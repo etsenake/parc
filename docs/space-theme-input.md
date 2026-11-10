@@ -42,7 +42,7 @@ so rejection cannot erase the new gesture. `onPreview` remains transient;
 `onCommitChange` owns existing Spaces and `onCommit` owns setup/creation drafts.
 [Theme Undo](space-theme-undo.md) owns persistence/rollback and cross-editor history.
 
-## Drawn knob position and cursors (October 31)
+## Drawn knob position and cursors
 
 Drawing, hit testing and pointer mapping all use the same y-down coordinates;
 backing sublayers must not introduce another geometry flip. Direct handle drag
@@ -56,7 +56,7 @@ During a pad drag the cursor is recomputed after moving the primary handle;
 beyond the rim it returns to arrow. Buttons, including preset swatches, retain
 Parc's pointing-hand behavior.
 
-## Knob hit geometry (November 1)
+## Knob hit geometry
 
 The 40-point center button has a 20-point circular press region. Press/release
 inside cycles texture and never starts a ring drag. Elsewhere in the 80-point
@@ -74,5 +74,4 @@ one-transaction Undo, intensity cancellation, dial thresholds, rotation/end,
 wheel throttle and parent interruption. Inert geometry checks cover drawn layers,
 button-over-handle precedence, disabled buttons, cursor restoration and circular
 versus rectangular hit regions. Model, appearance and original-window Undo suites
-remain applicable. These checks do not post OS input or establish physical
-trackpad, haptic or browser-runtime acceptance.
+cover the shared state and persistence boundaries.

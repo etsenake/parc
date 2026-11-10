@@ -19,9 +19,9 @@ palette, title, blob selectors and creation date, recomputing the mask from the
 first Unicode scalar of the last word modulo four.
 
 The persisted design includes title, palette, mask and fifteen blob selectors.
-Randomize generates a new title/blob configuration and different palette in 1…7
-while retaining name, mask and date. Malformed/future data is preserved and
-refuses changes; Reload permits retry. External replacement and stale name
+Randomize generates a new title/blob configuration, a different mask and a
+different palette in 1…7 while retaining name and date. Malformed/future data is
+preserved and refuses changes; Reload permits retry. External replacement and stale name
 sheets cannot overwrite a newer design. All Settings windows observe one owner.
 
 ## Presentation and export
@@ -61,5 +61,4 @@ handles lifecycle. Card animation is separate from pane/modal transitions.
 `scripts/test-membership-card.sh` uses disposable files and inert components for
 persistence, generation, Unicode/name validation, failed/stale writes, corrupt or
 future data, shared ownership, accessibility, detached cleanup and static/live
-artwork agreement. Renderer fixtures cover all four masks. Compiler/component
-checks do not establish actual sharing destinations, user input or browser runtime.
+artwork agreement. Renderer fixtures cover all four masks.

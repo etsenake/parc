@@ -53,5 +53,4 @@ Isolated model/native-boundary doubles cover atomic admission, protected Profile
 preparation cancellation, journal recovery and partial completion without deleting
 real profile storage. Inert sheet checks cover confirmation, duplicate/detached
 requests, Unicode names, long feedback, legacy scrollbars, action labels,
-Close/Done/Escape and bulk retries. Compiler/component checks do not establish
-browser runtime, VoiceOver or visual acceptance.
+Close/Done/Escape and bulk retries.

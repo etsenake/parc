@@ -44,8 +44,11 @@ transferred targets refuse without expanding the captured grant. Mixed moves
 stage every root, reject the complete proposal on any failure and save/publish
 once. No page is cloned or closed for a move.
 
-The selection is ephemeral, not session-persisted. Hierarchy disclosure preserves
-still-visible selected rows; collapsed/removed rows cannot remain selected.
+The selection is ephemeral, not session-persisted. Moving keyboard focus within
+the same window retains it, but its commands require focus in the sidebar list.
+Losing the window's key status clears it, except for the owning close-consent
+sheet. Hierarchy disclosure preserves still-visible selected rows;
+collapsed/removed rows cannot remain selected.
 Dragging an unselected row clears the multi-set and takes its single-item lease.
 The pane split-creation path never consumes a multi-set.
 
@@ -83,11 +86,13 @@ capabilities; tray admission validates every root and the twelve-root capacity.
 Supported modifiers and cross-Profile routes remain with
 [folder moves](folder-moves.md) and [split groups](split-groups.md).
 
-## Checks and scope
+## Remaining selection limits
+
+Close is unavailable when the selection contains only empty saved folders,
+because the close transaction requires at least one tab. Explicit folder Delete
+remains available. Favorite tiles do not join range or multi-selection.
+
+## Checks
 
 Model, copy-command and ownership checks cover visible Select All, export
 identity/order, stale grants, save failure and saved/mixed close semantics.
-Empty-only folder deselection, dormant cross-focus selection and additional
-Favorite multi-selection/modifier behavior remain separate requirements in
-[the backlog](backlog.md). Source/component checks do not establish live
-accessibility, motion or browser interaction acceptance.

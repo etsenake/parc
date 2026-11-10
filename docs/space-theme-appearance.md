@@ -33,11 +33,10 @@ Opening an editor or changing application appearance must not migrate or
 rewrite that stored theme. Palette Undo is documented separately in
 [theme Undo](space-theme-undo.md).
 
-## Checks and delivery
+## Checks
 
 `scripts/test-theme-appearance.sh` compiles the actual AppKit editor and
 `AppAppearance` with isolated preferences. It covers nil reset, preference
 removal, Light/Dark siblings, external-parent updates, saved-choice restoration,
 palette/preset/Undo preservation and observer lifetime. Theme model tests and
-whole-module Swift checks remain applicable. Compiler/component results do not
-establish browser runtime or physical display acceptance.
+whole-module Swift checks cover shared integration.

@@ -195,7 +195,7 @@ sidebar item. Scope entry/exit and search-privacy announcements in
 Any future narration should announce user-driven movement, not ordinary list
 reconciliation, and should preserve the command field's ownership.
 
-## Checks and validation boundary
+## Checks
 
 | Check | Coverage |
 |---|---|
@@ -207,13 +207,5 @@ reconciliation, and should preserve the command field's ownership.
 | `tests/SidebarWindowButtons/check.py` | Window controls and presentation-state pointer handling |
 
 These are model and inert AppKit component checks. Inspect their entry points
-before running them under [AGENTS.md](../AGENTS.md). The documentation update
-performed source and link inspection only.
-
-The component harness does not cover every full `SidebarView.render` path, a
-remote accessibility client's view of notifications, or live Tab navigation
-with Full Keyboard Access and VoiceOver. Earlier live acceptance was skipped.
-Those are validation limits, not grounds to remove working keyboard features
-or to claim the feature unimplemented. Source-pattern checks for saved weak
-responders also do not detect every possible captured or differently named
-responder; a new restore path still needs direct review.
+before running them under [AGENTS.md](../AGENTS.md). Review each new focus-restore
+path against the shared saved-responder rule.

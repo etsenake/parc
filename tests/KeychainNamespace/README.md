@@ -20,8 +20,8 @@ This is an upstream-startup integration correction to the retained Parc-owned
 service/account before initializing any provider or Profile. It leaves CEF's
 global API version unchanged and fills the matching settings as well. Fresh
 engine roots use `Parc Safe Storage` / `Parc`. An existing root with `Local State`
-and no namespace marker keeps its encryption key: normal authorized Keychain
-reads copy the exact Chromium key into `Parc Safe Storage` with account
+or restored Profile cookie/password databases and no namespace marker keeps its
+encryption key: normal authorized Keychain reads copy the exact Chromium key into `Parc Safe Storage` with account
 `Parc (Chromium compatibility)`. The distinct account preserves any previous
 Parc key. Create-only `SecItemAdd`, followed by a byte equality check, refuses
 denied access, a conflicting destination or an unavailable legacy key. It never
@@ -48,9 +48,7 @@ build/keychain-namespace-test
 
 They cover fresh roots, byte-preserving legacy migration, previous Parc-key
 preservation, duplicate-item races, missing/denied/conflicting keys, marker-write
-failure and idempotent retry. The actual native source also passes the shipping
-engine's generated compiler flags. These checks do not establish encrypted
-restart or completion of a real user's authorization.
+failure and idempotent retry.
 
 ## Separately authorized encrypted restart fixture
 
@@ -84,10 +82,5 @@ Keychain material nor bypasses system authorization.
 The server keeps its comparison token only in memory. Restarting the server or
 saving again would invalidate the intended restart check. A successful run plus
 the database aggregate establishes encrypted storage and cookie recovery for
-that exact app/profile. It does not establish signature continuity across future
-rebuilt or ad-hoc-signed apps.
-
-The earlier normal encrypted-persistence result in the root README belongs to
-ported into independent-engine coverage. Normal Keychain restart acceptance for
-the independent engine remains a separate runtime gate; removing unused source
-does not pass it.
+that app/profile. Keep the app's signing identity stable across a restart or
+upgrade so macOS can apply its normal Keychain authorization rules.

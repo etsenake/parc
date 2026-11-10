@@ -12,6 +12,5 @@ editor selection bookmarks, disabled button dispatch, stale/hidden/detached
 control refusal, inactive/non-key/closed/covered parent refusal, fallback focus,
 bookmark retirement and nested-sheet cancellation order. AppKit supplies the
 native control roles; an unshown field reports `AXUnknown` in this harness, so
-configured-label and availability assertions do **not** establish screen-reader
-or OS Full Keyboard Access acceptance. Functional browser and relaunch checks
-remain prohibited under the current project instructions.
+the assertions inspect configured labels and control availability. Follow
+[AGENTS.md](../../AGENTS.md) when choosing checks.

@@ -60,10 +60,10 @@ hidden. Nested/sidebar surfaces never create that second material. Each surface
 requires one canvas draw per frame; the transition does not allocate another
 gradient target.
 
-The strip renders the selected page and one neighbor. Tracking beyond one page
-can expose empty strip space while the background advances to a later pair.
-Release selection remains bounded by the pager's own policy. This current
-presentation limit must not be mistaken for missing theme interpolation.
+The strip positions the selected page and its immediate neighbors. Tracking
+beyond one page can expose empty strip space while the background advances to
+a later pair. Release selection remains bounded to one page from the starting
+Space.
 
 ## Color-pad motion
 
@@ -78,14 +78,10 @@ changes. Detachment cancels motion and its observer holds the pad weakly.
 Animation never owns a model mutation or deferred commit. Input, appearance and
 Undo transactions remain in their focused guides.
 
-## Checks and delivery
+## Checks
 
 `scripts/test-theme-rendering.sh` covers backing/content separation, propagation,
 material ownership, no-op publication, invalid themes, gradient/texture uniforms,
 alpha readback and spring interruption. Theme input/appearance/Undo and website-
 palette components cover their shared boundaries. Sidebar paging and floating-
 surface components check pair/progress continuity and material layering.
-
-Compiler/component evidence does not establish browser runtime, all GPU/material
-configurations or live visual/haptic acceptance. This document is a current
-implementation guide; release status belongs in [product status](parity.md).

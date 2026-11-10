@@ -10,6 +10,5 @@ The assertions cover native command role/name and child isolation, hit ownership
 actual subview containment, truncation versus Space-count geometry, both toolbar
 backing-scale representations, disabled content and light/dark color resolution.
 It also saves actual native light/dark component renders for appearance inspection.
-The separate Settings motion check owns hover lifetime/accepted input. Compiler
-and inert component checks do not establish functional browser or live VoiceOver
-acceptance.
+The separate Settings motion check owns hover lifetime and accepted input.
+Follow [AGENTS.md](../../AGENTS.md) when choosing checks.

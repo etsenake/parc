@@ -127,10 +127,9 @@ DevTools pane, which owns its internal frames.
 A page replacement resets the hold, last report and observation. When a page
 moves to another pane during a drag, the old subscription can remain until the
 old pane next changes mode; its reports affect only that old pane. Rejoining
-resets the previous hold. If the renderer cannot report the requested size,
-including when developer tools absorb the change, the hold can last until
-another report or the drag's end. These are current implementation limits,
-not newly reproduced runtime failures.
+resets the previous hold. Any renderer frame report releases the hold; it does
+not need to match the requested size. If no new frame arrives, the current
+size stays held until a report or the drag's end.
 
 ## Sidebar chrome spacing
 
@@ -198,9 +197,8 @@ Drops on a header target the top of that Space's pinned items; dock drops use
 the same move ownership and profile checks. Whole-split and multi-item behavior
 is described in [split views](split-groups.md) and [folder moves](folder-moves.md).
 
-The old title, rename, icon and profile handoffs are implemented. Collapsing
-the entire pinned section is still not implemented; the header does not expose
-a misleading collapse chevron or action.
+Collapsing the entire pinned section is not implemented; the header does not
+expose a collapse chevron or action.
 
 ## App Tray empty state
 
@@ -219,7 +217,7 @@ After dismissal, the header's 5-point band remains a drop target. The card
 exposes its image, text and Dismiss button in that order. Dismiss participates
 in the keyboard chain; removing it leaves focus at the next valid stop.
 
-## Checks and validation boundary
+## Checks
 
 These existing focused checks cover the production models and inert AppKit
 components; inspect a check before running it under the current work contract:
@@ -231,8 +229,3 @@ components; inspect a check before running it under the current work contract:
 | `tests/SidebarChrome/check.py` | Header/list/dock geometry, Space header and settings wiring |
 | `tests/SidebarFavoritesEmptyState/check.py` | Card layout, persistence, drag state and keyboard dismissal |
 | `tests/SidebarOutline/check.py` | Row geometry, disclosure and accessibility wrappers |
-
-The documentation cleanup used source inspection and link checks, not app
-execution. Historical component checks do not establish live drag smoothness,
-compositor timing or VoiceOver behavior. Browser/app launching and screenshots
-remain governed by [AGENTS.md](../AGENTS.md); this guide grants no permission.

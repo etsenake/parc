@@ -45,8 +45,7 @@ remain in the normal local Keychain.
 The master calls `scripts/publish-homebrew.py` with `--artifact-only --resume`
 and the run's signed `--appcast`. This validates published ZIP/DMG hashes,
 tag/source/version, package report, mounted-app signatures and Apple ticket,
-then promotes the stable release and publishes the cask. It requires no startup
-receipt and makes no runtime-acceptance claim.
+then promotes the stable release and publishes the cask.
 
 The appcast comes from `scripts/appcast.py`, offers the exact public ZIP and is
 mirrored with the ZIP and DMG into `etsenake/parc-releases`. Existing differing
@@ -59,13 +58,12 @@ Ruby and download strategy, then commits/pushes and compares remote state. See
 [master release](master-release.md) for recovery and stage receipts rather than
 maintaining a second release checklist here.
 
-## Explicit user confirmation
+## Optional historical receipts
 
-A user's confirmation applies only to the exact tested release. The optional
-`record-release-acceptance.py --user-confirmed` mode binds a dated exact statement
+Production releases and completed fixes do not wait for user confirmation. The
+optional `record-release-acceptance.py --user-confirmed` mode binds a dated exact statement
 to the immutable source/version and raw package-report hash, verifies the artifact,
-and preserves any interrupted raw observation unchanged. Its receipt explicitly
-records that automatic startup acceptance was not claimed.
+and preserves any interrupted raw observation unchanged.
 
 Historical acceptance-backed publication remains a separate tool capability.
 This guide does not authorize installation, launch, browser tests, profile access

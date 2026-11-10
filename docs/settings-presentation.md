@@ -45,7 +45,5 @@ input ownership, decorative-descendant isolation, truncation, disabled colors
 and toolbar representations. Shared Download Location checks cover that component's
 integration. Typechecking/SIL complement these inert checks.
 
-Offscreen components do not establish active-window selection appearance,
-complete controller behavior, VoiceOver/FKA acceptance or final product polish.
 Focus and motion have separate [Settings](settings.md) and
 [motion](settings-motion.md) contracts.

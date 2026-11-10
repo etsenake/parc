@@ -6,11 +6,10 @@ frontmost window, or a fabricated successful bubble. `autofill_save_session`
 implements real `AutofillBubbleBase` factories using pinned Chromium156's
 actual local-save controllers and the transferred `UpdateAddressBubbleController`.
 `NativeAutofillBubbleHandler` supplies these presentations through the real
-Browser-owned interface. Its other methods have explicit unavailable results,
-paired with producer and continuation guards in the reviewed upstream patch.
-The handler is registered by the canonical native host. Historical checks below
-retain their original scope; unrun browser tests are not implementation gates
-under the current user direction.
+Browser-owned interface. The canonical native host registers the handler and
+payment-entry owner before page clients are created. Additional native sessions
+present address-account and payment modes through their actual controllers.
+Producer and continuation guards preserve neutral refusal for unavailable UI.
 
 ## Native password Save and Update
 
@@ -26,8 +25,7 @@ the Swift shell. Trusted-vault blocking retains Chromium's unlock-before-save pa
 Management is reachable through the command bar and Settings. Generation retains
 Chromium's existing Cocoa-container popup route; manager reveal retains the real
 profile store and macOS DeviceAuthenticator. No duplicate generation or reveal
-surface was added. Remaining account-address/card/payment modes are separate
-implementation work; this password-save path is implemented.
+surface was added.
 
 ## Address update and editing
 
@@ -40,37 +38,53 @@ route because `TabDialogManager` requires a Views host widget. Ordinary Views
 browsers retain that route. Page hiding/navigation/detachment cancels unfinished
 editing; old controllers cannot clear a replacement request.
 
-New account-address saves,
-migration/Home-Work merge, sign-in promotion and remaining payment modes still
-have explicit capability boundaries. No functional browser tests were run here.
+Account-address save, migration and Home/Work/name/email merge use the actual
+save-address view and controller when a real primary account and account-address
+storage are eligible. The session revalidates that account before acting.
+Sign-in promotion uses its genuine controller when DICE support and the current
+Profile permit it; the presentation does not create an account or grant eligibility.
+
+## Payment modes
+
+`NativeCardSaveSession` handles local/CVC saves, upload consent, in-progress and
+completed uploads, and Manage Cards. It preserves legal links and forwards
+accepted details to the real save controller. The view accepts either a requested
+name or expiration correction; simultaneous requests for both are refused.
+
+`NativeIbanSession` handles local/upload save, nickname editing, management and
+completion. `NativePaymentConsentSession` owns virtual-card enrollment and
+mandatory-reauthentication opt-in/confirmation. Information sessions show offers
+and filled-card details; tab-owned sessions handle omnibox suggestions, eligible
+returning-payment-user prompts and wallet reminders.
+
+The native host publishes current payment actions to the browser sidebar and
+menu. Actions revalidate the same page, request and controller before reshowing
+UI. Saved feedback is acknowledged only after it reaches the visible control.
+Upstream account, feature, policy and backend eligibility remain authoritative.
 
 ## Presentation boundaries
 
 The native controls use a 400×180 initial sheet, AppKit layout and system sheet
 motion. Card copy comes from the actual controller, which distinguishes card-only
-and card+CVC saves. Localization, long translated text, focus restoration and
-integrated presentation need validation beyond source checks.
+and card+CVC saves. The additional address and payment sessions retain their
+controller-provided text and actual view-specific controls.
 
 Terminal state, delayed delivery, generation invalidation and physical-owner
 checks prevent stale results from consuming replacement requests.
 
 ## Scope and integration contract
 
-- `SupportsLocalCard` accepts actual local-save state without requested name,
-  expiration editing, upload or legal-message UI. Manage/CVC-only/upload and
-  continuation/confirmation modes are not claimed. `SupportsLocalAddress`
-  requires the actual typed `kSave` mode and excludes account profiles, migration
-  and Home/Work/name/email merge prompts. Cancellation semantics alone cannot
-  distinguish merge from ordinary save. The exact type uses the reviewed
-  read-only `GetSaveAddressBubbleType()` upstream accessor; this source needs
-  that integration patch, not a local substitute declaration.
-  These non-consuming predicates are caller
-  capabilities, not disabled full-browser feature policy.
+- `SupportsLocalCard` selects the simple local-save sheet; other admitted card
+  modes use `NativeCardSaveSession`. `SupportsLocalAddress` selects ordinary
+  local saves, while `SupportsAccountAddress` admits eligible account saves,
+  migration and merge. The exact typed mode comes from the integrated
+  `GetSaveAddressBubbleType()` accessor. These predicates route real requests
+  without changing the Profile's upstream feature or account policy.
 - The factory requires the supplied WebContents' actual TabInterface to belong
   to the supplied Browser/Profile. The supplied host must contain that exact
   native content view in that Browser's supplied NSWindow. Non-tab guest/inner
-  WebContents adaptation is not implemented; ordinary subframes share their
-  page WebContents.
+  WebContents are outside this tab-owned presentation route; ordinary subframes
+  share their page WebContents.
 - A factory returns a genuine pending session; presentation is queued using
   the real UI task runner and all sheet results are subsequently deferred.
   Chromium's synchronous `DoShowBubble` must install its returned bubble pointer
@@ -129,13 +143,10 @@ icon after successful presentation. The product buildflag excludes Autofill AI
 and AtMemory construction/direct presentation before Browser attachment; this
 is a scoped exclusion, not proof that the entire engine contains no AI.
 
-The address acceptance continuation needs a native-window capability guard:
-`AddressBubblesController::MaybeShowIOSDektopAddressPromo` unconditionally used
-`AsBrowserView()->browser()` after the generic lookup. The reviewed overlay
-checks for the actual Views presentation capability before that optional
-desktop promotion. The [lookup regressions](../NativeWindowLookup/README.md)
-include the real local-save controller reaching this continuation. This does
-not bypass the actual save controller or establish saved-data persistence.
+The integrated address acceptance continuation checks actual Views presentation
+capability before optional desktop promotion. Native address saving therefore
+keeps its real controller without entering a Views-only promotion path. The [lookup regressions](../NativeWindowLookup/README.md)
+include the real local-save controller reaching this continuation.
 
 ## Executable AppKit checks
 
@@ -149,11 +160,9 @@ deferred start/results, Save/Decline/Return/Escape, duplicate calls, external
 sheet dismissal, existing-sheet conflict, queued and displayed parent close,
 actual page reparenting, same-window explicit invalidation, stale queued Save,
 validator reentry, callback reentry/replacement, unrelated-window filtering and
-request retention/release. **75 assertions across eight groups pass.** The
-presentation-outcome suite adds **33 checks across seven groups**, including
-hidden/minimized parents, cancellation, validator reentry and owner release.
-Both suites pass through the repository runner. No browser/profile or real
-payment data is accessed.
+request retention/release. The presentation-outcome suite covers hidden/minimized
+parents, cancellation, validator reentry and owner release. No browser/Profile
+or real payment data is accessed.
 
 ## Actual Chromium interface check
 
@@ -208,10 +217,8 @@ BubbleManager enabled/disabled, six manager cases, five queue-reentry cases and
 two product-policy cases. Modified upstream wallet-controller tests include
 destruction during handler return/action notification and closing before
 presentation observation. These tests use the real controllers and managers;
-none of the Chromium cases has been linked or executed yet.
+the configured Chromium target supplies their execution environment.
 
-Passing AppKit tests proves presenter behavior. Passing pinned syntax checks
-proves source interfaces, **not linked Chromium controller execution or saved
-data**. Synthetic-profile persistence, execution of the BubbleManager feature-state
-matrix, navigation/transfer and address-replacement coverage remain open. Production routing is installed by the native host; component checks alone do
-not establish persisted data or browser-level acceptance.
+Follow [AGENTS.md](../../AGENTS.md) when selecting checks. The AppKit runner
+covers its presenter and lifecycle components; the Chromium target owns real
+controller/manager regressions.

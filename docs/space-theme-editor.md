@@ -78,17 +78,15 @@ Swatches, arrows, add/remove, appearance and noise controls use the shared Parc
 tooltip below the control and inherit their popover's palette. Noise anchors to
 `knobRect`; the tooltip hit region currently remains the whole dial.
 
-## Recorded gaps
+## Remaining presentation limits
 
 The intensity thumb/noise indicator do not grow their shadow/scale on hover.
 During a pad drag, entering a handle changes the cursor without refreshing its
 hover scale. Noise uses whole lit dots during continuous rotation, and its
-label can trigger outside the center knob. These presentation limits are
-source-visible; no live interaction acceptance is implied.
+label can trigger outside the center knob.
 
 ## Checks
 
 Theme rendering/input/appearance/Undo components cover actual control constants,
 button reversal, disabled drawing, cancellation, native parent identity and
-palette propagation. They do not establish live browser, visual or tactile
-acceptance. Current no-app/no-screenshot instructions govern future verification.
+palette propagation.

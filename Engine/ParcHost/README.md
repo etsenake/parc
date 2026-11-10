@@ -42,5 +42,4 @@ never owns Browser, Profile, TabStripModel or WebContents.
 [Harness procedures](../../tests/EngineConformance/native/README.md) describe the
 retained fixture. Browser launch is currently prohibited by
 [AGENTS.md](../../AGENTS.md); the fixture is not authorization to run it.
-Source validation, compilation and runtime behavior are distinct forms of
-verification. Preserve existing engine objects and caches.
+Preserve existing engine objects and caches.

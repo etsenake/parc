@@ -102,12 +102,10 @@ Locked and floating surfaces use the same transition input.
 
 For a colored floating Space, the blur follows the window's appearance while
 text follows the Space palette. Where material is the whole background, its
-appearance follows the palette's light/dark side. This leaves two recorded
-limitations: a forced-dark colored Space over a light window can have weak
-text contrast, and crossing between a forced uncolored Space and a colored
-Space can change the blur at the selection commit. These require a focused
-appearance change and its own validation; no live measurement was made in
-this documentation cleanup.
+appearance follows the palette's light/dark side. A saved forced-dark colored
+Space can therefore use light text over the light window's blur. Crossing
+between a forced uncolored Space and a colored Space changes that blur's
+appearance at the selection commit rather than blending both appearances.
 
 ## Hidden-sidebar hover regions
 
@@ -240,12 +238,7 @@ layout work. Shown material views are measured separately from that budget.
 Negative controls remove the optimizations or introduce extra layout and
 require the budget to fail.
 
-That harness does not establish Chromium frame-delivery timing, render-server
-compositing, live sidebar list performance or the visual result of material
-crossfades. Offscreen timings must not be presented as a running-browser
-performance result.
-
-## Checks and validation boundary
+## Checks
 
 | Check | Scope |
 |---|---|
@@ -256,7 +249,3 @@ performance result.
 | `tests/SidebarPlusMenu/check.py` | HUD geometry, palette and dismissal behavior |
 | `tests/SidebarPacing/check.py` | Bounded AppKit layout work and continuity |
 | `tests/SidebarSpaceSwipe/check.py` | Space-switch lifecycle and frame-budget regressions |
-
-No browser or app was launched for this documentation update. Earlier live
-sidebar-motion acceptance was explicitly skipped; component coverage does
-not replace it. Current execution restrictions are in [AGENTS.md](../AGENTS.md).

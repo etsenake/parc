@@ -48,12 +48,9 @@ Parc therefore uses this genuine API without inventing a capability or
 preference toggle. The tab-reordering haptic setting is unrelated. The app's
 macOS 13 minimum is above this API's macOS 10.11 availability.
 
-## Checks and limits
+## Checks
 
 `scripts/test-theme-haptics.sh` injects the feedback action so it can inspect
 detent and control ownership without producing physical feedback. Its checks cover
 the inclusive boundaries, reversal, multiple crossings, repeated/clamped
 values, gesture provenance, silent non-haptic actions and parent cancellation.
-
-No functional browser test or physical-device feel comparison is claimed.
-AppKit decides whether the current hardware performs an admitted request.

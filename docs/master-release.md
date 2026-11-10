@@ -84,8 +84,6 @@ published tag still refuses.
    update/push the cask's version, URL and checksum in `~/homebrew-tap`; the cask
    says `auto_updates true`, so `brew upgrade` leaves Sparkle-updated installs
    alone. Refresh the local tap metadata, check Ruby syntax and audit the cask.
-   **Updating the tap does not install or upgrade the app.** Runtime acceptance
-   is neither required nor claimed by this artifact-only release path. Artifact validation does not authorize app launch or runtime checks.
 
 On a fresh Mac, restore the [saved engine workspace](engine-artifacts.md)
 first to avoid a full pinned source sync/build. An unowned existing workspace is
@@ -103,8 +101,8 @@ No shell redirection is needed, and a new run never truncates the log.
 command PID. Each `build/releases/<run>/` contains atomic `state.json`, an
 `events.jsonl` stage journal and individual command logs. Swift/compiler detail
 is in `package/package-output.log`. Final publication metadata is in
-`delivery.json` and `build/releases/latest.json`; it records that no app was
-installed/launched and no runtime acceptance is claimed. Release status does not alter the installed-app state.
+`delivery.json` and `build/releases/latest.json`, including source, engine,
+package, signing, notarization, update-feed and tap identities.
 
 A nonblocking local lock serializes release/legacy refresh operations. An atomic
 temporary GitHub tag lease, `parc-release-in-progress`, prevents two Macs
@@ -163,7 +161,7 @@ from local commits main lacks, and a version commit carrying anything besides th
 version files that main lacks, as after main is rewritten, stops for
 reconciliation instead of being merged away.
 
-If the release owner died during the read-only overlay check, or during a Git
+If the release owner died during overlay validation, or during a Git
 command or a preflight step (`gh`, `xcrun`, `xcodebuild`, `security`, or the
 signing-key restore), for example while a source refresh was fetching, source
 refresh verifies that both the saved command PID and its process group are gone,

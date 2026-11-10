@@ -65,7 +65,8 @@ other imported blockers from their recorded destination Profiles; keeping all
 changes none. Yes requests uBlock Origin and falls back to uBlock Origin Lite
 when Manifest V2 is refused. Native removal is restricted to known blocker IDs,
 refuses external installs and can wait for an outstanding download. Installation
-failure uses the browser's existing failure notice; removal failures are logged.
+failure uses the browser's existing failure notice. Removal failures are currently
+logged without a visible failure or retry notice.
 These are actual engine operations, not consequences of simply selecting a row.
 
 ## Welcome presentation
@@ -180,9 +181,9 @@ and skips CSV.
 
 An accepted extension request runs only after successful setup completion and
 browser preparation; replay uses Finish. Skip, cancellation, stale ownership and
-failed completion cannot install it. The request outlives the setup window and
-reports native completion. Chromium retains metadata, policy, signature and CRX
-validation. Child Profiles are refused because this path cannot provide parental
+failed completion cannot install it. The request outlives the setup window. An
+installation failure is currently logged without a visible failure or retry
+notice. Chromium retains metadata, policy, signature and CRX validation. Child Profiles are refused because this path cannot provide parental
 reauthentication. Older macOS versions keep the manual path.
 
 ### Import content and initial bookmark recommendations
@@ -343,10 +344,6 @@ Relevant existing checks include:
 - The whole-module Swift check for material application changes.
 
 Read check entry points and follow [AGENTS.md](../AGENTS.md); this guide grants
-no permission to open apps or run browser fixtures. Source/model/component checks
-are not live browser or end-to-end setup acceptance. VoiceOver speech, Full
-Keyboard Access focus rings and the number of macOS consent prompts remain
-unverified. Current defaults retained for product decisions are Favorites after
-import, reduced-motion slides disabled, Lite blocker fallback, and no seeded
-starter folder. Product decisions and remaining work belong in the backlog,
-not new dated entries on this page.
+no permission to open apps or run browser fixtures. Favorites after import is the
+remaining ordering decision in the [backlog](backlog.md#onboarding). Reduce Motion,
+the Lite blocker fallback and no seeded starter folder retain the behavior above.

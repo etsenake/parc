@@ -1,6 +1,10 @@
 # Independent engine source bootstrap checks
 
-This tool prepares and builds **pinned upstream CEF/Chromium** in an explicitly selected external workspace. It does not implement the required Parc browser/window/extension bridge, package a replacement app, or launch anything. Stock embedded CEF does not satisfy Parc's extension/native-shell architecture gate.
+`scripts/engine-source.py` prepares and builds pinned CEF/Chromium and applies
+Parc's source-owned browser, window and extension integration through the reviewed
+overlay. Use an explicitly selected workspace, preferably ignored `work/` inside
+the checkout. App packaging is handled by `scripts/build.py`; this source tool
+does not package or launch the app.
 
 Run the offline safety suite from the repository root:
 
@@ -36,7 +40,19 @@ python3 scripts/engine-source.py overlay-check --workspace /absolute/engine-work
 python3 scripts/engine-source.py overlay-apply --workspace /absolute/engine-workspace --manifest /absolute/Parc/Engine/ParcHost/overlay.json
 ```
 
-`overlay-check` performs the complete validation and in-memory transformation without writing files. Both commands require a completed owned workspace, its unchanged source fingerprint, the matching pinned CEF/Chromium commits, and the exclusive operation lock. They do not download or build anything. Every source input, contextual patch and resulting target is SHA-256 bound. A mismatch anywhere prevents all source writes. Existing source changes require exact unified-diff context and before/after hashes; there is no fuzzy matching, binary patching, rename or executable-mode change. New files use the manifest's `files` array. Inputs and targets must be regular UTF-8 text without NUL, at most 8 MiB each, with confined paths and no symlinks. Repository metadata, dependency selection, output directories and pinned bootstrap scripts cannot be overlay targets.
+`overlay-check` performs validation and in-memory transformation without changing
+source files. Under the operation lock it can record a dead generation operation
+as failed before validating the workspace. Both commands require a completed
+owned workspace, its unchanged source fingerprint, the matching pinned
+CEF/Chromium commits, and the exclusive operation lock. They do not download or
+build anything. Every source input, contextual patch and resulting target is
+SHA-256 bound. A mismatch anywhere prevents all source writes. Existing source
+changes require exact unified-diff context and before/after hashes; there is no
+fuzzy matching, binary patching, rename or executable-mode change. New files use
+the manifest's `files` array. Inputs and targets must be regular UTF-8 text
+without NUL, at most 8 MiB each, with confined paths and no symlinks. Repository
+metadata, dependency selection, output directories and pinned bootstrap scripts
+cannot be overlay targets.
 
 The manifest schema is `schema_version: 1`, `id`, positive integer `version`, `upstream: {cef: commit, chromium: commit}`, `files`, `patches`, and optional `build_targets`. A file entry has `source`, source `sha256`, and `target` relative to `chromium/src`. A patch entry has `source`, patch `sha256`, and a `files` array of exact `target`, `before_sha256`, `after_sha256` entries. Each target appears once across the complete manifest. Optional `source_root: "repository"` makes inputs relative to this Parc repository and requires the manifest to be inside it; the default `"manifest"` makes inputs relative to the manifest directory. Neither mode accepts `..`. Build targets are individual simple GN names, not arguments or shell commands.
 
@@ -46,6 +62,24 @@ The default is Release ARM64 component build, `symbol_level=0`, `enable_dsyms=fa
 
 Storage guards come from the `storage` section of [the source lock](../../Engine/source-lock.json). Preflight requires its configured free-space thresholds before sync and compilation. These are working floors, not guarantees that a build will fit. `plan` prints blockers but succeeds so its proposed commands can be reviewed; `check`, `sync` and `build` return status 2 on blocked preflight. Execution rechecks capacity before mutation. No automatic cleanup occurs.
 
-A failed gclient dependency-sync records the partial repository inventory and source fingerprint. Repeating `sync` validates that unchanged state, then resumes at gclient without reinitializing, checking out, resetting or deleting existing repositories. A returned project-generation error likewise records its source fingerprint and `generation-failed` phase, provided all applied overlay outputs still match. An unchanged retry can regenerate; a reviewed overlay update can correct a source issue before regeneration. A bootstrap error occurs before generation begins and preserves the previous phase. Interrupted initial Git bootstrap, terminated processes that could not record their state, runhooks failures and generation that modifies reviewed overlay outputs remain incomplete and require inspection; this tool does not guess a safe repair. Their files remain intact. Failed compilation can be retried if source fingerprints still match. One operation per workspace is enforced by an exclusive advisory lock. Source paths and their ancestors must not be symlinks; unsupported characters are rejected because upstream-generated commands do not uniformly support them.
+A failed gclient dependency-sync records the partial repository inventory and source fingerprint.
+Repeating `sync` validates that unchanged state, then resumes at gclient without reinitializing,
+checking out, resetting or deleting existing repositories. A returned project-generation error
+likewise records its source fingerprint and `generation-failed` phase, provided all applied overlay
+outputs still match. An unchanged retry can regenerate; a reviewed overlay update can correct a
+source issue before regeneration. A bootstrap error occurs before generation begins and preserves
+the previous phase. After acquiring the operation lock, the tool converts a dead project-generation
+receipt into a resumable failure and revalidates the source fingerprint before retrying. The
+shipping path does the same for dead generation/build operations. Interrupted initial Git bootstrap,
+incomplete dependency sync, runhooks failures and generation that changes reviewed overlay outputs
+still require inspection; the tool preserves their files and refuses to guess a safe repair. Failed
+compilation can be retried if source fingerprints still match. One operation per workspace is
+enforced by an exclusive advisory lock. Source paths and their ancestors must not be symlinks;
+unsupported characters are rejected because upstream-generated commands do not uniformly support
+them.
 
-The offline suite verifies the Python tool, contextual transformations, rollback, update retirement, locking and build-target binding with temporary files and mocked command execution. It does not establish that a particular native bridge compiles or works. Actual upstream sync/build status is recorded separately in the project README; no independent Parc engine runtime claim follows from these tests.
+The offline suite covers contextual transformations, rollback, update retirement,
+locking, interrupted-operation recovery and build-target binding with temporary
+files and mocked command execution. The production build and packaging workflow
+is documented in [Engine](../../Engine/README.md) and
+[packaging](../Packaging/README.md).

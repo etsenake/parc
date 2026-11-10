@@ -52,7 +52,7 @@ last private window closes. Explicit history deletion by URL host, time range
 or all history invalidates matching cache entries. Ordinary history expiration
 does not erase them.
 
-## Bounded work and remaining limitation
+## Bounded refresh
 
 Element pixels are sampled at most once per detection. A 1.5-second negative
 cache is keyed by image identity/load state, gradient value, raster details,
@@ -63,13 +63,10 @@ leave the chosen band color stale for up to that cache interval. This remains
 a performance/refresh tradeoff; it is not a claim of immediate frame-by-frame
 tracking.
 
-## Sources and validation
+## Sources and checks
 
 The renderer top-band detector, native associated observer and
 `TopBarColorClient` feed `BrowserToolbar`. Relevant checks are
 `tests/TopBandColor/run.py`, the focused top-band-color script and native/client
 component coverage. They exercise candidate decisions, ownership and cache
 behavior; syntax/compiler checks cover integration when run.
-
-This cleanup verified documentation against source and did not launch a browser.
-It adds no claim about live websites, animation appearance or rendering cost.

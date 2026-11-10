@@ -23,7 +23,19 @@ python3 scripts/build.py build \
   --output "$PWD/build/package-1/development"
 ```
 
-The application configuration defaults to `release`, preserving this independent packager's original optimized Swift build. Add `--configuration debug` for `-g -Onone`; `--configuration release` uses `-O` with whole-module optimization (`-whole-module-optimization -num-threads <cores>`, as Xcode's Release does), compiling the module once instead of once per file. This option changes only Swift optimization, not the sealed Release engine, helper/compiler settings, signing identity or required explicit fresh output. Packaging purpose defaults to `development`. Seals and reports record the verified engine flags, `build_classification: development-component` and `distribution_eligible: false`; fresh seals are required after this metadata change, with no engine rebuild. The output itself must be a fresh directory whose parent already exists; a `.app` output is refused with migration guidance. The main bundle calls the shared `scripts/app_icons.py` exporter and sets `CFBundleIconFile=Parc.icns`. Both configurations export all ten catalog variants, each with ten standard macOS size/scale representations. The catalog's approved **Original** is the shared main ICNS, and every variant has identical bytes across debug/release. Source PNG variants are copied intact. The package report records the configuration and actual ICNS digest.
+The application configuration defaults to `release`, preserving this independent packager's original
+optimized Swift build. Add `--configuration debug` for `-g -Onone`; `--configuration release` uses
+`-O` with whole-module optimization (`-whole-module-optimization -num-threads <cores>`, as Xcode's
+Release does), compiling the module once instead of once per file. This option changes only Swift
+optimization, not the sealed Release engine, helper/compiler settings, signing identity or required
+explicit fresh output. Packaging purpose defaults to `development`. Seals and reports record the
+verified engine flags, `build_classification: development-component` and `distribution_eligible:
+false`. The output itself must be a fresh directory whose parent already exists; a `.app` output is
+refused with migration guidance. The main bundle calls the shared `scripts/app_icons.py` exporter
+and sets `CFBundleIconFile=Parc.icns`. Both configurations export all ten catalog variants, each
+with ten standard macOS size/scale representations. The catalog's approved **Original** is the
+shared main ICNS, and every variant has identical bytes across debug/release. Source PNG variants
+are copied intact. The package report records the configuration and actual ICNS digest.
 
 Every output is new: the tool refuses to overwrite a manifest or development directory. It stages the app, sibling libraries and report together, then publishes the complete directory with macOS exclusive atomic rename; even a concurrently created empty destination is preserved. It keeps the source tool's shared operation lock during verification and copying. Sealing reuses the bootstrap's pinned repository/dependency fingerprint checks, verifies the reviewed overlay's target hashes and the executable's public ABI headers, then records the framework inventory, symlinks, resources, runtime-loaded graphics/sandbox libraries, Mach-O dependency graph and component hashes. Packaging rechecks those inputs and rejects unknown external dependencies, ambiguous paths, symlink escapes and absent native C/Objective-C exports. The supported artifact is the pinned Release ARM64 component configuration; an additional non-system framework requires an explicit resource mapping rather than silently copying only its binary.
 
@@ -67,7 +79,7 @@ The atomically published directory contains a standalone `Parc.app` and its prov
 source. The [release command](../../docs/master-release.md) derives a version
 from Conventional Commits and advances the bundle build number. Preview packages
 keep the prepared version and do not update the stable Homebrew cask. A version
-change alone does not establish publication or runtime acceptance.
+change alone does not establish publication.
 
 ```sh
 bash scripts/package-app.sh --stable <sealed engine-artifacts.json>
@@ -107,7 +119,6 @@ and exact public assets must agree. It preserves unrelated tap edits and
 refuses older versions; `--resume` permits an identical verified cask.
 The [Homebrew guide](../../docs/homebrew-release.md) owns publication and
 verification details, including the separate optional user-confirmation path.
-No startup receipt is required or runtime acceptance claimed by `--artifact-only`.
 
 Users install on another Apple Silicon Mac with `brew tap etsenake/tap` and
 `brew install --cask parc`, and upgrade with `brew update` followed by
@@ -144,7 +155,13 @@ bash scripts/setup-signing.sh 'Developer ID Application: YOUR NAME (TEAM ID)'
 xcrun notarytool store-credentials parc-notary --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID
 ```
 
-The second command securely prompts for an Apple app-specific password and stores it in Keychain. Never put that password in shell arguments, source, logs or chat. `PARC_NOTARY_PROFILE` selects a different saved profile; `parc-notary` is the default. The publishing command validates authentication before compilation. Private signing keys remain in the building Mac's Keychain; do not copy them between Macs or replace Parc Safe Storage encryption with a file. Developer ID provisioning does not require an App Store Connect app listing.
+The second command securely prompts for an Apple app-specific password and stores it in Keychain.
+Never put that password in shell arguments, source, logs or chat. `PARC_NOTARY_PROFILE` selects a
+different saved profile; `parc-notary` is the default. The publishing command validates
+authentication before compilation. Private signing keys remain in the building Mac's Keychain. Use
+the encrypted [backup and restore workflow](../../docs/master-release.md#credentials-on-another-mac)
+when provisioning another Mac; never replace Parc Safe Storage encryption with a file. Developer ID
+provisioning does not require an App Store Connect app listing.
 
 The publisher calls `scripts/notarize-app.py` before creating the GitHub release. It verifies every signed image against its report, actual Developer ID Team IDs, secure timestamps and strict signatures, submits a ZIP, and retains the submission ID and immutable input fingerprint under the package run's `notarization/`. It polls that same submission, downloads Apple's log, and requires Accepted status plus the exact archive hash/job ID. It then staples and validates the ticket, verifies strict signatures/image hashes again and requires Gatekeeper acceptance. Only then does it write `notarized: true` with the evidence into `package-report.json`, and publish a ZIP containing the stapled app. Failed notarization, stapling or assessment cannot publish a production release.
 
@@ -214,7 +231,21 @@ one is accepted, following the same manual-install boundary above.
 `Sources/ParcHelper/main.cc` follows the pinned CEF macOS entry order: load `Libraries/libcef_sandbox.dylib`, resolve both sandbox entry points, initialize the sandbox context, then load the engine framework and call the exported `parc_engine_execute_process`. The sandbox stays alive through process execution and framework unloading. A missing sandbox, missing entry point, initialization failure or browser-process return fails. The helper links only system libraries; packaging checks its actual load commands before including it.
 
 
-Copied code is signed inside-out. The app is verified with `codesign --verify --deep --strict`, and sibling component dylibs are individually verified with `codesign --verify --strict` because they are outside the app bundle. Signing itself never uses `--deep`. The default ad-hoc identity is for development and requires library validation to be disabled because its separately signed component dylibs have no Team ID. Supply `--sign-identity` with an Apple-issued certificate (`Developer ID Application: …` or `Apple Development: …`); packaging reads its Team ID from a signed probe, and with one it does not add the development library-validation exception. A self-signed certificate has no Team ID, so it keeps the exception, like ad-hoc signing. Its only exception is `Parc Helper (CDM)`, signed with just `com.apple.security.cs.disable-library-validation` because the component-updated CDM carries Google's signature. Every other helper and the main app keep library validation ([why](../../docs/engine-flags.md#library-validation)). The tool does not create certificates, install trust, modify Keychain ACLs or claim signing/notarization continuity. Normal encrypted startup/restart across rebuilt packages remains a runtime gate.
+Copied code is signed inside-out. The app is verified with `codesign --verify --deep --strict`, and
+sibling component dylibs are individually verified with `codesign --verify --strict` because they
+are outside the app bundle. Signing itself never uses `--deep`. The default ad-hoc identity is for
+development and requires library validation to be disabled because its separately signed component
+dylibs have no Team ID. Supply `--sign-identity` with an Apple-issued certificate (`Developer ID
+Application: …` or `Apple Development: …`); packaging reads its Team ID from a signed probe, and
+with one it does not add the development library-validation exception. A self-signed certificate has
+no Team ID, so it keeps the exception, like ad-hoc signing. Its only exception is `Parc Helper
+(CDM)`, signed with just `com.apple.security.cs.disable-library-validation` because the
+component-updated CDM carries Google's signature. Every other helper and the main app keep library
+validation ([why](../../docs/engine-flags.md#library-validation)). The tool does not create
+certificates, install trust or modify Keychain ACLs. Production publication enforces the stable
+Developer ID identity and verifies notarization. Encrypted profile storage uses the [Parc Safe
+Storage namespace](../KeychainNamespace/README.md), preserving existing key bytes and normal macOS
+authorization.
 
 Pinned source references: CEF `tests/cefsimple/process_helper_mac.cc`, `libcef_dll/wrapper/cef_scoped_sandbox_context_mac.mm`, `libcef_dll/wrapper/cef_scoped_library_loader_mac.mm`, macOS `cef_app`/`cef_framework` targets in `cef/BUILD.gn`, Chromium `content/public/app/mac_helpers.gni` and `chrome/app/*entitlements.plist`. Packaging preserves the native window/page ownership architecture.
 
@@ -252,5 +283,8 @@ The real Mach-O tests copy unchanged engine-shaped fixtures into the normal CEF 
 
 These checks cover fixtures and packaging policy, not a Chromium launch. Set `PARC_CHROMIUM_SOURCE` to include the pinned LLD sectionless-library fixture; otherwise that one case is explicitly skipped.
 
-Other focused cases exercise ordered dependency resolution, source/output protection, exclusive whole-directory publication, stale/forged seals, component-distribution refusal, standalone dependency boundaries, compiler/signing fixtures, and real icon export/round-trip across debug and release. The genuine helper fixture still checks all four variants, sandbox failure and process exit propagation. Earlier relocation-specific production logic and its tests have been removed; the retained first-launch failure evidence explains that change, not an alternate packaging mode.
-
+Other focused cases exercise ordered dependency resolution, source/output protection, exclusive
+whole-directory publication, stale/forged seals, component-distribution refusal, standalone
+dependency boundaries, compiler/signing fixtures, and real icon export/round-trip across debug and
+release. The genuine helper fixture checks all five variants, including CDM, sandbox failure and
+process exit propagation.

@@ -43,7 +43,7 @@ directory.
   supplies the native compilers and packaging/signing tools; the pinned source
   bootstrap fetches its own depot_tools, Chromium dependencies and build tools.
 - When building from source, allow for the source tool's storage policy: at
-  least 150 GB free before sync and 50 GB free before building. These are conservative preflight thresholds,
+  least 80 GB free before sync and 40 GB free before building. These are preflight thresholds,
   not an estimate of the final size or a guarantee of sufficient capacity.
   Downloads require access to the upstream repositories and dependency servers.
 

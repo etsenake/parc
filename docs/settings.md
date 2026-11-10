@@ -167,9 +167,9 @@ requirement, not permission to discard opener/security semantics.
 <a id="internal-current-tab-routing"></a>
 
 Current-tab routing uses the original-request owner and its document/security
-lease. Authentication continuation and private-link lifetime have their own
-integration boundaries in the routing guides and backlog. Do not derive browser
-request behavior from the external URL entry point.
+lease. The routing guides describe authentication continuation and private-link
+ownership. Do not derive browser request behavior from the external URL entry
+point.
 
 ## Shortcuts
 
@@ -356,15 +356,11 @@ closed, non-key or inactive owners cannot steal focus. Closing cancels unanswere
 panels, input/preview subscriptions and old callbacks; approved exports and
 committed removals keep their established operation lifetimes.
 
-## Validation boundaries
+## Focused checks
 
 Existing checks include `test-settings-commands.sh`, `test-quit-warning.sh`,
 `test-default-browser.sh`, shortcut component scripts, `tests/WebsiteTheme`,
 `tests/SettingsFocus`, and the file-backed store/controller suites. Follow
-[AGENTS.md](../AGENTS.md) before running them. This documentation cleanup runs no
-browser, deletes no real Profile and changes no system preference.
-
-Source/component coverage does not establish live VoiceOver/Full Keyboard Access,
-actual macOS consent, native Profile destruction or browser interaction acceptance.
-Concrete routing integration work stays in the [backlog](backlog.md); do not append
-historical check receipts or progress logs to this guide.
+[AGENTS.md](../AGENTS.md) before running them. Profile-removal fixtures use native
+boundary doubles and disposable stores. Concrete routing work belongs in the
+[routing guide](routing-interaction.md) and [backlog](backlog.md).

@@ -129,13 +129,10 @@ Space while on this page retains that width and uses horizontal scrolling;
 leaving and returning reports the new count. Native trees are laid out once
 at completion, and closed windows reject stale completions.
 
-## Complete-row checks and independent review
+## Checks
 
 Space-management/store/inter-Profile components cover title migration, exact
 leases, failed saves, deletion/Undo, document relocation and owner preservation.
 `tests/SpaceManager/check.py` exercises real inert cards/sidebar controls and
 accessibility wiring. `tests/LibraryWidth/check.py` and sidebar motion/layout
 checks cover page-change reporting, clamps, cancellation and geometry.
-Compiler/component checks are distinct from live keyboard, VoiceOver, browser
-or complete visual acceptance. Current remaining product work is in
-[the backlog](backlog.md), not an accumulating delivery history here.

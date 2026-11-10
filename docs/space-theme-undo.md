@@ -46,7 +46,7 @@ operation without discarding its record. A closed original window has no
 remaining window history. History is intentionally not persisted across app
 restart; the saved theme is persisted.
 
-## Checks and limits
+## Checks
 
 `scripts/test-theme-undo.sh` compiles the actual BrowserStore, theme editor view,
 window Undo manager and theme registration adapter. Disposable model and inert
@@ -56,6 +56,3 @@ selection preservation, original-window availability, no-op/branch behavior,
 gesture commit on close, stale shared edits, interruption by a parent update,
 actual persistence failures and retry, deleted/reassigned targets and local
 draft history. No window is displayed and no browser or engine is loaded.
-
-These inert checks and whole-module compilation establish source/component
-behavior, not integrated browser runtime or live visual acceptance.

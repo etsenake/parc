@@ -1,8 +1,8 @@
 # Native direct browser import
 
-The app's chooser calls a two-stage native API. `availableImportSources` resolves
-installed application descriptors only. Selecting one descriptor permits
-`loadImportSourceProfiles` to read that browser's profile metadata and return
+The app's chooser calls a two-stage native API. `availableImportSources` lists
+browsers with importable or access-restricted data. Selecting one descriptor lets
+`loadImportSourceProfiles` read that browser's profile metadata and return
 immutable concrete profile tokens, supported categories and access restrictions.
 No credentials or cookie values cross into Swift. See `docs/browser-import.md`
 for the application-owned chooser, first-launch and bookmark-selection flow.
@@ -17,10 +17,9 @@ destroying the target Profile cancels further work.
 
 The source app may stay open. Its bundle and original directory device/inode are
 checked before reading and writing each category. Live Chromium and Firefox
-locks are not a refusal. macOS Full Disk Access is required to read another
-browser’s files, including Chrome; a restricted result opens that guidance for
-any source. Read-only source database/WAL copies retry when the live browser
-writes during the copy. SQLite opens the private temporary copy only after the
+locks are not a refusal. If macOS restricts source files, including Chrome's,
+a restricted result opens Full Disk Access guidance for that source. Read-only
+source database/WAL copies retry when the live browser writes during the copy. SQLite opens the private temporary copy only after the
 source files are unchanged through that copy; a still-changing pair is refused
 with a source-changed error rather than importing a torn snapshot. The owned
 copy is writable so a copied WAL can recover without creating a source SHM. The
@@ -39,7 +38,7 @@ before their native writes.
 
 | Source | Directly supported data | Deliberate restriction |
 | --- | --- | --- |
-| Chrome, Chromium, Brave, Edge, Vivaldi, Opera | History; ordered bookmarks/empty folders; cookies; saved passwords; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only. Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
+| Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Arc | History; ordered bookmarks/empty folders; cookies; saved passwords; form entries, current and historical local addresses, local payment cards; explicitly selected Web Store extensions | Actual macOS `v10` AES-CBC formats only. Unknown encryption, absent authorization or invalid encrypted-cookie host binding refuses that category. A source's concrete readable files determine availability. |
 | Safari | Default-store history and XML/binary-plist bookmarks | This reader supports no direct password/cookie/payment/extension import. Modern separate Safari profile stores are not advertised. Passwords require an explicit OS/source export. |
 | Firefox | History, bookmark hierarchy and form entries | Pinned macOS excludes the external NSS reader; no direct Firefox passwords, cookies, encrypted payment records or add-on installation is advertised. |
 
@@ -109,9 +108,8 @@ intersected with the source's capabilities before reading. The utility protocol,
 per-category failures, cancellation deadline, source-identity validation and
 shell-owned bookmark commit are Parc's implementation contracts.
 
-Compilation and disposable native fixtures establish source/API and reader
-behavior; they do not establish browser-runtime acceptance. This path has no
-third-party executable or library dependency beyond the pinned engine.
+This path has no third-party executable or library dependency beyond the pinned
+engine.
 
 ## Focused checks
 
@@ -126,10 +124,8 @@ rollback, cancellation, expiry, failure and reopened durability in disposable
 databases under both legacy and scoped transaction modes. All runners require
 explicit source/output paths and a private output directory; none generates GN,
 builds the engine, opens a browser, imports real profiles or accesses Keychain.
-Native service/writer/session integration is checked separately against the exact
-pinned targets and generated Mojo headers. Cookie/password service outcomes and
-extension consent/install remain source/compiler checked; the isolated database
-fixtures do not establish those live Profile behaviors.
+Native service/writer/session integration checks use the exact pinned targets
+and generated Mojo headers.
 
 ## Explicit exported password CSV
 
@@ -162,6 +158,5 @@ without claiming an atomic filesystem CAS. Closing the lease revokes removal.
 
 The synthetic file component exercises actual admission/hash helpers, and the
 coordinator fixture exercises original destination, cancellation, stale results
-and explicit removal dispatch. They do not execute a real Profile password store
-or read personal credentials; live native service behavior remains distinct from
-in `docs/browser-import.md`.
+and explicit removal dispatch. Both use disposable data. Application ownership
+and source mapping are described in [browser import](../../docs/browser-import.md).

@@ -147,5 +147,4 @@ and symlink targets. Extraction rejects unsafe paths, duplicate entries,
 special devices and escaping links. Hardlinks become separate files;
 ownership, ACLs and extended attributes are not transported. The original
 workspace's completed/unfinished state and the completed package's provenance
-remain distinct. Transport checks establish artifact integrity, not browser
-runtime or feature parity.
+remain distinct.

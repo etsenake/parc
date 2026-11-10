@@ -134,5 +134,5 @@ Primary owners are `BrowserImportCoordinator.swift`, the original setup/menu
 presenter, `BrowserImportDestination` and [native import](../Engine/ParcImport/README.md).
 Focused import, access, focus, password-file and restart-helper checks use
 fixtures or inert components. Restart fixtures replace final app launch with a
-recording seam. They do not prove live OS permission changes, real profile
-imports, external extension installation or end-to-end app restart acceptance.
+recording seam. Native reader/writer fixtures use disposable databases; see the
+[native import checks](../Engine/ParcImport/README.md#focused-checks).

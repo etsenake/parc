@@ -16,11 +16,10 @@ The window also remembers the selected split’s orientation and relative pane s
 
 If the remembered focused pane is unavailable, Parc retains its existing first-surviving-member fallback. It consumes the invalid focus immediately, so that page becoming available later cannot override a newer choice. With no surviving members, the existing empty-selection behavior remains; no additional tab ranking or page creation was added. This focus cache belongs to the live window and is not a new restart-persistence format. Accepted Peek remains attached to its original parent tab; returning to that parent uses the existing Peek presentation and selection path.
 
-## Validation and scope
+## Checks
 
 The window-presentation model checks per-Space focus return, closed-pane filtering,
 proportional split restoration, stale-focus refusal and atomic selection/layout
 admission. The cache belongs to the live window and does not add restart
 persistence. Transition drawing and gesture behavior are maintained in
 [sidebar motion](sidebar-motion.md), separately from this selection owner.
-No live browser validation is established by these source/model checks.

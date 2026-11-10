@@ -43,10 +43,9 @@ motion. Routing errors/scroll belong to [routing interaction](routing-interactio
 Default-browser requests retain actual asynchronous results; status refresh is
 not success feedback. Quit confirmation belongs to application lifecycle.
 
-## Checks and completion boundary
+## Checks
 
 `scripts/test-settings-hover.sh` uses inert AppKit components to cover native
 hit testing/actions, enabled state, covering views, window identity, sheets,
 hiding and detachment. Only activation/visibility/pointer inputs are substituted;
-no browser or real preferences are used. Compiler/component checks do not prove
-live keyboard, hardware haptic or whole-Settings visual acceptance.
+no browser or real preferences are used.

@@ -3,7 +3,8 @@
 Sidebar previews belong to the original sidebar item, profile, Space and window.
 Parc implements the local folder and recent-pages providers (Notion, Figma,
 Linear and Confluence) and, as its own addition, a tab picture card for every
-other tab ([below](#tab-picture-card)).
+other eligible loaded tab ([below](#tab-picture-card)). Private windows do not
+install sidebar previews.
 
 The sidebar registers its actual row/button anchors. A window-owned controller
 commits an eligible item after 200 ms only if the original item, anchor, selection
@@ -187,9 +188,7 @@ preferences. Every card gear uses that original Settings entry. Turning off a
 provider's Recents allows its tab-picture fallback only when the separate
 picture preference is enabled. These are local preferences, not service accounts.
 
-## Checks and limits
+## Checks
 
 Focused preview components exercise original-identity query/thumbnail leases,
-modifier routes, title rules, geometry, invalidation and focus return. These
-checks do not establish live hover/keyboard/VoiceOver acceptance. The picture
-card is hover-only; folders and Recents retain explicit keyboard entry.
+modifier routes, title rules, geometry, invalidation and focus return.

@@ -209,18 +209,14 @@ substitutions.
 
 `tests/ProductName` checks compiled translations and application strings against
 those decisions; it needs `PARC_ENGINE_WORKSPACE`. Every new Chrome-bearing
-message requires classification. Release receipts establish delivery, while
-visible UI acceptance needs separate evidence.
+message requires classification.
 
-## Acceptance and migration
+## Maintenance
 
-The independent engine is the production path; migration-era pending-integration
-notes are not an active queue. Current gaps belong in [the backlog](../docs/backlog.md).
+The independent engine is the production path. Current gaps belong in
+[the backlog](../docs/backlog.md).
 
-Compiler checks establish interfaces; model/native-component tests establish
-the behavior they execute; package/signature/notarization checks establish
-artifacts. None alone proves complete browser behavior, security policy or
-presentation. Browser/app launch is currently prohibited by
+Browser/app launch is currently prohibited by
 [AGENTS.md](../AGENTS.md); historical fixture commands do not authorize it.
 
 Maintain upstream security through deliberate pinned Chromium/CEF upgrades and
