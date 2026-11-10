@@ -1,6 +1,67 @@
 {
   "releases": [
     {
+      "version": "1.12.0",
+      "build": 26,
+      "date": "2026-11-10",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "updates",
+          "summary": "Keep download progress and byte counts steady",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "site-controls",
+          "summary": "Show the Site Control Center's section headings in plain black or white so they're readable in any theme",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "updates",
+          "summary": "Keep See What's New readable when you hover over the Update Complete banner",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "site-controls",
+          "summary": "Turn Developer Mode on from the Site Control Center, and keep its capture and Clear Cache controls available while it's open",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "toasts",
+          "summary": "Keep toast icons and secondary text readable in light and dark mode",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "sidebar",
+          "summary": "Show a tab's picture, title and site when you hover over it, with a button to open it in Split View",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "settings",
+          "summary": "Turn off the tab picture preview in Previews Settings",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": null,
+          "summary": "Show the pointing hand over every button and clickable control",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "pages",
+          "summary": "Show a tab opened by the click that brings Parc to the front instead of leaving it black until you switch apps",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "1.11.0",
       "build": 25,
       "date": "2026-11-10",

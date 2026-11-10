@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.12.0 (2026-11-10)
+
+### New
+
+- **sidebar:** Show a tab's picture, title and site when you hover over it, with a button to open it in Split View
+- **settings:** Turn off the tab picture preview in Previews Settings
+
+### Fixed
+
+- **updates:** Keep download progress and byte counts steady
+- **site-controls:** Show the Site Control Center's section headings in plain black or white so they're readable in any theme
+- **updates:** Keep See What's New readable when you hover over the Update Complete banner
+- **site-controls:** Turn Developer Mode on from the Site Control Center, and keep its capture and Clear Cache controls available while it's open
+- **toasts:** Keep toast icons and secondary text readable in light and dark mode
+- Show the pointing hand over every button and clickable control
+- **pages:** Show a tab opened by the click that brings Parc to the front instead of leaving it black until you switch apps
+
 ## 1.11.0 (2026-11-10)
 
 ### New
