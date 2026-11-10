@@ -123,8 +123,12 @@ Return to the recorder, select **Stop Tracing**, and wait for its downloaded
 `.gz` trace. Verify the download completed and copy that exact file into the
 capture directory. Close only the temporary tabs created for this task and
 restore the original tab when practical. Immediately end the computer-use
-phase with its completion summary. Tell the user control is released before
-doing lengthy trace parsing, code inspection or documentation work.
+phase with its completion summary before lengthy trace parsing, code inspection
+or documentation work. Report that input has stopped and the completion signal
+was sent; an acknowledgment alone does not prove the cursor overlay disappeared.
+If the user reports it remains, acknowledge that uncertainty and let them stop
+the session. The saved trace supports offline analysis without further computer
+access. Do not reacquire the app merely to check whether control was released.
 
 If the user stops computer use, stop immediately and follow the tool's handoff
 instructions. Do not retry through another agent, browser or input mechanism to
