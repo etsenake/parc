@@ -195,19 +195,30 @@ if [ -n "$from_release" ]; then
   fi
   if [ -n "$local_test" ]; then
     if ! git diff --quiet "$release_commit" "$commit" -- Engine/source-lock.json; then
-      echo "error: the source lock changed since $release_tag; a local test needs the same CEF" >&2
+      echo "error: the source lock changed since $release_tag; a local test needs the same engine" >&2
       exit 1
     fi
   elif ! git diff --quiet "$release_commit" "$commit" -- Engine; then
     echo "error: Engine/ changed since $release_tag ($release_commit); build the engine instead" >&2
     exit 1
   fi
-  # The pinned CEF/Chromium inputs come from an engine workspace's Git objects.
+  # The pinned engine inputs come from an engine workspace's Git objects.
   workspace="${PARC_ENGINE_WORKSPACE:-}"
   if [ -z "$workspace" ]; then
     main_root="$(dirname -- "$(git rev-parse --path-format=absolute --git-common-dir)")"
     for candidate in "$main_root/work/engine" "$HOME/Documents/Codex/2026-10-23/re/work/engine-source"; do
-      if [ -d "$candidate/chromium/src/cef" ]; then workspace="$candidate"; break; fi
+      if [ -f "$candidate/.parc-engine-source.json" ] &&
+         python3 - "$candidate" <<'PYWORKSPACE'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1]).resolve()
+try:
+    state = json.loads((root / ".parc-engine-source.json").read_text())
+    valid = state.get("schema_version") == 1 and state.get("workspace") == str(root) and (root / "chromium/src/.git").exists()
+except (OSError, ValueError):
+    valid = False
+sys.exit(0 if valid else 1)
+PYWORKSPACE
+      then workspace="$candidate"; break; fi
     done
   fi
   if [ -z "$workspace" ]; then

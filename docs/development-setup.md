@@ -182,16 +182,15 @@ measure the intended configuration before making performance claims.
 
 The reusable checker preserves the previous scratch helper's compiler contract:
 warnings as errors, whole-module checking, ARM64 macOS 13, the checkout's current
-native bridge headers and explicitly selected CEF headers. A synced CEF include
-tree is sufficient; a built engine or sealed package is unnecessary.
+native bridge headers. The direct facade needs no engine headers or built
+package. Legacy facades require an explicitly selected CEF include tree.
+
+For a direct facade:
 
 ```sh
-python3 scripts/check-swift.py \
-  --chromium-source "$PARC_ENGINE/chromium/src" --plan
-python3 scripts/check-swift.py \
-  --chromium-source "$PARC_ENGINE/chromium/src"
-python3 scripts/check-swift.py \
-  --chromium-source "$PARC_ENGINE/chromium/src" --mode sil
+python3 scripts/check-swift.py --plan
+python3 scripts/check-swift.py
+python3 scripts/check-swift.py --mode sil
 ```
 
 The default `typecheck` mode is for iteration. `--mode sil` emits SIL to
@@ -201,7 +200,11 @@ that plain typechecking omits, including definite initialization.
 
 The script finds its own checkout regardless of the shell's working directory.
 Use `--repo /absolute/other-worktree` to select another checkout, or
-`--cef-include /absolute/cef/include` when selecting headers directly.
+`--chromium-source "$PARC_ENGINE/chromium/src"` or
+`--cef-include /absolute/cef/include` when checking a legacy facade.
+When the facade imports `native_application_protocols.h`, the checker uses the
+self-contained declarations in `Engine/ParcNative` without an engine checkout.
+Explicit legacy header options are refused for the direct facade.
 `PARC_CHROMIUM_SOURCE` is an optional environment default; an explicit header
 option takes precedence. There are no historical username, workspace or package
 defaults.

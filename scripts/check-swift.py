@@ -3,7 +3,8 @@
 
 Portable replacement for the retained claude-split-checks/typecheck.sh. Uses
 the same warnings-as-errors, whole-module, ARM64 macOS 13 compiler contract.
-Select the CEF headers explicitly; this tool never selects a built package.
+Direct bridge declarations are self-contained; legacy CEF checkouts select their
+headers explicitly. This tool never selects a built package.
 """
 from __future__ import annotations
 
@@ -79,7 +80,8 @@ def compiler_command(repo: Path, cef_include: Path, sparkle_release: Path, mode:
         "xcrun", "--sdk", "macosx", "swiftc", "-warnings-as-errors",
         "-whole-module-optimization", *flags, "-target", "arm64-apple-macos13.0",
         "-I", str(repo / "Engine/ParcNative"), "-Xcc", "-DOS_MAC=1",
-        "-I", str(cef_include), "-F", str(sparkle_release),
+        *(["-I", str(cef_include)] if cef_include != repo / "Engine/ParcNative" else []),
+        "-F", str(sparkle_release),
         "-import-objc-header", str(repo / "Sources/ParcEngine/ParcEngine.h"),
         *map(str, sources),
     ]
@@ -120,15 +122,26 @@ def main(argv: list[str] | None = None) -> int:
             configured = os.environ.get("PARC_CHROMIUM_SOURCE")
             if configured:
                 chromium = Path(configured)
-        if args.cef_include is not None:
+        facade = repo / "Sources/ParcEngine/ParcEngine.h"
+        if not facade.is_file():
+            raise Refusal(f"Required compiler input is missing: {facade}")
+        direct = bool(re.search(r'^\s*#import\s+"native_application_protocols.h"', facade.read_text(), re.M))
+        if direct and (args.cef_include is not None or args.chromium_source is not None):
+            raise Refusal("The direct facade uses Engine/ParcNative headers; omit legacy CEF header options")
+        if direct:
+            cef_include = repo / "Engine/ParcNative"
+            protocol_header = cef_include / "native_application_protocols.h"
+        elif args.cef_include is not None:
             cef_include = args.cef_include.expanduser().resolve()
         elif chromium is not None:
             cef_include = chromium.expanduser().resolve() / "cef/include"
         else:
             raise Refusal("Select --chromium-source, --cef-include or PARC_CHROMIUM_SOURCE; no engine is guessed")
+        if not direct:
+            protocol_header = cef_include / "cef_application_mac.h"
         for required in (repo / "Sources/ParcEngine/ParcEngine.h",
                          repo / "Engine/ParcNative/native_appkit_bridge.h",
-                         cef_include / "cef_application_mac.h"):
+                         protocol_header):
             if not required.is_file():
                 raise Refusal(f"Required compiler input is missing: {required}")
         label = args.label or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ") + f"-{os.getpid()}"
@@ -145,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         command = compiler_command(repo, cef_include, sparkle_release, args.mode, sources)
         record = {
             "schema_version": 1, "mode": args.mode, "repo": str(repo), "git_before": state,
-            "cef_include": str(cef_include), "sparkle_release": str(sparkle_release),
+            ("bridge_headers" if direct else "cef_include"): str(cef_include), "sparkle_release": str(sparkle_release),
             "sparkle_cached": sparkle_release.is_dir(), "command": command, "inputs": before,
             "source_count": len(sources), "output": str(output),
             "scope": "Swift compiler check only; no engine ABI, linked app, package or runtime verification",

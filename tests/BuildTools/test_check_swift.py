@@ -106,6 +106,37 @@ class CheckSwiftTests(unittest.TestCase):
         for flag in ("-warnings-as-errors", "-whole-module-optimization", "-typecheck"):
             self.assertIn(flag, plan["command"])
 
+    def test_direct_bridge_needs_no_engine_tree(self):
+        facade = self.repo / "Sources/ParcEngine/ParcEngine.h"
+        facade.write_text('#import "native_application_protocols.h"\n')
+        header = self.repo / "Engine/ParcNative/native_application_protocols.h"
+        header.write_text("#import <Foundation/Foundation.h>\n")
+        result = self.run_check("--plan", headers=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan["bridge_headers"], str(header.parent))
+        self.assertNotIn(str(self.headers), plan["command"])
+        self.assertIn(str(header), plan["inputs"])
+
+    def test_direct_bridge_refuses_legacy_flags_and_tracks_mutations(self):
+        (self.repo / "Sources/ParcEngine/ParcEngine.h").write_text('#import "native_application_protocols.h"\n')
+        header = self.repo / "Engine/ParcNative/native_application_protocols.h"
+        header.write_text("#pragma once\n")
+        result = self.run_check("--plan")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("omit legacy", result.stderr)
+        self.env["FAKE_MUTATE_INPUT"] = str(header)
+        result = self.run_check(headers=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(self.receipt()["inputs_unchanged"])
+
+    def test_direct_bridge_missing_declaration_fails_before_output(self):
+        (self.repo / "Sources/ParcEngine/ParcEngine.h").write_text('#import "native_application_protocols.h"\n')
+        result = self.run_check("--plan", headers=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("native_application_protocols.h", result.stderr)
+        self.assertFalse(self.output.exists())
+
     def test_sil_retains_finished_row_flags(self):
         result = self.run_check("--mode", "sil", "--plan")
         self.assertEqual(result.returncode, 0, result.stderr)
