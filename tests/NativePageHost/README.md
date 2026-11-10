@@ -16,12 +16,10 @@ The script compiles the production component and tests with ARC and warnings
 treated as errors, then executes the standalone test binary. It links AppKit
 ignored `build/tests/native-page-host/`. Test NSWindows stay offscreen; the suite
 uses their real view hierarchies, Auto Layout, first-responder mechanism and a
-running main queue. It does not verify visible key-window keyboard delivery,
-renderer accessibility, GPU rendering or actual Chromium integration.
+running main queue.
 
-The suite passes **231 assertions across fifteen groups** and runs in
-`scripts/test.sh`: containment/reuse, replacement/external removal, deferred
-renderer focus/replacement, window move and detach, invalidation/weak lifetime,
+The suite runs in `scripts/test.sh` and covers containment/reuse, replacement/
+external removal, deferred renderer focus/replacement, window move and detach, invalidation/weak lifetime,
 reentrant replacement teardown, hidden queued-focus refusal, initially-hidden
 content visibility, reentrant visibility ownership, the pane compositor view
 (never the renderer responder, events pass through, on-screen state, screen
@@ -32,7 +30,7 @@ Chromium-style detach
 regression against the earlier component exits 1 at “selected initially-hidden
 native content and its renderer are actually unhidden”.
 
-The November 10 fresh-tab regressions attach the real native DevTools pane
+The fresh-tab regressions attach the real native DevTools pane
 after the shell wrapper has been laid out, then show without a window event.
 Both initially visible and initially hidden new pages, their renderer fixtures
 and the compositor display must have the host's size when show returns. They
@@ -41,8 +39,7 @@ shows without subtree walks, parked-page selection, two visible split panes,
 window transfer, native content reattachment, and transfer, hide or invalidation
 callbacks during layout. Against the preceding production host,
 the new foreground-page regression fails with a 0×0 page and renderer. These
-checks establish the geometry defect and correction, not the reported live
-load time or a GPU-rendering result.
+checks exercise the geometry defect and correction.
 
 ## Containment and lifetime
 
@@ -86,9 +83,7 @@ visible-page set before the engine notification. Superseded work cannot change a
 later owner's visibility. This adds no page, selection, navigation or focus
 operation and does not recreate the renderer.
 
-The source path and component regression establish the missing host visibility
-operation. They do not prove GPU rendering, live load time or browser-level
-accessibility. Browser/profile activation, keyboard dispatch, accessibility,
+Browser/profile activation, keyboard dispatch, accessibility,
 color-provider and compositor policy belong to the surrounding engine adapter.
 The wrapper does not infer visibility from attachment or successful focus from
 a processed request.

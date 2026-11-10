@@ -15,9 +15,9 @@ The queued page-host callback retains weak original window/renderer identities
 and requires the host to remain first responder without a sheet. A superseded
 request cannot change a later native control or physical window.
 
-## Verification boundaries
+## Coverage and ownership
 
 The suite exercises actual native focus, automatic KVO ordering, external focus changes, real NSTextField editing and selection, descendant preservation, same-window validation, live page-host reparenting, weak ownership, registration replacement, teardown, reentrant callbacks, owner release during resign/become delivery, and deferred page-host focus through the real main run loop. Queued page focus is also superseded by a later native control, original host transfer, renderer replacement or invalidation; a new explicit request may focus the current renderer. A controlled NSWindow subclass injects refusal, acceptance without focus, and nil actual focus to test pending/fallback boundaries reproducibly; these injected states are not claims about normal AppKit behavior.
 
-This verifies the reusable AppKit component, not Chromium integration, keyboard shortcut precedence, accessibility popup selection, hidden/modal pane eligibility, or a production F6 order. The native shell must supply those policies and wire its real page/content identities. One responder should have one active key per manager; aliases have no specified callback-selection order.
+The shell supplies shortcut precedence, accessibility selection, hidden/modal eligibility and pane order through its real page/content identities. One responder should have one active key per manager; aliases have no specified callback-selection order.
 

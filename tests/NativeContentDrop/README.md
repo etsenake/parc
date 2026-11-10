@@ -1,8 +1,30 @@
 # Native external split-drop components
 
-Run `bash scripts/test-external-split-drop.sh` for the actual durable model transaction. The fixture uses a temporary session and forces a real failed atomic replacement; it never opens a browser or personal file.
+Read [the working contract](../../AGENTS.md) before running checks.
 
-Run `python3 tests/NativeContentDrop/run_components.py router` or `session` for the native components. `--receipt /absolute/path.json` records the exact checked source hashes and output. Both use hidden disposable AppKit windows and unique pasteboards, with no real drag, navigation or personal pasteboard access.
+`bash scripts/test-external-split-drop.sh` checks the durable model transaction
+using a temporary session and a failed atomic replacement.
 
+`python3 tests/NativeContentDrop/run_components.py router` or `session` checks
+the native components. `--receipt /absolute/path.json` records the checked source
+and output. Both use hidden disposable AppKit windows and unique pasteboards.
 
-The complete `WebContentsViewCocoa` translation unit and router also require the normal actual-target compiler check against the pinned source overlay. The reusable component does not replace that check or an engine build.
+The router component compiles the production Objective-C++ source and drives its
+admission, update, prepare, commit and teardown methods through injected
+`NSDraggingInfo`. It covers receiver/window/pasteboard/sequence expiry, source
+operation masks, once-only completion, exact ancestor handoff, original terminal
+cancellation and truthful refusal.
+
+The session component compiles the production Swift URL decoder, geometry,
+preview and commit owner, with unrelated sidebar/layout collaborators supplied
+by the fixture. It covers public-URL precedence, one-item admission, internal/file
+refusal, changed pasteboards, ownership cancellation, same-router external
+reservation through native/local receivers, original geometry restoration and
+once-only commit/failure.
+
+The production overlay attaches the router to `WebContentsViewCocoa` before
+renderer drag delivery. `ExternalSplitDropHost` owns the admitted gesture and
+`BrowserWindowController` supplies its original-pane transaction. See
+[split groups](../../docs/split-groups.md#external-url-drops-into-ordinary-split-panes).
+Changes to the native integration also require the normal actual-target compiler
+check for the complete translation unit against the pinned source overlay.

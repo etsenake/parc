@@ -228,6 +228,5 @@ an intentional supported feature, independent of excluded account integrations.
 ## Checks and boundaries
 
 Model/native components cover original actions, reset normalization/targets,
-copy/split identity, row presentation, rename persistence and typed Undo. They
-do not establish live browser, full keyboard/VoiceOver or visual timing. Every
+copy/split identity, row presentation, rename persistence and typed Undo. Every
 source change must preserve the complete action/lease and editing boundaries.

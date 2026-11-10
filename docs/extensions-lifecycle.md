@@ -60,11 +60,10 @@ weak scope identity, original-window attachment, current page ancestry and the
 saved responder's visibility/enabled state. A newer unrelated responder remains
 untouched. No arbitrary delay holds the engine page alive for animation.
 
-## Checks and evidence boundaries
+## Checks
 
 Focused Site Control Center checks cover close-delegate ownership, overlapping
 closes, latest-action replacement, cancellation and delayed-show rejection.
 Native side-panel checks cover exact window ownership, modified Escape, close
 header focus and detached/foreign pages. Swift and pinned native compiler
-checks complement these inert tests. They do not establish live browser
-keyboard behavior or motion acceptance.
+checks complement these inert tests.

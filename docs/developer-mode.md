@@ -68,8 +68,9 @@ Pending frontend close uses genuine beforeunload. Focus returns to inspected
 content only if departing tools owned it. Native page/frame ownership remains
 valid throughout asynchronous loading and close completion.
 
-## Validation
+## Checks
 
-Compiler and inert AppKit/native checks cover toolbar presentation, admission,
-frontend replies, docking containment and focus. They do not establish live
-browser behavior, VoiceOver, Full Keyboard Access or visual acceptance.
+Toolbar, command-admission and preference checks live in
+`tests/DeveloperMode`; native frontend, docking and focus checks live in
+`tests/NativeDevTools`. Follow [the working contract](../AGENTS.md) before
+running window-based helpers.

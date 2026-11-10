@@ -1,12 +1,13 @@
 # macOS AAC decoding through AudioToolbox
 
-Overlay 287 routes every AAC profile to Chromium's `AudioToolboxAudioDecoder`,
+Parc routes every AAC profile to Chromium's `AudioToolboxAudioDecoder`,
 which runs in the GPU process behind `MojoAudioDecoder`. Parc's FFmpeg has no
 AAC decoder, so `FFmpegAudioDecoder` declines AAC first. The overlay also gives
 FFmpeg-demuxed AAC a sample format and adds FFmpeg's raw ADTS demuxer and AAC
-parser (no decoder) for `src=`. Overlay 291 has the decoder find implicitly
+parser (no decoder) for `src=`. The decoder finds implicitly
 signalled HE-AAC in the first access unit. See
 [the macOS codec route](../../docs/engine-flags.md#macos-codec-route) for the
+design.
 
 ```sh
 python3 tests/NativePlatformCodecs/run.py /absolute/chromium/src --results /absolute/private/results
@@ -14,9 +15,8 @@ python3 tests/NativePlatformCodecs/run.py /absolute/chromium/src --results /abso
 
 The runner takes the decoder, `ffmpeg_common.cc`, the ADTS demuxer and the
 FFmpeg configuration from the reviewed overlay. It works file by file, so the
-checkout may mix patched, pristine and earlier-overlay files, as it does after
-an overlay 287 build. It takes each file's pristine bytes from the checkout
-when they match the manifest's before-digest. Otherwise it reads them,
+checkout may mix patched, pristine and earlier-overlay files. It takes each
+file's pristine bytes from the checkout when they match the manifest's before-digest. Otherwise it reads them,
 read-only, with `git show HEAD:` from the Git checkout that holds the file. It
 applies `platform-codecs.patch` to them in memory, and every result must match
 the manifest's after-digest.
@@ -102,36 +102,9 @@ then runs again after applying Chromium's own `common.sb` + `gpu.sb` seatbelt
 profile in-process, with Chromium's helper parameters. It runs once more under
 `common.sb` + `renderer.sb`, where AudioToolbox must refuse the stream.
 
-Validation, November 1 (macOS 27.0.1, current dev engine output): 142
-assertions pass unsandboxed and the same 142 under the GPU profile. Before the
-review fixes, the raw ADTS cases had no PTS and the 8-byte CRC frame
-CHECK-failed in `base::span`. Under the
-renderer profile AudioToolbox refuses AAC, which is why the decoder stays in the
-GPU process.
+The GPU seatbelt profile permits the native decoder, while the renderer profile
+refuses it. Fixture tones distinguish AAC-LC from SBR output and compare the
+result with macOS decoding sample for sample; the test is not a listening test.
 
-Overlay 291's cases haven't run yet: the binary links against engine output,
-which was mid-build. The patched decoder, renderer and test compile with their
-actual target flags. A standalone probe gave the same answers with the same
-detection code, unsandboxed and under `common.sb` + `gpu.sb`. It found SBR in
-all 46 access units of each HE-AAC fixture (stereo, v2, mono and 5.1) and in
-none of the 181 AAC-LC units. It found none in 220 random or 209 truncated
-access units, or in any bit-damaged AAC-LC one, and it never crashed. Under
-`renderer.sb` the parser fails. A raw AudioToolbox probe matched afconvert's
-decoding bit for bit. Its stream was HE-AAC's 1,086-frame first output, 2,048
-per access unit after that, and the 962 frames that end of stream without an
-error returns. For the MP4s it was cut by their priming and remainder: 4,224
-and 1,784 frames for HE-AAC, 2,112 and 824 for AAC-LC. Every input the parser
-couldn't judge also gave no output from the AAC-LC converter.
-
-The current dev engine was built without proprietary codecs, so
-`ffmpeg_common.cc` compiles without its xHE-AAC profile detection. Also not
-covered here:
-
-- renderer decoder selection, the Mojo hop and the media pipeline, including
-  `AudioRendererImpl` taking implicit HE-AAC's rate change;
-- xHE-AAC, because macOS ships no xHE-AAC encoder to make a fixture (that path
-  is unchanged);
-- actual playback.
-
-Those need the rebuilt engine and runtime checks. Fixture tones are synthetic,
-so the 12–20 kHz threshold shows that SBR ran, not that it sounds right.
+The [WebAudio fixture](../NativeWebAudioAAC/README.md) covers the Mojo transport,
+queueing, cancellation and decoder output across that boundary.

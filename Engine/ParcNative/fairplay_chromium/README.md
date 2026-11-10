@@ -18,8 +18,7 @@ which the core predates, don't apply. Upstream hunks are in
 
 The production overlay includes CDM registration, GPU renderer and sandbox
 integration, tab mute/audibility and native HLS. Current shipping status is in
-[product status](../../../docs/parity.md); build/signing receipts are separate
-from runtime acceptance.
+[product status](../../../docs/parity.md).
 
 [Native HLS](NATIVE_HLS.md) describes URL playback through AVPlayer. The rest of
 this guide covers demuxed samples and the Chromium/CDM boundary.
@@ -316,10 +315,10 @@ after `MediaSource::monitorSourceBuffers`,
 
 ### Frame readiness before macOS 14.4
 
-Older systems lack the newer public frame-readiness APIs. The renderer keeps
-readiness, buffering and key waits distinct and uses its available-sample state
-for the fallback; see [waiting for keys](WAITING_FOR_KEY.md). Do not infer that a
-usable key alone means a decoded frame is ready.
+Before macOS 14.4, successful `prerollDecodeWithCompletionHandler:` on a
+displayable sample supplies frame readiness. Flush and renderer replacement
+invalidate older callbacks. Buffer capacity or a usable key alone cannot release
+the playback clock; see [waiting for keys](WAITING_FOR_KEY.md).
 
 ## Known gaps
 
@@ -332,20 +331,19 @@ one rebuffer. This also affects casting, PiP and background tabs.
 
 The current core supports VP9 and Vorbis for Safari-identity media, but has no
 VP8 or MP3 renderer implementation. Transitions into Dolby Vision beside those
-codecs can fail, and late FairPlay attachment can require restart. This is a
-source capability limit, not a newly reproduced site failure.
+codecs can fail, and late FairPlay attachment can require restart.
 
-Audio-grant association remains a source-review concern with multiple native
-players in one frame: `AudibilityBypassTracker::ClaimGrant` takes a pending grant
-without its originating player identity. The overlay preserves grants across
-document moves, but that does not by itself prove correct attribution when two
-players start or stop in different orders. A focused multi-player regression is
-needed before claiming the old speaker-icon concern resolved; no current live
-failure is established here.
+Native players in one frame receive audibility grants from a shared pending
+pool, without the originating player's identity. If they claim grants in a
+different order from creation, closing one renderer can revoke the surviving
+player's grant and remove its speaker indicator. Grants do follow document
+moves. Bind each new grant to its player and cover reversed claim/close order
+in the browser observer tests.
 
-A lost selected output device falls back to the system default. Turning a video
-track off leaves audio playing; re-enabling or replacing it resumes video on the
-same clock/layer. These are implemented behaviors, not outstanding gaps.
+The MSE FairPlay client and GPU adapter also omit `SetPreservesPitch`, so a
+page cannot disable pitch preservation on this route. The core supports the
+choice, and native HLS forwards it. Connect that choice through the FairPlay
+client/adapter boundary.
 
 ## Widevine request hook
 
@@ -375,18 +373,16 @@ returns.
 `enable_platform_ac3_eac3_audio=true`. Netflix and Apple TV+ pick Dolby
 Vision 5 and AC-3/E-AC-3 when they see Safari.
 
-- Dolby Vision plays only through FairPlay: `kPlatformEncryptedDolbyVision` is
-  on by default for macOS too (`media_switches.cc`). `MediaSource.isTypeSupported`
-  still says no to `dvh1`/`dvhe`, and EME offers it only through key systems
-  whose codecs list it, which means FairPlay and not Widevine. That is
+- Dolby Vision plays through the FairPlay renderer. On Chrome-identity pages,
+  `MediaSource.isTypeSupported` says no to `dvh1`/`dvhe`, and EME offers it only
+  through key systems whose codecs list it, which means FairPlay and not Widevine. That is
   Chromium's model on Windows. FairPlay's `CdmInfo` lists profile 5 only. The
   adapter and core can also play profile 8, but sites aren't offered it under the current
   capability policy.
 - Dolby Vision in Media Source follows Safari, whose
   `AVSampleBufferDisplayLayer` decodes it clear or encrypted, with keys set
   before, after or never. On a document presenting Safari's identity (with
-  a short hold where Dolby Vision or keys reach Chromium's renderer, see
-  Known gaps):
+  the handoff and restart rules described under Known gaps):
   - A clear Dolby Vision init segment (a plain `dvhe`/`dvh1` sample entry, no
     `encv` or `tenc`, as in a clear lead) is accepted in profiles 5 and 8,
     whatever the key timing. `WebMediaPlayerImpl` tells the demuxer when the
@@ -406,8 +402,8 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
     Safari-identity frames create that renderer without a FairPlay CDM
     (`parc::fairplay::SetSafariIdentityQuery`). A SourceBuffer that takes
     Dolby Vision later (`changeType()`) makes the demuxer prefer that renderer
-    too (`Demuxer::ParcPrefersFairPlayRenderer`), and the player restarts into
-    it (Known gaps).
+    too (`Demuxer::ParcPrefersFairPlayRenderer`). The player attempts a
+    synchronized handoff and restarts only when that cannot proceed.
 - AC-3/E-AC-3 is ordinary codec support: pages
   ask `isTypeSupported` first, and a page that offers E-AC-3 gets it decoded by
   AudioToolbox, as in Safari. Widevine's capability stays exactly as before:
@@ -463,20 +459,9 @@ Already allowed by `gpu.sb`: all preference reads, all POSIX shared memory
 `com.apple.CARenderServer`. Still denied while FairPlay plays, without effect:
 `tccd.system`, `audioanalyticsd` (WebKit denies it too), `UsageTrackingAgent`,
 distributed notifications, a few sysctls and `/System/Library/Audio/Tunings`.
-`IOSurfaceAcceleratorClient` is denied too: H.264 and HEVC open it, Dolby
-Vision doesn't, and all play without it. On-screen scaling isn't covered,
-because the probe's layer is in no window. `AudioConverterService` is never looked up, E-AC-3 and AC-3
-included. The probe doesn't cover Intel Macs, external displays, AirPlay or
-Bluetooth route changes. To check a real build, use
-`log stream --predicate 'eventMessage CONTAINS "deny(" AND eventMessage CONTAINS "Helper (GPU)"'`.
-
-## Runtime verification boundary
-
-Service-specific licensing/playback, protected-output behavior, hardware codec
-combinations and physical AirPlay delivery require separate runtime evidence.
-Component fixtures and engine compilation cannot establish those results.
-Browser/app execution remains prohibited by [AGENTS.md](../../../AGENTS.md)
-unless the user explicitly authorizes it.
+`IOSurfaceAcceleratorClient` remains denied; the sandbox fixture records its
+decoder behavior separately from compositor placement. `AudioConverterService`
+is not needed by the fixture's AC-3/E-AC-3 path.
 
 ## Checks run without a build
 

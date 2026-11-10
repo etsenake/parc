@@ -60,8 +60,7 @@ text color, color scheme and zoom. Image-load changes invalidate it.
 
 An animated image or paint change that keeps those keys unchanged can therefore
 leave the chosen band color stale for up to that cache interval. This remains
-a performance/refresh tradeoff; it is not a claim of immediate frame-by-frame
-tracking.
+a performance/refresh tradeoff.
 
 ## Sources and checks
 

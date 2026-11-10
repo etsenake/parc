@@ -6,8 +6,9 @@ The CEF callback must return false without consuming its callback. Chrome enterp
 
 The source binds the real page/document/Profile/Browser/window and requires live native attachment, activation, visible parent and sole security reservation. It validates before key acquisition, after key completion before same-challenge broadcast, and before deferred network continuation. Native widget close and pending key acquisition have separate lifetimes. Detach/navigation/parent close abort, and reservation release detects reentrant replacement. The original page's modal manager owns input blocking and list removal.
 
+The current Mac Views parent resolver only understands Views-owned NSWindows. A narrow NativeWidgetMac subclass for this auxiliary dialog lets the real native modal manager and exact AppKit parent provide that relationship. This adapts the current engine to the app-owned window.
 
-`selector_unittest.mm` has 14 genuine-controller cases: real native-parent/table/identity selection, explicit no-certificate cancellation, empty list, detached/hidden owners, exact-page detach, delayed key completion, invalid late-key same-challenge broadcast, competing reservation, release-time replacement, navigation, parent close, concurrent request refusal and delegate reentry destroying the page. The fixtures use synthetic certificate/key inputs, not the user's identities. They compile but have not been linked or executed.
+`selector_unittest.mm` has 14 genuine-controller cases: real native-parent/table/identity selection, explicit no-certificate cancellation, empty list, detached/hidden owners, exact-page detach, delayed key completion, invalid late-key same-challenge broadcast, competing reservation, release-time replacement, navigation, parent close, concurrent request refusal and delegate reentry destroying the page. The fixtures use synthetic certificate/key inputs, not the user's identities.
 
 After applying the complete reviewed overlay and generating its targets, run:
 
@@ -15,15 +16,7 @@ After applying the complete reviewed overlay and generating its targets, run:
 python3 tests/NativeClientCertificates/check-chromium.py /path/to/chromium/src
 ```
 
-The reusable checker requires every source/header/patch hash in the applied overlay and each unit's actual registered object and generated target flags. It refuses stale/partial checkouts; it has no VFS compatibility mode. A pass is syntax only. Integration registers `//cef/libcef/browser/parc_native:native_client_certificates` in libcef and `//cef/tests/parc_native_client_certificates:unit_tests` in Chrome unit tests. A valid CEF-compatible test process and actual runtime checks remain required.
-
-The reviewed v40 composition passes read-only replay with 122 mapped files and
-109 patched targets. Six combined isolated compatibility compiler checks cover
-the service, original selector/table, platform, application and fourteen test
-cases. New native/test targets borrow compatible existing generated settings for
-this check; the four existing units retain their own generated target flags.
-Actual newly generated membership/header checks, linking and execution remain
-pending. The live v22 compilation was not modified.
+The reusable checker requires every source/header/patch hash in the applied overlay and each unit's actual registered object and generated target flags. It refuses stale/partial checkouts; it has no VFS compatibility mode. A pass is syntax only. Integration registers `//cef/libcef/browser/parc_native:native_client_certificates` in libcef and `//cef/tests/parc_native_client_certificates:unit_tests` in Chrome unit tests. Executing the controller tests requires a valid CEF process/context.
 
 The integrated platform retains a weak-self check after HTTP cancellation and
 another after certificate cancellation: either callback can destroy the owning
@@ -32,3 +25,6 @@ authentication, file-dialog, permission and extension teardown paths. Review als
 confirmed that Chromium's macOS native-window wrapper is weak, so later widget
 destruction does not leave a dangling Objective-C window handle in the request.
 
+Certificate-error UI, WebAuthn and external protocols use their own services.
+[Web interactions](../../docs/web-interactions.md) describes their shared page and
+window ownership.

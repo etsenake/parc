@@ -43,8 +43,8 @@ page and Profile. Only visible cards and the focused preview request images.
 Work deferred out of native callbacks revalidates its generation and owner;
 a missing page never triggers URL-based creation.
 
-The card strip is 190 points high with 16-point outer padding. Cards are 158
-points wide with 12-point content padding, 14-point medium titles and rounded
+The card strip is 190 points high with 16-point outer padding. Cards are about
+182 points wide with 12-point content padding, 14-point medium titles and rounded
 preview corners. Focus has one rounded highlight; pointer focus and keyboard
 focus share it. The panel uses popover material, follows the parent's active
 appearance and stays inside the screen with a 40-point margin.
@@ -84,6 +84,3 @@ The shell switcher controller, recent-item model and native keyboard priority
 monitor own the session. `RecentTabSwitcherTests` and the keyboard/component
 checks cover ordering, bounded reserves, stale sessions, close refusal,
 modifier release and delayed presentation.
-
-These are source/model guarantees. No application was launched during this
-cleanup, so it does not add live keyboard, thumbnail or visual acceptance.

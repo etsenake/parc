@@ -84,6 +84,4 @@ This describes the implemented boundary, not all sound produced by a page.
 ## Validation
 
 Focused inert checks cover stale documents, one-shot fence consumption,
-dismissal/eviction ordering, privacy domains and metadata-only changes. They do
-not establish live device streams or website behavior. Browser work remains
-subject to [the working contract](../AGENTS.md).
+dismissal/eviction ordering, privacy domains and metadata-only changes.

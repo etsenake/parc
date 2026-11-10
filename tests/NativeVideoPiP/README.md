@@ -25,13 +25,11 @@ visibility and destruction feed the security-occlusion tracker. Disconnect the
 compositor callback/root before destruction. A terminal close callback can delete
 the overlay synchronously; never access its members afterward.
 
-## Checks and limits
+## Checks
 
 Presenter and layer component checks cover native panel state, callbacks,
 replacement, resize and teardown. Chromium controller tests cover their actual
-engine boundaries. Compiler acceptance does not mean those linked cases ran.
-Use finished-source receipts for current verification; old package/GUI diaries
-are available in Git history and are not current failures or live processes.
+engine boundaries.
 
 Browser/app launch and screenshots are prohibited by [AGENTS.md](../../AGENTS.md).
 Current media behavior and remaining work belong in

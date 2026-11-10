@@ -27,9 +27,9 @@ data roots, so stored shell records still require their own identity checks.
 A two-phase readiness gate queues Dock/URL requests until the engine and the
 required Profile are ready.
 
-OS logout/system shutdown handling through asynchronous termination has not
-been separately validated. Normal quit and persisted-state logic are not proof
-of that system-driven lifecycle.
+Quit, Dock termination and system termination enter the same application
+termination coordinator. It saves window/history state, waits for genuine page
+consent and native-service drain, then lets AppKit finish termination.
 
 ## Dock, reopen and closing windows
 
@@ -103,6 +103,15 @@ coverage includes `WindowPresentation`, `ClosedItems`, `CloseUndo`,
 `PagePlaceholder` and session-store tests. Native/compiler checks validate their
 interfaces when run.
 
-No application was launched for this documentation cleanup. Source and model
-coverage do not establish real AppKit restoration order, OS logout behavior,
-placeholder appearance or uninterrupted live media during every transfer.
+## Remaining behavior and explicit deferrals
+
+Folder disclosure is stored on the shared folder, so expanding or collapsing it
+changes every window displaying that folder. Window-local disclosure needs a
+separate presentation owner. Pinned-section collapse has no implementation;
+[command bar](command-bar.md) owns that missing command.
+
+The explicitly deferred cross-window cases remain: an automatic return to a
+non-key window can leave a blank frozen placeholder; a close that cannot begin
+after transfer can leave its tab selected; foreign-window split close eligibility
+is restricted; Close-Peek Undo is unavailable while its parent is elsewhere,
+although Reopen can bring the parent back. See [the backlog](backlog.md#deferred).

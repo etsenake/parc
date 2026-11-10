@@ -43,7 +43,7 @@ is resolved.
 | Media | Native playback controls, mute, Mini Player, picture in picture, casting, platform codecs and protected-media integration. FairPlay and learned Safari identity keep pages in Chromium. | [Media](media-interactions.md), [FairPlay identity](fairplay-identity.md), [casting](media-casting.md) |
 | Settings and identity | Local settings, routing rules, profiles, shortcuts, themes, icon variants, personalized membership card and Replay onboarding. | [Settings](settings.md), [membership card](settings-membership-card.md), [icons](app-icon-picker.md) |
 | Onboarding and import | Welcome, music, setup, real browser/bookmark/password import, favorites, theme, default-browser choice, ad-blocker choice and final reveal; resumable first launch and replay. | [Onboarding](onboarding.md), [browser import](browser-import.md) |
-| Windows and data | Standard/private/popup windows, live tab transfer, session restoration, native close consent, local credentials and Parc Safe Storage. Broader lifecycle work remains. | [Windows](windows-lifecycle.md), [private lifecycle](private-route-lifecycle.md), [Keychain](../tests/KeychainNamespace/README.md) |
+| Windows and data | Standard/private/popup windows, live tab transfer, session restoration, native close consent, local credentials and Parc Safe Storage. | [Windows](windows-lifecycle.md), [private lifecycle](private-route-lifecycle.md), [Keychain](../tests/KeychainNamespace/README.md) |
 | Software updates | Sparkle checks, download/status windows, update-ready/completed banners, guarded automatic installation and a bundled What's New timeline. | [Software updates](software-update.md) |
 | Distribution | Conventional Commit versioning and notes, frozen release inputs, Developer ID signing, notarization, GitHub artifacts, signed appcast and Homebrew publication. | [Release command](master-release.md), [packaging](../tests/Packaging/README.md) |
 | Automation | Existing local window/Space/tab scripting and page JavaScript commands remain supported; further expansion is deferred. | [Scripting](scripting.md) |
@@ -117,8 +117,7 @@ Safe Browsing remains configured without a key and is inert without one;
 on-device suggestions do not require a Google API key.
 
 The existing Chromium AI exclusions are the accepted scope. The broader
-audit/overhead proposal is closed; that unperformed work does not
-establish absence of every engine path or a measured performance improvement.
+audit/overhead proposal is closed.
 Further scripting remains deferred. The removed cross-Profile created-page
 proposal (ROUTE11) and speculative shutdown task (WIN14) stay out of scope.
 
@@ -127,9 +126,9 @@ proposal (ROUTE11) and speculative shutdown task (WIN14) stay out of scope.
 The independent engine and picture in picture are implemented. Completed fixes
 stay done unless a new report or concrete defect evidence reopens them.
 
-The [backlog](backlog.md) retains unresolved work and explicit deferrals. It is
-not a declaration that every old concern is still a defect. Reconcile an item
-with current source before implementing it. Historical agent names are not
+The [backlog](backlog.md) indexes source-checked unfinished behavior, product
+decisions and explicit deferrals. Recheck an item against current source before
+implementing it. Historical agent names are not
 proof of live ownership; coordinate through the [working contract](../AGENTS.md)
 and [collaboration guide](collaboration.md).
 

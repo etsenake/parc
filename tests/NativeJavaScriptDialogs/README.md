@@ -2,9 +2,7 @@
 
 This is a source-owned AppKit presenter and an adapter for the real pinned CEF
 runner interface. The canonical production native route selects Parc's platform
-delegate, which constructs this runner. The promoted Objective-C facade and
-Swift shell use that independent engine path. The complete v50 engine build has
-linked, but independent app launch and renderer-driven dialog/close acceptance
+delegate, which constructs this runner. The Objective-C facade and Swift shell use that independent engine path.
 
 ## Decisions
 
@@ -44,11 +42,10 @@ Another pending request or an existing sheet in that same window is rejected
 with false; the original request is unchanged. Independent windows can each
 present a dialog. The contention policy is covered by component tests. The canonical native window/application close
 coordinator and exact-page retirement coordinator serialize genuine Chromium
-beforeunload decisions. Their renderer-driven interaction with this runner
-remains a runtime gate; busy rejection must not become acceptance.
+beforeunload decisions. Busy rejection returns refusal rather than consent to close.
 
-Both implementations also pass syntax checking with the real pinned Clang,
-as errors. Reproduce it against an already generated checkout:
+The source checker compiles both implementations with the pinned Clang,
+as errors. Use an already generated checkout:
 
 ```sh
 python3 tests/NativeJavaScriptDialogs/check-chromium.py /path/to/chromium/src
@@ -60,14 +57,14 @@ and writes logs, source/flags digests and exact commands only to
 `build/tests/native-javascript-dialogs/chromium-syntax/`. It never generates,
 builds or modifies the external source checkout. A missing generated header is
 a failed check, not replaced with a stub. This command provides syntax-only
-evidence. Renderer-driven exercise requires a separate authorized run and receipt.
+evidence.
 
-## Source integration and remaining runtime work
+## Source integration
 
 CEF and Chromium revisions are pinned in
 [the source lock](../../Engine/source-lock.json).
 
-The original v5 integration, retained by the current overlay, compiles the
+The overlay compiles the
 presenter in the native AppKit component source set and the runner in actual
 `libcef_static`. It adds typed
 `RunBeforeUnload(CefBrowserHostBase*, bool is_reload, const std::u16string&,
@@ -89,16 +86,11 @@ BrowserWindow/platform factories. `native_appkit_host.mm` performs attachment
 after genuine Browser/tab registration; the Swift `BrowserWindowController`
 registers its supplied window and brackets native page reparenting with
 `pageWillDetach`/`pageDidAttach`. Current first-tab feature hooks are also
-integrated. These source connections and the successful engine link do not
-prove renderer-driven dialogs. CEF's renderer/manager close flow remains the
+integrated. CEF's renderer/manager close flow remains the
 owner: no app-modal fallback, unconditional unload acceptance or manual Browser
 deletion is part of this service. The callback box is independent of the runner
 and may complete while its owner is being destroyed.
 
-Verify the integrated route with actual disposable Chromium pages: alert/confirm/
-prompt results, script-dialog cancellation on navigation/close, two panes and
-two windows, a moved page, renderer/process failure, DevTools Handle/Cancel,
-and Stay → interactive page → second Leave for both tab close and application
-quit. Check that every callback resolves once and each sheet belongs to its
-originating page's window. CEF compilation and live-browser verification must
-be reported separately from the AppKit suite.
+The same page/window association brackets reparenting and terminal teardown.
+A dialog belongs to its originating document; moving the page cancels the
+request instead of transferring consent to a new window.

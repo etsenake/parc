@@ -14,8 +14,8 @@ MediaSessionObserver notifications trigger the existing native-page update path.
 
 ## AirPlay
 
-On Safari-identity pages whose video plays through the native HLS route
-(FairPlay HLS included), the row's transport ends with an AirPlay button
+On Safari-identity pages with a supported native playback target, including
+native HLS and compatible clear files, the row's transport ends with an AirPlay button
 (`airplayvideo`) once AirPlay devices are nearby
 ([NATIVE_HLS.md](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md#airplay)).
 Pressing it opens the system's AirPlay route list at the button: the same list
@@ -87,7 +87,7 @@ current page has media of its own, Cast... below it opens the dialog.
 
 ## Volume adaptation
 
-Parc uses a separate `MediaSessionImpl` user volume multiplier, clamped to 0...1 with non-finite input refused, and composes it with Chromium's existing ducking multiplier. Existing player observer delivery and new-player initialization use the composed value. The default factor is 1, preserving normal upstream behavior; a replacement primary document resets the factor. The slider is exposed only when the session has actual normal player observers; a metadata-only controllable session cannot advertise it. Ordinary MediaSession-controlled media players receive genuine renderer volume changes. Uncontrollable WebAudio-only/independent output paths are not represented as a supported volume row; this is not a claim that every output stream has a new mixer.
+Parc uses a separate `MediaSessionImpl` user volume multiplier, clamped to 0...1 with non-finite input refused, and composes it with Chromium's existing ducking multiplier. Existing player observer delivery and new-player initialization use the composed value. The default factor is 1, preserving normal upstream behavior; a replacement primary document resets the factor. The slider is exposed only when the session has actual normal player observers; a metadata-only controllable session cannot advertise it. Ordinary MediaSession-controlled media players receive genuine renderer volume changes. Uncontrollable WebAudio-only/independent output paths are not represented as a supported volume row.
 
 ## Episode admission and dismissal
 
@@ -128,7 +128,5 @@ No Mini Player-specific haptic is added.
 
 Pinned native compilation and Swift checks cover bridge integration. Inert deck
 checks cover layout, fade, focus/AX/input gating, hover delay, dismissal and
-transfer settlement. They do not establish live playback, casting/AirPlay device
-behavior, keyboard/VoiceOver or haptic acceptance. Capability guards remain
-truthful: WebAudio-only output is not a supported volume slider and encrypted
-media is not cast as an unprotected remote source.
+transfer settlement. Capability guards keep WebAudio-only output out of the
+volume slider and encrypted media out of unprotected remote playback.

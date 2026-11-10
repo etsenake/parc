@@ -24,7 +24,7 @@ bash tests/EngineConformance/native-window/run.sh
 ```
 
 
-The current AppKit run passes **60 assertions across five groups**. The actual Chromium implementation and all seven modal-test cases pass compilation with warnings treated as errors. A private executable linked against the completed v49 component libraries passes all seven cases with the v50 source fix. The first linked v49 run exposed a real nested-invalidation failure: clearing the checked-observer list marked an already-removed observer twice. Version 50 removes each observer before its terminal callback, preserving any active outer iterator and allowing a callback to release its observer. The integrated v50 rebuild subsequently succeeded, and its generated executable also passes all seven tests. Real browser/dialog checks remain pending.
+The AppKit suite covers 60 assertions across five groups. The modal companion removes each observer before its terminal callback, preserving active outer iterators and allowing a callback to release its observer.
 
 ## Actual Chromium syntax checks
 
@@ -38,7 +38,7 @@ The check reads the generated `ui/gfx` ObjC++ flags for the implementation and `
 
 `ModalHostTests.mm` contains seven real GoogleTest cases for active-view identity changes, odd and oversized dimensions, maximum-size changes, observer addition/removal boundaries, nested invalidation, observer release during destruction, destruction notification and invalidation before delegate destruction. The included `BUILD.gn` defines a runnable `parc_native_window_tests` target with the normal Chromium test entry point (`//base/test:run_all_unittests`), actual `web_modal`/`base`/`gfx` libraries, GoogleTest and AppKit. It requires no Browser, renderer, browser profile or full-browser test suite.
 
-Version 2 of the reviewed overlay maps these files relative to `chromium/src`:
+The overlay maps these files relative to `chromium/src`:
 
 | Repository file | Overlay target |
 |---|---|
@@ -55,6 +55,7 @@ Version 2 of the reviewed overlay maps these files relative to `chromium/src`:
 ./parc_native_window_tests --gtest_filter=NativeModalDialogHostTest.*
 ```
 
-Project generation with overlay version 2 has passed. A separate pinned-Clang syntax check of the installed `page_host.mm`, `browser_window.mm` and `ModalHostTests.mm`, using their own newly generated target flags, also passes. This verifies the new targets' compiler configuration in addition to the prerequisite-based checker above. The complete v49 engine build linked this target successfully. The corrected v50 private executable has also linked and executed all seven cases against those genuine Chromium libraries.
-
-Root integration owns the source-overlay/GN changes; these test files do not mutate or generate the external checkout. Real browser/dialog presentation, resize/selection notifications, focus arbitration, multi-profile teardown and beforeunload coordination are still required. The passing component tests do not establish those integrated behaviors.
+The checker reads existing generated targets and leaves the engine checkout unchanged.
+The production [native window adapter](../../../Engine/ParcNative/native_browser_window.mm)
+uses this companion for page-owned modal presentation; the
+[window guide](../../../docs/windows-lifecycle.md) owns the shell lifecycle contract.

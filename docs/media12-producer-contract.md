@@ -56,9 +56,7 @@ ambient players. Device capture counts report per-WebContents zero crossings,
 not individual overlapping stream starts. Website camera/microphone declarations
 and actual capture remain separate. See [event boundaries](media12-chromium-events.md).
 
-## Validation boundary
+## Checks
 
 Source/model checks cover exact owner/document rejection, suppression fences,
-privacy capacity, order and genuine presentation removals. They do not establish
-live playback, device behavior or every possible website media declaration. PiP's
-accepted implementation remains separate from this episode-admission contract.
+privacy capacity, order and genuine presentation removals.

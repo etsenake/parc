@@ -26,5 +26,4 @@ refresh, Mojo snapshots and parameterless notifications do not manufacture a
 producer event. Original-document replacement and eligibility loss invalidate
 suppression. The linked producer guide owns the exact re-admission operations.
 
-Source/component checks cover these boundaries. They do not constitute live
-PiP/browser acceptance or a request to reopen completed PiP work.
+Source/component checks cover these boundaries.

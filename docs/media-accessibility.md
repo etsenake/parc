@@ -50,6 +50,4 @@ See [presentation](media-mini-player-presentation.md).
 
 Native compilation and inert lease checks cover stale result ordering and
 creation/release races. Component checks cover dynamic labels, expanded state,
-error visibility, drawer focus and exact window ownership. They do not establish
-live system-picker interaction, device behavior, Full Keyboard Access or
-VoiceOver acceptance.
+error visibility, drawer focus and exact window ownership.

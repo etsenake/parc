@@ -1,18 +1,56 @@
 # Internal addresses
 
+Parc accepts `parc://` for Chromium-backed internal destinations, including Settings,
+passwords, extensions, flags, version and the internal-page directory. The native
+omnibox uses Chromium’s genuine built-in provider and controller inventory; Parc does
+not maintain a replacement list of fake pages. Unknown hosts receive Chromium’s normal
+controller/error behavior. `arc://` is not a registered or translated alias.
 
+`parc://easel/<UUID>` and `parc://note/<UUID>` remain app-owned document addresses.
+Malformed document addresses stay in those typed app routes; they cannot acquire WebUI
+bindings. Conversely, unsupported `chrome://easel` and `chrome://note` addresses are not
+projected into existing documents.
 
 ## Request and security ownership
 
-The all-process content client registers `parc` as standard, secure, CORS-enabled and savable. It does not register a response factory, grant WebUI bindings, bypass CSP, grant file access or add service-worker privileges. A pure GURL component conversion changes only the scheme to `chrome` before the original `NavigateParams` policy path and in the real browser URL-handler chain. The handler returns false so Chromium’s remaining aliases, policy and controller processing continue. Original request bodies, referrers, initiator origins, callbacks, dispositions and Profile/OTR owners stay with the original request.
+The all-process content client registers `parc` as standard, secure, CORS-enabled and
+savable. It does not register a response factory, grant WebUI bindings, bypass CSP,
+grant file access or add service-worker privileges. A pure GURL component conversion
+changes only the scheme to `chrome` before the original `NavigateParams` policy path and
+in the real browser URL-handler chain. The handler returns false so Chromium’s remaining
+aliases, policy and controller processing continue. Original request bodies, referrers,
+initiator origins, callbacks, dispositions and Profile/OTR owners stay with the original
+request.
 
-The actual document remains a `chrome://` origin. Current Chromium’s `WebUIConfigMap` still requires its registered origin, `IsWebUIEnabled(browser_context)` and `ShouldHandleURL`; renderer/process security checks remain unchanged. `HasWebUIScheme` recognizes the public scheme. This is necessary for `RenderFrameImpl`’s original top-level WebUI branch to transfer the complete request through `OpenURL` to the browser-owned navigation path, rather than begin an unsupported renderer/network request. The existing IPC validation, request fields and browser beforeunload/security policy stay authoritative. This classification does not register a `parc` WebUI controller or data source: the actual controller lookup remains restricted to Chromium’s real origins. Subframes do not receive a new rewrite or privilege bypass.
+The actual document remains a `chrome://` origin. Current Chromium’s `WebUIConfigMap`
+still requires its registered origin, `IsWebUIEnabled(browser_context)` and
+`ShouldHandleURL`; renderer/process security checks remain unchanged. `HasWebUIScheme`
+recognizes the public scheme. This is necessary for `RenderFrameImpl`’s original
+top-level WebUI branch to transfer the complete request through `OpenURL` to the
+browser-owned navigation path, rather than begin an unsupported renderer/network
+request. The existing IPC validation, request fields and browser beforeunload/security
+policy stay authoritative. This classification does not register a `parc` WebUI
+controller or data source: the actual controller lookup remains restricted to Chromium’s
+real origins. Subframes do not receive a new rewrite or privilege bypass.
 
+Controller-generated `chrome://` anchors, resources and endpoint constants remain
+internal Chromium URLs. Original link activation reaches the real controller. At the
+user boundary, Parc projects native page/navigation-history addresses, omnibox URL
+labels, hover destinations, link copying, bookmarking and exported source metadata to
+`parc://`. Context-menu Copy Link and Copy URL/Markdown preserve the actual Chromium
+clipboard-policy endpoint while projecting only the copied destination. No DOM text,
+arbitrary query, referrer, security origin, extension URL or `chrome-untrusted://`
+origin is rewritten.
 
-The app stores public destinations for normal/native tab adoption, command results and navigation updates. Legacy saved sessions migrate current and pinned destinations independently without changing IDs, Profile/Space membership, archive state or native ownership. Address edit/copy and restored sessions therefore use the same public scheme. Browser menus use the same real Settings/passwords/extensions routes. Easel routing is decided separately from browser WebUI.
+The app stores public destinations for normal/native tab adoption, command results and
+navigation updates. Legacy saved sessions migrate current and pinned destinations
+independently without changing IDs, Profile/Space membership, archive state or native
+ownership. Address edit/copy and restored sessions therefore use the same public scheme.
+Browser menus use the same real Settings/passwords/extensions routes. Easel routing is
+decided separately from browser WebUI.
 
-## Validation boundary
+## Checks
 
-Source/compiler/component checks cover scheme conversion and original request
-ownership. They do not establish browser runtime acceptance. The public scheme
-is presentation and routing; it is never a separate grant of WebUI privileges.
+`tests/NativeInternalURLs` covers scheme conversion, public address projection and
+app-owned document boundaries. The public scheme is presentation and routing; it is
+never a separate grant of WebUI privileges.

@@ -15,5 +15,20 @@ selectable in a nested Details sheet.
 
 Routing does not generate a generic success toast for every link. Modifier-
 explained link feedback belongs to [hovered-link status](web-interactions.md).
-Source and component checks do not establish live keyboard or VoiceOver
-acceptance; current browser-use restrictions still apply.
+
+## Link destinations
+
+External links use the first matching rule. A missing explicit Space falls back
+to the frontmost eligible window and its active Space; without one, Parc creates
+a window using the most recent surviving Space. Other unavailable destinations
+fall back through the rule store's recent-Space policy.
+
+Internal current-tab, foreground-tab and background-tab links retain the
+original navigation request and disposition. An unavailable rule destination
+leaves the original navigation in place. A background route keeps an existing
+destination's selection and visibility; a newly created destination appears
+without taking focus. Once an admitted route starts, failed destination creation
+reports failure rather than reconstructing the navigation from a URL.
+
+Overlapping private-window creation still needs shared Profile-level lifetime
+ownership; see [private navigation lifecycle](private-route-lifecycle.md).

@@ -57,9 +57,8 @@ Close and Escape invoke the real native service. Resize adjusts the existing
 container and real extension page without re-navigation. Details:
 [side-panel boundary](extensions-side-panel-adaptation.md).
 
-## Checks and delivery boundary
+## Checks
 
 Geometry checks cover image-only cells, narrow/zero-sized panel fit, header,
 close/Escape and the real layout policy. Native compiler and whole-module Swift
-checks cover bridge integration. These do not establish live extension rendering,
-keyboard traversal or browser runtime acceptance.
+checks cover bridge integration.

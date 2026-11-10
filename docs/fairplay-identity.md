@@ -164,7 +164,8 @@ Media Source key systems `com.apple.fps.2_N` and `.3_N` use modern FairPlay keys
 Type support checks the actual MSE route, plus keyrelease. Version 3 takes its
 init data directly; version 2 combines the supplied content identifier with its
 first eligible renderer-session init data. The session exchange is certificate
-request → certificate update → SPC → CKC update, with trusted key events.
+request → certificate update → SPC → CKC update. Session key events are
+script-generated; the native `webkitneedkey` bridge produces the trusted event.
 Renewal sends another SPC. Per-key requests receive their own messages and CKCs
 answer the oldest outstanding request.
 
@@ -226,9 +227,8 @@ list; the inverse menu restores Safari. Open pages update accordingly.
 ## Known limits
 
 - HLS relies on platform client-URL-loading SPI. Missing SPI produces unsupported
-  source rather than bypassing Chromium networking. Protected HLS GPU-sandbox,
-  caption-preference service and actual AirPlay acceptance require their own
-  evidence. MSE does not route to AirPlay; native HLS uses the system route list.
+  source rather than bypassing Chromium networking. MSE does not route to
+  AirPlay; native HLS uses the system route list.
 - A same-process redirect onto the main site can leave its already-sent request
   header different from its eventual script identity; replaying one-time callback
   URLs would be unsafe. Prerender subframe redirects and fenced-frame redirect
@@ -252,7 +252,5 @@ list; the inverse menu restores Safari. Open pages update accordingly.
 `scripts/test-fairplay-identity.sh` runs policy and exact compatibility-script
 models, renderer identity gates and service capability fixtures. Native codec,
 FairPlay/HLS and Blink component/compiler checks cover their separate layers.
-Current shipping/source status is centralized in [product status](parity.md).
-Neither source integration nor a built/notarized release establishes live
-Netflix/Apple TV+/other-service playback, PiP/casting, caption or output-protection
-acceptance. Browser/app launch restrictions remain in force.
+Check commands and fixtures live with their owning components. Follow
+[the working contract](../AGENTS.md) before running them.

@@ -28,7 +28,7 @@ Hardware-present profile/level/chroma/depth checks retain their existing owners.
 This gate is not a processor-name heuristic and does not depend on tab visibility,
 PiP, casting or capture state.
 
-## Validation boundary
+## Checks
 
 The API matrix covers both hardware states, both identities, MP4/WebM,
 canPlayType and all three MSE entry points. A decodingInfo matrix covers both
@@ -36,11 +36,6 @@ identities/hardware states for file and MediaSource. Player tests cover
 undeclared AV1 refusal and the Chrome bypass. The injected hardware result
 uses a scoped process command line, restored after each test.
 
-Recorded validation compiled the affected translation units and tests with
-shipping flags. Chromium test executables were not linked or run. Temporary
-generated-header stand-ins were compilation inputs only, not overlay contents.
-An inert AVFoundation probe on this hardware-capable Mac returned hardware=1,
-MP4 AV1 playable=1, WebM AVURLAsset playable=0 (WebKit supplies its WebM parser).
-No browser, PiP, casting, FairPlay playback, battery or frame-drop measurement
-was run. Current publication status is in [product status](../parity.md);
-a published engine does not turn this evidence into runtime acceptance.
+These regressions live in the Blink/player changes in
+`Engine/ParcHost/integration/fairplay-identity-blink.patch` and
+`fairplay-media.patch`. `tests/FairPlayIdentity` also covers the renderer gate.

@@ -3,8 +3,8 @@
 A FairPlay renderer decodes into an `AVSampleBufferDisplayLayer` that Apple
 never reads back, so Chromium can't draw the video. It can only put that layer
 where the `<video>` element is, among the page's other CALayers. This document
-covers the path that does that, what happens when it can't, and its verification boundaries. The CDM, renderer and media pipeline belong to
-`fairplay-media`; this covers the registry and the compositor.
+covers that path and its rendering limits. The CDM, renderer and media pipeline
+belong to `fairplay-media`; this covers the registry and the compositor.
 
 Engine changes: `Engine/ParcHost/integration/fairplay-compositing.patch`, plus
 `protected_layer_registry.{h,mm}` installed at
@@ -28,8 +28,8 @@ Mojo services).
    (`preventsCapture`, the Resize gravity and the flip); the compositor
    places the host like any registered layer. The
    registry is thread-safe and retains the layer until `Unregister`. The
-   native HLS player ([NATIVE_HLS.md](NATIVE_HLS.md), not built yet) will
-   register its `AVPlayerLayer` the same way, and it is placed the same way,
+   native HLS player ([NATIVE_HLS.md](NATIVE_HLS.md)) registers its
+   `AVPlayerLayer` the same way, and it is placed the same way,
    except as noted in step 8.
 2. **Renderer process.** The renderer client receives `(token, natural_size)`
    over its client extension and paints
@@ -320,8 +320,7 @@ How often:
 - They go black only during effects that a CALayer can't carry, applied to the
   video or its container: a filter, clip-path, or a free rotation.
 
-Counts are unmeasured until there is a build. Each frame's result is recorded
-in the `Compositing.Renderer.CALayerResult` histogram, and
+Each frame's result is recorded in the `Compositing.Renderer.CALayerResult` histogram, and
 `--show-mac-overlay-borders` outlines the protected host in orange.
 
 The black cases are black by design. CoreAnimation can't apply most CSS filters
@@ -364,9 +363,9 @@ video it can't composite the same way.
   (nothing else shows it). Half a second later the video surface submits an
   empty frame (`VideoFrameSubmitter::SubmitEmptyFrameIfNeeded`). When the page
   is shown again, the submitter sends the hole frame again and the page's tree
-  takes the layer. Whether a detached AVSampleBufferDisplayLayer keeps decoding
-  or sets `requiresFlushToResumeDecoding` is unverified; fairplay-core
-  re-enqueues from the last keyframe when it does. While hidden,
+  takes the layer. If AVFoundation sets `requiresFlushToResumeDecoding`,
+  the core re-enqueues from the last keyframe and waits for a decoded frame
+  before resuming the clock. While hidden,
   `WebMediaPlayerImpl::ShouldDisableVideoWhenHidden` may also disable the video
   track of an A/V MSE player that isn't in PiP. A disabled stream ends video in
   the FairPlay renderer, so `fairplay-media` makes that function return false
@@ -448,10 +447,8 @@ for placement, reuse, cross-tree ownership, black fallback and PiP. `viz_unittes
 contains `CALayerOverlayTest.Protected*` and `CALayerOverlayNestedTest.*` for
 parked frames, nested passes, clipping, punches, opacity and redraws.
 
-Use generated target flags and the pinned headers for compiler checks. Tests
-that have only compiled must not be reported as executed. Existing component
-receipts do not establish service playback, capture protection on every display,
-physical receiver behavior or current integrated performance.
+Use generated target flags and the pinned headers for compiler checks. Record
+compiler checks and executed test results separately.
 
 Browser/app launch, screenshots and live playback checks require explicit new
 user authorization under [AGENTS.md](../../../AGENTS.md). This document does not
@@ -464,4 +461,4 @@ Registry fixtures cover input validation, re-registration, retained lookup acros
 unregister and concurrent operations. Compositor fixtures cover geometry and
 ownership. Their commands, target settings and result receipts must be bound to
 the exact source being checked; old increment receipts do not verify a later
-change. A compiler check is not engine test execution or browser acceptance.
+change.

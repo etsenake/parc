@@ -10,14 +10,17 @@ The per-page overlay receives its content/top-bar geometry from the host.
 Find presentation and keyboard behavior are documented in
 [keyboard navigation](../../docs/keyboard-navigation.md).
 
-## Checks actually run
+## Checks
+
+Read [the working contract](../../AGENTS.md) before running these checks.
 
 ```sh
 bash tests/NativeFindBar/run.sh
 python3 tests/NativeFindBar/check-chromium.py /path/to/chromium/src
 ```
 
-The standalone AppKit suite passed **79 assertions across 6 groups**. It compiles
+The standalone AppKit suite compiles with Apple Clang, ARC and
+`-Wall -Wextra -Werror`, then executes real offscreen
 NSWindows/NSTextFields, their field editors and the main run loop. It checks
 native insertion and marked-text composition, programmatic updates without
 query callbacks, result/unknown states, button actions, keyboard command
@@ -28,17 +31,16 @@ callback delivery: attachment rejects that now-invalid context.
 
 The separate checker reads the actual generated `obj/cef/libcef_static.ninja`
 Objective-C++ settings and uses the pinned Chromium compiler, without modifying
-the checkout or invoking GN/Ninja. With the real upstream generated prerequisites
-present, **both the AppKit view and the Chromium bridge pass syntax checking**
-with warnings treated as errors. This does not link or execute the bridge in a
-browser. Logs/argv/dependencies are ignored under `build/tests/native-find-bar/`.
+the checkout or invoking GN/Ninja. It syntax-checks the AppKit view and Chromium
+bridge with warnings treated as errors and requires the real upstream generated
+prerequisites. Logs, arguments and dependencies are ignored under
+`build/tests/native-find-bar/`.
 
 ## Integration and lifetime
 
-`NativeBrowserWindowHost::CreateFindBar()` should return
-`std::make_unique<parc::NativeFindBar>(find_host)`. `FindBarController` owns and
-sets up the bar; do not instantiate a second controller or manually duplicate
-its tab observation. Its host must outlive the bar and implement:
+`NativeBrowserWindow::CreateFindBar()` delegates to `AppKitBrowserHost`, which
+constructs `NativeFindBar`. Chromium's `FindBarController` owns and sets up that
+bar. The host supplies:
 
 - `GetFindBarContext(WebContents*)`: the supplied contents' actual per-page
   overlay container, live `PCNativeFocusManager`, unique find/page keys and top
@@ -46,7 +48,13 @@ its tab observation. Its host must outlive the bar and implement:
   presentation. A registration token is retained for the context's lifetime.
 - `CloseFindOverlappingBubbles()`: the actual shell's applicable bubble closure.
 
-The bridge dispatches edits and next/previous through the real FindTabHelper;
+The normal application Find menu uses `BrowserWindowController`'s `PageFindView`
+and the selected page's native Find methods. Those methods and the Chromium
+bridge both reach the original page's `FindTabHelper`; the shell keeps queries
+bound to that page's document revision. [Keyboard navigation](../../docs/keyboard-navigation.md#find-commands-and-original-document-ownership)
+owns the application menu, split/Peek geometry and focus behavior.
+
+The Chromium bridge dispatches edits and next/previous through `FindTabHelper`;
 Escape/close use controller `EndFindSession(kKeep,kKeep)`. It forwards visibility
 changes and actual field-focus state. Query updates from results do not replace
 marked IME text. Chromium's Mac helper supplies its global Find pasteboard;
@@ -56,15 +64,9 @@ without playing a sound, matching pinned upstream behavior.
 The native view saves an actual keyed responder or weak same-window control,
 normalizing shared field editors to their owning field, and uses the explicit
 page key as fallback. A hide-induced transition to NSWindow is distinguished
-from the user choosing another control.  Full keyboard traversal among
-Find buttons and exact focus behavior across split/profile switches remain
-browser acceptance work.
+from the user choosing another control.
 
-`GetHostWidget()` is null because the actual host is AppKit. Integration must
-retain the native fullscreen path rather than calling Views-only immersive
-reparenting. Show/hide currently has no animation; `StopAnimation` therefore has
-no work. Real Browser/Find command routing, navigation/tab-switch behavior,
-renderer matches/highlights, profile/pasteboard boundaries, actual accessibility
-and visual/motion comparison remain integration gates. The v5 reviewed source
-overlay compiles the view in native_components and the bridge in libcef_static.
-The production native host supplies this service.
+`GetHostWidget()` is null because the host is AppKit. Fullscreen uses the native
+path rather than Views-only immersive reparenting. Show/hide is immediate;
+`StopAnimation` has no animation to stop. The source overlay compiles the view
+in native_components and the bridge in libcef_static.

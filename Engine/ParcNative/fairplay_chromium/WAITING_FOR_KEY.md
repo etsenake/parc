@@ -53,11 +53,11 @@ The existing chunk-demuxer target covers buffer identity on removal. Existing
 HTMLMediaElement wait/readyState tests retain their coverage; Blink's element
 implementation is unchanged.
 
-`PYTHONPATH=tests/EngineSource python3 -m unittest tests.EngineSource.test_overlays`
-validates the overlay. Each changed Chromium translation unit and test is
-compiled separately with `work/safari-media-audit-src/compile_copy.sh`, using
-`ParcDistribution_GN_arm64` flags and overlay-applied headers. Chromium unit
-test binaries are unavailable on this Mac: these tests are compiled, not
-linked or executed. No app build or browser runtime acceptance is claimed.
-The FairPlay core renderer is unchanged, so no FairPlay renderer harness
-scenario is changed or run for this correction.
+The overlay source checks run with:
+
+```sh
+PYTHONPATH=tests/EngineSource python3 -m unittest tests.EngineSource.test_overlays
+```
+
+Compile the affected Chromium test targets with the pinned generated headers
+and target flags. Keep execution receipts in ignored check output.

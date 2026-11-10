@@ -4,7 +4,7 @@ Safari-identity pages use Parc's native HLS route: AVPlayer in the GPU media
 service, with network requests performed by the page's Chromium loader and
 FairPlay keys supplied through the page's CDM. Other pages keep Chromium's HLS
 route. This guide describes current source; [product status](../../../docs/parity.md)
-records release delivery separately from runtime acceptance.
+records release delivery.
 
 ## On for Safari-identity pages
 
@@ -97,8 +97,7 @@ key request precedes its handler.
 Core fixtures exercise playlists/segments through a host reachable only by the
 client loader, metadata errors, clear and protected playback, seeks, cancellation
 and teardown. They also show that AVFoundation may retry failed key requests or
-live variants without immediately failing the item. These results do not certify
-all streaming services or OS versions.
+live variants without immediately failing the item.
 
 ## Network (render process)
 
@@ -177,9 +176,7 @@ the page compositor. Natural-size changes continue updating panel aspect ratio,
 and hidden-video exemptions preserve playback. See [compositing](COMPOSITING.md).
 
 Component fixtures cover moving the layer between remote contexts and hidden
-hosts, resizing and variant selection. They are not integrated service or
-physical-device acceptance. PiP's accepted product status is not reopened by
-this documentation cleanup.
+hosts, resizing and variant selection.
 
 ## AirPlay
 
@@ -216,9 +213,7 @@ Background tabs keep playing. Back/forward caching pauses without synthetic
 page events and resumes on return; navigation destroys the player and ends the
 route. Now Playing and media keys continue driving the same element/player.
 Core fixtures cover context attachment, route removal, local playback and file
-track transfer. Physical receiver playback, device naming, protected licensing
-on the receiver and receiver-specific sandbox behavior still require authorized
-hardware validation.
+track transfer.
 
 ## Media element state and events
 

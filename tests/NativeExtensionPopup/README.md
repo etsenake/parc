@@ -29,24 +29,19 @@ The `NativeExtensionActionHost` interface is a mandatory connection to real nati
 ## Integration obligations
 
 1. Construct the container only after the actual Browser/Profile/TabList/ToolbarActionsModel exists, and only on the native path where another ExtensionsContainer has not been registered. Keep the shell host alive through container shutdown. Connect the existing native keybinding registry's action dispatcher to `DispatchActionAccelerator` exactly once.
-2. Forward shell selection/security-state changes to `HostStateChanged`; do not use `SecurityDialogTracker`'s Views-only false result as native security evidence. Real extension context menus and toolbar/menu rendering remain required surrounding services. The native factory/window supplies those services.
+2. Forward shell selection/security-state changes to `HostStateChanged`; do not use `SecurityDialogTracker`'s Views-only false result as native security evidence. The native factory/window supplies extension context menus and toolbar/menu rendering.
 3. Shut the container down before Browser/Profile/TabList destruction. Browser/Profile must outlive any in-flight engine or native `sendEvent` callback and deferred terminal host destruction. Use `Shutdown(completion)` and retain Browser/Profile until its completion. Shutdown retains active and retiring popup sessions together with their real action models; a non-nestable task releases those models only after every supplied host is destroyed. Even an empty shutdown completes asynchronously. Do not destroy the Browser halfway through its own popup engine callback and assume a retained session also retains the Browser.
 4. Keep the supplied host's genuine WebContents delegate, background-readiness logic, modal handler and Escape behavior. If JS-dialog routing is later replaced with Parc's native CEF runner, feed its actual dialog state into the policy; the global AppModal queue will no longer describe that route.
 5. The native view is installed before renderer creation, which may run synchronously. A queued terminal dismissal prevents load completion from showing/focusing/reporting success. The show callback runs once with a real shown host or null on cancellation. Old-generation callbacks cannot clear a new session.
 
 ## Checks
 
-The standalone AppKit suite passes **57 assertions across seven groups**. The
-shared production and browser-test targets pass GN generation and header
-dependency checks. All three production units and the six-case browser-test source pass the pinned
-Linked browser execution remains pending.
-
 
 ```sh
 bash tests/NativeExtensionPopup/run.sh
 ```
 
-The executed suite passed **57 assertions in seven groups**. The executable uses real NSWindows, supplied NSViews, native close/notification delivery and the main run loop. It covers exact child/page identity and geometry, moved-window resize, parent-specific dismissal with a policy hold, callback reentry/final owner release, replacement during native detachment, invalid attachment, anchor callback invalidation, and a visible parent that must not expose an opening popup.
+The suite covers **57 assertions in seven groups**. The executable uses real NSWindows, supplied NSViews, native close/notification delivery and the main run loop. It covers exact child/page identity and geometry, moved-window resize, parent-specific dismissal with a policy hold, callback reentry/final owner release, replacement during native detachment, invalid attachment, anchor callback invalidation, and a visible parent that must not expose an opening popup.
 
 Syntax-check the three production translation units and six genuine-host browser-test cases using their actual reviewed shared target flags, without generating or building upstream:
 
@@ -55,9 +50,11 @@ python3 tests/NativeExtensionPopup/check-chromium.py /absolute/path/to/chromium/
 ```
 
 
-The browser tests use actual loaded extensions, actual `ExtensionViewHostFactory`, actual WebContents and visibility observers. They cover supplied identity, close-once results, close during hide/show notification without deleting the notifying WebContents on its stack, security appearing during opening, close completion after actual WebContents destruction, and repeated close observers delivered once each. `Close(completion)` reports actual terminal host destruction after existing result callbacks, not merely a requested dismissal. The browser tests are **not linked or executed yet**. Compiler acceptance is not runtime validation.
+The browser tests use actual loaded extensions, actual `ExtensionViewHostFactory`, actual WebContents and visibility observers. They cover supplied identity, close-once results, close during hide/show notification without deleting the notifying WebContents on its stack, security appearing during opening, close completion after actual WebContents destruction, and repeated close observers delivered once each. `Close(completion)` reports actual terminal host destruction after existing result callbacks, not merely a requested dismissal. Execution requires a valid CEF process/context.
 
-Still required after integration: real action user/API grants, same-ID unload/reload while a close callback reenters, registry remapping, exact parent/security/DevTools/modal cases, actual renderer focus/AX, Browser/Profile teardown during deferred closure, multi-monitor geometry, and full toolbar/context-menu behavior. AppKit component checks do not establish these.
+The [native runtime action suite](../NativeRuntime/README.md) exercises real
+grants and stale selection through the production bridge. Popup presentation
+and retirement use the source owners described above.
 
 The reviewed source overlay compiles all six production files in
 `//cef/libcef/browser/parc_native:native_extensions`, which consumes the existing
@@ -65,5 +62,4 @@ The reviewed source overlay compiles all six production files in
 `libcef_static` and `//cef/tests/parc_native_extensions:popup_browser_tests` use
 that implementation. The latter is registered with the actual macOS CEF
 `chrome/test:browser_tests` target and declares `HAS_OUT_OF_PROC_TEST_RUNNER`, as
-required for test cases executed by that binary. Registration and compiler
-acceptance do not mean the tests have been linked or run.
+required for test cases executed by that binary.

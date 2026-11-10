@@ -103,7 +103,7 @@ are bounded; [native WebAudio checks](../tests/NativeWebAudioAAC/README.md)
 exercise the service. Standalone service timing is not end-to-end renderer or
 GPU-process performance evidence.
 
-### Trade-offs and gaps
+### Codec boundaries
 
 - H.264 has no FFmpeg software fallback. Hardware-decoder disablement/failure or
   unsupported 4:2:2/4:4:4 streams cannot fall back; High 10 support is not claimed.
@@ -166,7 +166,7 @@ Without a signer, the package report records unsigned status and its reason.
 Local verification does not validate the certificate chain to Google's root.
 See [packaging](../tests/Packaging/README.md#widevine-host-signatures).
 
-### Apple FairPlay inside Chromium (decision, November 6)
+### Apple FairPlay inside Chromium
 
 Protected-media pages stay in Chromium. FairPlay exchanges travel through the
 page's normal EME request, then `AVContentKeySession` supplies content keys to
@@ -178,14 +178,11 @@ WebKit browser for DRM sites.
 Parc learns sites needing Safari identity from a Widevine request instead of a
 hardcoded site list. Its identity layer includes ManagedMediaSource, legacy
 WebKitMediaKeys and presentation/fullscreen APIs. Native HLS, Dolby codecs,
-PiP and fullscreen are implemented; their build status and service-level
-acceptance must be reported separately. See [Safari identity](fairplay-identity.md),
+PiP and fullscreen are implemented. See [Safari identity](fairplay-identity.md),
 [FairPlay core](../Engine/ParcNative/fairplay/README.md) and
 [Chromium integration](../Engine/ParcNative/fairplay_chromium/README.md).
 
-Protected video is not capturable as ordinary pixels. Live protected-service,
-AirPlay and output-protection acceptance are distinct from source, compiler,
-signature and packaging checks.
+Protected video is not capturable as ordinary pixels.
 
 ### Library validation
 

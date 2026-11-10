@@ -66,9 +66,9 @@ Forms, history, reloads and client redirects are not rerouted.
 The synchronous query reads only materialized state: no UI, storage, new page/
 Profile, renderer call, wait or nested loop. Weak frame/document and sequence
 guards reject reentry, stale replies and consumed tokens. Real creation occurs
-after return. Its IPC round trip is not evidence of measured latency equivalence.
-Original body/referrer/initiator/security callbacks survive. Specialized download,
-ad, injection, origin-trial and deferred-commit requests retain their own path.
+after return. Original body/referrer/initiator/security callbacks survive.
+Specialized download, ad, injection, origin-trial and deferred-commit requests
+retain their own path.
 
 ## Authentication continuation lifetime
 
@@ -80,8 +80,8 @@ automatic Peek does not interrupt the pinned-tab flow.
 
 The genuine main-frame address callback updates the baseline, including
 same-document changes. State survives intermediate document replacement but a
-fresh native page starts intrinsic; no authentication-continuation disk format
-is implemented.
+fresh native page starts intrinsic. This continuation state belongs to the live
+document and is not persisted.
 
 ## Native Escape ownership
 
@@ -114,13 +114,25 @@ fresh original-owner checks. Native traversal remains intact.
 
 ## Presentation and remaining scope
 
-The card uses an 80% content-width target, 12-point vertical inset and corner radius,
-with a separate title band and tiny-window clamp. Controls use a 0.25/0.8 spring;
-entry fades over 0.3 seconds. Reduce Motion settles owned animation. The completed
-right-swipe route does not establish continuous tug/velocity/reversal behavior.
-Exit fade, transition snapshots, full control/keyboard coverage and final motion
-remain tracked in [the backlog](backlog.md); no screenshot replaces live content.
+The card uses an 80% content-width target, 12-point vertical inset and corner
+radius, with a separate title band and tiny-window clamp. Controls use a 0.25/0.8
+spring; entry fades over 0.3 seconds. Reduce Motion settles owned animation.
+Tab and Shift-Tab follow the window key-view loop through Peek controls and its
+renderer, excluding the dimmed parent. Controls have accessible names and the
+close-confirmation state announces its instruction.
 
-Model/native components cover promotion, original-owner refusal, confirmation
-matrix/timers, renderer acknowledgments and focus cancellation. Compiler checks
-are separate from live browser, accessibility and appearance acceptance.
+Dismissal handles a completed right swipe. Continuous drag progress, velocity,
+reversal and cancellation are absent. Teardown removes the view immediately;
+there is no exit fade, transition snapshot or Peek-specific haptic feedback.
+Nested Peek is also unavailable: a visible Peek blocks another child, and
+creation requires an original saved parent tab. These are concrete remaining
+presentation and nesting items in [the backlog](backlog.md).
+
+Automatic and Shift-click Peek are enabled by Parc's local defaults and remain
+user-configurable. Keep those defaults until the existing product decision is
+settled; the engine's default-off policy flag is enabled for registered pages.
+
+Parent transfer, orphan preservation, promotion and new-tab provenance already
+use the original page and parent identity. Model/native components cover those
+transactions, confirmation timers, renderer acknowledgments and focus
+cancellation; window key-loop checks cover forward and backward traversal.

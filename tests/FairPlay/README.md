@@ -97,33 +97,18 @@ arrive in decode order with presentation times only).
     plays. The same display layer shows the new track; the clock waits for
     its first frame without HAVE_NOTHING.
 
-## Results and limits
-
-Recorded core and multi-key harness runs on macOS 27.2 exercised license
-exchange, clear/protected playback, pause/rate/seek, underflow recovery,
-late keys, supported init-data forms, HEVC, session close/remove and clear-path
-codec decoding. The recorded core baseline and separate multi-key run had no
-failed checks. A later expanded run reached its time cap; the remaining HEVC
-B-frame and close/remove sections passed separately. These are historical
-harness results, not a current browser or service acceptance claim.
+## Interpreting checks
 
 The checks distinguish frames due at the playback clock from AVFoundation's
-frames decoded ahead. Both counters stayed fixed while paused and advanced
-on resume; the core's due-frame count matched the presentation timeline.
-Protected playback is assessed through the clock, renderer state and frame
-metrics. Captured protected video can appear blank, so an image alone is not
-playback evidence. Output-protection state sometimes became obscured while
-decoding continued; the harness records it separately from decoding success.
+frames decoded ahead. Pause holds both counters; resume advances them. Protected
+playback checks use the clock, renderer state and frame metrics, while output
+protection is recorded separately. Protected video is intentionally unavailable
+to capture APIs.
 
-[Protected-codec checks](codecs/README.md) cover locally encrypted Dolby Vision,
-AV1, AAC variants, AC-3 and E-AC-3, including 7.1 channel layout, and document
-the unsupported cenc path and other platform limits.
-
-The recorded runs do not establish `avc3`, Dolby Vision profile 8, per-sample
-key rotation within one track, license renewal, macOS versions below 27,
-external displays or HDCP. Having a scenario in source does not establish that
-it ran; retain exact commands and results in ignored output when an authorized
-run exercises newer coverage.
+[Protected-codec checks](codecs/README.md) exercise locally encrypted Dolby Vision,
+AV1, AAC variants, AC-3 and E-AC-3, including 7.1 channel layout, and encode the
+unsupported encryption/codec cases as expected failures. `RenewalScenario` checks
+that playback keeps its answered key through a pending or failed renewal.
 
 ## Apple API behaviour
 
@@ -220,8 +205,8 @@ probed through its runtime interface)
 - A malformed CKC for a renewal fails with `CoreMediaErrorDomain -42681`. The
   answered key keeps working.
 - The ad-hoc signed command-line harness gets SPCs, CKCs and protected playback
-  with no app bundle and no entitlement. It ran unsandboxed; the sandbox profile
-  of the engine process that hosts the core must allow FairPlay (unverified).
+  with no app bundle and no entitlement. The separate
+  [GPU sandbox fixture](sandbox/README.md) exercises the required sandbox grants.
 - Setting `audioOutputDeviceUniqueID` on a playing `AVSampleBufferAudioRenderer`
   (from unset to the built-in speakers' explicit UID) posts
   `AVSampleBufferAudioRendererWasFlushedAutomaticallyNotification` once, with
@@ -286,14 +271,8 @@ through the player's client URL loading)
   `finishLoading`) plays (WebKit's legacy route); Axinom expects the URI as
   content identifier there too. A second SPC from the same loading request
   fails (`AVFoundationErrorDomain -11800` over `-12158`): one SPC per request.
-- With these, a stand-in of the core's routes passed 35 of 37 checks
-  (session route, resource loader route, MultiKey's separate audio and video
-  keys on both, a key licensed before the load, a session waiting for the
-  asset, sessions made before the asset was attached, a legacy content ID,
-  obscured output); the two failures were a closed session handing its used
-  loading request to another session, which the core now fails instead so
-  AVFoundation asks again. Parc then dropped the recipient route: a recipient
-  asset raises no `webkitneedkey` (its requests never reach the resource
-  loader), and the resource loader route plays in every order. The `keys-*`
-  scenarios of `scripts/test-fairplay-hls.sh` cover it through
-  `FairPlayHlsPlayer` and `FairPlayHlsKeyLoader`.
+- Parc uses the resource-loader route so every native key request can raise
+  `webkitneedkey`. Reusing a loading request after its SPC has been consumed
+  fails; the core preserves request ownership instead of handing it to another
+  session. The `keys-*` scenarios of `scripts/test-fairplay-hls.sh` exercise
+  ordering through `FairPlayHlsPlayer` and `FairPlayHlsKeyLoader`.

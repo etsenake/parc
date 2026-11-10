@@ -1,4 +1,4 @@
-# Safari-mode media behavior and follow-ups
+# Safari-mode media behavior and boundaries
 
 Safari identity changes the page-facing media decisions above Parc's playback
 backends. Native HLS uses AVPlayer; FairPlay Media Source uses native sample-buffer
@@ -7,9 +7,8 @@ owners and API details are in [FairPlay web surface](fairplay-safari-surface.md)
 [identity](fairplay-identity.md) and
 [native HLS](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md).
 
-This guide keeps durable behavior and unresolved follow-ups. It is not an agent
-queue, a release receipt or a claim that source checks establish live playback.
-Picture in picture is user-accepted as complete and is not reopened here.
+Picture in picture is complete. This guide describes current behavior, concrete
+limitations and explicit product decisions.
 
 ## Implemented behavior
 
@@ -18,113 +17,114 @@ Picture in picture is user-accepted as complete and is not reopened here.
 | Moving media | Same-origin document moves preserve the playing owner; visibility, mute, Now Playing, input and presentation follow the displayed element. Frame retirement transfers eligible loading rather than restarting playback. |
 | Element loading | Muted-attribute/autoplay state, lazy/preload decisions, buffered readiness, seeking, key waits and rate-zero/end state follow the Safari-identity route. |
 | Keys and renderer handoff | Late keys, replacement and detach are supported. The normal Chromium-to-FairPlay transition prerolls on the existing clock rather than restarting the page's media element. |
-| Native HLS | Live/DVR timeline, start dates, track changes, key requests, clear data playlists, private asset policy and native error/readiness propagation are implemented. |
-| Casting | Connecting and short-played casts survive eligible background/cache transitions. Mini Player retains its casting episode across navigation and can stop its original cast. |
-| Audio | Pitch policy, output-device selection/fallback, added tracks and clear/protected supported formats reach the real renderer. |
+| Native HLS | Live/DVR timeline, start dates, track changes, key requests, clear data playlists, private asset policy and native error/readiness propagation are implemented. AirPlay changes the existing player's output context. |
+| Casting | Connecting and short-played casts survive eligible background/cache transitions. Mini Player retains its admitted casting episode across navigation, keeps route state after its media session ends and offers Stop casting for the original route. |
+| Audio | Ordinary playback and native HLS apply pitch policy; output-device selection/fallback and added supported tracks reach their renderers. Added clear audio tracks share the output's timeline and playback rate. The FairPlay Media Source pitch-control gap is described below. |
 | Reverse playback | Plain files support silent negative rates inline and in background; time advances continuously while frames may drop. Native HLS retains AVPlayer's route. |
 | Media Source | Buffer admission, ranges, duration, eviction, worker lifetime, track switching and managed-buffer event timing use actual parser/player state. |
-| Transport streams | Multiple audio tracks, PMT-declared audio types, MPEG-1/2 video and SAMPLE-AES support are present. |
-| Formats | Ogg, clear PCM, ALAC, AMR/H.263 and additional Dolby Vision parsing/capabilities were added; compatibility-ID 2 carries SDR tagging. AV1 capability respects hardware under Safari identity. |
+| Transport streams | Multiple audio tracks, PMT-declared audio types, MPEG-1/2 video and SAMPLE-AES support are present. MPEG pixel aspect ratios feed the natural display dimensions. |
+| Formats and recovery | Ogg, clear PCM, ALAC, AMR/H.263 and additional Dolby Vision parsing/capabilities are supported; compatibility-ID 2 carries SDR tagging. AV1 capability respects hardware under Safari identity. Native decoder flush recovery replays from a retained keyframe before resuming its clock. |
 
-These statements replace older “in progress” claims for native HLS wiring,
-`preservesPitch=false`, `getStartDate`, ordinary late-key handoff, ALAC, PCM and
-Dolby Vision SDR compatibility. They do not erase the narrower boundaries below.
-
-## Accepted behavior and exclusions
-
-Preserve working functionality when updating compatibility behavior:
+## Accepted behavior and scope
 
 - Keep Chromium's useful behavior for HTTP servers without byte ranges.
 - Spotify's Safari route remains the supported identity path without Widevine;
-  its service-side lossless FLAC exclusion is retained. This is not signed-in
-  service acceptance.
+  its service-side lossless FLAC exclusion is retained.
 - Keep useful Ogg behavior: ambisonic Opus, rejection of garbage after abort,
   incomplete/bad-checksum page handling and FLAC's header-derived final duration.
   Mixed Ogg/video capability queries remain unsupported.
 - Keep Dolby Vision profiles 4/7 base-layer playback and long-lived cached cast
   restoration where Parc already provides it.
-- The user accepted non-perceptible play-promise, end-of-stream idle arrival,
-  extra timeupdate and removal/fullscreen scheduling differences, and the
-  `text/vtt` Media Source capability difference.
-- The user accepted deferring expensive reverse-playback optimization for rare
-  4K files with 5–10-second keyframe gaps. The retained estimate is 5–10 fps,
-  up to two additional seconds to begin and up to 384 MiB of working memory;
-  these are historical estimates, not fresh measurements.
+- The accepted non-perceptible differences in play-promise, end-of-stream idle
+  arrival, extra timeupdate and removal/fullscreen scheduling remain, along with
+  the `text/vtt` Media Source capability difference.
+- Expensive reverse-playback optimization for rare 4K files with 5–10-second
+  keyframe gaps remains explicitly deferred.
 - FairPlay `cenc` encryption and an element disabling its own video track remain
-  outside the earlier agreed media scope. Later implemented late-CDM attachment,
-  audio-output selection and additional Dolby Vision support remain supported.
+  outside the earlier agreed media scope. Late-CDM attachment, audio-output
+  selection and additional Dolby Vision support remain supported.
+- Further 3GPP MIME answers, MPEG-4 Part 2 in 3GPP and raw `.amr`/`.awb` support
+  remain an explicit scope decision. Preserve the implemented H.263/AMR route.
 
-## Retained follow-ups
+## Casting ownership and controls
 
-These are specific unresolved items carried from the media audit. Unless noted
-in the source contracts above, this documentation cleanup did not reproduce or
-freshly prove them. Reconcile current source before claiming a defect still
-exists or closing it. User-visible faults require a dedicated implementation
-change and its appropriate checks, not a new documentation-only “done” label.
+An already admitted Mini Player row survives a live cast; casting alone cannot
+create a row. Remoting is requested from the media session's single player when
+the receiver is picked. A successful launch retains its original active or cached
+document; failed launches withdraw pending requests. See [Mini Player](media-mini-player.md).
 
-### Casting and Mini Player
+A cached page's native pipeline and eligible URL/HLS readers can continue casting.
+Its JavaScript remains frozen, so Media Source cannot append beyond its buffered
+range. Receiver controls do not thaw the page or provide a reverse play command
+to its paused source pipeline. A source that is destroyed or evicted cannot keep
+feeding that route. An active cast from a moved element remains with its starting
+tab until it ends; closing that starting frame ends its presentation connection.
 
-- Two videos competing for a pending cast or a backend switch may lose a request
-  before playback. A `no-store` page can end the cast when leaving the page.
-- Frozen Media Source cannot supply data beyond its buffered range. A cast paused
-  while its page is cached cannot resume from the TV until the page runs.
-- An unmeasured paused cast assumes 30 fps; actual receiver limits still apply.
-  A receiver that never offers remoting can keep a harmless request until resume.
-- Navigation before Mini Player first observes the cast can open the chooser
-  instead of offering Stop. Mirroring may label a Safari row Cast; another tab's
-  launch can briefly show Connecting. Speaker-only receivers may lack the
-  default-presentation button.
-- Chromium's chooser ends a cast with Stop casting; it has no “This Mac” row.
+A requested paused video without a measured frame rate uses a 30-fps estimate
+for receiver capability checks. A request waiting for a receiver remains pending
+until a route/start failure, sink loss or remoting stop clears it. Chromium uses
+Stop casting to return locally; it does not offer a synthetic “This Mac” device.
+Tab mirroring is represented as Cast even on a Safari-identity page.
 
-### Moved elements and renderer transitions
+These concrete control edges remain:
 
-- An interrupted HLS resource without a strong ETag/Last-Modified cannot safely
-  resume after its original frame dies.
-- Popup-to-frameless-document moves followed by popup closure, and first play of
-  `preload=none` media while frameless, retain failure follow-ups.
-- An existing cast remains attached to its starting tab. TV continuity after
-  that starting frame closes is unverified.
-- Reverse playback, mid-resume, CDM-change or unsupported-codec handoff fallbacks
-  may still rebuffer. VP8/MP3 cannot join the FairPlay renderer.
-- Added-audio synchronization away from rate 1 has only a reasoned 30-ms bound;
-  a disabled first audio track may continue consuming decode CPU. Default audio
-  device changes after fallback have no live acceptance result.
+- If the media session gains a second player before the device pick is handled,
+  its single-player remoting request is refused. Preserve the picked player
+  explicitly if this interaction is extended to competing players.
+- The route watcher records the current document when it first observes a remote
+  route. Navigation before that observation can make an earlier-page cast open
+  the current media chooser instead of the direct Stop menu. Capture the route's
+  originating document when starting it.
+- Pending default-presentation routes are matched by source URL until the page
+  receives its connection, so another tab with the same request can briefly show
+  Connecting. Availability observes the default presentation's sources; a
+  speaker that only supports tab-audio mirroring does not make that button appear.
 
-### Native HLS and AirPlay
+## Moved elements and renderer boundaries
 
-- After switching to an HLS alternative, `load()` can lose the pending time;
-  WebM alternative switching and the alternative's CSP preflight remain follow-ups.
-- Live AirPlay reconnects at the live point with a gap rather than sharing one
-  loader connection. Some assets expose more audio tracks than the first group.
-- Out-of-band `<track>` sources remain Blink-owned rather than native alternate
-  tracks. Explicit display-change output-protection notification is absent.
-- Physical Apple TV acceptance and the effect of an open streaming connection
-  on back/forward-cache admission remain unverified.
+An interrupted HLS response resumes through the destination frame only when a
+strong ETag or Last-Modified identifies the resource. Without one, the partial
+response fails rather than combining bytes from potentially different resources.
 
-### Containers, codecs and low-level recovery
+A document without a frame cannot create a new player. An existing player can
+survive a move through such a document while its owning frame lives. If that
+frame closes before the element reaches another framed document, its resources
+are released and the frameless reload fails. A deferred `preload=none` first play
+in a frameless document likewise reports an unsupported source.
 
-- TS descriptor ordering/type mismatch and one encrypted event for combined
-  audio/video buffers remain follow-ups. Licensed AC-3/E-AC-3 SAMPLE-AES has no
-  acceptance result.
-- Non-square-pixel video reports Chromium's dimensions, which can differ from
-  its display aspect and default element size. MPEG video requires GPU decoding.
-  Plain `.ts`/`.mpg` playback and mixed H.264/MPEG-2 track choice remain unverified.
-- 3GPP MIME answers, MPEG-4 Part 2 in 3GPP and raw `.amr`/`.awb` support remain
-  an open scope decision; retain current behavior until that decision is made.
-- Real Dolby Vision profile 20, `dav1` on older Macs, lower-case FLAC/Opus MP4
-  aliases and complete runtime capability combinations remain unverified.
-- Decoder `requiresFlushToResumeDecoding` recovery has no public live trigger.
-  A picture retained after a decode error has no additional runtime acceptance;
-  this does not reopen the accepted PiP feature.
+Reverse playback, an in-progress resume or a CDM change can take the renderer's
+restart path instead of the seamless handoff. Unsupported VP8/MP3 cannot enter
+the FairPlay renderer; the [integration guide](../Engine/ParcNative/fairplay_chromium/README.md)
+owns its codec boundary and missing pitch-control forwarding: pages cannot disable
+pitch preservation on the FairPlay Media Source route. A disabled first clear-audio track is silenced after
+decoding while its clock drives the mixed tracks, so it still consumes decode work.
 
-## Validation and maintenance
+## Native HLS alternatives and format boundaries
 
-The engine patches and focused native/renderer tests are the source of truth.
-Fixture decoding, model assertions, compiler checks, compiled test objects and
-physical playback are distinct evidence. This cleanup ran no browser, app,
-engine build, licensed-service session or physical receiver test.
+A Media Source element can switch to its next `<source>` for AirPlay and restore
+its prior time when the alternative has future data. An explicit `load()` starts
+a new load and clears that pending time. Ordinary WebM files have no native
+AirPlay route or Media Source alternative-switch eligibility. The availability
+probe accepts a non-blob alternative before CSP is checked during its actual
+load, so an alternative blocked by CSP can still make AirPlay appear available.
 
-Keep cross-feature priority/status in [the backlog](backlog.md). Change this guide
-when a behavior or boundary changes; remove a resolved follow-up instead of
-appending another chronological receipt. Do not restore per-file audit logs,
-agent ownership rosters or cumulative fix counts here.
+Out-of-band `<track>` sources remain Blink-owned rather than native alternate
+tracks. The [web surface guide](fairplay-safari-surface.md) owns output-protection
+notification boundaries.
+
+SAMPLE-AES setup reads the first registration/private-data descriptor of each
+type. Later duplicate descriptors are not searched, and parser selection follows
+the PMT stream type even if its audio-format declaration disagrees. Each encrypted
+elementary stream emits its own initial `encrypted` event; combined audio/video
+is not coalesced into one event. Descriptor selection and conflicting format
+declarations are the remaining transport-stream follow-ups.
+
+MPEG-1/2 video uses VideoToolbox in the GPU process, including its software decoder
+when hardware decoding is unavailable. This is a process dependency, not a
+requirement for an MPEG hardware decoder.
+
+## Checks and maintenance
+
+Focused source, parser, renderer and episode-store checks live with their owners.
+Keep cross-feature priority in [the backlog](backlog.md), remove resolved work in
+the same change and preserve the explicit scope decisions above.

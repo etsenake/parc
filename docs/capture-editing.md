@@ -50,7 +50,7 @@ Library menus capture exact item/revision, selection and view generation. Async
 reads recheck these before invoking a service. Real AppKit capability checks
 and decode failures refuse unavailable actions. The service owns immutable
 payloads after explicit invocation; cancellation remains quiet, real failures
-are surfaced, and completion is not claimed to establish recipient delivery.
+are surfaced. The chosen service owns delivery after invocation.
 Profile/view retirement detaches callbacks. macOS has no public cancellation API
 to retract an already invoked external composer.
 

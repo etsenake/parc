@@ -55,10 +55,8 @@ explicit. Compatibility hooks need not reproduce Chrome UI; their current
 callers still require truthful results, request completion and safe lifetimes.
 The interface has no default successful UI callbacks. The concrete host, native
 page delegate, factory route and adapted native feature-initialization branches
-are now canonical and exercised by the independent application. The original
-upstream first-tab BrowserView assumption was an integration requirement, not a
-reason to create a hidden BrowserView. Component checks below remain narrower
-than the production runtime results tracked in the main README and parity ledger.
+are canonical production integration. Native first-tab feature initialization
+uses the supplied AppKit host without creating a hidden BrowserView.
 
 `GetStatusBubbles()` returns the empty list allowed by `BrowserWindow` and has
 no host service requirement. Chromium156's `UpdateTargetURL` and
@@ -73,21 +71,16 @@ is tied to the originating WebContents; this empty compatibility result does not
 python3 tests/NativeBrowserWindow/check-chromium.py /absolute/path/to/chromium/src
 ```
 
-The complete Objective-C++ implementation passes the pinned Chromium156 compiler
-as errors. A static assertion also requires the class to implement every pure
-virtual BrowserWindow and color-source method. The script reads the checkout,
+The checker compiles the complete Objective-C++ implementation with the pinned
+warnings as errors. A static assertion requires every pure virtual BrowserWindow
+and color-source method. The script reads the checkout,
 invokes only its compiler in syntax-only mode, and writes commands/diagnostics
 under ignored `build/tests/native-browser-window/`. It does not run generators,
 modify the engine checkout, link, or launch a browser.
 
 The separate page-host and window-association executable tests cover their
-component lifetimes. They do not validate this complete adapter's Browser
-construction/destruction, activation, beforeunload, fullscreen, multi-profile
-or renderer integration. Registry activation under reentrant profile selection,
-stale window-resign notifications, real action/named-command dispatch,
-suspension, media commands, split active-tab grants and teardown also require
-linked/runtime checks. The host/factory now runs in the independent browser;
-its passing basic runtime cases do not close these broader component gates.
+component lifetimes. Activation, beforeunload, fullscreen, Profile selection and
+registry dispatch are owned by the adapter and its connected native services.
 
 ## Engine selection and shell layout
 

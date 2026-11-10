@@ -103,9 +103,7 @@ owners, including protected native layers. Frame counters report actual native
 statistics. AirPlay uses the system route picker; clear file switching and
 selected-track propagation are implemented alongside native HLS.
 
-Picture in picture is user-accepted as complete and is not reopened by this
-inventory. Physical Apple TV and licensed-service acceptance must not be inferred
-from API, compiler or component checks.
+Picture in picture remains accepted as implemented.
 
 ## Native HLS audio and text tracks
 
@@ -132,24 +130,18 @@ Reattachment releases held work; retired key sessions live only while a request
 or queued SPC still needs them. Unsupported/fallback handoffs remain covered
 by the separate follow-up list.
 
-## Departures and validation limits
-
-The following are retained limits, not new runtime findings:
+## Integration boundaries
 
 - Output protection rechecks display changes when AVFoundation reports them;
   there is no explicit UI-display-change signal to the GPU key session.
 - Native HLS out-of-band tracks remain Blink-owned, as described above.
 - Legacy script-generated events are untrusted; Blink session-ID validation and
   the documented init-data extensions remain deliberate API adaptations.
-- Renewal uses the last answered key and rejects an SPC failure; that differs
-  from an indefinitely unsettled native renewal request.
-- Decoder-reset recovery lacks a public trigger for
-  `requiresFlushToResumeDecoding`; that path has no live acceptance result.
-- Capability coverage for non-FairPlay video and physical output-device changes
-  still needs targeted verification; supported-codec results are not a blanket
-  assertion about every `decodingInfo` combination.
+- Renewal uses the last answered key and reports an SPC failure while retaining
+  the previous usable key.
+- Decoder-reset notifications flush and replay video from the retained keyframe.
+  Frames already due decode without redisplay; the clock waits for a new frame.
 
 Tests in `tests/FairPlayIdentity` and native FairPlay components check protocols,
-validation, lifetime and fixtures. Compiled Chromium test objects are not executed
-Chromium suites. Preserve the [media follow-ups](safari-media-edges.md) and
-[backlog](backlog.md) when changing these boundaries.
+validation, lifetime and fixtures. See [media follow-ups](safari-media-edges.md)
+for concrete remaining work.

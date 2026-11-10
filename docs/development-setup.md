@@ -203,8 +203,7 @@ and unchanged hashes/file membership for the Swift sources, bridge headers,
 CEF include tree, source lock and checker. The receipt records the command,
 selected compiler/SDK, source hashes and Git state. `--plan` validates input
 paths and prints the command/hashes without invoking the compiler or writing
-receipts. This is a source check; it does not establish built-engine ABI
-compatibility, successful packaging or runtime behavior.
+receipts.
 
 The checker's own tests use temporary source trees and a fake compiler:
 

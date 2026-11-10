@@ -92,9 +92,10 @@ the URL row. Zero-opacity controls remain accessible and keyboard reachable,
 but do not accept invisible pointer clicks. Site Control Center, native menus
 and permission cards hold the row revealed for their lifetime.
 
-Two reveal paths remain incomplete: extension popups and site-settings bubbles
-lack shell lifecycle callbacks, so the row may fade after the pointer leaves.
-VoiceOver-only highlighting also has no independent reveal signal.
+Extension popups and site-settings bubbles do not hold the sidebar's Site
+Control Center and extension buttons revealed after the pointer leaves.
+VoiceOver highlighting alone also does not reveal those buttons; keyboard focus
+does. The address label itself remains visible.
 
 ## Loading, Stop and Refresh feedback
 
@@ -174,7 +175,3 @@ Implementation lives in the native navigation/history bridge and
 `BrowserWindowController`, `SidebarView`, navigation controls, focus owners and
 `SidebarSpacePager`. Focused coverage includes `tests/NavigationLoading`,
 `tests/SidebarSpacePaging`, `tests/ContentFocusRequest` and native focus tests.
-
-Model/component checks establish ownership and state transitions. They do not
-establish live keyboard traversal, gesture feel, accessibility interaction or
-browser rendering. This documentation cleanup did not launch applications.

@@ -5,7 +5,7 @@
 
 The application exposes original normal and incognito browser windows in front-to-back order, including Chromium-created windows after their original page has been adopted and normal link-routing destinations. Each window exposes its accessible tabs and profile-bound Spaces, the actual focused tab (including a focused split child), active Space, identity, title and native window state. A tab exposes its identity, title, URL, loading state and sidebar location (`topApp`, `pinned`, or `unpinned`). A Space exposes its identity, title and tabs, including its profile's Favorites. Unloaded tabs return their saved model metadata; a live page supplies its actual URL, title and loading state only when its original native owner and profile match.
 
-A window or Space can make a tab with an absolute `URL` property. A tab supports `select`, `go back`, `go forward`, `reload`, `stop`, `close`, `execute javascript` and URL assignment. A Space supports `focus`. The application can make a normal or incognito window, and windows support `close`. Window state and sidebar location are read-only. Creation accepts no replacement or arbitrary collection mutation. Private, mixed-context, popup and auxiliary windows are not represented as normal browser windows. A native reservation without an adopted live Browser is unavailable. Requests for an unsupported window mode fail before creation.
+A window or Space can make a tab with an absolute `URL` property. A tab supports `select`, `go back`, `go forward`, `reload`, `stop`, `close`, `execute javascript` and URL assignment. A Space supports `focus`. The application can make a normal or incognito window, and windows support `close`. Window state and sidebar location are read-only. Creation accepts no replacement or arbitrary collection mutation. Private windows are represented as incognito, while mixed-context, popup and auxiliary windows are not represented as normal browser windows. A native reservation without an adopted live Browser is unavailable. Requests for an unsupported window mode fail before creation.
 
 For example, these commands use the bundled dictionary (the examples do not run automatically):
 
@@ -57,11 +57,15 @@ Chromium owns OTR teardown. The shared creation-race requirement is described in
 The native parent Profile may not yet be loaded when the front window shows no page (no tab, or a blank tab). Private creation prepares that exact parent asynchronously without making a temporary page. `ParcCreateCommand` suspends private-window creation and returns the actual new wrapper after the native Browser exists; ordinary window/tab creation retains Cocoa's one-use insertion acknowledgment. App shutdown cancels pending creations once, and later readiness cannot create a replacement window. Profile removal, policy or readiness failure returns an error without a simulated owner.
 
 Private browsing supports original-tab scripting and native page tools. Capture
-supports Copy, Save, Messages and editing; persistent Library/Easel destinations,
-pinning and Space editing are withheld. Settings explicitly uses the normal
-parent Profile. Context-image-to-Easel and private download publication cannot
-write normal app storage; native download dialogs retain their actual window.
-The remaining private Library coverage is in [the backlog](backlog.md).
+supports Copy, Save, Messages, editing and explicit Save to Library through the
+normal parent Profile. Private Media reads that parent's capture catalog and
+private Downloads reads its genuine OTR download owner. Archive, Documents and
+Spaces pages, capture-to-Easel, pinning and Space editing remain unavailable.
+Settings explicitly uses the normal parent Profile. Context-image-to-Easel and
+private download publication cannot write normal app storage; native download
+dialogs retain their actual window.
+An explicit Library save is the intentional durable output from private capture;
+automatic private browsing and download records stay memory-only.
 
 ## Scope and checks
 

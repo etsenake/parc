@@ -176,8 +176,11 @@ It uses Move to New Space ownership checks and is unavailable in private windows
 
 BrowserStore, document-alias, copy-to-folder, close/Undo and window-presentation
 components cover atomic persistence, genuine asynchronous refusal, exact IDs,
-shared edits/assets and stale-owner cancellation using disposable data. Compiler
-checks cover shell/native integration. They do not establish runtime or full
-keyboard/accessibility/motion acceptance. Separate folder-archive entities,
-cross-Profile copy semantics and broader Duplicate Undo are not implemented by
-these commands; any proposed expansion needs an explicit product task.
+shared edits/assets and stale-owner cancellation using disposable data.
+
+Folder deletion keeps its nested restoration data in the window's Undo/Reopen
+record. Library Put Back restores archived tabs and splits, including their
+original folder when it still exists; it cannot recreate a deleted folder.
+See [archive restoration](archive.md) and the [Duplicate Undo decision](backlog.md#folders).
+Collection Duplicate stays within the source Profile; whole-split cross-Profile
+copies have the separate [copy contract](split-groups.md#whole-split-copy-and-external-drags--sp23).

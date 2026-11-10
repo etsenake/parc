@@ -50,9 +50,8 @@ cannot affect a newer request, episode or Profile. Never retain a document,
 Profile, browser or presenter merely to keep history. Terminal native callbacks
 may destroy their owner synchronously; do not use raw pointers afterward.
 
-## Validation boundary
+## Checks
 
 Pure state-machine and native component checks validate cancellation, retry and
-episode ownership. They do not establish live playback, device interoperability
-or every window-manager transition. The historical full-state observation proposal
-is not a current implementation requirement or authorization for browser tests.
+episode ownership. The historical full-state observation proposal is not a
+current implementation requirement.

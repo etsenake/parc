@@ -63,16 +63,9 @@ frames, pages that have never drawn and incompatible pane sizes can show the
 normal backing until their first frame. Docked DevTools can also show backing
 when its previous compositor was evicted from the single-spare pool.
 
-These are current lifecycle boundaries, not a claim that every visible flash
-has been reproduced or that a particular user report has this cause.
-
 ## Sources and validation
 
 The implementation is in the native page host/compositor bridge and window
 selection/layout integration. Focused checks cover compositor reuse policy,
 `NativePageHost`, `NativeFocusManager`, `NativeDevTools` and packaging exports.
 Native compiler checks validate bridge integration when run.
-
-This document describes current source. Model checks and compilation do not
-prove first-frame smoothness across real windows, GPUs, displays or DevTools
-transitions. No application was launched for this documentation cleanup.

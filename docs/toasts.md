@@ -74,7 +74,7 @@ cards expose a button role and the actual captured action.
 
 Copy feedback uses the actual copied URL when it retains the page's scheme,
 otherwise the page URL. Ordinary close/archive adds no Clear Today toast.
-Completed actions do not imply external sharing reached a recipient.
+Share actions hand the selected URLs to the chosen system service.
 
 ## Checks
 

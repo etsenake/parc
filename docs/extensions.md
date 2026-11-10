@@ -65,11 +65,13 @@ removes observation and invalidates pending deliveries.
 
 ### Popup extension-menu metadata carrier
 
-`enabledExtensions(for:)` snapshots the same registry, including no-action
-extensions. Manifest artwork loads asynchronously at 32 logical points with
-available scale representations. Missing/pending/failed images stay nil; this
-carrier does not fabricate a default icon. Menus omit nil-icon entries while
-preserving the independent availability flag.
+The native `enabledExtensions(for:)` API snapshots the same registry, including
+extensions without actions. Manifest artwork loads asynchronously at 32 logical
+points with available scale representations; missing or failed images stay nil.
+The shell currently reads action snapshots for the Site Control Center and does
+not consume this broader metadata. A no-action extension can therefore make the
+popup's Extensions control available without appearing as a tile. See the
+remaining consumer connection in [window appearance](window-appearance.md).
 
 Each snapshot binds the original Browser, tab, document, generation and enabled
 extension identity. Navigation, selection, registry changes and shutdown retire
@@ -86,13 +88,15 @@ Parc and removes Chrome-switch prompts. Its fixed ID is
 not change user-agent brands or other sites. Store host permission supplies the
 URL; no `tabs` permission or unrelated Slack/Notion page styling is included.
 
-## Checks and delivery boundary
+## Checks
 
 Native consent components exercise cancellation, once-only decisions, input
-delay, obstruction, permission layout and invalidation without an actual install.
-Command Bar integration receives Swift compiler checks; native owners use their
-pinned Chromium compiler targets. Metadata tests cover no-action entries,
-staleness and security admission. Browser-test source compilation is distinct
-from execution. Source checks do not establish real installs, device/browser
-behavior or live accessibility. Current delivery status belongs in the
-[product status](parity.md), not a stale pending-build note here.
+delay, obstruction, permission layout and invalidation. Command Bar integration
+receives Swift compiler checks; native owners use their pinned Chromium targets.
+Metadata tests cover no-action entries, staleness and security admission.
+
+The [native runtime fixture](../tests/NativeRuntime/README.md) exercises real
+action snapshots, pin state, stale selection refusal and selected-tab grants.
+The extension context menu still disables its side-panel command even though
+extension API and action routes can open the native panel. The missing menu
+connection is described in the [context-menu guide](../tests/NativeExtensionContextMenu/README.md).

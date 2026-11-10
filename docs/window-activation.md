@@ -39,9 +39,8 @@ foreground lookup.
 
 Manage/Add Extensions and delayed Site Control Center presentation retain the
 original window, page revision, Space and Profile through dismissal and input
-resolution. A popup-to-normal-window handoff additionally needs a hidden
-destination's admission and an original-page lease; that consumer integration
-is not established merely by the native query's existence.
+resolution. Popup requests still need the original-page and hidden-destination
+admission described in [the native handoff](#native-admission-handoff-for-win13).
 
 ## Existing interruption owners
 
@@ -70,14 +69,18 @@ The facade exposes two read-only main-thread queries:
 
 Both are momentary checks, not retained leases. The app consumer must capture
 source and destination page/Profile/Space/window identities, validate before
-first show and revalidate across every callback. The API exists in source;
-consuming integration and remaining activation behavior stay open under WIN13
-in [the backlog](backlog.md), rather than a missing-engine-API claim.
+first show and revalidate across every callback.
 
-## Validation boundary
+The shortcut-education Copy action uses the native copy operation, but its
+availability check still uses view visibility instead of the command-window
+query. A command can therefore remain offered when native admission will refuse
+it. Popup New Tab/address requests select or create a destination and show it
+before delivering the input; this handoff does not yet retain the original page
+and hidden destination through native admission. These two consumers are the
+remaining WIN13 work in [the backlog](backlog.md).
 
-Import-focus and original-owner sequence components cover background/minimized/
-obstructed parents, inactive app, key changes during cleanup and refusal paths.
-Swift/native compilation checks API compatibility. They do not establish every
-application-modal combination or live focus timing. No app launch or browser
-interaction is authorized by this guide.
+## Checks
+
+Import-focus and original-owner sequence components cover background, minimized
+and obstructed parents, inactive app, key changes during cleanup and refusal.
+`WindowOwnerSequence` exercises revalidation between callback-capable steps.

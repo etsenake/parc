@@ -88,36 +88,29 @@ that each signal notices garbage.
 
 ## Results
 
-Recorded 2026-11-06 on this MacBook Air (macOS 27.2): 151 checks, 0
-failed. A clip expected to fail counts as one check. Run time is about eight
-minutes.
-
 The table separates clear and protected playback. Wrong-key controls are
-required for protected codecs; AV1 has the specific limitation below. These
-results cover the recorded harness runs, not current browser acceptance.
+required for protected codecs; AV1 has the diagnostic limitation below. A clip
+expected to fail counts as a check when it fails in the expected way.
 
-| Codec / fixture | Protected type | Recorded outcome |
+| Codec / fixture | Protected type | Expected outcome |
 |---|---|---|
-| Dolby Vision profile 5 `dvh1` and `dvhe` | `qdh1` | Protected playback reached the end without corruption; the `dvh1` wrong-key control failed. |
-| AV1 8-bit and 10-bit `av01` | `qav1` | Protected playback completed without decoder errors; the wrong-key control is unreliable (see below). |
-| HE-AAC and HE-AACv2 | `qaac` | Protected playback completed without decoder errors; an AAC wrong-key control failed. |
-| xHE-AAC | `qusa` | Clear and protected playback passed; the wrong-key control failed. |
-| AC-3 and E-AC-3 | `qac3`, `qec3` | Protected playback passed; wrong-key controls failed. |
-| E-AC-3 7.1, DASH-IF FA01 | `qec3` | Passed both with the file's `dec3` and with the box built from Chromium's rate/channel configuration. |
-| FLAC, `bear-flac_frag.mp4` with STREAMINFO only | `qflc` | Clear and protected playback passed; the wrong-key control failed. An intermittent stall is described below. |
-| Opus, `bear-opus.mp4` with OpusHead | none | Clear playback passed; no protected type exists. |
-| ALAC, stereo ALACSpecificConfig from Apple's encoder | `qlac` | Clear and protected playback passed; the wrong-key control failed. |
-| PCM `ipcm` 16/24-bit and `fpcm` 32-bit float with `pcmC` | none | Clear playback passed; protected enqueue was refused, as in Safari. |
-| VP9, `bear-vp9.webm` frames with no `vpcC` | none | Clear playback displayed a frame and reached the end without corruption. |
-| Vorbis, `bear-320x240-audio-only.webm` with CodecPrivate cookie | none | Clear playback reached the end; the damaged-header control did not. |
+| Dolby Vision profile 5 `dvh1` and `dvhe` | `qdh1` | Protected playback reaches the end without corruption; the `dvh1` wrong-key control fails. |
+| AV1 8-bit and 10-bit `av01` | `qav1` | Protected playback completes without decoder errors; the wrong-key control is unreliable (see below). |
+| HE-AAC and HE-AACv2 | `qaac` | Protected playback completes without decoder errors; an AAC wrong-key control fails. |
+| xHE-AAC | `qusa` | Clear and protected playback passes; the wrong-key control fails. |
+| AC-3 and E-AC-3 | `qac3`, `qec3` | Protected playback passes; wrong-key controls fail. |
+| E-AC-3 7.1, DASH-IF FA01 | `qec3` | Plays both with the file's `dec3` and with the box built from Chromium's rate/channel configuration. |
+| FLAC, `bear-flac_frag.mp4` with STREAMINFO only | `qflc` | Clear and protected playback reach the end; the wrong-key control fails. |
+| Opus, `bear-opus.mp4` with OpusHead | none | Clear playback passes; no protected type exists. |
+| ALAC, stereo ALACSpecificConfig from Apple's encoder | `qlac` | Clear and protected playback passes; the wrong-key control fails. |
+| PCM `ipcm` 16/24-bit and `fpcm` 32-bit float with `pcmC` | none | Clear playback passes; protected enqueue is refused, as in Safari. |
+| VP9, `bear-vp9.webm` frames with no `vpcC` | none | Clear playback displays a frame and reaches the end without corruption. |
+| Vorbis, `bear-320x240-audio-only.webm` with CodecPrivate cookie | none | Clear playback reaches the end; the damaged-header control does not. |
 
-FLAC, Opus and ALAC were run with `--muted` (2026-11-07): every audio renderer muted
-at volume 0, which still decodes each packet and logs decoder errors, so
-nothing plays through the speakers. One of four muted runs of the three FLAC
-clips stalled the protected one at 1.88 s with 18 of 27 frames enqueued:
-AVFoundation's audio renderer stopped asking for samples and the clock reached
-the end of what it had. The three later runs passed every check; the cause
-isn't established.
+Muted audio still decodes. The core's `CheckRequestLater` recovers when
+AVFoundation omits a ready-for-more-data callback, including muted FLAC: it checks
+readiness after 100 ms and delivers the pending request once under the request
+gate. A flush or a newer request invalidates the old callback.
 
 Controls through the same path: Axinom's own H.264 segment as served (144/144
 frames), this program's encryption of H.264 (82/82) and HEVC (82/82), and
@@ -128,9 +121,8 @@ AV1 caveat: Apple's AV1 decoder decodes garbage tile data without complaint.
 Under six wrong keys, two gave decode errors (24 and 68 corrupted frames) and
 four looked exactly like the right key. Protected AV1 frames can't be read
 back (`copyDisplayedPixelBuffer` returns nothing, while the clear stream gives
-`&8v0` frames). So the frames are decrypted with the key (some wrong keys
-break them; the right key never has), but correct decryption of every block
-isn't proven.
+`&8v0` frames). The fixture therefore treats AV1 metrics as decoder health
+only; they cannot reliably distinguish every wrong-key output.
 
 7.1 channel layout: CoreMedia's top layer for the file's `dec3` (Lrs/Rrs
 in `chan_loc`) is 8 channels, `EAC3_7_1_A` (L C R Ls Rs LFE Rls Rrs).
@@ -143,8 +135,6 @@ with the file's own box. CoreMedia lists
 both as 8 channels, `EAC3_7_1_A`, over a 6-channel layer. Chromium also counts
 8 channels for 7.1 wide (Lc/Rc); such a stream gets the Lrs/Rrs box, so Apple
 places its extra pair as rear surrounds.
-
-Open problems: none in the core.
 
 Platform behaviour (checked to fail, so a change would show up):
 
@@ -173,5 +163,5 @@ Platform behaviour (checked to fail, so a change would show up):
   protected with every block encrypted (pattern 0:0) fails about half its
   frames even with the right key.
 
-Not covered: Dolby Vision profile 8, per-sample key rotation, license
-renewal, HDCP and external displays.
+License renewal has a separate `RenewalScenario` in the
+[core harness](../README.md).

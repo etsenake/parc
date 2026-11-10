@@ -39,15 +39,14 @@ A local Easel pane focuses its canvas after native deselection; selecting an
 already focused Easel preserves its title/text editor. A blank tab without a
 content target leaves focus with the window.
 
-## Delivery boundary
+## Source owners and checks
 
 The app uses the existing native selection/layout and close transactions. Model
 and compiler checks cover stale targets, original-page ownership and atomic
-selection. They do not establish live browser focus or visual acceptance. See
-[split groups](split-groups.md) for full layout, command choreography and
+selection. See [split groups](split-groups.md) for full layout, command choreography and
 accessibility contracts.
 
-### Separate focus correction
+### Separate focus
 
 Context and accessibility actions bind the original selection plus every page
 and editor claim. Failed group/selection persistence leaves both unchanged.

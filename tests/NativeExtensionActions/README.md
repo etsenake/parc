@@ -36,26 +36,23 @@ Toolbar buttons use Chromium's `kToolbarButton` source and menu tiles use
 Generation tokens, eager image copies and explicit dispatch draining protect
 lifetimes across synchronous model callbacks and nested menus.
 
-## Verification and integration gates
+## Checks
 
 The AppKit shell, model snapshots and bridge have component and compiler
-coverage. A passing source check does not mean a genuine Chromium test linked or
-executed; the test fixture needs valid CEF initialization.
+coverage. The Chromium test fixture requires valid CEF initialization.
 
 Nine genuine Browser/TabList/model cases cover copied metadata and pin order,
 navigation, selection/detachment epochs, unload/reload under the same ID,
 disabled-action fallback, actual activeTab target, security refusal, nested pin
 observer shutdown and change coalescing. They use the upstream test profile and
-real native container/controller; they do not establish installer, worker,
-popup or full browser-runtime compatibility. The standard Chrome fixture's CEF
-runtime prerequisite remains an execution gate.
+real native container/controller.
 
 `check-chromium.py SOURCE_TREE` requires the complete current applied source/hash
 cohort and exact generated object membership, then runs only syntax checks using
-each owning target's actual flags. It refuses an unintegrated candidate. The
-private candidate was checked with an isolated VFS against v49 target flags;
-that is compatibility evidence, not registration, linking or executed tests.
+each owning target's actual flags. It refuses an unintegrated candidate.
 
-The production bridge and tests share the native extension target. Actual shell
-clicks, asynchronous icon delivery, extension restart, security ordering and
-multi-window behavior require their own recorded integration results.
+The production bridge and tests share the native extension target. The
+[native runtime suite](../NativeRuntime/README.md) exercises real action
+snapshots, model pin order, stale selection refusal and selected-tab grants.
+The shell consumes the same bridge for toolbar, Site Control Center and Command
+Bar actions.

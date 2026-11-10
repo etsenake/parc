@@ -20,10 +20,8 @@ The chooser owns the original WebContents, main and requesting-frame documents, 
 
 The upstream device host prefers presentation or remote playback and, where Chromium's enabled audio-mirroring feature permits, offers tab mirroring for audio speakers and groups. The latter starts the real mirroring route; because it is not a presentation route, the unconsumed website context receives Chromium's cancellation/no-screen result when its controller is retired. No tab or desktop source is substituted for the website's successful presentation callback.
 
-## Checks and remaining comparison
+## Checks
 
 Pinned native/Chromium compiler checks cover the Cast and presentation adapters.
 Focused manager, supplemental-picker, presentation-item and service regression
-sources have compilation coverage; this is not test execution. Device
-interoperability, network/OS permission presentation and integrated keyboard,
-accessibility and appearance remain unverified. PiP work is not reopened.
+sources cover original-owner validation, replacement and route callbacks.

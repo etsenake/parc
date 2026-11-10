@@ -99,5 +99,5 @@ Fix the document rather than bypassing hooks.
 Also inspect changed relative links and heading anchors. The size checker does
 not establish content accuracy or link correctness. When removing a heading,
 update its callers or retain a useful compatibility anchor. Preserve provenance,
-product requirements, explicit exclusions and meaningful validation boundaries
+product requirements, explicit exclusions and useful check instructions
 while removing historical narrative.

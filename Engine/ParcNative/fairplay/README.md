@@ -66,7 +66,7 @@ The proof harness is [tests/FairPlay](../../../tests/FairPlay/README.md), run by
 | `DecoderBuffer` + `DecryptConfig` | `EncodedSample` + `DecryptInfo` |
 | `StartPlayingFrom` / `SetPlaybackRate` / `SetVolume` / `Flush` / `GetMediaTime` | same names (plus `SetMuted`); the rate picks the audio renderer's pitch algorithm as WebKit's `AudioVideoRendererAVFObjC` does (Spectral off 1x, else Varispeed) |
 | `Renderer::ParcSetPlaybackRateAt` (Parc) | `SetPlaybackRateAt`: the rate on another renderer's clock (a time at a host time), as WebKit's `setRateAtHostTime`, so a hand-off from Chromium's renderer has no gap |
-| `Renderer::SetPreservesPitch` | `SetPreservesPitch` (true until set; the GPU adapter has no call for it yet, as `media::mojom::Renderer` carries none) |
+| `Renderer::SetPreservesPitch` | `SetPreservesPitch` (true until set in the core; the Chromium FairPlay client and adapter do not forward page changes, so this route keeps pitch preservation enabled) |
 | `RendererClient::OnWaiting(kNoDecryptionKey)` | `OnWaitingForKey` |
 | `OnEnded` / `OnError` / `OnVideoNaturalSizeChange` / `OnBufferingStateChange` | same names; a later natural size is reported when the clock reaches its first sample (WebKit's `sizeWillChangeAtTime`) |
 | compositing (`ca_renderer_layer_tree.mm`) | `display_layer()` (a `CALayer` host filled by the `AVSampleBufferDisplayLayer`) |
@@ -197,9 +197,10 @@ as they are:
   some kinds (SPS and PPS under a known VPS) keeps the earlier sets of the
   other kinds. A rebuild that fails leaves the previous record and formats in
   place. The config's natural size wins over the stream's own display size.
-- Dolby Vision arrives as profile and level only. The `dvcC`/`dvvC` is built
-  from them, with compatibility ID 0 for profiles 4, 5 and 7, 2 (SDR) for 9,
-  and 1 (HDR10) assumed for 8.
+- Dolby Vision carries profile and level plus the Safari route's SDR marker
+  and color transfer. The adapter preserves SDR compatibility ID 2 and HLG
+  compatibility ID 4; otherwise the core uses the profile's default. Profile
+  10 uses an AV1-based `dav1` entry with `av1C` and `dvvC`.
 - AC-3 and E-AC-3 carry no `dac3`/`dec3`. The box is parsed from the first
   syncframe's header when it is in clear bytes (E-AC-3 substreams grouped by
   type and ID). When the whole sample is encrypted, the box comes from the
@@ -238,12 +239,11 @@ profile 5 and `av01` video with `mp4a.40.5` (HE-AAC) audio, probing
 - Codecs: `VideoCodec::kHEVC` (`hvc1`/`hev1`), `kDolbyVision` (`dvh1`/`dvhe`,
   `hvcC` + `dvcC`/`dvvC`), `kAV1` (`av1C`, never Annex B) and `AudioCodec::kAAC`
   for every AudioSpecificConfig object type. Each decodes through the renderer
-  from Chromium's own test media (tests/FairPlay). No public FairPlay-protected
-  sample exists for Dolby Vision, AV1, HE-AAC or xHE-AAC, so only their
-  protected format descriptions are checked, not protected decoding. On this M3, VideoToolbox
-  hardware-decodes `avc1`, `hvc1`, `dvh1` and `av01`; CoreAudio has protected
+  from Chromium's own test media. The [protected-codec harness](../../../tests/FairPlay/codecs/README.md)
+  encrypts clear fixtures with a licensed public test key and exercises their
+  protected decode path. CoreAudio has protected
   decoders for AAC, HE-AAC, HE-AACv2, xHE-AAC, AC-3, E-AC-3, FLAC (`qflc`) and
-  ALAC (`qlac`), none for Opus. AV1 needs M3 or later.
+  ALAC (`qlac`), none for Opus. Hardware AV1 decoding needs M3 or later.
 - FLAC and Opus come from Chromium's MP4 parser as the STREAMINFO block and
   the OpusHead it rebuilds from `dOps`. The core turns them back into `fLaC`
   with `dfLa` and `Opus` with `dOps` (48 kHz in the sample entry, the input
@@ -282,8 +282,7 @@ compositor places the protected layer without obtaining decoded video pixels.
 Canvas, WebGL and capture APIs cannot read protected frames.
 
 The GPU sandbox includes the required FairPlay/CoreMedia services; dedicated
-sandbox fixtures document component coverage. Service-specific playback and
-power behavior still need separately authorized runtime validation.
+sandbox fixtures describe the required grants and their ablation checks.
 
 Audio bypasses Chromium's mixer. Web Audio's `createMediaElementSource` receives
 silence from this path. Volume, mute, ducking and output device map to the native
@@ -320,8 +319,7 @@ sharing one MediaKeys. Key-held samples and buffering are separate signals.
   13.0–14.3), as WebKit's `flushVideo`
   and `updateAllRenderersHaveAvailableSamples`; audio's availability is
   untouched. The Failed status that comes with `requiresFlushToResumeDecoding`
-  isn't reported as a decode error. No public trigger exists on macOS, so this
-  path is untested.
+  isn't reported as a decode error.
 - `RendererStatus` counts both (`audio_automatic_flushes`,
   `video_decoder_resets`, `redelivered`), and `audio_double_enqueues` counts
   audio samples enqueued while already in the renderer (0 unless a page
@@ -363,7 +361,7 @@ sharing one MediaKeys. Key-held samples and buffering are separate signals.
   updates wait for it.
 - A renewal (`update("renew")`, or one AVFoundation starts) runs beside the
   answered request. The answered key stays usable until the renewal succeeds
-  (it then replaces the key) or fails (it is dropped).
+  (it then replaces the key); a failed renewal retains the answered key.
 - A JSON license response is validated entirely before any of it is applied.
 
 ## Device identifier
@@ -393,8 +391,8 @@ the raw 16-byte key ID for sinf and FairPlay pssh requests (and, as a Parc
 extension, for keyids and for cenc without a FairPlay pssh, which requests the
 key IDs the other pssh boxes name), and `TransportStreamIdentifier` for mpts
 init data (`{"codc": n, "mtyp": n, "cont": "mpts"}`, passed to AVFoundation
-unchanged), which names no key ID; key statuses report that name, and no
-renderer can use the key. WebKit's legacy `com.apple.fps.2_N`
+unchanged). Key statuses report that transport-stream identifier, and the
+SAMPLE-AES renderer matches it to the TS samples. WebKit's legacy `com.apple.fps.2_N`
 sessions name the SPC by the page's bytes instead; Parc's legacy script
 (`Engine/ParcRenderer/parc_webkit_media_keys.h`) sends them as sinf init data
 with a `"contentId"` member (base64), and AVFoundation gets the sinf entries
@@ -428,8 +426,7 @@ readiness keep only the latest request. Teardown cancels loads and invalidates
 queued callbacks.
 
 The HLS player, timeline, key and sandbox fixtures are described in
-[FairPlay tests](../../../tests/FairPlay/README.md). Component results are distinct
-from integrated playback or physical receiver acceptance.
+[FairPlay tests](../../../tests/FairPlay/README.md).
 
 ## HLS assets (FairPlay keys on the native HLS route)
 

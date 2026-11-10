@@ -1,237 +1,184 @@
 # Product backlog
 
-This is the bounded list of unfinished product work carried forward from the
-old ledger and reconciled on November 10, 2026. It is not a new authorization to
-start every task. [Product status](parity.md) describes what exists; subsystem
-guides own technical details. Legacy IDs keep unresolved obligations traceable
-without preserving thousands of completed rows or percentage tables.
+This is an index of concrete unfinished behavior and explicit product decisions,
+checked against the implementation on November 10, 2026. Subsystem guides own the
+details. [Product status](parity.md) describes what exists; this list does not
+authorize starting every task.
 
-Keep only concrete missing behavior, explicit deferrals and product decisions.
-Completed fixes do not wait for user confirmation or another browser test.
+Completed fixes stay done. Missing test receipts, browser access, user confirmation
+and routine release timing are not backlog work. Update or remove an item when
+its implementation lands; do not preserve completed rows or percentage tables.
 
-Keep the existing requested order for otherwise unassigned work: Routing,
-Windows, Data, Performance, then Folders, Archive, Command bar, Tab switcher,
-Peek and Onboarding. Product quality applies throughout. Finish assigned work
-first; scripting and the specifically deferred items below stay deferred.
+For otherwise unassigned work, retain the requested order: Routing, Windows,
+Data, Performance, Folders, Archive, Command bar, Tab switcher, Peek and Onboarding.
+Finish assigned work first; explicit deferrals remain deferred.
 
 ## Reported behavior
 
-- **What's New address leakage:** native History can retain its local file URL,
-  and engine copy paths can expose the committed file address while a new typed
-  destination is loading. These need engine history/copy handling, beyond the
-  current shell's address masking. [Software updates](software-update.md).
+- **What's New address leakage:** native History can record the bundled file URL,
+  and Copy URL can expose it while a new typed destination is loading. Add exact
+  engine history/copy guards. [Software updates](software-update.md).
 
-## Sidebar accessibility
+## Sidebar accessibility and presentation
 
-- Outline/row accessibility selection is read-only; press/custom actions can
-  select items. Control-Space highlight movement has no dedicated announcement,
-  although scope changes do. Decide and verify the intended assistive-technology
-  behavior before treating the broader accessibility requirement as complete.
+- Add direct accessibility row-selection setters and spoken Control-Space
+  highlight changes. Existing press/custom selection actions work.
   [Sidebar accessibility](sidebar-accessibility.md).
-- Forced-appearance floating-sidebar contrast and uncolored/colored swipe
-  material changes remain documented presentation risks. Resize frame holds,
-  transfer subscriptions and fallback frame restoration have specific boundary
-  semantics, not newly reproduced bugs. Keep their focused checks and limits in
-  [sidebar motion](sidebar-motion.md) and [resizing](sidebar-resize.md).
+- Honor Reduce Motion in preview-card and Library-width transitions. Restore
+  New Tab's pressed scale after a cancelled click, and prevent long Space drags
+  from exposing blank strip content. [Sidebar motion](sidebar-motion.md),
+  [previews](sidebar-previews.md), [theme rendering](space-theme-rendering.md).
+- Finish the documented theme-control hover/dot/tooltip details and floating
+  material transitions. Refresh visible tooltips when their palette changes.
+  [Theme editor](space-theme-editor.md), [sidebar motion](sidebar-motion.md).
+- Keep fallback window geometry and sidebar width associated with the same saved
+  window. Refresh open Library width after Space-count changes and enlarge the
+  empty card's Pinned drop target during drag. [Resizing](sidebar-resize.md),
+  [Space management](space-management.md).
 
 ## Routing
 
-- **ROUTE12 — reconcile:** disposition and unavailable-destination fallback
-  behavior remains the single carried routing requirement. Audit current
-  external/internal routing and exact destination ownership before defining the
-  remaining change, including shared Profile reservation during overlapping
-  private-window creation. The Links editor and close-commit handoff are implemented.
-  [Settings](settings.md), [routing interaction](routing-interaction.md).
+- **ROUTE12:** overlapping private-window creation lacks a shared Profile-lifetime
+  reservation. Failed creation or last-window teardown can retire a context while
+  another creator still needs it. Add shared claims through creation and teardown.
+  Ordinary disposition and missing-destination fallback are implemented.
+  [Private lifecycle](private-route-lifecycle.md).
 
 ## Windows and lifecycle
 
-- **WIN11 — reconcile:** remaining private Library, document-modal,
-  capture-to-Easel and cross-window retirement cases. Private Downloads, Media
-  catalog access and explicit capture-to-Library already exist; do not present
-  the whole private experience as missing. [Private lifecycle](private-route-lifecycle.md),
-  [capture Library](capture-library.md).
-- **WIN12 — reconcile:** Dock/logout and restoration across window states,
-  window-local folder disclosure, pinned-section interaction and nested Peek
-  behavior. Dock reopen, window identity, Stay on Top and session records are
-  implemented. [Windows](windows-lifecycle.md).
-- **WIN13 — reconcile:** remaining focus/activation, auxiliary-window and modal
-  interruption cases, including popup handoffs. Existing command admission and
-  owner-validation work must stay intact. Native command-window and hidden-page
-  destination queries exist; remaining shell consumers still need integration.
+- **WIN11:** private windows cannot create/open Notes or Easels, browse document
+  Library, or send captures to Easels. Private Media and explicit capture saves
+  to the parent Profile's Library work. [Capture Library](capture-library.md).
+- **WIN12:** folder disclosure is shared across windows; move it into window
+  presentation state. Whole pinned-section collapse also needs implementation.
+  [Windows](windows-lifecycle.md), [sidebar resizing](sidebar-resize.md).
+- **WIN13:** wire shortcut-education Copy availability to native admission, and
+  retain/revalidate the original page and hidden destination before popup handoff.
   [Window activation](window-activation.md).
-- **WIN15 — reconcile:** remaining private/popup/standard-window appearance and
-  transitions; existing private indicators and popup controls are implemented.
+- **WIN15:** Site Control Center omits enabled extensions without actions despite
+  an available native catalog. Consume that catalog without inventing actions.
   [Window appearance](window-appearance.md).
 
 ## Data and credentials
 
-- **DATA13 — acceptance:** stable Developer ID signing and Parc Safe Storage
-  migration are implemented. Actual encrypted restart and upgrade/authorization
-  continuity still lack acceptance; preserve old keys and ciphertext and normal
-  macOS consent. [Keychain contract](../tests/KeychainNamespace/README.md),
-  [release operations](master-release.md).
-- **DATA14, DATA16 — reconcile:** source-specific discovery/access/recovery,
-  keyboard/accessibility and presentation. Import now processes all readable
-  source Profiles into their intended destinations; the old destination/profile
-  chooser is not current UI. Recent onboarding completion supersedes broad
-  “missing import UI” statements.
-- **DATA15 — capability boundary:** unsupported source credential/encryption
-  formats must be reported honestly, with supported file-import alternatives.
-  Determine which additional sources are feasible before promising support.
-  [Browser import](browser-import.md).
+- **DATA15:** direct encrypted Chromium-family import supports the macOS `v10`
+  format; Safari uses its default history/bookmarks store and explicit password
+  CSV; Firefox imports history/bookmarks/forms. Additional formats and modern
+  Safari Profile stores need reader support before being offered.
+  [Import capabilities](../Engine/ParcImport/README.md#reader-and-writer-boundary).
 
 ## Performance
 
-- **PERF04–PERF08 — acceptance and measured fixes:** navigation/page loads;
-  input, scroll and sidebar frame pacing; sustained media/long sessions;
-  memory/CPU; cold/warm startup in the shipping configuration. Existing targeted
-  fixes do not constitute a representative benchmark. Keep measurement and
-  regression fixes separate from merely stabilizing a test.
-  [Navigation performance](performance-navigation.md).
-- **PERF09 / DL-PERF-01** remains deferred until after the product polish pass;
-  see [deferred work](#deferred).
+The specifically deferred Downloads investigation is [below](#deferred).
+New performance work needs a concrete delay or resource problem; a missing
+benchmark is not a defect. [Current implementation](performance-navigation.md).
 
 ## Folders
 
-These older obligations need a focused source reconciliation against the
-implemented collection transactions before choosing another implementation:
-
-- **FOLD16–FOLD18:** cross-Profile collection moves; external/copy dragging and
-  spring-loaded expansion; remaining Favorite/selection modifier cases. Mixed
-  ordinary-tab/folder-plus-split Option-copy remains unsupported; whole splits
-  copy. Note/Easel splits cannot copy across Profiles, and documents still
-  referenced by the source Profile cannot move across it.
-- **FOLD19–FOLD20:** group opening and included archive/restoration cases.
-- **FOLD21–FOLD22:** move feedback, menus, disclosure/ancestor highlighting,
-  drag geometry/motion and haptics. Inline folder-title editing remains separate
-  from the split New Folder command's guarded rename prompt.
-- **FOLD23:** decide whether another Duplicate entry should support Undo from
-  actual current ownership. The existing context command has none; this is not
-  an instruction to invent a duplicate-Undo feature.
-
-[Folder moves](folder-moves.md), [folder commands](folder-commands.md).
+- Ordinary-tab, folder and mixed-selection Option-drag copies are absent; whole
+  splits copy. Note/Easel splits cannot copy across Profiles, and document moves
+  refuse while source aliases still reference the document. These need explicit
+  copy/relocation transactions. [Folder moves](folder-moves.md).
+- Close does not handle selections containing only empty saved folders. Favorite
+  tiles do not join range/multi-selection. [Sidebar selection](sidebar-selection.md).
+- Decide whether Duplicate should gain Undo. Existing duplication works without
+  it; preserve that behavior until the decision changes. [Folder commands](folder-commands.md).
 
 ## Archive and history
 
-- **HIST13:** row-click preview/Expand is implemented. A persisted close-time
-  snapshot cache remains separate from that live preview. The current shell
-  accepts one HTTP(S) web record only; document/group preview promotion still
-  lacks its complete shell transaction despite an existing document owner.
-- **HIST14 — reconcile:** nested archived-root reconstruction and broader
-  restoration cases.
-- **HIST15–HIST17 — reconcile:** search/filter/selection presentation,
-  Library/preview transitions, keyboard/accessibility/focus and action ownership.
-
-[Archive](archive.md), [archive preview](archive-preview.md),
-[document previews](archive-preview-documents.md).
+- **HIST13:** live previews support one web tab. Connect document/group preview,
+  close consent and promotion to their existing owners; add persisted close-time
+  images if previews must show the page as it was when closed.
+  [Archive preview](archive-preview.md), [document owners](archive-preview-documents.md).
+- **HIST14:** Library Put Back cannot reconstruct deleted nested folder roots.
+  Existing window Undo restores the tree; persisted Archive restoration needs
+  folder provenance. [Archive](archive.md).
 
 ## Command bar
 
-- **CMD25 — source gaps:** Task Manager requires a native page, so Notes,
-  Easels and empty windows need a window-level engine route. Restore Data lacks
-  a sidebar-backup producer. Expand/Collapse Pinned Section lacks its sidebar
-  implementation. Keep unsupported actions honest until their dependencies exist.
-- **CMD24, CMD26–CMD28 — reconcile:** remaining ranking/preview decisions,
-  geometry/theme treatment, pointer/motion/haptics and IME/keyboard/accessibility
-  interruption cases. In-window hosting, live commands and recent editing/ranking
-  corrections already exist. Toolbar/pane/split/extension controls covered by
-  the command bar still lack the sidebar's hover-suppression admission.
-- **Related hover status:** Option-click and Option-Command-click already open
-  links in splits; hovered-link outcome text still lacks their split variants.
-  This is a label gap, not missing split navigation.
-
-[Command bar](command-bar.md), [web interactions](web-interactions.md).
+- **CMD25:** Task Manager needs a window-level route for Notes/Easels/empty
+  windows; Restore Data needs a backup producer and restore flow; Pinned
+  expand/collapse needs sidebar state and commands. [Command bar](command-bar.md).
+- Controls covered by the command bar can still show hover feedback. Some
+  extension-popup, site-bubble and accessibility focus states also lack sidebar
+  button-reveal ownership. [Command bar](command-bar.md), [navigation](navigation.md).
 
 ## Other input and surface limits
 
-- Generic Edit → Format → Font menu integration is absent; existing Note/Easel
-  formatting works. Shortcut storage still conflates keypad Clear with Escape
-  and keypad multiply with `*`. [Keyboard](keyboard-navigation.md).
-- Blocked popups have no chooser/release UI. The hovered-link capsule updates
-  its theme on presentation/appearance changes, not continuously while editing
-  a Space theme. [Web interactions](web-interactions.md).
-- Download-arrival motion has no Reduce Motion gate. Filesystem Documents,
-  Desktop and Screenshots have flyout sources, not dedicated Library pages;
-  Library Documents means Notes/Easels. [Downloads](download-library.md).
-
-## Tab switcher
-
-- **MRU10–MRU13 — reconcile:** remaining card geometry/type/material, replacement
-  and selection motion, refusal/interruption, keyboard/accessibility and
-  hover/pressed/haptic cases. The working switcher and navigation stay supported.
-
-[Tab switcher](tab-switcher.md).
+- Add the generic Edit → Format → Font menu route, distinct keypad identities
+  and recording mappings beyond F20. Existing document formatting works.
+  [Keyboard](keyboard-navigation.md).
+- Split dividers lack keyboard/accessibility resizing. Pane-handle drag,
+  double-click separation, Option-close unsplit and sidebar drop-to-combine are
+  absent. [Split groups](split-groups.md).
+- Add split outcomes to hover text, refresh a visible status capsule during
+  Space-theme edits, and provide blocked-popup chooser/release UI.
+  [Web interactions](web-interactions.md).
+- Tooltip shortcut feedback needs the same shifted-symbol matching as command
+  dispatch. [Tooltips](tooltips.md).
+- Download arrival needs a Reduce Motion path. [Downloads](download-library.md).
+- Extension context-menu side-panel toggle is unavailable even though toolbar
+  side-panel presentation works. [Extension interaction](extensions-interaction.md).
 
 ## Peek
 
-- **PEEK15 — product decision:** retain the explicit local link policy until
-  its intended factory defaults are settled.
-- **PEEK16–PEEK19 — reconcile:** geometry/states; Tab/Shift-Tab/accessibility
-  edges; continuous swipe reversal/cancellation; snapshots, promotion/reveal and
-  haptics. Open in Current Space and live Expand bindings are already implemented.
-- **PEEK20–PEEK21 — reconcile:** parent physical-window transfer, missing-parent
-  handling and remaining promotion/cross-window creation provenance.
-
-[Peek](peek.md).
+- Continuous swipe tracking, reversal/cancellation, exit fade/snapshots and
+  haptics are absent; dismissal currently handles completed right swipes.
+- Nested Peek needs parent-chain ownership. Existing parent transfer, orphan
+  promotion, Tab/Shift-Tab and live Expand are implemented.
+- **PEEK15:** keep the enabled automatic/Shift-click defaults until the product
+  decision changes. [Peek](peek.md).
 
 ## Onboarding
 
-- **OB17 — ordering decision:** Favorites currently follows the whole import.
-  Keep that default pending a decision on moving it immediately after source
-  selection. The other 35 original onboarding requirements are implemented;
-  old “75% complete” and already-closed theme/extension/reveal/traversal gaps
-  were stale. [Onboarding](onboarding.md).
-- Actual VoiceOver, Full Keyboard Access, default-browser consent and complete
-  first-launch/replay behavior have separate acceptance limits; do not turn
-  passing model or compiler checks into a real-user acceptance claim.
+- **OB17:** Favorites follows the complete import. Keep that ordering pending a
+  decision about moving it immediately after source selection.
+- Failed iCloud Passwords installation and imported ad-blocker removal are only
+  logged. Show failure/retry feedback so setup does not silently leave a choice
+  unapplied. [Onboarding](onboarding.md).
 
-## Media capability and acceptance
+## Media
 
-- The FairPlay decoder still lacks VP8/MP3 support; transitions into unsupported
-  codecs need truthful failure/recovery. VP9/Vorbis remain restricted to the
-  Safari-identity route. [FairPlay integration](../Engine/ParcNative/fairplay_chromium/README.md).
-- Media playback grants have a remaining multi-player association concern;
-  document-move preservation exists, but no current two-player reproduction
-  establishes a user-visible failure. Add a focused ownership regression before
-  selecting a correction. The same integration guide owns this detail.
-- Protected-service playback, output protection/privacy, physical AirPlay
-  receivers and system caption styling have device/runtime acceptance limits.
-  Built engine artifacts do not resolve those limits. Preserve the supported
-  native-HLS route and the MSE route's lack of AirPlay rather than promising
-  unsupported casting. [FairPlay identity](fairplay-identity.md),
-  [native HLS](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md).
+Casting continuity across navigation and picture in picture are implemented.
+The remaining work is specific to these paths:
 
-## Product quality
-
-**POL01–POL12** now describe product quality, not a mandate to copy another
-browser. Preserve coverage of the complete interaction/state inventory; icon
-optics; typography/spacing/material; light/dark/themes and window sizes; menus
-and modals; hover/pressed/disabled/selected states; animation/frame pacing;
-interruption/reversal; keyboard/gestures/focus; accessibility/contrast/Reduce
-Motion; sound/haptics; and integrated journeys. Fix concrete defects as they
-are found. Sampled flows cannot establish exhaustive coverage.
+- Correct competing-player cast selection, capture the route's original document
+  before navigation, and narrow same-source Connecting labels and speaker-only
+  discovery. Media Source on a frozen page cannot append beyond its buffered
+  range. [Casting and media boundaries](safari-media-edges.md).
+- FairPlay needs player-specific audibility-grant association and MSE pitch-policy
+  forwarding. VP8/MP3 and protected Opus/PCM remain unsupported; codec eligibility
+  and fallback behavior belong in
+  [FairPlay integration](../Engine/ParcNative/fairplay_chromium/README.md).
+- Protected playback also retains reused-context start-date, nested translucent
+  video-layer and encrypted AC-3/E-AC-3 channel-layout limits.
+  [Native HLS](../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md),
+  [composition](../Engine/ParcNative/fairplay_chromium/COMPOSITING.md),
+  [native audio](../Engine/ParcNative/fairplay/README.md).
+- Native-HLS alternative availability must respect CSP; transport-stream parsing
+  still stops at the first matching descriptor. See
+  [media boundaries](safari-media-edges.md) for the exact cases and retained scope.
+- Worker ManagedMediaSource lacks playback-position feedback for its high-water
+  stop. Existing shared workers keep their old identity until they end. The
+  [web surface](fairplay-safari-surface.md) and [identity](fairplay-identity.md)
+  guides own these limits and the output-protection/codec details.
 
 ## Deferred
 
-- **SCRIPT10–SCRIPT13:** additional quit/command/error behavior, collection order
-  and properties, window/sidebar mutation and scripting failure contexts remain
-  deferred by the current product scope. Preserve existing scripting. [Scripting](scripting.md).
-- **PERF09 / DL-PERF-01:** after polish, investigate large-Downloads-folder
-  stalls. This began as reported feedback about another browser, not a
-  reproduced Parc defect. Establish the original report and reproduction;
-  distinguish filesystem size, history size, transfer throughput and UI stalls
+- **SCRIPT10–SCRIPT13:** broader scripting commands, error contexts, collection
+  properties and window/sidebar mutation remain deferred. Existing automation
+  works. [Scripting](scripting.md).
+- **PERF09 / DL-PERF-01:** investigate large-Downloads-folder stalls after polish.
+  The original report concerned another browser; establish a repeatable Parc
+  delay and distinguish filesystem size, history size, throughput and UI work
   before choosing a fix. [Downloads](download-library.md).
-- **Cross-window limitations accepted for deferral on November 2:** a frozen
-  placeholder can be blank after automatic return to a non-key window; a close
-  that cannot begin after transfer can leave the tab selected; foreign-window
-  split close eligibility is restricted; Close-Peek Undo is unavailable while
-  its parent is elsewhere, though Reopen works. Reconcile current source before
-  reopening these explicitly skipped cases. [Windows](windows-lifecycle.md).
+- **Cross-window cases explicitly deferred:** automatic return to a non-key
+  window can leave a blank placeholder; failed close after transfer can leave
+  the tab selected; foreign-window split closing is restricted; Close-Peek Undo
+  requires the local parent, though Reopen works. [Windows](windows-lifecycle.md).
+- Rare reverse-playback optimization and additional 3GPP/AMR formats retain their
+  existing scope decisions. [Media boundaries](safari-media-edges.md).
 
-## Keeping this useful
-
-No completed-row history, percentage denominator, obsolete agent reservation or
-raw test transcript belongs here. Each active item needs a concrete next step
-and an owner only while ownership is current. Update or remove the item when
-its source change lands; retain lasting behavior in the subsystem guide.
-Keep this backlog below 400 lines, and follow [AGENTS.md](../AGENTS.md).
+Keep details in the linked guide and current ownership only while a task is
+active. Follow [the documentation policy](documentation.md); this index should
+stay below 400 lines.

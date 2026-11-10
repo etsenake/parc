@@ -86,8 +86,7 @@ long lists would put all those views into AppKit's layout engine.
 
 Rows and the outline expose selection as read-only. Selection changes use
 items' press and custom actions; direct accessibility assignment of selected
-rows is not implemented. This is a current capability limit, not a claim that
-VoiceOver cannot select tabs.
+rows is not implemented. VoiceOver selection uses the existing item actions.
 
 ## Window key-view loop
 

@@ -1,6 +1,6 @@
 # WebAudio AAC through the GPU process
 
-Overlay 292 lets WebAudio's `decodeAudioData` decode AAC and M4A. Parc's FFmpeg
+WebAudio's `decodeAudioData` decodes AAC and M4A. Parc's FFmpeg
 has no AAC decoder, so when the renderer's FFmpeg decode fails on AAC,
 `blink::PlatformAudioFileDecoder` keeps FFmpeg's demuxing and
 `media::AudioFileReader`'s trimming in the renderer and sends each packet to the
@@ -21,8 +21,7 @@ each of these with the actual flags of its target in the engine's ninja files:
 - `audio_toolbox_audio_decoder.cc`, `audio_file_reader.cc`, `ffmpeg_common.cc`,
   `mojo_audio_decoder.cc` and `mojo_audio_decoder_service.cc`;
 - `platform_audio_file_decoder.cc` and `base_audio_context.cc`, with WebAudio's
-  Blink flags. `base_audio_context.cc` is only compiled; turning the result
-  into an `AudioBuffer` needs a renderer;
+  Blink flags; `base_audio_context.cc` is included in the compiler checks;
 - `webaudio_aac_test.cc`, with `media/mojo/services` flags.
 
 `--compile-only` stops there, which is all that is safe while an engine build
@@ -62,12 +61,6 @@ The test checks:
   returns the same audio, at macOS's length, and its time is printed as a
   `TIME` line.
 
-Status, November 1: passed against the built overlay 292 engine, 53 checks and
-no failures. The `TIME` results are in
-[WebAudio `decodeAudioData`](../../docs/engine-flags.md#webaudio-decodeaudiodata).
-
-Before overlay 291, an AudioToolbox-only probe of the same fixtures showed the
-decoder losing HE-AAC's last 962 frames, limiting HE-AAC v2's peaks (1.026
-from a source peaking at 0.6) and decoding raw ADTS HE-AAC at its 22,050 Hz
-core. Overlay 291 fixed all three, so this check treats any of them as a
-failure.
+The sample comparisons cover the HE-AAC tail, HE-AAC v2 peaks above 1.0 and
+implicitly signalled ADTS at the full SBR rate. Each is a regression assertion
+in the current fixture, alongside the transport-failure controls above.

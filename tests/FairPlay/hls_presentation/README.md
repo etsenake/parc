@@ -2,7 +2,7 @@
 
 Proves the presentation side of Parc's native HLS route
 ([NATIVE_HLS.md](../../../Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md))
-against real AVFoundation on this Mac, before any engine build.
+against AVFoundation independently of the Chromium engine.
 
 ```bash
 scripts/test-fairplay-hls-presentation.sh            # every section

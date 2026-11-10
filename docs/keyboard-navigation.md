@@ -247,9 +247,10 @@ identities while activation refreshes registrations.
 one formatter, so recording and default display agree. Passive keycaps do not
 add interactive accessibility elements or change storage/matching.
 
-Storage retains active-layout characters. Keypad Clear currently stores Escape,
-and keypad multiplication stores `*`; distinguishing them needs a storage-format
-change. F21–F35 have display names but physical recording stops at F20.
+Storage retains active-layout characters rather than a separate keypad identity.
+Keypad Clear/Escape and keypad multiplication/`*` cannot have independent bindings.
+F21–F35 have display names, while physical recording's function-key table stops
+at F20.
 
 ## Complete command inventory reconciliation — KB03
 
@@ -288,11 +289,7 @@ Focused suites include `tests/KeyboardNavigation`, `tests/ContentFocusRequest`,
 `tests/SidebarWindowKeyLoop`, the shortcut/command scripts and the Find/Peek
 components. Full Swift typechecking is the iteration check; finished material
 Swift work also needs whole-module SIL under [the working contract](../AGENTS.md).
-These checks are not physical-keyboard, live renderer or visual acceptance.
 
-The remaining product requests are consolidated in [the backlog](backlog.md),
-including store backup/Restore Data, a collapsible Pinned section and Task
-Manager without a native page. Edit → Format → Font menu integration remains
-separate from the already working Note/Easel formatting controls. The keypad
-storage distinction above is also unresolved; no behavior changed in this docs
-cleanup.
+Edit → Format → Font has no application-menu entry; Notes and Easels retain
+their own formatting controls. The [command-bar guide](command-bar.md#checks-and-remaining-work)
+owns the remaining Task Manager, Restore Data and Pinned-section requests.

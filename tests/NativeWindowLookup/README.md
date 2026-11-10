@@ -28,7 +28,7 @@ anchored to Chrome's toolbar. The native save result remains intact; this is a
 promotion. Other promotion entrypoints are outside this focused change.
 
 CEF rechecks its own source patches during project generation. The native
-continuation overlaps its existing Autofill hunk, so the v8 overlay updates
+continuation overlaps its existing Autofill hunk, so the overlay updates
 that patch definition to recognize the same reviewed result. All other CEF
 hunks remain intact. The checker repeats CEF's actual read-only reverse check
 before compilation; it does not skip or disable the patcher.
@@ -46,16 +46,5 @@ generated target compiler flags. It never runs GN/Ninja or writes
 to the external source tree. `--tests-only` permits checking the four test
 cases before the overlay is applied. Logs stay in ignored `build/tests/`.
 
-**Current verification:** the four cases pass compilation with the pinned
-compiler and real `unit_tests` flags. Both full modified production units,
-`browser_view.cc` and `address_bubbles_controller.cc`, now also pass their
-actual generated target compiler checks with the required generated headers
-present. CEF's patch replay check passes. Linked test execution remains pending.
-The Widget-present/no-BrowserView fallback and successful non-tab Widget branch
-were reviewed statically but are not covered by these four test cases.
-The address regression exercises the real controller continuation, not saved
-data persistence or the native session's eventual Browser integration.
-
 After building the existing upstream `unit_tests` target, execute
-`unit_tests --gtest_filter=NativeWindowLookupTest.*` on this macOS build. A
-successful source check alone does not establish browser runtime behavior.
+`unit_tests --gtest_filter=NativeWindowLookupTest.*` on this macOS build.

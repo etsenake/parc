@@ -32,5 +32,4 @@ or security reservations. A crashed page may retain the mute setting for reload.
 ## Validation
 
 Swift/native compiler checks and inert speaker components cover the API boundary,
-lease guards and host reparenting animation. They do not establish live keyboard,
-VoiceOver, browser interaction or physical appearance acceptance.
+lease guards and host reparenting animation.

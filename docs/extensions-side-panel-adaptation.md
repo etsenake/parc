@@ -41,13 +41,12 @@ alone. The scope must still contain the actual page in the same window. Hidden
 views and disabled controls are refused, and a generic superview is never treated
 as the application root.
 
-## Verification and evidence
+## Checks
 
 Focused native compiler checks cover the panel and host with their actual
 Chromium flags. Inert input/focus checks cover original-owner validation and
 teardown; header and layout checks include narrow/zero-sized fit and real close
 callbacks. Whole-module Swift checks cover the app bridge.
 
-These checks do not establish functional extension loading, live focus traversal
-or renderer runtime behavior. [Geometry](extensions-geometry.md) and
-[lifecycle](extensions-lifecycle.md) carry the related contracts.
+[Geometry](extensions-geometry.md) and [lifecycle](extensions-lifecycle.md)
+carry the related contracts.

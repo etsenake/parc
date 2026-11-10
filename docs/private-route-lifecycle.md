@@ -3,8 +3,8 @@
 Ordinary New Incognito Window and a routed private navigation must share the
 same genuine primary off-the-record (OTR) Profile. A URL-only replay or fallback
 to a normal Profile cannot preserve the original request's privacy and ownership.
-This document retains the unresolved ROUTE12 creation-lifetime contract; it is
-not a claim that the shared reservation below is implemented.
+The shared Profile-level reservation described below is the remaining ROUTE12
+creation-lifetime work.
 
 ## Existing source boundaries
 
@@ -63,5 +63,5 @@ Inert/component coverage must exercise existing-context reuse, first creation,
 synchronous reentry, two pending claims, failed/cancelled creators in both
 orders, last-Browser destruction during a claim, a new Browser appearing before
 cleanup, exact one-use window binding, parent/shutdown invalidation and
-exactly-once callback/teardown. Source/compiler checks are separate from runtime
-acceptance. The actionable integration remains in [the backlog](backlog.md).
+exactly-once callback/teardown. The actionable integration remains in
+[the backlog](backlog.md).

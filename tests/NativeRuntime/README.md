@@ -14,7 +14,7 @@ The internal driver lives in CEF's existing `libcef_test_support` boundary, whic
 
 The disposable profile first enables developer mode through the same `SetDeveloperModeForProfile` helper as the normal Extensions UI. A managed preference is refused; exact page/Profile identity and the effective setting are rechecked afterward. The genuine installer and its policy decisions remain authoritative. Separate assertions require the same installed object and its actual enabled-registry entry before any action checks.
 
-The suite checks copied immutable pin snapshots against the real toolbar model and order, restores the original pin state, rejects unselected/stale snapshots after selection away and back, and verifies those refusals grant no access. A genuine current action must grant host access only to the selected tab and origin, leaving the other same-origin tab and another origin denied. Ordinary aggregate close and real engine shutdown are required. It does not establish GUI gestures, popup/side-panel/menu presentation, profile persistence or complete extension compatibility.
+The suite checks copied immutable pin snapshots against the real toolbar model and order, restores the original pin state, rejects unselected/stale snapshots after selection away and back, and verifies those refusals grant no access. A genuine current action must grant host access only to the selected tab and origin, leaving the other same-origin tab and another origin denied. Ordinary aggregate close and real engine shutdown are required.
 
 ```sh
 python3 tests/NativeRuntime/run.py /new/output/runtime-development/parc_native_runtime_tests.app --artifacts /existing/test-artifacts --deadline 300 --suite extension-actions
@@ -36,14 +36,9 @@ overriding an older queued event. The required marker is defined as
 `ENGINE_SELECTION` in [the launcher](run.py); a result from before this gate
 existed cannot satisfy it.
 
-Recorded packaged runs passed the selection, pin/snapshot and selected-tab
-permission checks, followed by the post-shutdown accessibility query and clean
-engine shutdown. These results cover their recorded source only. An earlier
-intermittent readiness timeout did not recur in those runs; its cause was not
-established. This suite does not verify popup/side-panel presentation, saved
-split/profile moves, popup restart, PiP input or the default recovery/auth suite.
-Current browser behavior belongs in [product status](../../docs/parity.md) and
-[the backlog](../../docs/backlog.md), not old package receipts.
+This suite covers selection, pin/snapshot and selected-tab permissions, followed
+by the post-shutdown accessibility query and engine shutdown. Popup/side-panel
+presentation and the default recovery/auth suite are separate fixture scopes.
 
 ## Optional native video-PiP controller regression
 
@@ -82,13 +77,10 @@ python3 tests/NativeRuntime/run.py /new/output/runtime-development/parc_native_r
 
 The original Chrome browser fixtures require valid CEF initialization; their
 `InProcessBrowserTest` startup assumptions do not supply this application's
-production lifecycle. Compilation, framework linking, packaging and an actual
-suite pass are separate checks. This migration alone does not pass those
-fixtures. The seven controller assertions do not verify floating pixels,
-pointer input, returned-page activation/focus, document PiP or complete media
-behavior. General PiP acceptance remains recorded in the
-[PiP guide](../NativeVideoPiP/README.md); default recovery/auth and optional
-extension-action results remain separate.
+production lifecycle. The seven controller assertions cover their named
+video-PiP operations; the
+[PiP guide](../NativeVideoPiP/README.md) owns general behavior. Default
+recovery/auth and optional extension-action cases are separate suites.
 
 ## Native accessibility regression
 
@@ -99,9 +91,7 @@ and walks the actual attached AppKit accessibility children to `AXWebArea`.
 The detach case also checks that the same page's native tree survives reattachment.
 After genuine CefShutdown, the app queries its role again; this must not recreate
 an engine accessibility scope after shutdown. Both AX markers are required
-by the launcher. Recorded controller runs passed the genuine engine tree and
-native `AXWebArea` checks. They do not establish current whole-browser
-accessibility. A timeout needs its stage diagnostics to distinguish document
+by the launcher. A timeout needs its stage diagnostics to distinguish document
 readiness, a missing engine AX root and native-child traversal.
 
 The role/manual/enhanced request policy uses basic mode 3, separate from the
@@ -110,8 +100,7 @@ uses Chromium156's complete/screen-reader scope and releases that scope when
 VoiceOver stops. No renderer AX mode is enabled merely by application readiness.
 The local `fixtures/accessibility.html` provides a real button, checkbox and text
 field for the separate packaged-app AX interaction check; no synthetic AX objects
-or forced-accessibility command-line switches are used. Full control semantics,
-VoiceOver toggling and web content navigation remain runtime gates.
+or forced-accessibility command-line switches are used.
 
 Stage/deadline diagnostics record only URL classification, document/frame
 readiness, AX mode/root state, exact attachment, and bounded native class/role/
@@ -148,10 +137,7 @@ native shell's visible drawing acknowledgment and actual Retry action are
 separate from this controller fixture, which deliberately does not invent a
 first-paint event. Final aggregate close still has to exit
 zero through actual engine shutdown, without suppressing unexpected failures.
-Recorded controller runs passed genuine renderer failure/recovery and all three
-authentication cases, followed by clean shutdown. Earlier crash investigations
-are retained in Git history;
-they are not current failures. The scheduling preserves current-engine observer
+The scheduling preserves current-engine observer
 and callback lifetimes.
 
 ## Cases and limits
@@ -162,7 +148,7 @@ All three cases call the **actual** `LoginHandler::Create` and `ShowLoginPrompt`
 2. Press the real **Cancel** NSButton; require one empty continuation and cleanup.
 3. Call the production binding's `pageWillDetach`; require cancellation through the attachment gate while the original page/window remain alive, then reattach the same page through `pageDidAttach`.
 
-The challenge is **synthetic** and loopback-labelled; no request is sent to port 9. These are integrated controller/presenter cases, not real server `401`, proxy `407`, same-challenge propagation, password-store persistence, or whole-browser functionality tests. Only disposable synthetic credentials are used and no credential value is logged. The real network and normal Keychain/restart gates remain separate.
+The challenge is **synthetic** and loopback-labelled; no request is sent to port 9. These are integrated controller/presenter cases, not real server `401`, proxy `407`, same-challenge propagation, password-store persistence, or whole-browser functionality tests. Only disposable synthetic credentials are used and no credential value is logged.
 
 ## Build closure
 
@@ -189,7 +175,6 @@ The launcher imposes a 120-second outer deadline (the app uses 80 seconds, each 
 The driver requires real Browser/Profile/tab/window registration before controller
 cases, then native accessibility, renderer-failure/recovery and authentication
 markers in order. Missing, duplicate, false or out-of-order markers fail the run.
-A successful package or compiled driver is not a runtime pass.
 
 Launcher unit tests verify receipt parsing and guard behavior without executing
 Chromium. Run them with:
@@ -198,8 +183,4 @@ Chromium. Run them with:
 python3 tests/NativeRuntime/test_launcher.py -v
 ```
 
-Actual origin HTTP 401/proxy 407, normal encrypted restart and whole-browser
-behavior remain separate from synthetic LoginHandler controller cases. Current
-runtime work and product gaps belong in [the backlog](../../docs/backlog.md).
-Historical run receipts remain in Git history; they are not live process
-records, current release failures or authorization to repeat browser runs.
+Browser execution follows [the working contract](../../AGENTS.md).

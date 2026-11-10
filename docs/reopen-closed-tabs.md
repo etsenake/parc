@@ -103,16 +103,16 @@ scroll state is therefore only as recent as the last saved navigation record.
 History deletion clears stored archives; live pages retain their navigation
 lists and can later write them again as a live session.
 
-## Bounded support and remaining work
+## Related restoration paths
 
-Original referrer/creation-active provenance and exact unread/return semantics
-are separate navigation concerns, not established by this close stack. Nested
-archive folder/split restoration remains a separate integration concern; this
-document does not claim that all Library restoration paths are complete.
+Restoring a closed record preserves its original creation/referrer identities
+and marks selected items read. [Folder commands](folder-commands.md#selection-after-ordinary-delete)
+describe close-time successor selection and the window's referrer pool.
+Library Put Back has its own [archive restoration](archive.md) path; it does
+not consume this window's nested-folder Undo/Reopen record.
 
 ## Validation
 
 `bash scripts/test-close-undo.sh` uses temporary stores and real Undo owners for
 consent, ordering, split regrouping, two-window/Space isolation, stale records,
-save failure/retry, Peek dismissal and private in-memory behavior. Model and
-compiler checks do not establish live browser navigation or interaction.
+save failure/retry, Peek dismissal and private in-memory behavior.

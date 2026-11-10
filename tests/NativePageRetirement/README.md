@@ -12,7 +12,7 @@ this irreversible boundary.
 
 ## Integration
 
-- Map `tab_retirement.h/.cc` to `//cef/libcef/browser/parc_native` and import `tab_retirement.gni` from that directory's `BUILD.gn` (or append its exact source_set there).
+- The overlay maps `tab_retirement.h/.cc` to `//cef/libcef/browser/parc_native`; the production `BUILD.gn` defines their shared `tab_retirement` source set.
 - The overlay compiles `native_page_retirement.mm` in the production `libcef_static` mac source list with `//cef/libcef/browser/parc_native:tab_retirement` in its deps. The canonical public bridge category and application/page changes are part of the same cohort.
 - The test BUILD/source map to `//cef/tests/parc_native_page_retirement`, with the `unit_tests` source set registered in `//chrome/test:unit_tests` under `is_mac && enable_cef`.
 - `native-page-retirement.patch` owns both contextual UnloadController changes and retains the earlier `RequestBrowserDeletion` drain gate. Every target remains bound to its pinned original and final SHA-256.
@@ -23,8 +23,11 @@ After normal generation, build `unit_tests` and run:
 out/Release_GN_arm64/unit_tests --gtest_filter=NativePageRetirementTest.*
 ```
 
-## Coverage and evidence boundaries
+## Coverage
 
 The source cases cover a later Stay, every approval preceding unload, late cancellation replies, moved-page reply ownership, renderer crash/retry on the same WebContents, prepared/committed document replacement, committed transfers, overlapping window close, duplicates/nonmembers, synchronous custom confirmation, untouched peers, an empty set still requiring model validation, validator reentry, actual destruction completion and sequential cross-Browser prompts.
 
-The 19 test cases were checked with actual generated pinned-Clang production and `unit_tests` flags via a VFS overlay. The source-set graph and linked test execution remain pending integration. Renderer beforeunload dialogs, AppKit sheets, transfer during renderer unload, browser/profile service drains and real multiwindow archive behavior still require linked/browser runtime tests. These compiler results do not assert those tests passed.
+The overlay includes the production source set and test target. The fixture
+exercises Chromium retirement ownership with injected public confirmation
+callbacks; renderer dialog presentation belongs to the connected native dialog
+service.

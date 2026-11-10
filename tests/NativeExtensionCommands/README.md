@@ -47,12 +47,9 @@ fallback. It must not also dispatch extensions. The typed native outer delegate
 must retain the skip guard for direct calls; ordinary renderer ACK already
 filters those events. Action controllers, popup services and the native BrowserWindow factory are
 installed by the production host.
-OS-global listener registration remains Chromium's responsibility. Native menu
-precedence, renderer-consumed keys, repeat/layout/IME, media keys, worker restart,
-incognito routing and real action popup ownership require separate integrated
-verification. General Google networking is outside this task.
+OS-global listener registration remains Chromium's responsibility.
 
-## Checks and current result
+## Checks
 
 The seven real Chromium browser-test cases in
 `extension_keybinding_registry_browsertest.cc` exercise:
@@ -70,9 +67,9 @@ The seven real Chromium browser-test cases in
 7. Native action delivery preserves modifiers, repeat, phase and timestamp,
    with both IME skip and shortcut suspension preventing callbacks.
 
-They are intended to link into Chromium `browser_tests` with the production
-registry source. No dummy headers, fake Browser or replacement EventRouter is
-used. Tests are not yet mapped into the reviewed source overlay.
+The test source uses the real Browser and EventRouter. It is exercised by the
+read-only syntax checker and is not mapped into the overlay's browser-test
+target; the production registry is mapped and connected to native dispatch.
 
 Run the read-only syntax check once generated prerequisites exist:
 
@@ -83,8 +80,6 @@ python3 -B tests/NativeExtensionCommands/check-chromium.py /absolute/path/to/chr
 It reads actual `libcef_static.ninja` and `browser_tests.ninja` compiler flags,
 uses the pinned Clang with `-fsyntax-only`, and writes logs only under ignored
 `build/tests/native-extension-commands/`. It neither generates nor builds the
-external tree. With the actual upstream generated prerequisites present, both
-the production registry and all seven browser-test cases pass syntax-only
-compilation using the pinned compiler and target flags, including warnings as
-errors. This verifies source/API compatibility, not test execution: linked
-browser tests and end-to-end shortcut UX have not run.
+external tree. The production registry and browser-test source use the pinned
+compiler with warnings as errors. The checker verifies source/API compatibility without
+executing the browser-test source.

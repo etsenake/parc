@@ -353,8 +353,9 @@ conversion can update a background group without changing selection.
 New Folder uses the shared atomic collection transaction and one Undo/Redo step.
 Undo compares affected records and refuses while the new folder contains unrelated
 items; Redo preserves a name entered after creation. Ancestors expand, the row
-scrolls into view and its existing rename prompt opens after a guarded delay.
-Inline folder-title editing remains a Folders concern.
+scrolls into view and its inline title editor opens after a guarded delay. A
+prompt is the fallback when the original row cannot host that editor. See
+[folder commands](folder-commands.md#folder-row-creation-and-rename).
 
 A standalone ordinary page shows the two-by-24 right-margin grip, with its resize
 cursor/hover band 44 points high. It is decorative: no trailing pane exists to
@@ -375,9 +376,3 @@ Relevant existing checks are `test-split-context.sh`, `test-split-dividers.sh`,
 `test-split-appearance.sh`, `test-external-split-drop.sh`,
 `test-inter-profile-move.sh`, the model/store suites and `tests/NativeContentDrop`.
 Inspect their entry points and obey [AGENTS.md](../AGENTS.md) before running them.
-
-This guide consolidates implemented source contracts; it does not claim new
-browser, VoiceOver, Full Keyboard Access or live gesture acceptance. Cross-Profile
-document-copy restrictions and mixed-selection copy limits remain explicit above.
-Historical compiler counts, receipts and completed progress entries belong in Git
-history and ignored artifacts, not appended here.

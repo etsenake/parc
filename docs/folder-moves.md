@@ -143,7 +143,6 @@ from outline multi-selection. Unsupported copy intent never silently becomes mov
 
 Store/ownership tests cover nested and mixed placements, original document IDs,
 complete-group admission, capacities, stale/foreign/cycle refusal, real disk-write
-failure, reload, competing claims and rollback. Native transfer tests distinguish
-compiled cases from executed fixtures. No source/component receipt establishes
-live browser interaction, final drag appearance or haptic acceptance.
-Remaining folder/collection behaviors are tracked in [the backlog](backlog.md).
+failure, reload, competing claims and rollback. Ordinary-tab and folder drags
+remain move-only, including mixed selections with splits. The supported
+whole-split copy path and document restrictions are in [split groups](split-groups.md#whole-split-copy-and-external-drags--sp23).

@@ -1,7 +1,6 @@
 # Window appearance and transitions
 
-This guide describes the implemented native surfaces. It does not close the
-remaining window-transition/loading presentation work in [the backlog](backlog.md).
+This guide describes standard, private and popup window surfaces.
 
 ## Private unpinned heading
 
@@ -22,11 +21,11 @@ palette drives controls; the resting URL field uses white at 0.15. The window
 and floating/docked sidebar suppress material/theme canvases. A locked sidebar
 shows the window's own background.
 
-The plus HUD, history chooser, tooltips, recent-tab switcher and hover previews
-receive the private palette. Download review uses the private surface and Dark
+The plus HUD, history chooser, tooltips and recent-tab switcher receive the
+private palette. Download review uses the private surface and Dark
 Aqua. Toasts and the Press Again cue use the private background through the
 shared [toast palette](toasts.md). Private popups currently retain their Space's
-theme with Dark Aqua; complete private-popup presentation remains unverified.
+theme with Dark Aqua.
 
 Show Toolbar is one preference shared by ordinary and private windows. Hiding
 it restores the sidebar URL/navigation controls. An empty window does not gain
@@ -52,8 +51,9 @@ of which buttons fit in the strip.
 The address context menu and accessibility action retain Site Control Center
 access when Extensions is absent. Both revalidate the original key window,
 security admission, native page binding, document revision and lifetime.
-Site Control Center's complete no-action extension content and popup menu/
-loading presentation remain separate follow-ups.
+Site Control Center still lists extension actions only. Enabled extensions
+without an action are absent from its content even though the native catalog
+includes them; the shell needs to consume that catalog.
 
 ## A window with no tab
 
@@ -84,5 +84,4 @@ existing shadow with the pane.
 
 `tests/EmptyWindow`, `tests/ContentFocusRequest`, `tests/SidebarMotion` and
 `tests/SidebarPacing` exercise colors, input/accessibility exclusion, focus,
-shadow geometry and bounded animation work. These are component checks, not
-live window appearance, popup interaction or transition acceptance.
+shadow geometry and bounded animation work.

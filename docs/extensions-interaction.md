@@ -47,10 +47,8 @@ badge appears. Decorative rings and alternate-click wrappers are not duplicate
 accessible elements. Actual extension popup/side-panel contents retain their
 native host/window focus; there is no second shortcut dispatcher into web content.
 
-## Checks and limits
+## Checks
 
 Inert extension-control and Site Control Center components cover action/menu
 leases, invalidation, hide/detach, labels, focus bounds, compression, physical
-picker keys and wrap/empty selection. Swift checks cover integration. These do
-not install extensions, drive browser input or validate live Tab order, popup
-focus or VoiceOver. Those observations remain unverified.
+picker keys and wrap/empty selection. Swift checks cover integration.

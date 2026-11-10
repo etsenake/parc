@@ -240,11 +240,10 @@ take focus away from the native content.
 
 ### Contracts for other families
 
-Previously listed missing Window Zoom/Bring All to Front, Manage Spaces, Change
-Profile, Stay On Top, Extensions menus and typed Appearance commands are present
-in current source. Those old handoffs are closed. Edit → Format → Font menu
-integration still needs reconciliation with the working Note/Easel formatting
-owners; no generic menu chord should preempt their native editing behavior.
+Window Zoom/Bring All to Front, Manage Spaces, Change Profile, Stay On Top,
+Extensions menus and typed Appearance commands are connected. Edit → Format → Font menu
+integration is absent. Its implementation must use the working Note/Easel
+formatting owners without preempting their native editing behavior.
 Task Manager without a native page, Restore Data and collapsible Pinned-section
 work remain in [the backlog](backlog.md).
 
@@ -264,7 +263,7 @@ pin badges a 0.36-second hover dwell followed by 0.12-second fade. Reduce Motion
 removes motion but retains hover-intent dwell. Permission buttons keep native
 press feedback. Status-capsule style/side changes do not animate.
 
-## Checks and remaining work
+## Checks
 
 Focused suites are `tests/SiteControlCenter`, `tests/NativeSitePermissions`,
 `tests/NativeJavaScriptDialogs`, `tests/NativeHTTPAuth`,
@@ -274,9 +273,6 @@ Native changes need their appropriate compiler checks; app changes need the
 Swift checks in [the working contract](../AGENTS.md). Older test helpers may
 present windows: inspect them and follow current authorization.
 
-This documentation cleanup ran no apps or browser tests. Compiler and component
-receipts establish only their recorded scope, not current live pages, rendering
-or input acceptance. Remaining source-level limitations are the split-link hover
-text, live status-capsule theme updates, absent built-in content blocking and
-the cross-family menu work above. Product work needed to close them is outside
-this documentation-only change and is recorded without treating it as completed.
+The [backlog](backlog.md) indexes the remaining split-link hover descriptions,
+live status-capsule theme updates, blocked-popup controls and cross-family
+menu work described above.

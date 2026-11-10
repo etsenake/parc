@@ -35,5 +35,4 @@ retains the complete title in its accessibility label and tooltip.
 media types. It covers stack dimensions, expanded spacing, focus eligibility,
 single-player layout, retained layers, marquee continuity, key-view rebuilding,
 PiP actions that do not reveal the tab and hover-state isolation between players.
-Whole-module compilation checks the real bridge. These are component/compiler
-checks, not live playback, device, VoiceOver or browser-runtime acceptance.
+Whole-module compilation checks the real bridge.

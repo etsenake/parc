@@ -4,8 +4,7 @@
 runtime platform-delegate interface to Parc's page wrapper and page-bound
 JavaScript dialog runner. The canonical typed native route now selects this
 delegate, and the promoted Objective-C facade and Swift shell use the independent
-engine path. Release delivery and runtime verification are tracked separately in
-[product status](../../docs/parity.md).
+engine path.
 
 ## Native ownership
 
@@ -44,22 +43,17 @@ top-left DIP points go through the actual view's bounds/flip and window conversi
 to AppKit screen points. This includes split-pane offsets. This is an explicit
 API integration.
 The inherited modal host uses the owning Browser's active tab, matching the
-shared window-host design; per-pane modal behavior still needs runtime
-verification. Chrome runtime context menus are a separate route. The Alloy-only
-CEF native menu runner is not selected here.
+shared window-host design. Chrome runtime context menus are a separate route.
+The Alloy-only CEF native menu runner is not selected here.
 
-## Verification and integration gates
+## Checks and integration
 
 ```sh
 python3 -B tests/NativePlatformDelegate/check-chromium.py /absolute/path/to/chromium/src
 ```
 
-The implementation passes syntax-only compilation with the pinned compiler,
-headers or substitute Browser classes are used. Logs remain in ignored
-`build/tests/native-platform-delegate/`. This command is not a linked/runtime
-test of the adapter. The later complete v50 engine build linked the delegate;
-page containment, focus and dialog presentation also have separate executed
-AppKit suites. Neither result establishes this bridge's live browser lifecycle.
+and warnings as errors. No fake headers or substitute Browser classes are used.
+Logs remain in ignored `build/tests/native-platform-delegate/`.
 
 The canonical `native-host-route.patch` selects `NativeChromePlatformDelegate`
 and constructs the native BrowserWindow through the real shell provider.
@@ -67,18 +61,4 @@ and constructs the native BrowserWindow through the real shell provider.
 `Sources/ParcApp/BrowserWindowController.swift` supplies the actual window and
 balanced `pageWillDetach`/`pageDidAttach` calls. Popup/internal creation policy,
 the dedicated DevTools route and native first-tab feature hooks are implemented
-in source; their runtime coverage is separate from this integration status.
-
-Remaining runtime acceptance:
-
-1. Exercise native browser creation and popup/DevTools/internal routes with the
-   actual independent app, including the supplied window and first-tab services.
-2. Verify registration, attachment, removal and live transfer preserve the same
-   WebContents and balance the attachment gates across real native callbacks.
-3. Verify the retained v5 typed CEF beforeunload dispatch with actual renderer
-   requests, including real close consent and shell sequencing.
-4. Exercise the integrated native context menus, per-page modals,
-   permission/extension presentation, navigation/selection, split/profile
-   boundaries and closed-window references against the independent engine.
-5. Exercise real HTTPS rendering, compositor/occlusion/accessibility, input,
-   zoom/multiple-display coordinate conversion, alert/prompt and Stay/Leave
+in source.

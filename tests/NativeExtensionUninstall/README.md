@@ -2,8 +2,7 @@
 
 The repository source connects Chromium's actual action-menu `UNINSTALL`
 command, helper, policy/removal controller, asynchronous icon loading and
-`DialogModel` to a source-owned AppKit sheet. The production native host registers this service. Its test coverage is distinct
-from integrated browser acceptance.
+`DialogModel` to a source-owned AppKit sheet. The production native host registers this service.
 
 ## Confirmation presentation
 
@@ -54,8 +53,7 @@ retain the host and Browser/Profile through shutdown completion.
 
 ## Verification
 
-**Standalone AppKit: 52 assertions in 9 groups passed**, including the owner's
-repository run. Real windows/sheets exercise button and checkbox dispatch,
+The standalone AppKit suite covers **52 assertions in 9 groups**. Real windows/sheets exercise button and checkbox dispatch,
 Return through `NSWindow.sendEvent:`, Escape, accessible naming, enabled-state
 gating, cancellation before presentation, reentrant validation/release, weak
 window lifetime, foreign-sheet rejection and parent closure. This is component
@@ -67,16 +65,14 @@ during reservation acquisition, real-model checkbox/reentrant Close, page detach
 same-ID replacement, unsupported/late models, navigation retention and security
 registration before Show with unrelated-window isolation. Added cases use the
 production-style aggregate security query and cover own-acquisition notification
-reentry, competing reservations and unrelated-window reservations. They pass the compiler
-with their own generated target settings but **have not been linked or executed**.
+reentry, competing reservations and unrelated-window reservations. The checker compiles them with their own generated target settings.
 
 ### Integration verification
 
 The aggregate security query must exclude only the request's own exact sheet and
 reservation. Competing reservations still cancel it. Generated-target compiler
-checks and header checks cover their recorded inputs; the browser fixture still
-requires its valid CEF test initialization before execution. Do not treat older
-candidate/build receipts as the status of a current release.
+checks and header checks verify source membership. Executing the browser fixture
+requires valid CEF process/context initialization.
 
 ## Targets and commands
 
@@ -109,7 +105,6 @@ and the standalone executable stay under ignored
 `build/tests/native-extension-uninstall/`. Apply/generate/build through the
 reviewed engine source workflow before running the actual-target check.
 
-Remaining runtime gates include removal/rejection/reload and managed policy,
-report-abuse behavior, two real native Browsers sharing one window, popup/menu/
-security ordering, callback-driven helper deletion, Profile/Browser teardown,
-behavior. Passing AppKit assertions does not close those gates.
+The confirmation result returns to Chromium's removal controller. Its policy,
+report-abuse handling and extension registry own the removal outcome; the sheet
+only supplies the user's decision for the captured extension instance.

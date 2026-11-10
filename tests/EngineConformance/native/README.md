@@ -4,6 +4,7 @@ Browser/app launch is currently prohibited by [AGENTS.md](../../../AGENTS.md).
 The runtime procedures below are retained for a future explicitly authorized
 run. Source/model checks do not grant that authorization.
 
+This harness is registered in the pinned overlay as `parc_host_harness`. It tests an upstream native-host capability separately from the production Parc shell. See the [ownership contract](../../../Engine/ParcHost/README.md).
 
 Source checks, without launching an app or accessing a real profile/Keychain:
 
@@ -38,5 +39,3 @@ Required runtime record:
 | Native view lifetime | Close/reopen the host panel with Chrome's header/action UI, change tabs while hidden, close tabs, then close the window. No stale owner/model access; the reopened panel reflects real model state. |
 | Extensions | Use `chrome://extensions` to load the [local MV3 fixture](../README.md), then its **real Chrome action**. Run its documented identity, scripting, command, worker, popup-window and profile-nonce procedures. Compare native snapshot IDs with fixture API output. Fixture PASS does not verify denied activeTab enforcement. |
 | Restart | Cleanly quit; relaunch with `--reuse-profile` and confirm the fixture's known nonce/local storage survives. Independent profile directories must not share that nonce. |
-
-Do not claim live tab transfer, full popup POST/opener preservation, four-pane presentation, multi-profile bindings in one physical window, extension installation UX parity, production settings or complete engine service exclusions from this harness. Those remain separate required gates.

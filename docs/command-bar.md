@@ -56,7 +56,7 @@ Command–Shift–C copies the highlighted row's actual URL; it is unavailable f
 commands or unresolved input. Command–C remains ordinary native selected-text
 copy. See [copy commands](keyboard-navigation.md#copy-commands).
 
-## In-window hosting — November 9
+## In-window hosting
 
 Every command surface, shadow and privacy banner lives in one host view inside
 the browser window. The browser stays key, so Edit Theme, History, Extensions,
@@ -333,13 +333,10 @@ native. This uses `SidebarTablistBackground`, not another input monitor.
 identity, default ranking, row diffs, submission, menus and typed targets. The
 command-bar scripts build focused production components; native search has
 separate owner/lifecycle coverage. Follow [the working contract](../AGENTS.md)
-before running checks. Source/component success does not establish live browser
-navigation, material/shadow rendering or all input-method combinations.
+before running checks.
 
 Current source still has these separate limitations, tracked in [the backlog](backlog.md):
 Task Manager needs a native page; Restore Data needs a backup producer and restore
 flow; the Pinned section is not collapsible. Toolbar/pane/split/extension controls
-covered by the bar still need the same hover-occlusion rule as sidebar rows.
-Broader command-bar presentation and input-method acceptance remains unverified;
-old failures from the removed child-panel architecture are not current defect
-claims without a fresh reproduction.
+covered by the bar can still show hover feedback underneath it; their tracking
+does not use the same topmost-view check as sidebar rows.

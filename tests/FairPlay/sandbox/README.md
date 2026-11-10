@@ -90,12 +90,11 @@ past the last switch, and the clock never ran out of data after it started
 (no HAVE_NOTHING). For AAC the format check only shows the core took the new
 config (it builds AAC's clear format at once); E-AC-3's comes from its first
 syncframe, video's from the first keyframe. The video switch and the E-AC-3
-leg are clear: protected HEVC after H.264 under one CDM, and E-AC-3's box
-built from an encrypted syncframe after a switch, aren't exercised.
+leg use clear samples; the other legs use the protected Axinom fixtures.
 
-No public FairPlay vector has Dolby Vision, E-AC-3 or AC-3. Their clear clips
-use the same decoders and output a protected sample does once it is
-decrypted, so they exercise everything except the key path.
+This sandbox fixture uses clear Dolby Vision, E-AC-3 and AC-3 clips. The
+[protected-codec fixture](../codecs/README.md) encrypts those codecs locally
+with a licensed test key.
 
 ### Outcomes
 
@@ -136,7 +135,7 @@ attempted no fetch of its own. Besides the MSE route's harmless denials it
 was refused, and plays without, `com.apple.PerfPowerTelemetryClientRegistrationService`,
 `com.apple.coremedia.volumecontroller.xpc`,
 `com.apple.accessibility.mediaaccessibilityd` (caption appearance
-preferences; unchecked for legible output), `networkd.plist`,
+preferences), `networkd.plist`,
 `eligibility.plist` and a few sysctls.
 
 Without the FairPlay rules, `h264` fails at renderer Initialize:
@@ -183,16 +182,9 @@ few methods with `apply-message-filter`. The same filters here make
 the filters the same profile applies and plays. A non-Apple process can't use
 message filters, so the grants cover the whole user clients.
 
-## What it doesn't cover
+## Fixture boundary
 
-- The real GPU process has more state (Metal, the command buffer, a
-  CAContext the browser hosts), and its executable sits in a helper app bundle
-  (`HELPER_BUNDLE_ID` is set there). The probe's display layer sits in no
-  layer tree, so the frames above are decoded and counted, not shown on
-  screen, and on-screen scaling (where `IOSurfaceAcceleratorClient` could
-  matter) isn't exercised.
-- One Mac and OS version, with built-in audio output. Intel Macs' kernel audio
-  drivers, third-party HAL plug-ins, AirPlay, Bluetooth and external displays
-  aren't exercised.
-- Protected Dolby Vision, AV1, E-AC-3 and AC-3: no public FairPlay vectors
-  exist, so their clear clips stand in for the decoders and output.
+The probe applies the GPU seatbelt profile before loading AVFoundation. Its
+layer is unhosted, so it checks decoder state and frame counts. Layer placement
+belongs to the [presentation fixture](../hls_presentation/README.md) and
+[compositor tests](../../../Engine/ParcNative/fairplay_chromium/COMPOSITING.md#verification-targets).
