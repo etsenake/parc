@@ -7655,7 +7655,7 @@
  };
 --- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
 +++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -4781,6 +4781,15 @@
+@@ -4788,6 +4788,15 @@
        origin_trial_feature_name: "Parakeet",
      },
      {
@@ -7705,7 +7705,7 @@
    }
 --- a/third_party/blink/renderer/core/execution_context/execution_context.cc
 +++ b/third_party/blink/renderer/core/execution_context/execution_context.cc
-@@ -44,6 +44,7 @@
+@@ -45,6 +45,7 @@
  #include "third_party/blink/renderer/core/execution_context/agent.h"
  #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_state_observer.h"
  #include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
@@ -7713,7 +7713,7 @@
  #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
  #include "third_party/blink/renderer/core/frame/csp/execution_context_csp_delegate.h"
  #include "third_party/blink/renderer/core/frame/integrity_policy.h"
-@@ -439,6 +440,10 @@
+@@ -451,6 +452,10 @@
    return window_interaction_tokens_ > 0;
  }
  
@@ -14486,7 +14486,7 @@
  void Page::SetVisibilityState(
      mojom::blink::PageVisibilityState visibility_state,
      bool is_initial_state) {
-@@ -1205,6 +1216,20 @@
+@@ -1209,6 +1220,20 @@
      case ChangeType::kTextTrackStyle:
        CSSDefaultStyleSheets::Instance().ResetTextTrackStyleSheet();
        UAStyleChanged();
@@ -14833,7 +14833,7 @@
  #include "third_party/blink/renderer/core/css/css_property_value_set.h"
  #include "third_party/blink/renderer/core/css/document_style_environment_variables.h"
  #include "third_party/blink/renderer/core/css/style_engine.h"
-@@ -52,6 +57,7 @@
+@@ -55,6 +60,7 @@
  #include "third_party/blink/renderer/modules/media_controls/elements/media_control_timeline_element.h"
  #include "third_party/blink/renderer/modules/media_controls/elements/media_control_volume_slider_element.h"
  #include "third_party/blink/renderer/modules/remoteplayback/remote_playback.h"
@@ -14841,7 +14841,7 @@
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
  #include "third_party/blink/renderer/platform/heap/thread_state.h"
  #include "third_party/blink/renderer/platform/media/remote_playback_client.h"
-@@ -93,8 +99,12 @@
+@@ -96,8 +102,12 @@
    WebTimeRanges Seekable() const override { return seekable_; }
    bool HasVideo() const override { return true; }
    bool HasAudio() const override { return has_audio_; }
@@ -14854,7 +14854,7 @@
    WebTimeRanges seekable_;
  };
  
-@@ -111,6 +121,27 @@
+@@ -114,6 +124,27 @@
        HTMLMediaElement& element) override {
      return &RemotePlayback::From(element);
    }
@@ -14883,19 +14883,20 @@
  
  Element* GetElementByShadowPseudoId(Node& root_node,
 @@ -210,6 +241,12 @@
-     test::RunPendingTasks();
-   }
- 
-+  void SetElementSize(int width, int height) {
-+    media_controls_->NotifyElementSizeChanged(
-+        DOMRectReadOnly::FromRect(gfx::Rect(0, 0, width, height)));
+     auto* size = media_controls_->MediaElement().GetBoundingClientRect();
+     media_controls_->NotifyElementSizeChanged(DOMRectReadOnly::FromRect(
+         gfx::Rect(size->left(), size->top(), size->width(), height)));
 +    test::RunPendingTasks();
 +  }
 +
-   void SimulateHideMediaControlsTimerFired() {
-     media_controls_->HideMediaControlsTimerFired(nullptr);
++  void SetElementSize(int width, int height) {
++    media_controls_->NotifyElementSizeChanged(
++        DOMRectReadOnly::FromRect(gfx::Rect(0, 0, width, height)));
+     test::RunPendingTasks();
    }
-@@ -324,6 +361,16 @@
+-
++
+@@ -327,6 +364,16 @@
    void SetReady() {
      MediaControls().MediaElement().SetReadyState(
          HTMLMediaElement::kHaveEnoughData);
@@ -14912,8 +14913,8 @@
    }
  
    // Set the focus .
-@@ -1858,4 +1905,264 @@
-   EXPECT_TRUE(found_toast_message);
+@@ -2032,4 +2079,264 @@
+   }
  }
  
 +// Parc: WebKit's AirPlay for an element whose player plays to AirPlay
@@ -15179,7 +15180,7 @@
  }  // namespace blink
 --- a/third_party/blink/renderer/modules/media_controls/resources/mediaControls.css
 +++ b/third_party/blink/renderer/modules/media_controls/resources/mediaControls.css
-@@ -420,6 +420,82 @@
+@@ -424,6 +424,82 @@
  audio::-internal-media-controls-cast-button.on,
  video::-internal-media-controls-cast-button.on {
    background-image: light-dark(url(ic_cast_on.svg), url(ic_cast_on_white.svg));

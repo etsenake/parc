@@ -13,7 +13,7 @@
  
  #include <algorithm>
  #include <iterator>
-@@ -4083,7 +4089,8 @@
+@@ -4084,7 +4090,8 @@
  #else  // !BUILDFLAG(IS_ANDROID)
    Profile* profile =
        Profile::FromBrowserContext(web_contents->GetBrowserContext());
@@ -23,7 +23,7 @@
      preferred_color_scheme = blink::mojom::PreferredColorScheme::kLight;
    } else if (profile->IsIncognitoProfile() && !security_principal.IsWebUI()) {
      // Incognito contents follow the device color mode.
-@@ -7487,6 +7494,11 @@
+@@ -7492,6 +7499,11 @@
  std::unique_ptr<content::VideoOverlayWindow>
  ChromeContentBrowserClient::CreateWindowForVideoPictureInPicture(
      content::VideoPictureInPictureWindowController* controller) {

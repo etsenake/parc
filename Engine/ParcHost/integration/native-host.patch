@@ -11,18 +11,19 @@
    if (is_win) {
      deps += [
        ":bootstrap",
-@@ -502,6 +506,10 @@
-     # Support for UI input events.
+@@ -506,6 +510,10 @@
      "//ui/views:test_support",
    ]
+-
 +
 +  if (is_mac) {
 +    deps += [ "//cef/tests/parc_native_runtime:driver" ]
 +  }
- 
++
    configs += [
      ":libcef_includes_config",
-@@ -634,6 +642,7 @@
+   ]
+@@ -637,6 +645,7 @@
      "libcef/browser/javascript_dialog_runner.h",
      "libcef/browser/javascript_dialog_manager.cc",
      "libcef/browser/javascript_dialog_manager.h",
@@ -30,7 +31,7 @@
      "libcef/browser/main_runner.cc",
      "libcef/browser/main_runner.h",
      "libcef/browser/media_access_query.cc",
-@@ -973,6 +982,7 @@
+@@ -976,6 +985,7 @@
      "//components/network_session_configurator/common",
      "//components/pdf/browser",
      "//components/pdf/renderer",
@@ -38,7 +39,7 @@
      "//components/plugins/renderer",
      "//components/pref_registry",
      "//components/printing/browser",
-@@ -1097,6 +1107,86 @@
+@@ -1100,6 +1110,86 @@
  
    if (is_mac) {
      sources += includes_mac + [
@@ -125,7 +126,7 @@
        "libcef/browser/chrome/chrome_content_browser_client_cef_mac.mm",
        "libcef/browser/chrome/chrome_web_contents_view_delegate_cef_mac.mm",
        "libcef/browser/native/browser_platform_delegate_native_mac.h",
-@@ -1121,7 +1211,109 @@
+@@ -1124,7 +1214,109 @@
        "//chrome/app/chrome_main_mac.mm",
      ]
  
@@ -236,7 +237,7 @@
    } else {
      sources += [
        "libcef/browser/chrome/chrome_web_contents_view_delegate_cef.cc",
-@@ -2312,6 +2504,21 @@
+@@ -2315,6 +2507,21 @@
      output_path = "{{bundle_resources_dir}}/English.lproj"
    }
  

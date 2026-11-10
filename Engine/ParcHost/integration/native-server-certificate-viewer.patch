@@ -20,7 +20,7 @@
    }
  
    source_set("repost_form_warning_controller") {
-@@ -1518,6 +1522,9 @@
+@@ -1519,6 +1523,9 @@
    }
  
    if (is_mac) {
