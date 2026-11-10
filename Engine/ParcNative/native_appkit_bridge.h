@@ -1230,6 +1230,17 @@ NS_SWIFT_UI_ACTOR
     NS_SWIFT_NAME(paymentFeedbackPresented(_:for:));
 @end
 
+// Shows an engine-built menu in the app's own style. -presentMenu: is
+// synchronous like -popUpMenuPositioningItem:atLocation:inView:: it sends the
+// menu delegate's open and close calls, returns once the menu has closed and
+// any chosen item has been performed, and answers whether the menu showed.
+// -cancelMenu ends a running presentation; otherwise it does nothing.
+NS_SWIFT_UI_ACTOR
+@protocol PCNativeMenuPresenter <NSObject>
+- (BOOL)presentMenu:(NSMenu*)menu NS_SWIFT_NAME(present(_:));
+- (void)cancelMenu NS_SWIFT_NAME(cancel());
+@end
+
 NS_SWIFT_UI_ACTOR
 @interface PCNativeBrowserWindow (ExtensionActions)
 // Synchronous user dismissal of the visible panel in this exact selected,
@@ -1266,6 +1277,12 @@ NS_SWIFT_UI_ACTOR
 - (BOOL)showExtensionActionContextMenu:(PCNativeExtensionAction*)action
                                forPage:(PCNativePage*)page
     NS_SWIFT_NAME(showExtensionActionContextMenu(_:for:));
+// The same menu, shown by `presenter` instead of AppKit at the pointer; nil
+// is the method above.
+- (BOOL)showExtensionActionContextMenu:(PCNativeExtensionAction*)action
+                               forPage:(PCNativePage*)page
+                             presenter:(nullable id<PCNativeMenuPresenter>)presenter
+    NS_SWIFT_NAME(showExtensionActionContextMenu(_:for:presenter:));
 - (BOOL)setExtensionAction:(PCNativeExtensionAction*)action
                     pinned:(BOOL)pinned
                    forPage:(PCNativePage*)page

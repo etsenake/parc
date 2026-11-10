@@ -31,6 +31,7 @@
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_registry_observer.h"
 #include "extensions/common/extension.h"
+#import "native_appkit_bridge.h"
 #include "ui/base/base_window.h"
 #include "ui/base/models/image_model.h"
 #include "ui/base/models/menu_model.h"
@@ -183,13 +184,15 @@ class NativeExtensionContextMenu::Session final
  public:
   Session(BrowserWindowInterface& browser,
           NativeExtensionActionHost& host,
-          ExtensionActionViewModel& action)
+          ExtensionActionViewModel& action,
+          id<PCNativeMenuPresenter> app_presenter)
       : browser_(browser.GetWeakPtr()),
         shell_(&host),
         action_(&action),
         id_(action.GetId()),
         extension_(action.GetExtension()),
-        window_(host.PopupParentWindow()) {}
+        window_(host.PopupParentWindow()),
+        app_presenter_(app_presenter) {}
   ~Session() override { StopObserving(); }
 
   bool active() const { return active_; }
@@ -297,17 +300,23 @@ class NativeExtensionContextMenu::Session final
       Cancel();
       return false;
     }
-    //
-    // Use AppKit's actual screen->window->view conversion for both flipped and
-    // unflipped roots; original unflipped fallback appears to mix coordinates.
-    NSView* root = window_.contentView;
-    NSPoint point = [root
-        convertPoint:[window_ convertPointFromScreen:NSEvent.mouseLocation]
-            fromView:nil];
-    [controller_.menu popUpMenuPositioningItem:nil
-                                    atLocation:point
-                                        inView:root];
-    const bool opened = opened_;
+    bool opened;
+    if (app_presenter_) {
+      opened = [app_presenter_ presentMenu:controller_.menu];
+    } else {
+      //
+      // Use AppKit's actual screen->window->view conversion for both flipped
+      // and unflipped roots; original unflipped fallback appears to mix
+      // coordinates.
+      NSView* root = window_.contentView;
+      NSPoint point = [root
+          convertPoint:[window_ convertPointFromScreen:NSEvent.mouseLocation]
+              fromView:nil];
+      [controller_.menu popUpMenuPositioningItem:nil
+                                      atLocation:point
+                                          inView:root];
+      opened = opened_;
+    }
     Cancel();
     return opened;
   }
@@ -321,6 +330,7 @@ class NativeExtensionContextMenu::Session final
     shell_ = nullptr;
     StopObserving();
     [controller_ cancel];
+    [app_presenter_ cancelMenu];
     // Keep controller and targets alive until the nested AppKit stack returns.
   }
   void StateChanged() {
@@ -454,6 +464,7 @@ class NativeExtensionContextMenu::Session final
   const std::string id_;
   scoped_refptr<const extensions::Extension> extension_;
   NSWindow* __weak window_;
+  id<PCNativeMenuPresenter> __strong app_presenter_;
   TabListInterface* tabs_ = nullptr;
   extensions::ExtensionRegistry* registry_ = nullptr;
   bool observing_ = false;
@@ -503,6 +514,7 @@ NativeExtensionContextMenu::~NativeExtensionContextMenu() {
 }
 bool NativeExtensionContextMenu::Show(
     ExtensionActionViewModel& model,
+    id<PCNativeMenuPresenter> app_presenter,
     extensions::ExtensionContextMenuModel::ContextMenuSource source) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (run_state_->stopping || (session_ && session_->active())) {
@@ -519,7 +531,7 @@ bool NativeExtensionContextMenu::Show(
   if (!model_use.acquired()) {
     return false;
   }
-  session_ = std::make_shared<Session>(browser_, host_, model);
+  session_ = std::make_shared<Session>(browser_, host_, model, app_presenter);
   auto keep = session_;
   // No access to this after the native loop: a command may destroy the
   // presenter.

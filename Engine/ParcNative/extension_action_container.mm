@@ -80,7 +80,7 @@ class NativeExtensionActionContainer::ActionDelegate final
     const std::string id = model_->GetId();
     auto model =
         owner->Find(id);  // Hold real model across native menu callbacks.
-    if (model && !owner->shell_.ShowActionContextMenu(*model) && owner) {
+    if (model && !owner->shell_.ShowActionContextMenu(*model, nil) && owner) {
       owner->shell_.ExtensionCapabilityUnavailable(id, "action context menu");
     }
   }

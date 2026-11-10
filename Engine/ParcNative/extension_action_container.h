@@ -13,6 +13,7 @@
 #import "extension_popup_presenter.h"
 #include "ui/base/accelerators/accelerator.h"
 @class PCNativeWindowSecurityReservation;
+@protocol PCNativeMenuPresenter;
 class ExtensionActionViewModel;
 class BrowserWindowInterface;
 class TabListInterface;
@@ -48,7 +49,9 @@ class NativeExtensionActionHost {
   virtual bool HandlePopupMenuKey(content::WebContents*,
                                   const input::NativeWebKeyboardEvent&) = 0;
   virtual bool InspectPopup(content::WebContents*) = 0;
-  virtual bool ShowActionContextMenu(ExtensionActionViewModel&) = 0;
+  // A nil presenter shows AppKit's menu at the pointer.
+  virtual bool ShowActionContextMenu(ExtensionActionViewModel&,
+                                     id<PCNativeMenuPresenter> presenter) = 0;
   virtual void CloseExtensionsMenu() = 0;
   virtual bool ToggleExtensionsMenu() = 0;
   virtual void ExtensionActionsChanged() = 0;

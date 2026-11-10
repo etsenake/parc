@@ -477,7 +477,7 @@ bool NativeExtensionActionBridge::ShowEnabledContextMenu(
   auto model = ValidateEnabled(value, contents);
   if (!model) return false;
   Operation operation(dispatch_);
-  return container_.shell_.ShowActionContextMenu(*model);
+  return container_.shell_.ShowActionContextMenu(*model, nil);
 }
 NSArray<PCNativeExtensionAction*>* NativeExtensionActionBridge::Snapshot(
     content::WebContents& contents,
@@ -604,13 +604,14 @@ bool NativeExtensionActionBridge::Execute(PCNativeExtensionAction* value,
 }
 bool NativeExtensionActionBridge::ShowContextMenu(
     PCNativeExtensionAction* value,
-    content::WebContents& contents) {
+    content::WebContents& contents,
+    id<PCNativeMenuPresenter> presenter) {
   if (!Validate(value, contents) ||
       container_.shell_.HasVisibleBrowserSecurityUI())
     return false;
   Operation operation(dispatch_);
   auto model = Validate(value, contents);
-  return model && container_.shell_.ShowActionContextMenu(*model);
+  return model && container_.shell_.ShowActionContextMenu(*model, presenter);
 }
 bool NativeExtensionActionBridge::SetPinned(PCNativeExtensionAction* value,
                                             content::WebContents& contents,

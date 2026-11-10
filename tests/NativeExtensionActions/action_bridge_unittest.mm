@@ -57,7 +57,8 @@ class ActionHost final : public NativeExtensionActionHost {
     return false;
   }
   bool InspectPopup(content::WebContents*) override { return false; }
-  bool ShowActionContextMenu(ExtensionActionViewModel& value) override {
+  bool ShowActionContextMenu(ExtensionActionViewModel& value,
+                             id<PCNativeMenuPresenter>) override {
     ++context_calls;
     last_context = value.GetId();
     if (on_context)

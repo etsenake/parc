@@ -9,6 +9,7 @@
 
 class BrowserWindowInterface;
 class ExtensionActionViewModel;
+@protocol PCNativeMenuPresenter;
 
 namespace parc {
 class NativeExtensionActionHost;
@@ -19,7 +20,8 @@ class NativeExtensionActionHost;
 // Browser/Profile. Destruction of this presenter itself during Show is safe.
 //
 // Exact host hook:
-//   NativeExtensionActionHost::ShowActionContextMenu(model) -> Show(model).
+//   NativeExtensionActionHost::ShowActionContextMenu(model, presenter) ->
+//   Show(model, presenter).
 // The existing fallback caller retains its model across that hook. Toolbar
 // callers must provide the same ownership, not retain a naked GetActionForId().
 // Pinning also requires the accompanying optional-feedback upstream patch.
@@ -36,7 +38,10 @@ class NativeExtensionContextMenu final {
   // It does not mean a command was selected or a downstream UI succeeded.
   // A cancelled in-flight Show still holds its action-model lease until return;
   // another presenter cannot replace that model during an executing command.
+  // `app_presenter` shows the same menu in the app's style instead of AppKit
+  // at the pointer, within the same synchronous Show.
   bool Show(ExtensionActionViewModel& model,
+            id<PCNativeMenuPresenter> app_presenter = nil,
             extensions::ExtensionContextMenuModel::ContextMenuSource source =
                 extensions::ExtensionContextMenuModel::ContextMenuSource::
                     kToolbarAction);

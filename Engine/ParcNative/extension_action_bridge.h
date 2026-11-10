@@ -46,7 +46,9 @@ class NativeExtensionActionBridge final : public content::WebContentsObserver,
   bool Execute(PCNativeExtensionAction*,
                content::WebContents&,
                bool menu_entry = false);
-  bool ShowContextMenu(PCNativeExtensionAction*, content::WebContents&);
+  bool ShowContextMenu(PCNativeExtensionAction*,
+                       content::WebContents&,
+                       id<PCNativeMenuPresenter> presenter = nil);
   bool SetPinned(PCNativeExtensionAction*, content::WebContents&, bool);
   // Called after real model/icon/pin or selected-page ownership changes.
   void Changed();

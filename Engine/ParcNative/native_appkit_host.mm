@@ -703,8 +703,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     // Keep the supplied ExtensionViewHost contents; it need not be a CEF tab.
     return RequestAppKitDevtools(*contents);
   }
-  bool ShowActionContextMenu(ExtensionActionViewModel& model) override {
-    return !tearing_down_ && context_menu_->Show(model);
+  bool ShowActionContextMenu(ExtensionActionViewModel& model,
+                             id<PCNativeMenuPresenter> presenter) override {
+    return !tearing_down_ && context_menu_->Show(model, presenter);
   }
   void CloseExtensionsMenu() override {
     NSMenu* menu = extensions_menu_;
@@ -2442,13 +2443,21 @@ bool ExecuteOpenAppActionForBinding(PCNativeBrowserWindow* binding,
 }
 - (BOOL)showExtensionActionContextMenu:(PCNativeExtensionAction*)action
                                forPage:(PCNativePage*)page {
+  return [self showExtensionActionContextMenu:action
+                                      forPage:page
+                                    presenter:nil];
+}
+- (BOOL)showExtensionActionContextMenu:(PCNativeExtensionAction*)action
+                               forPage:(PCNativePage*)page
+                             presenter:
+                                 (nullable id<PCNativeMenuPresenter>)presenter {
   CHECK(NSThread.isMainThread);
   auto* bridge = parc::ActionBridgeForPage(self, page);
   auto* contents = parc::ContentsForNativePage(page);
   return bridge && contents &&
          [action.pageIdentifier isEqualToString:page.identifier] &&
          [action.profilePath isEqualToString:page.profilePath] &&
-         bridge->ShowContextMenu(action, *contents);
+         bridge->ShowContextMenu(action, *contents, presenter);
 }
 - (BOOL)setExtensionAction:(PCNativeExtensionAction*)action
                     pinned:(BOOL)pinned

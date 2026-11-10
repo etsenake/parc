@@ -158,6 +158,9 @@ final class SiteControlCenterModel: ObservableObject {
     @Published var extensions: [Extension] = []
     /// ExtensionPickerState.focusedExtension; nil outside the picker.
     @Published var focusedExtension: String?
+    /// The extension whose menu is open; its tile stays lit, as a menu's row
+    /// does beside its open submenu.
+    @Published var menuExtension: String?
     @Published var settings: [Setting] = []
     /// FooterView.State?: nil hides the divider and footer.
     @Published var isSecure: Bool?
@@ -472,7 +475,8 @@ struct SiteControlCenterExtensionsView: View {
                         ForEach(row.items) { item in
                             switch item {
                             case .ext(let item):
-                                SiteControlCenterExtensionButton(item: item, isFocused: model.focusedExtension == item.id,
+                                SiteControlCenterExtensionButton(item: item,
+                                    isHighlighted: model.focusedExtension == item.id || model.menuExtension == item.id,
                                     colors: colors,
                                     onClick: { model.onExtension?(item.id) },
                                     onRightClick: { model.onExtensionContextMenu?(item.id) },
@@ -495,7 +499,7 @@ struct SiteControlCenterExtensionsView: View {
 ///
 struct SiteControlCenterExtensionButton: View {
     let item: SiteControlCenterModel.Extension
-    let isFocused: Bool
+    let isHighlighted: Bool
     let colors: SiteControlCenterColors
     let onClick: () -> Void
     let onRightClick: () -> Void
@@ -517,12 +521,12 @@ struct SiteControlCenterExtensionButton: View {
                         .resizable().aspectRatio(contentMode: .fit)
                         .frame(width: SiteControlCenterMetrics.extensionIcon, height: SiteControlCenterMetrics.extensionIcon)
                 }
-                SiteControlCenterAlternateClick(action: onRightClick)
+                SiteControlCenterAlternateClick(extensionID: item.id, action: onRightClick)
             }
                 .frame(width: SiteControlCenterMetrics.button.width, height: SiteControlCenterMetrics.button.height)
                 .fixedSize()
         }
-        .buttonStyle(SiteControlCenterTileStyle(colors: colors, highlighted: isFocused))
+        .buttonStyle(SiteControlCenterTileStyle(colors: colors, highlighted: isHighlighted))
         .fixedSize()
         .parcTooltip(TooltipConfiguration(item.tooltip.isEmpty ? item.name : item.tooltip))
         .overlay(alignment: .topLeading) {
@@ -615,9 +619,17 @@ struct SiteControlCenterBadge: NSViewRepresentable {
 ///
 /// extension's genuine context menu; ordinary clicks pass to the button.
 struct SiteControlCenterAlternateClick: NSViewRepresentable {
+    let extensionID: String
     let action: () -> Void
     func makeNSView(context: Context) -> ClickView { ClickView() }
-    func updateNSView(_ view: ClickView, context: Context) { view.action = action }
+    func updateNSView(_ view: ClickView, context: Context) {
+        view.action = action
+        view.identifier = Self.identifier(extensionID)
+    }
+    /// Names the tile for its menu's anchor.
+    static func identifier(_ extensionID: String) -> NSUserInterfaceItemIdentifier {
+        NSUserInterfaceItemIdentifier("extension-tile:" + extensionID)
+    }
 
     final class ClickView: NSView {
         var action: (() -> Void)?
@@ -907,6 +919,8 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
     private var modelChange: AnyCancellable?
     private var sizeCheck: Timer?
+    /// The open extension menu; it closes with the card.
+    private weak var extensionMenu: PArcContextMenu?
     private var pendingShow: UUID?
     var onClose: (() -> Void)?
     var onDidClose: (() -> Void)?
@@ -944,6 +958,30 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     }
 
     func isAnchored(to view: NSView) -> Bool { anchorView === view }
+
+    /// Runs `show` with a menu for extension `id` that hangs from this card
+    /// like a submenu, level with the tile, which stays lit until `show`
+    /// returns. False when the tile is not on the open card.
+    func presentExtensionMenu(for id: String, _ show: (PArcContextMenu) -> Void) -> Bool {
+        guard let panel, !closing,
+              let tile = Self.view(SiteControlCenterAlternateClick.identifier(id), in: host.view),
+              tile.window === panel else { return false }
+        let row = panel.convertToScreen(tile.convert(tile.bounds, to: nil))
+        let edges = panel.convertToScreen(card.convert(card.bounds, to: nil))
+        let menu = PArcContextMenu(anchor: NSRect(x: edges.minX, y: row.minY, width: edges.width, height: row.height),
+                                  parent: panel, colors: model.colors.menu)
+        extensionMenu = menu
+        model.menuExtension = id
+        show(menu)
+        model.menuExtension = nil
+        return true
+    }
+
+    private static func view(_ identifier: NSUserInterfaceItemIdentifier, in view: NSView) -> NSView? {
+        if view.identifier == identifier { return view }
+        for subview in view.subviews { if let found = Self.view(identifier, in: subview) { return found } }
+        return nil
+    }
 
     ///
     private var contentSize: NSSize {
@@ -1035,7 +1073,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         // reaches the card through the responder chain.
         panel.makeFirstResponder(host.view)
         observe(parent)
-        SidebarPlusMenuMotion.animateOpen(chrome)
+        SidebarPlusMenuMotion.animateOpen(chrome, about: chrome.tailTip)
     }
 
     /// SwiftUI applies a model change later in this run loop pass, so the
@@ -1239,6 +1277,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         pendingShow = nil
         guard !closing else { return }
         closing = true
+        extensionMenu?.cancel()
         guard let panel else { finish(); return }
         isAwaitingNativeClose = true
         closingLifetime = self
@@ -1253,7 +1292,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
             panel.orderOut(nil)
             self?.didClose()
         }
-        guard animated, let chrome, panel.isVisible, SidebarPlusMenuMotion.animateClose(chrome, completion: remove) else {
+        guard animated, let chrome, panel.isVisible, SidebarPlusMenuMotion.animateClose(chrome, about: chrome.tailTip, completion: remove) else {
             remove()
             return
         }

@@ -137,14 +137,6 @@ class PArcMenuChrome: NSView {
         path.close()
         colors.fillBackground(path)
     }
-
-    ///
-    func scaled(_ scale: CGFloat) -> CATransform3D {
-        let tip = tailTip
-        var transform = CATransform3DMakeTranslation(tip.x, tip.y, 0)
-        transform = CATransform3DScale(transform, scale, scale, 1)
-        return CATransform3DTranslate(transform, -tip.x, -tip.y, 0)
-    }
 }
 
 /// The plus HUD's card and tail.
@@ -172,12 +164,20 @@ enum SidebarPlusMenuMotion {
     static let closeDuration: CFTimeInterval = 0.07
     static var timing: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1) }
 
-    /// A 0.95 scale about the tail to identity over 0.1 s and opacity 0 to 1
+    ///
+    /// a context menu opens from.
+    static func scaled(_ scale: CGFloat, about point: NSPoint) -> CATransform3D {
+        var transform = CATransform3DMakeTranslation(point.x, point.y, 0)
+        transform = CATransform3DScale(transform, scale, scale, 1)
+        return CATransform3DTranslate(transform, -point.x, -point.y, 0)
+    }
+
+    /// A 0.95 scale about `point` to identity over 0.1 s and opacity 0 to 1
     /// over 0.05 s.
-    static func animateOpen(_ chrome: PArcMenuChrome) {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let layer = chrome.layer else { return }
+    static func animateOpen(_ view: NSView, about point: NSPoint) {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let layer = view.layer else { return }
         let transform = CABasicAnimation(keyPath: "transform")
-        transform.fromValue = NSValue(caTransform3D: chrome.scaled(hiddenScale))
+        transform.fromValue = NSValue(caTransform3D: scaled(hiddenScale, about: point))
         transform.toValue = NSValue(caTransform3D: CATransform3DIdentity)
         transform.duration = openTransformDuration
         transform.timingFunction = timing
@@ -193,14 +193,14 @@ enum SidebarPlusMenuMotion {
     /// From the presentation values back to the 0.95 scale and opacity 0 over
     /// 0.07 s, fill-forwards; false when it cannot animate and the caller
     /// removes the window itself.
-    static func animateClose(_ chrome: PArcMenuChrome, completion: @escaping () -> Void) -> Bool {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let layer = chrome.layer else { return false }
+    static func animateClose(_ view: NSView, about point: NSPoint, completion: @escaping () -> Void) -> Bool {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let layer = view.layer else { return false }
         let current = layer.presentation()
         CATransaction.begin()
         CATransaction.setCompletionBlock(completion)
         let transform = CABasicAnimation(keyPath: "transform")
         transform.fromValue = NSValue(caTransform3D: current?.transform ?? CATransform3DIdentity)
-        transform.toValue = NSValue(caTransform3D: chrome.scaled(hiddenScale))
+        transform.toValue = NSValue(caTransform3D: scaled(hiddenScale, about: point))
         let opacity = CABasicAnimation(keyPath: "opacity")
         opacity.fromValue = current?.opacity ?? 1
         opacity.toValue = 0
@@ -301,7 +301,7 @@ final class SidebarPlusMenuController: NSObject {
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(menu)
         observe(parent)
-        SidebarPlusMenuMotion.animateOpen(chrome)
+        SidebarPlusMenuMotion.animateOpen(chrome, about: chrome.tailTip)
     }
 
     func dismiss() { close(animated: true) }
@@ -369,7 +369,7 @@ final class SidebarPlusMenuController: NSObject {
             self.anchor = nil
             self.closing = false
         }
-        guard animated, let chrome, panel.isVisible, SidebarPlusMenuMotion.animateClose(chrome, completion: remove) else {
+        guard animated, let chrome, panel.isVisible, SidebarPlusMenuMotion.animateClose(chrome, about: chrome.tailTip, completion: remove) else {
             remove()
             return
         }

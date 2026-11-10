@@ -62,8 +62,9 @@ with tempfile.TemporaryDirectory(prefix="parc-site-control-center-") as director
                 *[app / name for name in ("ThemeRenderer.swift", "PArcMenuColors.swift", "SidebarPlusMenu.swift",
                                           "LibraryRailTile.swift", "LibraryRailIcon.swift", "DownloadActivityBadge.swift",
                                           "DownloadLibrarySelection.swift", "WindowStandardButtons.swift",
-                                          "ExtensionControls.swift", "SiteControlCenter.swift")]]
+                                          "ExtensionControls.swift", "SiteControlCenter.swift", "PArcContextMenu.swift")]]
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
+        "-import-objc-header", str(root / "Engine/ParcNative/native_appkit_bridge.h"),
         *map(str, compiled), *map(str, tooltip_sources(root, scratch, compiled)),
         str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
     # An unbundled executable's Bundle.main.resourceURL is its own directory.

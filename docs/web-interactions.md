@@ -37,8 +37,8 @@ fonts `0x730` 14 semibold, `0x738` 12 semibold, `0x748` 14 semibold, `0x750`
   Manage Extensions. Settings: "Settings" / "More", header → site settings.
   Add Extension (`plus` 13 semibold 0.8), rows of four 48 × 32 Secondary items,
   spacing (236 − 20 − 192) / 3 = 8. An item is the 16-point action icon over
-  `AlternateClickView` (secondary click → its context menu, with the card kept
-  the card's button); the picker's
+  `AlternateClickView` (secondary click → its context menu, described below);
+  the picker's
   focus is a 2-point maxContrast stroke, radius 6; the pin badge
   `pin.fill` 8 black, rotated 0.576 rad, knocked out (destinationOut) of a
   14-point maxContrast circle at 1 pinned / 0.33 not; tooltip Pin / Unpin.
@@ -132,6 +132,22 @@ one.
   certificate it closes the popover first, like its other after-close actions.
   Engines before overlay 284 keep the PageInfo popover on http/https pages
   and do nothing elsewhere.
+- An extension tile's menu (secondary click, Control-click or VoiceOver's
+  Show Menu) keeps the card open and is Parc's own, both at Josh's request.
+  palette, 8-point row plate, 13-point medium titles, separators and motion,
+  It hangs 4 points off the card's edge with its first row level with the
+  tile, like a submenu, on the side with room. The tile stays lit while it is
+  open, and the site-access submenu hangs from the menu the same way. Like
+  NSMenu it runs its own event-tracking loop: arrows, Return, Escape, a release
+  over a row (including a drag from the tile), a press outside and an open
+  submenu waiting while the pointer heads into it behave as NSMenu's do; the
+  keys stay with the lit row until Right. The item runs after the menu has closed, inside the engine's
+  synchronous show, so its model lease and guarded targets hold through the
+  command. Closing the card cancels the menu, as does the engine's own
+  cancellation. Engines before overlay 650 have no presenter hook and show
+  their menu at the pointer, with the card kept open. Disabled rows don't show
+  the engine's reason tooltip (VoiceOver reads it as help). The pinned
+  extension buttons keep the system menu and close an open card first.
 - A secondary click, Control-click or VoiceOver's Show Menu on an entry button
   argument was not decoded (rounded rectangle assumed); default SwiftUI
   resolves picker wrap, physical E (keyCode 14), Return selection and unrelated

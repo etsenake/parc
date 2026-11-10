@@ -14109,7 +14109,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     guard let self, let binding, let page,
                           self.nativeBinding === binding, self.currentBrowser?.nativePage === page,
                           !self.isClosing, !page.isClosed else { return }
-                    _ = binding.showExtensionActionContextMenu(action, for: page)
+                    // Parc's menu beside the card; earlier engines show their own at the pointer.
+                    let presented = binding.responds(to: #selector(PCNativeBrowserWindow.showExtensionActionContextMenu(_:for:presenter:)))
+                        && self.siteControlCenter?.presentExtensionMenu(for: action.identifier) { menu in
+                            _ = binding.showExtensionActionContextMenu(action, for: page, presenter: menu)
+                        } == true
+                    if !presented { _ = binding.showExtensionActionContextMenu(action, for: page) }
                 }, setPinned: { [weak self, weak binding, weak page] pinned in
                     guard let self, let binding, let page,
                           self.nativeBinding === binding, self.currentBrowser?.nativePage === page,

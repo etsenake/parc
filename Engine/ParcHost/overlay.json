@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 649,
+  "version": 650,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -230,12 +230,12 @@
     {
       "source": "Engine/ParcNative/extension_action_container.h",
       "target": "cef/libcef/browser/parc_native/extension_action_container.h",
-      "sha256": "b29b0eed17aa637b44431cca1230daf08fff354d7ae648726c20174f8aa7ff01"
+      "sha256": "1844ab4e268d4509b3128e71844f76a5a8e4f10d7861cf1ba8c127e2111fd58a"
     },
     {
       "source": "Engine/ParcNative/extension_action_container.mm",
       "target": "cef/libcef/browser/parc_native/extension_action_container.mm",
-      "sha256": "9e73494790c941b5c243fc6bf06bf3c5ea8359dd9175ac54c3e737631df3f2e2"
+      "sha256": "b71415908b4edf6cb29d394cae92e4d390945bd5e400b3c9689715c665dd4287"
     },
     {
       "source": "Engine/ParcNative/extension_popup.h",
@@ -270,17 +270,17 @@
     {
       "source": "Engine/ParcNative/extension_context_menu.h",
       "target": "cef/libcef/browser/parc_native/extension_context_menu.h",
-      "sha256": "cd0377540ec29068da796e9b4c2f019a7d67745975ad1aac1bd62c4b601e245c"
+      "sha256": "61d9e52cec50abe09ce3a7ec2d00dae898d8d13359f92f48e946486fde02acbf"
     },
     {
       "source": "Engine/ParcNative/extension_context_menu.mm",
       "target": "cef/libcef/browser/parc_native/extension_context_menu.mm",
-      "sha256": "f169c03cfdd88475307ddb7030e840d1fff4236980f19075d6119aeb0dc46067"
+      "sha256": "7898725ffe3f7b069777314915e95ddaa301f30d140804abd07e476459d95d86"
     },
     {
       "source": "tests/NativeExtensionContextMenu/context_menu_browsertest.mm",
       "target": "cef/tests/parc_native_extensions/context_menu_browsertest.mm",
-      "sha256": "ee557926f8320be081e0c75a2a15ea81b20b79d21fab029dcc5f020b3e0c9014"
+      "sha256": "892ba1fdfccab6affbdab4cc3de498d4b2da72c57cfc5f09ff3a4c8710afdc3d"
     },
     {
       "source": "Engine/ParcNative/autofill_bubble_handler.h",
@@ -360,7 +360,7 @@
     {
       "source": "tests/NativeExtensionUninstall/uninstall_browsertest.mm",
       "target": "cef/tests/parc_native_extensions/uninstall_browsertest.mm",
-      "sha256": "e91116930c8c1834157edf17782966097380221163715a424f318e548c091b34"
+      "sha256": "a4a844444ad3b9f0d4fb0a2fc4cd5e54f257f42b93edc2d47df0e85d18c6d4a8"
     },
     {
       "source": "Engine/ParcNative/extension_side_panel.h",
@@ -395,7 +395,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
       "target": "cef/libcef/browser/parc_native/native_appkit_bridge.h",
-      "sha256": "65831d77ed3d6ee9a0897e155b41cede3da2356cc45cb2ca5edb765d7c59abbe"
+      "sha256": "97638c47315f9c9034c963222da29100a9235d6df3a0bdbc79c770a568d57d2b"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
@@ -405,7 +405,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
       "target": "cef/libcef/browser/parc_native/native_appkit_host.mm",
-      "sha256": "a3971c8088a24cf4900f74f19334e7aa712ee6fd6cff21e39de13f864b6ed82c"
+      "sha256": "7c409e508a45844d1fc510ef10dbb5c5b6c5e60ae9b8e898aba20caace502619"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.h",
@@ -525,7 +525,7 @@
     {
       "source": "tests/NativeExtensionInstall/install_browsertest.mm",
       "target": "cef/tests/parc_native_extensions/install_browsertest.mm",
-      "sha256": "9d8ede7a98e123b7811ceaacf3f42587f45a8eea1d220f3101caccbf4df3178e"
+      "sha256": "2222663b18abe9ea6c0f4506e32c7aa55f8c1b636a15c3aebd719dfb39b686d6"
     },
     {
       "source": "Engine/ParcNative/extension_install.h",
@@ -865,12 +865,12 @@
     {
       "source": "Engine/ParcNative/extension_action_bridge.h",
       "target": "cef/libcef/browser/parc_native/extension_action_bridge.h",
-      "sha256": "21018623177ece932f84758f81c81a976c71fe02597bf77dc3a10b726df0c510"
+      "sha256": "711944678b208551549fb84c8429f6740bdc9227bbb565a2d3ec2136bdbe63ba"
     },
     {
       "source": "Engine/ParcNative/extension_action_bridge.mm",
       "target": "cef/libcef/browser/parc_native/extension_action_bridge.mm",
-      "sha256": "2f1abab55cfb1b80e8b17108bf89019c5e804d3116c444d681833c84f1dfacaa"
+      "sha256": "ef145f6a355303aa1086baa6eab1576d8172a4bc0e30c73072a98be8bcdd4cd0"
     },
     {
       "source": "tests/NativeExtensionActions/BUILD.gn",
@@ -880,7 +880,7 @@
     {
       "source": "tests/NativeExtensionActions/action_bridge_unittest.mm",
       "target": "cef/tests/parc_native_extension_actions/action_bridge_unittest.mm",
-      "sha256": "354ba634eaa245132c78abc04d9065ac6a7063b032050af2317c7d5be5dcab00"
+      "sha256": "f58a91cc252e4474a3050fc523557db98ce917aa4eca00ef4b2d68765e87390b"
     },
     {
       "source": "Engine/ParcNative/sad_tab.h",
