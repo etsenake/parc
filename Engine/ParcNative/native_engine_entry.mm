@@ -28,8 +28,10 @@
 #include "components/keep_alive_registry/keep_alive_types.h"
 #include "components/keep_alive_registry/scoped_keep_alive.h"
 #include "components/os_crypt/common/keychain_password_mac.h"
+#include "content/browser/scheduler/browser_task_executor.h"
 #include "content/public/app/content_main.h"
 #include "content/public/app/content_main_runner.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "fairplay_identity.h"
@@ -316,12 +318,14 @@ parc_engine_initialize(int argc,
   params.argv = const_cast<const char**>(session.argv.data());
   int code = content::ContentMainInitialize(std::move(params),
                                             session.runner.get());
-  if (code < 0) {
+  // Any other result, 0 included (e.g. --version), ends the process here.
+  const bool initialized = code < 0;
+  if (initialized) {
     // Runs Chrome's browser startup up to its main loop, which Parc runs.
     code = session.runner->Run();
   }
   *exit_code = code;
-  if (code != content::RESULT_CODE_NORMAL_EXIT) {
+  if (!initialized || code != content::RESULT_CODE_NORMAL_EXIT) {
     // A normal singleton handoff or startup command, or a failure. Like Chrome,
     // the process exits from here without shutting the engine down.
     const bool normal_exit = IsNormalEarlyExit(code);
@@ -394,6 +398,12 @@ extern "C" PARC_ENGINE_EXPORT int parc_engine_shutdown_if_idle() {
   state = State::kStopped;
   auto& session = CurrentSession();
   session.keep_alive.reset();
+  // As CEF does: run queued UI and IO work now, so objects those tasks own
+  // aren't released at the end of browser shutdown, after what they use.
+  content::BrowserTaskExecutor::RunAllPendingTasksOnThreadForTesting(
+      content::BrowserThread::UI);
+  content::BrowserTaskExecutor::RunAllPendingTasksOnThreadForTesting(
+      content::BrowserThread::IO);
   parc::PrepareNativeApplicationShutdown();
   parc::ShutdownNativeProfiles();
   session.delegate->ShutdownBrowser();
