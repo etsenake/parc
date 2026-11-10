@@ -1,0 +1,132 @@
+--- a/chrome/browser/download/BUILD.gn
++++ b/chrome/browser/download/BUILD.gn
+@@ -8,6 +8,7 @@
+ import("//components/safe_browsing/buildflags.gni")
+ import("//extensions/buildflags/buildflags.gni")
+ import("//pdf/features.gni")
++import("//parc/features.gni")
+-
++
+ source_set("download") {
+   public = [
+@@ -187,6 +188,7 @@
+-
++
+   deps = [
+     ":status_text_builder_utils",
++    "//parc:buildflags",
+     "//chrome/browser:browser_process",
+     "//chrome/browser:primitives",
+     "//chrome/browser/actor",
+@@ -353,6 +355,9 @@
+   }
+-
++
+   if (is_mac) {
++    if (enable_parc) {
++      deps += [ "//parc/native:native_download_dialog_api" ]
++    }
+     sources += [
+       "download_status_updater_mac.mm",
+       "drag_download_item_mac.mm",
+--- a/chrome/browser/download/download_file_picker.cc
++++ b/chrome/browser/download/download_file_picker.cc
+@@ -8,6 +8,10 @@
+ #include "base/functional/bind.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "build/build_config.h"
++#include "parc/features.h"
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
++#include "parc/native/download_file_dialog.h"
++#endif
+ #include "chrome/browser/download/download_prefs.h"
+ #include "chrome/browser/platform_util.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+@@ -42,8 +46,18 @@
+   DCHECK(item);
+   item->AddObserver(this);
+   WebContents* web_contents = content::DownloadItemUtils::GetWebContents(item);
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
++  if (!web_contents) {
++    // A native background/restored download belongs to its actual Profile,
++    // even without a page. Keep this picker and every target/security check;
++    // only supply an explicit, identity-checked native parent.
++    select_file_dialog_ = parc::CreateNativeDownloadFileDialog(
++        *item, this, std::make_unique<ChromeSelectFilePolicy>(nullptr));
++  }
++#endif
+   // Extension download may not have associated webcontents.
+-  if (item->GetDownloadSource() != download::DownloadSource::EXTENSION_API &&
++  if (!select_file_dialog_ &&
++      item->GetDownloadSource() != download::DownloadSource::EXTENSION_API &&
+       (!web_contents || !web_contents->GetNativeView())) {
+     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+         FROM_HERE, base::BindOnce(&DownloadFilePicker::FileSelectionCanceled,
+@@ -51,8 +65,10 @@
+     return;
+   }
+-
++
+-  select_file_dialog_ = ui::SelectFileDialog::Create(
+-      this, std::make_unique<ChromeSelectFilePolicy>(web_contents));
++  if (!select_file_dialog_) {
++    select_file_dialog_ = ui::SelectFileDialog::Create(
++        this, std::make_unique<ChromeSelectFilePolicy>(web_contents));
++  }
+   // |select_file_dialog_| could be null in Linux. See CreateSelectFileDialog()
+   // in shell_dialog_linux.cc.
+   if (!select_file_dialog_.get()) {
+--- a/chrome/browser/ui/select_file_policy/chrome_select_file_policy.h
++++ b/chrome/browser/ui/select_file_policy/chrome_select_file_policy.h
+@@ -30,6 +30,8 @@
+   // Returns true if local state allows showing file pickers.
+   static bool FileSelectDialogsAllowed();
+-
++
++  content::WebContents* source_contents() const { return source_contents_; }
++
+  private:
+   raw_ptr<content::WebContents, AcrossTasksDanglingUntriaged> source_contents_;
+ };
+--- a/chrome/browser/ui/webui/print_preview/pdf_printer_handler.cc
++++ b/chrome/browser/ui/webui/print_preview/pdf_printer_handler.cc
+@@ -531,8 +531,10 @@
+   }
+ #endif
+-
++
+-  select_file_dialog_ =
+-      ui::SelectFileDialog::Create(this, nullptr /*policy already checked*/);
++  // Name the preview as the source so Parc's chooser can bind Save to PDF to
++  // the preview's own native window and its print initiator.
++  select_file_dialog_ = ui::SelectFileDialog::Create(
++      this, std::make_unique<ChromeSelectFilePolicy>(preview_web_contents_));
+   select_file_dialog_->SelectFile(
+       ui::SelectFileDialog::SELECT_SAVEAS_FILE, std::u16string(), path,
+       &file_type_info, 0, kPdfExtension,
+--- a/net/base/directory_lister.cc
++++ b/net/base/directory_lister.cc
+@@ -200,7 +200,7 @@
+ }
+-
++
+ void DirectoryLister::OnListDone(int error) {
+-  delegate_->OnListDone(error);
++  delegate_.ExtractAsDangling()->OnListDone(error);
+ }
+-
++
+ }  // namespace net
+--- a/net/base/directory_lister.h
++++ b/net/base/directory_lister.h
+@@ -133,7 +133,7 @@
+   void OnListDone(int error);
+-
++
+   scoped_refptr<Core> core_;
+-  const raw_ptr<DirectoryListerDelegate> delegate_;
++  raw_ptr<DirectoryListerDelegate> delegate_;
+ };
+-
++
+ }  // namespace net

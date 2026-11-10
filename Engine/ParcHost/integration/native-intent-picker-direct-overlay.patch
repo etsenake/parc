@@ -1,0 +1,31 @@
+--- a/chrome/browser/ui/intent_picker_tab_helper.cc
++++ b/chrome/browser/ui/intent_picker_tab_helper.cc
+@@ -13,6 +13,10 @@
+ #include "base/metrics/user_metrics_action.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "build/build_config.h"
++#include "parc/features.h"
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
++#include "parc/native/native_intent_picker_api.h"
++#endif
+ #include "chrome/browser/apps/app_service/app_service_proxy.h"
+ #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
+ #include "chrome/browser/apps/intent_helper/intent_chip_display_prefs.h"
+@@ -127,6 +131,16 @@
+     return;
+   }
+-
++
++#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
++  // Icon loading is asynchronous. Preserve the original page at the native
++  // presentation boundary instead of retargeting to a newly selected tab.
++  if (parc::MaybeShowNativeIntentPickerForPage(
++          *browser, *web_contents, apps, show_stay_in_chrome,
++          show_remember_selection, callback)) {
++    return;
++  }
++#endif
++
+   BrowserWindow::FromBrowser(browser)->ShowIntentPickerBubble(
+       std::move(apps), show_stay_in_chrome, show_remember_selection,
+       apps::IntentPickerBubbleType::kLinkCapturing, std::nullopt,

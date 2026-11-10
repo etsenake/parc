@@ -1,0 +1,48 @@
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.h
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.h
+@@ -582,6 +582,9 @@
+   // Video frame sub-menu handling.
+   ui::SimpleMenuModel video_frame_submenu_model_;
+-
++
++  // Parc observer runs first for commands, last for menu construction.
++  std::unique_ptr<RenderViewContextMenuObserver> first_observer_;
++
+   // An observer that handles spelling suggestions, "Add to dictionary", and
+   // "Use enhanced spell check" items.
+   std::unique_ptr<SpellingMenuObserver> spelling_suggestions_menu_observer_;
+--- a/chrome/browser/ui/cocoa/renderer_context_menu/render_view_context_menu_mac_cocoa.mm
++++ b/chrome/browser/ui/cocoa/renderer_context_menu/render_view_context_menu_mac_cocoa.mm
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/ui/cocoa/renderer_context_menu/render_view_context_menu_mac_cocoa.h"
+-
++
+ #include <utility>
++#include "parc/native/native_page_context_menu.h"
+-
++
+ #include "base/compiler_specific.h"
+ #include "base/mac/mac_util.h"
+@@ -75,6 +76,9 @@
+ }
+-
++
+ void RenderViewContextMenuMacCocoa::Show() {
++  if (parc::ShowNativePageContextMenu(*this, parent_view_, &menu_controller_))
++    return;
++
+   views::Widget* widget = views::Widget::GetTopLevelWidgetForNativeView(
+       source_web_contents_->GetNativeView());
+-
++
+--- a/chrome/browser/ui/cocoa/BUILD.gn
++++ b/chrome/browser/ui/cocoa/BUILD.gn
+@@ -123,6 +123,7 @@
+   ]
+-
++
+   deps = [
++    "//parc/native:native_page_context_menu_api",
+     "//chrome/app:command_ids",
+     "//chrome/app/theme:chrome_unscaled_resources_grit",
+     "//chrome/browser:app_controller_mac",
