@@ -6,7 +6,7 @@
 |---|---|---:|---:|---:|---|
 | Complete | [Keyboard shortcuts and keyboard gestures](#keyboard-shortcuts-and-gestures) | 100.0% | 0.0% | +2.6 pp | Completed recovery; original `claude-kbd-*` owners retired |
 | Complete | [Downloads](#downloads) | 100.0% | 0.0% | +3.0 pp | Claude `claude/downloads` |
-| 1 · Complete | [Sidebar](#sidebar) | 100.0% | 0.0% | +5.9 pp | Claude `claude/sidebar` |
+| 1 | [Sidebar](#sidebar) | 94.4% | 5.6% | −5.6 pp (scope: SIDE18) | Claude `claude/tab-preview-card` (SIDE18, claimed November 9) |
 | 2 · Complete | [Today / pinned tabs / favorites](#today--pinned-tabs--favorites) | 100.0% | 0.0% | +4.5 pp | Claude `claude/today-favorites` |
 | 3 · Complete | [Automatic archive](#automatic-archive) | 100.0% | 0.0% | +16.7 pp | Completed AUTO09–AUTO12 owners; retired after publication |
 | 4 · Complete | [General navigation and gestures](#general-navigation-and-gestures) | 100.0% | 0.0% | +6.2 pp | Claude `claude/navigation` |
@@ -74,6 +74,16 @@ ownership and unfinished rows while pursuing the requested comparisons and fixes
 **Owner rule:** update this single table and the affected requirement rows in the same delivery. Record scope changes explicitly. Keep detailed evidence below; do not add separate percentage tables. Read [the collaboration guide](collaboration.md) for claims, repo-only communication, direct publication and shared-engine rules. Every owner ships directly to main; root integration is not a gate.
 
 ## Current ownership and handoffs
+
+- **Claude — SIDE18 tab picture card (November 9).** Josh asked for the sidebar
+  preview card to show a tab's last picture, title and site when you hover a
+  tab, keeping the folder and Recents cards. Checkout
+  `work/tab-preview-card` on `claude/tab-preview-card`. Scope:
+  `SidebarPreviewController.swift`, `SidebarPreviewCard.swift`, the preview
+  wiring in `BrowserWindowController.swift`, `TooltipController.swift`,
+  `docs/sidebar-previews.md` and focused checks. Swift only; it uses the
+  existing native tab-picture subscription, so no engine change. No card for a
+  tab on screen or one with no picture; tooltips stay hidden while a card shows.
 
 - **November 9 updater progress correction — Codex root.** Josh reported the
   download counter and bar jumping. Scope: `SoftwareUpdater.swift`,
@@ -6728,6 +6738,7 @@ Evidence: sidebar-motion.md; sidebar-previews.md; SidebarView.swift; BrowserWind
 | SIDE15 | DONE | Finish sidebar unread presentation and state attribution. |
 | SIDE16 | DONE | Match sidebar resizing/drag feedback and full spacing. |
 | SIDE17 | DONE | Complete remaining sidebar focus/AX and interaction-state inventory. |
+| SIDE18 | LEFT | Josh request, November 9: hovering a loaded tab that isn't on screen shows its picture, title and site in the preview card, with an Open in Split View button. |
 
 ### Today / pinned tabs / favorites
 
