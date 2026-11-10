@@ -95,7 +95,9 @@ pre-create the final engine directory to try to fix a refusal.
 build settings. Do not substitute a system CEF package or manually update one
 dependency. For pinned-source upgrades, use `retarget --previous-lock` as described
 in [Engine](../Engine/README.md#build-configuration); preserve the previous lock
-before updating it. Retarget uses the same 80 GB free-space floor as sync.
+before updating it. Verified same-branch incremental retargets use the existing
+40 GB build reserve; fresh syncs and cross-branch or unverifiable retargets keep
+the 80 GB sync reserve. The engine guide defines the required lock/CEF proofs.
 The source tool owns its dependency checkout and lock/receipt files;
 it does not reset, clean, delete or adopt an arbitrary existing checkout.
 

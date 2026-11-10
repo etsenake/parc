@@ -34,6 +34,7 @@ class RetargetTests(unittest.TestCase):
             self.git(root, 'checkout', '--detach', self.old[name]['commit'])
             for lock, data in [(self.old, b'old\n'), (self.new, b'new\n')]:
                 lock[name]['files'] = {'pinned': engine.digest(data)}
+        self.old['chromium']['tag'] = '156.0.8078.48'
         self.previous = self.base / 'previous.json'
         self.previous.write_text(json.dumps(self.old))
         _, self.old_sha = engine.load_lock(self.previous)
@@ -46,22 +47,33 @@ class RetargetTests(unittest.TestCase):
                           source_fingerprint=engine.tree_fingerprint(self.workspace, self.env, self.repos))
         engine.write_marker(self.workspace, self.state)
         self.calls = []
+        self.command_locations = []
+        self.prove_branch = False
+        self.branch_head = self.new["cef"]["commit"]
 
     def git(self, root, *args):
         return subprocess.check_output(engine.GIT + list(args), cwd=root, stderr=subprocess.DEVNULL)
 
-    def call(self, fail=False):
+    def call(self, fail=False, free_bytes=None):
         real = engine.run
         def command(argv, cwd, env, capture=False):
             self.calls.append(argv)
+            self.command_locations.append((argv, cwd))
             if 'fetch' in argv:
+                if argv[-1].startswith('refs/heads/') and self.prove_branch:
+                    (self.roots['cef'] / '.git/FETCH_HEAD').write_text(self.branch_head + '\n')
                 return b''  # Both revisions already exist in the fixture.
             if argv[0] != engine.GIT[0]:
                 if fail:
                     raise OSError('fixture hook failed')
                 return b''
             return real(argv, cwd, env, capture)
-        with patch.object(engine, 'host_report', return_value=self.good_host), patch.object(engine, 'run', side_effect=command), patch.object(engine, 'synced_repositories', return_value=self.repos):
+        def host(workspace, lock, operation):
+            required = lock['storage'][operation + '_minimum_free_bytes']
+            free = 200_000_000_000 if free_bytes is None else free_bytes
+            return dict(minimum_free_bytes=required,
+                        blockers=[] if free >= required else ['Insufficient space'])
+        with patch.object(engine, 'host_report', side_effect=host), patch.object(engine, 'run', side_effect=command), patch.object(engine, 'synced_repositories', return_value=self.repos):
             return engine.retarget(self.workspace, self.new, self.new_sha, self.previous)
 
     def test_moves_all_pins_and_preserves_objects_and_user_files(self):
@@ -72,7 +84,7 @@ class RetargetTests(unittest.TestCase):
         user.write_text('mine')
         self.state['source_fingerprint'] = engine.tree_fingerprint(self.workspace, self.env, self.repos)
         engine.write_marker(self.workspace, self.state)
-        self.call()
+        self.assertEqual(self.call()["reserve"], "sync")
         for name, root in self.roots.items():
             self.assertEqual(self.git(root, 'rev-parse', 'HEAD').strip().decode(), self.new[name]['commit'])
         self.assertEqual(output.read_bytes(), b'cached')
@@ -135,3 +147,60 @@ class RetargetTests(unittest.TestCase):
         self.call()
         current = engine.read_shipping_marker(self.workspace, self.new_sha, self.state)
         self.assertEqual(current['phase'], 'reconfigured')
+
+    def test_verified_incremental_retarget_uses_40gb_at_47gb_free(self):
+        self.prove_branch = True
+        result = self.call(free_bytes=47_000_000_000)
+        self.assertEqual(result['reserve'], 'build')
+        first_fetch = next((argv, cwd) for argv, cwd in self.command_locations if 'fetch' in argv)
+        self.assertEqual(first_fetch, (engine.GIT + ['fetch', '--no-tags', 'origin', 'refs/heads/8078'], self.roots['cef']))
+        self.assertEqual(result['minimum_free_bytes'], 40_000_000_000)
+        self.assertEqual(engine.read_marker(self.workspace, self.new_sha)['phase'], 'synced')
+
+    def test_cross_milestone_or_branch_keeps_80gb_and_never_fetches(self):
+        for tag in ['157.0.8103.51', '156.0.8079.1', '156.1.8078.1']:
+            self.new['chromium']['tag'] = tag
+            with self.subTest(tag=tag), self.assertRaisesRegex(engine.Refusal, 'Insufficient space'):
+                self.call(free_bytes=47_000_000_000)
+            self.assertFalse(any('fetch' in c or 'restore' in c for c in self.calls))
+            self.assertEqual(engine.read_marker(self.workspace, self.old_sha)['phase'], 'built')
+
+    def test_unknown_tags_require_80gb(self):
+        for tag in [None, '', 'malformed']:
+            self.new['chromium']['tag'] = tag
+            with self.subTest(tag=tag), self.assertRaisesRegex(engine.Refusal, 'Insufficient space'):
+                self.call(free_bytes=47_000_000_000)
+            self.assertFalse(any('restore' in c for c in self.calls))
+
+    def test_cef_commit_outside_matching_branch_uses_80gb(self):
+        self.prove_branch = True
+        root = self.roots['cef']
+        tree = self.git(root, 'rev-parse', 'HEAD^{tree}').strip().decode()
+        self.branch_head = self.git(root, 'commit-tree', tree, '-m', 'unrelated branch').strip().decode()
+        with self.assertRaisesRegex(engine.Refusal, 'Insufficient space'):
+            self.call(free_bytes=47_000_000_000)
+        self.assertFalse(any('restore' in c for c in self.calls))
+        self.assertEqual(engine.read_marker(self.workspace, self.old_sha)['phase'], 'built')
+
+    def test_below_40gb_refused_before_any_git_command(self):
+        self.prove_branch = True
+        with self.assertRaisesRegex(engine.Refusal, 'Insufficient space'):
+            self.call(free_bytes=39_000_000_000)
+        self.assertEqual(self.calls, [])
+
+    def test_cef_branch_fetch_failure_falls_back_to_sync_reserve(self):
+        with patch.object(engine, 'run', side_effect=OSError('offline')):
+            self.assertEqual(engine.retarget_reserve(self.workspace, self.old, self.new, self.env), 'sync')
+
+    def test_changed_source_is_checked_before_cef_branch_fetch(self):
+        self.prove_branch = True
+        (self.roots['chromium'] / 'source.cc').write_text('user changes')
+        with self.assertRaises(engine.Refusal):
+            self.call(free_bytes=47_000_000_000)
+        self.assertFalse(any('fetch' in c for c in self.calls))
+
+    def test_matching_tags_with_unprovable_cef_ancestry_keep_80gb(self):
+        self.new['chromium']['tag'] = self.old['chromium']['tag']
+        with self.assertRaisesRegex(engine.Refusal, 'Insufficient space'):
+            self.call(free_bytes=47_000_000_000)
+        self.assertFalse(any('restore' in c for c in self.calls))

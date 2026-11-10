@@ -458,6 +458,29 @@ def reconfigure(workspace: Path, lock: dict, lock_sha: str, previous_path: Path)
         return report
 
 
+def retarget_reserve(workspace: Path, previous: dict, lock: dict, env: dict) -> str:
+    """Use the incremental reserve only with matching lock tags and CEF ancestry."""
+    values = [item["chromium"].get("tag") for item in (previous, lock)]
+    tags = [re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)", value)
+            if isinstance(value, str) else None for value in values]
+    if not all(tags) or tags[0].groups()[:3] != tags[1].groups()[:3]:
+        return "sync"
+    cef = locations(workspace)["cef"]
+    branch = "refs/heads/" + tags[0].group(3)
+    try:
+        # Refresh this one CEF branch, never Chromium or its dependencies, before
+        # deciding whether a locked source upgrade qualifies as incremental.
+        run(GIT + ["fetch", "--no-tags", "origin", branch], cef, env)
+        head = run(GIT + ["rev-parse", "--verify", "FETCH_HEAD^{commit}"], cef, env, True).decode().strip()
+        if not re.fullmatch(r"[0-9a-f]{40}", head):
+            return "sync"
+        for item in (previous, lock):
+            run(GIT + ["merge-base", "--is-ancestor", item["cef"]["commit"], head], cef, env, True)
+    except (OSError, subprocess.CalledProcessError, UnicodeError):
+        return "sync"
+    return "build"
+
+
 def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) -> dict:
     """Change only dependency pins, preserving outputs and untracked files."""
     if (not previous_path.is_absolute() or ".." in previous_path.parts
@@ -472,7 +495,7 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
     for name in locations(workspace):
         if previous[name]["url"] != lock[name]["url"]:
             raise Refusal("retarget cannot change repository origins")
-    report = host_report(workspace, lock, "sync")
+    report = host_report(workspace, lock, "build")
     if report["blockers"]:
         raise Refusal("; ".join(report["blockers"]))
     guard_path = internal_path(workspace / ".parc-operation.lock", workspace)
@@ -486,6 +509,10 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
             raise Refusal("retarget requires a recorded good source phase")
         env = environment(workspace, previous, state["symbol_level"])
         verify_workspace(workspace, previous, state, env)
+        reserve = retarget_reserve(workspace, previous, lock, env)
+        report = host_report(workspace, lock, reserve)
+        if report["blockers"]:
+            raise Refusal("; ".join(report["blockers"]))
         record = recorded_overlay(workspace, state)
         # Validate every restoration path before starting a non-resumable stage.
         restores = [(target_path(workspace, target, previous),
@@ -531,7 +558,8 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
                             source_fingerprint=active["source_fingerprint"], overlay=None)
             write_marker(workspace, shipping, SHIPPING_MARKER)
         write_marker(workspace, active)
-        return {"workspace": str(workspace), "phase": "synced", "lock_sha256": lock_sha}
+        return {"workspace": str(workspace), "phase": "synced", "lock_sha256": lock_sha,
+                "reserve": reserve, "minimum_free_bytes": report.get("minimum_free_bytes")}
 
 
 def verify_repository(path: Path, item: dict, env: dict, require_clean: bool = True) -> None:

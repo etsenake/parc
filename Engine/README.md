@@ -67,7 +67,7 @@ It normalizes proven internal generated links and drops only known generated
 external links in the copy, preserving objects, caches and the original workspace.
 Copy-on-write ancestry itself is not detectable; the receipt and fingerprints
 prove the copy's source state. Adoption does not fetch or build and has no disk
-floor; later retarget and build commands retain their existing floors.
+floor; later retarget and build commands enforce their applicable reserves.
 
 Build-setting-only lock changes use the guarded reconfiguration path:
 
@@ -90,9 +90,17 @@ only verified overlay additions, and restores tracked CEF patch changes before
 checking out the new pins. It repeats dependency sync, hooks and CEF patching,
 then records `synced`; reapply the new overlay before generation/build. Outputs,
 caches and unrelated untracked files are preserved. Interrupted retargeting is
-left incomplete for inspection rather than guessed recovery. The **80 GB sync
-floor** applies: dependency downloads and replacement source blocks still need
-space even when compiled objects survive. No storage floor is lowered.
+left incomplete for inspection rather than guessed recovery. Verified incremental
+retargets use the existing **40 GB build reserve**: both lock tags must name the
+same Chromium major, minor and branch (for example `156.0.8078.x`), and both
+locked CEF commits must be ancestors of the freshly fetched matching CEF branch.
+Only that CEF branch is fetched to establish ancestry, after ownership/source
+verification and the 40 GB preflight; checkouts and dependency sync wait for the
+selected reserve check. Missing tags, unprovable CEF ancestry or cross-branch
+changes use the **80 GB sync reserve**, as do fresh syncs. Incremental retargets
+reuse the existing source, objects and caches; the reserve allows for delta
+fetches and replacement blocks, not a second full checkout. Neither floor value
+changes, and neither guarantees that an operation will fit.
 
 It verifies that only supported defines changed and preserves sources/objects.
 The next authorized build regenerates and compiles. Shipping planning, generation
