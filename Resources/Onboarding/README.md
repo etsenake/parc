@@ -18,9 +18,6 @@ AVFoundation extractions of each video's first frame, not additional reference
 artwork. The four grain images are 2100×1500. The 100×100 videos are silent,
 lasting 6 seconds (orb) and 8 seconds (background).
 
-The What's New page (`Sources/WhatsNew`) inlines the same font file for its
-headings when it is rendered at build time.
-
 Every resource is loaded from Parc's bundle. The packager already copies this
 tree, and the app already links AVFoundation; CoreText is imported by the Swift
 

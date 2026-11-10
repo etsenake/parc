@@ -93,6 +93,12 @@ class WhatsNewTests(unittest.TestCase):
         self.assertEqual(re.findall(r"url\((?![\"']?data:|%23)", page), [])
         self.assertNotIn("$", page)
 
+    def test_each_inlined_asset_appears_once(self):
+        page = whats_new.render(SAMPLE)
+        for asset in ("Sources/WhatsNew/CormorantGaramond-SemiBoldItalic.woff",
+                      "Resources/AppIcons/Marks/Monochrome.png", "Resources/ThemeTextures/grain.png"):
+            self.assertEqual(page.count(whats_new.inline(REPO / asset)), 1, asset)
+
     def test_favicon_is_square_so_it_is_not_stretched(self):
         page = whats_new.render(SAMPLE)
         icon = base64.b64decode(re.search(r'rel="icon" href="data:image/png;base64,([^"]+)"', page)[1])

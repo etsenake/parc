@@ -9,9 +9,10 @@
 <link rel="icon" href="data:image/png;base64,$favicon">
 <style>
 @font-face {
-  font-family: "Marlin Soft SQ";
-  font-weight: 800;
-  src: url(data:font/otf;base64,$font) format("opentype");
+  font-family: "Cormorant Garamond";
+  font-style: italic;
+  font-weight: 600;
+  src: url(data:font/woff;base64,$font) format("woff");
 }
 
 :root {
@@ -25,7 +26,7 @@
   --faster: #00807C;
   --heads-up: #F5E8C7;
   --heads-up-ink: #7D5E0F;
-  --display: "Marlin Soft SQ", ui-rounded, system-ui, sans-serif;
+  --display: "Cormorant Garamond", ui-serif, Georgia, serif;
   --body: system-ui, -apple-system, "Helvetica Neue", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
@@ -55,13 +56,15 @@ body {
 }
 
 /*
-   clipped by a 20 pt sine wave of amplitude 5 (see README.md). */
+   clipped by a 20 pt sine wave of amplitude 5, with Parc's grain texture
+   overlaid on top (see README.md). */
 .banner {
   padding: 72px 32px 84px;
   text-align: center;
   color: #FFFCEC;
-  background: #484FFF url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .184 0 0 0 0 .224 0 0 0 0 1 1.2 0 0 0 .23'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23g)'/%3E%3C/svg%3E");
+  background: url(data:image/png;base64,$grain) 0 0 / 100px 100px, #484FFF url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='g' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .184 0 0 0 0 .224 0 0 0 0 1 1.2 0 0 0 .23'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23g)'/%3E%3C/svg%3E");
   --wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 6'%3E%3Cpath d='M0 0V3.5C4.07.17 5.93.17 10 3.5S15.93 6.83 20 3.5V0Z'/%3E%3C/svg%3E");
+  background-blend-mode: overlay, normal;
   -webkit-mask: linear-gradient(#000 0 0) top / 100% calc(100% - 6px) no-repeat, var(--wave) left bottom / 20px 6px repeat-x;
   mask: linear-gradient(#000 0 0) top / 100% calc(100% - 6px) no-repeat, var(--wave) left bottom / 20px 6px repeat-x;
 }
@@ -72,13 +75,14 @@ body {
   height: 77px;
   margin: 0 auto 28px;
   background: currentColor;
-  -webkit-mask: url(data:image/png;base64,$mark) center / contain no-repeat;
-  mask: url(data:image/png;base64,$mark) center / contain no-repeat;
+  --mark: url(data:image/png;base64,$mark);
+  -webkit-mask: var(--mark) center / contain no-repeat;
+  mask: var(--mark) center / contain no-repeat;
 }
 
 .banner h1 {
-  font: 800 clamp(56px, 8vw, 96px)/0.95 var(--display);
-  letter-spacing: -0.05em;
+  font: italic 600 clamp(64px, 9.5vw, 112px)/1 var(--display);
+  letter-spacing: -0.01em;
 }
 
 main {
@@ -96,8 +100,8 @@ main {
 
 .latest h2 {
   margin-top: 16px;
-  font: 800 56px/1 var(--display);
-  letter-spacing: -0.05em;
+  font: italic 600 64px/1 var(--display);
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 
@@ -124,8 +128,7 @@ main {
 }
 
 .label {
-  font: 800 17px/1 var(--display);
-  letter-spacing: -0.01em;
+  font: italic 600 20px/1 var(--display);
   color: var(--accent);
 }
 
@@ -161,8 +164,7 @@ li::before {
 }
 
 .earlier > h2 {
-  font: 800 24px/1 var(--display);
-  letter-spacing: -0.03em;
+  font: italic 600 28px/1 var(--display);
   color: var(--ink);
 }
 
@@ -175,14 +177,13 @@ li::before {
 }
 
 .release h3 {
-  font: 800 22px/1 var(--display);
-  letter-spacing: -0.03em;
+  font: italic 600 26px/1 var(--display);
   color: var(--ink);
 }
 
 .release .date { margin-top: 10px; }
 .release .group + .group { margin-top: 22px; }
-.release .label { font-size: 15px; }
+.release .label { font-size: 17px; }
 .release ul { margin-top: 10px; }
 .quiet { color: var(--muted); }
 
@@ -192,8 +193,8 @@ li::before {
 }
 
 .empty h2 {
-  font: 800 40px/1 var(--display);
-  letter-spacing: -0.05em;
+  font: italic 600 46px/1 var(--display);
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 
@@ -207,8 +208,7 @@ li::before {
 .signoff {
   padding: 112px 0 80px;
   text-align: center;
-  font: 800 17px/1 var(--display);
-  letter-spacing: -0.01em;
+  font: italic 600 20px/1 var(--display);
   color: var(--muted);
 }
 

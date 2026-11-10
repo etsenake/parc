@@ -30,8 +30,8 @@ class PackagingIconTests(unittest.TestCase):
         self.root = Path(self.temporary.name).resolve()
         self.repo = self.root / "repo"
         shutil.copytree(REPO / "Resources/AppIcons", self.repo / "Resources/AppIcons")
-        (self.repo / "Resources/Onboarding").mkdir()
-        shutil.copy2(REPO / "Resources/Onboarding/MarlinSoftSQ-ExtraBold.otf", self.repo / "Resources/Onboarding")
+        (self.repo / "Resources/ThemeTextures").mkdir()
+        shutil.copy2(REPO / "Resources/ThemeTextures/grain.png", self.repo / "Resources/ThemeTextures")
         shutil.copytree(REPO / "Sources/WhatsNew", self.repo / "Sources/WhatsNew")
         shutil.copy2(REPO / "app-version.json", self.repo / "app-version.json")
         (self.repo / "Engine").mkdir()
