@@ -35,7 +35,9 @@ The private release stores the **existing incremental workspace** and the **last
 completed development package** separately. Restoring the workspace preserves
 source repositories, toolchains, object files and Siso build state. Its captured
 receipt may describe an unfinished build; the snapshot does not turn it into a
-completed engine. The development package includes `Parc.app`, its sibling
+completed engine. Capture and restore use the checkout’s `Engine/source-lock.json` for
+both CEF and direct Chromium workspaces; archive transport stays unchanged.
+The development package includes `Parc.app`, its sibling
 engine libraries and its original `package-report.json`.
 
 Use Python 3.12 or later and authenticate GitHub CLI with access to

@@ -153,5 +153,23 @@ class NotarizationTests(unittest.TestCase):
                     self.execute()
 
 
+class DirectNotarizationTests(NotarizationTests):
+    def setUp(self):
+        super().setUp()
+        helper = self.package / 'Parc.app/Contents/Frameworks/Parc Helper.app/Contents/MacOS/Parc Helper'
+        helper.parent.mkdir(parents=True)
+        helper.write_bytes(b'signed direct Chromium helper')
+        self.report['engine_runtime'] = 'chromium-direct'
+        self.report['signed_images'][helper.relative_to(self.package).as_posix()] = hashlib.sha256(helper.read_bytes()).hexdigest()
+        self.report_path.write_text(json.dumps(self.report))
+
+    def test_changed_direct_helper_is_rejected_before_upload(self):
+        helper = self.package / 'Parc.app/Contents/Frameworks/Parc Helper.app/Contents/MacOS/Parc Helper'
+        helper.write_bytes(b'changed helper')
+        with self.assertRaisesRegex(notarize.Refusal, 'differs from its report'):
+            self.execute()
+        self.assertFalse(any(call[:3] == ['xcrun', 'notarytool', 'submit'] for call in self.calls))
+
+
 if __name__ == '__main__':
     unittest.main()

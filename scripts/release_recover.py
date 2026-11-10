@@ -31,7 +31,7 @@ def recover(source, workspace, process_group, evidence, inputs_replaced=False):
         env = engine.shipping_environment(workspace, lock, state['symbol_level'])
         engine.verify_workspace(workspace, lock, state, env)
         engine.recorded_overlay(workspace, state)
-        arguments = engine.shipping_arguments(workspace, env)
+        arguments = engine.shipping_arguments(workspace, env, lock)
         output = workspace / 'chromium/src/out' / engine.SHIPPING_CONFIGURATION
         if ((output / 'args.gn').read_bytes() != arguments
                 or receipt['args_sha256'] != engine.digest(arguments)):

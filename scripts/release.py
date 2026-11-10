@@ -549,7 +549,10 @@ class Release:
         workspace = workspace.resolve()
         script = source / "scripts/engine-source.py"
         lock = source / "Engine/source-lock.json"
-        overlay = source / "Engine/ParcHost/overlay.json"
+        engine_tool = module(source, "engine-source")
+        selected_lock, _ = engine_tool.load_lock(lock)
+        overlay = source / ("Engine/ParcHost/overlay-direct.json" if engine_tool.direct_mode(selected_lock)
+                            else "Engine/ParcHost/overlay.json")
         self.checkpoint(workspace=str(workspace), overlay=json.loads(overlay.read_text())["version"])
         if not (workspace / ".parc-engine-source.json").exists() and (not workspace.exists() or not any(workspace.iterdir())):
             workspace.parent.mkdir(parents=True, exist_ok=True)
@@ -598,7 +601,7 @@ class Release:
         current = json.loads((workspace / ".parc-engine-source.json").read_text())
         if current.get("overlay", {}).get("identity") != sha(overlay):
             self.command([sys.executable, script, "overlay-apply", "--workspace", workspace, "--manifest", overlay], name="overlay-apply")
-        output = workspace / "chromium/src/out/ParcDistribution_GN_arm64"
+        output = workspace / "chromium/src/out" / engine_tool.SHIPPING_CONFIGURATION
         manifest = Path(self.state.get('engine_seal_path', str(Path(self.state['run']) / 'engine-artifacts.json')))
         self.checkpoint(engine_seal_path=str(manifest))
         if manifest.exists():
