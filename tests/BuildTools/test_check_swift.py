@@ -111,6 +111,8 @@ class CheckSwiftTests(unittest.TestCase):
         facade.write_text('#import "native_application_protocols.h"\n')
         header = self.repo / "Engine/ParcNative/native_application_protocols.h"
         header.write_text("#import <Foundation/Foundation.h>\n")
+        (self.headers / "cef_application_mac.h").unlink()
+        self.headers.rmdir()
         result = self.run_check("--plan", headers=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         plan = json.loads(result.stdout)

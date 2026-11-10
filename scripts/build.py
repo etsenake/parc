@@ -582,8 +582,8 @@ def verify_manifest(manifest: dict, engine: Path, repo: Path) -> None:
 def release_report(repo: Path, package: Path, *, local_test: bool = False) -> dict:
     """The published package's report, refused unless its engine is this checkout's engine.
 
-    A local test build only needs the same source lock, since its CEF header
-    comes from that lock; release_engine then checks the app's engine headers.
+    A local test build needs the same source lock; release_engine then checks
+    the engine API headers the app actually consumes.
     """
     report = read_json(package / "package-report.json")
     if (report.get("schema_version") != 1 or report.get("layout") != "standalone-app"
@@ -654,6 +654,8 @@ def pinned_source(repo: Path, workspace: Path, destination: Path, *, direct: boo
     for repository, name in PINNED_INPUTS:
         if direct and repository == "cef":
             continue
+        if name == "cef/include/cef_application_mac.h" and uses_direct_application_protocols(repo):
+            continue
         if name in patched:
             raise Refusal("The overlay changes a pinned packaging input; build the engine instead: " + name)
         checkout, path = (chromium / "cef", name[len("cef/"):]) if repository == "cef" else (chromium, name)
@@ -666,6 +668,12 @@ def pinned_source(repo: Path, workspace: Path, destination: Path, *, direct: boo
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(result.stdout)
     return destination
+
+
+def uses_direct_application_protocols(repo: Path) -> bool:
+    facade = repo / "Sources/ParcEngine/ParcEngine.h"
+    return facade.is_file() and bool(re.search(
+        r'^\s*#import\s+"native_application_protocols\.h"', facade.read_text(), re.M))
 
 
 def facade_includes(repo: Path, source: Path) -> list[object]:
@@ -681,9 +689,12 @@ def app_engine_headers(repo: Path, source: Path) -> list[str]:
                  "-I", repo / "Engine/ParcNative", "-I", repo / "Sources/ParcEngine", "-DOS_MAC=1",
                  *facade_includes(repo, source), "-M", repo / "Sources/ParcEngine/ParcEngine.m")
     root = (repo / "Engine/ParcNative").resolve()
+    # These app-side protocol declarations add no linked engine API.
+    application_protocols = root / "native_application_protocols.h"
     headers = {Path(token).resolve().relative_to(repo.resolve()).as_posix()
                for token in output.replace("\\\n", " ").split()
-               if token.endswith(".h") and Path(token).resolve().is_relative_to(root)}
+               if token.endswith(".h") and Path(token).resolve().is_relative_to(root)
+               and Path(token).resolve() != application_protocols}
     if not headers:
         raise Refusal("Could not find the engine headers the app compiles against")
     return sorted(headers)
@@ -1117,6 +1128,10 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
     facade = repo / "Sources/ParcEngine/ParcEngine.m"
     if '"native_engine_entry.h"' not in facade.read_text():
         raise Refusal("Refusing to compile the superseded engine facade")
+    if manifest.get("engine_runtime") == "chromium-direct" or uses_direct_application_protocols(repo):
+        protocols = repo / "Engine/ParcNative/native_application_protocols.h"
+        if not protocols.is_file():
+            raise Refusal("Required application protocol header is missing: " + str(protocols))
     progress(f"packaging: fetching Sparkle {sparkle.VERSION}")
     sparkle_release = sparkle.fetch(repo / "build/sparkle")
     with tempfile.TemporaryDirectory(prefix=".parc-package-", dir=output.parent) as temporary:

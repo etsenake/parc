@@ -128,6 +128,13 @@ class PackagingIconTests(unittest.TestCase):
             verified = stack.enter_context(patch.object(pkg, "verify_manifest"))
             yield verified
 
+    def test_direct_packaging_requires_application_protocol_header_before_copy(self):
+        (self.repo / "Sources/ParcEngine/ParcEngine.h").write_text('#import "native_application_protocols.h"\n')
+        with self.fixture_tools(), patch.object(pkg, "copy_engine") as copy:
+            with self.assertRaisesRegex(pkg.Refusal, "application protocol header"):
+                pkg.build_app(self.repo, self.engine, self.manifest, self.root / "direct-missing", "-")
+        copy.assert_not_called()
+
     def test_direct_helpers_preserve_all_bundle_plists_and_entitlements(self):
         def icons(resources):
             (resources / "Parc.icns").write_bytes(b"fixture icon")
@@ -135,6 +142,9 @@ class PackagingIconTests(unittest.TestCase):
         results = []
         for direct in (False, True):
             if direct:
+                (self.repo / "Sources/ParcEngine/ParcEngine.h").write_text('#import "native_application_protocols.h"\n')
+                (self.repo / "Engine/ParcNative/native_application_protocols.h").write_text("#pragma once\n")
+                shutil.rmtree(self.engine.parent.parent / "cef")
                 helper = self.engine / "parc_helper"
                 helper.write_bytes(b"GN-built helper")
                 helper.chmod(0o755)

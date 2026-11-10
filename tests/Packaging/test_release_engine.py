@@ -163,13 +163,25 @@ class ReleaseEngineTests(unittest.TestCase):
         helper = engine / "Parc Helper.app/Contents/MacOS/Parc Helper"
         helper.parent.mkdir(parents=True)
         helper.write_text("helper")
+        older = commit(self.repo, {
+            "Engine/ParcNative/native_engine_entry.h": "engine API",
+            "Sources/ParcEngine/ParcEngine.h": '#import "native_application_protocols.h"\n',
+        })
+        protocols = self.repo / "Engine/ParcNative/native_application_protocols.h"
+        protocols.write_text("@protocol CrAppProtocol\n@end\n")
+        api = self.repo / "Engine/ParcNative/native_engine_entry.h"
+        dependencies = "ParcEngine.o: " + str(api) + " " + str(protocols)
         with patch.object(pkg, "release_report", return_value=self.report), \
                 patch.object(pkg, "verify_release_framework"), patch.object(pkg, "verify_release_helper"), \
                 patch.object(pkg, "pinned_source", return_value=stage), \
-                patch.object(pkg, "app_engine_headers", return_value=[]), \
-                patch.object(pkg, "changed_since", return_value=[]), \
+                patch.object(pkg, "run", return_value=dependencies), \
                 patch.object(pkg, "release_manifest", return_value={"components": {}}) as seal:
-            pkg.release_engine(self.repo, self.package, self.root, stage, "v1", "a" * 40, local_test=True)
+            pkg.release_engine(self.repo, self.package, self.root, stage, "v1", older, local_test=True)
+            release = seal.call_args.args[2]
+            self.assertEqual(release["local_test"]["engine_api_headers"], ["Engine/ParcNative/native_engine_entry.h"])
+            api.write_text("engine API plus a new call")
+            with self.assertRaisesRegex(pkg.Refusal, "engine headers changed"):
+                pkg.release_engine(self.repo, self.package, self.root, stage, "v1", older, local_test=True)
         release = seal.call_args.args[2]
         self.assertEqual(release["local_test"]["checkout_overlay"], digest(direct))
 
@@ -208,6 +220,21 @@ class ReleaseEngineTests(unittest.TestCase):
         (cef / "include/cef_application_mac.h").write_text("edited header")
         self.write_lock({"cef": {"commit": pinned_cef}, "chromium": {"commit": pinned_chromium}})
         return workspace
+
+    def test_direct_facade_reuses_cef_engine_without_its_application_header(self):
+        workspace = self.pinned_workspace()
+        cef = workspace / "chromium/src/cef"
+        (cef / "include/cef_application_mac.h").unlink()
+        pinned = commit(cef, {"LICENSE.txt": "cef license without app header"})
+        lock = json.loads((self.repo / "Engine/source-lock.json").read_text())
+        lock["cef"]["commit"] = pinned
+        self.write_lock(lock)
+        facade = self.repo / "Sources/ParcEngine/ParcEngine.h"
+        facade.parent.mkdir(parents=True)
+        facade.write_text('#import "native_application_protocols.h"\n')
+        source = pkg.pinned_source(self.repo, workspace, self.root / "direct-facade")
+        self.assertEqual((source / "cef/LICENSE.txt").read_text(), "cef license without app header")
+        self.assertFalse((source / "cef/include/cef_application_mac.h").exists())
 
     def test_pinned_source_reads_the_lock_commits_not_the_working_tree(self):
         workspace = self.pinned_workspace()
