@@ -89,7 +89,7 @@ for use in (
     "if !shown { self.footerMore.refreshHover() }",
     "let plusColors = TranslucentButtonColors.standard(dark: palette.isDark)",
     "if plusButton.colors != plusColors { plusButton.colors = plusColors }",
-    "hovered = isEnabled && NSApp.isActive && !isHiddenOrHasHiddenAncestor",
+    "guard let window, isEnabled, NSApp.isActive, !isHiddenOrHasHiddenAncestor else { hovered = false; return }",
     # A press dragged off or back on the + changes its highlight; each edge re-reads the hover.
     "if tracksHover { refreshHover() }\n        onHighlight?(flag)",
 ):

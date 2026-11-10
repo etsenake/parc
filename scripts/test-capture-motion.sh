@@ -21,7 +21,7 @@ xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0
   "$check_root/Components.swift" "$repo_root/Sources/ParcCore/CaptureDestinations.swift" \
   "$repo_root/Sources/ParcApp/CapturePresentation.swift" "$repo_root/Sources/ParcApp/CaptureMotion.swift" \
   "$repo_root/Sources/ParcApp/DownloadArrivalMotion.swift" "$repo_root/Sources/ParcApp/DownloadLibraryPreview.swift" \
-  "$repo_root/Sources/ParcApp/TranslucentButtonFace.swift" "$repo_root/Sources/ParcApp/ReloadControl.swift" \
+  "$repo_root/Sources/ParcApp/TranslucentButtonFace.swift" "$repo_root/Sources/ParcApp/PointerCover.swift" "$repo_root/Sources/ParcApp/ReloadControl.swift" \
   "$repo_root/tests/Support/AppKitObservation.swift" "$repo_root/tests/CaptureMotion/main.swift" \
   -o "$check_root/CaptureMotionChecks"
 "$check_root/CaptureMotionChecks"

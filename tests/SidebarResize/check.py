@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-resize-") as directory:
     for name, sources in [("gesture", [model, here / "SidebarResizeGestureTests.swift"]),
                           ("width", [model, here / "SidebarWindowWidthTests.swift"]),
                           ("session", [*core, here / "SidebarWindowSessionTests.swift"]),
-                          ("region", [model, root / "Sources/ParcApp/SidebarResizeRegion.swift",
+                          ("region", [model, root / "Sources/ParcApp/SidebarResizeRegion.swift", root / "Sources/ParcApp/PointerCover.swift",
                                       here / "SidebarResizeRegionTests.swift"]),
                           ("hold", [hold, here / "PageContentResizeTests.swift"]),
                           ("resizer", [hold, root / "Sources/ParcApp/PageContentResizer.swift",

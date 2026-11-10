@@ -212,7 +212,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-chrome-") as directory:
                            app / "SidebarRowAppearance.swift", theme_palette, app / "SidebarAccessibility.swift", here / "SidebarDockMenuTests.swift"],
               "listmenu": [*store_sources, core / "SidebarOutlineConfigureSkip.swift",
                            app / "SidebarChromeLayout.swift", app / "SidebarSpaceMenu.swift", app / "SidebarOutline.swift",
-                           app / "SidebarTablist.swift", action_button, app / "TranslucentButtonFace.swift",
+                           app / "SidebarTablist.swift", action_button, app / "TranslucentButtonFace.swift", app / "PointerCover.swift",
                            app / "ReloadControl.swift", here / "SidebarListMenuTests.swift"],
               "setting": [*store_sources, here / "SpaceHeaderSettingTests.swift"]}
     def build(name, sources):

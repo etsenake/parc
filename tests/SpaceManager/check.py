@@ -66,6 +66,7 @@ MiniPlayerView.swift
 NavigationControlPress.swift
 PageCardShadow.swift
 ParcSplitView.swift
+PointerCover.swift
 ReloadControl.swift
 SadTabContent.swift
 SavedFocus.swift
