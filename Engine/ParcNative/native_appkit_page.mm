@@ -2,7 +2,7 @@
 #include "native_appkit_page.h"
 #include "native_page_shell_notify.h"
 #include "native_cast.h"
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "native_internal_urls.h"
 #include "components/sessions/content/content_serialized_navigation_builder.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "components/sessions/core/serialized_navigation_entry.h"
@@ -27,6 +27,11 @@
 #include "base/apple/foundation_util.h"
 #include "base/check.h"
 #include "components/find_in_page/find_tab_helper.h"
+#include "components/find_in_page/find_types.h"
+#include "components/url_formatter/url_fixer.h"
+#include "components/zoom/zoom_controller.h"
+#include "components/zoom/page_zoom.h"
+#include "content/public/common/page_zoom.h"
 #include "components/find_in_page/find_result_observer.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -1727,31 +1732,32 @@ void SetNativePageClosedCallback(PCNativePage* page,
 - (BOOL)isEmbedded { return _state->embedded(); }
 - (BOOL)embeddedOwnerValid { return _state->EmbeddedOwnerValid(); }
 - (void)loadURL:(NSURL*)url {
-  const GURL requested(url.absoluteString.UTF8String ?: "");
+  const GURL requested = url_formatter::FixupURL(
+      url.absoluteString.UTF8String ?: "", std::string());
+  if (!requested.is_valid()) return;
   if (parc::IsNativeAppDocumentURL(requested) || requested.SchemeIs("arc")) return;
   if (_state->embedded() && (!_state->PageToolBrowser(false, false) ||
       PCNativeWindowHasSecurityReservation(self.nativeView.window))) return;
   CHECK(NSThread.isMainThread);
-  auto host = _state->host();
-  auto frame = host ? host->GetMainFrame() : nullptr;
-  if (frame) {
-    frame->LoadURL(url.absoluteString.UTF8String);
+  if (auto* contents = _state->contents()) {
+    contents->GetController().LoadURL(requested, content::Referrer(),
+                                      ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED |
+                                          ui::PAGE_TRANSITION_FROM_ADDRESS_BAR),
+                                      std::string());
   }
 }
 - (void)goBack {
   if (_state->embedded() && (!_state->PageToolBrowser(false, false) ||
       PCNativeWindowHasSecurityReservation(self.nativeView.window))) return;
-  auto host = _state->host();
-  if (host) {
-    host->GoBack();
+  if (auto* contents = _state->contents()) {
+    contents->GetController().GoBack();
   }
 }
 - (void)goForward {
   if (_state->embedded() && (!_state->PageToolBrowser(false, false) ||
       PCNativeWindowHasSecurityReservation(self.nativeView.window))) return;
-  auto host = _state->host();
-  if (host) {
-    host->GoForward();
+  if (auto* contents = _state->contents()) {
+    contents->GetController().GoForward();
   }
 }
 - (PCNativeRendererCrash*)rendererCrash {
@@ -1766,36 +1772,37 @@ void SetNativePageClosedCallback(PCNativePage* page,
 - (void)reload {
   if (_state->embedded() && (!_state->PageToolBrowser(false, false) ||
       PCNativeWindowHasSecurityReservation(self.nativeView.window))) return;
-  auto host = _state->host();
-  if (host) {
-    host->Reload();
+  if (auto* contents = _state->contents()) {
+    contents->GetController().Reload(content::ReloadType::NORMAL, true);
   }
 }
 - (void)stop {
   if (_state->embedded() && (!_state->PageToolBrowser(false, false) ||
       PCNativeWindowHasSecurityReservation(self.nativeView.window))) return;
-  auto host = _state->host();
-  if (host) {
-    host->StopLoad();
+  if (auto* contents = _state->contents()) {
+    contents->Stop();
   }
 }
 - (void)setZoomLevel:(double)level {
-  auto host = _state->host();
-  if (host) {
-    host->SetZoomLevel(level);
+  auto* contents = _state->contents();
+  auto* zoom = contents ? zoom::ZoomController::FromWebContents(contents) : nullptr;
+  if (!zoom || !std::isfinite(level)) return;
+  if (level == 0) {
+    level = zoom->GetDefaultZoomLevel();
+    contents->SetPageScale(1.f);
   }
+  zoom->SetZoomLevel(level);
 }
 - (void)zoomPage:(NSInteger)direction {
-  auto host = _state->host();
-  if (host) {
-    host->Zoom(direction < 0   ? CEF_ZOOM_COMMAND_OUT
-               : direction > 0 ? CEF_ZOOM_COMMAND_IN
-                               : CEF_ZOOM_COMMAND_RESET);
+  if (auto* contents = _state->contents()) {
+    zoom::PageZoom::Zoom(contents, direction < 0 ? content::PAGE_ZOOM_OUT
+        : direction > 0 ? content::PAGE_ZOOM_IN : content::PAGE_ZOOM_RESET);
   }
 }
 - (double)pageZoomLevel {
-  auto host = _state->host();
-  return host ? host->GetZoomLevel() : 0;
+  auto* contents = _state->contents();
+  auto* zoom = contents ? zoom::ZoomController::FromWebContents(contents) : nullptr;
+  return zoom ? zoom->GetZoomLevel() : 0;
 }
 + (NSNotificationName)findResultDidChangeNotification {
   return @"ParcNativePageFindResultDidChange";
@@ -1818,17 +1825,18 @@ void SetNativePageClosedCallback(PCNativePage* page,
 }
 - (void)findText:(NSString*)text forward:(BOOL)forward findNext:(BOOL)findNext {
   auto* browser = _state->PageToolBrowser();
-  auto host = _state->host();
-  if (browser && [self canFindInPage] && host && text.length) {
+  auto* contents = _state->contents();
+  auto* helper = contents ? find_in_page::FindTabHelper::FromWebContents(contents) : nullptr;
+  if (browser && [self canFindInPage] && helper && text.length) {
     _state->PrepareFind(text);
-    host->Find(text.UTF8String, forward, false, findNext);
+    helper->StartFinding(base::SysNSStringToUTF16(text), forward, false, findNext);
   }
 }
 - (void)stopFinding {
   _state->ClearFind();
-  auto host = _state->host();
-  if (host) {
-    host->StopFinding(true);
+  auto* contents = _state->contents();
+  if (auto* helper = contents ? find_in_page::FindTabHelper::FromWebContents(contents) : nullptr) {
+    helper->StopFinding(find_in_page::SelectionAction::kClear);
   }
 }
 - (NSString*)developerModeHost {
