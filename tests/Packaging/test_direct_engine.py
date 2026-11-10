@@ -89,13 +89,13 @@ class DirectEngineTests(unittest.TestCase):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
-        pkg.check_helper_contract(self.root, direct=True)
+        pkg.check_helper_contract(self.root)
         for name in ("parc/helper/BUILD.gn", "parc/parc_content_clients.cc", "parc/parc_bundle_mac.mm", "chrome/common/chrome_constants.cc"):
             path = self.root / name
             original = path.read_text()
             path.write_text("")
             with self.assertRaisesRegex(pkg.Refusal, "routing|Seatbelt"):
-                pkg.check_helper_contract(self.root, direct=True)
+                pkg.check_helper_contract(self.root)
             path.write_text(original)
 
     def test_release_rejects_swapped_helper(self):
@@ -114,12 +114,12 @@ class DirectEngineTests(unittest.TestCase):
 
     def test_ambiguous_engine_is_refused(self):
         (self.framework / "Libraries/libcef_sandbox.dylib").write_bytes(b"stale")
-        with self.assertRaisesRegex(pkg.Refusal, "mixes"):
+        with self.assertRaisesRegex(pkg.Refusal, "Retired sandbox"):
             self.seal()
 
     def test_missing_gn_helper_cannot_be_sealed(self):
         (self.root / "parc_helper").unlink()
-        with self.assertRaisesRegex(pkg.Refusal, "libcef_sandbox"):
+        with self.assertRaisesRegex(pkg.Refusal, "GN helper"):
             self.seal()
 
     def test_helper_cannot_link_framework_before_sandbox(self):

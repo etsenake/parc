@@ -46,17 +46,17 @@ class ReleaseEngineTests(unittest.TestCase):
         self.repo = self.root / "repo"
         (self.repo / "scripts").mkdir(parents=True)
         (self.repo / "scripts/engine-source.py").write_bytes((REPO / "scripts/engine-source.py").read_bytes())
-        source = self.repo / "Engine/ParcHost/parc_native_host.mm"
+        source = self.repo / "Engine/ParcHost/fixture_host.mm"
         source.parent.mkdir(parents=True)
         source.write_text("overlay input")
         patch_file = self.repo / "Engine/ParcHost/integration/native-host.patch"
         patch_file.parent.mkdir(parents=True)
         patch_file.write_text("overlay patch")
-        self.overlay = {"files": [{"source": "Engine/ParcHost/parc_native_host.mm",
-                                   "target": "cef/libcef/browser/parc_native_host.mm", "sha256": digest(source)}],
+        self.overlay = {"files": [{"source": "Engine/ParcHost/fixture_host.mm",
+                                   "target": "parc/fixture_host.mm", "sha256": digest(source)}],
                         "patches": [{"source": "Engine/ParcHost/integration/native-host.patch",
                                      "sha256": digest(patch_file),
-                                     "files": [{"target": "cef/BUILD.gn"}]}]}
+                                     "files": [{"target": "parc/BUILD.gn"}]}]}
         self.write_overlay()
         self.package = self.root / "package"
         self.package.mkdir()
@@ -80,10 +80,10 @@ class ReleaseEngineTests(unittest.TestCase):
         (self.package / "package-report.json").write_text(json.dumps({**self.report, **changes}))
 
     def test_release_report_accepts_only_this_checkouts_standalone_engine(self):
-        self.write_lock({"cef": {"commit": "a"}})
+        self.write_lock({"chromium": {"commit": "a"}})
         self.write_report()
         self.assertEqual(pkg.release_report(self.repo, self.package)["layout"], "standalone-app")
-        refusals = {"non-component": [{"layout": "cef-component-development"},
+        refusals = {"non-component": [{"layout": "chromium-direct-component-development"},
                                       {"build_classification": "development-component"},
                                       {"distribution_eligible": False},
                                       {"engine_build_flags": {"is_component_build": True}}],
@@ -101,16 +101,16 @@ class ReleaseEngineTests(unittest.TestCase):
                         pkg.release_report(self.repo, self.package)
 
     def test_local_test_report_allows_a_newer_overlay_but_not_a_different_lock(self):
-        self.write_lock({"cef": {"commit": "a"}})
+        self.write_lock({"chromium": {"commit": "a"}})
         self.write_report(overlay={"identity": "older overlay"},
                           engine_build_flags={"is_component_build": False, "is_official_build": False})
-        (self.repo / "Engine/ParcHost/parc_native_host.mm").write_text("engine-internal change")
+        (self.repo / "Engine/ParcHost/fixture_host.mm").write_text("engine-internal change")
         self.assertEqual(pkg.release_report(self.repo, self.package, local_test=True)["overlay"],
                          {"identity": "older overlay"})
         with self.assertRaisesRegex(pkg.Refusal, "current shipping"):
             pkg.release_report(self.repo, self.package)
         for changes, message in (({"source_lock_sha256": "other"}, "different source lock"),
-                                 ({"layout": "cef-component-development"}, "non-component"),
+                                 ({"layout": "chromium-direct-component-development"}, "non-component"),
                                  ({"widevine": {"host_signatures": "signed"}}, "Widevine"),
                                  ({"engine_release": {"local_test": {}}}, "not a release engine")):
             self.write_report(overlay={"identity": "older overlay"}, **changes)
@@ -119,38 +119,33 @@ class ReleaseEngineTests(unittest.TestCase):
 
     def test_direct_release_report_uses_only_selected_overlay(self):
         self.write_lock({"schema_version": 2, "chromium": {"commit": "a"}})
-        direct = self.repo / "Engine/ParcHost/overlay-direct.json"
+        direct = self.repo / "Engine/ParcHost/overlay.json"
         direct.write_text(json.dumps(self.overlay))
-        # A stale CEF manifest must neither block nor authorize a direct release.
-        (self.repo / "Engine/ParcHost/overlay.json").write_text('{"files": [], "patches": []}')
         self.report["overlay"]["identity"] = digest(direct)
         self.write_report()
         self.assertEqual(pkg.release_report(self.repo, self.package)["overlay"], self.report["overlay"])
-        self.write_report(overlay={"identity": digest(self.repo / "Engine/ParcHost/overlay.json")})
+        self.write_report(overlay={"identity": "different"})
         with self.assertRaisesRegex(pkg.Refusal, "different engine overlay"):
             pkg.release_report(self.repo, self.package)
 
     def test_direct_pinned_source_uses_selected_overlay_for_patched_inputs(self):
         workspace = self.pinned_workspace()
         lock = json.loads((self.repo / "Engine/source-lock.json").read_text())
-        lock.pop("cef")
         lock["schema_version"] = 2
         self.write_lock(lock)
-        direct = self.repo / "Engine/ParcHost/overlay-direct.json"
+        direct = self.repo / "Engine/ParcHost/overlay.json"
         direct.write_text(json.dumps({"files": [], "patches": []}))
-        # Ignore a CEF overlay that patches a direct packaging input.
         self.overlay["patches"][0]["files"].append({"target": "LICENSE"})
-        self.write_overlay()
-        source = pkg.pinned_source(self.repo, workspace, self.root / "pinned-direct", direct=True)
+        source = pkg.pinned_source(self.repo, workspace, self.root / "pinned-direct")
         self.assertEqual((source / "LICENSE").read_text(), "chromium license")
         self.assertFalse((source / "cef").exists())
         direct.write_text(json.dumps(self.overlay))
         with self.assertRaisesRegex(pkg.Refusal, "overlay changes a pinned packaging input"):
-            pkg.pinned_source(self.repo, workspace, self.root / "refused", direct=True)
+            pkg.pinned_source(self.repo, workspace, self.root / "refused")
 
     def test_direct_local_test_records_the_selected_checkout_overlay(self):
         self.write_lock({"schema_version": 2, "chromium": {"commit": "a"}})
-        direct = self.repo / "Engine/ParcHost/overlay-direct.json"
+        direct = self.repo / "Engine/ParcHost/overlay.json"
         direct.write_text(json.dumps(self.overlay))
         self.write_report()
         licenses = self.package / "Parc.app/Contents/Resources/EngineLicenses"
@@ -196,9 +191,9 @@ class ReleaseEngineTests(unittest.TestCase):
                          ["Engine/ParcNative/page_host.h", "Engine/ParcNative/new_api.h"])
 
     def test_release_report_refuses_engine_source_edited_without_a_new_overlay(self):
-        self.write_lock({"cef": {"commit": "a"}})
+        self.write_lock({"chromium": {"commit": "a"}})
         self.write_report()
-        for name in ("parc_native_host.mm", "integration/native-host.patch"):
+        for name in ("fixture_host.mm", "integration/native-host.patch"):
             path = self.repo / "Engine/ParcHost" / name
             original = path.read_text()
             path.write_text(original + " edited")
@@ -213,47 +208,27 @@ class ReleaseEngineTests(unittest.TestCase):
         pinned_chromium = commit(chromium, {"LICENSE": "chromium license",
                                             "chrome/app/app-entitlements.plist": "entitlements",
                                             "chrome/tools/build/mac/infoplist_strings_util.cc": "usage"})
-        cef = chromium / "cef"
-        pinned_cef = commit(cef, {"LICENSE.txt": "cef license", "include/cef_application_mac.h": "header"})
-        # Later working-tree and history changes must not reach the package.
-        commit(cef, {"include/cef_application_mac.h": "later header"})
-        (cef / "include/cef_application_mac.h").write_text("edited header")
-        self.write_lock({"cef": {"commit": pinned_cef}, "chromium": {"commit": pinned_chromium}})
+        self.write_lock({"chromium": {"commit": pinned_chromium}})
+        commit(chromium, {"LICENSE": "newer license"})
         return workspace
 
-    def test_direct_facade_reuses_cef_engine_without_its_application_header(self):
-        workspace = self.pinned_workspace()
-        cef = workspace / "chromium/src/cef"
-        (cef / "include/cef_application_mac.h").unlink()
-        pinned = commit(cef, {"LICENSE.txt": "cef license without app header"})
-        lock = json.loads((self.repo / "Engine/source-lock.json").read_text())
-        lock["cef"]["commit"] = pinned
-        self.write_lock(lock)
-        facade = self.repo / "Sources/ParcEngine/ParcEngine.h"
-        facade.parent.mkdir(parents=True)
-        facade.write_text('#import "native_application_protocols.h"\n')
-        source = pkg.pinned_source(self.repo, workspace, self.root / "direct-facade")
-        self.assertEqual((source / "cef/LICENSE.txt").read_text(), "cef license without app header")
-        self.assertFalse((source / "cef/include/cef_application_mac.h").exists())
 
     def test_pinned_source_reads_the_lock_commits_not_the_working_tree(self):
         workspace = self.pinned_workspace()
         source = pkg.pinned_source(self.repo, workspace, self.root / "pinned")
-        self.assertEqual((source / "cef/include/cef_application_mac.h").read_text(), "header")
-        self.assertEqual((source / "cef/LICENSE.txt").read_text(), "cef license")
         self.assertEqual((source / "LICENSE").read_text(), "chromium license")
         self.assertEqual((source / "chrome/app/app-entitlements.plist").read_text(), "entitlements")
         self.assertEqual((source / "chrome/tools/build/mac/infoplist_strings_util.cc").read_text(), "usage")
 
     def test_pinned_source_refuses_overlay_patched_inputs_and_missing_commits(self):
         workspace = self.pinned_workspace()
-        self.overlay["patches"][0]["files"].append({"target": "cef/include/cef_application_mac.h"})
+        self.overlay["patches"][0]["files"].append({"target": "LICENSE"})
         self.write_overlay()
         with self.assertRaisesRegex(pkg.Refusal, "overlay changes a pinned packaging input"):
             pkg.pinned_source(self.repo, workspace, self.root / "pinned-1")
         self.overlay["patches"][0]["files"].pop()
         self.write_overlay()
-        self.write_lock({"cef": {"commit": "0" * 40}, "chromium": {"commit": "0" * 40}})
+        self.write_lock({"chromium": {"commit": "0" * 40}})
         with self.assertRaisesRegex(pkg.Refusal, "at the pinned"):
             pkg.pinned_source(self.repo, workspace, self.root / "pinned-2")
 

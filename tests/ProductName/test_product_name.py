@@ -428,9 +428,8 @@ ALLOWED = {
         '"/../../../Chromium Embedded Framework.framework/"',
         '"Chromium Embedded Framework"',
     },
-    "Sources/ParcHelper/cef_main.cc": {
-        '"/../../../Chromium Embedded Framework.framework/"',
-        '"Chromium Embedded Framework"',
+    "Engine/ParcNative/native_engine_entry.mm": {
+        '"Native application must implement Chromium\'s sendEvent protocol"',
     },
     # Parc's existing engine data directory.
     "Sources/ParcCore/BrowserStore.swift": {'"Chromium-v1"'},

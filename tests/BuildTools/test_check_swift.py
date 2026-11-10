@@ -43,7 +43,7 @@ class CheckSwiftTests(unittest.TestCase):
         root = Path(self.temp.name).resolve()
         self.repo = root / "Parc checkout"
         self.chromium = root / "engine source/chromium/src"
-        self.headers = self.chromium / "cef/include"
+        self.headers = self.repo / "Engine/ParcNative"
         self.output = root / "check receipts"
         for name, content in {
             "Sources/ParcCore/Model.swift": "struct Model {}\n",
@@ -61,8 +61,8 @@ class CheckSwiftTests(unittest.TestCase):
         self.sparkle_header = self.sparkle / "Sparkle.framework/Versions/B/Headers/Sparkle.h"
         self.sparkle_header.parent.mkdir(parents=True)
         self.sparkle_header.write_text("#pragma once\n")
-        self.headers.mkdir(parents=True)
-        (self.headers / "cef_application_mac.h").write_text("#pragma once\n")
+        self.headers.mkdir(parents=True, exist_ok=True)
+        (self.headers / "native_application_protocols.h").write_text("#pragma once\n")
         subprocess.run(["git", "init", "--quiet", str(self.repo)], check=True)
         subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
         subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
@@ -85,8 +85,6 @@ class CheckSwiftTests(unittest.TestCase):
     def run_check(self, *extra, headers=True):
         command = [sys.executable, str(SCRIPT), "--repo", str(self.repo),
                    "--output-dir", str(self.output), "--label", "case"]
-        if headers:
-            command += ["--chromium-source", str(self.chromium)]
         return subprocess.run(command + list(extra), cwd=Path(self.temp.name), env=self.env,
                               text=True, capture_output=True)
 
@@ -111,29 +109,18 @@ class CheckSwiftTests(unittest.TestCase):
         facade.write_text('#import "native_application_protocols.h"\n')
         header = self.repo / "Engine/ParcNative/native_application_protocols.h"
         header.write_text("#import <Foundation/Foundation.h>\n")
-        (self.headers / "cef_application_mac.h").unlink()
-        self.headers.rmdir()
         result = self.run_check("--plan", headers=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         plan = json.loads(result.stdout)
         self.assertEqual(plan["bridge_headers"], str(header.parent))
-        self.assertNotIn(str(self.headers), plan["command"])
+        self.assertIn(str(self.headers), plan["command"])
         self.assertIn(str(header), plan["inputs"])
 
-    def test_direct_bridge_refuses_legacy_flags_and_tracks_mutations(self):
-        (self.repo / "Sources/ParcEngine/ParcEngine.h").write_text('#import "native_application_protocols.h"\n')
-        header = self.repo / "Engine/ParcNative/native_application_protocols.h"
-        header.write_text("#pragma once\n")
-        result = self.run_check("--plan")
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("omit legacy", result.stderr)
-        self.env["FAKE_MUTATE_INPUT"] = str(header)
-        result = self.run_check(headers=False)
-        self.assertEqual(result.returncode, 2)
-        self.assertFalse(self.receipt()["inputs_unchanged"])
 
     def test_direct_bridge_missing_declaration_fails_before_output(self):
         (self.repo / "Sources/ParcEngine/ParcEngine.h").write_text('#import "native_application_protocols.h"\n')
+        header = self.headers / "native_application_protocols.h"
+        header.unlink()
         result = self.run_check("--plan", headers=False)
         self.assertEqual(result.returncode, 2)
         self.assertIn("native_application_protocols.h", result.stderr)
@@ -147,26 +134,11 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertEqual(command[command.index("-emit-sil"):command.index("-emit-sil") + 4],
                          ["-emit-sil", "-Onone", "-o", "/dev/null"])
 
-    def test_no_implicit_engine_or_package_selection(self):
-        result = self.run_check("--plan", headers=False)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("no engine is guessed", result.stderr)
-        self.assertFalse(self.output.exists())
 
-    def test_explicit_headers_override_environment(self):
-        self.env["PARC_CHROMIUM_SOURCE"] = "/missing/stale/workspace"
-        result = self.run_check("--cef-include", str(self.headers), "--plan", headers=False)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["cef_include"], str(self.headers))
 
-    def test_environment_can_select_engine(self):
-        self.env["PARC_CHROMIUM_SOURCE"] = str(self.chromium)
-        result = self.run_check("--plan", headers=False)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["cef_include"], str(self.headers))
 
     def test_missing_headers_fail_before_output_creation(self):
-        (self.headers / "cef_application_mac.h").unlink()
+        (self.headers / "native_application_protocols.h").unlink()
         result = self.run_check()
         self.assertEqual(result.returncode, 2)
         self.assertIn("Required compiler input", result.stderr)
@@ -185,7 +157,7 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertTrue(receipt["head_unchanged"])
         self.assertEqual(receipt["toolchain"]["DEVELOPER_DIR"], self.env["DEVELOPER_DIR"])
         self.assertEqual(receipt["compiler_exit"], 0)
-        self.assertIn(str(self.headers / "cef_application_mac.h"), receipt["inputs"])
+        self.assertIn(str(self.headers / "native_application_protocols.h"), receipt["inputs"])
         self.assertIn(str(self.sparkle_header), receipt["inputs"])
         self.assertEqual(receipt["command"][receipt["command"].index(str(self.sparkle)) - 1], "-F")
         self.assertIn("test compiler diagnostics", (self.output / "case/compiler.log").read_text())
@@ -198,7 +170,7 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertEqual(self.receipt()["compiler_exit"], 7)
 
     def test_changed_input_invalidates_successful_compiler(self):
-        self.env["FAKE_MUTATE_INPUT"] = str(self.headers / "cef_application_mac.h")
+        self.env["FAKE_MUTATE_INPUT"] = str(self.headers / "native_application_protocols.h")
         result = self.run_check()
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertEqual(self.receipt()["compiler_exit"], 0)

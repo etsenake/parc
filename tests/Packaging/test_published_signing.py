@@ -43,7 +43,6 @@ class PublishedSigningTests(unittest.TestCase):
                     "PARC_SIGN_IDENTITY": IDENTITY, "FIXTURE_IDENTITY": IDENTITY,
                     "FIXTURE_CERT": str(self.cert), "FIXTURE_ROOT": str(self.root), "FIXTURE_TEAM": TEAM}
         workspace = self.root / 'workspace'
-        (workspace / 'chromium/src/cef').mkdir(parents=True)
         self.env['PARC_ENGINE_WORKSPACE'] = str(workspace)
         for key in ("GH_TOKEN", "GITHUB_TOKEN", "FIXTURE_INVALID", "FIXTURE_ADHOC_REPORT"):
             self.env.pop(key, None)
