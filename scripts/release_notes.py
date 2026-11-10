@@ -12,12 +12,15 @@ TYPES = ("feat", "fix", "perf", "refactor", "docs", "build", "ci", "chore", "tes
 NOTABLE = ("feat", "fix", "perf")
 SUBJECT = re.compile(r"(?P<type>[a-z]+)(?:\((?P<scope>[^()\s]+)\))?(?P<breaking>!)?: (?P<summary>\S.*)")
 UNDO = re.compile(r'(Revert|Reapply) "(.*)"')
+# Release notes are for Parc users: no reference app and no sizes.
+PRIVATE = re.compile(r"\bArc\b|\d\s*(?:pt|px)\b|\d\s*×\s*\d")
 SECTIONS = (("Heads up", None), ("New", "feat"), ("Fixed", "fix"), ("Faster", "perf"))
 QUIET = "Small fixes and improvements."
 RULE = ("Commit messages are one line, a Conventional Commit: type(scope)!: summary\n"
         "  for example: fix(sidebar): Keep pinned tabs after a restart\n"
         "  types: " + " ".join(TYPES) + "\n"
-        "  feat, fix and perf subjects are Parc's release notes: write them for Parc users, starting with a capital.\n"
+        "  feat, fix and perf subjects are Parc's release notes: write them for Parc users, starting with a capital,\n"
+        "  never naming Arc or a size.\n"
         "  No body or trailers such as Co-Authored-By; ! alone marks a breaking change.\n"
         '  A revert is one line too: Revert "fix(sidebar): Keep pinned tabs after a restart"')
 
@@ -150,7 +153,12 @@ def check(message, merge=False):
     """What breaks the commit rules in a stored message, else None; a merge may keep git's own body."""
     lines = [line for line in message.splitlines() if line.strip()]
     subject = lines[0] if lines else ""
-    if (merge and subject.startswith("Merge ")) or (len(lines) == 1 and (UNDO.fullmatch(subject) or parse(subject))):
+    if (merge and subject.startswith("Merge ")) or (len(lines) == 1 and UNDO.fullmatch(subject)):
+        return None
+    commit = parse(subject) if len(lines) == 1 else None
+    if commit and commit["type"] in NOTABLE and PRIVATE.search(commit["summary"]):
+        return subject + " [names Arc or a size]"
+    if commit:
         return None
     return (subject or "(empty)") + (f" [{len(lines)} lines]" if len(lines) > 1 else "")
 

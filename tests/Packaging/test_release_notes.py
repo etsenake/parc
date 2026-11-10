@@ -45,6 +45,10 @@ class Parse(unittest.TestCase):
         self.assertEqual(notes.check('fix: Keep tabs\n\nCo-Authored-By: A <a@example.invalid>\n'), 'fix: Keep tabs [2 lines]')
         self.assertEqual(notes.check('Revert "feat: Add"\n\nThis reverts commit abc.\n'), 'Revert "feat: Add" [2 lines]')
         self.assertEqual(notes.check('# Sidebar\n\nfix: Keep tabs\n'), '# Sidebar [2 lines]')
+        for private in ("fix: Open the banner, as Arc does", "feat: Size the window at 270 × 341", "fix: Pad rows 8 pt"):
+            self.assertEqual(notes.check(private), private + " [names Arc or a size]")
+        self.assertIsNone(notes.check("docs(updates): Record Arc's 270 × 341 window"))
+        self.assertIsNone(notes.check("fix(sidebar): Keep Archive rows lit"))
         self.assertEqual(notes.check('fixup! fix: Keep'), 'fixup! fix: Keep')
         self.assertEqual(notes.check(''), '(empty)')
 
