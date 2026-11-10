@@ -87,7 +87,10 @@ pre-create the final engine directory to try to fix a refusal.
 
 `Engine/source-lock.json` is authoritative for Chromium, CEF, depot_tools and
 build settings. Do not substitute a system CEF package or manually update one
-dependency. The source tool owns its dependency checkout and lock/receipt files;
+dependency. For pinned-source upgrades, use `retarget --previous-lock` as described
+in [Engine](../Engine/README.md#build-configuration); preserve the previous lock
+before updating it. Retarget uses the same 80 GB free-space floor as sync.
+The source tool owns its dependency checkout and lock/receipt files;
 it does not reset, clean, delete or adopt an arbitrary existing checkout.
 
 ## Build from source: sync, apply, build, seal and package

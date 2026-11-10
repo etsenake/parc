@@ -5,7 +5,8 @@ check/plan are read-only. sync claims a NEW directory or resumes an unchanged
 owned dependency-sync failure. overlay-check/apply validate reviewed source
 manifests; build accepts only the recorded baseline and applied overlay.
 reconfigure adopts a source lock that changes only build.gn_defines; the next
-build regenerates. No reset, clean, stash, binary patches, installation or
+build regenerates. retarget changes pinned revisions in an idle owned workspace.
+No clean, stash, binary patches, installation or
 application launch.
 """
 from __future__ import annotations
@@ -455,6 +456,82 @@ def reconfigure(workspace: Path, lock: dict, lock_sha: str, previous_path: Path)
         write_marker(workspace, active)
         report["phase"] = "synced"
         return report
+
+
+def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) -> dict:
+    """Change only dependency pins, preserving outputs and untracked files."""
+    if (not previous_path.is_absolute() or ".." in previous_path.parts
+            or any(p.is_symlink() for p in [previous_path, *previous_path.parents])):
+        raise Refusal("Previous source lock must be an absolute non-symlink path")
+    previous, previous_sha = load_lock(previous_path)
+    def fixed(item):
+        return {k: v for k, v in item.items() if k not in
+                {"chromium", "cef", "depot_tools", "references"}}
+    if previous_sha == lock_sha or fixed(previous) != fixed(lock):
+        raise Refusal("retarget requires changed pins with unchanged build settings and storage")
+    for name in locations(workspace):
+        if previous[name]["url"] != lock[name]["url"]:
+            raise Refusal("retarget cannot change repository origins")
+    report = host_report(workspace, lock, "sync")
+    if report["blockers"]:
+        raise Refusal("; ".join(report["blockers"]))
+    guard_path = internal_path(workspace / ".parc-operation.lock", workspace)
+    with guard_path.open("r") as guard:
+        try:
+            fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise Refusal("Another operation is using this workspace") from error
+        state = read_marker(workspace, previous_sha)
+        if state.get("phase") not in {"synced", "generated", "built"}:
+            raise Refusal("retarget requires a recorded good source phase")
+        env = environment(workspace, previous, state["symbol_level"])
+        verify_workspace(workspace, previous, state, env)
+        record = recorded_overlay(workspace, state)
+        # Validate every restoration path before starting a non-resumable stage.
+        restores = [(target_path(workspace, target, previous),
+                     item["original"].encode() if item["original"] is not None else None,
+                     item["mode"]) for target, item in (record or {}).get("targets", {}).items()]
+        shipping_path = internal_path(workspace / SHIPPING_MARKER, workspace)
+        shipping = None
+        if shipping_path.exists():
+            shipping = read_shipping_marker(workspace, previous_sha, state)
+        active = dict(state, phase="retarget-in-progress", retarget_lock_sha256=lock_sha)
+        write_marker(workspace, active)
+        if shipping is not None:
+            shipping.update(phase="retarget-in-progress")
+            write_marker(workspace, shipping, SHIPPING_MARKER)
+        for path, original, mode in restores:
+            write_source(path, original, mode)
+        # Undo only tracked changes in the verified receipt (CEF's patches).
+        # No reset --hard or clean: untracked files and out/ must survive.
+        for relative in state["repositories"]:
+            path = internal_path(workspace / relative, workspace)
+            run(GIT + ["restore", "--source=HEAD", "--staged", "--worktree", "."], path, env)
+        plan = command_plan(workspace, lock, 4)
+        env = environment(workspace, lock, state["symbol_level"])
+        for index, command in enumerate(plan["sync"]):
+            if index < 12 and index % 4 not in {2, 3}:
+                continue
+            if index >= 12:
+                for name, path in locations(workspace).items():
+                    verify_repository(path, lock[name], env, require_clean=name == "depot_tools")
+            run(command["argv"], Path(command["cwd"]), env)
+        # CEF's full patch set is normally applied by project generation. Apply
+        # it explicitly here without generating or touching compiled outputs.
+        run([sys.executable, str(locations(workspace)["cef"] / "tools/patcher.py")],
+            locations(workspace)["cef"], env)
+        repositories = synced_repositories(workspace)
+        for name, path in locations(workspace).items():
+            verify_repository(path, lock[name], env, require_clean=name == "depot_tools")
+        active = {k: v for k, v in state.items() if k not in {"overlay", "generation_error"}}
+        active.update(lock_sha256=lock_sha, phase="synced", repositories=repositories,
+                      source_fingerprint=tree_fingerprint(workspace, env, repositories))
+        if shipping is not None:
+            shipping.update(lock_sha256=lock_sha, phase="reconfigured",
+                            source_fingerprint=active["source_fingerprint"], overlay=None)
+            write_marker(workspace, shipping, SHIPPING_MARKER)
+        write_marker(workspace, active)
+        return {"workspace": str(workspace), "phase": "synced", "lock_sha256": lock_sha}
 
 
 def verify_repository(path: Path, item: dict, env: dict, require_clean: bool = True) -> None:
@@ -1014,7 +1091,7 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "plan", "sync", "build", "generate", "shipping-plan", "shipping-generate", "shipping-build", "overlay-check", "overlay-apply", "reconfigure"))
+    parser.add_argument("command", choices=("check", "plan", "sync", "build", "generate", "shipping-plan", "shipping-generate", "shipping-build", "overlay-check", "overlay-apply", "reconfigure", "retarget"))
     parser.add_argument("--workspace", required=True,
                         help="Dedicated absolute path under this checkout's ignored work/ "
                              "(preferred) or outside the repo; sync claims a new directory or "
@@ -1029,8 +1106,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         lock, sha = load_lock()
         workspace = safe_path(args.workspace)
-        if args.previous_lock is not None and args.command != "reconfigure":
-            raise Refusal("--previous-lock is only accepted by reconfigure")
+        if args.previous_lock is not None and args.command not in {"reconfigure", "retarget"}:
+            raise Refusal("--previous-lock is only accepted by reconfigure or retarget")
         if args.command.startswith("overlay-"):
             if args.manifest is None:
                 raise Refusal("Source overlay requires --manifest")
@@ -1038,10 +1115,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.manifest is not None:
             raise Refusal("--manifest is only accepted by overlay-check/apply")
-        if args.command == "reconfigure":
+        if args.command in {"reconfigure", "retarget"}:
             if args.previous_lock is None:
-                raise Refusal("reconfigure requires --previous-lock")
-            print(json.dumps(reconfigure(workspace, lock, sha, args.previous_lock), indent=2))
+                raise Refusal(args.command + " requires --previous-lock")
+            print(json.dumps((retarget if args.command == "retarget" else reconfigure)(workspace, lock, sha, args.previous_lock), indent=2))
             return 0
         if args.command.startswith("shipping-"):
             report = host_report(workspace, lock, "build")

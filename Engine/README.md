@@ -56,6 +56,23 @@ python3 scripts/engine-source.py reconfigure --workspace /absolute/engine-source
   --previous-lock "$PWD/work/previous-source-lock.json"
 ```
 
+For a pinned-source upgrade with unchanged build settings and storage policy:
+
+```sh
+python3 scripts/engine-source.py retarget --workspace /absolute/engine-source \
+  --previous-lock "$PWD/work/previous-source-lock.json"
+```
+
+Retarget requires an idle, owned workspace in a good recorded phase. It verifies
+its previous lock and fingerprint, restores recorded overlay originals, removes
+only verified overlay additions, and restores tracked CEF patch changes before
+checking out the new pins. It repeats dependency sync, hooks and CEF patching,
+then records `synced`; reapply the new overlay before generation/build. Outputs,
+caches and unrelated untracked files are preserved. Interrupted retargeting is
+left incomplete for inspection rather than guessed recovery. The **80 GB sync
+floor** applies: dependency downloads and replacement source blocks still need
+space even when compiled objects survive. No storage floor is lowered.
+
 It verifies that only supported defines changed and preserves sources/objects.
 The next authorized build regenerates and compiles. Shipping planning, generation
 and building use one operation lock:
