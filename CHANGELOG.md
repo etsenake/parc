@@ -29,3 +29,87 @@
 - **capture:** Leave the What's New page's file address out of its captures and their shares
 - **whats-new:** Offer no shared quote on the What's New page, whose link would be its file address
 - **sidebar:** Keep rows and buttons under the command bar from lighting up on hover
+
+## 1.8.2 (2026-11-09)
+
+Small fixes and improvements.
+
+## 1.8.1 (2026-11-09)
+
+Small fixes and improvements.
+
+## 1.8.0 (2026-11-09)
+
+Small fixes and improvements.
+
+## 1.7.0 (2026-11-08)
+
+Small fixes and improvements.
+
+## 1.6.0 (2026-11-08)
+
+Small fixes and improvements.
+
+## 1.5.0 (2026-11-08)
+
+Small fixes and improvements.
+
+## 1.4.1 (2026-11-08)
+
+Small fixes and improvements.
+
+## 1.4.0 (2026-11-07)
+
+Small fixes and improvements.
+
+## 1.3.8 (2026-11-07)
+
+Small fixes and improvements.
+
+## 1.3.7 (2026-11-07)
+
+Small fixes and improvements.
+
+## 1.3.6 (2026-11-07)
+
+Small fixes and improvements.
+
+## 1.3.5 (2026-11-07)
+
+Small fixes and improvements.
+
+## 1.3.4 (2026-11-07)
+
+Small fixes and improvements.
+
+## 1.3.3 (2026-11-07)
+
+Small fixes and improvements.
+
+## 1.3.2 (2026-11-07)
+
+Small fixes and improvements.
+
+## 1.3.1 (2026-11-07)
+
+Small fixes and improvements.
+
+## 1.3.0 (2026-11-06)
+
+Small fixes and improvements.
+
+## 1.2.0 (2026-11-06)
+
+Small fixes and improvements.
+
+## 1.1.1 (2026-11-06)
+
+Small fixes and improvements.
+
+## 1.1.0 (2026-11-05)
+
+Small fixes and improvements.
+
+## 1.0.0 (2026-11-05)
+
+Small fixes and improvements.
