@@ -1,8 +1,10 @@
 """Render the bundled What's New page from release notes, offline."""
+import base64
 import importlib.util
 import json
 from pathlib import Path
 import re
+import struct
 import tempfile
 import unittest
 
@@ -90,6 +92,15 @@ class WhatsNewTests(unittest.TestCase):
         self.assertEqual(re.findall(r'(?:src|href)="(?!data:)', page), [])
         self.assertEqual(re.findall(r"url\((?![\"']?data:|%23)", page), [])
         self.assertNotIn("$", page)
+
+    def test_favicon_is_square_so_it_is_not_stretched(self):
+        page = whats_new.render(SAMPLE)
+        icon = base64.b64decode(re.search(r'rel="icon" href="data:image/png;base64,([^"]+)"', page)[1])
+        self.assertEqual(struct.unpack(">II", icon[16:24]), (32, 32))
+        tall = Path(self.temporary.name) / "favicon.png"
+        tall.write_bytes(icon[:16] + struct.pack(">II", 43, 64) + icon[24:])
+        with self.assertRaises(ValueError):
+            whats_new.favicon(tall)
 
 
 if __name__ == "__main__":

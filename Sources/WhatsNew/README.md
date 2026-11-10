@@ -25,4 +25,6 @@ Headings use the Marlin Soft SQ ExtraBold already bundled for onboarding (see
 `Resources/Onboarding/README.md`). Paper `#FFFCEC`, ink `#100E22` and blue
 highlight colours (`PreferencesSectionHighlight*`, `ARC_PreferencesFeature`
 catalog). The mark is Parc's `Resources/AppIcons/Marks/Monochrome.png`.
-`favicon.png` is `Marks/Borderless.png` scaled with `sips -Z 64`.
+`favicon.png` is `Marks/Borderless.png` centred in a 32 px square, since Chromium
+stores favicons as square 16 and 32 px bitmaps:
+`sips -Z 30 Borderless.png --out mark.png && sips -p 32 32 mark.png --out favicon.png`.

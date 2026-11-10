@@ -8,6 +8,7 @@ import importlib.util
 import json
 from pathlib import Path
 from string import Template
+import struct
 
 notes_spec = importlib.util.spec_from_file_location("parc_release_notes", Path(__file__).with_name("release_notes.py"))
 release_notes = importlib.util.module_from_spec(notes_spec)
@@ -80,11 +81,19 @@ def inline(path: Path) -> str:
     return base64.b64encode(path.read_bytes()).decode()
 
 
+def favicon(path: Path) -> str:
+    """Chromium stores favicons as square 16 and 32 px bitmaps, which stretches any other shape."""
+    width, height = struct.unpack(">II", path.read_bytes()[16:24])
+    if width != height:
+        raise ValueError(f"{path.name} is {width} × {height}; a favicon must be square")
+    return inline(path)
+
+
 def render(notes: Path, repo: Path = ROOT) -> str:
     page = Template((repo / TEMPLATE).read_text(encoding="utf-8"))
     return page.substitute(font=inline(repo / "Resources/Onboarding/MarlinSoftSQ-ExtraBold.otf"),
                            mark=inline(repo / "Resources/AppIcons/Marks/Monochrome.png"),
-                           favicon=inline(repo / "Sources/WhatsNew/favicon.png"),
+                           favicon=favicon(repo / "Sources/WhatsNew/favicon.png"),
                            content=render_content(read_releases(notes)))
 
 
