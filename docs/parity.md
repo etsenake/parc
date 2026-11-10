@@ -3050,8 +3050,8 @@ subsystem document, not left only in Codex messages.
   `parcSitePermissionAnchorForPage:`. [Evidence](web-interactions.md#dialogs-authentication-certificates-and-permissions--web15).
   View; no profile, QR, Lens, Glic or reading-mode items; search first for a
   and "Share this tab instead" on the sidebar row (touches the Sidebar's
-  `SidebarView.swift` row and `SidebarRowActionButton.swift`). Overlay 241, applied. Contract for Split views: Option/Option-Command link clicks to
-  a split, then their status explanation. [Evidence](web-interactions.md#context-menus-hovered-status-and-banners--web16).
+  `SidebarView.swift` row and `SidebarRowActionButton.swift`). Overlay 241, applied. Option/Option-Command link clicks open a split; their
+  hovered-link status text is still pending in the engine. [Evidence](web-interactions.md#context-menus-hovered-status-and-banners--web16).
   black/white glyph at 0.55/0.675, fill 0.05/0.09 hovered and 0.09/0.13
   pressed, 0.18 s hover and 0.16 s press ease-in-out. The Toolbar's appearance
   follows the theme. In the Site Control Center: the address pill's 10/100 ms

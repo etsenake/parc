@@ -496,9 +496,13 @@ animate.
 
 ### Contract and checks
 
-clicks to a split, return `PCNativeStatusLinkOutcomeSplitView` for ⌥ and ⌥⌘ in
-`native_appkit_page.mm`'s status `linkOutcome` block. The string `Open %@ in
-Split View` is already there.
+with NSApp modifier 0x80000). Parc already routes both clicks into a split
+(the split link lease in `native_link_routing.mm` and the window's
+`joinOriginalSplitPage`; Josh confirmed ⌥⌘-click on November 9). Only the
+hovered-link status text is missing: `native_appkit_page.mm`'s `linkOutcome`
+block still returns no outcome for ⌥ and ⌥⌘, and its comment saying Option
+reaches no split route is stale. Return `PCNativeStatusLinkOutcomeSplitView`
+there in an engine overlay; the string `Open %@ in Split View` already exists.
 
 **Checks run:**
 
