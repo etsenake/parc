@@ -208,8 +208,10 @@ that page identity and cannot reload another tab after selection or transfer.
 The failure view is contained in the page's actual pane/Peek bounds and replaces
 content immediately. The reload link uses native pointer, keyboard and
 accessibility actions; hover changes the cursor. The hung-renderer sheet uses
-Chromium's text and actual process decision. It lists titles without favicons
-and retains the application icon. Renderer and ordinary navigation failures
+Chromium's text and the unresponsive widget's actual renderer process. Wait
+restarts its hang timer; Exit terminates that process. A replacement request or
+page detach invalidates the old decision. The sheet lists titles without
+favicons and retains the application icon. Renderer and ordinary navigation failures
 must not be conflated merely because both show an error surface.
 
 ## Webpage actions, keyboard, focus and accessibility — WEB18

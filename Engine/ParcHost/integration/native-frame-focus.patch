@@ -1,0 +1,25 @@
+diff --git a/content/public/browser/web_contents_observer.h b/content/public/browser/web_contents_observer.h
+--- a/content/public/browser/web_contents_observer.h
++++ b/content/public/browser/web_contents_observer.h
+@@ -993,6 +993,9 @@
+   // the RenderWidgetHost for the WebContents has gained/lost focus.
+   virtual void OnFocusChangedInPage(const FocusedNodeDetails& details) {}
+ 
++  // The focused frame changed; invalidate page-owned native shortcut state.
++  virtual void OnFrameFocused(RenderFrameHost* render_frame_host) {}
++
+   // Notifies that the manifest URL for the main frame changed to
+   // |manifest_url|. This will be invoked when a document with a manifest loads
+   // or when the manifest URL changes (possibly to nothing). It is not invoked
+diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -11183,6 +11183,8 @@
+   }
+ 
+   CloseListenerManager::DidChangeFocusedFrame(this);
++  observers_.NotifyObservers(&WebContentsObserver::OnFrameFocused,
++                             node->current_frame_host());
+ }
+ 
+ FrameTree* WebContentsImpl::GetOwnedDocumentPictureInPictureFrameTree() {
