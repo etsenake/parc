@@ -6,6 +6,7 @@ xcrun swiftc -whole-module-optimization -parse-as-library -warnings-as-errors -t
   "$repo_root/Sources/ParcApp/KeyboardShortcuts.swift" \
   "$repo_root/Sources/ParcCore/SettingsPrettyJSONPersistSkip.swift" \
   "$repo_root/Sources/ParcApp/ShortcutRecorderView.swift" \
+  "$repo_root/Sources/ParcApp/ThemeRenderer.swift" \
   "$repo_root/Sources/ParcApp/ShortcutsSettingsView.swift" \
   "$repo_root/Sources/ParcApp/ShortcutKeycapView.swift" \
   "$repo_root/Sources/ParcApp/ShortcutSmileyView.swift" \

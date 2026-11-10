@@ -211,8 +211,11 @@ import QuartzCore
         field.refreshPresentation(reduceMotion: false)
         let border = field.layer!.sublayers![0], halo = field.layer!.sublayers![1]
         let label = field.subviews.compactMap { $0 as? NSTextField }.first!
+        // Resolve a dynamic expected colour in the field's appearance, as the
+        // field does, not in this Mac's.
         func equalColor(_ color: CGColor?, _ expected: NSColor) -> Bool {
-            guard let color, let value = NSColor(cgColor: color)?.usingColorSpace(.sRGB), let expected = expected.usingColorSpace(.sRGB) else { return false }
+            guard let color, let value = NSColor(cgColor: color)?.usingColorSpace(.sRGB),
+                  let expected = NSColor(cgColor: expected.cgColor(in: field.effectiveAppearance))?.usingColorSpace(.sRGB) else { return false }
             return abs(value.redComponent - expected.redComponent) < 0.002 && abs(value.greenComponent - expected.greenComponent) < 0.002 &&
                 abs(value.blueComponent - expected.blueComponent) < 0.002 && abs(value.alphaComponent - expected.alphaComponent) < 0.002
         }
@@ -239,7 +242,7 @@ import QuartzCore
         expect(equalColor(border.borderColor, NSColor(srgbRed: 0.93, green: 0.93, blue: 0.93, alpha: 1)), "Selection alone does not impersonate recorder focus")
         expect(presentationWindow.makeFirstResponder(field), "Actual original responder enters presentation")
         field.refreshPresentation(reduceMotion: false)
-        expect(equalColor(border.borderColor, .controlAccentColor) && equalColor(label.textColor?.cgColor, .controlAccentColor), "Focused field and text use actual accent")
+        expect(equalColor(border.borderColor, .controlAccentColor) && equalColor(label.textColor?.cgColor(in: field.effectiveAppearance), .controlAccentColor), "Focused field and text use actual accent")
         expect(halo.borderWidth == 1 && Set(halo.animationKeys() ?? []) == Set(["transform.scale.x", "transform.scale.y", "opacity", "cornerRadius"]), "Focus owns exactly four genuine layer animations")
         let pulse = halo.animation(forKey: "transform.scale.x") as! CABasicAnimation
         let opacity = halo.animation(forKey: "opacity") as! CABasicAnimation
