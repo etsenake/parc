@@ -27,9 +27,14 @@ def main():
     parser.add_argument('--engine-output', type=Path, required=True)
     parser.add_argument('--ninja', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--lock-file', type=Path)
     args = parser.parse_args()
     parc, chromium, engine, output = [p.resolve() for p in
         (args.parc_root, args.chromium_source, args.engine_output, args.output)]
+    lock = json.loads((args.lock_file or parc / 'Engine/source-lock.json').read_text())
+    if lock.get('schema_version') not in (1, 2):
+        parser.error('unsupported source lock schema')
+    direct = lock['schema_version'] == 2
     if output in (parc, chromium, engine) or chromium in output.parents:
         parser.error('--output must be outside source/build inputs')
     output.mkdir(parents=True, exist_ok=True)
@@ -53,7 +58,8 @@ def main():
 
     try:
         commands = run([str(args.ninja.resolve()), '-C', str(engine), '-t',
-            'commands', '-s', 'obj/cef/libcef_static/native_search.o'], 'flags')
+            'commands', '-s', ('obj/parc/browser/native_search.o' if direct
+                               else 'obj/cef/libcef_static/native_search.o')], 'flags')
         command = next(shlex.split(line) for line in commands.splitlines()
                        if 'clang++' in line and 'native_search.mm' in line)
         flags, i = [], 0
