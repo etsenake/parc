@@ -24,8 +24,9 @@ reentrant replacement teardown, hidden queued-focus refusal, initially-hidden
 content visibility, reentrant visibility ownership, the pane compositor view
 (never the renderer responder, events pass through, on-screen state, screen
 callbacks for hiding, a hidden ancestor, parking in a hidden container and
-leaving the window, and geometry callbacks) and content restoration after a
-Chromium-style detach
+leaving the window, geometry callbacks, and preserving a concealed picture's
+display connection across ancestor visibility and resizing) and content
+restoration after a Chromium-style detach
 ([page compositing](../../docs/page-compositing.md)). The background-visibility
 regression against the earlier component exits 1 at “selected initially-hidden
 native content and its renderer are actually unhidden”.

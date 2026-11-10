@@ -190,8 +190,9 @@ certificate panel. Cancellation and page/window invalidation are explicit.
 ## Page compositing across tab switches
 
 Each pane owns its compositor. A new page in the same pane retains the previous
-frame until its first frame, while another pane's frame is cleared. Shown pages
-must attach to their compositor first; all compositors die before CefShutdown.
+frame until its first frame, while an incompatible picture is concealed without
+disconnecting the display. Shown pages must attach to their compositor first;
+all compositors die before CefShutdown.
 The host settles changed constraints before showing fresh content, including
 DevTools composition and infobar geometry.
 See [page compositing](../docs/page-compositing.md) and

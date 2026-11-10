@@ -168,7 +168,7 @@ class NativePaneCompositor final : public ui::ViewsHostableView::Host,
   void Hide(uint64_t use);
   // Gives up the page; `restore_view` puts its WebContents view back.
   void Detach(bool restore_view);
-  // Drops the frame the display view holds.
+  // Conceals an incompatible held frame until the arriving page presents.
   void ClearDisplay();
   void UpdateSurface();
   void NotifyPresented(base::OnceClosure presented);
@@ -202,6 +202,9 @@ class NativePaneCompositor final : public ui::ViewsHostableView::Host,
   std::unique_ptr<ui::DisplayCALayerTree> tree_;
   PCNativePaneCompositorView* __strong overlay_;
   std::unique_ptr<ui::RecyclableCompositorMac> compositor_;
+  // Viz may send a changed connection only once. Keep it while suspended;
+  // expose it after the resumed page presents, rather than dropping it.
+  std::optional<gfx::CALayerParams> deferred_ca_layer_params_;
   std::unique_ptr<ui::Layer> root_;
   base::WeakPtr<content::WebContents> contents_;
   raw_ptr<const content::WebContents> contents_key_ = nullptr;
@@ -316,7 +319,10 @@ NativePaneCompositor::NativePaneCompositor(NativePaneCompositorPool& pool)
   // Pixels no renderer drew show the pane behind, as the page's own view did.
   compositor_->compositor()->SetBackgroundColor(SK_ColorTRANSPARENT);
   compositor_->widget()->SetNSView(this);
-  compositor_->widget()->SetSuspended(true);
+  // Receive connection changes even while drawing is suspended. Dropping one
+  // here can leave the display pointing at a retired CAContext until Viz's
+  // next forced resend. The callback below defers its display instead.
+  compositor_->widget()->SetSuspended(false);
   compositor_->compositor()->SetProtectedLayersAllowed(false);
   auto weak = weak_factory_.GetWeakPtr();
   overlay_.geometryHandler = ^{
@@ -478,17 +484,13 @@ void NativePaneCompositor::ReleasePool() {
 }
 
 void NativePaneCompositor::ClearDisplay() {
-  // A new tree on an already sized layer gets a zero-sized child (the
-  // ordering video_overlay_window.mm notes), so size it as AppKit's first
-  // sizing of the layer did; its autoresizing follows later resizes.
-  [CATransaction begin];
-  [CATransaction setDisableActions:YES];
-  tree_.reset();
-  tree_ = std::make_unique<ui::DisplayCALayerTree>(hosted_layer_);
-  for (CALayer* sublayer in hosted_layer_.sublayers) {
-    sublayer.frame = hosted_layer_.bounds;
-  }
-  [CATransaction commit];
+  // Keep the CAContext connection. Viz suppresses unchanged CALayerParams
+  // for ten seconds, and only resends them with another frame. Replacing
+  // DisplayCALayerTree here disconnected a reused compositor even while its
+  // new page rendered successfully; a static page stayed blank until input
+  // caused a later frame. Conceal the incompatible picture instead, then
+  // reveal the same live connection after the arriving page presents.
+  overlay_.frameConcealed = YES;
 }
 
 ui::Layer* NativePaneCompositor::GetUiLayer() const {
@@ -530,6 +532,11 @@ void NativePaneCompositor::ReleaseCaptureLock() {
 
 void NativePaneCompositor::AcceleratedWidgetCALayerParamsUpdated(
     gfx::CALayerParams params) {
+  if (!drawing_) {
+    deferred_ca_layer_params_ = std::move(params);
+    return;
+  }
+  deferred_ca_layer_params_.reset();
   tree_->UpdateCALayerTree(std::move(params));
 }
 
@@ -613,8 +620,8 @@ void NativePaneCompositor::SuspendDrawing() {
     return;
   }
   drawing_ = false;
-  // Holds the last frame: no new commits, and none in flight reaches the view.
-  compositor_->widget()->SetSuspended(true);
+  // Hold the last frame without losing connection changes: stop commits and
+  // defer in-flight CALayerParams in our callback until drawing resumes.
   compositor_->Suspend();
   // Its display still redraws when a surface the held frame embeds changes.
   // It must not take a FairPlay video's layer from the compositor that shows
@@ -626,14 +633,16 @@ void NativePaneCompositor::SuspendDrawing() {
 }
 
 void NativePaneCompositor::ResumeDrawing() {
-  if (drawing_) {
-    return;
+  if (!drawing_) {
+    drawing_ = true;
+    AllowProtectedLayers();
+    compositor_->widget()->SetSuspended(false);
+    compositor_->Unsuspend();
   }
-  drawing_ = true;
-  AllowProtectedLayers();
-  compositor_->widget()->SetSuspended(false);
-  compositor_->Unsuspend();
-  if (!presented_.empty()) {
+  // A capture lock can keep drawing across Hide, which cancels presentation
+  // callbacks. Showing again must still arrange to reveal a concealed frame.
+  if (!presented_.empty() || overlay_.frameConcealed ||
+      deferred_ca_layer_params_) {
     RequestPresentation();
   }
 }
@@ -654,6 +663,14 @@ void NativePaneCompositor::RequestPresentation() {
              const viz::FrameTimingDetails&) {
             if (!self || generation != self->presentation_generation_) {
               return;
+            }
+            if (self->drawing_) {
+              if (self->deferred_ca_layer_params_) {
+                self->tree_->UpdateCALayerTree(
+                    std::move(*self->deferred_ca_layer_params_));
+                self->deferred_ca_layer_params_.reset();
+              }
+              self->overlay_.frameConcealed = NO;
             }
             for (auto& callback : presented) {
               std::move(callback).Run();

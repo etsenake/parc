@@ -5,11 +5,14 @@
 // viewDidHide/viewDidUnhide 0x4737e14/0x4737e64 resynchronize the hosted page.
 #import "pane_compositor_view.h"
 
+#import <QuartzCore/QuartzCore.h>
+
 @implementation PCNativePaneCompositorView {
   NSWindow* __weak _observedWindow;
 }
 @synthesize geometryHandler = _geometryHandler;
 @synthesize screenHandler = _screenHandler;
+@synthesize frameConcealed = _frameConcealed;
 
 - (instancetype)initWithHostedLayer:(CALayer*)layer {
   self = [super initWithFrame:NSZeroRect];
@@ -49,6 +52,19 @@
 
 - (BOOL)isOnScreen {
   return self.window && !self.hiddenOrHasHiddenAncestor;
+}
+
+- (void)setFrameConcealed:(BOOL)concealed {
+  if (_frameConcealed == concealed) {
+    return;
+  }
+  _frameConcealed = concealed;
+  [CATransaction begin];
+  [CATransaction setDisableActions:YES];
+  for (CALayer* child in self.layer.sublayers) {
+    child.hidden = concealed;
+  }
+  [CATransaction commit];
 }
 
 - (void)setFrameSize:(NSSize)size {

@@ -27,6 +27,12 @@ NS_ASSUME_NONNULL_BEGIN
 // In a window and neither hidden nor below a hidden ancestor.
 @property(nonatomic, readonly, getter=isOnScreen) BOOL onScreen;
 
+// Conceals the hosted picture without disconnecting its remote layer tree.
+// The compositor clears this after the arriving page's next presented frame.
+// Hide the tree's children, not this NSView: drawing must continue while the
+// previous picture is concealed, and AppKit still owns the view's visibility.
+@property(nonatomic, getter=isFrameConcealed) BOOL frameConcealed;
+
 - (instancetype)initWithFrame:(NSRect)frameRect NS_UNAVAILABLE;
 - (nullable instancetype)initWithCoder:(NSCoder*)coder NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;

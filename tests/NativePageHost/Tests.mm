@@ -722,6 +722,38 @@ static void TestVisibilityReentrantOwnership(void) {
 - (NSView *)rendererResponder;
 @end
 
+static void TestConcealedPictureKeepsItsConnection(void) {
+  ++groups;
+  NSWindow *window = Window();
+  NSView *parent = [[NSView alloc] initWithFrame:window.contentView.bounds];
+  [window.contentView addSubview:parent];
+  CALayer *root = [CALayer layer];
+  CALayer *connection = [CALayer layer];
+  connection.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
+  [root addSublayer:connection];
+  PCNativePaneCompositorView *display =
+      [[PCNativePaneCompositorView alloc] initWithHostedLayer:root];
+  [parent addSubview:display];
+  display.frame = parent.bounds;
+  display.frameConcealed = YES;
+  Check(display.onScreen && !display.hidden && connection.hidden,
+        "concealing the old picture does not hide the compositor view or stop drawing");
+  parent.hidden = YES;
+  parent.hidden = NO;
+  Check(display.onScreen && connection.hidden && display.frameConcealed,
+        "ancestor visibility cannot prematurely reveal the old picture");
+  display.frame = NSMakeRect(0, 0, 720, 480);
+  Check(connection.superlayer == root && root.sublayers.firstObject == connection,
+        "resizing a concealed picture preserves its display connection");
+  Check(NSEqualSizes(connection.bounds.size, display.bounds.size),
+        "the concealed connection still follows the display size");
+  display.frameConcealed = NO;
+  Check(!connection.hidden && connection.superlayer == root,
+        "presentation reveals the same connection without another layer message");
+  [display removeFromSuperview];
+  [window close];
+}
+
 // pane_compositor.mm places the compositor's view inside the WebContents view,
 // above the renderer (or at the bottom before a renderer exists).
 static void TestPaneCompositorViewIsNeverTheRenderer(void) {
@@ -898,6 +930,7 @@ int main(void) {
       TestParkedSplitAndTransferredGeometry();
       TestLayoutReentrantOwnership();
       TestVisibilityReentrantOwnership();
+      TestConcealedPictureKeepsItsConnection();
       TestPaneCompositorViewIsNeverTheRenderer();
       TestRestoreContentAfterNativeDetach();
       TestHistoryOverlayContainer();

@@ -29,14 +29,20 @@ selection and reentrant work.
 
 A retained frame is usable only for the same role, such as page versus docked
 DevTools, and when both its layer bounds and page-view dimensions cover at least
-90% of the requested size in each dimension. An incompatible frame is cleared
-instead of stretching the wrong pane into view.
+90% of the requested size in each dimension. An incompatible frame is concealed
+until the arriving page presents. Its native display connection stays attached:
+Chromium suppresses unchanged connection messages for ten seconds and resends
+only with another frame, so destroying that connection can leave a fully drawn
+static page blank until later input causes a redraw.
 
 Candidates rank by fit, overlap, availability and recency. A hidden compositor
 retains its frame; drawing stops when an ancestor is hidden or it leaves the
-window unless a capture lock requires drawing. In-flight presentation callbacks
-do not restart hidden drawing. Showing resumes it, and screen changes refresh
-scale, color and HDR properties.
+window unless a capture lock requires drawing. Connection changes received
+while drawing is suspended are retained, then displayed after the resumed page
+presents; they are never discarded while Chromium believes they were delivered.
+An old owner's presentation callback cannot reveal another page. Showing resumes
+drawing and any cancelled reveal, including with a capture lock, and screen
+changes refresh scale, color and HDR properties.
 
 The shell settles dirty page-host geometry before exposing the renderer. This
 keeps a newly selected page attached at its current pane size rather than a
@@ -67,5 +73,6 @@ when its previous compositor was evicted from the single-spare pool.
 
 The implementation is in the native page host/compositor bridge and window
 selection/layout integration. Focused checks cover compositor reuse policy,
-`NativePageHost`, `NativeFocusManager`, `NativeDevTools` and packaging exports.
+`NativePageHost`, `NativeFocusManager`, `NativeDevTools`,
+[display handoffs](../tests/PaneCompositorDisplay/README.md) and packaging exports.
 Native compiler checks validate bridge integration when run.

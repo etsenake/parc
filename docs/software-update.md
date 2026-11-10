@@ -135,13 +135,12 @@ bookmarks, archive/folder previews and capture attribution omit its bundle path.
 A recognized older install path restores to this build's page. Captures share
 image-only metadata and enter Easels as images, not live web cards.
 
-### Fresh-tab geometry
+### Page presentation
 
-A fresh native host could have a sized outer pane but a 0 × 0 content/renderer
-view. `PCNativePageHost` now settles dirty edge constraints before show, marks
-size/content/infobar changes dirty immediately, and revalidates after reentrant
-layout. Clean shows do not walk layout. This fixes fresh tabs appearing with
-zero-sized content.
+What's New uses the shared native page host. It settles changed page dimensions
+before showing content and retains the display connection across reuse and
+suspension, so a rendered static page does not depend on later input to appear.
+See [page compositing](page-compositing.md) for the handoff and presentation rules.
 
 ### Remaining address exposure
 

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-native-host",
-  "version": 654,
+  "version": 655,
   "source_root": "repository",
   "upstream": {
     "cef": "4fa4ab516dacf6c49fc7e6e70d2b7ebce29fa35f",
@@ -60,7 +60,7 @@
     {
       "source": "Engine/ParcNative/pane_compositor.mm",
       "target": "cef/libcef/browser/parc_native/pane_compositor.mm",
-      "sha256": "7fc95ddc92e8949a93c9e6ec91fd8e13a8f11e1118c8dfcad210d97733cae088"
+      "sha256": "a9958a38142e7bc423bb197ddb0d2e7be63c973e605430aa42c89f4227c93cd3"
     },
     {
       "source": "Engine/ParcNative/pane_compositor_policy.h",
@@ -70,12 +70,12 @@
     {
       "source": "Engine/ParcNative/pane_compositor_view.h",
       "target": "cef/libcef/browser/parc_native/pane_compositor_view.h",
-      "sha256": "e27af34f940db72b65962b64aa7122fea0365a25fc1ef47da69d50d89b404307"
+      "sha256": "dd9b1812f17cc4dc10b6aea000227288bab8f85563e44e923fdfcf8246e2030a"
     },
     {
       "source": "Engine/ParcNative/pane_compositor_view.mm",
       "target": "cef/libcef/browser/parc_native/pane_compositor_view.mm",
-      "sha256": "44ecf87f290f097675811f05e39b0a684008371de1936b12530d9fe789636ccb"
+      "sha256": "be08892d5b483c70867d98242c6a8d120dd41b20dd8674fb4e412a62cace5b06"
     },
     {
       "source": "Engine/ParcNative/browser_window.h",
