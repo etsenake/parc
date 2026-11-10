@@ -39,7 +39,7 @@ class NativePageHostExportTests(unittest.TestCase):
                 "-Wall", "-Wextra", "-Werror",
                 REPO / "Engine/ParcNative/page_host.mm",
                 REPO / "Engine/ParcNative/pane_compositor_view.mm",
-                "-framework", "AppKit", "-o", library,
+                "-framework", "AppKit", "-framework", "QuartzCore", "-o", library,
             )
             # This uses the same typed cast and contentView access as the app.
             # Only compile/link: no application, browser or window is launched.
