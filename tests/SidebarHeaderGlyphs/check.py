@@ -72,7 +72,8 @@ assert controller.count("applySidebarToolbarOwnership()") == 3 and \
 assert "PaneTopBarAdmission.sidebarAddressBarShown(focusedHasTopBar: selectedBrowserToolbar != nil,\n" \
        "                                                   toolbarVisible: BrowserToolbarPreferences.shared.state.isVisible)" \
     in controller, "the URL bar's visibility no longer follows the Toolbar preference"
-assert sidebar.count("selectedURL.flatMap(SidebarAddressSearchIcon.host(of:)) ?? SidebarAddressSearchIcon.placeholder") == 2, \
+assert sidebar.count("Self.address(of: state.tabs.first { $0.id == (focusedTabID ?? state.selectedTabIDs.first) })") == 2 \
+    and "SidebarAddressSearchIcon.host(of: url) ?? SidebarAddressSearchIcon.placeholder" in sidebar, \
     "both address paths no longer show the www-less host or its empty URL bar text"
 pill = (app / "SidebarAddressPill.swift").read_text()
 assert 'static let placeholder = "Search or Enter URL…"' in pill and '"magnifyingglass"' in pill \
