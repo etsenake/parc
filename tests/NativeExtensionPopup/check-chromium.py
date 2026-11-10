@@ -20,17 +20,25 @@ import sys
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
-    parser.add_argument("--output-name", default="Release_GN_arm64")
+    parser.add_argument("--output-name", default=None)
     parser.add_argument(
         "--pre-integration", action="store_true",
         help="use existing libcef_static/browser_tests flags before the shared "
              "targets are generated; this is compatibility-only evidence")
+    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
-    if Path(args.output_name).name != args.output_name or args.output_name in (".", "..", ""):
+    if args.output_name is not None and (Path(args.output_name).name != args.output_name or args.output_name in (".", "..", "")):
         parser.error("--output-name must be one existing output directory name")
 
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
+    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock = json.loads(lock_path.read_text())
+    if lock.get("schema_version") not in (1, 2):
+        parser.error("unsupported source lock schema")
+    direct = lock["schema_version"] == 2
+    if args.output_name is None:
+        args.output_name = lock["build"]["configuration"]
     build = tree / "out" / args.output_name
     compiler = tree / "third_party/llvm-build/Release+Asserts/bin/clang++"
     if not compiler.is_file():
@@ -50,6 +58,15 @@ def main():
          "//chrome/test:browser_tests" if args.pre_integration else
          "//cef/tests/parc_native_extensions:popup_browser_tests"),
     )
+    if direct:
+        if args.pre_integration:
+            parser.error("--pre-integration requires the legacy CEF lock")
+        targets = tuple((name, source,
+                         flags.replace("obj/cef/libcef/browser/parc_native/", "obj/parc/native/")
+                              .replace("obj/cef/tests/", "obj/parc/tests/"),
+                         target.replace("//cef/libcef/browser/parc_native:", "//parc/native:")
+                               .replace("//cef/tests/", "//parc/tests/"))
+                        for name, source, flags, target in targets)
     missing = [str(build / target[2]) for target in targets
                if not (build / target[2]).is_file()]
     if missing:

@@ -70,25 +70,32 @@ def contains_object(flags_file, rule, target):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
-    parser.add_argument("--output-name", default="Release_GN_arm64")
+    parser.add_argument("--output-name", default=None)
+    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
-    if (Path(args.output_name).name != args.output_name or
+    if args.output_name is not None and (Path(args.output_name).name != args.output_name or
             args.output_name in (".", "..", "")):
         parser.error("--output-name must name one existing output directory")
 
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
+    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock = json.loads(lock_path.read_text())
+    if lock.get("schema_version") not in (1, 2):
+        parser.error("unsupported source lock schema")
+    direct = lock["schema_version"] == 2
+    if args.output_name is None:
+        args.output_name = lock["build"]["configuration"]
     build = (tree / "out" / args.output_name).resolve(strict=True)
     if not build.is_relative_to(tree / "out"):
         parser.error("the build output must remain inside source_tree/out")
-    manifest_path = repo / "Engine/ParcHost/overlay.json"
+    manifest_path = repo / ("Engine/ParcHost/overlay-direct.json" if direct
+                            else "Engine/ParcHost/overlay.json")
     manifest = json.loads(manifest_path.read_text())
-    lock_path = repo / "Engine/source-lock.json"
-    lock = json.loads(lock_path.read_text())
     if manifest.get("source_root") != "repository":
         parser.error("expected the reviewed repository-relative overlay")
-    if (manifest["upstream"]["cef"] != lock["cef"]["commit"] or
-            manifest["upstream"]["chromium"] != lock["chromium"]["commit"]):
+    upstream = ["chromium"] if direct else ["cef", "chromium"]
+    if manifest["upstream"] != {key: lock[key]["commit"] for key in upstream}:
         parser.error("overlay upstream identities do not match the source lock")
 
     snapshots = {}
@@ -146,6 +153,10 @@ def main():
             owner = f"obj/cef/tests/parc_native_extension_actions/{name}.ninja"
         else:
             owner = f"obj/cef/libcef/browser/parc_native/{name}.ninja"
+        if direct:
+            owner = owner.replace("obj/cef/libcef/browser/parc_native/", "obj/parc/native/")
+            owner = owner.replace("obj/cef/libcef_static.ninja", "obj/parc/browser.ninja")
+            owner = owner.replace("obj/cef/tests/", "obj/parc/tests/")
         flags_file = build / owner
         language = "cxx" if source.endswith(".cc") else "objcxx"
         if not flags_file.is_file() or not contains_object(flags_file, language, sources[source]):
