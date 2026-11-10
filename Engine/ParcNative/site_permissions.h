@@ -10,7 +10,8 @@ class WebContents;
 namespace parc {
 // Replaces Chrome's Views prompts once at startup. Auxiliary pages and
 // installed native pages get the typed native prompt; any other page gets no
-// prompt, which Chrome leaves undecided rather than granted.
+// prompt, so nothing is granted (Chrome leaves the request pending or ignores
+// it).
 void RegisterNativeSitePermissionPrompts();
 // Install before navigation. The page starts detached: a prompt created while
 // detached is cancelled, and detaching cancels the live prompt.
