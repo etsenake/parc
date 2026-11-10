@@ -10,11 +10,21 @@ import subprocess
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
-    parser.add_argument("--output-name", default="Release_GN_arm64")
+    parser.add_argument("--output-name", default=None)
+    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
-    build = tree / "out" / args.output_name
+    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock = json.loads(lock_path.read_text())
+    if lock.get("schema_version") not in (1, 2):
+        parser.error("unsupported source lock schema")
+    direct = lock["schema_version"] == 2
+    output_name = (lock["build"]["configuration"] if args.output_name is None
+                   else args.output_name)
+    if Path(output_name).name != output_name or output_name in ("", ".", ".."):
+        parser.error("output name must name one existing directory")
+    build = tree / "out" / output_name
     # Reuse the existing strict Ninja-variable reader; it never runs a builder.
     flags_from = runpy.run_path(str(repo / "tests/NativeLocationBar/check-chromium.py"))["flags_from"]
     logs = repo / "build/tests/native-extension-commands/chromium-syntax"
@@ -23,7 +33,7 @@ def main():
     results = []
     for name, source, flags_file in (
         ("implementation", repo / "Engine/ParcNative/extension_keybinding_registry.cc",
-         "obj/cef/libcef_static.ninja"),
+         "obj/parc/browser.ninja" if direct else "obj/cef/libcef_static.ninja"),
         ("browser-tests", Path(__file__).with_name("extension_keybinding_registry_browsertest.cc"),
          "obj/chrome/test/browser_tests.ninja"),
     ):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check native_chrome_platform_delegate with real generated Chromium ObjC++ flags.
+"""Check the native page binding (legacy platform delegate) with real generated Chromium ObjC++ flags.
 
 No GN/Ninja invocation or writes to the external checkout. This compiles syntax
 only; linking, a real shell host, factory wiring and runtime checks remain
@@ -16,12 +16,22 @@ import subprocess
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
-    parser.add_argument("--output-name", default="Release_GN_arm64")
+    parser.add_argument("--output-name", default=None)
+    parser.add_argument("--lock-file", type=Path)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
-    build = tree / "out" / args.output_name
-    flags_file = build / "obj/cef/libcef_static.ninja"
+    lock_path = args.lock_file or repo / "Engine/source-lock.json"
+    lock = json.loads(lock_path.read_text())
+    if lock.get("schema_version") not in (1, 2):
+        parser.error("unsupported source lock schema")
+    direct = lock["schema_version"] == 2
+    output_name = (lock["build"]["configuration"] if args.output_name is None
+                   else args.output_name)
+    if Path(output_name).name != output_name or output_name in ("", ".", ".."):
+        parser.error("output name must name one existing directory")
+    build = tree / "out" / output_name
+    flags_file = build / ("obj/parc/browser.ninja" if direct else "obj/cef/libcef_static.ninja")
     logs = repo / "build/tests/native-platform-delegate/chromium-syntax"
     logs.mkdir(parents=True, exist_ok=True)
     variables = {}
@@ -44,7 +54,8 @@ def main():
              for flag in flags]
     command = [str(tree / "third_party/llvm-build/Release+Asserts/bin/clang++"),
                *flags, "-fsyntax-only", f"-I{repo / 'Engine/ParcNative'}",
-               str(repo / "Engine/ParcNative/native_chrome_platform_delegate.mm")]
+               str(repo / ("Engine/ParcNative/native_page_binding.mm" if direct
+                           else "Engine/ParcNative/native_chrome_platform_delegate.mm"))]
     result = subprocess.run(command, cwd=build, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     (logs / "implementation.log").write_text(result.stdout)
