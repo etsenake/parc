@@ -67,8 +67,8 @@ inline void ApplyNativeStartupPolicy(base::CommandLine& command) {
   // Page translation is excluded: Chrome's translate service needs a Google
   // API key, which Parc never ships.
   command.AppendSwitch("disable-translate-trigger");
-  std::string enabled = command.GetSwitchValueASCII(switches::kEnableFeatures);
-  std::string disabled = command.GetSwitchValueASCII(switches::kDisableFeatures);
+  std::string enabled = command.GetSwitchValueUTF8(switches::kEnableFeatures);
+  std::string disabled = command.GetSwitchValueUTF8(switches::kDisableFeatures);
   // Chromium applies any disable over an enable of the same feature, so an
   //
   std::set<std::string, std::less<>> named;
@@ -103,9 +103,9 @@ inline void ApplyNativeStartupPolicy(base::CommandLine& command) {
   command.RemoveSwitch(switches::kEnableFeatures);
   command.RemoveSwitch(switches::kDisableFeatures);
   if (!enabled.empty()) {
-    command.AppendSwitchASCII(switches::kEnableFeatures, enabled);
+    command.AppendSwitchUTF8(switches::kEnableFeatures, enabled);
   }
-  command.AppendSwitchASCII(switches::kDisableFeatures, disabled);
+  command.AppendSwitchUTF8(switches::kDisableFeatures, disabled);
 }
 }  // namespace parc
 #endif  // PARC_NATIVE_STARTUP_POLICY_H_
