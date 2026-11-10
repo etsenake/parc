@@ -128,6 +128,37 @@ class PackagingIconTests(unittest.TestCase):
             verified = stack.enter_context(patch.object(pkg, "verify_manifest"))
             yield verified
 
+    def test_direct_helpers_preserve_all_bundle_plists_and_entitlements(self):
+        def icons(resources):
+            (resources / "Parc.icns").write_bytes(b"fixture icon")
+            return "Parc.icns"
+        results = []
+        for direct in (False, True):
+            if direct:
+                helper = self.engine / "parc_helper"
+                helper.write_bytes(b"GN-built helper")
+                helper.chmod(0o755)
+                self.manifest.update(engine_runtime="chromium-direct", helper={
+                    "image": "parc_helper", "sha256": pkg.sha(helper), "mode": 0o755})
+            self.commands = []
+            self.signed_entitlements = []
+            output = self.root / ("direct" if direct else "legacy")
+            with self.fixture_tools(), patch.object(pkg.app_icons, "package_app_icons", side_effect=icons):
+                pkg.build_app(self.repo, self.engine, self.manifest, output, "-")
+            plists = {}
+            for suffix, _, _ in pkg.HELPERS:
+                name = "Parc Helper" + suffix
+                bundle = output / "Parc.app/Contents/Frameworks" / (name + ".app")
+                plists[name] = (bundle / "Contents/Info.plist").read_bytes()
+                if direct:
+                    self.assertEqual((bundle / "Contents/MacOS" / name).read_bytes(), b"GN-built helper")
+            entitlements = {Path(name).name: values for name, values in self.signed_entitlements}
+            results.append((plists, entitlements))
+            if direct:
+                self.assertFalse(any(command[:2] == ("xcrun", "clang++") for command in self.commands))
+                self.assertFalse((output / "Parc.app/Contents/Resources/EngineLicenses/CEF-LICENSE.txt").exists())
+        self.assertEqual(results[0], results[1])
+
     def test_debug_and_release_have_same_real_icon_and_preserve_helper_signing_contract(self):
         icons = []
         families = []

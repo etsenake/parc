@@ -312,12 +312,26 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
-def check_helper_contract(source: Path) -> None:
+def check_helper_contract(source: Path, *, direct: bool = False) -> None:
     content = (source / "content/public/app/mac_helpers.gni").read_text()
     block = content.split("content_mac_helpers = [", 1)[1].split("\n]", 1)[0]
     actual = re.findall(r'\[\s*"([^"]*)"\s*,\s*"([^"]*)"\s*,\s*"([^"]*)"\s*,?\s*\]', block)
     if actual != [("default", "", ""), ("renderer", ".renderer", " (Renderer)"), ("gpu", "", " (GPU)")]:
         raise Refusal("Pinned content helper variants changed; review packaging")
+    if direct:
+        helper = (source / "parc/helper/BUILD.gn").read_text()
+        if 'executable("parc_helper")' not in helper or '"//sandbox/mac:seatbelt"' not in helper:
+            raise Refusal("Direct engine helper target or Seatbelt dependency is missing")
+        client = (source / "parc/parc_content_clients.cc").read_text()
+        bundle = (source / "parc/parc_bundle_mac.mm").read_text()
+        constants = (source / "chrome/common/chrome_constants.cc").read_text()
+        if (f'kMacHelperSuffixCdm[] = "{CDM_HELPER}";' not in client or
+                "SetCdmServiceChildFlags(" not in client or
+                "GetChildProcessPath(chrome::kMacHelperSuffixAlerts)" not in client or
+                '" Helper"' not in bundle or
+                'kMacHelperSuffixAlerts[] = " (Alerts)";' not in constants):
+            raise Refusal("Direct engine CDM or Alerts helper routing is missing")
+        return
     cef = (source / "cef/BUILD.gn").read_text()
     if not re.search(r'alert_helper_params\s*=\s*\[\s*"alerts",\s*"\.alerts",\s*" \(Alerts\)",?\s*\]', cef):
         raise Refusal("Pinned CEF Alerts helper definition changed")
@@ -382,13 +396,17 @@ def verify_workspace(engine: Path, repo: Path) -> tuple[Path, dict]:
         explicit_path(path)
         if sha(path) != item["output_sha256"] or stat.S_IMODE(path.stat().st_mode) != item["mode"]:
             raise Refusal(f"Applied source no longer matches completed build: {target}")
+    direct = direct_engine(engine)
     # Bind the public headers used by the executable to the actual mapped inputs.
-    for name in ("native_engine_entry.h", "native_appkit_bridge.h"):
-        target = "cef/libcef/browser/parc_native/" + name
+    header_names = ["native_engine_entry.h", "native_appkit_bridge.h"]
+    if direct:
+        header_names.append("native_application_protocols.h")
+    for name in header_names:
+        target = ("parc/native/" if direct else "cef/libcef/browser/parc_native/") + name
         if target not in record["targets"] or sha(repo / "Engine/ParcNative" / name) != record["targets"][target]["output_sha256"]:
             raise Refusal(f"Public native ABI header is not in the completed overlay: {name}")
     verify_source_baseline(repo, workspace, lock, state)
-    check_helper_contract(source)
+    check_helper_contract(source, direct=direct)
     args_path = engine / "args.gn"
     generated_args = dict(re.findall(r'^([A-Za-z0-9_]+)\s*=\s*([^\n]+)$', args_path.read_text(), re.M))
     expected_args = {"target_cpu": '"arm64"', "is_component_build": "false" if shipping else "true",
@@ -399,7 +417,12 @@ def verify_workspace(engine: Path, repo: Path) -> tuple[Path, dict]:
                      "is_debug": "false", "enable_dsyms": "false", "symbol_level": str(state["symbol_level"])}
     if any(generated_args.get(k, "").strip() != v for k, v in expected_args.items()):
         raise Refusal("Generated engine configuration differs from the reviewed Release ARM64 build")
-    proof = {name: sha(source / name) for name in PROOF_FILES}
+    proof_names = PROOF_FILES
+    if direct:
+        proof_names = tuple(name for name in PROOF_FILES if not name.startswith("cef/")) + (
+            "parc/BUILD.gn", "parc/framework.exports", "parc/helper/BUILD.gn", "parc/helper/main.cc",
+            "parc/parc_content_clients.cc", "parc/parc_bundle_mac.mm", "chrome/common/chrome_constants.cc")
+    proof = {name: sha(source / name) for name in proof_names}
     proof["out/" + engine.name + "/args.gn"] = sha(args_path)
     gl_flags = engine / "gen/ui/gl/buildflags.h"
     static_angle = re.search(
@@ -421,7 +444,7 @@ def verify_workspace(engine: Path, repo: Path) -> tuple[Path, dict]:
                     "distribution_eligible": shipping,
                     **({"shipping_build_receipt_sha256": shipping_proof} if shipping else {}),
                     "use_static_angle": static_angle.group(1) == "1",
-                    "upstream": {name: lock[name]["commit"] for name in ("cef", "chromium", "depot_tools")},
+                    "upstream": {name: lock[name]["commit"] for name in ("cef", "chromium", "depot_tools") if name in lock},
                     "proof_files": proof}
 
 
@@ -444,11 +467,44 @@ def make_manifest(engine: Path, repo: Path) -> dict:
     return seal_framework(engine, provenance)
 
 
+def direct_engine(engine: Path) -> bool:
+    """Select the bootstrap contract from actual engine artifacts, never a flag."""
+    if (engine / "parc_helper").exists() and (engine / FRAMEWORK / "Libraries/libcef_sandbox.dylib").exists():
+        raise Refusal("Engine mixes GN helper and CEF sandbox artifacts")
+    return ((engine / "parc_helper").is_file() or
+            (engine / "Parc Helper.app/Contents/MacOS/Parc Helper").is_file()) and not (
+                engine / FRAMEWORK / "Libraries/libcef_sandbox.dylib").exists()
+
+
+def check_bootstrap_graph(images: dict, helper_name: str = "parc_helper") -> None:
+    # Seatbelt is the only Chromium component permitted before sandbox setup.
+    for name, info in images.items():
+        if name != helper_name and name != "libseatbelt.dylib":
+            raise Refusal("Forbidden pre-sandbox dependency: " + name)
+        for load in info["loads"]:
+            if not system_library(load) and load != "@rpath/libseatbelt.dylib":
+                raise Refusal("Forbidden pre-sandbox load: " + load)
+
+
+def engine_helper(engine: Path) -> Path:
+    helper = engine / "parc_helper"
+    if not helper.exists():
+        helper = engine / "Parc Helper.app/Contents/MacOS/Parc Helper"
+    return inside(helper, engine)
+
+
 def seal_framework(engine: Path, provenance: dict) -> dict:
     framework = engine / FRAMEWORK
+    direct = direct_engine(engine)
     files = inventory_tree(framework)
     main = inside(framework / ENGINE_NAME, framework)
     require_exports(exported_symbols(main))
+    if direct:
+        if main != (framework / "Versions/A" / ENGINE_NAME).resolve() or not (framework / "Versions/Current").is_symlink() or (framework / "Versions/Current").readlink() != Path("A"):
+            raise Refusal("Direct framework must preserve the Versions/A layout")
+        info = plistlib.loads((framework / "Resources/Info.plist").read_bytes())
+        if info.get("CFBundleIdentifier") != "org.cef.framework" or info.get("CFBundleExecutable") != ENGINE_NAME:
+            raise Refusal("Direct framework bundle identity changed")
     for required in ("resources.pak", "chrome_100_percent.pak", "chrome_200_percent.pak", "icudtl.dat"):
         if not (framework / "Resources" / required).is_file():
             raise Refusal(f"Incomplete framework resource: {required}")
@@ -461,26 +517,38 @@ def seal_framework(engine: Path, provenance: dict) -> dict:
     # components, so CEF deliberately omits its separate framework libraries.
     # Dynamic ANGLE and the remaining runtime-loaded libraries need explicit
     # checks because they need not appear in the LC_LOAD_DYLIB graph.
-    runtime_libraries = ["libcef_sandbox.dylib", "libvk_swiftshader.dylib",
+    runtime_libraries = ["libvk_swiftshader.dylib",
                          "libvulkan.dylib", "vk_swiftshader_icd.json"]
+    if not direct:
+        runtime_libraries.append("libcef_sandbox.dylib")
     if not provenance["use_static_angle"]:
         runtime_libraries += ["libEGL.dylib", "libGLESv2.dylib"]
     for name in runtime_libraries:
         if not (framework / "Libraries" / name).is_file():
             raise Refusal("Incomplete runtime graphics/sandbox library: " + name)
-    sandbox = inside(framework / "Libraries/libcef_sandbox.dylib", framework)
-    if not {"_cef_sandbox_initialize", "_cef_sandbox_destroy"} <= exported_symbols(sandbox):
-        raise Refusal("Sandbox library exports are missing")
     seeds = [framework / name for name, item in files.items()
              if "sha256" in item and is_macho(framework / name)]
+    bootstrap = {}
+    if direct:
+        helper = engine_helper(engine)
+        helper_name = helper.relative_to(engine).as_posix()
+        if not helper.stat().st_mode & 0o111:
+            raise Refusal("GN helper is not executable")
+        bootstrap = dependency_closure(engine, [helper])
+        check_bootstrap_graph(bootstrap, helper_name)
+        seeds.append(helper)
+    else:
+        sandbox = inside(framework / "Libraries/libcef_sandbox.dylib", framework)
+        if not {"_cef_sandbox_initialize", "_cef_sandbox_destroy"} <= exported_symbols(sandbox):
+            raise Refusal("Sandbox library exports are missing")
+        sandbox_graph = dependency_closure(engine, [sandbox])
+        if str(main.relative_to(engine)) in sandbox_graph:
+            raise Refusal("Sandbox library loads the engine before initialization")
     images = dependency_closure(engine, seeds)
-    # libcef must not be a transitive dependency of the library loaded before
-    # sandbox initialization. Validate this at the graph, not by filename alone.
-    sandbox_graph = dependency_closure(engine, [sandbox])
-    if str(main.relative_to(engine)) in sandbox_graph:
-        raise Refusal("Sandbox library loads the engine before initialization")
     extra = {}
     for name in images:
+        if direct and name == helper_name:
+            continue
         if not name.startswith(FRAMEWORK + "/"):
             if any(part.endswith(".framework") for part in Path(name).parts):
                 raise Refusal("Additional runtime framework requires an explicit resource-bundle mapping: " + name)
@@ -490,6 +558,9 @@ def seal_framework(engine: Path, provenance: dict) -> dict:
         raise Refusal("Non-component shipping framework has dependencies outside its bundle")
     return {"schema_version": 1, "engine_dir": str(engine), **provenance,
             "framework": files, "components": extra, "images": images,
+            **({"engine_runtime": "chromium-direct", "helper": {
+                "sha256": sha(helper), "image": helper_name,
+                "mode": stat.S_IMODE(helper.stat().st_mode)}} if direct else {}),
             "required_exports": sorted(PUBLIC_SYMBOLS)}
 
 
@@ -556,7 +627,17 @@ def verify_release_framework(package: Path, report: dict) -> None:
             raise Refusal("Release framework code differs from its package report: " + name)
 
 
-def pinned_source(repo: Path, workspace: Path, destination: Path) -> Path:
+def verify_release_helper(package: Path, report: dict) -> None:
+    engine = package / "Parc.app/Contents/Frameworks"
+    if direct_engine(engine):
+        helper = engine_helper(engine)
+        name = helper.relative_to(package).as_posix()
+        if report.get("signed_images", {}).get(name) != sha(helper):
+            raise Refusal("Release helper differs from its package report")
+        run("/usr/bin/codesign", "--verify", "--deep", "--strict", helper.parent.parent.parent)
+
+
+def pinned_source(repo: Path, workspace: Path, destination: Path, *, direct: bool = False) -> Path:
     """Write PINNED_INPUTS at the source lock's commits under destination."""
     lock = read_json(repo / "Engine/source-lock.json")
     overlay = read_json(repo / "Engine/ParcHost/overlay.json")
@@ -565,6 +646,8 @@ def pinned_source(repo: Path, workspace: Path, destination: Path) -> Path:
     chromium = explicit_path(workspace) / "chromium/src"
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     for repository, name in PINNED_INPUTS:
+        if direct and repository == "cef":
+            continue
         if name in patched:
             raise Refusal("The overlay changes a pinned packaging input; build the engine instead: " + name)
         checkout, path = (chromium / "cef", name[len("cef/"):]) if repository == "cef" else (chromium, name)
@@ -579,11 +662,18 @@ def pinned_source(repo: Path, workspace: Path, destination: Path) -> Path:
     return destination
 
 
+def facade_includes(repo: Path, source: Path) -> list[object]:
+    # Legacy checkouts still import CEF's application protocol declaration.
+    if '"cef_application_mac.h"' in (repo / "Sources/ParcEngine/ParcEngine.h").read_text():
+        return ["-I", source / "cef/include"]
+    return []
+
+
 def app_engine_headers(repo: Path, source: Path) -> list[str]:
     """Engine/ParcNative headers the app compiles against, from the compiler's dependency list."""
     output = run("xcrun", "clang", "-arch", "arm64", "-mmacosx-version-min=13.0", "-fobjc-arc", "-fblocks",
                  "-I", repo / "Engine/ParcNative", "-I", repo / "Sources/ParcEngine", "-DOS_MAC=1",
-                 "-I", source / "cef/include", "-M", repo / "Sources/ParcEngine/ParcEngine.m")
+                 *facade_includes(repo, source), "-M", repo / "Sources/ParcEngine/ParcEngine.m")
     root = (repo / "Engine/ParcNative").resolve()
     headers = {Path(token).resolve().relative_to(repo.resolve()).as_posix()
                for token in output.replace("\\\n", " ").split()
@@ -619,11 +709,16 @@ def release_engine(repo: Path, package: Path, workspace: Path, stage: Path, tag:
     package = explicit_path(package)
     report = release_report(repo, package, local_test=local_test)
     verify_release_framework(package, report)
-    for name in ("Chromium-LICENSE.txt", "CEF-LICENSE.txt"):
+    verify_release_helper(package, report)
+    direct = direct_engine(package / "Parc.app/Contents/Frameworks")
+    licenses = [("Chromium-LICENSE.txt", "LICENSE")]
+    if not direct:
+        licenses.append(("CEF-LICENSE.txt", "cef/LICENSE.txt"))
+    for name, _ in licenses:
         if not (package / "Parc.app/Contents/Resources/EngineLicenses" / name).is_file():
             raise Refusal("Release package lacks its engine license: " + name)
-    source = pinned_source(repo, workspace, stage)
-    for name, original in (("Chromium-LICENSE.txt", "LICENSE"), ("CEF-LICENSE.txt", "cef/LICENSE.txt")):
+    source = pinned_source(repo, workspace, stage, direct=direct)
+    for name, original in licenses:
         if sha(package / "Parc.app/Contents/Resources/EngineLicenses" / name) != sha(source / original):
             raise Refusal("Release engine license differs from the pinned source: " + name)
     previous = report.get("engine_release", {})
@@ -649,6 +744,7 @@ def release_engine(repo: Path, package: Path, workspace: Path, stage: Path, tag:
         if directory != engine or sealed != release_manifest(engine, report, release):
             raise Refusal("Release engine changed while packaging")
         verify_release_framework(package, report)
+        verify_release_helper(package, report)
     return engine, source, manifest, verify
 
 
@@ -676,7 +772,7 @@ def copy_engine(engine: Path, app: Path, manifest: dict) -> dict:
         if sha(target) != expected["sha256"] or stat.S_IMODE(target.stat().st_mode) != expected["mode"]:
             raise Refusal("Copied component differs from sealed engine: " + name)
     return {development_engine_path(app, name).relative_to(app.parent).as_posix():
-            sha(development_engine_path(app, name)) for name in manifest["images"]}
+            sha(development_engine_path(app, name)) for name in manifest["images"] if name != manifest.get("helper", {}).get("image")}
 
 
 def expand_loader_path(value: str, image: Path, executable: Path) -> Path:
@@ -725,6 +821,8 @@ def verify_development_layout(app: Path, manifest: dict) -> dict:
         images[inside(path, root)] = inspect_macho(path)
     expected = {}
     for name, sealed in manifest["images"].items():
+        if name == manifest.get("helper", {}).get("image"):
+            continue
         path = inside(development_engine_path(app, name), root)
         if images.get(path) != {key: sealed[key] for key in ("id", "loads", "rpaths")}:
             raise Refusal("Engine load commands changed during packaging: " + name)
@@ -742,7 +840,9 @@ def verify_development_layout(app: Path, manifest: dict) -> dict:
     framework = inside(app / "Contents/Frameworks" / FRAMEWORK / ENGINE_NAME, root)
     sparkle_framework = (app / "Contents/Frameworks" / SPARKLE).resolve()
     for executable in executables:
-        if executable != main and any(not system_library(v) for v in images[executable]["loads"]):
+        direct_helper = (manifest.get("engine_runtime") == "chromium-direct" and
+                         executable.parent.parent.parent.name in {"Parc Helper" + suffix + ".app" for suffix, _, _ in HELPERS})
+        if executable != main and not direct_helper and any(not system_library(v) for v in images[executable]["loads"]):
             raise Refusal("Helper directly links non-system code before sandbox initialization")
         visited = set()
 
@@ -763,6 +863,14 @@ def verify_development_layout(app: Path, manifest: dict) -> dict:
                 if target is not None:
                     visit(target, rpaths)
 
+        if direct_helper:
+            info = images[executable]
+            check_bootstrap_graph({"parc_helper": info})
+            expected[executable] = {
+                load: inside(development_engine_path(app, target), root)
+                for load, target in manifest["images"][manifest["helper"]["image"]]["resolved"].items()}
+            if info != {key: manifest["images"][manifest["helper"]["image"]][key] for key in ("id", "loads", "rpaths")}:
+                raise Refusal("GN helper load commands changed during packaging")
         visit(executable, ())
         if (executable == (app / "Contents/MacOS/ParcRestart").resolve()
                 or sparkle_framework in executable.parents):
@@ -772,7 +880,7 @@ def verify_development_layout(app: Path, manifest: dict) -> dict:
             continue
         inherited = tuple(expand_loader_path(v, executable, executable).resolve()
                           for v in images[executable]["rpaths"])
-        if executable != main:
+        if executable != main and not direct_helper:
             # Sandbox is loaded before the framework. It can inherit only the
             # helper's RPATH, matching cef_app's upstream helper linker setting.
             sandbox = inside(app / "Contents/Frameworks" / FRAMEWORK / "Libraries/libcef_sandbox.dylib", root)
@@ -1022,20 +1130,28 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         notices = resources / "EngineLicenses"
         notices.mkdir()
         shutil.copy2(source / "LICENSE", notices / "Chromium-LICENSE.txt")
-        shutil.copy2(source / "cef/LICENSE.txt", notices / "CEF-LICENSE.txt")
+        direct = manifest.get("engine_runtime") == "chromium-direct"
+        if not direct:
+            shutil.copy2(source / "cef/LICENSE.txt", notices / "CEF-LICENSE.txt")
         headers = repo / "Engine/ParcNative"
         common = ["-arch", "arm64", "-mmacosx-version-min=13.0", "-Wall", "-Wextra", "-Werror", "-O2"]
         progress("packaging: compiling native facade and helpers")
         run("xcrun", "clang", *common, "-Wno-unused-parameter", "-fobjc-arc", "-fblocks",
             "-I", headers, "-I", repo / "Sources/ParcEngine",
-            "-DOS_MAC=1", "-I", source / "cef/include", "-c", facade, "-o", stage / "ParcEngine.o")
+            "-DOS_MAC=1", *facade_includes(repo, source), "-c", facade, "-o", stage / "ParcEngine.o")
         run("xcrun", "clang", *common, "-Wno-unused-parameter", "-fobjc-arc", "-fblocks",
             "-I", headers, "-I", repo / "Sources/ParcEngine", "-c",
             repo / "Sources/ParcEngine/VideoPiPWindow.m", "-o", stage / "VideoPiPWindow.o")
-        run("xcrun", "clang++", *common, "-std=c++20", repo / "Sources/ParcHelper/cef_main.cc",
-            "-Wl,-rpath,@executable_path/../../../../../..", "-o", stage / "Parc Helper")
+        if direct:
+            helper = engine / manifest["helper"]["image"]
+            if {"sha256": sha(helper), "mode": stat.S_IMODE(helper.stat().st_mode), "image": manifest["helper"]["image"]} != manifest["helper"]:
+                raise Refusal("GN helper differs from sealed engine")
+            shutil.copy2(helper, stage / "Parc Helper")
+        else:
+            run("xcrun", "clang++", *common, "-std=c++20", repo / "Sources/ParcHelper/cef_main.cc",
+                "-Wl,-rpath,@executable_path/../../../../../..", "-o", stage / "Parc Helper")
         # Inspect the actual compiled executable, not a source-text heuristic.
-        if any(not system_library(v) for v in inspect_macho(stage / "Parc Helper")["loads"]):
+        if not direct and any(not system_library(v) for v in inspect_macho(stage / "Parc Helper")["loads"]):
             raise Refusal("Compiled helper has a forbidden pre-sandbox dependency")
         dock_plugin = contents / "PlugIns/ParcDockTile.plugin"
         (dock_plugin / "Contents/MacOS").mkdir(parents=True)
@@ -1072,7 +1188,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
             raise Refusal("Native Swift application sources are missing")
         progress(f"packaging: compiling Swift app ({len(swift)} sources, swiftc -v)")
         run("xcrun", "swiftc", "-v", "-target", "arm64-apple-macos13.0", *optimization, "-I", headers,
-            "-Xcc", "-DOS_MAC=1", "-I", source / "cef/include",
+            "-Xcc", "-DOS_MAC=1", *facade_includes(repo, source),
             "-import-objc-header", repo / "Sources/ParcEngine/ParcEngine.h", *swift,
             stage / "ParcEngine.o", stage / "VideoPiPWindow.o", "-F", frameworks, "-framework", ENGINE_NAME,
             "-F", sparkle_release, "-framework", "Sparkle", "-framework", "Cocoa", "-framework", "QuartzCore", "-framework", "AVFoundation", "-framework", "AVKit",
@@ -1202,9 +1318,10 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         report = {"schema_version": 1, "executed": False, "destination": str(output),
                   "app_version": version,
                   "app": str(output / "Parc.app"),
-                  "layout": "standalone-app" if manifest["distribution_eligible"] else "cef-component-development",
+                  "layout": "standalone-app" if manifest["distribution_eligible"] else ("chromium-direct-component-development" if direct else "cef-component-development"),
                   "engine_manifest_sha256": hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest(),
-                  "source_lock_sha256": manifest["source_lock_sha256"], "overlay": manifest["overlay"],
+                  "source_lock_sha256": manifest["source_lock_sha256"],
+                  **({"engine_runtime": manifest["engine_runtime"]} if direct else {}), "overlay": manifest["overlay"],
                   "configuration": configuration,
                   "purpose": purpose,
                   "engine_build_flags": manifest["engine_build_flags"],

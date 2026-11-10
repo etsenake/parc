@@ -228,6 +228,10 @@ one is accepted, following the same manual-install boundary above.
 
 ## Helper and signing contract
 
+Direct engines use the GN-built `//parc/helper:parc_helper`, copied into all five helper bundles. `Sources/ParcHelper/main.cc` registers the allocator zone and initializes Seatbelt before loading the framework. A required sandbox with no server or failed initialization is fatal; the server stays alive until the framework unloads. Sealing hashes the helper and audits its complete bootstrap graph: only system libraries and the component build's `@rpath/libseatbelt.dylib` are permitted. Component helper RPATHs resolve that library from the package's sibling libraries. Framework name, identifier, versioned layout, helper identities and signing entitlements stay the same.
+
+Packaging selects this contract from the engine artifacts: a GN helper and no `Libraries/libcef_sandbox.dylib`. Legacy CEF engines retain the following contract while the integration transitions.
+
 `Sources/ParcHelper/cef_main.cc` follows the pinned CEF macOS entry order: load `Libraries/libcef_sandbox.dylib`, resolve both sandbox entry points, initialize the sandbox context, then load the engine framework and call the exported `parc_engine_execute_process`. The sandbox stays alive through process execution and framework unloading. A missing sandbox, missing entry point, initialization failure or browser-process return fails. The helper links only system libraries; packaging checks its actual load commands before including it.
 
 
