@@ -17,7 +17,10 @@ capability of its own: it is the toolbar above, with buttons into Chromium's
 DevTools. On shows the site's toolbar and opens this page's JavaScript
 Console; off hides the toolbar and closes this page's tools. The Site Control
 Center's Developer Mode row and View → Developer → Turn on/off Developer Mode
-for this site (Control-D) follow the site's setting they show. Developer Tools
+for this site (Control-D) follow the site's setting they show. The open card
+holds key, and the engine runs and offers page tools only while the browser
+window holds key, so the card reads which are available before it opens and
+its row closes the card before switching. Developer Tools
 (Command-Option-I, F12, the page menu's item) follows whether this page's tools
 are open, so on a site whose toolbar is already on (localhost and 127.0.0.1 by
 default) it opens the console rather than hiding the toolbar. JavaScript

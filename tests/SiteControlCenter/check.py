@@ -33,6 +33,20 @@ assert controller.count(".developerModeHost") == 1, \
     "only the permission rows' web-host gate reads developerModeHost; Developer Mode reads share developerModeSiteHost"
 assert "return developerModeExtensionHost?.lowercased()" in controller, \
     "Parc keys Developer Mode by the committed page's host, an extension page's ID included"
+# The open card holds key, and the engine's page tools and capture refuse
+# without the browser window key: the card reads them only before it opens.
+def body(start):
+    text = controller[controller.index(start):]
+    return text[:text.index("\n    }\n")]
+for start in ("    private func siteControlCenterSettings(page:", "    private func siteControlCenterMoreMenu("):
+    assert "canPerformPageTool(" not in body(start), f"the open card reads a key-gated page tool: {start.strip()}"
+update = body("    private func updateSiteControlCenter(")
+assert update.count("canCapturePage") == update.count("canPerformPageTool") == 1 \
+    and update.index("if window?.isKeyWindow == true {") < update.index("canCapturePage"), \
+    "the card reads capture and page tools only while the browser window holds key"
+toggle = body("    private func toggleSiteControlCenterSetting(")
+assert toggle.index("dismissSiteControlCenter(when: afterDismissal) {") < toggle.index("canPerformPageTool(.developerTools)"), \
+    "Developer Mode opens the tools once the card has gone and the browser window holds key"
 # Chromium's desktop PageInfo aborts on extension and internal pages.
 facade = (root / "Sources/ParcEngine/ParcEngine.m").read_text()
 assert "return !_disposed && self.hasPageInfo && _nativePage.canShowSiteInfo;" in facade, \

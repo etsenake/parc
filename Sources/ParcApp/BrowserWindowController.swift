@@ -576,6 +576,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// Shown permission rows' PageInfo index and revision, by row id.
     private var siteControlCenterPermissionTargets: [String: (Int, UInt)] = [:]
     private var siteControlCenterRevision: UInt?
+    /// The open card's page tools, read while the browser window still held key.
+    private var siteControlCenterPageTools: Set<PCNativePageTool> = []
     /// The Space and Profile the open card belongs to.
     private var siteControlCenterOwner: (space: UUID, profile: UUID)?
     /// Last applied visible extension-control model. Everyday chrome ticks still
@@ -14383,7 +14385,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.siteControlCenter = nil; self.extensionControlsPage = nil
             self.siteControlCenterItems = [:]; self.siteControlCenterPermissions = []
             self.siteControlCenterPermissionTargets = [:]; self.siteControlCenterRevision = nil
-            self.siteControlCenterOwner = nil
+            self.siteControlCenterOwner = nil; self.siteControlCenterPageTools = []
             self.sidebar.setAddressPopover(controller, open: false)
             if page?.responds(to: #selector(PCNativePage.closeSiteControls)) == true { page?.closeSiteControls() }
             self.refreshSidebarPointerIfKey()
@@ -14438,7 +14440,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         model.canCopy = canCopy
         model.canShare = canSharePage
         model.captureAvailable = privateCaptureContextIsValid
-        model.canCapture = canCapturePage
+        // The open card holds key, and capture and the page tools need the
+        // browser window key, so they keep what was read before it opened.
+        if window?.isKeyWindow == true {
+            model.canCapture = canCapturePage
+            siteControlCenterPageTools = Set([PCNativePageTool.developerTools, .clearCacheAndRefresh,
+                                              .clearCookiesAndRefresh].filter(canPerformPageTool))
+        }
         controller.theme = rootView.theme
         updateSiteControlCenterShortcuts()
         if let items {
@@ -14505,7 +14513,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             let enabled = DeveloperModePreferences.shared.isEnabled(host: host)
             rows.append(Setting(id: "developerMode", symbol: "hammer.fill", symbolSize: 13, symbolWeight: .medium,
                                 title: "Developer Mode", subtitle: enabled ? "On" : "Off", isOn: enabled,
-                                isEnabled: canPerformPageTool(.developerTools)))
+                                isEnabled: siteControlCenterPageTools.contains(.developerTools)))
         }
         siteControlCenterPermissionTargets = [:]
         guard secure else { return rows }
@@ -14591,8 +14599,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         model.onSetting = { [weak self, weak controller, weak page] id in
             guard currentPresentation(), let self, let controller, let page else { return }
-            self.toggleSiteControlCenterSetting(id, page: page)
-            self.updateSiteControlCenter(controller, page: page, items: nil)
+            self.toggleSiteControlCenterSetting(id, page: page, afterDismissal: afterDismissal)
+            if currentPresentation() { self.updateSiteControlCenter(controller, page: page, items: nil) }
         }
         model.onSiteSettings = { [weak self] in
             guard currentPresentation(), let self else { return }
@@ -14623,14 +14631,18 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    private func toggleSiteControlCenterSetting(_ id: String, page: PCNativePage) {
+    private func toggleSiteControlCenterSetting(_ id: String, page: PCNativePage, afterDismissal: @escaping () -> Bool) {
         switch id {
         case "preview":
             SidebarPreviewPreference.recentPages.isEnabled.toggle()
         case "developerMode":
-            guard let host = page.developerModeSiteHost, !isPrivateBrowsing, canPerformPageTool(.developerTools),
-                  let browser = currentBrowser, browser.nativePage === page else { return }
-            setDeveloperMode(!DeveloperModePreferences.shared.isEnabled(host: host), host: host, browser: browser, page: page)
+            // The developer tools open in the browser window, so it takes key back first.
+            dismissSiteControlCenter(when: afterDismissal) { [weak self, weak page] in
+                guard let self, let page, let host = page.developerModeSiteHost, !self.isPrivateBrowsing,
+                      self.canPerformPageTool(.developerTools),
+                      let browser = self.currentBrowser, browser.nativePage === page else { return }
+                self.setDeveloperMode(!DeveloperModePreferences.shared.isEnabled(host: host), host: host, browser: browser, page: page)
+            }
         default:
             guard let (index, revision) = siteControlCenterPermissionTargets[id],
                   page.responds(to: #selector(PCNativePage.toggleSiteControlsPermission(_:revision:))) else { return }
@@ -14654,7 +14666,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             let item = MenuAction.item(title) { [weak self] in
                 close { self?.performPageTool(tool) }
             }
-            item.isEnabled = canPerformPageTool(tool)
+            item.isEnabled = siteControlCenterPageTools.contains(tool)
             menu.addItem(item)
         }
         menu.addItem(.separator())
