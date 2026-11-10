@@ -11,10 +11,16 @@
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
+#if PARC_DIRECT_ENGINE
+#include "base/apple/bundle_locations.h"
+#include "chrome/common/chrome_paths_internal.h"
+#include "parc/parc_bundle_mac.h"
+#else
 #include "cef/libcef/common/cef_switches.h"
-#include "cef/libcef/common/command_line_impl.h"
 #include "cef/libcef/common/util_mac.h"
+#endif
 #include "content/public/browser/child_process_host.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
@@ -47,9 +53,7 @@ void CheckStartupPolicy() {
   actual.AppendSwitchASCII("enable-features", "UserEnabledFeature");
   actual.AppendSwitchASCII("lang", "fr-CA");
   actual.AppendArg("https://example.test/kept");
-  CefRefPtr<CefCommandLine> wrapper =
-      new CefCommandLineImpl(&actual, false, false);
-  parc::ApplyNativeStartupPolicy(*wrapper);
+  parc::ApplyNativeStartupPolicy(actual);
   Expect(actual.HasSwitch("disable-field-trial-config"),
          "default startup disables Chromium's bundled testing config");
   Expect(actual.HasSwitch("disable-translate-trigger"),
@@ -76,9 +80,7 @@ void CheckStartupPolicy() {
   explicit_test.AppendSwitch("enable-field-trial-config");
   explicit_test.AppendSwitchASCII("enable-benchmarking",
                                   "enable-field-trial-config");
-  CefRefPtr<CefCommandLine> explicit_wrapper =
-      new CefCommandLineImpl(&explicit_test, false, false);
-  parc::ApplyNativeStartupPolicy(*explicit_wrapper);
+  parc::ApplyNativeStartupPolicy(explicit_test);
   Expect(explicit_test.HasSwitch("disable-field-trial-config"),
          "preexisting default-control switch is retained");
   Expect(explicit_test.HasSwitch("enable-field-trial-config") &&
@@ -97,9 +99,7 @@ void CheckStartupPolicy() {
       "FedCm,*LiveCaption,MerchantTrust<Study.Group:p/v,HistoryEmbeddings");
   opt_in.AppendSwitchASCII("disable-features",
                            "CertificateTransparencyAskBeforeEnabling");
-  CefRefPtr<CefCommandLine> opt_in_wrapper =
-      new CefCommandLineImpl(&opt_in, false, false);
-  parc::ApplyNativeStartupPolicy(*opt_in_wrapper);
+  parc::ApplyNativeStartupPolicy(opt_in);
   Expect(opt_in.GetSwitchValueASCII("enable-features") ==
              "FedCm,*LiveCaption,MerchantTrust<Study.Group:p/v,"
              "HistoryEmbeddings,WebContentsDiscard",
@@ -118,18 +118,14 @@ void CheckStartupPolicy() {
 
   base::CommandLine spaced(base::FilePath("/fixture/Parc"));
   spaced.AppendSwitchASCII("enable-features", "FedCm :p/v");
-  CefRefPtr<CefCommandLine> spaced_wrapper =
-      new CefCommandLineImpl(&spaced, false, false);
-  parc::ApplyNativeStartupPolicy(*spaced_wrapper);
+  parc::ApplyNativeStartupPolicy(spaced);
   Expect(spaced.GetSwitchValueASCII("disable-features").find("FedCm") ==
              std::string::npos,
          "whitespace before a parameter list still names the feature");
 
   base::CommandLine precedence(base::FilePath("/fixture/Parc"));
   precedence.AppendSwitchASCII("enable-features", "FedCm,HistoryEmbeddings");
-  CefRefPtr<CefCommandLine> precedence_wrapper =
-      new CefCommandLineImpl(&precedence, false, false);
-  parc::ApplyNativeStartupPolicy(*precedence_wrapper);
+  parc::ApplyNativeStartupPolicy(precedence);
   base::FeatureList features;
   features.InitFromCommandLine(
       precedence.GetSwitchValueASCII("enable-features"),
@@ -148,6 +144,43 @@ void CheckStartupPolicy() {
                  base::FeatureList::OVERRIDE_DISABLE_FEATURE),
          "Chromium applies Parc defaults to unnamed features");
 }
+#if PARC_DIRECT_ENGINE
+void CheckApplication(const std::string& name) {
+  const base::FilePath executable = base::CommandLine::ForCurrentProcess()->GetProgram();
+  const base::FilePath framework = executable.DirName().DirName().DirName();
+  const base::FilePath bundle = framework.DirName().DirName().DirName();
+  Expect(parc::InstallBundleOverrides(), "real loaded-image bundle overrides install");
+  Expect(base::apple::FrameworkBundlePath() == framework, "loaded framework path");
+  Expect(base::apple::OuterBundlePath() == bundle, "real outer application path");
+  Expect(base::apple::BaseBundleID() == "org.parc.helper-routing-fixture", "fixture bundle identifier");
+  Expect(chrome::GetFrameworkBundlePath() == framework, "Chrome honours the loaded framework override");
+  auto expected = [&](const char* suffix) {
+    const std::string helper = name + " Helper" + suffix;
+    return bundle.Append("Contents/Frameworks").Append(helper + ".app")
+        .Append("Contents/MacOS").Append(helper);
+  };
+  Expect(parc::HelperExecutablePath("") == expected(""), "base helper derivation");
+  Expect(parc::HelperExecutablePath(" (Alerts)") == expected(" (Alerts)"), "Alerts helper derivation");
+  Expect(parc::HelperExecutablePath(" (CDM)") == expected(" (CDM)"), "CDM helper derivation");
+  base::FilePath child;
+  Expect(base::PathService::Get(content::CHILD_PROCESS_EXE, &child) && child == expected(""),
+         "startup installs correct child path");
+  using Host = content::ChildProcessHost;
+  Expect(Host::GetChildPath(Host::CHILD_NORMAL) == expected(""), "real default route");
+  Expect(Host::GetChildPath(Host::CHILD_RENDERER) == expected(" (Renderer)"), "real renderer JIT route");
+  Expect(Host::GetChildPath(Host::CHILD_GPU) == expected(" (GPU)"), "real GPU JIT route");
+  Expect(base::MakeAbsoluteFilePath(base::apple::NSStringToFilePath(
+             base::apple::FrameworkBundle().resourcePath)) ==
+             base::MakeAbsoluteFilePath(framework.Append("Resources")),
+         "real framework resource path");
+  auto* command = base::CommandLine::ForCurrentProcess();
+  command->AppendSwitchPath(switches::kBrowserSubprocessPath, expected(""));
+  Expect(Host::GetChildPath(Host::CHILD_RENDERER) == expected(""), "explicit override reproduces wrong renderer route");
+  Expect(Host::GetChildPath(Host::CHILD_GPU) == expected(""), "explicit override reproduces wrong GPU route");
+  command->RemoveSwitch(switches::kBrowserSubprocessPath);
+  std::printf("PASS %s: real bundle overrides, helper routes and resources\n", name.c_str());
+}
+#else
 void CheckApplication(const std::string& name) {
   const base::FilePath bundle("/parc-helper-routing-fixture/" + name + ".app");
   const base::FilePath executable =
@@ -202,6 +235,7 @@ void CheckApplication(const std::string& name) {
   std::printf("PASS %s: real base/renderer/GPU/Alerts/CDM and resource paths\n",
               name.c_str());
 }
+#endif
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -214,8 +248,13 @@ int main(int argc, char** argv) {
   content::ContentClient content_client;
   content::SetContentClient(&content_client);
   CheckStartupPolicy();
+#if PARC_DIRECT_ENGINE
+  Expect(argc == 2, "fixture executable name supplied");
+  CheckApplication(argv[1]);
+#else
   CheckApplication("Parc");
   CheckApplication("parc_native_runtime_tests");
+#endif
   content::SetContentClient(nullptr);
   std::printf(
       "PASS %d assertions; no browser, profile or helper process created\n",
