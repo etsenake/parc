@@ -1874,6 +1874,10 @@ void SetNativePageClosedCallback(PCNativePage* page,
 - (BOOL)performPageTool:(PCNativePageTool)tool {
   return _state->PerformPageTool(tool);
 }
+- (BOOL)hasDeveloperTools {
+  auto* contents = parc::ContentsForNativePage(self);
+  return contents && DevToolsWindow::GetInstanceForInspectedWebContents(contents);
+}
 - (PCNativeReaderMode)readerMode {
   return static_cast<PCNativeReaderMode>(_state->reader()->mode());
 }

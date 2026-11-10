@@ -606,6 +606,8 @@ __attribute__((visibility("default")))
 // policy. YES means the real command accepted delivery, not completed output.
 - (BOOL)canPerformPageTool:(PCNativePageTool)tool;
 - (BOOL)performPageTool:(PCNativePageTool)tool;
+// Whether Chromium's developer tools are open for this page, docked or not.
+@property(nonatomic, readonly) BOOL hasDeveloperTools;
 @property(nonatomic, readonly) PCNativeReaderMode readerMode;
 @property(nonatomic, readonly) NSUInteger readerRevision;
 @property(nonatomic, readonly, copy) NSString* readerMessage;

@@ -13373,13 +13373,40 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               request.owner === self, let browser = request.browser, currentBrowser === browser,
               browser.nativePage === request.page, browser.readerRevision == request.revision,
               request.page.developerModeSiteHost == request.host, canPerformPageTool(.developerTools) else { return }
-        do {
-            let preferences = DeveloperModePreferences.shared
-            try preferences.setEnabled(!preferences.isEnabled(host: request.host), host: request.host)
-            refreshDeveloperToolbars()
-        } catch { presentError(error) }
+        setDeveloperMode(!DeveloperModePreferences.shared.isEnabled(host: request.host), host: request.host,
+                         browser: browser, page: request.page)
     }
     @objc private func toggleDeveloperModeMenuItem(_ sender: NSMenuItem) { toggleDeveloperMode(from: sender) }
+
+    /// Developer Mode and Chromium's developer tools are one switch, at
+    /// Josh's request: on shows this site's developer toolbar and opens this
+    /// page's JavaScript console; off hides the toolbar and closes this
+    /// page's tools. Engines that can't say whether the tools are open keep
+    /// the two separate.
+    private func setDeveloperMode(_ on: Bool, host: String, browser: PCBrowserView, page: PCNativePage) {
+        do {
+            try DeveloperModePreferences.shared.setEnabled(on, host: host)
+        } catch { presentError(error); return }
+        refreshDeveloperToolbars()
+        guard Self.knowsDeveloperTools(page), on != page.hasDeveloperTools else { return }
+        _ = browser.performPageTool(on ? .javaScriptConsole : .developerTools)
+    }
+
+    private static func knowsDeveloperTools(_ page: PCNativePage) -> Bool {
+        page.responds(to: #selector(getter: PCNativePage.hasDeveloperTools))
+    }
+
+    /// Developer Tools runs that switch by whether this page's tools are open,
+    /// on a page with a Developer Mode site; elsewhere (a private window, an
+    /// internal page, an earlier engine) it toggles the tools alone.
+    private func toggleDeveloperTools(_ browser: PCBrowserView) {
+        guard let page = browser.nativePage, Self.knowsDeveloperTools(page),
+              let request = makeDeveloperModeRequest(), request.page === page else {
+            _ = browser.performPageTool(.developerTools)
+            return
+        }
+        setDeveloperMode(!page.hasDeveloperTools, host: request.host, browser: browser, page: page)
+    }
 
     private func activateDeveloperPage(_ browser: PCBrowserView, page: PCNativePage, revision: UInt) -> Bool {
         guard presentation.isReady, !isClosing, !wholeWindowClose, !windowClosePending,
@@ -13615,7 +13642,23 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func performPageTool(_ tool: PCNativePageTool) {
         guard canPerformPageTool(tool), let browser = currentBrowser else { return }
+        runPageTool(tool, in: browser)
+    }
+
+    /// Developer Tools runs the Developer Mode switch; Console, Network and
+    /// Inspect open their panel, and when that opens the tools they turn this
+    /// site's developer toolbar on too.
+    private func runPageTool(_ tool: PCNativePageTool, in browser: PCBrowserView) {
+        if tool == .developerTools { toggleDeveloperTools(browser); return }
+        let opens = browser.nativePage.map { Self.knowsDeveloperTools($0) && !$0.hasDeveloperTools } ?? false
         _ = browser.performPageTool(tool)
+        guard opens, [.javaScriptConsole, .networkInspector, .inspectElements].contains(tool),
+              let request = makeDeveloperModeRequest(), request.browser === browser,
+              !DeveloperModePreferences.shared.isEnabled(host: request.host) else { return }
+        do {
+            try DeveloperModePreferences.shared.setEnabled(true, host: request.host)
+            refreshDeveloperToolbars()
+        } catch { presentError(error) }
     }
 
     var canExportEaselImage: Bool { currentEaselEditor?.canExportImage == true }
@@ -13737,7 +13780,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               request.owner === self, let browser = request.browser,
               currentBrowser === browser, browser.readerRevision == request.revision,
               canPerformPageTool(request.tool) else { return }
-        _ = browser.performPageTool(request.tool)
+        runPageTool(request.tool, in: browser)
     }
 
     private func pageToolItem(_ title: String, tool: PCNativePageTool) -> NSMenuItem {
@@ -13749,7 +13792,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let self, let browser, self.currentBrowser === browser,
                   browser.readerRevision == revision,
                   self.canPerformPageTool(tool) else { return }
-            _ = browser.performPageTool(tool)
+            self.runPageTool(tool, in: browser)
         }
         item.isEnabled = canPerformPageTool(tool)
         if tool == .clearCacheAndRefresh {
@@ -14585,12 +14628,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         case "preview":
             SidebarPreviewPreference.recentPages.isEnabled.toggle()
         case "developerMode":
-            guard let host = page.developerModeSiteHost, !isPrivateBrowsing, canPerformPageTool(.developerTools) else { return }
-            do {
-                let preferences = DeveloperModePreferences.shared
-                try preferences.setEnabled(!preferences.isEnabled(host: host), host: host)
-                refreshDeveloperToolbars()
-            } catch { presentError(error) }
+            guard let host = page.developerModeSiteHost, !isPrivateBrowsing, canPerformPageTool(.developerTools),
+                  let browser = currentBrowser, browser.nativePage === page else { return }
+            setDeveloperMode(!DeveloperModePreferences.shared.isEnabled(host: host), host: host, browser: browser, page: page)
         default:
             guard let (index, revision) = siteControlCenterPermissionTargets[id],
                   page.responds(to: #selector(PCNativePage.toggleSiteControlsPermission(_:revision:))) else { return }

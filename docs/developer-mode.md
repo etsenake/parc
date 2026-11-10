@@ -10,6 +10,27 @@ The toolbar uses existing policy-aware copying, site information, extensions, sp
 
 New commands participate in the existing shortcut registry, conflict editor, command search and native consumed-key priority mechanism. Inspect Elements uses Command-Option-C, JavaScript Console Command-Option-J, and Toggle Developer Mode Control-D. Network Inspector has no recovered default chord. Recovered `promptAfterConsumedByWebView` defaults use the existing Use Both policy for Developer Tools, View Source, Inspect Elements and Toggle Developer Mode. Existing saved Developer Tools/View Source priority behavior is retained during the additive schema-3 migration; custom chords and explicit priorities are preserved.
 
+## One switch with the developer tools
+
+At Josh's request, Developer Mode and Chromium's developer tools are one
+capability of its own: it is the toolbar above, with buttons into Chromium's
+DevTools. On shows the site's toolbar and opens this page's JavaScript
+Console; off hides the toolbar and closes this page's tools. The Site Control
+Center's Developer Mode row and View → Developer → Turn on/off Developer Mode
+for this site (Control-D) follow the site's setting they show. Developer Tools
+(Command-Option-I, F12, the page menu's item) follows whether this page's tools
+are open, so on a site whose toolbar is already on (localhost and 127.0.0.1 by
+default) it opens the console rather than hiding the toolbar. JavaScript
+Console, Network Inspector and Inspect Elements still open their own panel and,
+when that opens the tools, turn the toolbar on. The toolbar is per site and the
+tools per page, so turning it off in one tab leaves another tab's open tools
+open. Where a page has no Developer Mode site (a private window, an internal
+page), Developer Tools toggles the tools alone. The engine's
+`PCNativePage.hasDeveloperTools` (Chromium's
+`DevToolsWindow::GetInstanceForInspectedWebContents`, which already skips
+closing tools; overlay 652) says whether this page's tools are open, docked or
+not. Earlier engines keep the toolbar and the tools separate.
+
 ## Reference and adaptation
 
 
