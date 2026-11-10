@@ -56,9 +56,10 @@ model and inert component checks. Documentation-only changes need size, link and
 diff checks, not an engine or app build. See [development setup](development-setup.md)
 for Swift typecheck and whole-module SIL commands.
 
-Keep each check's command, result and source identity in ignored output. Distinguish
-source implementation, published artifacts, actual runtime verification and user
-confirmation. An old receipt does not cover later source changes.
+Keep each check's command, result and source identity in ignored output. Be
+truthful about the checks run. Do not invent validation-only backlog work or
+repeat release-timing caveats; report a blocked check when its specific cause
+materially affects the task. An old receipt does not cover later source changes.
 
 Update the affected guide, product status or backlog in place. Follow the
 [documentation policy](documentation.md): one home per fact, normal 150–300 lines,

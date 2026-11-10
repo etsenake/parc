@@ -67,14 +67,22 @@ Technical details should help a reader act, not serve as proof that an agent wor
   handoffs. Remove resolved entries in the same delivery. Old requirement IDs
   may identify unresolved work; they are not a second progress accounting system.
 - Focused subsystem guides: current behavior, ownership/lifetimes, important
-  decisions, commands and validation boundaries. Link the backlog for open work.
+  decisions and useful commands. Link the backlog for concrete open work.
 - `docs/README.md`: navigation. [Documentation policy](docs/documentation.md)
   defines maintenance and the size check.
 
 Update the relevant existing paragraph in the same change as the behavior.
-Verify claims against current code, tests, release receipts or user confirmation;
-label source implementation, shipped artifacts and runtime acceptance separately.
+Verify claims against current code and the relevant checks. Be truthful about
+what you ran; do not claim an unperformed check passed.
 Do not copy an old pending-build note or agent assignment as current fact.
+
+**A missing test record is not a product gap.** Do not create validation-only or
+"runtime acceptance" backlog entries, or append generic "not tested here" caveats
+to feature docs and updates. Record concrete missing/broken behavior, an actionable
+blocker or a genuine product decision. Mention a blocked check only when it is
+material to the requested work, with its specific cause and next action. Do not
+explain that new code is absent from the user's installed release unless release
+status was requested or an actual version mismatch explains the reported issue.
 
 Keep one authoritative home for each fact and link to it. Do not add dated
 progress essays, transcript dumps, per-commit receipts, duplicate status tables,
@@ -101,8 +109,8 @@ A gap may remain only for an explicit exclusion/deferral, a genuine user decisio
 or work outside the assignment. Record the needed next action. **Disclose to the user
 every gap, limitation or decision recorded in documentation or a commit message
 in the same turn**, including findings from helpers, in
-plain words describing what the user experiences. Report unrun validation once
-and separately from known missing behavior.
+plain words describing what the user experiences. Absent test records and routine
+release timing do not count as gaps.
 
 Check real state before saying work is running, reviewed, built or shipped:
 inspect current activity, source and remote commits, and relevant build receipts.
@@ -114,8 +122,8 @@ Use checks appropriate to the changed inputs; inspect scripts before execution.
 Swift iteration uses `scripts/check-swift.py` typechecking. A completed feature
 with material Swift changes also needs whole-module SIL (`--mode sil`,
 `-emit-sil -Onone -o /dev/null`). Keep warnings as errors. Documentation-only
-changes need documentation checks, not app compilation. Compiler/model tests and
-artifact signatures do not establish visual or browser-runtime acceptance.
+changes need documentation checks, not app compilation. Report relevant results
+without boilerplate disclaimers about everything those checks did not test.
 
 When delegation is authorized, assign disjoint scopes and keep independent work
 moving. Authors integrate their helpers' work and remain responsible for the
@@ -174,8 +182,8 @@ sync/build. Setup does not authorize compilation or feature development.
 notarize/staple, publish GitHub assets and publish/verify the tap cask. It must
 never wait for main to be quiet, install/replace/quit/open the local app, run
 startup/browser checks, or run Homebrew install/upgrade/reinstall. Users run
-Homebrew upgrades themselves. Signature/hash/source/notarization checks remain required;
-these do not prove runtime acceptance. See [release guide](docs/master-release.md).
+Homebrew upgrades themselves. Signature/hash/source/notarization checks remain
+required. See [release guide](docs/master-release.md).
 
 Publish authorized development app packages with `scripts/package-app.sh` and
 report their tag. Keep component packages with their sibling libraries. Preserve

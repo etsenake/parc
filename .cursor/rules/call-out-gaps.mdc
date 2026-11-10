@@ -9,5 +9,6 @@ Disclose every gap, limitation, known failure or open decision written
 into docs or a commit message in the same turn, including helper findings.
 Describe what the user experiences and whether the
 fix is in scope; otherwise say what separate work or decision it needs. Report
-unrun validation once, separately from known product gaps. See
+only concrete problems or material blockers; absent test records and routine
+release timing are not gaps. See
 [AGENTS.md](../../AGENTS.md#complete-and-verify-the-assigned-work).

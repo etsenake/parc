@@ -49,10 +49,16 @@ invitation to rebuild the old percentage ledger.
    Keep commands executable and links pointing to their actual owner.
 3. Update the capability inventory only for a meaningful product change. Resolve
    or update its backlog item; do not add a completed-work paragraph.
-4. State validation accurately: source checked, artifact published, runtime
-   tested or explicitly user confirmed. Do not treat one as another.
-5. Tell the user about any newly recorded or retained gap in the same turn. Keep
-   unperformed validation separate from known missing behavior.
+4. Describe relevant checks truthfully. Do not turn absent test records into
+   validation-only backlog items or generic acceptance caveats.
+5. Tell the user about concrete missing/broken behavior, actionable blockers or
+   product decisions recorded in the same turn. Routine release timing and
+   "not tested here" are not product gaps.
+
+Explain a blocked check only when it materially affects the requested work,
+including its cause and next action. Mention an installed-version mismatch only
+when it explains a reported problem or release status was requested. Test guides
+should explain how their checks work, without repeating general disclaimers.
 
 Do not append dated implementation diaries, agent transcripts, build-by-build
 receipts, old ownership tables or duplicated lists of completed requirements.
