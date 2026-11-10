@@ -78,6 +78,11 @@ def gn_arguments(defines: str) -> bytes:
     return ("\n".join(k + "=" + v for k, v in sorted(pairs)) + "\n").encode()
 
 
+def direct_arguments(lock: dict, defines: str) -> bytes:
+    roots = json.dumps(lock["build"]["targets"], separators=(",", ":"))
+    return gn_arguments(defines) + ("root_extra_deps=" + roots + "\n").encode()
+
+
 def load_lock(path: Path = LOCK_FILE) -> tuple[dict, str]:
     raw = path.read_bytes()
     lock = json.loads(raw)
@@ -318,7 +323,7 @@ def shipping_command_plan(workspace: Path, jobs: int, lock: dict | None = None) 
 
 def shipping_arguments(workspace: Path, env: dict, lock: dict | None = None) -> bytes:
     if lock and direct_mode(lock):
-        return gn_arguments(env["GN_DEFINES"])
+        return direct_arguments(lock, env["GN_DEFINES"])
     # Use the pinned CEF configuration generator, as gclient_hook.py does.
     # The separate GN output preserves all existing development objects.
     program = ("import gn_args; "
@@ -552,10 +557,9 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         except BlockingIOError as error:
             raise Refusal("Another operation is using this workspace") from error
         state = read_marker(workspace, previous_sha)
-        if state.get("phase") not in {"synced", "generated", "built"}:
+        allowed = {"generated", "built"} if transition else {"synced", "generated", "built"}
+        if state.get("phase") not in allowed:
             raise Refusal("retarget requires a recorded good source phase")
-        if transition and state["phase"] != "built":
-            raise Refusal("Complete the stopgap build before transitioning to direct mode")
         env = environment(workspace, previous, state["symbol_level"])
         verify_workspace(workspace, previous, state, env)
         if direct_mode(lock):
@@ -567,6 +571,8 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         if report["blockers"]:
             raise Refusal("; ".join(report["blockers"]))
         record = recorded_overlay(workspace, state)
+        if transition and state["phase"] != "built" and not record:
+            raise Refusal("Unbuilt direct transition requires the verified source overlay")
         # Validate every restoration path before starting a non-resumable stage.
         restores = [(target_path(workspace, target, previous),
                      item["original"].encode() if item["original"] is not None else None,
@@ -745,7 +751,7 @@ def verify_workspace(workspace: Path, lock: dict, state: dict, env: dict) -> Non
         args = internal_path(locations(workspace)["chromium"] / "out" / lock["build"]["configuration"] / "args.gn", workspace)
         if (not args.is_file() or state.get("engine_mode") != "direct" or state.get("build_targets") != lock["build"]["targets"]
                 or state.get("args_sha256") != digest(args.read_bytes())
-                or args.read_bytes() != gn_arguments(environment(workspace, lock, state["symbol_level"])["GN_DEFINES"])):
+                or args.read_bytes() != direct_arguments(lock, environment(workspace, lock, state["symbol_level"])["GN_DEFINES"])):
             raise Refusal("Direct generated arguments differ from their receipt")
     recorded_overlay(workspace, state)
 
@@ -1194,7 +1200,7 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                 if direct_mode(lock):
                     output = internal_path(locations(workspace)["chromium"] / "out" / lock["build"]["configuration"], workspace)
                     output.mkdir(parents=True, exist_ok=True)
-                    arguments = gn_arguments(env["GN_DEFINES"])
+                    arguments = direct_arguments(lock, env["GN_DEFINES"])
                     write_source(internal_path(output / "args.gn", workspace), arguments, 0o644)
                     state.update(engine_mode="direct", build_targets=lock["build"]["targets"], args_sha256=digest(arguments))
                     write_marker(workspace, state)

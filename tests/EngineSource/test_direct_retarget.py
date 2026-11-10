@@ -64,10 +64,10 @@ class DirectRetargetTests(unittest.TestCase):
             self.call()
         self.assertEqual(self.calls, [])
 
-    def test_requires_stopgap_build(self):
-        self.state['phase'] = 'generated'
+    def test_requires_generated_source(self):
+        self.state['phase'] = 'synced'
         engine.write_marker(self.workspace, self.state)
-        with self.assertRaisesRegex(engine.Refusal, 'Complete the stopgap build'):
+        with self.assertRaisesRegex(engine.Refusal, 'good source phase'):
             self.call()
         self.assertTrue(self.roots['cef'].exists())
 
@@ -120,3 +120,26 @@ class DirectRetargetTests(unittest.TestCase):
         with self.assertRaisesRegex(engine.Refusal, 'cannot retarget back to CEF'):
             engine.retarget(self.workspace, self.old, self.old_sha, self.previous)
         self.assertEqual(self.calls, [])
+
+    def test_generated_unbuilt_transition_verifies_overlay_and_keeps_objects(self):
+        self.state['phase'] = 'generated'
+        engine.write_marker(self.workspace, self.state)
+        with self.assertRaisesRegex(engine.Refusal, 'requires the verified source overlay'):
+            self.call()
+        self.assertTrue(self.roots['cef'].is_dir())
+        self.assertFalse(any('restore' in c for c in self.calls))
+        target = self.roots['chromium'] / 'source.cc'
+        target.write_text('reviewed overlay\n')
+        record = dict(identity='a'*64, targets={'source.cc': dict(original='upstream\n', mode=0o644,
+                      output_sha256=engine.digest(target.read_bytes()))})
+        raw = engine.overlay_record_bytes(record)
+        folder = self.workspace / '.parc-overlays'
+        folder.mkdir()
+        (folder / ('a'*64 + '.json')).write_bytes(raw)
+        self.state.update(phase='generated', overlay=dict(identity='a'*64, record_sha256=engine.digest(raw)),
+                          source_fingerprint=engine.tree_fingerprint(self.workspace, self.env, self.repos))
+        engine.write_marker(self.workspace, self.state)
+        self.call()
+        self.assertEqual(target.read_text(), 'upstream\n')
+        self.assertEqual(self.output.read_bytes(), b'cached')
+        self.assertEqual(engine.read_marker(self.workspace, self.new_sha)['phase'], 'synced')

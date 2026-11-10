@@ -94,8 +94,8 @@ pre-create the final engine directory to try to fix a refusal.
 `Engine/source-lock.json` remains the stopgap lock. Direct mode is opt-in with
 `--lock-file "$PWD/Engine/source-lock-direct.json"` on every source-tool command;
 use the separately integrated `Engine/ParcHost/overlay-direct.json` for its overlay.
-The engine owner transitions only its isolated clone after the stopgap build
-completes, using `retarget --previous-lock` with unchanged Chromium/depot_tools
+The engine owner transitions only its idle isolated clone after source generation
+with a verified applied overlay, using `retarget --previous-lock` with unchanged Chromium/depot_tools
 pins. CEF is preserved outside the source tree, compiled objects stay in place,
 and both configurations require regeneration. The
 [engine transition commands](../Engine/README.md#build-configuration) describe

@@ -7,7 +7,7 @@ depot_tools; `ParcHost/overlay.json` records that integration. Direct Chromium
 uses [source-lock-direct.json](source-lock-direct.json), explicitly selected with
 `--lock-file`. It requires the separately integrated `ParcHost/overlay-direct.json`;
 this preparatory tool does not supply that manifest or the direct startup code.
-The engine owner must complete the stopgap build before transitioning its clone.
+The engine owner transitions only an idle clone with verified generated sources.
 The coordinator promotes the direct lock to the canonical filename after the
 first direct build.
 
@@ -37,7 +37,8 @@ instead of their manifest-owned inputs.
 
 Direct mode writes explicit GN arguments without CEF's generator. It builds
 `//parc:parc_framework` and `//parc/helper:parc_helper`, including the framework's
-resource dependencies. `Release_GN_arm64` deliberately keeps its name so existing
+resource dependencies. Generated `root_extra_deps` loads both Parc targets into
+the Chromium root graph. `Release_GN_arm64` deliberately keeps its name so existing
 output consumers and compiled objects remain usable. Chromium's gclient hooks
 still run; no CEF checkout or patcher participates. Overlay patches run in their
 reviewed manifest order against Chromium; each target has one consolidated patch
@@ -133,7 +134,8 @@ python3 scripts/engine-source.py retarget --workspace /absolute/project/engine \
   --previous-lock "$PWD/work/stopgap-source-lock.json"
 ```
 
-This transition requires a completed stopgap build and identical Chromium,
+This transition accepts a built engine or a generated/interrupted build with a
+verified applied overlay, and requires identical Chromium,
 depot_tools pins and storage policy. It uses the existing 40 GB build reserve,
 restores the verified overlay and CEF patches, moves the CEF checkout to
 `cef-retired/` beside `chromium/`, and removes only the `/cef/` Git exclude.

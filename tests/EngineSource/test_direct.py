@@ -80,6 +80,7 @@ class DirectTests(unittest.TestCase):
         self.assertEqual(state['engine_mode'], 'direct')
         args = self.workspace / 'chromium/src/out/Release_GN_arm64/args.gn'
         self.assertEqual(state['args_sha256'], engine.digest(args.read_bytes()))
+        self.assertIn(b'root_extra_deps=["//parc:parc_framework","//parc/helper:parc_helper"]\n', args.read_bytes())
         self.assertFalse(any('autoninja' in str(call) for call in run.call_args_list))
         (self.workspace / 'chromium/.gclient').write_text(engine.gclient_text(self.lock))
         with patch.object(engine, 'verify_repository'), patch.object(engine, 'tree_fingerprint', return_value='source'), patch.object(engine, 'recorded_overlay'):
