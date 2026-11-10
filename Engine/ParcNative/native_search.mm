@@ -9,7 +9,8 @@
 #include <vector>
 
 #include "base/check.h"
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "base/callback_list.h"
+#include "native_internal_urls.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -21,8 +22,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/supports_user_data.h"
 #include "base/task/single_thread_task_runner.h"
-#include "cef/include/cef_preference.h"
-#include "cef/libcef/browser/browser_host_base.h"
+#include "components/prefs/pref_registry_simple.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_provider_client.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
@@ -61,6 +61,7 @@
 #include "extensions/browser/permissions/active_tab_permission_granter.h"
 #include "extensions/common/extension.h"
 #include "native_appkit_host.h"
+#include "native_profiles.h"
 #include "window_security_reservation.h"
 #include "native_profile_removal.h"
 #include "native_appkit_page.h"
@@ -159,8 +160,11 @@ class SearchState final : public base::SupportsUserData::Data,
         readiness_(base::BindRepeating(&SearchState::InstallSiteCatalog,
                                       base::Unretained(this))) {
     profile.AddObserver(this);
-    if (service_)
+    if (service_) {
       service_->AddObserver(this);
+      loaded_subscription_ = service_->RegisterOnLoadedCallback(base::BindOnce(
+          &SearchState::Loaded, weak_factory_.GetWeakPtr()));
+    }
     prefs_.Init(profile.GetPrefs());
     prefs_.Add(
         omnibox::kKeywordSpaceTriggeringEnabled,
@@ -207,6 +211,7 @@ class SearchState final : public base::SupportsUserData::Data,
       readiness_.Schedule();
     }
   }
+  void Loaded() { readiness_.Schedule(); }
   void OnTemplateURLServiceChanged() override {
     Changed();
     if (service_ && service_->loaded())
@@ -290,13 +295,12 @@ class SearchState final : public base::SupportsUserData::Data,
   bool installing_catalog_ = false;
   uint64_t revision_ = 1;
   NativeSearchReadiness readiness_;
+  base::CallbackListSubscription loaded_subscription_;
   base::WeakPtrFactory<SearchState> weak_factory_{this};
 };
 }  // namespace
-void RegisterNativeSearchPreferences(CefPreferenceRegistrar& registrar) {
-  auto value = CefValue::Create();
-  value->SetDictionary(CefDictionaryValue::Create());
-  CHECK(registrar.AddPreference(kSiteCatalogPreference, value));
+void RegisterNativeSearchPreferences(PrefRegistrySimple& registrar) {
+  registrar.RegisterDictionaryPref(kSiteCatalogPreference);
 }
 void InitializeNativeSearch(Profile& profile) {
   if (!profile.IsOffTheRecord())
@@ -472,7 +476,7 @@ namespace {
 void WithSearchProfile(
     NSString* path,
     PCNativePage* page,
-    base::OnceCallback<void(Profile*, CefRefPtr<CefRequestContext>, NSError*)>
+    base::OnceCallback<void(Profile*, parc::NativeProfileLeasePtr, NSError*)>
         callback, PCNativeBrowserWindow* window = nil) {
   if (window.isPrivateBrowsing) {
     Profile* profile = NativePrivateProfileForWindow(window, path);
@@ -483,7 +487,7 @@ void WithSearchProfile(
       std::move(callback).Run(nullptr, nullptr, SearchError(@"The original private search window closed."));
       return;
     }
-    std::move(callback).Run(profile, NativeContextForProfile(*profile), nil);
+    std::move(callback).Run(profile, NativeLeaseForProfile(*profile), nil);
     return;
   }
   if (!page) {
@@ -491,9 +495,7 @@ void WithSearchProfile(
     return;
   }
   auto* contents = ContentsForNativePage(page);
-  auto host =
-      contents ? CefBrowserHostBase::GetBrowserForContents(contents) : nullptr;
-  if (!host || page.isClosed || ![page.profilePath isEqual:path] ||
+  if (!contents || page.isClosed || ![page.profilePath isEqual:path] ||
       ![PCNativeBrowserApplication ownerForPage:page].window) {
     std::move(callback).Run(
         nullptr, nullptr, SearchError(@"The originating page is unavailable."));
@@ -501,7 +503,7 @@ void WithSearchProfile(
   }
   std::move(callback).Run(
       Profile::FromBrowserContext(contents->GetBrowserContext()),
-      host->GetRequestContext(), nil);
+      NativeLeaseForProfile(*Profile::FromBrowserContext(contents->GetBrowserContext())), nil);
 }
 void SearchPreferences(NSString* path,
                        PCNativePage* page,
@@ -549,18 +551,21 @@ void SearchPreferences(NSString* path,
                                           NSError*), PCNativeBrowserWindow* window) {
   parc::WithSearchProfile(
       path, page,
-      base::BindOnce(^(Profile* profile, CefRefPtr<CefRequestContext> context,
+      base::BindOnce(^(Profile* profile, parc::NativeProfileLeasePtr context,
                        NSError* error) {
-        if (!profile) {
-          completion(nil, error);
+        if (!profile || !context) {
+          completion(nil, error ?: SearchError(@"The search Profile is closing."));
           return;
         }
         auto weak = profile->GetWeakPtr();
-        // Do not retain a request context in Profile-owned pending callbacks.
-        // The exact weak Profile cancels delivery if its owner closes.
+        // Retain the operation through catalogue readiness and reply delivery.
         __weak PCNativeBrowserWindow* originalWindow = window;
         const BOOL isPrivate = window.isPrivateBrowsing;
         parc::SearchState::Get(*profile).WhenLoaded(base::BindOnce(^{
+          auto lease = context;
+          if (!lease || lease->profile() != weak.get()) {
+            completion(nil, SearchError(@"The search Profile closed.")); return;
+          }
           if (isPrivate && NativePrivateProfileForWindow(originalWindow, path) != weak.get()) {
             completion(nil, SearchError(@"The original private search window closed.")); return;
           }
@@ -604,7 +609,7 @@ Profile* ProfileForSearchNavigation(PCNativeSearchNavigation* request) {
           @"This search engine cannot be selected as the default.");
     return nil;
   }
-  auto context = parc::NativeContextForProfile(*profile);
+  auto context = parc::NativeLeaseForProfile(*profile);
   if (!context) {
     if (error)
       *error = parc::SearchError(@"This profile is closing.");
@@ -630,7 +635,7 @@ Profile* ProfileForSearchNavigation(PCNativeSearchNavigation* request) {
           @"Search suggestions are controlled for this profile.");
     return nil;
   }
-  auto context = parc::NativeContextForProfile(*profile);
+  auto context = parc::NativeLeaseForProfile(*profile);
   if (!context) {
     if (error)
       *error = parc::SearchError(@"This profile is closing.");

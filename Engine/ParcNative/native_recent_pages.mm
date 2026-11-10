@@ -1,7 +1,8 @@
 // Copyright 2026 Parc contributors.
 #import "native_appkit_bridge.h"
 #include "native_appkit_host.h"
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "native_profiles.h"
+#include "native_internal_urls.h"
 
 #include <memory>
 #include <optional>
@@ -95,12 +96,13 @@ class RecentPagesQuery final : public ProfileObserver {
                                    weak_factory_.GetWeakPtr()));
     WithNativeProfile(path, base::BindOnce(
         [](base::WeakPtr<RecentPagesQuery> query, Profile* profile,
-           CefRefPtr<CefRequestContext> context, NSError* error) {
+           parc::NativeProfileLeasePtr context, NSError* error) {
           if (!query || query->finished_) return;
           if (!profile || !context || error) {
             query->FinishEmpty();
             return;
           }
+          query->lease_ = std::move(context);
           query->Begin(*profile);
         }, weak_factory_.GetWeakPtr()));
   }
@@ -122,7 +124,7 @@ class RecentPagesQuery final : public ProfileObserver {
  private:
   void Begin(Profile& profile) {
     CHECK(NSThread.isMainThread);
-    if (profile.IsOffTheRecord() || !NativeContextForProfile(profile)) {
+    if (profile.IsOffTheRecord() || (!lease_ || lease_->profile() != &profile)) {
       FinishEmpty();
       return;
     }
@@ -151,7 +153,7 @@ class RecentPagesQuery final : public ProfileObserver {
   void Completed(history::QueryResults results) {
     if (finished_) return;
     NSMutableArray<PCNativeRecentPage*>* pages = [[NSMutableArray alloc] init];
-    if (profile_ && NativeContextForProfile(*profile_)) {
+    if (profile_ && lease_ && lease_->profile() == profile_.get()) {
       for (const auto& result : results) {
         if (!Matches(domain_, result.url())) continue;
         NSURL* url = [NSURL URLWithString:base::SysUTF8ToNSString(parc::PublicInternalURL(result.url()).spec())];
@@ -177,7 +179,7 @@ class RecentPagesQuery final : public ProfileObserver {
   }
   void Deliver(NSArray<PCNativeRecentPage*>* pages) {
     if (!reply_) return;
-    if (!profile_ || !NativeContextForProfile(*profile_)) pages = @[];
+    if (!profile_ || !lease_ || lease_->profile() != profile_.get()) pages = @[];
     auto reply = reply_;
     reply_ = nil;
     DetachProfile();
@@ -187,7 +189,9 @@ class RecentPagesQuery final : public ProfileObserver {
   void DetachProfile() {
     if (profile_) profile_->RemoveObserver(this);
     profile_.reset();
+    lease_.reset();
   }
+  parc::NativeProfileLeasePtr lease_;
   RecentDomain domain_;
   Reply reply_;
   bool finished_ = false;

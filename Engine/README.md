@@ -157,8 +157,19 @@ Source and generated-target checks must verify the exact applied manifest.
 
 Application reopen resolves registered native windows through the shell's owner.
 It does not create a replacement profile or infer consent to close anything.
-Profiles and Keychain storage use Parc's own namespace. Keep normal encryption
-separate from disposable test-Keychain modes, and preserve signing continuity.
+Profiles and Keychain storage use Parc's own namespace. The direct engine's
+[profile registry](ParcNative/native_profiles.h) loads or creates immediate
+children of `Chromium-v1` through ProfileManager. One pending load serves all
+waiters for that exact path; a failed persistent load stays failed. Registry
+keepalives hand off profile creation safely, and operation leases keep imports,
+search and history work alive until their callbacks finish. Removal waits for
+those leases as well as windows, private profiles and downloads. Private windows
+use their parent's primary off-the-record profile; its retirement waits for
+private operations. Profile defaults disable browser sign-in and translation
+before services start; these defaults preserve stored user preferences. The
+existing policy of not restoring session cookies also stays in place.
+Keep normal encryption separate from disposable test-Keychain modes, and
+preserve signing continuity.
 See [relaunch checks](../tests/NativeRelaunch/README.md) and
 [Keychain checks](../tests/KeychainNamespace/README.md).
 

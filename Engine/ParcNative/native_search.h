@@ -3,9 +3,9 @@
 #define PARC_NATIVE_NATIVE_SEARCH_H_
 #import "native_appkit_bridge.h"
 class Profile;
-class CefPreferenceRegistrar;
+class PrefRegistrySimple;
 namespace parc {
-void RegisterNativeSearchPreferences(CefPreferenceRegistrar& registrar);
+void RegisterNativeSearchPreferences(PrefRegistrySimple& registrar);
 void InitializeNativeSearch(Profile& profile);
 Profile* ProfileForSearchNavigation(PCNativeSearchNavigation* request);
 }
