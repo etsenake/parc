@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "purpose": "Parc direct Chromium engine, explicitly selected after the stopgap build",
+  "target": "mac-arm64",
+  "chromium": {
+    "url": "https://chromium.googlesource.com/chromium/src.git",
+    "tag": "156.0.8078.96",
+    "commit": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
+  },
+  "depot_tools": {
+    "url": "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
+    "commit": "132599ebbd8d22d1b1bd5ea703a6d3bc493edd71",
+    "files": {
+      "gclient": "d8552f865c25da1a2806c8c027a57482fd865376c568a385902ff3d01ae1a61a",
+      "gclient.py": "6d27b8b478a1bda056b7ad769a340ab98709059d51a85fecae28face3d8355c3",
+      "autoninja": "aba41a134b45f028e13d5580414e6a9697c324b944154ad470e3ac953b4c5edf",
+      "autoninja.py": "31f4cc2bd9a84ed5263632028a76d9a005a1206f2c2b227125d9c314febc9342",
+      "ensure_bootstrap": "a88ab230f6d92fea7588747a21854981442ba5866026fe48f792a2e43c5a986c"
+    }
+  },
+  "storage": {
+    "sync_minimum_free_bytes": 80000000000,
+    "build_minimum_free_bytes": 40000000000,
+    "basis": "Local policy lowered from the upstream 150 GB Debug guidance after observed Release ARM64 component sync/build usage stayed well below that. 80 GB pre-sync and 40 GB pre-build are working floors, not fit guarantees. No automatic lowering or cleanup."
+  },
+  "build": {
+    "configuration": "Release_GN_arm64",
+    "symbol_levels": [
+      0,
+      1
+    ],
+    "default_symbol_level": 0,
+    "gn_defines": "is_component_build=true is_official_build=false dcheck_always_on=false disable_fieldtrial_testing_config=true proprietary_codecs=true ffmpeg_branding=\"Chromium\" enable_ffmpeg_video_decoders=false media_use_openh264=false enable_hangout_services_extension=true enable_platform_dolby_vision=true enable_platform_encrypted_dolby_vision=true enable_platform_ac3_eac3_audio=true target_cpu=\"arm64\" enable_dsyms=false use_remoteexec=false is_debug=false enable_background_mode=false enable_downgrade_processing=false alternate_cdm_storage_id_key=\"968b476909da4373b08903c28e859454\" optimize_webui=true enable_widevine=true enable_cdm_host_verification=true enable_cdm_storage_id=true enable_rlz=true clang_use_chrome_plugins=false",
+    "targets": [
+      "//parc:parc_framework",
+      "//parc/helper:parc_helper"
+    ]
+  },
+  "references": {
+    "depot_updates": "https://chromium.googlesource.com/chromium/tools/depot_tools/+/132599ebbd8d22d1b1bd5ea703a6d3bc493edd71/README.md",
+    "symbols": "https://chromium.googlesource.com/chromium/src/+/2ad9b7f5a86846e0b264090723a6a78964bb84c4/build/config/compiler/compiler.gni#154",
+    "dsyms": "https://chromium.googlesource.com/chromium/src/+/2ad9b7f5a86846e0b264090723a6a78964bb84c4/build/config/apple/symbols.gni"
+  }
+}

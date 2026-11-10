@@ -858,7 +858,8 @@ def verify_development_layout(app: Path, manifest: dict) -> dict:
             visited.add(key)
             for value in info["loads"]:
                 target = resolve_development_dependency(value, image, executable, rpaths, dependency_root)
-                if image in expected and target != expected[image].get(value):
+                if ((image in expected and target != expected[image].get(value)) or
+                        (direct_helper and image == executable and target != helper_expected.get(value))):
                     raise Refusal(f"Engine dependency changed during packaging: {image}: {value}")
                 if target is not None:
                     visit(target, rpaths)
@@ -866,7 +867,7 @@ def verify_development_layout(app: Path, manifest: dict) -> dict:
         if direct_helper:
             info = images[executable]
             check_bootstrap_graph({"parc_helper": info})
-            expected[executable] = {
+            helper_expected = {
                 load: inside(development_engine_path(app, target), root)
                 for load, target in manifest["images"][manifest["helper"]["image"]]["resolved"].items()}
             if info != {key: manifest["images"][manifest["helper"]["image"]][key] for key in ("id", "loads", "rpaths")}:

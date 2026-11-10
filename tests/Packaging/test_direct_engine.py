@@ -64,6 +64,40 @@ class DirectEngineTests(unittest.TestCase):
         with self.assertRaisesRegex(pkg.Refusal, "pre-sandbox"):
             self.seal()
 
+    def test_framework_identity_and_version_are_enforced(self):
+        info = self.framework / "Resources/Info.plist"
+        original = info.read_bytes()
+        info.write_bytes(plistlib.dumps({"CFBundleIdentifier": "other.framework", "CFBundleExecutable": pkg.ENGINE_NAME}))
+        with self.assertRaisesRegex(pkg.Refusal, "identity"):
+            self.seal()
+        info.write_bytes(original)
+        (self.framework / "Versions/Current").unlink()
+        (self.framework / "Versions/B").symlink_to("A")
+        (self.framework / "Versions/Current").symlink_to("B")
+        with self.assertRaisesRegex(pkg.Refusal, "Versions/A"):
+            self.seal()
+
+    def test_direct_helper_contract_refuses_missing_cdm_or_alerts_routes(self):
+        files = {
+            "content/public/app/mac_helpers.gni": 'content_mac_helpers = [\n["default", "", ""], ["renderer", ".renderer", " (Renderer)"], ["gpu", "", " (GPU)"],\n]',
+            "parc/helper/BUILD.gn": 'executable("parc_helper") { deps = [ "//sandbox/mac:seatbelt" ] }',
+            "parc/parc_content_clients.cc": 'constexpr char kMacHelperSuffixCdm[] = " (CDM)"; SetCdmServiceChildFlags( GetChildProcessPath(chrome::kMacHelperSuffixAlerts)',
+            "parc/parc_bundle_mac.mm": 'name + " Helper"',
+            "chrome/common/chrome_constants.cc": 'kMacHelperSuffixAlerts[] = " (Alerts)";',
+        }
+        for name, text in files.items():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        pkg.check_helper_contract(self.root, direct=True)
+        for name in ("parc/helper/BUILD.gn", "parc/parc_content_clients.cc", "parc/parc_bundle_mac.mm", "chrome/common/chrome_constants.cc"):
+            path = self.root / name
+            original = path.read_text()
+            path.write_text("")
+            with self.assertRaisesRegex(pkg.Refusal, "routing|Seatbelt"):
+                pkg.check_helper_contract(self.root, direct=True)
+            path.write_text(original)
+
     def test_release_rejects_swapped_helper(self):
         package = self.root / "package"
         engine = package / "Parc.app/Contents/Frameworks"
