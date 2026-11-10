@@ -1114,15 +1114,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    private func performWindowCommand<T>(selectNativePage: Bool = true, isCurrent: (() -> Bool)? = nil, afterCapture: (() -> Void)? = nil, _ action: () -> T) {
-        guard isCurrent?() ?? true else { return }
+    private func performWindowCommand<T>(selectNativePage: Bool = true, afterCapture: (() -> Void)? = nil, _ action: () -> T) {
         cancelSpaceCreation(restoreFocus: false)
-        guard presentation.isReady, !isClosing, !wholeWindowClose, transferringTabIDs.isEmpty,
-              isCurrent?() ?? true else { return }
+        guard presentation.isReady, !isClosing, !wholeWindowClose, transferringTabIDs.isEmpty else { return }
         pendingNativeSelection = nil
         let previousFocus = focusedTabID
         prepareStoreContext()
-        guard isCurrent?() ?? true else { return }
         _ = action()
         presentation.captureCommand(store.state) { ownership.canUse($0, owner: presentationID) }
         afterCapture?()
@@ -1152,13 +1149,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         resolveInput(input, replacing: nil)
     }
 
-    func openGuardedInput(_ input: String, isCurrent: @escaping () -> Bool) {
-        guard !isPopupWindow, isCurrent() else { return }
-        resolveInput(input, replacing: nil, isCurrent: isCurrent)
+    /// An exact address Parc chose itself skips the address classifier; a
+    /// popup still hands it to a browser window as input.
+    func openAddress(_ url: URL) {
+        if isPopupWindow { openInput(url.absoluteString) } else { openExactAddress(url) }
     }
 
-    private func resolveInput(_ input: String, replacing tabID: UUID?, isCurrent: (() -> Bool)? = nil) {
-        guard isCurrent?() ?? true else { return }
+    private func resolveInput(_ input: String, replacing tabID: UUID?) {
         if openLocalNoteAddress(input) { return }
         if let tabID, !prepareNotesToClose([tabID]) { return }
         let spaceID = activeSpaceID
@@ -1172,7 +1169,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             // The native resolver retains its main-thread profile callback contract.
             MainActor.assumeIsolated {
                 guard let self, self.activeSpaceID == spaceID, self.activeProfileID == profileID,
-                      !self.isClosing, !self.wholeWindowClose, isCurrent?() ?? true else { return }
+                      !self.isClosing, !self.wholeWindowClose else { return }
                 if let tabID {
                     guard self.currentTabID == tabID, self.inputRevisions[tabID] == revision,
                           self.browsers[tabID]?.nativePage === originalPage,
@@ -1183,7 +1180,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     self.showSearchError(error?.localizedDescription ?? "Search is unavailable for this profile.")
                     return
                 }
-                self.openSearchNavigation(navigation, replacing: tabID, isCurrent: isCurrent)
+                self.openSearchNavigation(navigation, replacing: tabID)
             }
         }
     }
@@ -1249,15 +1246,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return peek.parentTabID
     }
 
-    private func openSearchNavigation(_ navigation: PCNativeSearchNavigation, replacing tabID: UUID?,
-                                      isCurrent: (() -> Bool)? = nil) {
+    private func openSearchNavigation(_ navigation: PCNativeSearchNavigation, replacing tabID: UUID?) {
         guard navigation.profilePath == store.independentEngineProfilePath(for: activeProfileID),
-              presentation.isReady, !isClosing, !wholeWindowClose, transferringTabIDs.isEmpty,
-              isCurrent?() ?? true else { return }
+              presentation.isReady, !isClosing, !wholeWindowClose, transferringTabIDs.isEmpty else { return }
         if openLocalNoteAddress(navigation.url.absoluteString) { return }
         if let tabID {
             guard currentTabID == tabID, !store.retiringTabIDs.contains(tabID), !closingTabIDs.contains(tabID) else { return }
-            performWindowCommand(isCurrent: isCurrent) {
+            performWindowCommand {
                 pendingSearchNavigations[tabID] = navigation
                 requestedURLs.removeValue(forKey: tabID)
                 store.updateTab(tabID, url: navigation.url.absoluteString)
@@ -1265,7 +1260,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         } else {
             let id = UUID()
             let creation = creationProvenance(activeTabID: currentTabID)
-            performWindowCommand(isCurrent: isCurrent) {
+            performWindowCommand {
                 pendingSearchNavigations[id] = navigation
                 store.openResolvedURL(navigation.url, id: id, creation: creation)
                 presentation.recordCreation(id, state: store.state)
@@ -6797,12 +6792,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard let url = SoftwareUpdateBanner.releaseNotesURL else { return }
         openPageInNewTab(url.absoluteString)
     }
-    /// An app-owned exact address opens directly, like an external link: the
-    /// address classifier would first wait for the profile's search engines,
-    /// with no tab to show loading yet, and then open a blank page before it.
     private func openPageInNewTab(_ address: String) {
         guard canOpenPageInNewTab, window?.isKeyWindow == true, windowCommandSecurityAvailable,
               let url = URL(string: address) else { return }
+        openExactAddress(url)
+    }
+    /// An app-owned exact address opens directly, like an external link: the
+    /// address classifier would first wait for the profile's search engines,
+    /// with no tab to show loading yet, and then open a blank page before it.
+    private func openExactAddress(_ url: URL) {
         let creation = creationProvenance(activeTabID: currentTabID)
         performWindowCommand {
             let id = store.openResolvedURL(url, creation: creation)
@@ -13271,7 +13269,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             menu.addItem(page("Capture Visible Area", enabled: canCapture) { $0.capturePage(.viewport) })
             menu.addItem(page("Capture Full Page", enabled: canCapture) { $0.capturePage(.fullPage) })
             menu.addItem(.separator())
-            menu.addItem(page("Manage Extensions…") { $0.openInput("parc://extensions/") })
+            menu.addItem(page("Manage Extensions…") { $0.openAddress(URL(string: "parc://extensions/")!) })
         }
         var section: [NSMenuItem] = []
         let toolbar = BrowserToolbarPreferences.shared
@@ -14515,12 +14513,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard current(), let self, let parent, parent.isKeyWindow else { return false }
             return self.windowCommandSecurityAvailable
         }
-        let openExtensionDestination: (String) -> Void = { [weak self] input in
-            guard let self, afterDismissal() else { return }
-            // Popup handoff still uses its existing cross-window route; the
-            // hidden destination's native security preflight remains open.
-            if self.isPopupWindow { self.openInput(input) }
-            else { self.openGuardedInput(input, isCurrent: afterDismissal) }
+        let openExtensionDestination: (String) -> Void = { [weak self] address in
+            guard let self, afterDismissal(), let url = URL(string: address) else { return }
+            self.openAddress(url)
         }
         model.onManageExtensions = { [weak self] in
             guard currentPresentation(), let self else { return }
@@ -14618,11 +14613,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     /// Chromium's own per-site settings page for the current origin.
     private func openSiteControlCenterSiteSettings() {
         guard let url = currentBrowser?.url, let scheme = url.scheme, let host = url.host,
-              ["http", "https"].contains(scheme.lowercased()) else { openInput("parc://settings/content"); return }
+              ["http", "https"].contains(scheme.lowercased()) else { openAddress(URL(string: "parc://settings/content")!); return }
         let origin = scheme + "://" + host + (url.port.map { ":\($0)" } ?? "")
         var components = URLComponents(string: "parc://settings/content/siteDetails")
         components?.queryItems = [URLQueryItem(name: "site", value: origin)]
-        openInput(components?.string ?? "parc://settings/content")
+        openAddress(components?.url ?? URL(string: "parc://settings/content")!)
     }
 
     ///
