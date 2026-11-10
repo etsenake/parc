@@ -228,7 +228,7 @@ one is accepted, following the same manual-install boundary above.
 
 ## Helper and signing contract
 
-`Sources/ParcHelper/main.cc` follows the pinned CEF macOS entry order: load `Libraries/libcef_sandbox.dylib`, resolve both sandbox entry points, initialize the sandbox context, then load the engine framework and call the exported `parc_engine_execute_process`. The sandbox stays alive through process execution and framework unloading. A missing sandbox, missing entry point, initialization failure or browser-process return fails. The helper links only system libraries; packaging checks its actual load commands before including it.
+`Sources/ParcHelper/cef_main.cc` follows the pinned CEF macOS entry order: load `Libraries/libcef_sandbox.dylib`, resolve both sandbox entry points, initialize the sandbox context, then load the engine framework and call the exported `parc_engine_execute_process`. The sandbox stays alive through process execution and framework unloading. A missing sandbox, missing entry point, initialization failure or browser-process return fails. The helper links only system libraries; packaging checks its actual load commands before including it.
 
 
 Copied code is signed inside-out. The app is verified with `codesign --verify --deep --strict`, and

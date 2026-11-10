@@ -428,6 +428,10 @@ ALLOWED = {
         '"/../../../Chromium Embedded Framework.framework/"',
         '"Chromium Embedded Framework"',
     },
+    "Sources/ParcHelper/cef_main.cc": {
+        '"/../../../Chromium Embedded Framework.framework/"',
+        '"Chromium Embedded Framework"',
+    },
     # Parc's existing engine data directory.
     "Sources/ParcCore/BrowserStore.swift": {'"Chromium-v1"'},
     # The Chromium browser's own folders, Keychain item and name, to import

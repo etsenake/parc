@@ -26,7 +26,7 @@ class HelperLifecycleTests(unittest.TestCase):
         cls.framework = cls.root / "Parc.app/Contents/Frameworks/Chromium Embedded Framework.framework"
         (cls.framework / "Libraries").mkdir(parents=True)
         helper = cls.root / "Parc Helper"
-        subprocess.run(["xcrun", "clang++", "-arch", "arm64", "-std=c++20", "-mmacosx-version-min=13.0", "-Wall", "-Wextra", "-Werror", str(REPO / "Sources/ParcHelper/main.cc"), "-o", str(helper)], check=True, capture_output=True)
+        subprocess.run(["xcrun", "clang++", "-arch", "arm64", "-std=c++20", "-mmacosx-version-min=13.0", "-Wall", "-Wextra", "-Werror", str(REPO / "Sources/ParcHelper/cef_main.cc"), "-o", str(helper)], check=True, capture_output=True)
         cls.helper_binary = helper
         cls.sandbox_source = cls.root / "sandbox.c"
         cls.sandbox_source.write_text(r'''

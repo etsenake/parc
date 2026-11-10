@@ -1032,7 +1032,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         run("xcrun", "clang", *common, "-Wno-unused-parameter", "-fobjc-arc", "-fblocks",
             "-I", headers, "-I", repo / "Sources/ParcEngine", "-c",
             repo / "Sources/ParcEngine/VideoPiPWindow.m", "-o", stage / "VideoPiPWindow.o")
-        run("xcrun", "clang++", *common, "-std=c++20", repo / "Sources/ParcHelper/main.cc",
+        run("xcrun", "clang++", *common, "-std=c++20", repo / "Sources/ParcHelper/cef_main.cc",
             "-Wl,-rpath,@executable_path/../../../../../..", "-o", stage / "Parc Helper")
         # Inspect the actual compiled executable, not a source-text heuristic.
         if any(not system_library(v) for v in inspect_macho(stage / "Parc Helper")["loads"]):

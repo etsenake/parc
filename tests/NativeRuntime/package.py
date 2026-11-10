@@ -55,7 +55,7 @@ def main():
         if not TEST_EXPORTS <= package.exported_symbols(binary):
             raise package.Refusal("Real engine lacks the native runtime test driver")
         inputs = [test_dir / "main_mac.mm", test_dir / "runtime_driver.h",
-                  repo / "Sources/ParcHelper/main.cc", repo / "scripts/build.py",
+                  repo / "Sources/ParcHelper/cef_main.cc", repo / "scripts/build.py",
                   test_dir / "fixtures/extension-action/manifest.json",
                   repo / "Sources/ParcEngine/VideoPiPWindow.h",
                   repo / "Sources/ParcEngine/VideoPiPWindow.m"]
@@ -92,7 +92,7 @@ def main():
                         "-framework", "AppKit", "-framework", "QuartzCore",
                         "-o", contents / "MacOS" / APP)
             helper_binary = stage / "helper"
-            package.run("xcrun", "clang++", *common, repo / "Sources/ParcHelper/main.cc",
+            package.run("xcrun", "clang++", *common, repo / "Sources/ParcHelper/cef_main.cc",
                         "-Wl,-rpath,@executable_path/../../../../../..", "-o", helper_binary)
             for binary_path in (helper_binary, contents / "MacOS" / APP):
                 if any(not package.system_library(load) for load in package.inspect_macho(binary_path)["loads"]):
