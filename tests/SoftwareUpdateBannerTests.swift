@@ -22,13 +22,15 @@ struct SoftwareUpdateBannerTests {
         let updated = SoftwareUpdateBanner()
         updated.launch(in: directory, existingData: true, current: new)
         try check(updated.completedUpdate == new, "the first launch of a newer version shows the banner")
+        try check(updated.updatedFrom == old && updated.completedUpdateFragment == "from=1.8.2&to=1.9.0",
+                  "See What's New opens the page at the update's range")
         let unshown = SoftwareUpdateBanner()
         unshown.launch(in: directory, existingData: true, current: new)
         try check(unshown.completedUpdate == new, "a launch that never showed it carries it on")
         unshown.markCompletedUpdateShown()
-        try check(unshown.completedUpdate == new, "showing it keeps it up for this run")
+        try check(unshown.completedUpdate == new && unshown.updatedFrom == old, "showing it keeps it up for this run")
         unshown.retireCompletedUpdate()
-        try check(unshown.completedUpdate == nil, "retiring removes it")
+        try check(unshown.completedUpdate == nil && unshown.completedUpdateFragment == nil, "retiring removes it")
 
         let shown = SoftwareUpdateBanner()
         shown.launch(in: directory, existingData: true, current: new)

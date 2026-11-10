@@ -24,13 +24,14 @@ struct ReleaseNotesLaunchTests {
         let fresh = ReleaseNotesLaunch.launching(v190, previous: nil, existingData: false)
         try check(fresh == .init(lastLaunched: v190, pending: nil), "a fresh install shows nothing")
         let upgradedFromOld = ReleaseNotesLaunch.launching(v190, previous: nil, existingData: true)
-        try check(upgradedFromOld == .init(lastLaunched: v190, pending: v190),
+        try check(upgradedFromOld == .init(lastLaunched: v190, pending: v190) && upgradedFromOld.updatedFrom == nil,
                   "data an earlier run started on, without a record, was last run by an older Parc")
 
         let ran = ReleaseNotesLaunch(lastLaunched: v182, pending: nil)
         try check(ReleaseNotesLaunch.launching(v182, previous: ran, existingData: true) == ran, "a relaunch shows nothing")
         let updated = ReleaseNotesLaunch.launching(v190, previous: ran, existingData: true)
-        try check(updated == .init(lastLaunched: v190, pending: v190), "the first launch after an update shows the banner")
+        try check(updated == .init(lastLaunched: v190, pending: v190, updatedFrom: v182),
+                  "the first launch after an update shows the banner and remembers the version it replaced")
         try check(ReleaseNotesLaunch.launching(v190, previous: updated, existingData: true) == updated,
                   "an unretired banner comes back on the next launch")
         var shown = updated; shown.markShown()
@@ -48,6 +49,9 @@ struct ReleaseNotesLaunchTests {
         try check(olderUpdate.pending == nil, "an update older than one already shown shows nothing")
         let skipped = ReleaseNotesLaunch.launching(AppVersion(version: "1.9.1", build: "43"), previous: updated, existingData: true)
         try check(skipped.pending == AppVersion(version: "1.9.1", build: "43"), "a later update replaces an unretired one")
+        try check(skipped.updatedFrom == v182, "an update over one whose banner never showed counts from the version before both")
+        var shownSkipped = skipped; shownSkipped.markShown()
+        try check(shownSkipped.updatedFrom == nil, "a shown banner forgets the version it updated from")
 
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

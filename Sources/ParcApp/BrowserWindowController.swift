@@ -4289,7 +4289,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         sidebar.onSeeWhatsNew = { [weak self] in
             guard mayActOnUpdate(), let self, self.canOpenPageInNewTab, self.windowCommandSecurityAvailable else { return }
-            self.openReleaseNotes()
+            self.openReleaseNotes(fragment: updateComplete.completedUpdateFragment)
             updateComplete.retireCompletedUpdate()
         }
         sidebar.onShareParc = { [weak self] in
@@ -6788,9 +6788,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func openHistoryPage() { openPageInNewTab("parc://history/") }
     ///
     ///
-    func openReleaseNotes() {
+    /// See What's New adds the update's `fragment` so the page marks the
+    /// releases it skipped.
+    func openReleaseNotes(fragment: String? = nil) {
         guard let url = SoftwareUpdateBanner.releaseNotesURL else { return }
-        openPageInNewTab(url.absoluteString)
+        openPageInNewTab(url.absoluteString + (fragment.map { "#" + $0 } ?? ""))
     }
     private func openPageInNewTab(_ address: String) {
         guard canOpenPageInNewTab, window?.isKeyWindow == true, windowCommandSecurityAvailable,

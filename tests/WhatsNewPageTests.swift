@@ -22,7 +22,8 @@ import Foundation
         let unidentified = page(in: "Unidentified.app", identifier: nil).absoluteString
         let removed = root.appendingPathComponent("Removed.app/Contents/Resources/WhatsNew.html").absoluteString
 
-        for address in [running.absoluteString, running.deletingLastPathComponent().absoluteString + "./WhatsNew.html"] {
+        for address in [running.absoluteString, running.deletingLastPathComponent().absoluteString + "./WhatsNew.html",
+                        running.absoluteString + "#from=1.7.0&to=1.9.0"] {
             expect(WhatsNewPage.matches(address), "The running app's page is What's New: \(address)")
             expect(WhatsNewPage.presented(address).isEmpty, "What's New has no address to show: \(address)")
         }

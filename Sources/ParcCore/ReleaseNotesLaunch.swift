@@ -36,26 +36,37 @@ struct ReleaseNotesLaunch: Codable, Equatable {
     /// The last update whose banner was shown, so going back and forth between
     /// two versions doesn't show the same one again.
     var lastShown: AppVersion? = nil
+    ///
+    /// so What's New can mark the releases in between; unknown when the data's
+    /// last run predates this record.
+    var updatedFrom: AppVersion? = nil
 
     /// `existingData` is data an earlier Parc run started on: with no record it
     /// was last run by a Parc older than this record, so this launch is an update.
     static func launching(_ current: AppVersion, previous: ReleaseNotesLaunch?, existingData: Bool) -> ReleaseNotesLaunch {
         guard let previous else { return .init(lastLaunched: current, pending: existingData ? current : nil) }
-        let pending: AppVersion?
+        let pending: AppVersion?, updatedFrom: AppVersion?
         if current.isNewer(than: previous.lastLaunched) {
             // Never for an update at or below one whose notes were already shown.
             let seen = previous.lastShown.map { !current.isNewer(than: $0) } ?? false
             pending = seen ? nil : current
+            // An update over one whose banner never showed: neither one's notes have been seen.
+            updatedFrom = previous.pending == nil ? previous.lastLaunched : previous.updatedFrom
         }
         // A relaunch keeps an unshown banner; a downgrade has no notes to show.
-        else { pending = previous.pending == current ? current : nil }
-        return .init(lastLaunched: current, pending: pending, lastShown: previous.lastShown)
+        else {
+            pending = previous.pending == current ? current : nil
+            updatedFrom = previous.updatedFrom
+        }
+        return .init(lastLaunched: current, pending: pending, lastShown: previous.lastShown,
+                     updatedFrom: pending == nil ? nil : updatedFrom)
     }
 
     mutating func markShown() {
         guard let pending else { return }
         lastShown = pending
         self.pending = nil
+        updatedFrom = nil
     }
 
     static func file(in directory: URL) -> URL { directory.appendingPathComponent("release-notes-launch.json") }

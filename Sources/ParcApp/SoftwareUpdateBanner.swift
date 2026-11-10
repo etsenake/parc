@@ -14,6 +14,15 @@ final class SoftwareUpdateBanner: ObservableObject {
     /// Update Complete!: the update this run is the first since, until the
     /// banner is retired.
     @Published private(set) var completedUpdate: AppVersion?
+    /// The version the completed update replaced, when known.
+    private(set) var updatedFrom: AppVersion?
+    /// See What's New opens the page at this fragment, such as
+    /// `from=1.7.0&to=1.9.0`, and the page marks the releases in between. Naming
+    /// both ends lets a tab restored after a later update ignore the old range.
+    var completedUpdateFragment: String? {
+        guard let completedUpdate, let updatedFrom else { return nil }
+        return "from=\(updatedFrom.version)&to=\(completedUpdate.version)"
+    }
     private var record: ReleaseNotesLaunch?
     private var directory: URL?
 
@@ -29,6 +38,7 @@ final class SoftwareUpdateBanner: ObservableObject {
         self.record = record
         self.directory = directory
         completedUpdate = record.pending
+        updatedFrom = record.updatedFrom
     }
 
     ///
@@ -44,5 +54,6 @@ final class SoftwareUpdateBanner: ObservableObject {
     func retireCompletedUpdate() {
         markCompletedUpdateShown()
         completedUpdate = nil
+        updatedFrom = nil
     }
 }

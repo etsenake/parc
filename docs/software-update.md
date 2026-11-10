@@ -485,7 +485,9 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
     to that version, or an older one, doesn't show it again. A build without `WhatsNew.html` shows no banner.
     See What’s New retires the banner only when the window can open the page.
   - **Content.** "Update Complete!", then **See What’s New** (opens the
-    bundled page in a new tab of that window and retires the banner) and
+    bundled page in a new tab of that window and retires the banner; the
+    page opens at `#from=<replaced>&to=<installed>`, from the record's
+    releases in between only while `to` is its own version) and
     **Share Parc** (Parc has no referral service: it copies
     `https://github.com/etsenake/parc-releases` and shows "Copied Link" with
     a share button; the banner stays). The close button retires it. The
