@@ -16,6 +16,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/profiler/main_thread_stack_sampling_profiler.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
