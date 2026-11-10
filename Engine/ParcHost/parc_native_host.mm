@@ -1,7 +1,7 @@
 // Copyright 2026 Parc contributors.
 #import <AppKit/AppKit.h>
 
-#include "cef/libcef/browser/chrome/views/parc_native_host.h"
+#include "parc/harness/parc_native_host.h"
 
 #include <cstdio>
 #include <memory>

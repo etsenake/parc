@@ -1,7 +1,7 @@
 // Copyright 2026 Parc contributors.
 // Genuine Browser/TabInterface/native chooser tests. Source checks do not run
 // these cases; final acceptance also needs the supplied Parc NSWindow route.
-#include "cef/libcef/browser/parc_native/file_dialog.h"
+#include "parc/native/file_dialog.h"
 
 #import <AppKit/AppKit.h>
 
