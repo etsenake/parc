@@ -59,6 +59,11 @@ struct SoftwareUpdateSession {
 
     var menuToolTip: String? { hasFeed ? nil : "Updates are only available in released builds" }
 
+    /// Sparkle holds an install-now handler, so installing shows no window:
+    ///
+    /// after a cancelled quit.
+    var installsWithoutWindow: Bool { installNow != nil }
+
     init(hasFeed: Bool = true) { self.hasFeed = hasFeed }
 
     mutating func beginCheck(cancellation: @escaping Reply) {

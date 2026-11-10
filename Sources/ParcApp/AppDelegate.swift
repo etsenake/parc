@@ -352,10 +352,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
+    ///
+    private var automaticUpdateActivity: AutomaticUpdate.Activity {
+        AutomaticUpdate.Activity(
+            enabled: SoftwareUpdater.shared.automaticallyInstallsUpdates,
+            updateReady: SoftwareUpdater.shared.installsWithoutWindow,
+            pageInUse: windows.contains(where: \.hasPageInUse),
+            downloading: store.state.downloads.contains {
+                $0.nativeIdentity != nil && [.pending, .downloading, .paused].contains($0.status)
+            },
+            dialogOpen: NSApp.modalWindow != nil || NSApp.windows.contains { $0.attachedSheet != nil },
+            privateWindowOpen: windows.contains(where: \.isPrivateBrowsing),
+            //
+            idleTime: CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: CGEventType(rawValue: ~0)!))
+    }
+
     func openInitialWindow() {
         NSApp.finishLaunching()
         SoftwareUpdater.shared.start(disabled: argument("--parc-profile") != nil
                                      || arguments.contains("--disable-software-updater"))
+        SoftwareUpdater.shared.activity = { [weak self] in self?.automaticUpdateActivity }
         AppIconController.shared.configure(directory: store.directory, updatesSystemIdentity: argument("--parc-profile") == nil)
         restorationLaunch.finishLaunch()
         finishInitialLaunchIfReady()

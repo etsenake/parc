@@ -68,6 +68,7 @@ struct SoftwareUpdateSessionTests {
         session.downloadedInBackground(version: "1.9.0") { installed += 1 }
         check(session.phase == .readyToInstall(version: "1.9.0") && session.menuTitle == "Update Available…",
               "A silent download is ready for the banner")
+        check(session.installsWithoutWindow, "Its install handler installs without a window")
         session.dismissed()
         check(session.phase == .readyToInstall(version: "1.9.0"), "An unrelated session end keeps the background update ready")
         run(session.installAndRelaunch())
@@ -79,6 +80,7 @@ struct SoftwareUpdateSessionTests {
         check(isPresent(replaced.found(version: "1.9.0", downloaded: true, userInitiated: true) { choices.append($0) }),
               "Checking with a downloaded update shows the window")
         check(replaced.phase == .readyToInstall(version: "1.9.0"), "A downloaded find is ready to install")
+        check(!replaced.installsWithoutWindow, "A find waiting in its window needs the user")
         run(replaced.installAndRelaunch())
         check(choices == [.install] && installed == 1, "The manual session's reply replaces the stale background handler")
     }
@@ -130,6 +132,7 @@ struct SoftwareUpdateSessionTests {
         session.dismissed()
         check(session.phase == .readyToInstall(version: "1.9.0") && session.menuTitle == "Update Available…",
               "A dismissed downloaded update stays ready")
+        check(!session.installsWithoutWindow, "Resuming it opens a check, so it isn't installed automatically")
         guard case .resume? = session.installAndRelaunch() else { return check(false, "Restart and Update resumes it") }
         session.beginCheck {}
         guard case .install(let install) = session.found(version: "1.9.0", downloaded: true, userInitiated: true,
@@ -194,10 +197,12 @@ struct SoftwareUpdateSessionTests {
         _ = manual.found(version: "1.9.0", downloaded: false, userInitiated: true) { _ in }
         manual.choose(.install)?()
         manual.beginInstalling(retry: { retries += 1 })
+        check(manual.installsWithoutWindow, "A cancelled quit's retry installs without a window")
         run(manual.installAndRelaunch())
         check(retries == 1 && manual.phase == .installing, "A cancelled quit while installing can be retried")
         manual.beginInstalling(retry: nil)
         check(manual.installAndRelaunch() == nil, "Once the app terminated there is nothing to retry")
+        check(!manual.installsWithoutWindow, "Nor anything to install")
 
         var failing = SoftwareUpdateSession()
         _ = failing.found(version: "1.9.0", downloaded: false, userInitiated: true) { _ in }

@@ -686,6 +686,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         return (protected, unavailable)
     }
+    /// A live page plays, records or captures media, is in Picture in Picture
+    ///
+    /// automatic update, the same activity that keeps a tab from archiving.
+    var hasPageInUse: Bool {
+        let inUse = { (view: PCBrowserView) in view.automaticArchiveProtectionState == .protected }
+        return browsers.values.contains(where: inUse) || easelEditors.values.contains { pane in
+            pane.editor.pageObjects?.ownedViews.values.contains(where: inUse) == true
+        }
+    }
     func windowDidChangeOcclusionState(_ notification: Notification) {
         if window?.occlusionState.contains(.visible) != true, sidebarMotion.isAnimating {
             settleSidebarMotion()
@@ -4266,12 +4275,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.onRestartAndUpdate = { guard mayActOnReady() else { return }; SoftwareUpdater.shared.installAndRelaunch() }
         sidebar.onToggleAutomaticUpdates = { [weak self] in
             guard mayActOnReady() else { return }
-            SoftwareUpdater.shared.automaticallyDownloadsUpdates.toggle()
+            SoftwareUpdater.shared.automaticallyInstallsUpdates.toggle()
             self?.refreshSidebarBanners()
         }
         let ready = presentable && Self.updateReadyToInstall
-        // Read only while ready: Sparkle runs then, and never in a disposable profile.
-        sidebar.showUpdateReady(ready, automaticUpdates: ready ? SoftwareUpdater.shared.automaticallyDownloadsUpdates : nil)
+        sidebar.showUpdateReady(ready, automaticUpdates: ready ? SoftwareUpdater.shared.automaticallyInstallsUpdates : nil)
 
         let updateComplete = SoftwareUpdateBanner.shared
         let completeVisible = presentable && updateComplete.showsCompletedUpdate && !Self.updateReadyToInstall

@@ -6,6 +6,9 @@ trap 'rm -rf "$output"' EXIT
 xcrun swiftc -warnings-as-errors -parse-as-library -Onone -enforce-exclusivity=checked \
   Sources/ParcCore/SoftwareUpdateSession.swift tests/SoftwareUpdateSessionTests.swift -o "$output/check"
 "$output/check"
+xcrun swiftc -warnings-as-errors -parse-as-library -Onone -enforce-exclusivity=checked \
+  Sources/ParcCore/AutomaticUpdate.swift tests/AutomaticUpdateTests.swift -o "$output/automatic"
+"$output/automatic"
 xcrun swiftc -warnings-as-errors -parse-as-library \
   Sources/ParcApp/SoftwareUpdateWindow.swift tests/SoftwareUpdateWindowTests.swift -o "$output/window"
 "$output/window"

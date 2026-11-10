@@ -3,9 +3,9 @@ import Sparkle
 
 ///
 ///
-/// download silently and leave the install for the sidebar banner or the next
-/// quit. The state lives in `SoftwareUpdateSession`; see
-/// docs/software-update.md, "Updater API".
+/// download silently and leave the install for the sidebar banner, the next
+/// quit or a time the Mac is away (`AutomaticUpdate`). The state lives in
+/// `SoftwareUpdateSession`; see docs/software-update.md, "Updater API".
 @MainActor final class SoftwareUpdater: NSObject {
     typealias Phase = SoftwareUpdateSession.Phase
 
@@ -13,13 +13,20 @@ import Sparkle
     static let phaseDidChangeNotification = Notification.Name("ParcSoftwareUpdaterPhaseDidChange")
 
     var phase: Phase { session.phase }
+    var installsWithoutWindow: Bool { session.installsWithoutWindow }
 
-    /// Sparkle's own persisted setting (`SUAutomaticallyUpdate`, on in
-    /// Info.plist); the banner's Automatic Updates checkbox.
-    var automaticallyDownloadsUpdates: Bool {
-        get { updater.automaticallyDownloadsUpdates }
-        set { updater.automaticallyDownloadsUpdates = newValue }
+    ///
+    /// whether a downloaded update installs by itself while the Mac is away.
+    /// Sparkle's silent download (`SUAutomaticallyUpdate`) stays on either way.
+    var automaticallyInstallsUpdates: Bool {
+        get { UserDefaults.standard.object(forKey: Self.automaticInstallKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: Self.automaticInstallKey) }
     }
+    private static let automaticInstallKey = "ParcAutomaticallyInstallsUpdates"
+
+    /// What a restart would interrupt, from the app's windows and downloads.
+    var activity: (() -> AutomaticUpdate.Activity?)?
+    private var automatic = AutomaticUpdate()
 
     private var session = SoftwareUpdateSession(hasFeed: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil) {
         didSet {
@@ -48,7 +55,77 @@ import Sparkle
                                   userInfo: [NSLocalizedDescriptionKey: "Application is not allowed to update."])
             return
         }
-        do { try updater.start() } catch { unavailable = error }
+        // The checkbox used to turn off Sparkle's download, which nothing else
+        // can turn back on; carry that choice over to automatic installs.
+        if UserDefaults.standard.object(forKey: "SUAutomaticallyUpdate") as? Bool == false {
+            automaticallyInstallsUpdates = false
+            UserDefaults.standard.removeObject(forKey: "SUAutomaticallyUpdate")
+        }
+        do { try updater.start() } catch { unavailable = error; return }
+        observeAway()
+    }
+
+    ///
+    /// saver active and screen locked.
+    private typealias AwayEvent = (reason: AutomaticUpdate.Away, began: Bool)
+    private static let workspaceEvents: [Notification.Name: AwayEvent] = [
+        NSWorkspace.willSleepNotification: (.sleep, true),
+        NSWorkspace.didWakeNotification: (.sleep, false),
+        NSWorkspace.screensDidSleepNotification: (.displaySleep, true),
+        NSWorkspace.screensDidWakeNotification: (.displaySleep, false),
+    ]
+    private static let distributedEvents: [Notification.Name: AwayEvent] = [
+        Notification.Name("com.apple.screensaver.didstart"): (.screenSaver, true),
+        Notification.Name("com.apple.screensaver.didstop"): (.screenSaver, false),
+        Notification.Name("com.apple.screenIsLocked"): (.screenLock, true),
+        Notification.Name("com.apple.screenIsUnlocked"): (.screenLock, false),
+    ]
+
+    private func observeAway() {
+        for name in Self.workspaceEvents.keys {
+            NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(awayChanged(_:)), name: name, object: nil)
+        }
+        // AppKit holds distributed notices while Parc isn't active, which
+        // would delay a lock made from another app until Parc is next used.
+        for name in Self.distributedEvents.keys {
+            DistributedNotificationCenter.default().addObserver(self, selector: #selector(awayChanged(_:)), name: name,
+                                                                object: nil, suspensionBehavior: .deliverImmediately)
+        }
+    }
+
+    @objc private func awayChanged(_ notification: Notification) {
+        guard let event = Self.workspaceEvents[notification.name] ?? Self.distributedEvents[notification.name] else { return }
+        if !event.began {
+            automatic.ended(event.reason)
+        } else if let due = automatic.began(event.reason, at: ProcessInfo.processInfo.systemUptime) {
+            scheduleAutomaticCheck(due)
+        }
+    }
+
+    /// Awake time: the wait stops while the Mac sleeps.
+    private func scheduleAutomaticCheck(_ due: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + AutomaticUpdate.delay) { [weak self] in
+            MainActor.assumeIsolated { self?.automaticCheck(due: due) }
+        }
+    }
+
+    private func automaticCheck(due: TimeInterval) {
+        guard let next = automatic.checkFired(due: due, at: ProcessInfo.processInfo.systemUptime) else { return }
+        scheduleAutomaticCheck(next)
+        guard let activity = activity?(), AutomaticUpdate.allows(activity),
+              let feed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
+              let url = URL(string: feed) else { return }
+        //
+        // 60-second timeout), so the restored pages can load again.
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
+        request.httpMethod = "HEAD"
+        Task { [weak self, request] in
+            let status = (try? await URLSession.shared.data(for: request).1 as? HTTPURLResponse)?.statusCode
+            // Only if the Mac has stayed away since this check.
+            guard let self, let status, (200..<300).contains(status), automatic.nextCheck == next,
+                  let activity = self.activity?(), AutomaticUpdate.allows(activity) else { return }
+            installAndRelaunch()
+        }
     }
 
     func checkForUpdates() {
