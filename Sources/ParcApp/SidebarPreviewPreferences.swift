@@ -2,15 +2,16 @@ import Foundation
 
 enum SidebarPreviewPreference: String, CaseIterable {
     case folders = "sidebar.preview.folders", recentPages = "sidebar.preview.recentPages"
+    case tabPictures = "sidebar.preview.tabPictures"
 
     static let didChangeNotification = Notification.Name("ParcSidebarPreviewPreferencesDidChange")
 
-    var title: String {
-        self == .folders ? "Folder previews" : "Recent pages in Notion, Figma, Linear and Confluence"
-    }
-
     var settingsTitle: String {
-        self == .folders ? "Parc Folders" : "Recent pages on Notion, Figma, Linear, and Confluence"
+        switch self {
+        case .folders: return "Parc Folders"
+        case .recentPages: return "Recent pages on Notion, Figma, Linear, and Confluence"
+        case .tabPictures: return "A picture of other open tabs"
+        }
     }
 
     var isEnabled: Bool {

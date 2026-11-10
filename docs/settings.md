@@ -987,10 +987,9 @@ native decision controls without displaying a window.
 
 ## General preview preferences
 
-General → Previews Settings opens a native sheet for **Parc Folders** and **Recent pages on Notion, Figma, Linear, and Confluence**. Each checkbox updates the existing application-wide preference immediately; Done/Return closes the sheet. The sidebar menu and Settings share the same saved values and defaults. A change retires active previews and refreshes the preview actions in every existing browser window. The original Settings window owns the sheet; closing it retires its controls and observers, and late callbacks cannot change a new sheet or its preferences. No mail/calendar live-service control is present.
+General → Previews Settings opens a native sheet for **Parc Folders**, **Recent pages on Notion, Figma, Linear, and Confluence** and Parc's own **A picture of other open tabs** ([tab picture card](sidebar-previews.md#tab-picture-card)), on by default like the others. Each checkbox updates the existing application-wide preference immediately; Done/Return closes the sheet. The sidebar's Preview menu items, the Site Control Center's Preview row and Settings share the same saved values and defaults. A change retires active previews and refreshes the preview actions in every existing browser window. The original Settings window owns the sheet; closing it retires its controls and observers, and late callbacks cannot change a new sheet or its preferences. No mail/calendar live-service control is present.
 
 
-Parc preserves existing UserDefaults keys and fallbacks; installed checkbox values are user state, not evidence of factory defaults. Its smaller two-row sheet, native AppKit material/bezel/accent, Escape dismissal, retained Confluence history provider and omitted vendor Learn more link are explicit adaptations. Original provider/data ownership remains in [sidebar previews](sidebar-previews.md). Native sheet motion and shared original-responder restoration are covered by SET25–SET26; whole-product visual polish remains separate. This delivery changes no engine source.
 
 ## Default browser
 

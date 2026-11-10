@@ -22,8 +22,9 @@ Up/Down move the list's keyboard selection, which scrolls into view; Return
 activates it with the modifiers then held and Escape dismisses. The recents list
 has no search and takes focus on explicit entry. The sidebar context menu and
 accessibility custom action provide that keyboard/focus entry. Hover alone does
-not steal focus or intercept page typing. Folder/recent-provider preferences
-are in the sidebar's Tab previews submenu and persist locally.
+not steal focus or intercept page typing. The folder, recent-pages and tab
+picture preferences are in Settings → General → Previews Settings (the card's
+gear opens it) and persist locally.
 
 The native query lease is retained until delivery and invalidated on dismissal.
 The API accepts only `notion`, `figma`, `linear` and `confluence`; it queries the
@@ -51,7 +52,9 @@ resizes or pages) to cancel a hover without a card and start no new hover sessio
 
 ## Tab picture card
 
-no recent-pages provider, or one whose Recents preference is off, shows the
+other open tabs** on (Settings → General → Previews Settings, on by default),
+hovering a tab with no recent-pages provider, or one whose Recents preference
+is off, shows the
 Recents card's chrome and header with the tab's favicon, its folder-row title
 and its site (the address bar's host without "www."), an Open in Split View
 button (the sidebar's own Split View action, `rectangle.split.2x1`), and the
@@ -264,4 +267,4 @@ its `check.py` asserts the intersection in the controller's source.
 
 ## General Settings entry
 
-General → Previews Settings now exposes the same two application preferences as the sidebar's Tab previews menu. It applies changes immediately and reconciles all existing preview controllers, folder menus and accessibility preview actions; Done closes the original-window-owned sheet. Existing saved values, defaults, local folder contents and exact-profile native history sources remain intact. See [General preview preferences](settings.md#general-preview-preferences) for the original REA/UI contract and explicit presentation adaptations.
+General → Previews Settings exposes the three application preferences: folders, recent pages and tab pictures. It applies changes immediately and reconciles all existing preview controllers, folder menus and accessibility preview actions; Done closes the original-window-owned sheet. Existing saved values, defaults, local folder contents and exact-profile native history sources remain intact. See [General preview preferences](settings.md#general-preview-preferences) for the original REA/UI contract and explicit presentation adaptations.

@@ -3010,7 +3010,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     selectedTabIDs: selectedTabIDs, focusedTabID: focusedTabID, theme: activeSpace.theme, title: domain.title, domain: domain, originalURL: url, rows: [])
             }
             // The tab's own picture, only for a page loaded here and not already on screen.
-            guard !selectedTabIDs.contains(id), let page = browsers[id]?.nativePage, !page.isClosed,
+            guard SidebarPreviewPreference.tabPictures.isEnabled, !selectedTabIDs.contains(id),
+                  let page = browsers[id]?.nativePage, !page.isClosed,
                   let presented = URL(string: WhatsNewPage.presented(tab.url)) else { return nil }
             let title = SidebarPreviewRow.folderTitle(custom: tab.customTitle, url: presented, title: tab.title)
             return SidebarPreviewSource(target: target, profileID: profileID, spaceID: activeSpaceID,

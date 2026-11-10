@@ -16,7 +16,7 @@ final class SidebarPreviewSettingsSheet: NSWindowController {
         self.defaults = defaults
         // Keep the observed 24pt inset and row spacing; omitted live providers
         // reduce the height without leaving dead controls or empty rows.
-        let size = NSSize(width: 422, height: 244)
+        let size = NSSize(width: 422, height: 272)
         let sheet = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                              styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
         sheet.title = "Previews Settings"
@@ -32,7 +32,7 @@ final class SidebarPreviewSettingsSheet: NSWindowController {
         heading.frame = NSRect(x: 24, y: size.height - 42, width: 374, height: 18)
         content.addSubview(heading)
         let help = NSTextField(wrappingLabelWithString:
-            "Save a click! Hover over a Parc Folder, Pinned, or Favorited tab to preview its contents or recent pages.")
+            "Save a click! Hover over a Parc Folder or a tab to preview its contents, recent pages, or a picture of the page.")
         help.font = .systemFont(ofSize: 12)
         help.textColor = .secondaryLabelColor
         help.frame = NSRect(x: 24, y: size.height - 90, width: 374, height: 40)
@@ -55,7 +55,8 @@ final class SidebarPreviewSettingsSheet: NSWindowController {
         content.addSubview(done)
         sheet.defaultButtonCell = done.cell as? NSButtonCell
         choices[.folders]?.nextKeyView = choices[.recentPages]
-        choices[.recentPages]?.nextKeyView = done
+        choices[.recentPages]?.nextKeyView = choices[.tabPictures]
+        choices[.tabPictures]?.nextKeyView = done
         done.nextKeyView = choices[.folders]
         sheet.initialFirstResponder = choices[.folders]
         for name in [SidebarPreviewPreference.didChangeNotification, UserDefaults.didChangeNotification] {
