@@ -263,6 +263,49 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     var fill: NSColor?
     NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { fill = recents.fill?.usingColorSpace(.sRGB) }
     c.expect(fill.map { near($0.redComponent, 0.129) && near($0.blueComponent, 0.133) } == true, "dark recents fill is PreviewBackgroundColor")
+
+    // A tab's picture card: the Recents header with the tab's title and site,
+    // one split button, and the picture at the card's width, inset 8 pt.
+    let pageURL = URL(string: "https://www.example.com/a")!
+    let pictured = SidebarPreviewCard(title: "Example", domain: nil, providerURL: pageURL,
+                                      picture: NSImage(size: NSSize(width: 320, height: 200)), site: "example.com")
+    var pageIcons: [URL] = [], pageActions: [SidebarPreviewAction] = [], resized = 0
+    pictured.requestFavicon = { url, done in pageIcons.append(url); done(nil) }
+    pictured.onAction = { row, action in if row.tabID != nil { pageActions.append(action) } }
+    pictured.onHeightChange = { resized += 1 }
+    pictured.setRows([SidebarPreviewRow(id: "tab", tabID: UUID(), title: "Example", url: pageURL, visitedAt: nil)])
+    c.expect(pageIcons == [pageURL], "picture header uses the tab's favicon")
+    let pageLabels = all(pictured, NSTextField.self).map(\.stringValue)
+    c.expect(pageLabels.contains("Example") && pageLabels.contains("example.com"), "tab title and site in the header")
+    c.expect(all(pictured, NSScrollView.self).isEmpty && resized == 0, "a picture card has no list")
+    let pageButtons = all(pictured, NSButton.self)
+    c.expect(pageButtons.map { $0.toolTip ?? "" } == ["Open in Split View"], "split is the picture card's only control")
+    pageButtons.forEach { $0.performClick(nil) }
+    c.expect(pageActions == [.split], "split opens the tab in Split View")
+    c.expect(pictured.fill != nil && pictured.preferredHeight == 48 + 140 + 8, "picture keeps its aspect at 224 pt")
+    pictured.setPicture(NSImage(size: NSSize(width: 100, height: 400)))
+    c.expect(pictured.preferredHeight == 320 && resized == 1, "a taller picture is capped and resizes the card")
+    pictured.frame = NSRect(x: 0, y: 0, width: 240, height: 320); pictured.layout()
+    c.expect(pictured.content.subviews.contains { $0.frame == NSRect(x: 8, y: 48, width: 224, height: 264) },
+             "picture sits under the header, inset 8 pt")
+    func pageSource(_ target: SidebarPreviewTarget, _ domain: SidebarRecentDomain?) -> SidebarPreviewSource {
+        SidebarPreviewSource(target: target, profileID: UUID(), spaceID: UUID(), selectedTabIDs: [], focusedTabID: nil,
+                             theme: SpaceTheme(), title: "Example", domain: domain, originalURL: pageURL, rows: [])
+    }
+    pictured.setHeading("Inbox (3)", site: "mail.example.com")
+    c.expect(all(pictured, NSTextField.self).map(\.stringValue).contains("Inbox (3)"), "the header follows the tab's title")
+    let tabTarget = SidebarPreviewTarget.tab(UUID())
+    let before = pageSource(tabTarget, nil)
+    let renamed = SidebarPreviewSource(target: tabTarget, profileID: before.profileID, spaceID: before.spaceID,
+        selectedTabIDs: [], focusedTabID: nil, theme: SpaceTheme(), title: "Inbox (3)", domain: nil,
+        originalURL: URL(string: "https://www.example.com/b")!, rows: [])
+    c.expect(renamed.hasSameOwner(as: before), "a picture card keeps its session across title and address changes")
+    let notion = SidebarPreviewSource(target: tabTarget, profileID: before.profileID, spaceID: before.spaceID,
+        selectedTabIDs: [], focusedTabID: nil, theme: SpaceTheme(), title: "Notion", domain: .notion,
+        originalURL: URL(string: "https://notion.so/doc")!, rows: [])
+    c.expect(!notion.hasSameOwner(as: before), "moving onto a provider ends the picture card's session")
+    c.expect(pageSource(.tab(UUID()), nil).showsPicture && !pageSource(.tab(UUID()), .notion).showsPicture
+             && !pageSource(.folder(UUID()), nil).showsPicture, "only a tab without a provider shows its picture")
     c.expect(all(folder, SidebarPreviewDivider.self).count == 1 && all(recents, SidebarPreviewDivider.self).isEmpty,
              "only the folder card has the rule under its search row")
     c.expect(SidebarRecentDomain.allCases.map(\.createTitle) == ["New Page", "New File", "New Issue", "New Page"]

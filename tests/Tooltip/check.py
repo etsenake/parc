@@ -21,6 +21,9 @@ def source(name):
     return (app / name).read_text()
 
 sidebar = source("SidebarView.swift")
+assert "if isSuppressed { return false }" in source("TooltipController.swift") \
+    and "TooltipController.controller(for: window).isSuppressed = card != nil" in source("SidebarPreviewController.swift"), \
+    "a shown sidebar preview card no longer holds back tooltips"
 assert 'LiveShortcutToolTip.set(toggle, label, commandID: "toggleSidebar:")' in sidebar, \
     "the sidebar toggle no longer shows its Parc tooltip with the live binding and help"
 assert 'LiveShortcutToolTip.set(closeButton, tooltip, commandID: "closeTab:")' in sidebar \

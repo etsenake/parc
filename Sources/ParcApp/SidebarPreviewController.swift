@@ -1,8 +1,8 @@
 import AppKit
 
-/// Provider identity is deliberately narrower than an arbitrary tab screenshot.
+/// A tab row previews its provider's recent pages, or otherwise the tab's own
 ///
-/// recorded in docs/sidebar-previews.md.
+/// and the 200 ms hover commit are recorded in docs/sidebar-previews.md.
 enum SidebarPreviewTarget: Hashable {
     case tab(UUID)
     case folder(UUID)
@@ -115,13 +115,20 @@ struct SidebarPreviewSource: Equatable {
     let originalURL: URL?
     let rows: [SidebarPreviewRow]
 
+    /// A tab without a recent-pages provider shows its own picture.
+    var showsPicture: Bool {
+        if case .tab = target { return domain == nil }
+        return false
+    }
+
     ///
     /// shown folder card from the folder's current children, so only its
-    /// rows may change without ending the session.
+    /// rows may change without ending the session; a tab's picture card also
+    /// follows its tab's title and address.
     func hasSameOwner(as other: SidebarPreviewSource) -> Bool {
         target == other.target && profileID == other.profileID && spaceID == other.spaceID
             && selectedTabIDs == other.selectedTabIDs && focusedTabID == other.focusedTabID && theme == other.theme
-            && title == other.title && domain == other.domain && originalURL == other.originalURL
+            && domain == other.domain && (showsPicture || (title == other.title && originalURL == other.originalURL))
     }
 }
 
@@ -173,6 +180,8 @@ final class SidebarPreviewController {
     var permitted: (() -> Bool)?
     var perform: ((SidebarPreviewSource, SidebarPreviewRow, SidebarPreviewAction) -> Void)?
     var requestRecent: ((SidebarRecentDomain, UUID, @escaping ([SidebarPreviewRow]) -> Void) -> (() -> Void)?)?
+    /// The tab's pictures until cancelled; nil means the picture went away.
+    var requestPicture: ((UUID, @escaping (NSImage?) -> Void) -> (() -> Void)?)?
     var favicon: ((URL, UUID, @escaping (NSImage?) -> Void) -> Void)?
     var onPresentationChange: (() -> Void)?
     var openSettings: (() -> Void)?
@@ -187,7 +196,13 @@ final class SidebarPreviewController {
     private weak var window: NSWindow?
     private var current: SidebarPreviewSource?
     private var anchor = NSRect.zero
-    private var card: SidebarPreviewCard?
+    /// A card already shows its row's title, so tooltips wait until it goes.
+    private var card: SidebarPreviewCard? {
+        didSet {
+            guard let window, (card == nil) != (oldValue == nil) else { return }
+            TooltipController.controller(for: window).isSuppressed = card != nil
+        }
+    }
     private var leaving: [SidebarPreviewCard] = []
     private var dwell: DispatchWorkItem?
     private var timeout: DispatchWorkItem?
@@ -286,9 +301,11 @@ final class SidebarPreviewController {
     func reconcile() {
         guard var current else { return }
         // A shown folder card follows its folder's current children (a
-        // duplicate, a visit) in place; any other change ends the session.
+        // duplicate, a visit) in place, and a picture card its tab's title and
+        // address; any other change ends the session.
         if let card, current.domain == nil, let fresh = source?(current.target), fresh != current, fresh.hasSameOwner(as: current) {
             current = fresh; self.current = fresh; card.setRows(fresh.rows)
+            if fresh.showsPicture { card.setHeading(fresh.title, site: Self.site(fresh.originalURL)) }
         }
         guard valid(current), let next = anchorRect(current.target) else {
             dismiss(); return
@@ -404,14 +421,9 @@ final class SidebarPreviewController {
     /// card, and unavailable history presents nothing.
     private func commit(_ value: SidebarPreviewSource, token: UInt64) {
         guard generation == token, valid(value) else { dismiss(); return }
+        if value.showsPicture, case .tab(let id) = value.target { commitPicture(value, tabID: id, token: token); return }
         guard let domain = value.domain else { present(value, rows: value.rows, token: token); return }
-        let timeout = DispatchWorkItem { [weak self] in
-            guard let self, self.generation == token else { return }
-            self.cancelQuery?(); self.cancelQuery = nil; self.timeout = nil
-            self.onPresentationChange?()
-        }
-        self.timeout = timeout
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(500), execute: timeout)
+        let timeout = scheduleTimeout(token: token)
         let cancel = requestRecent?(domain, value.profileID) { [weak self] rows in
             guard let self, self.generation == token, self.timeout?.isCancelled == false else { return }
             self.timeout?.cancel(); self.timeout = nil; self.cancelQuery = nil
@@ -422,9 +434,44 @@ final class SidebarPreviewController {
         if cancel == nil { timeout.cancel(); self.timeout = nil }
         onPresentationChange?()
     }
-    private func present(_ value: SidebarPreviewSource, rows: [SidebarPreviewRow], token: UInt64) {
+    /// A tab with no picture presents nothing, as a provider without data does.
+    /// The subscription lives with the card, which follows newer pictures.
+    private func commitPicture(_ value: SidebarPreviewSource, tabID: UUID, token: UInt64) {
+        let timeout = scheduleTimeout(token: token)
+        let cancel = requestPicture?(tabID) { [weak self] image in
+            guard let self, self.generation == token else { return }
+            guard let image else {
+                // The page went away; end the session once the native callback returns.
+                DispatchQueue.main.async { [weak self] in if self?.generation == token { self?.dismiss() } }
+                return
+            }
+            if let card = self.card { card.setPicture(image); return }
+            guard self.timeout?.isCancelled == false else { return }
+            self.timeout?.cancel(); self.timeout = nil
+            self.present(value, rows: value.rows, picture: image, token: token)
+            if self.card == nil { self.cancelQuery?(); self.cancelQuery = nil; self.onPresentationChange?() }
+        }
+        if self.timeout === timeout { cancelQuery = cancel }
+        if cancel == nil { timeout.cancel(); self.timeout = nil }
+        onPresentationChange?()
+    }
+    private static func site(_ url: URL?) -> String {
+        url.map { SidebarAddressSearchIcon.host(of: $0) ?? $0.absoluteString } ?? ""
+    }
+    private func scheduleTimeout(token: UInt64) -> DispatchWorkItem {
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, self.generation == token else { return }
+            self.cancelQuery?(); self.cancelQuery = nil; self.timeout = nil
+            self.onPresentationChange?()
+        }
+        self.timeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(500), execute: timeout)
+        return timeout
+    }
+    private func present(_ value: SidebarPreviewSource, rows: [SidebarPreviewRow], picture: NSImage? = nil, token: UInt64) {
         guard generation == token, card == nil, current == value, valid(value), let host else { return }
-        let card = SidebarPreviewCard(title: value.title, domain: value.domain, providerURL: value.originalURL)
+        let card = SidebarPreviewCard(title: value.title, domain: value.domain, providerURL: value.originalURL,
+                                      picture: picture, site: Self.site(value.originalURL))
         card.placement = SidebarPreviewPlacement(row: anchor, location: location(value.target))
         // The session's live source: a folder card's rows may refresh in place.
         let live: () -> SidebarPreviewSource? = { [weak self] in

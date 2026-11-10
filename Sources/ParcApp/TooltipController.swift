@@ -114,6 +114,10 @@ final class TooltipAnchorView: NSView {
     ///
     /// every theme change. Nil shows the neutral palette.
     var palette: TooltipColorPalette?
+    /// Nothing presents while set, and setting it fades a shown tooltip.
+    var isSuppressed = false {
+        didSet { if isSuppressed && !oldValue { hide(TooltipTiming.exitDuration) } }
+    }
     /// The tooltipped view this controller is hit-testing for, only during
     /// that hit test (TooltipController field 11, set and cleared around
     ///
@@ -240,6 +244,7 @@ final class TooltipAnchorView: NSView {
     }
 
     private func isEligible(_ configuration: TooltipConfiguration) -> Bool {
+        if isSuppressed { return false }
         if configuration.requiresShortcut && shortcut(for: configuration) == nil { return false }
         return TooltipEligibility.permits(pressedMouseButtons: NSEvent.pressedMouseButtons, modifierFlags: NSEvent.modifierFlags,
                                    allowed: configuration.allowedModifierKeys) { [window] in

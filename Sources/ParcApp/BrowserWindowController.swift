@@ -2979,6 +2979,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }) else { return nil }
             return { query.invalidate() }
         }
+        previews.requestPicture = { [weak self] id, deliver in
+            guard let self, let window = self.window, let page = self.browsers[id]?.nativePage, !page.isClosed,
+                  let lease = page.observePreview(in: window, handler: deliver) else { return nil }
+            return { lease.invalidate() }
+        }
         previews.favicon = { [weak self] url, profileID, completion in
             guard let self, self.activeProfileID == profileID, !self.isClosing else { return }
             PCNativeBrowserApplication.favicon(for: url, profilePath: self.store.independentEngineProfilePath(for: profileID)) { image in
@@ -2997,13 +3002,21 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let profileID = activeProfileID
         switch target {
         case .tab(let id):
-            guard SidebarPreviewPreference.recentPages.isEnabled,
-                  let tab = visibleTabs.first(where: { $0.id == id }), tab.profileID == profileID,
+            guard let tab = visibleTabs.first(where: { $0.id == id }), tab.profileID == profileID,
                   !store.retiringTabIDs.contains(id), !closingTabIDs.contains(id), !transferringTabIDs.contains(id),
-                  ownership.canUse(id, owner: presentationID), let url = URL(string: tab.url),
-                  let domain = SidebarRecentDomain.matching(url) else { return nil }
+                  ownership.canUse(id, owner: presentationID), let url = URL(string: tab.url) else { return nil }
+            if SidebarPreviewPreference.recentPages.isEnabled, let domain = SidebarRecentDomain.matching(url) {
+                return SidebarPreviewSource(target: target, profileID: profileID, spaceID: activeSpaceID,
+                    selectedTabIDs: selectedTabIDs, focusedTabID: focusedTabID, theme: activeSpace.theme, title: domain.title, domain: domain, originalURL: url, rows: [])
+            }
+            // The tab's own picture, only for a page loaded here and not already on screen.
+            guard !selectedTabIDs.contains(id), let page = browsers[id]?.nativePage, !page.isClosed,
+                  let presented = URL(string: WhatsNewPage.presented(tab.url)) else { return nil }
+            let title = SidebarPreviewRow.folderTitle(custom: tab.customTitle, url: presented, title: tab.title)
             return SidebarPreviewSource(target: target, profileID: profileID, spaceID: activeSpaceID,
-                selectedTabIDs: selectedTabIDs, focusedTabID: focusedTabID, theme: activeSpace.theme, title: domain.title, domain: domain, originalURL: url, rows: [])
+                selectedTabIDs: selectedTabIDs, focusedTabID: focusedTabID, theme: activeSpace.theme, title: title,
+                domain: nil, originalURL: presented,
+                rows: [SidebarPreviewRow(id: id.uuidString, tabID: id, title: title, url: url, visitedAt: nil)])
         case .folder(let id):
             guard SidebarPreviewPreference.folders.isEnabled,
                   let folder = store.state.folders.first(where: { $0.id == id && $0.spaceID == activeSpaceID }) else { return nil }

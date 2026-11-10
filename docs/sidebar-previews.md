@@ -1,9 +1,9 @@
 # Sidebar provider previews
 
 Sidebar previews belong to the original sidebar item, profile, Space and window.
-They are provider lists, separate from the thumbnail-backed MRU switcher. Parc
-implements the local folder and recent-pages providers: Notion, Figma, Linear
-and Confluence. Hovering an unrelated page does not produce a screenshot card.
+Parc implements the local folder and recent-pages providers (Notion, Figma,
+Linear and Confluence) and, as its own addition, a tab picture card for every
+other tab ([below](#tab-picture-card)).
 
 The sidebar registers its actual row/button anchors. A window-owned controller
 commits an eligible item after 200 ms only if the original item, anchor, selection
@@ -48,6 +48,31 @@ previous responder on dismissal. A dismissed card retires at once: it cancels it
 menu, releases focus, takes no clicks or hover, no longer holds the sidebar and is
 removed when its exit animation completes. The owner can clear `isHoverEnabled`
 resizes or pages) to cancel a hover without a card and start no new hover session.
+
+## Tab picture card
+
+no recent-pages provider, or one whose Recents preference is off, shows the
+Recents card's chrome and header with the tab's favicon, its folder-row title
+and its site (the address bar's host without "www."), an Open in Split View
+button (the sidebar's own Split View action, `rectangle.split.2x1`), and the
+tab's last picture below, 224 pt wide at its own aspect, inset 8 pt with 4 pt
+corners and a hairline, the card still capped at 320 pt. The dwell, placement,
+motion, hover region, aim and dismissal are the other cards'.
+
+The picture is the one the tab switcher uses: the page's thumbnail
+subscription, for a page loaded in this window. There is no card for a tab on
+screen (any selected pane), for a tab whose page isn't loaded here, or when no
+picture arrives within the same 500 ms the Recents query gets. A shown card
+follows newer pictures and the tab's title and address in place, and ends when
+the page loads a new document, closes or the subscription is cancelled. No
+page is created, selected or navigated for it; the engine owns when the
+thumbnail itself is refreshed.
+The card has no keyboard entry; the sidebar's Preview items stay with Recents
+and folders.
+
+While any preview card is shown, the window's tooltips stay hidden: the row's
+title tooltip waits 1.5 s and would otherwise open over a card that already
+shows the title, and right after another tooltip it opens almost at once.
 
 ## Titles, grouping and badges
 
