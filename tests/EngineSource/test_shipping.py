@@ -133,7 +133,7 @@ class ShippingTests(unittest.TestCase):
                          (engine.SHIPPING_DEFINES, engine.digest(self.arguments)))
         with self.assertRaisesRegex(engine.Refusal, "completed shipping"):
             engine.verify_shipping_build(self.workspace, self.sha, self.state)
-        with self.assertRaisesRegex(engine.Refusal, "normal CEF source generation"):
+        with self.assertRaisesRegex(engine.Refusal, "normal engine source generation"):
             self.build()
         self.state["phase"] = "generated"
         engine.write_marker(self.workspace, self.state)

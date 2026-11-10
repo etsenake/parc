@@ -91,8 +91,13 @@ python3 scripts/engine-source.py check --workspace "$PARC_ENGINE"
 JSON output: `plan` may exit successfully while reporting blockers. Do not
 pre-create the final engine directory to try to fix a refusal.
 
-`Engine/source-lock.json` is authoritative for Chromium, CEF, depot_tools and
-build settings. Do not substitute a system CEF package or manually update one
+`Engine/source-lock.json` remains the stopgap lock. Direct mode is opt-in with
+`--lock-file "$PWD/Engine/source-lock-direct.json"` on every source-tool command;
+use the separately integrated `Engine/ParcHost/overlay-direct.json` for its overlay.
+Keep the stopgap workspace intact; direct retargeting is guarded off in this
+preparatory slice. After the first direct build, the
+coordinator promotes the direct lock to the canonical filename. The selected
+lock is authoritative for repositories and build settings. Do not substitute a system CEF package or manually update one
 dependency. For pinned-source upgrades, use `retarget --previous-lock` as described
 in [Engine](../Engine/README.md#build-configuration); preserve the previous lock
 before updating it. Verified same-branch incremental retargets use the existing

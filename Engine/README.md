@@ -2,8 +2,14 @@
 
 Parc builds its own Chromium/CEF engine and integrates it with a source-owned
 Swift/AppKit shell. No installed third-party browser or executable is a build or
-runtime dependency. `source-lock.json` pins Chromium, CEF and depot_tools;
-`ParcHost/overlay.json` records the reviewed native integration and patched hashes.
+runtime dependency. The stopgap `source-lock.json` pins Chromium, CEF and
+depot_tools; `ParcHost/overlay.json` records that integration. Direct Chromium
+uses [source-lock-direct.json](source-lock-direct.json), explicitly selected with
+`--lock-file`. It requires the separately integrated `ParcHost/overlay-direct.json`;
+this preparatory tool does not supply that manifest or the direct startup code.
+Keep the stopgap workspace intact: this slice accepts fresh direct workspaces,
+while retargeting to direct mode is guarded off. The coordinator promotes the
+direct lock to the canonical filename after the first direct build.
 
 For current delivery and unfinished product work, use
 [product status](../docs/parity.md). For an authorized production release, use
@@ -29,6 +35,14 @@ one. Supported commands and sequencing are in
 [development setup](../docs/development-setup.md). Never hand-edit generated copies
 instead of their manifest-owned inputs.
 
+Direct mode writes explicit GN arguments without CEF's generator. It builds
+`//parc:parc_framework` and `//parc/helper:parc_helper`, including the framework's
+resource dependencies. `Release_GN_arm64` deliberately keeps its name so existing
+output consumers and compiled objects remain usable. Chromium's gclient hooks
+still run; no CEF checkout or patcher participates. Overlay patches run in their
+reviewed manifest order against Chromium; each target has one consolidated patch
+with checked input and output hashes.
+
 Both engine configurations use ARM64 Release, `dcheck_always_on=false`,
 `disable_fieldtrial_testing_config=true`, no dSYM bundles and the workspace's
 chosen symbol level (default zero). The disabled field-trial testing config
@@ -43,6 +57,14 @@ Production output is non-component in `out/ParcDistribution_GN_arm64`, with
 profile is not pinned by the source lock. Development objects remain in their
 separate output directory. A Swift release build or signing certificate cannot
 turn component artifacts into a standalone distribution.
+
+The direct recipe retains Widevine host verification, RLZ/CDM storage support
+and the existing alternate CDM storage key. It disables background apps and
+downgrade restarts because the native shell owns those lifecycles. WebUI stays
+optimized; the Chrome style compiler plugin stays disabled. Windows resource
+allowlist/PCH workarounds and the non-component Debug exception are omitted on
+Mac Release. The shipping recipe keeps these settings and overrides only the
+reviewed official/non-component settings.
 
 Codec flags select macOS decoding/encoding rather than bundled proprietary
 FFmpeg/OpenH264 paths. See [engine policy](../docs/engine-flags.md) and
