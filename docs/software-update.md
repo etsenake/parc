@@ -98,7 +98,8 @@ is its error [R].
 
 ### Automatic checks
 
-and an 8-hour `SUScheduledCheckInterval` [R].
+and an 8-hour `SUScheduledCheckInterval` [R]. Parc checks every 4 hours instead,
+by Josh's choice, because it releases more often.
 
 - **Silent download.** Scheduled checks call `checkForUpdatesInBackground`
   asserting `show(_:reply:)` is unreachable].
@@ -333,7 +334,7 @@ and command-bar work ([keyboard navigation](keyboard-navigation.md#excluded-by-t
   - A manual check shows the status window ("Checking for updates..."), then
     the up-to-date window, the update-found window, or the "Update error!"
     alert, following the table above.
-  - A scheduled check (every 8 hours) downloads silently. Sparkle's
+  - A scheduled check (every 4 hours) downloads silently. Sparkle's
     `willInstallUpdateOnQuit` handler is kept, the phase becomes
     `readyToInstall`, and only the sidebar banner shows it. Restart and Update
     runs the handler; otherwise Sparkle installs on quit.

@@ -18,7 +18,7 @@ ACCOUNT = "parc"
 PUBLIC_ED_KEY = "1hic4mo2AXODWtTea711Nwof69H++DEETfSXVUzCqKI="
 #
 INFO = {"SUFeedURL": FEED_URL, "SUPublicEDKey": PUBLIC_ED_KEY, "SUEnableAutomaticChecks": True,
-        "SUAutomaticallyUpdate": True, "SUScheduledCheckInterval": 28800}
+        "SUAutomaticallyUpdate": True, "SUScheduledCheckInterval": 14400}
 
 
 def has_key() -> bool:

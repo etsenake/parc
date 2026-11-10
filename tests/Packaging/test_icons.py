@@ -308,7 +308,7 @@ class PackagingIconTests(unittest.TestCase):
         self.assertEqual({key: info[key] for key in info if key.startswith("SU")}, {
             "SUFeedURL": "https://github.com/etsenake/parc-releases/releases/latest/download/appcast.xml",
             "SUPublicEDKey": pkg.sparkle.PUBLIC_ED_KEY, "SUEnableAutomaticChecks": True,
-            "SUAutomaticallyUpdate": True, "SUScheduledCheckInterval": 28800})
+            "SUAutomaticallyUpdate": True, "SUScheduledCheckInterval": 14400})
         self.assertEqual(report["sparkle"]["update_feed"], info["SUFeedURL"])
 
     def test_self_signed_certificate_keeps_library_validation_off_without_timestamps(self):
