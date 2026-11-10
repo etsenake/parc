@@ -77,5 +77,4 @@ capability checks and guarded success/cancel/failure callbacks.
 Reduce Motion, once-only focus return, shared field-editor replacement, enabled
 key loops, marked text, busy rows and owner retirement using inert doubles.
 `scripts/test-portrait-capture.sh` covers the actual compositor and reversible
-image state. These checks do not establish browser, live VoiceOver or Full
-Keyboard Access acceptance.
+image state.

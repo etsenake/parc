@@ -54,5 +54,4 @@ name. The importer commits exact PNG bytes and metadata to the selected UUID.
 importer, persistent Easel store and Undo session with generated PNGs and a
 disposable directory. It covers activity ordering, profile isolation, collapsed
 and searched items, renamed UUID selection, disabled/empty results, source
-payloads, output failure and preservation of existing documents. These tests do
-not invoke sharing services or establish live composer/accessibility behavior.
+payloads, output failure and preservation of existing documents.

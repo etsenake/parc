@@ -33,5 +33,5 @@ in the loader); Brand6–9 and every Pastel, Drab and Greyscale color use Displa
 P3. Selecting a named color converts it to Display P3.
 
 Extraction used semantic asset names, since internal rendition filenames can
-be reused. Asset provenance alone does not establish the complete editor's
-appearance or motion. See [theme editor](../../docs/space-theme-editor.md).
+be reused. See [theme editor](../../docs/space-theme-editor.md) for interaction
+and animation behavior.

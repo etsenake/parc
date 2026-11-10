@@ -34,8 +34,7 @@ history. Filtering never changes the browser's Space or retargets a command.
 
 Unchanged profile/record inputs skip catalog filter and sort work. Metadata
 updates reload changed rows; a new Library context renews callbacks even when
-its filtered list looks identical. This optimization is not a large-history
-performance measurement.
+its filtered list looks identical.
 
 ## Private-window Downloads
 
@@ -252,9 +251,12 @@ manager tests cover history initialization, private lifetimes, capability
 validation and creation-only arrival. Consult [the working contract](../AGENTS.md)
 before running a suite; older helpers may create windows.
 
-This guide records implemented behavior, not fresh browser acceptance. A
-large-folder/history performance investigation remains deferred as **DL-PERF-01**
-in [the backlog](backlog.md); the catalog reload guards do not close that task.
-Dedicated Library pages for Documents, Desktop and Screenshots remain separate
-from their existing flyout sources. Live download, file-action, presentation and
-motion acceptance require their own authorized validation.
+The large-folder/history investigation remains explicitly deferred until after
+the product polish pass as **DL-PERF-01** in [the backlog](backlog.md). Its original
+report concerned another browser; it is not a reproduced Parc stall. Start by
+identifying a repeatable delay and separating filesystem size, manager history
+size, transfer throughput and main-thread presentation work.
+
+Documents, Desktop and Screenshots are filesystem sources in the entry flyout;
+they have no dedicated Library pages. Library's Easels & Notes category opens
+Parc documents. Download arrival still needs a Reduce Motion presentation path.

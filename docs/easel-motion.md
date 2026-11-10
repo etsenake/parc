@@ -59,13 +59,10 @@ still reveal current annotations. These are explicit accessibility
 and lifetime choices.
 Neither adaptation changes the current geometry, selection or focus.
 
-## Checks and limits
+## Checks
 
 `scripts/test-easel-motion.sh` covers both threshold directions, inclusive
 initial-band silence, repeated crossings, invalid samples, native magnification
 notifications, source replacement and immediate visibility reversal. Feedback
 is injected, so the component does not emit physical haptics. Shared capture
 checks protect original pixels and independent in-memory history.
-
-Compiler and inert-component checks do not establish live browser motion or
-physical-device feel. AppKit decides whether hardware performs a request.

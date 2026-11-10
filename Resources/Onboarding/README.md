@@ -2,7 +2,7 @@
 
 Parc bundles the welcome audio, typeface, background and setup icons described
 `Resources/AppIcons/Original.png`. See [onboarding](../../docs/onboarding.md)
-for playback, ownership and remaining acceptance work.
+for playback and ownership.
 
 ## Welcome audio
 

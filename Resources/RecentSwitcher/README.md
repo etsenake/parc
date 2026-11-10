@@ -12,5 +12,5 @@ Notes and Easels pair their illustration with the document title. The excluded
 shared-service item has no Parc producer or copied artwork. Packaging copies
 this directory with the other application resources.
 
-See [tab switcher](../../docs/tab-switcher.md#original-card-surface-and-ownership--kb21)
+See [tab switcher](../../docs/tab-switcher.md#cards-and-thumbnails)
 for card behavior and ownership.

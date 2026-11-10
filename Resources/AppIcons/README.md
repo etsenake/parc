@@ -14,6 +14,9 @@
 
 ## Provenance
 
+treatments corresponding to this family. AppKit decoded those shipped assets
+for visual reference. Parc's [availability policy](../../docs/app-icon-availability.md)
+defines the selectable variants.
 
 
 
@@ -32,6 +35,10 @@ geometry, provenance and checks are in [UI marks](../../docs/app-icon-marks.md).
 
 `scripts/app_icons.py` converts **each of the ten variants** into ten macOS icon representations, then packages one `AppIcons/<Variant>.icns` per variant with Apple's `iconutil`. It copies `Original.icns` to the bundle's `Parc.icns`; `scripts/build.py` declares that default through `CFBundleIconFile` for both debug and release.
 
+The Alerts helper also receives an identical copy of `Parc.icns` and its own
+`CFBundleIconFile` declaration before signing. Notification Center can resolve
+that helper separately from the browser. The packaging fixture checks the
+helper's icon bytes against the main application's icon in both configurations.
 
 | Logical size | 1× pixels | 2× pixels |
 |---|---|---|
@@ -61,11 +68,10 @@ a transparent outer guard pixel keep small representations consistent without
 changing their P geometry, proportions, color or mascot identity. Source PNGs
 remain byte-identical throughout packaging.
 
-All 100 representations pass size, visible-bounds, centering and transparency
-checks. Actual 16-, 32-, 64- and 128-pixel light/dark comparisons were inspected
-for all ten variants. Inert native checks confirm that equal pixel-size ICNS
-representations composite identically and reach the same picker/live identity
-consumer. [Optical contract and evidence](../../docs/app-icon-optical.md).
+The export checks cover all 100 representations for size, visible bounds,
+centering and transparency. Native controller checks cover equal pixel-size
+ICNS representations and the shared picker/identity consumer.
+See [optical export](../../docs/app-icon-optical.md).
 
 ## App identity consumers
 
@@ -75,9 +81,8 @@ the default in every configuration. Current selection and native identity
 behavior is documented in [Settings](../../docs/settings.md#app-icon), and
 included availability in [app icon availability](../../docs/app-icon-availability.md).
 
-[UI marks and alpha cleanup](../../docs/app-icon-marks.md) records ICON08's
+[UI marks and alpha cleanup](../../docs/app-icon-marks.md) records the
 source-preservation boundary and actual consumers. The approved variants retain
 their individual proportion/shading differences within the common optical frame.
-The [icon guide](../../docs/app-icon-picker.md) describes current interaction
-and validation boundaries. Integrated Dock/Finder appearance remains part of the separate
-whole-product polish pass; these asset checks do not claim a browser runtime test.
+The [icon guide](../../docs/app-icon-picker.md) describes selection, keyboard and
+accessibility interaction.

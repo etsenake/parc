@@ -48,5 +48,4 @@ focused guides.
 
 `scripts/test-capture-presentation.sh` covers backing-scale anchoring, side and
 bottom placement, pixel-crop clipping, compact/tall layouts, appearance states
-and cursor resources. These inert checks and compiler validation do not establish
-browser-runtime acceptance or live rendering equivalence.
+and cursor resources.

@@ -45,8 +45,7 @@ sweep uses the fresh state. Check current/split exclusions and both profile
 policies independently. The `/appearance` page exercises default canvas, explicit
 site colors and CSS color-scheme changes; it is not an archive-state assertion.
 
-`bash scripts/test.sh` retains the actual BrowserStore elapsed-time/profile policy
-checks. These model checks, fixture availability and source wiring do not prove
-that the independent renderer reports every exemption correctly. Independent archive runtime, a full real-day wait and all capture/PiP/VR
-cases remain explicit acceptance work. Real HTTPS responsiveness is also a
-separate check.
+`bash scripts/test.sh` contains the BrowserStore elapsed-time and Profile-policy
+checks. `tests/ArchiveScheduling/run.sh` covers clock deadlines and coalescing
+without waiting a real day. The [archive guide](../../docs/archive.md) describes
+the production protection and retirement owners.

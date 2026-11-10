@@ -1,55 +1,60 @@
 # Navigation responsiveness
 
-Controlled navigation and scrolling measurements remain part of the performance
-backlog (PERF04). Earlier exploratory component-build observations used unequal
-viewports, different activation times and concurrent compilation. They do not
-establish current shipping performance or a cause of a reported delay.
+This guide describes the work boundaries that keep navigation metadata, session
+persistence and sidebar updates from repeating expensive operations. Concrete
+reported defects and explicit deferrals belong in [the backlog](backlog.md).
 
-## Implemented reductions in source work
+## Metadata publication
 
 `BrowserStore.updateTab` publishes title/URL, saved Today metadata and history
-changes in one state transaction. Split reconciliation, selection stamping and
-save scheduling still occur; subscribers no longer receive separate publications
-for each piece of the same native metadata update.
+changes in one state transaction, and skips identical updates. Split
+reconciliation, selection stamping and save scheduling still occur.
 
-Session encoding and atomic writes run on `org.parc.session-save`, with generation
-cancellation and identical-snapshot skips. The session schema, ISO-8601 dates,
-pretty-printed sorted keys, 0600 permissions, same-directory atomic replacement,
-0.25-second debounce and ephemeral-store skip remain unchanged.
+Native metadata notifications are payload-free and requery current state after
+validating their original page and observer. The producer compares shell-visible
+state before posting unchanged shell/loading updates. `PCBrowserView` separately
+compares capture, crash, title, URL and loading values before notifying Swift.
+Favicon-only notifications use their own callback.
 
-Favicon admission tests exact Profile, Space, archive and tab identity through a
-short-circuit search instead of constructing `visibleTabs` for each request.
-Asynchronous result/owner validation remains intact. A sidebar render shares its
-eligible split-group projection between active-item and row construction; each
-hierarchy container likewise reuses its projection. Nothing is cached across
-state changes or callbacks.
+Notifications leave the engine observer stack through nonnestable tasks. Keep
+that ordering: replacing all pending notifications with a single flag can lose
+a retry that must run after an intervening queued task.
 
-These changes remove redundant work in source. They are not measured speedups
-and do not, by themselves, close PERF04 or the separate persistence/performance
-work represented by PERF08.
+## Session persistence
 
-## Metadata publication investigation
+Session encoding and atomic writes run on `org.parc.session-save`. Debounced
+writes skip identical snapshots; explicit saves and profile-setting commits wait
+for durability. Both preserve ISO-8601 dates, sorted pretty-printed JSON, 0600
+permissions and same-directory atomic replacement. The debounce is 0.25 seconds;
+ephemeral stores do not persist sessions.
 
-Native payload-free metadata notifications fan out to capture, crash, title, URL
-and loading refreshes. Notifications requery current state after validating their
-original page/owner. Replacing them with one pending-notification flag can erase
-a later retry that should run after an intervening queued task. Any further
-coalescing needs to preserve those ownership and ordering semantics.
+History lives in a separate file beside the session and is written only when it
+changes. Title, selection and activity updates no longer re-encode all stored
+visits with the session. Explicit saves still recreate a missing session file.
 
-Historical process samples included window rendering, navigation/sidebar layout
-and accessibility work; they did not isolate scrolling or prove a page-load
-bottleneck. Do not turn those samples into a causal claim.
+## Sidebar and Library work
 
-## Validation plan
+Favicon admission checks the original Profile, Space, archive state and tab
+identity with a short-circuit search. Asynchronous results revalidate their owner.
+A sidebar render shares its eligible split projection between active-item and row
+construction; each hierarchy container likewise reuses its projection. Reused
+rows retain settled artwork while their favicon identity is unchanged.
 
-When browser work is explicitly authorized again, compare shipping builds with
-matched viewports/visibility, interleaved repeated HTTPS sites, recorded concurrent
-load, cold contexts and warm reloads, and both existing-page and new-page
-navigation. Keep Navigation Timing/FCP separate from physical input-to-visible
-latency. Sample app and renderer during reproducible delays to distinguish
-network/resource waits from processing before changing behavior.
+Library catalogs compare their relevant inputs before filtering and sorting.
+Downloads refreshes only changed rows when item identities and section positions
+are unchanged, preserving other thumbnails, selection and preview ownership.
+See [Downloads](download-library.md) for its separate deferred investigation.
 
-Current model/compiler checks cover coherent publication, history deduplication,
-saved-pin destinations, private-history behavior and hierarchy ordering. No
-browser benchmark or runtime responsiveness result is established by this
-cleanup; existing restrictions remain in [AGENTS.md](../AGENTS.md).
+## Checks and measurement
+
+`tests/BrowserStoreTests.swift` covers coherent metadata publication, history
+storage and deduplication, saved destinations and private-history behavior.
+`tests/DownloadLibrary/ViewTests.swift` covers catalog reload guards and original
+row ownership. These tests assert behavior rather than a speedup threshold.
+
+For an authorized browser performance investigation, use shipping builds with
+matched viewports and visibility, interleaved repeated HTTPS sites, recorded
+concurrent load, cold contexts and warm reloads, and both existing-page and
+new-page navigation. Keep Navigation Timing/FCP separate from physical
+input-to-visible latency. Sample app and renderer during a reproducible delay to
+distinguish resource waits from processing before selecting a change.

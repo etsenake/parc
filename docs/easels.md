@@ -120,7 +120,7 @@ cards have a square fallback and links a 220 × 160 fallback.
 Feedback is transient and belongs to the current owner/gesture. Cancellation,
 selection changes and invalid geometry clear it. A stale callback cannot leave
 handles or guides over a different document. Model checks cover the shared
-geometry and ownership rules; rendered interaction remains a separate check.
+geometry and ownership rules.
 
 ## Inline images in rich text
 
@@ -189,9 +189,10 @@ The canvas uses its width and height `max(lowest object bottom, width) + 60`;
 fixed capture canvases use exact capture bounds. Selection, guides and carets
 are excluded. Background follows the chosen light/dark appearance.
 
-Real embedded-page snapshots have a five-second collection and eight-second
-native overall budget. Missing, denied, late or unsupported snapshots fall back
-to the saved card/capture, never silently to a newly navigated page.
+Each native embedded-page snapshot has a five-second deadline; the app allows
+eight seconds for the full collection. Missing, denied, late or unsupported
+snapshots fall back to the saved card/capture, never silently to a newly navigated
+page.
 
 Encoding streams 256-row strips to a temporary destination, then atomically
 publishes PNG or JPEG. JPEG dimensions cannot exceed 65,535; PNG does not inherit
@@ -203,10 +204,9 @@ queue behind an existing sheet.
 
 `bash scripts/test-easels.sh` and the focused editor/pool/capture components
 exercise atomic saves, rich-text validation, native Undo, ownership, geometry,
-clipboard conversion and export bytes. Injected native engines do not establish
-live webpage behavior, OS save-panel interaction or visual acceptance.
+clipboard conversion and export bytes.
 
-Private-window Easel/Note and capture-to-Easel integration remains unresolved.
-Local document editing/export does not claim cloud publication or collaboration.
+[Private-window document limits](capture-library.md#private-media-ownership)
+remain. Local documents do not publish to cloud or collaboration services.
 The [backlog](backlog.md) owns remaining product work; this guide owns the stable
 editing and data-safety contract.

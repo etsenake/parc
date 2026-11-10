@@ -11,4 +11,4 @@
 `SadTabContent.artwork` combines both bitmaps and the vector at the 1× point
 size. Parc treats the result as a template and tints it with the source
 branding. See [web interactions](../../docs/web-interactions.md) for crashed-page
-behavior; asset provenance alone does not establish live appearance.
+behavior.

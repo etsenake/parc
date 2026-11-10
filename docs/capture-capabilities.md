@@ -32,10 +32,8 @@ controls. See [Library storage and discovery](capture-library.md).
 
 ## Scope and checks
 
-The capability audit closed CAP22 without adding an unsupported recorder. This
-is a description of Parc's implemented surface, not a requirement to add every
-possible recording feature. Cloud sharing and telemetry remain excluded.
+Standalone video recording is outside this capture workflow. Cloud sharing and
+telemetry remain excluded by [product scope](parity.md#scope-boundaries).
 
-Source/model checks can establish screenshot types, stream ownership and file
-classification. They do not establish real OS permission acceptance, live
-website recording behavior or video playback.
+Source/model checks cover screenshot types, stream ownership and file
+classification.

@@ -63,5 +63,3 @@ non-overlapping controls, actual selected/disabled states, light/dark drawing,
 unchanged attributed text, scaled corner/edge admission, retained edge refusal after zoom, narrow toolbar
 content height under legacy preferences and the compact native
 URL editor. Shared Notes and capture editor checks exercise the reused classes.
-These component checks establish source behavior. They do not establish live
-browser interaction, VoiceOver/FKA acceptance or final visual polish.

@@ -30,7 +30,7 @@ source-only previews without an ICNS; a present but damaged ICNS is an
 availability error. Settings previews and native application identity therefore
 consume the same export without an additional crop or normalization step.
 
-## Checks and appearance evidence
+## Checks
 
 The AppIcons checks round-trip all variants through `iconutil` and independently
 decode their PNG representations. They cover dimensions, opaque extent/center,
@@ -40,6 +40,4 @@ configurations while isolating app compilation, engine and signing operations.
 Controller checks cover native loading and equality of representations with the
 same pixel dimensions but different logical scale.
 
-Exported-pixel inspection and compiler/component results do not establish live
-Dock/Finder behavior or whole-product visual acceptance. Fine master detail
-naturally reduces at 16 pixels.
+Fine master detail naturally reduces at 16 pixels.

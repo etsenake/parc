@@ -60,7 +60,5 @@ thresholds, desktop candidate filtering, async cancellation and failure controls
 with isolated preferences. A missing desktop image remains a visible error;
 tests must not simulate permission success to bypass that path.
 
-These component checks do not prove behavior on every wallpaper/display or
-browser capture path. Current no-app/no-screenshot rules apply to future checks.
 [Capture motion](capture-motion.md) owns preview transitions and focus return;
 [capture destinations](capture-destinations.md) owns output attribution.

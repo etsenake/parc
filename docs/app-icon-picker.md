@@ -41,5 +41,4 @@ controller.
 AppKit harness with disposable preferences and an injected identity recorder.
 Coverage includes hit testing, press/release/cancel, focus/repeat, accessibility
 role/value/action, persistence failure, attachment and window interruption.
-It does not establish live VoiceOver, Full Keyboard Access or integrated browser
-acceptance. See [availability](app-icon-availability.md) for the catalog policy.
+See [availability](app-icon-availability.md) for the catalog policy.

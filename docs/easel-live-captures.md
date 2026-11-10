@@ -19,9 +19,10 @@ but offers no live-region capability. Full-page captures have no region layout.
 
 The app carries that optional geometry through the existing exact-destination
 import transaction. Old cards never acquire guessed coordinates. Cropped,
-annotated or Portrait-framed outputs remain image cards: their changed output
-cannot truthfully describe the original renderer region. Undo and persistence
-retain exact original asset identity, date, source URL and capture geometry.
+annotated or Portrait-framed captures retain their saved image without Make Live:
+their changed output no longer describes the original renderer region. Undo and
+persistence retain exact original asset identity, date, source URL and capture
+geometry.
 
 ## Real page ownership
 
@@ -59,7 +60,5 @@ maximum viewport extent. Browser zoom is accounted for without changing the
 Profile's zoom preference. The fixed positioning script preserves unrelated
 inline style rather than replacing the body's entire CSS text.
 
-Compilation and injected page-pool checks validate source, geometry ownership,
-retirement and immutable image persistence. They create no browser and make no
-claim about installed appearance, animation, renderer interaction or runtime
-acceptance. Functional browser tests remain prohibited.
+Injected page-pool checks cover geometry ownership, retirement and immutable
+image persistence.

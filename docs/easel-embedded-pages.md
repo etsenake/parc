@@ -49,9 +49,9 @@ File rollback reverses every document move before cleaning copied assets. If
 any reverse move fails, preserve the copied assets for recovery. Refuse a move
 that would leave aliases in another Profile. Private sessions are not copied.
 
-The native backend can own an off-the-record page. This does not establish a
-complete private-window Easel/Note persistence or capture-to-Easel flow; that
-integration remains tracked in [the backlog](backlog.md).
+The native backend can own an off-the-record page. The shell’s private document
+and capture-destination limits are described in
+[capture Library](capture-library.md#private-media-ownership).
 
 ## Keyboard and accessibility ownership
 
@@ -67,5 +67,3 @@ for a selected native editor or webpage.
 
 Pool and transfer components exercise injected engines and disposable document
 stores, including cancellation, ownership rejection, rollback and retirement.
-Their results establish model/lifetime behavior. They do not establish live
-browser interaction, rendering or OS consent acceptance.

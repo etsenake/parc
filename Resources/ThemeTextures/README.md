@@ -11,5 +11,4 @@ ImageIO wrote those images without resizing or redrawing, preserving sRGB
 profiles and alpha.
 
 Parc's own renderer and shader load only these standalone PNGs. No original
-provenance alone does not establish the complete renderer's appearance; see
 [theme rendering](../../docs/space-theme-rendering.md).

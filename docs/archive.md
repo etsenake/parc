@@ -19,7 +19,10 @@ Space falls back only to a current Space in the record's original Profile;
 without one, the archive remains unchanged. An explicit Put Back in Space action
 supplies its own destination. A saved tab restored to its original Space returns
 to its original folder if that folder still exists. Other destinations, removed
-folders and Today items restore at top level; deleted folders are not invented.
+folders and Today items restore at top level. Archive records do not retain a
+deleted folder tree: Put Back restores its tabs or complete split, while the
+original nested folders are available only through the deletion's window Undo.
+Persisted folder-root restoration remains in [the backlog](backlog.md).
 
 The native retirement/ownership gate validates the whole item before model
 mutation. Complete splits restore atomically. Reopen Closed Tab has a separate
@@ -156,11 +159,10 @@ publishes synchronously, the window preflights native ownership/attachments and
 suppresses ordinary rendering before calling it; a failed transfer cannot undo
 already published model state.
 
-## Checks and limits
+## Checks
 
 Model suites cover typed items, split atomicity, settings snapshots and original
 consent. `tests/ArchiveScheduling/run.sh` covers clock ownership/coalescing;
 `tests/AutoArchiveEducation/check.sh` covers inert card focus and lifecycle.
 Library components cover filtering, original-row menus and stale leases.
-These checks do not establish live sleep/wake behavior, keyboard/VoiceOver or
-browser appearance. Current open product work belongs in [the backlog](backlog.md).
+Current open product work belongs in [the backlog](backlog.md).

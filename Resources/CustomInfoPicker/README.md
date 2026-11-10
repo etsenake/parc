@@ -25,5 +25,4 @@ comes from `ARC_CustomInfoPicker.bundle`: Display P3 0.525/0.533/0.553 at
 `BrandGray`, `ForegroundSecondary`, `ForegroundTertiary` and
 `SidebarItemBackground` come from the BaseAssets catalog.
 
-Asset provenance does not establish live appearance. See
-[split groups](../../docs/split-groups.md) for picker behavior.
+See [split groups](../../docs/split-groups.md) for picker behavior.

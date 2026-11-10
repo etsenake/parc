@@ -52,7 +52,7 @@ and decode failures refuse unavailable actions. The service owns immutable
 payloads after explicit invocation; cancellation remains quiet, real failures
 are surfaced, and completion is not claimed to establish recipient delivery.
 Profile/view retirement detaches callbacks. macOS has no public cancellation API
-to retract an already invoked external composer. These checks do not invoke outgoing shares.
+to retract an already invoked external composer.
 
 ## Checks
 
@@ -60,5 +60,3 @@ to retract an already invoked external composer. These checks do not invoke outg
 renderer and Library payloads. `scripts/test-portrait-capture.sh` covers edits
 through crop/frame, original-byte retention, recropping, density and wrong-size
 refusal. Shared Easel checks protect persistent sessions and canvas behavior.
-Compiler and inert-component evidence does not establish browser interaction,
-external-share delivery or live visual acceptance.

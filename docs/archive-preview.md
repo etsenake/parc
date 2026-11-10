@@ -42,10 +42,9 @@ never fall back to the underlying selected tab merely because it is easier to
 find. Preview metadata remains separate from the archived item until an explicit
 restore succeeds.
 
-## Limits and validation
+## Remaining work
 
-The persisted close-time snapshot cache is a separate backlog item. A working
-live web preview does not establish that cache or document/group preview support.
-Source and component checks establish ownership and retirement behavior; they do
-not establish live browser rendering, focus or beforeunload presentation. Current
-app/browser restrictions remain governed by [AGENTS.md](../AGENTS.md).
+Archive records contain tab metadata and complete split geometry, but no persisted
+close-time page image. The live preview loads the archived address again; it
+cannot show how the page looked when closed. A close-time snapshot cache and
+document/group preview integration remain in [the backlog](backlog.md).

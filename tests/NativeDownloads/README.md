@@ -44,8 +44,11 @@ reservation can accept; unrelated windows are isolated.
 
 The platform runner stays alive through terminal listener/release callbacks,
 then retires nonnestably. Policy refusal and user cancellation share a once-only
-finish path. A non-tab auxiliary WebContents safely refuses instead of crashing;
-that does not supply an auxiliary chooser owner for docked DevTools.
+finish path. Docked DevTools uses its registered auxiliary-page lease to bind
+the chooser to the inspected tab and original native window. Detach, rebinding
+or owner loss revokes the chooser; an unbound auxiliary page cancels without
+falling back to another window. Print Preview has its own original-document
+route for Save to PDF.
 
 ## Directory-upload confirmation correction
 
@@ -76,9 +79,9 @@ membership/flags. It does not generate, link or execute Chromium tests.
 notification reentry and shutdown. `file_dialog_browser_tests` covers actual
 chooser ownership, cancellation, policy refusal, competing leases, nested loops
 and owner destruction. Directory-confirmation cases use genuine Browser/Widget
-models. Treat compiled and executed results separately.
+models. `tests/NativeDevTools/auxiliary_browsertest.mm` covers actual auxiliary
+chooser cancellation and refusal after detach. Treat compiled and executed
+results separately.
 
 Current rules prohibit browser/app launch; see [AGENTS.md](../../AGENTS.md) before
-selecting any fixture. Model/source checks do not establish saved-file integrity,
-persistent-profile isolation, real permission decisions or shutdown behavior in
-a running browser. Historical versioned run receipts remain in Git history.
+selecting any fixture.

@@ -47,8 +47,6 @@ theme's `maxContrastColor` and `cutoutColor`. Selection plays `hover-start` to
 an animation. Completion parks on `selection-end`; an unplayed page shows
 frame 0 (`ip`).
 
-The renderer skips the 12 Offset Path items in `easels`, `spaces` and `archive`.
-renderer also ignores them has not been confirmed by tracing actual rendering.
-If it applies them, Parc's affected icon edges would be about 0.1 point fuller
-at a 28-point display size. Resource provenance does not settle that appearance
-question; it remains a presentation-validation boundary.
+The renderer draws the stored shape paths without the 12 Offset Path modifiers
+in `easels`, `spaces` and `archive`. Those modifiers specify a −0.5-unit inset
+with miter joins.

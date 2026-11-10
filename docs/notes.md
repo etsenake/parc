@@ -10,7 +10,7 @@ that navigated away unloads back to its saved document.
 Each normal Profile stores `Profiles/<profile UUID>/Notes/<document UUID>.json`.
 A shared `NoteSession` owns each document. `parc://note/<UUID>` resolves only in
 the current Profile; malformed addresses retain the reserved internal host.
-Private windows do not expose normal Notes. Cloud sharing, collaboration and
+Notes are unavailable in private windows. Cloud sharing, collaboration and
 vendor services are excluded. There is no Notes ZIP/HTML import command.
 
 ## Editing and lifetime
@@ -150,7 +150,7 @@ A real load failure displays Can't load this note and its local error instead
 of a fake editor. Save failures stay in the editor with their original draft.
 There is no artificial local-loading spinner.
 
-## Format-menu motion and haptic negative finding
+## Format-menu motion
 
 Selected-index movement and in-place item opacity use a spring with response
 0.15, damping 0.825 and blend 0. Gutter hover and menu presentation/dismissal are
@@ -183,10 +183,8 @@ between documents; ZIP preparation/copy run off the UI thread. Destination
 replacement is staged and atomic, preserving an existing file on failure.
 Temporary content is removed with its owner. Empty Profiles report no Notes.
 
-## Checks and limits
+## Checks
 
 `scripts/test-notes.sh`, `scripts/test-note-export.sh` and shared
 `scripts/test-easels.sh` checks cover stores, actual native editors, formatting,
-retirement, HTML/ZIP output and failure paths with temporary fixtures. Compiler
-and inert-component evidence do not establish live browser, VoiceOver/FKA or
-final visual acceptance.
+retirement, HTML/ZIP output and failure paths with temporary fixtures.

@@ -49,7 +49,7 @@ context payloads and Messages/AirDrop actions live in
 
 `tests/CaptureLibraryTests.swift` covers real disposable PNG persistence, shared
 ownership, revision replacement, stale/wrong-Profile refusal, exact-byte exports,
-asset deletion and corrupt-data preservation. This is not browser acceptance.
+asset deletion and corrupt-data preservation.
 
 ## OS media discovery and access — CAP23
 
@@ -113,8 +113,7 @@ classification, aliases, same-path replacement, disappearance, hiding, source
 configuration, bookmarks, unreadable/missing folders and corrupt preferences.
 Native client checks cover vnode arrival/removal and shutdown. Library view checks
 cover thumbnail geometry, hover, scrolling, selection, source rectangles and
-mixed capture/file navigation. These do not establish actual permission prompts,
-Quick Look video playback, cloud downloads or browser runtime.
+mixed capture/file navigation.
 
 ## Private Media ownership
 
@@ -130,7 +129,9 @@ writes its immutable PNG/source metadata into the original parent's Library,
 using neutral Space identity and Incognito label. The capture retains its original
 private native lease and the same removal reservation described above.
 
-Private Easels/Notes and private capture-to-Easel remain unresolved WIN11 scope;
-their partial backend/document support is not a completed private workflow.
+Private windows cannot create or open Notes/Easels, browse the document Library,
+or send a capture to a new or existing Easel. Those commands are disabled; the
+backend’s off-the-record page support does not provide a private document store.
+This remaining document workflow is tracked under WIN11 in [the backlog](backlog.md).
 Library/document commands retain the exact focused browser and native security
 admission rather than redirecting auxiliary-window actions to another browser.

@@ -18,7 +18,7 @@ If the mark cannot load, the wordmark remains centered without an empty icon
 slot. App, Dock and Finder icons continue using the selected tile artwork.
 Packaging copies both marks with `Resources`; no runtime generation is needed.
 
-## Asset preservation and current work
+## Asset preservation
 
 Regenerate with `scripts/derive_app_icon_marks.py`, supplying the retained
 approved originals and a distinct output directory. Review output and preservation
@@ -44,5 +44,3 @@ Git retains the original approved input artwork.
 - `scripts/test-portrait-capture.sh`: the real portrait compositor and resources.
 - `python3 -m unittest discover -s tests/BrandMarks -v`: approved-master RGB and
   protected-pixel fingerprints, alpha cleanup, contours and interior colors.
-
-These are resource/component checks; they do not establish live app appearance.

@@ -89,13 +89,12 @@ preference generations reject stale gestures after selection or settings change.
 Private captures do not create a persistent private catalog. An explicit Save
 to Library can write into the parent Profile's normal catalog; that deliberate
 save is distinct from ordinary private browsing history. Private preferences
-remain in memory. Private Easel/Note and capture-to-Easel integration remains
-unresolved; see [capture Library](capture-library.md) and [the backlog](backlog.md).
+remain in memory. Private document and Easel-destination availability is
+described in [capture Library](capture-library.md#private-media-ownership).
 
 ## Checks and limits
 
 Component checks cover geometry, invalidation, crop/frame identity, output
-transactions and real image bytes. They do not establish live browser pixels,
-wallpaper permission handling or acceptance by OS sharing applications.
+transactions and real image bytes.
 Capture is still-image output; website recording/stream controls and discovered
 external videos are described in [capture capabilities](capture-capabilities.md).

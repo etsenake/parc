@@ -27,4 +27,3 @@ owns interaction. `scripts/test-app-icon-controller.sh` exercises the production
 controller with disposable catalogs and an injected identity applier. It covers
 choice/order/defaults, restoration, invalid IDs, native sizes, missing-ICNS
 fallback and corrupt-ICNS refusal without changing the system icon or Dock.
-Component checks do not establish live browser or Finder acceptance.

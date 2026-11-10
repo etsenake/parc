@@ -19,4 +19,4 @@ as a template. Share and Capture use the SF Symbols `square.and.arrow.up` and
 catalog's Portrait Mode image, `window-screenshot-icon`, is not bundled.
 
 See [web interactions](../../docs/web-interactions.md) for Site Control Center
-behavior. Asset provenance alone does not establish live appearance or motion.
+behavior.
