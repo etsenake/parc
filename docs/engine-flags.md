@@ -194,3 +194,7 @@ only when it exists in the bundle. The process retains the CDM sandbox and all
 bundle path restrictions. Packaging refuses an engine that cannot route the
 CDM to the expected helper. No default network/storage/audio helper receives
 this production exception.
+
+Parc selects its web-push client through the GCM factory before profile services
+start. It declines legacy sender-ID registrations immediately, while Instance ID
+registrations and the GCM transport keep Chromium's implementation.

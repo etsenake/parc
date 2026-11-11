@@ -21,6 +21,10 @@ class CommandLine;
 class FilePath;
 }
 
+namespace gcm {
+class GCMClient;
+}
+
 namespace content {
 class WebContents;
 }
@@ -33,6 +37,9 @@ using PermissionPromptFactory =
         content::WebContents* web_contents,
         permissions::PermissionPrompt::Delegate* delegate);
 void SetPermissionPromptFactory(PermissionPromptFactory factory);
+
+// components/gcm_driver/gcm_client_factory.cc
+void SetWebPushFactory(std::unique_ptr<gcm::GCMClient> (*factory)());
 
 // content/browser/web_contents/web_contents_impl.cc
 void SetFrameFocusNotifier(void (*notifier)(content::WebContents*));

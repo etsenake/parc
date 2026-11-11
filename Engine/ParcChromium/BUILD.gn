@@ -69,6 +69,8 @@ source_set("browser") {
     "content_main.h",
     "frame_focus.cc",
     "frame_focus.h",
+    "web_push.cc",
+    "web_push.h",
     "native/extension_keybinding_registry.cc",
     "native/extension_keybinding_registry.h",
     "native/fairplay_identity.h",
@@ -178,6 +180,8 @@ source_set("browser") {
   ]
 
   deps = [
+    "//components/gcm_driver",
+    "//google_apis/gcm",
     ":page_preferences",
     ":buildflags",
     ":mojom",

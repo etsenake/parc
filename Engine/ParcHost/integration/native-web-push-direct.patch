@@ -1,16 +1,17 @@
---- a/components/gcm_driver/gcm_client_impl.cc
-+++ b/components/gcm_driver/gcm_client_impl.cc
-@@ -792,6 +792,13 @@
- 
- void GCMClientImpl::Register(
-     scoped_refptr<RegistrationInfo> registration_info) {
-+  // Legacy sender-ID registration uses a retired endpoint. FCM Instance ID
-+  // registration and the GCM transport remain available for website push.
-+  if (GCMRegistrationInfo::FromRegistrationInfo(registration_info.get())) {
-+    delegate_->OnRegisterFinished(registration_info, std::string(), GCM_DISABLED);
-+    return;
-+  }
+--- a/components/gcm_driver/gcm_client_factory.cc
++++ b/components/gcm_driver/gcm_client_factory.cc
+@@ -10,3 +10,14 @@
++namespace parc_hooks {
++namespace {
++std::unique_ptr<gcm::GCMClient> (*web_push_factory)() = nullptr;
++}
++void SetWebPushFactory(std::unique_ptr<gcm::GCMClient> (*factory)()) {
++  web_push_factory = factory;
++}
++}  // namespace parc_hooks
 +
-   DCHECK_EQ(state_, READY);
-   DCHECK(io_task_runner_->RunsTasksInCurrentSequence());
+ namespace gcm {
  
+ std::unique_ptr<GCMClient> GCMClientFactory::BuildInstance() {
++  if (parc_hooks::web_push_factory)
++    return parc_hooks::web_push_factory();
