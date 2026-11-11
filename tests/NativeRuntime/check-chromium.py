@@ -83,9 +83,9 @@ def main():
     for target, expected in outputs.items():
         check(contained(tree, target), expected)
     target = sources["tests/NativeRuntime/runtime_driver.mm"]
-    flags_file = build / ('obj/parc/tests/parc_native_runtime/driver.ninja')
+    flags_file = build / "obj/parc/browser.ninja"
     if not shared["contains_object"](flags_file, "objcxx", target):
-        raise ValueError("actual source-set object is not generated")
+        raise ValueError("framework browser target omits the runtime driver")
     toolchain = build / "toolchain.ninja"
     import re
     rule = re.search(r"^rule objcxx\n  command = (.+)$", toolchain.read_text(), re.MULTILINE)
