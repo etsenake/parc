@@ -12454,7 +12454,15 @@
      "pipeline_controller.cc",
      "pipeline_controller.h",
      "source_buffer_parse_warnings.h",
-@@ -462,6 +468,10 @@
+@@ -360,6 +366,7 @@
+     "frame_processor_unittest.cc",
+     "memory_data_source_unittest.cc",
+     "offloading_video_decoder_unittest.cc",
++    "parc_chunk_demuxer_hand_off_unittest.cc",
+     "pipeline_controller_unittest.cc",
+     "source_buffer_state_unittest.cc",
+     "source_buffer_stream_unittest.cc",
+@@ -462,6 +469,10 @@
        "manifest_demuxer_unittest.cc",
        "stream_parser_factory_unittest.cc",
      ]
@@ -14797,7 +14805,10 @@
    void ExpectConfigChanged(DemuxerStream::Type type) {
      EXPECT_CALL(*this, ReadDone(DemuxerStream::kConfigChanged, _));
      GetStream(type)->Read(
-@@ -2400,6 +2430,446 @@
+@@ -2397,11 +2427,519 @@
+   ExpectInitMediaLogs(HAS_AUDIO);
+   EXPECT_CALL(*this, InitSegmentReceivedMock(_));
+   ASSERT_TRUE(AppendInitSegmentWithSourceId(audio_id, HAS_AUDIO));
 -
 +
    // Adding an id after append should fail.
@@ -15035,6 +15046,74 @@
 +  CheckExpectedBuffers(video, "30 60 90 120K");
 +}
 +
++// Parc: the end of stream places a split still waiting for its keyframe at
++// the end of what was appended.
++TEST_F(ChunkDemuxerTest, ParcHandOffSplitAtTheEndOfStream) {
++  ShutdownDemuxer();
++  CreateNewDemuxer();
++  demuxer_->ParcSetSafariMediaSource(true);
++  ASSERT_TRUE(InitDemuxer(HAS_VIDEO));
++  DemuxerStream* video = GetStream(DemuxerStream::VIDEO);
++  EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimated(30));
++  AppendSingleStreamCluster(kSourceId, kVideoTrackNum, "0K 30");
++  ASSERT_TRUE(demuxer_->ParcBeginHandOff());
++  base::TimeDelta split = kNoTimestamp;
++  demuxer_->ParcSplitForHandOff(
++      base::Milliseconds(40),
++      base::BindOnce([](base::TimeDelta* out, base::TimeDelta time) { *out = time; },
++                     &split));
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(split, kNoTimestamp);
++
++  MarkEndOfStream(PIPELINE_OK);
++  EXPECT_EQ(split, base::Milliseconds(60));
++  CheckExpectedBuffers(video, "0K 30");
++  ExpectEndOfStream(DemuxerStream::VIDEO);
++
++  demuxer_->ParcEndHandOff();
++}
++
++// Parc: a split asked for while a seek is on its way is placed from the
++// seek's time once the seek returns data.
++TEST_F(ChunkDemuxerTest, ParcHandOffSplitWaitsForASeek) {
++  ShutdownDemuxer();
++  CreateNewDemuxer();
++  demuxer_->ParcSetSafariMediaSource(true);
++  ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
++  AppendMuxedCluster(
++      MuxedStreamInfo(kAudioTrackNum, "0K 23K 46K 69K 92K 115K 138K", 23),
++      MuxedStreamInfo(kVideoTrackNum, "0K 30 60K 90 120K 150", 30));
++  MediaResource* handoff = demuxer_->ParcBeginHandOff();
++  ASSERT_TRUE(handoff);
++  DemuxerStream* incoming_audio = nullptr;
++  DemuxerStream* incoming_video = nullptr;
++  for (DemuxerStream* stream : handoff->GetAllStreams()) {
++    (stream->type() == DemuxerStream::AUDIO ? incoming_audio : incoming_video) =
++        stream;
++  }
++  ASSERT_TRUE(incoming_audio && incoming_video);
++
++  demuxer_->StartWaitingForSeek(base::Milliseconds(60));
++  base::TimeDelta split = kNoTimestamp;
++  demuxer_->ParcSplitForHandOff(
++      base::TimeDelta(),
++      base::BindOnce([](base::TimeDelta* out, base::TimeDelta time) { *out = time; },
++                     &split));
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(split, kNoTimestamp);
++
++  demuxer_->Seek(base::Milliseconds(60), NewExpectedStatusCB(PIPELINE_OK));
++  base::RunLoop().RunUntilIdle();
++  EXPECT_EQ(split, base::Milliseconds(60));
++  CheckExpectedBuffers(GetStream(DemuxerStream::AUDIO), "46K");
++  ExpectEndOfStream(DemuxerStream::AUDIO);
++  ExpectEndOfStream(DemuxerStream::VIDEO);
++  CheckExpectedBuffers(incoming_audio, "69K 92K 115K 138K");
++  CheckExpectedBuffers(incoming_video, "60K 90 120K 150");
++
++  demuxer_->ParcEndHandOff();
++}
++
 +// Parc: on Safari's identity each SourceBuffer's first audio track is
 +// enabled, as WebKit's SourceBuffer enables it, and its player mixes them.
 +TEST_F(ChunkDemuxerTest, ParcSafariEachSourceBufferEnablesItsAudio) {
@@ -15246,7 +15325,9 @@
 -
 +
  // Test that Read() calls after a RemoveId() return "end of stream" buffers.
-@@ -3012,9 +3482,285 @@
+ TEST_F(ChunkDemuxerTest, RemoveId) {
+   std::string audio_id = "audio1";
+@@ -3012,9 +3550,285 @@
  
      if (result == ChunkDemuxer::kOk)
        demuxer_->RemoveId("source_id");
@@ -15532,7 +15613,7 @@
  TEST_F(ChunkDemuxerTest, EndOfStreamStillSetAfterSeek) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
  
-@@ -3309,6 +4055,38 @@
+@@ -3309,6 +4123,38 @@
  namespace {
  const char* kMp2tMimeType = "video/mp2t";
  const char* kMp2tCodecs = "mp4a.40.2,avc1.640028";
@@ -15571,7 +15652,7 @@
  }
  
  TEST_F(ChunkDemuxerTest, EmitBuffersDuringAbort) {
-@@ -3768,8 +4546,347 @@
+@@ -3768,8 +4614,347 @@
    // Verify that the old data, and nothing more, has been garbage collected.
    CheckExpectedRanges(DemuxerStream::AUDIO, "{ [1000,1230) }");
    CheckExpectedRanges(DemuxerStream::VIDEO, "{ [1000,1165) }");
@@ -15919,7 +16000,7 @@
  TEST_F(ChunkDemuxerTest, GCDuringSeek_SingleRange_SeekForward) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
    demuxer_->SetMemoryLimitsForTest(
-@@ -5073,4 +6190,52 @@
+@@ -5073,4 +6258,52 @@
  // same codec type in a single SourceBufferState, when WebM parser supports
  // multiple tracks. crbug.com/646900
  
@@ -16579,7 +16660,7 @@
    // Valid settings should work.
    pipeline_->SetPlaybackRate(1.0);
    EXPECT_EQ(1.0f, pipeline_->GetPlaybackRate());
-@@ -528,8 +595,250 @@
+@@ -528,8 +595,380 @@
    StartPipelineAndExpect(PIPELINE_OK);
    EXPECT_TRUE(metadata_.has_audio);
    EXPECT_TRUE(metadata_.has_video);
@@ -16778,6 +16859,136 @@
 +  EXPECT_TRUE(renderer_);
 +}
 +
++// Parc: what ends a hand-off, or completes it, before the playing renderer
++// reaches its split: a seek, a suspend, a new CDM, a turn of direction, and
++// the FairPlay Renderer's own end.
++class ParcPipelineHandOffTest : public PipelineImplTest {
++ protected:
++  // A hand-off whose FairPlay Renderer initialized; the demuxer holds the
++  // split asked for.
++  void StartHandOff() {
++    demuxer_->handoff = true;
++    CreateAudioAndVideoStream();
++    SetDemuxerExpectations();
++    StartPipelineAndExpect(PIPELINE_OK);
++
++    scoped_renderer_ =
++        std::make_unique<StrictMock<MockRenderer>>(RendererType::kFairPlay);
++    fairplay_ = scoped_renderer_->AsWeakPtr();
++    EXPECT_CALL(*fairplay_, GetMediaTime())
++        .WillRepeatedly(Return(base::TimeDelta()));
++    EXPECT_CALL(*fairplay_, SetPreservesPitch(_)).Times(AnyNumber());
++    EXPECT_CALL(*fairplay_, SetVolume(_)).Times(AnyNumber());
++    EXPECT_CALL(*fairplay_,
++                SetWasPlayedWithUserActivationAndHighMediaEngagement(_))
++        .Times(AnyNumber());
++    EXPECT_CALL(*fairplay_, OnInitialize(_, _, _))
++        .WillOnce(DoAll(SaveArg<1>(&fairplay_client_),
++                        PostCallback<2>(PIPELINE_OK)));
++    pipeline_->ParcHandOffToFairPlay(base::BindOnce(
++        [](std::optional<bool>* out, bool done) { *out = done; },
++        &handed_off_));
++    base::RunLoop().RunUntilIdle();
++    ASSERT_TRUE(demuxer_->split);
++  }
++
++  // The demuxer splits at |time|, where the FairPlay Renderer starts.
++  void Split(base::TimeDelta time) {
++    EXPECT_CALL(*fairplay_, StartPlayingFrom(time));
++    std::move(demuxer_->split).Run(time);
++    base::RunLoop().RunUntilIdle();
++  }
++
++  base::WeakPtr<MockRenderer> fairplay_;
++  raw_ptr<RendererClient, DanglingUntriaged> fairplay_client_ = nullptr;
++  std::optional<bool> handed_off_;
++};
++
++// The playing renderer can't go on past the split, so the FairPlay Renderer
++// takes over at once and the seek is its.
++TEST_F(ParcPipelineHandOffTest, SeekAfterTheSplitTakesOver) {
++  StartHandOff();
++  Split(base::Seconds(1));
++
++  EXPECT_CALL(callbacks_, OnBufferingStateChange(BUFFERING_HAVE_NOTHING, _));
++  EXPECT_CALL(*fairplay_, SetPlaybackRate(0.0)).Times(2);
++  EXPECT_CALL(*demuxer_, AbortPendingReads());
++  EXPECT_CALL(*fairplay_, OnFlush(_)).WillOnce(RunOnceClosure<0>());
++  EXPECT_CALL(*demuxer_, OnSeek(base::Seconds(2), _))
++      .WillOnce(RunOnceCallback<1>(PIPELINE_OK));
++  EXPECT_CALL(*fairplay_, StartPlayingFrom(base::Seconds(2)));
++  EXPECT_CALL(callbacks_, OnSeek(HasStatusCode(PIPELINE_OK)));
++  DoSeek(base::Seconds(2));
++  EXPECT_FALSE(renderer_);
++  EXPECT_EQ(handed_off_, true);
++  EXPECT_EQ(demuxer_->handoff_ends, 0);
++}
++
++// Before the split the seek ends the hand-off: the playing renderer seeks and
++// the caller restarts.
++TEST_F(ParcPipelineHandOffTest, SeekBeforeTheSplitEndsIt) {
++  StartHandOff();
++
++  ExpectSeek(base::Seconds(2), false);
++  DoSeek(base::Seconds(2));
++  EXPECT_FALSE(fairplay_);
++  EXPECT_TRUE(renderer_);
++  EXPECT_EQ(handed_off_, false);
++  EXPECT_EQ(demuxer_->handoff_ends, 1);
++}
++
++// A suspend ends the hand-off without a restart: the resume makes the
++// renderer the CDM or the demuxer picks.
++TEST_F(ParcPipelineHandOffTest, SuspendEndsItForTheResume) {
++  StartHandOff();
++
++  ExpectSuspend();
++  DoSuspend();
++  EXPECT_FALSE(fairplay_);
++  EXPECT_EQ(handed_off_, true);
++  EXPECT_EQ(demuxer_->handoff_ends, 1);
++}
++
++TEST_F(ParcPipelineHandOffTest, NewCdmEndsIt) {
++  StartHandOff();
++
++  SetCdmAndExpect(true);
++  EXPECT_FALSE(fairplay_);
++  EXPECT_EQ(handed_off_, false);
++  EXPECT_EQ(demuxer_->handoff_ends, 1);
++}
++
++// Turning backward ends it; Chromium's test renderer, which can't play
++// backward, stops.
++TEST_F(ParcPipelineHandOffTest, TurningBackwardEndsIt) {
++  StartHandOff();
++
++  EXPECT_CALL(*renderer_, SetPlaybackRate(0.0));
++  EXPECT_CALL(*demuxer_, SetPlaybackRate(-1.0));
++  pipeline_->SetPlaybackRate(-1.0);
++  base::RunLoop().RunUntilIdle();
++  EXPECT_FALSE(fairplay_);
++  EXPECT_EQ(handed_off_, false);
++  EXPECT_EQ(demuxer_->handoff_ends, 1);
++}
++
++// The FairPlay Renderer ended before it took over (a split at the end of the
++// stream): the page hears that end once, after the swap.
++TEST_F(ParcPipelineHandOffTest, EndBeforeTheSwapReachesThePageAfterIt) {
++  StartHandOff();
++  Split(base::Seconds(1));
++  fairplay_client_->OnEnded();
++  base::RunLoop().RunUntilIdle();
++
++  EXPECT_CALL(callbacks_, OnBufferingStateChange(BUFFERING_HAVE_NOTHING, _));
++  EXPECT_CALL(callbacks_, OnEnded());
++  EXPECT_CALL(*fairplay_, SetPlaybackRate(0.0));
++  renderer_client_->OnEnded();
++  base::RunLoop().RunUntilIdle();
++  EXPECT_FALSE(renderer_);
++  EXPECT_EQ(handed_off_, true);
++}
++
 +// Parc: MediaKeys replacing a FairPlay Renderer's FairPlay ones reach that
 +// renderer, which takes them in place (new renderers in their key session, on
 +// the same clock) instead of waiting for a restart into a renderer made with
@@ -16831,7 +17042,7 @@
  TEST_F(PipelineImplTest, EncryptedStream_SetCdmBeforeStart) {
    CreateEncryptedVideoStream();
    SetDemuxerExpectations();
-@@ -898,8 +1207,112 @@
+@@ -898,8 +1337,112 @@
    EXPECT_CALL(*renderer_, GetMediaTime())
        .WillRepeatedly(Return(base::Seconds(1)));
    EXPECT_EQ(kMediaTime, pipeline_->GetMediaTime());
