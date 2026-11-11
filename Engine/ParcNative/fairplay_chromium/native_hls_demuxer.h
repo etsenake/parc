@@ -32,6 +32,7 @@
 #include "base/unguessable_token.h"
 #include "media/base/buffering_state.h"
 #include "media/base/demuxer.h"
+#include "media/base/parc_inband_tracks.h"
 #include "media/base/parc_native_hls_demuxer_params.h"
 #include "media/base/parc_native_hls_source.h"
 #include "media/base/pipeline_status.h"
@@ -254,8 +255,9 @@ class NativeHlsDemuxer final : public media::Demuxer,
   bool wireless_video_playback_disabled_;
   std::optional<FileTracks> file_tracks_;
   const StartLoadCallback start_load_cb_;
-  // The element's tracks; posts to the main thread. Null in unit tests.
-  const std::unique_ptr<media::TrackManager> track_manager_;
+  // The element's in-band tracks; posts to the main thread. Null in unit
+  // tests.
+  const std::unique_ptr<media::ParcInbandTrackForwarder> inband_tracks_;
   // The client pipe can overtake the Initialize reply: track lists and cues
   // that arrive first wait for it, the newest list replacing the reply's.
   bool tracks_ready_ = false;

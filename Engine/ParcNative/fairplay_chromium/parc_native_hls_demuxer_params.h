@@ -39,7 +39,7 @@ class FairPlayHlsLoadClient;
 namespace media {
 
 class MediaLog;
-class TrackManager;
+class ParcInbandTrackForwarder;
 
 // The element's readyState as Safari's native HLS player reports it
 // (WebKit's MediaPlayerPrivateAVFoundation::updateStates).
@@ -71,10 +71,9 @@ struct MEDIA_EXPORT ParcNativeHlsDemuxerParams {
   raw_ptr<MediaLog> media_log = nullptr;
   // Raises `encrypted` on the element; posts to the main thread.
   Demuxer::EncryptedMediaInitDataCB encrypted_media_init_data_cb;
-  // The element's audio tracks (AddTrack, RemoveTrack, SetTrackState) and
-  // in-band text tracks and cues; callable on the media thread, posts to the
-  // main thread.
-  std::unique_ptr<TrackManager> track_manager;
+  // The element's in-band audio and text tracks and cues; callable on the
+  // media thread, posts to the main thread.
+  std::unique_ptr<ParcInbandTrackForwarder> inband_tracks;
   // Raises webkitneedkey for a key request of the player's resource loader
   // (WebMediaPlayerEncryptedMediaClient::ParcWebKitKeyRequest), before any
   // `encrypted` for it; posts to the main thread.

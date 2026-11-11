@@ -16,6 +16,7 @@
 #include "media/base/encryption_scheme.h"
 #include "media/base/media_log.h"
 #include "media/base/media_track.h"
+#include "media/base/parc_inband_tracks.h"
 #include "media/base/ranges.h"
 #include "media/base/sample_format.h"
 #include "media/base/timestamp_constants.h"
@@ -144,7 +145,7 @@ NativeHlsDemuxer::NativeHlsDemuxer(
       wireless_video_playback_disabled_(
           params.wireless_video_playback_disabled),
       start_load_cb_(std::move(params.start_load_cb)),
-      track_manager_(std::move(params.track_manager)),
+      inband_tracks_(std::move(params.inband_tracks)),
       pending_player_(std::move(player)),
       pending_client_receiver_(std::move(client)) {
   DETACH_FROM_SEQUENCE(sequence_checker_);
@@ -804,7 +805,7 @@ void NativeHlsDemuxer::OnTracksChanged(
 
 void NativeHlsDemuxer::ApplyTracks(
     const std::vector<media::mojom::FairPlayHlsTrackPtr>& tracks) {
-  if (!track_manager_ || stopped_) {
+  if (!inband_tracks_ || stopped_) {
     return;
   }
   std::vector<media::ParcInbandAudioTrack> audio_tracks;
@@ -842,13 +843,13 @@ void NativeHlsDemuxer::ApplyTracks(
     text.in_band_metadata_dispatch_type = track->in_band_metadata_dispatch_type;
     text_tracks.push_back(std::move(text));
   }
-  track_manager_->ParcSetInbandAudioTracks(
+  inband_tracks_->ParcSetInbandAudioTracks(
       audio_tracks,
       base::BindPostTask(
           media_task_runner_,
           base::BindRepeating(&NativeHlsDemuxer::SetAudioTrackEnabled,
                               weak_factory_.GetWeakPtr())));
-  track_manager_->ParcSetInbandTextTracks(
+  inband_tracks_->ParcSetInbandTextTracks(
       text_tracks,
       base::BindPostTask(
           media_task_runner_,
@@ -870,7 +871,7 @@ void NativeHlsDemuxer::OnTextCues(
 void NativeHlsDemuxer::ForwardTextCues(
     const std::string& track_key,
     const std::vector<media::mojom::FairPlayHlsCuePtr>& cues) {
-  if (!track_manager_ || stopped_) {
+  if (!inband_tracks_ || stopped_) {
     return;
   }
   std::vector<media::ParcInbandTextCue> result;
@@ -901,7 +902,7 @@ void NativeHlsDemuxer::ForwardTextCues(
     out.prevent_line_wrapping = cue->prevent_line_wrapping;
     result.push_back(std::move(out));
   }
-  track_manager_->ParcAddInbandTextCues(track_key, result);
+  inband_tracks_->ParcAddInbandTextCues(track_key, result);
 }
 
 void NativeHlsDemuxer::OnDataCues(
@@ -918,7 +919,7 @@ void NativeHlsDemuxer::OnDataCues(
 void NativeHlsDemuxer::ForwardDataCues(
     const std::string& track_key,
     const std::vector<media::mojom::FairPlayHlsDataCuePtr>& cues) {
-  if (!track_manager_ || stopped_) {
+  if (!inband_tracks_ || stopped_) {
     return;
   }
   using Kind = media::ParcDataCueValue::Kind;
@@ -970,7 +971,7 @@ void NativeHlsDemuxer::ForwardDataCues(
     out.value.data = value.data;
     result.push_back(std::move(out));
   }
-  track_manager_->ParcAddInbandDataCues(track_key, result);
+  inband_tracks_->ParcAddInbandDataCues(track_key, result);
 }
 
 void NativeHlsDemuxer::SetAudioTrackEnabled(const std::string& key,

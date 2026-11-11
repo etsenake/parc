@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#include "media/base/media_track.h"
+#include "media/base/parc_inband_tracks.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/html/track/text_track.h"
 #include "third_party/blink/renderer/core/html/track/vtt/vtt_cue.h"

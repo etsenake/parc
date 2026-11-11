@@ -13,7 +13,7 @@
 #include <optional>
 #include <vector>
 
-#include "media/base/media_track.h"
+#include "media/base/parc_inband_tracks.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/html/track/text_track_cue.h"
