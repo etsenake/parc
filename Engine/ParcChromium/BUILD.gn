@@ -54,6 +54,7 @@ source_set("browser") {
   sources = [
     "//chrome/app/chrome_main_delegate.cc",
     "//chrome/app/chrome_main_delegate.h",
+    "chromium_hooks.h",
     "native/extension_keybinding_registry.cc",
     "native/extension_keybinding_registry.h",
     "native/fairplay_identity.h",

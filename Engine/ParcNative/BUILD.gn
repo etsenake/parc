@@ -400,7 +400,6 @@ source_set("native_permissions") {
     "//chrome/browser/permissions/system",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui/browser_window",
-    "//chrome/browser/ui/permission_bubble",
     "//components/custom_handlers",
     "//components/strings:components_strings",
     "//components/tabs:public",

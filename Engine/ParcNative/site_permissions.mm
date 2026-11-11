@@ -17,7 +17,6 @@
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/permission_bubble/permission_prompt.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "components/custom_handlers/register_protocol_handler_permission_request.h"
 #include "components/permissions/embedded_permission_prompt_flow_model.h"
@@ -991,8 +990,9 @@ class NativeSitePermissions final
 };
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(NativeSitePermissions);
+}  // namespace
 
-std::unique_ptr<permissions::PermissionPrompt> CreatePrompt(
+std::unique_ptr<permissions::PermissionPrompt> CreateSitePermissionPrompt(
     content::WebContents* contents,
     Delegate* delegate) {
   // Chrome's own prompts need a BrowserView, which no Parc page has.
@@ -1004,12 +1004,6 @@ std::unique_ptr<permissions::PermissionPrompt> CreatePrompt(
   }
   auto* page = NativeSitePermissions::FromWebContents(contents);
   return page ? page->CreatePrompt(delegate) : nullptr;
-}
-}  // namespace
-
-void RegisterNativeSitePermissionPrompts() {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  SetCreatePermissionPromptFunction(&CreatePrompt);
 }
 
 void InstallNativeSitePermissions(content::WebContents& contents) {

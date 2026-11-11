@@ -53,6 +53,12 @@ services exist. Those are installed from the main delegate's early startup, neve
 ExtraParts callback. A signature mismatch fails at link time; nothing
 fails silently at runtime.
 
+Site permissions are the reference conversion. `permission_prompt_factory.cc` declares and defines
+`parc_hooks::SetPermissionPromptFactory`, and its factory returns Parc's result, a null one included, exactly
+as the old patch did. The header belongs to `//parc:browser`, and only the install points include it. A
+feature exposes its factory in its own header, here `CreateSitePermissionPrompt`, and the install point
+passes that factory to the setter, so the `//parc/native` targets never depend on `//parc:browser`.
+
 Parc state that today lives as members of Chromium classes moves into Parc-owned objects:
 - Blink supplements;
 - `UserData` and tab features;

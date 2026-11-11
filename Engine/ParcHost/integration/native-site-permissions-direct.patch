@@ -1,45 +1,44 @@
---- a/chrome/browser/ui/permission_bubble/permission_prompt.h
-+++ b/chrome/browser/ui/permission_bubble/permission_prompt.h
-@@ -12,6 +12,13 @@
- class WebContents;
- }
+--- a/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
++++ b/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
+@@ -44,6 +44,14 @@
+ #include "chrome/browser/web_applications/os_integration/mac/web_app_shortcut_mac.h"
+ #endif
  
-+// Replaces every Chrome prompt below, including a null "no prompt" result.
-+using CreatePermissionPromptFunctionPtr =
++namespace parc_hooks {
++using PermissionPromptFactory =
 +    std::unique_ptr<permissions::PermissionPrompt> (*)(
 +        content::WebContents* web_contents,
 +        permissions::PermissionPrompt::Delegate* delegate);
-+void SetCreatePermissionPromptFunction(CreatePermissionPromptFunctionPtr);
++void SetPermissionPromptFactory(PermissionPromptFactory factory);
++}  // namespace parc_hooks
 +
- // Factory function to create permission prompts for chrome.
- std::unique_ptr<permissions::PermissionPrompt> CreatePermissionPrompt(
-     content::WebContents* web_contents,
---- a/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
-+++ b/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
-@@ -257,6 +257,8 @@
-     return std::make_unique<PermissionPromptQuietIcon>(web_contents, delegate);
+ namespace {
+ 
+ BrowserWindowInterface* GetBrowser(content::WebContents* web_contents) {
+@@ -258,8 +266,17 @@
    }
  }
-+
-+CreatePermissionPromptFunctionPtr g_create_permission_prompt_ptr = nullptr;
  
++// Replaces every Chrome prompt below, including a null "no prompt" result.
++parc_hooks::PermissionPromptFactory g_parc_permission_prompt_factory = nullptr;
++
  }  // namespace
  
-@@ -287,11 +289,19 @@
-     return true;
-   }
-   return false;
++namespace parc_hooks {
++void SetPermissionPromptFactory(PermissionPromptFactory factory) {
++  g_parc_permission_prompt_factory = factory;
 +}
++}  // namespace parc_hooks
 +
-+void SetCreatePermissionPromptFunction(CreatePermissionPromptFunctionPtr ptr) {
-+  g_create_permission_prompt_ptr = ptr;
- }
- 
+ bool ShouldShowPermissionPromptEvenIfOmniboxEditedOrEmpty(
+     content::WebContents* web_contents) {
+   if (!web_contents) {
+@@ -292,6 +309,10 @@
  std::unique_ptr<permissions::PermissionPrompt> CreatePermissionPrompt(
      content::WebContents* web_contents,
      permissions::PermissionPrompt::Delegate* delegate) {
-+  if (g_create_permission_prompt_ptr) {
-+    return g_create_permission_prompt_ptr(web_contents, delegate);
++  if (g_parc_permission_prompt_factory) {
++    return g_parc_permission_prompt_factory(web_contents, delegate);
 +  }
 +
    if (delegate->ShouldDropCurrentRequestIfCannotShowQuietly() &&

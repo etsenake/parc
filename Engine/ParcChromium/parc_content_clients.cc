@@ -17,6 +17,7 @@
 #include "content/browser/media/service_factory.h"
 #include "content/public/browser/browser_url_handler.h"
 #include "content/public/common/content_switches.h"
+#include "parc/chromium_hooks.h"
 #include "parc/native/file_dialog.h"
 #include "parc/native/native_appkit_host.h"
 #include "parc/native/native_internal_urls.h"
@@ -52,7 +53,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
   }
   void PreMainMessageLoopRun() override {
     // Before any page exists.
-    RegisterNativeSitePermissionPrompts();
+    parc_hooks::SetPermissionPromptFactory(&CreateSitePermissionPrompt);
     RegisterNativeFileDialogs();
   }
   void PostMainMessageLoopRun() override {
