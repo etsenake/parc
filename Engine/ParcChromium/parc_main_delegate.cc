@@ -63,6 +63,7 @@ class ParcContentUtilityClient final : public ChromeContentUtilityClient {
 ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
     : ChromeMainDelegate({.exe_entry_point_ticks = base::TimeTicks::Now()}),
       application_(application) {
+  parc_hooks::SetMacMainLoopEndHandler(nullptr);
   parc_hooks::SetMacMainPartsFactory(&CreateMacMainParts);
   parc_hooks::SetMainStartupPolicy(&UsesNativeStartup);
   parc_hooks::SetBrowserStartupPolicy(&UsesNativeStartup);

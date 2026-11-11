@@ -275,7 +275,9 @@ preferences, crash reporting or root selection. Its browser-start gates keep
 Parc's own windows and event loop while preserving profile/service setup.
 The Mac main-parts factory selects Parc's subclass and retains Chromium's full
 extra-parts sequence and thread-ready notification. The subclass skips only
-Chrome's application-delegate and menu takeover.
+Chrome's application-delegate and menu takeover. The native quit path omits
+Chrome's AppController notification at its caller; the existing quit-closure
+guard still protects startup keep-alive changes.
 Resource factories are installed from the main delegate before either browser
 or child resource initialization; Chromium's public startup headers stay pristine.
 Second-launch routing is installed before Chromium unlocks its process singleton

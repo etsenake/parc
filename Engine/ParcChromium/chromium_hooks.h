@@ -58,6 +58,9 @@ using MacMainPartsFactory =
     std::unique_ptr<ChromeBrowserMainParts> (*)(bool, StartupData*);
 void SetMacMainPartsFactory(MacMainPartsFactory factory);
 
+// chrome/browser/browser_process_impl.cc; null omits Chrome's AppController.
+void SetMacMainLoopEndHandler(void (*handler)());
+
 }  // namespace parc_hooks
 
 #endif  // PARC_CHROMIUM_HOOKS_H_
