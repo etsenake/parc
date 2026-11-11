@@ -1,9 +1,9 @@
 # How Parc changes Chromium
 
 Parc builds pinned Chromium with its own code beside it. This guide explains where that code lives, how
-it reaches Chromium, which Chromium files are still patched and why, and what a new change must guard.
-The [engine guide](../Engine/README.md) covers building and the [overlay README](../Engine/ParcHost/README.md)
-covers the manifest.
+it reaches Chromium and what a new change must guard. The [hooks and patches reference](chromium-hooks.md)
+lists every hook and every kept patch with its reason. The [engine guide](../Engine/README.md) covers
+building and the [overlay README](../Engine/ParcHost/README.md) covers the manifest.
 
 The rule is simple. Use an extension point Chromium already gives an embedder. Where there is none,
 put Parc's logic in a Parc-owned file and leave a one-call hook in the Chromium file that owns the
@@ -73,7 +73,7 @@ in a file-local pointer and, when it is set, returns Parc's result, a null "no p
 before any Chrome prompt logic runs. Unhooked Chromium keeps its original path.
 
 [`parc/chromium_hooks.h`](../Engine/ParcChromium/chromium_hooks.h) declares every browser-side setter,
-grouped by the Chromium file that defines it. Chromium files never include it; only Parc's
+grouped by the Chromium file that defines it; the [reference](chromium-hooks.md) describes each one. Chromium files never include it; only Parc's
 install points do. A signature that drifts fails at link time, never silently at runtime, and there
 are no BUILD edits or buildflag includes for a hook, so upstream unit tests still link. A feature
 exposes its factory in its own header, such as `CreateSitePermissionPrompt`, and the install point
@@ -81,22 +81,18 @@ passes it to the setter, so `//parc/native` targets never depend on `//parc:brow
 
 ### Install points
 
-A hook is installed before the first moment Chromium can call it:
+A hook is installed before the first moment Chromium can call it. The
+[reference](chromium-hooks.md) names each hook's install point; these are the moments they use:
 
-- The `ParcMainDelegate` constructor installs startup and browser hooks: the Mac main parts and quit
-  path, Browser admission, lifetime, registration and deletion, the off-the-record deferral, navigator
-  and tab-strip hooks, the native window factory and features, DevTools, unload transactions,
-  profile removal and deletion, restore omission, profile defaults, session-state restore, the Gaia
-  guard, startup policy and both resource-bundle factories. These run before resource initialization
-  and before profile services exist.
+- The `ParcMainDelegate` constructor installs startup and browser hooks, before resource
+  initialization and before profile services exist.
 - The `ParcContentBrowserClient` constructor installs frame focus, web push and the internal extension.
 - `CreateBrowserMainParts` selects the CDM helper's child flags before the UI thread forbids blocking.
 - `ParcBrowserMainExtraParts::PostBrowserStart` installs the second-launch handler before Chrome's own
   PostBrowserStart lets the process singleton deliver launches; PostMainMessageLoopRun removes it.
-- `ParcBrowserMainExtraParts::PreMainMessageLoopRun` installs the interface hooks before any page
-  exists: autofill presentation, permissions, authentication validation, extension install and
-  uninstall, folder upload, sad tab, external protocols, certificates, passwords, tab sharing, pane
-  focus, the FairPlay CDM creator, picture-in-picture captions and the native page menu.
+- `ParcBrowserMainExtraParts::PreMainMessageLoopRun` installs the interface hooks before any page exists.
+- The engine entry installs the FairPlay identity and AirPlay hooks before Chromium's command line
+  exists, so no page or worker starts without them.
 
 ### Hooks inside component libraries and Blink
 
@@ -104,10 +100,12 @@ A hook defined inside a component library carries that library's export macro on
 as `service_factory.cc` does with `CONTENT_EXPORT` for `SetCdmServiceChildFlags`. The CDM creator,
 the picture-in-picture session hooks and the session-restore omissions follow the same rule.
 
-Renderer-side hooks use a Parc header installed inside the layer instead. Blink's player move is
-declared in `parc_media_player_move.h` under `blink::parc_hooks`, defined in `html_media_element.cc`
-and installed by `ModulesInitializer`, as Blink installs its own module hooks. The Widevine request
-observer and the Safari-identity query live in the owned `content/browser/media/parc_fairplay_hooks.h`.
+Renderer-side and content hooks use a Parc header installed inside the layer instead. Blink's player
+move is declared in `parc_media_player_move.h` under `blink::parc_hooks`, keeps its slot in Parc's
+`parc_media_element.cc` beside it, and is installed by `ModulesInitializer`, as Blink installs its
+own module hooks. The Widevine request observer and the Safari-identity query live in the owned
+`content/browser/media/parc_fairplay_hooks.h`; worker identity and AirPlay have their own owned
+headers in `content/public/browser`.
 
 ## Parc state in Parc-owned objects
 
@@ -282,65 +280,9 @@ for compatibility edits a changed interface needs. Parc files beside a layer, su
 
 ## Kept patches and why
 
-These patches carry only hooks, their setters and the minimal state they need:
-`native-site-permissions-direct`, `native-sad-tab`, `native-server-certificate-viewer-direct`,
-`native-http-auth`, `native-web-push-direct`, `native-session-cookies-direct`,
-`native-signin-disabled-direct`, `internal-extension`, `cdm-helper`, `native-tab-sharing-direct`,
-`extension_context_menu_native`, `native-page-context-menu-direct-overlay`,
-`native-password-prompt-direct`, `native-embedded-pages`, `native-page-retirement` and
-`native-browser-overlay`. The last three put their `.cc` gates at Chromium's private restore, close
-and deletion points; the browser overlay also carries the DevTools page-command body. The rest keep real behaviour:
-
-| Patch | Why it stays |
-|---|---|
-| `chromium-direct-startup` | Startup hooks, plus two exceptions: the Mac framework path honors the installed framework, which PathService can't reach for direct callers, and the Keychain definition makes its namespace mutable in both implementation and callers. |
-| `chromium-direct-shared` | Frame-focus and DevTools key hooks; FileSelectHelper's per-type filters, which Parc's dialog factory can't rebuild from the merged list; the context-menu observer, which must run first for command dispatch. |
-| `native-host-direct` | Profile-removal hooks, capture-picker revocation and indicator fixes, tab previews and Parc's action and side-panel IDs. |
-| `native-host-route-direct-overlay` | Native link transport: a link's policy query runs before Chromium creates its navigation request, which no public hook reaches. Also per-local-root renderer identity, player adoption across frames and a longer cache stay for a casting page. |
-| `native-devtools-auxiliary` | App-modal JavaScript dialogs for auxiliary pages such as DevTools capture their factory when queued and validate ownership after the queue advances; the public view factory runs only when shown and can't do both. |
-| `native-devtools-direct-overlay`, `native-developer-panels` | The docked-controller hooks, plus the page commands (Developer Tools, Inspect, Console, Network) in DevToolsWindow, its toggle action and the frontend's panel query. They need whether the window is closing or loaded and a counter that drops a stale panel reply; a Parc port couldn't tell closing from loading and would run beforeunload twice. |
-| `native-intent-picker-direct-overlay` | Keeps the source page through asynchronous icon loading. |
-| `native-client-certificates` | Refuses a stale choice before Chromium shares it for the host, and exposes the Views list's first-row setup. |
-| `native-external-protocol` | The hook, plus the picture-in-picture occlusion registry that rides with it. |
-| `native-folder-upload-direct-overlay` | Only a dialog host can run a dialog model's accept action. |
-| `native-extension-install` | Binds consent when the prompt is created, before the icon loads ([decisions](#decisions)). |
-| `native-webauthn` | Opt-in page context; other pages run Chromium's dialogs unchanged, and the recovery window holds a typed lease. |
-| `native-autofill-capabilities-direct`, `native-autofill-controllers-direct`, `native-address-editor`, `native-address-account` | Presentation results and request state for native offers, and routes for native owners without a Views widget ([decisions](#decisions)). |
-| `native-side-panel` | No deregistration observer for a pending entry, no seam for the borrowed host, private load-time mark. |
-| `native-protocol-handler-request` | Exposes the request's handler, with no public alternative. |
-| `native-current-tab-picker`, `native-delegated-picker` | The share-this-tab picker reports its destruction and hiding; the delegated picker keeps only an accepted session. Both are upstream candidates. |
-| `native-reader-direct` | Private-window Reader caches stay private. |
-| `native-file-dialogs-direct-overlay` | Native parents for background downloads and print preview, and directory listing. |
-| `native-internal-urls-direct-overlay`, `native-license-host` | Address completion and bookmark import classify Parc's internal and licence addresses. |
-| `native-window-lookup-direct`, `native-views-bubble-guards`, `native-document-pip-content-settings` | Native windows have no BrowserView, toast anchor or Views frame for these callers. |
-| `native-video-pip-direct` | Split links, repost warnings and picture-in-picture windows in Chromium's delegate, and caption compositing in Blink. |
-| `native-fullscreen-window` | Recovery needs the controller's private pending transition and original frame. |
-| `native-history-swipe-direct` | Cancellation must reach the retained AppKit tracker before a stale gesture navigates. |
-| `blink-overlay-scrollbar-fade` | No seam wraps the private fade timer that hands visibility back after a theme change. |
-| `document-pip-minimum-size` | Blink clamps script-requested sizes before the browser sees them; keep the global 52-pixel minimum. |
-| `native-input-diagnostics-direct` | Opt-in probes at responder and accessibility branches no observer exposes. |
-| `native-external-split-drop` | Page drops reach Parc's split router from the content view, which has no drop callback. |
-| `native-applescript-lifecycle` | Keeps a page runnable and orders visibility for native requests; the lifecycle manager's state is private. |
-| `native-media-controls` | Per-session volume and scrub recipients live in MediaSessionImpl's private state. |
-| `native-cast`, `native-presentation`, `native-gmc-presentation` | The Cast device dialog and presentation requests honor native page revocation and Parc's cast flow. |
-| `color-provider-manager-observer` | Chromium has no observer for color-provider resets. |
-| `native-viz-capture-direct` | A capture fix: failed or stale copies must complete the oracle's capture. |
-| `native-atomic-import` | Import's history and web-data writes are one transaction. |
-| `native-auto-pip-host-occlusion-direct` | Chromium's occlusion helper is behind an off flag, merges shell and page states Parc keeps apart and goes quiet while not observing; entry's wait for the renderer's hidden acknowledgement starts and is cancelled at seven private points. Only that acknowledgement is a hook. |
-| `native-safe-browsing-direct`, `native-extensions-background-mode`, `product-name` | Build inputs: Safe Browsing's direct dependencies, conditional background-extension dependencies and the extension-message formatter. |
-| `top-band-color` | The tracker's event hooks and its Blink build registration and Mojo target. |
-| `fairplay-media` | Accessors, player orchestration, the CreateCdm and renderer-registration calls, Media Source gap bridging, late SourceBuffers, reverse playback and mixing in the renderers. |
-| `fairplay-identity-blink-direct`, `fairplay-tracks`, `fairplay-idl-validation` | Element algorithm gates, EME enums, Safari tracks and the `ParcSafariIdentityEme` runtime feature Blink's IDL reader requires. |
-| `fairplay-identity-workers` | Worker identity and script requests; a throttle would set the user agent after Chrome's own. |
-| `fairplay-playback-controls` | The player observer's two virtuals and the controller's scrub call. |
-| `fairplay-compositing-direct` | The planner call, claim hook and CALayer compositing core. |
-| `platform-codecs`, `webaudio-aac` | Format support in parsers and the AudioToolbox decoder, and pipelined MojoAudioDecoder decodes for `decodeAudioData`. |
-| `parc-owned-tests` | Adds the owned test targets to Chromium's test binaries. |
-
-A few kept patches still include a narrow Parc API header from an `//parc/native:*_api` target or
-`parc/features.h`: the context menu, internal URLs, tabs API window state, intent picker, tab
-previews, download picker, browser delegate, autofill and the Mac framework path. Each is the
-smallest include that preserves its behaviour.
+Every patch the overlay still carries, what it changes, the files it touches and why it must stay a
+patch are listed by area in the [hooks and patches reference](chromium-hooks.md#the-areas). The
+decisions below explain the patches kept on purpose.
 
 ## Decisions
 
@@ -392,8 +334,10 @@ complete exactly once.
 4. Put the logic in a Parc-owned file and install the hook at the earliest point Chromium can call it.
 5. Move the Parc tests into the layer's `parc_tests` target, and make the unhooked upstream test pass
    unchanged.
-6. Update `overlay.json` under the [overlay rules](../AGENTS.md#engine-and-release-operations), list
-   the patch's reason in [kept patches](#kept-patches-and-why), and update the area's guide in place.
+6. Update `overlay.json` under the [overlay rules](../AGENTS.md#engine-and-release-operations) and
+   update the area's guide in place.
+7. In the same change, add, change, move or remove the hook's and patch's entries and counts in the
+   [hooks and patches reference](chromium-hooks.md); reviewers treat a missing update as blocking.
 
 A new hook or any other Chromium change first needs the user's approval, with the alternatives tried and
 why each fails ([Chromium boundary](../AGENTS.md#chromium-boundary)).

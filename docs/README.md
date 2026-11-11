@@ -10,7 +10,8 @@ Git and release notes retain history.
   [documentation policy](documentation.md), [interface review](visual-review.md).
 - [Developer onboarding](developer-onboarding.md),
   [development setup](development-setup.md), [engine artifacts](engine-artifacts.md).
-- [Engine architecture](../Engine/README.md), [how Parc changes Chromium](chromium-seams.md), [engine flags](engine-flags.md),
+- [Engine architecture](../Engine/README.md), [how Parc changes Chromium](chromium-seams.md),
+  [hooks and kept patches](chromium-hooks.md), [engine flags](engine-flags.md),
   [packaging](../tests/Packaging/README.md).
 - [Production release](master-release.md), [Homebrew delivery](homebrew-release.md),
   [software updates and What's New](software-update.md).

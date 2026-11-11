@@ -1,0 +1,140 @@
+# Chromium hooks: media, FairPlay and Blink
+
+Part of the [hooks and patches reference](chromium-hooks.md). The
+[FairPlay guide](../Engine/ParcNative/fairplay_chromium/README.md) explains the media service these
+hooks feed, and the [seams guide](chromium-seams.md#media-player-boundaries) explains the player,
+element and Media Source code Chromium calls directly. Answering code lives in `Engine/ParcNative/`
+unless a path says otherwise.
+
+## Media and FairPlay hooks
+
+Four of these are declared in `parc/chromium_hooks.h`; the rest in a Parc header installed in
+`content`, which carries `CONTENT_EXPORT` because content is a component library.
+
+- **`SetCdmServiceChildFlags`**: Widevine runs in Parc's dedicated CDM helper, the only helper
+  signed without library validation. `content/browser/media/service_factory.cc` builds the CDM
+  service's launch options itself. Installed in `ParcContentBrowserClient::CreateBrowserMainParts`
+  in `parc_content_clients.mm`, only when the bundle has the helper and before the interface thread
+  forbids blocking; `GetChildProcessPath` there resolves the flag.
+- **`SetFairPlayCdmCreator`**: FairPlay key requests go to Parc's FairPlay media service.
+  `MediaInterfaceProxy::CreateCdm` in `content/browser/media/media_interface_proxy.cc` calls it
+  after the Widevine request observer; false leaves the request to Chromium. Installed in
+  `PreMainMessageLoopRun`; answered by `FairPlayDocumentHost::CreateCdm` in `fairplay_media_host.cc`.
+  The [FairPlay guide](../Engine/ParcNative/fairplay_chromium/README.md#widevine-request-hook)
+  explains why the order needs a hook.
+- **`SetWidevineCdmRequestObserver`**: a site that belongs on FairPlay never starts Widevine; its
+  Widevine request is held and dropped with the document. Declared in
+  `content/browser/media/parc_fairplay_hooks.h` and defined in `media_interface_proxy.cc`. Installed
+  by `InstallFairPlayIdentity` in `fairplay_identity.mm`, which `native_engine_entry.mm` runs before
+  Chromium's command line exists and before any page or worker; answered by `OnWidevineCdmRequest`
+  there.
+- **`SetSafariIdentityQuery`** and its call-in **`FramePresentsSafariIdentity`**: Chromium code asks
+  whether a frame presents Safari's identity, so those pages get Safari's media behaviour. Same
+  header and file; asked by Parc's media session, input diagnostics and picture-in-picture patches
+  and by `FairPlayDocumentHost`. Installed by `InstallFairPlayIdentity`; answered by
+  `FramePresentsSafari` in `fairplay_identity.mm`.
+- **`SetParcWorkerIdentityHook`**: service, shared and dedicated workers on Safari-identity sites
+  report the same browser as their pages, in `navigator.userAgent` and in their requests. Declared in
+  `content/public/browser/parc_worker_identity.h`, defined in
+  `content/browser/service_worker/service_worker_version.cc` and called there and from
+  `shared_worker_host.cc`, `service_worker_loader_helpers.cc` and `worker_script_fetcher.cc`. A
+  request throttle would set the user agent after Chrome's own. Installed by
+  `InstallFairPlayIdentity`; answered by `ApplyWorkerIdentity`.
+- **`SetParcPlaybackTargetHandler`** and its call-ins **`SetParcPlaybackTargetAvailability`**,
+  **`SetParcPlaybackTarget`** and **`SetParcPlaybackTargetPickerDismissed`**: AirPlay works for video
+  on Safari-identity pages, with the device list, route and dismissal reaching each player. Declared
+  in `content/public/browser/parc_playback_target.h` and defined in
+  `content/browser/media/media_web_contents_observer.cc`, which already routes each player's
+  observer messages. Installed by `InstallNativeAirPlay` from `native_engine_entry.mm`; answered by
+  `NativeAirPlay` in `native_airplay.mm`.
+- **`SetAutoPictureInPictureVisibilitySync`**: automatic picture in picture on a tab switch waits
+  until the page's renderer confirms it is hidden, so the video never flashes. The wait starts and is
+  cancelled at private points in
+  `chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc`; unhooked builds enter at
+  once. Installed in the `ParcMainDelegate` constructor; answered by
+  `SynchronizeAutoPictureInPictureVisibility` in `native_media_controls.mm`.
+- **`SetVideoPictureInPictureSessionStarted`** and its call-in **`ScrubVideoPictureInPicture`**: each
+  picture-in-picture session gets only its own captions, and dragging Parc's scrubber pauses and
+  resumes as WebKit's scrubbing does. Both are defined in
+  `content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.cc`, as each
+  session starts; the call-in is declared in `video_overlay_window.mm`. Installed in
+  `PreMainMessageLoopRun`; answered by `StartPictureInPictureCaptionsSession` in
+  `video_overlay_window.mm`.
+
+## Blink and renderer hooks
+
+- **`SetMoveWebMediaPlayer`**: a Safari-identity video moved into another frame keeps playing when
+  the frame that made it goes away, and its sound, Now Playing, media keys and picture in picture
+  follow it to the new frame's tab. Declared in `parc_media_player_move.h`, installed at
+  `third_party/blink/renderer/core/html/media/`, with its slot in Parc's `parc_media_element.cc`
+  beside it, which calls it when the element moves. Blink's `modules_initializer.cc` installs it, as
+  it installs its own module hooks, because the move needs the element's audio output device from
+  modules; the adopting frame's `WebLocalFrameClient::ParcAdoptMediaPlayer` takes the player. A hook
+  keeps the move off `LocalFrameClient` and `CoreInitializer`.
+
+Other renderer points are direct calls from patched Blink and media files into Parc files installed
+beside them: the top-band tracker and network-activity counter on LocalFrame, the media element and
+AirPlay supplements, MediaCapabilities and EME rules, Safari's scripts, Media Source policy, the
+hand-off readers, renderer transitions and the compositing planner and layer claims.
+
+## Media and FairPlay patches
+
+- **`cdm-helper`**: only the CDM child-flags hook, in `service_factory.cc`.
+- **`fairplay-media`**: the Parc accessor on each media interface, player orchestration, the
+  CreateCdm and renderer-registration calls, Media Source gap bridging, late SourceBuffers, reverse
+  playback and mixing in the renderers, plus the FairPlay, Safari-identity and AirPlay hook
+  definitions and the GPU sandbox rule. It spans 154 files across `media/base`, `media/filters`,
+  `media/formats`, `media/mojo`, `media/renderers`, content's media code and Blink's platform media
+  and loader. Each change sits where Chromium's private player, demuxer and renderer state lives.
+- **`fairplay-compositing-direct`**: the nested render-pass planner call, the protected-layer claim
+  call and the CALayer compositing core, with a per-processor switch for protected layers. Touches 22
+  Viz display, frame-sink, CALayer tree, compositor and mojom files; candidate construction, the
+  rounded mask, root-pass processing and the parked-compositor flag stay at their call sites.
+- **`fairplay-identity-workers`**: the worker-identity definition and its four call points.
+- **`fairplay-playback-controls`**: the player observer's two virtuals, the controller's scrub call
+  and the picture-in-picture session and scrubbing hooks, across 24 media-session, controller,
+  picture-in-picture and media-controls files and their tests.
+- **`native-media-controls`**: Parc's media controls set each session's volume and route scrubbing,
+  which live in MediaSessionImpl's private state; adds a per-session volume multiplier in
+  `media_session_impl.{h,cc}`.
+- **`native-cast`**, **`native-presentation`**, **`native-gmc-presentation`**: the Cast device dialog
+  and presentation requests honor native page revocation and Parc's cast flow. The presentation patch
+  adds a per-request success validator and token, and the media-controls patch an interaction guard;
+  together 34 Cast dialog, media-router, global-media-controls and remoting files.
+- **`platform-codecs`**, **`webaudio-aac`**: format support inside Chromium's parsers and the
+  AudioToolbox decoder, and pipelined MojoAudioDecoder decodes for `decodeAudioData`. Parsers are
+  never forked, so these stay patches across 33 media, FFmpeg configuration, WebRTC and Web Audio
+  files. AMR and H.263 play only on Safari-identity pages ([decisions](chromium-seams.md#decisions)).
+- **`native-viz-capture-direct`**: a capture fix; failed or stale copies complete the capture oracle's
+  frame, in `frame_sink_video_capturer_impl.cc` and its test.
+- **`native-video-pip-direct`**: split links, repost warnings and picture-in-picture windows in
+  Chromium's web-contents delegate, and caption compositing in Blink, across nine delegate, Blink
+  track, style, paint and animation files.
+- **`native-auto-pip-host-occlusion-direct`**: Chromium's occlusion helper is behind an off flag,
+  merges shell and page states Parc keeps apart and goes quiet while not observing; entry's wait for
+  the renderer's hidden acknowledgement starts and is cancelled at seven private points. Only that
+  acknowledgement is a hook; the patch adds a host-occlusion setter in
+  `auto_picture_in_picture_tab_helper.{h,cc}`.
+- **`document-pip-minimum-size`**: Blink clamps script-requested sizes before the browser sees them;
+  `third_party/blink/common/widget/constants.cc` keeps the global 52-pixel minimum.
+- **`native-document-pip-content-settings`**: a document picture-in-picture window has no Views frame
+  or content-setting icons, in `chrome_content_settings_utils.cc`.
+
+## Blink and renderer patches
+
+- **`fairplay-identity-blink-direct`**: the media element's Safari-identity gates, EME, Media Source
+  and MediaCapabilities gates, Safari's script installation from LocalWindowProxy and the worker
+  controller, the player-move installer and the `ParcSafariIdentityEme` runtime feature Blink's IDL
+  reader requires. It spans 81 Blink core, modules, bindings and IDL files; the element's algorithm
+  and the bindings generator are private to Blink.
+- **`fairplay-tracks`**: Safari's text, audio and video track behaviour in 18 Blink track, cue and
+  binding files.
+- **`fairplay-idl-validation`**: lets Blink's IDL validator accept the `ParcSafariIdentityEme`
+  condition on `SecureContext`, so identity-gated EME bindings keep the secure-context gate. The
+  validator's rules live only in `supported_extended_attributes.py`.
+- **`top-band-color`**: the top-band tracker's event hooks at frame install, post-canvas sampling,
+  parsing, LCP, new documents and resource loads, with its Blink build registration and Mojo target,
+  in seven frame, document, loader and BUILD files. A lifecycle observer runs before canvas onpaint,
+  too early to sample.
+- **`blink-overlay-scrollbar-fade`**: overlay scrollbars fade correctly after a theme change; no seam
+  wraps the private fade timer in `scrollable_area.cc`.

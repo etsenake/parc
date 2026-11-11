@@ -53,8 +53,9 @@ engine builds, packaging or installations.
 
 Parc's engine logic lives in Parc-owned code. Chromium's own files change only
 as a last resort and only with the user's approval of that specific change.
-[How Parc changes Chromium](docs/chromium-seams.md) defines where code goes, the
-hook pattern and every patch kept today with its reason. The boundary keeps a
+[How Parc changes Chromium](docs/chromium-seams.md) defines where code goes and
+the hook pattern; the [hooks reference](docs/chromium-hooks.md) lists every hook
+and kept patch with its reason. The boundary keeps a
 Chromium upgrade to a version bump plus small refits, keeps engine work from
 recompiling large parts of Chromium, and keeps behaviour and speed unchanged.
 
@@ -89,7 +90,10 @@ Before any Chromium change:
   release in progress or a reviewer's suggestion is not approval.
 - Once approved, use the smallest form that works: a one-call hook in the `.cc`
   that owns the behaviour, with the unhooked path unchanged and no timer, extra
-  IPC hop, copy or polling. Record its reason in the guide's kept-patches list.
+  IPC hop, copy or polling.
+- Every change that adds, changes, moves or removes a hook or a patch, approved
+  or not, updates the [hooks reference](docs/chromium-hooks.md) in the same
+  change. Reviewers treat a missing update as a blocking finding.
 
 None of these excuse skipping that: the change is one line or small, faster to
 write, temporary or test-only; the file is already patched; a release or
