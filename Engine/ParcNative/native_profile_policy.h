@@ -5,6 +5,7 @@
 class PrefRegistrySimple;
 namespace parc {
 void RegisterNativeProfilePrefs(PrefRegistrySimple* registry);
+bool RestoreNativeSessionState();
 }  // namespace parc
 
 #endif  // PARC_NATIVE_NATIVE_PROFILE_POLICY_H_

@@ -74,6 +74,7 @@
 #include "native_host_route.h"
 #include "native_page_binding.h"
 #include "native_profiles.h"
+#include "native_profile_policy.h"
 #include "native_page_retirement.h"
 #include "pane_compositor.h"
 #include "tab_transfer.h"
@@ -3145,8 +3146,7 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
 @end
 @implementation PCNativeBrowserApplication (CookieStore)
 + (BOOL)restoresSessionCookies {
-  // native-session-cookies.patch: ProfileImpl::ShouldRestoreOldSessionCookies.
-  return YES;
+  return parc::RestoreNativeSessionState();
 }
 + (void)flushCookieStores {
   CHECK(NSThread.isMainThread);

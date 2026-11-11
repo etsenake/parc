@@ -71,6 +71,9 @@ void SetCdmServiceChildFlags(int flags);
 // chrome/browser/profiles/pref_service_builder_utils.cc; after all defaults.
 void SetRegisterProfilePrefs(void (*registration)(PrefRegistrySimple*));
 
+// chrome/browser/profiles/profile_impl.cc; cookies and session settings.
+void SetSessionRestorePolicy(bool (*policy)());
+
 }  // namespace parc_hooks
 
 #endif  // PARC_CHROMIUM_HOOKS_H_

@@ -162,7 +162,9 @@ use their parent's primary off-the-record profile; its retirement waits for
 private operations. Profile defaults disable browser sign-in and translation
 after Chrome and both dependency managers register their defaults, before
 services start; these defaults preserve stored user preferences. The
-existing policy of not restoring session cookies also stays in place.
+central native restore policy keeps website and extension session cookies and
+session-scoped permission decisions across relaunches without enabling Chrome's
+window/session restoration.
 Keep normal encryption separate from disposable test-Keychain modes, and
 preserve signing continuity.
 See [relaunch checks](../tests/NativeRelaunch/README.md) and

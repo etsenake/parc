@@ -86,7 +86,7 @@ void Initialized(const base::FilePath& path, Profile* profile) {
     record.profile.reset();
     record.keep_alive.reset();
   } else {
-    // Matches the old request-context default: session cookies are not restored.
+    // Keep Chrome from restoring its own windows and browsing session.
     profile->GetPrefs()->SetInteger(prefs::kRestoreOnStartup,
                                     SessionStartupPref::kPrefValueNewTab);
     InitializeNativeSearch(*profile);
@@ -247,6 +247,9 @@ void ShutdownNativeProfiles() {
   state.records.clear();
   state.initialize.Reset();
   state.changed.Reset();
+}
+bool RestoreNativeSessionState() {
+  return true;
 }
 void RegisterNativeProfilePrefs(PrefRegistrySimple* registry) {
   RegisterNativeSearchPreferences(*registry);
