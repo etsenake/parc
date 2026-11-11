@@ -280,6 +280,9 @@ Chrome's AppController notification at its caller; the existing quit-closure
 guard still protects startup keep-alive changes.
 Resource factories are installed from the main delegate before either browser
 or child resource initialization; Chromium's public startup headers stay pristine.
+The native application base implements Chromium's event-processor protocol.
+Scoped observer notification brackets each AppKit dispatch, including nested
+events, without changing Swift's event handling or application ownership.
 Second-launch routing is installed before Chromium unlocks its process singleton
 and removed at loop teardown. An installed native handler consumes the launch
 even when the native application declines it.

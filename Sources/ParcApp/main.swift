@@ -1,7 +1,7 @@
 import AppKit
 
 @objc(ParcApplication)
-final class ParcApplication: NSApplication, CrAppControlProtocol {
+final class ParcApplication: PCNativeApplication, CrAppControlProtocol {
     private var approvedTermination = false
     private var handlingEvent = false
     private let inputDiagnosticsEnabled = CommandLine.arguments.contains("--parc-input-diagnostics")

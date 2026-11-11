@@ -32,6 +32,7 @@
 #include "content/public/app/content_main.h"
 #include "content/public/app/content_main_runner.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/native_event_processor_mac.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "fairplay_identity.h"
@@ -249,6 +250,8 @@ parc_engine_initialize(int argc,
   CHECK(exit_code);
   CHECK([NSApp conformsToProtocol:@protocol(CrAppControlProtocol)])
       << "Native application must implement Chromium's sendEvent protocol";
+  CHECK([NSApp conformsToProtocol:@protocol(NativeEventProcessor)])
+      << "Native application must implement Chromium's native event protocol";
   if (!IsAbsolute(root_cache_path) || !IsAbsolute(framework_path) ||
       !IsAbsolute(bundle_path) || !IsAbsolute(helper_executable_path)) {
     return Fail(64, exit_code);

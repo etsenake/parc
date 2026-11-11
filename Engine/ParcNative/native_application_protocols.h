@@ -6,7 +6,7 @@
 #ifndef PARC_NATIVE_APPLICATION_PROTOCOLS_H_
 #define PARC_NATIVE_APPLICATION_PROTOCOLS_H_
 
-#import <Foundation/Foundation.h>
+#import <AppKit/AppKit.h>
 
 @protocol CrAppProtocol
 - (BOOL)isHandlingSendEvent;
@@ -14,6 +14,11 @@
 
 @protocol CrAppControlProtocol <CrAppProtocol>
 - (void)setHandlingSendEvent:(BOOL)handlingSendEvent;
+@end
+
+// Objective-C++ owns Chromium's C++ observer protocol behind this Swift base.
+__attribute__((visibility("default")))
+@interface PCNativeApplication : NSApplication
 @end
 
 #endif  // PARC_NATIVE_APPLICATION_PROTOCOLS_H_

@@ -112,9 +112,11 @@ Load command 4
         pkg.require_exports(pkg.PUBLIC_SYMBOLS)
 
     def test_missing_native_page_host_export_is_rejected_before_app_link(self):
-        exports = pkg.PUBLIC_SYMBOLS - {"_OBJC_CLASS_$_PCNativePageHost"}
-        with self.assertRaisesRegex(pkg.Refusal, "PCNativePageHost"):
-            pkg.require_exports(exports)
+        for name in ("PCNativePageHost", "PCNativeApplication"):
+            with self.subTest(name=name):
+                exports = pkg.PUBLIC_SYMBOLS - {"_OBJC_CLASS_$_" + name}
+                with self.assertRaisesRegex(pkg.Refusal, name):
+                    pkg.require_exports(exports)
 
     def test_manifest_never_accepts_other_output_or_mutated_resource(self):
         manifest = {"schema_version": 1, "engine_dir": str(self.engine), "framework": {"file": "old"}}

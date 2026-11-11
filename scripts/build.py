@@ -45,7 +45,7 @@ PUBLIC_SYMBOLS = {
     "_parc_engine_run_message_loop", "_parc_engine_request_quit_when_idle",
     "_parc_engine_quit_message_loop_if_idle", "_parc_engine_shutdown_if_idle",
     "_OBJC_CLASS_$_PCNativePage", "_OBJC_CLASS_$_PCNativeBrowserWindow",
-    "_OBJC_CLASS_$_PCNativePageHost",
+    "_OBJC_CLASS_$_PCNativePageHost", "_OBJC_CLASS_$_PCNativeApplication",
     "_OBJC_CLASS_$_PCNativeBrowserApplication", "_OBJC_CLASS_$_PCNativeRendererCrash",
 }
 CDM_HELPER = " (CDM)"

@@ -68,6 +68,7 @@ source_set("browser") {
     "native/native_airplay.h",
     "native/native_airplay.mm",
     "native/native_application_protocols.h",
+    "native/native_application.mm",
     "native/native_applescript.mm",
     "native/native_appkit_application.mm",
     "native/native_appkit_host.h",
