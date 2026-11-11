@@ -404,7 +404,7 @@ class EngineStringsTests(unittest.TestCase):
 
     def test_packed_overrides_cover_child_processes(self):
         delegate = (
-            REPO / "Engine/ParcChromium/parc_main_delegate.cc"
+            REPO / "Engine/ParcChromium/parc_main_delegate.mm"
         ).read_text()
         self.assertIn("ChildProductBrandingDelegate", delegate)
         self.assertIn("return delegate.get();", delegate)
