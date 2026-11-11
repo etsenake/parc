@@ -3,7 +3,8 @@
 @@ -67,6 +67,10 @@
      case media::EmeInitDataType::KEYIDS:
        return true;
- 
+-
++
 +    // Parc: FairPlay's types.
 +    case media::EmeInitDataType::SINF:
 +    case media::EmeInitDataType::SKD:
@@ -222,13 +223,15 @@
 @@ -132,6 +133,10 @@
  #include "media/mojo/mojom/speech_recognition_service.mojom.h"
  #endif  // BUILDFLAG(IS_WIN)
- 
+-
++
 +#if BUILDFLAG(IS_MAC)
 +#include "content/renderer/media/fairplay/fairplay_renderer_factories.h"
 +#endif  // BUILDFLAG(IS_MAC)
 +
  namespace {
- 
+-
++
  // This limit is much higher than it needs to be right now, because the logic
 @@ -464,14 +469,11 @@
    }
@@ -374,10 +377,12 @@
 +++ b/media/base/cdm_context.h
 @@ -6,11 +6,13 @@
  #define MEDIA_BASE_CDM_CONTEXT_H_
- 
+-
++
  #include <optional>
 +#include <vector>
- 
+-
++
  #include "base/functional/callback_forward.h"
  #include "base/memory/scoped_refptr.h"
  #include "base/unguessable_token.h"
@@ -385,7 +390,8 @@
 +#include "media/base/eme_constants.h"
  #include "media/base/media_export.h"
  #include "media/media_buildflags.h"
- 
+-
++
 @@ -56,6 +58,9 @@
      // A hardware reset happened. Some hardware context, e.g. hardware decoder
      // context may be lost.
@@ -394,7 +400,8 @@
 +    // Parc: every key status update, including updates with no usable key.
 +    kParcKeyStatusesChanged,
    };
- 
+-
++
    // Callback to notify the occurrence of an Event.
 @@ -125,6 +130,25 @@
    virtual chromeos::ChromeOsCdmContext* GetChromeOsCdmContext();
@@ -536,7 +543,8 @@
 +  if (init_data_type == "mpts") {
 +    return EmeInitDataType::MPTS;
 +  }
- 
+-
++
    return EmeInitDataType::UNKNOWN;
  }
 --- a/media/base/eme_constants.h
@@ -557,7 +565,8 @@
 +  MPTS,
 +  kMaxValue = MPTS,
  };
- 
+-
++
  // Returns the canonical string representation of |init_data_type| as defined
 @@ -72,6 +81,9 @@
    EME_CODEC_IAMF = 1 << 23,
@@ -567,7 +576,8 @@
 +  // key_systems_unittest.cc's test codecs.
 +  EME_CODEC_ALAC = 1 << 29,
  };
- 
+-
++
  // *_ALL values should only be used for masking, do not use them to specify
 @@ -95,6 +107,8 @@
    SupportedCodecs codecs = EME_CODEC_OPUS | EME_CODEC_FLAC;
@@ -657,7 +667,8 @@
 +  std::unique_ptr<Renderer> ParcReplaceRenderer(
 +      std::unique_ptr<Renderer> renderer) final;
 +  void ParcOnPipelineError(PipelineStatus status) final;
- 
+-
++
    const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
    const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
 @@ -297,6 +319,9 @@
@@ -667,11 +678,13 @@
 +  // Parc: `cdm_context_` was detached (SetCdm(nullptr)): it still picks the
 +  // renderer, but no renderer or native player gets it until it is set again.
 +  bool parc_cdm_detached_ = false;
- 
+-
++
    // By default, apply pitch adjustments.
    bool preserves_pitch_ = true;
 @@ -327,10 +352,89 @@
- 
+-
++
    // Called from non-media threads when an error occurs.
    RepeatingPipelineStatusCallback error_cb_;
 -
@@ -783,12 +796,14 @@
    pending_callbacks_.reset();
 +  parc_transitions_.Stop();
    weak_factory_.InvalidateWeakPtrs();
- 
+-
++
    DestroyRenderer();
 @@ -449,6 +561,14 @@
  void PipelineImpl::RendererWrapper::Seek(base::TimeDelta time) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
- 
+-
++
 +  if (parc_transitions_.turning()) {
 +    parc_transitions_.DeferUntilTurned(base::BindOnce(
 +        &RendererWrapper::Seek, weak_factory_.GetWeakPtr(), time));
@@ -801,17 +816,20 @@
    if (state_ != State::kPlaying) {
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
 @@ -461,6 +581,7 @@
- 
+-
++
    SetState(State::kSeeking);
    renderer_ended_ = false;
 +  parc_transitions_.OnSeeking();
- 
+-
++
    // Queue asynchronous actions required to start.
    DCHECK(!pending_callbacks_);
 @@ -490,6 +611,14 @@
  void PipelineImpl::RendererWrapper::Suspend() {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
- 
+-
++
 +  if (parc_transitions_.turning()) {
 +    parc_transitions_.DeferUntilTurned(
 +        base::BindOnce(&RendererWrapper::Suspend, weak_factory_.GetWeakPtr()));
@@ -825,24 +843,29 @@
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
 @@ -500,6 +629,7 @@
    DCHECK(!pending_callbacks_.get());
- 
+-
++
    SetState(State::kSuspending);
 +  parc_transitions_.OnSuspending();
- 
+-
++
    // Freeze playback and record the media time before destroying the renderer.
    shared_state_.media().renderer->SetPlaybackRate(0.0);
 @@ -546,6 +676,7 @@
- 
+-
++
    default_renderer_ = std::move(default_renderer);
    renderer_ended_ = false;
 +  parc_transitions_.OnResuming();
    base::TimeDelta start_timestamp =
        std::max(timestamp, demuxer_->GetStartTime());
- 
+-
++
 @@ -576,9 +707,18 @@
  void PipelineImpl::RendererWrapper::SetPlaybackRate(double playback_rate) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
- 
+-
++
 +  // Parc: a renderer leaving the start or the end in the other direction
 +  // can end again; a hand-off settles before the turn.
 +  if ((playback_rate < 0) != (playback_rate_ < 0)) {
@@ -858,7 +881,8 @@
 +    parc_transitions_.FollowPlayingClock();
 +    parc_transitions_.TurnIfNeeded();
    }
- 
+-
++
    if (state_ != State::kCreated && state_ != State::kStopping &&
 @@ -595,6 +735,9 @@
    if (shared_state_.media().renderer) {
@@ -868,7 +892,8 @@
 +    incoming->SetVolume(volume_);
 +  }
  }
- 
+-
++
  void PipelineImpl::RendererWrapper::SetLatencyHint(
 @@ -608,6 +751,9 @@
    if (shared_state_.media().renderer) {
@@ -878,7 +903,8 @@
 +    incoming->SetLatencyHint(latency_hint_);
 +  }
  }
- 
+-
++
  void PipelineImpl::RendererWrapper::SetPreservesPitch(bool preserves_pitch) {
 @@ -620,8 +766,25 @@
    if (shared_state_.media().renderer) {
@@ -915,7 +941,8 @@
 +    incoming->SetRenderMutedAudio(render_muted_audio_);
 +  }
  }
- 
+-
++
  void PipelineImpl::RendererWrapper::
 @@ -689,8 +855,52 @@
  void PipelineImpl::RendererWrapper::SetCdm(CdmContext* cdm_context,
@@ -1006,7 +1033,8 @@
 @@ -734,6 +964,28 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
- 
+-
++
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: a FairPlay CDM's keys reach only the FairPlay Renderer hosted next
 +  // to it in the GPU process.
@@ -1040,7 +1068,8 @@
 +  if (parc_transitions_.TakeOverAtSplit()) {
 +    return;
 +  }
- 
+-
++
    DCHECK(!renderer_ended_);
    renderer_ended_ = true;
 @@ -892,9 +1148,21 @@
@@ -1062,13 +1091,15 @@
    }
 +  change_completed_cb =
 +      parc_transitions_.CountTrackChange(std::move(change_completed_cb));
- 
+-
++
    demuxer_->OnTracksChanged(
        track_type, std::move(enabled_track_id), GetCurrentTimestamp(),
 @@ -1008,6 +1276,10 @@
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
    DVLOG(2) << __func__ << "(" << state << ", " << reason << ") ";
- 
+-
++
 +  if (parc_transitions_.OnBufferingStateChange(state)) {
 +    return;
 +  }
@@ -1079,7 +1110,8 @@
 @@ -1099,8 +1371,13 @@
                                                    bool success) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
- 
+-
++
 -  if (success)
 +  if (success) {
      cdm_context_ = cdm_context;
@@ -1090,21 +1122,25 @@
 +  }
    std::move(cdm_attached_cb).Run(success);
  }
- 
+-
++
 @@ -1116,7 +1393,8 @@
      return;
- 
+-
++
    main_task_runner_->PostTask(
 -      FROM_HERE, base::BindOnce(&PipelineImpl::OnEnded, weak_pipeline_));
 +      FROM_HERE, base::BindOnce(&PipelineImpl::OnEnded, weak_pipeline_,
 +                                playback_rate_ < 0));
  }
- 
+-
++
  void PipelineImpl::RendererWrapper::SetState(State next_state) {
 @@ -1146,6 +1424,12 @@
      return;
    }
- 
+-
++
 +  // Parc: a fast seek (HTMLMediaElement.fastSeek) plays from where the
 +  // demuxer landed it, at or before the target.
 +  if (std::optional<base::TimeDelta> landing =
@@ -1141,11 +1177,13 @@
 @@ -1244,7 +1531,7 @@
      return;
    }
- 
+-
++
 -  if (cdm_context_)
 +  if (cdm_context_ && !parc_cdm_detached_)
      shared_state_.media().renderer->SetCdm(cdm_context_, base::DoNothing());
- 
+-
++
    if (latency_hint_)
 @@ -1286,6 +1573,8 @@
      base::AutoLock auto_lock(shared_state_.lock());
@@ -1154,7 +1192,8 @@
 +  // Parc: a renderer that took over read the demuxer's hand-off streams.
 +  parc_transitions_.DestroyRenderer(std::move(renderer));
  }
- 
+-
++
  void PipelineImpl::RendererWrapper::ReportMetadata(StartType start_type) {
 @@ -1398,6 +1687,7 @@
    DCHECK(!client_);
@@ -1165,9 +1204,11 @@
    last_media_time_ = base::TimeDelta();
    seek_time_ = kNoTimestamp;
 @@ -1529,10 +1819,9 @@
- 
+-
++
    // Not checking IsRunning() so we can set the playback rate before Start().
- 
+-
++
 -  if (playback_rate < 0.0) {
 -    DVLOG(1) << __func__ << ": Invalid playback rate " << playback_rate;
 -    return;
@@ -1175,13 +1216,15 @@
 +  // Parc: only a Safari-identity element passes a negative rate (Blink's
 +  // HTMLMediaElement::setPlaybackRate drops it for a Media Source, as WebKit
 +  // does); the renderer plays it (ParcRendererTransitions::RendererRate()).
- 
+-
++
    playback_rate_ = playback_rate;
    media_task_runner_->PostTask(
 @@ -1589,6 +1878,14 @@
                                  preserves_pitch));
  }
- 
+-
++
 +void PipelineImpl::ParcOnAudioOutputDeviceChanged() {
 +  DCHECK(thread_checker_.CalledOnValidThread());
 +  media_task_runner_->PostTask(
@@ -1192,7 +1235,8 @@
 +
  void PipelineImpl::SetRenderMutedAudio(bool render_muted_audio) {
    DCHECK(thread_checker_.CalledOnValidThread());
- 
+-
++
 @@ -1630,7 +1927,7 @@
    //
    // It is expected that such events are transient and will be recovered as
@@ -1236,18 +1280,21 @@
 +  // Parc: null detaches the CDM on macOS (RendererWrapper::SetCdm()).
 +  DCHECK(cdm_context || BUILDFLAG(IS_MAC));
    DCHECK(cdm_attached_cb);
- 
+-
++
    // Not checking IsRunning() so we can set the CDM before Start().
 @@ -1714,11 +2030,16 @@
    client_->OnFallback(std::move(status).AddHere());
  }
- 
+-
++
 -void PipelineImpl::OnEnded() {
 +void PipelineImpl::OnEnded(bool parc_backward) {
    DVLOG(2) << __func__;
    DCHECK(thread_checker_.CalledOnValidThread());
    DCHECK(IsRunning());
- 
+-
++
 +  // Parc: playback already left an end the other direction reached.
 +  if (parc_backward != (playback_rate_ < 0)) {
 +    return;
@@ -1268,7 +1315,8 @@
 +      return "NativeHlsRenderer";
    }
  }
- 
+-
++
 @@ -67,4 +71,8 @@
    // Default implementation of OnExternalVideoFrameRequest is to no-op.
  }
@@ -1300,7 +1348,8 @@
 +  kFairPlayHls = 13,  // Parc: NativeHlsRendererFactory (macOS)
 +  kMaxValue = kFairPlayHls,
  };
- 
+-
++
  // Get the name of the Renderer for `renderer_type`. The returned name could be
 @@ -131,6 +134,10 @@
    // enforce RendererType registration for all Renderer implementations.
@@ -1325,7 +1374,8 @@
 +      // so the key system selector never lets one reach here.
 +      break;
    }
- 
+-
++
    NOTREACHED() << "Unexpected session type " << static_cast<int>(session_type);
 @@ -129,6 +133,10 @@
        return cdm::kKeyIds;
@@ -1348,7 +1398,8 @@
 +#include <string>
  #include <utility>
 +#include <vector>
- 
+-
++
  #include "base/functional/bind.h"
  #include "base/functional/callback_helpers.h"
  #include "base/memory/raw_ptr.h"
@@ -1386,7 +1437,8 @@
 +    parc_stream_hand_off_->AbortRead();
 +  }
  }
- 
+-
++
  void ChunkDemuxerStream::CompletePendingReadIfPossible() {
    base::AutoLock auto_lock(lock_);
 +  if (parc_stream_hand_off_) {
@@ -1394,7 +1446,8 @@
 +  }
    if (!read_cb_)
      return;
- 
+-
++
 @@ -108,6 +124,9 @@
      std::move(read_cb_).Run(DemuxerStream::kOk,
                              {StreamParserBuffer::CreateEOSBuffer()});
@@ -1403,15 +1456,18 @@
 +    parc_stream_hand_off_->EndRead();
 +  }
  }
- 
+-
++
  bool ChunkDemuxerStream::IsSeekWaitingForData() const {
 @@ -123,8 +142,17 @@
        << state_;
- 
+-
++
    stream_->Seek(time);
 +  ParcRestartHandOffAfterSeek_Locked();
  }
- 
+-
++
 +void ChunkDemuxerStream::ParcRestartHandOffAfterSeek_Locked() {
 +  // Parc: after a hand-off's split only the hand-off reader reads on.
 +  parc_returned_.clear();
@@ -1424,13 +1480,15 @@
    if (append_observer_cb_)
      append_observer_cb_.Run(&buffers);
 @@ -138,10 +166,67 @@
- 
+-
++
    if (read_cb_)
      CompletePendingReadIfPossible_Locked();
 +  if (parc_stream_hand_off_) {
 +    parc_stream_hand_off_->CompleteRead();
 +  }
- 
+-
++
    return true;
 +}
 +
@@ -1473,7 +1531,8 @@
 +    CompletePendingReadIfPossible_Locked();
 +  }
  }
- 
+-
++
 +void ChunkDemuxerStream::ParcRemove(base::TimeDelta start,
 +                                    base::TimeDelta end,
 +                                    base::TimeDelta duration) {
@@ -1498,7 +1557,8 @@
 +    stream_->ParcSetSafariMediaSource(parc_safari_media_source_);
      return true;
    }
- 
+-
++
 @@ -247,6 +333,7 @@
    if (!stream_) {
      DCHECK_EQ(state_, UNINITIALIZED);
@@ -1506,7 +1566,8 @@
 +    stream_->ParcSetSafariMediaSource(parc_safari_media_source_);
      return true;
    }
- 
+-
++
 @@ -312,6 +399,25 @@
    return is_enabled_;
  }
@@ -1553,7 +1614,8 @@
 +    }
    }
  }
- 
+-
++
 @@ -344,10 +456,176 @@
             << "type " << type_
             << " - " << state_ << " -> " << state;
@@ -1736,7 +1798,8 @@
 @@ -373,8 +651,26 @@
    }
    DCHECK(state_ == RETURNING_DATA_FOR_READS);
- 
+-
++
 -  auto [status, buffers] = GetPendingBuffers_Locked();
 +  // Parc: once a hand-off split is asked for, this reader gets what comes
 +  // before it, then end of stream (ParcHandOffReader()).
@@ -1755,7 +1818,8 @@
 +    std::move(read_cb_).Run(kOk, std::move(out));
 +    return;
 +  }
- 
+-
++
 +  auto [status, buffers] = GetPendingBuffers_Locked(requested_buffer_count_);
 +
    // If the status from |stream_| is kNeedBuffer and there's no buffers,
@@ -1763,7 +1827,8 @@
    // 'requested_buffer_count_' does not need to be cleared to 0.
 @@ -396,16 +692,16 @@
  }
- 
+-
++
  std::pair<SourceBufferStreamStatus, DemuxerStream::DecoderBufferVector>
 -ChunkDemuxerStream::GetPendingBuffers_Locked() {
 +ChunkDemuxerStream::GetPendingBuffers_Locked(uint32_t count) {
@@ -1807,7 +1872,8 @@
          return {status, std::move(output_buffers)};
      }
    }
- 
+-
++
    DCHECK_EQ(output_buffers.size(),
 -            static_cast<size_t>(requested_buffer_count_));
 +            static_cast<size_t>(count));
@@ -1835,10 +1901,12 @@
 +  if (parc_requested_fast_seek_ && parc_requested_fast_seek_->target == time) {
 +    parc_fast_seek_ = std::exchange(parc_requested_fast_seek_, std::nullopt);
    }
- 
+-
++
    SeekAllSources(time);
    StartReturningData();
- 
+-
++
 +  // Parc: WebKit redoes the eviction estimate of the active source buffers
 +  // at the seek's target (MediaSourcePrivate::reenqueueMediaForTime).
 +  if (parc_safari_eviction_) {
@@ -1853,18 +1921,21 @@
      DVLOG(1) << "Seek() : waiting for more data to arrive.";
      return;
 @@ -634,6 +948,8 @@
- 
+-
++
    AbortPendingReads_Locked();
    SeekAllSources(seek_time);
 +  // Parc: a later seek replaces this one; it doesn't land.
 +  parc_fast_seek_.reset();
- 
+-
++
    if (!seek_cb_) {
      cancel_next_seek_ = true;
 @@ -643,6 +959,43 @@
    RunSeekCB_Locked(PIPELINE_OK);
  }
- 
+-
++
 +void ChunkDemuxer::ParcSetFastSeek(base::TimeDelta target,
 +                                   base::TimeDelta tolerance_before) {
 +  base::AutoLock auto_lock(lock_);
@@ -1908,14 +1979,16 @@
 @@ -656,12 +1009,13 @@
    if (!audio_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
- 
+-
++
 -  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING) ||
 +  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING &&
 +       !ParcCanAddIdAfterInit_Locked()) ||
        IsValidId_Locked(id)) {
      return kReachedIdLimit;
    }
- 
+-
++
 -  DCHECK(init_cb_);
 +  DCHECK(init_cb_ || state_ == INITIALIZED);
    return AddIdInternal(id, StreamParserFactory::Create(std::move(audio_config)),
@@ -1924,14 +1997,16 @@
 @@ -679,12 +1033,13 @@
    if (!video_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
- 
+-
++
 -  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING) ||
 +  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING &&
 +       !ParcCanAddIdAfterInit_Locked()) ||
        IsValidId_Locked(id)) {
      return kReachedIdLimit;
    }
- 
+-
++
 -  DCHECK(init_cb_);
 +  DCHECK(init_cb_ || state_ == INITIALIZED);
    return AddIdInternal(id, StreamParserFactory::Create(std::move(video_config)),
@@ -1940,19 +2015,22 @@
 @@ -696,17 +1051,18 @@
             << " codecs=" << codecs;
    base::AutoLock auto_lock(lock_);
- 
+-
++
 -  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING) ||
 +  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING &&
 +       !ParcCanAddIdAfterInit_Locked()) ||
        IsValidId_Locked(id)) {
      return kReachedIdLimit;
    }
- 
+-
++
    // TODO(wolenetz): Change to DCHECK once less verification in release build is
    // needed. See https://crbug.com/786975.
 -  CHECK(init_cb_);
 +  CHECK(init_cb_ || state_ == INITIALIZED);
- 
+-
++
    std::unique_ptr<media::StreamParser> stream_parser(
 -      CreateParserForTypeAndCodecs(content_type, codecs, media_log_.get()));
 +      ParcCreateParser_Locked(content_type, codecs));
@@ -1968,11 +2046,13 @@
 +  source_state->ParcSetDolbyVisionCallback(base::BindRepeating(
 +      &ChunkDemuxer::ParcOnDolbyVisionAppended, base::Unretained(this)));
 +  source_state->ParcSetSafariInitSegmentRules(parc_safari_init_segment_rules_);
- 
+-
++
    // TODO(wolenetz): Change these to DCHECKs or switch to returning
    // kReachedIdLimit once less verification in release build is needed. See
 @@ -774,7 +1135,18 @@
- 
+-
++
    source_state->Init(base::BindOnce(&ChunkDemuxer::OnSourceInitDone,
                                      base::Unretained(this), id),
 -                     expected_codecs, encrypted_media_init_data_cb_);
@@ -1988,7 +2068,8 @@
 +                           }
 +                           demuxer->encrypted_media_init_data_cb_.Run(type, data);
 +                         }, base::Unretained(this), id));
- 
+-
++
    // TODO(wolenetz): Change to DCHECKs once less verification in release build
    // is needed. See https://crbug.com/786975.
 @@ -802,7 +1174,10 @@
@@ -1999,7 +2080,8 @@
 +    parc_source_key_cb_.Run(id, EmeInitDataType::UNKNOWN, {});
    CHECK(IsValidId_Locked(id));
 +  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
- 
+-
++
    source_state_map_.erase(id);
    pending_source_init_ids_.erase(id);
 @@ -830,6 +1205,7 @@
@@ -2008,14 +2090,16 @@
    id_to_streams_map_.erase(id);
 +  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
  }
- 
+-
++
  Ranges<base::TimeDelta> ChunkDemuxer::GetBufferedRanges(
 @@ -870,35 +1246,263 @@
                                     base::TimeDelta curr_time,
                                     TrackChangeCB change_completed_cb) {
    base::AutoLock auto_lock(lock_);
 +  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
- 
+-
++
 +  const bool is_audio = track_type == DemuxerStream::AUDIO;
 +  const OwnedChunkDemuxerStreamVector& streams =
 +      is_audio ? audio_streams_ : video_streams_;
@@ -2073,7 +2157,8 @@
 +    }
 +  }
 +  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
- 
+-
++
 -  bool is_audio = track_type == DemuxerStream::AUDIO;
 -  for (const auto& stream : is_audio ? audio_streams_ : video_streams_) {
 -    if (stream && stream.get() != enabled_stream) {
@@ -2088,10 +2173,12 @@
 +      break;
      }
    }
- 
+-
++
    std::move(change_completed_cb).Run(enabled_stream);
  }
- 
+-
++
 +void ChunkDemuxer::ParcSetSourceKeyCallback(ParcSourceKeyCB callback) {
 +  base::AutoLock auto_lock(lock_);
 +  parc_source_key_cb_ = std::move(callback);
@@ -2100,7 +2187,8 @@
  void ChunkDemuxer::DisableCanChangeType() {
    supports_change_type_ = false;
  }
- 
+-
++
 +void ChunkDemuxer::RestrictCanChangeType(ChangeTypeFilter filter) {
 +  base::AutoLock auto_lock(lock_);
 +  change_type_filter_ = std::move(filter);
@@ -2319,14 +2407,16 @@
 +  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
 +  return evicted;
  }
- 
+-
++
  bool ChunkDemuxer::AppendToParseBuffer(const std::string& id,
 @@ -1013,6 +1641,7 @@
                   << state_;
          return StreamParser::ParseStatus::kFailed;
      }
 +    ParcShareMediaSourceBuffered_Locked(old_waiting_for_data);
- 
+-
++
      // Check to see if newly parsed data was at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
 @@ -1075,6 +1704,8 @@
@@ -2335,7 +2425,8 @@
      }
 +    ParcShareMediaSourceBuffered_Locked(old_waiting_for_data);
 +    ParcContinueSplit_Locked();
- 
+-
++
      // Check to see if data was appended at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
 @@ -1102,6 +1733,7 @@
@@ -2349,7 +2440,8 @@
 @@ -1136,10 +1768,113 @@
    if (start == duration_)
      return;
- 
+-
++
 +  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
    source_state_map_[id]->Remove(start, end, duration_);
 +  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
@@ -2385,7 +2477,8 @@
 +  result.ended = state_ == ENDED;
 +  return result;
  }
- 
+-
++
 +void ChunkDemuxer::ParcPurgeForMemoryPressure(const std::string& id,
 +                                              base::TimeDelta media_time,
 +                                              bool active) {
@@ -2462,7 +2555,8 @@
                                   const std::string& codecs) {
 @@ -1159,6 +1894,25 @@
    DCHECK(IsValidId_Locked(id));
- 
+-
++
    if (!supports_change_type_) {
 +    return false;
 +  }
@@ -2485,19 +2579,23 @@
 +      !change_type_filter_.Run(filter_type, filter_codecs)) {
      return false;
    }
- 
+-
++
 @@ -1166,7 +1920,7 @@
    // initialization segment for the source buffer corresponding to |id|.
- 
+-
++
    std::unique_ptr<media::StreamParser> stream_parser(
 -      CreateParserForTypeAndCodecs(content_type, codecs, media_log_.get()));
 +      ParcCreateParser_Locked(content_type, codecs));
    return !!stream_parser;
  }
- 
+-
++
 @@ -1182,7 +1936,7 @@
    DCHECK(IsValidId_Locked(id));
- 
+-
++
    std::unique_ptr<media::StreamParser> stream_parser(
 -      CreateParserForTypeAndCodecs(content_type, codecs, media_log_.get()));
 +      ParcCreateParser_Locked(content_type, codecs));
@@ -2506,30 +2604,36 @@
    source_state_map_[id]->ChangeType(std::move(stream_parser),
 @@ -1244,6 +1998,7 @@
    DCHECK(duration_td.is_positive());
- 
+-
++
    user_specified_duration_ = duration;
 +  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
    duration_ = duration_td;
    host_->SetDuration(duration_);
- 
+-
++
 @@ -1251,6 +2006,7 @@
         ++itr) {
      itr->second->OnSetDuration(duration_);
    }
 +  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
  }
- 
+-
++
  bool ChunkDemuxer::IsParsingMediaSegment(const std::string& id) {
 @@ -1316,6 +2072,7 @@
         ++itr) {
      itr->second->MarkEndOfStream();
    }
 +  ParcContinueSplit_Locked();
- 
+-
++
    CompletePendingReadsIfPossible();
- 
+-
++
 @@ -1332,6 +2089,10 @@
- 
+-
++
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
      RunSeekCB_Locked(PIPELINE_OK);
 +  // Parc: and so does the end of stream (see Remove()).
@@ -2537,7 +2641,8 @@
 +    progress_cb_.Run();
 +  }
  }
- 
+-
++
  void ChunkDemuxer::UnmarkEndOfStream() {
 @@ -1440,6 +2201,10 @@
    CHECK(IsValidId_Locked(source_id));
@@ -2606,7 +2711,8 @@
 +    parc_streams_added_cb_.Run(added, tracks);
 +  }
  }
- 
+-
++
  // static
 @@ -1523,8 +2339,22 @@
    DCHECK(track_id_to_demux_stream_map_.find(media_track_id) ==
@@ -2645,10 +2751,12 @@
 +    }
      ranges_list.push_back(itr->second->GetBufferedRanges(duration_, ended));
    }
- 
+-
++
 @@ -1605,13 +2442,17 @@
  }
- 
+-
++
  void ChunkDemuxer::StartReturningData() {
 +  parc_returning_data_ = true;
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
@@ -2658,7 +2766,8 @@
 +  // Parc: a split asked for during the seek is placed from its time on.
 +  ParcContinueSplit_Locked();
  }
- 
+-
++
  void ChunkDemuxer::AbortPendingReads_Locked() {
 +  parc_returning_data_ = false;
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
@@ -2666,7 +2775,8 @@
      itr->second->AbortReads();
 @@ -1619,6 +2460,8 @@
  }
- 
+-
++
  void ChunkDemuxer::SeekAllSources(base::TimeDelta seek_time) {
 +  parc_seek_time_ = seek_time;
 +  parc_unstarted_tracks_.clear();
@@ -2706,7 +2816,8 @@
 +++ b/media/filters/chunk_demuxer.h
 @@ -9,6 +9,7 @@
  #include <stdint.h>
- 
+-
++
  #include <map>
 +#include <optional>
  #include <set>
@@ -2722,13 +2833,16 @@
  #include "media/base/stream_parser.h"
  #include "media/filters/source_buffer_parse_warnings.h"
 @@ -31,15 +34,18 @@
- 
+-
++
  namespace media {
- 
+-
++
 +class ParcDemuxerHandOff;
 +class ParcStreamHandOff;
  class SourceBufferStream;
- 
+-
++
  class AudioDecoderConfig;
  class VideoDecoderConfig;
 -
@@ -2741,12 +2855,14 @@
 -
 +
    ChunkDemuxerStream() = delete;
- 
+-
++
    ChunkDemuxerStream(Type type, MediaTrack::Id media_track_id);
 @@ -74,6 +80,27 @@
    void Remove(base::TimeDelta start, base::TimeDelta end,
                base::TimeDelta duration);
- 
+-
++
 +  // Parc: see SourceBufferStream::ParcKeyframeAtOrBefore, ParcRemoveBefore
 +  // and ParcRemoveFrom.
 +  base::TimeDelta ParcKeyframeAtOrBefore(base::TimeDelta time) const;
@@ -2817,10 +2933,12 @@
 +
    // Sets the memory limit, in bytes, on the SourceBufferStream.
    void SetStreamMemoryLimit(size_t memory_limit);
- 
+-
++
 @@ -174,7 +235,45 @@
    void CompletePendingReadIfPossible_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
- 
+-
++
    std::pair<SourceBufferStreamStatus, DemuxerStream::DecoderBufferVector>
 -  GetPendingBuffers_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 +  GetPendingBuffers_Locked(uint32_t count) EXCLUSIVE_LOCKS_REQUIRED(lock_);
@@ -2862,7 +2980,8 @@
 +  void ParcPullToSplit_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 +  // Answers the hand-off reader's pending read if possible.
 +  void ParcCompleteHandOffRead_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
- 
+-
++
    // Specifies the type of the stream.
    const Type type_;
 @@ -198,6 +297,13 @@
@@ -2877,7 +2996,8 @@
 +  // Taken for a hand-off that ended before its split: read before |stream_|.
 +  BufferQueue parc_returned_ GUARDED_BY(lock_);
  };
- 
+-
++
  // Demuxer implementation that allows chunks of media data to be passed
 @@ -248,6 +354,10 @@
    // associated JS method calls.
@@ -2887,7 +3007,8 @@
 +  void ParcSetFastSeek(base::TimeDelta target,
 +                       base::TimeDelta tolerance_before) override;
 +  std::optional<base::TimeDelta> ParcTakeFastSeekLanding() override;
- 
+-
++
    // Registers a new `id` to use for AppendToParseBuffer(),
    // RunSegmentParserLoop(), AppendChunks(), etc calls. `content_type` indicates
 @@ -293,7 +403,11 @@
@@ -2897,11 +3018,13 @@
 +  using ParcSourceKeyCB = base::RepeatingCallback<void(
 +      const std::string&, EmeInitDataType, const std::vector<uint8_t>&)>;
 +  void ParcSetSourceKeyCallback(ParcSourceKeyCB callback);
- 
+-
++
 +
    // Gets the currently buffered ranges for the specified ID.
    Ranges<base::TimeDelta> GetBufferedRanges(const std::string& id) const;
- 
+-
++
 @@ -313,6 +427,69 @@
    void SetPlaybackRate(double rate) override {}
 -
@@ -3006,7 +3129,8 @@
 +    bool ended = false;
 +  };
 +  std::optional<ParcBufferedState> ParcGetBufferedState() const;
- 
+-
++
    // Returns whether or not the source buffer associated with |id| can change
    // its parser type to one which parses |content_type| and |codecs|.
 @@ -491,6 +696,15 @@
@@ -3022,7 +3146,8 @@
 +  // has had no init segment yet.
 +  bool ParcCanAddIdAfterInit_Locked() const;
 +  bool ParcAwaitsLateInit_Locked(const std::string& id) const;
- 
+-
++
    // Creates a DemuxerStream of the specified |type| for the SourceBufferState
    // with the given |source_id|.
 @@ -550,6 +764,7 @@
@@ -3031,10 +3156,12 @@
    const base::RepeatingClosure progress_cb_;
 +  ParcSourceKeyCB parc_source_key_cb_;
    EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
- 
+-
++
    // MediaLog for reporting messages and properties to debug content and engine.
 @@ -595,10 +810,84 @@
- 
+-
++
    std::map<MediaTrack::Id, raw_ptr<ChunkDemuxerStream, CtnExperimental>>
        track_id_to_demux_stream_map_;
 -
@@ -3118,7 +3245,8 @@
 -
 +
  }  // namespace media
- 
+-
++
  #endif  // MEDIA_FILTERS_CHUNK_DEMUXER_H_
 --- a/media/filters/demuxer_manager.cc
 +++ b/media/filters/demuxer_manager.cc
@@ -3130,7 +3258,8 @@
  #include "net/storage_access_api/status.h"
  #include "url/gurl.h"
 +#include "url/url_constants.h"
- 
+-
++
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
  #include "base/time/time.h"
 @@ -232,6 +234,25 @@
@@ -3167,12 +3296,14 @@
 +#if BUILDFLAG(IS_MAC)
 +  parc_native_hls_demuxer_ = false;
 +#endif  // BUILDFLAG(IS_MAC)
- 
+-
++
    // We can only do a universal suspend for posters, unless the flag is enabled.
    auto suspended_mode = Pipeline::StartType::kSuspendAfterMetadataForAudioOnly;
 @@ -249,12 +273,48 @@
    }
- 
+-
++
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
 -  if (hls_fallback_ || IsManifestDemuxerURL()) {
 +#if BUILDFLAG(IS_MAC)
@@ -3365,7 +3496,8 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    return loaded_url_.path().ends_with(".m3u8");
 @@ -408,7 +592,7 @@
- 
+-
++
  std::unique_ptr<Demuxer> DemuxerManager::CreateFFmpegDemuxer() {
    DCHECK(data_source_);
 -  return std::make_unique<FFmpegDemuxer>(
@@ -3380,7 +3512,8 @@
 +  demuxer->ParcSetSafariCodecs(client_->PresentsParcSafariIdentity());
 +  return demuxer;
  }
- 
+-
++
  void DemuxerManager::OnFFmpegMediaTracksUpdated(
 @@ -474,6 +660,111 @@
            std::move(engine), media_log_.get()));
@@ -3642,13 +3775,15 @@
 +  void ParcSetInbandAudioTracks(const std::vector<ParcInbandAudioTrack>& tracks,
 +                                ParcInbandAudioTrackEnabledCB set_enabled);
 +#endif  // BUILDFLAG(IS_MAC)
- 
+-
++
    void AddTrack(const MediaTrack&);
    void RemoveTrack(const MediaTrack&);
 @@ -207,6 +307,13 @@
    // which becomes the default demuxer to use.
    std::unique_ptr<Demuxer> demuxer_override_;
- 
+-
++
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: CreateDemuxer chose Safari's native HLS demuxer.
 +  bool parc_native_hls_demuxer_ = false;
@@ -3671,10 +3806,12 @@
 +  }
    dv_info.color_space = mp4::ParseDolbyVisionColorSpace(
        dovi_config->codec_profile, dovi_config->dv_bl_signal_compatibility_id);
- 
+-
++
 @@ -459,6 +463,11 @@
  FourCC ProtectionSchemeInfo::BoxType() const { return FOURCC_SINF; }
- 
+-
++
  bool ProtectionSchemeInfo::Parse(BoxReader* reader) {
 +  // Parc: keep the payload; the reader's buffer is this box, its position
 +  // just past the header.
@@ -3707,7 +3844,8 @@
 @@ -1454,7 +1476,9 @@
      video_spatial_format.projection_type = sv3d.projection.type;
    }
- 
+-
++
 -  if (video_info.profile == VIDEO_CODEC_PROFILE_UNKNOWN) {
 +  // H.263 has no VideoCodecProfile.
 +  if (video_info.profile == VIDEO_CODEC_PROFILE_UNKNOWN &&
@@ -3718,7 +3856,8 @@
 @@ -1592,6 +1616,75 @@
    return true;
  }
- 
+-
++
 +PCMConfiguration::PCMConfiguration() = default;
 +PCMConfiguration::PCMConfiguration(const PCMConfiguration& other) = default;
 +PCMConfiguration::~PCMConfiguration() = default;
@@ -3790,11 +3929,13 @@
 +
  OpusSpecificBox::OpusSpecificBox()
      : seek_preroll(base::Milliseconds(80)), codec_delay_in_frames(0) {}
- 
+-
++
 @@ -1923,6 +2016,30 @@
      }
    }
- 
+-
++
 +  const FourCC original_format =
 +      format == FOURCC_ENCA ? sinf.format.format : format;
 +  if (original_format == FOURCC_IPCM || original_format == FOURCC_FPCM) {
@@ -3831,7 +3972,8 @@
 +  // Parc: the box's payload (its frma, schm and schi boxes) as stored, which
 +  // Safari's Media Source reports as FairPlay's "sinf" init data.
 +  std::vector<uint8_t> raw_payload;
- 
+-
++
    bool HasSupportedScheme() const;
    bool IsCbcsEncryptionScheme() const;
 @@ -343,6 +346,13 @@
@@ -3846,7 +3988,8 @@
 +  // Parc: dv_bl_signal_compatibility_id.
 +  uint8_t parc_compatibility_id = 0;
  };
- 
+-
++
  struct MEDIA_EXPORT Stereoscopic3DVideo : Box {
 @@ -437,6 +447,41 @@
    uint32_t sample_rate;
@@ -3888,7 +4031,8 @@
 +
 +  uint8_t level = 0;
  };
- 
+-
++
  struct MEDIA_EXPORT OpusSpecificBox : Box {
 @@ -509,6 +554,8 @@
    ElementaryStreamDescriptor esds;
@@ -3904,7 +4048,8 @@
 @@ -12,6 +12,7 @@
  #include <utility>
  #include <vector>
- 
+-
++
 +#include "base/base64.h"
  #include "base/containers/to_vector.h"
  #include "base/functional/callback_helpers.h"
@@ -3912,16 +4057,19 @@
 @@ -41,6 +42,10 @@
  #include "media/formats/mp4/stream_parser_metadata_track.h"
  #include "media/formats/mpeg/adts_constants.h"
- 
+-
++
 +#if BUILDFLAG(USE_PROPRIETARY_CODECS)
 +#include "media/formats/mp4/dolby_vision.h"
 +#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
 +
  namespace media::mp4 {
- 
+-
++
  namespace {
 @@ -52,6 +57,21 @@
- 
+-
++
  // Caller should be prepared to handle return of EncryptionScheme::kUnencrypted
  // in case of unsupported scheme.
 +// Parc: FairPlay's "sinf" init data for a protected track, as Safari's Media
@@ -3943,9 +4091,11 @@
    if (!sinf.HasSupportedScheme())
      return EncryptionScheme::kUnencrypted;
 @@ -173,6 +193,10 @@
- 
+-
++
  MP4StreamParser::~MP4StreamParser() = default;
- 
+-
++
 +void MP4StreamParser::ParcIgnoreDeclaredCodecs() {
 +  parc_ignore_declared_codecs_ = true;
 +}
@@ -3958,7 +4108,8 @@
    int detected_video_track_count = 0;
    int detected_metadata_track_count = 0;
 +  std::vector<std::vector<uint8_t>> sinf_init_data;
- 
+-
++
    for (std::vector<Track>::const_iterator track = moov_->tracks.begin();
         track != moov_->tracks.end(); ++track) {
 @@ -497,8 +522,28 @@
@@ -4058,7 +4209,8 @@
                  << "audio object type 0x" << std::hex
 @@ -703,7 +781,22 @@
        }
- 
+-
++
        SampleFormat sample_format;
 -      if (entry.samplesize == 8) {
 +      if (audio_format == FOURCC_FPCM) {
@@ -4083,7 +4235,8 @@
 @@ -768,11 +861,18 @@
          desc_idx = 0;
        const VideoSampleEntry& entry = samp_descr.video_entries[desc_idx];
- 
+-
++
 -      if (!entry.IsFormatValid()) {
 +      // Parc: 3GPP's H.263 only under Safari's init segment rules, as
 +      // AVStreamDataParser takes it.
@@ -4098,7 +4251,8 @@
 +      if (entry.format == FOURCC_ENCV) {
 +        AddSinfInitData(entry.sinf, &sinf_init_data);
        }
- 
+-
++
        // TODO(strobe): Recover correct crop box
 @@ -803,9 +903,33 @@
        VideoCodec video_codec = entry.video_info.codec;
@@ -4137,7 +4291,8 @@
            video_codec_profile = entry.dv_info->codec_info.profile;
            video_codec_level = entry.dv_info->codec_info.level;
 @@ -831,13 +955,30 @@
- 
+-
++
        video_config.set_aspect_ratio(aspect_ratio);
        video_config.set_level(video_codec_level);
 +      video_config.set_parc_dolby_vision_sdr(
@@ -4145,10 +4300,12 @@
 +          (entry.dv_info->codec_info.profile == DOLBYVISION_PROFILE8 ||
 +           entry.dv_info->codec_info.profile == DOLBYVISION_PROFILE10) &&
 +          entry.dv_info->parc_compatibility_id == 2);
- 
+-
++
        if (entry.video_color_space.IsSpecified())
          video_config.set_color_space_info(entry.video_color_space);
- 
+-
++
 -      if (entry.dv_info.has_value() && has_dv_ &&
 -          entry.dv_info->color_space.IsSpecified()) {
 -        video_config.set_color_space_info(entry.dv_info->color_space);
@@ -4168,19 +4325,23 @@
 +          video_config.set_color_space_info(dv_color_space);
 +        }
        }
- 
+-
++
        if (!entry.hdr_metadata.IsEmpty() && entry.hdr_metadata.IsValid()) {
 @@ -888,6 +1029,10 @@
- 
+-
++
    if (!moov_->pssh.empty())
      OnEncryptedMediaInitData(moov_->pssh);
 +  // Parc: one "sinf" init data per protected track, after any pssh boxes.
 +  for (const std::vector<uint8_t>& init_data : sinf_init_data) {
 +    encrypted_media_init_data_cb_.Run(EmeInitDataType::SINF, init_data);
 +  }
- 
+-
++
    RCHECK(config_cb_.Run(std::move(media_tracks)));
- 
+-
++
 @@ -1096,6 +1241,37 @@
    // being put in a StreamParserBuffer. Prefer `heap_frame_buf` where possible.
    std::vector<uint8_t> frame_buf;
@@ -4222,12 +4383,15 @@
 --- a/media/cdm/supported_audio_codecs.cc
 +++ b/media/cdm/supported_audio_codecs.cc
 @@ -4,6 +4,7 @@
- 
+-
++
  #include "media/cdm/supported_audio_codecs.h"
- 
+-
++
 +#include "build/build_config.h"
  #include "media/media_buildflags.h"
- 
+-
++
  namespace media {
 @@ -16,9 +17,11 @@
  #if BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
@@ -4252,7 +4416,8 @@
 +#include "mojo/public/cpp/bindings/callback_helpers.h"
  #include "services/service_manager/public/cpp/connect.h"
  #include "services/service_manager/public/mojom/interface_provider.mojom.h"
- 
+-
++
 @@ -65,6 +66,9 @@
        requires_media_foundation_renderer_(
            cdm_context->requires_media_foundation_renderer),
@@ -4266,7 +4431,8 @@
 @@ -325,6 +329,27 @@
  }
  #endif  // BUILDFLAG(IS_WIN)
- 
+-
++
 +#if BUILDFLAG(IS_MAC)
 +bool MojoCdm::RequiresFairPlayRenderer() {
 +  base::AutoLock auto_lock(lock_);
@@ -4292,7 +4458,8 @@
                                 MessageType message_type,
                                 const std::vector<uint8_t>& message) {
 @@ -352,6 +377,11 @@
- 
+-
++
    if (has_additional_usable_key)
      event_callbacks_.Notify(Event::kHasAdditionalUsableKey);
 +
@@ -4300,7 +4467,8 @@
 +  if (RequiresFairPlayRenderer())
 +    event_callbacks_.Notify(Event::kParcKeyStatusesChanged);
 +#endif
- 
+-
++
    session_keys_change_cb_.Run(session_id, has_additional_usable_key,
                                std::move(keys_info));
 --- a/media/mojo/clients/mojo_cdm.h
@@ -4315,7 +4483,8 @@
 +                                 const std::vector<uint8_t>& init_data,
 +                                 ParcHasSessionForInitDataCB done) final;
 +#endif  // BUILDFLAG(IS_MAC)
- 
+-
++
   private:
    ~MojoCdm() final;
 @@ -151,6 +157,9 @@
@@ -4325,15 +4494,18 @@
 +#if BUILDFLAG(IS_MAC)
 +  bool requires_fairplay_renderer_ GUARDED_BY(lock_) = false;
 +#endif  // BUILDFLAG(IS_MAC)
- 
+-
++
    CdmConfig cdm_config_;
- 
+-
++
 --- a/media/mojo/mojom/content_decryption_module.mojom
 +++ b/media/mojo/mojom/content_decryption_module.mojom
 @@ -99,6 +99,12 @@
    GetStatusForPolicy(HdcpVersion min_hdcp_version)
        => (CdmPromiseResult result, CdmKeyStatus key_status);
- 
+-
++
 +  // Parc: whether a session already has a key request for a key ID
 +  // |init_data| names. See media::CdmContext::ParcHasSessionForInitData.
 +  [EnableIf=is_mac]
@@ -4353,7 +4525,8 @@
 +  [EnableIf=is_mac]
 +  bool requires_fairplay_renderer;
  };
- 
+-
++
  // Factory interface used for creating ContentDecryptionModule instances.
 --- a/media/mojo/mojom/media_types.mojom
 +++ b/media/mojo/mojom/media_types.mojom
@@ -4380,7 +4553,8 @@
 +  kFairPlay = 12,        // Parc: FairPlayRendererClientFactory (macOS)
 +  kFairPlayHls = 13,     // Parc: NativeHlsRendererFactory (macOS)
  };
- 
+-
++
  // See media/base/demuxer.h for description.
 --- a/media/mojo/mojom/media_types_enum_mojom_traits.h
 +++ b/media/mojo/mojom/media_types_enum_mojom_traits.h
@@ -4393,7 +4567,8 @@
 +      case ::media::RendererType::kFairPlayHls:
 +        return media::mojom::RendererType::kFairPlayHls;
      }
- 
+-
++
      NOTREACHED();
 @@ -494,6 +498,10 @@
          return ::media::RendererType::kContentEmbedderDefined;
@@ -4404,7 +4579,8 @@
 +      case media::mojom::RendererType::kFairPlayHls:
 +        return ::media::RendererType::kFairPlayHls;
      }
- 
+-
++
      NOTREACHED();
 --- a/media/mojo/services/mojo_cdm_service.cc
 +++ b/media/mojo/services/mojo_cdm_service.cc
@@ -4428,7 +4604,8 @@
 +                                         std::move(callback));
 +}
 +#endif  // BUILDFLAG(IS_MAC)
- 
+-
++
  void MojoCdmService::CreateSessionAndGenerateRequest(
      CdmSessionType session_type,
 @@ -184,6 +200,10 @@
@@ -4440,7 +4617,8 @@
 +        cdm_context->RequiresFairPlayRenderer();
 +#endif  // BUILDFLAG(IS_MAC)
    }
- 
+-
++
    std::move(init_cb).Run(std::move(mojo_cdm_context),
 --- a/media/mojo/services/mojo_cdm_service.h
 +++ b/media/mojo/services/mojo_cdm_service.h
@@ -4564,7 +4742,8 @@
 @@ -374,6 +378,13 @@
      return persistent_license;
    }
- 
+-
++
 +  // Parc: FairPlay's persistent-usage-record support, which tells the
 +  // selector whether a Safari-identity page may persist FairPlay state.
 +  EmeConfig::Rule GetPersistentUsageRecordSessionSupport(
@@ -4577,16 +4756,19 @@
      return persistent_state;
 @@ -389,6 +400,7 @@
    bool init_data_type_keyids_supported_ = false;
- 
+-
++
    EmeConfig::Rule persistent_license = EmeConfig::UnsupportedRule();
 +  EmeConfig::Rule persistent_usage_record = EmeConfig::UnsupportedRule();
- 
+-
++
    // Every test implicitly requires these, so they must be set. They are set to
    // values that are likely to cause tests to fail if they are accidentally
 @@ -972,6 +984,77 @@
    EXPECT_EQ(MediaKeysRequirement::kRequired, config_.distinctive_identifier);
  }
- 
+-
++
 +// Parc: Safari's FairPlay on macOS takes "persistent-license" beside
 +// "temporary" (CDMPrivateFairPlayStreaming::supportsConfiguration), so only
 +// MediaKeys creation fails, and refuses it alone or after "temporary" is
@@ -4659,7 +4841,8 @@
 +}
 +
  // --- videoCapabilities ---
- 
+-
++
  TEST_F(KeySystemConfigSelectorTest, VideoCapabilities_Empty) {
 --- a/third_party/blink/renderer/platform/media/web_content_decryption_module_session_impl.cc
 +++ b/third_party/blink/renderer/platform/media/web_content_decryption_module_session_impl.cc
@@ -4675,7 +4858,8 @@
 @@ -107,6 +109,15 @@
        return true;
      }
- 
+-
++
 +    // Parc: FairPlay's types, passed through as WebKit passes them
 +    // (CDMPrivateFairPlayStreaming::sanitizeSinf, sanitizeSkd, sanitizeMpts).
 +    // The FairPlay CDM parses them and rejects malformed ones.
@@ -4695,7 +4879,8 @@
 -  DCHECK(session_type_ == media::CdmSessionType::kPersistentLicense);
 +  DCHECK(session_type_ == media::CdmSessionType::kPersistentLicense ||
 +         session_type_ == media::CdmSessionType::kPersistentUsageRecord);
- 
+-
++
    // From https://w3c.github.io/encrypted-media/#load.
    // 8.1 Let sanitized session ID be a validated and/or sanitized version of
 --- a/third_party/blink/renderer/platform/media/web_media_player_impl.cc
@@ -9995,12 +10180,14 @@
 +++ b/media/base/media_resource.h
 @@ -8,9 +8,16 @@
  #include <vector>
- 
+-
++
  #include "base/memory/raw_ptr.h"
 +#include "build/build_config.h"
  #include "media/base/demuxer_stream.h"
  #include "media/base/media_export.h"
- 
+-
++
 +#if BUILDFLAG(IS_MAC)
 +namespace parc::fairplay {
 +class NativeHlsSource;
@@ -10008,7 +10195,8 @@
 +#endif
 +
  namespace media {
- 
+-
++
  // Abstract class that defines how to retrieve "media resources" in
 @@ -40,6 +47,20 @@
    // A helper function that return the first stream of the given `type` if one
@@ -10029,14 +10217,16 @@
 +  // then keeps the renderers it has no stream for.
 +  virtual bool ParcMayAddStreams();
  };
- 
+-
++
  }  // namespace media
 --- a/media/base/media_resource.cc
 +++ b/media/base/media_resource.cc
 @@ -25,4 +25,14 @@
    return nullptr;
  }
- 
+-
++
 +#if BUILDFLAG(IS_MAC)
 +parc::fairplay::NativeHlsSource* MediaResource::GetParcNativeHlsSource() {
 +  return nullptr;
@@ -10052,14 +10242,16 @@
 +++ b/media/base/renderer_factory.h
 @@ -8,6 +8,7 @@
  #include <memory>
- 
+-
++
  #include "base/memory/scoped_refptr.h"
 +#include "build/build_config.h"
  #include "media/base/media_export.h"
  #include "media/base/media_resource.h"
  #include "media/base/overlay_info.h"
 @@ -23,6 +24,11 @@
- 
+-
++
  class AudioRendererSink;
  class VideoRendererSink;
 +#if BUILDFLAG(IS_MAC)
@@ -10067,7 +10259,8 @@
 +// Parc: media/base/parc_native_hls_demuxer_params.h.
 +struct ParcNativeHlsDemuxerParams;
 +#endif  // BUILDFLAG(IS_MAC)
- 
+-
++
  // A factory class for creating media::Renderer to be used by media pipeline.
  class MEDIA_EXPORT RendererFactory {
 @@ -46,6 +52,15 @@
@@ -10084,7 +10277,8 @@
 +      ParcNativeHlsDemuxerParams params);
 +#endif  // BUILDFLAG(IS_MAC)
  };
- 
+-
++
  }  // namespace media
 --- a/media/base/renderer_factory.cc
 +++ b/media/base/renderer_factory.cc
@@ -10129,7 +10323,8 @@
 @@ -67,6 +67,15 @@
    // NOTE: SetBaseRendererType() must be called before calling this method.
    virtual RendererFactory* GetCurrentFactory();
- 
+-
++
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: the factory added for `type`, or null. Safari's native HLS route
 +  // asks the RendererType::kFairPlayHls factory for its demuxer
@@ -10147,7 +10342,8 @@
 @@ -70,6 +70,13 @@
    return current_factory;
  }
- 
+-
++
 +#if BUILDFLAG(IS_MAC)
 +RendererFactory* RendererFactorySelector::GetFactory(RendererType type) {
 +  auto it = factories_.find(type);
@@ -10191,7 +10387,8 @@
 +      # Parc: Safari's native HLS route chooses its demuxer.
 +      sources += [ "parc_native_hls_routing_unittest.cc" ]
 +    }
- 
+-
++
      # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
      # enable the diagnostic by removing this line.
 --- a/third_party/blink/public/platform/web_media_player.h
@@ -10229,7 +10426,8 @@
 +      return "persistent-usage-record";
    }
  }
- 
+-
++
 --- a/media/base/content_decryption_module.h
 +++ b/media/base/content_decryption_module.h
 @@ -42,7 +42,10 @@
@@ -10242,14 +10440,16 @@
 +  kPersistentUsageRecord,
 +  kMaxValue = kPersistentUsageRecord
  };
- 
+-
++
  // Type of message being sent to the application.
 --- a/media/base/key_system_info.cc
 +++ b/media/base/key_system_info.cc
 @@ -24,4 +24,8 @@
    return false;
  }
- 
+-
++
 +EmeConfig::Rule KeySystemInfo::GetPersistentUsageRecordSessionSupport() const {
 +  return EmeConfig::UnsupportedRule();
 +}
@@ -10260,7 +10460,8 @@
 @@ -74,6 +74,12 @@
    // express combinations of requirements.
    virtual EmeConfig::Rule GetPersistentLicenseSessionSupport() const = 0;
- 
+-
++
 +  // Parc: returns the support this key system provides for Safari's
 +  // persistent-usage-record sessions, which only FairPlay offers (and only to
 +  // Safari-identity pages). Like GetPersistentLicenseSessionSupport(), the
@@ -10269,7 +10470,8 @@
 +
    // Returns the support this key system provides for persistent state.
    virtual EmeFeatureSupport GetPersistentStateSupport() const = 0;
- 
+-
++
 --- a/media/base/key_systems.cc
 +++ b/media/base/key_systems.cc
 @@ -32,6 +32,11 @@
@@ -10281,7 +10483,8 @@
 +    const std::string& key_system) const {
 +  return EmeConfig::UnsupportedRule();
 +}
- 
+-
++
  // Returns a name for `key_system` for UMA logging. When `use_hw_secure_codecs`
  // is specified (non-nullopt), names with robustness will be returned for
 --- a/media/base/key_systems.h
@@ -10289,7 +10492,8 @@
 @@ -80,6 +80,12 @@
    virtual EmeConfig::Rule GetPersistentLicenseSessionSupport(
        const std::string& key_system) const = 0;
- 
+-
++
 +  // Parc: returns the support |key_system| provides for Safari's
 +  // persistent-usage-record sessions (FairPlay only). Not pure, so test
 +  // KeySystems need no change.
@@ -10312,7 +10516,8 @@
      case AudioCodec::kEAC3:
 @@ -625,6 +627,16 @@
    CHECK(key_system_info);
- 
+-
++
    return key_system_info->GetPersistentLicenseSessionSupport();
 +}
 +
@@ -10325,7 +10530,8 @@
 +
 +  return key_system_info->GetPersistentUsageRecordSessionSupport();
  }
- 
+-
++
  EmeFeatureSupport KeySystemsImpl::GetPersistentStateSupport(
 --- a/media/base/key_systems_impl.h
 +++ b/media/base/key_systems_impl.h
@@ -10345,7 +10551,8 @@
  const char kTemporarySession[] = "temporary";
  const char kPersistentLicenseSession[] = "persistent-license";
 +const char kPersistentUsageRecordSession[] = "persistent-usage-record";
- 
+-
++
  static std::string ShortenTo64Characters(const std::string& input) {
    // Convert |input| into a string with escaped characters replacing any
 @@ -94,6 +95,9 @@
@@ -10357,7 +10564,8 @@
 +      jwk_set.Set(kTypeTag, kPersistentUsageRecordSession);
        break;
    }
- 
+-
++
 @@ -306,6 +310,9 @@
      case CdmSessionType::kPersistentLicense:
        request.Set(kTypeTag, kPersistentLicenseSession);
@@ -10366,7 +10574,8 @@
 +      request.Set(kTypeTag, kPersistentUsageRecordSession);
 +      break;
    }
- 
+-
++
    // Serialize the license request as a string.
 --- a/third_party/blink/public/platform/web_encrypted_media_types.h
 +++ b/third_party/blink/public/platform/web_encrypted_media_types.h
@@ -10380,7 +10589,8 @@
 +  kPersistentUsageRecord = 3,
 +  kMaxValue = kPersistentUsageRecord,
  };
- 
+-
++
  }  // namespace blink
 --- a/third_party/blink/public/platform/web_media_key_system_configuration.h
 +++ b/third_party/blink/public/platform/web_media_key_system_configuration.h
@@ -10393,27 +10603,32 @@
 +  // WebKit's FairPlay session type and persistent state rules.
 +  bool parc_safari_fairplay = false;
  };
- 
+-
++
  }  // namespace blink
 --- a/third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.cc
 +++ b/third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.cc
 @@ -20,6 +20,9 @@
- 
+-
++
  const char kTemporary[] = "temporary";
  const char kPersistentLicense[] = "persistent-license";
 +// Parc: Safari's; the rMKSA initializer and MediaKeys::createSession() keep it
 +// to Safari-identity pages.
 +const char kPersistentUsageRecord[] = "persistent-usage-record";
- 
+-
++
  }  // namespace
- 
+-
++
 @@ -49,6 +52,8 @@
      return WebEncryptedMediaSessionType::kTemporary;
    if (session_type == kPersistentLicense)
      return WebEncryptedMediaSessionType::kPersistentLicense;
 +  if (session_type == kPersistentUsageRecord)
 +    return WebEncryptedMediaSessionType::kPersistentUsageRecord;
- 
+-
++
    // |sessionType| is not restricted in the idl, so anything is possible.
    return WebEncryptedMediaSessionType::kUnknown;
 @@ -62,6 +67,8 @@
@@ -10428,9 +10643,11 @@
 --- a/third_party/blink/renderer/modules/encryptedmedia/media_keys.idl
 +++ b/third_party/blink/renderer/modules/encryptedmedia/media_keys.idl
 @@ -25,15 +25,19 @@
- 
+-
++
  // https://w3c.github.io/encrypted-media/#mediakeys-interface
- 
+-
++
 +// Parc: "persistent-usage-record" is Safari's, accepted on Safari-identity
 +// pages only; MediaKeys::createSession() throws this enum's TypeError for it
 +// everywhere else.
@@ -10439,7 +10656,8 @@
      "persistent-license",
 +    "persistent-usage-record",
  };
- 
+-
++
  [
      Exposed=Window,
      ActiveScriptWrappable,
@@ -10447,17 +10665,21 @@
 +    SecureContext=ParcSafariIdentityEme
  ] interface MediaKeys {
      [CallWith=ScriptState, RaisesException] MediaKeySession createSession(optional MediaKeySessionType sessionType = "temporary");
- 
+-
++
 --- a/third_party/blink/renderer/platform/media/key_system_config_selector.cc
 +++ b/third_party/blink/renderer/platform/media/key_system_config_selector.cc
 @@ -6,6 +6,7 @@
- 
+-
++
  #include <stddef.h>
- 
+-
++
 +#include <algorithm>
  #include <utility>
  #include <vector>
- 
+-
++
 @@ -131,6 +132,7 @@
      case WebEncryptedMediaSessionType::kTemporary:
        return false;
@@ -10527,11 +10749,13 @@
 +            key_systems_->GetPersistentUsageRecordSessionSupport(key_system);
          break;
      }
- 
+-
++
 --- a/media/filters/source_buffer_stream.h
 +++ b/media/filters/source_buffer_stream.h
 @@ -36,6 +36,8 @@
- 
+-
++
  namespace media {
 -
 +
@@ -10543,7 +10767,8 @@
 @@ -96,6 +98,43 @@
    // |media_time| is current playback position.
    bool GarbageCollectIfNeeded(base::TimeDelta media_time, size_t newDataSize);
- 
+-
++
 +  // Parc: pieces of WebKit's memory-pressure purge of a ManagedMediaSource's
 +  // SourceBuffer (SourceBufferState::ParcPurgeForMemoryPressure).
 +  // The presentation time of the last keyframe at or before |time|, or
@@ -10589,7 +10814,7 @@
 +
   private:
    friend class SourceBufferStreamTest;
-+  friend class ParcSourceBufferStreamState;
++  friend class ParcSourceBufferStreamTest;
 -
 +
    // Attempts to delete approximately |total_bytes_to_free| amount of data
@@ -10608,7 +10833,8 @@
 @@ -422,6 +465,23 @@
    // True if the end of the stream has been signalled.
    bool end_of_stream_ = false;
- 
+-
++
 +  // Parc: WebKit-compatible append interval, gap and purge state. The policy
 +  // lives in a Parc-owned .cc; this class still performs cursor changes.
 +  std::unique_ptr<ParcSourceBufferStreamState> parc_state_;
@@ -10628,12 +10854,14 @@
 +
    // Timestamp of the last request to Seek().
    base::TimeDelta seek_buffer_timestamp_;
- 
+-
++
 --- a/media/filters/source_buffer_stream.cc
 +++ b/media/filters/source_buffer_stream.cc
 @@ -5,6 +5,7 @@
  #include "media/filters/source_buffer_stream.h"
- 
+-
++
  #include <algorithm>
 +#include <iterator>
  #include <map>
@@ -10666,9 +10894,11 @@
        coded_frame_group_start_pts_(kNoTimestamp),
        range_for_next_append_(ranges_.end()),
 @@ -275,6 +279,10 @@
- 
+-
++
    PrepareRangesForNextAppend(buffers, &deleted_buffers);
- 
+-
++
 +  // Parc: WebKit's buffered ranges before |buffers| (ParcFillSmallGaps()).
 +  Ranges<base::TimeDelta> parc_buffered;
 +  parc_state_->PrepareForAppend(*this, &parc_buffered);
@@ -10681,7 +10911,8 @@
        (*range_for_next_append_)->AppendBuffersToEnd(buffers, kNoTimestamp);
      }
 +    ParcFillSmallGaps(&parc_buffered, buffers);
- 
+-
++
      last_appended_buffer_timestamp_ = buffers.back()->timestamp();
      last_appended_buffer_duration_ = buffers.back()->duration();
 @@ -353,6 +362,7 @@
@@ -10689,13 +10920,15 @@
          base::BindRepeating(&SourceBufferStream::GetMaxInterbufferDistance,
                              base::Unretained(this))));
 +    ParcFillSmallGaps(&parc_buffered, *buffers_for_new_range);
- 
+-
++
      last_appended_buffer_timestamp_ =
          buffers_for_new_range->back()->timestamp();
 @@ -418,6 +428,152 @@
    DCHECK(OnlySelectedRangeIsSeeked());
  }
- 
+-
++
 +// Parc: Remove() extends |end| to the next keyframe, or stops at |duration|
 +// when none follows.
 +base::TimeDelta SourceBufferStream::ParcRemoveEnd(base::TimeDelta end,
@@ -10850,7 +11083,8 @@
                        << end.InMicroseconds() << "us";
    DCHECK(duration != kNoTimestamp);
 +  parc_state_->FramesChanged();
- 
+-
++
    base::TimeDelta remove_end_timestamp = duration;
    base::TimeDelta keyframe_timestamp = FindKeyframeAfterTimestamp(end);
 @@ -624,6 +781,7 @@
@@ -10866,13 +11100,15 @@
    DCHECK(media_time != kNoTimestamp);
    DCHECK(!end_of_stream_);
 +  parc_state_->FramesChanged();
- 
+-
++
    // Compute size of |ranges_|.
    size_t ranges_size = GetMemoryUsage();
 @@ -1449,6 +1608,24 @@
        break;
    }
- 
+-
++
 +  // Parc: WebKit's TrackBuffer::reenqueueMediaForTime() starts from the next
 +  // frame when the gap to it is within its enqueue tolerance. The audio
 +  // renderer plays silence up to the first buffer after a seek.
@@ -10893,13 +11129,15 @@
 +
    if (itr == ranges_.end())
      return;
- 
+-
++
 @@ -1484,6 +1661,7 @@
    DVLOG(1) << __func__ << " " << GetStreamTypeName() << " ("
             << duration.InMicroseconds() << "us)";
    DCHECK(!end_of_stream_);
 +  parc_state_->FramesChanged();
- 
+-
++
    if (ranges_.empty())
      return;
 @@ -1563,6 +1741,7 @@
@@ -10907,12 +11145,14 @@
      highest_output_buffer_timestamp_ =
          std::max(highest_output_buffer_timestamp_, (*out_buffer)->timestamp());
 +    ParcNoteOutput(**out_buffer);
- 
+-
++
      // If the track buffer becomes empty, then try to set the selected range
      // based on the timestamp of this buffer being returned.
 @@ -1575,6 +1754,7 @@
    }
- 
+-
++
    DCHECK(track_buffer_.empty());
 +  ParcBridgeGap();
    if (!selected_range_ || !selected_range_->HasNextBuffer()) {
@@ -10925,18 +11165,22 @@
 +  ParcNoteOutput(**out_buffer);
    return SourceBufferStreamStatus::kSuccess;
  }
- 
+-
++
 @@ -1625,6 +1806,7 @@
    if (!track_buffer_.empty())
      return track_buffer_.front()->GetConfigId() != current_config_index_;
- 
+-
++
 +  ParcBridgeGap();
    if (!selected_range_ || !selected_range_->HasNextBuffer())
      return false;
- 
+-
++
 @@ -1681,6 +1863,9 @@
  }
- 
+-
++
  Ranges<base::TimeDelta> SourceBufferStream::GetBufferedTime() const {
 +  if (parc_state_->enabled()) {
 +    return parc_state_->BufferedTime(*this);
@@ -10950,7 +11194,8 @@
    end_of_stream_ = true;
 +  parc_state_->set_end_of_stream_suspended(false);
  }
- 
+-
++
  void SourceBufferStream::UnmarkEndOfStream() {
 +  // Parc: a purge already suspended it (ParcRemoveFrom()).
 +  if (parc_state_->end_of_stream_suspended()) {
@@ -10965,7 +11210,8 @@
 +++ b/media/filters/source_buffer_range.h
 @@ -16,6 +16,8 @@
  #include "media/base/stream_parser_buffer.h"
- 
+-
++
  namespace media {
 +
 +class ParcSourceBufferStreamState;
@@ -10977,7 +11223,7 @@
   private:
    // Friend of private is only for IsNextInPresentationSequence testing.
    friend class SourceBufferStreamTest;
-+  friend class ParcSourceBufferStreamState;
++  friend class ParcSourceBufferStreamTest;
 -
 +
    using KeyframeMap = std::map<base::TimeDelta, int>;
@@ -11067,7 +11313,8 @@
 @@ -256,6 +295,17 @@
    // Keeps track of whether a media segment is being parsed.
    bool parsing_media_segment_;
- 
+-
++
 +  // Parc: Safari eviction and ManagedMediaSource purge policy and state.
 +  std::unique_ptr<ParcSourceBufferEviction> parc_eviction_;
 +
@@ -11089,7 +11336,8 @@
  #include <string_view>
  #include <utility>
 +#include <vector>
- 
+-
++
  #include "base/command_line.h"
  #include "base/feature_list.h"
 @@ -22,6 +23,7 @@
@@ -11112,7 +11360,8 @@
 @@ -295,6 +298,99 @@
    }
  }
- 
+-
++
 +void SourceBufferState::ParcPurgeForMemoryPressure(
 +    base::TimeDelta media_time,
 +    bool active,
@@ -11211,7 +11460,8 @@
    size_t total_buffered_size = 0;
 @@ -517,6 +613,11 @@
  }
- 
+-
++
  bool SourceBufferState::IsSeekWaitingForData() const {
 +  // Parc: see ParcLeftOutOfMediaSource().
 +  if (ParcLeftOutOfMediaSource()) {
@@ -11233,13 +11483,15 @@
 +    expected_codecs.reset();
 +    stream_parser_->ParcIgnoreDeclaredCodecs();
 +  }
- 
+-
++
    std::vector<std::string> expected_codecs_parsed;
    if ((strict_codec_expectations_ = expected_codecs.has_value())) {
 @@ -592,6 +701,31 @@
    // RunSegmentParserLoop(), but not during Flush or parser reset operations.
    CHECK(new_configs_possible_);
- 
+-
++
 +  // Parc: a later init segment carries as many audio and video tracks as the
 +  // first, as WebKit's SourceBuffer::validateInitializationSegment requires.
 +  // With two or more of a type, each id must be one the first segment had
@@ -11266,7 +11518,8 @@
 +  }
 +
    bool success = true;
- 
+-
++
    // TODO(wolenetz): Update codec string strictness, if necessary, once spec
 @@ -602,7 +736,10 @@
    // TODO(wolenetz): Once codec strictness is relaxed, we can change
@@ -11277,7 +11530,8 @@
 +  // earlier ones either.
 +  const bool allow_codec_changes =
 +      state_ == PENDING_PARSER_RECONFIG || parc_safari_init_segment_rules_;
- 
+-
++
    FrameProcessor::TrackIdChanges track_id_changes;
    for (const auto& track : tracks->tracks()) {
 @@ -685,15 +822,32 @@
@@ -11315,301 +11569,13 @@
          }
        }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
---- a/media/filters/source_buffer_state_unittest.cc
-+++ b/media/filters/source_buffer_state_unittest.cc
-@@ -4,6 +4,8 @@
- 
- #include "media/filters/source_buffer_state.h"
- 
-+#include <optional>
-+#include <string_view>
- #include <vector>
- 
- #include "base/functional/bind.h"
-@@ -11,7 +13,9 @@
- #include "base/memory/raw_ptr.h"
- #include "base/strings/string_number_conversions.h"
- #include "base/test/gmock_callback_support.h"
-+#include "base/test/scoped_feature_list.h"
- #include "base/time/time.h"
-+#include "media/base/media_switches.h"
- #include "media/base/media_util.h"
- #include "media/base/mock_filters.h"
- #include "media/base/mock_media_log.h"
-@@ -19,6 +23,7 @@
- #include "media/base/test_helpers.h"
- #include "media/filters/chunk_demuxer.h"
- #include "media/filters/frame_processor.h"
-+#include "media/media_buildflags.h"
- #include "testing/gtest/include/gtest/gtest.h"
- 
- namespace media {
-@@ -82,8 +87,10 @@
-   }
- 
-   std::unique_ptr<SourceBufferState> CreateAndInitSourceBufferState(
--      const std::string& expected_codecs) {
-+      std::optional<std::string_view> expected_codecs,
-+      bool parc_safari = false) {
-     std::unique_ptr<SourceBufferState> sbs = CreateSourceBufferState();
-+    sbs->ParcSetSafariInitSegmentRules(parc_safari);
-     // Instead of using SaveArg<> to update |new_config_cb_| when mocked Init is
-     // called, we use a lambda because SaveArg<> doesn't work if any of the
-     // mocked method's arguments are move-only type.
-@@ -168,6 +175,93 @@
-   StreamParser::NewConfigCB new_config_cb_;
- };
--
-+
-+#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
-+// Parc: clear Dolby Vision passes the init segment check only where the
-+// demuxer allows it (a Safari-identity document or a FairPlay CDM, see
-+// ChunkDemuxer::ParcSetClearDolbyVisionAllowed()), and only in the profiles
-+// the FairPlay Renderer plays, 5 and 8.
-+class SourceBufferStateClearDolbyVisionTest : public SourceBufferStateTest {
-+ public:
-+  SourceBufferStateClearDolbyVisionTest() {
-+    feature_list_.InitWithFeatures(
-+        {kPlatformEncryptedDolbyVision},
-+        {kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled});
-+  }
-+
-+  // Appends an init segment with one clear Dolby Vision track of |profile|
-+  // to a SourceBuffer that names no codecs.
-+  bool AppendClearDolbyVision(bool allowed, VideoCodecProfile profile) {
-+    std::unique_ptr<SourceBufferState> sbs = CreateSourceBufferState();
-+    EXPECT_CALL(*mock_stream_parser_, Init(_, _, _, _, _, _, _))
-+        .WillOnce([&](auto init_cb, auto config_cb, auto new_buffers_cb,
-+                      auto encrypted_media_init_data_cb, auto new_segment_cb,
-+                      auto end_of_segment_cb,
-+                      auto media_log) { new_config_cb_ = config_cb; });
-+    sbs->Init(base::BindOnce(&SourceBufferStateTest::SourceInitDone,
-+                             base::Unretained(this)),
-+              std::nullopt,
-+              base::BindRepeating(
-+                  &SourceBufferStateTest::StreamParserEncryptedInitData,
-+                  base::Unretained(this)));
-+    sbs->SetTracksWatcher(base::BindRepeating(
-+        &SourceBufferStateTest::OnMediaTracksUpdated, base::Unretained(this)));
-+    EXPECT_CALL(*this, OnParseWarningMock(_)).Times(0);
-+    sbs->SetParseWarningCallback(base::BindRepeating(
-+        &SourceBufferStateTest::OnParseWarningMock, base::Unretained(this)));
-+    sbs->ParcSetClearDolbyVisionAllowed(allowed);
-+    sbs->ParcSetDolbyVisionCallback(base::BindRepeating(
-+        [](int* count) { ++*count; }, &dolby_vision_taken_));
-+
-+    const gfx::Size size(16, 16);
-+    auto tracks = std::make_unique<MediaTracks>();
-+    tracks->AddVideoTrack(
-+        VideoDecoderConfig(VideoCodec::kDolbyVision, profile,
-+                           VideoDecoderConfig::AlphaMode::kIsOpaque,
-+                           VideoColorSpace::REC709(), kNoTransformation, size,
-+                           gfx::Rect(size), size, EmptyExtraData(),
-+                           EncryptionScheme::kUnencrypted),
-+        true, 1, MediaTrack::Kind(), MediaTrack::Label(),
-+        MediaTrack::Language());
-+    return AppendDataAndReportTracks(sbs, std::move(tracks));
-+  }
-+
-+  // How often ParcSetDolbyVisionCallback()'s callback ran (Dolby Vision
-+  // taken, which routes the player to the FairPlay Renderer).
-+  int dolby_vision_taken_ = 0;
-+
-+ private:
-+  base::test::ScopedFeatureList feature_list_;
-+};
-+
-+TEST_F(SourceBufferStateClearDolbyVisionTest, RejectedWhereNotAllowed) {
-+  EXPECT_MEDIA_LOG(
-+      testing::HasSubstr("the provided DV track is not encrypted"));
-+  EXPECT_FALSE(AppendClearDolbyVision(false, DOLBYVISION_PROFILE5));
-+  EXPECT_EQ(dolby_vision_taken_, 0);
-+}
-+
-+TEST_F(SourceBufferStateClearDolbyVisionTest, Profile5PlaysWhereAllowed) {
-+  EXPECT_FOUND_CODEC_NAME(Video, "dolbyvision");
-+  EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+  EXPECT_TRUE(AppendClearDolbyVision(true, DOLBYVISION_PROFILE5));
-+  EXPECT_EQ(dolby_vision_taken_, 1);
-+}
-+
-+TEST_F(SourceBufferStateClearDolbyVisionTest, Profile8PlaysWhereAllowed) {
-+  EXPECT_FOUND_CODEC_NAME(Video, "dolbyvision");
-+  EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+  EXPECT_TRUE(AppendClearDolbyVision(true, DOLBYVISION_PROFILE8));
-+  EXPECT_EQ(dolby_vision_taken_, 1);
-+}
-+
-+TEST_F(SourceBufferStateClearDolbyVisionTest, OtherProfilesStayRejected) {
-+  EXPECT_MEDIA_LOG(
-+      testing::HasSubstr("the provided DV track is not encrypted"));
-+  EXPECT_FALSE(AppendClearDolbyVision(true, DOLBYVISION_PROFILE9));
-+  EXPECT_EQ(dolby_vision_taken_, 0);
-+}
-+#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
-+
- TEST_F(SourceBufferStateTest, InitSourceBufferWithRelaxedCodecChecks) {
-   std::unique_ptr<SourceBufferState> sbs = CreateSourceBufferState();
-   EXPECT_CALL(*mock_stream_parser_, Init(_, _, _, _, _, _, _))
-@@ -382,6 +476,152 @@
-   AppendDataAndReportTracks(sbs, std::move(tracks2));
- }
- 
-+// Parc: with SourceBufferState::ParcSetSafariInitSegmentRules(), init
-+// segments are checked as WebKit's SourceBuffer checks them, not against the
-+// codecs the type named.
-+TEST_F(SourceBufferStateTest, ParcSafariTakesCodecTheTypeDidNotName) {
-+  {
-+    std::unique_ptr<SourceBufferState> sbs =
-+        CreateAndInitSourceBufferState("vp9");
-+    std::unique_ptr<MediaTracks> tracks(new MediaTracks());
-+    AddVideoTrack(tracks, VideoCodec::kVP8, 1);
-+    EXPECT_MEDIA_LOG(InitSegmentMismatchesMimeType("Video", "vp8"));
-+    EXPECT_FALSE(AppendDataAndReportTracks(sbs, std::move(tracks)));
-+  }
-+
-+  std::unique_ptr<SourceBufferState> sbs =
-+      CreateAndInitSourceBufferState("vp9", /*parc_safari=*/true);
-+  std::unique_ptr<MediaTracks> tracks(new MediaTracks());
-+  AddVideoTrack(tracks, VideoCodec::kVP8, 1);
-+  EXPECT_FOUND_CODEC_NAME(Video, "vp8");
-+  EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+  EXPECT_TRUE(AppendDataAndReportTracks(sbs, std::move(tracks)));
-+}
-+
-+TEST_F(SourceBufferStateTest, ParcSafariTakesSegmentMissingANamedCodec) {
-+  {
-+    std::unique_ptr<SourceBufferState> sbs =
-+        CreateAndInitSourceBufferState("opus,vp9");
-+    std::unique_ptr<MediaTracks> tracks(new MediaTracks());
-+    AddVideoTrack(tracks, VideoCodec::kVP9, 1);
-+    EXPECT_FOUND_CODEC_NAME(Video, "vp9");
-+    EXPECT_MEDIA_LOG(InitSegmentMissesExpectedTrack("opus"));
-+    EXPECT_FALSE(AppendDataAndReportTracks(sbs, std::move(tracks)));
-+  }
-+
-+  std::unique_ptr<SourceBufferState> sbs =
-+      CreateAndInitSourceBufferState("opus,vp9", /*parc_safari=*/true);
-+  std::unique_ptr<MediaTracks> tracks(new MediaTracks());
-+  AddVideoTrack(tracks, VideoCodec::kVP9, 1);
-+  EXPECT_FOUND_CODEC_NAME(Video, "vp9");
-+  EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+  EXPECT_TRUE(AppendDataAndReportTracks(sbs, std::move(tracks)));
-+}
-+
-+TEST_F(SourceBufferStateTest, ParcSafariRejectsLaterSegmentWithFewerTracks) {
-+  {
-+    std::unique_ptr<SourceBufferState> sbs =
-+        CreateAndInitSourceBufferState(std::nullopt);
-+    std::unique_ptr<MediaTracks> tracks(new MediaTracks());
-+    AddAudioTrack(tracks, AudioCodec::kOpus, 1);
-+    AddVideoTrack(tracks, VideoCodec::kVP9, 2);
-+    EXPECT_FOUND_CODEC_NAME(Audio, "opus");
-+    EXPECT_FOUND_CODEC_NAME(Video, "vp9");
-+    EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+    EXPECT_TRUE(AppendDataAndReportTracks(sbs, std::move(tracks)));
-+
-+    std::unique_ptr<MediaTracks> tracks2(new MediaTracks());
-+    AddVideoTrack(tracks2, VideoCodec::kVP9, 2);
-+    EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+    EXPECT_TRUE(AppendDataAndReportTracks(sbs, std::move(tracks2)));
-+  }
-+
-+  std::unique_ptr<SourceBufferState> sbs =
-+      CreateAndInitSourceBufferState(std::nullopt, /*parc_safari=*/true);
-+  std::unique_ptr<MediaTracks> tracks(new MediaTracks());
-+  AddAudioTrack(tracks, AudioCodec::kOpus, 1);
-+  AddVideoTrack(tracks, VideoCodec::kVP9, 2);
-+  EXPECT_FOUND_CODEC_NAME(Audio, "opus");
-+  EXPECT_FOUND_CODEC_NAME(Video, "vp9");
-+  EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+  EXPECT_TRUE(AppendDataAndReportTracks(sbs, std::move(tracks)));
-+
-+  std::unique_ptr<MediaTracks> tracks2(new MediaTracks());
-+  AddVideoTrack(tracks2, VideoCodec::kVP9, 2);
-+  EXPECT_MEDIA_LOG(testing::HasSubstr(
-+      "has 0 audio and 1 video tracks; the first had 1 and 1"));
-+  EXPECT_FALSE(AppendDataAndReportTracks(sbs, std::move(tracks2)));
-+}
-+
-+TEST_F(SourceBufferStateTest, ParcSafariRejectsLaterSegmentWithMoreTracks) {
-+  {
-+    std::unique_ptr<SourceBufferState> sbs =
-+        CreateAndInitSourceBufferState(std::nullopt);
-+    std::unique_ptr<MediaTracks> tracks(new MediaTracks());
-+    AddAudioTrack(tracks, AudioCodec::kOpus, 1);
-+    AddVideoTrack(tracks, VideoCodec::kVP9, 2);
-+    EXPECT_FOUND_CODEC_NAME(Audio, "opus");
-+    EXPECT_FOUND_CODEC_NAME(Video, "vp9");
-+    EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+    EXPECT_TRUE(AppendDataAndReportTracks(sbs, std::move(tracks)));
-+
-+    std::unique_ptr<MediaTracks> tracks2(new MediaTracks());
-+    AddAudioTrack(tracks2, AudioCodec::kOpus, 1);
-+    AddAudioTrack(tracks2, AudioCodec::kOpus, 3);
-+    AddVideoTrack(tracks2, VideoCodec::kVP9, 2);
-+    EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+    EXPECT_TRUE(AppendDataAndReportTracks(sbs, std::move(tracks2)));
-+  }
-+
-+  std::unique_ptr<SourceBufferState> sbs =
-+      CreateAndInitSourceBufferState(std::nullopt, /*parc_safari=*/true);
-+  std::unique_ptr<MediaTracks> tracks(new MediaTracks());
-+  AddAudioTrack(tracks, AudioCodec::kOpus, 1);
-+  AddVideoTrack(tracks, VideoCodec::kVP9, 2);
-+  EXPECT_FOUND_CODEC_NAME(Audio, "opus");
-+  EXPECT_FOUND_CODEC_NAME(Video, "vp9");
-+  EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+  EXPECT_TRUE(AppendDataAndReportTracks(sbs, std::move(tracks)));
-+
-+  std::unique_ptr<MediaTracks> tracks2(new MediaTracks());
-+  AddAudioTrack(tracks2, AudioCodec::kOpus, 1);
-+  AddAudioTrack(tracks2, AudioCodec::kOpus, 3);
-+  AddVideoTrack(tracks2, VideoCodec::kVP9, 2);
-+  EXPECT_MEDIA_LOG(testing::HasSubstr(
-+      "has 2 audio and 1 video tracks; the first had 1 and 1"));
-+  EXPECT_FALSE(AppendDataAndReportTracks(sbs, std::move(tracks2)));
-+}
-+
-+TEST_F(SourceBufferStateTest, ParcSafariTakesCodecChangeInLaterSegment) {
-+  {
-+    std::unique_ptr<SourceBufferState> sbs =
-+        CreateAndInitSourceBufferState(std::nullopt);
-+    std::unique_ptr<MediaTracks> tracks(new MediaTracks());
-+    AddVideoTrack(tracks, VideoCodec::kVP9, 1);
-+    EXPECT_FOUND_CODEC_NAME(Video, "vp9");
-+    EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+    EXPECT_TRUE(AppendDataAndReportTracks(sbs, std::move(tracks)));
-+
-+    std::unique_ptr<MediaTracks> tracks2(new MediaTracks());
-+    AddVideoTrack(tracks2, VideoCodec::kVP8, 1);
-+    EXPECT_MEDIA_LOG(testing::HasSubstr("Video codec changes not allowed"));
-+    EXPECT_FALSE(AppendDataAndReportTracks(sbs, std::move(tracks2)));
-+  }
-+
-+  std::unique_ptr<SourceBufferState> sbs =
-+      CreateAndInitSourceBufferState(std::nullopt, /*parc_safari=*/true);
-+  std::unique_ptr<MediaTracks> tracks(new MediaTracks());
-+  AddVideoTrack(tracks, VideoCodec::kVP9, 1);
-+  EXPECT_FOUND_CODEC_NAME(Video, "vp9");
-+  EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+  EXPECT_TRUE(AppendDataAndReportTracks(sbs, std::move(tracks)));
-+
-+  std::unique_ptr<MediaTracks> tracks2(new MediaTracks());
-+  AddVideoTrack(tracks2, VideoCodec::kVP8, 1);
-+  EXPECT_CALL(*this, MediaTracksUpdatedMock(_));
-+  EXPECT_TRUE(AppendDataAndReportTracks(sbs, std::move(tracks2)));
-+}
-+
- TEST_F(SourceBufferStateTest, MarkEndOfStreamFlushesParser) {
-   std::unique_ptr<SourceBufferState> sbs =
-       CreateAndInitSourceBufferState("vp8");
 --- a/third_party/blink/public/platform/web_source_buffer.h
 +++ b/third_party/blink/public/platform/web_source_buffer.h
 @@ -114,6 +114,16 @@
    virtual void ResetParserState() = 0;
    virtual void Remove(double start, double end) = 0;
- 
+-
++
 +  // Parc: drops buffered data under memory pressure as WebKit does for a
 +  // ManagedMediaSource's SourceBuffer (media::ChunkDemuxer::
 +  // ParcPurgeForMemoryPressure). |active| is whether the SourceBuffer is in
@@ -11649,7 +11615,8 @@
 +  demuxer_->ParcPurgeForMemoryPressure(
 +      id_, base::Seconds(current_playback_time), active);
  }
- 
+-
++
 +void WebSourceBufferImpl::ParcUpdateEvictionData(
 +    double current_playback_time) {
 +  demuxer_->ParcUpdateEvictionData(id_, base::Seconds(current_playback_time));
@@ -11782,7 +11749,8 @@
 @@ -62,6 +62,14 @@
        base::span<const uint8_t> buf) override;
    [[nodiscard]] ParseStatus Parse(int max_pending_bytes_to_inspect) override;
- 
+-
++
 +  // Parc: the type named Apple Lossless ("alac"), so an 'alac' sample entry
 +  // is expected, as |has_flac| does for FLAC (stream_parser_factory.cc).
 +  void ParcSetHasAlac(bool has_alac) { parc_has_alac_ = has_alac; }
@@ -11829,7 +11797,8 @@
 @@ -310,9 +317,22 @@
                                            CodecInfo::HISTOGRAM_IAMF};
  #endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
- 
+-
++
 +static const CodecInfo kParcIPCM = {"ipcm", CodecInfo::AUDIO, nullptr,
 +                                      CodecInfo::HISTOGRAM_UNKNOWN};
 +static const CodecInfo kParcIPCMSuffix = {"ipcm.*", CodecInfo::AUDIO, nullptr,
@@ -11850,7 +11819,8 @@
      &kOpusCodecInfo2,
      &kMPEG4VP09CodecInfo,
 @@ -377,8 +397,12 @@
- 
+-
++
  // clang-format off
  static const auto kAudioMP4Codecs = std::to_array<const CodecInfo* const>({
 +    &kParcIPCM, &kParcIPCMSuffix, &kParcFPCM, &kParcFPCMSuffix,
@@ -11865,7 +11835,8 @@
 @@ -442,10 +466,17 @@
    // an encapsulation using MP4AudioSampleEntry with objectTypeIndication.
    bool has_iamf = false;
- 
+-
++
 +  // Parc: Apple Lossless names no object type either.
 +  bool has_alac = false;
 +
@@ -11883,7 +11854,8 @@
 @@ -515,8 +546,10 @@
      }
    }
- 
+-
++
 -  return new mp4::MP4StreamParser(audio_object_types, has_sbr, has_flac,
 -                                  has_iamf, has_dv);
 +  auto* parser = new mp4::MP4StreamParser(audio_object_types, has_sbr,
@@ -11895,7 +11867,8 @@
  static const CodecInfo kADTSCodecInfo = {nullptr, CodecInfo::AUDIO, nullptr,
 @@ -782,6 +815,62 @@
  }
- 
+-
++
  // static
 +std::unique_ptr<StreamParser> StreamParserFactory::ParcCreateWithoutCodecs(
 +    std::string_view type) {
@@ -11961,7 +11934,8 @@
 @@ -148,6 +148,11 @@
    // Allows the parser to drain/emit any remaining delayed frames.
    virtual void MarkEndOfStream() {}
- 
+-
++
 +  // Parc: takes tracks whatever codecs the SourceBuffer's type named, as
 +  // WebKit's SourceBuffer does; see
 +  // SourceBufferState::ParcSetSafariInitSegmentRules(). Called before Init().
@@ -11974,7 +11948,8 @@
 +++ b/media/formats/mp4/mp4_stream_parser_unittest.cc
 @@ -8,9 +8,12 @@
  #include <stdint.h>
- 
+-
++
  #include <algorithm>
 +#include <array>
  #include <memory>
@@ -11982,7 +11957,8 @@
 +#include <string_view>
  #include <tuple>
 +#include <vector>
- 
+-
++
  #include "base/functional/bind.h"
  #include "base/functional/callback_helpers.h"
 @@ -104,6 +107,8 @@
@@ -11992,12 +11968,14 @@
 +  bool capture_pcm_buffers_ = false;
 +  std::vector<scoped_refptr<StreamParserBuffer>> pcm_buffers_;
    std::vector<scoped_refptr<StreamParserBuffer>> video_buffers_;
- 
+-
++
    // Note this is similar to a StreamParserTestBase method, so may benefit from
 @@ -202,6 +207,9 @@
          // Ensure that track ids are properly assigned on all emitted buffers.
          EXPECT_EQ(track_id, buf->track_id());
- 
+-
++
 +        if (track_id == audio_track_id_ && capture_pcm_buffers_)
 +          pcm_buffers_.push_back(buf);
 +
@@ -12007,7 +11985,8 @@
 @@ -495,6 +503,227 @@
    ParseMP4File("bear-320x240-v-2fragments-open-gop_frag-cenc.mp4", 512);
  }
- 
+-
++
 +TEST_F(MP4StreamParserTest, ParcPCMInitNeedsSafariRules) {
 +  EXPECT_CALL(media_log_, DoAddLogRecordLogString(testing::_)).Times(testing::AnyNumber());
 +  for (bool safari : {false, true}) {
@@ -12262,7 +12241,8 @@
 +  ParseMP4File("bear-1280x720-av_frag.mp4", 512);
 +  EXPECT_EQ(audio_decoder_config_.codec(), AudioCodec::kAAC);
  }
- 
+-
++
  TEST_F(MP4StreamParserTest, MPEG4_XHE_AAC) {
 @@ -851,6 +1105,214 @@
    EXPECT_EQ(HEVCPROFILE_MAIN10, video_decoder_config_.profile());
@@ -12476,7 +12456,8 @@
 +  EXPECT_EQ(VideoCodec::kH264, video_decoder_config_.codec());
 +}
 +#endif  // (BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
- 
+-
++
  TEST_F(MP4StreamParserTest, DemuxingAC3) {
    base::flat_set<int> audio_object_types;
 --- a/media/filters/chunk_demuxer_unittest.cc
@@ -12488,7 +12469,8 @@
 +#include <string>
  #include <utility>
 +#include <vector>
- 
+-
++
  #include "base/command_line.h"
  #include "base/compiler_specific.h"
 @@ -27,6 +29,7 @@
@@ -12505,7 +12487,8 @@
  #include "media/media_buildflags.h"
 +#include "testing/gmock/include/gmock/gmock.h"
  #include "testing/gtest/include/gtest/gtest.h"
- 
+-
++
  using ::testing::AnyNumber;
 @@ -595,6 +599,26 @@
      std::vector<BlockInfo> blocks;
@@ -12532,12 +12515,14 @@
 +      AppendSingleStreamCluster(kSourceId, kAudioTrackNum, frames);
 +    }
    }
- 
+-
++
    struct MuxedStreamInfo {
 @@ -1188,6 +1212,12 @@
      base::RunLoop().RunUntilIdle();
    }
- 
+-
++
 +  // Parc: a read of |type| answered into ReadDone() whenever it completes.
 +  void ParcStartRead(DemuxerStream::Type type) {
 +    GetStream(type)->Read(
@@ -13070,7 +13055,8 @@
  TEST_F(ChunkDemuxerTest, RemoveId) {
    std::string audio_id = "audio1";
 @@ -3012,9 +3550,285 @@
- 
+-
++
      if (result == ChunkDemuxer::kOk)
        demuxer_->RemoveId("source_id");
 +  }
@@ -13163,7 +13149,8 @@
 +    }
    }
  }
- 
+-
++
 +TEST_F(ChunkDemuxerTest, ParcSafariContainerTypesNeedSafariRules) {
 +  EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
 +  demuxer_->Initialize(&host_,
@@ -13354,7 +13341,8 @@
 +
  TEST_F(ChunkDemuxerTest, EndOfStreamStillSetAfterSeek) {
    ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
- 
+-
++
 @@ -3309,6 +4123,38 @@
  namespace {
  const char* kMp2tMimeType = "video/mp2t";
@@ -13392,7 +13380,8 @@
 +  EXPECT_FALSE(first->IsEnabled());
 +  EXPECT_FALSE(second->IsEnabled());
  }
- 
+-
++
  TEST_F(ChunkDemuxerTest, EmitBuffersDuringAbort) {
 @@ -3768,8 +4614,347 @@
    // Verify that the old data, and nothing more, has been garbage collected.
@@ -13724,7 +13713,8 @@
 +      demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(), 1000000));
 +  CheckExpectedRanges("{ [0,75000) }");
  }
- 
+-
++
 +TEST_F(ChunkDemuxerTest, ParcSafariEviction_Off_EvictsFromThePlayableSegment) {
 +  ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
 +  demuxer_->SetMemoryLimitsForTest(DemuxerStream::AUDIO,
@@ -13745,7 +13735,8 @@
 @@ -5073,4 +6258,52 @@
  // same codec type in a single SourceBufferState, when WebM parser supports
  // multiple tracks. crbug.com/646900
- 
+-
++
 +// Parc: a Safari-identity page's Media Source
 +// (ChunkDemuxer::ParcSetSafariMediaSource()) fills a gap under
 +// 2002/24000 s in buffered, as WebKit's TrackBuffer does, and plays video
@@ -13792,179 +13783,6 @@
 +                            "0K 100K 200K 300K 400K 500D100K");
 +  base::RunLoop().RunUntilIdle();
 +  ExpectRead(DemuxerStream::VIDEO, 501);
-+}
-+
- }  // namespace media
---- a/media/filters/source_buffer_stream_unittest.cc
-+++ b/media/filters/source_buffer_stream_unittest.cc
-@@ -3057,6 +3057,36 @@
-   CheckExpectedRangesByTimestamp("{ [80,200) [400,650) }");
- }
- 
-+// Parc: the removals of SourceBufferState::ParcEvictFrames(), and the
-+// estimate ParcComputeEvictionData() makes of them.
-+TEST_F(SourceBufferStreamTest, ParcRemovalSize_IsWhatParcRemoveFrees) {
-+  NewCodedFrameGroupAppend("0K 30 60 90K 120 150 180K 210 240");
-+  NewCodedFrameGroupAppend("600K 630 660 690K 720 750");
-+  CheckExpectedRangesByTimestamp("{ [0,270) [600,780) }");
-+  const auto remove = [this](int start_ms, int end_ms) {
-+    const base::TimeDelta start = base::Milliseconds(start_ms);
-+    const base::TimeDelta end = base::Milliseconds(end_ms);
-+    const base::TimeDelta duration = base::Milliseconds(1000);
-+    const size_t expected = stream_->ParcRemovalSize(start, end, duration);
-+    const size_t before = stream_->GetMemoryUsage();
-+    stream_->ParcRemove(start, end, duration);
-+    EXPECT_EQ(expected, before - stream_->GetMemoryUsage());
-+    EXPECT_GT(expected, 0u);
-+  };
-+
-+  // Frame by frame from |start|, on to the next keyframe after |end|.
-+  remove(100, 130);
-+  CheckExpectedRangesByTimestamp("{ [0,120) [180,270) [600,780) }");
-+
-+  // To the end of the range when no keyframe follows |end| there.
-+  remove(700, 710);
-+  CheckExpectedRangesByTimestamp("{ [0,120) [180,270) [600,720) }");
-+
-+  // Across ranges, up to the keyframe after |end|.
-+  remove(200, 650);
-+  CheckExpectedRangesByTimestamp("{ [0,120) [180,210) [690,720) }");
-+}
-+
- // Test saving the last GOP appended when the GOP containing the next buffer is
- // adjacent to the last GOP appended.
- TEST_F(SourceBufferStreamTest, GarbageCollection_SaveAppendGOP_Selected1) {
-@@ -5865,4 +5895,132 @@
-   EXPECT_FALSE(GarbageCollect(base::Milliseconds(0), 0));
- }
--
-+
-+// Parc: a Safari-identity page's Media Source
-+// (SourceBufferStream::ParcSetSafariMediaSource()) reports buffered ranges as
-+// WebKit's TrackBuffer does: a frame appended within 2002/24000 s of a range
-+// fills the gap. A 70 ms gap in 30 fps video is two ranges in Chromium.
-+TEST_F(SourceBufferStreamTest, Parc_ChromeKeepsSmallGaps) {
-+  NewCodedFrameGroupAppend("0K 33 66 99");
-+  NewCodedFrameGroupAppend("202K 235 268 301");
-+  CheckExpectedRangesByTimestamp("{ [0,132) [202,334) }");
-+}
-+
-+TEST_F(SourceBufferStreamTest, Parc_SafariFillsGapsUnderTimeFudgeFactor) {
-+  stream_->ParcSetSafariMediaSource(true);
-+  NewCodedFrameGroupAppend("0K 33 66 99");
-+  NewCodedFrameGroupAppend("202K 235 268 301");
-+  CheckExpectedRangesByTimestamp("{ [0,334) }");
-+
-+  // A 100 ms gap stays.
-+  NewCodedFrameGroupAppend("434K 467");
-+  CheckExpectedRangesByTimestamp("{ [0,334) [434,500) }");
-+}
-+
-+TEST_F(SourceBufferStreamTest, Parc_SafariFilledGapLeavesWithTheFramesBesideIt) {
-+  stream_->ParcSetSafariMediaSource(true);
-+  NewCodedFrameGroupAppend("0K 33 66 99");
-+  NewCodedFrameGroupAppend("202K 235 268 301");
-+  CheckExpectedRangesByTimestamp("{ [0,334) }");
-+
-+  // TrackBuffer::removeSamples() erases the filled gap with the frames after
-+  // it; appended again, the first of them fills it again.
-+  RemoveInMs(202, 334, 334);
-+  CheckExpectedRangesByTimestamp("{ [0,132) }");
-+  NewCodedFrameGroupAppend("202K 235 268 301");
-+  CheckExpectedRangesByTimestamp("{ [0,334) }");
-+
-+  // And with the frames before it. Appended again, their last frame ends
-+  // nearer its own start than the next range (PlatformTimeRanges::nearest()),
-+  // so the gap stays open.
-+  RemoveInMs(0, 132, 334);
-+  CheckExpectedRangesByTimestamp("{ [202,334) }");
-+  NewCodedFrameGroupAppend("0K 33 66 99");
-+  CheckExpectedRangesByTimestamp("{ [0,132) [202,334) }");
-+}
-+
-+// Parc: WebKit's playback crosses a gap of up to 125 ms, or 250 ms where the
-+// media source's audio covers its start (MediaSourcePrivate::
-+// gapToleranceAtTime()); Chromium's stops where a range ends.
-+TEST_F(SourceBufferStreamTest, Parc_ChromeVideoStopsAtGaps) {
-+  NewCodedFrameGroupAppend("0K 33 66 99");
-+  NewCodedFrameGroupAppend("232K 265");
-+  SeekToTimestampMs(0);
-+  CheckExpectedBuffers("0K 33 66 99");
-+  CheckNoNextBuffer();
-+}
-+
-+TEST_F(SourceBufferStreamTest, Parc_SafariVideoPlaysAcrossGapsWithinTolerance) {
-+  stream_->ParcSetSafariMediaSource(true);
-+  NewCodedFrameGroupAppend("0K 33 66 99");
-+  NewCodedFrameGroupAppend("232K 265");
-+  NewCodedFrameGroupAppend("432K 465");
-+  CheckExpectedRangesByTimestamp("{ [0,132) [232,298) [432,498) }");
-+  SeekToTimestampMs(0);
-+  CheckExpectedBuffers("0K 33 66 99 232K 265");
-+  CheckNoNextBuffer();
-+
-+  Ranges<base::TimeDelta> audio;
-+  audio.Add(base::TimeDelta(), base::Seconds(1));
-+  stream_->ParcSetMediaSourceBuffered(base::TimeDelta(), audio);
-+  CheckExpectedBuffers("432K 465");
-+}
-+
-+// The overlapping append moves 133-199 to the track buffer and leaves no
-+// range selected once it runs out. The gap counts from where 199 ends (232),
-+// as WebKit measures from the end of the last sample it enqueued.
-+TEST_F(SourceBufferStreamTest, Parc_SafariVideoBridgesAfterTrackBuffer) {
-+  stream_->ParcSetSafariMediaSource(true);
-+  NewCodedFrameGroupAppend("100K 133 166 199");
-+  NewCodedFrameGroupAppend("342K 375");
-+  SeekToTimestampMs(100);
-+  CheckExpectedBuffers("100K");
-+  NewCodedFrameGroupAppend("0K 33 66 100K");
-+  CheckExpectedBuffers("133 166 199");
-+  EXPECT_MEDIA_LOG(ContainsTrackBufferExhaustionSkipLog(143));
-+  CheckExpectedBuffers("342K 375");
-+}
-+
-+// Chromium's audio renderer plays buffers back to back, so audio reads still
-+// stop at a gap; skipping it would shift audio against video.
-+TEST_F(SourceBufferStreamTest, Parc_SafariAudioStopsAtGaps) {
-+  SetAudioStream();
-+  stream_->ParcSetSafariMediaSource(true);
-+  NewCodedFrameGroupAppend("0K 2K 4K 6K");
-+  NewCodedFrameGroupAppend("60K 62K");
-+  SeekToTimestampMs(0);
-+  CheckExpectedBuffers("0K 2K 4K 6K");
-+  CheckNoNextBuffer();
-+}
-+
-+TEST_F(SourceBufferStreamTest, Parc_ChromeSeekIntoGapWaits) {
-+  NewCodedFrameGroupAppend("0K 33 66 99");
-+  NewCodedFrameGroupAppend("300K 333");
-+  SeekToTimestampMs(180);
-+  EXPECT_TRUE(stream_->IsSeekPending());
-+  CheckNoNextBuffer();
-+}
-+
-+TEST_F(SourceBufferStreamTest, Parc_SafariSeekIntoGapStartsAtNextRange) {
-+  stream_->ParcSetSafariMediaSource(true);
-+  NewCodedFrameGroupAppend("0K 33 66 99");
-+  NewCodedFrameGroupAppend("300K 333");
-+
-+  // TrackBuffer::reenqueueMediaForTime() starts from a frame up to the
-+  // tolerance after the target.
-+  SeekToTimestampMs(160);
-+  EXPECT_TRUE(stream_->IsSeekPending());
-+  SeekToTimestampMs(180);
-+  EXPECT_FALSE(stream_->IsSeekPending());
-+  CheckExpectedBuffers("300K 333");
-+
-+  // 250 ms where the media source's audio covers the target.
-+  SeekToTimestampMs(160);
-+  EXPECT_TRUE(stream_->IsSeekPending());
-+  Ranges<base::TimeDelta> audio;
-+  audio.Add(base::TimeDelta(), base::Seconds(1));
-+  stream_->ParcSetMediaSourceBuffered(base::TimeDelta(), audio);
-+  EXPECT_FALSE(stream_->IsSeekPending());
-+  CheckExpectedBuffers("300K 333");
 +}
 +
  }  // namespace media
@@ -14039,9 +13857,11 @@
  #include "media/mojo/clients/mojo_demuxer_stream_impl.h"
  #include "media/mojo/common/media_type_converters.h"
 +#include "mojo/public/cpp/bindings/callback_helpers.h"
- 
+-
++
  namespace media {
- 
+-
++
 @@ -96,15 +98,29 @@
                            CdmAttachedCB cdm_attached_cb) {
    DVLOG(1) << __func__;
@@ -14052,7 +13872,8 @@
 +  DCHECK(cdm_context || BUILDFLAG(IS_MAC));
    DCHECK(cdm_attached_cb);
 -  DCHECK(!cdm_attached_cb_);
- 
+-
++
    if (encountered_error_) {
      task_runner_->PostTask(FROM_HERE,
                             base::BindOnce(std::move(cdm_attached_cb), false));
@@ -14071,7 +13892,8 @@
 +  }
 +#endif  // BUILDFLAG(IS_MAC)
 +  DCHECK(!cdm_attached_cb_);
- 
+-
++
    std::optional<base::UnguessableToken> cdm_id = cdm_context->GetCdmId();
    if (!cdm_id) {
 --- a/media/mojo/services/mojo_renderer_service.cc
@@ -14128,7 +13950,8 @@
 @@ -285,6 +320,19 @@
    std::move(callback).Run();
  }
- 
+-
++
 +#if BUILDFLAG(IS_MAC)
 +void MojoRendererService::ParcOnReplacementCdmAttached(
 +    base::OnceCallback<void(bool)> callback,
@@ -14148,11 +13971,13 @@
 --- a/media/mojo/services/mojo_renderer_service.h
 +++ b/media/mojo/services/mojo_renderer_service.h
 @@ -9,6 +9,7 @@
- 
+-
++
  #include <memory>
  #include <optional>
 +#include <vector>
- 
+-
++
  #include "base/compiler_specific.h"
  #include "base/functional/callback.h"
 @@ -17,6 +18,7 @@
@@ -14164,16 +13989,19 @@
  #include "media/base/media_resource.h"
  #include "media/base/pipeline_status.h"
 @@ -116,6 +118,10 @@
- 
+-
++
    // Callback executed once SetCdm() completes.
    void OnCdmAttached(base::OnceCallback<void(bool)> callback, bool success);
 +#if BUILDFLAG(IS_MAC)
 +  void ParcOnReplacementCdmAttached(base::OnceCallback<void(bool)> callback,
 +                                    bool success);
 +#endif  // BUILDFLAG(IS_MAC)
- 
+-
++
    const raw_ptr<MojoCdmServiceContext> mojo_cdm_service_context_ = nullptr;
- 
+-
++
 @@ -132,6 +138,11 @@
    // Holds the CdmContextRef to keep the CdmContext alive for the lifetime of
    // the |renderer_|.
@@ -14183,7 +14011,8 @@
 +  // may still use (see SetCdm()).
 +  std::vector<std::unique_ptr<CdmContextRef>> parc_replaced_cdm_context_refs_;
 +#endif  // BUILDFLAG(IS_MAC)
- 
+-
++
    // Note: Destroy |renderer_| first to avoid access violation into other
    // members, e.g. |media_resource_| and |cdm_|.
 --- a/media/base/pipeline.h
@@ -14266,7 +14095,8 @@
    // the filters.
    double playback_rate_;
 +  bool parc_native_hls_ = false;
- 
+-
++
    // Current volume level (from 0.0f to 1.0f). This value is set immediately
    // via SetVolume() and a task is dispatched on the task runner to notify the
 --- a/media/filters/pipeline_controller.h
@@ -14390,7 +14220,8 @@
    raw_ptr<RendererClient, DanglingUntriaged> renderer_client_ = nullptr;
    VideoDecoderConfig video_decoder_config_;
 @@ -381,9 +447,10 @@
- 
+-
++
    // Initial value.
    EXPECT_EQ(0.0f, pipeline_->GetPlaybackRate());
 -  // Invalid values cannot be set.
@@ -14810,7 +14641,8 @@
 +      .WillRepeatedly(Return(base::Milliseconds(500)));
 +  EXPECT_EQ(base::Seconds(1), pipeline_->GetMediaTime());
  }
- 
+-
++
 +// Parc: a negative rate turns a file's renderer backward through a flush the
 +// page doesn't hear as a seek; the demuxer seeks backward playback asks for
 +// stay in the pipeline, and a rate of 0 or more turns it forward again from
@@ -14925,7 +14757,8 @@
 +      ]
 +    }
    }
- 
+-
++
    # TODO(crbug.com/40057824): These should be gated behind `enable_hls_demuxer`,
 @@ -327,6 +341,7 @@
      "ac3/ac3_util_unittest.cc",
@@ -14946,14 +14779,16 @@
 +        sources += [ "mp2t/parc_es_parser_ac3_unittest.cc" ]
 +      }
      }
- 
+-
++
      if (enable_platform_hevc) {
 --- a/media/formats/mp2t/mp2t_stream_parser.h
 +++ b/media/formats/mp2t/mp2t_stream_parser.h
 @@ -62,17 +62,22 @@
        base::span<const uint8_t> buf) override;
    [[nodiscard]] ParseStatus Parse(int max_pending_bytes_to_inspect) override;
- 
+-
++
 +  // Parc: keeps every elementary stream it parses, whatever |allowed_codecs|
 +  // named, and parses AC-3, E-AC-3 and MPEG-1 and MPEG-2 video too, as
 +  // Safari's Media Source does.
@@ -14967,7 +14802,8 @@
                            const VideoDecoderConfig& video_cfg);
      BufferQueueWithConfig(const BufferQueueWithConfig& other);
      ~BufferQueueWithConfig();
- 
+-
++
      bool is_config_sent;
 -    AudioDecoderConfig audio_config;
 -    StreamParser::BufferQueue audio_queue;
@@ -14988,13 +14824,15 @@
 +      int pes_pid,
 +      int stream_type,
 +      const Descriptors& descriptors);
- 
+-
++
    bool ShouldForceEncryptedParser();
    std::unique_ptr<EsParser> CreateEncryptedH264Parser(int pes_pid,
 @@ -163,6 +176,17 @@
    // (mp4a.40.5 in the codecs parameter).
    bool sbr_in_mimetype_;
- 
+-
++
 +  // Parc: whether ParcIgnoreDeclaredCodecs() asked for the streams Safari's
 +  // Media Source parses beyond Chromium's.
 +  bool parc_safari_streams_ = false;
@@ -15032,16 +14870,19 @@
 @@ -33,6 +36,10 @@
  #include "media/formats/mp2t/ts_section_pes.h"
  #include "media/formats/mp2t/ts_section_pmt.h"
- 
+-
++
 +#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
 +#include "media/formats/mp2t/parc_es_parser_ac3.h"
 +#endif
 +
  namespace media {
  namespace mp2t {
- 
+-
++
 @@ -40,24 +47,50 @@
- 
+-
++
  enum StreamType {
    // ISO-13818.1 / ITU H.222 Table 2.34 "Stream type assignments"
 +  // Parc: MPEG-1 and MPEG-2 video, as AVStreamDataParser reads them.
@@ -15064,7 +14905,8 @@
 -  //  kStreamTypeAC3WithSampleAES = 0xc1,
 -  //  kStreamTypeEAC3WithSampleAES = 0xc2,
  };
- 
+-
++
  constexpr uint32_t kSampleAESPrivateDataIndicatorAVC = 0x7a617663;
  constexpr uint32_t kSampleAESPrivateDataIndicatorAAC = 0x61616364;
 -// TODO(dougsteed). Consider adding support for the following:
@@ -15072,7 +14914,8 @@
 -// const int64_t kSampleAESPrivateDataIndicatorEAC3 = 0x65633364;
 +constexpr uint32_t kParcSampleAESPrivateDataIndicatorAC3 = 0x61633364;
 +constexpr uint32_t kParcSampleAESPrivateDataIndicatorEAC3 = 0x65633364;
- 
+-
++
 +// Parc: HLS SAMPLE-AES audio's setup information, a registration descriptor
 +// ('apad') holding audio_type, priming, version, setup_data_length and the
 +// codec's setup data.
@@ -15098,7 +14941,8 @@
      std::optional<base::span<const std::string>> allowed_codecs) {
    if (!allowed_codecs.has_value()) {
 @@ -214,10 +247,10 @@
- 
+-
++
  Mp2tStreamParser::BufferQueueWithConfig::BufferQueueWithConfig(
      bool is_cfg_sent,
 -    const AudioDecoderConfig& audio_cfg,
@@ -15109,20 +14953,23 @@
 +    audio_configs(audio_cfg),
      video_config(video_cfg) {
  }
- 
+-
++
 @@ -274,6 +307,8 @@
      pid_pair.second->Flush();
    }
    pids_.clear();
 +  parc_sample_aes_pids_.clear();
 +  parc_sample_aes_audio_types_.clear();
- 
+-
++
    // Flush is invoked from SourceBuffer.abort/SourceState::ResetParserState, and
    // MSE spec prohibits emitting new configs in ResetParserState algorithm (see
 @@ -327,6 +362,14 @@
    EmitRemainingBuffers();
  }
- 
+-
++
 +// Parc: Safari's Media Source parses MPEG-2 TS with AVStreamDataParser
 +// (SourceBufferParserAVFObjC), which takes every elementary stream it
 +// recognizes without consulting the SourceBuffer's type.
@@ -15145,7 +14992,8 @@
        // to specify encryption metadata for HLS by injecting it as an extra TS
        // packet at the front of the stream.
 +      // Parc: not under Safari's rules; AVStreamDataParser reads no CENC CAT.
- 
+-
++
        it = pids_.insert(std::make_pair(TsSection::kPidCat, MakeCatPidState()))
                 .first;
 @@ -517,6 +562,111 @@
@@ -15258,12 +15106,14 @@
 +  }
 +  return es_parser;
  }
- 
+-
++
  bool Mp2tStreamParser::ShouldForceEncryptedParser() {
 @@ -612,7 +762,39 @@
        es_parser = CreateMpeg1AudioParser(pes_pid);
        break;
- 
+-
++
 +    case kStreamTypeParcMpeg1Video:
 +    case kStreamTypeParcMpeg2Video:
 +      if (parc_safari_streams_) {
@@ -15302,7 +15152,8 @@
          is_audio = false;
 @@ -625,6 +807,11 @@
        break;
- 
+-
++
      case kStreamTypeAACWithSampleAES:
 +      if (parc_safari_streams_) {
 +        es_parser =
@@ -15335,7 +15186,8 @@
      buffer_queue_chain_.push_back(buffer_queue_with_config);
    }
 @@ -733,44 +926,55 @@
- 
+-
++
  void Mp2tStreamParser::OnAudioConfigChanged(
      int pes_pid,
 -    const AudioDecoderConfig& audio_decoder_config) {
@@ -15402,7 +15254,8 @@
 +    }
 +  }
  }
- 
+-
++
  std::unique_ptr<MediaTracks> GenerateMediaTrackInfo(
 -    const AudioDecoderConfig& audio_config,
 +    const std::map<int, AudioDecoderConfig>& audio_configs,
@@ -15427,7 +15280,8 @@
    if (selected_video_pid_ > 0 &&
        !queue_with_config.video_config.IsValidConfig())
      return true;
- 
+-
++
 +  if (parc_safari_streams_) {
 +    for (const auto& [pid, state] : pids_) {
 +      if (state->pid_type() == PidState::kPidAudioPes &&
@@ -15443,7 +15297,8 @@
 +      queue_with_config.audio_configs, queue_with_config.video_config);
    RCHECK(config_cb_.Run(std::move(media_tracks)));
    queue_with_config.is_config_sent = true;
- 
+-
++
 @@ -813,7 +1026,7 @@
    // accurately here. Currently, capped at max 1 each for audio and video.
    InitParameters params(kInfiniteDuration);
@@ -15459,13 +15314,15 @@
      scoped_refptr<StreamParserBuffer> stream_parser_buffer) {
 -  DCHECK_EQ(pes_pid, selected_audio_pid_);
 +  DCHECK(parc_safari_streams_ || pes_pid == selected_audio_pid_);
- 
+-
++
    DVLOG(LOG_LEVEL_ES)
        << "OnEmitAudioBuffer: " << " size=" << stream_parser_buffer->size()
 @@ -839,7 +1052,12 @@
      return;
    }
- 
+-
++
 -  buffer_queue_chain_.back().audio_queue.push_back(stream_parser_buffer);
 +  const int track_id = parc_safari_streams_ ? pes_pid + 2 : kMp2tAudioTrackId;
 +  stream_parser_buffer->set_track_id(track_id);
@@ -15474,35 +15331,41 @@
 +  }
 +  buffer_queue_chain_.back().audio_queues[track_id].push_back(stream_parser_buffer);
  }
- 
+-
++
  void Mp2tStreamParser::OnEmitVideoBuffer(
 @@ -859,6 +1077,9 @@
      NOTREACHED() << "Cannot provide buffers before configs";
    }
- 
+-
++
 +  if (parc_sample_aes_pids_.contains(pes_pid)) {
 +    ParcMarkSampleAes(*stream_parser_buffer);
 +  }
    buffer_queue_chain_.back().video_queue.push_back(stream_parser_buffer);
  }
- 
+-
++
 @@ -873,17 +1094,25 @@
      return true;
- 
+-
++
    // Keep track of the last audio and video config sent.
 -  AudioDecoderConfig last_audio_config =
 -      buffer_queue_chain_.back().audio_config;
 +  const auto last_audio_configs = buffer_queue_chain_.back().audio_configs;
    VideoDecoderConfig last_video_config =
        buffer_queue_chain_.back().video_config;
- 
+-
++
    // Do not have all the configs, need more data.
 -  if (selected_audio_pid_ >= 0 && !last_audio_config.IsValidConfig())
 +  if (selected_audio_pid_ >= 0 && last_audio_configs.empty())
      return true;
    if (selected_video_pid_ >= 0 && !last_video_config.IsValidConfig())
      return true;
- 
+-
++
 +  if (parc_safari_streams_) {
 +    for (const auto& [pid, state] : pids_) {
 +      if (state->pid_type() == PidState::kPidAudioPes &&
@@ -15526,7 +15389,8 @@
        }
 @@ -905,10 +1134,7 @@
      }
- 
+-
++
      // Add buffers.
 -    BufferQueueMap buffer_queue_map;
 -    if (!queue_with_config.audio_queue.empty())
@@ -15543,7 +15407,8 @@
 -      true, last_audio_config, last_video_config);
 +      true, last_audio_configs, last_video_config);
    buffer_queue_chain_.push_back(queue_with_config);
- 
+-
++
    return true;
 --- a/media/formats/mp2t/mp2t_stream_parser_unittest.cc
 +++ b/media/formats/mp2t/mp2t_stream_parser_unittest.cc
@@ -15562,24 +15427,28 @@
    std::vector<scoped_refptr<StreamParserBuffer>> video_buffer_capture_;
    bool capture_buffers;
 +  std::vector<std::pair<EmeInitDataType, std::string>> init_data_;
- 
+-
++
    void CreateNonStrictParser() {
      bool has_sbr = false;
 @@ -358,7 +361,9 @@
    }
- 
+-
++
    void OnKeyNeeded(EmeInitDataType type,
 -                   const std::vector<uint8_t>& init_data) {}
 +                   const std::vector<uint8_t>& init_data) {
 +    init_data_.emplace_back(type, std::string(init_data.begin(), init_data.end()));
 +  }
- 
+-
++
    void OnNewSegment() {
      DVLOG(1) << "OnNewSegment";
 @@ -408,6 +413,57 @@
    }
  };
- 
+-
++
 +TEST(Mp2tSafariTracksTest, SafariKeepsBothAudioPidsChromeKeepsLowest) {
 +  for (bool safari : {false, true}) {
 +    Mp2tStreamParser parser(std::nullopt, false);
@@ -15637,7 +15506,8 @@
 @@ -528,6 +584,135 @@
    EXPECT_EQ(config_count_, 1);
  }
- 
+-
++
 +// Parc: with ParcIgnoreDeclaredCodecs(), as on a document presenting Safari's
 +// identity (SourceBufferState::ParcSetSafariInitSegmentRules()), streams of
 +// codecs the type didn't name are parsed too.
@@ -15773,7 +15643,8 @@
 @@ -577,6 +762,130 @@
    }
  }
- 
+-
++
 +// Parc: HLS SAMPLE-AES under ParcIgnoreDeclaredCodecs(), as Safari's Media
 +// Source takes it through AVStreamDataParser: each stream reports "mpts" init
 +// data once (AVStreamDataParser's key specifier bytes for the file, macOS
@@ -15910,7 +15781,8 @@
 +  if (is_media_remoting_requested_) {
 +    requested_session_available_ = true;
 +  }
- 
+-
++
    UpdateAndMaybeSwitch(SINK_AVAILABLE, UNKNOWN_STOP_TRIGGER);
  }
 @@ -136,6 +139,19 @@
@@ -15931,11 +15803,13 @@
 +  }
 +  ParcMaybeTakeMovedRemoter();
  }
- 
+-
++
  void RendererController::OnStarted() {
 @@ -152,19 +168,20 @@
    DCHECK(thread_checker_.CalledOnValidThread());
- 
+-
++
    VLOG(1) << "Failed to start remoting:" << reason;
 -  is_media_remoting_requested_ = false;
 +  SetMediaRemotingRequested(false);
@@ -15946,10 +15820,12 @@
    }
 +  ParcMaybeTakeMovedRemoter();
  }
- 
+-
++
  void RendererController::OnStopped(mojom::RemotingStopReason reason) {
    DCHECK(thread_checker_.CalledOnValidThread());
- 
+-
++
    VLOG(1) << "Remoting stopped: " << reason;
 -  is_media_remoting_requested_ = false;
 +  SetMediaRemotingRequested(false);
@@ -15958,7 +15834,8 @@
  }
 @@ -209,8 +226,19 @@
  }
- 
+-
++
  void RendererController::OnMediaRemotingRequested() {
 -  is_media_remoting_requested_ = true;
 +  SetMediaRemotingRequested(true);
@@ -15975,7 +15852,8 @@
 +    client_->ParcCastRequestChanged(requested);
 +  }
  }
- 
+-
++
  #if BUILDFLAG(ENABLE_MEDIA_REMOTING_RPC)
 @@ -301,6 +329,11 @@
      pixel_rate_timer_.Stop();
@@ -15987,7 +15865,8 @@
 +      start_trigger = PIXEL_RATE_READY;
 +    }
    }
- 
+-
++
    UpdateRemotePlaybackAvailabilityMonitoringState();
 @@ -381,12 +414,26 @@
    // Cancel the timer since pixel rate cannot be calculated when media is
@@ -15999,11 +15878,13 @@
 +    UpdateAndMaybeSwitch(REQUESTED_BY_BROWSER, UNKNOWN_STOP_TRIGGER);
 +  }
  }
- 
+-
++
  void RendererController::OnFrozen() {
    DCHECK(thread_checker_.CalledOnValidThread());
    DCHECK(is_paused_);
- 
+-
++
 +  // Parc: as WebKit's suspend() leaves a paused player on its AirPlay
 +  // target, a session casting this element (Remote Playback, which ends when
 +  // remoting stops) stays, paused on the receiver, for the user to resume.
@@ -16031,7 +15912,8 @@
 +    ParcMaybeTakeMovedRemoter();
      return;
    }
- 
+-
++
 -  // Start remoting. First, check pixel rate compatibility.
 -  if (pixels_per_second_ == 0) {
 +  // Start remoting. First, check pixel rate compatibility. Parc: a requested
@@ -16048,7 +15930,8 @@
      MaybeStartCalculatePixelRateTimer();
      return;
    }
- 
+-
++
 -  auto pixel_rate_support = GetPixelRateSupport();
 +  auto pixel_rate_support = GetPixelRateSupport(pixels_per_second);
    metrics_recorder_.RecordVideoPixelRateSupport(pixel_rate_support);
@@ -16057,7 +15940,8 @@
 @@ -574,6 +631,29 @@
    UpdateAndMaybeSwitch(UNKNOWN_START_TRIGGER, stop_trigger);
  }
- 
+-
++
 +void RendererController::ParcMoveToRemoter(
 +    mojo::PendingReceiver<mojom::RemotingSource> source_receiver,
 +    mojo::PendingRemote<mojom::Remoter> remoter) {
@@ -16083,7 +15967,8 @@
 +
  void RendererController::SetClient(MediaObserverClient* client) {
    DCHECK(thread_checker_.CalledOnValidThread());
- 
+-
++
 @@ -628,8 +708,12 @@
    // Only switch to remoting when media is playing. Since the renderer is
    // created when video starts loading, the receiver would display a black
@@ -16102,13 +15987,15 @@
 @@ -666,13 +750,14 @@
    UpdateAndMaybeSwitch(PIXEL_RATE_READY, UNKNOWN_STOP_TRIGGER);
  }
- 
+-
++
 -PixelRateSupport RendererController::GetPixelRateSupport() const {
 -  DCHECK(pixels_per_second_ != 0);
 +PixelRateSupport RendererController::GetPixelRateSupport(
 +    double pixels_per_second) const {
 +  DCHECK(pixels_per_second != 0);
- 
+-
++
 -  if (pixels_per_second_ <= kPixelsPerSec2k) {
 +  if (pixels_per_second <= kPixelsPerSec2k) {
      return PixelRateSupport::k2kSupported;
@@ -16127,10 +16014,12 @@
 +#include "mojo/public/cpp/bindings/receiver.h"
 +#include "mojo/public/cpp/bindings/remote.h"
  #include "testing/gtest/include/gtest/gtest.h"
- 
+-
++
  namespace media {
 @@ -92,6 +94,10 @@
- 
+-
++
    void UpdateRemotePlaybackCompatibility(bool is_compatible) override {
      is_remote_playback_compatible_ = is_compatible;
 +  }
@@ -16138,7 +16027,8 @@
 +  void ParcCastRequestChanged(bool requested) override {
 +    cast_requested_ = requested;
    }
- 
+-
++
    void set_pixels_per_second_(double pixels) {
 @@ -152,6 +158,7 @@
    bool is_rendering_remotely_ = false;
@@ -16150,7 +16040,8 @@
    base::SimpleTestTickClock clock_;
 @@ -410,11 +417,185 @@
    ExpectInRemoting();
- 
+-
++
    // Freezing should kick rendering back to local.
 +  controller_->OnFrozen();
 +  RunUntilIdle();
@@ -16296,7 +16187,8 @@
    ExpectInLocalRendering();
 +  EXPECT_FALSE(cast_requested_);
  }
- 
+-
++
 +TEST_F(RendererControllerTest, ParcCastRequestEndsWithItsUnstartedSession) {
 +  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
 +  set_pixels_per_second_(0);
@@ -16337,7 +16229,8 @@
 @@ -434,5 +615,90 @@
  }
  #endif
- 
+-
++
 +namespace {
 +
 +// Parc: the remoting bridge of the tab a Safari-identity page moved a player
@@ -16546,7 +16439,8 @@
 +  task_runner->FastForwardBy(base::Minutes(48));
 +  ASSERT_TRUE(casting);
 +  EXPECT_FALSE(casting->is_evicted_from_back_forward_cache());
- 
+-
++
 +  task_runner->FastForwardBy(base::Minutes(2));
 +  EXPECT_TRUE(!casting || casting->is_evicted_from_back_forward_cache());
 +}
@@ -16587,7 +16481,8 @@
 +      preroll_buffer_->set_track_id(track_id);
 +    }
 +  }
- 
+-
++
    // Specifies a buffer which must be decoded prior to this one to ensure this
    // buffer can be accurately decoded.  The given buffer must be of the same
 @@ -234,7 +240,7 @@
@@ -16598,7 +16493,8 @@
 +  TrackId track_id_;
    scoped_refptr<StreamParserBuffer> preroll_buffer_;
  };
- 
+-
++
 --- a/media/remoting/renderer_controller.h
 +++ b/media/remoting/renderer_controller.h
 @@ -106,7 +106,16 @@
@@ -16676,11 +16572,13 @@
 +++ b/content/browser/media/media_web_contents_observer.h
 @@ -61,6 +61,7 @@
  namespace content {
- 
+-
++
  class AudibleMetrics;
 +class RenderFrameHostImpl;
  class WebContentsImpl;
- 
+-
++
  // Used to authorize a frame to bypass the browser's audio service for
 @@ -76,6 +77,9 @@
    using ScopedGrant = base::ScopedClosureRunner;
@@ -16748,17 +16646,20 @@
 +    void OnParcShowPlaybackTargetPicker(const gfx::Point& position) override;
 +
 +    bool remote_playback_started() const { return remote_playback_started_; }
- 
+-
++
     private:
      PlayerInfo* GetPlayerInfo();
 @@ -278,6 +307,7 @@
- 
+-
++
      // Helps monitor audio stream when not using AudioService.
      bool uses_audio_service_ = true;
 +    bool remote_playback_started_ = false;
      std::unique_ptr<AudioStreamMonitor::AudibleClientRegistration>
          audio_client_registration_;
- 
+-
++
 --- a/content/browser/media/media_web_contents_observer.cc
 +++ b/content/browser/media/media_web_contents_observer.cc
 @@ -12,6 +12,7 @@
@@ -16786,12 +16687,14 @@
      web_contents_impl()->MediaDestroyed(player_id);
 +    ParcPlaybackTargetPlayerGone(player_id);
    }
- 
+-
++
    session_controllers_manager_->RenderFrameDeleted(render_frame_host);
 @@ -379,6 +384,24 @@
    return false;
  }
- 
+-
++
 +// static
 +bool MediaWebContentsObserver::IsRemotePlaybackStartedInPage(
 +    RenderFrameHostImpl* main_frame) {
@@ -16811,7 +16714,8 @@
 +}
 +
  // MediaWebContentsObserver::MediaPlayerHostImpl
- 
+-
++
  MediaWebContentsObserver::MediaPlayerHostImpl::MediaPlayerHostImpl(
 @@ -523,6 +546,7 @@
      OnRemotePlaybackMetadataChange(
@@ -16834,7 +16738,8 @@
 +  const bool has_grant = !uses_audio_service_ &&
 +                         AudibilityBypassTracker::ClaimGrant(media_player_id_);
 +  bool should_add_client = player_info->IsAudible() && has_grant;
- 
+-
++
    auto* audio_stream_monitor =
        media_web_contents_observer_->web_contents_impl()->audio_stream_monitor();
 @@ -688,6 +715,101 @@
@@ -16947,7 +16852,8 @@
 +        observer->ParcPlaybackTargetPlayerGone(player_id);
        },
        base::Unretained(this), player_id));
- 
+-
++
 @@ -834,19 +957,60 @@
 -
 +
@@ -17066,7 +16972,8 @@
 +    }
 +  });
  }
- 
+-
++
  // static
 -void AudibilityBypassTracker::RevokeGrant(GlobalRenderFrameHostId rfh_id,
 -                                          int grant_id) {
@@ -17111,22 +17018,26 @@
 +      holders;
 +  return *holders;
  }
- 
+-
++
  DOCUMENT_USER_DATA_KEY_IMPL(AudibilityBypassTracker);
 --- a/third_party/blink/public/platform/web_audio_source_provider_impl.h
 +++ b/third_party/blink/public/platform/web_audio_source_provider_impl.h
 @@ -8,6 +8,7 @@
  #include <stddef.h>
- 
+-
++
  #include <memory>
 +#include <optional>
  #include <string>
- 
+-
++
  #include "base/functional/callback.h"
 @@ -86,6 +87,11 @@
                            media::OutputDeviceStatusCB callback) override;
    void TaintOrigin();
- 
+-
++
 +  // Parc: plays out of |sink| from now on, in the state the current one is
 +  // in, once |sink| is authorized; until then, or if it isn't, the current
 +  // one plays. Nothing changes once a client took the audio (SetClient()).
@@ -17138,14 +17049,16 @@
 @@ -102,6 +108,10 @@
    // Calls setFormat() on |client_| from the Blink renderer thread.
    void OnSetFormat();
- 
+-
++
 +  void ParcOnSwitchSinkAuthorized(
 +      scoped_refptr<media::SwitchableAudioRendererSink> sink,
 +      media::OutputDeviceInfo device_info);
 +
    // Used to keep the volume across reconfigurations.
    double volume_ = 1.0;
- 
+-
++
 @@ -123,6 +133,14 @@
    base::Lock sink_lock_;
    scoped_refptr<media::SwitchableAudioRendererSink> sink_
@@ -17159,13 +17072,15 @@
 +  // in while it was on its way switches to as well.
 +  std::optional<std::string> parc_requested_device_id_ GUARDED_BY(sink_lock_);
    std::unique_ptr<media::AudioBus> bus_wrapper_;
- 
+-
++
    // This dangling raw_ptr occurred in:
 --- a/third_party/blink/renderer/platform/media/web_audio_source_provider_impl.cc
 +++ b/third_party/blink/renderer/platform/media/web_audio_source_provider_impl.cc
 @@ -8,6 +8,7 @@
  #include <utility>
- 
+-
++
  #include "base/check_op.h"
 +#include "base/functional/callback_helpers.h"
  #include "base/logging.h"
@@ -17173,10 +17088,12 @@
  #include "base/metrics/histogram_macros.h"
 @@ -240,6 +241,7 @@
    DCHECK_EQ(state_, kStopped);
- 
+-
++
    tee_filter_->Initialize(renderer, params.channels(), params.sample_rate());
 +  params_ = params;
- 
+-
++
    if (sink_)
      sink_->Initialize(params, tee_filter_.get());
 @@ -330,10 +332,55 @@
@@ -17236,14 +17153,16 @@
 +    sink_->Play();
 +  }
  }
- 
+-
++
  void WebAudioSourceProviderImpl::TaintOrigin() {
 --- a/third_party/blink/renderer/platform/media/web_audio_source_provider_impl_test.cc
 +++ b/third_party/blink/renderer/platform/media/web_audio_source_provider_impl_test.cc
 @@ -198,6 +198,61 @@
    CallAllSinkMethodsAndVerify(false);
  }
- 
+-
++
 +// Parc: a sink swapped in plays, once authorized, in the state the old one
 +// was in, with the volume the old one had; an unauthorized one is never used,
 +// and a client keeps the audio.
@@ -17337,7 +17256,8 @@
 +    EXPECT_FALSE(reader->ReadChild(&pcm));
 +  }
 +}
- 
+-
++
  TEST_F(BoxDefinitionsTest, Stereoscopic3DBoxParsing) {
    // Box size = 13 bytes (0x0d), FourCC = 'st3d', Full box version = 0, flags =
 --- a/media/base/demuxer_stream.h
@@ -17475,12 +17395,14 @@
 +  bool parc_own_audio_muted_ = false;
 +  std::optional<base::TimeDelta> parc_latency_hint_;
 +  bool parc_preserves_pitch_ = true;
- 
+-
++
    raw_ptr<DemuxerStream> current_audio_stream_;
    raw_ptr<DemuxerStream> current_video_stream_;
 @@ -271,6 +336,18 @@
    base::TimeDelta restarting_audio_time_ = kNoTimestamp;
- 
+-
++
    bool pending_video_track_change_ = false;
 +
 +  // Parc: playing backward; audio stays flushed. `parc_backward_clock_`
@@ -17494,20 +17416,24 @@
 +  bool parc_backward_ended_ = false;
 +  WallClockTimeSource parc_backward_clock_;
 +  base::CancelableOnceClosure parc_reach_start_cb_;
- 
+-
++
    base::WeakPtr<RendererImpl> weak_this_;
    base::WeakPtrFactory<RendererImpl> weak_factory_{this};
 --- a/media/renderers/renderer_impl.cc
 +++ b/media/renderers/renderer_impl.cc
 @@ -4,9 +4,12 @@
- 
+-
++
  #include "media/renderers/renderer_impl.h"
- 
+-
++
 +#include <algorithm>
  #include <memory>
  #include <utility>
 +#include <vector>
- 
+-
++
 +#include "base/barrier_closure.h"
  #include "base/command_line.h"
  #include "base/compiler_specific.h"
@@ -17536,7 +17462,8 @@
 +             : stream->video_decoder_config().is_encrypted();
 +}
  }  // namespace
- 
+-
++
 +struct RendererImpl::ParcMixedAudio {
 +  int id = 0;
 +  raw_ptr<DemuxerStream> stream;
@@ -17591,7 +17518,8 @@
   public:
    RendererClientInternal(DemuxerStream::Type type,
 @@ -132,7 +193,10 @@
- 
+-
++
    // Tear down in opposite order of construction as |video_renderer_| can still
    // need |time_source_| (which can be |audio_renderer_|) to be alive.
 +  parc_video_renderer_.reset();
@@ -17599,12 +17527,14 @@
 +  parc_mixed_audio_.clear();
 +  parc_audio_renderer_.reset();
    audio_renderer_.reset();
- 
+-
++
    if (init_cb_)
 @@ -182,6 +246,19 @@
    cdm_context_ = cdm_context;
    std::move(cdm_attached_cb).Run(true);
- 
+-
++
 +  // Parc: the streams that waited for a CDM join with this one, or stop
 +  // waiting if they can't play here.
 +  for (DemuxerStream* stream : {parc_audio_join_awaiting_cdm_.get(),
@@ -17620,9 +17550,11 @@
 +
    if (state_ != STATE_INIT_PENDING_CDM)
      return;
- 
+-
++
 @@ -200,6 +277,19 @@
- 
+-
++
    if (audio_renderer_)
      audio_renderer_->SetLatencyHint(latency_hint);
 +
@@ -17639,10 +17571,12 @@
 +    }
 +  }
  }
- 
+-
++
  void RendererImpl::SetPreservesPitch(bool preserves_pitch) {
 @@ -208,6 +298,15 @@
- 
+-
++
    if (audio_renderer_)
      audio_renderer_->SetPreservesPitch(preserves_pitch);
 +  if (parc_audio_renderer_) {
@@ -17655,7 +17589,8 @@
 +    }
 +  }
  }
- 
+-
++
  void RendererImpl::SetRenderMutedAudio(bool render_muted_audio) {
 @@ -217,6 +316,9 @@
    if (audio_renderer_) {
@@ -17665,7 +17600,8 @@
 +    parc_audio_renderer_->SetRenderMutedAudio(render_muted_audio);
 +  }
  }
- 
+-
++
  void RendererImpl::SetWasPlayedWithUserActivationAndHighMediaEngagement(
 @@ -227,6 +329,10 @@
    if (audio_renderer_)
@@ -17676,12 +17612,14 @@
 +        was_played_with_user_activation_and_high_media_engagement);
 +  }
  }
- 
+-
++
  void RendererImpl::Flush(base::OnceClosure flush_cb) {
 @@ -250,6 +356,10 @@
    flush_cb_ = std::move(flush_cb);
    state_ = STATE_FLUSHING;
- 
+-
++
 +  if (parc_backward_) {
 +    ParcEndBackward();
 +  }
@@ -17704,7 +17642,8 @@
 @@ -288,7 +403,26 @@
    if (state_ != STATE_PLAYING && state_ != STATE_FLUSHED)
      return;
- 
+-
++
 +  if (parc_backward_) {
 +    playback_rate_ = playback_rate;
 +    parc_backward_clock_.SetPlaybackRate(playback_rate);
@@ -17725,18 +17664,21 @@
 +      mixed->renderer->GetTimeSource()->SetPlaybackRate(playback_rate);
 +    }
 +  }
- 
+-
++
    const double old_rate = playback_rate_;
    playback_rate_ = playback_rate;
 @@ -307,20 +441,30 @@
- 
+-
++
    if (audio_renderer_)
      audio_renderer_->SetVolume(volume);
 +  if (parc_audio_renderer_) {
 +    parc_audio_renderer_->SetVolume(volume);
 +  }
  }
- 
+-
++
  base::TimeDelta RendererImpl::GetMediaTime() {
    // No BelongsToCurrentThread() checking because this can be called from other
    // threads.
@@ -17754,16 +17696,19 @@
 +    // Parc: a joining audio renderer replaces it (OnParcJoinInitialized()).
 +    time_source = time_source_;
    }
- 
+-
++
 -  return time_source_->CurrentMediaTime();
 +  return time_source->CurrentMediaTime();
  }
- 
+-
++
  void RendererImpl::DisableUnderflowForTesting() {
 @@ -362,7 +506,16 @@
      return true;
    }
- 
+-
++
 -  return time_source_->GetWallClockTimes(media_timestamps, wall_clock_times);
 +  TimeSource* time_source = nullptr;
 +  {
@@ -17776,7 +17721,8 @@
 +  }
 +  return time_source->GetWallClockTimes(media_timestamps, wall_clock_times);
  }
- 
+-
++
  bool RendererImpl::HasEncryptedStream() {
 @@ -408,6 +561,9 @@
    MediaClient* media_client = GetMediaClient();
@@ -17790,18 +17736,21 @@
          FROM_HERE, base::BindOnce(&RendererImpl::OnAudioRendererInitializeDone,
 @@ -459,6 +615,9 @@
        media_resource_->GetFirstStream(DemuxerStream::VIDEO);
- 
+-
++
    if (!video_stream) {
 +    if (media_resource_->ParcMayAddStreams()) {
 +      parc_video_renderer_ = std::move(video_renderer_);
 +    }
      video_renderer_.reset();
- 
+-
++
      // Something has disabled all audio and video streams, so fail
 @@ -512,6 +671,16 @@
      time_source_ = wall_clock_time_source_.get();
    }
- 
+-
++
 +  // Parc: the other enabled audio streams initialize too; the last to finish
 +  // completes initialization (OnParcMixedAudioInitialized()).
 +  ParcSyncMixedAudio();
@@ -17818,7 +17767,8 @@
 @@ -538,11 +707,16 @@
    DCHECK_EQ(state_, STATE_FLUSHING);
    DCHECK(flush_cb_);
- 
+-
++
 +  base::OnceClosure flush_done_cb =
 +      base::BindOnce(&RendererImpl::OnAudioRendererFlushDone, weak_this_);
 +  if (!parc_mixed_audio_.empty()) {
@@ -17834,7 +17784,8 @@
 +    audio_renderer_->Flush(std::move(flush_done_cb));
    }
  }
- 
+-
++
 @@ -690,6 +864,11 @@
      audio_playing_ = true;
      pending_audio_track_change_ = false;
@@ -17850,7 +17801,8 @@
 @@ -740,6 +919,27 @@
                 type_string, "state",
                 BufferingStateToString(new_buffering_state, reason));
- 
+-
++
 +  // Parc: playing backward, time waits for the video renderer's earlier
 +  // frames without the page hearing about it.
 +  if (parc_backward_) {
@@ -17873,7 +17825,8 @@
 +  }
 +
    bool was_waiting_for_enough_data = WaitingForEnoughData();
- 
+-
++
    if (new_buffering_state == BUFFERING_HAVE_NOTHING) {
 @@ -824,7 +1024,12 @@
      return true;
@@ -17887,7 +17840,8 @@
 +    return mixed->buffering_state != BUFFERING_HAVE_ENOUGH;
 +  });
  }
- 
+-
++
  void RendererImpl::PausePlayback() {
 @@ -858,6 +1063,12 @@
    if (time_ticking_) {
@@ -17900,7 +17854,8 @@
 +      }
 +    }
    }
- 
+-
++
    if (playback_rate_ > 0 && video_renderer_)
 @@ -875,6 +1086,12 @@
      time_ticking_ = true;
@@ -17918,22 +17873,26 @@
 @@ -914,7 +1131,9 @@
    if (video_renderer_ && !video_ended_)
      return false;
- 
+-
++
 -  return true;
 +  return std::ranges::all_of(parc_mixed_audio_, [](const auto& mixed) {
 +    return mixed->ended;
 +  });
  }
- 
+-
++
  void RendererImpl::RunEndedCallbackIfNeeded() {
 @@ -947,6 +1166,9 @@
- 
+-
++
    const State old_state = state_;
    state_ = STATE_ERROR;
 +  if (parc_backward_) {
 +    ParcStopBackwardClock();
 +  }
- 
+-
++
    if (init_cb_) {
      DCHECK(old_state == STATE_INITIALIZING ||
 @@ -1009,6 +1231,52 @@
@@ -19060,10 +19019,12 @@
 +++ b/media/renderers/video_renderer_impl.h
 @@ -9,6 +9,7 @@
  #include <stdint.h>
- 
+-
++
  #include <memory>
 +#include <vector>
- 
+-
++
  #include "base/cancelable_callback.h"
  #include "base/memory/raw_ptr.h"
 @@ -24,7 +25,9 @@
@@ -19116,13 +19077,15 @@
 +  void ParcShowNextWindow_Locked();
 +  scoped_refptr<VideoFrame> ParcRender_Locked(base::TimeTicks deadline_min);
 +  void ParcStall();
- 
+-
++
    // Paints first frame and sets `painted_first_frame_` to true if
    // `painted_first_frame_` is false.
 @@ -379,6 +403,52 @@
    // one MEDIA_LOG.
    bool is_latency_hint_media_logged_ = false;
- 
+-
++
 +  // Parc: backward playback state (ParcDecodeWindowEndingAt_Locked()).
 +  bool parc_backward_ = false;
 +  ParcSeekDemuxerCB parc_seek_demuxer_cb_;
@@ -19171,17 +19134,20 @@
 +
    // NOTE: Weak pointers must be invalidated before all other member variables.
    base::WeakPtrFactory<VideoRendererImpl> weak_factory_{this};
- 
+-
++
 --- a/media/renderers/video_renderer_impl.cc
 +++ b/media/renderers/video_renderer_impl.cc
 @@ -5,6 +5,7 @@
  #include "media/renderers/video_renderer_impl.h"
- 
+-
++
  #include <algorithm>
 +#include <cmath>
  #include <memory>
  #include <utility>
- 
+-
++
 @@ -46,6 +47,19 @@
  // Today, |min_buffered_frames_| can go down (as low as 1) and up in response to
  // SetLatencyHint(), so we needed to peg this with a constant.
@@ -19199,9 +19165,11 @@
 +// this for the second window before starting.
 +constexpr base::TimeDelta kParcMaxWindowSpan = base::Seconds(30);
 +constexpr base::TimeDelta kParcMaxStartWait = base::Seconds(2);
- 
+-
++
  }  // namespace
- 
+-
++
 @@ -119,6 +133,19 @@
    }
    received_end_of_stream_ = false;
@@ -19219,7 +19187,8 @@
 +  parc_stride_ = base::TimeDelta();
 +  parc_scan_ = false;
 +  parc_window_awaited_ = false;
- 
+-
++
    // Reset |video_decoder_stream_| and drop any pending read callbacks from it.
    pending_read_ = false;
 @@ -127,9 +154,12 @@
@@ -19235,7 +19204,8 @@
 +        base::BindOnce(&VideoRendererImpl::OnVideoDecoderStreamResetDone,
 +                       weak_factory_.GetWeakPtr()));
 +  }
- 
+-
++
    // To avoid unnecessary work by VDAs, only delete queued frames after
    // resetting |video_decoder_stream_|. If this is done in the opposite order
 @@ -160,6 +190,27 @@
@@ -19269,7 +19239,8 @@
  void VideoRendererImpl::Initialize(
 @@ -248,6 +299,21 @@
                                 last_frame_ready_time_ >= last_render_time_);
- 
+-
++
    last_render_time_ = tick_clock_->NowTicks();
 +
 +  if (parc_backward_) {
@@ -19286,11 +19257,13 @@
 +    TRACE_EVENT_END("media", "frame", frame->AsHumanReadableString());
 +    return frame;
 +  }
- 
+-
++
    size_t frames_dropped = 0;
    scoped_refptr<VideoFrame> result =
 @@ -297,6 +363,9 @@
- 
+-
++
  void VideoRendererImpl::OnFrameDropped() {
    base::AutoLock auto_lock(lock_);
 +  if (parc_backward_) {
@@ -19298,9 +19271,11 @@
 +  }
    algorithm_->OnLastFrameDropped();
  }
- 
+-
++
 @@ -360,6 +429,10 @@
- 
+-
++
  void VideoRendererImpl::OnStatisticsUpdate(const PipelineStatistics& stats) {
    DCHECK(task_runner_->RunsTasksInCurrentSequence());
 +  if (stats.video_keyframe_distance_average.is_positive() &&
@@ -19309,11 +19284,13 @@
 +  }
    client_->OnStatisticsUpdate(stats);
  }
- 
+-
++
 @@ -431,6 +504,14 @@
    if (rendered_end_of_stream_)
      return;
- 
+-
++
 +  if (parc_backward_) {
 +    // Render() isn't running, so `parc_shown_` is only changed here.
 +    if (!parc_shown_.empty()) {
@@ -19327,19 +19304,22 @@
    if (!algorithm_->frames_queued()) {
 @@ -453,6 +534,10 @@
      return;
- 
+-
++
    StopSink();
 +
 +  if (parc_backward_) {
 +    return;
 +  }
- 
+-
++
    // Make sure we expire everything we can if we can't read any more currently,
    // otherwise playback may hang indefinitely.  Note: There are no effective
 @@ -633,6 +718,11 @@
    last_frame_ready_time_ = tick_clock_->NowTicks();
    last_decoder_stream_avg_duration_ = video_decoder_stream_->AverageDuration();
- 
+-
++
 +  if (parc_backward_) {
 +    ParcFrameReady_Locked(std::move(frame));
 +    return;
@@ -19351,7 +19331,8 @@
 @@ -820,6 +910,11 @@
    if (pending_read_ || received_end_of_stream_)
      return;
- 
+-
++
 +  if (parc_seeking_ || parc_resetting_ ||
 +      (parc_backward_ && !parc_decoding_)) {
 +    return;
@@ -19359,9 +19340,11 @@
 +
    if (HaveReachedBufferingCap(max_buffered_frames_))
      return;
- 
+-
++
 @@ -910,7 +1005,7 @@
- 
+-
++
  void VideoRendererImpl::StartSink() {
    DCHECK(task_runner_->RunsTasksInCurrentSequence());
 -  DCHECK_GT(algorithm_->frames_queued(), 0u);
@@ -19372,7 +19355,8 @@
 @@ -1121,4 +1216,399 @@
    paint_first_frame_cb_.Cancel();
  }
- 
+-
++
 +void VideoRendererImpl::ParcDecodeWindowEndingAt_Locked(base::TimeDelta end,
 +                                                        bool starting) {
 +  DCHECK(task_runner_->RunsTasksInCurrentSequence());
@@ -19772,9 +19756,11 @@
 --- a/media/renderers/video_renderer_impl_unittest.cc
 +++ b/media/renderers/video_renderer_impl_unittest.cc
 @@ -364,6 +364,102 @@
- 
+-
++
    MOCK_METHOD0(OnSimulateDecodeDelay, base::TimeDelta(void));
- 
+-
++
 +  // Parc: what ParcRewind() saw.
 +  struct ParcRewound {
 +    // The frames shown, in order.
@@ -19945,13 +19931,15 @@
 +  base::TimeDelta parc_next_;
 +  int parc_generation_ = 0;
 +  VideoDecoder::DecodeCB parc_decode_cb_;
- 
+-
++
    // Used to protect |time_|.
    base::Lock lock_;
 @@ -2017,4 +2180,337 @@
    Destroy();
  }
- 
+-
++
 +// Parc: Safari's AVPlayer rewinds a file. Each window is decoded forward from
 +// the keyframe at or before its end after a demuxer seek, and shown latest
 +// frame first; the window before is decoded meanwhile.
@@ -20321,24 +20309,28 @@
 +  // (MediaPlayerPrivateAVFoundationObjC::setShouldPlayToPlaybackTarget).
 +  void ParcSetCasting(bool casting);
 +  bool ParcCasting() const { return parc_casting_sources_ > 0; }
- 
+-
++
    // A redirect has occurred (or we've found a better UrlData for the same
    // resource).
 @@ -242,6 +256,8 @@
    // Number of bytes read from this resource.
    int64_t bytes_read_from_cache_ = 0;
- 
+-
++
 +  int parc_casting_sources_ = 0;
 +
    // Does the server support ranges?
    bool range_supported_;
- 
+-
++
 --- a/third_party/blink/renderer/platform/media/url_index.cc
 +++ b/third_party/blink/renderer/platform/media/url_index.cc
 @@ -143,6 +143,29 @@
    mime_type_ = std::move(mime_type);
  }
- 
+-
++
 +void UrlData::ParcCopyResponseInfo(const UrlData& from) {
 +  data_origin_ = from.data_origin_;
 +  has_access_control_ = from.has_access_control_;
@@ -20369,16 +20361,19 @@
 +++ b/third_party/blink/renderer/platform/media/multi_buffer_data_source.h
 @@ -8,6 +8,7 @@
  #include <stdint.h>
- 
+-
++
  #include <memory>
 +#include <vector>
- 
+-
++
  #include "base/containers/span.h"
  #include "base/functional/callback.h"
 @@ -71,6 +72,13 @@
          base::OnceCallback<void(std::unique_ptr<media::CrossOriginDataSource>)>
              cb) override;
- 
+-
++
 +    // Parc: the sources this made, and makes, load for a cast while their
 +    // frame is frozen (MultiBufferDataSource::ParcSetCasting()).
 +    void ParcSetCasting(bool casting);
@@ -20390,19 +20385,23 @@
      void OnUrlData(base::OnceCallback<
                         void(std::unique_ptr<media::CrossOriginDataSource>)> cb,
 @@ -90,6 +98,9 @@
- 
+-
++
      std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
- 
+-
++
 +    bool parc_casting_ = false;
 +    std::vector<base::WeakPtr<MultiBufferDataSource>> parc_sources_;
 +
      base::WeakPtrFactory<Factory> weak_factory_{this};
    };
- 
+-
++
 @@ -162,6 +173,19 @@
      is_client_audio_element_ = is_client_audio_element;
    }
- 
+-
++
 +  // Parc: loads through |url_index|, another frame's, from now on: a
 +  // Safari-identity element moved this source's player to that frame
 +  // (WebMediaPlayerImpl::ParcMoveToFrame). What was loaded stays; the rest is
@@ -20417,18 +20416,21 @@
 +  void ParcSetCasting(bool casting);
 +
    bool cancel_on_defer_for_testing() const { return cancel_on_defer_; }
- 
+-
++
   protected:
 @@ -200,6 +224,9 @@
    // Stops |reader_| if present. Used by Abort() and Stop().
    void StopLoader();
- 
+-
++
 +  // Parc: ParcMoveToUrlIndex()'s move, now.
 +  void ParcLoadThroughUrlIndex(UrlIndex& url_index);
 +
    // Tells |reader_| the bitrate of the media.
    void SetBitrateTask(int bitrate);
- 
+-
++
 @@ -324,6 +351,14 @@
    // a persistent reference. This avoids problems with the thread-safety of
    // reaching into this class from multiple threads to attain a WeakPtr.
@@ -20443,7 +20445,8 @@
 +  base::WeakPtrFactory<MultiBufferDataSource> redirect_weak_factory_{this};
    base::WeakPtrFactory<MultiBufferDataSource> weak_factory_{this};
  };
- 
+-
++
 --- a/third_party/blink/renderer/platform/media/multi_buffer_data_source.cc
 +++ b/third_party/blink/renderer/platform/media/multi_buffer_data_source.cc
 @@ -130,11 +130,13 @@
@@ -20454,17 +20457,20 @@
 +      blink::BindOnce(&MultiBufferDataSource::OnRedirected,
 +                      redirect_weak_factory_.GetWeakPtr()));
  }
- 
+-
++
  MultiBufferDataSource::~MultiBufferDataSource() {
    DCHECK(render_task_runner_->BelongsToCurrentThread());
 +  ParcSetCasting(false);
  }
- 
+-
++
  bool MultiBufferDataSource::media_has_played() const {
 @@ -179,6 +181,106 @@
    UpdateBufferSizes();
  }
- 
+-
++
 +void MultiBufferDataSource::ParcMoveToUrlIndex(UrlIndex& url_index) {
 +  DCHECK(render_task_runner_->BelongsToCurrentThread());
 +  if (!url_data_ || failed_) {
@@ -20571,7 +20577,8 @@
 @@ -212,6 +314,14 @@
      const scoped_refptr<UrlData>& new_destination) {
    did_redirect_ = true;
- 
+-
++
 +  // Parc: the old frame's load of a resource read without ranges failed, as
 +  // when the old frame goes; the element's new frame loads it on, once.
 +  if (!new_destination && url_data_ && parc_url_index_for_failure_) {
@@ -20592,12 +20599,14 @@
 +    new_destination->ParcSetCasting(true);
 +  }
    url_data_ = std::move(new_destination);
- 
+-
++
    url_data_->OnRedirect(
 -      blink::BindOnce(&MultiBufferDataSource::OnRedirected, weak_ptr_));
 +      blink::BindOnce(&MultiBufferDataSource::OnRedirected,
 +                      redirect_weak_factory_.GetWeakPtr()));
- 
+-
++
    if (init_cb_) {
      CreateResourceLoader(0, kPositionNotSpecified);
 @@ -846,8 +961,21 @@
@@ -20607,10 +20616,12 @@
 +  data_source->ParcSetCasting(parc_casting_);
 +  std::erase_if(parc_sources_, [](const auto& source) { return !source; });
 +  parc_sources_.push_back(data_source->weak_factory_.GetWeakPtr());
- 
+-
++
    std::move(cb).Run(std::move(data_source));
  }
- 
+-
++
 +void MultiBufferDataSource::Factory::ParcSetCasting(bool casting) {
 +  DCHECK(main_task_runner_->BelongsToCurrentThread());
 +  parc_casting_ = casting;
@@ -20627,7 +20638,8 @@
 @@ -110,6 +110,13 @@
            main_thread_compositor_task_runner,
        scoped_refptr<base::TaskRunner> compositor_worker_task_runner);
- 
+-
++
 +  // Parc: makes |player|, made by another frame's MediaFactory, this frame's:
 +  // a Safari-identity element moved it here (WebLocalFrameClient::
 +  // ParcAdoptMediaPlayer). Returns false for a player that can't move.
@@ -20641,7 +20653,8 @@
 @@ -123,6 +130,11 @@
    // Initializes `decoder_factory_` if it hasn't been initialized yet.
    void EnsureDecoderFactory();
- 
+-
++
 +  blink::WebMediaPlayerBuilder& GetMediaPlayerBuilder();
 +
 +  // Parc: ParcAdoptMediaPlayer()'s move_factories.
@@ -20655,13 +20668,15 @@
 @@ -20,6 +20,10 @@
  class TickClock;
  }
- 
+-
++
 +namespace blink {
 +class MediaInspectorContext;
 +}  // namespace blink
 +
  namespace content {
- 
+-
++
  // BatchingMediaLog is an implementation of MediaLog that sends messages
 @@ -35,6 +39,9 @@
      virtual ~EventHandler() = default;
@@ -20671,12 +20686,14 @@
 +    virtual void ParcMoveToInspectorContext(
 +        blink::MediaInspectorContext* inspector_context) {}
    };
- 
+-
++
    BatchingMediaLog(scoped_refptr<base::SingleThreadTaskRunner> task_runner,
 @@ -50,6 +57,11 @@
    // Will reset |last_ipc_send_time_| with the value of NowTicks().
    void SetTickClockForTesting(const base::TickClock* tick_clock);
- 
+-
++
 +  // Parc: a Safari-identity element moved the log's player to another frame,
 +  // whose |task_runner| and |inspector_context| the log uses from now on.
 +  void ParcMoveToFrame(scoped_refptr<base::SingleThreadTaskRunner> task_runner,
@@ -20686,19 +20703,23 @@
    // MediaLog implementation.
    void AddLogRecordLocked(
 @@ -67,6 +79,7 @@
- 
+-
++
    std::string MediaEventToMessageString(const media::MediaLogRecord& event);
- 
+-
++
 +  // Parc: written under `lock_` by ParcMoveToFrame(), on the render thread.
    scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
- 
+-
++
    // |lock_| protects access to all of the following member variables.  It
 --- a/content/renderer/media/batching_media_log.cc
 +++ b/content/renderer/media/batching_media_log.cc
 @@ -68,6 +68,23 @@
      SendQueuedMediaEvents();
  }
- 
+-
++
 +void BatchingMediaLog::ParcMoveToFrame(
 +    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
 +    blink::MediaInspectorContext* inspector_context) {
@@ -20734,7 +20755,8 @@
 +    // Parc: ParcMoveToFrame() replaces it under `lock_`.
 +    task_runner = task_runner_;
    }
- 
+-
++
    if (delay_for_next_ipc_send.is_positive()) {
 -    task_runner_->PostDelayedTask(
 +    task_runner->PostDelayedTask(
@@ -20743,7 +20765,8 @@
          delay_for_next_ipc_send);
 @@ -163,11 +183,11 @@
    }
- 
+-
++
    // It's been more than a second so send ASAP.
 -  if (task_runner_->BelongsToCurrentThread()) {
 +  if (task_runner->BelongsToCurrentThread()) {
@@ -20763,7 +20786,8 @@
    void OnWebMediaPlayerDestroyed() override;
 +  void ParcMoveToInspectorContext(
 +      blink::MediaInspectorContext* inspector_context) override;
- 
+-
++
   private:
 +  const int dom_node_id_;
    raw_ptr<blink::MediaInspectorContext> inspector_context_;
@@ -20784,7 +20808,8 @@
 @@ -166,6 +167,17 @@
      inspector_context_->NotifyPlayerErrors(player_id_, std::move(errors));
  }
- 
+-
++
 +void InspectorMediaEventHandler::ParcMoveToInspectorContext(
 +    blink::MediaInspectorContext* inspector_context) {
 +  if (video_player_destroyed_ || inspector_context == inspector_context_) {
@@ -20802,7 +20827,8 @@
 --- a/media/renderers/renderer_impl_factory.h
 +++ b/media/renderers/renderer_impl_factory.h
 @@ -10,6 +10,7 @@
- 
+-
++
  #include "base/functional/callback.h"
  #include "base/memory/raw_ptr.h"
 +#include "base/synchronization/lock.h"
@@ -20812,7 +20838,8 @@
 @@ -69,6 +70,11 @@
        RequestOverlayInfoCB request_overlay_info_cb,
        const gfx::ColorSpace& target_color_space) final;
- 
+-
++
 +  // Parc: decoders made from now on, for this factory's renderers too, come
 +  // from |decoder_factory|, another frame's: a Safari-identity element moved
 +  // its player there.
@@ -20822,7 +20849,8 @@
    std::vector<std::unique_ptr<AudioDecoder>> CreateAudioDecoders(
        const scoped_refptr<base::SequencedTaskRunner>& media_task_runner);
 @@ -82,7 +88,10 @@
- 
+-
++
    // Factory to create extra audio and video decoders.
    // Could be nullptr if not extra decoders are available.
 -  raw_ptr<DecoderFactory, DanglingUntriaged> decoder_factory_;
@@ -20830,7 +20858,8 @@
 +  base::Lock decoder_factory_lock_;
 +  raw_ptr<DecoderFactory, DanglingUntriaged> decoder_factory_
 +      GUARDED_BY(decoder_factory_lock_);
- 
+-
++
    // Creates factories for supporting video accelerators. May be null.
    GetGpuFactoriesCB get_gpu_factories_cb_;
 --- a/media/renderers/renderer_impl_factory.cc
@@ -20852,9 +20881,11 @@
 +  DCHECK(decoder_factory);
  }
  #endif
- 
+-
++
  RendererImplFactory::~RendererImplFactory() = default;
- 
+-
++
 +void RendererImplFactory::ParcSetDecoderFactory(
 +    DecoderFactory* decoder_factory) {
 +  base::AutoLock auto_lock(decoder_factory_lock_);
@@ -20866,7 +20897,8 @@
      const scoped_refptr<base::SequencedTaskRunner>& media_task_runner) {
    // Create our audio decoders and renderer.
    std::vector<std::unique_ptr<AudioDecoder>> audio_decoders;
- 
+-
++
 +  base::AutoLock auto_lock(decoder_factory_lock_);
    decoder_factory_->CreateAudioDecoders(media_task_runner, media_log_.get(),
                                          &audio_decoders);
@@ -20874,7 +20906,8 @@
 @@ -70,6 +77,7 @@
    // Create our video decoders and renderer.
    std::vector<std::unique_ptr<VideoDecoder>> video_decoders;
- 
+-
++
 +  base::AutoLock auto_lock(decoder_factory_lock_);
    decoder_factory_->CreateVideoDecoders(
        media_task_runner, gpu_factories, media_log_.get(),
@@ -20884,7 +20917,8 @@
 @@ -308,4 +308,22 @@
    handler_->SendQueuedMediaEvents(errors);
  }
- 
+-
++
 +// Parc: a player a Safari-identity element moved to another frame leaves the
 +// old frame's inspector and appears in the new one's, with its element.
 +TEST_F(InspectorMediaEventHandlerTest, ParcMovesToInspectorContext) {
@@ -20927,7 +20961,8 @@
 @@ -534,6 +538,60 @@
    bool is_client_audio_element_ = false;
  };
- 
+-
++
 +// Parc: a source whose player a Safari-identity element moved to another frame
 +// keeps what it loaded and loads the rest through that frame's index, which
 +// takes what the response told about the resource (ParcMoveToUrlIndex()).
@@ -20984,11 +21019,13 @@
 +
  TEST_F(MultiBufferDataSourceTest, Range_Supported) {
    InitializeWith206Response();
- 
+-
++
 @@ -734,6 +792,60 @@
    Stop();
  }
- 
+-
++
 +// Parc: a casting player's source keeps its loads running in a frozen frame
 +// (UrlData::ParcSetCasting()).
 +TEST_F(MultiBufferDataSourceTest, ParcCastingSourceLoadsRunWhileFrozen) {
@@ -21045,11 +21082,13 @@
 +
  TEST_F(MultiBufferDataSourceTest, Http_RetryOnError) {
    InitializeWith206Response();
- 
+-
++
 @@ -2204,6 +2316,52 @@
    EXPECT_TRUE(redirect_called);
  }
- 
+-
++
 +// Parc: the sources of Chromium's HLS player follow their factory's casting,
 +// those it made before included.
 +TEST_F(MultiBufferDataSourceTest, ParcFactorySourcesLoadForCast) {
@@ -21104,7 +21143,8 @@
 @@ -68,6 +68,14 @@
    // Document is detached.
    HeapMojoRemote<mojom::blink::PresentationService>& GetPresentationService();
- 
+-
++
 +  // Parc: a second PresentationService remote, whose replies reach a frozen
 +  // page, the back/forward cache included: Remote Playback starts its cast
 +  // without waiting for the page to run again
@@ -21122,7 +21162,8 @@
        presentation_service_remote_;
 +  blink::HeapMojoRemote<mojom::blink::PresentationService>
 +      parc_unfrozen_presentation_service_remote_;
- 
+-
++
    // Lazily-initialized binding for mojom::blink::PresentationController. Sent
    // to |presentation_service_|'s implementation.
 --- a/third_party/blink/renderer/modules/presentation/presentation_controller.cc
@@ -21138,15 +21179,18 @@
  #include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
 +#include "third_party/blink/renderer/platform/scheduler/public/agent_group_scheduler.h"
 +#include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
- 
+-
++
  namespace blink {
- 
+-
++
  PresentationController::PresentationController(LocalDOMWindow& window)
      : Supplement<LocalDOMWindow>(window),
        presentation_service_remote_(&window),
 +      parc_unfrozen_presentation_service_remote_(&window),
        presentation_controller_receiver_(this, &window) {}
- 
+-
++
  PresentationController::~PresentationController() = default;
 @@ -52,6 +56,7 @@
    visitor->Trace(connections_);
@@ -21155,11 +21199,13 @@
 +  visitor->Trace(parc_unfrozen_presentation_service_remote_);
    Supplement<LocalDOMWindow>::Trace(visitor);
  }
- 
+-
++
 @@ -167,6 +172,22 @@
    return presentation_service_remote_;
  }
- 
+-
++
 +HeapMojoRemote<mojom::blink::PresentationService>&
 +PresentationController::ParcGetPresentationServiceRunningWhileFrozen() {
 +  LocalDOMWindow* window = GetSupplementable();
@@ -21202,12 +21248,14 @@
   public:
 @@ -110,6 +112,9 @@
    bool CancelWatchAvailabilityInternal(int id);
- 
+-
++
    mojom::blink::PresentationConnectionState GetState() const { return state_; }
 +  // Parc: the element's Remote Playback is AirPlay (ParcUsesAirPlay() in
 +  // remote_playback.cc).
 +  bool ParcUsesAirPlay() const;
- 
+-
++
    // PresentationAvailabilityObserver implementation.
    void AvailabilityChanged(mojom::blink::ScreenAvailability) override;
 @@ -130,6 +135,7 @@
@@ -21243,7 +21291,8 @@
    // Adjusts the internal state of |this| after a playback state change.
    void StateChanged(mojom::blink::PresentationConnectionState);
 @@ -179,6 +192,20 @@
- 
+-
++
    // Clears bindings after remote playback stops.
    void CleanupConnections();
 +
@@ -21260,7 +21309,8 @@
 +  void ParcPromptAirPlay(ExceptionState&);
 +  void ParcSettlePrompts(bool resolve);
 +  void ParcSetAirPlayState(mojom::blink::PresentationConnectionState);
- 
+-
++
    mojom::blink::PresentationConnectionState state_;
    mojom::blink::ScreenAvailability availability_;
 @@ -187,6 +214,18 @@
@@ -21280,12 +21330,14 @@
 +  // together (RemotePlayback::m_promptPromises).
 +  HeapVector<Member<ScriptPromiseResolver<IDLUndefined>>> parc_prompt_resolvers_;
    bool is_background_availability_monitoring_disabled_for_testing_ = false;
- 
+-
++
    String presentation_id_;
 @@ -196,9 +235,14 @@
    std::optional<media::VideoCodec> video_codec_ = std::nullopt;
    std::optional<media::AudioCodec> audio_codec_ = std::nullopt;
- 
+-
++
 -  HeapMojoReceiver<mojom::blink::PresentationConnection, RemotePlayback>
 +  // Parc: reset when this object's context goes (ContextDestroyed()), which
 +  // follows the element's document, rather than with the one that made them.
@@ -21297,7 +21349,8 @@
 +  HeapMojoRemote<mojom::blink::PresentationConnection,
 +                 HeapMojoWrapperMode::kForceWithoutContextObserver>
        target_presentation_connection_;
- 
+-
++
    HeapHashSet<Member<RemotePlaybackObserver>> observers_;
 --- a/third_party/blink/renderer/modules/remoteplayback/remote_playback.cc
 +++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback.cc
@@ -21827,9 +21880,11 @@
 +
  class RemotePlaybackTest : public testing::Test,
 @@ -105,6 +131,14 @@
- 
+-
++
    DummyPageHolder* page_holder() { return page_holder_.get(); }
- 
+-
++
 +  // Parc: moves the element to |page|'s document, as a Safari-identity page
 +  // moves it with its player.
 +  void MoveElementTo(DummyPageHolder& page) {
@@ -21844,7 +21899,8 @@
 @@ -426,6 +460,91 @@
    testing::Mock::VerifyAndClear(mock_controller);
  }
- 
+-
++
 +// Parc: a moved element watches availability through its new document's
 +// frame, which its prompt and events use too.
 +TEST_F(RemotePlaybackTest, ParcMovedElementWatchesThroughItsNewDocument) {
@@ -21932,7 +21988,8 @@
 +
  TEST_F(RemotePlaybackTest, NullContextDoesntCrash) {
    RemotePlayback& remote_playback = get_remote_playback();
- 
+-
++
 @@ -454,6 +573,294 @@
        "remote-playback:media-element?source=aHR0cDovL3d3dy5leGFtcGxlLmNvbS8=&"
        "video_codec=vp9&audio_codec=mp3",
@@ -22083,7 +22140,8 @@
 +  scope.PerformMicrotaskCheckpoint();
 +  EXPECT_TRUE(prompt.IsFulfilled());
  }
- 
+-
++
 +TEST_F(RemotePlaybackBackForwardCacheTest,
 +       ConnectionCastsBeforeFrozenPageResumes) {
 +  V8TestingScope scope;
@@ -22255,11 +22313,13 @@
 --- a/media/renderers/audio_renderer_impl.h
 +++ b/media/renderers/audio_renderer_impl.h
 @@ -23,6 +23,7 @@
- 
+-
++
  #include <memory>
  #include <optional>
 +#include <vector>
- 
+-
++
  #include "base/memory/raw_ptr.h"
  #include "base/memory/weak_ptr.h"
 @@ -37,6 +38,7 @@
@@ -22295,7 +22355,8 @@
 @@ -266,6 +274,24 @@
    // AudioRendererAlgorithm::FrontTimestamp().
    base::TimeDelta CalculateClockAndAlgorithmDrift() const;
- 
+-
++
 +  // Parc: see ParcCreateMixedRenderer(). The sink of a renderer it made.
 +  class ParcMixedSink;
 +  // Parc: adds the renderers mixed into this one into the first |frames| of
@@ -22315,19 +22376,22 @@
 +                      AudioBus* audio_bus);
 +
    scoped_refptr<base::SequencedTaskRunner> task_runner_;
- 
+-
++
    std::unique_ptr<AudioBufferConverter> buffer_converter_;
 @@ -290,6 +316,10 @@
    // unmuted.
    scoped_refptr<NullAudioSink> null_sink_;
- 
+-
++
 +  // Parc: |sink_| of a renderer ParcCreateMixedRenderer() made; it renders in
 +  // that sink's format, the one of the renderer it's mixed into.
 +  scoped_refptr<ParcMixedSink> parc_mixed_sink_;
 +
    // True if |sink_| has not yet been started.
    bool real_sink_needs_start_;
- 
+-
++
 @@ -382,6 +412,14 @@
    // Keeps track of whether we received and rendered the end of stream buffer.
    bool received_end_of_stream_;
@@ -22340,9 +22404,11 @@
 +  std::unique_ptr<AudioBus> parc_mix_bus_;
 +  std::unique_ptr<AudioBus> parc_mix_wrapper_;
 +  bool parc_own_audio_muted_ = false;
- 
+-
++
    std::unique_ptr<AudioClock> audio_clock_;
- 
+-
++
 --- a/media/renderers/audio_renderer_impl_unittest.cc
 +++ b/media/renderers/audio_renderer_impl_unittest.cc
 @@ -33,6 +33,7 @@
@@ -22352,11 +22418,13 @@
 +#include "media/filters/audio_clock.h"
  #include "testing/gmock/include/gmock/gmock.h"
  #include "testing/gtest/include/gtest/gtest.h"
- 
+-
++
 @@ -557,6 +558,26 @@
          renderer_->buffer_converter_->input_frames_left_for_testing());
    }
- 
+-
++
 +  // Parc: a renderer mixed into |renderer_| (ParcCreateMixedRenderer()),
 +  // initialized and prerolled through the helpers, which drive |renderer_|
 +  // again after.
@@ -22378,7 +22446,8 @@
 +  }
 +
    base::TimeDelta CurrentMediaTime() { return renderer_->CurrentMediaTime(); }
- 
+-
++
    std::vector<bool> channel_mask() const {
 @@ -1325,6 +1346,60 @@
    for (float non_zero_sample : bus->channel(0).subspan(zero_frames)) {
@@ -22439,14 +22508,17 @@
 +            base::Milliseconds(30));
 +  EXPECT_GT(ParcWrittenUpTo(mixed.get()), base::Milliseconds(100));
  }
- 
+-
++
  TEST_F(AudioRendererImplTest, RenderingDelayedForSuspend) {
 --- a/media/filters/stream_parser_factory_unittest.cc
 +++ b/media/filters/stream_parser_factory_unittest.cc
 @@ -4,8 +4,12 @@
- 
+-
++
  #include "media/filters/stream_parser_factory.h"
- 
+-
++
 +#include <string>
 +#include <vector>
 +
@@ -22454,12 +22526,14 @@
  #include "media/base/media_switches.h"
 +#include "media/base/media_util.h"
  #include "testing/gtest/include/gtest/gtest.h"
- 
+-
++
  namespace media {
 @@ -24,4 +28,36 @@
              nullptr);
  }
- 
+-
++
 +// Parc: AVStreamDataParser's answers for Ogg (canParseExtendedMIMEType).
 +TEST(StreamParserFactoryTest, ParcSafariOgg) {
 +  using Codecs = std::vector<std::string>;
@@ -22497,7 +22571,8 @@
 +++ b/third_party/blink/renderer/platform/loader/fetch/resource_loader.h
 @@ -107,6 +107,13 @@
    void Cancel();
- 
+-
++
    void SetDefersLoading(LoaderFreezeMode);
 +
 +  // Parc: keeps this load running, and starts it, while its frame is frozen,
@@ -22506,12 +22581,15 @@
 +  // leaves it alone meanwhile.
 +  void ParcSetRunsWhileFrozen(bool runs_while_frozen);
 +  bool ParcRunsWhileFrozen() const { return parc_runs_while_frozen_; }
- 
+-
++
    void DidChangePriority(ResourceLoadPriority, int intra_priority_value);
- 
+-
++
 @@ -287,6 +294,7 @@
    scoped_refptr<base::SingleThreadTaskRunner> task_runner_for_body_loader_;
- 
+-
++
    LoaderFreezeMode freeze_mode_ = LoaderFreezeMode::kNone;
 +  bool parc_runs_while_frozen_ = false;
    // True if the next call of SetDefersLoading(kNotDeferred) needs to invoke
@@ -22522,12 +22600,14 @@
 @@ -388,7 +388,9 @@
      return;
    }
- 
+-
++
 -  SetDefersLoading(fetcher_->GetProperties().FreezeMode());
 +  SetDefersLoading(parc_runs_while_frozen_
 +                       ? LoaderFreezeMode::kNone
 +                       : fetcher_->GetProperties().FreezeMode());
- 
+-
++
    if (resource_->Options().synchronous_policy == kRequestSynchronously) {
      RequestSynchronously();
 @@ -457,6 +459,40 @@
@@ -22570,12 +22650,14 @@
 +                                       : frame_freeze_mode);
    }
  }
- 
+-
++
 --- a/third_party/blink/renderer/platform/loader/fetch/resource_fetcher.cc
 +++ b/third_party/blink/renderer/platform/loader/fetch/resource_fetcher.cc
 @@ -2939,11 +2939,17 @@
  }
- 
+-
++
  void ResourceFetcher::SetDefersLoading(LoaderFreezeMode mode) {
 +  // Parc: except loads kept running while frozen
 +  // (ResourceLoader::ParcSetRunsWhileFrozen()).
@@ -22592,7 +22674,8 @@
 +    }
    }
  }
- 
+-
++
 --- a/third_party/blink/renderer/platform/loader/fetch/resource_loader_test.cc
 +++ b/third_party/blink/renderer/platform/loader/fetch/resource_loader_test.cc
 @@ -25,6 +25,7 @@
@@ -22763,7 +22846,8 @@
 +  loader->ParcSetRunsWhileFrozen(true);
 +  EXPECT_TRUE(started);
  }
- 
+-
++
  namespace {
 --- a/third_party/blink/renderer/platform/loader/testing/test_resource_fetcher_properties.h
 +++ b/third_party/blink/renderer/platform/loader/testing/test_resource_fetcher_properties.h
@@ -22779,11 +22863,13 @@
 +++ b/third_party/blink/renderer/core/loader/threadable_loader.h
 @@ -120,6 +120,8 @@
    void Detach();
- 
+-
++
    void SetDefersLoading(bool);
 +  // Parc: ResourceLoader::ParcSetRunsWhileFrozen().
 +  void ParcSetRunsWhileFrozen(bool);
- 
+-
++
    // Return the task runner this class uses for processing network data.
    scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner();
 --- a/third_party/blink/renderer/core/loader/threadable_loader.cc
@@ -22800,7 +22886,8 @@
 +    GetResource()->Loader()->ParcSetRunsWhileFrozen(runs_while_frozen);
    }
  }
- 
+-
++
 --- a/third_party/blink/public/web/web_associated_url_loader.h
 +++ b/third_party/blink/public/web/web_associated_url_loader.h
 @@ -54,6 +54,9 @@
@@ -22811,7 +22898,8 @@
 +  // LoadAsynchronously().
 +  virtual void ParcSetRunsWhileFrozen(bool) {}
  };
- 
+-
++
  }  // namespace blink
 --- a/third_party/blink/renderer/core/loader/web_associated_url_loader_impl.h
 +++ b/third_party/blink/renderer/core/loader/web_associated_url_loader_impl.h
@@ -22820,7 +22908,8 @@
    void SetDefersLoading(bool) override;
    void SetLoadingTaskRunner(base::SingleThreadTaskRunner*) override;
 +  void ParcSetRunsWhileFrozen(bool runs_while_frozen) override;
- 
+-
++
    // Called by ClientAdapter to handle completion of loading.
    void ClientAdapterDone();
 @@ -63,6 +64,7 @@
@@ -22828,7 +22917,8 @@
    Persistent<ClientAdapter> client_adapter_;
    Persistent<ThreadableLoader> loader_;
 +  bool parc_runs_while_frozen_ = false;
- 
+-
++
    // A ExecutionContextLifecycleObserver for cancelling |loader_| when the
    // context is detached.
 --- a/third_party/blink/renderer/core/loader/web_associated_url_loader_impl.cc
@@ -22841,12 +22931,14 @@
 +      loader_->ParcSetRunsWhileFrozen(true);
 +    }
    }
- 
+-
++
    if (!loader_) {
 @@ -489,6 +492,14 @@
      loader_->SetDefersLoading(defers_loading);
  }
- 
+-
++
 +void WebAssociatedURLLoaderImpl::ParcSetRunsWhileFrozen(
 +    bool runs_while_frozen) {
 +  parc_runs_while_frozen_ = runs_while_frozen;
@@ -22869,12 +22961,14 @@
 +    // (UrlData::ParcSetCasting()).
 +    virtual void ParcSetRunsWhileFrozen(bool runs_while_frozen) {}
    };
- 
+-
++
    // MultiBuffers use a global shared LRU to free memory.
 @@ -288,6 +292,9 @@
    // Transfer all data from |other| to this.
    void MergeFrom(MultiBuffer* other);
- 
+-
++
 +  // Parc: DataProvider::ParcSetRunsWhileFrozen() for each writer.
 +  void ParcSetWritersRunWhileFrozen(bool runs_while_frozen);
 +
@@ -22884,7 +22978,8 @@
 --- a/third_party/blink/renderer/platform/media/multi_buffer.cc
 +++ b/third_party/blink/renderer/platform/media/multi_buffer.cc
 @@ -393,6 +393,12 @@
- 
+-
++
  void MultiBuffer::Prune(size_t max_to_free) {
    lru_->Prune(max_to_free);
 +}
@@ -22894,7 +22989,8 @@
 +    writer.second->ParcSetRunsWhileFrozen(runs_while_frozen);
 +  }
  }
- 
+-
++
  void MultiBuffer::OnDataProviderEvent(DataProvider* provider_tmp) {
 --- a/third_party/blink/renderer/platform/media/resource_multi_buffer_data_provider.h
 +++ b/third_party/blink/renderer/platform/media/resource_multi_buffer_data_provider.h
@@ -22903,13 +22999,15 @@
    scoped_refptr<media::DataBuffer> Read() override;
    void SetDeferred(bool defer) override;
 +  void ParcSetRunsWhileFrozen(bool runs_while_frozen) override;
- 
+-
++
    // WebAssociatedURLLoaderClient implementation.
    bool WillFollowRedirect(const WebURL& new_url,
 --- a/third_party/blink/renderer/platform/media/resource_multi_buffer_data_provider.cc
 +++ b/third_party/blink/renderer/platform/media/resource_multi_buffer_data_provider.cc
 @@ -146,6 +146,9 @@
- 
+-
++
    if (auto url_index = url_data_->url_index()) {
      active_loader_ = url_index->fetch_context()->CreateUrlLoader(options);
 +    if (url_data_->ParcCasting()) {
@@ -22921,7 +23019,8 @@
 @@ -188,6 +191,13 @@
    return ret;
  }
- 
+-
++
 +void ResourceMultiBufferDataProvider::ParcSetRunsWhileFrozen(
 +    bool runs_while_frozen) {
 +  if (active_loader_) {
@@ -22939,7 +23038,8 @@
 +    // Parc: runs while frozen as its new owner's writers do
 +    // (UrlData::ParcSetCasting()).
 +    ParcSetRunsWhileFrozen(url_data_->ParcCasting());
- 
+-
++
      // Call callback to let upstream users know about the transfer.
      // This will merge the data from the two multibuffers and
 --- a/third_party/blink/renderer/platform/media/testing/mock_web_associated_url_loader.h
@@ -22950,7 +23050,8 @@
                 void(base::SingleThreadTaskRunner* task_runner));
 +  MOCK_METHOD1(ParcSetRunsWhileFrozen, void(bool runs_while_frozen));
  };
- 
+-
++
  }  // namespace blink
 --- a/media/filters/ffmpeg_demuxer.h
 +++ b/media/filters/ffmpeg_demuxer.h
@@ -22964,13 +23065,16 @@
 +  // them. Set before Initialize().
 +  void ParcSetSafariCodecs(bool safari) { parc_safari_codecs_ = safari; }
 +  bool ParcPlaysSafariCodecs() const { return parc_safari_codecs_; }
- 
+-
++
    // Attaches to `buffer` the metadata that applies to it from every timed
    // metadata track that references it. Returns false if any of that metadata
 @@ -431,6 +437,8 @@
- 
+-
++
    const bool is_local_file_;
- 
+-
++
 +  bool parc_safari_codecs_ = false;
 +
    // NOTE: Weak pointers must be invalidated before all other member variables.
@@ -23019,7 +23123,8 @@
 +  CreateDemuxer("parc-h263-amr.3gp");
 +  InitializeDemuxerAndExpectPipelineStatus(DEMUXER_ERROR_NO_SUPPORTED_STREAMS);
 +  Shutdown();
- 
+-
++
 +  CreateDemuxer("parc-h263-amr.3gp");
 +  demuxer_->ParcSetSafariCodecs(true);
 +  InitializeDemuxer();
@@ -23042,14 +23147,16 @@
 +}
 +
  #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
- 
+-
++
  TEST_F(FFmpegDemuxerTest, Read_Webm_Multiple_Tracks) {
 --- a/media/remoting/courier_renderer_factory.h
 +++ b/media/remoting/courier_renderer_factory.h
 @@ -36,6 +36,9 @@
    // CourierRenderer.
    bool IsRemotingActive();
- 
+-
++
 +  // Parc: for a player a Safari-identity page moved to another frame.
 +  RendererController* controller() { return controller_.get(); }
 +
@@ -23067,14 +23174,17 @@
 +  // Safari-identity page moved the element to.
 +  virtual void ParcDidMoveToDocument() {}
  };
- 
+-
++
  }  // namespace blink
 --- a/media/base/video_decoder_config.h
 +++ b/media/base/video_decoder_config.h
 @@ -83,6 +83,11 @@
- 
+-
++
    std::string GetHumanReadableCodecName() const;
- 
+-
++
 +  // Safari MSE's SDR-compatible Dolby Vision base layer. Carried through
 +  // Mojo so the FairPlay adapter preserves ID 2 only for Safari pages.
 +  bool parc_dolby_vision_sdr() const { return parc_dolby_vision_sdr_; }
@@ -23085,12 +23195,14 @@
    void set_profile(VideoCodecProfile profile) { profile_ = profile; }
 @@ -172,6 +177,7 @@
    const VideoSpatialFormat& spatial_format() const { return spatial_format_; }
- 
+-
++
   private:
 +  bool parc_dolby_vision_sdr_ = false;
    VideoCodec codec_ = VideoCodec::kUnknown;
    VideoCodecProfile profile_ = VIDEO_CODEC_PROFILE_UNKNOWN;
- 
+-
++
 --- a/media/base/video_decoder_config.cc
 +++ b/media/base/video_decoder_config.cc
 @@ -64,6 +64,7 @@
@@ -23109,7 +23221,8 @@
 +         spatial_format() == config.spatial_format() &&
 +         parc_dolby_vision_sdr() == config.parc_dolby_vision_sdr();
  }
- 
+-
++
  std::string VideoDecoderConfig::AsHumanReadableString() const {
 --- a/media/mojo/mojom/video_decoder_config_mojom_traits.h
 +++ b/media/mojo/mojom/video_decoder_config_mojom_traits.h
@@ -23128,7 +23241,8 @@
 @@ -68,6 +68,7 @@
                       color_space, transformation, coded_size, visible_rect,
                       natural_size, extra_data, encryption_scheme);
- 
+-
++
 +  output->set_parc_dolby_vision_sdr(input.parc_dolby_vision_sdr());
    output->set_level(input.level());
    output->set_aspect_ratio(aspect_ratio);
@@ -23137,7 +23251,8 @@
 +++ b/media/mojo/mojom/video_decoder_config_mojom_traits_unittest.cc
 @@ -20,6 +20,21 @@
  static const gfx::Size kNaturalSize(320, 240);
- 
+-
++
  }  // namespace
 +
 +TEST(VideoDecoderConfigStructTraitsTest, SafariDolbyVisionSDRSurvivesMojo) {
@@ -23154,7 +23269,8 @@
 +    EXPECT_TRUE(output.Matches(input));
 +  }
 +}
- 
+-
++
  TEST(VideoDecoderConfigStructTraitsTest, ConvertVideoDecoderConfig_Normal) {
    const uint8_t kExtraData[] = "config extra data";
 --- a/third_party/blink/renderer/core/html/media/remote_playback_controller.h
@@ -23188,7 +23304,8 @@
 @@ -37,6 +37,11 @@
    // playback.
    virtual void UpdateRemotePlaybackCompatibility(bool is_compatible) = 0;
- 
+-
++
 +  // Parc: the browser asked for this element to be cast
 +  // (MediaObserver::OnMediaRemotingRequested()) and the request still holds:
 +  // it is connecting or casting, and ends when it fails or remoting stops.
@@ -23201,11 +23318,13 @@
 +++ b/third_party/blink/public/web/modules/mediastream/web_media_player_ms.h
 @@ -6,6 +6,7 @@
  #define THIRD_PARTY_BLINK_PUBLIC_WEB_MODULES_MEDIASTREAM_WEB_MEDIA_PLAYER_MS_H_
- 
+-
++
  #include <memory>
 +#include <optional>
  #include <string>
- 
+-
++
  #include "base/memory/raw_ptr.h"
 @@ -21,6 +22,7 @@
  #include "media/video/gpu_video_accelerator_factories.h"
@@ -23247,9 +23366,11 @@
                   WebSetSinkIdCompleteCallback completion_callback) override;
    void SetPreload(WebMediaPlayer::Preload preload) override;
 @@ -328,6 +340,9 @@
- 
+-
++
    std::unique_ptr<MediaStreamRendererFactory> renderer_factory_;
- 
+-
++
 +  // Parc: main_render_task_runner_ on a Safari-identity page, which
 +  // ParcMoveToFrame() points at the new frame.
 +  const scoped_refptr<ParcFrameTaskRunner> parc_frame_task_runner_;
@@ -23258,14 +23379,16 @@
    const scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
 @@ -342,6 +357,11 @@
    std::unique_ptr<WebMediaPlayerMSCompositor> compositor_;
- 
+-
++
    const WebString initial_audio_output_device_id_;
 +  // Parc: the device of the page's last setSinkId(), for the audio renderers
 +  // made after ParcMoveToFrame(); and the frame sink the surface layer goes
 +  // under when the element moved before it was made.
 +  WebString parc_audio_output_device_id_;
 +  std::optional<viz::FrameSinkId> parc_parent_frame_sink_id_;
- 
+-
++
    // The last volume received by setVolume() and the last volume multiplier from
    // SetVolumeMultiplier().  The multiplier is typical 1.0, but may be less
 --- a/third_party/blink/renderer/modules/mediastream/web_media_player_ms.cc
@@ -23453,10 +23576,12 @@
  #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_base.h"
 @@ -167,6 +168,7 @@
    }
- 
+-
++
    int delegate_id() { return delegate_id_; }
 +  bool has_observer() const { return observer_; }
- 
+-
++
   private:
    int delegate_id_ = 1234;
 @@ -524,6 +526,7 @@
@@ -23511,7 +23636,8 @@
 @@ -100,6 +100,9 @@
    void set_profile(AudioCodecProfile profile) { profile_ = profile; }
    AudioCodecProfile profile() const { return profile_; }
- 
+-
++
 +  uint32_t parc_ts_audio_type() const { return parc_ts_audio_type_; }
 +  void set_parc_ts_audio_type(uint32_t type) { parc_ts_audio_type_ = type; }
 +
@@ -23520,11 +23646,13 @@
    }
 @@ -153,6 +156,8 @@
    // Optional parameters that can be set later:
- 
+-
++
    AudioCodecProfile profile_ = AudioCodecProfile::kUnknown;
 +  // PMT audio setup type for Safari SAMPLE-AES; zero for other streams.
 +  uint32_t parc_ts_audio_type_ = 0;
- 
+-
++
    // Layout of the output hardware. Optionally set. See setter comments.
    ChannelLayoutConfig target_output_channel_layout_;
 --- a/media/base/audio_decoder_config.cc
@@ -23613,7 +23741,8 @@
 +  output->set_parc_ts_audio_type(input.parc_ts_audio_type());
    output->set_target_output_channel_layout(target_output_channel_layout);
    output->set_target_output_sample_format(target_output_sample_format);
- 
+-
++
 --- a/media/mojo/mojom/audio_decoder_config_mojom_traits_unittest.cc
 +++ b/media/mojo/mojom/audio_decoder_config_mojom_traits_unittest.cc
 @@ -62,6 +62,7 @@

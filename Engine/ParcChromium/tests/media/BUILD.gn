@@ -6,12 +6,20 @@ assert(is_mac)
 source_set("media_tests") {
   visibility = [ "//media:*" ]
   testonly = true
-  sources = [ "audio_toolbox_amr_test.cc" ]
+  sources = [
+    "audio_toolbox_amr_test.cc",
+    "source_buffer_state_test.cc",
+    "source_buffer_stream_test.cc",
+  ]
+
+  configs += [ "//media:media_config" ]
 
   deps = [
     "//base",
     "//base/test:test_support",
+    "//media",
     "//media:test_support",
+    "//testing/gmock",
     "//testing/gtest",
   ]
 }
