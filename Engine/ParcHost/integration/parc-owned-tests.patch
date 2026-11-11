@@ -24,3 +24,25 @@
 +    }
    }
  }
+--- a/components/global_media_controls/BUILD.gn
++++ b/components/global_media_controls/BUILD.gn
+@@ -89,4 +89,7 @@
+-
++
+-  friend = [ ":*" ]
++  friend = [
++    ":*",
++    "//components/global_media_controls/parc_tests:*",
++  ]
+-
++
+   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+@@ -137,4 +140,8 @@
+     "//ui/gfx:test_support",
+     "//ui/views:test_support",
+   ]
++
++  if (is_mac) {
++    deps += [ "//components/global_media_controls/parc_tests:unit_tests" ]
++  }
+ }

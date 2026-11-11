@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 698,
+  "version": 699,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -2395,6 +2395,16 @@
       "source": "Engine/ParcRenderer/parc_video_element_air_play.idl",
       "target": "third_party/blink/renderer/core/html/media/parc_video_element_air_play.idl",
       "sha256": "e55f5ee29d9e2a45efb43500e53e96b0c89b46668886c55b0d225189179878fa"
+    },
+    {
+      "source": "Engine/ParcChromium/tests/cast/components/BUILD.gn",
+      "target": "components/global_media_controls/parc_tests/BUILD.gn",
+      "sha256": "4c3d9da8f03354bd931e390ab2f5c0488a4a30555782e8631ca709457f33d772"
+    },
+    {
+      "source": "Engine/ParcChromium/tests/cast/components/media_item_manager_impl_test.cc",
+      "target": "components/global_media_controls/parc_tests/media_item_manager_impl_test.cc",
+      "sha256": "abe256cd77cc038ab06a145ae4f4b03841bd3c3f5fc2968db054f41fbe609f23"
     }
   ],
   "patches": [
@@ -3129,7 +3139,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "d1aa55e415d1860f4d9cda77f37bdef6872b131026c2d09a3cf1f0193716d1f3",
+      "sha256": "2b65018ce7dbbfd88684f947b9d360ec6225f3ab0176242b3b5296b7fd8b51a3",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
@@ -3205,11 +3215,6 @@
           "target": "components/global_media_controls/media_item_manager_impl.cc",
           "before_sha256": "b494ca861a9fd99c0c92e651c2a83c758dd77e9c7991e55d7bb5e5b7c7bf4762",
           "after_sha256": "671816647de1e8de135ba82babcc4d26eff241615e6b1622b687f78dd2ddb154"
-        },
-        {
-          "target": "components/global_media_controls/media_item_manager_impl_unittest.cc",
-          "before_sha256": "2e979191b31e7248d9169c107f45f2f8b3047703ade4eca3bd18445850e22aac",
-          "after_sha256": "ef6c4148b57fadf50f145f056165858319da8f8a5e7f58a00be533a078ac7d75"
         },
         {
           "target": "components/global_media_controls/public/supplemental_device_picker_producer.cc",
@@ -3316,7 +3321,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/parc-owned-tests.patch",
-      "sha256": "0d7b072c55ca95af05f4f25a445737eaa9bb825557acb866d1d58b2a42c73f17",
+      "sha256": "8242df4c914d68c77310f3abe82c4aae5280ca1386e392454ab7f1e1646a971c",
       "files": [
         {
           "target": "third_party/blink/renderer/controller/BUILD.gn",
@@ -3327,6 +3332,11 @@
           "target": "chrome/browser/ui/autofill/payments/BUILD.gn",
           "before_sha256": "41e2c2df3bcad8cc5dcf8aa564881356c7eaac4571c404df98eca4e1251ef6d7",
           "after_sha256": "095f2055113146ea2dfe41156c7e6b3c2cd2785677193a2fed225ba5d8041064"
+        },
+        {
+          "target": "components/global_media_controls/BUILD.gn",
+          "before_sha256": "7ec94ea91abaa9a2bddf397c5b36a286790dcca2526659909175876bab7252eb",
+          "after_sha256": "4f1ec38bbca45e7a07c76eca21a902b41830ffd2067070c3c9f74e50c508933d"
         }
       ]
     },

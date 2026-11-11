@@ -1,0 +1,18 @@
+# Installed at //components/global_media_controls/parc_tests so this owned test
+# target stays beside the component layer it exercises.
+
+assert(is_mac)
+
+source_set("unit_tests") {
+  visibility = [ "//components/global_media_controls:*" ]
+  testonly = true
+  sources = [ "media_item_manager_impl_test.cc" ]
+
+  deps = [
+    "//base",
+    "//components/global_media_controls",
+    "//components/global_media_controls:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+  ]
+}
