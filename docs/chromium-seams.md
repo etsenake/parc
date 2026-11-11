@@ -380,6 +380,15 @@ private Parc state pointer keeps the interval history out of the Chromium
 headers. Parser codec validation and the ignore-declared-codecs flag remain
 with Chromium's parser factory and parser.
 
+EME's configuration rules for Safari's identity and FairPlay live in a Parc
+file beside the encrypted-media module: which init data types, codecs,
+content types, containers, encryption schemes and session types a document
+may ask for. MediaKeySystemAccessInitializerBase calls each rule at the step
+where it used to run, so the order of the checks is unchanged. The small
+gates inside MediaKeySession, MediaKeys and MediaKeySystemAccess stay in
+place: each is a few lines tied to that object's own events, promises or
+pending updates, so moving them would only add a wrapper.
+
 ## Decisions
 
 - **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
