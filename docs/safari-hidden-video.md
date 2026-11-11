@@ -11,11 +11,12 @@ a ten-second task. Ordinarily `DisableVideoTrackIfNeeded` can deselect video
 while audio continues, and foregrounding reselects it through
 `EnableVideoTrackIfNeeded`.
 
-Parc's Safari-identity check in `ShouldDisableVideoWhenHidden` prevents that
-track-disable/reselect cycle. Chrome-identity pages retain Chromium's existing
-streaming, picture-in-picture, capture, flinging and keyframe eligibility rules.
-The implementation and paired identity regressions live in
-`Engine/ParcHost/integration/fairplay-media.patch`.
+Parc's Safari-identity gate at Chromium's hidden-video decision point prevents
+that track-disable/reselect cycle. Chrome-identity pages retain Chromium's
+existing streaming, picture-in-picture, capture, flinging and keyframe
+eligibility rules. The exact player call site remains in
+`Engine/ParcHost/integration/fairplay-media.patch`; its paired regressions are
+Parc-owned tests installed in Blink's `parc_tests` target.
 
 FairPlay Media Source and native HLS already have renderer-specific exemptions.
 FairPlay uses the sample-buffer renderer; native HLS uses AVPlayer, which owns its

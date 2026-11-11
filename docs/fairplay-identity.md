@@ -217,11 +217,12 @@ list; the inverse menu restores Safari. Open pages update accordingly.
 
 | Owner | Responsibility |
 |---|---|
-| `Engine/ParcNative/fairplay_identity.{h,mm}` | Page identity, navigation, workers, lists and bridge |
-| `fairplay_identity_policy.h` | Chromium-independent decisions |
-| `fairplay-identity-blink-direct.patch` | Identity-gated APIs, trusted events and memory-pressure listener |
-| `fairplay-media.patch` | Codec/EME integration and real managed-buffer eviction |
-| `fairplay-identity-workers.patch` | Worker identity and script-request hooks |
+| `Engine/ParcNative/fairplay_identity.{h,mm}` | Browser-side page identity, navigation, workers, lists and bridge |
+| `Engine/ParcNative/fairplay_identity_policy.h` | Chromium-independent decisions |
+| `Engine/ParcRenderer` | Safari script surface, EME and capability rules, media-element supplements and player state |
+| `fairplay-identity-blink-direct.patch` | Exact Blink algorithm gates, interface wiring, trusted-event call sites and the memory-pressure listener |
+| `fairplay-media.patch` | Media-pipeline accessors and call sites, managed-buffer eviction, key-system/CDM/init-data integration, and parser and renderer changes that remain in Chromium |
+| `fairplay-identity-workers.patch` | Worker identity and script-request call sites |
 | `native-host-route-direct-overlay.patch` | Per-local-root renderer identity |
 
 ## Known limits

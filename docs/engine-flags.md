@@ -144,7 +144,7 @@ Chromium supplies the framework and helper host files when their signatures exis
 
 | Host | Signature |
 |---|---|
-| Chromium Embedded Framework binary | framework `Versions/A/Resources/Chromium Embedded Framework.sig` |
+| Engine framework binary | framework `Versions/A/Resources/Chromium Embedded Framework.sig` |
 | Parc Helper (CDM) executable | helper `Contents/Resources/Parc Helper (CDM).sig` |
 
 Missing signatures do not stop loading; the service's license server decides

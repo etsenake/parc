@@ -47,9 +47,18 @@ The overlay maps these files relative to `chromium/src`:
 | `Engine/ParcNative/page_host.mm` | `parc/native/page_host.mm` |
 | `Engine/ParcNative/browser_window.h` | `parc/native/browser_window.h` |
 | `Engine/ParcNative/browser_window.mm` | `parc/native/browser_window.mm` |
-| `tests/EngineConformance/native-window/ModalHostTests.mm` | `parc/tests/native_window/ModalHostTests.mm` |
-| `tests/EngineConformance/native-window/BUILD.gn` | `parc/tests/native_window/BUILD.gn` |
+| `tests/EngineConformance/native-window/ModalHostTests.mm` | `parc/tests/parc_native_window/ModalHostTests.mm` |
+| `tests/EngineConformance/native-window/BUILD.gn` | `parc/tests/parc_native_window/BUILD.gn` |
 
+The overlay installs the
+`//parc/tests/parc_native_window:parc_native_window_tests` target definition.
+No loaded build file depends on it, so GN does not generate it and neither the
+normal engine build nor the Chrome test binaries include it. Running the target
+first requires connecting it from a loaded build file, regenerating and
+building it explicitly. It depends on `//parc/native:native_components`,
+compiling the actual page/window/modal sources with Chromium's default ARC and
+warning policy. Once available, the executable runs from the engine output
+directory using the normal generated component-library paths:
 
 ```sh
 ./parc_native_window_tests --gtest_filter=NativeModalDialogHostTest.*

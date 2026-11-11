@@ -36,6 +36,9 @@ identities/hardware states for file and MediaSource. Player tests cover
 undeclared AV1 refusal and the Chrome bypass. The injected hardware result
 uses a scoped process command line, restored after each test.
 
-These regressions live in the Blink/player changes in
-`Engine/ParcHost/integration/fairplay-identity-blink-direct.patch` and
-`fairplay-media.patch`. `tests/FairPlayIdentity` also covers the renderer gate.
+The hardware fact and reusable identity rules live in Parc-owned renderer
+sources. Chromium keeps the exact parser and player call sites in
+`fairplay-identity-blink-direct.patch` and `fairplay-media.patch`. Owned player
+and parser regressions install in their layers' `parc_tests` targets; the API
+matrix remains wired through Blink's modules build beside its owned source.
+`tests/FairPlayIdentity` covers the standalone renderer gate.

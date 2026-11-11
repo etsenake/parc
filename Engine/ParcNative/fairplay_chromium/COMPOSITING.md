@@ -6,14 +6,17 @@ where the `<video>` element is, among the page's other CALayers. This document
 covers that path and its rendering limits. The CDM, renderer and media pipeline
 belong to `fairplay-media`; this covers the registry and the compositor.
 
-Engine changes: `Engine/ParcHost/integration/fairplay-compositing-direct.patch`, plus
-`protected_layer_registry.{h,mm}` installed at
-`//ui/accelerated_widget_mac/`. Nothing here changes ordinary video. Every new
-branch is taken only for a `viz::VideoHoleDrawQuad`, and on Mac only a FairPlay
-renderer makes those. The other producer, `VideoOverlayFactory`, serves the
-Mojo `Renderer` service, Cast and Android flinging, and a Mac build enables
-none of them (`media/media_options.gni` gives Apple only decoder and encoder
-Mojo services).
+Engine changes: `Engine/ParcHost/integration/fairplay-compositing-direct.patch`;
+`protected_layer_registry` and `parc_protected_layer_claims` installed under
+`//ui/accelerated_widget_mac`; `parc_ca_layer_overlay` installed under
+`//components/viz/service/display`; and Parc-owned suites installed under
+`//ui/accelerated_widget_mac/parc_tests` and
+`//components/viz/service/parc_tests`. Nothing here changes ordinary video.
+Every new branch is taken only for a `viz::VideoHoleDrawQuad`, and on Mac only
+a FairPlay renderer makes those. The other producer, `VideoOverlayFactory`,
+serves the Mojo `Renderer` service, Cast and Android flinging, and a Mac build
+enables none of them (`media/media_options.gni` gives Apple only decoder and
+encoder Mojo services).
 
 ## From frame to CALayer
 

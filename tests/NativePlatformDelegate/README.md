@@ -46,11 +46,11 @@ an older callback.
 python3 -B tests/NativePlatformDelegate/check-chromium.py /absolute/path/to/chromium/src \
 ```
 
-The selected lock determines the source and generated compiler flags. Direct
-schema 2 checks `native_page_binding.mm` against `//parc:browser`'s
-`obj/parc/browser.ninja`; legacy schema 1 retains the old platform-delegate
-source and flags. The output name defaults to the selected lock's build
-configuration. The checker reads the canonical lock.
+The selected schema 2 lock determines the source and generated compiler flags.
+The checker validates `native_page_binding.mm` against `//parc:browser`'s
+`obj/parc/browser.ninja`; other lock schemas are refused. The output name
+defaults to the selected lock's build configuration. The checker reads the
+canonical lock.
 
 The checker reads the pinned compiler's generated Objective-C++ flags and runs
 syntax checks without generating, linking or launching anything. Logs remain

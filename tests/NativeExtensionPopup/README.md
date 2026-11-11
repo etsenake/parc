@@ -49,6 +49,11 @@ Syntax-check the three production translation units and six genuine-host browser
 python3 tests/NativeExtensionPopup/check-chromium.py /absolute/path/to/chromium/src
 ```
 
+The checker requires
+`obj/parc/native/native_extensions.ninja` and
+`obj/parc/tests/parc_native_extensions/popup_browser_tests.ninja` from the
+reviewed integration. It checks all four translation units with ARC and
+warnings-as-errors and records source, flag, toolchain and compiler hashes.
 
 The browser tests use actual loaded extensions, actual `ExtensionViewHostFactory`, actual WebContents and visibility observers. They cover supplied identity, close-once results, close during hide/show notification without deleting the notifying WebContents on its stack, security appearing during opening, close completion after actual WebContents destruction, and repeated close observers delivered once each. `Close(completion)` reports actual terminal host destruction after existing result callbacks, not merely a requested dismissal. Execution requires a valid Chromium process/context.
 
@@ -59,7 +64,7 @@ and retirement use the source owners described above.
 The reviewed source overlay compiles all six production files in
 `//parc/native:native_extensions`, which consumes the existing
 `native_components` page host and has no engine-private dependency. Both
-`//parc:browser` and `//parc/tests/native_extensions:popup_browser_tests` use
+`//parc:browser` and `//parc/tests/parc_native_extensions:popup_browser_tests` use
 that implementation. The latter is registered with the actual macOS Chromium
 `chrome/test:browser_tests` target and declares `HAS_OUT_OF_PROC_TEST_RUNNER`, as
 required for test cases executed by that binary.

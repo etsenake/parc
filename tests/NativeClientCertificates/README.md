@@ -16,7 +16,7 @@ After applying the complete reviewed overlay and generating its targets, run:
 python3 tests/NativeClientCertificates/check-chromium.py /path/to/chromium/src
 ```
 
-The reusable checker requires every source/header/patch hash in the applied overlay and each unit's actual registered object and generated target flags. It refuses stale/partial checkouts; it has no VFS compatibility mode. A pass is syntax only. Integration registers `//parc/native:native_client_certificates` in the Parc browser target and `//parc/tests/native_client_certificates:unit_tests` in Chrome unit tests. Executing the controller tests requires a valid Chromium process/context.
+The reusable checker requires every source/header/patch hash in the applied overlay and each unit's actual registered object and generated target flags. It refuses stale/partial checkouts; it has no VFS compatibility mode. A pass is syntax only. Integration registers `//parc/native:native_client_certificates` in the Parc browser target and `//parc/tests/parc_native_client_certificates:unit_tests` in Chrome unit tests. Executing the controller tests requires a valid Chromium process/context.
 
 The integrated platform retains a weak-self check after HTTP cancellation and
 another after certificate cancellation: either callback can destroy the owning

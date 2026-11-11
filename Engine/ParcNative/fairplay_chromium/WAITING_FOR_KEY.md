@@ -49,9 +49,10 @@ The owned `ParcWebMediaPlayerImplTest` suite covers attached src= stalls,
 two independently blocked SourceBuffers, status updates with no additional
 usable keys, removal with a check pending, successful and failed replacement,
 detach with a success in flight, and suppression of delayed encrypted events.
-The existing chunk-demuxer target covers buffer identity on removal. Existing
-HTMLMediaElement wait/readyState tests retain their coverage; Blink's element
-implementation is unchanged.
+The owned media-element suite covers waiting and ready-state behavior through
+the Parc supplement, and the owned chunk-demuxer suite covers buffer identity
+on removal. These suites install beside their Blink and media layers and run
+through those layers' normal test binaries.
 
 The overlay source checks run with:
 

@@ -186,7 +186,7 @@ generated `native_components`, `autofill_save_sessions` and `session_tests`
 targets; it checks the presenter, production session, handler and regression sources with
 their respective settings. Missing targets are an error before compilation.
 The checker uses `//parc/native` and `//parc/tests/parc_native_autofill` targets;
-it requires the direct engine graph rather than the retired CEF target flags.
+it requires the direct engine's exact generated target graph.
 Logs, command records and caches stay in the ignored test build directory. The
 checker performs no generation, GN, Ninja, source-checkout writes, downloads or
 synthetic-header substitution.

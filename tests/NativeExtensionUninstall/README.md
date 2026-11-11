@@ -86,7 +86,7 @@ its security-context helper; `security_dialog_tracker` and `//ui/views` are
 public dependencies because public headers expose their types. The hook is
 installed beside the other interface hooks in `ParcBrowserMainExtraParts`.
 
-`//parc/tests/native_extensions:uninstall_browser_tests` is consumed by the
+`//parc/tests/parc_native_extensions:uninstall_browser_tests` is consumed by the
 macOS `browser_tests` graph. It defines `HAS_OUT_OF_PROC_TEST_RUNNER` and directly
 depends on both native targets, the tracker and real Chromium test services.
 Membership is maintained in `tests/NativeExtensionPopup/BUILD.gn`, which the

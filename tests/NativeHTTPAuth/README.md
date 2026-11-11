@@ -21,7 +21,7 @@ sheet cancel that prompt. They are not queued for later presentation. The
 original document and visible selected page must retain ownership through
 submission; returning to the same hierarchy does not revive a cancelled request.
 
-Ownerless `CefURLRequest` authentication has no native page/window owner and is
-not redirected to another window. WebAuthn, certificates and external protocols
-use their own services. Docked main DevTools uses its explicit
+An authentication request without a native page/window owner is not redirected
+to another window. WebAuthn, certificates and external protocols use their own
+services. Docked main DevTools uses its explicit
 [auxiliary-page lease](../NativeDevTools/Auxiliary.md) for authentication.

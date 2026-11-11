@@ -77,7 +77,8 @@ Run the read-only syntax check once generated prerequisites exist:
 python3 -B tests/NativeExtensionCommands/check-chromium.py /absolute/path/to/chromium/src
 ```
 
-It reads actual `//parc:browser.ninja` and `browser_tests.ninja` compiler flags,
+It reads actual `obj/parc/browser.ninja` and
+`obj/chrome/test/browser_tests.ninja` compiler flags,
 uses the pinned Clang with `-fsyntax-only`, and writes logs only under ignored
 `build/tests/native-extension-commands/`. It neither generates nor builds the
 external tree. The production registry and browser-test source use the pinned

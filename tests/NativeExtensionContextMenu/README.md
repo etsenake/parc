@@ -33,10 +33,19 @@ output checksums and maintains one contextual patch for this target.
 python3 tests/NativeExtensionContextMenu/check-chromium.py /absolute/path/to/chromium/src
 ```
 
+The checker compiles the production unit and twelve-case browser-test source
+with their generated target settings. The patched upstream menu model uses its
+own generated target flags. It requires
+`obj/parc/native/native_extensions.ninja` and
+`obj/parc/tests/parc_native_extensions/context_menu_browser_tests.ninja`.
+ARC, warnings-as-errors, and the browser test's
+`HAS_OUT_OF_PROC_TEST_RUNNER` definition are required. Source, compiler, flag,
+toolchain hashes and commands are recorded under ignored
+`build/tests/native-extension-context-menu/`.
 
 The twelve browser cases use actual loaded extensions, real action models and actual `NSMenu` dispatch/tracking. They cover pin mutation, cancellation, rejected nested Show, cancellation and presenter replacement inside a real synchronous pin observer, stale rebuilt model, presenter destruction during tracking, active-page changes, security changes unavailable uninstall, terminal drain after actual pin dispatch destroys the presenter, and repeated idle drains that permanently refuse new tracking. Callback state belongs to the fixture, including failure paths. Execution requires a valid Chromium process/context.
 
-The overlay includes both implementation files in `native_extensions`, exposes the real extension-model header dependency and links the Cocoa menu adapter. It registers `//parc/tests/native_extensions:context_menu_browser_tests` with Chromium browser tests, including `HAS_OUT_OF_PROC_TEST_RUNNER` and its direct resource/header dependencies. This is source/target integration; production native shell routing uses the same service.
+The overlay includes both implementation files in `native_extensions`, exposes the real extension-model header dependency and links the Cocoa menu adapter. It registers `//parc/tests/parc_native_extensions:context_menu_browser_tests` with Chromium browser tests, including `HAS_OUT_OF_PROC_TEST_RUNNER` and its direct resource/header dependencies. This is source/target integration; production native shell routing uses the same service.
 
 The service also closes menu/popup presentation when the exact native window gains an uninstall reservation or a Chromium security widget, including registration before visibility. Unrelated native windows remain independent. The native host supplies the selection/security-state notifications.
 

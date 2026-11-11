@@ -27,7 +27,7 @@ The six `NativeDevToolsBrowserTest.*` cases cover actual tools/resize strategy, 
 
 The reusable checker above has no compatibility fallback: it requires the complete reviewed overlay applied, exact object membership, generated final target flags, ARC/warnings-as-errors, source/toolchain/compiler hashes and unchanged inputs. It performs syntax checking only, without GN, Ninja or runtime execution.
 
-The pane view belongs to `native_components`; `NativeDevToolsPane` belongs to shared `native_devtools`, consumed by `//parc:browser` and `//parc/tests/native_devtools:browser_tests`. Native host/application/page route remains in `//parc:browser`. The genuine test target defines `HAS_OUT_OF_PROC_TEST_RUNNER`. Root owns final GN/overlay composition and dependency checks.
+The pane view belongs to `native_components`; `NativeDevToolsPane` belongs to shared `native_devtools`, consumed by `//parc:browser` and `//parc/tests/parc_native_devtools:browser_tests`. Native host/application/page route remains in `//parc:browser`. The genuine test target defines `HAS_OUT_OF_PROC_TEST_RUNNER`. Root owns final GN/overlay composition and dependency checks.
 
 ## Auxiliary services and presentation
 

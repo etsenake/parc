@@ -30,7 +30,7 @@ python3 tests/NativeCertificateViewer/check-chromium.py /absolute/path/to/chromi
 
 The checker verifies the entire overlay cohort, source lock, generated object membership and exact compiler rules before checking the two production ObjC++ units, platform integration, generic Chromium viewer and controller test source. It has no compatibility fallback and does not generate, build, link, execute tests or write into the checkout.
 
-Chromium's `ShowCertificateViewer` reaches Parc through a one-call hook; pages without the native route keep the WebUI viewer. Integration maps the native sources into `parc/native`, and the controller test into `parc/tests/native_certificate_viewer`. The shared `native_certificate_viewer` target owns both production implementations and SecurityInterface linking; `//parc:browser` and the test source set depend on it. Only `chrome/test:unit_tests` under macOS imports the test source set. The test target does not depend on `//parc:browser`.
+Chromium's `ShowCertificateViewer` reaches Parc through a one-call hook; pages without the native route keep the WebUI viewer. Integration maps the native sources into `parc/native`, and the controller test into `parc/tests/parc_native_certificate_viewer`. The shared `native_certificate_viewer` target owns both production implementations and SecurityInterface linking; `//parc:browser` and the test source set depend on it. Only `chrome/test:unit_tests` under macOS imports the test source set. The test target does not depend on `//parc:browser`.
 
 The presenter retains its callback target until SecurityInterface delivers the
 actual dismissal callback. That ownership prevents a late OS callback from

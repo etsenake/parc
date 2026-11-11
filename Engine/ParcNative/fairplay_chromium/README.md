@@ -7,12 +7,12 @@ media renderer run together in the GPU process's media service, because the
 playback core's renderers get their keys only as content key recipients of
 the CDM's `AVContentKeySession` (see [the core](../fairplay/README.md)).
 
-This directory holds the Chromium-side sources. The overlay installs them at
-`//third_party/parc_fairplay`, next to the core
-(`Engine/ParcNative/fairplay` → `//third_party/parc_fairplay/core`). It is
-under third_party so Chromium's clang style plugin and unsafe-buffers checks,
-which the core predates, don't apply. Upstream hunks are in
-`Engine/ParcHost/integration/fairplay-media*.patch`.
+This directory owns the FairPlay service, CDM, native HLS and media-layer
+sources. The overlay installs them beside the Blink, content, media, Viz and
+accelerated-widget internals they use. The playback core installs from
+`Engine/ParcNative/fairplay` to `//third_party/parc_fairplay/core`, outside
+Chromium's clang style plugin and unsafe-buffers checks, which it predates.
+Chromium call sites remain in the reviewed integration patches.
 
 ## Status
 
@@ -46,9 +46,10 @@ this guide covers demuxed samples and the Chromium/CDM boundary.
 | Parc operations on Chromium's media interfaces | `parc_renderer_extensions.h`, `parc_pipeline_extension.h`, `parc_demuxer_extension.h` and `parc_demuxer_stream_extension.h` → `//media/base`: `Renderer`, `AudioRenderer`, `VideoRenderer`, `Pipeline` (and `PipelineController`), `Demuxer` and `DemuxerStream` each declare one `GetParcExtension()`, null by default, so Parc's playback, seeking, hand-off and stream calls change without rebuilding every includer of those headers |
 
 FairPlay has its own GPU service and browser host, built from Chromium's public
-media service classes. It doesn't make the GPU renderer the default for ordinary
-pages or change Chromium's media services. Chromium keeps one CDM hook, so
-Blink's EME path is unchanged.
+media service classes. It doesn't make the GPU renderer the default for
+ordinary pages. Chromium's media-service and Blink EME call sites retain narrow
+FairPlay adaptations, including one CDM creator hook after the Widevine request
+observer.
 
 ## Call flow (CDM)
 
@@ -303,8 +304,8 @@ after `MediaSource::monitorSourceBuffers`,
 - `play()` before the keys: `currentTime` stays at the start until the keys
   let samples reach the renderers, as Safari's synchronizer waits for
   `allRenderersHaveAvailableSamples`; `playing` comes with `canplay`.
-- Waiting for a key runs WebKit's Wait for Key on the element
-  (`HTMLMediaElement::ParcWaitForKey`), once per blocked episode: `readyState`
+- Waiting for a key runs WebKit's Wait for Key through the Parc-owned media
+  element supplement, once per blocked episode: `readyState`
   drops to HAVE_CURRENT_DATA if the current time is buffered, else
   HAVE_METADATA (only if that is lower), `waiting` fires if the element was
   potentially playing, then `waitingforkey`. While blocked the element follows
@@ -382,7 +383,7 @@ not in Parc's host, because their place before `receivers_` closes the pipes
 first. MojoRendererService and MojoRenderer keep the FairPlay CDM swap: CDM
 attach on another pipe would lose its order with the Renderer's calls.
 
-## Codec build flags (increment 3)
+## Codec build flags
 
 `Engine/source-lock.json` adds `enable_platform_dolby_vision=true`,
 `enable_platform_encrypted_dolby_vision=true` and
