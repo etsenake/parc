@@ -45,7 +45,7 @@ Playing, output protection policy, or renderer/sample scheduling.
 
 ## Verification
 
-The existing `WebMediaPlayerImplTest` target covers attached src= stalls,
+The owned `ParcWebMediaPlayerImplTest` suite covers attached src= stalls,
 two independently blocked SourceBuffers, status updates with no additional
 usable keys, removal with a check pending, successful and failed replacement,
 detach with a success in flight, and suppression of delayed encrypted events.

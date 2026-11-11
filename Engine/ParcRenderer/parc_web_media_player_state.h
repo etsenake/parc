@@ -79,7 +79,7 @@ class PLATFORM_EXPORT ParcWebMediaPlayerState {
 
  private:
   friend class WebMediaPlayerImpl;
-  friend class WebMediaPlayerImplTest;
+  friend class ParcWebMediaPlayerImplTest;
 
   void CheckSourceKey(const std::string& id);
 

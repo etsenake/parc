@@ -95,3 +95,16 @@
 +  if (is_mac) {
 +    deps += [ "//chrome/browser/ui/media_router/parc_tests:unit_tests" ]
 +  }
+--- a/third_party/blink/renderer/core/BUILD.gn
++++ b/third_party/blink/renderer/core/BUILD.gn
+@@ -1648,6 +1648,9 @@
+-
++
+   if (media_use_ffmpeg) {
+     sources += [ "exported/web_media_player_impl_unittest.cc" ]
++    if (is_mac) {
++      deps += [ "//third_party/blink/renderer/parc_tests:blink_core_media_tests" ]
++    }
+     data = [ "//media/test/data/" ]
+     deps += [
+       "//media",

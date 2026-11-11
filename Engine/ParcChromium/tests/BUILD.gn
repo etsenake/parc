@@ -24,3 +24,39 @@ source_set("blink_core_tests") {
     "//third_party/blink/renderer/platform:test_support",
   ]
 }
+
+source_set("blink_core_media_tests") {
+  visibility = [ "//third_party/blink/renderer/core:*" ]
+  testonly = true
+  sources = [ "blink/web_media_player_impl_test.cc" ]
+
+  configs += [
+    "//third_party/blink/renderer:config",
+    "//third_party/blink/renderer:inside_blink",
+    "//third_party/blink/renderer/core:blink_core_pch",
+  ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cc",
+    "//components/viz/test:test_support",
+    "//media",
+    "//media:test_support",
+    "//media/mojo/services",
+    "//mojo/public/cpp/bindings",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/blink/public:blink",
+    "//third_party/blink/public:test_headers",
+    "//third_party/blink/public:test_support",
+    "//third_party/blink/public/common/tokens:tokens_headers",
+    "//third_party/blink/public/platform/media",
+    "//third_party/blink/renderer/core",
+    "//third_party/blink/renderer/core:testing",
+    "//third_party/blink/renderer/core:unit_test_support",
+    "//third_party/blink/renderer/platform/media",
+    "//third_party/blink/renderer/platform:test_support",
+    "//ui/gfx/geometry",
+  ]
+}
