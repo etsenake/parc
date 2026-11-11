@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/task/sequenced_task_runner.h"
@@ -390,13 +391,11 @@ TEST_F(NativeHlsTest, TimelineFollowsThePlayer) {
       base::Seconds(10), media::kInfiniteDuration));
   metadata->start_date = base::Time::FromSecondsSinceUnixEpoch(1700000000);
   ASSERT_TRUE(InitializeWith(std::move(metadata)).is_ok());
-  std::optional<media::Demuxer::ParcNativeTimeline> timeline =
-      demuxer_->GetParcNativeTimeline();
-  ASSERT_TRUE(timeline);
-  ASSERT_EQ(timeline->seekable.size(), 1u);
-  EXPECT_EQ(timeline->seekable.start(0), base::Seconds(10));
-  EXPECT_EQ(timeline->seekable.end(0), media::kInfiniteDuration);
-  EXPECT_EQ(timeline->start_date,
+  NativeHlsSource::Timeline timeline = demuxer_->GetTimeline();
+  ASSERT_EQ(timeline.seekable.size(), 1u);
+  EXPECT_EQ(timeline.seekable.start(0), base::Seconds(10));
+  EXPECT_EQ(timeline.seekable.end(0), media::kInfiniteDuration);
+  EXPECT_EQ(timeline.start_date,
             base::Time::FromSecondsSinceUnixEpoch(1700000000));
   EXPECT_EQ(demuxer_->GetTimelineOffset(),
             base::Time::FromSecondsSinceUnixEpoch(1700000000));
@@ -407,10 +406,9 @@ TEST_F(NativeHlsTest, TimelineFollowsThePlayer) {
   client_->OnSeekableRangesChanged(std::move(window));
   client_->OnStartDateChanged(std::nullopt);
   task_environment_.RunUntilIdle();
-  timeline = demuxer_->GetParcNativeTimeline();
-  ASSERT_TRUE(timeline);
-  EXPECT_EQ(timeline->seekable.start(0), base::Seconds(20));
-  EXPECT_FALSE(timeline->start_date);
+  timeline = demuxer_->GetTimeline();
+  EXPECT_EQ(timeline.seekable.start(0), base::Seconds(20));
+  EXPECT_FALSE(timeline.start_date);
 }
 
 TEST_F(NativeHlsTest, LiveIsInfiniteAndNotSeekable) {
@@ -501,7 +499,7 @@ TEST_F(NativeHlsTest, LoadsGoToTheElementsLoader) {
 TEST_F(NativeHlsTest, ClearKeyReachesThePlayer) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   const std::vector<uint8_t> key(16, 0x2a);
-  demuxer_->ParcProvideClearKey("key-1", key);
+  demuxer_->ProvideClearKey("key-1", key);
   task_environment_.RunUntilIdle();
   ASSERT_EQ(player_.clear_keys_.size(), 1u);
   EXPECT_EQ(player_.clear_keys_[0].first, "key-1");
@@ -530,12 +528,10 @@ TEST_F(NativeHlsAirPlayTest, TargetReachesThePlayerBeforeInitialize) {
 }
 
 TEST_F(NativeHlsTest, AirPlayTargetChangesReachThePlayer) {
-  demuxer_->ParcSetPlaybackTarget("6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11",
-                                  true);
+  demuxer_->SetPlaybackTarget("6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11", true);
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
-  demuxer_->ParcSetPlaybackTarget("6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11",
-                                  false);
-  demuxer_->ParcSetWirelessVideoPlaybackDisabled(true);
+  demuxer_->SetPlaybackTarget("6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11", false);
+  demuxer_->SetWirelessVideoPlaybackDisabled(true);
   task_environment_.RunUntilIdle();
   ASSERT_EQ(player_.targets_.size(), 2u);
   // Set before the pipe was bound: sent with the load, before Initialize.
@@ -549,12 +545,10 @@ TEST_F(NativeHlsTest, AirPlayTargetChangesReachThePlayer) {
 // A clear file's track choices (NATIVE_HLS.md, AirPlay): one made before the
 // pipe is bound goes with the load, before Initialize; later ones at once.
 TEST_F(NativeHlsTest, FileTrackChoicesReachThePlayer) {
-  demuxer_->ParcSelectFileTracks({.audio_count = 2,
-                                  .audio = {1},
-                                  .video_count = 1,
-                                  .video = 0});
+  demuxer_->SelectFileTracks(
+      {.audio_count = 2, .audio = {1}, .video_count = 1, .video = 0});
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
-  demuxer_->ParcSelectFileTracks({.audio_count = 2, .audio = {0, 1}});
+  demuxer_->SelectFileTracks({.audio_count = 2, .audio = {0, 1}});
   task_environment_.RunUntilIdle();
   ASSERT_EQ(player_.file_tracks_.size(), 2u);
   const media::mojom::FairPlayHlsFileTracks& before =
@@ -628,7 +622,7 @@ TEST_F(NativeHlsTest, WaitsWhenThePlayerSaysSoWithACdmAttached) {
 TEST_F(NativeHlsTest, WaitingWithACdmAttachedReachesALaterRenderer) {
   NiceMock<media::MockCdmContext> cdm_context;
   cdm_context.set_cdm_id(base::UnguessableToken::Create());
-  demuxer_->SetCdmForNativePlayer(&cdm_context);
+  demuxer_->SetCdm(&cdm_context, base::DoNothing());
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   client_->OnWaiting(media::WaitingReason::kNoDecryptionKey);
   task_environment_.RunUntilIdle();
@@ -666,7 +660,7 @@ TEST_F(NativeHlsTest, ASecondOfferOfAnUnansweredCdmWaitsForThePlayer) {
     SCOPED_TRACE(accepts ? "accepted" : "refused");
     NiceMock<media::MockCdmContext> cdm_context;
     cdm_context.set_cdm_id(base::UnguessableToken::Create());
-    demuxer_->SetCdmForNativePlayer(&cdm_context);
+    demuxer_->SetCdm(&cdm_context, base::DoNothing());
     base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
     EXPECT_CALL(attached_cb, Run(_)).Times(0);
     renderer_->SetCdm(&cdm_context, attached_cb.Get());
@@ -1013,7 +1007,7 @@ TEST_F(NativeHlsTest, CdmReachesThePlayerByIdOnce) {
   NiceMock<media::MockCdmContext> cdm_context;
   const base::UnguessableToken cdm_id = base::UnguessableToken::Create();
   cdm_context.set_cdm_id(cdm_id);
-  demuxer_->SetCdmForNativePlayer(&cdm_context);
+  demuxer_->SetCdm(&cdm_context, base::DoNothing());
   CreateRenderer();
   base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
   EXPECT_CALL(attached_cb, Run(true));
@@ -1093,7 +1087,7 @@ TEST_F(NativeHlsTest, EarlyCdmOfferWaitsForThePlayersAcceptanceOrRefusal) {
   player_.holds_cdm_answers_ = true;
   base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
   EXPECT_CALL(attached_cb, Run(testing::_)).Times(0);
-  demuxer_->SetCdmForNativePlayer(&cdm_context, attached_cb.Get());
+  demuxer_->SetCdm(&cdm_context, attached_cb.Get());
   task_environment_.RunUntilIdle();
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   ASSERT_EQ(1u, player_.cdm_answers_.size());
@@ -1103,7 +1097,7 @@ TEST_F(NativeHlsTest, EarlyCdmOfferWaitsForThePlayersAcceptanceOrRefusal) {
   task_environment_.RunUntilIdle();
   testing::Mock::VerifyAndClearExpectations(&attached_cb);
   EXPECT_CALL(attached_cb, Run(testing::_)).Times(0);
-  demuxer_->SetCdmForNativePlayer(&cdm_context, attached_cb.Get());
+  demuxer_->SetCdm(&cdm_context, attached_cb.Get());
   task_environment_.RunUntilIdle();
   ASSERT_EQ(2u, player_.cdm_answers_.size());
   testing::Mock::VerifyAndClearExpectations(&attached_cb);
@@ -1145,7 +1139,7 @@ TEST_F(NativeHlsTest, ANewCdmOfferAfterPlayerLossIsRefused) {
   cdm_context.set_cdm_id(base::UnguessableToken::Create());
   base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
   EXPECT_CALL(attached_cb, Run(false));
-  demuxer_->SetCdmForNativePlayer(&cdm_context, attached_cb.Get());
+  demuxer_->SetCdm(&cdm_context, attached_cb.Get());
   task_environment_.RunUntilIdle();
 }
 

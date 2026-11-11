@@ -33,6 +33,7 @@
 #include "media/base/buffering_state.h"
 #include "media/base/demuxer.h"
 #include "media/base/parc_native_hls_demuxer_params.h"
+#include "media/base/parc_native_hls_source.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/ranges.h"
 #include "media/base/waiting.h"
@@ -51,63 +52,6 @@ class MediaLog;
 }  // namespace media
 
 namespace parc::fairplay {
-
-// The GPU player behind a NativeHlsDemuxer, as its renderer facade sees it
-// (MediaResource::GetParcNativeHlsSource()). Media thread, except
-// GetMediaTime().
-class NativeHlsSource {
- public:
-  // The facade's side of the player's reports. Calls arrive on the media
-  // thread while a client is set.
-  class Client {
-   public:
-    virtual void OnSourceBufferingStateChange(media::BufferingState state) = 0;
-    virtual void OnSourceEnded() = 0;
-    virtual void OnSourceError(media::PipelineStatus status) = 0;
-    virtual void OnSourceStatisticsUpdate(
-        const media::PipelineStatistics& delta) = 0;
-    virtual void OnSourceWaiting(media::WaitingReason reason) = 0;
-    virtual void OnSourceNaturalSizeChange(const gfx::Size& size) = 0;
-    virtual void OnSourceLayerRegistered(
-        const base::UnguessableToken& layer_token,
-        const gfx::Size& natural_size) = 0;
-
-   protected:
-    virtual ~Client() = default;
-  };
-
-  // Sets the facade that hears the player, or clears it with null. A new
-  // client first hears the display layer and natural size already known, and
-  // that the player waits for a key if it does.
-  virtual void SetClient(Client* client) = 0;
-
-  // AVPlayer's rate: Play() with `rate` > 0, Pause() for 0.
-  virtual void Play(double rate) = 0;
-  virtual void Pause() = 0;
-  virtual void SetVolume(float volume) = 0;
-  virtual void SetPreservesPitch(bool preserves_pitch) = 0;
-  // HTMLMediaElement.setSinkId's device, as its sink names it (hashed for the
-  // frame's origin; empty or "default" for the system default).
-  virtual void SetAudioOutputDevice(const std::string& sink_id) = 0;
-  // Hands the player the frame's CDM `cdm_context` names (its CDM ID).
-  // `cdm_attached_cb` answers whether the player took it.
-  using CdmAttachedCB = base::OnceCallback<void(bool)>;
-  virtual void SetCdm(media::CdmContext* cdm_context,
-                      CdmAttachedCB cdm_attached_cb) = 0;
-
-  // The item's buffering state as AVFoundation last reported it.
-  virtual media::BufferingState GetBufferingState() const = 0;
-
-  // The media time the GPU player last reported, advanced at its rate since
-  // then and kept within [0, duration]. During a seek, the seek target. Any
-  // thread.
-  virtual base::TimeDelta GetMediaTime() = 0;
-
-  virtual base::WeakPtr<NativeHlsSource> GetWeakPtr() = 0;
-
- protected:
-  virtual ~NativeHlsSource() = default;
-};
 
 // The media time a player reported as `time` at `capture_time`, advancing at
 // `rate`, seen at `now`: never below zero nor past a known `duration`
@@ -156,8 +100,6 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void ParcSetFastSeek(base::TimeDelta target,
                        base::TimeDelta tolerance_before) override;
   std::optional<base::TimeDelta> ParcTakeFastSeekLanding() override;
-  // Main thread: posts the player's PrepareToPlay to the media thread.
-  void ParcPrepareToPlay() override;
   // The player follows the tab mute of |handoff|'s frame
   // (FairPlayHlsPlayer.FollowMuteStateHandoff), as
   // FairPlayRendererClient::FollowMuteStateHandoff. Media thread.
@@ -178,19 +120,6 @@ class NativeHlsDemuxer final : public media::Demuxer,
                        base::TimeDelta curr_time,
                        TrackChangeCB change_completed_cb) override;
   void SetPlaybackRate(double rate) override;
-  void SetCdmForNativePlayer(
-      media::CdmContext* cdm_context,
-      base::OnceCallback<void(bool)> attached_cb = {}) override;
-  std::optional<ParcNativeTimeline> GetParcNativeTimeline() const override;
-  void ParcProvideClearKey(const std::string& key_id,
-                           const std::vector<uint8_t>& key) override;
-  // AirPlay: kept for the player and sent before Initialize, or at once
-  // when it is bound.
-  void ParcSetPlaybackTarget(const std::string& output_context_id,
-                             bool should_play) override;
-  void ParcSetWirelessVideoPlaybackDisabled(bool disabled) override;
-  // A clear file's track choices: kept for the player, as the target.
-  void ParcSelectFileTracks(const ParcFileTracks& tracks) override;
 
   // NativeHlsSource.
   void SetClient(NativeHlsSource::Client* client) override;
@@ -203,6 +132,18 @@ class NativeHlsDemuxer final : public media::Demuxer,
               NativeHlsSource::CdmAttachedCB cdm_attached_cb) override;
   media::BufferingState GetBufferingState() const override;
   base::TimeDelta GetMediaTime() override;
+  Timeline GetTimeline() const override;
+  void ProvideClearKey(const std::string& key_id,
+                       const std::vector<uint8_t>& key) override;
+  // Posts the player's PrepareToPlay to the media thread.
+  void PrepareToPlay() override;
+  // AirPlay: kept for the player and sent before Initialize, or at once
+  // when it is bound.
+  void SetPlaybackTarget(const std::string& output_context_id,
+                         bool should_play) override;
+  void SetWirelessVideoPlaybackDisabled(bool disabled) override;
+  // A clear file's track choices: kept for the player, as the target.
+  void SelectFileTracks(const FileTracks& tracks) override;
   base::WeakPtr<NativeHlsSource> GetWeakPtr() override;
 
   // media::mojom::FairPlayHlsPlayerClient.
@@ -311,7 +252,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
   std::string playback_target_id_;
   bool should_play_to_playback_target_;
   bool wireless_video_playback_disabled_;
-  std::optional<ParcFileTracks> file_tracks_;
+  std::optional<FileTracks> file_tracks_;
   const StartLoadCallback start_load_cb_;
   // The element's tracks; posts to the main thread. Null in unit tests.
   const std::unique_ptr<media::TrackManager> track_manager_;
@@ -382,7 +323,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
   uint32_t seeks_sent_ = 0;
   bool jumped_after_seek_ GUARDED_BY(time_lock_) = false;
   // The element's seekable window and getStartDate() as the player computed
-  // them (one range or none; GetParcNativeTimeline()).
+  // them (one range or none; GetTimeline()).
   media::Ranges<base::TimeDelta> seekable_ GUARDED_BY(time_lock_);
   std::optional<base::Time> start_date_ GUARDED_BY(time_lock_);
 

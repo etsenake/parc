@@ -39,7 +39,10 @@ encoded buffers.
 `NativeHlsRenderer` is a media-thread facade driving that same player through
 `MediaResource::GetParcNativeHlsSource()`. The demuxer owns the connection so
 metadata can precede renderer construction. CDMs set before renderer creation
-reach the demuxer directly. Suspend/resume of the renderer facade does not
+reach the demuxer directly. The pipeline and `DemuxerManager` reach the player
+through the same source (`media/base/parc_native_hls_source.h`) for its CDM,
+timeline, clear keys, AirPlay target and file track choices, so Chromium's
+`Demuxer` carries none of them. Suspend/resume of the renderer facade does not
 create another native player.
 
 Native HLS is exempt from ordinary idle/background/frozen-frame suspension and

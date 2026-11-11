@@ -5,7 +5,6 @@
 
 #include "base/check.h"
 #include "base/functional/bind.h"
-#include "base/functional/callback_helpers.h"
 #include "base/task/bind_post_task.h"
 #include "base/logging.h"
 #include "media/base/audio_decoder_config.h"
@@ -321,7 +320,7 @@ void NativeHlsDemuxer::Seek(base::TimeDelta time,
                                std::move(status_cb)));
 }
 
-void NativeHlsDemuxer::ParcPrepareToPlay() {
+void NativeHlsDemuxer::PrepareToPlay() {
   media_task_runner_->PostTask(
       FROM_HERE, base::BindOnce(
                      [](base::WeakPtr<NativeHlsDemuxer> demuxer) {
@@ -336,9 +335,8 @@ void NativeHlsDemuxer::ParcPrepareToPlay() {
                      weak_this_));
 }
 
-void NativeHlsDemuxer::ParcSetPlaybackTarget(
-    const std::string& output_context_id,
-    bool should_play) {
+void NativeHlsDemuxer::SetPlaybackTarget(const std::string& output_context_id,
+                                         bool should_play) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   playback_target_id_ = output_context_id;
   should_play_to_playback_target_ = should_play;
@@ -347,7 +345,7 @@ void NativeHlsDemuxer::ParcSetPlaybackTarget(
   }
 }
 
-void NativeHlsDemuxer::ParcSetWirelessVideoPlaybackDisabled(bool disabled) {
+void NativeHlsDemuxer::SetWirelessVideoPlaybackDisabled(bool disabled) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   wireless_video_playback_disabled_ = disabled;
   if (player_.is_bound()) {
@@ -355,7 +353,7 @@ void NativeHlsDemuxer::ParcSetWirelessVideoPlaybackDisabled(bool disabled) {
   }
 }
 
-void NativeHlsDemuxer::ParcSelectFileTracks(const ParcFileTracks& tracks) {
+void NativeHlsDemuxer::SelectFileTracks(const FileTracks& tracks) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   file_tracks_ = tracks;
   if (player_.is_bound()) {
@@ -507,8 +505,8 @@ void NativeHlsDemuxer::OnTracksChanged(
 
 void NativeHlsDemuxer::SetPlaybackRate(double rate) {}
 
-void NativeHlsDemuxer::ParcProvideClearKey(const std::string& key_id,
-                                           const std::vector<uint8_t>& key) {
+void NativeHlsDemuxer::ProvideClearKey(const std::string& key_id,
+                                       const std::vector<uint8_t>& key) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   // The page's legacy clear key session has the key a clearkey:// request
   // asked for; AVFoundation gets its requested bytes (WebKit's
@@ -518,19 +516,12 @@ void NativeHlsDemuxer::ParcProvideClearKey(const std::string& key_id,
   }
 }
 
-std::optional<media::Demuxer::ParcNativeTimeline>
-NativeHlsDemuxer::GetParcNativeTimeline() const {
+NativeHlsSource::Timeline NativeHlsDemuxer::GetTimeline() const {
   base::AutoLock lock(time_lock_);
-  ParcNativeTimeline timeline;
+  Timeline timeline;
   timeline.seekable = seekable_;
   timeline.start_date = start_date_;
   return timeline;
-}
-
-void NativeHlsDemuxer::SetCdmForNativePlayer(
-    media::CdmContext* cdm_context,
-    base::OnceCallback<void(bool)> attached_cb) {
-  SetCdm(cdm_context, attached_cb ? std::move(attached_cb) : base::DoNothing());
 }
 
 void NativeHlsDemuxer::SetClient(NativeHlsSource::Client* client) {
