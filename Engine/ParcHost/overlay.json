@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 673,
+  "version": 674,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -339,7 +339,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_application.mm",
       "target": "parc/native/native_appkit_application.mm",
-      "sha256": "c9d553a4c1ee295e56d5e38094aa66224c1acbd4396183282be04fd552ec95d3"
+      "sha256": "73ee7d388b0a0d7a882e960407c736f7ce8f312b0e0e29b0b7f730992f703a8a"
     },
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
@@ -1954,7 +1954,7 @@
     {
       "source": "Engine/ParcNative/native_profiles.mm",
       "target": "parc/native/native_profiles.mm",
-      "sha256": "509feef29217277fdb936d370839e06eccf550b543a7b8e0b2c7bfb9055b9812"
+      "sha256": "6fe7253f4d3bfb31835d7cee11ad5c8b9877257d6dbc1c2162f9e7afe6bf0720"
     },
     {
       "source": "Engine/ParcNative/native_page_observers.h",
@@ -2034,7 +2034,7 @@
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "b2b085f7a1a755587344c2547fc18871f8152a04c3591ae92ad0d6de3cbb2aa3"
+      "sha256": "4a2a9d91a9a03195392e66401a9c6f10f16d57988c3d7b51c29a1799cfeb2442"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2089,7 +2089,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.cc",
       "target": "parc/parc_main_delegate.cc",
-      "sha256": "77b862806d80adb30b27a75d1860d790468e19b28119ee25cf6d84d143f9fde8"
+      "sha256": "1f81a8af21bbef65bc9de66993490cb23f5cce5c760259e90b067d29141a04e6"
     },
     {
       "source": "Engine/ParcNative/native_application.mm",
@@ -2119,7 +2119,7 @@
     {
       "source": "Engine/ParcNative/native_profile_policy.h",
       "target": "parc/native/native_profile_policy.h",
-      "sha256": "2b1fc95d209c277e09df897c527a1f52fd833cffc994d6cae637d781baec2343"
+      "sha256": "be2181d00bea05673da80dd5858d868f0d1dc1b1df57eadfff6c3723298e9f57"
     }
   ],
   "patches": [
@@ -5642,17 +5642,12 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-session-cookies-direct.patch",
-      "sha256": "9b0d4a5570d190d54ec83e4d7ef9e0324417b50b96cec0f1ca79c159ca593c8d",
+      "sha256": "e52040c52ff6fbb3b44df726cd3303669f17f96e1da57955d75c34e4e9ae9c27",
       "files": [
         {
           "target": "chrome/browser/profiles/profile_impl.cc",
           "before_sha256": "e887443652d48563145855e2c525426aa44ccd1dc1023a7e1068fa4c092f06eb",
-          "after_sha256": "ad3a48b054f5342bc677593449713cc4d307e85710da803cf57ed28c5afce3d7"
-        },
-        {
-          "target": "chrome/browser/profiles/BUILD.gn",
-          "before_sha256": "c2d63dad9323512dfb00ee66766e3b9b2f82fc1e8dbfb6a644b60c7057594d4a",
-          "after_sha256": "c8952f96f31878567271bddd696500d5c2a35de83a6b26ccd982c6860f50dce0"
+          "after_sha256": "6a3243e98802a89fbdc3f4a78745cdf39535a1237711b60423c590f6c74749b6"
         }
       ]
     },
