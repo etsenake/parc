@@ -141,6 +141,7 @@ source_set("browser") {
     "native/native_page_binding.mm",
     "native/native_page_capture.mm",
     "native/native_page_context_menu.mm",
+    "native/native_page_info.h",
     "native/native_page_info.mm",
     "native/native_page_observers.h",
     "native/native_page_observers.mm",
@@ -188,7 +189,6 @@ source_set("browser") {
     "//parc/native:native_intent_picker_api",
     "//parc/native:native_page_context_menu_api",
     "//parc/native:native_tab_preview_api",
-    "//parc/native:native_tab_sharing_api",
     "//parc/native:native_video_pip_api",
     "//parc/native:native_window_state_api",
   ]
@@ -281,6 +281,7 @@ source_set("browser") {
     "//chrome/browser/ui/side_panel",
     "//chrome/browser/ui/side_panel:side_panel_views_dependent",
     "//chrome/browser/ui/tab_sharing",
+    "//components/content_settings/core/common",
     "//chrome/browser/ui/thumbnails",
     "//chrome/browser/ui/views/eye_dropper",
     "//chrome/browser/ui/views/global_media_controls",

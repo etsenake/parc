@@ -11,6 +11,7 @@
 
 #include "base/functional/callback.h"
 #include "chrome/browser/ui/sad_tab_types.h"
+#include "chrome/browser/ui/tab_sharing/tab_sharing_infobar_delegate.h"
 #include "components/permissions/permission_prompt.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "net/ssl/client_cert_identity.h"
@@ -25,6 +26,7 @@ class ChromeBrowserMainParts;
 class LoginHandler;
 class PrefRegistrySimple;
 class PrefService;
+class Profile;
 class SadTab;
 class StartupData;
 
@@ -125,6 +127,26 @@ void SetPasswordPrompt(bool (*uses)(content::WebContents*),
                        void (*hide)(content::WebContents*),
                        bool (*has)(content::WebContents*),
                        bool (*hovered)(content::WebContents*));
+
+// chrome/browser/ui/tab_sharing/tab_sharing_infobar_delegate.cc
+using TabSharingPageInfo = void (*)(content::WebContents* web_contents);
+void SetTabSharingPageInfo(TabSharingPageInfo page_info);
+using TabSharingInfoBarFactory = std::unique_ptr<infobars::InfoBar> (*)(
+    content::WebContents* web_contents,
+    std::unique_ptr<TabSharingInfoBarDelegate> delegate,
+    content::GlobalRenderFrameHostId shared_tab_id,
+    content::GlobalRenderFrameHostId capturer_id,
+    const std::u16string& shared_tab_name,
+    const std::u16string& capturer_name,
+    TabSharingInfoBarDelegate::TabRole role,
+    TabSharingInfoBarDelegate::TabShareType capture_type,
+    base::WeakPtr<ScreensharingControlsHistogramLogger> uma_logger);
+void SetTabSharingInfoBarFactory(TabSharingInfoBarFactory factory);
+
+// chrome/browser/ui/views/tab_sharing/tab_sharing_ui_views.cc
+using TabSharingProfile =
+    Profile* (*)(content::GlobalRenderFrameHostId capturer);
+void SetTabSharingProfile(TabSharingProfile profile);
 
 // chrome/browser/ui/login/login_handler.cc
 void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));

@@ -1,11 +1,14 @@
 // Copyright 2026 Parc contributors.
 #include "native_tab_sharing.h"
-#include "native_tab_sharing_api.h"
 
 #include <map>
 #include <utility>
+#include "base/functional/callback_helpers.h"
 #include "base/no_destructor.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/bubble_anchor_util.h"
+#include "chrome/browser/ui/page_info/page_info_dialog.h"
 #include "chrome/browser/ui/views/screen_sharing_util.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/browser_context.h"
@@ -13,6 +16,7 @@
 #include "content/public/browser/web_contents.h"
 #include "native_appkit_page.h"
 #include "native_host_route.h"
+#include "native_page_info.h"
 
 namespace parc {
 namespace {
@@ -57,12 +61,13 @@ NativeSharingBar* Model(infobars::InfoBar* bar) {
   auto found = NativeBars().find(bar);
   return found == NativeBars().end() ? nullptr : found->second;
 }
-}  // namespace
 
 bool IsNativeTabSharingPage(content::WebContents* contents) {
   PCNativePage* page = ExistingNativePage(contents);
   return page && !page.closed;
 }
+// Null for non-native capturers. Native profiles come from the actual
+// capturer; never from another active or most-recently-used browser profile.
 Profile* NativeTabSharingProfile(content::GlobalRenderFrameHostId capturer) {
   auto* contents = Contents(capturer);
   if (!contents) return nullptr;
@@ -72,14 +77,37 @@ Profile* NativeTabSharingProfile(content::GlobalRenderFrameHostId capturer) {
   if (!GetNativeRoute(*profile)) return nullptr;
   return profile->IsGuestSession() ? profile : profile->GetOriginalProfile();
 }
+}  // namespace
+
 std::unique_ptr<infobars::InfoBar> CreateNativeTabSharingInfoBar(
-    content::WebContents* contents, std::unique_ptr<Delegate>& delegate,
-    content::GlobalRenderFrameHostId, content::GlobalRenderFrameHostId,
-    const std::u16string&, const std::u16string&,
-    Delegate::TabRole, Delegate::TabShareType,
+    content::WebContents* contents, std::unique_ptr<Delegate> delegate,
+    content::GlobalRenderFrameHostId shared,
+    content::GlobalRenderFrameHostId capturer,
+    const std::u16string& shared_name, const std::u16string& capturer_name,
+    Delegate::TabRole role, Delegate::TabShareType type,
     base::WeakPtr<ScreensharingControlsHistogramLogger> logger) {
-  if (!IsNativeTabSharingPage(contents)) return nullptr;
-  return std::make_unique<NativeSharingBar>(std::move(delegate), logger);
+  if (IsNativeTabSharingPage(contents)) {
+    return std::make_unique<NativeSharingBar>(std::move(delegate), logger);
+  }
+  return ::CreateTabSharingInfoBar(std::move(delegate), shared, capturer,
+                                   shared_name, capturer_name, role, type,
+                                   logger);
+}
+Profile* TabSharingCapturerProfile(content::GlobalRenderFrameHostId capturer) {
+  if (auto* profile = NativeTabSharingProfile(capturer)) {
+    return profile;
+  }
+  return ProfileManager::GetLastUsedProfileAllowedByPolicy();
+}
+void ShowTabSharingPageInfo(content::WebContents* contents) {
+  if (IsNativeTabSharingPage(contents)) {
+    ShowNativePageInfoPermission(contents,
+                                 ContentSettingsType::CAPTURED_SURFACE_CONTROL);
+    return;
+  }
+  ShowPageInfoDialog(contents, base::DoNothing(),
+                     bubble_anchor_util::Anchor::kLocationBar,
+                     ContentSettingsType::CAPTURED_SURFACE_CONTROL);
 }
 bool IsNativeTabSharingInfoBar(infobars::InfoBar* bar) { return Model(bar); }
 bool NativeTabSharingCanShareInstead(infobars::InfoBar* bar) {

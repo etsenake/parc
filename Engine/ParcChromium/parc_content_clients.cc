@@ -41,6 +41,7 @@
 #include "parc/native/http_auth.h"
 #include "parc/native/native_appkit_host.h"
 #include "parc/native/native_internal_urls.h"
+#include "parc/native/native_tab_sharing.h"
 #include "parc/native/native_web_contents_view_delegate.h"
 #include "parc/native/password_prompt.h"
 #include "parc/native/sad_tab.h"
@@ -98,6 +99,9 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
         &UsesNativePasswordPrompt, &ShowNativePasswordPrompt,
         &HideNativePasswordPrompt, &HasNativePasswordPrompt,
         &IsNativePasswordPromptHovered);
+    parc_hooks::SetTabSharingPageInfo(&ShowTabSharingPageInfo);
+    parc_hooks::SetTabSharingInfoBarFactory(&CreateNativeTabSharingInfoBar);
+    parc_hooks::SetTabSharingProfile(&TabSharingCapturerProfile);
     RegisterNativeFileDialogs();
     RegisterLicenseWebUI();
   }

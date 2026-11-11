@@ -26,17 +26,6 @@ source_set("native_page_context_menu_api") {
   sources = public
 }
 
-# Chrome's original tab-sharing controller selects its native InfoBar factory.
-# This declaration-only seam avoids a reverse dependency on //parc:browser.
-source_set("native_tab_sharing_api") {
-  public = [ "native_tab_sharing_api.h", "native_page_info.h" ]
-  sources = public
-  public_deps = [
-    "//chrome/browser/ui/tab_sharing",
-    "//components/content_settings/core/common",
-  ]
-}
-
 # Chrome's windows.update preflight calls the engine without depending on
 # //parc:browser or acquiring a Views window. Implementation stays in the real
 # native_browser_window.mm owner.
