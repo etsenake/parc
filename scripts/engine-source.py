@@ -20,6 +20,7 @@ from pathlib import Path
 import platform
 import plistlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -139,9 +140,55 @@ def internal_path(path: Path, workspace: Path) -> Path:
 
 
 def run(argv: list[str], cwd: Path, env: dict, capture: bool = False) -> bytes:
+    if Path(argv[0]).name == "autoninja" and not capture:
+        return run_cached_build(argv, cwd, env)
     result = subprocess.run(argv, cwd=cwd, env=env, check=True,
                             stdout=subprocess.PIPE if capture else None)
     return result.stdout or b""
+
+
+def cache_backend(chromium: Path) -> list[str]:
+    # This is depot_tools/siso.py's checkout-local backend discovery location.
+    rc = chromium / "build/config/siso/.sisorc"
+    try:
+        flags = {}
+        for line in rc.read_text().splitlines():
+            args = shlex.split(line, comments=True)
+            if args and args[0] == "ninja":
+                flags = dict(arg.lstrip("-").split("=", 1) for arg in args[1:] if "=" in arg)
+        address = flags.get("reapi_address", "")
+        if not address or flags.get("reapi_insecure") != "true":
+            return []
+        return ["-reapi_address=" + address, "-reapi_cas_address=" + address,
+                "-reapi_instance=" + flags.get("reapi_instance", "main"), "-reapi_insecure=true"]
+    except (OSError, ValueError):
+        return []
+
+
+def run_cached_build(argv: list[str], cwd: Path, env: dict) -> bytes:
+    backend = cache_backend(cwd)
+    if backend:
+        try:
+            # Only this private copy is changed; the engine's active config stays intact.
+            with tempfile.TemporaryDirectory(prefix="parc-siso-", dir=env["TMPDIR"]) as directory:
+                config = Path(directory) / "config"
+                shutil.copytree(cwd / "build/config/siso", config)
+                shutil.copyfile(REPO / "scripts/siso/cache.star", config / "parc_cache.star")
+                args = argv[1:]
+                jobs = args.index("-j")
+                args = args[:jobs] + ["-local_jobs=" + args[jobs + 1]] + args[jobs + 2:]
+                cache_env = dict(env, SISO_PROJECT="parc")
+                subprocess.run([str(cwd / "third_party/siso/cipd/siso"), "ninja",
+                                "-config_repo_dir=" + str(config), "-load=@config//parc_cache.star",
+                                "-project=parc", *backend, "-re_exec_enable=false",
+                                "-cache_enable_read=true", "-re_cache_enable_read=true",
+                                "-re_cache_enable_write=true", "-output_local_strategy=full",
+                                *args], cwd=cwd, env=cache_env, check=True)
+                return b""
+        except (OSError, subprocess.CalledProcessError) as error:
+            print(f"Shared compile cache unavailable; retrying locally: {error}", file=sys.stderr)
+    subprocess.run(argv, cwd=cwd, env=env, check=True)
+    return b""
 
 
 def environment(workspace: Path, lock: dict, symbol_level: int) -> dict:

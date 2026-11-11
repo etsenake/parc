@@ -12,7 +12,59 @@ Run the offline safety suite from the repository root:
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/EngineSource -v
 ```
 
-The suite uses temporary files and mocked process/host boundaries. It does not run Git, download dependencies, compile Chromium, inspect real Keychain data or launch an application.
+The suite uses temporary files, fixture Git repositories and mocked process/host
+boundaries. It does not download dependencies, compile Chromium, inspect real
+Keychain data or launch an application.
+
+## Shared compile cache
+
+Both engine recipes automatically read the backend connection from Siso's existing
+checkout-local `chromium/src/build/config/siso/.sisorc` file. A developer without
+that file builds with the existing local autoninja command. On a trusted builder
+with a plaintext NativeLink CAS/ActionCache server, add a `ninja` line (preserve
+any other local settings for ordinary local builds):
+
+```text
+ninja -reapi_address=HOST:PORT -reapi_instance=main -reapi_insecure=true
+```
+
+Use the second Mac's address in that local file, never in tracked source. The
+cache path sets its project to `parc`, reads and writes results, downloads every
+output, and explicitly disables remote execution. Cache misses execute locally.
+Linking, packaging and signing remain local and are not shared cache actions.
+C, C++, C++ module, Objective-C and Objective-C++ compiler actions are eligible.
+Sharing module outputs also keeps downstream object inputs identical. Their
+inputs include the compiler headers/binaries, libc++ configuration, generated
+inputs and the full SDK (system headers omitted by `-MMD` still affect keys).
+Use only trusted cache producers for shipping builds. The cached invocation reads
+only the connection flags above; other `.sisorc` settings apply to ordinary local
+builds. The full SDK costs more to hash than a curated header list, but keeps
+SDK input coverage conservative.
+
+The recipe invokes the pinned Siso binary directly because autoninja forces
+`--offline` with `use_remoteexec=false`. A private temporary copy of Chromium's
+Siso config adds Parc's cache rules; the checkout config and completed objects
+are preserved. GN arguments and compiler command lines do not change, so there
+is no `use_remoteexec` transition or associated GN rebuild. Siso computes its
+incremental command and edge hashes from the unchanged Ninja commands and trigger
+inputs; extra cache tool inputs do not change those hashes. Cache keys must match the other
+Mac's compiler, SDK, paths and build configuration. Development and shipping
+usually warm separate action keys because their compiler flags differ.
+
+A cache failure retries the ordinary local build once, including connection or
+configuration failures before compilation begins. Siso itself falls back locally
+on cache misses and logs failed uploads. A failed local build still fails the
+recipe. A real compiler error also gets this one local retry. A server outage
+may delay the initial attempt while Siso times out.
+The connection supports the supplied insecure backend; other backend/auth modes
+keep the existing build path.
+
+The offline cache tests mock every subprocess and exercise both recipes,
+local fallback, execution-disable flags and SDK/compiler input declarations.
+To verify a backend, compare matching-action hits across the two Macs, check a
+miss after a real input change, and confirm zero Execute calls in the server
+logs. Preserve existing outputs and check that switching back to a plain local
+build leaves completed steps up to date.
 
 ## Branch export and equivalence
 
