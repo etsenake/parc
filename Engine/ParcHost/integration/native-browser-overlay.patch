@@ -377,19 +377,38 @@
 +
    // Must be after exclusive_access_manager_.
  #if !BUILDFLAG(IS_CHROMEOS)
---- a/chrome/browser/ui/focus/browser_focus_controller.h
-+++ b/chrome/browser/ui/focus/browser_focus_controller.h
-@@ -30,7 +30,7 @@
-       const BrowserWindowInterface* browser);
+--- a/chrome/browser/ui/focus/browser_focus_controller.cc
++++ b/chrome/browser/ui/focus/browser_focus_controller.cc
+@@ -12,6 +12,15 @@
+ #include "ui/views/focus/focus_manager.h"
+ #include "ui/views/widget/widget.h"
 -
 +
-   // Rotates pane focus forwards or backwards.
--  void RotatePaneFocus(bool forwards);
-+  virtual void RotatePaneFocus(bool forwards);
++namespace parc_hooks {
++namespace {
++bool (*pane_focus_rotation)(ui::BaseWindow*, bool) = nullptr;
++}  // namespace
++void SetPaneFocusRotation(bool (*rotation)(ui::BaseWindow*, bool)) {
++  pane_focus_rotation = rotation;
++}
++}  // namespace parc_hooks
++
+ DEFINE_USER_DATA(BrowserFocusController);
 -
 +
-   // Focuses the active web contents pane.
-   virtual void FocusWebContentsPane() = 0;
+ BrowserFocusController::BrowserFocusController(ui::BaseWindow* base_window,
+@@ -38,6 +47,10 @@
+ }
+-
++
+ void BrowserFocusController::RotatePaneFocus(bool forwards) {
++  if (parc_hooks::pane_focus_rotation &&
++      parc_hooks::pane_focus_rotation(&*base_window_, forwards)) {
++    return;
++  }
+   views::Widget* widget =
+       views::Widget::GetWidgetForNativeWindow(base_window_->GetNativeWindow());
+   if (!widget) {
 --- a/chrome/browser/ui/navigator/browser_navigator.cc
 +++ b/chrome/browser/ui/navigator/browser_navigator.cc
 @@ -3,6 +3,8 @@

@@ -2075,11 +2075,6 @@ class AppKitFocusController final : public BrowserFocusController {
       host_->FocusPage();
     }
   }
-  void RotatePaneFocus(bool forward) override {
-    if (host_) {
-      host_->RotateFocus(forward);
-    }
-  }
   void FocusInactivePopupForAccessibility() override {
     ActivateFirstInactiveBubbleForAccessibility();
   }
@@ -2176,6 +2171,15 @@ std::unique_ptr<NativeBrowserWindowHost> CreateAppKitBrowserHost(
 std::unique_ptr<BrowserFocusController> CreateAppKitFocusController(
     BrowserWindowInterface& browser) {
   return std::make_unique<AppKitFocusController>(browser);
+}
+bool RotateAppKitPaneFocus(ui::BaseWindow* window, bool forward) {
+  for (const auto& [browser, host] : Hosts()) {
+    if (host && browser->GetWindow() == window) {
+      host->RotateFocus(forward);
+      return true;
+    }
+  }
+  return false;
 }
 void AppKitPageOwnerChanged(BrowserWindowInterface* browser,
                             content::WebContents& contents) {

@@ -73,6 +73,7 @@ class X509Certificate;
 }
 
 namespace ui {
+class BaseWindow;
 class ColorProviderSource;
 class DialogModel;
 }
@@ -278,6 +279,10 @@ void SetNativeBrowserWindowFeatures(
     std::unique_ptr<DevtoolsUIController> (*devtools_controller)(
         BrowserWindowInterface&),
     NativeWebContentsDelegateFactory web_contents_delegate);
+
+// chrome/browser/ui/focus/browser_focus_controller.cc, before the Views
+// Widget lookup. True means the native window rotated focus.
+void SetPaneFocusRotation(bool (*rotation)(ui::BaseWindow*, bool));
 
 // Easel-owned pages that session and tab restore never record:
 // components/sessions/content/session_tab_helper.cc,

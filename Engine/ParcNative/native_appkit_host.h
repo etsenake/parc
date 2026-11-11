@@ -21,6 +21,9 @@ struct NativeWebKeyboardEvent;
 namespace content {
 class WebContents;
 }
+namespace ui {
+class BaseWindow;
+}
 class BrowserFocusController;
 class DevtoolsUIController;
 class Profile;
@@ -47,6 +50,7 @@ std::unique_ptr<NativeBrowserWindowHost> CreateAppKitBrowserHost(
     NSString* profile_path);
 std::unique_ptr<BrowserFocusController> CreateAppKitFocusController(
     BrowserWindowInterface&);
+bool RotateAppKitPaneFocus(ui::BaseWindow*, bool forward);
 std::unique_ptr<DevtoolsUIController> CreateAppKitDevtoolsController(
     BrowserWindowInterface&);
 bool HandleAppKitDevtoolsKey(content::WebContents*,

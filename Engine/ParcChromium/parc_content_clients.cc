@@ -102,6 +102,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
     parc_hooks::SetTabSharingPageInfo(&ShowTabSharingPageInfo);
     parc_hooks::SetTabSharingInfoBarFactory(&CreateNativeTabSharingInfoBar);
     parc_hooks::SetTabSharingProfile(&TabSharingCapturerProfile);
+    parc_hooks::SetPaneFocusRotation(&RotateAppKitPaneFocus);
     RegisterNativeFileDialogs();
     RegisterLicenseWebUI();
   }
