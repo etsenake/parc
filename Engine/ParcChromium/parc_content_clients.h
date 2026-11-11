@@ -50,6 +50,9 @@ class ParcContentBrowserClient final : public ChromeContentBrowserClient {
   void BrowserURLHandlerCreated(content::BrowserURLHandler* handler) override;
   std::unique_ptr<content::WebContentsViewDelegate> GetWebContentsViewDelegate(
       content::WebContents* web_contents) override;
+  std::unique_ptr<content::VideoOverlayWindow>
+  CreateWindowForVideoPictureInPicture(
+      content::VideoPictureInPictureWindowController* controller) override;
 
  private:
   friend class ParcBrowserMainExtraParts;

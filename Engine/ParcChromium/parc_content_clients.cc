@@ -17,6 +17,8 @@
 #include "chrome/renderer/process_state.h"
 #include "content/browser/media/parc_video_toolbox_decoding.h"
 #include "content/public/browser/browser_url_handler.h"
+#include "content/public/browser/overlay_window.h"
+#include "content/public/browser/video_picture_in_picture_window_controller.h"
 #include "content/public/common/content_switches.h"
 #include "media/base/audio_codecs.h"
 #include "media/base/media_types.h"
@@ -30,6 +32,7 @@
 #include "parc/native/native_internal_urls.h"
 #include "parc/native/native_web_contents_view_delegate.h"
 #include "parc/native/site_permissions.h"
+#include "parc/native/video_overlay_window.h"
 #include "parc/parc_bundle_mac.h"
 #include "parc/parc_branding.h"
 #include "parc/renderer/website_theme_agent.h"
@@ -197,6 +200,16 @@ std::unique_ptr<content::WebContentsViewDelegate>
 ParcContentBrowserClient::GetWebContentsViewDelegate(
     content::WebContents* web_contents) {
   return CreateNativeWebContentsViewDelegate(web_contents);
+}
+
+std::unique_ptr<content::VideoOverlayWindow>
+ParcContentBrowserClient::CreateWindowForVideoPictureInPicture(
+    content::VideoPictureInPictureWindowController* controller) {
+  if (UsesNativeVideoPictureInPicture(controller->GetWebContents())) {
+    return CreateNativeVideoOverlayWindow(controller);
+  }
+  return ChromeContentBrowserClient::CreateWindowForVideoPictureInPicture(
+      controller);
 }
 
 void ParcContentRendererClient::RenderFrameCreated(
