@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 672,
+  "version": 673,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -1949,12 +1949,12 @@
     {
       "source": "Engine/ParcNative/native_profiles.h",
       "target": "parc/native/native_profiles.h",
-      "sha256": "11f32c6084234afa67faaab300dc04f76613949f848e4a23dbb492d0d049fd4a"
+      "sha256": "869bfe6f4174b4f2659be1a88d5566efc63827951254bef10ad6733cd78b1852"
     },
     {
       "source": "Engine/ParcNative/native_profiles.mm",
       "target": "parc/native/native_profiles.mm",
-      "sha256": "05b057aecdd666444cdbf8a2d72b9b9a36bde973afd1fd22814488470adf982a"
+      "sha256": "509feef29217277fdb936d370839e06eccf550b543a7b8e0b2c7bfb9055b9812"
     },
     {
       "source": "Engine/ParcNative/native_page_observers.h",
@@ -2029,12 +2029,12 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "35878b34c35d6bff4e47317802b9f970ecc1530a107ee20efd3f66f3ea266834"
+      "sha256": "9688cd1414da1d04d8b97ec1ffe93fb4d50cd98aee20d5fe00f8991265d1ade1"
     },
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "0745853e134d455407e7354dc3851d3d4b209b9757d282171311ba4a901de387"
+      "sha256": "b2b085f7a1a755587344c2547fc18871f8152a04c3591ae92ad0d6de3cbb2aa3"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2089,7 +2089,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.cc",
       "target": "parc/parc_main_delegate.cc",
-      "sha256": "f07bc19d696c9dbb15444eacdf35e1860abde8476942ae5302a470ae513ee72a"
+      "sha256": "77b862806d80adb30b27a75d1860d790468e19b28119ee25cf6d84d143f9fde8"
     },
     {
       "source": "Engine/ParcNative/native_application.mm",
@@ -2115,6 +2115,11 @@
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_factories.cc",
       "target": "content/renderer/media/fairplay/fairplay_renderer_factories.cc",
       "sha256": "d68c7c4384d6a4ebc5442359ab688209e74bdcbd69463ca665af1ec9c01bed5b"
+    },
+    {
+      "source": "Engine/ParcNative/native_profile_policy.h",
+      "target": "parc/native/native_profile_policy.h",
+      "sha256": "2b1fc95d209c277e09df897c527a1f52fd833cffc994d6cae637d781baec2343"
     }
   ],
   "patches": [
@@ -6170,7 +6175,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/chromium-direct-startup.patch",
-      "sha256": "6378663b3536a003e210cec7056908295405b7288dc8bb69beed4f75b94b92cb",
+      "sha256": "26d2e1bfb653f57d7b909f8e25978a297017c4ecd4db7a363f3b62f9f207bc29",
       "files": [
         {
           "target": "chrome/app/chrome_main_delegate.cc",
@@ -6195,7 +6200,7 @@
         {
           "target": "chrome/browser/profiles/pref_service_builder_utils.cc",
           "before_sha256": "0691d5413ef0a4abff6743913bb1b9e5b207d0b16ca51c8aceb28f2bd4ce7483",
-          "after_sha256": "d1113c2e66c2f2eacc3bf72fea19715f6807a98a7ad33c70543badf886f161e1"
+          "after_sha256": "7fd421415f6c4209b9f2e4819b2e16fc8ab586315990b8b49c5b3cba685c99f4"
         },
         {
           "target": "chrome/browser/ui/startup/startup_browser_creator.cc",
