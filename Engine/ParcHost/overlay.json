@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 663,
+  "version": 664,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -384,7 +384,7 @@
     {
       "source": "Engine/ParcNative/native_engine_entry.mm",
       "target": "parc/native/native_engine_entry.mm",
-      "sha256": "8191b412d2c3e3c0f75b7d7bc4fb9e97610e1384f095035e00be191561510c0e"
+      "sha256": "6fad3420aa19f011feea45069cff104842654d19b8b563aa11baf7fafa7f07ac"
     },
     {
       "source": "Engine/ParcNative/native_exclusive_access.h",
@@ -2014,12 +2014,17 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "8ab653b1e92d74cfc3da2a96b6b40533eab279ee66fc3e5d1c028f14675f8c4d"
+      "sha256": "e67d9472df25e2b93a872b9b9faf75bd9143f3d29f05edf7f451c56dab37d8ae"
     },
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
       "sha256": "0eb83f4de218f6d86e76bc7ad10b5d054abbc08c3ecec46c71f322b547f40517"
+    },
+    {
+      "source": "Engine/ParcChromium/content_main.h",
+      "target": "parc/content_main.h",
+      "sha256": "9ae2d23556afbc28831ae8c89cabbd32bcbc8ec250972fbf3f80269e0148cabb"
     },
     {
       "source": "Engine/ParcChromium/features.gni",
@@ -6227,7 +6232,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/chromium-direct-startup.patch",
-      "sha256": "4b24d76ba7ac821bf871842ccc422abed99cce758e07a586b4bd784ac149c94b",
+      "sha256": "365e85b6ea629fc875f280138cf9926f46820cb85d793fef8fba69b463d3309f",
       "files": [
         {
           "target": "chrome/app/chrome_main_delegate.cc",
@@ -6297,17 +6302,12 @@
         {
           "target": "content/app/content_main.cc",
           "before_sha256": "151a5bd97cb99c68058d5fa40a0fa7cb7893fec37475fe85c91d2205f35e329a",
-          "after_sha256": "191fcfed05aae9b695b3a44d3bd8df511190704c4c31524b18eb3927ec5993a9"
+          "after_sha256": "c22ae1190832fe634c02fbc13a94313d0698f7c7125d73c0879f3bdb4b8a269b"
         },
         {
           "target": "content/browser/scheduler/responsiveness/native_event_observer_mac.mm",
           "before_sha256": "3709129726c0d154cad8a3a08e9a6072e3b9f503eaf82c3ae29425b2331eb1b7",
           "after_sha256": "a0426262eadc41ea217b8be850ce329467aa6f3503596d0d28844a1073f3f157"
-        },
-        {
-          "target": "content/public/app/content_main.h",
-          "before_sha256": "9f2af56a0a4395d78162460e9aff6ae9b287de29be6d33cc6cdd1bc5e13c6799",
-          "after_sha256": "64eea0486b64db0cf80ee5d605c988eb4ff2af263d25dd842788b2ff8aab542e"
         }
       ]
     },
