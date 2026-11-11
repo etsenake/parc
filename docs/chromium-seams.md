@@ -251,6 +251,14 @@ navigates or goes away and `ShowTabModal` only receives the page. A hook in File
 the frame too. The consent stays Chromium's Views dialog in Parc's sheet, so its acceptance check stays
 a patch: a dialog model's accept action can only be run by a dialog host.
 
+Sad tab, open-in-app, certificate viewing and client-certificate routing are one-call hooks. Parc presents
+installed pages natively and gives any other page Chromium's own interface. The sad tab's focus goes
+through Parc's view delegate. Two client-certificate pieces stay patched. The selector refuses a stale
+choice before Chromium shares it with other requests for the same host, which a wrapped delegate would
+only see afterwards. Parc also still hosts Chromium's Views certificate list, so its first-row setup stays
+exposed. The picture-in-picture occlusion registry and build dependency that rode in the open-in-app and
+certificate-viewer patches stay there for their owner.
+
 ## Browser integration boundaries
 
 Page preference state and frame-focus subscriptions belong to Parc. The top-band
