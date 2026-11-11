@@ -392,8 +392,11 @@ complete exactly once.
 4. Put the logic in a Parc-owned file and install the hook at the earliest point Chromium can call it.
 5. Move the Parc tests into the layer's `parc_tests` target, and make the unhooked upstream test pass
    unchanged.
-6. Record the patch change for the manifest integrator, who alone edits `overlay.json`, then update
-   this guide and the area's guide in place.
+6. Update `overlay.json` under the [overlay rules](../AGENTS.md#engine-and-release-operations), list
+   the patch's reason in [kept patches](#kept-patches-and-why), and update the area's guide in place.
+
+A new hook or any other Chromium change first needs Josh's approval, with the alternatives tried and
+why each fails ([Chromium boundary](../AGENTS.md#chromium-boundary)).
 
 ## Builds and upgrades
 

@@ -49,6 +49,55 @@ engine builds, packaging or installations.
   compiler caches. Do not infer that a process or workspace is unused from an
   old timestamp, lock or disconnected tool session.
 
+## Chromium boundary
+
+Parc's engine logic lives in Parc-owned code. Chromium's own files change only
+as a last resort and only with Josh's approval of that specific change.
+[How Parc changes Chromium](docs/chromium-seams.md) defines where code goes, the
+hook pattern and every patch kept today with its reason. The boundary keeps a
+Chromium upgrade to a version bump plus small refits, keeps engine work from
+recompiling large parts of Chromium, and keeps behaviour and speed unchanged.
+
+Every engine change uses the first of these that fully preserves what users
+see, hear and feel:
+
+1. **A Chromium extension point:** a content-client or main-delegate override,
+   a browser-main extra-parts callback, Parc's BrowserWindow, Browser or
+   WebContentsDelegate, a Blink supplement or a public observer that runs at
+   the same moment, with the same context, as the behaviour it serves.
+2. **Parc-owned code** under `Engine/Parc*`, in Parc-owned targets, reached
+   through an extension point or an existing hook.
+3. **A Chromium change**, only when neither can preserve the behaviour. This
+   is any new patch, including to Chromium's bundled code such as FFmpeg,
+   WebRTC or DevTools; any new or larger hunk in an existing patch; any new or
+   changed hook; any Chromium header edit (member, friend, forward declaration,
+   include or signature); and any Chromium BUILD edit, including listing a Parc
+   file in a Chromium target, a visibility entry or a dependency.
+
+Before any Chromium change:
+
+- Work through the alternatives in order against the actual code, and write
+  down why each one fails. Judge them by user-visible behaviour; speed and
+  snappiness (startup, input, scrolling, page loads, playback, memory and
+  energy); protected-media behaviour; the flow of Chromium security fixes;
+  upgrade refit cost; and rebuild cost, since a header edit recompiles every
+  file that includes it.
+- Stop and tell Josh in plain words before writing it: what the change is for,
+  which Chromium file it touches, each alternative and why it doesn't work, and
+  what it costs at upgrades and in rebuilds. Wait for his explicit approval of
+  that change. Silence, an assignment, an approval for something else, a
+  release in progress or a reviewer's suggestion is not approval.
+- Once approved, use the smallest form that works: a one-call hook in the `.cc`
+  that owns the behaviour, with the unhooked path unchanged and no timer, extra
+  IPC hop, copy or polling. Record its reason in the guide's kept-patches list.
+
+None of these excuse skipping that: the change is one line or small, faster to
+write, temporary or test-only; the file is already patched; a release or
+deadline is waiting; or an earlier change did the same. Removing or shrinking a
+Chromium change while preserving behaviour needs no approval. Reviewers treat
+an unapproved diff to `Engine/ParcHost/integration/`, a new hook or a Chromium
+header or BUILD edit as a blocking finding.
+
 ## Documentation is current state, not a diary
 
 **Repository Markdown documents have a hard limit of 500 lines**, except
