@@ -8,17 +8,22 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "media_item_manager_impl_test.cc",
+    "media_progress_view_test.cc",
     "supplemental_device_picker_producer_test.cc",
   ]
 
   deps = [
     "//base",
+    "//base/test:test_support",
     "//components/global_media_controls",
     "//components/global_media_controls:test_support",
     "//components/global_media_controls/public/mojom:device_service",
     "//content/test:test_support",
     "//mojo/public/cpp/bindings",
+    "//services/media_session/public/mojom",
     "//testing/gmock",
     "//testing/gtest",
+    "//ui/events:test_support",
+    "//ui/views:test_support",
   ]
 }
