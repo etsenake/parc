@@ -27,6 +27,7 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "components/tabs/public/tab_interface.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
+#include "content/common/content_export.h"
 #include "content/public/browser/context_factory.h"
 #include "content/public/browser/document_user_data.h"
 #include "content/public/browser/manifest_icon_downloader.h"
@@ -67,6 +68,15 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
+
+namespace parc_hooks {
+// content/browser/picture_in_picture/
+// video_picture_in_picture_window_controller_impl.cc: WebKit's beginScrubbing
+// and endScrubbing for the session's player.
+CONTENT_EXPORT void ScrubVideoPictureInPicture(
+    content::VideoPictureInPictureWindowController& controller,
+    bool scrubbing);
+}  // namespace parc_hooks
 
 namespace parc {
 namespace {
@@ -412,7 +422,9 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
   }
   void Close() override { Hide(); }
   void Hide() override {
-    if (controller_) controller_->SetScrubbing(false);
+    if (controller_) {
+      parc_hooks::ScrubVideoPictureInPicture(*controller_, false);
+    }
     compositor_->Suspend();
     compositor_->widget()->SetSuspended(true);
     // Stop drawing, as NativeWidgetMacNSWindowHost does for a hidden window.
@@ -693,10 +705,10 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
         controller_->RequestMute(!muted_);
         return;
       case PCVideoPiPBeginScrubbing:
-        controller_->SetScrubbing(true);
+        parc_hooks::ScrubVideoPictureInPicture(*controller_, true);
         return;
       case PCVideoPiPEndScrubbing:
-        controller_->SetScrubbing(false);
+        parc_hooks::ScrubVideoPictureInPicture(*controller_, false);
         return;
       case PCVideoPiPSeek:
         controller_->SeekTo(base::Seconds(value));

@@ -175,9 +175,8 @@ reader stays until those tests pass on the new path.
    fade, AudioToolbox AMR, native presentation-request retirement, reentrant media-item closure,
    supplemental picker lifecycle, wallet-reminder lifetime and desktop wallet-delegate regressions are the
    first suites moved this way.
-8. **Smaller conversions.** Auto-PiP occlusion, the playback-controls dispatcher, PiP captions over a Parc
-   mojom bound to a session token, the decodeAudioData hook (measured first), and WebPreferences fields over
-   a Parc mojom, whose first value must arrive before any media plays.
+8. **Smaller conversions.** Auto-PiP, playback controls and PiP captions (see media boundaries), the
+   decodeAudioData hook (measured first) and WebPreferences fields, whose first value precedes any media.
 9. **Compile cache.** Add the macOS cache configuration to both build recipes, prove cache hits with no
    remote execution, and keep existing objects untouched.
 10. **Patches as a branch.** The export and equivalence tooling comes first, and can start alongside
@@ -209,12 +208,9 @@ a separate FairPlay process with `CALayerHost`.
   - nested-pass and copy-request handling;
   - PiP layer ownership and `preventsCapture`;
   - re-checking compositor features at the Chromium 157 upgrade.
-- **Browser:**
-  - refusing a window before a Browser exists;
-  - draining the native host before deletion;
-  - deferring off-the-record operations;
-  - rolling back a transfer when its last tab fails;
-  - crash-safe profile removal.
+- **Browser:** refusing a window before a Browser exists, draining the native host before deletion,
+  deferring off-the-record operations, rolling back a transfer when its last tab fails, and crash-safe
+  profile removal.
 - **Interface:** every prompt keeps its source page and window checks, is cancelled on detach and
   navigation, and completes exactly once.
 
@@ -377,7 +373,10 @@ demuxer and track interfaces, and the orchestration that drives the player's
 own state machine, namely the FairPlay hand-off and restarts, the AirPlay
 route switch, document moves, casting while frozen and the readyState gates.
 They stay in Chromium's file because they read and change the player's
-private state in place, in an order Safari-identity pages depend on.
+private state in place, in an order Safari-identity pages depend on. Hidden
+Safari-identity video keeps its track by the player's own identity check, not
+the frame's background-track playback option: a player copies that option once,
+and keeps it when Parc moves it to another document.
 
 HTMLMediaElement's Parc state and steps live in a Parc supplement that the
 element makes in its constructor, so it lasts exactly as long as the element.
@@ -478,7 +477,11 @@ observing, and entry's wait for the renderer's hidden acknowledgement starts and
 private points. Only that acknowledgement is a hook. Captions reach Parc's window over a
 navigation-associated Parc interface, so Chromium's session interface and window class are stock. Each
 names its session by the document's count of started sessions, which both processes keep, so a replaced
-session's captions never show.
+session's captions never show. Scrubbing keeps Chromium's stable media-session and controller interfaces:
+the media controls send it on their play and pause pipe, in order, and read Safari-style scrubbing from
+the same session info, so a direct dispatcher would race them. Parc's window scrubs through a call in the
+controller's `.cc`, so the public controller and media-session headers are stock; the player observer
+keeps its two virtuals, the session's only route to its players.
 
 ## Decisions
 
