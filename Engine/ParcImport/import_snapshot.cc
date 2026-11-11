@@ -1,5 +1,5 @@
 // Copyright 2026 Parc contributors.
-#include "chrome/utility/importer/parc/import_snapshot.h"
+#include "parc/importer/import_snapshot.h"
 #include <array>
 #include <optional>
 #include <cerrno>

@@ -1,5 +1,5 @@
 // Copyright 2026 Parc contributors.
-#include "chrome/utility/importer/parc/import_service.h"
+#include "parc/importer/import_service.h"
 #include "base/functional/bind.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"

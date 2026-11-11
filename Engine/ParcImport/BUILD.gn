@@ -1,0 +1,31 @@
+# Parc's import protocol and isolated readers stay outside Chromium's tree.
+import("//mojo/public/tools/bindings/mojom.gni")
+
+assert(is_mac)
+
+mojom("interfaces") {
+  sources = [ "parc_import.mojom" ]
+  public_deps = [ "//sandbox/policy/mojom" ]
+}
+
+source_set("service") {
+  sources = [
+    "chromium_reader.cc",
+    "firefox_reader.cc",
+    "import_reader.h",
+    "import_service.cc",
+    "import_service.h",
+    "import_snapshot.cc",
+    "import_snapshot.h",
+    "safari_reader.mm",
+  ]
+  deps = [
+    ":interfaces",
+    "//base",
+    "//mojo/public/cpp/bindings",
+    "//sql",
+    "//third_party/sqlite",
+    "//url",
+  ]
+  frameworks = [ "Foundation.framework" ]
+}

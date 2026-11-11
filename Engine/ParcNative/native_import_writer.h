@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 #include "base/functional/callback.h"
-#include "chrome/common/importer/parc_import.mojom.h"
+#include "parc/importer/parc_import.mojom.h"
 class Profile;
 namespace parc::importer {
 struct WriteResult {

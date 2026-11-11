@@ -1,8 +1,8 @@
 // Copyright 2026 Parc contributors.
 #pragma once
 #include "base/memory/weak_ptr.h"
-#include "chrome/common/importer/parc_import.mojom.h"
-#include "chrome/utility/importer/parc/import_reader.h"
+#include "parc/importer/parc_import.mojom.h"
+#include "parc/importer/import_reader.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 namespace parc::importer {
 class ImportService final : public mojom::Reader {

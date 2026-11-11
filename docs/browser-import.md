@@ -136,3 +136,7 @@ Focused import, access, focus, password-file and restart-helper checks use
 fixtures or inert components. Restart fixtures replace final app launch with a
 recording seam. Native reader/writer fixtures use disposable databases; see the
 [native import checks](../Engine/ParcImport/README.md#focused-checks).
+
+Parc’s utility content client registers the isolated import reader. Its protocol
+and reader sources live under Parc’s importer target; atomic history and web-data
+writes retain their dedicated Chromium transaction patch.

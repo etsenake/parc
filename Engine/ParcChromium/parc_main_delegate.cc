@@ -21,8 +21,22 @@
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
 #include "parc/native/native_appkit_host.h"
+#include "chrome/utility/chrome_content_utility_client.h"
+#include "mojo/public/cpp/bindings/service_factory.h"
+#include "parc/importer/import_service.h"
 
 namespace parc {
+namespace {
+class ParcContentUtilityClient final : public ChromeContentUtilityClient {
+ public:
+  void RegisterMainThreadServices(mojo::ServiceFactory& services) override {
+    ChromeContentUtilityClient::RegisterMainThreadServices(services);
+    services.Add(+[](mojo::PendingReceiver<importer::mojom::Reader> receiver) {
+      return std::make_unique<importer::ImportService>(std::move(receiver));
+    });
+  }
+};
+}  // namespace
 
 ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
     : ChromeMainDelegate({.exe_entry_point_ticks = base::TimeTicks::Now()}),
@@ -117,6 +131,11 @@ content::ContentRendererClient*
 ParcMainDelegate::CreateContentRendererClient() {
   renderer_client_ = std::make_unique<ParcContentRendererClient>();
   return renderer_client_.get();
+}
+
+content::ContentUtilityClient* ParcMainDelegate::CreateContentUtilityClient() {
+  chrome_content_utility_client_ = std::make_unique<ParcContentUtilityClient>();
+  return chrome_content_utility_client_.get();
 }
 
 ui::ResourceBundle::Delegate* ParcMainDelegate::GetResourceBundleDelegate() {

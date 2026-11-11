@@ -32,7 +32,7 @@ def main():
     if output == parc or output == chromium or output == engine or chromium in output.parents:
         parser.error('--output must be outside source/build inputs')
     output.mkdir(parents=True, exist_ok=True)
-    include = output / 'include/chrome/utility/importer/parc'
+    include = output / 'include/parc/importer'
     include.mkdir(parents=True, exist_ok=True)
     source = parc / 'Engine/ParcImport'
     files = [source / name for name in

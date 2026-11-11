@@ -1,6 +1,6 @@
 // Copyright 2026 Parc contributors.
-#include "chrome/utility/importer/parc/import_reader.h"
-#include "chrome/utility/importer/parc/import_snapshot.h"
+#include "parc/importer/import_reader.h"
+#include "parc/importer/import_snapshot.h"
 
 #import <Foundation/Foundation.h>
 

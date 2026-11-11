@@ -11,8 +11,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/utility/importer/parc/import_reader.h"
-#include "chrome/utility/importer/parc/import_snapshot.h"
+#include "parc/importer/import_reader.h"
+#include "parc/importer/import_snapshot.h"
 #include "url/gurl.h"
 namespace parc::importer {
 namespace {

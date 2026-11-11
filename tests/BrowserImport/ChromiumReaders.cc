@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "chrome/utility/importer/parc/import_reader.h"
+#include "parc/importer/import_reader.h"
 #include "sql/initialization.h"
 #include "third_party/sqlite/sqlite3.h"
 namespace {

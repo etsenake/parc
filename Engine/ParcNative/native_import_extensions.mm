@@ -14,7 +14,7 @@
 #include "chrome/browser/extensions/webstore_install_with_prompt.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
-#include "chrome/common/importer/parc_import.mojom.h"
+#include "parc/importer/parc_import.mojom.h"
 #include "content/public/browser/service_process_host.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #import "native_appkit_host.h"
