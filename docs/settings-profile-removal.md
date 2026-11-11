@@ -1,56 +1,36 @@
 # Profile removal presentation
 
-Individual and unused-profile removal share `ProfileRemovalDialog` and
-`ProfileRemovalButton`. The exact selected UUID/name, or the reviewed bulk
-UUID/name set, remains authoritative throughout preparation, commit and recovery.
-The sheet does not own the native deletion job.
+the same one Space deletion uses. The exact selected UUID and name remain
+authoritative through preparation, commit and recovery. The dialog does not own
+the native deletion job.
 
-## Parc integration and deliberate adaptations
+## Confirmation and status
 
-The sheet is 450 points wide with content-derived height, 38-point horizontal
-padding and 28-point footer padding. Its warning uses an 18-point title and
-selectable 14-point text with four-point line spacing. Profile names and
-`CONFIRM` are emphasized. The 13-point confirmation field has eight-point
-padding and a one-point rounded border. Case-insensitive equality accepts the
-confirmation without trimming it; Return and Delete read the same accepted state.
+Settings → Profiles asks "Delete your “Name” Profile?" and states that the
+Profile's cookies, history, preferences and logins are permanently removed along
+with its saved tabs and local history entries, and that saved captures, downloaded
+files and Easels stay on this Mac. Cancel precedes the red Delete button. There is
+no typed confirmation and no completion state: Delete closes the dialog and
+removal proceeds in the background.
 
-Cancel precedes Delete. Native buttons own press, keyboard and accessibility
-behavior; disabled destructive styling takes priority over hover/press. Feedback,
-long names and large bulk sets scroll within bounded sections rather than being
-ellipsized. The warning identifies saved-tab/local-history deletion and retained
-local files, captures and Easels.
+Progress and recovery live on the Profile list. The row reads "Removing…" while
+the native job runs and "Retry" when it stopped with the removal still pending.
+The minus button cancels a reversible preparation, is disabled during the
+irreversible commit, and retries a pending removal without asking again. A
+failure is reported once in a standard alert naming the Profile. A failure before
+the irreversible commit leaves the Profile in place for a fresh Delete. Closing
+Settings never cancels a confirmed removal. Retry recovers the original journal
+and never reauthorizes a new target.
 
-Submit latches before dispatch and disables editing during preparation/commit.
-Refusal preserves entered confirmation. Recovery uses the original journal and
-Retry never reauthorizes a new target. Close cancels only reversible preparation;
-after irreversible commit it leaves the native transaction intact. Success remains
-visible with Done. Bulk results keep every reviewed member and actual status;
-Retry skips completed members and cannot include newly created Profiles.
+## Parent focus
 
-## Modal hover ownership integration
-
-`SettingsHoverButton` supplies shared immediate hover with original application,
-window, visibility and sheet lifetime checks. The removal button adds its palette
-and keeps native NSButton press/action behavior. It does not maintain a parallel
-tracking area, hover state or animation.
-
-## Completed parent-focus integration
-
-Confirmation initially owns focus. Disabling its editor moves focus to Cancel or
-Close; retry returns to a surviving editable field or recovery action. Changed
-feedback announces once, without stealing selection/focus on repeated refresh.
-Done accepts Return; Escape retains marked-text refusal.
-
-The common Settings focus owner captures pane, Profile and responder before
-sheet entry. Completion restores only a surviving visible enabled original
-control. If deletion changed the selected Profile, it returns to the surviving
-Profile list. Settings closure invalidates pending focus restoration and cancels
-only reversible work.
+The common Settings focus owner captures pane, Profile and responder before the
+sheet is entered. Dismissing it restores only a surviving visible enabled original
+control. If deletion changed the selected Profile, focus returns to the surviving
+Profile list. Settings closure invalidates pending focus restoration.
 
 ## Checks
 
 Isolated model/native-boundary doubles cover atomic admission, protected Profiles,
-preparation cancellation, journal recovery and partial completion without deleting
-real profile storage. Inert sheet checks cover confirmation, duplicate/detached
-requests, Unicode names, long feedback, legacy scrollbars, action labels,
-Close/Done/Escape and bulk retries.
+preparation cancellation, journal recovery, refused and incomplete removals, and
+partial completion without deleting real profile storage.

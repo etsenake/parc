@@ -71,7 +71,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private var profileNameSheet: ProfileNameSheet?
     private var previewSettingsSheet: SidebarPreviewSettingsSheet?
     private let removeProfile = ActionButton("", symbol: "minus")
-    private var profileRemovalSheet: ProfileRemovalSheet?
     private var removalSubscription: AnyCancellable?
 
     //
@@ -573,6 +572,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             guard let self, self.lifecycleRevision == revision, self.window?.attachedSheet == nil else { return }
             self.onSheetEnded?()
             guard !self.isClosing else { return }
+            self.reportRemovalFailures()
             if context?.hasPrefix(Pane.profiles.rawValue + ":") == true, self.selectedPane == .profiles,
                context != self.focusContext {
                 // The surviving Profile may have its own remembered control;
@@ -618,7 +618,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         let count = store.state.spaces.filter { $0.profileID == profile.id }.count
         let cell = SettingsProfileCell()
         cell.name.stringValue = profile.name
-        cell.count.stringValue = "\(count) \(count == 1 ? "Space" : "Spaces")"
+        cell.count.stringValue = store.isProfileRemovalPending(profile.id) ? (ProfileRemovalController.shared.status(for: profile.id)?.running == true ? "Removing…" : "Retry") : "\(count) \(count == 1 ? "Space" : "Spaces")"
         cell.setAccessibilityLabel(profile.name + ", " + cell.count.stringValue)
         return cell
     }
@@ -660,8 +660,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         renameProfile.isEnabled = displayedProfileID != nil && !removing
         if let id = displayedProfileID {
             if removing {
-                removeProfile.isEnabled = true
-                removeProfile.toolTip = "View this profile’s removal"
+                let status = ProfileRemovalController.shared.status(for: id)
+                removeProfile.isEnabled = status?.running != true || status?.canCancel == true
+                removeProfile.toolTip = status?.running == true ? (status?.canCancel == true ? "Cancel this profile’s removal" : "This profile is being removed") : "Retry this profile’s removal"
             } else {
                 do {
                     _ = try store.profileRemovalSummary(id)
@@ -712,7 +713,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         refreshingProfiles = false
         refreshDownloadPreferences()
         refreshSearchPreferences()
-        refreshProfileRemoval()
+        reportRemovalFailures()
     }
     override func showWindow(_ sender: Any?) {
         isClosing = false
@@ -722,6 +723,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     func windowDidBecomeKey(_ notification: Notification) {
         if window?.firstResponder === window || window?.firstResponder == nil { restorePaneFocus() }
         refreshDownloadPreferences(); refreshSearchPreferences()
+        reportRemovalFailures()
         DefaultBrowserController.shared.refresh()
     }
     func windowDidResignKey(_ notification: Notification) {
@@ -768,7 +770,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         previewSettingsSheet?.dismiss()
         previewSettingsSheet = nil
         cancelPendingDataExport()
-        closeProfileRemoval()
         cancelProfileNameEditor()
         shortcutsPane.endRecording()
         searchGeneration &+= 1; searchPreferences = nil
@@ -825,50 +826,40 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 
     private func showProfileRemoval() {
-        guard let window, window.attachedSheet == nil, profileRemovalSheet == nil,
+        guard let window, window.attachedSheet == nil,
               let profile = store.state.profiles.first(where: { $0.id == displayedProfileID }) else { return }
-        if !store.isProfileRemovalPending(profile.id) {
-            do { _ = try store.profileRemovalSummary(profile.id) }
-            catch { reportProfileSettingsError(error); return }
-        }
-        let editor = ProfileRemovalSheet(profile: profile,
-            tabCount: store.state.tabs.filter { $0.profileID == profile.id }.count,
-            historyCount: store.state.history.filter { $0.profileID == profile.id }.count)
-        editor.onConfirm = { confirmation in
-            ProfileRemovalController.shared.remove(profileID: profile.id, expectedName: profile.name, confirmation: confirmation)
-        }
-        editor.onCancel = { [weak self] in self?.closeProfileRemoval() }
-        guard let sheet = editor.window else { return }
-        profileRemovalSheet = editor
-        window.beginSheet(sheet) { [weak self, weak editor] _ in
-            sheet.orderOut(nil)
-            if self?.profileRemovalSheet === editor { self?.profileRemovalSheet = nil }
-            self?.refresh()
-        }
-        editor.focusName()
-        refreshProfileRemoval()
-    }
-
-    private func refreshProfileRemoval() {
-        guard let editor = profileRemovalSheet else { return }
-        guard store.state.profiles.contains(where: { $0.id == editor.profileID }) else {
-            if editor.submitted { editor.showComplete() }
-            else { closeProfileRemoval() }
+        let controller = ProfileRemovalController.shared
+        if controller.status(for: profile.id)?.running == true {
+            controller.cancel(profileID: profile.id)
             return
         }
-        guard let status = ProfileRemovalController.shared.status(for: editor.profileID) else { return }
-        if status.running { editor.setProgress(status.message, canCancel: status.canCancel) }
-        else if status.error != nil {
-            editor.showFailure(status.message, isRecovery: store.isProfileRemovalPending(editor.profileID), canCancel: status.canCancel)
+        if store.isProfileRemovalPending(profile.id) {
+            controller.remove(profileID: profile.id, expectedName: profile.name)
+            return
+        }
+        let summary: ProfileRemovalSummary
+        do { summary = try store.profileRemovalSummary(profile.id) }
+        catch { reportProfileSettingsError(error); return }
+        let tabs = summary.savedTabCount, entries = summary.historyEntryCount
+        PArcDialog.confirm(in: window, title: "Delete your “\(profile.name)” Profile?",
+                          message: "This permanently removes the Profile’s cookies, history, preferences and logins, plus its \(tabs) saved \(tabs == 1 ? "tab" : "tabs") and \(entries) local history \(entries == 1 ? "entry" : "entries"). Saved captures, downloaded files and Easels stay on this Mac.",
+                          confirm: "Delete", destructive: true) { approved in
+            if approved { ProfileRemovalController.shared.remove(profileID: profile.id, expectedName: profile.name) }
         }
     }
 
-    private func closeProfileRemoval() {
-        guard let editor = profileRemovalSheet, let sheet = editor.window else { return }
-        ProfileRemovalController.shared.cancel(profileID: editor.profileID)
-        profileRemovalSheet = nil
-        sheet.sheetParent?.endSheet(sheet, returnCode: .cancel)
-        sheet.orderOut(nil)
+    /// The Settings window in front reports a stopped removal once; Retry stays
+    /// on the Profile's remove button.
+    private func reportRemovalFailures() {
+        guard !isClosing, let window, window.isVisible, window.isKeyWindow, window.attachedSheet == nil else { return }
+        for profile in store.state.profiles {
+            guard let status = ProfileRemovalController.shared.claimFailure(for: profile.id) else { continue }
+            let alert = NSAlert()
+            alert.messageText = "Parc couldn’t delete “\(profile.name)”."
+            alert.informativeText = status.message
+            alert.beginSheetModal(for: window)
+            return
+        }
     }
 
     private func showProfileNameEditor() {

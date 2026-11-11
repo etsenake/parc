@@ -13,19 +13,17 @@ struct ProfileRemovalSummary: Equatable {
 }
 
 enum ProfileRemovalError: LocalizedError, Equatable {
-    case unavailable, defaultProfile, assignedToSpaces, alreadyRemoving, nameChanged, nameDoesNotMatch
-    case incompleteOperation, confirmationDoesNotMatch, invalidSelection, activeDocumentWrite
+    case unavailable, defaultProfile, assignedToSpaces, alreadyRemoving, nameChanged
+    case incompleteOperation, invalidSelection, activeDocumentWrite
     var errorDescription: String? {
         switch self {
         case .unavailable: return "This profile is no longer available."
         case .defaultProfile: return "The Default Profile cannot be deleted."
         case .assignedToSpaces: return "Only Profiles not assigned to any Spaces can be deleted."
         case .alreadyRemoving: return "This profile has a removal operation in progress."
-        case .nameChanged: return "This profile was renamed. Close this dialog and select it again."
-        case .nameDoesNotMatch: return "Enter the name of this profile to continue."
+        case .nameChanged: return "This profile was renamed. Select it again to delete it."
         case .incompleteOperation: return "Profile removal needs to finish before this profile can be used again."
-        case .confirmationDoesNotMatch: return "Type CONFIRM to delete the listed unused Profiles."
-        case .invalidSelection: return "The profile selection changed. Close this dialog and review the unused Profiles again."
+        case .invalidSelection: return "The profile selection changed. Review the unused Profiles again."
         case .activeDocumentWrite: return "Wait for this profile’s Library changes to finish, then try again."
         }
     }
@@ -38,14 +36,7 @@ extension BrowserStore {
         state.profiles.filter { (try? profileRemovalSummary($0.id)) != nil }
     }
 
-    static func confirmsUnusedProfileRemoval(_ text: String) -> Bool {
-        text.caseInsensitiveCompare("CONFIRM") == .orderedSame
-    }
-
-    func validateUnusedProfileRemoval(_ profiles: [BrowserProfile], confirmation: String) throws {
-        guard Self.confirmsUnusedProfileRemoval(confirmation) else {
-            throw ProfileRemovalError.confirmationDoesNotMatch
-        }
+    func validateUnusedProfileRemoval(_ profiles: [BrowserProfile]) throws {
         guard !profiles.isEmpty, Set(profiles.map(\.id)).count == profiles.count else {
             throw ProfileRemovalError.invalidSelection
         }
@@ -77,12 +68,9 @@ extension BrowserStore {
             historyEntryCount: state.history.filter { $0.profileID == profileID }.count)
     }
 
-    func validateProfileRemoval(_ profileID: UUID, expectedName: String, confirmation: String) throws -> ProfileRemovalSummary {
+    func validateProfileRemoval(_ profileID: UUID, expectedName: String) throws -> ProfileRemovalSummary {
         let summary = try profileRemovalSummary(profileID)
         guard summary.profile.name == expectedName else { throw ProfileRemovalError.nameChanged }
-        guard confirmation.caseInsensitiveCompare(expectedName) == .orderedSame else {
-            throw ProfileRemovalError.nameDoesNotMatch
-        }
         return summary
     }
 }

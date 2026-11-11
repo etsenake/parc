@@ -73,7 +73,7 @@ import Foundation
             engineProfilePath: normal.independentEngineProfilePath(for: unassigned), directory: absent, settings: normal.state.settings)
         let unassignedContext = normal.applicationContext(from: unassignedPrivate, spaceID: unassignedPrivate.activeSpaceID)
         expect(unassignedContext?.profileID == unassigned && unassignedContext?.spaceID == nil, "unassigned real profile remains a Settings owner without inventing a Space")
-        let pending = try normal.stageProfileRemoval(unassigned, expectedName: "Unassigned", confirmation: "Unassigned")
+        let pending = try normal.stageProfileRemoval(unassigned, expectedName: "Unassigned")
         expect(normal.applicationContext(from: unassignedPrivate, spaceID: unassignedPrivate.activeSpaceID) == nil, "retiring original parent is rejected before app command dispatch")
         try normal.cancelProfileRemoval(pending)
         let privateSnapshot = privateStore.state

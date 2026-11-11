@@ -54,11 +54,11 @@ window closure or Profile loss cancels. Failed writes preserve the draft.
 Only nondefault Profiles with no assigned Spaces can be deleted. The default
 Profile is identified by immutable UUID, not its editable name. The confirmation
 shows the original Profile's saved-tab/history counts and explains permanent
-browser-data removal. Typed-name confirmation is case-insensitive and does not
-trim input. Downloaded files and app-global Easel documents remain.
+browser-data removal in a standard Delete/Cancel dialog; no name is typed.
+Downloaded files and app-global Easel documents remain.
 
 `ProfileRemovalController` owns the process-wide operation; Settings owns only
-its sheet. Before native preparation, the store atomically records operation and
+its confirmation. Before native preparation, the store atomically records operation and
 Profile UUIDs. Pending Profiles cannot be renamed or assigned, and their native
 preference controls stop requesting the retiring context.
 
@@ -76,15 +76,14 @@ See [removal presentation and recovery](settings-profile-removal.md).
 
 ### Unused-profile cleanup
 
-Bulk cleanup fixes a UUID/name set of eligible nondefault, unassigned Profiles
-and requires case-insensitive `CONFIRM`, without trimming. Opening the review
-never authorizes deletion; later-created Profiles are not added. A changed name,
-assignment or failed durable save rejects new authorization.
+Bulk cleanup fixes a UUID/name set of eligible nondefault, unassigned Profiles.
+Later-created Profiles are not added, and a changed name, assignment or failed
+durable save rejects new authorization. Settings has no bulk entry point yet.
 
 All new operation records stage atomically, then each Profile uses the same
 native removal/recovery transaction. Results stay per Profile: one failure does
 not hide or undo another success. Retry reuses operation IDs and skips completed
-members. Closing cancels reversible preparation only.
+members.
 
 ## Profile search and navigation
 

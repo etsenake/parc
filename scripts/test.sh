@@ -125,14 +125,6 @@ compile_and_run profile-removal ProfileRemovalTests
 compile_and_run profile-removal-controller ProfileRemovalControllerTests \
   "$repo_root/Sources/ParcApp/ProfileRemovalController.swift" \
   "$repo_root/tests/ProfileRemovalTestSupport.swift"
-compile_and_run profile-removal-sheets ProfileRemovalSheetTests \
-  "$repo_root/Sources/ParcApp/ProfileRemovalController.swift" \
-  "$repo_root/Sources/ParcApp/ProfileRemovalDialog.swift" \
-  "$repo_root/Sources/ParcApp/ProfileRemovalButton.swift" \
-  "$repo_root/Sources/ParcApp/SettingsHoverButton.swift" "$repo_root/Sources/ParcApp/PointingHand.swift" \
-  "$repo_root/Sources/ParcApp/ProfileRemovalSheet.swift" \
-  "$repo_root/Sources/ParcApp/UnusedProfileRemovalSheet.swift" \
-  "$repo_root/tests/ProfileRemovalTestSupport.swift"
 
 compile_and_run sidebar-plural-duplicate SidebarPluralDuplicateTests \
   "$repo_root/Sources/ParcCore/NoteStore.swift" \

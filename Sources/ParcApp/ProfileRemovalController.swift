@@ -11,6 +11,7 @@ final class ProfileRemovalController: ObservableObject {
         var running: Bool
         var canCancel: Bool
         var error: Error?
+        var reported = false
     }
     @Published private(set) var revision = 0
     private weak var store: BrowserStore?
@@ -25,14 +26,22 @@ final class ProfileRemovalController: ObservableObject {
 
     func status(for profileID: UUID) -> Progress? { progress[profileID] }
 
-    func remove(profileID: UUID, expectedName: String, confirmation: String) {
+    /// Hands a stopped removal's failure to exactly one presenter, however many
+    /// Settings windows observe the controller.
+    func claimFailure(for profileID: UUID) -> Progress? {
+        guard let status = progress[profileID], !status.running, status.error != nil, !status.reported else { return nil }
+        progress[profileID]?.reported = true
+        return status
+    }
+
+    func remove(profileID: UUID, expectedName: String) {
         guard let store, progress[profileID]?.running != true else { return }
         if let record = store.state.profileRemovals.first(where: { $0.profileID == profileID }) {
             recover(record)
             return
         }
         do {
-            let record = try store.stageProfileRemoval(profileID, expectedName: expectedName, confirmation: confirmation)
+            let record = try store.stageProfileRemoval(profileID, expectedName: expectedName)
             prepare(record)
         } catch { set(profileID, message: error.localizedDescription, running: false, canCancel: true, error: error) }
     }
@@ -40,11 +49,8 @@ final class ProfileRemovalController: ObservableObject {
     /// A retry retains the sheet's original IDs/names, skips actual completed
     /// removals and recovers existing journals instead of creating new leases.
     /// Native operations are already keyed by exact profile path.
-    func removeUnusedProfiles(_ profiles: [BrowserProfile], confirmation: String) throws {
+    func removeUnusedProfiles(_ profiles: [BrowserProfile]) throws {
         guard let store else { throw ProfileRemovalError.unavailable }
-        guard BrowserStore.confirmsUnusedProfileRemoval(confirmation) else {
-            throw ProfileRemovalError.confirmationDoesNotMatch
-        }
         guard !profiles.isEmpty, Set(profiles.map(\.id)).count == profiles.count else {
             throw ProfileRemovalError.invalidSelection
         }
@@ -63,7 +69,7 @@ final class ProfileRemovalController: ObservableObject {
         }
         // Every new target is validated and staged before any native side
         // effect. Recovery still owns its original committed record.
-        let records = newProfiles.isEmpty ? [] : try store.stageUnusedProfileRemovals(newProfiles, confirmation: confirmation)
+        let records = newProfiles.isEmpty ? [] : try store.stageUnusedProfileRemovals(newProfiles)
         for record in recovering { recover(record) }
         for record in records { prepare(record) }
     }
