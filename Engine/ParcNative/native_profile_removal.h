@@ -5,7 +5,11 @@
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 class Profile;
+class ProfileManager;
 namespace parc {
+// Destruction pending, or a Profile object that hasn't finished initializing.
+bool IsNativeProfileLifecyclePending(const ProfileManager& manager,
+                                     const base::FilePath& path);
 // Both prepared leases and durable committed tombstones exclude new owners.
 bool IsNativeProfileRemovalBlocked(const base::FilePath& path);
 // Registry inspection never creates a Profile or takes a new CEF reference.

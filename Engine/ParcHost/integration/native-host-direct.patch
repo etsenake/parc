@@ -561,44 +561,36 @@
      thumbnail_tab_helper_ =
          GetUserDataFactory().CreateInstance<ThumbnailTabHelper>(
              tab, tab, tab.GetContents());
---- a/chrome/browser/profiles/profile_manager.h
-+++ b/chrome/browser/profiles/profile_manager.h
-@@ -328,6 +328,17 @@
-       base::RepeatingCallback<bool(ProfileAttributesEntry*)> predicate);
--
-+
-   DeleteProfileHelper& GetDeleteProfileHelper();
-+#if BUILDFLAG(IS_MAC)
-+  // Native removal owns its durable receipt. Do not touch its directory until
-+  // the original Profile has completed destruction (including render hosts).
-+  void DeferNativeProfileDiskCleanup(const base::FilePath& path,
-+                                    base::OnceClosure cleanup);
-+  bool RunDeferredNativeProfileDiskCleanup(const base::FilePath& path);
-+  bool IsNativeProfileLifecyclePending(const base::FilePath& path) const;
-+  void LoadProfileForNativeDeletion(const base::FilePath& path,
-+                                    ProfileLoadedCallback callback);
-+#endif
-+
- #endif
--
-+
-   // Autoloads profiles if they are running background apps.
-@@ -656,6 +667,11 @@
-   using ProfilesInfoMap =
-       std::map<base::FilePath, std::unique_ptr<ProfileInfo>>;
-   ProfilesInfoMap profiles_info_;
-+#if BUILDFLAG(IS_MAC)
-+  std::map<base::FilePath, base::OnceClosure> native_profile_disk_cleanup_;
-+  base::FilePath native_profile_cleanup_load_;
-+#endif
-+
--
-+
-   // Manages the process of creating, deleteing and updating Desktop shortcuts.
-   std::unique_ptr<ProfileShortcutManager> profile_shortcut_manager_;
 --- a/chrome/browser/profiles/delete_profile_helper.cc
 +++ b/chrome/browser/profiles/delete_profile_helper.cc
-@@ -377,11 +377,16 @@
+@@ -47,6 +47,24 @@
+ #include "content/public/browser/browser_task_traits.h"
+ #include "content/public/browser/browser_thread.h"
+-
++
++namespace parc_hooks {
++namespace {
++void (*profile_deletion_load)(ProfileManager&,
++                              const base::FilePath&,
++                              ProfileManager::ProfileLoadedCallback) = nullptr;
++bool (*profile_deletion_cleanup)(ProfileManager&,
++                                 const base::FilePath&) = nullptr;
++}  // namespace
++void SetNativeProfileDeletion(
++    void (*load)(ProfileManager&,
++                 const base::FilePath&,
++                 ProfileManager::ProfileLoadedCallback),
++    bool (*cleanup)(ProfileManager&, const base::FilePath&)) {
++  profile_deletion_load = load;
++  profile_deletion_cleanup = cleanup;
++}
++}  // namespace parc_hooks
++
+ namespace {
+-
++
+ // Called after a deleted profile was checked and cleaned up.
+@@ -377,11 +395,18 @@
 -
 +
    // Attempt to load the profile before deleting it to properly clean up
@@ -611,149 +603,158 @@
 +  auto callback = base::BindOnce(
 +      &DeleteProfileHelper::OnLoadProfileForProfileDeletion,
 +      base::Unretained(this), profile_dir, std::move(keep_alive));
-+#if BUILDFLAG(IS_MAC)
-+  // Only the explicitly registered native removal can load a tombstoned
-+  // Profile for sign-out/extension cleanup. A normal open stays refused.
-+  profile_manager_->LoadProfileForNativeDeletion(profile_dir, std::move(callback));
-+#else
-+  profile_manager_->LoadProfileByPath(profile_dir, false, std::move(callback));
-+#endif
++  // Only Parc's registered native removal may load a tombstoned Profile for
++  // its sign-out and extension cleanup; an ordinary open stays refused.
++  if (parc_hooks::profile_deletion_load) {
++    parc_hooks::profile_deletion_load(*profile_manager_, profile_dir,
++                                      std::move(callback));
++  } else {
++    profile_manager_->LoadProfileByPath(profile_dir, false,
++                                        std::move(callback));
++  }
    if (!IsProfileDirectoryMarkedForDeletion(profile_dir)) {
      // Prevents CreateProfileAsync from re-creating the profile.
      MarkProfileDirectoryForDeletion(profile_dir);
-@@ -423,6 +428,11 @@
-     // Clean-up pref data that won't be cleaned up by deleting the profile dir.
-     profile->GetPrefs()->OnStoreDeletionFromDisk();
-   } else {
-+    // A native operation owns its completion/error receipt, including the
-+    // load-failure path. It only runs after no Profile remains alive.
-+#if BUILDFLAG(IS_MAC)
-+    if (!profile_manager_->RunDeferredNativeProfileDiskCleanup(profile_dir))
-+#endif
-     // We failed to load the profile, but it's safe to delete a not yet loaded
-     // Profile from disk.
-     base::ThreadPool::PostTask(
---- a/chrome/browser/profiles/profile_manager.cc
-+++ b/chrome/browser/profiles/profile_manager.cc
-@@ -15,6 +15,7 @@
- #include <string>
- #include <utility>
+@@ -422,9 +447,12 @@
 -
 +
-+#include "base/auto_reset.h"
- #include "base/command_line.h"
- #include "base/debug/crash_logging.h"
- #include "base/debug/dump_without_crashing.h"
-@@ -176,6 +177,11 @@
+     // Clean-up pref data that won't be cleaned up by deleting the profile dir.
+     profile->GetPrefs()->OnStoreDeletionFromDisk();
+-  } else {
++  } else if (!parc_hooks::profile_deletion_cleanup ||
++             !parc_hooks::profile_deletion_cleanup(*profile_manager_,
++                                                   profile_dir)) {
+     // We failed to load the profile, but it's safe to delete a not yet loaded
+-    // Profile from disk.
++    // Profile from disk. A native removal instead runs its own cleanup once no
++    // Profile remains alive.
+     base::ThreadPool::PostTask(
+         FROM_HERE,
+         {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
+--- a/chrome/browser/profiles/profile_manager.cc
++++ b/chrome/browser/profiles/profile_manager.cc
+@@ -176,6 +176,36 @@
 -
 +
  using content::BrowserThread;
 -
 +
-+#if BUILDFLAG(IS_MAC)
-+#include <cerrno>
-+#include <sys/stat.h>
-+#endif
++namespace parc_hooks {
++namespace {
++void (*profile_manager_created)(
++    ProfileManager&,
++    base::RepeatingCallback<bool(const base::FilePath&)>,
++    base::RepeatingCallback<bool(const base::FilePath&)>) = nullptr;
++void (*profile_manager_destroyed)(ProfileManager&) = nullptr;
++bool (*profile_creation_refused)(const ProfileManager&,
++                                 const base::FilePath&) = nullptr;
++bool (*profile_disk_cleanup_owned)(const ProfileManager&,
++                                   const base::FilePath&) = nullptr;
++bool (*profile_disk_cleanup_run)(ProfileManager&,
++                                 const base::FilePath&) = nullptr;
++}  // namespace
++void SetNativeProfileRemoval(
++    void (*created)(ProfileManager&,
++                    base::RepeatingCallback<bool(const base::FilePath&)>,
++                    base::RepeatingCallback<bool(const base::FilePath&)>),
++    void (*destroyed)(ProfileManager&),
++    bool (*creation_refused)(const ProfileManager&, const base::FilePath&),
++    bool (*disk_cleanup_owned)(const ProfileManager&, const base::FilePath&),
++    bool (*disk_cleanup_run)(ProfileManager&, const base::FilePath&)) {
++  profile_manager_created = created;
++  profile_manager_destroyed = destroyed;
++  profile_creation_refused = creation_refused;
++  profile_disk_cleanup_owned = disk_cleanup_owned;
++  profile_disk_cleanup_run = disk_cleanup_run;
++}
++}  // namespace parc_hooks
 +
  namespace {
 -
 +
  const void* const kProfileDestructionObserverKey =
-@@ -991,6 +997,18 @@
+@@ -468,6 +498,23 @@
+-
++
+   zombie_metrics_timer_.Start(FROM_HERE, base::Minutes(30), this,
+                               &ProfileManager::RecordZombieMetrics);
++
++  // Parc's native Profile removal reads whether a path still has a Profile
++  // object, initialized or not, and whether its destruction is pending.
++  if (parc_hooks::profile_manager_created) {
++    parc_hooks::profile_manager_created(
++        *this,
++        base::BindRepeating(
++            [](const ProfileManager* manager, const base::FilePath& path) {
++              return !!manager->GetProfileByPathInternal(path);
++            },
++            base::Unretained(this)),
++        base::BindRepeating(
++            [](const ProfileManager* manager, const base::FilePath& path) {
++              return manager->profiles_pending_destruction_.contains(path);
++            },
++            base::Unretained(this)));
++  }
+ }
+-
++
+ ProfileManager::~ProfileManager() {
+@@ -503,6 +550,10 @@
+   profiles_pending_destruction_.clear();
+   profiles_info_.clear();
+   ProfileDestroyer::DestroyPendingProfilesForShutdown();
++
++  if (parc_hooks::profile_manager_destroyed) {
++    parc_hooks::profile_manager_destroyed(*this);
++  }
+ }
+-
++
+ #if BUILDFLAG(ENABLE_SESSION_SERVICE)
+@@ -991,6 +1042,12 @@
  }
 -
 +
  bool ProfileManager::CanCreateProfileAtPath(const base::FilePath& path) const {
-+#if BUILDFLAG(IS_MAC)
-+  if (path != native_profile_cleanup_load_) {
-+    // Native tombstones survive the Chromium deleted-profiles preference being
-+    // cleaned. The scoped helper exception below permits real sign-out cleanup,
-+    // never ordinary browsing, background autoload or UUID reuse.
-+    const auto journal = user_data_dir_.AppendASCII(".parc-profile-removals")
-+        .Append(path.BaseName().AddExtensionASCII("plist"));
-+    struct stat info;
-+    if (lstat(journal.value().c_str(), &info) == 0 || errno != ENOENT)
-+      return false;
++  // A native removal's durable tombstone refuses the path, even after
++  // Chromium's deleted-profiles preference is cleaned.
++  if (parc_hooks::profile_creation_refused &&
++      parc_hooks::profile_creation_refused(*this, path)) {
++    return false;
 +  }
-+#endif
    if (!IsAllowedProfilePath(path)) {
      LOG(ERROR) << "Cannot create profile at path " << path.AsUTF8Unsafe();
      return false;
-@@ -1776,9 +1794,18 @@
+@@ -1775,10 +1832,18 @@
+   bool ephemeral =
        IsRegisteredAsEphemeral(&GetProfileAttributesStorage(), profile_dir);
    bool marked_for_deletion = IsProfileDirectoryMarkedForDeletion(profile_dir);
++  // Read first: the erase below can complete destruction and run the cleanup.
++  const bool native_cleanup =
++      parc_hooks::profile_disk_cleanup_owned &&
++      parc_hooks::profile_disk_cleanup_owned(*this, profile_dir);
 -
-+
-+#if BUILDFLAG(IS_MAC)
-+  const bool native_cleanup = native_profile_disk_cleanup_.contains(profile_dir);
-+#endif
 +
    // Remove from |profiles_info_|, eventually causing the Profile object's
    // destruction.
    profiles_info_.erase(profile_dir);
-+#if BUILDFLAG(IS_MAC)
-+  if (native_cleanup)
-+    return;  // OnProfileDestructionComplete posts the registered cleanup.
-+#endif
-+
++  // OnProfileDestructionComplete posts the native removal's own cleanup.
++  if (native_cleanup) {
++    return;
++  }
 -
 +
    if (!ephemeral && !marked_for_deletion)
      return;
-@@ -2189,6 +2216,9 @@
+@@ -2189,6 +2254,9 @@
 -
 +
    std::vector<base::OnceClosure> callbacks = std::move(it->second);
    profiles_pending_destruction_.erase(it);
-+#if BUILDFLAG(IS_MAC)
-+  RunDeferredNativeProfileDiskCleanup(profile_path);
-+#endif
++  if (parc_hooks::profile_disk_cleanup_run) {
++    parc_hooks::profile_disk_cleanup_run(*this, profile_path);
++  }
 -
 +
    for (auto& callback : callbacks) {
      if (!callback.is_null()) {
-@@ -2196,6 +2226,43 @@
-     }
-   }
- }
-+
-+#if BUILDFLAG(IS_MAC)
-+void ProfileManager::LoadProfileForNativeDeletion(
-+    const base::FilePath& path, ProfileLoadedCallback callback) {
-+  base::AutoReset<base::FilePath> allow_cleanup_load(
-+      &native_profile_cleanup_load_,
-+      native_profile_disk_cleanup_.contains(path) ? path : base::FilePath());
-+  LoadProfileByPath(path, false, std::move(callback));
-+}
-+
-+void ProfileManager::DeferNativeProfileDiskCleanup(
-+    const base::FilePath& path, base::OnceClosure cleanup) {
-+  CHECK(!native_profile_disk_cleanup_.contains(path));
-+  native_profile_disk_cleanup_.emplace(path, std::move(cleanup));
-+}
-+
-+bool ProfileManager::IsNativeProfileLifecyclePending(
-+    const base::FilePath& path) const {
-+  return profiles_pending_destruction_.contains(path) ||
-+         (GetProfileByPathInternal(path) && !GetProfileByPath(path));
-+}
-+
-+bool ProfileManager::RunDeferredNativeProfileDiskCleanup(
-+    const base::FilePath& path) {
-+  auto it = native_profile_disk_cleanup_.find(path);
-+  if (it == native_profile_disk_cleanup_.end())
-+    return false;
-+  if (GetProfileByPathInternal(path) || profiles_pending_destruction_.contains(path))
-+    return true;
-+  auto cleanup = std::move(it->second);
-+  native_profile_disk_cleanup_.erase(it);
-+  // The observer is a SupportsUserData destructor. Finish that destruction
-+  // stack before the native owner starts any filesystem work.
-+  content::GetUIThreadTaskRunner({})->PostTask(FROM_HERE, std::move(cleanup));
-+  return true;
-+}
-+#endif
--
-+
- void ProfileManager::SetProfileAsLastUsed(Profile* last_active) {
- #if !BUILDFLAG(IS_ANDROID)

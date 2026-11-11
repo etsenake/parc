@@ -96,6 +96,12 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
   parc_hooks::SetUnloadControllerPageGates(&HoldsContents, &UnloadEventsResult,
                                            &HasTabCloseReply,
                                            &ConsumesBeforeUnloadReply);
+  parc_hooks::SetNativeProfileRemoval(
+      &OnProfileManagerCreated, &OnProfileManagerDestroyed,
+      &NativeProfileCreationRefused, &OwnsNativeProfileDiskCleanup,
+      &RunNativeProfileDiskCleanup);
+  parc_hooks::SetNativeProfileDeletion(&LoadNativeProfileForDeletion,
+                                       &RunNativeProfileDiskCleanup);
   parc_hooks::SetGaiaAccountsPolicy(&NativeGaiaAccountsAllowed);
   parc_hooks::SetSessionRestorePolicy(&RestoreNativeSessionState);
   parc_hooks::SetRegisterProfilePrefs(&RegisterNativeProfilePrefs);

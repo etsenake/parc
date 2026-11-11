@@ -5,6 +5,8 @@
 // operation-bound durable receipt; no live-directory deletion or URL replay.
 #import "native_profile_removal.h"
 
+#include "native_profile_policy.h"
+
 #include <cerrno>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -14,6 +16,7 @@
 #include <string>
 #include <utility>
 
+#include "base/auto_reset.h"
 #include "base/check.h"
 #include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
@@ -154,6 +157,31 @@ NSError* Validate(NSString* path, NSString* protected_path, NSString* operation)
     return RemovalError(kProtected, @"The Profile cache path is not safe to remove.");
   return nil;
 }
+// What ProfileManager kept for native removal: cleanups waiting for their
+// Profile's destruction, and the one path a scoped cleanup load may create.
+struct ManagerState {
+  base::RepeatingCallback<bool(const base::FilePath&)> has_profile;
+  base::RepeatingCallback<bool(const base::FilePath&)> destruction_pending;
+  std::map<base::FilePath, base::OnceClosure> disk_cleanup;
+  base::FilePath cleanup_load;
+};
+std::map<const ProfileManager*, ManagerState>& ManagerStates() {
+  static base::NoDestructor<std::map<const ProfileManager*, ManagerState>>
+      value;
+  return *value;
+}
+ManagerState& StateOf(const ProfileManager& manager) {
+  auto found = ManagerStates().find(&manager);
+  CHECK(found != ManagerStates().end());
+  return found->second;
+}
+void DeferNativeProfileDiskCleanup(ProfileManager& manager,
+                                   const base::FilePath& path,
+                                   base::OnceClosure cleanup) {
+  auto& state = StateOf(manager);
+  CHECK(!state.disk_cleanup.contains(path));
+  state.disk_cleanup.emplace(path, std::move(cleanup));
+}
 class Removal;
 std::map<base::FilePath, std::shared_ptr<Removal>>& Operations() {
   static base::NoDestructor<std::map<base::FilePath, std::shared_ptr<Removal>>> value;
@@ -243,7 +271,7 @@ class Removal final : public std::enable_shared_from_this<Removal>,
         base::BindOnce([](std::shared_ptr<Removal> self) {
           ReleaseNativeProfileForRemoval(self->path_);
           if (self->manager_)
-            self->manager_->RunDeferredNativeProfileDiskCleanup(self->path_);
+            RunNativeProfileDiskCleanup(*self->manager_, self->path_);
         }, self));
   }
   void OnProfileManagerDestroying() override {
@@ -342,18 +370,18 @@ class Removal final : public std::enable_shared_from_this<Removal>,
     storage.AddObserver(this);
     running_ = true;
     auto self = shared_from_this();
-    manager_->DeferNativeProfileDiskCleanup(path_, base::BindOnce(
+    DeferNativeProfileDiskCleanup(*manager_, path_, base::BindOnce(
         [](std::shared_ptr<Removal> self) { self->CleanDisk(); }, self));
     if (!storage.GetProfileAttributesWithPath(path_)) {
       // Never materialized, or a previous commit already removed attributes.
       // No Profile may still be loaded before direct physical cleanup.
       ReleaseNativeProfileForRemoval(path_);
-      manager_->RunDeferredNativeProfileDiskCleanup(path_);
+      RunNativeProfileDiskCleanup(*manager_, path_);
     } else if (IsProfileDirectoryMarkedForDeletion(path_)) {
       // Upstream startup may already own polite cleanup of its durable mark.
       // Do not schedule the same deletion twice or recreate a removed Profile.
       ReleaseNativeProfileForRemoval(path_);
-      manager_->RunDeferredNativeProfileDiskCleanup(path_);
+      RunNativeProfileDiskCleanup(*manager_, path_);
     } else {
       manager_->GetDeleteProfileHelper().MaybeScheduleProfileForDeletion(
           path_, base::BindOnce([](Profile*) {}),
@@ -372,7 +400,7 @@ class Removal final : public std::enable_shared_from_this<Removal>,
   }
   void CleanDisk() {
     if (!manager_ || manager_->GetProfileByPath(path_) ||
-        manager_->IsNativeProfileLifecyclePending(path_)) {
+        IsNativeProfileLifecyclePending(*manager_, path_)) {
       Finish(PCNativeProfileRemovalStatePending,
              RemovalError(kCommitted, @"The original Profile is still finishing retirement."));
       return;
@@ -424,6 +452,62 @@ class Removal final : public std::enable_shared_from_this<Removal>,
 bool IsNativeProfileRemovalBlocked(const base::FilePath& path) {
   CHECK(NSThread.isMainThread);
   return Operations().contains(path) || !Absent(Journal(path));
+}
+bool IsNativeProfileLifecyclePending(const ProfileManager& manager,
+                                     const base::FilePath& path) {
+  const auto& state = StateOf(manager);
+  return state.destruction_pending.Run(path) ||
+         (state.has_profile.Run(path) && !manager.GetProfileByPath(path));
+}
+void OnProfileManagerCreated(
+    ProfileManager& manager,
+    base::RepeatingCallback<bool(const base::FilePath&)> has_profile,
+    base::RepeatingCallback<bool(const base::FilePath&)> destruction_pending) {
+  auto [it, inserted] = ManagerStates().try_emplace(&manager);
+  CHECK(inserted);
+  it->second.has_profile = std::move(has_profile);
+  it->second.destruction_pending = std::move(destruction_pending);
+}
+void OnProfileManagerDestroyed(ProfileManager& manager) {
+  // Out of the registry before its cleanups are destroyed.
+  auto node = ManagerStates().extract(&manager);
+}
+bool NativeProfileCreationRefused(const ProfileManager& manager,
+                                  const base::FilePath& path) {
+  // Unlike Journal(path), always the manager's own root.
+  return path != StateOf(manager).cleanup_load &&
+         !Absent(manager.user_data_dir()
+                     .AppendASCII(".parc-profile-removals")
+                     .Append(path.BaseName().AddExtensionASCII("plist")));
+}
+bool OwnsNativeProfileDiskCleanup(const ProfileManager& manager,
+                                  const base::FilePath& path) {
+  return StateOf(manager).disk_cleanup.contains(path);
+}
+bool RunNativeProfileDiskCleanup(ProfileManager& manager,
+                                 const base::FilePath& path) {
+  auto& state = StateOf(manager);
+  auto it = state.disk_cleanup.find(path);
+  if (it == state.disk_cleanup.end())
+    return false;
+  if (state.has_profile.Run(path) || state.destruction_pending.Run(path))
+    return true;
+  auto cleanup = std::move(it->second);
+  state.disk_cleanup.erase(it);
+  // The observer is a SupportsUserData destructor. Finish that destruction
+  // stack before the native owner starts any filesystem work.
+  content::GetUIThreadTaskRunner({})->PostTask(FROM_HERE, std::move(cleanup));
+  return true;
+}
+void LoadNativeProfileForDeletion(
+    ProfileManager& manager,
+    const base::FilePath& path,
+    base::OnceCallback<void(Profile*)> callback) {
+  auto& state = StateOf(manager);
+  base::AutoReset<base::FilePath> allow_cleanup_load(
+      &state.cleanup_load,
+      state.disk_cleanup.contains(path) ? path : base::FilePath());
+  manager.LoadProfileByPath(path, false, std::move(callback));
 }
 }  // namespace parc
 
@@ -518,7 +602,7 @@ bool IsNativeProfileRemovalBlocked(const base::FilePath& path) {
   if ([record[@"state"] isEqual:@"removed"] &&
       parc::Absent(native) && parc::Absent(cache) &&
       !manager->GetProfileByPath(native) &&
-      !manager->IsNativeProfileLifecyclePending(native)) {
+      !parc::IsNativeProfileLifecyclePending(*manager, native)) {
     completion(PCNativeProfileRemovalStateRemoved, nil);
     return;
   }

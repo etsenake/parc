@@ -3503,7 +3503,7 @@ NSError* CheckNativeProfileRemovalOwners(const base::FilePath& path,
   if (!NativeProfileRemovalApplicationReady() || HasPendingNativeApplicationWork())
     return Error(@"Wait for the current browser operation to finish before removing this Profile.");
   auto* manager = g_browser_process->profile_manager();
-  if (manager->IsNativeProfileLifecyclePending(path))
+  if (IsNativeProfileLifecyclePending(*manager, path))
     return Error(@"This Profile is still finishing native retirement.");
   Profile* profile = manager->GetProfileByPath(path);
   bool has_fallback = false;

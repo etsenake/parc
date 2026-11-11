@@ -165,7 +165,9 @@ children of `Chromium-v1` through ProfileManager. One pending load serves all
 waiters for that exact path; a failed persistent load stays failed. Registry
 keepalives hand off profile creation safely, and operation leases keep imports,
 search and history work alive until their callbacks finish. Removal waits for
-those leases as well as windows, private profiles and downloads. Private windows
+those leases as well as windows, private profiles and downloads. Its durable
+tombstone keeps ProfileManager from recreating the path, and its disk cleanup
+runs only after Chromium has finished destroying that Profile. Private windows
 use their parent's primary off-the-record profile; its retirement waits for
 private operations. Profile defaults disable browser sign-in and translation
 after Chrome and both dependency managers register their defaults, before

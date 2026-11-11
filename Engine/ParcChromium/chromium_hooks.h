@@ -35,6 +35,7 @@ class LoginHandler;
 class PrefRegistrySimple;
 class PrefService;
 class Profile;
+class ProfileManager;
 class SadTab;
 class StartupData;
 class UnloadController;
@@ -276,6 +277,27 @@ void SetNativeBrowserWindowFeatures(
     std::unique_ptr<DevtoolsUIController> (*devtools_controller)(
         BrowserWindowInterface&),
     NativeWebContentsDelegateFactory web_contents_delegate);
+
+// chrome/browser/profiles/profile_manager.cc. Parc's native Profile removal:
+// the manager's lifetime, with whether a path still has a Profile object and
+// whether its destruction is pending; the durable-tombstone creation refusal;
+// and the disk cleanup that UnloadProfile leaves to it and
+// OnProfileDestructionComplete runs.
+void SetNativeProfileRemoval(
+    void (*created)(ProfileManager&,
+                    base::RepeatingCallback<bool(const base::FilePath&)>,
+                    base::RepeatingCallback<bool(const base::FilePath&)>),
+    void (*destroyed)(ProfileManager&),
+    bool (*creation_refused)(const ProfileManager&, const base::FilePath&),
+    bool (*disk_cleanup_owned)(const ProfileManager&, const base::FilePath&),
+    bool (*disk_cleanup_run)(ProfileManager&, const base::FilePath&));
+// chrome/browser/profiles/delete_profile_helper.cc: its scoped cleanup load,
+// and the failed-load cleanup a native removal owns.
+void SetNativeProfileDeletion(
+    void (*load)(ProfileManager&,
+                 const base::FilePath&,
+                 base::OnceCallback<void(Profile*)>),
+    bool (*cleanup)(ProfileManager&, const base::FilePath&));
 
 // chrome/browser/ui/unload_controller.cc. Parc's close and transfer
 // transactions: the controller's lifetime, with its private unclosable-app
