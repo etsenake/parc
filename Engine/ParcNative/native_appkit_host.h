@@ -81,7 +81,7 @@ class NativeApplication {
   virtual void ProfilesChanged() = 0;
   // Product branding; exists before content startup.
   virtual ui::ResourceBundle::Delegate* ResourceBundleDelegate() = 0;
-  // The process-singleton handoff. true means consumed, also while quitting.
+  // The process-singleton handoff. the legacy result is ignored; native launches are always consumed, also while quitting.
   virtual bool AlreadyRunningRelaunch(const base::CommandLine& command_line,
                                       const base::FilePath& current_directory) = 0;
   // Browser startup finished with Chrome's initial Profile.

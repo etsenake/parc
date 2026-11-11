@@ -11,6 +11,11 @@
 
 class LoginHandler;
 
+namespace base {
+class CommandLine;
+class FilePath;
+}
+
 namespace content {
 class WebContents;
 }
@@ -26,6 +31,13 @@ void SetPermissionPromptFactory(PermissionPromptFactory factory);
 
 // chrome/browser/ui/login/login_handler.cc
 void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));
+
+// chrome/browser/ui/startup/startup_browser_creator.cc
+// Installed handlers consume the launch, including a declined native request.
+using AlreadyRunningCommandLineHandler =
+    void (*)(const base::CommandLine&, const base::FilePath&, void*);
+void SetAlreadyRunningCommandLineHandler(
+    AlreadyRunningCommandLineHandler handler, void* context);
 
 }  // namespace parc_hooks
 

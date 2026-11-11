@@ -13,7 +13,6 @@
 #include "chrome/browser/child_process_host_flags.h"
 #include "chrome/browser/ui/login/http_auth_coordinator.h"
 #include "chrome/browser/chrome_browser_main.h"
-#include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/chrome_constants.h"
 #include "content/browser/media/service_factory.h"
 #include "content/public/browser/browser_url_handler.h"
@@ -49,9 +48,13 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
   void PostBrowserStart() override {
     // Chrome's own PostBrowserStart, which follows, lets ProcessSingleton
     // deliver second launches; the native handoff must be in place first.
-    StartupBrowserCreator::RegisterProcessCommandLineCallback(
-        base::BindRepeating(&NativeApplication::AlreadyRunningRelaunch,
-                            base::Unretained(&*client_->application_)));
+    parc_hooks::SetAlreadyRunningCommandLineHandler(
+        [](const base::CommandLine& command_line, const base::FilePath& cwd,
+           void* context) {
+          static_cast<NativeApplication*>(context)->AlreadyRunningRelaunch(
+              command_line, cwd);
+        },
+        &*client_->application_);
   }
   void PreMainMessageLoopRun() override {
     // Before any page exists.
@@ -60,7 +63,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
     RegisterNativeFileDialogs();
   }
   void PostMainMessageLoopRun() override {
-    StartupBrowserCreator::RegisterProcessCommandLineCallback({});
+    parc_hooks::SetAlreadyRunningCommandLineHandler(nullptr, nullptr);
     client_->initial_profile_ = nullptr;
   }
 

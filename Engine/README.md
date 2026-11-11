@@ -270,6 +270,9 @@ stays in Chromium's content startup file so allocator, platform and tracing setu
 keep their original order. Negative initialization continues into the retained
 runner; nonnegative results, including zero, are early process exits. The native
 shell keeps the browser runner alive for its event loop and shuts it down later.
+Second-launch routing is installed before Chromium unlocks its process singleton
+and removed at loop teardown. An installed native handler consumes the launch
+even when the native application declines it.
 
 ## Maintenance
 
