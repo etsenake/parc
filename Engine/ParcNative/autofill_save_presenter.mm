@@ -1,5 +1,9 @@
 #import "autofill_save_presenter.h"
 
+#import "dialog_style.h"
+
+using namespace parc_dialog;
+
 @interface PCAutofillSavePresenter () {
   __weak NSView* _page;
   __weak NSWindow* _window;
@@ -34,6 +38,19 @@
 }
 - (void)insertNewline:(id)sender {
   [self.request save:sender];
+}
+// Keypad Enter types U+0003, so Save's Return equivalent misses it.
+- (void)keyDown:(NSEvent*)event {
+  const NSEventModifierFlags modifiers =
+      event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
+                             NSEventModifierFlagOption | NSEventModifierFlagShift);
+  NSString* characters = event.charactersIgnoringModifiers;
+  if (!modifiers && ([characters isEqualToString:@"\r"] ||
+                     [characters isEqualToString:@"\003"])) {
+    [self insertNewline:self];
+    return;
+  }
+  [super keyDown:event];
 }
 @end
 
@@ -111,72 +128,51 @@ static void Later(void (^block)(void)) {
       [self finish:PCAutofillSaveInterrupted];
       return;
     }
-    // Geometry is a Parc adaptation pending the original sheet visual audit.
     PCAutofillSaveSheet* sheet = [[PCAutofillSaveSheet alloc]
-        initWithContentRect:NSMakeRect(0, 0, 400, 180)
+        initWithContentRect:NSMakeRect(0, 0, kWidth, 180)
                   styleMask:NSWindowStyleMaskTitled
                     backing:NSBackingStoreBuffered
                       defer:NO];
     sheet.releasedWhenClosed = NO;
     sheet.title = self->_title;
+    sheet.accessibilityLabel = self->_title;
     sheet.request = self;
-    NSView* content = sheet.contentView;
-    NSTextField* title = [NSTextField labelWithString:self->_title];
-    title.font = [NSFont boldSystemFontOfSize:15];
-    NSTextField* message = [NSTextField wrappingLabelWithString:self->_message];
-    message.font = [NSFont systemFontOfSize:13];
-    self->_save = [NSButton buttonWithTitle:self->_saveLabel
-                                     target:self
-                                     action:@selector(save:)];
-    self->_save.keyEquivalent = @"\r";
-    self->_decline = [NSButton buttonWithTitle:self->_declineLabel
-                                        target:self
-                                        action:@selector(decline:)];
-    self->_decline.keyEquivalent = @"\033";
-    for (NSView* view in @[ title, message, self->_save, self->_decline ]) {
-      view.translatesAutoresizingMaskIntoConstraints = NO;
-      [content addSubview:view];
-    }
-    [NSLayoutConstraint activateConstraints:@[
-      [title.leadingAnchor constraintEqualToAnchor:content.leadingAnchor
-                                          constant:24],
-      [title.topAnchor constraintEqualToAnchor:content.topAnchor constant:22],
-      [title.trailingAnchor
-          constraintLessThanOrEqualToAnchor:content.trailingAnchor
-                                   constant:-24],
-      [message.leadingAnchor constraintEqualToAnchor:title.leadingAnchor],
-      [message.topAnchor constraintEqualToAnchor:title.bottomAnchor
-                                        constant:12],
-      [message.trailingAnchor constraintEqualToAnchor:content.trailingAnchor
-                                             constant:-24],
-      [self->_save.trailingAnchor constraintEqualToAnchor:content.trailingAnchor
-                                                 constant:-20],
-      [self->_save.bottomAnchor constraintEqualToAnchor:content.bottomAnchor
-                                               constant:-20],
-      [self->_decline.trailingAnchor
-          constraintEqualToAnchor:self->_save.leadingAnchor
-                         constant:-8],
-      [self->_decline.centerYAnchor
-          constraintEqualToAnchor:self->_save.centerYAnchor],
-      [message.bottomAnchor
-          constraintLessThanOrEqualToAnchor:self->_save.topAnchor
-                                   constant:-18],
-    ]];
+    PrepareSheet(sheet);
+    PCDialogBaseView* root = [[PCDialogBaseView alloc] initWithFrame:NSZeroRect];
+    CGFloat y = kInset;
+    NSRect markRect;
+    NSImage* mark = ParcMark(&markRect);
+    PCDialogPictureIcon* art = [[PCDialogPictureIcon alloc] initWithImage:mark
+                                                               imageRect:markRect];
+    [art setAccessibilityElement:NO];
+    art.frameOrigin = NSMakePoint(kInset, y);
+    [root addSubview:art];
+    y = AddHeading(root, self->_title, self->_message, y + kArtSize, 200) + 22;
+    PCDialogButton* save = [[PCDialogButton alloc] initWithTitle:self->_saveLabel primary:YES];
+    save.target = self;
+    save.action = @selector(save:);
+    save.keyEquivalent = @"\r";
+    self->_save = save;
+    PCDialogButton* decline = [[PCDialogButton alloc] initWithTitle:self->_declineLabel
+                                                            primary:NO];
+    decline.target = self;
+    decline.action = @selector(decline:);
+    decline.keyEquivalent = @"\033";
+    self->_decline = decline;
+    NSMutableArray<NSButton*>* buttons = [NSMutableArray arrayWithObjects:save, decline, nil];
     if (self.neverLabel.length) {
-      self->_never = [NSButton buttonWithTitle:self.neverLabel
-                                         target:self
-                                         action:@selector(never:)];
-      self->_never.translatesAutoresizingMaskIntoConstraints = NO;
-      [content addSubview:self->_never];
-      [NSLayoutConstraint activateConstraints:@[
-        [self->_never.leadingAnchor constraintEqualToAnchor:content.leadingAnchor
-                                                   constant:20],
-        [self->_never.centerYAnchor constraintEqualToAnchor:self->_save.centerYAnchor],
-        [self->_never.trailingAnchor
-            constraintLessThanOrEqualToAnchor:self->_decline.leadingAnchor
-                                     constant:-16],
-      ]];
+      PCDialogButton* never = [[PCDialogButton alloc] initWithTitle:self.neverLabel primary:NO];
+      never.showsHint = NO;
+      never.target = self;
+      never.action = @selector(never:);
+      self->_never = never;
+      [buttons addObject:never];
     }
+    y = PlaceFooter(root, y, nil, buttons);
+    root.frame = NSMakeRect(0, 0, kWidth, y);
+    sheet.contentView = root;
+    [sheet setContentSize:NSMakeSize(kWidth, y)];
+    [sheet setAccessibilityDefaultButton:save];
     if (self->_finished || self->_invalidated || self->_window != window ||
         self->_page != page || page.window != window || window.attachedSheet) {
       [self finish:PCAutofillSaveInterrupted];
