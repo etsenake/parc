@@ -11,6 +11,7 @@
 #include "base/command_line.h"
 #include "base/path_service.h"
 #include "base/time/time.h"
+#include "chrome/browser/chrome_browser_main_mac.h"
 #include "chrome/browser/metrics/chrome_feature_list_creator.h"
 #include "chrome/browser/startup_data.h"
 #include "chrome/common/chrome_paths.h"
@@ -28,6 +29,18 @@
 
 namespace parc {
 namespace {
+class ParcBrowserMainPartsMac final : public ChromeBrowserMainPartsMac {
+ public:
+  using ChromeBrowserMainPartsMac::ChromeBrowserMainPartsMac;
+  int PreCreateThreads() override {
+    return ChromeBrowserMainPartsPosix::PreCreateThreads();
+  }
+};
+std::unique_ptr<ChromeBrowserMainParts> CreateMacMainParts(
+    bool is_integration_test, StartupData* startup_data) {
+  return std::make_unique<ParcBrowserMainPartsMac>(is_integration_test,
+                                                startup_data);
+}
 bool UsesNativeStartup() {
   return true;
 }
@@ -50,6 +63,7 @@ class ParcContentUtilityClient final : public ChromeContentUtilityClient {
 ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
     : ChromeMainDelegate({.exe_entry_point_ticks = base::TimeTicks::Now()}),
       application_(application) {
+  parc_hooks::SetMacMainPartsFactory(&CreateMacMainParts);
   parc_hooks::SetMainStartupPolicy(&UsesNativeStartup);
   parc_hooks::SetBrowserStartupPolicy(&UsesNativeStartup);
   parc_hooks::SetMainResourceBundleFactory(&NativeResourceBundle, application);

@@ -10,7 +10,9 @@
 #include "components/permissions/permission_prompt.h"
 #include "ui/base/resource/resource_bundle.h"
 
+class ChromeBrowserMainParts;
 class LoginHandler;
+class StartupData;
 
 namespace base {
 class CommandLine;
@@ -50,6 +52,11 @@ void SetBrowserResourceBundleFactory(ResourceBundleFactory factory,
 // Early startup policy in chrome_main_delegate.cc / chrome_browser_main.cc.
 void SetMainStartupPolicy(bool (*policy)());
 void SetBrowserStartupPolicy(bool (*policy)());
+
+// chrome/browser/chrome_browser_main.cc, before the normal AddParts sequence.
+using MacMainPartsFactory =
+    std::unique_ptr<ChromeBrowserMainParts> (*)(bool, StartupData*);
+void SetMacMainPartsFactory(MacMainPartsFactory factory);
 
 }  // namespace parc_hooks
 
