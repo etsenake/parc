@@ -18,7 +18,6 @@
 #include "base/strings/string_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
-#include "media/mojo/mojom/renderer_extensions.mojom.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/system/data_pipe.h"
@@ -39,6 +38,7 @@
 #include "third_party/blink/renderer/platform/media/resource_multi_buffer_data_provider.h"
 #include "third_party/blink/renderer/platform/media/testing/mock_web_associated_url_loader.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 #include "url/gurl.h"
 
 namespace blink {

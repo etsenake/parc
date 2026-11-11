@@ -35,7 +35,7 @@
 #include "media/base/pipeline_status.h"
 #include "media/base/renderer.h"
 #include "media/base/video_decoder_config.h"
-#include "media/mojo/mojom/renderer_extensions.mojom.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 #include "third_party/parc_fairplay/core/fairplay_renderer.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -82,8 +82,8 @@ class FairPlayRendererAdapter final
   RendererType GetRendererType() override;
 
   // The frame's mute state (tab mute). The audio bypasses Chromium's audio
-  // service, so the browser's MuteStateObserver feeds this; it is bound to a
-  // weak pointer and may outlive the adapter.
+  // service, so the browser's FairPlayMuteStateObserver feeds this; it is
+  // bound to a weak pointer and may outlive the adapter.
   base::RepeatingCallback<void(bool)> GetMuteStateCallback();
   // HTMLMediaElement.setSinkId's Core Audio device UID (empty for the system
   // default), as the browser resolved it; bound to a weak pointer.

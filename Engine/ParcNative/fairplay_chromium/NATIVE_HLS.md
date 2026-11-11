@@ -59,14 +59,13 @@ bounded by the timeline; a pending seek exposes its target.
 
 ## Mojo
 
-The authoritative interfaces are in the overlay's
-`media/mojo/mojom/renderer_extensions.mojom` and `interface_factory.mojom`.
+The authoritative interfaces are in `fairplay_media.mojom` beside this guide.
 Do not copy their complete schemas into this guide.
 
 | Boundary | Contract |
 | --- | --- |
-| Renderer → browser | Create a player through the frame's InterfaceFactory; renderer supplies no lifetime grant. |
-| Browser → GPU | Forward to the same frame service as its CDMs, adding a browser-owned audibility lifetime. Frameless requests are refused. |
+| Renderer → browser | Create a player through the frame's `FairPlayMediaHost`, naming the player whose audibility grant it holds; the renderer supplies no lifetime. |
+| Browser → GPU | Forward to the document's `FairPlayFrameMedia`, which also hosts its CDMs, adding a browser-owned audibility lifetime with that player's grant. Frameless documents have no host. |
 | GPU service | Own the core player, track bridge, CDM loader, mute observer and registered layer. Destroy players before their CDMs. |
 | GPU → renderer | Ordered initialization, metadata, buffering, time, tracks/cues, key events, errors and statistics on the client pipe. |
 | Per-load transport | Response metadata plus a data pipe, completion and cancellation. Completion must wait for body drain. |

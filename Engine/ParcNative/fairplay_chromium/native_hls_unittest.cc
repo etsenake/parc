@@ -34,11 +34,11 @@
 #include "media/base/test_helpers.h"
 #include "media/base/timestamp_constants.h"
 #include "media/base/video_frame.h"
-#include "media/mojo/mojom/renderer_extensions.mojom.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 #include "ui/gfx/geometry/size_f.h"
 #include "url/gurl.h"
 

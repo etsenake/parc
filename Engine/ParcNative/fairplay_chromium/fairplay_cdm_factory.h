@@ -1,4 +1,4 @@
-// The GPU process media service's CdmFactory: creates FairPlay CDMs and
+// Parc's FairPlay media service's CdmFactory: creates FairPlay CDMs and
 // refuses every other key system (library CDMs such as Widevine run in their
 // own CdmService process and never reach it).
 #ifndef THIRD_PARTY_PARC_FAIRPLAY_CHROMIUM_FAIRPLAY_CDM_FACTORY_H_
@@ -10,17 +10,17 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "media/base/cdm_factory.h"
-#include "media/mojo/mojom/frame_interface_factory.mojom.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 
 namespace media {
 
 class FairPlayCdmFactory final : public CdmFactory {
  public:
-  // |frame_interfaces| (the frame's browser services, may be null) gives every
-  // FairPlay CDM the frame's device ID salt and names the storage of one whose
+  // |frame_host| (the document's browser end) gives every FairPlay CDM the
+  // document's device ID salt and names the storage of one whose
   // configuration allows persistent state. It outlives this factory (both
-  // belong to the media service's InterfaceFactoryImpl).
-  explicit FairPlayCdmFactory(mojom::FrameInterfaceFactory* frame_interfaces);
+  // belong to the document's FairPlayFrameMedia).
+  explicit FairPlayCdmFactory(mojom::FairPlayFrameHost* frame_host);
   FairPlayCdmFactory(const FairPlayCdmFactory&) = delete;
   FairPlayCdmFactory& operator=(const FairPlayCdmFactory&) = delete;
   ~FairPlayCdmFactory() override;
@@ -52,7 +52,7 @@ class FairPlayCdmFactory final : public CdmFactory {
       const std::string& device_id_salt,
       const base::FilePath& storage_directory);
 
-  const raw_ptr<mojom::FrameInterfaceFactory> frame_interfaces_;
+  const raw_ptr<mojom::FairPlayFrameHost> frame_host_;
   base::WeakPtrFactory<FairPlayCdmFactory> weak_factory_{this};
 };
 

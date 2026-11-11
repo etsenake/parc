@@ -8,16 +8,14 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/task/sequenced_task_runner.h"
 #include "media/base/cdm_config.h"
-#include "media/mojo/mojom/frame_interface_factory.mojom.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "third_party/parc_fairplay/chromium/fairplay_cdm_adapter.h"
 #include "third_party/parc_fairplay/chromium/fairplay_key_system.h"
 
 namespace media {
 
-FairPlayCdmFactory::FairPlayCdmFactory(
-    mojom::FrameInterfaceFactory* frame_interfaces)
-    : frame_interfaces_(frame_interfaces) {}
+FairPlayCdmFactory::FairPlayCdmFactory(mojom::FairPlayFrameHost* frame_host)
+    : frame_host_(frame_host) {}
 
 FairPlayCdmFactory::~FairPlayCdmFactory() = default;
 
@@ -34,17 +32,14 @@ void FairPlayCdmFactory::Create(
   // its SPCs. The browser answers with the frame's media device ID salt, the
   // same per-site salt, replaced when site data is cleared. If it doesn't
   // answer, the CDM goes without, as WebKit's options do without the SPI.
-  if (frame_interfaces_ &&
-      parc::fairplay::IsFairPlayKeySystem(cdm_config.key_system)) {
-    frame_interfaces_->GetFairPlayDeviceIdSalt(
-        mojo::WrapCallbackWithDefaultInvokeIfNotRun(
-            base::BindOnce(&FairPlayCdmFactory::CreateWithSalt,
-                           weak_factory_.GetWeakPtr(), cdm_config,
-                           session_message_cb, session_closed_cb,
-                           session_keys_change_cb,
-                           session_expiration_update_cb,
-                           std::move(cdm_created_cb)),
-            std::string()));
+  if (parc::fairplay::IsFairPlayKeySystem(cdm_config.key_system)) {
+    frame_host_->GetDeviceIdSalt(mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+        base::BindOnce(&FairPlayCdmFactory::CreateWithSalt,
+                       weak_factory_.GetWeakPtr(), cdm_config,
+                       session_message_cb, session_closed_cb,
+                       session_keys_change_cb, session_expiration_update_cb,
+                       std::move(cdm_created_cb)),
+        std::string()));
     return;
   }
   CreateWithSalt(cdm_config, session_message_cb, session_closed_cb,
@@ -65,9 +60,9 @@ void FairPlayCdmFactory::CreateWithSalt(
   // persistent state uses it. The browser names (and creates) the frame's.
   // If it doesn't answer, the CDM goes without, as WebKit's does with an
   // empty directory.
-  if (cdm_config.allow_persistent_state && frame_interfaces_ &&
+  if (cdm_config.allow_persistent_state &&
       parc::fairplay::IsFairPlayKeySystem(cdm_config.key_system)) {
-    frame_interfaces_->GetFairPlayStorageDirectory(
+    frame_host_->GetStorageDirectory(
         mojo::WrapCallbackWithDefaultInvokeIfNotRun(
             base::BindOnce(&FairPlayCdmFactory::CreateWithStorage,
                            weak_factory_.GetWeakPtr(), cdm_config,

@@ -1,7 +1,7 @@
 // Copyright 2026 Parc contributors.
 // Chrome's content clients with the few Parc behaviours CEF used to carry:
 // the parc: scheme, CDM and Alerts helper routing, startup registrations and
-// the website-theme agent.
+// the website-theme agent, plus Parc's FairPlay media service.
 #ifndef PARC_PARC_CONTENT_CLIENTS_H_
 #define PARC_PARC_CONTENT_CLIENTS_H_
 
@@ -13,6 +13,7 @@
 #include "chrome/browser/chrome_browser_main_extra_parts.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/common/chrome_content_client.h"
+#include "chrome/gpu/chrome_content_gpu_client.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
 
 class Profile;
@@ -68,6 +69,15 @@ class ParcContentBrowserClient final : public ChromeContentBrowserClient {
 
   const raw_ref<NativeApplication> application_;
   raw_ptr<Profile> initial_profile_ = nullptr;
+};
+
+class ParcContentGpuClient final : public ChromeContentGpuClient {
+ public:
+  void ExposeInterfacesToBrowser(
+      viz::GpuServiceImpl* gpu_service,
+      const gpu::GpuPreferences& gpu_preferences,
+      const gpu::GpuDriverBugWorkarounds& gpu_workarounds,
+      mojo::BinderMap* binders) override;
 };
 
 class ParcContentRendererClient final : public ChromeContentRendererClient {

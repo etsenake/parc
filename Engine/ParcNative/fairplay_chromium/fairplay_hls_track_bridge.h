@@ -23,7 +23,7 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
-#include "media/mojo/mojom/renderer_extensions.mojom.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 #include "third_party/parc_fairplay/core/fairplay_hls_media_selection.h"
 #include "third_party/parc_fairplay/core/fairplay_hls_player.h"
 

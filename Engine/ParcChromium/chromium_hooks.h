@@ -14,6 +14,9 @@
 #include "chrome/browser/ui/tab_sharing/tab_sharing_infobar_delegate.h"
 #include "components/permissions/permission_prompt.h"
 #include "content/public/browser/weak_document_ptr.h"
+#include "media/base/cdm_factory.h"
+#include "media/mojo/mojom/content_decryption_module.mojom-forward.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "net/ssl/client_cert_identity.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -231,6 +234,18 @@ void SetMacMainLoopEndHandler(void (*handler)());
 // first CDM use. A value other than CHILD_NORMAL must be resolved by
 // ContentBrowserClient::GetChildProcessPath().
 void SetCdmServiceChildFlags(int flags);
+
+// content/browser/media/media_interface_proxy.cc, in CreateCdm after the
+// Widevine request observer: a frame's CDM request, for Parc's FairPlay media
+// service. False leaves `callback` to Chromium's CDM routing.
+using CdmCreatedCallback = base::OnceCallback<void(
+    mojo::PendingRemote<media::mojom::ContentDecryptionModule>,
+    media::mojom::CdmContextPtr,
+    media::CreateCdmStatus)>;
+using FairPlayCdmCreator = bool (*)(content::RenderFrameHost&,
+                                    const media::CdmConfig&,
+                                    CdmCreatedCallback&);
+void SetFairPlayCdmCreator(FairPlayCdmCreator creator);
 
 // chrome/browser/profiles/pref_service_builder_utils.cc; after all defaults.
 void SetRegisterProfilePrefs(void (*registration)(PrefRegistrySimple*));

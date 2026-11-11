@@ -8,23 +8,26 @@
 #include "content/renderer/media/fairplay/native_hls_demuxer.h"
 #include "content/renderer/media/fairplay/native_hls_renderer.h"
 #include "media/base/parc_native_hls_demuxer_params.h"
-#include "media/mojo/mojom/interface_factory.mojom.h"
-#include "media/mojo/mojom/renderer_extensions.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 
 namespace parc::fairplay {
 
 NativeHlsRendererFactory::NativeHlsRendererFactory(
-    media::mojom::InterfaceFactory* interface_factory)
-    : interface_factory_(interface_factory) {}
+    media::mojom::FairPlayMediaHost* media_host)
+    : media_host_(media_host) {}
 
 NativeHlsRendererFactory::~NativeHlsRendererFactory() = default;
 
-void NativeHlsRendererFactory::ParcSetInterfaceFactory(
-    media::mojom::InterfaceFactory* interface_factory) {
-  DCHECK(interface_factory);
-  interface_factory_ = interface_factory;
+void NativeHlsRendererFactory::SetMediaHost(
+    media::mojom::FairPlayMediaHost* media_host) {
+  DCHECK(media_host);
+  media_host_ = media_host;
+}
+
+void NativeHlsRendererFactory::SetPlayerId(int32_t player_id) {
+  player_id_ = player_id;
 }
 
 std::unique_ptr<media::Renderer> NativeHlsRendererFactory::CreateRenderer(
@@ -44,7 +47,7 @@ std::unique_ptr<media::Renderer> NativeHlsRendererFactory::CreateRenderer(
 std::unique_ptr<media::Demuxer>
 NativeHlsRendererFactory::CreateParcNativeHlsDemuxer(
     media::ParcNativeHlsDemuxerParams params) {
-  if (!interface_factory_ || !params.media_task_runner) {
+  if (!media_host_ || !params.media_task_runner) {
     return nullptr;
   }
   // The player lives as long as these pipes: the demuxer binds them on the
@@ -53,9 +56,9 @@ NativeHlsRendererFactory::CreateParcNativeHlsDemuxer(
   mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client;
   mojo::PendingReceiver<media::mojom::FairPlayHlsPlayerClient> client_receiver =
       client.InitWithNewPipeAndPassReceiver();
-  interface_factory_->CreateFairPlayHlsPlayer(
-      player.InitWithNewPipeAndPassReceiver(), std::move(client),
-      mojo::NullRemote());
+  media_host_->CreateHlsPlayer(player_id_,
+                               player.InitWithNewPipeAndPassReceiver(),
+                               std::move(client));
   media_task_runner_ = params.media_task_runner;
   auto demuxer = std::make_unique<NativeHlsDemuxer>(
       std::move(params), std::move(player), std::move(client_receiver));

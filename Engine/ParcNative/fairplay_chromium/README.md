@@ -29,13 +29,15 @@ this guide covers demuxed samples and the Chromium/CDM boundary.
 | --- | --- |
 | Key system names | `fairplay_key_system.h` (`IsFairPlayKeySystem`, same rule as the core and WebKit) |
 | `media::ContentDecryptionModule` + `CdmContext` | `fairplay_cdm_adapter.{h,cc}` over `parc::fairplay::FairPlayCdm` |
-| GPU media service CDM factory | `fairplay_cdm_factory.{h,cc}`, returned by `GpuMojoMediaClientMac::CreatePlatformCdmFactory` |
-| CDM routing | `MediaInterfaceProxy::CreateCdm` sends FairPlay key systems to the frame's GPU media service `InterfaceFactory`, before the library CDM path (which would look for a CDM binary) |
+| Parc's FairPlay media service (GPU) | `fairplay_media_service.{h,cc}` (`:service`) and `fairplay_media.mojom`: `ParcContentGpuClient::ExposeInterfacesToBrowser` binds `media.mojom.FairPlayMediaService` on a single-thread task runner configured like the GPU media service's runner. Each document gets a `FairPlayFrameMedia` hosting its CDMs (`MojoCdmService`), FairPlay Renderers (`MojoRendererService`) and native HLS players. A render process's documents share one `MojoCdmServiceContext`, so CDM IDs resolve within that process only |
+| Browser host | `parc/native/fairplay_media_host.{h,cc}` (`FairPlayDocumentHost`, one per document): serves `FairPlayMediaHost` to the render process (`ParcContentBrowserClient::RegisterBrowserInterfaceBindersForFrame`) and `FairPlayFrameHost` (storage, salt, ephemeral session, audio output, tab mute) to the GPU service, which it reaches with `content::BindInterfaceInGpuProcess` and reconnects after a GPU restart |
+| CDM factory | `fairplay_cdm_factory.{h,cc}`, used by `FairPlayFrameMedia`, with the document's `FairPlayFrameHost` answers |
+| CDM routing | `MediaInterfaceProxy::CreateCdm` runs Parc's CDM creator (`parc_hooks::SetFairPlayCdmCreator`, `FairPlayDocumentHost::CreateCdm`) after the Widevine observer. FairPlay key systems go to the document's `FairPlayFrameMedia`, before the library CDM path (which would look for a CDM binary) |
 | Renderer selection | `CdmContext::RequiresFairPlayRenderer()`, carried to the render process as `mojom::CdmContext.requires_fairplay_renderer`; `PipelineImpl` then asks for `RendererType::kFairPlay`. In the GPU process the FairPlay renderer and HLS player reach the key session with `FairPlayCdmAdapter::GetFairPlayCdm()` |
-| GPU `media::Renderer` | `fairplay_renderer_adapter.{h,mm}` over `parc::fairplay::FairPlayRenderer`, created by `GpuMojoMediaClientMac::CreateFairPlayRenderer` through `InterfaceFactory.CreateFairPlayRenderer` |
-| Render-process client | `fairplay_renderer_client{,_factory}.{h,cc}` → `//content/renderer/media/fairplay`, registered as `kFairPlay` (never the base renderer) by `fairplay_renderer_factories.{h,cc}`, which `MediaFactory` calls to add and move the FairPlay and native HLS factories |
+| GPU `media::Renderer` | `fairplay_renderer_adapter.{h,mm}` over `parc::fairplay::FairPlayRenderer`, created by `FairPlayFrameMedia::CreateRenderer` |
+| Render-process client | `fairplay_renderer_client{,_factory}.{h,cc}` → `//content/renderer/media/fairplay`, registered as `kFairPlay` (never the base renderer) by `fairplay_renderer_factories.{h,cc}`, which `MediaFactory` calls to add the FairPlay and native HLS factories, give them the built player's ID and move them. `fairplay_media_host_connection.{h,cc}` is the frame's pipe to its `FairPlayMediaHost`, callable from any thread |
 | Display handoff | layer token over `mojom::FairPlayRendererClientExtension.OnLayerRegistered`; `ui::ProtectedLayerRegistry` and the compositor side in [COMPOSITING.md](COMPOSITING.md) (fairplay-compositing) |
-| Native HLS (Safari's AVPlayer route) | [NATIVE_HLS.md](NATIVE_HLS.md): `mojom::FairPlayHlsPlayer` over `InterfaceFactory.CreateFairPlayHlsPlayer`; GPU `fairplay_hls_player_service.{h,mm}` (`GpuMojoMediaClientMac::CreateFairPlayHlsPlayer`); render-process loads `fairplay_hls_loader.{h,cc}` → `//third_party/blink/renderer/platform/media` |
+| Native HLS (Safari's AVPlayer route) | [NATIVE_HLS.md](NATIVE_HLS.md): `mojom::FairPlayHlsPlayer` over `FairPlayMediaHost.CreateHlsPlayer`; GPU `fairplay_hls_player_service.{h,mm}` (`FairPlayFrameMedia::CreateHlsPlayer`); render-process loads `fairplay_hls_loader.{h,cc}` → `//third_party/blink/renderer/platform/media` |
 | Key system registration | `fairplay_cdm_info.{h,cc}` and `fairplay_key_system_info.{h,cc}` (`:registration`), from one capability: `ParcContentClient::AddContentDecryptionModules` lists the `CdmInfo` after Chrome's CDMs (browser), and `ParcContentRendererClient::GetSupportedKeySystems` adds the `KeySystemInfo` to each of Chrome's key system updates (renderer) |
 | Widevine request hook | `parc::fairplay::SetWidevineCdmRequestObserver` (`parc_fairplay_hooks.h`, defined in `media_interface_proxy.cc`), for fairplay-identity |
 | VideoToolbox decoder facts | `parc_video_toolbox_decoding.{h,mm}` → `//content/browser/media`, with its own `parc_video_toolbox_decoding.mojom` in `//media/mojo/mojom`: the browser reads what WebKit's MediaCapabilities asks VideoToolbox (H.264 hardware, HEVC per-profile hardware and levels, Dolby Vision profiles and levels) once and serves `media.mojom.ParcVideoToolboxDecoding` to frames (`ParcContentBrowserClient::RegisterBrowserInterfaceBindersForFrame`) and dedicated workers (`browser_interface_binders.cc`), for Safari-identity `decodingInfo`. `ParcContentBrowserClient::AppendExtraCommandLineSwitches` gives each renderer the AV1 hardware-decoder answer |
@@ -43,24 +45,29 @@ this guide covers demuxed samples and the Chromium/CDM boundary.
 | GPU sandbox | `sandbox/policy/mac/gpu.sb`, rules listed below |
 | Parc operations on Chromium's media interfaces | `parc_renderer_extensions.h`, `parc_pipeline_extension.h` and `parc_demuxer_stream_extension.h` → `//media/base`: `Renderer`, `AudioRenderer`, `VideoRenderer`, `Pipeline` (and `PipelineController`) and `DemuxerStream` each declare one `GetParcExtension()`, null by default, so Parc's backward playback, mixed audio, output device, hand-off and stream calls change without rebuilding every includer of those headers |
 
-FairPlay uses dedicated GPU InterfaceFactory methods. It does not make the GPU
-renderer the default for ordinary pages or change unrelated Mojo media services.
+FairPlay has its own GPU service and browser host, built from Chromium's public
+media service classes. It doesn't make the GPU renderer the default for ordinary
+pages or change Chromium's media services. Chromium keeps one CDM hook, so
+Blink's EME path is unchanged.
 
 ## Call flow (CDM)
 
 1. Blink's `MediaKeys` asks the render process's `MojoCdmFactory`, which sends
    `InterfaceFactory::CreateCdm` to the browser's `MediaInterfaceProxy`
-   (UI thread).
-2. `MediaInterfaceProxy` sees a FairPlay key system. If `CdmRegistryImpl` has
-   no `CdmInfo` for it, it refuses (`kUnsupportedKeySystem`), as Chromium does
-   for any unregistered key system. Otherwise it forwards it to the
-   frame's GPU media service `InterfaceFactoryImpl`, the one that also serves
-   the frame's renderers. One `MojoCdmServiceContext` per frame is what lets a
-   renderer find the CDM by its ID later.
-3. In the GPU process, `InterfaceFactoryImpl` → `MojoCdmService` →
-   `FairPlayCdmFactory::Create` → `FairPlayCdmAdapter`, on the media service
-   thread. On macOS `kDedicatedMediaServiceThread` is on, so that's a
-   ThreadPool thread with no run loop, not the GPU main thread.
+   (UI thread), which hands it to Parc's CDM creator.
+2. `FairPlayDocumentHost::CreateCdm` sees a FairPlay key system. If
+   `CdmRegistryImpl` has no `CdmInfo` for it, it refuses
+   (`kUnsupportedKeySystem`), as Chromium does for any unregistered key
+   system. Otherwise it forwards it to the document's `FairPlayFrameMedia`,
+   the one that also serves the document's renderers. The
+   `MojoCdmServiceContext` the render process's documents share is what lets
+   a renderer find the CDM by its ID later, also in another frame a
+   Safari-identity page moved the element to.
+3. In the GPU process, `FairPlayFrameMedia` → `MojoCdmService` →
+   `FairPlayCdmFactory::Create` → `FairPlayCdmAdapter`, on the FairPlay
+   media service's sequence. On macOS `kDedicatedMediaServiceThread` is on, so
+   that's a ThreadPool single-thread task runner with no run loop, not the GPU
+   main thread; its worker may be shared.
 4. Session calls arrive over `mojom::ContentDecryptionModule` and go to the
    core on the same thread. The core posts its callbacks to that thread
    (`fairplay_task_runner.h`). Promises are tracked by a `CdmPromiseAdapter`,
@@ -80,8 +87,8 @@ system info offers it only where the render process can persist data, and the
 CDM takes it only with the CdmConfig's `allow_persistent_state`, as WebKit's
 `isLicenseTypeSupported`). Session IDs are WebKit's: the uppercase hex of a
 random 16-byte identifier. A CDM whose configuration allows persistent state
-asks the frame's `FrameInterfaceFactory.GetFairPlayStorageDirectory` (the
-browser's `MediaInterfaceProxy`) for its storage, WebKit's per-origin
+asks the document's `FairPlayFrameHost.GetStorageDirectory` (the browser's
+`FairPlayDocumentHost`) for its storage, WebKit's per-origin
 MediaKeys directory: `<Profile engine folder>/Parc FairPlay/MediaKeys/`, then
 the SHA-256 of the top-level origin and of the frame's origin, created by the
 browser, empty off the record or for an opaque origin. The core then creates
@@ -95,7 +102,7 @@ key status change; `update("acknowledged")` removes reports found. `persistent-l
 on Safari for macOS. `CdmContext::ParcHasSessionForInitData` (asked by a
 Safari-identity Media Source element through MojoCdm before it fires
 `encrypted` with `sinf`) answers from `FairPlayCdm::HasSessionForInitData`.
-Every FairPlay CDM also asks `FrameInterfaceFactory.GetFairPlayDeviceIdSalt`
+Every FairPlay CDM also asks `FairPlayFrameHost.GetDeviceIdSalt`
 for the frame's media device ID salt (`GetMediaDeviceSaltAndOrigin`), WebKit's
 MediaKeys hash salt, which randomizes the device identifier in its SPCs (core
 README, "Device identifier").
@@ -112,11 +119,11 @@ EME's false, when there are none), other types reject with NotSupported.
    renderer (encrypted streams wait for the CDM first). Without a FairPlay CDM
    the pipeline is unchanged.
 2. `FairPlayRendererClientFactory` makes a `MojoRenderer` through
-   `InterfaceFactory.CreateFairPlayRenderer` (render process → browser's
-   `MediaInterfaceProxy` → the frame's GPU media service `InterfaceFactoryImpl`).
-   The `FairPlayRendererClient` that wraps it binds the client extension.
-3. In the GPU process, `InterfaceFactoryImpl` hosts `FairPlayRendererAdapter`
-   under a `MojoRendererService` that shares the factory's
+   `FairPlayMediaHost.CreateRenderer` (render process → browser's
+   `FairPlayDocumentHost` → the document's `FairPlayFrameMedia`). The
+   `FairPlayRendererClient` that wraps it binds the client extension.
+3. In the GPU process, `FairPlayFrameMedia` hosts `FairPlayRendererAdapter`
+   under a `MojoRendererService` with the render process's
    `MojoCdmServiceContext`. `SetCdm(cdm_id)` therefore resolves the frame's
    FairPlay CDM, and the adapter hands its key session to the core
    (`FairPlayRenderer::SetCdm`, before `Initialize` is fine).
@@ -190,14 +197,19 @@ EME's false, when there are none), other types reject with NotSupported.
 
 ## Threads and processes
 
-- Browser, UI thread: `MediaInterfaceProxy` (routing, Widevine hook) and
-  `CdmRegistryImpl`.
+- Browser, UI thread: `MediaInterfaceProxy` (Widevine and CDM hooks),
+  `FairPlayDocumentHost` and `CdmRegistryImpl`.
 - Render process, media thread: `FairPlayRendererClient`, `MojoRenderer` and
-  `MojoCdm`. Blink's key system info is evaluated on the main thread.
-- GPU process, media service thread: `FairPlayCdmAdapter`,
-  `FairPlayRendererAdapter` and the core. On macOS `kDedicatedMediaServiceThread`
-  is on, so that's a ThreadPool thread with no run loop, not the GPU main
-  thread. The core posts every AVFoundation callback to it. CALayer creation
+  `MojoCdm`. Blink's key system info is evaluated on the main thread. A
+  factory's renderer or player request hops to the frame's main thread
+  (`FairPlayMediaHostConnection`), as the frame's InterfaceFactory requests
+  do, then reaches the browser host on the UI thread.
+- GPU process, the FairPlay media service's sequence: `FairPlayCdmAdapter`,
+  `FairPlayRendererAdapter`, `FairPlayHlsPlayerService` and the core. It is
+  chosen as the GPU media service chooses its own: on macOS
+  `kDedicatedMediaServiceThread` is on, so that's a ThreadPool single-thread
+  task runner with no run loop, not the GPU main thread; its worker may be
+  shared. The core posts every AVFoundation callback to it. CALayer creation
   is wrapped in an explicit CATransaction there. The compositor touches the
   layer only from the GPU main thread, and only its placement.
 - Audio goes from `AVSampleBufferAudioRenderer` straight to CoreAudio from the
@@ -205,20 +217,26 @@ EME's false, when there are none), other types reject with NotSupported.
   `createMediaElementSource` doesn't see it. Tab mute, the tab's audio
   indicator and `setSinkId` do, the first two the way MediaFoundation's
   renderer gets them on Windows:
-  - Mute: `GpuMojoMediaClientMac::CreateFairPlayRenderer` registers a
-    `mojom::MuteStateObserver` with the frame's `FrameInterfaceFactory`
-    (enabled on macOS too). The browser answers with the tab's state at once
+  - Mute: `FairPlayFrameMedia::CreateRenderer` registers a
+    `mojom::FairPlayMuteStateObserver` with the document's
+    `FairPlayFrameHost`. The browser answers with the tab's state at once
     and on every change; the adapter mutes the core (`SetMuted`, kept until
     the core is initialized). Until that first answer the adapter keeps the
     audio muted, so a muted tab plays no sound while it is on its way. The
     observer closes with the renderer.
-  - Indicator: `MediaInterfaceProxy::CreateFairPlayRenderer` holds an
+  - Indicator: `FairPlayDocumentHost::CreateRenderer` holds an
     `AudibilityBypassTracker` grant in the proxy it puts between the GPU
     adapter and the render-process client, so the grant ends with the GPU
-    renderer. The player reports that it doesn't use the audio service, so
-    `MediaWebContentsObserver` claims the grant while the player is audible
-    and registers it with `AudioStreamMonitor`. A frame gets the grant only
-    after it asked `CreateCdm` for a registered FairPlay key system.
+    renderer. The grant is the player's own
+    (`AudibilityBypassTracker::AddPlayerGrant`, keyed by the ID `MediaFactory`
+    gives the factories once the player exists), so players never take each
+    other's, and an unclaimed grant follows its player to another frame of the
+    process. The player reports that it doesn't use the audio service, so
+    `MediaWebContentsObserver` claims the grant and registers it with
+    `AudioStreamMonitor` while the player is audible. A frame gets the grant
+    only after it asked `CreateCdm` for a registered FairPlay key system, or
+    when it presents Safari's identity. The native HLS player's lifetime
+    handle holds its grant the same way.
   - Output device (`setSinkId`): the element's audio sink still switches
     and checks the device, so the promise settles as for clear media. Once
     it has, `WebMediaPlayerImpl` tells the pipeline, which tells its
@@ -226,7 +244,7 @@ EME's false, when there are none), other types reject with NotSupported.
     the render-process client sends the hashed ID its sink names, as at
     `Initialize`, over `FairPlayRendererExtension` (or `FairPlayHlsPlayer`).
     The GPU process asks the browser for its Core Audio UID
-    (`FrameInterfaceFactory.GetFairPlayAudioOutputDeviceUid`), so the page
+    (`FairPlayFrameHost.GetAudioOutputDeviceUid`), so the page
     never sees one, and the core puts every audio renderer, later and mixed
     ones too, on it (`AVPlayer` for native HLS), as WebKit's
     `setOutputDeviceId` does.
@@ -335,13 +353,6 @@ The current core supports VP9 and Vorbis for Safari-identity media, but has no
 VP8 or MP3 renderer implementation. Transitions into Dolby Vision beside those
 codecs can fail, and late FairPlay attachment can require restart.
 
-Native players in one frame receive audibility grants from a shared pending
-pool, without the originating player's identity. If they claim grants in a
-different order from creation, closing one renderer can revoke the surviving
-player's grant and remove its speaker indicator. Grants do follow document
-moves. Bind each new grant to its player and cover reversed claim/close order
-in the browser observer tests.
-
 The MSE FairPlay client and GPU adapter also omit `SetPreservesPitch`, so a
 page cannot disable pitch preservation on this route. The core supports the
 choice, and native HLS forwards it. Connect that choice through the FairPlay
@@ -366,7 +377,10 @@ the pipes close first. It's never run and is destroyed with the document.
 At most 16 requests are held per document; later ones fail with
 `kCdmCreationAborted` (no CDM, so no license request). If the observer ends
 the document while it runs, `CreateCdm` notices through a weak pointer and
-returns.
+returns. Parc's CDM creator runs next. The held callbacks stay in the proxy,
+not in Parc's host, because their place before `receivers_` closes the pipes
+first. MojoRendererService and MojoRenderer keep the FairPlay CDM swap: CDM
+attach on another pipe would lose its order with the Renderer's calls.
 
 ## Codec build flags (increment 3)
 

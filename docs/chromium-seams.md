@@ -172,11 +172,11 @@ context-menu and file-selector work shares files across areas, so it goes throug
    - the media supplements: HTMLMediaElement with AirPlay; EME and MediaCapabilities; the
      WebMediaPlayerImpl rules; //media/filters; the Viz planner; and the renderer arithmetic, which ships
      only together with a real playback check.
-5. **Parc FairPlay media service.** A Parc-owned GPU-process service and browser host, built from public
-   APIs, replaces our additions to Chromium's media factories and mojoms. That removes about 1,100 upstream
-   lines, 12 headers and 4 mojoms, and binds each audio grant to its own player. That last part fixes the
-   known gap where the speaker indicator can be lost. It goes in as two changes, the new service first and
-   then the switch-over, and can be reviewed alongside step 4.
+5. **Parc FairPlay media service.** Done. A Parc GPU service and a per-document browser host replace our
+   additions to Chromium's media factories and mojoms; 24 files are pristine again, 4 mojoms and 8 headers
+   among them. Each audio grant is now its own player's, so one closing player can't take another's speaker
+   indicator. The CreateCdm hook and the MojoRenderer CDM swap stay, for ordering reasons given in
+   [FairPlay in Chromium](../Engine/ParcNative/fairplay_chromium/README.md#widevine-request-hook).
 6. **FairPlay hand-off out of the pipeline.** A Parc helper owned by the renderer wrapper, plus a decorator
    stream, replaces the hand-off code in PipelineImpl and ChunkDemuxer. Its tests come first, and the old
 reader stays until those tests pass on the new path.
@@ -184,8 +184,9 @@ reader stays until those tests pass on the new path.
    autofill, controls and PiP, then the large media and Blink fixtures. Keep the compatibility edits those
    tests rely on. Parc-owned sources install into layer-local test targets when Chromium's visibility rules
    require it, and those targets remain dependencies of the original test binaries. The overlay-scrollbar
-   fade, AudioToolbox AMR, native presentation-request retirement, reentrant media-item closure and
-   wallet-reminder lifetime regressions are the first suites moved this way.
+   fade, AudioToolbox AMR, native presentation-request retirement, reentrant media-item closure,
+   supplemental picker lifecycle and wallet-reminder lifetime regressions are the first suites moved this
+   way.
 8. **Smaller conversions.** Auto-PiP occlusion, the playback-controls dispatcher, PiP captions over a Parc
    mojom bound to a session token, the decodeAudioData hook (measured first), and WebPreferences fields over
    a Parc mojom, whose first value must arrive before any media plays.

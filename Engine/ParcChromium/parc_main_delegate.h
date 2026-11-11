@@ -40,11 +40,13 @@ class ParcMainDelegate final : public ChromeMainDelegate {
       content::MainFunctionParams main_function_params) override;
   content::ContentClient* CreateContentClient() override;
   content::ContentBrowserClient* CreateContentBrowserClient() override;
+  content::ContentGpuClient* CreateContentGpuClient() override;
   content::ContentRendererClient* CreateContentRendererClient() override;
   content::ContentUtilityClient* CreateContentUtilityClient() override;
 
   const raw_ptr<NativeApplication> application_;
   ParcContentClient content_client_;
+  std::unique_ptr<ParcContentGpuClient> gpu_client_;
   std::unique_ptr<ParcContentRendererClient> renderer_client_;
   std::unique_ptr<content::BrowserMainRunner> browser_runner_;
 };
