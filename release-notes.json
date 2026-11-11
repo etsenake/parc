@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "version": "2.0.0",
+      "build": 31,
+      "date": "2026-11-11",
+      "changes": [
+        {
+          "type": "docs",
+          "scope": "engine",
+          "summary": "Plug Parc's engine into Chromium's own hooks so new Chromium versions land fast",
+          "breaking": true
+        },
+        {
+          "type": "fix",
+          "scope": "media",
+          "summary": "Stop a closing protected video from walking off with another video's speaker icon",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "1.13.0",
       "build": 30,
       "date": "2026-11-11",

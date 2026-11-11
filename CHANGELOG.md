@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0 (2026-11-11)
+
+### Heads up
+
+- **engine:** Plug Parc's engine into Chromium's own hooks so new Chromium versions land fast
+
+### Fixed
+
+- **media:** Stop a closing protected video from walking off with another video's speaker icon
+
 ## 1.13.0 (2026-11-11)
 
 ### New
