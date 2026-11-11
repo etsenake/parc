@@ -40,6 +40,7 @@ class RenderViewContextMenu;
 class SadTab;
 class SessionID;
 class StartupData;
+class TabStripModel;
 class UnloadController;
 struct BrowserWindowCreateParams;
 struct BrowserWindowDeleter;
@@ -82,8 +83,13 @@ class SSLCertRequestInfo;
 class X509Certificate;
 }
 
+namespace tabs {
+class TabInterface;
+}
+
 namespace ui {
 class BaseWindow;
+class ColorProvider;
 class ColorProviderSource;
 class DialogModel;
 }
@@ -276,6 +282,19 @@ using OpenedBrowserCreator =
                                 BrowserWindowCreateParams params);
 void SetNavigatorBrowserCreator(OpenedBrowserCreator creator);
 void SetDevToolsBrowserCreator(OpenedBrowserCreator creator);
+
+// chrome/browser/ui/browser_tabstrip.cc. Parc's AddTabAt route keeps its
+// address-bar transition bits; unhooked builds retain Chromium's typed value.
+void SetAddTabTransition(ui::PageTransition (*transition)());
+
+// chrome/browser/ui/browser_ui_controller/browser_ui_controller.cc. Native
+// contents can start loading after delegation but before tab-strip insertion.
+void SetTabUIUpdateGate(
+    bool (*allowed)(TabStripModel&, tabs::TabInterface&));
+
+// chrome/browser/ui/tabs/tab_strip_api/tab_strip_model_impl/
+// tab_strip_model_adapter_impl.cc. Native Browsers can genuinely be empty.
+void SetEmptyTabColorProvider(const ui::ColorProvider* (*provider)());
 
 // chrome/browser/ui/views/frame/browser_window_factory.cc; a null window keeps
 // Chrome's.

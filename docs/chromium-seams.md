@@ -326,6 +326,13 @@ point, before profile and incognito policy. The hook replaces only the URL; requ
 initiator and callback remain on the same `NavigateParams`. Chromium’s navigator no longer includes
 Parc or carries the internal-address build dependency.
 
+Three tab-strip details use implementation-only hooks. `AddTabAt` gets Parc’s typed, from-address-bar
+transition from owned policy. Synchronous loading UI asks Parc whether the delegated tab has reached its
+strip yet; moving that check later would miss the early load and attaching the delegate later would change
+lifetime ordering. The tab-strip API asks Parc for its native-theme color provider only when a Browser is
+genuinely empty, without inserting a dummy tab or disconnecting the API. Unhooked Chromium keeps all three
+of its original paths.
+
 These remaining browser patches preserve private implementation behavior or keep
 required build inputs. Declaration-only changes can move separately from the
 implementation they describe:

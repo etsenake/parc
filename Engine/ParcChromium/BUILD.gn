@@ -282,6 +282,7 @@ source_set("browser") {
     "//chrome/browser/ui/side_panel",
     "//chrome/browser/ui/side_panel:side_panel_views_dependent",
     "//chrome/browser/ui/tab_sharing",
+    "//chrome/browser/ui/tabs:tab_strip",
     "//components/content_settings/core/common",
     "//chrome/browser/ui/thumbnails",
     "//chrome/browser/ui/views/eye_dropper",
@@ -321,11 +322,13 @@ source_set("browser") {
     "//ui/actions",
     "//ui/base/clipboard",
     "//ui/base/data_transfer_policy",
+    "//ui/color",
     "//ui/compositor",
     "//ui/content_accelerators",
     "//ui/display",
     "//ui/gfx/codec",
     "//ui/menus",
+    "//ui/native_theme",
     "//ui/webui/resources",
   ]
 

@@ -14,11 +14,13 @@
 #include "chrome/browser/chrome_browser_main_mac.h"
 #include "chrome/browser/metrics/chrome_feature_list_creator.h"
 #include "chrome/browser/startup_data.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiler/main_thread_stack_sampling_profiler.h"
 #include "components/prefs/pref_service.h"
+#include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
 #include "parc/chromium_hooks.h"
@@ -30,6 +32,8 @@
 #include "chrome/utility/chrome_content_utility_client.h"
 #include "mojo/public/cpp/bindings/service_factory.h"
 #include "parc/importer/import_service.h"
+#include "ui/color/color_provider_manager.h"
+#include "ui/native_theme/native_theme.h"
 
 namespace parc {
 namespace {
@@ -47,6 +51,19 @@ std::unique_ptr<ChromeBrowserMainParts> CreateMacMainParts(
 }
 bool UsesNativeStartup() {
   return true;
+}
+ui::PageTransition NativeAddTabTransition() {
+  return static_cast<ui::PageTransition>(
+      ui::PAGE_TRANSITION_TYPED | ui::PAGE_TRANSITION_FROM_ADDRESS_BAR);
+}
+bool NativeTabUIUpdateAllowed(TabStripModel& model,
+                              tabs::TabInterface& tab) {
+  return model.GetIndexOfTab(&tab) != TabStripModel::kNoTab;
+}
+const ui::ColorProvider* NativeEmptyTabColorProvider() {
+  return ui::ColorProviderManager::Get().GetColorProviderFor(
+      ui::NativeTheme::GetInstanceForNativeUi()->GetColorProviderKey(
+          /*custom_theme=*/nullptr));
 }
 ui::ResourceBundle::Delegate* NativeResourceBundle(void* context) {
   return context
@@ -82,6 +99,9 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
   parc_hooks::SetNavigatorURLRewriter(&CanonicalInternalURL);
   parc_hooks::SetNavigatorContentsCreated(&NativeBrowser::OnWebContentsCreated);
   parc_hooks::SetNavigatorBrowserCreator(&CreateBrowserWindowFrom);
+  parc_hooks::SetAddTabTransition(&NativeAddTabTransition);
+  parc_hooks::SetTabUIUpdateGate(&NativeTabUIUpdateAllowed);
+  parc_hooks::SetEmptyTabColorProvider(&NativeEmptyTabColorProvider);
   parc_hooks::SetDevToolsBrowserCreator(&CreateBrowserWindowFrom);
   parc_hooks::SetNativeBrowserWindowFactory(&NativeBrowser::CreateWindow);
   parc_hooks::SetNativeBrowserWindowFeatures(
