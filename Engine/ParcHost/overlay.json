@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 680,
+  "version": 681,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -1694,12 +1694,12 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_client.h",
       "target": "content/renderer/media/fairplay/fairplay_renderer_client.h",
-      "sha256": "b87d757782fd7a0104a13d3fbaf5bf3a7df9dcbd8e66b40151e2a2fde1b2c83b"
+      "sha256": "b2f98db4d72be819953323d6d81be08cbcf04b01fb741ca32b03c1e57f38fda1"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_client.cc",
       "target": "content/renderer/media/fairplay/fairplay_renderer_client.cc",
-      "sha256": "f34c786401f5e0ba260613042af79d3bb2a85ab1e9e948fc0db057c57d2a29a6"
+      "sha256": "221142fd1a64330fb0be3f1635d31cf1f9731a9ee85ac4bff19db60574081645"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/fairplay_renderer_client_factory.h",
@@ -1764,12 +1764,12 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_renderer.h",
       "target": "content/renderer/media/fairplay/native_hls_renderer.h",
-      "sha256": "9927cedc83bf50636b856d23a4e0ffb7b0828c0903694d35878f6601f7a241e5"
+      "sha256": "d3f912bae4ef1337a5dcba1c5a2378f4faeeb19f004ef96ca7d2225ddffae5ba"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_renderer.cc",
       "target": "content/renderer/media/fairplay/native_hls_renderer.cc",
-      "sha256": "cda169fa2aa8fdff8fb0b8560a028469a26cb9a918e91e22260e378be2bd40aa"
+      "sha256": "b6281f0797c41c9d5afbce1e617e0b842da47241c3ce6d4869b7f2bc03964212"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/native_hls_renderer_factory.h",
@@ -2160,6 +2160,11 @@
       "source": "Engine/ParcChromium/generate_internal_extension.py",
       "target": "parc/generate_internal_extension.py",
       "sha256": "d411a62b37dfd1d168322672d19ce4cef220ce8c55e5658aec681cd2f40fd02f"
+    },
+    {
+      "source": "Engine/ParcNative/fairplay_chromium/parc_renderer_extensions.h",
+      "target": "media/base/parc_renderer_extensions.h",
+      "sha256": "6d4a8a768bbd7d9efd9ef6e237722c4bddbfd7a985afd693a143d4dbf67cfb4c"
     }
   ],
   "patches": [
@@ -3182,7 +3187,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/platform-codecs.patch",
-      "sha256": "4dc58699e344724cd3bb80bf4bce76ae4f0ea2bb11a7c9cead9fa167f052b253",
+      "sha256": "ec4906f86e0761b64262388fbadf1c23d0c196b5ec852cca0893b3c8fe089426",
       "files": [
         {
           "target": "media/BUILD.gn",
@@ -3207,7 +3212,7 @@
         {
           "target": "media/renderers/audio_renderer_impl.cc",
           "before_sha256": "d8c6991ce143092cbc1e954290ecb7531511085c1e48455c4783d4219b893f51",
-          "after_sha256": "9d0f0337357c30dfa0a799366dc3e5369f22f14a23d9ca43793fbb22f79020f1"
+          "after_sha256": "d5ecd206bd089d8671337400e8aca8cea4d2c3ac550495ab79a5d15d5b002456"
         },
         {
           "target": "third_party/blink/renderer/platform/peerconnection/rtc_video_decoder_adapter.cc",
@@ -3569,7 +3574,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "b21bce8fc6a3252958d0c911208a1c16ba4f5f789374daf83e1a2d1703364c10",
+      "sha256": "d4a665f6ef89f2675d80bebbd21b4e2f34772485b30caf17e0473e1764e2e749",
       "files": [
         {
           "target": "components/cdm/renderer/external_clear_key_key_system_info.cc",
@@ -3659,17 +3664,17 @@
         {
           "target": "media/base/pipeline_impl.cc",
           "before_sha256": "ea503b9ce7daeaa8d952b0621bca7f8d42b7769fab798cd1cb66fdcf8eda146d",
-          "after_sha256": "e2ec33f4c82438e740732d915e4d076d8efa6c52ab914bf2415b4ae7b912d992"
+          "after_sha256": "4d508c27f0f3d6c9b4cc1357297b42fcf9687c140784919414b39acbc508e5db"
         },
         {
           "target": "media/base/renderer.cc",
           "before_sha256": "082555d7b0efc84eb8736e9d2aa2c1555746e5f7f35ed9c9e0eda5ec2c68fd16",
-          "after_sha256": "a71514f06d554f0bdc5f5e2ecc9bf90a6db7ea66d2c1c5d079ad1997fb24dc1a"
+          "after_sha256": "07ae34f9b9693fb2f5704f1963c3c0d359aae06c68dabf0fb272722ce5a47abc"
         },
         {
           "target": "media/base/renderer.h",
           "before_sha256": "22e0fceeebdbdd863f23618420e3ce629631ec77ef9bcd8fd6b839172df9070d",
-          "after_sha256": "a6325f14e19eab154a6e3ae2bd73045d1921a0d72c8fe334ad6d3a92a6d74d30"
+          "after_sha256": "106b36358288588c5afe96e929c9376971a661aaf4dddb30f071717e881dc813"
         },
         {
           "target": "media/cdm/cdm_type_conversion.cc",
@@ -4074,7 +4079,7 @@
         {
           "target": "media/base/pipeline.h",
           "before_sha256": "d9cde130ef41659fed269dd558a2fad7966178d84fb93f7fc81b8b52a11a97c8",
-          "after_sha256": "52d488f304a6be3ccab79f64f593091a53d1ead7af9af14dc2877d15e4bed7fd"
+          "after_sha256": "5d5235c97724478bc105cb0cf8d2e80b514f9345346f4faba8dd44c2d64146a6"
         },
         {
           "target": "media/base/pipeline_impl.h",
@@ -4174,12 +4179,12 @@
         {
           "target": "media/renderers/renderer_impl.h",
           "before_sha256": "3cae65f347f7c8ec7eae2b976734f908ad3fd6b5524643c90d058ca6f67ba54a",
-          "after_sha256": "cccf9601cc72cf578b936f90adca6cfa8cccde29392570b01f84becbefd1f8c1"
+          "after_sha256": "afc1183a75d0be71c99e593c9bd9ef12010c210243f48f5df31af0a97cdc9ac6"
         },
         {
           "target": "media/renderers/renderer_impl.cc",
           "before_sha256": "9253fa0a2c9c32996ec5b3746d052e7b940ef7d8c670cd4365636f7557f055de",
-          "after_sha256": "ee19a083245eaf77b20e665169d45479a393bdd4f10fe79a0063e50dc7a0c34d"
+          "after_sha256": "d90b81bacc6f97aa9bfccefaa63fed526bc2e708eaad0e22082e831a549566c4"
         },
         {
           "target": "media/renderers/renderer_impl_unittest.cc",
@@ -4189,7 +4194,7 @@
         {
           "target": "media/base/video_renderer.h",
           "before_sha256": "7e6acba3b5003752bfef0789ce06644b6e5d07745a614008fe1d0c03697ca04b",
-          "after_sha256": "113c97017d2142a943ab4af1d3d406c434d3ec6e0461cee5efdd63d1c0e6b497"
+          "after_sha256": "008570f40462b41ced76688bcd7ff604fc6380fe33e8609a00fb797ed91b004a"
         },
         {
           "target": "media/base/wall_clock_time_source.cc",
@@ -4199,17 +4204,17 @@
         {
           "target": "media/base/mock_filters.h",
           "before_sha256": "176cb5b1556b7f6acf46544a8971f8f18f5db028174624a1a9cf4e6a17c09860",
-          "after_sha256": "f71893d885b42c663bc5b2d5b9b70e39328fb7aa44580764dee6e8c4bee555e7"
+          "after_sha256": "2f43a535e69a9a9fe03c333e88f82d88f1b667ba1e831b11980df1f1646c83f1"
         },
         {
           "target": "media/renderers/video_renderer_impl.h",
           "before_sha256": "257350867ae8369aae0646a6db429cfb2a5440d4fb8b674514dbe8d02a6e5b85",
-          "after_sha256": "e436aeed8b48922110dbfaa82d17b48a4b3dfcfb501cc724dce537d53aa9adad"
+          "after_sha256": "2aa443215d424951af745a2335d48bf68689ba69d8bf2f2351165f1d12e1031e"
         },
         {
           "target": "media/renderers/video_renderer_impl.cc",
           "before_sha256": "075c429d49eae6f1d5c79be4a176dbf46571d9c1a03d268ea409a313d47dbb2c",
-          "after_sha256": "477c499492eaeca0f1da9ed806b75a40c0d9cb2641d839bcef7a5b0fbb6efc2b"
+          "after_sha256": "8930aa5c044a08da25ee67af316d0908caac5911ec604f84fff271fc686742e2"
         },
         {
           "target": "media/renderers/video_renderer_impl_unittest.cc",
@@ -4314,12 +4319,12 @@
         {
           "target": "media/base/audio_renderer.h",
           "before_sha256": "3082fd4cc7496de65239a7450169757ddf98996948b7273d800f45933d096015",
-          "after_sha256": "6c721f7272094b07089755bd25f1106ee7333f0b038f4d4f7d8737f6b1e997ef"
+          "after_sha256": "5a670e795e52946b0e1abf94cbdaed42893094c18e22d5804d18ab4de84cdee5"
         },
         {
           "target": "media/renderers/audio_renderer_impl.h",
           "before_sha256": "a6c9c386fc1559b2bfc4b3671ff119cf9944228323393b6296afaec22515f98c",
-          "after_sha256": "a3e41bdaae3b1a50565128a2c58c99d368929f980014ae884c86b0b7f57d1d4a"
+          "after_sha256": "6297b36aa0cf4869e6615848f0dfbe3a293563723c48933d198734dc0e22141a"
         },
         {
           "target": "media/renderers/audio_renderer_impl_unittest.cc",
@@ -4535,6 +4540,16 @@
           "target": "media/base/audio_decoder_config.cc",
           "before_sha256": "c45032c8d0372c7ab1e5fb9751c40a42b82965d0e20e040a98a95b47f647e76b",
           "after_sha256": "dae5649647e4299a1321a7a689b9edf8d4e239fc8ccd66ab17212de6164f6898"
+        },
+        {
+          "target": "media/base/audio_renderer.cc",
+          "before_sha256": "5e8c26b031e714bf30e0fedbb382b9a79e516db753a071cde215ab289f542d04",
+          "after_sha256": "712d9dbb9353bccd7b28dd3974cfa7bcda7b07f094bee4d64d345fbb3185d7c3"
+        },
+        {
+          "target": "media/base/video_renderer.cc",
+          "before_sha256": "dd9202ccbfbd63e22a72111a1574ce0e5af61501569974e02a850b9663b00991",
+          "after_sha256": "9a408bbad7610a15af7eea1db24b30e6940163e1f5971378e3dd2929393d8ce9"
         },
         {
           "target": "media/mojo/mojom/audio_decoder_config_mojom_traits.h",
