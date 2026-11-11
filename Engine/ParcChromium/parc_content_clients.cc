@@ -17,6 +17,8 @@
 #include "chrome/renderer/process_state.h"
 #include "content/public/browser/browser_url_handler.h"
 #include "content/public/common/content_switches.h"
+#include "media/base/audio_codecs.h"
+#include "media/base/media_types.h"
 #include "parc/chromium_hooks.h"
 #include "parc/native/file_dialog.h"
 #include "parc/native/http_auth.h"
@@ -197,5 +199,15 @@ ParcContentRendererClient::GetSupportedKeySystems(
             cb.Run(std::move(key_systems));
           },
           !process_state::IsIncognitoProcess(), std::move(cb)));
+}
+
+bool ParcContentRendererClient::IsDecoderSupportedAudioType(
+    const media::AudioType& type) {
+  // AudioToolbox decodes Apple Lossless; Chromium's default list has no
+  // decoder for it.
+  if (type.codec == media::AudioCodec::kALAC) {
+    return !type.spatial_rendering;
+  }
+  return ChromeContentRendererClient::IsDecoderSupportedAudioType(type);
 }
 }  // namespace parc

@@ -275,6 +275,7 @@ source_set("browser") {
     "//components/tabs:public",
     "//components/translate/core/browser:translate_pref_names",
     "//components/webdata/common",
+    "//media",
     "//services/media_session/public/cpp",
     "//sql",
     "//ui/accelerated_widget_mac",

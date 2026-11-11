@@ -1712,21 +1712,7 @@
        return false;
    }
  }
-@@ -494,10 +498,12 @@
-     case AudioCodec::kAMR_NB:
-     case AudioCodec::kAMR_WB:
-     case AudioCodec::kGSM_MS:
--    case AudioCodec::kALAC:
-     case AudioCodec::kMpegHAudio:
-     case AudioCodec::kUnknown:
-       return false;
-+    case AudioCodec::kALAC:
-+      // Parc: AudioToolbox decodes Apple Lossless on macOS.
-+      return BUILDFLAG(IS_MAC);
-     case AudioCodec::kIAMF:
-       return IsIamfAudioDecodingSupported();
-     case AudioCodec::kDTS:
-@@ -548,6 +554,7 @@
+@@ -548,6 +552,7 @@
      case VideoCodec::kVC1:
      case VideoCodec::kMPEG2:
      case VideoCodec::kMPEG4:
@@ -1734,7 +1720,7 @@
        return false;
    }
  }
-@@ -574,6 +581,7 @@
+@@ -574,6 +579,7 @@
      case media::VideoCodec::kVC1:
      case media::VideoCodec::kMPEG2:
      case media::VideoCodec::kMPEG4:

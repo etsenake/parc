@@ -61,6 +61,7 @@ class ParcContentRendererClient final : public ChromeContentRendererClient {
   std::unique_ptr<media::KeySystemSupportRegistration> GetSupportedKeySystems(
       content::RenderFrame* render_frame,
       media::GetSupportedKeySystemsCB cb) override;
+  bool IsDecoderSupportedAudioType(const media::AudioType& type) override;
 };
 }  // namespace parc
 
