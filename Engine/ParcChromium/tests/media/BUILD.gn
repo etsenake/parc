@@ -7,6 +7,7 @@ source_set("media_tests") {
   visibility = [ "//media:*" ]
   testonly = true
   sources = [
+    "audio_renderer_impl_test.cc",
     "audio_toolbox_amr_test.cc",
     "box_definitions_test.cc",
     "chunk_demuxer_test.cc",
