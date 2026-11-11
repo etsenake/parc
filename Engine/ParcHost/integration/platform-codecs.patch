@@ -1271,7 +1271,8 @@
 @@ -977,6 +1106,138 @@
        was_played_with_user_activation_and_high_media_engagement;
  }
- 
+-
++
 +ParcAudioRendererExtension* AudioRendererImpl::GetParcExtension() {
 +  return this;
 +}

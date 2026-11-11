@@ -106,16 +106,20 @@
 +++ b/media/base/media_track.cc
 @@ -5,6 +5,7 @@
  #include "media/base/media_track.h"
- 
+-
++
  #include "base/notreached.h"
 +#include "media/base/parc_inband_tracks.h"
- 
+-
++
  namespace media {
- 
+-
++
 @@ -144,4 +145,91 @@
    update_.Run(track, state);
  }
- 
+-
++
 +ParcInbandTextTrack::ParcInbandTextTrack() = default;
 +ParcInbandTextTrack::ParcInbandTextTrack(const ParcInbandTextTrack&) = default;
 +ParcInbandTextTrack::ParcInbandTextTrack(ParcInbandTextTrack&&) = default;

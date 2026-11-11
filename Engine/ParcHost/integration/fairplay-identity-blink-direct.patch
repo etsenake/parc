@@ -1990,7 +1990,8 @@
 +
  void HTMLMediaElement::DidMoveToNewDocument(Document& old_document) {
    DVLOG(3) << "didMoveToNewDocument(" << *this << ")";
- 
+-
++
 @@ -524,6 +613,10 @@
        GetDocument().GetTaskRunner(TaskType::kInternalMedia));
    removed_from_document_timer_.MoveToNewTaskRunner(
@@ -3294,7 +3295,8 @@
 -
 +
 @@ -2725,36 +3534,187 @@
- 
+-
++
    // 10 - Queue a task to fire a simple event named seeking at the element.
    ScheduleNamedEvent(event_type_names::kSeeking);
 -
@@ -3525,7 +3527,8 @@
 -
 +
 @@ -2897,7 +3872,58 @@
- 
+-
++
    ReportCurrentTimeToMediaSource();
  }
 -
@@ -5144,7 +5147,8 @@
 +
  void HTMLMediaElement::ContextDestroyed() {
    DVLOG(3) << "contextDestroyed(" << static_cast<void*>(this) << ")";
- 
+-
++
 @@ -4409,6 +6482,8 @@
    ClearMediaPlayer();
    ready_state_ = kHaveNothing;
@@ -6229,7 +6233,8 @@
 +++ b/third_party/blink/renderer/platform/media/media_player_client.h
 @@ -34,12 +34,14 @@
  #include <memory>
- 
+-
++
  #include "base/time/time.h"
 +#include "media/base/parc_inband_tracks.h"
  #include "third_party/blink/public/platform/web_common.h"
@@ -6245,7 +6250,8 @@
  }
 @@ -56,7 +58,8 @@
  class WebMediaSource;
- 
+-
++
  class PLATFORM_EXPORT MediaPlayerClient : public WebMediaPlayerClient,
 -                                          public media::TrackManager {
 +                                          public media::TrackManager,
@@ -15389,7 +15395,8 @@
 --- a/third_party/blink/renderer/modules/media_controls/media_controls_impl_test.cc
 +++ b/third_party/blink/renderer/modules/media_controls/media_controls_impl_test.cc
 @@ -6,15 +6,21 @@
- 
+-
++
  #include <limits>
  #include <memory>
 -
@@ -15422,7 +15429,8 @@
 @@ -90,17 +97,30 @@
    display::ScreenInfo screen_info_;
  };
- 
+-
++
 -class MockWebMediaPlayerForImpl : public EmptyWebMediaPlayer {
 +class MockWebMediaPlayerForImpl : public EmptyWebMediaPlayer,
 +                                  public ParcWebMediaPlayerExtension {
