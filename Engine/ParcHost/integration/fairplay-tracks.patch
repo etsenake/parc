@@ -368,6 +368,14 @@
    "track/html_track_element.cc",
    "track/html_track_element.h",
    "track/loadable_text_track.cc",
+@@ -792,6 +800,7 @@
+   "media/autoplay_uma_helper_test.cc",
+   "media/html_media_element_event_listeners_test.cc",
+   "media/html_media_element_test.cc",
++  "media/parc_media_element_test.cc",
+   "media/html_video_element_persistent_test.cc",
+   "media/html_video_element_test.cc",
+   "media/lazy_load_media_observer_test.cc",
 --- a/third_party/blink/renderer/core/html/track/audio_track.cc
 +++ b/third_party/blink/renderer/core/html/track/audio_track.cc
 @@ -13,11 +13,15 @@

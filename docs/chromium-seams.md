@@ -397,7 +397,10 @@ state still sits on the element. The video element's two Parc hooks became a
 type check, which is exact because HTMLVideoElement is final. The
 supplement's timeupdate throttle uses WebKit's 250 ms, which is also
 Chromium's progress-timer interval; if Chromium changes its interval, the
-Safari path keeps WebKit's.
+Safari path keeps WebKit's. Its tests live in a Parc test file with their own
+copy of Chromium's element fixture. Chromium's element test is its own again,
+apart from two empty handlers for the messages Parc added to the player
+observer interface, which its observer must implement.
 
 MediaCapabilities answers Safari-identity documents as WebKit's `decodingInfo`
 does. Its HEVC and Dolby Vision codec-string parsers, the video rules over

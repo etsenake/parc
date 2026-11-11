@@ -158,7 +158,7 @@ class CORE_EXPORT ParcMediaElement final
 
  private:
   friend class HTMLMediaElement;
-  friend class HTMLMediaElementTest;
+  friend class ParcMediaElementTest;
 
   // Tells the element when its page's visibility changes, while playback is
   // held for the back/forward cache or its player belongs to another page's
