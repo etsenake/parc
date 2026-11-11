@@ -60,3 +60,14 @@
    if (is_mac) {
 +    deps += [ "//chrome/browser/parc_tests/file_selector:unit_tests" ]
      sources += [
+--- a/chrome/browser/media/BUILD.gn
++++ b/chrome/browser/media/BUILD.gn
+@@ -143,4 +143,8 @@
+       "//content/public/browser",
+       "//content/test:test_support",
+       "//media/mojo/mojom:remoting",
+     ]
++
++    if (is_mac) {
++      deps += [ "//chrome/browser/media/parc_tests:unit_tests" ]
++    }
