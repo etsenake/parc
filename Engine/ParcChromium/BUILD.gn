@@ -244,6 +244,7 @@ source_set("browser") {
     "//chrome/browser/ui/views/eye_dropper",
     "//chrome/browser/ui/views/global_media_controls",
     "//chrome/browser/ui/views/media_router",
+    "//chrome/browser/ui/login",
     "//chrome/browser/ui/views/tab_sharing",
     "//chrome/common:mojo_bindings",
     "//parc/importer:interfaces",
