@@ -1,0 +1,77 @@
+--- a/chrome/browser/autocomplete/BUILD.gn
++++ b/chrome/browser/autocomplete/BUILD.gn
+@@ -68,7 +68,7 @@
+     "shortcuts_backend_factory.cc",
+     "zero_suggest_cache_service_factory.cc",
+   ]
+-  deps = [
++  deps = [ "//parc/native:native_internal_urls_api",
+     ":aim_eligibility_service",
+     ":autocomplete",
+     "//chrome/app:command_ids",
+--- a/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc
++++ b/chrome/browser/autocomplete/chrome_autocomplete_provider_client.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+-
++
+ #include "chrome/browser/autocomplete/chrome_autocomplete_provider_client.h"
++#include "parc/native/native_internal_urls.h"
+-
++
+ #include <stddef.h>
+-
++
+@@ -429,7 +430,7 @@
+ std::string
+ ChromeAutocompleteProviderClient::GetEmbedderRepresentationOfAboutScheme()
+     const {
+-  return content::kChromeUIScheme;
++  return parc::kInternalScheme;
+ }
+-
++
+ std::vector<std::u16string> ChromeAutocompleteProviderClient::GetBuiltinURLs() {
+@@ -467,6 +468,8 @@
+   builtins_to_provide.push_back(chrome::kChromeUISettingsURL16);
+ #endif
+   builtins_to_provide.push_back(chrome::kChromeUIVersionURL16);
++  for (auto& value : builtins_to_provide)
++    value = base::UTF8ToUTF16(parc::PublicInternalURL(GURL(value)).spec());
+   return builtins_to_provide;
+ }
+-
++
+--- a/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.cc
++++ b/chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+-
++
+ #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
++#include "parc/native/native_internal_urls.h"
+-
++
+ #include "base/notreached.h"
+ #include "base/strings/string_util.h"
+@@ -65,6 +66,8 @@
+ metrics::OmniboxInputType
+ ChromeAutocompleteSchemeClassifier::GetInputTypeForScheme(
+     const std::string& scheme) const {
++  if (base::EqualsCaseInsensitiveASCII(scheme, parc::kInternalScheme))
++    return metrics::OmniboxInputType::URL;
+   if (scheme.empty()) {
+     return metrics::OmniboxInputType::EMPTY;
+   }
+--- a/content/public/common/url_utils.cc
++++ b/content/public/common/url_utils.cc
+@@ -29,7 +29,7 @@
+ namespace {
+-
++
+ bool IsWebUIScheme(std::string_view scheme) {
+-  return scheme == content::kChromeUIScheme ||
++  return scheme == "parc" || scheme == content::kChromeUIScheme ||
+          scheme == content::kChromeUIUntrustedScheme ||
+          scheme == content::kChromeDevToolsScheme;
+ }

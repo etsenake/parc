@@ -6,7 +6,7 @@
 #include <optional>
 #include <vector>
 #include "base/functional/bind.h"
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "parc/native/native_internal_urls.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/strings/sys_string_conversions.h"

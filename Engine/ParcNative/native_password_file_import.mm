@@ -17,6 +17,7 @@
 #include "components/password_manager/services/csv_password/csv_password_parser_service.h"
 #include "components/prefs/pref_service.h"
 #import "native_appkit_host.h"
+#include "native_profiles.h"
 #import "native_import_internal.h"
 #include "native_password_file.h"
 
@@ -59,7 +60,7 @@ class Session final : public ProfileObserver, public password_manager::PasswordS
     close_observer_ = [NSNotificationCenter.defaultCenter addObserverForName:NSWindowWillCloseNotification
         object:window_ queue:nil usingBlock:^(NSNotification*) { if (auto self = weak.lock()) self->Cancel(); }];
     WithNativeProfile(path_, base::BindOnce([](std::weak_ptr<Session> weak, Profile* profile,
-        CefRefPtr<CefRequestContext> context, NSError* error) {
+        parc::NativeProfileLeasePtr context, NSError* error) {
       auto self = weak.lock(); if (!self || self->finished_) return;
       if (error || !profile || !context || profile->IsOffTheRecord()) {
         self->Finish(PCNativeImportOutcomeFailed, error ?: importer::ImportError(@"The destination Profile is unavailable.")); return;
@@ -153,7 +154,7 @@ class Session final : public ProfileObserver, public password_manager::PasswordS
  private:
   bool ValidOwner() const {
     return !cancelled_ && window_ && window_.visible && profile_ && !profile_->IsOffTheRecord() &&
-        !profile_->ShutdownStarted() && NativeContextForProfile(*profile_) == context_;
+        !profile_->ShutdownStarted() && context_ && context_->profile() == profile_.get();
   }
   bool PasswordSavingEnabled() const {
     return profile_ && profile_->GetPrefs()->GetBoolean(password_manager::prefs::kCredentialsEnableService);
@@ -260,7 +261,7 @@ class Session final : public ProfileObserver, public password_manager::PasswordS
   id __strong close_observer_;
   std::shared_ptr<Session> lifetime_;
   base::WeakPtr<Profile> profile_;
-  CefRefPtr<CefRequestContext> context_;
+  parc::NativeProfileLeasePtr context_;
   scoped_refptr<password_manager::PasswordStoreInterface> store_;
   mojo::Remote<password_manager::mojom::CSVPasswordParser> parser_;
   std::vector<Credential> incoming_;

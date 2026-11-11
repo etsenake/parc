@@ -4,13 +4,13 @@ Browser/app launch is currently prohibited by [AGENTS.md](../../AGENTS.md).
 The runtime procedures below are retained for a future explicitly authorized
 run. Source/model checks do not grant that authorization.
 
-This focused AppKit application uses the **production** `parc_engine_initialize` → `parc_engine_run_message_loop` → genuine all-window close → idle callback → `parc_engine_shutdown_if_idle` lifecycle. Its default controller suite registers an actual supplied NSWindow and opens one real `PCNativePage` at the exact nonempty data-document URL shared by `runtime_driver.h`, the launcher and the driver. The document contains ordinary HTML controls, needs no external server, and remains the exact required URL across the real renderer crash/reload. It does not use `ChromeUnitTestSuite`, `TestingBrowserProcess`, `BrowserTaskEnvironment`, or a second `CefInitialize`.
+This focused AppKit application uses the **production** `parc_engine_initialize` → `parc_engine_run_message_loop` → genuine all-window close → idle callback → `parc_engine_shutdown_if_idle` lifecycle. Its default controller suite registers an actual supplied NSWindow and opens one real `PCNativePage` at the exact nonempty data-document URL shared by `runtime_driver.h`, the launcher and the driver. The document contains ordinary HTML controls, needs no external server, and remains the exact required URL across the real renderer crash/reload. It does not use `ChromeUnitTestSuite`, `TestingBrowserProcess`, `BrowserTaskEnvironment`, or a second engine startup.
 
-The internal driver lives in CEF's existing `libcef_test_support` boundary, which already links CEF's internal test helpers into its framework. No new GN argument, source-lock variant or product UI is added. The driver refuses an ordinary app process: it requires the explicit harness switch, Chromium's official `--use-mock-keychain`, exact `runtime-profile` path, and owned disposable-root marker. The launcher and executable separately reject profile reuse before startup. This is a test seam, not a web-accessible API.
+The internal driver lives in Parc's `//parc/tests/parc_native_runtime:driver` boundary, which already links the internal test driver into its framework. No new GN argument, source-lock variant or product UI is added. The driver refuses an ordinary app process: it requires the explicit harness switch, Chromium's official `--use-mock-keychain`, exact `runtime-profile` path, and owned disposable-root marker. The launcher and executable separately reject profile reuse before startup. This is a test seam, not a web-accessible API.
 
 ## Optional extension-action regression
 
-`--suite extension-actions` uses this same production-lifecycle application with two actual tabs in one disposable Profile/Browser. The launcher owns an ephemeral `127.0.0.1` HTTP origin serving the packaged test documents. The actual `UnpackedInstaller` loads a bundled MV3 fixture with only `activeTab`; the production native action bridge supplies snapshots, pin mutations and action dispatch. No test grants, fake Browser/Profile, hidden BrowserView or second CEF owner are introduced.
+`--suite extension-actions` uses this same production-lifecycle application with two actual tabs in one disposable Profile/Browser. The launcher owns an ephemeral `127.0.0.1` HTTP origin serving the packaged test documents. The actual `UnpackedInstaller` loads a bundled MV3 fixture with only `activeTab`; the production native action bridge supplies snapshots, pin mutations and action dispatch. No test grants, fake Browser/Profile, hidden BrowserView or second engine owner are introduced.
 
 The disposable profile first enables developer mode through the same `SetDeveloperModeForProfile` helper as the normal Extensions UI. A managed preference is refused; exact page/Profile identity and the effective setting are rechecked afterward. The genuine installer and its policy decisions remain authoritative. Separate assertions require the same installed object and its actual enabled-registry entry before any action checks.
 
@@ -42,7 +42,7 @@ presentation and the default recovery/auth suite are separate fixture scopes.
 
 ## Optional native video-PiP controller regression
 
-`--suite video-pip` reuses this CEF application, its real supplied NSWindow,
+`--suite video-pip` reuses this Chromium application, its real supplied NSWindow,
 Profile/Browser/tab and the production native PiP factory. The app links the
 same `PCVideoPiPPresenter` source as Parc. The launcher serves the package-bound
 upstream `media/test/data/bear.webm` from an ephemeral loopback origin with HTTP
@@ -75,7 +75,7 @@ activation and Promise assertions, not a physical user gesture.
 python3 tests/NativeRuntime/run.py /new/output/runtime-development/parc_native_runtime_tests.app --artifacts /existing/test-artifacts --deadline 300 --suite video-pip
 ```
 
-The original Chrome browser fixtures require valid CEF initialization; their
+The original Chrome browser fixtures require valid Chromium initialization; their
 `InProcessBrowserTest` startup assumptions do not supply this application's
 production lifecycle. The seven controller assertions cover their named
 video-PiP operations; the
@@ -89,7 +89,7 @@ Before the authentication cases, the driver invokes the real NSApplication
 newly forcing advanced or screen-reader flags, waits for the live renderer tree,
 and walks the actual attached AppKit accessibility children to `AXWebArea`.
 The detach case also checks that the same page's native tree survives reattachment.
-After genuine CefShutdown, the app queries its role again; this must not recreate
+After genuine engine shutdown, the app queries its role again; this must not recreate
 an engine accessibility scope after shutdown. Both AX markers are required
 by the launcher. A timeout needs its stage diagnostics to distinguish document
 readiness, a missing engine AX root and native-child traversal.
@@ -130,7 +130,7 @@ synthetic event dispatch are used.
 
 The production native SadTab factory keeps Chromium156's genuine SadTabHelper
 classification, background-memory policy and reset lifecycle. Normal
-`FastShutdown` is not an error; launch failure retains the pinned CEF error
+`FastShutdown` is not an error; launch failure retains the pinned Chromium error
 route. Metadata and genuine errors use lifetime-checked non-nestable delivery.
 New navigation invalidates pending errors; metadata reads current state. The
 native shell's visible drawing acknowledgment and actual Retry action are
@@ -152,7 +152,9 @@ The challenge is **synthetic** and loopback-labelled; no request is sent to port
 
 ## Build closure
 
-Map `BUILD.gn`, `runtime_driver.h` and `runtime_driver.mm` to `//cef/tests/parc_native_runtime/`. The small contextual `cef/BUILD.gn` addition makes the existing macOS `libcef_test_support` depend on `:driver`. The driver uses production controller/core targets and `libcef_static`; it has **no** Chrome unit/browser-test runner dependency. There is no dependency back from `libcef_static` to this source set. Normal CEF framework generation/linking is still required after applying this source cohort.
+The overlay maps the runtime driver to `//parc/tests/parc_native_runtime`. It uses
+production controller targets and the direct engine startup; no alternate engine
+lock or helper recipe is supported.
 
 
 After the reviewed cohort is applied and the normal engine build completes:
@@ -164,9 +166,9 @@ python3 tests/NativeRuntime/package.py --engine-dir /absolute/chromium/src/out/R
 python3 tests/NativeRuntime/run.py /new/output/runtime-development/parc_native_runtime_tests.app --artifacts /existing/test-artifacts
 ```
 
-The packager refuses an active build, incomplete source seal, missing test exports, external runtime dependency or reused output. It retains copied Chromium resources, graphics/sandbox libraries, helper variants, exact dependency closure and source provenance. It publishes a fresh development directory containing `parc_native_runtime_tests.app`, sibling component dylibs and `runtime-package-report.json`; `.app` output arguments are rejected. The report distinguishes identical pre-sign engine copies from final signed bytes. Only copied app/libraries are signed, and no Keychain setting or system policy changes. Move this whole directory together. Helpers receive the standard CEF link-time RPATH needed for the sandbox-first load; engine load commands are never rewritten. Ad-hoc signing follows the production packager's explicit development entitlement policy.
+The packager refuses an active build, incomplete source seal, missing test exports, external runtime dependency or reused output. It retains copied Chromium resources, graphics/sandbox libraries, helper variants, exact dependency closure and source provenance. It publishes a fresh development directory containing `parc_native_runtime_tests.app`, sibling component dylibs and `runtime-package-report.json`; `.app` output arguments are rejected. The report distinguishes identical pre-sign engine copies from final signed bytes. Only copied app/libraries are signed, and no Keychain setting or system policy changes. Move this whole directory together. Helpers receive the standard Chromium link-time RPATH needed for the sandbox-first load; engine load commands are never rewritten. Ad-hoc signing follows the production packager's explicit development entitlement policy.
 
-The launcher imposes a 120-second outer deadline (the app uses 80 seconds, each controller case 15 seconds). Failure first cancels the test-owned handler and requests actual Browser close. If close or idle shutdown stalls, the outer deadline fails and terminates the test process group; it does not claim clean shutdown or prove every helper exited. Profiles and logs are retained. A default-suite success receipt requires all three unique cases, exit zero and the post-loop actual `CefShutdown` result. Optional suites require their own complete ordered markers, including all seven PiP case markers for `video-pip`; partial controller results do not pass another suite.
+The launcher imposes a 120-second outer deadline (the app uses 80 seconds, each controller case 15 seconds). Failure first cancels the test-owned handler and requests actual Browser close. If close or idle shutdown stalls, the outer deadline fails and terminates the test process group; it does not claim clean shutdown or prove every helper exited. Profiles and logs are retained. A default-suite success receipt requires all three unique cases, exit zero and the post-loop actual engine shutdown result. Optional suites require their own complete ordered markers, including all seven PiP case markers for `video-pip`; partial controller results do not pass another suite.
 
 `python3 tests/NativeRuntime/test_launcher.py` verifies the fresh-profile/result guards and actual loopback transport/hash/range behavior. It never runs Chromium and its success is not runtime browser coverage. The source checker verifies the full applied overlay and exact generated driver object/flags before syntax checking; it has no compatibility fallback and never invokes GN/Ninja.
 

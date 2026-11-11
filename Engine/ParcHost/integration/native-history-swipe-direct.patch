@@ -1,0 +1,188 @@
+--- a/chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.h
++++ b/chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.h
+@@ -19,6 +19,8 @@
+ - (instancetype)initWithRenderWidgetHost:
+     (content::RenderWidgetHost*)renderWidgetHost;
+-
++
++// Embedder lifetime cancellation, including an AppKit Magic Mouse tracker.
++- (void)cancelHistorySwiping;
+ - (BOOL)handleEvent:(NSEvent*)event;
+ - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item
+                       isValidItem:(BOOL*)valid;
+--- a/chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.mm
++++ b/chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.mm
+@@ -73,6 +73,7 @@
+ }
+-
++
+ - (void)dealloc {
++  [_historySwiper cancelHistorySwipe];
+   [_historySwiper setDelegate:nil];
+ }
+-
++
+@@ -133,6 +134,10 @@
+ // Handle an event. All incoming key and mouse events flow through this
+ // delegate method if implemented. Return YES if the event is fully handled, or
+ // NO if normal processing should take place.
++- (void)cancelHistorySwiping {
++  [_historySwiper cancelHistorySwipe];
++}
++
+ - (BOOL)handleEvent:(NSEvent*)event {
+   return [_historySwiper handleEvent:event];
+ }
+--- a/chrome/browser/renderer_host/chrome_render_widget_host_view_mac_history_swiper.h
++++ b/chrome/browser/renderer_host/chrome_render_widget_host_view_mac_history_swiper.h
+@@ -169,6 +169,9 @@
+ - (void)touchesCancelledWithEvent:(NSEvent*)event;
+ - (void)touchesEndedWithEvent:(NSEvent*)event;
+-
++
++// Ends both native touch and AppKit swipe tracking without navigation.
++- (void)cancelHistorySwipe;
++
+ // Designated initializer.
+ - (instancetype)initWithDelegate:(id<HistorySwiperDelegate>)delegate;
+-
++
+--- a/chrome/browser/renderer_host/chrome_render_widget_host_view_mac_history_swiper.mm
++++ b/chrome/browser/renderer_host/chrome_render_widget_host_view_mac_history_swiper.mm
+@@ -158,6 +158,11 @@
+   // Cumulative scroll delta since scroll gesture start. Only valid during
+   // scroll gesture handling. Only used to trigger Magic Mouse history swiping.
+   NSSize _mouseScrollDelta;
++
++  // AppKit retains its tracking block independently of the touch recognizer.
++  // Cancel its exact generation and visible overlay when the owner changes.
++  NSUInteger _mouseTrackingGeneration;
++  HistoryOverlayController* __strong _mouseHistoryOverlay;
+ }
+-
++
+ @synthesize delegate = _delegate;
+@@ -171,7 +176,7 @@
+ }
+-
++
+ - (void)dealloc {
+-  [self removeHistoryOverlay];
++  [self cancelHistorySwipe];
+ }
+-
++
+ - (BOOL)handleEvent:(NSEvent*)event {
+@@ -353,6 +358,9 @@
+ }
+-
++
+ - (void)cancelHistorySwipe {
++  ++_mouseTrackingGeneration;
++  [_mouseHistoryOverlay dismiss];
++  _mouseHistoryOverlay = nil;
+   [self removeHistoryOverlay];
+   _recognitionState = history_swiper::kCancelled;
+ }
+@@ -454,6 +462,11 @@
+       [[HistoryOverlayController alloc]
+           initForMode:isRightScroll ? kHistoryOverlayModeForward
+                                     : kHistoryOverlayModeBack];
++
++  [_mouseHistoryOverlay dismiss];
++  _mouseHistoryOverlay = historyOverlay;
++  const NSUInteger generation = ++_mouseTrackingGeneration;
++  __weak HistorySwiper* weakSelf = self;
+-
++
+   // The way this API works: gestureAmount is between -1 and 1 (float).  If
+   // the user does the gesture for more than about 30% (i.e. < -0.3 or >
+@@ -487,10 +500,20 @@
+                              max:1
+                     usingHandler:^(CGFloat gestureAmount, NSEventPhase phase,
+                                    BOOL isComplete, BOOL* stop) {
++                      HistorySwiper* owner = weakSelf;
++                      if (!owner || generation != owner->_mouseTrackingGeneration ||
++                          ![owner.delegate shouldAllowHistorySwiping]) {
++                        *stop = YES;
++                        [historyOverlay dismiss];
++                        if (owner && owner->_mouseHistoryOverlay == historyOverlay)
++                          owner->_mouseHistoryOverlay = nil;
++                        historyOverlay = nil;
++                        return;
++                      }
+                       if (phase == NSEventPhaseBegan) {
+                         [historyOverlay
+                             showPanelForView:
+-                                [self.delegate viewThatWantsHistoryOverlay]];
++                                [owner.delegate viewThatWantsHistoryOverlay]];
+                         return;
+                       }
+-
++
+@@ -506,7 +529,7 @@
+                       // `gestureAmount` obeys -[NSEvent
+                       // isDirectionInvertedFromDevice] automatically.
+                       if (ended) {
+-                        [self.delegate
++                        [owner.delegate
+                             navigateInDirection:isRightScroll
+                                                     ? history_swiper::kForwards
+                                                     : history_swiper::kBackwards
+@@ -515,6 +538,8 @@
+-
++
+                       if (ended || isComplete) {
+                         [historyOverlay dismiss];
++                        if (owner->_mouseHistoryOverlay == historyOverlay)
++                          owner->_mouseHistoryOverlay = nil;
+                         historyOverlay = nil;
+                       }
+                     }];
+--- a/chrome/browser/ui/cocoa/history_overlay_controller.mm
++++ b/chrome/browser/ui/cocoa/history_overlay_controller.mm
+@@ -128,7 +128,8 @@
+-
++
+ - (void)setProgress:(CGFloat)gestureAmount finished:(BOOL)finished {
+   DCHECK(self.view.superview);
+-  NSRect parentFrame = self.view.superview.frame;
++  NSRect parentFrame = self.view.superview.bounds;
++  const BOOL reduceMotion = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+   // When tracking the gesture, the height is constant and the alpha value
+   // changes from [0.25, 0.65].
+   CGFloat height = kShieldHeight;
+@@ -139,7 +140,7 @@
+   // When the gesture is very likely to be completed (90% in this case), grow
+   // the semicircle's height and lock the alpha to 0.75.
+   if (finished) {
+-    height += kShieldHeightCompletionAdjust;
++    if (!reduceMotion) height += kShieldHeightCompletionAdjust;
+     shieldAlpha = 0.75;
+   }
+-
++
+@@ -148,7 +149,8 @@
+   frame.size.height = height;
+   frame.origin.y = (NSHeight(parentFrame) / 2) - (height / 2);
+-
++
+-  CGFloat width = std::min(kShieldRadius * gestureAmount, kShieldRadius);
++  CGFloat width = reduceMotion ? (gestureAmount > 0 ? kShieldRadius : 0)
++      : std::min(kShieldRadius * gestureAmount, kShieldRadius);
+   if (_mode == kHistoryOverlayModeForward) {
+     frame.origin.x = NSMaxX(parentFrame) - width;
+   } else if (_mode == kHistoryOverlayModeBack) {
+@@ -167,6 +169,10 @@
+ }
+-
++
+ - (void)dismiss {
++  if (NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion) {
++    [self.view removeFromSuperview];
++    return;
++  }
+   const CGFloat kFadeOutDurationSeconds = 0.4;
+-
++
+   [NSAnimationContext beginGrouping];

@@ -1,8 +1,9 @@
 # Page-bound JavaScript dialogs
 
-This is a source-owned AppKit presenter and an adapter for the real pinned CEF
-runner interface. The canonical production native route selects Parc's platform
-delegate, which constructs this runner. The Objective-C facade and Swift shell use that independent engine path.
+This is a source-owned AppKit presenter and the page's own
+`content::JavaScriptDialogManager`. Each native page installs it before its
+first navigation, and the page's WebContents delegate returns it to content.
+The Objective-C facade and Swift shell use that independent engine path.
 
 ## Decisions
 
@@ -27,7 +28,7 @@ per-page and per-window contention, actual window close, page movement and
 detachment, balanced reattachment, cancellation reentry, terminal invalidation,
 reentrant replacement, destruction during
 completion, independent windows, external sheet abort and retained callback
-AppKit/CEF headers. Output goes under ignored `build/tests/`.
+AppKit or Chromium headers. Output goes under ignored `build/tests/`.
 
 All APIs require the main thread. A presenter holds one request, not its page or
 parent window. Completing a request clears callback and presenter state before
@@ -45,7 +46,8 @@ coordinator and exact-page retirement coordinator serialize genuine Chromium
 beforeunload decisions. Busy rejection returns refusal rather than consent to close.
 
 The source checker compiles both implementations with the pinned Clang,
-as errors. Use an already generated checkout:
+generated headers and the ObjC++ flags of their own `parc/native` targets, with
+ARC and warnings treated as errors. Use an already generated checkout:
 
 ```sh
 python3 tests/NativeJavaScriptDialogs/check-chromium.py /path/to/chromium/src
@@ -61,23 +63,21 @@ evidence.
 
 ## Source integration
 
-CEF and Chromium revisions are pinned in
+Chromium revisions are pinned in
 [the source lock](../../Engine/source-lock.json).
 
-The overlay compiles the
-presenter in the native AppKit component source set and the runner in actual
-`libcef_static`. It adds typed
-`RunBeforeUnload(CefBrowserHostBase*, bool is_reload, const std::u16string&,
-DialogClosedCallback)` dispatch to CEF's real base and manager. Parc overrides
-it; the default implementation preserves the previous generic-confirm behavior
-for upstream runners. Client-handler precedence and real callback ownership
-remain unchanged. No message-text or empty-origin inference is used.
+The presenter compiles in the native AppKit component source set and the
+manager in `native_javascript_dialogs`. Content calls the manager with the
+asking frame, so the title uses that frame's real origin and beforeunload keeps
+its typed reload distinction. Only the page's own frames may ask. The
+"Don't show this again" block uses content's own suppression, which answers as
+Cancel, and resets with the primary page or when content asks to reset the
+page's dialog state.
 
-`NativeChromePlatformDelegate::CreateJavaScriptDialogRunner()` supplies its
-actual existing WebContents and retains only a weak runner handle. The page
-association gate calls `PageHostWillDetach()` before cancellation and rejects
-reentrant requests/reattachment during that delivery. After actual tab/window
-binding and containment, the shell must call `PageHostDidAttach()`, including
+The manager starts detached. The page association gate calls
+`SetNativeJavaScriptDialogsAttached(false)` before cancellation and rejects
+reentrant requests and reattachment during that delivery. After the real
+tab/window binding and containment, the shell must attach it again, including
 same-window reattachment. Native movement, close and WebContents destruction
 also cancel. No request is transferred to a different window.
 
@@ -86,9 +86,9 @@ BrowserWindow/platform factories. `native_appkit_host.mm` performs attachment
 after genuine Browser/tab registration; the Swift `BrowserWindowController`
 registers its supplied window and brackets native page reparenting with
 `pageWillDetach`/`pageDidAttach`. Current first-tab feature hooks are also
-integrated. CEF's renderer/manager close flow remains the
+integrated. Chromium's renderer and unload close flow remains the
 owner: no app-modal fallback, unconditional unload acceptance or manual Browser
-deletion is part of this service. The callback box is independent of the runner
+deletion is part of this service. The callback box is independent of the manager
 and may complete while its owner is being destroyed.
 
 The same page/window association brackets reparenting and terminal teardown.

@@ -2,7 +2,7 @@
 
 This service keeps Chromium's actual `SSLClientCertificateSelector`, certificate table/details action, filtered identity list, SSL auth observer and private-key acquisition. It attaches the genuine dialog's NSWindow to the supplied native browser window through a real WebContents modal manager. It does not instantiate a browser BrowserView or replace the certificate list.
 
-The CEF callback must return false without consuming its callback. Chrome enterprise policy, automatic selection and the empty-list outcome run before the page-owned native factory. Actual macOS private-key acquisition and later OS signing authorization remain unchanged. Explicit user cancellation retains Chrome's null-certificate result; interrupted ownership aborts the original request.
+Parc's content browser client does not override certificate selection. Chrome enterprise policy, automatic selection and the empty-list outcome run before the page-owned native factory. Actual macOS private-key acquisition and later OS signing authorization remain unchanged. Explicit user cancellation retains Chrome's null-certificate result; interrupted ownership aborts the original request.
 
 The source binds the real page/document/Profile/Browser/window and requires live native attachment, activation, visible parent and sole security reservation. It validates before key acquisition, after key completion before same-challenge broadcast, and before deferred network continuation. Native widget close and pending key acquisition have separate lifetimes. Detach/navigation/parent close abort, and reservation release detects reentrant replacement. The original page's modal manager owns input blocking and list removal.
 
@@ -16,7 +16,7 @@ After applying the complete reviewed overlay and generating its targets, run:
 python3 tests/NativeClientCertificates/check-chromium.py /path/to/chromium/src
 ```
 
-The reusable checker requires every source/header/patch hash in the applied overlay and each unit's actual registered object and generated target flags. It refuses stale/partial checkouts; it has no VFS compatibility mode. A pass is syntax only. Integration registers `//cef/libcef/browser/parc_native:native_client_certificates` in libcef and `//cef/tests/parc_native_client_certificates:unit_tests` in Chrome unit tests. Executing the controller tests requires a valid CEF process/context.
+The reusable checker requires every source/header/patch hash in the applied overlay and each unit's actual registered object and generated target flags. It refuses stale/partial checkouts; it has no VFS compatibility mode. A pass is syntax only. Integration registers `//parc/native:native_client_certificates` in the Parc browser target and `//parc/tests/native_client_certificates:unit_tests` in Chrome unit tests. Executing the controller tests requires a valid Chromium process/context.
 
 The integrated platform retains a weak-self check after HTTP cancellation and
 another after certificate cancellation: either callback can destroy the owning

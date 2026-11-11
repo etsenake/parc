@@ -1,0 +1,790 @@
+--- a/chrome/browser/ui/browser_window/public/create_browser_window.h
++++ b/chrome/browser/ui/browser_window/public/create_browser_window.h
+@@ -27,6 +27,10 @@
+ class WebContents;
+-
++
+ }  // namespace content
++
++namespace parc {
++class PreparedNativeWindow;
++}
+-
++
+ #if !BUILDFLAG(IS_ANDROID)
+ class BrowserWindow;
+@@ -174,6 +178,14 @@
+   // focused state.
+   std::optional<tab_groups::TabGroupId> focused_tab_group_id;
+-
++
++  // The Browser opening this one: a native popup, Picture-in-Picture or
++  // DevTools window asks the shell for a window relative to it.
++  raw_ptr<BrowserWindowInterface, DanglingUntriaged> opener = nullptr;
++
++  // The shell window reserved for exactly this Browser. The Browser constructor
++  // takes it, so Clone() and retained creation params never carry it.
++  std::shared_ptr<parc::PreparedNativeWindow> native_window;
++
+ #if BUILDFLAG(IS_CHROMEOS)
+   // If set, the browser should be created on the display given by
+   // `display_id`.
+--- a/chrome/browser/ui/browser.h
++++ b/chrome/browser/ui/browser.h
+@@ -83,6 +83,10 @@
+-
++
+ namespace web_modal {
+ class WebContentsModalDialogHost;
++}
++
++namespace parc {
++class NativeBrowser;
+ }
+-
++
+ // This enum is not a member of `Browser` so that it can be forward
+@@ -285,6 +289,10 @@
+-
++
+   ui::UnownedUserDataHost unowned_user_data_host_;
+-
++
++  // Set when a native shell window was reserved for this Browser. Registers
++  // with `unowned_user_data_host_`, so it is declared after it.
++  std::unique_ptr<parc::NativeBrowser> native_browser_;
++
+   // Creation and initial parameters of this browser window. Constructed early
+   // (before `features_` and the window) so downstream features and window setup
+   // can query it. Declared after `unowned_user_data_host_` so it is destroyed
+--- a/chrome/browser/ui/browser.cc
++++ b/chrome/browser/ui/browser.cc
+@@ -75,6 +75,7 @@
+ #include "chrome/browser/ui/browser_tab_strip_model_delegate.h"
+ #include "chrome/browser/ui/browser_ui_controller/browser_ui_controller.h"
+ #include "chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h"
++#include "parc/native/native_browser.h"
+ #include "chrome/browser/ui/browser_window.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+@@ -236,6 +237,10 @@
+   // should handle this; see e.g. crbug.com/40154317 and crbug.com/40798999.
+   CHECK_EQ(CreationStatus::kOk,
+            GetBrowserWindowCreationStatusForProfile(*params.profile));
++  // A refused native window cancels creation; it never becomes a Chrome one.
++  if (!parc::PrepareNativeBrowserWindow(params)) {
++    return nullptr;
++  }
+-
++
+   Profile* const profile_ptr = &*params.profile;
+   std::unique_ptr<Browser> browser =
+@@ -280,7 +285,8 @@
+       session_id_(SessionID::NewUnique()),
+       keep_alive_(
+           std::make_unique<ScopedKeepAlive>(KeepAliveOrigin::BROWSER,
+-                                            KeepAliveRestartOption::DISABLED)) {
++                                            KeepAliveRestartOption::DISABLED)),
++      native_browser_(parc::NativeBrowser::Create(*this, params)) {
+   const bool user_gesture = params.from_user_gesture;
+   const bool in_tab_dragging = params.in_tab_dragging;
+   BrowserWindow* const custom_window = params.window;
+@@ -880,6 +886,10 @@
+ // Browser, Assorted utility functions (private):
+-
++
+ void Browser::SetAsDelegate(WebContents* web_contents, bool set_delegate) {
++  if (native_browser_) {
++    native_browser_->SetAsDelegate(*web_contents, set_delegate);
++  }
++
+   content::WebContentsDelegate* delegate =
+       set_delegate ? BrowserWebContentsDelegate::From(this) : nullptr;
+-
++
+--- a/chrome/browser/ui/browser_manager_service.h
++++ b/chrome/browser/ui/browser_manager_service.h
+@@ -34,6 +34,16 @@
+   // requesting the browser close via BrowserWindow::Close(), which happens
+   // async and allows graceful teardown of the tab strip and associated data.
+   static void SynchronouslyDestroyBrowser(BrowserWindowInterface* browser);
++
++  // Destroys `browser` once a native shell window's engine-owned UI hosts
++  // have drained, keeping the Browser owned until that posted completion.
++  // Ordinary Browsers are destroyed at once. Call only after real close
++  // approval, with an empty TabStripModel.
++  static void RequestBrowserDeletion(BrowserWindowInterface* browser);
++
++  // The last Browser of a primary OTR Profile is gone: destroy that Profile
++  // when appropriate, unless a native operation still uses it.
++  static void DestroyUnusedOTRProfile(Profile& profile);
+-
++
+   // KeyedService:
+   void Shutdown() override;
+--- a/chrome/browser/ui/browser_manager_service.cc
++++ b/chrome/browser/ui/browser_manager_service.cc
+@@ -19,6 +19,7 @@
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ #include "components/keep_alive_registry/keep_alive_registry.h"
+ #include "components/keep_alive_registry/keep_alive_types.h"
++#include "parc/native/native_browser.h"
+ #include "printing/buildflags/buildflags.h"
+-
++
+ BrowserManagerService::BrowserManagerService(Profile* profile)
+@@ -39,10 +40,64 @@
+       ->DeleteBrowser(browser);
+ }
+-
++
++// static
++void BrowserManagerService::RequestBrowserDeletion(
++    BrowserWindowInterface* browser) {
++  CHECK(browser);
++  auto* manager =
++      BrowserManagerServiceFactory::GetForProfile(browser->GetProfile());
++  // Already removed Browsers and repeated drain requests cannot reach a
++  // native service or produce a second destruction.
++  if (!std::ranges::any_of(manager->browsers_and_subscriptions_,
++                           [browser](const BrowserAndSubscriptions& entry) {
++                             return entry.browser.get() == browser;
++                           })) {
++    return;
++  }
++  if (auto* native = parc::NativeBrowser::From(browser);
++      native && native->DeferDeletion(base::BindOnce(
++                    [](base::WeakPtr<BrowserWindowInterface> browser) {
++                      if (browser) {
++                        RequestBrowserDeletion(browser.get());
++                      }
++                    },
++                    browser->GetWeakPtr()))) {
++    return;
++  }
++  // This may delete the manager and Profile; touch neither afterwards.
++  manager->DeleteBrowser(browser);
++}
++
++// static
++void BrowserManagerService::DestroyUnusedOTRProfile(Profile& profile) {
++  if (parc::DeferNativeOTRProfileDestruction(profile)) {
++    return;
++  }
++#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
++  // The Printing Background Manager holds onto preview dialog WebContents
++  // whose corresponding print jobs have not yet fully spooled. Make sure
++  // these get destroyed before tearing down the incognito or isolated mode
++  // profile so that their RenderFrameHosts can exit in time - see
++  // crbug.com/41235373
++  g_browser_process->background_printing_manager()
++      ->DeletePreviewContentsForBrowserContext(&profile);
++#endif
++  // The incognito or isolated mode profile is no longer needed, this
++  // indirectly frees its cache and cookies once it gets destroyed at the
++  // appropriate time.
++  ProfileDestroyer::DestroyOTRProfileWhenAppropriate(&profile);
++}
++
+ void BrowserManagerService::Shutdown() {
+   CHECK(browsers_and_subscriptions_for_testing_.empty());
+-
++
+   while (!browsers_and_subscriptions_.empty()) {
++    // Keyed-service shutdown cannot pump a native drain. Engine shutdown
++    // refuses until native Browsers have died; reaching here first is a
++    // contract failure.
++    auto* native =
++        parc::NativeBrowser::From(browsers_and_subscriptions_.back().browser.get());
++    CHECK(!native || native->DeletionReady());
+     BrowserAndSubscriptions entry =
+         std::move(browsers_and_subscriptions_.back());
+     browsers_and_subscriptions_.pop_back();
+@@ -101,6 +156,14 @@
+-
++
+   base::WeakPtr<BrowserWindowInterface> browser_weak_ptr =
+       browser_ptr->GetWeakPtr();
++  if (auto* native = parc::NativeBrowser::From(browser_ptr)) {
++    // Ownership and subscriptions exist now. No nested run loop or direct
++    // destruction is permitted in this attachment.
++    native->OnRegistered();
++    if (!browser_weak_ptr) {
++      return;
++    }
++  }
+   for (BrowserCollectionObserver& observer : observers()) {
+     if (browser_weak_ptr) {
+       observer.OnBrowserCreated(browser_weak_ptr.get());
+@@ -120,6 +183,9 @@
+         return browser_and_subscriptions.browser.get() == removed_browser;
+       });
+   if (it != browsers_and_subscriptions_.end()) {
++    // Native Browsers come through RequestBrowserDeletion's drain first.
++    auto* native = parc::NativeBrowser::From(removed_browser);
++    CHECK(!native || native->DeletionReady());
+     std::erase(browsers_activation_order_, it->browser.get());
+     target_browser_and_subscriptions = std::move(*it);
+     browsers_and_subscriptions_.erase(it);
+@@ -142,23 +208,16 @@
+   //
+   // TODO(crbug.com/40159237): Use ScopedProfileKeepAlive for Incognito too,
+   // instead of separate logic for Incognito and regular profiles.
++  //
++  // Releasing the Browser can release the last keep-alive of a regular
++  // Profile and destroy `this`, so its state is captured first.
++  const bool was_last_browser = browsers_and_subscriptions_.empty();
++  const base::WeakPtr<Profile> profile = profile_->GetWeakPtr();
+   target_browser_and_subscriptions->browser.reset();
+-  if (browsers_and_subscriptions_.empty() &&
+-      profile_->IsPrimaryOTRProfileWithRegularParent() &&
+-      !profile_->IsSystemProfile()) {
+-#if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+-    // The Printing Background Manager holds onto preview dialog WebContents
+-    // whose corresponding print jobs have not yet fully spooled. Make sure
+-    // these get destroyed before tearing down the incognito or isolated mode
+-    // profile so that their RenderFrameHosts can exit in time - see
+-    // crbug.com/41235373
+-    g_browser_process->background_printing_manager()
+-        ->DeletePreviewContentsForBrowserContext(&profile_.get());
+-#endif
+-    // The incognito or isolated mode profile is no longer needed, this
+-    // indirectly frees its cache and cookies once it gets destroyed at the
+-    // appropriate time.
+-    ProfileDestroyer::DestroyOTRProfileWhenAppropriate(&profile_.get());
++  if (was_last_browser && profile &&
++      profile->IsPrimaryOTRProfileWithRegularParent() &&
++      !profile->IsSystemProfile()) {
++    DestroyUnusedOTRProfile(*profile);
+   }
+-
++
+   // If we're exiting, send out the APP_TERMINATING notification to allow other
+--- a/chrome/browser/ui/views/frame/browser_window_factory.cc
++++ b/chrome/browser/ui/views/frame/browser_window_factory.cc
+@@ -13,6 +13,7 @@
+ #include "chrome/browser/ui/webui_browser/webui_browser.h"
+ #include "chrome/browser/ui/webui_browser/webui_browser_window.h"
+ #include "chrome/browser/ui/window_feature_controller/window_feature_controller.h"
++#include "parc/native/native_browser.h"
+ #include "ui/views/widget/widget.h"
+-
++
+ #if defined(USE_AURA)
+@@ -32,6 +33,9 @@
+ BrowserWindow::CreateBrowserWindow(BrowserWindowInterface* browser,
+                                    bool user_gesture,
+                                    bool in_tab_dragging) {
++  if (auto* native = parc::NativeBrowser::From(browser)) {
++    return native->CreateWindow();
++  }
+   if (webui_browser::IsWebUIBrowserEnabled() &&
+       browser->GetType() == BrowserWindowInterface::Type::TYPE_NORMAL) {
+     return std::unique_ptr<BrowserWindow, BrowserWindowDeleter>(
+--- a/chrome/browser/ui/views/frame/BUILD.gn
++++ b/chrome/browser/ui/views/frame/BUILD.gn
+@@ -983,6 +983,10 @@
+     "//ui/views",
+   ]
+-
++
++  if (is_mac) {
++    deps += [ "//parc/native:native_browser_api" ]
++  }
++
+   if (use_aura) {
+     deps += [ "//ui/aura" ]
+   }
+--- a/chrome/browser/ui/browser_window/internal/browser_window_features.cc
++++ b/chrome/browser/ui/browser_window/internal/browser_window_features.cc
+@@ -79,6 +79,7 @@
+ #include "chrome/browser/ui/focus/browser_focus_controller.h"
+ #include "chrome/browser/ui/focus/browser_focus_controller_views.h"
+ #include "chrome/browser/ui/focus/browser_focus_controller_webui.h"
++#include "parc/native/native_browser.h"
+ #include "chrome/browser/ui/fullscreen/browser_window_fullscreen_controller.h"
+ #include "chrome/browser/ui/immersive/immersive_mode_controller.h"
+ #include "chrome/browser/ui/lens/lens_overlay_entry_point_controller.h"
+@@ -692,6 +693,7 @@
+       BrowserView::GetBrowserViewForBrowser(browser);
+   WebUIBrowserWindow* const webui_browser_window =
+       WebUIBrowserWindow::FromBrowser(browser);
++  parc::NativeBrowser* const native_browser = parc::NativeBrowser::From(browser);
+   views::FocusManager* focus_manager = nullptr;
+   if (browser_view) {
+     focus_manager = browser_view->GetFocusManager();
+@@ -722,6 +724,9 @@
+     browser_focus_controller_ =
+         GetUserDataFactory().CreateInstance<BrowserFocusControllerWebUI>(
+             *browser, browser->GetWindow(), browser->GetUnownedUserDataHost());
++  } else if (native_browser) {
++    browser_focus_controller_ = native_browser->CreateFocusController();
++    CHECK(browser_focus_controller_);
+   } else {
+     browser_focus_controller_ =
+         GetUserDataFactory().CreateInstance<StubBrowserFocusController>(
+@@ -743,6 +748,11 @@
+     color_provider_browser_helper_ =
+         std::make_unique<ColorProviderBrowserHelper>(
+             browser->GetTabStripModel(), browser_view->GetWidget(), browser);
++  } else if (native_browser) {
++    color_provider_browser_helper_ =
++        std::make_unique<ColorProviderBrowserHelper>(
++            browser->GetTabStripModel(), &native_browser->ColorProviderSource(),
++            browser);
+   }
+-
++
+   if (browser_view) {
+@@ -793,6 +803,9 @@
+     devtools_ui_controller_ =
+         GetUserDataFactory().CreateInstance<DevtoolsUIController>(
+             *browser, browser_, browser_view->GetContentsContainerViews());
++  } else if (native_browser) {
++    devtools_ui_controller_ = native_browser->CreateDevtoolsController();
++    CHECK(devtools_ui_controller_);
+   }
+-
++
+   // Must be before exclusive_access_manager_ (whose construction calls
+@@ -812,11 +825,20 @@
+-
++
+   // Must be after exclusive_access_manager_,
+   // desktop_browser_window_capabilities_, and browser_ui_controller_.
+-  browser_web_contents_delegate_ = std::make_unique<BrowserWebContentsDelegate>(
+-      browser, *exclusive_access_manager_, *browser_command_controller_,
+-      *unload_controller_, app_browser_controller_.get(),
+-      *BrowserWindow::FromBrowser(browser),
+-      *desktop_browser_window_capabilities_, *browser_ui_controller_);
++  if (native_browser) {
++    browser_web_contents_delegate_ = native_browser->CreateWebContentsDelegate(
++        *exclusive_access_manager_, *browser_command_controller_,
++        *unload_controller_, app_browser_controller_.get(),
++        *BrowserWindow::FromBrowser(browser),
++        *desktop_browser_window_capabilities_, *browser_ui_controller_);
++  } else {
++    browser_web_contents_delegate_ =
++        std::make_unique<BrowserWebContentsDelegate>(
++            browser, *exclusive_access_manager_, *browser_command_controller_,
++            *unload_controller_, app_browser_controller_.get(),
++            *BrowserWindow::FromBrowser(browser),
++            *desktop_browser_window_capabilities_, *browser_ui_controller_);
++  }
+-
++
+   // Must be after exclusive_access_manager_.
+ #if !BUILDFLAG(IS_CHROMEOS)
+--- a/chrome/browser/ui/browser_window/internal/BUILD.gn
++++ b/chrome/browser/ui/browser_window/internal/BUILD.gn
+@@ -179,6 +179,10 @@
+       "//components/search",
+     ]
+-
++
++    if (is_mac) {
++      deps += [ "//parc/native:native_browser_api" ]
++    }
++
+     if (is_win || is_mac) {
+       deps += [
+         "//chrome/browser/ui/pdf/infobar",
+--- a/chrome/browser/ui/focus/browser_focus_controller.h
++++ b/chrome/browser/ui/focus/browser_focus_controller.h
+@@ -30,7 +30,7 @@
+       const BrowserWindowInterface* browser);
+-
++
+   // Rotates pane focus forwards or backwards.
+-  void RotatePaneFocus(bool forwards);
++  virtual void RotatePaneFocus(bool forwards);
+-
++
+   // Focuses the active web contents pane.
+   virtual void FocusWebContentsPane() = 0;
+--- a/chrome/browser/ui/navigator/browser_navigator.cc
++++ b/chrome/browser/ui/navigator/browser_navigator.cc
+@@ -3,6 +3,9 @@
+ // found in the LICENSE file.
+-
++
+ #include "chrome/browser/ui/navigator/browser_navigator.h"
++
++#include "parc/native/native_browser.h"
++#include "parc/native/native_internal_urls.h"
+-
++
+ #include <algorithm>
+ #include <memory>
+@@ -332,6 +335,7 @@
+       }
+-
++
+       browser_params.pip_options = pip_options;
++      browser_params.opener = params.browser;
+-
++
+       const ui::BaseWindow* const browser_window = params.browser->GetWindow();
+       const gfx::NativeWindow native_window =
+@@ -371,6 +375,7 @@
+             BrowserWindowInterface::TYPE_POPUP, profile, params.user_gesture);
+         browser_params.is_trusted_source = params.trusted_source;
+         browser_params.initial_bounds = params.window_features.bounds;
++        browser_params.opener = params.browser;
+         browser_params.initial_origin_specified = GetOriginSpecified(params);
+         browser_params.can_maximize = !additional_params.tab_modal_popup;
+         browser_params.can_fullscreen = !additional_params.tab_modal_popup;
+@@ -382,6 +387,7 @@
+           BrowserWindowCreateParams::CreateForAppPopup(
+               app_name, params.trusted_source, params.window_features.bounds,
+               profile, params.user_gesture);
++      browser_params.opener = params.browser;
+       browser_params.initial_origin_specified = GetOriginSpecified(params);
+       browser_params.should_trigger_session_restore =
+           should_trigger_session_restore;
+@@ -393,6 +399,7 @@
+       if (GetBrowserWindowCreationStatusForProfile(*profile) ==
+           BrowserWindowInterface::CreationStatus::kOk) {
+         BrowserWindowCreateParams browser_params(profile, params.user_gesture);
++        browser_params.opener = params.browser;
+         browser_params.should_trigger_session_restore =
+             should_trigger_session_restore;
+         browser = CreateBrowserWindow(std::move(browser_params));
+@@ -528,7 +535,11 @@
+   }
+ #endif
+-
++
+-  return WebContents::Create(create_params);
++  std::unique_ptr<WebContents> contents = WebContents::Create(create_params);
++  if (auto* native = parc::NativeBrowser::From(params.browser)) {
++    native->OnWebContentsCreated(*contents);
++  }
++  return contents;
+ }
+-
++
+ }  // namespace
+@@ -597,6 +608,9 @@
+   TRACE_EVENT1("navigation", "chrome::Navigate", "disposition",
+                params->disposition);
+   CHECK(params);
++  // Rewrite only the URL component, before profile/incognito policy. The
++  // original NavigateParams keep body, referrer, initiator and callback.
++  params->url = parc::CanonicalInternalURL(params->url);
+   BrowserWindowInterface* source_browser = params->browser;
+   if (source_browser) {
+     params->initiating_profile = source_browser->GetProfile();
+--- a/chrome/browser/lifetime/browser_close_manager.cc
++++ b/chrome/browser/lifetime/browser_close_manager.cc
+@@ -233,7 +233,9 @@
+           // the tabs to make sure the browser is destroyed and cleanup can
+           // happen.
+           browser_window->GetTabStripModel()->CloseAllTabs();
+-          BrowserManagerService::SynchronouslyDestroyBrowser(browser_window);
++          // Native windows still drain their engine-owned hosts during
++          // logoff; ownership and keep-alives remain until that finishes.
++          BrowserManagerService::RequestBrowserDeletion(browser_window);
+         }
+         return true;
+       });
+--- a/chrome/browser/devtools/devtools_window.cc
++++ b/chrome/browser/devtools/devtools_window.cc
+@@ -94,11 +94,13 @@
+ #include "content/public/browser/render_widget_host_view.h"
+ #include "content/public/browser/security_principal.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/browser/weak_document_ptr.h"
+ #include "content/public/common/content_client.h"
+ #include "content/public/common/content_features.h"
+ #include "content/public/common/url_constants.h"
+ #include "extensions/common/constants.h"
+ #include "net/cert/x509_certificate.h"
++#include "parc/native/native_browser.h"
+ #include "services/metrics/public/cpp/ukm_builders.h"
+ #include "services/metrics/public/cpp/ukm_recorder.h"
+ #include "services/metrics/public/cpp/ukm_source_id.h"
+@@ -255,6 +257,10 @@
+ bool DevToolsToolboxDelegate::HandleKeyboardEvent(
+     content::WebContents* source,
+     const input::NativeWebKeyboardEvent& event) {
++  if (auto result = parc::HandleNativeDevtoolsKey(
++          inspected_web_contents_.get(), source, event)) {
++    return *result;
++  }
+ #if BUILDFLAG(IS_ANDROID)
+   return false;
+ #else
+@@ -889,6 +895,9 @@
+       case DevToolsToggleAction::kShowElementsPanel:
+         panel = "elements";
+         break;
++      case DevToolsToggleAction::kShowNativePanel:
++        panel = action.native_panel();
++        break;
+       case DevToolsToggleAction::kShowConsolePanel:
+         panel = "console";
+         break;
+@@ -1015,7 +1024,75 @@
+   registry.AddThrottle(std::make_unique<Throttle>(registry, window));
+ }
+-
++
++// static
++bool DevToolsWindow::PerformNativePageAction(
++    content::WebContents* inspected,
++    const DevToolsToggleAction& action,
++    base::RepeatingCallback<bool()> is_current) {
++  const auto inspected_owner = inspected ? inspected->GetWeakPtr() : nullptr;
++  if (!inspected_owner || !is_current || !is_current.Run() || !inspected_owner) {
++    return false;
++  }
++  auto* window = GetInstanceForInspectedWebContents(inspected);
++  if (!window) {
++    const auto initial = action.type() == DevToolsToggleAction::kShow
++                             ? DevToolsToggleAction::ShowNativePanel("elements")
++                             : action;
++    const auto weak_contents = inspected->GetWeakPtr();
++    OpenDevToolsWindow(inspected, initial,
++                       DevToolsOpenedByAction::kMainMenuOrMainShortcut);
++    return weak_contents &&
++           GetInstanceForInspectedWebContents(weak_contents.get());
++  }
++  if (window->life_stage_ == kClosing) {
++    return false;
++  }
++  if (action.type() == DevToolsToggleAction::kShow) {
++    window->CloseWindow();
++    return true;
++  }
++  if (action.type() != DevToolsToggleAction::kShowNativePanel ||
++      window->life_stage_ != kLoadCompleted) {
++    window->ScheduleShow(action);
++    return true;
++  }
++  // Query the actual frontend, never infer selection from the last command or
++  //
++  const uint64_t generation = ++window->native_action_generation_;
++  const auto document =
++      window->main_web_contents_->GetPrimaryMainFrame()->GetWeakDocumentPtr();
++  window->bindings_->CallClientMethod(
++      "InspectorFrontendAPI", "currentPanel", {}, {}, {},
++      base::BindOnce(
++          [](base::WeakPtr<DevToolsWindow> owner, uint64_t generation,
++             content::WeakDocumentPtr document, DevToolsToggleAction action,
++             base::RepeatingCallback<bool()> is_current, base::Value result) {
++            if (!owner || owner->life_stage_ != kLoadCompleted ||
++                owner->native_action_generation_ != generation ||
++                !document.AsRenderFrameHostIfValid() || !is_current.Run() ||
++                !owner || owner->life_stage_ != kLoadCompleted ||
++                owner->native_action_generation_ != generation ||
++                !document.AsRenderFrameHostIfValid()) {
++              return;
++            }
++            // Missing/failed frontend replies perform no action. In particular,
++            // a missing query capability must not manufacture a selected panel.
++            if (!result.is_string()) {
++              return;
++            }
++            if (result.GetString() == action.native_panel()) {
++              owner->CloseWindow();
++            } else {
++              owner->ScheduleShow(action);
++            }
++          },
++          window->weak_factory_.GetWeakPtr(), generation, document, action,
++          std::move(is_current)));
++  return true;
++}
++
+ void DevToolsWindow::ScheduleShow(const DevToolsToggleAction& action) {
++  ++native_action_generation_;
+   if (life_stage_ == kLoadCompleted) {
+     Show(action);
+     return;
+@@ -1413,6 +1490,8 @@
+                           has_other_clients, browser_connection));
+   std::unique_ptr<WebContents> main_web_contents =
+       WebContents::Create(WebContents::CreateParams(profile));
++  parc::PrepareNativeDevtoolsContents(inspected_web_contents,
++                                      *main_web_contents);
+   main_web_contents->GetController().LoadURL(
+       DecorateFrontendURL(url), content::Referrer(),
+       ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
+@@ -1721,7 +1800,11 @@
+ }
+-
++
+ void DevToolsWindow::CloseWindow() {
+-  if (is_docked_) {
++  ++native_action_generation_;
++  // Before first load, the frontend may already request undocked mode while
++  // its Browser has not been created. The controller still owns the contents;
++  // use its genuine beforeunload path instead of dropping that close request.
++  if (is_docked_ || (!browser_ && owned_main_web_contents_)) {
+     Close(DevToolsClosedByAction::kCloseButton);
+   } else {
+ #if BUILDFLAG(IS_ANDROID)
+@@ -1735,7 +1818,9 @@
+ }
+-
++
+ void DevToolsWindow::Close(DevToolsClosedByAction closed_by) {
+-  DCHECK(is_docked_);
++  ++native_action_generation_;
++  DCHECK(owned_main_web_contents_);
++  DCHECK(!browser_);
+   life_stage_ = kClosing;
+   main_web_contents_->DispatchBeforeUnload(false /* auto_cancel */);
+   closed_by_ = closed_by;
+@@ -1883,12 +1968,10 @@
+   if (!inspected_web_contents ||
+       !inspected_web_contents->OpenURL(params,
+                                        /*navigation_handle_callback=*/{})) {
++    // Parc's shell owns its windows: a link the inspected page did not open,
++    // including one its native routing presents later, opens nothing else.
+ #if BUILDFLAG(IS_ANDROID)
+     NOTIMPLEMENTED();
+-#else
+-    chrome::ScopedTabbedBrowserDisplayer displayer(profile_);
+-    chrome::AddSelectedTabWithURL(displayer.browser_window_interface(),
+-                                  fixed_url, ui::PAGE_TRANSITION_LINK);
+ #endif
+   }
+ }
+@@ -2091,8 +2174,16 @@
+       BrowserWindowInterface::CreationStatus::kOk) {
+     return;
+   }
+-  browser_ = CreateBrowserWindow(
+-      BrowserWindowCreateParams::CreateForDevTools(profile_));
++  auto create_params = BrowserWindowCreateParams::CreateForDevTools(profile_);
++  if (auto* inspected = GetInspectedWebContents()) {
++    create_params.opener =
++        GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(inspected);
++  }
++  browser_ = CreateBrowserWindow(std::move(create_params));
++  // A refused native window leaves the frontend with this controller.
++  if (!browser_) {
++    return;
++  }
+   browser_->GetTabStripModel()->AddWebContents(
+       OwnedMainWebContents::TakeWebContents(
+           std::move(owned_main_web_contents_)),
+@@ -2103,6 +2194,10 @@
+-
++
+ void DevToolsWindow::DoAction(const DevToolsToggleAction& action) {
+   switch (action.type()) {
++    case DevToolsToggleAction::kShowNativePanel:
++      bindings_->CallClientMethod("DevToolsAPI", "showPanel",
++                                  base::Value(action.native_panel()));
++      break;
+     case DevToolsToggleAction::kInspect:
+       bindings_->CallClientMethod("DevToolsAPI", "enterInspectElementMode");
+       break;
+--- a/chrome/browser/devtools/BUILD.gn
++++ b/chrome/browser/devtools/BUILD.gn
+@@ -424,7 +424,10 @@
+-
++
+   if (is_mac) {
+     sources += [ "devtools_dock_tile_mac.mm" ]
+-    deps += [ "//chrome/browser/renderer_host:history_swiping_control" ]
++    deps += [
++      "//chrome/browser/renderer_host:history_swiping_control",
++      "//parc/native:native_browser_api",
++    ]
+   } else {
+     sources += [ "devtools_dock_tile.cc" ]
+   }
+--- a/chrome/browser/extensions/api/tabs/tabs_api.cc
++++ b/chrome/browser/extensions/api/tabs/tabs_api.cc
+@@ -3,6 +3,11 @@
+ // found in the LICENSE file.
+-
++
+ #include "chrome/browser/extensions/api/tabs/tabs_api.h"
++
++#include "build/build_config.h"
++#if BUILDFLAG(IS_MAC)
++#include "parc/native/native_window_state.h"
++#endif
+-
++
+ #include "base/memory/weak_ptr.h"
+ #include "base/metrics/histogram_functions.h"
+@@ -1651,6 +1656,13 @@
+   }
+ #endif
+-
++
++#if BUILDFLAG(IS_MAC)
++  if (auto native_error = parc::PrepareNativeWindowStateUpdate(
++          *browser, show_state, set_window_bounds ? &window_bounds : nullptr)) {
++    return RespondNow(Error(std::move(*native_error)));
++  }
++#endif
++
+   // Parameters are valid. Now to perform the actual updates. Platform window
+   // operations (such as entering or exiting fullscreen) may spin a nested event
+   // loop on some platforms (e.g. macOS) and synchronously close the window,
+--- a/chrome/browser/ui/browser_tabstrip.cc
++++ b/chrome/browser/ui/browser_tabstrip.cc
+@@ -50,7 +50,12 @@
+     bool pinned,
+     std::optional<NavigateParams::WindowAction> window_action) {
+   const GURL resolved_url = url.is_empty() ? GetNewTabURL(browser) : url;
+-  NavigateParams params(browser, resolved_url, ui::PAGE_TRANSITION_TYPED);
++  // Parc's pages keep the typed address-bar transition they had under CEF,
++  // whose explicit loads used it.
++  NavigateParams params(
++      browser, resolved_url,
++      static_cast<ui::PageTransition>(ui::PAGE_TRANSITION_TYPED |
++                                      ui::PAGE_TRANSITION_FROM_ADDRESS_BAR));
+   params.disposition = foreground ? WindowOpenDisposition::NEW_FOREGROUND_TAB
+                                   : WindowOpenDisposition::NEW_BACKGROUND_TAB;
+   if (window_action) {
+--- a/chrome/browser/ui/browser_ui_controller/browser_ui_controller.cc
++++ b/chrome/browser/ui/browser_ui_controller/browser_ui_controller.cc
+@@ -143,7 +143,11 @@
+     // Update the loading state synchronously. This is so the throbber will
+     // immediately start/stop, which gives a more snappy feel. We want to do
+     // this for any tab so they start & stop quickly.
+-    NotifyTabUIChanged(tab, TabChangeType::kLoadingOnly);
++    // A native Browser delegates new contents before inserting them, so the
++    // tab may not be in the strip yet.
++    if (tab_strip_model_->GetIndexOfTab(tab) != TabStripModel::kNoTab) {
++      NotifyTabUIChanged(tab, TabChangeType::kLoadingOnly);
++    }
+     // The status bubble needs to be updated during INVALIDATE_TYPE_LOAD too,
+     // but we do that asynchronously by not stripping INVALIDATE_TYPE_LOAD from
+     // changed_flags.
+--- a/chrome/browser/ui/tabs/tab_strip_api/tab_strip_model_impl/tab_strip_model_adapter_impl.cc
++++ b/chrome/browser/ui/tabs/tab_strip_api/tab_strip_model_impl/tab_strip_model_adapter_impl.cc
+@@ -20,6 +20,8 @@
+ #include "components/tabs/public/tab_interface.h"
+ #include "components/tabs/public/tab_strip_collection.h"
+ #include "content/public/browser/web_contents.h"
++#include "ui/color/color_provider_manager.h"
++#include "ui/native_theme/native_theme.h"
+-
++
+ namespace tabs_api {
+-
++
+@@ -70,7 +72,12 @@
+ const ui::ColorProvider& TabStripModelAdapterImpl::GetColorProvider() const {
+   content::WebContents* active_contents =
+       tab_strip_model_->GetActiveWebContents();
+-  CHECK(active_contents);
++  // A native Browser can exist with an empty tab strip.
++  if (!active_contents) {
++    return *ui::ColorProviderManager::Get().GetColorProviderFor(
++        ui::NativeTheme::GetInstanceForNativeUi()->GetColorProviderKey(
++            /*custom_theme=*/nullptr));
++  }
+   return active_contents->GetColorProvider();
+ }
+-
++

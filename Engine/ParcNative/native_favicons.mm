@@ -1,6 +1,7 @@
 // Copyright 2026 Parc contributors.
 #import "native_appkit_bridge.h"
 #include "native_appkit_host.h"
+#include "native_profiles.h"
 
 #include <map>
 #include <memory>
@@ -29,9 +30,10 @@ const char kFaviconRequestsKey = 0;
 // Always deliver outside the service/profile observer stack. The caller owns
 // its view-generation checks; no view or page is retained by this service.
 void Deliver(IconReply reply, NSImage* image,
-             base::WeakPtr<Profile> profile = {}) {
+             base::WeakPtr<Profile> profile = {}, NativeProfileLeasePtr lease = {}) {
   dispatch_async(dispatch_get_main_queue(), ^{
-    reply(image && profile && NativeContextForProfile(*profile) ? image : nil);
+    auto retained = lease;
+    reply(image && retained && profile && retained->profile() == profile.get() ? image : nil);
   });
 }
 
@@ -68,8 +70,8 @@ class FaviconRequests final : public base::SupportsUserData::Data,
     CHECK(NSThread.isMainThread);
     // Archive belongs to its saved persistent profile. An OTR profile must
     // not silently redirect this history lookup to another profile's store.
-    if (!profile_ || profile_->IsOffTheRecord() ||
-        !NativeContextForProfile(*profile_)) {
+    auto lease = profile_ ? NativeLeaseForProfile(*profile_) : nullptr;
+    if (!profile_ || profile_->IsOffTheRecord() || !lease) {
       Deliver(reply, nil);
       return;
     }
@@ -81,6 +83,7 @@ class FaviconRequests final : public base::SupportsUserData::Data,
     }
     const uint64_t identifier = ++next_identifier_;
     replies_.emplace(identifier, [reply copy]);
+    leases_.emplace(identifier, std::move(lease));
     // This reads the actual history favicon database. It neither downloads a
     // guessed /favicon.ico nor falls back to a different URL on the host.
     const auto task = service->GetFaviconImageForPageURL(
@@ -96,7 +99,9 @@ class FaviconRequests final : public base::SupportsUserData::Data,
   void Completed(uint64_t identifier,
                  const favicon_base::FaviconImageResult& result) {
     CHECK(NSThread.isMainThread);
-    NSImage* image = profile_ && NativeContextForProfile(*profile_) &&
+    const auto found = leases_.find(identifier);
+    NSImage* image = profile_ && found != leases_.end() &&
+                            found->second && found->second->profile() == profile_.get() &&
                             !result.image.IsEmpty()
                         ? [result.image.AsNSImage() copy]
                         : nil;
@@ -108,19 +113,23 @@ class FaviconRequests final : public base::SupportsUserData::Data,
       return;
     IconReply reply = found->second;
     replies_.erase(found);
-    Deliver(reply, image, profile_);
+    auto lease = std::move(leases_.at(identifier));
+    leases_.erase(identifier);
+    Deliver(reply, image, profile_, std::move(lease));
   }
   void CancelAll() {
     weak_factory_.InvalidateWeakPtrs();
     tasks_.TryCancelAll();
     auto replies = std::move(replies_);
     replies_.clear();
+    leases_.clear();
     for (const auto& [identifier, reply] : replies)
       Deliver(reply, nil);
   }
   base::WeakPtr<Profile> profile_;
   base::CancelableTaskTracker tasks_;
   std::map<uint64_t, IconReply> replies_;
+  std::map<uint64_t, NativeProfileLeasePtr> leases_;
   uint64_t next_identifier_ = 0;
   base::WeakPtrFactory<FaviconRequests> weak_factory_{this};
 };
@@ -140,7 +149,7 @@ class FaviconRequests final : public base::SupportsUserData::Data,
   parc::WithNativeProfile(
       path, base::BindOnce(
                 [](GURL url, parc::IconReply reply, Profile* profile,
-                   CefRefPtr<CefRequestContext> context, NSError* error) {
+                   parc::NativeProfileLeasePtr context, NSError* error) {
                   if (!profile || !context || error) {
                     parc::Deliver(reply, nil);
                     return;

@@ -1,0 +1,14 @@
+# The framework is deliberately absent from this pre-sandbox executable.
+executable("parc_helper") {
+  sources = [ "main.cc" ]
+  deps = [
+    "//base/allocator:early_zone_registration_apple",
+    "//sandbox/mac:seatbelt",
+  ]
+  if (is_component_build) {
+    ldflags = [
+      "-Wl,-rpath,@executable_path/../../../Chromium Embedded Framework.framework/Libraries",
+      "-Wl,-rpath,@executable_path/../../../../../..",
+    ]
+  }
+}

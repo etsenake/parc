@@ -25,7 +25,8 @@ REPO = Path(__file__).resolve().parents[2]
 PATCH = 'Engine/ParcHost/integration/top-band-color.patch'
 MOJOM = 'third_party/blink/public/mojom/parc/top_band_color.mojom'
 CORE = 'obj/third_party/blink/renderer/core/core.ninja'
-CEF = 'obj/cef/libcef_static.ninja'
+MANIFEST_PATH = REPO / 'Engine/ParcHost/overlay.json'
+CEF = 'obj/parc/browser.ninja'
 RENDERER_UNITS = [
     'third_party/blink/renderer/core/frame/parc_top_band_color_tracker.cc',
     'third_party/blink/renderer/core/frame/local_frame.cc',
@@ -33,7 +34,7 @@ RENDERER_UNITS = [
     'third_party/blink/renderer/core/dom/document.cc',
     'third_party/blink/renderer/core/loader/document_loader.cc',
 ]
-BROWSER_UNIT = 'cef/libcef/browser/parc_native/native_appkit_page.mm'
+BROWSER_UNIT = 'parc/native/native_appkit_page.mm'
 
 
 def sha(path):
@@ -41,7 +42,7 @@ def sha(path):
 
 
 def manifest():
-    return json.loads((REPO / 'Engine/ParcHost/overlay.json').read_text())
+    return json.loads(MANIFEST_PATH.read_text())
 
 
 def patched_sources(tree):
@@ -113,12 +114,17 @@ def generate_bindings(tree, build, results):
 
 
 def main():
+    global MANIFEST_PATH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source_tree', type=Path)
     parser.add_argument('--results', type=Path, required=True)
     args = parser.parse_args()
+    lock = json.loads((REPO / "Engine/source-lock.json").read_text())
+    if lock.get('schema_version') != 2:
+        parser.error('unsupported source lock schema')
+    MANIFEST_PATH = REPO / ('Engine/ParcHost/overlay.json')
     tree = args.source_tree.resolve(strict=True)
-    build = tree / 'out/Release_GN_arm64'
+    build = tree / 'out' / lock['build']['configuration']
     results = args.results.resolve()
     if results.is_relative_to(tree):
         parser.error('results must be outside the source checkout')
@@ -141,10 +147,10 @@ def main():
     local = ['-I' + str(sources), '-I' + str(gen)]
     core = target_flags(build / CORE, ('defines', 'include_dirs', 'cflags', 'cflags_cc', 'module_deps'), results)
     # The objcxx rule takes no module flags.
-    cef = target_flags(build / CEF, ('defines', 'include_dirs', 'framework_dirs', 'cflags', 'cflags_objcc'), results,
+    browser_flags = target_flags(build / ('obj/parc/browser.ninja'), ('defines', 'include_dirs', 'framework_dirs', 'cflags', 'cflags_objcc'), results,
                        module=False)
     commands = [[clang, *local, *core, '-fsyntax-only', str(sources / unit)] for unit in RENDERER_UNITS]
-    commands.append([clang, *local, *cef, '-fsyntax-only', str(sources / BROWSER_UNIT)])
+    commands.append([clang, *local, *browser_flags, '-fsyntax-only', str(sources / (BROWSER_UNIT))])
     receipt = {'inputs': [{'path': str(p), 'sha256': sha(p)} for p in
                           [REPO / PATCH, *(REPO / i['source'] for i in manifest()['files']
                                            if 'ParcRenderer' in i['source'])]],

@@ -9,6 +9,8 @@ import hashlib
 import json
 from pathlib import Path
 import shlex
+import plistlib
+import tempfile
 import subprocess
 
 
@@ -25,8 +27,12 @@ def main():
     parser.add_argument('source_tree', type=Path)
     parser.add_argument('--results', type=Path, required=True)
     args = parser.parse_args()
+    repo = Path(__file__).resolve().parents[2]
+    lock = json.loads((repo / 'Engine/source-lock.json').read_text())
+    if lock.get('schema_version') != 2:
+        parser.error('unsupported source lock schema')
     tree = args.source_tree.resolve(strict=True)
-    build = tree / 'out/Release_GN_arm64'
+    build = tree / 'out' / lock['build']['configuration']
     results = args.results.resolve()
     if results.is_relative_to(tree):
         parser.error('results must be outside the source checkout')
@@ -34,7 +40,7 @@ def main():
     source = Path(__file__).with_name('helper_routing_test.mm')
     native = Path(__file__).resolve().parents[2] / 'Engine/ParcNative'
     policy = native / 'native_startup_policy.h'
-    flags_file = build / 'obj/cef/libcef_static.ninja'
+    flags_file = build / ('obj/parc/browser.ninja')
     variables = {}
     for line in flags_file.read_text().splitlines():
         if ' =' in line and not line.startswith(' '):
@@ -47,18 +53,40 @@ def main():
         raise RuntimeError('Generated target flags are incomplete/unresolved')
     flags = [f'-fcrash-diagnostics-dir={results}' if f.startswith('-fcrash-diagnostics-dir=') else f for f in flags]
     compiler = tree / 'third_party/llvm-build/Release+Asserts/bin/clang++'
-    objects = [build / 'obj/cef/libcef_static' / name for name in ('util_mac.o', 'cef_switches.o', 'command_line_impl.o',
-                                                                   'value_base.o', 'string_types_impl.o')]
+    objects = [build / 'obj/parc/browser/parc_bundle_mac.o',
+               build / 'obj/chrome/common/constants/chrome_paths_mac.o',
+               build / 'obj/chrome/common/constants/chrome_constants.o']
     libraries = [build / name for name in ('libcontent.dylib', 'libbase.dylib', 'libbase_i18n.dylib', 'libc++_chrome.dylib')]
     inputs = [source, policy, flags_file, compiler, *objects, *libraries]
-    receipt = {'scope': 'actual CEF utility/command-line objects, native startup policy and Chromium routing; no browser initialization',
+    receipt = {'scope': 'actual selected-engine bundle objects, native startup policy and Chromium routing; no browser initialization',
                'inputs': [{'path': str(p), 'sha256': sha(p)} for p in inputs], 'commands': []}
     obj = results / 'helper_routing_test.o'
     binary = results / 'helper_routing_test'
-    commands = [[str(compiler), *flags, '-c', str(source), '-o', str(obj)],
-                [str(compiler), '-nostdlib++', str(obj), *map(str, objects), *map(str, libraries),
-                 '-framework', 'Foundation', '-Wl,-rpath,' + str(build), '-o', str(binary)],
-                [str(binary)]]
+    binaries = []
+    fixture_root = Path(tempfile.mkdtemp(prefix='bundle-fixture-', dir=results))
+    for name in ('Parc', 'parc_native_runtime_tests'):
+        bundle = fixture_root / (name + '.app')
+        macos = bundle / 'Contents/MacOS'
+        macos.mkdir(parents=True, exist_ok=True)
+        (macos / name).touch()
+        (bundle / 'Contents/Info.plist').write_bytes(plistlib.dumps({
+            'CFBundleIdentifier': 'org.parc.helper-routing-fixture',
+            'CFBundleExecutable': name, 'CFBundlePackageType': 'APPL'}))
+        framework = bundle / 'Contents/Frameworks/Chromium Embedded Framework.framework'
+        version = framework / 'Versions/A'
+        (version / 'Resources').mkdir(parents=True, exist_ok=True)
+        (version / 'Resources/Info.plist').write_bytes(plistlib.dumps({
+            'CFBundleIdentifier': 'org.parc.framework-fixture',
+            'CFBundleExecutable': 'Chromium Embedded Framework', 'CFBundlePackageType': 'FMWK'}))
+        (framework / 'Versions/Current').symlink_to('A')
+        (framework / 'Resources').symlink_to('Versions/Current/Resources')
+        (framework / 'Chromium Embedded Framework').symlink_to('Versions/Current/Chromium Embedded Framework')
+        binaries.append((version / 'Chromium Embedded Framework', name))
+    commands = [[str(compiler), *flags, '-c', str(source), '-o', str(obj)]]
+    for executable, name in binaries:
+        commands += [[str(compiler), '-nostdlib++', str(obj), *map(str, objects), *map(str, libraries),
+                      '-framework', 'Foundation', '-Wl,-rpath,' + str(build), '-o', str(executable)],
+                     [str(executable), name]]
     code = 0
     for i, command in enumerate(commands):
         process = subprocess.run(command, cwd=build, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)

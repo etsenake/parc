@@ -26,6 +26,7 @@ import wave
 sys.dont_write_bytecode = True
 
 REPO = Path(__file__).resolve().parents[2]
+MANIFEST_PATH = REPO / 'Engine/ParcHost/overlay.json'
 PATCH = 'Engine/ParcHost/integration/platform-codecs.patch'
 DECODER = 'media/filters/mac/audio_toolbox_audio_decoder'
 FFMPEG_COMMON = 'media/ffmpeg/ffmpeg_common.cc'
@@ -74,7 +75,7 @@ def patched_sources(tree):
     spec = importlib.util.spec_from_file_location('engine_source', REPO / 'scripts/engine-source.py')
     engine = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(engine)
-    manifest = json.loads((REPO / 'Engine/ParcHost/overlay.json').read_text())
+    manifest = json.loads(MANIFEST_PATH.read_text())
     entry = next(p for p in manifest['patches'] if p['source'] == PATCH)
     if sha(REPO / PATCH) != entry['sha256']:
         raise RuntimeError('Patch differs from its manifest digest')
@@ -259,12 +260,17 @@ def write_wav(path, channels, rate=44100):
 
 
 def main():
+    global MANIFEST_PATH
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source_tree', type=Path)
     parser.add_argument('--results', type=Path, required=True)
     args = parser.parse_args()
+    lock = json.loads((REPO / "Engine/source-lock.json").read_text())
+    if lock.get('schema_version') != 2:
+        parser.error('unsupported source lock schema')
+    MANIFEST_PATH = REPO / ('Engine/ParcHost/overlay.json')
     tree = args.source_tree.resolve(strict=True)
-    build = tree / 'out/Release_GN_arm64'
+    build = tree / 'out' / lock['build']['configuration']
     results = args.results.resolve()
     if results.is_relative_to(tree):
         parser.error('results must be outside the source checkout')
@@ -316,7 +322,7 @@ def main():
                            str(build / 'obj/third_party/opus/libopus.a')], capture_output=True, text=True,
                           check=True).stdout.split()
     ffmpeg_objects += [build / member for member in opus]
-    inputs = [REPO / PATCH, REPO / 'Engine/ParcHost/overlay.json', test, filters_ninja, media_ffmpeg_ninja,
+    inputs = [REPO / PATCH, MANIFEST_PATH, test, filters_ninja, media_ffmpeg_ninja,
               ffmpeg_ninja, llvm / 'clang++', *libraries, *ffmpeg_objects]
     receipt = {'scope': 'patched AudioToolboxAudioDecoder, ffmpeg_common.cc and FFmpeg ADTS demuxer/parser with '
                         'actual target flags, linked to completed FFmpeg/media/base objects, decoding afconvert '

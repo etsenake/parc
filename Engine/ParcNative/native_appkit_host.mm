@@ -1,6 +1,6 @@
 // Copyright 2026 Parc contributors.
 #include "native_appkit_host.h"
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "native_internal_urls.h"
 #include "native_link_routing.h"
 
 #include <cmath>
@@ -20,7 +20,6 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/timer/timer.h"
-#include "cef/libcef/browser/chrome/chrome_browser_host_impl.h"
 #include "chrome/browser/devtools/devtools_ui_controller.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/profiles/profile.h"
@@ -58,10 +57,10 @@
 #include "native_browser_window.h"
 #include "native_capture_picker.h"
 #include "native_confirm_infobars.h"
-#include "native_chrome_platform_delegate.h"
 #include "native_exclusive_access.h"
 #include "native_fullscreen_window.h"
 #include "native_host_route.h"
+#include "native_page_binding.h"
 #include "native_intent_picker.h"
 #include "native_intent_picker_api.h"
 #include "native_payment_entry.h"
@@ -700,7 +699,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!contents || contents->GetBrowserContext() != browser_.GetProfile()) {
       return false;
     }
-    // Keep the supplied ExtensionViewHost contents; it need not be a CEF tab.
+    // Keep the supplied ExtensionViewHost contents; it need not be a tab.
     return RequestAppKitDevtools(*contents);
   }
   bool ShowActionContextMenu(ExtensionActionViewModel& model,
@@ -777,9 +776,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   }
   bool ValidActionPage(content::WebContents& contents) const {
     PCNativePage* page = ExistingNativePage(&contents);
-    auto cef = ChromeBrowserHostImpl::GetBrowserForContents(&contents);
     return selected() && window_ && window_.visible && !window_.miniaturized &&
-           Owns(contents) && cef && cef->browser() == &browser_ && page &&
+           Owns(contents) && NativeBrowserForContents(&contents) == &browser_ &&
+           page &&
            !page.closed && page.nativeView.window == window_ &&
            !page.nativeView.hiddenOrHasHiddenAncestor &&
            [binding_.client selectedNativePage] == page;
@@ -915,7 +914,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   }
   // Never deliver shell adoption from SetBrowser/TabStripModel mutation stacks.
   // External creation binds its exact returned WebContents before this task;
-  // internal creation is adopted only after model and CEF ownership agree.
+  // internal creation is adopted only after model and page ownership agree.
   void Synchronize() {
     if (tearing_down_ || draining_) {
       return;
@@ -946,13 +945,11 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         container.window != window_) {
       return false;
     }
-    auto cef = ChromeBrowserHostImpl::GetBrowserForContents(&contents);
-    if (!cef || cef->browser() != &browser_ ||
+    auto* platform = NativePageBinding::FromWebContents(&contents);
+    if (!platform || platform->browser() != &browser_ ||
         !GetNativeRoute(*browser_.GetProfile())) {
       return false;
     }
-    auto* platform =
-        static_cast<NativeChromePlatformDelegate*>(cef->platform_delegate());
     auto found = pages_.find(&contents);
     if (found != pages_.end() && found->second.container == container &&
         found->second.pane &&
@@ -990,12 +987,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       return false;
     }
     // A detach callback may have moved a still-live contents to another host.
-    cef = ChromeBrowserHostImpl::GetBrowserForContents(contents_weak.get());
-    if (!cef || cef->browser() != &browser_) {
+    platform = NativePageBinding::FromWebContents(contents_weak.get());
+    if (!platform || platform->browser() != &browser_) {
       return false;
     }
-    platform =
-        static_cast<NativeChromePlatformDelegate*>(cef->platform_delegate());
     return Attach(*contents_weak, page, container, *platform);
   }
   void ReconcilePages() {
@@ -1012,12 +1007,10 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       if (!contents || !Owns(*contents)) {
         continue;
       }
-      auto cef = ChromeBrowserHostImpl::GetBrowserForContents(contents.get());
-      if (!cef || cef->browser() != &browser_) {
+      auto* platform = NativePageBinding::FromWebContents(contents.get());
+      if (!platform || platform->browser() != &browser_) {
         continue;
       }
-      auto* platform =
-          static_cast<NativeChromePlatformDelegate*>(cef->platform_delegate());
       PCNativePage* page =
           GetOrCreateNativePage(*contents, *platform, profile_path_);
       if (!pages_.contains(contents.get())) {
@@ -1206,10 +1199,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
             current->second.pane != pane) {
           return false;
         }
-        auto cef = ChromeBrowserHostImpl::GetBrowserForContents(contents.get());
-        return cef && cef->browser() == &weak->browser_ &&
-               static_cast<NativeChromePlatformDelegate*>(
-                   cef->platform_delegate())->HasAttachedPage();
+        auto* platform = NativePageBinding::FromWebContents(contents.get());
+        return platform && platform->browser() == &weak->browser_ &&
+               platform->HasAttachedPage();
       };
       if (!attached_here()) {
         continue;
@@ -1495,13 +1487,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!still_bound()) return false;
     autofill_->PageHostWillDetach(*contents_weak);
     if (!still_bound()) return false;
-    auto platform = [&]() -> NativeChromePlatformDelegate* {
-      auto cef =
-          ChromeBrowserHostImpl::GetBrowserForContents(contents_weak.get());
-      return cef && cef->browser() == &browser_
-                 ? static_cast<NativeChromePlatformDelegate*>(
-                       cef->platform_delegate())
-                 : nullptr;
+    auto platform = [&]() -> NativePageBinding* {
+      auto* binding = NativePageBinding::FromWebContents(contents_weak.get());
+      return binding && binding->browser() == &browser_ ? binding : nullptr;
     };
     if (auto* delegate = platform()) {
       delegate->PageHostWillDetach();
@@ -1602,7 +1590,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
   bool Attach(content::WebContents& contents,
               PCNativePage* page,
               NSView* container,
-              NativeChromePlatformDelegate& platform) {
+              NativePageBinding& platform) {
     auto* initial_tab = tabs::TabInterface::MaybeGetFromContents(&contents);
     if (!initial_tab || initial_tab->GetBrowserWindowInterface() != &browser_) {
       return false;
@@ -1632,10 +1620,8 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         // contents. The older attachment must not replace that binding.
         return false;
       }
-      auto current =
-          ChromeBrowserHostImpl::GetBrowserForContents(contents_weak.get());
-      return current && current->browser() == &weak->browser_ &&
-             current->platform_delegate() == &platform;
+      auto* current = NativePageBinding::FromWebContents(contents_weak.get());
+      return current == &platform && current->browser() == &weak->browser_;
     };
     platform.PageHostWillDetach();
     if (!valid()) {
@@ -1818,11 +1804,9 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     if (!weak || !contents_weak) {
       return;
     }
-    auto cef =
-        ChromeBrowserHostImpl::GetBrowserForContents(contents_weak.get());
-    if (cef && cef->browser() == &browser_) {
-      static_cast<NativeChromePlatformDelegate*>(cef->platform_delegate())
-          ->PageHostWillDetach();
+    auto* platform = NativePageBinding::FromWebContents(contents_weak.get());
+    if (platform && platform->browser() == &browser_) {
+      platform->PageHostWillDetach();
     }
     if (!weak || !contents_weak) {
       return;

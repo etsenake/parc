@@ -72,18 +72,18 @@ reentry, competing reservations and unrelated-window reservations. The checker c
 The aggregate security query must exclude only the request's own exact sheet and
 reservation. Competing reservations still cancel it. Generated-target compiler
 checks and header checks verify source membership. Executing the browser fixture
-requires valid CEF process/context initialization.
+requires valid Chromium process/context initialization.
 
 ## Targets and commands
 
-`//cef/libcef/browser/parc_native:native_components` owns the presenter and shared
+`//parc/native:native_components` owns the presenter and shared
 reservation and exposes their headers. `native_extensions` owns uninstall and
 its security-context helper; `security_dialog_tracker` and `//ui/views` are
 public dependencies because public headers expose their types. The extensions
 upstream target includes `extension_uninstall_native_host.h` and publicly
 propagates `//ui/base/unowned_user_data`.
 
-`//cef/tests/parc_native_extensions:uninstall_browser_tests` is consumed by the
+`//parc/tests/native_extensions:uninstall_browser_tests` is consumed by the
 macOS `browser_tests` graph. It defines `HAS_OUT_OF_PROC_TEST_RUNNER` and directly
 depends on both native targets, the tracker and real Chromium test services.
 Membership is maintained in `tests/NativeExtensionPopup/BUILD.gn`, which the

@@ -1,5 +1,5 @@
-# Installed by the reviewed overlay at //cef/tests/parc_native_autofill.
-# Add this target to //chrome/test:unit_tests for macOS CEF builds. The tests
+# Installed by the reviewed overlay at //parc/tests/parc_native_autofill.
+# Add this target to //chrome/test:unit_tests for macOS Parc builds. The tests
 # exercise the production save sessions through real Browser/Tab/controllers.
 assert(is_mac)
 
@@ -12,14 +12,14 @@ source_set("session_tests") {
     "queue_reentrancy_unittest.mm",
     "session_unittest.mm",
   ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
   frameworks = [ "AppKit.framework" ]
 
   deps = [
     "//base",
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:autofill_save_sessions",
-    "//cef/libcef/features:parc_product_buildflags",
+    "//parc/native:autofill_save_sessions",
+    "//parc:buildflags",
     "//chrome/browser/autofill",
     "//chrome/browser/ui/autofill:test_support",
     "//chrome/browser/ui/autofill:impl",

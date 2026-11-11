@@ -18,17 +18,13 @@ import sys
 NATIVE = (
     ("Engine/ParcNative/downloads.cc", "native_downloads"),
     ("Engine/ParcNative/file_dialog.mm", "native_downloads"),
-    ("Engine/ParcNative/native_appkit_application.mm", "libcef_static"),
-    ("Engine/ParcNative/native_appkit_page.mm", "libcef_static"),
-    ("Engine/ParcNative/native_chrome_platform_delegate.mm", "libcef_static"),
+    ("Engine/ParcNative/native_appkit_application.mm", "browser"),
+    ("Engine/ParcNative/native_appkit_page.mm", "browser"),
+    ("Engine/ParcNative/native_page_binding.mm", "browser"),
     ("tests/NativeDownloads/downloads_unittest.cc", "download_unit_tests"),
     ("tests/NativeDownloads/file_dialog_browsertest.mm", "file_dialog_browser_tests"),
 )
-UPSTREAM = (
-    "cef/libcef/browser/download_manager_delegate_impl.cc",
-    "cef/libcef/browser/file_dialog_manager.cc",
-    "cef/libcef/browser/file_dialog_runner.cc",
-)
+UPSTREAM = ("chrome/browser/download/download_file_picker.cc",)
 RULE_PREFIX = (
     "../../third_party/llvm-build/Release+Asserts/bin/clang++ "
     "-MMD -MF ${target_out_dir}/${label_name}/${source_name_part}.o.d "
@@ -77,25 +73,29 @@ def contains_object(flags_file, rule, target):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
-    parser.add_argument("--output-name", default="Release_GN_arm64")
+    parser.add_argument("--output-name", default=None)
     args = parser.parse_args()
-    if (Path(args.output_name).name != args.output_name or
+    if args.output_name is not None and (Path(args.output_name).name != args.output_name or
             args.output_name in (".", "..", "")):
         parser.error("--output-name must name one existing output directory")
 
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
+    lock_path = repo / "Engine/source-lock.json"
+    lock = json.loads(lock_path.read_text())
+    if lock.get("schema_version") != 2:
+        parser.error("unsupported source lock schema")
+    if args.output_name is None:
+        args.output_name = lock["build"]["configuration"]
     build = (tree / "out" / args.output_name).resolve(strict=True)
     if not build.is_relative_to(tree / "out"):
         parser.error("the build output must remain inside source_tree/out")
-    manifest_path = repo / "Engine/ParcHost/overlay.json"
+    manifest_path = repo / ('Engine/ParcHost/overlay.json')
     manifest = json.loads(manifest_path.read_text())
-    lock_path = repo / "Engine/source-lock.json"
-    lock = json.loads(lock_path.read_text())
     if manifest.get("source_root") != "repository":
         parser.error("expected the reviewed repository-relative overlay")
-    if (manifest["upstream"]["cef"] != lock["cef"]["commit"] or
-            manifest["upstream"]["chromium"] != lock["chromium"]["commit"]):
+    upstream = ['chromium']
+    if manifest["upstream"] != {key: lock[key]["commit"] for key in upstream}:
         parser.error("overlay upstream identities do not match the source lock")
 
     snapshots = {}
@@ -145,14 +145,15 @@ def main():
 
     targets = []
     for source, name in NATIVE:
+        source = source
         if source not in sources:
             raise ValueError(f"reviewed overlay does not map {source}")
-        if name == "libcef_static":
-            owner = "obj/cef/libcef_static.ninja"
+        if name == "browser":
+            owner = "obj/parc/browser.ninja"
         elif name in ("download_unit_tests", "file_dialog_browser_tests"):
-            owner = f"obj/cef/tests/parc_native_downloads/{name}.ninja"
+            owner = f"obj/parc/tests/parc_native_downloads/{name}.ninja"
         else:
-            owner = f"obj/cef/libcef/browser/parc_native/{name}.ninja"
+            owner = f"obj/parc/native/{name}.ninja"
         flags_file = build / owner
         language = "cxx" if source.endswith(".cc") else "objcxx"
         if not flags_file.is_file() or not contains_object(flags_file, language, sources[source]):
@@ -160,8 +161,14 @@ def main():
         targets.append((sources[source], flags_file, language))
 
     # Discover the exact CXX owner rather than borrowing a nearby target's flags.
-    flags_file = build / "obj/cef/libcef_static.ninja"
-    for target in UPSTREAM:
+    flags_file = build / "obj/parc/browser.ninja"
+    upstream = UPSTREAM
+    choices = [path for path in (build / "obj/chrome/browser/download").rglob("*.ninja")
+               if contains_object(path, "cxx", upstream[0])]
+    if len(choices) != 1:
+        raise ValueError("expected one direct download picker owner")
+    flags_file = choices[0]
+    for target in upstream:
         if target not in outputs or not contains_object(flags_file, "cxx", target):
             raise ValueError(f"expected reviewed output and actual CXX owner: {target}")
         targets.append((target, flags_file, "cxx"))

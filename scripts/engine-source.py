@@ -5,7 +5,8 @@ check/plan are read-only. sync claims a NEW directory or resumes an unchanged
 owned dependency-sync failure. overlay-check/apply validate reviewed source
 manifests; build accepts only the recorded baseline and applied overlay.
 reconfigure adopts a source lock that changes only build.gn_defines; the next
-build regenerates. No reset, clean, stash, binary patches, installation or
+build regenerates. retarget changes pinned revisions in an idle owned workspace.
+No clean, stash, binary patches, installation or
 application launch.
 """
 from __future__ import annotations
@@ -32,7 +33,7 @@ SHIPPING_CONFIGURATION = "ParcDistribution_GN_arm64"
 OVERLAY_RECORD_LIMIT = 64 * 1024 * 1024
 # Chromium defaults dcheck_always_on (and EXPENSIVE_DCHECKs, V8 DEBUG/debug
 # code, cppgc heap verification) and the bundled field-trial testing config to
-# non-official builds; both engines turn them off, as CEF's official policy does.
+# non-official builds; both engines turn them off, in the shipping configuration.
 # Both play H.264/HEVC/AAC through macOS's decoders and encoders: FFmpeg keeps its
 # Chromium branding (no H.264/AAC decoders) and OpenH264 stays out.
 #
@@ -47,7 +48,6 @@ SHIPPING_DEFINES = ('is_component_build=false is_official_build=true chrome_pgo_
                     'target_cpu="arm64" enable_dsyms=false use_remoteexec=false')
 GIT = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "init.templateDir="]
 ORIGINS = {
-    "cef": "https://github.com/chromiumembedded/cef.git",
     "chromium": "https://chromium.googlesource.com/chromium/src.git",
     "depot_tools": "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
 }
@@ -61,20 +61,41 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def repository_names(lock: dict) -> tuple[str, ...]:
+    return ('depot_tools', 'chromium')
+
+
+def gn_arguments(defines: str) -> bytes:
+    # The reviewed recipe uses scalar GN literals, never imports or expressions.
+    pairs = re.findall(r'([a-z][a-z0-9_]*)=("[^"\n]*"|true|false|[0-9]+)(?:\s+|$)', defines)
+    if " ".join(k + "=" + v for k, v in pairs) != defines or len(dict(pairs)) != len(pairs):
+        raise Refusal("Expected unique scalar GN arguments")
+    return ("\n".join(k + "=" + v for k, v in sorted(pairs)) + "\n").encode()
+
+
+def engine_arguments(lock: dict, defines: str) -> bytes:
+    roots = json.dumps(lock["build"]["targets"], separators=(",", ":"))
+    return gn_arguments(defines) + ("root_extra_deps=" + roots + "\n").encode()
+
+
 def load_lock(path: Path = LOCK_FILE) -> tuple[dict, str]:
     raw = path.read_bytes()
     lock = json.loads(raw)
-    if lock.get("schema_version") != 1 or lock.get("target") != "mac-arm64":
+    if lock.get("schema_version") != 2 or lock.get("target") != "mac-arm64":
         raise Refusal("Unsupported source lock")
-    for name, origin in ORIGINS.items():
+    for name in repository_names(lock):
+        origin = ORIGINS[name]
         item = lock[name]
         if item["url"] != origin or not re.fullmatch(r"[0-9a-f]{40}", item["commit"]):
             raise Refusal(f"Invalid pinned origin/revision: {name}")
         for filename, sha in item.get("files", {}).items():
             if Path(filename).is_absolute() or ".." in Path(filename).parts or not re.fullmatch(r"[0-9a-f]{64}", sha):
                 raise Refusal(f"Invalid pinned file: {name}/{filename}")
-    if lock["build"]["configuration"] != "Release_GN_arm64" or lock["build"]["target"] != "cef":
+    if lock["build"]["configuration"] != "Release_GN_arm64":
         raise Refusal("Only the reviewed ARM64 upstream build is supported")
+    if lock["build"].get("targets") != ["//parc:parc_framework", "//parc/helper:parc_helper"]:
+        raise Refusal("Unsupported direct build targets")
+    gn_arguments(lock["build"]["gn_defines"] + " symbol_level=0")
     return lock, digest(raw)
 
 
@@ -144,10 +165,10 @@ def environment(workspace: Path, lock: dict, symbol_level: int) -> dict:
     }
 
 
-def locations(workspace: Path) -> dict[str, Path]:
-    return {"depot_tools": workspace / "depot_tools",
-            "chromium": workspace / "chromium/src",
-            "cef": workspace / "chromium/src/cef"}
+def locations(workspace: Path, lock: dict | None = None) -> dict[str, Path]:
+    paths = {"depot_tools": workspace / "depot_tools",
+            "chromium": workspace / "chromium/src"}
+    return {k: v for k, v in paths.items() if lock is None or k in repository_names(lock)}
 
 
 def gclient_text(lock: dict) -> str:
@@ -158,15 +179,14 @@ def gclient_text(lock: dict) -> str:
 
 
 def command_plan(workspace: Path, lock: dict, jobs: int) -> dict:
-    paths = locations(workspace)
+    paths = locations(workspace, lock)
     sync = []
-    for name in ("depot_tools", "chromium", "cef"):
+    for name in repository_names(lock):
         path = paths[name]
         # Googlesource shallow-fetch of a raw Chromium commit SHA stalls with no
         # progress. Fetch the pinned tag when present, then detach at the commit.
         fetch = GIT + ["-c", "http.version=HTTP/1.1", "fetch", "--progress"]
-        if name != "cef":
-            fetch.append("--depth=1")
+        fetch.append("--depth=1")
         fetch.append("origin")
         if name == "chromium" and lock[name].get("tag"):
             fetch.extend(["tag", lock[name]["tag"]])
@@ -181,13 +201,12 @@ def command_plan(workspace: Path, lock: dict, jobs: int) -> dict:
     gclient = str(paths["depot_tools"] / "gclient")
     sync.extend([
         {"cwd": str(workspace / "chromium"), "argv": [gclient, "sync", "--nohooks", "--no-history", "--revision", "src@" + lock["chromium"]["commit"], "--output-json", str(workspace / "dependency-sync.json")]},
-        {"cwd": str(paths["chromium"]), "argv": [sys.executable, str(paths["cef"] / "tools/patcher.py"), "--patch-file", str(paths["cef"] / "patch/patches/runhooks"), "--patch-dir", str(paths["chromium"])]},
         {"cwd": str(workspace / "chromium"), "argv": [gclient, "runhooks"]},
     ])
     return {"sync": sync, "build": [
         {"cwd": str(paths["depot_tools"]), "argv": [str(paths["depot_tools"] / "ensure_bootstrap")]},
-        {"cwd": str(paths["cef"]), "argv": ["/bin/bash", "cef_create_projects.sh"]},
-        {"cwd": str(paths["chromium"]), "argv": [str(paths["depot_tools"] / "autoninja"), "-C", "out/" + lock["build"]["configuration"], "-j", str(jobs), "cef_framework"]},
+        {"cwd": str(paths["chromium"]), "argv": [str(paths["depot_tools"] / "gn"), "gen", "out/" + lock["build"]["configuration"]]},
+        {"cwd": str(paths["chromium"]), "argv": [str(paths["depot_tools"] / "autoninja"), "-C", "out/" + lock["build"]["configuration"], "-j", str(jobs), *[t.removeprefix("//") for t in lock["build"]["targets"]]]},
     ]}
 
 
@@ -265,33 +284,26 @@ def settle_dead_operation(workspace: Path, receipt: dict, name: str = MARKER) ->
 
 def shipping_environment(workspace: Path, lock: dict, symbol_level: int) -> dict:
     env = environment(workspace, lock, symbol_level)
-    env["GN_DEFINES"] = SHIPPING_DEFINES + f" symbol_level={symbol_level}"
+    defines = SHIPPING_DEFINES
+    values = dict(line.split("=", 1) for line in gn_arguments(lock["build"]["gn_defines"]).decode().splitlines())
+    values.update(line.split("=", 1) for line in gn_arguments(SHIPPING_DEFINES).decode().splitlines())
+    defines = " ".join(k + "=" + v for k, v in values.items())
+    env["GN_DEFINES"] = defines + f" symbol_level={symbol_level}"
     return env
 
 
-def shipping_command_plan(workspace: Path, jobs: int) -> list[dict]:
+def shipping_command_plan(workspace: Path, jobs: int, lock: dict | None = None) -> list[dict]:
     paths = locations(workspace)
     output = "out/" + SHIPPING_CONFIGURATION
     return [
         {"cwd": str(paths["chromium"]), "argv": [str(paths["depot_tools"] / "gn"), "gen", output]},
         {"cwd": str(paths["chromium"]), "argv": [str(paths["depot_tools"] / "autoninja"), "-C", output,
-                                                "-j", str(jobs), "cef_framework"]},
+                                                "-j", str(jobs), *[t.removeprefix("//") for t in (lock or load_lock()[0])["build"]["targets"]]]},
     ]
 
 
-def shipping_arguments(workspace: Path, env: dict) -> bytes:
-    # Use the pinned CEF configuration generator, as gclient_hook.py does.
-    # The separate GN output preserves all existing development objects.
-    program = ("import gn_args; "
-               "args=gn_args.GetAllPlatformConfigs({}, quiet=True)['Release_GN_arm64']; "
-               "assert args['is_component_build'] is False and args['is_debug'] is False; "
-               "assert args['dcheck_always_on'] is False; "
-               "assert args['disable_fieldtrial_testing_config'] is True; "
-               "assert args['proprietary_codecs'] is True and args['ffmpeg_branding'] == 'Chromium'; "
-               "assert args['enable_ffmpeg_video_decoders'] is False and args['media_use_openh264'] is False; "
-               "assert args['enable_hangout_services_extension'] is True; "
-               "print(gn_args.GetConfigFileContents(args))")
-    return run([sys.executable, "-c", program], locations(workspace)["cef"] / "tools", env, True)
+def shipping_arguments(workspace: Path, env: dict, lock: dict | None = None) -> bytes:
+    return engine_arguments(lock or load_lock()[0], env["GN_DEFINES"])
 
 
 def read_shipping_marker(workspace: Path, lock_sha: str, state: dict) -> dict:
@@ -333,7 +345,7 @@ def shipping_build(workspace: Path, lock: dict, lock_sha: str, symbol_level: int
             raise Refusal("Another operation is using this workspace") from error
         state = settle_dead_operation(workspace, read_marker(workspace, lock_sha))
         if state.get("phase") not in {"generated", "built"} or state["symbol_level"] != symbol_level:
-            raise Refusal("Complete normal CEF source generation before building the shipping configuration")
+            raise Refusal("Complete normal engine source generation before building the shipping configuration")
         env = shipping_environment(workspace, lock, symbol_level)
         verify_workspace(workspace, lock, state, env)
         applied = recorded_overlay(workspace, state)
@@ -341,7 +353,7 @@ def shipping_build(workspace: Path, lock: dict, lock_sha: str, symbol_level: int
             raise Refusal("Shipping requires the reviewed native source overlay")
         output = internal_path(locations(workspace)["chromium"] / "out" / SHIPPING_CONFIGURATION, workspace)
         receipt_path = internal_path(workspace / SHIPPING_MARKER, workspace)
-        arguments = shipping_arguments(workspace, env)
+        arguments = shipping_arguments(workspace, env, lock)
         if receipt_path.exists():
             previous = settle_dead_operation(workspace, read_shipping_marker(workspace, lock_sha, state),
                                              SHIPPING_MARKER)
@@ -359,7 +371,8 @@ def shipping_build(workspace: Path, lock: dict, lock_sha: str, symbol_level: int
                    "configuration": SHIPPING_CONFIGURATION, "gn_defines": SHIPPING_DEFINES,
                    "symbol_level": symbol_level, "args_sha256": digest(arguments),
                    "source_fingerprint": state["source_fingerprint"], "overlay": state["overlay"]}
-        commands = shipping_command_plan(workspace, jobs)
+        receipt.update(engine_mode="direct", build_targets=lock["build"]["targets"], effective_gn_defines=env["GN_DEFINES"])
+        commands = shipping_command_plan(workspace, jobs, lock)
         if generate_only:
             commands = commands[:1]
         for phase, command in zip(("generation", "build"), commands):
@@ -389,7 +402,7 @@ def reconfigure_shipping(workspace: Path, lock: dict, previous_sha: str, lock_sh
     args_path = internal_path(locations(workspace)["chromium"] / "out" / SHIPPING_CONFIGURATION / "args.gn", workspace)
     if args_path.is_symlink() or not args_path.is_file():
         raise Refusal("Shipping output exists without its generated arguments")
-    arguments = shipping_arguments(workspace, shipping_environment(workspace, lock, state["symbol_level"]))
+    arguments = shipping_arguments(workspace, shipping_environment(workspace, lock, state["symbol_level"]), lock)
     current = args_path.read_bytes()
     # A killed reconfigure may already have replaced args.gn before its receipt.
     if digest(current) not in {receipt.get("args_sha256"), digest(arguments)}:
@@ -457,6 +470,85 @@ def reconfigure(workspace: Path, lock: dict, lock_sha: str, previous_path: Path)
         return report
 
 
+def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) -> dict:
+    """Change only dependency pins, preserving outputs and untracked files."""
+    if (not previous_path.is_absolute() or ".." in previous_path.parts
+            or any(p.is_symlink() for p in [previous_path, *previous_path.parents])):
+        raise Refusal("Previous source lock must be an absolute non-symlink path")
+    previous, previous_sha = load_lock(previous_path)
+    def fixed(item):
+        return {k: v for k, v in item.items() if k not in
+                {"chromium", "depot_tools", "references"}}
+    if previous_sha == lock_sha or fixed(previous) != fixed(lock):
+        raise Refusal("retarget requires changed pins with unchanged build settings and storage")
+    for name in locations(workspace, lock):
+        if previous[name]["url"] != lock[name]["url"]:
+            raise Refusal("retarget cannot change repository origins")
+    report = host_report(workspace, lock, "build")
+    if report["blockers"]:
+        raise Refusal("; ".join(report["blockers"]))
+    guard_path = internal_path(workspace / ".parc-operation.lock", workspace)
+    with guard_path.open("r") as guard:
+        try:
+            fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise Refusal("Another operation is using this workspace") from error
+        state = read_marker(workspace, previous_sha)
+        if state.get("phase") not in {"synced", "generated", "built"}:
+            raise Refusal("retarget requires a recorded good source phase")
+        env = environment(workspace, previous, state["symbol_level"])
+        verify_workspace(workspace, previous, state, env)
+        unchanged = all(previous[k] == lock[k] for k in ("chromium", "depot_tools"))
+        reserve = "build" if unchanged else "sync"
+        report = host_report(workspace, lock, reserve)
+        if report["blockers"]:
+            raise Refusal("; ".join(report["blockers"]))
+        record = recorded_overlay(workspace, state)
+        # Validate every restoration path before starting a non-resumable stage.
+        restores = [(target_path(workspace, target, previous),
+                     item["original"].encode() if item["original"] is not None else None,
+                     item["mode"]) for target, item in (record or {}).get("targets", {}).items()]
+        shipping_path = internal_path(workspace / SHIPPING_MARKER, workspace)
+        shipping = None
+        if shipping_path.exists():
+            shipping = read_shipping_marker(workspace, previous_sha, state)
+        active = dict(state, phase="retarget-in-progress", retarget_lock_sha256=lock_sha)
+        write_marker(workspace, active)
+        if shipping is not None:
+            shipping.update(phase="retarget-in-progress")
+            write_marker(workspace, shipping, SHIPPING_MARKER)
+        for path, original, mode in restores:
+            write_source(path, original, mode)
+        # Undo only tracked changes in the verified receipt.
+        # No reset --hard or clean: untracked files and out/ must survive.
+        for relative in state["repositories"]:
+            path = internal_path(workspace / relative, workspace)
+            run(GIT + ["restore", "--source=HEAD", "--staged", "--worktree", "."], path, env)
+        plan = command_plan(workspace, lock, 4)
+        env = environment(workspace, lock, state["symbol_level"])
+        for index, command in enumerate(plan["sync"]):
+            if index < 4 * len(repository_names(lock)) and index % 4 not in {2, 3}:
+                continue
+            if index >= 4 * len(repository_names(lock)):
+                for name, path in locations(workspace, lock).items():
+                    verify_repository(path, lock[name], env, require_clean=name == "depot_tools")
+            run(command["argv"], Path(command["cwd"]), env)
+        repositories = synced_repositories(workspace, lock)
+        for name, path in locations(workspace, lock).items():
+            verify_repository(path, lock[name], env, require_clean=name == "depot_tools")
+        active = {k: v for k, v in state.items() if k not in {"overlay", "generation_error", "engine_mode", "args_sha256", "build_targets"}}
+        active.update(lock_sha256=lock_sha, phase="synced", repositories=repositories,
+                      source_fingerprint=tree_fingerprint(workspace, env, repositories))
+        active["engine_mode"] = "direct"
+        if shipping is not None:
+            shipping.update(lock_sha256=lock_sha, phase="reconfigured",
+                            source_fingerprint=active["source_fingerprint"], overlay=None)
+            write_marker(workspace, shipping, SHIPPING_MARKER)
+        write_marker(workspace, active)
+        return {"workspace": str(workspace), "phase": "synced", "lock_sha256": lock_sha,
+                "reserve": reserve, "minimum_free_bytes": report.get("minimum_free_bytes")}
+
+
 def verify_repository(path: Path, item: dict, env: dict, require_clean: bool = True) -> None:
     if path.is_symlink() or not (path / ".git").is_dir() or (path / ".git").is_symlink():
         raise Refusal(f"Expected owned ordinary Git checkout: {path}")
@@ -482,9 +574,9 @@ def discover_repositories(workspace: Path) -> list[str]:
     return sorted(roots)
 
 
-def synced_repositories(workspace: Path) -> list[str]:
+def synced_repositories(workspace: Path, lock: dict | None = None) -> list[str]:
     entries = json.loads((workspace / "dependency-sync.json").read_text())["solutions"]
-    roots = {"chromium/src", "chromium/src/cef"}
+    roots = {"chromium/src"}
     for name, value in entries.items():
         if value.get("scm") == "git":
             relative = Path("chromium") / name
@@ -539,14 +631,19 @@ def verify_workspace(workspace: Path, lock: dict, state: dict, env: dict) -> Non
     config = internal_path(workspace / "chromium/.gclient", workspace)
     if config.is_symlink() or config.read_text() != gclient_text(lock):
         raise Refusal("gclient configuration changed")
-    for name, path in locations(workspace).items():
+    for name, path in locations(workspace, lock).items():
         internal_path(path, workspace)
         for filename in lock[name].get("files", {}):
             internal_path(path / filename, workspace)
-        # The CEF project generator applies reviewed upstream source patches.
         verify_repository(path, lock[name], env, require_clean=name == "depot_tools")
     if tree_fingerprint(workspace, env, state.get("repositories", [])) != state.get("source_fingerprint"):
         raise Refusal("Source/dependency changes detected; preserved without regeneration")
+    if state.get("phase") in {"generated", "built"}:
+        args = internal_path(locations(workspace)["chromium"] / "out" / lock["build"]["configuration"] / "args.gn", workspace)
+        if (not args.is_file() or state.get("engine_mode") != "direct" or state.get("build_targets") != lock["build"]["targets"]
+                or state.get("args_sha256") != digest(args.read_bytes())
+                or args.read_bytes() != engine_arguments(lock, environment(workspace, lock, state["symbol_level"])["GN_DEFINES"])):
+            raise Refusal("Direct generated arguments differ from their receipt")
     recorded_overlay(workspace, state)
 
 
@@ -575,8 +672,6 @@ def target_path(workspace: Path, target: str, lock: dict | None = None) -> Path:
     parts = target.split("/")
     if any(p.startswith(".") or p in {"out", "DEPS"} for p in parts):
         raise Refusal(f"Overlay cannot change bootstrap/generated inputs: {target}")
-    if lock and target in {"cef/" + name for name in lock["cef"].get("files", {})}:
-        raise Refusal(f"Overlay cannot change a pinned bootstrap file: {target}")
     file = internal_path(workspace / "chromium/src" / target, workspace)
     for parent in file.parents:
         if parent == workspace:
@@ -704,7 +799,7 @@ def prepare_overlay(workspace: Path, lock: dict, state: dict, manifest: Path,
     spec = json.loads(raw)
     if spec.get("schema_version") != 1 or not re.fullmatch(r"[a-z][a-z0-9-]*", spec.get("id", "")) or type(spec.get("version")) is not int or spec["version"] < 1:
         raise Refusal("Unsupported source overlay identity/version")
-    if spec.get("upstream") != {name: lock[name]["commit"] for name in ("cef", "chromium")}:
+    if spec.get("upstream") != {name: lock[name]["commit"] for name in (('chromium',))}:
         raise Refusal("Overlay upstream commits do not match the source lock")
     source_root = spec.get("source_root", "manifest")
     if source_root not in {"manifest", "repository"}:
@@ -712,7 +807,7 @@ def prepare_overlay(workspace: Path, lock: dict, state: dict, manifest: Path,
     input_root = REPO if source_root == "repository" else manifest.parent
     internal_path(manifest, input_root)
     build_targets = spec.get("build_targets", [])
-    if not isinstance(build_targets, list) or len(set(build_targets)) != len(build_targets) or any(not isinstance(t, str) or not re.fullmatch(r"[a-z][a-z0-9_]*", t) or t == "cef" for t in build_targets):
+    if not isinstance(build_targets, list) or len(set(build_targets)) != len(build_targets) or any(not isinstance(t, str) or not re.fullmatch('//parc(?:/[a-z][a-z0-9_]*)*:[a-z][a-z0-9_]*', t) for t in build_targets):
         raise Refusal("Invalid overlay build targets")
     # Resume after a killed apply must not require live outputs to still match the
     # previous overlay; those files may already be partially updated.
@@ -944,24 +1039,19 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                 start = 0
             else:
                 verify_workspace(workspace, lock, state, env)
-                start = 12  # Only repeat gclient sync, never checkout/reset sources.
+                start = 4 * len(repository_names(lock))  # Only repeat gclient sync, never checkout/reset sources.
                 state["phase"] = "sync-in-progress"
                 write_marker(workspace, state)
             for index, command in enumerate(plan["sync"]):
                 if index < start:
                     continue
-                if index == 8:
-                    exclude = locations(workspace)["chromium"] / ".git/info/exclude"
-                    exclude.parent.mkdir(exist_ok=True)
-                    with exclude.open("a") as stream:
-                        stream.write("\n/cef/\n")
-                if index >= 12:
-                    for name, path in locations(workspace).items():
-                        verify_repository(path, lock[name], env, require_clean=name != "chromium" or index == 12)
+                if index >= 4 * len(repository_names(lock)):
+                    for name, path in locations(workspace, lock).items():
+                        verify_repository(path, lock[name], env, require_clean=name != "chromium" or index == 4 * len(repository_names(lock)))
                 try:
                     run(command["argv"], Path(command["cwd"]), env)
                 except (OSError, subprocess.CalledProcessError):
-                    if index == 12:
+                    if index == 4 * len(repository_names(lock)):
                         # Snapshot only this owned failed sync; any later edit blocks
                         # resumption. gclient is rerun without force/reset/delete.
                         repositories = discover_repositories(workspace)
@@ -969,7 +1059,7 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                                      source_fingerprint=tree_fingerprint(workspace, env, repositories))
                         write_marker(workspace, state)
                     raise
-            repositories = synced_repositories(workspace)
+            repositories = synced_repositories(workspace, lock)
             state.update(phase="synced", repositories=repositories,
                          source_fingerprint=tree_fingerprint(workspace, env, repositories))
             write_marker(workspace, state)
@@ -977,7 +1067,9 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
             verify_workspace(workspace, lock, state, env)
             applied = recorded_overlay(workspace, state)
             if applied:
-                plan["build"][-1]["argv"].extend(applied["build_targets"])
+                plan["build"][-1]["argv"].extend(t.removeprefix('//') for t in applied["build_targets"])
+            if not applied:
+                raise Refusal("Direct generation requires the reviewed Parc overlay")
             if state["phase"] in {"synced", "generation-failed"}:
                 # gclient intentionally skips update_depot_tools under the
                 # pinned DEPOT_TOOLS_UPDATE=0 policy. Its vpython entry point
@@ -987,6 +1079,12 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                 state["phase"] = "generation-in-progress"
                 write_marker(workspace, state)
                 command = plan["build"][1]
+                output = internal_path(locations(workspace)["chromium"] / "out" / lock["build"]["configuration"], workspace)
+                output.mkdir(parents=True, exist_ok=True)
+                arguments = engine_arguments(lock, env["GN_DEFINES"])
+                write_source(internal_path(output / "args.gn", workspace), arguments, 0o644)
+                state.update(engine_mode="direct", build_targets=lock["build"]["targets"], args_sha256=digest(arguments))
+                write_marker(workspace, state)
                 try:
                     run(command["argv"], Path(command["cwd"]), env)
                 except (OSError, subprocess.CalledProcessError) as error:
@@ -998,7 +1096,7 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                                  source_fingerprint=tree_fingerprint(workspace, env, state["repositories"]))
                     write_marker(workspace, state)
                     raise
-                # Upstream CEF generation can apply its own source patches;
+                # Generation must preserve reviewed source outputs;
                 # refuse to compile if those changed a reviewed Parc target.
                 recorded_overlay(workspace, state)
                 state.pop("generation_error", None)
@@ -1014,7 +1112,7 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "plan", "sync", "build", "generate", "shipping-plan", "shipping-generate", "shipping-build", "overlay-check", "overlay-apply", "reconfigure"))
+    parser.add_argument("command", choices=("check", "plan", "sync", "build", "generate", "shipping-plan", "shipping-generate", "shipping-build", "overlay-check", "overlay-apply", "reconfigure", "retarget", "adopt-clone"))
     parser.add_argument("--workspace", required=True,
                         help="Dedicated absolute path under this checkout's ignored work/ "
                              "(preferred) or outside the repo; sync claims a new directory or "
@@ -1024,13 +1122,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--jobs", type=int, choices=range(1, 33), default=4)
     parser.add_argument("--manifest", type=Path, help="Absolute reviewed source overlay manifest for overlay-check/apply")
     parser.add_argument("--previous-lock", type=Path,
-                        help="Absolute copy of the source lock the workspace was built with, for reconfigure")
+                        help="Absolute copy of the source lock the workspace was built with, for reconfigure, retarget or adopt-clone")
+    parser.add_argument("--source-workspace", type=Path, help="Idle owned source of an APFS clone")
     args = parser.parse_args(argv)
     try:
-        lock, sha = load_lock()
+        lock, sha = load_lock(LOCK_FILE)
         workspace = safe_path(args.workspace)
-        if args.previous_lock is not None and args.command != "reconfigure":
-            raise Refusal("--previous-lock is only accepted by reconfigure")
+        if args.previous_lock is not None and args.command not in {"reconfigure", "retarget", "adopt-clone"}:
+            raise Refusal("--previous-lock is only accepted by reconfigure, retarget or adopt-clone")
+        if args.command == "adopt-clone":
+            if args.source_workspace is None or args.manifest is not None:
+                raise Refusal("adopt-clone requires --source-workspace, without a manifest override")
+            import engine_workspace
+            try:
+                print(json.dumps(engine_workspace.adopt_local_clone(args.source_workspace, workspace, REPO, args.previous_lock or LOCK_FILE), indent=2))
+            except engine_workspace.Refusal as error:
+                raise Refusal(str(error)) from error
+            return 0
+        if args.source_workspace is not None:
+            raise Refusal("--source-workspace is only accepted by adopt-clone")
         if args.command.startswith("overlay-"):
             if args.manifest is None:
                 raise Refusal("Source overlay requires --manifest")
@@ -1038,18 +1148,18 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.manifest is not None:
             raise Refusal("--manifest is only accepted by overlay-check/apply")
-        if args.command == "reconfigure":
+        if args.command in {"reconfigure", "retarget"}:
             if args.previous_lock is None:
-                raise Refusal("reconfigure requires --previous-lock")
-            print(json.dumps(reconfigure(workspace, lock, sha, args.previous_lock), indent=2))
+                raise Refusal(args.command + " requires --previous-lock")
+            print(json.dumps((retarget if args.command == "retarget" else reconfigure)(workspace, lock, sha, args.previous_lock), indent=2))
             return 0
         if args.command.startswith("shipping-"):
             report = host_report(workspace, lock, "build")
             state = read_marker(workspace, sha)
             if state.get("phase") not in {"generated", "built"} or state.get("symbol_level") != args.symbol_level:
-                report["blockers"].append("Complete normal CEF generation with the same symbol level first")
+                report["blockers"].append("Complete normal engine generation with the same symbol level first")
             report.update(configuration=SHIPPING_CONFIGURATION, ready=not report["blockers"],
-                          source_lock_sha256=sha, commands=shipping_command_plan(workspace, args.jobs),
+                          source_lock_sha256=sha, commands=shipping_command_plan(workspace, args.jobs, lock),
                           environment=shipping_environment(workspace, lock, args.symbol_level),
                           scope="Non-component release in a separate output; preserves development objects; no installation or launch")
             print(json.dumps(report, indent=2))

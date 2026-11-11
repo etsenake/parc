@@ -3,7 +3,7 @@
 #define CEF_LIBCEF_BROWSER_PARC_NATIVE_VIDEO_OVERLAY_WINDOW_H_
 #include <memory>
 #ifdef __OBJC__
-#import "cef/libcef/browser/parc_native/native_appkit_bridge.h"
+#import "parc/native/native_appkit_bridge.h"
 #endif
 namespace content {
 class WebContents;

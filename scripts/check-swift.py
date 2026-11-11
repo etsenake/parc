@@ -3,7 +3,7 @@
 
 Portable replacement for the retained claude-split-checks/typecheck.sh. Uses
 the same warnings-as-errors, whole-module, ARM64 macOS 13 compiler contract.
-Select the CEF headers explicitly; this tool never selects a built package.
+Bridge declarations are self-contained in Engine/ParcNative. This tool never selects a built package.
 """
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def swift_sources(repo: Path) -> list[Path]:
     return sources
 
 
-def snapshot(repo: Path, cef_include: Path, sparkle_release: Path) -> tuple[list[Path], dict[str, str]]:
+def snapshot(repo: Path, bridge_headers: Path, sparkle_release: Path) -> tuple[list[Path], dict[str, str]]:
     sources = swift_sources(repo)
     files = set(sources)
     sparkle_code = sparkle_release / "Sparkle.framework/Versions/B"
@@ -66,20 +66,20 @@ def snapshot(repo: Path, cef_include: Path, sparkle_release: Path) -> tuple[list
                       sparkle_code / "PrivateHeaders", sparkle_code / "Modules"):
         files.update(directory.rglob("*.h"))
         files.update(directory.rglob("*.modulemap"))
-    files.update(path for path in cef_include.rglob("*") if path.is_file())
+    files.update(path for path in bridge_headers.rglob("*") if path.is_file())
     files.add(repo / "Engine/source-lock.json")
     files.add(Path(__file__).resolve())
     return sources, {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(files)}
 
 
-def compiler_command(repo: Path, cef_include: Path, sparkle_release: Path, mode: str,
+def compiler_command(repo: Path, bridge_headers: Path, sparkle_release: Path, mode: str,
                      sources: list[Path]) -> list[str]:
     flags = ["-emit-sil", "-Onone", "-o", "/dev/null"] if mode == "sil" else ["-typecheck"]
     return [
         "xcrun", "--sdk", "macosx", "swiftc", "-warnings-as-errors",
         "-whole-module-optimization", *flags, "-target", "arm64-apple-macos13.0",
         "-I", str(repo / "Engine/ParcNative"), "-Xcc", "-DOS_MAC=1",
-        "-I", str(cef_include), "-F", str(sparkle_release),
+        "-F", str(sparkle_release),
         "-import-objc-header", str(repo / "Sources/ParcEngine/ParcEngine.h"),
         *map(str, sources),
     ]
@@ -95,11 +95,6 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--repo", type=Path, default=REPO,
                         help="Parc checkout root (default: this script's checkout)")
-    headers = result.add_mutually_exclusive_group()
-    headers.add_argument("--chromium-source", type=Path,
-                         help="Selected engine workspace's chromium/src directory; also PARC_CHROMIUM_SOURCE")
-    headers.add_argument("--cef-include", type=Path,
-                         help="Explicit CEF include directory containing cef_application_mac.h")
     result.add_argument("--mode", choices=("typecheck", "sil"), default="typecheck",
                         help="Fast iteration check, or whole-module SIL for a finished row")
     result.add_argument("--output-dir", type=Path,
@@ -115,20 +110,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         repo = args.repo.expanduser().resolve()
         state = git_state(repo)
-        chromium = args.chromium_source
-        if chromium is None and args.cef_include is None:
-            configured = os.environ.get("PARC_CHROMIUM_SOURCE")
-            if configured:
-                chromium = Path(configured)
-        if args.cef_include is not None:
-            cef_include = args.cef_include.expanduser().resolve()
-        elif chromium is not None:
-            cef_include = chromium.expanduser().resolve() / "cef/include"
-        else:
-            raise Refusal("Select --chromium-source, --cef-include or PARC_CHROMIUM_SOURCE; no engine is guessed")
+        bridge_headers = repo / "Engine/ParcNative"
+        protocol_header = bridge_headers / "native_application_protocols.h"
         for required in (repo / "Sources/ParcEngine/ParcEngine.h",
                          repo / "Engine/ParcNative/native_appkit_bridge.h",
-                         cef_include / "cef_application_mac.h"):
+                         protocol_header):
             if not required.is_file():
                 raise Refusal(f"Required compiler input is missing: {required}")
         label = args.label or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ") + f"-{os.getpid()}"
@@ -141,11 +127,11 @@ def main(argv: list[str] | None = None) -> int:
         # Fetch the build's pinned Sparkle into the same ignored cache; a plan writes nothing.
         cache = repo / "build/sparkle"
         sparkle_release = sparkle.directory(cache) if args.plan else sparkle.fetch(cache)
-        sources, before = snapshot(repo, cef_include, sparkle_release)
-        command = compiler_command(repo, cef_include, sparkle_release, args.mode, sources)
+        sources, before = snapshot(repo, bridge_headers, sparkle_release)
+        command = compiler_command(repo, bridge_headers, sparkle_release, args.mode, sources)
         record = {
             "schema_version": 1, "mode": args.mode, "repo": str(repo), "git_before": state,
-            "cef_include": str(cef_include), "sparkle_release": str(sparkle_release),
+            "bridge_headers": str(bridge_headers), "sparkle_release": str(sparkle_release),
             "sparkle_cached": sparkle_release.is_dir(), "command": command, "inputs": before,
             "source_count": len(sources), "output": str(output),
             "scope": "Swift compiler check only; no engine ABI, linked app, package or runtime verification",
@@ -180,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
         head_unchanged = False
         after_state = None
         try:
-            after_sources, after = snapshot(repo, cef_include, sparkle_release)
+            after_sources, after = snapshot(repo, bridge_headers, sparkle_release)
             unchanged = after == before and after_sources == sources
             after_state = git_state(repo)
             head_unchanged = after_state["head"] == state["head"]

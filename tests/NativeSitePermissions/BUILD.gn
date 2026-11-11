@@ -1,17 +1,17 @@
-# Installed at //cef/tests/parc_native_permissions and linked into genuine
+# Installed at //parc/tests/parc_native_permissions and linked into genuine
 # //chrome/test:unit_tests on macOS CEF builds. No libcef_static dependency.
 assert(is_mac)
 
 source_set("unit_tests") {
   testonly = true
   sources = [ "permission_prompt_unittest.mm" ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
   frameworks = [ "AppKit.framework" ]
   deps = [
     "//base",
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:native_components",
-    "//cef/libcef/browser/parc_native:native_permissions",
+    "//parc/native:native_components",
+    "//parc/native:native_permissions",
     "//chrome/browser/content_settings:content_settings_factory",
     "//chrome/browser/content_settings:content_settings_factory_impl",
     "//chrome/browser/ui/tabs:tab_strip",

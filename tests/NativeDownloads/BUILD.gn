@@ -1,4 +1,4 @@
-# Installed at //cef/tests/parc_native_downloads.
+# Installed at //parc/tests/parc_native_downloads.
 assert(is_mac)
 
 source_set("download_unit_tests") {
@@ -6,7 +6,7 @@ source_set("download_unit_tests") {
   sources = [ "downloads_unittest.cc" ]
   deps = [
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:native_downloads",
+    "//parc/native:native_downloads",
     "//chrome/browser/download",
     "//chrome/common:constants",
     "//chrome/test:test_support",
@@ -18,7 +18,7 @@ source_set("download_unit_tests") {
     "//testing/gtest",
     "//url",
   ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
 }
 
 source_set("file_dialog_browser_tests") {
@@ -31,8 +31,8 @@ source_set("file_dialog_browser_tests") {
   frameworks = [ "AppKit.framework" ]
   deps = [
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:native_components",
-    "//cef/libcef/browser/parc_native:native_downloads",
+    "//parc/native:native_components",
+    "//parc/native:native_downloads",
     "//chrome/browser/tab_list",
     "//chrome/browser/ui/dialogs:browser_dialogs",
     "//components/web_modal",
@@ -45,5 +45,5 @@ source_set("file_dialog_browser_tests") {
     "//ui/base",
     "//ui/shell_dialogs",
   ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
 }

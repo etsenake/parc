@@ -2,12 +2,14 @@
 
 This module never builds an engine or adopts an arbitrary existing directory.
 The artifact CLI authenticates and extracts an archive into private staging, then
-calls adopt_workspace before publishing it. Only receipt files are rewritten;
+calls adopt_workspace before publishing it. Local clone adoption instead proves
+the copy against an idle owned source. Only receipts and proven generated links
+are rewritten;
 GN regeneration is mandatory, and cached source/object mtimes remain intact.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import copy
 import fcntl
 import hashlib
@@ -109,7 +111,7 @@ def _receipt(engine, workspace: Path, lock: dict, lock_sha: str) -> tuple[dict, 
     return state, receipt_sha
 
 
-def _validate_baseline(engine, workspace: Path, repo: Path, lock: dict, state: dict) -> None:
+def _validate_baseline(engine, workspace: Path, repo: Path, lock: dict, state: dict, *, verify_overlay_inputs: bool = True) -> None:
     env = engine.environment(workspace, lock, state["symbol_level"])
     env["GIT_OPTIONAL_LOCKS"] = "0"  # Do not refresh indexes during verification.
     # Refuse Git metadata that would make an apparently complete snapshot rely
@@ -132,6 +134,8 @@ def _validate_baseline(engine, workspace: Path, repo: Path, lock: dict, state: d
                     or key.startswith(b"includeif.") or key == b"core.bare" and value.lower() != b"false"):
                 raise Refusal(f"External Git configuration is not portable: {relative}: {key.decode(errors='replace')}")
     engine.verify_workspace(workspace, lock, state, env)
+    if not verify_overlay_inputs:
+        return
     manifest = repo / "Engine/ParcHost/overlay.json"
     expected = _sha(manifest.read_bytes())
     if state.get("overlay", {}).get("identity") != expected:
@@ -239,16 +243,17 @@ def _toolchain(workspace: Path, engine) -> dict:
             "external_xcode": external}
 
 
-def snapshot_metadata(workspace: Path, repo: Path = REPO) -> dict:
+def snapshot_metadata(workspace: Path, repo: Path = REPO, *, lock_path: Path | None = None,
+                      verify_overlay_inputs: bool = True) -> dict:
     """Read and validate a frozen owned workspace; caller holds workspace_guard."""
     engine = _engine(repo)
     try:
         workspace = engine.safe_path(str(workspace), repo)
-        lock, lock_sha = engine.load_lock(repo / "Engine/source-lock.json")
+        lock, lock_sha = engine.load_lock(lock_path or repo / "Engine/source-lock.json")
         state, receipt_sha = _receipt(engine, workspace, lock, lock_sha)
         if state.get("workspace") != str(workspace):
             raise Refusal("Snapshot receipt names a different original workspace")
-        _validate_baseline(engine, workspace, repo, lock, state)
+        _validate_baseline(engine, workspace, repo, lock, state, verify_overlay_inputs=verify_overlay_inputs)
         metadata = {"schema_version": SCHEMA_VERSION, "kind": "parc-engine-workspace",
                     "original_workspace": str(workspace), "source_receipt": state,
                     "source_receipt_sha256": receipt_sha, "source_lock_sha256": lock_sha,
@@ -280,20 +285,31 @@ def adopt_workspace(extracted_root: Path, metadata: dict, *, verified_archive_sh
             or verified_archive_sha256 != expected_archive_sha256
             or not isinstance(expected_metadata_sha256, str) or not SHA256.fullmatch(expected_metadata_sha256)):
         raise Refusal("Authenticated archive and metadata digests are required for adoption")
+    return _adopt_workspace(extracted_root, metadata,
+                            expected_metadata_sha256=expected_metadata_sha256,
+                            provenance={"archive_sha256": verified_archive_sha256},
+                            destination=destination, repo=repo)
+
+
+def _adopt_workspace(extracted_root: Path, metadata: dict, *, expected_metadata_sha256: str,
+                     provenance: dict, destination: Path | None = None, repo: Path = REPO,
+                     source_lock: tuple | None = None, already_guarded: bool = False,
+                     local_source: Path | None = None) -> dict:
     engine = _engine(repo)
     try:
         root = engine.safe_path(str(extracted_root), repo)
         final = engine.safe_path(str(destination or root), repo)
         if final != root and final.exists():
             raise Refusal("Adoption destination must not already exist")
-        actual_metadata, metadata_sha = _read(root / SNAPSHOT_FILE)
+        actual_metadata, metadata_sha = (_read(root / SNAPSHOT_FILE) if local_source is None
+                                         else (metadata, _sha(canonical_json(metadata))))
         if actual_metadata != metadata or metadata_sha != expected_metadata_sha256:
             raise Refusal("Snapshot metadata is not bound to the authenticated archive inventory")
         if (metadata.get("schema_version") != SCHEMA_VERSION or metadata.get("kind") != "parc-engine-workspace"
                 or metadata.get("requires_regeneration") is not True):
             raise Refusal("Unsupported workspace snapshot metadata")
-        lock, lock_sha = engine.load_lock(repo / "Engine/source-lock.json")
-        with workspace_guard(root):
+        lock, lock_sha = source_lock or engine.load_lock(repo / "Engine/source-lock.json")
+        with (nullcontext() if already_guarded else workspace_guard(root)):
             state, receipt_sha = _receipt(engine, root, lock, lock_sha)
             original = metadata.get("original_workspace")
             if (not isinstance(original, str) or not Path(original).is_absolute()
@@ -302,20 +318,21 @@ def adopt_workspace(extracted_root: Path, metadata: dict, *, verified_archive_sh
                     or receipt_sha != metadata.get("source_receipt_sha256")
                     or lock_sha != metadata.get("source_lock_sha256")):
                 raise Refusal("Original workspace ownership/source receipt proof does not match")
-            _links(engine, root, state, lock, restored=True)
-            for value in metadata.get("archive_excludes", []):
-                path = root / _relative(value)
-                if not _generated_external(Path(value)) or path.exists() or path.is_symlink():
-                    raise Refusal("Excluded generated dependency was unexpectedly restored")
-            for value, target in metadata.get("symlink_rewrites", {}).items():
-                path = root / _relative(value)
-                if not path.is_symlink() or os.readlink(path) != target:
-                    raise Refusal("Normalized symlink differs from snapshot metadata")
+            if local_source is None:
+                _links(engine, root, state, lock, restored=True)
+                for value in metadata.get("archive_excludes", []):
+                    path = root / _relative(value)
+                    if not _generated_external(Path(value)) or path.exists() or path.is_symlink():
+                        raise Refusal("Excluded generated dependency was unexpectedly restored")
+                for value, target in metadata.get("symlink_rewrites", {}).items():
+                    path = root / _relative(value)
+                    if not path.is_symlink() or os.readlink(path) != target:
+                        raise Refusal("Normalized symlink differs from snapshot metadata")
             for value, expected in metadata.get("toolchain", {}).get("files", {}).items():
                 path = engine.internal_path(root / _relative(value), root)
                 if not isinstance(expected, str) or not SHA256.fullmatch(expected) or _file_sha(path) != expected:
                     raise Refusal(f"Toolchain/graph fingerprint changed: {value}")
-            _validate_baseline(engine, root, repo, lock, state)
+            _validate_baseline(engine, root, repo, lock, state, verify_overlay_inputs=source_lock is None)
             shipping_path = root / engine.SHIPPING_MARKER
             shipping = None
             if metadata.get("shipping_receipt") is not None:
@@ -324,9 +341,17 @@ def adopt_workspace(extracted_root: Path, metadata: dict, *, verified_archive_sh
                     raise Refusal("Shipping receipt proof does not match")
             elif shipping_path.exists() or shipping_path.is_symlink():
                 raise Refusal("Unrepresented shipping receipt in snapshot")
+            if local_source is not None:
+                for value, target in metadata["symlink_rewrites"].items():
+                    path = root / value
+                    path.unlink()
+                    path.symlink_to(target)
+                for value in metadata["archive_excludes"]:
+                    (root / value).unlink()
+                _links(engine, root, state, lock, restored=True)
             # All proofs pass before ownership changes. Invalidate shipping first:
             # interruption cannot leave a built shipping receipt at the new path.
-            provenance = {"original_workspace": original, "archive_sha256": verified_archive_sha256,
+            provenance = {**provenance, "original_workspace": original,
                           "snapshot_sha256": metadata_sha, "requires_regeneration": True}
             if shipping is not None:
                 shipping = copy.deepcopy(shipping)
@@ -344,5 +369,47 @@ def adopt_workspace(extracted_root: Path, metadata: dict, *, verified_archive_sh
                     "source_fingerprint": state["source_fingerprint"],
                     "external_dependencies": metadata.get("external_dependencies", []),
                     "next_step": "Regenerate the build graph explicitly before resuming compilation; no build was started"}
+    except engine.Refusal as error:
+        raise Refusal(str(error)) from error
+
+
+def adopt_local_clone(source: Path, clone: Path, repo: Path = REPO,
+                      previous_lock: Path | None = None) -> dict:
+    """Adopt only a verified local copy of an idle owned workspace."""
+    engine = _engine(repo)
+    try:
+        source = engine.safe_path(str(source), repo)
+        clone = engine.safe_path(str(clone), repo)
+        if (source == clone or source in clone.parents or clone in source.parents
+                or len(source.parts) != len(clone.parts)
+                or source.stat().st_dev != clone.stat().st_dev):
+            raise Refusal("Clone must be a separate path at the same depth on the same volume")
+        if previous_lock is not None and (not previous_lock.is_absolute()
+                or ".." in previous_lock.parts
+                or any(p.is_symlink() for p in [previous_lock, *previous_lock.parents])):
+            raise Refusal("Previous source lock must be an absolute non-symlink path")
+        lock_path = previous_lock or repo / "Engine/source-lock.json"
+        lock, lock_sha = engine.load_lock(lock_path)
+        with workspace_guard(source), workspace_guard(clone):
+            metadata = snapshot_metadata(source, repo, lock_path=lock_path, verify_overlay_inputs=False)
+            state, receipt_sha = _receipt(engine, clone, lock, lock_sha)
+            if state != metadata["source_receipt"] or receipt_sha != metadata["source_receipt_sha256"]:
+                raise Refusal("Clone receipt does not match the idle source")
+            _validate_baseline(engine, clone, repo, lock, state, verify_overlay_inputs=False)
+            def link_inventory(root):
+                return {str((Path(base) / name).relative_to(root)): os.readlink(Path(base) / name)
+                        for base, dirs, files in os.walk(root, followlinks=False)
+                        for name in [*dirs, *files] if (Path(base) / name).is_symlink()}
+            if link_inventory(source) != link_inventory(clone):
+                raise Refusal("Clone symlink inventory differs from source")
+            snapshot = engine.internal_path(clone / SNAPSHOT_FILE, clone)
+            original_snapshot = engine.internal_path(source / SNAPSHOT_FILE, source)
+            if snapshot.exists() or original_snapshot.exists():
+                if not snapshot.is_file() or not original_snapshot.is_file() or snapshot.read_bytes() != original_snapshot.read_bytes():
+                    raise Refusal("Inherited clone snapshot metadata differs from source")
+            return _adopt_workspace(clone, metadata,
+                                    expected_metadata_sha256=_sha(canonical_json(metadata)),
+                                    provenance={"kind": "local-clone", "source_receipt_sha256": receipt_sha},
+                                    source_lock=(lock, lock_sha), already_guarded=True, local_source=source, repo=repo)
     except engine.Refusal as error:
         raise Refusal(str(error)) from error

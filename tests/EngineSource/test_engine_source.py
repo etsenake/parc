@@ -28,6 +28,9 @@ class EngineSourceTests(unittest.TestCase):
         self.env = engine.environment(self.workspace, self.lock, 0)
 
     def owned(self, phase="synced"):
+        overlay = patch.object(engine, "recorded_overlay", return_value={"build_targets": []})
+        overlay.start()
+        self.addCleanup(overlay.stop)
         self.workspace.mkdir()
         state = {"schema_version": 1, "workspace": str(self.workspace),
                  "lock_sha256": self.sha, "phase": phase, "symbol_level": 0,
@@ -81,7 +84,7 @@ class EngineSourceTests(unittest.TestCase):
         self.assertFalse((self.workspace / engine.MARKER).exists())
         run.assert_not_called()
 
-    def test_initial_sync_creates_exclude_parent_without_git_templates(self):
+    def test_initial_sync_uses_only_two_checkouts_without_git_templates(self):
         chromium = self.workspace / "chromium/src"
         calls = []
 
@@ -89,20 +92,15 @@ class EngineSourceTests(unittest.TestCase):
             calls.append(argv)
             if argv[:len(engine.GIT)] == engine.GIT and "init" in argv:
                 checkout = Path(argv[-1])
-                if checkout.name == "cef":
-                    # This must be created by the bootstrap before nested CEF
-                    # init; Git init with an empty template did not create it.
-                    exclude = chromium / ".git/info/exclude"
-                    self.assertIn("/cef/", exclude.read_text().splitlines())
                 checkout.mkdir(parents=True)
                 (checkout / ".git").mkdir()
                 self.assertFalse((checkout / ".git/info").exists())
             return b""
 
-        with patch.object(engine, "host_report", return_value=self.good_host), patch.object(engine, "verify_repository"), patch.object(engine, "synced_repositories", return_value=["chromium/src", "chromium/src/cef"]), patch.object(engine, "tree_fingerprint", return_value="initial-source"), patch.object(engine, "run", side_effect=empty_template_git):
+        with patch.object(engine, "host_report", return_value=self.good_host), patch.object(engine, "verify_repository"), patch.object(engine, "synced_repositories", return_value=["chromium/src"]), patch.object(engine, "tree_fingerprint", return_value="initial-source"), patch.object(engine, "run", side_effect=empty_template_git):
             engine.execute(self.workspace, self.lock, self.sha, "sync", 0, 4)
-        self.assertEqual(len(calls), 15)
-        self.assertEqual((chromium / ".git/info/exclude").read_text(), "\n/cef/\n")
+        self.assertEqual(len(calls), 10)
+        self.assertFalse((chromium / ".git/info/exclude").exists())
         self.assertEqual(engine.read_marker(self.workspace, self.sha)["phase"], "synced")
 
     def test_marker_cannot_be_reused_at_another_path_or_lock(self):
@@ -136,7 +134,7 @@ class EngineSourceTests(unittest.TestCase):
             engine.execute(self.workspace, self.lock, self.sha, "build", 0, 4)
         calls = [call.args[0] for call in run.call_args_list]
         self.assertEqual(calls[0], [str(self.workspace / "depot_tools/ensure_bootstrap")])
-        self.assertEqual(calls[1], ["/bin/bash", "cef_create_projects.sh"])
+        self.assertEqual(calls[1], [str(self.workspace / "depot_tools/gn"), "gen", "out/Release_GN_arm64"])
         self.assertTrue(calls[2][0].endswith("/autoninja"))
         self.assertNotIn("update_depot_tools", str(calls))
 
@@ -146,7 +144,7 @@ class EngineSourceTests(unittest.TestCase):
             engine.execute(self.workspace, self.lock, self.sha, "generate", 0, 4)
         calls = [call.args[0] for call in run.call_args_list]
         self.assertEqual(len(calls), 2)
-        self.assertEqual(calls[1], ["/bin/bash", "cef_create_projects.sh"])
+        self.assertEqual(calls[1], [str(self.workspace / "depot_tools/gn"), "gen", "out/Release_GN_arm64"])
         self.assertEqual(engine.read_marker(self.workspace, self.sha)["phase"], "generated")
 
     def test_returned_generation_failure_records_state_and_resumes_unchanged(self):
@@ -204,7 +202,7 @@ class EngineSourceTests(unittest.TestCase):
         with patch.object(engine, "host_report", return_value=self.good_host), patch.object(engine, "verify_workspace") as verify, patch.object(engine, "verify_repository"), patch.object(engine, "synced_repositories", return_value=["chromium/src"]), patch.object(engine, "tree_fingerprint", return_value="new-baseline"), patch.object(engine, "run") as run:
             engine.execute(self.workspace, self.lock, self.sha, "sync", 0, 4)
         verify.assert_called_once()
-        self.assertEqual(run.call_count, 3)
+        self.assertEqual(run.call_count, 2)
         for call in run.call_args_list:
             self.assertNotIn("checkout", call.args[0])
             self.assertNotIn("fetch", call.args[0])
@@ -269,13 +267,13 @@ class EngineSourceTests(unittest.TestCase):
         chromium_fetch = next(cmd for cmd in fetches if cmd[-2:] == ["tag", self.lock["chromium"]["tag"]])
         self.assertIn("--depth=1", chromium_fetch)
         self.assertEqual({cmd[-1] for cmd in fetches if "tag" not in cmd},
-                         {self.lock[key]["commit"] for key in ("cef", "depot_tools")})
+                         {self.lock[key]["commit"] for key in ("depot_tools",)})
         self.assertNotIn("latest", engine.gclient_text(self.lock))
         sync = next(c["argv"] for c in plan["sync"] if "sync" in c["argv"])
         self.assertIn("--nohooks", sync)
         self.assertIn("src@" + self.lock["chromium"]["commit"], sync)
         self.assertIn("--no-history", sync)
-        self.assertEqual(plan["build"][-1]["argv"][-3:], ["-j", "4", "cef_framework"])
+        self.assertEqual(plan["build"][-1]["argv"][-3:], ["4", "parc:parc_framework", "parc/helper:parc_helper"])
 
     def test_environment_excludes_ambient_code_and_remote_build_injection(self):
         with patch.dict("os.environ", {"GN_DEFINES": "bad", "PYTHONPATH": "/bad", "GIT_CONFIG_COUNT": "99", "RBE_instance": "paid", "UV_NATIVE_TLS": "0"}):
@@ -356,12 +354,12 @@ class EngineSourceTests(unittest.TestCase):
             self.assertEqual(state[key], before[key])
         with patch.object(engine, "host_report", return_value=self.good_host), \
                 patch.object(engine, "verify_workspace"), \
-                patch.object(engine, "recorded_overlay", return_value=None), \
+                patch.object(engine, "recorded_overlay", return_value={"build_targets": []}), \
                 patch.object(engine, "tree_fingerprint", return_value="generated"), \
                 patch.object(engine, "run") as run:
             engine.execute(self.workspace, self.lock, self.sha, "build", 0, 4)
         calls = [call.args for call in run.call_args_list]
-        self.assertEqual(calls[1][0], ["/bin/bash", "cef_create_projects.sh"])
+        self.assertEqual(calls[1][0], [str(self.workspace / "depot_tools/gn"), "gen", "out/Release_GN_arm64"])
         self.assertIn("dcheck_always_on=false", calls[1][2]["GN_DEFINES"].split())
         self.assertIn("disable_fieldtrial_testing_config=true", calls[1][2]["GN_DEFINES"].split())
         self.assertTrue(calls[2][0][0].endswith("/autoninja"))
@@ -379,7 +377,7 @@ class EngineSourceTests(unittest.TestCase):
         self.assertEqual(engine.read_marker(self.workspace, self.sha)["phase"], "synced")
 
     def test_reconfigure_refuses_other_changes_and_partial_state(self):
-        other_path, other_sha = self.previous_lock(configuration="Release_GN_arm64", target="cef",
+        other_path, other_sha = self.previous_lock(configuration="Release_GN_arm64",
                                                    default_symbol_level=1)
         self.owned_with_lock(other_sha)
         receipt = (self.workspace / engine.MARKER).read_bytes()

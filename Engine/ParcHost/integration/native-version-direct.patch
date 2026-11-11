@@ -1,0 +1,27 @@
+--- a/chrome/browser/ui/webui/version/version_ui.cc
++++ b/chrome/browser/ui/webui/version/version_ui.cc
+@@ -110,6 +110,10 @@
+ #endif  // BUILDFLAG(IS_ANDROID)
+   };
+   html_source->AddLocalizedStrings(kStrings);
++  html_source->AddString(version_ui::kTitle, "About Parc");
++  html_source->AddString(version_ui::kApplicationLabel, "Parc");
++  html_source->AddString(version_ui::kLogoAltText, "Parc");
++
+ 
+   VersionUI::AddVersionDetailStrings(html_source);
+ 
+--- a/components/webui/version/resources/about_version.html
++++ b/components/webui/version/resources/about_version.html
+@@ -49,7 +49,10 @@
+         </picture>
+ </if>
+         <div id="company">$i18n{company}</div>
+-        <div id="copyright">$i18n{copyright}</div>
++        <div id="copyright">$i18n{copyright}<br>
++          <a href="chrome://license/">Parc licences</a> |
++          <a href="chrome://credits/">Third-party credits</a>
++        </div>
+       </div>
+       <table id="inner" cellpadding="0" cellspacing="0" border="0">
+         <tr><td class="label">$i18n{application_label}</td>

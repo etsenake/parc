@@ -1,14 +1,12 @@
 #!/bin/bash
 # The facade's media change delivery over stand-in engine classes, and the
-# window's once-per-turn refresh of it. Needs the Chromium source's CEF
-# headers: run.sh <chromium src>.
+# window's once-per-turn refresh of it. run.sh.
 set -euo pipefail
 root="$(cd -- "$(dirname -- "$0")/../.." && pwd)"
-chromium="${1:?usage: run.sh <chromium src>}"
 output="$(mktemp -d "${TMPDIR:-/tmp}/parc-browser-view-media.XXXXXX")"
 trap 'rm -rf "$output"' EXIT
 flags=(-arch arm64 -mmacosx-version-min=13.0 -fobjc-arc -fblocks -DOS_MAC=1
-       -I "$root/Engine/ParcNative" -I "$root/Sources/ParcEngine" -I "$chromium/cef/include")
+       -I "$root/Engine/ParcNative" -I "$root/Sources/ParcEngine")
 xcrun clang "${flags[@]}" -Wall -Wextra -Werror -Wno-unused-parameter \
   -c "$root/Sources/ParcEngine/ParcEngine.m" -o "$output/ParcEngine.o"
 # The stand-in page implements only what the change path reads.

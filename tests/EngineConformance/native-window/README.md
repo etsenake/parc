@@ -42,13 +42,13 @@ The overlay maps these files relative to `chromium/src`:
 
 | Repository file | Overlay target |
 |---|---|
-| `Engine/ParcNative/BUILD.gn` | `cef/libcef/browser/parc_native/BUILD.gn` |
-| `Engine/ParcNative/page_host.h` | `cef/libcef/browser/parc_native/page_host.h` |
-| `Engine/ParcNative/page_host.mm` | `cef/libcef/browser/parc_native/page_host.mm` |
-| `Engine/ParcNative/browser_window.h` | `cef/libcef/browser/parc_native/browser_window.h` |
-| `Engine/ParcNative/browser_window.mm` | `cef/libcef/browser/parc_native/browser_window.mm` |
-| `tests/EngineConformance/native-window/ModalHostTests.mm` | `cef/tests/parc_native_window/ModalHostTests.mm` |
-| `tests/EngineConformance/native-window/BUILD.gn` | `cef/tests/parc_native_window/BUILD.gn` |
+| `Engine/ParcNative/BUILD.gn` | `parc/native/BUILD.gn` |
+| `Engine/ParcNative/page_host.h` | `parc/native/page_host.h` |
+| `Engine/ParcNative/page_host.mm` | `parc/native/page_host.mm` |
+| `Engine/ParcNative/browser_window.h` | `parc/native/browser_window.h` |
+| `Engine/ParcNative/browser_window.mm` | `parc/native/browser_window.mm` |
+| `tests/EngineConformance/native-window/ModalHostTests.mm` | `parc/tests/native_window/ModalHostTests.mm` |
+| `tests/EngineConformance/native-window/BUILD.gn` | `parc/tests/native_window/BUILD.gn` |
 
 
 ```sh

@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "base/base64.h"
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "parc/native/native_internal_urls.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_reader.h"

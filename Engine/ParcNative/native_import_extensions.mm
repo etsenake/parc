@@ -18,6 +18,7 @@
 #include "content/public/browser/service_process_host.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #import "native_appkit_host.h"
+#include "native_profiles.h"
 #import "native_import_internal.h"
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
@@ -133,7 +134,7 @@ class Batch final : public ProfileObserver,
     NSString* __strong path;
     std::vector<std::string> ids;
     base::WeakPtr<Profile> profile;
-    CefRefPtr<CefRequestContext> context;
+    parc::NativeProfileLeasePtr context;
     mojo::Remote<mojom::Reader> reader;
     bool loaded = false, observing = false;
   };
@@ -271,7 +272,7 @@ class Batch final : public ProfileObserver,
         groups_[index].path,
         base::BindOnce(
             [](std::weak_ptr<Batch> weak, size_t index, Profile* profile,
-               CefRefPtr<CefRequestContext> context, NSError* error) {
+               parc::NativeProfileLeasePtr context, NSError* error) {
               auto self = weak.lock();
               if (!self || self->finished_ || self->groups_[index].loaded)
                 return;
@@ -687,7 +688,7 @@ class Session final : public std::enable_shared_from_this<Session> {
     auto weak = weak_from_this();
     WithNativeProfile(path_, base::BindOnce(
         [](std::weak_ptr<Session> weak, Profile* profile,
-           CefRefPtr<CefRequestContext> context, NSError* error) {
+           parc::NativeProfileLeasePtr context, NSError* error) {
           auto self = weak.lock();
           if (!self || self->finished_) return;
           if (error || !profile || !context || profile->IsOffTheRecord() ||
@@ -777,7 +778,7 @@ class Session final : public std::enable_shared_from_this<Session> {
   NSString* __strong failure_;
   NSError* __strong error_;
   void (^completion_)(NSError*);
-  CefRefPtr<CefRequestContext> context_;
+  parc::NativeProfileLeasePtr context_;
   base::WeakPtr<Profile> profile_;
   scoped_refptr<Installer> installer_;
   std::shared_ptr<Session> lifetime_;
@@ -807,7 +808,7 @@ class Removal final : public extensions::ExtensionRegistryObserver,
     lifetime_ = shared_from_this();
     WithNativeProfile(path_, base::BindOnce(
         [](std::weak_ptr<Removal> weak, Profile* profile,
-           CefRefPtr<CefRequestContext> context, NSError* error) {
+           parc::NativeProfileLeasePtr context, NSError* error) {
           auto self = weak.lock();
           if (!self || self->finished_) return;
           if (error || !profile || !context || profile->IsOffTheRecord() ||
@@ -906,7 +907,7 @@ class Removal final : public extensions::ExtensionRegistryObserver,
   std::set<std::string> waiting_;
   void (^completion_)(NSError*);
   NSError* __strong error_;
-  CefRefPtr<CefRequestContext> context_;
+  parc::NativeProfileLeasePtr context_;
   base::WeakPtr<Profile> profile_;
   base::ScopedObservation<extensions::ExtensionRegistry,
                           extensions::ExtensionRegistryObserver>

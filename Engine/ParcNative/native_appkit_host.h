@@ -3,11 +3,18 @@
 #define PARC_NATIVE_NATIVE_APPKIT_HOST_H_
 #include <memory>
 
+#include <string>
+
 #include "base/functional/callback.h"
-#include "cef/include/cef_app.h"
-#include "cef/include/cef_request_context.h"
+#include "base/types/expected.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #import "native_appkit_bridge.h"
+#include "native_profiles.h"
+#include "ui/base/resource/resource_bundle.h"
+namespace base {
+class CommandLine;
+class FilePath;
+}
 namespace input {
 struct NativeWebKeyboardEvent;
 }
@@ -18,20 +25,21 @@ class BrowserFocusController;
 class DevtoolsUIController;
 class Profile;
 namespace parc {
-// Uses the application-owned exact-path registry and retains its genuine CEF
-// context through callback delivery; never creates an independent Profile.
-CefRefPtr<CefRequestContext> NativeContextForProfile(Profile& profile);
+struct NativeWindowRequest;
+class PreparedNativeWindow;
 // Exact private identity of an existing native owner; never resolves a path to normal.
 Profile* NativePrivateProfileForWindow(PCNativeBrowserWindow*, NSString* path);
-void WithNativeProfile(NSString* path,
-    base::OnceCallback<void(Profile*, CefRefPtr<CefRequestContext>, NSError*)> callback);
 // Materialize only an empty real Browser in an already-prepared exact native
 // window. Original request execution remains in BrowserWebContentsDelegate.
 void WithNativeRoutingBrowser(PCNativeBrowserWindow* binding, NSString* path,
     base::OnceCallback<void(BrowserWindowInterface*, bool, NSError*)> callback);
 void AbandonEmptyNativeRoutingWindow(PCNativeBrowserWindow* binding);
 class NativeBrowserWindowHost;
-class NativeWindowProvider;
+// The shell's one-use window for this request, or why it refused one.
+base::expected<std::unique_ptr<PreparedNativeWindow>, std::string>
+PrepareAppKitWindow(const NativeWindowRequest& request);
+// Exact application error path for a refused native Browser creation.
+void NativeCreationFailed(Profile& profile, const std::string& reason);
 std::unique_ptr<NativeBrowserWindowHost> CreateAppKitBrowserHost(
     BrowserWindowInterface&,
     PCNativeBrowserWindow*,
@@ -64,11 +72,24 @@ void PrepareAppKitBrowserForDeletion(BrowserWindowInterface&,
 void RequestAppKitBrowserClose(BrowserWindowInterface&);
 bool AppKitBrowserAcceptsNewPages(BrowserWindowInterface&);
 PCNativeBrowserWindow* AppKitBindingForBrowser(const BrowserWindowInterface*);
-std::shared_ptr<NativeWindowProvider> CreateAppKitWindowProvider();
-CefRefPtr<CefApp> CreateNativeApplication();
+// The startup runner owns this for the whole session, on the main thread.
+class NativeApplication {
+ public:
+  virtual ~NativeApplication() = default;
+  // ConfigureNativeProfiles' initializer and change notification.
+  virtual void ProfileInitializer(Profile& profile) = 0;
+  virtual void ProfilesChanged() = 0;
+  // Product branding; exists before content startup.
+  virtual ui::ResourceBundle::Delegate* ResourceBundleDelegate() = 0;
+  // The process-singleton handoff. true means consumed, also while quitting.
+  virtual bool AlreadyRunningRelaunch(const base::CommandLine& command_line,
+                                      const base::FilePath& current_directory) = 0;
+  // Browser startup finished with Chrome's initial Profile.
+  virtual void BrowserReady(Profile& initial_profile) = 0;
+};
+std::unique_ptr<NativeApplication> CreateNativeApplication();
 void PrepareNativeApplicationShutdown();
 bool HasPendingNativeApplicationWork();
-bool HasLoadingNativeProfiles();
 // Used only by the application-owned window coordinator. Browser references
 // are removed synchronously before adapter teardown can run external callbacks.
 void RegisterAppKitBrowser(PCNativeBrowserWindow*, BrowserWindowInterface&);

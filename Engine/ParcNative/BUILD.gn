@@ -1,6 +1,6 @@
-# Installed by the reviewed overlay at //cef/libcef/browser/parc_native.
+# Installed by the reviewed overlay at //parc/native.
 # Shared native AppKit components and Chromium-backed native services. Other
-# services and the full window/page adapters compile in libcef_static.
+# services and the full window/page adapters compile in //parc:browser.
 import("//components/signin/features.gni")
 import("//printing/buildflags/buildflags.gni")
 
@@ -14,7 +14,7 @@ source_set("native_internal_urls_api") {
 }
 
 # TabFeatures owns the genuine thumbnail helper for native browser profiles.
-# The predicate implementation stays in libcef_static; Chrome takes declarations.
+# The predicate implementation stays in //parc:browser; Chrome takes declarations.
 source_set("native_tab_preview_api") {
   public = [ "native_tab_preview.h" ]
   sources = public
@@ -27,7 +27,7 @@ source_set("native_page_context_menu_api") {
 }
 
 # Chrome's original tab-sharing controller selects its native InfoBar factory.
-# This declaration-only seam avoids a reverse dependency on libcef_static.
+# This declaration-only seam avoids a reverse dependency on //parc:browser.
 source_set("native_tab_sharing_api") {
   public = [ "native_tab_sharing_api.h", "native_page_info.h" ]
   sources = public
@@ -38,7 +38,7 @@ source_set("native_tab_sharing_api") {
 }
 
 # Chrome's windows.update preflight calls the engine without depending on
-# libcef_static or acquiring a Views window. Implementation stays in the real
+# //parc:browser or acquiring a Views window. Implementation stays in the real
 # native_browser_window.mm owner.
 source_set("native_window_state_api") {
   public = [ "native_window_state.h" ]
@@ -47,7 +47,7 @@ source_set("native_window_state_api") {
 }
 
 # Chrome's picker can name the native dialog factory without a reverse
-# dependency on libcef_static or native_downloads. The used implementation
+# dependency on //parc:browser or native_downloads. The used implementation
 # stays in native_downloads' existing file_dialog.mm translation unit.
 source_set("native_download_dialog_api") {
   public = [ "download_file_dialog.h" ]
@@ -58,7 +58,7 @@ source_set("native_download_dialog_api") {
   ]
 }
 
-# Chrome callers use these declarations without acquiring libcef_static (which
+# Chrome callers use these declarations without acquiring //parc:browser (which
 # already depends on Chrome). The implementation stays in the actual engine;
 # the application owns and links its visible PiP presenter separately.
 source_set("native_video_pip_api") {
@@ -69,8 +69,8 @@ source_set("native_video_pip_api") {
   sources = public
 }
 
-# Lifecycle acknowledgement is implemented in libcef, without a dependency
-# from Chrome back to libcef_static.
+# Lifecycle acknowledgement is implemented in //parc:browser, without a dependency
+# from Chrome back to //parc:browser.
 source_set("native_background_picture_in_picture_api") {
   public = [
     "native_background_picture_in_picture.h",
@@ -81,7 +81,7 @@ source_set("native_background_picture_in_picture_api") {
 }
 
 # Chrome's BrowserWebContentsDelegate asks a Parc page's own alert sheet for
-# the repost warning; javascript_dialog_runner.mm implements it in libcef.
+# the repost warning; native_javascript_dialogs implements it.
 source_set("native_repost_form_warning_api") {
   public = [ "native_repost_form_warning_api.h" ]
   sources = public
@@ -90,6 +90,17 @@ source_set("native_repost_form_warning_api") {
 source_set("native_split_link_api") {
   public = [ "native_split_link_api.h" ]
   sources = public
+}
+
+# Browser, BrowserManagerService, window factory, navigator and DevTools hooks
+# name the native Browser seam. //parc:browser holds its implementation.
+source_set("native_browser_api") {
+  public = [ "native_browser.h" ]
+  sources = public
+  public_deps = [
+    "//base",
+    "//ui/base/unowned_user_data",
+  ]
 }
 
 source_set("native_components") {
@@ -176,8 +187,8 @@ source_set("native_components") {
   ]
 }
 
-# Both the production CEF bridge and real Chromium controller tests use this
-# implementation. Keep it independent of libcef_static and CEF-private headers
+# Both the production native bridge and real Chromium controller tests use this
+# implementation. Keep it independent of //parc:browser and startup-private headers
 # so the test binary does not acquire the engine's entire implementation.
 source_set("autofill_save_sessions") {
   public = [
@@ -261,7 +272,7 @@ source_set("autofill_save_sessions") {
 
 # Actual Chromium action models and supplied ExtensionViewHost sessions, shared
 # by the production engine and genuine-host browser regressions. No dependency
-# on libcef_static or private CEF implementation headers.
+# on //parc:browser or private startup implementation headers.
 source_set("native_extensions") {
   public = [
     "extension_action_bridge.h",
@@ -348,8 +359,8 @@ source_set("native_extensions") {
   ]
 }
 
-# The production CEF bridge and genuine-controller unit tests share this exact
-# implementation. It has no libcef_static dependency or CEF-private include.
+# The production native bridge and genuine-controller unit tests share this exact
+# implementation. It has no //parc:browser dependency or startup-private include.
 source_set("tab_retirement") {
   public = [ "tab_retirement.h" ]
   sources = [
@@ -389,6 +400,7 @@ source_set("native_permissions") {
     "//chrome/browser/permissions/system",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/permission_bubble",
     "//components/custom_handlers",
     "//components/strings:components_strings",
     "//components/tabs:public",
@@ -399,8 +411,8 @@ source_set("native_permissions") {
   ]
 }
 
-# libcef_static and the genuine-controller tests consume the same
-# implementation. No CEF runtime dependency is introduced into
+# //parc:browser and the genuine-controller tests consume the same
+# implementation. No application startup dependency is introduced into
 # chrome/test:unit_tests.
 source_set("tab_transfer") {
   public = [ "tab_transfer.h" ]
@@ -459,6 +471,7 @@ source_set("native_downloads") {
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/download",
     "//chrome/browser/ui/download:impl",
+    "//chrome/browser/ui/select_file_policy",
     "//net/traffic_annotation",
     "//printing/buildflags",
     "//chrome/common",
@@ -482,7 +495,7 @@ source_set("native_downloads") {
 }
 
 # Native presentation above the original LoginHandler/HttpAuthCoordinator.
-# No libcef_static dependency: actual controller tests use the same service.
+# No //parc:browser dependency: actual controller tests use the same service.
 source_set("native_http_auth") {
   public = [ "http_auth.h" ]
   sources = [
@@ -587,6 +600,25 @@ source_set("native_devtools") {
     "//chrome/browser/devtools",
     "//ui/gfx",
     "//ui/gfx/geometry",
+  ]
+}
+
+# The page's content::JavaScriptDialogManager and its repost warning sheet.
+source_set("native_javascript_dialogs") {
+  public = [ "javascript_dialog_manager.h" ]
+  sources = [
+    "javascript_dialog_manager.h",
+    "javascript_dialog_manager.mm",
+  ]
+  frameworks = [ "AppKit.framework" ]
+  public_deps = [ ":native_repost_form_warning_api" ]
+  deps = [
+    ":native_components",
+    "//base",
+    "//components/javascript_dialogs",
+    "//components/strings:components_strings",
+    "//content/public/browser",
+    "//ui/base",
   ]
 }
 
@@ -747,7 +779,7 @@ source_set("native_intent_picker") {
   ]
 }
 
-# Header-only boundary for Chrome callers. Implementation lives in libcef_static
+# Header-only boundary for Chrome callers. Implementation lives in //parc:browser
 # to avoid a Chrome -> engine -> Chrome GN dependency cycle.
 source_set("native_password_prompt_api") {
   public = [ "password_prompt.h" ]

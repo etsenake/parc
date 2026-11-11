@@ -1,7 +1,7 @@
 import AppKit
 
 @objc(ParcApplication)
-final class ParcApplication: NSApplication, CefAppProtocol {
+final class ParcApplication: NSApplication, CrAppControlProtocol {
     private var approvedTermination = false
     private var handlingEvent = false
     private let inputDiagnosticsEnabled = CommandLine.arguments.contains("--parc-input-diagnostics")
@@ -51,8 +51,8 @@ final class ParcApplication: NSApplication, CefAppProtocol {
         }
     }
 
-    // CEF must unwind its own run loop before shutdown. Do not enter AppKit's
-    // NSTerminateLater nested loop while waiting for that same unwind.
+    // The engine must unwind its own run loop before shutdown. Do not enter
+    // AppKit's NSTerminateLater nested loop while waiting for that same unwind.
     override func terminate(_ sender: Any?) {
         if approvedTermination {
             super.terminate(sender)
@@ -64,8 +64,8 @@ final class ParcApplication: NSApplication, CefAppProtocol {
     func finishApprovedTermination(_ sender: Any?) {
         guard !approvedTermination else { return }
         approvedTermination = true
-        // Genuine browser consent, native-service drain and CefShutdown have
-        // finished. Preserve AppKit's final termination/notification behavior.
+        // Genuine browser consent, native-service drain and engine shutdown
+        // have finished. Preserve AppKit's final termination/notification behavior.
         super.terminate(sender)
     }
 }

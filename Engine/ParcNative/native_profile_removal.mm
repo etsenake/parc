@@ -1,7 +1,7 @@
 // Copyright 2026 Parc contributors.
 //
 // publishes model removal only after the native operation succeeds. Current
-// Chromium adaptation: real DeleteProfileHelper, CEF retirement, and an
+// Chromium adaptation: real DeleteProfileHelper, profile retirement, and an
 // operation-bound durable receipt; no live-directory deletion or URL replay.
 #import "native_profile_removal.h"
 
@@ -26,7 +26,7 @@
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "base/uuid.h"
-#include "cef/libcef/browser/context.h"
+#include "native_profiles.h"
 #include "chrome/browser/browser_features.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/delete_profile_helper.h"
@@ -60,7 +60,7 @@ NSString* String(const base::FilePath& path) {
   return base::SysUTF8ToNSString(path.value());
 }
 base::FilePath Root() {
-  return base::FilePath(CefString(&CefContext::Get()->settings().root_cache_path).ToString());
+  return NativeProfileRoot();
 }
 base::FilePath Journal(const base::FilePath& path) {
   return path.DirName().AppendASCII(".parc-profile-removals")

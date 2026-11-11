@@ -3,9 +3,7 @@
 
 No GN/Ninja, generation, downloads, linking or application execution. The source
 checkout is read-only; command records, diagnostics and caches stay in build/tests.
-The default requires the integrated production and test source_set targets.
---pre-integration explicitly checks compatibility with the older libcef_static
-and unit_tests flags; that mode does not verify the new targets' configurations.
+The checker requires the integrated direct production and test source_set targets.
 """
 import argparse
 import hashlib
@@ -21,10 +19,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
     parser.add_argument("--output-name", default="Release_GN_arm64")
-    parser.add_argument(
-        "--pre-integration", action="store_true",
-        help="use existing libcef_static/unit_tests flags before the shared "
-             "targets are generated; this is compatibility-only evidence")
     args = parser.parse_args()
     if Path(args.output_name).name != args.output_name or args.output_name in (".", "..", ""):
         parser.error("--output-name must be one existing output directory name")
@@ -36,29 +30,16 @@ def main():
     if not compiler.is_file():
         parser.error("the existing pinned compiler is required")
 
+    session_flags = "obj/parc/native/autofill_save_sessions.ninja"
+    session_target = "//parc/native:autofill_save_sessions"
+    test_flags = "obj/parc/tests/parc_native_autofill/session_tests.ninja"
+    test_target = "//parc/tests/parc_native_autofill:session_tests"
     targets = (
         ("presenter", "Engine/ParcNative/autofill_save_presenter.mm",
-         "obj/cef/libcef/browser/parc_native/native_components.ninja",
-         "//cef/libcef/browser/parc_native:native_components"),
-        ("session", "Engine/ParcNative/autofill_save_session.mm",
-         "obj/cef/libcef_static.ninja" if args.pre_integration else
-         "obj/cef/libcef/browser/parc_native/autofill_save_sessions.ninja",
-         "//cef:libcef_static" if args.pre_integration else
-         "//cef/libcef/browser/parc_native:autofill_save_sessions"),
-        ("session-unit-tests", "tests/NativeAutofillSave/session_unittest.mm",
-         "obj/chrome/test/unit_tests.ninja" if args.pre_integration else
-         "obj/cef/tests/parc_native_autofill/session_tests.ninja",
-         "//chrome/test:unit_tests" if args.pre_integration else
-         "//cef/tests/parc_native_autofill:session_tests"),
+         "obj/parc/native/native_components.ninja", "//parc/native:native_components"),
+        ("session", "Engine/ParcNative/autofill_save_session.mm", session_flags, session_target),
+        ("session-unit-tests", "tests/NativeAutofillSave/session_unittest.mm", test_flags, test_target),
     )
-    session_flags = "obj/cef/libcef_static.ninja" if args.pre_integration else \
-        "obj/cef/libcef/browser/parc_native/autofill_save_sessions.ninja"
-    session_target = "//cef:libcef_static" if args.pre_integration else \
-        "//cef/libcef/browser/parc_native:autofill_save_sessions"
-    test_flags = "obj/chrome/test/unit_tests.ninja" if args.pre_integration else \
-        "obj/cef/tests/parc_native_autofill/session_tests.ninja"
-    test_target = "//chrome/test:unit_tests" if args.pre_integration else \
-        "//cef/tests/parc_native_autofill:session_tests"
     targets += (("handler", "Engine/ParcNative/autofill_bubble_handler.mm",
                  session_flags, session_target),)
     targets += tuple((name.removesuffix(".mm"), "tests/NativeAutofillSave/" + name,
@@ -70,8 +51,7 @@ def main():
     if missing:
         parser.error("missing generated target flags:\n" + "\n".join(missing) +
                      "\nNo compiler check ran. Generate the reviewed targets "
-                     "through the source workflow, or explicitly use "
-                     "--pre-integration for compatibility-only checks.")
+                     "through the direct source workflow.")
 
     # Share the bounded Ninja literal reader. Import without writing __pycache__
     # into the repository's source directories.
@@ -86,8 +66,8 @@ def main():
         raise RuntimeError("Missing actual ObjC++ compiler rule")
     # Unlike the cxx rule, pinned objcxx does not pass module_deps. Its system
     # PCM is C++-only, despite being an order dependency of the object target.
-    mode = "pre-integration" if args.pre_integration else "integrated-targets"
-    log_name = "chromium-syntax-pre-integration" if args.pre_integration else "chromium-syntax"
+    mode = "direct-integrated-targets"
+    log_name = "chromium-syntax"
     logs = repo / "build/tests/native-autofill-save" / log_name
     logs.mkdir(parents=True, exist_ok=True)
     print(f"Mode: {mode}; syntax only, no linking or test execution")

@@ -115,7 +115,7 @@ static void PCFinishEngineTermination(void* unused) {
                                     bundlePath.fileSystemRepresentation,
                                     helper.fileSystemRepresentation, &exitCode);
   }
-  // The engine entry copies argv and retains that copy through CefShutdown.
+  // The engine entry copies argv and retains that copy through shutdown.
   for (NSUInteger index = 0; index < arguments.count; ++index) {
     free(argv[index]);
   }
@@ -160,7 +160,7 @@ static void PCFinishEngineTermination(void* unused) {
   }
   PCTerminating = YES;
   // Defer out of the native menu/sendEvent stack. Browser unload approval
-  // is followed by genuine Browser/CEF-host drain and the engine-loop return.
+  // is followed by genuine Browser and page drain and the engine-loop return.
   dispatch_async(dispatch_get_main_queue(), ^{
     [PCNativeBrowserApplication requestCloseAllWindows:^(BOOL approved) {
       if (!approved) {

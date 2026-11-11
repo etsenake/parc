@@ -1,8 +1,11 @@
 // Copyright 2026 Parc contributors.
-// The pinned CEF macOS helper initializes libcef_sandbox before loading libcef.
+// Seatbelt must be initialized before loading the engine framework.
 // Do not link this executable to the engine framework: dyld would load it
 // before main, before SeatbeltExecServer consumes the child's sandbox
 // arguments.
+#include "base/allocator/early_zone_registration_apple.h"
+#include "sandbox/mac/seatbelt_exec.h"
+
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
 
@@ -44,33 +47,10 @@ class Library {
   void* handle_;
 };
 
-class Sandbox {
- public:
-  using Initialize = void* (*)(int, char**);
-  using Destroy = void (*)(void*);
-  Sandbox(const std::string& path, int argc, char** argv) : library_(path) {
-    auto initialize = library_.Symbol<Initialize>("cef_sandbox_initialize");
-    destroy_ = library_.Symbol<Destroy>("cef_sandbox_destroy");
-    // Both functions must exist before creating a context we must destroy.
-    if (initialize && destroy_) {
-      context_ = initialize(argc, argv);
-    }
-  }
-  ~Sandbox() {
-    if (context_) {
-      destroy_(context_);
-    }
-  }
-  bool ready() const { return context_ != nullptr; }
-
- private:
-  Library library_;
-  Destroy destroy_ = nullptr;
-  void* context_ = nullptr;
-};
 }  // namespace
 
 int main(int argc, char** argv) {
+  partition_alloc::EarlyMallocZoneRegistration();
   uint32_t size = 0;
   if (_NSGetExecutablePath(nullptr, &size) != -1 || size == 0) {
     return 1;
@@ -87,8 +67,10 @@ int main(int argc, char** argv) {
   // Same relative layout for Default, Renderer, GPU and Alerts helpers.
   std::string framework = path.substr(0, slash) +
                           "/../../../Chromium Embedded Framework.framework/";
-  Sandbox sandbox(framework + "Libraries/libcef_sandbox.dylib", argc, argv);
-  if (!sandbox.ready()) {
+  auto seatbelt = sandbox::SeatbeltExecServer::CreateFromArguments(
+      executable.data(), argc, argv);
+  if (seatbelt.sandbox_required &&
+      (!seatbelt.server || !seatbelt.server->InitializeSandbox())) {
     std::fprintf(stderr, "Parc Helper: sandbox initialization failed\n");
     return 1;
   }

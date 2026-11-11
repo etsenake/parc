@@ -37,5 +37,5 @@ undeclared AV1 refusal and the Chrome bypass. The injected hardware result
 uses a scoped process command line, restored after each test.
 
 These regressions live in the Blink/player changes in
-`Engine/ParcHost/integration/fairplay-identity-blink.patch` and
+`Engine/ParcHost/integration/fairplay-identity-blink-direct.patch` and
 `fairplay-media.patch`. `tests/FairPlayIdentity` also covers the renderer gate.

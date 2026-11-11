@@ -31,7 +31,7 @@ The `NativeExtensionActionHost` interface is a mandatory connection to real nati
 1. Construct the container only after the actual Browser/Profile/TabList/ToolbarActionsModel exists, and only on the native path where another ExtensionsContainer has not been registered. Keep the shell host alive through container shutdown. Connect the existing native keybinding registry's action dispatcher to `DispatchActionAccelerator` exactly once.
 2. Forward shell selection/security-state changes to `HostStateChanged`; do not use `SecurityDialogTracker`'s Views-only false result as native security evidence. The native factory/window supplies extension context menus and toolbar/menu rendering.
 3. Shut the container down before Browser/Profile/TabList destruction. Browser/Profile must outlive any in-flight engine or native `sendEvent` callback and deferred terminal host destruction. Use `Shutdown(completion)` and retain Browser/Profile until its completion. Shutdown retains active and retiring popup sessions together with their real action models; a non-nestable task releases those models only after every supplied host is destroyed. Even an empty shutdown completes asynchronously. Do not destroy the Browser halfway through its own popup engine callback and assume a retained session also retains the Browser.
-4. Keep the supplied host's genuine WebContents delegate, background-readiness logic, modal handler and Escape behavior. If JS-dialog routing is later replaced with Parc's native CEF runner, feed its actual dialog state into the policy; the global AppModal queue will no longer describe that route.
+4. Keep the supplied host's genuine WebContents delegate, background-readiness logic, modal handler and Escape behavior. If JS-dialog routing is later replaced with Parc's native dialog runner, feed its actual dialog state into the policy; the global AppModal queue will no longer describe that route.
 5. The native view is installed before renderer creation, which may run synchronously. A queued terminal dismissal prevents load completion from showing/focusing/reporting success. The show callback runs once with a real shown host or null on cancellation. Old-generation callbacks cannot clear a new session.
 
 ## Checks
@@ -50,16 +50,16 @@ python3 tests/NativeExtensionPopup/check-chromium.py /absolute/path/to/chromium/
 ```
 
 
-The browser tests use actual loaded extensions, actual `ExtensionViewHostFactory`, actual WebContents and visibility observers. They cover supplied identity, close-once results, close during hide/show notification without deleting the notifying WebContents on its stack, security appearing during opening, close completion after actual WebContents destruction, and repeated close observers delivered once each. `Close(completion)` reports actual terminal host destruction after existing result callbacks, not merely a requested dismissal. Execution requires a valid CEF process/context.
+The browser tests use actual loaded extensions, actual `ExtensionViewHostFactory`, actual WebContents and visibility observers. They cover supplied identity, close-once results, close during hide/show notification without deleting the notifying WebContents on its stack, security appearing during opening, close completion after actual WebContents destruction, and repeated close observers delivered once each. `Close(completion)` reports actual terminal host destruction after existing result callbacks, not merely a requested dismissal. Execution requires a valid Chromium process/context.
 
 The [native runtime action suite](../NativeRuntime/README.md) exercises real
 grants and stale selection through the production bridge. Popup presentation
 and retirement use the source owners described above.
 
 The reviewed source overlay compiles all six production files in
-`//cef/libcef/browser/parc_native:native_extensions`, which consumes the existing
-`native_components` page host and has no CEF-private dependency. Both
-`libcef_static` and `//cef/tests/parc_native_extensions:popup_browser_tests` use
-that implementation. The latter is registered with the actual macOS CEF
+`//parc/native:native_extensions`, which consumes the existing
+`native_components` page host and has no engine-private dependency. Both
+`//parc:browser` and `//parc/tests/native_extensions:popup_browser_tests` use
+that implementation. The latter is registered with the actual macOS Chromium
 `chrome/test:browser_tests` target and declares `HAS_OUT_OF_PROC_TEST_RUNNER`, as
 required for test cases executed by that binary.

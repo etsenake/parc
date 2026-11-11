@@ -16,8 +16,8 @@ class SelectFilePolicy;
 namespace parc {
 // Chrome's real DownloadFilePicker calls this only when there is no source
 // WebContents. A non-null dialog owns that exact item's Profile identity and
-// obtains its parent from the native shell. A null result leaves non-native
-// profiles on their existing Chrome/CEF path. Target determination, policy,
+// obtains its parent from the native shell. A null result leaves the picker on
+// Chrome's own path, where a chooser without a page is refused. Target determination, policy,
 // caller authority, extensions and destination verification stay in Chrome.
 scoped_refptr<ui::SelectFileDialog> CreateNativeDownloadFileDialog(
     download::DownloadItem& item,

@@ -5,7 +5,7 @@ ToolbarActionsModel and ExtensionActionViewModel. Each value carries opaque
 weak model, TabInterface and document identities plus an ownership generation.
 It never retains Browser/Profile or grants permission. User operations reject
 stale navigation, selection, native detachment and same-ID action replacement.
-The host validates the exact CEF page, selected Browser, profile and visible
+The host validates the exact native page, selected Browser, profile and visible
 native attachment. It never recreates a page from its URL.
 
 The real model performs ExecuteUserAction, including activeTab grants and its
@@ -39,7 +39,7 @@ lifetimes across synchronous model callbacks and nested menus.
 ## Checks
 
 The AppKit shell, model snapshots and bridge have component and compiler
-coverage. The Chromium test fixture requires valid CEF initialization.
+coverage. The Chromium test fixture requires valid Chromium initialization.
 
 Nine genuine Browser/TabList/model cases cover copied metadata and pin order,
 navigation, selection/detachment epochs, unload/reload under the same ID,

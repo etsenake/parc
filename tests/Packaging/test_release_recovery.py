@@ -25,10 +25,10 @@ class Recovery(unittest.TestCase):
         self.marker.write_text(json.dumps(self.receipt))
         self.before=self.marker.read_bytes()
         self.engine=SimpleNamespace(SHIPPING_CONFIGURATION='Shipping',SHIPPING_MARKER='shipping.json',
-            load_lock=lambda:({},'lock'),read_marker=lambda *args:self.state,
+            load_lock=lambda:({'schema_version':2},'lock'),read_marker=lambda *args:self.state,
             read_shipping_marker=lambda *args:json.loads(self.marker.read_text()),
             shipping_environment=lambda *args:{},verify_workspace=Mock(),recorded_overlay=Mock(),
-            shipping_arguments=lambda *args:b'unchanged args',digest=lambda b:hashlib.sha256(b).hexdigest(),
+            shipping_arguments=Mock(return_value=b'unchanged args'),digest=lambda b:hashlib.sha256(b).hexdigest(),
             write_marker=lambda workspace,value,name:self.marker.write_text(json.dumps(value)))
         self.addCleanup(patch.stopall)
         patch.object(release_recover.importlib.util,'spec_from_file_location').start()
@@ -43,6 +43,7 @@ class Recovery(unittest.TestCase):
         self.assertEqual((self.root/'evidence.json').read_bytes(),self.before)
         self.assertEqual((self.output/'compiled.o').read_bytes(),b'valuable compiled output')
         self.engine.verify_workspace.assert_called_once()
+        self.engine.shipping_arguments.assert_called_once_with(self.root, {}, {'schema_version': 2})
 
     def test_live_group_is_never_relabelled_or_killed(self):
         with patch.object(release_recover.os,'killpg') as signal:

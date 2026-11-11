@@ -6,7 +6,7 @@
 
 #import "VideoPiPWindow.h"
 #include "base/memory/raw_ptr.h"
-#include "cef/libcef/browser/parc_native/video_overlay_window.h"
+#include "parc/native/video_overlay_window.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"

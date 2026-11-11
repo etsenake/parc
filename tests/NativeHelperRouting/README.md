@@ -1,14 +1,14 @@
 # Native macOS helper routing and startup policy
 
-The production entry leaves `CefSettings.browser_subprocess_path` empty so
-CEF/Chromium selects Default, Renderer, GPU and Alerts helpers from the bundle.
+The production entry leaves the explicit subprocess override empty so
+Chromium selects Default, Renderer, GPU and Alerts helpers from the bundle.
 The supplied helper path still receives absolute-path and executable checks.
 The dedicated CDM helper retains the sandbox and signing policy described in
 [engine policy](../../docs/engine-flags.md#library-validation).
 
 ## Startup policy
 
-The real CEF application callback invokes `ApplyNativeStartupPolicy`. It disables
+The native engine startup invokes `ApplyNativeStartupPolicy`. It disables
 the bundled developer field-trial configuration and applies Parc's feature
 policy. Explicit feature-list entries keep their state except for the accepted
 product exclusions. The regression covers ordinary names, `*Name`,
@@ -34,14 +34,16 @@ python3 tests/NativeHelperRouting/run.py /absolute/chromium/src --results /absol
 ```
 
 The runner reads generated Objective-C++ flags and links completed upstream
-objects/components. It exercises the real `CefCommandLineImpl`,
-`base::CommandLine`, FeatureList, CEF utility routing and
-`ChildProcessHost::GetChildPath`. Cases cover both production and test executable
+objects/components using the canonical source lock.
+It exercises real `base::CommandLine`, FeatureList, bundle path configuration
+and `ChildProcessHost::GetChildPath`. Direct checks place the executable inside
+a disposable framework layout so the real loaded-image lookup supplies its
+framework and outer application. Cases cover production and test executable
 names, Default/Renderer/GPU paths, Alerts/CDM derivation and framework/resources.
 The old explicit override is a negative control: it routes Renderer/GPU to the
 default helper.
 
 The runner records its commands and input identities in the requested private
-output directory. It does not run GN/Ninja, initialize CEF, create a browser or
+output directory. It does not run GN/Ninja, initialize the engine, create a browser or
 Profile, or launch a helper. Compatible completed component-engine objects are
 required. Source-level integration checks remain in `tests/EngineSource`.

@@ -6,7 +6,7 @@ where the `<video>` element is, among the page's other CALayers. This document
 covers that path and its rendering limits. The CDM, renderer and media pipeline
 belong to `fairplay-media`; this covers the registry and the compositor.
 
-Engine changes: `Engine/ParcHost/integration/fairplay-compositing.patch`, plus
+Engine changes: `Engine/ParcHost/integration/fairplay-compositing-direct.patch`, plus
 `protected_layer_registry.{h,mm}` installed at
 `//ui/accelerated_widget_mac/`. Nothing here changes ordinary video. Every new
 branch is taken only for a `viz::VideoHoleDrawQuad`, and on Mac only a FairPlay

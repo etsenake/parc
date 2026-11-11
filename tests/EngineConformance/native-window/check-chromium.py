@@ -14,11 +14,17 @@ import subprocess
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
-    parser.add_argument("--output-name", default="Release_GN_arm64")
+    parser.add_argument("--output-name", default=None)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[3]
     source_tree = args.source_tree.resolve(strict=True)
-    build = source_tree / "out" / args.output_name
+    lock = json.loads((repo / "Engine/source-lock.json").read_text())
+    if lock.get("schema_version") != 2:
+        parser.error("unsupported source lock schema")
+    output_name = lock["build"]["configuration"] if args.output_name is None else args.output_name
+    if Path(output_name).name != output_name or output_name in ("", ".", ".."):
+        parser.error("output name must name one existing directory")
+    build = source_tree / "out" / output_name
     compiler = source_tree / "third_party/llvm-build/Release+Asserts/bin/clang++"
     results_dir = repo / "build/tests/native-window/chromium-syntax"
     results_dir.mkdir(parents=True, exist_ok=True)

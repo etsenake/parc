@@ -14,7 +14,7 @@ Chromium's actual controller and limits. Parent approval uses its own upstream
 policy; ordinary acceptance cannot substitute for it.
 
 
-`install_browsertest.mm` contains thirteen genuine Chromium Browser/Profile/ExtensionInstallPrompt cases. The overlay registers `//cef/tests/parc_native_extensions:install_browser_tests` in Chrome's macOS `browser_tests`; run filter `NativeExtensionInstallTest.*` only after the reviewed source overlay is applied and built. Execution requires a valid CEF process/context. They exercise consent outcomes, not a fabricated grant/installer implementation.
+`install_browsertest.mm` contains thirteen genuine Chromium Browser/Profile/ExtensionInstallPrompt cases. The overlay registers `//parc/tests/native_extensions:install_browser_tests` in Chrome's macOS `browser_tests`; run filter `NativeExtensionInstallTest.*` only after the reviewed source overlay is applied and built. Execution requires a valid Chromium process/context. They exercise consent outcomes, not a fabricated grant/installer implementation.
 
 The cases exercise prompt decisions; Chromium's installer and policy services
 own the resulting install. [Extensions](../../docs/extensions.md) describes

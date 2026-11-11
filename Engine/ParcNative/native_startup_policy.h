@@ -7,9 +7,10 @@
 #include <string>
 #include <string_view>
 
+#include "base/base_switches.h"
+#include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/strings/string_util.h"
-#include "cef/include/cef_command_line.h"
 
 namespace parc {
 // Disabled even when the command line explicitly enables them.
@@ -55,7 +56,8 @@ inline void AppendFeature(std::string& list, std::string_view feature) {
   list += feature;
 }
 
-inline void ApplyNativeStartupPolicy(CefCommandLine& command) {
+// Browser process only; children inherit the resulting feature state.
+inline void ApplyNativeStartupPolicy(base::CommandLine& command) {
   // Chromium testing/variations/README.md prescribes this control for
   // non-developer browsers. Its bundled testing config enables experiments
   // outside pinned CEF's supported helper cohort. Keep feature defaults;
@@ -65,8 +67,8 @@ inline void ApplyNativeStartupPolicy(CefCommandLine& command) {
   // Page translation is excluded: Chrome's translate service needs a Google
   // API key, which Parc never ships.
   command.AppendSwitch("disable-translate-trigger");
-  std::string enabled = command.GetSwitchValue("enable-features").ToString();
-  std::string disabled = command.GetSwitchValue("disable-features").ToString();
+  std::string enabled = command.GetSwitchValueUTF8(switches::kEnableFeatures);
+  std::string disabled = command.GetSwitchValueUTF8(switches::kDisableFeatures);
   // Chromium applies any disable over an enable of the same feature, so an
   //
   std::set<std::string, std::less<>> named;
@@ -98,10 +100,12 @@ inline void ApplyNativeStartupPolicy(CefCommandLine& command) {
       AppendFeature(enabled, feature);
     }
   }
+  command.RemoveSwitch(switches::kEnableFeatures);
+  command.RemoveSwitch(switches::kDisableFeatures);
   if (!enabled.empty()) {
-    command.AppendSwitchWithValue("enable-features", enabled);
+    command.AppendSwitchUTF8(switches::kEnableFeatures, enabled);
   }
-  command.AppendSwitchWithValue("disable-features", disabled);
+  command.AppendSwitchUTF8(switches::kDisableFeatures, disabled);
 }
 }  // namespace parc
 #endif  // PARC_NATIVE_STARTUP_POLICY_H_

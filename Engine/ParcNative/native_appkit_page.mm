@@ -1,8 +1,10 @@
 // Copyright 2026 Parc contributors.
 #include "native_appkit_page.h"
 #include "native_page_shell_notify.h"
+#include "native_page_observers.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
 #include "native_cast.h"
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "native_internal_urls.h"
 #include "components/sessions/content/content_serialized_navigation_builder.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "components/sessions/core/serialized_navigation_entry.h"
@@ -27,6 +29,11 @@
 #include "base/apple/foundation_util.h"
 #include "base/check.h"
 #include "components/find_in_page/find_tab_helper.h"
+#include "components/find_in_page/find_types.h"
+#include "components/url_formatter/url_fixer.h"
+#include "components/zoom/zoom_controller.h"
+#include "components/zoom/page_zoom.h"
+#include "content/public/common/page_zoom.h"
 #include "components/find_in_page/find_result_observer.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -41,7 +48,6 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "cef/libcef/browser/chrome/chrome_browser_host_impl.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/devtools/devtools_toggle_action.h"
@@ -95,7 +101,8 @@
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "extensions/common/constants.h"
 #include "native_appkit_host.h"
-#include "native_chrome_platform_delegate.h"
+#include "native_page_binding.h"
+#include "native_host_route.h"
 #include "native_page_retirement.h"
 #include "native_reader.h"
 #include "native_confirm_infobars.h"
@@ -620,16 +627,14 @@ class NativePageState final
       public std::enable_shared_from_this<NativePageState> {
  public:
   NativePageState(content::WebContents& contents,
-                  NativeChromePlatformDelegate& platform,
+                  NativePageBinding& platform,
                   NSString* path)
       : content::WebContentsObserver(&contents),
         contents_(contents.GetWeakPtr()),
-        host_(ChromeBrowserHostImpl::GetBrowserForContents(&contents)),
         page_view_(platform.GetNativePageView().GetNativeNSView()),
         identifier_([NSUUID UUID].UUIDString),
         profile_path_([path copy]) {
     CHECK(NSThread.isMainThread);
-    CHECK(host_);
     CHECK(page_view_);
     EnableNativeLinkNavigation(contents);
     capture_indicator_ = MediaCaptureDevicesDispatcher::GetInstance()
@@ -729,7 +734,7 @@ class NativePageState final
     // reaches no split route, so neither explains a split.
     status_text_.linkOutcome = ^PCNativeStatusLinkOutcome(NSEventModifierFlags flags, NSURL* url) {
       auto state = weak.lock();
-      if (!state || !state->host_ || !state->host_->browser())
+      if (!state || !state->browser())
         return PCNativeStatusLinkOutcomeNone;
       constexpr NSEventModifierFlags shift = NSEventModifierFlagShift;
       constexpr NSEventModifierFlags command = NSEventModifierFlagCommand;
@@ -744,7 +749,7 @@ class NativePageState final
       NSString* scheme = url.scheme.lowercaseString;
       if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"])
         return PCNativeStatusLinkOutcomeNewWindow;
-      PCNativeBrowserWindow* binding = AppKitBindingForBrowser(state->host_->browser());
+      PCNativeBrowserWindow* binding = AppKitBindingForBrowser(state->browser());
       id<PCNativeBrowserWindowClient> client = binding.client;
       return [client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] &&
               [client respondsToSelector:@selector(nativeBrowser:canPresentPeekFrom:)] &&
@@ -784,7 +789,9 @@ class NativePageState final
   void SetStatusText(NSString* text) { [status_text_ updateText:text]; }
   void SetStatusAttached(bool attached) { [status_text_ setAttached:attached]; }
   content::WebContents* contents() const { return contents_.get(); }
-  CefRefPtr<ChromeBrowserHostImpl> host() const { return host_; }
+  Browser* browser() const {
+    return contents_ ? NativeBrowserForContents(contents_.get()) : nullptr;
+  }
   NSView* view() const { return page_view_; }
   NSString* identifier() const { return identifier_; }
   NSString* path() const { return profile_path_; }
@@ -809,7 +816,8 @@ class NativePageState final
     CHECK(session);
     session->OmitFromSessionRestore();
     contents_->GetController().GetDefaultSessionStorageNamespace()->SetShouldPersist(false);
-    auto* browser = host_->browser();
+    auto* browser = this->browser();
+    CHECK(browser);
     embedded_browser_ = browser->GetWeakPtr();
     embedded_profile_ = browser->GetProfile()->GetWeakPtr();
     embedded_window_ = AppKitBindingForBrowser(browser).window;
@@ -824,8 +832,7 @@ class NativePageState final
         embedded_profile_->ShutdownStarted() || expected.IsDeleteScheduled() ||
         destination.IsDeleteScheduled() || expected.GetProfile() != embedded_profile_.get() ||
         destination.GetProfile() != embedded_profile_.get() || !binding.window ||
-        !binding.client || !AppKitBrowserAcceptsNewPages(destination) || !host_ ||
-        host_->browser() != &destination || !tab ||
+        !binding.client || !AppKitBrowserAcceptsNewPages(destination) || browser() != &destination || !tab ||
         tab->GetBrowserWindowInterface() != &destination ||
         destination.GetTabStripModel()->GetIndexOfTab(tab) == TabStripModel::kNoTab) {
       return false;
@@ -847,7 +854,7 @@ class NativePageState final
     return embedded_ && contents && browser && embedded_profile_ &&
         !embedded_profile_->ShutdownStarted() && browser->GetProfile() == embedded_profile_.get() &&
         embedded_window_ && binding.window == embedded_window_ && binding.client &&
-        host_ && host_->browser() == browser && tab &&
+        this->browser() == browser && tab &&
         tab->GetBrowserWindowInterface() == browser &&
         browser->GetTabStripModel()->GetIndexOfTab(tab) != TabStripModel::kNoTab;
   }
@@ -891,22 +898,25 @@ class NativePageState final
                            bool require_live_renderer = true) const {
     CHECK(NSThread.isMainThread);
     auto* contents = contents_.get();
-    auto* browser = host_ ? host_->browser() : nullptr;
-    auto* platform = host_ ? host_->platform_delegate() : nullptr;
+    if (!contents || contents->IsBeingDestroyed()) return nullptr;
+    auto* browser = this->browser();
+    auto* platform = NativePageBinding::FromWebContents(contents);
+    auto* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
+    const bool native_route = GetNativeRoute(*profile) ||
+        (profile->IsOffTheRecord() && GetNativeRoute(*profile->GetOriginalProfile()));
     NSWindow* window = page_view_.window;
-    if (closing_ || (embedded_ && !EmbeddedOwnerValid()) || !contents || contents->IsBeingDestroyed() ||
+    if (closing_ || (embedded_ && !EmbeddedOwnerValid()) ||
         (require_live_renderer &&
          (contents->IsCrashed() || !contents->GetPrimaryMainFrame() ||
           !contents->GetPrimaryMainFrame()->IsRenderFrameLive())) || !browser ||
-        !platform || !platform->native_route() || !window ||
+        !platform || !native_route || !window ||
         (require_interaction &&
          (!window.keyWindow || !window.visible || window.miniaturized ||
           page_view_.hiddenOrHasHiddenAncestor)) ||
         window.attachedSheet || !AppKitBrowserAcceptsNewPages(*browser) ||
         IsNativePageRetiring(page_) || IsLiveTabTransferTarget(contents) ||
         browser->tab_strip_model()->GetActiveWebContents() != contents ||
-        !static_cast<NativeChromePlatformDelegate*>(platform)
-             ->HasAttachedPage()) {
+        !platform->HasAttachedPage()) {
       return nullptr;
     }
     PCNativeBrowserWindow* binding = AppKitBindingForBrowser(browser);
@@ -1119,8 +1129,31 @@ class NativePageState final
     reader_->Cancel();
     // A retained state survives synchronous beforeunload/observer reentry.
     auto keep_alive = shared_from_this();
-    auto host = host_;
-    host->CloseBrowser(false);
+    if (contents_->NeedToFireBeforeUnloadOrUnloadEvents()) {
+      contents_->DispatchBeforeUnload(/*auto_cancel=*/false);
+      return;
+    }
+    // TabStripModel cannot be closed reentrantly from its own observer stack.
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce([](std::weak_ptr<NativePageState> weak) {
+          auto state = weak.lock();
+          if (!state || !state->closing_) return;
+          auto* contents = state->contents();
+          auto* browser = state->browser();
+          if (!contents || !browser || browser->IsDeleteScheduled()) {
+            state->CancelClose();
+            return;
+          }
+          auto* tabs = browser->tab_strip_model();
+          const int index = tabs->GetIndexOfWebContents(contents);
+          if (index == TabStripModel::kNoTab) {
+            state->CancelClose();
+            return;
+          }
+          tabs->CloseWebContentsAt(index,
+              TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB |
+              TabCloseTypes::CLOSE_USER_GESTURE);
+        }, weak_from_this()));
   }
   void CancelClose() {
     if (!closing_) {
@@ -1400,7 +1433,7 @@ class NativePageState final
     if (SadTab::ShouldShow(status)) {
       return;
     }
-    // Match CefBrowserContentsDelegate's current macOS failure classification.
+    // Match Chromium's current macOS failure classification.
     // TabStripModel fast-close reports NORMAL_TERMINATION with exit code 0
     // while its mutation guard is held; that is not a renderer failure.
     switch (status) {
@@ -1483,7 +1516,6 @@ class NativePageState final
     Observe(nullptr);
     contents_.reset();
     ++event_generation_;
-    host_ = nullptr;
     closing_ = false;
     auto callbacks = std::move(close_callbacks_);
     close_callbacks_.clear();
@@ -1520,7 +1552,6 @@ class NativePageState final
   std::unique_ptr<TopBandColorSampler> top_band_;
   std::unique_ptr<NativeReader> reader_;
   base::WeakPtr<content::WebContents> contents_;
-  CefRefPtr<ChromeBrowserHostImpl> host_;
   NSView* __strong page_view_;
   PCNativeStatusTextController* __strong status_text_;
   NSString* __strong identifier_;
@@ -1547,7 +1578,7 @@ void MarkNativePageEmbedded(PCNativePage* page) {
   [page state]->MarkEmbedded();
 }
 PCNativePage* GetOrCreateNativePage(content::WebContents& contents,
-                                    NativeChromePlatformDelegate& platform,
+                                    NativePageBinding& platform,
                                     NSString* profile_path) {
   CHECK(NSThread.isMainThread);
   auto found = Pages().find(&contents);
@@ -1559,6 +1590,7 @@ PCNativePage* GetOrCreateNativePage(content::WebContents& contents,
   PCNativePage* page = [[PCNativePage alloc] initWithState:state];
   state->SetPage(page);
   Pages().emplace(&contents, PageRecord{page});
+  InstallNativePageObservers(contents);
   AttachNativeConfirmInfoBars(contents);
   AttachFairPlayIdentity(contents);
   return page;
@@ -1599,6 +1631,7 @@ void UpdateNativePageStatusText(content::WebContents& contents,
 void SetNativePageStatusAttached(content::WebContents& contents,
                                  bool attached) {
   CHECK(NSThread.isMainThread);
+  if (!attached) DetachNativePageObservers(contents);
   if (PCNativePage* page = ExistingNativePage(&contents)) {
     [page state]->SetStatusAttached(attached);
   }
@@ -1727,31 +1760,32 @@ void SetNativePageClosedCallback(PCNativePage* page,
 - (BOOL)isEmbedded { return _state->embedded(); }
 - (BOOL)embeddedOwnerValid { return _state->EmbeddedOwnerValid(); }
 - (void)loadURL:(NSURL*)url {
-  const GURL requested(url.absoluteString.UTF8String ?: "");
+  const GURL requested = url_formatter::FixupURL(
+      url.absoluteString.UTF8String ?: "", std::string());
+  if (!requested.is_valid()) return;
   if (parc::IsNativeAppDocumentURL(requested) || requested.SchemeIs("arc")) return;
   if (_state->embedded() && (!_state->PageToolBrowser(false, false) ||
       PCNativeWindowHasSecurityReservation(self.nativeView.window))) return;
   CHECK(NSThread.isMainThread);
-  auto host = _state->host();
-  auto frame = host ? host->GetMainFrame() : nullptr;
-  if (frame) {
-    frame->LoadURL(url.absoluteString.UTF8String);
+  if (auto* contents = _state->contents()) {
+    contents->GetController().LoadURL(requested, content::Referrer(),
+                                      ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED |
+                                          ui::PAGE_TRANSITION_FROM_ADDRESS_BAR),
+                                      std::string());
   }
 }
 - (void)goBack {
   if (_state->embedded() && (!_state->PageToolBrowser(false, false) ||
       PCNativeWindowHasSecurityReservation(self.nativeView.window))) return;
-  auto host = _state->host();
-  if (host) {
-    host->GoBack();
+  if (auto* contents = _state->contents()) {
+    contents->GetController().GoBack();
   }
 }
 - (void)goForward {
   if (_state->embedded() && (!_state->PageToolBrowser(false, false) ||
       PCNativeWindowHasSecurityReservation(self.nativeView.window))) return;
-  auto host = _state->host();
-  if (host) {
-    host->GoForward();
+  if (auto* contents = _state->contents()) {
+    contents->GetController().GoForward();
   }
 }
 - (PCNativeRendererCrash*)rendererCrash {
@@ -1766,36 +1800,37 @@ void SetNativePageClosedCallback(PCNativePage* page,
 - (void)reload {
   if (_state->embedded() && (!_state->PageToolBrowser(false, false) ||
       PCNativeWindowHasSecurityReservation(self.nativeView.window))) return;
-  auto host = _state->host();
-  if (host) {
-    host->Reload();
+  if (auto* contents = _state->contents()) {
+    contents->GetController().Reload(content::ReloadType::NORMAL, true);
   }
 }
 - (void)stop {
   if (_state->embedded() && (!_state->PageToolBrowser(false, false) ||
       PCNativeWindowHasSecurityReservation(self.nativeView.window))) return;
-  auto host = _state->host();
-  if (host) {
-    host->StopLoad();
+  if (auto* contents = _state->contents()) {
+    contents->Stop();
   }
 }
 - (void)setZoomLevel:(double)level {
-  auto host = _state->host();
-  if (host) {
-    host->SetZoomLevel(level);
+  auto* contents = _state->contents();
+  auto* zoom = contents ? zoom::ZoomController::FromWebContents(contents) : nullptr;
+  if (!zoom || !std::isfinite(level)) return;
+  if (level == 0) {
+    level = zoom->GetDefaultZoomLevel();
+    contents->SetPageScale(1.f);
   }
+  zoom->SetZoomLevel(level);
 }
 - (void)zoomPage:(NSInteger)direction {
-  auto host = _state->host();
-  if (host) {
-    host->Zoom(direction < 0   ? CEF_ZOOM_COMMAND_OUT
-               : direction > 0 ? CEF_ZOOM_COMMAND_IN
-                               : CEF_ZOOM_COMMAND_RESET);
+  if (auto* contents = _state->contents()) {
+    zoom::PageZoom::Zoom(contents, direction < 0 ? content::PAGE_ZOOM_OUT
+        : direction > 0 ? content::PAGE_ZOOM_IN : content::PAGE_ZOOM_RESET);
   }
 }
 - (double)pageZoomLevel {
-  auto host = _state->host();
-  return host ? host->GetZoomLevel() : 0;
+  auto* contents = _state->contents();
+  auto* zoom = contents ? zoom::ZoomController::FromWebContents(contents) : nullptr;
+  return zoom ? zoom->GetZoomLevel() : 0;
 }
 + (NSNotificationName)findResultDidChangeNotification {
   return @"ParcNativePageFindResultDidChange";
@@ -1818,17 +1853,18 @@ void SetNativePageClosedCallback(PCNativePage* page,
 }
 - (void)findText:(NSString*)text forward:(BOOL)forward findNext:(BOOL)findNext {
   auto* browser = _state->PageToolBrowser();
-  auto host = _state->host();
-  if (browser && [self canFindInPage] && host && text.length) {
+  auto* contents = _state->contents();
+  auto* helper = contents ? find_in_page::FindTabHelper::FromWebContents(contents) : nullptr;
+  if (browser && [self canFindInPage] && helper && text.length) {
     _state->PrepareFind(text);
-    host->Find(text.UTF8String, forward, false, findNext);
+    helper->StartFinding(base::SysNSStringToUTF16(text), forward, false, findNext);
   }
 }
 - (void)stopFinding {
   _state->ClearFind();
-  auto host = _state->host();
-  if (host) {
-    host->StopFinding(true);
+  auto* contents = _state->contents();
+  if (auto* helper = contents ? find_in_page::FindTabHelper::FromWebContents(contents) : nullptr) {
+    helper->StopFinding(find_in_page::SelectionAction::kClear);
   }
 }
 - (NSString*)developerModeHost {

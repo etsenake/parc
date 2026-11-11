@@ -72,6 +72,7 @@ python3 tests/NativeBrowserWindow/check-chromium.py /absolute/path/to/chromium/s
 ```
 
 The checker compiles the complete Objective-C++ implementation with the pinned
+Chromium compiler, actual generated `//parc:browser` Objective-C++ flags, ARC and
 warnings as errors. A static assertion requires every pure virtual BrowserWindow
 and color-source method. The script reads the checkout,
 invokes only its compiler in syntax-only mode, and writes commands/diagnostics

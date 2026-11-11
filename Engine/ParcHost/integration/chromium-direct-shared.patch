@@ -1,0 +1,422 @@
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+-
++
+ #include "content/browser/web_contents/web_contents_impl.h"
++#include "content/public/browser/weak_document_ptr.h"
+-
++
+ #include <stddef.h>
+-
++
+@@ -4002,6 +4003,10 @@
+   CHECK(main_frame->is_main_frame());
+-
++
+   blink::web_pref::WebPreferences prefs;
++  // The embedder updates this browser-owned state on macOS power changes.
++  // Ordinary preference recomputation must preserve the latest value.
++  if (web_preferences_)
++    prefs.parc_media_power_restricted = web_preferences_->parc_media_power_restricted;
+-
++
+   // Sets the hardware-related fields in |prefs| that are slow to compute. The
+   // fields are set from cache if available, otherwise recomputed.
+@@ -4258,6 +4263,10 @@
+-
++
+   GetContentClient()->browser()->OverrideWebPreferences(
+       this, *main_frame->GetSiteInstance(), &prefs);
++  // Parc: shell attachment is WebContents state, not a computed preference.
++  // Preserve it through settings recomputation and BFCache restoration.
++  if (web_preferences_)
++    prefs.parc_page_in_window = web_preferences_->parc_page_in_window;
+   return prefs;
+ }
+-
++
+@@ -6970,6 +6979,22 @@
+   if (delegate_) {
+     delegate_->ResizeDueToAutoResize(this, new_size);
+   }
++}
++
++void WebContentsImpl::NotifyNativeDeferredOpenURL(
++    WebContents* created, const WeakDocumentPtr& source_document,
++    const OpenURLParams& params) {
++  RenderFrameHost* frame = source_document.AsRenderFrameHostIfValid();
++  if (!created || created == this || !frame || !frame->IsActive() ||
++      frame != GetPrimaryMainFrame() ||
++      WebContents::FromRenderFrameHost(frame) != this ||
++      !params.is_renderer_initiated || !params.initiator_frame_token ||
++      frame->GetGlobalFrameToken() != GlobalRenderFrameHostToken(
++          params.initiator_process_id, *params.initiator_frame_token)) return;
++  observers_.NotifyObservers(&WebContentsObserver::DidOpenRequestedURL,
++      created, frame, params.url, params.referrer, params.disposition,
++      params.transition, params.started_from_context_menu,
++      params.is_renderer_initiated);
+ }
+-
++
+ WebContents* WebContentsImpl::OpenURL(
+@@ -11217,6 +11242,8 @@
+   }
+-
++
+   CloseListenerManager::DidChangeFocusedFrame(this);
++  observers_.NotifyObservers(&WebContentsObserver::OnFrameFocused,
++                             node->current_frame_host());
+ }
+-
++
+ FrameTree* WebContentsImpl::GetOwnedDocumentPictureInPictureFrameTree() {
+--- a/chrome/browser/devtools/devtools_window_views.cc
++++ b/chrome/browser/devtools/devtools_window_views.cc
+@@ -2,6 +2,7 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+-
++
++#include "base/functional/bind.h"
+ #include "chrome/browser/devtools/devtools_ui_controller.h"
+ #include "chrome/browser/devtools/devtools_window.h"
+ #include "chrome/browser/ui/browser_window.h"
+@@ -14,6 +15,7 @@
+ #include "components/web_modal/web_contents_modal_dialog_manager.h"
+ #include "content/public/browser/keyboard_event_processing_result.h"
+ #include "content/public/browser/render_process_host.h"
++#include "parc/native/native_browser.h"
+ #include "printing/buildflags/buildflags.h"
+-
++
+ #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
+@@ -88,6 +90,10 @@
+ bool DevToolsWindow::HandleKeyboardEvent(
+     WebContents* source,
+     const input::NativeWebKeyboardEvent& event) {
++  if (auto result = parc::HandleNativeDevtoolsKey(GetInspectedWebContents(),
++                                                  source, event)) {
++    return *result;
++  }
+   if (event.windows_key_code == 0x08) {
+     // Do not navigate back in history on Windows (http://crbug.com/40529649).
+     return true;
+@@ -141,17 +147,76 @@
+   }
+ }
+-
++
+-void DevToolsWindow::RegisterModalDialogManager(
++base::ScopedClosureRunner DevToolsWindow::BindNativeDockedModalDialogHost(
++    WebContents* inspected,
++    WebContents* tools) {
++  auto* window = GetInstanceForInspectedWebContents(inspected);
++  if (!window || !window->is_docked_ || window->main_web_contents_ != tools) {
++    return {};
++  }
++  auto* browser =
++      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(inspected);
++  auto* controller = browser ? DevtoolsUIController::From(browser) : nullptr;
++  // CanDockDevtools governs initial creation. An already-docked inspected tab
++  // may legitimately transfer into a native popup Browser; its still-existing
++  // main contents need that exact destination's modal owner too.
++  if (!controller || !controller->HasNativePresentation()) {
++    return {};
++  }
++  auto weak = window->weak_factory_.GetWeakPtr();
++  auto owner = browser->GetWeakPtr();
++  auto page = inspected->GetWeakPtr();
++  auto contents = tools->GetWeakPtr();
++  const uint64_t generation = window->RegisterModalDialogManager(browser);
++  base::ScopedClosureRunner binding(base::BindOnce(
++      [](base::WeakPtr<DevToolsWindow> window,
++         base::WeakPtr<BrowserWindowInterface> owner, uint64_t generation) {
++        if (!window || !owner || !window->is_docked_ ||
++            window->native_modal_host_generation_ != generation) {
++          return;
++        }
++        ++window->native_modal_host_generation_;
++        auto* manager =
++            web_modal::WebContentsModalDialogManager::FromWebContents(
++                window->main_web_contents_);
++        if (manager &&
++            manager->delegate() ==
++                BrowserWindowModalDialogDelegate::From(owner.get())) {
++          manager->SetDelegate(nullptr);  // Last call: may notify native hosts.
++        }
++      },
++      weak, owner, generation));
++  if (!weak || !owner || !page || !contents ||
++      weak->native_modal_host_generation_ != generation || !weak->is_docked_ ||
++      weak->main_web_contents_ != contents.get() ||
++      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(page.get()) !=
++          owner.get()) {
++    return {};
++  }
++  // SetDelegate skips an identical owner. Replay the real blocked state after
++  // the new pane is registered, including deferred first attachment and a new
++  // pane in the same Browser. No synthetic input or dialog manager is created.
++  auto* manager =
++      web_modal::WebContentsModalDialogManager::FromWebContents(contents.get());
++  if (auto* current = DevtoolsUIController::From(owner.get())) {
++    current->SetDevtoolsScrimVisibility(contents.get(),
++                                        manager->IsDialogActive());
++  }
++  return binding;
++}
++
++uint64_t DevToolsWindow::RegisterModalDialogManager(
+     BrowserWindowInterface* browser) {
++  const uint64_t generation = ++native_modal_host_generation_;
+   web_modal::WebContentsModalDialogManager::CreateForWebContents(
+       main_web_contents_);
+-  web_modal::WebContentsModalDialogManager::FromWebContents(main_web_contents_)
+-      ->SetDelegate(BrowserWindowModalDialogDelegate::From(browser));
+-
+-  // Observer `browser` destruction/removal to reset `SetDelegate(nullptr)`
+-  // before the dialog manager's `raw_ptr` becomes dangling.
++  // Observe before SetDelegate can notify actual modal/native hosts and reenter
++  // Browser removal. Existing Show and native attachment share this ownership.
+   if (!browser_collection_observation_.IsObserving()) {
+     browser_collection_observation_.Observe(
+         GlobalBrowserCollection::GetInstance());
+   }
+-}
++  web_modal::WebContentsModalDialogManager::FromWebContents(main_web_contents_)
++      ->SetDelegate(BrowserWindowModalDialogDelegate::From(browser));
++  return generation;  // No member access after callback-capable SetDelegate.
++}
+--- a/chrome/browser/file_select_helper.cc
++++ b/chrome/browser/file_select_helper.cc
+@@ -268,7 +268,8 @@
+         entry->display_name_, std::move(chooser_files),
+         base::BindOnce(&FileSelectHelper::PerformContentAnalysisIfNeeded,
+                        this));
+-    chrome::ShowTabModal(std::move(model), web_contents_);
++    chrome::ShowFolderUploadConfirmation(std::move(model), web_contents_,
++                                         render_frame_host_);
+   } else {
+     listener_->FileSelected(std::move(chooser_files), base_dir_,
+                             FileChooserParams::Mode::kUploadFolder);
+@@ -526,17 +527,24 @@
+   std::vector<base::FilePath::StringType>* extensions =
+       &file_type->extensions.back();
+-
++
++  // Create individual filters for each accept type.
++  std::vector<std::vector<base::FilePath::StringType>> all_extensions;
++  std::vector<std::u16string> all_overrides;
++
+   // Find the corresponding extensions.
+   int valid_type_count = 0;
+   int description_id = 0;
+   for (const auto& accept_type : accept_types) {
++    std::vector<base::FilePath::StringType> current_extensions;
++    description_id = 0;
++
+     size_t old_extension_size = extensions->size();
+     if (accept_type[0] == '.') {
+       // If the type starts with a period it is assumed to be a file extension
+       // so we just have to add it to the list.
+       base::FilePath::StringType ext =
+           base::FilePath::FromUTF16Unsafe(accept_type).value();
+-      extensions->push_back(ext.substr(1));
++      current_extensions.push_back(ext.substr(1));
+     } else {
+       if (!base::IsStringASCII(accept_type))
+         continue;
+@@ -547,10 +555,18 @@
+         description_id = IDS_AUDIO_FILES;
+       else if (ascii_type == "video/*")
+         description_id = IDS_VIDEO_FILES;
+-
+-      net::GetExtensionsForMimeType(ascii_type, extensions);
+-    }
+-
++      net::GetExtensionsForMimeType(ascii_type, &current_extensions);
++    }
++
++    if (!current_extensions.empty()) {
++      all_extensions.push_back(current_extensions);
++      all_overrides.push_back(description_id != 0
++                                  ? l10n_util::GetStringUTF16(description_id)
++                                  : std::u16string());
++
++      extensions->insert(extensions->end(), current_extensions.begin(),
++                         current_extensions.end());
++    }
+     if (extensions->size() > old_extension_size)
+       valid_type_count++;
+   }
+@@ -566,13 +582,23 @@
+   //    "ehtml,shtml,htm,html" for "text/html". On Windows, the select file
+   //    dialog uses the first extension in the list to form the description,
+   //    like "EHTML Files". This is not what we want.
+-  if (valid_type_count > 1 ||
+-      (valid_type_count == 1 && description_id == 0 && extensions->size() > 1))
++  if (valid_type_count > 1 || (valid_type_count == 1 && description_id == 0 &&
++                               extensions->size() > 1)) {
+     description_id = IDS_CUSTOM_FILES;
+-
+-  if (description_id) {
+-    file_type->extension_description_overrides.push_back(
+-        l10n_util::GetStringUTF16(description_id));
++  }
++
++  file_type->extension_description_overrides.push_back(
++      description_id != 0 ? l10n_util::GetStringUTF16(description_id)
++                          : std::u16string());
++
++  if (all_extensions.size() > 1) {
++    // Add filters for the specific accept types after the combined filter so
++    // that the combined filter is selected by default.
++    file_type->extensions.insert(file_type->extensions.end(),
++                                 all_extensions.begin(), all_extensions.end());
++    file_type->extension_description_overrides.insert(
++        file_type->extension_description_overrides.end(), all_overrides.begin(),
++        all_overrides.end());
+   }
+-
++
+   return file_type;
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -2,6 +2,7 @@
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+-
++
++import("//parc/features.gni")
+ import("//build/config/buildflags_paint_preview.gni")
+ import("//build/config/chrome_build.gni")
+ import("//build/config/compiler/compiler.gni")
+@@ -126,6 +127,7 @@
+       "//chrome/browser/profiles:profile",
+       "//chrome/browser/profiles:profile_manager",
+       "//components/keep_alive_registry",
++      "//parc/native:native_browser_api",
+       "//printing/buildflags",
+     ]
+   }
+@@ -169,6 +171,10 @@
+       "//mojo/public/cpp/bindings",
+       "//ui/gfx",
+     ]
++    deps += [ "//parc:buildflags" ]
++    if (is_mac && enable_parc) {
++      deps += [ "//parc/native:native_intent_picker_api" ]
++    }
+   }
+-
++
+   source_set("browser_window_state") {
+@@ -3346,6 +3352,7 @@
+       ":browser_commands_mac",
+       ":browser_commands_mac_impl",
+       ":browser_mac",
++      "//parc/native:native_browser_api",
+       ":fullscreen_util_mac",
+       "//chrome/browser/apps/app_shim",
+       "//chrome/browser/ui/cocoa",
+--- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
++++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
+@@ -3,6 +3,10 @@
+ // found in the LICENSE file.
+-
++
+ #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
++#if BUILDFLAG(IS_MAC)
++#include "parc/native/native_page_context_menu.h"
++#include "parc/native/native_internal_urls.h"
++#endif
+-
++
+ #include <stddef.h>
+-
++
+@@ -779,6 +783,10 @@
+     return 1;
+   }
+-
++
++  // Parc commands use this reserved range.
++  if (id >= 26500 && id <= 28500)
++    return 1;
++
+   id = CollapseCommandsForUMA(id);
+   return UmaEnumForCommand(id, type);
+ }
+@@ -1124,6 +1132,12 @@
+   system_app_ = app_controller ? app_controller->system_app() : nullptr;
+ #endif  // BUILDFLAG(IS_CHROMEOS)
+-
++
++#if BUILDFLAG(IS_MAC)
++  first_observer_ = parc::CreateNativePageContextMenuObserver(this);
++  if (first_observer_)
++    observers_.AddObserver(first_observer_.get());
++#endif
++
+   observers_.AddObserver(&autofill_context_menu_manager_);
+ }
+-
++
+@@ -1187,7 +1201,7 @@
+ std::u16string RenderViewContextMenu::FormatURLForClipboard(const GURL& url) {
+   DCHECK(url.is_valid());
+-
++
+-  GURL url_to_format = url;
++  GURL url_to_format = parc::PublicInternalURL(url);
+   url_formatter::FormatUrlTypes format_types;
+   base::UnescapeRule::Type unescape_rules;
+   if (url.SchemeIs(url::kMailToScheme)) {
+@@ -1589,6 +1603,12 @@
+         !took_simplified_page_items_path) {
+       AppendReadAnythingItem();
+     }
++  }
++
++  if (first_observer_) {
++    // Do this last so that the observer can optionally modify previously
++    // created items.
++    first_observer_->InitMenu(params_);
+   }
+ }
+-
++
+--- a/chrome/browser/renderer_context_menu/BUILD.gn
++++ b/chrome/browser/renderer_context_menu/BUILD.gn
+@@ -77,7 +77,8 @@
+   public = [ "context_menu_content_type_factory.h" ]
+   sources = [ "context_menu_content_type_factory.cc" ]
+-
++
+-  deps = [
++  deps = [ "//parc/native:native_internal_urls_api",
++    "//parc/native:native_page_context_menu_api",
+     ":renderer_context_menu",
+     "//base",
+     "//base:i18n",
+--- a/chrome/browser/ui/navigator/BUILD.gn
++++ b/chrome/browser/ui/navigator/BUILD.gn
+@@ -41,7 +41,7 @@
+     "browser_navigator_params_utils.cc",
+   ]
+-
++
+-  deps = [
++  deps = [ "//parc/native:native_internal_urls_api",
+     ":navigator",
+     "//base",
+     "//chrome/browser:browser_about_handler",
+@@ -97,6 +97,7 @@
+       "//chrome/browser/ui/web_applications",
+       "//chrome/browser/ui/web_applications:launch_utils",
+       "//chrome/browser/ui/window_feature_controller",
++      "//parc/native:native_browser_api",
+     ]
+   }
+ }

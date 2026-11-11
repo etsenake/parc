@@ -8,7 +8,7 @@ individual building blocks.
 
 ## Inputs and commands
 
-Use an absolute `--engine-dir` for the locked `Release_GN_arm64` output. First finish the reviewed native-host overlay with `scripts/engine-source.py build`. A successful source-tool completion must record phase `built`; manually linked files and a still-running build cannot be sealed. The matching reviewed source overlay must include the actual public native bridge headers and compiled exports.
+Use an absolute `--engine-dir` for the locked `Release_GN_arm64` output. First finish the reviewed native-host overlay with `scripts/engine-source.py build`. A successful source-tool completion must record phase `built`; manually linked files and a still-running build cannot be sealed. The direct application requires `Engine/ParcNative/native_application_protocols.h`, whose event-control declarations are app inputs rather than linked engine API. The canonical `Engine/source-lock.json` and `Engine/ParcHost/overlay.json` are the only supported inputs. Sealing refuses a leftover retired sandbox library. The matching reviewed source overlay must include the actual public native bridge headers and compiled exports.
 
 Create the manifest and package in ignored local directories (replace the example paths with your workspace):
 
@@ -39,7 +39,7 @@ are copied intact. The package report records the configuration and actual ICNS 
 
 Every output is new: the tool refuses to overwrite a manifest or development directory. It stages the app, sibling libraries and report together, then publishes the complete directory with macOS exclusive atomic rename; even a concurrently created empty destination is preserved. It keeps the source tool's shared operation lock during verification and copying. Sealing reuses the bootstrap's pinned repository/dependency fingerprint checks, verifies the reviewed overlay's target hashes and the executable's public ABI headers, then records the framework inventory, symlinks, resources, runtime-loaded graphics/sandbox libraries, Mach-O dependency graph and component hashes. Packaging rechecks those inputs and rejects unknown external dependencies, ambiguous paths, symlink escapes and absent native C/Objective-C exports. The supported artifact is the pinned Release ARM64 component configuration; an additional non-system framework requires an explicit resource mapping rather than silently copying only its binary.
 
-The layout follows the pinned CEF component-development arrangement:
+The layout follows the pinned Chromium component-development arrangement:
 
 ```text
 development/
@@ -142,9 +142,9 @@ When only app code changed, skip the engine and reuse the one in a published pac
 bash scripts/package-app.sh --from-release [app-<stamp>-<commit>]
 ```
 
-Without a tag it picks the newest `app-*` preview or stable `v<version>` release whose tagged source has `HEAD`'s overlay version in `Engine/ParcHost/overlay.json`. An explicit stable tag also works, using `--from-release "$PARC_RELEASE_TAG"`; it selects the ZIP even when the release also includes a DMG. It refuses when `Engine/` differs between that release's commit and `HEAD`, checks the downloaded zip against GitHub's digest, then `build.py release-build` checks the package report: a standalone non-component engine whose overlay identity and source lock digest equal `HEAD`'s, with every overlay input still matching its pinned digest, recorded build flags matching `engine-source.py`'s current shipping defines (the recipe lives outside `Engine/`), and no Widevine host signatures from the earlier package. The framework must pass `codesign --verify --deep --strict` and its code must hash to the report's signed images. The few upstream files packaging reads besides the engine (CEF's `include/cef_application_mac.h` and `LICENSE.txt`, Chromium's `LICENSE` and `chrome/app/app-entitlements.plist`) are read from an engine workspace's Git objects at the source lock's commits, never its working tree, and refused if the overlay patches them; both licenses must equal the ones the release shipped. Set `PARC_ENGINE_WORKSPACE` to select an engine workspace outside the checkout's `work/engine` directory. The new package report records the reused release and the release that originally built the engine (`engine_release`), so packages can chain. Compiling and signing are `build_app`'s, unchanged.
+Without a tag it picks the newest `app-*` preview or stable `v<version>` release whose tagged source selects the same engine overlay manifest and version as `HEAD`. An explicit stable tag also works, using `--from-release "$PARC_RELEASE_TAG"`; it selects the ZIP even when the release also includes a DMG. It refuses when `Engine/` differs between that release's commit and `HEAD`, checks the downloaded zip against GitHub's digest, then `build.py release-build` checks the package report: a standalone non-component engine whose overlay identity and source lock digest equal `HEAD`'s, with every overlay input still matching its pinned digest, recorded build flags matching `engine-source.py`'s current shipping defines (the recipe lives outside `Engine/`), and no Widevine host signatures from the earlier package. The framework must pass `codesign --verify --deep --strict` and its code must hash to the report's signed images. Upstream packaging inputs come from an engine workspace's Git objects at the source lock's commits and are refused if the overlay patches them. The app uses the checkout's native application protocol header. Engine licenses must match the reused package. Set `PARC_ENGINE_WORKSPACE` to select an engine workspace outside the checkout's `work/engine` directory. The new package report records the reused release and the release that originally built the engine (`engine_release`), so packages can chain. Compiling and signing are `build_app`'s, unchanged.
 
-For runtime testing on a Mac whose newest published engine is older than `main`'s overlay, `bash scripts/package-app.sh --local-test [tag]` packages `main`'s app against the newest published engine without publishing anything. It refuses a changed source lock, and `build.py release-build --local-test` asks the compiler which `Engine/ParcNative` headers the app's native facade and bridging header include, then refuses if any differs from the engine's commit: a changed header means the app may call engine API that engine lacks. When every new call is guarded with `respondsToSelector:` (or `responds(to:)`), `PARC_ALLOW_CHANGED_ENGINE_HEADERS=1` accepts the changed headers and the report lists them; a new class or exported function would still stop the app launching. Engine-internal changes are allowed and simply absent. The bundle's `Info.plist` gets `ParcLocalTestBuild`, the report's `engine_release.local_test` records the checkout's overlay and the headers compared, and the package stays in `build/local-test-<stamp>`.
+For runtime testing on a Mac whose newest published engine is older than `main`'s overlay, `bash scripts/package-app.sh --local-test [tag]` packages `main`'s app against the newest published engine without publishing anything. It refuses a changed source lock, and `build.py release-build --local-test` asks the compiler which `Engine/ParcNative` headers the app's native facade and bridging header include, then refuses if any engine API header differs from the engine's commit (the app-only event protocol declarations are excluded): a changed header means the app may call engine API that engine lacks. When every new call is guarded with `respondsToSelector:` (or `responds(to:)`), `PARC_ALLOW_CHANGED_ENGINE_HEADERS=1` accepts the changed headers and the report lists them; a new class or exported function would still stop the app launching. Engine-internal changes are allowed and simply absent. The bundle's `Info.plist` gets `ParcLocalTestBuild`, the report's `engine_release.local_test` records the checkout's overlay and the headers compared, and the package stays in `build/local-test-<stamp>`.
 
 Every published production app requires a valid **Developer ID Application** identity and Apple notarization. Apple Development and ad-hoc identities are refused for publication. The explicit unpublished `--local-test` path and direct development/fixture builds remain available. Published packages use `--purpose distribution`, release optimization and the official standalone engine; compatible published engines can also be reused for distribution.
 
@@ -228,26 +228,13 @@ one is accepted, following the same manual-install boundary above.
 
 ## Helper and signing contract
 
-`Sources/ParcHelper/main.cc` follows the pinned CEF macOS entry order: load `Libraries/libcef_sandbox.dylib`, resolve both sandbox entry points, initialize the sandbox context, then load the engine framework and call the exported `parc_engine_execute_process`. The sandbox stays alive through process execution and framework unloading. A missing sandbox, missing entry point, initialization failure or browser-process return fails. The helper links only system libraries; packaging checks its actual load commands before including it.
+Direct engines use the GN-built `//parc/helper:parc_helper`, copied into all five helper bundles. `Sources/ParcHelper/main.cc` registers the allocator zone and initializes Seatbelt before loading the framework. A required sandbox with no server or failed initialization is fatal; the server stays alive until the framework unloads. Sealing hashes the helper and audits its complete bootstrap graph: only system libraries and the component build's `@rpath/libseatbelt.dylib` are permitted. Component helper RPATHs resolve that library from the package's sibling libraries. Framework name, identifier, versioned layout, helper identities and signing entitlements stay the same.
 
-
-Copied code is signed inside-out. The app is verified with `codesign --verify --deep --strict`, and
-sibling component dylibs are individually verified with `codesign --verify --strict` because they
-are outside the app bundle. Signing itself never uses `--deep`. The default ad-hoc identity is for
-development and requires library validation to be disabled because its separately signed component
-dylibs have no Team ID. Supply `--sign-identity` with an Apple-issued certificate (`Developer ID
-Application: …` or `Apple Development: …`); packaging reads its Team ID from a signed probe, and
-with one it does not add the development library-validation exception. A self-signed certificate has
-no Team ID, so it keeps the exception, like ad-hoc signing. Its only exception is `Parc Helper
-(CDM)`, signed with just `com.apple.security.cs.disable-library-validation` because the
-component-updated CDM carries Google's signature. Every other helper and the main app keep library
-validation ([why](../../docs/engine-flags.md#library-validation)). The tool does not create
-certificates, install trust or modify Keychain ACLs. Production publication enforces the stable
-Developer ID identity and verifies notarization. Encrypted profile storage uses the [Parc Safe
-Storage namespace](../KeychainNamespace/README.md), preserving existing key bytes and normal macOS
-authorization.
-
-Pinned source references: CEF `tests/cefsimple/process_helper_mac.cc`, `libcef_dll/wrapper/cef_scoped_sandbox_context_mac.mm`, `libcef_dll/wrapper/cef_scoped_library_loader_mac.mm`, macOS `cef_app`/`cef_framework` targets in `cef/BUILD.gn`, Chromium `content/public/app/mac_helpers.gni` and `chrome/app/*entitlements.plist`. Packaging preserves the native window/page ownership architecture.
+Sealing and packaging support only the direct GN helper. They refuse any
+retired sandbox library, preserve the framework bundle identity and require
+helper hashes, modes and load commands to match the seal. Component helpers
+resolve only the sealed sibling Seatbelt library before sandbox initialization.
+The five helper identities and entitlements remain unchanged.
 
 ## Sparkle
 
@@ -263,7 +250,7 @@ PARC_WIDEVINE_KEY_PASSPHRASE="$(security find-generic-password -s parc-widevine-
   --widevine-private-key /absolute/private/vmp-key.pem
 ```
 
-Keep the passphrase in the Keychain as above, or type it with `read -rs PARC_WIDEVINE_KEY_PASSPHRASE` and `export` it; don't write it into the command. It's optional, for encrypted keys, and read only from that variable. The tool removes it from its environment at startup and hands it to the `openssl` signing call alone. `openssl` from `PATH` runs without a terminal, so an encrypted key without the variable fails at once with a message to set it rather than prompting. Keys inside any Git checkout, including `.git` directories, worktrees and submodules, are refused. A signing service can stand in for the key with `--widevine-sign-command /absolute/signer`, run as `signer BINARY SIGNATURE FLAGS` with no terminal; it must write a complete `.sig`, not a symlink, without changing the binary. Either way the tool signs the framework binary (flag 1) and `Parc Helper (CDM)` (flag 0) where CEF reads them, verifies both, signs with Apple, then verifies them again. Component engines are refused. The format and evidence are in [engine flags](../../docs/engine-flags.md#widevine).
+Keep the passphrase in the Keychain as above, or type it with `read -rs PARC_WIDEVINE_KEY_PASSPHRASE` and `export` it; don't write it into the command. It's optional, for encrypted keys, and read only from that variable. The tool removes it from its environment at startup and hands it to the `openssl` signing call alone. `openssl` from `PATH` runs without a terminal, so an encrypted key without the variable fails at once with a message to set it rather than prompting. Keys inside any Git checkout, including `.git` directories, worktrees and submodules, are refused. A signing service can stand in for the key with `--widevine-sign-command /absolute/signer`, run as `signer BINARY SIGNATURE FLAGS` with no terminal; it must write a complete `.sig`, not a symlink, without changing the binary. Either way the tool signs the framework binary (flag 1) and `Parc Helper (CDM)` (flag 0) where Chromium reads them, verifies both, signs with Apple, then verifies them again. Component engines are refused. The format and evidence are in [engine flags](../../docs/engine-flags.md#widevine).
 
 ## Verification
 
@@ -279,7 +266,7 @@ PARC_CHROMIUM_SOURCE=/absolute/engine-source/chromium/src \
   python3 tests/Packaging/test_development_layout.py -v
 ```
 
-The real Mach-O tests copy unchanged engine-shaped fixtures into the normal CEF layout, preserve their load commands, sign copied libraries, remove the original output from its path, move the complete development directory, and execute both a framework-linked app and a runtime-style dynamic loader. Separate fresh helper processes load the sandbox first using only their own upstream RPATH. Omitting that helper RPATH is rejected. A genuine sectionless LLD dylib also retains its original bytes before signing and loads successfully without rewriting. The test suite rejects malformed header/segment bounds and altered sealed inputs.
+The real Mach-O tests copy unchanged engine-shaped fixtures into the Chromium component layout, preserve their load commands, sign copied libraries, remove the original output from its path, move the complete development directory, and execute both a framework-linked app and a runtime-style dynamic loader. Direct helper checks reject changed RPATHs and Seatbelt resolution. A genuine sectionless LLD dylib also retains its original bytes before signing and loads successfully without rewriting. The test suite rejects malformed header/segment bounds and altered sealed inputs.
 
 These checks cover fixtures and packaging policy, not a Chromium launch. Set `PARC_CHROMIUM_SOURCE` to include the pinned LLD sectionless-library fixture; otherwise that one case is explicitly skipped.
 

@@ -9,17 +9,8 @@ interposer and its synthetic provider/client tests.
 
 ## Product namespace and existing encrypted data
 
-The direct internal C++ `CefInitialize` entry does not call the public wrapper's
-`cef_api_hash`, leaving `cef_api_version()` at its initial `-1`. Pinned CEF's
-`chrome_main_delegate_cef.cc` applies the settings names only inside
-`CEF_API_IS_ADDED(15600)`, so merely filling those settings did not change the
-actual OSCrypt namespace.
-This is an upstream-startup integration correction to the retained Parc-owned
-
-`native_engine_entry.mm` now explicitly sets the shared `KeychainPassword`
-service/account before initializing any provider or Profile. It leaves CEF's
-global API version unchanged and fills the matching settings as well. Fresh
-engine roots use `Parc Safe Storage` / `Parc`. An existing root with `Local State`
+Direct Chromium startup sets the shared Keychain service and account before
+initializing any provider or Profile. Fresh engine roots use `Parc Safe Storage` / `Parc`. An existing root with `Local State`
 or restored Profile cookie/password databases and no namespace marker keeps its
 encryption key: normal authorized Keychain reads copy the exact Chromium key into `Parc Safe Storage` with account
 `Parc (Chromium compatibility)`. The distinct account preserves any previous

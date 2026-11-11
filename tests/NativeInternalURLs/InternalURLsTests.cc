@@ -1,5 +1,5 @@
 // Pure URL component checks. Does not create a browser, Profile or renderer.
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "parc/native/native_internal_urls.h"
 #include "url/origin.h"
 #include "url/url_util.h"
 #include <cstdio>

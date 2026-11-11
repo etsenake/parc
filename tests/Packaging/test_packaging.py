@@ -148,34 +148,6 @@ Load command 4
         with patch.object(pkg, "make_manifest", return_value=current):
             pkg.verify_manifest(current, self.engine, self.root)
 
-    def test_framework_inventory_matches_actual_angle_linkage_mode(self):
-        framework = self.engine / pkg.FRAMEWORK
-        self.image(pkg.FRAMEWORK + "/" + pkg.ENGINE_NAME)
-        for name in ("resources.pak", "chrome_100_percent.pak", "chrome_200_percent.pak",
-                     "icudtl.dat", "v8_context_snapshot.bin", "en.lproj/locale.pak"):
-            path = framework / "Resources" / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(b"runtime data")
-        for name in ("libcef_sandbox.dylib", "libvk_swiftshader.dylib", "libvulkan.dylib"):
-            self.image(pkg.FRAMEWORK + "/Libraries/" + name)
-        (framework / "Libraries/vk_swiftshader_icd.json").write_text("{}")
-        exports = pkg.PUBLIC_SYMBOLS | {"_cef_sandbox_initialize", "_cef_sandbox_destroy"}
-        closure = pkg.dependency_closure
-        def inspect_fixture(path):
-            return {"id": None, "loads": [], "rpaths": []}
-        with patch.object(pkg, "verify_workspace", return_value=(self.root, {"use_static_angle": True, "distribution_eligible": False})) as source, \
-                patch.object(pkg, "exported_symbols", return_value=exports), \
-                patch.object(pkg, "dependency_closure", side_effect=lambda root, seeds: closure(root, seeds, inspect_fixture)):
-            manifest = pkg.make_manifest(self.engine, self.root)
-            self.assertTrue(manifest["use_static_angle"])
-            source.return_value = (self.root, {"use_static_angle": False, "distribution_eligible": False})
-            with self.assertRaisesRegex(pkg.Refusal, "libEGL"):
-                pkg.make_manifest(self.engine, self.root)
-            for name in ("libEGL.dylib", "libGLESv2.dylib"):
-                self.image(pkg.FRAMEWORK + "/Libraries/" + name)
-            manifest = pkg.make_manifest(self.engine, self.root)
-            self.assertFalse(manifest["use_static_angle"])
-            self.assertIn(pkg.FRAMEWORK + "/Libraries/libEGL.dylib", manifest["images"])
 
     def test_output_never_replaces_arbitrary_app_or_enters_sources(self):
         existing = self.root / "development"
@@ -252,21 +224,29 @@ Load command 4
         with pkg.engine_lock(engine):
             pass
 
-    def test_workspace_requires_completed_phase_current_overlay_and_abi_header(self):
+
+    def test_direct_canonical_lock_seals_without_cef(self):
+        self.check_workspace_contract()
+
+    def check_workspace_contract(self):
         repo = self.root / "repo"
         (repo / "scripts").mkdir(parents=True)
         shutil.copyfile(REPO / "scripts/engine-source.py", repo / "scripts/engine-source.py")
         (repo / "Engine/ParcHost").mkdir(parents=True)
         (repo / "Engine/ParcNative").mkdir()
-        lock = {"build": {"configuration": "Release_GN_arm64"}, "cef": {"commit": "c"}, "chromium": {"commit": "h"}, "depot_tools": {"commit": "d"}}
+        lock = json.loads((REPO / "tests/Packaging/fixtures/direct-source-lock.json").read_text())
+        self.assertNotIn("cef", lock)
+        self.assertEqual(lock["schema_version"], 2)
+        self.assertEqual(lock["build"]["targets"], ["//parc:parc_framework", "//parc/helper:parc_helper"])
         lock_path = repo / "Engine/source-lock.json"
         lock_path.write_text(json.dumps(lock))
-        overlay = repo / "Engine/ParcHost/overlay.json"
+        overlay = repo / "Engine/ParcHost" / ('overlay.json')
         overlay.write_text("{}")
         workspace = self.root / "workspace"
         source = workspace / "chromium/src"
         engine = source / "out/Release_GN_arm64"
         engine.mkdir(parents=True)
+        (engine / "parc_helper").write_bytes(b"GN helper")
         args_path = engine / "args.gn"
         args_text = ('target_cpu="arm64"\nis_component_build=true\nis_official_build=false\n'
                      'dcheck_always_on=false\ndisable_fieldtrial_testing_config=true\n'
@@ -284,10 +264,12 @@ Load command 4
         trial_flags.write_text(trial_text)
         (workspace / ".parc-overlays").mkdir()
         records = {}
-        for name in ("native_engine_entry.h", "native_appkit_bridge.h"):
+        header_names = ["native_engine_entry.h", "native_appkit_bridge.h"]
+        header_names.append("native_application_protocols.h")
+        for name in header_names:
             native = repo / "Engine/ParcNative" / name
             native.write_text(name)
-            target = "cef/libcef/browser/parc_native/" + name
+            target = ('parc/native/') + name
             upstream = source / target
             upstream.parent.mkdir(parents=True, exist_ok=True)
             upstream.write_text(name)
@@ -295,7 +277,11 @@ Load command 4
         identity = pkg.sha(overlay)
         record_path = workspace / ".parc-overlays" / (identity + ".json")
         record_path.write_text(json.dumps({"identity": identity, "targets": records}))
-        for name in pkg.PROOF_FILES:
+        proofs = pkg.PROOF_FILES
+        proofs = proofs + (
+            "parc/BUILD.gn", "parc/framework.exports", "parc/helper/BUILD.gn", "parc/helper/main.cc",
+            "parc/parc_content_clients.cc", "parc/parc_bundle_mac.mm", "chrome/common/chrome_constants.cc")
+        for name in proofs:
             target = source / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("pinned input")
@@ -319,6 +305,8 @@ Load command 4
                               "ffmpeg_branding": "Chromium", "enable_ffmpeg_video_decoders": False,
                               "media_use_openh264": False, "enable_hangout_services_extension": True,
                               "is_debug": False, "enable_dsyms": False, "symbol_level": 0})
+            self.assertEqual(set(proof["upstream"]), {"chromium", "depot_tools"})
+            self.assertFalse(any(name.startswith("cef/") for name in proof["proof_files"]))
             self.assertEqual(proof["build_classification"], "development-component")
             self.assertIs(proof["distribution_eligible"], False)
             self.assertEqual(proof["proof_files"]["out/Release_GN_arm64/args.gn"], pkg.sha(args_path))

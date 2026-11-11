@@ -2,7 +2,7 @@
 // Exercises the production observer/service against genuine DownloadItemImpl
 // state transitions. Only the manager lookup/ownership boundary is a test
 // double.
-#include "cef/libcef/browser/parc_native/downloads.h"
+#include "parc/native/downloads.h"
 
 #include "base/functional/bind.h"
 #include "base/run_loop.h"

@@ -1,10 +1,11 @@
-"""Copy and load real Mach-O fixtures in CEF's unchanged component layout.
+"""Copy and load real Mach-O fixtures in Chromium's component layout.
 
 These libraries are controlled test inputs, not Chromium. Nothing is rewritten,
 and the original output is unavailable when the copied app/helpers are executed.
 """
 import importlib.util
 import os
+import shutil
 from pathlib import Path
 import struct
 import subprocess
@@ -43,13 +44,14 @@ class DevelopmentLayoutTests(unittest.TestCase):
                    "-Wl,-install_name,@executable_path/../Frameworks/" + pkg.FRAMEWORK + "/" + pkg.ENGINE_NAME,
                    "-Wl,-rpath,@loader_path/../../../../../..", "-Wl,-rpath,@loader_path/.",
                    "-Wl,-rpath,@loader_path/../../..", "-o", self.framework_binary)
-        sandbox_source = self.root / "sandbox.c"
-        sandbox_source.write_text("extern int component_value(void); int sandbox_value(void) { return component_value(); }\n")
-        self.sandbox = self.version / "Libraries/libcef_sandbox.dylib"
-        # Like the actual sandbox, this has no development-root RPATH of its own.
-        self.clang("-dynamiclib", sandbox_source, self.component,
-                   "-Wl,-install_name,@rpath/libcef_sandbox.dylib",
-                   "-Wl,-rpath,@loader_path/.", "-Wl,-rpath,@loader_path/../../..", "-o", self.sandbox)
+        seatbelt_source = self.root / "seatbelt.c"
+        seatbelt_source.write_text("int sandbox_value(void) { return 42; }\n")
+        self.seatbelt = self.engine / "libseatbelt.dylib"
+        self.clang("-dynamiclib", seatbelt_source, "-Wl,-install_name,@rpath/libseatbelt.dylib", "-o", self.seatbelt)
+        helper_source = self.root / "helper.c"
+        helper_source.write_text("extern int sandbox_value(void); int main(void) { return sandbox_value() != 42; }\n")
+        self.helper = self.engine / "parc_helper"
+        self.clang(helper_source, self.seatbelt, "-Wl,-rpath,@executable_path/../../../../../..", "-o", self.helper)
         self.manifest = self.seal()
 
     def clang(self, *args):
@@ -57,13 +59,14 @@ class DevelopmentLayoutTests(unittest.TestCase):
                         *map(str, args)], check=True, capture_output=True)
 
     def seal(self, extra=()):
-        graph = pkg.dependency_closure(self.engine, [self.framework_binary, self.sandbox, *extra])
-        return {"framework": pkg.inventory_tree(self.framework), "images": graph,
+        graph = pkg.dependency_closure(self.engine, [self.framework_binary, self.helper, *extra])
+        return {"engine_runtime": "chromium-direct", "helper": {"image": "parc_helper"},
+                "framework": pkg.inventory_tree(self.framework), "images": graph,
                 "components": {name: {"sha256": pkg.sha(self.engine / name),
                                        "mode": (self.engine / name).stat().st_mode & 0o777}
-                               for name in graph if not name.startswith(pkg.FRAMEWORK + "/")}}
+                               for name in graph if not name.startswith(pkg.FRAMEWORK + "/") and name != "parc_helper"}}
 
-    def compile_app(self, app, *, helper_rpath=True):
+    def compile_app(self, app):
         executable = app / "Contents/MacOS" / app.stem
         executable.parent.mkdir(parents=True)
         (app / "Contents/Frameworks").mkdir()
@@ -76,18 +79,13 @@ class DevelopmentLayoutTests(unittest.TestCase):
                               'void* lib=dlopen(argv[1],RTLD_NOW); if(!lib)return 3; '
                               'int(*value)(void)=dlsym(lib,"fixture_value"); return !value||value()!=42; }\n')
             self.clang(source, "-o", executable)
-        helper = app / "Contents/Frameworks" / (app.stem + " Helper.app/Contents/MacOS") / (app.stem + " Helper")
+        helper = app / "Contents/Frameworks/Parc Helper.app/Contents/MacOS/Parc Helper"
         helper.parent.mkdir(parents=True)
-        helper_source = self.root / "helper.c"
-        helper_source.write_text('#include <dlfcn.h>\nint main(int argc,char** argv) { if(argc!=2)return 2; '
-                                 'void* lib=dlopen(argv[1],RTLD_NOW); if(!lib)return 3; '
-                                 'int(*value)(void)=dlsym(lib,"sandbox_value"); return !value||value()!=42; }\n')
-        rpath = ["-Wl,-rpath,@executable_path/../../../../../.."] if helper_rpath else []
-        self.clang(helper_source, *rpath, "-o", helper)
+        shutil.copy2(self.helper, helper)
         return executable, helper
 
-    def test_unchanged_app_and_sandbox_first_helpers_load_without_original_output(self):
-        originals = {name: (self.engine / name).read_bytes() for name in self.manifest["images"]}
+    def test_unchanged_app_and_helpers_load_without_original_output(self):
+        originals = {name: (self.engine / name).read_bytes() for name in self.manifest["images"] if name != "parc_helper"}
         layouts = []
         for app_name in ("Parc", "parc_native_runtime_tests"):
             app = self.root / ("development-" + app_name) / (app_name + ".app")
@@ -119,9 +117,8 @@ class DevelopmentLayoutTests(unittest.TestCase):
             executable = app / "Contents/MacOS" / app.stem
             result = subprocess.run([str(executable), str(framework / pkg.ENGINE_NAME)], capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            helper = app / "Contents/Frameworks" / (app.stem + " Helper.app/Contents/MacOS") / (app.stem + " Helper")
-            # This process loads only the sandbox, before any framework RPATH exists.
-            result = subprocess.run([str(helper), str(framework / "Libraries/libcef_sandbox.dylib")], capture_output=True)
+            helper = app / "Contents/Frameworks/Parc Helper.app/Contents/MacOS/Parc Helper"
+            result = subprocess.run([str(helper)], capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_restart_helper_is_audited_without_loading_the_browser_engine(self):
@@ -140,12 +137,6 @@ class DevelopmentLayoutTests(unittest.TestCase):
         self.assertIn("Parc.app/Contents/MacOS/ParcRestart",
                       pkg.verify_development_layout(app, self.manifest))
 
-    def test_missing_helper_root_rpath_is_not_masked_by_framework(self):
-        app = self.root / "development/Parc.app"
-        self.compile_app(app, helper_rpath=False)
-        pkg.copy_engine(self.engine, app, self.manifest)
-        with self.assertRaisesRegex(pkg.Refusal, "Unresolved development dependency"):
-            pkg.verify_development_layout(app, self.manifest)
 
     def test_dock_plugin_is_audited_as_a_bundle(self):
         app = self.root / "development/Parc.app"

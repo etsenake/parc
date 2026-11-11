@@ -36,7 +36,7 @@ class PackagingIconTests(unittest.TestCase):
         shutil.copy2(REPO / "app-version.json", self.repo / "app-version.json")
         (self.repo / "Engine").mkdir()
         shutil.copy2(REPO / "Engine/source-lock.json", self.repo / "Engine/source-lock.json")
-        for name in ("native_engine_entry.h", "native_appkit_bridge.h"):
+        for name in ("native_engine_entry.h", "native_appkit_bridge.h", "native_application_protocols.h"):
             target = self.repo / "Engine/ParcNative" / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("fixture header")
@@ -52,7 +52,7 @@ class PackagingIconTests(unittest.TestCase):
         self.engine = self.root / "workspace/chromium/src/out/Release_GN_arm64"
         self.engine.mkdir(parents=True)
         source = self.engine.parent.parent
-        for name in ("LICENSE", "cef/LICENSE.txt"):
+        for name in ("LICENSE",):
             target = source / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("fixture license")
@@ -72,6 +72,10 @@ class PackagingIconTests(unittest.TestCase):
                                                 "is_official_build": False, "is_debug": False,
                                                 "enable_dsyms": False, "symbol_level": 0},
                          "build_classification": "development-component", "distribution_eligible": False, "components": {}}
+        helper = self.engine / "parc_helper"
+        helper.write_bytes(b"GN-built helper")
+        helper.chmod(0o755)
+        self.manifest.update(engine_runtime="chromium-direct", helper={"image": "parc_helper", "sha256": pkg.sha(helper), "mode": 0o755})
         # The extracted release layout sparkle.fetch returns, with fixture code.
         self.sparkle = self.root / "sparkle"
         framework = self.sparkle / pkg.SPARKLE
@@ -127,6 +131,37 @@ class PackagingIconTests(unittest.TestCase):
             stack.enter_context(patch.object(pkg, "signing_team", self.fake_signing_team))
             verified = stack.enter_context(patch.object(pkg, "verify_manifest"))
             yield verified
+
+    def test_direct_packaging_requires_application_protocol_header_before_copy(self):
+        (self.repo / "Sources/ParcEngine/ParcEngine.h").write_text('#import "native_application_protocols.h"\n')
+        (self.repo / "Engine/ParcNative/native_application_protocols.h").unlink()
+        with self.fixture_tools(), patch.object(pkg, "copy_engine") as copy:
+            with self.assertRaisesRegex(pkg.Refusal, "application protocol header"):
+                pkg.build_app(self.repo, self.engine, self.manifest, self.root / "direct-missing", "-")
+        copy.assert_not_called()
+
+    def test_gn_helpers_are_copied_without_compilation(self):
+        def icons(resources):
+            (resources / "Parc.icns").write_bytes(b"fixture icon")
+            return "Parc.icns"
+        (self.repo / "Sources/ParcEngine/ParcEngine.h").write_text('#import "native_application_protocols.h"\n')
+        (self.repo / "Engine/ParcNative/native_application_protocols.h").write_text("#pragma once\n")
+        helper = self.engine / "parc_helper"
+        helper.write_bytes(b"GN-built helper")
+        helper.chmod(0o755)
+        self.manifest.update(engine_runtime="chromium-direct", helper={
+            "image": "parc_helper", "sha256": pkg.sha(helper), "mode": 0o755})
+        self.commands = []
+        self.signed_entitlements = []
+        output = self.root / "direct"
+        with self.fixture_tools(), patch.object(pkg.app_icons, "package_app_icons", side_effect=icons):
+            pkg.build_app(self.repo, self.engine, self.manifest, output, "-")
+        for suffix, _, _ in pkg.HELPERS:
+            name = "Parc Helper" + suffix
+            bundle = output / "Parc.app/Contents/Frameworks" / (name + ".app")
+            self.assertEqual((bundle / "Contents/MacOS" / name).read_bytes(), b"GN-built helper")
+        self.assertFalse(any(command[:2] == ("xcrun", "clang++") for command in self.commands))
+        self.assertFalse((output / "Parc.app/Contents/Resources/EngineLicenses/CEF-LICENSE.txt").exists())
 
     def test_debug_and_release_have_same_real_icon_and_preserve_helper_signing_contract(self):
         icons = []
@@ -186,7 +221,7 @@ class PackagingIconTests(unittest.TestCase):
             # The fixture has no release-notes.json, so the bundled page shows its empty state.
             self.assertIn("A clean slate", (app / "Contents/Resources/WhatsNew.html").read_text())
             self.assertEqual(report["configuration"], configuration)
-            self.assertEqual(report["layout"], "cef-component-development")
+            self.assertEqual(report["layout"], "chromium-direct-component-development")
             self.assertEqual(report["app"], str(app))
             self.assertEqual(report["engine_copy_sha256_before_signing"], {"fixture": "pre-sign-copy-hash"})
             self.assertEqual(json.loads((output_dir / "package-report.json").read_text()), report)

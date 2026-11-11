@@ -139,7 +139,7 @@ changes belong in the owning guide and release notes, not an ever-growing log he
   position until the [remaining decision](backlog.md#onboarding) changes it.
 - Protected video uses the implemented FairPlay route and automatically learned
   site identity; pages remain in Chromium. Do not substitute a fixed site list.
-- Preserve upstream security maintenance through deliberate Chromium/CEF pin
+- Preserve upstream security maintenance through deliberate Chromium pin
   upgrades and relevant native integration checks.
 
 ## Scope boundaries

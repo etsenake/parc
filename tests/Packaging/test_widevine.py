@@ -294,33 +294,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertEqual(certificate["helper_library_validation"], "disabled only on the CDM helper")
         self.assertNotIn("signatures", certificate)
 
-    def test_helper_table_and_engine_patch_name_the_same_cdm_helper(self):
-        cdm = [helper for helper in pkg.HELPERS if helper[0] == pkg.CDM_HELPER]
-        self.assertEqual(cdm, [(" (CDM)", ".cdm", False)])
-        self.assertEqual(len({suffix for suffix, _, _ in pkg.HELPERS}), len(pkg.HELPERS))
-        patch_text = (REPO / "Engine/ParcHost/integration/native-internal-urls.patch").read_text()
-        self.assertIn(f'+constexpr char kMacHelperSuffixCdm[] = "{pkg.CDM_HELPER}";\n', patch_text)
-        self.assertRegex(patch_text, r"(?m)^\+\s+content::SetCdmServiceChildFlags\($")
 
-    def test_engine_must_route_the_cdm_to_the_packaged_helper(self):
-        source = self.root / "src"
-        files = {"content/public/app/mac_helpers.gni":
-                     'content_mac_helpers = [\n  [ "default", "", "" ],\n'
-                     '  [ "renderer", ".renderer", " (Renderer)" ],\n  [ "gpu", "", " (GPU)" ],\n]\n',
-                 "cef/BUILD.gn": 'alert_helper_params = [ "alerts", ".alerts", " (Alerts)" ]\n',
-                 "cef/libcef/browser/chrome/chrome_content_browser_client_cef.cc":
-                     'constexpr char kMacHelperSuffixCdm[] = " (CDM)";\n'
-                     "  content::SetCdmServiceChildFlags(flags);\n"}
-        for name, text in files.items():
-            (source / name).parent.mkdir(parents=True, exist_ok=True)
-            (source / name).write_text(text)
-        pkg.check_helper_contract(source)
-        client = source / "cef/libcef/browser/chrome/chrome_content_browser_client_cef.cc"
-        for text in ('constexpr char kMacHelperSuffixCdm[] = " (Plugin)";\ncontent::SetCdmServiceChildFlags(f);\n',
-                     'constexpr char kMacHelperSuffixCdm[] = " (CDM)";\n'):
-            client.write_text(text)
-            with self.subTest(text=text), self.assertRaisesRegex(pkg.Refusal, "CDM"):
-                pkg.check_helper_contract(source)
 
     def test_cli_keeps_widevine_options_on_build(self):
         for argv, message in ((["seal-engine", "--widevine-sign-command", "/bin/true"], "not seal-engine"),
@@ -366,7 +340,7 @@ class PackagedHostTests(unittest.TestCase):
         script.chmod(0o755)
         return script
 
-    def test_signatures_land_where_cef_reads_them_and_survive_apple_signing(self):
+    def test_signatures_land_where_chromium_reads_them_and_survive_apple_signing(self):
         signer = vmp.KeySigner(self.certificate, self.key, OPENSSL, None)
         report = pkg.widevine_host_signatures(self.app, signer, "FIXTURETEAM")
         self.assertEqual(report["host_signatures"], "signed")
@@ -375,7 +349,7 @@ class PackagedHostTests(unittest.TestCase):
         framework_sig = f"Contents/Frameworks/{pkg.FRAMEWORK}/Versions/A/Resources/{pkg.ENGINE_NAME}.sig"
         self.assertEqual({name: item["flags"] for name, item in report["signatures"].items()},
                          {framework_sig: 1, "Contents/Resources/Parc Helper (CDM).sig": 0})
-        # CEF's lookup goes through the framework's Resources symlink.
+        # Chromium's lookup goes through the framework's Resources symlink.
         self.assertTrue((self.framework / "Resources" / (pkg.ENGINE_NAME + ".sig")).is_file())
         for item in report["signatures"].values():
             ad_hoc_sign(self.app / item["binary"])

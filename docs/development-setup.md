@@ -54,6 +54,12 @@ the last completed engine package and saved build workspace. The restore tool
 checks their provenance without starting a build. Preserve the downloaded parts
 to avoid downloading them again after an interrupted restore.
 
+For an isolated local engine, the engine owner can use `cp -c -p -R` followed
+by `adopt-clone --source-workspace` as described in
+[Engine](../Engine/README.md#build-configuration). The copy must have the same
+path depth and volume as its idle owned source. Adoption requires regeneration;
+use `--previous-lock` when copying a workspace still on the previous pins.
+
 The source bootstrap below is for intentionally creating a new engine workspace.
 It is not the default new-machine onboarding path.
 
@@ -85,9 +91,12 @@ python3 scripts/engine-source.py check --workspace "$PARC_ENGINE"
 JSON output: `plan` may exit successfully while reporting blockers. Do not
 pre-create the final engine directory to try to fix a refusal.
 
-`Engine/source-lock.json` is authoritative for Chromium, CEF, depot_tools and
-build settings. Do not substitute a system CEF package or manually update one
-dependency. The source tool owns its dependency checkout and lock/receipt files;
+`Engine/source-lock.json` and `Engine/ParcHost/overlay.json` are the sole engine
+inputs. For pinned-source upgrades, preserve the previous lock and use
+`retarget --previous-lock` as described in
+[Engine](../Engine/README.md#build-configuration). Changed pins require the
+80 GB sync reserve; unchanged pins use the 40 GB build reserve.
+The source tool owns its dependency checkout and lock/receipt files;
 it does not reset, clean, delete or adopt an arbitrary existing checkout.
 
 ## Build from source: sync, apply, build, seal and package
@@ -171,16 +180,15 @@ measure the intended configuration before making performance claims.
 
 The reusable checker preserves the previous scratch helper's compiler contract:
 warnings as errors, whole-module checking, ARM64 macOS 13, the checkout's current
-native bridge headers and explicitly selected CEF headers. A synced CEF include
-tree is sufficient; a built engine or sealed package is unnecessary.
+native bridge headers. The direct facade needs no engine headers or built
+package.
+
+Run:
 
 ```sh
-python3 scripts/check-swift.py \
-  --chromium-source "$PARC_ENGINE/chromium/src" --plan
-python3 scripts/check-swift.py \
-  --chromium-source "$PARC_ENGINE/chromium/src"
-python3 scripts/check-swift.py \
-  --chromium-source "$PARC_ENGINE/chromium/src" --mode sil
+python3 scripts/check-swift.py --plan
+python3 scripts/check-swift.py
+python3 scripts/check-swift.py --mode sil
 ```
 
 The default `typecheck` mode is for iteration. `--mode sil` emits SIL to
@@ -189,18 +197,15 @@ as required by [the working contract](../AGENTS.md). It catches compiler stages
 that plain typechecking omits, including definite initialization.
 
 The script finds its own checkout regardless of the shell's working directory.
-Use `--repo /absolute/other-worktree` to select another checkout, or
-`--cef-include /absolute/cef/include` when selecting headers directly.
-`PARC_CHROMIUM_SOURCE` is an optional environment default; an explicit header
-option takes precedence. There are no historical username, workspace or package
-defaults.
+Use `--repo /absolute/other-worktree` to select another checkout. The checker
+uses self-contained declarations in `Engine/ParcNative`.
 
 Each execution creates a fresh directory under `build/swift-checks` containing
 `start.json`, `compiler.log` and `result.json`. Use `--output-dir` and `--label`
 to choose another location/name; an existing receipt directory is never
 overwritten. A passing result requires compiler exit zero, unchanged Git HEAD
 and unchanged hashes/file membership for the Swift sources, bridge headers,
-CEF include tree, source lock and checker. The receipt records the command,
+source lock and checker. The receipt records the command,
 selected compiler/SDK, source hashes and Git state. `--plan` validates input
 paths and prints the command/hashes without invoking the compiler or writing
 receipts.

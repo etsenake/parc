@@ -1,5 +1,5 @@
 // Copyright 2026 Parc contributors.
-#include "cef/libcef/browser/parc_native/native_website_theme.h"
+#include "parc/native/native_website_theme.h"
 
 #include <utility>
 

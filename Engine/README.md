@@ -1,13 +1,9 @@
 # Independent Chromium engine
 
-Parc builds its own Chromium/CEF engine and integrates it with a source-owned
-Swift/AppKit shell. No installed third-party browser or executable is a build or
-runtime dependency. `source-lock.json` pins Chromium, CEF and depot_tools;
-`ParcHost/overlay.json` records the reviewed native integration and patched hashes.
-
-For current delivery and unfinished product work, use
-[product status](../docs/parity.md). For an authorized production release, use
-[the release command](../docs/master-release.md).
+Parc builds Chromium directly with its source-owned native integration. The
+canonical [source lock](source-lock.json) pins Chromium and depot_tools; the
+canonical [overlay](ParcHost/overlay.json) records reviewed source inputs.
+Builds have no CEF checkout or installed-browser dependency.
 
 ## Build configuration
 
@@ -29,7 +25,15 @@ one. Supported commands and sequencing are in
 [development setup](../docs/development-setup.md). Never hand-edit generated copies
 instead of their manifest-owned inputs.
 
-Both engine configurations use ARM64 Release, `dcheck_always_on=false`,
+Generation writes explicit GN arguments. It builds
+`//parc:parc_framework` and `//parc/helper:parc_helper`, including the framework's
+resource dependencies. `Release_GN_arm64` deliberately keeps its name so existing
+output consumers and compiled objects remain usable. Chromium's gclient hooks
+still run. Overlay patches run in their
+reviewed manifest order against Chromium; each target has one consolidated patch
+with checked input and output hashes.
+
+The engine uses ARM64 Release, `dcheck_always_on=false`,
 `disable_fieldtrial_testing_config=true`, no dSYM bundles and the workspace's
 chosen symbol level (default zero). The disabled field-trial testing config
 removes the testing JSON startup path; individual supported feature overrides
@@ -44,9 +48,38 @@ profile is not pinned by the source lock. Development objects remain in their
 separate output directory. A Swift release build or signing certificate cannot
 turn component artifacts into a standalone distribution.
 
+The direct recipe retains Widevine host verification, RLZ/CDM storage support
+and the existing alternate CDM storage key. It disables background apps and
+downgrade restarts because the native shell owns those lifecycles. WebUI stays
+optimized; the Chrome style compiler plugin stays disabled. Windows resource
+allowlist/PCH workarounds and the non-component Debug exception are omitted on
+Mac Release. The shipping recipe keeps these settings and overrides only the
+reviewed official/non-component settings.
+
 Codec flags select macOS decoding/encoding rather than bundled proprietary
 FFmpeg/OpenH264 paths. See [engine policy](../docs/engine-flags.md) and
 [FairPlay integration](ParcNative/fairplay_chromium/README.md).
+
+An engine owner can isolate work with an APFS clone of an idle owned workspace.
+Choose an unused destination on the same volume and at the same path depth:
+
+```sh
+cp -c -p -R /absolute/shared/engine /absolute/project/engine
+python3 scripts/engine-source.py adopt-clone --workspace /absolute/project/engine \
+  --source-workspace /absolute/shared/engine \
+  --previous-lock "$PWD/work/previous-source-lock.json"
+```
+
+Omit `--previous-lock` when the current lock already matches the source.
+Keep the source idle during copying. Adoption holds both operation locks, checks
+the source receipt and copied source/overlay/graph fingerprints, records local
+provenance and requires generation at the new path. It accepts only the matching
+current lock or an explicit previous lock; it cannot adopt arbitrary checkouts.
+It normalizes proven internal generated links and drops only known generated
+external links in the copy, preserving objects, caches and the original workspace.
+Copy-on-write ancestry itself is not detectable; the receipt and fingerprints
+prove the copy's source state. Adoption does not fetch or build and has no disk
+floor; later retarget and build commands enforce their applicable reserves.
 
 Build-setting-only lock changes use the guarded reconfiguration path:
 
@@ -56,9 +89,22 @@ python3 scripts/engine-source.py reconfigure --workspace /absolute/engine-source
   --previous-lock "$PWD/work/previous-source-lock.json"
 ```
 
-It verifies that only supported defines changed and preserves sources/objects.
-The next authorized build regenerates and compiles. Shipping planning, generation
-and building use one operation lock:
+For a pinned-source upgrade with unchanged build settings and storage policy:
+
+```sh
+python3 scripts/engine-source.py retarget --workspace /absolute/engine-source \
+  --previous-lock "$PWD/work/previous-source-lock.json"
+```
+
+Retarget requires an idle owned workspace, its previous lock and an unchanged
+source fingerprint. It restores recorded overlay originals, preserves compiled
+objects and unrelated files, checks out the new pins and repeats dependency
+sync and hooks. Changed dependency pins use the 80 GB sync reserve; unchanged
+pins use the 40 GB build reserve. Reapply the overlay before generation.
+Interrupted operations remain incomplete for inspection.
+
+Reconfiguration preserves sources/objects and requires generation before building.
+Shipping planning, generation and building use one operation lock:
 
 ```sh
 python3 scripts/engine-source.py shipping-plan --workspace /absolute/engine-source
@@ -72,10 +118,8 @@ outputs cannot be sealed. Returned failures can resume without deleting objects;
 unowned output is preserved and refused. Disk reserves are preflight policy,
 not a measured guarantee that another output fits.
 
-See [packaging](../tests/Packaging/README.md#standalone-distribution). CEF's
-`docs/master_build_quick_start.md` and `tools/gn_args.py` in the pinned source
-checkout explain its build and distribution configuration; exact dependency
-versions live in [the source lock](source-lock.json).
+See [packaging](../tests/Packaging/README.md#standalone-distribution).
+Exact dependency versions live in [the source lock](source-lock.json).
 
 ## Required native integration
 
@@ -90,18 +134,14 @@ profile-bound Browsers, while selected state determines activation. Page hosts
 retain the actual native view independently of tab selection and profile ownership.
 Parc supports up to four visible panes, live popup adoption and cancellable close.
 
-Do not substitute stock embedding assumptions for these contracts: macOS CEF
-native-parent embedding selects Alloy, and stock Chrome Views have their own
-window/tab constraints. The optional [ParcHost harness](ParcHost/README.md) tests
-upstream capabilities; it is not the production architecture.
+Do not substitute stock embedding assumptions for these contracts: stock Chrome Views have their own window/tab constraints.
 
 ## Native construction and startup source integration
 
 `ParcNative` contains the native factory, BrowserWindow, page delegate and
-source-owned presentation services. The source manifest maps these to the pinned
-CEF graph. `native_components`, `autofill_save_sessions` and `native_extensions`
-are shared production/test source sets; other engine-facing units belong to their
-actual CEF owners. The Swift/Objective-C facade uses the independent route.
+source-owned presentation services. The overlay installs them under `//parc/native`. `native_components`,
+`autofill_save_sessions` and `native_extensions` are shared production/test
+source sets. The Swift/Objective-C facade uses the independent route.
 
 Before teardown, close request gates, invalidate native associations, cancel
 pending UI and drain callbacks while Browser/Profile services remain alive.
@@ -111,8 +151,19 @@ Source and generated-target checks must verify the exact applied manifest.
 
 Application reopen resolves registered native windows through the shell's owner.
 It does not create a replacement profile or infer consent to close anything.
-Profiles and Keychain storage use Parc's own namespace. Keep normal encryption
-separate from disposable test-Keychain modes, and preserve signing continuity.
+Profiles and Keychain storage use Parc's own namespace. The direct engine's
+[profile registry](ParcNative/native_profiles.h) loads or creates immediate
+children of `Chromium-v1` through ProfileManager. One pending load serves all
+waiters for that exact path; a failed persistent load stays failed. Registry
+keepalives hand off profile creation safely, and operation leases keep imports,
+search and history work alive until their callbacks finish. Removal waits for
+those leases as well as windows, private profiles and downloads. Private windows
+use their parent's primary off-the-record profile; its retirement waits for
+private operations. Profile defaults disable browser sign-in and translation
+before services start; these defaults preserve stored user preferences. The
+existing policy of not restoring session cookies also stays in place.
+Keep normal encryption separate from disposable test-Keychain modes, and
+preserve signing continuity.
 See [relaunch checks](../tests/NativeRelaunch/README.md) and
 [Keychain checks](../tests/KeychainNamespace/README.md).
 
@@ -192,7 +243,7 @@ certificate panel. Cancellation and page/window invalidation are explicit.
 Each pane owns its compositor. A new page in the same pane retains the previous
 frame until its first frame, while an incompatible picture is concealed without
 disconnecting the display. Shown pages must attach to their compositor first;
-all compositors die before CefShutdown.
+all compositors die before engine shutdown.
 The host settles changed constraints before showing fresh content, including
 DevTools composition and infobar geometry.
 See [page compositing](../docs/page-compositing.md) and
@@ -220,7 +271,7 @@ The independent engine is the production path. Current gaps belong in
 Browser/app launch is currently prohibited by
 [AGENTS.md](../AGENTS.md); historical fixture commands do not authorize it.
 
-Maintain upstream security through deliberate pinned Chromium/CEF upgrades and
+Maintain upstream security through deliberate pinned Chromium upgrades and
 appropriate integration checks. Preserve product exclusions without expanding
 them into unrelated Google/Chromium networking removal. Keep generated outputs,
 profiles, logs and dependency binaries outside Git.

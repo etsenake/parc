@@ -3,7 +3,7 @@
 their real build flags (docs/easels.md, Export as Image).
 
 Reads each object's exact clang command from `siso query commands -C
-out/Release_GN_arm64`, swaps the source for this checkout's overlay copy,
+the lock's configured output`, swaps the source for this checkout's overlay copy,
 puts every Engine/ParcNative overlay file first on the include path, and
 rewrites -o, -MF and crash diagnostics into the results directory. Never
 invokes GN/Ninja/siso builds or writes the engine workspace. This proves the
@@ -22,8 +22,8 @@ sys.dont_write_bytecode = True
 
 REPO = Path(__file__).resolve().parents[2]
 UNITS = {
-    'obj/cef/libcef_static/native_page_capture.o': 'cef/libcef/browser/parc_native/native_page_capture.mm',
-    'obj/cef/libcef_static/native_appkit_page.o': 'cef/libcef/browser/parc_native/native_appkit_page.mm',
+    'obj/parc/browser/native_page_capture.o': 'parc/native/native_page_capture.mm',
+    'obj/parc/browser/native_appkit_page.o': 'parc/native/native_appkit_page.mm',
 }
 
 
@@ -65,15 +65,18 @@ def main():
     parser.add_argument('source_tree', type=Path)
     parser.add_argument('--results', type=Path, required=True)
     args = parser.parse_args()
+    lock = json.loads((REPO / "Engine/source-lock.json").read_text())
+    if lock.get('schema_version') != 2:
+        parser.error('unsupported source lock schema')
     tree = args.source_tree.resolve(strict=True)
-    build = tree / 'out/Release_GN_arm64'
+    build = tree / 'out' / lock['build']['configuration']
     results = args.results.resolve()
     if results.is_relative_to(tree):
         parser.error('results must be outside the source checkout')
     results.mkdir(parents=True, exist_ok=True)
     sources = results / 'src'
     shutil.rmtree(sources, ignore_errors=True)
-    manifest = json.loads((REPO / 'Engine/ParcHost/overlay.json').read_text())
+    manifest = json.loads((REPO / ('Engine/ParcHost/overlay.json')).read_text())
     inputs = []
     for item in manifest['files']:
         if item['source'].startswith('Engine/ParcNative/'):
@@ -85,7 +88,11 @@ def main():
             inputs.append({'path': item['source'], 'sha256': item['sha256']})
     receipt = {'overlay_version': manifest['version'], 'inputs': inputs, 'commands': []}
     code = 0
-    for objects, unit in UNITS.items():
+    units = UNITS
+    units = {'obj/parc/browser/' + Path(obj).name:
+             unit
+             for obj, unit in UNITS.items()}
+    for objects, unit in units.items():
         command = real_command(tree, build, objects, unit, sources, results)
         process = subprocess.run(command, cwd=build, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         log = results / (Path(unit).stem + '.log')

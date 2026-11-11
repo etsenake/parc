@@ -15,6 +15,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
+#include "chrome/browser/ui/select_file_policy/chrome_select_file_policy.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "components/download/public/common/download_item.h"
@@ -31,6 +32,8 @@
 #include "chrome/browser/printing/print_preview_dialog_controller.h"
 #endif
 #include "native_auxiliary_page.h"
+#include "ui/shell_dialogs/select_file_dialog_factory.h"
+#include "ui/shell_dialogs/select_file_dialog_mac.h"
 #include "ui/shell_dialogs/select_file_policy.h"
 #include "ui/shell_dialogs/selected_file_info.h"
 #import "window_security_reservation.h"
@@ -212,14 +215,10 @@ class NativeFileDialog final : public ui::SelectFileDialog,
                     weak->Cancel();
                   }
                 }];
-    // run_from_cef bypasses only the already-used CEF factory. The genuine
-    // platform implementation retains every type/extension/tag/panel option.
-    inner_ = ui::SelectFileDialog::Create(this, std::move(select_file_policy_),
-                                          /*run_from_cef=*/true);
-    if (!inner_) {
-      Cancel();
-      return;
-    }
+    // Chromium's own Mac dialog, bypassing this file's factory, retains every
+    // type/extension/tag/panel option. The base class already applied the
+    // policy before SelectFileImpl.
+    inner_ = base::MakeRefCounted<ui::SelectFileDialogImpl>(this, nullptr);
     multiple_types_ = types ? types->extensions.size() > 1 : true;
     auto inner = inner_;
     inner->SelectFile(type, title, path, types, index, extension, window,
@@ -459,7 +458,61 @@ class NativeFileDialog final : public ui::SelectFileDialog,
   bool multiple_types_ = false;
   base::WeakPtrFactory<NativeFileDialog> weak_factory_{this};
 };
+
+// No asking page means no window can be proven to own the chooser.
+class RefusedFileDialog final : public ui::SelectFileDialog {
+ public:
+  RefusedFileDialog(Listener* listener,
+                    std::unique_ptr<ui::SelectFilePolicy> policy)
+      : ui::SelectFileDialog(listener, std::move(policy)) {}
+
+  void SelectFileImpl(Type,
+                      const std::u16string&,
+                      const base::FilePath&,
+                      const FileTypeInfo*,
+                      int,
+                      const base::FilePath::StringType&,
+                      gfx::NativeWindow,
+                      const GURL*) override {
+    Listener* listener = listener_;
+    listener_ = nullptr;
+    if (listener) {
+      listener->FileSelectionCanceled();
+    }
+  }
+  bool IsRunning(gfx::NativeWindow) const override { return false; }
+  void ListenerDestroyed() override { listener_ = nullptr; }
+  bool HasMultipleFileTypeChoicesImpl() override { return false; }
+
+ private:
+  ~RefusedFileDialog() override = default;
+};
+
+class NativeFileDialogFactory final : public ui::SelectFileDialogFactory {
+ public:
+  ui::SelectFileDialog* Create(
+      ui::SelectFileDialog::Listener* listener,
+      std::unique_ptr<ui::SelectFilePolicy> policy) override {
+    CHECK(NSThread.isMainThread);
+    // ChromeSelectFilePolicy is Chrome's only production policy. A guest or
+    // inner page's chooser belongs to the page that hosts it.
+    content::WebContents* source =
+        policy ? static_cast<ChromeSelectFilePolicy*>(policy.get())
+                     ->source_contents()
+               : nullptr;
+    if (!source) {
+      return new RefusedFileDialog(listener, std::move(policy));
+    }
+    return new NativeFileDialog(*source->GetOutermostWebContents(), listener,
+                                std::move(policy));
+  }
+};
 }  // namespace
+
+void RegisterNativeFileDialogs() {
+  CHECK(NSThread.isMainThread);
+  ui::SelectFileDialog::SetFactory(std::make_unique<NativeFileDialogFactory>());
+}
 
 scoped_refptr<ui::SelectFileDialog> CreateNativeFileDialog(
     content::WebContents& contents,

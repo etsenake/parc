@@ -428,6 +428,9 @@ ALLOWED = {
         '"/../../../Chromium Embedded Framework.framework/"',
         '"Chromium Embedded Framework"',
     },
+    "Engine/ParcNative/native_engine_entry.mm": {
+        '"Native application must implement Chromium\'s sendEvent protocol"',
+    },
     # Parc's existing engine data directory.
     "Sources/ParcCore/BrowserStore.swift": {'"Chromium-v1"'},
     # The Chromium browser's own folders, Keychain item and name, to import

@@ -1,0 +1,47 @@
+--- a/chrome/browser/ui/permission_bubble/permission_prompt.h
++++ b/chrome/browser/ui/permission_bubble/permission_prompt.h
+@@ -12,6 +12,13 @@
+ class WebContents;
+ }
+ 
++// Replaces every Chrome prompt below, including a null "no prompt" result.
++using CreatePermissionPromptFunctionPtr =
++    std::unique_ptr<permissions::PermissionPrompt> (*)(
++        content::WebContents* web_contents,
++        permissions::PermissionPrompt::Delegate* delegate);
++void SetCreatePermissionPromptFunction(CreatePermissionPromptFunctionPtr);
++
+ // Factory function to create permission prompts for chrome.
+ std::unique_ptr<permissions::PermissionPrompt> CreatePermissionPrompt(
+     content::WebContents* web_contents,
+--- a/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
++++ b/chrome/browser/ui/views/permissions/permission_prompt_factory.cc
+@@ -257,6 +257,8 @@
+     return std::make_unique<PermissionPromptQuietIcon>(web_contents, delegate);
+   }
+ }
++
++CreatePermissionPromptFunctionPtr g_create_permission_prompt_ptr = nullptr;
+ 
+ }  // namespace
+ 
+@@ -287,11 +289,19 @@
+     return true;
+   }
+   return false;
++}
++
++void SetCreatePermissionPromptFunction(CreatePermissionPromptFunctionPtr ptr) {
++  g_create_permission_prompt_ptr = ptr;
+ }
+ 
+ std::unique_ptr<permissions::PermissionPrompt> CreatePermissionPrompt(
+     content::WebContents* web_contents,
+     permissions::PermissionPrompt::Delegate* delegate) {
++  if (g_create_permission_prompt_ptr) {
++    return g_create_permission_prompt_ptr(web_contents, delegate);
++  }
++
+   if (delegate->ShouldDropCurrentRequestIfCannotShowQuietly() &&
+       IsFullScreenMode(web_contents)) {
+     return nullptr;

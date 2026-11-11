@@ -3,7 +3,7 @@
 
 PCBrowserView (Sources/ParcEngine/ParcEngine.m) publishes page-colour changes
 through browserViewDidChangePageColor:, and its owners repaint only the bar.
-The colour choice itself runs in tests/BrowserToolbar. Pass a CEF include
+The colour choice itself runs in tests/BrowserToolbar. Pass an additional include
 directory to also syntax-check the facade; no engine build, browser or page.
 """
 from pathlib import Path
@@ -74,7 +74,7 @@ assert "publishPresentationIfChanged" not in handler and "onUpdate" not in handl
     "Peek's colour-only path must not republish its presentation"
 
 if len(sys.argv) > 1:
-    # Read-only use of the CEF headers, as scripts/build.py compiles the facade.
+    # Read-only syntax check; the include root must satisfy the selected facade header.
     subprocess.run(["xcrun", "clang", "-fsyntax-only", "-arch", "arm64", "-mmacosx-version-min=13.0",
                     "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-fobjc-arc", "-fblocks",
                     "-I", str(root / "Engine/ParcNative"), "-I", str(root / "Sources/ParcEngine"),

@@ -1,16 +1,16 @@
-# Map to //cef/tests/parc_native_webauthn. Actual request/model/UI tests share
+# Map to //parc/tests/parc_native_webauthn. Actual request/model/UI tests share
 # the production native service, without linking libcef_static into Chrome tests.
 assert(is_mac)
 source_set("unit_tests") {
   testonly = true
   sources = [ "request_unittest.mm" ]
-  include_dirs = [ "//cef/libcef/browser/parc_native" ]
+  include_dirs = [ "//parc/native" ]
   frameworks = [ "AppKit.framework" ]
   deps = [
     "//base",
     "//base/test:test_support",
-    "//cef/libcef/browser/parc_native:native_components",
-    "//cef/libcef/browser/parc_native:native_webauthn",
+    "//parc/native:native_components",
+    "//parc/native:native_webauthn",
     "//chrome/browser/ui/tabs:tab_strip",
     "//chrome/browser/ui/views/webauthn",
     "//chrome/browser/webauthn",

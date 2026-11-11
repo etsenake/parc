@@ -1,0 +1,381 @@
+# Copyright 2026 Parc contributors.
+# Parc's engine framework, built directly on Chromium's chrome/ layer. Bundle
+# name, identifier and Versions/A layout are unchanged from the CEF engine:
+# code signing, the Keychain and installed copies depend on them.
+
+import("//build/apple/tweak_info_plist.gni")
+import("//build/buildflag_header.gni")
+import("//build/config/mac/rules.gni")
+import("//chrome/version.gni")
+import("//mojo/public/tools/bindings/mojom.gni")
+import("//parc/features.gni")
+import("//third_party/icu/config.gni")
+import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
+import("//ui/gl/features.gni")
+import("//v8/gni/v8.gni")
+
+assert(is_mac)
+
+_framework_name = "Chromium Embedded Framework"
+
+buildflag_header("buildflags") {
+  header = "features.h"
+  flags = [ "ENABLE_PARC=$enable_parc" ]
+}
+
+mojom("mojom") {
+  sources = [ "common/mojom/parc_theme.mojom" ]
+  generate_js = false
+  public_deps = [
+    "//mojo/public/mojom/base",
+    "//third_party/blink/public/mojom/tokens",
+  ]
+}
+
+source_set("renderer") {
+  sources = [
+    "renderer/website_theme_agent.cc",
+    "renderer/website_theme_agent.h",
+  ]
+  deps = [
+    ":mojom",
+    "//base",
+    "//content/public/renderer",
+    "//mojo/public/cpp/bindings",
+    "//third_party/blink/public:blink",
+    "//third_party/blink/public/common",
+  ]
+}
+
+# Startup, the content clients and the native application, compiled into the
+# framework binary. Chrome's main delegate is compiled here, not in
+# //chrome:chrome_dll, whose ChromeMain Parc doesn't use.
+source_set("browser") {
+  sources = [
+    "//chrome/app/chrome_main_delegate.cc",
+    "//chrome/app/chrome_main_delegate.h",
+    "native/extension_keybinding_registry.cc",
+    "native/extension_keybinding_registry.h",
+    "native/fairplay_identity.h",
+    "native/fairplay_identity.mm",
+    "native/fairplay_identity_policy.h",
+    "native/find_bar.h",
+    "native/find_bar.mm",
+    "native/location_bar.cc",
+    "native/location_bar.h",
+    "native/native_airplay.h",
+    "native/native_airplay.mm",
+    "native/native_application_protocols.h",
+    "native/native_applescript.mm",
+    "native/native_appkit_application.mm",
+    "native/native_appkit_host.h",
+    "native/native_appkit_host.mm",
+    "native/native_appkit_page.h",
+    "native/native_appkit_page.mm",
+    "native/native_blocked_popups.mm",
+    "native/native_browser.h",
+    "native/native_browser.mm",
+    "native/native_browser_web_contents_delegate.h",
+    "native/native_browser_web_contents_delegate.mm",
+    "native/native_browser_window.h",
+    "native/native_browser_window.mm",
+    "native/native_cast.h",
+    "native/native_cast.mm",
+    "native/native_confirm_infobars.h",
+    "native/native_confirm_infobars.mm",
+    "native/native_copy_link.mm",
+    "native/native_download_arrival.mm",
+    "native/native_engine_entry.h",
+    "native/native_engine_entry.mm",
+    "native/native_exclusive_access.h",
+    "native/native_exclusive_access.mm",
+    "native/native_favicons.mm",
+    "native/native_gmc_presentation.h",
+    "native/native_gmc_presentation.mm",
+    "native/native_history_swipe.h",
+    "native/native_history_swipe.mm",
+    "native/native_host_route.cc",
+    "native/native_host_route.h",
+    "native/native_import_discovery.mm",
+    "native/native_import_extensions.mm",
+    "native/native_import_internal.h",
+    "native/native_import_session.mm",
+    "native/native_import_writer.h",
+    "native/native_import_writer.mm",
+    "native/native_keychain_namespace.h",
+    "native/native_link_routing.h",
+    "native/native_link_routing.mm",
+    "native/native_media_controls.mm",
+    "native/native_page_binding.h",
+    "native/native_page_binding.mm",
+    "native/native_page_capture.mm",
+    "native/native_page_context_menu.mm",
+    "native/native_page_info.mm",
+    "native/native_page_observers.h",
+    "native/native_page_observers.mm",
+    "native/native_page_retirement.h",
+    "native/native_page_retirement.mm",
+    "native/native_password_file.h",
+    "native/native_password_file_import.mm",
+    "native/native_profile_removal.h",
+    "native/native_profile_removal.mm",
+    "native/native_profiles.h",
+    "native/native_profiles.mm",
+    "native/native_recent_pages.mm",
+    "native/native_search.h",
+    "native/native_search.mm",
+    "native/native_search_readiness.h",
+    "native/native_shortcuts.h",
+    "native/native_shortcuts.mm",
+    "native/native_startup_policy.h",
+    "native/native_tab_preview.mm",
+    "native/native_tab_sharing.h",
+    "native/native_tab_sharing.mm",
+    "native/native_web_contents_view_delegate.h",
+    "native/native_web_contents_view_delegate.mm",
+    "native/native_website_theme.cc",
+    "native/native_website_theme.h",
+    "native/password_prompt.mm",
+    "native/sad_tab.h",
+    "native/sad_tab.mm",
+    "native/video_overlay_window.mm",
+    "parc_bundle_mac.h",
+    "parc_bundle_mac.mm",
+    "parc_content_clients.cc",
+    "parc_content_clients.h",
+    "parc_main_delegate.cc",
+    "parc_main_delegate.h",
+  ]
+
+  public_deps = [
+    "//parc/native:native_background_picture_in_picture_api",
+    "//parc/native:native_download_dialog_api",
+    "//parc/native:native_intent_picker_api",
+    "//parc/native:native_page_context_menu_api",
+    "//parc/native:native_tab_preview_api",
+    "//parc/native:native_tab_sharing_api",
+    "//parc/native:native_video_pip_api",
+    "//parc/native:native_window_state_api",
+  ]
+
+  deps = [
+    ":buildflags",
+    ":mojom",
+    ":renderer",
+
+    # What //chrome:chrome_dll gives chrome_main_delegate.cc.
+    "//chrome:dependencies",
+    "//chrome:packed_resources",
+    "//chrome:resources",
+    "//chrome:strings",
+    "//chrome/app:command_ids",
+    "//chrome/browser:chrome_browser_application_mac",
+    "//chrome/browser:chrome_content_browser_client",
+    "//chrome/browser:chrome_process_singleton",
+    "//chrome/browser:process_singleton",
+    "//chrome/browser:startup_data",
+    "//chrome/browser/lifetime",
+    "//chrome/browser/mac",
+    "//chrome/common:buildflags",
+    "//chrome/common:version_header",
+    "//chrome/common/profiler",
+    "//components/crash/core/app",
+    "//components/memory_system",
+    "//components/policy:generated",
+    "//components/webapps/isolated_web_apps:scheme",
+    "//content/public/app",
+    "//third_party/cld_3/src/src:cld_3",
+
+    # Parc's native services.
+    "//parc/native:autofill_save_sessions",
+    "//parc/native:native_auxiliary_page",
+    "//parc/native:native_auxiliary_services",
+    "//parc/native:native_capture_picker",
+    "//parc/native:native_certificate_viewer",
+    "//parc/native:native_client_certificates",
+    "//parc/native:native_components",
+    "//parc/native:native_devtools",
+    "//parc/native:native_downloads",
+    "//parc/native:native_extensions",
+    "//parc/native:native_external_protocol",
+    "//parc/native:native_http_auth",
+    "//parc/native:native_intent_picker",
+    "//parc/native:native_javascript_dialogs",
+    "//parc/native:native_password_prompt_api",
+    "//parc/native:native_permissions",
+    "//parc/native:native_reader",
+    "//parc/native:native_webauthn",
+    "//parc/native:tab_retirement",
+    "//parc/native:tab_transfer",
+
+    # Chromium services the native sources use directly.
+    "//chrome/browser/autocomplete",
+    "//chrome/browser/enterprise",
+    "//chrome/browser/extensions/api/omnibox",
+    "//chrome/browser/favicon",
+    "//chrome/browser/history",
+    "//chrome/browser/media/router:media_router_feature",
+    "//chrome/browser/media/webrtc",
+    "//chrome/browser/picture_in_picture",
+    "//chrome/browser/renderer_host:delegate",
+    "//chrome/browser/renderer_host:history_swiper",
+    "//chrome/browser/search_engines",
+    "//chrome/browser/ui:browser_actions",
+    "//chrome/browser/ui:browser_content_setting_bubble_model_delegate",
+    "//chrome/browser/ui:browser_init_state",
+    "//chrome/browser/ui:chrome_pages",
+    "//chrome/browser/ui:intent_picker_tab_helper",
+    "//chrome/browser/ui:sad_tab",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/content_settings",
+    "//chrome/browser/ui/hung_renderer",
+    "//chrome/browser/ui/media_router",
+    "//chrome/browser/ui/page_info",
+    "//chrome/browser/ui/passwords",
+    "//chrome/browser/ui/passwords/bubble_controllers",
+    "//chrome/browser/ui/passwords/bubble_controllers:impl",
+    "//chrome/browser/ui/search_engines",
+    "//chrome/browser/ui/side_panel",
+    "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+    "//chrome/browser/ui/tab_sharing",
+    "//chrome/browser/ui/thumbnails",
+    "//chrome/browser/ui/views/eye_dropper",
+    "//chrome/browser/ui/views/global_media_controls",
+    "//chrome/browser/ui/views/media_router",
+    "//chrome/browser/ui/views/tab_sharing",
+    "//chrome/common:mojo_bindings",
+    "//chrome/common/importer:interfaces",
+    "//components/autofill/core/browser",
+    "//components/blocked_content",
+    "//components/enterprise/buildflags",
+    "//components/history/core/browser",
+    "//components/history/core/common",
+    "//components/infobars/content",
+    "//components/infobars/core",
+    "//components/omnibox/browser",
+    "//components/os_crypt/common:keychain_password_mac",
+    "//components/page_info",
+    "//components/password_manager/services/csv_password:service",
+    "//components/search_engines",
+    "//components/sessions",
+    "//components/shared_highlighting/core/common",
+    "//components/tabs:public",
+    "//components/translate/core/browser:translate_pref_names",
+    "//components/webdata/common",
+    "//services/media_session/public/cpp",
+    "//sql",
+    "//ui/accelerated_widget_mac",
+    "//ui/actions",
+    "//ui/base/clipboard",
+    "//ui/base/data_transfer_policy",
+    "//ui/compositor",
+    "//ui/content_accelerators",
+    "//ui/display",
+    "//ui/gfx/codec",
+    "//ui/menus",
+  ]
+
+  frameworks = [
+    "AppKit.framework",
+    "AVFoundation.framework",
+    "AVKit.framework",
+    "QuartzCore.framework",
+    "Security.framework",
+  ]
+}
+
+tweak_info_plist("parc_framework_plist") {
+  info_plist = "framework-Info.plist"
+  args = [
+    "--breakpad=0",
+    "--keystone=0",
+    "--scm=1",
+    "--version",
+    chrome_version_full,
+    "--branding",
+    _framework_name,
+  ]
+}
+
+bundle_data("parc_framework_resources") {
+  sources = [ "//ui/gl/resources/angle-metal/gpu_shader_cache.bin" ]
+  public_deps = []
+  if (icu_use_data_file) {
+    sources += [ "$root_out_dir/icudtl.dat" ]
+    public_deps += [ "//third_party/icu:icudata" ]
+  }
+  if (v8_use_external_startup_data) {
+    public_deps += [ "//v8" ]
+    if (use_v8_context_snapshot) {
+      sources += [ "$root_out_dir/$v8_context_snapshot_filename" ]
+      public_deps += [ "//tools/v8_context_snapshot" ]
+    }
+    if (!use_v8_context_snapshot || include_both_v8_snapshots) {
+      sources += [ "$root_out_dir/snapshot_blob.bin" ]
+    }
+  }
+  outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
+}
+
+bundle_data("parc_framework_swiftshader_binaries") {
+  sources = [
+    "$root_out_dir/vk_intermediates/libvk_swiftshader.dylib",
+    "$root_out_dir/vk_intermediates/vk_swiftshader_icd.json",
+  ]
+  outputs = [ "{{bundle_contents_dir}}/Libraries/{{source_file_part}}" ]
+  public_deps = [ "//ui/gl:swiftshader_vk_library_copy" ]
+}
+
+bundle_data("parc_framework_vulkan_binaries") {
+  sources = [ "$root_out_dir/vulkan_intermediates/libvulkan.dylib" ]
+  outputs = [ "{{bundle_contents_dir}}/Libraries/{{source_file_part}}" ]
+  public_deps = [ "//ui/gl:vulkan_loader_library_copy" ]
+}
+
+if (!use_static_angle) {
+  bundle_data("parc_framework_angle_binaries") {
+    sources = [
+      "$root_out_dir/egl_intermediates/libEGL.dylib",
+      "$root_out_dir/egl_intermediates/libGLESv2.dylib",
+    ]
+    outputs = [ "{{bundle_contents_dir}}/Libraries/{{source_file_part}}" ]
+    public_deps = [ "//ui/gl:angle_library_copy" ]
+  }
+}
+
+mac_framework_bundle("parc_framework") {
+  output_name = _framework_name
+  framework_version = "A"
+  framework_contents = [
+    "Libraries",
+    "Resources",
+  ]
+  info_plist_target = ":parc_framework_plist"
+
+  deps = [
+    ":browser",
+    ":parc_framework_resources",
+    ":parc_framework_swiftshader_binaries",
+    ":parc_framework_vulkan_binaries",
+  ]
+  if (!use_static_angle) {
+    deps += [ ":parc_framework_angle_binaries" ]
+  }
+
+  # The app and helpers load the framework by path; nothing links it.
+  ldflags = [
+    "-Wl,-install_name,@executable_path/../Frameworks/$output_name.framework/$output_name",
+    "-compatibility_version",
+    chrome_dylib_version,
+    "-current_version",
+    chrome_dylib_version,
+  ]
+  if (is_component_build) {
+    # The component libraries sit in the output directory, six levels above
+    # <App>.app/Contents/Frameworks/<Framework>.framework/Versions/A/<binary>.
+    ldflags += [
+      "-rpath",
+      "@loader_path/../../../../../..",
+    ]
+  }
+}

@@ -17,6 +17,7 @@
 #include "content/public/browser/service_process_host.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #import "native_appkit_host.h"
+#include "native_profiles.h"
 #import "native_import_internal.h"
 #import "native_import_writer.h"
 #include "url/gurl.h"
@@ -232,7 +233,7 @@ class Session final : public ProfileObserver,
         path_,
         base::BindOnce(
             [](std::weak_ptr<Session> weak, Profile* profile,
-               CefRefPtr<CefRequestContext> context, NSError* error) {
+               parc::NativeProfileLeasePtr context, NSError* error) {
               if (auto self = weak.lock()) {
                 if (self->finished_)
                   return;
@@ -292,7 +293,7 @@ class Session final : public ProfileObserver,
   bool Valid() const {
     return !finished_ && !cancelled_ && profile_ && !profile_->IsOffTheRecord() &&
            !profile_->ShutdownStarted() &&
-           NativeContextForProfile(*profile_) == context_;
+           context_ && context_->profile() == profile_.get();
   }
   void Prepare() {
     if (!Valid()) {
@@ -598,7 +599,7 @@ class Session final : public ProfileObserver,
       [NSMutableDictionary dictionary];
   NSMutableArray<NSString*>* __strong warnings_ = [NSMutableArray array];
   base::WeakPtr<Profile> profile_;
-  CefRefPtr<CefRequestContext> context_;
+  parc::NativeProfileLeasePtr context_;
   std::vector<uint8_t> key_;
   mojo::Remote<mojom::Reader> reader_;
   std::shared_ptr<ImportWriter> writer_;

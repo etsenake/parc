@@ -3,7 +3,7 @@
 // upstream features on so a missing Browser cannot accidentally be the gate.
 #include "base/functional/bind.h"
 #include "base/test/scoped_feature_list.h"
-#include "cef/libcef/features/parc_product_policy.h"
+#include "parc/features.h"
 #include "chrome/browser/ui/autofill/autofill_ai/autofill_ai_import_data_controller.h"
 #include "chrome/browser/ui/autofill/autofill_ai/autofill_ai_import_data_controller_impl.h"
 #include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
@@ -14,7 +14,7 @@
 #include "components/tabs/public/tab_interface.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-static_assert(BUILDFLAG(IS_PARC_BROWSER));
+static_assert(BUILDFLAG(ENABLE_PARC));
 namespace parc {
 namespace {
 class ProductClient final : public autofill::ChromeAutofillClient {

@@ -9,9 +9,10 @@
 #include <vector>
 
 #include "base/check.h"
-#include "cef/libcef/browser/parc_native/native_internal_urls.h"
+#include "native_internal_urls.h"
 #include "base/apple/scoped_cftyperef.h"
 #include "base/callback_list.h"
+#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -19,22 +20,8 @@
 #include "base/no_destructor.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
-#include "cef/include/cef_browser_process_handler.h"
-#include "cef/include/cef_command_line.h"
-#include "cef/include/cef_keyboard_handler.h"
-#include "cef/include/cef_life_span_handler.h"
-#include "cef/include/cef_permission_handler.h"
-#include "cef/include/cef_request_handler.h"
-#include "cef/include/cef_resource_bundle_handler.h"
-#include "cef/include/cef_resource_request_handler.h"
-#include "cef/libcef/browser/browser_host_base.h"
-#include "cef/libcef/browser/chrome/chrome_browser_host_impl.h"
-#include "cef/libcef/browser/chrome/chrome_browser_context.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
-#include "cef/libcef/browser/context.h"
-#include "cef/libcef/browser/parc_native/video_overlay_window.h"
-#include "cef/libcef/browser/request_context_impl.h"
-#include "cef/libcef/common/net/scheme_registration.h"
+#include "video_overlay_window.h"
 #include "chrome/browser/devtools/devtools_ui_controller.h"
 #include "chrome/browser/download/download_core_service.h"
 #include "chrome/browser/download/download_prefs.h"
@@ -50,7 +37,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/focus/browser_focus_controller.h"
-#include "chrome/browser/ui/hung_renderer/hung_renderer_core.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/navigation_controller.h"
@@ -58,7 +44,6 @@
 #include "chrome/browser/ui/unload_controller.h"
 #include "chrome/browser/ui/webui/current_channel_logo.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/grit/generated_resources.h"
 #include "chrome/grit/theme_resources.h"
 #include "components/prefs/pref_service.h"
 #include "components/tabs/public/tab_interface.h"
@@ -67,35 +52,31 @@
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/scoped_accessibility_mode.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/weak_document_ptr.h"
-#include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_user_data.h"
 #include "downloads.h"
 #include "file_dialog.h"
 #include "native_appkit_host.h"
-#include "native_shortcuts.h"
-#include "native_link_routing.h"
 #include "native_appkit_page.h"
 #include "native_search.h"
 #include "native_profile_removal.h"
 #include "fairplay_identity.h"
 #include "native_capture_picker.h"
 #include "native_gmc_presentation.h"
+#include "native_browser.h"
 #include "native_browser_window.h"
 #import "native_download_arrival.h"
-#include "native_chrome_platform_delegate.h"
 #include "native_engine_entry.h"
 #include "native_host_route.h"
-#include "native_startup_policy.h"
+#include "native_page_binding.h"
+#include "native_profiles.h"
 #include "native_page_retirement.h"
 #include "pane_compositor.h"
 #include "tab_transfer.h"
 #include "window_security_reservation.h"
 #include "url/url_constants.h"
-#include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/resource/resource_scale_factor.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 
 @interface PCNativePrivateDownloadContext () {
@@ -204,20 +185,26 @@ std::vector<base::OnceClosure>& ReadyQueue() {
   static base::NoDestructor<std::vector<base::OnceClosure>> value;
   return *value;
 }
-struct ProfileRecord {
-  CefRefPtr<CefRequestContext> context;
-  base::WeakPtr<Profile> profile;
-  std::vector<base::OnceCallback<
-      void(Profile*, CefRefPtr<CefRequestContext>, NSError*)>>
-      waiters;
-  NSError* __strong failure;
-};
-std::map<std::string, ProfileRecord>& Profiles() {
-  static base::NoDestructor<std::map<std::string, ProfileRecord>> value;
-  return *value;
-}
 NSString* ProfilePath(Profile& profile) {
   return base::SysUTF8ToNSString(profile.GetPath().value());
+}
+// The registry's live persistent Profile at `path`. The lease keeps it
+// through callers' synchronous observers; compare identity, never tokens.
+NativeProfileLeasePtr RegisteredProfile(const base::FilePath& path) {
+  Profile* profile =
+      g_browser_process->profile_manager()->GetProfileByPath(path);
+  auto lease = profile && !profile->IsOffTheRecord()
+                   ? NativeLeaseForProfile(*profile)
+                   : nullptr;
+  return lease && lease->profile() == profile ? lease : nullptr;
+}
+NativeProfileLeasePtr RegisteredProfile(NSString* path) {
+  return RegisteredProfile(base::FilePath(base::SysNSStringToUTF8(path)));
+}
+// Closing gates both the shell's requests and the Profile registry's.
+void SetQuitting(bool value) {
+  quitting = value;
+  SetNativeProfilesClosing(value);
 }
 }  // namespace
 class BindingState {
@@ -329,454 +316,65 @@ class PreparedAppKitWindow final : public PreparedNativeWindow {
   NSString* __strong path_;
   bool bound_ = false;
 };
-class Provider final : public NativeWindowProvider {
- public:
-  base::expected<std::unique_ptr<PreparedNativeWindow>, std::string> Prepare(
-      const NativeWindowRequest& request) override {
-    if (quitting || IsNativeProfileRemovalBlocked(
-                        request.profile.GetOriginalProfile()->GetPath())) {
-      return base::unexpected("The native application or Profile is closing.");
-    }
-    id<PCNativeBrowserApplicationClient> application = application_client;
-    if (!application) {
-      return base::unexpected("The native application is not registered.");
-    }
-    PCNativeWindowKind kind = PCNativeWindowKindBrowser;
-    if (request.type == BrowserWindowInterface::TYPE_DEVTOOLS) {
-      kind = PCNativeWindowKindDeveloperTools;
-    } else if (request.type ==
-               BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
-      kind = PCNativeWindowKindPictureInPicture;
-    } else if (request.type == BrowserWindowInterface::TYPE_POPUP ||
-               request.type == BrowserWindowInterface::TYPE_APP_POPUP) {
-      kind = PCNativeWindowKindPopup;
-    }
-    PCNativeWindowRequest* descriptor =
-        [[PCNativeWindowRequest alloc] initWithRequest:request kind:kind];
-    id<PCNativeBrowserWindowClient> client =
-        [application prepareNativeWindowForRequest:descriptor];
-    if (!client) {
-      return base::unexpected(
-          "The application declined the new native window.");
-    }
-    NSError* error = nil;
-    PCNativeBrowserWindow* binding =
-        [PCNativeBrowserApplication registerWindowClient:client error:&error];
-    if (!binding) {
-      return base::unexpected(
-          base::SysNSStringToUTF8(error.localizedDescription));
-    }
-    if ([binding state].close_in_progress || [binding state].close_approved) {
-      return base::unexpected("The supplied native window is closing.");
-    }
-    if ([binding state].private_mode != request.profile.IsOffTheRecord() ||
-        ([binding state].private_mode &&
-         [binding state].private_profile.get() != &request.profile)) {
-      return base::unexpected("The supplied window belongs to another browsing context.");
-    }
-    auto found = [binding state].browsers.find(&request.profile);
-    if (found != [binding state].browsers.end() && found->second) {
-      return base::unexpected(
-          "This physical window already owns a Browser for this Profile.");
-    }
-    return std::make_unique<PreparedAppKitWindow>(request.profile, request.type,
-                                                  binding);
+}  // namespace
+base::expected<std::unique_ptr<PreparedNativeWindow>, std::string>
+PrepareAppKitWindow(const NativeWindowRequest& request) {
+  if (quitting || IsNativeProfileRemovalBlocked(
+                      request.profile.GetOriginalProfile()->GetPath())) {
+    return base::unexpected("The native application or Profile is closing.");
   }
-  std::unique_ptr<BrowserFocusController> CreateFocusController(
-      BrowserWindowInterface& browser) override {
-    return CreateAppKitFocusController(browser);
+  id<PCNativeBrowserApplicationClient> application = application_client;
+  if (!application) {
+    return base::unexpected("The native application is not registered.");
   }
-  std::unique_ptr<DevtoolsUIController> CreateDevtoolsController(
-      BrowserWindowInterface& browser) override {
-    return CreateAppKitDevtoolsController(browser);
+  PCNativeWindowKind kind = PCNativeWindowKindBrowser;
+  if (request.type == BrowserWindowInterface::TYPE_DEVTOOLS) {
+    kind = PCNativeWindowKindDeveloperTools;
+  } else if (request.type == BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
+    kind = PCNativeWindowKindPictureInPicture;
+  } else if (request.type == BrowserWindowInterface::TYPE_POPUP ||
+             request.type == BrowserWindowInterface::TYPE_APP_POPUP) {
+    kind = PCNativeWindowKindPopup;
   }
-  bool HandleDevtoolsKey(content::WebContents* inspected,
-                         content::WebContents& tools,
-                         const input::NativeWebKeyboardEvent& event) override {
-    return HandleAppKitDevtoolsKey(inspected, tools, event);
+  PCNativeWindowRequest* descriptor =
+      [[PCNativeWindowRequest alloc] initWithRequest:request kind:kind];
+  id<PCNativeBrowserWindowClient> client =
+      [application prepareNativeWindowForRequest:descriptor];
+  if (!client) {
+    return base::unexpected("The application declined the new native window.");
   }
-  void PageOwnerChanged(BrowserWindowInterface* browser,
-                        content::WebContents& contents) override {
-    AppKitPageOwnerChanged(browser, contents);
+  NSError* error = nil;
+  PCNativeBrowserWindow* binding =
+      [PCNativeBrowserApplication registerWindowClient:client error:&error];
+  if (!binding) {
+    return base::unexpected(base::SysNSStringToUTF8(error.localizedDescription));
   }
-  void PrepareBrowserForDeletion(BrowserWindowInterface& browser,
-                                 base::OnceClosure completion) override {
-    PrepareAppKitBrowserForDeletion(browser, std::move(completion));
+  if ([binding state].close_in_progress || [binding state].close_approved) {
+    return base::unexpected("The supplied native window is closing.");
   }
-  void CreationFailed(Profile& profile, const std::string& reason) override {
-    for (PCNativeBrowserWindow* binding in Windows().objectEnumerator) {
-      if ([binding state].browsers.contains(&profile)) {
-        [binding.client nativeBrowser:binding
-                     didFailWithError:Error(base::SysUTF8ToNSString(reason))];
-      }
-    }
+  if ([binding state].private_mode != request.profile.IsOffTheRecord() ||
+      ([binding state].private_mode &&
+       [binding state].private_profile.get() != &request.profile)) {
+    return base::unexpected(
+        "The supplied window belongs to another browsing context.");
   }
-};
-//
-// crashProcess/wait forward to that object (Core 0x68d4f04/0x68d4f18).
-//
-// AppKit sheet is an explicit presentation adaptation for the independent
-// engine, retaining CEF's genuine hang timer and renderer termination actions.
-class NativeHungRenderer final
-    : public content::WebContentsObserver,
-      public content::WebContentsUserData<NativeHungRenderer> {
- public:
-  ~NativeHungRenderer() override { Finish(false, false); }
-
-  void Show(CefRefPtr<CefUnresponsiveProcessCallback> callback) {
-    // CEF detaches its previous callback before delivering a replacement.
-    const auto alive = weak_factory_.GetWeakPtr();
-    Finish(false, false);
-    if (!alive) {
-      callback->Wait();
-      return;
-    }
-    callback_ = std::move(callback);
-    auto* contents = web_contents();
-    auto* tab = tabs::TabInterface::MaybeGetFromContents(contents);
-    PCNativePage* page = ExistingNativePage(contents);
-    auto* frame = contents->GetPrimaryMainFrame();
-    auto* browser = tab ? tab->GetBrowserWindowInterface() : nullptr;
-    NSWindow* window = page.nativeView.window;
-    if (!tab || !tab->IsActivated() || !frame || !frame->IsActive() ||
-        !browser || browser->IsDeleteScheduled() || !window ||
-        !window.isKeyWindow || !window.visible || window.miniaturized ||
-        page.nativeView.hiddenOrHasHiddenAncestor || IsNativePageRetiring(page) ||
-        window.attachedSheet || PCNativeWindowHasSecurityReservation(window)) {
-      // Background/obscured pages keep their real timer. They never steal a
-      // different page's window or silently terminate a shared process.
-      Finish(true, false);
-      return;
-    }
-    browser_ = browser->GetWeakPtr();
-    document_ = frame->GetWeakDocumentPtr();
-    window_ = window;
-    const auto weak = weak_factory_.GetWeakPtr();
-    deactivate_ = tab->RegisterWillDeactivate(base::BindRepeating(
-        [](base::WeakPtr<NativeHungRenderer> self, tabs::TabInterface*) {
-          if (self) self->Finish(true, false);
-        }, weak));
-    detach_ = tab->RegisterWillDetach(base::BindRepeating(
-        [](base::WeakPtr<NativeHungRenderer> self, tabs::TabInterface*,
-           tabs::TabInterface::DetachReason) {
-          if (self) self->Finish(true, false);
-        }, weak));
-    discard_ = tab->RegisterWillDiscardContents(base::BindRepeating(
-        [](base::WeakPtr<NativeHungRenderer> self, tabs::TabInterface*,
-           content::WebContents*, content::WebContents*) {
-          if (self) self->Finish(false, false);
-        }, weak));
-    // Acquiring a reservation can synchronously dismiss another native owner.
-    auto reservation = [PCNativeWindowSecurityReservation acquireForWindow:window];
-    if (!weak || !OwnerCurrent() || !reservation.isOnlyReservation) {
-      [reservation invalidate];
-      if (weak) Finish(true, false);
-      return;
-    }
-    reservation_ = reservation;
-    observations_ = [NSMutableArray array];
-    for (NSNotificationName name in @[NSWindowWillCloseNotification,
-                                      NSWindowDidMiniaturizeNotification,
-                                      PCNativeWindowSecurityStateChanged]) {
-      [observations_ addObject:[NSNotificationCenter.defaultCenter
-          addObserverForName:name object:window queue:nil
-          usingBlock:^(NSNotification*) {
-            if (weak && (name != PCNativeWindowSecurityStateChanged ||
-                         !weak->OwnerCurrent() ||
-                         !weak->reservation_.isOnlyReservation)) {
-              weak->Finish(true, false);
-            }
-          }]];
-    }
-    //
-    // it and its Renderer.HungRendererDialog.UserAction histogram). Its text:
-    // the plural title and body, then each page sharing the hung process,
-    // with Wait as the default (OK) button and Exit Page(s) as Cancel.
-    // The page list approximates the hung process by the main frame's.
-    content::RenderProcessHost* process = frame->GetProcess();
-    const std::vector<content::WebContents*> hung =
-        GetHungWebContentsList(contents, process);
-    const int count = static_cast<int>(hung.size());
-    alert_ = [[NSAlert alloc] init];
-    alert_.alertStyle = NSAlertStyleWarning;
-    alert_.messageText = base::SysUTF16ToNSString(l10n_util::GetPluralStringFUTF16(
-        IDS_BROWSER_HANGMONITOR_RENDERER_TITLE, count));
-    NSMutableString* info = [base::SysUTF16ToNSString(
-        l10n_util::GetPluralStringFUTF16(IDS_BROWSER_HANGMONITOR_RENDERER, count))
-        mutableCopy];
-    [info appendString:@"\n"];
-    for (content::WebContents* affected : hung) {
-      [info appendFormat:@"\n%@", base::SysUTF16ToNSString(
-          GetHungWebContentsTitle(affected, process))];
-    }
-    alert_.informativeText = info;
-    [alert_ addButtonWithTitle:base::SysUTF16ToNSString(l10n_util::GetStringUTF16(
-        IDS_BROWSER_HANGMONITOR_RENDERER_WAIT))];
-    [alert_ addButtonWithTitle:base::SysUTF16ToNSString(
-        l10n_util::GetPluralStringFUTF16(IDS_BROWSER_HANGMONITOR_RENDERER_END, count))];
-    alert_.buttons.firstObject.keyEquivalent = @"\r";
-    const uint64_t generation = generation_;
-    [alert_ beginSheetModalForWindow:window completionHandler:^(NSModalResponse response) {
-      if (!weak || weak->generation_ != generation) return;
-      const bool terminate = response == NSAlertSecondButtonReturn &&
-          weak->OwnerCurrent() && weak->reservation_.isOnlyReservation;
-      weak->Finish(true, terminate);
-    }];
+  auto found = [binding state].browsers.find(&request.profile);
+  if (found != [binding state].browsers.end() && found->second) {
+    return base::unexpected(
+        "This physical window already owns a Browser for this Profile.");
   }
-
-  void Responsive() { Finish(false, false); }
-
- private:
-  friend class content::WebContentsUserData<NativeHungRenderer>;
-  explicit NativeHungRenderer(content::WebContents* contents)
-      : content::WebContentsObserver(contents),
-        content::WebContentsUserData<NativeHungRenderer>(*contents) {}
-
-  bool OwnerCurrent() const {
-    auto* contents = web_contents();
-    auto* frame = document_.AsRenderFrameHostIfValid();
-    auto* tab = contents ? tabs::TabInterface::MaybeGetFromContents(contents) : nullptr;
-    PCNativePage* page = ExistingNativePage(contents);
-    return callback_ && contents && !contents->IsBeingDestroyed() &&
-        frame && frame->IsActive() && frame == contents->GetPrimaryMainFrame() &&
-        browser_ && !browser_->IsDeleteScheduled() && browser_->GetWindow() &&
-        tab && tab->IsActivated() && tab->GetBrowserWindowInterface() == browser_.get() &&
-        window_ && window_.visible && !window_.miniaturized &&
-        browser_->GetWindow()->GetNativeWindow().GetNativeNSWindow() == window_ &&
-        page.nativeView.window == window_ && !page.nativeView.hiddenOrHasHiddenAncestor &&
-        !IsNativePageRetiring(page);
-  }
-
-  void Finish(bool restart_timer, bool terminate) {
-    ++generation_; // Old AppKit completion blocks cannot consume a new request.
-    auto callback = std::move(callback_);
-    callback_ = nullptr;
-    auto browser = browser_;
-    auto document = document_;
-    auto contents = web_contents() ? web_contents()->GetWeakPtr()
-                                  : base::WeakPtr<content::WebContents>();
-    NSWindow* __weak window = window_;
-    NSAlert* alert = alert_;
-    auto reservation = reservation_;
-    alert_ = nil;
-    reservation_ = nil;
-    browser_.reset();
-    document_ = {};
-    window_ = nil;
-    deactivate_ = {};
-    detach_ = {};
-    discard_ = {};
-    for (id observer in observations_) {
-      [NSNotificationCenter.defaultCenter removeObserver:observer];
-    }
-    observations_ = nil;
-    // All state is retired before AppKit/reservation callbacks can reenter or
-    // destroy this object. Only local values are used after these operations.
-    if (alert.window.sheetParent) {
-      [alert.window.sheetParent endSheet:alert.window returnCode:NSModalResponseCancel];
-    }
-    [alert.window orderOut:nil];
-    [reservation invalidate];
-    if (!callback || !restart_timer) return;
-    auto* tab = contents ? tabs::TabInterface::MaybeGetFromContents(contents.get()) : nullptr;
-    auto* frame = document.AsRenderFrameHostIfValid();
-    PCNativePage* page = ExistingNativePage(contents.get());
-    const bool current = contents && !contents->IsBeingDestroyed() && frame &&
-        frame->IsActive() && frame == contents->GetPrimaryMainFrame() && browser &&
-        !browser->IsDeleteScheduled() && browser->GetWindow() && tab &&
-        tab->IsActivated() && tab->GetBrowserWindowInterface() == browser.get() &&
-        window && window.visible && !window.miniaturized &&
-        browser->GetWindow()->GetNativeWindow().GetNativeNSWindow() == window &&
-        page.nativeView.window == window && !IsNativePageRetiring(page);
-    if (terminate && current) callback->Terminate();
-    else callback->Wait();
-  }
-
-  void PrimaryPageChanged(content::Page&) override { Finish(false, false); }
-  void PrimaryMainFrameRenderProcessGone(base::TerminationStatus) override {
-    Finish(false, false);
-  }
-  void WebContentsDestroyed() override { Finish(false, false); }
-  void OnVisibilityChanged(content::Visibility visibility) override {
-    if (visibility == content::Visibility::HIDDEN) Finish(true, false);
-  }
-  CefRefPtr<CefUnresponsiveProcessCallback> callback_;
-  base::WeakPtr<BrowserWindowInterface> browser_;
-  content::WeakDocumentPtr document_;
-  NSWindow* __weak window_ = nil;
-  NSAlert* __strong alert_ = nil;
-  PCNativeWindowSecurityReservation* __strong reservation_ = nil;
-  NSMutableArray* __strong observations_ = nil;
-  base::CallbackListSubscription deactivate_, detach_, discard_;
-  uint64_t generation_ = 0;
-  base::WeakPtrFactory<NativeHungRenderer> weak_factory_{this};
-  WEB_CONTENTS_USER_DATA_KEY_DECL();
-};
-WEB_CONTENTS_USER_DATA_KEY_IMPL(NativeHungRenderer);
-
-class NativeClient final : public CefClient,
-                           public CefDisplayHandler,
-                           public CefKeyboardHandler,
-                           public CefLifeSpanHandler,
-                           public CefPermissionHandler,
-                           public CefRequestHandler,
-                           public CefResourceRequestHandler {
- public:
-  CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
-  void OnAddressChange(CefRefPtr<CefBrowser> browser,
-                       CefRefPtr<CefFrame> frame,
-                       const CefString& url) override {
-    if (!frame || !frame->IsMain()) return;
-    auto host = CefBrowserHostBase::FromBrowser(browser);
-    if (auto* contents = host ? host->GetWebContents() : nullptr)
-      UpdateNativeLinkURL(*contents, GURL(url.ToString()));
-  }
-  void OnStatusMessage(CefRefPtr<CefBrowser> browser,
-                       const CefString& value) override {
-    auto host = CefBrowserHostBase::FromBrowser(browser);
-    if (auto* contents = host ? host->GetWebContents() : nullptr) {
-      // CEF resolves the callback from the original source WebContents. Never
-      // route through the selected tab or replace Chromium's mouse processing.
-      const GURL target(value.ToString());
-      UpdateNativePageStatusText(*contents, base::SysUTF8ToNSString(
-          target.SchemeIs("chrome") ? PublicInternalURL(target).spec()
-                                   : value.ToString()));
-    }
-  }
-  CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
-  CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
-  CefRefPtr<CefPermissionHandler> GetPermissionHandler() override {
-    return this;
-  }
-  CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
-  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(
-      CefRefPtr<CefBrowser> browser,
-      CefRefPtr<CefFrame> frame,
-      CefRefPtr<CefRequest> request,
-      bool is_navigation,
-      bool,
-      const CefString&,
-      bool&) override {
-    // Only OnProtocolExecution is needed, and CEF reaches it only for schemes
-    // the network stack doesn't handle. A handler on a web request makes CEF
-    // load its cookies through a UI-thread round trip before the request
-    // starts, so a busy main thread held every navigation (measured up to
-    // 1.4 s for a new tab); without one the network service sends it at once.
-    return is_navigation && browser && frame && frame->IsValid() && request &&
-                   !scheme::IsInternalHandledScheme(
-                       GURL(request->GetURL().ToString()).scheme())
-               ? this
-               : nullptr;
-  }
-  void OnProtocolExecution(CefRefPtr<CefBrowser> browser,
-                           CefRefPtr<CefFrame> frame,
-                           CefRefPtr<CefRequest>,
-                           bool& allow_os_execution) override {
-    // In the pinned Chrome runtime this enables HandleExternalProtocolHelper,
-    // which revalidates the captured WeakDocumentPtr and calls Chrome's genuine
-    // sandbox/scheme/enterprise/user-gesture/default-app policy path. This is
-    // not platform_util::OpenExternal and does not itself grant a launch.
-    allow_os_execution = browser && frame && frame->IsValid();
-  }
-
-  void OnBeforeClose(CefRefPtr<CefBrowser>) override {
-    NotifyNativeEngineOwnershipChanged();
-  }
-  bool OnRequestMediaAccessPermission(
-      CefRefPtr<CefBrowser> browser,
-      CefRefPtr<CefFrame>,
-      const CefString&,
-      uint32_t requested_permissions,
-      CefRefPtr<CefMediaAccessCallback> callback) override {
-    // Chromium owns origin/policy checks, OS permission and capture-device
-    // construction. The registered native picker handles display selection.
-    return false;
-  }
-  bool OnShowPermissionPrompt(
-      CefRefPtr<CefBrowser> browser,
-      uint64_t,
-      const CefString&,
-      uint32_t,
-      CefRefPtr<CefPermissionPromptCallback> callback) override {
-    callback->Continue(CEF_PERMISSION_RESULT_IGNORE);
-    // A native page must have been intercepted by the typed factory. Do not
-    // fall back to a generic monostate grant if that ownership route is absent.
-    ReportUnavailable(browser, @"Native permission host is unavailable");
-    return true;
-  }
-  bool OnSelectClientCertificate(
-      CefRefPtr<CefBrowser> browser,
-      bool,
-      const CefString&,
-      int,
-      const X509CertificateList&,
-      CefRefPtr<CefSelectClientCertificateCallback> callback) override {
-    // Preserve Chrome enterprise filtering and auto-selection before the
-    // page-owned native selector factory. Do not consume the CEF callback.
-    return false;
-  }
-  bool OnRenderProcessUnresponsive(
-      CefRefPtr<CefBrowser> browser,
-      CefRefPtr<CefUnresponsiveProcessCallback> callback) override {
-    auto host = CefBrowserHostBase::FromBrowser(browser);
-    auto* contents = host ? host->GetWebContents() : nullptr;
-    if (!contents || contents->IsBeingDestroyed()) {
-      callback->Wait();
-      return true;
-    }
-    NativeHungRenderer::CreateForWebContents(contents);
-    NativeHungRenderer::FromWebContents(contents)->Show(std::move(callback));
-    return true;
-  }
-  void OnRenderProcessResponsive(CefRefPtr<CefBrowser> browser) override {
-    auto host = CefBrowserHostBase::FromBrowser(browser);
-    auto* contents = host ? host->GetWebContents() : nullptr;
-    if (auto* dialog = contents ? NativeHungRenderer::FromWebContents(contents) : nullptr) {
-      dialog->Responsive();
-    }
-  }
-  // CefRequestHandler's documented defaults cancel credentials and invalid
-  // TLS requests. Native security presenters remain open capability gates.
-  void ReportUnavailable(CefRefPtr<CefBrowser> browser, NSString* capability) {
-    auto base = CefBrowserHostBase::FromBrowser(browser);
-    auto host = base ? ChromeBrowserHostImpl::GetBrowserForContents(
-                           base->GetWebContents())
-                     : nullptr;
-    PCNativeBrowserWindow* binding =
-        host ? AppKitBindingForBrowser(host->browser()) : nil;
-    [binding.client nativeBrowser:binding capabilityUnavailable:capability];
-  }
-  bool OnKeyEvent(CefRefPtr<CefBrowser> browser,
-                  const CefKeyEvent& event,
-                  CefEventHandle os_event) override {
-    // Only this recovered menu bridge runs here. If not consumed, CEF's
-    // original Browser delegate runs DevTools, then the native action registry.
-    NSEvent* native = (__bridge NSEvent*)os_event;
-    auto host = CefBrowserHostBase::FromBrowser(browser);
-    auto* contents = host ? host->GetWebContents() : nullptr;
-    if (contents && event.type == KEYEVENT_RAWKEYDOWN) {
-      if (auto result = HandleUnhandledNativeShortcut(*contents, native))
-        return *result;
-    }
-    return event.type == KEYEVENT_RAWKEYDOWN &&
-           native.type == NSEventTypeKeyDown &&
-           (native.modifierFlags &
-            NSEventModifierFlagDeviceIndependentFlagsMask) &&
-           [NSApp.mainMenu performKeyEquivalent:native];
-  }
-
- private:
-  IMPLEMENT_REFCOUNTING(NativeClient);
-};
-CefRefPtr<CefClient> Client() {
-  static base::NoDestructor<CefRefPtr<CefClient>> client(new NativeClient);
-  return *client;
+  return std::make_unique<PreparedAppKitWindow>(request.profile, request.type,
+                                                binding);
 }
-std::shared_ptr<NativeWindowProvider> ProviderInstance() {
-  static base::NoDestructor<std::shared_ptr<Provider>> provider(
-      std::make_shared<Provider>());
-  return *provider;
+void NativeCreationFailed(Profile& profile, const std::string& reason) {
+  for (PCNativeBrowserWindow* binding in Windows().objectEnumerator) {
+    if ([binding state].browsers.contains(&profile)) {
+      [binding.client nativeBrowser:binding
+                   didFailWithError:Error(base::SysUTF8ToNSString(reason))];
+    }
+  }
 }
+namespace {
 NSDictionary* DownloadValues(const NativeDownloadSnapshot& snapshot,
                              bool off_the_record) {
 NSString* status = @"pending";
@@ -964,112 +562,30 @@ void ClearSeededDownloadPrompt(Profile& profile) {
   }, directory));
 }
 
-class ContextHandler final : public CefRequestContextHandler {
- public:
-  explicit ContextHandler(std::string path) : path_(std::move(path)) {}
-  void OnRequestContextInitialized(
-      CefRefPtr<CefRequestContext> context) override {
-    auto* profile = CefRequestContextImpl::GetProfile(context);
-    auto& record = Profiles().at(path_);
-    if (!profile || profile->IsOffTheRecord() ||
-        profile->GetPath().value() != path_) {
-      record.failure = Error(@"The browser engine did not create the requested "
-                             @"persistent Profile.");
-      record.context = nullptr;
-      auto callbacks = std::move(record.waiters);
-      record.waiters.clear();
-      for (auto& callback : callbacks) {
-        std::move(callback).Run(nullptr, nullptr, record.failure);
-      }
-      NotifyNativeEngineOwnershipChanged();
-      return;
-    }
-    record.context = context;
-    record.profile = profile->GetWeakPtr();
-    InitializeNativeSearch(*profile);
-    // Register before GetDownloadManager can enumerate restored items.
-    if (!GetNativeRoute(*profile)) {
-      CHECK(RegisterNativeRoute(*profile, ProviderInstance(), Client()));
-    }
-    // Keep Chromium's complete target determination/security/filename policy
-    //
-    ClearSeededDownloadPrompt(*profile);
-    NativeDownloads::Install(
-        *profile, base::BindRepeating([](NativeDownloadSnapshot snapshot) {
-          CHECK(NSThread.isMainThread);
-          if (IsNativeProfileRemovalBlocked(snapshot.profile_path))
-            return;
-          NSDictionary* values = DownloadValues(snapshot, false);
-          id<PCNativeBrowserApplicationClient> client = application_client;
-          [client nativeApplicationDownloadDidUpdate:values];
-        }), base::BindRepeating(
-            [](base::WeakPtr<Profile> original, NativeDownloadSnapshot snapshot,
-               content::WeakDocumentPtr document) {
-              if (original && !original->ShutdownStarted())
-                PresentNativeDownloadArrival(*original, std::move(snapshot),
-                                             std::move(document), nil);
-            }, profile->GetWeakPtr()));
-
-    auto callbacks = std::move(record.waiters);
-    record.waiters.clear();
-    for (auto& callback : callbacks) {
-      std::move(callback).Run(profile, context, nil);
-    }
-    // A quit waiting for idle can proceed now the Profile has loaded.
-    NotifyNativeEngineOwnershipChanged();
+// The Profile registry's per-Profile setup, once, before its waiters run.
+void InitializeNativeProfile(Profile& profile) {
+  // Register before GetDownloadManager can enumerate restored items.
+  if (!GetNativeRoute(profile)) {
+    RegisterNativeRoute(profile);
   }
-
- private:
-  const std::string path_;
-  IMPLEMENT_REFCOUNTING(ContextHandler);
-};
-void WithProfile(
-    NSString* path,
-    base::OnceCallback<void(Profile*, CefRefPtr<CefRequestContext>, NSError*)>
-        callback) {
-  CHECK(ready);
-  std::string requested = base::SysNSStringToUTF8(path);
-  // After quit is approved no Profile starts loading: its waiters would hold
-  // the idle shutdown open or strand callbacks at CefShutdown.
-  if (quitting && !Profiles().contains(requested)) {
-    std::move(callback).Run(nullptr, nullptr, Error(@"Parc is quitting."));
-    return;
-  }
-  if (IsNativeProfileRemovalBlocked(base::FilePath(base::SysNSStringToUTF8(path)))) {
-    std::move(callback).Run(nullptr, nullptr,
-                           Error(@"This Profile is being removed."));
-    return;
-  }
-  std::string key = base::SysNSStringToUTF8(path);
-  auto& record = Profiles()[key];
-  if (record.failure) {
-    std::move(callback).Run(nullptr, nullptr, record.failure);
-    return;
-  }
-  if (record.profile) {
-    std::move(callback).Run(record.profile.get(), record.context, nil);
-    return;
-  }
-  record.waiters.push_back(std::move(callback));
-  if (record.context) {
-    return;
-  }
-  CefRequestContextSettings settings;
-  CefString(&settings.cache_path) = key;
-  auto context =
-      CefRequestContext::CreateContext(settings, new ContextHandler(key));
-  if (!record.failure) {
-    record.context = context;
-  }
-  if (!context && !record.failure) {
-    record.failure = Error(
-        @"The browser engine could not initialize the requested Profile.");
-    auto callbacks = std::move(record.waiters);
-    record.waiters.clear();
-    for (auto& waiter : callbacks) {
-      std::move(waiter).Run(nullptr, nullptr, record.failure);
-    }
-  }
+  // Keep Chromium's complete target determination/security/filename policy
+  //
+  ClearSeededDownloadPrompt(profile);
+  NativeDownloads::Install(
+      profile, base::BindRepeating([](NativeDownloadSnapshot snapshot) {
+        CHECK(NSThread.isMainThread);
+        if (IsNativeProfileRemovalBlocked(snapshot.profile_path))
+          return;
+        NSDictionary* values = DownloadValues(snapshot, false);
+        id<PCNativeBrowserApplicationClient> client = application_client;
+        [client nativeApplicationDownloadDidUpdate:values];
+      }), base::BindRepeating(
+          [](base::WeakPtr<Profile> original, NativeDownloadSnapshot snapshot,
+             content::WeakDocumentPtr document) {
+            if (original && !original->ShutdownStarted())
+              PresentNativeDownloadArrival(*original, std::move(snapshot),
+                                           std::move(document), nil);
+          }, profile.GetWeakPtr()));
 }
 //
 // white on dark ones, both served by the browser's chrome://theme. Parc's
@@ -1145,21 +661,31 @@ ProductLogos MakeProductLogos() {
   logos.dark_2x = MarkPNG(mark.get(), 1, 64);
   return logos;
 }
-class ProductBrandingHandler final : public CefResourceBundleHandler {
+// Serves Parc's mark for Chrome's product-logo resources. ResourceBundle may
+// ask from any thread, so it reads only the published branding.
+class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
  public:
-  bool GetLocalizedString(int string_id, CefString& string) override {
-    return false;
+  base::FilePath GetPathForResourcePack(
+      const base::FilePath& pack_path,
+      ui::ResourceScaleFactor scale_factor) override {
+    return pack_path;
   }
-  bool GetDataResource(int resource_id,
-                       void*& data,
-                       size_t& data_size) override {
-    return GetDataResourceForScale(resource_id, SCALE_FACTOR_NONE, data,
-                                   data_size);
+  gfx::Image GetImageNamed(int resource_id) override { return gfx::Image(); }
+  gfx::Image GetNativeImageNamed(int resource_id) override {
+    return gfx::Image();
   }
-  bool GetDataResourceForScale(int resource_id,
-                               ScaleFactor scale_factor,
-                               void*& data,
-                               size_t& data_size) override {
+  bool HasDataResource(int resource_id) const override { return false; }
+  scoped_refptr<base::RefCountedMemory> LoadDataResourceBytes(
+      int resource_id,
+      ui::ResourceScaleFactor scale_factor) override {
+    return nullptr;
+  }
+  std::optional<std::string> LoadDataResourceString(int resource_id) override {
+    return std::nullopt;
+  }
+  bool GetRawDataResource(int resource_id,
+                          ui::ResourceScaleFactor scale_factor,
+                          std::string_view* value) const override {
     const auto* branding = product_branding.load(std::memory_order_acquire);
     const bool light = branding && branding->light_logo >= 0 &&
                        resource_id == branding->light_logo;
@@ -1169,89 +695,58 @@ class ProductBrandingHandler final : public CefResourceBundleHandler {
     }
     // Rendered on first use and kept, since the bundle doesn't copy it.
     static const base::NoDestructor<ProductLogos> logos(MakeProductLogos());
-    // CEF passes Chromium's ui::ResourceScaleFactor through unchanged.
     const bool double_scale =
-        ui::GetScaleForResourceScaleFactor(
-            static_cast<ui::ResourceScaleFactor>(scale_factor)) > 1;
+        ui::GetScaleForResourceScaleFactor(scale_factor) > 1;
     const std::string& bytes =
         light ? (double_scale ? logos->light_2x : logos->light_1x)
               : (double_scale ? logos->dark_2x : logos->dark_1x);
     if (bytes.empty()) {
       return false;
     }
-    data = const_cast<char*>(bytes.data());
-    data_size = bytes.size();
+    *value = bytes;
     return true;
   }
-
- private:
-  IMPLEMENT_REFCOUNTING(ProductBrandingHandler);
+  bool GetLocalizedString(int message_id,
+                          std::u16string* value) const override {
+    return false;
+  }
 };
-class NativeApplication final : public CefApp, public CefBrowserProcessHandler {
+class AppKitApplication final : public NativeApplication {
  public:
-  CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override {
-    return this;
+  void ProfileInitializer(Profile& profile) override {
+    InitializeNativeProfile(profile);
   }
-  CefRefPtr<CefResourceBundleHandler> GetResourceBundleHandler() override {
-    return branding_;
+  void ProfilesChanged() override {
+    // A quit waiting for idle can proceed once loads and operations end.
+    NotifyNativeEngineOwnershipChanged();
+    RetryNativeOTRProfileDestruction();
   }
-  void OnRegisterCustomPreferences(
-      cef_preferences_type_t type,
-      CefRawPtr<CefPreferenceRegistrar> registrar) override {
-    if (type != CEF_PREFERENCES_TYPE_REQUEST_CONTEXT)
-      return;
-    RegisterNativeSearchPreferences(*registrar);
-    // Page translation is excluded (it needs a Google API key), so Chrome's
-    // Languages settings start with Google Translate off.
-    auto offer = CefValue::Create();
-    offer->SetBool(false);
-    CefString error;
-    CHECK(registrar->SetDefaultPreference(
-        translate::prefs::kOfferTranslateEnabled, offer, error))
-        << error.ToString();
+  ui::ResourceBundle::Delegate* ResourceBundleDelegate() override {
+    return &branding_;
   }
-  CefRefPtr<CefClient> GetDefaultClient() override { return Client(); }
-  void OnBeforeCommandLineProcessing(
-      const CefString&,
-      CefRefPtr<CefCommandLine> command) override {
-    parc::ApplyNativeStartupPolicy(*command);
-  }
-  void OnBeforeChildProcessLaunch(
-      CefRefPtr<CefCommandLine> command) override {
-    const auto browser = CefCommandLine::GetGlobalCommandLine();
-    // Explicit diagnostic opt-in follows only the renderer receiving the
-    // observed input. Ordinary launches and other child processes are unchanged.
-    if (command->GetSwitchValue("type") == "renderer" && browser &&
-        browser->HasSwitch("parc-input-diagnostics")) {
-      command->AppendSwitch("parc-input-diagnostics");
-    }
-  }
-  bool OnAlreadyRunningAppRelaunch(
-      CefRefPtr<CefCommandLine> command_line,
-      const CefString& current_directory) override {
+  bool AlreadyRunningRelaunch(const base::CommandLine& command_line,
+                              const base::FilePath& current_directory) override {
     CHECK(NSThread.isMainThread);
-    // Consume the handoff even while closing: returning false delegates to
-    // CEF's stock Chrome-window creation, which is never our native route.
+    // Consume the handoff even while closing: declining it lets Chrome's
+    // startup open a stock window, which is never our native route.
     id<PCNativeBrowserApplicationClient> client = application_client;
     if (!client || quitting || preparing_global_close) {
       return true;
     }
-    std::vector<CefString> argv;
-    command_line->GetArgv(argv);
     NSMutableArray<NSString*>* arguments =
-        [NSMutableArray arrayWithCapacity:argv.size()];
-    for (const auto& argument : argv) {
-      [arguments addObject:base::SysUTF8ToNSString(argument.ToString())];
+        [NSMutableArray arrayWithCapacity:command_line.argv().size()];
+    for (const auto& argument : command_line.argv()) {
+      [arguments addObject:base::SysUTF8ToNSString(argument)];
     }
     [client nativeApplicationRelaunchedWithArguments:[arguments copy]
                                     currentDirectory:base::SysUTF8ToNSString(
                                                          current_directory
-                                                             .ToString())];
+                                                             .value())];
     // The callback may start close or create work; no borrowed client state
-    // or CefCommandLine references are used after it returns.
+    // or command line references are used after it returns.
     return true;
   }
-  void OnContextInitialized() override {
+  void BrowserReady(Profile& initial_profile) override {
     CHECK(NSThread.isMainThread);
     PrepareProductBranding();
     auto& accessibility = Accessibility();
@@ -1260,14 +755,12 @@ class NativeApplication final : public CefApp, public CefBrowserProcessHandler {
     accessibility.observation_context =
         content::BrowserAccessibilityState::GetInstance();
     // Consume actual system state and any role/manual requests received while
-    // CEF was starting. No renderer AX mode is requested merely by startup.
+    // the engine was starting. No renderer AX mode is requested merely by
+    // startup.
     accessibility.voice_over = NSWorkspace.sharedWorkspace.voiceOverEnabled;
     accessibility.Apply();
-    auto* profile = CefRequestContextImpl::GetProfile(nullptr);
-    if (profile && !GetNativeRoute(*profile)) {
-      if (!GetNativeRoute(*profile)) {
-        CHECK(RegisterNativeRoute(*profile, ProviderInstance(), Client()));
-      }
+    if (!GetNativeRoute(initial_profile)) {
+      RegisterNativeRoute(initial_profile);
     }
     InstallNativeGmcPresentationHandler();
     DesktopMediaPicker::SetNativeFactory(
@@ -1289,13 +782,11 @@ class NativeApplication final : public CefApp, public CefBrowserProcessHandler {
   }
 
  private:
-  const CefRefPtr<CefResourceBundleHandler> branding_ =
-      new ProductBrandingHandler;
-  IMPLEMENT_REFCOUNTING(NativeApplication);
+  ProductBrandingDelegate branding_;
 };
 }  // namespace
-CefRefPtr<CefApp> CreateNativeApplication() {
-  return new NativeApplication;
+std::unique_ptr<NativeApplication> CreateNativeApplication() {
+  return std::make_unique<AppKitApplication>();
 }
 bool HasPendingNativeApplicationWork() {
   if (HasNativePageRetirementWork() || HasLiveTabTransfer() ||
@@ -1305,21 +796,12 @@ bool HasPendingNativeApplicationWork() {
   return pending_creations != 0 || close_transaction_active ||
          preparing_global_close;
 }
-// A Profile still loading (Settings asks for its search and download
-// preferences on open) has callbacks CefShutdown must not strand; quitting
-// then tripped PrepareNativeApplicationShutdown's waiters CHECK.
-bool HasLoadingNativeProfiles() {
-  for (const auto& [path, record] : Profiles()) {
-    if (!record.waiters.empty())
-      return true;
-  }
-  return false;
-}
 void PrepareNativeApplicationShutdown() {
   CHECK(NSThread.isMainThread);
   ready = false;
-  // CefShutdown follows and terminates Chromium's ImageTransportFactory, which
-  // every pane compositor uses; they go first, as BrowserCompositorMac's do.
+  // Engine shutdown follows and terminates Chromium's ImageTransportFactory,
+  // which every pane compositor uses; they go first, as BrowserCompositorMac's
+  // do.
   ShutDownPaneCompositors();
   auto& accessibility = Accessibility();
   accessibility.stopped = true;
@@ -1327,35 +809,34 @@ void PrepareNativeApplicationShutdown() {
   accessibility.basic.reset();
   CHECK(pending_creations == 0);
   CHECK(ReadyQueue().empty());
-  for (const auto& [path, record] : Profiles()) {
-    CHECK(record.waiters.empty());
-    auto profile = record.profile;
-    if (profile) {
-      CancelNativeDownloadFileDialogs(*profile);
+  CHECK(!NativeProfilesLoading());
+  for (Profile* profile :
+       g_browser_process->profile_manager()->GetLoadedProfiles()) {
+    auto weak = profile->GetWeakPtr();
+    CancelNativeDownloadFileDialogs(*profile);
+    if (!weak) {
+      continue;
     }
-    if (profile) {
-      if (auto* downloads = NativeDownloads::From(*profile)) {
-        downloads->Shutdown();
-      }
+    if (auto* downloads = NativeDownloads::From(*weak)) {
+      downloads->Shutdown();
     }
   }
   SetNativeDownloadDialogParentCallbacks({});
-  Profiles().clear();
   [Windows() removeAllObjects];
   application_client = nil;
-}
-std::shared_ptr<NativeWindowProvider> CreateAppKitWindowProvider() {
-  return ProviderInstance();
 }
 
 bool IsNativeDownloadDialogProfile(Profile& profile) {
   CHECK(NSThread.isMainThread);
-  if (profile.IsOffTheRecord()) return NativeContextForProfile(profile) && GetNativeRoute(profile);
-  const auto record = Profiles().find(profile.GetPath().value());
-  return ready && !quitting && !preparing_global_close &&
-         !IsNativeProfileRemovalBlocked(profile.GetPath()) &&
-         record != Profiles().end() && record->second.profile.get() == &profile &&
-         GetNativeRoute(profile);
+  if (profile.IsOffTheRecord()) {
+    auto lease = NativeLeaseForProfile(profile);
+    return lease && lease->profile() == &profile && GetNativeRoute(profile);
+  }
+  if (!ready || quitting || preparing_global_close) {
+    return false;
+  }
+  auto lease = RegisteredProfile(profile.GetPath());
+  return lease && lease->profile() == &profile && GetNativeRoute(profile);
 }
 
 bool IsNativeDownloadDialogParent(Profile& profile, gfx::NativeWindow window) {
@@ -1368,8 +849,8 @@ bool IsNativeDownloadDialogParent(Profile& profile, gfx::NativeWindow window) {
     auto* binding = [Windows() objectForKey:window.GetNativeNSWindow()];
     return NativePrivateProfileForWindow(binding, ProfilePath(profile)) == &profile;
   }
-  const auto record = Profiles().find(profile.GetPath().value());
-  if (record == Profiles().end() || record->second.profile.get() != &profile) {
+  auto lease = RegisteredProfile(profile.GetPath());
+  if (!lease || lease->profile() != &profile) {
     return false;
   }
   NSWindow* parent = window.GetNativeNSWindow();
@@ -1406,18 +887,17 @@ gfx::NativeWindow PrepareNativeDownloadDialogParent(Profile& profile) {
                    @selector(nativeDownloadDialogWindow:representsProfilePath:)]) {
     return {};
   }
-  const auto record = Profiles().find(profile.GetPath().value());
-  if (record == Profiles().end() || record->second.profile.get() != &profile) {
+  // Shell construction may reenter the engine. Keep the Profile leased, but
+  // re-resolve its weak identity after the callback.
+  auto lease = RegisteredProfile(profile.GetPath());
+  if (!lease || lease->profile() != &profile) {
     return {};
   }
-  // Shell construction may reenter the engine. Keep the actual CEF context
-  // alive, but re-resolve its weak Profile identity after the callback.
-  auto context = record->second.context;
   auto identity = profile.GetWeakPtr();
   NSWindow* parent =
       [client nativeDownloadDialogWindowForProfilePath:ProfilePath(profile)];
   const auto window = gfx::NativeWindow(parent);
-  return context && identity && IsNativeDownloadDialogParent(*identity, window)
+  return identity && IsNativeDownloadDialogParent(*identity, window)
              ? window
              : gfx::NativeWindow();
 }
@@ -1705,7 +1185,7 @@ class NativeCloseTransaction final
         }
       }
       if (all_windows_) {
-        quitting = false;
+        SetQuitting(false);
       }
     }
     for (PCNativeBrowserWindow* binding in bindings_) {
@@ -1950,10 +1430,9 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
       _state->close_in_progress || _state->close_approved || !path.isAbsolutePath ||
       ![path isEqualToString:path.stringByStandardizingPath])
     return fail(@"Wait for the original profile to finish opening before creating a private window.");
-  auto found = parc::Profiles().find(base::SysNSStringToUTF8(path));
-  Profile* parent = found == parc::Profiles().end() ? nullptr : found->second.profile.get();
-  if (!parent || parent->IsOffTheRecord() || !found->second.context ||
-      parc::IsNativeProfileRemovalBlocked(parent->GetPath()) || parent->ShutdownStarted())
+  auto lease = parc::RegisteredProfile(path);
+  Profile* parent = lease ? lease->profile() : nullptr;
+  if (!parent || parc::IsNativeProfileRemovalBlocked(parent->GetPath()))
     return fail(@"The original profile is not available for private browsing.");
   if (IncognitoModePrefs::GetAvailability(parent) == policy::IncognitoModeAvailability::kDisabled)
     return fail(@"Private browsing is disabled for this profile.");
@@ -1970,26 +1449,19 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   if (!profile || !profile->IsOffTheRecord() || profile->ShutdownStarted() ||
       GetBrowserWindowCreationStatusForProfile(*profile) != BrowserWindowInterface::CreationStatus::kOk)
     return fail(@"The private browsing context could not be opened.");
-  auto context = CefRequestContextImpl::GetOrCreateForBrowserContext(
-      ChromeBrowserContext::GetOrCreateForProfile(profile), nullptr);
-  if (!parc::GetNativeRoute(*profile) &&
-      !parc::RegisterNativeRoute(*profile, parc::ProviderInstance(), parc::Client()))
-    return fail(@"The private browser cannot use this native window.");
+  if (!parc::GetNativeRoute(*profile)) {
+    parc::RegisterNativeRoute(*profile);
+  }
   parc::InitializeNativeSearch(*profile);
   // Chromium owns private download items and dialogs. Do not publish their
   // URLs or filenames into the application's persistent normal download list.
   parc::InstallPrivateDownloads(*profile);
   _state->private_mode = true;
   _state->private_profile = profile->GetWeakPtr();
-  CefBrowserCreateParams native_params;
-  native_params.request_context = context;
-  native_params.client = parc::Client();
-  native_params.native_route = parc::GetNativeRoute(*profile);
-  native_params.native_reservation = std::make_shared<parc::PreparedAppKitWindow>(
-      *profile, BrowserWindowInterface::TYPE_NORMAL, self);
   BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL, *profile, true);
   params.should_trigger_session_restore = false;
-  params.cef_params = base::MakeRefCounted<ChromeBrowserHostImpl::DelegateCreateParams>(native_params);
+  params.native_window = std::make_shared<parc::PreparedAppKitWindow>(
+      *profile, BrowserWindowInterface::TYPE_NORMAL, self);
   auto* browser = CreateBrowserWindow(std::move(params));
   if (!browser || browser->GetProfile() != profile || parc::AppKitBindingForBrowser(browser) != self) {
     if (browser && !browser->IsDeleteScheduled() && browser->GetTabStripModel()->empty()) browser->GetWindow()->Close();
@@ -2058,17 +1530,15 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
       completion(nil, parc::Error(@"The application is closing."));
       return;
     }
-    const base::FilePath cache_root(
-        CefString(&CefContext::Get()->settings().root_cache_path).ToString());
     const base::FilePath profile_path(base::SysNSStringToUTF8(path));
-    if (profile_path.DirName() != cache_root) {
+    if (profile_path.DirName() != parc::NativeProfileRoot()) {
       completion(nil,
                  parc::Error(@"Each independent Profile must be an immediate "
                              @"child of the engine cache root."));
       return;
     }
     auto create_with_profile = base::BindOnce(^(
-        Profile* actual_profile, CefRefPtr<CefRequestContext> context,
+        Profile* actual_profile, parc::NativeProfileLeasePtr lease,
         NSError* profile_error) {
       if (!actual_profile) {
         completion(nil, profile_error);
@@ -2113,41 +1583,50 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
           contents = nullptr;
         }
       } else {
-        if (!context) {
+        if (!lease) {
           completion(
               nil,
               parc::Error(
                   @"The originating private Browser closed before creation."));
           return;
         }
-        CefBrowserCreateParams params;
-        params.request_context = context;
-        params.client = parc::Client();
-        params.url = url.absoluteString.UTF8String;
-        params.native_route = parc::GetNativeRoute(profile);
-        params.native_reservation =
-            std::make_shared<parc::PreparedAppKitWindow>(
-                profile, BrowserWindowInterface::TYPE_NORMAL, binding);
-        auto created = ChromeBrowserHostImpl::Create(params);
+        BrowserWindowInterface* created = nullptr;
+        if (GetBrowserWindowCreationStatusForProfile(profile) ==
+            BrowserWindowInterface::CreationStatus::kOk) {
+          BrowserWindowCreateParams params(profile, /*from_user_gesture=*/false);
+          params.native_window = std::make_shared<parc::PreparedAppKitWindow>(
+              profile, BrowserWindowInterface::TYPE_NORMAL, binding);
+          created = CreateBrowserWindow(std::move(params));
+        }
         if (created) {
-          contents = created->GetWebContents();
+          const auto created_weak = created->GetWeakPtr();
+          // A window's first Browser is shown before its first tab, as it
+          // was under CEF.
+          created->GetWindow()->Show();
+          if (created_weak) {
+            contents = chrome::AddAndReturnTabAt(
+                created, GURL(url.absoluteString.UTF8String),
+                TabStripModel::kNoTab, true);
+          }
+          if (!created_weak) {
+            contents = nullptr;
+          }
         }
       }
       if (!contents) {
         completion(nil, parc::Error(@"Native browser creation was refused."));
         return;
       }
-      auto cef = ChromeBrowserHostImpl::GetBrowserForContents(contents);
-      if (!cef || !cef->browser() || !parc::GetNativeRoute(profile)) {
+      auto* page_binding = parc::NativePageBinding::FromWebContents(contents);
+      if (!page_binding || !page_binding->browser() ||
+          !parc::GetNativeRoute(profile)) {
         completion(
             nil,
             parc::Error(@"The real tab has not established native ownership."));
         return;
       }
-      auto* platform = static_cast<parc::NativeChromePlatformDelegate*>(
-          cef->platform_delegate());
       PCNativePage* page =
-          parc::GetOrCreateNativePage(*contents, *platform, path);
+          parc::GetOrCreateNativePage(*contents, *page_binding, path);
       // Page attachment remains an exact owner operation. No URL
       // reconstruction.
       if (![binding pageDidAttach:page container:destination_container]) {
@@ -2170,14 +1649,14 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
         return;
       }
       std::move(create_with_profile)
-          .Run(profile, parc::NativeContextForProfile(*profile), nil);
+          .Run(profile, parc::NativeLeaseForProfile(*profile), nil);
     } else if (PCNativeBrowserWindow* binding = weak; binding && [binding state].private_mode) {
       Profile* profile = parc::NativePrivateProfileForWindow(binding, path);
       std::move(create_with_profile).Run(profile,
-          profile ? parc::NativeContextForProfile(*profile) : nullptr,
+          profile ? parc::NativeLeaseForProfile(*profile) : nullptr,
           profile ? nil : parc::Error(@"The original private browsing context closed."));
     } else {
-      parc::WithProfile(path, std::move(create_with_profile));
+      parc::WithNativeProfile(path, std::move(create_with_profile));
     }
   });
   if (parc::ready) {
@@ -2256,14 +1735,12 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
           completion(nil, parc::Error(@"Background page creation was refused."));
           return;
         }
-        auto cef = ChromeBrowserHostImpl::GetBrowserForContents(contents);
-        if (!cef || cef->browser() != browser) {
+        auto* page_binding = parc::NativePageBinding::FromWebContents(contents);
+        if (!page_binding || page_binding->browser() != browser) {
           completion(nil, parc::Error(@"The background page has no native owner."));
           return;
         }
-        auto* platform = static_cast<parc::NativeChromePlatformDelegate*>(
-            cef->platform_delegate());
-        PCNativePage* page = parc::GetOrCreateNativePage(*contents, *platform, path);
+        PCNativePage* page = parc::GetOrCreateNativePage(*contents, *page_binding, path);
         if (![binding pageDidAttach:page container:destination]) {
           [page requestClose:^(PCNativePageCloseResult) {}];
           completion(nil, parc::Error(@"The background page could not attach."));
@@ -2345,8 +1822,9 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
           completion(nil, inserted_failure(@"The restored page's Browser closed."));
           return;
         }
-        auto cef = ChromeBrowserHostImpl::GetBrowserForContents(contents);
-        if (!cef || cef->browser() != browser || !parc::GetNativeRoute(*browser->GetProfile())) {
+        auto* page_binding = parc::NativePageBinding::FromWebContents(contents);
+        if (!page_binding || page_binding->browser() != browser ||
+            !parc::GetNativeRoute(*browser->GetProfile())) {
           // Retire this inserted child through TabStripModel, as an embedded
           // page's refused creation does, instead of leaving an orphan.
           const int index = tabs->GetIndexOfWebContents(contents);
@@ -2356,8 +1834,7 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
         }
         // It loads once attached and laid out at its size (AppKitBrowserHost
         // Attach), as Chrome's AddRestoredTab sizes before LoadIfNecessary.
-        auto* platform = static_cast<parc::NativeChromePlatformDelegate*>(cef->platform_delegate());
-        PCNativePage* page = parc::GetOrCreateNativePage(*contents, *platform, path);
+        PCNativePage* page = parc::GetOrCreateNativePage(*contents, *page_binding, path);
         if (![binding pageDidAttach:page container:destination]) {
           [page requestClose:^(PCNativePageCloseResult) {}];
           completion(nil, inserted_failure(@"The restored page could not attach."));
@@ -2428,7 +1905,7 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
                 ![binding state].close_in_progress && ![binding state].close_approved &&
                 parc::AppKitBindingForBrowser(weak_browser.get()) == binding &&
                 parc::AppKitBrowserAcceptsNewPages(*weak_browser) &&
-                parc::NativeContextForProfile(*weak_browser->GetProfile()) &&
+                parc::NativeLeaseForProfile(*weak_browser->GetProfile()) &&
                 [parc::ProfilePath(*weak_browser->GetProfile()) isEqualToString:path];
           };
           // Recheck native ownership after the app query too; it must not be
@@ -2443,8 +1920,9 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
           // before the view has an authoritative auxiliary owner.
           auto* contents = chrome::AddAndReturnTabAt(
               browser, GURL(url::kAboutBlankURL), TabStripModel::kNoTab, false);
-          auto cef = weak_browser && contents ? ChromeBrowserHostImpl::GetBrowserForContents(contents) : nullptr;
-          if (!weak_browser || !cef || cef->browser() != browser) {
+          auto* page_binding = weak_browser && contents
+              ? parc::NativePageBinding::FromWebContents(contents) : nullptr;
+          if (!weak_browser || !page_binding || page_binding->browser() != browser) {
             // No requested navigation has begun. Retire this actual empty
             // child through TabStripModel instead of leaving an orphan.
             if (weak_browser && contents) {
@@ -2456,21 +1934,25 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
             [request finishWithPage:nil error:parc::Error(@"Embedded renderer creation was refused.")];
             return;
           }
-          auto* platform = static_cast<parc::NativeChromePlatformDelegate*>(cef->platform_delegate());
-          PCNativePage* page = parc::GetOrCreateNativePage(*contents, *platform, path);
+          PCNativePage* page = parc::GetOrCreateNativePage(*contents, *page_binding, path);
           parc::MarkNativePageEmbedded(page);
+          const auto contents_weak = contents->GetWeakPtr();
           if (!valid() || ![binding pageDidAttach:page container:weak_container] || !valid()) {
             [page requestClose:^(PCNativePageCloseResult) {}];
             [request finishWithPage:nil error:parc::Error(@"The embedded renderer could not attach to its original window.")];
             return;
           }
-          auto frame = cef->GetMainFrame();
-          if (!frame) {
+          if (!contents_weak) {
             [page requestClose:^(PCNativePageCloseResult) {}];
             [request finishWithPage:nil error:parc::Error(@"The embedded renderer has no navigation owner.")];
             return;
           }
-          frame->LoadURL(url.absoluteString.UTF8String);
+          // The explicit load the shell's own address entry makes.
+          contents_weak->GetController().LoadURL(
+              GURL(url.absoluteString.UTF8String), content::Referrer(),
+              ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED |
+                                        ui::PAGE_TRANSITION_FROM_ADDRESS_BAR),
+              std::string());
           [request finishWithPage:page error:nil];
         }, binding, original_window, weak_container, original_path, original_url,
         [validateOwner copy], request);
@@ -2595,12 +2077,9 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
 - (content::WebContents*)pictureInPicturePage {
   CHECK(NSThread.isMainThread);
   auto* child = PictureInPictureWindowManager::GetInstance()->GetChildWebContents();
-  auto cef = child ? ChromeBrowserHostImpl::GetBrowserForContents(child)
-                   : nullptr;
-  return cef && cef->browser() &&
-                 parc::AppKitBindingForBrowser(cef->browser()) == self
-             ? child
-             : nullptr;
+  auto* owner = parc::NativeBrowserForContents(child);
+  return owner && parc::AppKitBindingForBrowser(owner) == self ? child
+                                                               : nullptr;
 }
 - (BOOL)canReturnPictureInPictureToOpener {
   auto* child = [self pictureInPicturePage];
@@ -2633,35 +2112,29 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
 - (void)pageWillDetach:(PCNativePage*)page {
   CHECK(NSThread.isMainThread);
   auto* contents = parc::ContentsForNativePage(page);
-  auto cef = contents ? ChromeBrowserHostImpl::GetBrowserForContents(contents)
-                      : nullptr;
-  if (!cef || !cef->browser() ||
-      parc::AppKitBindingForBrowser(cef->browser()) != self) {
+  auto* owner = parc::NativeBrowserForContents(contents);
+  if (!owner || parc::AppKitBindingForBrowser(owner) != self) {
     return;
   }
-  parc::DetachAppKitPage(*cef->browser(), page);
+  parc::DetachAppKitPage(*owner, page);
 }
 - (BOOL)pageWillPark:(PCNativePage*)page {
   CHECK(NSThread.isMainThread);
   auto* contents = parc::ContentsForNativePage(page);
-  auto cef = contents ? ChromeBrowserHostImpl::GetBrowserForContents(contents)
-                      : nullptr;
-  if (!cef || !cef->browser() ||
-      parc::AppKitBindingForBrowser(cef->browser()) != self) {
+  auto* owner = parc::NativeBrowserForContents(contents);
+  if (!owner || parc::AppKitBindingForBrowser(owner) != self) {
     return NO;
   }
-  return parc::ParkAppKitPage(*cef->browser(), page);
+  return parc::ParkAppKitPage(*owner, page);
 }
 - (void)reportNextFrameOfPage:(PCNativePage*)page {
   CHECK(NSThread.isMainThread);
   auto* contents = parc::ContentsForNativePage(page);
-  auto cef = contents ? ChromeBrowserHostImpl::GetBrowserForContents(contents)
-                      : nullptr;
-  if (!cef || !cef->browser() ||
-      parc::AppKitBindingForBrowser(cef->browser()) != self) {
+  auto* owner = parc::NativeBrowserForContents(contents);
+  if (!owner || parc::AppKitBindingForBrowser(owner) != self) {
     return;
   }
-  parc::ReportAppKitPageFrame(*cef->browser(), page);
+  parc::ReportAppKitPageFrame(*owner, page);
 }
 - (BOOL)pageDidAttach:(PCNativePage*)page container:(NSView*)container {
   CHECK(NSThread.isMainThread);
@@ -2669,12 +2142,11 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   if (!contents || (page.isEmbedded && !page.embeddedOwnerValid) || container.window != self.window) {
     return NO;
   }
-  auto cef = ChromeBrowserHostImpl::GetBrowserForContents(contents);
-  if (!cef || !cef->browser() ||
-      parc::AppKitBindingForBrowser(cef->browser()) != self) {
+  auto* owner = parc::NativeBrowserForContents(contents);
+  if (!owner || parc::AppKitBindingForBrowser(owner) != self) {
     return NO;
   }
-  return parc::AttachAppKitPage(*cef->browser(), page, container);
+  return parc::AttachAppKitPage(*owner, page, container);
 }
 - (void)requestClose:(void (^)(BOOL))completion {
   CHECK(NSThread.isMainThread);
@@ -2782,9 +2254,8 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   const auto contents_weak = contents->GetWeakPtr();
   const auto tab_weak = tab->GetWeakPtr();
   Profile* profile = source->GetProfile();
-  auto route = parc::GetNativeRoute(*profile);
-  auto cef = ChromeBrowserHostImpl::GetBrowserForContents(contents);
-  if (!route || !cef || cef->browser() != source) {
+  if (!parc::GetNativeRoute(*profile) ||
+      parc::NativeBrowserForContents(contents) != source) {
     finish(PCNativePageTransferRefused,
            @"The page has no current native route.");
     return;
@@ -2805,19 +2276,11 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     }
     // Construct only the real empty Browser. No substitute/blank WebContents
     // exists, and the exact supplied NSWindow is the one-use reservation.
-    CefBrowserCreateParams native_params;
-    native_params.request_context = cef->GetRequestContext();
-    native_params.client = route->client();
-    native_params.native_route = route;
-    native_params.native_reservation =
-        std::make_shared<parc::PreparedAppKitWindow>(
-            *profile, BrowserWindowInterface::TYPE_NORMAL, self);
     BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL,
                                      *profile, true);
     params.should_trigger_session_restore = false;
-    params.cef_params =
-        base::MakeRefCounted<ChromeBrowserHostImpl::DelegateCreateParams>(
-            native_params);
+    params.native_window = std::make_shared<parc::PreparedAppKitWindow>(
+        *profile, BrowserWindowInterface::TYPE_NORMAL, self);
     destination = CreateBrowserWindow(std::move(params));
     created_destination = destination != nullptr;
   }
@@ -2956,9 +2419,8 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     auto* actual = parc::ContentsForNativePage(pages[i]);
     auto* actual_tab = actual ? tabs::TabInterface::MaybeGetFromContents(actual) : nullptr;
     NSView* original = parc::AppKitPageContainer(*source, pages[i]);
-    auto host = actual ? ChromeBrowserHostImpl::GetBrowserForContents(actual) : nullptr;
-    if (!actual_tab || actual_tab->GetBrowserWindowInterface() != source || !host ||
-        host->browser() != source || (pages[i].isEmbedded && !pages[i].embeddedOwnerValid) || !original ||
+    if (!actual_tab || actual_tab->GetBrowserWindowInterface() != source ||
+        parc::NativeBrowserForContents(actual) != source || (pages[i].isEmbedded && !pages[i].embeddedOwnerValid) || !original ||
         original.window != source_binding.window || containers[i].window != self.window ||
         containers[i] == pages[i].nativeView || [containers[i] isDescendantOf:pages[i].nativeView] ||
         std::ranges::find(actual_pages, actual) != actual_pages.end()) {
@@ -2970,9 +2432,8 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   const auto contents_weak = contents->GetWeakPtr();
   const auto tab_weak = tab->GetWeakPtr();
   Profile* profile = source->GetProfile();
-  auto route = parc::GetNativeRoute(*profile);
-  auto cef = ChromeBrowserHostImpl::GetBrowserForContents(contents);
-  if (!route || !cef || cef->browser() != source) {
+  if (!parc::GetNativeRoute(*profile) ||
+      parc::NativeBrowserForContents(contents) != source) {
     finish(PCNativePageTransferRefused,
            @"The page has no current native route.");
     return;
@@ -2992,19 +2453,11 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     }
     // Construct only the real empty Browser. No substitute/blank WebContents
     // exists, and the exact supplied NSWindow is the one-use reservation.
-    CefBrowserCreateParams native_params;
-    native_params.request_context = cef->GetRequestContext();
-    native_params.client = route->client();
-    native_params.native_route = route;
-    native_params.native_reservation =
-        std::make_shared<parc::PreparedAppKitWindow>(
-            *profile, BrowserWindowInterface::TYPE_NORMAL, self);
     BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL,
                                      *profile, true);
     params.should_trigger_session_restore = false;
-    params.cef_params =
-        base::MakeRefCounted<ChromeBrowserHostImpl::DelegateCreateParams>(
-            native_params);
+    params.native_window = std::make_shared<parc::PreparedAppKitWindow>(
+        *profile, BrowserWindowInterface::TYPE_NORMAL, self);
     destination = CreateBrowserWindow(std::move(params));
   }
   if (!destination || !source_weak || !contents_weak || !tab_weak ||
@@ -3214,14 +2667,9 @@ Profile* DownloadPreferencesProfile(NSString* path,
       IsNativeProfileRemovalBlocked(base::FilePath(base::SysNSStringToUTF8(path)))) {
     return nullptr;
   }
-  auto found = Profiles().find(base::SysNSStringToUTF8(path));
-  if (found == Profiles().end() || !found->second.context ||
-      found->second.failure || !found->second.profile) {
-    return nullptr;
-  }
-  Profile* profile = found->second.profile.get();
-  if (profile->IsOffTheRecord() ||
-      ![ProfilePath(*profile) isEqualToString:path] ||
+  auto lease = RegisteredProfile(path);
+  Profile* profile = lease ? lease->profile() : nullptr;
+  if (!profile || ![ProfilePath(*profile) isEqualToString:path] ||
       !GetNativeRoute(*profile) || !NativeDownloads::From(*profile) ||
       (expected && [expected profileIdentity] != profile)) {
     return nullptr;
@@ -3249,8 +2697,8 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   CHECK(NSThread.isMainThread);
   parc::WithNativeProfile(path, base::BindOnce(
       [](void (^completion)(NSError*), Profile* profile,
-         CefRefPtr<CefRequestContext> context, NSError* error) {
-        if (error || !profile || !context || profile->IsOffTheRecord() ||
+         parc::NativeProfileLeasePtr lease, NSError* error) {
+        if (error || !profile || !lease || profile->IsOffTheRecord() ||
             profile->ShutdownStarted()) {
           completion(error ?: parc::Error(@"The original profile is unavailable."));
           return;
@@ -3320,8 +2768,8 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   }
   auto* tab = tabs::TabInterface::MaybeGetFromContents(contents);
   auto* owner = tab ? tab->GetBrowserWindowInterface() : nullptr;
-  auto cef = ChromeBrowserHostImpl::GetBrowserForContents(contents);
-  if (!owner || owner->IsDeleteScheduled() || !cef || cef->browser() != owner ||
+  if (!owner || owner->IsDeleteScheduled() ||
+      parc::NativeBrowserForContents(contents) != owner ||
       owner->GetTabStripModel()->GetIndexOfTab(tab) == TabStripModel::kNoTab) {
     return nil;
   }
@@ -3367,12 +2815,12 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   CHECK(NSThread.isMainThread);
   parc::WithNativeProfile(profilePath, base::BindOnce(
       [](NSString* path, void (^reply)(PCNativeDownloadPreferences*, NSError*),
-         Profile* profile, CefRefPtr<CefRequestContext> context, NSError* error) {
+         Profile* profile, parc::NativeProfileLeasePtr lease, NSError* error) {
         // Recheck the registered original identity after asynchronous acquisition
         // and again at publication; profile removal cannot publish stale settings.
         base::WeakPtr<Profile> original = profile ? profile->GetWeakPtr() : nullptr;
         NSError* failure = error;
-        if (!failure && (!context || !original ||
+        if (!failure && (!lease || !original ||
             parc::DownloadPreferencesProfile(path, nil) != original.get())) {
           failure = parc::Error(@"Download settings are unavailable for this profile.");
         }
@@ -3416,11 +2864,8 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
     }
     return nil;
   }
-  // Keep the real request context alive across synchronous pref observers.
-  CefRefPtr<CefRequestContext> context =
-      parc::Profiles()
-          .at(base::SysNSStringToUTF8(preferences.profilePath))
-          .context;
+  // Keep the Profile leased across synchronous pref observers.
+  auto lease = parc::NativeLeaseForProfile(*profile);
   auto weak_profile = profile->GetWeakPtr();
   auto* values = DownloadPrefs::FromBrowserContext(profile);
   const bool accepted = parc::SetNativeDownloadDirectory(*profile, *values,
@@ -3453,10 +2898,7 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
     }
     return nil;
   }
-  CefRefPtr<CefRequestContext> context =
-      parc::Profiles()
-          .at(base::SysNSStringToUTF8(preferences.profilePath))
-          .context;
+  auto lease = parc::NativeLeaseForProfile(*profile);
   auto weak_profile = profile->GetWeakPtr();
   const bool accepted = parc::SetNativeDownloadPrompt(*profile, prompt);
   if (!accepted || !weak_profile ||
@@ -3476,10 +2918,10 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   void (^reply)(NSArray<NSString*>*, NSError*) = [completion copy];
   parc::WithNativeProfile(profilePath, base::BindOnce(
       [](void (^reply)(NSArray<NSString*>*, NSError*), Profile* profile,
-         CefRefPtr<CefRequestContext> context, NSError* error) {
+         parc::NativeProfileLeasePtr lease, NSError* error) {
         auto* service = profile && !profile->IsOffTheRecord()
             ? parc::NativeDownloads::From(*profile) : nullptr;
-        if (error || !context || !service) {
+        if (error || !lease || !service) {
           NSError* failure = error ?: parc::Error(@"Downloads are unavailable for this Profile.");
           dispatch_async(dispatch_get_main_queue(), ^{ reply(nil, failure); });
           return;
@@ -3515,11 +2957,8 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
       parc::IsNativeProfileRemovalBlocked(base::FilePath(base::SysNSStringToUTF8(profilePath)))) {
     return NO;
   }
-  auto found = parc::Profiles().find(base::SysNSStringToUTF8(profilePath));
-  if (found == parc::Profiles().end() || !found->second.profile) {
-    return NO;
-  }
-  auto* service = parc::NativeDownloads::From(*found->second.profile);
+  auto lease = parc::RegisteredProfile(profilePath);
+  auto* service = lease ? parc::NativeDownloads::From(*lease->profile()) : nullptr;
   if (!service) {
     return NO;
   }
@@ -3544,8 +2983,7 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
     default:
       return NO;
   }
-  auto context = found->second.context;
-  return context && service->Perform(base::SysNSStringToUTF8(identifier), command, base::SysNSStringToUTF8(itemIdentity));
+  return service->Perform(base::SysNSStringToUTF8(identifier), command, base::SysNSStringToUTF8(itemIdentity));
 }
 + (NSURL*)downloadFileURLForIdentifier:(NSString*)identifier
                             profilePath:(NSString*)profilePath
@@ -3553,9 +2991,8 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   CHECK(NSThread.isMainThread);
   if (!parc::ready || parc::quitting || parc::preparing_global_close || itemIdentity.length == 0 ||
       parc::IsNativeProfileRemovalBlocked(base::FilePath(base::SysNSStringToUTF8(profilePath)))) return nil;
-  auto found = parc::Profiles().find(base::SysNSStringToUTF8(profilePath));
-  if (found == parc::Profiles().end() || !found->second.profile || !found->second.context) return nil;
-  auto* service = parc::NativeDownloads::From(*found->second.profile);
+  auto lease = parc::RegisteredProfile(profilePath);
+  auto* service = lease ? parc::NativeDownloads::From(*lease->profile()) : nullptr;
   if (!service) return nil;
   auto path = service->FilePath(base::SysNSStringToUTF8(identifier), base::SysNSStringToUTF8(itemIdentity));
   if (!path || ![NSFileManager.defaultManager fileExistsAtPath:base::SysUTF8ToNSString(path->value())]) return nil;
@@ -3566,10 +3003,9 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   CHECK(NSThread.isMainThread);
   if (!parc::ready || parc::quitting || parc::preparing_global_close ||
       parc::IsNativeProfileRemovalBlocked(base::FilePath(base::SysNSStringToUTF8(profilePath)))) return nil;
-  auto found = parc::Profiles().find(base::SysNSStringToUTF8(profilePath));
-  if (found == parc::Profiles().end() || !found->second.profile ||
-      !found->second.context) return nil;
-  auto* profile = found->second.profile.get();
+  auto lease = parc::RegisteredProfile(profilePath);
+  auto* profile = lease ? lease->profile() : nullptr;
+  if (!profile) return nil;
   auto* service = parc::NativeDownloads::From(*profile);
   if (!service) return nil;
   auto value = service->Review(base::SysNSStringToUTF8(identifier));
@@ -3585,12 +3021,10 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   if (!parc::ready || parc::quitting || parc::preparing_global_close || !review ||
       parc::IsNativeProfileRemovalBlocked(base::FilePath(base::SysNSStringToUTF8(review.profilePath))))
     return NO;
-  auto found = parc::Profiles().find(base::SysNSStringToUTF8(review.profilePath));
-  if (found == parc::Profiles().end() || !found->second.profile ||
-      found->second.profile.get() != [review profileIdentity]) return NO;
-  auto context = found->second.context;
-  auto* service = parc::NativeDownloads::From(*found->second.profile);
-  if (!context || !service) return NO;
+  auto lease = parc::RegisteredProfile(review.profilePath);
+  if (!lease || lease->profile() != [review profileIdentity]) return NO;
+  auto* service = parc::NativeDownloads::From(*lease->profile());
+  if (!service) return NO;
   parc::NativeDownloadReviewAction command;
   switch (action) {
     case PCNativeDownloadReviewActionKeep:
@@ -3621,12 +3055,10 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   CHECK(NSThread.isMainThread);
   if (!parc::ready || parc::quitting || parc::preparing_global_close || !review ||
       parc::IsNativeProfileRemovalBlocked(base::FilePath(base::SysNSStringToUTF8(review.profilePath)))) return nil;
-  auto found = parc::Profiles().find(base::SysNSStringToUTF8(review.profilePath));
-  if (found == parc::Profiles().end() || !found->second.profile ||
-      found->second.profile.get() != [review profileIdentity]) return nil;
-  auto context = found->second.context;
-  auto* service = parc::NativeDownloads::From(*found->second.profile);
-  if (!context || !service) return nil;
+  auto lease = parc::RegisteredProfile(review.profilePath);
+  if (!lease || lease->profile() != [review profileIdentity]) return nil;
+  auto* service = parc::NativeDownloads::From(*lease->profile());
+  if (!service) return nil;
   auto url = service->ReviewLink([review values], index);
   return url ? [NSURL URLWithString:base::SysUTF8ToNSString(*url)] : nil;
 }
@@ -3654,7 +3086,7 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
     }
     return;
   }
-  parc::quitting = true;
+  parc::SetQuitting(true);
   parc::preparing_global_close = true;
   // Pending pre-initialization closures observe the closing gate and settle
   // their exact caller; they never acquire a Browser after global approval.
@@ -3676,9 +3108,10 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
 + (void)flushCookieStores {
   CHECK(NSThread.isMainThread);
   if (!parc::ready || parc::quitting) return;
-  for (auto& entry : parc::Profiles()) {
-    Profile* profile = entry.second.profile.get();
-    if (!profile || profile->ShutdownStarted()) continue;
+  for (Profile* profile :
+       g_browser_process->profile_manager()->GetLoadedProfiles()) {
+    auto lease = parc::NativeLeaseForProfile(*profile);
+    if (!lease || lease->profile() != profile) continue;
     if (auto* cookies = profile->GetDefaultStoragePartition()
                             ->GetCookieManagerForBrowserProcess()) {
       cookies->FlushCookieStore(base::DoNothing());
@@ -3915,54 +3348,6 @@ Profile* NativePrivateProfileForWindow(PCNativeBrowserWindow* binding, NSString*
       [ProfilePath(*profile) isEqual:path] && !IsNativeProfileRemovalBlocked(profile->GetOriginalProfile()->GetPath())
       ? profile : nullptr;
 }
-CefRefPtr<CefRequestContext> NativeContextForProfile(Profile& profile) {
-  if (profile.IsOffTheRecord()) {
-    if (quitting || preparing_global_close || profile.ShutdownStarted() ||
-        IsNativeProfileRemovalBlocked(profile.GetOriginalProfile()->GetPath())) return nullptr;
-    auto* context = ChromeBrowserContext::FromProfile(&profile);
-    return context ? CefRequestContextImpl::GetOrCreateForBrowserContext(context, nullptr) : nullptr;
-  }
-  auto found = Profiles().find(profile.GetPath().value());
-  return !quitting && !preparing_global_close &&
-                 !IsNativeProfileRemovalBlocked(profile.GetOriginalProfile()->GetPath()) &&
-                 found != Profiles().end() &&
-                 found->second.profile.get() == &profile
-             ? found->second.context
-             : nullptr;
-}
-void WithNativeProfile(
-    NSString* path,
-    base::OnceCallback<void(Profile*, CefRefPtr<CefRequestContext>, NSError*)>
-        callback) {
-  CHECK(NSThread.isMainThread);
-  NSString* requested = [path copy];
-  auto run = base::BindOnce(
-      [](NSString* path, decltype(callback) callback) {
-        if (quitting || preparing_global_close || !path.isAbsolutePath ||
-            ![path isEqualToString:path.stringByStandardizingPath]) {
-          std::move(callback).Run(
-              nullptr, nullptr,
-              Error(@"The requested profile is unavailable."));
-          return;
-        }
-        const base::FilePath root(
-            CefString(&CefContext::Get()->settings().root_cache_path)
-                .ToString());
-        if (base::FilePath(base::SysNSStringToUTF8(path)).DirName() != root) {
-          std::move(callback).Run(nullptr, nullptr,
-                                  Error(@"The requested profile is outside the "
-                                        @"engine profile root."));
-          return;
-        }
-        WithProfile(path, std::move(callback));
-      },
-      requested, std::move(callback));
-  if (ready)
-    std::move(run).Run();
-  else
-    ReadyQueue().push_back(std::move(run));
-}
-
 void AbandonEmptyNativeRoutingWindow(PCNativeBrowserWindow* binding) {
   if (binding && [binding state].browsers.empty()) NotifyEmptyBinding(binding, true);
 }
@@ -3998,7 +3383,7 @@ void WithNativeRoutingBrowser(PCNativeBrowserWindow* binding, NSString* path,
   WithNativeProfile(path, base::BindOnce(
       [](PCNativeBrowserWindow* binding,
          base::OnceCallback<void(BrowserWindowInterface*, bool, NSError*)> callback,
-         Profile* profile, CefRefPtr<CefRequestContext> context, NSError* error) {
+         Profile* profile, parc::NativeProfileLeasePtr lease, NSError* error) {
         auto finish = [&](BrowserWindowInterface* browser, bool created, NSError* failure) {
           auto weak = browser ? browser->GetWeakPtr() : base::WeakPtr<BrowserWindowInterface>();
           CHECK(pending_creations);
@@ -4008,7 +3393,7 @@ void WithNativeRoutingBrowser(PCNativeBrowserWindow* binding, NSString* path,
           NotifyNativeEngineOwnershipChanged();
           std::move(callback).Run(weak.get(), created, failure);
         };
-        if (!profile || !context || !NativeContextForProfile(*profile) ||
+        if (!profile || !lease || lease->profile() != profile ||
             quitting || preparing_global_close || !binding.window || !binding.client ||
             [binding state].close_in_progress || [binding state].close_approved) {
           finish(nullptr, false, error ?: Error(@"The destination Profile or window is unavailable."));
@@ -4019,22 +3404,16 @@ void WithNativeRoutingBrowser(PCNativeBrowserWindow* binding, NSString* path,
         auto* browser = found == state.browsers.end() ? nullptr : found->second.get();
         bool created = false;
         if (!browser) {
-          auto route = GetNativeRoute(*profile);
-          if (!route || profile->IsOffTheRecord() ||
+          if (!GetNativeRoute(*profile) || profile->IsOffTheRecord() ||
               GetBrowserWindowCreationStatusForProfile(*profile) !=
                   BrowserWindowInterface::CreationStatus::kOk) {
             finish(nullptr, false, Error(@"The destination Browser cannot be created."));
             return;
           }
-          CefBrowserCreateParams native_params;
-          native_params.request_context = context;
-          native_params.client = route->client();
-          native_params.native_route = route;
-          native_params.native_reservation = std::make_shared<PreparedAppKitWindow>(
-              *profile, BrowserWindowInterface::TYPE_NORMAL, binding);
           BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL, *profile, true);
           params.should_trigger_session_restore = false;
-          params.cef_params = base::MakeRefCounted<ChromeBrowserHostImpl::DelegateCreateParams>(native_params);
+          params.native_window = std::make_shared<PreparedAppKitWindow>(
+              *profile, BrowserWindowInterface::TYPE_NORMAL, binding);
           browser = CreateBrowserWindow(std::move(params));
           created = browser != nullptr;
         }
@@ -4089,22 +3468,8 @@ NSError* CheckNativeProfileRemovalOwners(const base::FilePath& path,
   }
   if (!has_fallback)
     return Error(@"Open another Profile before removing this one.");
-  auto found = Profiles().find(path.value());
-  if (found != Profiles().end()) {
-    auto& record = found->second;
-    if (!record.waiters.empty() || (record.context && !record.profile))
-      return Error(@"This Profile is still being initialized.");
-    if (record.context) {
-      auto* impl = static_cast<CefRequestContextImpl*>(record.context.get());
-      if (!record.context->HasOneRef() ||
-          !impl->GetBrowserContext()->HasOnlyCefRequestContext(impl))
-        return Error(@"This Profile still has an active page or native operation.");
-    }
-    if (record.profile.get() != profile)
-      return Error(@"The native Profile identity changed.");
-  } else if (CefBrowserContext::FromCachePath(path)) {
-    return Error(@"Another native context still owns this Profile.");
-  }
+  if (NSError* registry = CheckNativeProfileRegistryRemoval(path, profile))
+    return registry;
   if (profile) {
     auto* browsers = ProfileBrowserCollection::GetForProfile(profile);
     if (profile->IsOffTheRecord() || !profile->GetAllOffTheRecordProfiles().empty() ||
@@ -4126,18 +3491,13 @@ NSError* CheckNativeProfileRemovalOwners(const base::FilePath& path,
 
 void ReleaseNativeProfileForRemoval(const base::FilePath& path) {
   CHECK(NSThread.isMainThread);
-  auto found = Profiles().find(path.value());
-  if (found == Profiles().end())
-    return;
-  CHECK(found->second.waiters.empty());
-  if (auto* profile = found->second.profile.get()) {
+  if (auto* profile = g_browser_process->profile_manager()->GetProfileByPath(path)) {
+    auto weak = profile->GetWeakPtr();
     CancelNativeDownloadFileDialogs(*profile);
-    if (auto* downloads = NativeDownloads::From(*profile))
+    if (auto* downloads = weak ? NativeDownloads::From(*weak) : nullptr)
       downloads->Shutdown();
   }
-  // Remove the public registry before the last CEF ref starts shutdown.
-  auto context = std::move(found->second.context);
-  Profiles().erase(found);
-  context = nullptr;
+  // Last: the registry's keep-alive release can start Profile shutdown.
+  ReleaseNativeProfileRegistry(path);
 }
 }  // namespace parc

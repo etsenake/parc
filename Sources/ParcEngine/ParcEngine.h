@@ -1,8 +1,7 @@
 #import <Cocoa/Cocoa.h>
 
-// Pinned public CEF protocol, used by the real Swift NSApplication subclass.
 #import "VideoPiPWindow.h"
-#import "cef_application_mac.h"
+#import "native_application_protocols.h"
 #import "native_appkit_bridge.h"
 #import "page_host.h"
 #import "content_drop_router.h"
@@ -97,7 +96,7 @@ NS_SWIFT_UI_ACTOR
 // the main thread.
 + (int)run;
 // Call from the NSApplication terminate: override, which must return without
-// entering NSTerminateLater. YES follows consent, actual drain and CefShutdown;
+// entering NSTerminateLater. YES follows consent, actual drain and engine shutdown;
 // NO leaves the native loop and same browser pages alive. Main-thread callback.
 + (void)requestTermination:(void (^)(BOOL allow))completion
     NS_SWIFT_NAME(requestTermination(completion:));

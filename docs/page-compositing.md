@@ -59,7 +59,7 @@ Page destruction detaches first. Deferred release cannot destroy the pool in
 the middle of its own callback; if the task cannot be posted, the fallback
 retains the reference instead of using freed state. Application shutdown calls
 `PrepareNativeApplicationShutdown` to detach and destroy pools before
-`CefShutdown`, while the required native infrastructure is still available.
+`engine shutdown`, while the required native infrastructure is still available.
 Shutdown must not depend on a future task running.
 
 ## Remaining boundaries

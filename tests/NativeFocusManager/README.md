@@ -21,3 +21,4 @@ The suite exercises actual native focus, automatic KVO ordering, external focus 
 
 The shell supplies shortcut precedence, accessibility selection, hidden/modal eligibility and pane order through its real page/content identities. One responder should have one active key per manager; aliases have no specified callback-selection order.
 
+Check the production implementation with the pinned Chromium Clang, generated Parc browser Objective-C++ settings, ARC and warnings treated as errors using `python3 -B tests/NativeFocusManager/check-chromium.py /absolute/path/to/chromium/src`. It writes diagnostic records under ignored `build/tests/`; it compiles without linking the engine.

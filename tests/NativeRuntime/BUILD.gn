@@ -1,4 +1,4 @@
-# Map to //cef/tests/parc_native_runtime. No Chrome test runner or fake process.
+# Map to //parc/tests/parc_native_runtime. No Chrome test runner or fake process.
 assert(is_mac)
 source_set("driver") {
   testonly = true
@@ -9,8 +9,8 @@ source_set("driver") {
   frameworks = [ "AppKit.framework", "QuartzCore.framework" ]
   deps = [
     "//base",
-    "//cef:libcef_static",
-    "//cef/libcef/browser/parc_native:native_video_pip_api",
+    "//parc:browser",
+    "//parc/native:native_video_pip_api",
     "//chrome/browser/extensions",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/tab_list",

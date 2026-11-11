@@ -17,6 +17,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/permissions/system/system_permission_settings.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/permission_bubble/permission_prompt.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "components/custom_handlers/register_protocol_handler_permission_request.h"
 #include "components/permissions/embedded_permission_prompt_flow_model.h"
@@ -32,6 +33,7 @@
 #include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/web_contents_user_data.h"
 #include "native_auxiliary_page.h"
 #import "site_permission_presenter.h"
 #include "ui/base/base_window.h"
@@ -949,5 +951,77 @@ std::unique_ptr<permissions::PermissionPrompt> CreateNativeSitePermissionPrompt(
     *on_page_detach = prompt->DetachCallback();
   }
   return prompt;
+}
+
+namespace {
+// The page's attachment gate and the cancellation of its one live prompt.
+class NativeSitePermissions final
+    : public content::WebContentsUserData<NativeSitePermissions> {
+ public:
+  std::unique_ptr<permissions::PermissionPrompt> CreatePrompt(
+      Delegate* delegate) {
+    auto prompt =
+        CreateNativeSitePermissionPrompt(GetWebContents(), delegate, &detach_);
+    if (!attached_) {
+      auto detach = std::move(detach_);
+      detach.Run();
+    }
+    return prompt;
+  }
+
+  void SetAttached(bool attached) {
+    attached_ = attached;
+    if (!attached) {
+      // The prompt's cancellation may reenter and create the next prompt.
+      auto detach = std::move(detach_);
+      if (detach) {
+        detach.Run();
+      }
+    }
+  }
+
+ private:
+  friend WebContentsUserData;
+  explicit NativeSitePermissions(content::WebContents* contents)
+      : content::WebContentsUserData<NativeSitePermissions>(*contents) {}
+
+  bool attached_ = false;
+  base::RepeatingClosure detach_;
+  WEB_CONTENTS_USER_DATA_KEY_DECL();
+};
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(NativeSitePermissions);
+
+std::unique_ptr<permissions::PermissionPrompt> CreatePrompt(
+    content::WebContents* contents,
+    Delegate* delegate) {
+  // Chrome's own prompts need a BrowserView, which no Parc page has.
+  if (!contents) {
+    return nullptr;
+  }
+  if (HasNativeAuxiliaryRoute(*contents)) {
+    return CreateNativeSitePermissionPrompt(*contents, delegate);
+  }
+  auto* page = NativeSitePermissions::FromWebContents(contents);
+  return page ? page->CreatePrompt(delegate) : nullptr;
+}
+}  // namespace
+
+void RegisterNativeSitePermissionPrompts() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  SetCreatePermissionPromptFunction(&CreatePrompt);
+}
+
+void InstallNativeSitePermissions(content::WebContents& contents) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  NativeSitePermissions::CreateForWebContents(&contents);
+}
+
+void SetNativeSitePermissionsAttached(content::WebContents& contents,
+                                      bool attached) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (auto* page = NativeSitePermissions::FromWebContents(&contents)) {
+    page->SetAttached(attached);
+  }
 }
 }  // namespace parc

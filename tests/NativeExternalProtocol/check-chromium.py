@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Syntax-check the integrated native external-protocol consent route with actual target flags.
 
+Uses the canonical engine lock and overlay.
 Requires the reviewed overlay's complete applied file/hash cohort and generated
 object membership. No compatibility mode, generation, linking, test execution or
 checkout writes. Logs and compiler caches stay in the repository's ignored build.
@@ -17,15 +18,15 @@ import sys
 
 NATIVE = (
     ("Engine/ParcNative/external_protocol_presenter.mm",
-     "obj/cef/libcef/browser/parc_native/native_components.ninja"),
+     "obj/parc/native/native_components.ninja"),
     ("Engine/ParcNative/external_protocol.mm",
-     "obj/cef/libcef/browser/parc_native/native_external_protocol.ninja"),
-    ("Engine/ParcNative/native_chrome_platform_delegate.mm",
-     "obj/cef/libcef_static.ninja"),
+     "obj/parc/native/native_external_protocol.ninja"),
+    ("Engine/ParcNative/native_page_binding.mm",
+     "obj/parc/browser.ninja"),
     ("Engine/ParcNative/native_appkit_application.mm",
-     "obj/cef/libcef_static.ninja"),
+     "obj/parc/browser.ninja"),
     ("tests/NativeExternalProtocol/dialog_unittest.mm",
-     "obj/cef/tests/parc_native_external_protocol/unit_tests.ninja"),
+     "obj/parc/tests/parc_native_external_protocol/unit_tests.ninja"),
 )
 UPSTREAM = (
     ("chrome/browser/ui/views/external_protocol_dialog.cc",
@@ -82,25 +83,29 @@ def contains_object(flags_file, rule, target):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source_tree", type=Path)
-    parser.add_argument("--output-name", default="Release_GN_arm64")
+    parser.add_argument("--output-name", default=None)
     args = parser.parse_args()
-    if (Path(args.output_name).name != args.output_name or
+    if args.output_name is not None and (Path(args.output_name).name != args.output_name or
             args.output_name in (".", "..", "")):
         parser.error("--output-name must name one existing output directory")
 
     repo = Path(__file__).resolve().parents[2]
     tree = args.source_tree.resolve(strict=True)
+    lock_path = repo / "Engine/source-lock.json"
+    lock = json.loads(lock_path.read_text())
+    if lock.get("schema_version") != 2:
+        parser.error("unsupported source lock schema")
+    if args.output_name is None:
+        args.output_name = lock["build"]["configuration"]
     build = (tree / "out" / args.output_name).resolve(strict=True)
     if not build.is_relative_to(tree / "out"):
         parser.error("the build output must remain inside source_tree/out")
-    manifest_path = repo / "Engine/ParcHost/overlay.json"
+    manifest_path = repo / ('Engine/ParcHost/overlay.json')
     manifest = json.loads(manifest_path.read_text())
-    lock_path = repo / "Engine/source-lock.json"
-    lock = json.loads(lock_path.read_text())
     if manifest.get("source_root") != "repository":
         parser.error("expected the reviewed repository-relative overlay")
-    if (manifest["upstream"]["cef"] != lock["cef"]["commit"] or
-            manifest["upstream"]["chromium"] != lock["chromium"]["commit"]):
+    upstream = ['chromium']
+    if manifest["upstream"] != {key: lock[key]["commit"] for key in upstream}:
         parser.error("overlay upstream identities do not match the source lock")
 
     snapshots = {}
@@ -150,6 +155,7 @@ def main():
 
     targets = []
     for source, owner in NATIVE:
+        source = source
         if source not in sources:
             raise ValueError(f"reviewed overlay does not map {source}")
         flags_file = build / owner
@@ -207,7 +213,7 @@ def main():
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         (logs / (target.replace("/", "_") + ".log")).write_text(result.stdout)
         results.append({"source": target, "source_sha256": outputs[target],
-                        "mode": "integrated-actual-target", "rule": language,
+                        "mode": "integrated-actual-target", "direct": True, "rule": language,
                         "overlay_sha256": snapshots[manifest_path],
                         "source_lock_sha256": snapshots[lock_path],
                         "args_gn_sha256": snapshots[build / "args.gn"],

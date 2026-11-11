@@ -10,7 +10,7 @@ Current Chromium adaptations use the real `InputEventActivationProtector` utilit
 
 `dialog_unittest.mm` contains 17 Chromium-connected cases: 14 use real Browser/Profile/Tab/WebContents, modal manager, preferences and the upstream launch test delegate; three cover the genuine floating-widget occlusion tracker and activation protector. They cover cancellation, remembered policy, stale documents, navigation/detach and queued acceptance across reattachment, replacement, competing release-time reservations, preference-observer navigation and callback-driven page destruction. Only the OS effect is intercepted in controller tests. The tests begin at the checked platform-dialog boundary; they do not establish the earlier default-application lookup/network path. The protection utility cases run without the test bypass; lifecycle tests use Chromium's explicit testing switch.
 
-The reusable `check-chromium.py SOURCE_TREE` requires the full reviewed overlay applied with exact hashes and each unit's actual generated object membership. It refuses stale/unregistered cohorts; it does not borrow another target's flags or create headers. Executing the controller tests requires a valid CEF process/context.
+The reusable `check-chromium.py SOURCE_TREE` requires the full reviewed overlay applied with exact hashes and each unit's actual generated object membership. It refuses stale/unregistered cohorts; it does not borrow another target's flags or create headers. Executing the controller tests requires a valid Chromium process/context.
 
 ## Ownership boundary
 
@@ -20,6 +20,7 @@ refused. The browser does not substitute the selected page or another window
 as authority. The continuation rechecks that same document before remembering a
 decision and before launching the external application.
 
-The shared service is registered through `libcef_static`; the controller test
-source has its own target. The tests intercept the OS launch effect and keep
+The shared service links into the Parc browser target, and Parc's content
+browser client leaves Chrome's external-protocol policy route in place; the
+controller test source has its own target. The tests intercept the OS launch effect and keep
 Chromium's actual remembered-decision policy.

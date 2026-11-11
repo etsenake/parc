@@ -208,7 +208,7 @@ def main():
     print(f"Disposable profile: {root}", flush=True)
     print(f"Logs: {log_dir}", flush=True)
     env = {key: value for key, value in os.environ.items()
-           if not key.startswith("DYLD_") and key not in ("CEF_ROOT", "CHROME_LOG_FILE")}
+           if not key.startswith("DYLD_") and key != "CHROME_LOG_FILE"}
     # Official Chromium switch: selects its FakeKeychainV2. Never supplied to a
     # normal user profile; the executable independently checks our fresh marker.
     env["MallocNanoZone"] = "0"
