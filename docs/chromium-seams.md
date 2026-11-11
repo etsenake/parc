@@ -313,7 +313,10 @@ notifications stay in Chromium's file, in their current order. What moves out
 is Parc's own machinery. The two main-thread task runners, the one that
 follows a moved element's frame and the one that keeps a cast's pipeline
 running in a frozen page, live in a Parc header that WebMediaPlayerImpl and
-WebMediaPlayerMS include.
+WebMediaPlayerMS include. The rules the player applies to values it holds are
+pure functions in a Parc file: which codecs the FairPlay Renderer plays and
+accepts through `changeType()`, and the type AVFoundation is told for a file
+played to an AirPlay target.
 
 ## Decisions
 
