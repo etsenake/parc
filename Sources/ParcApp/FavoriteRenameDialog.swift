@@ -69,7 +69,7 @@ final class FavoriteRenameDialog: NSObject, NSTextFieldDelegate {
             updateValidity()
             // The draft stays for an explicit retry; the reason shows over the dialog.
             if sheetWindow.isVisible, sheetWindow.attachedSheet == nil {
-                sheetWindow.presentError(error, modalFor: sheetWindow, delegate: nil, didPresent: nil, contextInfo: nil)
+                PArcDialog.inform(in: sheetWindow, .init(error: error))
             }
         }
     }

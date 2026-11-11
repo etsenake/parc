@@ -90,7 +90,7 @@ final class ApplicationQuitWarning: NSObject {
             // It remains disabled if webpage close consent later rejects Quit.
             if disableWarning { try preferences.setEnabled(false) }
             finish(approved: true)
-        } catch { window.presentError(error, modalFor: window, delegate: nil, didPresent: nil, contextInfo: nil) }
+        } catch { PArcDialog.inform(in: window, .init(error: error), queued: true) }
     }
     @objc private func cancelAction(_ sender: Any?) { cancel() }
     func cancel() { finish(approved: false) }

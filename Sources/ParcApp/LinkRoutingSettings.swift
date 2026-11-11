@@ -524,11 +524,11 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
     }
     private func confirmReset() {
         guard let window else { return }
-        let alert = NSAlert(); alert.messageText = "Reset all routes?"
-        alert.informativeText = "Your Air Traffic Control routes will be removed. Tabs, Spaces and profiles stay unchanged."
-        alert.addButton(withTitle: "Reset Routes"); alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { [weak self, weak window] response in
-            guard response == .alertFirstButtonReturn, let self, self.routing.reset(basedOn: self.originalRules) else { return }
+        let dialog = PArcDialog(.init(title: "Reset all routes?",
+            message: "Your Air Traffic Control routes will be removed. Tabs, Spaces and profiles stay unchanged.",
+            confirm: "Reset Routes", cancel: "Cancel"))
+        _ = dialog.begin(for: window, queued: true) { [weak self, weak window] response in
+            guard response == .confirm, let self, self.routing.reset(basedOn: self.originalRules) else { return }
             self.originalRules = self.routing.state.rules; self.workingRules = self.originalRules
             self.discardButton.isHidden = true; self.render()
             DispatchQueue.main.async { [weak self, weak window] in

@@ -1189,9 +1189,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func showSearchError(_ message: String) {
         guard let window, window.attachedSheet == nil else { return }
-        let alert = NSAlert(); alert.messageText = "Couldn’t open search"
-        alert.informativeText = message; alert.addButton(withTitle: "OK")
-        alert.beginSheetModal(for: window)
+        PArcDialog.inform(in: window, .init(title: "Couldn’t open search", message: message))
     }
 
     private func creationProvenance(activeTabID: UUID?) -> TabCreationProvenance {
@@ -1466,7 +1464,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         manager.onReorder = { [weak self] id, before, order in
             guard let self, valid(), self.managementSpace(id) != nil else { return false }
             do { return try self.store.reorderSpace(id, before: before, expectedOrder: order) }
-            catch { self.window?.presentError(error); return false }
+            catch { showError(error); return false }
         }
         manager.makeMenu = { [weak self] id, _ in
             guard let self, valid() else { return nil }
@@ -1484,7 +1482,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let self, targetValid(), let space = self.managementSpace(id),
                       let folder = self.store.state.folders.first(where: { $0.id == folderID && $0.spaceID == id }) else { return }
                 do { _ = try self.store.setFolderExpanded(!folder.isExpanded, expected: folder, profileID: space.profileID) }
-                catch { self.window?.presentError(error) }
+                catch { showError(error) }
             }
             sidebar.prepareTabActivation = { [weak self] expected in
                 guard let self, targetValid(), expected.spaceID == id,
@@ -1679,7 +1677,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     do { try await reservation.perform { try await library.delete(capture) } }
                     catch {
                         guard let self, let parent, self.window === parent, parent.attachedSheet == nil else { return }
-                        NSAlert(error: error).beginSheetModal(for: parent, completionHandler: nil)
+                        PArcDialog.inform(in: parent, .init(error: error))
                     }
                 }
             }
@@ -2297,10 +2295,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func showTabTransferFailure(_ detail: String) {
-        let alert = NSAlert()
-        alert.messageText = "This tab couldn’t move"
-        alert.informativeText = detail
-        if let window, window.attachedSheet == nil { alert.beginSheetModal(for: window) }
+        if let window { PArcDialog.inform(in: window, .init(title: "This tab couldn’t move", message: detail)) }
     }
 
     // The temporary container receives the same engine page while the original
@@ -2536,21 +2531,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                                          pages: [PCNativePage], retry: @escaping () -> Void) {
         transferRecoveries[id] = retry
         destination.transferRecoveries[id] = retry
-        let alert = NSAlert()
-        alert.messageText = "The page move needs attention"
-        alert.informativeText = "The live page is retained, but its current owner or attachment couldn’t be confirmed. Retry to reconnect it, or close the actual page with its normal leave-page confirmation."
-        alert.addButton(withTitle: "Retry")
-        alert.addButton(withTitle: "Close Page")
-        alert.addButton(withTitle: "Keep Open")
+        var content = PArcDialog.Content(title: "The page move needs attention",
+            message: "The live page is retained, but its current owner or attachment couldn’t be confirmed. Retry to reconnect it, or close the actual page with its normal leave-page confirmation.",
+            confirm: "Retry")
+        content.secondary = "Close Page"; content.auxiliary = "Keep Open"
         func close(_ remaining: ArraySlice<PCNativePage>) {
             guard let page = remaining.first else { retry(); return }
             guard !page.isClosed else { close(remaining.dropFirst()); return }
             page.requestClose { _ in MainActor.assumeIsolated { close(remaining.dropFirst()) } }
         }
-        if let window = destination.window, window.attachedSheet == nil {
-            alert.beginSheetModal(for: window) { response in
-                if response == .alertFirstButtonReturn { retry() }
-                else if response == .alertSecondButtonReturn { close(pages[...]) }
+        if let window = destination.window {
+            _ = PArcDialog(content).begin(for: window) { response in
+                if response == .confirm { retry() }
+                else if response == .secondary { close(pages[...]) }
             }
         }
     }
@@ -2867,9 +2860,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         return accepted
     }
+    /// A failed command's alert, which a window that has gone away no longer shows.
+    private func showError(_ error: Error) {
+        if window != nil { PArcDialog.present(error) }
+    }
     private func showNoteError(_ error: Error) {
         guard let window, window.attachedSheet == nil else { return }
-        let alert = NSAlert(error: error); alert.beginSheetModal(for: window)
+        PArcDialog.inform(in: window, .init(error: error), queued: true)
     }
     private func showNote(_ tab: BrowserTab, id: UUID, in pane: BrowserPane) {
         guard !isPrivateBrowsing, !store.isProfileRemovalPending(tab.profileID) else { pane.showError("Notes are unavailable in this profile."); return }
@@ -2911,8 +2908,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func showEaselError(_ error: Error) {
         guard let window, window.attachedSheet == nil else { return }
-        let alert = NSAlert(); alert.messageText = "Couldn’t open Easels"
-        alert.informativeText = error.localizedDescription; alert.beginSheetModal(for: window)
+        PArcDialog.inform(in: window, .init(title: "Couldn’t open Easels", message: error.localizedDescription), queued: true)
     }
     func createEaselFromPlusMenu() {
         guard canCreateNote else { return }
@@ -3135,12 +3131,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     ///
     @discardableResult
     private func revealPreviewTab(_ id: UUID) -> Bool {
-        guard !store.isEphemeral, let window else { return false }
+        guard !store.isEphemeral, window != nil else { return false }
         let item = SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID).first { $0.tabIDs.contains(id) }
             .map { SidebarItemReference.split($0.id) } ?? .tab(id)
         guard let reveal = SidebarItemReveal(item: item, spaceID: activeSpaceID, profileID: activeProfileID, state: store.state) else { return false }
         do { return try store.revealSidebarItem(reveal) }
-        catch { window.presentError(error); return false }
+        catch { showError(error); return false }
     }
 
     ///
@@ -3881,12 +3877,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                             guard let self else { return }
                             self.synchronizeThemeEditor()
                             self.applyChromeTheme(self.activeSpace.theme)
-                        }, onError: { [weak self] in self?.window?.presentError($0) })
+                        }, onError: { [weak self] in self?.showError($0) })
                 }
             } catch {
                 // A competing edit invalidates this draft without overwriting
                 // it. A real disk failure retains the original durable value.
-                if (error as NSError).code != CocoaError.userCancelled.rawValue { self.window?.presentError(error) }
+                if (error as NSError).code != CocoaError.userCancelled.rawValue { showError(error) }
             }
             return self.store.state.spaces.first { $0.id == spaceID && $0.profileID == profileID }?.theme ?? previous
         }
@@ -5592,7 +5588,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.render(self.store.state)
                 // Membership changes no page or focused pane; no load/close is
                 // needed and the original command dismissal restores focus.
-            } catch { self.presentError(error) }
+            } catch { showError(error) }
         }
         let canMoveToFolder: (CommandBarFolderMove) -> Bool = { [weak self] move in
             guard isOriginal(), let self, self.commandSubmissionRevision == submissionRevision,
@@ -5636,7 +5632,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     self.showSidebarMoveNotice(item: item, space: move.folder.spaceID, profile: move.source.profileID,
                         message: "Copied to folder. Click to go there.")
                 }
-            } catch { self.presentError(error) }
+            } catch { showError(error) }
         }
         panel.canMoveToFolder = canMoveToFolder
         var folderMoveConsumed = false
@@ -5650,7 +5646,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 //
                 // a window toast with no tap.
                 self.showToast(.pinnedToFolder(move.folder.name), at: .window)
-            } catch { self.presentError(error) }
+            } catch { showError(error) }
         }
         let canRenameFavorite: (CommandBarFavoriteRenameAction) -> Bool = { [weak self, weak renameBinding, weak renameNote, weak renameEasel] action in
             guard isOriginal(), let self, let renameBinding, action == favoriteRenameAction,
@@ -5716,7 +5712,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         self.reconcileSidebarKeyboardFocus(scroll: true)
                     } catch {
                         panel?.dismiss()
-                        self.presentError(error)
+                        showError(error)
                     }
                     return
                 }
@@ -5999,7 +5995,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                       self.inputRevisions[peek.identity] == revision, peek.browser.url == originalURL else { return }
                 self.inputRevisions.removeValue(forKey: peek.identity)
                 if let navigation { peek.browser.loadSearchNavigation(navigation) }
-                else if let error, let window = self.window, window.attachedSheet == nil { NSAlert(error: error).beginSheetModal(for: window) }
+                else if let error, let window = self.window { PArcDialog.inform(in: window, .init(error: error)) }
             }
         }
     }
@@ -6447,7 +6443,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let reveal = SidebarItemReveal(item: .tab(current.id), spaceID: activeSpaceID,
                 profileID: activeProfileID, state: store.state) else { return }
             do { guard try store.revealSidebarItem(reveal) else { return } }
-            catch { window.presentError(error); return }
+            catch { showError(error); return }
         }
         closeLibrary(restoreFocus: false)
         render(store.state)
@@ -6844,7 +6840,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let reveal = SidebarItemReveal(item: .split(expected.group.id), spaceID: activeSpaceID,
                 profileID: activeProfileID, state: store.state) else { return }
             do { guard try store.revealSidebarItem(reveal) else { return } }
-            catch { window.presentError(error); return }
+            catch { showError(error); return }
         }
         closeLibrary(restoreFocus: false)
         render(store.state)
@@ -6893,10 +6889,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         guard let self, self.windowUndoContextAvailable,
                               self.activeProfileID == change.profileID else { return false }
                         return true
-                    }, onError: { [weak self] error in self?.window?.presentError(error) })
+                    }, onError: { [weak self] in self?.showError($0) })
                 }
                 return true
-            } catch { self.window?.presentError(error); return false }
+            } catch { showError(error); return false }
         }
     }
 
@@ -6927,10 +6923,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         guard let self, self.windowUndoContextAvailable,
                               self.activeProfileID == change.profileID else { return false }
                         return true
-                    }, onError: { [weak self] error in self?.window?.presentError(error) })
+                    }, onError: { [weak self] in self?.showError($0) })
                 }
                 return true
-            } catch { self.window?.presentError(error); return false }
+            } catch { showError(error); return false }
         }
     }
 
@@ -7003,7 +6999,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 if let change = try self.store.saveSidebarSplitTitle(expected, title: title) {
                     self.folderUndo.appendSplitTitleChange(change, store: self.store,
                         available: { [weak self] in self?.windowUndoContextAvailable == true && self?.activeProfileID == change.profileID },
-                        onError: { [weak self] in self?.window?.presentError($0) })
+                        onError: { [weak self] in self?.showError($0) })
                 }
             }
             dialog.onFinish = { [weak self, weak dialog] in
@@ -7028,7 +7024,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if reset {
                 used = true
                 do { try self.commitSplitAppearance(expected, icon: nil, reset: true); return true }
-                catch { self.window?.presentError(error); return false }
+                catch { showError(error); return false }
             }
             guard let anchor = self.sidebar.appearanceAnchor(for: expected.group), anchor.window === self.window else { return false }
             //
@@ -7045,7 +7041,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 if let group = self.store.state.splitLayouts.first(where: { $0.id == current.group.id }),
                    let next = SidebarSplitTitleEdit(group: group, profileID: current.profileID, state: self.store.state) { current = next }
             }
-            picker.onFailure = { [weak self] error in self?.window?.presentError(error) }
+            picker.onFailure = { [weak self] in self?.showError($0) }
             picker.onFinish = { [weak self, weak picker] in
                 guard let self, self.splitIconPicker === picker else { return }
                 self.splitIconPicker = nil
@@ -7065,7 +7061,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let change = try store.saveSplitAppearance(expected, icon: icon, reset: reset) {
             folderUndo.appendSplitAppearance(change, store: store,
                 available: { [weak self] in self?.windowUndoContextAvailable == true && self?.activeProfileID == change.profileID },
-                onError: { [weak self] in self?.window?.presentError($0) })
+                onError: { [weak self] in self?.showError($0) })
         }
     }
 
@@ -7134,7 +7130,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         guard let self, self.windowUndoContextAvailable,
                               self.activeProfileID == change.profileID else { return false }
                         return true
-                    }, onError: { [weak self] error in self?.window?.presentError(error) })
+                    }, onError: { [weak self] in self?.showError($0) })
                 }
             }
             dialog.onFinish = { [weak self, weak dialog] in
@@ -7416,7 +7412,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             var target: UUID?
             self.performWindowCommand(selectNativePage: false) {
                 do { target = try self.store.commitFavoriteSplit(request) }
-                catch { window.presentError(error) }
+                catch { self.showError(error) }
             }
             guard let target else { return false }
             self.openSplitHomes(plan.ids, profileID: expected.profileID, originatingSpaceID: space)
@@ -7642,10 +7638,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func archiveTabs(_ ids: Set<UUID>, reason: ArchiveReason, in space: BrowserSpace? = nil) {
         guard !isClosing, !wholeWindowClose, !ids.isEmpty else { return }
         if let message = retirementUnavailableReason?(ids) {
-            let alert = NSAlert()
-            alert.messageText = "These tabs can’t be closed together yet"
-            alert.informativeText = message
-            if let window, window.attachedSheet == nil { alert.beginSheetModal(for: window) }
+            if let window { PArcDialog.inform(in: window, .init(title: "These tabs can’t be closed together yet", message: message)) }
             return
         }
         // Every original page (including child Peeks and other window owners)
@@ -7714,7 +7707,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if focused { self.focusedTabID = undone.focusedTabID }
             self.render(self.store.state)
             if focused { self.requestNativeSelection(); self.focusSelectedLocalContent() }
-        }, onError: { [weak self] error in self?.window?.presentError(error) }) { _ in registered?() }
+        }, onError: { [weak self] in self?.showError($0) }) { _ in registered?() }
         closeUndoOperations.add(operation)
     }
 
@@ -8304,9 +8297,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, didFailLinkRoute error: Error) {
         guard browser === nativeBinding, !isClosing, let window, window.attachedSheet == nil else { return }
-        let alert = NSAlert(); alert.messageText = "Couldn’t open link in its Space"
-        alert.informativeText = error.localizedDescription; alert.addButton(withTitle: "OK")
-        alert.beginSheetModal(for: window)
+        PArcDialog.inform(in: window, .init(title: "Couldn’t open link in its Space", message: error.localizedDescription), queued: true)
     }
 
     func canAcceptNativeLinkRoute(profileID: UUID) -> Bool {
@@ -9330,10 +9321,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard browser === nativeBinding else { return }
         // An unfinished capability is an error, never simulated consent.
         NSLog("Parc capability unavailable: %@", capability)
-        let alert = NSAlert()
-        alert.messageText = "This feature isn’t available yet"
-        alert.informativeText = capability
-        if let window, window.attachedSheet == nil { alert.beginSheetModal(for: window) }
+        if let window { PArcDialog.inform(in: window, .init(title: "This feature isn’t available yet", message: capability)) }
     }
     func closeCurrentTab() {
         if let peek = activePeek { peek.requestDismiss(.closeShortcut); return }
@@ -9418,7 +9406,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 }
                 return true
             } catch {
-                window.presentError(error); return false
+                showError(error); return false
             }
         }
     }
@@ -9439,7 +9427,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 if let updated { receipt = updated }
                 done(updated != nil); self.render(self.store.state)
             }
-            catch { self.window?.presentError(error); done(false) }
+            catch { showError(error); done(false) }
         }))
     }
 
@@ -9670,7 +9658,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 do {
                     return try self.store.moveSidebarItems(items, to: location, before: before, expected: expected)
                 } catch {
-                    self.window?.presentError(error)
+                    showError(error)
                     return false
                 }
             })
@@ -9757,7 +9745,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                             self.finishInterProfileArrival(first)
                         } else { self.render(self.store.state) }
                     case .success(false): NSSound.beep()
-                    case .failure(let error): self.window?.presentError(error)
+                    case .failure(let error): showError(error)
                     }
                 }
             }
@@ -9848,7 +9836,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         destinations: urls.destinations, documents: urls.documents, creation: creation) else { return false }
                     arrive(result); return true
                 } catch {
-                    window.presentError(error); return false
+                    showError(error); return false
                 }
             }
             self.store.copySidebarSplitsReloadingOriginals(now, to: location, before: before,
@@ -9861,7 +9849,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     }
                     arrive(result)
                 case .success(nil): NSSound.beep()
-                case .failure(let error): self.window?.presentError(error)
+                case .failure(let error): showError(error)
                 }
             }
             return true
@@ -9953,7 +9941,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     guard try self.store.commitSidebarWindowMove(now) else { return false }
                     arrive(); return true
                 } catch {
-                    self.window?.presentError(error); return false
+                    showError(error); return false
                 }
             }
             return self.confirmInterProfileMove(tabCount: move.tabIDs.count,
@@ -9966,7 +9954,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     switch result {
                     case .success(true): self.onInterProfileMoveCommitted?(moved); arrive()
                     case .success(false): NSSound.beep()
-                    case .failure(let error): self.window?.presentError(error)
+                    case .failure(let error): showError(error)
                     }
                 }
             }
@@ -10018,7 +10006,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         var committed = false
         var resolving = false
         var recoveryInFlight = false
-        var alert: NSAlert?
+        var recoveryDialog: PArcDialog?
         var failure: String?
         var ids: Set<UUID> { Set(plan.tabIDs) }
 
@@ -10277,15 +10265,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
 
         func presentRecovery() {
-            guard alert == nil, destinationWindow.attachedSheet == nil else { return }
-            let alert = NSAlert(); self.alert = alert
-            alert.messageText = "Some tabs couldn’t be moved"
-            alert.informativeText = "Retry to reconnect the affected tabs, or close them with their normal leave-page confirmation."
-            alert.addButton(withTitle: "Retry"); alert.addButton(withTitle: "Close Affected Tabs"); alert.addButton(withTitle: "Keep Open")
-            alert.beginSheetModal(for: destinationWindow) { [self] response in
-                self.alert = nil
-                if response == .alertFirstButtonReturn { retry() }
-                else if response == .alertSecondButtonReturn { closeOriginalPages() }
+            guard recoveryDialog == nil, destinationWindow.attachedSheet == nil else { return }
+            var content = PArcDialog.Content(title: "Some tabs couldn’t be moved",
+                message: "Retry to reconnect the affected tabs, or close them with their normal leave-page confirmation.",
+                confirm: "Retry")
+            content.secondary = "Close Affected Tabs"; content.auxiliary = "Keep Open"
+            let dialog = PArcDialog(content)
+            recoveryDialog = dialog
+            _ = dialog.begin(for: destinationWindow) { [self] response in
+                self.recoveryDialog = nil
+                if response == .confirm { retry() }
+                else if response == .secondary { closeOriginalPages() }
             }
         }
 
@@ -10403,7 +10393,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 }
                 return true
             } catch {
-                self.window?.presentError(error); return false
+                showError(error); return false
             }
         }
     }
@@ -10443,7 +10433,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                             self.showSidebarMoveNotice(item: item, space: destination.id, profile: destination.profileID)
                         }
                     case .success(false): NSSound.beep()
-                    case .failure(let error): self.window?.presentError(error)
+                    case .failure(let error): showError(error)
                     }
                 }
             }
@@ -10484,7 +10474,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             rootView.layoutSubtreeIfNeeded()
             sidebar.revealItem(item)
             return true
-        } catch { window.presentError(error); return false }
+        } catch { showError(error); return false }
     }
 
     private var folderDuplicateContextAvailable: Bool {
@@ -10531,7 +10521,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     profileID: target.hierarchy.profileID, window: window)
                 return true
             } catch {
-                window.presentError(error); return false
+                showError(error); return false
             }
         }
     }
@@ -10723,7 +10713,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                                 self.requestNativeSelection(); self.focusSelectedLocalContent()
                             }
                         case .success(false): self.updateNavigation(); declined()
-                        case .failure(let error): self.updateNavigation(); declined(); window.presentError(error)
+                        case .failure(let error): self.updateNavigation(); declined(); showError(error)
                         }
                     }
                 }
@@ -10893,7 +10883,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 if focused { requestNativeSelection(); focusSelectedLocalContent() }
             }
             completion(committed)
-        } catch { completion(false); window.presentError(error) }
+        } catch { completion(false); showError(error) }
     }
 
     private func redoFolder(_ operation: FolderUndoOperation, completion: @escaping (Bool) -> Void) {
@@ -10936,7 +10926,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     if applied && !ids.isDisjoint(with: selection) { self.requestNativeSelection(); self.focusSelectedLocalContent() }
                 }
                 completion(committed)
-            case .failure(let error): completion(false); window.presentError(error)
+            case .failure(let error): completion(false); showError(error)
             }
         }
     }
@@ -12425,7 +12415,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if focused { focusedTabID = undo.focusedTabID }
             render(store.state); updateNavigation()
             if focused { requestNativeSelection(); focusSelectedLocalContent() }
-        } catch { window.presentError(error) }
+        } catch { showError(error) }
     }
     ///
     /// parent must be this window's live original page; a parent that is not
@@ -12455,9 +12445,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             // them; their pages come here with the selection below.
             do { restored = try store.restoreClosedItem(record, regroupable: { self.canUseOrMoveHere($0) }) }
             catch {
-                let alert = NSAlert(); alert.messageText = "This tab couldn’t be reopened"
-                alert.informativeText = error.localizedDescription
-                if let window, window.attachedSheet == nil { alert.beginSheetModal(for: window) }
+                if let window { PArcDialog.inform(in: window, .init(title: "This tab couldn’t be reopened", message: error.localizedDescription)) }
             }
         }
         guard restored else { store.closedPageHistory.unrestore(record.tabIDs); return }
@@ -13085,7 +13073,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         commandBar?.dismiss(restoreFocus: true)
         guard canToggleToolbar else { return }
         do { try BrowserToolbarPreferences.shared.setVisible(!BrowserToolbarPreferences.shared.state.isVisible) }
-        catch { presentError(error) }
+        catch { showError(error) }
     }
     private var selectedBrowserToolbar: BrowserToolbarView? {
         if let peek = activePeek, !peek.view.browserToolbar.isHidden { return peek.view.browserToolbar }
@@ -13270,7 +13258,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         func preference(_ title: String, enabled: Bool, _ change: @escaping () throws -> Void) -> NSMenuItem {
             let item = MenuAction.item(title) { [weak self] in
                 guard let self, self.presentation.isReady, !self.isClosing, !self.wholeWindowClose else { return }
-                do { try change() } catch { self.presentError(error) }
+                do { try change() } catch { showError(error) }
             }
             item.isEnabled = enabled; return item
         }
@@ -13402,7 +13390,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func setDeveloperMode(_ on: Bool, host: String, browser: PCBrowserView, page: PCNativePage) {
         do {
             try DeveloperModePreferences.shared.setEnabled(on, host: host)
-        } catch { presentError(error); return }
+        } catch { showError(error); return }
         refreshDeveloperToolbars()
         guard Self.knowsDeveloperTools(page), on != page.hasDeveloperTools else { return }
         _ = browser.performPageTool(on ? .javaScriptConsole : .developerTools)
@@ -13674,7 +13662,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         do {
             try DeveloperModePreferences.shared.setEnabled(true, host: request.host)
             refreshDeveloperToolbars()
-        } catch { presentError(error) }
+        } catch { showError(error) }
     }
 
     var canExportEaselImage: Bool { currentEaselEditor?.canExportImage == true }
@@ -14947,7 +14935,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.selectSpace(spaceID); self.requestNativeSelection()
                 return true
             } catch {
-                self.window?.presentError(error)
+                showError(error)
                 return false
             }
         }
@@ -15221,10 +15209,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 _ = try owner.store.setFoldersExpanded(expanded, in: spaceID,
                     profileID: profileID, expectedFolders: folders)
             } catch {
-                let alert = NSAlert()
-                alert.messageText = "Parc couldn’t save the folder layout"
-                alert.informativeText = error.localizedDescription
-                alert.beginSheetModal(for: window)
+                PArcDialog.inform(in: window, .init(title: "Parc couldn’t save the folder layout", message: error.localizedDescription), queued: true)
             }
         }
     }
@@ -15255,7 +15240,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     guard container != nil else { NSSound.beep(); return }
                 }
                 folderID = try store.createFolder(name: SidebarFolderFromItems.defaultName, in: expected, parent: container)
-            } catch { window.presentError(error); return }
+            } catch { showError(error); return }
             guard let folderID else { NSSound.beep(); return }
             render(store.state)
             sidebar.scrollItemToVisible(.folder(folderID))
@@ -15266,7 +15251,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                value: "", placeholder: "Folder name") { [weak self, weak window] name in
             guard let self, let window, self.window === window, self.managementSpace(id, profileID: expected.profileID) != nil else { return }
             do { _ = try self.store.createFolder(name: name, in: expected, parent: parent) }
-            catch { window.presentError(error) }
+            catch { showError(error) }
         }
     }
     /// The row's inline rename keeps the original folder, Space and Profile;
@@ -15277,7 +15262,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let self, let window, self.window === window,
                   self.managementSpace(space.id, profileID: space.profileID) != nil else { return false }
             do { return try self.store.renameFolder(expected, profileID: space.profileID, name: name) }
-            catch { window.presentError(error); return false }
+            catch { showError(error); return false }
         }
     }
     private enum FolderIconError: LocalizedError {
@@ -15309,7 +15294,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     throw FolderIconError.unavailable
                 }
             }
-            picker.onFailure = { [weak self] error in self?.window?.presentError(error) }
+            picker.onFailure = { [weak self] in self?.showError($0) }
             picker.onFinish = { [weak self, weak picker] in
                 guard let self, self.splitIconPicker === picker else { return }
                 self.splitIconPicker = nil
@@ -15326,7 +15311,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let self, let window, self.window === window,
                   self.managementSpace(space.id, profileID: space.profileID) != nil else { return }
             do { _ = try self.store.renameFolder(folder, profileID: space.profileID, name: name) }
-            catch { window.presentError(error) }
+            catch { showError(error) }
         }
     }
     private func turnSpaceIntoFolder(_ id: UUID, destinationID: UUID) {
@@ -15352,7 +15337,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         self.onInterProfileMoveCommitted?(conversion.tabIDs)
                         self.finishSpaceConversion(conversion, wasFocused: wasFocused)
                     case .success(false): NSSound.beep()
-                    case .failure(let error): self.window?.presentError(error)
+                    case .failure(let error): showError(error)
                     }
                 }
             }
@@ -15363,7 +15348,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let record = try store.convertSpaceToFolder(conversion) else { return }
                 registerSpaceConversionUndo(record, wasFocused: wasFocused, selection: selection, focus: focus)
                 finishSpaceConversion(conversion, wasFocused: wasFocused)
-            } catch { window?.presentError(error) }
+            } catch { showError(error) }
         }
     }
     private func spaceConversionOwners(_ conversion: SpaceFolderConversion) -> (() -> Bool)? {
@@ -15415,7 +15400,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     record = next; focused = wasFocused; selected = selection; focusedTab = focus
                     self.finishSpaceConversion(conversion, wasFocused: wasFocused); done(true)
                 }
-            } catch { self.window?.presentError(error); done(false) }
+            } catch { showError(error); done(false) }
         }))
     }
 
@@ -15480,7 +15465,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     else if wasFocused { self.requestNativeSelection(); self.focusSelectedLocalContent() }
                 }
                 completion(committed)
-            case .failure(let error): completion(false); window.presentError(error)
+            case .failure(let error): completion(false); showError(error)
             }
         }
     }
@@ -15511,7 +15496,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         self.render(self.store.state); self.requestNativeSelection(); self.focusSelectedLocalContent()
                     }
                     done(restored)
-                } catch { done(false); window.presentError(error) }
+                } catch { done(false); showError(error) }
             case .redo:
                 guard let target = operation.record.redoTarget(in: self.store.state) else { done(false); return }
                 let wasFocused = self.activeSpaceID == target.space.id
@@ -15557,7 +15542,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         return !self.isClosing && !self.wholeWindowClose && !self.windowClosePending
                             && !self.windowCloseApproved && self.spaceCreation == nil
                     }, completion: { [weak self] result in
-                        if case .failure(let error) = result { self?.window?.presentError(error) }
+                        if case .failure(let error) = result { self?.showError(error) }
                     })
              })
         }
@@ -15588,18 +15573,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard spaceCommandsAvailable else { return }
         let managerSidebar = libraryView?.kind == .spaces ? libraryView?.spaceManager.sidebar(for: id) : nil
         if id != activeSpaceID && managerSidebar == nil {
-            let alert = NSAlert(); alert.messageText = "Rename Space"
-            alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel")
-            let field = NSTextField(string: expected.title ?? "")
-            field.placeholderString = expected.name; field.frame = NSRect(x: 0, y: 0, width: 300, height: 26)
-            alert.accessoryView = field
-            alert.beginSheetModal(for: window) { [weak self, weak window] response in
-                guard response == .alertFirstButtonReturn, let self, let window, self.window === window,
+            let dialog = PArcDialog(.init(title: [("Rename Space", false)], confirm: "Save", cancel: "Cancel",
+                field: .init(value: expected.title ?? "", placeholder: expected.name, required: false)))
+            guard let field = dialog.textField else { return }
+            _ = dialog.begin(for: window, queued: true) { [weak self, weak window] response in
+                guard response == .confirm, let self, let window, self.window === window,
                       self.managementSpace(id, profileID: expected.profileID) != nil else { return }
                 do { try self.store.saveSpaceTitle(expected, title: field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) }
-                catch { if (error as NSError).code != CocoaError.userCancelled.rawValue { window.presentError(error) } }
+                catch { if (error as NSError).code != CocoaError.userCancelled.rawValue { showError(error) } }
             }
-            alert.window.makeFirstResponder(field); field.selectText(nil)
             return
         }
         guard PCNativeBrowserApplication.canPresentTabSwitcher(in: window),
@@ -15612,7 +15594,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if let value, self.managementSpace(id, profileID: expected.profileID) != nil,
                (self.activeSpaceID == id || self.libraryView?.spaceManager.sidebar(for: id) === editingSidebar) {
                 do { try self.store.saveSpaceTitle(expected, title: value.trimmingCharacters(in: .whitespacesAndNewlines)) }
-                catch { if (error as NSError).code != CocoaError.userCancelled.rawValue { window.presentError(error) } }
+                catch { if (error as NSError).code != CocoaError.userCancelled.rawValue { showError(error) } }
             }
             self.render(self.store.state)
         }
@@ -15646,7 +15628,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.spaceIconPicker = nil
             self.refreshSidebarPointerIfKey()
         }
-        picker.onFailure = { [weak window] error in window?.presentError(error) }
+        picker.onFailure = { [weak self] in self?.showError($0) }
         spaceIconPicker = picker
         picker.present(from: anchor)
     }
@@ -15663,15 +15645,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private func prompt(_ title: String, detail: String, value: String, placeholder: String, accept: @escaping (String) -> Void) {
         guard let window else { return }
-        let alert = NSAlert(); alert.messageText = title; alert.informativeText = detail
-        alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel")
-        let field = NSTextField(string: value); field.placeholderString = placeholder
-        field.frame = NSRect(x: 0, y: 0, width: 300, height: 26); alert.accessoryView = field
-        alert.beginSheetModal(for: window) { response in
+        let dialog = PArcDialog(.init(title: [(title, false)], message: [(detail, false)], confirm: "Save", cancel: "Cancel",
+                                     field: .init(value: value, placeholder: placeholder)))
+        guard let field = dialog.textField else { return }
+        _ = dialog.begin(for: window, queued: true) { response in
             let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if response == .alertFirstButtonReturn && !name.isEmpty { accept(name) }
+            if response == .confirm && !name.isEmpty { accept(name) }
         }
-        alert.window.makeFirstResponder(field)
     }
 
     // Shared Downloads presentation is separate from a private window's local
@@ -15964,9 +15944,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     if succeeded {
                         _ = self.performNativeDownloadAction(.remove, item: item)
                     } else if let owner = self.window, !self.isClosing, owner.attachedSheet == nil {
-                        let alert = NSAlert(); alert.messageText = "Couldn’t move the download to Trash"
-                        alert.informativeText = message ?? "The file was not moved. Its download record has been kept."
-                        alert.beginSheetModal(for: owner)
+                        PArcDialog.inform(in: owner, .init(title: "Couldn’t move the download to Trash",
+                            message: message ?? "The file was not moved. Its download record has been kept."))
                     }
                 }
             }
@@ -16034,8 +16013,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             easelImageDestination = controller
             controller.present(on: window)
         } catch {
-            let alert = NSAlert(error: error)
-            alert.beginSheetModal(for: window)
+            PArcDialog.inform(in: window, .init(error: error), queued: true)
         }
     }
 

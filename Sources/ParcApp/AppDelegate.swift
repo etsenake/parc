@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var hiddenReplayWindows: [BrowserWindowController] = []
     private var deferredReplayTermination: (() -> Void)?
     private var replayRestoreError: Error?
-    private var replayRestoreAlert: NSAlert?
+    private var replayRestoreAlert: PArcDialog?
     private var browserImport: BrowserImportWindow?
     private var applicationSettings: SettingsWindow?
     private var applicationSettingsProfileID: UUID?
@@ -345,6 +345,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 FileHandle.standardError.write(Data(("Parc startup failed: " + error.localizedDescription + "\n").utf8))
                 return .exit(failureExitCode)
             }
+            // A startup failure can come before any Parc window or engine exists,
+            // so it stays the system alert.
             let alert = NSAlert()
             alert.messageText = "Parc couldn’t start"
             alert.informativeText = error.localizedDescription
@@ -477,14 +479,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             controller.present()
             resumeBrowserImportIfNeeded()
         } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "Parc couldn’t restore setup."
-            alert.informativeText = "Your browser data has been kept. You can restart setup or quit and try again.\n\n" + error.localizedDescription
-            alert.addButton(withTitle: "Restart Setup")
-            alert.addButton(withTitle: "Quit")
-            if alert.runModal() == .alertFirstButtonReturn {
+            var content = PArcDialog.Content(title: "Parc couldn’t restore setup.",
+                message: "Your browser data has been kept. You can restart setup or quit and try again.\n\n" + error.localizedDescription,
+                confirm: "Restart Setup")
+            content.secondary = "Quit"
+            if PArcDialog(content).runModal() == .confirm {
                 do { try OnboardingDraft.remove(directory: store.directory); showOnboarding() }
-                catch { NSAlert(error: error).runModal() }
+                catch { _ = PArcDialog(.init(error: error)).runModal() }
             } else { requestApplicationTermination(nil) }
         }
     }
@@ -511,10 +512,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             Self.removeReplayRestartDraft(in: store.directory)
             try startOnboardingReplay(controller, closing: original)
         } catch {
-            let alert = NSAlert(error: error)
-            alert.messageText = "Parc couldn’t replay onboarding."
-            if let window = settings.window, window.isVisible, window.attachedSheet == nil { alert.beginSheetModal(for: window) }
-            else { alert.runModal() }
+            let dialog = PArcDialog(.init(error: error, title: "Parc couldn’t replay onboarding."))
+            let began = settings.window.map { $0.isVisible && dialog.begin(for: $0) { _ in } } ?? false
+            if !began { _ = dialog.runModal() }
         }
     }
 
@@ -680,15 +680,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         DispatchQueue.main.async { [weak self] in
             guard let self, self.replaySessionActive, let error = self.replayRestoreError,
                   !self.terminationInProgress, self.replayRestoreAlert == nil else { return }
-            let alert = NSAlert()
-            alert.messageText = "Parc couldn’t restore your browser window."
-            alert.informativeText = "Your saved tabs and window are retained. \(error.localizedDescription)"
-            alert.addButton(withTitle: "Retry")
-            alert.addButton(withTitle: "Quit")
-            self.replayRestoreAlert = alert
-            let response = alert.runModal()
+            var content = PArcDialog.Content(title: "Parc couldn’t restore your browser window.",
+                message: "Your saved tabs and window are retained. \(error.localizedDescription)", confirm: "Retry")
+            content.secondary = "Quit"
+            let dialog = PArcDialog(content)
+            self.replayRestoreAlert = dialog
+            let response = dialog.runModal()
             self.replayRestoreAlert = nil
-            if response == .alertFirstButtonReturn { self.finishOnboardingReplay() }
+            if response == .confirm { self.finishOnboardingReplay() }
             else { self.requestApplicationTermination(nil) }
         }
     }
@@ -1830,10 +1829,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     private func presentWindowCreationError(_ error: Error) {
         NSLog("Parc could not create a browser window: %@", error.localizedDescription)
-        let alert = NSAlert()
-        alert.messageText = "Parc couldn’t open this window"
-        alert.informativeText = error.localizedDescription
-        if let window = front?.window, window.attachedSheet == nil { alert.beginSheetModal(for: window) }
+        if let window = front?.window {
+            PArcDialog.inform(in: window, .init(title: "Parc couldn’t open this window", message: error.localizedDescription))
+        }
     }
 
     @objc private func newTab(_ sender: Any?) {
@@ -2315,15 +2313,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc private func setAsDefaultBrowser(_ sender: Any?) {
         DefaultBrowserController.shared.makeDefault { [weak self] failure in
             guard let self, let failure else { return }
-            let alert = NSAlert()
-            alert.messageText = "Parc could not become your default browser"
-            alert.informativeText = failure
-            alert.addButton(withTitle: "OK")
-            if let window = self.front?.window, window.attachedSheet == nil {
-                alert.beginSheetModal(for: window)
-            } else {
-                alert.runModal()
-            }
+            let dialog = PArcDialog(.init(title: "Parc could not become your default browser", message: failure))
+            let began = self.front?.window.map { dialog.begin(for: $0) { _ in } } ?? false
+            if !began { _ = dialog.runModal() }
         }
     }
 
@@ -2655,8 +2647,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
     private func showEaselError(_ error: Error, owner: BrowserWindowController) {
         guard owner === libraryCommandWindow, let window = owner.window, window.attachedSheet == nil else { return }
-        let alert = NSAlert(); alert.messageText = "Couldn’t open Easels"
-        alert.informativeText = error.localizedDescription; alert.beginSheetModal(for: window)
+        PArcDialog.inform(in: window, .init(title: "Couldn’t open Easels", message: error.localizedDescription))
     }
     @objc private func quitMenu(_ sender: Any?) {
         //

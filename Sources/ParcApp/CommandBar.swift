@@ -127,7 +127,7 @@ import SwiftUI
     private var actionsScope = false
     private var scopeMenu: NSMenu?
     private var scopeMenuLease: PCNativeOmniboxScopeMenu?
-    private var scopeAlert: NSAlert?
+    private var scopeAlert: PArcDialog?
     private let scopeOfferButton = CommandBarScopeHint()
     ///
     private var scopeColor: NSColor?
@@ -435,7 +435,7 @@ import SwiftUI
             }
         }
         observe(NSWindow.didResignKeyNotification, object: parent) { owner in
-            if let alert = owner.scopeAlert, owner.parent?.attachedSheet === alert.window { return }
+            if let alert = owner.scopeAlert, owner.parent?.attachedSheet === alert.panel { return }
             owner.dismiss(restoreFocus: false)
         }
         //
@@ -465,7 +465,7 @@ import SwiftUI
     /// The bar's field (or its results) is first responder in its key window.
     var hasFocus: Bool { presented && !dismissed && parent?.isKeyWindow == true && holdsFirstResponder }
     /// The window's sheet is the bar's own site-search alert, part of its session.
-    var ownsAttachedSheet: Bool { scopeAlert.map { $0.window === parent?.attachedSheet } ?? false }
+    var ownsAttachedSheet: Bool { scopeAlert.map { $0.panel === parent?.attachedSheet } ?? false }
     /// A press on the bar itself; one anywhere else in the window closes it.
     func contains(_ event: NSEvent) -> Bool {
         presented && !dismissed && event.window === parent
@@ -1682,8 +1682,8 @@ import SwiftUI
         let menu = scopeMenu; scopeMenu = nil; menu?.cancelTracking()
         if let alert = scopeAlert {
             scopeAlert = nil
-            if let owner = alert.window.sheetParent { owner.endSheet(alert.window, returnCode: .cancel) }
-            alert.window.orderOut(nil)
+            if let owner = alert.panel.sheetParent { owner.endSheet(alert.panel, returnCode: .cancel) }
+            alert.panel.orderOut(nil)
         }
     }
     private func scopeMenuIsCurrent(_ lease: PCNativeOmniboxScopeMenu) -> Bool {
@@ -1739,10 +1739,7 @@ import SwiftUI
         menu.addItem(.separator())
         menu.addItem(MenuAction.item("Learn More") { [weak self] in
             guard let self, self.scopeMenuIsCurrent(lease) else { return }
-            let alert = NSAlert()
-            alert.messageText = "Site Search"
-            alert.informativeText = "Type a site's search shortcut, then press Tab to search that site. Space also enters when enabled in your search settings. Use Change Site Search to keep your query and search another site. Removing a site search deletes its saved shortcut from this profile; you can add it again in Manage. Press Escape to return to your original address."
-            alert.addButton(withTitle: "Done")
+            let alert = PArcDialog(.init(title: "Site Search", message: "Type a site's search shortcut, then press Tab to search that site. Space also enters when enabled in your search settings. Use Change Site Search to keep your query and search another site. Removing a site search deletes its saved shortcut from this profile; you can add it again in Manage. Press Escape to return to your original address.", confirm: "Done"))
             self.presentScopeAlert(alert, lease: lease) { _ in }
         })
         scopeMenu = menu
@@ -1761,11 +1758,11 @@ import SwiftUI
         editor.setSelectedRange(range)
         applyingCompletion = false
     }
-    private func presentScopeAlert(_ alert: NSAlert, lease: PCNativeOmniboxScopeMenu,
-                                   completion: @escaping (NSApplication.ModalResponse) -> Void) {
+    private func presentScopeAlert(_ alert: PArcDialog, lease: PCNativeOmniboxScopeMenu,
+                                   completion: @escaping (PArcDialog.Response) -> Void) {
         guard scopeMenuIsCurrent(lease), let window = parent, window.attachedSheet == nil, scopeAlert == nil else { return }
         scopeAlert = alert
-        alert.beginSheetModal(for: window) { [weak self, weak alert] response in
+        _ = alert.begin(for: window) { [weak self, weak alert] response in
             guard let self, let alert, self.scopeAlert === alert else { return }
             let current = self.scopeMenuIsCurrent(lease)
             self.scopeAlert = nil
@@ -1791,12 +1788,10 @@ import SwiftUI
             self.announceScope("\(lease.activeScope.name) Site Search removed")
         }
         if lease.requiresRemovalConfirmation {
-            let alert = NSAlert()
-            alert.messageText = "Remove “\(lease.activeScope.name)” Site Search?"
-            alert.informativeText = "This removes the saved search shortcut from this profile."
-            alert.addButton(withTitle: "Remove"); alert.addButton(withTitle: "Cancel")
+            let alert = PArcDialog(.init(title: "Remove “\(lease.activeScope.name)” Site Search?",
+                message: "This removes the saved search shortcut from this profile.", confirm: "Remove", cancel: "Cancel"))
             presentScopeAlert(alert, lease: lease) { [weak self] response in
-                if response == .alertFirstButtonReturn { remove(true) }
+                if response == .confirm { remove(true) }
                 else { self?.restoreScopeSelection(editing.selection) }
             }
         } else { remove(false) }

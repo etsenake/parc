@@ -2,6 +2,8 @@
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$repo_root/build/tests"
+#
+spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/easel-spinner.swift" PArcButtonSpinner)
 xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
@@ -48,6 +50,7 @@ xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvasView.swift" \
+  "$repo_root/Sources/ParcApp/PArcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
   "$repo_root/tests/EaselCanvasTests.swift" \
   -o "$style_bundle/MacOS/EaselCanvas"
@@ -58,8 +61,6 @@ xcrun swiftc -parse-as-library \
 mkdir -p "$style_bundle/Resources/CustomInfoPicker" "$style_bundle/Resources/AppIcons/Marks"
 cp "$repo_root/Resources/CustomInfoPicker/icomoon.ttf" "$style_bundle/Resources/CustomInfoPicker/"
 cp "$repo_root/Resources/AppIcons/Marks/Borderless.png" "$style_bundle/Resources/AppIcons/Marks/"
-# A busy dialog button shows the onboarding button's spinner.
-spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/easel-image-export-spinner.swift" PArcButtonSpinner)
 xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/"*.swift \
   "$repo_root/Sources/ParcApp/LocalContentDrop.swift" \
@@ -72,11 +73,11 @@ xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvasView.swift" \
+  "$repo_root/Sources/ParcApp/PArcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
   "$repo_root/Sources/ParcApp/SidebarIconCatalog.swift" \
   "$repo_root/Sources/ParcApp/MenuItemImage.swift" \
   "$repo_root/Sources/ParcApp/ParcBrandMark.swift" \
-  "$repo_root/Sources/ParcApp/PArcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/EaselImageExport.swift" \
   "$repo_root/tests/EaselImageExportTests.swift" \
   -o "$style_bundle/MacOS/EaselImageExport"

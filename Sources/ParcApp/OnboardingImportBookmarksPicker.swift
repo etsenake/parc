@@ -57,7 +57,7 @@ struct OnboardingImportBookmarksPicker: View {
         .buttonStyle(.plain)
         .disabled(!page.enabled || page.selection.roots.isEmpty)
         .accessibilityLabel("Select all bookmarks from \(page.title)")
-        .accessibilityValue(page.selection.allSelected ? "Selected" : "Not selected")
+        .accessibilityValue(ParcSelectionMark.accessibilityValue(selected: page.selection.allSelected))
         .padding(.bottom, 12)
         ForEach(page.selection.roots) { item in
             OnboardingImportBookmarkBranch(item: item, depth: 0, page: page, selectionColor: selectionColor,
@@ -66,8 +66,7 @@ struct OnboardingImportBookmarksPicker: View {
     }
 
     private func selectionMark(_ selected: Bool) -> some View {
-        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-            .imageScale(.large).foregroundColor(Color(nsColor: selectionColor)).accessibilityHidden(true)
+        ParcSelectionMarkImage(selected: selected, color: selectionColor).accessibilityHidden(true)
     }
 }
 
@@ -84,13 +83,12 @@ private struct OnboardingImportBookmarkBranch: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Button { page.select(item.id) } label: {
-                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                        .imageScale(.large).foregroundColor(Color(nsColor: selectionColor))
+                    ParcSelectionMarkImage(selected: selected, color: selectionColor)
                 }
                 .buttonStyle(.plain)
                 .disabled(!page.enabled)
                 .accessibilityLabel("Select \(item.title)")
-                .accessibilityValue(selected ? "Selected" : "Not selected")
+                .accessibilityValue(ParcSelectionMark.accessibilityValue(selected: selected))
                 Button {
                     if item.url == nil {
                         withAnimation(reduceMotion ? nil : .default) { page.expand(item.id) }
@@ -110,7 +108,7 @@ private struct OnboardingImportBookmarkBranch: View {
                 .buttonStyle(.plain)
                 .disabled(item.url == nil ? !page.expandable : !page.enabled)
                 .accessibilityLabel(item.url == nil ? "\(expanded ? "Collapse" : "Expand") \(item.title)" : item.title)
-                .accessibilityValue(item.url == nil ? (expanded ? "Expanded" : "Collapsed") : (selected ? "Selected" : "Not selected"))
+                .accessibilityValue(item.url == nil ? (expanded ? "Expanded" : "Collapsed") : ParcSelectionMark.accessibilityValue(selected: selected))
             }
             .padding(.bottom, 12)
             if expanded {

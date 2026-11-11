@@ -65,8 +65,8 @@ import Combine
         try expect(dialog.sheetWindow.accessibilityLabel() == "Rename Tab…" && dialog.field.placeholderString == "Keep it short and sweet!"
                    && dialog.dialog.confirmButton.title == "Rename" && dialog.dialog.cancelButton?.title == "Cancel", "Recovered dialog strings")
         try expect(!dialog.field.isBordered && !dialog.field.isBezeled && !dialog.field.drawsBackground && dialog.field.focusRingType == .none
-                   && dialog.field.font?.pointSize == 14 && dialog.field.superview === dialog.sheetWindow.contentView,
-                   "the borderless 14-point field inside its dialog sheet")
+                   && dialog.field.font?.pointSize == 14 && dialog.field.superview?.superview === dialog.sheetWindow.contentView,
+                   "the borderless 14-point field on its card inside the dialog sheet")
         try expect(dialog.field.usesSingleLineMode && dialog.field.isEditable && dialog.field.isSelectable, "Native single-line selection/text owner")
         dialog.field.stringValue = ""; dialog.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: dialog.field))
         try expect(!dialog.dialog.confirmButton.isEnabled, "Required input disables Rename")

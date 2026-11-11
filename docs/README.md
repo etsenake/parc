@@ -39,7 +39,7 @@ Git and release notes retain history.
   [theme editor](space-theme-editor.md), [theme appearance](space-theme-appearance.md),
   [rendering](space-theme-rendering.md), [input](space-theme-input.md),
   [undo](space-theme-undo.md), [haptics](space-theme-haptics.md).
-- [Tooltips](tooltips.md), [toasts](toasts.md), [top-band colors](top-band-color.md).
+- [Tooltips](tooltips.md), [toasts](toasts.md), [dialogs](dialogs.md), [top-band colors](top-band-color.md).
 - [App icon picker](app-icon-picker.md), [availability](app-icon-availability.md),
   [marks](app-icon-marks.md), [optical sizing](app-icon-optical.md).
 
