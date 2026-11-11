@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 679,
+  "version": 680,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -1408,12 +1408,12 @@
     },
     {
       "source": "Engine/ParcInternalExtension/manifest.json",
-      "target": "chrome/browser/resources/parc_internal_extension/manifest.json",
+      "target": "parc/internal_extension/manifest.json",
       "sha256": "0b7c9dfef10d1d237c9cb634b26efa2ef83b738d3f00d8295957b4bc125a62a8"
     },
     {
       "source": "Engine/ParcInternalExtension/background.js",
-      "target": "chrome/browser/resources/parc_internal_extension/background.js",
+      "target": "parc/internal_extension/background.js",
       "sha256": "78cccb9c868d05b707fa853edf16fc3dd6b5c5255b8906993f7d1511045fca64"
     },
     {
@@ -2029,12 +2029,12 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "572f6e796d081be16745584d59d45672567a40422608cface04f366bab58f41d"
+      "sha256": "416f62268c6edaa8c5f5f067dff744a29c7579c0d9122aed8b5a9f14c7019316"
     },
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "75e71984bf57e25102391f012ca0f409166323406c916532bad4f6328d98c860"
+      "sha256": "54e42b8f0b2a091924918ce7b21c85140fea2c5d2b32c8cf1132056e623ecb76"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2079,7 +2079,7 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.cc",
       "target": "parc/parc_content_clients.cc",
-      "sha256": "9e30c53018b1b2e4f84b62c06a776ba541cbfbf7293853815542b979349e1a64"
+      "sha256": "0654a5f945842dd7ffd32a37c7ca87e821e06c9f98a78bfc5c81d43863db016e"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",
@@ -2155,6 +2155,11 @@
       "source": "Engine/ParcChromium/web_push.cc",
       "target": "parc/web_push.cc",
       "sha256": "41cc39507bd52a988d28b513c65fdf9bc4f44c13b2f7232f5983c34a7d53360a"
+    },
+    {
+      "source": "Engine/ParcChromium/generate_internal_extension.py",
+      "target": "parc/generate_internal_extension.py",
+      "sha256": "d411a62b37dfd1d168322672d19ce4cef220ce8c55e5658aec681cd2f40fd02f"
     }
   ],
   "patches": [
@@ -3161,27 +3166,17 @@
     },
     {
       "source": "Engine/ParcHost/integration/internal-extension.patch",
-      "sha256": "03f7770a65be1ecf00805f29e871722fff046fb1b29e92bb0b026a6a1dbc3cf5",
+      "sha256": "c428526a191f684b48c3cb2dc56154099b026b0bff5555fb58759557518e8237",
       "files": [
         {
           "target": "chrome/browser/extensions/component_extensions_allowlist/allowlist.cc",
           "before_sha256": "03d9d5d4cccd3b74ec2b8e4d486945aa3501499f1dbd9e319b1ed1fa3b275ad5",
-          "after_sha256": "3548c22a79d19cdbc503dcf79841341fe5685636e4a67e760a22a7508c94446d"
+          "after_sha256": "c905ef8408b62718a0be04fc90acec13d65f1345d2fd1d203ea89d18af143b00"
         },
         {
           "target": "chrome/browser/extensions/component_loader.cc",
           "before_sha256": "d7b01c4cb7a1c25cb128b75022caaf678a189c006fb6d67da95634ffefb73267",
-          "after_sha256": "daa0409315e7dfb71cfb38fb85f221ccd2739ca9457300d3f921e312ec4f5a8f"
-        },
-        {
-          "target": "chrome/browser/resources/BUILD.gn",
-          "before_sha256": "c7a38ad0cfa90f600b99d3ce6ea394f84680e7e812f0ec8251d53615efa1e57e",
-          "after_sha256": "143b948958b689bc35a4dc1289df5c963cce46f1c1405f1266da5fec2452731a"
-        },
-        {
-          "target": "chrome/browser/resources/component_extension_resources.grd",
-          "before_sha256": "1c895106a9e658cf9b3dc6a492ea2b4d751f78bd875ec77e3171e3b8365d84de",
-          "after_sha256": "65b5f15c4527ac8a3062e9a348727b502e1821e5583ce3c98cfea39bc8fc4474"
+          "after_sha256": "6c0258caa300a25cb18d5acd64bdb0200f37c228ccd7804e454e2b62d3da8a39"
         }
       ]
     },
