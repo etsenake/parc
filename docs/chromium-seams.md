@@ -69,7 +69,7 @@ recompiles that Parc file and relinks. A hook edit recompiles the one Chromium f
 
 ## What the research found
 
-Interface routing covers 35 patches: 14 SEAM, 17 HOOK and 4 STAY. These patches edit about 60 Chromium
+The initial interface-routing research classified 35 patches: 14 SEAM, 17 HOOK and 4 STAY. These patches edit about 60 Chromium
 headers today. Afterwards about 8 remain, none with more than 42 direct includers, and the 7 Parc headers
 injected into Chromium's tree go away. Three shared funnels carry most dialogs:
 - the extension dialog utilities, which also fix today's crash where extension dialogs assume a
@@ -128,9 +128,9 @@ context-menu and file-selector work shares files across areas, so it goes throug
 1. **Pattern and proof.** Add `parc/chromium_hooks.h` and the install point. Convert site permissions to
    the hook pattern as the thinnest slice that proves it end to end.
 2. **Delete what upstream already offers.** These need no patch:
-   - interface routing: the JavaScript app-modal wrapper, the HTTP-auth coordinator, the intent picker,
-     the action icon, version, licence and logo branding, the import utility service, and the context-menu
-     observer;
+   - interface routing: the action icon, version, licence and logo branding, and the import utility
+     service use existing extension points; HTTP authentication uses an owned coordinator and tab
+     helper with a narrow credential-validation hook;
    - browser: the five SEAM patches;
    - media stage 1: the key-system and CDM registration seams, the VideoToolbox facts binder, the AV1 and
      ALAC support switches, the PiP window creation seam, and presentation routing. Renderer-factory
@@ -220,6 +220,21 @@ a separate FairPlay process with `CALayerHost`.
   - crash-safe profile removal.
 - **Interface:** every prompt keeps its source page and window checks, is cancelled on detach and
   navigation, and completes exactly once.
+
+## Confirmed interface boundaries
+
+Three proposed zero-patch routes retain their current patches. JavaScript app-modal dialogs need
+factory capture when queued and ownership validation after queue advancement; the public view factory
+runs only when shown and cannot preserve both guarantees. The intent picker needs its source page
+through asynchronous icon loading; the BrowserWindow method does not receive that page. The context-menu
+observer must run first for command dispatch; the public testing registration appends it after Chrome’s
+observers. These are STAY boundaries until a lossless hook is designed. Shared DevTools and page-menu
+hunks remain with their core owner.
+
+HTTP authentication keeps a source-only validation hook because a stale request’s cancellation defers
+modal-list mutation. Credentials propagated from a matching request must be rejected during that gap.
+The import service uses an owned utility client and protocol target; its atomic history and web-data
+transaction patch stays unchanged. Product-name and translated branding outputs remain in step 4.
 
 ## Decisions
 
