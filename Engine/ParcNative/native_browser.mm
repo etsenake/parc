@@ -31,7 +31,21 @@
 
 namespace parc {
 namespace {
-size_t native_browsers_alive = 0;
+ScopedNativeBrowserCreation* innermost_creation = nullptr;
+
+std::vector<std::unique_ptr<NativeBrowser>>& Records() {
+  static base::NoDestructor<std::vector<std::unique_ptr<NativeBrowser>>> value;
+  return *value;
+}
+
+// Admission's accepted reservation, null for an ordinary Browser, waiting for
+// that Browser's constructor. Creation nests, so the newest is the Browser now
+// being constructed.
+std::vector<std::unique_ptr<PreparedNativeWindow>>& PendingWindows() {
+  static base::NoDestructor<std::vector<std::unique_ptr<PreparedNativeWindow>>>
+      value;
+  return *value;
+}
 
 std::vector<base::WeakPtr<Profile>>& DeferredOTRProfiles() {
   static base::NoDestructor<std::vector<base::WeakPtr<Profile>>> value;
@@ -46,15 +60,31 @@ NativeBrowserWindow& WindowOf(Browser& browser) {
 DEFINE_USER_DATA(NativeBrowser);
 
 // static
-std::unique_ptr<NativeBrowser> NativeBrowser::Create(
-    Browser& browser,
-    BrowserWindowCreateParams& params) {
-  if (!params.native_window) {
-    return nullptr;
+void NativeBrowser::OnBrowserCreated(Browser& browser) {
+  auto& pending = PendingWindows();
+  // DeprecatedCreateOwnedForTesting constructs a Browser without admission.
+  if (pending.empty()) {
+    return;
   }
-  // Moved out so the Browser's retained creation params never carry it.
-  return base::WrapUnique(
-      new NativeBrowser(browser, std::move(params.native_window)));
+  std::unique_ptr<PreparedNativeWindow> reservation = std::move(pending.back());
+  pending.pop_back();
+  if (reservation) {
+    Records().push_back(
+        base::WrapUnique(new NativeBrowser(browser, std::move(reservation))));
+  }
+}
+
+// static
+void NativeBrowser::OnBrowserDestroyed(Browser& browser) {
+  auto& records = Records();
+  auto it = std::ranges::find(records, From(&browser),
+                              &std::unique_ptr<NativeBrowser>::get);
+  if (it == records.end()) {
+    return;
+  }
+  // Out of the registry before its destructor notifies engine ownership.
+  std::unique_ptr<NativeBrowser> record = std::move(*it);
+  records.erase(it);
 }
 
 // static
@@ -69,17 +99,13 @@ const NativeBrowser* NativeBrowser::From(
 }
 
 NativeBrowser::NativeBrowser(Browser& browser,
-                             std::shared_ptr<PreparedNativeWindow> reservation)
+                             std::unique_ptr<PreparedNativeWindow> reservation)
     : browser_(browser),
       reservation_(std::move(reservation)),
-      scoped_data_holder_(browser.GetUnownedUserDataHost(), *this) {
-  ++native_browsers_alive;
-}
+      scoped_data_holder_(browser.GetUnownedUserDataHost(), *this) {}
 
 NativeBrowser::~NativeBrowser() {
   CHECK(DeletionReady());
-  CHECK(native_browsers_alive);
-  --native_browsers_alive;
   NotifyNativeEngineOwnershipChanged();
 }
 
@@ -169,8 +195,13 @@ NativeBrowser::CreateWebContentsDelegate(
       browser_ui_controller);
 }
 
-void NativeBrowser::SetAsDelegate(content::WebContents& contents,
+// static
+void NativeBrowser::SetAsDelegate(Browser& browser,
+                                  content::WebContents& contents,
                                   bool set_delegate) {
+  if (!From(&browser)) {
+    return;
+  }
   auto* binding = NativePageBinding::FromWebContents(&contents);
   if (!binding) {
     if (!set_delegate) {
@@ -179,7 +210,7 @@ void NativeBrowser::SetAsDelegate(content::WebContents& contents,
     NativePageBinding::CreateForWebContents(&contents);
     binding = NativePageBinding::FromWebContents(&contents);
   }
-  binding->SetBrowser(set_delegate ? &*browser_ : nullptr);
+  binding->SetBrowser(set_delegate ? &browser : nullptr);
 }
 
 // static
@@ -192,7 +223,35 @@ void NativeBrowser::OnWebContentsCreated(BrowserWindowInterface* browser,
   // Navigate starts the first load before inserting the tab. Its delegate
   // callbacks during that load already belong to this Browser.
   contents.SetDelegate(BrowserWebContentsDelegate::From(&*native->browser_));
-  native->SetAsDelegate(contents, true);
+  SetAsDelegate(*native->browser_, contents, true);
+}
+
+ScopedNativeBrowserCreation::ScopedNativeBrowserCreation(
+    const BrowserWindowInterface* opener,
+    std::unique_ptr<PreparedNativeWindow> window)
+    : opener_(opener), window_(std::move(window)), outer_(innermost_creation) {
+  innermost_creation = this;
+}
+
+ScopedNativeBrowserCreation::~ScopedNativeBrowserCreation() {
+  CHECK_EQ(innermost_creation, this);
+  innermost_creation = outer_;
+}
+
+// static
+ScopedNativeBrowserCreation* ScopedNativeBrowserCreation::Claim() {
+  if (!innermost_creation || innermost_creation->claimed_) {
+    return nullptr;
+  }
+  innermost_creation->claimed_ = true;
+  return innermost_creation;
+}
+
+BrowserWindowInterface* CreateBrowserWindowFrom(
+    BrowserWindowInterface* opener,
+    BrowserWindowCreateParams params) {
+  ScopedNativeBrowserCreation creation(opener, nullptr);
+  return CreateBrowserWindow(std::move(params));
 }
 
 bool IsNativeBrowser(const BrowserWindowInterface* browser) {
@@ -200,7 +259,7 @@ bool IsNativeBrowser(const BrowserWindowInterface* browser) {
 }
 
 size_t NativeBrowsersAlive() {
-  return native_browsers_alive;
+  return Records().size();
 }
 
 bool DeferNativeOTRProfileDestruction(Profile& profile) {
@@ -233,6 +292,12 @@ void RetryNativeOTRProfileDestruction() {
 }
 
 bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
+  ScopedNativeBrowserCreation* const creation =
+      ScopedNativeBrowserCreation::Claim();
+  const BrowserWindowInterface* const opener =
+      creation ? creation->opener_.get() : nullptr;
+  std::unique_ptr<PreparedNativeWindow> window =
+      creation ? std::move(creation->window_) : nullptr;
   Profile& profile = *params.profile;
   if (!GetNativeRoute(profile)) {
     if (GetNativeRoute(*profile.GetOriginalProfile())) {
@@ -240,14 +305,15 @@ bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
           profile, "This private profile has no registered native window route");
       return false;
     }
-    if (params.native_window) {
+    if (window) {
       LOG(ERROR) << "Native window reservation for an unregistered Profile";
       return false;
     }
-    if (IsNativeBrowser(params.opener)) {
+    if (IsNativeBrowser(opener)) {
       LOG(ERROR) << "Native opener cannot create an unregistered profile window";
       return false;
     }
+    PendingWindows().push_back(nullptr);
     return true;
   }
   auto weak_profile = profile.GetWeakPtr();
@@ -263,7 +329,7 @@ bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
   if (profile.GetProfilePolicyConnector()->IsManaged()) {
     return fail("Managed profile native data-protection UI is unavailable");
   }
-  if (!params.native_window) {
+  if (!window) {
     NativeWindowRequest request{
         profile, params.type,
         params.type == BrowserWindowInterface::TYPE_DEVTOOLS
@@ -272,7 +338,7 @@ bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
                params.type == BrowserWindowInterface::TYPE_APP_POPUP)
                   ? NativeWindowReason::kPopup
                   : NativeWindowReason::kInternal,
-        params.opener, nullptr, params.from_user_gesture};
+        opener, nullptr, params.from_user_gesture};
     request.initial_bounds = params.initial_bounds;
     request.initial_origin_specified =
         params.initial_origin_specified ==
@@ -287,12 +353,12 @@ bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
     if (!prepared.has_value()) {
       return fail(prepared.error());
     }
-    params.native_window = std::move(*prepared);
+    window = std::move(*prepared);
   }
-  if (!weak_profile || !params.native_window ||
-      !params.native_window->CanBind(profile, params.type)) {
+  if (!weak_profile || !window || !window->CanBind(profile, params.type)) {
     return fail("Native window reservation expired or was already consumed");
   }
+  PendingWindows().push_back(std::move(window));
   return true;
 }
 

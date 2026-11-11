@@ -68,8 +68,13 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
   parc_hooks::SetMacMainLoopEndHandler(nullptr);
   parc_hooks::SetMacMainPartsFactory(&CreateMacMainParts);
   parc_hooks::SetBrowserAdmission(&PrepareNativeBrowserWindow);
+  parc_hooks::SetBrowserLifetime(&NativeBrowser::OnBrowserCreated,
+                                 &NativeBrowser::OnBrowserDestroyed);
+  parc_hooks::SetBrowserDelegateChange(&NativeBrowser::SetAsDelegate);
   parc_hooks::SetBrowserRegistration(&NativeBrowser::OnRegistered);
   parc_hooks::SetNavigatorContentsCreated(&NativeBrowser::OnWebContentsCreated);
+  parc_hooks::SetNavigatorBrowserCreator(&CreateBrowserWindowFrom);
+  parc_hooks::SetDevToolsBrowserCreator(&CreateBrowserWindowFrom);
   parc_hooks::SetNativeBrowserWindowFactory(&NativeBrowser::CreateWindow);
   parc_hooks::SetNativeBrowserWindowFeatures(
       &NativeBrowser::ColorProviderSource, &CreateAppKitFocusController,

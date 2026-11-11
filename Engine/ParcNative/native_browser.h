@@ -6,6 +6,7 @@
 #include <optional>
 
 #include "base/functional/callback.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
 #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
 
@@ -39,17 +40,19 @@ class AppBrowserController;
 namespace parc {
 class PreparedNativeWindow;
 
-// Parc's part of a Browser whose window is a native shell window. The Browser
-// owns it from construction, before its features and window exist, until
-// destruction. All methods run on the UI thread.
+// Parc's part of a Browser whose window is a native shell window. Parc owns it
+// from the start of the Browser's constructor, before its features and window
+// exist, to the end of its destructor, after both are gone. All methods run on
+// the UI thread.
 class NativeBrowser final {
  public:
   DECLARE_USER_DATA(NativeBrowser);
 
-  // Takes the one-use reservation PrepareNativeBrowserWindow put in `params`.
-  // Null for an ordinary Browser.
-  static std::unique_ptr<NativeBrowser> Create(Browser& browser,
-                                               BrowserWindowCreateParams& params);
+  // Browser::Browser takes the one-use reservation PrepareNativeBrowserWindow
+  // accepted for it; an ordinary Browser gets no record. Browser::~Browser
+  // releases the record.
+  static void OnBrowserCreated(Browser& browser);
+  static void OnBrowserDestroyed(Browser& browser);
   static NativeBrowser* From(BrowserWindowInterface* browser);
   static const NativeBrowser* From(const BrowserWindowInterface* browser);
   ~NativeBrowser();
@@ -82,22 +85,51 @@ class NativeBrowser final {
       BrowserUiController& browser_ui_controller);
 
   // Browser::SetAsDelegate: binds or releases the page's native presentation.
-  void SetAsDelegate(content::WebContents& contents, bool set_delegate);
+  static void SetAsDelegate(Browser& browser,
+                            content::WebContents& contents,
+                            bool set_delegate);
   // chrome::Navigate created `contents` for `browser` before inserting it.
   static void OnWebContentsCreated(BrowserWindowInterface* browser,
                                    content::WebContents& contents);
 
  private:
   NativeBrowser(Browser& browser,
-                std::shared_ptr<PreparedNativeWindow> reservation);
+                std::unique_ptr<PreparedNativeWindow> reservation);
 
   enum class Deletion { kActive, kDraining, kReady };
 
   const raw_ref<Browser> browser_;
-  std::shared_ptr<PreparedNativeWindow> reservation_;
+  std::unique_ptr<PreparedNativeWindow> reservation_;
   Deletion deletion_ = Deletion::kActive;
   ui::ScopedUnownedUserData<NativeBrowser> scoped_data_holder_;
 };
+
+// The Browser the next Browser::Create on this stack opens from and, from
+// Parc's shell, its one-use window reservation. Only that Create's admission
+// consumes it; a Browser created during that admission sees no context.
+class ScopedNativeBrowserCreation final {
+ public:
+  ScopedNativeBrowserCreation(const BrowserWindowInterface* opener,
+                              std::unique_ptr<PreparedNativeWindow> window);
+  ~ScopedNativeBrowserCreation();
+  ScopedNativeBrowserCreation(const ScopedNativeBrowserCreation&) = delete;
+  ScopedNativeBrowserCreation& operator=(const ScopedNativeBrowserCreation&) =
+      delete;
+
+ private:
+  friend bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params);
+  static ScopedNativeBrowserCreation* Claim();
+
+  const raw_ptr<const BrowserWindowInterface> opener_;
+  std::unique_ptr<PreparedNativeWindow> window_;
+  bool claimed_ = false;
+  const raw_ptr<ScopedNativeBrowserCreation> outer_;
+};
+
+// The navigator's and DevTools' Browser creation, opened from `opener`.
+BrowserWindowInterface* CreateBrowserWindowFrom(
+    BrowserWindowInterface* opener,
+    BrowserWindowCreateParams params);
 
 bool IsNativeBrowser(const BrowserWindowInterface* browser);
 // Includes Browsers scheduled for deletion (upstream public collection hides
@@ -111,9 +143,9 @@ bool DeferNativeOTRProfileDestruction(Profile& profile);
 // Native operations changed; called from the Profile registry notification.
 void RetryNativeOTRProfileDestruction();
 
-// CreateBrowserWindow preflight, before any Browser or feature exists. A
-// native Profile gets a one-use window reservation in `params`. false is a
-// cancelled native creation, never a Chrome-window fallback.
+// Browser::Create's admission, before any Browser or feature exists. A native
+// Profile's Browser gets a one-use window reservation for its constructor.
+// false is a cancelled native creation, never a Chrome-window fallback.
 bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params);
 
 // DevTools frontend for a native page, before its first navigation.

@@ -143,6 +143,14 @@ source-owned presentation services. The overlay installs them under `//parc/nati
 `autofill_save_sessions` and `native_extensions` are shared production/test
 source sets. The Swift/Objective-C facade uses the independent route.
 
+Chromium's Browser, window factory, window features, manager and navigator
+reach native Browsers through `.cc` hooks the main delegate installs before any
+Browser exists. Admission refuses a native window before a Browser is
+allocated. A scoped creation context gives exactly the next Browser its opener
+and the shell's one-use window reservation, and Parc keeps each native
+Browser's record from the start of its constructor to the end of its
+destructor, so features and the window never outlive it.
+
 Before teardown, close request gates, invalidate native associations, cancel
 pending UI and drain callbacks while Browser/Profile services remain alive.
 Source and generated-target checks must verify the exact applied manifest.

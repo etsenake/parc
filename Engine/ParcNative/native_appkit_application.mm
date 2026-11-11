@@ -1504,8 +1504,9 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
   _state->private_profile = profile->GetWeakPtr();
   BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL, *profile, true);
   params.should_trigger_session_restore = false;
-  params.native_window = std::make_shared<parc::PreparedAppKitWindow>(
-      *profile, BrowserWindowInterface::TYPE_NORMAL, self);
+  parc::ScopedNativeBrowserCreation creation(
+      nullptr, std::make_unique<parc::PreparedAppKitWindow>(
+                   *profile, BrowserWindowInterface::TYPE_NORMAL, self));
   auto* browser = CreateBrowserWindow(std::move(params));
   if (!browser || browser->GetProfile() != profile || parc::AppKitBindingForBrowser(browser) != self) {
     if (browser && !browser->IsDeleteScheduled() && browser->GetTabStripModel()->empty()) browser->GetWindow()->Close();
@@ -1638,8 +1639,10 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
         if (GetBrowserWindowCreationStatusForProfile(profile) ==
             BrowserWindowInterface::CreationStatus::kOk) {
           BrowserWindowCreateParams params(profile, /*from_user_gesture=*/false);
-          params.native_window = std::make_shared<parc::PreparedAppKitWindow>(
-              profile, BrowserWindowInterface::TYPE_NORMAL, binding);
+          parc::ScopedNativeBrowserCreation creation(
+              nullptr, std::make_unique<parc::PreparedAppKitWindow>(
+                           profile, BrowserWindowInterface::TYPE_NORMAL,
+                           binding));
           created = CreateBrowserWindow(std::move(params));
         }
         if (created) {
@@ -2323,8 +2326,9 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL,
                                      *profile, true);
     params.should_trigger_session_restore = false;
-    params.native_window = std::make_shared<parc::PreparedAppKitWindow>(
-        *profile, BrowserWindowInterface::TYPE_NORMAL, self);
+    parc::ScopedNativeBrowserCreation creation(
+        nullptr, std::make_unique<parc::PreparedAppKitWindow>(
+                     *profile, BrowserWindowInterface::TYPE_NORMAL, self));
     destination = CreateBrowserWindow(std::move(params));
     created_destination = destination != nullptr;
   }
@@ -2500,8 +2504,9 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL,
                                      *profile, true);
     params.should_trigger_session_restore = false;
-    params.native_window = std::make_shared<parc::PreparedAppKitWindow>(
-        *profile, BrowserWindowInterface::TYPE_NORMAL, self);
+    parc::ScopedNativeBrowserCreation creation(
+        nullptr, std::make_unique<parc::PreparedAppKitWindow>(
+                     *profile, BrowserWindowInterface::TYPE_NORMAL, self));
     destination = CreateBrowserWindow(std::move(params));
   }
   if (!destination || !source_weak || !contents_weak || !tab_weak ||
@@ -3455,8 +3460,10 @@ void WithNativeRoutingBrowser(PCNativeBrowserWindow* binding, NSString* path,
           }
           BrowserWindowCreateParams params(BrowserWindowInterface::TYPE_NORMAL, *profile, true);
           params.should_trigger_session_restore = false;
-          params.native_window = std::make_shared<PreparedAppKitWindow>(
-              *profile, BrowserWindowInterface::TYPE_NORMAL, binding);
+          ScopedNativeBrowserCreation creation(
+              nullptr, std::make_unique<PreparedAppKitWindow>(
+                           *profile, BrowserWindowInterface::TYPE_NORMAL,
+                           binding));
           browser = CreateBrowserWindow(std::move(params));
           created = browser != nullptr;
         }

@@ -21,6 +21,7 @@
 #include "url/gurl.h"
 #include "url/origin.h"
 
+class Browser;
 class BrowserFocusController;
 class BrowserUiController;
 class BrowserWebContentsDelegate;
@@ -211,9 +212,14 @@ void SetSessionRestorePolicy(bool (*policy)());
 // components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
 void SetGaiaAccountsPolicy(bool (*policy)(PrefService*));
 
-// chrome/browser/ui/browser.cc, Browser::Create before any allocation; false
-// cancels the creation.
+// chrome/browser/ui/browser.cc: Browser::Create before any allocation (false
+// cancels the creation), the start of the constructor and the end of the
+// destructor, and Browser::SetAsDelegate.
 void SetBrowserAdmission(bool (*admission)(BrowserWindowCreateParams&));
+void SetBrowserLifetime(void (*created)(Browser&),
+                        void (*destroyed)(Browser&));
+void SetBrowserDelegateChange(
+    void (*changed)(Browser&, content::WebContents&, bool));
 
 // chrome/browser/ui/browser_manager_service.cc, in AddBrowser once ownership
 // and subscriptions exist and before any collection observer.
@@ -223,6 +229,15 @@ void SetBrowserRegistration(void (*registered)(BrowserWindowInterface*));
 // contents for a Browser and before their first load.
 void SetNavigatorContentsCreated(
     void (*created)(BrowserWindowInterface*, content::WebContents&));
+
+// Browsers opened from another one: popups, Picture-in-Picture and new windows
+// in chrome/browser/ui/navigator/browser_navigator.cc, and DevTools windows in
+// chrome/browser/devtools/devtools_window.cc.
+using OpenedBrowserCreator =
+    BrowserWindowInterface* (*)(BrowserWindowInterface* opener,
+                                BrowserWindowCreateParams params);
+void SetNavigatorBrowserCreator(OpenedBrowserCreator creator);
+void SetDevToolsBrowserCreator(OpenedBrowserCreator creator);
 
 // chrome/browser/ui/views/frame/browser_window_factory.cc; a null window keeps
 // Chrome's.
