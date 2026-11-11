@@ -327,12 +327,24 @@ Source's buffered ranges give. The player still runs that check where WebKit
 runs `monitorSourceBuffers`, and still makes the readyState change and the
 seek's time notification itself.
 
-Parc's per-player state is moving into one object that the player holds and
-befriends, and which reaches the player the same way. The key tracker moved
-there first: when a Safari-identity element starts and
-stops waiting for a key, and which CDM it asks. Its callbacks still go
-through the player's weak pointer, so they stop at the same moment as before,
-and the player still calls it from the same points.
+Parc's per-player state lives in one object, the player's only Parc member,
+which the player befriends and which reaches the player the same way. The key
+tracker runs inside it: when a Safari-identity element starts and stops
+waiting for a key, and which CDM it asks. Its callbacks still go through the
+player's weak pointer, so they stop at the same moment as before, and the
+player still calls it from the same points. The object is built before the
+player's main-thread task runner, which on Safari-identity pages is the
+object's frame task runner. Two of its fields are now destroyed slightly
+later in the player's destructor than before, the native HLS loader and a
+replaced CDM reference; both go after `Shutdown()` has stopped the pipeline,
+so nothing can observe the difference.
+
+The player header still declares Parc methods: overrides of Parc's player,
+demuxer and track interfaces, and the orchestration that drives the player's
+own state machine, namely the FairPlay hand-off and restarts, the AirPlay
+route switch, document moves, casting while frozen and the readyState gates.
+They stay in Chromium's file because they read and change the player's
+private state in place, in an order Safari-identity pages depend on.
 
 ## Decisions
 

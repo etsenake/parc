@@ -12,12 +12,17 @@
 #include "third_party/blink/public/platform/web_media_player.h"
 #include "third_party/blink/public/platform/web_media_player_encrypted_media_client.h"
 #include "third_party/blink/renderer/platform/media/parc_media_player_client.h"
+#if BUILDFLAG(IS_MAC)
+#include "third_party/blink/renderer/platform/media/fairplay_hls_loader.h"
+#endif  // BUILDFLAG(IS_MAC)
 #include "third_party/blink/renderer/platform/media/web_media_player_impl.h"
 
 namespace blink {
 
-ParcWebMediaPlayerState::ParcWebMediaPlayerState(WebMediaPlayerImpl& player)
-    : player_(player) {}
+ParcWebMediaPlayerState::ParcWebMediaPlayerState(
+    WebMediaPlayerImpl& player,
+    scoped_refptr<ParcFrameTaskRunner> frame_task_runner)
+    : player_(player), frame_task_runner_(std::move(frame_task_runner)) {}
 
 ParcWebMediaPlayerState::~ParcWebMediaPlayerState() = default;
 
