@@ -263,6 +263,10 @@ void DestroyUnusedOTRProfile(Profile& profile);
 // contents for a Browser and before their first load.
 void SetNavigatorContentsCreated(
     void (*created)(BrowserWindowInterface*, content::WebContents&));
+// Same file, before profile and incognito policy. Only the URL is replaced;
+// the rest of NavigateParams stays intact.
+using NavigatorURLRewriter = GURL (*)(const GURL&);
+void SetNavigatorURLRewriter(NavigatorURLRewriter rewriter);
 
 // Browsers opened from another one: popups, Picture-in-Picture and new windows
 // in chrome/browser/ui/navigator/browser_navigator.cc, and DevTools windows in

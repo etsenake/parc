@@ -24,6 +24,7 @@
 #include "parc/chromium_hooks.h"
 #include "parc/native/native_appkit_host.h"
 #include "parc/native/native_browser.h"
+#include "parc/native/native_internal_urls.h"
 #include "parc/native/native_profile_policy.h"
 #include "parc/native/unload_transactions.h"
 #include "chrome/utility/chrome_content_utility_client.h"
@@ -78,6 +79,7 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
                                      &NativeBrowser::DeletionReady);
   parc_hooks::SetOTRProfileDestructionDeferral(
       &DeferNativeOTRProfileDestruction);
+  parc_hooks::SetNavigatorURLRewriter(&CanonicalInternalURL);
   parc_hooks::SetNavigatorContentsCreated(&NativeBrowser::OnWebContentsCreated);
   parc_hooks::SetNavigatorBrowserCreator(&CreateBrowserWindowFrom);
   parc_hooks::SetDevToolsBrowserCreator(&CreateBrowserWindowFrom);

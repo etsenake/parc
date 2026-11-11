@@ -320,6 +320,11 @@ it. The frame-install, post-canvas, parsing, LCP, new-document and resource-load
 implementation hooks stay.
 Website-theme already uses an owned renderer observer and needs no replacement.
 
+Navigator internal-address canonicalization uses an implementation-only hook at the original early
+point, before profile and incognito policy. The hook replaces only the URL; request body, referrer,
+initiator and callback remain on the same `NavigateParams`. Chromium’s navigator no longer includes
+Parc or carries the internal-address build dependency.
+
 These remaining browser patches preserve private implementation behavior or keep
 required build inputs. Declaration-only changes can move separately from the
 implementation they describe:

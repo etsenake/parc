@@ -355,18 +355,6 @@
      ":renderer_context_menu",
      "//base",
      "//base:i18n",
---- a/chrome/browser/ui/navigator/BUILD.gn
-+++ b/chrome/browser/ui/navigator/BUILD.gn
-@@ -41,7 +41,7 @@
-     "browser_navigator_params_utils.cc",
-   ]
--
-+
--  deps = [
-+  deps = [ "//parc/native:native_internal_urls_api",
-     ":navigator",
-     "//base",
-     "//chrome/browser:browser_about_handler",
 --- a/chrome/browser/file_select_helper_unittest.cc
 +++ b/chrome/browser/file_select_helper_unittest.cc
 @@ -694,8 +694,16 @@
