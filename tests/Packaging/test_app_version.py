@@ -1,4 +1,3 @@
-"""Validate release ordering and the version shared by every native bundle."""
 import importlib.util
 import json
 from pathlib import Path

@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Execute production replay coordination with inert window/native collaborators.
-
-No AppKit application or browser is started. Extract the actual methods so a
-regression in their ordering, reservation or recovery cannot pass a copied model.
-"""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -31,12 +26,14 @@ browser_methods = "\n".join(method(browser, signature) for signature in (
 app_methods = "\n".join(method(app, signature) for signature in (
     "private func startOnboardingReplay(", "private func restoreReplayWindow(",
     "private func finishOnboardingReplay("))
-# Exercise both real termination entry gates; the unrelated normal shutdown
-# backend is replaced by a counter after its initial started guard.
 for signature in ("func requestApplicationTermination(", "private func continueApplicationTermination("):
     gate = method(app, signature).split("        guard started else", 1)[0]
     app_methods += "\n" + gate + "        globalQuitRequests += 1\n    }"
-generated = template.replace("// BROWSER_METHODS", browser_methods).replace("// APP_METHODS", app_methods)
+browser_end = "\n}\nfinal class AppDelegate {"
+app_end = "\n}\nfunc drain()"
+assert template.count(browser_end) == 1 and template.count(app_end) == 1, "Harness.swift class endings moved"
+generated = (template.replace(browser_end, "\n    " + browser_methods + browser_end)
+             .replace(app_end, "\n    " + app_methods + app_end))
 with tempfile.TemporaryDirectory(prefix="parc-replay-check-") as directory:
     source = Path(directory) / "main.swift"
     binary = Path(directory) / "replay-check"

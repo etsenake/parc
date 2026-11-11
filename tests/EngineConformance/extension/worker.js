@@ -63,7 +63,6 @@ function summary(tab) {
   return {id: tab.id, windowId: tab.windowId, index: tab.index, active: tab.active};
 }
 async function currentFixture() {
-  // Only an explicit action asks for the active tab. Never enumerate all windows/tabs.
   const current = await api("tabs.query", {active: true, lastFocusedWindow: true});
   if (current.length !== 1) blocked("Open the action on one active fixture page");
   const tab = current[0];
@@ -89,7 +88,6 @@ async function createWindow(type) {
   check(!state.registry.windows[String(window.id)], "Engine reused a tracked window ID");
   state.registry.windows[String(window.id)] = {id: window.id, type};
   const tabs = await api("tabs.query", {windowId: window.id});
-  // Track created contents before reporting a type/shape mismatch so cleanup remains possible.
   for (const tab of tabs) registerTab(tab, role);
   await persist();
   check(window.type === type, `Requested ${type} window, received ${window.type ?? "missing type"}`);
@@ -108,7 +106,6 @@ async function inspectIdentity() {
   }
   const failure = identityFailure(window, current, query, active, singles, state.registry);
   check(!failure, failure);
-  // Do not retain URLs, titles or identity data for tabs the fixture did not create.
   return {windowId: window.id, type: window.type, activeTabId: current.id,
     fixtureTabs: own.map(summary), untrackedTabCount: query.length - own.length};
 }
@@ -118,7 +115,6 @@ async function inject() {
   const results = await api("scripting.executeScript", {
     target: {tabId: tab.id, frameIds: [0]},
     func: (expectedURL) => {
-      // Execute nothing on a different document, including a navigation race.
       if (location.href !== expectedURL || location.origin !== "http://127.0.0.1:8765" ||
           location.pathname !== "/fixture.html") return {ok: false, reason: "document changed"};
       if (document.querySelector('meta[name="parc-engine-fixture"]')?.content !== "1")
@@ -173,7 +169,6 @@ async function perform(operation, input) {
         await api("tabs.remove", tab.id);
         const info = await removal;
         check(info.windowId === tab.windowId, "Removal event reported the wrong window");
-        // The serialized event handler removes the registry entry and journals it.
         return {removedTabId: tab.id, windowId: tab.windowId, removalEventObserved: true};
       } finally { clearTimeout(timer); pendingRemovals.delete(tab.id); }
     }
@@ -218,9 +213,8 @@ async function request(operation, input = {}) {
     return {ok: true, state: snapshot()};
   } catch (error) {
     const status = error.status ?? "FAIL";
-    // API error strings can contain URLs; the report does not need them.
     const message = String(error.message).replace(/(?:https?|file):\/\/\S+/g, "[URL omitted]").slice(0, 600);
-    try { await record(operation, status, {message}); } catch { /* Storage itself may be unsupported. */ }
+    try { await record(operation, status, {message}); } catch { }
     return {ok: false, status, message, state: state ? snapshot() : null};
   }
 }
@@ -233,7 +227,6 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   return true;
 });
 
-// Register synchronously so a suspended MV3 worker can be awakened by these events.
 function event(operation, extract) {
   return (...args) => { serial(async () => {
     await load();
@@ -251,7 +244,6 @@ chrome.tabs?.onUpdated?.addListener(event("tabs.onUpdated", (id, change) =>
 chrome.tabs?.onActivated?.addListener(event("tabs.onActivated", info =>
   state.registry.tabs[String(info.tabId)] ? {tabId: info.tabId, windowId: info.windowId} : null));
 chrome.tabs?.onRemoved?.addListener((id, info) => {
-  // Resolve before the serial journal task: a remove operation is awaiting this event.
   pendingRemovals.get(id)?.(info);
   const wasTracked = Boolean(state?.registry.tabs[String(id)]);
   serial(async () => {

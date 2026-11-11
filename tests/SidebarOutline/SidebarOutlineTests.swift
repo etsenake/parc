@@ -1,7 +1,5 @@
 import AppKit
 
-/// An item view exposed as TAB22 exposes a web row: one AX button described as
-/// "Tab", titled by the page.
 @MainActor final class TabItem: NSView {
     init(_ title: String) {
         super.init(frame: .zero)
@@ -11,8 +9,6 @@ import AppKit
     required init?(coder: NSCoder) { fatalError() }
 }
 
-/// A folder view exposed as SidebarFolderRow is: a disclosure triangle whose
-/// press toggles the folder.
 @MainActor final class FolderItem: NSView {
     var toggles = 0
     init(_ name: String, expanded: Bool) {
@@ -24,7 +20,6 @@ import AppKit
     func activate() { toggles += 1 }
 }
 
-/// A split exposed as SidebarSplitGroupView is: a group of its tab buttons.
 @MainActor final class SplitItem: NSView {
     let tabs = [TabItem("Left"), TabItem("Right")]
     init() {
@@ -39,7 +34,6 @@ import AppKit
     }
 }
 
-/// A list stop like SidebarView, whose canBecomeKeyView needs the sidebar presented.
 @MainActor final class FocusOwner: NSView {
     var isPresented = true
     override var acceptsFirstResponder: Bool { true }
@@ -69,29 +63,23 @@ enum Control: Hashable { case header, divider, heading, newTab }
         window.contentView = root
         let scroll = NSScrollView(frame: NSRect(x: 8, y: 0, width: 224, height: 200))
         root.addSubview(scroll)
-        // Configured as SidebarView configures its list: the outline sets
-        //
         let outline = SidebarOutlineView()
         outline.focusOwner = root
         scroll.documentView = outline
         check(outline.orientation == .vertical && outline.spacing == 0 && outline.edgeInsets.top == 0
               && outline.edgeInsets.bottom == SidebarChromeLayout.tablistBottomInset, "rows abut and the outline ends with the bottom inset")
 
-        // Items are keyed by their SidebarItemReference, as SidebarView keys them.
         let pinnedID = SidebarItemReference.tab(UUID()), childID = SidebarItemReference.tab(UUID())
         let splitID = SidebarItemReference.split(UUID()), todayID = SidebarItemReference.tab(UUID())
         let workID = UUID(), archiveID = UUID()
         let workKey = AnyHashable(SidebarItemReference.folder(workID)), archiveKey = AnyHashable(SidebarItemReference.folder(archiveID))
         let pinned = TabItem("Pinned"), folder = FolderItem("Work", expanded: true), child = TabItem("Child")
         let subfolder = FolderItem("Archive", expanded: false), split = SplitItem(), today = TabItem("Today")
-        // SidebarView's divider cell holds its line and Clear.
         let divider = NSBox(); divider.boxType = .separator
         let clear = ActionButton("↓ Clear")
         let dividerCell = NSView(); dividerCell.addSubview(divider); dividerCell.addSubview(clear)
         let newTab = ActionButton("New Tab", symbol: "plus")
 
-        // The entry helpers SidebarView.render builds its items with: key,
-        // row, level and disclosing folder; a folder's state and toggle.
         let tabEntry = SidebarOutlineEntry.item(childID, content: child, depth: 2, in: archiveID)
         check(tabEntry.key == AnyHashable(childID) && tabEntry.isItem && tabEntry.row == .item, "a tab entry is an item row keyed by its reference")
         check(tabEntry.level == 2, "a tab entry's folder depth is its level")
@@ -109,7 +97,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
         let controlEntry = SidebarOutlineEntry(key: Control.newTab, content: newTab, row: .item)
         check(!controlEntry.isItem && controlEntry.level == 0 && controlEntry.disclosedBy == nil, "a list control's entry is no item")
 
-        // The list's own rows take their tablist slots' rows, as SidebarView's do.
         typealias Slot = SidebarChromeLayout.TablistSlot
         let header = SidebarOutlineEntry.pinnedHeader(Control.header)
         check(header.key == AnyHashable(Control.header) && header.content == nil && header.row == Slot.pinnedHeader.row && !header.isItem,
@@ -133,7 +120,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
                            .item(todayID, content: today, depth: 0, in: nil)]
         }
         func layout() {
-            // SidebarView sizes the list from contentHeight; it must be Auto Layout's fitting height.
             check(abs(outline.contentHeight - outline.fittingSize.height) < 0.001,
                   "the summed row heights are the outline's fitting height (\(outline.contentHeight) vs \(outline.fittingSize.height))")
             outline.frame = NSRect(x: 0, y: 0, width: scroll.contentSize.width, height: max(0, outline.contentHeight))
@@ -141,10 +127,7 @@ enum Control: Hashable { case header, divider, heading, newTab }
         }
         outline.reload(entries()); layout()
 
-        // The outline: AppKit's AXOutline lists its rows, then one column.
         check(outline.isAccessibilityElement() && outline.accessibilityRole() == .outline, "the list is an AXOutline")
-        //
-        // which AX clients read as AXIdentifier only.
         check(outline.accessibilityIdentifier() == "sidebarAllTabList", "the outline's AXIdentifier is the sidebarAllTabList")
         check(outline.accessibilityLabel() == nil && outline.accessibilityTitle() == nil, "the outline has no AXDescription or AXTitle")
         let rows = outline.rows
@@ -162,7 +145,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
         check((outline.accessibilityColumns() ?? []).count == 1 && same(outline.accessibilityColumns()?.first, column), "one AXColumns entry")
         check(same(outline.accessibilityParent(), scroll), "the outline sits in the list's scroll area")
 
-        // Rows and cells: AXRow / AXOutlineRow → AXCell → the entry's own element.
         for (index, row) in rows.enumerated() {
             check(row.isAccessibilityElement() && row.accessibilityRole() == .row && row.accessibilitySubrole() == .outlineRow,
                   "row \(index) is an AXRow / AXOutlineRow")
@@ -175,7 +157,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
                   && row.cell.accessibilityColumnIndexRange() == NSRange(location: 0, length: 1), "cell \(index) index ranges")
             check(close(row.accessibilityFrame(), frame(row)) && abs(row.accessibilityFrame().width - frame(outline).width) < 0.5,
                   "row \(index) spans the outline in screen coordinates")
-            // TablistOutlineView's cell: 16 points in per level, the intercell gap below.
             let indent = CGFloat(row.accessibilityDisclosureLevel()) * SidebarChromeLayout.tablistIndentation
             check(close(row.cell.frame, NSRect(x: indent, y: 0, width: row.bounds.width - indent, height: row.bounds.height - 1)),
                   "cell \(index) is its row's cell")
@@ -194,7 +175,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
         let dividerChildren = cellChildren(Control.divider)
         check(dividerChildren.count == 1 && same(dividerChildren.first, clear.cell), "Clear sits in the divider's row divider cell")
 
-        //
         let workRow = byKey[workKey]!, archiveRow = byKey[archiveKey]!, childRow = byKey[childID]!, dividerRow = byKey[Control.divider]!
         let pinnedRow = byKey[pinnedID]!, splitRow = byKey[splitID]!, todayRow = byKey[todayID]!, newTabRow = byKey[Control.newTab]!
         func inRow(_ view: NSView, _ row: SidebarOutlineRow) -> NSRect { row.convert(view.bounds, from: view) }
@@ -214,7 +194,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
               && abs(newTab.frame.width - newTabRow.frame.width) < 0.5, "a narrower list keeps every row's insets")
         scroll.frame.size.width = 224; layout()
 
-        // Disclosure: AppKit's folder attributes, with links both ways.
         check(workRow.isAccessibilityDisclosed() && workRow.accessibilityDisclosureLevel() == 0, "an expanded folder discloses at level 0")
         let disclosed = (workRow.accessibilityDisclosedRows() as? [Any]) ?? []
         check(disclosed.count == 2 && same(disclosed[0], childRow) && same(disclosed[1], archiveRow), "a folder discloses its direct child rows")
@@ -227,8 +206,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
         check(workRow.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilityDisclosed(_:))), "a folder row takes AXDisclosing")
         check(!pinnedRow.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilityDisclosed(_:))), "a tab row does not")
         check(!workRow.isAccessibilitySelectorAllowed(#selector(NSView.setAccessibilitySelected(_:))), "selection stays with the items' actions")
-        // The pinned header: an expandable item with no children, listed
-        // collapsed, whose pinned items are its siblings.
         let headerRow = byKey[Control.header]!
         check(!headerRow.isAccessibilityDisclosed() && headerRow.accessibilityDisclosureLevel() == 0
               && ((headerRow.accessibilityDisclosedRows() as? [Any]) ?? []).isEmpty && headerRow.accessibilityDisclosedByRow() == nil,
@@ -237,8 +214,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
         check(rows.allSatisfy { !same($0.accessibilityDisclosedByRow(), headerRow) } && pinnedRow.accessibilityDisclosureLevel() == 0,
               "the pinned items are the header's siblings")
 
-        // Selected rows: the multi-selection or single selection plus the active
-        // item, filtered to visible rows.
         func selectedRows() -> [Any] { outline.accessibilitySelectedRows() ?? [] }
         outline.select([pinnedID, todayID], single: nil, active: nil)
         check(selectedRows().count == 2 && same(selectedRows()[0], pinnedRow) && same(selectedRows()[1], todayRow), "AXSelectedRows are the multi-selection")
@@ -253,16 +228,12 @@ enum Control: Hashable { case header, divider, heading, newTab }
         outline.select([pinnedID, .tab(UUID())], single: nil, active: .folder(UUID()))
         check(selectedRows().count == 1 && same(selectedRows()[0], pinnedRow), "items without a visible row are not selected")
 
-        // Setting AXDisclosing runs the folder's toggle, only on a change, and
-        // leaves the selected rows alone.
         workRow.setAccessibilityDisclosed(true)
         check(folder.toggles == 0, "setting the current disclosure does nothing")
         workRow.setAccessibilityDisclosed(false)
         check(folder.toggles == 1, "collapsing the folder row runs the folder's toggle once")
         pinnedRow.setAccessibilityDisclosed(true)
         check(folder.toggles == 1 && subfolder.toggles == 0, "a tab row ignores AXDisclosing")
-        // Expanding the pinned header leaves it collapsed, as AppKit's outline
-        // leaves an expandable item without children (inert probe).
         headerRow.setAccessibilityDisclosed(true)
         check(!headerRow.isAccessibilityDisclosed() && ((headerRow.accessibilityDisclosedRows() as? [Any]) ?? []).isEmpty,
               "the pinned header row stays collapsed with no rows to disclose")
@@ -270,7 +241,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
               "expanding the pinned header adds no rows and runs no toggle")
         check(selectedRows().count == 1 && pinnedRow.isAccessibilitySelected(), "AXDisclosing keeps the selected rows")
 
-        // Visible rows follow the scroll position.
         let visible = outline.accessibilityVisibleRows() ?? []
         check(!visible.isEmpty && visible.count < rows.count && same(visible.first, rows.first), "only rows inside the visible area are AXVisibleRows")
         scroll.contentView.scroll(to: NSPoint(x: 0, y: outline.frame.height - scroll.contentView.bounds.height))
@@ -278,7 +248,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
         let scrolled = outline.accessibilityVisibleRows() ?? []
         check(same(scrolled.last, rows.last) && !scrolled.contains { same($0, rows.first) }, "scrolling moves the visible rows")
 
-        // No element is exposed twice: walk the outline's subtree.
         var seen: [ObjectIdentifier: Int] = [:]
         func walk(_ element: Any) {
             guard let object = element as? NSObject else { return }
@@ -296,7 +265,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
         check(outline.contents.count == 8 && outline.contents.first === pinned && outline.contents.last === today,
               "contents keep every entry's view; the pinned header has none")
 
-        // Rebuilds keep row elements by key; collapsing drops the child rows.
         let rebuilt = TabItem("Pinned")
         outline.reload(entries(folderExpanded: false, pinned: rebuilt)); layout()
         let collapsed = outline.rows
@@ -314,19 +282,15 @@ enum Control: Hashable { case header, divider, heading, newTab }
         outline.select([], single: nil, active: nil)
         check(selectedRows().isEmpty && !collapsed[1].isAccessibilitySelected(), "clearing the selection clears every row")
 
-        // A hidden entry keeps a hidden row that is no element and takes no space.
         let heading = NSTextField(labelWithString: "Incognito Tabs"); heading.isHidden = true
         outline.reload([header, .init(key: Control.heading, content: heading, row: Slot.privateHeading.row), newTabEntry]); layout()
         let hiddenRow = outline.arrangedSubviews.first { ($0 as? SidebarOutlineRow)?.key == AnyHashable(Control.heading) }
         check(outline.rows.count == 2 && hiddenRow?.isAccessibilityElement() == false && outline.rows[1].frame.minY == 3,
               "a hidden entry's row is no element and takes no space")
 
-        // A repeated key still gets its own row.
         outline.reload([.item(pinnedID, content: TabItem("A"), depth: 0, in: nil), .item(pinnedID, content: TabItem("B"), depth: 0, in: nil)]); layout()
         check(outline.rows.count == 2 && outline.rows[0] !== outline.rows[1], "duplicate keys never share a row")
 
-        // Focus: the list's keyboard stop stands for the outline while it could
-        // be tabbed to: shown, with an item row to move through.
         check(!outline.isAccessibilityFocused(), "the outline is not focused while its stop is not first responder")
         window.makeFirstResponder(root)
         check(window.firstResponder === root && outline.isAccessibilityFocused(), "the stop's focus is the outline's")
@@ -337,18 +301,12 @@ enum Control: Hashable { case header, divider, heading, newTab }
         scroll.isHidden = true
         check(!outline.isAccessibilityFocused(), "a hidden list is never focused")
         scroll.isHidden = false
-        // A Space with no items still has its header and New Tab rows.
         outline.reload([header, newTabEntry]); layout()
         check(window.firstResponder === root && outline.rows.count == 2 && !outline.isAccessibilityFocused(), "a list of controls only is never focused")
         outline.reload([]); layout()
         check(!outline.isAccessibilityFocused() && outline.rows.isEmpty, "an empty list is never focused")
         check((outline.accessibilityChildren() ?? []).count == 1, "an empty outline keeps only its column")
 
-        //
-        // makes a cell only for a row AppKit shows. Every row is still listed
-        // with its index, depth, disclosure and selection; a row without a view
-        // takes it when an accessibility client asks for its children, and
-        // moving the accessibility focus to one scrolls it in.
         var built = 0
         var released: [AnyHashable] = []
         outline.releaseContent = { key, _ in released.append(key) }
@@ -399,8 +357,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
         print("SidebarOutline: \(count) checks passed")
     }
 
-    ///
-    /// no children, read and set through the attribute API remote clients use.
     static func stockHeader() {
         let window = NSWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 300, height: 200),
                               styleMask: [.titled], backing: .buffered, defer: false)
@@ -411,7 +367,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
         let source = StockSource(); stock.dataSource = source; stock.delegate = source
         scroll.documentView = stock; window.contentView = scroll
         stock.reloadData(); stock.layoutSubtreeIfNeeded()
-        // The legacy attribute methods, sent as AXUIElement requests arrive.
         typealias Get = @convention(c) (NSObject, Selector, NSString) -> Unmanaged<AnyObject>?
         typealias Settable = @convention(c) (NSObject, Selector, NSString) -> Bool
         typealias Put = @convention(c) (NSObject, Selector, AnyObject, NSString) -> Void
@@ -439,8 +394,6 @@ enum Control: Hashable { case header, divider, heading, newTab }
     }
 }
 
-///
-/// children) and a pinned tab, its sibling.
 @MainActor final class StockSource: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
     static let header = "header" as NSString, tab = "tab" as NSString
     var asked = 0

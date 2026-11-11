@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""P1-J behavior lock: PeekController title/URL/loading/capture/crash/favicon
-ticks skip refresh/onUpdate only when the Peek-visible presentation fingerprint
-matches the last apply. Real presentation flips still refresh and notify.
-Dismissal confirmation onUpdate paths stay ungated. No BrowserWindowController
-onUpdate-bridge skip.
-"""
 from pathlib import Path
 import re
 
@@ -62,7 +56,6 @@ for selector in (
     assert body.count("onUpdate?()") == 0, \
         f"{selector} must not call onUpdate outside publishPresentationIfChanged"
 
-# Dismissal confirmation / modal-phase notifies stay ungated.
 assert "self?.view.confirmationTitle = nil\n                self?.onUpdate?()" in controller, \
     "dismissal confirmation expiry must still call onUpdate ungated"
 assert re.search(
@@ -73,11 +66,9 @@ assert re.search(
 assert "if closePending { onUpdate?() }" in controller, \
     "dismissal-start owners must still observe closePending via onUpdate"
 
-# Ownership/focus: requestFocusForRendererCrash still refreshes then focuses.
 assert "func browserView(_ view: PCBrowserView, requestFocusForRendererCrash crash: PCNativeRendererCrash) { refresh(); focus() }" in controller, \
     "renderer-crash focus must still refresh then focus"
 
-# Skip must live in PeekController, not the window onUpdate bridge.
 peek_wire = re.search(
     r"peek\.onUpdate = \{ \[weak self\] in self\?\.(?P<fn>\w+)\(\) \}",
     window)

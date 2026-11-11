@@ -104,13 +104,9 @@ struct PeekReferrerPoolTests {
                "Accepted close archives only the actual promoted item")
         expect(window.finishFolderRemoval(surviving, state: store.state, available: { _ in true }),
                "Accepted close applies the original window's existing focus receipt")
-        // Joining the split moved the pinned source into Today and left a
-        //
-        // to it is an unpinned (context 2) selection that keeps the pair.
         expect(store.state.tabs.first { $0.id == source }?.kind == .today
                && window.selectedTabIDs == [source] && window.referrerPool == [source, promoted],
                "Committed close returns the original source with its unpinned pool transition")
-        // A pinned source outside any split keeps the saved-item transition.
         let savedSource = store.open("https://saved-source.example", kind: .pinned)
         let savedReceipt = TabCreationProvenance(referrerID: savedSource, activeTabID: savedSource,
                                                  profileID: profile, state: store.state)
@@ -134,9 +130,6 @@ struct PeekReferrerPoolTests {
                "The original window applies its pinned-source return")
         expect(savedWindow.selectedTabIDs == [savedSource] && savedWindow.referrerPool == [savedSource],
                "Committed close returns the pinned source and applies its saved-item pool transition")
-        // A global Favorite may be displayed in another Space in its Profile.
-        // Menu and control promotion target that window's current Space while
-        // retaining the original Favorite's provenance and original page URL.
         let favorite = store.open("https://global-favorite.example", kind: .favorite)
         let favoriteSpace = store.state.tabs.first { $0.id == favorite }!.spaceID
         let destination = store.createSpace(name: "Current Window Space")

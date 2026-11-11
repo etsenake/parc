@@ -148,9 +148,6 @@ def main():
             raise ValueError(f"reviewed overlay/hash mismatch: {path}")
         snapshots[path] = actual
 
-    # Validate all mapped sources, headers, BUILD files and patch outputs before
-    # any compiler starts. Native source is then compiled at its actual checkout
-    # path; no repository include override can mask an unapplied dependency.
     sources = {}
     outputs = {}
     for item in manifest["files"]:
@@ -211,8 +208,6 @@ def main():
             raise ValueError(f"missing actual object membership: {source}: {flags_file}")
         targets.append((sources[source], flags_file, language))
 
-    # These original CXX sources keep their own generated owners. A test
-    # source_set must use its own flags, never chrome/test's top-level flags.
     upstream = UPSTREAM
     source = "Engine/ParcNative/native_browser_web_contents_delegate.mm"
     if source not in sources:

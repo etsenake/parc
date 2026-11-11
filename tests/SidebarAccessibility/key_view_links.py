@@ -1,9 +1,3 @@
-"""SidebarView is not compiled by the key-view suites: every place it links its
-chain must pass the window owner's exit, bypass the chain while the sidebar is
-not presented and skip the Space pages it isn't showing (the linker's behaviour for
-each is run in SidebarAccessibilityTests)."""
-
-
 def sidebar_link_calls(sidebar):
     calls, start = [], sidebar.find("SidebarAccessibility.link(")
     while start != -1:

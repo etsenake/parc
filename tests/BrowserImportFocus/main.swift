@@ -36,8 +36,6 @@ import SwiftUI
         print("Browser import focus: 9 checks and setup key-view order passed")
     }
 
-    /// Reading order per root, roots kept in the given order, one entry per
-    /// SwiftUI host, labels left out, hidden and disabled controls kept.
     static func keyViewOrder() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 400),
                               styleMask: [.titled], backing: .buffered, defer: false)

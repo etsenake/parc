@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Check the real panel configuration off-screen, without browser input."""
 from pathlib import Path
 import subprocess
 import tempfile

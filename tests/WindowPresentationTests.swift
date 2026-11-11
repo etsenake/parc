@@ -16,7 +16,6 @@ struct WindowPresentationTests {
         launch.finishRestoration()
         expect(launch.canPresent && launch.takeDockReopen() && !launch.takeDockReopen(),
                "deferred Dock request drains once after both launch phases")
-        //
         let clean = LaunchContinuity(running: false, build: "a")
         expect(!LaunchContinuity.restoresEveryWindow(previous: clean, build: "a"), "a clean relaunch restores one window")
         expect(LaunchContinuity.restoresEveryWindow(previous: clean, build: "b"), "a new build restores every window")
@@ -104,8 +103,6 @@ struct WindowPresentationTests {
         shared.tabs = [a, b, c, pin]
         shared.selectedTabIDs = [a.id]
         shared.selectionBySpace[otherSpace.id.uuidString] = [b.id]
-        // Each persisted window starts with its own original Space and panes,
-        // rather than the globally last-selected window's presentation.
         let firstRecord = BrowserWindowRecord(sidebarWidth: 230, id: UUID(), focusedSpaceID: firstSpace.id,
                                               selectedTabIDs: [a.id, c.id], focusedTabID: c.id)
         let secondRecord = BrowserWindowRecord(sidebarWidth: 250, id: UUID(), focusedSpaceID: otherSpace.id,
@@ -117,8 +114,6 @@ struct WindowPresentationTests {
                && restoredFirst.preferredFocusedTabID == c.id, "first window restores its own split and focused pane")
         expect(restoredSecond.activeSpaceID == otherSpace.id && restoredSecond.selectedTabIDs == [b.id],
                "second window restores its own Space and selection")
-        // A native split request adopts its actual child in the background
-        // before the posted pane join. Preserve the existing split and focus.
         var splitAdoption = restoredFirst
         let originalSelection = splitAdoption.sessionSelection
         let child = tab(firstSpace)
@@ -130,15 +125,11 @@ struct WindowPresentationTests {
                splitAdoption.selectedTabIDs == [a.id, c.id] &&
                splitAdoption.preferredFocusedTabID == c.id,
                "background split child preserves original panes and focus through reconciliation")
-        // A failed late split admission retries the host's ordinary background
-        // disposition, with the same preservation rather than selecting child.
         var refusedSplit = restoredFirst
         refusedSplit.recordCreation(child.id, state: shared)
         refusedSplit.adopt(child.id, state: shared, foreground: false)
         expect(refusedSplit.sessionSelection == originalSelection,
                "refused split adopted in background keeps the original selection")
-        // A split can change without changing its focused pane; this still
-        // changes the saved per-window selection and must schedule a snapshot.
         var transferSource = restoredFirst
         let beforeRemoval = transferSource.sessionSelection
         transferSource.remove(a.id)
@@ -190,9 +181,6 @@ struct WindowPresentationTests {
         expect(preflight.activeSpaceID == otherSpace.id, "adoption selects compatible Space")
         expect(shared.selectedTabIDs == [c.id], "adoption does not rewrite shared selection")
 
-        // Engine selection is an exact existing-page presentation update. It
-        // preserves local split membership and never imports another window's
-        // selection or changes the saved navigation destination.
         var engineState = shared
         engineState.activeSpaceID = firstSpace.id
         engineState.selectedTabIDs = [a.id, c.id]
@@ -235,14 +223,11 @@ struct WindowPresentationTests {
         expect(engineWindow.selectExistingTab(c.id, state: engineState, available: availableA), "existing ordinary page can select its own Space")
         expect(engineWindow.activeSpaceID == firstSpace.id && engineWindow.selectedTabIDs == [c.id], "non-split target becomes the single current page")
         expect(engineState.tabs == originalTabs, "presentation selection does not navigate, duplicate or edit tab records")
-        // Move Tab Here of a Favorite's live page keeps the destination's Space.
         var transferDestination = WindowPresentation(state: engineState, ready: true)
         transferDestination.selectSpace(siblingSpace.id, state: engineState, available: availableA)
         transferDestination.adopt(favorite.id, state: engineState, foreground: true)
         expect(transferDestination.activeSpaceID == siblingSpace.id && transferDestination.selectedTabIDs == [favorite.id],
                "an adopted Favorite stays in the destination window's current Space")
-        // An Option release moves the page in the background; the split owner
-        // then inserts it after the focused pane.
         var optionState = engineState
         optionState.selectedTabIDs = [a.id]
         var optionDestination = WindowPresentation(state: optionState, ready: true)
@@ -250,9 +235,6 @@ struct WindowPresentationTests {
         expect(optionDestination.activeSpaceID == firstSpace.id && optionDestination.selectedTabIDs == [a.id],
                "a Favorite moved for an Option release keeps the destination's panes until placement")
 
-        // Returning to a Space restores this window's actual pane, even after
-        // another window publishes a different selection. Losing a pane keeps
-        // the surviving split's orientation and relative geometry.
         var continuityState = engineState
         continuityState.selectedTabIDs = [a.id, c.id, pin.id]
         continuityState.selectionBySpace[firstSpace.id.uuidString] = continuityState.selectedTabIDs
@@ -323,8 +305,6 @@ struct WindowPresentationTests {
         expect(left.selectedTabIDs == [a.id, c.id], "split capture removes duplicate, foreign owner and foreign profile")
         left.remove(a.id)
         expect(left.selectedTabIDs == [c.id], "closed split pane preserves other live pane identity")
-        //
-        //
         expect(BrowserSplitLayout.focusSuccessor([a.id, pin.id], removedAt: 1) == pin.id
                && BrowserSplitLayout.focusSuccessor([a.id, c.id], removedAt: 2) == c.id
                && BrowserSplitLayout.focusSuccessor([a.id], removedAt: nil) == a.id
@@ -354,8 +334,6 @@ struct WindowPresentationTests {
         ownership.release(a.id, owner: windowA)
         expect(ownership.canUse(a.id, owner: windowB), "actual page close permits later saved-URL reopening")
 
-        // A physical-window move reserves the existing model/page pair and
-        // only commits owner changes after the genuine native result.
         let moves = NativePageOwnership(), origin = UUID(), target = UUID(), third = UUID()
         expect(moves.claim(a.id, owner: origin, page: "same-live-page"), "seed exact source pair")
         expect(moves.reserveTransfer(a.id, page: "wrong-page", from: origin, to: target) == nil, "wrong page cannot reserve")
@@ -386,8 +364,6 @@ struct WindowPresentationTests {
         moves.releaseAll(owner: target)
         expect(!moves.isCurrent(teardownMove) && moves.canUse(a.id, owner: origin), "destination teardown cancels reservation without stealing source")
 
-        // Real BrowserStore adoption persists metadata without selecting it;
-        // projecting two windows cannot create any additional tab records.
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-window-test-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try BrowserStore(directory: directory)
@@ -414,8 +390,6 @@ struct WindowPresentationTests {
         try store.save()
         let loaded = try BrowserStore(directory: directory)
         expect(loaded.state.tabs.filter { $0.id == adopted }.count == 1, "adopted metadata persists exactly once")
-        // Address submission changes the existing local tab into a web-page
-        // request. It keeps its model identity; it is no longer nil selection.
         let startTab = store.open("about:blank")
         var addressWindow = WindowPresentation(state: store.state, ready: true)
         expect(addressWindow.isLocalSelection(startTab, state: store.state, hasNativeWrapper: false), "address command starts from a shell-local blank tab")
@@ -433,8 +407,6 @@ struct WindowPresentationTests {
         expect(addressWindow.selectedTabIDs == [easelTab] && store.state.tabs.count == easelCount, "Easel address command retains the exact saved tab")
         expect(!addressWindow.isLocalSelection(easelTab, state: store.state, hasNativeWrapper: false), "Easel-to-web waits for actual native readiness")
         expect(persistedWindow.selectedTabIDs == [original], "another physical window is not selected by the address command")
-        // Only the original physical window consumes a close decision. Shared
-        // persistence/reconcile cannot select its replacement in another window.
         var deletionState = shared
         deletionState.tabs = [a, b, c, pin]
         deletionState.activeSpaceID = firstSpace.id
@@ -472,8 +444,6 @@ struct WindowPresentationTests {
         let undoA = store.open("https://undo-a.test")
         let undoB = store.open("https://undo-b.test")
         let undoSpace = store.activeSpaceID, undoProfile = store.activeSpace.profileID
-        // A saved folder split is a whole split moved into the folder; pinned
-        // items joining a new split would leave homes instead (SP21).
         store.selectTab(undoA); store.selectTab(undoB, extendingSplit: true)
         let undoGroup = store.activeSplitLayout!
         _ = try store.moveSidebarItem(.split(undoGroup.id), to: .init(spaceID: undoSpace, folderID: undoFolder, section: .pinned),
@@ -502,9 +472,6 @@ struct WindowPresentationTests {
         _ = try store.undoFolderDeletion(undoRecord!, shouldCommit: { true })
         expect(!undoPeer.finishFolderUndo(undoRecord!, state: store.state, available: { _ in true }), "Background folder Undo does not invent an active item")
 
-        //
-        // placeholder pane with no selected sidebar item, until it is replaced
-        // here or the page comes back.
         var frozenState = BrowserState.initial()
         let frozenSpace = frozenState.spaces[0]
         let otherFrozenSpace = BrowserSpace(id: UUID(), name: "Second", symbol: "circle", color: "112233", profileID: frozenSpace.profileID)
@@ -535,7 +502,6 @@ struct WindowPresentationTests {
         expect(source.selectedTabIDs == [x.id] && source.displayedPlaceholders.isEmpty && !source.showsPlaceholder(x.id),
                "a returned page rejoins the selection in its slot")
 
-        // In a split, the departed pane keeps its slot and the split geometry.
         let frozenLayout = BrowserSplitLayout(spaceID: frozenSpace.id, tabIDs: [x.id, y.id], orientation: .vertical, widthFactors: [0.25, 0.75])
         frozenState.splitLayouts = [frozenLayout]
         frozenState.selectedTabIDs = [x.id, y.id]
@@ -578,7 +544,6 @@ struct WindowPresentationTests {
         expect(!unselected.leavePlaceholder(z.id, state: frozenState) && unselected.displayedPlaceholders.isEmpty,
                "a page this window did not show leaves no placeholder")
 
-        // Which pages a selection moves, and where an untargeted page returns.
         expect(PageReparenting.pagesToMove([x.id, y.id], usableHere: { $0 == y.id }, movable: { _ in true }) == [x.id],
                "only the panes held elsewhere move")
         expect(PageReparenting.pagesToMove([x.id, y.id], usableHere: { _ in false }, movable: { $0 == x.id }) == nil,
@@ -619,8 +584,6 @@ struct WindowPresentationTests {
         keeping.leavePlaceholder(x.id, state: frozenState)
         expect(keeping.hasPlaceholders, "a window knows when it still shows a placeholder, so it isn't retired as empty")
 
-        // A sidebar row works for a tab another window holds: its actions move
-        // the page here, and its Close moves it here and closes it here.
         expect(PageReparenting.rowAction(closing: false, busy: false, usableHere: false, heldElsewhere: true) == .moveHere,
                "a row for another window's tab activates by moving its page here")
         expect(PageReparenting.rowAction(closing: true, busy: false, usableHere: false, heldElsewhere: true) == .moveHereThenClose,

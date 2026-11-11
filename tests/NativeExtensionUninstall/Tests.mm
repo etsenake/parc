@@ -72,7 +72,6 @@ int main() {
   @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
-    // Shared exact-window state, independent reservations, idempotent release.
     NSWindow* a = Window();
     NSWindow* b = Window();
     EXPECT(a.visible && b.visible);
@@ -104,8 +103,6 @@ int main() {
     EXPECT(!PCNativeWindowHasSecurityReservation(a));
     EXPECT(notifications == 4);
     [NSNotificationCenter.defaultCenter removeObserver:observation];
-    // A release observer may acquire its own reservation; terminal state is set
-    // first.
     __block PCNativeWindowSecurityReservation* replacement = nil;
     first = [PCNativeWindowSecurityReservation acquireForWindow:a];
     observation = [NSNotificationCenter.defaultCenter
@@ -125,7 +122,6 @@ int main() {
     [NSNotificationCenter.defaultCenter removeObserver:observation];
     [replacement invalidate];
     replacement = nil;
-    // Acquisition observer can close the parent before acquire returns.
     observation = [NSNotificationCenter.defaultCenter
         addObserverForName:PCNativeWindowSecurityStateChanged
                     object:b
@@ -141,7 +137,6 @@ int main() {
     EXPECT(!PCNativeWindowHasSecurityReservation(b));
     EXPECT([PCNativeWindowSecurityReservation acquireForWindow:b] == nil);
     [NSNotificationCenter.defaultCenter removeObserver:observation];
-    // Reservation does not keep its NSWindow alive.
     __weak NSWindow* weakWindow;
     PCNativeWindowSecurityReservation* retained;
     @autoreleasepool {
@@ -156,7 +151,6 @@ int main() {
     EXPECT(!retained.isOnlyReservation);
     EXPECT(weakWindow == nil);
     [retained invalidate];
-    // Real native sheet, real checkbox callback, exactly one Remove decision.
     __block int results = 0, changes = 0;
     __block PCUninstallChoice choice = PCUninstallInterrupted;
     auto* presenter = Presenter(
@@ -189,7 +183,6 @@ int main() {
     EXPECT(!presenter.presenting);
     [presenter invalidate];
     EXPECT(results == 1);
-    // Escape uses the actual Cancel key equivalent on the AppKit sheet.
     results = 0;
     presenter = Presenter(
         a,
@@ -219,7 +212,6 @@ int main() {
     EXPECT([sheet performKeyEquivalent:escape]);
     Pump(.3);
     EXPECT(results == 1 && choice == PCUninstallCancel);
-    // Pending cancellation and reentrant validation never resurrect a sheet.
     results = 0;
     presenter = Presenter(
         a,
@@ -256,8 +248,6 @@ int main() {
     EXPECT(results == 1 && choice == PCUninstallInterrupted);
     EXPECT(!reentrant.presenting);
     reentrant = nil;
-    // Custom sheet preserves native default/cancel dispatch and validity
-    // gating.
     results = 0;
     presenter = Presenter(
         a,
@@ -295,8 +285,6 @@ int main() {
     [custom sendEvent:enter];
     Pump(.3);
     EXPECT(results == 1 && choice == PCUninstallAccept);
-    // Foreign sheet cannot be replaced; exact parent close interrupts only its
-    // request.
     NSWindow* foreign = Window();
     [a beginSheet:foreign completionHandler:nil];
     results = 0;

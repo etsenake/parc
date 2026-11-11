@@ -1,9 +1,6 @@
 import AppKit
 import Foundation
 
-/// P2: ThemeAppearanceButton 60 Hz timer idle-stops when hidden/detached/unselected
-/// and skips `needsDisplay` when the presentation fingerprint is unchanged.
-/// Active keyframe motion still dirties; appearance selection behavior is untouched.
 @main
 @MainActor
 struct ThemeAppearanceTimerIdleTests {
@@ -13,7 +10,6 @@ struct ThemeAppearanceTimerIdleTests {
         checks += 1
     }
 
-    /// The cue's 60 Hz timers scheduled while `body` runs.
     static func cueTimers(_ body: () -> Void) -> [FrameSource] {
         FrameSources.scheduled(during: body).filter { $0.timer?.timeInterval == 1 / 60 }
     }
@@ -28,7 +24,6 @@ struct ThemeAppearanceTimerIdleTests {
 
         let moon = try preconditionAnimation(ThemeAppearanceAnimation(name: "moon"))
         let size = CGSize(width: 28, height: 28)
-        // Moon holds after the last star key (t=82) until loop wrap at op=90.
         let holdA = moon.presentationFingerprint(seconds: 82.0 / 60.0, size: size)
         let holdB = moon.presentationFingerprint(seconds: 88.0 / 60.0, size: size)
         check(holdA == holdB, "post-keyframe moon hold shares one presentation fingerprint")
@@ -50,7 +45,6 @@ struct ThemeAppearanceTimerIdleTests {
         window.isReleasedWhenClosed = false
         window.contentView = button
         let beforeSelect = Redraws.count(button)
-        // A first selection starts playback at zero; this clock starts microseconds earlier, so it reads slightly ahead.
         let selectedAt = CACurrentMediaTime()
         let cue = cueTimers { button.isSelected = true }
         func playbackSeconds() -> Double { CACurrentMediaTime() - selectedAt }
@@ -62,8 +56,6 @@ struct ThemeAppearanceTimerIdleTests {
         } else {
             check(armed(cue), "selected visible cue arms the 60 Hz timer while motion is allowed")
 
-            // Enter the moon post-key hold by fingerprint (not wall-clock), then
-            // assert several ticks skip needsDisplay while the loop timer stays armed.
             let artworkSize = button.bounds.insetBy(dx: 6, dy: 6).size
             let holdFingerprint = moon.presentationFingerprint(seconds: 82.0 / 60.0, size: artworkSize)
             let enterHold = Date(timeIntervalSinceNow: 2.5)
@@ -78,7 +70,6 @@ struct ThemeAppearanceTimerIdleTests {
             }
             check(inHold && armed(cue),
                   "looping moon reaches a hold region with the timer still armed")
-            // Allow the first in-hold tick to latch lastDisplayFingerprint (may dirty once).
             let catchUp = Date(timeIntervalSinceNow: 0.05)
             while Date() < catchUp {
                 RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
@@ -103,7 +94,6 @@ struct ThemeAppearanceTimerIdleTests {
             }
             check(holdSkipTicks >= 3, "observed at least three in-hold ticks that skipped needsDisplay")
             check(beforeHoldProbe > afterSelect, "active keyframes still dirty while selected")
-            // The loop wraps out of the hold on the same timer.
             let wrapDeadline = Date(timeIntervalSinceNow: 0.5)
             while Redraws.count(button) == beforeHoldProbe, Date() < wrapDeadline {
                 RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
@@ -111,7 +101,6 @@ struct ThemeAppearanceTimerIdleTests {
             check(Redraws.count(button) > beforeHoldProbe && armed(cue),
                   "the armed timer resumes dirtying when the loop leaves the hold")
 
-            // Hidden while driving idle-stops.
             button.isHidden = true
             let hideDeadline = Date(timeIntervalSinceNow: 0.25)
             while armed(cue), Date() < hideDeadline {
@@ -125,11 +114,9 @@ struct ThemeAppearanceTimerIdleTests {
             check(Redraws.count(button) == hiddenInvalidations && !armed(cue),
                   "post-hide idle stays stopped with no further dirties")
 
-            // Unhide re-arms while still selected.
             let unhidden = cueTimers { button.isHidden = false }
             check(armed(unhidden), "unhiding a selected cue re-arms the 60 Hz timer")
 
-            // Ancestor hide must idle-stop via isHiddenOrHasHiddenAncestor.
             let nest = NSView(frame: NSRect(x: 0, y: 0, width: 40, height: 40))
             let nested = cueTimers {
                 window.contentView = nest
@@ -147,11 +134,9 @@ struct ThemeAppearanceTimerIdleTests {
             let reshown = cueTimers { nest.isHidden = false }
             check(armed(reshown), "ancestor unhide re-arms a selected cue")
 
-            // Deselect settles (freezes) and idle-stops.
             button.isSelected = false
             check(!armed(cue + unhidden + nested + reshown), "unselected appearance cue idle-stops the 60 Hz timer")
 
-            // Detach idle-stops a freshly selected driver.
             let driving = ThemeAppearanceButton(appearance: .light)
             driving.setFrameSize(NSSize(width: 40, height: 40))
             let host = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 40),
@@ -183,7 +168,6 @@ struct ThemeAppearanceTimerIdleTests {
         while condition(), Date() < deadline { RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01)) }
     }
 
-    /// The button style's motion timer runs only while hover or press is moving.
     static func buttonMotionTimers() {
         SystemOverrides.install(); SystemOverrides.reduceMotion = false
         defer { SystemOverrides.reduceMotion = nil }
@@ -221,8 +205,6 @@ struct ThemeAppearanceTimerIdleTests {
         check(!armed(reduced), "under Reduce Motion a hover change arms no timer")
     }
 
-    /// A pad drag refreshes the editor every frame; − and + redraw only when
-    /// their own state changes.
     static func padButtonsSkipDragRedraws() {
         var theme = SpaceTheme.singleColor(ThemeColor(red: 0.2, green: 0.6, blue: 0.9)!); theme.colorCount = 2
         let editor = SpaceThemeEditorView(theme: theme, performHapticFeedback: {})

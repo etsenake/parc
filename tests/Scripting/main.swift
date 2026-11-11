@@ -100,8 +100,6 @@ final class ObservedCommand: NSScriptCommand {
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
             precondition(condition(), message); checks += 1
         }
-        // Admission depends on actual native context plus original window kind,
-        // never on a parent Profile path shared by regular and private Profiles.
         expect(scriptWindowHasNormalOwner(origin: .application, context: .unavailable), "an app window showing the empty content or a blank tab retains its real app owner")
         expect(scriptWindowHasNormalOwner(origin: .application, context: .regular), "app window with regular contexts is exposed")
         expect(scriptWindowHasNormalOwner(origin: .nativeBrowser, context: .regular), "original native-created normal browser is exposed")
@@ -243,7 +241,6 @@ final class ObservedCommand: NSScriptCommand {
         owner.javascriptCallback?(.success("42")); owner.javascriptCallback = nil
         expect(staleJS.resumptions == 1 && staleJS.scriptErrorNumber == -1728 && staleJS.result == nil, "late result cannot escape stale original owner")
         owner.scriptingAvailable = true
-        // A model ID reused in another profile cannot retarget an old locator.
         owner.scriptingTabs[0] = ScriptTabRecord(id: record.id, profileID: owner.otherProfile, title: "Different", url: "https://other.test", loading: false, location: "unpinned")
         tab.select(command); tab.URL = "https://example.test/reject"
         expect(owner.actions.count == 5 && owner.navigations.count == 1, "profile change invalidates old tab wrapper")

@@ -8,8 +8,6 @@ import Foundation
         }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        // Session dates use second-resolution ISO 8601; fix the production
-        // clock to that representation for exact reload comparisons.
         let importedAt = Date(timeIntervalSince1970: 1_793_000_000)
         let store = try BrowserStore(directory: directory, now: { importedAt })
         let original = store.activeSpace
@@ -188,8 +186,6 @@ import Foundation
         print("\(checks) actual browser-import selection/store assertions passed; no browser or personal source reads.")
     }
 
-    /// Setup's Back to an accepted bookmark page: Next replaces what that
-    /// page added, and nothing else.
     @MainActor static func replaceChecks(directory: URL, date: Date) throws -> Int {
         var checks = 0
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
@@ -241,7 +237,6 @@ import Foundation
         expect(["b", "c", "d", "e", "x"].allSatisfy { count($0) == 1 } && count("f") == 0, "Nothing is added twice")
         expect(!store.state.sidebarItemOrder.values.contains { $0.contains(.tab(a.id)) }, "The removed bookmark leaves the sidebar order")
 
-        // The user's own changes since make an item theirs; it stays.
         _ = try store.saveSidebarTitle(d, title: "Renamed")
         store.moveTab(b.id, toSpace: space.id, folderID: nil)
         selection.toggle("d"); selection.toggle("b")
@@ -265,7 +260,6 @@ import Foundation
         expect(tab("d") != nil && tab("b") != nil && tab("x") != nil, "The user's and other imports' bookmarks stay")
         expect(other.tabs.count == 1 && beforeAll.tabs.count - store.state.tabs.count == 1, "Only the page's own unchanged items left")
 
-        // A refused write leaves the previous accepted set exactly.
         selection.toggleAll()
         let accepted = store.state
         let session = directory.appendingPathComponent("session.json")

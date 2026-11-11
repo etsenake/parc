@@ -11,7 +11,7 @@ import AppKit
     override var isMainWindow: Bool { true }
     override var isMiniaturized: Bool { minimized }
     override var attachedSheet: NSWindow? { testSheet }
-    override func toggleFullScreen(_ sender: Any?) { requests += 1 } // No OS transition.
+    override func toggleFullScreen(_ sender: Any?) { requests += 1 }
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
                    styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)

@@ -59,8 +59,6 @@ struct SidebarSpaceMoveTests {
         check(move.applying(to: stale)?.tabs[0].title == "New page title", "Live navigation metadata is not overwritten")
         var foreign = state; let other = BrowserProfile(id: UUID(), name: "Other"); foreign.profiles.append(other); foreign.spaces[1].profileID = other.id; foreign.tabs[5].profileID = other.id
         let foreignTo = SidebarHierarchySnapshot(state: foreign, spaceID: destination.id, profileID: other.id)!
-        //
-        // the separate retirement transaction (InterProfileMoveTests).
         let crossProfile = SidebarSpaceMove(items: [.folder(folder.id)], from: from, to: foreignTo, state: foreign)
         check(crossProfile?.crossesProfiles == true
             && crossProfile?.applying(to: foreign)?.tabs.first { $0.id == c.id }?.profileID == other.id, "Cross-profile relocation carries the destination Profile")
@@ -102,7 +100,7 @@ struct SidebarSpaceMoveTests {
         check(presentation.selectedTabIDs.isEmpty, "Original source presentation drops moved selection")
         presentation.selectSpace(destination.id, state: moved) { owner.canUse($0, owner: originalWindow) }
         check(presentation.selectExistingTab(b.id, state: moved, available: { owner.canUse($0, owner: originalWindow) }), "Original owner can select moved split")
-        presentation.recordFocusedTab(b.id) // BrowserWindowController records the actual requested pane.
+        presentation.recordFocusedTab(b.id)
         check(presentation.selectedTabIDs == group.tabIDs && presentation.preferredFocusedTabID == b.id, "Whole split and requested focus restore")
         check(owner.claimSnapshot(a.id) == claim, "Space navigation retains exact native claim")
         check(!owner.canUse(a.id, owner: otherWindow), "Move does not silently adopt another physical owner's page")
@@ -132,8 +130,6 @@ struct SidebarSpaceMoveTests {
         do { _ = try failing.moveSidebarItemsAcrossSpaces(move); preconditionFailure("Expected rename refusal") } catch {}
         check(failing.state == prior, "Failed write cannot publish a partial hierarchy")
 
-        // Splits deliberately retain their original child placements until an
-        // explicit destination moves the visible group as one container.
         func proposed(_ original: BrowserState, _ roots: [SidebarItemReference]) -> SidebarSpaceMove? {
             guard let from = SidebarHierarchySnapshot(state: original, spaceID: source.id, profileID: source.profileID),
                   let to = SidebarHierarchySnapshot(state: original, spaceID: destination.id, profileID: source.profileID) else { return nil }
@@ -213,7 +209,7 @@ struct SidebarSpaceMoveTests {
         check(newSpaceResult.tabs[0].spaceID == draft.spaceID && newSpaceResult.tabs[0].folderID == nested.id, "New Space consumes the complete nested-group move")
         check(newSpaceResult.splitLayouts[0].id == group.id && newSpaceResult.splitLayouts[0].spaceID == draft.spaceID, "New Space retains original split identity")
         check(newSpaceResult.spaces.firstIndex { $0.id == draft.spaceID } == newSpaceResult.spaces.firstIndex { $0.id == source.id }! + 1, "New Space retains recovered source-relative insertion")
-        var cancelled = draft; cancelled.name = "" // No commit, no model mutation.
+        var cancelled = draft; cancelled.name = ""
         check(cancelled.applying(to: nestedMixed) == nil && nestedMixed.spaces.count == state.spaces.count, "Refused draft cannot persist an empty Space")
         let mixedDirectory = directory.appendingPathComponent("mixed")
         try FileManager.default.createDirectory(at: mixedDirectory, withIntermediateDirectories: true)

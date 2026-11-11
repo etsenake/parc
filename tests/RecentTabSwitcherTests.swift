@@ -37,7 +37,6 @@ struct RecentTabSwitcherTests {
         expect(emptyWindow.focusedIndex == 0, "An empty original window begins at the first available item")
         let repeated = RecentTabSwitcherSelection(itemIDs: ["a", "a", "b"], currentID: "a", forward: true)
         expect(repeated.itemIDs == ["a", "b"] && repeated.focusedIndex == 1, "Repeated identity cannot produce duplicate cards")
-        //
         let shift: UInt = 0x2_0000, control: UInt = 0x4_0000, option: UInt = 0x8_0000, command: UInt = 0x10_0000
         let capsLock: UInt = 0x1_0000, function: UInt = 0x80_0000
         let input = RecentTabSwitcherInput(next: control, previous: control | shift)

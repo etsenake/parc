@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Isolated preference/state/AppKit hit-test checks; no browser or window drag."""
 from pathlib import Path
 import subprocess
 import tempfile

@@ -47,8 +47,6 @@ import AppKit
         state.project(resultID: "internal", text: "parc://settings/")
         check(state.selection == NSRange(location: 10, length: 6), "public internal scheme completion stays public")
 
-        // Exercise the real NSTextView UTF-16 replacement/caret contract. This
-        // is an inert local editor component, never a browser or URL load.
         let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 40))
         editor.isRichText = false
         state.edit("🌌"); state.project(resultID: "native", text: "🌌 night")
@@ -71,8 +69,6 @@ import AppKit
         state.project(resultID: "stale", text: "weather today"); state.clearProjection()
         editor.string = state.displayedText; editor.setSelectedRange(state.selection)
         check(editor.string == "weather" && editor.selectedRange().length == 0, "disappearing result restores query and caret")
-        // Automatic completion uses the same real field editor, but captures
-        // the editing cause and current range before each provider publication.
         state = CommandBarEditState(query: "")
         check(!state.allowsInlineCompletion, "initial address restoration is not typed input")
         state.userEdit("arc.n", selection: NSRange(location: 5, length: 0), hasMarkedText: false, didBackspace: false)
@@ -116,8 +112,6 @@ import AppKit
         check(!state.allowsInlineCompletion, "missing editor has no automatic completion owner")
         check(!CommandBarEditState.reachesEnd(NSRange(location: 1, length: Int.max), of: "a"), "invalid ranges cannot overflow")
         check(CommandBarEditState.reachesEnd(NSRange(location: 1, length: 2), of: "arc"), "existing selected suffix reaches the end")
-        // Observe AppKit's actual text-storage edit records: selection replacement
-        // may shorten text while still inserting, unlike deletion of a suffix.
         final class Changes: @unchecked Sendable { var deletion = false; var calls = 0 }
         let changes = Changes()
         let storage = editor.textStorage!

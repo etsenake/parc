@@ -54,14 +54,11 @@ int main() {
   assert(!ShellNotifyPayloadChanged(published, same));
   assert(ShellNotifyPayloadChanged(published, changed));
 
-  // Unpublished last always notifies loading start/stop.
   assert(ShouldNotifyLoadingChange(unpublished, same));
   assert(ShouldNotifyLoadingChange(unpublished, published));
 
-  // Iframe load noise: identical shell snapshot must not notify.
   assert(!ShouldNotifyLoadingChange(published, same));
 
-  // Primary loading bit flip must still notify.
   NativePageShellNotifyState loading = same;
   loading.loading = true;
   assert(ShouldNotifyLoadingChange(published, loading));
@@ -71,7 +68,6 @@ int main() {
   published_loading.published = true;
   assert(ShouldNotifyLoadingChange(published_loading, stopped));
 
-  // Other shell fields changing during a loading callback still notify.
   NativePageShellNotifyState history = same;
   history.can_go_back = false;
   assert(ShouldNotifyLoadingChange(published, history));
@@ -85,21 +81,16 @@ int main() {
   history.title = u"Next";
   assert(ShouldNotifyLoadingChange(published, history));
 
-  // Already-loading page with another start (iframe) and unchanged payload.
   assert(!ShouldNotifyLoadingChange(published_loading, loading));
 
-  // TitleWasSet / theme-color / visible-security: identical published shell
-  // snapshot must not notify (SPA theme/security churn).
   assert(!ShouldNotifyShellPayloadChange(published, same));
   assert(ShouldNotifyShellPayloadChange(unpublished, same));
 
-  // Distinct title updates must still notify.
   NativePageShellNotifyState retitled = same;
   retitled.title = u"SPA title";
   assert(ShouldNotifyShellPayloadChange(published, retitled));
   assert(ShellNotifyPayloadChanged(published, retitled));
 
-  // Loading-adjacent shell changes still notify through the shared gate.
   NativePageShellNotifyState theme_while_loading = same;
   theme_while_loading.loading = true;
   assert(ShouldNotifyShellPayloadChange(published, theme_while_loading));
@@ -113,20 +104,15 @@ int main() {
   theme_while_loading.can_go_forward = true;
   assert(ShouldNotifyShellPayloadChange(published, theme_while_loading));
 
-  // Loading helper remains the shared predicate for DidStart/DidStop.
   assert(ShouldNotifyLoadingChange(published, retitled) ==
          ShouldNotifyShellPayloadChange(published, retitled));
   assert(ShouldNotifyLoadingChange(published, same) ==
          ShouldNotifyShellPayloadChange(published, same));
 
-  // Reader changed_ / CaptureChanged: identical published snapshot (including
-  // reader + capture bits) must not notify.
   assert(!ShouldNotifyShellPayloadChange(published, same));
 
-  // Real reader mode / revision changes must still notify even when the five
-  // tab-metadata fields are unchanged.
   NativePageShellNotifyState reader = same;
-  reader.reader_mode = 1;  // kDistilling
+  reader.reader_mode = 1;
   assert(ShouldNotifyShellPayloadChange(published, reader));
   assert(ShellNotifyPayloadChanged(published, reader));
   reader = same;
@@ -134,8 +120,6 @@ int main() {
   assert(ShouldNotifyShellPayloadChange(published, reader));
   assert(ShellNotifyPayloadChanged(published, reader));
 
-  // Real capture producer bit flips must still notify with unchanged
-  // URL/title/loading/back/forward/reader.
   NativePageShellNotifyState capture = same;
   capture.capture_camera = true;
   assert(ShouldNotifyShellPayloadChange(published, capture));
@@ -159,15 +143,11 @@ int main() {
   capture.capture_shared = true;
   assert(ShouldNotifyShellPayloadChange(published, capture));
 
-  // The top bar shows theme-color (developerModeTint is always opaque), else
-  // an opaque CSS background, else nothing.
   assert(TopBarPageColor(0x800F0F0Fu, 0xFFFFFFFFu) == 0x800F0F0Fu);
   assert(TopBarPageColor(std::nullopt, 0xFF000000u) == 0xFF000000u);
   assert(!TopBarPageColor(std::nullopt, 0x80FFFFFFu));
   assert(!TopBarPageColor(std::nullopt, std::nullopt));
 
-  // A change to the colour the bar shows notifies even when every other field
-  // is unchanged; the same colour again skips.
   NativePageShellNotifyState colored = same;
   colored.top_bar_color = TopBarPageColor(0xFF0F0F0Fu, std::nullopt);
   assert(ShouldNotifyShellPayloadChange(published, colored));
@@ -175,7 +155,6 @@ int main() {
   NativePageShellNotifyState published_colored = colored;
   published_colored.published = true;
   assert(!ShouldNotifyShellPayloadChange(published_colored, colored));
-  // A background animating under a winning theme-color changes nothing shown.
   NativePageShellNotifyState animating = colored;
   animating.top_bar_color = TopBarPageColor(0xFF0F0F0Fu, 0xFF102030u);
   assert(!ShouldNotifyShellPayloadChange(published_colored, animating));
@@ -184,8 +163,6 @@ int main() {
   cleared.top_bar_color = TopBarPageColor(std::nullopt, std::nullopt);
   assert(ShouldNotifyShellPayloadChange(published_colored, cleared));
 
-  // A top-band delivery notifies, with or without a colour; the same
-  // delivery again skips.
   NativePageShellNotifyState sampled = same;
   sampled.top_band_delivered = true;
   assert(ShouldNotifyShellPayloadChange(published, sampled));
@@ -196,23 +173,17 @@ int main() {
   assert(!ShouldNotifyShellPayloadChange(published_sampled, sampled));
   sampled.top_band_color = 0xFF000000u;
   assert(ShouldNotifyShellPayloadChange(published_sampled, sampled));
-  // The same colour from another site's document notifies too, so the
-  // shell caches it under the new host.
   NativePageShellNotifyState navigated = published_sampled;
   navigated.published = false;
   navigated.top_band_host = "chatgpt.com";
   assert(ShouldNotifyShellPayloadChange(published_sampled, navigated));
 
-  // Capture/reader bits already published: another identical tick skips.
   NativePageShellNotifyState published_capture = capture;
   published_capture.published = true;
   NativePageShellNotifyState same_capture = capture;
   same_capture.published = false;
   assert(!ShouldNotifyShellPayloadChange(published_capture, same_capture));
 
-  // A cross-document load is held past its main document's end until the
-  // main document has had nothing in flight for the quiet window and the
-  // page has painted, never past the cap.
   using parc::LoadingHold;
   LoadingHold hold;
   assert(hold.Update(true, false, 0));
@@ -228,7 +199,6 @@ int main() {
   hold.NetworkBusy(true, 1800);
   assert(!hold.Update(false, true, 1800));
   hold.NetworkBusy(false, 1900);
-  // Without a paint, or with a page that is never idle, the cap ends it.
   hold.Committed(0);
   hold.NetworkBusy(true, 0);
   assert(hold.Update(false, false, 0));
@@ -238,11 +208,8 @@ int main() {
   }
   assert(!hold.Update(false, true, LoadingHold::kCapMs));
   hold.NetworkBusy(false, LoadingHold::kCapMs);
-  // Already quiet and painted when the load ends: a quiet window after the
-  // last request, not after the end.
   hold.Committed(0);
   assert(!hold.Update(false, true, 600));
-  // Same-document loads are never held; a new load supersedes a hold.
   assert(!hold.Update(false, true, 700));
   hold.Committed(0);
   assert(hold.Update(false, false, 100));
@@ -252,8 +219,6 @@ int main() {
   hold.Cancel();
   assert(!hold.Update(false, false, 200));
 
-  // The renderer's count drives the hold: a slow request still downloading
-  // after a fast one finishes keeps the page loading until it ends.
   using parc::page_network::InFlightRequests;
   using parc::page_network::kLongLivedMs;
   InFlightRequests count;
@@ -275,14 +240,10 @@ int main() {
   assert(hold.Update(false, true, 3000));
   assert(hold.Remaining(true, 3000) == 100);
   assert(!hold.Update(false, true, 3100));
-  // Finishing an unknown or already finished request changes nothing.
   count.Finish(2);
   count.Finish(7);
   assert(!count.BusyUntil(3100));
 
-  // A navigation that keeps its renderer frame commits while the old
-  // document still looks busy; the renderer's reset at commit ends it, and
-  // without that report the cap does.
   hold.NetworkBusy(true, 0);
   hold.Committed(100);
   assert(hold.Update(false, true, 200));
@@ -296,8 +257,6 @@ int main() {
   assert(!hold.Update(false, true, 1100 + LoadingHold::kCapMs));
   hold.NetworkBusy(false, 1100 + LoadingHold::kCapMs);
 
-  // A long-poll stops counting kLongLivedMs after it starts, so a page whose
-  // main document is slow ends its hold on quiet, not at the cap.
   count.Reset();
   hold.Committed(0);
   count.Start(3, 0);
@@ -312,11 +271,8 @@ int main() {
   report(kLongLivedMs);
   assert(hold.Update(false, true, kLongLivedMs + 499));
   assert(!hold.Update(false, true, kLongLivedMs + 500));
-  // Its late finish is not a new request; the count stays empty.
   count.Finish(3);
   assert(!count.BusyUntil(kLongLivedMs + 600));
-  // Busy lasts until the last open request expires, and a new document
-  // starts from nothing.
   count.Start(4, 0);
   count.Start(5, 1000);
   assert(count.BusyUntil(500) == 1000 + kLongLivedMs);

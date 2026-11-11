@@ -44,9 +44,6 @@ import AppKit
         expect(!settings.selectCommand("missing:"), "Unregistered command refuses targeted editing")
         expect(registry.revision == before, "Selecting and revealing never changes binding or priority")
 
-        // The cue's child-window presentation, layout, accessory and motion are
-        // covered by ShortcutHintPresentationTests (KB16). Here only the
-        // ownership invariants an unpresented cue must keep are checked.
         let hint = ShortcutPriorityHintView(title: "Component Action", shortcut: "⌥⌘J", canEdit: true, theme: SpaceTheme(),
             basicBackground: nil)
         expect(!hint.acceptsFirstResponder, "Cue cannot take editor focus")

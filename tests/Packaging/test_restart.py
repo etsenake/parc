@@ -1,7 +1,3 @@
-"""Exercise the production restart waiter's real process/pipe lifecycle.
-
-Only execl is replaced with a recorder; no browser or application is launched.
-"""
 import os
 from pathlib import Path
 import subprocess

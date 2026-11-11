@@ -1,6 +1,5 @@
 import Foundation
 
-///
 @main struct ResultTextTests {
     static func main() {
         var count = 0
@@ -89,7 +88,6 @@ import Foundation
         expect(Command.title(commandID: "sharePage:", title: "Share…") == "Share URL", "the Type Travel title")
         expect(Command.title(commandID: "createEasel:", title: "New Easel") == "New Easel", "other titles are unchanged")
 
-        // Every command the app registers has its own icon, never the fallback.
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let menus = try! String(contentsOf: repo.appendingPathComponent("Sources/ParcApp/AppDelegate.swift"), encoding: .utf8)
         let registered = try! NSRegularExpression(pattern: #"(?:item\("[^"]+",\s*|\("[^"]+",\s*)#selector\((?:[A-Z][A-Za-z]*\.)?([a-z][A-Za-z0-9_]*)"#)

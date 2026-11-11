@@ -66,7 +66,6 @@ import AppKit
         try privateStore.saveSidebarTitle(privateTab, title: "Private name")
         try check(privateStore.state.tabs.first { $0.id == privateID }?.customTitle == "Private name", "Private custom title usable")
         try check(!FileManager.default.fileExists(atPath: privateDirectory.path), "Private rename creates no persistent storage")
-        // Real I/O failure: replace the test-owned directory with a regular file.
         try store.save()
         let failedState = store.state
         try FileManager.default.removeItem(at: directory)

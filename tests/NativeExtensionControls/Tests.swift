@@ -1,7 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// Inert native window: no ordering, activation or OS input is performed.
 @MainActor private final class ControlWindow: NSWindow {
     var key = true
     override var isKeyWindow: Bool { key }
@@ -106,8 +105,6 @@ struct ExtensionControlsTests {
         expect((a as! NSButton).isEnabled == false, "Detached pin cannot dispatch stale input")
         toolbar.update([])
         expect(toolbar.desiredWidth == 0 && toolbar.subviews.isEmpty, "Clearing a page/profile releases every pin")
-        // Different native homes have different surfaces; the real pin order
-        // must still compress at whole-button boundaries without overlap.
         let topbar = ExtensionToolbarView(frame: NSRect(x: 0, y: 0, width: 63, height: 24), style: .toolbar)
         topbar.update([item("first", pin: 0), item("second", pin: 1)])
         topbar.layoutSubtreeIfNeeded()
@@ -127,8 +124,6 @@ struct ExtensionControlsTests {
             image: artwork, pinnedIndex: 0, canChangePin: true, execute: {}, showContextMenu: { _ in }, setPinned: { _ in })
         let artButton = ExtensionActionButton(item: artItem, style: .toolbar)
         artButton.frame = NSRect(origin: .zero, size: NSSize(width: 32, height: 24))
-        // Chromium centres the 16-point icon in the 32-point canvas, so the
-        //
         expect(artButton.cell?.imageRect(forBounds: artButton.bounds) == NSRect(x: 0, y: -4, width: 32, height: 32),
                "The native cell centers the genuine canvas at its own size, independent of its hit surface")
         let sidebarArt = ExtensionActionButton(item: artItem)
@@ -147,13 +142,11 @@ struct ExtensionControlsTests {
         fallback.frame = NSRect(origin: .zero, size: ExtensionControlStyle.sidebar.surfaceSize)
         expect(fallback.cell?.imageRect(forBounds: fallback.bounds) == NSRect(x: 6, y: 6, width: 16, height: 16),
                "The fallback symbol keeps the centred 16-point rect")
-        // Chromium's padded canvas: the 16-point icon at (8, 8) of 32.
         let padded = NSImage(size: NSSize(width: 32, height: 32), flipped: true) { _ in
             NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1).setFill()
             NSRect(x: 8, y: 8, width: 16, height: 16).fill()
             return true
         }
-        /// Pixel bounds, top-left origin, of the ink matching `match` in an offscreen render.
         func ink(_ host: NSView, scale: Int, _ match: (NSColor) -> Bool) -> (minX: Int, maxX: Int, minY: Int, maxY: Int) {
             let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(host.bounds.width) * scale,
                 pixelsHigh: Int(host.bounds.height) * scale, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
@@ -184,8 +177,6 @@ struct ExtensionControlsTests {
             }
         }
 
-        // Shell badge (user direction, November 1): top-right, overhanging the
-        // 16-point icon by 4 points, 11 high, growing leftward to 26 at most.
         let green = NSColor(srgbRed: 0, green: 0.8, blue: 0, alpha: 1), white = NSColor.white
         func badged(_ text: String, style: ExtensionControlStyle) -> ExtensionActionButton {
             let button = ExtensionActionButton(item: ExtensionControlItem(identifier: "badged", name: "Badged",

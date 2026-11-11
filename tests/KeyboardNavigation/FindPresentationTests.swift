@@ -101,7 +101,6 @@ import AppKit
         hoverWindow.contentView = surface
         let control = PageFindButton(frame: NSRect(x: 20, y: 20, width: 26, height: 26))
         surface.addSubview(control)
-        // The pointing hand's cursor-update area is not the hover tracking.
         func hoverAreas() -> [NSTrackingArea] { control.trackingAreas.filter { !$0.options.contains(.cursorUpdate) } }
         control.updateTrackingAreas()
         check(hoverAreas().count == 1, "one original hover tracking area")

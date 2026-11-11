@@ -10,7 +10,6 @@ import AppKit
     override var isKeyWindow: Bool { key }
 }
 
-/// KB38: every discovery surface reads the registry's live, valid binding.
 @main struct LiveBindingTests {
     @MainActor static func main() throws {
         _ = NSApplication.shared
@@ -28,13 +27,10 @@ import AppKit
         }
         registry.configure(directory: directory)
 
-        // Format: the title, one space, the binding's display.
         expect(KeyboardShortcuts.toolTip("Hide sidebar", shortcut: KeyboardShortcut(key: "s", flags: .command)) == "Hide sidebar ⌘S", "Tooltip format")
         expect(KeyboardShortcuts.toolTip("Hide sidebar", shortcut: nil) == "Hide sidebar", "No binding, title alone")
         expect(registry.toolTip("Go back", for: "goBack:") == "Go back", "Unregistered command shows the title")
 
-        //
-        // (and of the cell AppKit exposes for it); no help tag is set.
         func help(_ button: NSButton) -> String? {
             precondition(button.toolTip == nil && button.cell?.accessibilityHelp() == button.accessibilityHelp(), "help tag or cell help diverged")
             return button.accessibilityHelp()
@@ -45,7 +41,6 @@ import AppKit
         registry.bindHelp(plain, title: "Site Control Center", commandID: nil)
         expect(help(toggle) == "Hide sidebar ⌘S" && help(reset) == "Reset Tab ⇧⌘R" && help(plain) == "Site Control Center", "Initial live help")
 
-        // A changed binding updates every bound surface without rebuilding it.
         try registry.set(KeyboardShortcut(key: "b", flags: [.command, .option]), for: "toggleSidebar:")
         expect(help(toggle) == "Hide sidebar ⌥⌘B", "Changed binding updates the help")
         try registry.set(nil, for: "resetTab:")
@@ -53,14 +48,12 @@ import AppKit
         try registry.reset("resetTab:")
         expect(help(reset) == "Reset Tab ⇧⌘R", "Reset restores the help")
 
-        // A conflict is not a valid binding (KeyBindingsState.shortcut(for:)).
         let proposal = KeyboardShortcut(key: "c", flags: [.command, .shift])
         try registry.set(proposal, for: "toggleSidebar:")
         expect(help(toggle) == "Hide sidebar", "Conflicting binding is not advertised")
         try registry.reset("toggleSidebar:")
         expect(help(toggle) == "Hide sidebar ⌘S", "Resolved conflict advertises again")
 
-        // A rebound title replaces the earlier registration for that view.
         registry.bindHelp(toggle, title: "Lock sidebar", commandID: "toggleSidebar:")
         try registry.set(KeyboardShortcut(key: "l", flags: [.command, .control]), for: "toggleSidebar:")
         expect(help(toggle) == "Lock sidebar ⌃⌘L", "Latest title keeps following the binding")
@@ -68,7 +61,6 @@ import AppKit
         expect(help(toggle) == "Lock sidebar ⌃⌘Space", "Spoken help says Space where the keycap shows ⎵")
         try registry.reset("toggleSidebar:")
 
-        // Context-menu entries show the live binding as a native key equivalent.
         let copy = NSMenuItem(title: "Copy URL", action: nil, keyEquivalent: "")
         registry.showBinding(on: copy, for: "copyCurrentURL:")
         expect(copy.keyEquivalent == "c" && copy.keyEquivalentModifierMask == [.command, .shift], "Menu entry shows the binding")
@@ -105,7 +97,6 @@ import AppKit
                "Re-registering the original command restores its saved binding and retained context menu")
         try registry.reset("copyCurrentURL:")
 
-        // Released views drop out of the live set.
         do {
             let transient = NSButton()
             registry.bindHelp(transient, title: "Reload this page", commandID: "reload:")
@@ -114,8 +105,6 @@ import AppKit
         try registry.set(KeyboardShortcut(key: "r", flags: [.command, .option]), for: "reload:")
         expect(help(toggle) == "Lock sidebar ⌘S", "Other bindings unaffected after a released view")
 
-        // The recovered Peek menu command is hidden without a modal, but its
-        // physical chord must revalidate it when a real Peek becomes available.
         let peekRegistry = KeyboardShortcuts(), peekMenu = NSMenu(title: "Tabs"), rootMenu = NSMenu()
         let parentItem = NSMenuItem(); parentItem.submenu = peekMenu; rootMenu.addItem(parentItem)
         NSApp.mainMenu = rootMenu
@@ -174,7 +163,6 @@ import AppKit
         originalWindow.key = true
         expect(originalCommand.perform() && promoted == 1 && !originalCommand.perform(), "Original target promotes once and only once")
 
-        //
         let suite = "parc.kb38.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -191,7 +179,6 @@ import AppKit
         expect(upsell.message(copied: url, pageURL: url, shortcut: chord, now: now.addingTimeInterval(86_400)) == nil, "One day later is too soon")
         expect(upsell.message(copied: url, pageURL: url, shortcut: chord, now: now.addingTimeInterval(2 * 86_400)) != nil, "Two days later offers again")
 
-        // The upsell is recorded only once the shared window toast is attached.
         let window = NSWindow(contentRect: NSRect(x: -12_000, y: -12_000, width: 300, height: 200),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false

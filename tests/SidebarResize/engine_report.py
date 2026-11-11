@@ -22,7 +22,6 @@ REQUIRED = ["-[PCNativePage(RenderFrameViewport) observeRenderFrameViewportSize:
             "-[PCNativeRenderFrameObservation invalidate]",
             "_OBJC_CLASS_$_PCNativeRenderFrameObservation"]
 
-# The app side guards exactly these selectors.
 frames = (root / "Sources/ParcApp/PageRenderFrames.swift").read_text()
 for use in ("page.responds(to: #selector(getter: PCNativePage.renderFrameViewportSize))",
             "page.responds(to: #selector(PCNativePage.observeRenderFrameViewportSize(_:)))"):

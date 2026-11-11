@@ -35,8 +35,6 @@ struct RendererCrashPresentationTests {
         return result
     }
 
-    /// Offscreen rendering of a window-less view: real drawing for the
-    /// appearance check, which cannot acknowledge a crash (no window).
     @MainActor private static func pixel(_ view: NSView, at point: NSPoint) -> [CGFloat] {
         view.layoutSubtreeIfNeeded()
         let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
@@ -50,7 +48,6 @@ struct RendererCrashPresentationTests {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
-        //
         typealias Segment = SadTabContent.Segment
         expect(SadTabContent.segments(SadTabContent.message) == [Segment(text: "Tab crashed. Maybe ", isLink: false),
                Segment(text: "reload", isLink: true), Segment(text: " the page?", isLink: false)],
@@ -121,7 +118,6 @@ struct RendererCrashPresentationTests {
         expect(!failure.artwork.isHidden && link.text == SadTabContent.plainMessage && failure.corner.text == "Error code: 42",
                "crash shows the artwork, sentence and the snapshot's error code")
 
-        // SadTabView geometry in a 640 × 375 page (flipped, top-left origin).
         failure.layoutSubtreeIfNeeded()
         let bounds = failure.bounds, artFrame = failure.artwork.frame, line = link.frame, code = failure.corner.frame
         let column = 96 + 64 + line.height
@@ -148,15 +144,12 @@ struct RendererCrashPresentationTests {
         expect(retried.isEmpty && presented.isEmpty, "undisplayed preparation neither acknowledges nor acts")
         expect(!failure.focusRendererAction(first), "hidden window cannot claim crash focus")
 
-        // Let AppKit draw its real visible window. Never invoke draw directly.
         window.makeKeyAndOrderFront(nil)
         pump()
         expect(presented == [first], "actual native drawing acknowledges current snapshot once")
         failure.needsDisplay = true
         pump()
         expect(presented == [first], "repaint does not repeat presentation acknowledgment")
-        // The link's own mouse handlers (hit testing is checked above). The
-        // window would focus a clicked view only if it accepted first responder.
         func click(_ point: NSPoint) {
             let location = link.convert(point, to: nil)
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
@@ -255,7 +248,6 @@ struct RendererCrashPresentationTests {
         failure.onReload = nil
         window.close()
 
-        // Light and dark backing, drawn by a window-less copy (no acknowledgment).
         for (name, expected) in [(NSAppearance.Name.aqua, [CGFloat(255), 255, 255]), (.darkAqua, [0, 0, 0])] {
             let offscreen = PageFailureView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
             offscreen.appearance = NSAppearance(named: name)

@@ -1,4 +1,3 @@
-"""Retarget exercises real temporary Git trees and inert upstream commands."""
 import copy
 import json
 import subprocess
@@ -64,7 +63,7 @@ class RetargetTests(unittest.TestCase):
             self.calls.append(argv)
             self.command_locations.append((argv, cwd))
             if 'fetch' in argv:
-                return b''  # Both revisions already exist in the fixture.
+                return b''
             if argv[0] != engine.GIT[0]:
                 if fail:
                     raise OSError('fixture hook failed')

@@ -1,6 +1,5 @@
 import Foundation
 
-///
 @main @MainActor struct SplitSeparateAllTests {
     static var count = 0
     static func check(_ value: @autoclosure () throws -> Bool, _ message: String) throws {
@@ -66,7 +65,6 @@ import Foundation
         try check(store.separateAllTabsFromSplit(expected: background, focusedID: a), "A background split separates")
         try check(store.state.selectedTabIDs == [a] && !store.state.splitLayouts.contains { $0.id == background.id },
                   "A background separation leaves the displayed selection")
-        //
         store.setSplit([b,c]); store.setSplitLayout(orientation: .horizontal, widthFactors: [1,3])
         let shown = store.activeSplitLayout!
         try check(store.flipSplitOrientation(expected: shown), "The displayed split flips")
@@ -81,7 +79,6 @@ import Foundation
         try check(try BrowserStore(directory: root, now: { now }).state.splitLayouts.first { $0.id == flipped.id }?.orientation == .horizontal,
                   "The flip persists")
 
-        // Add Split results from another Space of the Profile (SplitCrossSpaceAdd).
         let home = store.activeSpaceID
         let other = store.createSpace(name: "Other")
         store.selectSpace(other)
@@ -112,8 +109,6 @@ import Foundation
                   && copy?.spaceID == other && copy?.kind == .pinned && copy?.url == savedRecord.savedURL,
                   "Its saved home stays in its own Space")
         try check(store.state.selectionBySpace[other.uuidString] == [homeID], "The other Space remembers the saved home, not the moved page")
-        // Slots: the origin split keeps its place under a new anchor; the
-        // destination split stays at the target pane's place.
         store.selectSpace(other)
         let b1 = store.open("https://b1.invalid"), b2 = store.open("https://b2.invalid"), b3 = store.open("https://b3.invalid")
         let filler = store.open("https://filler.invalid")
@@ -137,7 +132,6 @@ import Foundation
         try check(SidebarHierarchy.children(in: aToday, state: store.state).firstIndex(of: .split(joinedGroup.id)) == qSlot,
                   "The destination split stays at the target pane's slot")
 
-        // Option-Return on a tab from another Space joins the same way.
         store.selectSpace(other)
         let far = store.open("https://far.invalid")
         store.selectSpace(home)
@@ -147,8 +141,6 @@ import Foundation
         try check(store.state.selectedTabIDs == [focusTab, far] && store.activeSpaceID == home
                   && store.state.tabs.first { $0.id == far }?.spaceID == home, "It joins this split without a Space switch")
 
-        // A pinned Note from another Space: its typed reference is planned
-        // before the move and still validates (Add Split and Option-Return).
         let notes = try NoteStore(directory: root.appendingPathComponent("notes"), diskSaveDelay: 0)
         let farNote = try notes.create(), farNote2 = try notes.create()
         store.selectSpace(other)
@@ -175,7 +167,6 @@ import Foundation
                   "Option-Return accepts a pinned Note from another Space with its planned home")
         try check(store.state.tabs.first { $0.id == homeID2 }?.spaceID == other, "Option-Return uses the planned home ID")
 
-        // New Folder with n Items (SidebarFolderFromItems) for a split.
         store.selectSpace(home)
         let p1 = store.open("https://p1.invalid"), p2 = store.open("https://p2.invalid")
         let outer = store.createFolder(name: "Outer")
@@ -185,7 +176,6 @@ import Foundation
         try check(try store.moveSidebarItem(.split(pinnedGroup.id), to: SidebarContainerLocation(spaceID: home, folderID: outer, section: .pinned),
                                             before: nil, expected: intoOuter), "The split moves into a folder")
         store.toggleFolder(outer)
-        // Another window makes a different Space the store's active one.
         store.selectSpace(other)
         let snapshot = SidebarHierarchySnapshot(state: store.state, spaceID: home, profileID: profile, includesFavorites: true)!
         let beforeFolder = store.state, folderID = UUID()
@@ -195,7 +185,6 @@ import Foundation
                   "The folder takes the default name inside the split's own parent folder")
         try check(store.state.folders.first { $0.id == outer }?.isExpanded == true, "Its collapsed ancestor expands")
         try check(store.activeSpaceID == other, "It is made in the window's Space while another window's Space is active")
-        // Ordinary activity elsewhere keeps Undo available.
         store.renameFolder(outer, name: "Renamed outer")
         store.updateTab(p1, title: "Changed title")
         store.renameFolder(folderID, name: "Named by the prompt")
@@ -226,7 +215,6 @@ import Foundation
                   && store.state.folders.first { $0.id == todayFolder }?.parentID == nil
                   && store.state.tabs.first { $0.id == todayItem }?.folderID == todayFolder,
                   "A Today item's folder is made in the pinned root")
-        // Archive Other/Below/Above admit the sidebar's Today order, not the tab array order.
         store.selectSpace(home)
         let x = store.open("https://x.invalid"), y = store.open("https://y.invalid"), z = store.open("https://z.invalid")
         let todayOrder = SidebarTodayArchive.order(in: store.state, spaceID: home)

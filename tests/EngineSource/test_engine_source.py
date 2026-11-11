@@ -1,4 +1,3 @@
-"""Offline safety tests. No Git command, network, sync, or build is executed."""
 import contextlib
 import copy
 import importlib.util
@@ -176,7 +175,6 @@ class EngineSourceTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 engine.execute(self.workspace, self.lock, self.sha, "build", 0, 4)
         self.assertEqual(engine.read_marker(self.workspace, self.sha)["phase"], "generation-in-progress")
-        # No live process holds the lock now, so the next build regenerates.
         with patch.object(engine, "host_report", return_value=self.good_host), patch.object(engine, "verify_workspace"), patch.object(engine, "tree_fingerprint", return_value="generated"), patch.object(engine, "run") as run:
             engine.execute(self.workspace, self.lock, self.sha, "build", 0, 4)
         self.assertEqual(run.call_count, 3)
@@ -263,7 +261,6 @@ class EngineSourceTests(unittest.TestCase):
         for forbidden in ["reset", "clean", "revert", "stash", "--force", "--reset", "--force-clean", "--delete_unversioned_trees", "origin/main", "origin/master"]:
             self.assertNotIn(forbidden, all_args)
         fetches = [c["argv"] for c in plan["sync"] if "fetch" in c["argv"]]
-        # Chromium must shallow-fetch by tag when pinned; raw SHA stalls on googlesource.
         chromium_fetch = next(cmd for cmd in fetches if cmd[-2:] == ["tag", self.lock["chromium"]["tag"]])
         self.assertIn("--depth=1", chromium_fetch)
         self.assertEqual({cmd[-1] for cmd in fetches if "tag" not in cmd},
@@ -305,7 +302,6 @@ class EngineSourceTests(unittest.TestCase):
             self.assertIn(define, shipping)
 
     def test_development_and_shipping_engines_build_fairplay_platform_codecs(self):
-        # FairPlay's Dolby Vision (encrypted only) and AC-3/E-AC-3 decode.
         shipping = engine.shipping_environment(self.workspace, self.lock, 0)["GN_DEFINES"].split()
         for define in ("enable_platform_dolby_vision=true",
                        "enable_platform_encrypted_dolby_vision=true",

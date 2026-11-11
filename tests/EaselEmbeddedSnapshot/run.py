@@ -34,7 +34,6 @@ def sha(path):
 def real_command(tree, build, objects, unit, sources, results):
     query = subprocess.run([str(tree / 'third_party/siso/cipd/siso'), 'query', 'commands', '-C', str(build), objects],
                            cwd=tree, capture_output=True, check=True)
-    # Other commands in the graph carry non-UTF-8 bytes; keep them undecoded.
     lines = [line for line in query.stdout.decode('utf-8', 'surrogateescape').splitlines()
              if f' -c ../../{unit} -o {objects}' in line]
     if len(lines) != 1:

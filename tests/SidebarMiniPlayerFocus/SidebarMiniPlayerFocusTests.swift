@@ -1,11 +1,5 @@
 import AppKit
 
-/// MiniPlayerDeck's keyboard stops and rings, the sidebar's minimal hook in the
-/// media owner's view: every stop in the sidebar's chain draws a ring. The row
-/// stays a stop (Return reveals its page, Space plays or pauses) and draws one
-/// around its rounded card, and focusing it expands the deck; "Show All" and
-/// the title take the sidebar's radius-5 ring; the transport buttons keep their
-///
 @main @MainActor struct SidebarMiniPlayerFocusTests {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -52,7 +46,6 @@ import AppKit
                       "\(button.parcTooltip?.label ?? "?") keeps its exterior ring")
             }
         }
-        // Focusing the front card expands the deck to show every player.
         let collapsed = deck.desiredHeight
         check(window.makeFirstResponder(rows[0]) && window.firstResponder === rows[0], "a row takes focus")
         check(deck.desiredHeight > collapsed, "focusing a row expands the deck (\(collapsed) → \(deck.desiredHeight))")
@@ -65,7 +58,6 @@ import AppKit
             guard let title = titles.first(where: { $0.isDescendant(of: row) }) else { return false }
             return index(row).flatMap { rowIndex in index(title).map { rowIndex < $0 } } == true
         }, "each expanded row is a stop ahead of its title")
-        // Return on the focused row reveals its page; Space plays or pauses.
         rows[0].keyDown(with: key("\r", 36, window))
         check(revealed == ["a"], "Return on a focused row reveals its page (\(revealed))")
         rows[0].keyDown(with: key(" ", 49, window))
@@ -81,9 +73,6 @@ import AppKit
         window.close()
         print("Sidebar mini player focus checks: \(count) passed")
     }
-    /// The transport's last button is Cast for a Chrome-identity page's
-    /// castable player and AirPlay for a Safari-identity page's, and opens the
-    /// matching chooser; it reads the session's state.
     static func routeButton(_ window: NSWindow, _ host: NSView) {
         let deck = MiniPlayerDeck(frame: NSRect(x: 8, y: 100, width: 212, height: 200)); host.addSubview(deck)
         let page = PCNativePage(), state = PCNativeMediaState(identifier: "route")
@@ -120,9 +109,6 @@ import AppKit
         check(page.chooserRequests == ["cast", "airplay"], "AirPlay opens the route list (\(page.chooserRequests))")
         deck.removeFromSuperview()
     }
-    /// "This media is no longer available." means the row's episode is gone:
-    /// the row acts on the page's current snapshot of it, a refusal while it
-    /// plays shows nothing, and the message clears once the episode is back.
     static func unavailableMessage(_ window: NSWindow, _ host: NSView) {
         let deck = MiniPlayerDeck(frame: NSRect(x: 8, y: 100, width: 212, height: 200)); host.addSubview(deck)
         let page = PCNativePage(), published = PCNativeMediaState(identifier: "episode")
@@ -138,7 +124,6 @@ import AppKit
             deck.layoutSubtreeIfNeeded()
             return descendants(of: deck).contains { ($0 as? NSTextField)?.stringValue == "This media is no longer available." && !$0.isHidden }
         }
-        // The cast's page changed under the same episode without a publish.
         let replaced = PCNativeMediaState(identifier: "episode"); replaced.airPlayState = .available
         page.mediaState = replaced
         button("Pause")?.performClick(nil)
@@ -158,8 +143,6 @@ import AppKit
         page.mediaState = replaced
         button("AirPlay")?.performClick(nil)
         check(page.chooserRequests == ["airplay"] && !message(), "opening the route list clears the error (\(page.chooserRequests))")
-        // A list waiting for the page's next player holds the button until it
-        // opens or the wait ends, across the episode's updates meanwhile.
         let next = PCNativeMediaState(identifier: "episode"); next.airPlayState = .available
         page.mediaState = next
         deck.update([MiniPlayerItem(page: page, state: next, icon: nil, host: MiniPlayerHostLease(window), valid: { true }, reveal: {})])
@@ -169,8 +152,6 @@ import AppKit
         check(airPlay?.showsSelectedFill == false && !message(), "the wait's end releases the button")
         deck.removeFromSuperview()
     }
-    /// A click on the card reveals its page but leaves keyboard focus where it
-    /// was, so the card's ring never shows for a mouse user.
     static func clickTakesNoFocus(_ window: NSWindow, _ host: NSView) {
         let deck = MiniPlayerDeck(frame: NSRect(x: 8, y: 100, width: 212, height: 200)); host.addSubview(deck)
         var revealed = 0
@@ -184,10 +165,6 @@ import AppKit
         }
         _ = window.makeFirstResponder(nil)
         let before = window.firstResponder
-        // The artwork passes clicks to the card. In a key window AppKit offers
-        // the clicked view first responder, then sends it mouseDown, while
-        // the click is the current event; this off-screen window is never key,
-        // so it would swallow the click as a first mouse. Replay that order.
         let point = row.convert(NSPoint(x: 12, y: row.bounds.height - 16), to: nil)
         guard let hit = window.contentView?.hitTest(point) else { return check(false, "a view under the artwork") }
         check(hit === row, "the artwork's click lands on the card")
@@ -208,8 +185,6 @@ import AppKit
         _ = window.makeFirstResponder(nil)
         deck.removeFromSuperview()
     }
-    /// Open Picture in Picture shows only while Chromium offers it: one video
-    /// player with a video track. Audio-only media never shows it.
     static func pictureInPicture(_ window: NSWindow, _ host: NSView) {
         let deck = MiniPlayerDeck(frame: NSRect(x: 8, y: 100, width: 212, height: 200)); host.addSubview(deck)
         let page = PCNativePage(), state = PCNativeMediaState(identifier: "pip")
@@ -220,7 +195,7 @@ import AppKit
             return descendants(of: deck).compactMap { $0 as? ActionButton }
                 .contains { !$0.isHidden && $0.accessibilityLabel() == "Open Picture in Picture" }
         }
-        deck.updateHover(true)  // The row's top chrome shows while the deck is expanded.
+        deck.updateHover(true)
         state.canEnterPictureInPicture = false
         check(!shown(), "audio-only media has no Open Picture in Picture")
         state.canEnterPictureInPicture = true
@@ -229,8 +204,6 @@ import AppKit
         check(!shown(), "losing its video track hides it again")
         deck.removeFromSuperview()
     }
-    /// A control hidden while it holds keyboard focus hands focus to the next
-    /// visible control in the row, or to the card, never leaving it invisible.
     static func hiddenFocusMoves(_ window: NSWindow, _ host: NSView) {
         let deck = MiniPlayerDeck(frame: NSRect(x: 8, y: 100, width: 212, height: 200)); host.addSubview(deck)
         let page = PCNativePage(), state = PCNativeMediaState(identifier: "hide")
@@ -261,7 +234,6 @@ import AppKit
                          context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false,
                          keyCode: code)!
     }
-    /// Whether `view`'s focus-ring mask covers `point` (view coordinates).
     static func filled(_ view: NSView, at point: NSPoint) -> Bool {
         let size = view.bounds.size
         let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
@@ -277,7 +249,6 @@ import AppKit
 
 private class Flipped: NSView { override var isFlipped: Bool { true } }
 
-// Stand-ins for the engine's media types (native_appkit_bridge.h).
 enum PCNativeMediaAction { case play, pause, previousTrack, nextTrack, toggleMuted, toggleMicrophone, toggleCamera, enterPictureInPicture }
 enum PCNativeAirPlayState { case unavailable, available, connecting, connected }
 enum PCNativeCastState { case unavailable, available, connecting, connected }
@@ -295,7 +266,6 @@ enum PCNativeCastState { case unavailable, available, connecting, connected }
     var isClosed = false
     var mediaState: PCNativeMediaState?
     var onAction: ((PCNativeMediaAction) -> Void)?
-    /// As the engine's validation: only the page's current snapshot acts.
     var refuses = false
     private func accepts(_ state: PCNativeMediaState) -> Bool { !refuses && state === mediaState }
     func performMediaAction(_ action: PCNativeMediaAction, state: PCNativeMediaState, in window: NSWindow) -> Bool {

@@ -1,21 +1,3 @@
-// Checks the renderer's gate for the scripts a Safari-identity document gets
-// (fairplay-identity-blink.patch, InstallParcSafariScripts): the real
-// IsParcSafariIdentityUserAgent from Engine/ParcRenderer/parc_safari_identity.h
-// (over a stand-in WTF::String in blink_stub/), the real script constants, and
-// the user agent Parc sends for Safari's identity. A Safari-identity document
-// gets ManagedMediaSource, WebKitMediaKeys, Safari's MediaKeys (no
-// getStatusForPolicy), Safari's video presentation API and its AirPlay
-// availability event; Chrome's identity and other browsers' user agents get
-// none of them. webkit_media_keys.mjs, safari_media_keys.mjs,
-// webkit_presentation.mjs and webkit_playback_target.mjs run the scripts.
-// It also checks which EME init data types a document may name: FairPlay's
-// "sinf", "skd" and "mpts" only under Safari's identity, and that a Media Source
-// element there hears `encrypted` with "sinf" init data only, as in Safari;
-// which encryptionScheme and sessionTypes values requestMediaKeySystemAccess
-// takes there without a TypeError (WebKit's IDL enums); FairPlay's key
-// system names; that "persistent-usage-record" is a session type only
-// under Safari's identity; and WebKit's macOS spatial audio rule for
-// decodingInfo's spatialRendering.
 #include "fairplay_identity_policy.h"
 #include "parc_managed_media_source.h"
 #include "parc_safari_identity.h"
@@ -43,8 +25,6 @@ void Check(bool condition, const char* message) {
   }
 }
 
-// The decision and loop of InstallParcSafariScripts, for a main world whose
-// document can run scripts.
 std::vector<std::string> ScriptsFor(const std::string& user_agent) {
   std::vector<std::string> scripts;
   if (blink::IsParcSafariIdentityUserAgent(blink::String(user_agent))) {
@@ -59,10 +39,6 @@ std::vector<std::string> ScriptsFor(const std::string& user_agent) {
   return scripts;
 }
 
-// requestMediaKeySystemAccess's initDataTypes and generateRequest's
-// initDataType after Parc's gate (fairplay-identity-blink.patch): the name is
-// one media::StringToEmeInitDataType registers (fairplay-media.patch), and
-// FairPlay's own only under Safari's identity.
 bool InitDataTypeRegistered(const std::string& user_agent,
                             const std::string& type) {
   const bool registered = type == "cenc" || type == "keyids" ||
@@ -73,13 +49,6 @@ bool InitDataTypeRegistered(const std::string& user_agent,
           blink::IsParcSafariIdentityUserAgent(blink::String(user_agent)));
 }
 
-// WebMediaPlayerImpl::OnEncryptedMediaInitData's gate (fairplay-media.patch)
-// with HTMLMediaElement::PresentsParcSafariIdentity
-// (fairplay-identity-blink.patch): the MP4 parser's "sinf" init data reaches
-// a page only from a Media Source element of a Safari-identity document, and
-// that element hears nothing else, as Safari's Media Source surfaces only
-// sinf (SourceBufferPrivateAVFObjC, AudioVideoRendererAVFObjC::setInitData).
-// Every other element hears "cenc" and "webm" as before, never "sinf".
 enum class Load { kUrl, kMediaSource };
 bool EncryptedEventDelivered(const std::string& user_agent,
                              Load load,
@@ -90,7 +59,6 @@ bool EncryptedEventDelivered(const std::string& user_agent,
   return (type == "sinf") == safari_media_source;
 }
 
-// Each script installs its global unless the page already has one.
 bool Installs(const std::vector<std::string>& scripts, const char* global) {
   const std::string guard = std::string("'") + global + "' in g";
   for (const std::string& script : scripts) {
@@ -101,10 +69,9 @@ bool Installs(const std::vector<std::string>& scripts, const char* global) {
   return false;
 }
 
-}  // namespace
+}
 
 int main() {
-  // Exercise the added stand-ins through the real header's codec helpers.
   const auto parser_codecs = blink::ParcSafariMp2tParserCodecs(
       " , avc1.42E01E,\tmp4a.40.5, ac-3 ");
   Check(parser_codecs && *parser_codecs == "avc1.42E01E,mp4a.40.5",
@@ -116,8 +83,6 @@ int main() {
         "separators alone are not an empty codecs parameter");
   Check(!blink::ParcSafariMp2tParserCodecs("avc1.42E01E,invalid"),
         "an invalid codec rejects the parser list");
-  // What Parc's browser sends for a Safari site (fairplay_identity.mm builds
-  // it with SafariUserAgent from the installed Safari's version).
   for (const char* version : {"27.2", "26.0.1"}) {
     const std::vector<std::string> safari =
         ScriptsFor(parc::fairplay_identity::SafariUserAgent(version));
@@ -161,7 +126,6 @@ int main() {
           "a Safari-identity Media Source element hears no cenc, webm or mpts");
     Check(EncryptedEventDelivered(safari, Load::kUrl, "cenc"),
           "a Safari-identity element playing a URL keeps Chromium's events");
-    // EME compares init data types case-sensitively, as WebKit does.
     for (const char* type : {"SINF", "Skd", "sinf ", "MPTS", "mtps", ""}) {
       Check(!InitDataTypeRegistered(safari, type),
             "other spellings of sinf, skd and mpts stay unregistered");
@@ -171,7 +135,6 @@ int main() {
                     "isTypeSupported(keySystem, type = undefined)") != nullptr,
         "the script defines the static isTypeSupported");
 
-  // WebKit's MediaKeyEncryptionScheme and MediaKeySessionType enums.
   for (const char* scheme : {"cenc", "cbcs"}) {
     Check(blink::IsParcSafariEncryptionScheme(scheme),
           "cenc and cbcs are WebKit's encryption schemes");
@@ -199,8 +162,6 @@ int main() {
     Check(!blink::IsParcFairPlayKeySystem(key_system),
           "FairPlay's names compare case-sensitively");
   }
-  // Safari's persistent-usage-record session type exists only under Safari's
-  // identity, compared exactly as EME compares MediaKeySessionType values.
   Check(blink::IsParcSafariOnlySessionType("persistent-usage-record"),
         "persistent-usage-record is Safari-only");
   for (const char* type : {"temporary", "persistent-license",
@@ -211,12 +172,10 @@ int main() {
   }
 
   const char* const not_safari[] = {
-      // Chrome's identity (Parc's own user agent everywhere else).
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chromium/144.0.0.0 Safari/537.36",
-      // Browsers on iOS name themselves next to Safari's tokens.
       "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
       "AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/144.0.0.0 Version/18.0 "
       "Mobile/15E148 Safari/604.1",
@@ -226,7 +185,6 @@ int main() {
       "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
       "AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/140.0 Version/18.0 "
       "Mobile/15E148 Safari/605.1.15",
-      // Firefox, and an empty user agent.
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 "
       "Firefox/140.0",
       "",
@@ -248,11 +206,9 @@ int main() {
           "other documents hear cenc and webm init data as before and never sinf");
   }
 
-  // WebKit's macOS spatial audio rule for decodingInfo's spatialRendering:
-  // the output device's sources against the configuration's channels.
-  const std::vector<uint32_t> mono_or_stereo = {0x6d6f7374};  // 'most'
-  const std::vector<uint32_t> multichannel = {0x6d6c7469};    // 'mlti'
-  const std::vector<uint32_t> binaural = {0x62696e68};        // 'binh'
+  const std::vector<uint32_t> mono_or_stereo = {0x6d6f7374};
+  const std::vector<uint32_t> multichannel = {0x6d6c7469};
+  const std::vector<uint32_t> binaural = {0x62696e68};
   Check(blink::IsParcSafariSpatialAudioSupported(mono_or_stereo, 2) &&
             blink::IsParcSafariSpatialAudioSupported(mono_or_stereo, 1),
         "mono or stereo sources spatialize one or two channels");

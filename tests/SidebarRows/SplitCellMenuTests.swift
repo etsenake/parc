@@ -1,8 +1,5 @@
 import AppKit
 
-///
-///
-/// SidebarSplitCellMenu and SplitMarginHandleView.
 @main @MainActor struct SplitCellMenuTests {
     static var count = 0
     static func check(_ value: @autoclosure () throws -> Bool, _ message: String) throws {

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Test profile/receipt guards only; never launches Chromium or fakes its result."""
 import importlib.util
 from pathlib import Path
 import stat
@@ -78,8 +77,6 @@ class LauncherTest(unittest.TestCase):
             [launcher.ACCESSIBILITY_SHUTDOWN,
              "NATIVE_RUNTIME_PASS cases=3 synthetic_http_auth=true clean_shutdown=true"])
         self.assertTrue(launcher.verdict(0, receipt, False))
-        # An earlier runner can pass page events without exercising the new
-        # production crash state. Its old complete receipt is insufficient.
         old_receipt = receipt.replace(launcher.RENDERER_CRASH + "\n", "")
         self.assertFalse(launcher.verdict(0, old_receipt, False))
         self.assertFalse(launcher.verdict(0, receipt + "\n" + launcher.RENDERER_CRASH, False))
@@ -88,8 +85,6 @@ class LauncherTest(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertFalse(launcher.verdict(0, receipt.replace(
                     field + "=true", field + "=false"), False))
-        # It must follow the real crash/reload and precede authentication;
-        # a premature or late marker cannot turn a partial run into success.
         early = old_receipt.replace(launcher.PAGE_EVENTS,
                                    launcher.RENDERER_CRASH + "\n" + launcher.PAGE_EVENTS)
         late = old_receipt.replace("HTTP_AUTH_CONTROLLER_0 PASS: checked",
@@ -120,8 +115,6 @@ class LauncherTest(unittest.TestCase):
                 self.assertFalse(launcher.extension_verdict(0, receipt.replace(field + "=true", field + "=false"), False))
 
     def test_launcher_owns_real_loopback_fixture(self):
-        # Exercises the actual server implementation and shutdown; no browser,
-        # surrogate permission result or synthetic runtime PASS is produced.
         with launcher.extension_fixture_server() as fixture:
             for tab in ("first", "second"):
                 with urllib.request.urlopen(fixture["url"] + "?tab=" + tab, timeout=2) as response:
@@ -156,8 +149,6 @@ class LauncherTest(unittest.TestCase):
         self.assertFalse(launcher.pip_verdict(0, receipt + "\nNATIVE_PIP_CASE_7 PASS: unexpected", False))
 
     def test_video_transport_binds_package_hash_and_range(self):
-        # Transport/provenance checks only. These bytes are not a media decode
-        # or substitute for the real packaged bear.webm controller run.
         with tempfile.TemporaryDirectory() as directory:
             app = Path(directory) / "parc_native_runtime_tests.app"
             media = app / "Contents/Resources/NativeVideoFixture/bear.webm"

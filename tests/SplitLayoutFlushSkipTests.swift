@@ -1,4 +1,3 @@
-/// Split drop layoutSubtree gates plus divider-drag identical-factor move skip.
 @main
 struct SplitLayoutFlushSkipTests {
     static var assertions = 0

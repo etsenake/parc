@@ -180,7 +180,6 @@ static void Decisions() {
   Pump();
   Check(count == 2 && outcome == PCHTTPAuthCancel,
         "Escape means explicit cancellation");
-  // Keyboard routing from any focus, respecting input-method composition.
   __block int keyed = 0;
   __block PCHTTPAuthChoice keyedChoice = PCHTTPAuthInterrupted;
   auto keyResult = ^(PCHTTPAuthChoice c, NSString*, NSString*) {

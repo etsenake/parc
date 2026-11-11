@@ -1,19 +1,4 @@
 #!/usr/bin/env python3
-"""A Space swipe's main-thread work on the production SidebarView with 5, 50
-and 200 folders and items per Space, in an off-screen window that is never
-shown and, like the browser window, lays its content out with constraints.
-Phased scroll events are built in memory and handed to the sidebar; no
-browser, engine, posted events or preferences. Prints each size's frame times,
-release, spring frames, a jump to the farthest Space, the rows each swipe
-builds, the longest idle turn, the frames of a scroll through the list, a
-drag auto-scrolling it, a folder springing open under the drag and folders
-expanding and collapsing, and the footprint. Without arguments it is the
-regression check at 5 and 50 folders, four Spaces, first visits and returns:
-it fails if a swipe or jump builds a row or a page doesn't settle, and reports
-the three-run medians against the frame limits (swipe frames within a frame,
-spring frames, idle turns and list frames under 8 ms, folder expansion under
-16 ms, releases and far jumps under 50 ms).
-"""
 from pathlib import Path
 import ast
 import os
@@ -25,7 +10,6 @@ import tempfile
 
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
-# The sources the Space Manager's real-sidebar checks compile.
 manager = ast.parse((root / "tests/SpaceManager/check.py").read_text())
 names = excerpts = None
 for node in ast.walk(manager):
@@ -56,11 +40,6 @@ with tempfile.TemporaryDirectory(prefix="parc-space-swipe-") as directory:
                     *map(str, sources), "-o", str(executable)], check=True)
     if len(sys.argv) > 1:
         sys.exit(subprocess.run([str(executable), *sys.argv[1:]]).returncode)
-    # The regression check at 5 and 50 folders and items, four Spaces. The
-    # binary fails on what is exact: no swipe or jump builds rows, pages
-    # settle, list motion produces frames. Frame times are wall clock: the same
-    # build measured 10 ms and 25 ms runs apart, so their medians over three
-    # runs are reported against the limits rather than failing the suite.
     environment = {**os.environ, "SWIPE_ASSERT": "1", "SWIPE_SPACES": "4"}
     limits = {"swipe first frame": 16, "other frames max": 16, "settle frame max": 8, "release": 50,
               "far jump": 50, "longest idle turn": 8, "scroll frame max": 8, "drag auto-scroll frame max": 8,

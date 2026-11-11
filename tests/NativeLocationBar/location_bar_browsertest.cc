@@ -1,5 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Run in Chromium's browser_tests, with location_bar.cc linked into the target.
 #include "location_bar.h"
 
 #include "base/run_loop.h"
@@ -77,14 +75,12 @@ IN_PROC_BROWSER_TEST_F(NativeLocationBarBrowserTest,
   auto bar = std::make_unique<NativeLocationBar>(*browser());
   auto* view = bar->GetOmniboxView();
   auto* model = bar->GetOmniboxController()->edit_model();
-  view->SetUserText(u"parc local model check", /*update_popup=*/false);
+  view->SetUserText(u"parc local model check", false);
   EXPECT_EQ(model->user_text(), u"parc local model check");
   EXPECT_TRUE(model->user_input_in_progress());
   EXPECT_TRUE(view->GetText().empty());
   EXPECT_EQ(view->GetSelectionBounds(), gfx::Range(0));
 
-  // The recovered LocationBar hook is empty, but the inherited OmniboxView
-  // method must still reset the real model; conflating these loses behavior.
   bar->Revert();
   EXPECT_TRUE(model->user_input_in_progress());
   view->RevertAll();
@@ -93,12 +89,9 @@ IN_PROC_BROWSER_TEST_F(NativeLocationBarBrowserTest,
   EXPECT_FALSE(bar->IsVisible());
   EXPECT_FALSE(view->AimButtonVisible());
 
-  // Destroy the view/controller/client while Browser and Profile are alive;
-  // flush queued work to expose callbacks into the destroyed service under
-  // Chromium's DCHECK/raw_ptr instrumentation (and ASan builds when used).
   bar.reset();
   base::RunLoop().RunUntilIdle();
   EXPECT_NE(LocationBarModel::From(browser()), nullptr);
   EXPECT_NE(browser()->tab_strip_model()->GetActiveWebContents(), nullptr);
 }
-}  // namespace parc
+}

@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""P1-S leftover behavior lock: layoutChrome full pass skips synchronizeNativeLayout
-when side-panel and pageHost layoutSubtree flushes did not run (geometry and
-needsLayout already current). Real chrome moves / dirty hosted trees still flush
-and sync. P1-W side-panel/pageHost gates and WindowKeyViewLoop.relink remain."""
 from pathlib import Path
 import re
 
@@ -38,14 +34,12 @@ assert (
     "            synchronizeNativeLayout()\n"
     "        }"
 ) in body, "synchronizeNativeLayout must run only after a real hosted layout flush"
-# Unconditional sync on the full-pass path must be gone.
 full = body[body.index("guard fullPass else { return }"):]
 assert full.count("synchronizeNativeLayout()") == 1, \
     "full pass must call synchronizeNativeLayout exactly once (gated)"
 assert "windowKeyViews.relink()" in full, \
     "full pass must still request key-view relink (skip lives inside WindowKeyViewLoop)"
 
-# Geometry-only Cmd-S path still forces pageHost layout (motion).
 geometry = re.search(
     r"private func layoutChromeGeometry\(\) \{(?P<body>.*?)\n    \}\n\n    func newTab",
     controller, re.S)
@@ -56,7 +50,6 @@ assert "pageHost.needsLayout = true" in geo and "pageHost.layoutSubtreeIfNeeded(
 assert "synchronizeNativeLayout()" not in geo, \
     "geometry-only pass must not gain synchronizeNativeLayout"
 
-# Relink installed-chain skip must remain.
 keyloop = (root / "Sources/ParcApp/WindowKeyViewLoop.swift").read_text()
 assert "static func isInstalled(_ chain: [NSView], entry: NSView, exit: NSView?) -> Bool" in keyloop, \
     "WindowKeyViewLoop.isInstalled skip (0f652a99) must remain"

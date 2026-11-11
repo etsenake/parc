@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""P0-K behavior lock: BrowserPane skips content.layoutSubtreeIfNeeded when
-hosted chrome is current. content.layout / place still run on moved or dirty
-content; only dirty direct children get layoutSubtree. PageContentResizer still
-flushes on a new page size / shallow hosted-chrome mismatch."""
 from pathlib import Path
 import re
 

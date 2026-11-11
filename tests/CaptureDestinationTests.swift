@@ -1,7 +1,5 @@
 import AppKit
 
-/// Uses the production importer, persistent EaselStore and live undo session.
-/// Never opens a browser, invokes a sharing service or touches the pasteboard.
 @main
 struct CaptureDestinationTests {
     @MainActor static var assertions = 0

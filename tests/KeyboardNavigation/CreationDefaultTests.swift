@@ -19,7 +19,6 @@ import AppKit
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        // Golden shipped MainMenu key/mask records; uppercase adds Shift.
         let rows: [(String, String, KeyboardShortcut)] = [
             ("createNote:", "New Note", .init(key: "N", flags: .control)),
             ("createNoteInSplit:", "New Note in Split View", .init(key: "n", flags: [.control, .option])),
@@ -93,7 +92,6 @@ import AppKit
             for (id, _, chord) in rows { expect(registry.shortcut(for: id) == chord, "Reset All adopts all four defaults") }
             expect(registry.priority(for: "createNote:") == .useBoth, "Reset All uses recovered priority")
         }
-        // New-schema explicit clear is stored, unlike the old nil-default writer.
         let registry = KeyboardShortcuts(); registry.configure(directory: root); _ = register(registry)
         try registry.set(nil, for: "createNote:"); registry.configure(directory: root)
         expect(registry.shortcut(for: "createNote:") == nil, "Explicit clear persists after defaults are introduced")

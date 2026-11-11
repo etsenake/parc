@@ -1,4 +1,3 @@
-"""Exercise Apple acceptance, immutable retry inputs and post-stapling gates."""
 import contextlib
 import hashlib
 import importlib.util

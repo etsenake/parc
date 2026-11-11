@@ -1,32 +1,16 @@
 import AppKit
 
-/// The sidebar's own Space menu: the production SidebarSpaceMenuSurface and
-/// SidebarSpaceMenu.sidebar on a real session store, holding the production
-/// SidebarOutlineView in a tablist scroll view, in an off-screen window that
-/// is never shown or made key. AppKit's own rightMouseDown: and mouseDown:
-/// carry each event from the view under the point up the responder chain;
-/// the surface records the right-click it receives in place of opening its
-/// menu, which is read and performed directly. No menu tracking, pointer
-/// input, browser or preferences.
-
-/// SidebarView stand-in: the production menu(for:) and mouseDown:, with the
-/// right-click that AppKit would show the menu for recorded instead.
 @MainActor final class Sidebar: SidebarSpaceMenuSurface {
     var received: [NSEvent] = []
     override func rightMouseDown(with event: NSEvent) { received.append(event) }
 }
 
-/// The sidebar's superview, ending the responder chain before the window: a
-/// click the sidebar passes to super stops here.
 @MainActor final class Host: NSView {
     var clicks: [NSEvent] = []
     override func mouseDown(with event: NSEvent) { clicks.append(event) }
     override func rightMouseDown(with event: NSEvent) {}
 }
 
-/// SidebarTabRow stand-in (SidebarView.swift is not compiled here): its own
-/// menu, opened by its own rightMouseDown: and Control-click without
-/// forwarding either.
 @MainActor final class Row: NSView {
     let ownMenu = NSMenu(title: "row")
     var opened = 0
@@ -50,8 +34,6 @@ import AppKit
         return space
     }
 
-    /// The window state SidebarView passes to SidebarSpaceMenu.sidebar, read
-    /// from the store unless a fixture replaces it.
     @MainActor final class Model {
         let store: BrowserStore
         var fixture: (spaces: [BrowserSpace], active: UUID?)?
@@ -79,8 +61,6 @@ import AppKit
         let store = try BrowserStore(directory: directory)
         let model = Model(store: store)
 
-        //
-        // row order for two pinned and two Today items.
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 228, height: 700), styleMask: [.borderless], backing: .buffered, defer: true)
         let host = Host(frame: NSRect(x: 0, y: 0, width: 228, height: 700))
         let sidebar = Sidebar(frame: host.bounds)
@@ -116,13 +96,11 @@ import AppKit
         check(abs(list.frame.height - (lastRow.frame.maxY + SidebarChromeLayout.tablistBottomInset)) < 0.5
               && list.frame.height < scroll.contentSize.height, "the outline ends with the bottom inset, shorter than its scroll view")
 
-        /// A point in the window (the sidebar's base coordinates) from one in `view`.
         func point(_ view: NSView, _ local: NSPoint) -> NSPoint { view.convert(local, to: nil) }
         func event(_ type: NSEvent.EventType, _ location: NSPoint, _ flags: NSEvent.ModifierFlags = []) -> NSEvent {
             NSEvent.mouseEvent(with: type, location: location, modifierFlags: flags, timestamp: 0, windowNumber: window.windowNumber,
                                context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
         }
-        /// AppKit's delivery: the event goes to the view under the point [C].
         func deliver(_ type: NSEvent.EventType, at location: NSPoint, _ flags: NSEvent.ModifierFlags = []) -> NSView? {
             guard let hit = sidebar.hitTest(location) else { return nil }
             let delivered = event(type, location, flags)
@@ -132,11 +110,6 @@ import AppKit
         let base = ["Rename Space…", "Edit Theme Color…", "New Folder"]
         func menuTitles() -> [String]? { sidebar.menu(for: event(.rightMouseDown, .zero))?.items.map(\.title) }
 
-        // The empty area: the bottom inset below the last row, the clip view
-        // below the outline, the gaps between rows and the empty pinned header
-        // row, then the menu-less New Tab and Clear buttons. A button tracks
-        // its own mouseDown:, so a Control-click there stays its click [C] and
-        // is not sent here (it would track the pointer).
         let inset = point(list, NSPoint(x: list.bounds.midX, y: lastRow.frame.maxY + SidebarChromeLayout.tablistBottomInset / 2))
         let below = point(scroll.contentView, NSPoint(x: scroll.contentView.bounds.midX, y: list.frame.maxY + 40))
         let firstToday = list.rows[list.rows.count - 2]
@@ -170,7 +143,6 @@ import AppKit
         }
         check(pinned.allSatisfy { $0.opened == 0 } && today.allSatisfy { $0.opened == 0 }, "no row opened its menu for the empty area")
 
-        // A row keeps its own menu: AppKit opens it there and passes nothing up.
         sidebar.received.removeAll()
         for row in pinned + today {
             let centre = point(row, NSPoint(x: row.bounds.midX, y: row.bounds.midY))
@@ -181,7 +153,6 @@ import AppKit
         }
         check(sidebar.received.isEmpty, "nothing on a row reaches the sidebar's Space menu")
 
-        //
         let first = store.state.spaces[0]
         check(store.state.spaces.count == 1 && first.name == "Space 1" && store.state.settings.showSpaceHeaderOnSingleUnnamedSpaces == nil,
               "a new session has one untitled Space and the setting off")
@@ -198,7 +169,6 @@ import AppKit
         for index in 0..<3 { sidebar.menu(for: event(.rightMouseDown, inset))?.performActionForItem(at: index) }
         check(model.calls == ["rename Space 1", "theme", "folder"], "the menu renames, edits the theme of and adds a folder to the active Space")
 
-        // Two Spaces: no toggle, and the menu follows the active Space.
         model.calls.removeAll()
         let secondID = store.createSpace(name: "Work")
         check(store.state.activeSpaceID == secondID && menuTitles() == base
@@ -213,7 +183,6 @@ import AppKit
         check(menuTitles() == base, "the setting adds no toggle while the window has two Spaces")
         store.toggleSpaceHeaderOnSingleUnnamedSpaces()
 
-        //
         let lone = space("Space 1"), titled = space("Trips"), starred = space("Space 1", icon: .symbol("star")), unnamed = space("")
         for (fixture, expected, rule) in [(lone, "Show Space Header", "an untitled Space offers the toggle"),
                                           (titled, nil, "a titled Space offers none"),
@@ -230,8 +199,6 @@ import AppKit
         check(sidebar.menu(for: event(.rightMouseDown, inset)) == nil, "no menu for a Space the window does not have")
         model.fixture = nil
 
-        //
-        // incognito window, so AppKit shows nothing there.
         model.creating = true
         check(sidebar.menu(for: event(.rightMouseDown, inset)) == nil, "no menu while a Space is created")
         model.creating = false; model.privateWindow = true

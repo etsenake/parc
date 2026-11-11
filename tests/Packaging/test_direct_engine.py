@@ -1,4 +1,3 @@
-"""Seal direct-engine fixtures without compiling or loading Chromium."""
 import importlib.util
 from pathlib import Path
 import tempfile

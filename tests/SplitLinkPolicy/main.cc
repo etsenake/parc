@@ -5,8 +5,6 @@
 int main() {
   using parc::ClassifyNativeSplit;
   using parc::NativeSplitDecision;
-  // Initial refusal and a lease invalidated after admission use the same safe
-  // ordinary insertion, for both OpenURL and already-created pages.
   assert(ClassifyNativeSplit(true, false) == NativeSplitDecision::kOrdinary);
   assert(ClassifyNativeSplit(true, true) == NativeSplitDecision::kAdmitted);
   assert(ClassifyNativeSplit(false, false) == NativeSplitDecision::kUnmanaged);

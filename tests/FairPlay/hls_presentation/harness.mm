@@ -1,11 +1,3 @@
-// Proofs for the presentation side of Parc's native HLS route
-// (Engine/ParcNative/fairplay_chromium/NATIVE_HLS.md), run against real
-// AVFoundation with Apple's public HLS examples. See README.md.
-//
-// The player is made and driven on a serial queue with no run loop, as the
-// GPU process's media service thread is. Layer placement happens on the main
-// thread, as CARendererLayerTree does it.
-
 #import <AVFoundation/AVFoundation.h>
 #import <AppKit/AppKit.h>
 #import <QuartzCore/QuartzCore.h>
@@ -24,13 +16,10 @@
 #include <string>
 #include <vector>
 
-// WebKit's source for an AVPlayer's frame counts (PAL AVFoundationSPI.h).
 @interface AVPlayerLayer (ParcVideoPerformanceMetrics)
 - (AVVideoPerformanceMetrics*)videoPerformanceMetrics API_AVAILABLE(macos(14.4));
 @end
 
-// The GPU process's layer trees live in CAContexts that the browser shows
-// through CALayerHosts (ui/base/cocoa/remote_layer_api.h).
 typedef uint32_t ParcCGSConnectionID;
 extern "C" ParcCGSConnectionID CGSMainConnectionID(void);
 @interface CAContext : NSObject
@@ -70,7 +59,6 @@ void Sleep(double seconds) {
   [NSThread sleepForTimeInterval:seconds];
 }
 
-// Polls `ready` every 50 ms on the calling (non-main) thread.
 bool WaitFor(double timeout, const std::function<bool()>& ready) {
   const double end = CACurrentMediaTime() + timeout;
   while (CACurrentMediaTime() < end) {
@@ -94,7 +82,6 @@ std::string Format(const char* format, ...) {
   return buffer;
 }
 
-// The media thread stand-in: a serial queue, no run loop.
 dispatch_queue_t MediaQueue() {
   static dispatch_queue_t queue =
       dispatch_queue_create("parc.fairplay.hls.media", DISPATCH_QUEUE_SERIAL);
@@ -105,7 +92,6 @@ void OnMedia(dispatch_block_t block) {
   dispatch_sync(MediaQueue(), block);
 }
 
-// A window with a plain host layer, as a compositor's content layer host.
 struct Host {
   NSWindow* window = nil;
   CALayer* host = nil;
@@ -135,10 +121,6 @@ Host MakeHost(NSRect frame, NSString* title) {
   return result;
 }
 
-// What FillProtectedLayer does for an AVPlayerLayer (fairplay-compositing):
-// the tree's scale factor (its window's display) as the contents scale, as
-// WebKit gives its AVPlayerLayer the page's (mediaPlayerContentsScale), then
-// the host's bounds, which hand the core's layer its player.
 void Place(AVPlayerLayer* layer, CALayer* host, NSWindow* window) {
   OnMain(^{
     const CGFloat scale = window.backingScaleFactor;
@@ -175,7 +157,6 @@ struct Frames {
   long corrupted = 0;
 };
 
-// Read off the main thread, as WebKit reads it on a background work queue.
 Frames ReadFrames(AVPlayerLayer* layer) {
   Frames frames;
   if (@available(macOS 14.4, *)) {
@@ -190,7 +171,6 @@ Frames ReadFrames(AVPlayerLayer* layer) {
   return frames;
 }
 
-// The access log's variant changes, as indicated bitrate and video size.
 std::string Variants(AVPlayerItem* item) {
   __block std::string text;
   OnMedia(^{
@@ -225,9 +205,7 @@ Player MakePlayer(NSURL* url) {
     p.item = [AVPlayerItem playerItemWithURL:url];
     p.player = [AVPlayer playerWithPlayerItem:p.item];
     p.player.automaticallyWaitsToMinimizeStalling = YES;
-    p.player.muted = YES;  // Video only matters here; no sound out loud.
-    // The core's layer (fairplay_hls_player_layer.h): the player arrives
-    // once Place sizes it.
+    p.player.muted = YES;
     p.layer = [PCHlsPlayerLayer layer];
     [CATransaction commit];
     [p.layer parcAttachPlayerWhenSized:p.player];
@@ -254,11 +232,6 @@ bool ReadyForDisplay(AVPlayerLayer* layer) {
   return ready;
 }
 
-// ---------------------------------------------------------------------------
-// Display: the AVPlayerLayer placed like the MSE route's layer, moved between
-// hosts as Picture in Picture and tab moves do, and detached as a hidden tab's
-// tree drops it.
-
 void Display() {
   Host page = MakeHost(NSMakeRect(80, 380, 640, 360), @"page");
   Host pip = MakeHost(NSMakeRect(760, 380, 320, 180), @"pip");
@@ -283,7 +256,6 @@ void Display() {
         Format("videoRect %.0fx%.0f, bounds %.0fx%.0f", video_rect.size.width,
                video_rect.size.height, bounds.size.width, bounds.size.height));
 
-  // Frame counts come from the layer, read off the main thread.
   Frames f0 = ReadFrames(p.layer);
   Check(f0.available, "frames: -[AVPlayerLayer videoPerformanceMetrics] answers");
   const double t0 = p.Time();
@@ -294,7 +266,6 @@ void Display() {
         Format("%ld -> %ld over %.2f s of media", f0.total, f1.total, t1 - t0));
   Note(Format("dropped %ld, corrupted %ld", f1.dropped, f1.corrupted));
 
-  // Picture in Picture: the PiP window's tree takes the layer.
   Place(p.layer, pip.host, pip.window);
   Sleep(0.5);
   Frames f2 = ReadFrames(p.layer);
@@ -313,20 +284,16 @@ void Display() {
   Check(CGRectEqualToRect(video_rect, bounds), "pip: fills the PiP host",
         Format("videoRect %.0fx%.0f", video_rect.size.width, video_rect.size.height));
 
-  // Leaving PiP: back to the page.
   Place(p.layer, page.host, page.window);
   Sleep(0.5);
   Frames f4 = ReadFrames(p.layer);
   Sleep(2);
   Frames f5 = ReadFrames(p.layer);
-  // A larger layer makes AVFoundation switch up a variant, and the new
-  // decoder starts its count again: a count below the last one is a new run.
   Check(f5.total != f4.total && f5.total > 0, "pip: frames continue back in the page",
         Format("%ld -> %ld (%s)", f4.total, f5.total,
                f5.total < f4.total ? "counter restarted" : "same counter"));
   Note("variants: " + Variants(p.item));
 
-  // Hidden tab: the layer is in no tree for a while.
   Detach(p.layer);
   const double t6 = p.Time();
   Frames f6 = ReadFrames(p.layer);
@@ -345,7 +312,6 @@ void Display() {
   Check(f9.total > f8.total, "hidden: frames continue once placed again",
         Format("%ld -> %ld", f8.total, f9.total));
 
-  // Teardown on the media thread, as the player's destructor does it.
   PCHlsPlayerLayer* layer = p.layer;
   OnMedia(^{
     player.rate = 0;
@@ -359,10 +325,6 @@ void Display() {
   });
 }
 
-
-// ---------------------------------------------------------------------------
-// Frame statistics: fairplay_hls_frame_stats turns the layer's counts into
-// the deltas PipelineImpl adds up, polling while playing.
 
 namespace fp = parc::fairplay;
 
@@ -391,7 +353,6 @@ void Accumulator() {
   Check(d.empty(), "accumulator: negative readings add nothing");
 }
 
-// Reports land on the media queue, as on the player's sequence.
 struct Reports {
   std::mutex lock;
   int64_t decoded = 0;
@@ -442,9 +403,6 @@ void FrameStats() {
   Note(Format("summed %lld, layer total now %lld (equal unless the decoder restarted)", d1,
               raw.total));
 
-  // Pause: one last count, then nothing. That count is the only reading after
-  // the clock stops, so the sum reaching the layer's total (more if the
-  // decoder restarted during the run) proves it.
   OnMedia(^{
     player.rate = 0;
     stats->SetPlaying(false);
@@ -459,7 +417,6 @@ void FrameStats() {
   Check(d3 == d2 && n3 == n2, "frame stats: paused, no reports and the count stands",
         Format("%lld -> %lld", d2, d3));
 
-  // Resume.
   OnMedia(^{
     player.rate = 1;
     stats->SetPlaying(true);
@@ -468,7 +425,6 @@ void FrameStats() {
   const auto [d4, n4] = reports->Get();
   Check(d4 > d3, "frame stats: counts resume with playback", Format("+%lld", d4 - d3));
 
-  // Destroyed while polling: nothing reported afterwards.
   OnMedia(^{
     stats.reset();
   });
@@ -496,18 +452,12 @@ void FrameStats() {
 }
 
 
-// ---------------------------------------------------------------------------
-// Picture in Picture and fullscreen across CAContexts: the page's compositor
-// and Parc's PiP window each draw into their own CAContext in the GPU
-// process, shown in the browser through a CALayerHost. The layer moves
-// between the two contexts' trees; fullscreen is a resize of the page's.
-
 struct RemoteHost {
   NSWindow* window = nil;
   CAContext* context = nil;
   CALayer* root = nil;
   CALayerHost* layer_host = nil;
-  CALayer* host = nil;  // The content layer's host inside the context.
+  CALayer* host = nil;
 };
 
 RemoteHost MakeRemoteHost(NSRect frame, NSString* title) {
@@ -520,11 +470,9 @@ RemoteHost MakeRemoteHost(NSRect frame, NSString* title) {
     r.window.releasedWhenClosed = NO;
     r.window.title = title;
     r.window.contentView.wantsLayer = YES;
-    // Kept on screen from the top-left corner of the visible frame.
     const NSRect visible = NSScreen.mainScreen.visibleFrame;
     [r.window setFrameTopLeftPoint:NSMakePoint(NSMinX(visible) + frame.origin.x,
                                                NSMaxY(visible) - frame.origin.y)];
-    // As CALayerTreeCoordinator makes its context and root layer.
     r.root = [CALayer layer];
     r.root.geometryFlipped = YES;
     r.root.opaque = YES;
@@ -551,8 +499,6 @@ void Resize(RemoteHost& r, CGSize size) {
   OnMain(^{
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    // Grows down and right from the window's top-left corner, so it stays on
-    // screen.
     const NSPoint top_left = NSMakePoint(NSMinX(rp->window.frame), NSMaxY(rp->window.frame));
     [rp->window setContentSize:NSMakeSize(size.width, size.height)];
     [rp->window setFrameTopLeftPoint:top_left];
@@ -572,18 +518,12 @@ double VideoHeight(AVPlayerItem* item) {
 }
 
 void RemotePiP() {
-  // Offsets from the visible frame's top-left corner. The PiP window comes
-  // later, beside the page once it is back to its inline size.
   RemoteHost page = MakeRemoteHost(NSMakeRect(20, 20, 640, 360), @"page (CAContext)");
   __block CGFloat scale = 0;
   OnMain(^{
     scale = page.window.backingScaleFactor;
   });
   Check(scale == 2, "remote: the page is on a 2x display", Format("%.1fx", scale));
-  // FairPlayHlsPlayer::Start with the element's size from the render process
-  // (SetVideoLayerSize), as WebKit's order: the player, then its layer staged
-  // at that size in a CAContext of its own, which hands it the player, then
-  // the item, all in one turn of the media thread.
   Player p;
   Player* pp = &p;
   const CGFloat element_scale = scale;
@@ -617,10 +557,6 @@ void RemotePiP() {
   });
   Check(WaitFor(15, [&] { return ReadyForDisplay(p.layer); }),
         "remote: readyForDisplay in the page compositor's context");
-  // AVFoundation picks variants by the layer's size on screen, which it finds
-  // inside a context with no window too, as in Safari: 720p, and still not
-  // 1080p 8 s later (a larger layer gets 1080p within a second, below), even
-  // after the earlier sections left it a bandwidth estimate for 1080p.
   const bool reached_720 = WaitFor(15, [&] { return VideoHeight(p.item) >= 720; });
   const bool stayed_below_1080 = !WaitFor(8, [&] { return VideoHeight(p.item) >= 1080; });
   Note("variants: " + Variants(p.item));
@@ -628,7 +564,6 @@ void RemotePiP() {
         "remote: the variant follows the 640x360 pt layer on a 2x display (720p, not 1080p)",
         Format("%.0fp", VideoHeight(p.item)));
 
-  // Fullscreen is a resize of the page's context: 1280x720 pt.
   Resize(page, CGSizeMake(1280, 720));
   Place(p.layer, page.host, page.window);
   __block CGRect video_rect;
@@ -647,7 +582,6 @@ void RemotePiP() {
   Check(f1.total != f0.total && ReadyForDisplay(p.layer), "fullscreen: still playing",
         Format("%ld -> %ld", f0.total, f1.total));
 
-  // Leaving fullscreen, then PiP: the PiP window's context takes the layer.
   Resize(page, CGSizeMake(640, 360));
   Place(p.layer, page.host, page.window);
   RemoteHost pip = MakeRemoteHost(NSMakeRect(700, 20, 320, 180), @"pip (CAContext)");
@@ -664,7 +598,6 @@ void RemotePiP() {
         Format("%ld -> %ld", f2.total, f3.total));
   Check(t3 - t2 > 2.0, "remote pip: the clock keeps running", Format("+%.2f s", t3 - t2));
 
-  // Leaving PiP.
   Place(p.layer, page.host, page.window);
   Sleep(0.5);
   Frames f4 = ReadFrames(p.layer);
@@ -673,9 +606,6 @@ void RemotePiP() {
   Check(ReadyForDisplay(p.layer) && f5.total != f4.total,
         "remote pip: playing again in the page's context",
         Format("%ld -> %ld", f4.total, f5.total));
-  // Fullscreen again after PiP: AVFoundation returns to its earlier best
-  // variant (it doesn't go above it after a spell at PiP size, separate runs
-  // showed). Recorded, not checked.
   OnMain(^{
     [pip.window orderOut:nil];
   });
@@ -708,7 +638,7 @@ const Section kSections[] = {
     {"RemotePiP", RemotePiP},
 };
 
-}  // namespace
+}
 
 int main(int argc, char** argv) {
   @autoreleasepool {
@@ -734,7 +664,6 @@ int main(int argc, char** argv) {
         std::fflush(stdout);
         status = g_failures ? 1 : 0;
       }
-      // Exit from the main thread, outside AppKit's work.
       dispatch_async(dispatch_get_main_queue(), ^{
         std::exit(status);
       });

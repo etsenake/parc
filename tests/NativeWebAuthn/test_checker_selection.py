@@ -1,4 +1,3 @@
-"""Exercise the integrated checker refusal gates and target selection without a compiler."""
 import hashlib
 import json
 from pathlib import Path

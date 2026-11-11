@@ -1,8 +1,5 @@
 import AppKit
 
-//
-//
-// InterProfileMoveDialog decisions built on it. No browser is involved.
 @main
 struct PArcDialogTests {
     @MainActor static var count = 0
@@ -17,8 +14,6 @@ struct PArcDialogTests {
         let row = view.isFlipped ? y : view.bounds.height - y
         return rep.colorAt(x: Int(x * scale), y: Int(row * scale))!.usingColorSpace(.sRGB)!
     }
-    /// Compares with the sRGB value drawn by a swatch in the same window, so
-    /// the window's backing color space cancels out.
     @MainActor static func close(_ color: NSColor, _ rgb: UInt32, in host: NSView) -> Bool {
         let swatch = Swatch(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
         swatch.color = NSColor(srgbRed: CGFloat(rgb >> 16 & 0xff) / 255, green: CGFloat(rgb >> 8 & 0xff) / 255,
@@ -39,7 +34,6 @@ struct PArcDialogTests {
         _ = NSApplication.shared
         NSApp.appearance = NSAppearance(named: .aqua)
 
-        //
         let mark = NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
             NSColor.black.setFill(); rect.fill(); return true
         }
@@ -77,7 +71,6 @@ struct PArcDialogTests {
         ok.isEnabled = true
         panel.appearance = nil
 
-        // InterProfileMoveDialog on the same component.
         let prompt = InterProfileMovePrompt(tabCount: 1, spaceName: "Work")
         func move(_ act: (InterProfileMoveDialog) -> Void) -> InterProfileMoveDecision? {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
@@ -118,7 +111,6 @@ struct PArcDialogTests {
         expect(move { $0.dialog.panel.sendEvent(key(53, "\u{1b}", in: $0.dialog.panel)) } == .abort, "A real Escape key event cancels")
         expect((sample.panel.accessibilityDefaultButton() as? NSButton) === sample.confirmButton, "VoiceOver reports the confirm button as the default")
 
-        // A queued dialog waits behind the window's current sheet.
         let host = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         host.isReleasedWhenClosed = false
         defer { host.close() }
@@ -133,8 +125,6 @@ struct PArcDialogTests {
         next.confirmButton.performClick(nil); drain()
         expect(order == ["first", "next"] && host.attachedSheet == nil, "Both answer once, in order")
 
-        //
-        // Archive): ButtonsConfig.destructive draws DestructiveButtonFace.
         var deleting = PArcDialog.Content(title: [("Delete your “Work” Space?", false)],
                                          message: [("This will archive all the tabs and folders inside it.", false)],
                                          confirm: "Delete", cancel: "Cancel")
@@ -149,7 +139,6 @@ struct PArcDialogTests {
         destructive.panel.appearance = nil
         expect(close(pixel(sample.confirmButton, 6, 18), 0x3139FB, in: sampleRoot), "A plain confirm keeps the indigo primary")
 
-        //
         func confirmed(_ act: (NSWindow) -> Void) -> Bool? {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -173,8 +162,6 @@ struct PArcDialogTests {
                "A window that already shows a sheet refuses at once")
         blocker.confirmButton.performClick(nil); drain()
 
-        // ButtonsConfig.auxiliaryButton: a hint-less neutral button left of
-        // Cancel that answers with its own response.
         var auxiliaryContent = PArcDialog.Content(title: [("Quit Parc?", false)], confirm: "Quit", cancel: "Cancel")
         auxiliaryContent.auxiliary = "Quit, and don’t ask again"
         let auxiliary = PArcDialog(auxiliaryContent)
@@ -186,9 +173,6 @@ struct PArcDialogTests {
         auxiliaryButton.performClick(nil); drain()
         expect(auxiliaryResponse == .auxiliary && host.attachedSheet == nil, "The auxiliary button ends the sheet with its own response")
 
-        // TextInputDialogContext: a borderless 14-point field under the title and
-        // message; a required field disables confirm while blank; Return confirms
-        // and Escape cancels, but not during input-method composition.
         let named = PArcDialog(.init(title: [("Create a new Profile", false)], message: [("What do you want to call this Profile?", false)],
                                     confirm: "Create Profile", cancel: "Cancel", field: .init(value: "", placeholder: "Profile name")))
         let nameField = named.textField!
@@ -222,7 +206,6 @@ struct PArcDialogTests {
         drain()
         expect(namedResponse == .confirm && host.attachedSheet == nil, "Return confirms a valid name")
 
-        // Plain-text and error alerts: NSAlert(error:)'s title and recovery suggestion.
         struct Failure: LocalizedError {
             var errorDescription: String? { "The disk is full." }
             var recoverySuggestion: String? { "Free some space and try again." }
@@ -242,8 +225,6 @@ struct PArcDialogTests {
         for _ in 0..<2 { (host.attachedSheet?.contentView?.subviews.compactMap { $0 as? PArcDialogButton }.first { $0.primary })?.performClick(nil); drain() }
         expect(host.attachedSheet == nil, "Both alerts dismiss with OK")
 
-        // Choices without a Cancel button (Retry, Close, Keep Open): left to right
-        // Keep Open, Close, Retry; only Retry answers Return; Escape leaves the sheet.
         var trio = PArcDialog.Content(title: "The page move needs attention", confirm: "Retry")
         trio.secondary = "Close Page"; trio.auxiliary = "Keep Open"
         let choice = PArcDialog(trio)
@@ -262,7 +243,6 @@ struct PArcDialogTests {
         lone.panel.cancelOperation(nil); drain()
         expect(loneResponse == .cancel && host.attachedSheet == nil, "Escape dismisses a lone OK")
 
-        // A long error in a scrolling, selectable, read-only card.
         var detailed = PArcDialog.Content(title: "Air Traffic Control Details", confirm: "Done")
         detailed.details = String(repeating: "Could not save the routes. ", count: 40)
         let details = PArcDialog(detailed)
@@ -270,7 +250,6 @@ struct PArcDialogTests {
         expect(detailsText?.string == detailed.details && detailsText?.isEditable == false && detailsText?.isSelectable == true
                && details.confirmButton.title == "Done", "The details are selectable read-only text")
 
-        // The suppression checkbox is Parc's circular selection mark on an NSButton switch.
         guard let mark = sample.suppression else { fatalError("Missing checkbox") }
         mark.performClick(nil)
         expect(mark.state == NSControl.StateValue.on, "A click toggles the NSButton switch, which VoiceOver reads as a checkbox")
@@ -298,8 +277,6 @@ struct PArcDialogTests {
         expect(outline > 0 && tinted(mark) > 2 * outline, "The mark draws an outline circle, filled when checked")
         mark.state = .off
 
-        // Return confirms and Escape cancels wherever focus is: the field, the
-        // checkbox, or a composing input method that keeps its own keys.
         var focusedContent = PArcDialog.Content(title: [("Rename", false)], confirm: "Rename", cancel: "Cancel",
                                                field: .init(value: "Work", placeholder: "Name", required: false))
         focusedContent.suppression = "Don’t ask again"
@@ -340,7 +317,6 @@ struct PArcDialogTests {
         marked.removeFromSuperview(); _ = composing.panel.makeFirstResponder(composing.textField)
         composing.cancelButton!.performClick(nil); drain()
 
-        // The app-modal form returns the button's response.
         func modal(_ content: PArcDialog.Content, _ act: @escaping (PArcDialog) -> Void) -> PArcDialog.Response {
             let dialog = PArcDialog(content)
             dialog.panel.alphaValue = 0

@@ -105,8 +105,6 @@ def main():
                 if p.is_file():
                     receipt['inputs'][str(p.resolve())] = sha(p)
         exe = output / 'import-writer-fixture'
-        # Private patched definitions precede existing archives; no production
-        # object or library is replaced. ld64.lld reads LLVM thin archives.
         run([history[0], '-fuse-ld=lld', '-nostdlib++', '-Wl,-dead_strip',
              '-Wl,-dead_strip_dylibs', '-Wl,-rpath,' + str(engine), '-o', str(exe)] +
             [str(p) for p in objects + [feature_object] + libraries], 'link')

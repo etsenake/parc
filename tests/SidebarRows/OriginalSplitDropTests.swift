@@ -85,7 +85,6 @@ import Foundation
         var legacyTray = pinned
         for _ in 0..<13 { var extra = favoriteTarget.tabs[ai]; extra.id = UUID(); legacyTray.tabs.append(extra) }
         try check(propose(legacyTray) != nil, "unrelated legacy tray size cannot block ordinary original-tab movement")
-        // Real durable publication and failure, not a delayed changed() write.
         try check(store.dropTabIntoSplit(b, expectedSelection: [a], expectedLayout: nil,
             target: .insert(1), orientation: .horizontal, savedHomeIDs: [a:home]), "actual saved split transaction commits")
         let disk = try BrowserStore(directory: root)
@@ -100,7 +99,6 @@ import Foundation
         try check(store.dropTabIntoSplit(c, expectedSelection: [a,b], expectedLayout: current,
             target: .insert(2), orientation: .horizontal, savedHomeIDs: [c:bHome]), "same original receipt may retry after save failure")
         try check(store.state.tabs.filter { $0.id == bHome }.count == 1, "retry produces exactly one home")
-        // Local saved homes remain aliases to the real document, including drafts.
         let notes = try NoteStore(directory: root.appendingPathComponent("notes"), diskSaveDelay: 0), note = try notes.create()
         let easels = try EaselStore(directory: root.appendingPathComponent("easels")), easel = try easels.create()
         let references = [SidebarDocumentReference(page: .note(note.document.id), profileID: profile) { try notes.validateReference(note.document.id) },

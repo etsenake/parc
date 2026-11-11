@@ -1,7 +1,5 @@
 import AppKit
 
-// Inert AppKit component coverage only. No browser, engine, navigation,
-// user profile, real-window activation or synthesized input is involved.
 @MainActor
 func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     precondition(condition(), message)

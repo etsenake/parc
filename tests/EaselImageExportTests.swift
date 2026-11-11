@@ -2,9 +2,6 @@ import AppKit
 import ImageIO
 import UniformTypeIdentifiers
 
-// Export as Image over a real file-backed Easel and the actual canvas
-// renderer, Share menu row, save-panel configuration and encoders. No panel,
-// menu or window is shown, and no browser is involved.
 @main
 struct EaselImageExportTests {
     @MainActor static var count = 0
@@ -18,7 +15,6 @@ struct EaselImageExportTests {
         let store = try EaselStore(directory: directory), session = try store.create(title: "Export board")
         var box = EaselItem(kind: .rectangle, frame: .init(x: 40, y: 40, width: 100, height: 60)); box.color = "#D03030"
         let words = EaselItem(kind: .text, frame: .init(x: 200, y: 30, width: 220, height: 60), text: "Exported words")
-        // Crosses the first 256-row strip boundary (128 points at 2x).
         var seam = EaselItem(kind: .rectangle, frame: .init(x: 500, y: 110, width: 60, height: 40)); seam.color = "#2040D0"
         try session.perform("Seed") { $0.items = [box, words, seam] }
         let canvas = EaselCanvasView(session: session)
@@ -53,8 +49,6 @@ struct EaselImageExportTests {
         let seamRows = (254...257).map { pixel(lightBytes, light, 500.1, Double($0) / 2) }
         expect(seamRows.allSatisfy { $0.b > 0.7 && $0.r < 0.35 }, "A stroke crossing a strip boundary has no seam")
 
-        // On-screen selection chrome changes the canvas's own rendering but
-        // never the export.
         func screen() -> Data {
             let rep = canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds)!
             canvas.cacheDisplay(in: canvas.bounds, to: rep); return Data(bytes: rep.bitmapData!, count: rep.bytesPerRow * rep.pixelsHigh)
@@ -64,7 +58,6 @@ struct EaselImageExportTests {
         expect(screen() != unselected, "Selection is visible in the canvas's own drawing")
         expect(bytes(canvas.exportImage(backingScale: 2)!) == lightBytes, "Selection outlines and handles are not exported")
 
-        // An open text editor stays open; its saved text is exported.
         canvas.cancelOperation(nil)
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             let event = NSEvent.mouseEvent(with: type, location: canvas.convert(NSPoint(x: 300, y: 60), to: nil), modifierFlags: [],
@@ -101,7 +94,6 @@ struct EaselImageExportTests {
         let emptyCanvas = EaselCanvasView(session: empty)
         expect(emptyCanvas.exportImage(backingScale: 1)?.height == Int(emptyCanvas.bounds.width + 60), "An empty Easel exports the width-square plus 60 points")
 
-        // A very tall Easel streams through the encoder a strip at a time.
         let tall = try store.create(title: "Tall")
         try tall.perform("Seed") { $0.items = [EaselItem(kind: .rectangle, frame: .init(x: 20, y: 40_000, width: 100, height: 50))] }
         let tallImage = EaselCanvasView(session: tall).exportImage(backingScale: 2)!
@@ -126,7 +118,6 @@ struct EaselImageExportTests {
         expect(properties(tallJPEG)?[kCGImagePropertyPixelHeight] as? Int == 60_220, "A 30,110-point Easel fits JPEG")
         expect(peakMegabytes() - before < rawMegabytes(jpegImage) / 2, "JPEG encoding streams to the file without the whole raw image")
 
-        // The capture editor's fixed canvas exports its whole bounds.
         let now = Date()
         var mark = EaselItem(kind: .rectangle, frame: .init(x: 10, y: 10, width: 50, height: 30)); mark.color = "#D03030"
         let fixed = EaselCanvasView(session: try EaselSession(inMemory: EaselDocument(id: UUID(), title: "Capture", createdAt: now, modifiedAt: now, items: [mark]), assets: [:]))
@@ -135,7 +126,6 @@ struct EaselImageExportTests {
         expect(fixedImage.width == 600 && fixedImage.height == 400, "A fixed canvas exports exactly its bounds")
         expect(pixel(bytes(fixedImage), fixedImage, 10.2, 20).r > 0.7, "A fixed canvas exports its saved artwork")
 
-        //
         var requests = 0
         canvas.onExportImage = { requests += 1 }
         window.makeFirstResponder(canvas)
@@ -150,7 +140,6 @@ struct EaselImageExportTests {
         expect(fixedRequests == 1, "The capture editor's canvas exports too")
         window.contentView = canvas
 
-        // The Share menu row.
         var chosen = 0
         let menu = EaselImageExport.shareMenu { chosen += 1 }
         menu.update()
@@ -201,8 +190,6 @@ struct EaselImageExportTests {
         expect(failure.panel.contentView!.frame.width == 450 && ParcBrandMark.image(.borderless) != nil,
                "The failure uses the default 450-point dialog with the app mark")
 
-        // The collection's reply may arrive inside a Chromium task; the export
-        // resumes on its own main-queue turn, then re-admits its owner.
         let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         other.isReleasedWhenClosed = false; other.contentView = farCanvas
         defer { other.contentView = nil; other.close() }

@@ -1,4 +1,3 @@
-// Real AppKit presentation-result tests; compile with the production presenter.
 #import <AppKit/AppKit.h>
 
 #include <cstdio>

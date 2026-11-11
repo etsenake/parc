@@ -1,29 +1,3 @@
-// Plays a reordered HEVC clip (hierarchical B-frames) through the FairPlay
-// core, video only and silent, and reports how smoothly it plays with and
-// without decode timestamps. See README.md beside this file.
-//
-//   decode-time-harness --write-yuv <frames> <width> <height>
-//       Writes I420 frames to stdout for x265: a moving texture with fresh
-//       noise (so the encoder spends its bit rate), and the frame number as
-//       two rows of 16 bit blocks across the top.
-//   decode-time-harness --play <clip.hevc> <clip.csv> [options]
-//       --dts real|invalid    decode timestamps on the samples (default real)
-//       --dts-shift <frames>  decode times run this far before presentation
-//                             (default 4, as the reordered fragment showed)
-//       --feed eager|<ms>     eager: enqueue while the renderer is ready;
-//                             <ms>: one sample per readiness check, each
-//                             after a delay (Chromium's Read(1) round trip)
-//       --seconds <s>         stop after this much playback (default: to end)
-//       --size <w>x<h>        coded size (default 1920x1080)
-//       --protected 1         encrypt in memory (cbcs 1:9, CMAF's HEVC
-//                             subsamples) with the Axinom key the codec
-//                             proof uses, and play under a real FairPlay
-//                             license from Axinom's service (network)
-//
-// x265 writes the clip with access unit delimiters and a per-frame CSV
-// (encode order, slice type, POC); presentation order comes from the POC,
-// which restarts at every IDR.
-
 #import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
@@ -55,8 +29,6 @@ namespace {
 constexpr int kBits = 16;
 constexpr int kFps = 24;
 
-// --- Clip writer -----------------------------------------------------------
-
 uint32_t g_rng = 0x9e3779b9;
 inline uint32_t Next() {
   g_rng ^= g_rng << 13;
@@ -69,7 +41,6 @@ int WriteYuv(int frames, int width, int height) {
   const int pad = 1024;
   const int tw = width + pad, th = height + pad;
   std::vector<uint8_t> texture(size_t(tw) * th);
-  // Blurred noise: detail an encoder can track with motion vectors.
   for (auto& v : texture) v = uint8_t(Next());
   for (int pass = 0; pass < 2; ++pass) {
     for (int y = 0; y < th; ++y) {
@@ -91,7 +62,6 @@ int WriteYuv(int frames, int width, int height) {
         out[x] = uint8_t(std::clamp(v, 16, 235));
       }
     }
-    // Frame number: row 0 the bits, row 1 their complement.
     for (int b = 0; b < kBits; ++b) {
       const bool bit = (n >> (kBits - 1 - b)) & 1;
       for (int r = 0; r < 2; ++r) {
@@ -107,22 +77,19 @@ int WriteYuv(int frames, int width, int height) {
   return 0;
 }
 
-// --- Clip reader -----------------------------------------------------------
-
 struct Sample {
-  std::vector<uint8_t> data;  // Annex B, without the access unit delimiter.
-  std::vector<fp::SubsampleEntry> subsamples;  // When protected.
-  int64_t display = 0;        // Presentation index.
-  int64_t decode = 0;         // Decode index.
+  std::vector<uint8_t> data;
+  std::vector<fp::SubsampleEntry> subsamples;
+  int64_t display = 0;
+  int64_t decode = 0;
   bool keyframe = false;
 };
 
 int NalType(const uint8_t* nal) { return (nal[0] >> 1) & 0x3f; }
 
-// Splits on access unit delimiters (NAL type 35).
 std::vector<Sample> ReadAccessUnits(const std::vector<uint8_t>& bytes) {
-  std::vector<size_t> starts;  // Offsets of start codes (3 or 4 bytes).
-  std::vector<size_t> nals;    // Offsets of NAL headers.
+  std::vector<size_t> starts;
+  std::vector<size_t> nals;
   for (size_t i = 0; i + 3 < bytes.size(); ++i) {
     if (bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 1) {
       starts.push_back(i > 0 && bytes[i - 1] == 0 ? i - 1 : i);
@@ -141,7 +108,6 @@ std::vector<Sample> ReadAccessUnits(const std::vector<uint8_t>& bytes) {
     Sample& s = samples.back();
     const int type = NalType(&bytes[nals[k]]);
     s.keyframe |= type >= 16 && type <= 21;
-    // Every start code 4 bytes, so the sample maps 1:1 onto 4-byte lengths.
     s.data.insert(s.data.end(), {0, 0, 0, 1});
     s.data.insert(s.data.end(), bytes.begin() + nals[k], bytes.begin() + end);
   }
@@ -150,7 +116,6 @@ std::vector<Sample> ReadAccessUnits(const std::vector<uint8_t>& bytes) {
   return samples;
 }
 
-// x265's frame CSV: "Layer, Encode Order, Type, POC, ...".
 bool ReadOrder(const std::string& path, std::vector<Sample>* samples) {
   std::ifstream in(path);
   std::string line;
@@ -190,24 +155,16 @@ bool ReadOrder(const std::string& path, std::vector<Sample>* samples) {
   return true;
 }
 
-// --- Player ----------------------------------------------------------------
-
 struct Options {
   bool real_dts = true;
   int dts_shift = 4;
-  double feed_delay_ms = -1;  // < 0: eager.
+  double feed_delay_ms = -1;
   double seconds = 0;
-  double start = 0;  // Start (seek) time; feeding begins at the keyframe before it.
+  double start = 0;
   int width = 1920, height = 1080;
   bool protect = false;
 };
 
-// --- Protection --------------------------------------------------------------
-
-// Axinom public test vectors v10, "CMAF H264 SingleKey (cbcs)": the key the
-// codec proof encrypts with (tests/FairPlay/codecs/codecs.mm, its README has
-// the provenance). The token's inline key carries the license's IV, used here
-// as the constant IV.
 NSString* const kLicenseUrl = @"https://drm-fairplay-licensing.axprod.net/AcquireLicense";
 NSString* const kCertificateUrl = @"https://tools.axinom.com/FPScert/fairplay.cer";
 const uint8_t kKeyId[16] = {0x30, 0x2f, 0x80, 0xdd, 0x41, 0x1e, 0x48, 0x86,
@@ -217,11 +174,7 @@ const uint8_t kIv[16] = {0x77, 0xfd, 0x18, 0x89, 0xaa, 0xf4, 0x14, 0x3b,
                          0x08, 0x55, 0x48, 0xb3, 0xc0, 0xf9, 0x5b, 0x9a};
 NSString* const kToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogIjMwMmY4MGRkLTQxMWUtNDg4Ni1iY2E1LWJiMWY4MDE4YTAyNCIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiMWVYeWhGWmNGVjljemNtZG5BREpMdz09IiwKICAgICAgICAiaXYiOiAiZC8wWWlhcjBGRHNJVlVpendQbGJtZz09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.5VxBJQsgGVissi9WCNpT7IoykEAmxaEcif6F3SeLvzU";
 
-// Encrypts every sample in place, as a CMAF packager does (slice headers and
-// non-VCL NAL units clear, cbcs 1:9 after them), keeping it Annex B.
 bool Protect(std::vector<Sample>* samples) {
-  // An hvcC with no parameter set arrays and 4-byte lengths; the layout
-  // learns VPS/SPS/PPS from the keyframes, which carry them in-band.
   std::vector<uint8_t> record(23, 0);
   record[0] = 1;
   record[21] = 3;
@@ -230,7 +183,6 @@ bool Protect(std::vector<Sample>* samples) {
   const std::vector<uint8_t> key((const uint8_t*)key_data.bytes, (const uint8_t*)key_data.bytes + key_data.length);
   const std::vector<uint8_t> iv(kIv, kIv + 16);
   for (Sample& s : *samples) {
-    // Annex B with 4-byte start codes -> 4-byte lengths, and back after.
     std::vector<size_t> starts;
     for (size_t i = 0; i + 4 <= s.data.size(); ++i) {
       if (s.data[i] == 0 && s.data[i + 1] == 0 && s.data[i + 2] == 0 && s.data[i + 3] == 1) {
@@ -288,7 +240,6 @@ NSData* Fetch(NSString* url, NSData* body, NSDictionary* headers, long* status) 
   return result;
 }
 
-// One cenc session; each SPC goes to Axinom with the entitlement token.
 class License : public fp::FairPlayCdmClient {
  public:
   explicit License(std::function<void()> ready) : ready_(std::move(ready)) {}
@@ -363,14 +314,13 @@ class License : public fp::FairPlayCdmClient {
 };
 
 fp::MediaTime FrameTime(int64_t index) {
-  // Microseconds, as Chromium's demuxer hands them over.
   return fp::MediaTime::FromMicroseconds(int64_t(std::llround(index * 1e6 / kFps)));
 }
 
 struct Poll {
   double wall;
   double clock;
-  int frame;  // -1 when unreadable.
+  int frame;
 };
 
 struct Metrics {
@@ -422,7 +372,6 @@ class Harness : public fp::FairPlayRendererClient {
     [window_ orderFrontRegardless];
     start_wall_ = CACurrentMediaTime();
     if (options_.start > 0) {
-      // As a seek: decoding starts at the last keyframe at or before the start.
       for (size_t i = 0; i < samples_.size(); ++i) {
         if (samples_[i].keyframe && FrameTime(samples_[i].display).InSeconds() <= options_.start + 1e-9) next_ = i;
       }
@@ -432,7 +381,6 @@ class Harness : public fp::FairPlayRendererClient {
     StartPolling();
   }
 
-  // fp::FairPlayRendererClient
   void OnNeedData(fp::StreamType) override {
     if (options_.feed_delay_ms < 0) {
       while (next_ < samples_.size() && renderer_->IsReadyForMoreData(fp::StreamType::kVideo)) {
@@ -441,7 +389,6 @@ class Harness : public fp::FairPlayRendererClient {
       MaybeEnd();
       return;
     }
-    // One sample per round trip, as the Chromium adapter reads.
     if (read_pending_ || next_ >= samples_.size() || !renderer_->IsReadyForMoreData(fp::StreamType::kVideo)) {
       MaybeEnd();
       return;
@@ -537,7 +484,6 @@ class Harness : public fp::FairPlayRendererClient {
     if (wall - start_wall_ > 600) Finish("timeout");
   }
 
-  // Reads the frame number from the displayed picture, scaled down.
   int DisplayedFrame() {
     if (@available(macOS 14.4, *)) {
       AVSampleBufferVideoRenderer* video =
@@ -608,8 +554,6 @@ class Harness : public fp::FairPlayRendererClient {
            first_move_ < 0 ? NAN : 1000 * (first_move_ - start_wall_));
     printf("metrics: total=%lld dropped=%lld corrupted=%lld accumulated_delay=%.3fs\n", m.total_frames,
            m.dropped_frames, m.corrupted_frames, m.accumulated_frame_delay);
-    // Decode ahead: frames AVFoundation has decoded beyond those due, from
-    // 0.5 s in until 2 s before the end (where it runs out of frames).
     std::vector<double> ahead;
     for (const Metrics& r : metrics_) {
       if (r.clock > 0.5 && DueAt(r.clock) + 2 * kFps < samples_.size()) {
@@ -624,7 +568,6 @@ class Harness : public fp::FairPlayRendererClient {
              1000 * *std::min_element(leads_.begin(), leads_.end()), 1000 * Percentile(leads_, 0.1),
              1000 * Percentile(leads_, 0.5));
     }
-    // Displayed pictures: how long each stayed up while the clock ran.
     struct Shown {
       int frame;
       double first, last;
@@ -708,7 +651,7 @@ std::vector<uint8_t> ReadFile(const std::string& path) {
   return std::vector<uint8_t>((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
-}  // namespace
+}
 
 int main(int argc, char** argv) {
   @autoreleasepool {
@@ -734,7 +677,6 @@ int main(int argc, char** argv) {
     if (samples.empty() || !ReadOrder(argv[3], &samples)) return 1;
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
-    // A covered window that plays no audio gets App Napped otherwise.
     id activity = [NSProcessInfo.processInfo
         beginActivityWithOptions:NSActivityUserInitiated | NSActivityLatencyCritical
                           reason:@"decode-time-harness"];

@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Records what the menu does, in order, as the engine's target and delegate see it.
 final class Recorder: NSObject, NSMenuDelegate {
     var log: [String] = []
     @objc func record(_ sender: NSMenuItem) { log.append("perform " + sender.title) }
@@ -25,7 +24,6 @@ struct PArcContextMenuChecks {
             item.target = recorder; item.state = state; item.isEnabled = enabled
             return item
         }
-        /// The engine's extension menu, in Chromium's title-case strings.
         func extensionMenu() -> NSMenu {
             let access = NSMenu(title: "access")
             access.autoenablesItems = false
@@ -48,8 +46,6 @@ struct PArcContextMenuChecks {
             return menu
         }
 
-        // Placement: the first row level with the anchor, to its right, or
-        // to its left where the screen ends, and moved onto the screen.
         let m = PArcContextMenuMetrics.self
         let tile = NSRect(x: 100, y: 500, width: 48, height: 32)
         let size = NSSize(width: 200, height: 300)
@@ -84,7 +80,6 @@ struct PArcContextMenuChecks {
         expect(deepView.reach == deepView.card.width + 2 * m.gap + PArcContextMenuView.cardWidth([toDeep])
                + PArcContextMenuView.cardWidth(deep.items), "the reach counts every level of submenus")
 
-        // Rows: hidden items and stray separators drop; 32-point rows, 17-point dividers.
         let menu = extensionMenu()
         menu.items[0].isHidden = true
         let shown = m.shownItems(menu)
@@ -102,7 +97,6 @@ struct PArcContextMenuChecks {
         expect(view.row(at: NSPoint(x: view.rows[1].midX, y: view.rows[1].midY)) == nil, "a separator is not a row")
         expect(view.accessibilityChildren()?.count == rows.count, "VoiceOver sees each row as a menu item")
 
-        // The loop, driven by posted events over an off-screen parent.
         let parent = NSWindow(contentRect: NSRect(x: -12_000, y: -12_000, width: 600, height: 700),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         parent.isReleasedWhenClosed = false
@@ -118,7 +112,6 @@ struct PArcContextMenuChecks {
                                windowNumber: parent.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 0)!
         }
         func settle() { RunLoop.current.run(until: Date().addingTimeInterval(0.3)) }
-        /// Presents `menu` with `events` queued, then returns the log.
         func run(_ menu: NSMenu, _ events: [NSEvent], during: ((PArcContextMenu) -> Void)? = nil) -> [String] {
             recorder.log.removeAll()
             let presenter = PArcContextMenu(anchor: anchor, regions: [], parent: parent, colors: colors)
@@ -168,8 +161,6 @@ struct PArcContextMenuChecks {
                                       mouse(.rightMouseUp, allSites)]) == ["open root", "close root", "perform Always on All Sites"],
                "dragging from the tile into the submenu and releasing chooses there")
 
-        // NSMenu's submenu aim: a diagonal path through the next row keeps the
-        // submenu; a straight move or a pause on that row switches.
         let aim = NSPoint(x: rootFrame.maxX - m.inset - 2, y: options.y)
         expect(run(extensionMenu(), [mouse(.mouseMoved, siteRow), mouse(.mouseMoved, aim), mouse(.mouseMoved, allSites),
                                       mouse(.leftMouseUp, allSites)]) == ["open root", "close root", "perform Always on All Sites"],
@@ -183,14 +174,11 @@ struct PArcContextMenuChecks {
             RunLoop.main.add(timer, forMode: .common)
         }) == ["open root", "close root", "perform Options"], "pausing on the next row switches to it")
 
-        // Keys stay with the lit row under a submenu the pointer opened.
         expect(run(extensionMenu(), [mouse(.mouseMoved, siteRow), key(125), key(36)]) == ["open root", "close root", "perform Options"],
                "Down moves in the parent and closes the hovered submenu")
         expect(run(extensionMenu(), [mouse(.mouseMoved, siteRow), key(124), key(36)]) ==
                ["open root", "close root", "perform Ask on Every Visit"], "Right goes into the hovered submenu")
 
-        // Resting on the disabled row starts its reason's tooltip (off screen
-        // here, so it can't show); the menu carries on past it.
         expect(run(extensionMenu(), [mouse(.mouseMoved, disabled)], during: { _ in
             let timer = Timer(timeInterval: 0.6, repeats: false) { _ in
                 MainActor.assumeIsolated {
@@ -201,7 +189,6 @@ struct PArcContextMenuChecks {
             RunLoop.main.add(timer, forMode: .common)
         }) == ["open root", "close root", "perform Options"], "a row's reason tooltip leaves the menu working")
 
-        // VoiceOver's press chooses between events.
         expect(run(extensionMenu(), [], during: { _ in
             let timer = Timer(timeInterval: 0.05, repeats: false) { _ in
                 MainActor.assumeIsolated {
@@ -224,8 +211,6 @@ struct PArcContextMenuChecks {
         print("PASS: \(assertions) extension context menu assertions")
     }
 
-    /// A window on a screen with its top bars (or a sidebar URL bar) and the
-    /// Site Control Center button the card opens from, in screen coordinates.
     struct Scene {
         let name: String
         let screen: CGRect
@@ -235,13 +220,11 @@ struct PArcContextMenuChecks {
         let button: CGRect
     }
 
-    /// Each scene with the card placed from its button and the second tile's
-    /// menu and site-access submenu open, all placed as the app places them.
     @MainActor static func render(to output: URL, menu: () -> NSMenu) {
         let purple = SpaceTheme(primaryColor: ThemeColor(hex: "3D2468"), colorCount: 1, appearance: .dark, noise: 0.3)
         let blue = SpaceTheme(primaryColor: ThemeColor(hex: "3F9BD6"), colorCount: 2, noise: 0.3)
         let screen = CGRect(x: 0, y: 0, width: 1440, height: 875)
-        let barHeight: CGFloat = 32  // PaneTopBarLayout.height
+        let barHeight: CGFloat = 32
         func bar(_ window: CGRect, _ minX: CGFloat, _ maxX: CGFloat) -> CGRect {
             CGRect(x: window.minX + minX, y: window.maxY - barHeight, width: maxX - minX, height: barHeight)
         }
@@ -272,8 +255,6 @@ struct PArcContextMenuChecks {
         }
     }
 
-    /// `reasonTip` rests the pointer on the disabled row instead of opening
-    /// the submenu, so its reason shows as the tooltip.
     @MainActor static func draw(_ scene: Scene, theme: SpaceTheme, appearance: NSAppearance, menu: () -> NSMenu,
                                 reasonTip: Bool = false, to url: URL) {
         let colors = SiteControlCenterColors(theme: theme)
@@ -295,7 +276,6 @@ struct PArcContextMenuChecks {
         let size = NSSize(width: SiteControlCenterMetrics.width, height: ceil(host.fittingSize.height))
         host.frame.size = size
         let card = SiteControlCenterCard(content: host, colors: colors.menu)
-        // As SiteControlCenterController.present places it.
         let placed = SiteControlCenterPlacement.windowFrame(anchor: scene.button, card: size, below: true,
                                                            parent: scene.window, screen: scene.screen)
         let chrome = PArcMenuChrome(content: card, size: size, colors: colors.menu, tailX: placed.tailX, tailOnTop: placed.below)
@@ -309,7 +289,6 @@ struct PArcContextMenuChecks {
         let origin = placed.frame.origin
         let tileRect = tile.convert(tile.bounds, to: chrome).offsetBy(dx: origin.x, dy: origin.y)
         let cardRect = card.convert(card.bounds, to: chrome).offsetBy(dx: origin.x, dy: origin.y)
-        // As SiteControlCenterController.presentExtensionMenu anchors and bounds it.
         let regions = SiteControlCenterPlacement.regions(window: scene.window, screen: scene.screen)
         let anchorRow = NSRect(x: cardRect.minX, y: tileRect.minY, width: cardRect.width, height: tileRect.height)
         let margin = PArcContextMenuMetrics.shadowMargin
@@ -323,7 +302,6 @@ struct PArcContextMenuChecks {
         sub.frame.origin = NSPoint(x: subPlaced.frame.minX - margin, y: subPlaced.frame.minY - margin)
         sub.highlighted = 2
 
-        // The window, 40 points of desktop around it, and what lies off the screen in black.
         let area = scene.window.insetBy(dx: -40, dy: -40)
         let rep = bitmap(area.size)
         NSGraphicsContext.saveGraphicsState()
@@ -354,7 +332,6 @@ struct PArcContextMenuChecks {
             tinted.draw(in: NSRect(x: scene.button.midX - glyph.size.width / 2, y: scene.button.midY - glyph.size.height / 2,
                                    width: glyph.size.width, height: glyph.size.height))
         }
-        // AppKit masks the card's layer to its corners; this draw path does not, so clip as it does.
         NSGraphicsContext.saveGraphicsState()
         let cardInChrome = NSRect(x: origin.x, y: origin.y + (placed.below ? 0 : SidebarPlusMenuPlacement.tailHeight),
                                   width: size.width, height: size.height)
@@ -369,7 +346,6 @@ struct PArcContextMenuChecks {
             snapshot(view).draw(in: view.frame)
         }
         if reasonTip, let reason = root.items[7].toolTip {
-            //
             let tip = TooltipConfiguration(reason)
             let tipView = TooltipView(content: TooltipView.Content(label: reason, keycaps: [],
                 corners: TooltipCorners(anchor: tip.anchor), palette: TooltipColorPalette(theme: theme),

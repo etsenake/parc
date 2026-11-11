@@ -4,8 +4,6 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     precondition(condition(), message)
 }
 
-// IDs stand for physical windows; the ordered list contains private, popup,
-// closing or otherwise excluded windows as well as eligible browser windows.
 let excluded = "excluded", front = "front", back = "back"
 check(LinkRoutingUnavailableSpace.firstEligibleWindow(
     ordered: [excluded, front, back], eligible: [front, back]) == front,

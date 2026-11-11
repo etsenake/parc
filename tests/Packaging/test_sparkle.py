@@ -1,4 +1,3 @@
-"""The pinned Sparkle download is verified before it reaches the shared cache."""
 import hashlib
 import importlib.util
 from pathlib import Path

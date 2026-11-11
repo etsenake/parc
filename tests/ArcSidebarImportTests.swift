@@ -119,7 +119,6 @@ import Foundation
         expect(manyArc.spaces[0].pinned.count == ArcSidebarImport.maximumItems - 1 && manyArc.skippedItemCount == 4,
                "Item count is bounded at 50,000, including the container; the two refused entries and their references are counted")
 
-        // Store import.
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let importedAt = Date(timeIntervalSince1970: 1_793_000_000)
@@ -284,7 +283,6 @@ import Foundation
                && legacyResult.state.arcImportedSpaces.count == 4,
                "An import from before the record matches its Spaces by name and pinned pages and records them")
 
-        //
         let chosenStore = try BrowserStore(directory: directory.appendingPathComponent("Chosen"))
         let original = BrowserImportDestination(spaceID: chosenStore.activeSpace.id, profileID: chosenStore.activeSpace.profileID)
         let chosenID = chosenStore.createProfile(name: "Elsewhere")
@@ -311,8 +309,6 @@ import Foundation
             preconditionFailure("A target Profile being removed must refuse")
         } catch { checks += 1 }
 
-        //
-        // import was opened from; the next goes by name; standard stays behind.
         let customStore = try BrowserStore(directory: directory.appendingPathComponent("CustomPrimary"))
         let opened = BrowserImportDestination(spaceID: customStore.activeSpace.id, profileID: customStore.activeSpace.profileID)
         let namesake = customStore.createProfile(name: "Work Profile")

@@ -48,8 +48,6 @@ static BOOL gLiveResize;
 static BOOL LiveResize(id self, SEL _cmd) {
   return gLiveResize;
 }
-// What the window server shows, which ignores a background app's cursor
-// unless it is allowed to set one; this test process is never frontmost.
 static BOOL Shows(NSCursor* cursor) {
   [[NSRunLoop currentRunLoop]
       runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
@@ -75,7 +73,6 @@ static void PlaceUnderCursor(NSPanel* panel) {
 static void Hover(PCVideoPiPPresenter* presenter) {
   PlaceUnderCursor(presenter.panel);
   [presenter.panel.contentView mouseEntered:[NSEvent new]];
-  // Screen monitors also drive hover; give them a tick after re-placing.
   [[NSRunLoop currentRunLoop]
       runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
   [presenter.panel.contentView mouseMoved:[NSEvent new]];
@@ -110,7 +107,6 @@ int main(void) {
     EXPECT(presenter.panel.collectionBehavior &
            NSWindowCollectionBehaviorCanJoinAllSpaces);
     EXPECT(presenter.panel.contentView.layer.cornerRadius == 16);
-    //
     EXPECT(Button(presenter.panel.contentView, PCVideoPiPSkipAd) == nil);
     EXPECT(Button(presenter.panel.contentView, PCVideoPiPNextTrack) == nil);
     EXPECT(Button(presenter.panel.contentView, PCVideoPiPPreviousTrack) == nil);
@@ -173,8 +169,6 @@ int main(void) {
     [presenter.panel setContentSize:NSMakeSize(640, 360)];
     EXPECT(NSWidth(video.bounds) == 640);
     EXPECT(changes > 0);
-    // Captions sit over the video, under the chrome, at their page bounds
-    // (top-left origin), follow resizes and never take the pointer.
     NSView* content = presenter.panel.contentView;
     NSView* captions = nil;
     for (NSView* child in content.subviews) {
@@ -202,8 +196,6 @@ int main(void) {
     EXPECT(captions.layer.contents == cue);
     [presenter.panel setContentSize:NSMakeSize(320, 180)];
     EXPECT(Near(captions.frame, NSMakeRect(32, 18, 256, 18)));
-    // Chrome without a scrubber (no duration) leaves cues in place; a shown
-    // scrubber lifts them clear, and they drop back when it hides.
     [presenter setControlsVisible:YES];
     Hover(presenter);
     EXPECT(slider.hidden);
@@ -216,7 +208,6 @@ int main(void) {
     EXPECT(Near(captions.frame, NSMakeRect(32, 18, 256, 18)));
     [presenter setControlsVisible:YES];
     [presenter setPosition:0 duration:0];
-    // Page bounds outside the window are clipped to it; huge ones too.
     [presenter setCaptions:cue bounds:NSMakeRect(0.5, 0.9, 0.8, 0.2)];
     EXPECT(Near(captions.frame, NSMakeRect(160, 0, 160, 18)));
     [presenter setCaptions:cue bounds:NSMakeRect(1e308, -1e308, 1e308, 1e308)];
@@ -241,10 +232,6 @@ int main(void) {
     [presenter setAction:PCVideoPiPPlayPause visible:NO];
     [Button(presenter.panel.contentView, PCVideoPiPPlayPause) performClick:nil];
     EXPECT(actions == 1);
-    // The play button sits under the pointer at the panel's centre: it is
-    // hovered and shows the hand without the panel ever becoming key, the
-    // arrow comes back when the chrome hides, and the hand again as soon as
-    // the chrome shows under a still pointer.
     NSButton* play = Button(presenter.panel.contentView, PCVideoPiPPlayPause);
     EXPECT(play.alphaValue < 1);
     [presenter setAction:PCVideoPiPPlayPause visible:YES];
@@ -263,7 +250,6 @@ int main(void) {
     EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
     EXPECT(play.alphaValue == 1);
     EXPECT(Shows(NSCursor.pointingHandCursor));
-    // Off every button: the arrow, and no button hovered.
     NSRect off = presenter.panel.frame;
     off.origin.x += 60;
     [presenter.panel setFrame:off display:YES];
@@ -272,8 +258,6 @@ int main(void) {
     EXPECT(play.alphaValue < 1);
     Hover(presenter);
     EXPECT([NSCursor currentCursor] == NSCursor.pointingHandCursor);
-    // Another window's control (the Meet bar) entered before this one's
-    // exit keeps the hand until it leaves too.
     PCPictureInPicturePointAtControl(YES);
     [presenter setControlsVisible:NO];
     EXPECT(Shows(NSCursor.pointingHandCursor));
@@ -281,7 +265,6 @@ int main(void) {
     EXPECT(Shows(NSCursor.arrowCursor));
     [presenter setControlsVisible:YES];
     EXPECT(Shows(NSCursor.pointingHandCursor));
-    // Every top chip is a full disc of the same size, minus included.
     for (NSNumber* tag in @[ @(PCVideoPiPReturn), @(PCVideoPiPMinimize),
                              @(PCVideoPiPClose) ]) {
       NSButton* chip = Button(presenter.panel.contentView, tag.integerValue);
@@ -339,8 +322,6 @@ int main(void) {
         }];
     [reentrant showInactive];
     EXPECT(reentrant == nil);
-    // The window follows every natural size, and the video keeps its own
-    // aspect inside whatever window it is in, letterboxed or pillarboxed.
     __block int resized = 0;
     NSView* fitted = [NSView new];
     PCVideoPiPPresenter* fitting =
@@ -357,7 +338,6 @@ int main(void) {
     EXPECT(Aspect(fitPanel.frame, 16.0 / 9.0));
     EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
     const NSRect corner = fitPanel.frame;
-    // A 2.39:1 film after a 16:9 intro: same width, same bottom-right corner.
     [fitting setNaturalSize:NSMakeSize(1920, 804)];
     EXPECT(Aspect(fitPanel.frame, 1920.0 / 804.0));
     EXPECT(NSWidth(fitPanel.frame) == NSWidth(corner));
@@ -367,7 +347,6 @@ int main(void) {
     [fitting setNaturalSize:NSMakeSize(1440, 1080)];
     EXPECT(Aspect(fitPanel.frame, 4.0 / 3.0));
     EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
-    // A window of another shape letterboxes or pillarboxes the video.
     [fitPanel setContentSize:NSMakeSize(640, 360)];
     EXPECT(Near(fitted.frame, NSMakeRect(80, 0, 480, 360)));
     EXPECT(fitted.layer.cornerRadius == 0);
@@ -380,7 +359,6 @@ int main(void) {
     }
     EXPECT(Near(fitCaptions.frame, NSMakeRect(128, 36, 384, 36)));
     [fitting setCaptions:nil bounds:NSZeroRect];
-    // A reused window (the next session) takes the next video's aspect.
     [fitting hide];
     [fitPanel setContentSize:NSMakeSize(640, 360)];
     resized = 0;
@@ -391,10 +369,8 @@ int main(void) {
     EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
     EXPECT(resized > 0);
     EXPECT(fitted.layer.cornerRadius == 16);
-    // Under a point of difference fills the window, with no hairline.
     [fitPanel setContentSize:NSMakeSize(640, 266.4)];
     EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
-    // A size change during the user's live resize waits for its end.
     class_addMethod(object_getClass(fitPanel), @selector(inLiveResize),
                     (IMP)LiveResize, "c@:");
     const NSRect dragged = fitPanel.frame;
@@ -402,7 +378,6 @@ int main(void) {
     [fitting setNaturalSize:NSMakeSize(1920, 1080)];
     EXPECT(Near(fitPanel.frame, dragged));
     EXPECT(Aspect(fitted.frame, 2.4));
-    // AppKit may still report the live resize while it posts its end.
     [[NSNotificationCenter defaultCenter]
         postNotificationName:NSWindowDidEndLiveResizeNotification
                       object:fitPanel];
@@ -411,12 +386,10 @@ int main(void) {
     EXPECT(NSWidth(fitPanel.frame) == NSWidth(dragged));
     EXPECT(Near(fitted.frame, fitPanel.contentView.bounds));
     [fitting setNaturalSize:NSMakeSize(1920, 800)];
-    // Invalid natural sizes are ignored.
     [fitting setNaturalSize:NSMakeSize(0, 0)];
     [fitting setNaturalSize:NSMakeSize(NAN, 1)];
     EXPECT(Aspect(fitted.frame, 2.4));
     [fitting invalidate];
-    // A refit whose resize releases the owner leaves nothing touched after.
     __block PCVideoPiPPresenter* releasing;
     releasing = [[PCVideoPiPPresenter alloc] initWithVideoView:[NSView new]
         sourceFrame:NSZeroRect

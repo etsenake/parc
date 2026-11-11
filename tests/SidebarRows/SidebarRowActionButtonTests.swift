@@ -71,8 +71,6 @@ import AppKit
         button.cacheDisplay(in: button.bounds, to: bitmap)
         check(bitmap.pixelsWide > 0 && bitmap.pixelsHigh > 0, "Production Close renderer draws native bitmap")
         check(button.frame == oldFrame, "Drawing never changes hit geometry")
-        // SidebarCellButtonCloseContentView: black or white bars under one
-        //
         func closeInk(dark: Bool) -> (alpha: CGFloat, white: CGFloat, centre: CGFloat) {
             button.dark = dark
             let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 48, pixelsHigh: 50, bitsPerSample: 8, samplesPerPixel: 4,
@@ -94,7 +92,6 @@ import AppKit
         check(abs(closeInk(dark: false).alpha - 0.565 * 0.35) < 0.01, "Disabled Close keeps the 0.35 dimming")
         button.isEnabled = true; button.dark = false
 
-        //
         let reset = SidebarRowResetRegion()
         reset.frame = NSRect(x: 40, y: 10, width: 30, height: 35)
         let queriesBefore = queries
@@ -147,8 +144,6 @@ import AppKit
               "Without a separate owner Command leaves the click to the row")
         check(NSEvent.modifierFlags.contains(.command) || reset.hitTest(NSPoint(x: 50, y: 20)) === reset,
               "An available reset region takes a plain click")
-        // Command picks Separate From Pinned Tab's own one-use command
-        //
         var separations = 0
         reset.prepareSeparate = {
             guard available else { return nil }
@@ -179,8 +174,6 @@ import AppKit
         let slashBitmap = slash.bitmapImageRepForCachingDisplay(in: slash.bounds)!
         slash.cacheDisplay(in: slash.bounds, to: slashBitmap)
         check(slashBitmap.pixelsWide > 0, "Production slash renders")
-        // The row's −7 sublayer lift moves the title stack up on screen, as
-        //
         let row = FlippedRow(frame: NSRect(x: 0, y: 0, width: 200, height: 35)); row.wantsLayer = true
         window.contentView!.addSubview(row)
         let stack = SidebarRowTitleStack(frame: NSRect(x: 38, y: 8, width: 100, height: 32)); stack.wantsLayer = true
@@ -194,8 +187,6 @@ import AppKit
         let lifted = title.layer!.convert(CGPoint.zero, to: root)
         check(root.contentsAreFlipped() == false && lifted.y - resting.y == 7, "Lift raises the title 7 points")
         window.close()
-        // A costly owner (the split cell's Close) enables through a cheap
-        // check and prepares its action only when pressed; hidden, it waits.
         let costly = SidebarRowActionButton("Archive this item")
         costly.frame = NSRect(x: 40, y: 10, width: 24, height: 24)
         var prepares = 0, cheap = true, costlyDispatches = 0

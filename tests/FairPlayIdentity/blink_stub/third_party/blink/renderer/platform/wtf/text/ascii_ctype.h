@@ -1,4 +1,3 @@
-// Only the ASCII predicates used by the real Safari identity header.
 #ifndef PARC_TESTS_BLINK_STUB_ASCII_CTYPE_H_
 #define PARC_TESTS_BLINK_STUB_ASCII_CTYPE_H_
 
@@ -20,6 +19,6 @@ template <typename T>
 inline unsigned ToAsciiHexValue(T c) {
   return IsAsciiDigit(c) ? c - '0' : (c | 0x20) - 'a' + 10;
 }
-}  // namespace blink
+}
 
-#endif  // PARC_TESTS_BLINK_STUB_ASCII_CTYPE_H_
+#endif

@@ -20,8 +20,6 @@ struct QuitWarningTests {
         let subscription = preferences.$state.dropFirst().sink { _ in publications += 1 }
         try preferences.setEnabled(true)
         check(publications == 0, "No-op choice does not publish a policy change")
-        //
-        // [Quit, and don't ask again] [Cancel ESC] [Quit return] along the footer.
         let look = ApplicationQuitWarning(preferences: preferences)
         let root = look.window.contentView!
         check(look.window.frame.width == 450 && look.window.accessibilityLabel() == "Quit Parc?"
@@ -34,8 +32,6 @@ struct QuitWarningTests {
         check(look.suppress.frame.maxX < look.cancelButton.frame.minX && look.cancelButton.frame.maxX < look.quit.frame.minX
               && look.suppress.frame.minX >= 28 && look.quit.frame.maxX <= 450 - 27.5,
               "The auxiliary button sits left of Cancel and Quit, all inside the 28-point margins")
-        // Presented on a window: Escape (cancelOperation) answers false once and
-        // keypad Enter (key code 76) answers true once; each ends the sheet.
         func drain() { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05)) }
         let host = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         host.isReleasedWhenClosed = false
@@ -57,8 +53,6 @@ struct QuitWarningTests {
         enter.window.keyDown(with: keypad); drain()
         check(entered == [true] && host.attachedSheet == nil && preferences.state.isEnabled,
               "Keypad Enter quits once, ends the sheet and keeps the warning on")
-        // Behind a sheet the window already shows (a sign-in), the warning
-        // waits for it instead of dropping Quit, then begins.
         func blocker() -> NSWindow {
             let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.titled], backing: .buffered, defer: false)
             sheet.isReleasedWhenClosed = false
@@ -111,8 +105,6 @@ struct QuitWarningTests {
         suppress.suppress.performClick(nil)
         check(decisions.last == true && policyAtContinuation == false, "Suppression persists before the existing native close-consent continuation")
         check(publications == 1 && !preferences.state.isEnabled, "One successful suppression publishes once")
-        // A declined native close is owned by the caller; it must not reverse
-        // the already-confirmed application preference.
         suppress.cancel()
         check(!QuitWarningPreferences(defaults: defaults).state.isEnabled, "Later cancellation cannot restore the warning implicitly")
         check(suppress.onDecision == nil && !suppress.quit.isEnabled && !suppress.suppress.isEnabled,

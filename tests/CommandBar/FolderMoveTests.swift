@@ -91,8 +91,6 @@ struct FolderMoveTests {
         check(!move.isCurrent(in: changed), "Profile ownership changes refuse")
         check(source([], state) == nil && source([.tab(first.id), .tab(first.id)], state) == nil, "Empty/duplicate source refuses")
         let emptyInput = source([.folder(here.id)], state)!
-        // Empty folders still have an original container; their transaction does
-        // not require a fictitious page/native lease.
         var emptyState = state; emptyState.tabs.removeAll { $0.id == resident.id }
         let empty = source([.folder(here.id)], emptyState)!
         check(empty.tabIDs.isEmpty && action(empty, there.id, emptyState)?.applying(to: emptyState)?.folders.first { $0.id == here.id }?.parentID == there.id, "Empty original folder moves without materializing a page")
@@ -111,7 +109,6 @@ struct FolderMoveTests {
         let reopened = try BrowserStore(directory: directory)
         check(reopened.state.tabs.first { $0.id == first.id }?.folderID == there.id, "Exact folder placement survives real reload")
         check(reopened.state.tabs.first { $0.id == first.id }?.id == first.id, "Reload preserves original item")
-        // A real failed write must not publish the intermediate Space relocation.
         let failed = try BrowserStore(directory: directory)
         let retry = action(source([.tab(last.id)], failed.state)!, there.id, failed.state)!
         let unchanged = failed.state

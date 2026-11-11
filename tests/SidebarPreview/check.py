@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
-"""Exercise the production preview card and its pure placement/aim rules without a browser or input."""
 from pathlib import Path
 import subprocess
 import tempfile
 root = Path(__file__).resolve().parents[2]
-# The controller is not compiled here: its anchor is the row's own visible part
-# (the visibleRect fact is asserted in tests/SidebarAccessibility).
 controller = (root / "Sources/ParcApp/SidebarPreviewController.swift").read_text()
 assert "let visible = view.visibleRect.intersection(view.bounds)" in controller \
     and "return host.convert(visible, from: view)" in controller, "the preview anchor is no longer its row's own visible part"
-# Pointer-motion no-ops: stay on the live row / open card without hit-test or
-# per-move reconcile; leave/aim/scroll/render paths must still resolve.
 assert "SidebarPreviewMotion.keepsSessionTarget" in controller, "row stay must skip sidebar hit-testing"
 assert "!(hit is NSButton)" in controller, "row stay must keep previewTarget's NSButton exclusion"
 assert "if event.type == .mouseMoved, let host" in controller \
@@ -26,8 +21,6 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-preview-") as directory:
     for target, (source, marker) in slices.items():
         text = (root / "Sources/ParcApp" / source).read_text()
         (scratch / target).write_text(text[:text.index(marker)])
-    # SidebarView's ActionButton slice now includes FavoriteFaviconIdentity, which
-    # needs SplitOrientation from BrowserStore. Stub the enum for this harness.
     action = scratch / "ActionButton.swift"
     action.write_text("enum SplitOrientation: Equatable { case horizontal, vertical }\n" + action.read_text())
     executable = scratch / "checks"

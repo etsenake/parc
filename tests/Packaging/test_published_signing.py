@@ -1,4 +1,3 @@
-"""Exercise publication policy with fixture Git, Keychain, build and GitHub tools."""
 import json
 import os
 from pathlib import Path

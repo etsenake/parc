@@ -1,7 +1,5 @@
 import AppKit
 
-/// Original-root policy plus actual persistent close/archive/Undo transactions.
-/// Only the production native consent boundary is controlled; no browser runs.
 @main @MainActor
 struct SidebarKeyboardCloseTests {
     static var count = 0

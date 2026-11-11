@@ -22,8 +22,6 @@ struct PeekDismissalChecks {
     static func main() {
         typealias Owner = PeekDismissalConfirmation
         typealias Reason = Owner.Reason
-        // Explicit reference matrix: unarmed without/with capture, awaiting
-        // Escape without/with capture, awaiting media without/with capture.
         let contexts: [(Reason?, Bool)] = [
             (nil, false), (nil, true), (.escape, false), (.escape, true),
             (.mediaInput, false), (.mediaInput, true)
@@ -85,7 +83,6 @@ struct PeekDismissalChecks {
         expect(expirations == 1, "expiry is delivered once")
         expect(rejectedExpiry == 0, "consent cancels every replaced pending callback")
 
-        // An old short deadline cannot collapse a newly armed media prompt.
         var stale = 0
         prompt.arm(.escape) { stale += 1 }
         pump(0.2)
@@ -99,7 +96,6 @@ struct PeekDismissalChecks {
         expect(ProcessInfo.processInfo.systemUptime - mediaStart >= 9.99, "media expiry is not early")
         expect(prompt.reason == nil, "media expiry clears confirmation")
 
-        // Hiding/closing the owner explicitly clears both presentation and work.
         prompt.arm(.escape) { stale += 1 }
         prompt.cancel()
         prompt.cancel()
@@ -108,7 +104,6 @@ struct PeekDismissalChecks {
         pump(1.1)
         expect(stale == 0, "cancelled owner gets no later expiry")
 
-        // Notification can synchronously rearm without the old callback erasing it.
         prompt.arm(.escape) { prompt.arm(.mediaInput) { stale += 1 } }
         waitUntil({ prompt.reason == .mediaInput }, timeout: 5)
         expect(prompt.reason == .mediaInput, "new generation survives callback reentrancy")

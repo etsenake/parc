@@ -1,6 +1,5 @@
 import AppKit
 
-/// Inert window: no ordering or activation. Overrides key state for focus checks.
 @MainActor private final class GeometryWindow: NSWindow {
     var key = true
     override var isKeyWindow: Bool { key }
@@ -75,7 +74,6 @@ struct DevToolsWindowTests {
         restored.close()
         fallback.close()
 
-        // P0-C: identical undocked root geometry skips frame writes / onLayout.
         let bounds = NSRect(x: 0, y: 0, width: 900, height: 700)
         let settled = DevToolsRootLayoutSkip.plan(
             bounds: bounds, sidePanelVisible: false, errorHidden: true)

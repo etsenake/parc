@@ -7,8 +7,6 @@
 #include <cstdlib>
 
 #import "certificate_viewer_presenter.h"
-// Invoke the existing start method only to force replacement inside the
-// intercepted OS call; nested main-queue dispatch is deliberately not assumed.
 @interface PCServerCertificatePresenter (NestedBeginTest)
 - (void)start;
 @end
@@ -173,9 +171,6 @@ int main(int argc, char** argv) {
     Pump();
     EXPECT(!weak);
     EXPECT(!window.attachedSheet);
-
-    // Exercise reentry while the original real OS begin invocation is still
-    // on the presenter stack. Both sheets are genuine SFCertificatePanels.
     done = 0;
     __block int replacementDone = 0;
     __block bool intercepted = false;
@@ -239,10 +234,6 @@ int main(int argc, char** argv) {
     EXPECT(replacementDone == 1 && !window.attachedSheet);
     replacement = nil;
     p = nil;
-
-    // Cancellation can release the external owner before begin returns and
-    // before the presenter has captured the sheet. The real didEnd still owns
-    // its callback target even in that interval.
     done = 0;
     intercepted = false;
     @autoreleasepool {
@@ -257,9 +248,6 @@ int main(int argc, char** argv) {
             [delegate invalidate];
             EXPECT(done == 1 && !cancelled);
             EXPECT([delegate valueForKey:@"sheetLifetime"] == delegate);
-            // Do not pump didEnd here: the returned begin frame must capture
-            // and retire its own actual OS sheet before releasing the callback
-            // target.
           });
       method_setImplementation(method, intercept);
       cancelled = [[PCServerCertificatePresenter alloc] initWithPage:page

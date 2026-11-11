@@ -6,10 +6,6 @@ import AppKit
     override func layout() { super.layout(); onLayout?() }
 }
 
-/// The production PageContentResizer and PCBrowserView adapter over the
-/// engine's view tree (EngineStub.swift): reports are converted to the held
-/// view's size with the renderer below an infobar shelf and beside docked
-/// DevTools, which the engine frames only in its own layout.
 @main @MainActor struct PageRenderFramesTests {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -19,7 +15,6 @@ import AppKit
     static func size(_ width: CGFloat, _ height: CGFloat = 600) -> CGSize { CGSize(width: width, height: height) }
     static func main() {
         _ = NSApplication.shared
-        // Real AppKit hierarchy, outside the desktop and never key; no engine.
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 1200, height: 700),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -36,7 +31,6 @@ import AppKit
             resizer.place(browser, in: content)
         }
 
-        // Docked DevTools (300 pt) and a 40 pt infobar beside the renderer.
         let (content, resizer) = pane(800)
         let page = PCNativePage()
         page.host.infobarHeight = 40
@@ -95,7 +89,6 @@ import AppKit
         check(page.liveLeases == 0 && browser.frame == content.bounds && renderer.frame.size == size(450, 560),
               "the drag's end fills the content")
 
-        // An infobar alone on a static page: entering throttle holds nothing.
         let (shelved, shelvedResizer) = pane(800)
         let still = PCNativePage()
         still.host.infobarHeight = 40
@@ -113,8 +106,6 @@ import AppKit
         check(shelvedResizer.hold.lockedSize == nil && stillBrowser.frame.size == size(760), "and its report releases")
         shelvedResizer.mode = .intrinsic
 
-        // A page moved into another pane during the drag starts from its
-        // renderer's last frame, converted after the engine lays it out.
         let (target, targetResizer) = pane(700)
         targetResizer.mode = .throttle
         content.onLayout = nil; browser.removeFromSuperview()
@@ -131,7 +122,6 @@ import AppKit
         resizer.mode = .intrinsic
         targetResizer.mode = .intrinsic
 
-        // An engine without the report: throttle stays intrinsic.
         let (older, olderResizer) = pane(800)
         let legacy = PCNativePage(olderEngine: true)
         let legacyBrowser = PCBrowserView(frame: .zero, page: legacy)

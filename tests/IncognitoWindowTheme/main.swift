@@ -1,8 +1,5 @@
 import AppKit
 
-//
-// the sidebar URL bar's incognito fill, in an off-screen window that is never
-// ordered in or made key. No browser, input or preferences.
 @MainActor @main struct IncognitoWindowThemeChecks {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -28,7 +25,6 @@ import AppKit
     static func main() {
         NSApplication.shared.setActivationPolicy(.prohibited)
 
-        //
         let background = components(IncognitoWindowTheme.background, .displayP3)
         check(background.map { near($0[0], 0.054) && near($0[1], 0.06) && near($0[2], 0.075) && $0[3] == 1 } == true,
               "the incognito background is opaque Display P3 (0.054, 0.06, 0.075)")
@@ -68,16 +64,12 @@ import AppKit
             check(same(a, b), "the incognito \(name) is the brand palette's dark half")
         }
         check(!same(palette.title, systemPalette.title), "the incognito palette is not the uncoloured fallback")
-        // The private Space's own theme (BrowserStore's #202020) changes
-        // nothing that is drawn.
         root.theme = .singleColor(ThemeColor(hex: "202020")!)
         check(root.layer?.backgroundColor == IncognitoWindowTheme.background.cgColor && materials(root).allSatisfy(\.isHidden)
               && canvases(root).allSatisfy(\.isHidden) && same(root.palette.title, expected.title),
               "an incognito surface ignores its Space theme")
         root.theme = SpaceTheme()
 
-        //
-        // screenshot measures (14, 15, 19).
         root.display(); CATransaction.flush()
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 400, pixelsHigh: 300, bitsPerSample: 8, samplesPerPixel: 4,
                                    hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -91,7 +83,6 @@ import AppKit
         check(abs(rgb.0 - 13) <= 1 && abs(rgb.1 - 15) <= 1 && abs(rgb.2 - 19) <= 1 && pixel[3] == 255,
               "the rendered surface is opaque (13, 15, 19), nothing behind it showing: got \(rgb)")
 
-        // The sidebar's surface: none while locked, the rounded fill floating.
         let sidebar = ThemeRendererView(frame: NSRect(x: 0, y: 0, width: 240, height: 300))
         root.addSubview(sidebar)
         sidebar.coordinateSpace = root
@@ -110,17 +101,14 @@ import AppKit
               "docking shows no behind-window material and keeps the fill")
         sidebar.preparesFloatingDock = false; sidebar.docksFloatingSurface = false
 
-        // Back to an ordinary surface.
         root.incognito = false
         check(root.layer?.backgroundColor == nil && materials(root).first?.isHidden == false && same(root.palette.title, systemPalette.title),
               "turning incognito off restores the material and the Space palette")
 
-        // The stylesheet's simple colour is the basic colour.
         let sheet = expected.websiteStylesheet(theme: SpaceTheme(), basicBackground: IncognitoWindowTheme.background)
         check(sheet.contains("  --arc-background-simple-color: #0E0F13FF;"), "the incognito simple colour is the basic colour")
         check(!expected.websiteStylesheet(theme: SpaceTheme()).contains("#0E0F13FF"), "without it the theme's colours are used")
 
-        // CommandBarPlaceholderIncognitoBackground at rest, SidebarItemHoveredBackground hovered.
         let rest = components(SidebarAddressPillView.incognitoFill, .displayP3)
         check(rest.map { $0[0] == 1 && $0[1] == 1 && $0[2] == 1 && near($0[3], 0.15) } == true, "P3 white at 0.15")
         check(SidebarAddressPillView.fill(dark: true, hovered: false, incognito: true) == SidebarAddressPillView.incognitoFill,

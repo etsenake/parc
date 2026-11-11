@@ -1,9 +1,6 @@
 import Combine
 import Foundation
 
-///
-///
-/// app-wide, kept across a relaunch and absent from older sessions.
 @main @MainActor struct SpaceHeaderSettingTests {
     static var count = 0
     static func check(_ value: @autoclosure () throws -> Bool, _ message: String) rethrows {

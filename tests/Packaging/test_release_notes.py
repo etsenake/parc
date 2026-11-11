@@ -99,7 +99,6 @@ class Notes(unittest.TestCase):
         once = notes.record(notes.record({'releases': []}, first, '1.8.2'), second, '1.9.0')
         self.assertEqual([item['version'] for item in once['releases']], ['1.9.1', '1.9.0'])
         self.assertEqual(notes.record(once, second, '1.9.0'), once)
-        # 1.9.1 was committed by a superseded run but never tagged; 1.10.0 covers its changes.
         third = notes.entry('1.10.0', 12, '2026-11-12', [change('fix', 'B'), change('feat', 'C')])
         self.assertEqual(notes.record(once, third, '1.9.0'), {'releases': [third, first]})
 
@@ -163,7 +162,6 @@ class History(unittest.TestCase):
         self.commit('feat: Pin tabs'); self.commit('Revert "feat: Pin tabs"')
         self.commit('Revert "Revert "feat: Pin tabs""')
         self.assertEqual([item['summary'] for item in notes.changes(self.root, 'v1.0.0', 'HEAD')], ['Pin tabs'])
-        # git 2.43+ leaves a revert of that form nested, and either git may write it.
         self.commit('Revert "Revert "Revert "feat: Pin tabs"""')
         self.assertEqual(notes.changes(self.root, 'v1.0.0', 'HEAD'), [])
 
@@ -177,7 +175,6 @@ class History(unittest.TestCase):
         self.commit('Revert "feat: Pin tabs"'); self.commit('Revert "Revert "feat: Pin tabs""')
         self.assertEqual(notes.changes(self.root, 'v1.1.0', 'HEAD'), [])
         self.commit('Revert "Reapply "feat: Pin tabs""'); self.git('tag', 'v1.1.1')
-        # Pin tabs was out of 1.1.1, so restoring it ships again whatever depth git wrote.
         self.commit('Reapply "Reapply "feat: Pin tabs""')
         self.assertEqual([item['summary'] for item in notes.changes(self.root, 'v1.1.1', 'HEAD')], ['Pin tabs'])
 
@@ -193,7 +190,6 @@ class History(unittest.TestCase):
 
 
 class Hooks(unittest.TestCase):
-    """The tracked hooks in a real clone with an origin and a linked worktree; history predating the rule is on origin."""
     def setUp(self):
         source = Path(__file__).resolve().parents[2]
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
@@ -216,7 +212,6 @@ class Hooks(unittest.TestCase):
         return subprocess.run(['git', *args], cwd=cwd or self.root, capture_output=True, text=True)
 
     def tree_commit(self, parent, *messages):
-        """A commit made with commit-tree, which never runs commit-msg."""
         args = [part for message in messages for part in ('-m', message)]
         return self.git('commit-tree', 'HEAD^{tree}', '-p', parent, *args).stdout.strip()
 

@@ -44,8 +44,6 @@ import AppKit
         canvas.selectBrowserObject(item.id)
         do { try sourceStore.retireSessionForRelocation(original.document.id); fatalError("live child retired") }
         catch { expect(pool.pages.first === oldPage, "Live source child cannot be bypassed by durable relocation") }
-        // Inject only the actual native retirement result. This is not a
-        // browser/beforeunload test; those owners are unchanged production code.
         oldPage.isClosed = true; pool.didClose(oldPage); pool.disposeAfterClosure()
         try sourceStore.retireSessionForRelocation(original.document.id)
         expect(!canvas.canFinishEditingForTransfer, "Retired source canvas cannot authorize another transfer")
@@ -89,8 +87,6 @@ import AppKit
         }
     }
 
-    /// Export as Image collects each live page's own pixels through the
-    /// injected engine snapshot, and keeps the card on an engine without it.
     @MainActor static func exportSnapshots() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-export-pool-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -151,7 +147,6 @@ import AppKit
         expect(secondPage.snapshotRequests == 2 && refused?[item.id] != nil && refused?[second.id] == nil,
                "An engine NO for one page still completes with the others")
 
-        // A reply that never comes ends at the deadline, and a late one changes nothing.
         secondPage.refusesSnapshot = false; secondPage.withholdsSnapshot = true
         var deliveries = 0, late: [UUID: EaselPageSnapshot]?
         pool.exportSnapshots(within: 0.2) { deliveries += 1; late = $0 }
@@ -249,7 +244,7 @@ import AppKit
         expect(!rebind(target), "A destination lease cannot precede actual view/window movement")
         targetWindow.contentView = canvas
         expect(!rebind(target), "Moving AppKit views alone cannot claim a native page")
-        page.owner = target // Inject the genuine backend's eventual accepted owner result.
+        page.owner = target
         expect(!rebind(target, path: "/another/profile"), "Profile substitution refuses the same page")
         page.embeddedOwnerValid = false
         expect(!rebind(target), "Revoked native auxiliary lease refuses rebind")
@@ -266,8 +261,6 @@ import AppKit
         expect(originalMetadata == oldMetadata && targetMetadata > 0, "Metadata follows new original-window callback owner")
         let rollback = pool.snapshotForWindowTransfer()!
         expect(pool.beginWindowTransfer(rollback), "Next real move obtains a fresh snapshot")
-        // Backend refused/rolled back before durable model publication: the same
-        // current target is still original, so settle without any new document.
         expect(pool.rebindWindowTransfer(rollback, binding: target, profilePath: "/fixture/profile",
             validOwner: { true }, activeOwner: { true }, selectionChanged: {}, metadataChanged: {}), "Rollback preserves current owner rather than recreating it")
         expect(pool.finishWindowTransfer(rollback), "Refused transfer releases the original pool gate")

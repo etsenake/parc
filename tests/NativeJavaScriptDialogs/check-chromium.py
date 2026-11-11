@@ -32,8 +32,6 @@ def main():
     if not compiler.is_file() or not all(path.is_file() for path in flags_files.values()):
         parser.error("existing pinned compiler and generated parc/native target ninja files are required")
 
-    # Share the bounded Ninja literal reader. Import without writing __pycache__
-    # into the repository's source directories.
     sys.dont_write_bytecode = True
     helper_path = repo / "tests/NativeLocationBar/check-chromium.py"
     spec = importlib.util.spec_from_file_location("parc_chromium_flags", helper_path)
@@ -48,8 +46,6 @@ def main():
     logs.mkdir(parents=True, exist_ok=True)
     results = []
     for name, flags_file in flags_files.items():
-        # Unlike the cxx rule, pinned objcxx does not pass module_deps. Its system
-        # PCM is C++-only, despite being an order dependency of the object target.
         flags = helper.flags_from(flags_file, language_flags="cflags_objcc",
                                   include_module_deps="${module_deps}" in rule[1])
         if "-fobjc-arc" not in flags or "-Werror" not in flags:

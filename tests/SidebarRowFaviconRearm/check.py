@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Queue 20 leftover behavior lock: SidebarView.makeRow skips loadFavicon /
-loadResetIcon only when tab page URL + reset destination match the last arm
-and settled art can be adopted onto the replacement row. URL/art changes and
-reloadFavicon still load. Favorite favicon skip and outline live-path skip
-must remain.
-"""
 from pathlib import Path
 import re
 
@@ -60,7 +54,6 @@ assert render_body.count("row.loadFavicon") >= 1, \
 assert render_body.count("row.loadResetIcon") >= 1, \
     "makeRow must still loadResetIcon when skip does not apply"
 
-# reloadFavicon remains an unconditional force load for tab rows.
 reload = re.search(
     r"func reloadFavicon\(for id: UUID\) \{(?P<body>.*?)\n    func render\(state: BrowserState",
     sidebar, re.S)
@@ -71,7 +64,6 @@ assert "row.loadFavicon" in reload_body, \
 assert "skipArm" not in reload_body, \
     "reloadFavicon must not share makeRow's skipArm gate"
 
-# Live URL changes still re-arm and record identity.
 live = re.search(
     r"func applyLivePageMetadata\(state: BrowserState,.*?\) -> Bool \{(?P<body>.*?)\n"
     r"    func reloadFavicon\(for id: UUID\)",
@@ -89,7 +81,6 @@ assert "favoriteFaviconArms[id] == arm" in live_body, \
 assert "button.hasSettledPageFavicons(count: pages.count)" in live_body, \
     "Favorite settled-art gate on live path must remain"
 
-# Favorite skip on full render must remain.
 assert "favoriteFaviconArms[tab.id] == arm" in render_body, \
     "Favorite favicon re-arm skip on full render must remain"
 assert "button.hasSettledPageFavicons(count: pages.count)" in render_body, \

@@ -1,7 +1,5 @@
 import AppKit
 
-// These fixtures model only the data read by CommandBar.selectedScopeOffer;
-// the runner compiles that actual property, including its eligibility gates.
 final class PCNativeSearchNavigation {
     let url: URL
     let search: Bool

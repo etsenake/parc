@@ -1,8 +1,3 @@
-"""Asset integrity checks against the retained approved-pixel fingerprints.
-
-Requires Pillow, like the optional maintenance derivation tool. No browser or
-generation service is used; the application build does not require Pillow.
-"""
 import hashlib
 import json
 from pathlib import Path
@@ -53,8 +48,6 @@ class ArtworkChecks(unittest.TestCase):
         self.assertEqual(set(mono.convert("RGB").getdata()), {(0, 0, 0)})
         self.assertEqual(digest((ROOT / "Marks/Borderless.png").read_bytes()), record["borderlessFileSHA256"])
         self.assertEqual(digest((ROOT / "Marks/Monochrome.png").read_bytes()), record["monochromeFileSHA256"])
-        # Approved landmark coordinates are expressed in the Original canvas,
-        # independent of the derivation's threshold/filter implementation.
         x0, y0, _, _ = record["sourceCrop"]
         alpha = color.getchannel("A")
         for x, y in [(700, 450), (650, 850), (750, 1040), (390, 400)]:

@@ -1,6 +1,3 @@
-// Stand-in for Blink's WTF::String with only what
-// Engine/ParcRenderer/parc_safari_identity.h calls, over ASCII std::string,
-// for tests/FairPlayIdentity/renderer_gate_main.cc.
 #ifndef PARC_TESTS_BLINK_STUB_WTF_STRING_H_
 #define PARC_TESTS_BLINK_STUB_WTF_STRING_H_
 
@@ -107,6 +104,6 @@ inline bool EqualIgnoringAsciiCase(const String& a, const char* b) {
   return i == value.size() && !b[i];
 }
 
-}  // namespace blink
+}
 
-#endif  // PARC_TESTS_BLINK_STUB_WTF_STRING_H_
+#endif

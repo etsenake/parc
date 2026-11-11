@@ -13,7 +13,6 @@ import wave
 
 
 def seed_profile(directory, port):
-    """Create a fresh disposable session; never overwrite an existing profile."""
     directory.mkdir(parents=True, exist_ok=False)
     now = datetime.now(timezone.utc)
     date = lambda hours: (now - timedelta(hours=hours)).strftime('%Y-%m-%dT%H:%M:%SZ')

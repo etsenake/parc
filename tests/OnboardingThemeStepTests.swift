@@ -1,7 +1,5 @@
 import AppKit
 
-/// Inert AppKit checks for the onboarding theme-step editor chrome.
-/// No browser, engine, imports or user profile.
 @main
 struct OnboardingThemeStepTests {
     @MainActor static var assertions = 0

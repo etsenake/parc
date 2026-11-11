@@ -12,7 +12,6 @@ import Foundation
         check(G.defaultWidth == 8 + 8 + 4 * 47 + 3 * 8 && G.snapBand == 14 && G.snapMaximumVelocity == 50, "recovered detent")
         check(G.releaseFeedbackHold == 0.5, "recovered release hold")
 
-        // Rounding is half away from zero of widthOnBegin + translation, then a hard clamp.
         var g = G(width: 300, locked: true)
         check(!g.canSnap && !g.isSnapped && g.effectiveWidth == 300, "begin is unarmed at the store width")
         check(g.change(translationX: 0.5, velocityX: 0, now: 0).width == 301, "ties round away from zero")
@@ -23,7 +22,6 @@ import Foundation
         check(low.change(translationX: -118, velocityX: 0, now: 0).width == 164, "exactly 82 is clamped, not previewed")
         check(low.end(.ended, translationX: -118).collapses, "release exactly at 82 collapses")
 
-        // Collapse preview and its single boundary events.
         let previewing = low.change(translationX: -118.6, velocityX: -900, now: 0)
         check(previewing.width == 0 && previewing.events == [.previewHiddenChanged(true)] && low.isPreviewingHidden, "below 82 previews hidden once")
         check(low.change(translationX: -150, velocityX: -900, now: 0).events.isEmpty, "staying hidden repeats nothing")
@@ -41,13 +39,11 @@ import Foundation
         check(low.end(.failed, translationX: 300) == .init(width: 200, collapses: false), "failure restores widthOnBegin")
         check(G(width: 600, locked: true).end(.cancelled, translationX: 0).width == 500, "restored width is clamped")
 
-        // Arming: a drag beginning inside the band never snaps until it has left once.
         var inside = G(width: 230, locked: true)
         check(inside.change(translationX: -1, velocityX: -10, now: 0) == .init(width: 229, widthChanged: true, events: []), "unarmed band passes through")
         check(!inside.canSnap, "inside band stays unarmed")
         check(inside.change(translationX: 12, velocityX: 10, now: 0).width == 242 && inside.canSnap, "leaving the band arms at 14")
 
-        // Velocity gate and direction test (proposed > 228) XOR (vx < 0).
         var s = G(width: 300, locked: true)
         _ = s.change(translationX: -30, velocityX: -200, now: 1)
         check(s.canSnap, "outside the band arms")
@@ -78,7 +74,6 @@ import Foundation
         let dived = dive.change(translationX: -280, velocityX: -900, now: 1)
         check(dived.events == [.snapReleased(haptic: true), .previewHiddenChanged(true)] && dived.width == 0, "events keep the order")
 
-        // Breakpoints: the first i with 0 <= width < b[i], otherwise the count.
         check(G.breakpointIndex(for: 99, in: [100, 200]) == 0 && G.breakpointIndex(for: 100, in: [100, 200]) == 1, "breakpoint boundaries")
         check(G.breakpointIndex(for: 300, in: [100, 200]) == 2 && G.breakpointIndex(for: 50, in: []) == 0, "past the last breakpoint")
         var b = G(width: 150, locked: false, breakpoints: [100, 200])
@@ -87,7 +82,6 @@ import Foundation
         check(b.change(translationX: 60, velocityX: 0, now: 0).events == [.breakpointChanged(2)], "crossing a breakpoint publishes")
         check(b.change(translationX: -140, velocityX: 0, now: 0).events == [.previewHiddenChanged(true), .breakpointChanged(0)], "hidden preview is below the first breakpoint")
 
-        // Invalid native input cannot alter the session.
         var invalid = G(width: 240, locked: true)
         check(invalid.change(translationX: .nan, velocityX: 0, now: 0) == .init(width: 240, widthChanged: false, events: []), "non-finite translation ignored")
         check(invalid.change(translationX: 0, velocityX: .infinity, now: 0).width == 240, "non-finite velocity ignored")

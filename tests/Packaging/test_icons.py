@@ -1,10 +1,3 @@
-"""Exercise independent packaging's icon/configuration path with offline fixtures.
-
-Actual resource copy, native icon renderer compilation/export, iconutil, plist
-writing and final rename execute. Application compiler, engine artifact
-copying/audits and signing are explicit test doubles;
-these cases never seal, load or launch Chromium or read an installed browser.
-"""
 import contextlib
 import importlib.util
 import json
@@ -59,7 +52,6 @@ class PackagingIconTests(unittest.TestCase):
         entitlements = source / "chrome/app/app-entitlements.plist"
         entitlements.parent.mkdir(parents=True)
         entitlements.write_bytes(plistlib.dumps({"com.apple.security.device.camera": True}))
-        # The pinned Chromium's own list, as chrome/tools/build/mac/infoplist_strings_util.cc writes it.
         self.chromium_usage = source / "chrome/tools/build/mac/infoplist_strings_util.cc"
         self.chromium_usage.parent.mkdir(parents=True)
         self.chromium_usage.write_text("".join(f'        {{"{key}", permission_reason}},\n' for key in (
@@ -76,7 +68,6 @@ class PackagingIconTests(unittest.TestCase):
         helper.write_bytes(b"GN-built helper")
         helper.chmod(0o755)
         self.manifest.update(engine_runtime="chromium-direct", helper={"image": "parc_helper", "sha256": pkg.sha(helper), "mode": 0o755})
-        # The extracted release layout sparkle.fetch returns, with fixture code.
         self.sparkle = self.root / "sparkle"
         framework = self.sparkle / pkg.SPARKLE
         for name in ("Sparkle", "Autoupdate", "Updater.app/Contents/MacOS/Updater", "Headers/Sparkle.h",
@@ -199,8 +190,6 @@ class PackagingIconTests(unittest.TestCase):
                                 for document in info["CFBundleDocumentTypes"]))
             for folder in ("Desktop", "Documents", "Downloads"):
                 self.assertIn(folder, info[f"NS{folder}FolderUsageDescription"])
-            # Without these, macOS terminates Parc the moment a page touches Bluetooth
-            # (a passkey from a phone), location, a platform passkey or cast audio.
             for key in ("NSAudioCaptureUsageDescription", "NSBluetoothAlwaysUsageDescription",
                         "NSBluetoothPeripheralUsageDescription", "NSCameraUsageDescription",
                         "NSLocalNetworkUsageDescription", "NSLocationUsageDescription",
@@ -218,7 +207,6 @@ class PackagingIconTests(unittest.TestCase):
             self.assertEqual(data[:4], b"icns")
             self.assertEqual(struct.unpack(">I", data[4:8])[0], len(data))
             icons.append(data)
-            # The fixture has no release-notes.json, so the bundled page shows its empty state.
             self.assertIn("A clean slate", (app / "Contents/Resources/WhatsNew.html").read_text())
             self.assertEqual(report["configuration"], configuration)
             self.assertEqual(report["layout"], "chromium-direct-component-development")
@@ -284,7 +272,7 @@ class PackagingIconTests(unittest.TestCase):
         self.assertIn("-O", compiles[1]); self.assertNotIn("-Onone", compiles[1]); self.assertNotIn("-g", compiles[1])
         self.assertIn("-whole-module-optimization", compiles[1]); self.assertNotIn("-whole-module-optimization", compiles[0])
         signs = [cmd for cmd in self.commands if cmd[0] == "/usr/bin/codesign" and "--sign" in cmd]
-        self.assertEqual(len(signs), 22)  # engine, Sparkle Updater and framework, five helpers, Dock, restart and app per configuration
+        self.assertEqual(len(signs), 22)
         self.assertTrue(all("--deep" not in cmd for cmd in signs))
         signed_paths = [Path(cmd[-1]) for cmd in signs]
         plugins = [path for path in signed_paths if path.name == "ParcDockTile.plugin"]
@@ -492,7 +480,6 @@ class PackagingIconTests(unittest.TestCase):
         lock.assert_not_called()
 
     def test_distribution_refused_before_any_output_even_with_release_and_certificate(self):
-        # No manifest claim, optimization level or signing identity is an override.
         for configuration in ("debug", "release"):
             for identity in ("-", "Developer ID Application: Fixture"):
                 with self.subTest(configuration=configuration, identity=identity):

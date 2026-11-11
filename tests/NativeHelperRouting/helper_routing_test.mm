@@ -1,6 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Calls actual pinned CEF and Chromium implementations; no browser/profile is
-// created, and no subprocess is launched. The paths are isolated test inputs.
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -174,7 +171,7 @@ void CheckApplication(const std::string& name) {
   command->RemoveSwitch(switches::kBrowserSubprocessPath);
   std::printf("PASS %s: real bundle overrides, helper routes and resources\n", name.c_str());
 }
-}  // namespace
+}
 
 int main(int argc, char** argv) {
   base::AtExitManager at_exit;

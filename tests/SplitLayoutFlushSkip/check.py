@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""Behavior lock: split drop reserve and divider-drag skip only true no-ops.
-
-Drop clear/end / applyFrames still flush when geometry moves or the subtree is
-dirty. Divider drag applies frames on the first move and whenever factors
-change; later identical-factor moves skip applyFrames. Snap haptics stay
-outside that gate. configure still enters applySavedFrames on identical
-publishes (dirty flush / clearLayoutAnimation). finishDividerResize still
-invokes commit when moved (window-command side effects retained).
-InteractivePaneEdit's 50ms external-drop fallback timer stays.
-"""
 from pathlib import Path
 import re
 
@@ -110,7 +100,6 @@ assert "SplitLayoutFlushSkip.shouldFlush(" in mn, \
 assert "host.layoutSubtreeIfNeeded()" in mn, \
     "updateContainerMinimum must still flush the host when constraints move"
 
-# External-drop fallback must remain (not softened to an early end).
 assert "Timer(timeInterval: 0.05, repeats: true)" in split, \
     "InteractivePaneEdit 50ms fallback timer must remain"
 assert "RunLoop.main.add(timer, forMode: .common)" in split, \

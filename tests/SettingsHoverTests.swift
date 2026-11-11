@@ -1,7 +1,5 @@
 import AppKit
 
-// Replace only OS owner flags and pointer position. These inert windows never
-// order front, activate an application, post input, open a browser or save data.
 @MainActor private final class HoverApplication: NSApplication {
     var simulatedActive = true
     override var isActive: Bool { simulatedActive }

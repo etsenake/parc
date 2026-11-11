@@ -9,7 +9,6 @@ import AppKit
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
-///
 @main struct PArcToastTests {
     @MainActor static func main() {
         let app = NSApplication.shared
@@ -29,14 +28,12 @@ import AppKit
         }
         func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.75 }
 
-        // Placement: floatingTopRight on the window, the content's upper half otherwise.
         check(PArcToastPlacement.windowFrame(for: NSRect(x: 100, y: 200, width: 1000, height: 800))
               == NSRect(x: 500, y: 400, width: 600, height: 600), "600-point child at the window's top right")
         check(PArcToastPlacement.contentFrame(for: NSRect(x: 300, y: 100, width: 600, height: 700))
               == NSRect(x: 300, y: 450, width: 600, height: 350), "content toast uses the upper half of its pane")
         check(PArcToastTiming.duration == 5 && PArcToastTiming.retirement == 1, "five-second toast, one-second retirement")
 
-        //
         let url = URL(string: "https://chatgpt.com/")!
         check(PArcToastContent.copiedCurrentURL(url).body
               == .standard(icon: nil, label: "Copied Current URL", subLabel: nil, buttons: [.share([url])]),
@@ -78,7 +75,6 @@ import AppKit
         check(iconFont.map { NSFontManager.shared.weight(of: $0) > NSFontManager.shared.weight(of: NSFont.systemFont(ofSize: 13)) } == true,
               "the quote icon is the label font made heavier at NSFontManager weight 8")
 
-        // A real offscreen parent with a split-like right pane.
         let parent = ToastParent(contentRect: NSRect(x: -12_000, y: -12_000, width: 1000, height: 700),
                                  styleMask: [.borderless], backing: .buffered, defer: false)
         parent.isReleasedWhenClosed = false; parent.isRestorable = false
@@ -134,7 +130,6 @@ import AppKit
         second.dismiss(animated: false)
         check(toasts.current == nil && parent.childWindows?.isEmpty != false, "immediate dismissal removes the child")
 
-        // A private window hands every toast the incognito theme's basic colour.
         let basic = NSColor(displayP3Red: 0.054, green: 0.06, blue: 0.075, alpha: 1)
         toasts.basicBackground = basic
         guard let privateToast = toasts.show(.cannotAddNewPane, in: parent, over: nil, theme: SpaceTheme()) else {
@@ -156,7 +151,6 @@ import AppKit
         check(timed.isRetiring, "an unhovered timer tick dismisses")
         timed.dismiss(animated: false)
 
-        // Hover holds a toast past its tick; leaving lets the next tick dismiss it.
         let held = PArcToastPresentation(content: .standard("Held"), theme: SpaceTheme(), duration: 1)
         check(held.present(in: parent, over: pane), "hover owner admitted")
         await drain(0.7)
@@ -177,7 +171,6 @@ import AppKit
         } else { preconditionFailure("missing hover child") }
         held.dismiss(animated: false)
 
-        // Scrolling dismisses; a resting finger's zero-distance event does not.
         check(!PArcToastScroll.dismisses(window: parent, deltaX: 0, deltaY: 0, owners: [parent]), "zero distance keeps")
         check(PArcToastScroll.dismisses(window: parent, deltaX: 0, deltaY: -2, owners: [parent]), "scrolling the parent dismisses")
         check(!PArcToastScroll.dismisses(window: nil, deltaX: 3, deltaY: 0, owners: [parent]), "a scroll elsewhere keeps")
@@ -189,7 +182,6 @@ import AppKit
         check(scrolled.isRetiring, "a real scroll dismisses")
         scrolled.dismiss(animated: false)
 
-        // The toast reducer removes a tapped toast before acting.
         var retiringWhenTapped: Bool?
         var tapped: PArcToastPresentation?
         tapped = PArcToastPresentation(content: .standard("Tab moved! Click to go there."), theme: SpaceTheme(),
@@ -201,7 +193,6 @@ import AppKit
         check(retiringWhenTapped == true, "a retired toast ignores further taps")
         tapped?.dismiss(animated: false)
 
-        // A changed binding retires only a toast that shows a shortcut.
         guard let copyToast = toasts.show(.copiedCurrentURL(url), in: parent, over: pane, theme: SpaceTheme()) else {
             preconditionFailure("copy toast refused")
         }
@@ -214,7 +205,6 @@ import AppKit
         check(cue.isRetiring && toasts.current == nil, "a shortcut toast retires on a binding change")
         check(shared.isEmpty, "presenting never shares")
 
-        //
         let framed = PArcToastPresentation(content: .standard("Framed"), theme: SpaceTheme())
         check(framed.present(in: parent, over: pane), "framing owner admitted")
         let framedRect = framed.window?.frame
@@ -222,7 +212,6 @@ import AppKit
         check(framed.window?.frame == framedRect, "the child keeps its first frame")
         framed.dismiss(animated: false)
 
-        // Minimizing, a sheet and full-screen transitions close the toast at once.
         for name in [NSWindow.willMiniaturizeNotification, NSWindow.willBeginSheetNotification,
                      NSWindow.willEnterFullScreenNotification, NSWindow.willExitFullScreenNotification] {
             let toast = PArcToastPresentation(content: .standard("Closes"), theme: SpaceTheme())
@@ -231,8 +220,6 @@ import AppKit
             check(toast.isRetiring && toast.window == nil, "\(name.rawValue) closes the toast")
         }
 
-        // The quote icon and sub-label stay readable when the app's scheme and
-        // the Space's lightness disagree.
         func luminance(_ color: NSColor) -> CGFloat {
             let c = color.usingColorSpace(.sRGB) ?? color
             func linear(_ v: CGFloat) -> CGFloat { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }

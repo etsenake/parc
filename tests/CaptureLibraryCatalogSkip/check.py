@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""P1-F leftover: CaptureLibraryView skips reload when the Captures-visible
-catalog fingerprint already matches the last applied snapshot. combineLatest
-on store/media @Published still sinks while Captures is open; true no-op
-duplicate admissions return before filter/sort/rebuild. Real capture list,
-media membership, folder access, loading/error, and search (force) changes
-still reload.
-"""
 from pathlib import Path
 import re
 
@@ -61,10 +54,6 @@ assert 'search.stringValue = ""; reload(force: true)' in source, \
 assert "reload(force: true)" in source.split("collection.setAccessibilityLabel(\"Media items\")", 1)[1][:80], \
     "initial Captures layout must force the first apply"
 
-# A preview advances work generation to retire in-flight preview work, but it
-# does not retire the Library presentation. Folder-toggle recovery must
-# therefore refresh whenever its owner remains valid, while error reporting
-# uses the presentation lifetime that only invalidate() advances.
 assert "private var presentationGeneration: UInt64 = 0" in source, \
     "missing presentation lifetime distinct from operation generation"
 assert source.count("presentationGeneration &+= 1") == 1, \
@@ -86,7 +75,6 @@ assert toggle and "guard self.ownerValid() else { return }\n                self
 assert "self.presentationGeneration == presentation" in toggle.group(), \
     "folder-toggle error reporting must use presentation lifetime"
 
-# Sibling Library/Downloads fingerprint gates must remain across rebase.
 library = (root / "Sources/ParcApp/LibraryView.swift").read_text()
 assert "if shouldSkipCatalogReload() { return }" in library, \
     "LibraryView catalog fingerprint skip missing after rebase"

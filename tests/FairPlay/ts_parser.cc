@@ -25,7 +25,6 @@ int64_t ReadTimestamp(const uint8_t* p) {
          int64_t(p[3]) << 7 | int64_t(p[4] >> 1);
 }
 
-// The start of every Annex B start code (its leading zeros included) in |es|.
 std::vector<size_t> StartCodes(const std::vector<uint8_t>& es) {
   std::vector<size_t> codes;
   for (size_t i = 0; i + 3 <= es.size(); ++i) {
@@ -38,7 +37,6 @@ std::vector<size_t> StartCodes(const std::vector<uint8_t>& es) {
 }
 
 void SplitAccessUnits(const std::vector<Pes>& pes, std::vector<Sample>* samples) {
-  // The elementary stream with each PES's start offset and timestamps.
   std::vector<uint8_t> es;
   std::map<size_t, const Pes*> starts;
   for (const Pes& unit : pes) {
@@ -65,7 +63,6 @@ void SplitAccessUnits(const std::vector<Pes>& pes, std::vector<Sample>* samples)
     }
     samples->push_back(std::move(sample));
   }
-  // EsAdapterVideo's durations: the distance to the next frame's DTS.
   for (size_t n = 0; n < samples->size(); ++n) {
     Sample& sample = (*samples)[n];
     sample.duration = n + 1 < samples->size() ? (*samples)[n + 1].dts - sample.dts
@@ -105,7 +102,7 @@ void SplitAdtsFrames(const std::vector<Pes>& pes, std::vector<Sample>* samples) 
   }
 }
 
-}  // namespace
+}
 
 bool ParseTransportStream(const std::vector<uint8_t>& data, bool video, TsElementaryStream* stream,
                           std::string* error) {
@@ -127,7 +124,6 @@ bool ParseTransportStream(const std::vector<uint8_t>& data, bool video, TsElemen
     const uint8_t* payload = p + offset;
     const size_t size = 188 - offset;
     if ((pid == 0 || pid == pmt_pid) && unit_start) {
-      // Sections that fit their packet only, as the vector's do.
       const size_t pointer = 1 + size_t(payload[0]);
       const uint8_t* section = payload + pointer;
       const size_t length = pointer + 3 <= size ? ((section[1] & 0xf) << 8) | section[2] : 0;
@@ -200,8 +196,6 @@ std::vector<uint8_t> TsAudioSetupConfig(const std::vector<uint8_t>& descriptors)
   for (size_t i = 0; i + 2 <= descriptors.size(); i += 2 + descriptors[i + 1]) {
     const uint8_t* d = descriptors.data() + i + 2;
     const size_t length = descriptors[i + 1];
-    // registration_descriptor: 'apad', audio_type, priming, version,
-    // setup_data_length, setup_data.
     if (descriptors[i] != 0x05 || length < 12 || i + 2 + length > descriptors.size() ||
         std::string(d, d + 4) != "apad") {
       continue;
@@ -213,4 +207,4 @@ std::vector<uint8_t> TsAudioSetupConfig(const std::vector<uint8_t>& descriptors)
   return {};
 }
 
-}  // namespace parc::fairplay::test
+}

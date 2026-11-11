@@ -1,7 +1,5 @@
 import AppKit
 
-/// Offscreen command bar surface, palette, hairline, row highlight and cell
-/// colours (CommandBarAppearance.swift). No browser, provider or window focus.
 @main @MainActor struct AppearanceTests {
     static func main() {
         _ = NSApplication.shared
@@ -26,16 +24,11 @@ import AppKit
             let d = a - b; return max(abs(d.x), abs(d.y), abs(d.z), abs(d.w)) <= tolerance
         }
 
-        //
-        // 0.759): dark focus 0.801, 0.080, 0.444 at 0.8075; light focus 0.877,
-        // 0.428, 0.654; dark subtitle is tintedLight at 0.5 over black.
         let pink = NSColor(colorSpace: .extendedSRGB, components: [1.0698519945144653, 0.5164691805839539, 0.7590587735176086, 1], count: 4)
             .usingColorSpace(.displayP3)!
         let theme = SpaceTheme.singleColor(ThemeColor(red: Double(pink.redComponent), green: Double(pink.greenComponent),
                                                       blue: Double(pink.blueComponent), colorSpace: .displayP3)!)
         let palette = CommandBarPalette(theme: theme)
-        // A light Space in a dark-mode app: the centred bar and a bar with a
-        // query follow the app; only the empty sidebar bar takes the Space's.
         expect(CommandBarPalette.panelAppearance(inlineEmpty: false, space: light, window: nil) == nil, "the centred bar follows the app")
         expect(CommandBarPalette.panelAppearance(inlineEmpty: false, space: light, window: dark) === dark, "a dark window keeps its bar dark")
         expect(CommandBarPalette.panelAppearance(inlineEmpty: true, space: light, window: dark) === light, "the empty sidebar bar takes the Space's")
@@ -46,7 +39,6 @@ import AppKit
                "field text selection is the palette subtitle")
         expect(near(rgba(palette.inputIcon, dark), SIMD4(1.019, 0.903, 0.951, 1)), "field icon is maxContrastColor")
         expect(near(rgba(palette.scopePill, dark), rgba(palette.selected, dark)), "the pill's default colour is focus")
-        // A Space without a colour selects in the neutral grey palette (inferred), never the accent.
         let neutral = CommandBarPalette(theme: SpaceTheme())
         let neutralDark = SIMD4<Double>(0.356, 0.356, 0.356, 0.8075), neutralLight = SIMD4<Double>(0.6, 0.6, 0.6, 1)
         func accent(_ appearance: NSAppearance) -> [SIMD4<Double>] {
@@ -60,7 +52,6 @@ import AppKit
                && near(rgba(neutral.inputSelection, light), SIMD4(0.68, 0.68, 0.68, 1)), "neutral field selection")
         expect(near(rgba(neutral.scopePill, dark), neutralDark), "the scope and Actions pills follow the neutral focus")
 
-        //
         expect(near(rgba(CommandBarPalette.rowHover, dark), SIMD4(1, 1, 1, 0.05)), "dark hover")
         expect(near(rgba(CommandBarPalette.rowHover, light), SIMD4(0, 0, 0, 0.05)), "light hover")
         expect(near(rgba(CommandBarPalette.textPrimary, dark), SIMD4(1, 1, 1, 0.8)), "dark primary text")
@@ -75,7 +66,6 @@ import AppKit
         expect(NSFontManager.shared.weight(of: CommandBarTypography.label) == NSFontManager.shared.weight(of: .systemFont(ofSize: 13, weight: .medium)),
                "label is medium weight")
 
-        // Surface: popover material, wash and decorative rings in each appearance.
         let window = NSWindow(contentRect: NSRect(x: -30000, y: -30000, width: 900, height: 500), styleMask: [.borderless], backing: .buffered, defer: false)
         let surface = PopoverBackgroundView(blending: .withinWindow)
         window.contentView = surface
@@ -105,7 +95,6 @@ import AppKit
                "inline sidebar bar has a fill and no material or ring")
         surface.sidebarBrowsing = false
 
-        // Shadow: a view around the bar in its window that ignores the mouse, masked to outside the bar.
         let bar = NSRect(x: 100, y: 200, width: 700, height: 326)
         let m = CommandBarShadowView.margins
         let view = CommandBarShadowView(frame: NSRect(x: 0, y: 0, width: bar.width + m.left + m.right,
@@ -122,14 +111,12 @@ import AppKit
         CommandBarBounce.play(on: view.shadowLayer, about: view.barCentreOffset)
         let shadowFrom = ((view.shadowLayer.animation(forKey: CommandBarBounce.key) as? CASpringAnimation)?.fromValue as? NSValue)?
             .caTransform3DValue ?? CATransform3DIdentity
-        // The layer scales about its anchor, the middle of its bounds; the bar sits off that middle.
         let barFromAnchor = CGPoint(x: view.barFrame.midX - view.shadowLayer.bounds.midX, y: view.barFrame.midY - view.shadowLayer.bounds.midY)
         let barMoved = barFromAnchor.applying(CATransform3DGetAffineTransform(shadowFrom))
         expect(view.shadowLayer.anchorPoint == CGPoint(x: 0.5, y: 0.5) && view.shadowLayer.frame == view.bounds
                && barFromAnchor.y != 0 && abs(barMoved.x - barFromAnchor.x) < 0.0001 && abs(barMoved.y - barFromAnchor.y) < 0.0001
                && abs(shadowFrom.m11 - 0.95) < 0.0001, "the shadow bounces about the bar's centre, not its own")
 
-        // Scoped search: the bar's spring bounce and the colour splash under it.
         let bounce = CommandBarBounce.animation(about: CGPoint(x: 350, y: 32))
         let stiffness = pow(2 * CGFloat.pi / 0.7, 2), damping = 4 * CGFloat.pi * 0.9 / 0.7
         expect(bounce.keyPath == "transform" && bounce.mass == 1 && abs(bounce.stiffness - stiffness) < 0.001
@@ -151,15 +138,11 @@ import AppKit
         expect(CommandBarSplashView.blurRadius == 150 && CommandBarSplashView.duration == 1.2,
                "the splash blurs to 150 and fades over 1.2 seconds")
 
-        // Hairline: one device pixel in CommandBarHairlineDividerColor.
         let hairline = CommandBarHairline(frame: NSRect(x: 12, y: 64, width: 700, height: CommandBarHairline.height(in: window)))
         surface.addSubview(hairline); window.appearance = dark; hairline.updateLayer()
         expect(CommandBarHairline.height(in: window) == pixel && CommandBarHairline.height(in: nil) == 1, "one device pixel")
         expect(near(rgba(hairline.layer?.backgroundColor), SIMD4(1, 1, 1, 0.1)), "hairline paints white 0.1 in dark")
 
-        // Row highlight: a plain 2-point-inset layer, radius 6, with an implicit fade.
-        // Implicit actions need a rendered tree: order the offscreen window in
-        // without activating the app or making it key.
         window.orderFrontRegardless()
         let row = CommandResultRowView(frame: NSRect(x: 0, y: 0, width: 600, height: 50))
         row.selectedColor = palette.selected
@@ -180,12 +163,10 @@ import AppKit
         row.isSelected = false
         expect(rgba(row.highlight.backgroundColor).w == 0, "deselection clears")
 
-        // Rows default to the neutral palette, not the system accent.
         let plainRow = CommandResultRowView()
         expect(near(rgba(plainRow.selectedColor, dark), neutralDark) && near(rgba(plainRow.selectedColor, light), neutralLight)
                && !accent(dark).contains { near($0, rgba(plainRow.selectedColor, dark), 0.05) }, "no system-accent row default")
 
-        // Cell colours: Type Travel tiles and keycaps; favicon tiles only when selected.
         let favicon = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in true }
         let site = CommandResultCell(title: "YouTube", detail: "youtube.com", accessory: "", isTab: false, icon: favicon, enabled: true)
         let command = CommandResultCell(title: "New Easel", detail: "", accessory: "⌃⇧E", isTab: false,
@@ -212,8 +193,6 @@ import AppKit
         expect(near(rgba(plainCell.selectedColor, dark), neutralDark)
                && !accent(dark).contains { near($0, rgba(plainCell.selectedColor, dark), 0.05) }, "no system-accent cell default")
 
-        // A label framed at its intrinsic (alignment) width loses its 2-point text
-        // padding and truncates, so every row label must hold its single line.
         let longSpace = CommandBarSpaceAction(spaceID: UUID(), profileID: UUID(), name: "Personal Projects", symbol: "briefcase",
                                               profileName: "Work Profile", needsProfileLabel: true)
         let longCell = CommandResultCell(title: "Focus on", detail: longSpace.detail, accessory: "", isTab: false, icon: nil,
@@ -229,7 +208,6 @@ import AppKit
         let keycap = labels(command).first { $0.stringValue == "⌃⇧E" }
         expect(keycap.map { $0.alignmentRect(forFrame: $0.frame).minX } == 4, "the keycap's text starts 4 points in pins it")
 
-        // Appearance changes re-resolve tiles, keycaps and the Space capsule.
         command.setSelected(false)
         window.appearance = light; command.layoutSubtreeIfNeeded()
         expect(near(rgba(tile(command)?.layer?.backgroundColor), SIMD4(0, 0, 0, 0.05)), "light tile after an appearance change")

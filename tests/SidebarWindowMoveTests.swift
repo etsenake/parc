@@ -29,7 +29,7 @@ struct SidebarWindowMoveTests {
         let note = try notes.create(), easel = try easels.create(title: "Original")
         let n = tab("Note", parent: child.id, url: InternalPage.note(note.document.id).urlString)
         var e = tab("Easel", url: InternalPage.easel(easel.document.id).urlString)
-        e.kind = .today // The original split anchor remains inside the nested saved folder.
+        e.kind = .today
         let web = tab("Web", parent: folder.id), keep = tab("Keep")
         let split = BrowserSplitLayout(sidebarAnchorID: n.id, customTitle: "Original split", spaceID: source.id,
             tabIDs: [n.id,e.id], orientation: .vertical, widthFactors: [0.3,0.7])
@@ -58,8 +58,6 @@ struct SidebarWindowMoveTests {
         try check(SidebarWindowMove(items: [.folder(folder.id)], sourceSpaceID: source.id, profileID: profile.id, to: cycle, before: nil, state: initial) == nil, "No descendant cycle")
         let rootMove = SidebarWindowMove(items: [.split(split.id)], sourceSpaceID: source.id, profileID: profile.id,
             to: location, before: nil, state: initial)!
-        // SP21 restores the legacy mixed group in its anchor's container: the
-        // Today child joins the anchor's nested folder with the same identity.
         let migrated = initial.tabs.first { $0.id == e.id }!
         try check(migrated.kind == .pinned && migrated.folderID == child.id && migrated.url == e.url,
                   "Restored mixed child enters its split anchor's folder")

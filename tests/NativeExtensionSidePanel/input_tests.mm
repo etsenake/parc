@@ -1,4 +1,3 @@
-// Inert AppKit event-admission checks. No renderer, Browser or activation.
 #import "extension_side_panel_input.h"
 #include <cstdio>
 #include <cstdlib>
@@ -46,7 +45,6 @@ int main() {
                           NSEventModifierFlagOption, NSEventModifierFlagShift})
       EXPECT(!NativeExtensionSidePanelDismissesForKey(
           Key(original, 53, modifier), original));
-    // Caps Lock does not turn plain Escape into a shell shortcut.
     EXPECT(NativeExtensionSidePanelDismissesForKey(
         Key(original, 53, NSEventModifierFlagCapsLock), original));
     original.keyForTest = NO;

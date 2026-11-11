@@ -40,8 +40,6 @@ import AppKit
         }
         let refused = SplitPaneMenu.make(orientation: .horizontal, index: 1, count: 3) { _ in nil }
         check(refused.items.allSatisfy { $0.isSeparatorItem || !$0.isEnabled }, "A refused native owner cannot leave any enabled action")
-        //
-        // the appearance it draws in, at its own size; shown on macOS 27.
         func pixels(_ image: NSImage, _ appearance: NSAppearance.Name) -> Data {
             let size = image.size
             let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
@@ -54,7 +52,6 @@ import AppKit
             NSGraphicsContext.restoreGraphicsState()
             return Data(bytes: bitmap.bitmapData!, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
         }
-        // AppKit sizes an "@2x" file at half its pixels.
         func rendition(_ file: String) -> NSImage {
             NSImage(contentsOf: SplitPaneMenuArtwork.directory!.appendingPathComponent(file + "@2x.png"))!
         }
@@ -111,12 +108,10 @@ import AppKit
         check(!session.isValid, "Returning owner cannot revive a cancelled presentation")
         session.cancel()
         check(store.state == before, "Repeated cancellation never changes original content records")
-        //
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: .borderless, backing: .buffered, defer: false)
         let paneView = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 200)); window.contentView = paneView
         let highlight = SplitPaneHighlight(); highlight.attach(to: paneView)
         let shape = highlight.layer
-        // Core Animation only runs implicit actions on a layer it has committed.
         CATransaction.flush()
         func takeTransitions() -> [String: CFTimeInterval] {
             defer { shape.removeAllAnimations() }

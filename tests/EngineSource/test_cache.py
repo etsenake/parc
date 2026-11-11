@@ -1,4 +1,3 @@
-"""Offline cache dispatch and configuration checks; no engine commands run."""
 import importlib.util
 import json
 from pathlib import Path
@@ -77,7 +76,6 @@ class CacheTests(unittest.TestCase):
             self.assertEqual(engine.cache_backend(self.src), [])
 
     def test_cache_rules_hash_sdk_and_compiler_and_keep_links_local(self):
-        # Starlark's subset here also evaluates as Python with its imported modules supplied.
         rules = [{"name": "clang/" + name, "inputs": ["compiler"], "remote": True}
                  for name in ["cc", "cxx", "cxx_module", "objc", "objcxx", "link", "asm"]]
         original = SimpleNamespace(step_config=json.dumps({"rules": [{"name": "codesign", "remote": False}],

@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""P1-F leftover: DocumentsLibraryView skips reload when the Documents-visible
-catalog fingerprint already matches the last applied snapshot. NoteStore.changes
-still sinks while Documents is open; true no-op duplicate admissions return
-before filter/sort/rebuild. Real note/easel list, persist, membership, profile
-removal pending, and search (force) changes still reload.
-"""
 from pathlib import Path
 import re
 
@@ -59,7 +53,6 @@ assert "reload(force: true)" in source.split("catch { empty.stringValue = error.
 assert ".changes.sink { [weak self] in self?.reload() }" in source, \
     "NoteStore.changes must still sink through the unforced reload path"
 
-# Sibling Library/Downloads fingerprint gates must remain across rebase.
 library = (root / "Sources/ParcApp/LibraryView.swift").read_text()
 assert "if shouldSkipCatalogReload() { return }" in library, \
     "LibraryView catalog fingerprint skip missing after rebase"

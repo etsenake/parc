@@ -14,7 +14,7 @@ struct LinkRoutingStoreTests {
         let store = LinkRoutingStore(directory: directory)
         let unreadableMessage = store.errorMessage
         precondition(unreadableMessage != nil)
-        precondition(!store.save(LinkRoute())) // Validation may replace the initial error.
+        precondition(!store.save(LinkRoute()))
         var valid = LinkRoute()
         valid.conditions[0].pattern = "example.com"
         precondition(!store.save(valid))
@@ -24,7 +24,6 @@ struct LinkRoutingStoreTests {
         precondition(store.state.rules.isEmpty)
         print("LinkRoutingStore unreadable-file preservation passed")
 
-        // Identical recommit must skip the atomic rewrite while real changes still persist.
         let liveDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: liveDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: liveDirectory) }

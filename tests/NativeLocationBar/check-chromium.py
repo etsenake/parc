@@ -18,8 +18,6 @@ def flags_from(path, language_flags="cflags_cc", include_module_deps=True):
         if not line:
             break
         key, value = line.split(" =", 1)
-        # Only Ninja's literal escapes are accepted; variable expansion would
-        # require evaluating the actual build graph, which this tool never does.
         value = re.sub(r"\$([$: ])", r"\1", value.lstrip())
         if re.search(r"\$[A-Za-z_{]", value):
             raise RuntimeError(f"Unexpanded Ninja variable in {path}: {key}")

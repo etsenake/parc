@@ -1,5 +1,4 @@
 #!/bin/bash
-# Inert native component only; never launches Parc or an engine.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 out=${1:?Usage: check.sh outside-repository-output-directory}

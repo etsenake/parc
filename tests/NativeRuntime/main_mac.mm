@@ -1,4 +1,3 @@
-// Copyright 2026 Parc contributors.
 #import <AppKit/AppKit.h>
 #include <dlfcn.h>
 #include <sys/stat.h>
@@ -29,8 +28,7 @@ struct API {
 API api{};
 int result = 1;
 bool shutdown_complete = false;
-// No NSApplication terminate recursion, nested event loop, or second engine owner.
-}  // namespace
+}
 @class PCRuntimeController;
 @interface PCRuntimeApplication : NSApplication <CrAppControlProtocol>
 @property(nonatomic, assign) BOOL handlingSendEvent;
@@ -315,9 +313,6 @@ bool shutdown_complete = false;
 - (void)failWithError:(NSError*)error
                  page:(PCNativePage*)page
                source:(NSString*)source {
-  // Record the real error and lifecycle context before fail() starts teardown.
-  // A renderer notification during close is still a failure here; this receipt
-  // distinguishes it from an unexplained crash without changing the verdict.
   std::fprintf(stderr,
                "NATIVE_RUNTIME_ERROR source=%s domain=%s code=%ld closing=%d "
                "completed_cases=%ld page=%s expected_page=%s page_closed=%d\n",
@@ -365,9 +360,6 @@ bool shutdown_complete = false;
               if (!shutdown_complete) {
                 result = 1;
               } else {
-                // NSApp outlives CEF. A real late accessibility request
-                // must not recreate an engine accessibility scope after
-                // shutdown.
                 (void)[NSApp accessibilityRole];
                 std::fprintf(stdout, "NATIVE_ACCESSIBILITY_SHUTDOWN_PASS "
                                      "query_after_shutdown=true\n");
@@ -402,9 +394,6 @@ bool shutdown_complete = false;
     return _otherContainer;
   }
   if (page == _page) {
-    // Reconciliation can revisit a known tab while the detach case awaits its
-    // deferred auth result. Keep that exact page detached until the driver
-    // restores it; never adopt a second page or interfere with the lease.
     if (!_extensionDocument && !_videoDocument && _running &&
         _case == PCRuntimeHTTPAuthDetach && page.nativeView.window == nil) {
       return nil;
@@ -570,7 +559,7 @@ bool ValidateRoot(NSString* root) {
                                        error:nil]
       isEqualToString:@"Parc native runtime test v1\n"];
 }
-}  // namespace
+}
 int main(int argc, char** argv) {
   @autoreleasepool {
     const bool extension_suite =
@@ -637,7 +626,6 @@ int main(int argc, char** argv) {
     LOAD(pip, parc_test_video_pip)
     LOAD(cancel_pip, parc_test_cancel_video_pip)
 #undef LOAD
-    // Do not pass the marker path as a navigable CEF positional argument.
     char test_switch[] = "--parc-native-runtime-controller-tests";
     char* engine_argv[] = {argv[0], argv[2], test_switch, nullptr};
     int exit_code = 1;
@@ -676,8 +664,6 @@ int main(int argc, char** argv) {
                    result == 0 ? "PASS" : "FAIL",
                    shutdown_complete ? "true" : "false");
     }
-    // Do not unload Chromium: Objective-C classes remain registered. Process
-    // exit follows genuine engine shutdown and includes its real exit code.
     return result;
   }
 }

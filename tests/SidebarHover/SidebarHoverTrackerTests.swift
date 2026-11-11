@@ -12,8 +12,6 @@ import QuartzCore
     static func wait(_ seconds: TimeInterval) { RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds)) }
     static func main() {
         _ = NSApplication.shared
-        // Real AppKit hierarchy, outside the desktop and never key; the pointer
-        // and the listening condition are injected. No browser or input.
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 700),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -51,15 +49,11 @@ import QuartzCore
         check(published.count == 1 && tracker.info[.window] == .inside && tracker.info[.innerLeftEdge] == .none,
               "inside-window motion does not publish or change regions")
         check(tracker.stopScheduleCount == 0, "inside-window motion does not arm the edge stop")
-        // Identical screen point: evaluate is a true no-op (no rebuild, no publish).
         let samePointBuilds = regionBuilds
         tracker.mouseMoved()
         check(regionBuilds == samePointBuilds && published.count == 1,
               "an identical pointer skips containment work")
 
-        // A flipped root: point (3, 690) is the bottom-left, inside the 6 pt edge.
-        // Geometry refresh re-tests containment; MouseListener's stop arms only
-        // on a moved event while a stoppable edge is held.
         let edgeBuilds = regionBuilds
         pointer = NSPoint(x: 3, y: 690); tracker.refresh()
         check(regionBuilds > edgeBuilds, "entering the inner edge rebuilds the widened zones")
@@ -78,12 +72,10 @@ import QuartzCore
         check(tracker.info[.innerTopLeftEdge] == .inside && tracker.info[.innerLeftEdge] == .none, "top-left in flipped coordinates")
         check(tracker.stopScheduleCount == 2, "a new stoppable edge arms the stop again")
 
-        // Lingering in the floating sidebar zone.
         presentation = .floating
         tracker.setNeedsRefresh()
         pointer = NSPoint(x: 300, y: 350); tracker.refresh()
         check(tracker.info[.sidebar] == .inside, "the floating zone reaches 308 pt")
-        // Sidebar only lingers; it never stop-promotes, so in-zone motion stays quiet.
         let afterSidebar = tracker.stopScheduleCount
         tracker.mouseMoved()
         check(tracker.stopScheduleCount == afterSidebar, "sidebar-only motion does not arm the edge stop")
@@ -92,9 +84,6 @@ import QuartzCore
         wait(0.12)
         check(tracker.info[.sidebar] == .hasLingered && published.last?[.sidebar] == .hasLingered, "lingered after 0.15 s and published")
 
-        // Several moved events share one stop work item; it still fires 0.08 s
-        //
-        // check would accept.
         let beforeBurst = tracker.stopScheduleCount
         pointer = NSPoint(x: 3, y: 400); tracker.refresh()
         check(tracker.info[.innerLeftEdge] == .inside, "burst starts on the inner edge")
@@ -109,8 +98,6 @@ import QuartzCore
         check(tracker.info[.innerLeftEdge] == .hasStopped && published.last?[.innerLeftEdge] == .hasStopped,
               "stop is still 0.08 s after the last move")
 
-        // Losing the key window stops listening, resets every region to none
-        //
         let before = published.count
         listening = false; NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
         check(!tracker.isListening && tracker.info == SidebarHoverInfo(), "resigning key resets every region")
@@ -124,8 +111,6 @@ import QuartzCore
         listening = true; NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
         check(tracker.isListening && tracker.info[.sidebar] == .inside && tracker.info[.window] == .inside
               && published.count == before + 2, "becoming key re-tests the pointer")
-        // A refresh starts or stops the listener for the current state even
-        // before the notification reaches the tracker.
         listening = false; tracker.refresh()
         check(!tracker.isListening && published.last == SidebarHoverInfo() && published.count == before + 3,
               "a refresh after losing key resets and reports")
@@ -133,8 +118,6 @@ import QuartzCore
         check(tracker.isListening && tracker.info[.sidebar] == .inside && published.count == before + 4,
               "a refresh in the key window starts listening and reports")
 
-        // Resizing drops the tracker without a report; the new tracker reports
-        // on the next main-queue turn, not inside the caller's transaction.
         let entered = published.count
         tracker.isEnabled = false
         check(tracker.info == SidebarHoverInfo() && published.count == entered && !tracker.isListening,

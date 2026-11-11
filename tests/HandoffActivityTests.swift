@@ -1,7 +1,5 @@
 import Foundation
 
-/// HandoffActivity: what Parc publishes for its current page and which
-/// continued activities it opens.
 @main
 struct HandoffActivityTests {
     static var count = 0

@@ -3,10 +3,6 @@ import CryptoKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-///
-/// the badge cell carrying the download progress renderer, and the
-/// DownloadToLibrary bin's item. Disposable off-screen windows only, synthetic
-/// download records in a temporary store, a manual clock; no browser.
 @MainActor final class ManualClock {
     private(set) var now: TimeInterval = 0
     private var pending: [(at: TimeInterval, order: Int, body: @MainActor () -> Void)] = []
@@ -37,10 +33,7 @@ import UniformTypeIdentifiers
                            windowNumber: view.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
     }
     static func settle(_ seconds: TimeInterval = 0.05) { RunLoop.current.run(until: Date().addingTimeInterval(seconds)) }
-    /// Defaults domains `freshPreferences()` handed out; `main` removes them.
     static var preferenceSuites: [String] = []
-    /// Library entry preferences in their own throwaway defaults domain,
-    /// emptied as it is handed out in case an earlier run stopped early.
     static func freshPreferences() -> LibraryEntryPreferences {
         let suite = "parc.library-entry-checks.\(preferenceSuites.count)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -48,27 +41,16 @@ import UniformTypeIdentifiers
         preferenceSuites.append(suite)
         return LibraryEntryPreferences(defaults: defaults)
     }
-    /// The visible cell as SwiftUI draws it: the progress renderer it hosts in
-    /// the cell, whose frame SwiftUI moves on each animation frame. The first
-    /// sample is the frame before any run-loop turn; then every turn for
-    /// `seconds`. Times count from `start`, the first sample that moved from
-    /// the first by more than 0.01 point, so a late first render does not
-    /// shift the curve. `progress` runs from 0 at the old pose to 1 at the
-    /// last sample, along the model pose's y change `travel`.
     struct CellMotion {
         let samples: [(time: TimeInterval, y: CGFloat, progress: CGFloat)]
         let start: TimeInterval
-        /// The last sample at or before `time` after the motion started.
         func progress(at time: TimeInterval) -> CGFloat { samples.last { $0.time <= start + time }?.progress ?? 0 }
         var peak: CGFloat { samples.map(\.progress).max() ?? 0 }
-        /// Every sample from `time` after the motion started is at the new pose.
         func rests(after time: TimeInterval) -> Bool {
             let late = samples.filter { $0.time >= start + time }
             return !late.isEmpty && late.allSatisfy { abs($0.progress - 1) < 0.02 }
         }
-        /// Nothing moved at all.
         var still: Bool { samples.allSatisfy { abs($0.y - samples[0].y) < 0.01 } }
-        /// (seconds after the motion started, progress) for failure messages.
         var trace: [(Double, Double)] { samples.map { (Double($0.time - start), Double($0.progress)) } }
     }
     static func cellMotion(_ entry: SidebarLibraryEntry, travel: CGFloat, for seconds: TimeInterval) -> CellMotion {
@@ -94,8 +76,6 @@ import UniformTypeIdentifiers
         expect(LibraryArtwork.directory == Bundle.main.resourceURL?.appendingPathComponent("Library", isDirectory: true)
                && LibraryArtwork.boxOfThings("box") != nil, "the artwork loads from the bundle's Library resources")
 
-        //
-        // and the template flag, bitmaps at 1× and 2× plus the vector.
         let readme = try String(contentsOf: resources.appendingPathComponent("README.md"), encoding: .utf8)
         let files = try FileManager.default.contentsOfDirectory(atPath: resources.path).filter { $0 != "README.md" }.sorted()
         let originalArtwork = Set(["box", "circle", "glow", "star", "triangle"].flatMap { ["\($0).pdf", "\($0).png", "\($0)@2x.png"] }
@@ -121,7 +101,6 @@ import UniformTypeIdentifiers
         }
         expect(LibraryArtwork.emptyFavicon?.size == NSSize(width: 14, height: 14), "EmptyFavicon is the 14-point asset")
 
-        //
         let light = TranslucentButtonColors.standard(dark: false), dark = TranslucentButtonColors.standard(dark: true)
         func rgba(_ color: NSColor) -> [CGFloat] { let c = color.usingColorSpace(.sRGB)!; return [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent] }
         expect(rgba(light.hoveredBackground) == [0, 0, 0, 0.071] && rgba(light.pressedBackground) == [0, 0, 0, 0.090]
@@ -137,7 +116,6 @@ import UniformTypeIdentifiers
         expect(light.foreground(pressed: false, enabled: true) == light.foreground && light.foreground(pressed: true, enabled: true) == light.pressedForeground
                && light.foreground(pressed: false, enabled: false) == light.disabledForeground, "Foreground: A11, pressed A12, disabled A8")
 
-        //
         let clock = ManualClock()
         let icon = BoxOfThingsIconState(); icon.after = clock.schedule
         icon.hover(true, reduceMotion: false)
@@ -153,7 +131,6 @@ import UniformTypeIdentifiers
         icon.hover(true, reduceMotion: true)
         expect(!icon.isHovered && !icon.twinkle1 && clock.count == 0, "Reduce Motion: no pose, no twinkle, nothing scheduled")
 
-        // The sidebar entry in a flipped sidebar-like superview.
         let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 228, height: 400), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let sidebar = FlippedView(frame: NSRect(x: 0, y: 0, width: 228, height: 400))
@@ -162,7 +139,6 @@ import UniformTypeIdentifiers
         let entry = SidebarLibraryEntry()
         entry.preferences = preferences
         entry.model.after = clock.schedule
-        // The badge lifecycle's own timers (its dismissals), in order.
         var lifecycleDelays: [TimeInterval] = []
         entry.lifecycle.after = { delay, body in lifecycleDelays.append(delay); clock.schedule(delay, body) }
         var now = Date(timeIntervalSinceReferenceDate: 1000)
@@ -184,7 +160,6 @@ import UniformTypeIdentifiers
                "The Space strip runs 40…width − 40")
         expect(entry.iconHoverRect == NSRect(x: 8, y: 322.5, width: 32, height: 27), "The icon's hover region: its 81 × 27 ZStack within the button")
 
-        //
         expect(!entry.acceptsFirstResponder && !entry.canBecomeKeyView && !entry.host.acceptsFirstResponder && !entry.host.canBecomeKeyView,
                "No keyboard stop on the entry or its rendering")
         window.makeFirstResponder(entry)
@@ -193,8 +168,6 @@ import UniformTypeIdentifiers
         expect(entryRefused && window.firstResponder !== entry.host && entry.focusRingType != .exterior,
                "Focus is refused even when asked directly, no ring")
 
-        //
-        // the canvas itself is not one.
         var opened: [LibraryEntryPage?] = []
         entry.onOpen = { opened.append($0) }
         let home = entry.homeAccessibilityElement
@@ -211,7 +184,6 @@ import UniformTypeIdentifiers
         expect(!entry.host.isAccessibilityElement() && entry.host.accessibilityChildren()?.isEmpty == true, "The SwiftUI rendering adds no element")
         expect(home.accessibilityPerformPress() && opened.count == 1 && opened[0] == nil, "AX press clicks with no target page")
 
-        // Pointer: hover regions, press on mouse-up inside, drag-out cancels.
         let centre = NSPoint(x: entry.buttonRect.midX, y: entry.buttonRect.midY)
         entry.pointerMoved(to: centre)
         expect(entry.state.hovered && entry.state.icon.isHovered && entry.state.icon.twinkle1, "Hovering the button hovers the style and the icon")
@@ -232,10 +204,6 @@ import UniformTypeIdentifiers
         entry.mouseUp(with: event(.leftMouseUp, centre, in: entry, flags: [.shift, .option]))
         expect(opened.count == 3 && opened[2] == nil, "Modifiers change nothing")
 
-        //
-        // button's bottom-trailing corner. The canvas is larger than the
-        // button, so the configuration names the button's rect; the shared
-        // controller owns the 0.45 s idle, the window and dismissal.
         let button = TooltipConfiguration("View Library", shortcut: .command("viewLibrary:"), anchorRect: entry.buttonRect)
         expect(entry.parcTooltip == button && entry.toolTip == nil, "View Library, anchored to the button, before any pointer")
         entry.pointerMoved(to: nil)
@@ -249,7 +217,6 @@ import UniformTypeIdentifiers
         expect(!entry.state.hovered, "Leaving clears the hover")
         clock.advance(1)
 
-        //
         let menu = entry.menu(for: event(.rightMouseDown, centre, in: entry))!
         expect(menu.items.map(\.title) == ["Show media from:", "Documents", "Desktop", "Screenshots", "Saved Captures", "Downloads"],
                "the menu titles in order, Parc Captures as Parc's Saved Captures")
@@ -257,9 +224,6 @@ import UniformTypeIdentifiers
                "All five sources badge by default (the default turns every source on)")
         expect(entry.menu(for: event(.rightMouseDown, NSPoint(x: 2, y: 2), in: entry)) == nil, "No menu outside the button")
 
-        //
-        //
-        // DL26/DL27's renderer as its DownloadProgressBadge.
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try BrowserStore(directory: directory), profile = store.state.profiles[0].id
@@ -271,7 +235,6 @@ import UniformTypeIdentifiers
         func feed(_ items: [BrowserDownload], badging: Bool = true) {
             entry.updateFlyoutDownloads(items, profiles: [profile], privateWindow: false, badging: badging)
         }
-        /// The dismissals the badge lifecycle scheduled while `body` ran.
         func dismissals(_ body: () -> Void) -> [TimeInterval] {
             let start = lifecycleDelays.count
             body()
@@ -292,9 +255,6 @@ import UniformTypeIdentifiers
         expect(entry.accessibilityChildren()?.count == 2 && badgeElement?.accessibilityLabel() == "Download \u{2014} report.pdf"
                && badgeElement?.accessibilityRole() == .button && badgeElement?.accessibilityValue() == nil && home.accessibilityValue() == nil,
                "the visible HomeBadgingCell: a button labelled Download — file, no progress value anywhere")
-        // The drawn landing from the seed at b − 8: timingCurve(0.78, 0, 0.7, 1)
-        // is about a fifth of the way at 0.1 s (linear would be half) and at
-        // rest at 0.2 s, without overshoot.
         let landing = cellMotion(entry, travel: entry.model.cell.y - (LibraryEntryModel.base - 8), for: 0.3)
         expect(abs(landing.progress(at: 0)) < 0.1 && landing.progress(at: 0.1) < 0.35 && landing.progress(at: 0.17) > 0.6
                && landing.rests(after: 0.23) && landing.peak < 1.02,
@@ -305,8 +265,6 @@ import UniformTypeIdentifiers
         clock.advance(0.001)
         expect(entry.model.phase == .shown && entry.model.cell.y == 30 && entry.model.buttonYOffset == 0,
                "At 0.22 s the cell settles to b and the button to rest")
-        // The spring (mass 1, stiffness 500, damping 25, velocity 10) leaves
-        // fast, overshoots b and comes back to rest.
         let settling = cellMotion(entry, travel: entry.model.cell.y - landed, for: 0.8)
         expect(settling.progress(at: 0.08) > 0.6 && settling.peak > 1.05 && settling.rests(after: 0.6),
                "The settle draws the 500/25/10 spring: \(settling.trace)")
@@ -314,7 +272,6 @@ import UniformTypeIdentifiers
         expect(entry.model.presentedSlot(in: entry.flyout.rows, reduceMotion: false) == 0
                && near(cell, NSRect(x: 34 - 16, y: 324 - 16, width: 32, height: 32), 0.5),
                "The 40 × 40 icon at 0.8 in the 40 × 56 cell, offset (−4, −30) then (10, 56 × 0 + 30) from the button's bottom-left: \(cell)")
-        // Opening reads the unread badge: Downloads within 300 s.
         now = now.addingTimeInterval(299)
         _ = home.accessibilityPerformPress()
         expect(opened.last! == .downloads, "A download badge seen under 300 s ago opens Downloads")
@@ -351,7 +308,6 @@ import UniformTypeIdentifiers
                && entry.model.cell == LibraryEntryCellPose(x: -4, y: 50, opacity: 0, scale: 0.2, rotation: -45),
                "At 30 s: hide to x − 14, b + 20, 0, 0.2, −45°")
         expect(entry.hostRect == entry.buttonRect && entry.accessibilityChildren()?.count == 1, "The host is back to 32 × 32; only Home remains")
-        // linear(0.14): half way at 0.07 s, at rest by 0.14 s.
         let leaving = cellMotion(entry, travel: entry.model.cell.y - shownY, for: 0.25)
         expect((0.3...0.7).contains(leaving.progress(at: 0.07)) && leaving.rests(after: 0.17) && leaving.peak < 1.02,
                "The hide draws the 0.14 s linear leave: \(leaving.trace)")
@@ -359,8 +315,6 @@ import UniformTypeIdentifiers
         expect(entry.model.phase == .hidden && entry.model.cell == LibraryEntryCellPose(), "Cleared after 0.16 s")
         feed([finished])
         expect(entry.model.visibleBadge == nil, "A dismissed download is not badged again")
-        // A failed download: the renderer retires at once (BadgingIcon's
-        // EmptyView), the empty cell stays 5 s.
         let other = publish("archive.zip", date: 20)
         now = now.addingTimeInterval(10)
         feed([finished, other])
@@ -386,7 +340,6 @@ import UniformTypeIdentifiers
         var restored = publish("restored.iso", date: 35); restored.nativeIdentity = nil
         feed([finished, restored])
         expect(entry.model.visibleBadge == nil, "Metadata without a live incarnation never shows a badge")
-        // Paused and pending downloads: BadgingIcon's EmptyView, no timer.
         let paused = publish("paused.mov", date: 36)
         var pausedNow = paused; pausedNow.status = .paused
         let pausedDismissals = dismissals { feed([paused]); feed([pausedNow]) }
@@ -401,7 +354,6 @@ import UniformTypeIdentifiers
         expect(entry.model.visibleBadge == nil && entry.badge.activity == nil, "A window that stops badging clears the item and its renderer")
         clock.advance(1)
 
-        // The Downloads source toggle in the menu.
         let shown = publish("photo.png", date: 40)
         feed([shown])
         expect(entry.model.visibleBadge != nil, "Badging on")
@@ -417,8 +369,6 @@ import UniformTypeIdentifiers
         feed([], badging: false)
         clock.advance(1)
 
-        //
-        // 300 s old; a capture's cell is its image at 0.55, dismissed after 5 s.
         func savedCapture(_ title: String, at date: Date) -> SavedCapture {
             SavedCapture(id: UUID(), revision: UUID(), profileID: profile, spaceID: UUID(), spaceName: "Space", title: title,
                          sourceURL: "https://example.com/" + title, createdAt: date, kind: .viewport, pixelWidth: 10, pixelHeight: 10)
@@ -439,7 +389,6 @@ import UniformTypeIdentifiers
         entry.updateFlyoutCaptures([])
         clock.advance(1)
 
-        //
         typealias R = LibraryEntryRoute
         expect(R.decide(target: nil, showing: nil, lastSelected: .captures) == .open(.captures), "No target: the last selected page")
         expect(R.decide(target: .downloads, showing: nil, lastSelected: .captures) == .open(.downloads), "A recent download opens Downloads")
@@ -456,7 +405,6 @@ import UniformTypeIdentifiers
         expect(LibraryEntryLayout.totalHeight(count: 4) == 256 && LibraryEntryLayout.expandedCellWidth(containerWidth: 1200) == 984
                && LibraryEntryLayout.expandedCellWidth(containerWidth: 228) == 212, "Recovered flyout constants")
 
-        // The hover-expanded flyout (HomeBadgingCellStack's rows, flyout/CONTRACT.md).
         let flyout = entry.flyout
         var actions: [String] = []
         entry.onItemAction = { action in
@@ -513,14 +461,12 @@ import UniformTypeIdentifiers
                && LibraryFlyoutText.subtitle(flyout.rows[0], now: Date()) == DownloadRowSubtitle.text(for: movie),
                "Subtitles: a relative date when finished, the Library's download subtitle while running")
 
-        //
         expect(LibraryFlyoutLayout.hiddenOffset(reverseIndex: 0) == 20 && LibraryFlyoutLayout.hiddenOffset(reverseIndex: 3) == 56
                && LibraryFlyoutLayout.stagger(reverseIndex: 0) == 0 && abs(LibraryFlyoutLayout.stagger(reverseIndex: 2) - 0.025) < 1e-12
                && abs(LibraryFlyoutLayout.stagger(reverseIndex: 7) - 0.05) < 1e-12 && LibraryFlyoutLayout.animationDuration == 0.15
                && LibraryFlyoutLayout.animation(reverseIndex: 2)
                     == Animation.interactiveSpring(response: 0.15, dampingFraction: 0.86, blendDuration: 0.25).delay(0.025),
                "Collapsed rows wait 20/56 below; spring 0.15/0.86/0.25 staggered by min(i/4, 1) × 0.05")
-        // Expansion: canExpand && eligibleToExpand && rows.
         expect(!flyout.expanded && flyout.trackedRegions.isEmpty, "Nothing tracks while the window cannot expand")
         entry.canExpand = true
         expect(flyout.trackedRegions == [.button], "canExpand registers the button region only")
@@ -552,9 +498,6 @@ import UniformTypeIdentifiers
         expect(near(cancelFrame.width, 24) && near(cancelFrame.height, 24) && frames[0].contains(cancelFrame)
                && frames[0].maxX - cancelFrame.maxX < 20 && near(cancelFrame.midY, frames[0].midY) && flyout.cancelFrame(paperID) == nil,
                "The running download's 24-point cancel button sits at the trailing edge: \(cancelFrame)")
-        // The running movie is the visible item, so its row is the visible
-        //
-        // icon slot at scale 1, and no second ring for that row.
         func rings(in view: NSView) -> [DownloadActivityBadge] {
             view.subviews.flatMap { ($0 as? DownloadActivityBadge).map { [$0] } ?? rings(in: $0) }
         }
@@ -564,7 +507,6 @@ import UniformTypeIdentifiers
                && near(movieIcon, NSRect(x: frames[0].minX + 4, y: frames[0].midY - 20, width: 40, height: 40), 0.5),
                "The visible running row draws the visible cell's renderer in its thumbnail slot: \(movieIcon)")
 
-        // Pointer: rows hover, the dock lingers the flyout closed.
         let paperCentre = NSPoint(x: frames[2].midX, y: frames[2].midY)
         entry.pointerMoved(to: paperCentre)
         expect(!flyout.buttonHovered && flyout.flyoutHovered && flyout.expanded && flyout.hoveredRow == paperID,
@@ -593,7 +535,6 @@ import UniformTypeIdentifiers
         expect(flyout.expanded, "The button reopens it")
         entry.pointerMoved(to: nil); clock.advance(0.2)
         expect(!flyout.expanded && !flyout.buttonHovered, "Leaving collapses it")
-        // Within 100 ms of the Library closing, hover leaves eligibility alone.
         entry.libraryDidClose()
         entry.pointerMoved(to: buttonCentre); clock.advance(0.15)
         expect(flyout.buttonHovered && !flyout.eligibleToExpand && !flyout.expanded, "The 100 ms close guard")
@@ -601,9 +542,6 @@ import UniformTypeIdentifiers
         now = now.addingTimeInterval(0.101)
         entry.pointerMoved(to: buttonCentre); clock.advance(0.15)
         expect(flyout.expanded, "After 100 ms the button expands again")
-        // The Library opening (canExpand false) unregisters the regions, and
-        //
-        // closing it with the pointer elsewhere never re-expands by itself.
         entry.canExpand = false
         expect(!flyout.expanded && !flyout.buttonHovered && !flyout.flyoutHovered && !flyout.eligibleToExpand
                && flyout.trackedRegions.isEmpty, "Unregistered regions report unhovered")
@@ -614,7 +552,6 @@ import UniformTypeIdentifiers
         expect(flyout.expanded, "Lingering on the button expands it again")
         clock.advance(0.2); settle(0.4)
 
-        // Taps, cancel and menus go through the window's routes.
         let openedBefore = opened.count
         expect(entry.tapRow(paperID) && actions.last == "paper.pdf:open", "A finished download opens")
         expect(entry.tapRow(movieID) && opened.count == openedBefore + 1 && opened.last! == .downloads,
@@ -632,7 +569,6 @@ import UniformTypeIdentifiers
         entry.mouseDown(with: event(.leftMouseDown, paperCentre, in: entry))
         entry.mouseUp(with: event(.leftMouseUp, paperCentre, in: entry))
         expect(actions.last == "paper.pdf:open" && actions.count == 5, "Clicking a row taps it")
-        //
         func titles(_ menu: NSMenu?) -> [String] { menu?.items.map { $0.isSeparatorItem ? "—" : $0.title } ?? [] }
         func enabled(_ menu: NSMenu?) -> [Bool] { menu?.items.filter { !$0.isSeparatorItem }.map(\.isEnabled) ?? [] }
         func invoke(_ menu: NSMenu?, _ title: String) { _ = (menu?.items.first { $0.title == title }?.target as? MenuAction)?.invoke() }
@@ -656,7 +592,6 @@ import UniformTypeIdentifiers
         expect(actions.suffix(2) == ["share:airDrop:Screenshot", "delete:Screenshot"], "A capture's AirDrop and Delete go to the window's routes")
         expect(titles(entry.menu(for: event(.rightMouseDown, paperCentre, in: entry))) == titles(paperMenu), "Right-click on a row")
 
-        // Accessibility: Home and one button per row, no values.
         let children = entry.accessibilityChildren() ?? []
         let labels = children.compactMap { ($0 as? NSAccessibilityElement)?.accessibilityLabel() }
         expect(labels == ["Home", "Capture \u{2014} Screenshot", "Download \u{2014} paper.pdf", "Download \u{2014} failed.bin",
@@ -671,15 +606,12 @@ import UniformTypeIdentifiers
         expect(cancelElement?.accessibilityPerformPress() == true && actions.last == "movie.mov:cancel"
                && (children[2] as? LibraryEntryElement)?.accessibilityPerformPress() == true && actions.last == "paper.pdf:open",
                "AX presses tap and cancel")
-        // While the stack animates a cell's tap is the entry's click.
         entry.pointerMoved(to: nil); clock.advance(0.01)
         expect(!flyout.expanded && flyout.animating, "Collapsing animates")
         let beforeAnimatedTap = opened.count
         expect(entry.tapVisibleBadge() && opened.count == beforeAnimatedTap + 1, "A tap while animating clicks the entry (onDidClickEntryPoint)")
         clock.advance(1)
 
-        // The visible badge's cell expands the flyout at once while hovered.
-        // The running movie has been the visible item since it was published.
         clock.advance(1); settle(0.3)
         let cellRect = entry.visibleCellRect ?? .zero
         expect(entry.model.visibleBadge == movieID && near(cellRect, NSRect(x: 18, y: 301.6, width: 32, height: 44.8)),
@@ -689,8 +621,6 @@ import UniformTypeIdentifiers
         expect(flyout.expanded && !flyout.visibleBadgeHovered && flyout.flyoutHovered, "Hovering the visible cell expands; expanding clears its hover")
         entry.pointerMoved(to: nil); clock.advance(1)
 
-        // A cancelled download's cell is BadgingIcon's EmptyView: the renderer
-        // retires at once, the empty cell stays 5 s, then the 0.14 s hide runs on it.
         var cancelled = movie; cancelled.status = .cancelled
         let cancelDismissals = dismissals {
             entry.updateFlyoutDownloads([older, paper, cancelled, failed, oldest, hidden], profiles: [profile], privateWindow: false)
@@ -705,8 +635,6 @@ import UniformTypeIdentifiers
                "…then the leaving pose animates on the empty cell: \(cancelLeaving.trace)")
         clock.advance(1)
 
-        // Expanding dismisses a finished visible download (onDidExpandFlyout),
-        // after the expansion reset gives a completed item 0.55.
         var song = publish("song.mp3", date: 6_000)
         entry.updateFlyoutDownloads([older, paper, cancelled, song], profiles: [profile], privateWindow: false)
         let songID = "download:" + song.id
@@ -723,16 +651,11 @@ import UniformTypeIdentifiers
         entry.pointerMoved(to: nil); clock.advance(1)
         expect(entry.badge.activity == nil, "Nothing renders after the dismissal")
 
-        // Drag: a completed file through DL28's provider, a capture as PNG,
-        // nothing for an unfinished download (ConditionalDragModifier).
         let temporary = directory.appendingPathComponent("flyout-drag.png")
         try NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in NSColor.systemRed.setFill(); rect.fill(); return true }
             .tiffRepresentation.flatMap { NSBitmapImageRep(data: $0)?.representation(using: .png, properties: [:]) }!.write(to: temporary)
         var fileURL: URL? = temporary
         entry.downloadFileURL = { item in item.status == .completed ? fileURL : nil }
-        // A row pressed in the expanded flyout and moved past the 4-point
-        // threshold: the session the entry asks AppKit to begin is recorded
-        // in its place, and its writer is read as a drop target reads it.
         DraggingSessions.install()
         func expandFlyout() {
             entry.pointerMoved(to: NSPoint(x: entry.buttonRect.midX, y: entry.buttonRect.midY)); clock.advance(0.15); clock.advance(0.2); settle(0.4)
@@ -771,7 +694,6 @@ import UniformTypeIdentifiers
         entry.updateFlyoutDownloads([older, paper, cancelled, song, runningDrag], profiles: [profile], privateWindow: false)
         expect(entry.dragWriter(for: "download:" + runningDrag.id) == nil, "An unfinished download drags nothing")
 
-        // Share content (SharingServiceClient): never performed in checks.
         let red = NSImage(contentsOf: temporary)!
         expect(LibraryFlyoutSharing.isImage(temporary) && !LibraryFlyoutSharing.isImage(directory.appendingPathComponent("a.zip")),
                "An image file shares as its image (URL content type)")
@@ -790,8 +712,6 @@ import UniformTypeIdentifiers
                && deletion.confirmButton.title == "Delete" && deletion.confirmButton.destructive
                && deletion.cancelButton?.title == "Cancel", "the capture Delete confirmation, a destructive Parc dialog")
 
-        // Preview: a previewable completed download opens DL23/DL24's
-        // parent-owned preview from its row (ItemPreviewPresenter → MediaPreviewWindow).
         var photo = publish("holiday.png", status: "completed", received: 100, date: 8_000)
         photo.canOpen = true; photo.canCopyFile = true
         entry.updateFlyoutDownloads([photo, song, paper], profiles: [profile], privateWindow: false)
@@ -805,8 +725,6 @@ import UniformTypeIdentifiers
         expect(preview?.window?.parent === window && preview?.window?.isVisible == true && actions.count == actionsBefore,
                "The preview is a child of this window and nothing was opened")
         expect(preview?.sourceRect?() == entry.convert(entry.buttonRect, to: nil), "Closing returns to the Library button")
-        // Previous/Next walk the flyout's previewable items as listed at the
-        // tap (ItemPreviewPresenter's scoped items), newest first.
         func previewButton(_ label: String, in view: NSView? = nil) -> NSButton? {
             guard let view = view ?? preview?.window?.contentView else { return nil }
             if let button = view as? NSButton, button.accessibilityLabel() == label { return button }
@@ -837,8 +755,6 @@ import UniformTypeIdentifiers
         entry.pointerMoved(to: nil); clock.advance(1)
         entry.downloadFileURL = nil
 
-        // A capture drags its PNG bytes from the profile's capture store
-        // (saved here into this check's own temporary directory).
         let captureStore = CaptureLibraryStore.shared(directory: directory.appendingPathComponent("Captures", isDirectory: true), profileID: profile)
         let png = try Data(contentsOf: temporary)
         let saved = SavedBox(), capturedAt = now
@@ -856,8 +772,6 @@ import UniformTypeIdentifiers
         let captureWriter = writer(captureDrag)
         expect(saved.value != nil && captureDrag.count == 1 && (captureDrag.first?.source as AnyObject?) === entry
                && captureWriter?.types == [.png], "A capture's row drags a lazy PNG provider")
-        // The bytes load from the store after the drag starts. Until then the
-        // provider supplies nothing and AppKit asks it again on the next read.
         var capturePNG = captureWriter?.data(forType: .png)
         while capturePNG == nil && Date() < deadline { settle(0.05); capturePNG = captureWriter?.data(forType: .png) }
         expect(capturePNG == png && delivered(captureWriter) { $0.data(forType: .png) } == png,
@@ -866,7 +780,6 @@ import UniformTypeIdentifiers
         entry.captureStore = nil
         entry.updateFlyoutCaptures([])
 
-        // The sidebar content mask (homeButtonBadgingMaskLayer).
         let expandedLocations = LibraryFlyoutContentMask.locations(totalHeight: 256, height: 800, dockHeight: 50, inset: 0.04).map(\.doubleValue)
         let restingLocations = LibraryFlyoutContentMask.locations(totalHeight: 256, height: 800, dockHeight: 50, inset: 0.14).map(\.doubleValue)
         expect(zip(expandedLocations, [0, 0.0625, 0.0625, 0.3425, 0.4925, 1]).allSatisfy { abs($0 - $1) < 1e-9 }
@@ -929,11 +842,6 @@ import UniformTypeIdentifiers
         entry.updateFlyoutFiles([])
         expect(flyout.rows.isEmpty, "Clearing folder files empties the flyout")
 
-        //
-        // reverseIndex + 30 returns its collapsed cell to the button's corner,
-        // and expanding moves it to its own row on the row's spring. Another
-        // running row draws its own renderer, which outlives the collapse
-        // until the rows have faded.
         let backdrop = publish("backdrop.iso", received: 20, date: 8_500)
         entry.updateFlyoutDownloads([backdrop], profiles: [profile], privateWindow: false)
         clock.advance(1)
@@ -978,8 +886,6 @@ import UniformTypeIdentifiers
         clock.advance(0.5)
         expect(reopenedRing?.activity != nil, "An earlier collapse's retirement never applies to a later expansion")
         entry.pointerMoved(to: nil); clock.advance(1); settle(0.3)
-        // Reduce Motion (Parc adaptation): no travel. The visible cell fades at
-        // the button and the stack draws its row with that row's own renderer.
         SystemOverrides.reduceMotion = true
         entry.pointerMoved(to: buttonCentre)
         expect(entry.state.hovered && !entry.state.icon.isHovered, "Reduce Motion: hovering the entry leaves the box icon at rest")
@@ -998,7 +904,6 @@ import UniformTypeIdentifiers
         entry.updateFlyoutCaptures([])
         clock.advance(1)
 
-        // The bin's item (DownloadArrivalBinItem.make): maxContrast, clear, no-op.
         for isDark in [false, true] {
             let palette = ThemeChromePalette(theme: SpaceTheme(), isDark: isDark)
             let bin = DownloadBinBoxOfThingsItem(palette: palette)
@@ -1011,8 +916,6 @@ import UniformTypeIdentifiers
             expect(!bin.isAccessibilityElement() && !bin.acceptsFirstResponder, "No-op, decorative")
         }
 
-        // Nothing outlives the window: closing it retires the visible item, its
-        // renderer and timers, and a late publication cannot badge again.
         let late = publish("late.bin", date: 9_000)
         let lateDismissals = dismissals { entry.updateFlyoutDownloads([late], profiles: [profile], privateWindow: false) }
         expect(entry.model.visibleBadge != nil && entry.badge.activity != nil && lateDismissals.isEmpty, "Badged before closing")
@@ -1031,7 +934,6 @@ import UniformTypeIdentifiers
         print("Library entry checks passed: \(count)")
     }
 
-    /// Renders the real entry and bin item in disposable windows.
     static func acceptance(_ directory: URL, store: BrowserStore, profile: UUID,
                            publish: (String, String, Int, Double) -> BrowserDownload) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -1059,7 +961,6 @@ import UniformTypeIdentifiers
                 window.contentView = root
                 return (window, root)
             }
-            // The sidebar's bottom: the dock and its leading slot.
             let (window, root) = stage(NSSize(width: 120, height: 120))
             let dock = FlippedView(frame: root.bounds); dock.autoresizingMask = [.width, .height]; root.addSubview(dock)
             let entry = SidebarLibraryEntry()
@@ -1090,12 +991,10 @@ import UniformTypeIdentifiers
             try render(root, "entry-\(scheme)-badge-landing")
             settle(1.0)
             try render(root, "entry-\(scheme)-badge")
-            // Completed: DL27's completion retires, then the file's image (30 s).
             var done = item; done.status = .completed
             entry.updateFlyoutDownloads([done], profiles: [profile], privateWindow: false)
             settle(1.8)
             try render(root, "entry-\(scheme)-badge-completed")
-            // A new capture becomes the visible item: its image in the dashed outline at 0.55.
             entry.updateFlyoutCaptures([SavedCapture(id: UUID(), revision: UUID(), profileID: profile, spaceID: UUID(), spaceName: "Space",
                 title: "Release notes", sourceURL: "https://example.com/notes", createdAt: Date(), kind: .viewport, pixelWidth: 120, pixelHeight: 80)])
             settle(1.0)
@@ -1104,7 +1003,6 @@ import UniformTypeIdentifiers
             entry.updateFlyoutDownloads([], profiles: [profile], privateWindow: false); settle(0.5)
             try render(root, "entry-\(scheme)-after-badge")
             window.close()
-            // The bin card with its item (DownloadArrivalBinView's geometry).
             let (binWindow, binRoot) = stage(NSSize(width: 62, height: 62))
             let card = CALayer(); card.frame = binRoot.bounds.insetBy(dx: 8, dy: 8)
             card.cornerRadius = 12; card.cornerCurve = .continuous
@@ -1125,11 +1023,6 @@ import UniformTypeIdentifiers
         }
     }
 
-    /// The hover-expanded flyout over a sidebar-like list: collapsed with a
-    /// running download's badge, expanded (pointer on the button) with four
-    /// items and with one, and a hovered running row. The sidebar content
-    /// mask is composited from LibraryFlyoutContentMask's own stops (Core
-    /// Animation's render(in:) draws no masks).
     static func flyoutAcceptance(_ directory: URL, scheme: String, palette: ThemeChromePalette, isDark: Bool, store: BrowserStore, profile: UUID,
                                  publish: (String, String, Int, Double) -> BrowserDownload,
                                  stage: (NSSize) -> (NSWindow, NSView)) throws {
@@ -1165,7 +1058,6 @@ import UniformTypeIdentifiers
                                 createdAt: Date(timeIntervalSince1970: base - 1_800), kind: .viewport, pixelWidth: 1200, pixelHeight: 800)
         for (variant, items, captures) in [("several", [movie, paper, archive], [shot]), ("single", [movie], [SavedCapture]())] {
             let (window, root) = stage(size)
-            // A sidebar list beneath the flyout (the content the mask hides).
             let content = FlippedView(frame: root.bounds); content.wantsLayer = true
             root.addSubview(content)
             for (index, title) in ["Inbox", "Calendar", "Q4 planning doc", "Design review", "Team standup notes", "Reading list"].enumerated() {
@@ -1210,7 +1102,6 @@ import UniformTypeIdentifiers
             settle(1.2)
             precondition(entry.flyout.expanded, "The acceptance flyout expands")
             func composite(_ output: String) throws {
-                // Content shown (F) and hidden (B), blended by the mask's alpha.
                 let full = bitmap(root)
                 content.isHidden = true; let bare = bitmap(root); content.isHidden = false
                 let stops = LibraryFlyoutContentMask.locations(totalHeight: LibraryEntryLayout.totalHeight(count: entry.flyout.rows.count),

@@ -1,8 +1,5 @@
 import Foundation
 
-///
-/// identities next to the original, then move the copy to the drop location —
-/// another Space, the App Tray or another Profile included. Temporary store only.
 @main @MainActor
 struct SidebarSplitCopyTests {
     static var count = 0
@@ -58,7 +55,6 @@ struct SidebarSplitCopyTests {
                   && SidebarSplitCopy(items: [.split(split.id), .tab(keep.id)], spaceID: here.id, profileID: profile.id, state: initial) == nil,
                   "Only whole splits are copied here; loose tabs and folders stay FOLD17's")
 
-        // A proposal never saves.
         try check(store.canCopySidebarSplits(target, to: pinned, before: .tab(keep.id), destinations: urls) && store.state == initial, "Proposal admits the copy without publishing")
         let foreign = SidebarContainerLocation(spaceID: here.id, folderID: nil, section: .favorite, profileID: UUID())
         try check(!store.canCopySidebarSplits(target, to: foreign, before: nil, destinations: urls), "A foreign Profile's Favorites refuse the copy")
@@ -66,7 +62,6 @@ struct SidebarSplitCopyTests {
         try check(!store.canCopySidebarSplits(target, to: pinned, before: nil, destinations: [left.id: urls[left.id]!]), "Every child needs its resolved destination")
         try check(try store.copySidebarSplits(target, to: pinned, before: .tab(away.id), destinations: urls) == nil && store.state == initial, "A refused copy publishes nothing")
 
-        // Before the first pinned root.
         let first = try store.copySidebarSplits(target, to: pinned, before: .tab(keep.id), destinations: urls)!
         var after = store.state
         guard case .split(let firstID)? = first.roots.first, let firstGroup = after.splitLayouts.first(where: { $0.id == firstID }) else { throw NSError(domain: "copy root", code: 1) }
@@ -80,7 +75,6 @@ struct SidebarSplitCopyTests {
         try check(first.openTabIDs == firstGroup.tabIDs, "Every copied split child requests a background page (options 0x100)")
         try check(after.selectedTabIDs == initial.selectedTabIDs && after.activeSpaceID == initial.activeSpaceID, "Store leaves selection to the window")
 
-        // Into a folder, Today, another Space and Favorites.
         let base = SidebarSplitCopy(items: [.split(split.id)], spaceID: here.id, profileID: profile.id, state: after)!
         let foldered = try store.copySidebarSplits(base, to: inFolder, before: nil, destinations: urls)!
         after = store.state
@@ -111,7 +105,6 @@ struct SidebarSplitCopyTests {
         try check(trayGroup.tabIDs.allSatisfy { id in after.tabs.first { $0.id == id }?.kind == .favorite }, "Favorite copy children are Favorites")
         try check(after.splitLayouts.first(where: { $0.id == split.id }) == split, "Original still unchanged after every copy")
 
-        //
         let favoriteCopy = SidebarSplitCopy(items: [.split(favorite.id)], spaceID: here.id, profileID: profile.id, state: after)!
         let favURLs = [favA.id: "https://live.invalid/a", favB.id: "https://live.invalid/b"]
         let outOfTray = try store.copySidebarSplits(favoriteCopy, to: pinned, before: nil, destinations: favURLs)!
@@ -128,7 +121,6 @@ struct SidebarSplitCopyTests {
         let trayOrder = SidebarHierarchy.children(in: favorites, state: after)
         try check(trayOrder.firstIndex(of: .split(inTrayID)).map { $0 + 1 == trayOrder.firstIndex(of: .split(favorite.id)) } == true, "A copy within the tray lands before its target")
 
-        //
         let crossTarget = SidebarSplitCopy(items: [.split(split.id)], spaceID: here.id, profileID: profile.id, state: after)!
         let crossed = try store.copySidebarSplits(crossTarget, to: elsewherePinned, before: .tab(foreignTab.id), destinations: urls)!
         after = store.state
@@ -139,8 +131,6 @@ struct SidebarSplitCopyTests {
         }, "Its children belong to the destination Profile")
         try check(split.tabIDs.allSatisfy { id in after.tabs.first { $0.id == id }?.profileID == profile.id } && after.splitLayouts.contains(split), "The originals keep their Profile")
 
-        //
-        // their live pages retire with consent before the copy saves.
         var retired: Set<UUID> = []
         var consent = false
         store.requestPageRetirement = { ids, shouldCommit, done in
@@ -163,7 +153,6 @@ struct SidebarSplitCopyTests {
                   "The reloaded originals keep their records and Profile")
         store.requestPageRetirement = nil
 
-        // Notes and Easels are stored per Profile: an alias cannot cross.
         let note = tab("Note"), web = tab("Web")
         var withNote = store.state
         let noteSplit = BrowserSplitLayout(sidebarAnchorID: note.id, spaceID: here.id, tabIDs: [note.id, web.id], widthFactors: [0.5, 0.5])
@@ -178,8 +167,6 @@ struct SidebarSplitCopyTests {
         try check(!noteStore.canCopySidebarSplits(noteCopy, to: elsewherePinned, before: nil, destinations: noteURLs, documents: noteDocs), "A split with a Note child cannot copy into another Profile")
         try check(noteStore.canCopySidebarSplits(noteCopy, to: pinned, before: nil, destinations: noteURLs, documents: noteDocs), "The same split copies within its Profile as a document alias")
 
-        // The gesture binds placement: renaming a child, a new URL or a tab
-        // opened elsewhere in the source Space while a sheet is up still copies.
         let stale = SidebarSplitCopy(items: [.split(split.id)], spaceID: here.id, profileID: profile.id, state: store.state)!
         store.updateTab(left.id, title: "Renamed while deciding", url: "https://live.invalid/moved-on")
         _ = store.open("https://unrelated.invalid/", kind: .today)
@@ -192,7 +179,6 @@ struct SidebarSplitCopyTests {
         try check(SidebarSplitCopy(items: [.split(split.id)], spaceID: here.id, profileID: profile.id, state: refoldered)?.matchesPlacement(of: stale) != true,
                   "A child that changed folder no longer matches the gesture")
 
-        // Real save failure: nothing published, disk unchanged.
         let sessionURL = root.appendingPathComponent("session.json")
         let beforeFailure = store.state, savedBytes = try Data(contentsOf: sessionURL)
         try FileManager.default.removeItem(at: sessionURL)
@@ -203,8 +189,6 @@ struct SidebarSplitCopyTests {
         try FileManager.default.removeItem(at: sessionURL); try savedBytes.write(to: sessionURL)
         try check(threw && store.state == beforeFailure && (try Data(contentsOf: sessionURL)) == savedBytes, "A failed save throws and changes neither state nor disk")
 
-        // Refusals: a retiring child, an ephemeral store, an archived child, a
-        // Profile pending removal.
         var pendingDone: ((Bool) -> Void)?
         store.requestPageRetirement = { _, _, done in pendingDone = done }
         store.closeTabs([right.id]) { _ in }
@@ -218,13 +202,11 @@ struct SidebarSplitCopyTests {
         try check(SidebarSplitCopy(items: [.split(split.id)], spaceID: here.id, profileID: profile.id, state: archived) == nil, "An archived child is not copied (InterProfileMove.admits)")
         var removing = store.state
         removing.profileRemovals = [ProfileRemovalRecord(id: UUID(), profileID: foreignProfile.id, profileName: foreignProfile.name)]
-        // The copy's placement step (SidebarWindowMove) is what refuses it.
         try check(!InterProfileMove.profilesAvailable(profile.id, foreignProfile.id, in: removing)
                   && SidebarWindowMove(items: [.split(split.id)], sourceSpaceID: here.id, profileID: profile.id,
                       destinationProfileID: foreignProfile.id, to: elsewherePinned, before: nil, state: removing) == nil,
                   "A Profile pending removal takes no copy")
 
-        // Twelve tray roots: a pinned split cannot be copied in, nor a Favorite split within.
         var full = store.state
         let fillers = (0..<(12 - SidebarHierarchy.children(in: favorites, state: full).count)).map { tab("Filler\($0)", kind: .favorite) }
         full.tabs += fillers
@@ -240,7 +222,6 @@ struct SidebarSplitCopyTests {
         try check(!fullStore.canCopySidebarSplits(withinFull, to: favorites, before: nil, destinations: favURLs), "A full tray refuses a Favorite split copied within it")
         try check(fullStore.canCopySidebarSplits(withinFull, to: pinned, before: nil, destinations: favURLs), "The same Favorite split still copies out of a full tray")
 
-        // Several splits copy in their original order.
         var multi = store.state
         let m1 = tab("M1"), m2 = tab("M2")
         let second = BrowserSplitLayout(sidebarAnchorID: m1.id, spaceID: here.id, tabIDs: [m1.id, m2.id], widthFactors: [0.5, 0.5])

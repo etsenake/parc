@@ -1,12 +1,10 @@
 import AppKit
 
-/// Key state the test sets so hover resolution can run without activating a real window.
 private final class HoverKeyWindow: NSWindow {
     var key = true
     override var isKeyWindow: Bool { key }
 }
 
-/// Counts contentView hitTest calls so the mouseMoved no-op skip is observable.
 private final class HitCountingContentView: NSView {
     var hitTestCount = 0
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -81,8 +79,6 @@ private final class HitCountingContentView: NSView {
         check(!tile.accessibilityPerformPress(), "Removed tile cannot dispatch")
         window.close()
 
-        // Hover: enter/exit still set and clear; mouseMoved inside an already
-        // hovered tile skips contentView.hitTest (true no-op).
         let hoverWindow = HoverKeyWindow(contentRect: NSRect(x: -10000, y: -10000, width: 200, height: 100),
                                          styleMask: [.borderless], backing: .buffered, defer: false)
         hoverWindow.isReleasedWhenClosed = false
@@ -128,8 +124,6 @@ private final class HitCountingContentView: NSView {
         check(!hoverTile.isPointerHovered, "Non-key window does not hover")
         hoverWindow.close()
 
-        // N4: identical-frame layout skips CATransaction layer writes; bounds,
-        // orientation, and cell-count changes still rewrite; wash stays reachable.
         let layoutWindow = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 200, height: 100),
                                     styleMask: [.borderless], backing: .buffered, defer: false)
         layoutWindow.isReleasedWhenClosed = false
@@ -150,7 +144,6 @@ private final class HitCountingContentView: NSView {
         layoutTile.selected = true
         layoutTile.setOverlays(FavoriteTileOverlayState(badge: FavoriteTileBadge(favicon: nil)))
         let badge = layoutTile.overlays.badgeView!.layer!
-        // AppKit can reset a new backing layer's anchor at its first display.
         badge.anchorPoint = .zero
         check(layoutWrites() == 0, "selected no-op layout still skips frame rewrites")
         check(badge.anchorPoint == CGPoint(x: 0.5, y: 0.5),

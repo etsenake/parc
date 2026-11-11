@@ -1,5 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Disposable native component fixtures; never discovers or opens user profiles.
 #import <Foundation/Foundation.h>
 #include <cstdio>
 #include <cstdlib>
@@ -179,7 +177,6 @@ void WAL(const base::FilePath& path) {
   using namespace parc::importer;
   const auto file = path.AppendASCII("History.db");
   sqlite3* db = Database(file);
-  // An inert fixture connection retains uncheckpointed WAL. No browser is run.
   SQL(db, "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;"
           "CREATE TABLE history_items(id INTEGER,url TEXT,visit_count INTEGER);"
           "CREATE TABLE history_visits(history_item INTEGER,title TEXT,visit_time REAL);"
@@ -193,7 +190,7 @@ void WAL(const base::FilePath& path) {
   Require(Bytes(file) == original && Bytes(wal) == original_wal, "Snapshot leaves original DB/WAL unchanged");
   sqlite3_close(db);
 }
-}  // namespace
+}
 int main() {
   @autoreleasepool {
     std::fprintf(stderr, "fixture: start\n");

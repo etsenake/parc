@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""P2 behavior lock: ThemeAppearanceButton 60 Hz timer idle-stops and skips true
-no-ops. Hidden/detached/unselected ticks must stopFrames; identical presentation
-fingerprints must skip needsDisplay. Active keyframe motion still dirties.
-Do not change appearance selection behavior.
-"""
 from pathlib import Path
 import re
 

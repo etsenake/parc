@@ -1,11 +1,3 @@
-// The socket protocol between the sandboxed probe (probe_main.cc) and its
-// unsandboxed HTTP helper (probe_helper.mm). Plain C++, so the probe needs no
-// framework before its sandbox is applied. Each message is a 4-byte big-endian
-// length and that many bytes.
-//
-// Request:  "<METHOD> <URL>\n" then "<Name>: <value>\n" per header, "\n", body.
-//           "X-Fpsb-Cache: <key>" asks the helper to cache a GET under <key>.
-// Response: "<status>\n<error>\n<X-AxDRM-ErrorMessage>\n" then the body.
 #ifndef PARC_TESTS_FAIRPLAY_SANDBOX_PROBE_WIRE_H_
 #define PARC_TESTS_FAIRPLAY_SANDBOX_PROBE_WIRE_H_
 
@@ -31,8 +23,8 @@ struct HttpRequest {
 
 struct HttpResponse {
   long status = 0;
-  std::string error;         // Transport error, empty when a response arrived.
-  std::string error_header;  // Axinom's X-AxDRM-ErrorMessage, if any.
+  std::string error;
+  std::string error_header;
   std::vector<uint8_t> body;
 };
 
@@ -72,7 +64,6 @@ inline bool ReceiveMessage(int fd, std::vector<uint8_t>* payload) {
   return ReadAll(fd, payload->data(), length);
 }
 
-// Newlines would break the line framing; they never matter in these fields.
 inline std::string OneLine(std::string s) {
   for (char& c : s) {
     if (c == '\n' || c == '\r') c = ' ';
@@ -80,7 +71,6 @@ inline std::string OneLine(std::string s) {
   return s;
 }
 
-// Reads the next "\n"-terminated line from |data| at |*pos|.
 inline bool NextLine(const std::vector<uint8_t>& data, size_t* pos, std::string* line) {
   for (size_t i = *pos; i < data.size(); ++i) {
     if (data[i] == '\n') {
@@ -139,6 +129,6 @@ inline bool DecodeResponse(const std::vector<uint8_t>& data, HttpResponse* r) {
   return true;
 }
 
-}  // namespace fpsb
+}
 
-#endif  // PARC_TESTS_FAIRPLAY_SANDBOX_PROBE_WIRE_H_
+#endif

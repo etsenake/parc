@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""P1-AA behavior lock: refreshDeveloperToolbars skips forced needsLayout /
-layoutSubtreeIfNeeded when pane/peek developer chrome geometry is already
-current and the host does not need layout; real geometry/needsLayout still
-flushes and synchronizeNativeLayout runs only after a flush."""
 from pathlib import Path
 import re
 
@@ -54,7 +50,6 @@ assert "pane.needsLayout = true; pane.layoutSubtreeIfNeeded()" not in body, \
 assert "peek.view.needsLayout = true; peek.view.layoutSubtreeIfNeeded()" not in body, \
     "blanket peek needsLayout+layoutSubtree must be gone"
 
-# Live path must still configure without forcing pane layout.
 live_body = method(r"refreshLivePageChrome\(\) -> Bool")
 assert live_body, "refreshLivePageChrome not found"
 assert "configurePaneDeveloperToolbar(pane," in live_body and "configureDeveloperToolbar(peek.view.developerToolbar," in live_body, \

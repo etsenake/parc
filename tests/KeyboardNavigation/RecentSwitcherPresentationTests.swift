@@ -111,8 +111,6 @@ import AppKit
             print("\(checks) MRU presentation assertions passed; inert appearance window only")
             app.run(); return
         }
-        // A sixth original item occupies the reserve slot but owns no input,
-        // accessibility action, focus or thumbnail visibility until promotion.
         let reserveID = UUID()
         var reserve = RecentTabSwitcherView.Item(id: reserveID.uuidString, title: "Reserve",
             spaceName: "Space 1", vertical: false,
@@ -133,7 +131,6 @@ import AppKit
         view.choose(reserve.id)
         check(chosen == previousChosen + [4], "promoted reserve dispatches its current position")
 
-        // Render the actual production variants with inert local content.
         check(RecentSwitcherArtwork.directory == Bundle.main.resourceURL?.appendingPathComponent("RecentSwitcher", isDirectory: true),
               "the artwork loads from the bundle's RecentSwitcher resources")
         check(RecentSwitcherArtwork.note != nil && RecentSwitcherArtwork.easel != nil

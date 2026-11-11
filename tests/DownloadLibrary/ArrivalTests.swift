@@ -1,7 +1,5 @@
 import AppKit
 
-/// Manual time for the arrival: timers fire at their due time, the group
-/// notify runs on the next drain, and display frames are ticked explicitly.
 @MainActor final class ManualArrivalSchedule: DownloadArrivalSchedule {
     var now = 0.0
     private var timers: [(due: Double, body: @MainActor () -> Void)] = []
@@ -10,7 +8,6 @@ import AppKit
     override func after(_ delay: TimeInterval, _ body: @escaping @MainActor () -> Void) { timers.append((now + delay, body)) }
     override func async(_ body: @escaping @MainActor () -> Void) { queued.append(body) }
     var pendingTimers: Int { timers.count }
-    /// Advances in display frames: due timers, then queued main turns, then the frame's spring tick.
     func run(until end: Double, frame: Double = 1 / 60, _ controllers: () -> [DownloadArrivalController]) {
         while now + 1e-9 < end {
             let dt = min(frame, end - now); now += dt
@@ -42,7 +39,6 @@ import AppKit
         print("Download arrival: \(count) assertions passed")
     }
 
-    // MARK: Motion arithmetic (model fixture: renderer lane arrival_model.py).
     static func springs() {
         var spring = DownloadArrivalSpring()
         expect(spring.stiffness == 300 && spring.damping == 10, "Motion defaults 300/10 before configure")
@@ -121,8 +117,6 @@ import AppKit
             DownloadArrivalOwner.admits(valid: valid, hasPage: page, popupWindow: popup, privateWindow: privateWindow,
                                         privateContext: context, privateContextLive: live, profileKnown: profile)
         }
-        //
-        // `.browserPopup` LittleBrowserWindow panels, so no popup ever arrives.
         expect(!admits(popup: true), "A popup window never shows the arrival")
         expect(!admits(popup: true, privateWindow: true, context: "otr", live: true),
                "A private popup window never shows the arrival")
@@ -142,7 +136,6 @@ import AppKit
         function.getControlPoint(at: 1, values: &first); function.getControlPoint(at: 2, values: &second)
         return first == [0, 0] && second == [1, 1]
     }
-    /// Pixel bounds of the glyph's visible ink (alpha > 25%), top-left origin.
     static func glyphInk(_ image: CGImage?) -> (minX: Int, minY: Int, maxX: Int, maxY: Int)? {
         guard let image, let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
@@ -156,7 +149,6 @@ import AppKit
         return ink.maxX < 0 ? nil : ink
     }
     static func makeParent(_ frame: NSRect = NSRect(x: -20000, y: -20000, width: 1200, height: 800)) -> NSWindow {
-        // Disposable, borderless and far outside every display.
         let parent = NSWindow(contentRect: frame, styleMask: [], backing: .buffered, defer: false)
         parent.isReleasedWhenClosed = false; parent.isRestorable = false
         parent.orderFront(nil)
@@ -175,7 +167,6 @@ import AppKit
         expect(DownloadArrivalController.source(screenPoint: NSPoint(x: CGFloat.nan, y: 5), in: parent) == CGPoint(x: 70, y: 70),
                "Non-finite source falls back to (70, 70)")
 
-        // Bin case: two concurrent arrivals, an arrival while ending, exact retirement.
         let schedule = ManualArrivalSchedule()
         let owner = DownloadArrivalOwner(schedule: schedule)
         var showsBinReads = 0
@@ -257,7 +248,6 @@ import AppKit
         controller.dismiss(force: true)
         expect(owner.controller == nil && !controller.advance(1 / 60), "Retirement is exactly once and stops ticking")
 
-        // No bin: the icons stop at their last keyframe; completion at the last T + 1.
         let plain = DownloadArrivalOwner(schedule: schedule)
         let start = schedule.now
         plain.arrive(at: screen(parent, 400, 600), in: parent, showsBin: false, palette: palette(dark: false))
@@ -268,7 +258,6 @@ import AppKit
         schedule.run(until: start + unbinned.downloads[0].flight.projectileDuration + 1.05) { [plain.controller].compactMap { $0 } }
         expect(unbinned.retired && plain.controller == nil && !unbinned.window.isVisible, "Without the bin completion is immediate at T + 1")
 
-        // Forced dismissal: any window resigning key and main (CombineLatest), security, close.
         let combined = DownloadArrivalOwner(schedule: schedule)
         combined.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, palette: palette(dark: false))
         let other = NSWindow(contentRect: .zero, styleMask: [], backing: .buffered, defer: false)
@@ -304,7 +293,6 @@ import AppKit
         expect(closing.controller == nil && tracked.retired, "A forced dismissal (the windowWillClose path) retires")
         parent.setFrame(NSRect(x: -20000, y: -20000, width: 1200, height: 800), display: false)
 
-        // Pass-through: transparent pixels everywhere except drawn bin/icon pixels.
         let probe = DownloadArrivalOwner(schedule: schedule)
         let base = schedule.now
         probe.arrive(at: screen(parent, 600, 500), in: parent, showsBin: true, palette: palette(dark: false))
@@ -319,8 +307,6 @@ import AppKit
         probe.dismiss(force: true)
     }
 
-    /// The production frame driver on a real display: a transparent 2-point
-    /// test window that ignores the mouse, ordered for under a second.
     static func liveFrames() {
         guard let screen = NSScreen.main else { return }
         let host = NSWindow(contentRect: NSRect(origin: screen.frame.origin, size: NSSize(width: 2, height: 2)),
@@ -338,8 +324,6 @@ import AppKit
         expect(intervals.allSatisfy { $0 > 0 && $0 < 0.1 }, "Each tick carries the real frame interval: \(intervals)")
     }
 
-    /// Renders the arrival's actual layer tree at keyframe time `t` (Core
-    /// Animation time frozen on the root layer), over an optional backdrop.
     static func render(_ controller: DownloadArrivalController, at t: Double, scale: CGFloat, background: NSColor?) -> NSBitmapImageRep {
         let layer = controller.root.layer!
         let begin = controller.downloads.first?.view.content.layer?.animation(forKey: "parc.arrival.position")?.beginTime ?? 0
@@ -380,7 +364,6 @@ import AppKit
                 let slide = flight.projectileDuration + 1
                 let times = shows ? [0, 0.18, 0.35, 0.7, 1.0, 1.05, 1.1, 1.2, 1.4, 1.95, slide + 0.15, slide + 0.5, slide + 1.2]
                                   : [0, 0.35, 0.8, 1.0, 1.1, flight.duration]
-                // The trajectory: the actual layer tree rendered every 50 ms into one image.
                 let trail = render(controller, at: 0, scale: 1, background: backdrop)
                 let trailContext = NSGraphicsContext(bitmapImageRep: trail)!.cgContext
                 for step in 1...Int((min(flight.duration, slide) / 0.05).rounded(.down)) {
@@ -395,7 +378,6 @@ import AppKit
                     schedule.run(until: t) { [owner.controller].compactMap { $0 } }
                     let rep = render(controller, at: t, scale: 1, background: backdrop)
                     try write(rep, prefix + "-t" + String(format: "%.2f", t))
-                    // 3× crops: the apex icon, and the bottom-leading corner at rest/landing.
                     if t == 0.35 {
                         let point = flight.positions[21]
                         try write(crop(render(controller, at: t, scale: 3, background: backdrop),

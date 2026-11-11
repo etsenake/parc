@@ -1,11 +1,5 @@
 import Foundation
 
-/// P0-B leftover: SidebarOutlineRow.configure skips setContent/needsLayout when
-/// the configured content fingerprint already matches. Membership/appearance/
-/// size changes must not skip.
-///
-/// Compiles against Sources/ParcCore/SidebarOutlineConfigureSkip.swift;
-/// `tests/SidebarOutlineConfigureSkip/check.py` locks the production call site.
 @main
 struct SidebarOutlineConfigureSkipTests {
     static var assertions = 0
@@ -42,7 +36,6 @@ struct SidebarOutlineConfigureSkipTests {
 
     static func main() {
         typealias Skip = SidebarOutlineConfigureSkip
-        // Keep the content objects alive so ObjectIdentifier values stay distinct.
         let objectA = NSObject(), objectB = NSObject()
         let contentA = ObjectIdentifier(objectA), contentB = ObjectIdentifier(objectB)
         let base = fingerprint(contentIdentity: contentA)

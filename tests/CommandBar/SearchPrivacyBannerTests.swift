@@ -8,7 +8,6 @@ import AppKit
         }
         _ = NSApplication.shared
 
-        //
         let suite = "parc.tests.command-bar-privacy.\(ProcessInfo.processInfo.processIdentifier)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -38,7 +37,6 @@ import AppKit
         check(infoButton.accessibilityLabel() == "Search suggestions privacy", "the accessory is labelled for VoiceOver")
         check(infoButton.refusesFirstResponder, "clicking the accessory leaves the command field focused")
 
-        // Recovered copy, symbol and geometry.
         let banner = CommandBarSearchPrivacyBanner(frame: NSRect(x: 0, y: 0, width: 765, height: 60))
         let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 765, height: 60), styleMask: [.borderless],
                               backing: .buffered, defer: false)
@@ -58,7 +56,6 @@ import AppKit
         check(abs(banner.icon.frame.midY - 30) < 0.5 && abs(banner.dismissButton.frame.minY + 18 - 30) < 0.5,
               "the icon and the buttons' 36-point bodies are vertically centred")
         check(banner.dismissButton.intrinsicContentSize.height == 39, "a 36-point body, its 2-point lip and the half-point stroke inset")
-        // The narrowest single-row bar still fits the title, text padding included.
         let narrowest = CommandBarSearchPrivacyBanner(frame: .zero)
         let singleRow = (300...1000).map(CGFloat.init).first { !narrowest.isCondensed(forWidth: $0) } ?? 0
         narrowest.frame = NSRect(x: 0, y: 0, width: singleRow, height: 60); narrowest.layout()
@@ -86,7 +83,6 @@ import AppKit
         check(banner.settingsButton.frame.minX == 16 && banner.dismissButton.frame.maxX <= 260 - 10 + 0.5,
               "the narrowest 260-point bar (a 300-point popup window) fits both buttons from the leading inset")
 
-        // The buttons drive the owner's callbacks.
         var settings = 0, dismissals = 0
         banner.onSearchSettings = { settings += 1 }
         banner.onDismiss = { dismissals += 1 }
@@ -99,8 +95,6 @@ import AppKit
               "the banner's buttons leave the command field focused, even with Full Keyboard Access")
         check(banner.dismissButton.accessibilityLabel() == "Dismiss", "the Dismiss control is labelled")
 
-        // Sidebar tablist background press: the first click drags the window,
-        // the second waits for mouseUp, Control keeps the secondary click.
         check(SidebarTablistBackground.press(clickCount: 1, modifiers: []) == .dragWindow, "a first press drags the window")
         check(SidebarTablistBackground.press(clickCount: 1, modifiers: [.command, .option, .shift]) == .dragWindow,
               "other modifiers still drag checks only Control")
@@ -109,7 +103,6 @@ import AppKit
         check(SidebarTablistBackground.press(clickCount: 3, modifiers: []) == .waitForRelease, "later presses don't drag")
         check(SidebarTablistBackground.press(clickCount: 1, modifiers: [.control]) == .passThrough,
               "Control-press reaches the surface's secondary click")
-        // Release: second click at or below the last row only.
         check(SidebarTablistBackground.opensCommandBar(clickCount: 2, modifiers: [], y: 400, lastRowMaxY: 320),
               "a double-click under the last row opens the bar")
         check(SidebarTablistBackground.opensCommandBar(clickCount: 2, modifiers: [], y: 320, lastRowMaxY: 320),
@@ -122,9 +115,6 @@ import AppKit
               "Control keeps the secondary click")
         check(SidebarTablistBackground.opensCommandBar(clickCount: 2, modifiers: [.command], y: 0, lastRowMaxY: nil),
               "an empty list opens it anywhere")
-        // SidebarView receives the tablist's empty-area presses through the
-        // responder chain: the list (a stack) and the scroll view's clip below it
-        // forward unhandled presses and releases to their superview.
         final class Recorder: NSView {
             var downs: [Int] = [], ups: [Int] = []
             override func mouseDown(with event: NSEvent) { downs.append(event.clickCount) }

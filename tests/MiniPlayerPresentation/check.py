@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""Compile and inspect the production deck in an off-screen inert window.
-No browser, input events, profiles, or playback are used.
-"""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -15,10 +12,9 @@ with tempfile.TemporaryDirectory(prefix="parc-mini-presentation-") as directory:
     sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
     (scratch / "ActionButton.swift").write_text(sidebar[:sidebar.index("final class MenuAction")]
         + sidebar[sidebar.index("class LayoutView: NSView {"):sidebar.index("final class FlippedStackView")]
-        # The Favorite favicon identity above ActionButton needs SplitOrientation.
         + "\nenum SplitOrientation: Equatable { case horizontal, vertical }\n")
     fixture = (root / "tests/SidebarMiniPlayerFocus/SidebarMiniPlayerFocusTests.swift").read_text()
-    fixture = fixture[fixture.index("// Stand-ins for the engine's media types"):]
+    fixture = fixture[fixture.index("enum PCNativeMediaAction {"):]
     fixture = fixture.replace('title = "Song"', 'title = "A long track title that must overflow the mini player available width"')
     (scratch / "Fixtures.swift").write_text("import AppKit\n" + fixture)
     executable = scratch / "checks"

@@ -123,7 +123,6 @@ import AppKit
                 expect(old.shortcut(for: id) == nil && old.priority(for: id) == .preferParc, "Disabled binding and explicit priority survive reload")
             }
         }
-        // KB04: numbered targets and the native-text Find items never take a saved chord.
         for (id, chord) in KeyboardShortcuts.numberedTargetShortcuts {
             try JSONSerialization.data(withJSONObject: ["version": 3, "findShortcutDefaults": 1,
                 "overrides": ["custom:": encoded(chord)]]).write(to: file)
@@ -141,7 +140,6 @@ import AppKit
                && KeyboardShortcuts.numberedTargetShortcuts["findAndReplace:"] == .init(key: "f", flags: [.command, .option])
                && KeyboardShortcuts.numberedTargetShortcuts["jumpToSelection:"] == .init(key: "j", flags: [.command]),
                "Recovered numbered and Find defaults")
-        // Dynamic Space metadata follows its menu owner without losing saved choices.
         let dynamicDirectory = root.appendingPathComponent("dynamic")
         try FileManager.default.createDirectory(at: dynamicDirectory, withIntermediateDirectories: true)
         let dynamic = KeyboardShortcuts(); dynamic.configure(directory: dynamicDirectory)

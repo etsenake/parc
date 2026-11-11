@@ -27,11 +27,6 @@ extension SidebarChromeLayout.Toolbar {
         check(L.narrowWidth == 212, "narrow below 212")
         check(L.fieldTop == 46 && L.fieldHeight == 36, "field below the 4 + 40 row and 2-point padding")
 
-        //
-        //
-        // at 73 and the toggle sits at 77 (1.170 capture: 76.7); 3 × 14 + 2 × 6
-        // = 54 before, toggle at 71. Lights and toggle share the row's centre;
-        // other extents and heights exercise the generic placement.
         func lights(_ width: CGFloat, _ height: CGFloat = 14) -> CGSize { CGSize(width: width, height: height) }
         let regular = L.toolbar(width: 228, windowButtons: lights(60), showsNavigation: true)
         check(regular.windowButtons == CGRect(x: 13, y: 17, width: 60, height: 14), "lights lead the row at 8 + 5")
@@ -50,8 +45,6 @@ extension SidebarChromeLayout.Toolbar {
         check(wide.reload?.minX == 462 && wide.back?.minX == 394 && wide.toggle?.minX == 77, "wide sidebars keep the toggle leading and the rest trailing")
         check(L.toolbar(width: 220, windowButtons: lights(60), showsNavigation: true).reload?.width == 32, "compact keeps regular buttons")
 
-        // A crowded regular row keeps all four controls at the narrow size
-        // (Parc adaptation): with 60-point lights, below 217.
         let crowded = L.toolbar(width: 212, windowButtons: lights(56), showsNavigation: true)
         check(crowded.toggle == CGRect(x: 73, y: 10, width: 28, height: 28) && crowded.back?.minX == 122
               && crowded.forward?.minX == 150 && crowded.reload?.minX == 178, "crowded 212 keeps every control at 28 points")
@@ -62,8 +55,6 @@ extension SidebarChromeLayout.Toolbar {
               && L.toolbar(width: 217, windowButtons: lights(60), showsNavigation: true).back?.width == 32, "regular returns at 217 with 60-point lights")
         check(L.toolbar(width: 214, windowButtons: lights(56), showsNavigation: true).back?.width == 32, "regular returns once it fits")
 
-        //
-        // and shows More last; Parc's toggle takes the More slot.
         let narrow = L.toolbar(width: 164, windowButtons: lights(54), showsNavigation: true)
         check(narrow.reload == nil, "narrow hides Reload")
         check(narrow.toggle == CGRect(x: 130, y: 10, width: 28, height: 28) && narrow.forward == CGRect(x: 102, y: 10, width: 28, height: 28)
@@ -96,13 +87,9 @@ extension SidebarChromeLayout.Toolbar {
             }
         }
 
-        // The App Tray starts where the header ends; an empty tray leaves the
-        //
         check(L.headerBottom == 82 && L.tablistTop(trayHeight: 0) == 87, "empty tray: list at 82 + 5")
         check(L.tablistTop(trayHeight: 63) == 145 && L.tablistTop(trayHeight: 118) == 200, "list directly below a 1- or 2-row tray")
 
-        // The empty state: shown in an empty tray until the profile dismisses
-        // it, at least 8 + 47 + 8 tall, with the header inset 0 while it shows.
         check(L.showsAppTrayEmptyState(favorites: 0, dismissed: false, privateWindow: false), "an undismissed empty tray shows it")
         check(!L.showsAppTrayEmptyState(favorites: 0, dismissed: true, privateWindow: false)
               && !L.showsAppTrayEmptyState(favorites: 1, dismissed: false, privateWindow: false)
@@ -117,10 +104,6 @@ extension SidebarChromeLayout.Toolbar {
               && L.tablistTop(trayHeight: L.appTrayHeight(gridHeight: 0, emptyState: 40)) == 145
               && L.tablistTop(trayHeight: L.appTrayHeight(gridHeight: 0, emptyState: nil)) == 87,
               "list at 82 + the empty state with no inset, at 145 or lower; 87 once dismissed")
-        //
-        //
-        // Space, a custom icon or showSpaceHeaderOnSingleUnnamedSpaces; never
-        //
         typealias H = L.SpaceHeader
         check(!H.isShown(spaceCount: 1, titled: false, customIcon: false, privateWindow: false, showOnSingleUnnamedSpace: false),
               "one untitled Space without an icon: no header")
@@ -132,8 +115,6 @@ extension SidebarChromeLayout.Toolbar {
               "the setting shows it for one untitled Space")
         check(!H.isShown(spaceCount: 3, titled: true, customIcon: true, privateWindow: true, showOnSingleUnnamedSpace: true),
               "never in an incognito window, whatever the setting")
-        //
-        // icon, titled by the setting.
         check(H.toggleTitle(spaceCount: 1, titled: false, customIcon: false, showOnSingleUnnamedSpace: false) == "Show Space Header"
               && H.toggleTitle(spaceCount: 1, titled: false, customIcon: false, showOnSingleUnnamedSpace: true) == "Hide Space Header",
               "Show Space Header while the setting is off, Hide Space Header while on")
@@ -144,8 +125,6 @@ extension SidebarChromeLayout.Toolbar {
               "no toggle once two Spaces, a title or an icon decide the header")
         check(H.placeholderTitle(position: 0) == "Space 1" && H.placeholderTitle(position: 2) == "Space 3"
               && H.placeholderTitle(position: nil) == "Space", "the \"Space N\" placeholder, or \"Space\"")
-        // Placement: no 5-point inset, 8 below the page without Favorites,
-        // 36 tall, and the list at its bottom.
         check(H.height == 36 && H.topPadding == 8 && H.inset == 14 && H.iconSide == 24 && H.spacing == 4 && H.fontSize == 13, "header constants")
         check(L.pageTop(trayHeight: 0, spaceHeader: true) == 82 && L.pageTop(trayHeight: 0, spaceHeader: false) == 87,
               "a shown header takes the header inset to 0")
@@ -162,8 +141,6 @@ extension SidebarChromeLayout.Toolbar {
         let plain = H.frames(width: 164, icon: false, titleHeight: 16)
         check(plain.icon == nil && plain.title == CGRect(x: 14, y: 10, width: 132, height: 16), "no icon: the name leads the stack")
         check(H.frames(width: 20, icon: true, titleHeight: 16).title.width == 0, "a too-narrow header never gives the name a negative width")
-        //
-        // centred; 0 wide at rest, 24 shown, 30 while the name is edited.
         check(H.editButtonHeight == 24 && H.editButtonWidth(shown: false, editing: false) == 0
               && H.editButtonWidth(shown: false, editing: true) == 0 && H.editButtonWidth(shown: true, editing: false) == 24
               && H.editButtonWidth(shown: true, editing: true) == 30, "edit button widths: 0 hidden, 24 shown, 30 while editing")
@@ -175,7 +152,6 @@ extension SidebarChromeLayout.Toolbar {
         let editing = H.frames(width: 228, icon: false, titleHeight: 16, editButtonWidth: 30)
         check(editing.editButton == CGRect(x: 184, y: 6, width: 30, height: 24) && editing.title == CGRect(x: 14, y: 10, width: 166, height: 16),
               "editing: 184…214, the name 14…180")
-        // (isEditing || isHovered) && canShowHeaderButtonsIfPossible.
         check(!H.showsEditButton(editing: false, hovered: false, canShowHeaderButtons: true), "resting header: no button")
         check(H.showsEditButton(editing: false, hovered: true, canShowHeaderButtons: true)
               && H.showsEditButton(editing: true, hovered: false, canShowHeaderButtons: true), "hover or editing shows it")
@@ -198,9 +174,6 @@ extension SidebarChromeLayout.Toolbar {
         check(tall.icon.minY - tall.card.minY == tall.card.maxY - tall.subtitle.maxY && tall.close.minY == 16,
               "a taller tray centres the content; Dismiss stays at the top")
 
-        // TablistView's outline: 40-point cells, 1-point intercell spacing,
-        // 36-point visible rows centred in their cells, 16 per level, 120 below.
-        // SidebarTablistTests compares the model with AppKit's own outline.
         typealias S = L.TablistSpan
         check(L.tablistCellHeight == 40 && L.tablistVisibleRowHeight == 36 && L.tablistIntercellSpacing == 1
               && L.tablistIndentation == 16 && L.tablistBottomInset == 120, "outline constants")
@@ -211,8 +184,6 @@ extension SidebarChromeLayout.Toolbar {
         check(L.tablist([.item]).views == [S(minY: 2, height: 36)] && L.tablist([]).height == 120, "a lone item and an empty outline")
         check(L.tablist([.accessory(height: 28), .item]).views == [S(minY: 0, height: 28), S(minY: 31, height: 36)], "an accessory first")
 
-        // Insertion cues: the boundary after one visible row is the boundary
-        // before the next, in the middle of the intercell gap.
         let outset = L.tablistRowBoundaryOutset
         check(outset == 2.5, "boundaries 2.5 outside a visible row")
         let cue = L.tablist([.gap(height: 2), .item, .item, .accessory(height: 24), .item])
@@ -220,14 +191,11 @@ extension SidebarChromeLayout.Toolbar {
         check(cue.views[1]!.minY - outset == 2.5, "before the first pinned row: between the header and its cell")
         check(cue.views[2]!.maxY + outset == cue.views[3]!.minY - L.tablistIntercellSpacing / 2, "after the last pinned row: above the divider cell")
 
-        // The production row order (SidebarView.render places its views by these slots).
         typealias T = L.TablistSlot
         check(L.tablistSlots(pinnedItems: 2, todayItems: 1, isPrivate: false)
               == [.pinnedHeader, .pinnedItem, .pinnedItem, .sectionDivider, .newTab, .todayItem], "pinned header, items, divider, New Tab, Today")
         check(L.tablistSlots(pinnedItems: 0, todayItems: 1, isPrivate: false)
               == [.pinnedHeader, .sectionDivider, .newTab, .todayItem], "Today items keep the divider without pinned items")
-        //
-        // pinned row 41 points on and nothing is listed after it.
         check(L.tablistSlots(pinnedItems: 2, todayItems: 0, isPrivate: false)
               == [.pinnedHeader, .pinnedItem, .pinnedItem, .newTab], "an empty Today lists no divider and no hint")
         check(L.tablistSlots(pinnedItems: 0, todayItems: 0, isPrivate: false) == [.pinnedHeader, .newTab], "an empty Space: header and New Tab")
@@ -239,18 +207,11 @@ extension SidebarChromeLayout.Toolbar {
               && T.privateHeading.row == .accessory(height: 36), "each slot's cell")
         let lone = L.tablist(L.tablistSlots(pinnedItems: 1, todayItems: 0, isPrivate: false).map(\.row))
         check(lone.views[2]!.minY - lone.views[1]!.minY == 41, "without Today, New Tab's visible row is the next item's, 41 points on")
-        //
-        // full-width cell (10 inside Parc's list), a one-pixel border.
         check(L.sectionDividerInset == 10 && L.sectionDividerSpacing == 8, "divider insets and spacing")
         check(L.sectionDividerThickness(scale: 2) == 0.5 && L.sectionDividerThickness(scale: 1) == 1
               && L.sectionDividerThickness(scale: 3) == 2.0 / 3 && L.sectionDividerThickness(scale: 0) == 1,
               "the border is round(0.5 × scale) / scale points")
 
-        //
-        // still): outline at 87 with rows header, one pinned tab, separator,
-        // New Tab and four Today tabs, 3, 41, 25 and 41-point rows. The model
-        // puts the pinned cell at 90 (visible 92), the divider at 131, New Tab
-        // at 156 (visible 158) and the Today rows from 197 (visible 199).
         let top = L.tablistTop(trayHeight: 0)
         let captured = L.tablistSlots(pinnedItems: 1, todayItems: 4, isPrivate: false).map(\.row)
         let still = L.tablist(captured)
@@ -261,10 +222,7 @@ extension SidebarChromeLayout.Toolbar {
         } + [still.height - L.tablistBottomInset]
         check(zip(starts, starts.dropFirst()).map { $1 - $0 } == [3, 41, 25, 41, 41, 41, 41, 41], "row heights as captured")
 
-        // Dock: the + button 8 from the edge, centred in 50 points.
         check(L.dockTrailingButton(width: 228, height: 800) == CGRect(x: 188, y: 759, width: 32, height: 32), "trailing dock button at width − 40")
-        // leftButtonPlaceholder holds the Library entry (HomeBadging.HomeButton):
-        // 32 × 32 at x 8, centred; the Space strip runs between the two buttons.
         check(L.dockLeadingButton(height: 800) == CGRect(x: 8, y: 759, width: 32, height: 32), "leading dock button (Library entry) at x 8")
         check(L.dockStrip(width: 228, height: 800) == CGRect(x: 40, y: 750, width: 148, height: 50), "Space strip at 40…width − 40, the dock's height")
         for width: CGFloat in [164, 228, 500] {
@@ -274,8 +232,6 @@ extension SidebarChromeLayout.Toolbar {
         }
         check(L.dockStrip(width: 60, height: 800).width == 0, "a strip narrower than the two buttons collapses to nothing")
 
-        //
-        // default width is 228 − 80 = 148 with 2-point insets, 144 available.
         let three = L.dockLayout(width: 148, height: 50, count: 3, focused: nil)
         check(three.items == [21, 55, 89].map { CGRect(x: $0, y: 9, width: 34, height: 32) }, "34-point items centred as a group")
         check(three.contentWidth == 123 && !three.compact, "content width is the items plus the centring offset")
@@ -315,7 +271,6 @@ extension SidebarChromeLayout.Toolbar {
             }
         }
 
-        //
         typealias P = L.DockItemPresentation
         check(L.dockIconless(hasCustomIcon: false, symbol: "circle.fill"), "default Space sentinel is iconless")
         check(L.dockIconless(hasCustomIcon: false, symbol: "circle"), "staged Space sentinel is iconless")

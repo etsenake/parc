@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Parc's extension context menu (PArcContextMenu): placement, rows, keys, pointer and dispatch.
-
-Off-screen windows under a prohibited activation policy; no browser, engine or input devices.
-Pass a directory to also write light/dark renders of the Site Control Center with the menu open.
-"""
 from pathlib import Path
 import shutil
 import subprocess

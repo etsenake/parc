@@ -36,8 +36,6 @@ static void Check(BOOL condition, const char* message) {
 }
 @end
 
-// Explicitly controlled native-boundary failures. Ordinary selection tests
-// below use NSWindow's real implementation, not this injected behavior.
 @interface GateWindow : NSWindow
 @property(nonatomic, weak) NSResponder* blockedTarget;
 @property(nonatomic) BOOL acceptWithoutChanging;
@@ -77,7 +75,7 @@ static NSWindow* Window(Class cls = NSWindow.class) {
                   backing:NSBackingStoreBuffered
                     defer:NO];
   window.releasedWhenClosed = NO;
-  return window;  // Never shown or made key.
+  return window;
 }
 static FocusView* View(NSWindow* window) {
   FocusView* view = [[FocusView alloc] initWithFrame:NSMakeRect(0, 0, 100, 50)];

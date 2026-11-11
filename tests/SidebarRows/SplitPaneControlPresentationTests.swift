@@ -129,8 +129,6 @@ private final class TrackingEvent: NSEvent {
         check(lock.isHovered && abs(lockSurface.opacity - 0.05) < 0.00001, "lock shares the symbol hover surface")
         lock.mouseExited(with: lockArea); lock.removeFromSuperview()
 
-        // N5: identical centered surface / glyph frames skip CATransaction and
-        // glyph writes; a real size change still rewrites; hover refresh stays ungated.
         typealias LayoutSkip = SplitPaneControlLayoutSkip
         let skipBounds = NSRect(x: 0, y: 0, width: 32, height: 24)
         let skipSurface = LayoutSkip.surfaceFrame(bounds: skipBounds, surfaceSize: SplitPaneControl.surfaceSize)

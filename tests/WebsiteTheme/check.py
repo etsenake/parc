@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Check persisted policy and native color conversion without opening a browser."""
 from pathlib import Path
 import subprocess
 import tempfile

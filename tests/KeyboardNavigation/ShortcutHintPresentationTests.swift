@@ -52,8 +52,6 @@ import AppKit
         check(abs(averaged.background.redComponent - 0.625) < 0.0001, "gradient averages adjusted original colors")
         let pale = PArcToastPalette(colors: [NSColor(displayP3Red: 0.85, green: 0.85, blue: 0.85, alpha: 1)])
         check(abs(pale.background.redComponent - 0.6) < 0.0001, "lightness 0.8–0.95 steps down 0.25")
-        // An incognito window's theme context is the static incognito theme: its
-        // basic colour, P3 (0.054, 0.06, 0.075), saturates (+0.4) and lightens (+0.3).
         let basic = NSColor(displayP3Red: 0.054, green: 0.06, blue: 0.075, alpha: 1)
         let incognito = PArcToastPalette(theme: .singleColor(ThemeColor(hex: "202020")!), isDark: true, basicBackground: basic)
         check(abs(incognito.background.redComponent - 0.1594) < 0.001 && abs(incognito.background.greenComponent - 0.2766) < 0.001

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Real file-backed model transactions; no window, native engine or browser.
 @main @MainActor
 struct AutoArchivePresentationTests {
     struct Failure: Error { let message: String }

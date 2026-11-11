@@ -1,4 +1,3 @@
-"""Direct plans and recipes are checked without invoking engine tools."""
 import copy
 import json
 import unittest

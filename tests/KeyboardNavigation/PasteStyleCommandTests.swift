@@ -1,8 +1,5 @@
 import AppKit
 
-/// Stands in for the engine page view: it answers pasteAndMatchStyle: (and
-/// validates it) but, like the pinned RenderWidgetHostViewCocoa, not
-/// pasteAsPlainText:.
 @MainActor private final class PageView: NSView {
     var mainFrame = true
     var requests = 0
@@ -69,8 +66,6 @@ import AppKit
         let repeated = try Data(contentsOf: file)
         expect(repeated == data, "Migration is byte-idempotent")
 
-        // Forwarding: only a responder without pasteAsPlainText: reaches the
-        // fallback, which sends the page view's own validated selector.
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
                                styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false

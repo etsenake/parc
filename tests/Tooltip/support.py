@@ -1,8 +1,3 @@
-"""Sources a component check needs once it compiles a control that shows Parc's
-tooltip (`parcTooltip`, `LiveShortcutToolTip`): the three tooltip files, the
-hover rule in PointerCover.swift, the pointing hand in PointingHand.swift and,
-unless the check already compiles their whole files, ThemeChromePalette,
-KeyboardShortcut and ViewDisplayFrameDriver cut from them."""
 from pathlib import Path
 
 SLICES = {
@@ -20,7 +15,6 @@ def marker(text: str, name: str, value: str) -> int:
 
 
 def tooltip_sources(root: Path, scratch: Path, compiled) -> list:
-    """`compiled` are the paths the check already compiles."""
     app = root / "Sources/ParcApp"
     names = {Path(path).name for path in compiled}
     result = [app / name for name in ("Tooltip.swift", "TooltipView.swift", "TooltipController.swift", "PointerCover.swift",
@@ -40,8 +34,6 @@ def tooltip_sources(root: Path, scratch: Path, compiled) -> list:
 
 
 if __name__ == "__main__":
-    # For shell checks: support.py <scratch directory> <compiled files…>
-    # prints the extra paths, one per line.
     import sys
     for path in tooltip_sources(Path(__file__).resolve().parents[2], Path(sys.argv[1]), sys.argv[2:]):
         print(path)

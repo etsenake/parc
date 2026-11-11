@@ -1,4 +1,3 @@
-"""Exercise the public existing-package archive/restore and private cache paths."""
 import hashlib
 import importlib.util
 import json

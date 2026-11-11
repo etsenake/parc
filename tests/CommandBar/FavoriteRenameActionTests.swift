@@ -17,7 +17,7 @@ import AppKit
         var ordinary = favorite; ordinary.id = UUID(); ordinary.kind = .today; ordinary.spaceID = space.id
         var state = BrowserState(profiles: [profile, foreign], spaces: [origin, space], activeSpaceID: origin.id)
         state.tabs = [favorite, ordinary]
-        state.selectedTabIDs = [ordinary.id] // Another window's shared legacy selection is irrelevant.
+        state.selectedTabIDs = [ordinary.id]
         func make(_ state: BrowserState, _ ids: [UUID] = [favorite.id]) -> CommandBarFavoriteRenameAction? {
             .init(state: state, spaceID: space.id, profileID: profile.id, selectedTabIDs: ids)
         }
@@ -61,8 +61,6 @@ import AppKit
         check(current(changed) == nil, "Reparented split child cannot use Favorite dialog capability")
         check(action.currentTab(in: state, spaceID: origin.id, profileID: profile.id, selectedTabIDs: [favorite.id]) == nil, "Space change cannot retarget original command session")
         check(action.currentTab(in: state, spaceID: space.id, profileID: foreign.id, selectedTabIDs: [favorite.id]) == nil, "Profile change cannot retarget original command session")
-        // Meaningful transaction integration: use the captured action to resolve
-        // the original record, then the actual persisted title and shared Undo.
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-rename-action-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try BrowserStore(directory: directory)

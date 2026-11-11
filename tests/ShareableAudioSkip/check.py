@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""P1-AD behavior lock: refreshLivePageChrome and updateNavigation skip
-republishing shareable + audio into applyLivePageMetadata only when the live
-fingerprint matches the last apply (shareable ids + lease identity +
-audible/muted). Everyday chrome ticks still walk/probe; real shareable and
-audible/mute flips still hand off. No dirty-bit early out that can miss flips.
-"""
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[2]
@@ -13,7 +7,6 @@ sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
 
 
 def body(source, signature):
-    """The declaration at `signature`, through its body's closing brace."""
     assert source.count(signature) == 1, f"{signature} not found once"
     start = source.index(signature)
     depth = 0
@@ -123,7 +116,6 @@ assert "let effectiveAudio = applyShareableAudio ? audio : tabAudio" in sidebar,
 assert sidebar.count("row.shareable = shareable.contains(row.tabID)") >= 2, \
     "title/split-title edit early returns must still hand off shareable/audio flips"
 
-# Sibling gates from origin/main must remain across rebase.
 assert "lastCapturePresentationFingerprint" in controller, \
     "capture-indicators skip gate missing after rebase"
 assert "lastExtensionControlsSignature" in controller, \

@@ -1,6 +1,5 @@
 import AppKit
 
-/// Explicit inputs go to inert production controls, never to the event server.
 private final class ThemeInputEvent: NSEvent {
     let inputPhase: NSEvent.Phase
     let inputMomentum: NSEvent.Phase
@@ -8,7 +7,6 @@ private final class ThemeInputEvent: NSEvent {
     let delta: CGFloat
     let time: TimeInterval
     let location: NSPoint
-    /// `over` places a trackpad gesture over that dial's knob (`at`, in its bounds).
     init(over view: NSView? = nil, at point: NSPoint? = nil, phase: NSEvent.Phase = [], momentum: NSEvent.Phase = [],
          rotation: Float = 0, delta: CGFloat = 0, time: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         inputPhase = phase; inputMomentum = momentum; degrees = rotation
@@ -52,8 +50,6 @@ private final class ThemeInputEvent: NSEvent {
     static func hoverCenter(_ noise: NSView) {
         noise.mouseMoved(with: mouse(.mouseMoved, noise, NSPoint(x: noise.bounds.midX, y: noise.bounds.midY)))
     }
-    /// An offscreen window that is never ordered in gives the editor the same
-    /// AppKit-managed layer geometry it has in a popover.
     static func hosted(_ theme: SpaceTheme) -> (SpaceThemeEditorView, NSWindow) {
         let view = make(theme)
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: view.frame.width, height: view.frame.height),
@@ -64,15 +60,11 @@ private final class ThemeInputEvent: NSEvent {
         drain()
         return (view, window)
     }
-    /// The knob container is the pad sublayer no subview owns that holds
-    /// layers; AppKit's own content layer has none.
     static func knobs(_ pad: NSView) -> [CALayer] {
         pad.layer!.sublayers!.first { layer in
             !pad.subviews.contains { $0.layer === layer } && layer.sublayers?.isEmpty == false
         }!.sublayers!
     }
-    /// Where Core Animation draws a knob's centre, in pad coordinates. Each
-    /// geometry-flipped layer flips everything beneath it.
     static func drawn(_ knob: CALayer, _ pad: NSView, in view: NSView) -> NSPoint {
         var point = knob.position, layer = knob.superlayer!
         while true {
@@ -236,7 +228,6 @@ private final class ThemeInputEvent: NSEvent {
         pad.mouseDragged(with: mouse(.leftMouseDragged, pad, outside))
         pad.mouseUp(with: mouse(.leftMouseUp, pad, outside))
         expect(NSCursor.current == .arrow, "release outside the pad restores the arrow")
-        //
         NSCursor.arrow.set()
         pad.mouseDown(with: mouse(.leftMouseDown, pad, background))
         expect(NSCursor.current == .arrow, "a background press makes no cursor change")
@@ -252,8 +243,6 @@ private final class ThemeInputEvent: NSEvent {
         pad.mouseUp(with: mouse(.leftMouseUp, pad, corner))
         expect(NSCursor.current == .arrow, "a background release makes no cursor change")
 
-        // + sits 139 points below and right of centre, inside the 168.3-point
-        // rim. A pad drag ending there leaves the primary knob beneath it.
         let add = control("Add color", view) as! NSButton
         let addCenter = pad.convert(NSPoint(x: add.bounds.midX, y: add.bounds.midY), from: add)
         pad.mouseDown(with: mouse(.leftMouseDown, pad, background))
@@ -269,7 +258,6 @@ private final class ThemeInputEvent: NSEvent {
         expect(hover(knobEdge) == .openHand, "the knob outside the button frame shows the open hand")
         expect(knobs[0].transform.m11 > 1, "the knob outside the button frame shows its hover scale")
 
-        //
         let remove = control("Remove color", view)
         func edgeFill() -> CGFloat {
             let rep = remove.bitmapImageRepForCachingDisplay(in: remove.bounds)!
@@ -286,8 +274,6 @@ private final class ThemeInputEvent: NSEvent {
         expect(edgeFill() < 0.01, "a hovered knob turns off −'s hover styling")
         pad.mouseMoved(with: mouse(.mouseMoved, pad, background))
         expect(edgeFill() > 0.03, "leaving the knob restores it")
-        // NSButton's press tracking holds back exit and entry, so a press re-reads
-        // the pointer. It is never over this offscreen window.
         (remove as! NSButton).highlight(true); drain(0.4)
         expect(edgeFill() < 0.01, "a press dragged off − drops its hover")
         (remove as! NSButton).highlight(false)
@@ -297,7 +283,6 @@ private final class ThemeInputEvent: NSEvent {
         drain(0.4)
         expect(edgeFill() > 0.03, "− is hovered again before it leaves the window")
 
-        // A disabled NSButton passes its press to the pad, its next responder.
         var previews = 0; view.onPreview = { _ in previews += 1 }
         let beforeDisabledPress = view.theme
         add.mouseDown(with: mouse(.leftMouseDown, add, NSPoint(x: add.bounds.midX, y: add.bounds.midY)))
@@ -305,13 +290,11 @@ private final class ThemeInputEvent: NSEvent {
         pad.mouseUp(with: mouse(.leftMouseUp, pad, NSPoint(x: addCenter.x - 60, y: addCenter.y - 60)))
         expect(previews == 0 && view.theme == beforeDisabledPress, "a press on disabled + cannot grab the knob beneath it")
 
-        // Onboarding removes the editor and adds it again; no hover survives that.
         window.contentView = nil; window.contentView = view; view.layoutSubtreeIfNeeded()
         pad.mouseMoved(with: mouse(.mouseMoved, pad, knobEdge))
         pad.mouseMoved(with: mouse(.mouseMoved, pad, background))
         expect(edgeFill() < 0.01, "a button hovered before the editor left its window shows no hover after it returns")
     }
-    /// Pixels inside the knob's disc, where only the texture's scale changes.
     static func knobTexture(_ noise: NSView) -> [NSColor] {
         let rep = noise.bitmapImageRepForCachingDisplay(in: noise.bounds)!
         noise.cacheDisplay(in: noise.bounds, to: rep)
@@ -327,7 +310,6 @@ private final class ThemeInputEvent: NSEvent {
         view.cacheDisplay(in: view.bounds, to: rep)
         return Array(UnsafeBufferPointer(start: rep.bitmapData, count: rep.bytesPerRow * rep.pixelsHigh))
     }
-    /// Without a window the button style applies its scales without motion.
     static func buttonStylePresses() {
         let view = make(), noise = control("Theme texture and noise", view)
         let c = NSPoint(x: noise.bounds.midX, y: noise.bounds.midY)
@@ -401,9 +383,6 @@ private final class ThemeInputEvent: NSEvent {
         noise.rotate(with: ThemeInputEvent(over: noise, phase: .cancelled))
         expect(commits == 5, "physical cancellation retires and commits admitted value once")
     }
-    ///
-    /// the dial's frame, and no editor tooltip carries its own palette: each
-    /// inherits the popover window's, set from the edited theme.
     static func editorTooltips() {
         let view = make(), noise = control("Theme texture and noise", view)
         let knob = NSRect(x: noise.bounds.midX - 20, y: noise.bounds.midY - 20, width: 40, height: 40)
@@ -417,9 +396,6 @@ private final class ThemeInputEvent: NSEvent {
         expect(tooltips.count >= 6 && tooltips.allSatisfy { $0.palette == nil },
                "the editor's tooltips leave their palette to the popover window")
     }
-    ///
-    /// circular content shape, above the dial's 80-point gesture surface; its
-    /// hover tracks the knob's square frame and its rotation gesture is the knob's.
     static func dialKnobGeometry() {
         var theme = SpaceTheme(); theme.noise = 0.5
         let view = make(theme), noise = control("Theme texture and noise", view)

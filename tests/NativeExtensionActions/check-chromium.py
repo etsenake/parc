@@ -103,9 +103,6 @@ def main():
             raise ValueError(f"reviewed overlay/hash mismatch: {path}")
         snapshots[path] = actual
 
-    # Validate all mapped sources, headers, BUILD files and patch outputs before
-    # any compiler starts. Native source is then compiled at its actual checkout
-    # path; no repository include override can mask an unapplied dependency.
     sources = {}
     outputs = {}
     for item in manifest["files"]:
@@ -171,7 +168,6 @@ def main():
             raise ValueError(f"missing actual object membership: {source}: {flags_file}")
         targets.append((sources[source], flags_file, language))
 
-    # Discover the exact CXX owner rather than borrowing a nearby target's flags.
     flags_file = build / "obj/parc/browser.ninja"
     for target in UPSTREAM:
         if target not in outputs or not contains_object(flags_file, "cxx", target):

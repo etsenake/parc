@@ -13,8 +13,6 @@ import AppKit
             return [c.redComponent, c.greenComponent, c.blueComponent].map { Int(($0 * 255).rounded()) }
         }
 
-        // Bundled colours: prepopulated engines never take one, exact templates
-        //
         let youtube = "https://www.youtube.com/results?search_query={searchTerms}"
         let red = CommandBarSiteColor.bundledColor(template: youtube, searchHost: "www.youtube.com", prepopulated: false)
         check(red?.colorSpace == .displayP3, "bundled hex is read as Display P3")
@@ -42,12 +40,10 @@ import AppKit
         check(CommandBarSiteColor.host("a.b.example.com", matches: "b"), "a single label matches")
         check(!CommandBarSiteColor.host("notyoutube.com", matches: "youtube.com"), "a suffix without a dot does not")
 
-        // Favicon colour: HSL lightness lowered by 0.15, clamped.
         check(components(CommandBarSiteColor.faviconColor((238, 203, 168))) == [225, 165, 104], "HSL lightness step")
         check(components(CommandBarSiteColor.faviconColor((148, 148, 148))) == [110, 110, 110], "grey stays grey")
         check(components(CommandBarSiteColor.faviconColor((20, 20, 20))) == [0, 0, 0], "lightness clamps at zero")
 
-        // Quantizer: A, B, G, R bytes, every tenth pixel sampled.
         func pixels(_ samples: [(UInt8, UInt8, UInt8, UInt8)]) -> [UInt8] {
             samples.flatMap { sample -> [UInt8] in
                 [sample.3, sample.2, sample.1, sample.0] + [UInt8](repeating: 0, count: 36)
@@ -66,7 +62,6 @@ import AppKit
         check(CommandBarSiteColor.dominantRGB(pixels(Array(repeating: (0, 0, 0, 255), count: 4))).map { [$0.0, $0.1, $0.2] } == [4, 4, 4],
               "with none that bright, the first entry stands")
 
-        //
         let icon = NSImage(size: NSSize(width: 4, height: 4), flipped: false) { rect in
             NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1).setFill(); rect.fill(); return true
         }
@@ -75,8 +70,6 @@ import AppKit
               * (icon.cgImage(forProposedRect: nil, context: nil, hints: nil)?.height ?? 0) * 4, "one word per pixel")
         check(iconPixels.map { $0[1] > 200 && $0[3] < 40 } == true, "blue lands in byte 1 and red in byte 3")
 
-        //
-        // label sits 10 points in from each side and 4 from the top and bottom.
         let pill = CommandBarScopePill(), orange = NSColor(srgbRed: 1, green: 0.27, blue: 0, alpha: 1)
         check(pill.focusColor == CommandBarPalette.colourless.scopePill, "pill defaults to the colourless palette, not the accent")
         for (show, title) in [({ pill.showSite(name: "YouTube", unavailable: false) }, "YouTube"),
@@ -105,7 +98,6 @@ import AppKit
         check(pill.shadow?.shadowColor?.alphaComponent == 0.3, "pill glow is the focus colour at 0.3")
         check(pill.layer?.shadowPath != nil, "glow follows the capsule")
 
-        // Hint: text, then each key on a keycap, 8 points apart.
         let hint = CommandBarScopeHint()
         check(CommandBarScopeHint.font == CommandBarTypography.label, "hint uses the pill's label font")
         hint.show(site: "YouTube", spaceTriggerEnabled: false)
@@ -132,7 +124,6 @@ import AppKit
         hint.isHidden = true
         check(hint.hitTest(NSPoint(x: 1, y: 1)) == nil, "a hidden hint takes no clicks")
 
-        // Highlighted page → engine: the engine's search host must sit at or under the page's host.
         let engines = [(name: "Maps", host: "www.google.com"), (name: "YouTube", host: "www.youtube.com"),
                        (name: "Wikipedia", host: "en.wikipedia.org"), (name: "Legacy", host: "")]
         func offered(_ page: String) -> String? {
@@ -146,7 +137,6 @@ import AppKit
         check(offered("http://www/") == "Maps", "a single label page host matches the first engine carrying it")
         check(CommandBarSiteColor.scope(forPageHost: "", in: engines) { $0.host } == nil, "no host, no engine")
 
-        // Hint in a 350-point sidebar bar: capped at 45%, keys trail, the text truncates inside.
         hint.show(site: "Wikipedia (English)", spaceTriggerEnabled: true)
         hint.isHidden = false
         let capped = min(hint.intrinsicContentSize.width, 350 * 0.45)

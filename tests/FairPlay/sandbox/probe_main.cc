@@ -1,22 +1,3 @@
-// FairPlay GPU-sandbox probe. Plays FairPlay media through the
-// engine-independent core (FairPlayCdm + FairPlayRenderer) inside Chromium's
-// real GPU-process seatbelt profile, to check the GPU sandbox rules Parc adds
-// for FairPlay (Engine/ParcHost/integration/fairplay-media.patch, gpu.sb).
-//
-// This executable is plain C++ and links no framework, like the helper
-// executable Parc's GPU process starts as. Before its sandbox it downloads
-// and parses the media through an unsandboxed helper (fpsbhelper; the GPU
-// process has no network) and reads local files. Then it applies the profile
-// with sandbox_init_with_parameters and opens libfpsbplayer.dylib, which links
-// AVFoundation and the core, so every framework loads sandboxed as in Parc.
-// License POSTs still go through the helper.
-//
-// Usage: fpsbprobe --profile <.sb text> --scenario <name> [--cache <dir>]
-//                  [--media-dir <dir>] [--play-seconds 5] [--timeout 60]
-//                  [--setup-timeout 180] [--log <file>]
-// Prints "RESULT <PASS|FAIL|SETUP-FAIL|INCONCLUSIVE|TIMEOUT> ..." and exits
-// with the matching fpsb::Outcome code.
-
 #include <dlfcn.h>
 #include <limits.h>
 #include <mach-o/dyld.h>
@@ -53,20 +34,15 @@ namespace ft = parc::fairplay::test;
 
 namespace {
 
-// Axinom's public vectors, as tests/FairPlay uses them.
 const char kLicenseUrl[] = "https://drm-fairplay-licensing.axprod.net/AcquireLicense";
 const char kCertificateUrl[] = "https://tools.axinom.com/FPScert/fairplay.cer";
-// "CMAF H264 SingleKey (cbcs)".
 const char kH264Base[] = "https://media.axprod.net/TestVectors/Cmaf/protected_1080p_h264_cbcs/";
 const char kH264Token[] =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogIjMwMmY4MGRkLTQxMWUtNDg4Ni1iY2E1LWJiMWY4MDE4YTAyNCIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiMWVYeWhGWmNGVjljemNtZG5BREpMdz09IiwKICAgICAgICAiaXYiOiAiZC8wWWlhcjBGRHNJVlVpendQbGJtZz09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.5VxBJQsgGVissi9WCNpT7IoykEAmxaEcif6F3SeLvzU";
-// "CMAF H265 SingleKey" (cbcs, its own key and token).
 const char kHevcBase[] = "https://media.axprod.net/TestVectors/H265/protected_cmaf_1080p_h265_singlekey/";
 const char kHevcToken[] =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogImFiY2M0NGU1LWMxMjItNDVhYi1hYzgwLWE1YjM1MjJhMGEzMSIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAibGs1aERneXl1NXl6a3QzMWlVWmF4UT09IiwKICAgICAgICAiaXYiOiAiczhnNHNFemp4Yml2R1pDVGxxU3pQQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.lAwTqoU-rkmyk8QtSn0RrsleMefe2Y5-E5YGoala7yM";
 const char kHevcSkd[] = "skd://abcc44e5-c122-45ab-ac80-a5b3522a0a31:B3C838B04CE3C5B8AF19909396A4B33C";
-
-// ------------------------------------------------------------------ output
 
 std::mutex g_log_mutex;
 
@@ -87,7 +63,6 @@ void Log(const char* format, ...) {
   LogLine(buffer);
 }
 
-// Read by the watchdog; string literals only (the player's stay loaded).
 std::atomic<const char*> g_stage{"start"};
 std::atomic<bool> g_finished{false};
 
@@ -95,7 +70,6 @@ __attribute__((noreturn)) void Finish(fpsb::Outcome outcome, const std::string& 
   {
     std::lock_guard<std::mutex> lock(g_log_mutex);
     if (g_finished.exchange(true)) {
-      // Another thread is already reporting; let it exit the process.
       while (true) pause();
     }
     std::string line = std::string("RESULT ") + fpsb::OutcomeName(outcome) + " " + detail + "\n";
@@ -105,9 +79,6 @@ __attribute__((noreturn)) void Finish(fpsb::Outcome outcome, const std::string& 
   _exit(int(outcome));
 }
 
-// One deadline for the whole run: the setup budget until the sandbox is
-// applied, then the playback budget. A denied service can block the main
-// thread inside AVFoundation, so this runs on its own thread.
 std::atomic<int64_t> g_deadline_ms{0};
 std::atomic<bool> g_sandboxed{false};
 
@@ -128,10 +99,8 @@ void StartWatchdog() {
   }).detach();
 }
 
-// ------------------------------------------------------------------ helper
-
 int g_helper = -1;
-std::mutex g_helper_mutex;  // One request at a time on the socket.
+std::mutex g_helper_mutex;
 
 bool Request(const fpsb::HttpRequest& request, fpsb::HttpResponse* response) {
   std::lock_guard<std::mutex> lock(g_helper_mutex);
@@ -168,8 +137,6 @@ bool Get(const std::string& url, uint64_t offset, uint64_t length, std::vector<u
   *body = std::move(response.body);
   return true;
 }
-
-// ------------------------------------------------------------------- media
 
 struct ByteRange {
   std::string uri;
@@ -248,7 +215,6 @@ bool LoadHls(const std::string& base, const std::string& playlist, int max_segme
   return true;
 }
 
-// Appends |from|'s samples to |to| as a new part, moved |shift_seconds| later.
 void Splice(fpsb::Track* to, const fpsb::Track& from, std::vector<ft::Sample> samples, double shift_seconds) {
   if (to->parts.empty()) {
     to->parts.push_back(to->info);
@@ -268,15 +234,12 @@ double Seconds(const fpsb::Track& track, int64_t ticks) {
   return double(ticks) / track.info.timescale;
 }
 
-// End of the last sample, in seconds.
 double EndOf(const fpsb::Track& track, const std::vector<ft::Sample>& samples) {
   double end = 0;
   for (const ft::Sample& s : samples) end = std::max(end, Seconds(track, s.pts + s.duration));
   return end;
 }
 
-// A fragmented MP4 from Chromium's media/test/data (run.py extracts them from
-// the pinned checkout), holding its init segment and fragments.
 bool LoadFile(const std::string& path, fpsb::Track* track, std::string* error) {
   std::ifstream file(path, std::ios::binary);
   if (!file) {
@@ -306,22 +269,18 @@ bool LoadScenario(const std::string& name, const std::string& media_dir, fpsb::S
            Get(kCertificateUrl, 0, 0, &s->certificate, error);
   };
   if (name == "h264") {
-    // 720p H.264 + AAC, both protected; about 4 s per segment.
     if (!protected_vector(kH264Base, "video-H264-720-2100k.m3u8", 3, kH264Token)) return false;
     s->init_data_type = "cenc";
     s->init_data = s->video.info.pssh_boxes;
     return true;
   }
   if (name == "hevc") {
-    // 720p HEVC + AAC, both protected.
     if (!protected_vector(kHevcBase, "video-H265-720-2100k.m3u8", 3, kHevcToken)) return false;
     s->init_data_type = "skd";
     s->init_data.assign(kHevcSkd, kHevcSkd + sizeof(kHevcSkd) - 1);
     return true;
   }
   if (name == "audio-switch") {
-    // An audio language switch through MSE changeType: protected 720p H.264
-    // video throughout, audio protected AAC, then clear E-AC-3, then AAC again.
     if (!protected_vector(kH264Base, "video-H264-720-2100k.m3u8", 3, kH264Token)) return false;
     s->init_data_type = "cenc";
     s->init_data = s->video.info.pssh_boxes;
@@ -341,8 +300,6 @@ bool LoadScenario(const std::string& name, const std::string& media_dir, fpsb::S
     return true;
   }
   if (name == "video-switch") {
-    // A video codec switch through MSE changeType (clear): H.264, then HEVC,
-    // then H.264 again, each from a keyframe and continuing the timeline.
     fpsb::Track h264, hevc;
     if (!LoadFile(media_dir + "/bear-640x360-v_frag.mp4", &h264, error) ||
         !LoadFile(media_dir + "/bear-320x240-v_frag-hevc.mp4", &hevc, error)) {
@@ -358,16 +315,11 @@ bool LoadScenario(const std::string& name, const std::string& media_dir, fpsb::S
     Splice(&s->video, h264, h264.samples, hevc_start + EndOf(hevc, hevc.samples));
     return true;
   }
-  // Clear clips for codecs no public FairPlay vector has. Their decoders and
-  // output are the same once a protected sample is decrypted.
   if (name == "hls-ts") {
-    // Native HLS through AVPlayer: Apple's clear TS stream (H.264 + AAC).
     s->hls_url = "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8";
     return true;
   }
   if (name == "hls-fmp4") {
-    // Native HLS through AVPlayer: Axinom's clear CMAF (fMP4, alternate
-    // audio and subtitle groups).
     s->hls_url = "https://media.axprod.net/TestVectors/Cmaf/clear_1080p_h264/manifest.m3u8";
     return true;
   }
@@ -377,8 +329,6 @@ bool LoadScenario(const std::string& name, const std::string& media_dir, fpsb::S
   *error = "unknown scenario " + name;
   return false;
 }
-
-// ----------------------------------------------------------------- sandbox
 
 std::string Canonical(const std::string& path) {
   char resolved[PATH_MAX];
@@ -392,7 +342,6 @@ std::string DarwinDir(int name) {
   return Canonical(buffer);
 }
 
-// major * 100 + minor, as sandbox_parameters_mac.mm's OS_VERSION.
 std::string OsVersion() {
   char version[64] = {};
   size_t size = sizeof(version);
@@ -402,11 +351,6 @@ std::string OsVersion() {
   return std::to_string(major * 100 + minor);
 }
 
-// The parameters content/browser/sandbox_parameters_mac.mm passes a GPU
-// process (SetupCommonSandboxParameters + SetupGpuSandboxParameters), with
-// sandbox logging on (--enable-sandbox-logging) so denials reach the log.
-// HELPER_BUNDLE_ID stays unset: the probe isn't in an app bundle (as in
-// Chromium's unit tests). COMPONENT_PATH is component-build only.
 std::vector<std::string> GpuSandboxParameters(const std::string& executable, const std::string& log) {
   const char* home = std::getenv("HOME");
   return {
@@ -433,7 +377,7 @@ bool NetworkAllowed() {
   sockaddr_in address = {};
   address.sin_family = AF_INET;
   address.sin_port = htons(443);
-  address.sin_addr.s_addr = htonl(0x01010101);  // 1.1.1.1
+  address.sin_addr.s_addr = htonl(0x01010101);
   int rv = connect(s, reinterpret_cast<sockaddr*>(&address), sizeof(address));
   close(s);
   return rv == 0;
@@ -446,7 +390,7 @@ std::string ExecutablePath() {
   return Canonical(buffer);
 }
 
-}  // namespace
+}
 
 int main(int argc, char** argv) {
   std::string profile_path, scenario_name, cache = "/tmp/parc-fairplay-cache", media_dir, log_path = "/dev/null";
@@ -471,8 +415,6 @@ int main(int argc, char** argv) {
   g_deadline_ms = NowMs() + int64_t(setup_timeout * 1000);
   StartWatchdog();
 
-  // The helper, unsandboxed, on one end of a socketpair. It must not hold the
-  // probe's end, or it never sees EOF when the probe exits.
   const std::string executable = ExecutablePath();
   const std::string directory = executable.substr(0, executable.rfind('/'));
   const std::string helper_path = directory + "/fpsbhelper";
@@ -491,7 +433,6 @@ int main(int argc, char** argv) {
   close(fds[1]);
   g_helper = fds[0];
 
-  // Everything the GPU process wouldn't download itself, before the sandbox.
   g_stage = "download";
   auto* scenario = new fpsb::Scenario();
   scenario->play_seconds = play_seconds;
@@ -517,15 +458,12 @@ int main(int argc, char** argv) {
   }
   g_deadline_ms = NowMs() + int64_t(timeout * 1000);
   g_sandboxed = true;
-  // The GPU profile denies the network; if it didn't, the profile wasn't
-  // applied as meant and nothing below says anything about it.
   if (NetworkAllowed()) Finish(fpsb::Outcome::kSetup, "outbound network allowed in the sandbox");
   Log("sandboxed; outbound network denied");
 
   g_stage = "dlopen player";
   const std::string player_path = directory + "/libfpsbplayer.dylib";
   void* player = dlopen(player_path.c_str(), RTLD_NOW | RTLD_LOCAL);
-  // Opened inside the sandbox, so a failure here counts against the profile.
   if (!player) Finish(fpsb::Outcome::kFail, std::string("player failed to load in the sandbox: ") + dlerror());
   auto run = reinterpret_cast<fpsb::RunPlayerFunction>(dlsym(player, fpsb::kRunPlayerSymbol));
   if (!run) Finish(fpsb::Outcome::kSetup, "player has no FpsbRunPlayer");

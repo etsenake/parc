@@ -16,7 +16,6 @@ struct AutomaticUpdateTests {
         print("AutomaticUpdateTests: \(checks) checks passed")
     }
 
-    // Input idle well under half an hour, so only away events count.
     static let busy: TimeInterval = 10
     static func idle(_ seconds: TimeInterval) -> AutomaticUpdate.Activity { .init(idleTime: seconds) }
 
@@ -33,8 +32,6 @@ struct AutomaticUpdateTests {
     }
 
     static func sleepTimeDoesNotCount() {
-        // The caller's clock is awake time: a night asleep advances it by
-        // nothing, so waking to a locked screen leaves the delay to unlock.
         var schedule = AutomaticUpdate()
         schedule.began(.sleep, at: 50)
         schedule.began(.screenLock, at: 50)
@@ -55,7 +52,6 @@ struct AutomaticUpdateTests {
     }
 
     static func inputIdleCountsAsAway() {
-        // A Mac that never sleeps, dims, starts its screen saver or locks.
         let schedule = AutomaticUpdate()
         check(!schedule.isAway(at: 10_000, idle(1799)), "Just under half an hour without input")
         check(schedule.isAway(at: 10_000, idle(AutomaticUpdate.idleAwayTime)), "Half an hour without input")

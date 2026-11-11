@@ -1,7 +1,5 @@
-// No native host is linked or constructed by this inert component fixture.
 import AppKit
 @MainActor final class BrowserWindowController {}
-// Stand-ins for the engine's media types (native_appkit_bridge.h).
 enum PCNativeMediaAction { case play, pause, previousTrack, nextTrack, toggleMuted, toggleMicrophone, toggleCamera, enterPictureInPicture }
 enum PCNativeAirPlayState { case unavailable, available, connecting, connected }
 enum PCNativeCastState { case unavailable, available, connecting, connected }

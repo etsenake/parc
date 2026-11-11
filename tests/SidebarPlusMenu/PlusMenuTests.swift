@@ -1,9 +1,6 @@
 import AppKit
 import ObjectiveC
 
-/// Delivers the parent's resign-key notification from the HUD's
-/// `makeKeyAndOrderFront`. AppKit only does that when the parent is already
-/// key, and this process cannot become the active application.
 private enum ParentResignOnHUDKey {
     private static var installed = false
     static func install() {
@@ -24,9 +21,6 @@ private enum ParentResignOnHUDKey {
     }
 }
 
-/// Records the views marked for display. Layer-backed views here read
-/// `needsDisplay` as false even right after it is set, so the flag itself
-/// cannot show an invalidation.
 private enum DisplayRequests {
     static var marked: Set<ObjectIdentifier> = []
     private static var installed = false
@@ -82,7 +76,6 @@ extension NSWindow {
         }
     }
 
-    /// Extended-sRGB components of `color` resolved under one appearance.
     static func resolved(_ color: NSColor, dark: Bool) -> [CGFloat] {
         var components: [CGFloat] = []
         NSAppearance(named: dark ? .darkAqua : .aqua)!.performAsCurrentDrawingAppearance {
@@ -96,13 +89,11 @@ extension NSWindow {
         zip(resolved(a, dark: dark), resolved(b, dark: dark)).allSatisfy { abs($0 - $1) < 1e-5 }
     }
 
-    /// `foreground` over `background` in encoded sRGB, as 8-bit values.
     static func over(_ foreground: NSColor, _ background: [CGFloat], dark: Bool) -> [CGFloat] {
         let f = resolved(foreground, dark: dark)
         return (0..<3).map { (f[$0] * f[3] + background[$0] * (1 - f[3])) * 255 }
     }
 
-    /// Draws `view` offscreen at 2x into sRGB under the app appearance.
     static func render(_ view: NSView, dark: Bool) -> NSBitmapImageRep {
         NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -14_000, y: -14_000), size: view.frame.size),
@@ -113,7 +104,6 @@ extension NSWindow {
         return rep
     }
 
-    /// Draws `view` where it is, at 2x into sRGB, under its own appearance.
     static func capture(_ view: NSView) -> NSBitmapImageRep {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * 2), pixelsHigh: Int(view.bounds.height * 2),
                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -133,8 +123,6 @@ extension NSWindow {
         zip(a, b).allSatisfy { abs($0 - $1) <= tolerance }
     }
 
-    /// The pixel in a card-coordinate box that differs most from `background`:
-    /// a glyph's fully covered core.
     static func ink(_ rep: NSBitmapImageRep, _ box: NSRect, background: [CGFloat]) -> (color: [CGFloat], minX: CGFloat, maxX: CGFloat) {
         var best: (CGFloat, [CGFloat]) = (0, background)
         var minX = CGFloat.infinity, maxX = -CGFloat.infinity
@@ -225,7 +213,6 @@ extension NSWindow {
         check(buttons.last?.emphasized == true && buttons.last?.row.action == .tab, "New Tab starts highlighted")
         check(buttons.filter(\.emphasized).count == 1, "only one highlighted row")
 
-        // Every colour is one of the theme palette's two halves, chosen by appearance.
         let purple = SpaceTheme(primaryColor: ThemeColor(hex: "3D2468"), colorCount: 1, appearance: .dark, noise: 0.3)
         let blue = SpaceTheme(primaryColor: ThemeColor(hex: "3F9BD6"), colorCount: 2, noise: 0.3)
         let srgb = { (r: CGFloat, g: CGFloat, b: CGFloat) in NSColor(srgbRed: r, green: g, blue: b, alpha: 1) }
@@ -247,7 +234,6 @@ extension NSWindow {
         check(!same(PArcMenuColors(theme: purple).background, ThemeChromePalette(theme: purple, isDark: true).backgroundExtra, dark: false),
               "a forced-dark theme still shows its light half in a light app")
 
-        //
         for dark in [false, true] {
             let colors = PArcMenuColors(theme: purple)
             let card = SidebarPlusMenuView(rows: titles, colors: colors) { _ in }
@@ -355,7 +341,6 @@ extension NSWindow {
             parent.close()
         }
 
-        //
         do {
             NSApp.appearance = NSAppearance(named: .aqua)
             let (parent, anchor) = parentAndAnchor()
@@ -392,8 +377,6 @@ extension NSWindow {
         closingView.keyDown(with: escape)
         check(blockedAction == nil, "rows and Escape do nothing while closing")
 
-        // These use a real off-screen parent but no browser or user profile.
-        // Every driven transition emits exactly one true then one false.
         for closePath in ["dismiss", "toggle", "escape", "row", "outside-click", "parent-close"] {
             let (parent, anchor) = parentAndAnchor()
             let controller = SidebarPlusMenuController()

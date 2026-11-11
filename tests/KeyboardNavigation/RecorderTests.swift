@@ -52,13 +52,11 @@ import QuartzCore
         do { _ = try registry.conflictProposal(for: a, commandID: "copy:"); preconditionFailure("Editing target accepted") } catch { checks += 1 }
         let uncontested = try registry.conflictProposal(for: a, commandID: "alpha:")
         expect(uncontested == nil, "Uncontested chord does not need resolution")
-        // Reset-to-default resolution resets only the selected command's priority.
         try registry.set(a, for: "beta:")
         let reset = try registry.conflictProposal(for: a, commandID: "alpha:", resetsPriority: true)!
         try registry.resolveConflict(reset)
         expect(registry.shortcut(for: "alpha:") == a && !registry.isCustomized("alpha:"), "Reset resolution restores default binding and priority")
         expect(registry.priority(for: "beta:") == .preferParc, "Reset resolution retains the displaced owner's priority")
-        // A failed atomic write cannot disable the old owner or publish the new chord.
         let blocked = try registry.conflictProposal(for: a, commandID: "gamma:")!
         let beforeFailure = registry.revision
         try FileManager.default.removeItem(at: file)
@@ -72,9 +70,6 @@ import QuartzCore
         try registry.resetAll()
         expect(registry.shortcut(for: "alpha:") == a && registry.shortcut(for: "beta:") == b && !registry.hasOverrides, "Reset All restores shipped bindings and clears all overrides")
 
-        // Exercise the real menu/native query against an inert Objective-C
-        // target. Saving a duplicate disables both dispatch owners, not either
-        // stored choice; this survives reload and explicit later resolution.
         let target = ConflictDispatchTarget(), menu = NSMenu()
         NSApp.mainMenu = menu
         for item in items { item.target = target; menu.addItem(item) }
@@ -114,7 +109,6 @@ import QuartzCore
         try registry.set(nil, for: "gamma:")
         expect(!registry.isConflicting("beta:") && registry.nativeCommand(for: key, editable: false)?.item === items[1] && items[1].keyEquivalent == "b",
                "Clearing the final conflict restores the surviving original native menu owner")
-        // An older externally written override must not silence native Copy.
         var stored = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
         var assignments = stored["overrides"] as! [String: Any]
         assignments["alpha:"] = ["shortcut": ["key": "c", "modifiers": NSEvent.ModifierFlags.command.rawValue]]
@@ -127,8 +121,6 @@ import QuartzCore
                "Native Copy keeps its original menu binding despite a legacy conflicting override")
         try registry.resetAll()
 
-        // These are direct, offscreen AppKit component calls. No events are sent
-        // to a browser, application menu, renderer or user's Settings window.
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 100), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let recorder = ShortcutRecorderView(frame: NSRect(x: 0, y: 0, width: 80, height: 26))
@@ -211,8 +203,6 @@ import QuartzCore
         field.refreshPresentation(reduceMotion: false)
         let border = field.layer!.sublayers![0], halo = field.layer!.sublayers![1]
         let label = field.subviews.compactMap { $0 as? NSTextField }.first!
-        // Resolve a dynamic expected colour in the field's appearance, as the
-        // field does, not in this Mac's.
         func equalColor(_ color: CGColor?, _ expected: NSColor) -> Bool {
             guard let color, let value = NSColor(cgColor: color)?.usingColorSpace(.sRGB),
                   let expected = NSColor(cgColor: expected.cgColor(in: field.effectiveAppearance))?.usingColorSpace(.sRGB) else { return false }

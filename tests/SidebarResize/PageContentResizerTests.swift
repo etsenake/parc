@@ -1,7 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// A page whose "renderer" is driven by the test: emit() is a frame report.
 @MainActor final class FakePage: NSView, RenderFrameReporting {
     final class Lease: RenderFrameObservation {
         var handler: ((CGSize) -> Void)?
@@ -10,7 +9,6 @@ import QuartzCore
     var reports = true
     var viewport = CGSize.zero
     private(set) var leases: [Lease] = []
-    /// Every size the renderer would have been sent.
     private(set) var sentSizes: [CGSize] = []
     override var isFlipped: Bool { true }
     override func setFrameSize(_ newSize: NSSize) {
@@ -44,7 +42,6 @@ import QuartzCore
     static func size(_ width: CGFloat, _ height: CGFloat = 600) -> CGSize { CGSize(width: width, height: height) }
     static func main() {
         _ = NSApplication.shared
-        // Real AppKit hierarchy, outside the desktop and never key; no engine.
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 1200, height: 700),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -63,7 +60,6 @@ import QuartzCore
         root.layoutSubtreeIfNeeded()
         let ownClipping = content.clipsToBounds
 
-        // Intrinsic: today's live resizing, autoresized and laid out to fill.
         check(page.autoresizingMask == [.width, .height] && page.frame == content.bounds, "intrinsic fills the content")
         resize(760)
         check(page.frame.size == size(760) && resizer.hold.pendingFrames.isEmpty, "intrinsic resizes at once")
@@ -83,8 +79,6 @@ import QuartzCore
         resizer.place(page, in: content)
         check(filler.layouts == hostedLayouts && filler.frame.size == page.frame.size,
               "an unchanged page size does not relayout the hosted subtree")
-        // Shallow hosted-chrome fingerprint: a direct child that no longer
-        // fills still flushes without requiring a deep descendant walk first.
         filler.frame = NSRect(x: 0, y: 0, width: 1, height: 1)
         filler.needsLayout = false
         resizer.place(page, in: content)
@@ -96,7 +90,6 @@ import QuartzCore
         check(filler.frame.width == 740 && filler.frame.size == page.frame.size && filler.layouts == afterFill + 1,
               "a later size is pushed into the hosted subtree in the same pass")
 
-        // An engine without the report: throttle stays intrinsic.
         page.reports = false
         resizer.mode = .throttle
         check(resizer.hold.mode == .intrinsic && page.leases.isEmpty, "no report keeps the page intrinsic")
@@ -105,7 +98,6 @@ import QuartzCore
         check(page.sentSizes.count == before + 6 && page.frame.size == size(700), "without the report every size reaches the page")
         resizer.mode = .intrinsic
 
-        // Renderer-paced throttle.
         page.reports = true
         page.viewport = size(700)
         resizer.mode = .throttle
@@ -137,7 +129,6 @@ import QuartzCore
         resize(640.5)
         check(resizer.hold.lockedSize == nil && page.frame.size.width == 640.5, "a change within a point follows live")
 
-        // Leaving throttle ends the subscription and restores the page.
         resize(620)
         check(resizer.hold.lockedSize == size(620), "held before the drag ends")
         resize(580)
@@ -147,12 +138,10 @@ import QuartzCore
         check(page.frame == content.bounds && page.frame.size == size(580), "the final size is applied after the drag")
         check(page.autoresizingMask == [.width, .height] && content.clipsToBounds == ownClipping, "autoresizing and clipping are restored")
 
-        // Re-entering throttle delivers the current report first.
         page.viewport = size(580)
         resizer.mode = .throttle
         check(page.liveLeases == 1 && resizer.hold.pendingFrames.isEmpty, "the current report drains any stale frame")
 
-        // A new page takes the current mode; the old subscription ends.
         let first = page
         page = FakePage(frame: content.bounds)
         first.removeFromSuperview(); content.addSubview(page)
@@ -164,7 +153,6 @@ import QuartzCore
         resizer.mode = .intrinsic
         root.layoutSubtreeIfNeeded()
 
-        // Locked keeps the size at entry and needs no renderer report.
         page.reports = false
         resizer.mode = .locked
         check(resizer.hold.mode == .locked && resizer.hold.lockedSize == size(540), "locked holds the current size")
@@ -174,9 +162,6 @@ import QuartzCore
         root.layoutSubtreeIfNeeded()
         check(page.frame.size == size(700) && content.clipsToBounds == ownClipping, "unlocking fills the content")
 
-        // A new pane's content and page view start empty (BrowserPane's
-        // `browser` didSet places the page before the content's first layout):
-        // a held mode waits for a size instead of holding an empty one.
         let fresh = Content(frame: .zero)
         root.addSubview(fresh)
         let freshResizer = PageContentResizer()
@@ -211,8 +196,6 @@ import QuartzCore
         check(freshResizer.hold.lockedSize == nil && late.frame.size == size(480), "its report releases the page")
         freshResizer.mode = .intrinsic
 
-        // A page that leaves a held pane mid-drag (its `browser` set to nil)
-        // and comes back after the drag fills its content again.
         let home = Content(frame: NSRect(origin: .zero, size: size(800)))
         let elsewhere = Content(frame: NSRect(origin: .zero, size: size(600)))
         root.addSubview(home); root.addSubview(elsewhere)

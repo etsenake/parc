@@ -1,4 +1,3 @@
-"""The Sparkle appcast: escaped XML, a whole-archive signature and identical bytes on a rerun."""
 import datetime
 import importlib.util
 import json
@@ -66,8 +65,6 @@ class SignatureTests(unittest.TestCase):
 
 
 class WriteTests(unittest.TestCase):
-    """main() against stand-in Sparkle tools that log their arguments."""
-
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="parc-appcast-")
         self.addCleanup(temporary.cleanup)

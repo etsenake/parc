@@ -1,7 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// A window whose key and main state the test sets before posting AppKit's notifications.
 private final class ActivityWindow: NSWindow {
     var key = true, main = true
     override var isKeyWindow: Bool { key }
@@ -20,7 +19,6 @@ private final class ActivityWindow: NSWindow {
         func close(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.0001 }
         typealias Rules = FavoriteTileOverlayRules
 
-        //
         func music(_ url: String) -> Bool { Rules.isMusicHost(URL(string: url)?.host) }
         check(Rules.musicHosts.count == 8, "Eight recovered music hosts")
         for host in Rules.musicHosts { check(music("https://\(host)/x"), "Exact host \(host)") }
@@ -38,7 +36,6 @@ private final class ActivityWindow: NSWindow {
               "No host never matches")
         check(!Rules.isMusicHost(nil), "Nil host never matches")
 
-        //
         let spotify = "https://open.spotify.com/playlist/1"
         check(Rules.showsMusic(singlePage: true, status: .active, savedURL: spotify), "Active single-page music Favorite")
         check(!Rules.showsMusic(singlePage: false, status: .active, savedURL: spotify), "Split Favorites never show particles")
@@ -53,7 +50,6 @@ private final class ActivityWindow: NSWindow {
         check(FavoriteMediaSessionStatus(rawStatus: 7) == .inactive && FavoriteMediaSessionStatus(rawStatus: -1) == .inactive,
               "Out-of-range status is inactive")
 
-        // Recording mapping: mediaRecording (camera/microphone) or tabCapturing (mirrored).
         func recording(camera: Bool = false, microphone: Bool = false, tab: Bool = false, window: Bool = false,
                        display: Bool = false, mirrored: Bool = false, shared: Bool = false) -> Bool {
             Rules.isRecording(camera: camera, microphone: microphone, tab: tab, window: window,
@@ -68,7 +64,6 @@ private final class ActivityWindow: NSWindow {
         check(!recording(shared: true), "A display-media source flag feeds no tested trait")
         check(recording(display: true, mirrored: true), "A tested trait still shows alongside desktop capture")
 
-        // Geometry in the flipped tile space.
         typealias G = FavoriteTileOverlayGeometry
         let tileBounds = CGRect(x: 0, y: 0, width: 60, height: 47)
         check(G.dot(in: tileBounds) == CGRect(x: 46, y: 33, width: 8, height: 8), "Dot at (W-14, H-14, 8, 8)")
@@ -87,13 +82,11 @@ private final class ActivityWindow: NSWindow {
         check(close(collapsed.m11, 0.1) && close(collapsed.m22, 0.1) && close(collapsed.m33, 1), "Collapsed scale 0.1")
         check(close(collapsed.m41, -24) && close(collapsed.m42, 17.5), "Collapsed onto the tile centre")
 
-        //
         let spring = FavoriteTileSpring.make(keyPath: "opacity")
         check(close(spring.mass, 1) && close(spring.stiffness, pow(2 * .pi / 0.4, 2))
               && close(spring.damping, 4 * .pi * 0.6 / 0.4) && close(spring.duration, spring.settlingDuration),
               "Badge spring parameters")
 
-        // Emitter configuration (MP2-20..24).
         let configurations = FavoriteParticleCellConfiguration.cells
         check(configurations.map(\.birthRate) == [1.4, 1.0], "Two cells, birth rates 1.4 and 1.0")
         let dark = FavoriteMusicParticlesView(dark: true)
@@ -126,7 +119,6 @@ private final class ActivityWindow: NSWindow {
               && FavoriteNoteSprites.single.isTemplate && FavoriteNoteSprites.pair.isTemplate, "Two 6 × 6 template sprites")
         check(FavoriteNoteSprites.single.tiffRepresentation != FavoriteNoteSprites.pair.tiffRepresentation, "Two distinct note shapes")
 
-        // Live tile: idempotent overlay updates.
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -221,7 +213,6 @@ private final class ActivityWindow: NSWindow {
         tile.setOverlays(FavoriteTileOverlayState(recording: true, badge: FavoriteTileBadge(favicon: second)))
         check(overlays.particlesView == nil, "Ineligible music removes the emitter")
 
-        // Hide springs collapse; a show before removal keeps the same badge.
         tile.setOverlays(FavoriteTileOverlayState(recording: true))
         let hide = badge?.layer?.animation(forKey: "badge_transform") as? CASpringAnimation
         check(overlays.badgeView === badge && !overlays.badgeShown && badge?.layer?.opacity == 0
@@ -234,7 +225,6 @@ private final class ActivityWindow: NSWindow {
         check(overlays.dotView == nil && dot?.superview == nil, "Recording off removes the dot at once")
         check(dot?.pulse == nil, "A removed dot leaves no pulse running")
 
-        // Leaving the window: final values without animation.
         tile.removeFromSuperview()
         tile.setOverlays(.none)
         check(overlays.badgeView == nil && badge?.superview == nil, "Without a window the badge is removed at once")
@@ -243,7 +233,6 @@ private final class ActivityWindow: NSWindow {
         tile.setOverlays(.none)
         window.close()
 
-        // Dim (INC-01): shouldDim = neither key nor main; applied without animation.
         check(Rules.shouldDim(isKey: false, isMain: false) && !Rules.shouldDim(isKey: true, isMain: false)
               && !Rules.shouldDim(isKey: false, isMain: true) && !Rules.shouldDim(isKey: true, isMain: true),
               "shouldDim truth table")
@@ -311,7 +300,6 @@ private final class ActivityWindow: NSWindow {
         lit.selected = true
         lit.applyPalette(isDark: false, glyphColor: .black, highlightColor: maxContrast)
 
-        // Highlight ring (S15–S17): z 4, 2-point maxContrastColor stroke, no animation.
         let litOverlays = lit.overlays
         SystemOverrides.reduceMotion = true
         check(litOverlays.ringView == nil && !litOverlays.highlighted, "No ring until highlighted")
@@ -354,7 +342,6 @@ private final class ActivityWindow: NSWindow {
         check(ring.frame == lit.bounds && ring.ring.path == FavoriteTilePaths.highlightRing(bounds: ring.bounds),
               "Ring follows the tile size")
 
-        // Developer-tab style (S16/S17): selected && isDeveloperTab, below the highlight.
         var yellow: CGColor?
         lit.effectiveAppearance.performAsCurrentDrawingAppearance { yellow = NSColor.systemYellow.cgColor }
         func developerStyle() -> Bool {
@@ -388,8 +375,6 @@ private final class ActivityWindow: NSWindow {
         check(fresh.overlays.ringView?.isHidden == false && fresh.overlays.ringView?.style == .developerTab,
               "Selecting a developer tab creates the ring lazily")
 
-        // P1-AC live-chrome skip predicate: identical presentation fingerprints
-        // are true no-ops; media status is readable only for listed music hosts.
         typealias Skip = FavoriteOverlayPresentationSkip
         check(Skip.shouldSkip(previous: nil, next: "a") == false, "First fingerprint never skips")
         check(Skip.shouldSkip(previous: "a", next: "a"), "Identical fingerprint skips")
@@ -420,8 +405,6 @@ private final class ActivityWindow: NSWindow {
         check(Skip.tiffDataToken(Data()) == "0.cbf29ce484222325",
               "Empty TIFF token is FNV-1a over zero bytes")
 
-        // N3: identical-frame layout skips CATransaction layer writes; a real
-        // bounds change still rewrites; style stays ungated; pulse keeps working.
         typealias LayerSkip = FavoriteOverlayLayerLayoutSkip
         let dotBounds = CGRect(x: 0, y: 0, width: 8, height: 8)
         let stroke = FavoriteTileOverlayGeometry.dotStroke

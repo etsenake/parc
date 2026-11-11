@@ -23,8 +23,6 @@ import AppKit
     @objc func invoke() { count += 1 }
 }
 
-/// Inert AppKit components only: no windows are ordered, no OS input or browser
-/// is driven, and no real preference, profile or application activation changes.
 @main @MainActor struct SettingsFocusTests {
     static func main() {
         let app = TestApplication.shared as! TestApplication
@@ -43,7 +41,6 @@ import AppKit
         button.frame = NSRect(x: 230, y: 20, width: 80, height: 25)
         let lower = NSTextField(frame: NSRect(x: 20, y: 80, width: 200, height: 25))
         let label = NSTextField(labelWithString: "Explanation")
-        // Insertion order intentionally disagrees with visual order.
         [lower, button, label, first].forEach(root.addSubview)
         SettingsFocusState.connectKeyViews(in: root)
         expect(SettingsFocusState.controls(in: root).count == 3, "Passive labels are not duplicate keyboard controls")

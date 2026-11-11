@@ -30,7 +30,6 @@ import Foundation
         check(hold.pendingFrames.isEmpty && hold.lockedSize == nil, "intrinsic keeps no pending frames")
         check(!hold.setMode(.intrinsic, frameSize: size(700)), "an unchanged mode does nothing")
 
-        // Throttle: the renderer's latest report is the baseline with nothing pending.
         check(hold.setMode(.throttle, frameSize: size(800)), "entering throttle needs layout")
         check(hold.lockedSize == nil, "entering throttle holds nothing yet")
         hold.didApply(frameSize: size(801), lastReport: size(800))
@@ -53,7 +52,6 @@ import Foundation
         hold.acknowledge(size(1200))
         check(hold.pendingFrames.isEmpty && hold.lockedSize == nil, "a report that matches nothing drops every frame and releases")
 
-        // Frames are consumed from the front through the first match only.
         var queued = H()
         queued.setMode(.throttle, frameSize: size(900))
         queued.didApply(frameSize: size(880), lastReport: size(900))
@@ -68,7 +66,6 @@ import Foundation
         queued.acknowledge(size(860))
         check(queued.pendingFrames.isEmpty, "a later report drains the rest")
 
-        // Locked keeps the frame size at entry, without any renderer report.
         var locked = H()
         check(locked.setMode(.locked, frameSize: size(640)) && locked.lockedSize == size(640), "locking holds the current size")
         locked.didApply(frameSize: size(640), lastReport: size(10))
@@ -79,7 +76,6 @@ import Foundation
         locked.setMode(.intrinsic, frameSize: size(620))
         check(locked.lockedSize == nil && locked.frame(in: bounds) == bounds, "unlocking fills the content again")
 
-        // The renderer viewport in the page view's own size.
         check(H.pageSize(ofViewport: size(700, 560), page: size(1000, 600), renderer: size(700, 560)) == size(1000, 600),
               "docked chrome around the renderer is added back")
         check(H.pageSize(ofViewport: size(690, 560), page: size(1000, 600), renderer: size(700, 560)) == size(990, 600),

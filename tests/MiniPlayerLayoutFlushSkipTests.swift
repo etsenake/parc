@@ -1,9 +1,3 @@
-/// P2-AR: forced mini-player layoutSubtree flushes only when geometry moved or
-/// the subtree is already dirty. Identical frames with a clean tree stay a no-op.
-///
-/// Mirrors `MiniPlayerLayoutFlushSkip` in Sources/ParcApp/MiniPlayerView.swift so
-/// this unit stays freestanding; `tests/MiniPlayerLayoutFlushSkip/check.py` locks
-/// the production copy and call sites.
 enum MiniPlayerLayoutFlushSkip {
     static func shouldFlush(
         frameChanged: Bool = false,

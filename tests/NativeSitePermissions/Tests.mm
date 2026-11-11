@@ -443,9 +443,6 @@ static void Anchor() {
   Drain();
   [w close];
 }
-// WEB19: PlainButtonStyle's press feedback draws the whole action at 75%.
-// The summed alpha of the button's own drawing, without the view shadow that
-// cacheDisplay (unlike the layer path) bakes into each drawn element.
 static double DrawnAlpha(NSButton* button) {
   NSShadow* shadow = button.shadow;
   button.shadow = nil;

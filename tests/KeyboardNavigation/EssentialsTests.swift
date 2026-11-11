@@ -1,8 +1,6 @@
 import AppKit
 import CoreText
 
-/// Exercises the production education window and registry without a browser,
-/// Apple Events, global keyboard input or personal preferences.
 @MainActor private final class EssentialsMenuTarget: NSObject {
     var copyCount = 0
     @objc func copyCurrentURL(_ sender: NSMenuItem) { copyCount += 1 }
@@ -142,8 +140,6 @@ import CoreText
         controller!.isOwnerAvailable = { false }
         expect(!controller!.canActivateCommand("newTab:"), "Lost original owner refuses command availability")
         expect(!controller!.activateCommand("unknown:"), "Unrelated commands cannot enter education dispatch")
-        // The original education controller inherits NSWindow's menu delivery.
-        // Exercise actual AppKit key-equivalent dispatch without browser input.
         let target = EssentialsMenuTarget(), copyItem = menu.items[2]
         copyItem.target = target
         func copyEvent(repeating: Bool, flags: NSEvent.ModifierFlags = [.command, .shift],

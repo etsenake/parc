@@ -1,7 +1,3 @@
-// Runs the legacy EME script from Engine/ParcRenderer/parc_webkit_media_keys.h
-// against a model of Chromium's Media Source and modern EME as a
-// Safari-identity page sees them, with Parc's FairPlay CDM message formats.
-// No browser; `node webkit_media_keys.mjs`.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
@@ -11,7 +7,6 @@ const header = readFileSync(fileURLToPath(new URL(
 const match = header.match(/R"PARC_WKMK_JS\(([\s\S]*)\)PARC_WKMK_JS"/);
 if (!match) throw new Error('script not found in header');
 const script = match[1];
-// Blink runs it as a Latin-1 String.
 if (/[^\x00-\x7f]/.test(script)) throw new Error('script must be ASCII');
 
 let checks = 0;
@@ -23,24 +18,14 @@ function check(condition, message) {
   }
 }
 
-// Chromium's Media Source on a Safari-identity page: MP4 and WebM, codec
-// strings it parses, Dolby audio and Dolby Vision profile 5 included (the
-// identity's gates in fairplay-identity-blink.patch). AV1, VP9, Opus and FLAC
-// play there too, but not through FairPlay.
 const MSE_CODECS = [
   /^avc[13]\.[0-9a-f]{6}$/i, /^(hvc1|hev1)\.[0-9a-z.]+$/i, /^(dvh1|dvhe)\.05\.\d\d$/i,
   /^av01\.[0-9.a-z]+$/i, /^vp09\.[0-9.]+$/, /^vp9$/, /^opus$/, /^flac$/,
   /^mp4a\.40\.\d+$/, /^mp4a\.6[678]$/, /^(ac-3|ec-3|mp4a\.a[56])$/i,
 ];
-// A model of modern EME over Parc's FairPlay CDM: cenc and keyids sessions
-// exchange JSON {keyID, payload} arrays, sinf sessions raw SPC and CKC, and
-// "renew" asks for a renewal. `sinf` says whether the CDM takes sinf init data.
 const text = (data) => Buffer.from(ArrayBuffer.isView(data) ?
     new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data)).toString('latin1');
 const bytesOf = (value) => new Uint8Array(Buffer.from(value, 'latin1'));
-// `privateWindow` refuses persistent state, as Chromium's FairPlay selector
-// does off the record; `reports` are the storage's expired-session reports for
-// "first", `sessionReport` the one a legacy key session leaves for "session".
 function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [],
                     sessionReport = null} = {}) {
   const calls = [];
@@ -62,7 +47,6 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
     get messageType() { return this.#type; }
     get message() { return this.#message; }
   }
-  // The media pipeline's events are trusted; one a page builds isn't.
   class MediaEncryptedEvent extends Event {
     #type; #data; #trusted;
     constructor(type, init, trusted = false) {
@@ -82,7 +66,6 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
     #keys; #json = false; #lastKey = null; #statuses = new Map();
     constructor(keys) { super(); this.#keys = keys; }
     get keyStatuses() { return new MediaKeyStatusMap(this.#statuses); }
-    // The CDM reporting key statuses (keystatuseschange).
     setStatuses(entries) {
       this.#statuses = new Map(entries);
       this.dispatchEvent(new Event('keystatuseschange'));
@@ -97,7 +80,6 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
     generateRequest(type, data) {
       log.push(['generateRequest', type, text(data)]);
       if (type === 'sinf' && JSON.parse(text(data)).legacySecureStop) {
-        // Parc's CDM: WebKit's legacy secure stop (fairplay_key_session.mm).
         const operation = JSON.parse(text(data)).legacySecureStop;
         const none = () => Promise.reject(
             new DOMException('no expired-session report (560820082)', 'NotSupportedError'));
@@ -118,8 +100,6 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
       let innerType = type;
       let inner = text(data);
       if (type === 'skd') {
-        // Parc's skd extension for the legacy AVFoundation player: the key
-        // URI and the SPC's content ID.
         const json = JSON.parse(inner);
         this.#json = false;
         this.#lastKey = 'skd:' + json.skd + ':' + Buffer.from(json.contentId, 'base64').toString();
@@ -127,8 +107,6 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
         return Promise.resolve();
       }
       if (type === 'keyids') {
-        // Blink's SanitizeInitData rebuilds keyids init data from its key IDs
-        // alone, so nothing else in it reaches the CDM.
         let json;
         try {
           json = JSON.parse(inner);
@@ -143,7 +121,6 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
         return Promise.reject(new DOMException('Unsupported initDataType', 'NotSupportedError'));
       }
       this.#json = innerType !== 'sinf';
-      // Each pssh box in the model names one key; sinf names one.
       const keyIds = innerType === 'cenc' ? inner.match(/pssh(\w+)/g).map((m) => m.slice(4)) : ['sinf-key'];
       this.#lastKey = keyIds[keyIds.length - 1];
       this.send('license-request', keyIds.map((id) => [id, spc(this.#keys, id)]));
@@ -160,7 +137,6 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
       if (body === 'renew') {
         this.send('license-renewal', [[this.#lastKey, spc(this.#keys, 'renew:' + this.#lastKey)]]);
       }
-      // A CKC AVFoundation rejects.
       const ckc = this.#json && body.startsWith('[') ?
           JSON.parse(body).map((entry) => Buffer.from(entry.payload, 'base64').toString('latin1')).join() : body;
       if (ckc === 'BAD-CKC') return Promise.reject(new TypeError('license response rejected'));
@@ -204,9 +180,8 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
   class HTMLMediaElement extends EventTarget {
     #keys = null; #paused = true; name;
     constructor(name = 'video') { super(); this.name = name; }
-    get paused() { return this.#paused; }  // brand-checks like Blink's getter
+    get paused() { return this.#paused; }
     get mediaKeys() { return this.#keys; }
-    // Blink refuses a setMediaKeys while another on the element is pending.
     #attaching = false;
     setMediaKeys(keys) {
       if (this.#attaching) {
@@ -232,13 +207,7 @@ function makeWorld({sinf = true, failSpc = 0, privateWindow = false, reports = [
   vm.createContext(context);
   return context;
 }
-// Lets the script's tasks and promise chains run.
 const settle = async () => { for (let i = 0; i < 20; ++i) await new Promise((r) => setTimeout(r, 0)); };
-// The browser's AVAssetMIMETypeCache::canDecodeType answer as AVFoundation
-// gave it on macOS 27.2 (AVURLAsset.audiovisualMIMETypes, then
-// isPlayableExtendedMIMEType for the codecs; case-sensitive, avc3, hev1 and
-// dvhe answer no). Blink gives it to the script's hook
-// (parc_webkit_need_key.h); run() does the same here.
 const AVFOUNDATION_TYPES = new Set((
     'application/mp4 application/ogg application/ttml+xml ' +
     'application/vnd.apple.mpegurl application/x-mpegurl audio/3gpp audio/3gpp2 ' +
@@ -275,8 +244,6 @@ const run = (context, source) => {
   }
   return value;
 };
-// Errors the script throws come from the context's realm (DOMException is
-// shared), so TypeErrors are compared by name.
 const thrown = (fn) => {
   try {
     fn();
@@ -286,7 +253,6 @@ const thrown = (fn) => {
   return null;
 };
 
-// ---- Installation.
 {
   const world = makeWorld();
   run(world, script);
@@ -298,14 +264,11 @@ const thrown = (fn) => {
   check(world.WebKitMediaKeys.length === 1 && world.WebKitMediaKeys.isTypeSupported.length === 1,
         'one required argument each, as WebIDL reports');
 
-  // Netflix's akira client, exactly.
   check(run(world, '!!(window.WebKitMediaKeys && window.WebKitMediaKeys.isTypeSupported("com.apple.fps.2_0"))') === true,
         "Netflix's canPlayHTML5WithDRM check passes");
   check(run(world, '(() => { let a; return !!(null != (a = window.WebKitMediaKeys) && a.isTypeSupported("com.apple.fps.2_0")); })()') === true,
         "Netflix's capability observable passes");
 
-  // Apple TV+'s MusicKit (mediakit~*.js), exactly: it probes only 1_0, and
-  // gets Safari's answer now that native HLS plays it.
   check(run(world, `(() => { const s = 'video/mp4; codecs="avc1.42E01E"', n = [];
       typeof window.WebKitMediaKeys?.isTypeSupported == "function" &&
           window.WebKitMediaKeys.isTypeSupported("com.apple.fps.1_0", s) === true && n.push("fairplay_legacy");
@@ -314,8 +277,6 @@ const thrown = (fn) => {
         "Apple TV+'s media extension sees Safari's 1_0 answer");
 }
 
-// ---- Key systems: WebKit's legacy Media Source CDM's (the AVFoundation
-// player's com.apple.fps, 1_0 and org.w3c.clearkey are checked below).
 {
   const world = makeWorld();
   run(world, script);
@@ -338,8 +299,6 @@ const thrown = (fn) => {
   check(thrown(() => supports(Symbol('fps')))?.name === 'TypeError', 'a Symbol is not a DOMString');
 }
 
-// ---- Content types: what Media Source plays, as WebKit's legacy Media Source
-// CDM answers (LegacyCDMPrivateAVFObjC::supportsKeySystemAndMimeType).
 {
   const world = makeWorld();
   run(world, script);
@@ -360,7 +319,7 @@ const thrown = (fn) => {
   ];
   for (const type of yes) check(supports(type) === true, `${type} is supported`);
   const no = [
-    'audio/mp4; codecs="mp4a.6B"',          // Media Source doesn't play it
+    'audio/mp4; codecs="mp4a.6B"',
     'video/mp4; codecs="dvhe.08.07"',
     'video/mp4; codecs="avc1.640028,"',
     'video/mp4; codecs=""',
@@ -380,7 +339,6 @@ const thrown = (fn) => {
         'createSession: keyrelease case-sensitively, then what Media Source plays');
 }
 
-// ---- A page replacing MediaSource.isTypeSupported doesn't change the answers.
 {
   const world = makeWorld();
   run(world, script);
@@ -392,7 +350,6 @@ const thrown = (fn) => {
         "Chromium's own answer is used");
 }
 
-// ---- Without MediaSource only the key system can be answered.
 {
   const context = { DOMException };
   vm.createContext(context);
@@ -402,7 +359,6 @@ const thrown = (fn) => {
         'no type is playable without Media Source');
 }
 
-// ---- An existing WebKitMediaKeys is left alone.
 {
   const world = makeWorld();
   run(world, 'globalThis.WebKitMediaKeys = function Existing() {};');
@@ -410,7 +366,6 @@ const thrown = (fn) => {
   check(world.WebKitMediaKeys.name === 'Existing', 'an existing WebKitMediaKeys is kept');
 }
 
-// ---- The constructor: WebKit's legacy Media Source CDM.
 {
   const world = makeWorld();
   run(world, script);
@@ -431,13 +386,10 @@ const thrown = (fn) => {
   check(construct()?.name === 'TypeError', 'the constructor needs a key system');
   check(thrown(() => world.WebKitMediaKeys('com.apple.fps.2_0'))?.name === 'TypeError',
         'calling it without new throws TypeError');
-  // Disney+'s native client (dwp bundle), exactly: 1_0 is native HLS, which
-  // Parc plays, so the keys are made as in Safari.
   check(run(world, `((J = WebKitMediaKeys) => { try { new J("com.apple.fps.1_0"); return "made"; }
       catch (e) { return e.name; } })()`) === 'made', "Disney+'s native client gets its keys");
 }
 
-// ---- Without modern EME (an insecure context) no keys can be made.
 {
   const context = { MediaSource: makeWorld().MediaSource, DOMException, Event, EventTarget };
   vm.createContext(context);
@@ -448,7 +400,6 @@ const thrown = (fn) => {
         'keys need modern EME underneath');
 }
 
-// ---- Interfaces.
 {
   const world = makeWorld();
   run(world, script);
@@ -497,7 +448,6 @@ const thrown = (fn) => {
         'media elements keep EventTarget\'s own addEventListener, as in Safari');
 }
 
-// ---- Argument checks of createSession and update.
 {
   const world = makeWorld();
   run(world, script);
@@ -521,7 +471,6 @@ const thrown = (fn) => {
   check(name(() => session.update('ckc')) === 'TypeError', 'update takes a Uint8Array');
 }
 
-// A pssh box naming one key in the model.
 const pssh = (id) => {
   const body = Buffer.from('pssh' + id, 'latin1');
   const box = Buffer.alloc(4 + body.length);
@@ -532,16 +481,11 @@ const pssh = (id) => {
 const encrypted = (world, element, initDataType, bytes) =>
     element.dispatchEvent(new world.MediaEncryptedEvent('encrypted',
         {initDataType, initData: new Uint8Array(bytes).buffer}, true));
-// Blink's side of webkitneedkey (parc_webkit_need_key.h): the script's
-// completion value is its hook; Blink calls it with the element, the init
-// data and where it comes from, and queues the event it returns at the
-// element (trusted, before `encrypted`). Here the event is dispatched at once.
 const needKey = (hook, element, bytes, kind) => {
   const event = hook(element, new Uint8Array(bytes), kind);
   if (event) element.dispatchEvent(event);
   return event;
 };
-// WebKit's legacy skd init data, as Blink builds it (ParcWebKitSkdInitData).
 const skdInitData = (uri) => {
   const data = Buffer.alloc(4 + uri.length * 2);
   data.writeUInt32LE(uri.length * 2, 0);
@@ -549,7 +493,6 @@ const skdInitData = (uri) => {
   return data;
 };
 
-// ---- com.apple.fps.3_0 over cenc init data: the whole protocol.
 {
   const world = makeWorld();
   const hook = run(world, script);
@@ -628,9 +571,6 @@ const skdInitData = (uri) => {
   session.close();
   session.update(new Uint8Array(bytesOf('late')));
   await settle();
-  // WebKit's close() is releaseKeys(): the key session expires and its
-  // expired-session report is looked for, so the CDM is asked for it after
-  // the modern session closes.
   const after = world.log.slice(logged);
   check(after[0] && after[0][0] === 'close' &&
         !after.some((entry) => entry[0] === 'update') && events.length === before,
@@ -646,8 +586,6 @@ const skdInitData = (uri) => {
         world.log[world.log.length - 1][2] === null, 'webkitSetMediaKeys(null) detaches');
 }
 
-// ---- sinf init data: raw SPC and CKC once the CDM takes sinf; until then
-// a DOMAIN error with the system code.
 for (const sinf of [true, false]) {
   const world = makeWorld({sinf});
   run(world, script);
@@ -672,8 +610,6 @@ for (const sinf of [true, false]) {
           'a request the CDM refuses is a DOMAIN key error');
   }
 }
-// ---- The key system's protocol versions reach the CDM with sinf requests
-// (LegacyCDMPrivateAVFObjC::parseKeySystem, AVContentKeyRequestProtocolVersionsKey).
 for (const [keySystem, expected] of [['com.apple.fps.3_1,2', [1, 2]], ['com.apple.fps.3_0', [0]]]) {
   const world = makeWorld();
   run(world, script);
@@ -687,8 +623,6 @@ for (const [keySystem, expected] of [['com.apple.fps.3_1,2', [1, 2]], ['com.appl
         JSON.stringify(JSON.parse(request[2]).protocolVersions) === JSON.stringify(expected),
         keySystem + ': protocol versions ' + expected.join(','));
 }
-// ---- Init data of no form Parc's CDM reads goes to AVFoundation unchanged
-// (CDMSessionAVContentKeySession::update), as sinf JSON's legacyInitData.
 {
   const world = makeWorld();
   run(world, script);
@@ -723,7 +657,6 @@ for (const [keySystem, expected] of [['com.apple.fps.3_1,2', [1, 2]], ['com.appl
   check(unknown.error && unknown.error.code === 6, 'init data Parc cannot read is a DOMAIN key error');
 }
 
-// ---- com.apple.fps.2_0: the init data is the source buffer's sinf.
 {
   const world = makeWorld();
   const hook = run(world, script);
@@ -752,8 +685,6 @@ for (const [keySystem, expected] of [['com.apple.fps.3_1,2', [1, 2]], ['com.appl
         "the request is the source buffer's sinf, the SPC named by the page's identifier");
   check(events.slice(-2).join() === 'certificate,SPC(CERT,sinf-key)', 'then the raw SPC');
 
-  // A session keeps the first source buffer init data it is given: the
-  // renderer's latest when it becomes the renderer's session, else the next.
   const third = keys.createSession('video/mp4', new Uint8Array(bytesOf('content-id')));
   needKey(hook, video, sinfOf('D'), 'media-source');
   await settle();
@@ -762,7 +693,6 @@ for (const [keySystem, expected] of [['com.apple.fps.3_1,2', [1, 2]], ['com.appl
   check(tagOf(world.log.filter((entry) => entry[0] === 'generateRequest').pop()) === 'C',
         'init data arriving later does not replace a session\'s first');
 
-  // Keys attached after their session was created hand it the element's.
   const other = new world.HTMLMediaElement('other');
   needKey(hook, other, sinfOf('E'), 'media-source');
   const late = new world.WebKitMediaKeys('com.apple.fps.2_0');
@@ -774,8 +704,6 @@ for (const [keySystem, expected] of [['com.apple.fps.3_1,2', [1, 2]], ['com.appl
   check(tagOf(world.log.filter((entry) => entry[0] === 'generateRequest').pop()) === 'E',
         "attaching the keys gives their latest session the element's init data");
 
-  // A new load: WebKit's new player has no renderer session or init data, so
-  // the next title's session waits for its own init data.
   needKey(hook, video, [], 'load');
   const nextTitle = keys.createSession('video/mp4', new Uint8Array(bytesOf('content-id')));
   const nextEvents = [];
@@ -789,10 +717,7 @@ for (const [keySystem, expected] of [['com.apple.fps.3_1,2', [1, 2]], ['com.appl
   check(needKey(hook, video, [], 'load') === null, 'a load raises no event');
 }
 
-// ---- Secure stop (CDMSessionAVContentKeySession: keyrelease, acknowledged,
-// the report on close).
 {
-  // keyrelease: the first report for the certificate, acknowledged away.
   const world = makeWorld({reports: ['REPORT-1', 'REPORT-2']});
   run(world, script);
   const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
@@ -813,12 +738,9 @@ for (const [keySystem, expected] of [['com.apple.fps.3_1,2', [1, 2]], ['com.appl
         events.pop() === 'added', 'acknowledged removes it and the key counts as added');
   release.update(new Uint8Array(bytesOf('other')));
   await settle();
-  // (The check above popped 'added'.) WebKit's KeyRelease mode returns
-  // false for anything else, with no event.
   check(events.join() === 'message:REPORT-1', 'a keyrelease session takes nothing else');
 }
 for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1']}]) {
-  // No report, or no storage (a private window): KeySystemNotSupported '!mor'.
   const world = makeWorld(options);
   run(world, script);
   const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
@@ -835,7 +757,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(other.error && other.error.code === 1, 'acknowledged without a report: InvalidPlayerState');
 }
 {
-  // The report a legacy session's key session leaves arrives after close().
   const world = makeWorld({sessionReport: 'SESSION-REPORT'});
   run(world, script);
   const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
@@ -858,8 +779,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(!world.log.some((entry) => entry[0] === 'acknowledge'),
         'a closed session ignores updates, as WebKit drops them');
 
-  // Each session has its own key session, so each close asks for its own
-  // report (CDMSessionAVContentKeySession::releaseKeys).
   const two = makeWorld({sessionReport: 'R'});
   run(two, script);
   const shared = new two.WebKitMediaKeys('com.apple.fps.3_0');
@@ -881,7 +800,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(asked() === 2, 'and the other close asks for its own');
 }
 {
-  // A private window has no storage: temporary sessions, nothing on close.
   const world = makeWorld({privateWindow: true, sessionReport: 'R'});
   run(world, script);
   const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
@@ -896,8 +814,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
         'temporary sessions and no report request without storage');
 }
 
-// ---- The key-needed hook: what Blink calls for each key a media element
-// needs (HTMLMediaElement::mediaPlayerKeyNeeded).
 {
   const world = makeWorld();
   const hook = run(world, script);
@@ -917,7 +833,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(seen.length === 1 && seen[0] === event, 'dispatched at the element');
   check(hook({}, new Uint8Array(1), 'skd') === null && hook(audio, [1], 'skd') === null &&
         hook(audio) === null, 'only a media element and a Uint8Array');
-  // A page giving the class another parent can't choose the trusted event.
   const NeededEvent = world.WebKitMediaKeyNeededEvent;
   const parent = Object.getPrototypeOf(NeededEvent);
   Object.setPrototypeOf(NeededEvent, function() { return new world.Event('click', {bubbles: true}); });
@@ -925,8 +840,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(guarded instanceof NeededEvent && guarded.type === 'webkitneedkey' && !guarded.bubbles &&
         Buffer.from(guarded.initData).equals(layout), "the hook's event ignores a replaced parent class");
   Object.setPrototypeOf(NeededEvent, parent);
-  // Changing the event's initData doesn't change what 2_N keys use, and
-  // only Media Source init data reaches them.
   const video = new world.HTMLMediaElement();
   const keys = new world.WebKitMediaKeys('com.apple.fps.2_0');
   video.webkitSetMediaKeys(keys);
@@ -942,7 +855,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(request && request[1] === 'sinf' &&
         Buffer.from(JSON.parse(request[2]).sinf[0], 'base64').toString() === 'K',
         'the keys keep their own copy of the Media Source init data');
-  // The constructor's dictionary, as WebIDL converts it.
   run(world, 'Object.defineProperty(Object.prototype, "initData", {get() { throw new Error("read"); }, configurable: true});');
   check(thrown(() => new world.WebKitMediaKeyNeededEvent('webkitneedkey')) === null &&
         thrown(() => new world.WebKitMediaKeyNeededEvent('webkitneedkey', null)) === null &&
@@ -955,8 +867,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
         'a dictionary must be an object');
 }
 
-// ---- Keys follow the last element; a page replacing the modern API after
-// the script ran (Shaka's PatchedMediaKeysApple) doesn't reach the keys.
 {
   const world = makeWorld();
   run(world, script);
@@ -969,7 +879,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   const keys = new world.WebKitMediaKeys('com.apple.fps.3_0');
   first.webkitSetMediaKeys(keys);
   second.webkitSetMediaKeys(keys);
-  // The element plays with the renderer session's own keys (none before).
   keys.createSession('video/mp4', new Uint8Array(pssh('A')));
   await settle();
   const attaches = world.log.filter((entry) => entry[0] === 'setMediaKeys')
@@ -985,10 +894,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(world.log.some((entry) => entry[0] === 'generateRequest'), 'the native modern EME is used');
 }
 
-// ---- `encrypted` events raise no webkitneedkey in script: Blink raises it,
-// before `encrypted`, for every element in or out of the tree. A page's own
-// encrypted event (Shaka's PatchedMediaKeysApple dispatches one from
-// webkitneedkey) can't loop.
 {
   const world = makeWorld();
   run(world, script);
@@ -1002,7 +907,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(needs.length === 0, 'no webkitneedkey from encrypted events');
 }
 
-// ---- WebKit's AVFoundation player key systems (native HLS).
 {
   const world = makeWorld();
   const hook = run(world, script);
@@ -1095,7 +999,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
         'a key URI no request holds (or already taken), or unreadable init data: UNKNOWN');
 }
 
-// ---- Legacy clear key for HLS (LegacyCDMPrivateClearKey, CDMSessionClearKey).
 {
   const world = makeWorld();
   run(world, script);
@@ -1135,10 +1038,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   check(events.length === 6, 'nothing after close()');
 }
 
-// ---- Legacy clear key on the player side: the player's clearkey://
-// requests get the page's keys (MediaPlayerPrivateAVFoundationObjC::
-// shouldWaitForLoadingOfResource checks the element's keys first, keyAdded
-// answers the held ones).
 {
   const world = makeWorld();
   const hook = run(world, script);
@@ -1176,7 +1075,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   session.update(jwk('k\u00e9y-2'));
   await settle();
   check(provided.length === 3, 'an answered request is no longer held');
-  // Another element's requests wait for that element's own keys.
   const other = new world.HTMLMediaElement('o');
   const otherProvided = [];
   const event = hook(other, new Uint8Array(bytesOf('key-1')), 'clearkey',
@@ -1185,9 +1083,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
         "an element without keys doesn't take another element's");
 }
 
-// ---- WebKitMediaKeys::setMediaElement: keys follow the last element they
-// were set on, and clearing them on an element that still holds them
-// detaches them from wherever they are.
 {
   const world = makeWorld();
   const hook = run(world, script);
@@ -1199,7 +1094,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
     return sets.length ? sets[sets.length - 1][2] : null;
   };
   a.webkitSetMediaKeys(keys);
-  // The renderer session's own modern keys are what moves.
   keys.createSession('video/mp4', new Uint8Array(pssh('A')));
   await settle();
   b.webkitSetMediaKeys(keys);
@@ -1220,14 +1114,12 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   b.webkitSetMediaKeys(keys);
   await settle();
   check(attached(b) === modern, 'b takes them again');
-  // A page that has since given b its own MediaKeys keeps them.
   const own = new world.MediaKeys();
   world.HTMLMediaElement.prototype.setMediaKeys.call(b, own);
   const c = new world.HTMLMediaElement('c');
   c.webkitSetMediaKeys(keys);
   await settle();
   check(attached(b) === own && attached(c) === modern, "the page's MediaKeys stay on b");
-  // Quick moves end on the last element alone.
   const d = new world.HTMLMediaElement('d');
   const e = new world.HTMLMediaElement('e');
   d.webkitSetMediaKeys(keys);
@@ -1239,9 +1131,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
         'the hook still answers');
 }
 
-// ---- Two keys on one element: the new keys attach after the old ones
-// leave, whatever their modern MediaKeys' state (Blink refuses overlapping
-// setMediaKeys calls).
 {
   const world = makeWorld();
   run(world, script);
@@ -1251,7 +1140,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
   video.webkitSetMediaKeys(k1);
   k1.createSession('video/mp4', new Uint8Array(pssh('A')));
   await settle();
-  // k2's modern MediaKeys exist before it is set (a session made them).
   const early = k2.createSession('video/mp4', new Uint8Array(pssh('A')));
   await settle();
   early.update(new Uint8Array(bytesOf('CERT')));
@@ -1265,9 +1153,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
         "k1's keys leave, then k2's arrive");
 }
 
-// ---- A new session on keys an element plays with becomes the renderer's
-// (LegacyCDM::createSession): the element's MediaKeys are replaced by that
-// session's own, with no detach in between.
 {
   const world = makeWorld();
   run(world, script);
@@ -1284,13 +1169,10 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
         "the second session's MediaKeys replace the first's on the element");
 }
 
-// ---- The hook reaches no page code: a page that patches WeakMap, Set or
-// Object.prototype changes nothing it does.
 {
   const world = makeWorld();
   const hook = run(world, script);
   const audio = new world.HTMLMediaElement('audio');
-  // The model shares Node's TextDecoder; put its decode back afterwards.
   const decode = TextDecoder.prototype.decode;
   run(world, `
     globalThis.reached = 0;
@@ -1314,8 +1196,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
         clear instanceof world.WebKitMediaKeyNeededEvent, 'no page code runs inside the hook');
 }
 
-// ---- Without modern EME (an insecure context) media elements still have
-// webkitSetMediaKeys and webkitKeys, and webkitneedkey still comes.
 {
   const base = makeWorld();
   const context = { MediaSource: base.MediaSource, DOMException, Event, EventTarget,
@@ -1331,7 +1211,6 @@ for (const options of [{reports: []}, {privateWindow: true, reports: ['REPORT-1'
         'the hook is there');
 }
 
-// ---- An existing WebKitMediaKeys: nothing installed, no hook.
 {
   const world = makeWorld();
   run(world, 'globalThis.WebKitMediaKeys = function Existing() {};');

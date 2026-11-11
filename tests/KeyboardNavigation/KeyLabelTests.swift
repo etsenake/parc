@@ -1,7 +1,5 @@
 import AppKit
 
-///
-///
 @main struct KeyLabelTests {
     static func main() {
         var checks = 0
@@ -9,7 +7,6 @@ import AppKit
         func chord(_ key: String, _ flags: NSEvent.ModifierFlags = .control) -> KeyboardShortcut {
             KeyboardShortcut(key: key, flags: flags)
         }
-        //
         let text: [(String, String)] = [
             (" ", "⌃⎵"), ("\t", "⌃⇥"), ("\r", "⌃↩"), ("\n", "⌃↩"), ("\u{3}", "⌃↩︎"),
             ("\u{7f}", "⌃⌫"), ("\u{8}", "⌃⌫"), ("\u{f728}", "⌃⌦"), ("\u{1b}", "⌃⎋"),
@@ -24,8 +21,6 @@ import AppKit
         expect(chord(" ", [.control, .option, .shift, .command]).display == "⌃⌥⇧⌘⎵", "Modifiers keep modifierDisplayInfo's ⌃ ⌥ ⇧ ⌘ order")
         expect(!chord(" ").display.contains("Space"), "Space is never written as a word")
 
-        //
-        // tooltip and onboarding keycaps (options 7) spell Tab out.
         expect(chord(" ").symbols == ["⌃", "⎵"] && chord(" ").keycapSymbols == ["⌃", "⎵"], "Space keycaps are ⎵ on every surface")
         expect(chord("\t").symbols == ["⌃", "⇥"], "Settings detail keeps ⇥ for Tab")
         expect(chord("\t").keycapSymbols == ["⌃", "TAB"], "Essentials keycaps spell Tab out")

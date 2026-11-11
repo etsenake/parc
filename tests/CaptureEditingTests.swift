@@ -2,7 +2,6 @@ import AppKit
 import ImageIO
 import UniformTypeIdentifiers
 
-// Inert shared-canvas/data checks; no browser, service invocation or user files.
 @main
 struct CaptureEditingTests {
     @MainActor static var checks = 0

@@ -32,7 +32,7 @@ import AppKit
             let window = GateWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
                 styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
-            return window // Never shown, activated or attached to a browser.
+            return window
         }
         let window = makeWindow(), otherWindow = makeWindow()
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))

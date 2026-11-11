@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""P1-AE leftover behavior lock: full SidebarView.render skips outline rebuild
-when membership/selection/folder expansion already match by preferring
-applyLivePageMetadata gated on preservesSidebarOutline (not the stricter
-preservesChromeLayout). Membership moves still reconstruct. Favorite favicon
-re-arm skip and live metadata path stay intact.
-"""
 from pathlib import Path
 import re
 

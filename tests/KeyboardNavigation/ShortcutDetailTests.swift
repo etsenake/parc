@@ -51,8 +51,6 @@ import Carbon.HIToolbox
         expect(explanation.frame.height > 40 && explanation.frame.minY == heading.frame.maxY + 8, "Introduction fits three lines without truncation")
         window.makeFirstResponder(search)
         let responder = window.firstResponder
-        // The first transition out of the introduction must draw the same
-        // complete wrapped description as a later selection of that command.
         func renderedDescription() -> Data {
             let bitmap = explanation.bitmapImageRepForCachingDisplay(in: explanation.bounds)!
             explanation.cacheDisplay(in: explanation.bounds, to: bitmap)
@@ -175,7 +173,6 @@ import Carbon.HIToolbox
                "Parented eye paths occupy their original canvas positions")
         let smiley = ShortcutSmileyView(frame: .zero)
         expect(!smiley.acceptsFirstResponder && smiley.hitTest(.zero) == nil && !smiley.isAccessibilityElement(), "Animated decoration is passive and hidden from AX")
-        // Menus use the real registry and original command, not a mutable row index.
         let commandWindow = ShortcutMenuWindow(contentRect: view.frame, styleMask: .titled, backing: .buffered, defer: false)
         window.contentView = nil; commandWindow.contentView = view
         view.selectCommand("captureFullPage:")
@@ -239,8 +236,6 @@ import Carbon.HIToolbox
                "Context reset reuses the actual atomic conflict resolution")
         expect(!keycaps.isInConflict, "Resolved menu reset clears actual conflict state")
         view.selectCommand("closeTab:")
-        // Source-backed warning projection uses real physical key translation,
-        // enabled OS records and Carbon modifier bits, without changing the OS.
         func record(_ code: Int, _ modifiers: Int, enabled: Bool = true) -> [String: Any] {
             [kHISymbolicHotKeyCode as String: code, kHISymbolicHotKeyModifiers as String: modifiers,
              kHISymbolicHotKeyEnabled as String: enabled]

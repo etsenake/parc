@@ -9,7 +9,6 @@ func passwordCoordinatorChecks(store: BrowserStore, destination: BrowserImportDe
         checks += 1; precondition(condition(), message)
     }
     var current = true
-    /// A Safari import reaches its password step through the browser's own data.
     func make(_ source: PCNativeImportSource = safari, continuing: Bool = true) -> BrowserImportCoordinator {
         let coordinator = BrowserImportCoordinator(store: store, destination: destination,
             window: window, ownerIsCurrent: { current })
@@ -364,7 +363,6 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     for _ in 0..<3 { skipping.commitBookmarks(); skipping.goBackInSetup() }
     expect(store.state.tabs == reticked && skipping.stage == .bookmarks, "Back and Next loops add nothing twice")
 
-    // A refused write keeps the bookmarks accepted before, and the edit to retry.
     skipping.toggleBookmark(pageID: accepted.id, id: selected.identifier)
     let session = store.directory.appendingPathComponent("session.json")
     let backup = store.directory.appendingPathComponent("prior-session.json")
@@ -420,7 +418,6 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     return checks
 }
 
-/// Setup's Safari access page: Back, Do this later and the no-browser case.
 @MainActor
 func setupAccessChecks(store: BrowserStore, destination: BrowserImportDestination,
                        window: NSWindow, safari: PCNativeImportSource, other: PCNativeImportSource) -> Int {

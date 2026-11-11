@@ -9,7 +9,6 @@ struct TypedCommandTests {
     static func main() throws {
         typealias Command = CommandBarTypedCommand
         let space = UUID()
-        //
         let titles: [(Command.Kind, String)] = [
             (.undo("New Folder…"), "Undo New Folder…"), (.redo("Update Appearance"), "Redo Update Appearance"),
             (.pinToSpace(space, name: "Work"), "Pin to Work"), (.pinToNewFolder, "Pin to New Folder"),
@@ -27,7 +26,6 @@ struct TypedCommandTests {
               "A renamed Space keeps its row identity")
         check(Command(kind: .undo("A")) != Command(kind: .undo("B")), "A different Undo step is a different command")
 
-        //
         check(Command(kind: .pinToSpace(space, name: "Work")).matches(query: "move work"), "Move finds Pin to Space")
         check(Command(kind: .pinToNewFolder).matches(query: "pin new"), "Title words match")
         check(Command(kind: .airTrafficControl).matches(query: "air traffic"), "Air Traffic Control matches")
@@ -36,7 +34,6 @@ struct TypedCommandTests {
         check(!Command(kind: .searchSettings).matches(query: ""), "Empty query is the provider's choice, not a match")
         check(!Command(kind: .searchSettings).matches(query: "split"), "Unrelated words do not match")
 
-        //
         check(Command.commandBarTitle(forMenuCommand: "toggleSidebar:", menuTitle: "Show / Hide Sidebar") == "Toggle Sidebar", "Toggle Sidebar")
         check(Command.commandBarTitle(forMenuCommand: "resetTab:", menuTitle: "Reset Tab to Original URL") == "Reset Tab", "Reset Tab")
         check(Command.commandBarTitle(forMenuCommand: "split:", menuTitle: "Add Split View") == "Add Split View", "Add Split View keeps its menu title (side by side)")
@@ -45,7 +42,6 @@ struct TypedCommandTests {
         check(Command.commandBarSearchText(forMenuCommand: "createNote:").contains("arc note"), "the words still find it")
         check(Command.commandBarTitle(forMenuCommand: "newTab:", menuTitle: "New Tab") == "New Tab", "Other menu titles are unchanged")
 
-        // The recovered WebDocumentType catalog and its engagement domains.
         check(CommandBarWebDocument.catalog.count == 11, "Eleven recovered document types")
         check(CommandBarWebDocument.catalog.map(\.url).contains("https://make.page"), "Confluence uses make.page")
         check(CommandBarWebDocument.available(visitedHosts: []).isEmpty, "No engagement offers no document")
@@ -55,7 +51,6 @@ struct TypedCommandTests {
               "Subdomains count as engagement")
         check(CommandBarWebDocument.available(visitedHosts: ["notfigma.com"]).isEmpty, "A suffix that is not a subdomain does not")
 
-        // Split commands follow the pane menu's axis rules.
         check(Command.splitCommands(paneCount: 1, vertical: false).map(\.title)
               == ["Add Left Split", "Add Right Split", "Add Top Split", "Add Bottom Split", "Add Vertical Split View"],
               "One pane offers every edge and the stacked add")
@@ -67,7 +62,6 @@ struct TypedCommandTests {
               "A full split adds nothing")
         check(Command.splitCommands(paneCount: 0, vertical: false).isEmpty, "No pane, no split command")
 
-        //
         let panes = Command.SettingsPane.allCases
         check(panes.map(\.title) == ["Settings", "Open General Preferences", "Open Profile Preferences",
             "Edit Keyboard Shortcuts", "Open Link Preferences", "Open App Icon", "Open Advanced Preferences"],
@@ -81,12 +75,10 @@ struct TypedCommandTests {
         check(Command(kind: .searchSettings).candidateBump == nil, "No invented bump")
         check(!panes.contains { $0.title.contains("Max") || $0.title.contains("Staff") }, "AI and staff panes excluded")
 
-        // Appearance items take their nib Type Travel title.
         check(Command(kind: .appearance(.dark)).title == "Switch to Dark Mode", "Dark title")
         check(Command(kind: .appearance(.dark)).matches(query: "night"), "Dark trigger")
         check(Command(kind: .appearance(.automatic)).title == "Switch to Automatic Appearance", "Automatic title")
 
-        // Help → Troubleshooting and Portrait capture, with nib icons and bumps.
         check(Command(kind: .copyAppInfo).title == "Copy Parc Info" && Command(kind: .copyAppInfo).symbol == "list.clipboard",
               "Copy Parc Info title and icon")
         check(Command(kind: .revealAppData).title == "Reveal Parc Data" && Command(kind: .revealAppData).candidateBump == 0.1,
@@ -102,13 +94,11 @@ struct TypedCommandTests {
         check(Command(kind: .openTaskManager).matches(query: "cpu") && Command(kind: .openTaskManager).matches(query: "memory"),
               "Task Manager triggers")
 
-        // Another Profile's Space names its Profile.
         let foreignPin = Command(kind: .pinToSpace(space, name: "Work", profileName: "Personal"))
         check(foreignPin.title == "Pin to Work" && foreignPin.detail == "Personal", "Profile shown beside the Space")
         check(foreignPin.matches(query: "pin personal"), "Profile name finds it")
         check(Command(kind: .pinToSpace(space, name: "Work")).detail.isEmpty, "Own Profile shows no label")
 
-        // Per-command MainMenu Type Travel data.
         check(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "toggleSidebar:") == 0.5, "Sidebar bump")
         check(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "exportNotes:") == 1.5, "Export Notes bump")
         check(CommandBarMenuItemInfo.candidateBump(forMenuCommand: "newTab:") == nil, "No bump without data")
@@ -118,7 +108,6 @@ struct TypedCommandTests {
         check(Command.commandBarTitle(forMenuCommand: "sharePage:", menuTitle: "Share…") == "Share URL", "Share's Type Travel title")
         check(CommandBarMenuItemInfo.rankingBump(1.5) < 0.95 - 0.85, "The largest bump can't lift an exact command over an exact tab")
 
-        // Replace Pin with Current Page: the saved item keeps its identity.
         let profile = BrowserProfile(id: UUID(), name: "Original")
         let origin = BrowserSpace(id: UUID(), name: "Origin", symbol: "circle", color: "ABCDEF", profileID: profile.id)
         func tab(_ kind: TabKind, url: String) -> BrowserTab {
@@ -154,7 +143,6 @@ struct TypedCommandTests {
               "A WebUI page can become a pin's home")
         check(settingsStore.state.tabs.first { $0.id == settingsPin.id }?.savedURL == "parc://settings/searchEngines",
               "WebUI homes are saved under their public parc:// address")
-        // Pin to [Space] lands a Today tab in the destination's Pinned section.
         let away = BrowserSpace(id: UUID(), name: "Away", symbol: "circle", color: "ABCDEF", profileID: profile.id)
         var spaces = BrowserState(profiles: [profile], spaces: [origin, away], activeSpaceID: origin.id)
         spaces.tabs = [today]; spaces.selectedTabIDs = [today.id]

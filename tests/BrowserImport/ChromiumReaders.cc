@@ -1,6 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Genuine private SQLite/crypto fixtures. No source discovery, Keychain or
-// target writes.
 #include <CommonCrypto/CommonCryptor.h>
 #include <CommonCrypto/CommonDigest.h>
 #include <array>
@@ -63,7 +60,7 @@ void Blob(sqlite3* db, const char* statement, std::string_view bytes) {
   Require(sqlite3_step(s) == SQLITE_DONE, "fixture committed row");
   sqlite3_finalize(s);
 }
-}  // namespace
+}
 int main() {
   using namespace parc::importer;
   base::ScopedTempDir temp;

@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""the home width, read only on a page change
-, over the actual LibraryView, SpaceManagementLayout and
-SidebarChromeFrames. The Library is never put in a
-window and the process cannot activate; no browser, engine, input or real
-profile. The window controller's group, settle and close are asserted in
-tests/SidebarMotion."""
 import pathlib
 import shutil
 import subprocess
@@ -16,9 +10,6 @@ sys.path.insert(0, str(root / "tests/Tooltip"))
 from support import tooltip_sources
 with tempfile.TemporaryDirectory(prefix="parc-library-width-") as directory:
     temporary = pathlib.Path(directory)
-    # As tests/DownloadLibrary/check-view.py: the shared controls at the start
-    # of SidebarView.swift, the documents catalog's lazy store owner, and only
-    # the card sidebar's members SpaceManagerView reaches.
     sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
     controls = temporary / "NativeControls.swift"
     controls.write_text(sidebar[:sidebar.index("final class FlippedStackView:")])
@@ -43,7 +34,6 @@ with tempfile.TemporaryDirectory(prefix="parc-library-width-") as directory:
            "SidebarMotionController", "PArcToast", "TopBarColorClient", "PArcDialog"]
     sources = sorted((root / "Sources/ParcCore").glob("*.swift"))
     sources += [root / "Sources/ParcApp" / f"{name}.swift" for name in app]
-    #
     spinner = temporary / "PArcButtonSpinner.swift"
     subprocess.run([sys.executable, "-B", str(root / "tests/Support/declarations.py"), str(spinner), "PArcButtonSpinner"],
                    check=True, stdout=subprocess.DEVNULL)

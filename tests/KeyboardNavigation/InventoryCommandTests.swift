@@ -10,9 +10,6 @@ import AppKit
     @objc func custom(_ sender: NSMenuItem) {}
 }
 
-///
-/// the hidden symbolic Next/Previous Tab bindings) use the existing registry,
-/// symbolic Shift bridge and additive no-steal migration.
 @main @MainActor struct InventoryCommandTests {
     static var count = 0
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -58,14 +55,12 @@ import AppKit
         }
         expect(registry.priority(for: "nextTab:") == .preferParc, "Menu Next Tab keeps its own priority")
         expect(items["nextTab"]!.keyEquivalent == "}" && items["nextTab"]!.keyEquivalentModifierMask == .command, "Symbolic menu chord")
-        // A Shift-produced "}" reaches the original hidden item through native arbitration.
         let shiftedNext = event(30, "}", [.command, .shift])
         expect(registry.nativeCommand(for: shiftedNext, editable: false)?.item === items["nextTab"], "Symbolic Command-} dispatches the hidden Next Tab owner")
         expect(registry.nativeCommand(for: event(33, "{", [.command, .shift]), editable: false)?.item === items["previousTab"], "Symbolic Command-{ dispatches Previous Tab")
         target.enabled = false
         expect(registry.nativeCommand(for: shiftedNext, editable: false) == nil, "Unavailable positional target is not dispatched")
         target.enabled = true
-        // A saved physical owner of Command-Shift-] wins and suppresses the symbolic menu equivalent.
         let physical = KeyboardShortcut(key: "]", flags: [.command, .shift])
         if KeyboardShortcut.physicalKeys(producingShifted: "}").contains("]") {
             try registry.set(physical, for: "custom:")
@@ -74,13 +69,11 @@ import AppKit
             try registry.set(nil, for: "custom:")
             expect(items["nextTab"]!.keyEquivalent == "}", "Clearing the physical owner restores the symbolic equivalent")
         }
-        // Customizing the hidden binding leaves the menu Next Tab untouched.
         try registry.set(.init(key: "j", flags: [.command, .option, .control]), for: "nextTab")
         expect(registry.nativeCommand(for: shiftedNext, editable: false) == nil, "Customized binding drops the symbolic route")
         expect(registry.shortcut(for: "nextTab:") == .init(key: "\u{f701}", flags: [.command, .option]), "Independent identities")
         try registry.resetAll()
 
-        // Migration: an older file whose custom chord equals a new default keeps it.
         let file = root.appendingPathComponent("keyboard-shortcuts.json")
         let legacy = """
         {"version":3,"overrides":{"custom:":{"shortcut":{"key":"l","modifiers":\(NSEvent.ModifierFlags([.command, .shift]).rawValue)}}},

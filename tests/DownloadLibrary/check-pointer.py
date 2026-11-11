@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Visible inert AppKit mouse tracking; synthetic rows, no browser/file actions.
-
-Coordinate the foreground before running. The component requires its genuine
-key/active window and closes it after the bounded native input assertions.
-"""
 import pathlib
 import plistlib
 import subprocess

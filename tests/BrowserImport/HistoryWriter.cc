@@ -1,5 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Runs the actual HistoryBackend import transaction on a disposable database.
 #include <cstdio>
 #include <cstdlib>
 #include "base/at_exit.h"
@@ -69,7 +67,7 @@ int Count(sql::Database& db, const char* path) {
   Require(query.Step(), "actual history row query");
   return query.ColumnInt(0);
 }
-}  // namespace
+}
 int main(int argc, char** argv) {
   base::AtExitManager exit;
   base::test::AllowCheckIsTestForTesting();
@@ -128,8 +126,6 @@ int main(int argc, char** argv) {
   Require(Count(db, "rollback") == 0 && Count(db, "ordinary") == 1,
           "cancel preserves earlier ordinary history");
   const auto notified = observer->changes;
-  // Make the actual visit-source write fail, after URL and visit insertion.
-  // Chromium deliberately disables SQL triggers, so use a real CHECK instead.
   Require(
       db.Execute("ALTER TABLE visit_source RENAME TO fixture_saved_source") &&
           db.Execute("CREATE TABLE visit_source(id INTEGER PRIMARY KEY, "

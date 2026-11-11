@@ -53,8 +53,6 @@ def main():
                      "\nNo compiler check ran. Generate the reviewed targets "
                      "through the direct source workflow.")
 
-    # Share the bounded Ninja literal reader. Import without writing __pycache__
-    # into the repository's source directories.
     sys.dont_write_bytecode = True
     helper_path = repo / "tests/NativeLocationBar/check-chromium.py"
     spec = importlib.util.spec_from_file_location("parc_chromium_flags", helper_path)
@@ -64,8 +62,6 @@ def main():
     rule = re.search(r"^rule objcxx\n  command = (.+)$", toolchain_file.read_text(), re.MULTILINE)
     if not rule or "${cflags_objcc}" not in rule[1]:
         raise RuntimeError("Missing actual ObjC++ compiler rule")
-    # Unlike the cxx rule, pinned objcxx does not pass module_deps. Its system
-    # PCM is C++-only, despite being an order dependency of the object target.
     mode = "direct-integrated-targets"
     log_name = "chromium-syntax"
     logs = repo / "build/tests/native-autofill-save" / log_name

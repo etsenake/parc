@@ -1,15 +1,10 @@
 import AppKit
 
-/// An off-screen window that reports the pointer where the check puts it.
 final class PointerWindow: NSWindow {
     var pointer = NSPoint(x: -1, y: -1)
     override var mouseLocationOutsideOfEventStream: NSPoint { pointer }
 }
 
-/// The dock plus face over a real ActionButton in an off-screen window of an
-///
-/// press and hover hooks, input passing through to the button, and the rest,
-/// hovered, pressed and open faces.
 @main @MainActor struct PlusButtonTests {
     static var count = 0
     static func check(_ condition: @autoclosure () -> Bool, _ message: String) {
@@ -21,15 +16,11 @@ final class PointerWindow: NSWindow {
         abs(value - expected) <= tolerance
     }
 
-    /// sRGB (white, alpha) of a GrayA colour.
     static func gray(_ color: NSColor) -> (white: CGFloat, alpha: CGFloat) {
         let srgb = color.usingColorSpace(.sRGB)!
         return (srgb.redComponent, srgb.alphaComponent)
     }
 
-    /// `view` rendered alone at 2x once its animations have settled: the
-    /// highest alpha, the box of pixels above `threshold` alpha, the plate's
-    /// alpha at the left edge's middle (away from the glyph) and at the corner.
     static func ink(_ view: NSView, threshold: CGFloat = 0.3)
         -> (maxAlpha: CGFloat, width: Int, height: Int, plate: CGFloat, corner: CGFloat) {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.8))
@@ -53,8 +44,6 @@ final class PointerWindow: NSWindow {
 
     static func main() {
         NSApplication.shared.setActivationPolicy(.prohibited)
-        //
-        // open; GrayA12 pressed; GrayA4 hovered and GrayA5 pressed plates.
         for (dark, white, a4, a5, a11, a12) in [(false, CGFloat(0), CGFloat(0.071), CGFloat(0.090), CGFloat(0.565), CGFloat(0.910)),
                                                 (true, CGFloat(1), CGFloat(0.077), CGFloat(0.103), CGFloat(0.592), CGFloat(0.923))] {
             let colors = TranslucentButtonColors.standard(dark: dark)
@@ -99,8 +88,6 @@ final class PointerWindow: NSWindow {
                                             windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)!
         button.mouseEntered(with: entered)
         check(state.hovered, "entering the button hovers the face")
-        // The HUD closed as the app deactivated: the tracking area sent no exit
-        // and the pointer is still over the button.
         check(!NSApp.isActive, "the checks run in an app that never activates")
         window.pointer = NSPoint(x: 32, y: 32)
         button.refreshHover()
@@ -125,11 +112,6 @@ final class PointerWindow: NSWindow {
         button.highlight(false)
         button.mouseExited(with: exited)
 
-        // NSButton's press tracking sends no exit or entry while the pointer is
-        // held; it changes the highlight as the press leaves or returns, and
-        //
-        //
-        // finds no hover even over the +.
         button.mouseEntered(with: entered)
         check(button.hovered && state.hovered, "entering hovers the + before the press")
         window.pointer = NSPoint(x: 32, y: 32)
@@ -145,7 +127,6 @@ final class PointerWindow: NSWindow {
 
         state.open = true
         let open = ink(button)
-        // 1-point corners make the 14 × 2 bars capsules; any angle but π/4 is wider.
         check(open.width == 20 && open.height == 20, "the open × settles at π/4, 12/√2 + 2 ≈ 10.5 points (\(open.width)×\(open.height) px)")
         let openEdge = ink(button, threshold: 0.05)
         check(openEdge.width == 22 && openEdge.height == 22, "the open ×'s visible edge spans the 22 × 22 pixels (\(openEdge.width)×\(openEdge.height) px)")

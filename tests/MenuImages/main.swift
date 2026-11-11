@@ -1,7 +1,5 @@
 import AppKit
 
-/// The real MenuAction (sliced from SidebarView.swift) and NSMenuItem.showImage.
-/// AppKit measures each NSMenu; no menu is opened, no window is shown.
 @main @MainActor struct MenuImagesTests {
     static var count = 0
     static func check(_ value: Bool, _ message: String) {

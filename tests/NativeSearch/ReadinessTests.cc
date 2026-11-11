@@ -1,6 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Isolated component: real Chromium task runner and non-reentrant ObserverList,
-// production readiness owner; no Profile, browser, network or user-data access.
 #include <cstdio>
 #include <memory>
 #include <string_view>
@@ -24,8 +21,6 @@ void Idle() {
   base::RunLoop().RunUntilIdle();
 }
 
-// Only the service notification is represented: this is exactly the pinned
-// Scoper's ObserverList type/iteration, not a fake reentrancy assertion.
 struct Service {
   void Notify() {
     ++depth;
@@ -52,7 +47,7 @@ struct Owner final : TemplateURLServiceObserver {
   ~Owner() override { service.observers.RemoveObserver(this); }
   void OnTemplateURLServiceChanged() override {
     if (synchronous)
-      Prepare();  // Negative control: the reported observer -> Add ordering.
+      Prepare();
     else
       readiness.Schedule();
     if (nest) {
@@ -81,7 +76,7 @@ struct Owner final : TemplateURLServiceObserver {
   int preparations = 0;
   parc::NativeSearchReadiness readiness;
 };
-}  // namespace
+}
 
 int main(int argc, char** argv) {
   base::SingleThreadTaskExecutor executor;
@@ -89,7 +84,7 @@ int main(int argc, char** argv) {
       std::string_view(argv[1]) == "--synchronous-negative-control") {
     Service service;
     Owner owner(service, true);
-    service.Notify();  // Must abort in the actual Chromium ObserverList check.
+    service.Notify();
     return 99;
   }
   {
@@ -101,9 +96,8 @@ int main(int argc, char** argv) {
       ++delivered;
     }));
     Idle();
-    Expect(owner.preparations == 0 && delivered == 0);  // Still loading.
+    Expect(owner.preparations == 0 && delivered == 0);
     owner.nest = true;
-    // A task owns the outer service notification, matching web-data delivery.
     executor.task_runner()->PostTask(
         FROM_HERE, base::BindLambdaForTesting([&] {
           service.Notify();
@@ -112,9 +106,9 @@ int main(int argc, char** argv) {
         }));
     Idle();
     Expect(owner.preparations == 1 && delivered == 1);
-    Expect(service.additions == 1);  // Add notification did not reenter/loop.
+    Expect(service.additions == 1);
     owner.readiness.Add(base::BindLambdaForTesting([&] { ++delivered; }));
-    owner.readiness.Schedule();  // Already-loaded caller also stays async.
+    owner.readiness.Schedule();
     Expect(delivered == 1);
     Idle();
     Expect(owner.preparations == 2 && delivered == 2 && service.additions == 1);
@@ -128,7 +122,7 @@ int main(int argc, char** argv) {
     int delivered = 0;
     owner.readiness.Add(base::BindLambdaForTesting([&] { ++delivered; }));
     service.Notify();
-    owner.readiness.Stop();  // Service/Profile shuts down before queued work.
+    owner.readiness.Stop();
     owner.readiness.Stop();
     Expect(delivered == 0);
     Idle();
@@ -145,7 +139,7 @@ int main(int argc, char** argv) {
     int delivered = 0;
     owner->readiness.Add(base::BindLambdaForTesting([&] { ++delivered; }));
     service.Notify();
-    owner.reset();  // Destruction invalidates preparation, still settles once.
+    owner.reset();
     Expect(delivered == 0);
     Idle();
     Expect(delivered == 1 && service.additions == 0);
@@ -168,7 +162,7 @@ int main(int argc, char** argv) {
     readiness->Add(base::BindLambdaForTesting([&] { ++delivered; }));
     readiness->Schedule();
     Idle();
-    Expect(!readiness && delivered == 1);  // No post-prepare dangling owner.
+    Expect(!readiness && delivered == 1);
   }
   {
     int prepared = 0, delivered = 0;

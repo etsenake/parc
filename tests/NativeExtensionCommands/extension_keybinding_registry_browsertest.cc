@@ -1,5 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Link this into Chromium browser_tests with the real native registry source.
 #include "extension_keybinding_registry.h"
 
 #include <memory>
@@ -36,11 +34,9 @@ constexpr char kCommand[] = "parc-test-command";
 constexpr char kEvent[] = "commands.onCommand";
 
 NativeExtensionKeybindingRegistry::ActionDispatcher NoActionForTest() {
-  // Tests isolate named dispatch. Production must supply its actual action
-  // controller, not this testing callback.
   return base::BindRepeating([](const ui::Accelerator&) { return false; });
 }
-}  // namespace
+}
 
 class NativeExtensionCommandsBrowserTest : public extensions::ExtensionApiTest {
  protected:
@@ -126,7 +122,6 @@ IN_PROC_BROWSER_TEST_F(NativeExtensionCommandsBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(NativeExtensionCommandsBrowserTest,
                        LoadRemapUnloadUpdatesLocalRegistration) {
-  // Construct first to exercise load observation, not just Init's enumeration.
   NativeExtensionKeybindingRegistry registry(*browser(), NoActionForTest());
   const auto* extension = LoadFixture();
   ASSERT_TRUE(extension);
@@ -135,7 +130,6 @@ IN_PROC_BROWSER_TEST_F(NativeExtensionCommandsBrowserTest,
   auto released = old_key;
   released.set_key_state(ui::Accelerator::KeyState::RELEASED);
   EXPECT_FALSE(registry.DispatchAccelerator(released));
-  // Action commands remain outside the regular base event-target map.
   EXPECT_FALSE(registry.IsAcceleratorRegistered(
       AcceleratorFor(*extension, "_execute_action")));
 
@@ -166,8 +160,6 @@ IN_PROC_BROWSER_TEST_F(NativeExtensionCommandsBrowserTest,
       blink::WebInputEvent::kAltKey | blink::WebInputEvent::kShiftKey,
       base::TimeTicks::Now());
   event.windows_key_code = ui::VKEY_Y;
-  // Translated text may differ under a keyboard layout; command identity uses
-  // the real virtual key, rather than reinterpreting the text buffer.
   event.text[0] = u'z';
   event.unmodified_text[0] = u'z';
   extensions::TestEventRouterObserver events(
@@ -318,4 +310,4 @@ IN_PROC_BROWSER_TEST_F(NativeExtensionCommandsBrowserTest,
   }
 }
 
-}  // namespace parc
+}

@@ -1,7 +1,5 @@
 import AppKit
 
-// Only the unrelated sidebar/layout collaborators are supplied here. The URL
-// parser, drop session, hit geometry, preview and commit code are production.
 @MainActor class LayoutView: NSView { override var isFlipped: Bool { true } }
 @MainActor enum SidebarSplitDrag { static let pasteboardType = NSPasteboard.PasteboardType("org.parc.sidebar-split-drag") }
 @MainActor enum SidebarMoveSession { static let pasteboardType = NSPasteboard.PasteboardType("org.parc.sidebar-item-move") }
@@ -165,7 +163,6 @@ extension ReservedPane: SplitLayoutFollowing {
         check(!regionView.isAccessibilityElement() && regionView.accessibilityChildren()?.isEmpty == true,
               "active and retiring region is a passive native presentation")
         let borderMotion = regionView.layer?.animation(forKey: "Split drop region") as? CAAnimationGroup
-        //
         check(borderMotion?.duration == 0.2 && borderMotion?.timingFunction == CAMediaTimingFunction(name: .easeOut),
               "actual border expands with original alpha/layout duration and curve whatever the Reduce Motion setting")
         let bounds = borderMotion?.animations?.compactMap { $0 as? CABasicAnimation }.first { $0.keyPath == "bounds" }
@@ -299,8 +296,6 @@ extension ReservedPane: SplitLayoutFollowing {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.3))
         check(split.subviews.count == 2 && !completeMotion.isCurrent,
               "current passive completion removes its own retired region without a drag owner")
-        // Real native router + production host/session/reservation, with inert
-        // AppKit views. No browser or fabricated successful model write.
         let handWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1810, height: 700),
             styleMask: .borderless, backing: .buffered, defer: false)
         let handHost = ExternalSplitDropHost(frame: NSRect(x: 0, y: 0, width: 1810, height: 700))
@@ -367,7 +362,6 @@ extension ReservedPane: SplitLayoutFollowing {
         handRouter.end()
         check(!handRouter.claimed && !handSplit.isInteractivePaneEditing && handEditing.last == false,
               "the exited page view's terminal draggingEnded ends the edit")
-        // The guaranteed fallback for a terminal callback that never arrives.
         handDrag.draggingLocation = handHost.convert(NSPoint(x: 1, y: 200), to: nil)
         check(handRouter.begin(handDrag) && handSplit.isInteractivePaneEditing, "another admitted entry begins an edit")
         handDrag.draggingLocation = handHost.convert(NSPoint(x: 1700, y: 200), to: nil)
@@ -436,8 +430,6 @@ extension ReservedPane: SplitLayoutFollowing {
         beginHandoff(); handA.removeFromSuperview()
         check(handHost.draggingUpdated(handDrag).isEmpty && !handHost.performDragOperation(handDrag) && handCommits == 3,
               "original native receiver detachment cannot retarget remaining pane")
-        //
-        // which gives the link its own image back when the session ends.
         let headWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1810, height: 700), styleMask: .borderless, backing: .buffered, defer: false)
         let headHost = ExternalSplitDropHost(frame: NSRect(x: 0, y: 0, width: 1810, height: 700)); headWindow.contentView = headHost
         let headSplit = ParcSplitView(frame: headHost.bounds); headHost.addSubview(headSplit)

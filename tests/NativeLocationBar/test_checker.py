@@ -1,4 +1,3 @@
-"""Check production owner selection without invoking a compiler."""
 import json
 from pathlib import Path
 import runpy

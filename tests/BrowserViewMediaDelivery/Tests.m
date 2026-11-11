@@ -1,13 +1,8 @@
-// PCBrowserView's change fan-out (Sources/ParcEngine/ParcEngine.m) over a
-// stand-in page: a media-only change, such as play becoming pause, reaches the
-// delegate while title, URL and loading stay the same. No engine or browser.
 #import "ParcEngine.h"
 
 #include <assert.h>
 #include <stdio.h>
 
-// The engine's classes and entry points, as far as the facade's change path
-// and its link need them.
 @interface PCNativePage (Test)
 - (instancetype)initForTest;
 @property(nonatomic) uint64_t testMediaRevision;
@@ -61,12 +56,11 @@ int main(void) {
     PCBrowserView* view = [[PCBrowserView alloc] initWithFrame:NSZeroRect adoptingNativePage:page];
     Delegate* delegate = [Delegate new];
     view.delegate = delegate;
-    assert(delegate.media == 1 && delegate.titles == 1);  // A new delegate reads the current state.
+    assert(delegate.media == 1 && delegate.titles == 1);
 
     [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    assert(delegate.media == 1 && delegate.titles == 1);  // Nothing changed: no callback.
+    assert(delegate.media == 1 && delegate.titles == 1);
 
-    // The engine bumps the revision when it publishes a play/pause flip.
     page.testMediaRevision = 1;
     [(id<PCNativePageObserver>)view nativePageDidChange:page];
     assert(delegate.media == 2 && delegate.titles == 1);
@@ -75,11 +69,11 @@ int main(void) {
 
     page.testTitle = @"Next Track";
     [(id<PCNativePageObserver>)view nativePageDidChange:page];
-    assert(delegate.media == 2 && delegate.titles == 2);  // A title change is not a media change.
+    assert(delegate.media == 2 && delegate.titles == 2);
 
     Delegate* next = [Delegate new];
     view.delegate = next;
-    assert(next.media == 1);  // A new delegate also learns the current media state.
+    assert(next.media == 1);
   }
   printf("Browser view media delivery: checks passed\n");
   return 0;

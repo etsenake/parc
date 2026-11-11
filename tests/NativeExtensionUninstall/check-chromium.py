@@ -108,9 +108,6 @@ def main():
             raise ValueError(f"reviewed overlay/hash mismatch: {path}")
         snapshots[path] = actual
 
-    # Validate all mapped sources, headers, BUILD files and patch outputs before
-    # any compiler starts. Native source is then compiled at its actual checkout
-    # path; no repository include override can mask an unapplied dependency.
     sources = {}
     outputs = {}
     for item in manifest["files"]:
@@ -176,7 +173,6 @@ def main():
             raise ValueError(f"missing actual object membership: {source}: {flags_file}")
         targets.append((sources[source], flags_file, "objcxx"))
 
-    # Discover the exact CXX owner rather than borrowing a nearby target's flags.
     owners = {target: [] for target in UPSTREAM}
     for folder in ("obj/chrome/browser/extensions",):
         for flags_file in sorted((build / folder).rglob("*.ninja")):

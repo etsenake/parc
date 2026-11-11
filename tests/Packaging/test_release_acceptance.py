@@ -1,4 +1,3 @@
-"""Offline release acceptance fixtures: no real app, process, signing or Keychain operations."""
 import hashlib
 import importlib.util
 import json

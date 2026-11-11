@@ -6,7 +6,6 @@ import Foundation
         func check(_ condition: @autoclosure () -> Bool, _ message: String) {
             precondition(condition(), message); checks += 1
         }
-        // These are reference contract cases, not navigation canonicalization.
         let equivalent: [(String, String)] = [
             ("https://example.test/home", "https://example.test/home"),
             ("http://example.test/home", "https://example.test/home"),
@@ -102,8 +101,6 @@ import Foundation
         store.resetDormantSavedTab(away)
         check(store.state.tabs.first { $0.id == tab.id } == reset, "Old snapshot cannot reset a replacement state")
 
-        //
-        // become a new Today tab at the top of Today; the pinned item returns home.
         let today = store.openResolvedURL(URL(string: "https://today.test/")!)
         store.updateTab(tab.id, title: "Away", url: "https://example.test/away")
         let pinned = store.state.tabs.first { $0.id == tab.id }!

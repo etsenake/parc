@@ -1,8 +1,6 @@
 import CoreGraphics
 import Foundation
 
-/// Queue 10: layoutChrome returns early only for a true chrome-geometry no-op.
-/// Presentation / page-frame input changes and dirty hosted trees still run.
 @main
 struct LayoutChromeGeometrySkipTests {
     static var assertions = 0

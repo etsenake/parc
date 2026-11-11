@@ -1,9 +1,5 @@
 import AppKit
 
-//
-// hover rule, and the empty content's backing and page-card shadows on the
-// production views. Off-screen views only; no window is shown.
-
 @MainActor @main struct EmptyWindowTests {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -22,8 +18,6 @@ import AppKit
         print("EmptyWindow: \(count) assertions passed")
     }
 
-    /// Every request to hide floats instead while the window has no tab; other
-    /// requests and windows with a tab are unchanged.
     static func presentationRule() {
         typealias Rule = EmptyWindowSidebarRule
         for requested in [SidebarPresentation.locked, .floating, .hidden] {
@@ -42,9 +36,6 @@ import AppKit
         check(Rule.refresh(.locked, noActiveItem: false, heldBefore: true) == .keep, "a locked sidebar with a tab is untouched")
     }
 
-    ///
-    /// no sidebar item: with no tab, and while Add Split's pending pane is
-    /// focused, which keeps the window's tab but has no item of its own.
     static func activeItemPredicate() {
         typealias Rule = EmptyWindowSidebarRule
         let tab = UUID()
@@ -71,9 +62,6 @@ import AppKit
                                             isKeyWindow: key, ownerDefers: owner, interactionDefers: interaction)
     }
 
-    /// The hover rule's dismissals are requests to hide: with no tab each
-    /// keeps the sidebar floating, and the first tab restores the ordinary
-    /// activation, which dismisses a sidebar the pointer has left.
     static func hoverHandOff() {
         var inSidebar = SidebarHoverInfo(); inSidebar[.sidebar] = .inside
         var pressed = SidebarHoverInfo(); pressed[.window] = .inside
@@ -83,17 +71,13 @@ import AppKit
             ("an interaction guard outside the key window", decide(key: false, interaction: true)),
             ("a click in the window outside the sidebar", decide(info: pressed)),
         ]
-        // Each is a request to hide, which presentationRule floats with no tab.
         for (name, decision) in dismissals { check(decision.action == .dismiss, "\(name) dismisses a floating sidebar") }
         check(decide(.hidden, key: true).action == .keep, "no hover reveal without an activation")
-        // A tab activates (.applyHover): the controller re-applies the hover
-        // rule with the stored input its floating request set.
         check(decide(stored: true, info: inSidebar).action == .keep, "the pointer still on the sidebar keeps it")
         check(decide(stored: true).action == .dismiss
               && EmptyWindowSidebarRule.presentation(for: .hidden, noActiveItem: false) == .hidden, "the pointer elsewhere hides it")
     }
 
-    /// The color follows the view's own (window) appearance.
     static func placeholderBacking() {
         let pane = SplitPanePlaceholder(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
         for (name, alpha) in [(NSAppearance.Name.aqua, 0.666), (.darkAqua, 0.1)] {
@@ -107,7 +91,6 @@ import AppKit
         check(pane.isAccessibilityElement() && pane.accessibilityRole() == .group, "the empty content is an accessibility group")
     }
 
-    /// Alpha per pixel, rows from the top.
     static func alphas(_ image: CGImage) -> [UInt8] {
         let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
                                 space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
@@ -117,7 +100,6 @@ import AppKit
     }
     static func alpha(_ image: CGImage, _ x: Int, _ yFromTop: Int) -> UInt8 { alphas(image)[yFromTop * image.width + x] }
 
-    /// Outside-only, one point down, stretchable in its middle point.
     static func shadowImage() {
         typealias Shadow = ContentShadowImage
         check(PageCard.cornerRadius == 6, "the page card's six-point corner")
@@ -135,9 +117,6 @@ import AppKit
         check(below > above && above > 0, "the shadow falls 1 point down: \(below) below against \(above) above")
         check(alpha(image, middle, inner + 1) <= 64, "at most 0.25 black at the edge")
         check(alpha(image, 0, 0) == 0 && alpha(image, middle, image.height - 1) == 0, "the blur fades out inside the outset")
-        // The interior is cleared with the cards' own continuous corner: at
-        // 8× every pixel the card fully covers is clear, including the many a
-        // circular corner of the same radius would leave partly shadowed.
         let scale: CGFloat = 8
         guard let fine = Shadow.image(scale: scale) else { return check(false, "the shadow image renders at 8×") }
         let mask = CGContext(data: nil, width: fine.width, height: fine.height, bitsPerComponent: 8, bytesPerRow: fine.width,
@@ -152,8 +131,6 @@ import AppKit
         check(shadowedInside == 0, "every pixel inside the card's continuous corner is clear (\(shadowedInside) are not)")
     }
 
-    /// The lone card's shadow is a sibling view that takes no input or
-    /// accessibility and sits 10 points beyond the page host.
     static func pageCardShadowView() {
         let view = PageCardShadowView()
         view.place(around: NSRect(x: 220, y: 10, width: 1230, height: 820))
@@ -170,8 +147,6 @@ import AppKit
         (split.layer?.sublayers ?? []).filter { $0.name == "Split pane shadow" }
     }
 
-    /// A lone pane is clipped by the host and casts no split shadow; each
-    /// divided pane clips itself and has its own shadow just below it.
     static func splitBackingAndShadows() {
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 1230, height: 820))
         host.wantsLayer = true
@@ -211,8 +186,6 @@ import AppKit
 
     final class FlippedHost: NSView { override var isFlipped: Bool { true } }
 
-    /// The page host is flipped, so the split's layer is not geometry-flipped
-    /// itself; stacked panes of unequal height must keep their own shadows.
     static func stackedInFlippedHost() {
         let host = FlippedHost(frame: NSRect(x: 0, y: 0, width: 600, height: 800))
         host.wantsLayer = true

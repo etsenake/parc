@@ -7,7 +7,6 @@
 #include <cstdio>
 #include <cstdlib>
 
-//
 static unsigned assertions = 0;
 static unsigned groups = 0;
 
@@ -68,9 +67,6 @@ static void Check(BOOL condition, const char *message) {
 }
 @end
 
-// Also compile this test against the old production header/implementation.
-// The availability branch below reproduces its absent parent-visibility step;
-// the regression fails on the real managed child's hidden state, not the API.
 @interface PCNativePageHost (VisibilityRegression)
 - (BOOL)setContentVisible:(BOOL)visible inWindow:(NSWindow *)window;
 @end
@@ -110,8 +106,6 @@ static NSWindow *Window(void) {
                           NSWindowStyleMaskResizable
                   backing:NSBackingStoreBuffered defer:NO];
   window.releasedWhenClosed = NO;
-  // Keep tests offscreen: first-responder and view hierarchy behavior do not
-  // require bringing a test window in front of the user's application.
   return window;
 }
 
@@ -234,8 +228,6 @@ static void TestDeferredFocusAndRendererReplacement(void) {
         "queued request focuses real renderer in same window");
   Check(observer.focusAttempts == 1, "observer notified after queued request");
 
-  // The queued request names the renderer and window it was made for; a
-  // replacement renderer supersedes it (Peek focus routing, 90578fb5).
   SetSentinel(window);
   Check([window makeFirstResponder:host], "queue focus before renderer replacement");
   [renderer removeFromSuperview];
@@ -278,7 +270,6 @@ static void TestDeferredMoveAndDetach(void) {
   [second.contentView addSubview:host];
   DrainMainQueue();
   Check(host.window == second && renderer.window == second, "host and page move together");
-  // The request belongs to the window it was made in (90578fb5).
   Check(second.firstResponder == destinationSentinel && renderer.focusRequests == 0,
         "a move to another window supersedes the queued request");
   Check(first.firstResponder == firstSentinel, "old window responder stays unchanged");
@@ -403,7 +394,7 @@ static void TestBackgroundContentVisibility(void) {
   parking.hidden = YES;
   [window.contentView addSubview:parking];
   VisibilityView *page = [[VisibilityView alloc] initWithFrame:NSZeroRect];
-  page.hidden = YES;  // Real WebContentsViewMac's initially_hidden contract.
+  page.hidden = YES;
   RendererView *renderer = [[RendererView alloc] initWithFrame:NSZeroRect];
   renderer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   [page addSubview:renderer];
@@ -419,8 +410,6 @@ static void TestBackgroundContentVisibility(void) {
   }
   [window.contentView addSubview:host];
   host.frame = NSMakeRect(0, 0, 640, 360);
-  // The old host has no parent visibility operation: reparenting, resizing
-  // and showing the renderer child leave this native parent hidden.
   renderer.hidden = NO;
   if (hasVisibility) {
     Check([host setContentVisible:YES inWindow:window], "visible shell shows exact native content");
@@ -450,9 +439,6 @@ static void TestBackgroundContentVisibility(void) {
 
 static void TestFreshContentSizeBeforeShow(void) {
   ++groups;
-  // A new foreground page's native container starts visible, but unsized.
-  // A new background page starts hidden. Neither has run an AppKit layout
-  // pass when the native tab attachment sizes the outer host and shows it.
   const BOOL initialVisibility[] = {NO, YES};
   for (BOOL initiallyHidden : initialVisibility) {
     NSWindow *window = Window();
@@ -468,8 +454,6 @@ static void TestFreshContentSizeBeforeShow(void) {
         initWithHostedLayer:[CALayer layer]];
     [page addSubview:display];
     PCNativePageHost *host = [PCNativePageHost hostWithContentView:page observer:nil];
-    // Native attachment adds a pane after the shell has already sized its
-    // wrapper. Layout of the pane sets the host's frame, not its constraints.
     PCNativeDevToolsPaneView *pane = [[PCNativeDevToolsPaneView alloc]
         initWithInspectedView:host];
     pane.frame = wrapper.bounds;
@@ -493,8 +477,6 @@ static void TestFreshContentSizeBeforeShow(void) {
     Check(page.subtreeLayouts == layouts,
           "settled visibility does not walk the renderer subtree again");
 
-    // A later pane resize or infobar changes the constraints; drawing must
-    // use their actual result, not overwrite them with the outer host size.
     host.frame = NSMakeRect(0, 0, 640, 360);
     NSView *shelf = [[NSView alloc] initWithFrame:NSZeroRect];
     [host setInfobarView:shelf preferredHeight:30];
@@ -630,8 +612,6 @@ static void TestLayoutReentrantOwnership(void) {
         "old layout leaves the new owner's page hidden");
   [host invalidate];
 
-  // Layout may also deliver a newer visibility decision for the same owner.
-  // Retaining the right host/window alone cannot authorize the old show.
   LayoutView *current = [[LayoutView alloc] initWithFrame:NSZeroRect];
   current.hidden = YES;
   PCNativePageHost *currentHost = [PCNativePageHost hostWithContentView:current observer:nil];
@@ -754,8 +734,6 @@ static void TestConcealedPictureKeepsItsConnection(void) {
   [window close];
 }
 
-// pane_compositor.mm places the compositor's view inside the WebContents view,
-// above the renderer (or at the bottom before a renderer exists).
 static void TestPaneCompositorViewIsNeverTheRenderer(void) {
   ++groups;
   NSWindow *window = Window();
@@ -776,7 +754,6 @@ static void TestPaneCompositorViewIsNeverTheRenderer(void) {
   };
   Check(!overlay.onScreen, "an unplaced compositor view is off screen");
   [page addSubview:overlay positioned:NSWindowBelow relativeTo:nil];
-  // Joining a window can also report a backing change; count only deltas.
   Check(geometryChanges >= 1, "joining a window reports geometry");
   NSUInteger changes = geometryChanges;
   overlay.frame = page.bounds;
@@ -815,7 +792,6 @@ static void TestPaneCompositorViewIsNeverTheRenderer(void) {
   host.hidden = NO;
   Check(overlay.onScreen, "unhiding brings it back on screen");
   Check(screenChanges > screens && lastOnScreen, "an unhidden ancestor reports rejoining");
-  // Parc parks a departing tab's pane in a hidden container in the same window.
   NSView *parked = [[NSView alloc] initWithFrame:window.contentView.bounds];
   parked.hidden = YES;
   [window.contentView addSubview:parked];
@@ -847,7 +823,6 @@ static void TestPaneCompositorViewIsNeverTheRenderer(void) {
   [window close];
 }
 
-// Chromium's ViewsHostableDetach hides and removes the hosted WebContents view.
 static void TestRestoreContentAfterNativeDetach(void) {
   ++groups;
   NSWindow *window = Window();
@@ -883,8 +858,6 @@ static void TestRestoreContentAfterNativeDetach(void) {
   [window close];
 }
 
-// Chromium's history swipe overlay goes in a container above the page and
-// the pane compositor's display view, which never takes input.
 static void TestHistoryOverlayContainer(void) {
   ++groups;
   NSWindow *window = Window();

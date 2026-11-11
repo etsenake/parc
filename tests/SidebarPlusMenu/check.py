@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Dock plus HUD: the New Space / Folder / Easel / Note / Split / Tab menu.
-
-Off-screen AppKit windows, including a key child HUD. No browser, input or preferences.
-"""
 from pathlib import Path
 import shutil
 import subprocess
@@ -38,7 +34,6 @@ for use in (
 ):
     assert use in controller, f"the window no longer wires the plus HUD: {use}"
 assert 'row(.note, "New Note", "doc.text", "createNote:", canCreateNote' in plus
-#
 for use in (
     "static let titleFont = NSFont.systemFont(ofSize: 13, weight: .medium)",
     "static let shortcutFont = NSFont.systemFont(ofSize: 13, weight: .regular)",
@@ -49,7 +44,6 @@ for use in (
     assert use in plus, f"the plus HUD rows no longer use PArcMenu's fonts: {use}"
 assert "NSAppearance(named:" not in plus and ".appearance = " not in plus, "the HUD forces no appearance of its own"
 assert "appearanceSource" not in plus, "like the PArcMenu, the HUD keeps AppKit's default appearance source, the app"
-#
 navigation = (root / "Sources/ParcApp/NavigationControls.swift").read_text()
 history = navigation[navigation.index("private final class NavigationHistoryFill"):]
 for use in (
@@ -68,8 +62,6 @@ assert ("NavigationHistoryController(page: page, snapshot: snapshot, window: win
         "                    theme: self.windowPaletteTheme)") in controller \
     and "private var windowPaletteTheme: SpaceTheme { rootView.incognito ? IncognitoWindowTheme.paletteTheme : activeSpace.theme }" in controller, \
     "the window hands the history chooser its Space theme, or the incognito theme in a private window"
-# The window's live theme reaches the HUD, including while it is open. A
-#
 assert "sidebar.plusMenuTheme = rootView.paletteTheme" in controller.split("private func applyChromeTheme(", 1)[1].split("\n    }\n", 1)[0], \
     "the window hands its chrome theme to the plus HUD"
 assert "var paletteTheme: SpaceTheme { incognito ? IncognitoWindowTheme.paletteTheme : theme }" in (root / "Sources/ParcApp/ThemeRenderer.swift").read_text(), \
@@ -77,7 +69,6 @@ assert "var paletteTheme: SpaceTheme { incognito ? IncognitoWindowTheme.paletteT
 assert "set { plusMenu.theme = newValue }" in sidebar, "the sidebar forwards the window theme to the plus HUD"
 assert "SidebarPlusMenuView(rows: rows, colors: PArcMenuColors(theme: theme)" in plus, "the HUD opens in the window theme"
 assert "Boost" not in plus.split("enum SidebarPlusAction", 1)[1], "Boost is excluded from the plus menu"
-#
 for use in (
     "private let plusButton = SidebarPlusButtonState()",
     'footerMore.title = ""\n',
@@ -90,7 +81,6 @@ for use in (
     "let plusColors = TranslucentButtonColors.standard(dark: palette.isDark)",
     "if plusButton.colors != plusColors { plusButton.colors = plusColors }",
     "guard let window, isEnabled, NSApp.isActive, !isHiddenOrHasHiddenAncestor else { hovered = false; return }",
-    # A press dragged off or back on the + changes its highlight; each edge re-reads the hover.
     "if tracksHover { refreshHover() }\n        onHighlight?(flag)",
 ):
     assert use in sidebar, f"SidebarView no longer drives the + button face: {use}"
@@ -131,11 +121,8 @@ with tempfile.TemporaryDirectory(prefix="parc-plus-menu-") as directory:
         ],
         check=True,
     )
-    # An unbundled executable's Bundle.main.resourceURL is its own directory.
     shutil.copytree(root / "Resources/SidebarPlusMenu", Path(directory) / "SidebarPlusMenu")
     subprocess.run([str(executable)], check=True)
-    # The face over the real ActionButton (SidebarView.swift's head) and the
-    # Library entry's TranslucentButtonColors / rendering host.
     controls = Path(directory) / "ActionButton.swift"
     controls.write_text(sidebar[:sidebar.index("final class MenuAction")])
     button_checks = Path(directory) / "button-checks"

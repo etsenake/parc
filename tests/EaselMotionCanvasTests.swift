@@ -4,8 +4,6 @@ import AppKit
     override var isKeyWindow: Bool { true }
 }
 
-/// Actual shared canvas, native clip geometry and retained accessibility
-/// closures in a hidden component. No mouse/key gesture or browser is driven.
 @main struct EaselMotionCanvasTests {
     @MainActor static var count = 0
     @MainActor static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {

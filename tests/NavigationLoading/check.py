@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""NAV16 inert model checks: per-pane scrim loader placement and eligibility,
-the ForegroundPrimary loader colours under each content appearance, the
-48 ↔ 128-point track and 0.92 bar springs into and out of the sweep, Parc's
-stroke cycle, the reload glyph spring, idle display-link stop, identical
-pulse/sweep presentation skips, the Developer Mode reload menu and the
-19 + 14-point Developer Mode toolbar row. No browser, on-screen window or
-input."""
 from pathlib import Path
 import shutil
 import subprocess
@@ -32,7 +25,6 @@ with tempfile.TemporaryDirectory(prefix="parc-navigation-loading-") as directory
                     str(app / "SidebarChromeLayout.swift"), str(root / "tests/Support/AppKitObservation.swift"),
                     str(Path(__file__).with_name("main.swift")),
                     "-o", str(executable)], check=True)
-    # An unbundled executable's Bundle.main.resourceURL is its own directory.
     shutil.copytree(root / "Resources/NavigationControls", Path(directory) / "NavigationControls")
     subprocess.run([str(executable)], check=True)
 print("NavigationLoading presentation-skip check passed")

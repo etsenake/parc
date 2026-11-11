@@ -48,7 +48,6 @@ import AppKit
         expect(DownloadActivity.active(in: [unknown], profiles: profiles)?.progress == nil, "Unknown length is not invented percent")
         let overflow = publish("over", received: 200)
         expect(DownloadActivity.active(in: [overflow], profiles: profiles)?.progress == 1, "Published byte progress is clamped safely")
-        //
         let pending = publish("pending", status: "pending", date: 50, received: 0)
         expect(DownloadActivity.inFlight(in: [older, newest, paused, pending], profiles: profiles)?.name == "newest",
                "In flight is the newest in-progress download; newer paused and not-started ones do not count")
@@ -59,7 +58,6 @@ import AppKit
         expect(DownloadActivity.inFlight(in: [metadata], profiles: profiles) == nil && DownloadActivity.inFlight(in: [newest], profiles: []) == nil,
                "Persisted metadata and retired profiles are never in flight")
 
-        //
         let badge = DownloadActivityBadge(frame: NSRect(x: 0, y: 0, width: 40, height: 56))
         let window = NSWindow(contentRect: badge.frame, styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSView(frame: badge.frame); window.contentView = host; host.addSubview(badge)
@@ -81,10 +79,6 @@ import AppKit
                "Renderer remains decoration, never a duplicate accessibility action")
         badge.setFrameSize(NSSize(width: 40, height: 40)); badge.layoutSubtreeIfNeeded()
         expect(firstRenderer.frame == badge.bounds, "Actual renderer remains centered in resized cell geometry")
-        //
-        // cutoutColor fills the disc, maxContrastColor strokes progress and the 0.2 track,
-        // foregroundPrimary outlines the disc at 0.5. The ring's outer edge covers the
-        // outline's inner half, so the outline is read just outside it on the track side.
         badge.colors = DownloadBadgeColors(foreground: .blue, maxContrast: .red, cutout: .green)
         badge.layoutSubtreeIfNeeded(); RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         let roles = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 80, pixelsHigh: 80, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
@@ -203,7 +197,6 @@ import AppKit
             var badges: [DownloadActivityBadge] = []
             for (index, amount) in [20, 60, 100].enumerated() {
                 let column = CGFloat(index) * 150 + 32
-                // One Library entry badge cell (40 × 56) per sample.
                 let cell = NSView(frame: NSRect(x: column, y: 62, width: 40, height: 56))
                 root.addSubview(cell)
                 let indicator = DownloadActivityBadge(frame: cell.bounds)

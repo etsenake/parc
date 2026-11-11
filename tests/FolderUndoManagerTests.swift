@@ -1,7 +1,5 @@
 import AppKit
 
-/// Real NSUndoManager interface, isolated callbacks; no NSApplication, window,
-/// web page or installed browser profile is created by this component check.
 @main @MainActor
 struct FolderUndoManagerTests {
     static func main() {

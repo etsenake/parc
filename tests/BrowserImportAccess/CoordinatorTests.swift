@@ -152,8 +152,6 @@ import AppKit
         noAccess.cancel()
         expect(PCNativeBrowserApplication.imports == 0, "All checks stayed outside native import execution")
         checks += try passwordCoordinatorChecks(store: store, destination: destination, window: window, safari: safari, other: impostor)
-        // The inline first-launch owner admits into its captured first Profile,
-        // even if unrelated model selection changes before the Import action.
         let firstLaunchStore = try BrowserStore(directory: directory.appendingPathComponent("FirstLaunch"))
         let firstLaunchDestination = BrowserImportDestination(spaceID: firstLaunchStore.activeSpace.id,
             profileID: firstLaunchStore.activeSpace.profileID)
@@ -284,8 +282,6 @@ import AppKit
         func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
             checks += 1; precondition(condition(), message)
         }
-        // BrowserStore's ISO8601 format persists whole seconds. Freeze the real
-        // injectable clock at that precision for exact before/after equality.
         let date = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970))
         let store = try BrowserStore(directory: directory.appendingPathComponent("BookmarkSelection"), now: { date })
         let destination = BrowserImportDestination(spaceID: store.activeSpace.id, profileID: store.activeSpace.profileID)

@@ -1,10 +1,6 @@
 import Combine
 import Foundation
 
-///
-/// topAppsEmptyStateDismissedForProfiles, which hides the empty state for one
-/// profile in every window, survives a relaunch and is absent from older
-/// sessions.
 @main @MainActor struct EmptyStateDismissalTests {
     static var count = 0
     static func check(_ value: @autoclosure () throws -> Bool, _ message: String) rethrows {
@@ -43,7 +39,6 @@ import Foundation
         check(relaunched.state.settings.favoritesEmptyStateDismissed(for: first)
               && !relaunched.state.settings.favoritesEmptyStateDismissed(for: second), "the dismissal survives a relaunch")
 
-        // Sessions saved before the preference existed decode with none.
         var json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
         var settings = json["settings"] as! [String: Any]
         check(settings["topAppsEmptyStateDismissedForProfiles"] as? [String] == [first.uuidString], "the session stores the key")

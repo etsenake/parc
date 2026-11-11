@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""sidebar_item_drag.py <scratch directory> [files the check already compiles...]
-
-Prints SidebarItemDrag.swift and the sources it needs: its folder row builds on
-the row appearance, the folder icon, the tooltips and two small SidebarView
-declarations (cut by tests/Support/declarations.py)."""
 import pathlib
 import subprocess
 import sys

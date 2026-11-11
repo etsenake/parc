@@ -35,15 +35,15 @@ class WebmParser {
  private:
   bool Element(uint64_t id, size_t pos, size_t size) {
     switch (id) {
-      case 0x18538067:  // Segment
-      case 0x1549A966:  // Info
-      case 0x1654AE6B:  // Tracks
-      case 0x1F43B675:  // Cluster
-      case 0xA0:        // BlockGroup
-      case 0xE0:        // Video
-      case 0xE1:        // Audio
+      case 0x18538067:
+      case 0x1549A966:
+      case 0x1654AE6B:
+      case 0x1F43B675:
+      case 0xA0:
+      case 0xE0:
+      case 0xE1:
         return Parse(pos, pos + size);
-      case 0xAE:  // TrackEntry: the first one only.
+      case 0xAE:
         return track_number_ || Parse(pos, pos + size);
       case 0x2AD7B1:
         timecode_scale_ = Uint(pos, size);
@@ -72,7 +72,7 @@ class WebmParser {
       case 0x9F:
         track_->channels = static_cast<uint16_t>(Uint(pos, size));
         return true;
-      case 0xB5: {  // SamplingFrequency, a 4- or 8-byte float.
+      case 0xB5: {
         const uint64_t bits = Uint(pos, size);
         track_->sample_rate = static_cast<uint32_t>(
             size == 4 ? std::bit_cast<float>(static_cast<uint32_t>(bits)) : std::bit_cast<double>(bits));
@@ -81,8 +81,8 @@ class WebmParser {
       case 0xE7:
         cluster_time_ = Uint(pos, size);
         return true;
-      case 0xA3:  // SimpleBlock
-      case 0xA1:  // Block
+      case 0xA3:
+      case 0xA1:
         return Block(id == 0xA3, pos, size);
       default:
         return true;
@@ -104,14 +104,11 @@ class WebmParser {
     Sample sample;
     sample.data.assign(file_.begin() + at, file_.begin() + pos + size);
     sample.pts = sample.dts = static_cast<int64_t>(cluster_time_) + relative;
-    // A Block's keyframe flag would be the absence of ReferenceBlock; only
-    // audio comes in Blocks here, all of it keyframes.
     sample.is_keyframe = simple ? (flags & 0x80) != 0 : !track_->is_video;
     samples_->push_back(std::move(sample));
     return true;
   }
 
-  // An EBML variable-length integer: an element ID keeps its length marker.
   uint64_t Vint(size_t* pos, bool keep_marker) const {
     if (*pos >= file_.size()) return kInvalid;
     const uint8_t first = file_[*pos];
@@ -143,7 +140,7 @@ class WebmParser {
   std::string error_;
 };
 
-}  // namespace
+}
 
 bool ParseWebmFile(const std::vector<uint8_t>& file, TrackInfo* track, std::vector<Sample>* samples,
                    std::string* error) {
@@ -162,4 +159,4 @@ bool ParseWebmFile(const std::vector<uint8_t>& file, TrackInfo* track, std::vect
   return true;
 }
 
-}  // namespace parc::fairplay::test
+}

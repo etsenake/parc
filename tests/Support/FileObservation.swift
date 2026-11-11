@@ -1,16 +1,10 @@
 import Foundation
 import ObjectiveC
 
-// Test-process observers for persistence work: file-manager calls and reads of
-// ObjC-backed document text, each with the thread that made it. Exchanges
-// NSFileManager implementations inside the test executable only.
-
-/// One NSFileManager call on a path under the watched directory.
 struct FileOperation {
     let name: String
     let path: String
     let onMainThread: Bool
-    /// `ProcessInfo.systemUptime` when the call was made.
     let time: TimeInterval
     var fileName: String { (path as NSString).lastPathComponent }
 }
@@ -36,7 +30,6 @@ enum FileOperations {
             method_exchangeImplementations(originalMethod, replacementMethod)
         }
     }
-    /// Calls on paths under `directory` made from any thread while `body` runs.
     static func during(_ directory: URL, _ body: () throws -> Void) rethrows -> [FileOperation] {
         precondition(installed, "FileOperations.install() first")
         let paths = [directory.standardizedFileURL.path, directory.resolvingSymlinksInPath().path]
@@ -71,11 +64,6 @@ extension FileManager {
     }
 }
 
-/// An immutable ObjC-backed string, like the text AppKit controls hand to the
-/// stores, that records each read with the thread making it. Swift keeps such a
-/// string bridged rather than copied, so encoding a document that holds one
-/// reads it through NSString on the encoding thread: one `getCharacters` call
-/// per JSON encode, where equality comparisons use `characterAt` only.
 final class ObservedString: NSString {
     struct Read {
         let name: String
@@ -84,13 +72,11 @@ final class ObservedString: NSString {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var log: [Read]?
     private var storage: NSString = ""
-    /// The bridged Swift string a store receives.
     static func text(_ value: String) -> String {
         let string = ObservedString()
         string.storage = value as NSString
         return string as String
     }
-    /// Reads of every observed string from any thread while `body` runs.
     static func reads(during body: () throws -> Void) rethrows -> [Read] {
         lock.lock(); log = []; lock.unlock()
         defer { lock.lock(); log = nil; lock.unlock() }
@@ -98,7 +84,6 @@ final class ObservedString: NSString {
         lock.lock(); defer { lock.unlock() }
         return log ?? []
     }
-    /// JSON encodes of observed text made off the main thread.
     static func backgroundEncodes(_ reads: [Read]) -> Int {
         reads.filter { $0.name == "getCharacters" && !$0.onMainThread }.count
     }

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Pure session/draft checks; no browser engine, UI or existing profile is used.
 @main
 @MainActor
 struct OnboardingTests {
@@ -30,8 +29,6 @@ struct OnboardingTests {
                      "An accepted extension choice resumes with its original destination, not the active Profile")
         precondition(!store.state.settings.onboardingComplete && store.state.tabs.isEmpty,
                      "A draft must not commit setup or open tabs")
-        // Existing persisted enum tags must keep their meaning even though
-        // visible setup order is independent from declaration order.
         let draftFile = root.appendingPathComponent("onboarding.json")
         var legacy = try JSONSerialization.jsonObject(with: Data(contentsOf: draftFile)) as! [String: Any]
         legacy.removeValue(forKey: "defaultBrowserChoice")
@@ -272,8 +269,6 @@ struct OnboardingTests {
         print("Onboarding draft, commit, retry, restart, rollback, replay and skip checks passed")
     }
 
-    ///
-    /// (wheel and light/dark kept), Favorites to none. Replay restores what the Space had.
     static func checkSkip(root: URL) throws {
         let skipRoot = root.appendingPathComponent("skip")
         let store = try BrowserStore(directory: skipRoot)
@@ -312,8 +307,6 @@ struct OnboardingTests {
                      "Replay Skip keeps the profile's existing Favorites selected and drops new picks")
     }
 
-    /// Replay dedupes saved URLs the way saved tabs compare them, and archived
-    /// pinned tabs, like archived Favorites, don't count as existing.
     static func checkReplayDedupe(root: URL) throws {
         let dedupeRoot = root.appendingPathComponent("replay-dedupe")
         let first = try BrowserStore(directory: dedupeRoot)
@@ -351,7 +344,6 @@ struct OnboardingTests {
         var seeded = replay; seeded.favoriteURLs = [OnboardingDraft.choiceURL(forSaved: "http://www.youtube.com/")]
         precondition(seeded.isFavoriteSelected(choiceYouTube), "An http://www.youtube.com/ Favorite shows YouTube selected")
 
-        // Pinned bookmark links compare exactly: fragment-routed links are distinct pages.
         let fragmentRoot = root.appendingPathComponent("first-launch-fragments")
         let fragmentStore = try BrowserStore(directory: fragmentRoot)
         var fragments = try OnboardingDraft.load(directory: fragmentRoot, space: fragmentStore.activeSpace)
@@ -368,7 +360,6 @@ struct OnboardingTests {
         store.state.spaces.first { $0.id == id }?.theme
     }
 
-    /// Replay applies through the first-launch writes, adding to the existing session.
     static func checkReplay(root: URL) throws {
         let replayRoot = root.appendingPathComponent("replay")
         let store = try BrowserStore(directory: replayRoot)
@@ -429,7 +420,6 @@ struct OnboardingTests {
         precondition(store.state.spaces.first { $0.id == unnamed }?.title == nil,
                      "Keeping the suggested name does not freeze a placeholder title")
 
-        // The live preview repaints from the model but never reaches the session file.
         let base = theme(in: store, original.id)!
         let live = SpaceTheme.singleColor(ThemeColor(hex: "334455")!)
         let later = SpaceTheme.singleColor(ThemeColor(hex: "445566")!)
@@ -450,7 +440,6 @@ struct OnboardingTests {
         let closedEarly = try BrowserStore(directory: replayRoot)
         precondition(theme(in: closedEarly, original.id) == base)
 
-        // Finish commits the previewed theme.
         precondition(store.previewSpaceTheme(original.id, theme: live))
         var finishing = OnboardingDraft(spaceID: original.id, spaceName: "Home", theme: live)
         finishing.favoriteURLs = []
@@ -460,7 +449,6 @@ struct OnboardingTests {
         precondition(theme(in: store, original.id) == live && theme(in: finished, original.id) == live,
             "Finish saves the replay theme and ends the preview")
 
-        // Another editor's save during the preview persists its theme and ends the preview.
         for before in [live, later] {
             precondition(store.previewSpaceTheme(original.id, theme: later))
             let change = try store.saveSpaceTheme(spaceID: original.id, profileID: original.profileID,
@@ -480,7 +468,6 @@ struct OnboardingTests {
         precondition(theme(in: sameValue, original.id) == later && theme(in: store, original.id) == later,
             "An editor saving the previewed value itself still persists it")
 
-        // Finish applies only what replay changed from where it started.
         var unchanged = OnboardingDraft(spaceID: original.id, spaceName: "Home", theme: later)
         unchanged.favoriteURLs = []
         unchanged.replayBaseName = "Home"; unchanged.replayBaseTheme = later
@@ -497,7 +484,6 @@ struct OnboardingTests {
         precondition(store.state.spaces.first { $0.id == original.id }?.name == "Replay name"
             && theme(in: store, original.id) == live, "Changed replay name and theme apply")
 
-        // A Safari restart saves the replay draft; relaunch reopens it at the import once.
         var restarting = replay
         restarting.replayBaseName = original.name; restarting.replayBaseTheme = base
         restarting.replayAppearance = "dark"
@@ -517,7 +503,6 @@ struct OnboardingTests {
         precondition(OnboardingDraft.takeReplayRestart(directory: replayRoot, space: originSpace) == nil,
                      "The saved replay is consumed once")
 
-        // Only Replay onboarding's own restart intent reopens a saved replay.
         let destination = BrowserImportDestination(spaceID: original.id, profileID: original.profileID)
         try BrowserImportRestartIntent(destination: destination, onboarding: false, replay: true).save(in: replayRoot)
         let marked = try BrowserImportRestartIntent.take(from: replayRoot)

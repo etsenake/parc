@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""declarations.py <output .swift> <name>...
-
-Writes the top-level declaration of each name (a class, struct or enum, or
-the extension declaring a member of that name), cut whole with its file's
-imports from the one Sources/ParcApp file that holds it, so a check can
-compile a small type that lives inside a file it can't compile without
-depending on where in that file it sits. Braces are counted as written, so a
-cut declaration must not hold an unbalanced brace in a string or comment.
-Prints the output path."""
 import pathlib
 import re
 import sys

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Exercise the real folder Delete menu wiring in inert AppKit (no browser)."""
 from pathlib import Path
 import subprocess
 import sys

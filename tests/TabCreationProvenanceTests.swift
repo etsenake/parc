@@ -27,10 +27,6 @@ struct TabCreationProvenanceTests {
         expect(receipt.validated(profileID: UUID(), state: state).activeTabBeforeCreationID == nil, "Target profile cannot accept another profile's receipt")
         var gone = state; gone.tabs.removeAll { $0.id == parent.id }
         expect(receipt.validated(profileID: profile, state: gone).referrerID == nil, "A removed source is not resurrected at insertion")
-        // A same-Profile routed tab can retain an exact source owned by a
-        //
-        //
-        // source only as active-before. Created contents keep the referrer.
         let routedSpace = BrowserSpace(id: UUID(), name: "Routed", symbol: "circle", color: "123456", profileID: profile)
         var routedState = state; routedState.spaces.append(routedSpace)
         var sourceWindow = WindowPresentation(state: routedState, ready: true)
@@ -60,9 +56,6 @@ struct TabCreationProvenanceTests {
         changedProfile.tabs[changedProfile.tabs.firstIndex { $0.id == parent.id }!].profileID = UUID()
         expect(createdReceipt.validated(profileID: profile, state: changedProfile).activeTabBeforeCreationID == nil,
                "Source Profile changes invalidate both stored identities")
-        //
-        // creator would capture the source window's tab, which no return
-        // consumer accepts across Profiles, so neither identity is recorded.
         let unsourced = TabCreationProvenance(routedFrom: nil, openedLink: false, profileID: profile, state: routedState)
         expect(unsourced.referrerID == nil && unsourced.activeTabBeforeCreationID == nil,
                "A routed page without a same-Profile source borrows no destination selection")
@@ -217,8 +210,6 @@ struct TabCreationProvenanceTests {
         expect(ownerless.tabIDs.allSatisfy { id in store.state.tabs.contains { $0.id == id
             && $0.referrerID == nil && $0.activeTabBeforeCreationID == nil } }, "A caller without a window cannot invent copied provenance")
 
-        //
-        // top placement of a created page routed outside the current Space.
         let placementDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: placementDirectory) }
         let placing = try BrowserStore(directory: placementDirectory)
@@ -261,8 +252,6 @@ struct TabCreationProvenanceTests {
         SidebarHierarchy.placingCreatedTab(foreignSpaceChild, insertion: .automatic, in: &spaced)
         expect(today(spaced).first == .tab(foreignSpaceChild),
                "A referrer outside this Today list does not move the tab below unrelated items")
-        // A referrer inside a split starts at that whole item; another split
-        // ends a run because it is not a tab opened from the same referrer.
         let splitLayout = BrowserSplitLayout(sidebarAnchorID: childB, spaceID: placingSpace, tabIDs: [childB, olderTab],
             orientation: .vertical, widthFactors: [0.5, 0.5])
         spaced.splitLayouts = [splitLayout]
@@ -287,8 +276,6 @@ struct TabCreationProvenanceTests {
         expect(today().firstIndex(of: .tab(adopted)) == today().firstIndex(of: .tab(childB)).map { $0 + 1 },
                "Native background adoption uses the same referrer placement")
         expect(placing.state.selectedTabIDs == selectionBeforeAdoption, "Background placement does not change selection")
-        // A modal (Peek) source supplies its parent as referrer. Closing the
-        // linked tab returns through that receipt, not its placed neighbour.
         var placingWindow = WindowPresentation(state: placing.state, ready: true)
         placing.selectTab(childA)
         let fromModal = placing.open("https://from-modal.example", creation: creationFrom(pinnedSource))
@@ -298,8 +285,6 @@ struct TabCreationProvenanceTests {
             profileID: placingProfile, state: placing.state, selected: [fromModal], focused: fromModal,
             referrerPool: placingWindow.referrerPool, available: { _ in true })
         expect(returnDecision?.tabIDs == [pinnedSource], "Closing the linked tab returns to its source, not its Today neighbour")
-        // A cross-Profile route enters this Profile's Space at the top with no
-        // receipt, so this window's current item gains no creation return.
         placing.selectTab(childA)
         let destinationCurrent = childA
         let crossProfile = placing.adoptNativePage(url: URL(string: "https://cross-profile.example"), title: "Routed",
@@ -319,8 +304,6 @@ struct TabCreationProvenanceTests {
             referrerPool: destination.referrerPool, available: { _ in true })
         expect(crossReturn?.tabIDs == [pinnedSource] && crossReturn?.tabIDs != [destinationCurrent],
                "Without a remembered item, closing it reaches its neighbour, not the destination's prior current item")
-        // A same-Profile matched link also takes the top and records its
-        // source only as active-before, so it does not join the source's run.
         let openedLink = placing.adoptNativePage(url: URL(string: "https://opened-link.example"), title: "Linked",
             profilePath: enginePath, preferredSpaceID: placingSpace, select: false,
             creation: TabCreationProvenance(routedFrom: fromPinnedA, openedLink: true, profileID: placingProfile,

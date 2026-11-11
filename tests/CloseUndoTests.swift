@@ -1,7 +1,5 @@
 import AppKit
 
-/// Real persistent BrowserStore and the window's FolderUndoManager. All files
-/// are temporary; native page owners are represented by their consent boundary.
 @main @MainActor
 struct CloseUndoTests {
     static var count = 0
@@ -57,8 +55,6 @@ struct CloseUndoTests {
         func todayIDs(_ space: BrowserSpace) -> Set<UUID> {
             Set(store.state.tabs.filter { $0.archivedAt == nil && $0.kind == .today && $0.spaceID == space.id && $0.profileID == profile.id }.map(\.id))
         }
-        // The window's Clear: SpaceClearToday's targets, the shared close with
-        // the clear-button reason, and the record built from the committed close.
         var record: ClosedTabsUndo?, committed: Bool?
         func clear(_ space: BrowserSpace) {
             record = nil; committed = nil
@@ -108,9 +104,7 @@ struct CloseUndoTests {
                   "Toast reads Cleared Tabs! Use ⌘Z to undo.")
 
         var usable = true, undone = 0, errors: [Error] = [], redoCurrent: (() -> Bool)?
-        // Tabs the window can neither use nor move here (closing, or mid-move): its canUse refuses them.
         var refused = Set<UUID>(), lastOperation: ClosedTabsUndoOperation?
-        // The window's Redo close: the ordinary close whose commit rechecks `current`.
         func register(_ record: ClosedTabsUndo, in manager: FolderUndoManager, on other: BrowserStore? = nil) -> Bool {
             let owner = other ?? store
             lastOperation = nil
@@ -126,7 +120,6 @@ struct CloseUndoTests {
             return lastOperation != nil
         }
         var closedItems = WindowClosedItems()
-        // Reopen's record of the same close, as the window's close path keeps it.
         let reopenIntent = ClosedItemIntent(ids: hereIDs, state: initial, spaceID: here.id, profileID: profile.id, focusedTabID: first.id)!
         closedItems.record(reopenIntent, in: cleared)
         try check(closedItems.nextStep(in: store.state, restorable: { _ in false }) != nil, "Clear also leaves Reopen Closed Tab steps")
@@ -134,7 +127,6 @@ struct CloseUndoTests {
         let window = FolderUndoManager()
         try check(register(clearRecord, in: window), "A committed Clear registers on the window's Undo (toast follows)")
         try check(window.canUndo && window.undoMenuItemTitle == "Undo Clear Tabs", "Edit menu reads Undo Clear Tabs")
-        // ⌘Z from another Space of the same window.
         _ = store.setWindowPresentation(spaceID: there.id, selectedTabIDs: [elsewhere.id])
         let beforeUndo = store.state
         usable = false
@@ -175,11 +167,9 @@ struct CloseUndoTests {
         try check(initial.tabs.filter { hereIDs.contains($0.id) }.allSatisfy { store.state.tabs.contains($0) } && store.state.splitLayouts == [split]
                   && SidebarHierarchy.children(in: today, state: store.state) == SidebarHierarchy.children(in: today, state: initial),
                   "Undo after Redo restores the redone close")
-        // Redo covers only tabs that are live Today tabs again.
         try check(clearRecord.redoIDs(in: store.state) == hereIDs, "Every restored tab is a Redo target")
         _ = store.setWindowPresentation(spaceID: here.id, selectedTabIDs: [first.id])
 
-        // Two Spaces cleared in one window undo last first.
         autoApprove = true
         clear(here); let hereRecord = record!
         _ = store.setWindowPresentation(spaceID: there.id, selectedTabIDs: [elsewhere.id])
@@ -193,7 +183,6 @@ struct CloseUndoTests {
         stack.undo()
         try check(todayIDs(here) == hereIDs && store.state.splitLayouts == [split], "Then the earlier Clear")
 
-        // Two windows keep separate stacks over the shared store.
         clear(here); let windowA = record!
         clear(there); let windowB = record!
         let firstWindow = FolderUndoManager(), secondWindow = FolderUndoManager()
@@ -204,7 +193,6 @@ struct CloseUndoTests {
         secondWindow.undo()
         try check(todayIDs(there) == [elsewhere.id, elsewhereToo.id], "The other window undoes its own")
 
-        // Reopen and Archive changes made after the Clear: Undo returns the rest.
         let reopenIntent2 = ClosedItemIntent(ids: hereIDs, state: store.state, spaceID: here.id, profileID: profile.id, focusedTabID: nil)!
         clear(here); let partial = record!
         var reopen = WindowClosedItems()
@@ -240,7 +228,6 @@ struct CloseUndoTests {
         partialWindow.undo()
         try check(remaining.isSubset(of: todayIDs(here)), "Undo after that Redo restores the same tabs")
 
-        //
         let livePut = todayIDs(here)
         clear(here); let putBack = record!
         let putWindow = FolderUndoManager()
@@ -256,7 +243,6 @@ struct CloseUndoTests {
         putWindow.undo()
         try check(todayIDs(here) == livePut, "Undo restores them all")
 
-        // An archived tab edited since (a Note renamed in the Library) is still this Clear's and keeps its edits.
         var edited = cleared
         if let index = edited.tabs.firstIndex(where: { $0.id == first.id }) {
             edited.tabs[index].title = "Edited in the Library"; edited.tabs[index].url = "https://edited.invalid/"
@@ -269,7 +255,6 @@ struct CloseUndoTests {
         if let index = rearchived.tabs.firstIndex(where: { $0.id == first.id }) { rearchived.tabs[index].archivedAt = Date(timeIntervalSince1970: 2_000_000_000) }
         try check(!clearRecord.restorableIDs(in: rearchived).contains(first.id), "A tab archived again since is not this Clear's")
 
-        // Pure restoration: a split pane deleted since returns its partner alone in the split's slot.
         var halfGone = cleared
         halfGone.tabs.removeAll { $0.id == right.id }
         let alone = clearRecord.restoring(halfGone)!
@@ -286,10 +271,8 @@ struct CloseUndoTests {
         if let index = moved.tabs.firstIndex(where: { $0.id == remaining.first }) { moved.tabs[index].kind = .pinned }
         try check(!partial.redoIDs(in: moved).contains(remaining.first ?? UUID()), "Redo never archives a tab pinned since")
 
-        // Failure and invalidation.
         autoApprove = true
         let live = todayIDs(here)
-        // Identical bytes skip the write, so leave this Undo's result unwritten.
         _ = store.setWindowPresentation(spaceID: there.id, selectedTabIDs: [])
         clear(here); let failing = record!
         let failingWindow = FolderUndoManager()
@@ -316,7 +299,6 @@ struct CloseUndoTests {
         approve()
         try check(!busy.isBusy && busy.canUndo, "The Redo finishes")
 
-        // A second store: a three-pane split that is the window's selected split.
         let sideRoot = root.appendingPathComponent("side")
         try FileManager.default.createDirectory(at: sideRoot, withIntermediateDirectories: true)
         let side = BrowserSpace(id: UUID(), name: "Side", symbol: "circle", color: "FEDCBA", profileID: profile.id)
@@ -359,8 +341,6 @@ struct CloseUndoTests {
         try check(sideStore.state.splitLayouts == sideInitial.splitLayouts && SidebarHierarchy.children(in: sideToday, state: sideStore.state) == sideOrder,
                   "The selected split returns whole, in place")
 
-        // A Clear that leaves panes this window can use or move here, as after a
-        // Library card Clear whose other panes another window shows: the pane rejoins.
         let one = clearSide([a.id])!
         try check(one.actionName == "Clear Tab", "One pane from a split that survives is one item")
         try check(sideStore.state.splitLayouts.first { $0.id == trio.id }?.tabIDs == [b.id, c.id] && one.memberships[a.id]?.dissolved == false,
@@ -385,7 +365,6 @@ struct CloseUndoTests {
         try check(regroupedTrio != nil && regroupedTrio == beforePair
                   && SidebarHierarchy.children(in: sideToday, state: sideStore.state) == sideOrder, "Undo regroups the split the Clear dissolved")
 
-        // Redo's commit rechecks its tabs, as the Clear's own close does.
         let loose = clearSide([d.id, e.id])!
         let looseWindow = FolderUndoManager()
         try check(register(loose, in: looseWindow, on: sideStore), "Registers")
@@ -400,8 +379,6 @@ struct CloseUndoTests {
         try check(sideStore.state.tabs.first { $0.id == d.id }.map { $0.kind == .pinned && $0.archivedAt == nil } == true
                   && sideStore.state.tabs.first { $0.id == e.id }?.archivedAt != nil, "Redo then archives only the tab still in Today")
 
-        // Panes that can't come here right now (closing, or mid-move between
-        // windows): Undo leaves them as they are.
         refused = [b.id, c.id]
         let foreignPanes = clearSide([a.id])!
         let foreignWindow = FolderUndoManager()
@@ -421,7 +398,6 @@ struct CloseUndoTests {
                   "Nor does Undo regroup a split whose last other pane is busy elsewhere")
         refused = []
 
-        // Every other close: Command-W, a pane's close, a row's Archive Tab.
         let archRoot = root.appendingPathComponent("archive")
         try FileManager.default.createDirectory(at: archRoot, withIntermediateDirectories: true)
         let work = BrowserSpace(id: UUID(), name: "Work", symbol: "circle", color: "FFEEDD", profileID: profile.id)
@@ -450,7 +426,6 @@ struct CloseUndoTests {
         @MainActor func workOrder() -> [SidebarItemReference] { SidebarHierarchy.children(in: workToday, state: arch.state) }
         let workOriginal = workOrder()
         try check(workOriginal == [.tab(t1.id), .split(duo.id), .tab(t2.id), .tab(t3.id)], "Fixture: a split between Today tabs")
-        // The window's close path: its focused tab, the shared close and the record of what it committed.
         func close(_ ids: Set<UUID>, focused: UUID?, prompt: ClosedTabsUndo.Prompt = .archive) -> ClosedTabsUndo? {
             var made: ClosedTabsUndo?
             let selection = FolderRemovalSelection.resolve(removing: ids, spaceID: arch.state.activeSpaceID,
@@ -509,7 +484,6 @@ struct CloseUndoTests {
                   && SidebarHierarchy.children(in: shelfBox, state: arch.state) == [.tab(note.id), .tab(shelved.id)],
                   "A pinned Note only unloads in its folder, so it registers no Undo either")
 
-        // Clear, then Command-W: Command-Z undoes the later close first.
         let mixed = FolderUndoManager()
         let cleanAll = close([t1.id, t3.id, s1.id, s2.id, t2.id], focused: nil, prompt: .clear)!
         try check(register(cleanAll, in: mixed, on: arch), "Clear registers")
@@ -526,7 +500,6 @@ struct CloseUndoTests {
         ordered.undo()
         try check(workOrder() == workOriginal, "Then the Clear")
 
-        // A close that commits while a Redo still waits joins when that Redo finishes.
         let deferred = FolderUndoManager()
         let first1 = close([t1.id], focused: nil)!
         try check(register(first1, in: deferred, on: arch), "Registers")
@@ -560,7 +533,6 @@ struct CloseUndoTests {
         refusedRedo.undo()
         try check(workOrder() == workOriginal, "Undo restores it")
 
-        // A private window's close removes its tabs; Undo puts the records back.
         let privateStore = BrowserStore(privateParentProfileID: profile.id, engineProfilePath: root.appendingPathComponent("otr").path,
                                         directory: root, settings: store.state.settings)
         privateStore.requestPageRetirement = store.requestPageRetirement
@@ -600,7 +572,6 @@ struct CloseUndoTests {
         privateClearWindow.undo()
         try check(SidebarHierarchy.children(in: privateToday, state: privateStore.state) == privateOrder, "Undo returns them all")
 
-        // Close Peek: Undo opens the Peek again over its parent; Redo closes exactly that Peek.
         let peekRecord = ClosedPeekRecord(id: UUID(), url: URL(string: "https://peek.invalid/a")!, parentTabID: t1.id, profileID: profile.id)
         var opened: [ClosedPeekRecord] = [], openWorks = false, closeRequests: [UUID] = [], closeWorks = true
         var livePeeks = Set<UUID>()
@@ -608,7 +579,6 @@ struct CloseUndoTests {
             manager.appendClosedPeek(peekRecord, state: { arch.state }, canOpen: { _ in true }, open: { operation in
                 opened.append(operation.record)
                 guard openWorks else { return false }
-                // The window's adoption of the Peek the engine offers.
                 let adopted = UUID(); livePeeks.insert(adopted); operation.openedPeek = adopted
                 return true
             }, isOpen: { operation in operation.openedPeek.map(livePeeks.contains) == true },
@@ -652,7 +622,6 @@ struct CloseUndoTests {
         appendPeek(to: archivedParent) { _ in }
         _ = close([t1.id], focused: nil)
         try check(!archivedParent.canUndo, "A Peek whose parent left the sidebar can't come back")
-        // Clear takes the focused Today tab: Undo Clear Tabs reselects it.
         _ = arch.setWindowPresentation(spaceID: work.id, selectedTabIDs: [t2.id])
         let todayLive = Set(arch.state.tabs.filter { $0.archivedAt == nil && $0.kind == .today && $0.spaceID == work.id }.map(\.id))
         let focusedClear = close(todayLive, focused: t2.id, prompt: .clear)!
@@ -665,7 +634,6 @@ struct CloseUndoTests {
         try check(afterClear.finishClosedTabsUndo(focusedClear, state: arch.state, available: { _ in true })
                   && afterClear.selectedTabIDs == [t2.id], "Undo Clear Tabs selects the tab that was focused")
 
-        // A pinned tab and a Today tab closed together.
         let mixedClose = close([keep.id, t3.id], focused: nil)!
         try check(mixedClose.tabs.map(\.id) == [t3.id] && mixedClose.actionName == "Archive Tab"
                   && arch.state.tabs.contains { $0.id == keep.id && $0.archivedAt == nil && $0.kind == .pinned },
@@ -677,7 +645,6 @@ struct CloseUndoTests {
                   && arch.state.tabs.contains { $0.id == keep.id && $0.archivedAt == nil && $0.kind == .pinned },
                   "Undo returns the Today tab and leaves the pinned one alone")
 
-        // Back/forward entries of closed pages, kept in memory for Undo and Reopen.
         var history = ClosedPageHistory<NSObject>(limit: 2)
         let pageA = UUID(), pageB = UUID(), pageC = UUID()
         let entriesA = NSObject(), entriesB = NSObject(), entriesC = NSObject()

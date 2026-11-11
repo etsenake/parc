@@ -206,13 +206,10 @@ try MainActor.assumeIsolated {
     let host = NSView(frame: window.contentView!.bounds); window.contentView = host
     host.addSubview(labelControl); labelControl.updateTrackingAreas()
     let surface = labelControl.layer!.sublayers!.first!
-    // The passive surface follows its button at once outside an implicit
-    // group and takes the group's geometry timing inside one (round 3).
     labelControl.place(in: NSRect(x: 0, y: 0, width: 300, height: 28)); labelControl.layoutSubtreeIfNeeded()
     check(surface.frame == labelControl.bounds && surface.animation(forKey: "bounds") == nil
           && surface.animation(forKey: "position") == nil, "surface frame follows outside a group without an implicit animation")
     labelControl.updateTitle("A longer original title for the group")
-    // Core Animation adds implicit actions only to a rendered layer tree.
     window.setFrameOrigin(NSPoint(x: -4000, y: -4000)); window.orderFrontRegardless()
     labelControl.layoutSubtreeIfNeeded(); window.displayIfNeeded(); CATransaction.flush()
     NSAnimationContext.runAnimationGroup { context in
@@ -225,8 +222,6 @@ try MainActor.assumeIsolated {
     surface.removeAllAnimations()
     labelControl.updateTitle("Short title"); labelControl.place(in: NSRect(x: 0, y: 0, width: 420, height: 28))
     labelControl.layoutSubtreeIfNeeded()
-    // URLTextView.onRightClickURL: the owner builds the menu; the passive
-    // control never builds or performs one itself.
     let ownerMenu = NSMenu()
     var menuRequests = 0
     labelControl.menuProvider = { menuRequests += 1; return ownerMenu }
@@ -238,7 +233,6 @@ try MainActor.assumeIsolated {
     check(labelControl.titleMenu() == nil && menuRequests == 1, "a background window's title offers no menu")
     window.key = true
     labelControl.menuProvider = nil
-    //
     let noURL = PaneShareMenu.item(for: nil)
     check(noURL.title == "Share" && !noURL.isEnabled && noURL.submenu == nil, "a page without a URL offers no services")
     let shared = URL(string: "https://example.test/page")!
@@ -252,7 +246,6 @@ try MainActor.assumeIsolated {
     check(shareItem.submenu?.items.count == 1 && serviceEntry?.title == "Test Service" && serviceEntry?.image != nil,
           "each service appears with its menu title and image")
     if #available(macOS 27, *), let serviceEntry, let submenu = shareItem.submenu {
-        // AppKit makes room for an item's image only when the item asks to show it.
         let hidden = NSMenu(); hidden.addItem(withTitle: serviceEntry.title, action: nil, keyEquivalent: "")
         hidden.items[0].image = serviceEntry.image
         check(serviceEntry.preferredImageVisibility == .visible && submenu.size.width > hidden.size.width,
@@ -265,7 +258,6 @@ try MainActor.assumeIsolated {
     check(PaneShareMenu.item(for: shared) { _ in [] }.submenu == nil, "no services leave Share without a submenu")
     _ = PaneShareMenu.sharingServices(for: [shared])
     checks += 1
-    // A toast's share button offers the same menu for every copied URL.
     let second = URL(string: "https://example.test/other")!
     var toastRequests: [URL] = []
     let toastMenu = PaneShareMenu.menu(for: [shared, second]) { toastRequests = $0; return [service] }
@@ -273,7 +265,6 @@ try MainActor.assumeIsolated {
           && (toastMenu?.items.first?.representedObject as? PaneShareMenu.ShareAction)?.urls == [shared, second],
           "a toast's share menu asks for and performs with every copied URL")
     check(PaneShareMenu.menu(for: []) { _ in [service] } == nil, "no URLs, no share menu")
-    //
     check(PaneMenuContent(livePage: true, tabURL: "parc://note/x", localDocument: true) == .web,
           "a live page, including an error or crash, is web content")
     check(PaneMenuContent(livePage: false, tabURL: "https://example.test/", localDocument: false) == .web,
@@ -471,7 +462,6 @@ try MainActor.assumeIsolated {
     check(named("Reload this page")!.alphaValue == 1 && toolbar.extensionToolbar.alphaValue == 1,
           "revealing restores the predicate-driven controls")
     check(menuControl.alphaValue == 1 && closeControl.alphaValue == 1, "focused or hovered presentation restores only menu opacity")
-    //
     let actionWindow = TitleWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 100),
         styleMask: .borderless, backing: .buffered, defer: false)
     actionWindow.isReleasedWhenClosed = false
@@ -479,7 +469,6 @@ try MainActor.assumeIsolated {
     toolbar.frame = NSRect(x: 0, y: 0, width: 720, height: BrowserToolbarView.height)
     actionWindow.contentView!.addSubview(toolbar); toolbar.layoutSubtreeIfNeeded()
     let actionButtons = toolbar.subviews.compactMap { $0 as? BrowserToolbarActionButton }
-    //
     check(Set(actionButtons.map { $0.parcTooltip?.label ?? "" }) == ["Copy Current URL", "Site Control Center", "Show sidebar"]
           && actionButtons.allSatisfy { $0.toolTip == nil },
           "the three Toolbar action buttons use the TopBarButtonStyle owner")
@@ -487,8 +476,6 @@ try MainActor.assumeIsolated {
     let siteSurface = siteButton.layer!.sublayers!.first!
     check(siteSurface.frame.height == 24 && siteSurface.frame.width == siteButton.bounds.width && siteSurface.cornerRadius == 6,
           "background surface keeps the slot width at the original height and corner")
-    // N6: identical-frame action-surface layout skips CATransaction; a real
-    // bounds change still rewrites; hover/press opacity refresh stays ungated.
     typealias SurfaceSkip = BrowserToolbarActionSurfaceLayoutSkip
     let matchedSurface = CGRect(x: 0, y: 4, width: 28, height: 24)
     check(SurfaceSkip.shouldSkip(current: matchedSurface, next: matchedSurface),
@@ -497,7 +484,6 @@ try MainActor.assumeIsolated {
           "Mismatched action-surface frame does not skip")
     GeometryWrites.install()
     @MainActor func surfaceWrites(_ body: () -> Void) -> Int { GeometryWrites.layerWrites(by: siteButton, during: body).count }
-    // A stale surface frame, so the next layout pass has geometry to write.
     siteSurface.frame = .zero
     check(surfaceWrites { siteButton.needsLayout = true; siteButton.layoutSubtreeIfNeeded() } > 0
           && siteSurface.frame.height == 24,
@@ -552,8 +538,6 @@ try MainActor.assumeIsolated {
     let copyButton = actionButtons.first { $0.parcTooltip?.label == "Copy Current URL" }!
     check(copyButton.layer!.sublayers!.first!.frame.size == NSSize(width: 19, height: 24), "Copy surface keeps its 19-point slot")
     siteButton.appearance = nil
-    //
-    // the scheme; without one the bar inherits the window's own appearance.
     func ink(_ view: NSButton) -> CGFloat? { view.contentTintColor?.usingColorSpace(.sRGB)?.redComponent }
     func fill() -> NSColor? { toolbar.layer?.backgroundColor.flatMap { NSColor(cgColor: $0)?.usingColorSpace(.sRGB) } }
     let page = NSObject()
@@ -575,8 +559,6 @@ try MainActor.assumeIsolated {
         check(abs((toolbar.layer?.animation(forKey: "page-color")?.duration ?? 0) - 0.18) < 0.00001,
               "a later colour for the same content crossfades over 0.18 s")
     }
-    // Chromium resets both colours for each committed document; the same
-    // page keeps its colour while it loads without one.
     toolbar.setPageColor(nil, for: page, holdingWhileUnknown: true)
     check(toolbar.pageColor != nil, "a loading page without a colour yet keeps its last colour")
     toolbar.setPageColor(nil, for: NSObject(), holdingWhileUnknown: true)
@@ -586,7 +568,6 @@ try MainActor.assumeIsolated {
     check(toolbar.pageColor == nil, "a page that finished loading without a colour leaves the bar clear")
     toolbar.setPageColor(NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.5), for: page)
     check(toolbar.pageColor == nil && siteButton.appearance == nil, "a translucent page colour leaves the bar clear")
-    // The one route panes, Peek and colour-only notifies share.
     let native = PCNativePage()
     let theme = NSColor(srgbRed: 0.02, green: 0.447, blue: 0.925, alpha: 1)
     let background = NSColor(srgbRed: 0.059, green: 0.059, blue: 0.059, alpha: 1)
@@ -609,9 +590,6 @@ try MainActor.assumeIsolated {
     toolbar.showPageColor(of: native, failing: false); native.isClosed = true
     toolbar.showPageColor(of: native, failing: false)
     check(shown() == nil, "a closed page leaves the bar clear")
-    // Overlay 294's engine: the client's colour, never the theme stand-ins.
-    // A bar outside a browser window counts as private, so the test's colours
-    // stay out of real preferences.
     let sampled = PCNativePage(); sampled.sampler = true
     sampled.url = URL(string: "https://my.1password.com/vault")
     sampled.developerModeTint = theme; sampled.pageBackgroundColor = background
@@ -643,8 +621,6 @@ try MainActor.assumeIsolated {
         check(fill().map { $0.redComponent == 1 && abs($0.alphaComponent - (dark ? 0.1 : 0.666)) < 0.001 } == true,
               "without a page colour the bar shows the content backing")
     }
-    // Over a Space theme the backing's contrast picks the scheme; the window
-    // still resolves the backing.
     let lightTheme = ThemeChromePalette(theme: SpaceTheme(primaryColor: ThemeColor(red: 0.6, green: 0.85, blue: 0.7), colorCount: 2),
                                         isDark: false)
     let darkTheme = ThemeChromePalette(theme: SpaceTheme(primaryColor: ThemeColor(red: 0.6, green: 0.85, blue: 0.7), colorCount: 2),
@@ -667,14 +643,11 @@ try MainActor.assumeIsolated {
           "key loss retires action hover and motion")
     actionWindow.key = true
     toolbar.removeFromSuperview(); actionWindow.close()
-    // The extensions control dims to one half while controls are disabled.
     update(enabled: false)
     check(toolbar.extensionToolbar.alphaValue == 0.5,
           "disabled controls dim the extensions control to 0.5")
     update(enabled: true)
     check(toolbar.extensionToolbar.alphaValue == 1, "enabled controls restore the extensions control")
-    // Copy exists only while copying is available; Reload stops at the
-    // leftmost shown center element.
     let longURL = URL(string: "https://www.example-domain-with-a-long-name.test/some/really/long/path?query=1")!
     for width in stride(from: CGFloat(220), through: CGFloat(420), by: CGFloat(20)) {
         for (canCopy, insecure) in [(false, false), (false, true), (true, true), (true, false)] {
@@ -695,13 +668,11 @@ try MainActor.assumeIsolated {
             }, "no control overlaps another at \(width) (canCopy \(canCopy), insecure \(insecure))")
         }
     }
-    // Bar choice follows the content kind, not the page view's visibility.
     check(PaneSurface.page.usesPageBar(pageLive: true) && PaneSurface.failure.usesPageBar(pageLive: true),
           "a navigation failure or renderer crash over a live page keeps the web bar")
     check(!PaneSurface.local.usesPageBar(pageLive: true) && !PaneSurface.page.usesPageBar(pageLive: false)
           && !PaneSurface.failure.usesPageBar(pageLive: false),
           "a local content or a closed page takes the content bar")
-    // A content without a page keeps the same bar without site controls.
     toolbar.frame = NSRect(x: 0, y: 0, width: 720, height: BrowserToolbarView.height)
     toolbar.update(url: nil, documentTitle: "Original Note", fullURL: false, enabled: true, canBack: false,
         canForward: false, loading: false, canReload: false, canCopy: false, canShowSiteInfo: false,

@@ -76,7 +76,6 @@ def main():
             link += ['-isysroot', flags[flags.index('-isysroot') + 1]]
         run(link, 'link')
         print(run([str(executable)], 'components'), end='')
-        # Never produce a core dump for this deliberate child-process CHECK.
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         negative = run([str(executable), '--synchronous-negative-control'],
                        'negative-control', -signal.SIGABRT)

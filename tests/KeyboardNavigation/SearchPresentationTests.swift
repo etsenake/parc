@@ -102,8 +102,6 @@ import AppKit
         expect(field.stringValue == "command", "Hidden owner cannot clear native text")
         view.isHidden = false; clear.performPress()
         expect(field.stringValue.isEmpty, "Current original owner remains usable after refusal")
-        // Read actual native drawing under both appearances. No pre-resolved
-        // semantic alpha may leak from the original construction appearance.
         func sample(_ appearance: NSAppearance.Name, x: Int, y: Int) -> NSColor {
             header.appearance = NSAppearance(named: appearance)
             let bitmap = header.bitmapImageRepForCachingDisplay(in: header.bounds)!

@@ -29,7 +29,6 @@ MANIFEST_PATH = REPO / 'Engine/ParcHost/overlay.json'
 PATCHES = ['Engine/ParcHost/integration/platform-codecs.patch',
            'Engine/ParcHost/integration/webaudio-aac.patch']
 WEBAUDIO = 'third_party/blink/renderer/modules/webaudio'
-# (source, target ninja, linked)
 UNITS = [
     ('media/filters/mac/audio_toolbox_audio_decoder.cc', 'obj/media/filters/filters.ninja', True),
     ('media/filters/audio_file_reader.cc', 'obj/media/filters/filters.ninja', True),
@@ -42,9 +41,8 @@ UNITS = [
 TEST_NINJA = 'obj/media/mojo/services/services.ninja'
 SERVICES_LINK = 'build ./libmedia_mojo_services.dylib'
 CLIENT_OBJECTS = ['obj/media/mojo/clients/clients/mojo_media_log_service.o']
-# Built objects whose patched sources the check compiles instead.
 REPLACED = {'obj/media/mojo/services/services/mojo_audio_decoder_service.o'}
-FIXTURES = {  # name: (afconvert container, data format, source)
+FIXTURES = {
     'lc.m4a': ('m4af', 'aac ', 'stereo.wav'),
     'lc_mono.m4a': ('m4af', 'aac ', 'mono.wav'),
     'he.m4a': ('m4af', 'aach', 'stereo.wav'),
@@ -69,9 +67,6 @@ sha = CODECS.sha
 
 
 def patched_sources(tree):
-    """Every target of both patches and the new files, from the reviewed overlay. A live target
-    may be patched, pristine or an earlier overlay's version; for the last, the pristine bytes
-    come read-only from the Git checkout that holds the file."""
     manifest = json.loads(MANIFEST_PATH.read_text())
     outputs = {}
     for name in PATCHES:
@@ -102,7 +97,6 @@ def patched_sources(tree):
 
 
 def ninja_build(ninja, prefix):
-    """The explicit inputs and indented variables of the build statement starting with `prefix`."""
     lines = ninja.read_text().splitlines()
     index = next(i for i, line in enumerate(lines) if line.startswith(prefix))
     inputs = lines[index].split(': solink ', 1)[1].split(' | ', 1)[0].split(' || ', 1)[0].split()
@@ -118,7 +112,6 @@ def ninja_build(ninja, prefix):
 
 
 def write_wav(path, channels, seconds):
-    # Whole-hertz tones repeat every second, so longer files repeat that second.
     rate = 44100
     tones = [(1000, 14000), (500, 16000)][:channels]
     second = bytearray()
@@ -192,7 +185,6 @@ def main():
         runtime = [build / item for item in variables.get('libs', '').split()]
         sysroot = flags[flags.index('-isysroot') + 1]
         inputs += [build / TEST_NINJA, *archives, *clients, *solibs, *runtime]
-        # Chromium's static libraries are thin archives, which only its own lld reads.
         commands.append([str(llvm / 'clang++'), '--target=arm64-apple-macos', '-isysroot', sysroot,
                          '-mmacos-version-min=13.0', '-nostdlib++', '-fuse-ld=lld',
                          '--ld-path=' + str(llvm / 'ld64.lld'), *map(str, linked), *map(str, archives),

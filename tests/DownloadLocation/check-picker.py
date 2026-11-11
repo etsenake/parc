@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""Exercise the Download Location picker and the Settings Downloads card.
-
-Compiles the real DownloadLocationPicker with the exact Downloads card layout
-lines and layout helpers sliced from SettingsWindow.swift, plus its shared
-SettingsGroupView from SettingsPresentation.swift
-(not copies), runs its assertions, and checks the SettingsWindow wiring that
-needs the native engine on source. No Chromium, profile, panel or user file.
-Usage: check-picker.py [acceptance-image-directory]
-"""
 import pathlib
 import subprocess
 import sys
@@ -46,8 +37,6 @@ harness = f"""import AppKit
 }}
 {group_view}"""
 
-# SettingsWindow wiring that needs PCNativeBrowserApplication is asserted on
-# the source; the full app typecheck compiles it.
 for use in (
         "private let downloadLocationPicker = DownloadLocationPicker()",
         "downloadLocationPicker.onChoose = { [weak self] choice in self?.downloadLocationChosen(choice) }",
@@ -83,7 +72,6 @@ with tempfile.TemporaryDirectory(prefix="parc-download-location-") as directory:
     temporary = pathlib.Path(directory)
     controls = temporary / "NativeControls.swift"
     controls.write_text(sidebar[:sidebar.index("final class FlippedStackView:")]
-        # The Favorite favicon identity above ActionButton needs SplitOrientation.
         + "\nenum SplitOrientation: Equatable { case horizontal, vertical }\n")
     (temporary / "DownloadsCard.swift").write_text(harness)
     sources = [controls, temporary / "DownloadsCard.swift", root / "Sources/ParcApp/DownloadLocationPicker.swift",

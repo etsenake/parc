@@ -1,8 +1,5 @@
 import AppKit
 
-/// Every source profile imports; there is no choice. The browser's main profile imports into
-/// the Parc Profile import was opened from; each other one into a Parc Profile
-/// of its name, made only when its turn comes. Neither flow has a destination step.
 @MainActor
 func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
     var checks = 0
@@ -21,11 +18,9 @@ func profileMappingChecks(directory: URL, window: NSWindow) throws -> Int {
         PCNativeBrowserApplication.browserCompletions.removeFirst()(.init(outcome: .completed,
             bookmarks: bookmarks, warnings: [], error: nil))
     }
-    /// Completes the background imports of every profile's other data.
     func drain() { while !PCNativeBrowserApplication.browserCompletions.isEmpty { finishNext() } }
     var requests: [PCNativeBrowserApplication.BrowserRequest] { PCNativeBrowserApplication.browserRequests }
     let mappingStart = requests.count
-    /// Each native import a source profile made since `start`, foreground and background.
     func paths(_ profile: PCNativeImportProfile, since start: Int) -> [String] {
         requests.dropFirst(start).filter { $0.profile === profile }.map(\.path)
     }

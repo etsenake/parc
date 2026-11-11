@@ -91,8 +91,6 @@ struct DeveloperToolbarTests {
                "First-edit selects the whole address on the next main-queue turn")
         window.close()
 
-        // P1-AA: skip forced pane/peek layout when strip geometry is already current.
-        // Zero-height bars still keep full-width frames (BrowserPane.layout).
         let paneBounds = NSRect(x: 0, y: 0, width: 800, height: 600)
         let zeroBar = NSRect(x: 0, y: 0, width: 800, height: 0)
         let hiddenCurrent = DeveloperChromeGeometry.paneIsCurrent(
@@ -106,7 +104,6 @@ struct DeveloperToolbarTests {
             contentFrame: paneBounds),
                "unlaid-out zero frames are not current (first attach still flushes)")
         let shownDev = DeveloperToolbarLayout.height
-        // PaneTopBarLayout.height / BrowserToolbarView.height.
         let shownBar: CGFloat = 32
         let header = max(shownDev, shownBar)
         let afterShow = DeveloperChromeGeometry.paneIsCurrent(

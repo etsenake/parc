@@ -1,7 +1,5 @@
 import Foundation
 
-/// SoftwareUpdateBanner: one launch shows Update Complete, and what showing,
-/// retiring and relaunching leave behind.
 @main @MainActor
 struct SoftwareUpdateBannerTests {
     static var count = 0

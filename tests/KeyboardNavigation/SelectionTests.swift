@@ -35,7 +35,6 @@ import Foundation
         expect(PositionalTabNavigation.destination(ordered, selected: [], forward: false)?.tabIDs == [today.id], "Missing reverse selection starts at last")
         expect(PositionalTabNavigation.destination([], selected: [], forward: true) == nil, "Empty list")
         expect(!items(unavailable: [pinned.id]).flatMap(\.tabIDs).contains(pinned.id), "Native owner unavailable")
-        // KB04: Go to Sidebar Item 1…9 over the same list.
         let withoutFavorites = PositionalTabNavigation.items(state: state, spaceID: space, selected: [], focused: nil,
                                                              includeFavorites: false, available: { _ in true })
         expect(withoutFavorites.flatMap(\.tabIDs) == [pinned.id, folderTab.id, nestedTab.id, today.id], "Excluded Favorites leave the ordering")
@@ -69,8 +68,6 @@ import Foundation
         state.folders[0].isExpanded = false
         expect(!items().flatMap(\.tabIDs).contains(nestedTab.id), "Collapsed ancestor hides descendants")
 
-        // Mixed folder/tab placement drives both keyboard traversal and copied
-        // links, even when a split container hides its individual child rows.
         state.folders[0].isExpanded = true
         let root = SidebarContainerLocation(spaceID: space, folderID: nil, section: .pinned)
         state.sidebarItemOrder[root.key] = [.folder(expanded.id), .tab(pinned.id), .folder(collapsed.id)]

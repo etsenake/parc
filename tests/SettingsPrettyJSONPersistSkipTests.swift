@@ -1,7 +1,5 @@
 import Foundation
 
-/// True no-op skip for settings pretty JSON persists: identical encoded bytes
-/// skip the atomic write; a first persist or any byte change still writes.
 @main
 struct SettingsPrettyJSONPersistSkipTests {
     static var assertions = 0

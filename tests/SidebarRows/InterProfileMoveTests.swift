@@ -90,14 +90,12 @@ import Foundation
         func propose(_ r: ForeignSplitDrop.Request, _ state: BrowserState? = nil) -> BrowserState? {
             ForeignSplitDrop.proposal(r, state: state ?? f.state, now: now, creation: nil)
         }
-        // Today original enters the other Profile's split with its live state.
         let moved = try unwrap(propose(request(f, f.today)), "Today original crosses Profiles")
         let live = moved.tabs.first { $0.id == f.today.id }!
         try check(live.profileID == f.q.id && live.spaceID == f.d.id && live.kind == .today && live.folderID == nil, "original record carries destination Profile/Space")
         try check(live.url == f.today.url && live.title == f.today.title && live.referrerID == f.today.referrerID, "original identity, URL and provenance retained")
         try check(moved.selectedTabIDs == [f.d1.id, f.today.id] && moved.splitLayouts.contains { $0.tabIDs == [f.d1.id, f.today.id] && $0.spaceID == f.d.id }, "destination group publishes with original")
         try check(moved.tabs.count == f.state.tabs.count, "Today move creates no copy")
-        // Saved original leaves its fresh home in the exact parent slot.
         let home = UUID()
         let saved = try unwrap(propose(request(f, f.pinned, home: home)), "pinned original crosses Profiles")
         let copy = saved.tabs.first { $0.id == home }!
@@ -106,7 +104,6 @@ import Foundation
         try check(saved.selectionBySpace[f.s.id.uuidString] == [home], "source Space remembers the home, not the moved original")
         try check(saved.tabs.first { $0.id == f.pinned.id }?.kind == .today && saved.tabs.first { $0.id == f.pinned.id }?.profileID == f.q.id, "live original becomes destination Today")
         try check(propose(request(f, f.pinned, home: f.sibling.id)) == nil, "colliding home identity refuses")
-        // A child leaving a two-member source split dissolves that container.
         let child = try unwrap(propose(request(f, f.g2)), "split child crosses Profiles")
         try check(!child.splitLayouts.contains { $0.id == f.group.id } && child.tabs.first { $0.id == f.g1.id } == f.g1, "two-member source split dissolves, survivor intact")
         var three = f.state
@@ -117,17 +114,13 @@ import Foundation
         let kept = anchorMoved.splitLayouts.first { $0.id == f.group.id }!
         try check(kept.tabIDs == [f.g2.id, g3.id] && kept.sidebarAnchorID == f.g2.id && kept.customTitle == "Pair" && kept.orientation == .vertical, "surviving source group keeps identity/appearance and reanchors")
         try check(abs(kept.widthFactors.reduce(0, +) - 1) < 0.0001, "surviving proportions renormalize")
-        // Existing destination group retains its identity.
         var grouped = f.state
         let layout = BrowserSplitLayout(spaceID: f.d.id, tabIDs: [f.d1.id, f.d2.id], orientation: .horizontal, widthFactors: [0.5, 0.5])
         grouped.splitLayouts.append(layout); grouped.selectedTabIDs = layout.tabIDs; grouped.selectionBySpace[f.d.id.uuidString] = layout.tabIDs
         let joined = try unwrap(propose(request(f, f.today, target: .insert(2), selection: layout.tabIDs, layout: layout), grouped), "join existing group")
         try check(joined.splitLayouts.first { $0.id == layout.id }?.tabIDs == [f.d1.id, f.d2.id, f.today.id], "existing destination group identity retained")
-        // Center replacement keeps the displaced destination page.
         let replaced = try unwrap(propose(request(f, f.today, target: .replace(0))), "center replacement")
         try check(replaced.selectedTabIDs == [f.today.id] && replaced.tabs.contains { $0.id == f.d1.id && $0.archivedAt == nil }, "displaced page survives")
-        // Refusals.
-        //
         var note = f.state; let noteID = UUID(); note.tabs[0].url = InternalPage.note(noteID).urlString; note.tabs[0].savedURL = note.tabs[0].url
         let movedNote = try unwrap(propose(request(f, note.tabs[0]), note), "Today Note crosses Profiles")
         try check(InterProfileMove.documents(moving: [f.today.id], after: movedNote) == [.note(noteID)], "its document moves to the destination store")
@@ -137,7 +130,6 @@ import Foundation
         var favorite = f.state; favorite.tabs[0].kind = .favorite
         try check(propose(request(f, favorite.tabs[0]), favorite) == nil, "Profile-wide Favorite refuses")
         var navigated = f.state; navigated.tabs[0].url = "https://live.invalid/next"; navigated.tabs[0].title = "Next"
-        // updateTab keeps a Today tab's saved fields on its navigation.
         navigated.tabs[0].savedURL = navigated.tabs[0].url; navigated.tabs[0].savedTitle = navigated.tabs[0].title
         navigated.tabs[0].lastAccessed = Date(); navigated.tabs[0].isUnread = true
         let reloaded = try unwrap(propose(request(f, f.today), navigated), "live navigation after the gesture")
@@ -170,7 +162,6 @@ import Foundation
         try check(InterProfileMove.documents(moving: Set(f.group.tabIDs), after: withEasel) == [.easel(easelID)], "the Easel document moves with its group")
         var removing = f.state; removing.profileRemovals = [ProfileRemovalRecord(id: UUID(), profileID: f.q.id, profileName: "Work")]
         try check(SidebarHierarchySnapshot(state: removing, spaceID: f.d.id, profileID: f.q.id) == nil, "removed destination Profile has no snapshot")
-        // Physical-window collection drop into another Profile's window.
         let location = SidebarContainerLocation(spaceID: f.d.id, folderID: nil, section: .today)
         let window = try unwrap(SidebarWindowMove(items: [.split(f.group.id)], sourceSpaceID: f.s.id, profileID: f.p.id,
             destinationProfileID: f.q.id, to: location, before: .tab(f.d1.id), state: f.state), "window drop crosses Profiles")
@@ -178,7 +169,6 @@ import Foundation
         let dropped = try unwrap(window.applying(to: f.state), "window move applies")
         try check(dropped.tabs.filter { f.group.tabIDs.contains($0.id) }.allSatisfy { $0.profileID == f.q.id && $0.spaceID == f.d.id && $0.kind == .today }, "dropped children take destination section and Profile")
         try check(SidebarHierarchy.children(in: location, state: dropped).first == .split(f.group.id), "drop lands before the requested destination item")
-        //
         let tray = SidebarContainerLocation(spaceID: f.d.id, folderID: nil, section: .favorite, profileID: f.q.id)
         let toTray = try unwrap(SidebarWindowMove(items: [.split(f.group.id)], sourceSpaceID: f.s.id, profileID: f.p.id,
             destinationProfileID: f.q.id, to: tray, before: nil, state: f.state)?.applying(to: f.state), "whole split enters another Profile's tray")
@@ -210,13 +200,11 @@ import Foundation
         try check(!store.bypassesInterProfileMoveConfirmation, "dialog preference defaults off")
         let r = request(f, f.today)
         let proposal: (BrowserState) -> BrowserState? = { ForeignSplitDrop.proposal(r, state: $0, now: Date(), creation: nil) }
-        // Native consent refusal changes no record.
         var asked: Set<UUID> = []
         store.requestPageRetirement = { ids, _, completion in asked = ids; completion(false) }
         var result: Result<Bool, Error>?
         store.moveAcrossProfiles([f.today.id], proposal: proposal) { result = $0 }
         try check(asked == [f.today.id] && (try? result?.get()) == false && store.state == f.state, "refused page consent publishes nothing")
-        // Validation happens after approval and before unload.
         var pending: (() -> Bool, (Bool) -> Void)?
         store.requestPageRetirement = { _, shouldCommit, completion in pending = (shouldCommit, completion) }
         result = nil
@@ -228,7 +216,6 @@ import Foundation
         try check(store.state.tabs.first { $0.id == f.today.id }?.profileID == f.q.id && store.retiringTabIDs.isEmpty, "record published in destination Profile")
         let reopened = try BrowserStore(directory: directory)
         try check(reopened.state.tabs.first { $0.id == f.today.id }?.profileID == f.q.id, "move persisted atomically")
-        // A changed original after the gesture is not committed.
         var edited = f.state; edited.tabs[0].customTitle = "Renamed"
         try encoder.encode(edited).write(to: file)
         let staleStore = try BrowserStore(directory: directory)
@@ -236,7 +223,6 @@ import Foundation
         result = nil
         staleStore.moveAcrossProfiles([f.today.id], proposal: proposal) { result = $0 }
         try check((try? result?.get()) == false && staleStore.state == edited, "changed original after the gesture refuses")
-        // Disk failure leaves the exact prior state.
         try encoder.encode(f.state).write(to: file)
         let failing = try BrowserStore(directory: directory)
         failing.requestPageRetirement = { _, shouldCommit, completion in completion(shouldCommit()) }
@@ -247,7 +233,6 @@ import Foundation
         if case .failure? = result { failed = true }
         try check(failed && failing.state == f.state, "failed save publishes nothing")
         try FileManager.default.removeItem(at: file)
-        //
         var emptyFolder = f.state
         let folder = BrowserFolder(id: UUID(), spaceID: f.s.id, name: "Empty")
         emptyFolder.folders.append(folder); emptyFolder.sidebarItemOrder[f.root.key]?.append(.folder(folder.id))
@@ -264,7 +249,6 @@ import Foundation
         folders.moveAcrossProfiles([], proposal: { folderMove.applying(to: $0) }) { result = $0 }
         try check((try? result?.get()) == true && !retiredEmpty
             && folders.state.folders.first { $0.id == folder.id }?.spaceID == f.d.id, "an empty folder moves at once")
-        // Same-Profile commit paths refuse a Profile-crossing transaction.
         try encoder.encode(f.state).write(to: file)
         let plain = try BrowserStore(directory: directory)
         let from = SidebarHierarchySnapshot(state: f.state, spaceID: f.s.id, profileID: f.p.id)!
@@ -273,7 +257,6 @@ import Foundation
         try check(try plain.moveSidebarItemsAcrossSpaces(move) == false && plain.state == f.state, "ordinary relocation cannot skip page reload")
         plain.rememberInterProfileMoveChoice()
         try check(plain.bypassesInterProfileMoveConfirmation, "Don’t ask again stores the preference")
-        // Local documents need the native relocation owner; a failed save reverses it.
         try encoder.encode(f.state).write(to: file)
         var withNote = f.state; let noteID = UUID(); withNote.tabs[0].url = InternalPage.note(noteID).urlString
         try encoder.encode(withNote).write(to: file)
@@ -330,7 +313,6 @@ import Foundation
 
     static func sameProfileDrop() throws {
         var f = fixture()
-        // Another window showing another Space of the same Profile.
         let other = BrowserSpace(id: UUID(), name: "Errands", symbol: "circle", color: "AABBCC", profileID: f.p.id)
         let e1 = BrowserTab(id: UUID(), spaceID: other.id, profileID: f.p.id, url: "https://live.invalid/e1", title: "e1", kind: .today,
                             folderID: nil, createdAt: .distantPast, lastAccessed: .distantPast, savedURL: "https://live.invalid/e1", savedTitle: "e1")
@@ -341,7 +323,6 @@ import Foundation
         let live = moved.tabs.first { $0.id == f.today.id }!
         try check(live.profileID == f.p.id && live.spaceID == other.id && live.url == f.today.url, "original keeps its Profile and joins the other Space")
         try check(moved.splitLayouts.contains { $0.tabIDs == [e1.id, f.today.id] && $0.orientation == .vertical }, "group forms in the destination window's Space")
-        // Two windows showing the same Space: the ordinary drop keeps the saved home.
         var same = f.state
         let home = UUID()
         let sameSpace = ForeignSplitDrop.Request(source: f.pinned, sourceHomeID: home, spaceID: f.s.id, profileID: f.p.id,
@@ -350,7 +331,6 @@ import Foundation
         let placed = try unwrap(ForeignSplitDrop.proposal(sameSpace, state: same, now: Date(), creation: nil), "same-Space other-window drop")
         try check(placed.tabs.contains { $0.id == home && $0.kind == .pinned && $0.url == f.pinned.savedURL }
             && placed.selectedTabIDs == [f.pinned.id, f.sibling.id], "same-Space drop leaves the source's saved home")
-        // Same-Profile placement commits without any page retirement.
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-foreign-drop-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -374,8 +354,6 @@ import Foundation
         let easels = try EaselStore(directory: root.appendingPathComponent("source/Easels"))
         let targetNotes = try NoteStore(directory: root.appendingPathComponent("target/Notes"), diskSaveDelay: 0)
         let targetEasels = try EaselStore(directory: root.appendingPathComponent("target/Easels"))
-        // Native consent retains these actual original sessions until callback
-        // completion. Their lifetime deliberately spans successful relocation.
         let note = try notes.create(), easel = try easels.create()
         let browser = EaselItem(kind: .browser, frame: .init(x: 0, y: 0, width: 320, height: 200), url: "https://example.com/embedded")
         try note.updateTitle("Original Note", replacing: note.document.title)
@@ -443,8 +421,6 @@ import Foundation
                 catch { return false }
             }, cleanup: { destination.removeAssets(copied) })
         }
-        // A concurrent source-side conflict blocks B's reversal. A still
-        // reverses afterward, but must not delete the shared asset B needs.
         let blocked = root.appendingPathComponent("source/documents/" + b.document.id.uuidString.lowercased() + ".json")
         try FileManager.default.createDirectory(at: blocked, withIntermediateDirectories: false)
         rollback.run()

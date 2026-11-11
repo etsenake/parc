@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""TopBarColorClient alone, with an injected clock, scheduler and defaults
-suite; no browser, engine or real preferences."""
 from pathlib import Path
 import subprocess
 import tempfile

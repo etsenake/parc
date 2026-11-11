@@ -1,4 +1,3 @@
-"""Compile the real split-drop router across Chromium's component boundary."""
 from pathlib import Path
 import platform
 import shutil
@@ -58,15 +57,12 @@ class NativeContentDropExportTests(unittest.TestCase):
                      "-warnings-as-errors", "-I", native,
                      "-import-objc-header", header, consumer,
                      engine, "-o", root / "Consumer"]
-            # Exactly the production dependency graph: Swift -> engine ->
-            # ui/base. No duplicate class, re-export, or direct component link.
             compile_source(*swift)
             exports = subprocess.check_output(
                 ["xcrun", "nm", "-gU", str(engine)], text=True)
             self.assertIn("_PCCreateNativeContentDropRouter", exports)
             self.assertNotIn("_OBJC_CLASS_$_PCNativeContentDropRouter", exports)
 
-            # The former direct instantiation fails against this same graph.
             consumer.write_text(consumer.read_text().replace(
                 "PCCreateNativeContentDropRouter(NSView())",
                 "PCNativeContentDropRouter(view: NSView())"))

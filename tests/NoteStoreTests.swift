@@ -18,9 +18,6 @@ struct NoteStoreTests {
             attributes: .init(font: .init(name: "Helvetica", size: 15), ink: "#252525FF", underline: 1, link: "https://example.test/"))])
         return result
     }
-    /// The document writer's work while `body` runs. Its encodes are reads of an
-    /// observed title off the main thread; its atomic replaces each remove one
-    /// `.write-` temporary, a file only the writer touches.
     struct Writes { var encodes: Int; var replaces: Int; var offMain: Bool }
     static func writes(in directory: URL, _ body: () throws -> Void) throws -> Writes {
         var calls: [FileOperation] = []
@@ -175,8 +172,6 @@ struct NoteStoreTests {
         let offDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("parc-notes-off-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: offDirectory) }
         let offStore = try NoteStore(directory: offDirectory, now: { Date(timeIntervalSince1970: 102) }, diskSaveDelay: 0)
-        // The created note's title is a native literal, so only its replace shows;
-        // every later revision carries an observed title.
         var created: NoteSession?
         let create = try writes(in: offDirectory) { created = try offStore.create() }
         let offSession = created!

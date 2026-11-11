@@ -38,11 +38,8 @@ final class Page { var sample: TopBarColorClient.Sample? }
     let page = Page()
     let blue = rgb(26, 115, 232), black = rgb(0, 0, 0), dark = rgb(15, 15, 15)
 
-    //
     check(same(client.initialColor(for: page, host: "example.com"), .white), "unknown page starts white")
 
-    // Tracking re-reads after 250 ms without convergence; the first delivered
-    // sample is displayed and cached at once.
     client.track(page) { page.sample }
     check(harness.pending.map(\.delay) == [0.25], "tracking re-reads after 250 ms")
     page.sample = .init(color: blue, host: "1password.com")
@@ -51,14 +48,10 @@ final class Page { var sample: TopBarColorClient.Sample? }
     check(same(client.cachedColor(forHost: "1password.com"), blue), "first sample after tracking is cached")
     check(harness.pending.contains { $0.delay == 1 }, "a cache change persists after one second")
 
-    // The same delivery again is not a new sample.
     check(!client.deliver(page.sample!, for: page), "repeat delivery is ignored")
-    //
     check(!client.deliver(.init(color: nil, host: "1password.com"), for: page), "nil sample is ignored")
     check(same(client.colorToDisplay(for: page), blue), "nil sample keeps the colour")
 
-    // A different sample is displayed at once but cached only once it holds:
-    // the 400 ms re-read finds it unchanged.
     harness.run(delay: 0.25)
     page.sample = .init(color: black, host: "1password.com")
     check(client.deliver(page.sample!, for: page), "new sample changes the display")
@@ -68,12 +61,10 @@ final class Page { var sample: TopBarColorClient.Sample? }
     harness.run(delay: 0.4)
     check(same(client.cachedColor(forHost: "1password.com"), black), "a held colour is cached on re-read")
 
-    // A sample within 0.015 of the cache is cached directly.
     page.sample = .init(color: rgb(2, 2, 2), host: "1password.com")
     client.deliver(page.sample!, for: page)
     check(same(client.cachedColor(forHost: "1password.com"), rgb(2, 2, 2)), "sample matching the cache is cached")
 
-    // At most four re-reads while the colour keeps moving.
     var shade = 40
     page.sample = .init(color: rgb(shade, 0, 0), host: "1password.com")
     client.deliver(page.sample!, for: page)
@@ -86,8 +77,6 @@ final class Page { var sample: TopBarColorClient.Sample? }
     }
     check(rereads == 4, "a moving colour is re-read four times, not \(rereads)")
 
-    // A new page for a cached host starts with the cached colour, and the
-    // page's own colour wins once it has one.
     let other = Page()
     check(same(client.initialColor(for: other, host: "1password.com"), rgb(2, 2, 2)),
           "cached host colour is the initial colour")
@@ -95,7 +84,6 @@ final class Page { var sample: TopBarColorClient.Sample? }
     client.deliver(.init(color: dark, host: "1password.com"), for: other)
     check(same(client.initialColor(for: other, host: "1password.com"), dark), "displayed colour beats the cache")
 
-    // Persistence: {host: {Color, LastUsed}} under TopBarColorCache.
     harness.run(delay: 1)
     let stored = harness.defaults.dictionary(forKey: TopBarColorClient.defaultsKey)
     let entry = stored?["1password.com"] as? [String: Any]
@@ -104,7 +92,6 @@ final class Page { var sample: TopBarColorClient.Sample? }
     let reloaded = harness.client()
     check(same(reloaded.cachedColor(forHost: "1password.com"), dark), "cache reloads from defaults")
 
-    // The cache keeps the 50 most recently updated hosts.
     for i in 0..<51 {
         harness.time = 2000 + Double(i)
         let key = Page()
@@ -116,7 +103,6 @@ final class Page { var sample: TopBarColorClient.Sample? }
     check(reloaded.cachedColor(forHost: "1password.com") == nil, "oldest host is evicted")
     check(reloaded.cachedColor(forHost: "site50.test") != nil, "newest host is kept")
 
-    // A private window's client never writes defaults.
     let privateClient = harness.client(persistent: false)
     let privatePage = Page()
     privateClient.track(privatePage) { nil }
@@ -126,7 +112,6 @@ final class Page { var sample: TopBarColorClient.Sample? }
     check((harness.defaults.dictionary(forKey: TopBarColorClient.defaultsKey)?["private.test"]) == nil,
           "private client does not persist")
 
-    // A document without a host is displayed but never cached.
     let local = Page()
     client.track(local) { nil }
     client.deliver(.init(color: blue, host: nil), for: local)
@@ -134,8 +119,6 @@ final class Page { var sample: TopBarColorClient.Sample? }
     check(client.cachedColor(forHost: nil) == nil && client.domainCache["NullString"] == nil,
           "a hostless document's colour is not cached")
 
-    // Navigation on the same page: a colour is stored only under the host it
-    // was sampled for, and the previous host's sample is no convergence.
     let navigating = Page()
     let navigator = harness.client()
     navigator.track(navigating) { navigating.sample }
@@ -154,8 +137,6 @@ final class Page { var sample: TopBarColorClient.Sample? }
     check(same(navigator.cachedColor(forHost: "b.test"), black), "the new host's held colour is cached under it")
     check(same(navigator.cachedColor(forHost: "a.test"), blue), "the old host keeps its own colour")
 
-    // History deletions forget hosts, a time range, or everything, and write
-    // the cache at once.
     let deletions = Harness()
     let clearing = deletions.client()
     let written = { deletions.defaults.dictionary(forKey: TopBarColorClient.defaultsKey) ?? [:] }
@@ -180,7 +161,6 @@ final class Page { var sample: TopBarColorClient.Sample? }
     RunLoop.main.run(until: Date().addingTimeInterval(0.05))
     check(clearing.domainCache.isEmpty, "the engine's all-history deletion forgets every colour")
 
-    // The private client trims to 50 as it caches, with nothing persisted.
     let trimmed = harness.client(persistent: false)
     for i in 0..<60 {
         harness.time = 9000 + Double(i)

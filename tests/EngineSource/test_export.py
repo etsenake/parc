@@ -1,4 +1,3 @@
-"""Committed-object fixtures; no Git process, engine operation or network."""
 import copy
 import importlib.util
 import json
@@ -175,7 +174,6 @@ class ExportTests(unittest.TestCase):
 
     def test_dependency_cannot_shadow_tracked_parent_source(self):
         overlap = {"": self.branch, "chrome": self.branch}
-        # Distinct objects with the same content still cannot shadow each other.
         overlap["chrome"] = copy.copy(self.branch)
         with self.assertRaisesRegex(exporter.Refusal, "Overlapping"):
             self.call(branches=overlap)

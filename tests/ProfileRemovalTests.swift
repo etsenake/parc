@@ -50,8 +50,6 @@ struct ProfileRemovalTests {
         try rejects { _ = try store.validateProfileRemoval(deleting, expectedName: "Other") }
         let summary = try store.validateProfileRemoval(deleting, expectedName: "Work")
         try expect(summary.savedTabCount == 2 && summary.historyEntryCount == 1, "Confirmation reports actual source records")
-        // Hold the original parent across a delayed Library write. Its owning
-        // window is irrelevant; the operation retains the reservation itself.
         var originalOwner: ProfileWriteReservation? = store.reserveProfileWrite(deleting)!
         var pendingWrite: CheckedContinuation<Void, Never>?
         let write = Task { [reservation = originalOwner!] in await reservation.perform {

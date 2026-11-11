@@ -1,4 +1,3 @@
-"""Cancelled build recovery verifies provenance and never marks work built."""
 import hashlib
 import json
 from pathlib import Path

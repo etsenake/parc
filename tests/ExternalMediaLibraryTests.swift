@@ -4,11 +4,8 @@ import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Only generated files in a disposable directory; no real home-folder scan,
-/// browser, OS authorization prompt, Quick Look or user media is exercised.
 @main struct ExternalMediaLibraryTests {
     @MainActor static func main() async throws {
-        // The same ordered-identity policy drives both real preview controllers.
         let order = ["file:A", "capture:B", "file:C", "capture:D"]
         for index in order.indices {
             let navigation = MediaLibraryNavigation(orderedIDs: order, selectedID: order[index])
@@ -25,8 +22,6 @@ import UniformTypeIdentifiers
         precondition(!ticket.canCommit(generation: 4, ownerValid: true, itemCurrent: true))
         precondition(!ticket.canCommit(generation: 3, ownerValid: false, itemCurrent: true))
         precondition(!ticket.canCommit(generation: 3, ownerValid: true, itemCurrent: false))
-        // Native cancellation need not send its callback; the Swift await must
-        // still finish, and a late callback must not resume it a second time.
         let probe = ThumbnailProbe()
         let operation = MediaLibraryThumbnailOperation(start: { probe.start($0) }, stop: { probe.stop() })
         let pending = Task { try await operation.value() }
@@ -87,8 +82,6 @@ import UniformTypeIdentifiers
         do { try await disk.export(linked, to: hardLink); fatalError("Alias overwritten") } catch ExternalMediaFailure.sameFile {}
         try await disk.hide(linked); snapshot = try await disk.scan(systemFolders: [folder])
         precondition(!snapshot.items.contains { $0.url == shot } && fm.fileExists(atPath: shot.path))
-        // Private windows start with the real parent configuration but keep
-        // changes in independent, memory-only owners across view reopenings.
         let manifest = config.appendingPathComponent("MediaFolders.json")
         let parentBytes = try Data(contentsOf: manifest)
         let privateA = ExternalMediaDisk(directory: config, preferencesAreEphemeral: true)
@@ -122,7 +115,6 @@ import UniformTypeIdentifiers
         snapshot = try await reopened.scan(systemFolders: [folder]); precondition(!snapshot.items.contains { $0.url == shot })
         try await reopened.restoreHidden(); snapshot = try await reopened.scan(systemFolders: [folder]); precondition(snapshot.items.count == 3)
         let original = snapshot.items.first { $0.url == other }!
-        // Same-path atomic replacement has a different inode and refuses all old actions.
         try Data("replacement".utf8).write(to: other, options: .atomic)
         do { _ = try await reopened.data(original); fatalError("Stale bytes read") } catch ExternalMediaFailure.changed {}
         do { try await reopened.export(original, to: export); fatalError("Stale bytes exported") } catch ExternalMediaFailure.changed {}
@@ -134,8 +126,6 @@ import UniformTypeIdentifiers
         let fresh = snapshot.items.first { $0.url == shot }!
         try fm.removeItem(at: shot)
         do { try await reopened.validate(fresh); fatalError("Deleted file survived") } catch {}
-        // Real bookmark encoding/resolution without a panel or OS grant bypass.
-        // This disposable folder is already readable by the test process.
         let granted = ExternalMediaDisk(directory: root.appendingPathComponent("Granted"))
         try await granted.grant(folder)
         let grantSnapshot = try await granted.scan(systemFolders: [])
@@ -144,8 +134,6 @@ import UniformTypeIdentifiers
         let reopenedGrant = try await grantReopened.scan(systemFolders: [])
         precondition(reopenedGrant.items == grantSnapshot.items)
         do { try await granted.grant(other); fatalError("File accepted as folder") } catch {}
-        // Model-owned watchers are shared while either view is active and stop
-        // after the last view leaves; exercise them using only generated files.
         let live = ExternalMediaLibrary(directory: root.appendingPathComponent("Observed"), systemFolders: { [folder] })
         let a = UUID(), b = UUID(); live.activate(a); live.activate(b)
         func until(_ condition: () -> Bool) async throws {
@@ -174,7 +162,6 @@ import UniformTypeIdentifiers
         try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: denied.path)
         precondition(deniedSnapshot.items.isEmpty)
         precondition(deniedSnapshot.folders.contains { if case .unavailable = $0.access { return true }; return false })
-        // Malformed preferences never erase ignored paths or silently enable roots.
         let corrupt = Data("broken".utf8); try corrupt.write(to: config.appendingPathComponent("MediaFolders.json"))
         let broken = ExternalMediaDisk(directory: config)
         do { _ = try await broken.scan(systemFolders: [folder]); fatalError("Invalid preferences accepted") } catch ExternalMediaFailure.invalidConfiguration {}

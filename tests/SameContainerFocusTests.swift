@@ -44,8 +44,6 @@ struct SameContainerFocusTests {
         let peer = WindowPresentation(state: state, ready: true)
         expect(peer.previouslySelectedItemID == nil, "Another physical window does not acquire selection history")
         expect(choose(state)?.tabIDs == [previous.id], "Actual previous item precedes the adjacent fallback")
-        // Closing the focused split pane focuses the pane that takes its
-        //
         func closeSplitPane(_ closing: BrowserTab) -> FolderRemovalSelection? {
             FolderRemovalSelection.resolve(removing: [closing.id], spaceID: space.id, profileID: profile, state: state,
                 selected: [previous.id, neighbor.id, current.id], focused: closing.id, available: { _ in true })

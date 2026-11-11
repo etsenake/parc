@@ -1,8 +1,6 @@
 import Combine
 import Foundation
 
-/// Executable tests for Parc's own source model. These do not launch a browser,
-///
 @main
 @MainActor
 struct BrowserStoreTests {
@@ -22,9 +20,6 @@ struct BrowserStoreTests {
         }
     }
 
-    ///
-    /// leave fresh homes); a saved split is a whole split moved into its
-    /// container. Builds that from Today tabs and returns the moved group.
     @discardableResult
     static func savedSplit(_ store: BrowserStore, _ ids: [UUID], in location: SidebarContainerLocation) throws -> BrowserSplitLayout {
         store.selectTab(ids[0])
@@ -37,7 +32,6 @@ struct BrowserStoreTests {
         return moved
     }
 
-    ///
     static func expectHome(of original: UUID, in store: BrowserStore, savedURL: String,
                            file: StaticString = #filePath, line: UInt = #line) throws -> BrowserTab {
         let homes = store.state.tabs.filter { $0.id != original && $0.savedURL == savedURL && $0.archivedAt == nil
@@ -177,8 +171,6 @@ struct BrowserStoreTests {
         }
     }
 
-    /// Empty-query recents must match the previous full-array date sort, including
-    /// live-tab URL exclusion and http(s) URL() scheme checks.
     static func commandBarEmptyQueryRecents(
         history: [BrowserHistoryEntry], tabURLs: [String], alreadyShown: Int = 0
     ) -> [BrowserHistoryEntry] {
@@ -260,10 +252,6 @@ struct BrowserStoreTests {
                    "Empty-query recents keep sort identity when timestamps collide")
     }
 
-    /// Visits moved from session.json to history.jsonl: an inline legacy
-    /// history migrates on the next save, navigations and retitles append
-    /// one record, settings-only saves leave the file alone, removals
-    /// rewrite it, and visits an older build kept inline merge on load.
     static func testHistoryFileSplit() throws {
         try withDirectory { directory in
             let session = directory.appendingPathComponent("session.json")
@@ -587,17 +575,11 @@ struct BrowserStoreTests {
         }
     }
 
-    /// Identical pretty/sorted session bytes skip atomic replace; real
-    /// profile-settings commits still persist with the same formatting.
     static func testProfileSettingsIdenticalBytePersistSkip() throws {
         try withDirectory { directory in
             let date = Date(timeIntervalSince1970: 1_800_000_000)
             let store = try BrowserStore(directory: directory, now: { date })
             let file = directory.appendingPathComponent("session.json")
-            // A tab title typed into AppKit stays ObjC-backed, so every session encode
-            // reads it once per occurrence in the JSON, on the thread encoding. Each
-            // atomic replace goes through its own `.session-` temporary, a file only
-            // the writer touches.
             FileOperations.install()
             let tab = store.open("https://example.org/observed")
             store.updateTab(tab, title: ObservedString.text("Observed session tab"))
@@ -668,8 +650,6 @@ struct BrowserStoreTests {
             let afterRecreate = try session { try store.save() }
             try expect(afterRecreate.replaces == 0 && (try Data(contentsOf: file)) == bytesBeforeDelete,
                        "After recreate, identical bytes skip replace while the file exists")
-            // Profile-settings commits share SessionFileWriter; a distinct
-            // preference must still replace after the missing-file recreate.
             let later = try session { try store.saveSidebarWidth(300) }
             expected = store.state; expected.windows = store.windowRecords; expected.history = []
             try expect(later.replaces == 1 && (try Data(contentsOf: file)) == (try encoder.encode(expected)),
@@ -677,9 +657,6 @@ struct BrowserStoreTests {
         }
     }
 
-    /// Pending debounce coalesce: unchanged persisted state must not reset the
-    /// 0.25s timer. Distinct revisions still arm a new save. Identical-byte
-    /// replace skip is covered by `testProfileSettingsIdenticalBytePersistSkip`.
     static func testSessionSavePendingScheduleCoalesce() throws {
         try withDirectory { directory in
             let date = Date(timeIntervalSince1970: 1_800_000_000)
@@ -689,7 +666,6 @@ struct BrowserStoreTests {
             try store.save()
             let file = directory.appendingPathComponent("session.json")
             let bytesAfterSave = try Data(contentsOf: file)
-            // Each atomic replace creates its own `.session-` temporary, a file only the writer touches.
             FileOperations.install()
             func replaces(_ calls: [FileOperation]) -> [FileOperation] {
                 calls.filter { $0.name == "createFile" && $0.fileName.hasPrefix(".session-") }
@@ -707,9 +683,6 @@ struct BrowserStoreTests {
             try expect(replaces(idle).isEmpty && (try Data(contentsOf: file)) == bytesAfterSave,
                        "Debounced identical snapshot does not rewrite durable session bytes")
 
-            //
-            // while it is pending must not push it back: a reset at 0.22 s would
-            // land the write at 0.47 s or later.
             let armedAt = ProcessInfo.processInfo.systemUptime
             var lastUnchanged = armedAt
             let edit = FileOperations.during(directory) {
@@ -804,8 +777,6 @@ struct BrowserStoreTests {
             let otherPin = store.open("https://work-saved.example.org", kind: .pinned)
             store.updateTab(otherPin, title: "Work article", url: "https://work-saved.example.org/article")
             store.setSplit([otherToday, otherPin])
-            //
-            //
             let otherHome = store.state.tabs.first { $0.kind == .pinned && $0.spaceID == otherSpace && $0.id != otherPin }!.id
             try expect(try tab(otherPin, in: store).kind == .today, "The pinned original joins the new Today split")
             store.recordDownload(["id": "existing-download", "name": "notes.pdf", "isComplete": true])
@@ -918,8 +889,6 @@ struct BrowserStoreTests {
             store.updateTab(pinned, title: "A different page", url: "https://example.org/other")
             store.setSplit([pinned, today, today, UUID()])
             try expect(store.state.selectedTabIDs == [pinned, today], "Splits must reject unknown or duplicate members")
-            //
-            // pinned slot and moves the original page into the Today split.
             let home = try expectHome(of: pinned, in: store, savedURL: "https://example.org/home")
             try expect(home.url == home.savedURL && home.title == home.savedTitle,
                        "The pinned slot keeps a fresh home at its saved page and title")
@@ -1029,8 +998,6 @@ struct BrowserStoreTests {
             let peer = store.createFolder(name: "Peer")
             let today = store.open("https://today.example.org")
             @MainActor func snapshot() -> SidebarHierarchySnapshot { SidebarHierarchySnapshot(state: store.state, spaceID: space, profileID: profile)! }
-            // The sidebar lists a Space's containers in one pass; each must
-            // match its own children(in:).
             @MainActor func batchedMatches() -> Bool {
                 let state = store.state, batched = SidebarHierarchy.childrenByContainer(spaceID: space, state: state)
                 let locations = [root, SidebarContainerLocation(spaceID: space, folderID: nil, section: .today)]
@@ -1602,8 +1569,6 @@ struct BrowserStoreTests {
             try expect(store.activeSplitLayout == original, "Revisiting an ordered pane group must restore its own geometry")
             store.updateTab(first, title: "Changed page", url: "https://one.example/next")
             try expect(store.activeSplitLayout == original, "Navigation and title updates must not drift divider proportions")
-            //
-            //
             let tray = SidebarContainerLocation(spaceID: firstSpace, folderID: nil, section: .favorite, profileID: profile)
             let snapshot = SidebarHierarchySnapshot(state: store.state, spaceID: firstSpace, profileID: profile, includesFavorites: true)!
             try expect(try store.moveSidebarItem(.split(original!.id), to: tray, before: nil, expected: snapshot),
@@ -1633,8 +1598,6 @@ struct BrowserStoreTests {
         }
     }
 
-    ///
-    /// the split is filed under keeps the split in its slot, shown or not.
     static func testClosingSplitAnchorKeepsSlot() throws {
         try withDirectory { directory in
             let store = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_800_000_000) })
@@ -1672,10 +1635,6 @@ struct BrowserStoreTests {
         }
     }
 
-    ///
-    /// New splits enter Today after their first ordinary member, else at the
-    /// top; joining saved members leave fresh homes; leaving children follow
-    /// the split, and a dissolved split's children take its slot.
     static func testSplitMembershipContainers() throws {
         try withDirectory { directory in
             let store = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_800_000_000) })
@@ -1692,7 +1651,6 @@ struct BrowserStoreTests {
             let t1 = store.open("https://t1.example"), t2 = store.open("https://t2.example")
             try expect(today() == [.tab(t2), .tab(t1)], "Created Today tabs enter at the top")
 
-            // (a) Mixed sections: a new split goes after its first ordinary member.
             store.selectTab(pinned); store.selectTab(t1, extendingSplit: true)
             var group = store.activeSplitLayout!
             let pinnedHome = try expectHome(of: pinned, in: store, savedURL: "https://pin.example")
@@ -1710,8 +1668,6 @@ struct BrowserStoreTests {
             try expect(try tab(favorite, in: store).kind == .today && today() == [.tab(t2), .split(group.id)],
                        "The Favorite original joins the existing Today container; the split keeps its slot")
 
-            // (c) Leaving: a separated child follows the split; a split left
-            // with one child is replaced by its children in child order.
             try expect(store.separateTabFromSplit(t1, expected: group, focusedID: pinned), "Separate the anchor")
             group = store.state.splitLayouts.first { $0.id == group.id }!
             try expect(group.sidebarAnchorID == pinned && today() == [.tab(t2), .split(group.id), .tab(t1)],
@@ -1720,7 +1676,6 @@ struct BrowserStoreTests {
             try expect(store.activeSplitLayout == nil && today() == [.tab(t2), .tab(pinned), .tab(favorite), .tab(t1)],
                        "Dissolving puts every child at the split's slot in child order")
 
-            // All-saved new split: no ordinary member, so Today's top.
             let g1 = store.open("https://g1.example", kind: .favorite), g2 = store.open("https://g2.example", kind: .favorite)
             store.selectTab(g1); store.selectTab(g2, extendingSplit: true)
             let saved = store.activeSplitLayout!
@@ -1732,7 +1687,6 @@ struct BrowserStoreTests {
             try expect(today().first == .tab(g2) && store.activeSplitLayout == nil,
                        "Closing a pane dissolves the split into its slot with the survivor")
 
-            // (b) Existing Favorite split: joining members become Favorites.
             let u1 = store.open("https://u1.example"), u2 = store.open("https://u2.example")
             let favoriteSplit = try savedSplit(store, [u1, u2], in: tray)
             store.selectTab(u1)
@@ -1754,7 +1708,6 @@ struct BrowserStoreTests {
             store.selectTab(u1)
             try expect(store.activeSpaceID == secondSpace && store.state.selectedTabIDs == current + [q],
                        "The Favorite split with its new members appears in every Space")
-            // A separated Favorite-split child is a Favorite tile after the split.
             let favoriteGroup = store.activeSplitLayout!
             try expect(store.separateTabFromSplit(q, expected: favoriteGroup, focusedID: u1), "Separate from a Favorite split")
             let trayNow = SidebarHierarchy.children(in: .init(spaceID: secondSpace, folderID: nil, section: .favorite, profileID: profile), state: store.state)
@@ -1762,7 +1715,6 @@ struct BrowserStoreTests {
                        && (try tab(q, in: store)).kind == .favorite, "The separated child is a Favorite right after the split tile")
             store.selectSpace(space)
 
-            // Existing pinned folder split: a dropped Today tab becomes pinned there.
             let v1 = store.open("https://v1.example"), v2 = store.open("https://v2.example")
             let pinnedSplit = try savedSplit(store, [v1, v2], in: folderBox)
             store.selectTab(v1)
@@ -1773,15 +1725,12 @@ struct BrowserStoreTests {
             try expect(try tab(t4, in: store).kind == .pinned && tab(t4, in: store).folderID == folder
                        && store.activeSplitLayout?.tabIDs == [v1, v2, t4], "The dropped tab enters the pinned split's folder")
 
-            // Persistence: every container form survives restart unchanged.
             try store.save()
             let reopened = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_800_000_000) })
             try expect(reopened.state == store.state, "Container membership and slots survive restart")
         }
     }
 
-    /// SP21 review cases: planning, Pin/Unpin, re-formed window splits,
-    /// Profile reassignment and partial closes keep one container per split.
     static func testSplitMembershipRoutes() throws {
         try withDirectory { directory in
             let store = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 1_800_000_000) })
@@ -1789,8 +1738,6 @@ struct BrowserStoreTests {
             let pinnedRoot = SidebarContainerLocation(spaceID: space, folderID: nil, section: .pinned)
             let todayBox = SidebarContainerLocation(spaceID: space, folderID: nil, section: .today)
 
-            // Command-bar planning: a Today Note has no saved home. Pinning it
-            // first still leaves a typed home when a new URL joins the split.
             let documentID = UUID()
             let note = store.openNote(id: documentID, title: "Note")!
             store.selectTab(note)
@@ -1812,7 +1759,6 @@ struct BrowserStoreTests {
             try expect(noteHome.kind == .pinned && noteHome.savedURL == InternalPage.note(documentID).urlString
                        && (try tab(note, in: store)).kind == .today, "The Note joins Today and its alias home stays pinned")
 
-            // Two windows: planning reads the shared selection once it is this window's.
             let p = store.open("https://p.example", kind: .pinned), q = store.open("https://q.example", kind: .pinned)
             let t = store.open("https://t.example")
             _ = store.setWindowPresentation(spaceID: space, selectedTabIDs: [p])
@@ -1820,7 +1766,6 @@ struct BrowserStoreTests {
             _ = store.setWindowPresentation(spaceID: space, selectedTabIDs: [t])
             try expect(store.splitExtensionHomes(q).map(\.id) == [q], "Window B plans from its own synchronized selection")
 
-            // Pin/Unpin on a split pane moves the whole split (toggleSelectedItemsPinned).
             let a = store.open("https://a.example"), b = store.open("https://b.example")
             store.selectTab(a); store.selectTab(b, extendingSplit: true)
             let pair = store.activeSplitLayout!
@@ -1833,7 +1778,6 @@ struct BrowserStoreTests {
                        && SidebarHierarchy.children(in: todayBox, state: store.state).contains(.split(pair.id)),
                        "Unpinning a split pane unpins its whole split")
 
-            // A window re-forming its own split never mixes containers.
             let w1 = store.open("https://w1.example", kind: .pinned), w2 = store.open("https://w2.example")
             _ = store.setWindowPresentation(spaceID: space, selectedTabIDs: [w1, w2],
                 splitLayout: BrowserSplitLayout(spaceID: space, tabIDs: [w1, w2], widthFactors: [0.5, 0.5]))
@@ -1842,7 +1786,6 @@ struct BrowserStoreTests {
                        && store.state.tabs.contains { $0.kind == .pinned && $0.savedURL == "https://w1.example" && $0.id != w1 },
                        "A window's own split re-forms through the membership owner")
 
-            // Partial close of a pinned split pane: it leaves after the split.
             let x1 = store.open("https://x1.example"), x2 = store.open("https://x2.example"), x3 = store.open("https://x3.example")
             let pinnedSplit = try savedSplit(store, [x1, x2, x3], in: pinnedRoot)
             store.selectTab(x1)
@@ -1853,8 +1796,6 @@ struct BrowserStoreTests {
                        && afterClose.firstIndex(of: .split(pinnedSplit.id)).map { $0 + 1 } == afterClose.firstIndex(of: .tab(x2)),
                        "A closed pinned pane stays saved and follows its split")
 
-            // A Favorite split stored under one Space: partial close from
-            // another Space, and that Space moving to another Profile.
             let f1 = store.open("https://f1.example"), f2 = store.open("https://f2.example"), f3 = store.open("https://f3.example")
             let tray = SidebarContainerLocation(spaceID: space, folderID: nil, section: .favorite, profileID: profile)
             let favoriteSplit = try savedSplit(store, [f1, f2, f3], in: tray)
@@ -1868,9 +1809,6 @@ struct BrowserStoreTests {
                        "Closing a Favorite split pane from another Space removes it from the one split")
             store.selectSpace(space)
             let other = store.createProfile(name: "Other")
-            // This model fixture's earlier Note and alias have no document
-            // files. Supply the explicit inert relocation owner now required
-            // by Profile assignment and verify both original references.
             store.relocateLocalDocuments = { ids, pages, from, to in
                 try expect(ids.contains(note) && ids.contains(noteHome.id) && pages == [.note(documentID)],
                            "Profile assignment delegates the original Note and alias together")
@@ -1883,9 +1821,6 @@ struct BrowserStoreTests {
         }
     }
 
-    /// SP21 migration: legacy mixed Favorite/ordinary groups and per-Space
-    /// copies of the same Favorites restore in one-container form without
-    /// losing a page or saved item.
     static func testLegacyMixedSplitContainerMigration() throws {
         try withDirectory { directory in
             let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -1949,10 +1884,6 @@ struct BrowserStoreTests {
         }
     }
 
-    /// A Favorite shared by splits in two Spaces restores into one split: a
-    /// Favorites-container split keeps it, the other keeps its own children,
-    /// layout and title; the tray gains no root and the moving active
-    /// selection follows the saved home.
     static func testLegacySharedFavoriteMigration() throws {
         try withDirectory { directory in
             let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -1973,7 +1904,6 @@ struct BrowserStoreTests {
             let favoriteSplit = BrowserSplitLayout(spaceID: second.id, tabIDs: [shared.id, partner.id], widthFactors: [0.5, 0.5])
             let roamingSplit = BrowserSplitLayout(spaceID: first, tabIDs: [t3.id, roaming.id], widthFactors: [0.5, 0.5])
             state.splitLayouts = [favoriteSplit, mixed, roamingSplit]
-            // Space 2 is active and shows the Favorite that a Space 1 split holds.
             state.selectionBySpace[first.uuidString] = mixed.tabIDs
             state.activeSpaceID = second.id; state.selectedTabIDs = [roaming.id]
             state.settings.restoreSession = true
@@ -2246,7 +2176,6 @@ struct BrowserStoreTests {
             try expect(try tab(tabID, in: store).kind == .today && tab(tabID, in: store).archivedAt == nil,
                        "Library reopen restores the archived Easel as Today")
             let web = store.open("https://example.org/alongside")
-            // A pinned split is a whole split moved into the pinned section.
             try savedSplit(store, [tabID, web], in: .init(spaceID: store.activeSpaceID, folderID: nil, section: .pinned))
             store.selectTab(tabID)
             store.setSplitLayout(orientation: .vertical, widthFactors: [1, 2])
@@ -2459,8 +2388,6 @@ struct BrowserStoreTests {
             try expect((try tab(viewed, in: reopened)).lastAccessed == now,
                        "Activity-only stamps must still persist into the session file")
             let afterPublish = publications
-            // Advance so selectTab's access stamp differs from the overlay; a
-            // same-timestamp re-select is a true state no-op and must not publish.
             now.addTimeInterval(1)
             store.selectTab(viewed)
             try expect(publications > afterPublish,
@@ -2470,8 +2397,6 @@ struct BrowserStoreTests {
         }
     }
 
-    /// P1-AX leftover: open / Space create / split form / split close / tab remove
-    /// must publish the completed BrowserState once, not nest intermediate assigns.
     static func testBatchedMutationPublishesOnce() throws {
         try withDirectory { directory in
             let store = try BrowserStore(directory: directory, now: { Date(timeIntervalSince1970: 2_000_000_000) })
@@ -2529,7 +2454,6 @@ struct BrowserStoreTests {
             store.refreshVisibleTabs([id])
             try expect(publications == 1 && store.stateRevision == revision,
                        "Activity overlay must still avoid publish after an identical-assign gate")
-            // Same-timestamp re-select equals the overlay snapshot — true no-op.
             store.selectTab(id)
             try expect(publications == 1 && store.stateRevision == revision,
                        "Identical selectTab assign must not fan out @Published observers")
@@ -2632,8 +2556,6 @@ struct BrowserStoreTests {
             store.moveTab(nested, toSpace: store.activeSpaceID, folderID: folder)
             let favorite = store.open("https://favorite.example", kind: .favorite)
             _ = store.open("https://current.example")
-            // The legacy move API can place one live pane in a saved folder;
-            // archive must preserve that mixed item until its owner resolves it.
             store.moveTab(second, toSpace: store.activeSpaceID, folderID: folder)
             now.addTimeInterval(13 * 3600)
             try expect(store.state.splitLayouts.contains { $0.tabIDs == [first, second] },
@@ -3438,8 +3360,6 @@ struct BrowserStoreTests {
                 selected: [current], focused: current, available: { _ in true }) == nil,
                 "A replacement changing profile invalidates the original hierarchy")
             var selection = choice
-            // A forged cross-profile replacement is rejected by the model's
-            // own decision validation, not just the AppKit capability.
             selection = FolderRemovalSelection(spaceID: space, profileID: profile, original: [current],
                 originalFocus: current, tabIDs: [UUID()], focusedTabID: nil)
             var result: Result<Bool, Error>?

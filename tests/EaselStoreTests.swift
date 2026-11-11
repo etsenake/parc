@@ -24,9 +24,6 @@ struct EaselStoreTests {
     static let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3uoAAAAASUVORK5CYII=")!
     static let frame = EaselRect(x: 20, y: 30, width: 120, height: 80)
 
-    /// The document writer's work while `body` runs. Its encodes are reads of an
-    /// observed title off the main thread; each atomic document replace removes
-    /// one `.write-` temporary beside the document, a file only the writer touches.
     struct Writes {
         let directory: URL
         let calls: [FileOperation]
@@ -74,9 +71,6 @@ struct EaselStoreTests {
         print("EaselStore: \(assertions) assertions passed (22 test groups)")
     }
 
-    /// Sorted-keys bytes stay identical to a direct `JSONEncoder`, and canvas
-    /// `perform` / explicit `save` encode on the easel-save queue rather than
-    /// the calling/MainActor stack. Durability still waits before publish.
     @MainActor static func persistEncodeOffCallingThread() throws {
         try withDirectory { directory in
             let store = try EaselStore(directory: directory, now: { Date(timeIntervalSince1970: 2_000) })
@@ -129,7 +123,6 @@ struct EaselStoreTests {
         }
     }
 
-    /// Identical sorted-keys bytes skip atomic replace; real edits still persist.
     @MainActor static func identicalBytePersistSkip() throws {
         try withDirectory { directory in
             let store = try EaselStore(directory: directory, now: { Date(timeIntervalSince1970: 3_000) })
@@ -222,7 +215,6 @@ struct EaselStoreTests {
             try restored.perform("After rollback") { $0.title = "Writable source" }
             expect(restored.document.title == "Writable source" && original.document == saved, "old retained session stays revoked after rollback")
             try source.retireSessionForRelocation(id)
-            // A matching asset name is not authority to substitute pixels.
             let collision = destination.directory.appendingPathComponent("assets/" + asset)
             var other = png; other.append(0)
             try other.write(to: collision)

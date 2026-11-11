@@ -108,7 +108,6 @@ def pip_verdict(status, stdout, timed_out):
 
 @contextmanager
 def video_fixture_server(app):
-    """Serve the package-bound real upstream media on one loopback origin."""
     report = json.loads((app.parent / "runtime-package-report.json").read_text())
     body = (app / "Contents/Resources/NativeVideoFixture/bear.webm").read_bytes()
     digest = hashlib.sha256(body).hexdigest()
@@ -157,7 +156,6 @@ def video_fixture_server(app):
 
 @contextmanager
 def extension_fixture_server():
-    """One launcher-owned origin, existing fixture only; no external server."""
     body = (Path(__file__).parent / "fixtures/extension-actions.html").read_bytes()
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -171,7 +169,7 @@ def extension_fixture_server():
             self.end_headers()
             self.wfile.write(body)
         def log_message(self, *_args):
-            pass  # No URLs, headers or page text in the receipt.
+            pass
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, name="parc-runtime-fixture", daemon=True)
     thread.start()
@@ -199,8 +197,6 @@ def main():
     executable = app / "Contents/MacOS/parc_native_runtime_tests"
     if not executable.is_file() or not os.access(executable, os.X_OK):
         parser.error("test executable is absent")
-    # The same closure/signing prerequisite as the production app. This does
-    # not bless external component dylibs or claim Seatbelt execution passed.
     subprocess.run(["/usr/bin/codesign", "--verify", "--strict", "--deep", str(app)], check=True)
     root = fresh_root(args.artifacts)
     log_dir = root.parent / (root.name + "-logs")
@@ -209,8 +205,6 @@ def main():
     print(f"Logs: {log_dir}", flush=True)
     env = {key: value for key, value in os.environ.items()
            if not key.startswith("DYLD_") and key != "CHROME_LOG_FILE"}
-    # Official Chromium switch: selects its FakeKeychainV2. Never supplied to a
-    # normal user profile; the executable independently checks our fresh marker.
     env["MallocNanoZone"] = "0"
     command = [str(executable), str(root), "--use-mock-keychain"]
     started = time.monotonic()

@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Production feedback components with isolated preferences and injected outputs.
-
-Does not launch a browser, send Apple Events, play sound, or invoke haptic hardware.
-"""
 from pathlib import Path
 import subprocess
 import tempfile

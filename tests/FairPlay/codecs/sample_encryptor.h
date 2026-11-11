@@ -1,7 +1,3 @@
-// Common Encryption (ISO/IEC 23001-7) of single samples in memory, for the
-// FairPlay codec proof: the AES-128 'cenc' and 'cbcs' ciphers, and the
-// subsample layouts a CMAF packager gives H.264 and HEVC (Dolby Vision)
-// samples.
 #pragma once
 
 #include <cstddef>
@@ -14,35 +10,14 @@
 
 namespace parc::fairplay::test {
 
-// Encrypts (or decrypts) |data| in place with a 16-byte |key|.
-// 'cenc': AES-CTR over the protected ranges as one keystream; the counter
-//   block starts as |iv| (an 8-byte IV is zero-extended to 16) and is
-//   incremented as a 128-bit big-endian number per block.
-// 'cbcs': AES-CBC over each protected range with |pattern| (crypt blocks
-//   encrypted, then skip blocks left clear, repeating; {0, 0} encrypts every
-//   block). Every range starts again from the 16-byte |iv| and a trailing
-//   partial block stays clear (as media/cdm/cbcs_decryptor.cc reads it).
-// Empty |subsamples| means the whole sample is one protected range.
 bool CencCrypt(bool encrypt, EncryptionScheme scheme, const std::vector<uint8_t>& key, const std::vector<uint8_t>& iv,
                EncryptionPattern pattern, const std::vector<SubsampleEntry>& subsamples, std::vector<uint8_t>* data,
                std::string* error);
 
 enum class NalCodec { kH264, kHevc };
 
-// Subsample layouts for length-prefixed H.264 or HEVC samples (Dolby Vision
-// profiles 5 and 8 are HEVC streams), as CENC 3rd edition section 10 and the
-// CMAF packagers do it: each VCL NAL unit keeps its length field, NAL unit
-// header and slice header clear and protects the rest; NAL units without
-// slice data (parameter sets, SEI, AUD, Dolby Vision RPU) stay clear and are
-// folded into the next subsample's clear bytes. 'cenc' rounds each protected
-// range down to whole 16-byte blocks, moving the remainder into the clear
-// bytes; 'cbcs' protects everything after the slice header.
-//
-// Slice headers are parsed with the active parameter sets, from the decoder
-// record and from parameter sets found in the samples.
 class NalLayout {
  public:
-  // |record| is the 'avcC' or 'hvcC' payload.
   NalLayout(NalCodec codec, const std::vector<uint8_t>& record);
 
   bool ok() const { return error_.empty(); }
@@ -52,9 +27,6 @@ class NalLayout {
   bool Subsamples(const std::vector<uint8_t>& sample, EncryptionScheme scheme, std::vector<SubsampleEntry>* subsamples,
                   std::string* error);
 
-  // Bytes of a VCL NAL unit (from its NAL unit header, length field
-  // excluded) up to the end of its slice header, or 0 for a NAL unit without
-  // slice data. Parameter sets passed here are stored.
   bool HeaderSize(const uint8_t* nal, size_t size, size_t* header, std::string* error);
 
   struct H264Sps {
@@ -80,7 +52,7 @@ class NalLayout {
   };
   struct HevcRps {
     uint32_t num_delta_pocs = 0;
-    uint32_t num_used = 0;  // used_by_curr_pic entries.
+    uint32_t num_used = 0;
   };
   struct HevcSps {
     uint32_t chroma_format_idc = 1;
@@ -90,7 +62,7 @@ class NalLayout {
     bool sample_adaptive_offset = false;
     std::vector<HevcRps> rps;
     bool long_term_ref_pics_present = false;
-    std::vector<bool> lt_used_by_curr_pic;  // Per SPS long-term picture.
+    std::vector<bool> lt_used_by_curr_pic;
     bool temporal_mvp = false;
   };
   struct HevcPps {
@@ -126,4 +98,4 @@ class NalLayout {
   std::map<uint32_t, HevcPps> hevc_pps_;
 };
 
-}  // namespace parc::fairplay::test
+}

@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""Menu item images: only the menus where Parc shows an image set one, and
-each goes through NSMenuItem.showImage so macOS 27 shows it.
-
-Parc 1.122 builds its sidebar, preview, page and window menus without images
-(PArcContextMenuItem.icon and CallbackMenuItem's image are nil at every such
-call site). It shows images in the split controls menu, its ShareMenu's
-services, the main menu's Open in [Space], the Download Location picker, the
-extension rows of its main-menu Extensions menu (16 pt icons,
-BrowserExtensionsMainMenuProvider) and Easel's Export as Image row. Parc
-doesn't build the Extensions rows yet. Compiles the real MenuAction and
-MenuItemImage; no browser, menu tracking or window.
-"""
 from pathlib import Path
 import re
 import subprocess
@@ -36,10 +24,6 @@ for source, use in (("PaneTitleControl.swift", "entry.showImage(service.image)")
                     ("EaselImageExport.swift", "item.showImage(SidebarIconCatalog.featherImage(0xE9CA, size: 14))")):
     expect(use in (app / source).read_text(), f"{source} no longer shows the menu image: {use}")
 
-#
-# doesn't show; clearing an image is allowed. Menu item names are collected
-# per function: constructed items, typed declarations and parameters, and items
-# a menu returns.
 declarations = (
     re.compile(r"\b(?:let|var)\s+(\w+)\s*(?::\s*NSMenuItem\s*)?=\s*(?:NSMenuItem\(|MenuAction\.item)"),
     re.compile(r"(\w+)\s*:\s*NSMenuItem\b"),

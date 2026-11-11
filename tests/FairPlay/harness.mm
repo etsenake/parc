@@ -1,8 +1,3 @@
-// FairPlay M0 proof: the engine-independent key session and renderer in
-// Engine/ParcNative/fairplay play Axinom's public "CMAF H264 SingleKey (cbcs)"
-// test vector with a real FairPlay license exchange, in a visible window.
-// Protected video can't be captured, so playback is proven through the
-// synchronizer clock, renderer status and AVFoundation's frame metrics.
 #import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -36,8 +31,6 @@
 #error "This file requires ARC."
 #endif
 
-// AVStreamDataParser, which Safari's Media Source parses MPEG-2 TS with
-// (SourceBufferParserAVFObjC); the macOS SDK doesn't declare it.
 @interface AVStreamDataParser : NSObject
 - (void)setDelegate:(id)delegate;
 - (void)appendStreamData:(NSData*)data;
@@ -45,9 +38,6 @@
 - (void)providePendingMediaData;
 @end
 
-// What AVStreamDataParser makes of one TS segment: the key specifier's init
-// data, and each sample buffer's format type, TransportStreamEncryptionInitData
-// and bytes.
 @interface PCTsReference : NSObject
 @property(nonatomic) NSData* keyInitData;
 @property(nonatomic) NSMutableArray<NSNumber*>* types;
@@ -93,33 +83,20 @@ namespace ft = parc::fairplay::test;
 
 namespace {
 
-// Axinom public test vectors v10, "CMAF H264 SingleKey (cbcs)": the FairPlay
-// player link in https://github.com/Axinom/public-test-vectors (README) gives
-// the license URL, certificate URL and this entitlement token, which the
-// license service takes in the X-AxDRM-Message header with the raw SPC as the
-// POST body; it answers with the raw CKC.
 NSString* const kProtectedBase = @"https://media.axprod.net/TestVectors/Cmaf/protected_1080p_h264_cbcs/";
 NSString* const kClearBase = @"https://media.axprod.net/TestVectors/Cmaf/clear_1080p_h264/";
 NSString* const kLicenseUrl = @"https://drm-fairplay-licensing.axprod.net/AcquireLicense";
 NSString* const kCertificateUrl = @"https://tools.axinom.com/FPScert/fairplay.cer";
 NSString* const kToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogIjMwMmY4MGRkLTQxMWUtNDg4Ni1iY2E1LWJiMWY4MDE4YTAyNCIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiMWVYeWhGWmNGVjljemNtZG5BREpMdz09IiwKICAgICAgICAiaXYiOiAiZC8wWWlhcjBGRHNJVlVpendQbGJtZz09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.5VxBJQsgGVissi9WCNpT7IoykEAmxaEcif6F3SeLvzU";
-// EXT-X-KEY URI in the vector's HLS playlists (KEYFORMAT com.apple.streamingkeydelivery).
 const char* const kSkd = "skd://302f80dd-411e-4886-bca5-bb1f8018a024:77FD1889AAF4143B085548B3C0F95B9A";
-// "CMAF H264 MultiKey (cbcs)": three keys (audio, SD video, HD video) under
-// one token, the shape of Netflix's three-key FairPlay licenses.
 NSString* const kMultiKeyBase = @"https://media.axprod.net/TestVectors/MultiKey/Cmaf_h264_1080p_cbcs/";
 NSString* const kMultiKeyToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogImI1NGVjOTE0LTE5MmQtNGVhMS1hYzE5LWY0MjllYjQ5ODI2OCIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiUldKemlSUDRqQkhjd2tJYzRTd1h5QT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9LAogICAgICB7CiAgICAgICAgImlkIjogImM4M2M0ZWE4LTBmMmEtNDUyMy04NTFjLWZiZWNjZGMwZjIwMiIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiSHFoK1BCNVU1OStvclMzVGVZQ2lOUT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9LAogICAgICB7CiAgICAgICAgImlkIjogImM4NjhjNzAyLWM3MWItNDA2NC1hZTJiLWMyNGY3Y2MxMDc5MiIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiLy9nM2pmdktjUlliaHBwRW04c3BqUT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.09GZO7pokr1k24NXKxIV7qyEZ2lhtbpfMoKfP7vzSns";
-// "CMAF H265 SingleKey" from the same table, for the HEVC check.
 NSString* const kHevcBase = @"https://media.axprod.net/TestVectors/H265/protected_cmaf_1080p_h265_singlekey/";
 NSString* const kHevcToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogImFiY2M0NGU1LWMxMjItNDVhYi1hYzgwLWE1YjM1MjJhMGEzMSIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAibGs1aERneXl1NXl6a3QzMWlVWmF4UT09IiwKICAgICAgICAiaXYiOiAiczhnNHNFemp4Yml2R1pDVGxxU3pQQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.lAwTqoU-rkmyk8QtSn0RrsleMefe2Y5-E5YGoala7yM";
 const char* const kHevcSkd = "skd://abcc44e5-c122-45ab-ac80-a5b3522a0a31:B3C838B04CE3C5B8AF19909396A4B33C";
-// "HLS H264 SingleKey" from the same table: MPEG-2 TS with FairPlay SAMPLE-AES
-// (H.264 0xdb 'zavc', AAC 0xcf 'aacd'), its own token and key.
 NSString* const kTsBase = @"https://media.axprod.net/TestVectors/Hls/protected_hls_1080p_h264_singlekey/";
 const char* const kTsKeyGuid = "4060a865-8878-4267-9cbf-91ae5bae1e72";
 NSString* const kTsToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogIjQwNjBhODY1LTg4NzgtNDI2Ny05Y2JmLTkxYWU1YmFlMWU3MiIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAieE5LNVNvRzRseGdHbGpRY2ZMOVRXQT09IiwKICAgICAgICAiaXYiOiAiTkJOYUpPcGI3MnNTYzBkSXFJejJQdz09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.3Ti5rkzgw77GOXIpZWqNBUX16DXvph_NiJPCejrDStA";
-
-// ---------------------------------------------------------------- reporting
 
 double g_start = 0;
 int g_checks = 0;
@@ -178,8 +155,6 @@ const char* StatusName(fp::RenderingStatus s) {
   return "?";
 }
 
-// --------------------------------------------------------------------- HTTP
-
 struct Http {
   long status = 0;
   NSData* body = nil;
@@ -187,7 +162,6 @@ struct Http {
   std::string error;
 };
 
-// Blocking; called off the main thread only.
 Http Fetch(NSString* url, NSString* method, NSData* body, NSDictionary* headers) {
   NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:url]];
   request.HTTPMethod = method;
@@ -234,8 +208,6 @@ NSData* CachedGet(NSString* url, uint64_t offset, uint64_t length, std::string* 
   [http.body writeToFile:path atomically:YES];
   return http.body;
 }
-
-// ------------------------------------------------------------ media loading
 
 struct Range {
   std::string uri;
@@ -307,13 +279,9 @@ bool LoadMedia(NSString* base, NSString* playlist_name, int count, Media* media,
   return true;
 }
 
-// Chromium's own media test files (media/test/data at the pinned tag): one
-// fragmented MP4 holding the init segment and its fragments.
 NSString* const kChromiumTestData =
     @"https://chromium.googlesource.com/chromium/src/+/refs/tags/156.0.8078.48/media/test/data/";
 
-// A whole MP4 (fragmented or progressive) from |url|, cached as |cache_name|;
-// |base64| for Gitiles' ?format=TEXT.
 NSData* CachedFile(NSString* url, NSString* cache_name, bool base64, std::string* error) {
   NSString* path = [g_cache_dir stringByAppendingPathComponent:cache_name];
   NSData* data = [NSData dataWithContentsOfFile:path];
@@ -352,7 +320,6 @@ bool LoadChromiumFile(NSString* name, Media* media, std::string* error) {
                      [@"chromium_" stringByAppendingString:name], true, media, error);
 }
 
-// The first track of one of Chromium's WebM test files.
 bool LoadChromiumWebm(NSString* name, Media* media, std::string* error) {
   NSData* data = CachedFile([NSString stringWithFormat:@"%@%@?format=TEXT", kChromiumTestData, name],
                             [@"chromium_" stringByAppendingString:name], true, error);
@@ -365,8 +332,6 @@ bool LoadChromiumWebm(NSString* name, Media* media, std::string* error) {
   return true;
 }
 
-// DASH-IF's 7.1 Dolby Digital Plus channel-ID stream (Dolby Media Generator):
-// an independent 5.1 substream plus a dependent one with Lrs/Rrs.
 NSString* const kDdp71 = @"https://dash.akamaized.net/dash264/TestCasesMCA/dolby/2/1/ChID_voices_71_768_ddp_A.mp4";
 
 struct EncodeState {
@@ -395,9 +360,6 @@ OSStatus ProvidePcm(AudioConverterRef, UInt32* packets, AudioBufferList* data,
   return noErr;
 }
 
-// HE-AAC / HE-AACv2 track encoded with AudioToolbox (no such MP4 sample is in
-// Chromium's test data): 44.1 kHz stereo tones, packets and the encoder's
-// AudioSpecificConfig, as an MP4 parser would hand them over.
 bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* error) {
   AudioStreamBasicDescription in = {44100, kAudioFormatLinearPCM,
                                     kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked, 8, 1, 8, 2, 32, 0};
@@ -459,8 +421,6 @@ bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* 
   return true;
 }
 
-// -------------------------------------------------------- async sequencing
-
 using Done = std::function<void()>;
 using Step = std::function<void(Done)>;
 
@@ -487,7 +447,6 @@ void Sequence(std::vector<Step> steps, Done done) {
   RunSteps(std::make_shared<std::vector<Step>>(std::move(steps)), 0, std::move(done));
 }
 
-// Runs |done| once, either from |attempt| or after |timeout| seconds.
 std::function<void(bool)> Once(double timeout, const std::string& label, std::function<void(bool)> done) {
   auto fired = std::make_shared<bool>(false);
   auto finish = [fired, done](bool ok) {
@@ -516,15 +475,10 @@ void PollUntil(double deadline, std::function<bool()> ready, std::function<void(
   After(0.01, [=] { PollUntil(deadline, ready, done); });
 }
 
-// Calls |done(true)| once |ready| holds (checked every 10 ms), or
-// |done(false)| once |timeout| seconds have passed.
 void WaitUntil(double timeout, std::function<bool()> ready, std::function<void(bool)> done) {
   PollUntil(CFAbsoluteTimeGetCurrent() + timeout, std::move(ready), std::move(done));
 }
 
-// The core's posted tasks can be held back, to line up a callback the
-// renderer has already queued against a Flush. Never destroyed: AVFoundation
-// threads may still post while exit() runs static destructors.
 struct PostHold {
   std::mutex mutex;
   bool holding = false;
@@ -554,7 +508,6 @@ void HoldPosts() {
   Hold().holding = true;
 }
 
-// Queues the held tasks on the main queue, in order, and stops holding.
 void ReleasePosts() {
   PostHold& hold = Hold();
   std::lock_guard<std::mutex> lock(hold.mutex);
@@ -567,8 +520,6 @@ void ReleasePosts() {
   }
   hold.tasks.clear();
 }
-
-// ----------------------------------------------------------- license flow
 
 std::string KeysText(const std::vector<fp::KeyInfo>& keys) {
   std::string text;
@@ -588,13 +539,11 @@ class LicenseClient : public fp::FairPlayCdmClient {
 
   fp::FairPlayCdm* cdm = nullptr;
   bool json = false;
-  // With |hold|, messages wait in held_* until Respond() is called.
   bool hold = false;
   std::string held_session;
   std::vector<uint8_t> held_message;
   std::function<void()> on_message;
   std::vector<fp::MessageType> message_types;
-  // Closes the session from inside OnSessionKeysChange (re-entrancy check).
   bool close_on_keys_change = false;
   int messages = 0;
   int keys_events = 0;
@@ -622,10 +571,9 @@ class LicenseClient : public fp::FairPlayCdmClient {
     Respond(session_id, message);
   }
 
-  // The page's license round trip: POST each SPC, then update().
   void Respond(const std::string& session_id, const std::vector<uint8_t>& message) {
     NSData* body = Data(message);
-    std::string session = session_id;  // Blocks capture reference parameters by reference.
+    std::string session = session_id;
     std::string name = name_;
     bool is_json = json;
     fp::FairPlayCdm* target = cdm;
@@ -683,7 +631,6 @@ class LicenseClient : public fp::FairPlayCdmClient {
     Log("%s: session %s closed", name_.c_str(), session_id.c_str());
   }
 
-  // POSTs one SPC to the license service (blocking; off the main thread).
   static std::vector<uint8_t> Post(NSData* spc, const std::string& name, NSString* token,
                                    std::string* failure) {
     Http http = Fetch(kLicenseUrl, @"POST", spc,
@@ -726,16 +673,12 @@ std::unique_ptr<KeySystem> MakeKeySystem(const std::string& name, NSString* toke
   return ks;
 }
 
-// WebKit's session IDs: the uppercase hex of a random 16-byte identifier
-// (CDMInstanceSessionFairPlayStreamingAVFObjC::sessionIdentifierChanged).
 bool IsWebKitSessionId(const std::string& id) {
   return id.size() == 32 && std::all_of(id.begin(), id.end(), [](char c) {
            return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F');
          });
 }
 
-// Session from |init_data|, the page-side license round trip, then a check
-// that the renderer can find a key for the content's key ID.
 void AcquireLicense(KeySystem* ks, fp::InitDataType type, std::vector<uint8_t> init_data,
                     const std::string& label, std::function<void(bool)> done,
                     std::vector<std::vector<uint8_t>> key_ids = {g_key_id}) {
@@ -763,15 +706,10 @@ void AcquireLicense(KeySystem* ks, fp::InitDataType type, std::vector<uint8_t> i
       });
 }
 
-// ------------------------------------------------------------------ player
-
 enum class Framing { kChromium, kIso };
 
 using SegmentList = std::vector<const std::vector<ft::Sample>*>;
 
-// What Chromium hands a renderer (MP4StreamParser): no video decoder record,
-// Dolby Vision as profile and level only, no dac3/dec3, and encryption as
-// the scheme alone.
 bool g_chromium_inputs_default = false;
 
 fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing, bool chromium_inputs);
@@ -802,7 +740,6 @@ fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing, bool 
   vc.sample_entry = f;
   vc.extra_data = info.codec_config;
   vc.dolby_vision_config = info.dolby_vision_config;
-  // Chromium hands AV1 and VP9 over as stored, everything else as Annex B.
   vc.format = framing == Framing::kChromium && vc.codec != fp::VideoCodec::kAV1 && vc.codec != fp::VideoCodec::kVP9
                   ? fp::BitstreamFormat::kAnnexB
                   : fp::BitstreamFormat::kLengthPrefixed;
@@ -815,11 +752,9 @@ fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info, Framing framing, bool 
     if (dv.size() >= 5) {
       vc.dolby_vision_profile = dv[2] >> 1;
       vc.dolby_vision_level = ((dv[2] & 1) << 5) | (dv[3] >> 3);
-      // Chromium has no compatibility ID; the renderer's default applies.
     }
     vc.dolby_vision_config.clear();
     vc.encryption = fp::TrackEncryption{info.encryption.scheme, {}, {}, 0, {}};
-    // WebMVideoClient's color without a Colour element: BT.709.
     if (vc.codec == fp::VideoCodec::kVP9) vc.color = {1, 1, 1};
   }
   return vc;
@@ -835,7 +770,6 @@ fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info, Framing framing, bool 
              : f == fp::FourCC('e', 'c', '-', '3') ? fp::AudioCodec::kEAC3
                                                    : fp::AudioCodec::kAC3;
   ac.extra_data = info.codec_config;
-  // Chromium keeps no dac3/dec3; Vorbis keeps its CodecPrivate.
   if (chromium_inputs && !aac && !vorbis) ac.extra_data.clear();
   ac.framing = framing == Framing::kChromium && aac && ft::AacObjectType(info.codec_config, true) <= 4
                    ? fp::AudioFraming::kADTS
@@ -847,17 +781,12 @@ fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info, Framing framing, bool 
   return ac;
 }
 
-// Edits a scenario's configs before Initialize.
 using ConfigAdjust = std::function<void(std::optional<fp::VideoConfig>*, std::optional<fp::AudioConfig>*)>;
 
-// --muted: every audio renderer muted at volume 0, nothing out of the speakers.
 bool g_muted = false;
 
 class Player : public fp::FairPlayRendererClient {
  public:
-  // Either stream may be null (single-stream codec checks).
-  // |cdm_first| calls SetCdm before Initialize, Chromium's order when
-  // MediaKeys were attached before playback.
   Player(std::string name, Framing framing, const Media* video, const Media* audio,
          fp::FairPlayCdm* cdm, NSView* host, bool cdm_first = false,
          bool chromium_inputs = g_chromium_inputs_default, ConfigAdjust adjust = nullptr)
@@ -883,7 +812,6 @@ class Player : public fp::FairPlayRendererClient {
     result = renderer_.Initialize(vc, ac);
     Check(result.ok(), name_ + ": renderer Initialize", result.message);
     if (g_muted && result.ok() && has_audio_) {
-      // Silent runs: AVFoundation still decodes and renders every sample.
       renderer_.SetMuted(true);
       renderer_.SetVolume(0);
     }
@@ -931,14 +859,8 @@ class Player : public fp::FairPlayRendererClient {
   int need_data_calls = 0;
   int reconfigures = 0;
   std::vector<std::pair<int32_t, int32_t>> natural_sizes;
-  // Flushes in the same task as the end of stream that completes both
-  // streams (whose OnEnded is then already queued).
   bool flush_at_end_of_stream = false;
-  // Like a batched DemuxerStream read: keeps enqueuing behind a sample held
-  // for a key, through end of stream, instead of waiting for readiness.
   bool batch_reads = false;
-  // As FairPlayRendererAdapter reads: on past a sample held for a key while
-  // the renderer takes more (its held window).
   bool adapter_reads = false;
   int ends_sent = 0;
 
@@ -952,18 +874,12 @@ class Player : public fp::FairPlayRendererClient {
     audio_feed_ = Feed{std::move(audio), 0, 0, end_of_stream, false, {}, nullptr};
   }
 
-  // Segments that each come with their own track (an adaptive-streaming
-  // switch). Chromium converts each with its own init segment; a new audio
-  // track reaches the renderer as Reconfigure (DemuxerStream kConfigChanged),
-  // video as different in-band parameter sets.
   void SetFeedsWithTracks(SegmentList video, std::vector<const ft::TrackInfo*> video_tracks, SegmentList audio,
                           std::vector<const ft::TrackInfo*> audio_tracks, bool end_of_stream) {
     video_feed_ = Feed{std::move(video), 0, 0, end_of_stream, false, std::move(video_tracks), nullptr};
     audio_feed_ = Feed{std::move(audio), 0, 0, end_of_stream, false, std::move(audio_tracks), nullptr};
   }
 
-  // More data arrives (as from the network): append and push it; with
-  // |end_of_stream| it is the last.
   void AppendFeeds(const SegmentList& video, const SegmentList& audio, bool end_of_stream = false) {
     video_feed_.segments.insert(video_feed_.segments.end(), video.begin(), video.end());
     audio_feed_.segments.insert(audio_feed_.segments.end(), audio.begin(), audio.end());
@@ -983,9 +899,6 @@ class Player : public fp::FairPlayRendererClient {
         s.decode_failures, s.video_error.c_str(), s.audio_error.c_str());
   }
 
-  // A stream that joins during playback (FairPlayRenderer::AddVideo,
-  // AddAudio), fed |segments| from where they start; the core drops or hides
-  // what comes before the clock. Video goes on the host like the first.
   fp::Result JoinVideo(const Media& video, SegmentList segments) {
     fp::Result result = renderer_.AddVideo(VideoConfigFor(video.info, framing_, chromium_inputs_));
     if (!result.ok()) return result;
@@ -1010,7 +923,6 @@ class Player : public fp::FairPlayRendererClient {
     joined_audio_.erase(track);
     renderer_.RemoveAudio(track);
   }
-  // A video track switch (FairPlayRenderer::ReplaceVideo), fed |segments|.
   fp::Result SwitchVideo(const Media& video, SegmentList segments) {
     fp::Result result = renderer_.ReplaceVideo(VideoConfigFor(video.info, framing_, chromium_inputs_));
     if (!result.ok()) return result;
@@ -1019,7 +931,6 @@ class Player : public fp::FairPlayRendererClient {
     return result;
   }
 
-  // media::RendererClient side.
   void OnNeedData(fp::StreamId stream) override {
     ++need_data_calls;
     Pump(stream);
@@ -1071,7 +982,7 @@ class Player : public fp::FairPlayRendererClient {
     size_t index = 0;
     bool end_of_stream = false;
     bool end_sent = false;
-    std::vector<const ft::TrackInfo*> tracks;  // Per segment, or empty.
+    std::vector<const ft::TrackInfo*> tracks;
     const ft::TrackInfo* current = nullptr;
   };
 
@@ -1123,9 +1034,6 @@ class Player : public fp::FairPlayRendererClient {
       }
       const ft::TrackInfo& info = feed.tracks.empty() ? default_info : *feed.tracks[feed.segment];
       if (!feed.tracks.empty() && feed.current && feed.current != &info) {
-        // A different track: audio needs Reconfigure; video of the same
-        // codec signals itself in-band (and gets Reconfigure too when full
-        // configs are in use), a new codec is a config change in Chromium.
         const bool in_band = chromium_inputs_ && info.original_format == feed.current->original_format;
         fp::Result result = stream.type == fp::StreamType::kAudio
                                 ? renderer_.Reconfigure(AudioConfigFor(info, framing_, chromium_inputs_),
@@ -1138,7 +1046,7 @@ class Player : public fp::FairPlayRendererClient {
       feed.current = &info;
       const ft::Sample& sample = (*feed.segments[feed.segment])[feed.index++];
       if (sample.pts + sample.duration <= 0) {
-        continue;  // Before zero: MSE's append window drops it in Chromium.
+        continue;
       }
       fp::EncodedSample buffer = framing_ == Framing::kChromium
                                      ? ft::ChromiumBuffer(info, sample, &storage_, &decrypt_storage_)
@@ -1181,8 +1089,6 @@ SegmentList Segments(const Media& media, size_t first, size_t end) {
   return list;
 }
 
-// Flush, feed from |first| segment, start at |time|, wait for HAVE_ENOUGH,
-// then play at |rate|. Either media may be null for a player without it.
 Step StartAt(std::shared_ptr<Player> player, const Media* video, const Media* audio, size_t first,
              size_t end, double time, double rate, bool end_of_stream) {
   return [=](Done done) {
@@ -1216,15 +1122,12 @@ void CheckHealthy(Player& player, const std::string& label) {
   Check(s.decode_failures == 0 && player.errors.empty(),
         label + ": no decode, key or enqueue errors",
         player.errors.empty() ? Format("decode failures %llu", s.decode_failures) : player.errors.front());
-  // Screen capture or an unprotected display makes AVFoundation obscure
-  // protected output; that's protection working, not a playback failure.
   if (s.output_obscured) {
     Log("%s: NOTE output obscured for insufficient external protection (screen capture or display)",
         label.c_str());
   }
 }
 
-// Plays for |seconds| and checks the synchronizer clock moved by rate * seconds.
 Step Run(std::shared_ptr<Player> player, double seconds, double rate, const std::string& label) {
   return [=](Done done) {
     double t0 = player->Time();
@@ -1260,8 +1163,6 @@ Step Metrics(std::shared_ptr<Player> player, const std::string& label, int64_t m
   };
 }
 
-// -------------------------------------------------------------- self tests
-
 void SelfTests(const Media& video, const Media& audio) {
   Log("== self tests (offline, on the downloaded vector)");
   const ft::TrackInfo& v = video.info;
@@ -1283,7 +1184,6 @@ void SelfTests(const Media& video, const Media& audio) {
             a.encryption.default_pattern.skip_byte_block == 0,
         "parser: audio tenc pattern 0:0 (whole-block encryption)");
 
-  // The core's box builders reproduce the file's protection boxes byte for byte.
   Check(fp::ProtectionSchemeInfoPayload(v.original_format, v.encryption) == v.sinf_payload,
         "core: sinf payload built from tenc fields equals the video init segment's sinf",
         Format("%zu bytes", v.sinf_payload.size()));
@@ -1294,9 +1194,6 @@ void SelfTests(const Media& video, const Media& audio) {
             std::equal(tenc.begin(), tenc.end(), v.sinf_payload.end() - 41),
         "core: tenc payload is the 41 bytes AVStreamDataParser reports");
 
-  // The core's synthesized protected sample entries, through CoreMedia's
-  // public converter, give the same format descriptions as the file's own
-  // encv/enca entries.
   auto same_format = [&](const ft::TrackInfo& t, const char* label) {
     CMFormatDescriptionRef ours = nullptr;
     CMFormatDescriptionRef file = nullptr;
@@ -1349,8 +1246,6 @@ void SelfTests(const Media& video, const Media& audio) {
   same_format(v, "video");
   same_format(a, "audio");
 
-  // Parser: senc and saiz/saio agree (ParseMediaSegment refuses otherwise),
-  // subsamples cover every video sample.
   size_t covered = 0, protected_samples = 0;
   bool saio = true;
   for (const ft::Sample& s : video.segments[0]) {
@@ -1369,7 +1264,6 @@ void SelfTests(const Media& video, const Media& audio) {
             audio.segments[0].front().decrypt->subsamples.empty(),
         "parser: audio edit list shifts the first sample to -1024 ticks; whole-sample encryption");
 
-  // Chromium framing round trip through the core's Annex B conversion.
   int round_trips = 0, keyframes = 0;
   for (size_t i = 0; i < 48 && i < video.segments[0].size(); ++i) {
     const ft::Sample& s = video.segments[0][i];
@@ -1383,7 +1277,6 @@ void SelfTests(const Media& video, const Media& audio) {
     uint32_t inserted = 0;
     if (s.is_keyframe) {
       ++keyframes;
-      // avcC: one SPS, one PPS.
       const std::vector<uint8_t>& r = v.codec_config;
       size_t sps_len = (r[6] << 8) | r[7];
       size_t pps_len = (r[8 + sps_len + 1] << 8) | r[8 + sps_len + 2];
@@ -1409,7 +1302,6 @@ void SelfTests(const Media& video, const Media& audio) {
         "sample) convert back to the ISO sample plus in-band parameter sets",
         Format("%d/48 samples, %d keyframes", round_trips, keyframes));
 
-  // ADTS.
   {
     const ft::Sample& s = audio.segments[0][1];
     std::vector<uint8_t> storage;
@@ -1424,7 +1316,6 @@ void SelfTests(const Media& video, const Media& audio) {
               "whole-sample protection (no aux data), as AVStreamDataParser emits");
   }
 
-  // Init data planning.
   auto pssh_json = [](const std::vector<uint8_t>& json) -> std::vector<uint8_t> {
     NSDictionary* root = [NSJSONSerialization JSONObjectWithData:Data(json) options:0 error:nil];
     NSString* base64 = [root isKindOfClass:[NSDictionary class]] ? root[@"pssh"] : nil;
@@ -1482,10 +1373,6 @@ void SelfTests(const Media& video, const Media& audio) {
   auto sinf = fp::PlanContentKeyRequests(fp::InitDataType::kSinf, Bytes(sinf_json));
   Check(sinf.error.empty() && sinf.calls.size() == 1 && sinf.calls[0].key_ids[0] == g_key_id,
         "init data: sinf JSON -> tenc key ID");
-  // What Safari's Media Source fires `encrypted` with, and Parc's MP4 parser
-  // reports for every protected track on Safari-identity pages
-  // (fairplay-media.patch, mp4_stream_parser.cc AddSinfInitData): compact JSON
-  // naming the track's sinf payload as stored, audio as well as video.
   for (const auto* track : {&v, &a}) {
     auto plan = fp::PlanContentKeyRequests(
         fp::InitDataType::kSinf,
@@ -1497,8 +1384,6 @@ void SelfTests(const Media& video, const Media& audio) {
           "init data: Media Source's sinf init data for each protected track -> one request "
           "for its tenc key ID, the raw SPC/CKC exchange WebKit uses");
   }
-  // WebKit's legacy com.apple.fps.2_N: the source buffer's sinf, the page's
-  // content identifier (parc_webkit_media_keys.h's sinf "contentId").
   {
     NSString* sinf64 = [Data(v.sinf_payload) base64EncodedStringWithOptions:0];
     auto legacy = fp::PlanContentKeyRequests(
@@ -1534,9 +1419,6 @@ void SelfTests(const Media& video, const Media& audio) {
           "init data: a sinf contentId that isn't non-empty base64 is ignored, as Safari ignores "
           "members besides sinf");
   }
-  // WebKit's mpts (macOS): the JSON passed through with no identifier, the
-  // request named "TransportStreamIdentifier" (extractKeyIDsMpts), the raw
-  // SPC/CKC exchange, and no 16-byte key ID for renderers.
   const std::string mpts_json = "{\"codc\":1,\"mtyp\":2,\"cont\":\"mpts\"}";
   auto mpts = fp::PlanContentKeyRequests(fp::InitDataType::kMpts, Bytes(mpts_json));
   Check(mpts.error.empty() && !mpts.json_messages && mpts.calls.size() == 1 &&
@@ -1560,10 +1442,6 @@ void SelfTests(const Media& video, const Media& audio) {
         "init data: malformed keyids/cenc/skd rejected");
 }
 
-// A FairPlay 'pssh' for the vector's key, laid out as WebKit's
-// ISOFairPlayStreamingPsshBox parses it: fpsd { fpsi(scheme), fpsk { fkri(key
-// ID), fkai(asset ID), fkvl(versions) } }. The vector itself carries only
-// PlayReady and Widevine boxes.
 std::vector<uint8_t> FairPlayPssh(const std::vector<std::vector<uint8_t>>& key_ids, uint32_t scheme) {
   auto full = [](uint32_t type, std::vector<uint8_t> payload) {
     payload.insert(payload.begin(), {0, 0, 0, 0});
@@ -1594,15 +1472,11 @@ std::vector<uint8_t> FairPlayPssh(const std::vector<uint8_t>& key_id, uint32_t s
   return FairPlayPssh(std::vector<std::vector<uint8_t>>{key_id}, scheme);
 }
 
-// --------------------------------------------------------------- scenarios
-
 struct World {
   Media video, audio, clear_video, clear_audio, hevc_video, hevc_audio, multi_video, multi_audio;
-  Media eac3_71;  // First 5 s of kDdp71.
+  Media eac3_71;
   Media hev1, hev1_in_band, hev1_vps_once, dolby_vision, dolby_vision_10, av1, av1_10bit, xhe_aac, he_aac, he_aac_v2, ac3, eac3, video_288,
       he_aac_after_clear, avc_bframes;
-  // VP9 and Vorbis from Chromium's WebM files; Dolby Vision and VP9 again
-  // after the VP9 clip, for a codec switch each way.
   Media vp9, vorbis, dolby_vision_after_vp9, vp9_after_dolby_vision;
   NSView* host = nil;
   std::unique_ptr<KeySystem> main_keys;
@@ -1613,7 +1487,6 @@ struct World {
 
 World* g_world = nullptr;
 std::string g_only;
-// Set when the harness runs in a sandbox that denies Core Audio's services.
 bool g_audio_unavailable = false;
 
 Step Section(const std::string& title) {
@@ -1633,7 +1506,7 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
     w->player = std::make_shared<Player>(name, framing, &w->video, &w->audio, w->main_keys->cdm.get(), w->host);
     done();
   });
-  auto& p = w->player;  // Captured by reference to the World slot below.
+  auto& p = w->player;
   (void)p;
   auto player = [w] { return w->player; };
   steps.push_back([=](Done done) {
@@ -1641,11 +1514,8 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
   });
   steps.push_back([=](Done done) { Run(player(), 8, 1, name + " play 8s")(done); });
   steps.push_back([=](Done done) { Metrics(player(), name + " after 8s", 150, frames)(done); });
-  // The frame counts Chromium's statistics report (the adapter takes
-  // AVFoundation's on macOS 14.4+, the core's own before) move with the clock.
   steps.push_back([=](Done done) {
     player()->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
-      // Read after the count, so no fewer frames are due than were counted.
       const double now = player()->Time();
       int64_t due = 0;
       for (const auto& segment : w->video.segments) {
@@ -1700,8 +1570,6 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
       player()->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
         const int64_t passed = m.frames_passed - paused->frames_passed;
         const int64_t total = m.total_frames - paused->total_frames;
-        // AVFoundation's total counts the frames decoded ahead of the clock,
-        // so after a pause it moves with the decoder's queue, not the clock.
         Check(passed >= 40 && (!m.available || total > 0),
               name + ": frame counts advance again in 2s after resuming",
               Format("core passed +%lld, AVFoundation total +%lld", passed, total));
@@ -1713,8 +1581,6 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
       Run(player(), 2, 1.5, name + " rate 1.5 for 2s")(done);
     });
     steps.push_back([=](Done done) {
-      // A rate change may make the audio renderer flush itself; whatever it
-      // dropped must have been enqueued again.
       fp::RendererStatus s = player()->renderer().GetStatus();
       Check(s.audio_automatic_flushes == 0 || s.redelivered > 0,
             name + ": automatic audio flushes during the rate steps were re-delivered",
@@ -1734,8 +1600,6 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
       done();
     });
   }
-  // Seek into the middle of a segment: preceding video decodes without
-  // display, preceding audio is dropped.
   auto passed_before_seek = std::make_shared<int64_t>(0);
   steps.push_back([=](Done done) {
     player()->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
@@ -1753,10 +1617,6 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
   });
   steps.push_back([=](Done done) { Run(player(), 4, 1, name + " after seek 4s")(done); });
   steps.push_back([=](Done done) { Metrics(player(), name + " after seek", 60, frames)(done); });
-  // The flush drops the samples queued ahead of the old position: from the
-  // seek on, the core counts only the new segments' samples the clock passed
-  // (those before 40 s decode without display). A few more may come due
-  // between the count before the seek and the flush.
   steps.push_back([=](Done done) {
     player()->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
       const double now = player()->Time();
@@ -1804,8 +1664,6 @@ std::vector<Step> MainScenario(Framing framing, bool full) {
   return steps;
 }
 
-// |chromium_inputs|: Chromium's configs, so the protected formats must be
-// built from the first encrypted sample's key ID, after clear ones.
 std::vector<Step> MixedScenario(bool chromium_inputs = false) {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
@@ -1850,7 +1708,6 @@ std::vector<Step> MixedScenario(bool chromium_inputs = false) {
   return steps;
 }
 
-// The default output device's Core Audio UID.
 std::string DefaultOutputDeviceUid() {
   AudioObjectPropertyAddress address = {kAudioHardwarePropertyDefaultOutputDevice,
                                         kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
@@ -1870,10 +1727,6 @@ std::string DefaultOutputDeviceUid() {
   return result;
 }
 
-// A page that loses its compositor has its display layer taken out of every
-// layer tree, then put back. Playback must carry on without a seek; if the
-// layer reports requiresFlushToResumeDecoding, the renderer re-feeds it from
-// the last keyframe itself.
 std::vector<Step> LayerDetachScenario() {
   World* w = g_world;
   auto before = std::make_shared<fp::RendererStatus>();
@@ -1924,8 +1777,6 @@ std::vector<Step> LayerDetachScenario() {
   return steps;
 }
 
-// Initialize that fails on its config, retried at once and later: exactly one
-// natural size per successful attempt, never the failed attempt's.
 std::vector<Step> InitializeRetryScenario() {
   World* w = g_world;
   std::vector<Step> steps;
@@ -1943,16 +1794,13 @@ std::vector<Step> InitializeRetryScenario() {
     steps.push_back([=](Done done) {
       auto client = std::make_shared<CountingClient>();
       auto renderer = std::make_shared<fp::FairPlayRenderer>(client.get(), MainPoster());
-      // Same task: the failed attempt's size differs, so a stale report shows.
-      // Later: both attempts have the same size, so a size left recorded by
-      // the failed attempt would make the retry report none.
       fp::VideoConfig failed_video = VideoConfigFor(w->video.info, Framing::kChromium, true);
       if (same_task) {
         failed_video.natural_width = 111;
         failed_video.natural_height = 77;
       }
       fp::AudioConfig bad_audio = AudioConfigFor(w->audio.info, Framing::kChromium, true);
-      bad_audio.extra_data.clear();  // AAC needs its AudioSpecificConfig.
+      bad_audio.extra_data.clear();
       const fp::VideoConfig vc = VideoConfigFor(w->video.info, Framing::kChromium, true);
       const fp::AudioConfig ac = AudioConfigFor(w->audio.info, Framing::kChromium, true);
       const std::string label = same_task ? "retried in the same task" : "retried later";
@@ -1981,9 +1829,6 @@ std::vector<Step> InitializeRetryScenario() {
   return steps;
 }
 
-// Run inside a sandbox that denies Core Audio's services: the audio
-// renderer is invalid and the synchronizer refuses it, which must fail
-// Initialize with an error instead of throwing out of it.
 std::vector<Step> AudioUnavailableScenario() {
   World* w = g_world;
   std::vector<Step> steps;
@@ -2022,8 +1867,6 @@ std::vector<Step> AudioUnavailableScenario() {
     }
     done();
   });
-  // SetCdm, a failed Initialize, then a retry without audio: the CDM must
-  // still be attached, and only the retry reports a natural size.
   steps.push_back([=](Done done) {
     struct CountingClient : fp::FairPlayRendererClient {
       int sizes = 0;
@@ -2067,9 +1910,6 @@ std::vector<Step> AudioUnavailableScenario() {
   return steps;
 }
 
-// Moving audio to another output (setSinkId) makes AVSampleBufferAudioRenderer
-// flush itself; the renderer must enqueue what was dropped again, or the
-// queued duration plays as silence and the clock runs ahead of the audio.
 std::vector<Step> AudioDeviceSwitchScenario() {
   World* w = g_world;
   auto before = std::make_shared<fp::RendererStatus>();
@@ -2081,9 +1921,6 @@ std::vector<Step> AudioDeviceSwitchScenario() {
     StartAt(w->player, &w->video, &w->audio, 0, 5, 0, 1, false)(done);
   });
   steps.push_back([=](Done done) { Run(w->player, 2, 1, "device-switch before the switch")(done); });
-  // "" first is a no-op (still following the default). Naming the device in
-  // use flushes the audio renderer on this Mac, which must be re-delivered.
-  // "" afterwards names the default device again (no flush expected).
   enum class Expect { kNoFlush, kFlush, kEither };
   struct Switch {
     bool explicit_device;
@@ -2135,8 +1972,6 @@ std::vector<Step> AudioDeviceSwitchScenario() {
   return steps;
 }
 
-// A private aggregate device over the default output, which this process
-// alone sees and can make disappear, as an unplugged headset does.
 struct DisposableOutputDevice {
   DisposableOutputDevice() {
     const std::string main = DefaultOutputDeviceUid();
@@ -2161,12 +1996,6 @@ struct DisposableOutputDevice {
   std::string uid;
 };
 
-// HTMLMediaElement.setSinkId on Media Source, as WebKit's
-// AudioVideoRendererAVFObjC::setOutputDeviceId: a device named before there
-// is audio is kept for every audio renderer made later (a track joining, a
-// second one mixed in). WebKit leaves a device going away to AVFoundation,
-// which fails the audio renderers and stops the clock; the renderer moves
-// them to the default device first, so playback goes on there.
 std::vector<Step> AudioOutputDeviceScenario() {
   World* w = g_world;
   auto device = std::make_shared<std::unique_ptr<DisposableOutputDevice>>();
@@ -2227,11 +2056,6 @@ std::vector<Step> AudioOutputDeviceScenario() {
   return steps;
 }
 
-// Streams joining a playing renderer, as a SourceBuffer added after the
-// others does in Safari (AudioVideoRendererAVFObjC::addTrack): the display
-// layer and the other renderers stay, the clock waits for the new stream's
-// samples (and video for a decoded frame) and runs on from where it was, and
-// a second audio track plays mixed with the first until it is removed.
 std::vector<Step> LateStreamsScenario() {
   World* w = g_world;
   auto layer = std::make_shared<void*>(nullptr);
@@ -2241,7 +2065,6 @@ std::vector<Step> LateStreamsScenario() {
   auto underflows = std::make_shared<int>(0);
   auto track = std::make_shared<uint32_t>(0);
   std::vector<Step> steps;
-  // Joins with |join| and waits for HAVE_NOTHING, then HAVE_ENOUGH.
   auto join = [=](const std::string& label, std::function<fp::Result()> join) -> Step {
     return [=](Done done) {
       *before = w->player->renderer().GetStatus();
@@ -2331,8 +2154,6 @@ std::vector<Step> LateStreamsScenario() {
     w->player->RemoveAudio(*track);
     s = w->player->renderer().GetStatus();
     Check(s.audio_renderers == 1, "second-audio: RemoveAudio takes its renderer off the synchronizer");
-    // Checked right after: playback here (as on main) can blip HAVE_NOTHING
-    // for a moment at a segment's end, unrelated to the removal.
     After(0.3, [=] {
       Check(w->player->underflows == *underflows, "second-audio: removing a track doesn't stall the others");
       Run(w->player, 2, 1, "second-audio after removing it")(done);
@@ -2375,19 +2196,14 @@ std::vector<Step> LateStreamsScenario() {
   return steps;
 }
 
-// What someone watching a player sees, polled every 20 ms: polls with no
-// picture in its layer, the longest wall time the clock stood still while
-// it should run, and when a single display layer was left in it.
 struct Sight {
   int polls = 0;
   int blank = 0;
   double longest_still = 0;
-  // The most the clock moved ahead of the wall clock between two polls, and
-  // whether it ever went back.
   double largest_jump = 0;
   bool went_back = false;
   double back_by = 0;
-  double one_layer_after = -1;  // Wall seconds after watching started.
+  double one_layer_after = -1;
   double started = 0;
   double last_time = -1;
   double last_wall = 0;
@@ -2455,7 +2271,6 @@ void StopWatching(const std::shared_ptr<Sight>& sight) {
   sight->timer = nil;
 }
 
-// The end of segment |segment| of |media|: the next one's first sample.
 double SegmentEnd(const Media& media, size_t segment) {
   const auto& next = media.segments[segment + 1];
   double first = std::numeric_limits<double>::infinity();
@@ -2463,29 +2278,19 @@ double SegmentEnd(const Media& media, size_t segment) {
   return first;
 }
 
-// The segment of |media| holding |time|.
 size_t SegmentAt(const Media& media, double time) {
   size_t segment = 0;
   while (segment + 2 < media.segments.size() && SegmentEnd(media, segment) <= time) ++segment;
   return segment;
 }
 
-// FairPlay keys reaching a renderer that already played without them (a
-// clear lead or a clear Dolby Vision start, then setMediaKeys), as Safari
-// takes them per sample: new renderers join the key session and take over on
-// the same clock (FairPlayRenderer::SetCdm), so the picture, the sound and
-// the clock carry on, with no HAVE_NOTHING (the page's waiting) and no
-// restart.
 std::vector<Step> HandOffScenario() {
   World* w = g_world;
-  const double clear_end = SegmentEnd(w->video, 0);  // The same encode.
+  const double clear_end = SegmentEnd(w->video, 0);
   auto sight = std::make_shared<std::shared_ptr<Sight>>();
   auto before = std::make_shared<fp::RendererStatus>();
   auto underflows = std::make_shared<int>(0);
   auto frames = std::make_shared<int64_t>(0);
-  // The longest the clock stands still between polls in plain playback: the
-  // synchronizer's timebase reads back in steps, up to about 85 ms here from
-  // run to run, so a hand-off may show that much plus a poll.
   auto control = std::make_shared<double>(0.085);
   auto device = std::make_shared<std::string>();
   std::vector<Step> steps;
@@ -2494,7 +2299,6 @@ std::vector<Step> HandOffScenario() {
       w->player = std::make_shared<Player>(name, Framing::kChromium, &w->video, &w->audio, nullptr, w->host);
       w->player->adapter_reads = true;
       if (name == "hand-off") {
-        // setSinkId before playback: the renderers taking over keep the device.
         *device = DefaultOutputDeviceUid();
         fp::Result named = w->player->renderer().SetAudioOutputDevice(*device);
         Check(named.ok(), name + ": an output device named before playback", named.message);
@@ -2516,7 +2320,6 @@ std::vector<Step> HandOffScenario() {
       });
     };
   };
-  // Attaches the keys, watching from just before.
   auto attach = [=](const std::string& name, bool clock_runs) -> Step {
     return [=](Done done) {
       *before = w->player->renderer().GetStatus();
@@ -2525,7 +2328,6 @@ std::vector<Step> HandOffScenario() {
       CALayer* playing = w->player->layer().sublayers.firstObject;
       fp::Result result = w->player->renderer().SetCdm(w->main_keys->cdm.get());
       Check(result.ok(), name + ": SetCdm after media was processed is taken in place", result.message);
-      // Below the playing one, which leaves once it has a frame (maybe at once).
       CALayer* joined = w->player->layer().sublayers.firstObject;
       Check(joined != playing && [joined isKindOfClass:[AVSampleBufferDisplayLayer class]],
             name + ": a new display layer joins the key session in the same host");
@@ -2549,8 +2351,6 @@ std::vector<Step> HandOffScenario() {
       Check(v.one_layer_after >= 0 && v.one_layer_after < max_layer_seconds,
             name + Format(": the outgoing display layer leaves once the new one has a frame (%.3fs)",
                           v.one_layer_after));
-      // AVFoundation sometimes flushes an audio renderer by itself (seen also
-      // in plain playback here); the re-delivery mustn't queue twice.
       Check(s.audio_renderers == 1 && s.audio_double_enqueues == before->audio_double_enqueues,
             name + ": one audio renderer plays on, no sample queued twice",
             Format("%zu renderers, double enqueues %llu -> %llu, automatic flushes %llu", s.audio_renderers,
@@ -2569,8 +2369,6 @@ std::vector<Step> HandOffScenario() {
   steps.push_back(Section(Format("keys during the clear lead (ends %.3fs): new renderers take over seamlessly",
                                  clear_end)));
   steps.push_back(start("hand-off", 4));
-  // Control: the same watch over plain playback, for what the clock does
-  // without a hand-off.
   steps.push_back([=](Done done) {
     *sight = Watch(w->player, true);
     Run(w->player, 2, 1, "hand-off clear lead")([=] {
@@ -2659,9 +2457,6 @@ std::vector<Step> HandOffScenario() {
     });
   });
 
-  // The page's MediaKeys replaced during playback (setMediaKeys with new
-  // ones, or a legacy session's): the new CDM's renderers take over the same
-  // way, and the old CDM's keys play what the outgoing ones hold.
   auto other = std::make_shared<std::unique_ptr<KeySystem>>();
   steps.push_back(Section("MediaKeys replaced during protected playback"));
   steps.push_back([=](Done done) {
@@ -2683,7 +2478,6 @@ std::vector<Step> HandOffScenario() {
     fp::Result result = w->player->renderer().SetCdm(w->main_keys->cdm.get());
     Check(result.ok(), "replaced: another CDM is taken during playback", result.message);
     Check(w->player->layer().sublayers.firstObject != playing, "replaced: a new display layer joins its key session");
-    // setSinkId mid hand-off: the outgoing renderer, still playing, moves too.
     *device = DefaultOutputDeviceUid();
     fp::Result named = w->player->renderer().SetAudioOutputDevice(*device);
     fp::RendererStatus s = w->player->renderer().GetStatus();
@@ -2696,7 +2490,6 @@ std::vector<Step> HandOffScenario() {
   });
   steps.push_back(seen("replaced", 1.5));
   steps.push_back([=](Done done) {
-    // Only the new MediaKeys' keys are left; play past what was held.
     *before = w->player->renderer().GetStatus();
     (*other)->cdm->CloseSession((*other)->session, [=](const fp::Result& closed) {
       Check(closed.ok(), "replaced: the old MediaKeys' session closes", closed.message);
@@ -2745,13 +2538,6 @@ std::vector<Step> HandOffScenario() {
   return steps;
 }
 
-// A video track switch (the page's or the player's videoTracks): the same
-// layer decodes the new track from the keyframe before the current time and
-// the clock waits for its frame, as Safari's AudioVideoRendererAVFObjC
-// flushes its video renderer for a new track. The flush keeps the displayed
-// image (AVFoundation's flush, not flushAndRemoveImage), though
-// readyForDisplay turns false until the new frame, so the polls can't see the
-// picture; they count those polls.
 std::vector<Step> VideoSwitchScenario() {
   World* w = g_world;
   auto sight = std::make_shared<std::shared_ptr<Sight>>();
@@ -2801,9 +2587,6 @@ std::vector<Step> VideoSwitchScenario() {
   steps.push_back(seen("video-switch to clear"));
   steps.push_back(switch_to("video-switch back", &w->video));
   steps.push_back(seen("video-switch back"));
-  // The page turns its video track off: the disabled stream answers end of
-  // stream, and audio and the clock play on. Turned back on, the track comes
-  // back at the current time in the same layer.
   steps.push_back(Section("video track turned off, then back on"));
   steps.push_back([=](Done done) {
     *underflows = w->player->underflows;
@@ -2823,20 +2606,12 @@ std::vector<Step> VideoSwitchScenario() {
   return steps;
 }
 
-// The host clock (mach absolute time) in microseconds, base::TimeTicks'.
 int64_t HostNowUs() {
   return CMTimeConvertScale(CMClockGetTime(CMClockGetHostTimeClock()), 1000000,
                             kCMTimeRoundingMethod_RoundTowardZero)
       .value;
 }
 
-// Taking over from Chromium's renderer (PipelineImpl's hand-off), the
-// FairPlay Renderer prerolls paused at the split while the other plays up to
-// it. How far its clock trails the other's line once past the split is the
-// gap someone sees (the last frame held) and hears (silence) at the swap.
-// Set playing only once the other reaches the split, as the pipeline did
-// before, it trails by its start (40-65 ms here); on the other's clock
-// (SetPlaybackRateAt) it must not.
 std::vector<Step> HandOffStartScenario() {
   World* w = g_world;
   const double frame = double(w->video.segments[0][0].duration) / w->video.info.timescale;
@@ -2865,16 +2640,12 @@ std::vector<Step> HandOffStartScenario() {
       w->player->renderer().Flush([=] {
         const size_t first = SegmentAt(w->video, split);
         w->player->SetFeeds(Segments(w->video, first, first + 2), Segments(w->audio, first, first + 2), false);
-        // The other renderer reaches the split at host time *reach (µs).
         auto reach = std::make_shared<int64_t>(0);
         auto follow = [=](double rate, int64_t at) {
           const int64_t now = HostNowUs();
           const double time = split - double(at - now) * 1e-6;
           w->player->renderer().SetPlaybackRateAt(rate, fp::MediaTime::FromMicroseconds(int64_t(time * 1e6)), now);
         };
-        // Samples the clock against the other's line until 0.6 s past the
-        // split: from it on (a clock held there, then caught up, counts the
-        // hold), and before it once the clock is past the split (early).
         auto measure = [=](Done measured) {
           auto lags = std::make_shared<std::vector<double>>();
           auto sample = std::make_shared<std::function<void()>>();
@@ -2886,7 +2657,6 @@ std::vector<Step> HandOffStartScenario() {
               lags->push_back(line - t);
             }
             if (host <= *reach + 600000) {
-              // The pending call owns the sampler; it holds itself weakly.
               if (auto next = weak.lock()) {
                 After(0.004, [next] { (*next)(); });
               }
@@ -2908,7 +2678,6 @@ std::vector<Step> HandOffStartScenario() {
                     Format("%s: the picture carries on within a frame (%.1f ms) of the other's last", label.c_str(),
                            frame * 1e3),
                     Format("worst %.1f ms", worst * 1e3));
-              // The synchronizer's clock, which AVFoundation plays the audio by.
               Check(worst < 0.005, Format("%s: the clock is within 5 ms of the other's, so no silence at the switch",
                                           label.c_str()),
                     Format("worst %.1f ms", worst * 1e3));
@@ -2919,7 +2688,6 @@ std::vector<Step> HandOffStartScenario() {
         };
         auto ready = Once(10, label + ": HAVE_ENOUGH paused at the split", [=](bool) {
           if (mode == Mode::kOnClockBeforeReady) {
-            // Already on the line, before the split.
             Check(HostNowUs() < *reach && w->player->Time() <= split + 0.002,
                   Format("%s: prerolled before the other reaches the split (%.3fs)", label.c_str(),
                          w->player->Time()));
@@ -2944,8 +2712,6 @@ std::vector<Step> HandOffStartScenario() {
             case Mode::kOnClockPaused:
               *reach = HostNowUs() + 300000;
               follow(1, *reach);
-              // The other pauses about 0.2 s before the split for 0.25 s,
-              // then plays on from where it paused.
               After(0.1, [=] {
                 follow(0, *reach);
                 const double paused = w->player->Time();
@@ -2960,7 +2726,6 @@ std::vector<Step> HandOffStartScenario() {
               });
               break;
             case Mode::kLate:
-              // The other passed the split long before: it plays from there.
               WaitUntil(1, [=] { return w->player->Time() > split + 0.05; }, [=](bool moved) {
                 Check(moved && w->player->Time() < split + 0.3,
                       Format("%s: plays from the split (%.3fs)", label.c_str(), w->player->Time()));
@@ -2970,7 +2735,6 @@ std::vector<Step> HandOffStartScenario() {
           }
         });
         w->player->on_have_enough = [ready] { ready(true); };
-        // Paused (rate 0) at the split, as PipelineImpl's ParcOnSplit leaves it.
         w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(int64_t(split * 1e6)));
         if (mode == Mode::kOnClockBeforeReady) {
           *reach = HostNowUs() + 700000;
@@ -3033,8 +2797,6 @@ std::vector<Step> UnderflowScenario() {
   return steps;
 }
 
-// Responses a page could send: each must be rejected (TypeError) without
-// touching AVFoundation, then the real response still works.
 std::vector<Step> ResponseValidationScenario() {
   World* w = g_world;
   auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
@@ -3096,7 +2858,6 @@ std::vector<Step> ResponseValidationScenario() {
                  int(cases.size())),
           failures->empty() ? "" : "accepted: " + *failures);
     Check(!ks->cdm->HasUsableKey(g_key_id), "responses: no key from a malformed response");
-    // The real license still goes through afterwards.
     auto finish = Once(30, "responses: real license after the malformed ones", [=](bool) { done(); });
     ks->client->on_update = [=](bool ok, const std::string& detail) {
       Check(ok && ks->cdm->HasUsableKey(g_key_id),
@@ -3114,8 +2875,6 @@ std::vector<Step> ResponseValidationScenario() {
   return steps;
 }
 
-// Chromium's CompleteSeek: StartPlayingFrom and SetPlaybackRate in one task.
-// The clock must stay at the seek time until HAVE_ENOUGH, then run.
 std::vector<Step> SeekOrderScenario() {
   World* w = g_world;
   struct Probe {
@@ -3170,7 +2929,6 @@ std::vector<Step> SeekOrderScenario() {
   });
   steps.push_back([=](Done done) {
     w->player->renderer().Flush([=] {
-      // Video ends before the seek target; only audio has a picture-free tail.
       w->player->SetFeeds(Segments(w->video, 0, 1), Segments(w->audio, 6, 10), true);
       w->player->batch_reads = true;
       auto finish = Once(10, "seek-order: audio tail readiness", [=](bool ok) {
@@ -3189,9 +2947,6 @@ std::vector<Step> SeekOrderScenario() {
   return steps;
 }
 
-// A short final chunk after an underflow (or a short ad, or a seek into the
-// last second): too little for AVFoundation's sufficiency test, so end of
-// stream must count as HAVE_ENOUGH or the clock never restarts.
 std::vector<Step> ShortEndScenario() {
   World* w = g_world;
   auto tail_video = std::make_shared<std::vector<ft::Sample>>();
@@ -3243,17 +2998,9 @@ std::vector<Step> ShortEndScenario() {
 
 double EndSeconds(const Media& media);
 
-// Tasks queued before a Flush must not land after it: an OnEnded queued by
-// the end of stream (a seek near the end) or by the end-time observer, and
-// OnNeedData queued by StartPlayingFrom or by an answered media request. Each
-// held callback also gets a control run without the Flush, which must
-// deliver it.
 std::vector<Step> FlushRaceScenario() {
   World* w = g_world;
   const double end = std::max(EndSeconds(w->video), EndSeconds(w->audio));
-  // Holds the core's posts until a media request has been answered (a
-  // renderer ready again, its hand-over held), then releases them, after a
-  // Flush when |flush|.
   auto held_request = [w](bool flush) -> Step {
     return [w, flush](Done done) {
       const std::string run = flush ? "with a Flush" : "control, no Flush";
@@ -3262,7 +3009,6 @@ std::vector<Step> FlushRaceScenario() {
         return w->player->renderer().IsReadyForMoreData(fp::StreamType::kVideo) ||
                w->player->renderer().IsReadyForMoreData(fp::StreamType::kAudio);
       };
-      // Hand-overs queued before the hold run first and refill the renderers.
       After(0.3, [=] {
         const int at_hold = w->player->need_data_calls;
         WaitUntil(5, fired, [=](bool ok) {
@@ -3289,9 +3035,6 @@ std::vector<Step> FlushRaceScenario() {
       });
     };
   };
-  // Queues the final segment while paused, through end of stream, so the
-  // end observer is armed before holding posts and starting the clock.
-  // Backpressure during playback must not decide whether this race is tested.
   auto near_end = [w, end](Done done) {
     w->player->ended = false;
     w->player->batch_reads = true;
@@ -3338,7 +3081,6 @@ std::vector<Step> FlushRaceScenario() {
     w->player = std::make_shared<Player>("flush-race", Framing::kChromium, &w->video, &w->audio,
                                          w->main_keys->cdm.get(), w->host);
     w->player->renderer().Flush([=] {
-      // Nothing to play: end of stream on both, then Flush in that same task.
       w->player->SetFeeds({}, {}, true);
       w->player->flush_at_end_of_stream = true;
       w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
@@ -3362,8 +3104,6 @@ std::vector<Step> FlushRaceScenario() {
       });
     });
   });
-  // A media request AVFoundation already answered (its hand-over queued)
-  // when the Flush comes: dropped, and the next start still gets data.
   steps.push_back([=](Done done) {
     StartAt(w->player, &w->video, &w->audio, 0, w->segments, 0, 1, false)(done);
   });
@@ -3386,8 +3126,6 @@ std::vector<Step> FlushRaceScenario() {
       done();
     });
   });
-  // The end-of-stream boundary observer fired before a Flush (its OnEnded
-  // queued): dropped after it.
   steps.push_back(near_end);
   steps.push_back(held_end(false));
   steps.push_back(near_end);
@@ -3399,8 +3137,6 @@ std::vector<Step> FlushRaceScenario() {
   return steps;
 }
 
-// Callbacks never run inside a call into the key system, so a client can
-// re-enter it: here the session is closed from inside OnSessionKeysChange.
 std::vector<Step> ReentrancyScenario() {
   World* w = g_world;
   auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
@@ -3435,8 +3171,6 @@ std::vector<Step> ReentrancyScenario() {
   return steps;
 }
 
-// Two update() calls back to back (licenses fetched in parallel): the second
-// waits for the first instead of being rejected.
 std::vector<Step> QueuedUpdateScenario() {
   World* w = g_world;
   auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
@@ -3498,9 +3232,6 @@ std::vector<Step> QueuedUpdateScenario() {
   return steps;
 }
 
-// A request AVFoundation can't serve (a FairPlay pssh with no key entry) gets
-// no delegate call, so generateRequest stays pending, as WebKit's
-// requestLicense does: the key session has no timeout of its own.
 std::vector<Step> NoHangScenario() {
   World* w = g_world;
   auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
@@ -3527,11 +3258,6 @@ std::vector<Step> NoHangScenario() {
   return steps;
 }
 
-// Safari's persistent-usage-record sessions (WebKit's
-// CDMInstanceSessionFairPlayStreamingAVFObjC::isLicenseTypeSupported):
-// refused without persistent state, otherwise a license round trip like a
-// temporary session's, with the key session's storage in a directory the CDM
-// creates (WebKit's setStorageDirectory).
 std::vector<Step> PersistentUsageRecordScenario() {
   World* w = g_world;
   auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
@@ -3577,9 +3303,6 @@ std::vector<Step> PersistentUsageRecordScenario() {
           if (!r.ok()) finish(false);
         });
   });
-  // remove(): as in Safari on macOS, AVFoundation's reports are named by the
-  // shared key session, never by an EME session's ID, so none matches: the
-  // keys are revoked, the statuses become empty, no license-release message.
   steps.push_back([=](Done done) {
     KeySystem* ks = keys->get();
     ks->client->hold = true;
@@ -3608,8 +3331,6 @@ std::vector<Step> PersistentUsageRecordScenario() {
       });
     });
   });
-  // A temporary session has nothing to remove (WebKit's removeSessionData
-  // fails after expiring its keys): no keys, NotSupported.
   steps.push_back([=](Done done) {
     KeySystem* ks = keys->get();
     ks->client->hold = false;
@@ -3635,9 +3356,6 @@ std::vector<Step> PersistentUsageRecordScenario() {
                      });
                    });
   });
-  // load() is WebKit's loadSession: refused for a temporary session, a
-  // TypeError without persistent state or storage, false for an ID no report
-  // carries.
   steps.push_back([=](Done done) {
     KeySystem* ks = keys->get();
     ks->cdm->LoadSession(fp::SessionType::kTemporary, std::string(32, 'A'),
@@ -3663,12 +3381,6 @@ std::vector<Step> PersistentUsageRecordScenario() {
       done();
     });
   });
-  // A report AVFoundation wrote. Expiring a key session that has storage
-  // (Parc does when the CDM goes away) leaves its expired-session report,
-  // named by that key session's own identifier, which no EME session carries
-  // (as in Safari on macOS). Loading that name runs the rest of WebKit's path:
-  // load() reports the report's key, remove() sends the report as the
-  // license-release message, "acknowledged" removes it from the storage.
   auto playback_id = std::make_shared<std::string>();
   auto reports_named = [storage](const std::string& id) {
     NSURL* url = [NSURL fileURLWithPath:[storage stringByAppendingPathComponent:@"SecureStop.plist"]
@@ -3704,8 +3416,6 @@ std::vector<Step> PersistentUsageRecordScenario() {
           break;
         }
       }
-      // AVFoundation decides when it writes a report (it may want playback),
-      // so its absence only skips the steps that need one.
       Log("usage-record: expired-session report after the CDM went away: %s",
           playback_id->empty() ? "none (load/remove/acknowledged with a report skipped)"
                                : playback_id->c_str());
@@ -3783,8 +3493,6 @@ std::vector<Step> PersistentUsageRecordScenario() {
   return steps;
 }
 
-// License renewal while playing: the answered key stays usable while the
-// renewal is in flight, after it succeeds, and after a failed one.
 std::vector<Step> RenewalScenario() {
   World* w = g_world;
   auto keys = std::make_shared<std::unique_ptr<KeySystem>>();
@@ -3850,9 +3558,6 @@ std::vector<Step> RenewalScenario() {
   return steps;
 }
 
-// Chromium's order when MediaKeys come first: SetCdm, then Initialize. The
-// renderers must still join the key session (protected samples would
-// otherwise fail with -11800 "no content key present").
 std::vector<Step> CdmFirstScenario() {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
@@ -3880,7 +3585,6 @@ std::vector<Step> WaitingForKeyScenario() {
   steps.push_back([=](Done done) {
     *keys = MakeKeySystem("late-keys");
     w->player = std::make_shared<Player>("late", Framing::kChromium, &w->video, &w->audio, (*keys)->cdm.get(), w->host);
-    // Fill the held queue rather than stopping at the first missing key.
     w->player->batch_reads = true;
     w->player->renderer().Flush([=] {
       w->player->SetFeeds(Segments(w->video, 0, 3), Segments(w->audio, 0, 3), false);
@@ -3926,9 +3630,6 @@ std::vector<Step> WaitingForKeyScenario() {
   return steps;
 }
 
-// Whole GOPs from the start of |segment|: video in decode order up to the
-// first keyframe at least |min_seconds| in (so every frame decodes), and the
-// audio that ends by the last video frame's end.
 struct Clip {
   std::vector<ft::Sample> video, audio;
   double start = 0, end = 0;
@@ -3950,9 +3651,8 @@ Clip ClipFrom(const Media& video, const Media& audio, size_t segment, double min
   return clip;
 }
 
-// Timeline of one player's buffering and end, for checks made after the fact.
 struct Timeline {
-  double enough_time = -1;  // Media time at the last HAVE_ENOUGH.
+  double enough_time = -1;
   double enough_wall = 0;
   bool enough_before_key = false;
   int enough_after_key = 0;
@@ -3963,8 +3663,6 @@ struct Timeline {
   std::function<void()> on_enough, on_nothing, on_ended;
 };
 
-// Records every HAVE_ENOUGH, HAVE_NOTHING and OnEnded of |player| into
-// |line|. The player's hooks fire once, so each re-arms them.
 void Record(Player* player, std::shared_ptr<Timeline> line) {
   player->on_have_enough = [player, line] {
     line->enough_time = player->Time();
@@ -3986,7 +3684,6 @@ void Record(Player* player, std::shared_ptr<Timeline> line) {
   };
 }
 
-// Runs |done| now if |happened|, else when |slot| fires (or after |timeout|).
 void WaitFor(bool happened, std::function<void()>* slot, double timeout, const std::string& label,
              std::function<void(bool)> done) {
   auto finish = Once(timeout, label, done);
@@ -3997,11 +3694,6 @@ void WaitFor(bool happened, std::function<void()>* slot, double timeout, const s
   }
 }
 
-// A short clip (an ad, or a seek into the last seconds) enqueued in full
-// with end of stream on both streams before its license arrives. Nothing
-// counts as enough while its samples wait for the key, so the clock stays at
-// the start despite rate 1; once the key arrives it plays from the start and
-// ends at the clip's end, on time.
 std::vector<Step> EndBeforeKeyScenario() {
   World* w = g_world;
   auto clip = std::make_shared<Clip>(ClipFrom(w->video, w->audio, 0, 2.0));
@@ -4037,7 +3729,6 @@ std::vector<Step> EndBeforeKeyScenario() {
         }
       });
       dispatch_resume(probe->timer);
-      // Chromium's CompleteSeek order.
       w->player->renderer().StartPlayingFrom(fp::MediaTime::FromMicroseconds(int64_t(clip->start * 1e6)));
       w->player->renderer().SetPlaybackRate(1);
       After(hold, done);
@@ -4062,7 +3753,6 @@ std::vector<Step> EndBeforeKeyScenario() {
                    [=](bool) { done(); });
   });
   steps.push_back([=](Done done) {
-    // The clock starts once the key lets the samples reach the renderers.
     PollUntil(CFAbsoluteTimeGetCurrent() + 10, [=] { return w->player->Time() > clip->start + 0.05; },
               [=](bool ok) {
                 Check(ok, "eos-before-key: the clock starts once the key arrives");
@@ -4102,12 +3792,6 @@ std::vector<Step> EndBeforeKeyScenario() {
   return steps;
 }
 
-// A clear lead, then a protected tail whose key hasn't arrived, then end of
-// stream (a key change in the last period). As in WebKit, the held tail
-// doesn't stop the clock: it runs on over the frozen picture and the element
-// ends at the tail's end without the key. Video only, as before: resuming
-// audio onto protected samples after clear ones moved the synchronizer's
-// clock back to about zero, a separate defect.
 std::vector<Step> HeldTailScenario() {
   World* w = g_world;
   auto tail = std::make_shared<Clip>(ClipFrom(w->video, w->audio, 1, 1.5));
@@ -4124,8 +3808,6 @@ std::vector<Step> HeldTailScenario() {
     w->player->renderer().Flush([=] {
       w->player->SetFeeds({&w->clear_video.segments[0]}, {}, false);
       WaitFor(false, &line->on_enough, 10, "held-tail: HAVE_ENOUGH on the clear lead", [=](bool) {
-        // The rest arrives in one batch: the protected tail, held for its
-        // key, then end of stream.
         w->player->batch_reads = true;
         w->player->AppendFeeds({&tail->video}, {}, true);
         done();
@@ -4134,9 +3816,6 @@ std::vector<Step> HeldTailScenario() {
       w->player->renderer().SetPlaybackRate(1);
     });
   });
-  // WebKit: a sample held for a key doesn't stop the clock; it runs on over
-  // the frozen picture to the buffered end, which with end of stream is the
-  // end, and the element ends there.
   steps.push_back([=](Done done) {
     WaitFor(line->ended_time >= 0, &line->on_ended, tail->end - tail->start + 8,
             "held-tail: OnEnded at the tail's end without the key", [=](bool ok) {
@@ -4161,11 +3840,6 @@ std::vector<Step> HeldTailScenario() {
   return steps;
 }
 
-// setMediaKeys(null) during playback, then the same MediaKeys again, as
-// WebKit's renderer takes them (AudioVideoRendererAVFObjC::setCDMInstance):
-// what AVFoundation already has plays out with its keys, protected samples
-// from then on, including ones a flush makes the renderer deliver again, wait
-// for a key, and the same CDM lets them through.
 std::vector<Step> DetachCdmScenario() {
   World* w = g_world;
   struct Detached {
@@ -4196,9 +3870,6 @@ std::vector<Step> DetachCdmScenario() {
   steps.push_back([=](Done done) { Run(w->player, 2, 1, "detach: play 2s with keys")(done); });
   steps.push_back([=](Done done) { Metrics(w->player, "detach: before the detach", 1, frames)(done); });
 
-  // Paused, so the audio queued ahead of the clock stays ahead: naming the
-  // device in use flushes the audio renderer on this Mac
-  // (AudioDeviceSwitchScenario), and its re-delivery must wait for the keys.
   steps.push_back([=](Done done) {
     w->player->renderer().SetPlaybackRate(0);
     detach(0);
@@ -4225,7 +3896,6 @@ std::vector<Step> DetachCdmScenario() {
   });
   steps.push_back([=](Done done) { Run(w->player, 1, 1, "detach: play 1s after the flushed audio returns")(done); });
 
-  // Playing: what AVFoundation has plays out; what comes next waits.
   steps.push_back([=](Done done) {
     w->player->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
       detach(m.frames_passed);
@@ -4305,11 +3975,6 @@ std::vector<Step> InitDataScenario(fp::InitDataType type, std::vector<uint8_t> i
   return steps;
 }
 
-// Netflix's flow: one generateRequest("cenc") naming three keys, one JSON
-// message carrying three SPCs, one JSON response with three CKCs, then video
-// and audio under different keys. |with_fairplay| adds a FairPlay pssh for the
-// three keys to the vector's PlayReady/Widevine boxes (Netflix's init data
-// carries one); without it the core falls back to the Widevine key IDs.
 std::vector<Step> MultiKeyScenario(bool with_fairplay) {
   World* w = g_world;
   std::string label = with_fairplay ? "multikey cenc+fairplay pssh" : "multikey cenc (widevine key IDs)";
@@ -4337,9 +4002,6 @@ std::vector<Step> MultiKeyScenario(bool with_fairplay) {
     Log("%s: cenc init data %zu bytes", label.c_str(), init_data.size());
     *keys = MakeKeySystem(label, kMultiKeyToken);
     int messages_before = 0;
-    // The message is held to check it names each key once, and that a
-    // response naming a key twice is still rejected before anything reaches
-    // AVFoundation; then the real exchange runs.
     (*keys)->client->hold = true;
     (*keys)->client->on_message = [=] {
       KeySystem* ks = keys->get();
@@ -4362,10 +4024,6 @@ std::vector<Step> MultiKeyScenario(bool with_fairplay) {
       for (const auto& id : named) names += (names.empty() ? "" : ", ") + ft::Hex(id);
       Check(each_once, label + ": the license message has one SPC per key, each named by its own key ID",
             "[" + names + "]");
-      // Two responses that name a key twice: alone, and among all three.
-      // Each must be rejected before any entry reaches AVFoundation. If an
-      // entry got through, its request would no longer await a response, and
-      // the real exchange that follows could not complete.
       std::vector<std::string> cases;
       if (each_once) {
         auto entry = [&](size_t i) {
@@ -4494,13 +4152,6 @@ std::vector<Step> HevcScenario() {
   return steps;
 }
 
-// FairPlay SAMPLE-AES in MPEG-2 TS (Axinom's "HLS H264 SingleKey"), as
-// Safari's Media Source plays it through AVStreamDataParser and as Parc's TS
-// parser hands it to the renderer: Annex B access units and ADTS frames as
-// carried, each marked with the mpts key ID (kTransportStreamKeyId), the AAC
-// config from the PMT's audio setup. The renderer must give the decryptor
-// AVStreamDataParser's formats (zavc, zaac with TransportStreamEncryptionInitData)
-// and bytes (slices unescaped), and play with the key an mpts request gets.
 std::vector<Step> TransportStreamScenario() {
   World* w = g_world;
   auto video = std::make_shared<Media>();
@@ -4509,7 +4160,6 @@ std::vector<Step> TransportStreamScenario() {
   auto acquired = std::make_shared<bool>(false);
   auto frames = std::make_shared<int64_t>(0);
   const std::vector<uint8_t> ts_key(std::begin(fp::kTransportStreamKeyId), std::end(fp::kTransportStreamKeyId) - 1);
-  // What Parc's TS parser reports, AVStreamDataParser's key specifier bytes.
   auto init_data = [](uint32_t type, uint32_t media) {
     return Bytes(Format("{\n  \"cont\" : \"mpts\",\n  \"codc\" : %u,\n  \"mtyp\" : %u\n}", type, media));
   };
@@ -4560,7 +4210,6 @@ std::vector<Step> TransportStreamScenario() {
     audio->info.sample_rate = 44100;
     audio->info.channels = 2;
 
-    // Apple's own parse of the first segments is the reference.
     PCTsReference* rv = [PCTsReference parse:video_segments[0]];
     PCTsReference* ra = [PCTsReference parse:audio_segments[0]];
     Check(Bytes(rv.keyInitData) == video_init && Bytes(ra.keyInitData) == audio_init,
@@ -4575,9 +4224,6 @@ std::vector<Step> TransportStreamScenario() {
               Bytes(ra.extensions.firstObject) ==
                   fp::TransportStreamEncryptionInitData(fp::FourCC('z', 'a', 'a', 'c'), fp::FourCC('s', 'o', 'u', 'n')),
           "ts: AVStreamDataParser's formats are zavc and zaac with the TransportStreamEncryptionInitData the core builds");
-    // AVStreamDataParser emits a segment's last access unit when the append
-    // ends, and unescapes every NAL unit of that one; the next segment's AUD
-    // ends it in Parc's parser, which keeps the rule of the others.
     size_t same = 0, escaped = 0;
     const auto& units = video->segments[0];
     for (size_t i = 0; i + 1 < units.size() && i < rv.samples.count; ++i) {
@@ -4609,8 +4255,6 @@ std::vector<Step> TransportStreamScenario() {
     Check(!ours.empty() && ours == apple, "ts: the ADTS frames' payloads are AVStreamDataParser's audio bytes",
           Format("%zu vs %zu bytes", ours.size(), apple.size()));
 
-    // The same implicit-SBR ASC (AOT 2) with a PMT declaring HE-AAC.
-    // Rewrite the registration type and the enclosing PMT's MPEG CRC.
     auto he_ts = Bytes(audio_segments[0]);
     for (size_t packet = 0; packet + 188 <= he_ts.size(); packet += 188) {
       size_t payload = packet + 4;
@@ -4640,9 +4284,6 @@ std::vector<Step> TransportStreamScenario() {
               (ft::TsAudioSetupConfig(he_stream.descriptors)[0] >> 3) == 2,
           "ts: AVStreamDataParser uses declared zach for an implicit-SBR AOT 2 config");
 
-    // The other SAMPLE-AES audio types, as AVStreamDataParser names them
-    // (AC-3, E-AC-3, HE-AAC and HE-AACv2 streams of crafted TS files on macOS
-    // 27.2).
     struct Other {
       const Media* media;
       const char* type;
@@ -4701,7 +4342,6 @@ std::vector<Step> TransportStreamScenario() {
       return;
     }
     auto adjust = [](std::optional<fp::VideoConfig>* vc, std::optional<fp::AudioConfig>* ac) {
-      // Parc's TS parser: Annex B, no record, the setup data's AAC config, ADTS.
       (*vc)->format = fp::BitstreamFormat::kAnnexB;
       (*vc)->extra_data.clear();
       (*vc)->encryption = fp::TrackEncryption{fp::EncryptionScheme::kCbcs, {}, {}, 0, {}};
@@ -4744,8 +4384,6 @@ std::vector<Step> TransportStreamScenario() {
   return steps;
 }
 
-// An hev1 stream whose hvcC has no parameter sets: the VPS/SPS/PPS move into
-// every keyframe, as such streams carry them.
 Media InBandParameterSetsOnly(const Media& media) {
   Media out = media;
   const std::vector<uint8_t>& record = media.info.codec_config;
@@ -4775,9 +4413,6 @@ Media InBandParameterSetsOnly(const Media& media) {
   return out;
 }
 
-// The protected H.264 vector's first |segments| with SPS and PPS only
-// in-band: the avcC keeps its length size but lists none, and each keyframe
-// starts with them, length-prefixed, inside its first subsample's clear bytes.
 Media InBandAvcParameterSetsOnly(const Media& media, size_t segments) {
   Media out;
   out.info = media.info;
@@ -4802,8 +4437,8 @@ Media InBandAvcParameterSetsOnly(const Media& media, size_t segments) {
   for (int k = 0, pps = ok ? record[pos++] : 0; ok && k < pps; ++k) take();
   if (!Check(ok && !prefix.empty(), "in-band-protected: SPS and PPS read from the vector's avcC")) return out;
   out.info.codec_config.assign(record.begin(), record.begin() + 5);
-  out.info.codec_config.push_back(0xe0);  // No SPS.
-  out.info.codec_config.push_back(0);     // No PPS.
+  out.info.codec_config.push_back(0xe0);
+  out.info.codec_config.push_back(0);
   for (auto& segment : out.segments) {
     for (ft::Sample& sample : segment) {
       if (!sample.is_keyframe) continue;
@@ -4821,9 +4456,6 @@ Media InBandAvcParameterSetsOnly(const Media& media, size_t segments) {
   return out;
 }
 
-// The in-band stream played twice in a row, the second copy's keyframes
-// without their VPS: a later keyframe that repeats only SPS and PPS, which
-// must merge with the VPS already known instead of replacing it.
 Media VpsOnFirstKeyframeOnly(const Media& media) {
   Media out = media;
   const size_t length_size = (media.info.codec_config[21] & 3) + 1;
@@ -4867,13 +4499,8 @@ size_t SampleCount(const Media& media) {
   return count;
 }
 
-// A codec Netflix uses, through the renderer's clear path with Chromium's
-// framing, played to OnEnded; then the protected format description the
-// renderer builds for it (Apple's FairPlay type). No FairPlay-protected sample
-// of these codecs is public, so protected decode stays unproven.
 struct CodecOptions {
   ConfigAdjust adjust;
-  // When set, every natural size reported must be this one.
   std::pair<int32_t, int32_t> natural_size{0, 0};
 };
 
@@ -4945,7 +4572,6 @@ std::vector<Step> CodecScenario(const std::string& label, const Media* video, co
       done();
       return;
     }
-    // The protected form: same config with a cbcs track encryption.
     fp::TrackEncryption tenc;
     tenc.scheme = fp::EncryptionScheme::kCbcs;
     tenc.default_pattern = video ? fp::EncryptionPattern{1, 9} : fp::EncryptionPattern{0, 0};
@@ -4974,8 +4600,6 @@ std::vector<Step> CodecScenario(const std::string& label, const Media* video, co
     std::string type = ft::FourCCString(video ? s.video_protected_format : s.audio_protected_format);
     std::string layers;
     if (audio) {
-      // The format list says which AAC layers the protected description
-      // carries (HE-AAC rides in 'qaac' with an SBR/PS layer listed).
       std::vector<uint8_t> entry = fp::ProtectSampleEntry(
           fp::AudioSampleEntry(fp::FourCC('m', 'p', '4', 'a'), audio->info.channels, audio->info.sample_rate,
                                {fp::MakeBox(fp::FourCC('e', 's', 'd', 's'), fp::AacEsdsPayload(audio->info.codec_config))}),
@@ -5002,11 +4626,6 @@ std::vector<Step> CodecScenario(const std::string& label, const Media* video, co
   return steps;
 }
 
-// Safari's Media Source plays VP9 and Vorbis next to Dolby Vision in the one
-// AVFoundation renderer (AVSampleBufferDisplayLayer decodes VP9 once
-// VideoToolbox's supplemental decoder is registered; AudioToolbox decodes
-// Vorbis), and switches between them with changeType(): VP9, then Dolby
-// Vision, then VP9 again through Reconfigure, Chromium's config changes.
 std::vector<Step> CodecSwitchScenario() {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
@@ -5051,8 +4670,6 @@ std::vector<Step> CodecSwitchScenario() {
   return steps;
 }
 
-// The core rebuilds what Chromium leaves out; each must equal the box the
-// file itself carries.
 void BuilderSelfTests() {
   World* w = g_world;
   auto first_keyframe_av1 = [](const Media& m) -> std::optional<std::vector<uint8_t>> {
@@ -5079,14 +4696,11 @@ void BuilderSelfTests() {
         "file " + ft::Hex(w->ac3.info.codec_config) + (dac3 ? ", built " + ft::Hex(*dac3) : ", none"));
   auto dec3 = fp::Eac3SpecificBoxPayload(w->eac3.segments[0][0].data.data(), w->eac3.segments[0][0].data.size());
   const std::vector<uint8_t>& file = w->eac3.info.codec_config;
-  // data_rate (13 bits) is informational: computed from the frames it is the
-  // true rate; the file's muxer wrote another. The substream fields must match.
   bool same = dec3 && file.size() >= dec3->size() && dec3->size() >= 5 && ((*dec3)[1] & 0x07) == (file[1] & 0x07) &&
               std::equal(dec3->begin() + 2, dec3->end(), file.begin() + 2);
   Check(same, "builders: dec3 from the first E-AC-3 syncframe matches the file's substream fields",
         "file " + ft::Hex(file) + (dec3 ? ", built " + ft::Hex(*dec3) : ", none"));
 
-  // Synthetic E-AC-3 access units: 48 kHz, bsid 16.
   auto frame = [](int strmtyp, int substreamid, int numblkscod, int acmod, int lfeon, int chanmap, size_t bytes) {
     std::vector<uint8_t> out;
     uint64_t acc = 0;
@@ -5104,13 +4718,13 @@ void BuilderSelfTests() {
     put(strmtyp, 2);
     put(substreamid, 3);
     put(bytes / 2 - 1, 11);
-    put(0, 2);  // fscod 48 kHz
+    put(0, 2);
     put(numblkscod, 2);
     put(acmod, 3);
     put(lfeon, 1);
-    put(16, 5);  // bsid
-    put(31, 5);  // dialnorm
-    put(0, 1);   // compre
+    put(16, 5);
+    put(31, 5);
+    put(0, 1);
     if (strmtyp == 1) {
       put(chanmap >= 0, 1);
       if (chanmap >= 0) put(chanmap, 16);
@@ -5124,23 +4738,18 @@ void BuilderSelfTests() {
     for (auto& part : parts) out.insert(out.end(), part.begin(), part.end());
     return out;
   };
-  // Two 3-block syncframes of one independent substream: one dec3 entry, its
-  // 192 kb/s counted once.
   std::vector<uint8_t> halves = join({frame(0, 0, 2, 7, 1, -1, 384), frame(0, 0, 2, 7, 1, -1, 384)});
   auto grouped = fp::Eac3SpecificBoxPayload(halves.data(), halves.size());
   const std::vector<uint8_t> grouped_expected = {0x06, 0x00, 0x20, 0x0f, 0x00};
   Check(grouped && *grouped == grouped_expected,
         "builders: dec3 groups an independent substream's syncframes into one entry",
         grouped ? ft::Hex(*grouped) : "none");
-  // 5.1 independent plus a dependent substream adding Lrs/Rrs (7.1): one
-  // dependent, chan_loc Lrs/Rrs, 320 kb/s.
   std::vector<uint8_t> seven_one = join({frame(0, 0, 3, 7, 1, -1, 768), frame(1, 0, 3, 2, 0, 0x0200, 512)});
   auto dependent = fp::Eac3SpecificBoxPayload(seven_one.data(), seven_one.size());
   const std::vector<uint8_t> dependent_expected = {0x0a, 0x00, 0x20, 0x0f, 0x02, 0x02};
   Check(dependent && *dependent == dependent_expected,
         "builders: dec3 counts dependent substreams and writes their chan_loc",
         dependent ? ft::Hex(*dependent) : "none");
-  // Encrypted samples: only clear headers are read.
   const std::vector<fp::SubsampleEntry> all_protected;
   const std::vector<fp::SubsampleEntry> clear_header = {{12, uint32_t(halves.size() - 12)}};
   auto from_protected = fp::Eac3SpecificBoxPayload(halves.data(), halves.size(), &all_protected);
@@ -5157,8 +4766,6 @@ void BuilderSelfTests() {
             !fp::Ac3SpecificBoxPayload(ac3_sample.data(), ac3_sample.size(), &ac3_clear4) &&
             !fp::Ac3SpecificBoxPayload(ac3_sample.data(), ac3_sample.size(), &all_protected),
         "builders: dac3 reads the syncframe only when its header is in clear bytes");
-  // From the decoder config: the same layout fields as the files' boxes (the
-  // bit rate is unknown and written as 0).
   auto ac3_config = fp::Ac3SpecificBoxFromConfig(int(w->ac3.info.sample_rate), w->ac3.info.channels);
   const std::vector<uint8_t>& ac3_file = w->ac3.info.codec_config;
   Check(ac3_config && ac3_config->size() == 3 && ac3_file.size() == 3 && (*ac3_config)[0] == ac3_file[0] &&
@@ -5176,15 +4783,12 @@ void BuilderSelfTests() {
   Check(fp::DefaultDolbyVisionCompatibilityId(5) == 0 && fp::DefaultDolbyVisionCompatibilityId(8) == 1 &&
             fp::DefaultDolbyVisionCompatibilityId(9) == 2,
         "builders: Dolby Vision compatibility ID defaults to 0 for profile 5, 1 (HDR10) for 8 and 2 (SDR) for 9");
-  // Two programs whose 3-block frames interleave (I0 D0 I1 D1 I0 D0): each
-  // dependent belongs to the independent frame just before it.
   std::vector<uint8_t> programs = join({frame(0, 0, 2, 7, 1, -1, 384), frame(1, 0, 2, 2, 0, 0x0200, 256),
                                         frame(0, 1, 2, 2, 0, -1, 256), frame(1, 0, 2, 2, 0, 0x0100, 256),
                                         frame(0, 0, 2, 7, 1, -1, 384), frame(1, 0, 2, 2, 0, 0x0200, 256)});
   auto two = fp::Eac3SpecificBoxPayload(programs.data(), programs.size());
   std::string layout;
   if (two) {
-    // num_ind_sub, then per substream: dependents and chan_loc.
     size_t bit = 13;
     auto read = [&](int n) {
       uint32_t v = 0;
@@ -5201,18 +4805,14 @@ void BuilderSelfTests() {
   }
   Check(layout == "1:002 1:004", "builders: dec3 credits each dependent substream to its own program",
         two ? ft::Hex(*two) + " -> " + layout : "none");
-  // A real 7.1 stream from Dolby's muxer: the box built from its first
-  // syncframes must equal the file's, chan_loc included.
   const std::vector<uint8_t>& au71 = w->eac3_71.segments[0][0].data;
   auto built71 = fp::Eac3SpecificBoxPayload(au71.data(), au71.size());
   Check(built71 && *built71 == w->eac3_71.info.codec_config,
         "builders: dec3 from a 7.1 Dolby Digital Plus access unit equals the file's (Lrs/Rrs in chan_loc)",
         "file " + ft::Hex(w->eac3_71.info.codec_config) + (built71 ? ", built " + ft::Hex(*built71) : ", none"));
-  // Parameter set IDs: the files' own sets declare 0; synthetic PPS with ID 1.
   std::string ids;
   auto add_ids = [&](bool hevc, const std::vector<uint8_t>& record) {
     std::vector<uint8_t> data;
-    // Parameter sets from the record, through the Annex B conversion.
     ft::AvcToAnnexB(record, hevc, true, &data, nullptr);
     for (size_t i = 0; i + 4 < data.size();) {
       size_t next = i + 4;
@@ -5232,14 +4832,11 @@ void BuilderSelfTests() {
   const uint8_t avc_pps1[] = {0x68, 0x40}, hevc_pps1[] = {0x44, 0x01, 0x40};
   auto avc1 = fp::ParameterSetId(false, avc_pps1, sizeof(avc_pps1));
   auto hevc1 = fp::ParameterSetId(true, hevc_pps1, sizeof(hevc_pps1));
-  // H.264 PPS 200: ue(200) = 7 zeros, 1, then 7 bits of 201 - 128 = 73.
   const uint8_t avc_pps200[] = {0x68, 0x01, 0x92, 0x80};
   auto avc200 = fp::ParameterSetId(false, avc_pps200, sizeof(avc_pps200));
-  // HEVC SPS 3 with one sub-layer (level present), emulation-prevented: the
-  // 96-bit general profile_tier_level of zeros needs 0x03 after each 00 00.
-  std::vector<uint8_t> rbsp = {0x03};                 // VPS 0, max_sub_layers_minus1 1, nesting 1
-  rbsp.insert(rbsp.end(), 12, 0x00);                  // general profile, tier, level
-  rbsp.insert(rbsp.end(), {0x40, 0x00, 0x00, 0x24});  // flags 0 1, reserved, level, ue(3), stop
+  std::vector<uint8_t> rbsp = {0x03};
+  rbsp.insert(rbsp.end(), 12, 0x00);
+  rbsp.insert(rbsp.end(), {0x40, 0x00, 0x00, 0x24});
   std::vector<uint8_t> sps3 = {0x42, 0x01};
   int zeros = 0;
   for (uint8_t b : rbsp) {
@@ -5255,8 +4852,6 @@ void BuilderSelfTests() {
         "builders: parameter set IDs read from H.264 SPS/PPS and HEVC VPS/SPS/PPS",
         ids + Format(", PPS 1: %d %d, H.264 PPS 200: %d, HEVC SPS 3 with a sub-layer: %d", avc1 ? int(*avc1) : -1,
                      hevc1 ? int(*hevc1) : -1, avc200 ? int(*avc200) : -1, hevc_sps3 ? int(*hevc_sps3) : -1));
-  // 8 channels: the 5.1 core plus a dependent substream of Lrs/Rrs, as in
-  // Dolby's 7.1 streams; 7 channels stay the 5.1 core.
   auto core71 = fp::Eac3SpecificBoxFromConfig(48000, 8);
   auto core51 = fp::Eac3SpecificBoxFromConfig(48000, 6);
   auto core61 = fp::Eac3SpecificBoxFromConfig(48000, 7);
@@ -5265,9 +4860,6 @@ void BuilderSelfTests() {
         Format("7.1 %s, 5.1 %s, 6.1 %s", core71 ? ft::Hex(*core71).c_str() : "none",
                core51 ? ft::Hex(*core51).c_str() : "none", core61 ? ft::Hex(*core61).c_str() : "none"));
 
-  // Chromium's whole-sample-encrypted AC-3/E-AC-3: no dac3/dec3 in the config
-  // and no clear syncframe, so the renderer builds the box from rate and
-  // channels and the protected format comes out as Apple's.
   if (g_audio_unavailable) {
     Log("builders: renderer audio checks skipped (Core Audio is denied in this run)");
     return;
@@ -5275,7 +4867,7 @@ void BuilderSelfTests() {
   struct Fallback {
     const Media* media;
     const char* type;
-    int channels;  // 0: the file's.
+    int channels;
   };
   for (Fallback fallback : {Fallback{&w->ac3, "qac3", 0}, Fallback{&w->eac3, "qec3", 0}, Fallback{&w->eac3, "qec3", 8}}) {
     const Media* media = fallback.media;
@@ -5314,9 +4906,6 @@ void BuilderSelfTests() {
   }
 }
 
-// Chromium's configs for protected playback: no decoder record (built from
-// in-band SPS/PPS) and only the encryption scheme (protected formats built
-// from each sample's key ID, pattern and 16-byte IV).
 std::vector<Step> ChromiumInputsScenario() {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
@@ -5347,9 +4936,6 @@ std::vector<Step> ChromiumInputsScenario() {
   return steps;
 }
 
-// Protected samples whose SPS and PPS travel only in-band, length-prefixed
-// (ChromiumInputsScenario covers Annex B): the record comes from the first
-// protected keyframe, and the protected format is rebuilt on it.
 std::vector<Step> ProtectedInBandScenario() {
   World* w = g_world;
   auto media = std::make_shared<Media>();
@@ -5358,7 +4944,6 @@ std::vector<Step> ProtectedInBandScenario() {
   steps.push_back(Section("protected samples with SPS and PPS only in-band (length-prefixed)"));
   steps.push_back([=](Done done) {
     *media = InBandAvcParameterSetsOnly(w->video, 2);
-    // Video only, so every protected sample counted is video.
     w->player = std::make_shared<Player>("in-band-protected", Framing::kIso, media.get(), nullptr,
                                          w->main_keys->cdm.get(), w->host);
     w->player->renderer().Flush([=] {
@@ -5388,9 +4973,6 @@ std::vector<Step> ProtectedInBandScenario() {
   return steps;
 }
 
-// An adaptive-streaming switch, as Chromium delivers it: 288p, 720p, 288p
-// segments (one key), each converted with its own init segment, no record in
-// the config. The renderer must rebuild its formats from each new keyframe.
 std::vector<Step> QualitySwitchScenario() {
   World* w = g_world;
   auto frames = std::make_shared<int64_t>(0);
@@ -5433,13 +5015,6 @@ std::vector<Step> QualitySwitchScenario() {
   return steps;
 }
 
-// Long protected playback with B-frames (P then three B-frames, as Netflix
-// encodes), audio, quality switches 720p -> 288p -> 720p, a pause and a
-// stretch at 1.25x: AVFoundation must show every picture. Without the
-// upcoming presentation time bound (FairPlayRenderer's EnqueueVideo) it skips
-// about two a second while the audio plays on. Appends and evictions never
-// reach the renderer (Chromium's SourceBuffer keeps the samples), so the
-// renderer sees them only as this stream of samples.
 std::vector<Step> SmoothPlaybackScenario() {
   World* w = g_world;
   std::vector<Step> steps;
@@ -5475,8 +5050,6 @@ std::vector<Step> SmoothPlaybackScenario() {
   steps.push_back([=](Done done) {
     CheckHealthy(*w->player, "smooth");
     w->player->renderer().LoadVideoMetrics([=](const fp::VideoMetrics& m) {
-      // A busy machine may drop the odd picture; skipping B-frame pictures
-      // drops one in about twelve.
       Check(m.available && m.total_frames > 700 && m.corrupted_frames == 0 && m.dropped_frames <= 3,
             "smooth: AVFoundation shows every picture of B-frame video through switches, pause and 1.25x",
             Format("total %lld, displayed %lld, dropped %lld (limit 3), corrupted %lld", m.total_frames,
@@ -5488,8 +5061,6 @@ std::vector<Step> SmoothPlaybackScenario() {
   return steps;
 }
 
-// A new AudioSpecificConfig mid-stream (AAC-LC, then HE-AAC), which only
-// Reconfigure can signal.
 std::vector<Step> AudioReconfigureScenario() {
   World* w = g_world;
   double end = EndSeconds(w->he_aac_after_clear);
@@ -5528,11 +5099,6 @@ std::vector<Step> AudioReconfigureScenario() {
   return steps;
 }
 
-// ------------------------------------------------------------ frame order
-
-// A 420v picture's luma: the mean of each cell of a 32x18 grid, normalized
-// so small level differences between decode paths don't matter. Empty for
-// another format or an unreadable buffer.
 std::vector<float> LumaSignature(CVPixelBufferRef buffer) {
   constexpr int kColumns = 32, kRows = 18;
   if (CVPixelBufferGetPixelFormatType(buffer) != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) return {};
@@ -5565,7 +5131,6 @@ std::vector<float> LumaSignature(CVPixelBufferRef buffer) {
   return cells;
 }
 
-// Infinite unless both signatures are complete.
 double SignatureDistance(const std::vector<float>& a, const std::vector<float>& b) {
   if (a.empty() || a.size() != b.size()) return INFINITY;
   double sum = 0;
@@ -5578,8 +5143,6 @@ struct ReferenceFrame {
   std::vector<float> signature;
 };
 
-// A readable (420v) copy of |image|: what a display layer shows may be in a
-// compressed format ('&8v0'). Null when it can't be converted.
 CVPixelBufferRef ReadableCopy(CVPixelBufferRef image) {
   static VTPixelTransferSessionRef transfer = [] {
     VTPixelTransferSessionRef session = nullptr;
@@ -5599,9 +5162,6 @@ CVPixelBufferRef ReadableCopy(CVPixelBufferRef image) {
   return copy;
 }
 
-// The clip decoded by VideoToolbox from its own record, in decode order with
-// the file's decode timestamps: one signature per picture, in presentation
-// order.
 std::vector<ReferenceFrame> DecodeReference(const Media& clip, std::string* error) {
   const ft::TrackInfo& info = clip.info;
   const bool avc = info.original_format == fp::FourCC('a', 'v', 'c', '1') ||
@@ -5666,8 +5226,6 @@ std::vector<ReferenceFrame> DecodeReference(const Media& clip, std::string* erro
   return *frames;
 }
 
-// Samples whose presentation time is below an earlier one in decode order:
-// the B-frames (and other reordered pictures).
 int ReorderedSamples(const Media& media) {
   int reordered = 0;
   int64_t latest = INT64_MIN;
@@ -5680,23 +5238,12 @@ int ReorderedSamples(const Media& media) {
   return reordered;
 }
 
-// A stream with B-frames, as Chromium hands it over: Annex B, no decoder
-// record and no decode timestamps (DecoderBuffer carries none). Paused at
-// points through the clip, the displayed picture must be the one VideoToolbox
-// decodes for that time with the file's own decode timestamps. Then the clip
-// plays straight through: every frame reaches the renderer, none corrupted.
-// A few dropped frames are allowed, since a busy machine drops them with real
-// decode timestamps too; late B-frames from missing ones would drop about one
-// per reordered picture, so drops must stay under half that.
 std::vector<Step> ReorderScenario(const std::string& label, const Media* clip) {
   World* w = g_world;
   auto references = std::make_shared<std::vector<ReferenceFrame>>();
   const double end = EndSeconds(*clip);
   const size_t samples = SampleCount(*clip);
   const int reordered = ReorderedSamples(*clip);
-  // The layer presents for the coming display refresh, so the next picture
-  // may already show up to one refresh (16.7 ms at 60 Hz) before its time;
-  // capped below a frame so a picture shown a frame early still fails.
   const double frame = double(clip->segments[0][0].duration) / clip->info.timescale;
   const double display_lead = std::min(0.020, 0.6 * frame);
   std::vector<Step> steps;
@@ -5739,9 +5286,6 @@ std::vector<Step> ReorderScenario(const std::string& label, const Media* clip) {
       auto next = std::make_shared<std::function<void()>>();
       auto finish = [=] {
         *next = nullptr;
-        // A point with no displayed picture to read (nothing drawn at that
-        // moment, as when the window isn't on screen) proves nothing either
-        // way; at least 15 must be read.
         Check(tally->checked >= 15 && tally->wrong == 0 && !tally->backwards && !tally->stalled,
               label + ": every paused point read shows the picture due then, in presentation order",
               Format("%d points in %d passes (%d showing the next picture within %.0f ms of it), %d wrong, "
@@ -5753,8 +5297,6 @@ std::vector<Step> ReorderScenario(const std::string& label, const Media* clip) {
         done();
       };
       *next = [=] {
-        // Play a little at half speed, pause, let the layer settle, then
-        // read its picture.
         w->player->renderer().SetPlaybackRate(0.5);
         After(0.07, [=] {
           w->player->renderer().SetPlaybackRate(0);
@@ -5841,7 +5383,6 @@ std::vector<Step> ReorderScenario(const std::string& label, const Media* clip) {
   return steps;
 }
 
-// Media Source's sinf init data for a track, as Parc's MP4 parser reports it.
 std::vector<uint8_t> SinfInitData(const std::vector<uint8_t>& sinf_payload) {
   return Bytes("{\"sinf\":[\"" +
                std::string([Data(sinf_payload) base64EncodedStringWithOptions:0].UTF8String) + "\"]}");
@@ -5850,11 +5391,6 @@ std::vector<uint8_t> SinfInitData(const std::vector<uint8_t>& sinf_payload) {
 std::vector<Step> CloseScenario() {
   World* w = g_world;
   std::vector<Step> steps;
-  // Safari's Media Source fires `encrypted` for a protected track only while
-  // no session of the element's MediaKeys has a request for its key ID
-  // (AudioVideoRendererAVFObjC::setInitData, sessionForKeyIDs): a request
-  // awaiting its license counts, remove() keeps a session's requests and
-  // close() drops them.
   const fp::InitDataType sinf = fp::InitDataType::kSinf;
   const std::vector<uint8_t> video_sinf = SinfInitData(w->video.info.sinf_payload);
   const std::vector<uint8_t> audio_sinf = SinfInitData(w->audio.info.sinf_payload);
@@ -5864,7 +5400,6 @@ std::vector<Step> CloseScenario() {
       SinfInitData(fp::ProtectionSchemeInfoPayload(w->video.info.original_format, other_key));
   steps.push_back(Section("session for init data: which sessions cover a track's key ID"));
   steps.push_back([=](Done done) {
-    // Kept in w->retired afterwards: its license answer may still arrive.
     auto holder = std::make_shared<std::unique_ptr<KeySystem>>(MakeKeySystem("session for init data"));
     KeySystem* pending = holder->get();
     Check(!pending->cdm->HasSessionForInitData(sinf, video_sinf),
@@ -5893,8 +5428,6 @@ std::vector<Step> CloseScenario() {
           "session for init data: an answered skd request covers the tracks' key ID");
     ks->cdm->RemoveSession(ks->session, [=](const fp::Result& r) {
       After(0.2, [=] {
-        // WebKit's removeSessionData for a temporary session: keys revoked,
-        // statuses emptied, NotSupportedError.
         Check(!r.ok() && r.exception == fp::Exception::kNotSupported &&
                   !ks->cdm->HasUsableKey(g_key_id) && ks->client->keys.empty(),
               "remove: a temporary session's keys are revoked and its statuses emptied, then "
@@ -5920,10 +5453,6 @@ std::vector<Step> CloseScenario() {
   return steps;
 }
 
-// Watchdog: the run must never wait forever. A main-queue heartbeat is
-// checked from a background queue; if the main thread stalls for 15 s, or the
-// whole run exceeds its time limit, the main thread's stack is sampled into
-// the log and the process exits with status 3 (stall) or 4 (time limit).
 std::atomic<double> g_heartbeat{0};
 double g_time_limit = 480;
 
@@ -5944,9 +5473,6 @@ void StartWatchdog() {
     double stalled = now - g_heartbeat.load();
     bool stall = g_heartbeat.load() > 0 && stalled > 15;
     bool over = now > g_time_limit;
-    // Short stalls (the heartbeat beats every 0.5 s) delay callbacks enough to
-    // fail timing checks; the first few are sampled while still in progress,
-    // without stopping the run, to show what holds the main thread.
     static std::atomic<bool> sampling{false};
     static std::atomic<int> short_samples{0};
     if (!stall && !over && g_heartbeat.load() > 0 && stalled > 1.2 && short_samples.load() < 4 &&
@@ -6041,7 +5567,6 @@ void RunAll() {
   }
 
   std::vector<Step> steps;
-  // --only <text> keeps the scenario groups whose call names contain <text>.
   auto add = [&steps](const std::string& name, std::vector<Step> group) {
     if (!g_only.empty() && name.find(g_only) == std::string::npos) return;
     steps.insert(steps.end(), group.begin(), group.end());
@@ -6096,9 +5621,6 @@ void RunAll() {
   add("InitDataScenario(fp::InitDataType::kSinf, Bytes(sinf_json))", InitDataScenario(fp::InitDataType::kSinf, Bytes(sinf_json)));
   add("InitDataScenario(fp::InitDataType::kKeyIds, Bytes(Format({kids:[%s]}, kid64.UTF8String)))", InitDataScenario(fp::InitDataType::kKeyIds, Bytes(Format("{\"kids\":[\"%s\"]}", kid64.UTF8String))));
   add("InitDataScenario(fp::InitDataType::kCenc, w->video.info.pssh_boxes)", InitDataScenario(fp::InitDataType::kCenc, w->video.info.pssh_boxes));
-  // Chromium's cenc init data is every pssh in the moov; put a FairPlay box
-  // among the vector's own so the WebKit path (FairPlay pssh to AVFoundation
-  // as {"pssh": ...}) runs.
   std::vector<uint8_t> with_fairplay = w->video.info.pssh_boxes;
   std::vector<uint8_t> fairplay =
       FairPlayPssh(g_key_id, fp::FourCC('c', 'b', 'c', 's'));
@@ -6108,8 +5630,6 @@ void RunAll() {
   add("MultiKeyScenario(false)", MultiKeyScenario(false));
   add("HevcScenario()", HevcScenario());
   add("TransportStreamScenario()", TransportStreamScenario());
-  // hev1 decodes only when presented as hvc1, so its protected form is qhvc
-  // (Apple's own parser would label the entry qhev).
   add("CodecScenario(hev1 (HEVC), &w->hev1, nullptr, qhvc)", CodecScenario("hev1 (HEVC)", &w->hev1, nullptr, "qhvc"));
   add("CodecScenario(hev1 with parameter sets only in-band, &w->hev1_in_band, nullptr, )", CodecScenario("hev1 with parameter sets only in-band", &w->hev1_in_band, nullptr, ""));
   add("CodecScenario(Dolby Vision profile 5 (dvh1), &w->dolby_vision, nullptr, qdh1)", CodecScenario("Dolby Vision profile 5 (dvh1)", &w->dolby_vision, nullptr, "qdh1"));
@@ -6161,7 +5681,7 @@ void RunAll() {
   Sequence(steps, Finish);
 }
 
-}  // namespace
+}
 
 int main(int argc, char** argv) {
   @autoreleasepool {
@@ -6169,9 +5689,6 @@ int main(int argc, char** argv) {
     setvbuf(stdout, nullptr, _IOLBF, 0);
     static World world;
     g_world = &world;
-    // A covered window that plays no audio (the video-only codec clips) is
-    // App Napped: timers, time observers and callbacks then arrive seconds
-    // late and timing checks fail. The proof opts out for its whole run.
     static id<NSObject> no_app_nap = [[NSProcessInfo processInfo]
         beginActivityWithOptions:NSActivityUserInitiatedAllowingIdleSystemSleep | NSActivityLatencyCritical
                           reason:@"FairPlay proof timing"];
@@ -6183,7 +5700,7 @@ int main(int argc, char** argv) {
       std::string flag = argv[i];
       if (flag == "--muted") {
         g_muted = true;
-        --i;  // Takes no value.
+        --i;
         continue;
       }
       if (i + 1 >= argc) break;
@@ -6254,13 +5771,10 @@ int main(int argc, char** argv) {
                           samples.end());
           }
           world.hev1_vps_once = VpsOnFirstKeyframeOnly(world.hev1_in_band);
-          // Profile 10.1 over the 10-bit AV1 stream, as AVStreamDataParser
-          // describes a dav1 entry with av1C and dvvC.
           world.dolby_vision_10 = world.av1_10bit;
           world.dolby_vision_10.info.sample_entry = fp::FourCC('d', 'a', 'v', '1');
           world.dolby_vision_10.info.original_format = fp::FourCC('d', 'a', 'v', '1');
           world.dolby_vision_10.info.dolby_vision_config = fp::DolbyVisionConfigurationRecord(10, 5, 1);
-          // HE-AAC continuing the clear AAC-LC segment, for an audio Reconfigure.
           world.he_aac_after_clear = world.he_aac;
           int64_t shift = int64_t(EndSeconds(world.clear_audio) * world.he_aac.info.timescale + 0.5);
           for (ft::Sample& sample : world.he_aac_after_clear.segments[0]) {

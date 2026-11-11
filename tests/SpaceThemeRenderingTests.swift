@@ -16,9 +16,6 @@ struct SpaceThemeRenderingTests {
         return NSImage(contentsOf: url)!.cgImage(forProposedRect: nil, context: nil, hints: nil)!
     }
 
-    /// A Space swipe on the window's surface between a light-style and a
-    ///
-    ///
     @MainActor static func checkPagingMaterial(_ check: (Bool, String) -> Void) {
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 300, height: 200),
                               styleMask: [.titled], backing: .buffered, defer: true)
@@ -50,12 +47,9 @@ struct SpaceThemeRenderingTests {
         check(foreground.frame == surface.bounds, "it covers the surface")
         surface.pagingTransition = ThemePagingTransition(from: light, theme: dark, progress: 0.8)
         check(materials().count == 2 && abs(foreground.alphaValue - 0.8) < 0.001, "the same view follows the swipe")
-        // The commit keeps the strip's position, so the transition stays and
-        // only the surface's own theme changes.
         surface.theme = dark
         check(base.material.rawValue == 1 && !isDark(base) && foreground.material.rawValue == 2 && isDark(foreground)
               && abs(foreground.alphaValue - 0.8) < 0.001 && materials().count == 2, "the commit leaves both materials")
-        // Swiping the other way the dark page lies to the left.
         surface.pagingTransition = ThemePagingTransition(from: dark, theme: light, progress: 0.2)
         check(base.material.rawValue == 2 && isDark(base) && foreground.material.rawValue == 1 && !isDark(foreground)
               && abs(foreground.alphaValue - 0.2) < 0.001 && materials().count == 2, "the left page's style is the base")
@@ -72,15 +66,12 @@ struct SpaceThemeRenderingTests {
         check(foreground.isHidden, "a Library card draws no material")
         surface.drawsMaterial = true
         check(!foreground.isHidden, "restored with the material")
-        // An uncoloured Space's material follows the window's appearance.
         surface.theme = dark
         surface.pagingTransition = ThemePagingTransition(from: dark, theme: SpaceTheme(), progress: 0.5)
         check(!foreground.isHidden && foreground.material.rawValue == 1 && !isDark(foreground), "towards an uncoloured Space in a light window")
         window.appearance = NSAppearance(named: .darkAqua)
         check(foreground.isHidden, "an uncoloured Space in a dark window has the dark style already")
 
-        // Past one page neither page is the surface's own: the base takes the
-        // left page's style, the foreground the right's, whatever the commit.
         window.appearance = NSAppearance(named: .aqua)
         surface.theme = alsoLight
         surface.pagingTransition = ThemePagingTransition(from: dark, theme: light, progress: 0.3)
@@ -93,8 +84,6 @@ struct SpaceThemeRenderingTests {
         surface.pagingTransition = nil
         check(base.material.rawValue == 1 && !isDark(base) && foreground.isHidden, "at rest the base returns to the surface's own style")
 
-        // A locked sidebar's surface that floats mid-swipe (layoutChrome sets
-        // drawsBackground before the radius) never builds a material of its own.
         let container = ThemeRendererView(frame: NSRect(x: 0, y: 0, width: 120, height: 200))
         surface.addSubview(container)
         container.coordinateSpace = surface
@@ -112,10 +101,6 @@ struct SpaceThemeRenderingTests {
         container.removeFromSuperview()
     }
 
-    /// The real renderer draws a mid-gray theme into an offscreen 2× drawable.
-    ///
-    /// alpha, so a straight-as-premultiplied read would add roughly 3.9× the
-    /// texture and brighten the surface.
     @MainActor static func checkGrainComposite(_ check: (Bool, String) -> Void) {
         let grain = image("grain"), tweed = image("tweed")
         check(grain.alphaInfo == .last && grain.width == 200 && grain.height == 200,
@@ -128,7 +113,6 @@ struct SpaceThemeRenderingTests {
         window.contentView = surface; window.orderFront(nil); surface.layout()
         let canvas = surface.subviews.compactMap { $0 as? MTKView }.first!
         check(canvas.colorspace?.name == CGColorSpace.sRGB, "theme canvas outputs sRGB")
-        // A 1× backing would minify the 200-pixel grain tile without mipmaps.
         canvas.framebufferOnly = false; canvas.autoResizeDrawable = false
         canvas.drawableSize = CGSize(width: 400, height: 400)
         let queue = canvas.device!.makeCommandQueue()!
@@ -161,7 +145,6 @@ struct SpaceThemeRenderingTests {
             let mean = sum / Double(count)
             return (mean, alpha / Double(count), (squares / Double(count) - mean * mean).squareRoot(), texture.width)
         }
-        // The layer can still vend one drawable at its previous size.
         _ = render(noise: 0, active: true)
         let plain = render(noise: 0, active: true)
         let active = render(noise: 1, active: true)
@@ -170,13 +153,10 @@ struct SpaceThemeRenderingTests {
         window.orderOut(nil); window.contentView = nil
         check(plain.mean > 100 && active.mean > 0, "offscreen renderer produced the themed surface")
         check([plain, active, inactive, woven].allSatisfy { $0.width == 400 }, "readback uses the pinned 2× drawable")
-        // Multiply darkens by about 2%; a straight-as-premultiplied read brightens by about 50%.
         check(active.mean / plain.mean > 0.95 && active.mean / plain.mean < 1.03,
               "full grain darkens the surface slightly and must not brighten it beyond 1.03×")
         check(active.deviation > 3 && active.deviation < 13, "full grain stays within the premultiplied amplitude")
         check(inactive.deviation < active.deviation / 2.5, "inactive ownership quarters the grain amplitude")
-        // Opaque textures need no premultiplication: the readback follows the
-        // original composite from the PNG's own mean.
         let context = CGContext(data: nil, width: tweed.width, height: tweed.height, bitsPerComponent: 8,
                                 bytesPerRow: tweed.width * 4, space: tweed.colorSpace!,
                                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
@@ -189,7 +169,6 @@ struct SpaceThemeRenderingTests {
         check(abs(woven.mean - predicted) < 2, "opaque tweed composites unchanged at its measured maximum")
     }
 
-    /// Offscreen 2× snapshots of the real editor controls (dark appearance).
     @MainActor static func checkEditorPresentation(_ check: (Bool, String) -> Void) {
         let dark = NSAppearance(named: .darkAqua)!
         var theme = SpaceTheme.singleColor(ThemeColor(red: 0.69, green: 1, blue: 0.85)!)
@@ -215,8 +194,6 @@ struct SpaceThemeRenderingTests {
         }
         func control(_ label: String) -> NSView { editor.subviews.first { $0.accessibilityLabel() == label }! }
 
-        // SpaceStyleDialView: 19 five-point dots on a 32-point radius, the
-        // bottom slot empty, lit clockwise from the top to the value.
         let dial = control("Theme texture and noise"), dialImage = snapshot(dial)
         let center = NSPoint(x: dial.bounds.midX, y: dial.bounds.midY)
         func slot(_ index: Int) -> NSColor {
@@ -225,7 +202,6 @@ struct SpaceThemeRenderingTests {
         }
         check(slot(0).alphaComponent < 0.02, "dial leaves its bottom dot slot empty")
         check((1..<20).allSatisfy { slot($0).alphaComponent > 0.1 }, "dial draws the other 19 dots")
-        // SidebarForeground 0.45 over the separator dot composes to 0.5325.
         check((10...14).allSatisfy { slot($0).alphaComponent > 0.52 && slot($0).alphaComponent < 0.55 },
               "lit dots draw the foreground over the separator dot")
         check((Array(1...9) + Array(16...19)).allSatisfy { slot($0).alphaComponent > 0.1 && slot($0).alphaComponent < 0.2 },
@@ -247,8 +223,6 @@ struct SpaceThemeRenderingTests {
         let lightIndicator = pixel(lightImage, center.x + 38, center.y).usingColorSpace(.deviceRGB)!
         check(lightIndicator.alphaComponent > 0.95 && lightIndicator.redComponent > 0.95, "Aqua keeps the white indicator")
 
-        // SpaceStyleButtonStyle on the knob: pressed 0.9 on spring(0.3, 0.5),
-        // hovered 1.05 on easeOut(0.1), multiplied.
         var still = ThemeButtonMotion()
         still.setHovered(true, animated: false); still.setPressed(true, animated: false)
         check(abs(still.scale - 0.945) < 1e-9 && still.isSettled, "a hovered press scales the knob 0.9 × 1.05")
@@ -278,7 +252,6 @@ struct SpaceThemeRenderingTests {
                                                       trackingNumber: 0, userData: nil)!)
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
 
-        // SpaceStyleButtonStyle draws a disabled button's enabled look at 0.33.
         func peakAlpha(_ view: NSView) -> CGFloat {
             let image = snapshot(view)
             var peak: CGFloat = 0
@@ -301,7 +274,6 @@ struct SpaceThemeRenderingTests {
             }
             return best.usingColorSpace(.deviceRGB)!
         }
-        // SwiftUI resolves Color.primary.opacity(0.6) to 0.508.
         let darkInk = ink(next, dark), lightInk = ink(next, NSAppearance(named: .aqua)!)
         check(darkInk.alphaComponent > 0.46 && darkInk.alphaComponent < 0.53 && darkInk.redComponent > 0.9,
               "> draws white at primary × 0.6 in Dark")
@@ -321,22 +293,18 @@ struct SpaceThemeRenderingTests {
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
         check(pixel(snapshot(next), 1, 16).alphaComponent < 0.01, "the hover fill fades out on exit")
 
-        // SineSlider: native 224-point slider at x 18, centered with the dial.
         let slider = control("Theme intensity"), sliderImage = snapshot(slider)
         check(slider.frame == NSRect(x: 10, y: 422, width: 240, height: 60), "intensity slider shares the dial's center line")
         let midY = slider.bounds.midY, thumb = pixel(sliderImage, 16 + 208 * 0.5, midY)
         check(thumb.alphaComponent > 0.95 && thumb.redComponent > 0.95, "slider thumb is white")
-        // At these x positions the wave sits 7.5 points below center.
         let leading = 16 + 6.0332 * 1.5 * .pi, trailing = 16 + 6.0332 * 9.5 * .pi
         let track = pixel(sliderImage, leading, midY).alphaComponent
         check(track > 0.04 && track < 0.12, "leading side draws the half-opacity separator track")
         check(pixel(sliderImage, trailing, midY).alphaComponent < 0.02, "trailing side has no track")
         let lit = pixel(sliderImage, leading, midY + 7.5).alphaComponent
         let unlit = pixel(sliderImage, trailing, midY + 7.5).alphaComponent
-        // Foreground 0.45 over the separator wave and track composes to ≈0.57.
         check(lit > 0.52 && lit < 0.62 && unlit > 0.1 && unlit < 0.2, "wave uses foreground before the thumb and separator after")
 
-        // ColorPillButtonStyle: the color fills the 24-point frame.
         let swatch = control("Brand color 1"), swatchImage = snapshot(swatch)
         check(swatch.frame.size == NSSize(width: 24, height: 24), "preset swatch keeps its 24-point frame")
         check(pixel(swatchImage, 0.75, 12).alphaComponent > 0.8, "preset color reaches the frame edge")
@@ -345,7 +313,6 @@ struct SpaceThemeRenderingTests {
         check(border.greenComponent < fill.greenComponent * 0.95 && border.greenComponent > fill.greenComponent * 0.8,
               "two-point inner border darkens the edge by the black 0.1 overlay")
 
-        // Pad: primary 0.05 under the template DotGrid at 0.4.
         let empty = SpaceThemeEditorView(theme: SpaceTheme(), performHapticFeedback: {})
         window.contentView = empty; empty.frame = editor.frame; empty.layoutSubtreeIfNeeded()
         let padImage = snapshot(empty.subviews.first { $0.accessibilityLabel() == "Theme color pad" }!)
@@ -363,8 +330,6 @@ struct SpaceThemeRenderingTests {
         window.contentView = nil
     }
 
-    ///
-    ///
     @MainActor static func checkTooltipTheme(_ check: (Bool, String) -> Void) {
         let theme = SpaceTheme.singleColor(ThemeColor(hex: "5E3FA0")!)
         let editor = SpaceThemeEditorView(theme: theme, performHapticFeedback: {})
@@ -442,8 +407,6 @@ struct SpaceThemeRenderingTests {
         let material = root.subviews.compactMap { $0 as? NSVisualEffectView }.first!
         check(material.material.rawValue == 1 && material.isEmphasized, "production native material uses recovered style and emphasis")
         check(material.blendingMode == .behindWindow && material.state == .followsWindowActiveState, "native backdrop preserves actual window compositing")
-        // Sync material/canvas once, then prove identical-geometry layouts skip
-        // chrome onLayout while a real bounds change still fires it.
         root.layout()
         check(material.frame == root.bounds, "layout syncs material to bounds")
         var layoutCallbacks = 0
@@ -510,11 +473,6 @@ struct SpaceThemeRenderingTests {
         check(!ThemeWindowActivity.contains(window, in: child), "reparented surface drops previous owner")
         check(!ThemeWindowActivity.isActive(nil), "detached renderer has no active owner")
 
-        // Key/main observers: only Metal noise samples activity. Zero-noise
-        // themes and redundant key↔main flips that leave isActive unchanged
-        // must not rewrite needsDisplay; real activity flips still dirty.
-        // Count invalidations rather than reading MTKView.needsDisplay: an
-        // unmapped deferred window keeps that flag stuck until ordered front.
         let canvas = root.subviews.compactMap { $0 as? MTKView }.first!
         window.orderFront(nil)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
@@ -547,7 +505,6 @@ struct SpaceThemeRenderingTests {
         check(root.canvasActivityDisplayInvalidations == noisyBefore + 1,
               "becomeMain while already key leaves isActive unchanged and skips needsDisplay")
 
-        // Same-turn key+main: first flip dirties; second sees needsDisplay and skips.
         window.reportsKey = false; window.reportsMain = false
         settleCanvas()
         let sameTurnBefore = root.canvasActivityDisplayInvalidations

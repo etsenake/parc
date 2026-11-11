@@ -1,4 +1,3 @@
-"""Inert release transactions: real disposable Git repos, fake Apple/Brew edges."""
 import hashlib
 import json
 from pathlib import Path
@@ -75,7 +74,6 @@ class Repository(unittest.TestCase):
             refreshed.refresh_inputs()
 
     def stopped_patch_release(self):
-        """A 1.0.1 release of 'fix: Keep tabs' that stopped on a compiler error."""
         self.commit('fix: Keep tabs')
         runner = release.Release(self.root); runner.start(); runner.prepare()
         runner.checkpoint(status='stopped', stage='engine', completed=['source'], command_pid=None,
@@ -96,7 +94,6 @@ class Repository(unittest.TestCase):
         with patch.object(release_inputs, 'create', side_effect=OSError('power lost after publishing the notes')):
             with self.assertRaises(OSError): refreshed.refresh_inputs()
         for item in refreshed.locks: item.close()
-        # A plain resume finishes the refresh instead of building the commit main has moved past.
         refreshed = release.Release(self.root); refreshed.preflight = Mock(); refreshed.env['GH_TOKEN'] = 'fixture-token'
         with patch.dict(release.os.environ), patch.object(release_lease, 'acquire', return_value='lease'):
             with patch.object(refreshed, 'engine', side_effect=release.Failure('compiler error again')):
@@ -106,11 +103,9 @@ class Repository(unittest.TestCase):
         self.assertEqual(self.git('rev-parse', notes + '^'), checked)
         self.assertEqual(self.git('log', '-1', '--format=%s %P', 'origin/main'),
                          'Merge chore(release): 1.0.1 notes ' + later + ' ' + notes)
-        # The rerun reused the published notes commit and merge.
         self.assertEqual(sorted(self.git('log', '--format=%s', checked + '..origin/main').splitlines()),
                          ['Merge chore(release): 1.0.1 notes', 'chore(release): 1.0.1 notes', 'feat: Later work'])
         self.assertTrue(subprocess.run(['git', 'merge-base', '--is-ancestor', later, notes], cwd=self.root).returncode)
-        # The GitHub text and What's New page come from the frozen source's notes, which main shares.
         shipped = (Path(refreshed.state['source']) / 'release-notes.json').read_text().strip()
         self.assertEqual(shipped, self.git('show', 'origin/main:release-notes.json'))
         [entry] = json.loads(shipped)['releases']
@@ -168,7 +163,6 @@ class Repository(unittest.TestCase):
         self.assertNotEqual(minor.state['run'], str(patch_dir))
         minor.prepare()
         self.assertEqual(minor.state['version'], {'version': '1.1.0', 'build': 3})
-        # The superseded 1.0.1 was committed but never tagged, so 1.1.0 replaces its notes.
         self.assertEqual(minor.state['since'], 'v1.0.0')
         self.assertEqual([item['version'] for item in self.notes()], ['1.1.0'])
 
@@ -360,7 +354,6 @@ class Repository(unittest.TestCase):
         self.assertEqual(resumed.state['version']['version'], '2.0.0')
 
     def race(self, runner, killed=None, rewritten=False):
-        """Prepares while a peer pushes a feat just before the version commit's first push."""
         peer = Path(self.tmp.name) / 'peer'
         subprocess.run(['git', 'clone', '-q', str(self.remote), str(peer)], check=True)
         original = runner.git; pushes = []
@@ -370,7 +363,6 @@ class Repository(unittest.TestCase):
                 if len(pushes) == 1:
                     if rewritten:
                         subprocess.run(['git', 'reset', '-q', '--hard', 'HEAD~1'], cwd=peer, check=True)
-                    # The peer's notes edit conflicts with the version commit's.
                     (peer / 'release-notes.json').write_text('{"releases":[]}\n')
                     (peer / 'Resources/icon').write_bytes(b'late icon')
                     for command in (['-c', 'user.name=Peer', '-c', 'user.email=peer@example.invalid', 'commit',
@@ -393,7 +385,6 @@ class Repository(unittest.TestCase):
         with self.assertRaises(OSError):
             self.race(runner, killed)
         for item in runner.locks: item.close()
-        # The merge is written without the checkout, so the kill leaves it clean on the version commit.
         self.assertEqual((self.git('status', '--porcelain'), self.git('log', '-1', '--format=%s')),
                          ('', 'chore(release): 1.0.1'))
         self.assertTrue(subprocess.run(['git', 'rev-parse', '-q', '--verify', 'MERGE_HEAD'], cwd=self.root).returncode)
@@ -605,7 +596,6 @@ class Pipeline(Repository):
         identity = 'Developer ID Application: Fixture (' + release.TEAM + ')'
         (home / '.config/parc/signing-identity').write_text(identity + '\n')
         op = '/usr/local/bin/op'
-        # (op installed, identity present, key present, what restore brings back)
         for tool, has_identity, has_key, restored in ((op, True, False, True), (op, True, False, False),
                                                       (None, True, False, False), (op, False, True, True)):
             runner = self.runner(); runner.auth = Mock(); keychain = {'identity': has_identity, 'key': has_key}; commands = []
@@ -636,7 +626,6 @@ class Pipeline(Repository):
         home = Path(self.tmp.name); (home / '.config/parc').mkdir(parents=True)
         identity = 'Developer ID Application: Fixture (' + release.TEAM + ')'
         (home / '.config/parc/signing-identity').write_text(identity + '\n')
-        # (op installed, profile works, what restore brings back)
         for tool, works, restored in (('/usr/local/bin/op', True, False), ('/usr/local/bin/op', False, True),
                                       ('/usr/local/bin/op', False, False), (None, False, True)):
             runner = self.runner(); runner.auth = Mock(); profile = {'works': works}; commands = []

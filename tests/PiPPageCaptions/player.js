@@ -1,6 +1,3 @@
-// Plays captions as the service's player does: a line, a gap, the next line,
-// while the controls' clock runs. ?render=<line> shows that line alone on a
-// transparent page, the video and controls hidden, for PiP renders.
 function playCaptions(show, clock) {
   const params = new URLSearchParams(location.search);
   if (params.has('render')) {

@@ -1,7 +1,5 @@
 import Foundation
 
-/// TabHistoryArchive on a real temporary directory: what a relaunch reads
-/// back, when a record is refused, and what removes records.
 @main
 struct TabHistoryArchiveTests {
     static var count = 0

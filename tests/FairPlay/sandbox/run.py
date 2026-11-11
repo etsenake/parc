@@ -31,21 +31,14 @@ import time
 REPO = pathlib.Path(__file__).resolve().parents[3]
 DEFAULT_SOURCE = pathlib.Path(
     "/Users/josh/Documents/Codex/2026-10-23/re/work/engine-source/chromium/src")
-PROBE_NAME = "fpsbprobe"  # Short: the kernel logs at most 16 bytes of name.
+PROBE_NAME = "fpsbprobe"
 SCENARIOS = ["h264", "hevc", "dolby-vision", "eac3", "ac3", "audio-switch", "video-switch", "hls-ts", "hls-fmp4"]
-# Clear clips for the codecs no public FairPlay vector has, from the pinned
-# checkout's media/test/data.
 CHROMIUM_MEDIA = ["glass-blowing2-dolby-vision-profile-5-frag.mp4",
                   "bear-eac3-only-frag.mp4", "bear-ac3-only-frag.mp4",
                   "bear-640x360-v_frag.mp4", "bear-320x240-v_frag-hevc.mp4"]
 OUTCOMES = {0: "PASS", 1: "FAIL", 2: "SETUP-FAIL", 3: "INCONCLUSIVE", 4: "TIMEOUT"}
 GRANT = re.compile(r'\((global-name|xpc-service-name|iokit-user-client-class|subpath|literal|path)'
                    r'\s+"([^"]*)"\)')
-# A filter of the same kind that matches nothing, so removing a grant never
-# leaves its rule without a filter (which would allow everything).
-# The grants playback needs (--ablate --ablate-groups, see README.md). The
-# without-rules run must be denied one of these; the others (AudioSession,
-# SandboxHelper, AudioDSP.component) are only looked up while audio plays.
 NEEDED = {"com.apple.lskdd", "com.apple.lskdd.xpc", "com.apple.audio.audiohald",
           "com.apple.coremedia.routingcontext.xpc", "AppleAVDUserClient",
           "IOMobileFramebufferUserClient", "/System/Library/Components/CoreAudio.component"}
@@ -61,8 +54,6 @@ def pinned(source, rev, path, binary=False):
 
 
 def patched_gpu_sb(source, rev):
-    """gpu.sb with the FairPlay patch's gpu.sb hunk, via the overlay tool's
-    exact applier."""
     spec = importlib.util.spec_from_file_location("engine_source", REPO / "scripts/engine-source.py")
     engine = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(engine)
@@ -98,8 +89,6 @@ def compile_all(output):
         subprocess.run(["xcrun", "clang++", *[objects[n] for n in names], *extra, "-o",
                         str(output / name)], check=True)
 
-    # The sandboxed probe links no framework (like Parc's helper executable);
-    # everything AVFoundation-side is in the player it opens after the sandbox.
     link(PROBE_NAME, ["probe_main", "fmp4_parser", "fairplay_bitstream"], [])
     link("fpsbhelper", ["probe_helper"], ["-framework", "Foundation"])
     frameworks = []
@@ -117,17 +106,15 @@ def compile_all(output):
 
 
 def denials(pid, since):
-    """Sandbox denials the kernel logged for |pid| since |since|."""
     deadline = time.time() + 10
     lines = []
-    time.sleep(1)  # The log can lag a little behind the process.
+    time.sleep(1)
     while time.time() < deadline:
         out = subprocess.run(
             ["/usr/bin/log", "show", "--style", "compact", "--start", since, "--predicate",
              f'eventMessage CONTAINS "({pid})" AND eventMessage CONTAINS "deny"'],
             capture_output=True, text=True).stdout
         lines = [l for l in out.splitlines() if f"({pid})" in l and "deny" in l]
-        # Every sandboxed run logs the probe's own network check; wait for more.
         if any("network-outbound" not in l for l in lines):
             break
         time.sleep(1)
@@ -142,7 +129,6 @@ def denials(pid, since):
 
 
 def names_denial(item, name):
-    """Whether the denial |item| is for the grant target |name|."""
     if name.startswith("/"):
         return name in item
     return name in re.split(r"[\s()]+", item)
@@ -259,8 +245,6 @@ def main():
             for i in grants:
                 ablate(f"ablate-{i}", [i])
         if args.ablate_groups:
-            # Each commented group (a comment line starts one), replaced whole,
-            # for grants that stand in for each other (lskdd and lskdd.xpc).
             groups, current = [], None
             for i, l in enumerate(lines):
                 if l.strip().startswith(";"):

@@ -1,6 +1,5 @@
 import AppKit
 
-/// Original-model identity and real native row checks; no browser is launched.
 @main @MainActor
 struct SpaceActionTests {
     static var assertions = 0

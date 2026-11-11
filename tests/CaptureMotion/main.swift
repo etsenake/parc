@@ -116,7 +116,6 @@ import AppKit
         check(overlay.nextKeyView !== overlay.searchField && overlay.nextKeyView?.isHidden == false,
               "Returning to selection retires the palette key loop")
 
-        // P1-AP: element-lens 60 Hz timer idle-stops; identical settled focus is a no-op.
         FrameSources.install()
         SystemOverrides.install()
         func lensTimers(_ body: () -> Void) -> [FrameSource] {
@@ -137,7 +136,6 @@ import AppKit
         check(armed(retarget), "Retarget arms the lens timer while the spring runs")
         let deadline = Date(timeIntervalSinceNow: 2)
         while armed(retarget), Date() < deadline {
-            // Timer is registered for .common; run .default (a common mode member).
             RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
         }
         check(!armed(retarget), "Settled spring idle-stops the lens timer")

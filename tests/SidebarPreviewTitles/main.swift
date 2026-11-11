@@ -7,7 +7,6 @@ func check(_ value: @autoclosure () -> Bool, _ description: String) {
 }
 func url(_ string: String) -> URL { URL(string: string)! }
 
-//
 let rules: [String: [TidyTitleRule]] = ["example.com": [
     TidyTitleRule(match: .pathEquals("/"), title: .always("Example")),
     TidyTitleRule(match: .fragmentEquals("inbox"), title: .always("Inbox")),
@@ -24,13 +23,11 @@ check(TidyTitles.title(for: url("https://example.com/p"), title: "(3) Page | Exa
 check(TidyTitles.title(for: url("https://other.com/p"), title: "Page", rules: rules) == nil, "unknown host")
 check(TidyTitles.title(for: url("https://example.com/p"), title: " Page ", rules: ["example.com": [TidyTitleRule(match: nil, title: .removing(["x"]))]]) == " Page ", "untrimmed result kept")
 
-// Parc rule data.
 check(TidyTitles.title(for: url("https://www.notion.so/Roadmap-0123456789abcdef0123456789abcdef"), title: "(2) Roadmap | Notion") == "Roadmap", "Notion count and suffix")
 check(TidyTitles.title(for: url("https://www.notion.so/"), title: "Anything") == "Notion", "Notion root")
 check(TidyTitles.title(for: url("https://www.figma.com/design/abc/Board"), title: "Board – Figma") == "Board", "Figma suffix")
 check(TidyTitles.title(for: url("https://www.figma.com/files/recent"), title: "x") == "Recently Viewed", "Figma recent files")
 
-//
 let linear = url("https://linear.app/acme/issue/ENG-123/fix-the-thing")
 check(RecentPageText.linearTicketID(linear) == "ENG-123", "Linear ticket id from five components")
 check(RecentPageText.linearTicketID(url("https://linear.app/acme/issue/ENG-123")) == nil, "Linear needs the slug component")
@@ -44,7 +41,6 @@ check(RecentPageText.tidyTitle(.confluence, url: confluence, title: "A - B - C -
 check(RecentPageText.tidyTitle(.confluence, url: confluence, title: "Plan - Draft") == "Plan - Draft", "Confluence without suffix unchanged")
 check(RecentPageText.tidyTitle(.figma, url: url("https://figma.com/file/x/y"), title: "y – Figma") == "y", "Figma via rules")
 
-//
 let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
 check(RecentPageText.relativeTime(now.addingTimeInterval(-59), now: now) == "Just now", "under a minute is Just now")
 check(RecentPageText.relativeTime(now.addingTimeInterval(59), now: now) == "Just now", "absolute interval")
@@ -52,7 +48,6 @@ check(RecentPageText.relativeTime(now.addingTimeInterval(-120), now: now) != "Ju
 check(RecentPageText.subtitle(url: linear, visitedAt: now.addingTimeInterval(-5), now: now) == "ENG-123 • Just now", "Linear subtitle prefix")
 check(RecentPageText.subtitle(url: confluence, visitedAt: now, now: now) == "Just now", "plain subtitle")
 
-// Dedupe: first occurrence by tidy title, then by recognized identity.
 struct Row { let title: String; let url: URL }
 let rows = [
     Row(title: "Plan", url: url("https://www.notion.so/Plan-0123456789abcdef0123456789abcdef")),
@@ -66,7 +61,6 @@ check(kept == ["Plan", "File A", "File B"], "title then identity dedupe keeps un
 check(RecentPageText.pageIdentity(url("https://acme.notion.site/Doc-0123456789ABCDEF0123456789ABCDEF")) == "notion:0123456789abcdef0123456789abcdef", "Notion identity normalized")
 check(RecentPageText.pageIdentity(url("https://figma.com/file/a")) == nil, "Figma has no identity")
 
-//
 check(RecentPageText.rowMenu(linear) == .linearIssue(id: "ENG-123"), "a Linear ticket copies its ID and URL")
 check(RecentPageText.rowMenu(url("https://www.linear.app/acme/issue/ENG-9/x")) == .linearIssue(id: "ENG-9"), "www. is stripped")
 check(RecentPageText.rowMenu(url("https://linear.app/acme/issue/ENG-123")) == .copyURL
@@ -81,14 +75,12 @@ check(RecentPageText.rowMenu(url("https://acme.notion.site/Doc-0123456789abcdef0
 check(RecentPageText.rowMenu(url("https://www.figma.com/design/a/Board")) == .copyURL && RecentPageText.rowMenu(confluence) == .copyURL,
       "Figma and Confluence copy their URL")
 
-//
 typealias M = SidebarPreviewModifiers
 check(M(eventFlags: 1 << 17 | 1 << 18 | 1 << 19 | 1 << 20) == [.shift, .control, .option, .command]
       && M(eventFlags: 1 << 17 | 1 << 18 | 1 << 19 | 1 << 20).rawValue == 0xF, "shift 1, control 2, option 4, command 8")
 check(M(eventFlags: 1 << 16 | 1 << 21 | 1 << 22 | 1 << 23).rawValue == 0xF0, "capsLock, numericPad, help and function high bits")
 check(M(eventFlags: 1 << 20 | 1 << 16 | 1 << 23 | 0xFFFF).normalized == .command, "normalization masks 0xF0 and ignores device bits")
 
-//
 let recent = SidebarPreviewActivation.recentPage
 check(recent([]) == .navigateSource(split: false) && recent([.shift, .control]) == .navigateSource(split: false), "plain routes the source tab")
 check(recent(.option) == .navigateSource(split: true) && recent([.option, .shift]) == .navigateSource(split: true), "Option asks for split")
@@ -96,7 +88,6 @@ check(recent(.command) == .openNewTab(split: false) && recent([.command, .shift,
 check(recent([.command, .option]) == .openNewTab(split: true), "Command-Option opens a new tab in split")
 check([recent([]), recent(.option), recent(.command), recent([.command, .option])].allSatisfy(\.dismissesPreview), "recent routes dismiss")
 
-//
 let folder = SidebarPreviewActivation.folderItem
 check(folder([]) == .selectOriginal(split: false) && folder(.shift) == .selectOriginal(split: false)
       && folder(.control) == .selectOriginal(split: false), "other modifiers select the original")
@@ -110,7 +101,6 @@ check(folder([]).dismissesPreview && folder(.option).dismissesPreview, "selectio
 check(!folder([.command, .shift]).dismissesPreview && !folder(.command).dismissesPreview && !folder([.option, .command]).dismissesPreview,
       "Command routes keep the preview")
 
-//
 func route(_ target: String, saved: Bool = true, split: Bool = false, current: String? = "www.notion.so",
            savedHost: String? = "www.notion.so", unlocked: Bool = false) -> SidebarPreviewSourceRoute {
     .route(to: url(target), isSavedItem: saved, inSplit: split, currentHost: current, savedHost: savedHost, authenticationUnlocked: unlocked)

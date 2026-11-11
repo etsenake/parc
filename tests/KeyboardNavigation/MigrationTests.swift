@@ -58,7 +58,6 @@ import AppKit
         let unchanged = try Data(contentsOf: file)
         expect(unchanged == bad, "Unreadable document not overwritten")
 
-        // These are existing command owners, not a new event dispatcher.
         let browserIDs = ["goBack:", "goForward:", "cycleTabForward:", "cycleTabBackward:",
                           "focusAddress:", "newTab:", "newWindow:", "newIncognitoWindow:", "restoreTab:",
                           "nextTab:", "previousTab:", "cycleToNextRecentTab:", "cycleToPreviousRecentTab:",
@@ -134,8 +133,6 @@ import AppKit
         expect(menuRegistry.loadError != nil, "Future schema remains protected")
         let preservedFuture = try Data(contentsOf: file)
         expect(preservedFuture == future, "Migration never rewrites an unknown schema")
-        //
-        // are not registered; their saved custom bindings must survive edits.
         let gatedDirectory = directory.appendingPathComponent("gated")
         try FileManager.default.createDirectory(at: gatedDirectory, withIntermediateDirectories: true)
         let gatedFile = gatedDirectory.appendingPathComponent("keyboard-shortcuts.json")

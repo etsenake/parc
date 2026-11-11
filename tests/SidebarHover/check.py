@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Sidebar hover regions: the pure model and the production AppKit tracker.
-
-The tracker runs in an off-screen window that is never made key; the pointer
-and the listening condition are injected. No browser or input.
-"""
 from pathlib import Path
 import subprocess
 import tempfile

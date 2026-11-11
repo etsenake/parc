@@ -1,7 +1,5 @@
 import AppKit
 
-/// Inert AppKit checks for setup's Close Setup owner and the theme editor's
-/// setup Tab loop. No browser, engine, imports or user profile.
 @MainActor private final class ProbeWindow: NSWindow {
     var testParent: NSWindow?
     var testSheet: NSWindow?
@@ -58,12 +56,9 @@ struct OnboardingKeyboardTests {
             visited.append(view); current = view.nextKeyView
         }
         expect(current === following, "The editor's last control leads to the following setup control")
-        // Color pad, three appearance buttons, remove/add, both chevrons,
-        // nine presets, intensity and noise.
         expect(visited.count == 19, "Every editor control is in the loop (\(visited.count))")
         expect(Set(visited.map(ObjectIdentifier.init)).count == visited.count, "No control repeats")
         expect(visited.allSatisfy { $0.isDescendant(of: editor) }, "The loop stays inside the editor")
-        // Disabled chevrons and empty presets stay listed; Tab skips them.
         expect(visited.allSatisfy { $0 is NSControl || $0.acceptsFirstResponder }, "Every loop member is a control")
         expect(!visited.contains { $0 === editor }, "The editor container is not a Tab stop")
         expect(Self.links(in: sidebar) == sidebarLinks, "An editor the setup never chains keeps its own loop")

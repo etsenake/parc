@@ -1,6 +1,5 @@
 import AppKit
 
-/// Reports the window visible, as an on-screen, unoccluded window would.
 private final class VisibleWindow: NSWindow {
     override var occlusionState: NSWindow.OcclusionState { .visible }
 }
@@ -18,7 +17,6 @@ private final class VisibleWindow: NSWindow {
         Redraws.install()
         GeometryWrites.install()
         SystemOverrides.install()
-        // Placement: a 128 × 4 pill centred over its pane in the 10-point band.
         check(PageLoadingIndicator.size == NSSize(width: 128, height: 4), "the 128 × 4 size")
         check(PageLoadingIndicator.frame(paneMinX: 0, paneWidth: 1000, bandHeight: 10) == NSRect(x: 436, y: 3, width: 128, height: 4), "centred in band")
         check(PageLoadingIndicator.frame(paneMinX: 500, paneWidth: 500, bandHeight: 10).midX == 750, "centred over the second pane")
@@ -26,7 +24,6 @@ private final class VisibleWindow: NSWindow {
         check(PageLoadingIndicatorHost.frame(pageHost: NSRect(x: 228, y: 10, width: 1232, height: 811)) == NSRect(x: 228, y: 0, width: 1232, height: 10), "host spans the top inset")
         check(PageLoadingIndicatorHost.frame(pageHost: NSRect(x: 0, y: 0, width: 1470, height: 831)).height == 0, "no band in page full screen")
 
-        //
         let a = UUID(), b = UUID(), c = UUID()
         check(PageLoadingIndicatorHost.eligible([a, b, c], stacked: true) == [a], "stacked: first pane only")
         check(PageLoadingIndicatorHost.eligible([a, b, c], stacked: false) == [a, b, c], "side by side: every pane")
@@ -45,7 +42,6 @@ private final class VisibleWindow: NSWindow {
         host.reset()
         check(host.indicators.isEmpty, "reset removes every indicator")
 
-        //
         func stroke(_ t: Double) -> (CGFloat, CGFloat) { let s = PageLoadingIndicator.stroke(at: t); return (s.start, s.end) }
         check(stroke(0) == (0, 0), "cycle starts empty")
         check(near(stroke(0.1875).1, 0.5) && stroke(0.1875).0 == 0, "grows from the start")
@@ -54,7 +50,6 @@ private final class VisibleWindow: NSWindow {
         check(near(stroke(1.125 + 0.1875).1, 0.5), "repeats every 1.125 s")
         check(PageLoadingIndicator.sweepDelay == 3.2, "sweep after 3.2 s")
 
-        // ReloadGlyph: SwiftUI spring(response 0.2, damping 0.6), delays 0.2 / 0.1.
         check(ReloadGlyph.spring(0) == 0, "spring starts at rest")
         check(abs(ReloadGlyph.spring(ReloadGlyph.settlingTime) - 1) < 0.001, "settled within the envelope")
         check(ReloadGlyph.settlingTime > 0.3 && ReloadGlyph.settlingTime < 0.5, "settles in under half a second")
@@ -110,15 +105,12 @@ private final class VisibleWindow: NSWindow {
             check(glyph.progress == 0 && !driving(unload), "a settled spring stops its own display link")
         }
 
-        // Without a window the pill does not start a run-loop timer.
         let indicator = PageLoadingIndicator(frame: NSRect(x: 0, y: 0, width: 128, height: 4))
         var unwindowed = FrameSources.scheduled { indicator.setLoading(true) }
         check(indicator.isLoading && unwindowed.isEmpty, "no window: loading does not tick")
         unwindowed += FrameSources.scheduled { indicator.setLoading(false) }
         check(!indicator.isLoading && unwindowed.isEmpty, "no window: hide does not tick")
 
-        // Identical pulse/sweep presentation fingerprints skip the layer write;
-        // a changed frame still presents (display link keeps sampling).
         typealias Skip = PageLoadingPresentationSkip
         let empty = PageLoadingIndicator.presentation(
             pulse: 1, sweeping: true, stroke: (0, 0), barOpacity: 0.92, hidden: false)
@@ -134,15 +126,10 @@ private final class VisibleWindow: NSWindow {
         check(Skip.shouldSkip(previous: pulseA, next: pulseB) == false, "loading pulse change must present")
         check(PageLoadingIndicator.stroke(at: 0.9) == (0, 0), "0.9 s is the empty third")
 
-        //
-        // colour keeps the sweep on its 0.276 p branch.
         check(near(CGFloat(pulseA.fillOpacity), 0.368) && near(CGFloat(empty.fillOpacity), 0.276), "fill opacity per phase")
         check(PageLoadingIndicator.trackSize(sweeping: false) == CGSize(width: 48, height: 4)
               && PageLoadingIndicator.trackSize(sweeping: true) == CGSize(width: 128, height: 4), "the per-phase track sizes")
 
-        // BaseAssets ForegroundPrimary under the Space's content appearance,
-        // the same colour for the fill and the bar. As in BrowserWindowController,
-        // the host's appearance is set before its indicators exist.
         let spaceHost = PageLoadingIndicatorHost(frame: NSRect(x: 0, y: 0, width: 400, height: 10))
         spaceHost.appearance = NSAppearance(named: .aqua)
         spaceHost.update([.init(id: a, minX: 0, width: 200, loading: false), .init(id: b, minX: 200, width: 200, loading: true)])
@@ -167,8 +154,6 @@ private final class VisibleWindow: NSWindow {
         check(showsLight(a) && showsLight(b), "returning to light content restores near-black")
         spaceHost.reset()
 
-        // A pill in a visible window samples display-link frames, delivered by
-        //
         SystemOverrides.reduceMotion = false
         let pillWindow = VisibleWindow(contentRect: NSRect(x: 0, y: 0, width: 128, height: 4),
                                        styleMask: .borderless, backing: .buffered, defer: true)
@@ -178,7 +163,6 @@ private final class VisibleWindow: NSWindow {
         var loadingStarted = CACurrentMediaTime()
         var pill = FrameSources.scheduled { driven.setLoading(true) }
         check(driving(pill), "a visible loading pill samples on the display link")
-        // Every presentation writes the track's scale transform once.
         let track = driven.layer!.sublayers!.first!
         let bar = track.sublayers!.last as! CAShapeLayer
         func deliverFrame() -> [GeometryWrite] {
@@ -192,7 +176,6 @@ private final class VisibleWindow: NSWindow {
             return (from.rectValue.width, to.rectValue.width, spring)
         }
         func barTarget() -> Float? { ((bar.animation(forKey: "opacity") as? CASpringAnimation)?.toValue as? NSNumber)?.floatValue }
-        //
         func isArcSpring(_ spring: CASpringAnimation) -> Bool {
             let response = 2 * Double.pi / (spring.stiffness / spring.mass).squareRoot()
             let fraction = spring.damping / (2 * (spring.stiffness * spring.mass).squareRoot())
@@ -211,7 +194,6 @@ private final class VisibleWindow: NSWindow {
         check(track.bounds.size == PageLoadingIndicator.trackSize(sweeping: true) && widen.map { near($0.from, 48) && $0.to == 128 } == true
               && widen.map { isArcSpring($0.spring) } == true && barTarget() == PageLoadingIndicator.sweepBarOpacity,
               "the sweep springs the track from 48 to 128 points and the bar to 0.92 on the spring")
-        // Once the pulse settles, empty-third frames present nothing.
         var skipped = 0
         let settleDeadline = Date(timeIntervalSinceNow: 8)
         while skipped < 2, Date() < settleDeadline {
@@ -224,8 +206,6 @@ private final class VisibleWindow: NSWindow {
         let growthDeadline = Date(timeIntervalSinceNow: 1.5)
         while bar.strokeEnd == 0, Date() < growthDeadline { growth = deliverFrame() }
         check(bar.strokeEnd > 0 && presentations(growth) == 1, "stroke growth presents")
-        // A load that ends mid-sweep: the track springs back to 48 points and
-        // the bar fades on the same spring; reset drops both.
         driven.setLoading(false)
         let shrink = boundsSpring()
         check(track.bounds.size == PageLoadingIndicator.trackSize(sweeping: false) && bar.opacity == 0
@@ -235,7 +215,6 @@ private final class VisibleWindow: NSWindow {
         driven.reset()
         check(track.animation(forKey: "bounds") == nil && bar.animation(forKey: "opacity") == nil && !driving(pill),
               "reset removes the track and bar springs and idles the pill")
-        // Mid-sweep Reduce Motion returns to the static loading track.
         loadingStarted = CACurrentMediaTime()
         pill = FrameSources.scheduled { driven.setLoading(true) }
         check(waitForSweep() < PageLoadingIndicator.sweepDelay + 0.5 && bar.opacity > 0, "a second load sweeps again")
@@ -253,7 +232,6 @@ private final class VisibleWindow: NSWindow {
         SystemOverrides.reduceMotion = nil
         pillWindow.close()
 
-        //
         var chosen: [ReloadOptionsMenu.Choice] = []
         let menu = ReloadOptionsMenu.make(state: .forceReload, canReload: true, canForceReload: true, canClearCookies: false) { chosen.append($0) }
         check(menu.items.map(\.title) == ["Reload", "Refresh (Ignore Cache)", "", "Clear Cookies and Refresh"], "the items")
@@ -272,7 +250,6 @@ private final class VisibleWindow: NSWindow {
         SystemOverrides.standardDefaults = nil
         defaults.removePersistentDomain(forName: "parc.navigation-loading-checks")
 
-        //
         let lights = CGSize(width: 60, height: 14)
         let regular = SidebarChromeLayout.toolbar(width: 228, windowButtons: lights, showsNavigation: true)
         let developer = SidebarChromeLayout.toolbar(width: 228, windowButtons: lights, showsNavigation: true, developerReload: true)

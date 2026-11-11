@@ -47,7 +47,6 @@ int main() {
                                             signal, retries);
   };
 
-  //
   {
     auto step = reduce(S::kIdle, V::kHidden, false, true);
     assert(step.state == S::kPendingActive && step.command == C::kEnter);
@@ -94,17 +93,14 @@ int main() {
     auto step = reduce(S::kUserClosed, V::kVisible, false, true);
     assert(step.state == S::kIdle && step.command == C::kNone);
   }
-  // Fast return while pending + Chromium already in PiP must Exit, not orphan.
   {
     auto step = reduce(S::kPendingActive, V::kVisible, true, true);
     assert(step.state == S::kIdle && step.command == C::kExit);
   }
-  // Pending must not drop on transient !eligible (races in-flight Enter).
   {
     auto step = reduce(S::kPendingActive, V::kOccluded, false, false);
     assert(step.state == S::kPendingActive && step.command == C::kNone);
   }
-  // Silent Enter failure timeout → one retry while eligible, then Idle.
   {
     auto step = reduce(S::kPendingActive, V::kOccluded, false, true,
                        Sig::kEnterTimedOut, 1);
@@ -120,28 +116,23 @@ int main() {
                        Sig::kEnterTimedOut, 1);
     assert(step.state == S::kIdle && step.command == C::kNone);
   }
-  // Active dismiss only on explicit PiP-false, not reconcile churn.
   {
     auto step = reduce(S::kActive, V::kHidden, false, true);
     assert(step.state == S::kActive && step.command == C::kNone);
   }
-  // Fast return while Enter still in flight → CancelPending (not Idle orphan).
   {
     auto step = reduce(S::kPendingActive, V::kVisible, false, true);
     assert(step.state == S::kCancelPending && step.command == C::kNone);
   }
-  // Late success after cancel → Exit.
   {
     auto step = reduce(S::kCancelPending, V::kVisible, true, true);
     assert(step.state == S::kIdle && step.command == C::kExit);
   }
-  // Late failure/timeout after cancel while still foreground → Idle, no Exit.
   {
     auto step = reduce(S::kCancelPending, V::kVisible, false, true,
                        Sig::kEnterTimedOut);
     assert(step.state == S::kIdle && step.command == C::kNone);
   }
-  // Away again before settle ends → timeout must resume Enter, not stuck Idle.
   {
     auto step = reduce(S::kCancelPending, V::kOccluded, false, true,
                        Sig::kEnterTimedOut);
@@ -153,7 +144,6 @@ int main() {
     assert(step.state == S::kPendingActive && step.command == C::kEnter);
   }
 
-  // Compatibility wrappers.
   auto enter = [](V visibility, bool in_pip, bool allowed, bool controllable,
                   bool playing, bool muted, bool has_video,
                   bool dismissed = false) {
@@ -192,8 +182,6 @@ int main() {
   assert(!parc::ShouldExitBackgroundVideoPictureInPicture(V::kVisible, false, true));
   assert(!parc::ShouldExitBackgroundVideoPictureInPicture(V::kVisible, true, false));
 
-  // Production producer fence and re-admission state transition: the lease is
-  // single use and a newer dismissal/eviction must win over captured work.
   parc::NativeMediaSuppressionFence fence;
   auto stale = fence.Capture();
   fence.Suppress();
@@ -209,7 +197,7 @@ int main() {
   for (bool was_active : {false, true}) {
     bool active = was_active, dismissed = true;
     assert(parc::AdmitAfterPresentationRemoval(active, dismissed, accepted));
-    assert(!active && !dismissed);  // Real Snapshot sets active on acceptance.
+    assert(!active && !dismissed);
   }
   bool active = true, dismissed = true;
   assert(!parc::AdmitAfterPresentationRemoval(active, dismissed, [] { return false; }));
@@ -236,7 +224,6 @@ int main() {
   active = true; dismissed = true;
   assert(!parc::KeepMediaEpisodeAcrossPageChange(active, dismissed, casting));
   assert(!active && !dismissed);
-  // Casting() creates the cast watcher, so it's asked only for a shown row.
   auto unasked = [] { assert(false); return true; };
   assert(!parc::KeepMediaEpisodeAcrossPageChange(active, dismissed, unasked));
   dismissed = true;
@@ -249,7 +236,7 @@ int main() {
     assert(!store.Admit(regular[i], {}, false).get());
     assert(store.Sequence(regular[i].get()) == static_cast<unsigned>(i));
   }
-  assert(!store.Admit(regular[1], {}, false).get());  // Duplicate is not a new admission.
+  assert(!store.Admit(regular[1], {}, false).get());
   assert(store.Admit(regular[5], {}, false).get() == regular[0].get());
   assert(store.Sequence(regular[5].get()) > store.Sequence(regular[4].get()));
 
@@ -262,10 +249,8 @@ int main() {
   assert(!store.Admit(b, private_b, true).get());
   assert(store.Admit(a[5], private_a, true).get() == a[0].get());
   assert(store.Sequence(b.get()) == 0);
-  assert(store.Sequence(regular[1].get()) == 1);  // Private admission cannot evict regular.
+  assert(store.Sequence(regular[1].get()) == 1);
 
-  // Prune a newly ineligible entry before admitting a new source: a still
-  // eligible oldest entry must not be evicted by a stale slot.
   Store reconcile;
   for (int i = 0; i < 5; ++i) assert(!reconcile.Admit(regular[i], {}, false).get());
   auto withdrawn = reconcile.RemoveIf([&](Source* source) { return source == regular[4].get(); });
@@ -282,10 +267,8 @@ int main() {
   expired.reset();
   assert(!cleanup.Admit(b, private_b, true).get());
   private_b.reset();
-  assert(cleanup.Sequence(b.get()) == UINT64_MAX);  // A dead OTR identity cannot fall back to regular.
+  assert(cleanup.Sequence(b.get()) == UINT64_MAX);
 
-  // A route list asked for between two players opens for the page's next
-  // player, and only for that page; a later request or its deadline ends it.
   struct Ask { int page; int press; };
   auto page = [](int id) { return [id](const Ask& ask) { return ask.page == id; }; };
   parc::NativeRouteWait<Ask> wait;

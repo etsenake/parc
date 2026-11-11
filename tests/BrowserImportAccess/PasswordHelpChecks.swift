@@ -1,7 +1,5 @@
 import Foundation
 
-/// The menu window can't be built without the whole app, so its help
-/// presentation is checked in source against setup's.
 func passwordHelpChecks() throws -> Int {
     var checks = 0
     func expect(_ condition: @autoclosure () -> Bool, _ message: String) {

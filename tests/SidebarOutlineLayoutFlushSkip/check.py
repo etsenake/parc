@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""797f2a55 leftover behavior lock: SidebarView.layout skips forced outline/list
-layoutSubtreeIfNeeded when the list frame already matches and the outline
-subtree is clean. Membership rebuilds still force layoutSubtree at the end of
-render; size/disclosure/dirty-tree cases still flush the list.
-"""
 from pathlib import Path
 import re
 
@@ -23,8 +18,6 @@ layout = re.search(
 assert layout, "SidebarView.layout not found"
 body = layout.group("body")
 
-# Both space-management and ordinary chrome paths lay the shown page out
-# through layoutPage, which gates the outline flush.
 assert body.count("layoutPage(shownPage)") == 2, \
     "space-management and ordinary layout must both lay the shown page out"
 page = re.search(r"private func layoutPage\(_ page: SidebarSpacePage, flush: Bool = true\) \{(?P<body>.*?)\n    \}\n", sidebar, re.S)
@@ -42,7 +35,6 @@ assert "frameChanged:" in page_body and "page.list.needsLayout" in page_body, \
 assert "page.list.subviews.contains(where: \\.needsLayout)" in page_body, \
     "shouldFlush must observe dirty outline children"
 
-# Membership rebuilds must still force a sidebar layoutSubtree walk.
 render = re.search(
     r"func render\(state: BrowserState, focusedTabID: UUID\?, loading: Set<UUID>, canBack: Bool, "
     r"canForward: Bool, captures: \[UUID: CaptureIndicatorPresentation\] = \[:\],\n"

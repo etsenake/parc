@@ -1,4 +1,3 @@
-// Pure checks for Engine/ParcNative/fairplay_identity_policy.h.
 #include "fairplay_identity_policy.h"
 
 #include <cstdio>
@@ -146,7 +145,7 @@ void UserAgentRules() {
   Check(!IsSafariVersion("1.2.3.4"), "four parts");
 }
 
-}  // namespace
+}
 
 int main() {
   SiteListRules();

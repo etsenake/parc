@@ -72,7 +72,6 @@ struct MembershipCardTests {
         window.contentView = pane
         SettingsFocusState.connectKeyViews(in: pane)
         func descendants(_ view: NSView) -> [NSView] { view.subviews + view.subviews.flatMap(descendants) }
-        // The default-browser banner stays hidden until Settings reports Parc isn't the default.
         let buttons = descendants(pane).compactMap { $0 as? NSButton }.filter { $0.superview?.isHidden == false }
         precondition(buttons.count == 5)
         for label in ["Share card", "Download card", "Randomize card design", "Edit card display name"] {
@@ -81,8 +80,6 @@ struct MembershipCardTests {
         let card = try require(pane.subviews.compactMap { $0 as? MembershipCardView }.first)
         precondition(card.accessibilityRole() == .image)
         precondition(card.accessibilityLabel()?.contains("Local Parc card created") == true)
-        // Native inert rendering only: no browser, GUI input, real profile, share
-        // service, save panel or system setting is driven by these checks.
         let directory = URL(fileURLWithPath: CommandLine.arguments[1])
         for shape in 1...4 {
             var specimen = initial; specimen.shape = shape; specimen.palette = shape - 1
@@ -157,7 +154,6 @@ struct MembershipCardTests {
         }
         print("PASS: membership persistence, regeneration, validation, failed writes, stale owner, future/corrupt preservation, shared ownership, native AX controls, inactive motion cleanup and four rendered masks")
     }
-    /// A layer's matrix reports its rotation within ±π; compare as an angle.
     static func sameAngle(_ layer: CALayer, _ angle: CGFloat) -> Bool {
         let value = (layer.value(forKeyPath: "transform.rotation.z") as? NSNumber)?.doubleValue ?? .nan
         return abs(sin(value) - sin(angle)) < 0.001 && abs(cos(value) - cos(angle)) < 0.001

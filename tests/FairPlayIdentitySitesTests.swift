@@ -1,6 +1,5 @@
 import Foundation
 
-// Pure checks for Sources/ParcCore/FairPlayIdentity.swift; no browser.
 @main
 struct FairPlayIdentitySitesTests {
     static var checks = 0

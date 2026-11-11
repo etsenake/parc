@@ -1,4 +1,3 @@
-"""Offline artifact/deployment tests. They do not build or execute Chromium."""
 import fcntl
 import importlib.util
 import json
@@ -175,7 +174,6 @@ Load command 4
         (stage / "component.dylib").write_bytes(b"component")
         (stage / "package-report.json").write_text("{}")
         output = self.root / "published"
-        # Even a concurrently created empty output must survive publication.
         output.mkdir()
         with self.assertRaises(OSError):
             pkg.publish_development_directory(stage, output)

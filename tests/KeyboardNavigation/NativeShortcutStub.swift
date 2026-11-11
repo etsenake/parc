@@ -1,5 +1,4 @@
 import AppKit
-// Component-only stand-in for the native dispatch DTO; no renderer is created.
 enum PCNativeShortcutPriority { case preferWebsites, useBoth, preferParc }
 @MainActor final class PCNativeShortcutCommand {
     let item: NSMenuItem?

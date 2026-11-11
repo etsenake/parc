@@ -1,6 +1,5 @@
 import AppKit
 
-// An inert output owner: no engine, renderer, browser window or capture API.
 @MainActor final class PageCaptureController {
     var received: [NSGestureRecognizer.State] = []
     func handleCaptureGesture(_ recognizer: NSPanGestureRecognizer) { received.append(recognizer.state) }

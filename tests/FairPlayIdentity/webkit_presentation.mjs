@@ -1,9 +1,3 @@
-// Runs the video presentation and fullscreen script from
-// Engine/ParcRenderer/parc_webkit_presentation.h against a model of
-// Chromium's DOM events, Picture-in-Picture and Fullscreen APIs as a
-// Safari-identity page sees them, and asserts WebKit's behaviour
-// (HTMLVideoElement.cpp, HTMLMediaElement.cpp on macOS). No browser;
-// `node webkit_presentation.mjs`.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
@@ -13,7 +7,6 @@ const header = readFileSync(fileURLToPath(new URL(
 const match = header.match(/R"PARC_WKPM_JS\(([\s\S]*)\)PARC_WKPM_JS"/);
 if (!match) throw new Error('script not found in header');
 const script = match[1];
-// Blink runs it as a Latin-1 String.
 if (/[^\x00-\x7f]/.test(script)) throw new Error('script must be ASCII');
 
 let checks = 0;
@@ -25,9 +18,6 @@ function check(condition, message) {
   }
 }
 
-// A window: Chromium's event dispatch (capture, target, bubble; shadow roots
-// stop events that aren't composed), and its Picture-in-Picture and
-// Fullscreen state machines, with the platform's steps taking tasks.
 function makeWindow() {
   const log = [];
   const listeners = new WeakMap();
@@ -91,14 +81,10 @@ function makeWindow() {
     remove() {
       const fullscreen = this.ownerDocument.state.fullscreen;
       this.parentNode = null;
-      // Removing the fullscreen element exits fullscreen; the event goes to
-      // the document, as the element is no longer connected.
       if (fullscreen === this) this.ownerDocument.leaveFullscreen(() => {});
     }
     get isConnected() { return this.getRootNode() instanceof Document; }
   }
-  // Retargeting against a root: the element, or the shadow host that holds
-  // it in that root.
   const retarget = (element, root) => {
     let node = element;
     while (node) {
@@ -167,7 +153,6 @@ function makeWindow() {
         document.state.fullscreen = this;
         log.push('entered fullscreen');
         resolve();
-        // HTMLVideoElement::DidEnterFullscreen ends picture in picture.
         if (document.state.pictureInPicture === this) document.exitPictureInPicture();
         task(() => this.dispatchEvent(new Event('fullscreenchange', {bubbles: true, composed: true})));
       }));
@@ -176,7 +161,6 @@ function makeWindow() {
   }
   class HTMLMediaElement extends Element {
     #networkState = 0; #readyState = 0;
-    // HTMLMediaElement::ParcHadMediaUserGesture.
     hadGesture = false;
     play() { if (activation.active) this.hadGesture = true; return Promise.resolve(); }
     get networkState() { return this.#networkState; }
@@ -201,7 +185,6 @@ function makeWindow() {
       }
       if (document.state.pictureInPicture === this) return Promise.resolve({});
       if (document.state.fullscreen === this) document.exitFullscreen();
-      // The browser's PiP service answers after a round trip.
       return new Promise((resolve) => tasks(3, () => {
         const previous = document.state.pictureInPicture;
         if (previous) {
@@ -217,8 +200,6 @@ function makeWindow() {
   }
   class HTMLAudioElement extends HTMLMediaElement {}
   const document = new Document();
-  // The listener types registered on a target (for what Blink's
-  // HasJSBasedEventListeners would see).
   const listenerTypes = (target) => (listeners.get(target) || []).map((entry) => entry.type);
   const window = {
     listenerTypes, WeakRef,
@@ -227,7 +208,6 @@ function makeWindow() {
     navigator: {userActivation: activation}, document, activation, log, failFullscreen: false,
     slowFullscreenExit: false, pipToken: false,
     consumeToken() { const had = window.pipToken; window.pipToken = false; return had; },
-    // Blink's helpers for the script (fairplay-identity-blink.patch).
     native: {
       fire(target, type) {
         const event = new Event(type, {bubbles: false, cancelable: true});
@@ -248,15 +228,9 @@ function makeWindow() {
   };
   return window;
 }
-// Runs the script as Blink does: it evaluates to a function, called with
-// the window's private helpers (the model's stand-ins for Blink's).
 const install = (window, helpers = window.native) => vm.runInContext(script, window)(helpers);
-// Lets the script's tasks and the model's platform steps run.
 const settle = async () => { for (let i = 0; i < 20; ++i) await new Promise((r) => setTimeout(r, 0)); };
-// Errors come from either realm (the script's or the model's).
 const throwsType = (fn) => { try { fn(); return false; } catch (error) { return !!error && error.name === 'TypeError'; } };
-// Records webkitpresentationmodechanged (with the mode read in the
-// listener) and the standard events, in the order the page sees them.
 function record(window, video, target = window.document) {
   const seen = [];
   video.addEventListener('webkitpresentationmodechanged', (event) => {
@@ -270,7 +244,6 @@ function record(window, video, target = window.document) {
   return seen;
 }
 
-// The members, as WebIDL defines them on HTMLVideoElement.
 {
   const window = makeWindow();
   install(window);
@@ -311,8 +284,6 @@ function record(window, video, target = window.document) {
         'a symbol is not a mode');
 }
 
-// webkitSupportsPresentationMode: inline always; fullscreen once a load
-// started (WebKit's media player); picture in picture once there's video.
 {
   const window = makeWindow();
   install(window);
@@ -336,9 +307,6 @@ function record(window, video, target = window.document) {
         'audio-only media supports fullscreen but not picture in picture');
 }
 
-// Entering picture in picture: a user gesture is needed, the mode reports
-// picture in picture from the task after the call, before the platform
-// finishes, and webkitpresentationmodechanged precedes enterpictureinpicture.
 {
   const window = makeWindow();
   install(window);
@@ -365,8 +333,6 @@ function record(window, video, target = window.document) {
         'one cancelable, non-bubbling webkitpresentationmodechanged, before enterpictureinpicture: ' + seen);
   check(window.document.pictureInPictureElement === video, 'the standard API agrees');
 
-  // Leaving for inline needs no gesture, reports inline at once and fires
-  // the event in a task.
   seen.length = 0;
   video.webkitSetPresentationMode('inline');
   check(window.log.includes('exitPictureInPicture') && video.webkitPresentationMode === 'inline',
@@ -379,8 +345,6 @@ function record(window, video, target = window.document) {
   check(seen.length === 2, 'setting the current mode does nothing');
 }
 
-// Fullscreen is element fullscreen of the video; the event comes before the
-// page's fullscreenchange, and inline exits it.
 {
   const window = makeWindow();
   install(window);
@@ -401,7 +365,6 @@ function record(window, video, target = window.document) {
   await settle();
   check(seen.join() === 'mode:inline,fullscreenchange', 'exit events: ' + seen);
 
-  // A refused request changes nothing and ends the change.
   window.failFullscreen = true;
   window.activation.active = true;
   video.webkitSetPresentationMode('fullscreen');
@@ -414,8 +377,6 @@ function record(window, video, target = window.document) {
   check(video.webkitPresentationMode === 'fullscreen', 'and the next request proceeds');
 }
 
-// Fullscreen to picture in picture and back: one change each, no inline in
-// between.
 {
   const window = makeWindow();
   install(window);
@@ -442,8 +403,6 @@ function record(window, video, target = window.document) {
         'Chromium ended picture in picture once fullscreen');
 }
 
-// Chromium may finish picture in picture before its exit from fullscreen
-// lands: still one change, and the video keeps reporting picture in picture.
 {
   const window = makeWindow();
   install(window);
@@ -467,8 +426,6 @@ function record(window, video, target = window.document) {
   check(seen.join() === 'mode:inline,leavepictureinpicture', 'and leaves it normally: ' + seen);
 }
 
-// Changes made through the standard APIs report too, and picture in
-// picture needs no gesture while the document already has one.
 {
   const window = makeWindow();
   install(window);
@@ -501,9 +458,6 @@ function record(window, video, target = window.document) {
   check(secondSeen.join() === 'picture-in-picture,enter,inline', 'the standard exit reports');
 }
 
-// A video in a shadow tree, whose picture-in-picture events don't reach the
-// window, still reports to its listener; a fullscreen video taken out of the
-// document reports inline from the document's fullscreenchange.
 {
   const window = makeWindow();
   install(window);
@@ -533,7 +487,6 @@ function record(window, video, target = window.document) {
   check(plainSeen.join() === 'inline', 'a fullscreen video removed from the document reports inline: ' + plainSeen);
 }
 
-// The fullscreen members, as WebIDL defines them on HTMLVideoElement.
 {
   const window = makeWindow();
   install(window);
@@ -557,10 +510,6 @@ function record(window, video, target = window.document) {
   check(!('webkitEnterFullscreen' in window.HTMLAudioElement.prototype), 'audio elements have none');
 }
 
-// webkitEnterFullscreen throws InvalidStateError without a gesture, without
-// a player or while changing; does nothing while displaying fullscreen; and
-// webkitExitFullscreen fully exits. macOS fires neither webkitbeginfullscreen
-// nor webkitendfullscreen around element fullscreen.
 {
   const window = makeWindow();
   install(window);
@@ -607,10 +556,6 @@ function record(window, video, target = window.document) {
         'exiting an inline video does nothing');
 }
 
-// In picture in picture the video displays fullscreen: webkitEnterFullscreen
-// does nothing and webkitExitFullscreen leaves picture in picture. From
-// fullscreen to picture in picture, webkitendfullscreen follows the mode
-// change.
 {
   const window = makeWindow();
   install(window);
@@ -644,11 +589,6 @@ function record(window, video, target = window.document) {
   check(!seen.some((entry) => entry.startsWith('webkitbeginfullscreen')), 'never webkitbeginfullscreen');
 }
 
-// Once a gesture reached the element's media (here play()), WebKit lifts
-// its rule: picture in picture goes without a gesture, through Chromium's
-// request token, and webkitEnterFullscreen no longer throws (element
-// fullscreen still needs transient activation, so it fails with
-// fullscreenerror, as in WebKit).
 {
   const window = makeWindow();
   install(window);
@@ -680,8 +620,6 @@ function record(window, video, target = window.document) {
         'element fullscreen still needs transient activation: ' + seen);
 }
 
-// Without Blink's helpers (an older engine) the script still works, with
-// script-made events.
 {
   const window = makeWindow();
   install(window, null);
@@ -696,11 +634,6 @@ function record(window, video, target = window.document) {
         'script-made events without the helpers: ' + seen);
 }
 
-// The script never listens for fullscreen changes on a video itself: Blink
-// adds webkitfullscreenchange on Safari-identity pages unless the page
-// listens for both change events there (WebKit's DocumentFullscreen rule),
-// and the script's listener would count as the page's. A video in a shadow
-// tree still reports fullscreen, from the window.
 {
   const window = makeWindow();
   install(window);
@@ -723,11 +656,6 @@ function record(window, video, target = window.document) {
   check(seen.join() === 'fullscreen,inline', 'and leaving it: ' + seen);
 }
 
-// A page's own requestPictureInPicture changes the mode as WebKit's does
-// (it goes through webkitSetPresentationMode there): from fullscreen,
-// picture in picture first and webkitendfullscreen, before Chromium's exit
-// from fullscreen and enterpictureinpicture reach the page. Chromium still
-// makes the request and every check; a refused one changes nothing.
 {
   const window = makeWindow();
   install(window);

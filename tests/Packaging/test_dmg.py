@@ -1,4 +1,3 @@
-"""Exercise DMG acceptance, contents and immutable notarization retries offline."""
 import contextlib
 import hashlib
 import importlib.util

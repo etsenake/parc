@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Isolated original-press ownership and cancellation checks; no browser/events posted."""
 from pathlib import Path
 import subprocess
 import tempfile

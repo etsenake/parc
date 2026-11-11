@@ -1,7 +1,5 @@
 import AppKit
 
-// Substitute only OS activation flags. The real control reads these native
-// owner properties, so focus-ring checks never activate or steal a real window.
 @MainActor
 private final class IconSettingsTestApplication: NSApplication {
     var simulatedActive = true
@@ -20,8 +18,6 @@ private final class IconSettingsTestBackdrop: NSView {
     override func draw(_ dirtyRect: NSRect) { NSColor.windowBackgroundColor.setFill(); bounds.fill() }
 }
 
-/// Inert native component checks. No browser, system event posting, real profile,
-/// Dock identity, Finder metadata, or installed application is involved.
 @main
 @MainActor
 struct IconSettingsTests {
@@ -173,8 +169,6 @@ struct IconSettingsTests {
         candy.mouseUp(with: mouse(.leftMouseUp, row: candy))
         expect(applications == 6 && icons.selectedID == "Original", "External selection retires pending input")
 
-        // The real controller's atomic write failure must never change the radio
-        // readout or invoke the system applier, even briefly.
         let blocker = temporary.appendingPathComponent("not-a-directory")
         try Data([1]).write(to: blocker)
         icons.configure(preferenceURL: blocker.appendingPathComponent("choice.json")) { _ in applications += 1; return nil }

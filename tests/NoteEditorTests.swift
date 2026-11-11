@@ -24,8 +24,6 @@ struct NoteEditorTests {
     static func expectPublished(_ value: @autoclosure () throws -> Bool, _ message: String) throws {
         try drainPublications(); try expect(try value(), message)
     }
-    /// A format row's highlight: the sibling its owner lays out under the
-    /// row, inset 2 points (`NoteMotion.layoutHighlight`).
     static func highlight(of button: NoteFormatButton) -> NSView? {
         button.superview?.subviews.first { !($0 is NoteFormatButton) && $0.frame == button.frame.insetBy(dx: 2, dy: 2) }
     }
@@ -113,8 +111,6 @@ struct NoteEditorTests {
         let reopened = try makeEditor(directory: directory, documentID: session.document.id); reopened.loadView()
         try expect(EaselRichTextCodec.snapshot(reopened.text.attributedString()) == EaselRichTextCodec.snapshot(text.attributedString()), "Reopen retains original authored attributes despite layout glyph substitution")
 
-        // Component-owned, never displayed window: the overridden key state
-        // exercises admission/retirement without synthetic OS/browser input.
         let window = NoteComponentWindow(contentRect: NSRect(x: 0, y: 0, width: 340, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = first.view
         first.view.frame = NSRect(x: 0, y: 0, width: 340, height: 600); first.view.layoutSubtreeIfNeeded()
@@ -274,7 +270,6 @@ struct NoteEditorTests {
         try expect(text.enclosingScrollView?.isFindBarVisible == true, "Note Find opens original native text finder")
         window.contentView = nil
 
-        // Real discontiguous native selections, durable local edits and Undo.
         let multiSession = try store.create()
         let multiEditor = try makeEditor(directory: directory, documentID: multiSession.document.id)
         multiEditor.loadView(); window.contentView = multiEditor.view
@@ -325,7 +320,6 @@ struct NoteEditorTests {
         try expectPublished(NoteSelectionTarget(text: multi, document: multiSession.document) == nil, "A sole attachment replacement character is excluded")
         window.contentView = nil
 
-        // Refusal in a later range cannot partially format an earlier range.
         let refusing = EaselStyledTextView(frame: .zero)
         let unsupported = NSMutableAttributedString(string: "good bad", attributes: [.font: NSFont.systemFont(ofSize: 15)])
         unsupported.addAttribute(NSAttributedString.Key("UnsupportedNoteAttribute"), value: "unsupported", range: NSRange(location: 5, length: 3))
@@ -351,8 +345,6 @@ struct NoteEditorTests {
         try expect(NoteParagraphGeometry.target(in: wrapped, containing: -1) == nil, "Reject invalid character index")
 
 
-        // The title/body boundary uses the actual native responders and local
-        // document store in a never-displayed component window.
         let keySession = try store.create()
         try keySession.updateTitle("Head 👩🏽‍💻 tail", replacing: keySession.document.title)
         let keyboard = try makeEditor(directory: directory, documentID: keySession.document.id)
@@ -465,7 +457,6 @@ struct NoteEditorTests {
         window.contentView = nil
         try store.delete(session.document.id, expectedRevision: session.document.revision)
         try expect(!first.text.isEditable && !second.text.isEditable && first.prepareToClose(), "Tombstone disables all original editors without resurrection")
-        // Native constraint/layout components, never an appearance/browser run.
         let presentationSession = try store.create(), presentation = try makeEditor(directory: directory, documentID: presentationSession.document.id)
         presentation.loadView(); window.contentView = presentation.view
         let nativeTitle = presentation.titleText, nativeBody = presentation.text
@@ -599,8 +590,6 @@ struct NoteEditorTests {
             let license = CTFontCopyName(font as CTFont, kCTFontLicenseNameKey) as String? ?? ""
             try expect(license.localizedCaseInsensitiveContains("Open Font License"), "Used body family retains embedded OFL license")
         }
-        // Actual native placeholder dispatch: only this undisplayed component
-        // window is painted into memory. The hint never enters document storage.
         let hintSession = try store.create()
         try hintSession.updateTitle("", replacing: hintSession.document.title)
         let hintEditor = try makeEditor(directory: directory, documentID: hintSession.document.id)
@@ -665,9 +654,6 @@ struct NoteEditorTests {
         hint.localUndo.beginUndoGrouping(); hint.insertText("", replacementRange: NSRange(location: 0, length: hint.string.utf16.count)); hint.localUndo.endUndoGrouping()
         try store.delete(hintSession.document.id, expectedRevision: hintSession.document.revision)
         try expect(!hint.isEditable && hint.string.isEmpty && (try hintPixels()) > 0, "Empty read-only tombstone retains native hint without resurrecting document")
-        // The actual gutter and its original text owner, in a never-displayed
-        // component window. Native events are delivered directly to the view;
-        // no app activation, OS pointer, browser or shared clipboard is used.
         do {
         let gutterSession = try store.create()
         let gutterEditor = try makeEditor(directory: directory, documentID: gutterSession.document.id)
@@ -965,7 +951,6 @@ struct NoteEditorTests {
         try expectPublished(hitSession.document.body == beforeFormat, "Insertion menu formatting Undo preserves original body and exact text")
         let classification = "\n\r\u{000b}\u{000c}\u{0085}\u{2028}\u{2029}\t👩"
         for index in [0, 1, 2, 3, 4, 5, 6] {
-            // A single UTF-16 newline range must itself be a valid Swift range.
             let range = Range(NSRange(location: index, length: 1), in: classification)
             try expect(NoteParagraphGeometry.isNewline(in: classification, at: index) == (range != nil), "Recovered newline set preserves actual range conversion")
         }
@@ -1133,8 +1118,6 @@ struct NoteEditorTests {
         try expect(icon(NSRange(location: NSNotFound, length: 0)) == .text, "Invalid sentinel cannot overflow attributed access")
         try expect(icon(NSRange(location: 0, length: Int.max)) == .text, "Oversized original range fails safely")
 
-        // Draw the same production vectors at 4x. These are component images,
-        // not screenshots of an installed browser or historical appearance.
         func pixels(numbered: Bool) throws -> NSBitmapImageRep {
             let rep = try require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 80, pixelsHigh: 80,
                 bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -1294,7 +1277,6 @@ struct NoteEditorTests {
         delayedEditor.view.layoutSubtreeIfNeeded()
         let delayedTitle = delayedEditor.titleText
         let chromeBeforeTitle = delayedEditor.chromeLayoutCount
-        // Each document replace removes one `.write-` temporary, a file only the writer touches.
         FileOperations.install()
         func replaces(_ calls: [FileOperation]) -> Int { Set(calls.filter { $0.fileName.hasPrefix(".write-") }.map(\.path)).count }
         let titleTyping = FileOperations.during(delayDirectory) {
@@ -1549,9 +1531,6 @@ struct NoteEditorTests {
                    && abs(checkedKeyboardFill.alphaComponent - selectedFill.alphaComponent) < 0.01,
                    "Checked plus keyboard keeps selected fill")
         row.keyboardSelected = false
-        // A keyboard selection's hover fill is its owner's: the selection
-        // bar's highlight behind the row draws it, and the row draws none, so
-        // pressing a keyboard-selected row still shows that fill once.
         let keyboardRange = NSRange(location: 7, length: 5)
         selectionText.setSelectedRange(keyboardRange)
         let keyboardBar = NoteSelectionBar(text: selectionText, ranges: [keyboardRange], canInteract: { true },
@@ -1597,8 +1576,6 @@ private final class NoteComponentWindow: NSWindow {
     override var isKeyWindow: Bool { componentKey }
 }
 
-/// Native event subclass supplies the exact tracking-area identity for isolated
-/// enter/exit components; its delivery never reaches the OS event queue.
 private final class NoteComponentTrackingEvent: NSEvent {
     var area: NSTrackingArea?
     override var trackingArea: NSTrackingArea? { area }

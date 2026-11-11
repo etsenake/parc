@@ -12,7 +12,6 @@ import Foundation
         SidebarHoverZones.rects(size: CGSize(width: 1200, height: 800), presentation: presentation, sidebarWidth: 228,
                                 showingToolbar: toolbar, trafficLightHeight: 50, info: info)
     }
-    /// Moves to an unflipped point and resizes the zones until containment settles, as WindowHoverTracker does.
     static func move(_ tracking: inout SidebarHoverTracking, to point: CGPoint,
                      _ presentation: SidebarHoverZones.Presentation = .hidden) -> [R] {
         var entered: [R] = []
@@ -29,7 +28,6 @@ import Foundation
         check(R.allCases.allSatisfy { $0.lingerRequirement == ($0 == .outerLeftEdge ? 0.16 : 0.15) }, "0.15 s linger, 0.16 s off the edge")
         check(SidebarHoverTracking.stopDelay == 0.08, "0.08 s stop")
 
-        // Outside the window every edge zone is in its wide form.
         let outside = zones(SidebarHoverInfo())
         check(outside[.window] == CGRect(x: 0, y: 0, width: 1200, height: 800), "window bounds")
         check(outside[.innerLeftEdge] == CGRect(x: -20, y: 0, width: 35, height: 800), "inner edge reaches 20 pt out, 15 pt in")
@@ -55,7 +53,6 @@ import Foundation
         check(Z.trafficLightHeight(windowMaxY: 966, screenHeight: 1000, menuBarHeight: 24) == 0, "10 pt or less is no zone")
         check(Z.trafficLightHeight(windowMaxY: 976, screenHeight: 1000, menuBarHeight: 24) == 0, "a window at the menu bar has none")
 
-        // Region state machine.
         var t = SidebarHoverTracking()
         check(move(&t, to: CGPoint(x: 600, y: 400)).isEmpty && t.info[.window] == .inside, "the window region needs no linger")
         check(!t.needsStopPromotion, "in-page window hover cannot stop-promote")
@@ -99,7 +96,6 @@ import Foundation
         f.reset()
         check(f.info == SidebarHoverInfo(), "a reset tracker starts empty")
 
-        // Activation.
         typealias A = SidebarHoverActivation
         var info = SidebarHoverInfo()
         info[.window] = .inside; info[.innerLeftEdge] = .inside
@@ -123,7 +119,6 @@ import Foundation
         kept[.sidebar] = .none; kept[.outerLeftEdge] = .inside
         check(A.isActive(wasActive: true, info: kept, fullscreen: false, includesTopLeft: false), "off the left edge keeps it")
 
-        // Parc's presentation rule over the activation (an inferred update rule).
         typealias P = SidebarHoverPresentationRule
         func decide(_ stored: Bool, _ presentation: SidebarHoverZones.Presentation, _ info: SidebarHoverInfo,
                     key: Bool = true, owner: Bool = false, interaction: Bool = false) -> P.Decision {

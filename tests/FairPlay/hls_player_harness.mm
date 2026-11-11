@@ -1,11 +1,3 @@
-// Proof for the core's native HLS player (Engine/ParcNative/fairplay/
-// fairplay_hls_player.mm), run by scripts/test-fairplay-hls.sh.
-//
-// The player runs on a serial dispatch queue with no run loop, like Chromium's
-// GPU media thread. Its loader serves the streams under a made-up host,
-// parc-hls.invalid, that only the loader knows how to reach: anything
-// AVFoundation tried to fetch by itself would fail, so playing proves that
-// every load went through HlsLoader.
 #import <AVFoundation/AVFoundation.h>
 #import <CoreAudio/CoreAudio.h>
 #import <Foundation/Foundation.h>
@@ -54,15 +46,12 @@ fp::PostTask OwnerPoster() {
   };
 }
 
-// Runs |task| on the owner queue and waits for it.
 void OnOwner(const std::function<void()>& task) {
   dispatch_sync(Owner(), ^{
     task();
   });
 }
 
-// Spins the main run loop (AVFoundation posts some KVO there) until |done|
-// or |seconds| pass.
 bool WaitFor(const std::function<bool()>& done, double seconds) {
   NSDate* end = [NSDate dateWithTimeIntervalSinceNow:seconds];
   while ([end timeIntervalSinceNow] > 0) {
@@ -80,10 +69,8 @@ bool WaitFor(const std::function<bool()>& done, double seconds) {
 
 constexpr const char* kFakeHost = "parc-hls.invalid";
 
-}  // namespace
+}
 
-// NSURLSession stand-in for Chromium's loader: maps parc-hls.invalid/<host>/…
-// to https://<host>/… and back.
 @interface HarnessFetcher : NSObject <NSURLSessionDataDelegate>
 @property(atomic) int requests;
 @property(atomic) int skdRequests;
@@ -155,7 +142,6 @@ constexpr const char* kFakeHost = "parc-hls.invalid";
 namespace {
 
 std::string ToReal(const std::string& url) {
-  // http(s)://parc-hls.invalid/<host>/<path> -> https://<host>/<path>
   for (const char* scheme : {"https://", "http://"}) {
     std::string prefix = std::string(scheme) + kFakeHost + "/";
     if (url.rfind(prefix, 0) == 0) {
@@ -200,13 +186,10 @@ class Loader : public fp::HlsLoader {
     std::string real = ToReal(request.url);
     auto alive = std::make_shared<std::atomic<bool>>(true);
     if (real.empty() && request.url.rfind("https://", 0) == 0) {
-      // An absolute URL inside a playlist the loader served: still a load
-      // through HlsLoader, fetched as is.
       real = request.url;
       absolute_++;
     }
     if (real.empty()) {
-      // Never http(s): AVFoundation must not hand the loader anything else.
       foreign_++;
       dispatch_async(Owner(), ^{
         if (*alive) {
@@ -231,8 +214,6 @@ class Loader : public fp::HlsLoader {
           r.mime_type = response.MIMEType.UTF8String ?: "";
           r.content_length = response.expectedContentLength;
           r.final_url = ToFake(response.URL.absoluteString.UTF8String ?: "");
-          // As Parc's loader: a ranged load's Content-Range tells AVFoundation
-          // the file's size.
           for (NSString* name in response.allHeaderFields) {
             r.headers.emplace_back(name.UTF8String, [response.allHeaderFields[name] UTF8String]);
           }
@@ -313,7 +294,6 @@ struct Client : fp::HlsPlayerClient {
   }
 
   std::optional<fp::HlsMetadata> metadata;
-  // The element's loadedmetadata handler, run inside OnMetadata.
   std::function<void()> on_metadata;
   int64_t frames_decoded = 0;
   int64_t frames_dropped = 0;
@@ -389,9 +369,6 @@ void VodTs() {
   Check(!rig.client.ready_states.empty() && rig.client.ready_states.back() == fp::HlsReadyState::kHaveEnoughData,
         "WebKit's readyState reaches HAVE_ENOUGH_DATA");
   Check(!rig.client.loaded.empty(), "loaded ranges reported");
-  // Each KVO notification carries its own value, as WebKit caches them: a dip
-  // to an empty buffer and back, all notified before the owner sequence runs,
-  // still reaches the client (underflow, then enough data again).
   size_t buffering_before_dip = 0;
   size_t ready_before_dip = 0;
   OnOwner([&] {
@@ -437,13 +414,10 @@ void VodTs() {
   Check(seek_result == 1 && std::fabs(rig.Time() - 300) < 0.1, "exact seek to 300 s finishes there");
   Check(WaitFor([&] { return rig.client.time_jumps > jumps_before_seek; }, 5),
         "the time jump reaches the client while paused");
-  // Chromium finishes a seek only at HAVE_ENOUGH; AVFoundation's dip and
-  // recovery within the seek is too quick to show as a change.
   Check(WaitFor([&] { return rig.client.buffering.size() > buffering_before_seek && rig.client.buffering.back(); }, 10),
         "after the seek the client hears enough data again");
   OnOwner([&] { rig.player->SetRate(1); });
   Check(WaitFor([&] { return rig.Time() > 302; }, 20), "plays on after the seek");
-  // Ended: seek to two seconds before the end and play through.
   seek_result = -1;
   OnOwner([&] { rig.player->Seek(m.duration - 2, [&](bool finished) { seek_result = finished; }); });
   WaitFor([&] { return seek_result != -1; }, 20);
@@ -467,8 +441,6 @@ void VodFmp4() {
   Check(rig.loader.foreign_ == 0 && rig.client.errors == 0, "only the loader's host, no error");
   AVPlayerLayer* layer = nil;
   OnOwner([&] { layer = fp::HlsPlayerLayer(rig.player->impl()); });
-  // The layer takes its player once it has a size (fairplay_hls_player_layer.h),
-  // here the size the compositor gives it when it first draws the layer.
   OnOwner([&] { layer.bounds = CGRectMake(0, 0, 640, 360); });
   Check(layer && layer.player == fp::HlsPlayerAVPlayer(rig.player->impl()), "player layer shows the player once sized");
   NSString* algorithm = nil;
@@ -493,14 +465,11 @@ void VodFmp4() {
   Check([algorithm isEqualToString:AVAudioTimePitchAlgorithmVarispeed], "preservesPitch false: Varispeed");
   double before = rig.Time();
   Check(WaitFor([&] { return rig.Time() > before + 2; }, 10), "plays on at 1.5x");
-  // The layer is in no window here, so AVFoundation may count nothing; the
-  // presentation harness checks the counts on a layer on screen.
   std::printf("       video frame counts reported: %lld decoded, %lld dropped\n",
               static_cast<long long>(rig.client.frames_decoded),
               static_cast<long long>(rig.client.frames_dropped));
 }
 
-// WebKit's rules (fairplay_hls_timeline.h), no network.
 void Timeline() {
   std::printf("-- live and DVR timing rules (WebKit's)\n");
   using fp::HlsSeekableRangeInput;
@@ -557,8 +526,6 @@ void Timeline() {
   Check(!from_invalid.DurationChanged(numeric(10)) && from_invalid.duration() == 10,
         "a duration arriving from invalid fires no durationchange (WebKit's durationDidChange)");
 
-  // WebKit caches the window's ends and computes them again only when the
-  // ranges change or, at a ready-state change, while the end is 0.
   fp::HlsTimeline cached;
   cached.Start(numeric(0), {}, std::nullopt);
   Check(!cached.seekable(), "duration 0, no range: nothing seekable");
@@ -570,7 +537,6 @@ void Timeline() {
   Check(cached.SeekableChanged({}) && is(cached.seekable(), 0, 60), "a ranges change computes it again");
 }
 
-// The window the page sees now: the last change, or the metadata's.
 std::vector<fp::HlsTimeRange> CurrentSeekable(const Client& client) {
   return client.seekable_changes ? client.seekable : client.metadata->seekable;
 }
@@ -614,14 +580,11 @@ void Live() {
   if (window.size() != 1) {
     return;
   }
-  // Within the DVR window.
   double target = window[0].start + (window[0].end - window[0].start) / 2;
   int seek_result = -1;
   OnOwner([&] { rig.player->Seek(target, [&](bool finished) { seek_result = finished; }); });
   WaitFor([&] { return seek_result != -1; }, 20);
   Check(seek_result == 1 && std::fabs(rig.Time() - target) < 1, "an exact seek into the DVR window lands there");
-  // To the live edge (the window's end, where the element's seek clamps
-  // anything later, Infinity included).
   OnOwner([&] { window = CurrentSeekable(rig.client); });
   seek_result = -1;
   OnOwner([&] { rig.player->Seek(window[0].end, [&](bool finished) { seek_result = finished; }); });
@@ -644,8 +607,6 @@ void BadUrl() {
         "a blob: URL is refused (AVFoundation reports it unsupported before any load)");
 }
 
-// A data: media playlist of byte ranges in one file, as Spotify's player
-// writes them: |ranges| are the init segment, then each 6 s segment.
 std::string DataPlaylist(const std::string& file, const std::vector<std::string>& ranges) {
   std::string playlist = "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n"
                          "#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MAP:URI=\"" + file + "\",BYTERANGE=\"" + ranges[0] + "\"\n";
@@ -659,8 +620,6 @@ std::string DataPlaylist(const std::string& file, const std::vector<std::string>
 
 constexpr const char* kBipbopFmp4 = "devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/";
 
-// Spotify's player under Safari's identity plays a FairPlay audio file as a
-// data: playlist of its byte ranges (a blob: URL only without MediaSource).
 void DataUrl() {
   std::printf("-- a data: playlist of byte ranges in one audio file (Spotify's shape)\n");
   std::string file = Fake((std::string(kBipbopFmp4) + "a1/main.mp4").c_str());
@@ -685,8 +644,6 @@ void DataUrl() {
   Check(rig.loader.ranged_ > 0 && rig.loader.foreign_ == 0 && rig.client.errors == 0, "ranged loads, no error");
 }
 
-// Its video podcasts: a data: master playlist whose audio rendition and
-// variants are data: media playlists.
 void DataUrlVideo() {
   std::printf("-- a data: master playlist of data: media playlists (Spotify's video)\n");
   std::string audio = Fake((std::string(kBipbopFmp4) + "a1/main.mp4").c_str());
@@ -766,9 +723,6 @@ void Skd() {
         "a failed key request is asked for again (AVFoundation retries; the element keeps waiting, as in Safari)");
 }
 
-// The CDM's key loader takes skd requests itself: installed between
-// CreateAsset and Start, it gets the loading request, and the client's
-// OnKeyRequest never fires for it.
 struct RecordingKeyHandler : fp::HlsKeyRequestHandler {
   void HandleLoadingRequest(AVAssetResourceLoadingRequest* request) override {
     uris.push_back(request.request.URL.absoluteString.UTF8String ?: "");
@@ -800,18 +754,12 @@ void SkdHandler() {
   OnOwner([&] { fp::SetHlsKeyRequestHandler(rig.player->impl(), nullptr); });
 }
 
-// FairPlay keys (Engine/ParcNative/fairplay/README.md, "HLS assets"): a
-// stand-in page answers the player's key requests with skd sessions on a
-// FairPlayCdm sharing the player's owner queue, and Axinom's license service
-// (the vectors, service, certificate and tokens tests/FairPlay/harness.mm
-// uses; MultiKey has separate audio and video skd keys).
 NSString* const kLicenseUrl = @"https://drm-fairplay-licensing.axprod.net/AcquireLicense";
 NSString* const kCertificateUrl = @"https://tools.axinom.com/FPScert/fairplay.cer";
 NSString* const kSingleKeyToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogIjMwMmY4MGRkLTQxMWUtNDg4Ni1iY2E1LWJiMWY4MDE4YTAyNCIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiMWVYeWhGWmNGVjljemNtZG5BREpMdz09IiwKICAgICAgICAiaXYiOiAiZC8wWWlhcjBGRHNJVlVpendQbGJtZz09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.5VxBJQsgGVissi9WCNpT7IoykEAmxaEcif6F3SeLvzU";
 NSString* const kMultiKeyToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogImI1NGVjOTE0LTE5MmQtNGVhMS1hYzE5LWY0MjllYjQ5ODI2OCIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiUldKemlSUDRqQkhjd2tJYzRTd1h5QT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9LAogICAgICB7CiAgICAgICAgImlkIjogImM4M2M0ZWE4LTBmMmEtNDUyMy04NTFjLWZiZWNjZGMwZjIwMiIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiSHFoK1BCNVU1OStvclMzVGVZQ2lOUT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9LAogICAgICB7CiAgICAgICAgImlkIjogImM4NjhjNzAyLWM3MWItNDA2NC1hZTJiLWMyNGY3Y2MxMDc5MiIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiLy9nM2pmdktjUlliaHBwRW04c3BqUT09IiwKICAgICAgICAiaXYiOiAiT3VrQWE1L3ZtTWlOQ05jamlsL09QQT09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.09GZO7pokr1k24NXKxIV7qyEZ2lhtbpfMoKfP7vzSns";
 const char* const kSingleKeyMaster = "media.axprod.net/TestVectors/Cmaf/protected_1080p_h264_cbcs/manifest.m3u8";
 const char* const kMultiKeyMaster = "media.axprod.net/TestVectors/MultiKey/Cmaf_h264_1080p_cbcs/manifest.m3u8";
-// The SingleKey playlists' EXT-X-KEY URI.
 const std::string kSkd = "skd://302f80dd-411e-4886-bca5-bb1f8018a024:77FD1889AAF4143B085548B3C0F95B9A";
 
 std::vector<uint8_t> Bytes(const std::string& text) {
@@ -823,7 +771,6 @@ std::vector<uint8_t> Bytes(NSData* data) {
   return std::vector<uint8_t>(bytes, bytes + data.length);
 }
 
-// Blocking; never on the owner queue.
 NSData* Fetch(NSURLRequest* request, NSInteger* status) {
   __block NSData* result = nil;
   __block NSInteger code = 0;
@@ -850,9 +797,6 @@ NSData* Certificate() {
   return certificate;
 }
 
-// The page and its media element: MediaKeys, sessions and the element's
-// encrypted events (the key loader's needs). Everything but the license POST
-// runs on the owner queue. Declare it before the KeyRig.
 struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
   explicit KeyPage(NSString* token) : token_(token) {}
   ~KeyPage() {
@@ -867,7 +811,6 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
     });
   }
 
-  // generateRequest("skd", init_data); call on the owner queue.
   void GenerateOnOwner(const std::string& init_data) {
     std::weak_ptr<int> alive = alive_;
     cdm->CreateSessionAndGenerateRequest(
@@ -935,7 +878,6 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
   }
   void OnSessionClosed(const std::string&) override {}
 
-  // Every skd request the loader is handed (legacy pages' webkitneedkey).
   void OnKeyLoadingRequest(const std::string& url) override {
     loading_requests.push_back(url);
     if (on_loading_request) {
@@ -943,7 +885,6 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
     }
   }
 
-  // The element's encrypted(skd) event, and its waitingforkey without a CDM.
   void OnKeyNeeded(const std::string& uri, bool cdm_attached) override {
     needs.push_back(uri);
     need_cdm_attached.push_back(cdm_attached);
@@ -964,10 +905,10 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
 
   std::function<void(fp::FairPlayCdm*)> on_idle;
   std::unique_ptr<fp::FairPlayCdm> cdm;
-  std::function<void(const std::string&)> on_need;  // The encrypted handler.
-  std::function<void(const std::string&)> on_loading_request;  // webkitneedkey.
+  std::function<void(const std::string&)> on_need;
+  std::function<void(const std::string&)> on_loading_request;
   std::vector<std::string> needs;
-  std::vector<bool> need_cdm_attached;  // Each need's, in order.
+  std::vector<bool> need_cdm_attached;
   std::vector<std::string> loading_requests;
   std::vector<std::string> sessions;
   std::vector<fp::MessageType> message_types;
@@ -986,8 +927,6 @@ struct KeyPage : fp::FairPlayCdmClient, fp::FairPlayHlsKeyLoaderClient {
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
 };
 
-// The GPU service's order: CreateAsset, the key loader for the asset (with
-// the element's CDM if it has one), the handler, Start.
 struct KeyRig {
   explicit KeyRig(fp::FairPlayHlsKeyLoaderClient* client) : client(client) {}
   ~KeyRig() {
@@ -996,7 +935,6 @@ struct KeyRig {
       keys.reset();
     });
   }
-  // Call on the owner queue.
   void LoadOnOwner(const char* master, fp::FairPlayCdm* cdm) {
     rig.player->CreateAsset(Fake(master), "");
     keys = std::make_unique<fp::FairPlayHlsKeyLoader>(fp::HlsPlayerAsset(rig.player->impl()), cdm, client,
@@ -1028,7 +966,6 @@ struct KeyRig {
   fp::FairPlayHlsKeyLoaderClient* client;
 };
 
-// Mirror the service's retained CdmContextRefs without network or licenses.
 void KeysDetachLifetime() {
   KeyPage page(kSingleKeyToken);
   OnOwner([&] {
@@ -1059,8 +996,6 @@ void KeysDetachLifetime() {
       Check(idle == i, "attached CDM is never reported idle");
       Check(loader.SetCdm(nullptr).ok(), "detach the CDM");
       Check(!weak.expired(), "owner retains CDM until withdrawal report");
-      // Reattach before delivery, then detach again: the old queued report
-      // must not release a newer lease for the same CDM.
       Check(loader.SetCdm(cdm).ok(), "reattach the same CDM before idle delivery");
       drain();
       Check(idle == i && !weak.expired(), "reattachment cancels stale idle report");
@@ -1078,7 +1013,6 @@ void KeysDetachLifetime() {
   });
 }
 
-// Force the system factory to fail, without adding a production test hook.
 IMP g_session_factory = nullptr;
 bool g_fail_session = false;
 int g_session_attempts = 0;
@@ -1120,9 +1054,6 @@ void KeysSessionFailure() {
   OnOwner([&] { method_setImplementation(factory, g_session_factory); });
 }
 
-// MediaKeys before the load (Shaka): the request still comes through the
-// resource loader, raising webkitneedkey and encrypted as in Safari, and the
-// attached CDM answers the page's session with the request's own SPC.
 void KeysMediaKeysFirst() {
   std::printf("-- FairPlay HLS keys: MediaKeys before the load\n");
   KeyPage page(kSingleKeyToken);
@@ -1142,8 +1073,6 @@ void KeysMediaKeysFirst() {
   Check(kr.SetCdm(nullptr).ok(), "setMediaKeys(null) detaches the CDM");
 }
 
-// MediaKeys after the key request (Apple's sample): the resource loader holds
-// the request, and the session answers it with the request's own SPC.
 void KeysLoaderRoute() {
   std::printf("-- FairPlay HLS keys: key request first, MediaKeys after\n");
   KeyPage page(kSingleKeyToken);
@@ -1170,10 +1099,6 @@ void KeysLoaderRoute() {
   Check(page.Usable(kSkd), "usable again once output is no longer obscured");
 }
 
-// MediaKeys attached after AVFoundation's request but before the loader
-// reports its need (here in the page's webkitneedkey handler, which comes
-// first): the request came with no CDM, so the element waits for the key, as
-// WebKit decides when AVFoundation asks (shouldWaitForLoadingOfResource).
 void KeysAttachAtRequest() {
   std::printf("-- FairPlay HLS keys: MediaKeys attached between the request and its report\n");
   KeyPage page(kSingleKeyToken);
@@ -1197,7 +1122,6 @@ void KeysAttachAtRequest() {
   Check(plays, "protected HLS plays");
 }
 
-// Separate audio and video keys, MediaKeys before the load and after.
 void KeysMultiKey() {
   std::printf("-- FairPlay HLS keys: MultiKey (audio and video keys)\n");
   for (bool keys_first : {false, true}) {
@@ -1230,8 +1154,6 @@ void KeysMultiKey() {
   }
 }
 
-// The session first: it waits for the asset's request. Everything runs in one
-// owner task, before any request can arrive.
 void KeysAwait() {
   std::printf("-- FairPlay HLS keys: session waiting for the asset's request\n");
   KeyPage page(kSingleKeyToken);
@@ -1249,9 +1171,6 @@ void KeysAwait() {
   Check(plays, "protected HLS plays");
 }
 
-// A session made before any asset was attached plans for the MSE route; the
-// asset's request reaches it as a second license request, whether the CDM
-// comes with the loader or later.
 void KeysEarlySession() {
   std::printf("-- FairPlay HLS keys: session made before MediaKeys were attached\n");
   for (bool cdm_first : {true, false}) {
@@ -1275,9 +1194,6 @@ void KeysEarlySession() {
   }
 }
 
-// Closing a session before it answered leaves its loading request pending,
-// as WebKit leaves a closed session's key requests: AVFoundation doesn't ask
-// again (no second encrypted event) and playback waits.
 void KeysClose() {
   std::printf("-- FairPlay HLS keys: session closed before its answer\n");
   KeyPage page(kSingleKeyToken);
@@ -1305,8 +1221,6 @@ void KeysClose() {
   Check(kr.rig.Time() < 0.5, "playback waits for the key");
 }
 
-// Legacy WebKitMediaKeys sessions: {"skd", "contentId"} names the SPC by the
-// page's content ID (here the URI, which Axinom's service expects).
 void KeysLegacy() {
   std::printf("-- FairPlay HLS keys: legacy content ID\n");
   KeyPage page(kSingleKeyToken);
@@ -1326,9 +1240,6 @@ void KeysLegacy() {
   Check(plays, "protected HLS plays");
 }
 
-// WebKit's order (MediaPlayerPrivateAVFoundation::updateStates): HAVE_METADATA
-// from the asset before the item is on the player; a seek made then waits for
-// the item and lands; the natural size follows from the item.
 void MetadataFirst() {
   std::printf("-- metadata from the asset before the item (WebKit's order)\n");
   Rig rig;
@@ -1354,12 +1265,6 @@ void MetadataFirst() {
   Check(rig.client.errors == 0, "no error");
 }
 
-// A legacy page's order (WebKitMediaKeys made before the load, attached only
-// once readyState reaches HAVE_METADATA, a session made at webkitneedkey):
-// Safari reports HAVE_METADATA from the asset before the item exists, so the
-// keys are attached before any key request, and the session made then (with a
-// player behind it) licenses the request. A session made before the keys are
-// attached would have no player and never answer, as in WebKit.
 void KeysLegacyOrder() {
   std::printf("-- FairPlay HLS keys: legacy page order (attach at loadedmetadata, session at webkitneedkey)\n");
   KeyPage page(kSingleKeyToken);
@@ -1376,7 +1281,6 @@ void KeysLegacyOrder() {
   int requests = 0;
   kr.rig.client.on_metadata = [&, krp, pagep] {
     item_before_metadata = fp::HlsPlayerAVPlayer(krp->rig.player->impl()).currentItem != nil;
-    // The page's loadedmetadata handler runs later, as a task.
     bool* attached_flag = &attached;
     dispatch_async(Owner(), ^{
       krp->keys->SetCdm(pagep->cdm.get());
@@ -1404,13 +1308,6 @@ void KeysLegacyOrder() {
   Check(plays, "protected HLS plays");
 }
 
-// AirPlay (WebKit's setWirelessPlaybackTarget / setShouldPlayToPlaybackTarget
-// / setWirelessVideoPlaybackDisabled). The browser names its route picker's
-// AVOutputContext by ID; the media server knows it, so the player finds it
-// from any process (the harness uses its own iTunes audio context, the one
-// WebKit's AVRoutePickerViewTargetPicker uses). With no device picked in it,
-// AVPlayer stays local and nothing reports wireless; that it becomes wireless
-// once a device is picked needs an AirPlay receiver.
 void AirPlay() {
   std::printf("-- AirPlay target and disabled flag\n");
   id context = [NSClassFromString(@"AVOutputContext") valueForKey:@"iTunesAudioContext"];
@@ -1421,7 +1318,6 @@ void AirPlay() {
   }
   const std::string id_string = context_id.UTF8String;
   Rig rig;
-  // Set before the player exists: applied when it is made.
   OnOwner([&] { rig.player->SetPlaybackTarget(id_string, true); });
   Check(rig.Load(Fake("media.axprod.net/TestVectors/Cmaf/clear_1080p_h264/manifest.m3u8")).ok(), "Load");
   bool ready = WaitFor([&] { return rig.client.metadata_count > 0 || rig.client.errors; }, 20);
@@ -1442,13 +1338,11 @@ void AirPlay() {
   Check(WaitFor([&] { return rig.Time() > 2; }, 20), "plays locally while the context has no device");
   Check(rig.client.wireless_changes.empty(), "not wireless without a device: nothing reported");
   OnOwner([&] { rig.player->SetPlaybackTarget(id_string, false); });
-  // Once ours is off, AVPlayer answers a default context of its own.
   auto ours = [&] { return [output_context_id() isEqualToString:context_id]; };
   Check(!ours(), "should-play off takes the context off the player");
   OnOwner([&] { rig.player->SetPlaybackTarget(id_string, true); });
   Check([output_context_id() isEqualToString:context_id], "and on again");
   OnOwner([&] { rig.player->SetPlaybackTarget("00000000-0000-0000-0000-000000000000", true); });
-  // Not the context-less object outputContextForID answers for it.
   Check(!ours() && output_context_id().length > 0, "an ID the media server doesn't know plays locally");
   OnOwner([&] { rig.player->SetPlaybackTarget("", true); });
   OnOwner([&] { rig.player->SetPlaybackTarget(id_string, true); });
@@ -1463,9 +1357,6 @@ void AirPlay() {
   Check(rig.client.errors == 0 && rig.client.wireless_changes.empty(), "no error, never wireless");
 }
 
-// A clear file moved onto the player to play to an AirPlay target
-// (NATIVE_HLS.md, AirPlay): the target and the type from its container before
-// Load, then the element's time as a seek and its rate.
 void PlayFile(const char* real_without_scheme, const char* mime_type, bool has_video) {
   id context = [NSClassFromString(@"AVOutputContext") valueForKey:@"iTunesAudioContext"];
   NSString* context_id = [context valueForKey:@"contextID"];
@@ -1483,7 +1374,6 @@ void PlayFile(const char* real_without_scheme, const char* mime_type, bool has_v
   Check(rig.client.metadata->has_video == has_video && rig.client.metadata->has_audio,
         "media types from the file's tracks");
   Check(rig.client.metadata->duration > 1.5 && !rig.client.metadata->is_live, "a finite duration");
-  // The pipeline's seek to the element's time follows the metadata.
   std::atomic<bool> seeked{false};
   OnOwner([&] { rig.player->Seek(1.0, [&](bool finished) { seeked = finished; }); });
   Check(WaitFor([&] { return seeked.load(); }, 20), "the seek to the element's time finishes");
@@ -1498,13 +1388,12 @@ void PlayFile(const char* real_without_scheme, const char* mime_type, bool has_v
 void File() {
   std::printf("-- clear MP4 video served as application/octet-stream\n");
   PlayFile("raw.githubusercontent.com/chromium/chromium/main/media/test/data/bear-1280x720.mp4", "video/mp4",
-           /*has_video=*/true);
+           true);
   std::printf("-- clear MP3 audio\n");
   PlayFile("raw.githubusercontent.com/chromium/chromium/main/media/test/data/bear-audio-10s-CBR-has-TOC.mp3", "audio/mpeg",
-           /*has_video=*/false);
+           false);
 }
 
-// The default output device's Core Audio UID.
 std::string DefaultOutputDeviceUid() {
   AudioObjectPropertyAddress address = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal,
                                         kAudioObjectPropertyElementMain};
@@ -1524,15 +1413,8 @@ std::string DefaultOutputDeviceUid() {
   return result;
 }
 
-// HTMLMediaElement.setSinkId on the native HLS route, as WebKit's
-// MediaPlayerPrivateAVFoundationObjC: a device named before the player exists
-// is on it once made and empty follows the system default (nil). WebKit
-// leaves a device going away to AVFoundation, which pauses the player for
-// good; the player follows the default device instead and plays on.
 void AudioOutput() {
   std::printf("-- audio output device (setSinkId)\n");
-  // A private aggregate device over the default output, which this process
-  // alone sees and can make disappear, as an unplugged headset does.
   const std::string main_uid = DefaultOutputDeviceUid();
   const std::string uid = "parc.fairplay.hls-harness." + std::to_string(getpid());
   NSDictionary* description = @{
@@ -1585,7 +1467,7 @@ void Teardown() {
   Check(true, "no callback after destruction crashed");
 }
 
-}  // namespace
+}
 
 int main(int argc, char** argv) {
   @autoreleasepool {

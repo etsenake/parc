@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Original app components only; no browser, Apple Event or real preferences."""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -17,20 +16,14 @@ with tempfile.TemporaryDirectory(prefix="parc-toolbar-") as directory:
     for target, (source, marker) in slices.items():
         text = (root / "Sources/ParcApp" / source).read_text()
         (scratch / target).write_text(text[:text.index(marker)])
-    # SidebarView's ActionButton prefix now references SplitOrientation via the
-    # Favorite favicon-arm identity; stub the enum so the slice compiles without
-    # pulling BrowserStore.
     (scratch / "SplitOrientation.swift").write_text(
         "enum SplitOrientation: String, Codable, CaseIterable { case horizontal, vertical }\n"
     )
-    # The clear top bar's backing is the empty pane's own colour.
     text = (root / "Sources/ParcApp/SplitPaneMenu.swift").read_text()
     start = text.index("    static let emptyContentBackground")
     (scratch / "EmptyContentBackground.swift").write_text(
         "import AppKit\n@MainActor final class SplitPanePlaceholder {\n"
         + text[start:text.index("    let splitHighlight", start)] + "}\n")
-    # The page the top bar reads its colour from; `legacy` stands in for an
-    # engine before overlay 293, which has no pageBackgroundColor.
     (scratch / "NativePageStub.swift").write_text("""import AppKit
 final class PCNativePage: NSObject {
     @objc var developerModeTint: NSColor?
@@ -47,7 +40,6 @@ final class PCNativePage: NSObject {
     }
 }
 """)
-    # Only the Site Control Center's artwork, as tests/SpaceManager excerpts it.
     text = (root / "Sources/ParcApp/SiteControlCenter.swift").read_text()
     (scratch / "SiteControlCenterArtwork.swift").write_text(text[:text.index("enum SiteControlCenterMetrics")])
     executable = scratch / "checks"
@@ -70,7 +62,6 @@ final class PCNativePage: NSObject {
         str(root / "Sources/ParcApp/PaneTitleControl.swift"),
         str(root / "Sources/ParcApp/MenuItemImage.swift"),
         str(root / "Sources/ParcApp/SplitPaneControl.swift"),
-        # PaneTitleControl pins its label through the sidebar motion owner.
         str(root / "Sources/ParcApp/SidebarMotionController.swift"),
         str(root / "Sources/ParcApp/SidebarChromeLayout.swift"),
         str(root / "Sources/ParcApp/WindowStandardButtons.swift"),

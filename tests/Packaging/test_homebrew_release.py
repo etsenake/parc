@@ -1,4 +1,3 @@
-"""Reject mismatched or unnotarized archives before changing the public tap."""
 import hashlib
 import copy
 import importlib.util

@@ -59,14 +59,10 @@ def main():
     if not sources:
         parser.error("the manifest contains no Autofill translation units")
 
-    # Resolve object membership, not a guessed nearby target. Each selected
-    # translation unit must have exactly one actual CXX owner in this subtree.
     owners = {target: [] for target in sources}
     flag_files = [path for folder in ("obj/chrome/browser/ui/autofill",
                                      "obj/components/autofill/core/browser")
                   for path in sorted((build / folder).rglob("*.ninja"))]
-    # Chrome's existing controller/delegate regressions belong to its shared
-    # unit-test target; component-manager tests have their own subtarget.
     chrome_tests = build / "obj/chrome/test/unit_tests.ninja"
     if chrome_tests.is_file():
         flag_files.append(chrome_tests)

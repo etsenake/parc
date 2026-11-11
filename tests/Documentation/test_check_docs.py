@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Exercise documentation limits and pre-push enforcement in disposable repositories."""
 from pathlib import Path
 import shutil
 import subprocess

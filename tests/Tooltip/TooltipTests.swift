@@ -77,7 +77,6 @@ import SwiftUI
         check(neutral.background.resolved(dark: true) === neutral.background.dark && neutral.background.resolved(dark: false) === neutral.background.light,
               "Dark Aqua resolves the dark variant, anything else the light one")
 
-        //
         let theme = SpaceTheme(primaryColor: ThemeColor.hsl(hue: 0.575, saturation: 1, lightness: 0.7, colorSpace: .displayP3), colorCount: 2)
         let light = ThemeChromePalette(theme: theme, isDark: false), dark = ThemeChromePalette(theme: theme, isDark: true)
         let themed = TooltipColorPalette(theme: theme)
@@ -220,8 +219,6 @@ import SwiftUI
               "the label wraps beside the keycaps, which stay centred")
         check(TooltipView.layout(for: content(long, maxWidth: 150), scale: 2).size.width == 150, "a configured maximum width")
 
-        //
-        // subtitle lines, 0 apart, leading (measured with NSHostingView).
         func label(_ title: String, _ subtitle: String?) -> TooltipView.Layout {
             var value = content(title); value.style = .label(subtitle: subtitle)
             return TooltipView.layout(for: value, scale: 2)
@@ -244,7 +241,6 @@ import SwiftUI
         check(TooltipView.layout(for: content("Sign in to GitHub"), scale: 2).subtitle == nil, "standard content has no subtitle")
     }
 
-    /// Draws `view` into a clear 2x sRGB bitmap; nothing is shown on screen.
     static func render(_ view: NSView) -> NSBitmapImageRep {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * 2), pixelsHigh: Int(view.bounds.height * 2),
                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -253,7 +249,6 @@ import SwiftUI
         view.cacheDisplay(in: view.bounds, to: rep)
         return rep
     }
-    /// The stored sRGB bytes at a point in the view's top-left-origin space.
     static func pixel(_ rep: NSBitmapImageRep, _ point: CGPoint) -> [Int] {
         var raw = [Int](repeating: 0, count: 4)
         rep.getPixel(&raw, atX: Int(point.x * 2), y: Int(point.y * 2))
@@ -296,8 +291,6 @@ import SwiftUI
         check(pixel(heldRep, CGPoint(x: other.midX, y: other.maxY - 2)).prefix(3).allSatisfy { (140...165).contains($0) },
               "keys that are not held keep the lip")
 
-        //
-        // beyond it, and the subtitle is the title colour at 0.66.
         var labelContent = TooltipView.Content(label: "Sign in to GitHub", keycaps: [], corners: TooltipCorners(anchor: .cursor),
                                                palette: .neutral, maxWidth: 296, style: .label(subtitle: "Double-click to rename"))
         labelContent.palette.title = .init(.black)
@@ -321,9 +314,6 @@ import SwiftUI
         check(titleInk < 40 && (60...130).contains(subtitleInk), "black title; subtitle at 0.66 opacity over white")
     }
 
-    /// SidebarDockItemTooltipView: the title, 6 points, the Profile capsule
-    /// (5 / 20 / 2 / name / 6 wide, 4 above and below the 14-point name line),
-    /// then the keycaps; its face and glyph colours are the keycaps'.
     static func dockItem() {
         func content(_ label: String, profile: String?, keycaps: [TooltipKeycap] = TooltipKeycap.keycaps(for: KeyboardShortcut(key: "1", flags: .control)))
             -> TooltipView.Content {
@@ -464,9 +454,6 @@ import SwiftUI
         check(exit.exit(targetUnderPointer: false, enclosing: nil, enclosingAnchor: nil, anchor: .bottomTrailing) == .hide(.init(duration: 0.3)), "a view tooltip fades in 0.3 s")
         check(exit.exit(targetUnderPointer: false, enclosing: nil, enclosingAnchor: nil, anchor: .cursor) == .hide(.init(duration: 0.1)), "a cursor tooltip in 0.1 s")
 
-        // A row's Close pill is up and the pointer moves onto the row body,
-        //
-        //
         var row = State()
         _ = row.schedule("close", anchor: .bottomTrailing, behavior: .onMouseIdle(delay: 0.45), now: t0)
         row.didPresent("close")
@@ -509,19 +496,15 @@ import SwiftUI
         check(failed.phase == .tracking, "a pending presentation can be cancelled")
     }
 
-    /// A window that reports itself key without being shown or made key, with
-    /// the pointer away from it whatever the real pointer does.
     final class KeyStandInWindow: NSWindow {
         override var isKeyWindow: Bool { true }
         override var mouseLocationOutsideOfEventStream: NSPoint { NSPoint(x: -10_000, y: -10_000) }
     }
-    /// A key stand-in whose pointer is where a check puts it.
     final class PointerStandInWindow: NSWindow {
         var pointer = NSPoint.zero
         override var isKeyWindow: Bool { true }
         override var mouseLocationOutsideOfEventStream: NSPoint { pointer }
     }
-    /// Takes the pointer only over `part`, as the Library entry's canvas does.
     final class PartView: NSView {
         var part = NSRect.zero
         override func hitTest(_ point: NSPoint) -> NSView? {
@@ -530,10 +513,6 @@ import SwiftUI
         }
     }
 
-    /// Real entered and mouse-moved events through the view's own tracking-area
-    /// owner, on windows that are never ordered in; their tooltip child stays
-    /// off screen with them. No button or modifier is held, whatever a person
-    /// using the machine presses meanwhile.
     static func routing() {
         InputOverrides.install()
         InputOverrides.pressedMouseButtons = 0; InputOverrides.modifierFlags = []
@@ -596,7 +575,6 @@ import SwiftUI
         check(tooltip(of: hidden.window) == nil, "a view hidden during the idle delay never shows its tooltip")
         hidden.window.close()
 
-        // The controller reads the overridden input state: a held Shift declines.
         let held = scene()
         InputOverrides.modifierFlags = .shift
         held.owner.mouseEntered(with: event(.mouseEntered, in: held.window))
@@ -605,7 +583,6 @@ import SwiftUI
         InputOverrides.modifierFlags = []
         held.window.close()
 
-        // A binding-only tooltip shows only while its command has a binding.
         let unbound = scene()
         TooltipController.commandShortcut = { _ in nil }
         unbound.anchor.parcTooltip = TooltipConfiguration("Reset Tab", shortcut: .command("resetTab:"), requiresShortcut: true)
@@ -619,8 +596,6 @@ import SwiftUI
         TooltipController.commandShortcut = nil
         unbound.window.close()
 
-        // A drawn part: the view takes the pointer only over its part, and the
-        // tooltip anchors to the part's rect, not the view's bounds.
         let window = KeyStandInWindow(contentRect: NSRect(x: 200, y: 200, width: 300, height: 200), styleMask: .borderless,
                                       backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -641,16 +616,12 @@ import SwiftUI
         let partTip = tooltip(of: window)
         check(partTip != nil, "entering over the part shows its tooltip")
         if let partTip {
-            // Bottom-trailing: 6 points inside the part's corner, which is at
-            // window x 160 and 140 points below the window's top (screen 400).
             let margin = TooltipView.margin(scale: partTip.screen?.backingScaleFactor ?? window.backingScaleFactor)
             check(near(partTip.frame.minX + margin, 200 + 160 - 6, 1) && near(partTip.frame.maxY - margin, 400 - (140 - 6), 1),
                   "the tooltip sits at the part's bottom-trailing corner")
         }
         window.close()
 
-        // Entered outside its part, the view stays recorded: the pointer then
-        // moving onto the part and stopping schedules it.
         let stopping = PointerStandInWindow(contentRect: NSRect(x: 200, y: 200, width: 300, height: 200), styleMask: .borderless,
                                             backing: .buffered, defer: false)
         stopping.isReleasedWhenClosed = false
@@ -676,9 +647,6 @@ import SwiftUI
         check(tooltip(of: stopping) == nil, "the stop's idle delay is still running")
         wait(0.6)
         check(tooltip(of: stopping) != nil, "the pointer stopping on the part shows the tooltip of the view it entered elsewhere")
-        // From the shown part into a gap inside the view: the 0.25 s backstop
-        // hides the tooltip but keeps the view entered, as the pointer never
-        // left it, so stopping on the part again shows it.
         move(to: NSPoint(x: 60, y: 120))
         wait(0.9)
         check(tooltip(of: stopping) == nil, "past the backstop, a gap inside the view hides its part's tooltip")
@@ -687,9 +655,6 @@ import SwiftUI
         check(tooltip(of: stopping) != nil, "stopping on the part again shows its tooltip without a new entry")
         stopping.close()
 
-        // A configuration changed while its tooltip shows replaces it while the
-        // pointer is over the view; once the pointer has gone, it fades and
-        // closes the window instead.
         let changing = PointerStandInWindow(contentRect: NSRect(x: 200, y: 200, width: 300, height: 200), styleMask: .borderless,
                                             backing: .buffered, defer: false)
         changing.isReleasedWhenClosed = false
@@ -714,9 +679,6 @@ import SwiftUI
         changing.close()
     }
 
-    /// ConditionalHitTestView: a SwiftUI control's overlaid anchor passes every
-    /// hit test through to the control, yet the controller's own hit test for
-    /// it finds it, so a real entered event still shows the tooltip.
     static func bridge() {
         InputOverrides.install()
         InputOverrides.pressedMouseButtons = 0; InputOverrides.modifierFlags = []
@@ -789,7 +751,6 @@ import SwiftUI
         check(TooltipController.controller(for: window) === controller && controller.palette == nil, "one controller per window, neutral until told")
         check(!window.isVisible && !window.isKeyWindow, "the check window is never shown")
 
-        // LiveShortcutToolTip: the adoption entry point.
         let button = NSButton(title: "", target: nil, action: nil)
         button.toolTip = "Go back ⌘["
         LiveShortcutToolTip.set(button, "Go back", commandID: "goBack:")

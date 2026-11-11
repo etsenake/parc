@@ -1,6 +1,3 @@
-/// True no-op skip for LiveShortcutToolTip.didChange fan-out: identical
-/// discovered copy-tooltip / site-control shortcut fingerprints skip; a first
-/// apply or any string change must still update every window that needs them.
 @main
 struct ShortcutTooltipDiscoverySkipTests {
     static var assertions = 0

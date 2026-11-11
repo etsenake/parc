@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""the static incognito WindowTheme: the private window's opaque surface,
-brand palette and URL bar fill on the production ThemeRendererView and
-SidebarAddressPillView, plus the controller and sidebar wiring that gives
-them to a private window. An off-screen window that is never ordered in or
-made key; no browser, input or preferences."""
 from pathlib import Path
 import shutil
 import subprocess
@@ -11,8 +6,6 @@ import tempfile
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
 controller = (app / "BrowserWindowController.swift").read_text()
-#
-# Space's theme.
 for use in ("        let incognitoTheme = store.isEphemeral && !popup\n"
             "        rootView.incognito = incognitoTheme; sidebarContainer.incognito = incognitoTheme\n",
             "TooltipController.controller(for: window).palette = TooltipColorPalette(theme: self.rootView.paletteTheme)",

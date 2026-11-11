@@ -1,6 +1,5 @@
 import AppKit
 
-/// Actual offscreen AppKit row/table controls; no browser or output operation.
 @main @MainActor struct PointerSelectionTests {
     static func main() {
         _ = NSApplication.shared

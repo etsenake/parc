@@ -1,6 +1,5 @@
 import AppKit
 
-/// Inert production-view checks: no browser, visible window, engine or real profile.
 @main
 struct SpaceThemeAppearanceTests {
     static var assertions = 0
@@ -32,7 +31,7 @@ struct SpaceThemeAppearanceTests {
 
         AppAppearance.apply(.dark, defaults: defaults)
         var theme = SpaceTheme.singleColor(ThemeColor(hex: "4C6688")!)
-        theme.appearance = .light // Preserve old saved themes without using them as the app choice.
+        theme.appearance = .light
         theme.intensity = 0.3; theme.noise = 0.6; theme.texture = .tweed
         let editor = SpaceThemeEditorView(theme: theme, performHapticFeedback: {})
         let other = SpaceThemeEditorView(theme: SpaceTheme(), performHapticFeedback: {})
@@ -107,7 +106,6 @@ struct SpaceThemeAppearanceTests {
         expect(released == nil, "Appearance observation does not retain a retired editor")
         AppAppearance.apply(.dark, defaults: defaults)
         expectSelection(.dark, in: editor)
-        // Onboarding replay previews light/dark without saving it until Finish.
         AppAppearance.preview(.light)
         expect(AppAppearance.current == .light && defaults.string(forKey: "parc.appAppearance.v1") == "dark",
                "A replay preview shows without being saved, so a crash keeps the saved choice")
@@ -121,8 +119,6 @@ struct SpaceThemeAppearanceTests {
         presetPageOwnership()
         print("Space theme appearance: \(assertions) assertions passed")
     }
-    ///
-    /// so a later editor opens where the last one was left.
     @MainActor static func presetPageOwnership() {
         var windowPage = 0
         func open() -> SpaceThemeEditorView {

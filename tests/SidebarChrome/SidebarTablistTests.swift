@@ -1,14 +1,5 @@
 import AppKit
 
-/// Inert AppKit checks of the tablist, without a window. An NSOutlineView set
-///
-///
-/// SidebarChromeLayout.tablist and for the rows, cells and views of the
-/// production SidebarOutlineView, the sidebar list; the production
-/// adoptTablistScroller runs on a scroll view holding that outline.
-
-/// TablistOutlineView: AppKit's cell 18 points left and 18 wider, no outline
-/// cell, and the bottom inset added to every frame size.
 private final class TablistOutline: NSOutlineView {
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
         let frame = super.frameOfCell(atColumn: column, row: row)
@@ -26,7 +17,6 @@ private final class Node: NSObject {
     init(_ height: CGFloat, _ children: [Node] = []) { self.height = height; self.children = children }
 }
 
-///
 private final class Source: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate {
     let root: [Node]
     init(_ root: [Node]) { self.root = root }
@@ -49,8 +39,6 @@ private final class Source: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
         abs(a.minX - b.minX) < 0.001 && abs(a.minY - b.minY) < 0.001 && abs(a.width - b.width) < 0.001 && abs(a.height - b.height) < 0.001
     }
 
-    /// TablistView's outline setup: plain style, no header, 16 per level, the
-    /// 5-point base row height and (0, 1) intercell spacing.
     @MainActor fileprivate static func outline(_ nodes: [Node]) -> (TablistOutline, Source) {
         let source = Source(nodes)
         let outline = TablistOutline(frame: NSRect(x: 0, y: 0, width: width, height: 10))
@@ -64,8 +52,6 @@ private final class Source: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
         return (outline, source)
     }
 
-    /// The sidebar list: one outline row per row at its level, with a view
-    /// in every non-gap cell.
     @MainActor fileprivate static func list(_ rows: [L.TablistRow], levels: [Int]? = nil) -> (SidebarOutlineView, [NSView?]) {
         let list = SidebarOutlineView(frame: NSRect(x: 0, y: 0, width: width, height: 10))
         let views: [NSView?] = rows.map { row in if case .gap = row { nil } else { NSView() } }
@@ -75,7 +61,6 @@ private final class Source: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
 
     @MainActor static func main() {
         _ = NSApplication.shared
-        // Every sequence of up to four rows, plus the production slot orders.
         let alphabet: [L.TablistRow] = [.item, .gap(height: L.pinnedHeaderHeight), .accessory(height: L.sectionDividerHeight),
                                         .accessory(height: L.unpinnedHeaderHeight)]
         var sequences: [[L.TablistRow]] = [[]]
@@ -111,7 +96,6 @@ private final class Source: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
                 check(close(list.convert(list.rows[index].cell.bounds, from: list.rows[index].cell), cell), "outline cell \(index) is AppKit's for \(rows)")
                 switch row {
                 case .item:
-                    // CellSelectionStateView centres the visible row in the cell.
                     check(span == L.TablistSpan(minY: cell.minY + (cell.height - L.tablistVisibleRowHeight) / 2,
                                                 height: L.tablistVisibleRowHeight), "item \(index) centred in \(cell) for \(rows)")
                 case .accessory:
@@ -126,9 +110,6 @@ private final class Source: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
             }
         }
 
-        // Levels: with the outline cell gone and the cell moved 18 left, a
-        // level-n cell starts at 16n and keeps the trailing edge, as the
-        // outline's cell for a depth-n row does.
         let (tree, _) = outline([Node(40, [Node(40, [Node(40)]), Node(40)]), Node(24), Node(40)])
         let levels = (0..<tree.numberOfRows).map { tree.level(forRow: $0) }
         check(levels == [0, 1, 2, 1, 0, 0], "expanded tree")
@@ -145,9 +126,6 @@ private final class Source: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
             }
         }
 
-        // TablistView's scroll view with the production scroller. Six pinned
-        // rows and New Tab fit a 400-point clip (290) but not with the 120-point
-        // inset (410).
         let rows = L.tablistSlots(pinnedItems: 6, todayItems: 0, isPrivate: false).map(\.row)
         func scrolled(style: NSScroller.Style?, clip: CGFloat) -> (NSScrollView, NSView) {
             let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: clip))
@@ -165,7 +143,6 @@ private final class Source: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
         let (fresh, _) = scrolled(style: nil, clip: 400)
         check(fresh.verticalScroller is SidebarTablistScroller && fresh.verticalScroller?.controlSize == .small
               && fresh.hasVerticalScroller && fresh.autohidesScrollers, "the small NoBackgroundScroller")
-        // AppKit gives the scroll view the system's style, not the class's.
         check(fresh.scrollerStyle == NSScroller.preferredScrollerStyle, "system scroller style")
         check(SidebarTablistScroller.isCompatibleWithOverlayScrollers && SidebarTablistScroller.preferredScrollerStyle == .overlay,
               "overlay-compatible and preferring overlay")
@@ -178,8 +155,6 @@ private final class Source: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
         let (fits, fitsList) = scrolled(style: .legacy, clip: 440)
         check(fits.verticalScroller?.isHidden == true && fitsList.frame.width == width, "a list that fits with its inset keeps its width")
 
-        // No knob slot: drawKnobSlot leaves a bitmap transparent, where a
-        // legacy NSScroller paints its track.
         func slotAlpha(_ scroller: NSScroller) -> Int {
             scroller.frame = NSRect(x: 0, y: 0, width: 15, height: 60)
             guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 15, pixelsHigh: 60, bitsPerSample: 8,

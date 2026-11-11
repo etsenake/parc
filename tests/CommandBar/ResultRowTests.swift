@@ -1,7 +1,5 @@
 import AppKit
 
-///
-/// accessory and the selected icon tile. No browser or provider operation.
 @main @MainActor struct ResultRowTests {
     static func main() {
         _ = NSApplication.shared
@@ -66,8 +64,6 @@ import AppKit
         expect(caption.textColor == .white && !caption.isHidden, "the selected caption is white")
         expect(field(tab, "→") != nil, "the caption keeps its arrow")
         expect(caption.frame.width >= ceil(caption.cell!.cellSize.width), "Switch to Tab fits without an ellipsis")
-        // A label draws its line at the top of its frame; that line, the icon
-        // and the caption share the row's centre.
         func lineMidY(_ label: NSTextField) -> CGFloat { label.frame.maxY - ceil(label.cell!.cellSize.height) / 2 }
         expect(abs(lineMidY(title) - image(history).frame.midY) < 0.5 && abs(lineMidY(subtitle) - 25) < 0.5,
                "the title and subtitle lines are centred on the icon")

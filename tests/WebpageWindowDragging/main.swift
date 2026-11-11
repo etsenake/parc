@@ -55,11 +55,6 @@ state.commit()
 check(!state.consume(.rightMouseUp, deltaX: 40, deltaY: 0), "other buttons unaffected")
 state.cancel();check(state.phase == .inactive, "cancel terminates accounting")
 
-// A real hidden AppKit view/window hierarchy; no Apple Events, browser object,
-// NSApplication input dispatch or AppKit drag loop is used: the check supplies
-// NSApplication's current event and NSCursor's cursor, and takes
-// NSWindow.performDrag itself. Chromium's source-owned per-event hit test is
-// exercised by explicitly asking this tree.
 _ = NSApplication.shared
 DispatchOverrides.install()
 let window = NSWindow(contentRect: rect, styleMask: [], backing: .buffered, defer: false)
@@ -137,9 +132,6 @@ check(grabber.drag.phase == .inactive, "window detach cancels")
 root.addSubview(grabber); grabber.frame = WebpageWindowDragState.region(in: rect, topStripHeight: 0)
 configure()
 
-// True no-op: inactive left-drags in the strip never arm/commit/take the click,
-// so owner/current/hidden/arrow/eligibility probes are skipped. Left-down and
-// armed/committed drag still probe so eligibility flips keep identical outcomes.
 func resetProbes() { DispatchOverrides.cursorReads = 0; currentProbes = 0; eligibilityProbes = 0 }
 func probed() -> Bool { DispatchOverrides.cursorReads + currentProbes + eligibilityProbes > 0 }
 resetProbes()

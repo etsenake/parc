@@ -1,8 +1,3 @@
-// FairPlay protected-codec proof. No public FairPlay content exists for
-// Dolby Vision, AV1, HE-AAC, xHE-AAC, AC-3 or E-AC-3, so this program makes
-// its own: it encrypts clear samples in memory with a content key that
-// Axinom's FairPlay license service licenses, then plays them through
-// FairPlayCdm and FairPlayRenderer the way Chromium hands them over.
 #import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -39,25 +34,15 @@ namespace ft = parc::fairplay::test;
 
 namespace {
 
-// Axinom public test vectors v10, "CMAF H264 SingleKey (cbcs)", the vector the
-// core harness licenses (tests/FairPlay/harness.mm). Axinom publishes its
-// content key next to the key ID and the X-AxDRM-Message entitlement token in
-// https://github.com/Axinom/public-test-vectors/blob/master/ContentKeys/Axinom-Encoding-Cmaf-H264-protected-SingleKey.txt
-// so Axinom's FairPlay service licenses a key this program can encrypt with.
-// The token's inline key carries the FairPlay IV the service requires.
 NSString* const kLicenseUrl = @"https://drm-fairplay-licensing.axprod.net/AcquireLicense";
 NSString* const kCertificateUrl = @"https://tools.axinom.com/FPScert/fairplay.cer";
 const char* const kKeyIdHex = "302f80dd411e4886bca5bb1f8018a024";
 const char* const kKeyBase64 = "FbKq+Qbr7GMJ1A+RKJEnuA==";
 NSString* const kToken = @"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjogMSwKImNvbV9rZXlfaWQiOiAiZjM0ZjgzZWMtZTQyNS00OTYzLWExODMtYjRkNDAwYmNlNDQ0IiwKIm1lc3NhZ2UiOiB7CiAgInR5cGUiOiAiZW50aXRsZW1lbnRfbWVzc2FnZSIsCiAgInZlcnNpb24iOiAyLAogICJsaWNlbnNlIjogewogICAgImFsbG93X3BlcnNpc3RlbmNlIjogdHJ1ZQogIH0sCiAgImNvbnRlbnRfa2V5c19zb3VyY2UiOiB7CiAgICAiaW5saW5lIjogWwogICAgICB7CiAgICAgICAgImlkIjogIjMwMmY4MGRkLTQxMWUtNDg4Ni1iY2E1LWJiMWY4MDE4YTAyNCIsCiAgICAgICAgImVuY3J5cHRlZF9rZXkiOiAiMWVYeWhGWmNGVjljemNtZG5BREpMdz09IiwKICAgICAgICAiaXYiOiAiZC8wWWlhcjBGRHNJVlVpendQbGJtZz09IiwKICAgICAgICAidXNhZ2VfcG9saWN5IjogIlBvbGljeSBBIgogICAgICB9CiAgICBdCiAgfSwKICAiY29udGVudF9rZXlfdXNhZ2VfcG9saWNpZXMiOiBbCiAgICB7CiAgICAgICJuYW1lIjogIlBvbGljeSBBIiwKICAgICAgInBsYXlyZWFkeSI6IHsKICAgICAgICAibWluX2RldmljZV9zZWN1cml0eV9sZXZlbCI6IDE1MCwKICAgICAgICAicGxheV9lbmFibGVycyI6IFsKICAgICAgICAgICI3ODY2MjdEOC1DMkE2LTQ0QkUtOEY4OC0wOEFFMjU1QjAxQTciCiAgICAgICAgXQogICAgICB9CiAgICB9CiAgXQp9fQ.5VxBJQsgGVissi9WCNpT7IoykEAmxaEcif6F3SeLvzU";
 
-// Chromium's media/test/data at the pinned tag. Its encrypted files use the
-// test key in that directory's README ("[1] Test key ID", "[2] Test key").
 NSString* const kChromiumTestData =
     @"https://chromium.googlesource.com/chromium/src/+/refs/tags/156.0.8078.48/media/test/data/";
 const char* const kChromiumKeyHex = "ebdd62f16814d27b68ef122afce4ae3c";
-
-// ---------------------------------------------------------------- reporting
 
 double g_start = 0;
 int g_checks = 0;
@@ -122,8 +107,6 @@ const char* StatusName(fp::RenderingStatus s) {
   return "?";
 }
 
-// --------------------------------------------------------------------- HTTP
-
 struct Http {
   long status = 0;
   NSData* body = nil;
@@ -131,7 +114,6 @@ struct Http {
   std::string error;
 };
 
-// Blocking, with a 60 s request timeout; called off the main thread only.
 Http Fetch(NSString* url, NSString* method, NSData* body, NSDictionary* headers) {
   NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:url]];
   request.HTTPMethod = method;
@@ -175,7 +157,6 @@ NSData* CachedGet(NSString* url, NSString* name, bool base64, std::string* error
 
 void Finish();
 
-// One byte range of a static file (a CMAF segment of an HLS playlist).
 NSData* CachedRange(NSString* url, NSString* name, uint64_t offset, uint64_t length, std::string* error) {
   NSString* path = [g_cache_dir stringByAppendingPathComponent:name];
   if (NSData* cached = [NSData dataWithContentsOfFile:path]) return cached;
@@ -189,8 +170,6 @@ NSData* CachedRange(NSString* url, NSString* name, uint64_t offset, uint64_t len
   [http.body writeToFile:path atomically:YES];
   return http.body;
 }
-
-// ------------------------------------------------------------ media loading
 
 struct Media {
   ft::TrackInfo info;
@@ -207,15 +186,12 @@ bool ParseFile(NSData* data, const std::string& name, Media* media, std::string*
   return true;
 }
 
-// One fragmented (or progressive) MP4 from Chromium's media/test/data; the
-// cache name matches the core harness's so both share downloads.
 bool LoadChromiumFile(NSString* name, Media* media, std::string* error) {
   NSData* data = CachedGet([NSString stringWithFormat:@"%@%@?format=TEXT", kChromiumTestData, name],
                            [@"chromium_" stringByAppendingString:name], true, error);
   return data && ParseFile(data, name.UTF8String, media, error);
 }
 
-// The first track of one of Chromium's WebM test files.
 bool LoadChromiumWebm(NSString* name, Media* media, std::string* error) {
   NSData* data = CachedGet([NSString stringWithFormat:@"%@%@?format=TEXT", kChromiumTestData, name],
                            [@"chromium_" stringByAppendingString:name], true, error);
@@ -250,11 +226,6 @@ OSStatus ProvidePcm(AudioConverterRef, UInt32* packets, AudioBufferList* data, A
   return noErr;
 }
 
-// AAC-LC, HE-AAC and HE-AACv2 tracks encoded with AudioToolbox (Chromium's
-// test data has no HE-AAC MP4): 44.1 kHz stereo tones, packets and the
-// encoder's AudioSpecificConfig, as an MP4 parser would hand them over.
-// AAC from Apple's encoder, or ALAC (kAudioFormatAppleLossless) as Apple's
-// 'alac' sample entry carries it.
 bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* error) {
   const bool alac = format == kAudioFormatAppleLossless;
   AudioStreamBasicDescription in = {44100, kAudioFormatLinearPCM, kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
@@ -297,7 +268,6 @@ bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* 
       ft::Sample sample;
       sample.data.assign(buffer.begin() + d.mStartOffset, buffer.begin() + d.mStartOffset + d.mDataByteSize);
       sample.pts = sample.dts = pts;
-      // ALAC's last packet holds only the frames left (its header says so).
       const int64_t frames = alac ? std::min<int64_t>(out.mFramesPerPacket, int64_t(seconds * 44100) - pts)
                                   : int64_t(out.mFramesPerPacket);
       sample.duration = frames;
@@ -318,7 +288,6 @@ bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* 
   media->info.channels = 2;
   media->info.sample_rate = uint32_t(out.mSampleRate);
   if (alac) {
-    // The 'alac' child box's payload, as the parser keeps it from a file.
     media->info.codec_config = fp::AlacSpecificBoxPayload(cookie).value_or(std::vector<uint8_t>());
   } else {
     media->info.codec_config = ft::AscFromDescriptor(cookie.data(), cookie.size());
@@ -330,9 +299,6 @@ bool EncodeAac(AudioFormatID format, double seconds, Media* media, std::string* 
   return true;
 }
 
-// ISO 23003-5 PCM as Chromium's MP4 parser hands it over: 'ipcm' (16, 24 or
-// 32-bit integer) or 'fpcm' (32-bit float), little-endian interleaved 44.1 kHz
-// stereo tones in 1024-frame samples, the 'pcmC' payload as the config.
 void MakePcm(bool floating, int bits, double seconds, Media* media) {
   const int64_t total = int64_t(seconds * 44100);
   for (int64_t pts = 0; pts < total; pts += 1024) {
@@ -371,9 +337,6 @@ double EndSeconds(const Media& media) {
   return end;
 }
 
-// Channel count Chromium's MP4 parser reports for AC-3/E-AC-3 (from the
-// dac3/dec3 box: acmod, lfeon and, for E-AC-3, the dependent substreams'
-// chan_loc). The sample entry's channelcount is often just 2.
 int DolbyChannels(const ft::TrackInfo& info) {
   static const int kAcmodChannels[8] = {2, 1, 2, 3, 3, 4, 4, 5};
   const std::vector<uint8_t>& c = info.codec_config;
@@ -385,7 +348,7 @@ int DolbyChannels(const ft::TrackInfo& info) {
     int channels = kAcmodChannels[acmod] + lfeon;
     if (dependents && c.size() >= 6) {
       const int chan_loc = ((c[4] & 1) << 8) | c[5];
-      static const int kLocationChannels[9] = {2, 2, 1, 1, 2, 2, 2, 1, 1};  // Lc/Rc, Lrs/Rrs, Cs, Ts, ...
+      static const int kLocationChannels[9] = {2, 2, 1, 1, 2, 2, 2, 1, 1};
       for (int bit = 0; bit < 9; ++bit) channels += (chan_loc >> bit) & 1 ? kLocationChannels[bit] : 0;
     }
     return channels;
@@ -393,9 +356,6 @@ int DolbyChannels(const ft::TrackInfo& info) {
   return info.channels;
 }
 
-// Decrypts a Chromium test file (encrypted with its README's test key) into
-// clear samples, keeping each sample's subsample layout as the packager made
-// it.
 bool DecryptReference(const Media& encrypted, const std::vector<uint8_t>& key, Media* clear,
                       std::vector<std::vector<fp::SubsampleEntry>>* layouts, std::string* error) {
   *clear = encrypted;
@@ -443,33 +403,23 @@ std::string LayoutText(const std::vector<fp::SubsampleEntry>& layout) {
   return text.empty() ? "whole sample" : text;
 }
 
-// ---------------------------------------------------------------- protection
-
-// How samples are split into clear and protected bytes.
 enum class Layout {
-  kNal,               // H.264/HEVC/Dolby Vision: slice data protected (NalLayout).
-  kReference,         // AV1: the layout Shaka Packager gave the same stream.
-  kAv1ObuPayloads,    // AV1 probe: every frame, frame header and tile group OBU
-                      // protected after its header and size field (frame
-                      // headers included, which a packager never does).
-  kWholeSample,       // Audio, CMAF style: the whole sample is protected.
-  kSyncframeHeaders,  // AC-3/E-AC-3: each syncframe's first 16 bytes clear.
+  kNal,
+  kReference,
+  kAv1ObuPayloads,
+  kWholeSample,
+  kSyncframeHeaders,
 };
 
-// IVs. FairPlay's CKC carries an IV with the key, and Axinom's service
-// requires one in the entitlement token ("iv" of the token's inline key:
-// d/0Yiar0FDsIVUizwPlbmg==, the constant IV Axinom's own content uses).
-// kOtherIv is an IV the license doesn't carry.
 const uint8_t kLicenseIv[16] = {0x77, 0xfd, 0x18, 0x89, 0xaa, 0xf4, 0x14, 0x3b,
                                 0x08, 0x55, 0x48, 0xb3, 0xc0, 0xf9, 0x5b, 0x9a};
 const uint8_t kOtherIv[16] = {'p', 'a', 'r', 'c', '-', 'f', 'a', 'i', 'r', 'p', 'l', 'a', 'y', '-', 'i', 'v'};
 const uint8_t kCencIvBase[8] = {0x70, 0x61, 0x72, 0x63, 0x00, 0x00, 0x00, 0x00};
 
 enum class IvMode {
-  kLicense,    // cbcs: the license's IV as the tenc constant IV. cenc: the
-               // license's IV as every sample's 16-byte IV.
-  kOther,      // cbcs only: a constant IV the license doesn't carry.
-  kPerSample,  // cenc only: 8-byte IVs counting up per sample, as packagers write.
+  kLicense,
+  kOther,
+  kPerSample,
 };
 
 std::vector<fp::SubsampleEntry> SyncframeLayout(const std::vector<uint8_t>& data, bool eac3) {
@@ -481,13 +431,10 @@ std::vector<fp::SubsampleEntry> SyncframeLayout(const std::vector<uint8_t>& data
     out.push_back({16, uint32_t(size - 16)});
     pos += size;
   }
-  if (pos != data.size()) out.clear();  // Not syncframe-aligned: fall back to the whole sample.
+  if (pos != data.size()) out.clear();
   return out;
 }
 
-// Low-overhead AV1 OBUs (each with obu_has_size_field): header and size field
-// clear, payload protected for frame (6), frame header (3) and tile group (4)
-// OBUs, everything else clear.
 bool Av1ObuPayloadLayout(const std::vector<uint8_t>& data, std::vector<fp::SubsampleEntry>* out) {
   out->clear();
   uint32_t pending_clear = 0;
@@ -520,8 +467,8 @@ struct ProtectOptions {
   fp::EncryptionScheme scheme = fp::EncryptionScheme::kCbcs;
   Layout layout = Layout::kNal;
   IvMode iv = IvMode::kLicense;
-  const std::vector<std::vector<fp::SubsampleEntry>>* reference = nullptr;  // kReference.
-  std::optional<fp::EncryptionPattern> pattern;  // Instead of CMAF's.
+  const std::vector<std::vector<fp::SubsampleEntry>>* reference = nullptr;
+  std::optional<fp::EncryptionPattern> pattern;
 };
 
 ProtectOptions Options(fp::EncryptionScheme scheme, Layout layout, IvMode iv,
@@ -536,17 +483,13 @@ ProtectOptions Options(fp::EncryptionScheme scheme, Layout layout, IvMode iv,
 
 struct ProtectionStats {
   size_t samples = 0;
-  size_t protected_samples = 0;  // With at least one complete encrypted block.
+  size_t protected_samples = 0;
   size_t bytes = 0;
   size_t cypher_bytes = 0;
   size_t changed_bytes = 0;
   bool round_trip = true;
 };
 
-// Encrypts every sample of |clear| with |key| under |key_id| and gives each
-// the DecryptConfig Chromium's MP4 parser would build from the resulting
-// senc/tenc: key ID, per-sample IV (cenc) or none with the tenc constant IV
-// (cbcs), subsamples and the cbcs pattern.
 bool Protect(const Media& clear, const ProtectOptions& options, const std::vector<uint8_t>& key,
              const std::vector<uint8_t>& key_id, Media* out, ProtectionStats* stats, std::string* error) {
   const bool video = clear.info.is_video;
@@ -560,7 +503,6 @@ bool Protect(const Media& clear, const ProtectOptions& options, const std::vecto
   out->info.scheme_type = cbcs ? fp::FourCC('c', 'b', 'c', 's') : fp::FourCC('c', 'e', 'n', 'c');
   out->info.encryption.scheme = options.scheme;
   out->info.encryption.default_key_id = key_id;
-  // CMAF: 1:9 pattern for video, whole blocks for audio.
   out->info.encryption.default_pattern =
       options.pattern ? *options.pattern : cbcs && video ? fp::EncryptionPattern{1, 9} : fp::EncryptionPattern{0, 0};
   const std::vector<uint8_t> license_iv(kLicenseIv, kLicenseIv + 16), other_iv(kOtherIv, kOtherIv + 16);
@@ -648,14 +590,11 @@ bool Protect(const Media& clear, const ProtectOptions& options, const std::vecto
     stats->cypher_bytes += cypher;
     stats->protected_samples += full_block;
     for (size_t k = 0; k < original.size(); ++k) stats->changed_bytes += original[k] != sample.data[k];
-    // Stored as the senc would hold it: cbcs carries no per-sample IV.
     if (cbcs) info.iv.clear();
     sample.decrypt = info;
   }
   return true;
 }
-
-// ------------------------------------------------------------- async steps
 
 using Done = std::function<void()>;
 using Step = std::function<void(Done)>;
@@ -682,8 +621,6 @@ void Sequence(std::vector<Step> steps, Done done) {
   RunSteps(std::make_shared<std::vector<Step>>(std::move(steps)), 0, std::move(done));
 }
 
-// Runs |done| once: with true from the returned callback, or with false
-// after |timeout| seconds (recorded as a failed check when |label| is set).
 std::function<void(bool)> Once(double timeout, const std::string& label, std::function<void(bool)> done) {
   auto fired = std::make_shared<bool>(false);
   auto finish = [fired, done](bool ok) {
@@ -714,8 +651,6 @@ Step Section(const std::string& title) {
   };
 }
 
-// ----------------------------------------------------------- license flow
-
 std::string KeysText(const std::vector<fp::KeyInfo>& keys) {
   std::string text;
   for (const fp::KeyInfo& key : keys) {
@@ -727,8 +662,6 @@ std::string KeysText(const std::vector<fp::KeyInfo>& keys) {
   return text;
 }
 
-// The page's side of EME for a cenc session: each JSON message entry's SPC
-// goes to Axinom with the entitlement token; the CKCs go back in one update().
 class LicenseClient : public fp::FairPlayCdmClient {
  public:
   fp::FairPlayCdm* cdm = nullptr;
@@ -781,34 +714,22 @@ class LicenseClient : public fp::FairPlayCdmClient {
   void OnSessionClosed(const std::string&) override {}
 };
 
-// A version 1 'pssh' of the W3C common system (1077efec-...), naming |key_id|:
-// what a CMAF packager puts in the moov and Chromium's MP4 parser passes on
-// as "cenc" init data. With no FairPlay pssh, the CDM requests the key IDs it
-// names.
 std::vector<uint8_t> CommonPssh(const std::vector<uint8_t>& key_id) {
   static const uint8_t kCommonSystemId[16] = {0x10, 0x77, 0xef, 0xec, 0xc0, 0xb2, 0x4d, 0x02,
                                               0xac, 0xe3, 0x3c, 0x1e, 0x52, 0xe2, 0xfb, 0x4b};
-  std::vector<uint8_t> payload = {1, 0, 0, 0};  // Version 1, no flags.
+  std::vector<uint8_t> payload = {1, 0, 0, 0};
   payload.insert(payload.end(), kCommonSystemId, kCommonSystemId + 16);
-  payload.insert(payload.end(), {0, 0, 0, 1});  // KID_count.
+  payload.insert(payload.end(), {0, 0, 0, 1});
   payload.insert(payload.end(), key_id.begin(), key_id.end());
-  payload.insert(payload.end(), {0, 0, 0, 0});  // DataSize.
+  payload.insert(payload.end(), {0, 0, 0, 0});
   return fp::MakeBox(fp::FourCC('p', 's', 's', 'h'), payload);
 }
 
-// --------------------------------------------------------- decoder errors
-
 struct DecoderLog {
-  int errors = 0;      // -1 when the log can't be read.
-  std::string common;  // The three most frequent, with counts.
+  int errors = 0;
+  std::string common;
 };
 
-// Errors Apple's audio and video decoders and the content protection layer
-// logged in this process since |since|. The renderers report none of them:
-// an audio decoder that fails every packet still shows status rendering and
-// the clock still reaches the end, and some AV1 garbage decodes without a
-// corrupted frame. The current process's log needs no entitlement. Slow on
-// a long log, so callers run it off the main thread.
 DecoderLog DecoderErrorsSince(NSDate* since) {
   DecoderLog out;
   NSError* error = nil;
@@ -850,12 +771,6 @@ DecoderLog DecoderErrorsSince(NSDate* since) {
   return out;
 }
 
-// ------------------------------------------------------------------ player
-
-// Chromium's decoder configs (MP4StreamParser at the pinned tag, as the
-// FairPlay renderer adapter passes them): no video decoder record, Dolby
-// Vision as profile and level, AAC with its AudioSpecificConfig and ADTS
-// framing where it fits, no dac3/dec3, encryption as the scheme alone.
 fp::VideoConfig ChromiumVideoConfig(const ft::TrackInfo& info) {
   fp::VideoConfig vc;
   const uint32_t f = info.original_format;
@@ -867,7 +782,7 @@ fp::VideoConfig ChromiumVideoConfig(const ft::TrackInfo& info) {
     vc.codec = fp::VideoCodec::kAV1;
   } else if (f == fp::FourCC('v', 'p', '0', '9')) {
     vc.codec = fp::VideoCodec::kVP9;
-    vc.color = {1, 1, 1};  // WebMVideoClient's without a Colour element.
+    vc.color = {1, 1, 1};
   } else {
     vc.codec = fp::VideoCodec::kH264;
   }
@@ -885,7 +800,6 @@ fp::VideoConfig ChromiumVideoConfig(const ft::TrackInfo& info) {
   return vc;
 }
 
-// --muted: every audio renderer muted at volume 0, nothing out of the speakers.
 bool g_muted = false;
 
 fp::AudioConfig ChromiumAudioConfig(const ft::TrackInfo& info) {
@@ -899,15 +813,11 @@ fp::AudioConfig ChromiumAudioConfig(const ft::TrackInfo& info) {
   ac.channels = aac ? info.channels : DolbyChannels(info);
   const std::vector<uint8_t>& c = info.codec_config;
   if (f == fp::FourCC('f', 'L', 'a', 'C')) {
-    // MP4StreamParser: the STREAMINFO block of 'dfLa' (a short box leaves the
-    // config empty, which the renderer refuses).
     ac.codec = fp::AudioCodec::kFLAC;
     ac.extra_data.clear();
     if (c.size() >= 8 + 34) ac.extra_data.assign(c.begin() + 8, c.begin() + 8 + 34);
     ac.channels = info.channels;
   } else if (f == fp::FourCC('a', 'l', 'a', 'c')) {
-    // fairplay-media.patch's ALACSpecificBox: the 24-byte ALACSpecificConfig
-    // after the box's version and flags; channels and rate from it.
     ac.codec = fp::AudioCodec::kALAC;
     ac.extra_data.clear();
     if (c.size() >= 4 + 24) {
@@ -916,14 +826,12 @@ fp::AudioConfig ChromiumAudioConfig(const ft::TrackInfo& info) {
       ac.sample_rate = int32_t(uint32_t(c[24]) << 24 | uint32_t(c[25]) << 16 | uint32_t(c[26]) << 8 | c[27]);
     }
   } else if (f == fp::FourCC('i', 'p', 'c', 'm') || f == fp::FourCC('f', 'p', 'c', 'm')) {
-    // fairplay-media.patch: kPCM, the sample format from 'pcmC'.
     ac.codec = fp::AudioCodec::kPCM;
     ac.extra_data.clear();
     ac.channels = info.channels;
     ac.pcm_bits = c.size() >= 6 ? c[5] : 0;
     ac.pcm_float = f == fp::FourCC('f', 'p', 'c', 'm');
   } else if (f == fp::FourCC('O', 'p', 'u', 's')) {
-    // OpusSpecificBox::Parse: "OpusHead" and the 'dOps' fields, little-endian.
     ac.codec = fp::AudioCodec::kOpus;
     ac.extra_data.clear();
     if (c.size() >= 11) {
@@ -934,7 +842,6 @@ fp::AudioConfig ChromiumAudioConfig(const ft::TrackInfo& info) {
       ac.sample_rate = int32_t(uint32_t(c[4]) << 24 | uint32_t(c[5]) << 16 | uint32_t(c[6]) << 8 | c[7]);
     }
   } else if (f == fp::FourCC('v', 'o', 'r', 'b')) {
-    // WebMAudioClient: CodecPrivate as it is.
     ac.codec = fp::AudioCodec::kVorbis;
     ac.extra_data = c;
     ac.channels = info.channels;
@@ -953,13 +860,11 @@ class Player : public fp::FairPlayRendererClient {
     if (video_) vc = ChromiumVideoConfig(media->info);
     else ac = ChromiumAudioConfig(media->info);
     if (ac && file_audio_config) ac->extra_data = media->info.codec_config;
-    // Chromium's order when the page set MediaKeys before playback.
     fp::Result result = renderer_.SetCdm(cdm);
     if (!result.ok()) errors.push_back("SetCdm: " + result.message);
     result = renderer_.Initialize(vc, ac);
     if (!result.ok()) errors.push_back("Initialize: " + result.message);
     if (g_muted && result.ok() && ac) {
-      // Silent runs: AVFoundation still decodes every packet.
       renderer_.SetMuted(true);
       renderer_.SetVolume(0);
     }
@@ -991,11 +896,8 @@ class Player : public fp::FairPlayRendererClient {
   fp::FairPlayRenderer& renderer() { return renderer_; }
   bool initialized() const { return initialized_; }
 
-  // Whether AVFoundation hands back the frame on screen (it can't for
-  // protected output), and its size and pixel format.
   std::string DisplayedFrame() {
     if (@available(macOS 14.4, *)) {
-      // The renderer's layer hosts its AVSampleBufferDisplayLayer.
       AVSampleBufferDisplayLayer* display = nil;
       for (CALayer* sublayer in layer_.sublayers) {
         if ([sublayer isKindOfClass:[AVSampleBufferDisplayLayer class]]) display = (AVSampleBufferDisplayLayer*)sublayer;
@@ -1069,9 +971,6 @@ class Player : public fp::FairPlayRendererClient {
   }
 
  private:
-  // DemuxerStream reads: each sample in Chromium's DecoderBuffer form (Annex B
-  // with parameter sets on keyframes, ADTS, microseconds, 16-byte IVs, no
-  // decode timestamp), then end of stream.
   void Pump() {
     const fp::StreamType stream = video_ ? fp::StreamType::kVideo : fp::StreamType::kAudio;
     while (initialized_ && renderer_.IsReadyForMoreData(stream)) {
@@ -1109,33 +1008,25 @@ class Player : public fp::FairPlayRendererClient {
   fp::DecryptInfo decrypt_storage_;
 };
 
-// ------------------------------------------------------------------- world
-
-// What a clip's playback is expected to show.
 enum class Expect {
-  kPlays,     // Decrypts and decodes: every check must pass.
-  kGarbage,   // Control (wrong key): must not look like healthy playback,
-              // or healthy playback proves nothing for this codec.
-  kFails,     // Documented platform behaviour: must not play correctly.
-  kReport,    // Reported only (a control whose result is information).
-  kDecodeError,  // Safari's outcome: AVFoundation takes the protected format
-                 // (expected_types) and fails the renderer once the key is
-                 // usable, which a page sees as MEDIA_ERR_DECODE.
+  kPlays,
+  kGarbage,
+  kFails,
+  kReport,
+  kDecodeError,
 };
 
 struct Clip {
   std::string label;
-  Media media;                 // Protected samples.
-  std::string expected_types;  // Apple's protected format subtype(s), '|'-separated.
+  Media media;
+  std::string expected_types;
   Expect expect = Expect::kPlays;
-  // AC-3/E-AC-3: hand the renderer the file's dac3/dec3, which Chromium
-  // doesn't (isolates the core's own box building).
   bool file_audio_config = false;
 };
 
 struct ClipResult {
   std::string label;
-  std::string verdict;  // OK, FAIL, or INFO.
+  std::string verdict;
   std::string evidence;
 };
 
@@ -1150,15 +1041,10 @@ struct World {
   std::shared_ptr<Player> player;
   std::vector<std::shared_ptr<Clip>> clips;
   std::vector<ClipResult> results;
-  // Loaded media.
   Media h264, h264_cbcs_ref, hevc, dv5_dvh1, dv5_dvhe, av1_ref, av1, av1_10bit_ref, av1_10bit, xhe_aac, ac3, eac3,
       eac3_71, eac3_71_full, aac_lc, he_aac, he_aac_v2, axinom_h264, axinom_hevc, flac, opus, alac, ipcm16,
       ipcm24, fpcm32, vp9, vorbis, vorbis_damaged;
-  // The Dolby Vision dvhe test file's own cenc layout (dv5_dvhe holds it
-  // decrypted).
   std::vector<std::vector<fp::SubsampleEntry>> dv5_dvhe_layout;
-  // Shaka Packager's subsample layouts of the AV1 streams (av1_ref and
-  // av1_10bit_ref hold those streams decrypted).
   std::vector<std::vector<fp::SubsampleEntry>> av1_layout, av1_10bit_layout;
 };
 
@@ -1196,8 +1082,6 @@ Step AcquireLicense() {
   };
 }
 
-// Plays one protected clip from the start to OnEnded and judges it by the
-// clock, renderer status and (video) AVFoundation's frame counts.
 std::vector<Step> PlayClip(std::shared_ptr<Clip> clip) {
   World* w = g_world;
   const double end = EndSeconds(clip->media);
@@ -1238,7 +1122,6 @@ std::vector<Step> PlayClip(std::shared_ptr<Clip> clip) {
     if (w->player->ended) finish(true);
     else w->player->on_ended = [finish] { finish(true); };
   });
-  // The log store can trail by a moment.
   steps.push_back([=](Done done) {
     After(1, [=] {
       NSDate* since = *started;
@@ -1256,8 +1139,6 @@ std::vector<Step> PlayClip(std::shared_ptr<Clip> clip) {
       fp::RendererStatus s = w->player->renderer().GetStatus();
       const double wall = *ended_wall;
       const size_t count = clip->media.samples.size();
-      // A clip that is clear as given (a baseline) plays clear: nothing
-      // protected, and the expected type is the clear format's.
       const bool clear_given = clip->media.info.encryption.scheme == fp::EncryptionScheme::kUnencrypted;
       const std::string type = ft::FourCCString(clear_given ? (video ? s.video_format : s.audio_format)
                                                             : (video ? s.video_protected_format : s.audio_protected_format));
@@ -1291,16 +1172,12 @@ std::vector<Step> PlayClip(std::shared_ptr<Clip> clip) {
       if (video) Log("%s: %s", clip->label.c_str(), w->player->DisplayedFrame().c_str());
       const bool healthy = on_time && rendering && clean && frames_ok && quiet_log;
       if (clip->expect == Expect::kGarbage) {
-        // If garbage looks like healthy playback, frame counts and statuses
-        // prove nothing about decryption for this codec.
         Check(!healthy, clip->label + ": decoding garbage is detected", evidence);
         w->results.push_back({clip->label, healthy ? "FAIL" : "OK", evidence});
       } else if (clip->expect == Expect::kFails) {
         Check(!healthy, clip->label + ": doesn't play, as documented", evidence);
         w->results.push_back({clip->label, healthy ? "FAIL" : "OK", "fails as documented: " + evidence});
       } else if (clip->expect == Expect::kDecodeError) {
-        // -11800 over 'fmt?' (kAudioFormatUnsupportedFormatError, 1718449215):
-        // no decoder for the format, after the protected samples went in.
         const bool as_safari = type_ok && status == fp::RenderingStatus::kFailed && s.protected_enqueued > 0 &&
                                apple_error.find("-11800") != std::string::npos &&
                                apple_error.find("1718449215") != std::string::npos &&
@@ -1348,19 +1225,10 @@ std::vector<Step> PlayClip(std::shared_ptr<Clip> clip) {
   return steps;
 }
 
-// --------------------------------------------------------------- self tests
-
-// The cipher and the layouts against packagers' own output, before any of it
-// reaches FairPlay.
 void SelfTests() {
   World* w = g_world;
   const std::vector<uint8_t> chromium_key = FromHex(kChromiumKeyHex);
   std::string error;
-  // AES-CBC with the 1:9 pattern and the H.264 layout against Shaka
-  // Packager's bear-640x360-v_frag-cbcs.mp4 (the clear file, encrypted with
-  // the README's test key after a clear lead). The parser doesn't expose that
-  // file's subsamples, so each of its samples must equal either the clear
-  // sample or this program's encryption of it.
   {
     ft::NalLayout nal(ft::NalCodec::kH264, w->h264.info.codec_config);
     size_t identical = 0, clear_lead = 0;
@@ -1382,8 +1250,6 @@ void SelfTests() {
           "cipher and layout: cbcs (AES-CBC, 1:9) H.264 encryption equals Shaka Packager's byte for byte",
           Format("%zu identical, %zu clear lead, of %zu samples", identical, clear_lead, count));
   }
-  // Slice header ends against Axinom's own cbcs vectors (H.264 and HEVC):
-  // their clear bytes per NAL unit must equal ours exactly.
   for (const Media* m : {&w->axinom_h264, &w->axinom_hevc}) {
     const bool hevc = m == &w->axinom_hevc;
     ft::NalLayout nal(hevc ? ft::NalCodec::kHevc : ft::NalCodec::kH264, m->info.codec_config);
@@ -1404,9 +1270,6 @@ void SelfTests() {
           std::string("layout: ") + (hevc ? "HEVC" : "H.264") + " cbcs subsamples equal Axinom's packager's",
           Format("%zu/%zu samples", same, m->samples.size()) + first_difference);
   }
-  // HEVC cenc layout (16-byte aligned) against the Dolby Vision dvhe test
-  // file's own, and AES-CTR against that file and Shaka's AV1 files: each
-  // decrypts to the clear stream.
   {
     ft::NalLayout nal(ft::NalCodec::kHevc, w->dv5_dvhe.info.codec_config);
     size_t same = 0;
@@ -1433,8 +1296,6 @@ void SelfTests() {
   }
 }
 
-// Apple's view of a dec3: the channels and layout of each layer CoreMedia
-// lists for it (the first is the richest, as with HE-AAC).
 std::string Dec3Layers(const std::vector<uint8_t>& dec3, uint32_t sample_rate, AudioChannelLayoutTag* top,
                        UInt32* top_channels) {
   *top = 0;
@@ -1460,11 +1321,6 @@ std::string Dec3Layers(const std::vector<uint8_t>& dec3, uint32_t sample_rate, A
   return text;
 }
 
-// The 7.1 stream (channel configuration FA01: L R C LFE Ls Rs Lrs Rrs):
-// Apple's E-AC-3 decoder on the clear frames, then the layouts Apple derives
-// from the file's dec3 and from the two dec3 the core can build (from clear
-// syncframe headers, and from rate and channel count when the headers are
-// encrypted).
 void ChannelLayoutChecks() {
   World* w = g_world;
   const ft::TrackInfo& info = w->eac3_71_full.info;
@@ -1475,7 +1331,6 @@ void ChannelLayoutChecks() {
         "7.1: CoreMedia's top layer for the file's dec3 is 8 channels, EAC3_7_1_A (L C R Ls Rs LFE Rls Rrs)",
         file_text);
 
-  // Apple's decoder on all 30 s of clear frames, asked for that top layer.
   std::vector<uint8_t> entry = fp::AudioSampleEntry(fp::FourCC('e', 'c', '-', '3'), 2, info.sample_rate,
                                                     {fp::MakeBox(fp::FourCC('d', 'e', 'c', '3'), info.codec_config)});
   CMAudioFormatDescriptionRef format = nullptr;
@@ -1558,18 +1413,15 @@ void ChannelLayoutChecks() {
   if (format) CFRelease(format);
   size_t live = 0;
   for (double e : energy) live += e > 0;
-  // The LFE channel of a voice-identification stream may be silent.
   Check(energy.size() == 8 && live >= 7 && out_tag == kAudioChannelLayoutTag_EAC3_7_1_A,
         "7.1: Apple's E-AC-3 decoder outputs 8 discrete channels (EAC3_7_1_A) from the clear stream", decoded);
 
-  // The core's dec3 from the first sample's clear syncframe headers.
   const ft::Sample& first = w->eac3_71_full.samples.front();
   std::optional<std::vector<uint8_t>> core = fp::Eac3SpecificBoxPayload(first.data.data(), first.data.size(), nullptr);
   std::string core_text = core ? Dec3Layers(*core, info.sample_rate, &tag, &channels) : "none";
   Check(core && tag == file_tag && channels == file_channels,
         "7.1: the dec3 the core builds from clear syncframe headers gives Apple's layout of the file's dec3",
         "core " + core_text + "; file " + file_text);
-  // ... and from rate and channel count (encrypted headers).
   core = fp::Eac3SpecificBoxFromConfig(int(info.sample_rate), DolbyChannels(info));
   core_text = core ? Dec3Layers(*core, info.sample_rate, &tag, &channels)
                    : Format("Eac3SpecificBoxFromConfig(%u, %d) returns nothing", info.sample_rate, DolbyChannels(info));
@@ -1578,15 +1430,9 @@ void ChannelLayoutChecks() {
         "core " + core_text + "; file " + file_text);
 }
 
-// -------------------------------------------------------------------- main
-
 std::atomic<double> g_heartbeat{0};
 double g_time_limit = 600;
 
-// Watchdog: the run must never wait forever. A main-queue heartbeat is
-// checked from a background queue; if the main thread stalls for 15 s, or the
-// whole run exceeds its time limit, the main thread's stack is sampled into
-// the log and the process exits with status 3 (stall) or 4 (time limit).
 void StartWatchdog() {
   static dispatch_source_t beat = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
   dispatch_source_set_timer(beat, DISPATCH_TIME_NOW, NSEC_PER_SEC / 2, NSEC_PER_SEC / 10);
@@ -1640,9 +1486,6 @@ void Finish() {
   exit(g_failures ? 1 : 0);
 }
 
-// Adds a protected clip: |clear| encrypted as |options| say, with Axinom's
-// key or, when |wrong_key|, another key under the same key ID.
-// |wrong_key| XORs every key byte with it (0: Axinom's key).
 void AddClip(const std::string& label, const Media& clear, ProtectOptions options, const std::string& expected_types,
              Expect expect = Expect::kPlays, uint8_t wrong_key = 0, bool file_audio_config = false) {
   World* w = g_world;
@@ -1681,8 +1524,6 @@ void RunAll() {
     return o;
   };
 
-  // Controls: Axinom's own segment, then this program's encryption of what
-  // already plays (H.264, HEVC, AAC-LC) through the same path, and garbage.
   auto add_loaded = [w](const std::string& label, const Media& media, const std::string& types, Expect expect) {
     if (!g_only.empty() && label.find(g_only) == std::string::npos) return;
     auto clip = std::make_shared<Clip>();
@@ -1695,12 +1536,8 @@ void RunAll() {
   add_loaded("H.264 Axinom vector segment as served", w->axinom_h264, "qavc", Expect::kPlays);
   AddClip("H.264 avc1 cbcs", w->h264, nal, "qavc");
   AddClip("H.264 avc1 cbcs, wrong key (control)", w->h264, nal, "qavc", Expect::kGarbage, 0x5a);
-  // FairPlay decrypts qavc, qhvc and qdh1 with the CKC's IV: a content IV the
-  // license doesn't carry fails, in the tenc and in CryptorIV alike.
   AddClip("H.264 avc1 cbcs, constant IV not the license's", w->h264, with_iv(nal, IvMode::kOther), "qavc",
           Expect::kFails);
-  // WebKit's FairPlay takes cbcs only, and Parc refuses cenc on Safari pages:
-  // AES-CTR content isn't expected to play.
   AddClip("H.264 avc1 cenc, 8-byte per-sample IVs", w->h264, nal_cenc, "cavc", Expect::kFails);
   AddClip("H.264 avc1 cenc, every IV the license's", w->h264, with_iv(nal_cenc, IvMode::kLicense), "cavc",
           Expect::kReport);
@@ -1710,29 +1547,22 @@ void RunAll() {
           "qaac", Expect::kFails);
   AddClip("AAC-LC cbcs, wrong key (control)", w->aac_lc, audio, "qaac", Expect::kGarbage, 0x5a);
 
-  // The codecs no public FairPlay content covers.
   AddClip("Dolby Vision profile 5 dvh1 cbcs", w->dv5_dvh1, nal, "qdh1");
   AddClip("Dolby Vision profile 5 dvh1 cbcs, wrong key (control)", w->dv5_dvh1, nal, "qdh1", Expect::kGarbage, 0x5a);
   AddClip("Dolby Vision profile 5 dvhe cbcs", w->dv5_dvhe, nal, "qdh1");
   AddClip("Dolby Vision profile 5 dvhe cenc, 8-byte per-sample IVs", w->dv5_dvhe, nal_cenc, "cdh1", Expect::kFails);
   add_loaded("AV1 8-bit av01 clear (baseline)", w->av1, "", Expect::kReport);
   AddClip("AV1 8-bit av01 cbcs", w->av1, av1, "qav1");
-  // Garbage tile data mostly decodes without a word, so the control runs
-  // under several wrong keys: at least one must trip the decoder.
   for (uint8_t k : {0x5a, 0x01, 0x80, 0xff, 0x33, 0xc4}) {
     AddClip(Format("AV1 8-bit av01 cbcs, wrong key %02x (control)", k), w->av1, av1, "qav1", Expect::kReport, k);
   }
   ProtectOptions av1_10bit = av1;
   av1_10bit.reference = &w->av1_10bit_layout;
   AddClip("AV1 10-bit av01 cbcs", w->av1_10bit, av1_10bit, "qav1");
-  // Video protected with every block encrypted (pattern 0:0, not CMAF's 1:9)
-  // doesn't decrypt correctly: about half the frames fail with the right key.
   ProtectOptions av1_all = av1;
   av1_all.pattern = fp::EncryptionPattern{0, 0};
   AddClip("AV1 8-bit av01 cbcs, every tile block encrypted (pattern 0:0)", w->av1, av1_all, "qav1", Expect::kFails);
-  // Apple parses AV1 frame headers before decrypting: encrypted ones fail.
   AddClip("AV1 8-bit av01 cbcs, frame headers encrypted", w->av1, av1_probe, "qav1", Expect::kFails);
-  // Apple has no cenc AV1 type: the description stays 'encv'.
   AddClip("AV1 8-bit av01 cenc", w->av1, Options(cenc, Layout::kReference, IvMode::kPerSample, &w->av1_layout), "qav1",
           Expect::kFails);
   AddClip("HE-AAC mp4a.40.5 cbcs", w->he_aac, audio, "qaac");
@@ -1741,8 +1571,6 @@ void RunAll() {
   AddClip("xHE-AAC mp4a.40.42 cbcs", w->xhe_aac, audio, "qusa");
   AddClip("xHE-AAC mp4a.40.42 cbcs, wrong key (control)", w->xhe_aac, audio, "qusa", Expect::kGarbage, 0x5a);
   AddClip("AC-3 cbcs, whole sample", w->ac3, audio, "qac3");
-  // Apple's AC-3/E-AC-3 decryption fails with a subsample layout, exactly
-  // like a wrong key; whole-sample (CMAF) works.
   AddClip("AC-3 cbcs, clear syncframe headers", w->ac3, syncframes, "qac3", Expect::kFails);
   AddClip("AC-3 cbcs, wrong key (control)", w->ac3, syncframes, "qac3", Expect::kGarbage, 0x5a);
   AddClip("E-AC-3 cbcs, whole sample", w->eac3, audio, "qec3");
@@ -1752,29 +1580,19 @@ void RunAll() {
   AddClip("E-AC-3 7.1 cbcs, whole sample, the file's dec3 given to the renderer", w->eac3_71, audio, "qec3",
           Expect::kPlays, 0, true);
   AddClip("E-AC-3 7.1 cbcs, clear syncframe headers", w->eac3_71, syncframes, "qec3", Expect::kFails);
-  // FLAC and Opus as Chromium's MP4 parser gives them (STREAMINFO, OpusHead).
   add_loaded("FLAC fLaC clear", w->flac, "flac", Expect::kPlays);
   AddClip("FLAC fLaC cbcs, whole sample", w->flac, audio, "qflc");
   AddClip("FLAC fLaC cbcs, wrong key (control)", w->flac, audio, "qflc", Expect::kGarbage, 0x5a);
   add_loaded("Opus clear", w->opus, "opus", Expect::kPlays);
-  // CoreAudio has no protected Opus decoder (its list has qflc and qlac, no
-  // Opus one), so FairPlay can't carry Opus.
   AddClip("Opus cbcs, whole sample", w->opus, audio, "", Expect::kFails);
-  // ALAC from Apple's encoder, as Chromium's MP4 parser gives it (the
-  // ALACSpecificConfig).
   add_loaded("ALAC alac clear", w->alac, "alac", Expect::kPlays);
   AddClip("ALAC alac cbcs, whole sample", w->alac, audio, "qlac");
   AddClip("ALAC alac cbcs, wrong key (control)", w->alac, audio, "qlac", Expect::kGarbage, 0x5a);
-  // PCM, as Safari's AVStreamDataParser makes 'ipcm' and 'fpcm': clear as
-  // 'lpcm'; protected the format stays 'enca' (CoreAudio has no protected PCM
-  // decoder) and AVSampleBufferAudioRenderer fails with -11800.
   add_loaded("PCM ipcm 16-bit clear", w->ipcm16, "lpcm", Expect::kPlays);
   add_loaded("PCM ipcm 24-bit clear", w->ipcm24, "lpcm", Expect::kPlays);
   add_loaded("PCM fpcm 32-bit float clear", w->fpcm32, "lpcm", Expect::kPlays);
   AddClip("PCM ipcm 16-bit cbcs, whole sample", w->ipcm16, audio, "enca", Expect::kDecodeError);
   AddClip("PCM fpcm 32-bit float cbcs, whole sample", w->fpcm32, audio, "enca", Expect::kDecodeError);
-  // VP9 and Vorbis as Chromium's WebM parser gives them, which Safari's Media
-  // Source plays through the same renderers. FairPlay protects neither.
   add_loaded("VP9 vp09 clear", w->vp9, "vp09", Expect::kPlays);
   add_loaded("Vorbis clear", w->vorbis, "vorb", Expect::kPlays);
   add_loaded("Vorbis clear, damaged setup header (control)", w->vorbis_damaged, "vorb", Expect::kGarbage);
@@ -1802,14 +1620,10 @@ void RunAll() {
   Sequence(steps, Finish);
 }
 
-// Axinom's v10 CMAF vectors, first media segment of each (byte ranges from
-// their HLS playlists): H.264 288p and HEVC 720p, for the layout checks.
 NSString* const kAxinomH264 =
     @"https://media.axprod.net/TestVectors/Cmaf/protected_1080p_h264_cbcs/video-H264-288-400k-video-avc1.mp4";
 NSString* const kAxinomHevc =
     @"https://media.axprod.net/TestVectors/H265/protected_cmaf_1080p_h265_singlekey/video-H265-720-2100k-video-hvc1.mp4";
-// DASH-IF multichannel audio test vector (Dolby): 7.1 E-AC-3 at 768 kb/s,
-// channel configuration FA01 (L R C LFE Ls Rs Lrs Rrs), channel ID voices.
 NSString* const kEac371 =
     @"https://dash.akamaized.net/dash264/TestCasesMCA/dolby/2/1/ChID_voices_71_768_ddp_A.mp4";
 
@@ -1842,14 +1656,9 @@ bool LoadAll(World* w, std::string* error) {
   MakePcm(false, 16, 2, &w->ipcm16);
   MakePcm(false, 24, 2, &w->ipcm24);
   MakePcm(true, 32, 2, &w->fpcm32);
-  // The setup header (the last of the three) flipped, past what the
-  // identification header gives CoreMedia.
   w->vorbis_damaged = w->vorbis;
   std::vector<uint8_t>& headers = w->vorbis_damaged.info.codec_config;
   for (size_t k = headers.size() / 2; k < headers.size(); ++k) headers[k] ^= 0x5a;
-  // Chromium's cenc test files decrypted with its test key: the AV1 ones
-  // must equal Chromium's clear files (SelfTests) and give Shaka's layout;
-  // the Dolby Vision dvhe one is the only dvhe stream in the test data.
   for (auto [ref, layout] : {std::pair{&w->av1_ref, &w->av1_layout}, std::pair{&w->av1_10bit_ref, &w->av1_10bit_layout},
                              std::pair{&w->dv5_dvhe, &w->dv5_dvhe_layout}}) {
     Media clear;
@@ -1858,7 +1667,6 @@ bool LoadAll(World* w, std::string* error) {
   }
   NSData* eac3 = CachedGet(kEac371, @"dashif_ChID_voices_71_768_ddp_A.mp4", false, error);
   if (!eac3 || !ParseFile(eac3, "ChID_voices_71_768_ddp_A.mp4", &w->eac3_71_full, error)) return false;
-  // Playback uses the first 6 s of the 30 s stream.
   w->eac3_71 = w->eac3_71_full;
   auto& s = w->eac3_71.samples;
   s.erase(std::remove_if(s.begin(), s.end(),
@@ -1875,7 +1683,7 @@ bool LoadAll(World* w, std::string* error) {
          load_segment(kAxinomHevc, 3625, 5133, 41261, @"axinom_hevc_720", &w->axinom_hevc);
 }
 
-}  // namespace
+}
 
 int main(int argc, char** argv) {
   @autoreleasepool {

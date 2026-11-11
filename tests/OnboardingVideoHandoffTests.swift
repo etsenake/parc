@@ -1,7 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// Inert poster/video handoff checks. No browser, engine or user profile.
 @main
 struct OnboardingVideoHandoffTests {
     static func main() {

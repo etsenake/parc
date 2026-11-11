@@ -1,9 +1,6 @@
 import AppKit
 import Foundation
 
-/// P1: ShortcutSmileyView 60 Hz timer idle-stops when hidden/settled and skips
-/// `needsDisplay` when the presentation fingerprint is unchanged. Active
-/// keyframe motion still dirties; shortcut binding behavior is untouched.
 @main
 @MainActor
 struct ShortcutSmileyTimerIdleTests {
@@ -13,7 +10,6 @@ struct ShortcutSmileyTimerIdleTests {
         checks += 1
     }
 
-    /// The cue's 60 Hz timers scheduled while `body` runs.
     static func cueTimers(_ body: () -> Void) -> [FrameSource] {
         FrameSources.scheduled(during: body).filter { $0.timer?.timeInterval == 1 / 60 }
     }
@@ -31,14 +27,13 @@ struct ShortcutSmileyTimerIdleTests {
 
         let size = CGSize(width: 50, height: 50)
         let earlyA = artwork.presentationFingerprint(seconds: 0, size: size)
-        let earlyB = artwork.presentationFingerprint(seconds: 0.5, size: size) // frame 15 < first key 27
+        let earlyB = artwork.presentationFingerprint(seconds: 0.5, size: size)
         check(earlyA == earlyB, "early hold shares one presentation fingerprint")
-        let mid = artwork.presentationFingerprint(seconds: 1.5, size: size) // frame 45, mid blink/smile
+        let mid = artwork.presentationFingerprint(seconds: 1.5, size: size)
         check(mid != earlyA, "active keyframes change the presentation fingerprint")
-        let late = artwork.presentationFingerprint(seconds: 4.2, size: size) // frame 126 > last key 119
+        let late = artwork.presentationFingerprint(seconds: 4.2, size: size)
         let end = artwork.presentationFingerprint(seconds: artwork.duration, size: size)
         check(late == end, "late hold matches the end-frame presentation fingerprint")
-        // This artwork's final pose is a near-rest (p ends at 50.135/70.022); start≠end.
         check(earlyA != end, "start pose fingerprint differs from the end-frame settle pose")
         let resized = artwork.presentationFingerprint(seconds: 0, size: CGSize(width: 64, height: 64))
         check(resized != earlyA, "bounds size remains part of the presentation fingerprint")
@@ -46,13 +41,10 @@ struct ShortcutSmileyTimerIdleTests {
         let view = ShortcutSmileyView(frame: NSRect(x: 0, y: 0, width: 50, height: 50))
         let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
-        // Attaching arms playback (unless Reduce Motion).
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let attached = cueTimers { window.contentView = view }
         check(armed(attached) != reduceMotion, "attaching arms the 60 Hz cue timer only while motion is allowed")
-        // AppKit's own deferred attach invalidations land on the next pass.
         RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
-        // The accessibility-options notification restarts playback from the first frame.
         let beforeRestart = Redraws.count(view)
         let cue = cueTimers {
             NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
@@ -68,7 +60,6 @@ struct ShortcutSmileyTimerIdleTests {
             check(!armed(cue), "Reduce Motion never arms the 60 Hz cue timer")
         } else {
             check(armed(cue), "visible cue arms the 60 Hz timer while motion is allowed")
-            // Spin through the early hold (~0.9s of identical resting frames).
             let earlyDeadline = Date(timeIntervalSinceNow: 0.55)
             while Date() < earlyDeadline {
                 RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
@@ -90,14 +81,12 @@ struct ShortcutSmileyTimerIdleTests {
             check(Redraws.count(view) == settledInvalidations && !armed(cue),
                   "post-settle idle stays stopped with no further dirties")
 
-            // Hidden while driving: re-attach a fresh view and hide mid-play.
             let driving = ShortcutSmileyView(frame: NSRect(x: 0, y: 0, width: 50, height: 50))
             let host = NSWindow(contentRect: driving.frame, styleMask: [.titled], backing: .buffered, defer: true)
             host.isReleasedWhenClosed = false
             let drivingCue = cueTimers { host.contentView = driving }
             check(armed(drivingCue), "fresh visible cue arms the timer")
             driving.isHidden = true
-            // Next tick observes isHidden and idle-stops.
             let hideDeadline = Date(timeIntervalSinceNow: 0.25)
             while armed(drivingCue), Date() < hideDeadline {
                 RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))

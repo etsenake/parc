@@ -1,7 +1,6 @@
 import AppKit
 import ObjectiveC
 
-// Keep the real link controller/owner while preventing native panel display.
 extension NSPopover {
     @objc fileprivate func easelTestSuppressShow(relativeTo rect: NSRect, of view: NSView, preferredEdge: NSRectEdge) {}
 }
@@ -25,8 +24,6 @@ extension NSPopover {
     func resetSpringLoading() {}
 }
 
-// Real native canvas events over an isolated file-backed session. No browser,
-// visible window, personal document, or user's pasteboard is involved.
 @main
 struct EaselCanvasTests {
     @MainActor static var count = 0
@@ -94,7 +91,6 @@ struct EaselCanvasTests {
         canvas.mouseDragged(with: mouse(.leftMouseDragged, 90, 90))
         try session.perform("Other owner content") { $0.items[1].color = "#112233" }
         canvas.mouseUp(with: mouse(.leftMouseUp, 90, 90))
-        // The new real canvas center attracts the original group's 390pt center to 400pt.
         expect(session.document.items[0].frame.x == 90 && session.document.items[2].frame.x == 560 && session.document.items[1].color == "#112233", "Native canvas-center move preserves latest unrelated changes and selected group spacing")
         try session.undo()
         expect(session.document.items[0].frame == a.frame && session.document.items[1].color == "#112233", "Native group move is one independent undo transaction")
@@ -113,7 +109,6 @@ struct EaselCanvasTests {
         _ = NSApp.sendAction(staleDuplicate.action!, to: staleDuplicate.target, from: staleDuplicate)
         expect(session.document.items.count == 3, "Stale menu action is refused at execution too")
         canvas.mouseDown(with: mouse(.leftMouseDown, 40, 40)); canvas.mouseUp(with: mouse(.leftMouseUp, 40, 40))
-        // Select only the first object before exercising its existing resize handle.
         canvas.cancelOperation(nil)
         canvas.mouseDown(with: mouse(.leftMouseDown, 40, 40)); canvas.mouseUp(with: mouse(.leftMouseUp, 40, 40))
         let originalFrame = session.document.items[0].frame
@@ -237,8 +232,6 @@ struct EaselCanvasTests {
         var relinks = 0
         canvas.onKeyboardStructureChange = { relinks += 1 }
         func drainFocusChanges() async {
-            // Yield this main-actor test before awaiting the queued native
-            // structure callback; a nested synchronous RunLoop cannot do that.
             for _ in 0..<2 {
                 await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                     DispatchQueue.main.async { continuation.resume() }
@@ -468,8 +461,6 @@ struct EaselCanvasTests {
             action { native.insertText("First typing", replacementRange: NSRange(location: 0, length: native.string.utf16.count)) }
             action { historyCanvas.setTextFill(.contentHugging) }
             action { native.insertText(" Later", replacementRange: NSRange(location: native.string.utf16.count, length: 0)) }
-            // A real range action is also a native boundary, but stays inside
-            // the same durable editing lifetime.
             native.setSelectedRange(NSRange(location: 0, length: 5))
             action { native.toggle(.underline) }
             if undoEdits {
@@ -898,7 +889,6 @@ struct EaselCanvasTests {
         expect(!window.isVisible, "Anchor component never displayed a window")
     }
 
-    /// Stands in for the engine page view: pasteAndMatchStyle: only.
     @MainActor private final class EnginePage: NSView {
         var requests = 0, mainFrame = true
         override var acceptsFirstResponder: Bool { true }
@@ -955,8 +945,6 @@ struct EaselCanvasTests {
         expect(canvas.needsDisplay, "Selecting multiple objects still dirties selection chrome")
         canvas.displayIfNeeded()
         expect(!canvas.needsDisplay, "Paint clears multi-select chrome dirty flags")
-        // mouseExited always invalidates; with hover already nil this is a pure
-        // presentation-fingerprint no-op and must not re-dirty group outlines.
         func exitEvent() -> NSEvent {
             NSEvent.enterExitEvent(with: .mouseExited, location: .zero, modifierFlags: [],
                                    timestamp: 0, windowNumber: window.windowNumber, context: nil,
@@ -978,8 +966,6 @@ struct EaselCanvasTests {
                "Title-only document republish does not apply a dirty rect when presentation matches")
         expect(!canvas.needsDisplay,
                "Title-only document republish with matching presentation does not re-dirty multi-select outlines")
-        // Real selection chrome change after a no-op must apply a dirty rect.
-        // Probe counts — AX summary after selection mutation can paint immediately.
         let dirtyBeforeClear = canvas.presentationDirtyCount
         canvas.setAccessibilitySelectedChildren([])
         expect(canvas.presentationDirtyCount > dirtyBeforeClear,

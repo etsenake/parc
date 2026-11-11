@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""P1-AP behavior lock: CaptureElementLens 60 Hz timer idle-stops and skips
-true no-ops. Identical settled focus (inset == focusRect, !isAnimating) must
-return before motion.target / startFrames; ticks must skip path rebuild when
-motion.rect is unchanged, then stopFrames when !motion.isAnimating. Do not
-drop frames that change presentation.
-"""
 from pathlib import Path
 import re
 

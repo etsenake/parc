@@ -1,7 +1,5 @@
 import AppKit
 
-/// Measures the updater window's Auto Layout content without any window,
-///
 @main @MainActor
 struct SoftwareUpdateWindowTests {
     static var checks = 0

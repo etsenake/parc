@@ -1,7 +1,6 @@
 import AppKit
 import CoreText
 
-/// Inert AppKit presentation checks. No browser, engine, imports or user profile.
 @main
 struct OnboardingSetupCardTests {
     @MainActor static func main() {
@@ -34,10 +33,8 @@ struct OnboardingSetupCardTests {
             ("Welcome to Parc, Ada Lovelace", "Here’s your Parc Card. Show it off to the world or keep it to yourself.\n\nAnd with that, you’re now ready to experience your upgraded internet.")
         ]
         for (index, stage) in stages.enumerated() {
-            //
             back.isHidden = index == 0 || index == 4
             skip.isHidden = !(1...3).contains(index)
-            // OnboardingThemeEditorLayout.spaceNameHeight
             card.configure(title: stage.0, subtitle: stage.1, font: font,
                            back: back, next: next, skip: skip, progress: progress,
                            accessory: index == 1 ? name : nil, accessoryHeight: index == 1 ? 36 : 30)
@@ -50,7 +47,6 @@ struct OnboardingSetupCardTests {
             if index == 1 {
                 precondition(name.superview === card.instructions)
                 precondition(name.frame.minY > card.message.frame.maxY && name.frame.maxY < next.frame.minY)
-                // The card keeps 967×548 bounds at every fit, so this holds at the smallest size too.
                 precondition(name.frame.maxY + 12 <= skip.frame.minY, "Space name clears Skip on the theme step")
             } else { precondition(name.superview == nil) }
             precondition(next.superview === card.instructions && progress.superview === card.instructions)
@@ -61,7 +57,6 @@ struct OnboardingSetupCardTests {
             precondition(card.accessibilityLabel() == stage.0)
             precondition(next.acceptsFirstResponder)
         }
-        // Regular 1280×800 window, screen−72 of 1024×768, and tighter fits.
         for size in [NSSize(width: 1280, height: 800), NSSize(width: 952, height: 696),
                      NSSize(width: 1208, height: 648), NSSize(width: 760, height: 500),
                      NSSize(width: 400, height: 300)] {
@@ -77,8 +72,6 @@ struct OnboardingSetupCardTests {
                              && abs(fit.height - OnboardingSetupLayout.size.height) < 0.001,
                              "Ordinary windows keep the recovered 967×548 card")
             }
-            // Actual NSView coordinate scaling preserves controls and content,
-            // rather than creating a second compact layout for another stage.
             card.frame = fit
             card.setBoundsSize(OnboardingSetupLayout.size)
             card.needsLayout = true
@@ -94,7 +87,6 @@ struct OnboardingSetupCardTests {
             precondition(abs(card.borders.outer.frame.minX + OnboardingSetupLayout.outerStrokeInset) < 0.001)
             precondition(card.chrome.hitTest(NSPoint(x: card.bounds.midX, y: card.bounds.midY)) == nil)
             precondition(card.borders.hitTest(NSPoint(x: card.bounds.midX, y: card.bounds.midY)) == nil)
-            // One coordinate space: scaled frame, original 967×548 bounds.
             precondition(abs(card.bounds.width - OnboardingSetupLayout.size.width) < 0.001
                          && abs(card.bounds.height - OnboardingSetupLayout.size.height) < 0.001,
                          "Small-screen fit keeps the original card bounds: \(card.bounds.size)")
@@ -288,8 +280,6 @@ struct OnboardingSetupCardTests {
         return value
     }
 
-    /// NewSetupView's description typography and step motion: the old text
-    /// springs out while the new springs in, and the content only crossfades.
     @MainActor static func checkStepMotion(_ card: OnboardingSetupCard, font: NSFont, back: NSView, next: NSView,
                                            skip: NSView, progress: NSView) {
         card.configure(title: "Choose the apps you use most.", subtitle: "Select your favorite apps to keep them handy in your sidebar.",

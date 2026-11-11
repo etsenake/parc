@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-"""Site Control Center (WEB14) production components: model, layout and artwork.
-
-Off-screen hosting only; no browser, page, popover presentation, input or preferences.
-Pass a directory to also write light/dark renders for appearance review.
-"""
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 root = Path(__file__).resolve().parents[2]
-# The window owner is not compiled here; these are its recovered routes.
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
 for use in ('sidebar.onPageMenu = { [weak self] in self?.showSiteControlCenter() }',
             'case .siteInfo, .siteInsecure: self.showSiteControlCenter(from: anchor)',
@@ -33,8 +27,6 @@ assert controller.count(".developerModeHost") == 1, \
     "only the permission rows' web-host gate reads developerModeHost; Developer Mode reads share developerModeSiteHost"
 assert "return developerModeExtensionHost?.lowercased()" in controller, \
     "Parc keys Developer Mode by the committed page's host, an extension page's ID included"
-# The open card holds key, and the engine's page tools and capture refuse
-# without the browser window key: the card reads them only before it opens.
 def body(start):
     text = controller[controller.index(start):]
     return text[:text.index("\n    }\n")]
@@ -47,7 +39,6 @@ assert update.count("canCapturePage") == update.count("canPerformPageTool") == 1
 toggle = body("    private func toggleSiteControlCenterSetting(")
 assert toggle.index("dismissSiteControlCenter(when: afterDismissal) {") < toggle.index("canPerformPageTool(.developerTools)"), \
     "Developer Mode opens the tools once the card has gone and the browser window holds key"
-# Chromium's desktop PageInfo aborts on extension and internal pages.
 facade = (root / "Sources/ParcEngine/ParcEngine.m").read_text()
 assert "return !_disposed && self.hasPageInfo && _nativePage.canShowSiteInfo;" in facade, \
     "the facade must refuse site info on pages without PageInfo, whatever the engine"
@@ -81,7 +72,6 @@ with tempfile.TemporaryDirectory(prefix="parc-site-control-center-") as director
         "-import-objc-header", str(root / "Engine/ParcNative/native_appkit_bridge.h"),
         *map(str, compiled), *map(str, tooltip_sources(root, scratch, compiled)),
         str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
-    # An unbundled executable's Bundle.main.resourceURL is its own directory.
     shutil.copytree(root / "Resources/SiteControlCenter", scratch / "SiteControlCenter")
     shutil.copytree(root / "Resources/SidebarPlusMenu", scratch / "SidebarPlusMenu")
     subprocess.run([str(executable), *sys.argv[1:2]], check=True)

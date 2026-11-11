@@ -17,13 +17,12 @@ uint64_t Be64(const uint8_t* p) { return (uint64_t(Be32(p)) << 32) | Be32(p + 4)
 
 struct Box {
   uint32_t type = 0;
-  const uint8_t* start = nullptr;    // Box header.
+  const uint8_t* start = nullptr;
   const uint8_t* payload = nullptr;
   size_t payload_size = 0;
   size_t size = 0;
 };
 
-// Calls |visit| for each box in [data, data + size); false if malformed.
 bool Boxes(const uint8_t* data, size_t size, const std::function<bool(const Box&)>& visit) {
   size_t offset = 0;
   while (offset + 8 <= size) {
@@ -87,7 +86,7 @@ std::vector<SeigEntry> ParseSgpdSeig(const Box& box) {
     default_length = Be32(p + pos);
     pos += 4;
   } else if (version >= 2) {
-    pos += 4;  // default_sample_description_index
+    pos += 4;
   }
   if (pos + 4 > n) return entries;
   uint32_t count = Be32(p + pos);
@@ -119,7 +118,6 @@ std::vector<SeigEntry> ParseSgpdSeig(const Box& box) {
 }
 
 std::vector<uint8_t> AscFromEsds(const uint8_t* p, size_t n) {
-  // Skip version/flags, then walk descriptors to DecoderSpecificInfo (5).
   size_t pos = 4;
   auto read_descriptor = [&](uint8_t* tag, size_t* length) {
     if (pos + 2 > n) return false;
@@ -135,7 +133,7 @@ std::vector<uint8_t> AscFromEsds(const uint8_t* p, size_t n) {
   uint8_t tag = 0;
   size_t length = 0;
   if (!read_descriptor(&tag, &length) || tag != 3 || pos + 3 > n) return {};
-  pos += 2;  // ES_ID
+  pos += 2;
   uint8_t flags = p[pos++];
   if (flags & 0x80) pos += 2;
   if (flags & 0x40) {
@@ -149,7 +147,7 @@ std::vector<uint8_t> AscFromEsds(const uint8_t* p, size_t n) {
   return std::vector<uint8_t>(p + pos, p + pos + length);
 }
 
-}  // namespace
+}
 
 std::string FourCCString(uint32_t v) {
   char s[5] = {char(v >> 24), char(v >> 16), char(v >> 8), char(v), 0};
@@ -221,8 +219,6 @@ bool ParseInitSegment(const std::vector<uint8_t>& data, TrackInfo* track, std::s
       }
       case FourCC('s', 't', 's', 'd'): {
         if (n < 16) return false;
-        // First sample entry only: a VisualSampleEntry's fixed fields take 78
-        // bytes after the box header, an AudioSampleEntry's 28.
         const uint8_t* entry = p + 8;
         size_t entry_size = Be32(entry);
         if (entry_size < (track->is_video ? 8u + 78 : 8u + 28) || entry_size > n - 8) return false;
@@ -255,7 +251,7 @@ bool ParseInitSegment(const std::vector<uint8_t>& data, TrackInfo* track, std::s
             case FourCC('d', 'e', 'c', '3'):
             case FourCC('d', 'f', 'L', 'a'):
             case FourCC('d', 'O', 'p', 's'):
-            case FourCC('a', 'l', 'a', 'c'):  // ALACSpecificBox.
+            case FourCC('a', 'l', 'a', 'c'):
               track->codec_config.assign(c, c + child.payload_size);
               break;
             case FourCC('e', 's', 'd', 's'):
@@ -329,14 +325,12 @@ bool ParseMediaSegment(const std::vector<uint8_t>& data,
       uint8_t saiz_default = 0;
       uint32_t saiz_count = 0;
       std::vector<uint64_t> saio_offsets;
-      std::vector<uint32_t> group_index;  // Per sample, seig.
+      std::vector<uint32_t> group_index;
       std::vector<SeigEntry> local_seig;
       bool parsed = Boxes(traf.payload, traf.payload_size, [&](const Box& b) -> bool {
         const uint8_t* p = b.payload;
         size_t n = b.payload_size;
         switch (b.type) {
-          // Every read below is bounds-checked against the box payload; a
-          // field running past it makes the segment malformed.
           case FourCC('t', 'f', 'h', 'd'): {
             if (n < 8) return false;
             flags = Be32(p) & 0xffffff;
@@ -383,7 +377,7 @@ bool ParseMediaSegment(const std::vector<uint8_t>& data,
             return true;
           }
           case FourCC('s', 'e', 'n', 'c'):
-            if (n < 8) return false;  // version/flags and sample_count
+            if (n < 8) return false;
             senc_flags = Be32(p) & 0xffffff;
             senc.assign(p + 4, p + n);
             return true;
@@ -438,7 +432,6 @@ bool ParseMediaSegment(const std::vector<uint8_t>& data,
       });
       if (!parsed) return false;
 
-      // Encryption info for sample |i|: protection, key, IV size.
       auto seig_for = [&](size_t i) -> const SeigEntry* {
         if (i >= group_index.size() || group_index[i] == 0) return nullptr;
         uint32_t index = group_index[i];
@@ -450,7 +443,6 @@ bool ParseMediaSegment(const std::vector<uint8_t>& data,
       };
       const bool track_protected = track.encryption.scheme != EncryptionScheme::kUnencrypted;
 
-      // Per-sample aux info from senc and, independently, from saiz/saio.
       struct Aux {
         std::vector<uint8_t> iv;
         std::vector<SubsampleEntry> subsamples;
@@ -560,7 +552,7 @@ bool ParseProgressiveFile(const std::vector<uint8_t>& data,
                           std::vector<Sample>* samples,
                           std::string* error) {
   std::vector<uint32_t> sizes, durations, sync;
-  std::vector<std::pair<uint32_t, uint32_t>> stts, ctts, stsc;  // (count, value) / (first chunk, per chunk)
+  std::vector<std::pair<uint32_t, uint32_t>> stts, ctts, stsc;
   std::vector<uint64_t> chunks;
   bool has_stss = false;
   std::function<bool(const Box&)> visit = [&](const Box& box) -> bool {
@@ -608,7 +600,6 @@ bool ParseProgressiveFile(const std::vector<uint8_t>& data,
     *error = "no progressive sample tables";
     return false;
   }
-  // Sample offsets from chunks and samples-per-chunk runs.
   std::vector<uint64_t> offsets;
   for (size_t c = 0; c < chunks.size() && offsets.size() < sizes.size(); ++c) {
     uint32_t per_chunk = 0;
@@ -687,8 +678,6 @@ bool AvcToAnnexB(const std::vector<uint8_t>& record,
     }
   }
 
-  // AVC::ConvertFrameToAnnexB: each length prefix becomes 00 00 00 01; the
-  // subsample holding the prefix absorbs the size change.
   auto subsample_at = [&](size_t offset) -> SubsampleEntry* {
     if (!subsamples || subsamples->empty()) return nullptr;
     size_t start = 0;
@@ -743,9 +732,6 @@ int AacObjectType(const std::vector<uint8_t>& asc, bool core) {
   int type = asc[0] >> 3;
   if (type == 31) return 32 + (((asc[0] & 7) << 3) | (asc[1] >> 5));
   if (!core || (type != 5 && type != 29)) return type;
-  // Explicit hierarchical signaling: frequency index (4 bits, 24 more if 15),
-  // channel config (4), extension frequency index (4, 24 more if 15), then the
-  // core object type (5).
   size_t bit = 5;
   auto read = [&](int n) {
     int v = 0;
@@ -762,7 +748,6 @@ int AacObjectType(const std::vector<uint8_t>& asc, bool core) {
 }
 
 std::vector<uint8_t> AscFromDescriptor(const uint8_t* p, size_t n) {
-  // A bare ES_Descriptor (tag 3) gets the version/flags AscFromEsds skips.
   std::vector<uint8_t> esds;
   if (n && p[0] == 0x03) esds.insert(esds.end(), {0, 0, 0, 0});
   esds.insert(esds.end(), p, p + n);
@@ -792,8 +777,6 @@ EncodedSample ChromiumBuffer(const TrackInfo& track, const Sample& sample,
   if (sample.decrypt) subsamples = sample.decrypt->subsamples;
   const uint32_t f = track.original_format;
   if (track.is_video) {
-    // MP4StreamParser converts H.264, HEVC and Dolby Vision (not profile 10);
-    // AV1 passes through.
     bool avc = f == FourCC('a', 'v', 'c', '1') || f == FourCC('a', 'v', 'c', '3');
     bool hevc = f == FourCC('h', 'v', 'c', '1') || f == FourCC('h', 'e', 'v', '1') ||
                 f == FourCC('d', 'v', 'h', '1') || f == FourCC('d', 'v', 'h', 'e');
@@ -802,7 +785,6 @@ EncodedSample ChromiumBuffer(const TrackInfo& track, const Sample& sample,
                   sample.decrypt ? &subsamples : nullptr);
     }
   } else if (f == FourCC('m', 'p', '4', 'a') && AacObjectType(track.codec_config, true) <= 4) {
-    // PrepareAACBuffer adds ADTS when the config fits it (not xHE-AAC).
     std::vector<uint8_t> header = AdtsHeader(track.codec_config, storage->size());
     if (sample.decrypt) {
       if (subsamples.empty()) {
@@ -820,8 +802,6 @@ EncodedSample ChromiumBuffer(const TrackInfo& track, const Sample& sample,
   out.data = storage->data();
   out.size = storage->size();
   out.pts = micros(sample.pts);
-  // A DecoderBuffer reaching the GPU process carries only its timestamp (the
-  // PTS): mojom::DecoderBuffer has no decode timestamp.
   out.dts = MediaTime::Invalid();
   out.duration = micros(sample.duration);
   out.is_keyframe = sample.is_keyframe;
@@ -850,4 +830,4 @@ EncodedSample IsoBuffer(const TrackInfo& track, const Sample& sample) {
   return out;
 }
 
-}  // namespace parc::fairplay::test
+}

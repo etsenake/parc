@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Library rail tile playback and Downloads badge, offscreen: no activation, events or browser."""
 import pathlib
 import shutil
 import subprocess
@@ -16,8 +15,6 @@ with tempfile.TemporaryDirectory(prefix="parc-library-rail-") as directory:
                 ("LibraryRailTile", "LibraryRailIcon", "DownloadActivityBadge", "DownloadLibrarySelection", "WindowStandardButtons")]
     sources += [root / "tests/Support/AppKitObservation.swift", pathlib.Path(__file__).with_name("main.swift")]
     sources += tooltip_sources(root, temporary, sources)
-    # An unbundled executable's Bundle.main.resourceURL is its own directory,
-    # so the rail compositions sit beside the binary as they do in the app.
     shutil.copytree(root / "Resources/Library", temporary / "Library")
     executable = temporary / "library-rail"
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",

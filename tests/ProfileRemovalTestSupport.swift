@@ -1,8 +1,5 @@
 import Foundation
 
-// Deliberate native-boundary doubles. This executable exercises the production
-// controller and real file-backed BrowserStore without loading Chromium,
-// deleting native profile directories or sending browser input.
 enum PCNativeProfileRemovalState { case removed, pending, failed }
 @MainActor final class PCNativeProfileRemoval {
     let operationID: String

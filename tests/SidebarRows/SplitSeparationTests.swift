@@ -51,8 +51,6 @@ import Foundation
         let todayOrder = SidebarHierarchy.children(in: .init(spaceID: space, folderID: nil, section: .today), state: store.state)
         try check(todayOrder.firstIndex(of: .split(anchor.id)).map { $0 + 1 } == todayOrder.firstIndex(of: .tab(a)),
                   "A separated child moves directly after its split")
-        // Separating from a pinned folder split: the child stays saved in that
-        //
         let pinnedIDs = [store.open("https://four.invalid"), store.open("https://five.invalid"), store.open("https://six.invalid")]
         store.selectTab(pinnedIDs[0]); store.selectTab(pinnedIDs[1], extendingSplit: true); store.selectTab(pinnedIDs[2], extendingSplit: true)
         let folderBox = SidebarContainerLocation(spaceID: space, folderID: folder, section: .pinned)

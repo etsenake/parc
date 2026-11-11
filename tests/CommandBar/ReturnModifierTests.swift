@@ -1,7 +1,5 @@
 import AppKit
 
-/// Uses AppKit's real field-editor bindings without an app/browser key event,
-/// then sends the resulting selector to the actual production resolver.
 @MainActor private final class ReturnEditor: NSTextView {
     var commands: [Selector] = []
     override func doCommand(by selector: Selector) { commands.append(selector) }
@@ -81,8 +79,6 @@ struct ReturnModifierTests {
                "Existing native Return without a current event remains ordinary")
         expect(CommandBarSubmission.resolveTextCommand(NSSelectorFromString("insertNewlineIgnoringFieldEditor:"), event: nil, hasMarkedText: false) == .split,
                "Existing native Option command without a current event remains split")
-        // Confirm the real NSTextField -> field editor -> control delegate
-        // boundary. No NSApp event dispatch, visible window or browser is used.
         let field = NSTextField(frame: editor.bounds), delegate = ReturnFieldDelegate()
         window.contentView = field; field.delegate = delegate
         expect(window.makeFirstResponder(field), "Native field becomes the isolated first responder")

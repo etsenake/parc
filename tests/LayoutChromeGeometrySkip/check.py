@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Queue 10 behavior lock: layoutChrome skips only on an identical
-chrome-geometry fingerprint with a clean hosted tree. Cmd-S / motion that
-change presentation or page frames still run. P1-W pageHost/side-panel gates
-and P1-S synchronizeNativeLayout gating remain."""
 from pathlib import Path
 import re
 
@@ -55,7 +51,6 @@ assert body.index("shouldReturnEarly(") < body.index("refreshSidebarHoverZones()
 assert "lastAppliedChromeGeometryFingerprint = fingerprint" in body, \
     "successful passes must record the applied fingerprint"
 
-# P1-W / P1-S leftovers must remain after the early-return gate.
 assert "var flushedHostedLayout = false" in body, \
     "layoutChrome must still track hosted layout flushes (P1-S)"
 assert "let pageHostMoved = pageHost.frame != frames.pageHost" in body, \
@@ -70,7 +65,6 @@ assert (
 assert "windowKeyViews.relink()" in body, \
     "full pass must still request key-view relink"
 
-# Geometry-only Cmd-S path still flushes pageHost during motion.
 geometry = re.search(
     r"private func layoutChromeGeometry\(\) \{(?P<body>.*?)\n    \}\n\n    func newTab",
     controller, re.S)
@@ -79,7 +73,6 @@ geo = geometry.group("body")
 assert "pageHost.needsLayout = true" in geo and "pageHost.layoutSubtreeIfNeeded()" in geo, \
     "layoutChromeGeometry must still flush pageHost during sidebar motion"
 
-# ThemeRenderer onLayout skip stays owned elsewhere; do not regress its gate.
 theme = (root / "Sources/ParcApp/ThemeRenderer.swift").read_text()
 assert "if surfacesMoved { onLayout?() }" in theme, \
     "ThemeRenderer onLayout frame skip (15de84db) must remain untouched"

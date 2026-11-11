@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Inert native layout; no browser, displayed window or input automation.
 @main @MainActor
 struct UpdateReadyCardTests {
     struct Failure: Error { let message: String }
@@ -31,7 +30,6 @@ struct UpdateReadyCardTests {
         print("UpdateReadyCard: \(assertions) assertions passed")
     }
 
-    /// As the sidebar does after a height change: lay the slot out again.
     static func settle(_ card: UpdateReadyCard) {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         card.frame.size.height = card.preferredHeight(for: card.frame.width)
@@ -39,7 +37,6 @@ struct UpdateReadyCardTests {
     }
     static func label(_ view: NSView?) -> String { (view as? UpdateBannerKeyStop)?.accessibilityLabel() ?? "\(view as Any)" }
 
-    /// Opening from the title moves focus to Automatic Updates.
     static func focus() throws {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 228, height: 200), styleMask: .borderless,
                               backing: .buffered, defer: false)
@@ -68,7 +65,6 @@ struct UpdateReadyCardTests {
                    "Restart and Update takes focus with a ring")
         let center = controls[1].convert(NSPoint(x: controls[1].bounds.midX, y: controls[1].bounds.midY), to: window.contentView)
         try expect(window.contentView!.hitTest(center) is NSHostingView<UpdateReadyBanner>, "The pointer reaches SwiftUI's button")
-        // As the host hides it, then shows it anew.
         card.setInteractionEnabled(false)
         card.collapse()
         card.setInteractionEnabled(true)

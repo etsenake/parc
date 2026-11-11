@@ -1,7 +1,5 @@
 import AppKit
 
-/// Real persistent BrowserStore and AppKit UndoManager. All files are temporary;
-/// the native page owner is represented only by its explicit consent boundary.
 @main @MainActor
 struct SidebarPluralRemovalTests {
     static var count = 0

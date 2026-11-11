@@ -1,8 +1,3 @@
-// Checks WebKit's legacy skd init data as Parc builds it for webkitneedkey
-// (Engine/ParcRenderer/parc_webkit_skd_init_data.h), against the layout of
-// MediaPlayerPrivateAVFoundationObjC::shouldWaitForLoadingOfResource: the key
-// URI's UTF-16 byte length as 4 little-endian bytes, then the URI's UTF-16
-// code units, little-endian (a character outside the BMP is two units).
 #include "parc_webkit_skd_init_data.h"
 
 #include <cstdint>
@@ -23,7 +18,7 @@ void Check(bool condition, const char* message) {
   }
 }
 
-}  // namespace
+}
 
 int main() {
   {
@@ -37,7 +32,6 @@ int main() {
     Check(data == std::vector<uint8_t>({0, 0, 0, 0}), "an empty URI is a zero length");
   }
   {
-    // U+00E9 and U+1F511 (a surrogate pair, D83D DD11).
     const std::u16string uri = u"skd://é\U0001F511";
     const std::vector<uint8_t> data = blink::ParcWebKitSkdInitData(uri);
     Check(uri.size() == 9 && data.size() == 4 + 18, "code units, not characters");
@@ -47,7 +41,6 @@ int main() {
           "U+1F511 as its surrogate pair, each unit little-endian");
   }
   {
-    // A length past 255 bytes spreads over the length's low bytes.
     const std::u16string uri(300, u'a');
     const std::vector<uint8_t> data = blink::ParcWebKitSkdInitData(uri);
     Check(data[0] == (600 & 0xff) && data[1] == (600 >> 8) && data[2] == 0 && data[3] == 0,

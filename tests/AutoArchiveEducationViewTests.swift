@@ -1,6 +1,5 @@
 import AppKit
 
-/// Inert native rendering; no browser, displayed window or input automation.
 @main @MainActor
 struct AutoArchiveEducationViewTests {
     struct Failure: Error { let message: String }

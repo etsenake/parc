@@ -21,8 +21,6 @@ int main() {
   assert((closed == std::vector<intptr_t>{1, 2, 5, 8}));
   { auto lease = make(); lease->Created(9); lease->Release(); lease->Release(); }
   assert((closed == std::vector<intptr_t>{1, 2, 5, 8, 9}));
-  // Created can race worker destruction on a different sequence. Exactly one
-  // close must occur regardless of which side observes the ID first.
   for (int i = 0; i < 500; ++i) {
     std::atomic<int> closes{0};
     auto lease = std::make_shared<parc::NativePickerLease>(

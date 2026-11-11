@@ -1,15 +1,10 @@
 import AppKit
 
-/// A list stop after the empty state in the window's key-view loop.
 final class FocusStop: NSView {
     override var acceptsFirstResponder: Bool { true }
     override var canBecomeKeyView: Bool { true }
 }
 
-// The production Favorites empty state in off-screen windows that are never
-// made key: strings, fonts, accessibility, geometry against the checked
-// model, wrapping, the dragging style, Dismiss and Hide, and the tray the
-// sidebar lays out from it for a real store's profiles in two windows.
 @main
 struct EmptyStateViewTests {
     static var failures = 0, count = 0
@@ -17,7 +12,6 @@ struct EmptyStateViewTests {
         count += 1
         if !condition { failures += 1; print("FAIL: \(message)") }
     }
-    /// Lets the 0.18 s style animation finish, with headroom for a loaded machine.
     static func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.6)) }
     static func window() -> NSWindow {
         NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 228, height: 300), styleMask: [.borderless],
@@ -36,7 +30,6 @@ struct EmptyStateViewTests {
         typealias E = SidebarChromeLayout.AppTrayEmptyState
         typealias L = SidebarChromeLayout
 
-        // Two windows of the same profile, as SidebarView.render drives them.
         let windows = [window(), window()]
         let views = windows.map { _ in FavoritesEmptyStateView() }
         for (window, view) in zip(windows, views) { window.contentView?.addSubview(view) }
@@ -70,7 +63,6 @@ struct EmptyStateViewTests {
         check((attribute(subtitle, .kern) as? Double) == -0.2 && attribute(title, .kern) == nil, "the subtitle alone is kerned −0.2")
         check([title, subtitle].allSatisfy { (attribute($0, .paragraphStyle) as? NSParagraphStyle)?.alignment == .center }, "both centred")
 
-        // Geometry: the measured parts placed by the checked model.
         let sizes = (icon.image?.size ?? .zero, title.frame.size, subtitle.frame.size)
         check(height == E.height(icon: sizes.0, title: sizes.1, subtitle: sizes.2) && height > E.minimumHeight,
               "fitting height is the model's, taller than the tray's 63-point minimum (\(height))")
@@ -79,7 +71,6 @@ struct EmptyStateViewTests {
               "subviews at the model's frames")
         check(subtitle.frame.width <= 150 && subtitle.frame.height > title.frame.height * 1.5, "the subtitle wraps within 150 points")
         check(icon.image?.isTemplate == false && (icon.image?.size.height ?? 0) > 12, "a 16-point palette star")
-        // Every label's frame holds all of its wrapped text.
         func holdsText(_ label: NSTextField) -> Bool {
             guard let cell = label.cell else { return false }
             return cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: label.frame.width, height: .greatestFiniteMagnitude)).height
@@ -87,9 +78,6 @@ struct EmptyStateViewTests {
         }
         check(holdsText(title) && holdsText(subtitle) && title.frame.height < 20, "at 228 the title takes one line, all text shown")
 
-        // Accessibility: the star as an image, two static texts and the
-        //
-        // AppKit may expose a control's cell in its place.
         let elements = (view.accessibilityChildren() ?? []).compactMap { $0 as AnyObject as? NSAccessibilityProtocol }
         let roles = elements.compactMap { $0.accessibilityRole() }
         let owners = elements.compactMap { ($0 as? NSView) ?? ($0 as? NSCell)?.controlView }
@@ -97,11 +85,9 @@ struct EmptyStateViewTests {
               "AX children: star, title, subtitle and Dismiss in that order (\(roles))")
         check(button.accessibilityLabel() == "Dismiss" && button.accessibilityIdentifier() == "sidebarFavoritesEmptyStateDismissButton",
               "Dismiss label and identifier")
-        // A keyboard stop among the Favorites' controls draws a ring.
         check(button.focusRingType != .none && !button.focusRingMaskBounds.isEmpty && !button.refusesFirstResponder,
               "Dismiss can take focus and draws AppKit's ring")
 
-        // Hide calls back with its profile.
         var hides: [UUID] = []
         let menuView = FavoritesEmptyStateView()
         menuView.update(favorites: 0, profileID: other, settings: store.state.settings, privateWindow: false) { hides.append($0) }
@@ -112,7 +98,6 @@ struct EmptyStateViewTests {
         if let hide = menu?.items.first, let action = hide.action { NSApp.sendAction(action, to: hide.target, from: hide) }
         check(hides == [other], "Hide calls back with the profile")
 
-        // A tray narrower than 150 + 36 wraps both labels to the card.
         let narrowView = views[1]
         let narrow = narrowView.fittingHeight(width: 164)
         narrowView.frame = NSRect(x: 0, y: 0, width: 164, height: narrow)
@@ -123,7 +108,6 @@ struct EmptyStateViewTests {
         check(narrowLabels.first { $0.stringValue == FavoritesEmptyStateView.title }.map { $0.frame.height > 16 * 1.5 } == true
               && narrow > height, "at 164 the title takes two lines and the tray grows (\(narrow))")
 
-        // Dragging style: dimmed labels and a solid border, back on exit.
         let border = view.layer?.sublayers?.compactMap { $0 as? CAShapeLayer }.first
         check(title.alphaValue == 1 && abs(subtitle.alphaValue - 0.7) < 0.001 && border?.lineDashPattern == [5], "idle: 1 / 0.7, dashed [5]")
         check(view.showsDrop(true), "a drop over the shown view takes the dragging style in place of a cue")
@@ -134,11 +118,6 @@ struct EmptyStateViewTests {
         settle()
         check(title.alphaValue == 1 && border?.lineDashPattern == [5], "idle again")
 
-        // The tray the sidebar lays out at the default width: 86 points for
-        // the insets, padding, spacing, one-line title and two-line subtitle
-        // plus the system symbol's height, which varies by macOS release (20
-        // where 106 and a list at 188 were measured, 19 on macOS 27), with the
-        // list directly below it; Favorites take the grid's height instead.
         let star = NSImage(systemSymbolName: "star.circle.fill", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 16, weight: .medium))?.size
         check(sizes.0 == star, "the star is the system's star.circle.fill at 16-point medium (\(sizes.0))")
@@ -155,10 +134,6 @@ struct EmptyStateViewTests {
         view.showsDrop(false)
         render()
 
-        // Dismiss from the keyboard: the store records the profile, every
-        // window of it collapses its tray to the 87 list top, and focus goes
-        // to the next stop the sidebar's chain links after Dismiss, not to the
-        // window (AppKit's own hand-off on hiding).
         let stop = FocusStop(frame: NSRect(x: 0, y: 200, width: 20, height: 20))
         window.contentView?.addSubview(stop)
         SidebarAccessibility.link([button, stop], within: window.contentView!, exit: nil, bypassed: false)

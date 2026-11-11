@@ -37,7 +37,6 @@ import QuartzCore
               == NSRect(x: 296, y: 51, width: 8, height: 0), "vertical insets follow the container and never go negative")
 
         _ = NSApplication.shared
-        // Real AppKit hierarchy, outside the desktop; no browser, profile or input.
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 700),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -61,8 +60,6 @@ import QuartzCore
         check(indicator.frame.minX == -1.5 && indicator.frame.minY == 4, "half the line sits outside the strip")
         check(indicator.path?.boundingBox == CGRect(x: 0, y: 0, width: 3, height: 670), "rounded path fills the line")
         check(!region.mouseDownCanMoveWindow, "strip never drags the window")
-        // AppKit asks for tracking areas when the pointer next needs them, which
-        // an off-screen window never does; ask twice, as each geometry change would.
         region.updateTrackingAreas(); region.updateTrackingAreas()
         let area = region.trackingAreas.first
         check(region.trackingAreas.count == 1 && area?.options.rawValue == 0x227 && area?.owner === region,
@@ -80,7 +77,6 @@ import QuartzCore
         region.frame = R.frame(trailing: sidebar.frame, in: root.bounds)
         root.layoutSubtreeIfNeeded(); wait(0.05)
 
-        // Hit test of the actual strip, its overlays and child windows.
         let center = region.convert(NSPoint(x: region.bounds.midX, y: region.bounds.midY), to: nil)
         check(region.isUnobstructed(atWindowPoint: center), "unobstructed strip owns the cursor")
         check(!region.isUnobstructed(atWindowPoint: NSPoint(x: 600, y: 300)), "page area does not")
@@ -97,7 +93,6 @@ import QuartzCore
         check(region.isUnobstructed(atWindowPoint: center), "a click-through child window does not")
         window.removeChildWindow(child); child.close()
 
-        // Hover: 0.25 s delay, 0.2 s fades, and cancellation before the delay.
         let entered = NSEvent.enterExitEvent(with: .mouseEntered, location: center, modifierFlags: [], timestamp: 0,
             windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)!
         let exited = NSEvent.enterExitEvent(with: .mouseExited, location: center, modifierFlags: [], timestamp: 0,
@@ -124,7 +119,6 @@ import QuartzCore
         check(region.isHovered, "movement inside re-establishes hover")
         region.mouseExited(with: exited); wait(0.3)
 
-        // Resizing shows immediately and suppresses the hover path.
         region.isResizing = true
         check(!indicator.isHidden && indicator.animationKeys() == nil, "resizing shows at once without animation")
         region.mouseEntered(with: entered); wait(0.35)
@@ -143,7 +137,6 @@ import QuartzCore
         region.isResizing = false
         check(fade(region) == nil, "unchanged resizing value does nothing")
 
-        // Snap feedback.
         region.isResizing = true
         region.present([.previewHiddenChanged(true), .breakpointChanged(1)])
         check(haptics == 0 && indicator.animationKeys() == nil, "layout events have no feedback")
@@ -166,7 +159,6 @@ import QuartzCore
         check(haptics == 2, "long hold release performs the haptic")
         region.isResizing = false; wait(0.35)
 
-        // Pan forwarding, cursor rects and session cancellation.
         var pans: [(NSGestureRecognizer.State, CGFloat, CGFloat)] = []
         region.onPan = { pans.append(($0, $1, $2)) }
         let pan = FakePan(target: nil, action: nil)

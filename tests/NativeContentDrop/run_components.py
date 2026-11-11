@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Disposable native router/session fixtures; no browser or personal pasteboard."""
 from pathlib import Path
 import argparse, hashlib, json, subprocess, tempfile, time
 parser = argparse.ArgumentParser()

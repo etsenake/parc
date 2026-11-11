@@ -1,8 +1,3 @@
-"""Copy and load real Mach-O fixtures in Chromium's component layout.
-
-These libraries are controlled test inputs, not Chromium. Nothing is rewritten,
-and the original output is unavailable when the copied app/helpers are executed.
-"""
 import importlib.util
 import os
 import shutil
@@ -100,7 +95,7 @@ class DevelopmentLayoutTests(unittest.TestCase):
             self.assertFalse((app / "Contents/Frameworks/libcomponent.dylib").exists())
             for name in images:
                 if (app.parent / name).parent.name == "MacOS":
-                    continue  # These untouched fixture executables retain their linker signature.
+                    continue
                 subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(app.parent / name)],
                                check=True, capture_output=True)
             pkg.verify_development_layout(app, self.manifest)
@@ -147,7 +142,7 @@ class DevelopmentLayoutTests(unittest.TestCase):
         source = self.root / "dock-plugin.c"
         source.write_text("int dock_value(void) { return 42; }\n")
         self.clang("-bundle", source, "-o", plugin)
-        self.assertEqual(struct.unpack("<8I", plugin.read_bytes()[:32])[3], 8)  # MH_BUNDLE
+        self.assertEqual(struct.unpack("<8I", plugin.read_bytes()[:32])[3], 8)
         images = pkg.verify_development_layout(app, self.manifest)
         self.assertIn(plugin.relative_to(app.parent).as_posix(), images)
 

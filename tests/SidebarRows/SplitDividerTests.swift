@@ -182,8 +182,6 @@ import AppKit
             axSplit.addArrangedSubview(pane)
         }
         axSplit.configure(orientation: .horizontal, factors: [1, 1])
-        //
-        // selector, so AppKit ignores them and exposes each pane directly (SP32).
         let axChildren = NSAccessibility.unignoredChildren(from: [axSplit]).map { $0 as AnyObject }
         try check(!axSplit.isAccessibilityElement() && axSplit.accessibilityRole() != .splitGroup
                   && (axSplit.accessibilitySplitters() ?? []).isEmpty
@@ -479,9 +477,6 @@ import AppKit
         view.adjustSubviews()
         try check(grips().isEmpty && view.trackingAreas.isEmpty, "Retired panes remove their grip and tracking owners")
 
-        //
-        //
-        // animated false, so every command-driven shape change is immediate.
         let commandRoot = FileManager.default.temporaryDirectory.appendingPathComponent("parc-split-commands-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: commandRoot) }
         let commands = try BrowserStore(directory: commandRoot)
@@ -540,8 +535,6 @@ import AppKit
         try check(commandPanes[1].frame == commanded.bounds && !commandMotion(),
                   "Cancelling the pending pane restores the original layout immediately")
 
-        // A pair whose saved weights cannot hold two expanded panes resizes
-        // from the displayed lengths, moving only the space those panes use.
         let degenerate = ParcSplitView(frame: NSRect(x: 0, y: 0, width: 1210, height: 800))
         commandWindow.contentView!.addSubview(degenerate)
         let degeneratePanes = (0..<3).map { _ in NSView() }
@@ -571,7 +564,6 @@ import AppKit
         try check(degenerateCommits.count == 2 && degeneratePanes[0].frame.width == degenerateWidths[0]
                   && abs(degeneratePanes[1].frame.width - degeneratePanes[2].frame.width) <= 1,
                   "Double click splits the pair's displayed space and leaves the other pane alone")
-        // At 1x the same pair's rounded lengths overrun the available length.
         commandWindow.testScale = 1
         let unscaled = ParcSplitView(frame: NSRect(x: 0, y: 0, width: 1210, height: 800))
         commandWindow.contentView!.addSubview(unscaled)
@@ -596,7 +588,6 @@ import AppKit
             eventNumber: 2, clickCount: 2, pressure: 1)!)
         try check(unscaledPanes[0].frame.width == unscaledWidths[0] && unscaledPanes[1].frame.width == unscaledPanes[2].frame.width,
                   "A 1x double click splits the pair evenly and leaves the other pane alone")
-        // The same at the first divider, with the remainder before the other pane.
         unscaled.configure(orientation: .horizontal, factors: [1e-9, 0.25, 0.75])
         let leadingWidths = unscaledPanes.map(\.frame.width)
         try check(leadingWidths[0] == 220 && leadingWidths.reduce(0, +) > 1190, "At 1x the leading degenerate pair overruns too")

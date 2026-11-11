@@ -123,8 +123,6 @@ struct SoftwareUpdateSessionTests {
     }
 
     static func dismissedDownloadStaysReady() {
-        // Sparkle keeps a dismissed downloaded update, and installs it on quit
-        // once it is installing; the banner must stay and can resume it.
         var session = SoftwareUpdateSession()
         var choices: [SoftwareUpdateSession.Choice] = []
         _ = session.found(version: "1.9.0", downloaded: true, userInitiated: true) { choices.append($0) }
@@ -228,8 +226,6 @@ struct SoftwareUpdateSessionTests {
     }
 
     static func repliesMayReenterTheSession() {
-        // Sparkle can end the session from inside a reply; the session must
-        // not be mid-mutation when the reply runs.
         var session = SoftwareUpdateSession()
         session.upToDate { session.dismissed() }
         session.acknowledge()?()

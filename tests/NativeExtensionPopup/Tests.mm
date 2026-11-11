@@ -57,7 +57,6 @@ int main() {
   @autoreleasepool {
     [NSApplication sharedApplication];
     NSApp.activationPolicy = NSApplicationActivationPolicyAccessory;
-    // 1. Actual child window and existing native page identity, not a URL copy.
     NSWindow* parent = Window();
     PageObserver* observer = [[PageObserver alloc] init];
     PCNativePageHost* page = Page(observer);
@@ -108,8 +107,6 @@ int main() {
     [presenter invalidate];
     EXPECT(closes == 0);
     [page invalidate];
-    // 2. Sidebar/focused anchor, content size versus frame size, user-move
-    // lock.
     page = Page(nil);
     __block PCExtensionPopupAnchor* anchor =
         [PCExtensionPopupAnchor sidebarAnchorWithWidth:200];
@@ -151,7 +148,6 @@ int main() {
     EXPECT(Near(popup.frame.origin.x, origin.x));
     [presenter invalidate];
     [page invalidate];
-    // 3. Only actual parent activation dismisses; owned-dialog policy can hold.
     __block BOOL allow = NO;
     closes = 0;
     page = Page(nil);
@@ -187,7 +183,6 @@ int main() {
                       object:parent];
     EXPECT(closes == 1);
     [page invalidate];
-    // 4. Actual close plus reentrant owner release is exactly once.
     closes = 0;
     observer = [[PageObserver alloc] init];
     page = Page(observer);
@@ -216,13 +211,12 @@ int main() {
     EXPECT(owned == nil);
     EXPECT(
         !weak ||
-        weak.invalidated);  // AppKit may autorelease its close delegate later.
+        weak.invalidated);
     EXPECT(page.window == nil && page.contentView != nil);
     EXPECT(observer.detachCount >= 1);
     [popup close];
     EXPECT(closes == 1);
     [page invalidate];
-    // 5. Native detach reentry must not close or remove a replacement popup.
     closes = 0;
     observer = [[PageObserver alloc] init];
     page = Page(observer);
@@ -263,8 +257,6 @@ int main() {
     replacement = nil;
     [replacementPage invalidate];
     [page invalidate];
-    // 6. Invalid parent/attached page and anchor-callback invalidation fail
-    // safely.
     page = Page(nil);
     [parent.contentView addSubview:page];
     presenter = [[PCExtensionPopupPresenter alloc] initWithParentWindow:parent
@@ -297,7 +289,6 @@ int main() {
     EXPECT(reentrant.invalidated && page.window == nil);
     reentrant = nil;
     [page invalidate];
-    // 7. A visible parent must not expose an opening popup before loaded/show.
     [parent orderFront:nil];
     EXPECT(parent.visible);
     page = Page(nil);

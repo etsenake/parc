@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Exercise runtime output guards with the real production path validator.
-
-Uses disposable filesystem fixtures only; never copies an engine or signs an app.
-"""
 import importlib.util
 from pathlib import Path
 import tempfile

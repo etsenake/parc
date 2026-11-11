@@ -15,9 +15,6 @@ import QuartzCore
         super.setFrameSize(newSize)
     }
 }
-///
-/// content (`WindowStandardButtons.stackSize` from x 13), so the toggle sits 4
-/// points after them at a fixed sidebar x and moves only with the sidebar itself.
 @MainActor final class ToolbarHost: NSView {
     let lights = NSView()
     let toggle = NSView()
@@ -30,7 +27,6 @@ import QuartzCore
         lights.frame = bar.windowButtons ?? .zero; toggle.frame = bar.toggle ?? .zero
     }
 }
-/// A drawing view (AppKit's `.duringViewResize` default) that counts frame-size changes.
 @MainActor final class CountedLabel: NSTextField {
     var sizeChanges = 0
     override func setFrameSize(_ newSize: NSSize) {
@@ -44,7 +40,6 @@ import QuartzCore
 @MainActor func run() {
     let c = Checks()
     _ = NSApplication.shared
-    //
     let rootBounds = NSRect(x: 0, y: 0, width: 1470, height: 831)
     func frame(_ placement: SidebarPresentationFrame) -> NSRect { placement.rect(width: 228, in: rootBounds) }
     c.expect(frame(.locked) == NSRect(x: 0, y: 0, width: 228, height: 831), "locked fills the leading edge")
@@ -54,8 +49,6 @@ import QuartzCore
     c.expect(frame(.revealing) == NSRect(x: -228, y: 0, width: 228, height: 831), "the anchored reveal starts at x − width")
     c.expect([SidebarPresentationFrame.hiding, .hidden, .revealing].allSatisfy { frame($0).maxX <= rootBounds.minX },
              "every hidden frame lies wholly outside the root")
-    // Which frame each pass of a transition places (sidebarContainerFrame):
-    // presentation, whether it slides, a floating surface, an anchored reveal.
     let placements: [(SidebarPresentation, Bool, Bool, Bool, SidebarPresentationFrame, String)] = [
         (.locked, false, false, false, .locked, "settled locked"),
         (.floating, false, false, false, .floating, "settled floating"),
@@ -71,8 +64,6 @@ import QuartzCore
         c.expect(SidebarPresentationFrame(presentation, inMotion: inMotion, floatingSurface: surface, revealsAnchored: anchored) == expected,
                  "placement: \(name)")
     }
-    //
-    // and flush for each change setSidebarPresentation animates.
     let transitions: [(SidebarPresentation, SidebarPresentation, SidebarMotionController.Style, Bool, Bool, Bool, Bool)] = [
         (.locked, .hidden, .anchored, false, false, false, false), (.hidden, .locked, .anchored, false, false, true, true),
         (.hidden, .floating, .floating, true, false, false, true), (.floating, .hidden, .floating, true, false, false, false),
@@ -83,9 +74,6 @@ import QuartzCore
                  && transition.revealsAnchored == anchored && transition.flushesPreparation == flushes,
                  "transition \(from) → \(to)")
     }
-    // SidebarChromeFrames: the page takes the locked sidebar's edge or the
-    // 10-point inset, and the side panel, popup chrome and
-    // Library keep layoutChrome's geometry.
     func chrome(_ presentation: SidebarPresentation, _ placement: SidebarPresentationFrame, previewingHidden: Bool = false,
                 fullscreen: Bool = false, library: Bool = false, popup: Bool = false, panel: Bool = false) -> SidebarChromeFrames {
         SidebarChromeFrames(bounds: rootBounds, sidebarWidth: 228, presentation: presentation, placement: placement, previewingHidden: previewingHidden,
@@ -113,7 +101,6 @@ import QuartzCore
     c.expect(wideLibrary.library == NSRect(x: 0, y: 0, width: 417, height: 832)
              && wideLibrary.pageHost == NSRect(x: 417, y: 10, width: 853, height: 812),
              "a 417-point page's Library is 417 wide and its page is inset 10 vertically")
-    //
     func libraryWidth(_ content: CGFloat, in width: CGFloat) -> SidebarChromeFrames {
         SidebarChromeFrames(bounds: NSRect(x: 0, y: 0, width: width, height: 831), sidebarWidth: 228, presentation: .locked,
                             placement: .locked, library: true, libraryContentWidth: content)
@@ -131,8 +118,6 @@ import QuartzCore
                  && frames.pageHost == NSRect(x: expected, y: 10, width: max(0, width - expected - 10), height: 811),
                  "Library width, \(name): \(frames.library.width)")
     }
-    // Three Spaces in a 1280-point window leave the extension panel only the
-    // rest of the row; the geometry pass moves it with the Library edge.
     let panelled = SidebarChromeFrames(bounds: libraryWindow, sidebarWidth: 228, presentation: .locked, placement: .locked,
                                        library: true, libraryContentWidth: 1008, sidePanel: true)
     c.expect(panelled.library.width == 1008 && panelled.showsSidePanel && panelled.sidePanel.minX == 1008
@@ -144,9 +129,6 @@ import QuartzCore
     let libraryFullscreen = SidebarChromeFrames(bounds: libraryWindow, sidebarWidth: 228, presentation: .locked, placement: .locked,
                                                 fullscreen: true, library: true, libraryContentWidth: 744)
     c.expect(libraryFullscreen.library.width == 0 && libraryFullscreen.pageHost == libraryWindow, "Full screen hides the Library column")
-    // EXT12's current-Chromium panel is a real page sibling. Initial/narrow
-    // layout must not give its native host a positive off-window rectangle.
-    //
     for (width, height, sidebarWidth, isPopup, isLibrary) in [
         (1470.0, 831.0, 228.0, false, false),
         (760.0, 540.0, 420.0, false, false),
@@ -169,11 +151,9 @@ import QuartzCore
                      "extension panel follows the actual page without overlap or a gap")
         }
     }
-    // SidebarView.isPresented: false only once a hide settles.
     c.expect(!SidebarPresentation.hidden.presents(inMotion: false) && SidebarPresentation.hidden.presents(inMotion: true)
              && [SidebarPresentation.locked, .floating].allSatisfy { $0.presents(inMotion: false) && $0.presents(inMotion: true) },
              "only a settled hide is not presented")
-    // Real AppKit hierarchy, outside the desktop; no browser, profile or input.
     let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 700),
                           styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
@@ -226,7 +206,6 @@ import QuartzCore
     c.expect(!motion.isAnimating, "completion releases motion owner")
     c.expect(basic(page, "position") == nil && basic(pane, "bounds") == nil, "completed geometry removed")
 
-    // Another component can replace the exact same geometry key mid-flight.
     motion.animate(layoutRoot: root, views: views, style: .anchored, changes: { layout(false) }, completion: { finished.append("obsolete") })
     let replacement = CABasicAnimation(keyPath: "bounds")
     replacement.fromValue = NSValue(rect: pane.bounds); replacement.duration = 10
@@ -256,15 +235,11 @@ import QuartzCore
     c.expect(sidebar.layer!.animation(forKey: "position") == nil, "floating interruption removes owned spring")
     c.expect(sidebar.animations.count == 1, "cancel leaves original view definitions")
 
-    // Reduced Motion and external geometry use this same settle path before a
-    // direct, nonanimated layout; old callbacks cannot recreate their animation.
     layout(true); root.layoutSubtreeIfNeeded()
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.0)); CATransaction.flush()
     c.expect(finished == ["show"], "reduced-motion settle invalidates pending completion")
     c.expect(page.frame.minX == 228 && pane.bounds.width == 763, "new layout remains authoritative")
     c.expect(window.firstResponder === responder, "settle does not choose a different responder")
-    // Rapid repeated toggles retain one final generation while layout commits
-    // each actual request. Stale completions cannot hide the newest sidebar.
     for index in 0..<6 {
         motion.animate(layoutRoot: root, views: views, style: .anchored,
                        changes: { layout(index.isMultiple(of: 2)) },
@@ -277,9 +252,6 @@ import QuartzCore
     c.expect(!motion.isAnimating && basic(pane, "bounds") == nil, "repeat completion releases child motion")
     c.expect(window.firstResponder === responder, "repeats preserve original field editor")
 
-    //
-    // cubic. Closing the Library and a window resize settle it through cancel
-    // before their own layout, which stays authoritative; it never completes.
     func controlPoints(_ timing: CAMediaTimingFunction?) -> [Float] {
         guard let timing else { return [] }
         var first: [Float] = [0, 0], second: [Float] = [0, 0]
@@ -299,10 +271,6 @@ import QuartzCore
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.4)); CATransaction.flush()
     c.expect(!finished.contains("library"), "a settled Library width group never completes")
 
-    //
-    // first arranged view), so they and the toggle keep their sidebar
-    // positions and travel with the surface: in with the floating spring and
-    // 5 points left/up inside the 0.08 s floating→locked group.
     let container = NSView(frame: NSRect(x: -228, y: 5, width: 228, height: 690))
     container.wantsLayer = true
     let toolbar = ToolbarHost(frame: container.bounds)
@@ -329,17 +297,11 @@ import QuartzCore
     c.expect(finished.suffix(2) == ["reveal", "lock"] && !toolbar.needsLayout && container.frame.minX + toolbar.toggle.frame.minX == toggleX,
              "completion leaves no pending header move")
 
-    // Drawn content whose width follows the page. AppKit's default for a
-    // drawing view drives its frame every display frame outside Core
-    // Animation; NSButton's default policy scales its drawn contents into the
-    // animated bounds. Pinned views join the group's single animation.
     func label(_ y: CGFloat) -> CountedLabel {
         let field = CountedLabel(labelWithString: "Parc"); field.alignment = .center
         field.frame = NSRect(x: 0, y: y, width: 300, height: 40); pane.addSubview(field); return field
     }
     let ticking = label(100), pinned = label(150)
-    // A hidden drawing view whose width follows the page, as a pane's hidden
-    // toolbars, failure page and their labels do.
     let hiddenHost = NSView(frame: NSRect(x: 0, y: 320, width: 300, height: 30)); hiddenHost.isHidden = true; pane.addSubview(hiddenHost)
     let hidden = CountedLabel(labelWithString: "Hidden"); hidden.frame = hiddenHost.bounds; hiddenHost.addSubview(hidden)
     let stretched = NSButton(title: "Capture", target: nil, action: nil), anchored = NSButton(title: "Capture", target: nil, action: nil)
@@ -372,9 +334,6 @@ import QuartzCore
              "a hidden drawing view is sized once and keeps its own policy (\(hidden.sizeChanges) sizes)")
     c.expect(finished.last == "drawn" && basic(pinned, "bounds") == nil, "group completion releases pinned geometry")
 
-    //
-    // uncommitted; a clean root whose presentation already matches the model is
-    // a true no-op and must not pay CATransaction.flush.
     final class FlushCountingRoot: NSView {
         var zeroDurationLayouts = 0
         override func layoutSubtreeIfNeeded() {
@@ -402,8 +361,6 @@ import QuartzCore
     flushRoot.layoutSubtreeIfNeeded(); CATransaction.flush()
     c.expect(!SidebarMotionController.shouldFlushPreviousLayout(of: flushRoot),
              "layout clears the flush requirement")
-    // Origin-only prep can leave needsLayout false while presentation lags the
-    // model — the same shape as a reveal that only nudges the sidebar's x.
     flushSidebar.layer?.removeAllAnimations()
     CATransaction.flush()
     let oldPresentation = flushSidebar.layer!.presentation()!.position

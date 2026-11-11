@@ -55,7 +55,6 @@ static NSWindow* Window(void) {
                   backing:NSBackingStoreBuffered
                     defer:NO];
   window.releasedWhenClosed = NO;
-  // Native objects are exercised without showing a window or loading a page.
   return window;
 }
 

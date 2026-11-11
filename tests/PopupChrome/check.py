@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Compile the popup view with inert collaborators; do not open a browser."""
 from pathlib import Path
 import subprocess
 import tempfile

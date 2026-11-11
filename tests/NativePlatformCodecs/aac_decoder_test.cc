@@ -1,7 +1,3 @@
-// Drives the patched media::AudioToolboxAudioDecoder with AAC shaped the way
-// each Chromium path hands it over, using streams from macOS's AAC encoder.
-// Usage: aac_decoder_test <fixture directory written by run.py>
-
 #include <algorithm>
 #include <cmath>
 #include <complex>
@@ -36,8 +32,6 @@
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/mac/audio_toolbox_audio_decoder.h"
 
-// libsystem_sandbox's parameterised profile compiler, which Chromium's seatbelt
-// wrapper also uses.
 extern "C" int sandbox_init_with_parameters(const char* profile,
                                             uint64_t flags,
                                             const char* const parameters[],
@@ -71,7 +65,6 @@ struct Stream {
   Packets packets;
 };
 
-// ADTS frames exactly as stored, headers included.
 Stream ReadAdts(const std::string& path) {
   std::ifstream file(path, std::ios::binary);
   std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), {});
@@ -99,9 +92,6 @@ Stream ReadAdts(const std::string& path) {
   return stream;
 }
 
-// Raw access units and the AudioSpecificConfig from an MP4's esds, which is
-// what FFmpeg's MP4 demuxer and Chromium's MP4 stream parser produce. run.py
-// extracts them so that nothing touches AudioToolbox before a seatbelt applies.
 Stream ReadMp4Packets(const std::string& path) {
   std::ifstream file(path, std::ios::binary);
   std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), {});
@@ -126,8 +116,6 @@ Stream ReadMp4Packets(const std::string& path) {
   return stream;
 }
 
-// macOS's own decoding, which run.py has afconvert write as
-// <u32 channels><u32 frames> and planar floats.
 Pcm ReadPcm(const std::string& path) {
   std::ifstream file(path, std::ios::binary);
   std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), {});
@@ -149,19 +137,14 @@ Pcm ReadPcm(const std::string& path) {
   return pcm;
 }
 
-// The demuxing half of src= playback: FFmpeg with FFmpegGlue's and
-// FFmpegDemuxer's settings, and Chromium's AVStream-to-config conversion.
 struct Demuxed {
   bool opened = false;
-  // FFmpeg had no AAC decoder to fill in the sample format.
   bool sample_format_unset = false;
   bool valid_config = false;
-  // FFmpegDemuxer fails the stream at the first packet without a PTS.
   bool timestamps_defined_and_increasing = true;
   media::AudioDecoderConfig config;
   Packets packets;
   PacketTimes times;
-  // The priming and remainder FFmpegDemuxer gives each packet.
   Discards discards;
 };
 
@@ -214,7 +197,6 @@ Demuxed DemuxWithFFmpeg(const std::string& path) {
       AVFMT_FLAG_CUSTOM_IO | AVFMT_FLAG_FAST_SEEK | AVFMT_FLAG_NOH264PARSE;
   format->error_recognition |= AV_EF_EXPLODE;
   format->codec_whitelist = av_strdup(media::GetAllowedAudioDecoders());
-  // GetAllowedDemuxers() in ffmpeg_glue.cc for proprietary-codec builds.
   format->format_whitelist = av_strdup("ogg,matroska,wav,flac,mp3,mov,aac");
   format->max_analyze_duration = 60 * AV_TIME_BASE;
   Demuxed result;
@@ -241,7 +223,6 @@ Demuxed DemuxWithFFmpeg(const std::string& path) {
                    result.times.back().timestamp)) {
             result.timestamps_defined_and_increasing = false;
           }
-          // As FFmpegDemuxerStream::EnqueuePacket() stamps the buffer.
           result.times.push_back(
               {media::ConvertFromTimeBase(stream->time_base, packet->pts),
                media::ConvertFromTimeBase(stream->time_base,
@@ -266,7 +247,6 @@ struct Output {
   bool decoded = true;
   int sample_rate = 0;
   int channels = 0;
-  // Every buffer has the first's rate and channel count.
   bool consistent = true;
   bool timestamps_increase = true;
   std::optional<base::TimeDelta> last_timestamp;
@@ -301,9 +281,6 @@ void Collect(Output* output, scoped_refptr<media::AudioBuffer> buffer) {
   }
 }
 
-// Stamps packet `i` at i * `packet_seconds` unless `times` gives the
-// demuxer's timestamps. `end_of_stream_first` decodes end of stream and resets
-// before the first packet. `discards` gives packets discard padding.
 Output Decode(const media::AudioDecoderConfig& config,
               const Packets& packets,
               double packet_seconds,
@@ -368,7 +345,6 @@ Output Decode(const media::AudioDecoderConfig& config,
   return output;
 }
 
-// Normalised magnitude at `frequency` over the steady middle of `samples`.
 double Tone(const std::vector<float>& samples, int rate, double frequency) {
   const size_t begin = samples.size() / 4;
   const size_t end = samples.size() - samples.size() / 4;
@@ -386,8 +362,6 @@ double Tone(const std::vector<float>& samples, int rate, double frequency) {
   return std::sqrt(std::max(power, 0.0)) / (end - begin);
 }
 
-// Phase in radians of `frequency` over seconds 0.5 to 1.5 of `samples`, whose
-// first sample is at time zero.
 double Phase(const std::vector<float>& samples, int rate, double frequency) {
   std::complex<double> sum;
   for (size_t index = rate / 2; index < std::min<size_t>(samples.size(), 3 * rate / 2);
@@ -398,8 +372,6 @@ double Phase(const std::vector<float>& samples, int rate, double frequency) {
   return std::arg(sum);
 }
 
-// How much later `frequency` appears in `samples` than in `reference`, in
-// milliseconds modulo one period.
 double ToneLagMs(const std::vector<float>& samples,
                  int rate,
                  const std::vector<float>& reference,
@@ -412,8 +384,6 @@ double ToneLagMs(const std::vector<float>& samples,
   return 1000 * difference / (2 * M_PI * frequency);
 }
 
-// Energy between 12 and 20 kHz, which an AAC-LC core below 24 kHz can't carry
-// and SBR reconstructs.
 double HighBand(const std::vector<float>& samples, int rate) {
   double energy = 0;
   for (double frequency = 12000; frequency < 20000; frequency += 25) {
@@ -428,7 +398,6 @@ struct Expectation {
   int channels;
   bool high_band;
   bool stereo_source;
-  // Tone measurements need a signal without a seek discontinuity.
   bool continuous = true;
 };
 
@@ -484,7 +453,6 @@ void Check(const std::string& name,
   }
 }
 
-// The output must be macOS's own decoding, `expected`, sample for sample.
 void ExpectMacOsDecoding(const std::string& name,
                          const Output& output,
                          const Pcm& expected) {
@@ -508,7 +476,6 @@ void ExpectMacOsDecoding(const std::string& name,
              ", largest difference " + std::to_string(worst));
 }
 
-// `pcm` without frames [begin, end).
 Pcm Without(const Pcm& pcm, size_t begin, size_t end) {
   Pcm result;
   for (const auto& channel : pcm) {
@@ -519,8 +486,6 @@ Pcm Without(const Pcm& pcm, size_t begin, size_t end) {
   return result;
 }
 
-// A header-only ADTS frame cut from `frame`: 7 bytes without CRC, or 8 bytes
-// that claim a CRC (whose header alone needs 9).
 std::vector<uint8_t> ShortAdts(const std::vector<uint8_t>& frame, bool crc) {
   std::vector<uint8_t> result(frame.begin(), frame.begin() + 7);
   if (crc) {
@@ -536,7 +501,6 @@ std::vector<uint8_t> ShortAdts(const std::vector<uint8_t>& frame, bool crc) {
   return result;
 }
 
-// An ADTS frame with `frame`'s header, without CRC, around `payload`.
 std::vector<uint8_t> AdtsFrame(const std::vector<uint8_t>& frame,
                                const std::vector<uint8_t>& payload) {
   std::vector<uint8_t> result(frame.begin(), frame.begin() + 7);
@@ -549,7 +513,6 @@ std::vector<uint8_t> AdtsFrame(const std::vector<uint8_t>& frame,
   return result;
 }
 
-// The payload of an ADTS frame.
 std::vector<uint8_t> AdtsPayload(const std::vector<uint8_t>& frame) {
   return std::vector<uint8_t>(frame.begin() + ((frame[1] & 0x01) ? 7 : 9),
                               frame.end());
@@ -560,8 +523,6 @@ Packets Concatenate(Packets first, const Packets& second) {
   return first;
 }
 
-// The patched AudioRendererImpl's MayDoubleAacRate(): the src= configs whose
-// output may run at twice the config's rate.
 bool RendererTakesRateChange(const media::AudioDecoderConfig& config) {
   const auto& asc = config.extra_data();
   if (config.codec() != media::AudioCodec::kAAC ||
@@ -591,7 +552,7 @@ media::AudioDecoderConfig Config(int rate,
       rate, extra_data, media::EncryptionScheme::kUnencrypted);
 }
 
-}  // namespace
+}
 
 int main(int argc, char** argv) {
   if (argc < 2) {
@@ -627,8 +588,6 @@ int main(int argc, char** argv) {
   constexpr double kCore22 = 1024.0 / 22050;
   struct SourceCase {
     const char* file;
-    // What FFmpeg reports without an AAC decoder: the AAC-LC core's rate when
-    // only the bitstream signals SBR.
     int reported_rate;
     int expected_rate;
     int expected_channels;
@@ -644,7 +603,6 @@ int main(int argc, char** argv) {
       {"he_implicit.m4a", 22050, 44100, 2, true, true, kCore22, {}},
       {"hev2_implicit.m4a", 22050, 44100, 2, true, true, kCore22, {}},
       {"lc.aac", 44100, 44100, 2, true, true, kCore44, {}},
-      // Raw ADTS can't signal SBR, so only the bitstream tells.
       {"he.aac", 22050, 44100, 2, true, true, kCore22, {}},
       {"hev2.aac", 22050, 44100, 2, true, true, kCore22, {}},
       {"he_mono.aac", 22050, 44100, 2, true, false, kCore22, {}},
@@ -658,8 +616,6 @@ int main(int argc, char** argv) {
   using media::CHANNEL_LAYOUT_MONO;
   using media::CHANNEL_LAYOUT_STEREO;
 
-  // Chromium applies its seatbelt policy before a helper decodes anything;
-  // the streams above stand in for buffers that arrive over IPC.
   if (argc > 3 && std::string(argv[2]) == "--seatbelt") {
     std::ifstream file(argv[3]);
     const std::string profile((std::istreambuf_iterator<char>(file)), {});
@@ -691,8 +647,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // FFmpeg's MP4 demuxer and Chromium's MP4 parser: raw access units, the esds
-  // AudioSpecificConfig, and the SBR rate when the config signals SBR.
   Check(
       "mp4 AAC-LC",
       Decode(Config(44100, CHANNEL_LAYOUT_STEREO, lc_mp4.audio_specific_config),
@@ -709,10 +663,6 @@ int main(int argc, char** argv) {
              hev2_mp4.packets, kCore22),
       {44100, 2, true, true}, hev2_mp4.packets.size(), kCore22);
 
-  // MPEG-2 TS (HLS, MSE video/mp2t) and MSE audio/aac: whole ADTS frames and a
-  // two-byte AudioSpecificConfig. MPEG-2 TS doubles the rate when the MIME type
-  // names SBR; MSE audio/aac always uses the header's rate, which the "without
-  // an SBR hint" cases cover.
   Check("adts AAC-LC",
         Decode(
             Config(44100, CHANNEL_LAYOUT_STEREO, lc_adts.audio_specific_config),
@@ -734,10 +684,6 @@ int main(int argc, char** argv) {
             mono_adts.packets, kCore44),
         {44100, 1, true, false}, mono_adts.packets.size(), kCore44);
 
-  // Implicitly signalled HE-AAC: the config and container give only the AAC-LC
-  // core, and SBR (with parametric stereo for HE-AAC v2) is in the bitstream.
-  // FFmpeg's decoder finds it in the first frame and doubles the rate, and
-  // makes a mono core stereo; so must AudioToolbox.
   Check("adts HE-AAC without an SBR hint finds SBR in the bitstream",
         Decode(
             Config(22050, CHANNEL_LAYOUT_STEREO, he_adts.audio_specific_config),
@@ -781,7 +727,6 @@ int main(int argc, char** argv) {
                hev2_implicit_mp4.packets, kCore22),
         {44100, 2, true, true}, hev2_implicit_mp4.packets.size(), kCore22);
 
-  // True AAC-LC at the same core rates must stay AAC-LC.
   Check("adts AAC-LC at 22.05 kHz stays AAC-LC",
         Decode(Config(22050, CHANNEL_LAYOUT_STEREO,
                       lc22_adts.audio_specific_config),
@@ -792,16 +737,12 @@ int main(int argc, char** argv) {
                       lc22_mono_adts.audio_specific_config),
                lc22_mono_adts.packets, kCore22),
         {22050, 1, false, false}, lc22_mono_adts.packets.size(), kCore22);
-  // An explicit sbrPresentFlag of 0 (sync extension 0x2b7, AOT 5) rules SBR
-  // out; FFmpeg then ignores SBR in the bitstream.
   const std::vector<uint8_t> sbr_absent = {0x13, 0x90, 0x56, 0xe5, 0x00};
   const Output core =
       Decode(Config(22050, CHANNEL_LAYOUT_STEREO, sbr_absent), he_adts.packets,
              kCore22);
   Check("adts HE-AAC with SBR signalled absent keeps the AAC-LC core", core,
         {22050, 2, false, true}, he_adts.packets.size(), kCore22);
-  // The first frame decides, as in FFmpeg's decoder: SBR that first appears
-  // later is ignored.
   Check("adts AAC-LC frames, then HE-AAC frames, stay AAC-LC",
         Decode(Config(22050, CHANNEL_LAYOUT_STEREO,
                       lc22_adts.audio_specific_config),
@@ -811,8 +752,6 @@ int main(int argc, char** argv) {
                kCore22),
         {22050, 2, false, true, false}, 3 + he_adts.packets.size(), kCore22);
 
-  // Timing: AudioToolbox drops HE-AAC's SBR delay from its first output (962
-  // frames), so HE-AAC lines up with the AAC-LC core it replaces.
   {
     const Output implicit = Decode(
         Config(22050, CHANNEL_LAYOUT_STEREO, he_adts.audio_specific_config),
@@ -840,7 +779,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // WebCodecs without a description: ADTS chunks and no extra data.
   Check("webcodecs ADTS HE-AAC without description",
         Decode(Config(44100, CHANNEL_LAYOUT_STEREO, {}), he_adts.packets,
                kCore22),
@@ -855,10 +793,6 @@ int main(int argc, char** argv) {
          "webcodecs raw AAC without description",
          "is refused at the first chunk");
 
-  // <audio>/<video src=>: FFmpeg's MP4 and ADTS demuxers. The output keeps the
-  // config's rate apart from implicitly signalled HE-AAC, which doubles a core
-  // rate of 24 kHz or less; the patched AudioRendererImpl takes that change
-  // for such configs. AAC may also turn mono into stereo.
   for (const auto& source : source_cases) {
     const std::string name = std::string("src= ") + source.file;
     const Demuxed& demuxed = source.demuxed;
@@ -895,8 +829,6 @@ int main(int argc, char** argv) {
   Check("mp4 AAC-LC across Reset()", reset, {44100, 2, true, true, false},
         lc_mp4.packets.size(), kCore44);
 
-  // A seek before the first access unit leaves the decision to it; one after
-  // keeps the decision made.
   const auto he_core =
       Config(22050, CHANNEL_LAYOUT_STEREO, he_adts.audio_specific_config);
   Check("adts implicit HE-AAC with Reset() before the first access unit",
@@ -917,8 +849,6 @@ int main(int argc, char** argv) {
         Decode(he_core, Concatenate(Packets(1), he_adts.packets), kCore22),
         {44100, 2, true, true}, 1 + he_adts.packets.size(), kCore22);
   {
-    // MSE can send an empty buffer while the first access unit's frames wait
-    // for the next one; it mustn't move the stream's first timestamp.
     Packets gap = {he_adts.packets[0], {}};
     gap.insert(gap.end(), he_adts.packets.begin() + 1, he_adts.packets.end());
     const Output output = Decode(he_core, gap, kCore22);
@@ -935,8 +865,6 @@ int main(int argc, char** argv) {
                kCore22, std::nullopt, nullptr, true),
         {44100, 2, true, true}, he_adts.packets.size(), kCore22);
 
-  // A first access unit that can't be judged leaves the decision to the next.
-  // AudioToolbox outputs nothing for these, so nothing locks the layer early.
   Check("adts one-byte first access unit, then HE-AAC",
         Decode(he_core,
                Concatenate(Packets{AdtsFrame(he_adts.packets[0], {0x01})},
@@ -968,8 +896,6 @@ int main(int argc, char** argv) {
           kCore22);
   }
 
-  // macOS's own decoding, decoder tail included. AAC-LC and HE-AAC aren't
-  // limited, so HE-AAC v2's overshoot above 1.0 must survive.
   ExpectMacOsDecoding("adts implicit HE-AAC",
                       Decode(he_core, he_adts.packets, kCore22), he_adts_macos);
   ExpectMacOsDecoding(
@@ -992,8 +918,6 @@ int main(int argc, char** argv) {
            "keeps its peaks above 1.0 (" + std::to_string(peak) + ")");
   }
 
-  // Discard padding lands on its own access unit, as macOS applies priming and
-  // remainder. These are FFmpegDemuxer's, from each MP4's iTunSMPB.
   for (const auto& [file, expected] :
        {std::pair{"he.m4a", &he_mp4_macos},
         std::pair{"hev2.m4a", &hev2_mp4_macos},
@@ -1032,9 +956,6 @@ int main(int argc, char** argv) {
                         Without(he_adts_macos, 2048, 4096));
   }
 
-  // Damaged first access units reach macOS's ADTS parser and the decoder. They
-  // must decode at one rate, the AAC-LC core's or HE-AAC's, or fail cleanly,
-  // and never crash the GPU process.
   {
     std::vector<uint8_t> noise(300);
     uint32_t seed = 1;
@@ -1079,7 +1000,6 @@ int main(int argc, char** argv) {
                         kCore22));
       }
     }
-    // Raw access units longer than an ADTS frame can hold skip the check.
     const auto mp4_core = Config(22050, CHANNEL_LAYOUT_STEREO,
                                  he_implicit_mp4.audio_specific_config);
     survives("mp4 first access unit of random bytes",
@@ -1100,8 +1020,6 @@ int main(int argc, char** argv) {
   Expect(rejected.initialized && !rejected.decoded,
          "adts frame with two raw data blocks", "fails to decode");
 
-  // WebCodecs chunks and FFmpeg's ADTS demuxer pass frames this short; they
-  // must fail or decode, not crash the GPU process.
   for (const bool crc : {true, false}) {
     const std::string frame =
         crc ? "8-byte CRC ADTS frame" : "7-byte ADTS frame";
@@ -1118,8 +1036,6 @@ int main(int argc, char** argv) {
                (with_config.decoded ? "decoded" : "decode failed") + ")");
   }
 
-  // End of stream drains AudioToolbox only for AAC-LC and HE-AAC. xHE-AAC,
-  // which macOS can't encode as a fixture, and AC-3 keep upstream's handling.
   {
     auto xhe = Config(48000, CHANNEL_LAYOUT_STEREO, {});
     xhe.set_profile(media::AudioCodecProfile::kXHE_AAC);
@@ -1136,8 +1052,6 @@ int main(int argc, char** argv) {
            "end of stream", "drains AAC-LC and HE-AAC, not xHE-AAC or AC-3");
   }
 
-  // MojoAudioDecoderService forwards Decode() and Reset() after a failed
-  // Initialize(). AudioToolbox refuses AAC Main.
   {
     media::AudioToolboxAudioDecoder decoder(
         std::make_unique<media::NullMediaLog>());

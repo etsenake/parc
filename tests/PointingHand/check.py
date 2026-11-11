@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Every Parc button shows the pointing hand (PointingHand.swift).
-
-Source check only. A new AppKit button or clickable control, a SwiftUI button
-with a built-in style or a custom ButtonStyle fails here until it shows the
-hand or is listed below with the reason it keeps another cursor.
-"""
 from pathlib import Path
 import re
 import sys
@@ -23,9 +17,7 @@ KEEP_CURSOR = {
     "ThemeAppearanceButton": "the hand, enabled or not",
     "UpdateBannerKeyStop": "its own cursor rect over the SwiftUI control it stands in for",
 }
-# The bookmark picker keeps the arrow over its rows on purpose.
 PLAIN_BUTTON_FILES = {"OnboardingImportBookmarksPicker.swift"}
-# The update banners' key stops show the hand over these styles' buttons.
 STYLES_SHOWN_BY_KEY_STOPS = {("UpdateReadyCard.swift", "Bare"), ("UpdateReadyCard.swift", "Style")}
 
 failures = []

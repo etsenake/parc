@@ -3,8 +3,6 @@ import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Production-store persistence checks. Run in a temporary directory only; no
-/// browser, renderer, profile fixture, UI or substitute capture service is used.
 @main
 struct CaptureLibraryTests {
     @MainActor
@@ -12,7 +10,6 @@ struct CaptureLibraryTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("ParcCaptureLibrary-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let profile = UUID(), space = UUID(), id = UUID(), capturedAt = Date(timeIntervalSince1970: 1_600_000_000)
-        // Encode real 2×2 pixels independently of the production store.
         let rgba = Data([255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,255])
         let image = CGImage(width: 2, height: 2, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 8,
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
@@ -45,7 +42,6 @@ struct CaptureLibraryTests {
         let exported = root.appendingPathComponent("Exported.png")
         try await CaptureLibraryStore.export(secondData, to: exported)
         let exportedData = try Data(contentsOf: exported); precondition(exportedData == png)
-        // A fresh owner reconstructs from the actual persisted catalog/assets.
         let reopenedRoot = root.appendingPathComponent("Reopened")
         try FileManager.default.createDirectory(at: reopenedRoot, withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: root.appendingPathComponent("Captures.json"), to: reopenedRoot.appendingPathComponent("Captures.json"))
@@ -65,8 +61,6 @@ struct CaptureLibraryTests {
         await broken.reload(); precondition(broken.loadError != nil)
         do { _ = try await broken.save(input()); fatalError("Corrupt catalog was overwritten") } catch {}
         let preserved = try Data(contentsOf: corruptRoot.appendingPathComponent("Captures.json")); precondition(preserved == corrupt)
-        // The production destination selects the real normal parent and never
-        // writes the private window's synthetic profile/Space or another owner.
         let parentDirectory = root.appendingPathComponent("Parent")
         let parentStore = try BrowserStore(directory: parentDirectory)
         let parentID = parentStore.state.profiles[0].id
@@ -94,8 +88,6 @@ struct CaptureLibraryTests {
         let wrong = CaptureLibraryStore.shared(directory: other.capturesDirectory(for: other.state.profiles[0].id),
                                                profileID: other.state.profiles[0].id)
         await wrong.reload(); precondition(wrong.items.isEmpty)
-        // A deletion reserves the exact durable owner before asynchronous work.
-        // This disposable profile is removable; the parent default profile is not.
         let removable = parentStore.createProfile(name: "Removal test")
         let owned = CaptureLibraryStore.shared(directory: parentStore.capturesDirectory(for: removable), profileID: removable)
         await owned.reload()

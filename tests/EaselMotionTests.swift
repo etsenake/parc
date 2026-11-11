@@ -1,7 +1,5 @@
 import AppKit
 
-// An inert window supplies deterministic key ownership. It is never ordered
-// on screen; notifications exercise the observer, not trackpad/browser input.
 @MainActor private final class MotionWindow: NSWindow {
     override var isKeyWindow: Bool { true }
 }

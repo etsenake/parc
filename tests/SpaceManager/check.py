@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
-"""Actual manager/sidebar responder and AX checks in an undisplayed window.
-No engine linkage, browser, OS event dispatch, application activation or real profile.
-Only unrelated native media/shortcut host types are inert stand-ins.
-"""
 from pathlib import Path
 import subprocess
 import tempfile
 root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
-# The window controller is not compiled here: its card Clear must reach the
-# shared page-retirement archive for the card's own Space, as the window's does.
 controller = (app / "BrowserWindowController.swift").read_text()
 configure = controller[controller.index("private func configureSpaceManager("):controller.index("func clearArchive()")]
 for use in ("return SpaceClearToday.ids(in: self.store.state, spaceID: id, profileID: space.profileID)",
             ".filter { self.ownership.canUse($0, owner: self.presentationID) }",
-            # Nothing it may clear disables a card's Clear; a stale press beeps.
             "sidebar.canClearToday = { targetValid() && !clearable().isEmpty }",
             "sidebar.onClearToday = { [weak self] in",
             "guard let self, targetValid(), let space = self.managementSpace(id) else { return }",
@@ -27,9 +20,6 @@ for use in ("archiveTabs(SpaceClearToday.ids(in: store.state, spaceID: activeSpa
             "self.activeSpaceID == originSpace, self.activeProfileID == originProfile else { return false }",
             "&& $0.spaceID == spaceID && $0.profileID == profileID"):
     assert use in controller, f"Clear's shared archive path changed: {use}"
-# The window sidebar's New Tab is current while a new-tab bar shows its
-# suggestions in the centre: Command-T, the New Tab row and Add Split, not the
-# sidebar's keyboard search. Closing the bar ends it.
 for use in ("commandBarCreatesNewTab = newTab; commandBarShowsNewTabPlaceholder = newTab && !inSidebar\n        commandBar = panel; panel.present()",
             "commandBarCreatesNewTab = true; commandBarShowsNewTabPlaceholder = true\n        commandBar = panel; panel.present()",
             "if commandBar == nil { commandBarCreatesNewTab = false; commandBarShowsNewTabPlaceholder = false }\n"
@@ -123,7 +113,6 @@ with tempfile.TemporaryDirectory(prefix="parc-space-manager-") as directory:
         ("NavigationControls.swift", None, "enum NavigationHistoryMenuMetrics", ""),
         ("SiteControlCenter.swift", None, "enum SiteControlCenterMetrics", ""),
         ("DownloadLibraryView.swift", "@MainActor enum DownloadRowSubtitle", "@MainActor enum DownloadRowArtwork {", "import AppKit\nimport UniformTypeIdentifiers\n"),
-        #
         ("OnboardingProgressionButton.swift", "struct PArcButtonSpinner", "extension NSColor", "import SwiftUI\n"),
     ]
     extracted = []

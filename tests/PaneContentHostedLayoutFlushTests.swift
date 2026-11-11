@@ -1,7 +1,3 @@
-/// P0-K: BrowserPane content layout skips Chromium layoutSubtree walks when
-/// hosted chrome is already current. Mirrors `PaneContentHostedLayoutFlush`
-/// in Sources/ParcApp/PageContentResizer.swift; check.py locks the production
-/// copy and BrowserPane call sites.
 enum PaneContentHostedLayoutFlush {
     static func shouldLayoutContent(frameChanged: Bool, needsLayout: Bool) -> Bool {
         frameChanged || needsLayout

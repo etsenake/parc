@@ -1,13 +1,6 @@
 import CoreGraphics
 import Foundation
 
-/// P1-G leftover: note editor layoutDocument skips footer/scroll/format/key-loop
-/// chrome only when the geometry fingerprint already matches. Real bounds or
-/// error-footer changes still layout. Document height reflow stays separate.
-///
-/// Mirrors `NoteEditorChromeLayoutSkip` in NoteEditorViewController.swift so
-/// this unit stays freestanding; `tests/NoteEditorChromeLayoutSkip/check.py`
-/// locks the production copy and call sites.
 struct NoteEditorChromeFingerprint: Equatable {
     var width: CGFloat
     var height: CGFloat

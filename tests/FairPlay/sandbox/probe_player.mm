@@ -1,18 +1,3 @@
-// The FairPlay sandbox probe's player: libfpsbplayer.dylib, opened by
-// probe_main.cc after the GPU profile is applied. It does what Parc's GPU
-// process does for a FairPlay player: a FairPlayCdm session and a
-// FairPlayRenderer joined to it, fed Chromium-shaped buffers (Annex B, ADTS,
-// scheme-only encryption, 16-byte IVs). The license exchange goes through the
-// host's unsandboxed helper.
-//
-// PASS needs more than the clock (audio drives it): the stream played to its
-// target, every present stream rendering, protected formats on every stream
-// of a protected scenario, no decode failure, and for video AVFoundation's
-// metrics, counted halfway and at the end: as many frames as came due (at
-// least 80%), and between the two counts at least 80% of those that came due
-// and were still to decode, a frame ready for display, none corrupted and at
-// most 10% dropped.
-
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 
@@ -54,9 +39,6 @@ std::vector<uint8_t> Bytes(NSData* data) {
 
 NSData* Data(const std::vector<uint8_t>& v) { return [NSData dataWithBytes:v.data() length:v.size()]; }
 
-// What Chromium's MP4StreamParser hands a renderer, as the GPU adapter
-// passes it on: no video decoder record, Dolby Vision as profile and level,
-// no dac3/dec3, AAC with ADTS, encryption as the scheme alone.
 fp::VideoConfig VideoConfigFor(const ft::TrackInfo& info) {
   fp::VideoConfig vc;
   const uint32_t f = info.original_format;
@@ -94,7 +76,6 @@ fp::AudioConfig AudioConfigFor(const ft::TrackInfo& info) {
   return ac;
 }
 
-// The source a sample came from (several after a changeType splice).
 const ft::TrackInfo& InfoFor(const fpsb::Track& track, size_t i) {
   return track.parts.empty() ? track.info : track.parts[track.part_of_sample[i]];
 }
@@ -119,8 +100,6 @@ double EndSeconds(const fpsb::Track& track) {
   return end;
 }
 
-// The clear format subtype the core builds for a source (its status
-// reports it), e.g. 'aac ' for an mp4a track.
 std::string ClearFormatFor(const ft::TrackInfo& info) {
   const uint32_t f = info.original_format;
   if (f == fp::FourCC('m', 'p', '4', 'a')) return "aac ";
@@ -139,7 +118,6 @@ fp::PostTask MainPoster() {
 class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
  public:
   explicit Player(const fpsb::Scenario& s) : s_(s), cdm_(this, MainPoster()), renderer_(this, MainPoster()) {
-    // The clear clips are shorter than the target; play them to their end.
     double end = 1e9;
     if (s_.video.present) end = std::min(end, EndSeconds(s_.video));
     if (s_.audio.present) end = std::min(end, EndSeconds(s_.audio));
@@ -159,7 +137,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
         session_ = id;
         Log("session %s created", id.c_str());
       });
-      // Chromium's order when MediaKeys come first: SetCdm, then Initialize.
       SetStage("SetCdm");
       fp::Result r = renderer_.SetCdm(&cdm_);
       if (!r.ok()) Fail("SetCdm: " + r.message);
@@ -177,7 +154,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
     Poll();
   }
 
-  // FairPlayCdmClient
   void OnSessionMessage(const std::string& session_id, fp::MessageType,
                         const std::vector<uint8_t>& message) override {
     Log("license message %zu bytes", message.size());
@@ -186,8 +162,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
     std::string session = session_id;
     const bool skd = s_.init_data_type == "skd";
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-      // cenc sessions exchange [{keyID, payload}] JSON, skd sessions the raw
-      // SPC and CKC; the license service takes and returns raw ones.
       NSArray* entries = skd ? @[ @{@"payload" : [body base64EncodedStringWithOptions:0]} ]
                              : [NSJSONSerialization JSONObjectWithData:body options:0 error:nil];
       NSMutableArray* answers = [NSMutableArray array];
@@ -216,7 +190,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
       }
       NSData* update = skd ? raw_answer : [NSJSONSerialization dataWithJSONObject:answers options:0 error:nil];
       dispatch_async(dispatch_get_main_queue(), ^{
-        // The server or the network, not the sandbox (the helper is outside it).
         if (!failure.empty()) g_host->finish(fpsb::Outcome::kInconclusive, failure + State());
         SetStage("update");
         cdm_.UpdateSession(session, Bytes(update), [](const fp::Result& r) {
@@ -240,7 +213,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
 
   void OnSessionClosed(const std::string&) override {}
 
-  // FairPlayRendererClient
   void OnNeedData(fp::StreamType stream) override { Feed(stream); }
   void OnWaitingForKey() override { Log("waiting for key"); }
   void OnEnded() override { ended_ = true; }
@@ -283,8 +255,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
       const ft::TrackInfo& info = InfoFor(track, next);
       const bool first_of_part = next == 0 || PartOf(track, next) != PartOf(track, next - 1);
       if (first_of_part && next > 0) {
-        // What the GPU adapter does on the demuxer's kConfigChanged after
-        // changeType: the new config, then the new samples.
         fp::Result r = video ? renderer_.Reconfigure(VideoConfigFor(info)) : renderer_.Reconfigure(AudioConfigFor(info));
         if (!r.ok()) Fail(std::string("Reconfigure (") + (video ? "video" : "audio") + "): " + r.message);
         Log("%s switched to %s at %.3f (media time %.3f)", video ? "video" : "audio",
@@ -298,7 +268,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
         Fail(std::string("enqueue rejected (") + (video ? "video" : "audio") + ")");
       }
       if (first_of_part && !track.parts.empty()) {
-        // The core builds a part's format from its first (key)frame.
         const fp::RendererStatus status = renderer_.GetStatus();
         formats.push_back(ft::FourCCString(video ? status.video_format : status.audio_format));
       }
@@ -318,9 +287,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
       if (s.audio == fp::RenderingStatus::kFailed) Fail("audio renderer failed: " + s.audio_error);
       const bool keys_ready = !s_.protected_media || usable_;
       const double now = renderer_.GetMediaTime().InSeconds();
-      // Video frames are counted twice, halfway and at the end: the frames
-      // decoded between the two samples must keep up with the media time
-      // (a single count includes the frames decoded ahead of it).
       if (keys_ready && s_.video.present && !first_requested_ && (now >= target_ / 2 || ended_)) {
         first_requested_ = true;
         renderer_.LoadVideoMetrics([this](const fp::VideoMetrics& m) {
@@ -342,7 +308,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
     });
   }
 
-  // Video samples presented before |time|.
   int64_t FramesDue(double time) const {
     int64_t due = 0;
     for (size_t i = 0; i < s_.video.samples.size(); ++i) {
@@ -359,8 +324,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
     if (s.decode_failures) failures.push_back(std::to_string(s.decode_failures) + " decode failures");
     if (s_.video.present && s.video != fp::RenderingStatus::kRendering) failures.push_back("video not rendering");
     if (s_.audio.present && s.audio != fp::RenderingStatus::kRendering) failures.push_back("audio not rendering");
-    // A changeType splice: every part's format built, in order, and the clock
-    // past the last switch.
     std::string switches;
     for (const fpsb::Track* track : {&s_.video, &s_.audio}) {
       if (track->parts.empty()) continue;
@@ -379,8 +342,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
     }
     if (!switches.empty()) {
       switches += " underflows " + std::to_string(underflows_);
-      // A switch that stalls the renderer shows as the clock running out of
-      // data (HAVE_NOTHING after playback started).
       if (underflows_) failures.push_back(std::to_string(underflows_) + " underflows around the switches");
     }
     if (s_.protected_media) {
@@ -394,8 +355,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
       metrics_missing = !metrics->available || !first_metrics_.available;
       if (!metrics_missing) {
         const int64_t due = FramesDue(media_time);
-        // Frames that came due between the counts, but no more than were still
-        // left to decode at the first (a short clip decodes whole up front).
         const int64_t left = std::max<int64_t>(
             0, int64_t(s_.video.samples.size()) - first_metrics_.total_frames);
         const int64_t expected_between = std::min(due - FramesDue(first_time_), left);
@@ -422,7 +381,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
       g_host->finish(fpsb::Outcome::kInconclusive, "no video metrics (macOS 14.4+)" + State());
     }
     if (s.output_obscured) {
-      // Screen capture by another process does this; the frames above decoded.
       g_host->finish(fpsb::Outcome::kInconclusive, "output obscured" + detail + State());
     }
     g_host->finish(fpsb::Outcome::kPass, s_.name + switches + detail + State());
@@ -451,9 +409,6 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
 
 Player* g_player = nullptr;
 
-// Native HLS: FairPlayHlsPlayer on a serial queue with no run loop, as on the
-// GPU media thread. AVFoundation fetches nothing itself; every load goes to
-// the unsandboxed helper, as Parc's go to the render process.
 class HlsProbe : public fp::HlsPlayerClient, public fp::HlsLoader {
  public:
   explicit HlsProbe(const fpsb::Scenario& s)
@@ -475,7 +430,6 @@ class HlsProbe : public fp::HlsPlayerClient, public fp::HlsLoader {
     });
   }
 
-  // HlsLoader.
   class Load : public fp::HlsLoad {
    public:
     explicit Load(std::shared_ptr<std::atomic<bool>> alive) : alive_(std::move(alive)) {}
@@ -501,7 +455,7 @@ class HlsProbe : public fp::HlsPlayerClient, public fp::HlsLoader {
       dispatch_async(owner, ^{
         if (!*alive) return;
         if (!ok || !response->error.empty()) {
-          client->OnComplete(-2);  // net::ERR_FAILED
+          client->OnComplete(-2);
           return;
         }
         fp::HlsLoadResponse r;
@@ -518,7 +472,6 @@ class HlsProbe : public fp::HlsPlayerClient, public fp::HlsLoader {
     return std::make_unique<Load>(alive);
   }
 
-  // HlsPlayerClient.
   void OnMetadata(const fp::HlsMetadata& m) override {
     Log("hls metadata: video=%d %dx%d audio=%d duration=%.1f", m.has_video, m.natural_width, m.natural_height,
         m.has_audio, m.duration);
@@ -586,13 +539,11 @@ void Player::Fail(const std::string& reason) {
   g_host->finish(fpsb::Outcome::kFail, reason + (g_player ? g_player->State() : ""));
 }
 
-}  // namespace
+}
 
 extern "C" __attribute__((visibility("default"))) void FpsbRunPlayer(const fpsb::Scenario* scenario,
                                                                      const fpsb::Host* host) {
   g_host = host;
-  // AVFoundation reports some failures as exceptions (an invalid renderer
-  // passed to the synchronizer when CoreAudio is unreachable).
   NSSetUncaughtExceptionHandler([](NSException* exception) {
     const char* name = exception.name.UTF8String;
     const char* reason = exception.reason.UTF8String;

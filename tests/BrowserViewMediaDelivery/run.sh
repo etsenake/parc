@@ -1,6 +1,4 @@
 #!/bin/bash
-# The facade's media change delivery over stand-in engine classes, and the
-# window's once-per-turn refresh of it. run.sh.
 set -euo pipefail
 root="$(cd -- "$(dirname -- "$0")/../.." && pwd)"
 output="$(mktemp -d "${TMPDIR:-/tmp}/parc-browser-view-media.XXXXXX")"
@@ -9,7 +7,6 @@ flags=(-arch arm64 -mmacosx-version-min=13.0 -fobjc-arc -fblocks -DOS_MAC=1
        -I "$root/Engine/ParcNative" -I "$root/Sources/ParcEngine")
 xcrun clang "${flags[@]}" -Wall -Wextra -Werror -Wno-unused-parameter \
   -c "$root/Sources/ParcEngine/ParcEngine.m" -o "$output/ParcEngine.o"
-# The stand-in page implements only what the change path reads.
 xcrun clang "${flags[@]}" -Wall -Werror -Wno-incomplete-implementation -Wno-objc-property-implementation \
   -Wno-objc-protocol-property-synthesis -Wno-protocol -Wno-objc-root-class \
   -c "$root/tests/BrowserViewMediaDelivery/Tests.m" -o "$output/Tests.o"

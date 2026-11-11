@@ -1,4 +1,3 @@
-// Static fixture/guard checks only. This never launches a browser or claims API conformance.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -66,7 +65,6 @@ test(() => assert.ok(verify({...window, tabs: [main, {...sibling, index: 999}]})
 test(() => assert.ok(verify(window, [main, sibling], [main])));
 test(() => assert.ok(verify(window, [main, sibling], [sibling], [main, {...sibling, active: false}])));
 test(() => assert.ok(verify({...window, type: "popup"})));
-// Mutate every API result together: agreement alone must not accept invalid state.
 for (const invalid of [
   [main, {...sibling, active: false}],
   [{...main, active: true}, sibling],

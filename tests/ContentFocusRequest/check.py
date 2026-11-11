@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-"""ContentFocusRequest: focus following an explicit content selection.
-
-Off-screen windows that report key without being shown; no browser, input,
-preferences or Parc binary. Runs the main run loop briefly for the idle retry.
-"""
 from pathlib import Path
 import re
 import subprocess
 import tempfile
 root = Path(__file__).resolve().parents[2]
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
-# BrowserWindowController is not compiled here: its wiring is asserted in source.
 for use, count in (("let request = ContentFocusRequest(window: window, content: pageHost)", 1),
                    ("focusedTabID = id; updateNavigation(); requestNativeSelection(); focusSelectedContent(); return true", 1),
                    ("updateNavigation(); requestNativeSelection(); focusSelectedContent()\n", 1),
@@ -23,8 +17,6 @@ for use, count in (("let request = ContentFocusRequest(window: window, content: 
                    ("self.window?.makeFirstResponder(self.findField) == true { return }", 1)):
     assert controller.count(use) == count, f"content focus wiring changed: {use}"
 assert controller.count("ContentFocusRequest.returnsToSaved(view, find: find,") == 1, "command-bar close target wiring changed"
-# A blank tab gives focus to the window: the request ends, the local fallback
-# and the command-bar close do the same, and every pane surface keeps the flag.
 assert controller.count("if self.panes[id]?.showsBlank == true { window.makeFirstResponder(nil); return .focused }") == 1
 assert controller.count("else if panes[id]?.showsBlank == true { window.makeFirstResponder(nil) }") == 1
 assert controller.count("else if self.panes[id]?.showsBlank == true { self.window?.makeFirstResponder(nil) }") == 1

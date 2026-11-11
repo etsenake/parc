@@ -1,8 +1,5 @@
 import Foundation
 
-/// Parc links other browsers' native messaging manifests into its engine
-///
-/// re-pointed or dropped as the browsers' manifests come and go.
 @main
 struct NativeMessagingHostsTests {
     static var assertions = 0

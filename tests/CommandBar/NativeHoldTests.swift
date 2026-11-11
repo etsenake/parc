@@ -1,7 +1,5 @@
 import Foundation
 
-/// Which native answer is on screen while typing, and what Return and Tab
-/// may act on before the current query's answer arrives.
 @main struct NativeHoldTests {
     static func main() {
         var count = 0

@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Queue 18 behavior lock: keyboard-shortcuts and link-routing pretty JSON
-persists skip the atomic write when encoded bytes match the last successful
-write. Real content changes still encode with pretty/sorted keys and write.
-"""
 from pathlib import Path
 import re
 

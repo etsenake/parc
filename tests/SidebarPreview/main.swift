@@ -28,7 +28,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     let c = Checks()
     _ = NSApplication.shared
 
-    //
     let row = NSRect(x: 8, y: 300, width: 212, height: 32)
     let right = SidebarPreviewPlacement(row: row, location: .right)
     c.expect(right.frame(height: 200, hostHeight: 700) == NSRect(x: 224, y: 216, width: 240, height: 200),
@@ -48,7 +47,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
              "diagonal: row.maxX - 4, top at row bottom - 4")
     c.expect(tile.anchor == NSPoint(x: 219, y: 107), "diagonal anchor is the tile's trailing bottom corner")
 
-    //
     func aim(_ last: (CGFloat, CGFloat), _ point: (CGFloat, CGFloat), _ location: SidebarPreviewLocation) -> Bool {
         SidebarPreviewAim.keepsCurrent(from: NSPoint(x: last.0, y: last.1), to: NSPoint(x: point.0, y: point.1), location: location)
     }
@@ -69,7 +67,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     c.expect(opacity(false, false) == 0 && opacity(true, false) == 0.08 && opacity(false, true) == 0.08
              && opacity(true, true) == 0.16, "hover and keyboard focus add up")
 
-    // Real AppKit hierarchy outside the desktop; no browser, profile, input or preferences.
     let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 1000, height: 700),
                           styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
@@ -77,7 +74,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     host.wantsLayer = true; window.contentView = host
     window.orderFront(nil)
 
-    // Pointer still on the live session row (non-button): full sidebar walk is a no-op.
     let sessionRow = NSView(frame: NSRect(x: 8, y: 300, width: 212, height: 32))
     host.addSubview(sessionRow)
     host.layoutSubtreeIfNeeded()
@@ -119,7 +115,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     c.expect(folder.frame == right.frame(height: 320, hostHeight: 700), "card uses the solved placement")
     host.layoutSubtreeIfNeeded(); folder.layoutSubtreeIfNeeded(); CATransaction.flush()
 
-    // PreviewBackgroundView chrome.
     let effect = all(folder, NSVisualEffectView.self).first
     c.expect(effect?.material == .popover && effect?.blendingMode == .withinWindow
              && effect?.state == .followsWindowActiveState, "popover material within the window")
@@ -129,12 +124,8 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     c.expect(folder.layer?.masksToBounds == false && near(shadow ?? 0, 0.4) && folder.layer?.shadowRadius == 16
              && folder.layer?.shadowOffset == CGSize(width: 0, height: 5) && folder.layer?.shadowPath != nil,
              "unclipped black 0.4 / 16 pt shadow owner")
-    // CALayer.render does not composite shadows as the window server does; the
-    // geometry-flipped superlayer is what makes a positive offset fall down.
     c.expect(folder.layer?.superlayer?.isGeometryFlipped == true, "shadow falls 5 pt downward in the flipped root")
     c.expect(folder.fill == nil, "folder card is material only")
-    //
-    // window, with PopoverBackgroundView's wash and decorative rings.
     c.expect(folder.appearance == nil, "the card follows the window's appearance")
     let popover = all(folder, PopoverBackgroundView.self).first
     c.expect(popover?.translucency.blendingMode == .withinWindow, "the preview's popover blends within the window")
@@ -151,14 +142,12 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     }
     host.appearance = nil
 
-    //
     folder.updateTrackingAreas()
     let area = folder.trackingAreas.first { $0.owner === folder }
     c.expect(area?.rect == NSRect(x: -40, y: 0, width: 280, height: 320), "tracking area widened 40 pt left")
     c.expect(area?.options.contains([.mouseEnteredAndExited, .activeInKeyWindow]) == true, "options 0x21")
     c.expect(folder.hoverFrame == NSRect(x: 184, y: folder.frame.minY, width: 280, height: 320), "hover frame")
 
-    // EaselUI ToolTipAnimations entrance about the row edge.
     let anchor = folder.convert(right.anchor, from: host)
     folder.animateIn(from: anchor)
     let grow = basic(folder, "transform"), fade = basic(folder, "opacity")
@@ -177,7 +166,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     c.expect(near(corner.x, 220 + 0.8 * (folder.frame.minX - 220)) && near(corner.y, 316 + 0.8 * (folder.frame.minY - 316)),
              "card grows out of the row edge")
 
-    // ItemView rows; hover and keyboard focus are separate states.
     let table = all(folder, NSTableView.self).first!
     c.expect(table.selectionHighlightStyle == .none && table.intercellSpacing.height == 1 && table.rowHeight == item,
              "no system selection; 1 pt row spacing")
@@ -190,14 +178,12 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
              && cell?.subtitle.frame.maxY == (cell?.bounds.height ?? 0) - 7, "5/7/8 padding and 8 pt spacing")
     let rowView = table.rowView(atRow: 0, makeIfNecessary: true) as? SidebarPreviewRowView
     c.expect(rowView?.highlightOpacity == 0, "hover-only presentation focuses nothing")
-    // Deliver the table's own tracking callback directly; nothing is posted to the system.
     let hoverPoint = table.convert(NSPoint(x: table.rect(ofRow: 0).midX, y: table.rect(ofRow: 0).midY), to: nil)
     table.mouseMoved(with: NSEvent.mouseEvent(with: .mouseMoved, location: hoverPoint, modifierFlags: [], timestamp: 0,
         windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!)
     c.expect(rowView?.isHovered == true && rowView?.highlightOpacity == 0.08 && table.selectedRow == -1,
              "hover alone, without selection")
 
-    // Explicit keyboard entry: the search keeps focus and moves the selection.
     folder.focusKeyboard()
     let field = all(folder, NSTextField.self).first { $0.isEditable }!
     c.expect(field.placeholderAttributedString?.string == "Search Docs", "Search placeholder")
@@ -214,7 +200,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     command(#selector(NSResponder.insertNewline(_:)))
     command(#selector(NSResponder.cancelOperation(_:)))
     c.expect(actions.map(\.0) == ["11"] && actions.first?.1 == .activate([]) && escapes == 1, "Return opens, Escape dismisses")
-    //
     held = [.command, .shift, .capsLock]; actions.removeAll()
     command(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)))
     c.expect(actions.first?.1 == .activate([.command, .shift, .capsLock])
@@ -231,7 +216,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     c.expect(table.numberOfRows == 1, "search matches the full URL case-insensitively")
     field.stringValue = "ago"; folder.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
     c.expect(table.numberOfRows == 0, "search ignores the subtitle")
-    // A shown folder refreshes in place (a duplicate arrives newest first).
     field.stringValue = "Page"; folder.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
     command(#selector(NSResponder.moveDown(_:)))
     let copy = SidebarPreviewRow(id: "copy", tabID: UUID(), title: "Page 1", url: URL(string: "https://example.com/1")!, visitedAt: nil)
@@ -241,7 +225,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     folder.setRows(rows)
     c.expect(all(folder, NSButton.self).isEmpty, "no close or refresh controls")
 
-    // Recents: header, CTA, gear and per-provider empty state; no loading card or search.
     let provider = URL(string: "https://www.notion.so/team/doc")!
     let recents = SidebarPreviewCard(title: "Notion", domain: .notion, providerURL: provider)
     var requested: [URL] = [], created: [URL] = [], settings = 0
@@ -264,8 +247,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance { fill = recents.fill?.usingColorSpace(.sRGB) }
     c.expect(fill.map { near($0.redComponent, 0.129) && near($0.blueComponent, 0.133) } == true, "dark recents fill is PreviewBackgroundColor")
 
-    // A tab's picture card: the Recents header with the tab's title and site,
-    // one split button, and the picture at the card's width, inset 8 pt.
     let pageURL = URL(string: "https://www.example.com/a")!
     let pictured = SidebarPreviewCard(title: "Example", domain: nil, providerURL: pageURL,
                                       picture: NSImage(size: NSSize(width: 320, height: 200)), site: "example.com")
@@ -316,7 +297,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
         "Recent Figma files appear here.", "Recent Linear projects and issues appear here.",
         "Recent Confluence pages appear here."], "per-provider empty states")
 
-    //
     let now = Date()
     func page(_ title: String, _ url: String, _ age: TimeInterval = 5) -> SidebarPreviewRow {
         SidebarPreviewRow(id: url, tabID: nil, title: title, url: URL(string: url)!, visitedAt: now.addingTimeInterval(-age))
@@ -350,9 +330,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     c.expect(recentActions == [.activate([.command, .option])]
              && recentActions.first?.activation(for: pages[1]) == .openNewTab(split: true), "recent Return carries held modifiers")
 
-    //
-    //
-    //
     func rightClickMenu(_ domain: SidebarRecentDomain?, _ row: SidebarPreviewRow) -> (NSMenu?, SidebarPreviewCard) {
         let card = SidebarPreviewCard(title: "Menu", domain: domain, providerURL: nil)
         card.placement = right; host.addSubview(card); card.place(); card.setRows([row])
@@ -381,7 +358,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     let (figmaMenu, figmaCard) = rightClickMenu(.figma, page("Board", "https://www.figma.com/design/a/Board"))
     c.expect(menuTitles(figmaMenu) == ["Copy URL"] && choose(figmaMenu, figmaCard) == [.copyURL], "an unrecognized page row copies its URL")
 
-    // Folder rows: custom title, then tidy title; newest visit first; badge path.
     let folderURL = URL(string: "https://www.figma.com/design/a/Board")!
     c.expect(SidebarPreviewRow.folderTitle(custom: "Mine", url: folderURL, title: "Board – Figma") == "Mine"
              && SidebarPreviewRow.folderTitle(custom: nil, url: folderURL, title: "Board – Figma") == "Board"
@@ -406,7 +382,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     let plainCell = SidebarPreviewItemView(row: older, title: .labelColor, secondary: .secondaryLabelColor, now: now)
     c.expect(plainCell.subtitle.font == .systemFont(ofSize: 11) && !all(plainCell, NSImageView.self).isEmpty, "folder rows keep icons")
 
-    // Activation kinds and the session's owner identity.
     c.expect(SidebarPreviewAction.activate(.option).activation(for: older) == .selectOriginal(split: true)
              && SidebarPreviewAction.activate(.option).activation(for: pages[0]) == .navigateSource(split: true)
              && SidebarPreviewAction.create(.command).activation(for: pages[0]) == .openNewTab(split: false)
@@ -419,7 +394,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
     c.expect(source([older]).hasSameOwner(as: source([older, badged])) && !source([older]).hasSameOwner(as: source([older], selected: [UUID()])),
              "only rows may refresh within a session")
 
-    // Same-item geometry updates move without animation.
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.0)); CATransaction.flush()
     let settled = Set(folder.layer?.animationKeys() ?? [])
     folder.placement.row.origin.y += 40; folder.place()
@@ -427,7 +401,6 @@ func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
              && folder.frame.minY == right.frame(height: folder.preferredHeight, hostHeight: 700).minY + 40,
              "reposition is immediate and adds no animation")
 
-    // Exit: retired card takes no input; it is removed after the animation.
     folder.retire()
     c.expect(folder.hitTest(NSPoint(x: folder.frame.midX, y: folder.frame.midY)) == nil, "exiting card takes no clicks")
     c.expect(!folder.trackingAreas.contains { $0.owner === folder }, "exiting card stops tracking hover")

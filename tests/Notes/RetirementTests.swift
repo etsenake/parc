@@ -1,6 +1,5 @@
 import AppKit
 
-/// Original native composition and failed-draft close barrier; never displayed.
 @main @MainActor
 struct NoteRetirementTests {
     static func main() throws {

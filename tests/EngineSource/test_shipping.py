@@ -1,4 +1,3 @@
-"""Shipping configuration/receipt checks; no Chromium or browser execution."""
 import copy
 import importlib.util
 import json
@@ -98,7 +97,6 @@ class ShippingTests(unittest.TestCase):
         self.assertEqual(engine.read_shipping_marker(self.workspace, self.sha, self.state)["phase"], "built")
 
     def emulate_previous_lock(self, args_bytes=b"is_component_build=false\n"):
-        """Rewrite the built receipts as if made by the lock before the DCHECK/trial policy."""
         previous = copy.deepcopy(self.lock)
         previous["build"]["gn_defines"] = ('is_component_build=true is_official_build=false '
                                            'target_cpu="arm64" enable_dsyms=false use_remoteexec=false')

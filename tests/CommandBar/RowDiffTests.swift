@@ -1,7 +1,5 @@
 import AppKit
 
-///
-/// views, changed content reloads only that cell, keys survive typing.
 @main @MainActor struct RowDiffTests {
     final class Rows: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         var titles: [String] = []

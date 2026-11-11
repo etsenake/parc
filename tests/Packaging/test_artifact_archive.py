@@ -1,4 +1,3 @@
-"""Archive transport tests use tiny synthetic trees; no engine or browser runs."""
 import gzip
 import hashlib
 import importlib.util

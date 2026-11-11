@@ -1,7 +1,5 @@
 import AppKit
 
-// Real model snapshots and native table input. No browser, file action,
-// pasteboard write, download or personal profile is opened by this component.
 @main @MainActor
 struct DownloadLibrarySelectionTests {
     static var assertions = 0

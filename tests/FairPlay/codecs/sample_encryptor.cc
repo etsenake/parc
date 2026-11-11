@@ -9,7 +9,6 @@ namespace parc::fairplay::test {
 
 namespace {
 
-// One AES-128 block operation per call, through an ECB cryptor.
 class Aes {
  public:
   Aes(bool encrypt, const std::vector<uint8_t>& key) {
@@ -39,12 +38,12 @@ void Increment(uint8_t counter[16]) {
   }
 }
 
-}  // namespace
+}
 
 bool CencCrypt(bool encrypt, EncryptionScheme scheme, const std::vector<uint8_t>& key, const std::vector<uint8_t>& iv,
                EncryptionPattern pattern, const std::vector<SubsampleEntry>& subsamples, std::vector<uint8_t>* data,
                std::string* error) {
-  std::vector<std::pair<size_t, size_t>> ranges;  // Offset, size.
+  std::vector<std::pair<size_t, size_t>> ranges;
   if (subsamples.empty()) {
     ranges.push_back({0, data->size()});
   } else {
@@ -68,7 +67,7 @@ bool CencCrypt(bool encrypt, EncryptionScheme scheme, const std::vector<uint8_t>
       *error = "cenc needs an 8- or 16-byte IV";
       return false;
     }
-    Aes aes(true, key);  // CTR uses the forward cipher both ways.
+    Aes aes(true, key);
     if (!aes.ok()) {
       *error = "bad key";
       return false;
@@ -76,7 +75,7 @@ bool CencCrypt(bool encrypt, EncryptionScheme scheme, const std::vector<uint8_t>
     uint8_t counter[16] = {};
     std::memcpy(counter, iv.data(), iv.size());
     uint8_t stream[16];
-    size_t used = 16;  // Keystream bytes consumed from |stream|.
+    size_t used = 16;
     for (auto [offset, size] : ranges) {
       for (size_t i = 0; i < size; ++i) {
         if (used == 16) {
@@ -125,12 +124,8 @@ bool CencCrypt(bool encrypt, EncryptionScheme scheme, const std::vector<uint8_t>
   return true;
 }
 
-// ------------------------------------------------------------- NAL parsing
-
 namespace {
 
-// Reads an RBSP (emulation prevention bytes removed) and maps positions back
-// to the escaped NAL unit.
 class RbspReader {
  public:
   RbspReader(const uint8_t* nal, size_t size) {
@@ -187,7 +182,6 @@ class RbspReader {
     return true;
   }
   bool Aligned() const { return pos_ % 8 == 0; }
-  // Escaped bytes from the NAL unit's start through the last bit read.
   size_t RawBytesConsumed() const {
     if (pos_ == 0) return 0;
     return raw_[(pos_ - 1) / 8] + 1;
@@ -243,7 +237,7 @@ bool HevcScalingListData(RbspReader& r) {
 }
 
 bool HevcProfileTierLevel(RbspReader& r, uint32_t max_sub_layers_minus1) {
-  READ(r.Skip(96));  // General profile, tier, flags and level_idc.
+  READ(r.Skip(96));
   std::vector<bool> profile_present(max_sub_layers_minus1), level_present(max_sub_layers_minus1);
   for (uint32_t i = 0; i < max_sub_layers_minus1; ++i) {
     bool p = false, l = false;
@@ -260,7 +254,6 @@ bool HevcProfileTierLevel(RbspReader& r, uint32_t max_sub_layers_minus1) {
   return true;
 }
 
-// st_ref_pic_set(idx) (H.265 7.3.7), recording its size and used count.
 bool HevcStRefPicSet(RbspReader& r, uint32_t idx, const std::vector<NalLayout::HevcRps>& sets, uint32_t num_sets,
                      NalLayout::HevcRps* out) {
   bool inter = false;
@@ -271,8 +264,8 @@ bool HevcStRefPicSet(RbspReader& r, uint32_t idx, const std::vector<NalLayout::H
     uint32_t delta_idx_minus1 = 0;
     if (idx == num_sets) READ(r.Ue(&delta_idx_minus1));
     if (delta_idx_minus1 + 1 > idx) return false;
-    READ(r.Skip(1));  // delta_rps_sign.
-    READ(r.Ue(&u));   // abs_delta_rps_minus1.
+    READ(r.Skip(1));
+    READ(r.Ue(&u));
     const NalLayout::HevcRps& ref = sets[idx - (delta_idx_minus1 + 1)];
     for (uint32_t j = 0; j <= ref.num_delta_pocs; ++j) {
       bool used = false, use_delta = true;
@@ -301,15 +294,15 @@ bool ParseH264Sps(RbspReader& r, uint32_t* id, NalLayout::H264Sps* sps) {
   uint32_t profile_idc = 0, u = 0;
   int32_t s = 0;
   READ(r.Bits(8, &profile_idc));
-  READ(r.Skip(16));  // Constraint flags, level_idc.
+  READ(r.Skip(16));
   READ(r.Ue(id));
   static const uint32_t kHigh[] = {100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135};
   if (std::find(std::begin(kHigh), std::end(kHigh), profile_idc) != std::end(kHigh)) {
     READ(r.Ue(&sps->chroma_format_idc));
     if (sps->chroma_format_idc == 3) READ(r.Flag(&sps->separate_colour_plane));
-    READ(r.Ue(&u));    // bit_depth_luma_minus8.
-    READ(r.Ue(&u));    // bit_depth_chroma_minus8.
-    READ(r.Skip(1));   // qpprime_y_zero_transform_bypass_flag.
+    READ(r.Ue(&u));
+    READ(r.Ue(&u));
+    READ(r.Skip(1));
     bool matrix = false;
     READ(r.Flag(&matrix));
     if (matrix) {
@@ -334,10 +327,10 @@ bool ParseH264Sps(RbspReader& r, uint32_t* id, NalLayout::H264Sps* sps) {
     READ(r.Ue(&cycle));
     for (uint32_t i = 0; i < cycle; ++i) READ(r.Se(&s));
   }
-  READ(r.Ue(&u));    // max_num_ref_frames.
-  READ(r.Skip(1));   // gaps_in_frame_num_value_allowed_flag.
-  READ(r.Ue(&u));    // pic_width_in_mbs_minus1.
-  READ(r.Ue(&u));    // pic_height_in_map_units_minus1.
+  READ(r.Ue(&u));
+  READ(r.Skip(1));
+  READ(r.Ue(&u));
+  READ(r.Ue(&u));
   READ(r.Flag(&sps->frame_mbs_only));
   return true;
 }
@@ -349,7 +342,7 @@ bool ParseH264Pps(RbspReader& r, uint32_t* id, NalLayout::H264Pps* pps) {
   READ(r.Flag(&pps->entropy_coding_mode));
   READ(r.Flag(&pps->bottom_field_pic_order_in_frame_present));
   READ(r.Ue(&pps->num_slice_groups_minus1));
-  if (pps->num_slice_groups_minus1 > 0) return false;  // FMO isn't in any profile used here.
+  if (pps->num_slice_groups_minus1 > 0) return false;
   READ(r.Ue(&pps->num_ref_idx_l0_default_minus1));
   READ(r.Ue(&pps->num_ref_idx_l1_default_minus1));
   READ(r.Flag(&pps->weighted_pred));
@@ -358,14 +351,14 @@ bool ParseH264Pps(RbspReader& r, uint32_t* id, NalLayout::H264Pps* pps) {
   READ(r.Se(&s));
   READ(r.Se(&s));
   READ(r.Flag(&pps->deblocking_filter_control_present));
-  READ(r.Skip(1));  // constrained_intra_pred_flag.
+  READ(r.Skip(1));
   READ(r.Flag(&pps->redundant_pic_cnt_present));
   return true;
 }
 
 bool ParseHevcSps(RbspReader& r, uint32_t* id, NalLayout::HevcSps* sps) {
   uint32_t u = 0, max_sub_layers_minus1 = 0;
-  READ(r.Skip(4));  // sps_video_parameter_set_id.
+  READ(r.Skip(4));
   READ(r.Bits(3, &max_sub_layers_minus1));
   READ(r.Skip(1));
   READ(HevcProfileTierLevel(r, max_sub_layers_minus1));
@@ -380,8 +373,8 @@ bool ParseHevcSps(RbspReader& r, uint32_t* id, NalLayout::HevcSps* sps) {
   if (conformance) {
     for (int i = 0; i < 4; ++i) READ(r.Ue(&u));
   }
-  READ(r.Ue(&u));  // bit_depth_luma_minus8.
-  READ(r.Ue(&u));  // bit_depth_chroma_minus8.
+  READ(r.Ue(&u));
+  READ(r.Ue(&u));
   READ(r.Ue(&u));
   sps->log2_max_poc_lsb = u + 4;
   bool ordering = false;
@@ -394,23 +387,23 @@ bool ParseHevcSps(RbspReader& r, uint32_t* id, NalLayout::HevcSps* sps) {
   uint32_t log2_min_cb_minus3 = 0, log2_diff_cb = 0;
   READ(r.Ue(&log2_min_cb_minus3));
   READ(r.Ue(&log2_diff_cb));
-  READ(r.Ue(&u));  // log2_min_luma_transform_block_size_minus2.
-  READ(r.Ue(&u));  // log2_diff_max_min_luma_transform_block_size.
-  READ(r.Ue(&u));  // max_transform_hierarchy_depth_inter.
-  READ(r.Ue(&u));  // max_transform_hierarchy_depth_intra.
+  READ(r.Ue(&u));
+  READ(r.Ue(&u));
+  READ(r.Ue(&u));
+  READ(r.Ue(&u));
   const uint32_t ctb_log2 = log2_min_cb_minus3 + 3 + log2_diff_cb;
   if (ctb_log2 > 7) return false;
   const uint32_t ctb = 1u << ctb_log2;
   sps->pic_size_in_ctbs = ((width + ctb - 1) / ctb) * ((height + ctb - 1) / ctb);
   bool flag = false;
-  READ(r.Flag(&flag));  // scaling_list_enabled_flag.
+  READ(r.Flag(&flag));
   if (flag) {
-    READ(r.Flag(&flag));  // sps_scaling_list_data_present_flag.
+    READ(r.Flag(&flag));
     if (flag) READ(HevcScalingListData(r));
   }
-  READ(r.Skip(1));  // amp_enabled_flag.
+  READ(r.Skip(1));
   READ(r.Flag(&sps->sample_adaptive_offset));
-  READ(r.Flag(&flag));  // pcm_enabled_flag.
+  READ(r.Flag(&flag));
   if (flag) {
     READ(r.Skip(8));
     READ(r.Ue(&u));
@@ -447,35 +440,35 @@ bool ParseHevcPps(RbspReader& r, uint32_t* id, NalLayout::HevcPps* pps) {
   READ(r.Flag(&pps->dependent_slice_segments_enabled));
   READ(r.Flag(&pps->output_flag_present));
   READ(r.Bits(3, &pps->num_extra_slice_header_bits));
-  READ(r.Skip(1));  // sign_data_hiding_enabled_flag.
+  READ(r.Skip(1));
   READ(r.Flag(&pps->cabac_init_present));
   READ(r.Ue(&pps->num_ref_idx_l0_default_minus1));
   READ(r.Ue(&pps->num_ref_idx_l1_default_minus1));
-  READ(r.Se(&s));   // init_qp_minus26.
-  READ(r.Skip(1));  // constrained_intra_pred_flag.
+  READ(r.Se(&s));
+  READ(r.Skip(1));
   READ(r.Flag(&transform_skip));
-  READ(r.Flag(&flag));  // cu_qp_delta_enabled_flag.
+  READ(r.Flag(&flag));
   if (flag) READ(r.Ue(&u));
   READ(r.Se(&s));
   READ(r.Se(&s));
   READ(r.Flag(&pps->slice_chroma_qp_offsets_present));
   READ(r.Flag(&pps->weighted_pred));
   READ(r.Flag(&pps->weighted_bipred));
-  READ(r.Skip(1));  // transquant_bypass_enabled_flag.
+  READ(r.Skip(1));
   READ(r.Flag(&pps->tiles_enabled));
   READ(r.Flag(&pps->entropy_coding_sync_enabled));
   if (pps->tiles_enabled) {
     uint32_t columns = 0, rows = 0;
     READ(r.Ue(&columns));
     READ(r.Ue(&rows));
-    READ(r.Flag(&flag));  // uniform_spacing_flag.
+    READ(r.Flag(&flag));
     if (!flag) {
       for (uint32_t i = 0; i < columns + rows; ++i) READ(r.Ue(&u));
     }
-    READ(r.Skip(1));  // loop_filter_across_tiles_enabled_flag.
+    READ(r.Skip(1));
   }
   READ(r.Flag(&pps->loop_filter_across_slices_enabled));
-  READ(r.Flag(&flag));  // deblocking_filter_control_present_flag.
+  READ(r.Flag(&flag));
   if (flag) {
     READ(r.Flag(&pps->deblocking_filter_override_enabled));
     READ(r.Flag(&pps->deblocking_filter_disabled));
@@ -484,21 +477,21 @@ bool ParseHevcPps(RbspReader& r, uint32_t* id, NalLayout::HevcPps* pps) {
       READ(r.Se(&s));
     }
   }
-  READ(r.Flag(&flag));  // pps_scaling_list_data_present_flag.
+  READ(r.Flag(&flag));
   if (flag) READ(HevcScalingListData(r));
   READ(r.Flag(&pps->lists_modification_present));
-  READ(r.Ue(&u));  // log2_parallel_merge_level_minus2.
+  READ(r.Ue(&u));
   READ(r.Flag(&pps->slice_segment_header_extension_present));
-  READ(r.Flag(&flag));  // pps_extension_present_flag.
+  READ(r.Flag(&flag));
   if (flag) {
     bool range = false;
     uint32_t others = 0;
     READ(r.Flag(&range));
     READ(r.Bits(7, &others));
-    if (others) return false;  // Multilayer, 3D and SCC extensions change the slice header.
+    if (others) return false;
     if (range) {
       if (transform_skip) READ(r.Ue(&u));
-      READ(r.Skip(1));  // cross_component_prediction_enabled_flag.
+      READ(r.Skip(1));
       READ(r.Flag(&pps->chroma_qp_offset_list_enabled));
     }
   }
@@ -510,7 +503,7 @@ bool H264SliceHeader(RbspReader& r, uint8_t nal_ref_idc, uint8_t nal_type,
                      const std::map<uint32_t, NalLayout::H264Pps>& all_pps, std::string* error) {
   uint32_t u = 0, slice_type = 0, pps_id = 0;
   int32_t s = 0;
-  READ(r.Ue(&u));  // first_mb_in_slice.
+  READ(r.Ue(&u));
   READ(r.Ue(&slice_type));
   READ(r.Ue(&pps_id));
   auto pps_it = all_pps.find(pps_id);
@@ -521,7 +514,7 @@ bool H264SliceHeader(RbspReader& r, uint8_t nal_ref_idc, uint8_t nal_type,
   }
   const NalLayout::H264Pps& pps = pps_it->second;
   const NalLayout::H264Sps& sps = sps_it->second;
-  const uint32_t type = slice_type % 5;  // P 0, B 1, I 2, SP 3, SI 4.
+  const uint32_t type = slice_type % 5;
   if (sps.separate_colour_plane) READ(r.Skip(2));
   READ(r.Skip(sps.log2_max_frame_num));
   bool field_pic = false;
@@ -529,7 +522,7 @@ bool H264SliceHeader(RbspReader& r, uint8_t nal_ref_idc, uint8_t nal_type,
     READ(r.Flag(&field_pic));
     if (field_pic) READ(r.Skip(1));
   }
-  if (nal_type == 5) READ(r.Ue(&u));  // idr_pic_id.
+  if (nal_type == 5) READ(r.Ue(&u));
   if (sps.pic_order_cnt_type == 0) {
     READ(r.Skip(sps.log2_max_poc_lsb));
     if (pps.bottom_field_pic_order_in_frame_present && !field_pic) READ(r.Se(&s));
@@ -539,7 +532,7 @@ bool H264SliceHeader(RbspReader& r, uint8_t nal_ref_idc, uint8_t nal_type,
     if (pps.bottom_field_pic_order_in_frame_present && !field_pic) READ(r.Se(&s));
   }
   if (pps.redundant_pic_cnt_present) READ(r.Ue(&u));
-  if (type == 1) READ(r.Skip(1));  // direct_spatial_mv_pred_flag.
+  if (type == 1) READ(r.Skip(1));
   uint32_t l0 = pps.num_ref_idx_l0_default_minus1, l1 = pps.num_ref_idx_l1_default_minus1;
   if (type == 0 || type == 3 || type == 1) {
     bool override_flag = false;
@@ -549,7 +542,6 @@ bool H264SliceHeader(RbspReader& r, uint8_t nal_ref_idc, uint8_t nal_type,
       if (type == 1) READ(r.Ue(&l1));
     }
   }
-  // ref_pic_list_modification().
   for (int list = 0; list < (type == 1 ? 2 : (type == 2 || type == 4) ? 0 : 1); ++list) {
     bool modification = false;
     READ(r.Flag(&modification));
@@ -563,7 +555,7 @@ bool H264SliceHeader(RbspReader& r, uint8_t nal_ref_idc, uint8_t nal_type,
   }
   const uint32_t chroma_array_type = sps.separate_colour_plane ? 0 : sps.chroma_format_idc;
   if ((pps.weighted_pred && (type == 0 || type == 3)) || (pps.weighted_bipred_idc == 1 && type == 1)) {
-    READ(r.Ue(&u));  // luma_log2_weight_denom.
+    READ(r.Ue(&u));
     if (chroma_array_type != 0) READ(r.Ue(&u));
     for (int list = 0; list < (type == 1 ? 2 : 1); ++list) {
       for (uint32_t i = 0; i <= (list ? l1 : l0); ++i) {
@@ -582,7 +574,7 @@ bool H264SliceHeader(RbspReader& r, uint8_t nal_ref_idc, uint8_t nal_type,
       }
     }
   }
-  if (nal_ref_idc != 0) {  // dec_ref_pic_marking().
+  if (nal_ref_idc != 0) {
     if (nal_type == 5) {
       READ(r.Skip(2));
     } else {
@@ -601,8 +593,8 @@ bool H264SliceHeader(RbspReader& r, uint8_t nal_ref_idc, uint8_t nal_type,
       }
     }
   }
-  if (pps.entropy_coding_mode && type != 2 && type != 4) READ(r.Ue(&u));  // cabac_init_idc.
-  READ(r.Se(&s));  // slice_qp_delta.
+  if (pps.entropy_coding_mode && type != 2 && type != 4) READ(r.Ue(&u));
+  READ(r.Se(&s));
   if (type == 3 || type == 4) {
     if (type == 3) READ(r.Skip(1));
     READ(r.Se(&s));
@@ -615,7 +607,7 @@ bool H264SliceHeader(RbspReader& r, uint8_t nal_ref_idc, uint8_t nal_type,
     }
   }
   if (pps.entropy_coding_mode) {
-    while (!r.Aligned()) READ(r.Skip(1));  // cabac_alignment_one_bit.
+    while (!r.Aligned()) READ(r.Skip(1));
   }
   return true;
 }
@@ -626,7 +618,7 @@ bool HevcSliceHeader(RbspReader& r, uint8_t nal_type, const std::map<uint32_t, N
   int32_t s = 0;
   bool first = false, dependent = false;
   READ(r.Flag(&first));
-  if (nal_type >= 16 && nal_type <= 23) READ(r.Skip(1));  // no_output_of_prior_pics_flag.
+  if (nal_type >= 16 && nal_type <= 23) READ(r.Skip(1));
   READ(r.Ue(&pps_id));
   auto pps_it = all_pps.find(pps_id);
   auto sps_it = pps_it == all_pps.end() ? all_sps.end() : all_sps.find(pps_it->second.sps_id);
@@ -638,17 +630,17 @@ bool HevcSliceHeader(RbspReader& r, uint8_t nal_type, const std::map<uint32_t, N
   const NalLayout::HevcSps& sps = sps_it->second;
   if (!first) {
     if (pps.dependent_slice_segments_enabled) READ(r.Flag(&dependent));
-    READ(r.Skip(CeilLog2(sps.pic_size_in_ctbs)));  // slice_segment_address.
+    READ(r.Skip(CeilLog2(sps.pic_size_in_ctbs)));
   }
   if (!dependent) {
     READ(r.Skip(pps.num_extra_slice_header_bits));
-    uint32_t slice_type = 0;  // B 0, P 1, I 2.
+    uint32_t slice_type = 0;
     READ(r.Ue(&slice_type));
     if (pps.output_flag_present) READ(r.Skip(1));
     if (sps.separate_colour_plane) READ(r.Skip(2));
     bool temporal_mvp = false;
-    uint32_t total_curr = 0;  // NumPicTotalCurr.
-    if (nal_type != 19 && nal_type != 20) {  // Not IDR.
+    uint32_t total_curr = 0;
+    if (nal_type != 19 && nal_type != 20) {
       READ(r.Skip(sps.log2_max_poc_lsb));
       bool sps_set = false;
       READ(r.Flag(&sps_set));
@@ -708,7 +700,7 @@ bool HevcSliceHeader(RbspReader& r, uint8_t nal_type, const std::map<uint32_t, N
           if (modification) READ(r.Skip(size_t((list ? l1 : l0) + 1) * CeilLog2(total_curr)));
         }
       }
-      if (slice_type == 0) READ(r.Skip(1));  // mvd_l1_zero_flag.
+      if (slice_type == 0) READ(r.Skip(1));
       if (pps.cabac_init_present) READ(r.Skip(1));
       if (temporal_mvp) {
         bool from_l0 = true;
@@ -744,9 +736,9 @@ bool HevcSliceHeader(RbspReader& r, uint8_t nal_type, const std::map<uint32_t, N
           }
         }
       }
-      READ(r.Ue(&u));  // five_minus_max_num_merge_cand.
+      READ(r.Ue(&u));
     }
-    READ(r.Se(&s));  // slice_qp_delta.
+    READ(r.Se(&s));
     if (pps.slice_chroma_qp_offsets_present) {
       READ(r.Se(&s));
       READ(r.Se(&s));
@@ -778,14 +770,14 @@ bool HevcSliceHeader(RbspReader& r, uint8_t nal_type, const std::map<uint32_t, N
     READ(r.Ue(&u));
     READ(r.Skip(size_t(u) * 8));
   }
-  READ(r.Skip(1));  // alignment_bit_equal_to_one.
+  READ(r.Skip(1));
   while (!r.Aligned()) READ(r.Skip(1));
   return true;
 }
 
 #undef READ
 
-}  // namespace
+}
 
 NalLayout::NalLayout(NalCodec codec, const std::vector<uint8_t>& record) : codec_(codec) {
   auto add_list = [&](size_t* pos, uint32_t count) {
@@ -944,4 +936,4 @@ bool NalLayout::Subsamples(const std::vector<uint8_t>& sample, EncryptionScheme 
   return true;
 }
 
-}  // namespace parc::fairplay::test
+}

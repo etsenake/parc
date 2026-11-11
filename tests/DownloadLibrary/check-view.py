@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Exercise the actual Downloads Library view without Chromium or file actions."""
 import pathlib
 import subprocess
 import tempfile
@@ -14,20 +13,12 @@ sys.path.insert(0, str(root / "tests/Tooltip"))
 from support import tooltip_sources
 with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as directory:
     temporary = pathlib.Path(directory)
-    # The shared controls still live at the start of SidebarView.swift. Compile
-    # their exact complete declarations, not a test double or copied mirror,
-    # without bringing the unrelated native browser/sidebar into this component.
     sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
     controls = temporary / "NativeControls.swift"
     controls.write_text(sidebar[:sidebar.index("final class FlippedStackView:")])
-    # Compile the exact production lazy store owner used by the documents
-    # catalog, without unrelated browser/editor methods. A private Library
-    # accidentally initializing it still performs the genuine filesystem work.
     easel = (root / "Sources/ParcApp/EaselEditorViewController.swift").read_text()
     store_owner = temporary / "EaselStoreOwner.swift"
     store_owner.write_text(easel[:easel.index("    private let session:")] + "}\n")
-    # Space management is not exercised here. Its real view requires the full
-    # browser sidebar, so supply only that unrelated card dependency.
     sidebar_stub = temporary / "SpaceCardSidebar.swift"
     sidebar_stub.write_text("""import AppKit
 @MainActor final class SidebarView: NSView {
@@ -46,15 +37,12 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
            "SidebarMotionController", "PArcToast", "TopBarColorClient", "PArcDialog"]
     sources = sorted((root / "Sources/ParcCore").glob("*.swift"))
     sources += [root / "Sources/ParcApp" / f"{name}.swift" for name in app]
-    #
     spinner = temporary / "PArcButtonSpinner.swift"
     subprocess.run([sys.executable, "-B", str(root / "tests/Support/declarations.py"), str(spinner), "PArcButtonSpinner"],
                    check=True, stdout=subprocess.DEVNULL)
     sources += [controls, store_owner, sidebar_stub, spinner, root / "tests/Support/AppKitObservation.swift",
                 root / "tests/DownloadLibrary/ViewTests.swift"]
     sources += tooltip_sources(root, temporary, sources)
-    # An unbundled executable's Bundle.main.resourceURL is its own directory,
-    # so the Library artwork sits beside the binaries as it does in the app.
     shutil.copytree(root / "Resources/Library", temporary / "Library")
     executable = temporary / "download-library-view"
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library", *map(str, sources), "-o", str(executable)], check=True)
@@ -78,11 +66,6 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",
                     *map(str, entry_sources), "-o", str(entry)], check=True)
     subprocess.run([str(entry)], check=True, timeout=120)
-    #
-    # badge cell, hover-expanded flyout and the arrival bin's item, with the
-    # Library sources the flyout reads (download subtitles, capture records).
-    # SidebarView and the window controller are not compiled here; their
-    # wiring is asserted on source.
     library_entry_sources = sorted((root / "Sources/ParcCore").glob("*.swift")) + [
         root / "Sources/ParcApp" / f"{name}.swift" for name in
         sorted(set(app) | {"BoxOfThingsIcon", "SidebarLibraryEntry", "SidebarChromeLayout", "LibraryFlyout", "PArcDialog"})] + [
@@ -113,8 +96,6 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
                 "            maxContrast: palette?.maxContrastColor ?? .labelColor, cutout: palette?.cutoutColor ?? .windowBackgroundColor)",
                 "libraryEntry.appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua)"):
         assert use in sidebar, f"SidebarView no longer hosts the Library entry as checked: {use}"
-    # The window's key-view chain keeps footer More last and the Space header
-    # before the list, whatever else the call passes.
     chain = re.search(r"SidebarAccessibility\.keyViewChain\((?P<args>[^()]*\btrailing: \[footerMore\][^()]*)\)", sidebar)
     assert chain and "beforeList: [spaceHeader]" in chain.group("args"), \
         "SidebarView's key-view chain no longer ends with footer More after the Space header and list"

@@ -1,10 +1,7 @@
 import AppKit
 
-/// The window controller is not compiled here; the session only holds it weakly.
 @MainActor final class BrowserWindowController {}
 
-/// SP23: the sidebar move session's copy capability and the handle's rendered
-/// drag image. Inert AppKit objects in a disposable window; no drag starts.
 @main @MainActor
 struct SidebarMoveCopyTests {
     static var count = 0

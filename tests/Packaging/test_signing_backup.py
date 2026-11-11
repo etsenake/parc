@@ -1,4 +1,3 @@
-"""Credential backup refuses unavailable vaults and keeps secrets off argv/logs."""
 import base64
 import contextlib
 import importlib.util
@@ -14,7 +13,6 @@ spec=importlib.util.spec_from_file_location('parc_signing_backup',Path(__file__)
 backup=importlib.util.module_from_spec(spec);spec.loader.exec_module(backup)
 
 def setUpModule():
-    # A step a test forgets to fake fails here instead of reaching the real Keychain, vault or Apple.
     guard = patch.object(backup.subprocess, 'run', side_effect=AssertionError('unfaked credential command'))
     guard.start(); unittest.addModuleCleanup(guard.stop)
 
@@ -52,7 +50,6 @@ class Backup(unittest.TestCase):
 
 
 class SparkleKey(unittest.TestCase):
-    """Fake Keychain, generate_keys and vault; the real Keychain item and 1Password are never touched."""
     KEY = base64.b64encode(bytes(range(32))).decode()
 
     def setUp(self):
@@ -151,7 +148,6 @@ class SparkleKey(unittest.TestCase):
 
 
 class NotaryProfile(unittest.TestCase):
-    """Fake notarytool, Apple and vault; the real profile, Keychain and 1Password are never touched."""
     PASSWORD = 'fake-fake-fake-fake'
 
     def setUp(self):
@@ -163,7 +159,6 @@ class NotaryProfile(unittest.TestCase):
                 if '--keychain-profile' in args:
                     if self.profile is None: raise ValueError('Credential operation failed')
                     return '{"history": []}'
-                # The password arrives only at the prompt, from a process without a terminal.
                 self.assertTrue(start_new_session); self.assertEqual(args[-2:], ['--team-id', '94HKA7L2DR'])
                 if data != self.accepted + '\n': raise ValueError('Credential operation failed')
                 if args[2] == 'store-credentials':

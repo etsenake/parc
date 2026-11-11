@@ -218,7 +218,6 @@ struct ClosedItemsTests {
         var cache = WindowClosedItems()
         func top() -> ClosedItemStep? { cache.nextStep(in: store.state, restorable: { store.canUndoFolderDeletion($0) }) }
 
-        // openPeek: one step naming the parent item and the Peek's current URL.
         let parent = store.open("https://parent.invalid")
         let peek = ClosedPeekRecord(id: UUID(), url: URL(string: "https://peek.invalid/current")!,
             parentTabID: parent, profileID: profile)
@@ -234,7 +233,6 @@ struct ClosedItemsTests {
         try expect(!cache.consume(stepID: UUID()) && cache.consume(stepID: peek.id) && top() == nil,
             "only the exact Peek step consumes")
 
-        //
         let pinned = store.open("https://saved.invalid", kind: .pinned)
         let savedIntent = ClosedItemIntent(ids: [pinned], state: store.state, spaceID: space, profileID: profile, focusedTabID: pinned)!
         store.closeTabs([pinned]); cache.record(savedIntent, in: store.state)
@@ -245,7 +243,6 @@ struct ClosedItemsTests {
         try expect(cache.consume(saved), "saved priority consumes first")
         guard case .peek? = top() else { throw NSError(domain: "Peek step must remain after saved Reopen", code: 3) }
 
-        // A parent that is no longer in the sidebar expires the Peek step.
         let older = store.open("https://older.invalid")
         let olderIntent = ClosedItemIntent(ids: [older], state: store.state, spaceID: space, profileID: profile, focusedTabID: older)!
         store.closeTabs([older]); cache.record(olderIntent, in: store.state)
@@ -256,7 +253,6 @@ struct ClosedItemsTests {
         }
         try expect(try store.restoreClosedItem(survivor) && cache.consume(survivor), "the older close remains reachable")
 
-        // Folder Delete: one step restores the original subtree and expansion.
         let folder = store.createFolder(name: "Reading")
         let inner = store.open("https://inner.invalid"), second = store.open("https://second.invalid")
         store.moveTab(inner, toSpace: space, folderID: folder)
@@ -285,7 +281,6 @@ struct ClosedItemsTests {
             "original folder, collapsed flag and children return")
         try expect(top() == nil, "the step is consumed once")
 
-        // Undo and Reopen share the restoration; whichever runs first expires the other.
         try expect(try store.setFolderExpanded(true, expected: collapsed, profileID: profile), "folder expands before Delete")
         guard let again = delete(folder) else { throw NSError(domain: "second folder Delete must commit", code: 7) }
         cache.recordFolderDeletion(again)
@@ -319,7 +314,6 @@ struct ClosedItemsTests {
             try expect(cache.consume(record), "partial split step consumes once")
         }
 
-        // insertItem: a pane closed out of three rejoins its surviving container.
         let a = store.open("https://a.invalid"), b = store.open("https://b.invalid"), c = store.open("https://c.invalid")
         let three = split([a, b, c], .vertical, [0.2, 0.3, 0.5])
         close([b], focus: b)
@@ -333,7 +327,6 @@ struct ClosedItemsTests {
         try expect(store.state.selectedTabIDs == [a, b, c], "Reopen selects the rejoined split, not a lone pane")
         try expect(store.state.splitLayouts.filter { $0.tabIDs.contains(b) }.count == 1, "no duplicate group is appended")
 
-        // regroupItems: closing one of two dissolves; Reopen recreates the original container.
         let d = store.open("https://d.invalid"), e = store.open("https://e.invalid")
         let pair = split([d, e], .vertical, [0.25, 0.75])
         close([d], focus: d)
@@ -348,7 +341,6 @@ struct ClosedItemsTests {
         let disk = try BrowserStore(directory: directory)
         try expect(disk.state.splitLayouts.contains { $0.id == pair.id && $0.tabIDs == [d, e] }, "regrouping persists before consumption")
 
-        //
         let f = store.open("https://f.invalid"), g = store.open("https://g.invalid")
         let h = store.open("https://h.invalid"), i = store.open("https://i.invalid")
         let four = split([f, g, h, i], .horizontal, [0.1, 0.2, 0.3, 0.4])
@@ -360,7 +352,6 @@ struct ClosedItemsTests {
         try expect(group(four.id)?.tabIDs == [f, g, h, i] && approx(group(four.id)?.widthFactors, [0.1, 0.2, 0.3, 0.4]),
             "successive Reopens restore the original order and ratios")
 
-        // Two of three closed together: the first Reopen regroups, the next rejoins.
         let j = store.open("https://j.invalid"), k = store.open("https://k.invalid"), l = store.open("https://l.invalid")
         let trio = split([j, k, l], .horizontal, [0.5, 0.25, 0.25])
         close([k, l], focus: l)
@@ -372,16 +363,12 @@ struct ClosedItemsTests {
         try expect(group(trio.id)?.tabIDs == [j, k, l] && approx(group(trio.id)?.widthFactors, [0.5, 0.25, 0.25]),
             "second pane rejoins the regrouped container at its original index")
 
-        // A survivor that can't come here right now (closing, or mid-move
-        // between windows) is never taken; the pane returns alone.
         let m = store.open("https://m.invalid"), n = store.open("https://n.invalid")
         let owned = split([m, n], .horizontal, [0.5, 0.5])
         close([n], focus: n)
         try reopen([n], regroupable: { $0 != m })
         try expect(group(owned.id) == nil && store.state.selectedTabIDs == [n], "refused survivor leaves the pane alone")
 
-        // A survivor another window shows rejoins: the window's predicate
-        //
         let shownElsewhere = NativePageOwnership(), thisWindow = UUID(), otherWindow = UUID()
         let survivor = store.open("https://survivor.invalid"), returning = store.open("https://returning.invalid")
         let shared = split([survivor, returning], .vertical, [0.4, 0.6])
@@ -393,7 +380,6 @@ struct ClosedItemsTests {
         try expect(group(shared.id)?.tabIDs == [survivor, returning] && approx(group(shared.id)?.widthFactors, [0.4, 0.6]),
             "a survivor shown in another window rejoins the split with its geometry")
 
-        // A survivor that joined another group is not taken from it.
         let o = store.open("https://o.invalid"), p = store.open("https://p.invalid"), q = store.open("https://q.invalid")
         let left = split([o, p], .horizontal, [0.5, 0.5])
         close([p], focus: p)
@@ -402,8 +388,6 @@ struct ClosedItemsTests {
         try expect(group(left.id) == nil && group(other.id)?.tabIDs == [o, q] && store.state.selectedTabIDs == [p],
             "regrouping never steals a pane from a newer group")
 
-        //
-        //
         let o1 = store.open("https://o1.invalid"), o2 = store.open("https://o2.invalid"), o3 = store.open("https://o3.invalid")
         let o4 = store.open("https://o4.invalid")
         let skippedTrio = split([o1, o2, o3], .horizontal, [1, 1, 1])
@@ -415,7 +399,6 @@ struct ClosedItemsTests {
         try expect(group(skippedTrio.id) == nil && store.state.selectedTabIDs == [o2] && group(elsewhere.id)?.tabIDs == [o1, o4],
             "two ungrouped returning panes still do not regroup around a grouped child")
 
-        // A surviving container refilled to four panes refuses the returning pane.
         let r = store.open("https://r.invalid"), s = store.open("https://s.invalid"), t = store.open("https://t.invalid")
         let u = store.open("https://u.invalid"), v = store.open("https://v.invalid")
         let full = split([r, s, t], .horizontal, [1, 1, 1])
@@ -426,7 +409,6 @@ struct ClosedItemsTests {
         try expect(group(full.id)?.tabIDs == [r, t, u, v] && store.state.selectedTabIDs == [s],
             "a four-pane container refuses insertion and the pane returns alone")
 
-        // Fewer than two existing original children refuses regrouping.
         let w = store.open("https://w.invalid"), x = store.open("https://x.invalid")
         let lone = split([w, x], .horizontal, [0.5, 0.5])
         close([x], focus: x)
@@ -438,7 +420,6 @@ struct ClosedItemsTests {
         try expect(group(lone.id) == nil && store.state.selectedTabIDs == [x],
             "fewer than two existing original children returns the pane alone")
 
-        // The committed afterimage must be this close's result.
         let y = store.open("https://y.invalid"), z = store.open("https://z.invalid"), zz = store.open("https://zz.invalid")
         let checked = split([y, z, zz], .horizontal, [1, 1, 1])
         let intent = ClosedItemIntent(ids: [z], state: store.state, spaceID: space, profileID: profile, focusedTabID: z)!
@@ -448,8 +429,6 @@ struct ClosedItemsTests {
         try expect(intent.membership(of: z, in: replaced) == nil, "a changed container records no regrouping")
         try expect(intent.membership(of: z, in: store.state)?.index == 1, "the exact afterimage records the original index")
 
-        // Steps follow model order, not split order: a later pane that returns
-        // first must not push its earlier sibling past it.
         let p1 = store.open("https://p1.invalid"), p2 = store.open("https://p2.invalid"), p3 = store.open("https://p3.invalid")
         let reordered = split([p1, p3, p2], .horizontal, [0.5, 0.2, 0.3])
         close([p3, p2], focus: p2)
@@ -478,7 +457,6 @@ struct ClosedItemsTests {
         first.recordSelection([oldest], focusedTabID: oldest, state: store.state, at: now.addingTimeInterval(0.1))
         first.recordSelection([recent], focusedTabID: recent, state: store.state, at: now.addingTimeInterval(0.2))
         second.recordSelection([newestShared], focusedTabID: newestShared, state: store.state, at: now + 1)
-        // A different window/protection refresh may change the shared date.
         now += 1
         store.selectTab(newestShared)
         store.updateWindowRecords([BrowserWindowRecord(sidebarWidth: 228, itemLastActiveDates: first.itemLastActiveDates)])
@@ -534,8 +512,6 @@ struct ClosedItemsTests {
         let noteBytes = try Data(contentsOf: notePath), easelBytes = try Data(contentsOf: easelPath)
         let n = store.openNote(id: note.document.id, title: note.document.title)!
         let e = store.openEasel(id: easel.document.id, title: easel.document.title)!
-        // A saved split is a whole split moved into the pinned section; pinned
-        // items joining a new split would instead leave homes (SP21).
         store.setKind(n, .today); store.setKind(e, .today)
         store.setSplit([n,e]); _ = store.setSplitLayout(orientation: .vertical, widthFactors: [0.3,0.7])
         let todaySplit = store.state.splitLayouts.first { $0.tabIDs == [n,e] }!

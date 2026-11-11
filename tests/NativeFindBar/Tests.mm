@@ -83,7 +83,7 @@ int main() { @autoreleasepool {
   EXPECT(NSEqualRanges(view.selectedRange, NSMakeRange(0, 5)));
   EXPECT([manager.focusedKey isEqual:@"find-a"]);
   EXPECT([receiver.focusChanges containsObject:@YES]);
-  EXPECT(receiver.actions.count == 0); // Programmatic text is not a query.
+  EXPECT(receiver.actions.count == 0);
   NSTextView *editor = (NSTextView *)view.textField.currentEditor;
   EXPECT(editor != nil);
   [editor insertText:@"native edit" replacementRange:NSMakeRange(0, editor.string.length)];
@@ -134,8 +134,6 @@ int main() { @autoreleasepool {
   EXPECT(!Command(view, @selector(moveDown:))); EXPECT(receiver.actions.count == before);
   puts("PASS editing, results, commands and keyed focus");
 
-  // A narrow per-page container shrinks the preferred width; a sibling window
-  // must never be accepted as the same focus context.
   FlippedContainer *pane = [[FlippedContainer alloc] initWithFrame:NSMakeRect(0, 60, 240, 260)];
   [window.contentView addSubview:pane];
   EXPECT([view attachToContainer:pane topInset:42 focusManager:manager focusKey:@"find-b" pageFocusKey:@"page-a"]);
@@ -161,10 +159,9 @@ int main() { @autoreleasepool {
   [view dismiss]; [view restoreSavedFocus];
   EXPECT(window.firstResponder == unrelated.currentEditor);
   [view presentTakingFocus:YES]; [view dismiss]; [view restoreSavedFocus];
-  EXPECT(window.firstResponder == unrelated.currentEditor); // Saved owning field, not shared editor.
+  EXPECT(window.firstResponder == unrelated.currentEditor);
   puts("PASS no stolen focus and unregistered field-editor restoration");
 
-  // A synchronous engine callback can tear down the native view.
   [view presentTakingFocus:YES];
   receiver.onAction = ^(PCNativeFindView *target) { [target invalidate]; };
   Query(view, @"closing");
@@ -181,8 +178,6 @@ int main() { @autoreleasepool {
   EXPECT(focusVictim.invalidated); EXPECT(focusVictim.superview == nil);
   puts("PASS terminal and reentrant teardown");
 
-  // Losing focus during reattachment may move the destination to a different
-  // native window. Validate after callback delivery, not before it only.
   PCNativeFindView *moving = [[PCNativeFindView alloc] initWithFrame:NSZeroRect];
   FindReceiver *movingReceiver = [[FindReceiver alloc] init]; moving.delegate = movingReceiver;
   EXPECT([moving attachToContainer:window.contentView topInset:10 focusManager:manager focusKey:@"moving-find" pageFocusKey:@"page-a"]);

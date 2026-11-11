@@ -20,8 +20,6 @@ def inspect_profile(profile: Path) -> int:
         if not database.resolve().is_relative_to(profile):
             continue
         with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
-            # Aggregate lengths only: no cookie values or encryption keys leave
-            # the database. Limit the query to this fixture's loopback cookie.
             count, encrypted, plaintext = connection.execute(
                 "SELECT count(*), coalesce(sum(length(encrypted_value)>0),0), "
                 "coalesce(sum(length(value)>0),0) FROM cookies "
@@ -37,8 +35,6 @@ def inspect_profile(profile: Path) -> int:
 
 
 def serve(port: int) -> None:
-    # Keep this server running across the browser restart. Its token stays in
-    # memory and is never printed, persisted by this script, or echoed in HTML.
     token = secrets.token_hex(24)
 
     class Handler(BaseHTTPRequestHandler):

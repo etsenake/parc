@@ -85,8 +85,6 @@ struct ProfileSettingsTests {
         let legacy = try JSONDecoder().decode(BrowserSettings.self, from: legacyData)
         try expect(legacy.settingsPane == nil && legacy.settingsProfileID == nil, "Existing sessions need no migration")
 
-        // A directory at the final file path forces the atomic rename to fail
-        // without relying on permissions that can behave differently as root.
         let stateFile = directory.appendingPathComponent("session.json")
         try FileManager.default.removeItem(at: stateFile)
         try FileManager.default.createDirectory(at: stateFile, withIntermediateDirectories: false)

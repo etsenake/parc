@@ -1,4 +1,3 @@
-"""Source overlays use real temporary files; Git/build/network remain mocked."""
 import copy
 import contextlib
 import fcntl
@@ -302,7 +301,6 @@ class OverlayTests(unittest.TestCase):
             self.assert_unchanged_refusal()
         self.spec["files"][0]["source"] = "reviewed/source.mm"
         self.save()
-        # A manifest outside the actual repository cannot borrow its root.
         self.assert_unchanged_refusal()
 
     def test_non_directory_target_parent_refused_before_earlier_writes(self):
@@ -386,7 +384,7 @@ class OverlayTests(unittest.TestCase):
         self.run.side_effect = changed_by_generation
         with patch.object(engine, "host_report", return_value={"blockers": []}), self.assertRaises(engine.Refusal):
             engine.execute(self.workspace, self.lock, self.sha, "build", 0, 4)
-        self.assertEqual(self.run.call_count, 2)  # Bootstrap and generator; no compiler.
+        self.assertEqual(self.run.call_count, 2)
         self.assertEqual(engine.read_marker(self.workspace, self.sha)["phase"], "generation-in-progress")
 
     def test_returned_generation_failure_preserves_overlay_on_retry(self):

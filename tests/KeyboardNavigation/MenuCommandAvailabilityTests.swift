@@ -1,6 +1,5 @@
 import AppKit
 
-/// An active app whose main window is the test browser, without activating.
 @MainActor private final class ActiveApplication: NSApplication {
     weak var browser: NSWindow?
     override var isActive: Bool { true }
@@ -12,8 +11,6 @@ import AppKit
     override var isKeyWindow: Bool { key }
     override var isMainWindow: Bool { true }
 }
-/// Release Notes opens a page tab, so its validator needs its browser to be
-/// key, as Edit Theme…, History, Extensions, Back and Zoom do.
 @MainActor private final class KeyGatedTarget: NSObject, NSMenuItemValidation {
     let browser: BrowserWindow
     var runs = 0
@@ -43,16 +40,12 @@ import AppKit
         registry.register(item, group: "Help")
         func listed() -> KeyboardShortcuts.MenuCommand? { registry.menuCommands(in: browser).first { $0.id == "showReleaseNotes:" } }
 
-        // The bar is a view in its browser: with its field first responder
-        // there, the browser stays key and a key-gated row answers live. The
-        // window's own gates (browserInputCommandWindow) aren't built here.
         let field = NSTextField(frame: NSRect(x: 20, y: 20, width: 200, height: 22))
         browser.contentView?.addSubview(field)
         expect(browser.makeFirstResponder(field), "The bar's field takes focus in its browser")
         guard let row = listed() else { preconditionFailure("Release Notes is listed") }
         expect(registry.canPerformMenuCommand(row), "A key-gated row is offered while a field in its key browser has focus")
         expect(registry.performMenuCommand(row) && target.runs == 1, "Choosing it opens the page once")
-        // Another window taking key closes the bar; the live check follows it.
         browser.key = false
         expect(!registry.canPerformMenuCommand(row) && !registry.performMenuCommand(row) && target.runs == 1,
                "A browser that isn't key refuses the row")

@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""A window with no tab: the empty content and page-card shadows on the
-production views, and the floating-sidebar rule on every path that hides the
-sidebar. No browser, input or window is shown."""
 from pathlib import Path
 import re
 import subprocess
@@ -18,20 +15,14 @@ def body(name):
     return match.group(0)
 
 
-# Every request to hide reaches setSidebarPresentation, whose first statement
-# applies the rule; the only direct writes are a window's initial state, which
-# the first render refreshes.
 setter = body("setSidebarPresentation")
 mapping = "var presentation = EmptyWindowSidebarRule.presentation(for: requested, noActiveItem: emptyWindowHoldsSidebar)"
 assert setter.splitlines()[1].strip() == mapping, "setSidebarPresentation no longer applies the no-tab rule before anything else"
-# Hiding during Space creation cancels it first, which can leave the window
-# without a tab, so the rule is applied again before anything uses the result.
 assert ("if presentation == .hidden, spaceCreation != nil {\n"
         "            cancelSpaceCreation(restoreFocus: false)\n"
         "            presentation = EmptyWindowSidebarRule.presentation(for: requested, noActiveItem: emptyWindowHoldsSidebar)\n"
         "        }\n") in setter, "cancelling Space creation no longer re-applies the no-tab rule"
 assert setter.count("EmptyWindowSidebarRule.presentation(") == 2
-# The stored hover input follows the mapped request and precedes the no-op guard.
 held = "if presentation == .floating { sidebarHoverActive = true }"
 guard = "guard sidebarPresentation != presentation else { return }"
 assert setter.index(mapping) < setter.index("cancelSpaceCreation(restoreFocus: false)") < setter.index(held) < setter.index(guard), \
@@ -50,7 +41,6 @@ render = re.search(r"^    private func render\(_ sharedState: BrowserState\) \{.
 tail = [line.strip() for line in render[render.index("        lastChromeState = sharedState\n"):].rstrip().removesuffix("}").splitlines()
         if line.strip()]
 assert "refreshEmptyWindowSidebar()" in tail, "render no longer ends by applying the no-tab rule"
-# Anything after the rule only queues work for a later turn of the run loop.
 for later in tail[tail.index("refreshEmptyWindowSidebar()") + 1:]:
     deferred = re.fullmatch(r"(\w+)\(\)", later)
     assert deferred, f"render changes state after applying the no-tab rule: {later}"
@@ -64,9 +54,6 @@ assert "layoutChrome()\n        refreshEmptyWindowSidebar()" in body("closeLibra
 assert ("EmptyWindowSidebarRule.holdsSidebar(focusedTab: currentTabID, pendingSplitPane: splitInsertion != nil,\n"
         "                                            creatingSpace: spaceCreation != nil, popup: isPopupWindow, library: libraryView != nil)"
         ) in controller, "the window no longer feeds its focused tab and pending Add Split pane to the rule"
-# Add Split's pending pane starts and ends with a render, which ends by
-# applying the rule: opening it floats a hidden sidebar, and filling or
-# cancelling it hands the sidebar back to the hover rule.
 assert "splitInsertion = session\n        render(store.state)" in body("beginSplitInsertion"), "opening the pending pane no longer renders"
 assert "splitInsertion = nil; session.cancel()\n        let panel = commandBar; commandBar = nil; panel?.dismiss(restoreFocus: false)\n        render(store.state)" \
     in body("cancelSplitInsertion"), "cancelling the pending pane no longer renders"
@@ -76,7 +63,6 @@ assert fill.index("splitInsertion = nil; session.cancel()") < fill.index("focuse
 assert controller.index("self.splitInsertion = nil; session.cancel()") < controller.index("self.focusedTabID = id; self.render(self.store.state)"), \
     "filling the pane with a result no longer renders after ending it"
 assert controller.count("splitInsertion = nil; session.cancel()") == 3, "an unexpected end of the pending pane"
-# The empty window shows the empty content through a clear, clipping host.
 assert "let empty = SplitPanePlaceholder(frame: .zero)\n                empty.setAccessibilityLabel(\"No tab open\")" in controller
 assert "let showsEmpty = splitView.arrangedSubviews.count == 1 && splitView.arrangedSubviews.first is SplitPanePlaceholder" in controller
 assert re.search(r"splitView\.configureBacking\(in: pageHost, hasTranslucentPane: translucentPane \|\| showsEmpty[,)]", controller)
@@ -105,7 +91,6 @@ def build(directory, name, replace=None):
 
 with tempfile.TemporaryDirectory(prefix="parc-empty-window-") as directory:
     subprocess.run([str(build(directory, "check"))], check=True)
-    # Without each piece the checks fail.
     controls = {
         "hiding with no tab": (("SidebarMotionController.swift", "requested == .hidden && noActiveItem ? .floating : requested",
                                 "requested"), "hiding a window with no tab floats its sidebar"),

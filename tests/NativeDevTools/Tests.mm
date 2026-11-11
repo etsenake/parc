@@ -1,4 +1,3 @@
-// Copyright 2026 Parc contributors. Real AppKit containment/lifetime tests.
 #import <AppKit/AppKit.h>
 
 #include <cstdio>
@@ -109,7 +108,6 @@ int main() {
     EXPECT(![pane setHostedToolsView:inspected]);
     EXPECT(![pane setHostedToolsView:pane]);
     EXPECT(![pane setHostedToolsView:parent.contentView]);
-    // An older pane cannot remove a tools/page view moved to its new owner.
     EXPECT([pane setHostedToolsView:tools]);
     NSView* next = [[NSView alloc] initWithFrame:NSZeroRect];
     [next addSubview:tools];
@@ -121,7 +119,6 @@ int main() {
     [pane layout];
     EXPECT(layouts == 1);
     EXPECT(![pane setHostedToolsView:tools]);
-    // Native reentry invalidates the pane while a real NSView is attaching.
     ReentrantView* reentrant = [[ReentrantView alloc] initWithFrame:NSZeroRect];
     PCNativeDevToolsPaneView* second = [[PCNativeDevToolsPaneView alloc]
         initWithInspectedView:[[NSView alloc] initWithFrame:NSZeroRect]];
@@ -135,7 +132,6 @@ int main() {
     EXPECT(![second setHostedToolsView:reentrant]);
     EXPECT(second.toolsView == nil && !reentrant.superview);
     reentrant.moved = nil;
-    // A newer reentrant replacement is preserved after an older remove returns.
     ReentrantView* old = [[ReentrantView alloc] initWithFrame:NSZeroRect];
     NSView* replacement = [[NSView alloc] initWithFrame:NSZeroRect];
     PCNativeDevToolsPaneView* third = [[PCNativeDevToolsPaneView alloc]
@@ -152,7 +148,6 @@ int main() {
     EXPECT(third.toolsView == replacement && replacement.superview == third);
     old.moved = nil;
     [third invalidate];
-    // Detach callbacks can give the exact tools view to a newer owner.
     ReentrantView* migrating = [[ReentrantView alloc] initWithFrame:NSZeroRect];
     PCNativeDevToolsPaneView* fourth = [[PCNativeDevToolsPaneView alloc]
         initWithInspectedView:[[NSView alloc] initWithFrame:NSZeroRect]];
@@ -167,9 +162,6 @@ int main() {
     EXPECT(migrating.superview == next);
     EXPECT(fourth.toolsView == nil);
     migrating.moved = nil;
-    // A frame callback can transfer tools while the old layout is in progress.
-    // The old pane must not subsequently hide or resize either transferred
-    // view.
     ReentrantView* moving_page =
         [[ReentrantView alloc] initWithFrame:NSZeroRect];
     NSView* moving_tools =
@@ -191,9 +183,6 @@ int main() {
     EXPECT(![fifth setHostedToolsView:moving_tools]);
     moving_page.framed = nil;
     [fifth invalidate];
-    // Writing the current docking rects must not call setFrame. Chromium's
-    // WebContents view treats setFrame as a resize even when the rectangle is
-    // unchanged, which relayouts the inspected page while walking Elements.
     ReentrantView* counted =
         [[ReentrantView alloc] initWithFrame:NSMakeRect(0, 0, 900, 700)];
     PCNativeDevToolsPaneView* stable =
@@ -221,8 +210,6 @@ int main() {
     __block int handlers = 0;
     __weak PCNativeDevToolsPaneView* weak_stable = stable;
     __weak FocusView* weak_tools = stable_tools;
-    // Open-Elements layout reentry with identical docking rects must not write
-    // frames (the production Layout geometry_current skip / SetFrameIfNeeded).
     stable.layoutHandler = ^(NSRect) {
       ++handlers;
       PCNativeDevToolsPaneView* pane = weak_stable;
@@ -248,8 +235,6 @@ int main() {
                      toolsRect:NSMakeRect(400, 0, 500, 700)
                  hideInspected:NO];
     EXPECT(writes == 2);
-    // Nested layout from setFrame stays suppressed by _applyingLayout; the two
-    // prior identical-geometry layouts are the only handler entries.
     EXPECT(handlers == 2);
     counted.framed = nil;
     [stable invalidate];

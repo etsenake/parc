@@ -1,6 +1,5 @@
 import Foundation
 
-/// Genuine durable store and original Note/Easel sessions; every file is temporary.
 @main @MainActor
 struct SidebarPluralDuplicateTests {
     static var count = 0
@@ -109,7 +108,6 @@ struct SidebarPluralDuplicateTests {
         try check(try store.duplicateSidebarItems(target, destinations: urls, documents: references) == nil, "Original menu snapshot cannot execute again after hierarchy changed")
         let reload = try BrowserStore(directory: root)
         try check(copy.tabIDs.allSatisfy { id in reload.state.tabs.contains { $0.id == id } } && reload.state.splitLayouts.contains(copiedGroup), "All committed identities durably reload")
-        // Root indexes, not descendant counts, govern the recovered first-five rule.
         var many = state; many.folders = []; many.splitLayouts = []; many.tabs = (0..<7).map { tab("root\($0)", kind: .today) }
         many.sidebarItemOrder = [:]; many.selectedTabIDs = [many.tabs[0].id]; many.selectionBySpace = [:]
         let other = root.appendingPathComponent("Many"); try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)

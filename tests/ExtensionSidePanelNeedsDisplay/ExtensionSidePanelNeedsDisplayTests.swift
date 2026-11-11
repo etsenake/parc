@@ -1,8 +1,5 @@
 import AppKit
 
-/// P1-AJ: layoutChrome → layoutSubtreeIfNeeded must not dirty the side-panel
-/// header fill when content/close/title frames are already current. Geometry
-/// and appearance that affect the painted fill still redraw.
 @main
 @MainActor
 struct ExtensionSidePanelNeedsDisplayTests {

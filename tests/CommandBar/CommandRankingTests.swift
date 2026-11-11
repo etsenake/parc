@@ -1,6 +1,5 @@
 import Foundation
 
-/// Trigger phrases and bumps reach the shared ranking as the command bar builds them.
 @main struct CommandRankingTests {
     static func main() {
         var count = 0
@@ -24,21 +23,16 @@ import Foundation
         }
         let dark = typed(.appearance(.dark)), light = typed(.appearance(.light))
 
-        // The nib trigger "Night Mode" is an exact match for its own row.
         let night = [search("night mode", 0), search("night mode iphone", 1), light, dark, tab("Night Mode Tips", "https://example.com/night")]
         expect(first(night, "night mode") == dark.key, "night mode ranks Switch to Dark Mode first")
         expect(CommandBarRanking.match("night mode", dark.texts) == 1, "the trigger phrase is matched whole")
 
-        // Trigger phrases survive ranking: Clear Today's "Close Unpinned Tabs".
         let clear = menu("clearToday:", "Clear Today", group: "Tabs")
         expect(CommandBarRanking.rank([search("close unpinned tabs", 0), clear], query: "close unpinned tabs").contains(1),
                "a menu command found only by its trigger is kept")
 
-        // Bumps order equal matches but never beat an exact tab.
         let exportNotes = menu("exportNotes:", "Export Notes…", group: "File")
         expect(exportNotes.bump == 1.5 * CommandBarMenuItemInfo.bumpWeight, "Export Notes carries its weighted bump")
-        // 0.85 + 0.06 × 1.5 = 0.94 stays under an exact tab's 0.95; a word match
-        // (0.85 × 0.7 + 0.09) is far below it.
         expect(0.85 + exportNotes.bump < 0.95, "the largest bump keeps an exact command under an exact tab")
         let notesTab = tab("Notes", "https://example.com/notes")
         expect(first([exportNotes, notesTab], "notes") == notesTab.key, "a bumped word-matched command doesn't pass an exact tab")

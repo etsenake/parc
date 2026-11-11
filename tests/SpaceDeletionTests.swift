@@ -1,6 +1,5 @@
 import Foundation
 
-/// File-backed model and explicit retirement callbacks. No browser or real data.
 @main @MainActor struct SpaceDeletionTests {
     static var count = 0
     static func expect(_ condition: @autoclosure () throws -> Bool, _ message: String) throws {

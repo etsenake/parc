@@ -2,7 +2,6 @@ import AppKit
 import ObjectiveC
 import QuartzCore
 
-/// Tab and folder rows constructed, counted at NSView's initializer.
 @MainActor enum BuiltRows { static var count = 0 }
 extension NSView {
     @objc func swipeCountingInit(frame: NSRect) -> NSView {
@@ -11,12 +10,8 @@ extension NSView {
     }
 }
 
-/// The source of an in-memory sidebar drag: it holds the drag's move session,
-/// as a row does.
 @MainActor final class SwipeDragSource: NSView, SidebarItemDragSource { var sidebarDrag: SidebarMoveSession? }
 
-/// A drag over the sidebar built in memory: the session's pasteboard
-/// identity and a location the check moves; nothing is posted.
 @MainActor final class SwipeDrag: NSObject, @preconcurrency NSDraggingInfo {
     private let pasteboard = NSPasteboard(name: NSPasteboard.Name("org.parc.swipe-check.\(UUID().uuidString)"))
     private let source: SwipeDragSource
@@ -47,11 +42,6 @@ extension NSView {
     func resetSpringLoading() {}
 }
 
-/// A Space swipe's main-thread work on the production SidebarView, with 5, 50
-/// and 200 folders and items in each of three Spaces. Phased scroll events
-/// built in memory go straight to the sidebar, which selects Spaces the way
-/// BrowserWindowController does: it renders the new Space synchronously. The
-/// window is off screen and never shown; no browser, engine or posted events.
 @main @MainActor struct SidebarSpaceSwipe {
     static func scroll(_ dx: Int32, phase: Int64, at time: CFTimeInterval) -> NSEvent {
         let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: dx, wheel3: 0)!
@@ -85,7 +75,6 @@ extension NSView {
 
     struct Swipe { var firstFrame = 0.0, frames: [Double] = [], release = 0.0, settle: [Double] = [], settled = true, built = 0, builtInFrames = 0, builtIdle = 0, idleTurn = 0.0 }
 
-    /// Main-thread busy spans between run loop waits, for the spring's frames.
     final class Busy {
         var spans: [Double] = []
         private var start: CFTimeInterval?
@@ -103,13 +92,10 @@ extension NSView {
         func remove() { if let observer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) } }
     }
 
-    /// Delivers waiting events, as the application's event loop does.
     static func deliverEvents() {
         while let event = NSApp.nextEvent(matching: .any, until: nil, inMode: .default, dequeue: true) { NSApp.sendEvent(event) }
     }
 
-    /// Runs the main loop until it has been quiet for 0.4 s (no turn over
-    /// 2 ms), as a user pauses between swipes; at most 30 s.
     @discardableResult static func idle() -> Double {
         let busy = Busy(); busy.install()
         let end = Date().addingTimeInterval(30)
@@ -118,14 +104,12 @@ extension NSView {
             let before = busy.spans.count, began = Date()
             deliverEvents()
             RunLoop.main.run(until: began.addingTimeInterval(0.05))
-            // A turn that overran the slice ended it before it reported.
             if Date().timeIntervalSince(began) > 0.06 || busy.spans[before...].contains(where: { $0 > 0.002 }) { quietSince = Date() }
         }
         busy.remove()
         return (busy.spans.max() ?? 0) * 1000
     }
 
-    /// The process's physical footprint in MB.
     static func footprint() -> Double {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
@@ -148,8 +132,6 @@ extension NSView {
             let window = NSWindow(contentRect: sidebar.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false; window.contentView = sidebar
             if ProcessInfo.processInfo.environment["SWIPE_NO_ENGINE"] == nil {
-                // The browser window lays its content out with constraints
-                // (ParcSplitView.constrain), so it has a layout engine.
                 let content = NSView(frame: sidebar.frame)
                 window.contentView = content; content.addSubview(sidebar)
                 let pane = NSView()
@@ -159,8 +141,6 @@ extension NSView {
                                              pane.topAnchor.constraint(equalTo: content.topAnchor),
                                              pane.widthAnchor.constraint(equalToConstant: 0), pane.heightAnchor.constraint(equalToConstant: 0)])
             }
-            // BrowserWindowController's move lease: the hierarchy it expects,
-            // revalidated on every check, and the real move proposal.
             if ProcessInfo.processInfo.environment["SWIPE_NO_LEASES"] == nil { sidebar.prepareSidebarMove = { item in
                 let space = state.spaces.first { $0.id == state.activeSpaceID }!
                 guard var expected = SidebarHierarchySnapshot(state: state, spaceID: space.id, profileID: space.profileID, includesFavorites: true),
@@ -195,7 +175,6 @@ extension NSView {
             sidebar.layoutSubtreeIfNeeded()
             let renderMs = (CACurrentMediaTime() - initial) * 1000
             if let rounds = ProcessInfo.processInfo.environment["SWIPE_PROFILE_RENDERS"].flatMap(Int.init) {
-                // Space switches between kept pages only, for a profiler.
                 let began = CACurrentMediaTime()
                 for round in 0..<rounds {
                     state.activeSpaceID = state.spaces[round % 2 == 0 ? 1 : 0].id
@@ -207,7 +186,6 @@ extension NSView {
             }
             var counted = BuiltRows.count
             func newRows() -> Int { defer { counted = BuiltRows.count }; return BuiltRows.count - counted }
-            // The idle preparation of the other Spaces' pages.
             let preparingTurn = idle()
             let prepared = newRows()
             if ProcessInfo.processInfo.environment["SWIPE_VERBOSE"] != nil { print("  idle before swiping built \(prepared)") }
@@ -218,8 +196,6 @@ extension NSView {
             }
             var swipes: [Swipe] = []
             var clock = CACurrentMediaTime()
-            // Through every Space and back, one Space a swipe: each first
-            // visit and each return.
             for direction: Int32 in Array(repeating: -1, count: spaceCount - 1) + Array(repeating: 1, count: spaceCount - 1) {
                 var swipe = Swipe()
                 _ = frame { sidebar.scrollWheel(with: scroll(0, phase: 128, at: clock)) }
@@ -233,7 +209,6 @@ extension NSView {
                 swipe.builtInFrames = newRows()
                 clock += 1.0 / 120
                 swipe.release = frame { sidebar.scrollWheel(with: scroll(0, phase: 4, at: clock)) }
-                // The spring's frames, until the page strip is back at rest.
                 func moving(_ view: NSView) -> Bool {
                     !CATransform3DIsIdentity(view.layer?.sublayerTransform ?? CATransform3DIdentity) || view.subviews.contains(where: moving)
                 }
@@ -253,10 +228,6 @@ extension NSView {
                 swipes[swipes.count - 1] = swipe
                 clock = CACurrentMediaTime()
             }
-            // A click on the farthest Space's icon and back, as the dock or a
-            // shortcut switches: the kept page shows, or one let go rebuilds.
-            // SWIPE_PRESSURE: macOS reports memory pressure first, so the jump
-            // finds the pages the sidebar let go and rebuilds one.
             if ProcessInfo.processInfo.environment["SWIPE_PRESSURE"] != nil { sidebar.releaseOffscreenPages(); idle(); _ = newRows() }
             var jumps: [Double] = []
             var jumpBuilt = 0
@@ -266,11 +237,6 @@ extension NSView {
                 jumpBuilt += newRows()
                 idle(); _ = newRows()
             }
-            // The shown page's list: a brisk scroll to its end and back, a drag
-            // resting at its bottom edge that auto-scrolls it, a collapsed
-            // folder springing open under the drag (and closing as the drag
-            // leaves), and folders expanding with the rows below sliding or
-            // with their children landing out of view.
             var scrollFrames: [Double] = [], dragFrames: [Double] = [], springFrames: [Double] = [], disclosureFrames: [Double] = []
             func shownScroll() -> NSScrollView? {
                 var found: NSScrollView?
@@ -290,7 +256,6 @@ extension NSView {
                 return rows.filter { visible.intersects(scroll.contentView.convert($0.bounds, from: $0)) }
                     .sorted { scroll.contentView.convert($0.bounds, from: $0).minY < scroll.contentView.convert($1.bounds, from: $1).minY }
             }
-            /// The main thread's turns for `seconds`, as an animation's frames.
             func spans(for seconds: TimeInterval) -> [Double] {
                 let busy = Busy(); busy.install()
                 let end = Date().addingTimeInterval(seconds)
@@ -347,15 +312,12 @@ extension NSView {
                             springFrames += [toggled ?? 0] + spans(for: 0.35)
                         }
                         idle()
-                        // The top folder expands: every row below it slides.
                         if folderRows(in: scroll).first?.folderID == first.folderID,
                            state.folders.first(where: { $0.id == first.folderID })?.isExpanded == false {
                             disclosureFrames += toggle(first.folderID)
                             idle()
                         }
                     }
-                    // The lowest folder in view collapses, then expands with its
-                    // child out of view.
                     if let last = folderRows(in: scroll).last {
                         disclosureFrames += toggle(last.folderID); idle()
                         disclosureFrames += toggle(last.folderID); idle()
@@ -387,9 +349,7 @@ extension NSView {
                 + "drag auto-scroll frame max \(fmt(dragFrames.max() ?? 0)) ms, spring-open frame max \(fmt(springFrames.max() ?? 0)) ms, "
                 + "expand/collapse frame max \(fmt(disclosureFrames.max() ?? 0)) ms; footprint \(fmt(memory)) MB"
             print(line); report.append(line)
-            // The frame-time limits are judged by check.py over several runs.
             if ProcessInfo.processInfo.environment["SWIPE_ASSERT"] != nil {
-                // Prepared while idle, no swipe builds a row, first visits included.
                 precondition(builtInFrames == 0 && built == 0, "\(items): a swipe built rows (\(builtInFrames) tracking, \(built) in all)")
                 precondition(swipes.allSatisfy(\.settled), "\(items): a page didn't spring back to rest")
                 precondition(jumpBuilt == 0, "\(items): a jump to a kept Space built \(jumpBuilt) rows")

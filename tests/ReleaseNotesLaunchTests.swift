@@ -1,7 +1,5 @@
 import Foundation
 
-/// ReleaseNotesLaunch: when a launch is the first after an update, and how
-/// long its Update Complete! banner waits.
 @main
 struct ReleaseNotesLaunchTests {
     static var count = 0

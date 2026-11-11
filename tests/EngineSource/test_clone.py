@@ -1,4 +1,3 @@
-"""Local clone adoption uses miniature Git workspaces, never a real engine."""
 import fcntl
 import importlib.util
 from pathlib import Path

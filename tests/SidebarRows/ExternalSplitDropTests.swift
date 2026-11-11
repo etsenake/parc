@@ -44,8 +44,6 @@ import Foundation
         four.selectedTabIDs = [a,b,c,d]; var fourGroup = group; fourGroup.tabIDs = four.selectedTabIDs; fourGroup.widthFactors = [0.25,0.25,0.25,0.25]; four.splitLayouts = [fourGroup]
         try check(proposal(four, .insert(1), four.selectedTabIDs, fourGroup) == nil, "capacity refusal is atomic")
         try check(proposal(four, .replace(2), four.selectedTabIDs, fourGroup)?.selectedTabIDs.count == 4, "replacement at capacity remains available")
-        // Profile-wide Favorites can have a home Space different from the one
-        // that owns this original live split gesture.
         var favorite = original
         let homeSpace = UUID(), homeID = UUID(), urlID = UUID(), now = Date(timeIntervalSince1970: 123456)
         favorite.spaces.append(BrowserSpace(id: homeSpace, name: "Home", symbol: "star", color: "123456", profileID: p))
@@ -98,8 +96,6 @@ import Foundation
         try check(favoriteProposal(capped, .insert(1), trayGroup) != nil, "existing Favorite group insertion does not consume a tray root")
         var mixed = favoriteGroup; mixed.tabs[bi].kind = .today; mixed.tabs[bi].spaceID = space
         try check(favoriteProposal(mixed, .insert(1), trayGroup) == nil, "unrecovered mixed Favorite/Today group refuses without conversion")
-        // The same original saved-item predicate includes pinned tabs. The
-        // saved home keeps its exact nested mixed-list slot, not a tray/root slot.
         var pinned = favorite
         let pinnedFolder = BrowserFolder(id: UUID(), spaceID: space, name: "Original folder")
         let siblingFolder = BrowserFolder(id: UUID(), spaceID: space, name: "Sibling", parentID: pinnedFolder.id)
@@ -127,8 +123,6 @@ import Foundation
         try check(favoriteProposal(changedProfile, .insert(1)) == nil, "foreign Favorite refuses")
         var absentHome = favorite; absentHome.spaces.removeAll { $0.id == homeSpace }
         try check(favoriteProposal(absentHome, .insert(1)) == nil, "missing saved home Space refuses")
-        // Actual persistence: both saved home and original live placement are
-        // serialized together; a failed rename publishes neither half.
         let favoriteRoot = root.appendingPathComponent("favorite")
         try FileManager.default.createDirectory(at: favoriteRoot, withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted,.sortedKeys]; encoder.dateEncodingStrategy = .iso8601
@@ -158,8 +152,6 @@ import Foundation
             creation: receipt, savedHomeID: homeID), "actual pinned saved-home and split commit is atomic")
         let pinnedReload = try BrowserStore(directory: pinnedRoot)
         try check(SidebarHierarchy.children(in: pinnedContainer, state: pinnedReload.state) == [.tab(b), .tab(homeID), .folder(siblingFolder.id)] && pinnedReload.state.selectedTabIDs == [urlID,a], "pinned home order and live original selection durably reopen together")
-        // Typed saved homes are aliases to actual original documents. The
-        // store must reject an unvalidated reference before any persistence.
         let notes = try NoteStore(directory: root.appendingPathComponent("notes"), diskSaveDelay: 0)
         let note = try notes.create()
         let easels = try EaselStore(directory: root.appendingPathComponent("easels"))
@@ -203,7 +195,6 @@ import Foundation
         var archived = original; archived.tabs[0].archivedAt = Date()
         try check(proposal(archived, .insert(1), [a,b], group) == nil, "archived original refusal")
         try check(proposal(original, .insert(8), [a,b], group) == nil && proposal(original, .replace(-1), [a,b], group) == nil, "invalid target refused")
-        // Failure of the actual atomic rename must not expose an orphan new tab.
         let current = store.state, currentGroup = store.activeSplitLayout!
         let stateFile = root.appendingPathComponent("session.json"), saved = try Data(contentsOf: stateFile)
         try FileManager.default.removeItem(at: stateFile); try FileManager.default.createDirectory(at: stateFile, withIntermediateDirectories: false)

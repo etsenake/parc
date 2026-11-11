@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Run production handoff methods against a throttled frame-connection source.
-
-The adapter supplies inert Chromium dependencies; AppKit views and layers are
-real. Extract method bodies so the regression also runs against the preceding
-implementation, rather than maintaining a second copy of its handoff logic.
-"""
 import argparse
 from pathlib import Path
 import subprocess

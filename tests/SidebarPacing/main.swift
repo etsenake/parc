@@ -2,15 +2,6 @@ import AppKit
 import QuartzCore
 import ObjectiveC
 
-// ⌘S frame pacing: the production SidebarMotionController, SidebarTransition,
-// SidebarChromeFrames and ThemeRendererView in an off-screen window laid out
-// like BrowserWindowController's, never made key; no browser, input or
-// preferences. Counts the main thread's work per phase and per display frame.
-
-// MARK: - Instrumentation
-
-/// Work inside the window's content view, counted per view by swizzled
-/// AppKit and Core Animation entry points while `on`.
 struct Tally {
     var counts: [ObjectIdentifier: (label: String, count: Int)] = [:]
     var byKey: [String: Int] = [:]
@@ -19,10 +10,7 @@ struct Tally {
         if let key { byKey["\(key) \(Meter.label(view))", default: 0] += 1 }
     }
     var total: Int { counts.values.reduce(0) { $0 + $1.count } }
-    /// The most any one view did.
     var most: Int { counts.values.map(\.count).max() ?? 0 }
-    /// The most any one of Parc's views did: AppKit's own window widgets
-    /// (`_NS…` hosting views) lay out once per sidebar origin change.
     var mostOutsideAppKit: Int { counts.values.filter { !$0.label.hasPrefix("_NS") }.map(\.count).max() ?? 0 }
     var byLabel: [String: Int] { counts.values.reduce(into: [:]) { $0[$1.label, default: 0] += $1.count } }
     static func + (a: Tally, b: Tally) -> Tally {
@@ -35,19 +23,11 @@ struct Tally {
 @MainActor final class Meter {
     static var on = false
     static weak var root: NSView?
-    /// Outside Parc's budget: this floating surface's shown materials (the
-    /// blur, and while docking the behind-window material), which Parc leaves
-    ///
-    /// background and blur views are (docs/sidebar-motion.md, frame pacing).
-    /// Counted apart. A hidden one stays in the budget.
     static weak var exemptSurface: NSView?
     static var exemptFrames = Tally()
     static var layouts = Tally(), frames = Tally(), layerSets = Tally(), text = Tally(), draws = Tally(), animations = Tally()
-    /// Redraw requests: an off-screen window is occluded, so AppKit skips the
-    /// display itself and only these show a view it would redraw on screen.
     static var invalidations = Tally()
     static var redundantLayerSets = 0
-    /// Main-thread time inside the counted layout, resize and redraw calls.
     static var viewSeconds: CFTimeInterval = 0
     private static var depth = 0
 
@@ -171,7 +151,6 @@ func exchange(_ type: AnyClass, _ original: Selector, _ replacement: Selector) {
     exchange(CALayer.self, #selector(CALayer.add(_:forKey:)), #selector(CALayer.pacing_add(_:forKey:)))
 }
 
-/// Main-thread busy time: the run loop's awake intervals while `on`.
 @MainActor final class BusyClock {
     private(set) var seconds: CFTimeInterval = 0
     private var awake: CFTimeInterval?
@@ -191,11 +170,9 @@ func exchange(_ type: AnyClass, _ original: Selector, _ replacement: Selector) {
     func reset() { seconds = 0; awake = on ? CACurrentMediaTime() : nil }
 }
 
-/// One phase's counts.
 struct Work: CustomStringConvertible {
     var layouts = Tally(), frames = Tally(), layerSets = Tally(), text = Tally(), draws = Tally(), animations = Tally()
     var invalidations = Tally(), redundantLayerSets = 0, exempt = Tally()
-    /// Run-loop busy time, and the part spent in the counted view work.
     var seconds: CFTimeInterval = 0, viewSeconds: CFTimeInterval = 0
     @MainActor static func take(_ clock: BusyClock?, seconds: CFTimeInterval? = nil) -> Work {
         defer { Meter.reset(); clock?.reset() }
@@ -222,8 +199,6 @@ struct Work: CustomStringConvertible {
     }
 }
 
-// MARK: - The window
-
 extension NSView {
     func identified(_ name: String) -> Self { identifier = .init(name); return self }
 }
@@ -232,13 +207,9 @@ class LayoutHostView: NSView {
     override var isFlipped: Bool { true }
     override func layout() { super.layout(); onLayout?() }
 }
-/// A drawing view (AppKit's `.duringViewResize` default), as a pane's
-/// DeveloperToolbarView, BrowserToolbarView and PageFailureView are.
 final class DrawnStrip: LayoutHostView {
     override func draw(_ dirtyRect: NSRect) { NSColor.separatorColor.setFill(); dirtyRect.fill() }
 }
-/// WebContentsViewCocoa: sets its subviews' frames in setFrameSize, and its
-/// RenderWidgetHostViewCocoa tells the renderer its bounds on each change.
 final class PageView: NSView {
     let host = NSView()
     private(set) var boundsSent = 0
@@ -255,9 +226,6 @@ final class PageView: NSView {
         if changed { boundsSent += 1 }
     }
 }
-/// BrowserPane's children as BrowserWindowController lays them out: the
-/// content (a page), and the hidden strips and labels a pane carries while no
-/// toolbar, header or failure shows.
 @MainActor final class Pane: LayoutHostView {
     let content = LayoutHostView(), page = PageView(frame: .zero)
     let developerToolbar = DrawnStrip(), browserToolbar = DrawnStrip(), failure = DrawnStrip()
@@ -275,7 +243,6 @@ final class PageView: NSView {
         addSubview(content); addSubview(grabber); addSubview(header); header.addSubview(headerLabel)
         addSubview(developerToolbar); addSubview(browserToolbar); browserToolbar.addSubview(toolbarField)
         content.addSubview(page); content.addSubview(failure); failure.addSubview(failureTitle)
-        // PageFailureView's pins (PageFailureView.swift, asserted by tests/SidebarMotion).
         SidebarMotionController.pinDrawnContent(failure, to: .scaleAxesIndependently)
         SidebarMotionController.pinDrawnContent(failureTitle, to: .center)
         header.isBordered = false; header.isHidden = true
@@ -299,9 +266,6 @@ final class PageView: NSView {
     }
 }
 
-/// SplitPanePlaceholder as a window with no tab shows it: a layer-only
-/// backing color resolved in updateLayer and its highlight layer, no drawing
-/// or subviews (asserted by check.py).
 @MainActor final class EmptyContent: LayoutHostView {
     let highlight = CAShapeLayer()
     override var wantsUpdateLayer: Bool { true }
@@ -319,8 +283,6 @@ final class PageView: NSView {
     }
 }
 
-/// BrowserWindowController's sidebar presentation owner in miniature: the same
-/// views and participants, its three passes through the production helpers.
 @MainActor final class Window {
     enum Pass { case full, preparation, geometry }
     let window = NSWindow(contentRect: NSRect(x: -12000, y: -12000, width: 1470, height: 831),
@@ -340,7 +302,6 @@ final class PageView: NSView {
     var settled = 0
     var didPrepare: (() -> Void)?, willSettle: (() -> Void)?
 
-    /// Control only: a second geometry pass through intermediate frames.
     var passesTwice = false
 
     init(showsPage: Bool = false, pinsSurface: Bool = true, visibleStrip: Bool = false) {
@@ -359,7 +320,6 @@ final class PageView: NSView {
         rootView.addSubview(pageShadow); rootView.addSubview(pageHost); rootView.addSubview(loadingIndicator); rootView.addSubview(findHost)
         rootView.addSubview(sidebarContainer)
         sidebarContainer.coordinateSpace = rootView
-        // A themed Space: the floating surface draws its canvas, not only its material.
         if let color = ThemeColor(red: 0.42, green: 0.36, blue: 0.86) { rootView.theme = .singleColor(color); sidebarContainer.theme = .singleColor(color) }
         sidebarContainer.addSubview(sidebar)
         if pinsSurface { SidebarMotionController.pinSurface(of: sidebarContainer, except: sidebar) }
@@ -373,10 +333,8 @@ final class PageView: NSView {
         }
         pageHost.wantsLayer = true; pageHost.layer?.cornerRadius = PageCard.cornerRadius; pageHost.layer?.cornerCurve = .continuous
         pageHost.layer?.masksToBounds = true
-        // ParcSplitView.configureBacking: a lone empty content shows through a clear host.
         pageHost.layer?.backgroundColor = (showsPage ? NSColor.white : .clear).cgColor
         pageHost.addSubview(splitView)
-        // ParcSplitView.constrain(to:): the split fills the page host by constraints.
         splitView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([splitView.leadingAnchor.constraint(equalTo: pageHost.leadingAnchor),
                                      splitView.trailingAnchor.constraint(equalTo: pageHost.trailingAnchor),
@@ -397,7 +355,6 @@ final class PageView: NSView {
         let placement = SidebarPresentationFrame(presentation, inMotion: motionVisible, floatingSurface: floatingSurface, revealsAnchored: revealsAnchored)
         return SidebarChromeFrames(bounds: rootView.bounds, sidebarWidth: width, presentation: presentation, placement: placement)
     }
-    /// BrowserWindowController.layoutChrome's sidebar and page frames.
     func layoutChrome() {
         let frames = frames()
         if pass == .geometry {
@@ -425,7 +382,6 @@ final class PageView: NSView {
         guard pass == .full else { return }
         pageHost.layoutSubtreeIfNeeded()
     }
-    /// BrowserWindowController.setSidebarPresentation's animated branch.
     func present(_ next: SidebarPresentation) {
         let transition = SidebarTransition(from: presentation, to: next)
         motionVisible = true
@@ -452,17 +408,11 @@ final class PageView: NSView {
         pass = .full
         revealsAnchored = false
     }
-    /// A Reduce Motion or external-geometry settle (settleSidebarMotion + layoutChrome).
     func settle() { motion.cancel(); motionVisible = false; floatingSurface = false; layoutChrome() }
-    /// The end of the run-loop turn that handled ⌘S: AppKit's display cycle
-    /// draws what the passes invalidated and Core Animation commits, before
-    /// the first frame of the slide.
     func commit() { rootView.displayIfNeeded(); CATransaction.flush() }
     func set(_ settledPresentation: SidebarPresentation) { motion.cancel(); presentation = settledPresentation; settle() }
     func close() { window.orderOut(nil); window.close() }
 }
-
-// MARK: - Scenarios
 
 @MainActor final class Checks {
     var count = 0, failures: [String] = []
@@ -472,10 +422,8 @@ final class PageView: NSView {
     }
 }
 
-/// The recovered curves' peak speed for a `distance`-point move, in points/s.
 enum Curve {
     static func cubicPeak(distance: CGFloat) -> CGFloat {
-        // CAMediaTimingFunction(0.25, 0.46, 0.45, 0.94) over 0.08 s.
         let (x1, y1, x2, y2) = (0.25, 0.46, 0.45, 0.94)
         func point(_ t: Double, _ a: Double, _ b: Double) -> Double { 3 * (1 - t) * (1 - t) * t * a + 3 * (1 - t) * t * t * b + t * t * t }
         var peak = 0.0, previous = (x: 0.0, y: 0.0)
@@ -487,7 +435,6 @@ enum Curve {
         return CGFloat(peak) * distance / 0.08
     }
     static func springPeak(distance: CGFloat) -> CGFloat {
-        // Preset 5: response 0.18, damping ratio 0.8, mass 1, no initial velocity.
         let omega = 2 * Double.pi / 0.18, damping = 2 * 0.8 * omega
         var x = Double(distance), v = 0.0, peak = 0.0
         for _ in 0..<20000 { let a = -omega * omega * x - damping * v; v += a * 0.00005; x += v * 0.00005; peak = max(peak, abs(v)) }
@@ -495,7 +442,6 @@ enum Curve {
     }
 }
 
-/// Samples presentation geometry every millisecond while it runs.
 @MainActor final class Sampler {
     struct Sample { let time: CFTimeInterval; let sidebar: CGFloat; let page: CGFloat; let pageWidth: CGFloat }
     private(set) var samples: [Sample] = []
@@ -513,8 +459,6 @@ enum Curve {
         samples.append(Sample(time: CACurrentMediaTime(), sidebar: sidebar.minX, page: page.minX, pageWidth: page.width))
     }
     func stop() { timer?.invalidate(); timer = nil }
-    /// The fastest move over any 2 ms or more between samples, in points/s,
-    /// across the three tracks; timer jitter only lengthens a window.
     var peakSpeed: CGFloat {
         var peak: CGFloat = 0, later = 0
         for (index, sample) in samples.enumerated() {
@@ -526,9 +470,6 @@ enum Curve {
         }
         return peak
     }
-    /// The furthest any track moved between consecutive samples beyond what
-    /// `speed` allows over their interval: a snap shows as its own size,
-    /// while timer jitter only shifts when a sample is taken.
     func largestExcess(speed: CGFloat) -> CGFloat {
         zip(samples, samples.dropFirst()).reduce(0) { excess, pair in
             let allowance = speed * CGFloat(pair.1.time - pair.0.time)
@@ -540,8 +481,6 @@ enum Curve {
 
 struct Result {
     let name: String
-    /// The preparation pass, then the group with its flush and the display
-    /// cycle that ends the turn (a reversal's own, when it reverses).
     let preparation: Work, group: Work, flight: Work, completion: Work
     let frames: Double
     func perFrame(_ seconds: CFTimeInterval) -> Double { frames > 0 ? seconds / frames : 0 }
@@ -549,14 +488,11 @@ struct Result {
 
 @MainActor final class Harness {
     let checks = Checks()
-    /// How far the snap control's settle moved the sidebar at once.
     var snapJump: CGFloat = 0
     let clock = BusyClock()
     let refresh = Double(NSScreen.screens.map(\.maximumFramesPerSecond).max() ?? 60)
 
     func wait(_ seconds: TimeInterval) { RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds)) }
-    /// The main thread's busy time per display frame while nothing animates,
-    /// polled the way `measure` polls.
     func baseline() -> Double {
         clock.on = true; clock.reset()
         let began = CACurrentMediaTime()
@@ -573,15 +509,10 @@ struct Result {
         CATransaction.flush(); wait(0.05)
     }
 
-    /// One transition, or a reversal `reverseAfter` seconds in: the commit
-    /// (preparation, flush and group; a reversal's own), every display frame
-    /// until the newest completion starts, and that completion's full pass.
     func measure(_ name: String, _ window: Window, from start: SidebarPresentation, to next: SidebarPresentation,
                  reversing reversal: SidebarPresentation? = nil, reverseAfter: TimeInterval = 0.03) -> Result {
         settle(window, at: start)
         Meter.root = window.rootView
-        // An anchored group with the floating surface drawn: floating → locked,
-        // and locked → floating, which ⌘S takes in a window with no tab.
         let anchoredFloat = SidebarTransition(from: start, to: next).keepsFloatingSurface && (next == .locked || start == .locked)
         Meter.exemptSurface = anchoredFloat ? window.sidebarContainer : nil
         let target = window.settled + 1
@@ -614,9 +545,6 @@ struct Result {
                       frames: (duration > 0 ? duration : total) * refresh)
     }
 
-    /// Presentation speed across the same transition, against 1.3 × the
-    /// recovered curve's peak for the longest move it makes, and the largest
-    /// step beyond that speed; `snap` settles 10 ms in, as a control.
     func continuity(_ window: Window, from start: SidebarPresentation, to next: SidebarPresentation,
                     reversing reversal: SidebarPresentation? = nil, snap: Bool = false) -> (peak: CGFloat, allowed: CGFloat, excess: CGFloat) {
         settle(window, at: start)
@@ -650,17 +578,8 @@ struct Result {
     }
 }
 
-/// A step beyond the recovered curve's speed that still counts as smooth:
-/// about 3 ms of motion at its peak, for the up to 2 ms by which a timer
-/// sample and Core Animation's presentation time drift apart. A snap moves
-/// tens of points at once.
 let snapTolerance: CGFloat = 20
 
-///
-///
-///
-///
-/// the budget below is Parc's.
 let arcGroup = "Parc [D]: sidebar frame (origin), contents constraint, contents frame, one layoutSubtreeIfNeeded"
     + " (floating → locked also fades the floating background's alpha); Parc's budget: no per-frame main-thread work in its views"
 
@@ -674,8 +593,6 @@ let arcGroup = "Parc [D]: sidebar frame (origin), contents constraint, contents 
     let idle = (0..<3).map { _ in harness.baseline() }.max() ?? 0
     print("idle main thread: \(String(format: "%.3f", idle * 1000)) ms/frame")
     let scenarios: [(String, Window, SidebarPresentation, SidebarPresentation, SidebarPresentation?)] = [
-        // With no tab ⌘S floats; hiding over the empty content stays as a
-        // content-cost case beside the web page's.
         ("content cost: ⌘S hide, empty content", empty, .locked, .hidden, nil),
         ("content cost: ⌘S reveal, empty content", empty, .hidden, .locked, nil),
         ("⌘S hide, web page", page, .locked, .hidden, nil),
@@ -685,8 +602,6 @@ let arcGroup = "Parc [D]: sidebar frame (origin), contents constraint, contents 
         ("hover reveal, or the last tab closing (floating)", empty, .hidden, .floating, nil),
         ("content cost: floating dismissal, empty content", empty, .floating, .hidden, nil),
         ("⌘S locks a floating sidebar", empty, .floating, .locked, nil),
-        // The dock made its behind-window material; hidden, it is held off
-        // AppKit's per-frame resize like any hidden drawing view.
         ("⌘S with no tab floats after a dock", empty, .locked, .floating, nil),
         ("⌘S hide reversed by ⌘S", page, .locked, .hidden, .locked),
         ("⌘S reveal reversed by ⌘S", page, .hidden, .locked, .hidden),
@@ -703,19 +618,14 @@ let arcGroup = "Parc [D]: sidebar frame (origin), contents constraint, contents 
             print("  outside budget: the floating materials, resized \(result.flight.exempt.byLabel) on frames AppKit drove; [I] the floating background is too")
         }
         print("  completion:  \(result.completion)")
-        //
-        // view of the window but the floating material works per frame.
         c.expect(result.flight.isIdle, "\(name): per-frame layout, frame, layer, text, draw or redraw-request work in flight: \(result.flight)")
         c.expect(result.flight.viewSeconds == 0, "\(name): \(result.flight.viewSeconds * 1000) ms of view work in flight")
-        // Each pass lays out a view and relays out a label at most once.
         for (pass, work) in [("preparation", result.preparation), ("group", result.group)] {
             c.expect(work.layouts.mostOutsideAppKit <= 1, "\(name): a view laid out twice in the \(pass): \(work.layouts.byLabel)")
             c.expect(work.text.most <= 1, "\(name): a label relaid out twice in the \(pass): \(work.text.byLabel)")
         }
-        // The renderer hears the final page size once, never per frame.
         c.expect(result.flight.frames.byLabel["page.renderWidget"] == nil && (result.group.frames.byLabel["page.renderWidget"] ?? 0) <= 1,
                  "\(name): the page's renderer view resized more than once")
-        // The settled frames are the model's, with no geometry animation left.
         let settled = window.frames()
         c.expect(window.sidebarContainer.frame == settled.sidebar && window.pageHost.frame == settled.pageHost
                  && window.pageShadow.frame == ContentShadowImage.frame(around: settled.pageHost)
@@ -723,8 +633,6 @@ let arcGroup = "Parc [D]: sidebar frame (origin), contents constraint, contents 
         c.expect(window.participants.allSatisfy { view in ["position", "bounds"].allSatisfy { view.layer?.animation(forKey: $0) == nil } },
                  "\(name): a geometry animation outlived the transition")
         if from == .floating && to == .locked {
-            //
-            // opacity and at most one bounds animation and no per-frame work.
             c.expect(result.group.animations.byKey["opacity FloatingSidebarShadowView"] == 1
                      && (result.group.animations.byKey["bounds FloatingSidebarShadowView"] ?? 0) <= 1,
                      "\(name): the floating shadow does not fade once inside the group: \(result.group.animations.byKey)")
@@ -736,16 +644,10 @@ let arcGroup = "Parc [D]: sidebar frame (origin), contents constraint, contents 
     }
     c.expect(page.pane.page.boundsSent > 0, "the page's renderer view heard its sizes")
 
-    // The floating surface through a dock: a full pass mid-slide (a theme or
-    //
-    // sidebar is square and unshadowed, and the next float, like a dock
-    // reversed into floating, shows the shadow again.
     func dockState(_ window: Window) -> (alpha: CGFloat, hidden: Bool, radius: CGFloat) {
         let shadow = window.sidebarContainer.subviews.first { $0 is FloatingSidebarShadowView }
         return (shadow?.alphaValue ?? -1, shadow?.isHidden ?? true, window.sidebarContainer.layer?.cornerRadius ?? -1)
     }
-    //
-    // alpha and visibility.
     func materialState(_ window: Window) -> (blur: CGFloat, dock: CGFloat, dockHidden: Bool) {
         let materials = window.sidebarContainer.subviews.compactMap { $0 as? NSVisualEffectView }
         return (materials.first?.alphaValue ?? -1, materials.count == 2 ? materials[1].alphaValue : -1, materials.count == 2 ? materials[1].isHidden : false)
@@ -785,7 +687,6 @@ let arcGroup = "Parc [D]: sidebar frame (origin), contents constraint, contents 
     harness.until { empty.settled >= target }
     harness.settle(empty, at: .locked)
 
-    // Negative controls: the budget catches each cost it guards against.
     print("\nControls (each must violate the budget):")
     let unpinned = Window(pinsSurface: false)
     let surface = harness.measure("control: unpinned theme canvas", unpinned, from: .floating, to: .locked)

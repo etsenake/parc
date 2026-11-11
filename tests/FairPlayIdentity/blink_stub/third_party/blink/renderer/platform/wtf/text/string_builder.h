@@ -1,4 +1,3 @@
-// Only the builder operations used by the real Safari identity header.
 #ifndef PARC_TESTS_BLINK_STUB_STRING_BUILDER_H_
 #define PARC_TESTS_BLINK_STUB_STRING_BUILDER_H_
 
@@ -15,6 +14,6 @@ class StringBuilder {
  private:
   std::string value_;
 };
-}  // namespace blink
+}
 
-#endif  // PARC_TESTS_BLINK_STUB_STRING_BUILDER_H_
+#endif

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Actual native editor/router components; temporary documents, no browser/UI actions."""
 from pathlib import Path
 import hashlib,json,subprocess,time,argparse
 p=argparse.ArgumentParser();p.add_argument('--output',type=Path);args=p.parse_args()

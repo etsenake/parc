@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""P1 behavior lock: ShortcutSmileyView 60 Hz timer idle-stops and skips true
-no-ops. Hidden/detached/settled ticks must stopFrames; identical presentation
-fingerprints must skip needsDisplay. Active keyframe motion still dirties.
-Do not change shortcut binding behavior.
-"""
 from pathlib import Path
 import re
 

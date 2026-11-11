@@ -1,9 +1,6 @@
 import AppKit
 import QuartzCore
 
-// Offscreen only: the app may not activate, the borderless window is never
-// ordered in, and selection is assigned the way LibraryView.show assigns it.
-
 @main
 struct LibraryRailChecks {
     @MainActor static func main() { run() }
@@ -28,7 +25,6 @@ func run() {
     window.contentView = root
 
     func makeTile(_ title: String, _ name: LibraryRailAnimation.Name) -> LibraryRailTile {
-        // The hidden progress badge holds the icon's slot, so its frame is the icon rect.
         let tile = LibraryRailTile(title, animation: name, hasProgressBadge: true)
         tile.iconColors = (primary, secondary)
         tile.frame = NSRect(x: 0, y: 0, width: LibraryRailLayout.width - 15, height: LibraryRailLayout.tileHeight)
@@ -64,8 +60,6 @@ func run() {
         candidates[key] = result
         return result
     }
-    /// The drawn icon against the interpreter at `frames` (quarter steps):
-    /// the best mean absolute byte difference over the icon rect.
     struct Drawn {
         let pixels: [UInt8]
         let elapsed: CFTimeInterval
@@ -100,15 +94,12 @@ func run() {
             RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: min(0.002, max(0, target - CACurrentMediaTime()))))
         }
     }
-    ///
     func playing(_ drawn: Drawn) -> ClosedRange<Double> {
         let frame = min(35, 1 + 60 * drawn.elapsed)
         return (frame - 1.5)...(frame + 1.5)
     }
-    // A static frame matches exactly; a moving one is captured a few milliseconds off a quarter frame.
     let exact = 0.05, moving = 1.0
 
-    // A page selected before the rail has a window (the Library opening on it) does not play.
     let opening = makeTile("Media", .media)
     opening.state = .on
     root.addSubview(opening)
@@ -119,7 +110,6 @@ func run() {
            "A page selected before its window rests on the start frame instead of playing")
     opening.removeFromSuperview()
 
-    // Selection plays; deselection lets the running play finish; reselection restarts it.
     let media = makeTile("Media", .media)
     root.addSubview(media)
     drawn = capture(media, since: CACurrentMediaTime())
@@ -148,7 +138,6 @@ func run() {
     expect(score(drawn, media, playing(drawn)) < moving, "The restarted play runs at 60 frames a second")
     media.removeFromSuperview()
 
-    // Completion parks on selection-end, through deselection; reselection replays from hover-start.
     let archive = makeTile("Archived Tabs", .archive)
     root.addSubview(archive)
     let parked = 34.9...35.0, rest = 0.0...1.0
@@ -174,7 +163,6 @@ func run() {
     expect(score(drawn, archive, playing(drawn)) < moving && score(drawn, archive, parked) > 10,
            "Selecting again replays from hover-start")
 
-    //
     expect(CACurrentMediaTime() - start < 0.5, "Leaving the window happens mid-play")
     archive.removeFromSuperview()
     root.addSubview(archive)
@@ -186,7 +174,6 @@ func run() {
            "Leaving the window parks a running play on selection-end")
     archive.removeFromSuperview()
 
-    // Reduce Motion never plays.
     let still = makeTile("Archived Tabs", .archive)
     root.addSubview(still)
     SystemOverrides.reduceMotion = true
@@ -198,7 +185,6 @@ func run() {
     SystemOverrides.reduceMotion = false
     still.removeFromSuperview()
 
-    // DownloadsPage.SidebarView: one badge renderer while any download is in flight.
     let downloads = makeTile("Downloads", .downloads)
     root.addSubview(downloads)
     let badge = downloads.progress!, profile = UUID()
@@ -222,7 +208,6 @@ func run() {
     expect(badge.activity?.identity == DownloadLibraryIdentity(flight("b", received: 10, started: 2)) && badge.activity?.progress == 0.1
            && badge.activity?.completed == true && badge.subviews.first === renderer,
            "A newer download in flight keeps the renderer, and its completion is not replayed or undone")
-    /// Whether anything at all draws in the badge's slot.
     func inked(_ drawn: Drawn) -> Bool {
         let rect = badge.frame, stride = Int(badge.superview!.bounds.width * 2) * 4
         for y in Int(rect.minY * 2)..<Int(rect.maxY * 2) {
@@ -249,8 +234,6 @@ func run() {
     downloads.removeFromSuperview()
     expect(badge.isHidden && badge.activity == nil, "Leaving the window retires the badge")
 
-    // PageSidebarItem's tooltip is the title, only while the slot drops the
-    //
     let compact = makeTile("Archived Tabs", .archive)
     expect(compact.parcTooltip == nil && compact.toolTip == nil, "A labelled tile has no tooltip")
     compact.showsLabel = false

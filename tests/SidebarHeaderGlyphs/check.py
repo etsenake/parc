@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Sidebar header TranslucentButton glyphs and the URL bar surface: Parc's
-PArcButtonStyle `_32`/`_28` glyph sizes, the GrayA palette and face states, the
-reload press transform, the Developer Mode chevron, the URL bar fill and its
-buttons' reveal rule. Inert: no window is shown, no input and no browser."""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -12,7 +8,6 @@ sys.path.insert(0, str(root / "tests/Tooltip"))
 from support import tooltip_sources
 app = root / "Sources/ParcApp"
 sidebar = (app / "SidebarView.swift").read_text()
-# SidebarView itself is not compiled here; its wiring uses the checked types.
 for use in ("private let addressBackground = SidebarAddressPillView()",
             "addressBackground.dark = palette.isDark",
             "toggle.translucentFace = TranslucentButtonFace(view: toggle)",
@@ -23,7 +18,6 @@ for use in ("private let addressBackground = SidebarAddressPillView()",
             "SidebarAddressButtonsReveal.showsSiteControlCenter(revealed: revealed, copyQuoteLink: showsSharedQuote)",
             "SidebarAddressButtonsReveal.apply(revealed, to: extensionToolbar, animated: animated)",
             "if sidebarFloating != floating { sidebarFloating = floating; updateAddressButtonsReveal() }",
-            # Keyboard focus on the address button, Site Control Center or a pinned extension reveals.
             "return responder === addressButton || responder === pageActions || responder.isDescendant(of: extensionToolbar)",
             "firstResponderObservation = window?.observe(\\.firstResponder, options: [.new])",
             "        observeFirstResponder()\n",
@@ -35,16 +29,12 @@ for use in ("private let addressBackground = SidebarAddressPillView()",
             "copyQuote.contentTintColor = palette?.maxContrastColor ?? .labelColor",
             ".font: NSFont.systemFont(ofSize: SidebarChromeLayout.addressFontSize), .foregroundColor: color, .paragraphStyle: paragraph,",
             "paragraph.firstLineHeadIndent = empty ? SidebarAddressSearchIcon.textIndent : SidebarChromeLayout.addressTextIndent",
-            #
             "let empty = address == SidebarAddressSearchIcon.placeholder",
             "addressSearchIcon.isHidden = !empty; addressSearchIcon.contentTintColor = color",
             "addressSearchIcon.isHidden = true; addressButton.addSubview(addressSearchIcon)",
             "(palette?.isDark == true ? NSColor.white : NSColor.black).withAlphaComponent(0.6)",
             "addressButton.focusRingCornerRadius = SidebarAddressPillView.cornerRadius"):
     assert use in sidebar, f"SidebarView no longer wires the header through the checked types: {use}"
-# Quote mode adds a second text line inside the complete 36-point URL pill.
-# Only the URL hit target becomes shorter; the fill and quote actions must stay
-# visible, and clicking either quote action must preserve the page selection.
 quote_layout = sidebar[sidebar.index("        addressBackground.frame = field"):sidebar.index("        let iconSide = SidebarAddressSearchIcon.side")]
 assert quote_layout.count("addressBackground.frame") == 1, "quote mode must not shrink or reposition the full URL pill"
 assert "height: Chrome.fieldHeight)" in sidebar and "static let fieldHeight: CGFloat = 36" in (app / "SidebarChromeLayout.swift").read_text()
@@ -54,14 +44,11 @@ for use in ("addressButton.frame.size.height = 18",
             "shareQuote.refusesFirstResponder = true; copyQuote.refusesFirstResponder = true",
             "shareQuote.actionBlock = action; copyQuote.actionBlock = action"):
     assert use in sidebar, f"the full-height quote pill lost its two-line presentation or original selection: {use}"
-# An event without a tracking area never matches the reveal area before AppKit has installed it.
 for kind in ("Entered", "Exited"):
     assert (f"guard let revealTracking, event.trackingArea === revealTracking else {{ super.mouse{kind}(with: event); return }}"
             in sidebar), f"the sidebar's mouse{kind} must not match a nil tracking area"
 assert "addressBackground.layer?.backgroundColor" not in sidebar, "the palette must not overwrite the pill's own fill"
 controller = (app / "BrowserWindowController.swift").read_text()
-# A split pane's own bar keeps the URL bar and takes Back/Forward/Reload; only
-#
 assert "for view in [addressBackground, addressButton, pageActions, extensionToolbar] as [NSView] {\n                view.isHidden = usesContentToolbar" \
     in sidebar, "the Toolbar no longer hides exactly the URL bar group"
 assert "showsNavigation: !usesContentToolbar && !navigationInContentToolbar," in sidebar, \
@@ -79,14 +66,11 @@ pill = (app / "SidebarAddressPill.swift").read_text()
 assert 'static let placeholder = "Search or Enter URL…"' in pill and '"magnifyingglass"' in pill \
     and "override func hitTest(_ point: NSPoint) -> NSView? { nil }" in pill[pill.index("class SidebarAddressSearchIcon"):], \
     "the empty URL bar's glyph no longer matches the or lets clicks through to the URL bar"
-#
 assert "if sidebar.isPresented && sidebarShowsAddressBar {\n            return .sidebar(" in controller, \
     "extension popups no longer anchor at the visible sidebar URL bar"
-# The pill's Site Control Center popover keeps the buttons shown while open, on every close path.
 assert controller.count("if anchor === sidebar.pageControlsAnchor { sidebar.setAddressPopover(controller, open: true) }") == 1, \
     "the pill popover no longer holds its buttons revealed"
 assert controller.count("self.sidebar.setAddressPopover(controller, open: false)") == 2, "close and detach must release the reveal hold"
-#
 anchor_body = controller[controller.index("func sitePermissionAnchor(forPage page: NSView) -> NSDictionary? {"):]
 anchor_body = anchor_body[:anchor_body.index("\n    }\n")]
 assert "if anchor === sidebar.pageControlsAnchor { holdAddressButtonsForPermissionPrompt() }" in anchor_body, \
@@ -109,7 +93,6 @@ for use in ("if glyphPointSize != nil { translucentFace = TranslucentButtonFace(
     assert use in navigation, f"NavigationControlButton no longer draws its TranslucentButton face: {use}"
 with tempfile.TemporaryDirectory(prefix="parc-sidebar-header-glyphs-") as directory:
     scratch = Path(directory)
-    # The real ActionButton and NavigationControlButton declarations, as tests/BrowserToolbar slices them.
     slices = {
         "ActionButton.swift": ("SidebarView.swift", "final class MenuAction"),
         "NavigationControlButton.swift": ("NavigationControls.swift", "final class NavigationHistoryController"),
@@ -118,10 +101,8 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-header-glyphs-") as direct
     for target, (source, marker) in slices.items():
         text = (app / source).read_text()
         (scratch / target).write_text(text[:text.index(marker)])
-    # The ActionButton slice's Favorite favicon identity needs SplitOrientation.
     (scratch / "SplitOrientation.swift").write_text(
         "enum SplitOrientation: String, Codable, CaseIterable { case horizontal, vertical }\n")
-    # Only the Site Control Center's artwork, as tests/SpaceManager excerpts it.
     text = (root / "Sources/ParcApp/SiteControlCenter.swift").read_text()
     (scratch / "SiteControlCenterArtwork.swift").write_text(text[:text.index("enum SiteControlCenterMetrics")])
     executable = scratch / "checks"

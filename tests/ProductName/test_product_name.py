@@ -1,10 +1,3 @@
-"""Parc's UI names Parc, not Chromium, as the product.
-
-The engine check runs every translation of every string the macOS engine
-compiles through parc_branding.Rename, as grit does when it builds the
-engine. It needs an engine workspace: PARC_ENGINE_WORKSPACE, or the main
-checkout's work/engine.
-"""
 import importlib.util
 import os
 from pathlib import Path
@@ -24,24 +17,14 @@ BRANDING_SPEC.loader.exec_module(BRANDING)
 STRING_GRDS = BRANDING.STRING_GRDS
 MAC_DEFINES = BRANDING.MAC_DEFINES
 
-# Chromium's letters, with a mnemonic, an h or u more or less or o and r
-# swapped, as translators have spelt it, and its Hindi transliteration.
 CHROMIUM = re.compile(r"C&?h?&?(?:r&?o&?u?|o&?r)&?m&?(?:i|u&?i)|क्रोमियम")
-# Chromium OS keeps its name.
 OPERATING_SYSTEM = re.compile(r"Chromium\s?OS")
-# Chrome in any form or script a translation gives the browser, in lower case
-# outside URLs, and Google's devices and operating system wrongly renamed.
 CHROME = re.compile(r"[CС]hrom(?!ebook|ebox|ebit|ecast|e\s?OS|ium)|(?<![\w/:.-])chrom(?!ium|e[\w/:.-])|"
                     r"(?<![^\W\d_])hrome|क्रोम|ক্রোম|குரோம|ක්\u200dරෝම")
 DEVICE = re.compile(r"Parc(?:book|box|bit|cast|\s?OS)")
-# The English says Chrome, other than for Google's devices and operating system.
 SAYS_CHROME = re.compile(r"Chrome(?!book|box|bit|cast|\s?OS)")
-# Messages whose English Chrome stays, by why it is still true. Every message
-# the macOS engine compiles whose English says Chrome is here or in
-# parc_branding.CHROME_MEANS_PARC.
 CHROME_KEPT = {
     "Google product or service": frozenset({
-        # The Chrome Web Store.
         "IDS_EXTENSIONS_BLOCKLISTED_CWS_POLICY_VIOLATION",
         "IDS_EXTENSIONS_DISABLED_PUBLISHED_IN_STORE_REQUIRED_BY_POLICY",
         "IDS_EXTENSIONS_DISABLED_UNSUPPORTED_DEVELOPER_MODE",
@@ -63,7 +46,6 @@ CHROME_KEPT = {
         "IDS_POLICY_OFF_CWS_URL_ERROR",
         "IDS_SAFETY_CHECK_EXTENSIONS_POLICY_VIOLATION",
         "IDS_SETTINGS_ACCESSIBILITY_WEB_STORE",
-        # Chrome Apps.
         "IDS_APP_PAUSE_HEADING_FOR_WEB_APPS",
         "IDS_DEPRECATED_APPS_LEARN_MORE_AX_LABEL",
         "IDS_DEPRECATED_APPS_MONITOR_RENDERER",
@@ -72,7 +54,6 @@ CHROME_KEPT = {
         "IDS_FORCE_INSTALLED_PREINSTALLED_DEPRECATED_APPS_CONTENT",
         "IDS_QUIT_WITH_APPS_EXPLANATION",
         "IDS_QUIT_WITH_APPS_QUIT_LABEL",
-        # Chrome sign-in and sync, and what is built on them.
         "IDS_ACCESS_CODE_CAST_ERROR_PROFILE_SYNC",
         "IDS_ACC_OMNIBOX_PEDAL_MANAGE_SYNC_SUFFIX_UPDATED",
         "IDS_ACC_OMNIBOX_PEDAL_MANAGE_SYNC_UPDATED",
@@ -114,7 +95,6 @@ CHROME_KEPT = {
         "IDS_TIPS_NOTIFICATIONS_SIGNIN_TITLE",
         "IDS_TOOLBAR_BUTTON_SEND_TAB_TO_SELF_BUTTON_HINT_TEXT",
         "IDS_TUTORIAL_SEND_TAB_TO_SELF_SUCCESS_BODY",
-        # Chrome Enterprise and Google's admin console.
         "IDS_CHROME_ENTERPRISE_RELEASE_NOTES",
         "IDS_ENTERPRISE_CONTENT_ANALYSIS_COPY_KEPT_IN_MANAGED_CHROME_MESSAGE",
         "IDS_MANAGEMENT_BANNER_PROMOTION_BTN",
@@ -129,23 +109,17 @@ CHROME_KEPT = {
         "IDS_POLICY_BANNER_PROMOTION_DESC",
         "IDS_POLICY_CLOUD_MANAGEMENT_ENROLLMENT_ONLY_ERROR",
         "IDS_POLICY_IGNORED_UNAFFILIATED",
-        # The Chrome Root Store and Root Program.
         "IDS_SETTINGS_CERTIFICATE_MANAGER_V2_CRS_CERTIFICATES",
         "IDS_SETTINGS_CERTIFICATE_MANAGER_V2_CRS_CERTIFICATES_DESCRIPTION",
         "IDS_SETTINGS_CERTIFICATE_MANAGER_V2_CRS_LEARN_MORE_LINK_ARIA_LABEL",
-        # Google Chrome on other devices.
         "IDS_DOWNLOAD_CHROME",
         "IDS_IOS_DESKTOP_ADDRESS_PROMO_BUBBLE_FOOTER_DESCRIPTION_QR",
         "IDS_IOS_DESKTOP_PAYMENT_PROMO_BUBBLE_FOOTER_DESCRIPTION_QR",
         "IDS_NTP_MOBILE_PROMO_DESCRIPTION",
         "IDS_NTP_MOBILE_PROMO_HEADER",
         "IDS_PASSWORD_MANAGER_UI_WEB_PROMO_CARD_DESCRIPTION",
-        # Google Chrome's own builds, which show these instead of the ones Parc
-        # shows.
         "IDS_PASSWORD_MANAGER_RELAUNCH_CHROME_BUBBLE_ACCEPT_BUTTON_BRANDED",
         "IDS_PASSWORD_MANAGER_RELAUNCH_CHROME_BUBBLE_DESCRIPTION_BRANDED",
-        # Chrome for Testing, Chrome Labs, Google's Chrome tips and help sites, Chrome's
-        # Terms of Service and Google Family Link.
         "IDS_ACC_OMNIBOX_PEDAL_SEE_CHROME_TIPS",
         "IDS_ACC_OMNIBOX_PEDAL_SEE_CHROME_TIPS_SUFFIX",
         "IDS_CHROMELABS",
@@ -156,7 +130,6 @@ CHROME_KEPT = {
         "IDS_TOS_NOTIFICATION_TITLE",
     }),
     "What Google does that Parc doesn't": frozenset({
-        # Google Safe Browsing; Parc has no Google API key, so it is inert.
         "IDS_CHROME_NO_LONGER_SHOW_WARNINGS_NOTIFICATION_BODY",
         "IDS_DOWNLOAD_LOCAL_DECRYPTION_PROMPT_ALERT",
         "IDS_EXTENSIONS_BLOCKLISTED_POTENTIALLY_UNWANTED",
@@ -176,7 +149,6 @@ CHROME_KEPT = {
         "IDS_TAILORED_SECURITY_UNCONSENTED_MODAL_BODY",
         "IDS_TAILORED_SECURITY_UNCONSENTED_MODAL_TITLE",
         "IDS_TIPS_NOTIFICATIONS_ENHANCED_SAFE_BROWSING_TITLE",
-        # Google Account features, which need Google sign-in.
         "IDS_AUTOFILL_ADDRESS_HOME_AND_WORK_RECORD_TYPE_NOTICE",
         "IDS_AUTOFILL_GMAIL_OTP_FILLING_TOGGLE_DESCRIPTION",
         "IDS_AUTOFILL_SAVE_CARD_CONFIRMATION_FAILURE_DESCRIPTION_TEXT",
@@ -195,15 +167,12 @@ CHROME_KEPT = {
         "IDS_PROFILES_DASHER_FEATURE_DISABLED_TITLE",
         "IDS_SAVE_TO_DRIVE_FOLDER_NAME",
         "IDS_SETTINGS_PASSWORD_CHANGE_SUBLABEL",
-        # Google's updater; Parc updates itself.
         "IDS_ABOUT_CHROME_AUTOUPDATE_ALL",
         "IDS_ACC_OMNIBOX_PEDAL_UPDATE_CHROME",
         "IDS_ACC_OMNIBOX_PEDAL_UPDATE_CHROME_SUFFIX",
         "IDS_OMNIBOX_PEDAL_UPDATE_CHROME_HINT",
         "IDS_OMNIBOX_PEDAL_UPDATE_CHROME_SUGGESTION_CONTENTS",
         "IDS_UPDATER_HELP_CENTER_TOOLTIP",
-        # Reports, surveys and other data sent to Google, Google's translation and
-        # shopping services, and Google's tips notifications.
         "IDS_CHROME_FINDS_NOTIFICATIONS_HELPFUL_BUTTON_TEXT",
         "IDS_MEDIA_ROUTER_FEEDBACK_PRIVACY_DATA_USAGE",
         "IDS_OMNIBOX_TRACK_PRICE_DIALOG_TITLE_FIRST_RUN",
@@ -215,7 +184,6 @@ CHROME_KEPT = {
         "IDS_TIPS_NOTIFICATIONS_HELPFUL_BUTTON_TEXT",
     }),
     "Feature Parc excludes": frozenset({
-        # Gemini and Chrome's other AI features.
         "IDS_ACTOR_EXPERIMENTAL_TRIGGERING_NOTIFICATION_BODY",
         "IDS_ACTOR_EXPERIMENTAL_TRIGGERING_NOTIFICATION_BODY_FALLBACK",
         "IDS_ACTOR_NOTIFICATION_BODY_COMPLETE",
@@ -266,7 +234,6 @@ CHROME_KEPT = {
         "IDS_STS_IPH_PROMPT_FIRST_TIME_ADDING_CONTEXT_MESSAGE_BODY",
         "IDS_STS_IPH_TRY_IT_BODY",
         "IDS_STS_SETTINGS_OPTION_1_CHOOSE_HOW_RELEVANT_OPEN_TABS_CAN_BE_USED_V3",
-        # Other platforms.
         "IDS_IOS_ACC_OMNIBOX_PEDAL_SET_CHROME_AS_DEFAULT_BROWSER",
         "IDS_IOS_ACC_OMNIBOX_PEDAL_SET_CHROME_AS_DEFAULT_BROWSER_SUFFIX",
         "IDS_IOS_OMNIBOX_PEDAL_PLAY_CHROME_DINO_GAME_HINT",
@@ -304,8 +271,6 @@ def load_generator():
 
 
 class MacDefines(dict):
-    """The macOS engine's grit defines, with every other define false."""
-
     def __init__(self):
         super().__init__(dict.fromkeys(MAC_DEFINES, True), safe_browsing_mode=1,
                          _google_chrome=False)
@@ -318,7 +283,6 @@ class MacDefines(dict):
 
 
 def project_link(branding, translation):
-    """The start of the translation's link to the Chromium project, if any."""
     return "".join(part if isinstance(part, str) else part.GetOriginal()
                    for part, in_link in branding._Parts(translation) if in_link)
 
@@ -452,7 +416,6 @@ class EngineStringsTests(unittest.TestCase):
                 english_text = branding._Text(english)
                 chrome_is_parc = name in branding.CHROME_MEANS_PARC or (
                     "Chromium" in english_text and "Chrome" not in english_text)
-                # A translation's Chromium there is the translator's Chrome.
                 kept_as_is = name in kept and "Chromium" not in english_text
                 translations = [(("en", ""), english), *node.clique.clique.items()]
                 for (language, gender), translation in translations:
@@ -478,8 +441,6 @@ class EngineStringsTests(unittest.TestCase):
         self.assertEqual(sorted(says_chrome ^ (kept | branding.CHROME_MEANS_PARC)), [])
 
 
-# Parc's own source and resources, which may name Chromium only where it is
-# the engine, its project, another browser or an identifier.
 SOURCE_ROOTS = ("Sources", "Resources", "Engine/ParcNative", "Engine/ParcRenderer",
                 "Engine/ParcImport", "Engine/ParcInternalExtension",
                 "Engine/ParcHost/native", "Engine/ParcHost/integration")
@@ -487,7 +448,6 @@ CODE = {".swift", ".m", ".mm", ".h", ".cc", ".c", ".js", ".ts"}
 TEXT = {".html", ".css", ".json", ".strings", ".plist", ".sdef", ".svg", ".txt"}
 LITERAL = re.compile(r"\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*'")
 ALLOWED = {
-    # The engine's version, its project and its open source credits.
     "Sources/ParcApp/AboutParcWindow.swift": {
         '"ParcChromiumVersion"',
         '"Chromium Engine Version \\(info.chromium)"',
@@ -499,7 +459,6 @@ ALLOWED = {
         '"Chromium Embedded Framework.framework"',
         '"Chromium Engine Version \\(engine)"',
     },
-    # The engine framework's path.
     "Sources/ParcApp/AppDelegate.swift": {'"/Chromium Embedded Framework.framework"'},
     "Sources/ParcHelper/main.cc": {
         '"/../../../Chromium Embedded Framework.framework/"',
@@ -512,10 +471,7 @@ ALLOWED = {
     "Engine/ParcNative/native_appkit_application.mm": {
         '"the next time you relaunch Chromium."',
     },
-    # Parc's existing engine data directory.
     "Sources/ParcCore/BrowserStore.swift": {'"Chromium-v1"'},
-    # The Chromium browser's own folders, Keychain item and name, to import
-    # from it and share its native messaging hosts.
     "Sources/ParcCore/NativeMessagingHosts.swift": {'"Chromium"'},
     "Engine/ParcNative/native_import_discovery.mm": {
         '"org.chromium.Chromium"',
@@ -523,19 +479,16 @@ ALLOWED = {
         '"Library/Application Support/Chromium"',
         '"Chromium Safe Storage"',
     },
-    # Keychain items earlier Parc builds stored passwords under.
     "Engine/ParcNative/native_keychain_namespace.h": {
         '"Parc (Chromium compatibility)"',
         '"Chromium Safe Storage"',
         '"Chromium"',
     },
-    # A user-agent token sites send.
     "Engine/ParcRenderer/parc_safari_identity.h": {'"Chromium/"'},
 }
 
 
 def chromium_strings(path):
-    """Every string in |path| that names Chromium, with its line number."""
     text = path.read_text(errors="replace")
     for number, line in enumerate(text.splitlines(), 1):
         if "Chromium" not in line:

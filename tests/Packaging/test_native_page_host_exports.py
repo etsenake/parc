@@ -1,4 +1,3 @@
-"""Link the production page wrapper across the actual Swift/native boundary."""
 from pathlib import Path
 import platform
 import shutil
@@ -30,8 +29,6 @@ class NativePageHostExportTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0,
                                  result.stdout + result.stderr)
 
-            # Chromium hides symbols by default. Compiling this file directly
-            # into a test executable would not exercise the public ABI boundary.
             compile_source(
                 "clang++", "-arch", "arm64", "-std=c++20",
                 "-mmacosx-version-min=13.0", "-dynamiclib",
@@ -41,8 +38,6 @@ class NativePageHostExportTests(unittest.TestCase):
                 REPO / "Engine/ParcNative/pane_compositor_view.mm",
                 "-framework", "AppKit", "-framework", "QuartzCore", "-o", library,
             )
-            # This uses the same typed cast and contentView access as the app.
-            # Only compile/link: no application, browser or window is launched.
             compile_source(
                 "swiftc", "-target", "arm64-apple-macos13.0",
                 "-import-objc-header", REPO / "Engine/ParcNative/page_host.h",
@@ -52,7 +47,6 @@ class NativePageHostExportTests(unittest.TestCase):
                 ["xcrun", "nm", "-gU", str(library)], text=True)
             self.assertIn("_OBJC_CLASS_$_PCNativePageHost", exports)
             self.assertIn("_OBJC_METACLASS_$_PCNativePageHost", exports)
-            # The pane compositor view stays inside the engine (PUBLIC_SYMBOLS).
             self.assertNotIn("PCNativePaneCompositorView", exports)
 
 

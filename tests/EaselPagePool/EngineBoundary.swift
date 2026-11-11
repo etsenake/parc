@@ -1,7 +1,5 @@
 import AppKit
 
-// Injected engine replies for the real Swift page-pool component. These types
-// are NOT a Chromium implementation or a native-transfer behavioral test.
 @MainActor enum PCNativeNavigationAction { case back, forward, reload, stop }
 @MainActor final class PCNativeRendererCrash { var title = "Crash"; var message = ""; var actionTitle = "Reload" }
 @MainActor final class PCNativeCaptureState {}
@@ -17,9 +15,7 @@ import AppKit
     init(image: NSImage?) { self.image = image }
 }
 @MainActor final class PCNativePage: NSObject {
-    /// False plays an engine built before the embedded snapshot existed.
     var supportsSnapshot = true
-    /// The engine's NO for an ineligible page, and a reply that never comes.
     var refusesSnapshot = false, withholdsSnapshot = false
     var snapshotImage: NSImage?
     var snapshotRequests = 0

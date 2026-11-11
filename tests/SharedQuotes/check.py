@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Preference and token-lifetime checks without native pages, browser input or clipboard writes."""
 from pathlib import Path
 import subprocess
 import tempfile

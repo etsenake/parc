@@ -1,4 +1,3 @@
-/// Closed-bar gate must not run snapshot work; an open bar must.
 @main
 struct ReconcileInputsTests {
     static var assertions = 0

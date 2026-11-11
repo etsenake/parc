@@ -1,4 +1,3 @@
-"""Audit direct helper resolution using real bundle paths and inert image metadata."""
 import importlib.util
 from pathlib import Path
 import tempfile

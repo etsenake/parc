@@ -1,14 +1,3 @@
-// Proof for the native HLS media selection (Engine/ParcNative/fairplay/
-// fairplay_hls_media_selection.mm), run by scripts/test-fairplay-hls-tracks.sh.
-//
-// Plays Apple's public test streams through a plain AVPlayer (the network
-// route is fairplay_hls_player's business, not this one's) with the
-// selection running on a serial dispatch queue with no run loop, like
-// Chromium's GPU media thread. Checks the audioTracks and textTracks WebKit
-// would report, that enabling an audio track and setting text track modes
-// select the options in the AVPlayerItem, and that cues arrive: WebVTT
-// subtitles as ISO WebVTT cues, CEA-608 captions as generic cues that are
-// completed by the next one, and a seek flushing the open cue.
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 
@@ -25,12 +14,10 @@
 
 namespace fp = parc::fairplay;
 
-// The SPI the selection uses to find an option's asset track.
 @interface AVMediaSelectionOption (HlsTracksHarness)
 - (AVAssetTrack*)track;
 @end
 
-// The synchronous media selection accessors, as the selection itself uses.
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 namespace {
@@ -100,7 +87,6 @@ struct ReceivedCue {
   fp::HlsCue cue;
 };
 
-// Records what the selection reports; owner queue only.
 class Recorder : public fp::HlsMediaSelectionClient {
  public:
   void OnTracksChanged(const std::vector<fp::HlsTrack>& tracks) override {
@@ -108,7 +94,6 @@ class Recorder : public fp::HlsMediaSelectionClient {
     track_reports_++;
   }
   void OnTextCues(const std::string& track_id, const std::vector<fp::HlsCue>& cues) override {
-    // track_id is the track's key.
     for (const auto& cue : cues) {
       cues_.push_back({track_id, cue});
       if (cues_.size() <= 40) {
@@ -182,7 +167,6 @@ class Recorder : public fp::HlsMediaSelectionClient {
   std::vector<ReceivedCue> cues_;
 };
 
-// One AVPlayer with the selection attached, all on the owner queue.
 struct Session {
   explicit Session(NSString* url) {
     OnOwner([&] {
@@ -214,7 +198,6 @@ struct Session {
     return option;
   }
 
-  // The option's NAME (its common metadata title), as the track label.
   static std::string Title(AVMediaSelectionOption* option) {
     if (!option) {
       return "(none)";
@@ -240,7 +223,6 @@ struct Session {
     return now;
   }
 
-  // Seeks as the player does: BeginSeeking, then EndSeeking when it ends.
   void Seek(double seconds) {
     auto done = std::make_shared<bool>(false);
     OnOwner([&] {
@@ -265,8 +247,6 @@ struct Session {
   std::unique_ptr<fp::HlsMediaSelection> selection;
 };
 
-// bipbop_16x9_variant: two audio renditions, eight WebVTT subtitle options
-// (four languages, each with a forced-only option).
 void WebVttScenario() {
   std::printf("== webvtt: bipbop_16x9_variant\n");
   Session session(@"https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8");
@@ -283,9 +263,6 @@ void WebVttScenario() {
     const fp::HlsTrack* audio2 = r.Find(fp::HlsTrackType::kAudio, "BipBop Audio 2");
     Check(audio1 && audio2, "audio labels are the renditions' NAMEs");
     Check(audio1 && audio1->language == "eng", "audio language is the option's tag as given (LANGUAGE=eng)");
-    // WebKit's id and index: the option's ID and position, unless the item
-    // already had Audio 1's track when the audio tracks were made; then its
-    // trackID (1) and index -1 (no asset track list for HLS), sorted last.
     bool option_path = audio1 && audio1->id == "0" && audio1->index == 0 && r.tracks_[0].label == "BipBop Audio 1";
     bool asset_path = audio1 && audio1->id == "1" && audio1->index == -1 && r.tracks_[0].label == "BipBop Audio 2";
     std::printf("  audio 1 identified by its %s\n", option_path ? "option" : asset_path ? "item track" : "?");
@@ -311,7 +288,6 @@ void WebVttScenario() {
   Check(session.SelectedName(AVMediaCharacteristicLegible) == "(none)",
         "no legible option selected until the page shows a track");
 
-  // Audio switch.
   std::string audio2_id;
   OnOwner([&] {
     if (const fp::HlsTrack* audio2 = r.Find(fp::HlsTrackType::kAudio, "BipBop Audio 2")) {
@@ -337,7 +313,6 @@ void WebVttScenario() {
       15);
   Check(mirrored, "track 1 reports disabled once the item's tracks follow the switch");
 
-  // Text: show English.
   std::string english_id;
   std::string french_id;
   OnOwner([&] {
@@ -366,8 +341,6 @@ void WebVttScenario() {
     Check(timed, "a WebVTT cue ends at start + sample duration");
   });
 
-  // Hidden French is ignored while English shows; showing French wins once
-  // English is disabled.
   OnOwner([&] { session.selection->SetTextTrackMode(french_id, fp::HlsTextTrackMode::kHidden); });
   Check(session.SelectedName(AVMediaCharacteristicLegible) == "English", "a showing track beats a hidden one");
   OnOwner([&] { session.selection->SetTextTrackMode(english_id, fp::HlsTextTrackMode::kDisabled); });
@@ -390,8 +363,6 @@ void WebVttScenario() {
   Check(session.SelectedName(AVMediaCharacteristicLegible) == "(none)", "disabling every track selects none");
 }
 
-// img_bipbop_adv_example_fmp4: CLOSED-CAPTIONS (CEA-608 CC1) plus one
-// WebVTT subtitle option.
 void ClosedCaptionScenario() {
   std::printf("== cea608: img_bipbop_adv_example_fmp4\n");
   Session session(
@@ -432,9 +403,6 @@ void ClosedCaptionScenario() {
       },
       40);
   Check(added, "CEA-608 captions arrive as open-ended generic cues");
-  // TextTrackCueGeneric's style comes from the cue's markup attributes: the
-  // colours the page draws (CEA-608 gives white text on a black character
-  // background, and no base font size).
   OnOwner([&] {
     const fp::HlsCue* styled = nullptr;
     for (const auto& c : r.cues_) {
@@ -479,7 +447,6 @@ void ClosedCaptionScenario() {
     }
     Check(any && matched, "updates name a cue added before, with the same text and start");
   });
-  // A seek drops the open cue (removeGenericCue) when one is pending.
   size_t open_before = 0;
   OnOwner([&] {
     std::vector<uint64_t> open;
@@ -509,11 +476,6 @@ void ClosedCaptionScenario() {
   Check(after_seek, "captions resume after the seek");
 }
 
-// Chromium's bbb-320x240-2video-2audio.mp4 (video 1, audio 2, video 3,
-// audio 4) rewritten as a multi-language file is muxed: with `grouped`, the
-// audio tracks share alternate group 1 and the video tracks group 2, the
-// second of each disabled; without, no groups and every track enabled.
-// Returns a file URL, or nil.
 NSURL* MultiTrackFile(bool grouped) {
   NSData* source = [NSData dataWithContentsOfURL:
       [NSURL URLWithString:@"https://raw.githubusercontent.com/chromium/chromium/main/media/test/data/"
@@ -540,7 +502,7 @@ NSURL* MultiTrackFile(bool grouped) {
         uint32_t id = be32(at + 12 + (v1 ? 16 : 8));
         bool audio = id % 2 == 0;
         bool second = id > 2;
-        bytes[at + 11] = grouped && second ? 0x2 : 0x3;  // track_enabled | in_movie
+        bytes[at + 11] = grouped && second ? 0x2 : 0x3;
         size_t alternate_group = at + 12 + (v1 ? 32 : 20) + 8 + 2;
         bytes[alternate_group] = 0;
         bytes[alternate_group + 1] = grouped ? (audio ? 1 : 2) : 0;
@@ -554,9 +516,6 @@ NSURL* MultiTrackFile(bool grouped) {
   return [data writeToURL:url atomically:YES] ? url : nil;
 }
 
-// A clear file played for AirPlay (NATIVE_HLS.md, AirPlay): the element's
-// track choices reach the item, by position, whatever AVFoundation enabled,
-// and stay when the tracks change.
 void FileTracks(bool grouped) {
   std::printf("-- %s\n", grouped ? "audio and video in alternate groups, the second of each disabled"
                                   : "no alternate groups, every track enabled");
@@ -573,8 +532,6 @@ void FileTracks(bool grouped) {
   if (!listed) {
     return;
   }
-  // Which of the item's audio or video tracks play: the selected option of
-  // its group, else the enabled item tracks.
   auto playing = [&](AVMediaType type, AVMediaCharacteristic characteristic) {
     std::vector<bool> on;
     AVMediaSelectionGroup* group = [session.item.asset mediaSelectionGroupForMediaCharacteristic:characteristic];
@@ -631,8 +588,6 @@ void FileTracks(bool grouped) {
   Check(plays({true, false}, {true, false}), "back to the first audio and video tracks");
   Check(reported({true, false}), "the list follows");
 
-  // A group plays one option: the first chosen, as Chromium's pipeline does.
-  // Choosing again what plays changes nothing.
   if (grouped) {
     OnOwner([&] { session.selection->SelectFileTracks({2, {0, 1}, 2, 0}); });
     Check(plays({true, false}, {true, false}), "a group plays the first chosen audio track");
@@ -651,7 +606,6 @@ void FileTracks(bool grouped) {
     OnOwner([&] { session.selection->SelectFileTracks({2, {0, 1}, 2, 0}); });
     Check(plays({true, true}, {true, false}), "every enabled audio track plays, as Safari's");
     OnOwner([&] { session.selection->SelectFileTracks({2, {0}, 2, 0}); });
-    // A track enabled behind the choice (a tracks change) is turned off.
     OnOwner([&] {
       for (AVPlayerItemTrack* track in session.item.tracks) {
         if ([track.assetTrack.mediaType isEqualToString:AVMediaTypeAudio] && !track.enabled) {
@@ -662,8 +616,6 @@ void FileTracks(bool grouped) {
     Check(plays({true, false}, {true, false}), "a track enabled outside the choice goes off again");
     OnOwner([&] { session.selection->SelectFileTracks({2, {}, 2, std::nullopt}); });
     Check(plays({false, false}, {false, false}), "none enabled or selected plays none");
-    // A list that doesn't match the item's (a track Chromium's demuxer
-    // couldn't read) leaves AVFoundation's choice for that type.
     OnOwner([&] { session.selection->SelectFileTracks({1, {0}, 2, 1}); });
     Check(plays({false, false}, {false, true}), "unmatched audio stays as it is; video follows");
   }
@@ -671,8 +623,8 @@ void FileTracks(bool grouped) {
 
 void FileScenario() {
   std::printf("== file: a clear MP4 with two audio and two video tracks\n");
-  FileTracks(/*grouped=*/true);
-  FileTracks(/*grouped=*/false);
+  FileTracks(true);
+  FileTracks(false);
 }
 
 void TeardownScenario() {
@@ -686,12 +638,11 @@ void TeardownScenario() {
     });
     [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:1.0]];
   }
-  // Anything posted after destruction must be dropped, not crash.
   [[NSRunLoop mainRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:2.0]];
   Check(true, "destroying the selection while cues are flowing");
 }
 
-}  // namespace
+}
 
 int main(int argc, char** argv) {
   @autoreleasepool {

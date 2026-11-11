@@ -32,14 +32,10 @@ DECODER = 'media/filters/mac/audio_toolbox_audio_decoder'
 FFMPEG_COMMON = 'media/ffmpeg/ffmpeg_common.cc'
 FFMPEG_CONFIG = 'third_party/ffmpeg/chromium/config/Chromium/mac/arm64'
 FFMPEG_DEMUXER = 'third_party/ffmpeg/libavformat/aacdec.c'
-# FFmpeg units the patch adds or alters: allformats.c and parsers.c include
-# the demuxer and parser lists, adts_parser.c reads CONFIG_ADTS_HEADER, and the
-# rest are the ADTS demuxer (patched, so compiled from the results) and its
-# AAC parser and tag dependencies.
 FFMPEG_UNITS = ['libavformat/allformats.c', 'libavcodec/parsers.c', 'libavcodec/adts_parser.c',
                 'libavcodec/aac_ac3_parser.c', 'libavcodec/aac_parser.c', 'libavcodec/adts_header.c',
                 'libavformat/apetag.c', 'libavformat/img2.c']
-FIXTURES = {  # name: (afconvert container, data format, source)
+FIXTURES = {
     'lc.m4a': ('m4af', 'aac ', 'stereo.wav'),
     'he.m4a': ('m4af', 'aach', 'stereo.wav'),
     'hev2.m4a': ('m4af', 'aacp', 'stereo.wav'),
@@ -52,11 +48,7 @@ FIXTURES = {  # name: (afconvert container, data format, source)
     'lc22.aac': ('adts', 'aac ', 'stereo22.wav'),
     'lc22_mono.aac': ('adts', 'aac ', 'mono22.wav'),
 }
-# afconvert's MP4s signal SBR explicitly; these copies keep only the AAC-LC core.
 IMPLICIT_MP4 = {'he_implicit.m4a': 'he.m4a', 'hev2_implicit.m4a': 'hev2.m4a'}
-# macOS's own decoding of these, with its priming, remainder and decoder tail,
-# made by afconvert so that nothing touches AudioToolbox in the test process
-# before a seatbelt applies.
 REFERENCES = ['he.aac', 'hev2.aac', 'he.m4a', 'hev2.m4a', 'lc.m4a']
 
 
@@ -69,9 +61,6 @@ def sha(path):
 
 
 def patched_sources(tree):
-    """Return every target of the overlay patch as the manifest's after-digest bytes. Each live
-    target may already be patched, be pristine, or carry an earlier overlay's version; for the
-    last, the pristine bytes come read-only from the Git checkout that holds the file."""
     spec = importlib.util.spec_from_file_location('engine_source', REPO / 'scripts/engine-source.py')
     engine = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(engine)
@@ -133,8 +122,6 @@ def child(data, start, end, *path):
 
 
 def extract_mp4(source, target):
-    """Write the AudioSpecificConfig and access units of an afconvert .m4a without AudioToolbox,
-    so nothing initializes AudioToolbox before the test applies a seatbelt profile."""
     data = source.read_bytes()
     stbl = child(data, 0, len(data), 'moov', 'trak', 'mdia', 'minf', 'stbl')
     stsd = child(data, *stbl, 'stsd')
@@ -177,15 +164,12 @@ def extract_mp4(source, target):
 
 
 def implicit_mp4(source, target):
-    """Rewrite an afconvert HE-AAC .m4a so its esds AudioSpecificConfig is the bare two-byte
-    AAC-LC core, as an implicitly signalled HE-AAC MP4 carries. The `free` box between moov and
-    mdat absorbs the size change, so the chunk offsets stay valid."""
     data = bytearray(source.read_bytes())
     ancestors, start, end = [], 0, len(data)
     for name in ('moov', 'trak', 'mdia', 'minf', 'stbl', 'stsd'):
         start, end = child(data, start, end, name)
         ancestors.append(start - 8)
-    ancestors.append(start + 8)  # the sample entry, after stsd's version, flags and count
+    ancestors.append(start + 8)
     esds = child(data, start + 8 + 8 + 28, end, 'esds')
     ancestors.append(esds[0] - 8)
     lengths, offset = [], esds[0] + 4
@@ -217,7 +201,6 @@ def implicit_mp4(source, target):
 
 
 def reference_pcm(source, target):
-    """Write afconvert's 32-bit float WAV as <u32 channels><u32 frames> and planar floats."""
     data = source.read_bytes()
     if data[:4] != b'RIFF' or data[8:12] != b'WAVE':
         raise RuntimeError('Not a WAVE file: ' + source.name)
@@ -241,8 +224,6 @@ def reference_pcm(source, target):
 
 
 def write_wav(path, channels, rate=44100):
-    # Every 5.1 channel gets the first pair, so the decoded left channel has it
-    # however afconvert maps the WAV's channels.
     tones = [(1000, 14000), (500, 16000)][:channels] if channels <= 2 else [(1000, 14000)] * channels
     with wave.open(str(path), 'wb') as output:
         output.setnchannels(channels)
@@ -309,15 +290,12 @@ def main():
     libraries = [build / name for name in (
         'libmedia.dylib', 'libbase.dylib', 'libc++_chrome.dylib', 'libui_gfx_color_space.dylib',
         'libbase_allocator_partition_allocator_src_partition_alloc_allocator_core.dylib')]
-    # The rest of FFmpeg exactly as the engine links libffmpeg.dylib, so this
-    # executable's demuxing uses one FFmpeg with the patched lists.
     link_line = next(line for line in (build / 'obj/third_party/ffmpeg/ffmpeg.ninja').read_text().splitlines()
                      if line.startswith('build ./libffmpeg.dylib'))
     replaced = {Path(unit).stem + '.o' for unit in FFMPEG_UNITS} | {'autorename_libavformat_aacdec.o'}
     ffmpeg_objects = [build / item for item in link_line.split()
                       if item.startswith('obj/third_party/ffmpeg/ffmpeg_internal/') and item.endswith('.o')
                       and Path(item).name not in replaced]
-    # libopus.a is a thin archive, which the system linker doesn't read.
     opus = subprocess.run([str(tree / 'third_party/llvm-build/Release+Asserts/bin/llvm-ar'), 't',
                            str(build / 'obj/third_party/opus/libopus.a')], capture_output=True, text=True,
                           check=True).stdout.split()
@@ -338,8 +316,6 @@ def main():
     for unit in FFMPEG_UNITS:
         commands.append([str(llvm / 'clang'), *ffmpeg_flags, '-c', str(tree / 'third_party/ffmpeg' / unit),
                          '-o', str(objects / (Path(unit).stem + '.o'))])
-    # FFmpeg's build includes aacdec.c through an autorename wrapper; its own
-    # quoted includes resolve beside the original.
     commands.append([str(llvm / 'clang'), *ffmpeg_flags, '-I' + str(tree / FFMPEG_DEMUXER).rsplit('/', 1)[0],
                      '-c', str(sources / FFMPEG_DEMUXER), '-o', str(objects / 'autorename_libavformat_aacdec.o')])
     compiled = [command[-1] for command in commands]
@@ -354,7 +330,6 @@ def main():
                          str(fixtures / (name + '.wav'))])
     extract = len(commands)
     commands.append([str(binary), str(fixtures)])
-    # Chromium's own parameters for a helper (content/browser/sandbox_parameters_mac.mm).
     darwin = {name: subprocess.run(['/usr/bin/getconf', name], capture_output=True, text=True,
                                    check=True).stdout.strip() for name in
               ('DARWIN_USER_CACHE_DIR', 'DARWIN_USER_DIR', 'DARWIN_USER_TEMP_DIR')}

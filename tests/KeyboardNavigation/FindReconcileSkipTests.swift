@@ -1,4 +1,3 @@
-/// Closed Find must skip filter/dismiss/update; an open bar must not.
 @main
 struct FindReconcileSkipTests {
     static var assertions = 0

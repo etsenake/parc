@@ -48,7 +48,6 @@ def main():
             flags.extend(shlex.split(variables[key]))
         if any("$" in flag for flag in flags):
             raise RuntimeError("Unexpanded generated variable; require explicit flags")
-        # A compiler crash must not create diagnostics in the external checkout.
         flags = [f"-fcrash-diagnostics-dir={results_dir}"
                  if flag.startswith("-fcrash-diagnostics-dir=") else flag
                  for flag in flags]

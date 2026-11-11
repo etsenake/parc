@@ -1,7 +1,6 @@
 import Combine
 import Foundation
 
-// Source-model checks only. No browser/profile/native navigation is launched.
 @main @MainActor
 struct SplitSubmissionTests {
     static var assertions = 0
@@ -73,16 +72,12 @@ struct SplitSubmissionTests {
         let foreign = store.openResolvedURL(URL(string: "https://example.test/foreign")!)
         let sourceSpace = store.state.tabs.first(where: { $0.id == source })!.spaceID
         store.selectSpace(sourceSpace); store.setSplit([source])
-        //
-        // relationship mutation precedes its Space check (SplitCrossSpaceAdd).
         expect(store.insertCommandBarSplit(after: source, expectedSelection: [source], tabID: foreign), "Foreign Space tab joins the split")
         expect(store.state.selectedTabIDs == [source, foreign] && store.activeSpaceID == sourceSpace
                && store.state.tabs.first(where: { $0.id == foreign })?.spaceID == sourceSpace, "It moves into this Space without a Space switch")
         store.setSplit([source])
         store.setKind(other, .favorite)
         expect(store.insertCommandBarSplit(after: source, expectedSelection: [source], tabID: other), "Same-profile Favorite is available across Spaces")
-        //
-        // Favorite leaves a fresh tray home and its original joins Today.
         let favoriteHome = store.state.tabs.first { $0.id != other && $0.kind == .favorite && $0.savedURL == "https://example.test/other" }
         expect(store.state.tabs.first(where: { $0.id == other })?.kind == .today
                && store.state.tabs.first(where: { $0.id == other })?.spaceID == sourceSpace, "The Favorite result joins the new Today split")

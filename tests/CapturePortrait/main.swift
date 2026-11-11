@@ -3,9 +3,6 @@ import ImageIO
 import UniformTypeIdentifiers
 import ScreenCaptureKit
 
-// Compositor/persistence/control checks use generated pixels and disposable
-// preferences. Explicit optional appearance/provider checks capture only their
-// own inert window or the system wallpaper; no browser or clipboard is driven.
 @main
 struct PortraitChecks {
     @MainActor static func main() async throws {
@@ -81,8 +78,6 @@ struct PortraitChecks {
         let preview = try PortraitCaptureRenderer.render(source: source, options: options, palette: palette,
             pageColor: .green, desktop: wallpaper, preview: true)
         precondition(max(preview.width, preview.height) <= 440)
-        // The real capture-edit owner must preserve the native PNG exactly,
-        // even when Portrait scales it down or a user edits the frame repeatedly.
         func png(_ image: CGImage) -> Data {
             let bytes = NSMutableData()
             let sink = CGImageDestinationCreateWithData(bytes, UTType.png.identifier as CFString, 1, nil)!
@@ -125,7 +120,6 @@ struct PortraitChecks {
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         tallContext.setFillColor(NSColor.red.cgColor); tallContext.fill(CGRect(x: 0, y: 0, width: 300, height: 4000))
         let tallPNG = png(tallContext.makeImage()!)
-        // CAP21 retains original, edited source, crop and frame as separate layers.
         let editedCapture = try CapturedImage(pngData: original, backingScale: 2)
         try editedCapture.crop(to: CGRect(x: 160, y: 0, width: 160, height: 160))
         var editedStyle = style; editedStyle.backingScale = 2
@@ -154,8 +148,6 @@ struct PortraitChecks {
         precondition(tallCapture.pngData == tallPNG && tallCapture.pixels.height == 4000)
         do { _ = try CapturedImage(pngData: Data([0, 1, 2])); preconditionFailure("Invalid image must fail") }
         catch { }
-        // Backing density and ICC conversion are explicit. At 2x the source
-        // retains every original pixel until the 2160 logical-point bound.
         let retina = try PortraitCaptureRenderer.render(source: source, options: options, palette: palette,
             pageColor: .green, desktop: wallpaper, backingScale: 2)
         precondition(retina.width == 1088 && retina.height == 928)
@@ -177,8 +169,6 @@ struct PortraitChecks {
         let expected = sample(p3.makeImage()!, x: 100, y: 100)
         let actual = sample(p3Result, x: 250, y: 250)
         precondition(zip(expected, actual).allSatisfy { abs(Int($0) - Int($1)) <= 1 })
-        // The recovered luma threshold intentionally differs from relative
-        // luminance; verify both sides and the exact opacity of the brand ink.
         let darkInk = PortraitCaptureRenderer.watermarkInk(on: NSColor(srgbRed: 0.75, green: 0.75, blue: 0.75, alpha: 1))
         precondition(darkInk.usingColorSpace(.sRGB)!.redComponent == 0 && darkInk.alphaComponent == 0.45)
         let lightInk = PortraitCaptureRenderer.watermarkInk(on: NSColor(srgbRed: 0.74, green: 0.74, blue: 0.74, alpha: 1))
@@ -194,8 +184,6 @@ struct PortraitChecks {
             bundle: "com.apple.finder", title: "Wallpaper", layer: -1).isWallpaper(for: display))
         precondition(!PortraitDesktopSnapshot.Candidate(id: 3, processID: 3, bounds: display,
             bundle: "com.apple.dock", title: "Dock", layer: 20).isWallpaper(for: display))
-        // Inert controls have genuine generated pixels and a disposable settings
-        // suite. No production capture, browser, clipboard or service is invoked.
         let view = PortraitCaptureView(source: source, pageColor: .green, composition: style, defaults: defaults)
         view.layoutSubtreeIfNeeded()
         precondition(view.bounds.size == NSSize(width: PortraitCaptureLayout.width, height: PortraitCaptureLayout.height),
@@ -223,8 +211,6 @@ struct PortraitChecks {
         var canceled = false; view.onCancel = { canceled = true }; view.cancelOperation(nil); precondition(canceled)
         view.showError(String(repeating: "A desktop error. ", count: 16)); view.layoutSubtreeIfNeeded()
         precondition(view.subviews.filter { !($0 is NSVisualEffectView) }.allSatisfy { view.bounds.contains($0.frame) })
-        // A deterministic failure callback is not a simulated desktop success.
-        // Saved Desktop intent must remain blocked until an explicit alternative.
         defaults.set(PortraitCaptureOptions.Background.desktop.rawValue, forKey: "parc.capture.portrait.background")
         let unavailableView = PortraitCaptureView(source: source, pageColor: .green, defaults: defaults)
         precondition(!unavailableView.captureButton.isEnabled)

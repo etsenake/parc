@@ -1,16 +1,11 @@
 import AppKit
 
-/// Production SidebarDockStrip in an off-screen window that is never shown or
-/// made key; no browser, pointer input or preferences.
 @main @MainActor struct SidebarDockStripTests {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
         count += 1
         guard value() else { fatalError("SidebarDockStrip: \(message)") }
     }
-    /// Records each alpha it is given with the animation group's duration (0
-    /// for a direct set, which would cut an in-flight cross-fade short) and
-    /// each move to a superview.
     final class RecordingButton: NSButton {
         var alphaSets: [(value: CGFloat, duration: TimeInterval)] = []
         var moves = 0
@@ -32,15 +27,12 @@ import AppKit
             return button
         }
     }
-    /// Accessibility titles in the order VoiceOver walks them.
     static func titles(_ children: [Any]?) -> [String] {
         (children ?? []).compactMap { ($0 as AnyObject as? NSAccessibilityProtocol)?.accessibilityTitle() ?? nil }
     }
     static func parts(_ strip: SidebarDockStrip, _ name: String) -> [NSView] {
         strip.documentView!.subviews.filter { $0.identifier?.rawValue == name }
     }
-    /// Points the strip's hover at an item's centre (window coordinates), as
-    /// the pointer would; nil clears it.
     static func hover(_ strip: SidebarDockStrip, _ index: Int?) {
         let item = index.map { strip.layoutState.items[$0] }
         strip.updateHover(atWindowPoint: item.map { strip.documentView!.convert(NSPoint(x: $0.midX, y: $0.midY), to: nil) })
@@ -49,11 +41,8 @@ import AppKit
     static func main() {
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 100), styleMask: [.borderless], backing: .buffered, defer: true)
-        // The host is not layer-backed, so AppKit animates the buttons by
-        // timer and an in-flight cross-fade is observable in their alpha.
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 100))
         window.contentView = host
-        //
         let strip = SidebarDockStrip(frame: SidebarChromeLayout.dockStrip(width: 228, height: 50))
         host.addSubview(strip)
         strip.dark = false
@@ -61,7 +50,6 @@ import AppKit
         check(strip.contentInsets.left == 2 && strip.contentInsets.right == 2 && strip.contentInsets.top == 0, "the 0/2/0/2 insets")
         check(strip.horizontalScrollElasticity == .none && strip.verticalScrollElasticity == .none && !strip.drawsBackground, "no elasticity or background")
 
-        // Regular: icons, the selected one at full alpha, others resting at 0.5.
         let three = buttons(3)
         strip.items = three; strip.selectedIndex = 1
         strip.layoutSubtreeIfNeeded()
@@ -75,7 +63,6 @@ import AppKit
         check(three.map(\.alphaValue) == [0.35, 1, 0.35], "dark resting alpha")
         strip.dark = false; settle()
 
-        // An iconless Space uses the foreground dot rather than its accent-tinted image.
         strip.activeTints = [.systemGreen, .systemGreen, .systemGreen]
         strip.iconlessButtons = [ObjectIdentifier(three[1])]
         let iconlessDots = parts(strip, "SidebarDockItemPageIndicator")
@@ -87,8 +74,6 @@ import AppKit
         check(titles(strip.accessibilityChildren()) == ["Space 0", "Space 1", "Space 2"], "iconless presentation keeps the Space accessibility owner")
         strip.iconlessButtons = []; strip.activeTints = []
 
-        // Accessibility order is the visual order, with and without the
-        // creation button, and reordering keeps every element in place.
         check(titles(strip.accessibilityChildren()) == ["Space 0", "Space 1", "Space 2"], "Space order left to right")
         check(titles(strip.documentView!.accessibilityChildren()) == ["Space 0", "Space 1", "Space 2"], "document order left to right")
         check(strip.accessibilityChildren()?.count == 3, "backgrounds and dots are not exposed")
@@ -108,8 +93,6 @@ import AppKit
         check(titles(strip.accessibilityChildren()) == ["Space 0", "Space 1", "Space 2"], "order without the creation button")
         check(zip(three, regular.items).allSatisfy { near($0.frame, $1) }, "frames after the reorder")
 
-        // Hover highlights; the items take no keyboard focus. Each item has
-        // its own background covering it, which only fades.
         let backgrounds = parts(strip, "SidebarDockItemBackground")
         check(backgrounds.count == 3 && zip(backgrounds, regular.items).allSatisfy { near($0.frame, $1) }, "one background per item")
         check(backgrounds.allSatisfy { $0.layer?.cornerRadius == 6 && $0.layer?.cornerCurve == .continuous }, "radius 6, continuous")
@@ -117,8 +100,6 @@ import AppKit
         hover(strip, 0); settle()
         check(abs(three[0].alphaValue - 0.7) < 0.001 && three[1].alphaValue == 1, "a hovered item is highlighted")
         check(abs(backgrounds[0].alphaValue - 1) < 0.001 && backgrounds[1].alphaValue < 0.001, "the hovered item's background shows")
-        // mouseMoved keeps resolving hover; the same Space identity must not
-        // re-enter arrange or cut the highlight.
         reset(three)
         hover(strip, 0)
         check(sets(three).allSatisfy(\.isEmpty) && abs(backgrounds[0].alphaValue - 1) < 0.001,
@@ -132,15 +113,11 @@ import AppKit
         reset(three)
         hover(strip, nil)
         check(sets(three).allSatisfy(\.isEmpty), "a repeated clear does not rearrange")
-        // A hidden view gets no mouseExited: hiding an ancestor (a window
-        // without a sidebar) clears the hover.
         hover(strip, 0); settle()
         strip.superview!.isHidden = true
         check(backgrounds.allSatisfy { $0.alphaValue < 0.001 } && three[0].alphaValue == 0.5, "hiding the sidebar clears the hover")
         strip.superview!.isHidden = false
         check(backgrounds.allSatisfy { $0.alphaValue < 0.001 }, "showing it again in a window that is not key hovers nothing")
-        // ⌘S leaves the sidebar unhidden off-screen; SidebarView.isPresented
-        // reports the hide and the return instead.
         hover(strip, 0); settle()
         strip.setPresented(false)
         check(!strip.isHiddenOrHasHiddenAncestor && backgrounds.allSatisfy { $0.alphaValue < 0.001 } && three[0].alphaValue == 0.5,
@@ -148,7 +125,6 @@ import AppKit
         strip.setPresented(true)
         check(backgrounds.allSatisfy { $0.alphaValue < 0.001 }, "its return in a window that is not key hovers nothing")
 
-        // A Space colour tints the active icon while it is selected or highlighted.
         let red = NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1), blue = NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)
         strip.activeTints = [nil, red, blue]
         check(three[0].contentTintColor == light && three[1].contentTintColor == red && three[2].contentTintColor == light,
@@ -158,9 +134,6 @@ import AppKit
         hover(strip, nil); settle()
         check(three[2].contentTintColor == light, "the colour leaves with the highlight")
 
-        // The same items, a layout pass or an unchanged style during a Space
-        // switch never set an alpha again, so the cross-fade runs on; a new
-        // item takes its style directly and leaves the others' alone.
         reset(three)
         strip.selectedIndex = 2
         check(sets(three)[2].map(\.value) == [1] && sets(three)[1].map(\.value) == [0.5] && sets(three)[0].isEmpty,
@@ -182,9 +155,6 @@ import AppKit
         strip.items = three; strip.layoutSubtreeIfNeeded(); settle()
         check(extra.superview == nil && zip(three, regular.items).allSatisfy { near($0.frame, $1) }, "the extra item leaves")
 
-        // Removing an earlier item keeps the selection on its button, so the
-        // selected icon is never restyled; a removed selection's successor
-        // still cross-fades.
         strip.selectedIndex = 2; settle(); reset(three)
         strip.items = Array(three.dropFirst()); strip.layoutSubtreeIfNeeded()
         check(strip.selectedIndex == 1 && sets([three[2]])[0].isEmpty, "the selection follows its item")
@@ -198,7 +168,6 @@ import AppKit
               "the successor of a removed selection cross-fades")
         settle()
 
-        // Compact: dots below a 22 pitch, the selected item widened and iconic.
         let eight = buttons(8)
         strip.items = eight; strip.selectedIndex = 3; strip.activeTints = []
         strip.layoutSubtreeIfNeeded(); settle()
@@ -221,7 +190,6 @@ import AppKit
         check(eight.allSatisfy { !$0.isHidden && $0.cell?.accessibilityRoleDescription() == "Space" }, "dots keep the Space buttons accessible")
         check(titles(strip.accessibilityChildren()) == (0..<8).map { "Space \($0)" }, "compact order left to right")
 
-        // Overflow scrolls; a new selection is centred, first without animation.
         let many = buttons(30)
         strip.items = many; strip.selectedIndex = nil; strip.layoutSubtreeIfNeeded()
         strip.selectedIndex = 29
@@ -239,8 +207,6 @@ import AppKit
         check(abs(many[14].alphaValue - 0.7) < 0.001, "a visible compact item shows its icon while hovered")
         hover(strip, nil); settle()
 
-        //
-        // strip keeps it only while its Spaces overflow.
         func sideways() -> NSEvent {
             NSEvent(cgEvent: CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 0, wheel2: -3, wheel3: 0)!)!
         }

@@ -110,7 +110,6 @@ static void TestButtonsAndDeferredCompletion() {
             isEqualToString:@"PCAutofillSaveSheet"],
         "uses custom NSWindow subclass, not NSAlert");
   Check(NSApp.modalWindow == nil, "no application-modal loop");
-  // macOS may place the test window on screen, so compare with the pointer.
   const BOOL pointerOverSheet = NSPointInRect(
       NSEvent.mouseLocation, [request.sheet contentRectForFrameRect:request.sheet.frame]);
   Check(request.isMouseHovered == pointerOverSheet,

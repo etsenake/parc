@@ -12,7 +12,6 @@ import AppKit
     }
     static func main() {
         let page = NSRect(x: 31, y: 76, width: 1000, height: 800)
-        // Actual content origin includes toolbar/header/shelf offsets.
         expect(NSPoint(x: 430, y: 476), [page], .horizontal, .insert(0), .horizontal)
         expect(NSPoint(x: 431, y: 476), [page], .horizontal, .replace(0), .horizontal)
         expect(NSPoint(x: 631, y: 476), [page], .horizontal, .replace(0), .horizontal)
@@ -21,7 +20,6 @@ import AppKit
         expect(NSPoint(x: 531, y: 126), [page], .horizontal, .replace(0), .horizontal)
         expect(NSPoint(x: 531, y: 826), [page], .horizontal, .replace(0), .horizontal)
         expect(NSPoint(x: 1000, y: 827), [page], .horizontal, .insert(1), .vertical)
-        // A sole pane permits either axis independently of its saved orientation.
         expect(NSPoint(x: 40, y: 476), [page], .vertical, .insert(0), .horizontal)
         expect(NSPoint(x: 531, y: 80), [page], .vertical, .insert(0), .vertical)
         let small = NSRect(x: 0, y: 0, width: 120, height: 120)
@@ -58,7 +56,6 @@ import AppKit
         check(trailing?.0 == .insert(1) && trailing?.2 == page, "insertion reports the exact classified content frame, not a half-pane preview")
         let leading = SplitDropGeometry.proposal(at: NSPoint(x: 20, y: 300), frames: horizontal, orientation: .horizontal)
         check(leading?.0 == .insert(0) && leading?.2 == horizontal[0], "edge insertion keeps the original captured pane frame")
-        //
         let tracker = SplitDropTargetTracker()
         var feedback = 0, published: [SplitDropTarget?] = []
         tracker.performFeedback = { feedback += 1 }

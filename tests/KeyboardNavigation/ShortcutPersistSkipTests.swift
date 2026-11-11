@@ -1,7 +1,5 @@
 import AppKit
 
-/// Keyboard-shortcuts pretty JSON persist skip: identical recommit leaves the
-/// file and revision untouched; a real binding change still writes and publishes.
 @main
 @MainActor
 struct ShortcutPersistSkipTests {

@@ -1,18 +1,7 @@
 import AppKit
 
-/// SidebarView's flipped content surface, holding the header and a stand-in
-/// for the list where SidebarView.layout() puts them.
 final class FlippedHost: NSView { override var isFlipped: Bool { true } }
 
-// The production Space header in an off-screen window that is never made
-// key: SidebarChromeLayout.SpaceHeader.content on Space fixtures, frames
-// against the model, the name field's font, colour, placeholder and
-// configuration, its MaskedTextField fade, the icon slot, the edit button
-// (frames, alpha, colours, hover fill, the hover delay on the main queue, the
-// key-window gate, editing and its menu), accessibility, the context menu and
-// its actions, hit testing and keyboard focus. Hover arrives as AppKit's
-// entered and exited messages; no pointer input, and menus are captured
-// rather than shown.
 @main
 struct SidebarSpaceHeaderTests {
     static var failures = 0, count = 0
@@ -26,7 +15,6 @@ struct SidebarSpaceHeaderTests {
     }
     static func components(_ color: CGColor?) -> [CGFloat]? { components(color.flatMap { NSColor(cgColor: $0) }) }
     @MainActor static func settle(_ seconds: Double) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
-    /// Runs the main run loop until `condition` holds or `seconds` pass.
     @MainActor static func wait(upTo seconds: Double, _ condition: () -> Bool) -> Bool {
         let end = Date().addingTimeInterval(seconds)
         while !condition(), Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
@@ -38,7 +26,6 @@ struct SidebarSpaceHeaderTests {
         if name.hasPrefix("Space "), Int(name.dropFirst(6)) != nil { space.title = nil }
         return space
     }
-    /// A view's pixels as AppKit draws them.
     @MainActor static func pixels(_ view: NSView) -> Data? {
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
         view.cacheDisplay(in: view.bounds, to: rep)
@@ -51,7 +38,6 @@ struct SidebarSpaceHeaderTests {
         typealias H = L.SpaceHeader
         typealias Content = H.Content
 
-        // The render-side decision SidebarView calls, on Space fixtures.
         func content(_ spaces: [BrowserSpace], _ active: BrowserSpace?, privateWindow: Bool = false, setting: Bool = false) -> Content {
             H.content(spaces: spaces, activeSpaceID: active?.id, privateWindow: privateWindow, showOnSingleUnnamedSpace: setting)
         }
@@ -91,14 +77,12 @@ struct SidebarSpaceHeaderTests {
                               backing: .buffered, defer: false)
         let host = FlippedHost(frame: NSRect(x: 0, y: 0, width: 228, height: 400))
         host.wantsLayer = true
-        // The sidebar's Space appearance, which the header inherits.
         host.appearance = NSAppearance(named: .aqua)
         window.contentView = host
         let header = SidebarSpaceHeaderView()
         let list = NSView()
         host.addSubview(header); host.addSubview(list)
 
-        // Two Spaces with a dismissed, empty tray, laid out as SidebarView does.
         header.frame = NSRect(x: 0, y: H.top(trayHeight: 0, hasFavorites: false), width: 228, height: H.height)
         list.frame = NSRect(x: 8, y: L.tablistTop(trayHeight: 0, spaceHeader: true), width: 212, height: 100)
         check(header.frame == NSRect(x: 0, y: 90, width: 228, height: 36) && list.frame.minY == header.frame.maxY,
@@ -128,7 +112,6 @@ struct SidebarSpaceHeaderTests {
         check(components(symbolView.contentTintColor) == [0, 0, 0, 0.3], "ForegroundTertiary icon tint without a Space colour")
         header.applyStyle(dark: true, tint: nil)
         check(components(field.textColor) == [1, 1, 1, 0.45] && components(symbolView.contentTintColor) == [1, 1, 1, 0.3], "dark theme")
-        // The header takes the sidebar's appearance, not one of its own.
         check(header.appearance == nil && header.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua,
               "a dark theme sets no appearance on the header; it keeps the sidebar's")
         host.appearance = NSAppearance(named: .darkAqua)
@@ -199,8 +182,6 @@ struct SidebarSpaceHeaderTests {
         header.layoutSubtreeIfNeeded()
         check(field.frame.maxX == 210 && field.frame.height == titleHeight, "a long name stays one truncated line inside the slot")
 
-        //
-        // editable field whose text runs past an edge.
         let mask = field.leadingMask
         check((mask.colors as? [CGColor]) == [NSColor.clear.cgColor, NSColor.black.cgColor]
               && mask.startPoint == CGPoint(x: 0, y: 0.5) && mask.endPoint == CGPoint(x: 1, y: 0.5) && field.isMaskingEnabled,
@@ -209,7 +190,6 @@ struct SidebarSpaceHeaderTests {
         header.layoutSubtreeIfNeeded()
         check(mask.frame == field.bounds && (mask.locations?.map(\.doubleValue) ?? []) == [0, Double(16 / field.bounds.width)],
               "layout gives the mask the field's bounds and a 16-point ramp")
-        // AppKit's handlers forward the notification's field editor.
         let editor = NSTextView()
         let changed = Notification(name: NSText.didChangeNotification, object: editor)
         field.updateMask(true); field.textDidChange(changed)
@@ -231,8 +211,6 @@ struct SidebarSpaceHeaderTests {
         field.isEditable = false
 
         first.title = nil
-        //
-        // AppKit's placeholder colour with an empty accessibility value.
         header.update(content([first], first, setting: true), symbol: nil, emoji: nil)
         header.layoutSubtreeIfNeeded()
         let reference = SidebarSpaceHeaderView()
@@ -256,9 +234,6 @@ struct SidebarSpaceHeaderTests {
         header.applyStyle(dark: false, tint: nil)
         reference.removeFromSuperview()
 
-        // Accessibility: AppKit exposes the name field's cell as a static
-        //
-        // icon views (shown or hidden) and the header itself are not elements.
         func exposed() -> [NSObject] {
             NSAccessibility.unignoredChildren(from: header.accessibilityChildren() ?? []).compactMap { $0 as? NSObject }
         }
@@ -268,8 +243,6 @@ struct SidebarSpaceHeaderTests {
         header.update(titled("Work"), symbol: star, emoji: nil)
         let children = exposed()
         let name = children.first as? NSCell
-        //
-        // hides it [C].
         let editElement = children.last as? NSCell
         check(children.count == 2 && name === field.cell && editElement === header.editButton.cell,
               "two elements: the name field's cell, then the resting edit button's")
@@ -277,8 +250,6 @@ struct SidebarSpaceHeaderTests {
               && name?.accessibilityPlaceholderValue() == nil, "a title reads as static text")
         check(name?.accessibilityIdentifier() == "sidebarSpaceName" && field.accessibilityIdentifier() == "sidebarSpaceName",
               "the sidebarSpaceName identifier on the exposed element")
-        // No label of its own: AppKit's reading of the "ellipsis" symbol with
-        //
         let plainButton = NSButton(frame: .zero)
         plainButton.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "")
         check(editElement?.accessibilityRole() == .button && editElement?.accessibilityIdentifier() == "sidebarSpaceEditButton"
@@ -291,8 +262,6 @@ struct SidebarSpaceHeaderTests {
         header.update(titled("Work"), symbol: star, emoji: nil)
         check(!symbolView.isAccessibilityElement() && !header.isAccessibilityElement(), "the symbol view and the header are not elements")
 
-        //
-        // has, then the header toggle while the content offers it.
         var calls: [String] = []
         header.onRenameSpace = { calls.append("rename") }
         header.onEditTheme = { calls.append("theme") }
@@ -322,11 +291,8 @@ struct SidebarSpaceHeaderTests {
         check(header.makeMenu().items.map(\.title) == base && (field.cell?.accessibilityCustomActions() ?? []).count == 3,
               "the toggle leaves with the content's toggle title")
 
-        //
         let button = header.editButton
         header.layoutSubtreeIfNeeded()
-        // Drawn once, AppKit animates the button's layer, so a fade is its
-        // "opacity" animation [C].
         header.display()
         func opacityFade() -> CABasicAnimation? { button.layer?.animation(forKey: "opacity") as? CABasicAnimation }
         func controlPoints(_ function: CAMediaTimingFunction?) -> [Float]? {
@@ -361,7 +327,6 @@ struct SidebarSpaceHeaderTests {
         check(areaOptions(header) == [0x223] && areaOptions(button) == [0x223] && !window.isKeyWindow,
               "the header and the button track entered/exited, moved, in the visible rect and only in the key window (0x223)")
 
-        // The gate: hovering shows nothing while canShowHeaderButtonsIfPossible is false.
         func crossing(_ type: NSEvent.EventType) -> NSEvent {
             NSEvent.enterExitEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
                                    context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)!
@@ -374,7 +339,6 @@ struct SidebarSpaceHeaderTests {
         header.canShowHeaderButtonsIfPossible = true
         check(button.frame.width == 0 && button.alphaValue == 0, "the gate alone shows nothing")
 
-        // Hover-in waits 0.1 s on the main queue, then shows and fades in.
         header.mouseEntered(with: crossing(.mouseEntered))
         check(header.isHovered && button.frame.width == 0 && button.alphaValue == 0, "hovering re-evaluates later, not at once")
         let start = Date()
@@ -387,8 +351,6 @@ struct SidebarSpaceHeaderTests {
               && field.frame == shownFrames.title && field.frame.maxX == 186 && !button.isHidden,
               "shown: 190…214, 24 × 24 and centred; the name ends 4 before it")
         check(pixels(button).map { !$0.allSatisfy { $0 == 0 } } == true, "the ellipsis draws")
-        // The pointer leaving re-evaluates on the next main-queue turn; a
-        // block queued after the exit sees that re-evaluation's result.
         settle(0.3)
         header.mouseExited(with: crossing(.mouseExited))
         check(button.frame.width == 24 && button.alphaValue == 1, "hover-out is dispatched, not applied in the exit message")
@@ -397,15 +359,11 @@ struct SidebarSpaceHeaderTests {
         settle(0.05)
         check(after.width == 0 && after.alpha == 0 && isArcFade(after.fade) && !button.isHidden && field.frame.maxX == 210,
               "then, without a custom icon, the width snaps to 0 and the alpha fades out in the 0.1 s ease-out group")
-        // A pointer that leaves within 0.1 s shows nothing: the delayed
-        // re-evaluation reads the hover again.
         header.mouseEntered(with: crossing(.mouseEntered))
         header.mouseExited(with: crossing(.mouseExited))
         var flashed = false
         _ = wait(upTo: 0.3) { flashed = flashed || button.frame.width > 0 || button.alphaValue > 0; return false }
         check(!flashed && !header.isHovered, "a hover shorter than 0.1 s never shows the button")
-        //
-        // lands with the width.
         header.update(titled("Work"), symbol: star, emoji: nil)
         header.layoutSubtreeIfNeeded()
         header.mouseEntered(with: crossing(.mouseEntered))
@@ -420,7 +378,6 @@ struct SidebarSpaceHeaderTests {
         header.mouseEntered(with: crossing(.mouseEntered))
         _ = wait(upTo: 2) { button.frame.width == 24 }
 
-        // The button's own hover fill: GrayA4, radius 6, continuous corners.
         func fill() -> [CGFloat]? { button.display(); return components(button.layer?.backgroundColor) }
         check(fill() == [0, 0, 0, 0] && button.layer?.cornerRadius == 6 && button.layer?.cornerCurve == .continuous
               && button.layer?.borderWidth == 0, "unhovered: clear, with the radius 6 continuous corners")
@@ -436,8 +393,6 @@ struct SidebarSpaceHeaderTests {
         button.mouseExited(with: crossing(.mouseExited))
         check(!button.isHovered && header.isHovered && fill() == [0, 0, 0, 0], "leaving the button clears its fill, the header stays hovered")
 
-        //
-        //
         header.update(titled("Work"), symbol: nil, emoji: nil)
         header.mouseExited(with: crossing(.mouseExited))
         _ = wait(upTo: 2) { button.frame.width == 0 && button.alphaValue == 0 }
@@ -446,13 +401,11 @@ struct SidebarSpaceHeaderTests {
         check(button.frame == editingFrames.editButton && button.frame == NSRect(x: 184, y: 6, width: 30, height: 24)
               && field.frame == editingFrames.title && field.frame.maxX == 180, "editing: 184…214 and the name ends at 180, without hover")
         check(button.alphaValue == 1 && isArcFade(opacityFade()), "the editing change fades in, in the group")
-        // AppKit keeps a 1 × 1 placeholder for the cleared image [C].
         check(button.image?.tiffRepresentation != ellipsis?.tiffRepresentation && (button.image?.size.width ?? 0) <= 1
               && button.title == "Done" && editElement?.accessibilityLabel() == "Done", "\"Done\" replaces the ellipsis")
         button.mouseEntered(with: crossing(.mouseEntered))
         check(fill() == [0, 0, 0, 0], "no hover fill while editing")
         button.mouseExited(with: crossing(.mouseExited))
-        // Done ends the rename: makeFirstResponder(nil).
         field.isEditable = true
         let began = window.makeFirstResponder(field)
         button.performClick(nil)
@@ -463,8 +416,6 @@ struct SidebarSpaceHeaderTests {
               "leaving editing restores the ellipsis and hides the button again")
         _ = wait(upTo: 2) { button.alphaValue == 0 }
 
-        // A click pops up makeMenu(), the same Space menu as right-click (the
-        // popUpContextMenu call itself is a source check; no menu is shown here).
         calls.removeAll()
         let clickMenu = header.makeMenu()
         check(clickMenu.items.map(\.title) == click.flatMap { header.menu(for: $0) }?.items.map(\.title)
@@ -472,7 +423,6 @@ struct SidebarSpaceHeaderTests {
         clickMenu.performActionForItem(at: 0)
         check(calls == ["rename"], "its items run the Parc actions")
 
-        // Hover only in the key window: resigning key (or hiding) clears it.
         NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
         check(!header.isHovered && wait(upTo: 0.5) { button.frame.width == 0 }, "resigning key clears the hover and hides the button")
         header.mouseEntered(with: crossing(.mouseEntered))
@@ -483,8 +433,6 @@ struct SidebarSpaceHeaderTests {
         settle(0.2)
         check(button.frame.width == 0 && button.alphaValue == 0, "shown again it waits for the pointer")
 
-        // Pointer and keyboard: the header takes its own events and no focus.
-        // hitTest takes points in the superview's (the flipped host's) space.
         check(header.hitTest(NSPoint(x: 100, y: 108)) === header && header.hitTest(NSPoint(x: 20, y: 108)) === header,
               "points over the name or icon hit the header")
         check(header.hitTest(NSPoint(x: 212, y: 108)) === header, "the resting edit button's slot hits the header")

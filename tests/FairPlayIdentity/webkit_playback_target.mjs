@@ -1,9 +1,3 @@
-// Runs the AirPlay availability event script from
-// Engine/ParcRenderer/parc_webkit_playback_target.h against a model of a
-// window's Event and asserts WebKit's WebKitPlaybackTargetAvailabilityEvent
-// (WebKitPlaybackTargetAvailabilityEvent.idl, HTMLMediaElement::
-// enqueuePlaybackTargetAvailabilityChangedEvent). No browser;
-// `node webkit_playback_target.mjs`.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
@@ -13,7 +7,6 @@ const header = readFileSync(fileURLToPath(new URL(
 const match = header.match(/R"PARC_WKPT_JS\(([\s\S]*)\)PARC_WKPT_JS"/);
 if (!match) throw new Error('script not found in header');
 const script = match[1];
-// Blink runs it as a Latin-1 String.
 if (/[^\x00-\x7f]/.test(script)) throw new Error('script must be ASCII');
 
 let checks = 0;
@@ -33,8 +26,6 @@ function throwsTypeError(fn) {
   return false;
 }
 
-// A window's Event, as Chromium's: type, bubbles and cancelable from the
-// dictionary, both false by default.
 const context = vm.createContext({});
 vm.runInContext(`
   class Event {
@@ -89,7 +80,6 @@ for (const [available, value] of [[true, 'available'], [false, 'not-available']]
   check(!event.bubbles && !event.cancelable, 'it neither bubbles nor cancels');
 }
 
-// A page's getters on Object.prototype never run for the hook's event.
 let touched = 0;
 vm.runInContext(`Object.defineProperty(Object.prototype, 'bubbles', {
   get() { globalThis.touched = (globalThis.touched || 0) + 1; return true; },
@@ -99,7 +89,6 @@ touched = vm.runInContext('globalThis.touched || 0', context);
 check(touched === 0 && !guarded.bubbles, 'the hook reads nothing from Object.prototype');
 vm.runInContext('delete Object.prototype.bubbles;', context);
 
-// Nor does a page changing the class's parent.
 vm.runInContext(`Object.setPrototypeOf(WebKitPlaybackTargetAvailabilityEvent,
     function() { return new Event('click', {bubbles: true}); });`, context);
 const reparented = hook(true);
@@ -107,7 +96,6 @@ check(reparented instanceof Cls && reparented.type === 'webkitplaybacktargetavai
       reparented.availability === 'available' && !reparented.bubbles,
       'the hook\'s event ignores a replaced parent class');
 
-// WebIDL converts the type before the dictionary.
 let order = '';
 try {
   new Cls({toString() { order += 'type'; throw new RangeError('type'); }}, 1);
@@ -116,11 +104,9 @@ try {
 }
 check(order === 'type:range', 'the type converts first');
 
-// A page replacing the global keeps the hook working with the real class.
 vm.runInContext('globalThis.WebKitPlaybackTargetAvailabilityEvent = null;', context);
 check(hook(true) instanceof Cls, 'the hook keeps the real class');
 
-// A document taking over the context already has the interface.
 const second = vm.createContext({});
 vm.runInContext('globalThis.Event = class Event {}; globalThis.WebKitPlaybackTargetAvailabilityEvent = 1;', second);
 check(vm.runInContext(script, second) === undefined, 'an existing interface is kept, no hook');

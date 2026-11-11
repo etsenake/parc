@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""P1-AI behavior lock: refreshCaptureIndicators leaves the sidebar's capture
-map unchanged only when the live capture presentation fingerprint matches the
-last apply (active tab ids + camera/mic/tab/window/display/mirrored/shared).
-Everyday chrome ticks still walk browsers/peeks/easel pages; real start/stop
-and bit flips still update. No dirty-bit early out that can miss capture
-notifications.
-"""
 from pathlib import Path
 import re
 
@@ -68,7 +61,6 @@ live = re.search(
 assert live and "refreshCaptureIndicators()" in live.group("body"), \
     "refreshLivePageChrome must still invoke refreshCaptureIndicators"
 
-# Sibling gates from origin/main must remain across rebase.
 assert "lastExtensionControlsSignature" in controller, \
     "extension-controls skip gate missing after rebase"
 assert "lastPushedWebsiteTheme" in controller, \

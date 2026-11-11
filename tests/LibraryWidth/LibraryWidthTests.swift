@@ -1,8 +1,5 @@
 import AppKit
 
-///
-/// SidebarChromeFrames. The Library is never put in a window and the process
-/// cannot activate; no browser, engine, input or real profile.
 @main @MainActor struct LibraryWidthTests {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -17,8 +14,6 @@ import AppKit
             SidebarChromeFrames(bounds: bounds, sidebarWidth: 228, presentation: .locked, placement: .locked,
                                 library: true, libraryContentWidth: content)
         }
-        //
-        // strip fills the page column with 4 points on each side.
         for spaces in 1...6 {
             let width = Layout.libraryWidth(count: spaces)
             check(width == 216 + 264 * CGFloat(spaces), "\(spaces) Spaces' page is 216 + 264 × \(spaces): \(width)")
@@ -35,7 +30,6 @@ import AppKit
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try BrowserStore(directory: directory)
         let profile = store.state.profiles[0].id
-        //
         for kind in [LibraryView.Kind.archive, .downloads, .captures, .documents] {
             let page = LibraryView(store: store, kind: kind, profileID: profile)
             check(page.contentWidth == SidebarChromeFrames.libraryMinimumWidth && frames(page.contentWidth).library.width == 417,
@@ -56,8 +50,6 @@ import AppKit
         check(add.maxX + Layout.horizontalInset + Layout.pageInset == library.frame.maxX,
               "the add item ends 28 points before the page: \(add)")
 
-        //
-        // a Space count change on the page keeps it, and the strip scrolls.
         let pageChange = reports
         let work = store.createSpace(name: "Work")
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))

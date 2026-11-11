@@ -1,7 +1,5 @@
 import AppKit
 
-// Async boundary fixture for the actual app coordinator. No browser, importer,
-// personal source, TCC access or native engine is loaded by these checks.
 struct PCNativeImportCategories: OptionSet {
     let rawValue: UInt
     static let history = Self(rawValue: 1), bookmarks = Self(rawValue: 2), extensions = Self(rawValue: 32)

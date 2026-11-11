@@ -1,13 +1,10 @@
 import AppKit
 
-/// Direct inert event calls only. Events are never posted to the system, and
-/// every editor substitutes a recorder for the physical feedback action.
 private final class HapticGestureEvent: NSEvent {
     let eventPhase: NSEvent.Phase
     let angle: Float
     let delta: CGFloat
     let location: NSPoint
-    /// `over` places a trackpad gesture over that dial's knob.
     init(over view: NSView? = nil, phase: NSEvent.Phase = [], angle: Float = 0, delta: CGFloat = 0) {
         eventPhase = phase; self.angle = angle; self.delta = delta
         location = view.map { $0.convert(NSPoint(x: $0.bounds.midX, y: $0.bounds.midY), to: nil) } ?? .zero

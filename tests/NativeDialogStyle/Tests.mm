@@ -51,7 +51,6 @@ static NSButton* Button(NSView* view, NSString* title) {
   return nil;
 }
 
-// Presents a two-button prompt shaped like the unresponsive-page decision.
 static PCDialogPrompt* Present(NSWindow* window, NSModalResponse* response, int* count,
                                BOOL cancelRole) {
   PCDialogPrompt* prompt = [[PCDialogPrompt alloc] initWithTitle:@"Page Unresponsive"
@@ -183,7 +182,6 @@ static void TestPanelComposition(void) {
   for (NSView* view in @[ input, ok, cancel ]) [panel.contentView addSubview:view];
   panel.enterButton = ok;
   panel.escapeButton = cancel;
-  // Count clicks through block-backed actions.
   ok.target = [NSBlockOperation blockOperationWithBlock:^{ ++accepted; }];
   ok.action = @selector(main);
   cancel.target = [NSBlockOperation blockOperationWithBlock:^{ ++cancelled; }];

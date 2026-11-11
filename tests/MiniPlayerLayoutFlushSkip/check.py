@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""P2-AR behavior lock: MiniPlayerDeck.resize and MiniPlayerRow.failure skip
-forced layoutSubtreeIfNeeded when frames/subtree are already clean after the
-sidebar height/content flush. Real dirty trees still flush. Do not touch
-cross-window mini-player sweep admission."""
 from pathlib import Path
 import re
 
@@ -14,7 +10,6 @@ assert "enum MiniPlayerLayoutFlushSkip" in view, "MiniPlayerLayoutFlushSkip help
 assert "static func shouldFlush(" in view, "shouldFlush predicate missing"
 assert "frameChanged || needsLayout || subtreeNeedsLayout" in view, \
     "shouldFlush must require a moved frame or dirty tree"
-# Freestanding unit test must keep the same true no-op formula.
 assert "frameChanged || needsLayout || subtreeNeedsLayout" in unit, \
     "MiniPlayerLayoutFlushSkipTests must mirror the production shouldFlush formula"
 
@@ -56,7 +51,6 @@ assert re.search(
     fb) is None, \
     "failure must not unconditionally layoutSubtree contentView after onHeightChanged"
 
-# Cross-window sweep admission must stay untouched (1e9231a1).
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
 assert "miniPlayerSourceSignature" in controller, \
     "mini-player multi-window sweep signature must remain"

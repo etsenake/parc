@@ -1,4 +1,3 @@
-"""Standalone packaging checks; no browser or engine build is executed."""
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -48,7 +47,6 @@ class ShippingPackagingTests(unittest.TestCase):
                     patch.object(pkg, "macho_layout", return_value={"file_type": 2}):
                 with self.assertRaisesRegex(pkg.Refusal, "escapes"):
                     pkg.verify_development_layout(app, manifest)
-                # The same original paths remain valid for a component development directory.
                 pkg.verify_development_layout(app, {**manifest, "distribution_eligible": False})
 
 

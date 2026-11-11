@@ -1,6 +1,5 @@
 import AppKit
 
-/// Real inert AppKit controls only. No browser, provider or history is opened.
 @main @MainActor struct SuggestionDeletionTests {
     static var assertions = 0
     static func expect(_ value: @autoclosure () -> Bool, _ message: String) {

@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""P1-AB behavior lock: identical payment-entry fields skip sidebar layout on
-chrome ticks; a real title/symbol/enabled/savedLabel change still layouts and
-acknowledgment/AX still follow when the entry is visible."""
 from pathlib import Path
 import re
 

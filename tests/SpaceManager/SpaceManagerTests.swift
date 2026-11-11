@@ -1,9 +1,5 @@
 import AppKit
 
-/// Inert original production cards/list responders. The window is never shown
-/// or activated; its key-state accessor is a local stand-in, and keyDown is
-/// called directly. No system input dispatch, browser, engine or real profile.
-/// The app reports itself active only where a check says so.
 @MainActor final class ManagerTestApplication: NSApplication {
     var simulatedActive = false
     override var isActive: Bool { simulatedActive }
@@ -11,11 +7,9 @@ import AppKit
 @MainActor final class ManagerTestWindow: NSWindow {
     var key = true
     override var isKeyWindow: Bool { key }
-    /// Where a check puts the pointer; nil reads the real one.
     var pointer: NSPoint?
     override var mouseLocationOutsideOfEventStream: NSPoint { pointer ?? super.mouseLocationOutsideOfEventStream }
 }
-/// An enter event for one named tracking area, as AppKit delivers it.
 final class AreaEvent: NSEvent {
     var area: NSTrackingArea?
     override var trackingArea: NSTrackingArea? { area }
@@ -87,8 +81,6 @@ final class AreaEvent: NSEvent {
         available = false; sidebar.cancelOperation(nil)
         check(cancelled == 2, "expired owner cannot cancel a replacement context")
 
-        // Space-Management reload fingerprint: title/URL publishes no-op; real
-        // membership/order/theme/profile catalog changes still apply.
         var catalog = BrowserState.initial()
         let catalogSpace = catalog.spaces[0]
         let catalogTab = BrowserTab(
@@ -144,8 +136,6 @@ final class AreaEvent: NSEvent {
         print("SpaceManager: \(count) assertions passed")
     }
 
-    ///
-    /// cards, controls, header rule, divider, Today drops and Clear targets.
     static func checkCards() {
         typealias Layout = SpaceManagementLayout
         check(Layout.cardFrame(index: 0, height: 650) == NSRect(x: 24, y: 48, width: 240, height: 554), "first card: 24 leading, 48 top/bottom, 240 wide")
@@ -202,7 +192,6 @@ final class AreaEvent: NSEvent {
         check(more?.frame == NSRect(x: 240 - 36, y: controls.midY - 14, width: 28, height: 28) && more?.accessibilityLabel() == "Space Options",
               "More options is a 28-point trailing control that keeps its accessible name")
         check(manager.anchor(for: first.id) === more, "a hidden header leaves the card's theme and icon popovers on More")
-        // More's keyboard ring follows its 6-point hover fill.
         check(more?.focusRingType == .exterior && more?.focusRingMaskBounds == more?.bounds, "More draws an exterior keyboard ring over its bounds")
         let mask = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 28, pixelsHigh: 28, bitsPerSample: 8, samplesPerPixel: 4,
                                     hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -221,7 +210,6 @@ final class AreaEvent: NSEvent {
         let clear = buttons.first { $0.identifier?.rawValue == "sidebarClear" }!
         check(clear.title == "Clear" && clear.isEnabled && clear.font == NSFont.systemFont(ofSize: 10, weight: .semibold) && clear.image != nil,
               "the card's Clear is the arrow-and-label button")
-        //
         check(!clear.isHidden && clear.alphaValue == 1, "a card shows Clear without the pointer over it")
         let section = clear.superview!
         let line = section.subviews.compactMap { $0 as? SidebarHairline }.first!
@@ -237,7 +225,6 @@ final class AreaEvent: NSEvent {
             let c = color!.usingColorSpace(.sRGB)!
             return [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent].map { ($0 * 100).rounded() / 100 }
         }
-        /// ForegroundTertiary: black or white at 0.3; ForegroundPrimary 0.9 or 0.8.
         func resting(_ color: NSColor?) -> Bool { let v = rgba(color); return v[3] == 0.3 && (v[0] == 0 || v[0] == 1) && v[0] == v[1] && v[1] == v[2] }
         func hovered(_ color: NSColor?) -> Bool { [0.8, 0.9].contains(rgba(color)[3]) }
         check(resting(clear.contentTintColor), "a resting card Clear is ForegroundTertiary")
@@ -245,9 +232,6 @@ final class AreaEvent: NSEvent {
         check(clear.hovered && hovered(clear.contentTintColor), "hovering a card's Clear tints it ForegroundPrimary")
         clear.mouseExited(with: enter)
         check(!clear.hovered && resting(clear.contentTintColor), "leaving restores the resting tint")
-        // Another window can take every Today page, or release one, without a
-        // card render: the card re-reads canClearToday as the pointer enters it
-        // or Clear, and as its window becomes key.
         sidebar.updateTrackingAreas()
         let reveal = AreaEvent()
         reveal.area = sidebar.trackingAreas.first { $0.owner === sidebar && $0.options.contains(.activeInActiveApp) }
@@ -263,8 +247,6 @@ final class AreaEvent: NSEvent {
         func windowBecomesKey() { NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window) }
         clearable = false; windowBecomesKey()
         check(!clear.isEnabled, "the window becoming key disables a Clear with nothing to clear")
-        // Released while the pointer is already in the card: Clear's own entry
-        // re-reads before its hover reads isEnabled.
         clearable = true
         clear.mouseEntered(with: enter)
         check(clear.isEnabled && clear.hovered && hovered(clear.contentTintColor), "entering Clear re-enables it and hovers it at once")
@@ -283,8 +265,6 @@ final class AreaEvent: NSEvent {
         clearable = true
         manager.reload(state); manager.layoutSubtreeIfNeeded()
 
-        //
-        // trailing edge: the label extends its 2-point alignment inset past both.
         let todayRow = descendants(sidebar).compactMap { $0 as? SidebarTabRow }.first { $0.tabID == today.id }!
         let title = descendants(todayRow).compactMap { $0 as? SidebarChromeLabel }.first { $0.stringValue == "today" }!
         let titleFrame = title.convert(title.bounds, to: todayRow)
@@ -292,7 +272,6 @@ final class AreaEvent: NSEvent {
               && titleFrame.maxX == SidebarRowAppearance.titleTrailingEdge(in: todayRow.bounds, closeVisible: false) + SidebarRowAppearance.titleTextPadding,
               "the idle title label extends 2 past the inset and the trailing edge (\(titleFrame))")
         check(descendants(todayRow).allSatisfy { !($0 is SidebarTitleField) }, "a row builds its rename field for its first rename")
-        // The row re-reads its hover from the pointer as its tracking updates.
         window.pointer = todayRow.convert(NSPoint(x: todayRow.bounds.midX, y: todayRow.bounds.midY), to: nil)
         todayRow.updateTrackingAreas(); todayRow.layoutSubtreeIfNeeded()
         let close = descendants(todayRow).compactMap { $0 as? SidebarRowActionButton }.first { $0.accessibilityLabel() == "Archive Tab" }!
@@ -324,7 +303,6 @@ final class AreaEvent: NSEvent {
         checkRowTooltips(state: state, pinned: pinned, today: today)
         checkTablistBackground(state: state)
 
-        // Clear's targets: that Space's unarchived Today tabs in its Profile only.
         var archived = tab("archived", .today, in: first); archived.archivedAt = Date()
         let second = BrowserSpace(id: UUID(), name: "Second", symbol: "star.fill", color: "AABBCC", profileID: first.profileID)
         let elsewhere = tab("elsewhere", .today, in: second)
@@ -335,8 +313,6 @@ final class AreaEvent: NSEvent {
         check(SpaceClearToday.ids(in: targets, spaceID: second.id, profileID: second.profileID) == [elsewhere.id],
               "another card's Clear targets its own Space")
 
-        // Without New Tab, Today begins below the divider for drops, or below
-        // the last row when no divider is listed.
         final class DragSource: NSView, SidebarItemDragSource { var sidebarDrag: SidebarMoveSession? }
         let source = DragSource(frame: .zero); manager.addSubview(source)
         var commits: [(SidebarContainerLocation, SidebarItemReference?)] = []
@@ -362,8 +338,6 @@ final class AreaEvent: NSEvent {
         drop(later.id, at: onPinned)
         check(commits.count == 2 && commits[1].0.section == .pinned, "a drop on the pinned row stays in Pinned")
 
-        //
-        // only while Today has items, in cards as in the window's sidebar.
         let extra = tab("extra", .pinned, in: first)
         var todayless = state; todayless.tabs = [pinned, extra]
         manager.reload(todayless); manager.layoutSubtreeIfNeeded()
@@ -379,9 +353,6 @@ final class AreaEvent: NSEvent {
         drop(extra.id, at: sidebar.convert(NSPoint(x: lastRow.bounds.midX, y: lastRow.bounds.maxY - 4), from: lastRow))
         check(commits.count == 4 && commits[3].0.section == .pinned, "without a divider, a drop on the last pinned row stays in Pinned")
 
-        // With no pinned and no Today items the card lists only the 2-point
-        // pinned header, so a hidden header leaves a 2.5-point Pinned band.
-        //
         let favorite = tab("favorite", .favorite, in: first)
         var empty = state; empty.tabs = [favorite]
         manager.reload(empty); manager.layoutSubtreeIfNeeded()
@@ -395,8 +366,6 @@ final class AreaEvent: NSEvent {
         check(commits.count == 6 && commits[4].0.section == .pinned && commits[5].0.section == .today && commits[5].0.spaceID == first.id,
               "an empty card's Pinned band ends 2.5 points down, at the header's boundary; below it is Today")
 
-        // A card shows no Profile-wide Favorites tray, so with no Favorites the
-        // gap above its shown header takes no Favorite drop.
         var trayless = state; trayless.spaces.append(second); trayless.tabs = [pinned]
         manager.reload(trayless); manager.layoutSubtreeIfNeeded()
         let landed = commits.count
@@ -406,7 +375,6 @@ final class AreaEvent: NSEvent {
         manager.reload(state); manager.layoutSubtreeIfNeeded()
         source.removeFromSuperview()
 
-        // Two Spaces: each card's header shows, as the window's sidebar's does.
         var pair = state; pair.spaces.append(second); pair.tabs.append(elsewhere)
         manager.reload(pair); manager.layoutSubtreeIfNeeded()
         let headers = pair.spaces.map { space in descendants(manager.sidebar(for: space.id)!).compactMap { $0 as? SidebarSpaceHeaderView }.first! }
@@ -419,19 +387,11 @@ final class AreaEvent: NSEvent {
         checkAddPalette()
     }
 
-    /// Runs the main loop for `timeout`, or until `done` holds: fades end
-    /// late on a loaded machine.
     static func settle(timeout: TimeInterval = 0.3, until done: () -> Bool = { false }) {
         let end = Date().addingTimeInterval(timeout)
         while !done(), Date() < end { RunLoop.main.run(until: min(end, Date().addingTimeInterval(0.02))) }
     }
 
-    /// The window sidebar's UnpinnedSectionDividerCellView: Clear is hidden at
-    /// rest and shows only while the pointer is over the sidebar and Today has
-    ///
-    ///
-    /// cell's insets while Clear is out of the row. An empty Today lists no
-    ///
     static func checkWindowDivider(state: BrowserState, pinned: BrowserTab,
                                    resting: (NSColor?) -> Bool, hovered: (NSColor?) -> Bool) {
         typealias Chrome = SidebarChromeLayout
@@ -445,7 +405,6 @@ final class AreaEvent: NSEvent {
 
         var cleared = 0
         let sidebar = SidebarView(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
-        // Backed (never shown), so the fade's completion runs.
         let window = ManagerTestWindow(contentRect: sidebar.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = sidebar
         defer { window.contentView = nil }
@@ -456,7 +415,6 @@ final class AreaEvent: NSEvent {
         let line = section.subviews.compactMap { $0 as? SidebarHairline }.first!
         let inset = Chrome.sectionDividerInset, thickness = Chrome.sectionDividerThickness(scale: window.backingScaleFactor)
         func centre(of view: NSView) -> NSPoint { section.convert(NSPoint(x: view.frame.midX, y: view.frame.midY), to: section.superview) }
-        // AppKit exposes a button through its cell.
         func exposed() -> Bool { (section.accessibilityChildren() ?? []).contains { ($0 as AnyObject) === clear || ($0 as AnyObject) === clear.cell } }
         func relayout() { section.needsLayout = true; section.layoutSubtreeIfNeeded() }
         check(section.subviews.count == 2 && !section.subviews.contains { $0 is NSBox }, "the window divider is one row: the border and Clear")
@@ -466,14 +424,11 @@ final class AreaEvent: NSEvent {
         check(line.frame.minX == inset && line.frame.width == section.bounds.width - 2 * inset && line.frame.height == thickness
               && abs(line.frame.midY - section.bounds.midY) <= thickness / 2, "at rest the border spans the cell's insets, centred")
 
-        // AppKit replaces the sidebar's tracking area as it lays out; each
-        // event names the current one.
         var reveal: AreaEvent {
             let event = AreaEvent()
             event.area = sidebar.trackingAreas.first { $0.owner === sidebar && $0.options.contains(.activeInActiveApp) }
             return event
         }
-        // The window reports the pointer where each step puts it.
         func enter() { window.pointer = sidebar.convert(NSPoint(x: 100, y: 300), to: nil); sidebar.mouseEntered(with: reveal) }
         func exit() { window.pointer = NSPoint(x: -100, y: -100); sidebar.mouseExited(with: reveal) }
         sidebar.updateTrackingAreas()
@@ -507,8 +462,6 @@ final class AreaEvent: NSEvent {
         clear.mouseExited(with: AreaEvent())
         clear.sendAction(clear.action, to: clear.target)
         check(cleared == 1, "the window's Clear reaches its handler")
-        // VoiceOver presses the button's exposed cell (AppKit answers false
-        // although the press runs the action).
         _ = clear.cell?.accessibilityPerformPress()
         check(cleared == 2, "VoiceOver can press a revealed Clear")
 
@@ -525,8 +478,6 @@ final class AreaEvent: NSEvent {
         check(!clear.isHidden && clear.alphaValue == 1, "re-entering during the fade-out keeps Clear revealed")
         exit(); settle(timeout: 3) { clear.isHidden }; enter()
         check(!clear.isHidden, "entering unhides Clear for its fade-in")
-        // Leaving late in the fade-in: the fade-in's completion falls inside
-        // the fade-out and must leave Clear to it.
         RunLoop.main.run(until: Date().addingTimeInterval(0.09)); exit()
         _ = RunLoop.main.run(mode: .default, before: .distantPast)
         check(!clear.isHidden, "leaving during the fade-in still fades Clear out")
@@ -559,7 +510,6 @@ final class AreaEvent: NSEvent {
               "New Tab follows the last pinned row 41 points on")
         exit()
 
-        // Without a divider the pinned section ends at New Tab's row.
         final class DragSource: NSView, SidebarItemDragSource { var sidebarDrag: SidebarMoveSession? }
         let source = DragSource(frame: .zero); sidebar.addSubview(source)
         defer { source.removeFromSuperview() }
@@ -582,9 +532,6 @@ final class AreaEvent: NSEvent {
         check(commits.map(\.section) == [.pinned, .today], "New Tab's upper half ends Pinned and its lower half begins Today")
     }
 
-    /// The tablist's empty area: SidebarView's own press/release routing.
-    /// A first press would start a real window drag, so only the routing
-    /// around it runs here; SidebarTablistBackground's checks cover its choice.
     static func checkTablistBackground(state: BrowserState) {
         let sidebar = SidebarView(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
         let window = ManagerTestWindow(contentRect: sidebar.frame, styleMask: [.borderless], backing: .buffered, defer: true)
@@ -619,9 +566,6 @@ final class AreaEvent: NSEvent {
         sidebar.mouseUp(with: mouse(.leftMouseUp, at: below, clicks: 2))
         check(opened == 2, "a Library Space card's list isn't the window background")
     }
-    ///
-    ///
-    /// body's double-click rename those hints promise.
     static func checkRowTooltips(state: BrowserState, pinned: BrowserTab, today: BrowserTab) {
         var renamed = pinned; renamed.id = UUID(); renamed.customTitle = "Mine"
         var document = today; document.id = UUID(); document.url = "parc://note/\(UUID().uuidString)"
@@ -679,9 +623,6 @@ final class AreaEvent: NSEvent {
         check(!sidebar.isEditingTitle && committed.isEmpty, "cancelling the double-click rename commits nothing")
     }
 
-    ///
-    /// CellSelectionStateView hover plate, the SidebarBouncyClickCell press
-    /// bounce, and no tooltip.
     static func checkNewTabRow(state: BrowserState) {
         let app = NSApp as! ManagerTestApplication
         app.simulatedActive = true
@@ -737,8 +678,6 @@ final class AreaEvent: NSEvent {
         row.button.mouseExited(with: AreaEvent())
         check(plate.appearanceState.fill == nil, "leaving clears the plate")
 
-        // `.activeInKeyWindow` tracking sends no exit when the window resigns
-        // key, as it does for New Tab's own command bar.
         func centre(of view: NSView) -> NSPoint { view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil) }
         func post(_ name: Notification.Name) { NotificationCenter.default.post(name: name, object: window) }
         window.pointer = centre(of: row); row.button.mouseEntered(with: AreaEvent())
@@ -752,8 +691,6 @@ final class AreaEvent: NSEvent {
         window.key = true; post(NSWindow.didBecomeKeyNotification)
         check(plate.appearanceState.fill == nil && !row.button.hovered, "taking key with the pointer gone leaves the plate clear")
 
-        // A render keeps the one row: New Tab moving under a still pointer
-        // lights the plate, which AppKit's tracking does not report.
         var todayless = state; todayless.tabs = state.tabs.filter { $0.kind == .pinned }
         sidebar.render(state: todayless, focusedTabID: nil, loading: [], canBack: false, canForward: false)
         sidebar.layoutSubtreeIfNeeded()
@@ -818,9 +755,6 @@ final class AreaEvent: NSEvent {
               "the tab a click opens re-renders the list without cutting the release bounce off")
     }
 
-    ///
-    /// with the current plate and shadow and the palette's title colour, and no
-    /// sidebar item is current meanwhile; Favorites do not read it.
     static func checkNewTabPlaceholder(state base: BrowserState) {
         let sidebar = SidebarView(frame: NSRect(x: 0, y: 0, width: 240, height: 600))
         let window = ManagerTestWindow(contentRect: sidebar.frame, styleMask: [.borderless], backing: .buffered, defer: true)
@@ -897,8 +831,6 @@ final class AreaEvent: NSEvent {
         check(fill(of: single.id) == .current, "and the next render makes the selected tab current again")
     }
 
-    /// The add circle takes its own window's Space theme, resolved under the
-    /// palette's appearance, and follows appearance changes.
     static func checkAddPalette() {
         func components(_ color: CGColor?) -> [CGFloat] {
             guard let color, let srgb = CGColorSpace(name: CGColorSpace.sRGB),
@@ -939,7 +871,6 @@ final class AreaEvent: NSEvent {
         check(same(fill(bluePage), expected(blue.theme, light)), "the window on the blue Space paints its add circle blue")
         check(same(fill(redPage), expected(red.theme, light)) && !same(fill(redPage), fill(bluePage)),
               "the window on the red Space uses its own Space, not the store's active Space")
-        // An unthemed Space's palette is dynamic; it follows the appearance.
         var plain = state; plain.spaces[0].theme = SpaceTheme()
         bluePage.reload(plain); bluePage.layoutSubtreeIfNeeded()
         check(same(fill(bluePage), expected(SpaceTheme(), light)), "an unthemed Space resolves its add circle in Aqua")

@@ -1,8 +1,5 @@
 import Foundation
 
-/// P1-J behavior lock: identical Peek presentation fingerprints are true
-/// no-ops; title/URL/loading/history/capture/crash/favicon/chrome flips must
-/// not skip.
 @main
 struct PeekPresentationSkipTests {
     static var assertions = 0
@@ -82,7 +79,6 @@ struct PeekPresentationSkipTests {
         expect(Skip.shouldSkip(previous: idle, next: fingerprint(capture: capturing)) == false,
                "Capture start must not skip")
 
-        // Both live at once, so the second cannot reuse the first's freed address.
         let crashOwners = (NSObject(), NSObject())
         let (crashA, crashB) = withExtendedLifetime(crashOwners) {
             (Skip.crashToken(identity: ObjectIdentifier(crashOwners.0), terminationStatus: 1, errorCode: 2),

@@ -1,8 +1,5 @@
 import AppKit
 
-// The real DownloadLocationPicker plus the Settings Downloads card built by the
-// exact layout lines sliced from SettingsWindow.swift (check-picker.py).
-// Synthetic profile values only: no Chromium, profile, panel or user file.
 @main
 @MainActor
 struct DownloadLocationPickerTests {
@@ -53,7 +50,6 @@ struct DownloadLocationPickerTests {
                    "The full effective path stays reachable on hover")
         try expect(picker.isEnabled, "An unmanaged profile can change its location")
 
-        //
         picker.selectItem(withTag: 0); _ = picker.sendAction(picker.action, to: picker.target)
         try expect(chosen.isEmpty, "Re-choosing the folder row sends nothing")
         picker.selectItem(withTag: 2); _ = picker.sendAction(picker.action, to: picker.target)
@@ -76,8 +72,6 @@ struct DownloadLocationPickerTests {
         try expect(picker.titleOfSelectedItem == "Incoming Files", "A custom folder shows its own last path component")
         try expect(picker.item(at: 0)?.toolTip == custom.path, "The custom folder's full path is on hover")
 
-        //
-        // effective value returns whichever way the panel ended.
         picker.update(.init(directory: downloads, prompt: true), enabled: true, panelOpen: true)
         try expect(picker.numberOfItems == 0 && picker.panelOpen, "The picker is empty while its folder panel runs")
         picker.revert()
@@ -95,7 +89,6 @@ struct DownloadLocationPickerTests {
         picker.selectItem(withTag: 2); _ = picker.sendAction(picker.action, to: picker.target)
         try expect(chosen == [.prompt], "The component reports; SettingsWindow refuses managed changes")
 
-        //
         let titled = makePicker()
         let group = DownloadsCardHarness(picker: titled).build(in: LayoutView(frame: NSRect(x: 0, y: 0, width: 680, height: 692)))
         let title = titled.rowTitle as? NSTextField
@@ -113,16 +106,11 @@ struct DownloadLocationPickerTests {
         print("Download location picker: \(assertions) assertions passed")
     }
 
-    // MARK: Acceptance images
-
     final class Backdrop: NSView {
         override var isFlipped: Bool { true }
         override func draw(_ dirtyRect: NSRect) { NSColor.windowBackgroundColor.setFill(); bounds.fill() }
     }
 
-    /// A drawing of the picker's actual NSMenu (titles, images, separator,
-    /// checkmark). AppKit's open menu is a separate on-screen window that
-    /// cannot be captured offscreen without screen-recording access.
     final class MenuModel: NSView {
         let items: [NSMenuItem]
         let font = NSFont.menuFont(ofSize: 0)
@@ -183,7 +171,6 @@ struct DownloadLocationPickerTests {
         group.setFrameOrigin(NSPoint(x: 20, y: menu ? 80 : 20))
         backdrop.addSubview(group)
         if menu {
-            // macOS opens a pop-up menu with the shown row over the button.
             let model = MenuModel(items: picker.itemArray, width: picker.frame.width + 24)
             let selected = picker.indexOfSelectedItem
             let offset = picker.itemArray.prefix(selected).reduce(CGFloat(5)) { $0 + ($1.isSeparatorItem ? 11 : 22) }

@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Exercise the production AppKit motion owner without a browser or input."""
 from pathlib import Path
 import subprocess
 import tempfile
 root = Path(__file__).resolve().parents[2]
-# Drawn views whose width follows the page inside the ⌘S group are pinned.
 pinned = {"PageFailureView.swift": ["SidebarMotionController.pinDrawnContent(self, to: .scaleAxesIndependently)",
                                     "SidebarMotionController.pinDrawnContent(sentence, to: .center)",
                                     "SidebarMotionController.pinDrawnContent(corner, to: .center)"],
@@ -14,9 +12,6 @@ for source, calls in pinned.items():
     text = (root / "Sources/ParcApp" / source).read_text()
     for call in calls:
         assert call in text, f"{source} no longer pins: {call}"
-#
-# off-screen; the controller places it and sets SidebarView.isPresented through
-# the helpers main.swift checks, the presentation after the frames.
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
 for use in ("sidebarContainer.isHidden = !sidebarAvailable\n",
             "let placement = SidebarPresentationFrame(sidebarPresentation, inMotion: sidebarMotionVisible,\n"
@@ -38,8 +33,6 @@ assert ("let libraryWidth: CGFloat = !library || fullscreen ? 0\n"
     "Library column is max(min(width − 56, the page's content width), 417)"
 assert "case .libraryWidth: context.duration = 0.2" in motion and "if style != .floating {" in motion, \
     "the Library width group is 0.2 s on the anchored cubic"
-#
-# animated on a later change, settled by closing and by a window resize.
 for use in ("        libraryView = view\n        libraryContentWidth = view.contentWidth\n",
             "        libraryMotion.cancel()\n"
             "        libraryView?.removeFromSuperview(); libraryView = nil; libraryContentWidth = 0\n"
@@ -87,10 +80,8 @@ assert "libraryView?.showsWindowButtons = showsOwn && !sidebarless" in controlle
     "Library lists the dimmed lights, and a popup does not"
 split = (root / "Sources/ParcApp/ParcSplitView.swift").read_text()
 assert "pane.layer?.cornerRadius = divided ? PageCard.cornerRadius : 0" in split, "split panes keep their own 6-point radius"
-#
 assert "NativeStartView" not in controller, "the Parc start page is gone"
 assert "let empty = SplitPanePlaceholder(frame: .zero)" in controller, "a window with no tab shows the empty content"
-# The lone card's shadow is the page host's sibling below it and moves with it.
 assert controller.index("rootView.addSubview(pageShadow)") < controller.index("rootView.addSubview(pageHost)"), \
     "the page card's shadow sits below the page host"
 assert controller.count("pageShadow.place(around: frames.pageHost)") == 2, "both chrome passes place the page card's shadow"
@@ -108,7 +99,6 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-motion-") as directory:
             str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
         return executable
     subprocess.run([str(build("checks", motion))], check=True)
-    # Negative control: without the hold, AppKit resizes the hidden label every frame.
     result = subprocess.run([str(build("unheld", motion.replace(hold, "")))], capture_output=True, text=True)
     assert result.returncode != 0 and "a hidden drawing view is sized once" in result.stderr, \
         "negative control: the hidden-view check passes without the hold"

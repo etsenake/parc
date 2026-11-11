@@ -1,6 +1,3 @@
-// Runs the ManagedMediaSource script from
-// Engine/ParcRenderer/parc_managed_media_source.h against a small model of
-// Chromium's media APIs. No browser; `node managed_media_source.mjs`.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
@@ -20,7 +17,6 @@ function check(condition, message) {
   }
 }
 
-// ---- Model of the media APIs the script builds on.
 function makeWorld(options = {}) {
   const timers = [];
   const intervals = new Map();
@@ -58,14 +54,12 @@ function makeWorld(options = {}) {
       }
     }
     changeType(type) { if (this._updating) throw busy(); this.type = type; }
-    // Test helper: an append or eviction finished with these ranges.
     _finish(list) {
       this._ranges = list;
       this._updating = false;
       this.dispatchEvent(new Event('update'));
       this.dispatchEvent(new Event('updateend'));
     }
-    // Test helper: an append failed after parsing changed the ranges.
     _fail(list) {
       this._ranges = list;
       this._updating = false;
@@ -168,8 +162,6 @@ function makeWorld(options = {}) {
     clearInterval: (id) => { intervals.delete(id); },
   };
   if (options.worker) {
-    // A dedicated worker: MediaSource and SourceBuffer, TimeRanges objects
-    // without a TimeRanges interface, no DOM.
     for (const name of ['TimeRanges', 'Element', 'HTMLMediaElement', 'HTMLSourceElement',
                         'HTMLVideoElement', 'document']) {
       delete context[name];
@@ -183,7 +175,6 @@ function makeWorld(options = {}) {
            poll: () => { for (const fn of [...intervals.values()]) fn(); } };
 }
 
-// ---- Interfaces.
 {
   const { context } = makeWorld();
   const { ManagedMediaSource, ManagedSourceBuffer, BufferedChangeEvent, MediaSource, SourceBuffer } = context;
@@ -267,7 +258,6 @@ function makeWorld(options = {}) {
   check(foreignEvent, 'addedRanges on another event is an illegal invocation');
 }
 
-// Running twice changes nothing.
 {
   const { context } = makeWorld();
   const before = context.ManagedMediaSource;
@@ -275,7 +265,6 @@ function makeWorld(options = {}) {
   check(context.ManagedMediaSource === before, 'script is idempotent');
 }
 
-// ---- Streaming and buffered changes through srcObject.
 {
   const world = makeWorld();
   const { context } = world;
@@ -335,7 +324,6 @@ function makeWorld(options = {}) {
         changes[2].removedRanges.end(0) === 10, 'eviction reported as removed');
   check(changes[2].addedRanges.start(0) === 31 && changes[2].addedRanges.end(0) === 40, 'and the new data as added');
 
-  // A range change without an append (garbage collection) is caught by the poll.
   sb._ranges = [[20, 40]];
   world.poll();
   world.run();
@@ -348,7 +336,6 @@ function makeWorld(options = {}) {
   check(source.streaming === true,
         'buffered to the duration of an open source: still streaming (WebKit caps at the duration once ended)');
 
-  // End of stream, then a seek back into data that was evicted.
   source._end();
   check(source.streaming === false, 'ended and buffered to the end: not streaming');
   video.currentTime = 2;
@@ -377,7 +364,6 @@ function makeWorld(options = {}) {
   check(world.revoked.includes(reattached), 'its URL is revoked');
 }
 
-// ---- WebKit's streaming policy (ManagedMediaSource::monitorSourceBuffers).
 {
   const world = makeWorld();
   const { context } = world;
@@ -412,7 +398,6 @@ function makeWorld(options = {}) {
   audio._finish([[0, 60]]);
   check(source.streaming === false, 'all of them 30 s ahead stops it');
 
-  // Both transitions in one task queue both events, in order.
   world.run();
   order.length = 0;
   audio._finish([[0, 5]]);
@@ -421,7 +406,6 @@ function makeWorld(options = {}) {
   world.run();
   check(order.join() === 'startstreaming,endstreaming', 'each change queues its own event');
 
-  // Ended with the playback position at the duration: never streaming.
   source.duration = 20;
   first._finish([]);
   check(source.streaming === true, 'nothing buffered: streaming');
@@ -433,8 +417,6 @@ function makeWorld(options = {}) {
   check(source.streaming === true, 'a seek back from the end starts streaming');
 }
 
-// ---- WebKit's gap tolerances: 125 ms, 250 ms where audio covers the gap,
-// 1 s before the first range near the start.
 {
   const world = makeWorld();
   const { context } = world;
@@ -466,8 +448,6 @@ function makeWorld(options = {}) {
   check(source.streaming === true, 'a first range starting after 1 s leaves the start unbuffered');
 }
 
-// ---- bufferedchange inside the operation, as WebKit queues it: before update
-// and updateend, with the SourceBuffer still updating.
 {
   const world = makeWorld();
   const { context } = world;
@@ -491,8 +471,6 @@ function makeWorld(options = {}) {
   check(updatingThen === true && updatingAtUpdate === false && sb.updating === false,
         'updating reads true during bufferedchange only');
 
-  // While it is dispatched, the SourceBuffer and its source refuse what
-  // WebKit refuses while updating.
   const refused = [];
   const attempt = (name, fn) => {
     try { fn(); } catch (e) { if (e.name === 'InvalidStateError') refused.push(name); }
@@ -518,14 +496,12 @@ function makeWorld(options = {}) {
   sb.appendBuffer(new Uint8Array(1));
   check(sb.updating === true, 'after the event, appends work again');
 
-  // abort() during it ends the append with abort and updateend, not update.
   order.length = 0;
   onChange = () => { sb.abort(); };
   sb._finish([[0, 30]]);
   check(order.join() === 'bufferedchange,abort,updateend', 'abort() turns update/updateend into abort/updateend: ' + order.join());
   check(sb.calls.filter((c) => c === 'abort').length === 1, 'the native abort ran once (parser and append window reset)');
 
-  // After abort() the SourceBuffer is no longer updating, as in WebKit.
   let afterAbort = null;
   onChange = () => { sb.abort(); afterAbort = sb.updating; sb.timestampOffset = 4; };
   sb.appendBuffer(new Uint8Array(1));
@@ -533,7 +509,6 @@ function makeWorld(options = {}) {
   check(afterAbort === false && sb.timestampOffset === 4, 'abort() ends updating at once; setters work again');
   sb.timestampOffset = 0;
 
-  // A removal can't be aborted.
   order.length = 0;
   let abortError = null;
   onChange = () => { try { sb.abort(); } catch (e) { abortError = e.name; } };
@@ -542,7 +517,6 @@ function makeWorld(options = {}) {
   check(abortError === 'InvalidStateError' && order.join() === 'bufferedchange,update,updateend',
         'abort() during a removal\'s bufferedchange throws, the removal completes');
 
-  // removeSourceBuffer during it aborts the append too.
   order.length = 0;
   onChange = () => { source.removeSourceBuffer(sb); };
   sb.appendBuffer(new Uint8Array(1));
@@ -551,8 +525,6 @@ function makeWorld(options = {}) {
   check(!source.sourceBuffers.includes(sb), 'and removes the SourceBuffer');
 }
 
-// ---- Changes outside an operation are queued as tasks; a failed append
-// reports what its parsing changed before updateend.
 {
   const world = makeWorld();
   const { context } = world;
@@ -567,7 +539,6 @@ function makeWorld(options = {}) {
   sb.addEventListener('bufferedchange', (e) => { changes.push(e); updatingThen = sb.updating; });
   sb._finish([[0, 30]]);
 
-  // endOfStream extends the last range; the change is a task, not updating.
   sb._ranges = [[0, 32]];
   source.endOfStream();
   check(changes.length === 1, 'nothing synchronous at endOfStream');
@@ -575,15 +546,12 @@ function makeWorld(options = {}) {
   check(changes.length === 2 && changes[1].addedRanges.start(0) === 30 && changes[1].addedRanges.end(0) === 32 &&
         updatingThen === false, 'endOfStream\'s change is queued as a task');
 
-  // Setting timestampOffset reopens the ended source, dropping the extension.
   sb._ranges = [[0, 30]];
   sb.timestampOffset = 10;
   source.readyState = 'open';
   world.run();
   check(changes.length === 3 && changes[2].removedRanges.start(0) === 30, 'a setter that reopens the source reports the change');
 
-  // A setter on another SourceBuffer leaves this one's pending change alone,
-  // and only timestampOffset and mode on an ended source report changes.
   const second = source.addSourceBuffer('audio/mp4; codecs="mp4a.40.2"');
   sb.appendBuffer(new Uint8Array(1));
   sb._ranges = [[0, 31]];
@@ -603,14 +571,12 @@ function makeWorld(options = {}) {
   sb._finish([[0, 30]]);
   changes.splice(3);
 
-  // A shorter duration.
   sb._ranges = [[0, 25]];
   source.duration = 25;
   world.run();
   check(changes.length === 4 && changes[3].removedRanges.start(0) === 25 && changes[3].removedRanges.end(0) === 30,
         'a shorter duration\'s change is queued');
 
-  // The poll leaves a SourceBuffer that is updating to report at completion.
   sb.appendBuffer(new Uint8Array(1));
   sb._ranges = [[0, 25], [26, 28]];
   world.poll();
@@ -624,9 +590,6 @@ function makeWorld(options = {}) {
         'a failed append reports its parsed ranges before updateend');
 }
 
-// ---- A memory-pressure purge by the engine (SourceBuffer::ParcPurge_Locked)
-// is reported as WebKit reports it: bufferedchange as a task, streaming
-// re-evaluated, the engine's events hidden from the page.
 {
   const world = makeWorld();
   const { context } = world;
@@ -647,7 +610,6 @@ function makeWorld(options = {}) {
   source.dispatchEvent(new context.Event('parcmanagedmediasource'));
   check(!pageSawMarker, 'the marker event never reaches the page');
 
-  // The engine kept 0-40 around the position 0 and dropped 60-90.
   sb._ranges = [[0, 40]];
   sb.dispatchEvent(new context.Event('parcmanagedmediasourcepurged'));
   check(changes.length === 1 && changes[0].removedRanges.length === 1 &&
@@ -655,9 +617,6 @@ function makeWorld(options = {}) {
         changes[0].addedRanges.length === 0, 'the purge is a bufferedchange with the removed ranges');
   check(!pageSawPurge, 'the engine\'s purge event never reaches the page');
 
-  // A purge that took the data ahead of the position restarts streaming.
-  // WebKit's low threshold is the closed window [t, t + 10 s], so exactly
-  // 10 s ahead still counts as buffered.
   video.currentTime = 30;
   sb._ranges = [[28, 40]];
   sb.dispatchEvent(new context.Event('parcmanagedmediasourcepurged'));
@@ -668,7 +627,6 @@ function makeWorld(options = {}) {
   video.dispatchEvent(new context.Event('timeupdate'));
   check(source.streaming === true, '9 s ahead after the purge: streaming again');
 
-  // An operation started since reports the change when it completes.
   sb.appendBuffer(new Uint8Array(1));
   sb._ranges = [[30, 40]];
   sb.dispatchEvent(new context.Event('parcmanagedmediasourcepurged'));
@@ -678,7 +636,6 @@ function makeWorld(options = {}) {
         'the operation reports the purge with its own change');
 }
 
-// ---- Other SourceBuffers and MediaSources keep the native behaviour.
 {
   const world = makeWorld();
   const { context } = world;
@@ -705,7 +662,6 @@ function makeWorld(options = {}) {
         'replaced methods keep their arity');
 }
 
-// ---- Attachment through src with an object URL, setAttribute, and <source>.
 {
   const world = makeWorld();
   const { context } = world;
@@ -749,7 +705,6 @@ function makeWorld(options = {}) {
   check(other.streaming === true, 'seeking on the media element (not the <source>) is heard at once');
 }
 
-// ---- Unknown playback position: may start, never stops.
 {
   const world = makeWorld();
   const { context } = world;
@@ -762,7 +717,6 @@ function makeWorld(options = {}) {
   check(source.streaming === true, 'never stops while the playhead is unknown');
 }
 
-// ---- Listener cleanup, setAttribute scope, a second element.
 {
   const world = makeWorld();
   const { context } = world;
@@ -796,7 +750,7 @@ function makeWorld(options = {}) {
   sb._finish([[0, 5]]);
   check(playing.streaming === true, 'playing element 5 s ahead: streaming');
   two.currentTime = 1000;
-  two.srcObject = playing;  // fails in Chromium: the source is already open on `one`
+  two.srcObject = playing;
   one.dispatchEvent(new context.Event('timeupdate'));
   check(playing.streaming === true, 'a failed second attach does not take over the policy');
   const url = context.URL.createObjectURL(playing);
@@ -807,7 +761,6 @@ function makeWorld(options = {}) {
   check(playing.streaming === true, 'src naming an open source elsewhere does not take over the policy');
 }
 
-// ---- A dedicated worker of a Safari-identity document.
 {
   const world = makeWorld({ worker: true });
   const { context } = world;
@@ -829,7 +782,6 @@ function makeWorld(options = {}) {
   check(source.streaming === true, 'no playhead in a worker: streaming never stops');
 }
 
-// A MediaStream still goes to Chromium's srcObject.
 {
   const { context } = makeWorld();
   const video = new context.HTMLVideoElement();

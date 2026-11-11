@@ -1,4 +1,3 @@
-"""Exercise the portable checker with a fake compiler, never an app or engine."""
 from __future__ import annotations
 
 import importlib.util
@@ -56,7 +55,6 @@ class CheckSwiftTests(unittest.TestCase):
             file = self.repo / name
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text(content)
-        # An already fetched pinned Sparkle, so the checker never downloads.
         self.sparkle = sparkle.directory(self.repo / "build/sparkle")
         self.sparkle_header = self.sparkle / "Sparkle.framework/Versions/B/Headers/Sparkle.h"
         self.sparkle_header.parent.mkdir(parents=True)
@@ -145,8 +143,6 @@ class CheckSwiftTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
 
     def test_success_records_toolchain_inputs_and_diagnostics(self):
-        # Apple's /usr/bin/git also dispatches through the selected developer
-        # directory, so use its real path while substituting only the compiler.
         self.env["DEVELOPER_DIR"] = (subprocess.check_output(["xcode-select", "-p"], text=True).strip()
                                      if sys.platform == "darwin" else "/chosen/developer")
         result = self.run_check()

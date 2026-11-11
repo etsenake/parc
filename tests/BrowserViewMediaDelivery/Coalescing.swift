@@ -1,8 +1,5 @@
 import Foundation
 
-/// The window's media refresh (NextTurnCoalescer): a burst of media changes,
-/// such as a volume drag's steps, refreshes once per run-loop turn, and a
-/// single play or pause still refreshes on the next turn.
 @main @MainActor struct Coalescing {
     static func turn() { RunLoop.main.run(until: Date()) }
     static func main() {

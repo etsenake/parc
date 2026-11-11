@@ -1,7 +1,5 @@
 import Foundation
 
-/// Empty-query history scan reuse: identical query/revision/excluded-URL/tab
-/// fingerprints are true no-ops; typing and membership changes must recompute.
 @main
 struct HistoryScanSkipTests {
     static var assertions = 0
@@ -59,10 +57,6 @@ struct HistoryScanSkipTests {
         ], "Empty-query top-8 skips tab collisions and non-http(s), keeps order")
         expect(visits[2].title == "", "Empty titles are retained for Result rebuild")
 
-        // CommandBar's empty-query path already placed tabs into `results`; the
-        // combined budget is max(0, 8 - results.count). A 3-tab table takes only
-        // the first 5 cached history visits — the same prefix the live walk would
-        // have appended before hitting results.count == 8.
         let remainingAfterThreeTabs = Array(visits.prefix(max(0, 8 - 3)))
         expect(remainingAfterThreeTabs.map(\.url) == [
             "https://a.test", "https://b.test", "https://c.test", "https://d.test", "https://e.test",

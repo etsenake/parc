@@ -1,7 +1,5 @@
 import AppKit
 
-// Only unrelated shell collaborators are supplied. Real editor views, the
-// native router, split session/model and file-backed documents are exercised.
 @MainActor class LayoutView: NSView {}
 @MainActor enum SidebarSplitDrag { static let pasteboardType = NSPasteboard.PasteboardType("org.parc.sidebar-split-drag") }
 @MainActor enum SidebarMoveSession { static let pasteboardType = NSPasteboard.PasteboardType("org.parc.sidebar-item-move") }
@@ -59,7 +57,6 @@ import AppKit
                 validate: { valid && editor.canAcceptExternalSplitDrop && canvas.canAcceptExternalSplitDrop },
                 insertionColor: { .black }, canPropose: { _, _ in true }, commit: { _, _ in commits += 1; return true })
         }
-        // Original Notes title/body route through the actual native ancestor.
         for text in [editor.titleText as NSTextView, editor.text] {
             drag.write("https://drop.invalid/original?q=a+b")
             let before = text.attributedString(), selected = text.selectedRanges
@@ -94,7 +91,6 @@ import AppKit
         editor.text.setMarkedText("later", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
         try check(!editor.text.performDragOperation(drag) && editor.text.hasMarkedText(), "composition begun during preview cancels without discarding it")
         editor.text.unmarkText()
-        // Ordinary local paste/import remains owned by its original content.
         editor.view.removeFromSuperview(); host.addSubview(canvas); canvas.frame = host.bounds
         drag.write("ordinary canvas text")
         try check(canvas.draggingEntered(drag) == .copy && canvas.performDragOperation(drag), "non-URL canvas text falls back to genuine Easel import")
@@ -107,7 +103,6 @@ import AppKit
         try check(!canvas.canAcceptExternalSplitDrop, "actual in-progress canvas gesture cannot be displaced")
         canvas.cancelOperation(nil)
         try check(canvas.canAcceptExternalSplitDrop, "cancelled original canvas gesture permits a later drop")
-        // The actual BrowserStore transaction retains typed originals and data.
         let browser = try BrowserStore(directory: root.appendingPathComponent("browser"))
         let noteID = browser.openNote(id: note.document.id, title: "Original Note")!
         let easelID = browser.openEasel(id: easel.document.id, title: "Original Easel")!

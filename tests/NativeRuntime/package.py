@@ -22,8 +22,6 @@ TEST_EXPORTS = {"_parc_test_http_auth", "_parc_test_cancel_http_auth",
 
 def validate_output(output, repo, engine, package):
     package.validate_output(output, repo, engine)
-    # The ignored build tree is a supported development destination. Keep
-    # engine protection independent: an engine may itself live under build.
     if (repo.is_relative_to(output) or
             (output.is_relative_to(repo) and not output.is_relative_to(repo / "build"))):
         raise package.Refusal("Repository output is allowed only under its build directory")

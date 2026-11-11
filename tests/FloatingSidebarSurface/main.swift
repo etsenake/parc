@@ -1,9 +1,6 @@
 import AppKit
 import MetalKit
 
-//
-// off-screen window that is never ordered in or made key; no browser, input
-// or preferences.
 @MainActor @main struct FloatingSidebarSurfaceChecks {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -15,7 +12,6 @@ import MetalKit
     static func main() {
         NSApplication.shared.setActivationPolicy(.prohibited)
 
-        // FloatingSidebarBackgroundView's recovered values.
         check(FloatingSidebarSurface.cornerRadius == 8, "updateLayer's and the blur masks' radius is 10 − 2")
         check(FloatingSidebarSurface.borderWidth == 1, "a 1-point edge")
         let border = NSColor(cgColor: FloatingSidebarSurface.borderColor)?.usingColorSpace(.sRGB)
@@ -23,7 +19,6 @@ import MetalKit
               "SidebarBorderColor is sRGB white at 0.3")
         check(FloatingSidebarSurface.shadowAlpha == 0.2 && FloatingSidebarSurface.shadowOutset == 10, "shadowView at 0.2, pinned 10 points out")
 
-        // CellDropShadow as the catalog holds it.
         guard let shadowImage = FloatingSidebarSurface.shadowImage else { fatalError("FloatingSidebarSurface: CellDropShadow loads from the bundle") }
         check(shadowImage.size == NSSize(width: 40, height: 40), "40-point image")
         let caps = shadowImage.capInsets
@@ -38,7 +33,6 @@ import MetalKit
             check(alpha(9, 20) > 0.35 && alpha(9, 20) < 0.4, "about 0.37 alpha at the hole's edge")
         }
 
-        //
         check(FloatingSidebarSurface.mask(radius: 0) == nil, "square corners need no mask")
         guard let mask = FloatingSidebarSurface.mask(radius: 8) else { fatalError("FloatingSidebarSurface: radius-8 mask") }
         check(mask.size == NSSize(width: 17, height: 17) && mask.resizingMode == .stretch
@@ -74,7 +68,6 @@ import MetalKit
         check(material().blendingMode == .behindWindow && shadows().isEmpty && container.layer?.borderWidth == 0,
               "the window's own surface: behind-window material, no shadow or edge")
 
-        // Floating (layoutChrome's floating pass).
         container.floatingCornerRadius = FloatingSidebarSurface.cornerRadius
         check(material().blendingMode == .withinWindow && material().material == .popover && material().isEmphasized,
               "blurView: within-window popover, emphasized")
@@ -93,7 +86,6 @@ import MetalKit
         container.theme = .singleColor(ThemeColor(red: 0.2, green: 0.6, blue: 0.4)!)
         check(material().blendingMode == .withinWindow && material().material == .popover, "a theme change keeps the floating material")
 
-        // Composited as the window does: the shadow outside, the edge on top.
         container.drawsBackground = false
         func render() -> NSBitmapImageRep {
             root.layoutSubtreeIfNeeded(); root.display(); CATransaction.flush()
@@ -118,9 +110,6 @@ import MetalKit
         check(white(dark, edge - 1, middle) > 0.2 && white(dark, edge - 3, middle) < 0.02, "a light 1-point edge just inside")
         container.drawsBackground = true
 
-        // A Space swipe on the floating surface is drawn by its one canvas over
-        // its one blur (SidebarView.onPagingTheme); a swipe from an uncoloured
-        // Space still shows the incoming theme.
         container.theme = SpaceTheme()
         container.pagingTransition = ThemePagingTransition(from: SpaceTheme(), theme: .singleColor(ThemeColor(red: 0.9, green: 0.4, blue: 0.2)!),
                                                            progress: 0.4)
@@ -128,15 +117,10 @@ import MetalKit
         container.pagingTransition = nil
         if let canvas = canvas() { check(canvas.isHidden, "an uncoloured Space at rest draws no canvas") }
         container.theme = .singleColor(ThemeColor(red: 0.2, green: 0.6, blue: 0.4)!)
-        //
         checkSwipeCommit(floating: true)
         checkSwipeCommit(floating: false)
         checkSwipeMaterial()
 
-        // Docking. The preparation unhides the window's material at alpha 0
-        //
-        // blur and shadow fade out and that material fades in; the corners,
-        //
         func materials() -> [NSVisualEffectView] { container.subviews.compactMap { $0 as? NSVisualEffectView } }
         check(materials().count == 1, "no dock material before the first dock")
         container.preparesFloatingDock = true
@@ -169,16 +153,12 @@ import MetalKit
             let fade = view.layer?.animation(forKey: "opacity") as? CABasicAnimation
             check(fade.map { near($0.duration, 0.08, 1e-6) } == true, "the \(name) fades on the group's 0.08 s timing")
         }
-        // A full pass during the slide repeats the floating radius and the
-        // dock, and ends the preparation.
         container.floatingCornerRadius = FloatingSidebarSurface.cornerRadius
         container.docksFloatingSurface = true
         container.preparesFloatingDock = false
         check(shadow.alphaValue == 0 && container.layer?.cornerRadius == 8, "a full pass mid-dock keeps the faded shadow")
         check(material().alphaValue == 0 && dock.alphaValue == 1 && !dock.isHidden, "and keeps the cross-faded materials")
 
-        // A dock reversed into floating before it settles floats with its
-        // shadow and blur at once, its fades removed.
         container.docksFloatingSurface = false
         check(shadow.alphaValue == 0.2 && !shadow.isHidden && container.layer?.cornerRadius == 8 && material().maskImage != nil,
               "a reversed dock floats with its shadow, corners and mask")
@@ -187,7 +167,6 @@ import MetalKit
               "a reversed dock leaves no fade in flight")
         container.docksFloatingSurface = true
 
-        // Settled locked (layoutChrome's full pass).
         container.floatingCornerRadius = nil
         container.docksFloatingSurface = false
         check(material().blendingMode == .behindWindow && material().material == windowMaterial && material().maskImage == nil,
@@ -202,8 +181,6 @@ import MetalKit
         check(materials().count == 2 && materials()[1] === dock && dock.isHidden && material().alphaValue == 1,
               "floating again keeps the dock material hidden for the next dock")
 
-        // The sidebar's own clip as layoutChrome toggles it: AppKit clips a
-        // view once its layer has a corner radius, which a locked sidebar undoes.
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
         content.wantsLayer = true
         root.addSubview(content)
@@ -217,14 +194,7 @@ import MetalKit
         print("FloatingSidebarSurface checks passed: \(count)")
     }
 
-    /// The strip sends its left page as `from`, its right page and its
-    /// position. The pager's commit (SidebarSpacePager.settle) keeps that
-    /// position, so the surfaces keep one transition and only their own theme
-    /// changes. Rendered by the real canvas of the floating surface or the
-    /// window's own, in a window parked off-screen (ordered in, never key),
-    /// the picture either side of it must match.
     static func checkSwipeCommit(floating: Bool) {
-        // Not square, so the gradient's line differs from the unit diagonal.
         let width = 128, height = 96, surfaceName = floating ? "floating surface" : "window surface"
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: width, height: height),
                               styleMask: [.titled], backing: .buffered, defer: true)
@@ -254,7 +224,6 @@ import MetalKit
             return (0..<length).map { Int(bytes[$0]) }
         }
         func largest(_ a: [Int], _ b: [Int]) -> Int { a.count == b.count && !a.isEmpty ? zip(a, b).map { abs($0 - $1) }.max()! : .max }
-        // Premultiplied BGRA `source` over `backdrop`, with the source layer at `opacity`.
         func over(_ source: [Int], opacity: Double, _ backdrop: [Int]) -> [Int] {
             (0..<source.count).map { index in
                 let alpha = Double(source[index - index % 4 + 3]) * opacity / 255
@@ -279,8 +248,6 @@ import MetalKit
               "past one page, neither page the surface's own, the same picture (\(largest(pastOnePage, before)) levels)")
         check(largest(render(current, across(current, incoming, 0)), alone) <= 1
               && largest(render(incoming, across(current, incoming, 1)), other) <= 1, "the swipe's ends are each theme alone")
-        // Without texture each picture is its premultiplied gradient layer, so
-        //
         var plainCurrent = current, plainIncoming = incoming
         plainCurrent.noise = 0; plainIncoming.noise = 0
         let a = render(plainCurrent, nil), b = render(plainIncoming, nil)
@@ -296,13 +263,10 @@ import MetalKit
         let crossfade = (0..<a.count).map { Int((Double(a[$0]) * (1 - p) + Double(b[$0]) * p).rounded()) }
         check(largest(mixed, expected) <= 2, "the \(surfaceName) mixes both themes' straight layers (\(largest(mixed, expected)) levels)")
         check(largest(mixed, crossfade) >= 4, "which is not a crossfade of the two pictures (\(largest(mixed, crossfade)) levels apart)")
-        // The canvas stays visible for the current theme but has nothing to
-        // draw at a swipe's end in an uncoloured Space; it must not keep the last frame.
         let uncoloured = render(current, across(current, SpaceTheme(), 1))
         check(!uncoloured.isEmpty && uncoloured.allSatisfy { $0 == 0 }, "a swipe's end in an uncoloured Space clears the canvas")
         let arrived = render(SpaceTheme(), across(SpaceTheme(), current, 1))
         check(largest(arrived, alone) <= 1, "a swipe from an uncoloured Space ends on the incoming gradient as it rests (\(largest(arrived, alone)) levels)")
-        // An uncoloured Space on either side of a mid-swipe commit.
         let fromUncoloured = across(SpaceTheme(), current, p), toUncoloured = across(current, SpaceTheme(), 1 - p)
         let leftBefore = render(SpaceTheme(), fromUncoloured), leftAfter = render(current, fromUncoloured)
         let rightBefore = render(current, toUncoloured), rightAfter = render(SpaceTheme(), toUncoloured)
@@ -314,8 +278,6 @@ import MetalKit
         let fading = render(plainCurrent, across(plainCurrent, SpaceTheme(), p))
         let faded = a.map { Int((Double($0) * (1 - p)).rounded()) }
         check(largest(fading, faded) <= 1, "towards an uncoloured Space the theme fades as a whole (\(largest(fading, faded)) levels)")
-        // Over an opaque stand-in backdrop, the old stacked neighbour canvas
-        // differed across the same commit.
         let backdrop = (0..<alone.count).map { $0 % 4 == 3 ? 255 : 200 }
         let stackedBefore = over(other, opacity: p, over(alone, opacity: 1, backdrop))
         let stackedAfter = over(alone, opacity: 1 - p, over(other, opacity: 1, backdrop))
@@ -326,12 +288,6 @@ import MetalKit
               + " the stacked canvas jumped \(largest(stackedBefore, stackedAfter))")
     }
 
-    ///
-    ///
-    /// colour, a swipe between a light-style and a dark-style Space, its
-    /// commit included, leaves the floating blur as it was, in the window's
-    /// appearance. Where the blur is the whole backdrop, and on a locked
-    /// surface, it keeps the theme's side.
     static func checkSwipeMaterial() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 300), styleMask: [.borderless],
                               backing: .buffered, defer: true)
@@ -344,7 +300,6 @@ import MetalKit
         var light = SpaceTheme.singleColor(ThemeColor(red: 0.8, green: 0.88, blue: 0.97)!); light.appearance = .light
         var dark = SpaceTheme.singleColor(ThemeColor(red: 0.36, green: 0.22, blue: 0.62)!); dark.appearance = .dark
         var uncoloured = SpaceTheme(); uncoloured.appearance = .dark
-        // Increase Contrast's variants match their base appearance.
         func side(_ appearance: NSAppearance) -> NSAppearance.Name? { appearance.bestMatch(from: [.aqua, .darkAqua]) }
         struct Material: Equatable {
             var kind: NSVisualEffectView.Material, withinWindow: Bool, alpha: CGFloat, hidden: Bool, side: NSAppearance.Name?
@@ -369,9 +324,6 @@ import MetalKit
         let rest = materials()
         check(rest == [Material(kind: .popover, withinWindow: true, alpha: 1, hidden: false, side: .aqua)],
               "one floating blur, in the window's appearance")
-        // The strip sends its left page as `from`, its right page and its
-        // position; the pager's commit keeps that position, so it changes
-        // only the surface's own theme.
         func across(_ from: SpaceTheme, _ to: SpaceTheme, _ p: CGFloat) -> ThemePagingTransition {
             ThemePagingTransition(from: from, theme: to, progress: p)
         }
@@ -393,7 +345,6 @@ import MetalKit
               "a locked surface's material keeps its light theme's side in a Dark Aqua window")
         surface.floatingCornerRadius = FloatingSidebarSurface.cornerRadius
         check(materials().map(\.side) == [.darkAqua] && materials().first?.kind == .popover, "floating again resolves against the window")
-        // The common path: the window inherits the app's appearance.
         window.appearance = nil
         guard let inherited = side(window.effectiveAppearance) else { fatalError("FloatingSidebarSurface: an Aqua or Dark Aqua window") }
         let flipped: NSAppearance.Name = inherited == .darkAqua ? .aqua : .darkAqua
@@ -404,9 +355,6 @@ import MetalKit
         NSApp.appearance = nil
         until { side(window.effectiveAppearance) == inherited }
         check(materials().map(\.side) == [inherited], "and follows it back")
-        // An automatic Space is on the window's side, coloured or not, so a
-        // swipe between the two keeps the window's own variant (Increase
-        // Contrast's included; AppKit cannot name it, so only the system can).
         let automatic = SpaceTheme.singleColor(ThemeColor(red: 0.42, green: 0.36, blue: 0.86)!)
         let names: [(SpaceTheme, ThemePagingTransition?)] = [
             (automatic, nil), (automatic, across(automatic, SpaceTheme(), 0.6)),

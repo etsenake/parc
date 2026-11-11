@@ -1,7 +1,6 @@
 import Foundation
 struct NSRect: Equatable { var x, y, width, height: Int }
 
-// These collaborators intentionally have no AppKit/native browser implementation.
 enum BrowserScriptError: Error { case busy, missing }
 final class Text { var isEditable = true }
 final class View { var needsLayout = false }
@@ -89,7 +88,6 @@ final class BrowserWindowController {
     func ejectPageBeforeClose() -> Bool {
         if deferEjection { closeAfterEjecting = true; return true }; return false
     }
-    // BROWSER_METHODS
 }
 final class AppDelegate {
     struct ReplayWindow {
@@ -119,7 +117,6 @@ final class AppDelegate {
         let owner = BrowserWindowController(store: store); owner.sessionID = restoredRecord?.id ?? UUID()
         owner.window?.isVisible = showImmediately; add(owner); return owner
     }
-    // APP_METHODS
 }
 func drain() { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01)) }
 func fixture() -> (AppDelegate, BrowserWindowController, BrowserWindowController, OnboardingWindow) {
@@ -129,8 +126,6 @@ func fixture() -> (AppDelegate, BrowserWindowController, BrowserWindowController
     other.isPrivateBrowsing = true; app.add(origin); app.add(other)
     return (app, origin, other, flow)
 }
-// Refusal preserves the original owner, releases the note freeze, and cancels
-// a queued Quit. Neither replay nor a second global consent starts afterward.
 do {
     let (app, origin, other, flow) = fixture(), editor = NoteEditorViewController()
     origin.noteEditors[UUID()] = Note(editor: editor)
@@ -143,8 +138,6 @@ do {
     precondition(app.onboarding == nil && !flow.presented && other.window!.isVisible)
     precondition(app.globalQuitRequests == 0 && app.replayReturnOwner == nil)
 }
-// Saved frozen notes cannot produce a late veto after irreversible native
-// approval. A failed restoration retains the snapshot and gate until Retry.
 do {
     let (app, origin, other, flow) = fixture(), editor = NoteEditorViewController()
     origin.noteEditors[UUID()] = Note(editor: editor)
@@ -162,8 +155,6 @@ do {
     precondition(app.lastActiveWindow?.sessionID == id && app.lastActiveWindow?.window?.frame == frame)
     precondition(app.replayReturnOwner == nil && app.onboarding == nil)
 }
-// Both Quit entry points defer while consent owns its reservation; approval
-// restores a real original-session owner before the deferred Quit runs.
 for direct in [false, true] {
     let (app, origin, _, flow) = fixture()
     try app.startOnboardingReplay(flow, closing: origin)
@@ -183,8 +174,6 @@ do {
     app.failsRestoration = false; app.finishOnboardingReplay()
     precondition(app.globalQuitRequests == 1 && !app.replaySessionActive)
 }
-// A resumed ejection's local refusal is final; a later unrelated window close
-// cannot resurrect the cancelled replay callback.
 do {
     let (app, origin, _, flow) = fixture(); origin.deferEjection = true
     try app.startOnboardingReplay(flow, closing: origin)
@@ -193,8 +182,6 @@ do {
     precondition(!app.replayCloseInProgress && app.onboarding == nil)
     precondition(origin.scriptingWindowCloseCompletions.isEmpty && !flow.presented)
 }
-// Private/popup pages get genuine consent but are never unloaded or recreated.
-// Include parked pages, Peek children and embedded Easel pages, not just focus.
 for privateOrigin in [false, true] {
     let (app, origin, _, flow) = fixture()
     origin.isPopupWindow = !privateOrigin
@@ -215,8 +202,6 @@ for privateOrigin in [false, true] {
     app.finishOnboardingReplay()
     precondition(app.lastActiveWindow === auxiliary && auxiliary.window!.isVisible)
 }
-// Page creation or replacement while auxiliary consent is pending invalidates
-// the entire approval; no stale inventory may hide a different owner/page set.
 do {
     let (app, origin, _, flow) = fixture(); origin.isPopupWindow = true
     origin.browsers[UUID()] = Browser(PCNativePage(origin.nativeBinding!))
@@ -225,8 +210,6 @@ do {
     PCNativeBrowserApplication.resolve(true); drain()
     precondition(!flow.presented && app.replayReturnOwner == nil && origin.window!.isVisible)
 }
-// A preserved popup can close itself during replay. Return to the surviving
-// regular owner; never reconstruct a dead popup or private context.
 do {
     let (app, origin, _, flow) = fixture()
     let popup = BrowserWindowController(store: app.store); popup.isPopupWindow = true; app.add(popup)
@@ -236,8 +219,6 @@ do {
     app.finishOnboardingReplay()
     precondition(app.lastActiveWindow === origin && origin.window!.isVisible && !app.replaySessionActive)
 }
-// Application Settings survives its browser. Replay without any origin still
-// retains the recovery gate if opening a normal browser fails on completion.
 do {
     NSApp.orderedWindows = []
     let app = AppDelegate(), flow = OnboardingWindow()
@@ -248,7 +229,6 @@ do {
     app.failsRestoration = false; app.finishOnboardingReplay()
     precondition(app.lastActiveWindow?.store === app.store && !app.replaySessionActive)
 }
-// Cancel never revives editing on a note deleted while consent was pending.
 do {
     let (app, origin, _, flow) = fixture(), editor = NoteEditorViewController()
     origin.noteEditors[UUID()] = Note(editor: editor)

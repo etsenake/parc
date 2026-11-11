@@ -1,7 +1,5 @@
 import AppKit
 
-/// The outgoing page stays on screen until the incoming page has drawn, and
-/// never longer than a second after the hold began.
 @main
 struct PageSwitchHoldTests {
     final class Pane {}

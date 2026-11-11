@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""Source assertions for the split cell's Close gate (SP30).
-
-The window controller is not compiled here. These assertions keep the split
-cell's Close and keyboard Close of selected roots on ordinary row Close's
-window and per-tab conditions (without its key-window check), the close
-action read at press time and no split accessibility close action (Parc's
-SplitViewCellView has none). No browser, window or input.
-"""
 from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
@@ -41,8 +33,6 @@ expect("ownership" not in tab, "the shared per-tab conditions leave which window
 row = body(controller, "private func canPerformSidebarTabAction(")
 expect("sidebarTabActionWindowAvailable" in row and "sidebarTabActionAvailable(expected.id)" in row
        and "window?.isKeyWindow == true" in row, "ordinary row actions use the shared conditions plus the key window")
-# The per-tab conditions hold wherever the page is; each action checks which
-# window holds it. A row's Close takes this window's page or moves it here.
 expect("usableHere: closing ? ownership.canUse(expected.id, owner: presentationID) : switcherCanUse(expected.id)" in row
        and "heldElsewhere: canMovePageHere(expected.id)" in row, "a row action checks which window holds its page")
 expect("PageReparenting.rowAction(closing: closing, busy: !sidebarTabActionAvailable(expected.id)" in row,
@@ -69,9 +59,6 @@ expect("self.moveRootsHere(elsewhere[...], moved: [])" in moving and "ids.allSat
        and "self.prepareSidebarRootsClose(items, archive: archive, requiresConfirmation: requiresConfirmation," in moving
        and "isSelectionCommand: isSelectionCommand, selectionIsCurrent: current, declined: giveBack)," in moving,
        "held pages move here, then the whole set (here and moved) closes or archives here only once all are here")
-# A later move in the set can still be refused after earlier pages arrived
-# (the transfer rechecks both windows and the page), so nothing may stay
-# half-moved: every way the press ends without closing sends moved pages back.
 expect("let giveBack = { [weak self] in self?.returnMovedRoots(moved); declined() }" in moving
        and "close() else { giveBack(); return false }" in moving,
        "moved pages go back when the close can't be prepared or doesn't start")
@@ -92,9 +79,6 @@ expect("heldContentIDs.contains(id) || holdsEmptyClaim(id)" in unshown
        and "shownSinceArrival.union(heldReturns).filter(holdsEmptyClaim)" in returnable,
        "a handed-over claim with nothing behind it, which has no pane here, goes back as moved content does, "
        "including while its return is held")
-# A return the placeholder window can't take now (a move under way, page full
-# screen, a close, a move in its recovery prompt, another Space) is held, not
-# dropped, and retried on the change that ends that, never on a timer.
 returns = body(controller, "private func scheduleUntargetedReturns()")
 expect("self.shownSinceArrival.remove(id)" in returns
        and "let outcome = self.onUntargetedReturn?(id, self, .deselected)" in returns

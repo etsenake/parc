@@ -1,4 +1,3 @@
-"""Exercise the package wrapper's actual receipt lookup without packaging."""
 import json
 from pathlib import Path
 import subprocess

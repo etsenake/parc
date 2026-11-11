@@ -29,8 +29,6 @@ import AppKit
             return found
         }
         let expand = button("Show All Mini Players (2)")
-        ///
-        ///
         func checkName(_ control: ActionButton, _ name: String) {
             let tooltip = name.contains("Camera") ? "Toggle Camera" : name.contains("Microphone") ? "Toggle Microphone" : name
             check(control.parcTooltip?.label == tooltip && control.toolTip == nil && control.accessibilityHelp() == tooltip
@@ -68,9 +66,6 @@ import AppKit
             .filter { $0.accessibilityLabel() == "Unmute Tab" && !$0.isHidden }
         check(unmuteControls.count == 1, "muted volume control describes the unmute action")
         unmuteControls.forEach { checkName($0, "Unmute Tab") }
-        // An action after its media ended, in a collapsed stack, expands and
-        // exposes feedback; this calls only an inert stand-in page, with no
-        // native input events.
         expand.actionBlock?(); deck.layoutSubtreeIfNeeded()
         state.playing = true; page.mediaState = nil
         deck.update([first, second]); deck.layoutSubtreeIfNeeded()

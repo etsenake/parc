@@ -54,7 +54,6 @@ import Combine
         try expect(store.state.splitLayouts.first!.customTitle == "Planning", "Consecutive rename Redo retains chronology")
         owner.undo()
         try expect(try record("Research", in: owner) == nil && owner.canRedo, "Same-value edit leaves Redo intact")
-        // A cancelled native edit never calls the commit/registration owner.
         try expect(owner.canRedo, "No registration occurs for cancellation")
         _ = try record("Shared window", in: otherWindow)
         try expect(!owner.canRedo && otherWindow.canUndo, "A competing shared name invalidates the older inverse")
@@ -105,7 +104,6 @@ import Combine
         changed = privateStore.state; changed.spaces.append(newSpace); changed.splitLayouts[0].spaceID = newSpace.id
         for i in changed.tabs.indices { changed.tabs[i].spaceID = newSpace.id }
         try expect(privateChange.target(in: changed, undo: true)?.spaceID == newSpace.id, "Same-profile cross-Space relocation retains original title capability")
-        // The async-close adapter and synchronous name action share one chronology.
         let mixed = FolderUndoManager(); var closed = true
         _ = mixed.append(.init(name: "Archive Tab", isValid: { _ in true }, isAvailable: { _ in true }, perform: { direction, done in closed = direction == .redo; done(true) }))
         _ = mixed.appendSplitTitleChange(privateChange, store: privateStore, available: { true }, onError: { _ in errors += 1 })

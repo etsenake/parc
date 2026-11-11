@@ -60,7 +60,6 @@ static NSTextField* Input(NSView* view) {
   }
   return nil;
 }
-// OK stays inert for half a second after the sheet appears.
 static void WaitEnabled(NSButton* button) {
   NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:2];
   while (!button.enabled && deadline.timeIntervalSinceNow > 0) {

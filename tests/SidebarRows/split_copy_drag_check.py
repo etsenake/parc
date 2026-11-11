@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""Source assertions for the whole-split drag's copy and external behaviour (SP23).
-
-The window controller and sidebar are not compiled here. These assertions keep
-the outline source mask on the split cell (copy and move inside the app, copy
-outside it), copy admitted only for whole-split sessions through the drop's
-Option mask, the destination window's prepared copy (duplicate, place, open
-children, select the copy) and the hover-free drag image. No browser, window
-or input.
-"""
 from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()

@@ -320,8 +320,6 @@ struct EaselTextStyleTests {
             expect(view.attributedString().isEqual(to: before), "Native undo restores the original attributed glyph and layout metadata")
             view.redo(nil)
             expect(view.hasEmphasis(emphasis), "Native redo restores the authored formatting")
-            // Layout may choose the fallback again after redo; checked state
-            // must continue reading the authored font retained by AppKit.
             let authored = NSFontManager.shared.convert(original, toHaveTrait: emphasis == .bold ? .boldFontMask : .italicFontMask)
             load([.font: fallback, key: authored])
             expect(view.hasEmphasis(emphasis), "Checked state follows authored emphasis after native fallback")
@@ -587,8 +585,6 @@ struct EaselTextStyleTests {
             view.textStorage!.setAttributedString(EaselTextAppearance.attributed(string, style: .init(), color: "#252525"))
             view.localUndo.removeAllActions(); view.setSelectedRange(NSRange(location: 0, length: (string as NSString).length))
         }
-        // Imported paragraph metadata may accompany ordinary tabular content.
-        // Neither changing kind nor outdenting may consume a non-marker word.
         for format in [NSTextList.MarkerFormat.disc, NSTextList.MarkerFormat(rawValue: "{decimal}.")] {
             load("\tImportant\tKeep this text")
             let imported = NSMutableParagraphStyle()

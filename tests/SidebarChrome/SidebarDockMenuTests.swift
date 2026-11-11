@@ -1,10 +1,5 @@
 import AppKit
 
-/// The dock's Space items' context menu: the production SidebarDockItemMenu
-/// and SidebarSpaceMenu.dock on a real session store and Space fixtures, on
-/// the production SidebarDockStrip in an off-screen window that is never
-/// shown or made key. Menus are read and their items performed directly; no
-/// menu tracking, pointer input, browser or preferences.
 @main @MainActor struct SidebarDockMenuTests {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -17,18 +12,12 @@ import AppKit
         if name.hasPrefix("Space "), Int(name.dropFirst(6)) == 1 { space.title = nil }
         return space
     }
-    /// The accessibility actions an element advertises (AXShowMenu for Show
-    /// Menu), read through the informal protocol without its deprecation.
     static func actions(_ element: Any?) -> [String] {
         let selector = NSSelectorFromString("accessibilityActionNames")
         guard let object = element as? NSObject, object.responds(to: selector) else { return [] }
         return object.perform(selector)?.takeUnretainedValue() as? [String] ?? []
     }
 
-    /// Stands in for SidebarView: keeps one button and one item menu per
-    /// Space, installs each menu on its button as a render does, and builds
-    /// the Space menu with SidebarSpaceMenu.dock as SidebarView.dockSpaceMenu
-    /// does, with the store's toggle.
     @MainActor final class Dock {
         let store: BrowserStore
         let strip: SidebarDockStrip
@@ -68,7 +57,6 @@ import AppKit
             strip.selectedIndex = shown ? spaces.firstIndex { $0.id == active } : nil
             strip.layoutSubtreeIfNeeded()
         }
-        /// The item's menu as AppKit opens it: the delegate rebuilds it first.
         func opened(_ id: UUID) -> NSMenu? {
             guard let menu = buttons[id]?.menu else { return nil }
             menu.delegate?.menuNeedsUpdate?(menu)
@@ -96,7 +84,6 @@ import AppKit
                                eventNumber: 0, clickCount: 1, pressure: 1)
         }
 
-        //
         dock.render()
         let first = store.state.spaces[0]
         check(store.state.spaces.count == 1 && first.name == "Space 1" && store.state.settings.showSpaceHeaderOnSingleUnnamedSpaces == nil,
@@ -123,8 +110,6 @@ import AppKit
         check(dock.calls == ["rename Space 1", "theme", "folder"], "the active Space's item runs rename, theme and folder")
         check(store.state.activeSpaceID == first.id && strip.selectedIndex == nil, "the menu selects nothing")
 
-        // Two Spaces: no toggle; each item acts on its own Space and only the
-        // active Space's item offers Parc's theme editor and folder prompt.
         dock.calls.removeAll()
         let secondID = store.createSpace(name: "Work")
         let second = store.state.spaces.first { $0.id == secondID }!
@@ -148,7 +133,6 @@ import AppKit
               "the setting adds no toggle while the window has two Spaces")
         store.toggleSpaceHeaderOnSingleUnnamedSpaces()
 
-        //
         let lone = space("Space 1"), titled = space("Trips"), starred = space("Space 1", icon: .symbol("star"))
         for (fixture, expected, rule) in [(lone, "Show Space Header", "an untitled Space offers the toggle"),
                                           (titled, nil, "a titled Space offers none"),
@@ -170,7 +154,6 @@ import AppKit
                                     toggleHeader: nil) == nil, "no menu for a Space the window does not have")
         dock.fixture = nil; dock.render()
 
-        //
         dock.creating = true; dock.render()
         check(dock.spaces.count == 2 && dock.spaces.allSatisfy { dock.buttons[$0.id]?.menu == nil } && event(.rightMouseDown, [], button).flatMap { button.menu(for: $0) } == nil,
               "creating a Space removes every item's menu")

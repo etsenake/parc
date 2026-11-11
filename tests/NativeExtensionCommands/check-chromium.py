@@ -23,7 +23,6 @@ def main():
     if Path(output_name).name != output_name or output_name in ("", ".", ".."):
         parser.error("output name must name one existing directory")
     build = tree / "out" / output_name
-    # Reuse the existing strict Ninja-variable reader; it never runs a builder.
     flags_from = runpy.run_path(str(repo / "tests/NativeLocationBar/check-chromium.py"))["flags_from"]
     logs = repo / "build/tests/native-extension-commands/chromium-syntax"
     logs.mkdir(parents=True, exist_ok=True)

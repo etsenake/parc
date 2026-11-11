@@ -1,5 +1,4 @@
 #!/bin/bash
-# Inert admission-store model check. No browser, profiles, AppKit or input.
 set -euo pipefail
 root="$(cd -- "$(dirname -- "$0")/../.." && pwd)"
 mkdir -p "$root/build/tests/native-media-episode-store"

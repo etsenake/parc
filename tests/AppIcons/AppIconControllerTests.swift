@@ -1,8 +1,6 @@
 import AppKit
 import ImageIO
 
-/// Production catalog/controller with only temporary files and an injected
-/// image consumer. Never launches a browser or changes Finder/the user's Dock.
 @main @MainActor struct AppIconControllerTests {
     static var assertions = 0
     static func expect(_ condition: @autoclosure () throws -> Bool, _ message: String, line: Int = #line) throws {
@@ -42,8 +40,6 @@ import ImageIO
         try expect(applied.count == applyCount && sourceController.selectedID == "Dev", "Unknown choices cannot reach the applier")
         try expect(try Data(contentsOf: preference) == savedData, "Unknown choices cannot replace the preference")
 
-        // PNG previews are deliberately unreadable: a packaged image must use
-        // the actual ICNS representations instead of resampling the preview.
         for id in expected {
             try Data("invalid preview".utf8).write(to: packaged.appendingPathComponent("AppIcons/\(id).png"))
         }
@@ -54,9 +50,6 @@ import ImageIO
         for variant in nativeController.variants {
             let actual = Set(variant.image.representations.map(\.pixelsWide))
             try expect(actual == pixelSizes, "\(variant.id) preserves all native pixel sizes: \(actual)")
-            // Compare native compositing, not iconutil's PNG encodings: its
-            // legacy 32px export unpremultiplies edge RGB differently even
-            // when the ICNS representations render to identical pixels.
             let url = packaged.appendingPathComponent("AppIcons/\(variant.id).icns")
             let decoder = CGImageSourceCreateWithURL(url as CFURL, nil)!
             var rendered: [Int: Data] = [:]

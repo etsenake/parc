@@ -10,7 +10,6 @@ import AppKit
             Dictionary(grouping: frames, by: \.minY).keys.sorted().map { y in frames.filter { $0.minY == y }.count }
         }
 
-        // Recovered App Tray grid: 8-point insets/gaps, 47-point rows, four columns.
         let one = FavoriteGridLayout.frames(count: 1, width: 260)
         check(one.frames == [CGRect(x: 8, y: 8, width: 244, height: 47)], "A lone Favorite spans the tray")
         check(one.height == 63, "One row is 8 + 55")
@@ -28,7 +27,6 @@ import AppKit
         check(columns(FavoriteGridLayout.frames(count: 3, width: 40).frames) == [1, 1, 1], "Narrow trays keep one column")
         check(FavoriteGridLayout.frames(count: 0, width: 260).frames.isEmpty, "No Favorites, no tiles")
 
-        // Split cells: 2-point gap, inner edges only, outer corners only.
         let pair = FavoriteChildLayouts.layouts(count: 2, size: CGSize(width: 55, height: 47), gap: 2, orientation: .horizontal)
         check(pair.map(\.rect) == [CGRect(x: 0, y: 0, width: 26.5, height: 47), CGRect(x: 28.5, y: 0, width: 26.5, height: 47)],
               "Recovered two-page split cells")
@@ -45,14 +43,12 @@ import AppKit
               "Vertical splits stack into two rows")
         check(FavoriteChildLayouts.layouts(count: 2, size: .zero, gap: 2, orientation: .horizontal).isEmpty, "Empty size has no cells")
 
-        // Selection ring: outer edge plus one inner hole per page.
         let ring = FavoriteTilePaths.selectionRing(bounds: CGRect(x: 0, y: 0, width: 55, height: 47), count: 1, orientation: .horizontal)
         check(ring.contains(CGPoint(x: 27, y: 1), using: .evenOdd), "Ring covers the outer two points")
         check(!ring.contains(CGPoint(x: 27, y: 23), using: .evenOdd), "Ring leaves the tile interior open")
         let splitRing = FavoriteTilePaths.selectionRing(bounds: CGRect(x: 0, y: 0, width: 55, height: 47), count: 2, orientation: .horizontal)
         check(splitRing.contains(CGPoint(x: 27.5, y: 23), using: .evenOdd), "Split ring carves a divider")
 
-        //
         let tile = CGRect(x: 0, y: 0, width: 55, height: 47)
         let highlight = FavoriteTilePaths.highlightRing(bounds: tile)
         check(FavoriteTileMetrics.highlightRingWidth == 2 && FavoriteTileMetrics.highlightRingInset == 1,
@@ -67,7 +63,6 @@ import AppKit
         check(stroke.contains(CGPoint(x: 27, y: 0.5)) && !stroke.contains(CGPoint(x: 27, y: 2.5)),
               "Stroke covers only the outer two points")
 
-        //
         func style(dark: Bool, hovered: Bool, dimmed: Bool) -> FavoriteSelectedStyle {
             FavoriteSelectedStyle(dark: dark, hovered: hovered, dimmed: dimmed)
         }
@@ -89,7 +84,6 @@ import AppKit
             }
         }
 
-        // N4: identical-frame FavoriteTile.layout skips CATransaction layer writes.
         typealias LayerSkip = FavoriteTileLayerLayoutSkip
         let tileBounds = CGRect(x: 0, y: 0, width: 60, height: 47)
         let local = CGRect(origin: .zero, size: tileBounds.size)

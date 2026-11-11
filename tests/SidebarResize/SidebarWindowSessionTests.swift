@@ -1,10 +1,6 @@
 import Combine
 import Foundation
 
-/// Each window's session record through the real store: its codec, the old
-/// session format, the save order, save and reopen without a publication, and
-/// private stores. The record is what BrowserWindowController.sessionRecord
-/// derives from its SidebarWindowWidth.
 @main @MainActor struct SidebarWindowSessionTests {
     private struct LegacyDatedRecord: Encodable {
         let sidebarWidth: Double
@@ -24,8 +20,6 @@ import Foundation
         try body(directory)
     }
     static func main() throws {
-        //
-        // missing one as 228, not as the app-wide width.
         let encoded = try JSONEncoder().encode(BrowserWindowRecord(sidebarWidth: 312))
         try check((try JSONSerialization.jsonObject(with: encoded) as? [String: Any])?["sidebarWidth"] as? Double == 312, "the record encodes its width")
         try check(try JSONDecoder().decode(BrowserWindowRecord.self, from: encoded).sidebarWidth == 312, "the record round-trips")
@@ -36,8 +30,6 @@ import Foundation
         try check(try JSONDecoder().decode(BrowserWindowRecord.self, from: Data(#"{"sidebarWidth":900}"#.utf8)).sidebarWidth == 900,
                   "decoding keeps the saved value; seeding clamps it")
 
-        // The save order: the frame autosave holder first even when it is not
-        // frontmost, then front to back, then windows off screen in opening order.
         let order = BrowserWindowRecord.sessionOrder
         check(order([false, true, false], [0, 2, 1]) == [1, 0, 2], "the autosave holder first, though behind the others")
         check(order([false, false, false], [nil, 1, 0]) == [2, 1, 0] && order([false, false], [nil, nil]) == [0, 1],
@@ -49,8 +41,6 @@ import Foundation
             let store = try BrowserStore(directory: directory)
             store.updateSettings { $0.sidebarWidth = 250 }
             try store.save()
-            // Sessions saved before window records decode with none, so the
-            // reopened window takes the last-used width as before.
             var json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
             check((json["windows"] as? [Any])?.isEmpty == true, "a session saves its window records")
             json.removeValue(forKey: "windows")
@@ -61,7 +51,6 @@ import Foundation
                                      restored: migrated.windowRecords.first?.sidebarWidth).width == 250,
                   "without a record the reopened window takes the last-used width")
 
-            // Two windows with their own widths; the last-used width is a third.
             var first = SidebarWindowWidth(lastUsed: 250, restored: 320), second = SidebarWindowWidth(lastUsed: 250)
             var lastUsed = 250.0
             var gesture = SidebarResizeGesture(width: second.width, locked: true)
@@ -71,13 +60,11 @@ import Foundation
             var published = 0
             let subscription = migrated.statePublisher.dropFirst().sink { _ in published += 1 }
             let settingsUpdates = published
-            // Saving now settles the settings' own pending save first.
             try migrated.save()
             migrated.updateWindowRecords([record(first), record(second)])
             check(migrated.windowRecords.map(\.sidebarWidth) == [320, 210], "new records update the store")
             check(published == settingsUpdates && migrated.state.windows.isEmpty,
                   "records publish nothing, so no window renders for them")
-            // The debounced save writes them without an explicit save.
             RunLoop.main.run(until: Date().addingTimeInterval(0.6))
             let written = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
             check((written["windows"] as? [[String: Any]])?.compactMap { $0["sidebarWidth"] as? Double } == [320, 210],
@@ -85,7 +72,6 @@ import Foundation
             let updates = published
             migrated.updateWindowRecords([record(first), record(second)])
             check(published == updates, "unchanged records change nothing")
-            // A cancelled drag or a collapse changes no width, so no record.
             for completion in [SidebarResizeGesture.Completion.cancelled, .ended] {
                 var drag = SidebarResizeGesture(width: first.width, locked: true)
                 _ = drag.change(translationX: completion == .ended ? -300 : 60, velocityX: 0, now: 0)
@@ -132,13 +118,11 @@ import Foundation
             try check(try legacyDecoder.decode(BrowserWindowRecord.self, from: legacyEncoder.encode(legacy))
                 == BrowserWindowRecord(sidebarWidth: 220, itemLastActiveDates: [tabID: legacyDate]),
                 "the earlier ISO-8601 activity dates remain readable")
-            // A later session write keeps the records in the file.
             relaunched.updateSettings { $0.sidebarWidth = 230 }
             try relaunched.save()
             try check(try BrowserStore(directory: directory).windowRecords == dated,
                       "a later session write keeps the records")
 
-            // A hand-edited out-of-range width decodes as saved and clamps when seeded.
             json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
             json["windows"] = [["sidebarWidth": 40], [:]] as [[String: Any]]
             try JSONSerialization.data(withJSONObject: json).write(to: file)
@@ -146,7 +130,6 @@ import Foundation
             check(edited.windowRecords.map(\.sidebarWidth) == [40, 228] && edited.windowRecords.allSatisfy { $0.itemLastActiveDates.isEmpty }, "older records keep their widths and default missing activity dates to empty")
             check(SidebarWindowWidth(lastUsed: 210, restored: edited.windowRecords[0].sidebarWidth).width == 164, "seeding clamps a saved width")
 
-            // Private windows keep their own store, which never persists records.
             let incognito = BrowserStore(privateParentProfileID: relaunched.activeSpace.profileID, engineProfilePath: "/tmp/parc-test",
                                          directory: directory, settings: relaunched.state.settings)
             incognito.updateWindowRecords([BrowserWindowRecord(sidebarWidth: 400)])

@@ -1,9 +1,4 @@
 #!/bin/bash
-# Plays an x265 clip with Netflix's frame reordering (P then three
-# hierarchical B-frames, decode times four frames ahead) through the FairPlay
-# core, silent and video only, with and without decode timestamps. Needs x265
-# (Homebrew). Extra arguments go to every --play run. PARC_DECODE_TIMES_SIZE,
-# _KBPS and _BFRAMES change the clip (default 1920x1080, 12000, 3).
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/../../.." && pwd)"
 core="$repo_root/Engine/ParcNative/fairplay"

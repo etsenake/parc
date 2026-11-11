@@ -73,7 +73,6 @@ import UniformTypeIdentifiers
   let window=NSWindow(contentRect:view.frame,styleMask:[.titled],backing:.buffered,defer:false);window.contentView=view
   defer { view.invalidate();window.contentView=nil }
   func all(_ v:NSView)->[NSView] { [v]+v.subviews.flatMap(all) }
-  // A real document grid must fit both cards in the narrow Library pane.
   let documentStore = try EaselEditorViewController.sharedStore(directory: store.easelsDirectory(for: profile))
   _ = try documentStore.create(title: "First disposable Easel")
   _ = try documentStore.create(title: "Second disposable Easel")
@@ -155,8 +154,6 @@ import UniformTypeIdentifiers
   documents.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: documentsSearch))
   expect(documentTitles() == titlesAfterTitle, "Clearing Documents search force-reloads membership")
   documentWindow.contentView = nil
-  // Isolated Documents catalog fingerprint: body persist still reloads search/
-  // sort-visible bits, while an identical NoteStore.changes admission no-ops.
   let documentsFingerprintRoot = directory.appendingPathComponent("documents-fingerprint", isDirectory: true)
   let documentsFingerprintStore = try BrowserStore(directory: documentsFingerprintRoot)
   let documentsFingerprintProfile = documentsFingerprintStore.activeSpace.profileID
@@ -218,8 +215,6 @@ import UniformTypeIdentifiers
          "A note title change still refreshes the isolated Documents catalog")
   documentsFingerprintWindow.contentView = nil
   documentsFingerprintWindow.close()
-  // LibraryView store-sink skip: Documents pane must ignore live title/URL publishes
-  // (NoteStore still refreshes real catalog changes via its own subscription).
   SystemOverrides.reduceMotion = true
   let documentsLibrary = LibraryView(store: store, kind: .documents, profileID: profile)
   documentsLibrary.frame = NSRect(x: 0, y: 0, width: 416, height: 600)
@@ -268,8 +263,6 @@ import UniformTypeIdentifiers
   store.updateTab(liveTab,url:"https://unrelated-library-url.example.invalid")
   drainMain()
   expect(downloadLabels()==labelsBeforeTitle,"Unrelated live tab URL publishes do not rebuild Downloads rows")
-  // Identical re-publish of the current catalog must remain a true no-op for
-  // the Downloads fingerprint across duplicate $state admissions.
   store.recordDownload(["id":"a","profilePath":path,"name":"a","status":"downloading","available":true,"itemIdentity":"a1","canOpen":false,"receivedBytes":250000,"totalBytes":1000000,"sourceURL":"https://example.invalid/a","startedAt":1000])
   drainMain()
   let labelsAtBaseline=downloadLabels()
@@ -338,8 +331,6 @@ import UniformTypeIdentifiers
   publish("a","a3");view.setLoading(count:0,message:nil)
   invoke(retiredHide)
   expect(actions.count==afterDirectActions,"A replaced original cannot accept a previously captured Hide")
-  // Exercise the actual table data source and lazy original-file pasteboard
-  // boundary with a disposable URL. No file is opened, moved or downloaded.
   search.stringValue="";view.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification))
   table.selectRowIndexes(IndexSet(integer:1),byExtendingSelection:false)
   let outgoingURL=directory.appendingPathComponent("original.png")
@@ -368,8 +359,6 @@ import UniformTypeIdentifiers
   view.setOperation(draggingItem,message:"Moving to Trash…")
   expect(view.tableView(table,pasteboardWriterForRow:1)==nil,"Busy original file refuses outgoing drag")
   view.setOperation(draggingItem,message:nil)
-  // Actual asynchronous thumbnail owner with an injected generator only. No
-  // personal file, directory enumeration or Quick Look service is exercised.
   var replies:[@MainActor (DownloadThumbnailProvider.Delivery)->Void]=[], cancelled=0, delivered=0
   let provider=DownloadThumbnailProvider(loader:{ _, reply in replies.append(reply);return {cancelled += 1} })
   let first=store.state.downloads.first!
@@ -403,8 +392,6 @@ import UniformTypeIdentifiers
   expect(replies.count==4,"Category retirement clears file image cache")
   provider.invalidate();replies[3](.finished(NSImage(size:NSSize(width:2,height:2))))
   expect(delivered==2 && cancelled==3,"Invalidated generator callback remains harmless")
-  // The original icon may publish provisionally, then be superseded by the
-  // thumbnail. Cancellation must revoke either phase, including reentrancy.
   var phaseImages:[NSImage?]=[]
   let provisional=NSImage(size:NSSize(width:14,height:14))
   let finalImage=NSImage(size:NSSize(width:24,height:24))
@@ -467,8 +454,6 @@ import UniformTypeIdentifiers
   expect(moved==[false] && opened==0,"Preview keys respect actual disabled bounds and original open capability")
   preview.window!.sendEvent(keyEvent(49));preview.close()
   expect(closed==1,"Space closes one preview owner exactly once")
-  // Actual parent-sized native preview, using an owned temporary URL and the
-  // system Reduce Motion setting. No browser, personal file or output action.
   let previewParent=NSWindow(contentRect:NSRect(x:150,y:150,width:1000,height:700),styleMask:[.titled,.resizable],backing:.buffered,defer:false)
   previewParent.isReleasedWhenClosed=false
   SystemOverrides.reduceMotion=true
@@ -550,7 +535,6 @@ import UniformTypeIdentifiers
   expiredSource.dismiss();expect(expiredClosed==1,"Expired source dismisses immediately without retaining an animation owner")
   expect(DownloadPreviewGeometry.modalFrame(in:NSRect(x:5,y:10,width:80,height:60))==NSRect(x:5,y:10,width:80,height:60),"Tiny parent adaptation clamps content to real owner bounds")
   previewParent.close()
-  // Archive filter transitions own the original window and preserve the editor.
   SystemOverrides.reduceMotion=true
   let archiveView=LibraryView(store:store,kind:.archive,profileID:profile)
   archiveView.frame=NSRect(x:0,y:0,width:416,height:600)
@@ -559,7 +543,6 @@ import UniformTypeIdentifiers
   let archiveSearch=all(archiveView).compactMap{$0 as? NSTextField}.first{$0.accessibilityLabel()=="Search Library"}!
   let archiveFilter=all(archiveView).compactMap{$0 as? NSButton}.first{$0.title=="Filter"}!
   expect(archiveFilter.frame.width==archiveFilter.fittingSize.width && archiveFilter.fittingSize.width>72,"Archive Filter uses its fitting width so the title is not clipped to 72")
-  // Archived Tabs uses the PageHeaderView controls and geometry Downloads uses.
   expect(archiveSearch is DownloadSearchField && archiveSearch.superview is DownloadSearchBackdrop && (archiveFilter as? DownloadFilterButton)?.style == .header,
          "Archive header is the shared search field, its backdrop and the header Filter")
   let filterText=ceil(("Filter" as NSString).size(withAttributes:[.font:archiveFilter.font!]).width)
@@ -648,8 +631,6 @@ import UniformTypeIdentifiers
   pressArchive(newWindowChip)
   expect(all(archiveView).compactMap{$0 as? NSButton}.first{$0.title=="Manually Closed"}!.state == .on,"Reattached Archive gets live controls for its new window")
   replacementWindow.contentView=nil;replacementWindow.close();archiveWindow.close()
-  // The displayed projection follows the single active closure type, not just
-  // the visual chip state. Both records are disposable store-owned tabs.
   let reasonStore=try BrowserStore(directory:directory.appendingPathComponent("archive-reasons",isDirectory:true))
   let reasonProfile=reasonStore.activeSpace.profileID
   let automaticID=reasonStore.open("https://auto.example.invalid")
@@ -675,8 +656,6 @@ import UniformTypeIdentifiers
   pressArchive(reasonChip("Manually Closed"))
   expect(displayedArchiveTitles().contains("auto.example.invalid") && displayedArchiveTitles().contains("manual.example.invalid"),"Reselecting Manual restores all original rows")
   reasonWindow.contentView=nil;reasonWindow.close()
-  // Invoke the real Archive table menu on disposable records; no browser or
-  // user's archive data participates. Retain menu items across invalidation.
   var archiveNow = Date(timeIntervalSince1970: 1_900_000_000)
   let menuStore=try BrowserStore(directory:directory.appendingPathComponent("archive-menu",isDirectory:true),now:{archiveNow})
   let menuProfile=menuStore.activeSpace.profileID, originalSpace=menuStore.activeSpaceID
@@ -721,8 +700,6 @@ import UniformTypeIdentifiers
   expect(archiveTable.selectedRowIndexes==IndexSet(integer:archiveRows[0]) && !archiveTable.validateUserInterfaceItem(NSMenuItem(title:"Select All",action:#selector(NSTableView.selectAll(_:)),keyEquivalent:"a")),"Archive Select All cannot create plural selection")
   menuView.show(.archive)
   expect(!archiveTable.allowsMultipleSelection,"Returning to Archive restores single selection")
-  // Isolated Archive catalog fingerprint: live title/URL publishes must not
-  // rebuild rows, while a newly archived tab must still appear.
   var fingerprintNow=Date(timeIntervalSince1970:1_910_000_000)
   let fingerprintStore=try BrowserStore(directory:directory.appendingPathComponent("archive-fingerprint",isDirectory:true),now:{fingerprintNow})
   let fingerprintProfile=fingerprintStore.activeSpace.profileID
@@ -754,7 +731,6 @@ import UniformTypeIdentifiers
   drainMain()
   expect(fingerprintTitles().contains("fingerprint-fresh.example.invalid"),"A newly archived tab still reloads the Archive catalog")
   fingerprintWindow.contentView=nil;fingerprintWindow.close()
-  // Spaces fingerprint includes settings SidebarView.render consumes.
   let spacesStore=try BrowserStore(directory:directory.appendingPathComponent("spaces-fingerprint",isDirectory:true))
   let spacesView=LibraryView(store:spacesStore,kind:.spaces,profileID:spacesStore.activeSpace.profileID)
   spacesView.frame=NSRect(x:0,y:0,width:800,height:600)
@@ -770,8 +746,6 @@ import UniformTypeIdentifiers
   drainMain()
   expect(all(spacesView).contains{$0 === spacesBeforeSettings && !$0.isHidden},"Live tab title publishes still reach Spaces reload")
   spacesWindow.contentView=nil;spacesWindow.close()
-  // Isolated Downloads catalog fingerprint: unrelated $state ticks skip, while
-  // progress byte flips and new membership still reload through the store sink.
   let downloadsFingerprintStore=try BrowserStore(directory:directory.appendingPathComponent("downloads-fingerprint",isDirectory:true))
   let downloadsFingerprintPath=downloadsFingerprintStore.independentEngineProfilePath(for:downloadsFingerprintStore.activeSpace.profileID)
   downloadsFingerprintStore.recordDownload(["id":"dl-fp","profilePath":downloadsFingerprintPath,"name":"dl-fp","status":"downloading","available":true,"itemIdentity":"dl-fp-1","canOpen":false,"receivedBytes":100,"totalBytes":1000,"sourceURL":"https://example.invalid/dl-fp","startedAt":2000])
@@ -826,7 +800,6 @@ import UniformTypeIdentifiers
   menuStore.deleteArchivedTabs([groupB],profileID:menuProfile)
   invoke(staleGroup.items[1]);expect(menuStore.state.tabs.contains{$0.id==groupA && $0.archivedAt != nil},"A changed group cannot delete its surviving member")
   let otherMenu=archiveMenu(archiveRow("other.example.invalid"))
-  // Deliberately reuse the exact archive clock to test intervening incarnation.
   _ = menuStore.restoreArchivedTab(other,profileID:menuProfile,destination:.previousSpace(fallbackSpaceID:originalSpace))
   menuStore.closeTabs([other])
   invoke(otherMenu.items[1]);expect(menuStore.state.tabs.contains{$0.id==other && $0.archivedAt == archiveNow},"A rearchived replacement with the same ID and timestamp survives the old action")
@@ -861,7 +834,6 @@ import UniformTypeIdentifiers
   shownActions(hoverIndex).first{$0.accessibilityLabel()=="Delete"}!.performClick(nil)
   expect(!menuStore.archivedItems(profileID:menuProfile).contains{$0.id==hoverItem.id},"Trash removes that live archive record")
   hoverHost.contentView=nil;menuWindow.contentView=menuView;hoverHost.close()
-  // The untouched original group is tested in a second disposable store.
   let directStore=try BrowserStore(directory:directory.appendingPathComponent("archive-direct",isDirectory:true))
   let directProfile=directStore.activeSpace.profileID
   let directA=directStore.open("https://direct-a.example.invalid"),directB=directStore.open("https://direct-b.example.invalid")
@@ -878,8 +850,6 @@ import UniformTypeIdentifiers
   invoke(directMenu.items[1])
   expect(directWindow.attachedSheet == nil && directStore.archivedItems(profileID:directProfile).isEmpty,"Delete directly removes the entire original group without a confirmation sheet")
   menuWindow.contentView=nil;menuWindow.close();newMenuWindow.close();directWindow.contentView=nil;directWindow.close()
-  // Actual filter header/chips retain original item/Profile ownership. All
-  // records and profile files belong to this disposable component directory.
   let filterStore=try BrowserStore(directory:directory.appendingPathComponent("filter",isDirectory:true))
   let filterDefault=filterStore.state.profiles[0].id
   let secondProfile=filterStore.createProfile(name:"Second Profile")
@@ -1018,8 +988,6 @@ import UniformTypeIdentifiers
   filterOwner=true;filterWindow.contentView=nil;press(filterToggle)
   expect(filterToggle.title=="Filter","Detached Library cannot revive a filter session")
   filterWindow.close()
-  // A real layer transaction uses the recovered curve and is retired together
-  // on parent resize/detach. No app activation or functional browser is needed.
   SystemOverrides.reduceMotion=false
   let motionView=DownloadLibraryView(store:filterStore,ownerValid:{true})
   motionView.frame=NSRect(x:0,y:0,width:304,height:600)
@@ -1037,9 +1005,6 @@ import UniformTypeIdentifiers
   expect(motionSearch.layer?.animationKeys()?.isEmpty != false,"Retired animation completion cannot restore stale header/layers")
   motionWindow.close()
   SystemOverrides.reduceMotion=nil
-  // P1-AN: filter expand/collapse flush stays when layout is dirty or geometry is
-  // still uncommitted; a clean root whose presentation already matches the model
-  // is a true no-op and must not pay CATransaction.flush.
   final class FilterFlushCountingRoot: NSView {
     var layouts = 0
     override func layoutSubtreeIfNeeded() {
@@ -1071,8 +1036,6 @@ import UniformTypeIdentifiers
   flushRoot.layouts=0
   expect(!DownloadLibraryView.shouldPrepareFilterLayoutFlush(of:flushRoot),
          "layout clears the filter flush requirement")
-  // Origin-only prep can leave needsLayout false while presentation lags the
-  // model — the same shape as a header nudge that only moves a child origin.
   flushChild.layer?.removeAllAnimations()
   CATransaction.flush()
   let oldPresentation=flushChild.layer!.presentation()!.position
@@ -1089,8 +1052,6 @@ import UniformTypeIdentifiers
   expect(!DownloadLibraryView.shouldPrepareFilterLayoutFlush(of:flushRoot),
          "flushing uncommitted geometry clears the filter requirement")
   flushWindow.orderOut(nil);flushWindow.close()
-  // Actual row projection consumes genuine snapshot metadata; no filesystem
-  // lookup or Chromium status-string parser stands in for the original states.
   var subtitleItem=BrowserDownload(id:"subtitle",name:"photo.png",path:"",receivedBytes:1000000,totalBytes:2000000,status:.completed)
   subtitleItem.sourceURL="https://files.example.co.uk/photo.png";subtitleItem.sourceDomain="example.co.uk"
   expect(DownloadRowSubtitle.text(for:subtitleItem)=="Image from example.co.uk","Completed image names its type and source domain")
@@ -1150,8 +1111,6 @@ import UniformTypeIdentifiers
   expect(heading(headingOlder)==headingFormatter.localizedString(for:headingOlder,relativeTo:headingNow)
          && heading(headingOlder) != "Today" && heading(headingOlder) != "Yesterday",
          "Older downloads use the relative formatter on the item's own timestamp")
-  // A fixed noon on a fixed UTC day: relative to the live clock, no hour of
-  // one day four days back changes title after 23:00.
   var splitCalendar=Calendar(identifier:.gregorian);splitCalendar.timeZone=TimeZone(identifier:"UTC")!
   let splitNow=splitCalendar.date(from:DateComponents(year:2025,month:1,day:15,hour:12))!
   let splitDay=splitCalendar.date(byAdding:.day,value:-4,to:splitCalendar.startOfDay(for:splitNow))!
@@ -1200,11 +1159,8 @@ import UniformTypeIdentifiers
          && expectedHeadings.contains{$0 != "Today" && $0 != "Yesterday" && $0 != DownloadSectionHeading.undatedTitle},
          "Sections follow each item's Parc title, and an undated download is Earlier at the bottom; got \(sectionHeadings), expected \(expectedHeadings)")
   expect(sectionHeadings.filter{$0=="Today"}.count==1,"Items that share a title share one section")
-  // A context change with identical matching rows must rebuild captured cell
-  // actions, while an ordinary unchanged progress publication preserves them.
   let layoutStore=try BrowserStore(directory:directory.appendingPathComponent("layout",isDirectory:true))
   let layoutProfile=layoutStore.state.profiles[0].id, layoutPath=layoutStore.independentEngineProfilePath(for:layoutProfile)
-  // Keep this layout fixture in one date group even when it runs at midnight.
   let now=Calendar.current.startOfDay(for:Date()).addingTimeInterval(12*3600).timeIntervalSince1970
   let fixtures:[(String,String,String,Int64,Int64)]=[
    ("image","Mountain photograph.png","completed",2400000,2400000),
@@ -1259,8 +1215,6 @@ import UniformTypeIdentifiers
   expect(layoutActions==1,"Rebuilt original cell routes actual current command after context change")
   layoutSearch.stringValue="";layoutView.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification))
   layoutView.layoutSubtreeIfNeeded()
-  // Actual retained row/SwiftUI host, driven only by synthetic manager records.
-  // No file service, download or browser operation is exercised.
   func updateActive(_ status:String="downloading",bytes:Int64=60000000,identity:String="active",review:Bool=false,total:Int64=100000000) {
    layoutStore.recordDownload(["id":"active","profilePath":layoutPath,"name":"Project resources.zip","status":status,
     "available":true,"itemIdentity":identity,"canPause":status=="downloading","canResume":status=="paused",
@@ -1338,7 +1292,6 @@ import UniformTypeIdentifiers
      image.effectiveAppearance.performAsCurrentDrawingAppearance {
       let primary=NSColor.labelColor.alphaComponent
       expect(abs((placeholder.backgroundColor?.alpha ?? 0)-primary)<0.001,"EmptyFavicon tints its template with semantic primary")
-      // Render the actual masked layer at 2×: the asset's own layers make 72/255.
       let side=28,context=CGContext(data:nil,width:side,height:side,bitsPerComponent:8,bytesPerRow:side*4,space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!
       context.scaleBy(x:2,y:2)
       placeholder.render(in:context)
@@ -1387,8 +1340,6 @@ import UniformTypeIdentifiers
   layoutView.invalidate()
   expect(actualPreview.parent==nil && actualSource.image==nil,"Original Library invalidation releases real source image and child together")
   layoutView.fileURL=nil
-  // Exercise actual row, control, selection and original scroll/window
-  // notification owners. No menu/file action or browser input is issued.
   layoutTable.selectRowIndexes([],byExtendingSelection:false)
   let accessoryRow=layoutTable.rowView(atRow:1,makeIfNecessary:true)!
   let accessoryCell=layoutTable.view(atColumn:0,row:1,makeIfNecessary:true)!
@@ -1472,7 +1423,6 @@ import UniformTypeIdentifiers
   accessoryRow.isSelected=false;layoutWindow.contentView=layoutView
   expect(accessory.isHidden,"Reattachment does not retain stale hover presentation")
   expect(!rowBackdrop.highlighted,"Original row reattachment also clears stale background highlight")
-  // Regular rail layout uses the actual controls without opening a browser.
   let regularRail=LibraryView(store:store,kind:.downloads,profileID:profile)
   regularRail.frame=NSRect(x:0,y:0,width:416,height:832)
   regularRail.layout()
@@ -1517,7 +1467,6 @@ import UniformTypeIdentifiers
   otherTile.state = .off
   otherTile.cell?.setNextState()
   expect(otherTile.state == .off,"A tile never toggles its own selection")
-  // DownloadsPage.SidebarView: an in-flight download's badge replaces the icon.
   let downloadsTile=categories.first{$0.title=="Downloads"}!
   let railBadge=downloadsTile.progress!
   expect(categories.allSatisfy{($0.progress != nil)==($0 === downloadsTile)} && railBadge.isHidden,"Only the Downloads tile carries a progress badge, hidden while nothing downloads")
@@ -1615,8 +1564,6 @@ import UniformTypeIdentifiers
   expect(LibraryView.heading(for:archiveHeadingNow,relativeTo:archiveHeadingNow)=="Today" &&
          LibraryView.heading(for:archiveHeadingNow.addingTimeInterval(-86_400),relativeTo:archiveHeadingNow)=="Yesterday" &&
          LibraryView.heading(for:archiveHeadingNow.addingTimeInterval(-3*86_400),relativeTo:archiveHeadingNow).contains("3"),"Archive sections use relative day names")
-  // Real memory-only model and complete Library rail. No native Browser or
-  // download operation is started; callbacks only record original identities.
   let privateDirectory=directory.appendingPathComponent("never-created-private",isDirectory:true)
   let privateStore=BrowserStore(privateParentProfileID:profile,engineProfilePath:path,
    directory:privateDirectory,settings:store.state.settings)
@@ -1636,8 +1583,6 @@ import UniformTypeIdentifiers
   foreign=privateRecord;foreign["offTheRecord"]=false;foreign["id"]="regular"
   privateStore.recordPrivateDownload(foreign)
   expect(privateStore.state.downloads.count==1,"Private endpoint refuses normal-manager data")
-  // Isolated Captures catalog fingerprint: identical store/media re-publishes
-  // skip rebuild, while membership and search still reload.
   let capturesFingerprintRoot=directory.appendingPathComponent("captures-fingerprint",isDirectory:true)
   let capturesFingerprintStore=try BrowserStore(directory:capturesFingerprintRoot)
   let capturesFingerprintProfile=capturesFingerprintStore.activeSpace.profileID
@@ -1748,8 +1693,6 @@ import UniformTypeIdentifiers
   drainMain()
   expect(capturesFingerprintCount()==1,"Clearing Captures search force-reloads membership")
   expect(capturesFingerprintCatalog.contains(capturesFingerprintSaved),"Fingerprint fixture capture remains durable")
-  // Disposable folders only: one readable fixture folder and one that does
-  // not exist, so the status line reports exactly one folder needing access.
   let statusRoot=directory.appendingPathComponent("media-status",isDirectory:true)
   let statusFolder=statusRoot.appendingPathComponent("Pictures",isDirectory:true)
   let statusMissing=statusRoot.appendingPathComponent("Missing",isDirectory:true)
@@ -1790,12 +1733,6 @@ import UniformTypeIdentifiers
   drainMain()
   expect(mediaStatus()==folderNotice,"The next user action clears the file-action error")
   statusView.invalidate();statusWindow.contentView=nil;statusWindow.close()
-  // A failed folder toggle synchronously clears its items before its disk
-  // mutation. Its recovery refresh must still happen even if another
-  // production operation (such as preview navigation) advanced its work
-  // generation; this fixture turns only its disposable manifest path into a
-  // directory after the initial scan, so the genuine folder-toggle write
-  // fails without touching user data.
   let toggleRoot=directory.appendingPathComponent("media-toggle-failure",isDirectory:true)
   let toggleFolder=toggleRoot.appendingPathComponent("Pictures",isDirectory:true)
   try FileManager.default.createDirectory(at:toggleFolder,withIntermediateDirectories:true)
@@ -1824,9 +1761,6 @@ import UniformTypeIdentifiers
   expect(toggleStatus() != nil && !toggleMedia.isLoading && toggleGrid.numberOfItems(inSection:0)==toggleInitialCount,
          "A failed folder toggle reports its error and refreshes Media after the synchronous clear")
   toggleWindow.contentView=nil;toggleWindow.close()
-  // Regression: this view is long-lived and re-shown on later presentations
-  // (LibraryView keeps one instance). A file-action failure must not survive
-  // invalidate() into the next presentation.
   let staleRoot=directory.appendingPathComponent("media-stale",isDirectory:true)
   let staleFolder=staleRoot.appendingPathComponent("Pictures",isDirectory:true)
   try FileManager.default.createDirectory(at:staleFolder,withIntermediateDirectories:true)
@@ -1855,14 +1789,9 @@ import UniformTypeIdentifiers
   }
   drainMain()
   expect(staleStatus() != nil,"Deleting the selected file produces a file-action failure")
-  // Removing the view from its window (as a real presentation closing would)
-  // must invalidate it without any further user action clearing the error.
   staleWindow.contentView=nil
   expect(staleStatus()==nil,"invalidate() clears a stale file-action failure so the next presentation starts clean")
   staleWindow.close()
-  // Regression: a Captures catalog load failure can coexist with real Media
-  // items (they are independent sources). The resulting message must not
-  // claim the folder menu for a right-click meant for the visible items.
   let messageRoot=directory.appendingPathComponent("media-message-overlay",isDirectory:true)
   let messageStore=try BrowserStore(directory:messageRoot)
   let messageProfile=messageStore.activeSpace.profileID
@@ -1897,8 +1826,6 @@ import UniformTypeIdentifiers
   expect(overlayMessage.menu(for:messageRightClick(overlayMessage))==nil,
          "Right-clicking the load-error message does not open the folder menu while items exist behind it")
   messageWindow.contentView=nil;messageWindow.close()
-  // Regression: the keyboard menu must anchor inside what is actually
-  // visible, not at a selected item scrolled out of view.
   let anchorRoot=directory.appendingPathComponent("media-anchor",isDirectory:true)
   let anchorFolder=anchorRoot.appendingPathComponent("Pictures",isDirectory:true)
   try FileManager.default.createDirectory(at:anchorFolder,withIntermediateDirectories:true)
@@ -1939,8 +1866,6 @@ import UniformTypeIdentifiers
           "An off-screen selected item's keyboard menu uses the visible area's top-left fallback")
   }
   anchorWindow.contentView=nil;anchorWindow.close()
-  //
-  // video badge and one hover/selection spring, through the real grid.
   func tilePNG(_ width:Int,_ height:Int)->Data {
    let context=CGContext(data:nil,width:width,height:height,bitsPerComponent:8,bytesPerRow:0,space:CGColorSpaceCreateDeviceRGB(),
     bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!
@@ -2067,7 +1992,6 @@ import UniformTypeIdentifiers
   expectTile(1,aspect:1.6,lit:true,"Hovered capture")
   expect(reduceTileMotion || parts(1).paper.animationKeys()==nil,"The hidden paper of a capture gets no spring")
   hoverOut(1)
-  //
   let ring=NSPoint(x:2,y:center.y),corner=NSPoint(x:2,y:2)
   hoverIn(0,at:ring)
   expectTile(0,aspect:2,lit:false,"Entering through the cell's outer ring")
@@ -2096,8 +2020,6 @@ import UniformTypeIdentifiers
   expectTile(2,aspect:0.5,lit:false,"Leaving during a live scroll clears the hover hover bridge does")
   hoverIn(0)
   expectTile(0,aspect:2,lit:false,"A pointer crossing during a live scroll")
-  // A file arriving mid-scroll needs a fifth item view, which only learns
-  // about the scroll through configure.
   let pooledTiles=Set(tileGrid.subviews.map(ObjectIdentifier.init))
   let lateFile=tileFolder.appendingPathComponent("late.png");try tilePNG(120,120).write(to:lateFile)
   try FileManager.default.setAttributes([.modificationDate:Date(timeIntervalSince1970:2_300_000_000-240)],ofItemAtPath:lateFile.path)
@@ -2128,8 +2050,6 @@ import UniformTypeIdentifiers
   expect(parts(2).plate.borderWidth==(NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 1:0),"Selection keeps a focus border only for Increase Contrast")
   tileGrid.selectionIndexPaths=[]
   expectTile(2,aspect:0.5,lit:false,"Deselected tall image")
-  // Replacing both files makes their thumbnails arrive again: the selected
-  // tile and the hovered tile are updated in place, not reloaded.
   tileGrid.selectionIndexPaths=[IndexPath(item:2,section:0)]
   tileWindow.pointer=tile(0).convert(center,to:nil);hoverIn(0)
   expectTile(0,aspect:2,lit:true,"Hovered wide image before its file changes")
@@ -2163,8 +2083,6 @@ import UniformTypeIdentifiers
    expect(tileSearch.placeholderString=="Search Media…" && tileSearch.placeholderAttributedString?.string=="Search Media…",
           "A theme change keeps the Media search placeholder")
   }
-  // Removing Media mid-scroll may never deliver the scroll's end; the reused page
-  // must not keep refusing hover when it returns.
   NotificationCenter.default.post(name:NSScrollView.willStartLiveScrollNotification,object:tileScroll)
   tileWindow.contentView=nil;tileWindow.contentView=tileView
   for _ in 0..<500 where !tilesReady() { RunLoop.main.run(mode:.default,before:Date(timeIntervalSinceNow:0.02));tileView.layoutSubtreeIfNeeded() }
@@ -2174,9 +2092,6 @@ import UniformTypeIdentifiers
   hoverOut(0)
   tileWindow.contentView=nil;tileWindow.close()
   capturesFingerprintWindow.contentView=nil;capturesFingerprintWindow.close()
-  // A private Media presentation is explicitly bound to the real parent
-  // catalog and cannot turn into Archive, History or Documents. No window is
-  // attached, so the external-media service never scans personal folders.
   var privateMediaValid=true
   let privateMediaSource=ExternalMediaLibrary(directory:store.capturesDirectory(for:profile),preferencesAreEphemeral:true,systemFolders:{[]})
   let mediaContext=LibraryView.PrivateMediaContext(store:store,profileID:profile,media:privateMediaSource,isValid:{privateMediaValid})
@@ -2244,8 +2159,6 @@ import UniformTypeIdentifiers
   let regularCount=store.state.downloads.count;store.clearPrivateDownloads()
   expect(store.state.downloads.count==regularCount,"Private teardown cannot clear ordinary catalog")
   expect(!store.state.downloads.contains{$0.nativeID=="private-original"},"Private view and teardown never leak rows into regular catalog")
-  // The real shared catalog combines regular history and live OTR contexts,
-  // while the original private window retains its independent tab/document model.
   let mergedDirectory=directory.appendingPathComponent("merged",isDirectory:true)
   let merged=try BrowserStore(directory:mergedDirectory)
   let mergedProfile=merged.activeSpace.profileID
@@ -2332,8 +2245,6 @@ import UniformTypeIdentifiers
   sharedPrivateWindow.contentView=nil;sharedRegularWindow.contentView=nil
   try mergedPrivate.save()
   expect(!FileManager.default.fileExists(atPath:mergedPrivateDirectory.path),"Merged private Downloads does not create persistent catalogs or window state")
-  // The actual whole empty-content owner has one entrance per appearance.
-  // No file, browser page or real download is needed for this native subtree.
   var emptyOwnerValid=true
   SystemOverrides.reduceMotion=false
   let emptyMotion=DownloadEmptyContentView(ownerValid:{emptyOwnerValid})
@@ -2399,8 +2310,6 @@ import UniformTypeIdentifiers
   expect(actualEmpty.layer?.animation(forKey:"empty.translation")==nil,"Library invalidation settles its actual empty subtree")
   emptyViewWindow.contentView=nil
   SystemOverrides.reduceMotion=nil
-  // Original ContentCell tap policy: actual temporary file metadata and the
-  // production native view. Output callbacks are intercepted, never executed.
   let activationDirectory=directory.appendingPathComponent("activation",isDirectory:true)
   try FileManager.default.createDirectory(at:activationDirectory,withIntermediateDirectories:true)
   let textURL=activationDirectory.appendingPathComponent("original.txt")

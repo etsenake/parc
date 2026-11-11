@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""Inspect production media-control labels in an inert off-screen view.
-No browser, keyboard events, VoiceOver or accessibility actions are used.
-"""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -14,10 +11,9 @@ with tempfile.TemporaryDirectory(prefix="parc-mini-ax-") as directory:
     sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
     (scratch / "ActionButton.swift").write_text(sidebar[:sidebar.index("final class MenuAction")]
         + sidebar[sidebar.index("class LayoutView: NSView {"):sidebar.index("final class FlippedStackView")]
-        # The Favorite favicon identity above ActionButton needs SplitOrientation.
         + "\nenum SplitOrientation: Equatable { case horizontal, vertical }\n")
     fixture = (root / "tests/SidebarMiniPlayerFocus/SidebarMiniPlayerFocusTests.swift").read_text()
-    fixture = fixture[fixture.index("// Stand-ins for the engine's media types"):]
+    fixture = fixture[fixture.index("enum PCNativeMediaAction {"):]
     fixture = fixture.replace('let identifier: String, title = "Song", sourceURL = "https://example.test/"',
                               'let identifier: String, sourceURL = "https://example.test/"\n    var title = "Song"')
     fixture = fixture.replace('let microphoneOn = false, cameraOn = false', 'var microphoneOn = false, cameraOn = false')

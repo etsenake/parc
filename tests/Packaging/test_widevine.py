@@ -1,4 +1,3 @@
-"""Widevine VMP host-signature checks. They compile tiny Mach-O fixtures and never run Chromium."""
 from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
@@ -190,7 +189,6 @@ class SigningTests(unittest.TestCase):
         certificate, key = make_identity(self.root, "encrypted", passphrase="vmp-test-passphrase")
         image = compile_image(self.root / "libfixture.dylib")
         signer = vmp.KeySigner(certificate, key, OPENSSL, None)
-        # The child has a controlling terminal, so openssl could prompt on /dev/tty.
         pid, terminal = pty.fork()
         if pid == 0:
             try:
@@ -263,7 +261,6 @@ class PackagingConfigurationTests(unittest.TestCase):
         (checkout / "keys").mkdir(parents=True)
         subprocess.run(["git", "init", "-q", str(checkout)], check=True)
         (checkout / ".git/keys").mkdir()
-        # Worktrees and submodules mark their checkout with a .git file.
         linked = self.root / "linked"
         (linked / "keys").mkdir(parents=True)
         (linked / ".git").write_text("gitdir: /nonexistent/.git/worktrees/linked\n")
@@ -349,7 +346,6 @@ class PackagedHostTests(unittest.TestCase):
         framework_sig = f"Contents/Frameworks/{pkg.FRAMEWORK}/Versions/A/Resources/{pkg.ENGINE_NAME}.sig"
         self.assertEqual({name: item["flags"] for name, item in report["signatures"].items()},
                          {framework_sig: 1, "Contents/Resources/Parc Helper (CDM).sig": 0})
-        # Chromium's lookup goes through the framework's Resources symlink.
         self.assertTrue((self.framework / "Resources" / (pkg.ENGINE_NAME + ".sig")).is_file())
         for item in report["signatures"].values():
             ad_hoc_sign(self.app / item["binary"])

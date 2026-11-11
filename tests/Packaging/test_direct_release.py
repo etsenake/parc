@@ -1,4 +1,3 @@
-"""Frozen-lock release routing with inert engine and signing boundaries."""
 import importlib.util
 import json
 from pathlib import Path

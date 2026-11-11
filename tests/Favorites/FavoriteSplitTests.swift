@@ -26,10 +26,6 @@ import Combine
                 spaceID: space, selection: snapshot.selectedTabIDs, focusedID: focus,
                 state: snapshot, duplicateURL: url, duplicateTitle: "Live title", newID: id, homeIDs: homes)
         }
-        //
-        //
-        //
-        //
         let trayHome = UUID()
         check(request(state, focus: first.id)!.savedHomeSources(in: state).map(\.id) == [favorite.id],
               "The released Favorite needs a saved home")
@@ -62,7 +58,6 @@ import Combine
         check(inserted.tabs.first { $0.id == favorite.id }?.kind == .today && inserted.tabs.contains { $0.id == trayHome },
               "Joining an existing Today split also leaves the tray home")
 
-        // A Favorite split is one topApps item: its members stay Favorites.
         let partner = tab(.favorite, "partner")
         var already = state
         already.tabs.append(partner)
@@ -85,8 +80,6 @@ import Combine
         check(duplicated.tabs.first { $0.id == favorite.id } == already.tabs.first { $0.id == favorite.id },
               "Original focused Favorite record remains unchanged")
         check(duplicated.splitLayouts.map(\.id) == [favoriteGroup.id], "The Favorite split keeps its one identity")
-        // A lone focused Favorite: the duplicate and the Favorite form a new
-        // Today split; the Favorite leaves its tray home.
         var lone = state; lone.selectedTabIDs = [favorite.id]
         let loneID = UUID(), loneHome = UUID()
         let loneRequest = request(lone, focus: favorite.id, url: "https://example.test/current", id: loneID, homes: [favorite.id: loneHome])!
@@ -145,8 +138,6 @@ import Combine
         check(relocated.splitLayouts.first { $0.id == old.id } == old, "An unrelated split is untouched")
         check(relocated.splitLayouts.flatMap(\.tabIDs).filter { $0 == favorite.id }.count == 1, "No overlapping membership")
 
-        // Actual BrowserStore transaction: failed durable save must not publish
-        // the copied item or selection. All paths are disposable and isolated.
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("FavoriteSplit-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

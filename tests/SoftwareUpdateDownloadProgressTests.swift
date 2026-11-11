@@ -1,6 +1,5 @@
 import AppKit
 
-/// Exercises real status controls without a window, web view, updater or network.
 @main @MainActor
 struct SoftwareUpdateDownloadProgressTests {
     static var checks = 0
@@ -99,8 +98,6 @@ struct SoftwareUpdateDownloadProgressTests {
         indicator.modeWrites = 0
         indicator.stops = 0
         view.show(status: "Downloading", action: "Cancel", progress: 0)
-        // AppKit can stop internally while changing mode. Once determinate,
-        // advancing the value must not issue any further stop or mode writes.
         let transitionStops = indicator.stops
         for value in [0.1, 0.4, 202.8 / 227.5, 1.0] {
             view.show(status: "Downloading", action: "Cancel", progress: value)

@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""The window owner's key-view loop between the page side and the sidebar:
-WindowKeyViewLoop and the production sidebar linker over a stand-in page side.
-
-Off-screen window, never made key; no browser, input or preferences.
-"""
 from pathlib import Path
 import re
 import subprocess
@@ -11,7 +6,6 @@ import sys
 import tempfile
 root = Path(__file__).resolve().parents[2]
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
-# BrowserWindowController is not compiled here: its wiring is asserted in source.
 for use, count in (("private lazy var windowKeyViews = WindowKeyViewLoop(", 1),
                    ("excluded: { [sidebarContainer, parkedPages, pageHost, weak self] in\n"
                     "            EaselBrowserObjects.excludesFromKeyboardNavigation($0) ||\n"
@@ -20,7 +14,6 @@ for use, count in (("private lazy var windowKeyViews = WindowKeyViewLoop(", 1),
                    ("isPage: { [extensionSidePanel] in $0 is PCBrowserView || $0 === extensionSidePanel.content },", 1),
                    ("passesThrough: { $0 is PeekHostView })", 1),
                    ("windowKeyViews.attach(to: window)", 1),
-                   # layoutChrome plus easel keyboard-structure and selection-change paths
                    ("windowKeyViews.relink()", 3),
                    ("extension SidebarView: SidebarKeyViewEnds {}", 1),
                    ("recalculateKeyViewLoop", 0),
@@ -36,11 +29,8 @@ for use in ("var keyViewEntry: NSView { keyViewGate }",
 sys.path.insert(0, str(root / "tests/SidebarAccessibility"))
 from key_view_links import assert_sidebar_links
 assert_sidebar_links(sidebar)
-# The preview card's own surface, the root subview the window leaves out
-# (and PeekController's host, hosted over the page host, as asserted above).
 peek = (root / "Sources/ParcApp/PeekController.swift").read_text()
 assert "final class PeekHostView: NSView {" in peek and "override var acceptsFirstResponder: Bool { true }" in peek
-# A Peek opens over this window's page host, or a moving parent's Peek over its destination's.
 hosted = controller.count("addSubview(peek.view")
 assert controller.count("pageHost.addSubview(peek.view, positioned: .above, relativeTo: nil)") == hosted, \
     "every Peek is hosted over a page host"

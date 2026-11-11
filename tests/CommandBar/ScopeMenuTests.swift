@@ -53,8 +53,6 @@ import AppKit
         check(!pill.accessibilityPerformPress() && opened == 2, "disabled AX cannot invoke menu")
         pill.isEnabled = true; pill.isHidden = true
         check(!pill.accessibilityPerformPress() && opened == 2, "hidden AX cannot invoke menu")
-        // The empty-query decision belongs to the actual scope, not a title,
-        // selected URL, trimmed whitespace or the row's display completion.
         check(CommandBarScopeKeyboard.tab(query: "", scope: .ordinary) == .enterActions, "empty ordinary Tab enters Actions")
         check(CommandBarScopeKeyboard.tab(query: "", scope: .actions) == .leaveScope, "empty Actions Tab exits")
         check(CommandBarScopeKeyboard.tab(query: "", scope: .website) == .leaveScope, "empty website Tab uses scope restoration")

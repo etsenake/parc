@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""Isolated Space paging model and pager checks; no browser, window or posted events.
-
-P1-AQ: spring ticks / place with an identical strip presentation fingerprint
-skip setOffset; changed offsets still present; the 120 Hz timer idle-stops only
-on settle and keeps running while motion can change pixels.
-"""
 from pathlib import Path
 import re
 import subprocess
@@ -24,8 +18,6 @@ assert "Timer(timeInterval: 1.0 / 120, repeats: true)" in source, \
 assert "timer?.invalidate(); timer = nil" in source, \
     "settle via place must still idle-stop the timer"
 
-#
-# every scroll view in it offers its scrolls to the pager first.
 sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
 for use in ("    let scroll = SidebarPagingScrollView()\n",
             "        page.scroll.offerScroll = { [weak self] event in self?.spacePager.scrollWheel(event) ?? false }\n",

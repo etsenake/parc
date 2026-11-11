@@ -66,7 +66,6 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         try check(store.state == before, "Failed save preserves both fields and originals")
         try FileManager.default.removeItem(at: file); try bytes.write(to: file)
 
-        // Same-profile Favorite group may retain a different stored home Space.
         let active = BrowserSpace(id: UUID(), name: "Other Space", symbol: "circle", color: "AABBCC", profileID: profile)
         var state = store.state; state.spaces.append(active); state.activeSpaceID = active.id
         for i in state.tabs.indices { if [first,second].contains(state.tabs[i].id) { state.tabs[i].kind = .favorite; state.tabs[i].folderID = nil } }
@@ -93,8 +92,6 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         var retired = favorite.state; retired.tabs[0].archivedAt = Date()
         try check(SidebarSplitTitleEdit(group: fgroup, profileID: profile, state: retired) == nil, "Archived child refuses whole editor")
 
-        // Actual native picker publication and dismissal, no browser/profile UI.
-        //
         var commits: [SidebarGroupIcon?] = [], finished = 0
         let picker = SidebarGroupIconPicker(selected: nil); _ = picker.view
         picker.isCurrent = { true }; picker.onCommit = { commits.append($0) }; picker.onFinish = { finished += 1 }
@@ -133,7 +130,6 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         try check(!failed.finished && commits.count == 4 && commits.last! == nil && target().group.customIcon == nil, "Explicit icon removal retries same owner and commits")
         failed.cancel()
 
-        // Space creation's TextAndIconPicker hides the picker on every choice.
         var spaceCommits: [SidebarGroupIcon?] = [], spaceFinished = 0
         let spacePicker = SidebarGroupIconPicker(selected: .emoji("🌙")); _ = spacePicker.view
         spacePicker.closesAfterChoice = true; spacePicker.isCurrent = { true }
@@ -145,7 +141,6 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         _ = spaceRemove.pickerView!.removeButton.accessibilityPerformPress()
         try check(spaceCommits.count == 2 && spaceCommits[1] == nil && spaceRemove.finished, "Space creation Remove also closes")
 
-        // The owner lease accepts a key window the picker owns (the skin-tone popover).
         let browserWindow = KeyTestWindow(), pickerWindow = KeyTestWindow(), toneWindow = KeyTestWindow()
         let owned = SidebarGroupIconPicker(selected: nil)
         pickerWindow.contentView = owned.view
@@ -159,7 +154,6 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         try check(SidebarGroupIconPicker.ownedKeyWindow(of: pickerWindow, extra: looseTone) === looseTone && SidebarGroupIconPicker.ownedKeyWindow(of: pickerWindow, extra: nil) == nil, "The tone popover window counts even unparented")
         pickerWindow.removeChildWindow(toneWindow); pickerWindow.contentView = nil
 
-        // Closing breaks popover → controller, so the picker and its pages deinit.
         weak var leakedPicker: SidebarGroupIconPicker?, leakedView: NSView?, leakedGrid: NSCollectionView?
         autoreleasepool {
             let transient = SidebarGroupIconPicker(selected: nil); _ = transient.view
@@ -170,7 +164,6 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         }
         try check(leakedPicker == nil && leakedView == nil && leakedGrid == nil, "A closed picker releases its controller, view and emoji grid")
 
-        //
         try check(SidebarIconType.allCases.count == 61 && SidebarIconType.allCases.first == .star && SidebarIconType.allCases.last == .search, "All 61 SidebarIconType cases in order")
         try check(SidebarIconType.tabAndSpacePicker.count == 56 && SidebarIconType.tabAndSpacePicker.last == .train, "Tab/Space catalog stops at train")
         try check(SidebarIconType.folderPicker.count == 24 && SidebarIconType.folderPicker[8] == .chatBubbleEllipses && SidebarIconType.folderPicker.last == .skull, "Folder catalog order")
@@ -215,7 +208,6 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         let folder = SidebarGroupIconPicker(selected: nil, iconSet: .folderPicker); _ = folder.view
         try check(folder.pickerView!.page == .icon && folder.pickerView!.heading?.stringValue == "Icon" && folder.pickerView!.emojiPage == nil && folder.pickerView!.iconGrid.items.count == 24, "Folder picker is icons only")
 
-        //
         let emoji = SidebarEmojiModel.shared
         try check(emoji.emojis.count > 1800 && emoji.emojis.first?.emoji == "😀", "Bundled emoji list loads in category order")
         let starts = emoji.categoryStarts.compactMap { $0 }
@@ -241,7 +233,6 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         try check(size == NSSize(width: 28, height: 28), "Emoji cells are 28 points")
 
         let row = SidebarSplitTitleView(title: "Original", count: 2)
-        // What the row shows: its icon image view, or the rounded count icon's label.
         let iconView = row.subviews.compactMap { $0 as? NSImageView }.first!
         let countIcon = row.subviews.first { !($0 is NSTextField) && !($0 is NSImageView) && $0.layer?.cornerRadius == 4 }!
         func shownCount() -> String? { countIcon.isHidden ? nil : countIcon.subviews.compactMap { $0 as? NSTextField }.first?.stringValue }
@@ -266,12 +257,8 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
                   && shownImage()?.size == NSSize(width: 16, height: 16) && shownImage()?.isTemplate == false
                   && !row.subviews.contains { ($0 as? NSTextField)?.stringValue == "🧭" }, "Emoji drawn as an untinted 16-point image")
         row.setIcon(nil); try check(shownCount() == "2" && shownImage() == nil, "Explicit icon reset restores original count in reused native row")
-        // SplitViewCellCustomInfoView geometry and colors (SP30).
         row.frame = NSRect(x: 0, y: 0, width: 212, height: 36); row.titleTrailing = 164; row.layoutSubtreeIfNeeded()
         let title = row.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == "Original" }!
-        // The custom info stack places its title by its alignment rect, so the
-        // label extends its 2-point text inset past the 36-point title inset
-        // and the trailing edge.
         try check(title.frame.minX == SidebarSplitCellLayout.infoTitleInset - SidebarRowAppearance.titleTextPadding
                   && SidebarSplitCellLayout.infoTitleInset == 36 && title.frame.maxX == 164 + SidebarRowAppearance.titleTextPadding
                   && title.font?.pointSize == 14
@@ -296,8 +283,6 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
                   && shownImage()?.isTemplate == true && shownImage()?.size == NSSize(width: 16, height: 16), "Catalog icon is a 16-point template glyph")
         try check(row.iconContainerFrame == NSRect(x: SidebarSplitCellLayout.infoLeadingInset, y: 6, width: 24, height: 24), "The 24-point slot anchors the picker")
 
-        // The actual native Undo owner carries both operation types without
-        // replacing later pane geometry or independently edited name fields.
         let undo = FolderUndoManager(); var available = true, errors = 0
         let nativeChange = try store.saveSplitAppearance(target(), icon: .symbol("heart"))!
         try check(undo.appendSplitAppearance(nativeChange, store: store, available: { available }, onError: { _ in errors += 1 }), "Committed icon registers actual native Undo")

@@ -11,8 +11,6 @@ import Foundation
         defer { try? FileManager.default.removeItem(at: root) }
         let now = Date(timeIntervalSince1970: 1_000_000)
         let store = try BrowserStore(directory: root, now: { now })
-        //
-        // the split here is Today pages and the pinned original stays apart.
         let saved = store.open("https://one.invalid", kind: .pinned)
         let folder = store.createFolder(name: "Original parent")
         store.moveTab(saved, toSpace: store.activeSpaceID, folderID: folder)
@@ -44,8 +42,6 @@ import Foundation
         let draft = SplitPaneInsertion(paneID: b, operation: .addAbove, state: store.state)!
         try check(draft.index == 1 && draft.orientation == .vertical && draft.selection == [a,b,c], "Exact target top insertion")
         try check(draft.previewFactors.count == 4 && abs(draft.previewFactors.reduce(0,+) - 1) < 0.00001, "Temporary geometry stays normalized")
-        //
-        //
         let previousFactors = store.activeSplitLayout!.widthFactors, pendingFactors = draft.previewFactors
         try check(abs(pendingFactors[1] - 0.25) < 0.00001, "Pending pane receives one over the new pane count")
         try check(zip(previousFactors, [pendingFactors[0], pendingFactors[2], pendingFactors[3]]).allSatisfy { abs($0 * 0.75 - $1) < 0.00001 },

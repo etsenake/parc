@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""Sidebar chrome geometry model (toolbar, field, Space header, dock, tablist
-rows), the production list outline and tablist scroller checked against an
-NSOutlineView set up (no window; the second run takes legacy
-scrollers from the process's argument domain only), the production Space
-strip and Space header (with its edit button's hover delay run on the main
-queue) in off-screen windows that are never made key, the dock's Space item
-menus on that strip with the real session store, the sidebar's own Space menu
-over the production list in an off-screen window with the real session store,
-and the Space header setting through the real session store; no browser,
-pointer input, menu tracking or preferences. Negative controls rebuild the
-layout, header, dock menu, list menu and
-setting suites from mutated copies and require them to fail."""
 from pathlib import Path
 import re
 import subprocess
@@ -23,7 +11,6 @@ here = Path(__file__).parent
 app = root / "Sources/ParcApp"
 core = root / "Sources/ParcCore"
 sidebar = (app / "SidebarView.swift").read_text()
-# SidebarView itself is not compiled here; its list and Space header use the checked model.
 for use in ("scroll.adoptTablistScroller()",
             "    let list = SidebarOutlineView()",
             "let geometry = PageGeometry(hiddenAddressHeight: hiddenAddressHeight, trayHeight: favoritesHeight, hasFavorites: !favorites.isEmpty,",
@@ -48,7 +35,6 @@ for use in ("scroll.adoptTablistScroller()",
             "header.onNewFolder = { [weak self] in self?.onNewFolder?() }",
             "let end = spaceHeader.isHidden ? scroll.frame.minY : spaceHeader.frame.minY",
             "height: max(0, end - top))",
-            # The dock's Space items take the checked Space menu.
             "let dockMenu = previousSpaceMenus[spaceID] ?? SidebarDockItemMenu { [weak self] in self?.dockSpaceMenu(spaceID) }",
             "dockMenu.install(on: button)",
             "spaceMenusByID[space.id]?.install(on: button)",
@@ -61,9 +47,6 @@ for use in ("scroll.adoptTablistScroller()",
             "newFolder: { [weak self] in self?.onNewFolder?() },",
             "toggleHeader: { [weak self] in self?.toggleSpaceHeaderOnSingleUnnamedSpaces?() })"):
     assert use in sidebar, f"SidebarView no longer lays its list out by the checked model: {use}"
-# Toolbar ownership collapses the missing URL row in every Space, including
-# cached neighboring pages prepared for a swipe. Prompts and keyboard search
-# retain their required row; an unchanged sidebar size must not hide this change.
 for use in ("SidebarChromeLayout.hiddenAddressHeight(toolbar: usesContentToolbar,",
             "hasPrompt: paymentWidth > 0, keyboardSearch: keyboardSearchActive)",
             "favoritesHost.frame = NSRect(x: 0, y: Chrome.headerBottom - hiddenAddressHeight,",
@@ -77,7 +60,6 @@ for use in ("if isEditing { finishNameEditing(cancelled: false); return }",
             "guard let event = NSApp.currentEvent else { return }",
             "NSMenu.popUpContextMenu(makeMenu(), with: event, for: editButton)"):
     assert use in (app / "SidebarSpaceHeader.swift").read_text(), f"the edit button's click path changed: {use}"
-# The sidebar's own menu is the checked surface's, for the active Space.
 assert "final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, OffscreenPresenting {" in sidebar, \
     "SidebarView no longer takes the checked Space menu surface"
 assert "spaceMenu = { [weak self] in self?.sidebarSpaceMenu() }" in sidebar, "SidebarView no longer supplies its Space menu"
@@ -94,10 +76,6 @@ for use in ("SidebarSpaceMenu.sidebar(spaces: spaces, activeSpaceID: activeSpace
 sidebar_class = sidebar[sidebar.index("final class SidebarView:"):sidebar.index("private final class SidebarKeyboardHighlightView")]
 for override in ("override func menu(for", "override func rightMouseDown("):
     assert override not in sidebar_class, f"SidebarView overrides the checked surface's event handling: {override}"
-# Its one mouseDown: is the empty tablist's window drag (SidebarTablistBackground,
-# whose Control pass-through tests/CommandBar/SearchPrivacyBannerTests runs);
-# every press it doesn't drag with, a Control-click included, reaches the
-# surface's mouseDown:, which opens the menu.
 assert sidebar_class.count("override func mouseDown(") == 1, \
     "SidebarView's one mouseDown: (the tablist background's) is missing, moved out of the class, or joined by another"
 press_start = sidebar_class.index("override func mouseDown(")
@@ -110,7 +88,6 @@ controller = (app / "BrowserWindowController.swift").read_text()
 assert "sidebar.toggleSpaceHeaderOnSingleUnnamedSpaces = { [weak self] in self?.store.toggleSpaceHeaderOnSingleUnnamedSpaces() }" in controller, \
     "BrowserWindowController no longer records the Space header toggle in the store"
 store = (root / "Sources/ParcCore/BrowserStore.swift").read_text()
-# BrowserStore.swift and the ParcCore sources it needs, as scripts/test.sh compiles them.
 core_sources = re.search(r"^core_sources=\((.*?)^\)", (root / "scripts/test.sh").read_text(), re.S | re.M)
 assert core_sources, "scripts/test.sh no longer lists core_sources"
 store_sources = [root / "Sources/ParcCore" / name for name in re.findall(r"Sources/ParcCore/(\w+\.swift)", core_sources.group(1))]
@@ -120,7 +97,6 @@ assert reference, "SidebarItemReference not found in BrowserStore.swift"
 sources_by_name = {path.name: path.read_text() for path in
                    [app / "SidebarChromeLayout.swift", app / "SidebarSpaceHeader.swift", app / "SidebarSpaceMenu.swift",
                     root / "Sources/ParcCore/BrowserStore.swift"]}
-# Each mutation reverts one recovered rule; the suite built from it must fail.
 negatives = [("chrome", "visibility at two Spaces", "SidebarChromeLayout.swift", "spaceCount >= 2", "spaceCount >= 3"),
              ("chrome", "header inset 0 with the header", "SidebarChromeLayout.swift",
               "trayHeight : spaceHeader ? 0 : headerBottomSpacing", "trayHeight : headerBottomSpacing"),
@@ -193,15 +169,10 @@ negatives = [("chrome", "visibility at two Spaces", "SidebarChromeLayout.swift",
               "$0.showSpaceHeaderOnSingleUnnamedSpaces = !($0.showSpaceHeaderOnSingleUnnamedSpaces ?? false)",
               "$0.showSpaceHeaderOnSingleUnnamedSpaces = true")]
 with tempfile.TemporaryDirectory(prefix="parc-sidebar-chrome-") as directory:
-    # The outline's entry helpers take ParcCore's item reference.
     item_reference = Path(directory) / "SidebarItemReference.swift"
     item_reference.write_text("import Foundation\n" + reference.group(0))
-    # The list's controls are ActionButtons, from SidebarView.swift's head;
-    # the store sources it compiles with supply SplitOrientation.
     action_button = Path(directory) / "ActionButton.swift"
     action_button.write_text(sidebar[:sidebar.index("final class MenuAction")])
-    # SidebarRowAppearance resolves its ring colour with ThemeRenderer's
-    # NSColor.cgColor(in:), in the palette slice the tooltip sources cut.
     tooltips = tooltip_sources(root, Path(directory), store_sources)
     theme_palette = next((path for path in tooltips if Path(path).name == "TooltipThemePalette.swift"), None)
     assert theme_palette, "tests/Tooltip/support.py no longer cuts the ThemeRenderer palette slice"
@@ -241,8 +212,6 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-chrome-") as directory:
         copy.parent.mkdir()
         copy.write_text(source.replace(original, mutated))
         sources = [copy if path.name == file else path for path in suites[suite]]
-        # A mutant that does not finish within 60 s counts as failing, so no
-        # mutant can hold the run.
         try:
             failed = subprocess.run([str(build(f"negative-{index}", sources))], capture_output=True, text=True,
                                     timeout=60).returncode != 0

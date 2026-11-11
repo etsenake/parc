@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""P2-Y behavior lock: BrowserWindowController's LiveShortcutToolTip.didChange
-sink skips dismiss/copy-tooltip/site-control shortcut reapply when the
-discovered fingerprint already matches what that window last applied. A first
-apply or any string change still updates; multi-window correctness when content
-changes is preserved by per-window last-applied comparison."""
 from pathlib import Path
 import re
 
@@ -71,7 +66,6 @@ for command in (
     assert f'activeShortcut(for: "{command}")' in fp_body, \
         f"fingerprint must still read activeShortcut for {command}"
 
-# Unconditional sink apply must stay gone.
 assert (
     "shortcutDiscoverySubscription = NotificationCenter.default.publisher(for: LiveShortcutToolTip.didChange).sink { [weak self] _ in\n"
     "            guard let self else { return }\n"

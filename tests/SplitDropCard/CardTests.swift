@@ -1,9 +1,5 @@
 import AppKit
 
-// The card, its sizing, bitmap, dragging-item updates, the split overlay and
-// the insertion ink are production code; only the dragging session and the
-// dragged row are recording stand-ins. No drag is started and no window is shown.
-
 @MainActor var passed = 0
 @MainActor var failed = 0
 @MainActor func check(_ condition: Bool, _ message: String) {
@@ -74,7 +70,6 @@ import AppKit
     item.setDraggingFrame(frame, contents: NSImage(size: frame.size))
     return item
 }
-// The provider: `imageComponents` caches a local item's first components.
 @MainActor func contents(_ item: NSDraggingItem) -> NSImage? { item.imageComponentsProvider?().first?.contents as? NSImage }
 
 @main @MainActor struct CardTests {
@@ -136,12 +131,10 @@ import AppKit
             check(abs(icon.midX - card.bounds.midX) < 0.5 && abs(stack.frame.midY - card.bounds.midY) < 0.5,
                   "the stack is centred in the card")
             check(abs(min(abs(text.minY - icon.maxY), abs(icon.minY - text.maxY)) - 24) < 0.5, "the icon sits 24 points from the title")
-            // The card's width is fractional; AppKit rounds the stack to whole points.
             check(stack.frame.minX >= 7 && stack.frame.maxX <= card.bounds.maxX - 7,
                   "the stack keeps its 8-point side insets to within AppKit's point rounding")
         }
 
-        //
         let link = SidebarIconCatalog.emojiImage(String(Character(Unicode.Scalar(0xE98A)!)), size: 22)
         check(link.size == NSSize(width: 25, height: 25) && !link.isTemplate,
               "the link icon is icomoon's 22-point chain link in a 25-point square, not a template")
@@ -156,7 +149,6 @@ import AppKit
             check(ink > 100 && light == 0, "the glyph draws in black from the shipped icomoon font")
         }
 
-        // Item updates: the session's own item becomes the image and its own image is recorded.
         let type = SidebarSplitDrag.pasteboardType
         let probe = Drag()
         let own = item(type, "current", frame: NSRect(x: 30, y: 40, width: 206, height: 36))
@@ -180,7 +172,6 @@ import AppKit
               "restore puts the own image back at the item's current bottom-left")
         probe.dispose()
 
-        // ThemeChromePalette.appearanceBasedMaxContrast resolves by the drawing appearance.
         let primary = ThemeColor.hsl(hue: 0.42, saturation: 0.5, lightness: 0.75, colorSpace: .displayP3)
         for forced in SpaceTheme.Appearance.allCases {
             var theme = SpaceTheme(primaryColor: primary, colorCount: 2); theme.appearance = forced
@@ -197,7 +188,6 @@ import AppKit
             }
         }
 
-        // The real split overlay over a real reservation.
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1236, height: 808), styleMask: .borderless, backing: .buffered, defer: false)
         let host = Host(frame: NSRect(x: 0, y: 0, width: 1236, height: 808)); window.contentView = host
         let split = ParcSplitView(frame: host.bounds); host.addSubview(split)

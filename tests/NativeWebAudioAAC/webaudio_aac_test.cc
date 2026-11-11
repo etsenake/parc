@@ -1,12 +1,3 @@
-// Drives blink::PlatformAudioFileDecoder, the renderer half of WebAudio's
-// decodeAudioData() for AAC, through the patched media::AudioFileReader and
-// AudioToolboxAudioDecoder. Each file decodes once with the decoder in-process
-// and once behind a real MojoAudioDecoder and MojoAudioDecoderService on
-// another thread, as the GPU process hosts it, and is compared with macOS's
-// own ExtAudioFile decode. The Mojo side then disconnects, stops answering or
-// is never reached, and the decode is cancelled, which must all fail cleanly.
-// Usage: webaudio_aac_test <fixture directory written by run.py>
-
 #include <AudioToolbox/AudioToolbox.h>
 
 #include <algorithm>
@@ -98,8 +89,6 @@ struct Pcm {
   }
 };
 
-// macOS's decode, trimmed by its own reading of the file's priming and
-// padding, at the file's rate and channel count.
 Pcm Reference(const std::string& path) {
   Pcm pcm;
   CFURLRef url = CFURLCreateFromFileSystemRepresentation(
@@ -167,20 +156,13 @@ Pcm ToPcm(const PlatformAudioFileDecoder::Output& output) {
   return pcm;
 }
 
-// How the GPU process's decoder misbehaves.
 struct GpuOptions {
-  // Closes the pipe, as a GPU process crash does, at this Decode() call.
   std::optional<int> close_at_decode;
-  // Swallows this Decode() call and every later one, as a hung GPU process.
   std::optional<int> hang_at_decode;
-  // Leaves Initialize() for the test to answer through `held_init`.
   bool hold_init = false;
-  // Leaves every Decode() undecoded for the test to answer.
   bool hold_decodes = false;
 };
 
-// The GPU process's side: AudioToolboxAudioDecoder behind the real
-// MojoAudioDecoderService on its own thread. Only `decodes` is read off it.
 struct GpuControl {
   GpuOptions options;
   std::atomic<int> decodes{0};
@@ -275,7 +257,6 @@ class GpuProcess {
     thread_.Stop();
   }
 
-  // Runs `task` on the GPU thread and waits for it.
   void RunOnGpu(base::OnceClosure task) {
     base::RunLoop loop;
     thread_.task_runner()->PostTaskAndReply(FROM_HERE, std::move(task),
@@ -283,7 +264,6 @@ class GpuProcess {
     loop.Run();
   }
 
-  // As InterfaceFactory::CreateAudioDecoder() binds the service.
   mojo::PendingRemote<media::mojom::AudioDecoder> CreateDecoder(
       GpuControl** control_out,
       GpuOptions options = {}) {
@@ -326,10 +306,8 @@ struct Result {
   std::optional<PlatformAudioFileDecoder::Output> output;
 };
 
-// As base_audio_context.cc sends to the GPU process.
 constexpr int kMojoDecodes = 8;
 
-// `deadline` only ends the wait; a decode still running then counts as hung.
 Result Run(std::vector<uint8_t> data,
            PlatformAudioFileDecoder::CreateDecoderCB create_decoder,
            int decodes_in_flight,
@@ -337,7 +315,6 @@ Result Run(std::vector<uint8_t> data,
                base::BindRepeating([] { return false; }),
            base::TimeDelta timeout = base::Seconds(30),
            base::TimeDelta deadline = base::Seconds(60)) {
-  // Shared with the callbacks, which outlive this call if the decode hangs.
   auto result = std::make_shared<Result>();
   auto input = std::make_shared<std::vector<uint8_t>>(std::move(data));
   base::RunLoop loop;
@@ -411,7 +388,6 @@ PlatformAudioFileDecoder::CreateDecoderCB OverMojo(GpuProcess* gpu,
       gpu, control, options);
 }
 
-// Waits until `done` holds or `limit` passes; returns whether it held.
 bool RunUntil(base::RepeatingCallback<bool()> done,
               base::TimeDelta limit = base::Seconds(10)) {
   const base::TimeTicks end = base::TimeTicks::Now() + limit;
@@ -424,8 +400,6 @@ bool RunUntil(base::RepeatingCallback<bool()> done,
   return done.Run();
 }
 
-// Drives MojoAudioDecoderService over its raw interface, with the test
-// writing the data pipe, to reach orders MojoAudioDecoder doesn't produce.
 class RawDecoder final : public media::mojom::AudioDecoderClient {
  public:
   RawDecoder(GpuProcess* gpu, GpuControl** control, GpuOptions options)
@@ -449,7 +423,6 @@ class RawDecoder final : public media::mojom::AudioDecoderClient {
             },
             &init_status_));
   }
-  // Sends the decode now; its bytes go into the pipe only with Write().
   void Decode(scoped_refptr<media::DecoderBuffer> buffer) {
     const int index = sent_++;
     remote_->Decode(media::mojom::DecoderBuffer::From(*buffer),
@@ -482,7 +455,6 @@ class RawDecoder final : public media::mojom::AudioDecoderClient {
     return text;
   }
 
-  // media::mojom::AudioDecoderClient implementation.
   void OnBufferDecoded(media::mojom::AudioBufferPtr buffer) override {}
   void OnWaiting(media::WaitingReason reason) override {}
 
@@ -499,7 +471,6 @@ std::string Frames(size_t ours, size_t reference) {
   return std::to_string(ours) + " frames, macOS " + std::to_string(reference);
 }
 
-// Largest sample difference over the frames both have, from frame 0.
 float MaxDifference(const Pcm& a, const Pcm& b) {
   float difference = 0;
   for (size_t c = 0; c < std::min(a.channels.size(), b.channels.size()); ++c) {
@@ -511,7 +482,6 @@ float MaxDifference(const Pcm& a, const Pcm& b) {
   return difference;
 }
 
-// FNV-1a over the samples' bits, to compare long decodes without keeping both.
 uint64_t Digest(const PlatformAudioFileDecoder::Output& output) {
   uint64_t hash = 14695981039346656037ull;
   for (const auto& packet : output.packets) {
@@ -524,7 +494,7 @@ uint64_t Digest(const PlatformAudioFileDecoder::Output& output) {
   return hash;
 }
 
-}  // namespace
+}
 
 int main(int argc, char** argv) {
   if (argc < 2) {
@@ -539,8 +509,6 @@ int main(int argc, char** argv) {
   mojo::core::Init();
   const std::string dir = argv[1];
 
-  // The synchronous path the renderer tries first: FFmpeg, unchanged by the
-  // reader's refactor, decodes WAV and has no AAC decoder, so AAC falls back.
   for (const char* file : {"stereo.wav", "lc.m4a"}) {
     const std::vector<uint8_t> data = ReadFile(dir + "/" + file);
     media::InMemoryUrlProtocol protocol(data, false);
@@ -559,8 +527,6 @@ int main(int argc, char** argv) {
   }
 
   GpuProcess gpu;
-  // Every file must match macOS's decode in rate, channels, length and
-  // samples: HE-AAC's tail and unlimited peaks, and raw ADTS HE-AAC at 44.1 kHz.
   for (const char* file : {"lc.m4a", "lc_mono.m4a", "lc.aac", "lc_long.m4a",
                            "he.m4a", "hev2.m4a", "he.aac"}) {
     const std::string path = dir + "/" + file;
@@ -609,7 +575,6 @@ int main(int argc, char** argv) {
            "matches macOS to the frame and sample (" + what + ")");
   }
 
-  // Raw ADTS cut mid-file keeps the frames before the cut, as Read() does.
   {
     const std::vector<uint8_t> data = ReadFile(dir + "/lc_truncated.aac");
     const Result result = Run(data, OverMojo(&gpu), kMojoDecodes);
@@ -618,7 +583,6 @@ int main(int argc, char** argv) {
            "truncated ADTS", std::to_string(frames) + " frames before the cut");
   }
 
-  // Not AAC: the fallback declines without creating a decoder.
   {
     const Result result =
         Run(ReadFile(dir + "/stereo.wav"), OverMojo(&gpu), kMojoDecodes);
@@ -634,7 +598,6 @@ int main(int argc, char** argv) {
 
   const std::vector<uint8_t> long_file = ReadFile(dir + "/lc_long.m4a");
 
-  // The GPU process crashes part way through.
   {
     GpuControl* control = nullptr;
     const Result result =
@@ -647,7 +610,6 @@ int main(int argc, char** argv) {
                std::to_string(result.elapsed.InMilliseconds()) + " ms");
   }
 
-  // The GPU process is unavailable: the decoder's pipe is dropped unbound.
   {
     const Result result = Run(
         long_file, base::BindOnce([](scoped_refptr<base::SequencedTaskRunner>
@@ -664,7 +626,6 @@ int main(int argc, char** argv) {
            "fails the decode");
   }
 
-  // The GPU process stops answering: the watchdog fails the decode.
   {
     const Result result = Run(
         long_file,
@@ -678,7 +639,6 @@ int main(int argc, char** argv) {
                std::to_string(result.elapsed.InMilliseconds()) + " ms");
   }
 
-  // The document is destroyed mid-decode.
   {
     GpuControl* control = nullptr;
     auto checks = std::make_shared<int>(0);
@@ -687,7 +647,6 @@ int main(int argc, char** argv) {
             base::BindRepeating([](std::shared_ptr<int> checks) {
               return ++*checks > 40;
             }, checks));
-    // At most one check per packet sent, plus those still in flight.
     const int decodes = control ? control->decodes.load() : -1;
     Expect(result.done && !result.output && decodes > 0 &&
                decodes <= 41 + kMojoDecodes,
@@ -696,8 +655,6 @@ int main(int argc, char** argv) {
                " packets reached the GPU process");
   }
 
-  // A reset with decodes still queued at the service answers each of them, in
-  // order, before the reset, and the decoder works afterwards.
   {
     const std::vector<uint8_t> data = ReadFile(dir + "/lc.m4a");
     media::InMemoryUrlProtocol protocol(data, false);
@@ -767,7 +724,6 @@ int main(int argc, char** argv) {
            "answers queued decodes in order, then the reset (" + order + ")");
   }
 
-  // The service's own packets: lc.m4a's config and first access units.
   const std::vector<uint8_t> lc = ReadFile(dir + "/lc.m4a");
   media::InMemoryUrlProtocol lc_protocol(lc, false);
   media::AudioFileReader lc_reader(&lc_protocol);
@@ -781,8 +737,6 @@ int main(int argc, char** argv) {
   const std::string failed_read = std::to_string(
       static_cast<int>(media::DecoderStatus::Codes::kFailedToGetDecoderBuffer));
 
-  // Decodes whose data arrives after Initialize() failed: the service no
-  // longer has a decoder and answers each in order.
   if (lc_opened) {
     GpuControl* control = nullptr;
     RawDecoder raw(&gpu, &control, {.hold_init = true});
@@ -813,8 +767,6 @@ int main(int argc, char** argv) {
                ")");
   }
 
-  // A read that fails behind a decode the decoder still has is answered after
-  // that decode.
   if (lc_opened) {
     GpuControl* control = nullptr;
     RawDecoder raw(&gpu, &control, {.hold_decodes = true});
@@ -827,7 +779,6 @@ int main(int argc, char** argv) {
     raw.Decode(lc_packets[1]);
     raw.Decode(lc_packets[2]);
     raw.Flush();
-    // Give the service time to see the closed pipe and fail both reads.
     RunUntil(base::BindRepeating([] { return false; }),
              base::Milliseconds(200));
     const bool answered_early = !raw.answers().empty();
@@ -848,7 +799,6 @@ int main(int argc, char** argv) {
                ")");
   }
 
-  // Throughput: a 10-minute AAC-LC file, serial against pipelined decodes.
   {
     const std::string path = dir + "/lc_10min.m4a";
     const std::vector<uint8_t> data = ReadFile(path);

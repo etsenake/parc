@@ -1,7 +1,5 @@
 import AppKit
 
-/// Inert native mouse tracking. Owns one synthetic table/window; output is a
-/// counter, never a browser, download manager, file action or pasteboard write.
 @main @MainActor
 struct DownloadPointerTests {
     static var assertions = 0

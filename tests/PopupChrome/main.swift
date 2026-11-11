@@ -1,7 +1,5 @@
 import AppKit
 
-// Isolated collaborators keep the production popup view inert: no browser,
-// navigation, event injection or window activation occurs in this check.
 enum NavigationControlKind { case back, forward, reload }
 struct NavigationControlInteraction {}
 final class NavigationControlButton: NSButton {
@@ -19,7 +17,6 @@ final class ActionButton: NSButton {
 }
 struct ThemeChromePalette { let contentAppearance: NSAppearance?; let title: NSColor; let isDark: Bool }
 enum TooltipConfiguration { enum Anchor { case bottom, bottomTrailing } }
-///
 enum LiveShortcutToolTip {
     static var tooltips: [String: (String?, TooltipConfiguration.Anchor)] = [:]
     static func set(_ view: NSView, _ title: String, commandID: String? = nil, anchor: TooltipConfiguration.Anchor = .bottomTrailing) {
@@ -51,7 +48,6 @@ enum SidebarIconCatalog {
         let copy = buttons.first { $0.title == "Copy URL" } as! SidebarRowActionButton
         let extensions = buttons.first { $0.title == "Extensions" } as! SidebarRowActionButton
         precondition(!buttons.contains { $0.title == "Forward" || $0.title == "Refresh the Page" })
-        //
         precondition(LiveShortcutToolTip.tooltips["Copy URL"]! == ("copyCurrentURL:", .bottom)
                      && LiveShortcutToolTip.tooltips["Extensions"]! == (nil, .bottom))
         let background = view.subviews.compactMap { $0 as? PopupAddressBackground }.first!

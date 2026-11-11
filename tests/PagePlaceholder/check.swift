@@ -1,8 +1,5 @@
 import AppKit
 
-///
-///
-///
 @main
 struct PagePlaceholderCheck {
     @MainActor
@@ -57,13 +54,10 @@ struct PagePlaceholderCheck {
         }
         guard let screenshot = NSImage(contentsOf: URL(fileURLWithPath: arguments[1]))?
             .cgImage(forProposedRect: nil, context: nil, hints: nil) else { fatalError("unreadable screenshot") }
-        // The user's screenshot (1024×584): the live pane at x 160, the frozen one
-        // 512 points to the right; below y 270 both show the same content.
         let paneSize = CGSize(width: 345, height: 568)
         let live = pixels(screenshot.cropping(to: CGRect(origin: CGPoint(x: 160, y: 12), size: paneSize))!)
         let frozen = pixels(screenshot.cropping(to: CGRect(origin: CGPoint(x: 672, y: 12), size: paneSize))!)
         let rows = 258..<563, columns = 15..<330
-        // The theme behind the pane: frozen = a·live + (1 − a)·theme, per channel.
         var theme = [Double](repeating: 0, count: 3), fitted = [Double](repeating: 0, count: 3)
         for channel in 0..<3 {
             var xs: [Double] = [], ys: [Double] = []
@@ -77,8 +71,6 @@ struct PagePlaceholderCheck {
                      fitted[0], fitted[1], fitted[2], theme[0], theme[1], theme[2]))
         expect(fitted.allSatisfy { abs($0 - Double(PagePlaceholderDim.opacity)) < 0.05 }, "the frozen pane is drawn near 0.6 opacity")
 
-        // Parc: the pane, dimmed, over the window surface in the theme colour.
-        // The same layers BrowserPane composes, without AppKit's window.
         let frame = CGRect(origin: .zero, size: paneSize)
         let surface = CALayer(); surface.frame = frame
         surface.backgroundColor = CGColor(srgbRed: theme[0] / 255, green: theme[1] / 255, blue: theme[2] / 255, alpha: 1)
@@ -104,9 +96,6 @@ struct PagePlaceholderCheck {
         print("PagePlaceholderCheck: \(count) assertions passed")
     }
 
-    /// The engine's PNG of a 1440×900-point viewport at 2×, for a
-    /// 600×400-point pane: decoded off the main thread straight to the
-    /// pane's pixels.
     @MainActor static func checkDecode(_ expect: (Bool, String) -> Void) {
         let capture = CGSize(width: 2880, height: 1800), pane = CGSize(width: 1200, height: 800)
         let longest = PagePlaceholderSnapshot.maxPixelSize(source: capture, filling: pane)

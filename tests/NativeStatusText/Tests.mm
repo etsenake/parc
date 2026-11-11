@@ -3,8 +3,6 @@
 #include <cstdio>
 #include <cstdlib>
 
-// Exercises the same point conversion destination used by the local mouse
-// monitor, without synthesizing or consuming the user's input events.
 @interface PCNativeStatusTextController (PointerChecks)
 - (void)updatePointerInOverlay:(NSPoint)point;
 - (void)updateModifierFlags:(NSEventModifierFlags)flags;

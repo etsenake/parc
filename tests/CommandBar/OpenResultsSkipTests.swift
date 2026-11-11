@@ -1,7 +1,5 @@
 import Foundation
 
-/// Open-bar result rebuild skip: identical query/result fingerprints are true
-/// no-ops; query, selection, and tab/history membership changes must not skip.
 @main
 struct OpenResultsSkipTests {
     static var assertions = 0
@@ -79,11 +77,9 @@ struct OpenResultsSkipTests {
                "Tab membership change must not skip")
         expect(Skip.shouldSkip(previous: idle, next: fingerprint(query: "", history: [histTitle])) == false,
                "History membership change must not skip")
-        // lastAccessed-style noise is outside tabToken; identical membership stays a no-op.
         expect(Skip.shouldSkip(previous: idle, next: fingerprint(query: "", tabs: [tabB])),
                "Unchanged tab membership remains a true no-op")
 
-        // Extension-action resultIndex owns row insertion among natives.
         let extA = Skip.fingerprint(
             query: "q",
             actionsScope: false,

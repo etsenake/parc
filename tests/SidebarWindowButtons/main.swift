@@ -1,8 +1,6 @@
 import AppKit
 
-/// The sidebar in miniature: flipped, at the window's top-left like a locked sidebar.
 final class FlippedHost: NSView { override var isFlipped: Bool { true } }
-/// Records which views AppKit's widgets ask for `_mouseInGroup:`, and the answers.
 final class GroupQueries { var receivers: [ObjectIdentifier] = []; var answers: [Bool] = [] }
 
 @main @MainActor struct SidebarWindowButtonsTests {
@@ -12,8 +10,6 @@ final class GroupQueries { var receivers: [ObjectIdentifier] = []; var answers: 
         guard value() else { fatalError("SidebarWindowButtons: \(message)") }
     }
     static let style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-    /// BrowserWindowController's window: production style, no collection
-    /// behaviour beyond AppKit's default.
     static func window() -> NSWindow {
         let window = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: 900, height: 600), styleMask: style,
                               backing: .buffered, defer: false)
@@ -28,17 +24,13 @@ final class GroupQueries { var receivers: [ObjectIdentifier] = []; var answers: 
     static func main() {
         _ = NSApplication.shared
         typealias W = WindowStandardButtons
-        //
-        // the intrinsic size never depends on the buttons' own.
         check(W.buttonDimension == 14 && W.buttonSpace == (isAtLeast26 ? 9 : 6), "1.170's 14-point buttons, 9 apart on macOS 26+")
         check(W.stackSize == CGSize(width: isAtLeast26 ? 60 : 54, height: 14), "3 × 14 + 2 × spacing by 14")
         let lights = W()
         check(lights.buttons.isEmpty && lights.frame.size == W.stackSize, "formula size before a window")
 
-        // Buttons are AppKit's own widgets, made for the window that holds them.
         let main = window()
         main.standardWindowButton(.zoomButton)?.isEnabled = false
-        // The window controller stores the window's own before the sidebar joins.
         let systemButtons = W.systemButtons(of: main)
         check(systemButtons.count == 3, "window's own buttons captured")
         let sidebar = FlippedHost(frame: NSRect(x: 0, y: 0, width: 228, height: 600))
@@ -51,11 +43,6 @@ final class GroupQueries { var receivers: [ObjectIdentifier] = []; var answers: 
         check(made.allSatisfy { $0.superview === lights && $0.target == nil && $0.action != nil },
               "direct children keeping AppKit's own actions")
         check(made[0].isEnabled && made[1].isEnabled && !made[2].isEnabled, "enabled state copied from the window's own buttons")
-        // Each exposed cell reports what the window's own button of its type
-        // reports, under production's behaviour and a request that cannot go
-        // full screen. AXFullScreenButton needs AppKit to treat the window as
-        //
-        // (no regular activation) leaves the default window at AXZoomButton.
         let initial = main.collectionBehavior
         for behavior in [initial, initial.union(.fullScreenNone), initial.union(.fullScreenPrimary)] {
             main.collectionBehavior = behavior
@@ -70,13 +57,11 @@ final class GroupQueries { var receivers: [ObjectIdentifier] = []; var answers: 
         lights.removeFromSuperview(); sidebar.addSubview(lights)
         check(lights.buttons.count == 3 && zip(lights.buttons, made).allSatisfy(===), "made once")
 
-        // The header row: lights lead at 8 + 5, the toggle follows 4 later, level.
         let bar = SidebarChromeLayout.toolbar(width: 228, windowButtons: W.stackSize, showsNavigation: true)
         check(bar.windowButtons == CGRect(x: 13, y: 17, width: W.stackSize.width, height: 14), "lights at 13, centred in the row")
         check(bar.toggle?.minX == (isAtLeast26 ? 77 : 71) && bar.windowButtons?.midY == bar.toggle?.midY,
               "toggle 4 points after the lights and level with them")
 
-        // Geometry: 14-point slots, overlays 2 points smaller, centred, inert.
         lights.frame = bar.windowButtons ?? .zero; lights.layoutSubtreeIfNeeded()
         let pitch = W.buttonDimension + W.buttonSpace
         check(!isAtLeast26 || lights.buttons.map(\.frame) == (0..<3).map { NSRect(x: CGFloat($0) * pitch, y: 0, width: 14, height: 14) },
@@ -89,9 +74,6 @@ final class GroupQueries { var receivers: [ObjectIdentifier] = []; var answers: 
         check(overlays.allSatisfy { $0.hitTest(NSPoint(x: $0.frame.midX, y: $0.frame.midY)) == nil }, "overlays never take the click")
         let point = lights.convert(NSPoint(x: lights.buttons[1].frame.midX, y: lights.buttons[1].frame.midY), to: lights.superview)
         check(lights.hitTest(point) === lights.buttons[1], "the minimize widget receives its click")
-        //
-        // lights 16 × 16 at x 12/35/57, y 16; toggle at x 76. AppKit's widget
-        // reports a frame 1 point outside its 14-point bounds.
         if isAtLeast26 {
             let windowFrame = main.frame
             let frames = lights.buttons.map { button -> NSRect in
@@ -104,10 +86,6 @@ final class GroupQueries { var receivers: [ObjectIdentifier] = []; var answers: 
             check(abs((bar.toggle?.minX ?? 0) - 76 / 0.9905) <= 1, "toggle within a point of 1.170's")
         }
 
-        // Group hover: AppKit's widgets ask an ancestor for _mouseInGroup: when
-        //
-        // refresh also relayouts them on macOS 26+), also across an
-        // intermediate view; the glyphs show together and the group dims.
         let selector = NSSelectorFromString("_mouseInGroup:")
         check(lights.responds(to: selector), "answers _mouseInGroup:")
         typealias Query = @convention(c) (AnyObject, Selector, AnyObject?) -> Bool
@@ -150,15 +128,11 @@ final class GroupQueries { var receivers: [ObjectIdentifier] = []; var answers: 
         check(!lights.mouseInside, "a hidden header drops its hover")
         lights.isHidden = false
         check(!lights.mouseInside && overlays.allSatisfy { !$0.isHidden }, "re-shown away from the pointer it dims again")
-        // ⌘S leaves the sidebar unhidden off-screen; SidebarView.isPresented
-        // reports the hide and the return in place of viewDidHide/viewDidUnhide.
         lights.setMouseInside(true); lights.setPresented(false)
         check(!lights.mouseInside && !lights.isHiddenOrHasHiddenAncestor, "a header leaving with an unhidden sidebar drops its hover")
         lights.setMouseInside(true); lights.setPresented(true)
         check(!lights.mouseInside, "its return re-tests the pointer, which is elsewhere")
         do {
-            // A positive control: a window never ordered in, placed so its
-            // lights lie under the pointer, hovers them on return.
             let pointer = NSEvent.mouseLocation
             let under = NSWindow(contentRect: NSRect(x: pointer.x - 30, y: pointer.y - 93, width: 200, height: 100),
                                  styleMask: [.borderless], backing: .buffered, defer: false)
@@ -176,8 +150,6 @@ final class GroupQueries { var receivers: [ObjectIdentifier] = []; var answers: 
             under.close()
         }
 
-        // Which set shows: the rule BrowserWindowController.refreshWindowButtons
-        // applies, on the window's real buttons.
         typealias P = WindowFullscreenPhase
         let cases: [(phase: P?, sidebarless: Bool, system: Bool, header: Bool)] = [
             (nil, false, false, true), (.entering, false, false, false), (.expanded, false, true, false), (.exiting, false, false, true),
@@ -201,13 +173,10 @@ final class GroupQueries { var receivers: [ObjectIdentifier] = []; var answers: 
             check(P.showsSystemButtons(phase, sidebarless: false) != P.showsSidebarButtons(phase) || phase == .entering,
                   "exactly one set of traffic lights except while entering")
         }
-        // Why the references are stored: with the window's own hidden,
-        // AppKit's lookup finds the sidebar's.
         _ = P.apply(nil, sidebarless: false, system: systemButtons)
         check(main.standardWindowButton(.closeButton) === lights.buttons[0], "-standardWindowButton: answers with the content widget")
         check(main.standardWindowButton(.zoomButton)?.isEnabled == false, "so its enabled state must match the window's own")
 
-        // The widgets act on the window that holds them, even when it is not key.
         let other = window(); other.orderFront(nil)
         let closing = window(); closing.orderFront(nil)
         let closingLights = W(); closing.contentView?.addSubview(closingLights)

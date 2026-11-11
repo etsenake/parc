@@ -46,8 +46,6 @@ def manifest():
 
 
 def patched_sources(tree):
-    """The patch's targets as the manifest's after-digest bytes, from pristine
-    checkout bytes (read with `git show HEAD:` when the live file differs)."""
     spec = importlib.util.spec_from_file_location('engine_source', REPO / 'scripts/engine-source.py')
     engine = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(engine)
@@ -89,7 +87,6 @@ def target_flags(ninja, keys, results, module=True):
 
 
 def generate_bindings(tree, build, results):
-    """The same generator invocations as //third_party/blink/public/mojom:mojom_core."""
     root = results / 'mojom'
     shutil.rmtree(root, ignore_errors=True)
     (root / MOJOM).parent.mkdir(parents=True)
@@ -131,7 +128,6 @@ def main():
     results.mkdir(parents=True, exist_ok=True)
     sources = results / 'src'
     shutil.rmtree(sources, ignore_errors=True)
-    # Every overlay file at its target, so relative includes see the overlay.
     for item in manifest()['files']:
         if item['source'].startswith(('Engine/ParcRenderer/', 'Engine/ParcNative/')):
             path = sources / item['target']
@@ -146,7 +142,6 @@ def main():
     clang = str(tree / 'third_party/llvm-build/Release+Asserts/bin/clang++')
     local = ['-I' + str(sources), '-I' + str(gen)]
     core = target_flags(build / CORE, ('defines', 'include_dirs', 'cflags', 'cflags_cc', 'module_deps'), results)
-    # The objcxx rule takes no module flags.
     browser_flags = target_flags(build / ('obj/parc/browser.ninja'), ('defines', 'include_dirs', 'framework_dirs', 'cflags', 'cflags_objcc'), results,
                        module=False)
     commands = [[clang, *local, *core, '-fsyntax-only', str(sources / unit)] for unit in RENDERER_UNITS]

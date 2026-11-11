@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""P0-B leftover behavior lock: SidebarOutlineRow.configure skips setContent and
-needsLayout when the configured content fingerprint already matches. Membership,
-appearance, and size deltas still configure and dirty layout. Toggle still
-refreshes on the skip path so AX disclosing keeps the entry's current closure.
-"""
 from pathlib import Path
 import re
 
@@ -52,7 +47,6 @@ assert body.index("shouldSkip(") < body.index("needsLayout = true"), \
     "fingerprint skip must precede needsLayout"
 assert "toggle = entry.toggle" in body, \
     "configure must still refresh toggle"
-# Skip path refreshes toggle then returns before setContent/needsLayout.
 skip_arm = body.split("cell.setContent(")[0]
 assert "toggle = entry.toggle" in skip_arm, \
     "identical fingerprint must still refresh toggle before returning"

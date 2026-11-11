@@ -210,8 +210,6 @@ import AppKit
         checkAppearanceSwitch()
         print("Mini Player presentation checks passed")
     }
-    /// The window's root rebuilds a theme-free palette inside its appearance
-    /// callback, where AppKit still draws in the old appearance.
     final class Root: NSView {
         var onSwitch: (() -> Void)?
         override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); onSwitch?() }

@@ -1,10 +1,4 @@
 #!/usr/bin/env python3
-"""P1-AU behavior lock: refreshExtensionControls skips closure rebuild and
-sidebar/toolbar republish only when the live Snapshot's visible model matches
-the last apply (identifiers/names/tooltips/a11y/generation/pin/enabled/
-canChangePin + pin-surface/popup availability). Real extension/page changes
-still Snapshot and update; no dirty-bit early out that can miss notifications.
-"""
 from pathlib import Path
 import re
 
@@ -63,7 +57,6 @@ assert "nativeBrowserExtensionActionsDidChange" in controller and \
         "func nativeBrowserExtensionActionsDidChange")[1].split("func nativeBrowserExtensionPopupAnchor")[0], \
     "extension-actions-changed notification must still refresh controls"
 
-# Website-theme gate from origin/main must remain (rebase must not drop it).
 assert "lastPushedWebsiteTheme" in controller, "website-theme skip gate missing"
 assert "last.stylesheet == stylesheet" in controller, "website-theme identical-stylesheet skip missing"
 

@@ -1,7 +1,3 @@
-"""Exercise real export of every catalog variant without a browser engine.
-
-Independent debug/release bundle integration is covered by tests/Packaging.
-"""
 import importlib.util
 import json
 from pathlib import Path
@@ -19,7 +15,6 @@ spec.loader.exec_module(icons)
 
 
 def rgba_png(path):
-    """Read ImageIO's noninterlaced 8-bit RGBA output without extra packages."""
     data = path.read_bytes()
     width, height, depth, color, compression, filtering, interlace = struct.unpack(
         ">IIBBBBB", data[16:29])
@@ -131,14 +126,10 @@ class AppIconTests(unittest.TestCase):
                         left, top, right, bottom = bounds
                         extent = max(right - left, bottom - top)
                         target = round(width * (204 / 256 if name == "Dev" else 824 / 1024))
-                        # Raster edge coverage can move the >=50% boundary one
-                        # pixel. This rejects the old 83-89% inconsistent framing.
                         self.assertLessEqual(abs(extent - target), 1, (name, representation, bounds))
                         self.assertLessEqual(abs((left + right) / 2 - width / 2), 1)
                         target_y = height * (130 / 256 if name == "Dev" else 0.5)
                         self.assertLessEqual(abs((top + bottom) / 2 - target_y), 1)
-                        # Every variant keeps a transparent outer pixel ring;
-                        # colored full-canvas mattes and clipping are regressions.
                         perimeter = [rows[0], rows[-1]]
                         self.assertTrue(all(row[x] == 0 for row in perimeter
                                             for x in range(3, len(row), 4)))

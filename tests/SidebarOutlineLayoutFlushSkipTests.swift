@@ -1,9 +1,3 @@
-/// 797f2a55 leftover: forced sidebar outline/list layoutSubtree flushes only
-/// when geometry moved or the subtree is already dirty. Identical frames with
-/// a clean tree stay a true no-op.
-///
-/// Compiles against Sources/ParcCore/SidebarOutlineLayoutFlushSkip.swift;
-/// `tests/SidebarOutlineLayoutFlushSkip/check.py` locks production call sites.
 @main
 struct SidebarOutlineLayoutFlushSkipTests {
     static var assertions = 0

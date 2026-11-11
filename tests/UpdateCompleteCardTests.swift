@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Inert native layout; no browser, displayed window or input automation.
 @main @MainActor
 struct UpdateCompleteCardTests {
     struct Failure: Error { let message: String }
@@ -33,7 +32,6 @@ struct UpdateCompleteCardTests {
         print("UpdateCompleteCard: \(assertions) assertions passed")
     }
 
-    /// The stops SwiftUI places over the controls, linked as the sidebar links them.
     static func keyLoop() throws {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 228, height: 200), styleMask: .borderless,
                               backing: .buffered, defer: false)

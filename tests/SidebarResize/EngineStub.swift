@@ -1,20 +1,10 @@
 import AppKit
 
-// The engine's page view tree for the production PCBrowserView adapter
-// (PageRenderFrames.swift), with the renderer driven by the test. These types
-// are NOT the engine; they mirror its geometry:
-// PCBrowserView > PCNativeDevToolsPaneView (autoresized; frames the page host
-// beside docked DevTools only in its own layout(), devtools_pane_view.mm and
-// NativeDevToolsPane::Layout) > PCNativePageHost (no autoresizing; the infobar
-// shelf above the content view, both by constraints, page_host.mm) > the
-// content view, whose size is the renderer's.
-
 @MainActor final class PCNativeRenderFrameObservation: NSObject {
     var handler: ((NSSize) -> Void)?
     func invalidate() { handler = nil }
 }
 
-/// The renderer's view; records every size the renderer would be sent.
 @MainActor final class StubRenderer: NSView {
     private(set) var sentSizes: [CGSize] = []
     override func setFrameSize(_ newSize: NSSize) {
@@ -61,7 +51,6 @@ import AppKit
 @MainActor final class PCNativePage: NSObject {
     let host = PCNativePageHost()
     var isClosed = false
-    /// An engine before the RenderFrameViewport overlay.
     let olderEngine: Bool
     var nativeView: NSView { host }
     private var drawn = CGSize.zero
@@ -79,8 +68,6 @@ import AppKit
             || selector == #selector(PCNativePage.observeRenderFrameViewportSize(_:)) { return false }
         return super.responds(to: selector)
     }
-    /// The browser activates a frame of the size the renderer was last sent,
-    /// or of an older `viewport`.
     func draw(_ viewport: CGSize? = nil) {
         drawn = viewport ?? host.renderer.frame.size
         leases.forEach { $0.handler?(drawn) }

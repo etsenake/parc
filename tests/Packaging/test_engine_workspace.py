@@ -1,4 +1,3 @@
-"""Real miniature Git workspaces; no browser, engine generation, or compilation."""
 import copy
 import importlib.util
 import json

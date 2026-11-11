@@ -1,6 +1,5 @@
 import AppKit
 
-/// Actual durable stores and native UndoManager; no browser/page or personal files.
 @main @MainActor
 struct FolderDocumentCloseTests {
     static var count = 0
@@ -135,8 +134,6 @@ struct FolderDocumentCloseTests {
         manager.redo(); try check(authorize?() == true, "Redo revalidates typed original content")
         finish?(true)
         try check(manager.canUndo && store.state.tabs.filter { $0.archivedAt != nil }.count == 3, "Accepted Redo archives same original aliases")
-        // The actual document-delete owner removes all aliases, so old group
-        // restoration cannot resurrect references to the deleted document.
         store.requestPageRetirement = { _, admission, done in done(admission()) }
         var deletedError: Error?
         store.deleteLocalDocument(.note(note.document.id), profileID: profile.id, ownerValid: { true }, deleteDocument: {

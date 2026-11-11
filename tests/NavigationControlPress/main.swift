@@ -34,7 +34,7 @@ func run() {
     expect(normal.finished && !normal.hasHistory, "commit drops captured closures")
 
     let command = NavigationControlPress(event: event([.command], number: 2), interaction: interaction)
-    _ = event([], number: 3) // Later event/modifier state cannot change the captured press.
+    _ = event([], number: 3)
     command.activate()
     expect(actions == [false, true], "Command is captured at pointer-down")
     let shift = NavigationControlPress(event: event([.shift]), interaction: interaction)

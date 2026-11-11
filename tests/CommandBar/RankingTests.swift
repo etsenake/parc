@@ -1,6 +1,5 @@
 import Foundation
 
-///
 @main struct RankingTests {
     static func main() {
         var count = 0
@@ -25,35 +24,28 @@ import Foundation
         expect(CommandBarRanking.match("ight", ["Add Right Split"]) == 0.4, "a word inside a word is a weak match")
         expect(CommandBarRanking.match("xyz", ["Add Right Split"]) == 0, "no match")
 
-        //
         let easel = [search("new eas", 0), search("new earth", 1), command("New Easel"), command("New Window"), search("new earth waste services", 2)]
         let easelOrder = order(easel, "new eas")
         expect(easelOrder.prefix(3) == ["typeTravel:New Easel", "search:new eas", "search:new earth"],
                "a Type Travel action named by the query leads, then Chromium's default")
         expect(!easelOrder.contains("typeTravel:New Window"), "an action the query doesn't match is not a result")
-        //
         let split = [search("split", 0), search("splitwise", 1), command("Add Right Split"), command("Add Left Split")]
         let splitOrder = order(split, "split")
         expect(splitOrder.first == "search:split", "word-only command matches don't outrank the search")
         expect(splitOrder.contains("typeTravel:Add Right Split") && splitOrder.contains("typeTravel:Add Left Split"), "the split commands still rank in")
-        //
         let space = [search("space", 0), command("Focus on", ["Space 1", "Focus on Space 1"])]
         expect(order(space, "space").first == "typeTravel:Focus on", "a contextual target named by the query leads")
 
-        // The extra commands interleave by score instead of trailing every native row.
         let interleaved = order([search("new", 0), search("news", 1), search("new york times", 2), search("new balance", 3),
                                  search("netflix", 4), command("New Easel"), command("New Folder")], "new")
         expect(interleaved[0] == "typeTravel:New Easel" && interleaved[1] == "search:new", "lead then default")
         expect(interleaved.firstIndex(of: "typeTravel:New Folder")! < interleaved.firstIndex(of: "search:netflix")!,
                "a prefix-matched command ranks above weaker suggestions")
 
-        // DedupKey: an open tab and Chromium's row for the same page become one row.
         let merged = [page("https://www.youtube.com/", 0, title: "YouTube"), tab("YouTube", "https://youtube.com")]
         let mergedOrder = CommandBarRanking.rank(merged, query: "you")
         expect(mergedOrder == [1], "the tab replaces Chromium's row for its page")
 
-        // Cmd-T with the site already open: dedup must retain the native
-        // default's position, even when www makes the tab a weak text match.
         for (host, title) in [("google.com", "Google"), ("youtube.com", "YouTube")] {
             let website = "https://www.\(host)/"
             let results = [page(website, 0), search(host, 1), tab(title, website)]
@@ -78,7 +70,6 @@ import Foundation
                       tab("Pull requests", "https://github.com/etsenake/parc/pulls")]
         expect(CommandBarRanking.rank(github, query: "pull").count == 1, "listed sites dedup by title and host")
 
-        // Caps and the 15-result limit.
         let many = (0..<12).map { command("New Thing \($0)") } + (0..<12).map { search("new \($0)", $0) }
         let capped = CommandBarRanking.rank(many, query: "new")
         expect(capped.count == 13, "five actions and eight Chromium rows")
@@ -86,7 +77,6 @@ import Foundation
         let wide = many + (0..<12).map { tab("New tab \($0)", "https://example\($0).com") }
         expect(CommandBarRanking.rank(wide, query: "new").count == 15, "the result stops at the 15")
 
-        // Documents and top domains are ordinary sources.
         let note = C(archetype: .document, key: "document:1", texts: ["Trip plans"])
         expect(order([search("trip", 0), note], "trip").contains("document:1"), "a Note without a tab is a result")
         let tabbed = [note, C(archetype: .tab, key: "document:1", texts: ["Trip plans"])]

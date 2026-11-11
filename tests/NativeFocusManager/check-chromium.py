@@ -42,8 +42,6 @@ def main():
             raise RuntimeError(f"Unexpanded Ninja variable: {key}")
         variables[key] = value
     flags = []
-    # ObjC++ uses its own language flags. The C++ module flags describe a
-    # different compiler mode and must not be copied into this command.
     for key in ("defines", "include_dirs", "framework_dirs", "cflags",
                 "cflags_objcc"):
         flags.extend(shlex.split(variables[key]))

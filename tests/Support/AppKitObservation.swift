@@ -2,14 +2,6 @@ import AppKit
 import ObjectiveC
 import QuartzCore
 
-// Test-process observers for production behaviour that has no public readout:
-// per-frame sources, redraw requests, layer geometry writes, the system
-// settings AppKit components read (Reduce Motion, standard defaults), the
-// global input state (modifier flags, pressed buttons), the event, cursor and
-// window drag hit testing consults, and the dragging sessions views begin.
-// Each exchanges a Foundation, AppKit or Core Animation method implementation
-// inside the test executable only.
-
 private func exchange(_ type: AnyClass, _ original: Selector, _ replacement: Selector) {
     guard let originalMethod = class_getInstanceMethod(type, original),
           let replacementMethod = class_getInstanceMethod(type, replacement) else {
@@ -18,7 +10,6 @@ private func exchange(_ type: AnyClass, _ original: Selector, _ replacement: Sel
     method_exchangeImplementations(originalMethod, replacementMethod)
 }
 
-/// A repeating timer added to a run loop, or a display link created for a view.
 @MainActor final class FrameSource {
     let timer: Timer?
     let link: AnyObject?
@@ -29,10 +20,7 @@ private func exchange(_ type: AnyClass, _ original: Selector, _ replacement: Sel
     fileprivate init(link: AnyObject, target: NSObject?, selector: Selector) {
         timer = nil; self.link = link; self.target = target; self.selector = selector
     }
-    /// Still scheduled: a valid timer, or a display link nobody has invalidated.
     var isLive: Bool { timer?.isValid ?? !invalidated }
-    /// Delivers one frame callback now. Display links never fire for a view
-    /// outside an on-screen window, so checks deliver their frames this way.
     func fire() {
         if let timer { if timer.isValid { timer.fire() }; return }
         guard !invalidated, let link, let target, let selector else { return }
@@ -50,7 +38,6 @@ private func exchange(_ type: AnyClass, _ original: Selector, _ replacement: Sel
         if #available(macOS 14.0, *) {
             exchange(NSView.self, #selector(NSView.displayLink(target:selector:)),
                      #selector(NSView.observed_displayLink(target:selector:)))
-            // NSView vends a private CADisplayLink subclass with its own invalidate.
             let probe = NSView().displayLink(target: NSNull(), selector: #selector(NSObject.description))
             exchange(object_getClass(probe)!, #selector(CADisplayLink.invalidate),
                      #selector(CADisplayLink.observed_invalidate))
@@ -58,7 +45,6 @@ private func exchange(_ type: AnyClass, _ original: Selector, _ replacement: Sel
             recorded.removeAll()
         }
     }
-    /// Frame sources scheduled while `body` runs.
     static func scheduled(during body: () -> Void) -> [FrameSource] {
         precondition(installed, "FrameSources.install() first")
         let start = recorded.count
@@ -97,7 +83,6 @@ extension CADisplayLink {
     }
 }
 
-/// `needsDisplay = true` requests per view.
 @MainActor enum Redraws {
     private static var installed = false
     fileprivate static var counts: [ObjectIdentifier: Int] = [:]
@@ -121,7 +106,6 @@ extension NSView {
     }
 }
 
-/// One setter call on a layer, or a view frame assignment.
 struct GeometryWrite {
     let object: AnyObject
     let key: String
@@ -146,7 +130,6 @@ struct GeometryWrite {
         exchange(CAShapeLayer.self, #selector(setter: CAShapeLayer.strokeEnd), #selector(CAShapeLayer.observed_setStrokeEnd(_:)))
         exchange(NSView.self, #selector(setter: NSView.frame), #selector(NSView.observed_setFrame(_:)))
     }
-    /// Every write made while `body` runs, in order.
     static func during(_ body: () -> Void) -> [GeometryWrite] {
         precondition(installed, "GeometryWrites.install() first")
         log = []
@@ -154,14 +137,12 @@ struct GeometryWrite {
         defer { log = nil }
         return log ?? []
     }
-    /// Writes to `view`'s own sublayers, excluding any view's backing layer.
     static func layerWrites(by view: NSView, during body: () -> Void) -> [GeometryWrite] {
         during(body).filter { write in
             guard let layer = write.object as? CALayer, !(layer.delegate is NSView) else { return false }
             return owner(of: layer) === view
         }
     }
-    /// The view whose backing layer is `layer` or its nearest ancestor.
     static func owner(of layer: CALayer) -> NSView? {
         var current: CALayer? = layer
         while let candidate = current {
@@ -199,8 +180,6 @@ extension NSView {
     @objc dynamic nonisolated func observed_setFrame(_ value: NSRect) { GeometryWrites.note(self, "frame"); observed_setFrame(value) }
 }
 
-/// Values for the system settings production code reads directly. `nil`
-/// passes through to the real setting.
 enum SystemOverrides {
     nonisolated(unsafe) static var reduceMotion: Bool?
     nonisolated(unsafe) static var standardDefaults: UserDefaults?
@@ -226,8 +205,6 @@ extension UserDefaults {
     @objc dynamic class var observed_standard: UserDefaults { SystemOverrides.standardDefaults ?? self.observed_standard }
 }
 
-/// The global input state NSEvent's class getters report, so a check does not
-/// see a person using the machine. `nil` passes through to the real state.
 enum InputOverrides {
     nonisolated(unsafe) static var modifierFlags: NSEvent.ModifierFlags?
     nonisolated(unsafe) static var pressedMouseButtons: Int?
@@ -255,15 +232,10 @@ extension NSEvent {
     }
 }
 
-/// The event NSApplication reports dispatching, the cursor NSCursor reports
-/// showing, and window drags, for views that consult them while hit testing.
-/// `nil` passes through to AppKit.
 enum DispatchOverrides {
     nonisolated(unsafe) static var currentEvent: NSEvent?
     nonisolated(unsafe) static var cursor: NSCursor?
-    /// `NSCursor.current` reads answered from `cursor`.
     nonisolated(unsafe) static var cursorReads = 0
-    /// Receives `NSWindow.performDrag(with:)` in place of AppKit's drag loop.
     nonisolated(unsafe) static var windowDrag: ((NSWindow, NSEvent) -> Void)?
     nonisolated(unsafe) private static var installed = false
     static func install() {
@@ -299,14 +271,12 @@ extension NSWindow {
     }
 }
 
-/// One `beginDraggingSession(with:event:source:)` call.
 struct DraggingStart {
     let view: NSView
     let items: [NSDraggingItem]
     let source: NSDraggingSource
 }
 
-/// Dragging sessions views begin, recorded in place of AppKit's drag loop.
 @MainActor enum DraggingSessions {
     private static var installed = false
     fileprivate static var log: [DraggingStart]?
@@ -316,8 +286,6 @@ struct DraggingStart {
         exchange(NSView.self, #selector(NSView.beginDraggingSession(with:event:source:)),
                  #selector(NSView.observed_beginDraggingSession(with:event:source:)))
     }
-    /// Sessions begun while `body` runs. None of them reaches AppKit; outside
-    /// `body` AppKit begins sessions as usual.
     static func begun(during body: () -> Void) -> [DraggingStart] {
         precondition(installed, "DraggingSessions.install() first")
         log = []
@@ -328,9 +296,6 @@ struct DraggingStart {
 }
 
 extension NSView {
-    /// Recording returns no session: AppKit never starts one. AppKit declares
-    /// the result non-null, so this nil is safe only because the production
-    /// callers under test discard it.
     @objc dynamic func observed_beginDraggingSession(with items: [NSDraggingItem], event: NSEvent,
                                                      source: NSDraggingSource) -> NSDraggingSession? {
         guard DraggingSessions.log != nil else { return observed_beginDraggingSession(with: items, event: event, source: source) }

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Sidebar preview title rules, recent-page text, dedupe and modifier routes; pure model, no browser."""
 from pathlib import Path
 import subprocess
 import tempfile

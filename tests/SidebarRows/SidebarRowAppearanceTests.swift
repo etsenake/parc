@@ -12,7 +12,6 @@ import AppKit
             return [c.redComponent, c.greenComponent, c.blueComponent, c.alphaComponent].map { ($0 * 1000).rounded() / 1000 }
         }
 
-        //
         for bits in 0..<16 {
             let state = SidebarRowAppearance(current: bits & 1 != 0, contentVisible: bits & 2 != 0,
                                              multiSelected: bits & 4 != 0, hovered: bits & 8 != 0)
@@ -35,7 +34,6 @@ import AppKit
         check(SidebarRowAppearance(splitChild: true).cornerRadius(in: wide) == 8
               && SidebarRowAppearance(splitChild: true).cornerRadius(in: thin) == 5, "Split child rounds by min(width / 2, 8)")
 
-        //
         check(rgba(SidebarRowAppearance.color(.current, dark: false)) == [1, 1, 1, 0.85], "Current light")
         check(rgba(SidebarRowAppearance.color(.current, dark: true), .displayP3) == [0.98, 0.984, 1, 0.2], "Current dark")
         check(rgba(SidebarRowAppearance.color(.contentVisible, dark: false)) == [1, 1, 1, 0.7], "Content visible light")
@@ -51,7 +49,6 @@ import AppKit
         check(rgba(SidebarRowAppearance.controlFill(pressed: false, dark: true)) == [1, 1, 1, 0.077], "GrayA4 dark")
         check(rgba(SidebarRowAppearance.controlFill(pressed: true, dark: true)) == [1, 1, 1, 0.103], "GrayA5 dark")
 
-        // 24-point slot, 16-point favicon and 36-point title start.
         let row = NSRect(x: 0, y: 0, width: 212, height: 36)
         check(SidebarRowAppearance.iconSlotFrame(in: row) == NSRect(x: 6, y: 6, width: 24, height: 24), "Icon slot")
         check(SidebarRowAppearance.iconFrame(in: row) == NSRect(x: 10, y: 10, width: 16, height: 16), "Centered favicon")
@@ -63,18 +60,12 @@ import AppKit
               && label.alignmentRectInsets.right == SidebarRowAppearance.titleTextPadding,
               "A stacked label's alignment rect sits 2 points inside each edge of its frame")
 
-        // Resettable row: slash after the slot, icon region up to the slash,
-        //
         check(SidebarRowAppearance.slashFrame(in: row) == NSRect(x: 30, y: 10, width: 4, height: 15), "Slash geometry")
         check(SidebarRowAppearance.resetRegionFrame(in: row) == NSRect(x: 0, y: 0, width: 30, height: 36), "Icon region ends at the slash")
         check(SidebarRowAppearance.resetTitleInset == 38, "Resettable title starts after slash and its spacing")
-        // Close: 24-point square, 6 inside the trailing edge; the title ends 2
-        // before it, or 10 inside the edge while Close is hidden.
         check(SidebarRowAppearance.closeFrame(in: row) == NSRect(x: 182, y: 6, width: 24, height: 24), "Close geometry")
         check(SidebarRowAppearance.titleTrailingEdge(in: row, closeVisible: true) == 180, "Title stops before visible Close")
         check(SidebarRowAppearance.titleTrailingEdge(in: row, closeVisible: false) == 202, "Title widens while Close is hidden")
-        // The label's text runs from the inset to the trailing edge: the
-        // frame extends the alignment inset past both, and never under Close.
         let hoveredSpan = SidebarRowAppearance.titleLabelSpan(resettable: false, trailing: SidebarRowAppearance.titleTrailingEdge(in: row, closeVisible: true))
         check(hoveredSpan.minX == 34 && hoveredSpan.minX + hoveredSpan.width == SidebarRowAppearance.closeFrame(in: row).minX,
               "A hovered title's text runs from 36 to 2 before Close; its frame ends at Close")
@@ -90,7 +81,6 @@ import AppKit
         check(SidebarRowAppearance.separateSubtitle == "Separate From Pinned Tab", "Separate hover subtitle text")
         check(SidebarRowAppearance.subtitleFontSize == 11, "Subtitle uses arc_subLabel's 11-point system font")
 
-        //
         func child(_ width: CGFloat, recording: Bool = false, hovered: Bool = false, close: Bool = true)
             -> SidebarRowAppearance.SplitChildLayout {
             SidebarRowAppearance.splitChildLayout(in: NSRect(x: 0, y: 0, width: width, height: 35), titleHeight: 17,
@@ -116,7 +106,6 @@ import AppKit
         check(child(50, hovered: true).showsClose && !child(49, hovered: true).showsClose, "Close must clear the icon")
         check(child(54).title == nil && child(55).title?.width == 21, "Titles need more than 20 points")
 
-        //
         let all: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         let leading: CACornerMask = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
         check(SidebarRowAppearance().splitsResetRegions && SidebarRowAppearance().resetRegionCorners == all, "Idle row splits regions")
@@ -133,7 +122,6 @@ import AppKit
         check(rgba(SidebarRowAppearance.slashColor(dark: false), .displayP3) == [0, 0, 0, 0.3], "TabCellSlash light")
         check(rgba(SidebarRowAppearance.slashColor(dark: true), .displayP3) == [1, 1, 1, 0.3], "TabCellSlash dark")
 
-        // Background view mirrors CellSelectionStateView without taking input.
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 80),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -177,7 +165,6 @@ import AppKit
         background.updateLayer()
         check(layer.cornerRadius == 8 && NSColor(cgColor: layer.backgroundColor!).map { rgba($0) } == [0, 0, 0, 0.07]
               && NSColor(cgColor: layer.shadowColor!)!.alphaComponent == 0, "Selected split child pill")
-        // HighlightRingView: 2-point maxContrastColor border on the same frame.
         background.frame = NSRect(x: 8, y: 10, width: 212, height: 35)
         background.ringColor = .black
         background.appearanceState = SidebarRowAppearance(current: true, highlighted: true, dimmed: true)
@@ -189,8 +176,6 @@ import AppKit
         check(layer.opacity == 0.5 && ring.opacity == 1, "shouldDim halves the fill and shadow but not the ring")
         check(NSColor(cgColor: layer.backgroundColor!).map { rgba($0) } == [1, 1, 1, 0.85], "Dimmed current row keeps its fill color")
 
-        // Metadata-driven sidebar layouts must not rebuild fill/ring layers when
-        // appearance and the bounds updateLayer uses are unchanged.
         check(background.paintedBounds == background.bounds, "updateLayer records the bounds it painted")
         let painted = background.paintedBounds
         let shadow = layer.shadowPath

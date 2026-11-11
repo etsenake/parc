@@ -56,7 +56,7 @@ import AppKit
         expect(other.requests == 0, "No different window is targeted")
         let pending = BrowserWindowCloseCommand(window: original, ownerIsAvailable: { !target.pending })
         expect(!pending.perform(nil), "A pending original close rejects duplicate invocations")
-        target.pending = false // Simulated refusal; no browser or native page exists.
+        target.pending = false
         let retry = BrowserWindowCloseCommand(window: original, ownerIsAvailable: { !target.pending })
         expect(retry.perform(nil) && target.delegateRequests == 2, "Fresh invocation after refusal reaches original delegate")
         target.approved = true
@@ -150,8 +150,6 @@ import AppKit
             try old.resetAll()
             expect(old.shortcut(for: "closeWindow:") == chord && old.priority(for: "closeWindow:") == .preferParc, "Reset All deliberately restores defaults")
         }
-        // Earlier files never registered this command: absence is unambiguously
-        // new, unlike the existing generic-priority migration's ambiguity.
         try JSONSerialization.data(withJSONObject: ["version": 3, "overrides": [:]]).write(to: file)
         let absent = KeyboardShortcuts(); absent.configure(directory: root); _ = register(absent)
         expect(absent.shortcut(for: "closeWindow:") == chord && absent.priority(for: "closeWindow:") == .preferParc, "Unassigned legacy files receive new command")

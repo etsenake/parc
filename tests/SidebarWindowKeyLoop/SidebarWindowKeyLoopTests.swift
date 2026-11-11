@@ -1,12 +1,5 @@
 import AppKit
 
-/// The window owner's key-view loop (WindowKeyViewLoop) with the production
-/// sidebar linker (SidebarAccessibility.link, as SidebarView.linkKeyViews calls
-/// it) and a stand-in page side: split panes with engine-like page hosts, a
-/// closed capture loop, find, an extension panel, parked panes, Library, a
-/// popup bar; then the window's production exclusions with a preview card and
-/// a Peek. Tab paths go through the window's own selectNextKeyView: and
-/// selectPreviousKeyView:, which Chromium's TakeFocus calls.
 @main @MainActor struct SidebarWindowKeyLoopTests {
     static var count = 0
     static func check(_ value: @autoclosure () -> Bool, _ message: String) {
@@ -28,8 +21,6 @@ import AppKit
         let header1 = Stop("header1", NSRect(x: 10, y: 4, width: 200, height: 24)), close1 = Stop("close1", NSRect(x: 230, y: 4, width: 24, height: 24))
         pane1.addSubview(close1); pane1.addSubview(header1)
         AppKitLoop.compute(window, from: header1)
-        //
-        // Tab past its last element stays in it [C].
         let page1 = StandInPage(frame: NSRect(x: 0, y: 30, width: 260, height: 650)); pane1.addSubview(page1)
         check(page1.renderer.nextValidKeyView == nil && page1.renderer.previousValidKeyView == nil,
               "a page added after the window's loop has no way out")
@@ -78,8 +69,6 @@ import AppKit
               && capture.cancel.nextKeyView === capture && capture.previousKeyView === capture.cancel
               && capture.viewport.previousKeyView === capture, "page capture keeps its own loop")
         check(sidebar.keyViewExit === header1 && findDone.nextKeyView === sidebar.keyViewEntry, "the sidebar's ends join the page side's")
-        // Tab and Shift-Tab follow key views' links; a container's link from
-        // AppKit's computed loop is never on the way.
         func intoSidebar() -> [NSView] {
             descendants(of: root).filter { view in
                 SidebarAccessibility.takesFocus(view) && !view.isDescendant(of: container)
@@ -110,10 +99,6 @@ import AppKit
               "locked, Shift-Tab runs it backwards: \(tabs(from: header1, 14, backward: true))")
         check(tabs(from: page1.renderer, 1, backward: true) == ["close1"] && tabs(from: page2.renderer, 1, backward: true) == ["infobar"],
               "Shift-Tab leaves a page from its renderer, not into its forwarding host")
-        // AppKit's computed loop (a window's first show, before any capture)
-        // runs through every view, containers too [C]; becoming key links both
-        // sides again, and the sidebar's moved ways in keep the gate's way back
-        // from the page side.
         capture.removeFromSuperview()
         window.recalculateKeyViewLoop()
         check(findDone.nextKeyView !== sidebar.keyViewEntry && sidebar.plus.nextKeyView !== header1,
@@ -126,9 +111,6 @@ import AppKit
         page1.addSubview(capture); loop.relink()
         check(tabs(from: sidebar.plus, 14) == locked && capture.nextKeyView === capture.viewport && capture.cancel.nextKeyView === capture
               && capture.previousKeyView === capture.cancel, "a capture opened later keeps its loop through relinks")
-        // Page capture's portrait card (PortraitCaptureView) loops its controls
-        // among themselves inside a container that takes no focus: kept, and
-        // out of the page side.
         let portrait = Flipped(frame: NSRect(x: 20, y: 40, width: 200, height: 120)); pane2.addSubview(portrait)
         let shoot = Stop("shoot", NSRect(x: 10, y: 8, width: 100, height: 24))
         let shade = Stop("shade", NSRect(x: 10, y: 40, width: 100, height: 24)), quit = Stop("quit", NSRect(x: 10, y: 80, width: 100, height: 24))
@@ -140,20 +122,16 @@ import AppKit
         check(tabs(from: sidebar.plus, 14) == locked, "the page side passes the portrait card: \(tabs(from: sidebar.plus, 14))")
         portrait.removeFromSuperview(); loop.relink()
 
-        // Hidden: the sidebar waits unhidden off-screen and its gate leads
-        // straight out, so both directions pass it.
         container.frame.origin.x = -238; sidebar.isPresented = false
         let pageLoop = Array(locked.prefix(9))
         check(tabs(from: findDone, 10) == pageLoop + ["header1"], "hidden, Tab from the page side's end returns to its start: \(tabs(from: findDone, 10))")
         check(tabs(from: header1, 10, backward: true) == pageLoop.reversed() + ["findDone"],
               "hidden, Shift-Tab from its start returns to its end: \(tabs(from: header1, 10, backward: true))")
-        // No sidebar (Library, popup, tab full screen): its container is hidden.
         sidebar.isPresented = true; container.isHidden = true; sidebar.isPresented = false
         check(tabs(from: findDone, 10) == pageLoop + ["header1"] && tabs(from: header1, 1, backward: true) == ["findDone"],
               "without a sidebar the page side loops on itself")
         container.isHidden = false; container.frame.origin.x = 0; sidebar.isPresented = true
 
-        // Pane changes (split to one pane, a new pane): the next layout's link.
         pane2.removeFromSuperview(); pane1.frame.size.width = 520
         let pane3 = Flipped(frame: NSRect(x: 0, y: 0, width: 520, height: 680)); parked.addSubview(pane3)
         let header3 = Stop("header3", NSRect(x: 10, y: 4, width: 200, height: 24)); pane3.addSubview(header3)
@@ -165,7 +143,6 @@ import AppKit
         loop.relink()
         check(tabs(from: page1.renderer, 2) == ["header3", "renderer"] && intoSidebar().isEmpty, "an added pane joins in place")
 
-        // A renderer swapped in by the engine relinks when it takes focus.
         let swapped = Stop("swapped", page1.renderer.frame)
         page1.renderer.removeFromSuperview(); page1.contents.addSubview(swapped, positioned: .below, relativeTo: nil)
         page1.contents.nextKeyView = swapped
@@ -175,7 +152,6 @@ import AppKit
         check(tabs(from: swapped, 1) == ["header3"] && tabs(from: swapped, 1, backward: true) == ["close1"],
               "focus reaching it relinks the page side")
 
-        // Library at the leading edge and a popup's bar above lead the page side.
         let library = Flipped(frame: NSRect(x: 0, y: 0, width: 228, height: 700)); root.addSubview(library)
         let librarySearch = Stop("library", NSRect(x: 10, y: 40, width: 200, height: 24)); library.addSubview(librarySearch)
         container.isHidden = true; sidebar.isPresented = false
@@ -189,9 +165,6 @@ import AppKit
         check(sidebar.keyViewExit === popupBack && tabs(from: findDone, 1) == ["popupBack"], "a popup's bar starts the page side")
         check(intoSidebar().isEmpty, "the window owner never links into other sidebar members")
 
-        // Without the page rule a forwarding host is a stop: Shift-Tab from its
-        // renderer reaches the host, which hands focus straight back (async, as
-        // page_host.mm does).
         let plain = WindowKeyViewLoop.pageSide(in: root, excluded: { $0 === container || $0 === parked }, isPage: { _ in false })
         check(plain.contains { $0 === panel.host }, "without the page rule the host is a stop")
         WindowKeyViewLoop.link(plain, to: sidebar.keyViewEntry)
@@ -204,8 +177,6 @@ import AppKit
         print("Sidebar window key-view loop checks: \(count) passed")
     }
 
-    /// BrowserWindowController's exclusions (`windowExcludes`, with the Peek's
-    /// host passing through) over a pane, a production preview card and a Peek.
     static func previewsAndPeek() {
         let window = NSWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 1000, height: 700),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
@@ -235,10 +206,6 @@ import AppKit
         loop.relink()
         check(names(side()) == ["header", "renderer"], "the page side without a card or Peek: \(names(side()))")
 
-        // A sidebar preview card is a root subview beside the row it previews.
-        // Live, retired or still animating out, it is off the page side: Tab
-        // from the page's end reaches the sidebar's gate, Shift-Tab from the
-        // sidebar's first control the page's end, never a card control.
         let card = SidebarPreviewSurface(frame: NSRect(x: 236, y: 120, width: 260, height: 300))
         let create = Stop("cardCreate", NSRect(x: 12, y: 12, width: 24, height: 24)), search = Stop("cardSearch", NSRect(x: 44, y: 12, width: 180, height: 24))
         card.content.addSubview(create); card.content.addSubview(search)
@@ -259,10 +226,6 @@ import AppKit
               "without the card rule its controls would join the page side")
         card.removeFromSuperview()
 
-        // A Peek covers the page host above the pane it dims; its host takes
-        // focus only for Escape. While it is up, the pane and its renderer are
-        // off the page side and the host is no stop; Tab runs the Peek's
-        // controls and page between the sidebar's ends.
         let peekView = PeekLike(frame: pageHost.bounds)
         pageHost.addSubview(peekView, positioned: .above, relativeTo: nil); peek = peekView
         loop.relink()
@@ -292,23 +255,18 @@ import AppKit
     static func descendants(of view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants(of: $0) } }
 }
 
-/// Stands in for the window's first display, when AppKit computes its loop.
 @MainActor enum AppKitLoop {
     static func compute(_ window: NSWindow, from view: NSView) { _ = window.makeFirstResponder(view); window.recalculateKeyViewLoop() }
 }
 
 private class Flipped: NSView { override var isFlipped: Bool { true } }
 
-/// A control that takes focus without Full Keyboard Access.
 private final class Stop: NSView {
     init(_ name: String, _ frame: NSRect) { super.init(frame: frame); identifier = .init(name) }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override var acceptsFirstResponder: Bool { true }
 }
 
-/// PCBrowserView over the engine's page host (page_host.mm): the host takes
-/// focus while its renderer does and hands it on later; the renderer, the
-/// contents' first child, is linked from its contents as Chromium links it.
 private final class StandInPage: Flipped {
     let host = ForwardingHost(), contents = Flipped(), renderer = Stop("renderer", .zero)
     init(frame: NSRect, infobar: Bool = false) {
@@ -331,7 +289,6 @@ private final class ForwardingHost: Flipped {
         return true
     }
 }
-/// PageCaptureController's overlay: its own closed loop.
 private final class CaptureLike: Flipped {
     let viewport = Stop("viewport", NSRect(x: 10, y: 10, width: 40, height: 20)), cancel = Stop("cancel", NSRect(x: 60, y: 10, width: 40, height: 20))
     override init(frame: NSRect) {
@@ -343,8 +300,6 @@ private final class CaptureLike: Flipped {
     override var acceptsFirstResponder: Bool { true }
 }
 
-/// PeekHostView: a host that takes focus for Escape, over the pane it dims,
-/// holding the Peek's controls and page.
 private final class PeekLike: Flipped {
     let close = Stop("peekClose", NSRect(x: 40, y: 20, width: 32, height: 32))
     let page = StandInPage(frame: NSRect(x: 90, y: 20, width: 620, height: 640))
@@ -353,9 +308,6 @@ private final class PeekLike: Flipped {
     override var acceptsFirstResponder: Bool { true }
 }
 
-/// SidebarView's ends and chain: a gate that never takes focus, header
-/// controls, the list stop (itself), "+"; linked by the production helper
-/// whenever its exit or presentation changes, as its layout does.
 private final class StandInSidebar: Flipped, SidebarKeyViewEnds {
     let gate = NSView(), toggle = Stop("toggle", NSRect(x: 76, y: 7, width: 32, height: 32))
     let address = Stop("address", NSRect(x: 8, y: 46, width: 212, height: 36)), plus = Stop("plus", NSRect(x: 188, y: 650, width: 32, height: 32))

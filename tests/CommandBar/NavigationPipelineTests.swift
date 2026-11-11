@@ -1,8 +1,5 @@
 import AppKit
 
-// Engine publications are inert reference objects, so these tests can assert
-// that the exact request survives the production pipeline without a browser,
-// a Profile, a network request or a synthetic URL-classification algorithm.
 final class PCNativeSearchNavigation {
     let url: URL
     let search: Bool
@@ -142,10 +139,6 @@ struct TabCandidatesFixture {
             return f
         }
 
-        // A pristine compact field displays the selected current URL but ranks
-        // zero-query suggestions. Clearing it also ranks zero-query suggestions;
-        // the fingerprint must still discard the old URL, without depending on
-        // a newer native answer or a change in the provider's error state.
         for providerError in [nil, "Suggestions unavailable"] as [String?] {
             let f = compact("https://current.example/")
             f.nativeError = providerError; f.refreshResults()
@@ -177,9 +170,6 @@ struct TabCandidatesFixture {
         recents.submitSelection(.ordinary)
         expect(recents.submitted?.result.input == "https://recent.example/", "Return after clearing selects an actual recent page")
 
-        // Local tabs are URL suggestions in the compact editor, but exact-ID
-        // switches in the full palette. Notes, Easels and app commands remain
-        // available in that full palette and do not leak into address editing.
         let websiteTab = tab("https://example.com/", title: "Example")
         let note = CommandBarDocument(kind: .note, id: UUID(), title: "Example Note")
         let easel = CommandBarDocument(kind: .easel, id: UUID(), title: "Example Easel")
@@ -213,9 +203,6 @@ struct TabCandidatesFixture {
             expect(f.results.first?.navigation === request, "both surfaces retain the original native search request")
         }
 
-        // Use the shell's real candidate filter: other Spaces in this Profile
-        // participate; current, archived, closing, transferring and other
-        // Profile tabs cannot replace the native destination.
         var candidates = TabCandidatesFixture()
         let current = tab("https://www.google.com/")
         var anotherSpace = tab(current.url); anotherSpace.spaceID = UUID()
@@ -230,8 +217,6 @@ struct TabCandidatesFixture {
         candidates.isPopupWindow = true
         expect(candidates.commandBarTabs(profileID: profile, excluding: current.id).isEmpty, "popups cannot switch sidebar tabs")
 
-        // Every native type we previously filtered can be the first provider
-        // result. Presentation must not silently promote the next search.
         for type in ["url-what-you-typed", "history-url", "history-title", "navsuggest", "bookmark-title",
                      "navsuggest-personalized", "history-body", "history-embeddings", "future-navigation-type"] {
             for alreadyOpen in [false, true] {
@@ -249,8 +234,6 @@ struct TabCandidatesFixture {
                        "Return preserves the \(type) website target")
             }
         }
-        // A newer publication can have identical text and URL but different
-        // request, scope and completion/deletion identities.
         let updated = NavigationFixture(), query = "youtube.com"
         updated.editState.edit(query)
         let first = PCNativeSearchNavigation("https://www.youtube.com/", title: query)
@@ -282,8 +265,6 @@ struct TabCandidatesFixture {
                 f.editState.edit(query)
                 let website = PCNativeSearchNavigation(url, title: "Website")
                 f.tabs = (0..<tabCount).map { _ in tab(url) }
-                // A previous accidental search must not win merely because
-                // its title starts with the exact input.
                 f.tabs.append(tab(search(query).url.absoluteString, title: query + " - Google Search"))
                 f.topDomainList = CommandBarRanking.topDomains([(url, "Website"), (url, "Website")])
                 f.publish([website, search(query)], input: query)
@@ -317,8 +298,6 @@ struct TabCandidatesFixture {
             f.publish([website, search(url)], input: url)
             expect(f.results.first?.navigation === website, "a different path, port, query or fragment does not consume the website default")
         }
-        // Genuine search input is classified by the engine, never guessed by
-        // an app-side dot/URL heuristic, including search terms containing dots.
         for query in ["weather tomorrow", "google.com reviews", "version 1.2.3", "name@example.com"] {
             let f = NavigationFixture(); f.editState.edit(query)
             let request = search(query)
@@ -340,8 +319,6 @@ struct TabCandidatesFixture {
             expect(f.submitted?.result.input == literal.trimmingCharacters(in: .whitespacesAndNewlines),
                    "no provider answer: Return sends the current literal input to the real classifier")
         }
-        // Return before providers answer must use the current literal input;
-        // an explicit selection of an older visible row keeps that intent.
         for disposition in [CommandBarSubmission.ordinary, .background, .split] {
             for explicit in [false, true] {
                 let f = NavigationFixture(); f.editState.edit("you")
@@ -355,8 +332,6 @@ struct TabCandidatesFixture {
                        "pending answer: explicit=\(explicit) preserves the correct Return input")
             }
         }
-        // Extension positions share the original native order. They must not
-        // lose priority or turn into website navigation while filtering.
         let extensionFirst = NavigationFixture(); extensionFirst.editState.edit("keyword")
         let action = PCNativeOmniboxExtensionAction(index: 0)
         extensionFirst.extensionActions = [action]

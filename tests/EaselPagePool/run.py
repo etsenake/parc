@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Actual pool/AppKit/session component with an injected engine boundary only."""
 from pathlib import Path
 import subprocess,hashlib,json,sys,time,shutil
 root=Path(__file__).resolve().parents[2]

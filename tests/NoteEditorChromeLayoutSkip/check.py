@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""P1-G leftover: NoteEditorViewController skips layoutDocument chrome work when
-the document chrome geometry fingerprint already matches. Typing must not set
-needsLayout every keystroke; real bounds/error-footer changes and document
-height reflow still layout. NoteStore persist encode stays out of scope.
-"""
 from pathlib import Path
 import re
 
@@ -54,7 +49,6 @@ assert "view.needsLayout = true" not in change_body, \
 assert "layoutDocument()" in change_body, \
     "textDidChange must still layout via layoutDocument (fingerprint skip + reflow)"
 
-# Freestanding unit mirrors the production skip predicate.
 assert "previous == next" in unit, \
     "NoteEditorChromeLayoutSkipTests must mirror the production shouldSkip formula"
 assert "struct NoteEditorChromeFingerprint: Equatable" in unit, \

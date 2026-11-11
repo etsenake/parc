@@ -1,7 +1,5 @@
 import AppKit
 
-/// Real model transactions and an inert native header/menu. No browser, engine,
-/// displayed window, system input dispatch or real profile data is used.
 @main @MainActor struct SpaceManagementTests {
     static var count = 0
     static func check(_ value: @autoclosure () throws -> Bool, _ message: String) throws {

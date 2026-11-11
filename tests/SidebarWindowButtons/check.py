@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""the sidebar traffic lights (WindowStandardButtons) on production AppKit components.
-
-Off-screen titled windows, never made key; no browser, input or preferences.
-"""
 from pathlib import Path
 import subprocess
 import tempfile

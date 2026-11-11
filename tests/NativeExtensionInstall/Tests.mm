@@ -89,20 +89,15 @@ static NSView* View(NSView* root, NSString* className) {
 static BOOL Near(CGFloat a, CGFloat b) {
   return std::abs(a - b) < .01;
 }
-//
-// content-sized up to 113 points, and 28 points above the panel's bottom.
 static void ExpectDialogFrame(NSWindow* sheet, NSScrollView* scroll) {
   NSView* root = sheet.contentView;
   NSButton* add = Button(root, @"Add Extension");
   EXPECT(Near(NSHeight(scroll.frame),
               std::min<CGFloat>(NSHeight(scroll.documentView.frame), 113)));
   EXPECT(Near(NSMinY(add.frame) + .5, NSMaxY(scroll.frame) + 8));
-  // The window rounds the content height to a whole point.
   EXPECT(std::abs(NSHeight(root.frame) - (NSMinY(add.frame) + .5 + 36 + 28)) < 1);
   EXPECT(NSEqualSizes(sheet.frame.size, root.frame.size));
 }
-// The content view itself paints the panel; an attached sheet's own material
-// would otherwise show through.
 static BOOL Fill(NSWindow* sheet, CGFloat x, CGFloat y, int r, int g, int b) {
   NSView* root = sheet.contentView;
   NSBitmapImageRep* rep = [root bitmapImageRepForCachingDisplayInRect:root.bounds];
@@ -238,7 +233,6 @@ int main() {
     [p invalidate];
     Pump();
     EXPECT(results == 1);
-    // Escape is cancellation, never acceptance; no repeat callback.
     p = Make(
         w,
         ^BOOL {
@@ -256,7 +250,6 @@ int main() {
     [p invalidate];
     Pump();
     EXPECT(results == 2);
-    // Closing, navigation/identity changes, and hidden parents interrupt.
     __block BOOL valid = YES;
     p = Make(
         w,
@@ -287,7 +280,6 @@ int main() {
     Pump();
     EXPECT(results == 4 && choice == PCExtensionInstallInterrupted && !p.sheet);
     [w orderFront:nil];
-    // Actual native close cancels pending consent exactly once.
     p = Make(
         w,
         ^BOOL {
@@ -303,8 +295,6 @@ int main() {
     Pump();
     EXPECT(results == 5 && choice == PCExtensionInstallInterrupted);
     w = Window();
-    // Occlusion prevents both button activation and direct action dispatch,
-    // then starts a fresh 500ms delay after unobstructed visibility.
     __block BOOL input = NO;
     p = Make(
         w,
@@ -326,13 +316,10 @@ int main() {
     EXPECT(!add.enabled);
     Pump(.5);
     EXPECT(add.enabled);
-    // Recheck between click and deferred callback; don't grant a stale
-    // decision.
     [add performClick:nil];
     input = NO;
     Pump();
     EXPECT(results == 6 && choice == PCExtensionInstallInterrupted);
-    // Close before scheduled attachment, including repeated invalidation.
     p = Make(
         w,
         ^BOOL {
@@ -348,7 +335,6 @@ int main() {
     Pump();
     EXPECT(results == 7 && choice == PCExtensionInstallInterrupted &&
            !w.attachedSheet);
-    // Reentrant validation cannot attach after invalidation.
     __block PCExtensionInstallPresenter* reentrant = nil;
     reentrant = Make(
         w,
@@ -364,7 +350,6 @@ int main() {
     Pump();
     EXPECT(results == 8 && !reentrant.sheet && !w.attachedSheet);
     reentrant = nil;
-    // An unrelated attached sheet is never displaced.
     NSWindow* other =
         [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 200, 100)
                                     styleMask:NSWindowStyleMaskTitled
@@ -387,9 +372,6 @@ int main() {
     [w endSheet:other];
     [other orderOut:nil];
     Pump();
-    // Ordinary education is configured from actual install inputs. Missing
-    // artwork still explains the destination; an empty permission set is not
-    // represented as a blank permission list or a successful installation.
     p = [[PCExtensionInstallPresenter alloc] initWithWindow:w
         title:@"Upstream install" icon:nil heading:@"Upstream permissions"
         permissions:@[] details:@[] acceptLabel:@"Add" cancelLabel:@"Cancel"
@@ -416,12 +398,10 @@ int main() {
     EXPECT(Text(p.sheet.contentView, @"It can:"));
     EXPECT(Text(p.sheet.contentView, @"Read browsing history"));
     EXPECT(Text(p.sheet.contentView, @"example.test"));
-    //
     scroll = Scroll(p.sheet.contentView);
     EXPECT(scroll.frame.size.height > 0 && scroll.frame.size.height < 113);
     EXPECT(View(p.sheet.contentView, @"PCDialogFade").hidden);
     ExpectDialogFrame(p.sheet, scroll);
-    // PopoverBackground follows the window's appearance, edge to edge.
     const NSSize panel = p.sheet.contentView.bounds.size;
     EXPECT(Fill(p.sheet, 2, 2, 21, 28, 48));
     EXPECT(Fill(p.sheet, panel.width - 2, panel.height - 2, 21, 28, 48));
@@ -430,14 +410,11 @@ int main() {
     w.appearance = nil;
     add = Button(p.sheet.contentView, @"Add Extension");
     EXPECT(!add.enabled && [add.keyEquivalent isEqual:@"\r"]);
-    // Return, like the button, is inert during Chromium's input delay.
     EXPECT(!Key(p.sheet, @"\r", 36, Uptime()));
     Pump();
     EXPECT(results == 10);
     Pump(.5);
     EXPECT(add.enabled);
-    // Obstruction refuses Return before the button's state catches up, then
-    // restarts the delay.
     input = NO;
     EXPECT(Key(p.sheet, @"\r", 36, Uptime()));
     Pump();
@@ -447,8 +424,6 @@ int main() {
     const NSTimeInterval earlyPress = Uptime();
     Pump(.45);
     EXPECT(add.enabled);
-    // Neither a held Return's repeat nor a Return pressed during the delay
-    // accepts once the delay ends.
     EXPECT(Key(p.sheet, @"\r", 36, Uptime(), YES));
     EXPECT(Key(p.sheet, @"\r", 36, earlyPress));
     Pump();
@@ -484,7 +459,6 @@ int main() {
     Pump();
     EXPECT(fade.hidden);
     for (NSView* label in scroll.documentView.subviews) {
-      // NSTextField's drawing frame includes its native alignment insets.
       EXPECT([label alignmentRectForFrame:label.frame].size.width <=
              scroll.contentView.bounds.size.width);
     }
@@ -492,7 +466,6 @@ int main() {
     [p invalidate];
     Pump();
     EXPECT(results == 12 && choice == PCExtensionInstallInterrupted);
-    // Enterprise justification: Parc's card editor, live counter, no Return accept.
     results = 0;
     p = [[PCExtensionInstallPresenter alloc]
         initWithWindow:w
@@ -572,7 +545,6 @@ int main() {
     Pump();
     EXPECT(results == 1 && choice == PCExtensionInstallCancel);
     [p invalidate];
-    // Parent approval: secure field on Parc's card, growing error, cleared credential.
     results = 0;
     __block NSInteger submittedParent = -1;
     __block NSString* submitted = nil;

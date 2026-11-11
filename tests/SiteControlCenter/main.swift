@@ -14,14 +14,12 @@ struct SiteControlCenterChecks {
         expect(SiteControlCenterArtwork.directory == Bundle.main.resourceURL?.appendingPathComponent("SiteControlCenter", isDirectory: true)
                && SiteControlCenterArtwork.controlCenter != nil, "the artwork loads from the bundle's SiteControlCenter resources")
 
-        //
         expect(SiteControlCenterMetrics.padding == SidebarPlusMenuView.inset && SiteControlCenterMetrics.width == 232,
                "the card keeps the tiles and spacing inside the plus HUD's edge inset")
         expect(SiteControlCenterMetrics.button == CGSize(width: 48, height: 32) &&
                SiteControlCenterMetrics.extensionIcon == 16 && SiteControlCenterMetrics.pin == 14,
                "extension tiles stay the 48×32 with a 16-point icon and 14-point pin")
 
-        //
         for (name, size) in [("icon-control-center", NSSize(width: 18, height: 18)),
                              ("copy-url", NSSize(width: 19, height: 19)),
                              ("capture-full-page", NSSize(width: 19, height: 19))] {
@@ -34,8 +32,6 @@ struct SiteControlCenterChecks {
         expect(SiteControlCenterArtwork.controlCenter === SiteControlCenterArtwork.image("icon-control-center"),
                "the entry glyph is the cached catalog image")
 
-        //
-        // capture. All three capture modes remain directly discoverable.
         let model = SiteControlCenterModel()
         expect(model.buttons == [.share, .copyURL], "without capture only Share and Copy URL remain")
         model.captureAvailable = true
@@ -50,7 +46,6 @@ struct SiteControlCenterChecks {
         expect(model.help(.captureVisiblePage) == "Capture the visible area" && model.help(.captureFullPage) == "Capture the full page",
                "capture hints identify the actual acquisition mode")
 
-        // The extension picker moves through the order and wraps.
         func ext(_ id: String, pinned: Bool = false) -> SiteControlCenterModel.Extension {
             .init(id: id, name: "Extension " + id, tooltip: "", accessibilityLabel: "", icon: nil, isPinned: pinned, canChangePin: true)
         }
@@ -70,7 +65,6 @@ struct SiteControlCenterChecks {
         model.extensions = [ext("a", pinned: true), ext("b"), ext("c"), ext("d"), ext("e")]
         model.focusedExtension = nil
 
-        // Original physical-key routing, tested without sending browser input.
         typealias Input = SiteControlCenterController.PickerInput
         for code: UInt16 in [123, 126] {
             expect(Input.resolve(type: .keyDown, keyCode: code, modifiers: .command) == .previous, "left/up move backward")
@@ -86,7 +80,6 @@ struct SiteControlCenterChecks {
         expect(Input.resolve(type: .flagsChanged, keyCode: 56, modifiers: [.command, .shift]) == .cancel,
                "another held-Command modifier change cancels rather than inventing navigation")
 
-        //
         model.settings = [
             .init(id: "developerMode", symbol: "hammer.fill", symbolSize: 13, symbolWeight: .medium, title: "Developer Mode",
                   subtitle: "Off", isOn: false, isEnabled: true),
@@ -99,9 +92,6 @@ struct SiteControlCenterChecks {
         expect(host.fittingSize.width == 232, "the hosted content is exactly 232 points wide")
         let full = host.fittingSize.height
 
-        //
-        // overlaid anchors carry the titles and commands, and pass the
-        // pointer through to the SwiftUI buttons. The window is never shown.
         let tooltipWindow = NSWindow(contentRect: NSRect(origin: .zero, size: host.frame.size), styleMask: .borderless,
                                      backing: .buffered, defer: false)
         tooltipWindow.isReleasedWhenClosed = false
@@ -128,8 +118,6 @@ struct SiteControlCenterChecks {
         tooltipWindow.contentView = nil
         tooltipWindow.close()
 
-        // The pinned strips' top-right badge on a tile: only over an engine's
-        // unbadged canvas, framed by their metrics in the 48 × 32 tile.
         do {
             let badge = ExtensionActionBadge(text: "12", textColor: .white, backgroundColor: .systemBlue)
             let badged = SiteControlCenterModel()
@@ -167,8 +155,6 @@ struct SiteControlCenterChecks {
         let twoRows = NSHostingView(rootView: SiteControlCenterView(model: model)).fittingSize
         expect(twoRows.height == bare.height + 32 + 8, "a fifth item (Add Extension) starts a second 32-point row 8 points below")
 
-        // The plus HUD's placement under the button: centred, the tail on the
-        // button's midpoint, inside the parent window, flipped without room.
         let button = CGRect(x: 500, y: 700, width: 32, height: 32)
         let parentFrame = CGRect(x: 0, y: 0, width: 1200, height: 900)
         let hung = SiteControlCenterPlacement.windowFrame(anchor: button, card: CGSize(width: 232, height: 300), below: true,
@@ -184,8 +170,6 @@ struct SiteControlCenterChecks {
                                                          card: CGSize(width: 232, height: 300), below: true,
                                                          parent: parentFrame, screen: parentFrame)
         expect(!low.below && low.frame.minY == 132, "without room below, the card opens above the button")
-        // Every anchor (sidebar URL bar, top toolbar, a split pane's bar) keeps
-        // the card on screen and in the window's part on it.
         let screen = CGRect(x: 0, y: 0, width: 1440, height: 875)
         let offRight = SiteControlCenterPlacement.windowFrame(anchor: CGRect(x: 1420, y: 800, width: 32, height: 32),
                                                               card: CGSize(width: 232, height: 300), below: true,
@@ -207,7 +191,6 @@ struct SiteControlCenterChecks {
         expect(tall.below && tall.frame.maxY == 560 && tall.frame.minY >= screen.minY,
                "a card taller than the window hangs past it but stays on screen")
 
-        // The plus HUD's chrome: the tail above the card or below it.
         let content = NSView(frame: .zero)
         let colors = SiteControlCenterColors(theme: SpaceTheme()).menu
         let top = PArcMenuChrome(content: content, size: NSSize(width: 232, height: 100), colors: colors, tailX: 116, tailOnTop: true)
@@ -220,7 +203,6 @@ struct SiteControlCenterChecks {
         expect(menu.frame.origin.y == SidebarPlusMenuPlacement.tailHeight && plus.tailTip == NSPoint(x: 50, y: 0),
                "the plus HUD keeps its card above a tail pointing down")
 
-        // Escape closes the card, as the plus HUD does.
         let card = SiteControlCenterCard(content: NSView(frame: .zero), colors: colors)
         var escaped = 0
         card.onEscape = { escaped += 1 }
@@ -240,9 +222,6 @@ struct SiteControlCenterChecks {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         expect(after == 1, "an after-close action runs once the card has gone")
 
-        // A closing card's exit animation is the barrier: the owner releases
-        // its controller as closing starts, and only the last action runs
-        // once every card has gone.
         final class Closing: SiteControlCenterPresentation {
             var isAwaitingNativeClose = true
             var onDidClose: (() -> Void)?
@@ -252,9 +231,6 @@ struct SiteControlCenterChecks {
                 let done = onDidClose; onDidClose = nil; done?()
             }
         }
-        // The production window coordinator survives current-session cleanup.
-        // A second action waits behind all still-closing native presentations;
-        // an ordinary dismissal also cancels after didClose, before dispatch.
         let dismissal = SiteControlCenterDismissal()
         func beginNativeClose() -> Closing {
             let card = Closing()
@@ -295,8 +271,6 @@ struct SiteControlCenterChecks {
         RunLoop.main.run(until: Date().addingTimeInterval(0.02))
         expect(dispatched == 2, "all original native barriers finish before the replacement action dispatches")
 
-        // Capture remembers its original document/window/Profile/Space through
-        // the native close barrier, even after the visible controller is gone.
         var ownerRevision = 1
         let changingOwner = beginNativeClose()
         dismissal.close(nil, when: { ownerRevision == 1 }) { dispatched += 100 }
@@ -313,7 +287,6 @@ struct SiteControlCenterChecks {
         dismissal.close(nil, when: { ownerRevision == 3 }) { dispatched += 1 }
         expect(dispatched == 3, "The original current owner still executes once when the barrier is clear")
 
-        // WEB19: the address pill's delayed show.
         let delayed = SiteControlCenterController(model: SiteControlCenterModel())
         var delayedClosed = 0
         delayed.onClose = { delayedClosed += 1 }
@@ -322,7 +295,7 @@ struct SiteControlCenterChecks {
         expect(delayed.isShown && !delayed.isAwaitingNativeClose, "a pending address-pill show counts as shown before the card opens")
         delayed.close()
         expect(!delayed.isShown && delayedClosed == 1, "closing cancels the pending show and cleans up once")
-        delayed.onClose = { delayedClosed += 100 } // a stale block reaching close() would fire this
+        delayed.onClose = { delayedClosed += 100 }
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         expect(!delayed.isShown && !delayed.isAwaitingNativeClose && delayedClosed == 1,
                "a stale delayed show neither opens nor ends anything")
@@ -333,7 +306,6 @@ struct SiteControlCenterChecks {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         expect(!windowless.isShown && windowlessClosed == 1, "an anchor that left its window ends the session instead of opening")
 
-        // An owner lost during the delay must not present the pending card.
         let ownerWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 40, height: 40),
                                    styleMask: [.titled], backing: .buffered, defer: false)
         let ownedAnchor = NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
@@ -371,11 +343,9 @@ struct SiteControlCenterChecks {
                       expectedWindow: ownerWindow, when: { true })
         expect(!mismatch.isShown && mismatchClosed == 1, "a mismatched immediate anchor cannot show")
 
-        // Ordinary clicks pass through the secondary-click layer.
         let click = SiteControlCenterAlternateClick.ClickView(frame: NSRect(x: 0, y: 0, width: 10, height: 10))
         expect(click.hitTest(NSPoint(x: 5, y: 5)) == nil, "without a secondary click the layer is transparent")
 
-        // The real controller over an off-screen parent; the app never activates.
         NSApplication.shared.setActivationPolicy(.prohibited)
         final class Anchor: NSView {
             var onDown: (() -> Void)?, onUp: (() -> Void)?
@@ -442,7 +412,6 @@ struct SiteControlCenterChecks {
             if path != "parent-close" { parent.close() }
         }
 
-        // The press on the button that closed the card does not reopen it.
         do {
             let (parent, anchor) = parentAndAnchor()
             let first = SiteControlCenterController(model: SiteControlCenterModel())
@@ -477,8 +446,6 @@ struct SiteControlCenterChecks {
         expect(!NSApp.windows.contains { $0 is SiteControlCenterWindow && $0.isVisible },
                "no delayed or refused show left a card open")
 
-        // Rows arriving after opening re-hang the card from a moved button;
-        // the hosted buttons keep keyboard focus through the swap.
         do {
             let (parent, button) = parentAndAnchor()
             button.frame.origin.x = 520
@@ -500,8 +467,6 @@ struct SiteControlCenterChecks {
             parent.close()
         }
 
-        // Synthetic presses on the real card: a drag from a tile is the tile's,
-        // a drag from the background past 3 points tears the card off.
         do {
             let (parent, button) = parentAndAnchor()
             let pressed = SiteControlCenterModel()

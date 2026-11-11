@@ -17,7 +17,6 @@ import SwiftUI
         return near(r, white) && near(g, white) && near(b, white) && near(a, alpha)
     }
 
-    /// Draws `view` into a clear 2x bitmap; nothing is shown on screen.
     static func capture(_ view: NSView) -> NSBitmapImageRep {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * 2), pixelsHigh: Int(view.bounds.height * 2),
                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -31,7 +30,6 @@ import SwiftUI
         for y in 0..<rep.pixelsHigh { for x in 0..<rep.pixelsWide { best = max(best, rep.colorAt(x: x, y: y)!.alphaComponent) } }
         return best
     }
-    /// Runs `draw` into a clear 2x bitmap of `size` points.
     static func render(_ size: NSSize, _ draw: () -> Void) -> NSBitmapImageRep {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -51,7 +49,6 @@ import SwiftUI
 
     static func main() {
         NSApplication.shared.setActivationPolicy(.prohibited)
-        //
         typealias Chrome = SidebarChromeLayout
         check(Chrome.navigationGlyphPointSize == 16 && Chrome.narrowNavigationGlyphPointSize == 14, "16 and 14 points")
         check(Chrome.navigationGlyphPointSize(buttonSide: 32) == 16, "regular 32-point buttons use `_32`")
@@ -63,7 +60,6 @@ import SwiftUI
         check(narrow.back.map { Chrome.navigationGlyphPointSize(buttonSide: $0.height) } == 14, "the narrow row draws 14-point glyphs")
         check(Chrome.addressFontSize == 13 && Chrome.addressTextIndent == 12, "CommandBarPlaceholderTextView 13 points")
 
-        // NavigationControlArtwork.symbol: SwiftUI-rasterized templates.
         let regular = NavigationControlArtwork.symbol("arrow.left", pointSize: 16)
         let small = NavigationControlArtwork.symbol("arrow.left", pointSize: 14)
         check(regular?.isTemplate == true && regular?.representations.count == 2, "1x and 2x template")
@@ -72,7 +68,6 @@ import SwiftUI
         check((small?.size.width ?? 99) < (regular?.size.width ?? 0), "14 points draws smaller than 16")
         check(NavigationControlArtwork.symbol("arrow.left", pointSize: 16) === regular, "cached per symbol and size")
 
-        // TranslucentButtonColors.standard: GrayA4/5/8/11/12, black in Aqua, white in Dark Aqua.
         let light = TranslucentButtonColors.standard(dark: false), dark = TranslucentButtonColors.standard(dark: true)
         check(gray(light.foreground, white: 0, alpha: 0.565) && gray(dark.foreground, white: 1, alpha: 0.592), "GrayA11 rest")
         check(gray(light.disabledForeground, white: 0, alpha: 0.220) && gray(dark.disabledForeground, white: 1, alpha: 0.249), "GrayA8 disabled")
@@ -81,7 +76,6 @@ import SwiftUI
         check(gray(light.pressedForeground, white: 0, alpha: 0.910) && gray(dark.pressedForeground, white: 1, alpha: 0.923), "GrayA12 pressed")
         check(light.background(hovered: true, pressed: true, enabled: false) == light.disabledBackground, "disabled wins")
 
-        // TranslucentButtonFace states (no window, so changes are immediate).
         check(TranslucentButtonFace.cornerRadius == 6 && TranslucentButtonFace.pressedScale == 0.95, "6-point corners, 0.95 press")
         check(TranslucentButtonFace.pressResponse == 0.3 && TranslucentButtonFace.pressDamping == 0.6, "press spring")
         check(TranslucentButtonFace.hoverDuration == 0.1, "0.1 s ease-in hover")
@@ -112,14 +106,12 @@ import SwiftUI
         check(TranslucentButtonFace.easeIn(0) == 0 && TranslucentButtonFace.easeIn(1) == 1, "ease-in ends")
         check(near(TranslucentButtonFace.easeIn(0.5), 0.3153, 0.001), "CAMediaTimingFunction easeIn midpoint")
 
-        // Pressed fill and scale drawn into a 2x bitmap.
         face.setHovered(true); face.setPressed(true)
         let pressed = drawFace()
         check(near(pressed.fill, 0.090, 0.01), "pressed GrayA5 fill")
         check(pressed.edge < 0.01, "0.95 press scale leaves the edge clear")
         check(pressed.tint.map { gray($0, white: 0, alpha: 0.910) } == true, "the glyph closure receives GrayA12")
 
-        // ReloadIcon press: π/2 about the centre, offset (1, 1); size follows the button.
         check(ReloadGlyph.pressedRotation == .pi / 2 && ReloadGlyph.pressedOffset == 1, "reload press transform")
         let glyph = ReloadGlyph(view: view, pointSize: 16, rasterized: true)
         func reloadInkWidth() -> Int {
@@ -130,7 +122,6 @@ import SwiftUI
         glyph.pointSize = 14
         check(regularWidth > 0 && reloadInkWidth() < regularWidth, "narrow reload re-renders at 14 points")
 
-        // CommandBarPlaceholderView rectangle: SidebarItemBackground / Hovered, 12-point continuous corners.
         check(SidebarAddressPillView.cornerRadius == 12 && SidebarAddressPillView.hoverDuration == 0.12, "12 points, 0.12 s")
         func p3(_ color: NSColor) -> (CGFloat, CGFloat, CGFloat, CGFloat) {
             let c = color.usingColorSpace(.displayP3)!
@@ -152,7 +143,6 @@ import SwiftUI
         check(pill.layer?.backgroundColor == SidebarAddressPillView.fill(dark: true, hovered: true).cgColor, "dark follows the palette")
         check(pill.hitTest(NSPoint(x: 10, y: 10)) == nil, "the surface takes no clicks")
 
-        // CommandBarPlaceholderButtonsView reveal: hovered || menu || !anchored.
         for hovered in [false, true] { for menu in [false, true] { for anchored in [false, true] {
             check(SidebarAddressButtonsReveal.revealed(sidebarHovered: hovered, showingMenu: menu, anchored: anchored)
                   == (hovered || menu || !anchored), "reveal predicate \(hovered) \(menu) \(anchored)")
@@ -167,7 +157,6 @@ import SwiftUI
         SidebarAddressButtonsReveal.apply(true, to: button, animated: true)
         check(button.alphaValue == 1, "reveal restores full opacity")
 
-        // The pane top bar keeps AppKit's vector reload; its disabled tint is a true half alpha.
         let toolbar = ReloadGlyph(view: view, pointSize: ReloadGlyph.toolbarPointSize, rasterized: false)
         let flipped = NSView(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
         func reloadAlpha(_ glyph: ReloadGlyph, _ tint: NSColor) -> CGFloat {
@@ -185,7 +174,6 @@ import SwiftUI
         check(near(reloadAlpha(sidebarReload, NSColor(white: 0, alpha: 0.565)), 0.565, 0.02), "GrayA11 reload keeps its alpha")
         check(near(reloadAlpha(sidebarReload, NSColor(white: 0, alpha: 0.910)), 0.910, 0.02), "GrayA12 reload keeps its alpha")
 
-        // TranslucentButton arrows: GrayA11 at rest, GrayA8 disabled, GrayA12 and the 3-point shift pressed.
         let backButton = NavigationControlButton("Go back", symbol: "arrow.left", history: true, glyphPointSize: 16)
         backButton.frame = NSRect(x: 0, y: 0, width: 32, height: 32)
         backButton.appearance = NSAppearance(named: .aqua)
@@ -199,13 +187,11 @@ import SwiftUI
         check(near(maxAlpha(pressedRep), 0.910, 0.03), "pressed arrow is GrayA12 over GrayA5")
         let shift = inkBounds(pressedRep, threshold: 0.5).minX - inkBounds(restRep, threshold: 0.5).minX
         check(shift < 0 && shift >= -6, "pressed Back moves left (3 points, scaled 0.95 about the centre)")
-        // Without a glyph size the toolbar's button keeps AppKit's symbol and its own 0.08/0.16 fill.
         let toolbarButton = NavigationControlButton("Go back", symbol: "arrow.left", history: true)
         toolbarButton.frame = backButton.frame; toolbarButton.appearance = NSAppearance(named: .aqua)
         toolbarButton.contentTintColor = .black
         check(maxAlpha(capture(toolbarButton)) > 0.97, "the toolbar's arrow keeps its opaque tint")
 
-        //
         let chevron = NavigationControlButton("Reload options", symbol: "chevron.down")
         chevron.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: "Refresh options button")
         chevron.windowControlStyle = true
@@ -223,7 +209,6 @@ import SwiftUI
         chevron.isHighlighted = false; chevron.isEnabled = false
         check(capture(chevron).colorAt(x: 4, y: 8)!.alphaComponent < 0.01, "no hover fill while disabled")
 
-        //
         let plateView = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
         plateView.appearance = NSAppearance(named: .aqua)
         let plateFace = TranslucentButtonFace(view: plateView)
@@ -245,7 +230,6 @@ import SwiftUI
         check(alphaDelta(plate, reference(.continuous)) < 0.005, "continuous 6-point plate")
         check(alphaDelta(plate, reference(.circular)) > 0.01, "not circular corners")
 
-        // The toggle's face follows ActionButton.hovered, so refreshHover() updates it too.
         let faced = ActionButton("Hide sidebar")
         faced.frame = NSRect(x: 0, y: 0, width: 32, height: 32); faced.appearance = NSAppearance(named: .aqua)
         faced.translucentFace = TranslucentButtonFace(view: faced)
@@ -254,7 +238,6 @@ import SwiftUI
         faced.refreshHover()
         check(capture(faced).colorAt(x: 32, y: 32)!.alphaComponent < 0.01, "refreshHover clears the face without a window")
 
-        // Fully transparent pill buttons pass clicks through; the default keeps hit-testing.
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 40))
         let pageButton = ActionButton("Site Control Center")
         pageButton.frame = NSRect(x: 10, y: 5, width: 25, height: 28); host.addSubview(pageButton)
@@ -269,7 +252,6 @@ import SwiftUI
         check(pageButton.hitTest(NSPoint(x: 20, y: 15)) === pageButton && toolbarView.hitTest(NSPoint(x: 60, y: 15)) === toolbarView,
               "revealed buttons take clicks")
 
-        // Shared-quote mode keeps Parc's earlier pill surface (an adaptation).
         let quotePill = SidebarAddressPillView(frame: NSRect(x: 0, y: 0, width: 200, height: 18))
         let hoverFill = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.4)
         quotePill.style = .sharedQuote(fill: hoverFill)
@@ -280,7 +262,6 @@ import SwiftUI
         quotePill.style = .urlBar
         check(quotePill.layer?.cornerRadius == 12 && quotePill.layer?.cornerCurve == .continuous
               && quotePill.layer?.backgroundColor == SidebarAddressPillView.fill(dark: false, hovered: true).cgColor, "back to the URL bar")
-        // A permission prompt holds the buttons while the next popover shown stays open.
         let center = NotificationCenter.default
         var ended = 0
         let hold = AddressPopoverRevealHold { ended += 1 }

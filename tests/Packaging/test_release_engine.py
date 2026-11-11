@@ -1,4 +1,3 @@
-"""Release-engine packaging checks with fixture packages and Git repositories; no engine runs."""
 import contextlib
 import hashlib
 import importlib.util

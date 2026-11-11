@@ -1,13 +1,11 @@
 import AppKit
 import Combine
 
-/// Explicit event properties feed inert controls; nothing is posted to macOS.
 private final class ThemeGestureEvent: NSEvent {
     let eventPhase: NSEvent.Phase
     let eventMomentum: NSEvent.Phase
     let time: TimeInterval
     let location: NSPoint
-    /// `over` places a trackpad gesture over that dial's knob.
     init(over view: NSView? = nil, phase: NSEvent.Phase = [], momentum: NSEvent.Phase = [],
          time: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         eventPhase = phase; eventMomentum = momentum; self.time = time
@@ -23,8 +21,6 @@ private final class ThemeGestureEvent: NSEvent {
     override var scrollingDeltaY: CGFloat { 1 }
 }
 
-/// Production model, durable transaction, window history and inert editor views.
-/// No displayed window, browser, engine, user profile or system event dispatch.
 @main @MainActor struct SpaceThemeUndoTests {
     static var assertions = 0
     static func expect(_ condition: @autoclosure () throws -> Bool, _ message: String, line: Int = #line) throws {
@@ -229,7 +225,6 @@ private final class ThemeGestureEvent: NSEvent {
         try expect(owner.saved == external && owner.editor!.theme == external && !owner.history.canUndo, "External parent replacement retires an old in-flight gesture")
         click("Add color", in: owner.editor!)
         let beforeFailure = store.state, committed = owner.commits
-        // Replace the disposable storage directory with a file to force a real write failure.
         try FileManager.default.removeItem(at: directory); try Data().write(to: directory)
         owner.history.undo()
         try expect(store.state == beforeFailure && owner.history.canUndo && !owner.history.canRedo, "Failed inverse preserves actual model and retryable history")
