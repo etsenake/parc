@@ -23,7 +23,6 @@ source_set("unit_tests") {
     "//components/viz/test:test_support",
     "//gpu/command_buffer/client",
     "//media",
-    "//media/gpu",
     "//media:test_support",
     "//mojo/public/cpp/bindings",
     "//testing/gmock",

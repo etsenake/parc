@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 711,
+  "version": 712,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -2374,7 +2374,7 @@
     {
       "source": "Engine/ParcChromium/tests/blink/modules/BUILD.gn",
       "target": "third_party/blink/renderer/modules/parc_tests/BUILD.gn",
-      "sha256": "ea751cd911ace280e62ef6e2c1025c68f82257da6385d1554998c3c454b15b70"
+      "sha256": "71ca7592fac53bddb2e8271d46e10b56c62636d70aaac235d1fdafbc70e22e1f"
     },
     {
       "source": "Engine/ParcChromium/tests/blink/modules/media_controls_impl_test.cc",
@@ -4105,7 +4105,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "67729253ab443064e463f1b6db0ec5401b17096359afb49cd1ef6e29f2462e80",
+      "sha256": "0f54e1fe8c443ec9ae09f87644ba566500826fb48fd839360acf90147faa5017",
       "files": [
         {
           "target": "components/cdm/renderer/external_clear_key_key_system_info.cc",
@@ -4455,7 +4455,7 @@
         {
           "target": "third_party/blink/renderer/platform/media/BUILD.gn",
           "before_sha256": "7352243a806b330fee5952647a7e28437c3887ca99ba949044b1058d4b5d4768",
-          "after_sha256": "d5201020f8829c6ec3baeee102b02f3a153d51885123a9cdca8f97480b27cb44"
+          "after_sha256": "c91967ab8ac8fa786ec480fb635c124da4d671a6c0191a16245f71867ad74199"
         },
         {
           "target": "content/test/BUILD.gn",

@@ -8885,7 +8885,15 @@
  #if BUILDFLAG(IS_FUCHSIA)
 --- a/third_party/blink/renderer/platform/media/BUILD.gn
 +++ b/third_party/blink/renderer/platform/media/BUILD.gn
-@@ -57,6 +57,10 @@
+@@ -33,6 +33,7 @@
+     # and web, and platform should not depend on either.
+     "//third_party/blink/public/platform/media",
+     "//third_party/blink/renderer/core:unit_tests",
++    "//third_party/blink/renderer/parc_tests:blink_core_media_tests",
+     "//third_party/blink/renderer/platform/*",
+   ]
+   output_name = "blink_platform_media"
+@@ -57,6 +58,10 @@
      "multi_buffer_reader.h",
      "new_session_cdm_result_promise.cc",
      "new_session_cdm_result_promise.h",
@@ -8896,7 +8904,7 @@
      "power_status_helper.cc",
      "power_status_helper.h",
      "resource_fetch_context.h",
-@@ -84,6 +88,14 @@
+@@ -84,6 +89,14 @@
      "web_source_buffer_impl.h",
    ]
 -
@@ -8912,7 +8920,7 @@
    configs += [
      "//third_party/blink/renderer/platform:blink_platform_config",
      "//third_party/blink/renderer/platform:blink_platform_implementation",
-@@ -112,6 +124,12 @@
+@@ -112,6 +125,12 @@
      "//third_party/blink/renderer/platform",
      "//third_party/blink/renderer/platform:allow_discouraged_type",
    ]
@@ -8926,7 +8934,7 @@
 -
 +
  source_set("unit_tests") {
-@@ -135,6 +153,10 @@
+@@ -135,6 +154,10 @@
      "watch_time_component_unittest.cc",
      "watch_time_reporter_unittest.cc",
    ]
@@ -8937,7 +8945,7 @@
    deps = [
      ":media",
      "//base",
-@@ -154,6 +176,13 @@
+@@ -154,6 +177,13 @@
      "//third_party/blink/renderer/platform:test_support",
    ]
 -
