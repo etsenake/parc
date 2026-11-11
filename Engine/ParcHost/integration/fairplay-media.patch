@@ -1184,7 +1184,15 @@
  
  #include "base/command_line.h"
  #include "base/dcheck_is_on.h"
-@@ -96,6 +97,7 @@
+@@ -31,6 +32,7 @@
+ #include "media/base/demuxer.h"
+ #include "media/base/media_log.h"
+ #include "media/base/media_switches.h"
++#include "media/base/parc_renderer_extensions.h"
+ #include "media/base/renderer.h"
+ #include "media/base/renderer_client.h"
+ #include "media/base/serial_runner.h"
+@@ -96,6 +98,7 @@
    void SetVolume(float volume);
    void SetLatencyHint(std::optional<base::TimeDelta> latency_hint);
    void SetPreservesPitch(bool preserves_pitch);
@@ -1192,7 +1200,7 @@
    void SetRenderMutedAudio(bool render_muted_audio);
    void SetWasPlayedWithUserActivationAndHighMediaEngagement(
        bool was_played_with_user_activation_and_high_media_engagement);
-@@ -112,6 +114,13 @@
+@@ -112,6 +115,13 @@
  
    void OnExternalVideoFrameRequest();
  
@@ -1206,7 +1214,7 @@
   private:
    enum class State {
      kCreated,
-@@ -277,6 +286,30 @@
+@@ -277,6 +287,30 @@
    // Uses |default_renderer_| as the Renderer or asynchronously creates a new
    // one by calling back to PipelineImpl. Fires |done_cb| with the result.
    void CreateRendererInternal(PipelineStatusCallback done_cb);
@@ -1237,7 +1245,7 @@
  
    const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
    const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
-@@ -297,6 +330,9 @@
+@@ -297,6 +331,9 @@
    std::optional<base::TimeDelta> latency_hint_;
    bool render_muted_audio_ = false;
    raw_ptr<CdmContext, DanglingUntriaged> cdm_context_ = nullptr;
@@ -1247,7 +1255,7 @@
  
    // By default, apply pitch adjustments.
    bool preserves_pitch_ = true;
-@@ -328,9 +364,331 @@
+@@ -328,9 +365,337 @@
    // Called from non-media threads when an error occurs.
    RepeatingPipelineStatusCallback error_cb_;
  
@@ -1457,7 +1465,9 @@
 +  }
 +  parc_incoming_ = std::move(renderer);
 +  parc_incoming_client_ = std::make_unique<ParcIncomingClient>(this);
-+  parc_incoming_->ParcSetHidden(true);
++  if (auto* parc = parc_incoming_->GetParcExtension()) {
++    parc->ParcSetHidden(true);
++  }
 +  if (cdm_context_ && !parc_cdm_detached_) {
 +    parc_incoming_->SetCdm(cdm_context_, base::DoNothing());
 +  }
@@ -1518,8 +1528,10 @@
 +                              parc_buffering_state_ == BUFFERING_HAVE_ENOUGH
 +                          ? ParcRendererRate()
 +                          : 0;
-+  parc_incoming_->ParcSetPlaybackRateAt(rate, playing->GetMediaTime(),
-+                                        base::TimeTicks::Now());
++  if (auto* parc = parc_incoming_->GetParcExtension()) {
++    parc->ParcSetPlaybackRateAt(rate, playing->GetMediaTime(),
++                                base::TimeTicks::Now());
++  }
 +}
 +
 +// The playing renderer ended its part (OnEnded()), or a seek, suspend or
@@ -1539,7 +1551,9 @@
 +  // which the hole frame then takes.
 +  playing.reset();
 +  Renderer* renderer = shared_state_.media().renderer.get();
-+  renderer->ParcSetHidden(false);
++  if (auto* parc = renderer->GetParcExtension()) {
++    parc->ParcSetHidden(false);
++  }
 +  // Before what the new renderer reports, which the caller then takes as
 +  // that renderer's.
 +  std::move(parc_handoff_done_).Run(true);
@@ -1579,7 +1593,7 @@
  PipelineImpl::RendererWrapper::RendererWrapper(
      scoped_refptr<base::SequencedTaskRunner> media_task_runner,
      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-@@ -380,6 +738,12 @@
+@@ -380,6 +745,12 @@
    default_renderer_ = std::move(default_renderer);
    weak_pipeline_ = weak_pipeline;
  
@@ -1592,7 +1606,7 @@
    // Setup |error_cb_| on the media thread.
    error_cb_ = base::BindRepeating(&RendererWrapper::OnPipelineError,
                                    weak_factory_.GetWeakPtr());
-@@ -430,6 +794,21 @@
+@@ -430,6 +801,21 @@
    // the pipeline is stopped before it had a chance to complete outstanding
    // tasks.
    pending_callbacks_.reset();
@@ -1614,7 +1628,7 @@
    weak_factory_.InvalidateWeakPtrs();
  
    DestroyRenderer();
-@@ -449,6 +828,14 @@
+@@ -449,6 +835,14 @@
  void PipelineImpl::RendererWrapper::Seek(base::TimeDelta time) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1629,7 +1643,7 @@
    // Suppress seeking if we're not fully started.
    if (state_ != State::kPlaying) {
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
-@@ -461,6 +848,9 @@
+@@ -461,6 +855,9 @@
  
    SetState(State::kSeeking);
    renderer_ended_ = false;
@@ -1639,7 +1653,7 @@
  
    // Queue asynchronous actions required to start.
    DCHECK(!pending_callbacks_);
-@@ -490,6 +880,14 @@
+@@ -490,6 +887,14 @@
  void PipelineImpl::RendererWrapper::Suspend() {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1654,7 +1668,7 @@
    // Suppress suspending if we're not playing.
    if (state_ != State::kPlaying) {
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
-@@ -500,6 +898,11 @@
+@@ -500,6 +905,11 @@
    DCHECK(!pending_callbacks_.get());
  
    SetState(State::kSuspending);
@@ -1666,7 +1680,7 @@
  
    // Freeze playback and record the media time before destroying the renderer.
    shared_state_.media().renderer->SetPlaybackRate(0.0);
-@@ -546,6 +949,8 @@
+@@ -546,6 +956,8 @@
  
    default_renderer_ = std::move(default_renderer);
    renderer_ended_ = false;
@@ -1675,7 +1689,7 @@
    base::TimeDelta start_timestamp =
        std::max(timestamp, demuxer_->GetStartTime());
  
-@@ -576,9 +981,17 @@
+@@ -576,9 +988,17 @@
  void PipelineImpl::RendererWrapper::SetPlaybackRate(double playback_rate) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1695,7 +1709,7 @@
    }
  
    if (state_ != State::kCreated && state_ != State::kStopping &&
-@@ -595,6 +1008,9 @@
+@@ -595,6 +1015,9 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetVolume(volume_);
    }
@@ -1705,7 +1719,7 @@
  }
  
  void PipelineImpl::RendererWrapper::SetLatencyHint(
-@@ -608,6 +1024,9 @@
+@@ -608,6 +1031,9 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetLatencyHint(latency_hint_);
    }
@@ -1715,7 +1729,7 @@
  }
  
  void PipelineImpl::RendererWrapper::SetPreservesPitch(bool preserves_pitch) {
-@@ -620,8 +1039,21 @@
+@@ -620,8 +1046,25 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetPreservesPitch(preserves_pitch_);
    }
@@ -1727,17 +1741,21 @@
 +void PipelineImpl::RendererWrapper::ParcOnAudioOutputDeviceChanged() {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
 +  if (shared_state_.media().renderer) {
-+    shared_state_.media().renderer->ParcOnAudioOutputDeviceChanged();
++    if (auto* parc = shared_state_.media().renderer->GetParcExtension()) {
++      parc->ParcOnAudioOutputDeviceChanged();
++    }
 +  }
 +  if (parc_incoming_) {
-+    parc_incoming_->ParcOnAudioOutputDeviceChanged();
++    if (auto* parc = parc_incoming_->GetParcExtension()) {
++      parc->ParcOnAudioOutputDeviceChanged();
++    }
 +  }
 +}
 +
  void PipelineImpl::RendererWrapper::SetRenderMutedAudio(
      bool render_muted_audio) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
-@@ -634,6 +1066,9 @@
+@@ -634,6 +1077,9 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetRenderMutedAudio(render_muted_audio_);
    }
@@ -1747,7 +1765,7 @@
  }
  
  void PipelineImpl::RendererWrapper::
-@@ -689,8 +1124,51 @@
+@@ -689,8 +1135,51 @@
  void PipelineImpl::RendererWrapper::SetCdm(CdmContext* cdm_context,
                                             CdmAttachedCB cdm_attached_cb) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
@@ -1799,7 +1817,7 @@
    // If there's already a renderer, set the CDM on the renderer directly.
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetCdm(
-@@ -700,9 +1178,27 @@
+@@ -700,9 +1189,27 @@
      return;
    }
  
@@ -1827,7 +1845,7 @@
    std::move(cdm_attached_cb).Run(true);
  
    // Continue Renderer creation if it's waiting for the CDM to be set.
-@@ -734,6 +1230,28 @@
+@@ -734,6 +1241,28 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -1856,7 +1874,7 @@
    // During Resume(), the |default_renderer_| might already match the
    // |renderer_type|, in which case we shouldn't need to create a new one.
    if (!default_renderer_ ||
-@@ -828,6 +1346,11 @@
+@@ -828,6 +1357,11 @@
    if (state_ != State::kPlaying) {
      return;
    }
@@ -1868,7 +1886,7 @@
  
    DCHECK(!renderer_ended_);
    renderer_ended_ = true;
-@@ -892,9 +1415,25 @@
+@@ -892,9 +1426,25 @@
    // Track status notifications might be delivered asynchronously. If we receive
    // a notification when pipeline is stopped/shut down, it's safe to ignore it.
    if (state_ == State::kStopping || state_ == State::kStopped) {
@@ -1894,7 +1912,7 @@
  
    demuxer_->OnTracksChanged(
        track_type, std::move(enabled_track_id), GetCurrentTimestamp(),
-@@ -1008,6 +1547,14 @@
+@@ -1008,6 +1558,14 @@
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
    DVLOG(2) << __func__ << "(" << state << ", " << reason << ") ";
  
@@ -1909,7 +1927,7 @@
    main_task_runner_->PostTask(
        FROM_HERE, base::BindOnce(&PipelineImpl::OnBufferingStateChange,
                                  weak_pipeline_, state, reason));
-@@ -1099,8 +1646,13 @@
+@@ -1099,8 +1657,13 @@
                                                    bool success) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
  
@@ -1924,7 +1942,7 @@
    std::move(cdm_attached_cb).Run(success);
  }
  
-@@ -1116,7 +1668,8 @@
+@@ -1116,7 +1679,8 @@
      return;
  
    main_task_runner_->PostTask(
@@ -1934,7 +1952,7 @@
  }
  
  void PipelineImpl::RendererWrapper::SetState(State next_state) {
-@@ -1146,6 +1699,12 @@
+@@ -1146,6 +1710,12 @@
      return;
    }
  
@@ -1947,7 +1965,7 @@
    shared_state_.media().renderer->StartPlayingFrom(
        std::max(seek_time, demuxer_->GetStartTime()));
    {
-@@ -1153,14 +1712,134 @@
+@@ -1153,14 +1723,136 @@
      shared_state_.mutable_media().suspend_timestamp = kNoTimestamp;
    }
  
@@ -2016,10 +2034,12 @@
 +  parc_backward_ = !parc_backward_;
 +  parc_turned_ = true;
 +  if (parc_backward_) {
-+    renderer->ParcStartPlayingBackwardFrom(
-+        time, std::min(playback_rate_, 0.0),
-+        base::BindRepeating(&RendererWrapper::ParcSeekDemuxer,
-+                            weak_factory_.GetWeakPtr()));
++    if (auto* parc = renderer->GetParcExtension()) {
++      parc->ParcStartPlayingBackwardFrom(
++          time, std::min(playback_rate_, 0.0),
++          base::BindRepeating(&RendererWrapper::ParcSeekDemuxer,
++                              weak_factory_.GetWeakPtr()));
++    }
 +  } else {
 +    renderer->StartPlayingFrom(time);
 +    renderer->SetPlaybackRate(ParcRendererRate());
@@ -2083,7 +2103,7 @@
  void PipelineImpl::RendererWrapper::CompleteSuspend(PipelineStatus status) {
    DVLOG(1) << __func__ << ": status=" << status;
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
-@@ -1244,7 +1923,7 @@
+@@ -1244,7 +1936,7 @@
      return;
    }
  
@@ -2092,7 +2112,7 @@
      shared_state_.media().renderer->SetCdm(cdm_context_, base::DoNothing());
  
    if (latency_hint_)
-@@ -1286,6 +1965,15 @@
+@@ -1286,6 +1978,15 @@
      base::AutoLock auto_lock(shared_state_.lock());
      renderer.swap(shared_state_.mutable_media().renderer);
    }
@@ -2108,7 +2128,7 @@
  }
  
  void PipelineImpl::RendererWrapper::ReportMetadata(StartType start_type) {
-@@ -1398,6 +2086,7 @@
+@@ -1398,6 +2099,7 @@
    DCHECK(!client_);
    DCHECK(!seek_cb_);
    client_ = client;
@@ -2116,7 +2136,7 @@
    seek_cb_ = std::move(seek_cb);
    last_media_time_ = base::TimeDelta();
    seek_time_ = kNoTimestamp;
-@@ -1529,10 +2218,9 @@
+@@ -1529,10 +2231,9 @@
  
    // Not checking IsRunning() so we can set the playback rate before Start().
  
@@ -2130,7 +2150,7 @@
  
    playback_rate_ = playback_rate;
    media_task_runner_->PostTask(
-@@ -1589,6 +2277,14 @@
+@@ -1589,6 +2290,14 @@
                                  preserves_pitch));
  }
  
@@ -2145,7 +2165,7 @@
  void PipelineImpl::SetRenderMutedAudio(bool render_muted_audio) {
    DCHECK(thread_checker_.CalledOnValidThread());
  
-@@ -1630,7 +2326,7 @@
+@@ -1630,7 +2339,7 @@
    //
    // It is expected that such events are transient and will be recovered as
    // rendering continues over time.
@@ -2154,7 +2174,7 @@
      DVLOG(2) << __func__ << ": actual=" << media_time
               << " clamped=" << last_media_time_;
      return last_media_time_;
-@@ -1641,6 +2337,20 @@
+@@ -1641,6 +2350,20 @@
    return last_media_time_;
  }
  
@@ -2175,7 +2195,7 @@
  Ranges<base::TimeDelta> PipelineImpl::GetBufferedTimeRanges() const {
    DCHECK(thread_checker_.CalledOnValidThread());
    return renderer_wrapper_->GetBufferedTimeRanges();
-@@ -1665,7 +2375,8 @@
+@@ -1665,7 +2388,8 @@
                            CdmAttachedCB cdm_attached_cb) {
    DVLOG(2) << __func__;
    DCHECK(thread_checker_.CalledOnValidThread());
@@ -2185,7 +2205,7 @@
    DCHECK(cdm_attached_cb);
  
    // Not checking IsRunning() so we can set the CDM before Start().
-@@ -1714,11 +2425,16 @@
+@@ -1714,11 +2438,16 @@
    client_->OnFallback(std::move(status).AddHere());
  }
  
@@ -2216,16 +2236,25 @@
    }
  }
  
+@@ -67,4 +71,8 @@
+   // Default implementation of OnExternalVideoFrameRequest is to no-op.
+ }
+ 
++ParcRendererExtension* Renderer::GetParcExtension() {
++  return nullptr;
++}
++
+ }  // namespace media
 --- a/media/base/renderer.h
 +++ b/media/base/renderer.h
-@@ -13,6 +13,7 @@
- #include "media/base/demuxer_stream.h"
- #include "media/base/media_export.h"
- #include "media/base/pipeline_status.h"
-+#include "media/base/video_renderer.h"
+@@ -18,6 +18,7 @@
  
- namespace media {
+ class CdmContext;
+ class MediaResource;
++class ParcRendererExtension;
+ class RendererClient;
  
+ // Types of media::Renderer.
 @@ -37,7 +38,9 @@
    kCastStreaming = 9,  // PlaybackCommandForwardingRendererFactory
    kContentEmbedderDefined = 10,  // Defined by the content embedder
@@ -2237,35 +2266,14 @@
  };
  
  // Get the name of the Renderer for `renderer_type`. The returned name could be
-@@ -131,6 +134,31 @@
+@@ -131,6 +134,10 @@
    // enforce RendererType registration for all Renderer implementations.
    // Note: New implementation should update RendererType.
    virtual RendererType GetRendererType() = 0;
 +
-+  // Parc: after Flush(), plays backward from `time` at `playback_rate` < 0, as
-+  // Safari's AVPlayer rewinds a file (MediaPlayerPrivateAVFoundationObjC::
-+  // setRateDouble). Only RendererImpl does; audio stays silent.
-+  virtual void ParcStartPlayingBackwardFrom(base::TimeDelta time,
-+                                            double playback_rate,
-+                                            ParcSeekDemuxerCB seek_demuxer_cb) {
-+  }
-+
-+  // Parc: the pipeline's audio sink switched to another output device
-+  // (HTMLMediaElement.setSinkId). Renderers whose audio bypasses the sink
-+  // (FairPlay, native HLS) move theirs to the device the sink now names.
-+  virtual void ParcOnAudioOutputDeviceChanged() {}
-+
-+  // Parc: a renderer taking over from another (Pipeline::
-+  // ParcHandOffToFairPlay()) shows nothing until it does: the FairPlay
-+  // Renderer paints its video hole frame only when shown.
-+  virtual void ParcSetHidden(bool hidden) {}
-+
-+  // Parc: while hidden, runs at `playback_rate` on the playing renderer's
-+  // clock, which reads `time` at `host_time`, so it takes over at the split
-+  // without a gap. Only the FairPlay Renderer does.
-+  virtual void ParcSetPlaybackRateAt(double playback_rate,
-+                                     base::TimeDelta time,
-+                                     base::TimeTicks host_time) {}
++  // Parc: Parc's operations on this renderer
++  // (media/base/parc_renderer_extensions.h), or null without them.
++  virtual ParcRendererExtension* GetParcExtension();
  };
  
  }  // namespace media
@@ -17792,7 +17800,7 @@
 +  // back to outside a seek (Safari's native HLS route).
 +  virtual void ParcResetMediaTimeClamp() {}
 +
-+  // Parc: see Renderer::ParcOnAudioOutputDeviceChanged().
++  // Parc: see ParcRendererExtension::ParcOnAudioOutputDeviceChanged().
 +  virtual void ParcOnAudioOutputDeviceChanged() {}
 +
 +  // Parc: Chromium's renderer hands over to the FairPlay Renderer while it
@@ -20687,26 +20695,43 @@
    virtual ~DemuxerStream();
 --- a/media/renderers/renderer_impl.h
 +++ b/media/renderers/renderer_impl.h
-@@ -26,6 +26,8 @@
+@@ -22,10 +22,12 @@
+ #include "media/base/decryptor.h"
+ #include "media/base/demuxer_stream.h"
+ #include "media/base/media_export.h"
++#include "media/base/parc_renderer_extensions.h"
+ #include "media/base/pipeline_status.h"
  #include "media/base/renderer.h"
  #include "media/base/tuneable.h"
  #include "media/base/video_decoder_config.h"
-+#include "media/base/video_renderer.h"
 +#include "media/base/wall_clock_time_source.h"
  #include "media/base/waiting.h"
  #include "ui/gfx/geometry/size.h"
  
-@@ -71,6 +73,9 @@
+@@ -37,7 +39,8 @@
+ class VideoRenderer;
+ class WallClockTimeSource;
+ 
+-class MEDIA_EXPORT RendererImpl final : public Renderer {
++class MEDIA_EXPORT RendererImpl final : public Renderer,
++                                        public ParcRendererExtension {
+  public:
+   // Renders audio/video streams using |audio_renderer| and |video_renderer|
+   // provided. All methods except for GetMediaTime() run on the |task_runner|.
+@@ -71,6 +74,12 @@
                         DemuxerStream* enabled_track,
                         base::OnceClosure change_completed_cb) final;
    RendererType GetRendererType() final;
++  ParcRendererExtension* GetParcExtension() final;
++
++  // ParcRendererExtension implementation.
 +  void ParcStartPlayingBackwardFrom(base::TimeDelta time,
 +                                    double playback_rate,
 +                                    ParcSeekDemuxerCB seek_demuxer_cb) final;
  
    // Helper functions for testing purposes. Must be called before Initialize().
    void DisableUnderflowForTesting();
-@@ -206,6 +211,47 @@
+@@ -206,6 +215,48 @@
  
    void OnStreamRestartCompleted();
  
@@ -20733,8 +20758,9 @@
 +  // Parc: on Safari's Media Source every enabled audio stream plays, as
 +  // WebKit's player keeps a renderer per enabled audio track
 +  // (AudioVideoRendererAVFObjC::addTrack): the others mixed into
-+  // |audio_renderer_| (AudioRenderer::ParcCreateMixedRenderer()), which goes
-+  // silent while its own is disabled. Time waits for each to have enough.
++  // |audio_renderer_| (ParcAudioRendererExtension::ParcCreateMixedRenderer()),
++  // which goes silent while its own is disabled. Time waits for each to have
++  // enough.
 +  class ParcMixedAudioClient;
 +  struct ParcMixedAudio;
 +  void ParcSyncMixedAudio();
@@ -20754,7 +20780,7 @@
    State state_;
  
    // Task runner used to execute pipeline tasks.
-@@ -222,6 +268,20 @@
+@@ -222,6 +273,20 @@
    std::unique_ptr<RendererClientInternal> video_renderer_client_;
    std::unique_ptr<AudioRenderer> audio_renderer_;
    std::unique_ptr<VideoRenderer> video_renderer_;
@@ -20775,7 +20801,7 @@
  
    raw_ptr<DemuxerStream> current_audio_stream_;
    raw_ptr<DemuxerStream> current_video_stream_;
-@@ -271,6 +331,18 @@
+@@ -271,6 +336,18 @@
    base::TimeDelta restarting_audio_time_ = kNoTimestamp;
  
    bool pending_video_track_change_ = false;
@@ -21127,17 +21153,19 @@
    }
  }
  
-@@ -690,6 +863,9 @@
+@@ -690,6 +863,11 @@
      audio_playing_ = true;
      pending_audio_track_change_ = false;
    }
 +  if (media_resource_->ParcMayAddStreams()) {
-+    audio_renderer_->ParcSetOwnAudioMuted(parc_own_audio_muted_);
++    if (auto* parc = audio_renderer_->GetParcExtension()) {
++      parc->ParcSetOwnAudioMuted(parc_own_audio_muted_);
++    }
 +  }
    audio_renderer_->StartPlaying();
    std::move(restart_completed_cb).Run();
  }
-@@ -740,6 +916,27 @@
+@@ -740,6 +918,27 @@
                 type_string, "state",
                 BufferingStateToString(new_buffering_state, reason));
  
@@ -21165,7 +21193,7 @@
    bool was_waiting_for_enough_data = WaitingForEnoughData();
  
    if (new_buffering_state == BUFFERING_HAVE_NOTHING) {
-@@ -824,7 +1021,12 @@
+@@ -824,7 +1023,12 @@
      return true;
    if (video_renderer_ && video_buffering_state_ != BUFFERING_HAVE_ENOUGH)
      return true;
@@ -21179,7 +21207,7 @@
  }
  
  void RendererImpl::PausePlayback() {
-@@ -858,6 +1060,12 @@
+@@ -858,6 +1062,12 @@
    if (time_ticking_) {
      time_ticking_ = false;
      time_source_->StopTicking();
@@ -21192,7 +21220,7 @@
    }
  
    if (playback_rate_ > 0 && video_renderer_)
-@@ -875,6 +1083,12 @@
+@@ -875,6 +1085,12 @@
      time_ticking_ = true;
      audio_playing_ = true;
      time_source_->StartTicking();
@@ -21205,7 +21233,7 @@
    }
    if (playback_rate_ > 0 && video_renderer_) {
      video_playing_ = true;
-@@ -914,7 +1128,9 @@
+@@ -914,7 +1130,9 @@
    if (video_renderer_ && !video_ended_)
      return false;
  
@@ -21216,7 +21244,7 @@
  }
  
  void RendererImpl::RunEndedCallbackIfNeeded() {
-@@ -947,6 +1163,9 @@
+@@ -947,6 +1165,9 @@
  
    const State old_state = state_;
    state_ = STATE_ERROR;
@@ -21226,7 +21254,7 @@
  
    if (init_cb_) {
      DCHECK(old_state == STATE_INITIALIZING ||
-@@ -1009,6 +1228,50 @@
+@@ -1009,6 +1230,52 @@
    DCHECK(task_runner_->RunsTasksInCurrentSequence());
    TRACE_EVENT1("media", "RendererImpl::OnTracksChanged", "track_type",
                 track_type);
@@ -21265,7 +21293,9 @@
 +    }
 +    parc_own_audio_muted_ = !own_enabled;
 +    if (parc_own_audio_muted_ || !audio_playing_) {
-+      audio_renderer_->ParcSetOwnAudioMuted(parc_own_audio_muted_);
++      if (auto* parc = audio_renderer_->GetParcExtension()) {
++        parc->ParcSetOwnAudioMuted(parc_own_audio_muted_);
++      }
 +      std::move(change_completed_cb).Run();
 +      return;
 +    }
@@ -21277,7 +21307,7 @@
    // 'fixing' the stream -> restarting if its the same stream,
    //                        reinitializing if it is different.
    base::OnceClosure fix_stream_cb;
-@@ -1084,8 +1347,455 @@
+@@ -1084,8 +1351,464 @@
    }
  }
  
@@ -21389,7 +21419,9 @@
 +  if (audio && media_resource_->ParcMayAddStreams()) {
 +    // Turned off while it joined.
 +    parc_own_audio_muted_ = !stream->ParcIsEnabled();
-+    audio_renderer_->ParcSetOwnAudioMuted(parc_own_audio_muted_);
++    if (auto* parc = audio_renderer_->GetParcExtension()) {
++      parc->ParcSetOwnAudioMuted(parc_own_audio_muted_);
++    }
 +    ParcSyncMixedAudio();
 +  }
 +  std::move(join_completed_cb).Run();
@@ -21451,7 +21483,9 @@
 +    if (ParcAwaitsCdm(stream)) {
 +      OnWaiting(WaitingReason::kNoCdm);
 +    } else {
-+      renderer = audio_renderer_->ParcCreateMixedRenderer();
++      if (auto* parc = audio_renderer_->GetParcExtension()) {
++        renderer = parc->ParcCreateMixedRenderer();
++      }
 +      if (!renderer) {
 +        if (it != parc_mixed_audio_.end()) {
 +          parc_mixed_audio_.erase(it);
@@ -21615,6 +21649,10 @@
    return RendererType::kRendererImpl;
 +}
 +
++ParcRendererExtension* RendererImpl::GetParcExtension() {
++  return this;
++}
++
 +void RendererImpl::ParcStartPlayingBackwardFrom(
 +    base::TimeDelta time,
 +    double playback_rate,
@@ -21643,8 +21681,9 @@
 +
 +  if (video_renderer_) {
 +    video_playing_ = true;
-+    video_renderer_->ParcStartPlayingBackwardFrom(time,
-+                                                  std::move(seek_demuxer_cb));
++    if (auto* parc = video_renderer_->GetParcExtension()) {
++      parc->ParcStartPlayingBackwardFrom(time, std::move(seek_demuxer_cb));
++    }
 +    return;
 +  }
 +
@@ -22208,38 +22247,31 @@
  }  // namespace media
 --- a/media/base/video_renderer.h
 +++ b/media/base/video_renderer.h
-@@ -7,7 +7,8 @@
+@@ -7,7 +7,7 @@
  
  #include <optional>
  
 -#include "base/functional/callback_forward.h"
-+#include "base/functional/callback.h"
-+#include "base/time/time.h"
++#include "base/functional/callback_forward.h"
  #include "media/base/media_export.h"
  #include "media/base/pipeline_status.h"
  #include "media/base/time_source.h"
-@@ -17,6 +18,11 @@
+@@ -16,6 +16,7 @@
+ 
  class CdmContext;
  class DemuxerStream;
++class ParcVideoRendererExtension;
  class RendererClient;
-+
-+// Parc: moves the demuxer to a time for a renderer playing backward, then runs
-+// the closure.
-+using ParcSeekDemuxerCB =
-+    base::RepeatingCallback<void(base::TimeDelta, base::OnceClosure)>;
  
  class MEDIA_EXPORT VideoRenderer {
-  public:
-@@ -71,6 +77,12 @@
+@@ -71,6 +72,10 @@
    // |latency_hint| may be nullopt to indicate the hint has been cleared
    // (restore UA default).
    virtual void SetLatencyHint(std::optional<base::TimeDelta> latency_hint) = 0;
 +
-+  // Parc: like StartPlayingFrom(), but shows frames at and before `timestamp`
-+  // going backward (Renderer::ParcStartPlayingBackwardFrom()).
-+  virtual void ParcStartPlayingBackwardFrom(base::TimeDelta timestamp,
-+                                            ParcSeekDemuxerCB seek_demuxer_cb) {
-+  }
++  // Parc: Parc's operations on this renderer
++  // (media/base/parc_renderer_extensions.h), or null without them.
++  virtual ParcVideoRendererExtension* GetParcExtension();
  };
  
  }  // namespace media
@@ -22259,20 +22291,45 @@
    }
 --- a/media/base/mock_filters.h
 +++ b/media/base/mock_filters.h
-@@ -467,6 +467,9 @@
+@@ -35,6 +35,7 @@
+ #include "media/base/demuxer.h"
+ #include "media/base/media_client.h"
+ #include "media/base/media_track.h"
++#include "media/base/parc_renderer_extensions.h"
+ #include "media/base/pipeline.h"
+ #include "media/base/pipeline_status.h"
+ #include "media/base/renderer.h"
+@@ -438,7 +439,8 @@
+   MOCK_METHOD0(IsVideoStreamAvailable, bool());
+ };
+ 
+-class MockVideoRenderer : public VideoRenderer {
++class MockVideoRenderer : public VideoRenderer,
++                          public ParcVideoRendererExtension {
+  public:
+   MockVideoRenderer();
+ 
+@@ -467,9 +469,14 @@
    MOCK_METHOD0(OnTimeStopped, void());
    MOCK_METHOD1(SetLatencyHint,
                 void(std::optional<base::TimeDelta> latency_hint));
++  ParcVideoRendererExtension* GetParcExtension() override { return this; }
 +  MOCK_METHOD2(ParcStartPlayingBackwardFrom,
 +               void(base::TimeDelta timestamp,
 +                    ParcSeekDemuxerCB seek_demuxer_cb));
  };
  
- class MockAudioRenderer : public AudioRenderer {
-@@ -499,6 +502,11 @@
+-class MockAudioRenderer : public AudioRenderer {
++class MockAudioRenderer : public AudioRenderer,
++                          public ParcAudioRendererExtension {
+  public:
+   MockAudioRenderer();
+ 
+@@ -499,9 +506,15 @@
    MOCK_METHOD1(SetPreservesPitch, void(bool));
    MOCK_METHOD1(SetWasPlayedWithUserActivationAndHighMediaEngagement,
                 void(bool));
++  ParcAudioRendererExtension* GetParcExtension() override { return this; }
 +  MOCK_METHOD(std::unique_ptr<AudioRenderer>,
 +              ParcCreateMixedRenderer,
 +              (),
@@ -22280,11 +22337,16 @@
 +  MOCK_METHOD(void, ParcSetOwnAudioMuted, (bool muted), (override));
  };
  
- class MockRenderer : public Renderer {
-@@ -543,6 +551,14 @@
+-class MockRenderer : public Renderer {
++class MockRenderer : public Renderer, public ParcRendererExtension {
+  public:
+   MockRenderer();
+ 
+@@ -543,6 +556,15 @@
    MOCK_METHOD2(OnSelectedAudioTracksChanged,
                 void(std::vector<raw_ptr<DemuxerStream>>, base::OnceClosure));
    RendererType GetRendererType() override { return renderer_type_; }
++  ParcRendererExtension* GetParcExtension() override { return this; }
 +  MOCK_METHOD3(ParcStartPlayingBackwardFrom,
 +               void(base::TimeDelta time,
 +                    double playback_rate,
@@ -22306,24 +22368,37 @@
  
  #include "base/cancelable_callback.h"
  #include "base/memory/raw_ptr.h"
-@@ -25,6 +26,7 @@
+@@ -24,7 +25,9 @@
+ #include "media/base/frame_rate_estimator.h"
  #include "media/base/limits.h"
  #include "media/base/media_log.h"
++#include "media/base/parc_renderer_extensions.h"
  #include "media/base/pipeline_status.h"
 +#include "media/base/timestamp_constants.h"
  #include "media/base/tuneable.h"
  #include "media/base/video_decoder.h"
  #include "media/base/video_decoder_config.h"
-@@ -81,6 +83,8 @@
+@@ -47,6 +50,7 @@
+ // ready for rendering.
+ class MEDIA_EXPORT VideoRendererImpl
+     : public VideoRenderer,
++      public ParcVideoRendererExtension,
+       public VideoRendererSink::RenderCallback {
+  public:
+   // |decoders| contains the VideoDecoders to use when initializing.
+@@ -81,6 +85,11 @@
    void OnTimeProgressing() override;
    void OnTimeStopped() override;
    void SetLatencyHint(std::optional<base::TimeDelta> latency_hint) override;
++  ParcVideoRendererExtension* GetParcExtension() override;
++
++  // ParcVideoRendererExtension implementation.
 +  void ParcStartPlayingBackwardFrom(base::TimeDelta timestamp,
 +                                    ParcSeekDemuxerCB seek_demuxer_cb) override;
  
    void SetTickClockForTesting(const base::TickClock* tick_clock);
    size_t frames_queued_for_testing() const {
-@@ -213,6 +217,21 @@
+@@ -213,6 +222,21 @@
    // called on |task_runner_|.
    void AttemptReadAndCheckForMetadataChanges(VideoPixelFormat pixel_format,
                                               const gfx::Size& natural_size);
@@ -22345,7 +22420,7 @@
  
    // Paints first frame and sets `painted_first_frame_` to true if
    // `painted_first_frame_` is false.
-@@ -379,6 +398,52 @@
+@@ -379,6 +403,52 @@
    // one MEDIA_LOG.
    bool is_latency_hint_media_logged_ = false;
  
@@ -22464,10 +22539,14 @@
  
    // To avoid unnecessary work by VDAs, only delete queued frames after
    // resetting |video_decoder_stream_|. If this is done in the opposite order
-@@ -160,6 +190,23 @@
+@@ -160,6 +190,27 @@
    last_render_time_ = last_frame_ready_time_ = base::TimeTicks();
    video_decoder_stream_->SkipPrepareUntil(start_timestamp_);
    AttemptRead_Locked();
++}
++
++ParcVideoRendererExtension* VideoRendererImpl::GetParcExtension() {
++  return this;
 +}
 +
 +void VideoRendererImpl::ParcStartPlayingBackwardFrom(
@@ -22488,7 +22567,7 @@
  }
  
  void VideoRendererImpl::Initialize(
-@@ -248,6 +295,21 @@
+@@ -248,6 +299,21 @@
                                 last_frame_ready_time_ >= last_render_time_);
  
    last_render_time_ = tick_clock_->NowTicks();
@@ -22510,7 +22589,7 @@
  
    size_t frames_dropped = 0;
    scoped_refptr<VideoFrame> result =
-@@ -297,6 +359,9 @@
+@@ -297,6 +363,9 @@
  
  void VideoRendererImpl::OnFrameDropped() {
    base::AutoLock auto_lock(lock_);
@@ -22520,7 +22599,7 @@
    algorithm_->OnLastFrameDropped();
  }
  
-@@ -360,6 +425,10 @@
+@@ -360,6 +429,10 @@
  
  void VideoRendererImpl::OnStatisticsUpdate(const PipelineStatistics& stats) {
    DCHECK(task_runner_->RunsTasksInCurrentSequence());
@@ -22531,7 +22610,7 @@
    client_->OnStatisticsUpdate(stats);
  }
  
-@@ -431,6 +500,14 @@
+@@ -431,6 +504,14 @@
    if (rendered_end_of_stream_)
      return;
  
@@ -22546,7 +22625,7 @@
    // If we have no frames queued, there is a pending buffering state change in
    // flight and we should ignore the start attempt.
    if (!algorithm_->frames_queued()) {
-@@ -453,6 +530,10 @@
+@@ -453,6 +534,10 @@
      return;
  
    StopSink();
@@ -22557,7 +22636,7 @@
  
    // Make sure we expire everything we can if we can't read any more currently,
    // otherwise playback may hang indefinitely.  Note: There are no effective
-@@ -633,6 +714,11 @@
+@@ -633,6 +718,11 @@
    last_frame_ready_time_ = tick_clock_->NowTicks();
    last_decoder_stream_avg_duration_ = video_decoder_stream_->AverageDuration();
  
@@ -22569,7 +22648,7 @@
    const bool is_eos = frame->metadata().end_of_stream;
    const bool is_before_start_time = !is_eos && IsBeforeStartTime(*frame);
    const bool cant_read = !video_decoder_stream_->CanReadWithoutStalling();
-@@ -820,6 +906,11 @@
+@@ -820,6 +910,11 @@
    if (pending_read_ || received_end_of_stream_)
      return;
  
@@ -22581,7 +22660,7 @@
    if (HaveReachedBufferingCap(max_buffered_frames_))
      return;
  
-@@ -910,7 +1001,7 @@
+@@ -910,7 +1005,7 @@
  
  void VideoRendererImpl::StartSink() {
    DCHECK(task_runner_->RunsTasksInCurrentSequence());
@@ -22590,7 +22669,7 @@
    sink_started_ = true;
    was_background_rendering_ = false;
    sink_->Start(this);
-@@ -1121,4 +1212,399 @@
+@@ -1121,4 +1216,399 @@
    paint_first_frame_cb_.Cancel();
  }
  
@@ -25367,30 +25446,22 @@
  }  // namespace blink
 --- a/media/base/audio_renderer.h
 +++ b/media/base/audio_renderer.h
-@@ -5,6 +5,7 @@
- #ifndef MEDIA_BASE_AUDIO_RENDERER_H_
- #define MEDIA_BASE_AUDIO_RENDERER_H_
+@@ -17,6 +17,7 @@
  
-+#include <memory>
- #include <optional>
+ class CdmContext;
+ class DemuxerStream;
++class ParcAudioRendererExtension;
+ class RendererClient;
+ class TimeSource;
  
- #include "base/functional/callback.h"
-@@ -80,6 +81,18 @@
+@@ -80,6 +81,10 @@
    // activation and high media engagement.
    virtual void SetWasPlayedWithUserActivationAndHighMediaEngagement(
        bool was_played_with_user_activation_and_high_media_engagement) = 0;
 +
-+  // Parc: a renderer for another audio stream whose output this one adds into
-+  // its own on its timeline, as WebKit's player plays every enabled audio
-+  // track on one synchronizer (AudioVideoRendererAVFObjC::addTrack). It plays
-+  // through this one's sink at this one's volume. Null if this one can't mix
-+  // (not initialized, or bitstream output). Call after Initialize() completed.
-+  virtual std::unique_ptr<AudioRenderer> ParcCreateMixedRenderer() {
-+    return nullptr;
-+  }
-+  // Parc: silences this renderer's own stream (its track was disabled) while
-+  // its clock and the renderers mixed into it go on.
-+  virtual void ParcSetOwnAudioMuted(bool muted) {}
++  // Parc: Parc's operations on this renderer
++  // (media/base/parc_renderer_extensions.h), or null without them.
++  virtual ParcAudioRendererExtension* GetParcExtension();
  };
  
  }  // namespace media
@@ -25404,16 +25475,35 @@
  
  #include "base/memory/raw_ptr.h"
  #include "base/memory/weak_ptr.h"
-@@ -111,6 +112,8 @@
+@@ -37,6 +38,7 @@
+ #include "media/base/audio_renderer_sink.h"
+ #include "media/base/decryptor.h"
+ #include "media/base/media_log.h"
++#include "media/base/parc_renderer_extensions.h"
+ #include "media/base/time_source.h"
+ #include "media/filters/audio_renderer_algorithm.h"
+ #include "media/filters/decoder_stream.h"
+@@ -56,6 +58,7 @@
+ 
+ class MEDIA_EXPORT AudioRendererImpl
+     : public AudioRenderer,
++      public ParcAudioRendererExtension,
+       public TimeSource,
+       public base::PowerSuspendObserver,
+       public AudioRendererSink::RenderCallback {
+@@ -111,6 +114,11 @@
    void SetRenderMutedAudio(bool render_muted_audio) override;
    void SetWasPlayedWithUserActivationAndHighMediaEngagement(
        bool was_played_with_user_activation_and_high_media_engagement) override;
++  ParcAudioRendererExtension* GetParcExtension() override;
++
++  // ParcAudioRendererExtension implementation.
 +  std::unique_ptr<AudioRenderer> ParcCreateMixedRenderer() override;
 +  void ParcSetOwnAudioMuted(bool muted) override;
  
    // base::PowerSuspendObserver implementation.
    void OnSuspend() override;
-@@ -266,6 +269,24 @@
+@@ -266,6 +274,24 @@
    // AudioRendererAlgorithm::FrontTimestamp().
    base::TimeDelta CalculateClockAndAlgorithmDrift() const;
  
@@ -25438,7 +25528,7 @@
    scoped_refptr<base::SequencedTaskRunner> task_runner_;
  
    std::unique_ptr<AudioBufferConverter> buffer_converter_;
-@@ -290,6 +311,10 @@
+@@ -290,6 +316,10 @@
    // unmuted.
    scoped_refptr<NullAudioSink> null_sink_;
  
@@ -25449,7 +25539,7 @@
    // True if |sink_| has not yet been started.
    bool real_sink_needs_start_;
  
-@@ -382,6 +407,14 @@
+@@ -382,6 +412,14 @@
    // Keeps track of whether we received and rendered the end of stream buffer.
    bool received_end_of_stream_;
    bool rendered_end_of_stream_;
@@ -27073,6 +27163,28 @@
      << ", profile: " << GetProfileName(profile())
      << ", bytes_per_channel: " << bytes_per_channel()
      << ", channel_layout: " << ChannelLayoutToString(channel_layout())
+--- a/media/base/audio_renderer.cc
++++ b/media/base/audio_renderer.cc
+@@ -9,4 +9,8 @@
+ AudioRenderer::AudioRenderer() = default;
+ AudioRenderer::~AudioRenderer() = default;
+ 
++ParcAudioRendererExtension* AudioRenderer::GetParcExtension() {
++  return nullptr;
++}
++
+ }  // namespace media
+--- a/media/base/video_renderer.cc
++++ b/media/base/video_renderer.cc
+@@ -9,4 +9,8 @@
+ VideoRenderer::VideoRenderer() = default;
+ VideoRenderer::~VideoRenderer() = default;
+ 
++ParcVideoRendererExtension* VideoRenderer::GetParcExtension() {
++  return nullptr;
++}
++
+ }  // namespace media
 --- a/media/mojo/mojom/audio_decoder_config_mojom_traits.h
 +++ b/media/mojo/mojom/audio_decoder_config_mojom_traits.h
 @@ -14,6 +14,10 @@

@@ -25,6 +25,7 @@
 #include "base/unguessable_token.h"
 #include "content/renderer/media/fairplay/native_hls_demuxer.h"
 #include "media/base/buffering_state.h"
+#include "media/base/parc_renderer_extensions.h"
 #include "media/base/renderer.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -38,6 +39,7 @@ class VideoRendererSink;
 namespace parc::fairplay {
 
 class NativeHlsRenderer final : public media::Renderer,
+                                public media::ParcRendererExtension,
                                 public NativeHlsSource::Client {
  public:
   // Made on the main thread; every other call is on `media_task_runner`,
@@ -63,6 +65,9 @@ class NativeHlsRenderer final : public media::Renderer,
   void SetVolume(float volume) override;
   base::TimeDelta GetMediaTime() override;
   media::RendererType GetRendererType() override;
+  media::ParcRendererExtension* GetParcExtension() override;
+
+  // media::ParcRendererExtension.
   // The player plays to the device the pipeline's audio sink names, from
   // Initialize() on.
   void ParcOnAudioOutputDeviceChanged() override;

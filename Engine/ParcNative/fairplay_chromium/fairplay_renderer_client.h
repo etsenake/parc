@@ -22,6 +22,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
+#include "media/base/parc_renderer_extensions.h"
 #include "media/base/renderer.h"
 #include "media/base/renderer_client.h"
 #include "media/mojo/mojom/renderer_extensions.mojom.h"
@@ -41,6 +42,7 @@ class VideoRendererSink;
 
 class FairPlayRendererClient final
     : public Renderer,
+      public ParcRendererExtension,
       public RendererClient,
       public mojom::FairPlayRendererClientExtension {
  public:
@@ -78,6 +80,9 @@ class FairPlayRendererClient final
                        DemuxerStream* stream,
                        base::OnceClosure change_completed_cb) override;
   RendererType GetRendererType() override;
+  ParcRendererExtension* GetParcExtension() override;
+
+  // ParcRendererExtension implementation.
   // The GPU process's audio renderers play to the device the pipeline's
   // audio sink names, from Initialize on.
   void ParcOnAudioOutputDeviceChanged() override;

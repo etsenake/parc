@@ -1268,10 +1268,14 @@
      output_config =
          ComputeBitstreamOutputConfig(stream->audio_decoder_config(), hw_params);
      buffer_converter_.reset();
-@@ -977,6 +1106,134 @@
+@@ -977,6 +1106,138 @@
        was_played_with_user_activation_and_high_media_engagement;
  }
  
++ParcAudioRendererExtension* AudioRendererImpl::GetParcExtension() {
++  return this;
++}
++
 +std::unique_ptr<AudioRenderer> AudioRendererImpl::ParcCreateMixedRenderer() {
 +  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 +  {
@@ -1403,7 +1407,7 @@
  void AudioRendererImpl::OnSuspend() {
    base::AutoLock auto_lock(lock_);
    is_suspending_ = true;
-@@ -1027,7 +1284,7 @@
+@@ -1027,7 +1288,7 @@
  
    bool allow_config_changes = expecting_config_changes_;
    if (base::FeatureList::IsEnabled(kMatchSourceAudioChannelLayout) &&
@@ -1412,7 +1416,7 @@
        ((audio_parameters_.channels() != buffer->channel_count()) ||
         (audio_parameters_.sample_rate() != buffer->sample_rate()))) {
      // If the incoming buffer's channel count or sample rate has changed,
-@@ -1378,6 +1635,7 @@
+@@ -1378,6 +1639,7 @@
    }
  
    int frames_written = 0;
@@ -1420,7 +1424,7 @@
    {
      base::AutoLock auto_lock(lock_);
      DCHECK_NE(state_, kReinitializingSink);
-@@ -1404,6 +1662,7 @@
+@@ -1404,6 +1666,7 @@
                                 playback_rate_);
        return 0;
      }
@@ -1428,7 +1432,7 @@
  
      if (playback_rate_ == 0 || is_suspending_) {
        audio_clock_->WroteAudio(0, frames_requested, frames_delayed,
-@@ -1477,6 +1736,9 @@
+@@ -1477,6 +1740,9 @@
              playback_rate_);
          frames_written += frames_filled;
          effective_playback_rate = algorithm_->effective_playback_rate();
@@ -1438,7 +1442,7 @@
  
          DVLOG(4) << __func__ << ": frames_filled=" << frames_filled
                   << ", playback_rate_=" << playback_rate_
-@@ -1536,6 +1798,13 @@
+@@ -1536,6 +1802,13 @@
        SetBufferingState_Locked(BUFFERING_HAVE_NOTHING);
      }
  
@@ -1452,7 +1456,7 @@
      // Note: effective_playback_rate() is used here because WSOLA is a
      // non-linear operation. E.g., for a `playback_rate_` of 2.0 WSOLA may end
      // up with effective rates between 1 and 3 and a/v sync drift of +/- 20ms.
-@@ -1565,7 +1834,7 @@
+@@ -1565,7 +1838,7 @@
    }
  
    DCHECK_LE(frames_written, frames_requested);

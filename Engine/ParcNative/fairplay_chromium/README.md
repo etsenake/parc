@@ -40,6 +40,7 @@ this guide covers demuxed samples and the Chromium/CDM boundary.
 | Widevine request hook | `parc::fairplay::SetWidevineCdmRequestObserver` (`parc_fairplay_hooks.h`, defined in `media_interface_proxy.cc`), for fairplay-identity |
 | VideoToolbox decoder facts | `parc_video_toolbox_decoding.{h,mm}` → `//content/browser/media`, with its own `parc_video_toolbox_decoding.mojom` in `//media/mojo/mojom`: the browser reads what WebKit's MediaCapabilities asks VideoToolbox (H.264 hardware, HEVC per-profile hardware and levels, Dolby Vision profiles and levels) once and serves `media.mojom.ParcVideoToolboxDecoding` to frames (`ParcContentBrowserClient::RegisterBrowserInterfaceBindersForFrame`) and dedicated workers (`browser_interface_binders.cc`), for Safari-identity `decodingInfo`. `ParcContentBrowserClient::AppendExtraCommandLineSwitches` gives each renderer the AV1 hardware-decoder answer |
 | GPU sandbox | `sandbox/policy/mac/gpu.sb`, rules listed below |
+| Parc operations on Chromium's media interfaces | `parc_renderer_extensions.h` → `//media/base`: `Renderer`, `AudioRenderer` and `VideoRenderer` each declare one `GetParcExtension()`, null by default, so Parc's backward playback, mixed audio, output device and hand-off calls change without rebuilding every includer of those headers |
 
 FairPlay uses dedicated GPU InterfaceFactory methods. It does not make the GPU
 renderer the default for ordinary pages or change unrelated Mojo media services.
@@ -219,11 +220,11 @@ EME's false, when there are none), other types reject with NotSupported.
     after it asked `CreateCdm` for a registered FairPlay key system.
   - Output device (`setSinkId`): the element's audio sink still switches
     and checks the device, so the promise settles as for clear media. Once
-    it has, `WebMediaPlayerImpl` tells the pipeline
-    (`Renderer::ParcOnAudioOutputDeviceChanged`), and the render-process
-    client sends the hashed ID its sink names, as at `Initialize`, over
-    `FairPlayRendererExtension` (or `FairPlayHlsPlayer`). The GPU process asks
-    the browser for its Core Audio UID
+    it has, `WebMediaPlayerImpl` tells the pipeline, which tells its
+    renderers (`ParcRendererExtension::ParcOnAudioOutputDeviceChanged`), and
+    the render-process client sends the hashed ID its sink names, as at
+    `Initialize`, over `FairPlayRendererExtension` (or `FairPlayHlsPlayer`).
+    The GPU process asks the browser for its Core Audio UID
     (`FrameInterfaceFactory.GetFairPlayAudioOutputDeviceUid`), so the page
     never sees one, and the core puts every audio renderer, later and mixed
     ones too, on it (`AVPlayer` for native HLS), as WebKit's

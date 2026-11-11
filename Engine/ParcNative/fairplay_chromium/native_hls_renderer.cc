@@ -168,6 +168,10 @@ media::RendererType NativeHlsRenderer::GetRendererType() {
   return media::RendererType::kFairPlayHls;
 }
 
+media::ParcRendererExtension* NativeHlsRenderer::GetParcExtension() {
+  return this;
+}
+
 void NativeHlsRenderer::ParcOnAudioOutputDeviceChanged() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!audio_sink_ || !source_) {

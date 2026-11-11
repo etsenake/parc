@@ -269,6 +269,10 @@ RendererType FairPlayRendererClient::GetRendererType() {
   return RendererType::kFairPlay;
 }
 
+ParcRendererExtension* FairPlayRendererClient::GetParcExtension() {
+  return this;
+}
+
 void FairPlayRendererClient::ParcSetHidden(bool hidden) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   hidden_ = hidden;
