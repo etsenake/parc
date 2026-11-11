@@ -591,8 +591,7 @@ class Controller final : public AuthenticatorRequestDialogViewController,
     widget_ = std::make_unique<views::Widget>();
     Guard::Operation operation(guard);
     auto params = views::DialogDelegate::GetDialogWidgetInitParams(
-        view_, gfx::NativeWindow(), gfx::NativeView(), gfx::Rect(),
-        gfx::kNullAcceleratedWidget);
+        view_, gfx::NativeWindow(), gfx::NativeView(), gfx::Rect());
     params.ownership = views::Widget::InitParams::CLIENT_OWNS_WIDGET;
     params.native_widget = new AuthenticatorWidget(widget_.get());
     widget_->Init(std::move(params));

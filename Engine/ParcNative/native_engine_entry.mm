@@ -18,6 +18,7 @@
 #include "base/files/file_util.h"
 #include "base/files/important_file_writer.h"
 #include "base/functional/bind.h"
+#import "base/mac/scoped_sending_event.h"
 #include "base/no_destructor.h"
 #include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
@@ -43,6 +44,7 @@
 #include "native_profiles.h"
 #include "native_startup_policy.h"
 #include "parc/parc_bundle_mac.h"
+#include "parc/parc_content_clients.h"
 #include "parc/parc_main_delegate.h"
 
 namespace {
@@ -332,7 +334,7 @@ parc_engine_initialize(int argc,
     state = normal_exit ? State::kEarlyExit : State::kFailed;
     return normal_exit ? PARC_ENGINE_START_EARLY_EXIT : PARC_ENGINE_START_FAILED;
   }
-  Profile* initial_profile = session.delegate->browser_client().initial_profile();
+  Profile* initial_profile = parc::ParcContentBrowserClient::Get().initial_profile();
   CHECK(initial_profile);
   auto* application = session.application.get();
   parc::ConfigureNativeProfiles(

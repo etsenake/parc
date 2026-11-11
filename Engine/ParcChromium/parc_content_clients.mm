@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/apple/foundation_util.h"
+#include "base/check.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -16,6 +17,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "content/browser/media/service_factory.h"
 #include "content/public/browser/browser_url_handler.h"
+#include "content/public/browser/web_contents_view_delegate.h"
 #include "content/public/common/content_switches.h"
 #include "parc/native/file_dialog.h"
 #include "parc/native/native_appkit_host.h"
@@ -31,6 +33,7 @@ namespace {
 // component-updated Widevine CDM carries Google's code signature.
 constexpr char kMacHelperSuffixCdm[] = " (CDM)";
 constexpr char kInputDiagnostics[] = "parc-input-diagnostics";
+ParcContentBrowserClient* g_browser_client = nullptr;
 }  // namespace
 
 class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
@@ -74,9 +77,20 @@ void ParcContentClient::AddAdditionalSchemes(Schemes* schemes) {
 
 ParcContentBrowserClient::ParcContentBrowserClient(
     NativeApplication& application)
-    : application_(application) {}
+    : application_(application) {
+  CHECK(!g_browser_client);
+  g_browser_client = this;
+}
 
-ParcContentBrowserClient::~ParcContentBrowserClient() = default;
+ParcContentBrowserClient::~ParcContentBrowserClient() {
+  g_browser_client = nullptr;
+}
+
+// static
+ParcContentBrowserClient& ParcContentBrowserClient::Get() {
+  CHECK(g_browser_client);
+  return *g_browser_client;
+}
 
 std::unique_ptr<content::BrowserMainParts>
 ParcContentBrowserClient::CreateBrowserMainParts(bool is_integration_test) {

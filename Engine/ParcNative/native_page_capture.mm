@@ -56,6 +56,7 @@
 #include "ui/base/base_window.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/rect_f.h"
 #import "window_security_reservation.h"
 
 @interface PCNativeCaptureLayout ()

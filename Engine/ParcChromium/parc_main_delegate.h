@@ -27,8 +27,6 @@ class ParcMainDelegate final : public ChromeMainDelegate {
   explicit ParcMainDelegate(NativeApplication* application);
   ~ParcMainDelegate() override;
 
-  // After content's Run() has returned 0 in the browser process.
-  ParcContentBrowserClient& browser_client();
   // Tears down Chrome's browser state on the main thread once the caller's
   // loop has returned; content's Shutdown() follows.
   void ShutdownBrowser();

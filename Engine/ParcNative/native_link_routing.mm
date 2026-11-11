@@ -350,7 +350,7 @@ NSString* RoutingSourceSpace(CreatedPage& origin) {
 }
 bool SameProfileRoute(CreatedPage& origin, PCNativeLinkRoute* route) {
   auto browser = origin.browser_;
-  if (!browser || !route || !NativeContextForProfile(*browser->GetProfile())) return false;
+  if (!browser || !route || !NativeLeaseForProfile(*browser->GetProfile())) return false;
   return [route.profilePath isEqualToString:
       base::SysUTF8ToNSString(browser->GetProfile()->GetPath().value())];
 }
@@ -697,7 +697,7 @@ class MatchedLinkOperation final : public content::WebContentsObserver,
         AppKitBindingForBrowser(destination.get()) != destination_ ||
         !AppKitBrowserAcceptsNewPages(*destination) ||
         ![base::SysUTF8ToNSString(destination->GetProfile()->GetPath().value())
-            isEqualToString:route_.profilePath] || !NativeContextForProfile(*destination->GetProfile()) ||
+            isEqualToString:route_.profilePath] || !NativeLeaseForProfile(*destination->GetProfile()) ||
         ![destination_.client respondsToSelector:@selector(nativeBrowser:canAcceptLinkRoute:)] ||
         ![destination_.client nativeBrowser:destination_ canAcceptLinkRoute:route_] ||
         !destination || !Valid() || !destination) {

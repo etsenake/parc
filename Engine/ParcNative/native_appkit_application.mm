@@ -33,6 +33,7 @@
 #include "chrome/browser/profiles/nuke_profile_directory_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
