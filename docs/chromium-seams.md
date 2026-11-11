@@ -185,8 +185,8 @@ reader stays until those tests pass on the new path.
    tests rely on. Parc-owned sources install into layer-local test targets when Chromium's visibility rules
    require it, and those targets remain dependencies of the original test binaries. The overlay-scrollbar
    fade, AudioToolbox AMR, native presentation-request retirement, reentrant media-item closure,
-   supplemental picker lifecycle and wallet-reminder lifetime regressions are the first suites moved this
-   way.
+   supplemental picker lifecycle, wallet-reminder lifetime and desktop wallet-delegate regressions are the
+   first suites moved this way.
 8. **Smaller conversions.** Auto-PiP occlusion, the playback-controls dispatcher, PiP captions over a Parc
    mojom bound to a session token, the decodeAudioData hook (measured first), and WebPreferences fields over
    a Parc mojom, whose first value must arrive before any media plays.
