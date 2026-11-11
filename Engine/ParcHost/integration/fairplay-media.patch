@@ -24585,7 +24585,26 @@
    for (const auto& connection : connections_) {
 --- a/third_party/blink/renderer/modules/remoteplayback/remote_playback.h
 +++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback.h
-@@ -110,6 +110,9 @@
+@@ -13,6 +13,7 @@
+ #include "third_party/blink/renderer/core/dom/events/event_target.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
++#include "third_party/blink/renderer/core/html/media/parc_remote_playback_extension.h"
+ #include "third_party/blink/renderer/core/html/media/remote_playback_controller.h"
+ #include "third_party/blink/renderer/modules/modules_export.h"
+ #include "third_party/blink/renderer/modules/presentation/presentation_availability_observer.h"
+@@ -53,7 +54,8 @@
+       public RemotePlaybackClient,
+       public PresentationAvailabilityObserver,
+       public mojom::blink::PresentationConnection,
+-      public RemotePlaybackController {
++      public RemotePlaybackController,
++      public ParcRemotePlaybackExtension {
+   DEFINE_WRAPPERTYPEINFO();
+-
++
+  public:
+@@ -110,6 +112,9 @@
    bool CancelWatchAvailabilityInternal(int id);
  
    mojom::blink::PresentationConnectionState GetState() const { return state_; }
@@ -24595,7 +24614,7 @@
  
    // PresentationAvailabilityObserver implementation.
    void AvailabilityChanged(mojom::blink::ScreenAvailability) override;
-@@ -130,6 +133,7 @@
+@@ -130,6 +135,7 @@
    bool RemotePlaybackAvailable() const override;
    void SourceChanged(const KURL&, bool is_source_supported) override;
    String GetPresentationId() override;
@@ -24603,25 +24622,31 @@
    void MediaMetadataChanged(
        std::optional<media::VideoCodec> video_codec,
        std::optional<media::AudioCodec> audio_codec) override;
-@@ -139,12 +143,16 @@
+@@ -139,12 +145,19 @@
    void RemoveObserver(RemotePlaybackObserver*) override;
    void AvailabilityChangedForTesting(bool screen_is_available) override;
    void StateChangedForTesting(bool is_connected) override;
++  ParcRemotePlaybackExtension& GetParcExtension() override;
++
++  // ParcRemotePlaybackExtension implementation.
 +  void ParcAirPlayAvailabilityChanged() override;
 +  void ParcShouldPlayToRemoteTargetChanged(bool should_play) override;
 +  void ParcPlayingToRemoteTargetChanged(bool playing) override;
 +  void ParcPlaybackTargetPickerDismissed() override;
- 
+-
++
    // ScriptWrappable implementation.
    bool HasPendingActivity() const final;
- 
+-
++
    // ExecutionContextLifecycleObserver implementation.
 -  void ContextDestroyed() override {}
 +  void ContextDestroyed() override;
- 
+-
++
    // Adjusts the internal state of |this| after a playback state change.
    void StateChanged(mojom::blink::PresentationConnectionState);
-@@ -179,6 +187,20 @@
+@@ -179,6 +192,20 @@
  
    // Clears bindings after remote playback stops.
    void CleanupConnections();
@@ -24642,7 +24667,7 @@
  
    mojom::blink::PresentationConnectionState state_;
    mojom::blink::ScreenAvailability availability_;
-@@ -187,6 +209,18 @@
+@@ -187,6 +214,18 @@
    Member<ScriptPromiseResolver<IDLUndefined>> prompt_promise_resolver_;
    Vector<KURL> availability_urls_;
    bool is_listening_;
@@ -24661,7 +24686,7 @@
    bool is_background_availability_monitoring_disabled_for_testing_ = false;
  
    String presentation_id_;
-@@ -196,9 +230,14 @@
+@@ -196,9 +235,14 @@
    std::optional<media::VideoCodec> video_codec_ = std::nullopt;
    std::optional<media::AudioCodec> audio_codec_ = std::nullopt;
  
@@ -24960,10 +24985,11 @@
 -
 +
  void RemotePlayback::OnMessage(
-@@ -708,9 +836,153 @@
+@@ -708,9 +836,157 @@
    is_listening_ = true;
  }
- 
+-
++
 +// Parc: an element whose player plays to AirPlay targets on a
 +// Safari-identity page offers AirPlay through Remote Playback, as WebKit's
 +// RemotePlayback does on macOS: prompt() opens the AirPlay route list and the
@@ -25055,6 +25081,10 @@
 +    observer->OnRemotePlaybackStateChanged(state_);
 +  }
 +  ParcMaybeMoveToElementContext();
++}
++
++ParcRemotePlaybackExtension& RemotePlayback::GetParcExtension() {
++  return *this;
 +}
 +
 +// availabilityChanged.
@@ -26917,28 +26947,29 @@
    const uint8_t kExtraData[] = "config extra data";
 --- a/third_party/blink/renderer/core/html/media/remote_playback_controller.h
 +++ b/third_party/blink/renderer/core/html/media/remote_playback_controller.h
-@@ -30,6 +30,22 @@
+@@ -11,6 +11,7 @@
+-
++
+ namespace blink {
+-
++
++class ParcRemotePlaybackExtension;
+ class RemotePlaybackObserver;
+-
++
+ // Interface exposing RemotePlayback to core/. It is meant to replace
+@@ -30,6 +31,10 @@
    virtual void AvailabilityChangedForTesting(bool screen_is_available) = 0;
    virtual void StateChangedForTesting(bool is_connected) = 0;
- 
-+  // Parc: an element whose player plays to AirPlay targets on a
-+  // Safari-identity page (HTMLMediaElement::ParcPlaysToPlaybackTargets())
-+  // runs its Remote Playback as AirPlay, as WebKit's RemotePlayback does.
-+  // Whether it can offer AirPlay may have changed: devices nearby
-+  // (wirelessRoutesAvailableDidChange), disabled, or a new player.
-+  virtual void ParcAirPlayAvailabilityChanged() = 0;
-+  // The element was given the route's target, or taken off it
-+  // (shouldPlayToRemoteTargetChanged).
-+  virtual void ParcShouldPlayToRemoteTargetChanged(bool should_play) = 0;
-+  // Its player plays to the device now, or stopped
-+  // (isPlayingToRemoteTargetChanged).
-+  virtual void ParcPlayingToRemoteTargetChanged(bool playing) = 0;
-+  // The route list closed without a choice
-+  // (playbackTargetPickerWasDismissed).
-+  virtual void ParcPlaybackTargetPickerDismissed() = 0;
+-
++
++  // Parc: Parc's AirPlay calls on this Remote Playback
++  // (core/html/media/parc_remote_playback_extension.h).
++  virtual ParcRemotePlaybackExtension& GetParcExtension() = 0;
 +
    void Trace(Visitor*) const override;
- 
+-
++
   protected:
 --- a/media/base/media_observer.h
 +++ b/media/base/media_observer.h
