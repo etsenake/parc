@@ -42,6 +42,7 @@
 #include "native_page_binding.h"
 #include "native_profiles.h"
 #include "native_startup_policy.h"
+#include "parc/content_main.h"
 #include "parc/parc_bundle_mac.h"
 #include "parc/parc_main_delegate.h"
 

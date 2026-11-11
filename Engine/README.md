@@ -263,6 +263,14 @@ substitutions.
 those decisions; it needs `PARC_ENGINE_WORKSPACE`. Every new Chrome-bearing
 message requires classification.
 
+## Staged startup
+
+Parc declares its staged content entry in `parc/content_main.h`. The implementation
+stays in Chromium's content startup file so allocator, platform and tracing setup
+keep their original order. Negative initialization continues into the retained
+runner; nonnegative results, including zero, are early process exits. The native
+shell keeps the browser runner alive for its event loop and shuts it down later.
+
 ## Maintenance
 
 The independent engine is the production path. Current gaps belong in

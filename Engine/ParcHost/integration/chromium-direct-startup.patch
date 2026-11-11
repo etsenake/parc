@@ -492,8 +492,8 @@
 -NO_STACK_PROTECTOR int RunContentProcess(
 -    ContentMainParams params,
 -    ContentMainRunner* content_main_runner) {
-+int ContentMainInitialize(ContentMainParams params,
-+                          ContentMainRunner* content_main_runner) {
++CONTENT_EXPORT int ContentMainInitialize(ContentMainParams params,
++                                         ContentMainRunner* content_main_runner) {
    base::FeatureList::FailOnFeatureAccessWithoutFeatureList();
    int exit_code = -1;
 -#if BUILDFLAG(IS_MAC)
@@ -575,20 +575,3 @@
    id<NativeEventProcessor> processor =
        static_cast<id<NativeEventProcessor>>(NSApp);
    [processor removeNativeEventProcessorObserver:this];
---- a/content/public/app/content_main.h
-+++ b/content/public/app/content_main.h
-@@ -94,6 +94,14 @@
-   }
- };
- 
-+// The first stage of RunContentProcess(), for an embedder that runs the
-+// browser's main loop itself: returns -1 to continue with
-+// content_main_runner->Run() and, after it returns, ->Shutdown(); otherwise
-+// returns the process exit code. The caller owns params.autorelease_pool.
-+CONTENT_EXPORT int ContentMainInitialize(
-+    ContentMainParams params,
-+    ContentMainRunner* content_main_runner);
-+
- CONTENT_EXPORT int RunContentProcess(ContentMainParams params,
-                                      ContentMainRunner* content_main_runner);
- 
