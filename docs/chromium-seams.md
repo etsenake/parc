@@ -178,7 +178,7 @@ context-menu and file-selector work shares files across areas, so it goes throug
    known gap where the speaker indicator can be lost. It goes in as two changes, the new service first and
    then the switch-over, and can be reviewed alongside step 4.
 6. **FairPlay hand-off out of the pipeline.** A Parc helper owned by the renderer wrapper, plus a decorator
-   stream, replaces the hand-off code in PipelineImpl and ChunkDemuxer. Its tests move first, and the old
+   stream, replaces the hand-off code in PipelineImpl and ChunkDemuxer. Its tests come first, and the old
 reader stays until those tests pass on the new path.
 7. **Tests out of upstream files.** Start with the small suites (scrollbar, Viz capture, AMR), then cast,
    autofill, controls and PiP, then the large media and Blink fixtures. Keep the compatibility edits those
@@ -414,6 +414,23 @@ Safari path keeps WebKit's. Its tests live in a Parc test file with their own
 copy of Chromium's element fixture. Chromium's element test is its own again,
 apart from two empty handlers for the messages Parc added to the player
 observer interface, which its observer must implement.
+
+The FairPlay hand-off and the silent reverse turn live in a Parc helper owned
+by PipelineImpl's renderer wrapper, which keeps one call where each step ran,
+so its state changes keep their order. Renderer choice stays upstream's
+Windows pattern in `CreateRendererInternal`; `pipeline.h` and
+`pipeline_impl.h` don't change. The split readers live in Parc-owned filter
+files: a hand-off object each stream owns, with the decorator stream the
+incoming renderer reads, and the demuxer's resource over those streams and its
+split negotiation. The pipeline's helper can't own that decorator: the split
+is placed under the stream's lock as data arrives, sees a config change
+without taking it, and both readers' seeks, aborts, disabling and shutdown are
+answered in that locked step. A decorator outside the lock would split a read
+later, could pass the playing renderer frames past the split, and would add
+work to every Safari-identity Media Source read. `demuxer.h` keeps its three
+hand-off calls, the pipeline's only way to ChunkDemuxer, until they join the
+fast-seek pair and the renderer preference in one accessor. The old reader
+stays, unused, until the compiled hand-off tests pass on the new one.
 
 MediaCapabilities answers Safari-identity documents as WebKit's `decodingInfo`
 does. Its HEVC and Dolby Vision codec-string parsers, the video rules over
