@@ -1,0 +1,17 @@
+# Installed at //media/parc_tests so media_unittests can link Parc's owned
+# regression suites without exposing media internals to another layer.
+
+assert(is_mac)
+
+source_set("media_tests") {
+  visibility = [ "//media:*" ]
+  testonly = true
+  sources = [ "audio_toolbox_amr_test.cc" ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//media:test_support",
+    "//testing/gtest",
+  ]
+}

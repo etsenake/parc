@@ -182,7 +182,9 @@ context-menu and file-selector work shares files across areas, so it goes throug
 reader stays until those tests pass on the new path.
 7. **Tests out of upstream files.** Start with the small suites (scrollbar, Viz capture, AMR), then cast,
    autofill, controls and PiP, then the large media and Blink fixtures. Keep the compatibility edits those
-   tests rely on.
+   tests rely on. Parc-owned sources install into layer-local test targets when Chromium's visibility rules
+   require it, and those targets remain dependencies of the original test binaries. The overlay-scrollbar
+   fade and AudioToolbox AMR regressions are the first suites moved this way.
 8. **Smaller conversions.** Auto-PiP occlusion, the playback-controls dispatcher, PiP captions over a Parc
    mojom bound to a session token, the decodeAudioData hook (measured first), and WebPreferences fields over
    a Parc mojom, whose first value must arrive before any media plays.

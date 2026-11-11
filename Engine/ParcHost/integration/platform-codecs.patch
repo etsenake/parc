@@ -14,6 +14,13 @@
        "proprietary codecs and ffmpeg_branding set to Chromium are incompatible")
  }
  
+@@ -219,5 +223,6 @@
+     "//media/test:pipeline_integration_tests",
+     "//media/test:run_all_unittests",
+     "//media/video:unit_tests",
+     "//media/webrtc:unit_tests",
++    "//media/parc_tests:media_tests",
+   ]
 --- a/media/ffmpeg/ffmpeg_common.cc
 +++ b/media/ffmpeg/ffmpeg_common.cc
 @@ -164,6 +164,10 @@
@@ -1886,73 +1893,3 @@
      "video_toolbox_av1_accelerator_unittest.cc",
      "video_toolbox_decompression_session_manager_unittest.cc",
      "video_toolbox_h264_accelerator_unittest.cc",
---- a/media/filters/audio_decoder_unittest.cc
-+++ b/media/filters/audio_decoder_unittest.cc
-@@ -22,6 +22,7 @@
- #include "base/notreached.h"
- #include "base/run_loop.h"
- #include "base/strings/stringprintf.h"
-+#include "base/test/bind.h"
- #include "base/test/scoped_feature_list.h"
- #include "base/test/task_environment.h"
- #include "base/test/test_future.h"
-@@ -1542,7 +1543,59 @@
-                          Combine(Values(AudioDecoderType::kMediaCodec),
-                                  ValuesIn(GetAndroidParams())));
- #endif
-+
-+#if BUILDFLAG(IS_MAC)
-+// Parc: a 3GPP AMR sample holds several frames, which AudioToolbox takes one
-+// per packet; each sample comes out whole, as one buffer.
-+TEST(AudioToolboxAmrTest, DecodesEveryFrameOfEachSample) {
-+  base::test::TaskEnvironment task_environment;
-+  for (const bool wideband : {false, true}) {
-+    SCOPED_TRACE(wideband ? "AMR-WB" : "AMR-NB");
-+    const int sample_rate = wideband ? 16000 : 8000;
-+    const int frames_per_packet = sample_rate / 50;
-+    AudioToolboxAudioDecoder decoder(std::make_unique<NullMediaLog>());
-+    std::vector<scoped_refptr<AudioBuffer>> outputs;
-+    base::test::TestFuture<DecoderStatus> initialized;
-+    decoder.Initialize(
-+        AudioDecoderConfig(
-+            wideband ? AudioCodec::kAMR_WB : AudioCodec::kAMR_NB,
-+            kSampleFormatS16, ChannelLayoutConfig::Mono(), sample_rate,
-+            EmptyExtraData(), EncryptionScheme::kUnencrypted),
-+        nullptr, initialized.GetCallback(),
-+        base::BindLambdaForTesting([&outputs](scoped_refptr<AudioBuffer> buffer) {
-+          outputs.push_back(std::move(buffer));
-+        }),
-+        base::DoNothing());
-+    ASSERT_TRUE(initialized.Get().is_ok());
- 
-+    // Nine 12.2 kbit/s (AMR-WB 23.85) frames, then a NO_DATA one.
-+    std::vector<uint8_t> sample;
-+    for (int i = 0; i < 9; ++i) {
-+      sample.push_back(wideband ? 0x44 : 0x3c);
-+      for (int j = 0; j < (wideband ? 60 : 31); ++j) {
-+        sample.push_back(static_cast<uint8_t>(i * 37 + j * 11));
-+      }
-+    }
-+    sample.push_back(0x7c);
-+    for (int i = 0; i < 2; ++i) {
-+      scoped_refptr<DecoderBuffer> buffer = DecoderBuffer::CopyFrom(sample);
-+      buffer->set_timestamp(base::Milliseconds(200 * i));
-+      buffer->set_duration(base::Milliseconds(200));
-+      base::test::TestFuture<DecoderStatus> decoded;
-+      decoder.Decode(std::move(buffer), decoded.GetCallback());
-+      ASSERT_TRUE(decoded.Get().is_ok());
-+    }
-+
-+    // AudioToolbox trims its decoder delay, under a frame, from the first.
-+    ASSERT_EQ(outputs.size(), 2u);
-+    EXPECT_GT(outputs[0]->frame_count(), 9 * frames_per_packet);
-+    EXPECT_EQ(outputs[1]->frame_count(), 10 * frames_per_packet);
-+    EXPECT_EQ(outputs[1]->sample_rate(), sample_rate);
-+    EXPECT_EQ(outputs[1]->channel_count(), 1);
-+  }
-+}
-+#endif  // BUILDFLAG(IS_MAC)
-+
- #if BUILDFLAG(USE_PROPRIETARY_CODECS)
- #if BUILDFLAG(IS_MAC)
- INSTANTIATE_TEST_SUITE_P(AudioToolbox,
