@@ -7139,7 +7139,8 @@
  #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
  #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
  #include "third_party/blink/renderer/platform/network/mime/content_type.h"
-@@ -195,7 +200,38 @@
+@@ -194,9 +199,44 @@
+   }
    return stream_parser_buffer;
  }
 -
@@ -7148,6 +7149,12 @@
 +// (parc_managed_media_source.h) listens for on its SourceBuffers, which this
 +// queues when a purge has changed their buffered ranges.
 +constexpr char kParcPurgedEvent[] = "parcmanagedmediasourcepurged";
++
++// Parc: past every tag, so no memory listener suppression mask
++// (base/memory/memory_pressure_listener_registry.cc) silences a purge.
++constexpr base::MemoryPressureListenerTag kParcManagedMediaSourceTag =
++    static_cast<base::MemoryPressureListenerTag>(
++        std::numeric_limits<int>::max());
 +
  }  // namespace
 +
@@ -7158,9 +7165,7 @@
 + public:
 +  explicit ParcMemoryPressureListener(SourceBuffer* owner)
 +      : owner_(owner),
-+        registration_(FROM_HERE,
-+                      base::MemoryPressureListenerTag::kParcManagedMediaSource,
-+                      this) {}
++        registration_(FROM_HERE, kParcManagedMediaSourceTag, this) {}
 +  ParcMemoryPressureListener(const ParcMemoryPressureListener&) = delete;
 +  ParcMemoryPressureListener& operator=(const ParcMemoryPressureListener&) =
 +      delete;
@@ -7180,7 +7185,8 @@
 +
  SourceBuffer::SourceBuffer(std::unique_ptr<WebSourceBuffer> web_source_buffer,
                             MediaSource* source,
-@@ -248,6 +284,13 @@
+                            EventQueue* async_event_queue)
+@@ -248,6 +288,13 @@
 -
 +
    source_->AssertAttachmentsMutexHeldIfCrossThreadForDebugging();
@@ -7196,7 +7202,7 @@
 -
 +
  SourceBuffer::~SourceBuffer() {
-@@ -258,6 +301,75 @@
+@@ -258,6 +305,75 @@
    // Promptly clears a raw reference from content/ to an on-heap object
    // so that content/ doesn't access it in a lazy sweeping phase.
    web_source_buffer_.reset();
@@ -7273,7 +7279,7 @@
 -
 +
  void SourceBuffer::setMode(const V8AppendMode& new_mode,
-@@ -1015,7 +1127,12 @@
+@@ -1015,7 +1131,12 @@
    //    the parent media source, then throw a NotSupportedError exception and
    //    abort these steps.
    ContentType content_type(type);
@@ -7286,7 +7292,7 @@
    // TODO(wolenetz): Refactor and use a less-strict version of isTypeSupported
    // here. As part of that, CanChangeType in Chromium should inherit relaxation
    // of impl's StreamParserFactory (since it returns true iff a stream parser
-@@ -1023,7 +1140,7 @@
+@@ -1023,7 +1144,7 @@
    if (!MediaSource::IsTypeSupportedInternal(
            GetExecutionContext(), type,
            false /* allow underspecified codecs in |type| */) ||
@@ -7295,7 +7301,7 @@
      MediaSource::LogAndThrowDOMException(
          *exception_state, DOMExceptionCode::kNotSupportedError,
          StrCat({"Changing to the type provided ('", type,
-@@ -1045,7 +1162,7 @@
+@@ -1045,7 +1166,7 @@
    //    value in the "Generate Timestamps Flag" column of the byte stream format
    //    registry entry that is associated with type.
    // This call also updates the pipeline to switch bytestream parser and codecs.
@@ -7305,7 +7311,7 @@
 +
    // 8. If the generate timestamps flag equals true: Set the mode attribute on
    //    this SourceBuffer object to "sequence", including running the associated
-@@ -1173,6 +1290,7 @@
+@@ -1173,6 +1294,7 @@
    web_source_buffer_.reset();
    source_ = nullptr;
    async_event_queue_ = nullptr;
@@ -7314,7 +7320,7 @@
 -
 +
  double SourceBuffer::HighestPresentationTimestamp() {
-@@ -1814,6 +1932,7 @@
+@@ -1814,6 +1936,7 @@
    pending_remove_end_ = -1;
 -
 +
@@ -7324,7 +7330,7 @@
 -
 +
  ExecutionContext* SourceBuffer::GetExecutionContext() const {
-@@ -1891,8 +2010,13 @@
+@@ -1891,8 +2014,13 @@
    source_->AssertAttachmentsMutexHeldIfCrossThreadForDebugging();
 -
 +
@@ -7341,7 +7347,7 @@
 +
    bool result = web_source_buffer_->EvictCodedFrames(media_time, new_data_size);
    if (!result) {
-@@ -2060,6 +2184,12 @@
+@@ -2060,6 +2188,12 @@
    } else {
      updating_ = false;
 -
@@ -7356,7 +7362,7 @@
 -
 +
      // Don't schedule 'update' or 'updateend' for this promisified async
-@@ -2072,6 +2202,11 @@
+@@ -2072,6 +2206,11 @@
    TRACE_EVENT_END("media", /* appending */ trace_track_);
    TRACE_EVENT_END("media", /* SourceBuffer::appendEncodedChunks */
                    trace_track_);
@@ -7369,7 +7375,7 @@
 +
    DVLOG(3) << __func__ << " done. this=" << this
             << " media_time=" << GetMediaTime() << " buffered="
-@@ -2121,6 +2256,12 @@
+@@ -2121,6 +2260,12 @@
        // 3. Set the updating attribute to false.
        updating_ = false;
 -
@@ -7384,7 +7390,7 @@
 -
 +
        // 4. Queue a task to fire a simple event named update at this
-@@ -2130,11 +2271,20 @@
+@@ -2130,11 +2275,20 @@
        // 5. Queue a task to fire a simple event named updateend at this
        //    SourceBuffer object.
        ScheduleEvent(event_type_names::kUpdateend);
@@ -7407,7 +7413,7 @@
 +
    double media_time = GetMediaTime();
    DVLOG(3) << __func__ << " done. this=" << this << " media_time=" << media_time
-@@ -2173,6 +2323,12 @@
+@@ -2173,6 +2327,12 @@
    //    and end of the removal range.
    web_source_buffer_->Remove(pending_remove_start_, pending_remove_end_);
 -
@@ -7421,7 +7427,7 @@
    // 10. Set the updating attribute to false.
    updating_ = false;
    pending_remove_start_ = -1;
-@@ -2187,6 +2343,9 @@
+@@ -2187,6 +2347,9 @@
    // 12. Queue a task to fire a simple event named updateend at this
    //     SourceBuffer object.
    ScheduleEvent(event_type_names::kUpdateend);
@@ -7927,19 +7933,6 @@
    }
 -
 +
---- a/base/memory/memory_pressure_listener.h
-+++ b/base/memory/memory_pressure_listener.h
-@@ -102,6 +102,9 @@
-   kGrShaderCache = 68,
-   kMemoryPressureListenerPolicy = 69,
-   kLongScreenshotsTabService = 70,
-+  // Parc: the SourceBuffers of a ManagedMediaSource on Safari-identity pages
-+  // (third_party/blink/renderer/modules/mediasource/source_buffer.cc).
-+  kParcManagedMediaSource = 71,
- };
--
-+
- // base::MemoryPressureListener is deprecated. Use base::MemoryConsumer instead.
 --- a/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.cc
 +++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.cc
 @@ -4,14 +4,17 @@
