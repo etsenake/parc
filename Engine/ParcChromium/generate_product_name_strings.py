@@ -69,7 +69,25 @@ def _unbranded_translation(node, language, gender, message_module):
     return text.replace('\ufeff', '').replace('[GRITLANGCODE]', language)
 
 
-def collect_overrides(source_root, locales, branding_path, resource_ids_path):
+def _translation_language(root, pak_locale):
+    suffix = f'_{pak_locale}.pak'
+    languages = {
+        output.GetLanguage()
+        for output in root.GetOutputFiles()
+        if output.GetType() == 'data_package'
+        and Path(output.GetFilename()).name.endswith(suffix)
+    }
+    if not languages:
+        return None
+    if len(languages) != 1:
+        raise ValueError(
+            f'expected one data-package language for {pak_locale}, '
+            f'found {sorted(languages)}')
+    return languages.pop()
+
+
+def collect_overrides(source_root, locales, branding_path, resource_ids_path,
+                      predetermined_ids_path):
     """Return {locale: {numeric id: branded text}} and parsed roots."""
     sys.path.insert(0, str(source_root / 'tools/grit'))
     from grit import constants, grd_reader
@@ -84,24 +102,34 @@ def collect_overrides(source_root, locales, branding_path, resource_ids_path):
         path = source_root / relative
         root = grd_reader.Parse(
             str(path), defines=defines, first_ids_file=str(resource_ids_path),
+            predetermined_ids_file=str(predetermined_ids_path),
             target_platform='darwin', translate_genders=True)
         root.SetOutputLanguage('en')
         root.RunGatherers()
         root.InitializeIds()
         id_map = root.GetIdMap()
+        languages = {
+            locale: language
+            for locale in locales
+            if (language := _translation_language(root, locale)) is not None
+        }
         for node in root.ActiveDescendants():
             if not isinstance(node, message.MessageNode) or not node.clique:
                 continue
+            node.SetReplaceEllipsis(True)
             resource_id = id_map[node.GetTextualIds()[0]]
             for locale in locales:
+                if locale not in languages:
+                    continue
+                language = languages[locale]
                 branded = (node.ws_at_start +
                            branding.Translate(
-                               node, locale, constants.DEFAULT_GENDER) +
+                               node, language, constants.DEFAULT_GENDER) +
                            node.ws_at_end)
                 original = (
                     node.ws_at_start +
                     _unbranded_translation(
-                        node, locale, constants.DEFAULT_GENDER, message) +
+                        node, language, constants.DEFAULT_GENDER, message) +
                     node.ws_at_end)
                 if branded == original:
                     continue
@@ -178,10 +206,6 @@ def _write_source(path, overrides):
             '  }',
         ])
     lines.extend([
-        '  const std::size_t separator = locale.find_first_of("-_");',
-        '  if (separator != std::string_view::npos) {',
-        '    return EntriesForLocale(locale.substr(0, separator));',
-        '  }',
         '  return {nullptr, 0};',
         '}',
         '}  // namespace',
@@ -209,7 +233,7 @@ def _write_source(path, overrides):
 
 
 def _write_depfile(path, outputs, source_root, branding_path,
-                   resource_ids_path, roots):
+                   resource_ids_path, predetermined_ids_path, roots):
     sys.path.insert(0, str(source_root / 'build'))
     sys.path.insert(0, str(source_root / 'tools/grit'))
     import action_helpers
@@ -223,6 +247,7 @@ def _write_depfile(path, outputs, source_root, branding_path,
         os.path.relpath(Path(__file__).resolve(), cwd),
         os.path.relpath(branding_path.resolve(), cwd),
         os.path.relpath(resource_ids_path.resolve(), cwd),
+        os.path.relpath(predetermined_ids_path.resolve(), cwd),
     }
     for grd, _ in roots:
         dependencies.add(os.path.relpath(grd.resolve(), cwd))
@@ -240,20 +265,24 @@ def main():
     parser.add_argument('--depfile', type=Path, required=True)
     parser.add_argument('--branding', type=Path, required=True)
     parser.add_argument('--resource-ids', type=Path, required=True)
+    parser.add_argument('--predetermined-ids', type=Path, required=True)
     parser.add_argument('--locale', action='append', dest='locales',
                         required=True)
     args = parser.parse_args()
     source_root = args.source_root.resolve()
     branding_path = args.branding.resolve()
     resource_ids_path = args.resource_ids.resolve()
+    predetermined_ids_path = args.predetermined_ids.resolve()
     overrides, roots = collect_overrides(
-        source_root, args.locales, branding_path, resource_ids_path)
+        source_root, args.locales, branding_path, resource_ids_path,
+        predetermined_ids_path)
     args.header.parent.mkdir(parents=True, exist_ok=True)
     args.source.parent.mkdir(parents=True, exist_ok=True)
     _write_header(args.header)
     _write_source(args.source, overrides)
     _write_depfile(args.depfile, (args.header, args.source), source_root,
-                   branding_path, resource_ids_path, roots)
+                   branding_path, resource_ids_path, predetermined_ids_path,
+                   roots)
 
 
 if __name__ == '__main__':

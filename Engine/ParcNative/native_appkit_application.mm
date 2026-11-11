@@ -759,6 +759,10 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
   }
   bool GetLocalizedString(int message_id,
                           std::u16string* value) const override {
+    if (message_id == IDS_VERSION_UI_TITLE) {
+      *value = u"About Parc";
+      return true;
+    }
     auto& resources = ui::ResourceBundle::GetSharedInstance();
     std::string locale = resources.GetLoadedLocale();
     if (locale.empty()) {

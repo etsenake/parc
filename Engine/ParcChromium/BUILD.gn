@@ -59,12 +59,15 @@ action("internal_extension_manifest") {
 
 _product_name_header = "$root_gen_dir/parc/product_name_strings.h"
 _product_name_source = "$root_gen_dir/parc/product_name_strings.cc"
+_product_name_grit_python_inputs =
+    filter_exclude(read_file("//tools/grit/grit.pydeps", "list lines"), [ "#*" ])
 
 action("product_name_strings") {
   script = "generate_product_name_strings.py"
-  inputs = [
-    "//tools/grit/grit/parc_branding.py",
+  inputs = _product_name_grit_python_inputs + [
+    "//tools/grit/grit.pydeps",
     grit_resource_id_file,
+    grit_predetermined_resource_ids_file,
   ]
   outputs = [
     _product_name_header,
@@ -84,6 +87,8 @@ action("product_name_strings") {
     rebase_path("//tools/grit/grit/parc_branding.py", root_build_dir),
     "--resource-ids",
     rebase_path(grit_resource_id_file, root_build_dir),
+    "--predetermined-ids",
+    rebase_path(grit_predetermined_resource_ids_file, root_build_dir),
   ]
   foreach(locale, platform_pak_locales) {
     args += [

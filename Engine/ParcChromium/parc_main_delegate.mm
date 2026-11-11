@@ -4,11 +4,17 @@
 // cef/libcef/common/resource_util.cc).
 #include "parc/parc_main_delegate.h"
 
+#include <optional>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 
 #include "base/check.h"
 #include "base/command_line.h"
+#include "base/files/file_path.h"
+#include "base/memory/ref_counted_memory.h"
+#include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/time/time.h"
 #include "chrome/browser/chrome_browser_main_mac.h"
@@ -30,10 +36,14 @@
 #include "parc/native/native_internal_urls.h"
 #include "parc/native/native_profile_policy.h"
 #include "parc/native/unload_transactions.h"
+#include "parc/product_name_strings.h"
 #include "chrome/utility/chrome_content_utility_client.h"
 #include "mojo/public/cpp/bindings/service_factory.h"
 #include "parc/importer/import_service.h"
+#include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/color/color_provider_manager.h"
+#include "ui/gfx/image/image.h"
 #include "ui/native_theme/native_theme.h"
 
 namespace parc {
@@ -66,10 +76,48 @@ const ui::ColorProvider* NativeEmptyTabColorProvider() {
       ui::NativeTheme::GetInstanceForNativeUi()->GetColorProviderKey(
           /*custom_theme=*/nullptr));
 }
+class ChildProductBrandingDelegate final
+    : public ui::ResourceBundle::Delegate {
+ public:
+  base::FilePath GetPathForResourcePack(
+      const base::FilePath& pack_path,
+      ui::ResourceScaleFactor scale_factor) override {
+    return pack_path;
+  }
+  gfx::Image GetImageNamed(int resource_id) override { return gfx::Image(); }
+  gfx::Image GetNativeImageNamed(int resource_id) override {
+    return gfx::Image();
+  }
+  bool HasDataResource(int resource_id) const override { return false; }
+  scoped_refptr<base::RefCountedMemory> LoadDataResourceBytes(
+      int resource_id,
+      ui::ResourceScaleFactor scale_factor) override {
+    return nullptr;
+  }
+  std::optional<std::string> LoadDataResourceString(int resource_id) override {
+    return std::nullopt;
+  }
+  bool GetRawDataResource(int resource_id,
+                          ui::ResourceScaleFactor scale_factor,
+                          std::string_view* value) const override {
+    return false;
+  }
+  bool GetLocalizedString(int message_id,
+                          std::u16string* value) const override {
+    auto& resources = ui::ResourceBundle::GetSharedInstance();
+    std::string locale = resources.GetLoadedLocale();
+    if (locale.empty()) {
+      locale = l10n_util::GetApplicationLocale(std::string(), false);
+    }
+    return GetProductNameString(locale, message_id, value);
+  }
+};
 ui::ResourceBundle::Delegate* NativeResourceBundle(void* context) {
-  return context
-             ? static_cast<NativeApplication*>(context)->ResourceBundleDelegate()
-             : nullptr;
+  if (context) {
+    return static_cast<NativeApplication*>(context)->ResourceBundleDelegate();
+  }
+  static base::NoDestructor<ChildProductBrandingDelegate> delegate;
+  return delegate.get();
 }
 class ParcContentUtilityClient final : public ChromeContentUtilityClient {
  public:

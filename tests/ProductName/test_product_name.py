@@ -328,6 +328,14 @@ class EngineStringsTests(unittest.TestCase):
     def test_generated_resource_overrides_keep_numeric_ids(self):
         source = engine_source()
         generator = load_generator()
+        predetermined_ids = (
+            source / "tools/gritsettings/startup_resources_mac.txt")
+        pak_locales = tuple(dict.fromkeys(
+            Path(output.attrib["filename"]).stem.rsplit("_", 1)[-1]
+            for output in ET.parse(
+                source / "chrome/app/chromium_strings.grd"
+            ).iter("output")
+            if output.attrib["type"] == "data_package"))
         with tempfile.TemporaryDirectory(prefix="parc-product-name-") as temp:
             resource_ids = Path(temp) / "default_resource_ids"
             subprocess.run(
@@ -343,16 +351,65 @@ class EngineStringsTests(unittest.TestCase):
                 ],
                 check=True,
             )
-            overrides, _ = generator.collect_overrides(
-                source, ("en-US", "az", "ko"),
+            overrides, roots = generator.collect_overrides(
+                source, pak_locales,
                 REPO / "Engine/ParcHost/integration/parc_branding.py",
-                resource_ids)
+                resource_ids, predetermined_ids)
 
         self.assertIn("About Parc", overrides["en-US"].values())
+        self.assertEqual("Parc", overrides["en-US"][103])
+        self.assertIn("Vil du starte Parc på nytt?", overrides["nb"].values())
+        self.assertFalse(
+            [locale for locale, entries in overrides.items() if not entries])
+        chromium_root = next(
+            root for path, root in roots
+            if path.name == "chromium_strings.grd")
+        self.assertEqual(103, chromium_root.GetIdMap()["IDS_PRODUCT_NAME"])
+        install_running_id = next(
+            root.GetIdMap()["IDS_DOWNLOAD_STATUS_CRX_INSTALL_RUNNING"]
+            for _, root in roots
+            if "IDS_DOWNLOAD_STATUS_CRX_INSTALL_RUNNING" in root.GetIdMap())
+        self.assertEqual(
+            "Adding to Parc…",
+            overrides["en-US"][install_running_id])
+        pinned_ids = {
+            name: int(resource_id)
+            for name, resource_id in (
+                line.split()
+                for line in predetermined_ids.read_text().splitlines()
+                if line.strip() and not line.startswith("#"))
+        }
+        checked_pinned_ids = 0
+        for _, root in roots:
+            id_map = root.GetIdMap()
+            for name, expected in pinned_ids.items():
+                if name in id_map:
+                    self.assertEqual(expected, id_map[name], name)
+                    checked_pinned_ids += 1
+        self.assertGreater(checked_pinned_ids, 100)
         self.assertTrue(all(isinstance(resource_id, int)
                             for resource_id in overrides["en-US"]))
         self.assertTrue(overrides["az"])
         self.assertTrue(overrides["ko"])
+
+        build = (REPO / "Engine/ParcChromium/BUILD.gn").read_text()
+        self.assertIn("grit_predetermined_resource_ids_file", build)
+        self.assertIn('"--predetermined-ids"', build)
+        self.assertIn('"//tools/grit/grit.pydeps"', build)
+        app_delegate = (
+            REPO / "Engine/ParcNative/native_appkit_application.mm"
+        ).read_text()
+        self.assertIn("message_id == IDS_VERSION_UI_TITLE", app_delegate)
+        self.assertIn('*value = u"About Parc";', app_delegate)
+
+    def test_packed_overrides_cover_child_processes(self):
+        delegate = (
+            REPO / "Engine/ParcChromium/parc_main_delegate.cc"
+        ).read_text()
+        self.assertIn("ChildProductBrandingDelegate", delegate)
+        self.assertIn("return delegate.get();", delegate)
+        self.assertIn("GetProductNameString(locale, message_id, value)",
+                      delegate)
 
     def test_non_pak_output_inventory_stays_explicit(self):
         source = engine_source()

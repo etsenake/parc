@@ -266,9 +266,10 @@ See [page compositing](../docs/page-compositing.md) and
 
 ## Product name
 
-The product-name build action uses Chromium's translated GRIT messages and
-numeric IDs to generate Parc's language-specific string overrides. The resource
-delegate returns those strings before packed-resource lookup. It replaces
+The product-name build action uses Chromium's translated GRIT messages and fixed
+macOS numeric IDs to generate Parc's language-specific string overrides. Browser
+and child-process resource delegates return them before packed-resource lookup.
+It replaces
 Chromium in browser strings and Chrome only in the explicitly classified
 messages that mean this browser. Google products/services, copyright, Chromium
 project links and device names retain their real names. IDs, user agents, paths,
