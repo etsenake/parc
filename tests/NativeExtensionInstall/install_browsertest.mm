@@ -26,6 +26,11 @@
 #include "extensions/test/test_extension_dir.h"
 #include "ui/base/base_window.h"
 #import "window_security_reservation.h"
+namespace parc_hooks {
+void SetExtensionInstallCapture(
+    std::shared_ptr<extensions::ExtensionInstallNativeBinding> (*)(
+        ExtensionInstallPromptShowParams&));
+}
 namespace parc {
 namespace {
 using Result = extensions::ExtensionInstallPromptClient::Result;
@@ -94,6 +99,8 @@ class NativeExtensionInstallTest : public extensions::ExtensionApiTest {
  protected:
   void SetUpOnMainThread() override {
     extensions::ExtensionApiTest::SetUpOnMainThread();
+    parc_hooks::SetExtensionInstallCapture(
+        &NativeExtensionInstallService::CaptureFor);
     window_ = browser()->GetWindow()->GetNativeWindow().GetNativeNSWindow();
     [window_ orderFront:nil];
     host_ = std::make_unique<Host>(window_);
@@ -114,6 +121,7 @@ class NativeExtensionInstallTest : public extensions::ExtensionApiTest {
     base::RunLoop().RunUntilIdle();
     service_.reset();
     host_.reset();
+    parc_hooks::SetExtensionInstallCapture(nullptr);
     extensions::ExtensionApiTest::TearDownOnMainThread();
   }
   void Confirm() {

@@ -11,7 +11,11 @@ namespace parc {
 class NativeExtensionActionHost;
 // One service per actual Browser, sharing the existing native security gate.
 // Register before installers can start; cancel before page detach or host
-// destruction. Installer decisions never mutate policy or grants directly.
+// destruction. Deliver consent once and asynchronously. Cancellation resolves
+// only pending consent and never undoes an install; install failures keep
+// Chromium's install error instead of becoming consent refusals. Parent approval
+// succeeds only after real parent reauthentication. The Profile marker outlives
+// its last window. Installer decisions never mutate policy or grants directly.
 class NativeExtensionInstallService final {
  public:
   DECLARE_USER_DATA(NativeExtensionInstallService);
