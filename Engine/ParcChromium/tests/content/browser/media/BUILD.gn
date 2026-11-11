@@ -10,6 +10,7 @@ source_set("tests") {
     check_includes = false
   }
   sources = [
+    "back_forward_cache_impl_test.cc",
     "media_session_controller_test.cc",
     "media_session_impl_service_routing_test.cc",
     "media_web_contents_observer_test.cc",
@@ -25,10 +26,12 @@ source_set("tests") {
     "//media/mojo/mojom",
     "//mojo/public/cpp/bindings",
     "//services/media_session/public/cpp",
+    "//services/media_session/public/mojom",
     "//services/media_session/public/cpp/test:test_support",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/blink/public/common",
     "//ui/gfx",
+    "//url",
   ]
 }
