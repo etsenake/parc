@@ -1,0 +1,26 @@
+# Installed at //third_party/blink/renderer/parc_tests. Keeping the owned test
+# target inside Blink preserves its internal visibility and compiler configs.
+
+assert(is_mac)
+
+source_set("blink_core_tests") {
+  visibility = [ "//third_party/blink/renderer/controller:*" ]
+  testonly = true
+  sources = [ "blink/scrollbar_fade_test.cc" ]
+
+  configs += [
+    "//third_party/blink/renderer:config",
+    "//third_party/blink/renderer:inside_blink",
+    "//third_party/blink/renderer/core:blink_core_pch",
+  ]
+
+  deps = [
+    "//base/test:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/blink/public:test_headers",
+    "//third_party/blink/renderer/core",
+    "//third_party/blink/renderer/core:unit_tests",
+    "//third_party/blink/renderer/platform:test_support",
+  ]
+}
