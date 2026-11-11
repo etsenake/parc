@@ -1,10 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# The frozen pane a window keeps after its page moves to another window.
-#
-# (live pane left, frozen pane right) to compare against, and
-# PARC_ARC_FROZEN_COMPARISON a PNG to write side by side. No browser runs.
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$repo_root/build/tests"
 xcrun swiftc -warnings-as-errors -parse-as-library \

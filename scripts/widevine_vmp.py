@@ -1,10 +1,3 @@
-"""Widevine VMP host signatures (.sig files) for macOS Mach-O binaries.
-
-A signature file is a version byte (0) followed by tagged entries, each a tag
-byte, an LEB128 length and the bytes: 1 the DER certificate, 2 an RSA-PSS
-signature (SHA-1, MGF1-SHA-1, 20-byte salt) of the binary's digest followed by
-the flags byte, and 3 the flags byte. Flag 1 marks the host's main binary.
-"""
 from __future__ import annotations
 
 import base64
@@ -92,11 +85,6 @@ def _slice_body(stream, base: int, file_size: int) -> tuple[int, int]:
 
 
 def macho_body_ranges(path: Path) -> list[tuple[int, int]]:
-    """Per architecture, from the first __TEXT section to the end of the string table.
-
-    The body excludes the header, load commands and Apple's code signature, so
-    Apple signing after VMP signing leaves the VMP signature valid.
-    """
     file_size = path.stat().st_size
     with path.open("rb") as stream:
         head = stream.read(8)
@@ -353,8 +341,6 @@ def verify(binary: Path, data: bytes, flags: int, now: datetime | None = None) -
 
 
 class KeySigner:
-    """Signs locally with a VMP certificate and its RSA private key through openssl."""
-
     kind = "certificate-key"
 
     def __init__(self, certificate: Path, private_key: Path, openssl: str, passphrase: str | None):
@@ -374,8 +360,6 @@ class KeySigner:
             if self.passphrase is not None:
                 command += ["-passin", "env:" + PASSPHRASE_VARIABLE]
                 environment = {**os.environ, PASSPHRASE_VARIABLE: self.passphrase}
-            # openssl asks for a passphrase on /dev/tty even with stdin closed;
-            # a new session has no controlling terminal, so it fails instead.
             result = subprocess.run(command + [str(message_path)], stdin=subprocess.DEVNULL, env=environment,
                                     capture_output=True, text=True, start_new_session=True)
             if result.returncode or not signature_path.is_file():
@@ -386,8 +370,6 @@ class KeySigner:
 
 
 class CommandSigner:
-    """Delegates to an external VMP signing service, run as COMMAND BINARY SIGNATURE FLAGS."""
-
     kind = "command"
 
     def __init__(self, command: Path):

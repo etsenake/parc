@@ -1,5 +1,4 @@
 #!/bin/bash
-# Inert native Settings hover/ownership checks; no visible window or browser.
 set -euo pipefail
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 output=$(mktemp -d)

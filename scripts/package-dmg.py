@@ -45,7 +45,6 @@ def verify_app(app, report, folder):
             raise Refusal("DMG signed image differs from the notarized package: " + relative)
     notary.command(["codesign", "--verify", "--deep", "--strict", app], folder / "app-codesign.log")
     details = notary.command(["codesign", "-dv", "--verbose=4", app], folder / "app-identity.log")
-    # codesign's descriptive output is on stderr, retained by command in the log.
     details += (folder / "app-identity.log").read_text()
     if (f'TeamIdentifier={report["signing_team"]}\n' not in details
             or "Authority=Developer ID Application: " not in details or "Timestamp=" not in details):

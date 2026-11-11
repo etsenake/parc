@@ -1,13 +1,4 @@
 #!/bin/bash
-# Packages the app from this clean, pushed checkout and publishes it as a
-# private GitHub pre-release, so another Mac can run it without building.
-# Either seal a local engine build, or (--from-release) reuse the engine of a
-# published standalone package when Engine/ hasn't changed since it was built.
-# --local-test packages for this Mac only, against the newest published engine
-# even if Engine/ moved on, as long as the app's engine headers didn't (or, with
-# PARC_ALLOW_CHANGED_ENGINE_HEADERS=1, their new calls are guarded with
-# respondsToSelector:); it is labelled and never published. See
-# tests/Packaging/README.md.
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 git_root="${PARC_RELEASE_REPOSITORY:-$repo_root}"
@@ -16,8 +7,6 @@ github_repo="etsenake/parc"
 keep=3
 tag_pattern='^app-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$'
 stable_tag_pattern='^v[0-9]+[.][0-9]+[.][0-9]+$'
-# An inherited GH_TOKEN may be stale, and gh can fail to read its keyring login
-# on its own; pass the keyring token explicitly.
 gh_token="$(env -u GH_TOKEN -u GITHUB_TOKEN gh auth token 2>/dev/null || true)"
 gh() { GH_TOKEN="$gh_token" GITHUB_TOKEN= command gh "$@"; }
 
@@ -50,7 +39,6 @@ if [ -n "$stable" ] && [ -n "$local_test" ]; then usage; fi
 
 cd "$repo_root"
 started=$SECONDS
-# build.py reads these paths whether or not Git tracks the files.
 inputs=(Sources Resources Engine scripts app-version.json release-notes.json)
 check_checkout() {
   if [ -n "${PARC_RELEASE_COMMIT:-}" ]; then
@@ -73,7 +61,6 @@ app_version="$(python3 scripts/app_version.py show)"
 stable_tag="v$app_version"
 release_notes=""
 if [ -n "$stable" ]; then
-  # Committed with the version, so a resumed release publishes the same text.
   release_notes="$(python3 scripts/release_notes.py markdown "$app_version")"
   stable_ref="$(git ls-remote --tags origin "refs/tags/$stable_tag")"
   if [ -n "$stable_ref" ] && [ -z "${PARC_PACKAGE_RUN:-}" ]; then
@@ -81,7 +68,6 @@ if [ -n "$stable" ]; then
     exit 1
   fi
 fi
-# build.py copies Resources wholesale, so ignored files there would ship too.
 find Resources -name .DS_Store -delete
 if [ -z "${PARC_RELEASE_COMMIT:-}" ] && [ -n "$(git status --porcelain --ignored=matching --untracked-files=all -- Resources)" ]; then
   echo "error: Resources has ignored files that would be packaged:" >&2
@@ -107,9 +93,6 @@ else
   mkdir "$run"
 fi
 
-# An Apple-issued identity's Team ID keeps macOS's Keychain and privacy grants
-# across builds; ad-hoc signatures change with every build. scripts/setup-signing.sh
-# records the identity once per Mac.
 sign_name="${PARC_SIGN_IDENTITY:-}"
 if [ -z "$sign_name" ] && [ -s "$HOME/.config/parc/signing-identity" ]; then
   sign_name="$(head -n 1 "$HOME/.config/parc/signing-identity")"
@@ -147,8 +130,6 @@ else
   signed_with="ad-hoc"
   echo "note: signing ad-hoc, so macOS asks for Parc Safe Storage again; see bash scripts/setup-signing.sh" >&2
 fi
-# Production publication requires Apple's Developer ID and notarization checks.
-# Validate the stored credentials before compiling.
 notary_profile=""
 if [ -z "$local_test" ] && [[ "$sign_name" == 'Developer ID Application: '* ]]; then
   notary_profile="${PARC_NOTARY_PROFILE:-parc-notary}"
@@ -161,8 +142,6 @@ fi
 
 if [ -n "$from_release" ]; then
   if [ -z "$release_tag" ]; then
-    # A local test takes the newest engine; a published build needs HEAD's overlay, read
-    # from the release's tagged source because stable release titles are just the version.
     candidates="$(gh release list -R "$github_repo" --limit 200 --json tagName,createdAt,isDraft,isPrerelease \
       --jq "[.[] | select((((.tagName | test(\"$tag_pattern\")) and .isPrerelease) or ((.tagName | test(\"$stable_tag_pattern\")) and (.isPrerelease | not))) and (.isDraft | not))] | sort_by(.createdAt) | reverse | .[].tagName" </dev/null)"
     for candidate in $candidates; do
@@ -207,7 +186,6 @@ if [ -n "$from_release" ]; then
     echo "error: Engine/ changed since $release_tag ($release_commit); build the engine instead" >&2
     exit 1
   fi
-  # The pinned engine inputs come from an engine workspace's Git objects.
   workspace="${PARC_ENGINE_WORKSPACE:-}"
   if [ -z "$workspace" ]; then
     main_root="$(dirname -- "$(git rev-parse --path-format=absolute --git-common-dir)")"
@@ -233,7 +211,6 @@ PYWORKSPACE
   cache="$repo_root/build/release-cache/$release_tag"
   zip="$cache/$asset"
   if [ ! -f "$zip" ] || [ "sha256:$(shasum -a 256 "$zip" | cut -d' ' -f1)" != "$digest" ]; then
-    # Preserve other releases and caches. Replace only a failed download.
     mkdir -p "$cache"
     if [ -f "$zip" ]; then mv "$zip" "$zip.invalid-$(date +%s)"; fi
     gh release download "$release_tag" -R "$github_repo" -p "$asset" -D "$cache" </dev/null
@@ -261,7 +238,6 @@ else
   description="Package built from $commit on engine overlay $overlay; signed $signed_with."
 fi
 
-# build.py writes its own package.log in the run directory.
 purpose=distribution
 if [ -n "$local_test" ]; then purpose=development; fi
 if [ -n "${PARC_PACKAGE_RUN:-}" ] && [ -f "$run/development/package-report.json" ]; then
@@ -319,7 +295,6 @@ release_options=(--prerelease)
 title="Parc app $stamp ($short, engine overlay $overlay)"
 notes="$description Install: tests/Packaging/README.md, \"Publishing app builds\"."
 if [ -n "$stable" ]; then
-  # Users read stable releases; their provenance stays in package-report.json and the release run.
   tag="$stable_tag"
   archive="$run/Parc-$app_version-arm64.zip"
   release_options=(--prerelease --latest=false)
@@ -344,7 +319,6 @@ if [ -n "${PARC_PACKAGE_RUN:-}" ] && gh release view "$tag" -R "$github_repo" --
 import json,sys
 if json.load(open(sys.argv[1]))['targetCommitish']!=sys.argv[2]:raise SystemExit('error: existing release belongs to another source commit')
 PY
-  # Reconcile partially uploaded assets by immutable GitHub SHA-256, never clobber.
   python3 "$repo_root/scripts/release_assets.py" "$tag" "$commit" "${assets[@]}"
 else
   gh release create "$tag" "${assets[@]}" -R "$github_repo" "${release_options[@]}" --target "$commit" \

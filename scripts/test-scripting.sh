@@ -15,8 +15,6 @@ cat > "$check_bundle/Info.plist" <<'PLIST'
 <key>OSAScriptingDefinition</key><string>Parc.sdef</string>
 </dict></plist>
 PLIST
-# This process contains only the scripting wrappers and fake model owners.
-# No browser, Apple Event, osascript or user-profile operation is performed.
 xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcApp/BrowserScripting.swift" \
   "$repo_root/tests/Scripting/main.swift" \

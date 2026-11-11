@@ -1,17 +1,4 @@
 #!/bin/bash
-# Native HLS player proof (Engine/ParcNative/fairplay/fairplay_hls_player.mm
-# and fairplay_hls_timeline.cc, with the key loader and key session for
-# FairPlay keys). Compiles the player with
-# tests/FairPlay/hls_player_harness.mm using clang only and plays public HLS
-# streams through a loader the harness controls. Needs network access, except
-# for the timeline scenario (WebKit's live and DVR timing rules). Optional
-# argument: one scenario (timeline, ts, fmp4, live, missing, http, bad-url,
-# data-url, data-url-video, skd, skd-handler, teardown, keys-first, keys-loader,
-# keys-attach-at-request, keys-multikey,
-# keys-await, keys-early, keys-close, keys-legacy, metadata-first,
-# keys-legacy-order, airplay, file, audio-output). The keys
-# scenarios license Axinom's FairPlay HLS vectors from its public test
-# license service.
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 output="$(mktemp -d "${TMPDIR:-/tmp}/parc-fairplay-hls.XXXXXX")"
@@ -27,9 +14,6 @@ done
 xcrun clang++ "${flags[@]}" -c "$tests/hls_player_harness.mm" -o "$output/hls_player_harness.o"
 xcrun clang++ "$output"/*.o -framework AVFoundation -framework CoreAudio -framework CoreGraphics -framework CoreMedia \
   -framework Foundation -framework QuartzCore -o "$output/hls-player-proof"
-# The harness bounds each wait itself; this caps the whole run. The cap's
-# sleep is its own process: stopping the cap must stop it too, or it would
-# hold the output open. Stopping this script stops both.
 "$output/hls-player-proof" "$@" &
 proof=$!
 ( sleeper=; trap 'if [ -n "$sleeper" ]; then kill "$sleeper" 2>/dev/null; fi; exit 0' TERM

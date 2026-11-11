@@ -51,7 +51,6 @@ def app_processes(app):
 
 
 def stop_app(app):
-    # NSRunningApplication requests a normal quit without scripting browser UI.
     if app_processes(app):
         subprocess.run(["osascript", "-l", "JavaScript", "-e",
             'ObjC.import("AppKit"); $.NSRunningApplication.runningApplicationsWithBundleIdentifier("org.parc.Browser").js.forEach(a => a.terminate)'],
@@ -116,8 +115,6 @@ def install(package, tag, commit, receipts, app=Path("/Applications/Parc.app")):
         previous = json.loads(receipt_path.read_text())
         if previous['commit'] != commit or previous['report_sha256'] != hashlib.sha256(raw).hexdigest():
             raise ValueError('Installation receipt belongs to different inputs')
-        # No failed startup is silently retried. Only an interrupted observation
-        # without a completed result can start a fresh, explicitly recorded run.
         if previous.get('phase') in ('installed', 'launching'):
             check.verify_installed(app, report, strict=False)
             stop_app(app)
@@ -129,7 +126,6 @@ def install(package, tag, commit, receipts, app=Path("/Applications/Parc.app")):
             if result['status'] != 'passed':
                 raise ValueError('Startup failed; candidate and evidence preserved without automatic retry')
             return
-        # A killed filesystem transaction is reconciled below using exact paths.
     stop_app(app)
     profile, before, backup = backup_profile(receipts)
     preferences = Path.home() / "Library/Preferences/org.parc.Browser.plist"
@@ -137,7 +133,6 @@ def install(package, tag, commit, receipts, app=Path("/Applications/Parc.app")):
         subprocess.run(["ditto", str(preferences), str(receipts / "preferences-backup.plist")], check=True)
     stage_parent = app.parent / (".Parc-release-" + receipts.parent.name)
     if stage_parent.exists():
-        # Retain interrupted staging rather than merging a possibly partial app.
         os.rename(stage_parent, stage_parent.with_name(stage_parent.name + '-interrupted-' + str(time.time_ns())))
     stage_parent.mkdir()
     staged = stage_parent / "Parc.app"
@@ -150,7 +145,6 @@ def install(package, tag, commit, receipts, app=Path("/Applications/Parc.app")):
     atomic(receipt_path, intent)
     if app.exists():
         if old.exists():
-            # The prior rename/install may have completed before checkpointing.
             check.verify_installed(app, report, strict=True)
             shutil.rmtree(staged)
         else:
@@ -160,7 +154,6 @@ def install(package, tag, commit, receipts, app=Path("/Applications/Parc.app")):
             os.rename(staged, app)
         check.verify_installed(app, report, strict=True)
     except BaseException:
-        # This is a filesystem/signature transaction failure before any launch.
         if app.exists():
             os.rename(app, receipts / "failed-stage-Parc.app")
         if old.exists():

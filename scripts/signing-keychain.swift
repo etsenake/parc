@@ -1,4 +1,3 @@
-// Export/import only Parc's selected Developer ID identity. Secrets use stdin.
 import Foundation
 import Security
 
@@ -31,7 +30,7 @@ if CommandLine.arguments[1] == "export" {
     var exported: CFData?
     let result = SecItemExport(identity, .formatPKCS12, [], &parameters, &exported)
     guard result == errSecSuccess, let data = exported as Data? else { fail("Selected key export failed: \(result); normal Keychain approval may be required") }
-    print(data.base64EncodedString()) // Encrypted PKCS12, captured by the parent; never logged.
+    print(data.base64EncodedString())
 } else if CommandLine.arguments[1] == "import" {
     guard let encoded = request["pkcs12"], let data = Data(base64Encoded: encoded) else { fail("Missing encrypted PKCS12") }
     var keychain: SecKeychain?

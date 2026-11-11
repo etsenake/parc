@@ -43,8 +43,6 @@ def run(*args, cwd=None, env=None):
 def github(*args):
     global _github_environment
     if _github_environment is None:
-        # An inherited token can be stale; retrieve gh's saved login without
-        # exposing its value through arguments, diagnostics or cask metadata.
         login_environment = {key: value for key, value in os.environ.items() if key not in ("GH_TOKEN", "GITHUB_TOKEN")}
         token = subprocess.check_output(["gh", "auth", "token"], env=login_environment,
                                         text=True, stderr=subprocess.DEVNULL).strip()
@@ -167,8 +165,6 @@ def promote_release(release, acceptance, app_version, report_sha, notes):
 
 
 def promote_verified_artifacts(release, notes):
-    """Called only after ZIP, DMG, signatures, Apple ticket and source verification. Sets the bare-version title
-    and user notes too, so a candidate packaged with older text is corrected when a release resumes."""
     verify_tag(release["tag_name"], release["target_commitish"])
     if github("api", f"repos/{REPOSITORY}", "--jq", ".private") != "true":
         raise ValueError("Parc release assets must remain in the private repository")
@@ -195,7 +191,6 @@ def verify_dmg_asset(release, dmg, report, folder):
 
 
 def publish_public(release, files, notes):
-    """Mirror the verified assets to the public releases repository; never replace differing bytes."""
     tag = release["tag_name"]
     text = ("--title", tag.removeprefix("v"), "--notes", notes)
     if github("api", f"repos/{PUBLIC_REPOSITORY}", "--jq", ".private") != "false":
@@ -227,7 +222,6 @@ def publish_public(release, files, notes):
 
 
 def verify_appcast(appcast, tag, archive):
-    """The feed must offer exactly this release's public ZIP."""
     enclosure = ElementTree.parse(appcast).find("channel/item/enclosure")
     url = f"https://github.com/{PUBLIC_REPOSITORY}/releases/download/{tag}/{archive.name}"
     if enclosure is None or enclosure.get("url") != url or enclosure.get("length") != str(archive.stat().st_size):

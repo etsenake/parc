@@ -3,7 +3,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
-# The real shared ActionButton/LayoutView without Sidebar's browser owners.
 python3 - "$output/NativeBases.swift" <<'PY'
 import pathlib,sys
 s=pathlib.Path('Sources/ParcApp/SidebarView.swift').read_text()
@@ -22,6 +21,5 @@ xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0
   Sources/ParcCore/MembershipCard.swift Sources/ParcApp/MembershipCardView.swift \
   Sources/ParcApp/OnboardingReadyContent.swift Sources/ParcApp/TranslucentButtonFace.swift Sources/ParcApp/PointerCover.swift Sources/ParcApp/ReloadControl.swift Sources/ParcApp/PointingHand.swift "$output/NativeBases.swift" \
   tests/OnboardingSetupCardTests.swift -o "$output/check"
-# An unbundled executable's Bundle.main.resourceURL is its own directory.
 cp -R Resources/ThemeTextures "$output/ThemeTextures"
 "$output/check"

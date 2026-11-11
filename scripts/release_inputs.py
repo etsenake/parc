@@ -1,4 +1,3 @@
-"""Immutable Git archive inputs, without another checkout or Git worktree."""
 import hashlib
 import json
 from pathlib import Path
@@ -31,8 +30,6 @@ def verify(repo, source, commit):
         actual = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data).hexdigest()
         if actual != entry["blob"]:
             raise ValueError("Frozen release input changed: " + name)
-    # Only generated build output is allowed outside the committed input set.
-    # Extra resources or source files must never slip into a resumed package.
     for directory in ('Sources', 'Resources', 'Engine', 'scripts'):
         for parent, dirs, files in os.walk(Path(source) / directory):
             dirs[:] = [d for d in dirs if d != '__pycache__']

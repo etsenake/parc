@@ -3,7 +3,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
-# ThemeChromePalette and its colour maths, cut before the renderer's diagnostics.
 python3 - "$output/ThemePalette.swift" <<'EOF'
 import sys
 from pathlib import Path

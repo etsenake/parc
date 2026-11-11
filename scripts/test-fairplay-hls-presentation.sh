@@ -1,8 +1,4 @@
 #!/bin/bash
-# Native HLS presentation proofs (tests/FairPlay/hls_presentation). Compiles
-# the harness with clang only and runs it against Apple's public HLS examples
-# in visible windows. Needs network access. Pass --only <Section> to run one
-# section.
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 output="$(mktemp -d "${TMPDIR:-/tmp}/parc-fairplay-hls-presentation.XXXXXX")"
@@ -15,8 +11,6 @@ xcrun clang++ "${flags[@]}" -c "$core/fairplay_hls_player_layer.mm" -o "$output/
 xcrun clang++ "${flags[@]}" -c "$tests/harness.mm" -o "$output/harness.o"
 xcrun clang++ "$output"/*.o -framework AppKit -framework AVFoundation \
   -framework CoreMedia -framework QuartzCore -o "$output/fairplay-hls-presentation-proof"
-# The harness exits by itself; a 300 s cap backs that up. The cap's sleep is
-# its own process: stopping the cap must stop it too.
 "$output/fairplay-hls-presentation-proof" "$@" &
 proof=$!
 ( trap 'kill "$sleeper" 2>/dev/null; exit 0' TERM; sleep 300 >/dev/null 2>&1 & sleeper=$!

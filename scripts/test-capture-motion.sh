@@ -1,6 +1,4 @@
 #!/bin/bash
-# Production source slices with inert controls; no renderer, ordered window,
-# input posting, service invocation, personal profile or user media.
 set -euo pipefail
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 check_root=$(mktemp -d "${TMPDIR:-/tmp}/parc-capture-motion.XXXXXX")

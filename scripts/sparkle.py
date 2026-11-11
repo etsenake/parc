@@ -1,4 +1,3 @@
-"""The pinned Sparkle release Parc embeds for software updates, fetched on first use."""
 from __future__ import annotations
 
 import hashlib
@@ -11,21 +10,16 @@ URL = f"https://github.com/sparkle-project/Sparkle/releases/download/{VERSION}/S
 SHA256 = "1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27"
 RELEASES = "https://github.com/etsenake/parc-releases/releases"
 FEED_URL = RELEASES + "/latest/download/appcast.xml"
-# The private key lives in the release Mac's login Keychain under Sparkle's
-# service, this account (generate_keys/sign_update --account parc).
 SERVICE = "https://sparkle-project.org"
 ACCOUNT = "parc"
 PUBLIC_ED_KEY = "1hic4mo2AXODWtTea711Nwof69H++DEETfSXVUzCqKI="
-#
 INFO = {"SUFeedURL": FEED_URL, "SUPublicEDKey": PUBLIC_ED_KEY, "SUEnableAutomaticChecks": True,
         "SUAutomaticallyUpdate": True, "SUScheduledCheckInterval": 14400}
 
 
 def has_key() -> bool:
-    """Whether the login Keychain holds the signing key; its secret is not read."""
     found = subprocess.run(["security", "find-generic-password", "-s", SERVICE, "-a", ACCOUNT],
                            capture_output=True, timeout=30).returncode
-    # 44 is errSecItemNotFound; anything else (a locked Keychain) is not "missing".
     if found not in (0, 44):
         raise RuntimeError("The login Keychain could not be searched for Sparkle's signing key; unlock it first")
     return found == 0
@@ -36,7 +30,6 @@ def directory(cache: Path) -> Path:
 
 
 def fetch(cache: Path) -> Path:
-    """The verified release (Sparkle.framework and bin/), downloaded once into cache."""
     target = directory(cache)
     if target.is_dir():
         return target
@@ -55,7 +48,6 @@ def fetch(cache: Path) -> Path:
         try:
             extracted.rename(target)
         except OSError:
-            # A concurrent build published the same verified release first.
             if not target.is_dir():
                 raise
     return target

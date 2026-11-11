@@ -10,11 +10,8 @@ xcrun swiftc -warnings-as-errors -parse-as-library Sources/ParcCore/*.swift "${t
     Sources/ParcApp/FolderUndoManager.swift Sources/ParcApp/SidebarSplitTitleUndo.swift \
     Sources/ParcApp/SidebarGroupIconPicker.swift \
     Sources/ParcApp/SidebarEmojiPicker.swift Sources/ParcApp/SidebarIconCatalog.swift Sources/ParcApp/SidebarRowAppearance.swift tests/SidebarRows/SplitAppearanceTests.swift -o "$output/check"
-# An unbundled executable's Bundle.main.resourceURL is its own directory.
 cp -R Resources/CustomInfoPicker "$output/CustomInfoPicker"
 "$output/check"
-# The row background resolves its ring colour with ThemeRenderer's NSColor.cgColor(in:),
-# in the palette slice the tooltip step above cut into "$output".
 xcrun swiftc -warnings-as-errors -parse-as-library Sources/ParcApp/SidebarRowAppearance.swift \
     Sources/ParcApp/SidebarSplitCellLayout.swift "$output/TooltipThemePalette.swift" Sources/ParcCore/SpaceTheme.swift \
     tests/SidebarRows/SplitCellLayoutTests.swift -o "$output/layout"

@@ -57,12 +57,7 @@ PROOF_FILES = (
     "chrome/app/helper-gpu-entitlements.plist", "chrome/app/app-entitlements.plist",
     "ui/gl/features.gni", "ui/gl/BUILD.gn",
 )
-# Chromium writes a usage description into its own bundle for every privacy-gated
-# macOS API it can reach; macOS terminates an app that reaches one without it.
 CHROMIUM_USAGE_DESCRIPTIONS = "chrome/tools/build/mac/infoplist_strings_util.cc"
-# The only upstream files packaging reads besides the engine itself. A release
-# engine build takes them from the source lock's commits in a workspace's Git
-# objects, never from a working tree an engine build may be changing.
 PINNED_INPUTS = (("chromium", "LICENSE"),
                  ("chromium", "chrome/app/app-entitlements.plist"),
                  ("chromium", CHROMIUM_USAGE_DESCRIPTIONS))
@@ -82,7 +77,6 @@ def run(*args: object, capture: bool = True) -> str:
     cmd = [str(a) for a in args]
     if capture:
         return subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE)
-    # Inherit stdout/stderr so package.log / tee see compiler progress (e.g. swiftc -v).
     subprocess.check_call(cmd)
     return ""
 
@@ -146,11 +140,6 @@ def parse_macho(output: str) -> dict:
 
 
 def macho_layout(path: Path) -> dict:
-    """Validate the thin ARM64 header, command table and file-backed segments.
-
-    Signing accepts some malformed images that dyld refuses. In particular,
-    every byte of the header/load commands must remain mapped by __TEXT.
-    """
     file_size = path.stat().st_size
     with path.open("rb") as stream:
         header = stream.read(32)
@@ -172,7 +161,7 @@ def macho_layout(path: Path) -> dict:
             raise Refusal(f"Invalid Mach-O load command size: {path}")
         raw = table[offset:offset + command_size]
         commands.append((command, raw))
-        if command == 0x19:  # LC_SEGMENT_64
+        if command == 0x19:
             if command_size < 72:
                 raise Refusal(f"Truncated Mach-O segment: {path}")
             (_, _, name, vmaddr, vmsize, fileoff, filesize, _, _, sections, _) = struct.unpack_from("<II16sQQQQiiII", raw)
@@ -186,7 +175,7 @@ def macho_layout(path: Path) -> dict:
                 address, length, start, flags = section[2], section[3], section[4], section[8]
                 if address < vmaddr or length > vmsize or address - vmaddr > vmsize - length:
                     raise Refusal(f"Mach-O section exceeds VM bounds: {path}")
-                if flags & 0xFF not in {1, 0xC, 0x12}:  # zero-fill sections have no file bytes
+                if flags & 0xFF not in {1, 0xC, 0x12}:
                     if start < fileoff or length > filesize or start - fileoff > filesize - length:
                         raise Refusal(f"Mach-O section exceeds segment bounds: {path}")
                     if length and start < 32 + size:
@@ -208,12 +197,8 @@ def macho_layout(path: Path) -> dict:
 
 def inspect_macho(path: Path) -> dict:
     macho_layout(path)
-    # Single-architecture input avoids ambiguity when different slices load
-    # different libraries. This bootstrap deliberately produces ARM64 only.
     if run("/usr/bin/lipo", "-archs", path).strip() != "arm64":
         raise Refusal(f"Expected an ARM64-only image: {path}")
-    # Chromium helper names end in (Renderer), (GPU) or (Alerts). Treat those
-    # parentheses as filename text, not otool's archive(member) notation.
     return parse_macho(run("/usr/bin/otool", "-m", "-l", path))
 
 
@@ -244,14 +229,10 @@ def resolve_dependency(value: str, image: Path, info: dict, root: Path, *, outpu
                 candidates.append(image.parent / rpath.replace("@loader_path", ".", 1) / tail)
             elif rpath.startswith("/"):
                 candidates.append(Path(rpath) / tail)
-        # The pinned Chromium component output links every component in this root.
-        # This is an explicit deployment root, not an arbitrary basename search.
         if output_fallback:
             candidates.append(root / tail)
     elif value.startswith("/"):
         candidates = [Path(value)]
-    # @executable_path cannot be inferred without a particular executable. Chromium
-    # uses it for the framework's ID (not a load); reject an unexpected load.
     valid = set()
     for candidate in candidates:
         if candidate.exists():
@@ -286,7 +267,6 @@ def dependency_closure(root: Path, seeds: list[Path], inspect=inspect_macho) -> 
 
 
 def inventory_tree(root: Path) -> dict:
-    """Hash regular files and preserve only relative, in-tree symlinks."""
     records = {}
     for path in sorted(root.rglob("*")):
         name = path.relative_to(root).as_posix()
@@ -340,7 +320,6 @@ def source_verifier(repo: Path):
 
 
 def verify_source_baseline(repo: Path, workspace: Path, lock: dict, state: dict) -> None:
-    # Reuse the bootstrap's real checks without invoking sync/build/GN/Ninja.
     module = source_verifier(repo)
     try:
         module.verify_workspace(workspace, lock, state,
@@ -388,7 +367,6 @@ def verify_workspace(engine: Path, repo: Path) -> tuple[Path, dict]:
         explicit_path(path)
         if sha(path) != item["output_sha256"] or stat.S_IMODE(path.stat().st_mode) != item["mode"]:
             raise Refusal(f"Applied source no longer matches completed build: {target}")
-    # Bind the public headers used by the executable to the actual mapped inputs.
     header_names = ["native_engine_entry.h", "native_appkit_bridge.h", "native_application_protocols.h"]
     for name in header_names:
         target = "parc/native/" + name
@@ -437,8 +415,6 @@ def verify_workspace(engine: Path, repo: Path) -> tuple[Path, dict]:
 
 @contextlib.contextmanager
 def engine_lock(engine: Path):
-    # Same advisory guard as the source tool: refuse an active sync/build/overlay.
-    # Keep a shared lock through sealing/copying to prevent source-tool mutation.
     path = engine.parent.parent.parent.parent / ".parc-operation.lock"
     explicit_path(path)
     with path.open("r") as stream:
@@ -455,7 +431,6 @@ def make_manifest(engine: Path, repo: Path) -> dict:
 
 
 def check_bootstrap_graph(images: dict, helper_name: str = "parc_helper") -> None:
-    # Seatbelt is the only Chromium component permitted before sandbox setup.
     for name, info in images.items():
         if name != helper_name and name != "libseatbelt.dylib":
             raise Refusal("Forbidden pre-sandbox dependency: " + name)
@@ -493,10 +468,6 @@ def seal_framework(engine: Path, provenance: dict) -> dict:
     if not (list((framework / "Resources").glob("v8_context_snapshot*.bin")) or
             (framework / "Resources/snapshot_blob.bin").is_file()):
         raise Refusal("Framework V8 startup snapshot is missing")
-    # Match pinned Chromium's framework bundle rules. Static ANGLE is linked into
-    # components, so Chromium deliberately omits its separate framework libraries.
-    # Dynamic ANGLE and the remaining runtime-loaded libraries need explicit
-    # checks because they need not appear in the LC_LOAD_DYLIB graph.
     runtime_libraries = ["libvk_swiftshader.dylib",
                          "libvulkan.dylib", "vk_swiftshader_icd.json"]
     if not provenance["use_static_angle"]:
@@ -536,18 +507,11 @@ def seal_framework(engine: Path, provenance: dict) -> dict:
 def verify_manifest(manifest: dict, engine: Path, repo: Path) -> None:
     if manifest.get("schema_version") != 1 or manifest.get("engine_dir") != str(engine):
         raise Refusal("Engine artifact manifest/output directory mismatch")
-    # Rebuild the sealed inventory, including link graph and exported ABI. An
-    # extra resource, swapped component or changed symlink must not go unnoticed.
     if manifest != make_manifest(engine, repo):
         raise Refusal("Engine artifacts/source provenance changed after sealing")
 
 
 def release_report(repo: Path, package: Path, *, local_test: bool = False) -> dict:
-    """The published package's report, refused unless its engine is this checkout's engine.
-
-    A local test build needs the same source lock; release_engine then checks
-    the engine API headers the app actually consumes.
-    """
     report = read_json(package / "package-report.json")
     if (report.get("schema_version") != 1 or report.get("layout") != "standalone-app"
             or report.get("build_classification") != "release-noncomponent"
@@ -562,7 +526,6 @@ def release_report(repo: Path, package: Path, *, local_test: bool = False) -> di
         raise Refusal("The release engine was built from a different source lock than this checkout")
     if local_test:
         return report
-    # The shipping recipe lives in engine-source.py, outside Engine/ and the lock.
     recorded = report["engine_build_flags"]
     for define in source_verifier(repo).SHIPPING_DEFINES.split():
         name, value = define.split("=", 1)
@@ -572,8 +535,6 @@ def release_report(repo: Path, package: Path, *, local_test: bool = False) -> di
     manifest_path = overlay_path(repo)
     if report.get("overlay", {}).get("identity") != sha(manifest_path):
         raise Refusal("The release engine was built from a different engine overlay than this checkout")
-    # The overlay pins each repository input's digest; an edited input means
-    # this checkout carries engine source the release engine was not built from.
     overlay = read_json(manifest_path)
     for item in overlay["files"] + overlay.get("patches", []):
         if sha(repo / relative(item["source"])) != item["sha256"]:
@@ -583,7 +544,6 @@ def release_report(repo: Path, package: Path, *, local_test: bool = False) -> di
 
 def verify_release_framework(package: Path, report: dict) -> None:
     framework = package / RELEASE_FRAMEWORK
-    # The framework's own seal covers every resource and nested library.
     run("/usr/bin/codesign", "--verify", "--deep", "--strict", framework)
     published = {name: digest for name, digest in report.get("signed_images", {}).items()
                  if name.startswith(RELEASE_FRAMEWORK + "/")}
@@ -606,7 +566,6 @@ def verify_release_helper(package: Path, report: dict) -> None:
 
 
 def pinned_source(repo: Path, workspace: Path, destination: Path) -> Path:
-    """Write PINNED_INPUTS at the source lock's commits under destination."""
     lock = read_json(repo / "Engine/source-lock.json")
     overlay = read_json(overlay_path(repo))
     patched = {item["target"] for item in overlay["files"]}
@@ -629,12 +588,10 @@ def pinned_source(repo: Path, workspace: Path, destination: Path) -> Path:
 
 
 def app_engine_headers(repo: Path, source: Path) -> list[str]:
-    """Engine/ParcNative headers the app compiles against, from the compiler's dependency list."""
     output = run("xcrun", "clang", "-arch", "arm64", "-mmacosx-version-min=13.0", "-fobjc-arc", "-fblocks",
                  "-I", repo / "Engine/ParcNative", "-I", repo / "Sources/ParcEngine", "-DOS_MAC=1",
                  "-M", repo / "Sources/ParcEngine/ParcEngine.m")
     root = (repo / "Engine/ParcNative").resolve()
-    # These app-side protocol declarations add no linked engine API.
     application_protocols = root / "native_application_protocols.h"
     headers = {Path(token).resolve().relative_to(repo.resolve()).as_posix()
                for token in output.replace("\\\n", " ").split()
@@ -659,15 +616,12 @@ def changed_since(repo: Path, commit: str, names: list[str]) -> list[str]:
 def release_manifest(engine: Path, report: dict, release: dict) -> dict:
     provenance = {name: report[name] for name in ("source_lock_sha256", "overlay", "engine_build_flags",
                                                   "build_classification", "distribution_eligible")}
-    # The original seal checked the generated ANGLE flag; a static-ANGLE
-    # framework ships no separate EGL libraries.
     provenance["use_static_angle"] = not (engine / FRAMEWORK / "Libraries/libEGL.dylib").exists()
     return seal_framework(engine, {**provenance, "engine_release": release})
 
 
 def release_engine(repo: Path, package: Path, workspace: Path, stage: Path, tag: str, commit: str,
                    *, local_test: bool = False, allow_changed_headers: bool = False):
-    """Engine directory, pinned source inputs and manifest for a published package's engine."""
     package = explicit_path(package)
     report = release_report(repo, package, local_test=local_test)
     verify_release_framework(package, report)
@@ -684,8 +638,6 @@ def release_engine(repo: Path, package: Path, workspace: Path, stage: Path, tag:
     release = {"tag": tag, "commit": commit, "package_report_sha256": sha(package / "package-report.json"),
                "engine_origin": previous.get("engine_origin", {"tag": tag, "commit": commit})}
     if local_test:
-        # Engine-internal changes only change behaviour; a changed header the
-        # app compiles against means it calls engine API the release lacks.
         headers = app_engine_headers(repo, source)
         changed = changed_since(repo, commit, headers)
         if changed and not allow_changed_headers:
@@ -715,11 +667,6 @@ def development_engine_path(app: Path, name: str) -> Path:
 
 
 def copy_engine(engine: Path, app: Path, manifest: dict) -> dict:
-    """Preserve Chromium's component build layout and every copied engine byte.
-
-    The framework's original six-parent RPATH reaches app.parent; components
-    retain their original output-root paths. Signing copied code follows later.
-    """
     framework = app / "Contents/Frameworks" / FRAMEWORK
     shutil.copytree(engine / FRAMEWORK, framework, symlinks=True)
     if inventory_tree(framework) != manifest["framework"]:
@@ -752,8 +699,6 @@ def resolve_development_dependency(value: str, image: Path, executable: Path,
         candidates = [path / tail for path in rpaths]
     else:
         candidates = [expand_loader_path(value, image, executable)]
-    # dyld tries these paths in order. Preserve unused upstream fallback paths,
-    # but never satisfy an actual load from another build or an arbitrary root.
     for candidate in candidates:
         if system_library(str(candidate)):
             return None
@@ -766,7 +711,6 @@ def resolve_development_dependency(value: str, image: Path, executable: Path,
 
 
 def verify_development_layout(app: Path, manifest: dict) -> dict:
-    """Audit real load paths for the app, helpers and runtime-loaded engine code."""
     root = app.parent.resolve(strict=True)
     dependency_root = app.resolve(strict=True) if manifest.get("distribution_eligible") else root
     if manifest.get("distribution_eligible") and manifest["components"]:
@@ -788,10 +732,6 @@ def verify_development_layout(app: Path, manifest: dict) -> dict:
         expected[path] = {load: inside(development_engine_path(app, target), root)
                           for load, target in sealed["resolved"].items()}
     main = app / "Contents/MacOS" / app.stem
-    # A Dock plugin also has Contents/MacOS, but its MH_BUNDLE image runs in
-    # the Dock. Only MH_EXECUTE images are process entry points that load the
-    # browser framework and initialize the renderer sandbox. Bundles remain
-    # in the complete image/load-command/signature audit below.
     executables = [path for path in images if path.parent.name == "MacOS"
                    and macho_layout(path)["file_type"] == 2]
     if main not in executables:
@@ -834,18 +774,13 @@ def verify_development_layout(app: Path, manifest: dict) -> dict:
         visit(executable, ())
         if (executable == (app / "Contents/MacOS/ParcRestart").resolve()
                 or sparkle_framework in executable.parents):
-            # ParcRestart only watches the original PID and execs Launch
-            # Services, and Sparkle's updater only replaces and relaunches the
-            # app; neither initializes Chromium or its sandbox.
             continue
         inherited = tuple(expand_loader_path(v, executable, executable).resolve()
                           for v in images[executable]["rpaths"])
-        visit(framework, inherited)  # The helper/runtime app uses genuine dlopen.
+        visit(framework, inherited)
         framework_paths = tuple(dict.fromkeys(
             [expand_loader_path(v, framework, executable).resolve() for v in images[framework]["rpaths"]]
             + list(inherited)))
-        # Also inspect sealed runtime-loaded graphics/sandbox libraries. Their
-        # actual framework loader supplies its RPATH stack, not a basename scan.
         for image in expected:
             visit(image, framework_paths)
         if executable == main:
@@ -870,8 +805,6 @@ def validate_output(output: Path, repo: Path, engine: Path) -> None:
 
 
 def publish_development_directory(stage: Path, output: Path) -> None:
-    # macOS renamex_np(RENAME_EXCL) publishes the complete directory atomically
-    # and cannot replace even an empty directory created by a concurrent writer.
     rename = ctypes.CDLL(None, use_errno=True).renamex_np
     rename.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
     rename.restype = ctypes.c_int
@@ -881,11 +814,6 @@ def publish_development_directory(stage: Path, output: Path) -> None:
 
 
 def embed_sparkle(release: Path, frameworks: Path) -> Path:
-    """Copy the pinned Sparkle without build-time headers or its XPC services.
-
-    Sparkle documents those services as unused by apps that aren't sandboxed,
-    which may remove them; Parc isn't sandboxed.
-    """
     framework = frameworks / SPARKLE
     shutil.copytree(release / SPARKLE, framework, symlinks=True)
     if os.readlink(framework / "Versions/Current") != "B":
@@ -894,7 +822,6 @@ def embed_sparkle(release: Path, frameworks: Path) -> Path:
     for name in ("Headers", "PrivateHeaders", "Modules", "XPCServices"):
         (framework / name).unlink()
         shutil.rmtree(code / name)
-    # Parc ships ARM64 only, like its engine and Swift runtime.
     for binary in (code / "Sparkle", code / "Autoupdate", code / "Updater.app/Contents/MacOS/Updater"):
         thin = binary.with_name(binary.name + ".arm64")
         run("/usr/bin/lipo", binary, "-thin", "arm64", "-output", thin)
@@ -930,8 +857,6 @@ def require_package_purpose(purpose: str, manifest: dict | None = None,
 
 
 def inside_git_checkout(path: Path) -> bool:
-    # A .git file marks worktrees and submodules; a path inside .git itself has
-    # the repository's top level among its parents.
     if any(os.path.lexists(parent / ".git") for parent in path.parents):
         return True
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
@@ -945,7 +870,6 @@ def inside_git_checkout(path: Path) -> bool:
 
 def widevine_signer(certificate: Path | None, private_key: Path | None, command: Path | None,
                     repo: Path = ROOT, *, passphrase: str | None = None):
-    """The configured VMP signer, or None when Parc stays an unsigned Widevine host."""
     if command is not None and (certificate is not None or private_key is not None):
         raise Refusal("Use either --widevine-sign-command or a VMP certificate and key, not both")
     try:
@@ -976,15 +900,12 @@ def require_widevine_signing(manifest: dict, signer) -> None:
 
 
 def widevine_host_files(app: Path) -> list[tuple[Path, Path, int]]:
-    """Binaries Chromium hands the CDM for host verification, with their .sig paths and flags."""
     framework = app / "Contents/Frameworks" / FRAMEWORK
     current = framework / "Versions/Current"
     version = os.readlink(current) if current.is_symlink() else ""
     if not version or "/" in version or version in {".", ".."}:
         raise Refusal("Engine framework lacks its versioned bundle layout")
     versioned = framework / "Versions" / version
-    # Chromium reads the CDM process executable's signature from the main bundle's
-    # Resources and the framework's from the framework's own.
     name = "Parc Helper" + CDM_HELPER
     helper = app / "Contents/Frameworks" / (name + ".app") / "Contents/MacOS" / name
     return [(versioned / ENGINE_NAME, versioned / "Resources" / (ENGINE_NAME + ".sig"), widevine_vmp.BLESSED),
@@ -992,7 +913,6 @@ def widevine_host_files(app: Path) -> list[tuple[Path, Path, int]]:
 
 
 def widevine_host_signatures(app: Path, signer, team: str | None) -> dict:
-    """Write each CDM host signature before Apple signing seals its bundle."""
     report = {"cdm": "downloaded by the component updater, not bundled",
               "cdm_helper": "Parc Helper" + CDM_HELPER,
               "helper_library_validation": ("disabled on every helper without a Team ID" if team is None else
@@ -1026,7 +946,6 @@ def verify_widevine_signatures(app: Path, report: dict) -> None:
 
 
 def signing_team(identity: str, probe: Path) -> str | None:
-    """The identity's Apple Team ID; None for ad-hoc or a self-signed certificate."""
     if identity == "-":
         return None
     run("/usr/bin/codesign", "--force", "--sign", identity, "--timestamp=none", probe)
@@ -1038,7 +957,6 @@ def signing_team(identity: str, probe: Path) -> str | None:
 def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: str,
               configuration: str = "release", *, purpose: str = "development", widevine=None,
               source: Path | None = None, verify=None, bundle_note: str | None = None) -> dict:
-    """Package against a sealed engine; source and verify replace the workspace's for a release engine."""
     verify = verify or verify_manifest
     source = engine.parent.parent if source is None else source
     require_package_purpose(purpose, manifest, identity, configuration)
@@ -1046,19 +964,14 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
     if configuration not in ("debug", "release"):
         raise Refusal("Unsupported application configuration: " + configuration)
     validate_output(output, repo, engine)
-    # Direct callers must receive the same pre-copy seal check as the CLI.
-    # Classification comes from verified engine flags, never signing/optimization.
     progress("packaging: verifying sealed engine")
     verify(manifest, engine, repo)
     try:
         version = app_version.read(repo)
     except ValueError as error:
         raise Refusal(str(error)) from error
-    # Release compiles the module once, as Xcode's Release does, instead of one
-    # frontend per file that each re-typecheck the module.
     optimization = (["-g", "-Onone"] if configuration == "debug" else
                     ["-O", "-whole-module-optimization", "-num-threads", str(os.cpu_count() or 4)])
-    # Fail before copying gigabytes if the independent facade isn't integrated.
     for name in ("native_engine_entry.h", "native_appkit_bridge.h"):
         if not (repo / "Engine/ParcNative" / name).is_file():
             raise Refusal("Independent native engine source is not integrated")
@@ -1079,7 +992,7 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         (contents / "MacOS").mkdir(parents=True)
         frameworks.mkdir()
         resources = contents / "Resources"
-        inventory_tree(repo / "Resources")  # Reject escaping source-resource links.
+        inventory_tree(repo / "Resources")
         progress("packaging: copying resources and engine framework")
         shutil.copytree(repo / "Resources", resources, symlinks=True)
         whats_new.write(repo, resources / "WhatsNew.html")
@@ -1101,7 +1014,6 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         if {"sha256": sha(helper), "mode": stat.S_IMODE(helper.stat().st_mode), "image": manifest["helper"]["image"]} != manifest["helper"]:
             raise Refusal("GN helper differs from sealed engine")
         shutil.copy2(helper, stage / "Parc Helper")
-        # Inspect the actual compiled executable, not a source-text heuristic.
         dock_plugin = contents / "PlugIns/ParcDockTile.plugin"
         (dock_plugin / "Contents/MacOS").mkdir(parents=True)
         run("xcrun", "clang", *common, "-fobjc-arc", "-fblocks", "-bundle",
@@ -1121,9 +1033,6 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                         LSEnvironment={"MallocNanoZone": "0"})
             if id_suffix == ".alerts":
                 info["NSUserNotificationAlertStyle"] = "alert"
-                # Notification Center resolves this helper as an application
-                # in its own right. It cannot inherit the main bundle's icon.
-                # Copy the selected app artwork before signing either bundle.
                 helper_resources = helper / "Contents/Resources"
                 helper_resources.mkdir()
                 shutil.copyfile(resources / icon_file, helper_resources / icon_file)
@@ -1178,12 +1087,9 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                          "CFBundleTypeExtensions": ["xhtml", "xht"],
                          "CFBundleTypeMIMETypes": ["application/xhtml+xml"]}],
                     LSApplicationCategoryType="public.app-category.productivity",
-                    #
                     NSUserActivityTypes=["NSUserActivityTypeBrowsingWeb"],
                     NSCameraUsageDescription="Allow camera access for websites you choose.",
                     NSMicrophoneUsageDescription="Allow microphone access for websites you choose.",
-                    # macOS kills an app that touches these without a description: passkeys from a
-                    # phone or tablet use Bluetooth, and Web Bluetooth and geolocation reach them too.
                     NSBluetoothAlwaysUsageDescription="Websites you allow can use Bluetooth, for example to sign in with a passkey on your phone.",
                     NSBluetoothPeripheralUsageDescription="Websites you allow can use Bluetooth, for example to sign in with a passkey on your phone.",
                     NSLocationUsageDescription="Allow location access for websites you choose.",
@@ -1194,8 +1100,6 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                     NSDesktopFolderUsageDescription="Show images and videos from Desktop in your Media Library.",
                     NSDocumentsFolderUsageDescription="Show images and videos from Documents in your Media Library.",
                     NSDownloadsFolderUsageDescription="Show images and videos from Downloads in your Media Library.")
-        # Only a distribution package follows the release feed; a development or
-        # local test build behind the latest release must not replace itself.
         if purpose == "distribution":
             info.update(sparkle.INFO)
         if bundle_note:
@@ -1206,8 +1110,6 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         if missing_usage:
             raise Refusal("Info.plist lacks usage descriptions Chromium declares: " + ", ".join(missing_usage))
         plist(contents / "Info.plist", info)
-        # Device capabilities follow the pinned Chromium main-app entitlement
-        # input. Do not copy Chrome accounts, keychain groups or provisioning.
         entitlements = plistlib.loads((source / "chrome/app/app-entitlements.plist").read_bytes())
         probe = stage / "signing-probe"
         shutil.copy2(contents / "MacOS/ParcRestart", probe)
@@ -1215,15 +1117,11 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         if purpose == "distribution" and team is None:
             raise Refusal("Distribution requires an Apple-issued signing identity with a Team ID")
         if team is None:
-            # Ad-hoc and self-signed code has no Team ID, so library validation
-            # would refuse the engine; this is an explicit local development
-            # signing accommodation, never added for an Apple-issued certificate.
             entitlements["com.apple.security.cs.disable-library-validation"] = True
         ent_path = stage / "main-entitlements.plist"
         plist(ent_path, entitlements)
         progress("packaging: Widevine host signatures")
         widevine_report = widevine_host_signatures(app, widevine, team)
-        # Strip only copied extended attributes, never source metadata.
         run("/usr/bin/xattr", "-cr", development)
         images = verify_development_layout(app, manifest)
         progress(f"packaging: signing {len(images)} images")
@@ -1234,20 +1132,15 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
             if ent is not None:
                 args += ["--entitlements", ent]
             run(*args, path)
-        # Sign every inner code object before sealing enclosing bundles. No
-        # --deep signing, no system ACL/certificate changes and no app launch.
         for name in sorted(images, key=lambda s: (-s.count("/"), s)):
             path = development / name
             if path.parent.name != "MacOS":
                 sign(path)
         sign(frameworks / FRAMEWORK)
-        # Sparkle's documented Developer ID order: Autoupdate (above), Updater, framework.
         sign(sparkle_framework / "Versions/B/Updater.app")
         sign(sparkle_framework)
         for helper, jit, hosts_cdm in helper_apps:
             helper_ent = {"com.apple.security.cs.allow-jit": True} if jit else {}
-            # The component-updated Widevine CDM is signed by Google's team,
-            # so only the helper the engine starts it in may load it.
             if team is None or hosts_cdm:
                 helper_ent["com.apple.security.cs.disable-library-validation"] = True
             helper_path = stage / (helper.stem + ".plist")
@@ -1258,12 +1151,10 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
         sign(app, ent_path)
         run("/usr/bin/codesign", "--verify", "--deep", "--strict", app)
         verify_widevine_signatures(app, widevine_report)
-        # Sibling components are outside the app's deep-verification scope.
         for name in manifest["components"]:
             run("/usr/bin/codesign", "--verify", "--strict", development / name)
         signed = verify_development_layout(app, manifest)
         require_exports(exported_symbols(frameworks / FRAMEWORK / ENGINE_NAME))
-        # Bind the report to exact sealed artifacts and every signed Mach-O.
         report = {"schema_version": 1, "executed": False, "destination": str(output),
                   "app_version": version,
                   "app": str(output / "Parc.app"),
@@ -1285,8 +1176,6 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
                   "signing_verification": "app deep/strict and sibling components strict verification passed",
                   "runtime_verified": False,
                   **({"engine_release": manifest["engine_release"]} if "engine_release" in manifest else {})}
-        # Source-tool lock remains held. Revalidate sealed source artifacts after
-        # compilation/copy so an out-of-band writer cannot silently mix builds.
         verify(manifest, engine, repo)
         with (development / "package-report.json").open("x") as stream:
             json.dump(report, stream, indent=2, sort_keys=True)
@@ -1298,8 +1187,6 @@ def build_app(repo: Path, engine: Path, manifest: dict, output: Path, identity: 
 
 
 class _Tee:
-    """Mirror writes to the console and a run-directory log file."""
-
     def __init__(self, primary, log_file) -> None:
         self.primary = primary
         self.log_file = log_file
@@ -1321,7 +1208,6 @@ class _Tee:
 
 
 def _attach_run_log(run_dir: Path, name: str):
-    """Append seal/package progress next to the manifest (typically under build/)."""
     if not run_dir.is_dir():
         raise Refusal(f"Run directory does not exist: {run_dir}")
     handle = (run_dir / name).open("a", encoding="utf-8")
@@ -1363,8 +1249,6 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     log_handle = None
     try:
-        # Only the openssl call receives the passphrase; compilers, codesign and
-        # a signing service never inherit it.
         passphrase = os.environ.pop(WIDEVINE_KEY_PASSPHRASE, None)
         widevine_options = (args.widevine_certificate, args.widevine_private_key, args.widevine_sign_command)
         if args.command == "seal-engine" and any(option is not None for option in widevine_options):

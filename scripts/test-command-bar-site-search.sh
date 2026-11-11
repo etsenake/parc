@@ -3,8 +3,6 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 output="$repo_root/build/tests/command-bar-site-search"
 mkdir -p "$output"
-# Exercise the production selected-row resolver with inert publication/row
-# fixtures. No Chromium, browser window, profile or navigation is created.
 python3 - "$repo_root" "$output" <<'PY'
 from pathlib import Path
 import sys

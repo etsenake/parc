@@ -1,4 +1,3 @@
-// Native, offline raster export. This changes framing, never the approved art.
 import Foundation
 import CoreGraphics
 import CoreImage
@@ -25,9 +24,6 @@ func exportIcon(source: URL, directory: URL, mascot: Bool) throws {
         }
     }
     guard right > left, bottom > top else { throw IconExportError.emptyArtwork }
-    //
-    // The terminal mascot occupies 204 / 256, with its center 2 / 256 lower.
-    // Preserve each approved Parc silhouette/aspect instead of stretching it.
     let extent = mascot ? 204.0 / 256.0 : 824.0 / 1024.0
     let centerY = mascot ? 130.0 / 256.0 : 0.5
     let sourceExtent = Double(max(right - left, bottom - top))
@@ -37,9 +33,6 @@ func exportIcon(source: URL, directory: URL, mascot: Bool) throws {
     for points in [16, 32, 128, 256, 512] {
         for scale in [1, 2] {
             let pixels = points * scale
-            // Snap the dominant opaque extent and center to the pixel grid.
-            // The 16px result has a 13px body, 32px has 26px; high-density
-            // representations are drawn independently from the full master.
             let body = (Double(pixels) * extent).rounded()
             let ratio = body / sourceExtent
             let targetX = ((Double(pixels) - body) / 2).rounded(.down) + body / 2
@@ -47,16 +40,10 @@ func exportIcon(source: URL, directory: URL, mascot: Bool) throws {
             let x = targetX - Double(left + right) / 2 * ratio
             let yFromTop = targetY - Double(top + bottom) / 2 * ratio
             let height = Double(image.height) * ratio
-            // Core Image's origin is lower-left; measured rows are top-first.
-            // Explicit Lanczos downsampling keeps narrow neon/glass details
-            // from being blurred by a context's implicit reduction stages.
             let scaled = original.applyingFilter("CILanczosScaleTransform", parameters: [
                 kCIInputScaleKey: ratio, kCIInputAspectRatioKey: 1.0
             ]).transformed(by: CGAffineTransform(translationX: x,
                                                  y: Double(pixels) - yFromTop - height))
-            // Lanczos' outer lobe can reach the canvas edge at 16px even
-            // though the opaque artwork is inset. Keep a transparent guard
-            // pixel; this removes only the outer resampling fringe.
             let inset = scaled.cropped(to: CGRect(x: 1, y: 1, width: pixels - 2, height: pixels - 2))
             let suffix = scale == 2 ? "@2x" : ""
             let path = directory.appendingPathComponent("icon_\(points)x\(points)\(suffix).png")

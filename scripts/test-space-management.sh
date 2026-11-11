@@ -1,5 +1,4 @@
 #!/bin/bash
-# Model and inert native Space management checks; never opens a browser/window.
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 check_dir="$repo_root/build/tests/space-management-check"

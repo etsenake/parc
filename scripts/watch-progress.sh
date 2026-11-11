@@ -1,5 +1,4 @@
 #!/bin/bash
-# One-screen live status for engine build / app packaging. No log archaeology.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 interval="${1:-5}"
@@ -16,7 +15,6 @@ status() {
     tail -n 5 "$root/build/engine-build.log" 2>/dev/null || true
     echo
   fi
-  # Preferred in-repo package runs, then legacy outside paths.
   latest=""
   for dir in "$root"/build/local-* "$HOME"/ParcBuild/runs/local-*; do
     [[ -d "$dir" ]] || continue

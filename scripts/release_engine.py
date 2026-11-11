@@ -1,4 +1,3 @@
-"""Verify an interrupted sealing stage without rewriting its engine or receipt."""
 import json
 from pathlib import Path
 import sys

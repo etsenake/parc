@@ -3,10 +3,6 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 output="$repo_root/build/tests/command-bar-navigation"
 mkdir -p "$output"
-# Compile the actual command-bar pipeline against inert native publications.
-# Only access modifiers change; ranking, filtering, request identity, the
-# publication fingerprint, zero-query rows, scope resolution and Return selection
-# stay intact. Native request dispatch and AppKit table presentation are omitted.
 python3 - "$repo_root" "$output" <<'PY'
 from pathlib import Path
 import sys

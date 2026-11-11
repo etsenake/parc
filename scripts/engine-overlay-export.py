@@ -31,8 +31,6 @@ def git(repository: Path, *args: str) -> bytes:
 
 
 class Branch:
-    """Immutable object inventories; working-tree changes never enter an export."""
-
     def __init__(self, repository: Path, base: str, branch: str):
         self.repository = repository.resolve()
         top = git(self.repository, "rev-parse", "--show-toplevel").decode().strip()
@@ -80,7 +78,6 @@ def targets(spec: dict) -> set[str]:
 
 
 def contextual_diff(target: str, before: bytes, after: bytes) -> bytes:
-    # Keep patches small enough for the existing per-input size limit.
     lines = difflib.unified_diff(before.decode().splitlines(True), after.decode().splitlines(True),
                                  fromfile="a/" + target, tofile="b/" + target,
                                  n=3)
@@ -88,19 +85,12 @@ def contextual_diff(target: str, before: bytes, after: bytes) -> bytes:
     for line in lines:
         parts.append(line if line.endswith("\n") else line + "\n\\ No newline at end of file\n")
     data = "".join(parts).encode()
-    # Keep the delivery validator's restrictions, including required context.
     if engine.apply_context_patch(data.decode(), {target: before}) != {target: after}:
         raise Refusal(f"Patch did not reproduce branch bytes: {target}")
     return data
 
 
 def export(manifest: Path, lock: dict, branches: dict[str, Branch], output: Path) -> dict:
-    """Validate current output, export residuals, validate candidate, compare both.
-
-    Dependency trees are explicit because their contents live in separate Git
-    repositories, even when Chromium records their commits as gitlinks. Their
-    reviewed before hashes are checked by the same manifest validator; no dependency revision is inferred from a live checkout.
-    """
     if "" not in branches or branches[""].base != lock["chromium"]["commit"]:
         raise Refusal("Chromium branch base must equal the pinned source-lock commit")
     for prefix in branches:
@@ -131,14 +121,12 @@ def export(manifest: Path, lock: dict, branches: dict[str, Branch], output: Path
         for name in set(branch.before) | set(branch.after):
             target = prefix + "/" + name if prefix else name
             if locate(target)[0] is not branch:
-                # A dependency must not shadow source tracked by the parent.
                 raise Refusal(f"Overlapping branch trees: {target}")
             if branch.before.get(name) != branch.after.get(name):
                 changed.add(target)
     relevant = changed | targets(spec)
     before = {}
     after = {}
-    # Temporary source trees exist only to reuse prepare_overlay unchanged.
     with tempfile.TemporaryDirectory(prefix="parc-export-") as temporary:
         work = Path(temporary).resolve()
         for target in sorted(relevant):
@@ -197,7 +185,6 @@ def export(manifest: Path, lock: dict, branches: dict[str, Branch], output: Path
                       if target in writes else before[target])
             if result != after[target]:
                 raise Refusal(f"Export differs from branch bytes/mode: {target}")
-        # Never overwrite a review directory or a source checkout.
         if not output.is_absolute() or ".." in output.parts or any(p.is_symlink() for p in [output, *output.parents]):
             raise Refusal("Output must be an absolute non-symlink path")
         for branch in branches.values():
@@ -215,11 +202,11 @@ def export(manifest: Path, lock: dict, branches: dict[str, Branch], output: Path
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(data)
                 path.chmod(0o644)
-            output.mkdir()  # Claim an unused destination before publishing.
+            output.mkdir()
             try:
                 os.replace(stage, output)
             except OSError:
-                output.rmdir()  # Remove only our still-empty claim.
+                output.rmdir()
                 raise
     return dict(equivalent=True, targets=len(relevant), changed=len(changed),
                 manifest=str(output / "overlay.json"))

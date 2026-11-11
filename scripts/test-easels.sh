@@ -2,7 +2,6 @@
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$repo_root/build/tests"
-#
 spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/easel-spinner.swift" PArcButtonSpinner)
 xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
@@ -14,8 +13,6 @@ xcrun swiftc -parse-as-library \
   -o "$repo_root/build/tests/easel-store"
 "$repo_root/build/tests/easel-store"
 
-# A private app-shaped resource directory exercises bundled font resolution.
-# The component check uses its own named pasteboard, never the user's clipboard.
 style_bundle="$repo_root/build/tests/EaselTextStyle.app/Contents"
 mkdir -p "$style_bundle/MacOS" "$style_bundle/Resources/EaselFonts"
 cp "$repo_root/Resources/EaselFonts/"*.ttf "$style_bundle/Resources/EaselFonts/"
@@ -35,7 +32,6 @@ xcrun swiftc -parse-as-library \
   -o "$style_bundle/MacOS/EaselTextStyle"
 "$style_bundle/MacOS/EaselTextStyle"
 
-# Exercise actual native selection/move/menu owners without displaying a window.
 xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
@@ -56,8 +52,6 @@ xcrun swiftc -parse-as-library \
   -o "$style_bundle/MacOS/EaselCanvas"
 "$style_bundle/MacOS/EaselCanvas"
 
-# Export as Image: the actual canvas export render, Share menu row, panel
-# configuration and encoders. Nothing is displayed and no panel runs.
 mkdir -p "$style_bundle/Resources/CustomInfoPicker" "$style_bundle/Resources/AppIcons/Marks"
 cp "$repo_root/Resources/CustomInfoPicker/icomoon.ttf" "$style_bundle/Resources/CustomInfoPicker/"
 cp "$repo_root/Resources/AppIcons/Marks/Borderless.png" "$style_bundle/Resources/AppIcons/Marks/"
@@ -83,7 +77,6 @@ xcrun swiftc -parse-as-library \
   -o "$style_bundle/MacOS/EaselImageExport"
 "$style_bundle/MacOS/EaselImageExport"
 
-# Real captured-card/image import, durable provenance and shared-session undo.
 xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
@@ -94,7 +87,6 @@ xcrun swiftc -parse-as-library \
   -o "$repo_root/build/tests/capture-destinations"
 "$repo_root/build/tests/capture-destinations"
 
-# The actual address/search native editor: cancellation and IME in a hidden component.
 xcrun swiftc -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselWebNavigation.swift" \
   "$repo_root/Sources/ParcApp/EaselAppearance.swift" \

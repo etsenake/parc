@@ -134,7 +134,6 @@ def record(package, app, tag, commit, output, seconds=90):
 
 
 def record_user_confirmation(package, tag, commit, output, statement, confirmed_at, raw_observation=None):
-    """Record existing explicit user approval using only the preserved artifact."""
     if output.exists() or not output.parent.is_dir():
         raise ValueError("Use a new receipt path in an existing directory")
     raw = (package / "package-report.json").read_bytes()

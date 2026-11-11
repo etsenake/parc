@@ -26,7 +26,6 @@ TITLE = 'Parc Developer ID 94HKA7L2DR'
 SPARKLE_TITLE = 'Parc Sparkle EdDSA key'
 NOTARY_TITLE = 'Parc notary profile'
 PROFILE = os.environ.get('PARC_NOTARY_PROFILE', 'parc-notary')
-# The user's 1Password account holds the backups; 1Password's own OP_ACCOUNT can override it.
 os.environ.setdefault('OP_ACCOUNT', 'my.1password.ca')
 spec = importlib.util.spec_from_file_location('parc_signing_sparkle', Path(__file__).with_name('sparkle.py'))
 sparkle = importlib.util.module_from_spec(spec)
@@ -37,7 +36,6 @@ def run(args, *, data=None, umask=-1, start_new_session=False):
     result = subprocess.run(args, input=data, text=True, capture_output=True, timeout=60, umask=umask,
                             start_new_session=start_new_session)
     if result.returncode:
-        # Tool diagnostics can echo secret-bearing input; argv never carries a secret.
         raise ValueError('Credential operation failed: ' + ' '.join([Path(args[0]).name, *args[1:]]))
     return result.stdout.strip()
 
@@ -51,7 +49,6 @@ def vault():
 
 
 def existing(title):
-    """The titled item's fields, or None; a failed lookup or duplicate titles stop instead of guessing."""
     found = [item['id'] for item in json.loads(run(['op','item','list','--format=json',*vault()])) if item['title'] == title]
     if len(found) > 1:
         raise ValueError('More than one 1Password item is titled ' + title + '; preserved for manual cleanup')
@@ -59,7 +56,6 @@ def existing(title):
 
 
 def create(template):
-    """Save a vault item and return its fields from a fresh read."""
     created = json.loads(run(['op','item','create','--format=json',*vault()],data=json.dumps(template)))
     return fields(json.loads(run(['op','item','get',created['id'],'--format=json'])))
 
@@ -74,7 +70,6 @@ def helper():
 
 
 def backup():
-    # Backup is run by hand, so 1Password may unlock through its app. Releases only run restore.
     result = subprocess.run(['op','whoami','--format=json'], capture_output=True, timeout=120)
     if result.returncode:
         raise ValueError('Sign in to 1Password CLI with op signin --account ' + os.environ['OP_ACCOUNT']
@@ -101,7 +96,6 @@ def backup_identity():
         {'id':'identity','type':'STRING','label':'Identity','value':identity},
         {'id':'pkcs12','type':'CONCEALED','label':'Encrypted PKCS12','value':encoded},
         {'id':'password','type':'CONCEALED','label':'PKCS12 password','value':password}]})
-    # Verify the saved secret bytes through a fresh read without exposing them.
     if saved.get('pkcs12') != encoded or saved.get('password') != password:
         raise ValueError('Vault round-trip verification failed; no successful backup claimed')
     print('Selected production identity encrypted and backed up to 1Password')
@@ -140,7 +134,6 @@ def backup_sparkle():
 
 
 def notarytool(*args, password):
-    # Without a controlling terminal, notarytool's getpass prompt reads standard input.
     run(['xcrun','notarytool',*args,'--team-id','94HKA7L2DR'], data=password + '\n', start_new_session=True)
 
 
@@ -163,8 +156,6 @@ def backup_notary():
             raise ValueError('Apple did not accept the existing notary profile backup; it was preserved') from None
         print('Existing notary profile backup verified with Apple and in 1Password')
         return
-    # notarytool keeps the profile in the data-protection Keychain under its own entitlement, so
-    # no other process can read it back, even with approval; the password is entered again instead.
     if not sys.stdin.isatty():
         raise ValueError('Run backup in a terminal to enter the notary profile\'s app-specific password')
     apple_id = input('Apple ID of the ' + PROFILE + ' notary profile: ').strip()
@@ -183,7 +174,6 @@ def backup_notary():
 
 
 def restore():
-    """Restore whichever credential this Mac's Keychain lacks."""
     restore_identity()
     restore_sparkle()
     restore_notary()
@@ -227,7 +217,6 @@ def restore_sparkle():
             stream.write(saved['private_key'])
         run([*tool, '-f', str(imported)])
     if run([*tool, '-p']) != sparkle.PUBLIC_ED_KEY:
-        # The Keychain had no key before this import, so only the wrong one is removed.
         run(['security','delete-generic-password','-s',sparkle.SERVICE,'-a',sparkle.ACCOUNT])
         raise ValueError('The restored Sparkle key is not the one Parc trusts; it was removed again')
     print('Sparkle signing key restored and verified in the login Keychain')
@@ -243,7 +232,6 @@ def restore_notary():
         raise ValueError('1Password has no notary profile backup to restore')
     if saved.get('team_id') != '94HKA7L2DR' or not saved.get('apple_id') or not saved.get('password'):
         raise ValueError('Vault entry is not the expected notary profile')
-    # store-credentials checks the password with Apple before saving, so a rejected one changes nothing.
     notarytool('store-credentials',PROFILE,'--apple-id',saved['apple_id'], password=saved['password'])
     if not notary_works():
         raise ValueError('The restored notary profile ' + PROFILE + ' still fails notarytool history')

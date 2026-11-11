@@ -14,6 +14,5 @@ xcrun swiftc -warnings-as-errors -parse-as-library -target arm64-apple-macos13.0
   Sources/ParcApp/OnboardingCloseCommand.swift \
   tests/OnboardingKeyboardTests.swift \
   -o "$output/check"
-# An unbundled executable's Bundle.main.resourceURL is its own directory.
 cp -R Resources/ThemeTextures "$output/ThemeTextures"
 "$output/check"

@@ -41,7 +41,7 @@ def working_documents(repo: Path) -> dict[str, bytes]:
         try:
             documents[name] = path.read_bytes()
         except FileNotFoundError:
-            pass  # A tracked document deleted from the working tree is no longer a document.
+            pass
     return documents
 
 
@@ -60,7 +60,6 @@ def committed_documents(repo: Path, ref: str) -> dict[str, bytes]:
         blobs[name] = oid
     if not blobs:
         return {}
-    # Request object IDs, not paths: spaces, tabs and newlines in names stay unambiguous.
     data = git(repo, "cat-file", "--batch", data=b"\n".join(blobs.values()) + b"\n")
     documents = {}
     offset = 0

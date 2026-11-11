@@ -1,14 +1,3 @@
-"""Stream portable trees to split gzip tar assets, and restore them without clobbering.
-
-The JSON manifest binds a JSONL inventory and every compressed part by SHA-256.
-Inventory records are in component-wise path order, so even very large trees can
-be checked without retaining all file names. Symlink resolution uses a temporary
-SQLite index. Ownership, ACLs, xattrs and hardlink identity are deliberately not
-transported; hardlinked regular files are archived as independent contents.
-
-The manifest must come from a trusted source: hashes establish integrity, not
-publisher authenticity. No archive member is ever extracted with tar.extract().
-"""
 from __future__ import annotations
 
 import ctypes
@@ -33,7 +22,7 @@ CHUNK = 1024 * 1024
 
 
 class ArchiveError(ValueError):
-    """The archive is invalid, unsafe or changed while it was being read."""
+    pass
 
 
 def _path(value):
@@ -227,15 +216,6 @@ def _walk(root, selection, excluded, extras, rewrites, replace_extra_files=False
 def create_archive(root, output_directory, name, *, includes=None, extra_files=None,
                    excludes=(), part_size=DEFAULT_PART_SIZE, symlink_rewrites=None,
                    replace_extra_files=False):
-    """Write split assets and publish the manifest last; return its JSON object.
-
-    Paths in includes/excludes/extra_files are relative to root, without a wrapper
-    directory. Missing ancestors of extra_files are generated as 0755 directories.
-    symlink_rewrites explicitly replaces included links with internal relative
-    targets. replace_extra_files permits virtual metadata to supersede existing
-    regular files in the archive only; it never changes the source tree.
-    Sources must remain quiescent throughout this operation.
-    """
     root, output = Path(root).resolve(), Path(output_directory).resolve()
     _asset(name)
     _integer(part_size, "part size", 1, DEFAULT_PART_SIZE)
@@ -281,24 +261,23 @@ def create_archive(root, output_directory, name, *, includes=None, extra_files=N
                             if record["type"] == "symlink":
                                 header.linkname = record["target"]
                             archive.addfile(header)
-                        archive.members.clear()  # Do not retain one TarInfo per source file.
+                        archive.members.clear()
                         inventory.write(_json(record))
                         count += 1
-            writer.close()  # gzip's trailer is written after the tar stream closes.
+            writer.close()
             if _fingerprint(root_info) != _fingerprint(root.stat()):
                 raise ArchiveError("source root changed during export")
             manifest = {"format": FORMAT, "compression": "gzip", "archive": "tar",
                         "parts": writer.parts,
                         "inventory": {**_digest(inventory_path), "entries": count},
                         "root": {"mode": stat.S_IMODE(root_info.st_mode), "mtime_ns": root_info.st_mtime_ns}}
-            # Validate paths and complete symlink chains before publishing anything.
             with _Inventory(inventory_path, manifest["inventory"]):
                 pass
             manifest_path = stage / f"{name}.manifest.json"
             manifest_path.write_bytes(_json(manifest))
             for asset in [*writer.parts, manifest["inventory"], {"name": manifest_path.name}]:
                 target = output / asset["name"]
-                os.link(stage / asset["name"], target)  # exclusive; never overwrite.
+                os.link(stage / asset["name"], target)
                 published.append(target)
             return manifest
         except BaseException:
@@ -351,8 +330,6 @@ class _Inventory:
         self.file = None
         try:
             self.database.execute("CREATE TABLE links (path TEXT PRIMARY KEY, target TEXT)")
-            # Keep a private verified inventory snapshot across validation passes.
-            # A caller changing the downloaded file cannot alter paths after checks.
             local = Path(self.temporary.name) / "inventory.jsonl"
             digest, size = hashlib.sha256(), 0
             with _open_regular(self.path) as source, local.open("xb") as copy:
@@ -413,7 +390,6 @@ class _Inventory:
 
 
 def _check_link(name, target, lookup):
-    """Resolve each component, checking containment before following any link."""
     base, pending, hops = name.split("/")[:-1], target.split("/"), 0
     while pending:
         component = pending.pop(0)
@@ -437,8 +413,6 @@ def _check_link(name, target, lookup):
 
 
 def _check_staged_links(stage, inventory):
-    # Case and Unicode aliases are determined by the destination filesystem, not
-    # Python or SQLite string equality. All directories are still traversable.
     def lookup(path):
         candidate = stage / path
         try:
@@ -510,7 +484,7 @@ def _consume(directory, manifest, inventory, stage=None):
                 header = archive.next()
                 if header is None:
                     raise ArchiveError("archive is missing inventory entries")
-                archive.members.clear()  # tarfile otherwise retains millions of headers.
+                archive.members.clear()
                 kind = ("file" if header.isreg() else "directory" if header.isdir()
                         else "symlink" if header.issym() else "unsupported")
                 if (header.name != record["path"] or kind != record["type"] or header.sparse is not None
@@ -546,7 +520,6 @@ def _consume(directory, manifest, inventory, stage=None):
             while chunk := archive.fileobj.read(CHUNK):
                 if chunk.strip(b"\0"):
                     raise ArchiveError("archive contains trailing data")
-        # Exhaust the compressed stream and force every part's digest check.
         while chunk := compressed.read(CHUNK):
             if chunk.strip(b"\0"):
                 raise ArchiveError("archive contains trailing data")
@@ -554,7 +527,6 @@ def _consume(directory, manifest, inventory, stage=None):
             raise ArchiveError("archive contains unread compressed data")
     if stage:
         _check_staged_links(stage, inventory)
-        # Restore directory times only after their children have been created.
         pending = []
         for record in inventory.records():
             parts = _path(record["path"])
@@ -569,7 +541,6 @@ def _consume(directory, manifest, inventory, stage=None):
 
 
 def verify_archive(manifest_path):
-    """Verify part hashes, inventory, tar headers and every regular file's bytes."""
     directory, manifest = _load(manifest_path)
     with _Inventory(directory / manifest["inventory"]["name"], manifest["inventory"]) as inventory:
         _consume(directory, manifest, inventory)
@@ -577,16 +548,15 @@ def verify_archive(manifest_path):
 
 
 def _publish(stage, destination):
-    """Atomic directory rename which refuses any existing destination, even empty."""
     library = ctypes.CDLL(None, use_errno=True)
     if sys.platform == "darwin":
         function = library.renamex_np
         function.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
-        result = function(os.fsencode(stage), os.fsencode(destination), 4)  # RENAME_EXCL
+        result = function(os.fsencode(stage), os.fsencode(destination), 4)
     elif sys.platform.startswith("linux") and hasattr(library, "renameat2"):
         function = library.renameat2
         function.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-        result = function(-100, os.fsencode(stage), -100, os.fsencode(destination), 1)  # RENAME_NOREPLACE
+        result = function(-100, os.fsencode(stage), -100, os.fsencode(destination), 1)
     else:
         raise ArchiveError("atomic exclusive directory publication is unsupported on this platform")
     if result:
@@ -606,12 +576,6 @@ def _cleanup(stage):
 
 
 def extract_archive(manifest_path, destination, *, post_extract=None):
-    """Verify and stage a tree, invoke optional trusted callback(stage, final), publish.
-
-    The callback runs after archive metadata restoration and before publication;
-    it may perform application-specific adoption. Failure leaves no destination.
-    The destination parent must already exist. Existing paths are never replaced.
-    """
     destination = Path(destination).absolute()
     destination = destination.parent.resolve(strict=True) / destination.name
     if os.path.lexists(destination):

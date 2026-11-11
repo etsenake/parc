@@ -32,13 +32,6 @@ MARKER = ".parc-engine-source.json"
 SHIPPING_MARKER = ".parc-shipping-build.json"
 SHIPPING_CONFIGURATION = "ParcDistribution_GN_arm64"
 OVERLAY_RECORD_LIMIT = 64 * 1024 * 1024
-# Chromium defaults dcheck_always_on (and EXPENSIVE_DCHECKs, V8 DEBUG/debug
-# code, cppgc heap verification) and the bundled field-trial testing config to
-# non-official builds; both engines turn them off, in the shipping configuration.
-# Both play H.264/HEVC/AAC through macOS's decoders and encoders: FFmpeg keeps its
-# Chromium branding (no H.264/AAC decoders) and OpenH264 stays out.
-#
-# because the profile is a separate gclient download the lock doesn't pin.
 SHIPPING_DEFINES = ('is_component_build=false is_official_build=true chrome_pgo_phase=0 '
                     'dcheck_always_on=false '
                     'disable_fieldtrial_testing_config=true '
@@ -67,7 +60,6 @@ def repository_names(lock: dict) -> tuple[str, ...]:
 
 
 def gn_arguments(defines: str) -> bytes:
-    # The reviewed recipe uses scalar GN literals, never imports or expressions.
     pairs = re.findall(r'([a-z][a-z0-9_]*)=("[^"\n]*"|true|false|[0-9]+)(?:\s+|$)', defines)
     if " ".join(k + "=" + v for k, v in pairs) != defines or len(dict(pairs)) != len(pairs):
         raise Refusal("Expected unique scalar GN arguments")
@@ -104,7 +96,6 @@ def safe_path(value: str, repo: Path = REPO) -> Path:
     path = Path(value).expanduser()
     if not path.is_absolute() or ".." in path.parts:
         raise Refusal("Workspace must be an absolute path without '..'")
-    # Chromium's generated commands are not all safe with whitespace/shell chars.
     if not re.fullmatch(r"/[A-Za-z0-9_./-]+", str(path)):
         raise Refusal("Workspace path must contain only ASCII letters, digits, /, ., _, -")
     for part in [path, *path.parents]:
@@ -115,7 +106,6 @@ def safe_path(value: str, repo: Path = REPO) -> Path:
     work_root = (repo / "work").resolve()
     under_work = path == work_root or work_root in path.parents
     under_repo = path == repo or repo in path.parents
-    # Prefer ignored checkout-local work/; outside paths remain valid for older setups.
     if (path == Path.home().resolve() or len(path.parts) < 3 or path in repo.parents
             or path == repo or path == work_root or (under_repo and not under_work)):
         raise Refusal("Use a dedicated workspace under this checkout's ignored work/ "
@@ -148,7 +138,6 @@ def run(argv: list[str], cwd: Path, env: dict, capture: bool = False) -> bytes:
 
 
 def cache_backend(chromium: Path) -> list[str]:
-    # This is depot_tools/siso.py's checkout-local backend discovery location.
     rc = chromium / "build/config/siso/.sisorc"
     try:
         flags = {}
@@ -169,7 +158,6 @@ def run_cached_build(argv: list[str], cwd: Path, env: dict) -> bytes:
     backend = cache_backend(cwd)
     if backend:
         try:
-            # Only this private copy is changed; the engine's active config stays intact.
             with tempfile.TemporaryDirectory(prefix="parc-siso-", dir=env["TMPDIR"]) as directory:
                 config = Path(directory) / "config"
                 shutil.copytree(cwd / "build/config/siso", config)
@@ -192,7 +180,6 @@ def run_cached_build(argv: list[str], cwd: Path, env: dict) -> bytes:
 
 
 def environment(workspace: Path, lock: dict, symbol_level: int) -> dict:
-    # Do not inherit GN, GIT, Python injection or remote-execution configuration.
     return {
         "HOME": os.environ.get("HOME", str(Path.home())),
         "PATH": f"{workspace / 'depot_tools'}:/usr/bin:/bin:/usr/sbin:/sbin",
@@ -204,8 +191,6 @@ def environment(workspace: Path, lock: dict, symbol_level: int) -> dict:
         "GIT_TERMINAL_PROMPT": "0",
         "PYTHONNOUSERSITE": "1",
         "PYTHONDONTWRITEBYTECODE": "1",
-        # vpython's uv otherwise trusts only its bundled roots, and on networks
-        # that re-sign TLS it stalls each depot_tools bootstrap for five minutes.
         "UV_NATIVE_TLS": "1",
         "GN_OUT_CONFIGS": lock["build"]["configuration"],
         "GN_DEFINES": lock["build"]["gn_defines"] + f" symbol_level={symbol_level}",
@@ -230,8 +215,6 @@ def command_plan(workspace: Path, lock: dict, jobs: int) -> dict:
     sync = []
     for name in repository_names(lock):
         path = paths[name]
-        # Googlesource shallow-fetch of a raw Chromium commit SHA stalls with no
-        # progress. Fetch the pinned tag when present, then detach at the commit.
         fetch = GIT + ["-c", "http.version=HTTP/1.1", "fetch", "--progress"]
         fetch.append("--depth=1")
         fetch.append("origin")
@@ -266,7 +249,6 @@ def host_report(workspace: Path, lock: dict, operation: str) -> dict:
         blockers.append("A native Apple Silicon Mac is required")
     filesystem = "unknown"
     if platform.system() == "Darwin":
-        # diskutil does not accept an arbitrary directory; resolve its device.
         device = subprocess.check_output(["/bin/df", "-P", str(parent)], text=True).splitlines()[-1].split()[0]
         info = plistlib.loads(subprocess.check_output(["/usr/sbin/diskutil", "info", "-plist", device]))
         filesystem = info.get("FilesystemType", "unknown")
@@ -301,8 +283,6 @@ def write_marker(workspace: Path, state: dict, name: str = MARKER) -> None:
         raise Refusal("Unknown build receipt")
     temp = internal_path(workspace / (name + ".tmp"), workspace)
     internal_path(workspace / name, workspace)
-    # Every writer holds the operation lock (or has just claimed a new
-    # workspace), so an existing temp is the remnant of a killed write.
     if temp.is_file():
         temp.unlink()
     with temp.open("x") as stream:
@@ -312,13 +292,6 @@ def write_marker(workspace: Path, state: dict, name: str = MARKER) -> None:
 
 
 def settle_dead_operation(workspace: Path, receipt: dict, name: str = MARKER) -> dict:
-    """Record a dead generation or build as that step's returned failure.
-
-    Callers hold the operation lock, and flock is released when its process
-    dies, so a step still recorded in progress belongs to no live process.
-    Resuming re-verifies the source fingerprint. A dead sync stays refused:
-    a partial checkout is never adopted.
-    """
     phase = receipt.get("phase")
     if phase not in {"generation-in-progress", "build-in-progress"}:
         return receipt
@@ -451,7 +424,6 @@ def reconfigure_shipping(workspace: Path, lock: dict, previous_sha: str, lock_sh
         raise Refusal("Shipping output exists without its generated arguments")
     arguments = shipping_arguments(workspace, shipping_environment(workspace, lock, state["symbol_level"]), lock)
     current = args_path.read_bytes()
-    # A killed reconfigure may already have replaced args.gn before its receipt.
     if digest(current) not in {receipt.get("args_sha256"), digest(arguments)}:
         raise Refusal("Shipping arguments differ from their receipt; existing output is preserved")
     changed = receipt.get("args_sha256") != digest(arguments)
@@ -459,7 +431,6 @@ def reconfigure_shipping(workspace: Path, lock: dict, previous_sha: str, lock_sh
         write_source(args_path, arguments, args_path.stat().st_mode & 0o777)
     receipt.update(lock_sha256=lock_sha, gn_defines=SHIPPING_DEFINES, args_sha256=digest(arguments))
     if changed:
-        # gn gen and compilation must run again before this output can be sealed.
         receipt.pop("error", None)
         receipt["phase"] = "reconfigured"
     write_marker(workspace, receipt, SHIPPING_MARKER)
@@ -467,12 +438,6 @@ def reconfigure_shipping(workspace: Path, lock: dict, previous_sha: str, lock_sh
 
 
 def reconfigure(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) -> dict:
-    """Adopt a source lock whose only changes are build.gn_defines and the host disk floors.
-
-    Sources, overlay records and compiled objects are untouched. The receipt
-    returns to synced, so the next build regenerates GN files with the new
-    arguments; that build recompiles whatever those arguments invalidate.
-    """
     if (not previous_path.is_absolute() or ".." in previous_path.parts
             or any(p.is_symlink() for p in [previous_path, *previous_path.parents])):
         raise Refusal("Previous source lock must be an absolute non-symlink path")
@@ -481,7 +446,6 @@ def reconfigure(workspace: Path, lock: dict, lock_sha: str, previous_path: Path)
         raise Refusal("Previous source lock is the current source lock")
 
     def without_defines(item: dict) -> dict:
-        # storage holds this host's free-space preflight floors, not a build input.
         return {**{k: v for k, v in item.items() if k != "storage"},
                 "build": {k: v for k, v in item["build"].items() if k != "gn_defines"}}
     if without_defines(previous) != without_defines(lock):
@@ -518,7 +482,6 @@ def reconfigure(workspace: Path, lock: dict, lock_sha: str, previous_path: Path)
 
 
 def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) -> dict:
-    """Change only dependency pins, preserving outputs and untracked files."""
     if (not previous_path.is_absolute() or ".." in previous_path.parts
             or any(p.is_symlink() for p in [previous_path, *previous_path.parents])):
         raise Refusal("Previous source lock must be an absolute non-symlink path")
@@ -551,7 +514,6 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         if report["blockers"]:
             raise Refusal("; ".join(report["blockers"]))
         record = recorded_overlay(workspace, state)
-        # Validate every restoration path before starting a non-resumable stage.
         restores = [(target_path(workspace, target, previous),
                      item["original"].encode() if item["original"] is not None else None,
                      item["mode"]) for target, item in (record or {}).get("targets", {}).items()]
@@ -566,8 +528,6 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
             write_marker(workspace, shipping, SHIPPING_MARKER)
         for path, original, mode in restores:
             write_source(path, original, mode)
-        # Undo only tracked changes in the verified receipt.
-        # No reset --hard or clean: untracked files and out/ must survive.
         for relative in state["repositories"]:
             path = internal_path(workspace / relative, workspace)
             run(GIT + ["restore", "--source=HEAD", "--staged", "--worktree", "."], path, env)
@@ -612,7 +572,6 @@ def verify_repository(path: Path, item: dict, env: dict, require_clean: bool = T
 
 
 def discover_repositories(workspace: Path) -> list[str]:
-    """Used only for interrupted sync recovery, never for ordinary builds."""
     roots = []
     for base, dirs, files in os.walk(workspace / "chromium/src", followlinks=False):
         dirs[:] = sorted(d for d in dirs if d not in {"out", ".git"} and not (Path(base) / d).is_symlink())
@@ -633,12 +592,6 @@ def synced_repositories(workspace: Path, lock: dict | None = None) -> list[str]:
 
 
 def tree_fingerprint(workspace: Path, env: dict, repositories: list[str]) -> str:
-    """Bind recorded Git dependencies' HEADs, diffs and untracked file contents.
-
-    No source-tree traversal during build. Ignored build outputs are excluded.
-    The repository inventory is bound by the owned workspace marker. This is an
-    upstream-baseline check; future reviewed Parc source overlays are separate.
-    """
     result = hashlib.sha256()
     if not repositories or "chromium/src" not in repositories:
         raise Refusal("Source repository inventory is missing")
@@ -648,7 +601,6 @@ def tree_fingerprint(workspace: Path, env: dict, repositories: list[str]) -> str
         if not git.is_dir():
             raise Refusal(f"Expected ordinary Git metadata: {git}")
         result.update(relative.encode() + b"\0")
-        # A failed dependency fetch may have initialized an unborn repository.
         try:
             head = run(GIT + ["rev-parse", "--verify", "HEAD"], root, env, True)
         except subprocess.CalledProcessError:
@@ -714,8 +666,6 @@ def text_bytes(path: Path, *, maximum_bytes: int = 8 * 1024 * 1024) -> bytes:
 
 def target_path(workspace: Path, target: str, lock: dict | None = None) -> Path:
     relative_source(target)
-    # Overlay build logic is reviewable source, but bootstrap trust inputs,
-    # repository metadata, dependency selection and generated outputs are not.
     parts = target.split("/")
     if any(p.startswith(".") or p in {"out", "DEPS"} for p in parts):
         raise Refusal(f"Overlay cannot change bootstrap/generated inputs: {target}")
@@ -729,11 +679,6 @@ def target_path(workspace: Path, target: str, lock: dict | None = None) -> Path:
 
 
 def apply_context_patch(patch: str, originals: dict[str, bytes]) -> dict[str, bytes]:
-    """Apply ordinary unified text hunks exactly, without fuzzy offsets or Git.
-
-    New files use manifest files[], so rename/mode/binary/add/delete sections
-    are deliberately unsupported. Both git diff and plain unified headers work.
-    """
     lines = patch.splitlines(keepends=True)
     outputs = {}
     index = 0
@@ -800,8 +745,6 @@ def apply_context_patch(patch: str, originals: dict[str, bytes]) -> dict[str, by
 
 
 def overlay_record_bytes(record: dict) -> bytes:
-    # The aggregate contains original text from hundreds of source files. Its
-    # bound is separate from each source's limit and checked before any writes.
     raw = (json.dumps(record, indent=2) + "\n").encode("utf-8")
     if len(raw) > OVERLAY_RECORD_LIMIT:
         raise Refusal("Aggregate overlay record exceeds its size limit")
@@ -809,7 +752,6 @@ def overlay_record_bytes(record: dict) -> bytes:
 
 
 def load_overlay_record(workspace: Path, state: dict) -> dict | None:
-    """Load the saved overlay record without checking live tree bytes."""
     reference = state.get("overlay")
     if reference is None:
         return None
@@ -839,7 +781,6 @@ def recorded_overlay(workspace: Path, state: dict) -> dict | None:
 
 def prepare_overlay(workspace: Path, lock: dict, state: dict, manifest: Path,
                     *, verify_live_outputs: bool = True) -> tuple[dict, dict]:
-    """Validate every input and compute the complete update before any writes."""
     if not manifest.is_absolute() or ".." in manifest.parts or any(p.is_symlink() for p in [manifest, *manifest.parents]):
         raise Refusal("Manifest must be an absolute non-symlink path")
     raw = text_bytes(manifest)
@@ -856,8 +797,6 @@ def prepare_overlay(workspace: Path, lock: dict, state: dict, manifest: Path,
     build_targets = spec.get("build_targets", [])
     if not isinstance(build_targets, list) or len(set(build_targets)) != len(build_targets) or any(not isinstance(t, str) or not re.fullmatch('//parc(?:/[a-z][a-z0-9_]*)*:[a-z][a-z0-9_]*', t) for t in build_targets):
         raise Refusal("Invalid overlay build targets")
-    # Resume after a killed apply must not require live outputs to still match the
-    # previous overlay; those files may already be partially updated.
     previous = (recorded_overlay(workspace, state) if verify_live_outputs
                 else load_overlay_record(workspace, state))
 
@@ -930,8 +869,6 @@ def prepare_overlay(workspace: Path, lock: dict, state: dict, manifest: Path,
         raise Refusal("Empty source overlay")
     for target, data in writes.items():
         targets[target]["output_sha256"] = digest(data)
-    # An update can retire earlier owned additions or restore patched originals,
-    # but only after the old record and all live outputs have been verified.
     for target, item in old.items():
         if target not in targets:
             writes[target] = item["original"].encode("utf-8") if item["original"] is not None else None
@@ -943,10 +880,8 @@ def prepare_overlay(workspace: Path, lock: dict, state: dict, manifest: Path,
 
 def write_source(path: Path, data: bytes | None, mode: int) -> None:
     if data is None:
-        path.unlink()  # Only a verified, previously overlay-owned addition.
+        path.unlink()
         return
-    # Siso's local incremental checks use input mtimes. Replacing identical
-    # reviewed headers would needlessly invalidate their compiled dependents.
     if path.is_file() and path.stat().st_mode & 0o777 == mode and path.read_bytes() == data:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -963,7 +898,6 @@ def write_source(path: Path, data: bytes | None, mode: int) -> None:
 
 def _finish_overlay_writes(workspace: Path, lock: dict, state: dict, env: dict,
                            record: dict, writes: dict, raw: bytes) -> None:
-    """Write every overlay target then mark the workspace synced."""
     for target, data in writes.items():
         path = target_path(workspace, target, lock)
         mode = record["targets"].get(target, {}).get("mode", path.stat().st_mode & 0o777 if path.exists() else 0o644)
@@ -979,7 +913,6 @@ def _finish_overlay_writes(workspace: Path, lock: dict, state: dict, env: dict,
 def overlay(workspace: Path, lock: dict, lock_sha: str, manifest: Path, apply: bool) -> dict:
     state = read_marker(workspace, lock_sha)
     guard_path = internal_path(workspace / ".parc-operation.lock", workspace)
-    # The bootstrap creates this lock. Checking an overlay creates no files.
     with guard_path.open("rb") as guard:
         try:
             fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -987,8 +920,6 @@ def overlay(workspace: Path, lock: dict, lock_sha: str, manifest: Path, apply: b
             raise Refusal("Another operation is using this workspace") from error
         state = settle_dead_operation(workspace, read_marker(workspace, lock_sha))
         env = environment(workspace, lock, state["symbol_level"])
-        # A killed apply leaves phase overlay-applying with pending_overlay set.
-        # Re-running overlay-apply with the same manifest finishes those writes.
         if state.get("phase") == "overlay-applying":
             pending = state.get("pending_overlay")
             if not apply:
@@ -1029,7 +960,6 @@ def overlay(workspace: Path, lock: dict, lock_sha: str, manifest: Path, apply: b
         else:
             with record_path.open("xb") as stream:
                 stream.write(raw)
-        # Marker flips before writes so a kill can resume via overlay-apply.
         active = dict(state, phase="overlay-applying", pending_overlay=record["identity"])
         write_marker(workspace, active)
         changed = []
@@ -1045,8 +975,6 @@ def overlay(workspace: Path, lock: dict, lock_sha: str, manifest: Path, apply: b
             recorded_overlay(workspace, active)
             write_marker(workspace, active)
         except Exception:
-            # Ordinary errors roll back exact prior bytes. KeyboardInterrupt and
-            # other BaseException kills stay in overlay-applying; re-run apply.
             for target in reversed(changed):
                 write_source(target_path(workspace, target, lock), *before[target])
             write_marker(workspace, state)
@@ -1056,7 +984,6 @@ def overlay(workspace: Path, lock: dict, lock_sha: str, manifest: Path, apply: b
 
 
 def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_level: int, jobs: int) -> None:
-    # generate uses the same disk floor as build; only sync has a separate reserve.
     report = host_report(workspace, lock, "build" if operation == "generate" else operation)
     if report["blockers"]:
         raise Refusal("; ".join(report["blockers"]))
@@ -1074,12 +1001,11 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
         return state
     claimed = operation == "sync" and is_new
     if claimed:
-        workspace.mkdir(mode=0o700)  # Atomic claim, never adopt an arbitrary tree.
+        workspace.mkdir(mode=0o700)
         state = {"schema_version": 1, "workspace": str(workspace), "lock_sha256": lock_sha,
                  "phase": "sync-in-progress", "symbol_level": symbol_level}
         write_marker(workspace, state)
     else:
-        # Ownership before touching the lock; the phase is judged under it.
         state = read_marker(workspace, lock_sha)
     for name in ("tmp", ".parc-operation.lock"):
         internal_path(workspace / name, workspace)
@@ -1098,7 +1024,7 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                 start = 0
             else:
                 verify_workspace(workspace, lock, state, env)
-                start = 4 * len(repository_names(lock))  # Only repeat gclient sync, never checkout/reset sources.
+                start = 4 * len(repository_names(lock))
                 state["phase"] = "sync-in-progress"
                 write_marker(workspace, state)
             for index, command in enumerate(plan["sync"]):
@@ -1111,8 +1037,6 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                     run(command["argv"], Path(command["cwd"]), env)
                 except (OSError, subprocess.CalledProcessError):
                     if index == 4 * len(repository_names(lock)):
-                        # Snapshot only this owned failed sync; any later edit blocks
-                        # resumption. gclient is rerun without force/reset/delete.
                         repositories = discover_repositories(workspace)
                         state.update(phase="dependency-sync-failed", repositories=repositories,
                                      source_fingerprint=tree_fingerprint(workspace, env, repositories))
@@ -1130,9 +1054,6 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
             if not applied:
                 raise Refusal("Direct generation requires the reviewed Parc overlay")
             if state["phase"] in {"synced", "generation-failed"}:
-                # gclient intentionally skips update_depot_tools under the
-                # pinned DEPOT_TOOLS_UPDATE=0 policy. Its vpython entry point
-                # can work even while GN's hermetic Python is missing.
                 command = plan["build"][0]
                 run(command["argv"], Path(command["cwd"]), env)
                 state["phase"] = "generation-in-progress"
@@ -1147,16 +1068,11 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                 try:
                     run(command["argv"], Path(command["cwd"]), env)
                 except (OSError, subprocess.CalledProcessError) as error:
-                    # Only a returned failure is resumable. A killed process
-                    # remains in-progress. Preserve upstream-applied patches
-                    # and reject later edits before any retry or overlay.
                     recorded_overlay(workspace, state)
                     state.update(phase="generation-failed", generation_error=str(error),
                                  source_fingerprint=tree_fingerprint(workspace, env, state["repositories"]))
                     write_marker(workspace, state)
                     raise
-                # Generation must preserve reviewed source outputs;
-                # refuse to compile if those changed a reviewed Parc target.
                 recorded_overlay(workspace, state)
                 state.pop("generation_error", None)
                 state.update(phase="generated", source_fingerprint=tree_fingerprint(workspace, env, state["repositories"]))

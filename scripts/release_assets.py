@@ -1,4 +1,3 @@
-"""Reconcile an interrupted GitHub asset upload without replacing released bytes."""
 import hashlib
 import json
 from pathlib import Path

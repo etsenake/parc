@@ -164,14 +164,11 @@ class Release:
         if self.current.exists():
             prior = json.loads(self.current.read_text())
             if prior.get("status") == "running":
-                # The release lock is held, so no other release process can still be running this.
-                # command_pid is kept: a crashed shipping-build still needs its process-group recovery.
                 prior.update(status="stopped",
                              error=prior.get("error") or "The previous release process exited without stopping cleanly")
                 save(self.current, prior)
                 if prior.get("run"):
                     save(Path(prior["run"]) / "state.json", prior)
-            # Only an explicit, different --type retires a stopped run; an automatic run resumes it.
             if (prior.get("status") not in TERMINAL and self.kind and prior["release_type"]
                     and prior["release_type"] != self.kind):
                 self.supersede(prior)
@@ -187,7 +184,6 @@ class Release:
                 self.refresh_previous = dict(prior)
                 self.state = prior
                 if self.kind:
-                    # Resuming with --type fixes the version too, even for a run whose commits chose it.
                     self.state["type_override"] = self.kind
                 self.kind = self.kind or prior["release_type"]
                 self.state["release_type"] = self.kind
@@ -205,22 +201,15 @@ class Release:
         self.checkpoint(status="running", error=None)
 
     def recover_dead_command(self, prior):
-        """A dead overlay check, Git or preflight tool command leaves no engine operation to recover.
-
-        So it can't block a source refresh, which checks Git again from scratch; engine operations keep the guard.
-        """
         command = prior.get('command', [])
         pid = prior.get('command_pid')
         source = prior.get('source')
         overlay_check = bool(source) and command[1:3] == [str(Path(source) / 'scripts/engine-source.py'), 'overlay-check']
         tool = command[:1] in (['git'], ['gh'], ['xcrun'], ['xcodebuild'], ['security'])
-        # Preflight checks the keys again and restores whatever is still missing.
         restore = command[1:3] == [str(self.root / 'scripts/signing-backup.py'), 'restore']
         if (prior.get('status') != 'stopped' or prior.get('stage') != 'engine' or not pid
                 or not (overlay_check or tool or restore)):
             return
-        # A dead leader does not establish that its descendants are gone.
-        # Permission failures and reused/live PIDs must also refuse recovery.
         for probe in (os.kill, os.killpg):
             try:
                 probe(pid, 0)
@@ -235,10 +224,6 @@ class Release:
         save(Path(prior['run']) / 'state.json', prior)
 
     def supersede(self, prior):
-        """Retire a stopped, never-published release of another type so a new bump can start.
-
-        Its run directory, frozen source and compiled engine objects stay in place.
-        """
         unfinished = "An unfinished " + prior["release_type"] + " release must resume before another bump"
         if prior.get("status") != "stopped" or prior.get("lease_release_started"):
             raise Failure(unfinished)
@@ -253,7 +238,6 @@ class Release:
                     pass
                 raise Failure(unfinished + "; its process " + str(pid) + " is still alive")
         if prior.get("tag"):
-            # No self.git here: its checkpoint would overwrite current.json before the state is known.
             remote = subprocess.run(["git", "ls-remote", "origin", "refs/tags/" + prior["tag"]], cwd=self.root,
                                     env=self.env, capture_output=True, text=True)
             if remote.returncode:
@@ -271,7 +255,6 @@ class Release:
                   + " so a " + self.kind + " release can start; its run, source archive and engine objects were kept")
 
     def superseded_shipping_build(self):
-        """The newest run this kind superseded whose shipping build was cancelled mid-operation."""
         found = []
         for path in self.base.glob('*/state.json'):
             try:
@@ -285,7 +268,6 @@ class Release:
         return max(found, key=lambda state: state.get('abandoned_utc', '')) if found else None
 
     def refresh_inputs(self):
-        """Explicitly replace failed, unpublished build inputs; retain the old archive."""
         if self.git('status', '--porcelain'):
             raise Failure('Source refresh requires clean main; local edits were preserved')
         if self.git('branch', '--show-current') != 'main':
@@ -308,7 +290,6 @@ class Release:
         release_inputs.verify(self.root, self.state['source'], self.state['commit'])
         since, found = self.changes(commit)
         version = self.state['version']
-        # The version commit is published, so a feat or breaking change here can't raise it as prepare() would.
         kind = release_notes.bump(found) or self.kind
         raised = next_version(self.state['previous_version']['version'], kind)
         outgrown = release_notes.number(raised) > release_notes.number(version['version'])
@@ -318,8 +299,6 @@ class Release:
         notes = release_notes.entry(version['version'], version['build'], self.state['notes']['date'], found)
         files = release_notes.files(json.loads(self.git('show', commit + ':release-notes.json')), notes, since[1:])
         if any(self.git('show', commit + ':' + name) != text.strip() for name, text in files.items()):
-            # The fixes frozen in here ship, so the source and main must carry notes that list them. Until the
-            # checkpoint below, any resume finishes this refresh instead of building the commit main has moved past.
             self.checkpoint(refresh_commit=commit)
             commit = self.publish_notes(commit, files)
         source = Path(self.state['run']) / ('source-' + commit)
@@ -333,7 +312,6 @@ class Release:
         self.emit('Refreshed unpublished release inputs to ' + commit + '; previous archive and compiled objects preserved')
 
     def tree(self, commit, files):
-        """commit's tree with these top-level files replaced, written without touching the checkout."""
         def plumbing(args, text):
             return subprocess.run(['git', *args], cwd=self.root, env=self.env, input=text, capture_output=True,
                                   text=True, check=True).stdout.strip()
@@ -343,14 +321,9 @@ class Release:
         return plumbing(['mktree'], '\n'.join(entries) + '\n')
 
     def publish_notes(self, source, files):
-        """Publishes source plus these notes on main, merged when main has moved on, and returns that commit.
-
-        The merge keeps main's later commits out of the frozen source, as --source-commit asks.
-        """
         message = 'chore(release): ' + self.state['version']['version'] + ' notes'
         tree = self.tree(source, files)
         self.git('fetch', 'origin', 'main', retries=2)
-        # A rerun after a crash reuses the notes commit it already published.
         log = self.git('log', '--format=%H %T %P', source + '..origin/main').splitlines()
         published = [line.split()[0] for line in log if line.split()[1:] == [tree, source]]
         notes = published[0] if published else self.git('commit-tree', tree, '-p', source, '-m', message)
@@ -382,7 +355,6 @@ class Release:
         self.env.update(GH_TOKEN=token, GITHUB_TOKEN="")
         if json.loads(self.github("api", "repos/" + REPOSITORY))["private"] is not True:
             raise Failure("The app repository must remain private")
-        # Git uses the same saved GitHub identity without putting a token in argv.
         self.env.update(GIT_CONFIG_COUNT="2", GIT_CONFIG_KEY_0="credential.helper", GIT_CONFIG_VALUE_0="",
                         GIT_CONFIG_KEY_1="credential.helper", GIT_CONFIG_VALUE_1="!gh auth git-credential")
 
@@ -438,14 +410,11 @@ class Release:
                               cwd=self.root, env=self.env, capture_output=True).returncode == 0
 
     def changes(self, revision):
-        """The newest published release tag in revision and the Conventional Commits since it."""
-        # Published tags are immutable; a differing local tag fails here instead of being replaced.
         self.git('fetch', '--no-tags', 'origin', 'refs/tags/v*:refs/tags/v*', retries=2)
         tag = release_notes.last_release(self.root, revision)
         return tag, release_notes.changes(self.root, tag, revision)
 
     def version_files(self, base):
-        """The version commit's exact files: base's notes plus this release, so a rerun never appends twice."""
         notes = json.loads(self.git('show', base + ':release-notes.json'))
         return {'app-version.json': json.dumps(self.state['version'], indent=2) + '\n',
                 **release_notes.files(notes, self.state['notes'], self.state['since'][1:])}
@@ -482,7 +451,6 @@ class Release:
         if not self.state.get('commit'):
             files = self.version_files(self.state['base_commit'])
             head = self.git('rev-parse', 'HEAD')
-            # Recover a kill between commit creation and checkpoint, without a second bump.
             if head != self.state['base_commit']:
                 parent = self.git('rev-parse', 'HEAD^')
                 changed = self.git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD').splitlines()
@@ -490,7 +458,6 @@ class Release:
                         or any(self.git('show', 'HEAD:' + name) != text.strip() for name, text in files.items())):
                     raise Failure('Source changed during version transaction; preserved for reconciliation')
             else:
-                # Porcelain lines are "XY path"; git() strips the first line's leading space.
                 dirty = {line.split(maxsplit=1)[1] for line in self.git('status', '--porcelain').splitlines()}
                 if not dirty <= set(files) or any((self.root / name).read_text() != files[name] for name in dirty):
                     raise Failure('Unexpected local edits during version transaction; preserved')
@@ -509,14 +476,11 @@ class Release:
                 raise Failure('Another release changed the remote version; no retagging or automatic version replacement')
             if not subprocess.run(['git', 'merge-base', '--is-ancestor', 'origin/main', commit], cwd=self.root,
                                   env=self.env, capture_output=True).returncode == 0:
-                # Commits merged in here ship in this release, so its notes are recomputed to include them.
                 tip = self.git('rev-parse', 'origin/main')
                 ours = self.git('diff-tree', '-r', '--name-only', self.git('merge-base', commit, tip), commit).splitlines()
-                # The merge below keeps only the version files from this side, not e.g. an unpushed local commit.
                 if not set(ours) <= set(self.version_files(tip)):
                     raise Failure('The version commit carries changes main lacks; preserved for reconciliation')
                 since, found = self.changes(tip)
-                # The version is unpublished, so a late feat or breaking change raises a bump --type didn't set.
                 kind = self.state.get('type_override') or release_notes.bump(found) or self.kind
                 raised = next_version(self.state['previous_version']['version'], kind)
                 if release_notes.number(raised) > release_notes.number(wanted['version']):
@@ -525,8 +489,6 @@ class Release:
                 notes = release_notes.entry(wanted['version'], wanted['build'], self.state['notes']['date'], found)
                 self.checkpoint(release_type=self.kind, version=wanted, tag='v' + wanted['version'],
                                 notes=notes, since=since)
-                # The version commit only changes these files, so the merge is main's tree with them
-                # replaced. Writing it without the checkout leaves a kill nothing to clean up.
                 self.checkpoint(commit=self.git('commit-tree', self.tree(tip, self.version_files(tip)), '-p', commit,
                                                 '-p', tip, '-m', 'chore(release): ' + wanted['version']))
             try:
@@ -577,7 +539,6 @@ class Release:
                 self.command([sys.executable, script, 'reconfigure', '--workspace', workspace,
                               '--previous-lock', previous], name='engine-reconfigure')
             else:
-                # Upstream revisions need their own workspace; never reset an existing cache.
                 workspace = workspace.with_name(workspace.name + '-' + sha(lock)[:12])
                 self.checkpoint(workspace=str(workspace))
                 self.command([sys.executable, script, 'sync', '--workspace', workspace], name='engine-sync')
@@ -607,8 +568,6 @@ class Release:
             self.command([sys.executable, source / 'scripts/release_engine.py', source, manifest, output], name='verify-resumed-engine')
             self.checkpoint(manifest=str(manifest), manifest_sha256=sha(manifest))
             return
-        # Sealing first reuses a compatible completed shipping build. A refusal
-        # proceeds through generation/incremental compilation, preserving output.
         try:
             self.command([sys.executable, source / "scripts/build.py", "seal-engine", "--engine-dir", output, "--manifest", manifest, "--purpose", "distribution"], name="engine-reuse")
         except Failure:
@@ -630,7 +589,6 @@ class Release:
 
     def appcast(self):
         source = Path(self.state["source"]); run = Path(self.state["run"]); version = self.state["version"]["version"]
-        # A fixed pubDate and Ed25519's deterministic signature make a rerun write identical bytes.
         if not self.state.get("appcast_published"):
             self.checkpoint(appcast_published=now())
         output = run / "appcast.xml"
@@ -655,7 +613,6 @@ class Release:
         head = self.git('rev-parse', 'HEAD', cwd=tap)
         remote = self.git('ls-remote', 'origin', 'refs/heads/main', cwd=tap).split()[0]
         if head != remote:
-            # A resumed local cask commit may simply await its first push.
             self.git('push', 'origin', head + ':refs/heads/main', cwd=tap, retries=2)
             if self.git('ls-remote', 'origin', 'refs/heads/main', cwd=tap).split()[0] != head:
                 raise Failure('Tap commit publication was not verified')
@@ -669,7 +626,6 @@ class Release:
         self.checkpoint(tap=str(tap), tap_commit=self.git("rev-parse", "HEAD", cwd=tap))
 
     def verify_feed(self):
-        """Parc's feed URL, releases/latest/download/appcast.xml, must serve this release's appcast."""
         public = json.loads(self.github('api', 'repos/' + PUBLIC_REPOSITORY + '/releases/latest'))
         feed = {item['name']: item.get('digest') for item in public['assets']}.get('appcast.xml')
         if public['tag_name'] != self.state['tag'] or feed != 'sha256:' + self.state['appcast_sha256']:
@@ -714,7 +670,6 @@ class Release:
             if self.state.get('lease_release_started'):
                 self.finish()
                 return 0
-            # Use the saved gh identity for the atomic cross-Mac lease too.
             os.environ['GH_TOKEN'] = self.env['GH_TOKEN']
             os.environ.pop('GITHUB_TOKEN', None)
             if not self.state.get('source_frozen'):

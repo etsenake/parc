@@ -9,7 +9,6 @@ xcrun swiftc -parse-as-library "${tooltip[@]}" "$root/Sources/ParcApp/SidebarRow
     "$root/Sources/ParcApp/SidebarRowAppearance.swift" \
     "$root/tests/SidebarRows/SidebarRowActionButtonTests.swift" -o "$tmp/sidebar-rows"
 "$tmp/sidebar-rows"
-# The appearance-resolved layer colour helper, without the rest of the theme renderer.
 sed -n '/^extension NSColor {/,/^}/p' "$root/Sources/ParcApp/ThemeRenderer.swift" | { echo "import AppKit"; cat; } > "$tmp/ColorInAppearance.swift"
 xcrun swiftc -parse-as-library "$root/Sources/ParcApp/SidebarRowAppearance.swift" "$tmp/ColorInAppearance.swift" \
     "$root/tests/SidebarRows/SidebarRowAppearanceTests.swift" -o "$tmp/sidebar-row-appearance"

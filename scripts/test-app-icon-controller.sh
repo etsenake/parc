@@ -1,5 +1,4 @@
 #!/bin/bash
-# Inert icon catalog/selection checks. No app launch or system identity changes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 check_dir=$(mktemp -d)

@@ -1,5 +1,4 @@
 #!/bin/bash
-# Inert AppKit admission/lifetime checks; no browser or posted input.
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 check_dir="$(mktemp -d "${TMPDIR:-/tmp}/parc-capture-gesture.XXXXXX")"

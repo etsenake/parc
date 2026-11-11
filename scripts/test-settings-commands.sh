@@ -1,5 +1,4 @@
 #!/bin/bash
-# File-backed model and destination checks only; no browser/engine or user data.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 output=$(mktemp -d)

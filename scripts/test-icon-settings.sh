@@ -1,6 +1,4 @@
 #!/bin/bash
-# Compile actual picker/controller source into an inert AppKit component runner.
-# No browser or system identity mutation; all apply effects are injected recorders.
 set -euo pipefail
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 output=$(mktemp -d)

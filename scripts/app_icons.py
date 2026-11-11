@@ -1,4 +1,3 @@
-"""Package Parc's app-icon family and shared default from versioned artwork."""
 import json
 from pathlib import Path
 import shutil
@@ -9,7 +8,6 @@ ICON_FILE = "Parc.icns"
 
 
 def package_app_icons(resources: Path) -> str:
-    """Export every variant's native sizes and the shared Dock/Finder default."""
     icons = resources / "AppIcons"
     catalog = json.loads((icons / "catalog.json").read_text())
     default = catalog["default"]
@@ -34,9 +32,6 @@ def package_app_icons(resources: Path) -> str:
 
 
 def _package_icon(source: Path, destination: Path, renderer: Path, *, mascot: bool) -> None:
-    # macOS consumes the 1x/2x representations from one standard ICNS file.
-    # Optical framing uses the opaque silhouette, ignoring faint edge/shadow
-    # pixels. Each size comes directly from the unchanged approved artwork.
     with tempfile.TemporaryDirectory(prefix="parc-app-icon-") as temporary:
         iconset = Path(temporary) / "Parc.iconset"
         iconset.mkdir()

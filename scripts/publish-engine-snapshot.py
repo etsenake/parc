@@ -35,7 +35,6 @@ def write(path, value):
 
 
 def github_preflight(cfg):
-    """Validate the inherited login; recover only invalid token overrides."""
     command = ["gh", "api", f"repos/{cfg['repository']}/releases/tags/{cfg['release']}"]
     def probe(env):
         return subprocess.run(command, env=env, stdout=subprocess.PIPE,
@@ -85,7 +84,6 @@ def main():
             child = subprocess.Popen([sys.executable, "-u", __file__, "--config", str(config_path)],
                                      stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                      start_new_session=True)
-        # Catch an immediate launch failure instead of reporting it as running.
         try:
             code = child.wait(timeout=1)
         except subprocess.TimeoutExpired:
@@ -139,8 +137,6 @@ def main():
             if found.get("digest") == digest and found["size"] == path.stat().st_size:
                 report("Already uploaded: " + path.name)
                 return
-            # Only an unfinished workspace upload may be replaced. Completed
-            # snapshots and the original application package are immutable.
             finalized = any(x["name"] == "engine-workspace.manifest.json" for x in release["assets"])
             if finalized or not path.name.startswith("engine-workspace.part"):
                 raise RuntimeError("Remote asset differs; refusing replacement: " + path.name)
@@ -165,13 +161,12 @@ def main():
         report("Verified upload: " + path.name)
 
     def closed_parts():
-        # The next part is created only after the previous part is closed.
         for stage in assets.glob(".engine-workspace-*"):
             for part in sorted(stage.glob("engine-workspace.part*.tar.gz"))[:-1]:
                 yield part
 
     try:
-        remote()  # Authentication/release check before expensive work.
+        remote()
         done = set()
         manifest_path = assets / "engine-workspace.manifest.json"
         attempts = 0
@@ -237,7 +232,7 @@ def main():
             manifest = json.loads(path.read_text())
             for item in [*manifest["parts"], manifest["inventory"]]:
                 upload(assets / item["name"])
-            upload(path)  # A manifest is published only after all payloads pass.
+            upload(path)
             with (assets / manifest["inventory"]["name"]).open() as stream:
                 entry = next(json.loads(line) for line in stream if json.loads(line)["path"] == metadata)
             pins[kind] = {"manifest": path.name, "manifest_sha256": sha(path),

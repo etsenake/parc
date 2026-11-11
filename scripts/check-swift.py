@@ -49,7 +49,6 @@ def git_state(repo: Path) -> dict:
 
 def swift_sources(repo: Path) -> list[Path]:
     sources = []
-    # Keep the source selection identical to scripts/build.py.
     for directory in ("Sources/ParcCore", "Sources/ParcApp"):
         group = sorted((repo / directory).glob("*.swift"))
         if not group:
@@ -124,7 +123,6 @@ def main(argv: list[str] | None = None) -> int:
         output = parent / label
         if output.exists() or output.is_symlink():
             raise Refusal(f"Receipt directory already exists; use a fresh --label: {output}")
-        # Fetch the build's pinned Sparkle into the same ignored cache; a plan writes nothing.
         cache = repo / "build/sparkle"
         sparkle_release = sparkle.directory(cache) if args.plan else sparkle.fetch(cache)
         sources, before = snapshot(repo, bridge_headers, sparkle_release)
@@ -139,8 +137,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.plan:
             print(json.dumps({**record, "executed": False}, indent=2))
             return 0
-        # Query the selected toolchain without overriding xcode-select or the
-        # caller's DEVELOPER_DIR/SDKROOT. Record it instead of assuming Xcode.app.
         record["toolchain"] = {
             "swiftc": capture(["xcrun", "--sdk", "macosx", "--find", "swiftc"], repo),
             "swift_version": capture(["xcrun", "--sdk", "macosx", "swiftc", "--version"], repo),
@@ -150,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
             "SDKROOT": os.environ.get("SDKROOT"),
         }
         parent.mkdir(parents=True, exist_ok=True)
-        output.mkdir()  # Atomic claim; concurrent invocations cannot overwrite receipts.
+        output.mkdir()
         record.update(started=utc(), executed=True)
         write_json(output / "start.json", record)
         started = time.monotonic()

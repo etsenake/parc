@@ -56,7 +56,6 @@ def asset_name(name):
 
 
 def fetch_asset(repository, asset, destination, expected):
-    """Resume a private GitHub asset; credentials travel over stdin, never argv."""
     if destination.is_symlink():
         raise ValueError("Symlinked cached asset refused")
     if destination.exists():
@@ -81,7 +80,7 @@ def fetch_asset(repository, asset, destination, expected):
                    input=config, text=True, check=True)
     if digest(partial) != expected or partial.stat().st_size != asset["size"]:
         raise ValueError("Downloaded asset digest/size mismatch: " + destination.name)
-    os.link(partial, destination)  # Exclusive publication; never replace a cache entry.
+    os.link(partial, destination)
     partial.unlink()
 
 

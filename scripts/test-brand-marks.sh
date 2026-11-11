@@ -1,5 +1,4 @@
 #!/bin/bash
-# Inert AppKit asset checks only; no browser, user profile, Dock or Finder writes.
 set -euo pipefail
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 check_root=$(mktemp -d "${TMPDIR:-/tmp}/parc-brand-mark-check.XXXXXX")

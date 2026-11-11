@@ -1,5 +1,4 @@
 #!/bin/bash
-# File-backed model + inert AppKit components only. Never creates/drives a browser.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 output=$(mktemp -d)
@@ -8,7 +7,6 @@ mkdir -p "$output/CardChecks.app/Contents/MacOS" "$output/CardChecks.app/Content
 mkdir -p "$output/CardChecks.app/Contents/Resources/Onboarding"
 cp Resources/Onboarding/grain-1.png "$output/CardChecks.app/Contents/Resources/Onboarding/"
 cp -R Resources/MembershipCard "$output/CardChecks.app/Contents/Resources/"
-# Compile the real shared base classes without Sidebar's unrelated browser owners.
 python3 - "$output/NativeBases.swift" <<'PY'
 import pathlib,sys
 s=pathlib.Path('Sources/ParcApp/SidebarView.swift').read_text()

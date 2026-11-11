@@ -3,7 +3,6 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 check_root=$(mktemp -d "${TMPDIR:-/tmp}/parc-capture-edit.XXXXXX")
 trap 'rm -rf "$check_root"' EXIT
-#
 spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$check_root/PArcButtonSpinner.swift" PArcButtonSpinner)
 xcrun swiftc -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \

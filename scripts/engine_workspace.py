@@ -1,12 +1,3 @@
-"""Authenticated workspace snapshot metadata and conservative relocation.
-
-This module never builds an engine or adopts an arbitrary existing directory.
-The artifact CLI authenticates and extracts an archive into private staging, then
-calls adopt_workspace before publishing it. Local clone adoption instead proves
-the copy against an idle owned source. Only receipts and proven generated links
-are rewritten;
-GN regeneration is mandatory, and cached source/object mtimes remain intact.
-"""
 from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
@@ -50,7 +41,6 @@ def _file_sha(path: Path) -> str:
 
 
 def _engine(repo: Path):
-    # Load trusted code beside this module, even when validating a fixture repo.
     spec = importlib.util.spec_from_file_location("parc_snapshot_engine_source", Path(__file__).with_name("engine-source.py"))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -83,7 +73,6 @@ def _relative(value: str) -> Path:
 
 @contextmanager
 def workspace_guard(workspace: Path):
-    """Hold this across metadata creation AND archive capture, without waiting."""
     engine = _engine(REPO)
     path = engine.internal_path(Path(workspace) / ".parc-operation.lock", Path(workspace))
     with path.open("rb") as guard:
@@ -113,9 +102,7 @@ def _receipt(engine, workspace: Path, lock: dict, lock_sha: str) -> tuple[dict, 
 
 def _validate_baseline(engine, workspace: Path, repo: Path, lock: dict, state: dict, *, verify_overlay_inputs: bool = True) -> None:
     env = engine.environment(workspace, lock, state["symbol_level"])
-    env["GIT_OPTIONAL_LOCKS"] = "0"  # Do not refresh indexes during verification.
-    # Refuse Git metadata that would make an apparently complete snapshot rely
-    # on an external object store or worktree. No Git commands run before this.
+    env["GIT_OPTIONAL_LOCKS"] = "0"
     for relative in ["depot_tools", *state["repositories"]]:
         git = engine.internal_path(workspace / relative / ".git", workspace)
         if not git.is_dir():
@@ -124,8 +111,6 @@ def _validate_baseline(engine, workspace: Path, repo: Path, lock: dict, state: d
             path = engine.internal_path(git / name, workspace)
             if path.exists() and path.read_bytes().strip():
                 raise Refusal(f"External Git storage is not portable: {relative}/.git/{name}")
-        # A transplanted core.worktree could make Git verify the old checkout
-        # while we adopt different source bytes. Includes can hide that setting.
         config = engine.run(engine.GIT + ["config", "--local", "--no-includes", "--null", "--list"], git.parent, env, True)
         for entry in config.split(b"\0"):
             key, _, value = entry.partition(b"\n")
@@ -149,7 +134,7 @@ def _ignored_source_link(engine, workspace: Path, state: dict, path: Path, lock:
     roots = [workspace / "depot_tools", *(workspace / item for item in state["repositories"])]
     owners = [root for root in roots if root in path.parents]
     if not owners:
-        return True  # Workspace metadata, never included in the Git fingerprint.
+        return True
     owner = max(owners, key=lambda root: len(root.parts))
     relative = str(path.relative_to(owner))
     if ".git" in Path(relative).parts:
@@ -184,8 +169,6 @@ def _links(engine, workspace: Path, state: dict, lock: dict, *, restored: bool =
                 continue
             target = os.readlink(path)
             relative = path.relative_to(workspace)
-            # Resolve the entire chain, not only its first hop; dangling
-            # internal links are allowed but cycles and escaping chains are not.
             try:
                 resolved = path.resolve()
             except (RuntimeError, OSError) as error:
@@ -208,8 +191,6 @@ def _links(engine, workspace: Path, state: dict, lock: dict, *, restored: bool =
 
 
 def _toolchain(workspace: Path, engine) -> dict:
-    # These hashes identify the bundled compiler and generated graph inputs.
-    # They are provenance, not evidence that old objects are reusable on a new host.
     names = ["chromium/src/third_party/llvm-build/Release+Asserts/bin/clang",
              "chromium/src/third_party/llvm-build/Release+Asserts/cr_build_revision",
              "chromium/src/third_party/rust-toolchain/bin/rustc",
@@ -245,7 +226,6 @@ def _toolchain(workspace: Path, engine) -> dict:
 
 def snapshot_metadata(workspace: Path, repo: Path = REPO, *, lock_path: Path | None = None,
                       verify_overlay_inputs: bool = True) -> dict:
-    """Read and validate a frozen owned workspace; caller holds workspace_guard."""
     engine = _engine(repo)
     try:
         workspace = engine.safe_path(str(workspace), repo)
@@ -274,13 +254,6 @@ def snapshot_metadata(workspace: Path, repo: Path = REPO, *, lock_path: Path | N
 def adopt_workspace(extracted_root: Path, metadata: dict, *, verified_archive_sha256: str,
                     expected_archive_sha256: str, expected_metadata_sha256: str,
                     destination: Path | None = None, repo: Path = REPO) -> dict:
-    """Adopt authenticated private staging before archive publication.
-
-    The caller must authenticate the archive manifest against its trusted lock,
-    verify all archive parts/inventory, and pass the snapshot entry's digest from
-    that authenticated inventory. Passing equal unauthenticated strings does not
-    authenticate an archive. This is deliberately not exposed as an adoption CLI.
-    """
     if (not isinstance(verified_archive_sha256, str) or not SHA256.fullmatch(verified_archive_sha256)
             or verified_archive_sha256 != expected_archive_sha256
             or not isinstance(expected_metadata_sha256, str) or not SHA256.fullmatch(expected_metadata_sha256)):
@@ -349,8 +322,6 @@ def _adopt_workspace(extracted_root: Path, metadata: dict, *, expected_metadata_
                 for value in metadata["archive_excludes"]:
                     (root / value).unlink()
                 _links(engine, root, state, lock, restored=True)
-            # All proofs pass before ownership changes. Invalidate shipping first:
-            # interruption cannot leave a built shipping receipt at the new path.
             provenance = {**provenance, "original_workspace": original,
                           "snapshot_sha256": metadata_sha, "requires_regeneration": True}
             if shipping is not None:
@@ -375,7 +346,6 @@ def _adopt_workspace(extracted_root: Path, metadata: dict, *, expected_metadata_
 
 def adopt_local_clone(source: Path, clone: Path, repo: Path = REPO,
                       previous_lock: Path | None = None) -> dict:
-    """Adopt only a verified local copy of an idle owned workspace."""
     engine = _engine(repo)
     try:
         source = engine.safe_path(str(source), repo)

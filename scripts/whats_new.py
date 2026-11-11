@@ -18,8 +18,6 @@ notes_spec.loader.exec_module(release_notes)
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = "Sources/WhatsNew/WhatsNew.html"
 SCRIPT = "Sources/WhatsNew/WhatsNew.js"
-# Every line the timeline says, kept here for rewording. The page fills in
-# {from} and {count} when See What's New opens it after an update.
 COPY = {
     "skipped": "Straight from {from} to here? Bold. Here are the {count} releases you leapfrogged.",
     "skipped one": "Straight from {from} to here? Bold. Here’s the release you leapfrogged.",
@@ -31,13 +29,11 @@ COPY = {
     "new to you": "New to you",
     "previous version": "Your previous version",
 }
-# Breaking changes lead whatever their type; the rest group by type.
 GROUPS = (("breaking", "heads-up", "Heads up"), ("feat", "new", "New"),
           ("fix", "fixed", "Fixed"), ("perf", "faster", "Faster"))
 
 
 def read_releases(path: Path) -> list:
-    """Releases newest first; a missing file is an empty history."""
     try:
         releases = json.loads(path.read_text(encoding="utf-8"))["releases"]
     except FileNotFoundError:
@@ -69,7 +65,6 @@ def render_groups(changes: list, heading: str, quiet: str = release_notes.QUIET)
 
 
 def glance(changes: list) -> str:
-    """A closed row's summary, such as "2 new · 3 fixed"; nothing for a release without notes."""
     counts = [(key, title, len(members(changes, key))) for key, _, title in GROUPS]
     return " · ".join(title if key == "breaking" else f"{count} {title.lower()}" for key, title, count in counts if count)
 
@@ -87,7 +82,6 @@ def render_content(releases: list) -> str:
     latest, *earlier = releases
     notes = '<p class="lead">Thanks for using Parc! Here’s what’s new in this version.</p>\n'
     if earlier:
-        # Shown by WhatsNew.js when See What's New opens the page after an update that skipped releases.
         notes += f'<p class="skipped" hidden><span></span><a href="#earlier">{escape(COPY["catch up"])}</a></p>\n'
     notes += render_groups(latest["changes"], "h3", COPY["no notes"])
     html = ['<section class="latest">'
@@ -117,7 +111,6 @@ def inline(path: Path) -> str:
 
 
 def favicon(path: Path) -> str:
-    """Chromium stores favicons as square 16 and 32 px bitmaps, which stretches any other shape."""
     width, height = struct.unpack(">II", path.read_bytes()[16:24])
     if width != height:
         raise ValueError(f"{path.name} is {width} × {height}; a favicon must be square")
@@ -125,7 +118,6 @@ def favicon(path: Path) -> str:
 
 
 def script(repo: Path) -> str:
-    """WhatsNew.js after the copy it shows. "<" is escaped so no copy can close the script element."""
     words = {key: COPY[key] for key in ("skipped", "skipped one", "new to you", "previous version")}
     words = json.dumps(words, ensure_ascii=False).replace("<", "\\u003c")
     return f"const copy = {words};\n" + (repo / SCRIPT).read_text(encoding="utf-8")
@@ -143,7 +135,6 @@ def render(notes: Path, repo: Path = ROOT) -> str:
 
 
 def write(repo: Path, output: Path) -> None:
-    """Write the bundled page from the repository's release notes."""
     output.write_text(render(repo / "release-notes.json", repo), encoding="utf-8")
 
 

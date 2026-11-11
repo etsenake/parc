@@ -1,29 +1,4 @@
 #!/bin/bash
-# One-time, per Mac: choose the code-signing identity scripts/package-app.sh
-# signs with. Without one, builds are ad-hoc signed: the keychain's partition
-# list for "Parc Safe Storage" then names each build's cdhash, so macOS asks
-# again after every update (and pages stay blank until it's answered), and
-# camera/microphone grants reset too. Code signed by an Apple-issued
-# certificate carries a Team ID, which the keychain and privacy settings
-# remember across builds. A self-signed certificate has no Team ID, so it
-# doesn't help.
-#
-# Any Apple ID works. In Xcode: Settings > Accounts > + > Apple ID, select its
-# team (a free "Personal Team" is fine) > Manage Certificates > + > Apple
-# Development. Use the same Apple ID on every Mac that builds; each Mac gets
-# its own certificate and key from Apple, and nothing private is copied.
-#
-# Production publication requires Developer ID Application and notarization.
-# A paid team can
-# instead add Developer ID Application in Manage Certificates; package-app.sh
-# then notarizes each build, which needs credentials stored once per Mac with
-# `xcrun notarytool store-credentials parc-notary --apple-id <Apple ID> --team-id <team>`.
-#
-#   scripts/setup-signing.sh             use this Mac's only Apple-issued identity
-#   scripts/setup-signing.sh 'IDENTITY'  use that one (as listed by the first form)
-#
-# It only records the choice in ~/.config/parc/signing-identity; it creates,
-# trusts and imports nothing.
 set -euo pipefail
 keychain="$HOME/Library/Keychains/login.keychain-db"
 config="$HOME/.config/parc/signing-identity"

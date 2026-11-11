@@ -1,9 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# With an integrated checkout, no arguments are needed. An optional source
-# overlay and support checkout let the same runner check a staged cohort using
-# its actual sources, without copying or changing the support checkout.
 if (( $# > 2 )); then
   echo "Usage: $0 [source-root [support-root]]" >&2
   exit 2

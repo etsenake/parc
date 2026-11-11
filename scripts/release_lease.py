@@ -1,7 +1,3 @@
-"""Atomic GitHub tag lease; prevents two Macs publishing overlapping releases.
-
-Only this temporary lease is deleted. Immutable version tags are never moved.
-"""
 import json
 import subprocess
 
@@ -22,7 +18,6 @@ def api(path, payload=None, method=None):
 
 
 def acquire(owner, commit, saved=None):
-    # Reference creation is atomic on GitHub, unlike a read-then-write lock file.
     try:
         existing = api('git/ref/' + REF)
     except RuntimeError as error:

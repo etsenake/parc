@@ -12,7 +12,6 @@ TYPES = ("feat", "fix", "perf", "refactor", "docs", "build", "ci", "chore", "tes
 NOTABLE = ("feat", "fix", "perf")
 SUBJECT = re.compile(r"(?P<type>[a-z]+)(?:\((?P<scope>[^()\s]+)\))?(?P<breaking>!)?: (?P<summary>\S.*)")
 UNDO = re.compile(r'(Revert|Reapply) "(.*)"')
-# Release notes are for Parc users: no reference app and no sizes.
 PRIVATE = re.compile(r"\bArc\b|\d\s*(?:pt|px)\b|\d\s*×\s*\d")
 SECTIONS = (("Heads up", None), ("New", "feat"), ("Fixed", "fix"), ("Faster", "perf"))
 QUIET = "Small fixes and improvements."
@@ -26,7 +25,6 @@ RULE = ("Commit messages are one line, a Conventional Commit: type(scope)!: summ
 
 
 def parse(message):
-    """The Conventional Commit in a message's subject, or None when it doesn't follow the format."""
     match = SUBJECT.fullmatch(message.strip().partition("\n")[0].strip())
     if not match or match["type"] not in TYPES:
         return None
@@ -35,11 +33,6 @@ def parse(message):
 
 
 def undone(subject):
-    """("Revert" or "Reapply", the original subject) for git's own revert subjects, else (None, subject).
-
-    Each Revert layer undoes the one inside it: git 2.43+ reverts Revert "S" as Reapply "S", older git as
-    Revert "Revert "S"".
-    """
     layers = []
     undo = UNDO.fullmatch(subject)
     while undo:
@@ -52,16 +45,11 @@ def undone(subject):
 
 
 def last_release(repo, revision):
-    """The newest release tag revision contains; a superseded run's version commit has none."""
     return subprocess.run(["git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*.[0-9]*.[0-9]*", revision],
                           cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
 
 
 def changes(repo, since, until):
-    """Parsed commits in since..until, oldest first, without merges or unparseable subjects.
-
-    git's own Revert "subject" cancels that change and Reapply "subject" restores it.
-    """
     log = subprocess.run(["git", "log", "-z", "--no-merges", "--reverse", "--format=%B", since + ".." + until],
                          cwd=repo, capture_output=True, text=True, check=True).stdout
     found, cancelled = [], {}
@@ -72,7 +60,6 @@ def changes(repo, since, until):
             if reverted:
                 cancelled[original] = found.pop(reverted[-1])[1]
             else:
-                # The change shipped before this range, so reapplying it here ships nothing new.
                 cancelled.setdefault(original, None)
             continue
         if action:
@@ -100,8 +87,6 @@ def entry(version, build, date, changes):
 
 
 def record(notes, release, since):
-    """Newest first. Entries after the published version `since` are a rerun of this release or a
-    superseded run that never shipped; this release covers all of their changes, so it replaces them."""
     older = [item for item in notes["releases"] if number(item["version"]) <= number(since)]
     return {"releases": [release, *older]}
 
@@ -111,8 +96,6 @@ def number(version):
 
 
 def display(summary):
-    """Capitalizes an all-lowercase first word, leaving names like macOS or iCloud alone. Some subjects on main start
-    lowercase, and release-notes.json keeps them as written."""
     return summary[:1].upper() + summary[1:] if summary.split(" ", 1)[0].islower() else summary
 
 
@@ -129,7 +112,6 @@ def markdown(release):
 
 
 def text(notes, version):
-    """One recorded release's notes as its GitHub release shows them."""
     found = [release for release in notes["releases"] if release["version"] == version]
     if not found:
         raise ValueError("release-notes.json has no release " + version)
@@ -144,13 +126,11 @@ def changelog(notes):
 
 
 def files(notes, release, since):
-    """release-notes.json and CHANGELOG.md after recording one release."""
     notes = record(notes, release, since)
     return {"release-notes.json": json.dumps(notes, indent=2) + "\n", "CHANGELOG.md": changelog(notes)}
 
 
 def check(message, merge=False):
-    """What breaks the commit rules in a stored message, else None; a merge may keep git's own body."""
     lines = [line for line in message.splitlines() if line.strip()]
     subject = lines[0] if lines else ""
     if (merge and subject.startswith("Merge ")) or (len(lines) == 1 and UNDO.fullmatch(subject)):

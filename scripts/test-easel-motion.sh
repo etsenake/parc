@@ -2,7 +2,6 @@
 set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$repo_root/build/tests"
-#
 spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/easel-spinner.swift" PArcButtonSpinner)
 xcrun swiftc -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \

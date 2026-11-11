@@ -1,4 +1,3 @@
-"""Reconcile a cancelled owned shipping operation; never invent a built receipt."""
 import fcntl
 import importlib.util
 import json
@@ -8,11 +7,6 @@ import sys
 
 
 def recover(source, workspace, process_group, evidence, inputs_replaced=False):
-    """inputs_replaced: a superseding release replaced the cancelled run's source on purpose.
-
-    The source fingerprint and overlay may then differ; GN arguments must still match and
-    the incremental build recompiles whatever changed.
-    """
     spec = importlib.util.spec_from_file_location('parc_cancelled_engine', source / 'scripts/engine-source.py')
     engine = importlib.util.module_from_spec(spec); spec.loader.exec_module(engine)
     lock, identity = engine.load_lock()
@@ -39,8 +33,6 @@ def recover(source, workspace, process_group, evidence, inputs_replaced=False):
         if not inputs_replaced and (receipt['source_fingerprint'] != state['source_fingerprint']
                                     or receipt['overlay'] != state.get('overlay')):
             raise ValueError('Cancelled build inputs changed; receipt and objects preserved')
-        # The previous bytes remain evidence. Only convert the verified cancelled
-        # operation to a resumable failure; GN/Ninja still must actually succeed.
         evidence.parent.mkdir(parents=True, exist_ok=True)
         if not evidence.exists():
             evidence.write_bytes((workspace / engine.SHIPPING_MARKER).read_bytes())

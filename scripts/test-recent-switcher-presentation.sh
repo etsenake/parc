@@ -7,6 +7,5 @@ xcrun swiftc -whole-module-optimization -warnings-as-errors -parse-as-library -t
   "$repo_root/Sources/ParcApp/RecentTabSwitcherView.swift" \
   "$repo_root/tests/KeyboardNavigation/RecentSwitcherPresentationTests.swift" \
   -o "$check_dir/recent-switcher"
-# An unbundled executable's Bundle.main.resourceURL is its own directory.
 cp -R "$repo_root/Resources/RecentSwitcher" "$check_dir/RecentSwitcher"
 "$check_dir/recent-switcher"

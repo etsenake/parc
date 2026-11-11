@@ -27,7 +27,6 @@ whats_new = load("whats_new")
 
 
 def parse(output):
-    """sign_update's enclosure attributes: the EdDSA signature and the signed length."""
     match = SIGNATURE.fullmatch(output.strip())
     if not match:
         raise ValueError("Unexpected sign_update output: " + output.strip())
@@ -35,7 +34,6 @@ def parse(output):
 
 
 def sign(tools, archive, key):
-    """The archive's signature, checked to cover every byte and verified by Sparkle itself."""
     output = subprocess.run([tools / "sign_update", *key, archive], check=True, stdout=subprocess.PIPE, text=True).stdout
     signature, length = parse(output)
     if length != archive.stat().st_size:
@@ -45,7 +43,6 @@ def sign(tools, archive, key):
 
 
 def notes(path, version):
-    """This version's release notes as HTML, grouped like the What's New page."""
     found = [release for release in whats_new.read_releases(path) if release["version"] == version]
     if not found:
         raise ValueError(f"{path} has no release {version}")
