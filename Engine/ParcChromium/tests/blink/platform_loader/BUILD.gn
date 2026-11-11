@@ -1,0 +1,27 @@
+# Installed at //third_party/blink/renderer/platform/loader/parc_tests.
+
+assert(is_mac)
+
+source_set("unit_tests") {
+  visibility = [ "//third_party/blink/renderer/platform/loader:*" ]
+  testonly = true
+  sources = [ "resource_loader_test.cc" ]
+
+  configs += [ "//third_party/blink/renderer/platform:blink_platform_config" ]
+
+  deps = [
+    "//base/test:test_support",
+    "//mojo/public/cpp/test_support:test_utils",
+    "//net:test_support",
+    "//net/traffic_annotation:test_support",
+    "//services/network:test_support",
+    "//services/network/public/cpp:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/blink/public:test_headers",
+    "//third_party/blink/renderer/platform",
+    "//third_party/blink/renderer/platform:test_support",
+  ]
+
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+}
