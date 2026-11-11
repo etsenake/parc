@@ -432,89 +432,26 @@
  };
 --- a/media/base/demuxer.cc
 +++ b/media/base/demuxer.cc
-@@ -15,5 +15,26 @@
- // Most Demuxer implementations don't need to disable canChangeType.
+@@ -16,4 +16,8 @@
  // Do nothing by default.
  void Demuxer::DisableCanChangeType() {}
 -
 +
-+bool Demuxer::ParcPrefersFairPlayRenderer() {
-+  return false;
-+}
-+
-+void Demuxer::ParcSetFastSeek(base::TimeDelta target,
-+                              base::TimeDelta tolerance_before) {}
-+
-+std::optional<base::TimeDelta> Demuxer::ParcTakeFastSeekLanding() {
-+  return std::nullopt;
-+}
-+
-+MediaResource* Demuxer::ParcBeginHandOff() {
++ParcDemuxerExtension* Demuxer::GetParcExtension() {
 +  return nullptr;
 +}
-+
-+void Demuxer::ParcSplitForHandOff(
-+    base::TimeDelta not_before,
-+    base::OnceCallback<void(base::TimeDelta)> split_cb) {}
-+
-+void Demuxer::ParcEndHandOff() {}
 +
  }  // namespace media
 --- a/media/base/demuxer.h
 +++ b/media/base/demuxer.h
-@@ -11,6 +11,7 @@
- #include <optional>
- #include <vector>
--
-+
-+#include "base/functional/callback.h"
- #include "base/time/time.h"
- #include "media/base/container_names.h"
- #include "media/base/demuxer_stream.h"
-@@ -181,6 +182,41 @@
--
-+
-   // Allow canChangeType to be disabled.
+@@ -26,1 +26,2 @@
+ class MediaTracks;
++class ParcDemuxerExtension;
+@@ -183,1 +184,4 @@
    virtual void DisableCanChangeType();
 +
-+  // Parc: whether the pipeline picks the FairPlay Renderer without a FairPlay
-+  // CDM: a SourceBuffer took Dolby Vision where clear Dolby Vision is allowed
-+  // (ChunkDemuxer::ParcSetClearDolbyVisionAllowed()), at the start or later
-+  // (changeType()). That renderer also plays the H.264, HEVC or AV1 before a
-+  // switch into Dolby Vision. Any thread. False by default.
-+  virtual bool ParcPrefersFairPlayRenderer();
-+
-+  // Parc: HTMLMediaElement.fastSeek on a Safari-identity page
-+  // (ParcWebMediaPlayerExtension::ParcFastSeek): the next Seek() to |target|
-+  // may land up to |tolerance_before| earlier, never later (WebKit's
-+  // SeekTarget with that negative threshold and no positive one); zero asks
-+  // for an exact seek.
-+  // Called on the main thread before that seek. A demuxer that can't land
-+  // early seeks exactly, which the tolerance allows.
-+  virtual void ParcSetFastSeek(base::TimeDelta target,
-+                               base::TimeDelta tolerance_before);
-+  // Where the Seek() that just completed landed, if it took such a
-+  // tolerance; once. Media thread: the pipeline starts the renderer there.
-+  virtual std::optional<base::TimeDelta> ParcTakeFastSeekLanding();
-+
-+  // Parc: the playing renderer's streams handed to another renderer without
-+  // a restart (PipelineImpl's from Chromium's renderer to the FairPlay
-+  // Renderer), as Safari's Media Source does. ParcBeginHandOff() returns the
-+  // streams the incoming renderer reads, or null where the demuxer can't
-+  // (ChunkDemuxer on Safari's Media Source can). ParcSplitForHandOff() splits
-+  // every stream at one time at or after |not_before| (a video keyframe):
-+  // the playing renderer reaches end of stream there and the incoming one
-+  // starts there; |split_cb| gets that time. ParcEndHandOff() ends it, once
-+  // the incoming renderer is gone or won't be used.
-+  virtual MediaResource* ParcBeginHandOff();
-+  virtual void ParcSplitForHandOff(
-+      base::TimeDelta not_before,
-+      base::OnceCallback<void(base::TimeDelta)> split_cb);
-+  virtual void ParcEndHandOff();
- };
--
-+
- }  // namespace media
++  // Parc's operations on this demuxer, or null without them.
++  virtual ParcDemuxerExtension* GetParcExtension();
 --- a/media/base/eme_constants.cc
 +++ b/media/base/eme_constants.cc
 @@ -16,6 +16,12 @@
@@ -604,17 +541,18 @@
               base::FEATURE_DISABLED_BY_DEFAULT
 --- a/media/base/pipeline_impl.cc
 +++ b/media/base/pipeline_impl.cc
-@@ -31,6 +31,9 @@
+@@ -31,6 +31,10 @@
  #include "media/base/demuxer.h"
  #include "media/base/media_log.h"
  #include "media/base/media_switches.h"
++#include "media/base/parc_demuxer_extension.h"
 +#include "media/base/parc_native_hls_source.h"
 +#include "media/base/parc_renderer_extensions.h"
 +#include "media/base/parc_renderer_transitions.h"
  #include "media/base/renderer.h"
  #include "media/base/renderer_client.h"
  #include "media/base/serial_runner.h"
-@@ -72,8 +75,10 @@
+@@ -72,8 +76,10 @@
  // |default_renderer| in Start() and Resume() helps avoid a round trip to the
  // render main task runner for Renderer creation in most cases which could add
  // latency to start-to-play time.
@@ -627,7 +565,7 @@
   public:
    RendererWrapper(scoped_refptr<base::SequencedTaskRunner> media_task_runner,
                    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-@@ -96,6 +101,7 @@
+@@ -96,6 +102,7 @@
    void SetVolume(float volume);
    void SetLatencyHint(std::optional<base::TimeDelta> latency_hint);
    void SetPreservesPitch(bool preserves_pitch);
@@ -635,7 +573,7 @@
    void SetRenderMutedAudio(bool render_muted_audio);
    void SetWasPlayedWithUserActivationAndHighMediaEngagement(
        bool was_played_with_user_activation_and_high_media_engagement);
-@@ -109,9 +115,13 @@
+@@ -109,9 +116,13 @@
    void OnTracksChanged(DemuxerStream::Type track_type,
                         std::optional<MediaTrack::Id> enabled_track_id,
                         base::OnceClosure change_completed_cb);
@@ -651,7 +589,7 @@
   private:
    enum class State {
      kCreated,
-@@ -277,6 +287,18 @@
+@@ -277,6 +288,18 @@
    // Uses |default_renderer_| as the Renderer or asynchronously creates a new
    // one by calling back to PipelineImpl. Fires |done_cb| with the result.
    void CreateRendererInternal(PipelineStatusCallback done_cb);
@@ -671,7 +609,7 @@
 +
    const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
    const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
-@@ -297,6 +319,9 @@
+@@ -297,6 +320,9 @@
    std::optional<base::TimeDelta> latency_hint_;
    bool render_muted_audio_ = false;
    raw_ptr<CdmContext, DanglingUntriaged> cdm_context_ = nullptr;
@@ -682,7 +620,7 @@
 +
    // By default, apply pitch adjustments.
    bool preserves_pitch_ = true;
-@@ -327,10 +352,89 @@
+@@ -327,10 +353,89 @@
 -
 +
    // Called from non-media threads when an error occurs.
@@ -775,7 +713,7 @@
  PipelineImpl::RendererWrapper::RendererWrapper(
      scoped_refptr<base::SequencedTaskRunner> media_task_runner,
      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-@@ -380,6 +484,13 @@
+@@ -380,6 +485,13 @@
    default_renderer_ = std::move(default_renderer);
    weak_pipeline_ = weak_pipeline;
 -
@@ -790,7 +728,7 @@
    // Setup |error_cb_| on the media thread.
    error_cb_ = base::BindRepeating(&RendererWrapper::OnPipelineError,
                                    weak_factory_.GetWeakPtr());
-@@ -430,6 +541,7 @@
+@@ -430,6 +542,7 @@
    // the pipeline is stopped before it had a chance to complete outstanding
    // tasks.
    pending_callbacks_.reset();
@@ -799,7 +737,7 @@
 -
 +
    DestroyRenderer();
-@@ -449,6 +561,14 @@
+@@ -449,6 +562,14 @@
  void PipelineImpl::RendererWrapper::Seek(base::TimeDelta time) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
 -
@@ -815,7 +753,7 @@
    // Suppress seeking if we're not fully started.
    if (state_ != State::kPlaying) {
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
-@@ -461,6 +581,7 @@
+@@ -461,6 +582,7 @@
 -
 +
    SetState(State::kSeeking);
@@ -825,7 +763,7 @@
 +
    // Queue asynchronous actions required to start.
    DCHECK(!pending_callbacks_);
-@@ -490,6 +611,14 @@
+@@ -490,6 +612,14 @@
  void PipelineImpl::RendererWrapper::Suspend() {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
 -
@@ -841,7 +779,7 @@
    // Suppress suspending if we're not playing.
    if (state_ != State::kPlaying) {
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
-@@ -500,6 +629,7 @@
+@@ -500,6 +630,7 @@
    DCHECK(!pending_callbacks_.get());
 -
 +
@@ -851,7 +789,7 @@
 +
    // Freeze playback and record the media time before destroying the renderer.
    shared_state_.media().renderer->SetPlaybackRate(0.0);
-@@ -546,6 +676,7 @@
+@@ -546,6 +677,7 @@
 -
 +
    default_renderer_ = std::move(default_renderer);
@@ -861,7 +799,7 @@
        std::max(timestamp, demuxer_->GetStartTime());
 -
 +
-@@ -576,9 +707,18 @@
+@@ -576,9 +708,18 @@
  void PipelineImpl::RendererWrapper::SetPlaybackRate(double playback_rate) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
 -
@@ -884,7 +822,7 @@
 -
 +
    if (state_ != State::kCreated && state_ != State::kStopping &&
-@@ -595,6 +735,9 @@
+@@ -595,6 +736,9 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetVolume(volume_);
    }
@@ -895,7 +833,7 @@
 -
 +
  void PipelineImpl::RendererWrapper::SetLatencyHint(
-@@ -608,6 +751,9 @@
+@@ -608,6 +752,9 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetLatencyHint(latency_hint_);
    }
@@ -906,7 +844,7 @@
 -
 +
  void PipelineImpl::RendererWrapper::SetPreservesPitch(bool preserves_pitch) {
-@@ -620,8 +766,25 @@
+@@ -620,8 +767,25 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetPreservesPitch(preserves_pitch_);
    }
@@ -933,7 +871,7 @@
  void PipelineImpl::RendererWrapper::SetRenderMutedAudio(
      bool render_muted_audio) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
-@@ -634,6 +797,9 @@
+@@ -634,6 +798,9 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetRenderMutedAudio(render_muted_audio_);
    }
@@ -944,7 +882,7 @@
 -
 +
  void PipelineImpl::RendererWrapper::
-@@ -689,8 +855,52 @@
+@@ -689,8 +856,52 @@
  void PipelineImpl::RendererWrapper::SetCdm(CdmContext* cdm_context,
                                             CdmAttachedCB cdm_attached_cb) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
@@ -998,7 +936,7 @@
    // If there's already a renderer, set the CDM on the renderer directly.
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetCdm(
-@@ -700,9 +910,29 @@
+@@ -700,9 +911,29 @@
      return;
    }
 -
@@ -1030,7 +968,7 @@
 -
 +
    // Continue Renderer creation if it's waiting for the CDM to be set.
-@@ -734,6 +964,28 @@
+@@ -734,6 +965,28 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
 -
@@ -1046,7 +984,7 @@
 +  // AVSampleBufferDisplayLayer uses for every Media Source video), with keys
 +  // or without, once a SourceBuffer took it where the demuxer lets clear
 +  // Dolby Vision through (the documents allowed to create that renderer).
-+  if (demuxer_->ParcPrefersFairPlayRenderer()) {
++  if (ParcDemuxerPrefersFairPlayRenderer(demuxer_.get())) {
 +    renderer_type = RendererType::kFairPlay;
 +  }
 +
@@ -1060,7 +998,7 @@
    // During Resume(), the |default_renderer_| might already match the
    // |renderer_type|, in which case we shouldn't need to create a new one.
    if (!default_renderer_ ||
-@@ -828,6 +1080,10 @@
+@@ -828,6 +1081,10 @@
    if (state_ != State::kPlaying) {
      return;
    }
@@ -1072,7 +1010,7 @@
 +
    DCHECK(!renderer_ended_);
    renderer_ended_ = true;
-@@ -892,9 +1148,21 @@
+@@ -892,9 +1149,21 @@
    // Track status notifications might be delivered asynchronously. If we receive
    // a notification when pipeline is stopped/shut down, it's safe to ignore it.
    if (state_ == State::kStopping || state_ == State::kStopped) {
@@ -1095,7 +1033,7 @@
 +
    demuxer_->OnTracksChanged(
        track_type, std::move(enabled_track_id), GetCurrentTimestamp(),
-@@ -1008,6 +1276,10 @@
+@@ -1008,6 +1277,10 @@
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
    DVLOG(2) << __func__ << "(" << state << ", " << reason << ") ";
 -
@@ -1107,7 +1045,7 @@
    main_task_runner_->PostTask(
        FROM_HERE, base::BindOnce(&PipelineImpl::OnBufferingStateChange,
                                  weak_pipeline_, state, reason));
-@@ -1099,8 +1371,13 @@
+@@ -1099,8 +1372,13 @@
                                                    bool success) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
 -
@@ -1124,7 +1062,7 @@
  }
 -
 +
-@@ -1116,7 +1393,8 @@
+@@ -1116,7 +1394,8 @@
      return;
 -
 +
@@ -1136,7 +1074,7 @@
 -
 +
  void PipelineImpl::RendererWrapper::SetState(State next_state) {
-@@ -1146,6 +1424,12 @@
+@@ -1146,6 +1425,12 @@
      return;
    }
 -
@@ -1144,13 +1082,13 @@
 +  // Parc: a fast seek (HTMLMediaElement.fastSeek) plays from where the
 +  // demuxer landed it, at or before the target.
 +  if (std::optional<base::TimeDelta> landing =
-+          demuxer_->ParcTakeFastSeekLanding()) {
++          ParcTakeDemuxerFastSeekLanding(demuxer_.get())) {
 +    seek_time = *landing;
 +  }
    shared_state_.media().renderer->StartPlayingFrom(
        std::max(seek_time, demuxer_->GetStartTime()));
    {
-@@ -1152,15 +1436,18 @@
+@@ -1152,15 +1437,18 @@
      base::AutoLock auto_lock(shared_state_.lock());
      shared_state_.mutable_media().suspend_timestamp = kNoTimestamp;
    }
@@ -1174,7 +1112,7 @@
  void PipelineImpl::RendererWrapper::CompleteSuspend(PipelineStatus status) {
    DVLOG(1) << __func__ << ": status=" << status;
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
-@@ -1244,7 +1531,7 @@
+@@ -1244,7 +1532,7 @@
      return;
    }
 -
@@ -1185,7 +1123,7 @@
 -
 +
    if (latency_hint_)
-@@ -1286,6 +1573,8 @@
+@@ -1286,6 +1574,8 @@
      base::AutoLock auto_lock(shared_state_.lock());
      renderer.swap(shared_state_.mutable_media().renderer);
    }
@@ -1195,7 +1133,7 @@
 -
 +
  void PipelineImpl::RendererWrapper::ReportMetadata(StartType start_type) {
-@@ -1398,6 +1687,7 @@
+@@ -1398,6 +1688,7 @@
    DCHECK(!client_);
    DCHECK(!seek_cb_);
    client_ = client;
@@ -1203,7 +1141,7 @@
    seek_cb_ = std::move(seek_cb);
    last_media_time_ = base::TimeDelta();
    seek_time_ = kNoTimestamp;
-@@ -1529,10 +1819,9 @@
+@@ -1529,10 +1820,9 @@
 -
 +
    // Not checking IsRunning() so we can set the playback rate before Start().
@@ -1220,7 +1158,7 @@
 +
    playback_rate_ = playback_rate;
    media_task_runner_->PostTask(
-@@ -1589,6 +1878,14 @@
+@@ -1589,6 +1879,14 @@
                                  preserves_pitch));
  }
 -
@@ -1237,7 +1175,7 @@
    DCHECK(thread_checker_.CalledOnValidThread());
 -
 +
-@@ -1630,7 +1927,7 @@
+@@ -1630,7 +1928,7 @@
    //
    // It is expected that such events are transient and will be recovered as
    // rendering continues over time.
@@ -1246,7 +1184,7 @@
      DVLOG(2) << __func__ << ": actual=" << media_time
               << " clamped=" << last_media_time_;
      return last_media_time_;
-@@ -1641,6 +1938,24 @@
+@@ -1641,6 +1939,24 @@
    return last_media_time_;
  }
 -
@@ -1272,7 +1210,7 @@
  Ranges<base::TimeDelta> PipelineImpl::GetBufferedTimeRanges() const {
    DCHECK(thread_checker_.CalledOnValidThread());
    return renderer_wrapper_->GetBufferedTimeRanges();
-@@ -1665,7 +1980,8 @@
+@@ -1665,7 +1981,8 @@
                            CdmAttachedCB cdm_attached_cb) {
    DVLOG(2) << __func__;
    DCHECK(thread_checker_.CalledOnValidThread());
@@ -1283,7 +1221,7 @@
 -
 +
    // Not checking IsRunning() so we can set the CDM before Start().
-@@ -1714,11 +2030,16 @@
+@@ -1714,11 +2031,16 @@
    client_->OnFallback(std::move(status).AddHere());
  }
 -
@@ -2823,16 +2761,17 @@
  #include <set>
  #include <string>
  #include <vector>
-@@ -22,6 +23,8 @@
+@@ -22,6 +23,9 @@
  #include "media/base/demuxer.h"
  #include "media/base/demuxer_stream.h"
  #include "media/base/media_tracks.h"
++#include "media/base/parc_demuxer_extension.h"
 +#include "media/base/parc_demuxer_stream_extension.h"
 +#include "media/base/pipeline_metadata.h"
  #include "media/base/ranges.h"
  #include "media/base/stream_parser.h"
  #include "media/filters/source_buffer_parse_warnings.h"
-@@ -31,15 +34,18 @@
+@@ -31,15 +35,18 @@
 -
 +
  namespace media {
@@ -2858,7 +2797,7 @@
 -
 +
    ChunkDemuxerStream(Type type, MediaTrack::Id media_track_id);
-@@ -74,6 +80,27 @@
+@@ -74,6 +81,27 @@
    void Remove(base::TimeDelta start, base::TimeDelta end,
                base::TimeDelta duration);
 -
@@ -2887,7 +2826,7 @@
    // If the buffer is full, attempts to try to free up space, as specified in
    // the "Coded Frame Eviction Algorithm" in the Media Source Extensions Spec.
    // Returns false iff buffer is still full after running eviction.
-@@ -135,10 +162,44 @@
+@@ -135,10 +163,44 @@
    AudioDecoderConfig audio_decoder_config() override;
    VideoDecoderConfig video_decoder_config() override;
    bool SupportsConfigChanges() override;
@@ -2935,7 +2874,7 @@
    void SetStreamMemoryLimit(size_t memory_limit);
 -
 +
-@@ -174,7 +235,45 @@
+@@ -174,7 +236,45 @@
    void CompletePendingReadIfPossible_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 -
 +
@@ -2984,7 +2923,7 @@
 +
    // Specifies the type of the stream.
    const Type type_;
-@@ -198,6 +297,13 @@
+@@ -198,6 +298,13 @@
    State state_ GUARDED_BY(lock_);
    ReadCB read_cb_ GUARDED_BY(lock_);
    bool is_enabled_ GUARDED_BY(lock_);
@@ -2999,11 +2938,17 @@
 -
 +
  // Demuxer implementation that allows chunks of media data to be passed
-@@ -248,6 +354,10 @@
+@@ -204,2 +311,3 @@
+ // from JavaScript to the media stack.
+-class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
++class MEDIA_EXPORT ChunkDemuxer : public Demuxer,
++                                  public ParcDemuxerExtension {
+@@ -248,6 +356,11 @@
    // associated JS method calls.
    void StartWaitingForSeek(base::TimeDelta seek_time) override;
    void CancelPendingSeek(base::TimeDelta seek_time) override;
-+  // Parc: HTMLMediaElement.fastSeek; see Demuxer::ParcSetFastSeek().
++  ParcDemuxerExtension* GetParcExtension() override { return this; }
++  // Parc: HTMLMediaElement.fastSeek.
 +  void ParcSetFastSeek(base::TimeDelta target,
 +                       base::TimeDelta tolerance_before) override;
 +  std::optional<base::TimeDelta> ParcTakeFastSeekLanding() override;
@@ -3011,7 +2956,7 @@
 +
    // Registers a new `id` to use for AppendToParseBuffer(),
    // RunSegmentParserLoop(), AppendChunks(), etc calls. `content_type` indicates
-@@ -293,7 +403,11 @@
+@@ -293,7 +406,11 @@
    // Removed an ID & associated resources that were previously added with
    // AddId().
    void RemoveId(const std::string& id);
@@ -3025,7 +2970,7 @@
    Ranges<base::TimeDelta> GetBufferedRanges(const std::string& id) const;
 -
 +
-@@ -313,6 +427,69 @@
+@@ -313,6 +430,69 @@
    void SetPlaybackRate(double rate) override {}
 -
 +
@@ -3097,7 +3042,7 @@
 +
    // Appends media data to the source buffer's stream parser associated with
    // `id`. No parsing is done, just buffering the media data for future parsing
-@@ -378,6 +555,34 @@
+@@ -378,6 +558,34 @@
    // associated with |id|.
    void Remove(const std::string& id, base::TimeDelta start,
                base::TimeDelta end);
@@ -3133,7 +3078,7 @@
 +
    // Returns whether or not the source buffer associated with |id| can change
    // its parser type to one which parses |content_type| and |codecs|.
-@@ -491,6 +696,15 @@
+@@ -491,6 +699,15 @@
    // SourceBufferState callbacks.
    void OnSourceInitDone(const std::string& source_id,
                          const StreamParser::InitParameters& params);
@@ -3150,7 +3095,7 @@
 +
    // Creates a DemuxerStream of the specified |type| for the SourceBufferState
    // with the given |source_id|.
-@@ -550,6 +764,7 @@
+@@ -550,6 +767,7 @@
    raw_ptr<DemuxerHost, DanglingUntriaged> host_ = nullptr;
    base::OnceClosure open_cb_;
    const base::RepeatingClosure progress_cb_;
@@ -3159,7 +3104,7 @@
 -
 +
    // MediaLog for reporting messages and properties to debug content and engine.
-@@ -595,10 +810,84 @@
+@@ -595,10 +813,84 @@
 -
 +
    std::map<MediaTrack::Id, raw_ptr<ChunkDemuxerStream, CtnExperimental>>
@@ -3250,8 +3195,9 @@
  #endif  // MEDIA_FILTERS_CHUNK_DEMUXER_H_
 --- a/media/filters/demuxer_manager.cc
 +++ b/media/filters/demuxer_manager.cc
-@@ -18,8 +18,10 @@
+@@ -18,8 +18,11 @@
  #include "media/base/media_switches.h"
++#include "media/base/parc_demuxer_extension.h"
  #include "media/filters/chunk_demuxer.h"
  #include "media/filters/ffmpeg_demuxer.h"
 +#include "net/base/data_url.h"
@@ -3262,7 +3208,7 @@
 +
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
  #include "base/time/time.h"
-@@ -232,6 +234,25 @@
+@@ -232,6 +235,26 @@
    demuxer_->DisableCanChangeType();
  }
 -
@@ -3283,13 +3229,14 @@
 +}
 +
 +bool DemuxerManager::ParcDemuxerPrefersFairPlayRenderer() {
-+  return demuxer_ && demuxer_->ParcPrefersFairPlayRenderer();
++  return demuxer_ &&
++         media::ParcDemuxerPrefersFairPlayRenderer(demuxer_.get());
 +}
 +
  PipelineStatus DemuxerManager::CreateDemuxer(
      bool load_media_source,
      DataSource::Preload preload,
-@@ -241,6 +262,9 @@
+@@ -241,6 +264,9 @@
    if (!client_) {
      return DEMUXER_ERROR_COULD_NOT_OPEN;
    }
@@ -3300,7 +3247,7 @@
 +
    // We can only do a universal suspend for posters, unless the flag is enabled.
    auto suspended_mode = Pipeline::StartType::kSuspendAfterMetadataForAudioOnly;
-@@ -249,12 +273,48 @@
+@@ -249,12 +275,48 @@
    }
 -
 +
@@ -3353,7 +3300,7 @@
               /*is_static=*/false);
    }
  #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -315,6 +375,14 @@
+@@ -315,6 +377,14 @@
    if (data_source_) {
      data_source_->SetPreload(preload);
    }
@@ -3369,7 +3316,7 @@
 -
 +
  void DemuxerManager::StopAndResetClient() {
-@@ -382,8 +450,124 @@
+@@ -382,8 +452,124 @@
      return !demuxer_->IsSeekable();
    }
    return false;
@@ -3388,7 +3335,7 @@
 +void DemuxerManager::ParcSetFastSeek(base::TimeDelta target,
 +                                     base::TimeDelta tolerance_before) {
 +  if (demuxer_) {
-+    demuxer_->ParcSetFastSeek(target, tolerance_before);
++    ParcSetDemuxerFastSeek(demuxer_.get(), target, tolerance_before);
 +  }
 +}
 +
@@ -3495,7 +3442,7 @@
  bool DemuxerManager::IsManifestDemuxerURL() const {
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    return loaded_url_.path().ends_with(".m3u8");
-@@ -408,7 +592,7 @@
+@@ -408,7 +594,7 @@
 -
 +
  std::unique_ptr<Demuxer> DemuxerManager::CreateFFmpegDemuxer() {
@@ -3505,7 +3452,7 @@
        media_task_runner_, data_source_.get(),
        base::BindPostTaskToCurrentDefault(
            base::BindRepeating(&DemuxerManager::OnEncryptedMediaInitData,
-@@ -417,6 +601,8 @@
+@@ -417,6 +603,8 @@
            base::BindRepeating(&DemuxerManager::OnFFmpegMediaTracksUpdated,
                                weak_factory_.GetWeakPtr())),
        media_log_.get(), IsLocalFile(loaded_url_));
@@ -3515,7 +3462,7 @@
 -
 +
  void DemuxerManager::OnFFmpegMediaTracksUpdated(
-@@ -474,6 +660,111 @@
+@@ -474,6 +662,111 @@
            std::move(engine), media_log_.get()));
  }
 -
@@ -3699,8 +3646,8 @@
 +  // Parc: see ChunkDemuxer::ParcSetClearDolbyVisionAllowed(). No-op before the
 +  // demuxer exists and for every demuxer but a ChunkDemuxer.
 +  void ParcSetDemuxerClearDolbyVisionAllowed(bool allowed);
-+  // Parc: see Demuxer::ParcPrefersFairPlayRenderer(). False before the
-+  // demuxer exists.
++  // Parc: whether the demuxer extension prefers the FairPlay Renderer. False
++  // before the demuxer exists.
 +  bool ParcDemuxerPrefersFairPlayRenderer();
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: whether the demuxer is Safari's native HLS player's. Known from
@@ -3720,7 +3667,7 @@
 +  // demuxer, whose element then keeps Chromium's own rules.
 +  std::optional<parc::fairplay::NativeHlsSource::Timeline>
 +  GetParcNativeTimeline() const;
-+  // Parc: the demuxer's Demuxer::ParcSetFastSeek(), from the main thread.
++  // Parc: the demuxer extension's fast seek, from the main thread.
 +  void ParcSetFastSeek(base::TimeDelta target, base::TimeDelta tolerance_before);
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: hands a legacy clear key to the native HLS demuxer's player on the
@@ -10199,7 +10146,7 @@
 +  CheckExpectedBuffers(enabled, "46K 69K");
 +}
 +
-+// Parc: a hand-off (Demuxer::ParcSplitForHandOff()) splits every stream at
++// Parc: a hand-off (ParcDemuxerExtension::ParcSplitForHandOff()) splits at
 +// one video keyframe at or after the time asked: the playing renderer's reads
 +// get what comes before it, then end of stream, and the hand-off readers what
 +// follows, so the incoming renderer starts where the other ends.
@@ -11643,15 +11590,16 @@
  #include "base/test/simple_test_tick_clock.h"
  #include "base/test/task_environment.h"
  #include "base/threading/simple_thread.h"
-@@ -24,6 +25,7 @@
+@@ -24,6 +25,8 @@
  #include "base/time/time.h"
  #include "media/base/media_util.h"
  #include "media/base/mock_filters.h"
++#include "media/base/parc_demuxer_extension.h"
 +#include "media/base/parc_native_hls_source.h"
  #include "media/base/test_helpers.h"
  #include "media/base/time_delta_interpolator.h"
  #include "testing/gtest/include/gtest/gtest.h"
-@@ -82,6 +84,70 @@
+@@ -82,6 +85,72 @@
  // InitializationComplete(), which keeps the pipeline humming along.  If
  // either filters don't call InitializationComplete() immediately or filter
  // initialization is moved to a separate thread this test will become flaky.
@@ -11690,15 +11638,17 @@
 +  base::WeakPtrFactory<ParcFakeNativeHlsSource> weak_factory_{this};
 +};
 +
-+class ParcRateDemuxer : public MockDemuxer {
++class ParcRateDemuxer : public MockDemuxer,
++                        public ParcDemuxerExtension {
 + public:
++  ParcDemuxerExtension* GetParcExtension() override { return this; }
 +  parc::fairplay::NativeHlsSource* GetParcNativeHlsSource() override {
 +    return native_hls ? &native_source : nullptr;
 +  }
 +  ParcFakeNativeHlsSource native_source;
 +  bool native_hls = false;
 +
-+  // A hand-off (Demuxer::ParcBeginHandOff()) whose split the test makes.
++  // A hand-off whose split the test makes.
 +  MediaResource* ParcBeginHandOff() override { return handoff ? this : nullptr; }
 +  void ParcSplitForHandOff(
 +      base::TimeDelta not_before,
@@ -11722,7 +11672,7 @@
  class PipelineImplTest : public ::testing::Test {
   public:
    // Used for setting expectations on pipeline callbacks.  Using a StrictMock
-@@ -105,7 +171,7 @@
+@@ -105,7 +174,7 @@
    PipelineImplTest()
        : scoped_renderer_(std::make_unique<StrictMock<MockRenderer>>()),
          renderer_(scoped_renderer_->AsWeakPtr()),
@@ -11731,7 +11681,7 @@
      pipeline_ = std::make_unique<PipelineImpl>(
          task_environment_.GetMainThreadTaskRunner(),
          task_environment_.GetMainThreadTaskRunner(),
-@@ -364,7 +430,7 @@
+@@ -364,7 +433,7 @@
    std::unique_ptr<StrictMock<MockDemuxerStream>> audio_stream_;
    std::unique_ptr<StrictMock<MockDemuxerStream>> video_stream_;
    std::vector<raw_ptr<DemuxerStream>> streams_;
@@ -11740,7 +11690,7 @@
    raw_ptr<DemuxerHost, DanglingUntriaged> demuxer_host_ = nullptr;
    raw_ptr<RendererClient, DanglingUntriaged> renderer_client_ = nullptr;
    VideoDecoderConfig video_decoder_config_;
-@@ -381,9 +447,10 @@
+@@ -381,9 +450,10 @@
 -
 +
    // Initial value.
@@ -11754,7 +11704,7 @@
    // Valid settings should work.
    pipeline_->SetPlaybackRate(1.0);
    EXPECT_EQ(1.0f, pipeline_->GetPlaybackRate());
-@@ -528,8 +595,380 @@
+@@ -528,8 +598,380 @@
    StartPipelineAndExpect(PIPELINE_OK);
    EXPECT_TRUE(metadata_.has_audio);
    EXPECT_TRUE(metadata_.has_video);
@@ -12136,7 +12086,7 @@
  TEST_F(PipelineImplTest, EncryptedStream_SetCdmBeforeStart) {
    CreateEncryptedVideoStream();
    SetDemuxerExpectations();
-@@ -898,8 +1337,112 @@
+@@ -898,8 +1340,112 @@
    EXPECT_CALL(*renderer_, GetMediaTime())
        .WillRepeatedly(Return(base::Seconds(1)));
    EXPECT_EQ(kMediaTime, pipeline_->GetMediaTime());
@@ -20824,10 +20774,11 @@
      "renderer.mojom",
 --- a/media/base/BUILD.gn
 +++ b/media/base/BUILD.gn
-@@ -284,6 +284,8 @@
+@@ -284,6 +284,9 @@
      "output_device_info.h",
      "overlay_info.cc",
      "overlay_info.h",
++    "parc_demuxer_extension.h",
 +    "parc_renderer_transitions.cc",
 +    "parc_renderer_transitions.h",
      "picture_in_picture_events_info.cc",

@@ -43,7 +43,7 @@ this guide covers demuxed samples and the Chromium/CDM boundary.
 | VideoToolbox decoder facts | `parc_video_toolbox_decoding.{h,mm}` → `//content/browser/media`, with its own `parc_video_toolbox_decoding.mojom` in `//media/mojo/mojom`: the browser reads what WebKit's MediaCapabilities asks VideoToolbox (H.264 hardware, HEVC per-profile hardware and levels, Dolby Vision profiles and levels) once and serves `media.mojom.ParcVideoToolboxDecoding` to frames (`ParcContentBrowserClient::RegisterBrowserInterfaceBindersForFrame`) and dedicated workers (`browser_interface_binders.cc`), for Safari-identity `decodingInfo`. `ParcContentBrowserClient::AppendExtraCommandLineSwitches` gives each renderer the AV1 hardware-decoder answer |
 | Renderer hand-off and reverse turn | `parc_renderer_transitions.{h,cc}` → `//media/base`, owned by PipelineImpl's renderer wrapper; the split readers in `parc_chunk_demuxer_hand_off.{h,cc}` → `//media/filters`, owned by each ChunkDemuxerStream and the ChunkDemuxer ([why](../../../docs/chromium-seams.md#media-player-boundaries)) |
 | GPU sandbox | `sandbox/policy/mac/gpu.sb`, rules listed below |
-| Parc operations on Chromium's media interfaces | `parc_renderer_extensions.h`, `parc_pipeline_extension.h` and `parc_demuxer_stream_extension.h` → `//media/base`: `Renderer`, `AudioRenderer`, `VideoRenderer`, `Pipeline` (and `PipelineController`) and `DemuxerStream` each declare one `GetParcExtension()`, null by default, so Parc's backward playback, mixed audio, output device, hand-off and stream calls change without rebuilding every includer of those headers |
+| Parc operations on Chromium's media interfaces | `parc_renderer_extensions.h`, `parc_pipeline_extension.h`, `parc_demuxer_extension.h` and `parc_demuxer_stream_extension.h` → `//media/base`: `Renderer`, `AudioRenderer`, `VideoRenderer`, `Pipeline` (and `PipelineController`), `Demuxer` and `DemuxerStream` each declare one `GetParcExtension()`, null by default, so Parc's playback, seeking, hand-off and stream calls change without rebuilding every includer of those headers |
 
 FairPlay has its own GPU service and browser host, built from Chromium's public
 media service classes. It doesn't make the GPU renderer the default for ordinary
@@ -418,7 +418,7 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
     Safari-identity frames create that renderer without a FairPlay CDM
     (`parc::fairplay::SetSafariIdentityQuery`). A SourceBuffer that takes
     Dolby Vision later (`changeType()`) makes the demuxer prefer that renderer
-    too (`Demuxer::ParcPrefersFairPlayRenderer`). The player attempts a
+    too (`ParcDemuxerExtension::ParcPrefersFairPlayRenderer`). The player attempts a
     synchronized handoff and restarts only when that cannot proceed.
 - AC-3/E-AC-3 is ordinary codec support: pages
   ask `isTypeSupported` first, and a page that offers E-AC-3 gets it decoded by

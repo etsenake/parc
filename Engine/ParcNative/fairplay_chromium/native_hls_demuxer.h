@@ -32,6 +32,7 @@
 #include "base/unguessable_token.h"
 #include "media/base/buffering_state.h"
 #include "media/base/demuxer.h"
+#include "media/base/parc_demuxer_extension.h"
 #include "media/base/parc_inband_tracks.h"
 #include "media/base/parc_native_hls_demuxer_params.h"
 #include "media/base/parc_native_hls_source.h"
@@ -64,6 +65,7 @@ base::TimeDelta InterpolateNativeHlsTime(base::TimeDelta time,
                                          base::TimeDelta duration);
 
 class NativeHlsDemuxer final : public media::Demuxer,
+                               public media::ParcDemuxerExtension,
                                public NativeHlsSource,
                                public media::mojom::FairPlayHlsPlayerClient {
  public:
@@ -97,6 +99,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
   void CancelPendingSeek(base::TimeDelta seek_time) override;
   void Seek(base::TimeDelta time,
             media::PipelineStatusCallback status_cb) override;
+  media::ParcDemuxerExtension* GetParcExtension() override { return this; }
   // HTMLMediaElement.fastSeek: AVPlayer lands within the tolerance.
   void ParcSetFastSeek(base::TimeDelta target,
                        base::TimeDelta tolerance_before) override;

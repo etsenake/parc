@@ -13,6 +13,7 @@
 #include "base/task/bind_post_task.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/demuxer.h"
+#include "media/base/parc_demuxer_extension.h"
 #include "media/base/parc_renderer_extensions.h"
 #include "media/base/renderer.h"
 #include "media/base/renderer_client.h"
@@ -186,7 +187,7 @@ void ParcRendererTransitions::HandOff(base::OnceCallback<void(bool)> done) {
       turn_ || host_->ParcPlaybackRate() < 0 || !renderer ||
       renderer->GetRendererType() == RendererType::kFairPlay ||
       renderer->GetRendererType() == RendererType::kFairPlayHls ||
-      !host_->ParcDemuxer()->ParcBeginHandOff()) {
+      !ParcBeginDemuxerHandOff(host_->ParcDemuxer())) {
     std::move(done).Run(false);
     return;
   }
@@ -213,7 +214,7 @@ void ParcRendererTransitions::OnIncomingCreated(
   }
   host_->ParcConfigureRenderer(*incoming_);
   incoming_->Initialize(
-      host_->ParcDemuxer()->ParcBeginHandOff(), incoming_client_.get(),
+      ParcBeginDemuxerHandOff(host_->ParcDemuxer()), incoming_client_.get(),
       base::BindOnce(&ParcRendererTransitions::OnIncomingInitialized,
                      handoff_weak_factory_.GetWeakPtr()));
 }
@@ -229,7 +230,8 @@ void ParcRendererTransitions::OnIncomingInitialized(PipelineStatus status) {
   }
   // Enough ahead for the incoming renderer to have its first frame there.
   constexpr base::TimeDelta kLead = base::Milliseconds(500);
-  host_->ParcDemuxer()->ParcSplitForHandOff(
+  ParcSplitDemuxerForHandOff(
+      host_->ParcDemuxer(),
       host_->ParcCurrentTimestamp() + kLead,
       base::BindOnce(&ParcRendererTransitions::OnSplit,
                      handoff_weak_factory_.GetWeakPtr()));
@@ -316,7 +318,7 @@ void ParcRendererTransitions::Abort(bool restart) {
   incoming_.reset();
   incoming_client_.reset();
   split_ = false;
-  host_->ParcDemuxer()->ParcEndHandOff();
+  ParcEndDemuxerHandOff(host_->ParcDemuxer());
   std::move(handoff_done_).Run(!restart);
   RunDeferredTrackChanges();
 }
@@ -331,7 +333,7 @@ void ParcRendererTransitions::DestroyRenderer(
   incoming_client_.reset();
   handed_off_ = false;
   if (Demuxer* demuxer = host_->ParcDemuxer()) {
-    demuxer->ParcEndHandOff();
+    ParcEndDemuxerHandOff(demuxer);
   }
 }
 
@@ -519,7 +521,7 @@ void ParcRendererTransitions::Stop() {
   handoff_weak_factory_.InvalidateWeakPtrs();
   incoming_.reset();
   if (handoff_done_ && host_->ParcDemuxer()) {
-    host_->ParcDemuxer()->ParcEndHandOff();
+    ParcEndDemuxerHandOff(host_->ParcDemuxer());
   }
   handoff_done_.Reset();
   split_ = false;

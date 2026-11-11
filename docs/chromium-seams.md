@@ -123,8 +123,8 @@ context-menu and file-selector work shares files across areas, so it goes throug
      registration moves its bodies out, but keeps one registration call and the renderer enum and
      accessor as a small patch.
 3. **Freeze headers.** This is most of the rebuild win:
-   - 2a: one media accessor per interface across Renderer, Pipeline, the audio and video renderers and
-     DemuxerStream;
+   - 2a: one media accessor per interface across Renderer, Pipeline, Demuxer, the audio and video
+     renderers and DemuxerStream;
    - 2b: the Blink public and platform accessors;
    - 2c: the widely included Blink and base headers listed above. The HTML and event names,
      `execution_context.h`, `memory_pressure_listener.h`, `element.h` and `node_rare_data.h` are back
@@ -414,10 +414,10 @@ is placed under the stream's lock as data arrives, sees a config change
 without taking it, and both readers' seeks, aborts, disabling and shutdown are
 answered in that locked step. A decorator outside the lock would split a read
 later, could pass the playing renderer frames past the split, and would add
-work to every Safari-identity Media Source read. `demuxer.h` keeps its three
-hand-off calls, the pipeline's only way to ChunkDemuxer, until they join the
-fast-seek pair and the renderer preference in one accessor. The old reader
-stays, unused, until the compiled hand-off tests pass on the new one.
+work to every Safari-identity Media Source read. The hand-off, fast-seek
+landing and renderer preference now share one Demuxer accessor; `demuxer.h`
+keeps only that seam. The old reader stays, unused, until the compiled hand-off
+tests pass on the new one.
 
 MediaCapabilities answers Safari-identity documents as WebKit's `decodingInfo`
 does. Its HEVC and Dolby Vision codec-string parsers, the video rules over

@@ -30,8 +30,8 @@ class SerialRunner;
 // - A hand-off from Chromium's renderer to the FairPlay Renderer while it
 //   plays (ParcPipelineExtension::ParcHandOffToFairPlay()). The FairPlay
 //   Renderer reads the demuxer's hand-off streams and prerolls paused where
-//   the demuxer splits them, at least 500 ms ahead (Demuxer::
-//   ParcSplitForHandOff()). Prerolled, it runs on the playing renderer's
+//   the demuxer splits them, at least 500 ms ahead
+//   (ParcDemuxerExtension::ParcSplitForHandOff()). Prerolled, it runs on the
 //   clock, and takes over, shown and played, when that renderer reaches the
 //   end of its part, so the picture, the sound and the clock carry on.
 // - A turn between directions for a file renderer, which plays backward in

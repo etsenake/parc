@@ -110,7 +110,7 @@ class ParcDemuxerHandOff final : public MediaResource {
   std::vector<raw_ptr<DemuxerStream>> GetAllStreams() final;
   bool ParcMayAddStreams() final;
 
-  // See Demuxer::ParcSplitForHandOff().
+  // See ParcDemuxerExtension::ParcSplitForHandOff().
   void AskSplit(base::TimeDelta not_before,
                 base::OnceCallback<void(base::TimeDelta)> split_cb);
   // Places the split asked for across the enabled streams that started, once
