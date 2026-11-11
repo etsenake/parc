@@ -22,9 +22,14 @@
 #include "components/autofill/core/browser/test_utils/autofill_test_util.h"
 #include "components/autofill/core/browser/ui/payments/wallet_reminder_notice_ui_delegate.h"
 #include "components/autofill/core/common/autofill_prefs.h"
-#include "parc/chromium_hooks.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+namespace parc_hooks {
+void SetAutofillUiPresentationSupport(
+    bool (*support)(const autofill::AutofillClient&,
+                    autofill::AutofillUiPresentation));
+}
 
 namespace parc {
 namespace {

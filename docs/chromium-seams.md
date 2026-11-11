@@ -76,9 +76,9 @@ The initial interface-routing research classified 35 patches: 14 SEAM, 17 HOOK a
 headers today. Afterwards about 8 remain, none with more than 42 direct includers, and the 7 Parc headers
 injected into Chromium's tree go away. It proposed three shared funnels for most dialogs: the extension
 dialog utilities, `ShowTabModal` and the page-info dialog. The first two carry too little context for the
-dialogs Parc presents; the confirmed boundaries below say what replaced them. The 4,744-line autofill capability patch can probably be
-deleted. Parc's existing bubble handler would decline every offer Parc has no interface for, and the
-offers that need an account are already off, because sign-in is off. That needs a per-feature audit first.
+dialogs Parc presents; the confirmed boundaries below say what replaced them. It initially proposed
+deleting the 4,744-line autofill capability patch, but the per-feature audit found its presentation
+results and request state are required, so the decision below keeps it while freeing its client headers.
 
 Browser, window and startup covers 28 patches: 5 SEAM, 12 HOOK and 11 STAY. Chromium's concrete
 construction, its private startup stages and its deletion rules can't be overridden, so they keep small
@@ -486,11 +486,11 @@ holds them, so `page.h` and the page-visibility observer are stock.
 ## Decisions
 
 - **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
-- **Autofill capability patch:** decided, it stays. The audit found Parc presents almost every gated
-  offer natively, and each native sheet is built on the presentation results and request state the
-  patch adds. Without them a refused sheet would count as an ignored offer and collect strikes. Only
-  the password sheet's routing moved behind a hook. A later compiled slice can still free
-  `autofill_client.h`, whose only change is one defaulted capability query.
+- **Autofill capability patch:** decided, it stays. Parc presents almost every gated offer natively,
+  using the patch's presentation results and request state; otherwise a refused sheet would count as
+  ignored and collect strikes. The password sheet's routing moved behind a hook; the capability query
+  is now a free function in Parc's presentation header, backed by a core-client hook, and both
+  `autofill_client.h` and `chrome_autofill_client.h` are stock.
 - **Extension install:** decided, it stays. The research's show-time hooks only see the page once the
   prompt is ready, but Parc binds consent to the asking page's document and Browser when the prompt is
   created, and starts watching for navigation and detach before the icon loads.
