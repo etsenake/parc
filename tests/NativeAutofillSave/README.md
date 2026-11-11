@@ -141,7 +141,9 @@ The host must balance `PageHostWillDetach`/`PageHostDidAttach` and destroy the
 handler before Browser/Profile services.
 
 The capability patch checks unsupported modes at their real producers and
-again during direct dispatch/reshow. Unavailable UI does not synthesize a
+again during direct dispatch/reshow. A free capability query in the owned
+presentation interface reaches the actual page through an implementation hook;
+Chromium's widely included core client header stays unchanged. Unavailable UI does not synthesize a
 decline, enrollment, reauthentication preference change or wallet disclosure
 acknowledgment. The BubbleManager preserves queue progress across refusal,
 controller/page destruction, replacement and callback-induced tab deactivation.

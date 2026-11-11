@@ -48,6 +48,11 @@ class UnloadController;
 struct BrowserWindowCreateParams;
 struct BrowserWindowDeleter;
 
+namespace autofill {
+class AutofillClient;
+enum class AutofillUiPresentation;
+}
+
 #ifdef __OBJC__
 @class MenuControllerCocoa;
 @class NSView;
@@ -103,6 +108,12 @@ class AppBrowserController;
 }
 
 namespace parc_hooks {
+
+// components/autofill/core/browser/foundations/autofill_client.cc
+using AutofillUiPresentationSupport =
+    bool (*)(const autofill::AutofillClient&,
+             autofill::AutofillUiPresentation);
+void SetAutofillUiPresentationSupport(AutofillUiPresentationSupport support);
 
 // chrome/browser/ui/views/permissions/permission_prompt_factory.cc
 using PermissionPromptFactory =

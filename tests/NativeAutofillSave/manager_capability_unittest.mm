@@ -22,6 +22,7 @@
 #include "components/autofill/core/browser/test_utils/autofill_test_util.h"
 #include "components/autofill/core/browser/ui/payments/wallet_reminder_notice_ui_delegate.h"
 #include "components/autofill/core/common/autofill_prefs.h"
+#include "parc/chromium_hooks.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -32,7 +33,7 @@ using Client = payments::PaymentsAutofillClient;
 using Kind = AutofillUiPresentation;
 class CapabilityClient : public TestAutofillClient {
  public:
-  bool IsAutofillUiPresentationSupported(Kind kind) const override {
+  bool Supports(Kind kind) const {
     return kind != blocked;
   }
   void ConfirmSaveAddressProfile(
@@ -47,12 +48,15 @@ class CapabilityClient : public TestAutofillClient {
   AddressProfileSavePromptCallback pending_address;
   Kind blocked = Kind::kAutofillAiImport;
 };
+bool SupportsPresentation(const AutofillClient& client, Kind kind) {
+  return static_cast<const CapabilityClient&>(client).Supports(kind);
+}
 class CapturePayments final : public payments::TestPaymentsAutofillClient {
  public:
   explicit CapturePayments(AutofillClient* client)
       : TestPaymentsAutofillClient(client), client_(*client) {}
   bool IsAutofillUiPresentationSupported(Kind kind) const override {
-    return client_->IsAutofillUiPresentationSupported(kind);
+    return autofill::IsAutofillUiPresentationSupported(*client_, kind);
   }
   bool LocalCardSaveIsSupported() override { return true; }
   void ShowSaveCreditCardLocally(
@@ -141,12 +145,16 @@ class InspectAddressManager final : public AddressProfileSaveManager {
 class NativeAutofillManagerCapabilityTest : public testing::Test {
  protected:
   void SetUp() override {
+    parc_hooks::SetAutofillUiPresentationSupport(&SupportsPresentation);
     auto payments = std::make_unique<CapturePayments>(&client);
     capture = payments.get();
     client.set_payments_autofill_client(std::move(payments));
     client.GetPersonalDataManager()
         .test_payments_data_manager()
         .SetAutofillPaymentMethodsEnabled(true);
+  }
+  void TearDown() override {
+    parc_hooks::SetAutofillUiPresentationSupport(nullptr);
   }
   base::test::TaskEnvironment tasks;
   test::AutofillUnitTestEnvironment autofill_environment;

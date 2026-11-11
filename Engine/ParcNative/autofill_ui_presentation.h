@@ -4,6 +4,7 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_UI_AUTOFILL_UI_PRESENTATION_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_UI_AUTOFILL_UI_PRESENTATION_H_
 namespace autofill {
+class AutofillClient;
 // Presentation capabilities, not permissions to fill or access existing data.
 // Keep requests distinct: a local new-card sheet cannot present a CVC-only,
 // upload, fix, management, or icon-only offer.
@@ -37,5 +38,8 @@ enum class AutofillUiPresentation {
   kPaymentsChurnedUsersConfirmation,
   kWalletReminder,
 };
+bool IsAutofillUiPresentationSupported(
+    const AutofillClient& client,
+    AutofillUiPresentation presentation);
 }  // namespace autofill
 #endif

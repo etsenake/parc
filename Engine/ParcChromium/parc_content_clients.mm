@@ -13,11 +13,14 @@
 #include "base/functional/bind.h"
 #include "chrome/browser/child_process_host_flags.h"
 #include "chrome/browser/extensions/component_loader.h"
+#include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
 #include "chrome/browser/ui/login/http_auth_coordinator.h"
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/browser/webauthn/chrome_authenticator_request_delegate.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/renderer/process_state.h"
+#include "components/autofill/content/browser/content_autofill_client.h"
+#include "components/autofill/core/browser/ui/autofill_ui_presentation.h"
 #include "content/browser/media/parc_video_toolbox_decoding.h"
 #include "content/public/browser/browser_url_handler.h"
 #include "content/public/browser/overlay_window.h"
@@ -72,6 +75,14 @@ constexpr int kChildProcessHelperCdm =
     std::to_underlying(ChildProcessHostFlags::kChildProcessHelperAlerts) + 1;
 constexpr char kInputDiagnostics[] = "parc-input-diagnostics";
 ParcContentBrowserClient* g_browser_client = nullptr;
+bool SupportsAutofillUiPresentation(
+    const autofill::AutofillClient& client,
+    autofill::AutofillUiPresentation presentation) {
+  const auto& content_client =
+      static_cast<const autofill::ContentAutofillClient&>(client);
+  return autofill::AutofillBubbleHandler::IsPresentationSupported(
+      content_client.web_contents(), presentation);
+}
 }  // namespace
 
 class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
@@ -97,6 +108,8 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
   }
   void PreMainMessageLoopRun() override {
     // Before any page exists.
+    parc_hooks::SetAutofillUiPresentationSupport(
+        &SupportsAutofillUiPresentation);
     parc_hooks::SetPermissionPromptFactory(&CreateSitePermissionPrompt);
     parc_hooks::SetLoginHandlerAuthValidator(&ValidateNativeLoginHandlerAuth);
     parc_hooks::SetExtensionUninstallHandler(&BeginExtensionUninstall);
