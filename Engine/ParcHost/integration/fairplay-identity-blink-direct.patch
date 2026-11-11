@@ -393,9 +393,10 @@
  void WorkerOrWorkletScriptController::DisableEvalInternal(
 --- a/third_party/blink/renderer/modules/encryptedmedia/navigator_request_media_key_system_access.cc
 +++ b/third_party/blink/renderer/modules/encryptedmedia/navigator_request_media_key_system_access.cc
-@@ -8,17 +8,22 @@
+@@ -8,7 +8,10 @@
  #include <vector>
- 
+-
++
  #include "base/memory/ptr_util.h"
 +#include "media/mojo/mojom/parc_video_toolbox_decoding.mojom-blink.h"
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
@@ -404,11 +405,7 @@
  #include "third_party/blink/public/platform/web_encrypted_media_client.h"
  #include "third_party/blink/public/platform/web_encrypted_media_request.h"
  #include "third_party/blink/public/platform/web_media_key_system_configuration.h"
- #include "third_party/blink/public/platform/web_media_key_system_media_capability.h"
- #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
- #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
-+#include "third_party/blink/renderer/bindings/modules/v8/v8_media_key_system_media_capability.h"
- #include "third_party/blink/renderer/core/dom/dom_exception.h"
+@@ -19,18 +22,23 @@
  #include "third_party/blink/renderer/core/execution_context/execution_context.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -416,38 +413,33 @@
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/media_key_session.h"
-@@ -29,8 +34,12 @@
+ #include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.h"
+ #include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access_initializer_base.h"
++#include "third_party/blink/renderer/modules/encryptedmedia/parc_encrypted_media.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+ #include "third_party/blink/renderer/platform/bindings/script_state.h"
  #include "third_party/blink/renderer/platform/bindings/v8_throw_exception.h"
  #include "third_party/blink/renderer/platform/encrypted_media_request.h"
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 +#include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
  #include "third_party/blink/renderer/platform/network/mime/content_type.h"
  #include "third_party/blink/renderer/platform/network/parsed_content_type.h"
-+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 +#include "third_party/blink/renderer/platform/wtf/functional.h"
 +#include "third_party/blink/renderer/platform/wtf/hash_map.h"
  #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
  #include "third_party/blink/renderer/platform/wtf/vector.h"
- 
-@@ -65,8 +74,31 @@
+-
++
+@@ -65,8 +73,21 @@
    void StartRequestAsync();
- 
+-
++
    void Trace(Visitor* visitor) const override {
 +    visitor->Trace(parc_avfoundation_);
      MediaKeySystemAccessInitializerBase::Trace(visitor);
    }
 +
 + private:
-+  // Parc: one FairPlay capability AVFoundation judges under Safari's
-+  // identity.
-+  struct ParcAVFoundationCheck {
-+    wtf_size_t configuration;
-+    bool video;
-+    wtf_size_t index;
-+    String content_type;
-+    bool hls;  // An HLS type, else MP4 for Media Source.
-+  };
-+
 +  void ParcAskAVFoundation();
 +  void ParcOnAnswer(const String& content_type, bool playable);
 +  void ParcApplyAnswers();
@@ -459,9 +451,10 @@
 +  HeapMojoRemote<media::mojom::blink::ParcVideoToolboxDecoding>
 +      parc_avfoundation_;
  };
- 
+-
++
  MediaKeySystemAccessInitializer::MediaKeySystemAccessInitializer(
-@@ -80,7 +112,45 @@
+@@ -80,7 +101,22 @@
            resolver,
            key_system,
            supported_configurations,
@@ -480,103 +473,30 @@
 +      !IsParcFairPlayKeySystem(key_system)) {
 +    return;
 +  }
-+  for (wtf_size_t i = 0; i < supported_configurations.size(); ++i) {
-+    for (bool video : {false, true}) {
-+      const HeapVector<Member<MediaKeySystemMediaCapability>>& capabilities =
-+          video ? supported_configurations[i]->videoCapabilities()
-+                : supported_configurations[i]->audioCapabilities();
-+      for (wtf_size_t j = 0; j < capabilities.size(); ++j) {
-+        const String content_type = capabilities[j]->contentType();
-+        ParsedContentType type(content_type);
-+        if (content_type.empty() || !type.IsValid()) {
-+          continue;
-+        }
-+        const String container = type.MimeType();
-+        const bool hls =
-+            EqualIgnoringAsciiCase(container, "application/vnd.apple.mpegurl") ||
-+            EqualIgnoringAsciiCase(container, "application/x-mpegurl");
-+        const bool mp4 = EqualIgnoringAsciiCase(container, "video/mp4") ||
-+                         EqualIgnoringAsciiCase(container, "audio/mp4");
-+        if (hls || mp4) {
-+          parc_checks_.push_back(
-+              ParcAVFoundationCheck{i, video, j, content_type, hls});
-+        }
-+      }
-+    }
-+  }
++  parc_checks_ = ParcAVFoundationChecks(supported_configurations);
 +}
- 
+-
++
  void MediaKeySystemAccessInitializer::RequestSucceeded(
      std::unique_ptr<WebContentDecryptionModuleAccess> access) {
-@@ -109,6 +179,12 @@
- void MediaKeySystemAccessInitializer::StartRequestAsync() {
+@@ -110,6 +146,12 @@
    if (!IsExecutionContextValid() || !DomWindow())
      return;
+-
 +
 +  // Parc: AVFoundation's answers first (Safari-identity FairPlay only).
 +  if (!parc_checks_.empty() && !parc_asked_) {
 +    ParcAskAVFoundation();
 +    return;
 +  }
- 
++
    // 6. Asynchronously determine support, and if allowed, create and
    //    initialize the MediaKeySystemAccess object.
-@@ -118,6 +194,120 @@
+   DCHECK(!DomWindow()->document()->IsPrerendering());
+@@ -118,8 +160,50 @@
        EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow(
            DomWindow());
    media_client->RequestMediaKeySystemAccess(WebEncryptedMediaRequest(this));
-+}
-+
-+// Parc: under Safari's identity a configuration converts as in WebKit, whose
-+// MediaKeyEncryptionScheme and MediaKeySessionType are IDL enums where Blink
-+// takes any DOMString: another value is a TypeError, thrown before anything
-+// else is checked, from the first configuration holding one and, in it, from
-+// the members in the order WebKit converts them (audioCapabilities,
-+// sessionTypes, videoCapabilities). Returns false after throwing.
-+bool ParcCheckSafariEnumValues(
-+    const HeapVector<Member<MediaKeySystemConfiguration>>&
-+        supported_configurations,
-+    ExceptionState& exception_state) {
-+  auto check_capabilities =
-+      [&exception_state](
-+          const HeapVector<Member<MediaKeySystemMediaCapability>>&
-+              capabilities) {
-+        for (const MediaKeySystemMediaCapability* capability : capabilities) {
-+          if (capability->hasEncryptionScheme() &&
-+              !capability->encryptionScheme().IsNull() &&
-+              !IsParcSafariEncryptionScheme(capability->encryptionScheme())) {
-+            exception_state.ThrowTypeError(StrCat(
-+                {"Failed to read the 'encryptionScheme' property from "
-+                 "'MediaKeySystemMediaCapability': The provided value '",
-+                 capability->encryptionScheme(),
-+                 "' is not a valid enum value of type "
-+                 "MediaKeyEncryptionScheme."}));
-+            return false;
-+          }
-+        }
-+        return true;
-+      };
-+  for (const MediaKeySystemConfiguration* config : supported_configurations) {
-+    if (!check_capabilities(config->audioCapabilities())) {
-+      return false;
-+    }
-+    if (config->hasSessionTypes()) {
-+      for (const String& session_type : config->sessionTypes()) {
-+        if (!IsParcSafariSessionType(session_type)) {
-+          exception_state.ThrowTypeError(StrCat(
-+              {"Failed to read the 'sessionTypes' property from "
-+               "'MediaKeySystemConfiguration': The provided value '",
-+               session_type,
-+               "' is not a valid enum value of type MediaKeySessionType."}));
-+          return false;
-+        }
-+      }
-+    }
-+    if (!check_capabilities(config->videoCapabilities())) {
-+      return false;
-+    }
-+  }
-+  return true;
 +}
 +
 +void MediaKeySystemAccessInitializer::ParcAskAVFoundation() {
@@ -600,7 +520,8 @@
 +        BindOnce(&MediaKeySystemAccessInitializer::ParcOnAnswer,
 +                 WrapWeakPersistent(this), check.content_type));
 +  }
-+}
+ }
+-
 +
 +void MediaKeySystemAccessInitializer::ParcOnAnswer(const String& content_type,
 +                                                   bool playable) {
@@ -614,37 +535,21 @@
 +  if (parc_checks_.empty()) {
 +    return;  // Applied already.
 +  }
-+  for (const ParcAVFoundationCheck& check : parc_checks_) {
-+    std::vector<WebMediaKeySystemMediaCapability>& capabilities =
-+        check.video
-+            ? supported_configurations_[check.configuration].video_capabilities
-+            : supported_configurations_[check.configuration].audio_capabilities;
-+    if (check.index >= capabilities.size()) {
-+      continue;
-+    }
-+    WebMediaKeySystemMediaCapability& capability = capabilities[check.index];
-+    auto it = parc_answers_.find(check.content_type);
-+    if (it == parc_answers_.end() || !it->value) {
-+      // Skipped like any unsupported capability.
-+      capability.mime_type = WebString::FromAscii("application/x-parc-skipped");
-+      capability.codecs = WebString::FromAscii("parc.skipped");
-+    } else if (check.hls) {
-+      // AVFoundation's call alone: judged as a FairPlay codec of its kind.
-+      capability.mime_type =
-+          WebString::FromAscii(check.video ? "video/mp4" : "audio/mp4");
-+      capability.codecs =
-+          WebString::FromAscii(check.video ? "avc1.42E01E" : "mp4a.40.2");
-+    }
-+  }
++  ParcApplyAVFoundationAnswers(parc_checks_, parc_answers_,
++                               supported_configurations_);
 +  parc_checks_.clear();
 +  parc_avfoundation_.reset();
 +  StartRequestAsync();
- }
- 
++}
++
  }  // namespace
-@@ -133,7 +323,14 @@
+-
++
+ ScriptPromise<MediaKeySystemAccess>
+@@ -133,7 +217,14 @@
    DVLOG(3) << __func__;
- 
+-
++
    LocalDOMWindow* window = LocalDOMWindow::From(script_state);
 -  if (!window->IsFeatureEnabled(
 +  if (IsParcSafariIdentityUserAgent(window->UserAgent()) &&
@@ -658,10 +563,11 @@
            network::mojom::PermissionsPolicyFeature::kEncryptedMedia,
            ReportOptions::kReportOnFailure)) {
      UseCounter::Count(window,
-@@ -189,6 +386,15 @@
+@@ -189,6 +280,15 @@
            window, resolver, key_system, supported_configurations);
    auto promise = resolver->Promise();
- 
+-
++
 +  // Parc: a document presenting Safari's identity is refused Widevine as
 +  // Chromium refuses a key system it does not support.
 +  if (IsParcSafariHiddenKeySystem(key_system) &&
@@ -674,9 +580,10 @@
    // Defer to determine support until the prerendering page is activated.
    if (window->document()->IsPrerendering()) {
      window->document()->AddPostPrerenderingActivationStep(
-@@ -198,11 +404,9 @@
+@@ -198,11 +298,9 @@
    }
- 
+-
++
    // 6. Asynchronously determine support, and if allowed, create and
 -  //    initialize the MediaKeySystemAccess object.
 -  WebEncryptedMediaClient* media_client =
@@ -686,7 +593,8 @@
 +  //    initialize the MediaKeySystemAccess object. (Parc: StartRequestAsync,
 +  //    which asks AVFoundation first under Safari's identity.)
 +  initializer->StartRequestAsync();
- 
+-
++
    // 7. Return promise.
    return promise;
 --- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc

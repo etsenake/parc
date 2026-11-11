@@ -16,8 +16,11 @@
 #include "third_party/blink/public/platform/web_media_key_system_media_capability.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_key_system_configuration.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_media_key_system_media_capability.h"
 #include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/network/parsed_content_type.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
@@ -246,6 +249,117 @@ void ParcApplySafariOnlySessionTypes(
       if (IsParcSafariOnlySessionType(config.sessionTypes()[j])) {
         web_config.session_types[j] = WebEncryptedMediaSessionType::kUnknown;
       }
+    }
+  }
+}
+
+// Parc: under Safari's identity a configuration converts as in WebKit, whose
+// MediaKeyEncryptionScheme and MediaKeySessionType are IDL enums where Blink
+// takes any DOMString: another value is a TypeError, thrown before anything
+// else is checked, from the first configuration holding one and, in it, from
+// the members in the order WebKit converts them (audioCapabilities,
+// sessionTypes, videoCapabilities). Returns false after throwing.
+bool ParcCheckSafariEnumValues(
+    const HeapVector<Member<MediaKeySystemConfiguration>>&
+        supported_configurations,
+    ExceptionState& exception_state) {
+  auto check_capabilities =
+      [&exception_state](
+          const HeapVector<Member<MediaKeySystemMediaCapability>>&
+              capabilities) {
+        for (const MediaKeySystemMediaCapability* capability : capabilities) {
+          if (capability->hasEncryptionScheme() &&
+              !capability->encryptionScheme().IsNull() &&
+              !IsParcSafariEncryptionScheme(capability->encryptionScheme())) {
+            exception_state.ThrowTypeError(StrCat(
+                {"Failed to read the 'encryptionScheme' property from "
+                 "'MediaKeySystemMediaCapability': The provided value '",
+                 capability->encryptionScheme(),
+                 "' is not a valid enum value of type "
+                 "MediaKeyEncryptionScheme."}));
+            return false;
+          }
+        }
+        return true;
+      };
+  for (const MediaKeySystemConfiguration* config : supported_configurations) {
+    if (!check_capabilities(config->audioCapabilities())) {
+      return false;
+    }
+    if (config->hasSessionTypes()) {
+      for (const String& session_type : config->sessionTypes()) {
+        if (!IsParcSafariSessionType(session_type)) {
+          exception_state.ThrowTypeError(StrCat(
+              {"Failed to read the 'sessionTypes' property from "
+               "'MediaKeySystemConfiguration': The provided value '",
+               session_type,
+               "' is not a valid enum value of type MediaKeySessionType."}));
+          return false;
+        }
+      }
+    }
+    if (!check_capabilities(config->videoCapabilities())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+Vector<ParcAVFoundationCheck> ParcAVFoundationChecks(
+    const HeapVector<Member<MediaKeySystemConfiguration>>&
+        supported_configurations) {
+  Vector<ParcAVFoundationCheck> checks;
+  for (wtf_size_t i = 0; i < supported_configurations.size(); ++i) {
+    for (bool video : {false, true}) {
+      const HeapVector<Member<MediaKeySystemMediaCapability>>& capabilities =
+          video ? supported_configurations[i]->videoCapabilities()
+                : supported_configurations[i]->audioCapabilities();
+      for (wtf_size_t j = 0; j < capabilities.size(); ++j) {
+        const String content_type = capabilities[j]->contentType();
+        ParsedContentType type(content_type);
+        if (content_type.empty() || !type.IsValid()) {
+          continue;
+        }
+        const String container = type.MimeType();
+        const bool hls =
+            EqualIgnoringAsciiCase(container, "application/vnd.apple.mpegurl") ||
+            EqualIgnoringAsciiCase(container, "application/x-mpegurl");
+        const bool mp4 = EqualIgnoringAsciiCase(container, "video/mp4") ||
+                         EqualIgnoringAsciiCase(container, "audio/mp4");
+        if (hls || mp4) {
+          checks.push_back(
+              ParcAVFoundationCheck{i, video, j, content_type, hls});
+        }
+      }
+    }
+  }
+  return checks;
+}
+
+void ParcApplyAVFoundationAnswers(
+    const Vector<ParcAVFoundationCheck>& checks,
+    const HashMap<String, bool>& answers,
+    std::vector<WebMediaKeySystemConfiguration>& configurations) {
+  for (const ParcAVFoundationCheck& check : checks) {
+    std::vector<WebMediaKeySystemMediaCapability>& capabilities =
+        check.video
+            ? configurations[check.configuration].video_capabilities
+            : configurations[check.configuration].audio_capabilities;
+    if (check.index >= capabilities.size()) {
+      continue;
+    }
+    WebMediaKeySystemMediaCapability& capability = capabilities[check.index];
+    auto it = answers.find(check.content_type);
+    if (it == answers.end() || !it->value) {
+      // Skipped like any unsupported capability.
+      capability.mime_type = WebString::FromAscii("application/x-parc-skipped");
+      capability.codecs = WebString::FromAscii("parc.skipped");
+    } else if (check.hls) {
+      // AVFoundation's call alone: judged as a FairPlay codec of its kind.
+      capability.mime_type =
+          WebString::FromAscii(check.video ? "video/mp4" : "audio/mp4");
+      capability.codecs =
+          WebString::FromAscii(check.video ? "avc1.42E01E" : "mp4a.40.2");
     }
   }
 }
