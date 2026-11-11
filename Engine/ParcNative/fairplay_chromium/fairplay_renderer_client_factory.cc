@@ -7,6 +7,7 @@
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "content/renderer/media/fairplay/fairplay_renderer_client.h"
+#include "media/gfx/video_overlay_factory.h"
 #include "media/mojo/clients/mojo_renderer.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
