@@ -783,13 +783,6 @@ source_set("native_intent_picker") {
   ]
 }
 
-# Header-only boundary for Chrome callers. Implementation lives in //parc:browser
-# to avoid a Chrome -> engine -> Chrome GN dependency cycle.
-source_set("native_password_prompt_api") {
-  public = [ "password_prompt.h" ]
-  sources = public
-}
-
 # Native UI over Chromium's actual offered sources and capture policy pipeline.
 source_set("native_capture_picker") {
   public = [ "native_capture_picker.h" ]

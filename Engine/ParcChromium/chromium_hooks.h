@@ -119,6 +119,13 @@ using ClientCertificateSelector = base::OnceClosure (*)(
     std::unique_ptr<content::ClientCertificateDelegate> delegate);
 void SetClientCertificateSelector(ClientCertificateSelector selector);
 
+// chrome/browser/ui/passwords/manage_passwords_ui_controller.cc
+void SetPasswordPrompt(bool (*uses)(content::WebContents*),
+                       bool (*show)(content::WebContents*, bool user_action),
+                       void (*hide)(content::WebContents*),
+                       bool (*has)(content::WebContents*),
+                       bool (*hovered)(content::WebContents*));
+
 // chrome/browser/ui/login/login_handler.cc
 void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));
 

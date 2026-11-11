@@ -41,6 +41,7 @@
 #include "parc/native/native_appkit_host.h"
 #include "parc/native/native_internal_urls.h"
 #include "parc/native/native_web_contents_view_delegate.h"
+#include "parc/native/password_prompt.h"
 #include "parc/native/sad_tab.h"
 #include "parc/native/site_permissions.h"
 #include "parc/native/video_overlay_window.h"
@@ -91,6 +92,10 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
     parc_hooks::SetExternalProtocolPrompt(&RunExternalProtocolPrompt);
     parc_hooks::SetCertificateViewer(&ShowServerCertificateViewer);
     parc_hooks::SetClientCertificateSelector(&ShowClientCertificateSelector);
+    parc_hooks::SetPasswordPrompt(
+        &UsesNativePasswordPrompt, &ShowNativePasswordPrompt,
+        &HideNativePasswordPrompt, &HasNativePasswordPrompt,
+        &IsNativePasswordPromptHovered);
     RegisterNativeFileDialogs();
     RegisterLicenseWebUI();
   }

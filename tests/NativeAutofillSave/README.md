@@ -14,7 +14,9 @@ Producer and continuation guards preserve neutral refusal for unavailable UI.
 ## Native password Save and Update
 
 `password_prompt` connects the actual ManagePasswordsUIController/BubbleManager
-to SaveUpdateBubbleController and the shared native sheet. Save writes through
+to SaveUpdateBubbleController and the shared native sheet. The controller reaches
+it through a hook in `manage_passwords_ui_controller.cc`; its header keeps only the
+presentation-unavailable result the BubbleManager reads. Save writes through
 Chromium's real form manager and store; No and Never on this site use their real
 controller decisions. Never is omitted for an update. The exact submitted form,
 page, browser, profile and physical window are revalidated before an action.
