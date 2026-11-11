@@ -327,6 +327,13 @@ Source's buffered ranges give. The player still runs that check where WebKit
 runs `monitorSourceBuffers`, and still makes the readyState change and the
 seek's time notification itself.
 
+Parc's per-player state is moving into one object that the player holds and
+befriends, and which reaches the player the same way. The key tracker moved
+there first: when a Safari-identity element starts and
+stops waiting for a key, and which CDM it asks. Its callbacks still go
+through the player's weak pointer, so they stop at the same moment as before,
+and the player still calls it from the same points.
+
 ## Decisions
 
 - **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
