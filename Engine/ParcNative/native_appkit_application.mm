@@ -16,8 +16,10 @@
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
@@ -45,6 +47,8 @@
 #include "chrome/browser/ui/webui/current_channel_logo.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/theme_resources.h"
+#include "components/grit/version_ui_resources.h"
+#include "components/strings/grit/components_strings.h"
 #include "components/prefs/pref_service.h"
 #include "components/tabs/public/tab_interface.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
@@ -678,10 +682,29 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
   scoped_refptr<base::RefCountedMemory> LoadDataResourceBytes(
       int resource_id,
       ui::ResourceScaleFactor scale_factor) override {
+    if (resource_id == IDR_VERSION_UI_ABOUT_VERSION_HTML) {
+      auto html = ui::ResourceBundle::GetSharedInstance()
+                      .LoadDataResourceStringForScale(resource_id, scale_factor);
+      base::ReplaceFirstSubstringAfterOffset(
+          &html, 0, "<div id=\"copyright\">$i18n{copyright}</div>",
+          "<div id=\"copyright\">$i18n{copyright}<br>"
+          "<a href=\"chrome://license/\">Parc licences</a> | "
+          "<a href=\"chrome://credits/\">Third-party credits</a></div>");
+      base::ReplaceFirstSubstringAfterOffset(
+          &html, 0, "alt=\"$i18n{logo_alt_text}\"", "alt=\"Parc\"");
+      base::ReplaceFirstSubstringAfterOffset(
+          &html, 0, "$i18n{application_label}", "Parc");
+      return base::MakeRefCounted<base::RefCountedString>(std::move(html));
+    }
     return nullptr;
   }
   std::optional<std::string> LoadDataResourceString(int resource_id) override {
-    return std::nullopt;
+    auto bytes = LoadDataResourceBytes(resource_id, ui::kScaleFactorNone);
+    if (!bytes) {
+      return std::nullopt;
+    }
+    return std::string(reinterpret_cast<const char*>(bytes->data()),
+                       bytes->size());
   }
   bool GetRawDataResource(int resource_id,
                           ui::ResourceScaleFactor scale_factor,
@@ -708,7 +731,13 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
   }
   bool GetLocalizedString(int message_id,
                           std::u16string* value) const override {
-    return false;
+    switch (message_id) {
+      case IDS_VERSION_UI_TITLE:
+        *value = u"About Parc";
+        return true;
+      default:
+        return false;
+    }
   }
 };
 class AppKitApplication final : public NativeApplication {

@@ -122,6 +122,10 @@ count and block. Programmatic handling does not pretend the checkbox was shown.
 Inherited frame origins remain part of the dialog title. Beforeunload retains
 whole-window/tab consent rather than using ordinary alert suppression.
 
+The resource-bundle delegate supplies Parc’s version-page title, licence links
+and logo text. A Parc WebUI configuration serves the licence page, which
+remains available to internal-address completion through the retained host list.
+
 HTTP authentication uses the actual authority, including proxy text, and the
 native trust explanation. Return submits and Escape cancels. Native secure text
 fields, original callbacks and sheet lifetime remain authoritative. Parc supplies

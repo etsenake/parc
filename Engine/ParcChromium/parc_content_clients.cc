@@ -25,6 +25,7 @@
 #include "parc/native/native_web_contents_view_delegate.h"
 #include "parc/native/site_permissions.h"
 #include "parc/parc_bundle_mac.h"
+#include "parc/parc_branding.h"
 #include "parc/renderer/website_theme_agent.h"
 
 namespace parc {
@@ -61,6 +62,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
     parc_hooks::SetPermissionPromptFactory(&CreateSitePermissionPrompt);
     parc_hooks::SetLoginHandlerAuthValidator(&ValidateNativeLoginHandlerAuth);
     RegisterNativeFileDialogs();
+    RegisterLicenseWebUI();
   }
   void PostMainMessageLoopRun() override {
     parc_hooks::SetAlreadyRunningCommandLineHandler(nullptr, nullptr);
