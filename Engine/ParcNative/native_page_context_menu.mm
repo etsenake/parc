@@ -1,5 +1,6 @@
 // Copyright 2026 Parc contributors.
 #include "native_page_context_menu.h"
+#include "parc/chromium_hooks.h"
 #include "parc/native/native_internal_urls.h"
 
 #include "base/functional/bind.h"
@@ -385,6 +386,9 @@ void GuardItems(NSMenu* menu, MenuControllerCocoa* controller, PageLease lease,
   }
 }
 }  // namespace
+void RegisterNativePageContextMenu() {
+  parc_hooks::SetNativePageContextMenu(&ShowNativePageContextMenu);
+}
 std::unique_ptr<RenderViewContextMenuObserver> CreateNativePageContextMenuObserver(
     RenderViewContextMenu* menu) {
   return ExistingNativePage(menu->GetWebContents())

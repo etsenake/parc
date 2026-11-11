@@ -236,6 +236,13 @@ observer must run first for command dispatch; the public testing registration ap
 observers. These are STAY boundaries until a lossless hook is designed. Shared DevTools and page-menu
 hunks remain with their core owner.
 
+Native page-menu presentation now enters Parc through an implementation-only hook in Chromium’s Cocoa
+implementation, before the Views widget lookup. That Cocoa file no longer includes Parc, and its Cocoa
+build target no longer carries a page-menu dependency. Parc still validates the source document, page
+and window, and cancels the menu on navigation, detach or window invalidation. The observer patch above
+remains deliberately separate: its first-dispatch, last-construction ordering is private behavior that
+the public testing registration cannot preserve.
+
 HTTP authentication keeps a source-only validation hook because a stale request’s cancellation defers
 modal-list mutation. Credentials propagated from a matching request must be rejected during that gap.
 The import service uses an owned utility client and protocol target; its atomic history and web-data

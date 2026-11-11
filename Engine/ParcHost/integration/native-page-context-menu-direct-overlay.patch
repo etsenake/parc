@@ -13,36 +13,34 @@
    std::unique_ptr<SpellingMenuObserver> spelling_suggestions_menu_observer_;
 --- a/chrome/browser/ui/cocoa/renderer_context_menu/render_view_context_menu_mac_cocoa.mm
 +++ b/chrome/browser/ui/cocoa/renderer_context_menu/render_view_context_menu_mac_cocoa.mm
-@@ -5,6 +5,7 @@
- #include "chrome/browser/ui/cocoa/renderer_context_menu/render_view_context_menu_mac_cocoa.h"
+@@ -22,6 +22,19 @@
+ #import "ui/menus/cocoa/menu_controller.h"
+ #include "ui/views/controls/menu/menu_controller_cocoa_delegate_params.h"
+ #include "ui/views/interaction/element_tracker_views.h"
+ #include "ui/views/widget/widget.h"
 -
 +
- #include <utility>
-+#include "parc/native/native_page_context_menu.h"
--
++namespace parc_hooks {
++using NativePageContextMenu =
++    bool (*)(RenderViewContextMenu&,
++             NSView*,
++             MenuControllerCocoa* __strong*);
++namespace {
++NativePageContextMenu native_page_context_menu = nullptr;
++}  // namespace
++void SetNativePageContextMenu(NativePageContextMenu presenter) {
++  native_page_context_menu = presenter;
++}
++}  // namespace parc_hooks
 +
- #include "base/compiler_specific.h"
- #include "base/mac/mac_util.h"
-@@ -75,6 +76,9 @@
- }
--
-+
+ namespace {
+@@ -77,3 +90,9 @@
  void RenderViewContextMenuMacCocoa::Show() {
-+  if (parc::ShowNativePageContextMenu(*this, parent_view_, &menu_controller_))
++  if (parc_hooks::native_page_context_menu &&
++      parc_hooks::native_page_context_menu(*this, parent_view_,
++                                           &menu_controller_)) {
 +    return;
++  }
 +
    views::Widget* widget = views::Widget::GetTopLevelWidgetForNativeView(
        source_web_contents_->GetNativeView());
--
-+
---- a/chrome/browser/ui/cocoa/BUILD.gn
-+++ b/chrome/browser/ui/cocoa/BUILD.gn
-@@ -123,6 +123,7 @@
-   ]
--
-+
-   deps = [
-+    "//parc/native:native_page_context_menu_api",
-     "//chrome/app:command_ids",
-     "//chrome/app/theme:chrome_unscaled_resources_grit",
-     "//chrome/browser:app_controller_mac",

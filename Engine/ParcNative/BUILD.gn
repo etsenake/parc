@@ -20,7 +20,7 @@ source_set("native_tab_preview_api") {
   sources = public
 }
 
-# Declaration-only seam for Chrome's real Cocoa context-menu presenter.
+# Declaration-only seam for Chrome's first-ordered context-menu observer.
 source_set("native_page_context_menu_api") {
   public = [ "native_page_context_menu.h" ]
   sources = public

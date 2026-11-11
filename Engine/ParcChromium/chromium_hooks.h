@@ -36,12 +36,18 @@ class PrefRegistrySimple;
 class PrefService;
 class Profile;
 class ProfileManager;
+class RenderViewContextMenu;
 class SadTab;
 class SessionID;
 class StartupData;
 class UnloadController;
 struct BrowserWindowCreateParams;
 struct BrowserWindowDeleter;
+
+#ifdef __OBJC__
+@class MenuControllerCocoa;
+@class NSView;
+#endif
 
 namespace base {
 class CommandLine;
@@ -112,6 +118,16 @@ using FolderUploadConfirmation =
              content::WebContents* web_contents,
              content::RenderFrameHost* frame);
 void SetFolderUploadConfirmation(FolderUploadConfirmation confirmation);
+
+#ifdef __OBJC__
+// chrome/browser/ui/cocoa/renderer_context_menu/
+// render_view_context_menu_mac_cocoa.mm
+using NativePageContextMenu =
+    bool (*)(RenderViewContextMenu&,
+             NSView*,
+             MenuControllerCocoa* __strong*);
+void SetNativePageContextMenu(NativePageContextMenu presenter);
+#endif
 
 // chrome/browser/ui/sad_tab_controller.cc
 using SadTabFactory = std::unique_ptr<SadTab> (*)(content::WebContents*,

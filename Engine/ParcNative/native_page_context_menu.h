@@ -5,6 +5,8 @@
 class RenderViewContextMenu;
 class RenderViewContextMenuObserver;
 namespace parc {
+// Installs the Cocoa presenter's implementation-only hook.
+void RegisterNativePageContextMenu();
 // No observer is returned for non-native pages. The real context menu owns it.
 std::unique_ptr<RenderViewContextMenuObserver> CreateNativePageContextMenuObserver(
     RenderViewContextMenu* menu);
