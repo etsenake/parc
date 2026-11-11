@@ -30,6 +30,17 @@
 #include "ui/views/views_switches.h"
 #include "ui/views/widget/widget.h"
 #import "window_security_reservation.h"
+namespace parc_hooks {
+void SetExternalProtocolPrompt(
+    void (*)(const GURL&,
+             content::WebContents*,
+             ui::PageTransition,
+             bool,
+             bool,
+             const std::optional<url::Origin>&,
+             content::WeakDocumentPtr,
+             const std::u16string&));
+}
 namespace parc {
 namespace {
 class OSDelegate final : public ExternalProtocolHandler::Delegate {
@@ -129,6 +140,7 @@ class NativeExternalProtocolTest : public BrowserWithTestWindowTest {
     contents()->UpdateWebContentsVisibility(content::Visibility::VISIBLE);
     web_modal::WebContentsModalDialogManager::CreateForWebContents(contents());
     manager()->SetDelegate(&modal_);
+    parc_hooks::SetExternalProtocolPrompt(&RunExternalProtocolPrompt);
     InstallNativeExternalProtocol(*contents());
     SetNativeExternalProtocolAttached(*contents(), true);
     ExternalProtocolHandler::SetDelegateForTesting(&os_);
@@ -147,6 +159,7 @@ class NativeExternalProtocolTest : public BrowserWithTestWindowTest {
     Pump();
     modal_.host.Invalidate();
     ExternalProtocolHandler::SetDelegateForTesting(nullptr);
+    parc_hooks::SetExternalProtocolPrompt(nullptr);
     os_.launched_page = nullptr;
     BrowserWithTestWindowTest::TearDown();
     [window_ close];

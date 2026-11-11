@@ -6,10 +6,16 @@
 #define PARC_CHROMIUM_HOOKS_H_
 
 #include <memory>
+#include <optional>
+#include <string>
 
 #include "chrome/browser/ui/sad_tab_types.h"
 #include "components/permissions/permission_prompt.h"
+#include "content/public/browser/weak_document_ptr.h"
+#include "ui/base/page_transition_types.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 class BrowserWindowInterface;
 class ChromeBrowserMainParts;
@@ -77,6 +83,18 @@ void SetFolderUploadConfirmation(FolderUploadConfirmation confirmation);
 using SadTabFactory = std::unique_ptr<SadTab> (*)(content::WebContents*,
                                                   SadTabKind);
 void SetSadTabFactory(SadTabFactory factory);
+
+// chrome/browser/ui/views/external_protocol_dialog.cc
+using ExternalProtocolPrompt =
+    void (*)(const GURL& url,
+             content::WebContents* web_contents,
+             ui::PageTransition page_transition,
+             bool has_user_gesture,
+             bool is_in_fenced_frame_tree,
+             const std::optional<url::Origin>& initiating_origin,
+             content::WeakDocumentPtr initiator_document,
+             const std::u16string& program_name);
+void SetExternalProtocolPrompt(ExternalProtocolPrompt prompt);
 
 // chrome/browser/ui/login/login_handler.cc
 void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));

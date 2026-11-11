@@ -12,11 +12,16 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/supports_user_data.h"
 #include "base/task/single_thread_task_runner.h"
-#include "chrome/browser/external_protocol/native_external_protocol_dialog.h"
+#include "base/types/optional_util.h"
+#include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/views/external_protocol_dialog.h"
+#include "chrome/common/pref_names.h"
+#include "chrome/grit/generated_resources.h"
+#include "components/prefs/pref_service.h"
 #include "components/tabs/public/tab_interface.h"
 #include "components/url_formatter/elide_url.h"
 #include "components/web_modal/single_web_contents_dialog_manager.h"
@@ -29,14 +34,120 @@
 #include "content/public/browser/web_contents_observer.h"
 #import "external_protocol_presenter.h"
 #include "ui/base/base_window.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
+#include "ui/gfx/text_elider.h"
 #include "ui/views/input_event_activation_protector.h"
 #import "window_security_reservation.h"
 
 namespace parc {
 namespace {
+// The same text as Chromium's ExternalProtocolDialog.
+std::u16string GetMessageTextForOrigin(
+    const std::optional<url::Origin>& origin) {
+  if (!origin || origin->opaque()) {
+    return l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_MESSAGE);
+  }
+  return l10n_util::GetStringFUTF16(
+      IDS_EXTERNAL_PROTOCOL_MESSAGE_WITH_INITIATING_ORIGIN,
+      url_formatter::FormatOriginForSecurityDisplay(*origin));
+}
+
+// Created only at the already-policy-checked platform dialog boundary. The
+// native shell presents this exact request; it must not create another URL load
+// or call an OS launcher. Its once-only decision keeps Chrome's preferences,
+// metrics, escaping and actual platform continuation.
+class NativeExternalProtocolDialogRequest {
+ public:
+  NativeExternalProtocolDialogRequest(content::WebContents* contents,
+                                      const GURL& target,
+                                      const std::u16string& program,
+                                      const std::optional<url::Origin>& origin,
+                                      content::WeakDocumentPtr document)
+      : url(target),
+        program_name(program),
+        initiating_origin(origin),
+        initiator_document(std::move(document)),
+        contents_(contents->GetWeakPtr()) {}
+  NativeExternalProtocolDialogRequest(
+      const NativeExternalProtocolDialogRequest&) = delete;
+  NativeExternalProtocolDialogRequest& operator=(
+      const NativeExternalProtocolDialogRequest&) = delete;
+  const GURL url;
+  const std::u16string program_name;
+  const std::optional<url::Origin> initiating_origin;
+  const content::WeakDocumentPtr initiator_document;
+  bool MayRemember() const {
+    return contents_ &&
+           Profile::FromBrowserContext(contents_->GetBrowserContext())
+               ->GetPrefs()
+               ->GetBoolean(
+                   prefs::kExternalProtocolDialogShowAlwaysOpenCheckbox) &&
+           ExternalProtocolHandler::MayRememberAllowDecisionsForThisOrigin(
+               base::OptionalToPtr(initiating_origin));
+  }
+  std::u16string Title() const {
+    std::u16string elided;
+    gfx::ElideString(program_name, 32, &elided);
+    return l10n_util::GetStringFUTF16(IDS_EXTERNAL_PROTOCOL_TITLE, elided);
+  }
+  std::u16string Message() const {
+    return GetMessageTextForOrigin(initiating_origin);
+  }
+  std::u16string AcceptLabel() const {
+    return l10n_util::GetStringFUTF16(IDS_EXTERNAL_PROTOCOL_OK_BUTTON_TEXT,
+                                      program_name);
+  }
+  // Call after native presentation has ended. Revalidates before preferences
+  // and after preference observers, immediately before the real OS launch.
+  void Accept(bool remember, base::RepeatingCallback<bool()> can_authorize) {
+    if (decided_) {
+      return;
+    }
+    decided_ = true;
+    auto valid = [&] {
+      if (!can_authorize || !can_authorize.Run() || !contents_) {
+        return false;
+      }
+      auto* frame = initiator_document.AsRenderFrameHostIfValid();
+      return frame && content::WebContents::FromRenderFrameHost(frame)
+                              ->GetOutermostWebContents() == contents_.get();
+    };
+    if (!valid()) {
+      ExternalProtocolHandler::RecordHandleStateMetrics(
+          false, ExternalProtocolHandler::BLOCK);
+      return;
+    }
+    remember = remember && MayRemember();
+    ExternalProtocolHandler::RecordHandleStateMetrics(
+        remember, ExternalProtocolHandler::DONT_BLOCK);
+    if (remember) {
+      ExternalProtocolHandler::SetBlockState(
+          url.GetScheme(), *initiating_origin,
+          ExternalProtocolHandler::DONT_BLOCK,
+          Profile::FromBrowserContext(contents_->GetBrowserContext()));
+    }
+    if (valid()) {
+      ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(
+          url, contents_.get(), initiator_document);
+    }
+  }
+  void Cancel() {
+    if (decided_) {
+      return;
+    }
+    decided_ = true;
+    ExternalProtocolHandler::RecordHandleStateMetrics(
+        false, ExternalProtocolHandler::BLOCK);
+  }
+
+ private:
+  const base::WeakPtr<content::WebContents> contents_;
+  bool decided_ = false;
+};
+
 class Request;
 constexpr char kPageState[] = "parc-native-external-protocol-page";
 class PageState final : public base::SupportsUserData::Data {
@@ -475,35 +586,46 @@ void InstallNativeExternalProtocol(content::WebContents& contents) {
   if (!State(&contents)) {
     contents.SetUserData(kPageState, std::make_unique<PageState>());
   }
-  SetNativeExternalProtocolDialogFactory(
-      contents,
-      base::BindRepeating(
-          [](content::WebContents* contents,
-             std::unique_ptr<NativeExternalProtocolDialogRequest> decision) {
-            auto weak_contents = contents->GetWeakPtr();
-            auto* state = State(contents);
-            const auto generation = ++state->generation;
-            //
-            // Move the old list first: release notifications may reenter here.
-            auto previous = std::move(state->requests);
-            for (auto& weak : previous) {
-              if (auto old = weak.lock()) {
-                old->Finish(false, false);
-              }
-            }
-            if (!weak_contents || !State(contents) ||
-                !State(contents)->attached ||
-                State(contents)->generation != generation) {
-              decision->Cancel();
-              return;
-            }
-            auto request =
-                std::make_shared<Request>(*contents, std::move(decision));
-            State(contents)->requests.push_back(request);
-            if (!request->Build()) {
-              request->Finish(false, false);
-            }
-          }));
+}
+void RunExternalProtocolPrompt(
+    const GURL& url,
+    content::WebContents* contents,
+    ui::PageTransition,
+    bool,
+    bool,
+    const std::optional<url::Origin>& initiating_origin,
+    content::WeakDocumentPtr initiator_document,
+    const std::u16string& program_name) {
+  auto* state = State(contents);
+  if (!state) {
+    // Windowing system takes ownership.
+    new ExternalProtocolDialog(contents, url, program_name, initiating_origin,
+                               std::move(initiator_document));
+    return;
+  }
+  auto decision = std::make_unique<NativeExternalProtocolDialogRequest>(
+      contents, url, program_name, initiating_origin,
+      std::move(initiator_document));
+  auto weak_contents = contents->GetWeakPtr();
+  const auto generation = ++state->generation;
+  //
+  // Move the old list first: release notifications may reenter here.
+  auto previous = std::move(state->requests);
+  for (auto& weak : previous) {
+    if (auto old = weak.lock()) {
+      old->Finish(false, false);
+    }
+  }
+  if (!weak_contents || !State(contents) || !State(contents)->attached ||
+      State(contents)->generation != generation) {
+    decision->Cancel();
+    return;
+  }
+  auto request = std::make_shared<Request>(*contents, std::move(decision));
+  State(contents)->requests.push_back(request);
+  if (!request->Build()) {
+    request->Finish(false, false);
+  }
 }
 void SetNativeExternalProtocolAttached(content::WebContents& contents,
                                        bool attached) {

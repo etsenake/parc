@@ -32,6 +32,7 @@
 #include "parc/page_preferences.h"
 #include "parc/web_push.h"
 #include "parc/native/extension_uninstall.h"
+#include "parc/native/external_protocol.h"
 #include "parc/native/file_dialog.h"
 #include "parc/native/folder_upload.h"
 #include "parc/native/http_auth.h"
@@ -85,6 +86,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
     parc_hooks::SetExtensionUninstallHandler(&BeginExtensionUninstall);
     parc_hooks::SetFolderUploadConfirmation(&ShowFolderUploadConfirmation);
     parc_hooks::SetSadTabFactory(&CreateSadTab);
+    parc_hooks::SetExternalProtocolPrompt(&RunExternalProtocolPrompt);
     RegisterNativeFileDialogs();
     RegisterLicenseWebUI();
   }

@@ -629,12 +629,15 @@ source_set("native_external_protocol") {
   deps = [
     ":native_components",
     "//base",
+    "//chrome/app:generated_resources",
     "//chrome/browser/external_protocol",
     "//chrome/browser/picture_in_picture",
     "//chrome/browser/picture_in_picture:impl",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/views:external_protocol_dialog",
+    "//chrome/common:constants",
+    "//components/prefs",
     "//components/tabs:public",
     "//components/url_formatter",
     "//components/web_modal",
@@ -643,6 +646,7 @@ source_set("native_external_protocol") {
     "//ui/events",
     "//ui/gfx",
     "//ui/views",
+    "//url",
   ]
 }
 
