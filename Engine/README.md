@@ -266,13 +266,22 @@ See [page compositing](../docs/page-compositing.md) and
 
 ## Product name
 
-The grit hook in `integration/parc_branding.py` names the running browser Parc
-without forking translated resources or message IDs. It replaces Chromium in
-browser strings and Chrome only in the explicitly classified messages that mean
-this browser. Google products/services, copyright, Chromium project links and
-device names retain their real names. IDs, user agents, paths, Keychain items and
-preference keys are unchanged. Language-specific endings follow the reviewed
-substitutions.
+The product-name build action uses Chromium's translated GRIT messages and
+numeric IDs to generate Parc's language-specific string overrides. The resource
+delegate returns those strings before packed-resource lookup. It replaces
+Chromium in browser strings and Chrome only in the explicitly classified
+messages that mean this browser. Google products/services, copyright, Chromium
+project links and device names retain their real names. IDs, user agents, paths,
+Keychain items and preference keys are unchanged. Language-specific endings
+follow the reviewed substitutions. The delegate also overrides the generated
+field-trials resource so its hardcoded relaunch sentence names Parc.
+
+Extension message JSON is emitted directly by several independent GRIT targets,
+outside packed resources and the resource delegate. Its formatter retains a
+narrow patch that applies the same classification; the global message
+translation hook is gone. The output inventory also covers policy templates and
+libaddressinput's C format, which currently contain no classified product-name
+messages.
 
 `tests/ProductName` checks compiled translations and application strings against
 those decisions; it needs `PARC_ENGINE_WORKSPACE`. Every new Chrome-bearing

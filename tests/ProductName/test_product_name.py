@@ -11,37 +11,19 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[2]
 
-# Every translated string bundle the macOS engine compiles.
-STRING_GRDS = (
-    "chrome/app/chromium_strings.grd",
-    "chrome/app/generated_resources.grd",
-    "chrome/app/resources/locale_settings.grd",
-    "chrome/app/resources/locale_settings_mac.grd",
-    "components/components_chromium_strings.grd",
-    "components/components_locale_settings.grd",
-    "components/components_strings.grd",
-    "components/components_variant_public_strings.grd",
-    "components/guest_view/browser/slim_web_view/strings/slim_web_view_strings.grd",
-    "components/omnibox/resources/omnibox_pedal_synonyms.grd",
-    "components/policy/resources/policy_templates.build.grd",
-    "components/privacy_sandbox_strings.grd",
-    "device/bluetooth/bluetooth_strings.grd",
-    "device/fido/fido_strings.grd",
-    "extensions/strings/extensions_strings.grd",
-    "services/services_strings.grd",
-    "third_party/blink/public/strings/blink_strings.grd",
-    "third_party/blink/public/strings/permission_element_strings.grd",
-    "third_party/libaddressinput/chromium/address_input_strings.grd",
-    "ui/accessibility/extensions/strings/accessibility_extensions_strings.grd",
-    "ui/strings/app_locale_settings.grd",
-    "ui/strings/auto_image_annotation_strings.grd",
-    "ui/strings/ax_strings.grd",
-    "ui/strings/ui_strings.grd",
-)
+BRANDING_SPEC = importlib.util.spec_from_file_location(
+    "parc_branding", REPO / "Engine/ParcHost/integration/parc_branding.py")
+BRANDING = importlib.util.module_from_spec(BRANDING_SPEC)
+BRANDING_SPEC.loader.exec_module(BRANDING)
+STRING_GRDS = BRANDING.STRING_GRDS
+MAC_DEFINES = BRANDING.MAC_DEFINES
+
 # Chromium's letters, with a mnemonic, an h or u more or less or o and r
 # swapped, as translators have spelt it, and its Hindi transliteration.
 CHROMIUM = re.compile(r"C&?h?&?(?:r&?o&?u?|o&?r)&?m&?(?:i|u&?i)|क्रोमियम")
@@ -54,18 +36,6 @@ CHROME = re.compile(r"[CС]hrom(?!ebook|ebox|ebit|ecast|e\s?OS|ium)|(?<![\w/:.-]
 DEVICE = re.compile(r"Parc(?:book|box|bit|cast|\s?OS)")
 # The English says Chrome, other than for Google's devices and operating system.
 SAYS_CHROME = re.compile(r"Chrome(?!book|box|bit|cast|\s?OS)")
-# The macOS engine's grit defines that are true.
-MAC_DEFINES = {
-    "chrome_root_store_cert_management_ui", "enable_cef", "enable_compose", "enable_dice_support",
-    "enable_extensions", "enable_extensions_core", "enable_hangout_services_extension",
-    "enable_pdf", "enable_pdf_ink2", "enable_pdf_save_to_drive", "enable_plugins",
-    "enable_print_preview", "enable_printing", "enable_private_insights",
-    "enable_pseudolocales", "enable_screen_ai_service", "enable_screen_capture",
-    "enable_supervised_users", "enable_webui_certificate_viewer",
-    "enable_webui_contextual_tasks_composebox", "enable_webui_ntp", "optimize_webui",
-    "toolkit_views", "use_blink", "use_titlecase",
-}
-
 # Messages whose English Chrome stays, by why it is still true. Every message
 # the macOS engine compiles whose English says Chrome is here or in
 # parc_branding.CHROME_MEANS_PARC.
@@ -321,8 +291,13 @@ def engine_source():
 
 
 def load_branding():
+    return BRANDING
+
+
+def load_generator():
     spec = importlib.util.spec_from_file_location(
-        "parc_branding", REPO / "Engine/ParcHost/integration/parc_branding.py")
+        "generate_product_name_strings",
+        REPO / "Engine/ParcChromium/generate_product_name_strings.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -350,6 +325,51 @@ def project_link(branding, translation):
 
 @unittest.skipUnless(engine_source(), "needs an engine workspace (PARC_ENGINE_WORKSPACE)")
 class EngineStringsTests(unittest.TestCase):
+    def test_generated_resource_overrides_keep_numeric_ids(self):
+        source = engine_source()
+        generator = load_generator()
+        with tempfile.TemporaryDirectory(prefix="parc-product-name-") as temp:
+            resource_ids = Path(temp) / "default_resource_ids"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(source / "tools/grit/grit.py"),
+                    "update_resource_ids",
+                    "-o",
+                    str(resource_ids),
+                    "--add-header",
+                    "--input",
+                    str(source / "tools/gritsettings/resource_ids.spec"),
+                ],
+                check=True,
+            )
+            overrides, _ = generator.collect_overrides(
+                source, ("en-US", "az", "ko"),
+                REPO / "Engine/ParcHost/integration/parc_branding.py",
+                resource_ids)
+
+        self.assertIn("About Parc", overrides["en-US"].values())
+        self.assertTrue(all(isinstance(resource_id, int)
+                            for resource_id in overrides["en-US"]))
+        self.assertTrue(overrides["az"])
+        self.assertTrue(overrides["ko"])
+
+    def test_non_pak_output_inventory_stays_explicit(self):
+        source = engine_source()
+        for output_type, grds in BRANDING.NON_PAK_OUTPUT_GRDS.items():
+            for grd in grds:
+                formats = {
+                    output.attrib["type"]
+                    for output in ET.parse(source / grd).iter("output")
+                }
+                self.assertIn(output_type, formats, grd)
+        patch = (
+            REPO / "Engine/ParcHost/integration/product-name.patch"
+        ).read_text()
+        self.assertIn(
+            "--- a/tools/grit/grit/format/chrome_messages_json.py", patch)
+        self.assertNotIn("--- a/tools/grit/grit/node/message.py", patch)
+
     def test_translations_name_parc(self):
         source = engine_source()
         sys.path.insert(0, str(source / "tools/grit"))
@@ -430,6 +450,10 @@ ALLOWED = {
     },
     "Engine/ParcNative/native_engine_entry.mm": {
         '"Native application must implement Chromium\'s sendEvent protocol"',
+        '"Native application must implement Chromium\'s native event protocol"',
+    },
+    "Engine/ParcNative/native_appkit_application.mm": {
+        '"the next time you relaunch Chromium."',
     },
     # Parc's existing engine data directory.
     "Sources/ParcCore/BrowserStore.swift": {'"Chromium-v1"'},

@@ -49,6 +49,7 @@
 #include "chrome/browser/ui/webui/current_channel_logo.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/theme_resources.h"
+#include "components/grit/metrics_internals_resources.h"
 #include "components/grit/version_ui_resources.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/prefs/pref_service.h"
@@ -78,9 +79,11 @@
 #include "native_profile_policy.h"
 #include "native_page_retirement.h"
 #include "pane_compositor.h"
+#include "parc/product_name_strings.h"
 #include "tab_transfer.h"
 #include "window_security_reservation.h"
 #include "url/url_constants.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/resource/resource_scale_factor.h"
 #include "ui/webui/resources/grit/webui_resources.h"
@@ -688,6 +691,15 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
   scoped_refptr<base::RefCountedMemory> LoadDataResourceBytes(
       int resource_id,
       ui::ResourceScaleFactor scale_factor) override {
+    if (resource_id == IDR_METRICS_INTERNALS_FIELD_TRIALS_HTML_JS) {
+      auto script = ui::ResourceBundle::GetSharedInstance()
+                        .LoadDataResourceStringForScale(resource_id,
+                                                        scale_factor);
+      base::ReplaceFirstSubstringAfterOffset(
+          &script, 0, "the next time you relaunch Chromium.",
+          "the next time you relaunch Parc.");
+      return base::MakeRefCounted<base::RefCountedString>(std::move(script));
+    }
     if (resource_id == IDR_VERSION_UI_ABOUT_VERSION_HTML) {
       auto html = ui::ResourceBundle::GetSharedInstance()
                       .LoadDataResourceStringForScale(resource_id, scale_factor);
@@ -747,13 +759,12 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
   }
   bool GetLocalizedString(int message_id,
                           std::u16string* value) const override {
-    switch (message_id) {
-      case IDS_VERSION_UI_TITLE:
-        *value = u"About Parc";
-        return true;
-      default:
-        return false;
+    auto& resources = ui::ResourceBundle::GetSharedInstance();
+    std::string locale = resources.GetLoadedLocale();
+    if (locale.empty()) {
+      locale = l10n_util::GetApplicationLocale(std::string(), false);
     }
+    return GetProductNameString(locale, message_id, value);
   }
 };
 class AppKitApplication final : public NativeApplication {

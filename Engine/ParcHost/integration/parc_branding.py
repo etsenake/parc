@@ -14,6 +14,75 @@ import re
 
 PRODUCT = 'Parc'
 
+# Every translated string bundle the macOS engine compiles. Keep this list
+# shared by the build action and its coverage test.
+STRING_GRDS = (
+    'chrome/app/chromium_strings.grd',
+    'chrome/app/generated_resources.grd',
+    'chrome/app/resources/locale_settings.grd',
+    'chrome/app/resources/locale_settings_mac.grd',
+    'components/components_chromium_strings.grd',
+    'components/components_locale_settings.grd',
+    'components/components_strings.grd',
+    'components/components_variant_public_strings.grd',
+    'components/guest_view/browser/slim_web_view/strings/slim_web_view_strings.grd',
+    'components/omnibox/resources/omnibox_pedal_synonyms.grd',
+    'components/policy/resources/policy_templates.build.grd',
+    'components/privacy_sandbox_strings.grd',
+    'device/bluetooth/bluetooth_strings.grd',
+    'device/fido/fido_strings.grd',
+    'extensions/strings/extensions_strings.grd',
+    'services/services_strings.grd',
+    'third_party/blink/public/strings/blink_strings.grd',
+    'third_party/blink/public/strings/permission_element_strings.grd',
+    'third_party/libaddressinput/chromium/address_input_strings.grd',
+    'ui/accessibility/extensions/strings/accessibility_extensions_strings.grd',
+    'ui/strings/app_locale_settings.grd',
+    'ui/strings/auto_image_annotation_strings.grd',
+    'ui/strings/ax_strings.grd',
+    'ui/strings/ui_strings.grd',
+)
+
+# These translated outputs have no numeric ResourceBundle message IDs. The
+# policy and address C outputs contain no classified product-name messages in
+# Chromium 156. Extension message JSON remains covered at its grit formatter,
+# including extension GRDs outside the engine's packed-string inventory.
+NON_RESOURCE_ONLY_GRDS = frozenset({
+    'components/policy/resources/policy_templates.build.grd',
+    'ui/accessibility/extensions/strings/accessibility_extensions_strings.grd',
+})
+RESOURCE_STRING_GRDS = tuple(
+    grd for grd in STRING_GRDS if grd not in NON_RESOURCE_ONLY_GRDS)
+NON_PAK_OUTPUT_GRDS = {
+    'chrome_messages_json_gzip': (
+        'chrome/browser/resources/accessibility/strings/extension_strings.grd',
+        'chrome/browser/resources/chromeos/accessibility/strings/accessibility_strings.grd',
+    ),
+    'chrome_messages_json': (
+        'remoting/resources/remoting_strings.grd',
+        'ui/accessibility/extensions/strings/accessibility_extensions_strings.grd',
+    ),
+    'c_format': (
+        'third_party/libaddressinput/chromium/address_input_strings.grd',
+    ),
+    'policy_templates': (
+        'components/policy/resources/policy_templates.build.grd',
+    ),
+}
+
+# The release's macOS grit defines. Undefined names evaluate false.
+MAC_DEFINES = frozenset({
+    'chrome_root_store_cert_management_ui', 'enable_cef', 'enable_compose',
+    'enable_dice_support', 'enable_extensions', 'enable_extensions_core',
+    'enable_hangout_services_extension', 'enable_pdf', 'enable_pdf_ink2',
+    'enable_pdf_save_to_drive', 'enable_plugins', 'enable_print_preview',
+    'enable_printing', 'enable_private_insights', 'enable_pseudolocales',
+    'enable_screen_ai_service', 'enable_screen_capture',
+    'enable_supervised_users', 'enable_webui_certificate_viewer',
+    'enable_webui_contextual_tasks_composebox', 'enable_webui_ntp',
+    'optimize_webui', 'toolkit_views', 'use_blink', 'use_titlecase',
+})
+
 # Their Chromium is the copyright holder or the open source project.
 UNCHANGED = {
     'IDS_ABOUT_VERSION_COMPANY_NAME',
@@ -288,3 +357,15 @@ def Rename(name, language, english, translation):
         part = _ENDING.sub(_Ending(language), part)
     text.append(part)
   return ''.join(text)
+
+
+def Translate(node, language, gender):
+  '''Returns MessageNode.Translate() output with Parc's classification.'''
+  from grit.node import message
+  translation = node.clique.MessageForLanguageAndGender(
+      language, gender, node.PseudoIsAllowed(), node.ShouldFallbackToEnglish())
+  text = Rename(node.NameOrOffset(), language, node.clique.GetMessage(),
+                translation)
+  if node._replace_ellipsis and '...' in text:
+    text = message._ELLIPSIS_PATTERN.sub(message._ELLIPSIS_SYMBOL, text)
+  return text.replace('\ufeff', '').replace('[GRITLANGCODE]', language)

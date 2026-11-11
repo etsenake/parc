@@ -1,27 +1,15 @@
---- a/tools/grit/grit/node/message.py
-+++ b/tools/grit/grit/node/message.py
-@@ -10,6 +10,7 @@
- 
- from grit import clique
- from grit import exception
+--- a/tools/grit/grit/format/chrome_messages_json.py
++++ b/tools/grit/grit/format/chrome_messages_json.py
+@@ -10,2 +10,3 @@
+ from grit import constants
 +from grit import parc_branding
- from grit import tclib
- from grit import util
- 
-@@ -282,9 +283,10 @@
-   def Translate(self, lang, gender):
-     '''Returns a translated version of this message.'''
-     assert self.clique
--    msg = self.clique.MessageForLanguageAndGender(
--      lang, gender, self.PseudoIsAllowed(), self.ShouldFallbackToEnglish()
--    ).GetRealContent()
-+    msg = parc_branding.Rename(
-+      self.NameOrOffset(), lang, self.clique.GetMessage(),
-+      self.clique.MessageForLanguageAndGender(
-+        lang, gender, self.PseudoIsAllowed(), self.ShouldFallbackToEnglish()))
-     # Optimization: Avoid the overhead of regular expression substitution if the
-     # string clearly does not contain the target '...'.
-     if self._replace_ellipsis and '...' in msg:
+ from grit.node import message
+@@ -47,3 +48,4 @@
+         child.ws_at_start
+-        + child.Translate(lang, constants.DEFAULT_GENDER)
++        + parc_branding.Translate(
++          child, lang, constants.DEFAULT_GENDER)
+         + child.ws_at_end
 --- a/tools/grit/grit.pydeps
 +++ b/tools/grit/grit.pydeps
 @@ -61,6 +61,7 @@
@@ -32,14 +20,3 @@
  //tools/grit/grit/pseudo.py
  //tools/grit/grit/pseudolocales.py
  //tools/grit/grit/shortcuts.py
---- a/components/metrics/debug/field_trials.html
-+++ b/components/metrics/debug/field_trials.html
-@@ -209,7 +209,7 @@
- <div id="field-trial-list"></div>
- <div id="needs-restart">
-   <div class="flex-container">
--    <div class="restart-notice">Your changes will take effect the next time you relaunch Chromium.</div>
-+    <div class="restart-notice">Your changes will take effect the next time you relaunch Parc.</div>
-     <div>
-       <button id="restart-button" tabindex="-1">
-         Relaunch
