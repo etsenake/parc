@@ -75,7 +75,7 @@ struct MEDIA_EXPORT ParcNativeHlsDemuxerParams {
   // media thread, posts to the main thread.
   std::unique_ptr<ParcInbandTrackForwarder> inband_tracks;
   // Raises webkitneedkey for a key request of the player's resource loader
-  // (WebMediaPlayerEncryptedMediaClient::ParcWebKitKeyRequest), before any
+  // (blink::ParcMediaPlayerClient::ParcWebKitKeyRequest), before any
   // `encrypted` for it; posts to the main thread.
   base::RepeatingCallback<void(const std::string& key_uri)> key_request_cb;
   // Serves one load AVFoundation makes (FairPlayHlsPlayerClient.StartLoad)

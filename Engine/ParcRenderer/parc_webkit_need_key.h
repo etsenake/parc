@@ -11,7 +11,7 @@
 // shouldWaitForLoadingOfResource, `skd://` and `clearkey://`).
 //
 // Parc's media pipeline reports the same two sources through
-// WebMediaPlayerEncryptedMediaClient: ParcWebKitMediaSourceKeyNeeded() from
+// ParcMediaPlayerClient: ParcWebKitMediaSourceKeyNeeded() from
 // WebMediaPlayerImpl::OnEncryptedMediaInitData for a Safari-identity Media
 // Source's sinf, before it decides on `encrypted`, and ParcWebKitKeyRequest()
 // from the native HLS route for every key request.
