@@ -1,8 +1,12 @@
 # Native extension uninstall
 
 The repository source connects Chromium's actual action-menu `UNINSTALL`
-command, helper, policy/removal controller, asynchronous icon loading and
-`DialogModel` to a source-owned AppKit sheet. The production native host registers this service.
+command, policy/removal controller, asynchronous icon loading and
+`DialogModel` to a source-owned AppKit sheet. The command reaches Parc through
+a one-call hook in `extension_context_menu_model.cc`; Parc's
+`NativeExtensionUninstallDialog` subclasses Chromium's uninstall dialog and
+builds the same model as its Views implementation. The production native host
+registers this service.
 
 ## Confirmation presentation
 
@@ -20,8 +24,8 @@ consent. Browsers without the native service retain the ordinary Views route.
 ## Ownership and shell obligations
 
 - `NativeBrowserWindow` owns `NativeExtensionUninstallService` as typed unowned
-  Browser data. The real menu command captures its binding before async icon
-  loading. It uses the same supplied parent/security/selection host as menus and
+  Browser data. The real menu command captures its binding, and `Confirm` arms
+  it, before async icon loading. It uses the same supplied parent/security/selection host as menus and
   popups, with no key/frontmost-window lookup.
 - `Arm` commits observers and a pending reservation before notifications can
   close menus or popups. Reservation state belongs to the exact weak `NSWindow`,
@@ -60,7 +64,7 @@ window lifetime, foreign-sheet rejection and parent closure. This is component
 execution, not Chromium removal execution.
 
 Fifteen genuine browser-test cases cover actual controller Cancel, the real
-UNINSTALL helper/factory/registrar route, pending-owner expiry, service destruction
+UNINSTALL hook/dialog/registrar route, pending-owner expiry, service destruction
 during reservation acquisition, real-model checkbox/reentrant Close, page detach,
 same-ID replacement, unsupported/late models, navigation retention and security
 registration before Show with unrelated-window isolation. Added cases use the
@@ -79,9 +83,8 @@ requires valid Chromium process/context initialization.
 `//parc/native:native_components` owns the presenter and shared
 reservation and exposes their headers. `native_extensions` owns uninstall and
 its security-context helper; `security_dialog_tracker` and `//ui/views` are
-public dependencies because public headers expose their types. The extensions
-upstream target includes `extension_uninstall_native_host.h` and publicly
-propagates `//ui/base/unowned_user_data`.
+public dependencies because public headers expose their types. The hook is
+installed beside the other interface hooks in `ParcBrowserMainExtraParts`.
 
 `//parc/tests/native_extensions:uninstall_browser_tests` is consumed by the
 macOS `browser_tests` graph. It defines `HAS_OUT_OF_PROC_TEST_RUNNER` and directly

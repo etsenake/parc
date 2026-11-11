@@ -74,13 +74,9 @@ recompiles that Parc file and relinks. A hook edit recompiles the one Chromium f
 
 The initial interface-routing research classified 35 patches: 14 SEAM, 17 HOOK and 4 STAY. These patches edit about 60 Chromium
 headers today. Afterwards about 8 remain, none with more than 42 direct includers, and the 7 Parc headers
-injected into Chromium's tree go away. Three shared funnels carry most dialogs:
-- the extension dialog utilities, which also fix today's crash where extension dialogs assume a
-  BrowserView;
-- `ShowTabModal`;
-- the page-info dialog.
-
-One native dialog host renders the first two, and page info gets its own routing hook. The 4,744-line autofill capability patch can probably be
+injected into Chromium's tree go away. It proposed three shared funnels for most dialogs: the extension
+dialog utilities, `ShowTabModal` and the page-info dialog. The first two carry too little context for the
+dialogs Parc presents; the confirmed boundaries below say what replaced them. The 4,744-line autofill capability patch can probably be
 deleted. Parc's existing bubble handler would decline every offer Parc has no interface for, and the
 offers that need an account are already off, because sign-in is off. That needs a per-feature audit first.
 
@@ -243,6 +239,12 @@ branding outputs remain in step 4.
 
 The toolbar and narrow-window drawers share the owned dark-logo resource. This also fixes a branding
 bug: those drawers showed Chrome’s logo in dark mode while already showing Parc’s in light mode.
+
+Extension uninstall doesn't use the extension-dialog funnel, which only sees the window once the icon
+has loaded. Parc binds consent to the asking Browser, page and extension instance, and reserves the
+window, before loading starts. The context menu's uninstall command reaches Parc through a hook, and
+Parc subclasses Chromium's uninstall dialog, building the same model as the Views version. The crash
+the research expected in that funnel isn't reachable: nothing in Chromium calls its BrowserView overload.
 
 ## Browser integration boundaries
 

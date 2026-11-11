@@ -3,6 +3,8 @@
 #include <utility>
 
 #include "base/check.h"
+#include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
@@ -10,6 +12,7 @@
 #include "chrome/browser/tab_list/tab_list_interface_observer.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/views/extensions/security_dialog_tracker.h"
+#include "chrome/grit/generated_resources.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
@@ -19,19 +22,70 @@
 #import "extension_uninstall_presenter.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_registry_observer.h"
+#include "extensions/browser/ui_util.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "ui/base/base_window.h"
+#include "ui/base/interaction/element_identifier.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/dialog_model.h"
 #include "ui/base/models/dialog_model_field.h"
 #include "ui/base/models/dialog_model_host.h"
+#include "ui/base/models/image_model.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia_operations.h"
 #include "ui/strings/grit/ui_strings.h"
 #import "window_security_reservation.h"
 
 namespace parc {
+namespace {
+DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kCheckboxId);
+
+// Owns one context-menu uninstall, as Chromium's UninstallDialogHelper does.
+class UninstallFlow final
+    : public extensions::ExtensionUninstallDialog::Delegate {
+ public:
+  static void Begin(BrowserWindowInterface* browser,
+                    const extensions::Extension* extension) {
+    (new UninstallFlow)->Start(browser, extension);
+  }
+
+ private:
+  UninstallFlow() = default;
+  ~UninstallFlow() override = default;
+  void Start(BrowserWindowInterface* browser,
+             const extensions::Extension* extension) {
+    Profile* profile = browser->GetProfile();
+    gfx::NativeWindow parent = browser->GetWindow()->GetNativeWindow();
+    auto* service = NativeExtensionUninstallService::Get(
+        browser->GetUnownedUserDataHost());
+    if (!service) {
+      dialog_ =
+          extensions::ExtensionUninstallDialog::Create(profile, parent, this);
+      dialog_->ConfirmUninstall(
+          extension, extensions::UNINSTALL_REASON_USER_INITIATED,
+          extensions::UNINSTALL_SOURCE_TOOLBAR_CONTEXT_MENU);
+      return;
+    }
+    auto dialog = std::make_unique<NativeExtensionUninstallDialog>(
+        profile, parent, this, service->Capture(*extension));
+    auto* native = dialog.get();
+    dialog_ = std::move(dialog);
+    // May report, and so delete this, before returning.
+    native->Confirm(extension, extensions::UNINSTALL_REASON_USER_INITIATED,
+                    extensions::UNINSTALL_SOURCE_TOOLBAR_CONTEXT_MENU);
+  }
+  void OnExtensionUninstallDialogClosed(bool, const std::u16string&) override {
+    delete this;
+  }
+  std::unique_ptr<extensions::ExtensionUninstallDialog> dialog_;
+};
+}  // namespace
+
+DEFINE_USER_DATA(NativeExtensionUninstallService);
+
 class NativeExtensionUninstallService::Request final
-    : public extensions::ExtensionUninstallNativeBinding,
+    : public ExtensionUninstallNativeBinding,
       public ui::DialogModelHost,
       public ui::DialogModelFieldHost,
       public std::enable_shared_from_this<Request>,
@@ -431,7 +485,7 @@ bool NativeExtensionUninstallService::CanPresent(
   return request->Valid() &&
          !PCNativeWindowHasSecurityReservation(host_.PopupParentWindow());
 }
-std::shared_ptr<extensions::ExtensionUninstallNativeBinding>
+std::shared_ptr<ExtensionUninstallNativeBinding>
 NativeExtensionUninstallService::Capture(
     const extensions::Extension& extension) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -470,5 +524,121 @@ void NativeExtensionUninstallService::Shutdown() {
       request->Invalidate();
     }
   }
+}
+
+NativeExtensionUninstallDialog::NativeExtensionUninstallDialog(
+    Profile* profile,
+    gfx::NativeWindow parent,
+    Delegate* delegate,
+    std::shared_ptr<ExtensionUninstallNativeBinding> binding)
+    : ExtensionUninstallDialog(profile, parent, delegate),
+      binding_(std::move(binding)) {}
+NativeExtensionUninstallDialog::~NativeExtensionUninstallDialog() {
+  // A synchronous native close must not report from this destructor.
+  if (std::exchange(model_, nullptr)) {
+    binding_->Close();
+  }
+}
+void NativeExtensionUninstallDialog::Confirm(
+    const scoped_refptr<const extensions::Extension>& extension,
+    extensions::UninstallReason reason,
+    extensions::UninstallSource source) {
+  auto weak = weak_factory_.GetWeakPtr();
+  const bool armed = binding_->Arm(
+      base::BindRepeating(&NativeExtensionUninstallDialog::Close, weak));
+  if (!weak) {
+    return;
+  }
+  if (!armed) {
+    Report(CLOSE_ACTION_CANCELED);
+    return;
+  }
+  ConfirmUninstall(extension, reason, source);
+}
+// The same model as Chromium's ExtensionUninstallDialogImpl::Show.
+void NativeExtensionUninstallDialog::Show() {
+  // An icon can finish loading after a cancellation was reported.
+  if (reported_) {
+    return;
+  }
+  ui::DialogModel::Builder dialog_builder;
+  dialog_builder.SetInternalName("ExtensionUninstallDialog")
+      .SetTitle(l10n_util::GetStringFUTF16(
+          IDS_EXTENSION_PROMPT_UNINSTALL_TITLE,
+          extensions::ui_util::GetFixupExtensionNameForUIDisplay(
+              extension()->name())))
+      .OverrideShowCloseButton(false)
+      .SetDialogDestroyingCallback(
+          base::BindOnce(&NativeExtensionUninstallDialog::Closing,
+                         weak_factory_.GetWeakPtr()))
+      .SetIcon(ui::ImageModel::FromImageSkia(
+          gfx::ImageSkiaOperations::CreateResizedImage(
+              icon(), skia::ImageOperations::ResizeMethod::RESIZE_GOOD,
+              gfx::Size(extension_misc::EXTENSION_ICON_SMALL,
+                        extension_misc::EXTENSION_ICON_SMALL))))
+      .AddOkButton(base::BindOnce(&NativeExtensionUninstallDialog::Accepted,
+                                  weak_factory_.GetWeakPtr()),
+                   ui::DialogModel::Button::Params()
+                       .SetLabel(l10n_util::GetStringUTF16(
+                           IDS_EXTENSION_PROMPT_UNINSTALL_BUTTON))
+                       .SetId(kOkButtonElementId))
+      .AddCancelButton(
+          base::DoNothing() /* Cancel is covered by the destroying callback */,
+          ui::DialogModel::Button::Params().SetId(kCancelButtonElementId));
+  if (triggering_extension()) {
+    dialog_builder.AddParagraph(
+        ui::DialogModelLabel(
+            l10n_util::GetStringFUTF16(
+                IDS_EXTENSION_PROMPT_UNINSTALL_TRIGGERED_BY_EXTENSION,
+                extensions::ui_util::GetFixupExtensionNameForUIDisplay(
+                    triggering_extension()->name())))
+            .set_is_secondary()
+            .set_allow_character_break());
+  }
+  if (ShouldShowCheckbox()) {
+    std::u16string checkbox_label =
+        triggering_extension()
+            ? l10n_util::GetStringFUTF16(
+                  IDS_EXTENSION_PROMPT_UNINSTALL_REPORT_ABUSE_FROM_EXTENSION,
+                  extensions::ui_util::GetFixupExtensionNameForUIDisplay(
+                      extension()->name()))
+            : l10n_util::GetStringUTF16(
+                  IDS_EXTENSION_PROMPT_UNINSTALL_REPORT_ABUSE);
+    dialog_builder.AddCheckbox(kCheckboxId,
+                               ui::DialogModelLabel(checkbox_label));
+  }
+  std::unique_ptr<ui::DialogModel> model = dialog_builder.Build();
+  model_ = model.get();
+  binding_->Show(std::move(model));
+}
+void NativeExtensionUninstallDialog::Close() {
+  if (model_) {
+    binding_->Close();
+  } else if (!reported_) {
+    Report(CLOSE_ACTION_CANCELED);
+  }
+}
+void NativeExtensionUninstallDialog::Accepted() {
+  CHECK(model_);
+  const bool checked =
+      ShouldShowCheckbox() &&
+      model_->GetCheckboxByUniqueId(kCheckboxId)->is_checked();
+  model_ = nullptr;
+  Report(checked ? CLOSE_ACTION_UNINSTALL_AND_CHECKBOX_CHECKED
+                 : CLOSE_ACTION_UNINSTALL);
+}
+void NativeExtensionUninstallDialog::Closing() {
+  if (std::exchange(model_, nullptr)) {
+    Report(CLOSE_ACTION_CANCELED);
+  }
+}
+void NativeExtensionUninstallDialog::Report(CloseAction action) {
+  reported_ = true;
+  OnDialogClosed(action);
+}
+
+void BeginExtensionUninstall(BrowserWindowInterface* browser,
+                             const extensions::Extension* extension) {
+  UninstallFlow::Begin(browser, extension);
 }
 }  // namespace parc

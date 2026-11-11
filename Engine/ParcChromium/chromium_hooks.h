@@ -10,6 +10,7 @@
 #include "components/permissions/permission_prompt.h"
 #include "ui/base/resource/resource_bundle.h"
 
+class BrowserWindowInterface;
 class ChromeBrowserMainParts;
 class LoginHandler;
 class PrefRegistrySimple;
@@ -23,6 +24,7 @@ class FilePath;
 
 namespace extensions {
 class ComponentLoader;
+class Extension;
 }
 
 namespace gcm {
@@ -50,6 +52,12 @@ void SetWebPushFactory(std::unique_ptr<gcm::GCMClient> (*factory)());
 
 // content/browser/web_contents/web_contents_impl.cc
 void SetFrameFocusNotifier(void (*notifier)(content::WebContents*));
+
+// chrome/browser/extensions/extension_context_menu_model.cc
+using ExtensionUninstallHandler =
+    void (*)(BrowserWindowInterface* browser,
+             const extensions::Extension* extension);
+void SetExtensionUninstallHandler(ExtensionUninstallHandler handler);
 
 // chrome/browser/ui/login/login_handler.cc
 void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));

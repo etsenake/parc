@@ -26,11 +26,7 @@ NATIVE = (
     ("tests/NativeExtensionUninstall/uninstall_browsertest.mm",
      "uninstall_browser_tests"),
 )
-UPSTREAM = (
-    "chrome/browser/extensions/extension_context_menu_model.cc",
-    "chrome/browser/extensions/extension_uninstall_dialog.cc",
-    "chrome/browser/ui/extensions/extension_uninstall_dialog_impl.cc",
-)
+UPSTREAM = ("chrome/browser/extensions/extension_context_menu_model.cc",)
 RULE_PREFIX = (
     "../../third_party/llvm-build/Release+Asserts/bin/clang++ "
     "-MMD -MF ${target_out_dir}/${label_name}/${source_name_part}.o.d "
@@ -167,7 +163,7 @@ def main():
 
     # Discover the exact CXX owner rather than borrowing a nearby target's flags.
     owners = {target: [] for target in UPSTREAM}
-    for folder in ("obj/chrome/browser/extensions", "obj/chrome/browser/ui/extensions"):
+    for folder in ("obj/chrome/browser/extensions",):
         for flags_file in sorted((build / folder).rglob("*.ninja")):
             for target in UPSTREAM:
                 if contains_object(flags_file, "cxx", target):

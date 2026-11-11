@@ -31,6 +31,7 @@
 #include "parc/internal_extension_manifest.h"
 #include "parc/page_preferences.h"
 #include "parc/web_push.h"
+#include "parc/native/extension_uninstall.h"
 #include "parc/native/file_dialog.h"
 #include "parc/native/http_auth.h"
 #include "parc/native/native_appkit_host.h"
@@ -79,6 +80,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
     // Before any page exists.
     parc_hooks::SetPermissionPromptFactory(&CreateSitePermissionPrompt);
     parc_hooks::SetLoginHandlerAuthValidator(&ValidateNativeLoginHandlerAuth);
+    parc_hooks::SetExtensionUninstallHandler(&BeginExtensionUninstall);
     RegisterNativeFileDialogs();
     RegisterLicenseWebUI();
   }

@@ -13,7 +13,6 @@
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/task/single_thread_task_runner.h"
-#include "chrome/browser/extensions/extension_uninstall_native_host.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/tab_list/tab_list_interface_observer.h"
@@ -28,6 +27,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "extension_action_container.h"
 #include "extension_security_context.h"
+#include "extension_uninstall.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_registry_observer.h"
 #include "extensions/common/extension.h"
@@ -343,7 +343,7 @@ class NativeExtensionContextMenu::Session final
   NSString* UnavailableReason(int command) const {
     if (command == extensions::ExtensionContextMenuModel::UNINSTALL &&
         browser_ && extension_) {
-      auto* host = extensions::ExtensionUninstallNativeHost::Get(
+      auto* host = NativeExtensionUninstallService::Get(
           browser_->GetUnownedUserDataHost());
       if (host && host->CanPresent(*extension_)) {
         return nil;

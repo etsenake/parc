@@ -31,6 +31,10 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 #import "window_security_reservation.h"
+namespace parc_hooks {
+void SetExtensionUninstallHandler(void (*)(BrowserWindowInterface*,
+                                           const extensions::Extension*));
+}
 namespace parc {
 namespace {
 DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kReportCheckbox);
@@ -96,6 +100,7 @@ class NativeExtensionUninstallTest
  protected:
   void SetUpOnMainThread() override {
     extensions::ExtensionApiTest::SetUpOnMainThread();
+    parc_hooks::SetExtensionUninstallHandler(&BeginExtensionUninstall);
     window_ = browser()->GetWindow()->GetNativeWindow().GetNativeNSWindow();
     [window_ orderFront:nil];
     host_ = std::make_unique<Host>(window_);
@@ -124,12 +129,13 @@ class NativeExtensionUninstallTest
   }
   void Confirm() {
     binding_ = service_->Capture(*extension_);
-    dialog_ = extensions::ExtensionUninstallDialog::Create(
+    auto dialog = std::make_unique<NativeExtensionUninstallDialog>(
         browser()->GetProfile(), browser()->GetWindow()->GetNativeWindow(),
         this, binding_);
-    dialog_->ConfirmUninstall(
-        extension_, extensions::UNINSTALL_REASON_USER_INITIATED,
-        extensions::UNINSTALL_SOURCE_TOOLBAR_CONTEXT_MENU);
+    auto* native = dialog.get();
+    dialog_ = std::move(dialog);
+    native->Confirm(extension_, extensions::UNINSTALL_REASON_USER_INITIATED,
+                    extensions::UNINSTALL_SOURCE_TOOLBAR_CONTEXT_MENU);
   }
   bool Presenting() const {
     return window_.attachedSheet && window_.attachedSheet.visible;
@@ -150,7 +156,7 @@ class NativeExtensionUninstallTest
   NSWindow* __weak window_;
   std::unique_ptr<Host> host_;
   std::unique_ptr<NativeExtensionUninstallService> service_;
-  std::shared_ptr<extensions::ExtensionUninstallNativeBinding> binding_;
+  std::shared_ptr<ExtensionUninstallNativeBinding> binding_;
   std::unique_ptr<extensions::ExtensionUninstallDialog> dialog_;
   extensions::TestExtensionDir fixture_;
   scoped_refptr<const extensions::Extension> extension_;
