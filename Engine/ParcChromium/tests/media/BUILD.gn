@@ -16,6 +16,7 @@ source_set("media_tests") {
     "mp4_stream_parser_test.cc",
     "pipeline_impl_test.cc",
     "renderer_controller_test.cc",
+    "renderer_impl_test.cc",
     "stream_parser_factory_test.cc",
     "video_decoder_config_mojom_traits_test.cc",
     "video_renderer_impl_test.cc",
