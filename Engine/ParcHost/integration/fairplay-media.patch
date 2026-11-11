@@ -10609,319 +10609,6 @@
      if (HasVideoCapability(mojom::RemotingSinkVideoCapability::SUPPORT_4K)) {
        return PixelRateSupport::k4kSupported;
      } else {
---- a/media/remoting/renderer_controller_unittest.cc
-+++ b/media/remoting/renderer_controller_unittest.cc
-@@ -18,6 +18,8 @@
- #include "media/base/test_helpers.h"
- #include "media/base/video_decoder_config.h"
- #include "media/remoting/fake_remoter.h"
-+#include "mojo/public/cpp/bindings/receiver.h"
-+#include "mojo/public/cpp/bindings/remote.h"
- #include "testing/gtest/include/gtest/gtest.h"
--
-+
- namespace media {
-@@ -92,6 +94,10 @@
--
-+
-   void UpdateRemotePlaybackCompatibility(bool is_compatible) override {
-     is_remote_playback_compatible_ = is_compatible;
-+  }
-+
-+  void ParcCastRequestChanged(bool requested) override {
-+    cast_requested_ = requested;
-   }
--
-+
-   void set_pixels_per_second_(double pixels) {
-@@ -152,6 +158,7 @@
-   bool is_rendering_remotely_ = false;
-   bool disable_pipeline_suspend_ = false;
-   bool is_remote_playback_compatible_ = false;
-+  bool cast_requested_ = false;
-   size_t decoded_bytes_ = 0;
-   unsigned decoded_frames_ = 0;
-   base::SimpleTestTickClock clock_;
-@@ -410,11 +417,185 @@
-   ExpectInRemoting();
--
-+
-   // Freezing should kick rendering back to local.
-+  controller_->OnFrozen();
-+  RunUntilIdle();
-+  ExpectInLocalRendering();
-+}
-+
-+TEST_F(RendererControllerTest, ParcOnFrozenKeepsRequestedRemoting) {
-+  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8),
-+                               GetDefaultSinkMetadata(false));
-+  controller_->OnMediaRemotingRequested();
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+
-+  controller_->OnPaused();
-+  controller_->OnFrozen();
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+
-+  controller_->OnPlaying();
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+}
-+
-+TEST_F(RendererControllerTest, ParcRequestEndsWithItsUnstartedSession) {
-+  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
-+  // Playing, the element measures its pixel rate before it starts remoting:
-+  // the requested session comes and times out first.
-+  set_pixels_per_second_(0);
-+  decoded_frames_ = 0;
-+  controller_->OnMediaRemotingRequested();
-+  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
-+  controller_->OnSinkGone();
-+  RunUntilIdle();
-+
-+  // A later tab mirroring session remotes only the dominant video, and hands
-+  // the receiver back to the tab when the page freezes.
-+  controller_->OnSinkAvailable(GetDefaultSinkMetadata(true));
-+  controller_->OnPlaying();
-+  RunUntilIdle();
-+  PixelRateTimerEnds();
-+  RunUntilIdle();
-+  ExpectInLocalRendering();
-+
-+  controller_->OnBecameDominantVisibleContent(true);
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+  controller_->OnPaused();
-   controller_->OnFrozen();
-+  RunUntilIdle();
-+  ExpectInLocalRendering();
-+}
-+
-+TEST_F(RendererControllerTest, ParcRequestedSessionStartsOnFrozenElement) {
-+  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
-+  controller_->OnMediaRemotingRequested();
-+  // The page is left before the requested session comes.
-+  controller_->OnPaused();
-+  controller_->OnFrozen();
-+  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+}
-+
-+TEST_F(RendererControllerTest, ParcRequestedSessionStartsBeforePixelRate) {
-+  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
-+  // The element played for less than the pixel rate's measurement.
-+  set_pixels_per_second_(0);
-+  controller_->OnMediaRemotingRequested();
-+  controller_->OnPaused();
-+  controller_->OnFrozen();
-+  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+}
-+
-+TEST_F(RendererControllerTest, ParcRequestedSessionStartsWhenPausedMeasuring) {
-+  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
-+  set_pixels_per_second_(0);
-+  controller_->OnMediaRemotingRequested();
-+  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
-+  RunUntilIdle();
-+  ExpectInLocalRendering();
-+
-+  // The page is left before the pixel rate's measurement ends.
-+  controller_->OnPaused();
-+  controller_->OnFrozen();
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+}
-+
-+TEST_F(RendererControllerTest, ParcUnmeasuredRequestKeepsSinkPixelRateLimit) {
-+  PipelineMetadata metadata = DefaultMetadata(VideoCodec::kVP8);
-+  metadata.natural_size = gfx::Size(3840, 2160);
-+  InitializeControllerWithSink(metadata, nullptr);
-+  set_pixels_per_second_(0);
-+  controller_->OnMediaRemotingRequested();
-+  controller_->OnPaused();
-+  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
-+  RunUntilIdle();
-+  ExpectInLocalRendering();
-+}
-+
-+TEST_F(RendererControllerTest, ParcUnrequestedRemotingWaitsForPixelRate) {
-+  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8),
-+                               GetDefaultSinkMetadata(true));
-+  set_pixels_per_second_(0);
-+  decoded_frames_ = 0;
-+  controller_->OnBecameDominantVisibleContent(true);
-+  RunUntilIdle();
-+  ExpectInLocalRendering();
-+
-+  PixelRateTimerEnds();
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+}
-+
-+// Parc: the client hears of a request while it connects and casts, and when
-+// remoting stops.
-+TEST_F(RendererControllerTest, ParcCastRequestHeldWhileConnecting) {
-+  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
-+  controller_->OnMediaRemotingRequested();
-+  RunUntilIdle();
-+  EXPECT_TRUE(cast_requested_);
-+  ExpectInLocalRendering();
-+
-+  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+  EXPECT_TRUE(cast_requested_);
-+
-+  controller_->OnStopped(mojom::RemotingStopReason::ROUTE_TERMINATED);
-   RunUntilIdle();
-+  EXPECT_FALSE(cast_requested_);
-+}
-+
-+TEST_F(RendererControllerTest, ParcCastRequestEndsWhenStartFails) {
-+  controller_ = FakeRemoterFactory::CreateController(true);
-+  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
-+  controller_->OnMediaRemotingRequested();
-+  EXPECT_TRUE(cast_requested_);
-+  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
-+  RunUntilIdle();
-   ExpectInLocalRendering();
-+  EXPECT_FALSE(cast_requested_);
- }
--
-+
-+TEST_F(RendererControllerTest, ParcCastRequestEndsWithItsUnstartedSession) {
-+  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
-+  set_pixels_per_second_(0);
-+  decoded_frames_ = 0;
-+  controller_->OnMediaRemotingRequested();
-+  controller_->OnSinkAvailable(GetDefaultSinkMetadata(false));
-+  EXPECT_TRUE(cast_requested_);
-+  controller_->OnSinkGone();
-+  EXPECT_FALSE(cast_requested_);
-+}
-+
-+TEST_F(RendererControllerTest, ParcCastRequestEndsWhenRemotingStops) {
-+  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8),
-+                               GetDefaultSinkMetadata(false));
-+  controller_->OnMediaRemotingRequested();
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+  EXPECT_TRUE(cast_requested_);
-+
-+  controller_->OnRemotePlaybackDisabled(true);
-+  RunUntilIdle();
-+  ExpectInLocalRendering();
-+  EXPECT_FALSE(cast_requested_);
-+}
-+
-+// Remoting a mirrored tab's dominant video is no request.
-+TEST_F(RendererControllerTest, ParcDominantRemotingIsNoCastRequest) {
-+  InitializeControllerAndBecomeDominant(DefaultMetadata(VideoCodec::kVP8),
-+                                        GetDefaultSinkMetadata(true));
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+  EXPECT_FALSE(cast_requested_);
-+}
-+
- #if BUILDFLAG(IS_ANDROID)
- TEST_F(RendererControllerTest, RemotePlaybackHlsCompatibility) {
-   controller_ = FakeRemoterFactory::CreateController(true);
-@@ -434,5 +615,90 @@
- }
- #endif
--
-+
-+namespace {
-+
-+// Parc: the remoting bridge of the tab a Safari-identity page moved a player
-+// to.
-+class ParcNewTabRemoter final : public mojom::Remoter {
-+ public:
-+  explicit ParcNewTabRemoter(mojo::PendingRemote<mojom::RemotingSource> source)
-+      : source_(std::move(source)) {}
-+
-+  void Start() final {
-+    ++starts_;
-+    source_->OnStarted();
-+  }
-+  void StartWithPermissionAlreadyGranted() final { Start(); }
-+  void StartDataStreams(mojo::ScopedDataPipeConsumerHandle audio_pipe,
-+                        mojo::ScopedDataPipeConsumerHandle video_pipe,
-+                        mojo::PendingReceiver<mojom::RemotingDataStreamSender>
-+                            audio_sender_receiver,
-+                        mojo::PendingReceiver<mojom::RemotingDataStreamSender>
-+                            video_sender_receiver) final {}
-+  void Stop(mojom::RemotingStopReason reason) final { ++stops_; }
-+  void SendMessageToSink(const std::vector<uint8_t>& message) final {}
-+
-+  mojo::Remote<mojom::RemotingSource> source_;
-+  int starts_ = 0;
-+  int stops_ = 0;
-+};
-+
-+}  // namespace
-+
-+// Parc: a moved player's session goes on through the tab that started it, and
-+// once it ends the player remotes through its new tab's sink alone.
-+TEST_F(RendererControllerTest, ParcMovedPlayerRemotesThroughItsNewTab) {
-+  InitializeControllerAndBecomeDominant(DefaultMetadata(VideoCodec::kVP8),
-+                                        GetDefaultSinkMetadata(true));
-+  ExpectInRemoting();
-+
-+  mojo::PendingRemote<mojom::RemotingSource> source;
-+  auto source_receiver = source.InitWithNewPipeAndPassReceiver();
-+  ParcNewTabRemoter new_tab(std::move(source));
-+  mojo::Receiver<mojom::Remoter> new_tab_receiver(&new_tab);
-+  controller_->ParcMoveToRemoter(std::move(source_receiver),
-+                                 new_tab_receiver.BindNewPipeAndPassRemote());
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+
-+  controller_->OnBecameDominantVisibleContent(false);
-+  RunUntilIdle();
-+  ExpectInLocalRendering();
-+  controller_->OnBecameDominantVisibleContent(true);
-+  RunUntilIdle();
-+  ExpectInLocalRendering();
-+  EXPECT_EQ(0, new_tab.starts_);
-+  EXPECT_EQ(0, new_tab.stops_);
-+
-+  new_tab.source_->OnSinkAvailable(GetDefaultSinkMetadata(true));
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+  EXPECT_EQ(1, new_tab.starts_);
-+}
-+
-+// Parc: a request through the tab a player moved from goes with that tab's
-+// sink, so the player then remotes through its new tab.
-+TEST_F(RendererControllerTest, ParcMovedPlayerDropsTheOldTabsRequest) {
-+  InitializeControllerWithSink(DefaultMetadata(VideoCodec::kVP8), nullptr);
-+  controller_->OnMediaRemotingRequested();
-+  RunUntilIdle();
-+  ExpectInLocalRendering();
-+
-+  mojo::PendingRemote<mojom::RemotingSource> source;
-+  auto source_receiver = source.InitWithNewPipeAndPassReceiver();
-+  ParcNewTabRemoter new_tab(std::move(source));
-+  mojo::Receiver<mojom::Remoter> new_tab_receiver(&new_tab);
-+  controller_->ParcMoveToRemoter(std::move(source_receiver),
-+                                 new_tab_receiver.BindNewPipeAndPassRemote());
-+  controller_->OnSinkGone();
-+  RunUntilIdle();
-+
-+  controller_->OnBecameDominantVisibleContent(true);
-+  new_tab.source_->OnSinkAvailable(GetDefaultSinkMetadata(true));
-+  RunUntilIdle();
-+  ExpectInRemoting();
-+  EXPECT_EQ(1, new_tab.starts_);
-+}
-+
- }  // namespace remoting
- }  // namespace media
 --- a/content/browser/back_forward_cache/back_forward_cache_impl_unittest.cc
 +++ b/content/browser/back_forward_cache/back_forward_cache_impl_unittest.cc
 @@ -7,9 +7,14 @@
@@ -11101,7 +10788,7 @@
 +
 --- a/media/remoting/renderer_controller.h
 +++ b/media/remoting/renderer_controller.h
-@@ -106,7 +106,16 @@
+@@ -106,7 +106,17 @@
    // tab.
    void OnRendererFatalError(StopTrigger stop_trigger);
 -
@@ -11117,10 +10804,11 @@
 +  void ParcMaybeTakeMovedRemoter();
 +
    friend class RendererControllerTest;
++  friend class ParcRendererControllerTest;
 -
 +
    bool has_audio() const {
-@@ -145,6 +154,10 @@
+@@ -145,6 +155,10 @@
    void UpdateAndMaybeSwitch(StartTrigger start_trigger,
                              StopTrigger stop_trigger);
 -
@@ -11132,7 +10820,7 @@
    // Activates or deactivates the remote playback monitoring based on whether
    // the element is compatible with Remote Playback API.
    void UpdateRemotePlaybackAvailabilityMonitoringState();
-@@ -160,7 +173,7 @@
+@@ -160,7 +174,7 @@
    void MaybeStartCalculatePixelRateTimer();
    void DoCalculatePixelRate(int decoded_frame_count_before_delay,
                              base::TimeTicks delayed_start_time);
@@ -11142,7 +10830,7 @@
 +
    // Callback from RpcMessenger when sending message to remote sink.
    void SendMessageToSink(std::vector<uint8_t> message);
-@@ -176,8 +189,11 @@
+@@ -176,8 +190,11 @@
    openscreen::cast::RpcMessenger rpc_messenger_;
  #endif
 -
@@ -11158,7 +10846,7 @@
 +
    // When the sink is available for remoting, this describes its metadata. When
    // not available, this is empty. Updated by OnSinkAvailable/Gone().
-@@ -228,6 +244,11 @@
+@@ -228,6 +245,11 @@
    // local rendering.
    bool is_media_remoting_requested_ = false;
 -
