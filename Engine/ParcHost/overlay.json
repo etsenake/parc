@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 676,
+  "version": 677,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -1074,7 +1074,7 @@
     {
       "source": "Engine/ParcNative/native_shortcuts.mm",
       "target": "parc/native/native_shortcuts.mm",
-      "sha256": "5e578eb07ffab7c1e4423d1635fb454ed05c5a0b19324bff95eff7580418625a"
+      "sha256": "38c001cc80ddd921e080ffa606854d92ec6c8f21efc48715fd4d24015bbe43a3"
     },
     {
       "source": "Engine/ParcNative/native_tab_preview.h",
@@ -2029,12 +2029,12 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "9688cd1414da1d04d8b97ec1ffe93fb4d50cd98aee20d5fe00f8991265d1ade1"
+      "sha256": "cd1c1c74d356cb680b174bf6852afe67649b237897d799da35a12288209516b8"
     },
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "1e70a8f44c7cf63e2eb27ca394f3024bde5dd94f525f2f397285a416e72fc396"
+      "sha256": "bdc20751735cfe78c8667f47e35bde760f43ebd6230a8ac4f412234288ab4ec9"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2079,7 +2079,7 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.cc",
       "target": "parc/parc_content_clients.cc",
-      "sha256": "9c767e9f3edd8b608917b42538b5088d985764a2e73eab100101a99f4e8a9880"
+      "sha256": "e377b74ba38b9f2ed2c00f598fda4bc8cb8ccab19a49382f3d0bdedc3da7d54e"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",
@@ -2120,6 +2120,16 @@
       "source": "Engine/ParcNative/native_profile_policy.h",
       "target": "parc/native/native_profile_policy.h",
       "sha256": "0fcfb38fade87ce21dd6a8c173cca2bec7f4d18546e04e9cc8f72d801157eb05"
+    },
+    {
+      "source": "Engine/ParcChromium/frame_focus.h",
+      "target": "parc/frame_focus.h",
+      "sha256": "64c93e20d588c29f747283bf1256e3bfac285fc896a6fa3070b9287fb7b2cb82"
+    },
+    {
+      "source": "Engine/ParcChromium/frame_focus.cc",
+      "target": "parc/frame_focus.cc",
+      "sha256": "f5e8038b19b1ef0faac92d4b49153d314206c75e8eeb2ec483c8c0c3bd146515"
     }
   ],
   "patches": [
@@ -5647,17 +5657,6 @@
       ]
     },
     {
-      "source": "Engine/ParcHost/integration/native-frame-focus-overlay.patch",
-      "sha256": "a6f472bacfb1e854ff420fc72236e23dc0154733ca62dc546b45c6060bf42de1",
-      "files": [
-        {
-          "target": "content/public/browser/web_contents_observer.h",
-          "before_sha256": "bbb2264ec451a7efddd8961074fecd25a5c695b48513f144761d6d2c3d866119",
-          "after_sha256": "c079c8ad40fb4f1835fe60ee25161c05bcdeafa9cb3583add034f7bcf231884f"
-        }
-      ]
-    },
-    {
       "source": "Engine/ParcHost/integration/native-signin-disabled-direct.patch",
       "sha256": "bd75f0a5e4f6978cac3de689dd8167d26de7c5d1c380da6cfdba1b9a1a6419c2",
       "files": [
@@ -6333,12 +6332,12 @@
     },
     {
       "source": "Engine/ParcHost/integration/chromium-direct-shared.patch",
-      "sha256": "d27ad8055cc75014fe86d08c70f5a6fdc3d06390338223b3d60e5d3257d256f1",
+      "sha256": "65fa9a6604b5c4fa6341fb10b208d4d31f038573c5e053b49285f90ee5d84917",
       "files": [
         {
           "target": "content/browser/web_contents/web_contents_impl.cc",
           "before_sha256": "debf4bbfb70d0339256b39bf5b4221f9055eda8077c42b91eaa05b323516246f",
-          "after_sha256": "09187733d6818ff11fcd354e67d9dce74321bc0cd9d384774b0cd9add4221139"
+          "after_sha256": "5c6d71e3f0182555524b193590b90be8e187c3fff5629f596dd39ac624c631e7"
         },
         {
           "target": "chrome/browser/devtools/devtools_window_views.cc",
