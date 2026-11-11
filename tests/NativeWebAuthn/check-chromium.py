@@ -29,8 +29,6 @@ UPSTREAM = (
      "obj/chrome/browser/ui/views/webauthn/webauthn.ninja"),
     ("chrome/browser/ui/views/webauthn/authenticator_request_dialog_view.cc",
      "obj/chrome/browser/ui/views/webauthn/webauthn.ninja"),
-    ("chrome/browser/webauthn/authenticator_request_scheduler.cc",
-     "obj/chrome/browser/webauthn/impl.ninja"),
     ("chrome/browser/webauthn/chrome_authenticator_request_delegate.cc",
      "obj/chrome/browser/webauthn/impl.ninja"),
 )

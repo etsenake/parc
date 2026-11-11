@@ -8,8 +8,9 @@ The current Chromium adaptation changes only registered native pages. It preserv
 
 The production page delegate installs the WebAuthn context when it creates a
 page, admits presentation on exact native attachment, and cancels on detachment.
-The overlay connects Chromium's scheduler, dialog factory, platform-window
-selection and request callbacks to that context. Its GN target is linked into
+Parc's browser client creates each request through Chromium's scheduler and
+tells that context about it. The overlay connects Chromium's dialog factory,
+platform-window selection and request callbacks to the same context. Its GN target is linked into
 the Chromium native route; the request tests join Chromium's unit-test target.
 
 Ambient sign-in, standalone `WINDOW` recovery and non-request settings/change-PIN

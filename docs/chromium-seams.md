@@ -259,6 +259,12 @@ only see afterwards. Parc also still hosts Chromium's Views certificate list, so
 exposed. The picture-in-picture occlusion registry and build dependency that rode in the open-in-app and
 certificate-viewer patches stay there for their owner.
 
+WebAuthn request creation moved to Parc's browser client, which tells the page's native context about
+each request Chromium's scheduler makes. The rest of the WebAuthn patch stays. Its call sites ask
+an opt-in page context and otherwise run Chromium's own dialog, ambient bubble and recovery window
+unchanged. Final-answer hooks would make Parc rebuild those for every other page, and the recovery
+window holds a typed lease object inside Chromium's window class.
+
 ## Browser integration boundaries
 
 Page preference state and frame-focus subscriptions belong to Parc. The top-band

@@ -26,6 +26,7 @@
 #include "chrome/browser/ui/views/webauthn/sheet_view_factory.h"
 #include "chrome/browser/ui/webauthn/authenticator_request_dialog_view_controller.h"
 #include "chrome/browser/webauthn/authenticator_request_dialog_model.h"
+#include "chrome/browser/webauthn/authenticator_request_scheduler.h"
 #include "chrome/browser/webauthn/chrome_authenticator_request_delegate.h"
 #include "chrome/browser/webauthn/native_authenticator_request_context.h"
 #include "components/tabs/public/tab_interface.h"
@@ -870,6 +871,19 @@ std::unique_ptr<AuthenticatorRequestDialogViewController> Context::CreateDialog(
   return std::make_unique<Controller>(model, guard);
 }
 }  // namespace
+std::unique_ptr<ChromeAuthenticatorRequestDelegate>
+CreateWebAuthenticationRequestDelegate(
+    content::RenderFrameHost* render_frame_host) {
+  auto request =
+      AuthenticatorRequestScheduler::CreateRequestDelegate(render_frame_host);
+  if (request) {
+    if (auto* native = NativeAuthenticatorRequestContext::Get(
+            content::WebContents::FromRenderFrameHost(render_frame_host))) {
+      native->Created(*render_frame_host, request->AsWeakPtr());
+    }
+  }
+  return request;
+}
 void InstallNativeWebAuthn(content::WebContents& contents) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!NativeAuthenticatorRequestContext::Get(&contents)) {

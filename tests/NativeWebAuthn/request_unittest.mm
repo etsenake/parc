@@ -114,7 +114,7 @@ class NativeWebAuthnTest : public BrowserWithTestWindowTest {
         contents());
   }
   void Create(bool ready = true) {
-    request_ = AuthenticatorRequestScheduler::CreateRequestDelegate(
+    request_ = CreateWebAuthenticationRequestDelegate(
         contents()->GetPrimaryMainFrame());
     ASSERT_TRUE(request_);
     request_->SetRelyingPartyId("webauthn.example");

@@ -287,6 +287,7 @@ source_set("browser") {
     "//chrome/browser/ui/views/media_router",
     "//chrome/browser/ui/login",
     "//chrome/browser/ui/views/tab_sharing",
+    "//chrome/browser/webauthn",
     "//chrome/common:mojo_bindings",
     "//chrome/renderer:process_state",
     "//parc/importer:interfaces",

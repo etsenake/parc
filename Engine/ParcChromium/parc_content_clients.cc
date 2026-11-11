@@ -14,6 +14,7 @@
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/ui/login/http_auth_coordinator.h"
 #include "chrome/browser/chrome_browser_main.h"
+#include "chrome/browser/webauthn/chrome_authenticator_request_delegate.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/renderer/process_state.h"
 #include "content/browser/media/parc_video_toolbox_decoding.h"
@@ -45,6 +46,7 @@
 #include "parc/native/sad_tab.h"
 #include "parc/native/site_permissions.h"
 #include "parc/native/video_overlay_window.h"
+#include "parc/native/webauthn.h"
 #include "parc/parc_bundle_mac.h"
 #include "parc/parc_branding.h"
 #include "parc/renderer/website_theme_agent.h"
@@ -246,6 +248,12 @@ ParcContentBrowserClient::CreateWindowForVideoPictureInPicture(
   }
   return ChromeContentBrowserClient::CreateWindowForVideoPictureInPicture(
       controller);
+}
+
+std::unique_ptr<content::AuthenticatorRequestClientDelegate>
+ParcContentBrowserClient::GetWebAuthenticationRequestDelegate(
+    content::RenderFrameHost* render_frame_host) {
+  return CreateWebAuthenticationRequestDelegate(render_frame_host);
 }
 
 void ParcContentRendererClient::RenderFrameCreated(
