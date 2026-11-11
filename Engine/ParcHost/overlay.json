@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 672,
+  "version": 673,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -454,7 +454,7 @@
     {
       "source": "Engine/ParcNative/site_permissions.mm",
       "target": "parc/native/site_permissions.mm",
-      "sha256": "bba0efd9b71e46828e69e1212b9c0f69f7df0e9ebd07b27178da523576fdcfa3"
+      "sha256": "6cfc489b9ccfc7787137683e227028ff85f794366074f5d7e41858baae050a31"
     },
     {
       "source": "tests/NativeSitePermissions/BUILD.gn",

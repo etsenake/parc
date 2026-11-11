@@ -126,6 +126,9 @@ then never accepts, so a page cannot time a dialog under a keystroke. An input
 method composing in the field keeps Return and Escape. A plain alert still has
 only OK and ignores Escape.
 
+The notifications-permission sheet (**Open System Preferences**, or **Never
+Mind** with Escape) uses the same dialog.
+
 JavaScript prompts offer **Don't show this again** from the sixth page dialog.
 Suppression returns the native cancellation result; primary-page change resets
 count and block. Programmatic handling does not pretend the checkbox was shown.
