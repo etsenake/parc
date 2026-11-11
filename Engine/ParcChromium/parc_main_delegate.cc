@@ -25,6 +25,7 @@
 #include "content/public/common/content_switches.h"
 #include "parc/chromium_hooks.h"
 #include "parc/native/native_appkit_host.h"
+#include "parc/native/native_background_picture_in_picture_api.h"
 #include "parc/native/native_browser.h"
 #include "parc/native/native_internal_urls.h"
 #include "parc/native/native_profile_policy.h"
@@ -102,6 +103,8 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
   parc_hooks::SetAddTabTransition(&NativeAddTabTransition);
   parc_hooks::SetTabUIUpdateGate(&NativeTabUIUpdateAllowed);
   parc_hooks::SetEmptyTabColorProvider(&NativeEmptyTabColorProvider);
+  parc_hooks::SetAutoPictureInPictureVisibilitySync(
+      &SynchronizeAutoPictureInPictureVisibility);
   parc_hooks::SetDevToolsBrowserCreator(&CreateBrowserWindowFrom);
   parc_hooks::SetNativeBrowserWindowFactory(&NativeBrowser::CreateWindow);
   parc_hooks::SetNativeBrowserWindowFeatures(

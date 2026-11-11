@@ -84,33 +84,21 @@ Browser, window and startup covers 28 patches: 5 SEAM, 12 HOOK and 11 STAY. Chro
 construction, its private startup stages and its deletion rules can't be overridden, so they keep small
 `.cc` hooks rather than observers. Observers would run too late to guard native deletion. The 11 STAY patches
 are genuine Chromium fixes, build dependencies, Keychain naming, and three behaviours with no lossless
-replacement yet:
-- atomic browser import;
-- native link transport;
-- one fullscreen failure transition.
+replacement yet: atomic browser import, native link transport and one fullscreen failure transition.
 
 Media covers about 24,150 product lines. About 2,100 leave Chromium files through seams, about 8,900 move
 into Parc files behind hooks or accessors, and about 13,000 stay as patches, mostly hooks and state
 machines (all ±20%). About 10,000 of its 15,335 upstream test lines can follow into Parc test files. A
 Parc-owned media player is rejected. Chromium picks the player once, from the URL, before any CDM
-exists, so a separate player would mean forking WebMediaPlayerImpl. What stays patched has no seam:
-- the HTMLMediaElement algorithm steps, though their state moves to a supplement;
-- Media Source gap bridging and late SourceBuffers;
-- format support in the parsers and the AudioToolbox decoder;
-- reverse playback and audio mixing in the renderers;
-- the CALayer compositing core;
-- the EME enums;
-- the Cast device dialog.
+exists, so a separate player would mean forking WebMediaPlayerImpl. What stays patched has no seam: the
+HTMLMediaElement algorithm steps (their state moves to a supplement), Media Source gap bridging and late
+SourceBuffers, format support in the parsers and the AudioToolbox decoder, reverse playback and audio
+mixing in the renderers, the CALayer compositing core, the EME enums and the Cast device dialog.
 
-These widely included headers leave:
-- `execution_context.h`, `element.h`, `node_rare_data.h` and `page.h`;
-- `web_preferences.h` and its mojom;
-- the local-frame clients;
-- the `html_names`/`event_type_names` regeneration;
-- the renderer-factory struct;
-- the four FairPlay mojoms;
-- the overlay-window and picture-in-picture interfaces;
-- the stable media-session mojoms.
+These widely included headers leave: `execution_context.h`, `element.h`, `node_rare_data.h` and
+`page.h`; `web_preferences.h` and its mojom; the local-frame clients; the `html_names`/`event_type_names`
+regeneration; the renderer-factory struct; the four FairPlay mojoms; the overlay-window and
+picture-in-picture interfaces; and the stable media-session mojoms.
 
 Build and tests: Parc-owned build targets per subsystem, owned test targets for the 53 upstream test files,
 and a shared compile cache. Chromium's build tool can use the NativeLink server on the second Mac as a cache
@@ -483,6 +471,11 @@ copy-request and nested-pass handling, black capture fallbacks, Picture in
 Picture ownership and `preventsCapture`. Renderer window planning and mixing
 arithmetic remain patched until that separate move ships with a real playback
 check.
+
+Automatic picture in picture keeps its tab-helper patch: Chromium's occlusion helper exists only behind an
+off flag, merges the shell's and the page's states that Parc keeps apart, and goes quiet while not
+observing, and entry's wait for the renderer's hidden acknowledgement starts and is cancelled at seven
+private points. Only that acknowledgement is a hook.
 
 ## Decisions
 

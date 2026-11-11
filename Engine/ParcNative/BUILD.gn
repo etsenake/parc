@@ -58,8 +58,8 @@ source_set("native_video_pip_api") {
   sources = public
 }
 
-# Lifecycle acknowledgement is implemented in //parc:browser, without a dependency
-# from Chrome back to //parc:browser.
+# Implemented in //parc:browser. Chrome's auto-PiP helper reaches the lifecycle
+# acknowledgement through a hook, so nothing in Chrome depends on this target.
 source_set("native_background_picture_in_picture_api") {
   public = [
     "native_background_picture_in_picture.h",

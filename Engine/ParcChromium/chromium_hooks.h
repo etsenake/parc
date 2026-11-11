@@ -311,6 +311,12 @@ void SetTabUIUpdateGate(
 // tab_strip_model_adapter_impl.cc. Native Browsers can genuinely be empty.
 void SetEmptyTabColorProvider(const ui::ColorProvider* (*provider)());
 
+// chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc.
+// Automatic entry waits for the renderer to acknowledge the page is hidden;
+// unhooked builds enter at once, as Chromium does.
+void SetAutoPictureInPictureVisibilitySync(
+    void (*sync)(content::WebContents*, base::OnceCallback<void(bool)>));
+
 // chrome/browser/ui/views/frame/browser_window_factory.cc; a null window keeps
 // Chrome's.
 void SetNativeBrowserWindowFactory(
