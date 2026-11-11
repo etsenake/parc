@@ -23,7 +23,10 @@ bash tests/NativeJavaScriptDialogs/run.sh
 ```
 
 The suite compiles source against real AppKit and opens offscreen test windows.
-title, accessory stack and suppression reporting, Unicode prompt entry, nil versus empty override, repeated completion,
+It runs 120 assertions across seven groups: actual OK/Cancel buttons, the
+title and VoiceOver names, the half-second OK delay with early, held and fresh
+Return, keypad Enter, Escape, input-method composition, the circular
+suppression checkbox and its reporting, Unicode prompt entry, nil versus empty override, repeated completion,
 per-page and per-window contention, actual window close, page movement and
 detachment, balanced reattachment, cancellation reentry, terminal invalidation,
 reentrant replacement, destruction during
