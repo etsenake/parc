@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 670,
+  "version": 671,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -679,12 +679,12 @@
     {
       "source": "Engine/ParcNative/external_protocol_presenter.h",
       "target": "parc/native/external_protocol_presenter.h",
-      "sha256": "d39101162ee2be8f3d0bd0365d54d9eb1659624faefc2571c963d1786a80bc17"
+      "sha256": "250f128f3998a0f5bc62463af53ababbfe23dcf54dfeee1b0607717206abc0b3"
     },
     {
       "source": "Engine/ParcNative/external_protocol_presenter.mm",
       "target": "parc/native/external_protocol_presenter.mm",
-      "sha256": "a1e6a5bdbe71a17d95fd319cc5f46ff626df128ba47d78d7dd18b8b8970d1232"
+      "sha256": "87c9f9e68f76987826a8d1fd21e60ea903e6aa61d6cd9cf7eb0047f575bdd442"
     },
     {
       "source": "tests/NativeExternalProtocol/BUILD.gn",
