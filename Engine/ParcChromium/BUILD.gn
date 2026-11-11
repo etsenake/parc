@@ -141,10 +141,10 @@ source_set("browser") {
     "native/video_overlay_window.mm",
     "parc_bundle_mac.h",
     "parc_bundle_mac.mm",
-    "parc_content_clients.cc",
     "parc_content_clients.h",
-    "parc_main_delegate.cc",
+    "parc_content_clients.mm",
     "parc_main_delegate.h",
+    "parc_main_delegate.mm",
   ]
 
   public_deps = [
