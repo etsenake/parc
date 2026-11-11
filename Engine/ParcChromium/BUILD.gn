@@ -89,6 +89,8 @@ source_set("browser") {
     "native/fairplay_identity.h",
     "native/fairplay_identity.mm",
     "native/fairplay_identity_policy.h",
+    "native/fairplay_media_host.cc",
+    "native/fairplay_media_host.h",
     "native/find_bar.h",
     "native/find_bar.mm",
     "native/location_bar.cc",
@@ -249,7 +251,11 @@ source_set("browser") {
     "//parc/native:tab_transfer",
     "//parc/native:unload_transactions",
 
-    # FairPlay Streaming's CDM and key system registration.
+    # FairPlay Streaming's CDM and key system registration, and the browser's
+    # end of Parc's FairPlay media service.
+    "//crypto",
+    "//third_party/parc_fairplay:key_system",
+    "//third_party/parc_fairplay:mojom",
     "//third_party/parc_fairplay:registration",
 
     # Chromium services the native sources use directly.
