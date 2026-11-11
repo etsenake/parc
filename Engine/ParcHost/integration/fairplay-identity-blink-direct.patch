@@ -9543,7 +9543,11 @@
 -
 +
  TEST_P(HTMLMediaElementTest, PlayedWithoutUserActivation) {
-@@ -3593,5 +4387,4573 @@
+@@ -3590,8 +4384,4602 @@
+   Media()->appendChild(source);
+-
++
+   test::RunPendingTasks();
 -
 +
    EXPECT_EQ(Media()->getNetworkState(), HTMLMediaElement::kNetworkIdle);
@@ -13903,6 +13907,32 @@
 +  media_player_observer().WaitUntilReceivedMessage();
 +  EXPECT_TRUE(
 +      media_player_observer().received_playback_target_state()->supports_target);
++}
++
++// WebKit's legacy EME handler attributes are content attributes of HTML
++// elements only under Safari's identity; elsewhere they stay plain
++// attributes, as in Chrome.
++TEST_P(HTMLMediaElementTest, ParcLegacyEmeHandlerAttributesNeedSafariIdentity) {
++  Media()->GetDocument().GetSettings()->SetScriptEnabled(true);
++  const struct {
++    const char* attribute;
++    const char* event;
++  } kHandlers[] = {{"onwebkitkeyadded", "webkitkeyadded"},
++                   {"onwebkitkeyerror", "webkitkeyerror"},
++                   {"onwebkitkeymessage", "webkitkeymessage"},
++                   {"onwebkitneedkey", "webkitneedkey"}};
++  for (const char* user_agent : {kParcSafariUserAgent, kParcChromeUserAgent}) {
++    SetUserAgent(user_agent);
++    for (const auto& handler : kHandlers) {
++      const QualifiedName attribute(AtomicString(handler.attribute));
++      Media()->setAttribute(attribute, AtomicString("void 0"));
++      EXPECT_EQ(
++          !!Media()->GetAttributeEventListener(AtomicString(handler.event)),
++          user_agent == kParcSafariUserAgent)
++          << user_agent << " " << handler.attribute;
++      Media()->removeAttribute(attribute);
++    }
++  }
 +}
 +
 +// MediaSource::sourceOpen with ManagedMediaSourceNeedsAirPlay (on for
