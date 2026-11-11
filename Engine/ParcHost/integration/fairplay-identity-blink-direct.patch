@@ -8046,58 +8046,47 @@
      },
 --- a/third_party/blink/renderer/bindings/scripts/bind_gen/codegen_expr.py
 +++ b/third_party/blink/renderer/bindings/scripts/bind_gen/codegen_expr.py
-@@ -259,6 +259,14 @@
+@@ -259,6 +259,16 @@
          secure_context_term = _Expr("${is_in_secure_context}")
      elif exposure.only_in_secure_contexts is False:
          secure_context_term = _Expr(True)
 +    elif "ParcSafariIdentityEme" in exposure.only_in_secure_contexts:
 +        # Parc: [SecureContext=ParcSafariIdentityEme] constructs are also
 +        # exposed to a document presenting Safari's identity, as WebKit gates
-+        # no Encrypted Media construct on a secure context.
++        # no Encrypted Media construct on a secure context. The installer's
++        # local symbols (interface.py) include parc_safari_identity.h.
 +        secure_context_term = expr_or([
 +            _Expr("${is_in_secure_context}"),
-+            _Expr("${execution_context}->IsParcSafariIdentityContext()")
++            _Expr("${IsParcSafariIdentityUserAgent}("
++                  "${execution_context}->UserAgent())")
 +        ])
      else:
          terms = list(map(ref_enabled, exposure.only_in_secure_contexts))
          secure_context_term = expr_or(
---- a/third_party/blink/renderer/core/execution_context/execution_context.h
-+++ b/third_party/blink/renderer/core/execution_context/execution_context.h
-@@ -282,6 +282,12 @@
-   SecureContextMode GetSecureContextMode() const {
-     return security_context_.GetSecureContextMode();
-   }
-+  // Parc: this context presents Safari's identity (its user agent,
-+  // parc_safari_identity.h). The Encrypted Media bindings marked
-+  // [SecureContext=ParcSafariIdentityEme] are exposed to it even when it isn't
-+  // a secure context, as in WebKit (bind_gen/codegen_expr.py).
-+  bool IsParcSafariIdentityContext() const;
-+
-   virtual bool IsSecureContext() const {
-     return GetSecureContextMode() == SecureContextMode::kSecureContext;
-   }
---- a/third_party/blink/renderer/core/execution_context/execution_context.cc
-+++ b/third_party/blink/renderer/core/execution_context/execution_context.cc
-@@ -45,6 +45,7 @@
- #include "third_party/blink/renderer/core/execution_context/agent.h"
- #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_state_observer.h"
- #include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
-+#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
- #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
- #include "third_party/blink/renderer/core/frame/csp/execution_context_csp_delegate.h"
- #include "third_party/blink/renderer/core/frame/integrity_policy.h"
-@@ -451,6 +452,10 @@
-   return window_interaction_tokens_ > 0;
- }
+--- a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
++++ b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
+@@ -4423,6 +4423,20 @@
+         ]))
+     local_vars.append(node)
 -
 +
-+bool ExecutionContext::IsParcSafariIdentityContext() const {
-+  return IsParcSafariIdentityUserAgent(UserAgent());
-+}
++    # Parc: [SecureContext=ParcSafariIdentityEme] (codegen_expr.py) calls this
++    # inline function by name, so its definition only adds the include.
++    def define_parc_safari_identity(symbol_node):
++        node = SymbolDefinitionNode(symbol_node)
++        node.accumulate(
++            CodeGenAccumulator.require_include_headers([
++                "third_party/blink/renderer/core/frame/parc_safari_identity.h"
++            ]))
++        return node
 +
- bool ExecutionContext::IsSecureContext(String& error_message) const {
-   if (!IsSecureContext()) {
-     error_message = SecurityOrigin::IsPotentiallyTrustworthyErrorMessage();
++    local_vars.append(
++        S("IsParcSafariIdentityUserAgent",
++          definition_constructor=define_parc_safari_identity))
++
+     # parent_interface_template
+     pattern = (
+         "v8::Local<v8::FunctionTemplate> ${parent_interface_template}{_1};")
 --- a/third_party/blink/renderer/modules/encryptedmedia/media_key_session.idl
 +++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_session.idl
 @@ -36,7 +36,7 @@
