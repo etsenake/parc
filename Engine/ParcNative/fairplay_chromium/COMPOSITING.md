@@ -55,7 +55,8 @@ Mojo services).
    force-merges the quad, because `OverlayCandidate::RequiresOverlay` is true
    for `kVideoHole` (already upstream).
 5. **Overlay processing** (`components/viz/service/display/ca_layer_overlay.cc`).
-   `FromDrawQuad` now accepts `kVideoHole`. The candidate gets the quad's rect,
+   `FromDrawQuad` now accepts `kVideoHole` and hands it to Parc's
+   `ParcFromVideoHoleQuad` (`parc_ca_layer_overlay.cc`). The candidate gets the quad's rect,
    clip, rounded corners, transform, opacity and sorting context like any quad,
    plus `protected_layer_token` (new, Apple only, in
    `overlay_candidate.h`) and `protected_video_type = kHardwareProtected`. It
