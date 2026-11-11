@@ -300,6 +300,7 @@ source_set("native_extensions") {
     "//chrome/browser/ui/side_panel",
     "//chrome/browser/ui/toolbar",
     "//chrome/browser/ui/views/extensions:security_dialog_tracker",
+    "//extensions/browser",
     "//ui/base",
     "//ui/base/unowned_user_data",
     "//ui/gfx",
@@ -329,7 +330,6 @@ source_set("native_extensions") {
     "//components/sessions",
     "//components/tabs:public",
     "//components/web_modal",
-    "//extensions/browser",
     "//extensions/common",
     "//extensions/strings",
     "//ui/color",
@@ -535,10 +535,13 @@ source_set("native_client_certificates") {
     "client_certificates.mm",
   ]
   frameworks = [ "AppKit.framework" ]
+  public_deps = [
+    "//base",
+    "//net",
+  ]
   deps = [
     ":native_auxiliary_page",
     ":native_components",
-    "//base",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ssl",
     "//chrome/browser/ui/browser_window",
@@ -546,7 +549,6 @@ source_set("native_client_certificates") {
     "//components/tabs:public",
     "//components/web_modal",
     "//content/public/browser",
-    "//net",
     "//ui/base",
     "//ui/gfx",
     "//ui/views",
@@ -635,6 +637,11 @@ source_set("native_external_protocol") {
   public = [ "external_protocol.h" ]
   sources = [ "external_protocol.h", "external_protocol.mm" ]
   frameworks = [ "AppKit.framework" ]
+  public_deps = [
+    "//content/public/browser",
+    "//ui/base",
+    "//url",
+  ]
   deps = [
     ":native_components",
     "//base",
@@ -650,12 +657,9 @@ source_set("native_external_protocol") {
     "//components/tabs:public",
     "//components/url_formatter",
     "//components/web_modal",
-    "//content/public/browser",
-    "//ui/base",
     "//ui/events",
     "//ui/gfx",
     "//ui/views",
-    "//url",
   ]
 }
 
@@ -751,6 +755,7 @@ source_set("native_certificate_viewer") {
     "Security.framework",
     "SecurityInterface.framework",
   ]
+  public_deps = [ "//ui/gfx" ]
   deps = [
     ":native_components",
     "//base",
@@ -762,7 +767,6 @@ source_set("native_certificate_viewer") {
     "//content/public/browser",
     "//net",
     "//ui/base",
-    "//ui/gfx",
   ]
 }
 
