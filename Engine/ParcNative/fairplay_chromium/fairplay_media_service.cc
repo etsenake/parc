@@ -107,7 +107,7 @@ class FairPlayRendererStreams final : public mojom::FairPlayRendererExtension {
   }
 
   void FollowMuteStateHandoff(const base::UnguessableToken& handoff) final {
-    mojo::PendingReceiver<mojom::MuteStateObserver> observer =
+    mojo::PendingReceiver<mojom::FairPlayMuteStateObserver> observer =
         take_mute_state_handoff_.Run(handoff);
     if (observer) {
       renderer_->ReplaceMuteStateObserverCloser(BindFairPlayMuteStateObserver(
@@ -171,11 +171,11 @@ void FairPlayProcessMedia::RemoveFrame(FairPlayFrameMedia* frame) {
   frames_.erase(frame);
 }
 
-mojo::PendingReceiver<mojom::MuteStateObserver>
+mojo::PendingReceiver<mojom::FairPlayMuteStateObserver>
 FairPlayProcessMedia::TakeMuteStateHandoff(
     const base::UnguessableToken& handoff) {
   for (FairPlayFrameMedia* frame : frames_) {
-    if (mojo::PendingReceiver<mojom::MuteStateObserver> observer =
+    if (mojo::PendingReceiver<mojom::FairPlayMuteStateObserver> observer =
             frame->TakeMuteStateHandoff(handoff)) {
       return observer;
     }
@@ -273,7 +273,7 @@ void FairPlayFrameMedia::CreateRenderer(
   // The document's tab mute, the way MediaFoundationRendererWrapper gets it:
   // the browser answers with the current state at once. The observer closes
   // with the renderer.
-  mojo::PendingRemote<mojom::MuteStateObserver> observer;
+  mojo::PendingRemote<mojom::FairPlayMuteStateObserver> observer;
   renderer->SetMuteStateObserverCloser(BindFairPlayMuteStateObserver(
       observer.InitWithNewPipeAndPassReceiver(),
       renderer->GetMuteStateCallback()));
@@ -306,7 +306,7 @@ void FairPlayFrameMedia::CreateHlsPlayer(
       frame_host_.get(), service->GetAudioOutputDeviceCallback()));
   // Its audio bypasses the audio service too, so it gets the tab's mute the
   // same way; the observer closes with the player.
-  mojo::PendingRemote<mojom::MuteStateObserver> observer;
+  mojo::PendingRemote<mojom::FairPlayMuteStateObserver> observer;
   service->SetMuteStateObserverCloser(BindFairPlayMuteStateObserver(
       observer.InitWithNewPipeAndPassReceiver(),
       service->GetMuteStateCallback()));
@@ -333,7 +333,7 @@ void FairPlayFrameMedia::CreateMuteStateHandoff(
   }
   // The browser answers the observer with the tab's mute at once and on every
   // change; it queues until a player follows the handoff.
-  mojo::PendingRemote<mojom::MuteStateObserver> observer;
+  mojo::PendingRemote<mojom::FairPlayMuteStateObserver> observer;
   const base::UnguessableToken handoff = base::UnguessableToken::Create();
   mute_state_handoffs_.emplace_back(handoff,
                                     observer.InitWithNewPipeAndPassReceiver());
@@ -341,7 +341,7 @@ void FairPlayFrameMedia::CreateMuteStateHandoff(
   std::move(callback).Run(handoff);
 }
 
-mojo::PendingReceiver<mojom::MuteStateObserver>
+mojo::PendingReceiver<mojom::FairPlayMuteStateObserver>
 FairPlayFrameMedia::TakeMuteStateHandoff(
     const base::UnguessableToken& handoff) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -351,7 +351,7 @@ FairPlayFrameMedia::TakeMuteStateHandoff(
   if (found == mute_state_handoffs_.end()) {
     return {};
   }
-  mojo::PendingReceiver<mojom::MuteStateObserver> observer =
+  mojo::PendingReceiver<mojom::FairPlayMuteStateObserver> observer =
       std::move(found->second);
   mute_state_handoffs_.erase(found);
   return observer;

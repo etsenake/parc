@@ -36,7 +36,7 @@ CONTENT_EXPORT void SetWidevineCdmRequestObserver(
 // document may create FairPlay Renderers without a FairPlay CDM: Safari plays
 // Dolby Vision in Media Source with keys or without, and in Parc only that
 // renderer decodes it. Asked on the UI thread from
-// MediaInterfaceProxy::CreateFairPlayRenderer; without a query, no document
+// parc::FairPlayDocumentHost::CreateRenderer; without a query, no document
 // presents it.
 using SafariIdentityQuery =
     base::RepeatingCallback<bool(content::RenderFrameHost* frame)>;

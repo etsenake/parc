@@ -257,6 +257,10 @@ source_set("browser") {
     "//third_party/parc_fairplay:key_system",
     "//third_party/parc_fairplay:mojom",
     "//third_party/parc_fairplay:registration",
+    "//third_party/parc_fairplay:service",
+
+    # Chrome's GPU client, which Parc's extends.
+    "//chrome/gpu",
 
     # Chromium services the native sources use directly.
     "//chrome/browser/autocomplete",

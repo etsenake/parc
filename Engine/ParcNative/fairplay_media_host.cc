@@ -270,7 +270,7 @@ void FairPlayDocumentHost::GetAudioOutputDeviceUid(
 // service, so they take the tab's mute from here, as MediaFoundation's
 // renderer does on Windows: the current state at once, then every change.
 void FairPlayDocumentHost::RegisterMuteStateObserver(
-    mojo::PendingRemote<media::mojom::MuteStateObserver> observer) {
+    mojo::PendingRemote<media::mojom::FairPlayMuteStateObserver> observer) {
   auto id = mute_state_observers_.Add(std::move(observer));
   mute_state_observers_.Get(id)->OnMuteStateChange(
       web_contents()->IsAudioMuted());

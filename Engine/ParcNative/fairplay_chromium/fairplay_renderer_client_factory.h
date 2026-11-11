@@ -12,6 +12,7 @@
 #include <optional>
 
 #include "base/functional/callback.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/unguessable_token.h"
@@ -24,12 +25,17 @@ class SequencedTaskRunner;
 namespace media {
 
 class FairPlayRendererClient;
-class MojoRendererFactory;
+
+namespace mojom {
+class FairPlayMediaHost;
+}  // namespace mojom
 
 class FairPlayRendererClientFactory final : public RendererFactory {
  public:
-  explicit FairPlayRendererClientFactory(
-      std::unique_ptr<MojoRendererFactory> mojo_renderer_factory);
+  // `media_host` is the frame's (FairPlayMediaHostConnection), which goes
+  // with the frame and hops to its own thread. A player a Safari-identity
+  // element moves to another frame takes that frame's (SetMediaHost).
+  explicit FairPlayRendererClientFactory(mojom::FairPlayMediaHost* media_host);
   FairPlayRendererClientFactory(const FairPlayRendererClientFactory&) = delete;
   FairPlayRendererClientFactory& operator=(
       const FairPlayRendererClientFactory&) = delete;
@@ -44,19 +50,17 @@ class FairPlayRendererClientFactory final : public RendererFactory {
       RequestOverlayInfoCB request_overlay_info_cb,
       const gfx::ColorSpace& target_color_space) override;
 
-  MojoRendererFactory* mojo_renderer_factory() {
-    return mojo_renderer_factory_.get();
-  }
+  void SetMediaHost(mojom::FairPlayMediaHost* media_host);
 
   // Parc: gives the last renderer made, if it lives, a mute state handoff
-  // (InterfaceFactory.CreateMuteStateHandoff) of the frame a Safari-identity
+  // (FairPlayMediaHost.CreateMuteStateHandoff) of the frame a Safari-identity
   // page moved its element to. Null before any renderer.
   using MuteStateHandoffTarget = base::OnceCallback<void(
       const std::optional<base::UnguessableToken>& handoff)>;
   MuteStateHandoffTarget ParcMuteStateHandoffTarget();
 
  private:
-  std::unique_ptr<MojoRendererFactory> mojo_renderer_factory_;
+  raw_ptr<mojom::FairPlayMediaHost> media_host_;
   scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
   base::WeakPtr<FairPlayRendererClient> renderer_;
   uint64_t mute_state_handoff_requests_ = 0;

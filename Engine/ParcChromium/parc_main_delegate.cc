@@ -228,6 +228,11 @@ content::ContentBrowserClient* ParcMainDelegate::CreateContentBrowserClient() {
   return chrome_content_browser_client_.get();
 }
 
+content::ContentGpuClient* ParcMainDelegate::CreateContentGpuClient() {
+  gpu_client_ = std::make_unique<ParcContentGpuClient>();
+  return gpu_client_.get();
+}
+
 content::ContentRendererClient*
 ParcMainDelegate::CreateContentRendererClient() {
   renderer_client_ = std::make_unique<ParcContentRendererClient>();

@@ -38,14 +38,14 @@ class FakeFrameHost final : public mojom::FairPlayFrameHost {
     std::move(callback).Run(std::nullopt);
   }
   void RegisterMuteStateObserver(
-      mojo::PendingRemote<mojom::MuteStateObserver> observer) final {
+      mojo::PendingRemote<mojom::FairPlayMuteStateObserver> observer) final {
     observers_.emplace_back(std::move(observer));
   }
 
-  std::vector<mojo::Remote<mojom::MuteStateObserver>> observers_;
+  std::vector<mojo::Remote<mojom::FairPlayMuteStateObserver>> observers_;
 };
 
-class PlayerMute final : public mojom::MuteStateObserver {
+class PlayerMute final : public mojom::FairPlayMuteStateObserver {
  public:
   void OnMuteStateChange(bool muted) final { states_.push_back(muted); }
 
@@ -110,13 +110,13 @@ TEST(FairPlayMediaServiceTest, MuteStateHandoffStaysInItsRenderProcess) {
 
   EXPECT_FALSE(FairPlayProcessMedia::Get(8)->TakeMuteStateHandoff(*handoff));
   scoped_refptr<FairPlayProcessMedia> process = FairPlayProcessMedia::Get(7);
-  mojo::PendingReceiver<mojom::MuteStateObserver> observer =
+  mojo::PendingReceiver<mojom::FairPlayMuteStateObserver> observer =
       process->TakeMuteStateHandoff(*handoff);
   ASSERT_TRUE(observer);
   EXPECT_FALSE(process->TakeMuteStateHandoff(*handoff));
 
   PlayerMute player;
-  mojo::Receiver<mojom::MuteStateObserver> player_receiver(&player,
+  mojo::Receiver<mojom::FairPlayMuteStateObserver> player_receiver(&player,
                                                            std::move(observer));
   tab_mute.observers_[0]->OnMuteStateChange(true);
   task_environment.RunUntilIdle();

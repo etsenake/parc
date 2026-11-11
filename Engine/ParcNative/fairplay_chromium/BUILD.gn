@@ -1,8 +1,8 @@
 # Installed by the reviewed overlay at //third_party/parc_fairplay.
 # Parc's FairPlay Streaming playback for Chromium on macOS. core/ is the
 # engine-independent playback core (Engine/ParcNative/fairplay in the Parc
-# repository); chromium/ adapts it to media::ContentDecryptionModule for the
-# GPU process's media service. See Engine/ParcNative/fairplay_chromium/README.md.
+# repository); chromium/ adapts it to Chromium's media interfaces in Parc's
+# FairPlay media service. See Engine/ParcNative/fairplay_chromium/README.md.
 #
 # It lives under third_party so Chromium's clang style plugin and
 # unsafe-buffers checks, which the core predates, don't apply to it.
@@ -19,6 +19,8 @@ mojom("mojom") {
     "//media/mojo/mojom",
     "//mojo/public/mojom/base",
     "//sandbox/policy/mojom",
+    "//ui/gfx/geometry/mojom",
+    "//url/mojom:url_mojom_gurl",
   ]
 }
 
@@ -93,14 +95,11 @@ source_set("core") {
   ]
 }
 
-# The GPU process's FairPlay CDM and Renderer, linked into
-# //media/mojo/services. The render process's client is compiled into
-# //content/renderer (content/renderer/media/fairplay).
+# The GPU process's FairPlay CDM, Renderer and native HLS player, hosted by
+# Parc's FairPlay media service (:service). The render process's client is
+# compiled into //content/renderer (content/renderer/media/fairplay).
 source_set("gpu") {
-  visibility = [
-    ":*",
-    "//media/mojo/services:*",
-  ]
+  visibility = [ ":*" ]
   sources = [
     "chromium/fairplay_cdm_adapter.cc",
     "chromium/fairplay_cdm_adapter.h",

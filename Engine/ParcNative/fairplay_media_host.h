@@ -65,7 +65,8 @@ class FairPlayDocumentHost final
       const std::string& hashed_device_id,
       GetAudioOutputDeviceUidCallback callback) override;
   void RegisterMuteStateObserver(
-      mojo::PendingRemote<media::mojom::MuteStateObserver> observer) override;
+      mojo::PendingRemote<media::mojom::FairPlayMuteStateObserver> observer)
+      override;
 
   // content::WebContentsObserver:
   void DidUpdateAudioMutingState(bool muted) override;
@@ -84,7 +85,8 @@ class FairPlayDocumentHost final
   bool fairplay_playback_context_ = false;
   mojo::ReceiverSet<media::mojom::FairPlayMediaHost> media_host_receivers_;
   mojo::ReceiverSet<media::mojom::FairPlayFrameHost> frame_host_receivers_;
-  mojo::RemoteSet<media::mojom::MuteStateObserver> mute_state_observers_;
+  mojo::RemoteSet<media::mojom::FairPlayMuteStateObserver>
+      mute_state_observers_;
   mojo::Remote<media::mojom::FairPlayFrameMedia> frame_media_;
 };
 

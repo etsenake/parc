@@ -5,17 +5,398 @@
 // Parc's FairPlay media service. A GPU-process service hosts each document's
 // FairPlay CDMs, FairPlay Renderers and native HLS players; a browser host per
 // document connects to it and serves that document's render process. In
-// media.mojom, beside the FairPlay types its interfaces carry.
+// media.mojom, so its C++ names read as Chromium's media interfaces do.
 module media.mojom;
 
 import "media/mojo/mojom/content_decryption_module.mojom";
-import "media/mojo/mojom/frame_interface_factory.mojom";
+import "media/mojo/mojom/demuxer_stream.mojom";
 import "media/mojo/mojom/media_types.mojom";
 import "media/mojo/mojom/renderer.mojom";
-import "media/mojo/mojom/renderer_extensions.mojom";
 import "mojo/public/mojom/base/file_path.mojom";
+import "mojo/public/mojom/base/time.mojom";
 import "mojo/public/mojom/base/unguessable_token.mojom";
 import "sandbox/policy/mojom/sandbox.mojom";
+import "ui/gfx/geometry/mojom/geometry.mojom";
+import "url/mojom/url.mojom";
+
+// The tab's mute, for a FairPlay Renderer or native HLS player, whose audio
+// bypasses the audio service.
+interface FairPlayMuteStateObserver {
+  OnMuteStateChange(bool muted);
+};
+
+// The element's readyState as WebKit's AVFoundation player reports it
+// (MediaPlayerPrivateAVFoundation::updateStates).
+enum FairPlayHlsReadyState {
+  kHaveMetadata,
+  kHaveCurrentData,
+  kHaveFutureData,
+  kHaveEnoughData,
+};
+
+// Extension of the mojo::RendererClient communication layer for the FairPlay
+// Streaming Renderer, which runs next to the FairPlay CDM in Parc's FairPlay
+// media service. Implemented by FairPlayRendererClient in the render process.
+interface FairPlayRendererClientExtension {
+  // The Renderer's AVSampleBufferDisplayLayer is registered under
+  // `layer_token` in the GPU process's ui::ProtectedLayerRegistry. The client
+  // paints a video hole frame naming the token, sized `natural_size`, and the
+  // compositor places the layer where that frame is drawn.
+  OnLayerRegistered(mojo_base.mojom.UnguessableToken layer_token,
+                    gfx.mojom.Size natural_size);
+
+  // The Renderer's own extension, sent once when it is created.
+  OnRendererExtension(pending_remote<FairPlayRendererExtension> extension);
+};
+
+// The render process's way to the FairPlay Streaming Renderer during
+// playback, beside media.mojom.Renderer. Implemented in the GPU process.
+interface FairPlayRendererExtension {
+  // Plays `stream` too, from the current time, as WebKit's
+  // AudioVideoRendererAVFObjC adds a renderer for a track enabled during
+  // playback. Streams given to Initialize are named by their index there;
+  // `id` names this one. Answers once it plays.
+  AddStream(uint32 id, pending_remote<DemuxerStream> stream) => ();
+  // An audio stream the page turned off leaves.
+  RemoveStream(uint32 id);
+  // Follows the tab mute of the frame a Safari-identity page moved the element
+  // to, instead of the one the Renderer was made in: `handoff` is what that
+  // frame's FairPlayMediaHost.CreateMuteStateHandoff() answered.
+  FollowMuteStateHandoff(mojo_base.mojom.UnguessableToken handoff);
+  // HTMLMediaElement.setSinkId: `sink_id` as the page named it (hashed for
+  // the frame's origin; empty or "default" for the system default). The GPU
+  // process asks the browser for its Core Audio device.
+  SetAudioOutputDevice(string sink_id);
+  // Taking over from the render process's renderer without a gap: the
+  // clock reads `time` at `host_time` and runs at `rate` along that line
+  // (FairPlayRenderer::SetPlaybackRateAt).
+  SetPlaybackRateAt(double rate, mojo_base.mojom.TimeDelta time,
+                    mojo_base.mojom.TimeTicks host_time);
+};
+
+// Safari's native HLS route. An AVPlayer in Parc's FairPlay media service,
+// next to the frame's FairPlay CDMs, plays <video src="....m3u8"> on pages
+// that present Safari's identity; every load AVFoundation makes is fetched by
+// the render process through the element's loader. See NATIVE_HLS.md beside
+// third_party/parc_fairplay's sources in the Parc repository.
+
+// One load AVFoundation asks for.
+struct FairPlayHlsRequest {
+  url.mojom.Url url;
+  string method;
+  // As AVFoundation set them. The render process forwards only Range.
+  map<string, string> headers;
+};
+
+struct FairPlayHlsResponse {
+  int32 http_status;
+  // The server's Content-Type without parameters, or empty.
+  string mime_type;
+  // -1 when unknown, also when the network stack decoded a Content-Encoding.
+  int64 content_length;
+  // The URL after redirects, which relative playlist URIs resolve against.
+  url.mojom.Url final_url;
+  // The response's headers, combined per name.
+  map<string, string> headers;
+};
+
+// Implemented by the render process, one per load. Cancel() or closing the
+// pipe ends the load; no more client calls follow.
+interface FairPlayHlsLoad {
+  Cancel();
+};
+
+// Implemented by the GPU process, one per load: OnResponse at most once, then
+// OnComplete once. A load that fails before a response gets only OnComplete.
+interface FairPlayHlsLoadClient {
+  // `body` carries the response body and closes after its last byte.
+  OnResponse(FairPlayHlsResponse response,
+             handle<data_pipe_consumer> body);
+  // net::OK once the whole body is in the pipe, otherwise a net error.
+  OnComplete(int32 net_error);
+};
+
+struct FairPlayHlsTimeRange {
+  mojo_base.mojom.TimeDelta start;
+  mojo_base.mojom.TimeDelta end;
+};
+
+enum FairPlayHlsTrackType {
+  kAudio,
+  kVideo,
+  kText,
+};
+
+// The element's tracks for a clear file played for AirPlay (the FairPlay
+// core's HlsFileTracks): how many audio and video tracks it lists, the
+// positions of the enabled audio tracks and of the selected video track. A
+// type whose count differs from the item's keeps AVFoundation's choice.
+struct FairPlayHlsFileTracks {
+  uint32 audio_count;
+  array<uint32> audio;
+  uint32 video_count;
+  uint32? video;
+};
+
+// An audioTracks or textTracks entry with the values WebKit's AVFoundation
+// player gives the DOM (the FairPlay core's HlsTrack).
+struct FairPlayHlsTrack {
+  // Unique for the player; names the track in calls and cues.
+  string key;
+  // The DOM id (audio ids can repeat, as in Safari), kind, label, language.
+  string id;
+  string kind;
+  string label;
+  string language;
+  // Audio: AudioTrack.enabled.
+  bool enabled;
+  // WebKit's track index; each list orders by it (an audio -1 last).
+  int64 index;
+  FairPlayHlsTrackType type;
+  // Text: what WebKit's caption preferences weigh.
+  bool is_default;
+  bool is_closed_captions;
+  bool is_sdh;
+  bool contains_only_forced_subtitles;
+  bool is_main_program_content;
+  bool is_easy_to_read;
+  // The one text track WebKit's automatic selection shows when none is
+  // showing (by the system caption settings and the enabled audio track).
+  bool automatic;
+  // TextTrack.inBandMetadataTrackDispatchType: "com.apple.streaming" for the
+  // metadata track, else "".
+  string in_band_metadata_dispatch_type;
+};
+
+// TextTrack.mode.
+enum FairPlayHlsTextTrackMode {
+  kDisabled,
+  kHidden,
+  kShowing,
+};
+
+enum FairPlayHlsCueType {
+  // `text`: the WebVTT header (regions and style sheets).
+  kWebVttHeader,
+  // A WebVTT cue (WebKit's WebVTTParser::parseCueData).
+  kWebVtt,
+  // Generic cues by `cue_id`: InbandGenericTextTrack's addGenericCue,
+  // updateGenericCue and removeGenericCue.
+  kAdd,
+  kUpdate,
+  kRemove,
+};
+
+enum FairPlayHlsCueAlign {
+  kNone,
+  kStart,
+  kMiddle,
+  kEnd,
+};
+
+// One change to a text track's cues (the FairPlay core's HlsCue).
+struct FairPlayHlsCue {
+  FairPlayHlsCueType type;
+  uint64 cue_id;
+  // Seconds. A generic cue's end is +infinity while it is open; a WebVTT
+  // cue's is NaN when its sample has no duration.
+  double start;
+  double end;
+  bool complete;
+  string text;
+  // WebVTT iden, sttg, vsid and ctim boxes.
+  string identifier;
+  string settings;
+  string source_id;
+  string original_start_time;
+  // Generic cue layout; -1 when unset.
+  double line;
+  double position;
+  double size;
+  double base_font_size;
+  double relative_font_size;
+  string font_name;
+  FairPlayHlsCueAlign align;
+  FairPlayHlsCueAlign position_align;
+  // 0xRRGGBBAA.
+  uint32? foreground_color;
+  uint32? background_color;
+  uint32? highlight_color;
+  bool prevent_line_wrapping;
+};
+
+// A DataCue's value (the FairPlay core's HlsDataCueValue: what WebKit keeps
+// of a timed metadata item).
+enum FairPlayHlsDataCueValueKind { kNone, kString, kNumber, kBoolean, kData, kDate };
+
+struct FairPlayHlsDataCueValue {
+  string? type;
+  map<string, string> attributes;
+  string? locale;
+  string? key;
+  FairPlayHlsDataCueValueKind kind;
+  string string_value;
+  // kNumber, kBoolean (0 or 1), kDate (seconds since 1970).
+  double number_value;
+  array<uint8> data;
+};
+
+enum FairPlayHlsDataCueType { kAdd, kUpdate, kRemove };
+
+// One change to the metadata track's DataCues (the core's HlsDataCue).
+struct FairPlayHlsDataCue {
+  FairPlayHlsDataCueType type;
+  double start;
+  // +infinity while open.
+  double end;
+  // DataCue.type, null without one.
+  string? cue_type;
+  FairPlayHlsDataCueValue value;
+};
+
+// The element's metadata (HAVE_METADATA) once the asset is playable, before
+// the item exists, as WebKit reports it: the asset's duration and the
+// seekable window up to it, media types from its variants (both assumed when
+// they don't say), no buffered ranges. The item's own values follow as
+// changes.
+struct FairPlayHlsMetadata {
+  bool has_audio;
+  bool has_video;
+  gfx.mojom.Size natural_size;
+  // kUnknown when AVFoundation names a format Chromium has no codec for.
+  AudioCodec audio_codec;
+  VideoCodec video_codec;
+  // media::kInfiniteDuration (TimeDelta::Max()) for live streams.
+  mojo_base.mojom.TimeDelta duration;
+  // getStartDate(): EXT-X-PROGRAM-DATE-TIME at media time 0, if any.
+  mojo_base.mojom.Time? start_date;
+  array<FairPlayHlsTimeRange> seekable;
+  array<FairPlayHlsTimeRange> buffered;
+  array<FairPlayHlsTrack> tracks;
+};
+
+// Lifetime handle the browser binds, holding the frame's audibility-bypass
+// grant while the GPU player keeps the remote. No methods.
+interface FairPlayHlsPlayerLifetime {};
+
+// Implemented by the GPU process (media::FairPlayHlsPlayerService).
+interface FairPlayHlsPlayer {
+  // Loads `url` (http or https); `mime_type` is the element's <source type>,
+  // or empty. `video_layer_size` is the element's size in points and
+  // `video_layer_scale` its display's scale (WebKit's initial video layer
+  // size), empty and 0 before it has a layout box.
+  // FairPlayHlsPlayerClient.OnInitialized answers, on the client's pipe so it
+  // is ordered with every other client call (this pipe and the client's
+  // aren't ordered with each other).
+  Initialize(url.mojom.Url url, string mime_type,
+             gfx.mojom.SizeF video_layer_size, float video_layer_scale);
+  // HTMLMediaElement::prepareToPlay: the element's preload is auto or the
+  // page called load(). Until then (or a play or seek) the item stays off the
+  // player, as WebKit makes it only then, except for a live stream.
+  PrepareToPlay();
+  // The frame's CDM, as MojoCdmServiceContext names it. Null detaches it
+  // (setMediaKeys(null)): key requests from then on wait for the next.
+  SetCdm(mojo_base.mojom.UnguessableToken? cdm_id) => (bool success);
+  // `rate` > 0. AVPlayer waits to minimize stalling, as in Safari.
+  Play(double rate);
+  Pause();
+  // May land up to `tolerance_before` before `time` (HTMLMediaElement
+  // fastSeek), never after; zero is exact. False when a later seek
+  // interrupted it. `current_time` is where the player then sits.
+  Seek(mojo_base.mojom.TimeDelta time,
+       mojo_base.mojom.TimeDelta tolerance_before)
+      => (bool success, mojo_base.mojom.TimeDelta current_time);
+  SetVolume(float volume);
+  SetMuted(bool muted);
+  SetPreservesPitch(bool preserves_pitch);
+  // As FairPlayRendererExtension.SetAudioOutputDevice.
+  SetAudioOutputDevice(string sink_id);
+  // Legacy clear key: the key for a held clearkey:// request's key ID (the
+  // page's WebKitMediaKeys session took it).
+  ProvideClearKey(string key_id, array<uint8> key);
+  // AudioTrack.enabled and TextTrack.mode, set by the page or the element.
+  SetAudioTrackEnabled(string key, bool enabled);
+  SetTextTrackMode(string key, FairPlayHlsTextTrackMode mode);
+  // Stop and restart loading (preload, idle suspension).
+  Suspend();
+  Resume();
+  // AirPlay (WebKit's setWirelessPlaybackTarget and
+  // setShouldPlayToPlaybackTarget): `output_context_id` names the
+  // AVOutputContext of the browser's route picker, a UUID, or is empty for
+  // none; AVPlayer plays to it only while `should_play`.
+  SetPlaybackTarget(string output_context_id, bool should_play);
+  // x-webkit-airplay="deny" or disableRemotePlayback: no external playback.
+  SetWirelessVideoPlaybackDisabled(bool disabled);
+  // A clear file played for AirPlay (NATIVE_HLS.md, AirPlay): the element's
+  // track choices, kept and applied whenever the item's tracks change.
+  SelectFileTracks(FairPlayHlsFileTracks tracks);
+  // As FairPlayRendererExtension.FollowMuteStateHandoff.
+  FollowMuteStateHandoff(mojo_base.mojom.UnguessableToken handoff);
+};
+
+// Implemented by the render process (the native HLS demuxer).
+interface FairPlayHlsPlayerClient {
+  // A load AVFoundation needs. The render process fetches it through the
+  // element's loader and answers on `client`.
+  StartLoad(FairPlayHlsRequest request,
+            pending_receiver<FairPlayHlsLoad> load,
+            pending_remote<FairPlayHlsLoadClient> client);
+  // Initialize's result: the metadata once the asset is playable, or null
+  // when it failed before that (after an OnError naming the asset's failure,
+  // if it had one). Before it come only StartLoad (the asset's playlists),
+  // OnError and OnLayerRegistered: the item, and so every key call and cue,
+  // comes after it.
+  OnInitialized(FairPlayHlsMetadata? metadata);
+  // The media time `time` at `capture_time`, advancing at `rate`.
+  OnTimeUpdate(mojo_base.mojom.TimeDelta time, double rate,
+               mojo_base.mojom.TimeTicks capture_time);
+  // Right after an OnTimeUpdate whose time is before the one sent before
+  // it, with no seek in flight in between (WebKit's
+  // MediaPlayerPrivateRemote::currentTimeChanged reverse jump).
+  // `seeks_received`: the Seek calls the player had received, all done.
+  OnTimeJumpedBackward(uint32 seeks_received);
+  OnBufferingStateChange(BufferingState state);
+  // WebKit's readyState for the item changed: HAVE_CURRENT_DATA at the first
+  // video frame (or an empty buffer), HAVE_FUTURE_DATA once it is ready to
+  // play with media ahead, HAVE_ENOUGH_DATA with OnBufferingStateChange.
+  OnReadyStateChanged(FairPlayHlsReadyState state);
+  // The item's enabled tracks changed the media types the metadata gave
+  // (WebKit's characteristicsChanged); OnLayerRegistered comes first when
+  // video appears.
+  OnMediaTypesChanged(bool has_audio, bool has_video);
+  OnBufferedRangesChanged(array<FairPlayHlsTimeRange> buffered);
+  OnSeekableRangesChanged(array<FairPlayHlsTimeRange> seekable);
+  OnDurationChange(mojo_base.mojom.TimeDelta duration);
+  // getStartDate(), sampled as Safari does at metadata and at each buffering
+  // change; sent just before the OnBufferingStateChange it goes with.
+  OnStartDateChanged(mojo_base.mojom.Time? start_date);
+  // The whole list after any change (never before OnInitialized):
+  // audio then text tracks, each in DOM order; tracks match by key.
+  OnTracksChanged(array<FairPlayHlsTrack> tracks);
+  // Changes to one text track's cues, in order.
+  OnTextCues(string track_key, array<FairPlayHlsCue> cues);
+  // Changes to the metadata track's DataCues, in order.
+  OnDataCues(string track_key, array<FairPlayHlsDataCue> cues);
+  OnNaturalSizeChange(gfx.mojom.Size size);
+  // The player's AVPlayerLayer is registered under `layer_token` in the GPU
+  // process's ui::ProtectedLayerRegistry; paint a hole frame naming it.
+  OnLayerRegistered(mojo_base.mojom.UnguessableToken layer_token,
+                    gfx.mojom.Size natural_size);
+  OnStatisticsUpdate(PipelineStatistics delta);
+  // `init_data_type` "skd": the key URI as UTF-8.
+  OnEncrypted(string init_data_type, array<uint8> init_data);
+  // Every skd:// and clearkey:// key request AVFoundation makes, CDM or not,
+  // repeats included, before anything else it raises: the request URL's
+  // absoluteString, unchanged. The element raises webkitneedkey
+  // (blink::ParcMediaPlayerClient::ParcWebKitKeyRequest).
+  OnKeyRequest(string key_uri);
+  OnWaiting(WaitingReason reason);
+  OnEnded();
+  OnError(PipelineStatus status, string message);
+  // Whether AVPlayer plays to the AirPlay device now (externalPlaybackActive
+  // with a target, WebKit's isCurrentPlaybackTargetWireless), on each change.
+  OnPlaybackTargetIsWirelessChanged(bool wireless);
+};
 
 // The browser's end of one document's FairPlay media, for the GPU process.
 interface FairPlayFrameHost {
@@ -44,7 +425,8 @@ interface FairPlayFrameHost {
   GetAudioOutputDeviceUid(string hashed_device_id) => (string? unique_id);
 
   // Answers `observer` with the tab's mute at once and on every change.
-  RegisterMuteStateObserver(pending_remote<MuteStateObserver> observer);
+  RegisterMuteStateObserver(
+      pending_remote<FairPlayMuteStateObserver> observer);
 };
 
 // One document's FairPlay media in the GPU process. Its renderers and players

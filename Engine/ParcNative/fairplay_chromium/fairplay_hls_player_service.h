@@ -5,8 +5,8 @@
 // this file's source in the Parc repository): media.mojom.FairPlayHlsPlayer
 // over the core's parc::fairplay::FairPlayHlsPlayer (an AVPlayer), with its
 // audio and text tracks through FairPlayHlsTrackBridge (fp-hls-tracks), on the
-// media service thread next to the frame's FairPlay CDMs. InterfaceFactoryImpl
-// owns it.
+// FairPlay media service's thread next to the frame's FairPlay CDMs.
+// FairPlayFrameMedia owns it.
 //
 //  - Network: the core's HlsLoader. Every load AVFoundation makes becomes a
 //    FairPlayHlsPlayerClient.StartLoad, which the render process fetches
@@ -28,8 +28,8 @@
 //    the request cross on different pipes). clearkey:// requests are
 //    answered by ProvideClearKey with their key ID (HlsClearKeyId).
 //  - Audio: muted while the page or the tab mutes it; the tab's state comes
-//    from the browser's MuteStateObserver, and audio stays muted until its
-//    first answer.
+//    from the browser's FairPlayMuteStateObserver, and audio stays muted until
+//    its first answer.
 #ifndef THIRD_PARTY_PARC_FAIRPLAY_CHROMIUM_FAIRPLAY_HLS_PLAYER_SERVICE_H_
 #define THIRD_PARTY_PARC_FAIRPLAY_CHROMIUM_FAIRPLAY_HLS_PLAYER_SERVICE_H_
 
@@ -49,11 +49,10 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/timer/timer.h"
 #include "base/unguessable_token.h"
-#include "media/mojo/mojom/frame_interface_factory.mojom-forward.h"
-#include "media/mojo/mojom/renderer_extensions.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 #include "third_party/parc_fairplay/core/fairplay_hls_media_selection.h"
 #include "third_party/parc_fairplay/core/fairplay_hls_player.h"
 
@@ -72,7 +71,7 @@ class FairPlayHlsTrackBridge;
 // the FairPlay Renderer and the native HLS player take them. Running the
 // returned closer closes it.
 base::ScopedClosureRunner BindFairPlayMuteStateObserver(
-    mojo::PendingReceiver<mojom::MuteStateObserver> observer,
+    mojo::PendingReceiver<mojom::FairPlayMuteStateObserver> observer,
     base::RepeatingCallback<void(bool)> on_change);
 
 class FairPlayHlsPlayerService final
@@ -96,17 +95,17 @@ class FairPlayHlsPlayerService final
       delete;
   ~FairPlayHlsPlayerService() override;
 
-  // The tab's mute state (MuteStateObserver). Bound to a weak pointer; may
-  // outlive the service.
+  // The tab's mute state (FairPlayMuteStateObserver). Bound to a weak
+  // pointer; may outlive the service.
   base::RepeatingCallback<void(bool)> GetMuteStateCallback();
   // Called once the browser was asked for the tab's mute state: audio stays
   // muted until its first answer. |closer| closes the observer when the
   // service goes.
   void SetMuteStateObserverCloser(base::ScopedClosureRunner closer);
   // The tab mute observer of a FollowMuteStateHandoff() handoff, or an
-  // invalid one (MojoMediaClient::MuteStateHandoffTaker).
-  using MuteStateHandoffTaker =
-      base::RepeatingCallback<mojo::PendingReceiver<mojom::MuteStateObserver>(
+  // invalid one (FairPlayProcessMedia::TakeMuteStateHandoff).
+  using MuteStateHandoffTaker = base::RepeatingCallback<
+      mojo::PendingReceiver<mojom::FairPlayMuteStateObserver>(
           const base::UnguessableToken& handoff)>;
   void SetMuteStateHandoffTaker(MuteStateHandoffTaker take_mute_state_handoff);
   // HTMLMediaElement.setSinkId's Core Audio device UID (empty for the system
@@ -118,8 +117,8 @@ class FairPlayHlsPlayerService final
   void SetAudioOutputDeviceSetter(
       base::RepeatingCallback<void(const std::string& sink_id)> setter);
   // WebKit's ephemeral session for the frame, which the browser answers
-  // (FrameInterfaceFactory.IsFairPlayEphemeralSession): once this was asked
-  // for, Initialize waits for it. Bound to a weak pointer.
+  // (FairPlayFrameHost.IsEphemeralSession): once this was asked for,
+  // Initialize waits for it. Bound to a weak pointer.
   base::OnceCallback<void(bool)> GetEphemeralSessionCallback();
 
   // mojom::FairPlayHlsPlayer:

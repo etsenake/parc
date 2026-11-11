@@ -22,7 +22,6 @@
 #include "media/base/timestamp_constants.h"
 #include "media/base/video_codecs.h"
 #include "media/base/waiting.h"
-#include "media/mojo/mojom/frame_interface_factory.mojom.h"
 #include "mojo/public/cpp/bindings/message.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
@@ -165,12 +164,12 @@ bool HasScheme(const std::string& uri, const char* scheme) {
 }
 
 // The tab's mute state for |on_change|.
-class FairPlayMuteStateObserver final : public mojom::MuteStateObserver {
+class TabMuteObserver final : public mojom::FairPlayMuteStateObserver {
  public:
-  explicit FairPlayMuteStateObserver(
+  explicit TabMuteObserver(
       base::RepeatingCallback<void(bool)> on_change)
       : on_change_(std::move(on_change)) {}
-  ~FairPlayMuteStateObserver() final = default;
+  ~TabMuteObserver() final = default;
 
   void OnMuteStateChange(bool muted) final { on_change_.Run(muted); }
 
@@ -181,14 +180,14 @@ class FairPlayMuteStateObserver final : public mojom::MuteStateObserver {
 }  // namespace
 
 base::ScopedClosureRunner BindFairPlayMuteStateObserver(
-    mojo::PendingReceiver<mojom::MuteStateObserver> observer,
+    mojo::PendingReceiver<mojom::FairPlayMuteStateObserver> observer,
     base::RepeatingCallback<void(bool)> on_change) {
-  mojo::SelfOwnedReceiverRef<mojom::MuteStateObserver> observer_ref =
+  mojo::SelfOwnedReceiverRef<mojom::FairPlayMuteStateObserver> observer_ref =
       mojo::MakeSelfOwnedReceiver(
-          std::make_unique<FairPlayMuteStateObserver>(std::move(on_change)),
+          std::make_unique<TabMuteObserver>(std::move(on_change)),
           std::move(observer));
   return base::ScopedClosureRunner(base::BindOnce(
-      [](mojo::SelfOwnedReceiverRef<mojom::MuteStateObserver> ref) {
+      [](mojo::SelfOwnedReceiverRef<mojom::FairPlayMuteStateObserver> ref) {
         if (ref) {
           ref->Close();
         }
@@ -771,7 +770,7 @@ void FairPlayHlsPlayerService::FollowMuteStateHandoff(
   if (!take_mute_state_handoff_) {
     return;
   }
-  mojo::PendingReceiver<mojom::MuteStateObserver> observer =
+  mojo::PendingReceiver<mojom::FairPlayMuteStateObserver> observer =
       take_mute_state_handoff_.Run(handoff);
   if (observer) {
     mute_state_observer_closer_ = BindFairPlayMuteStateObserver(

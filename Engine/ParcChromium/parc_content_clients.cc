@@ -36,6 +36,7 @@
 #include "parc/native/client_certificates.h"
 #include "parc/native/extension_uninstall.h"
 #include "parc/native/external_protocol.h"
+#include "parc/native/fairplay_media_host.h"
 #include "parc/native/file_dialog.h"
 #include "parc/native/folder_upload.h"
 #include "parc/native/http_auth.h"
@@ -53,6 +54,8 @@
 #include "parc/parc_branding.h"
 #include "parc/renderer/website_theme_agent.h"
 #include "third_party/parc_fairplay/chromium/fairplay_cdm_info.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media_service.h"
 
 namespace parc {
 namespace {
@@ -104,6 +107,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
     parc_hooks::SetTabSharingInfoBarFactory(&CreateNativeTabSharingInfoBar);
     parc_hooks::SetTabSharingProfile(&TabSharingCapturerProfile);
     parc_hooks::SetPaneFocusRotation(&RotateAppKitPaneFocus);
+    parc_hooks::SetFairPlayCdmCreator(&FairPlayDocumentHost::CreateCdm);
     RegisterNativePageContextMenu();
     RegisterNativeFileDialogs();
     RegisterLicenseWebUI();
@@ -222,6 +226,9 @@ void ParcContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
              receiver) {
         content::BindParcVideoToolboxDecoding(std::move(receiver));
       }));
+  // The document's FairPlay Renderers and native HLS players.
+  map->Add<media::mojom::FairPlayMediaHost>(
+      base::BindRepeating(&FairPlayDocumentHost::BindMediaHost));
 }
 
 bool ParcContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -261,6 +268,20 @@ std::unique_ptr<content::AuthenticatorRequestClientDelegate>
 ParcContentBrowserClient::GetWebAuthenticationRequestDelegate(
     content::RenderFrameHost* render_frame_host) {
   return CreateWebAuthenticationRequestDelegate(render_frame_host);
+}
+
+void ParcContentGpuClient::ExposeInterfacesToBrowser(
+    viz::GpuServiceImpl* gpu_service,
+    const gpu::GpuPreferences& gpu_preferences,
+    const gpu::GpuDriverBugWorkarounds& gpu_workarounds,
+    mojo::BinderMap* binders) {
+  ChromeContentGpuClient::ExposeInterfacesToBrowser(
+      gpu_service, gpu_preferences, gpu_workarounds, binders);
+  // FairPlay's CDMs, renderers and native HLS players, on the kind of thread
+  // the GPU media service runs on.
+  binders->Add<media::mojom::FairPlayMediaService>(
+      base::BindRepeating(&media::BindFairPlayMediaService),
+      media::CreateFairPlayMediaServiceTaskRunner());
 }
 
 void ParcContentRendererClient::RenderFrameCreated(

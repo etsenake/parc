@@ -25,10 +25,10 @@
 #include "media/base/parc_renderer_extensions.h"
 #include "media/base/renderer.h"
 #include "media/base/renderer_client.h"
-#include "media/mojo/mojom/renderer_extensions.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace media {

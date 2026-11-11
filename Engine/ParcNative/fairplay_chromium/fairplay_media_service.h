@@ -27,7 +27,6 @@
 #include "base/unguessable_token.h"
 #include "media/base/cdm_config.h"
 #include "media/base/cdm_factory.h"
-#include "media/mojo/mojom/frame_interface_factory.mojom.h"
 #include "media/mojo/services/deferred_destroy_unique_receiver_set.h"
 #include "media/mojo/services/mojo_cdm_service.h"
 #include "media/mojo/services/mojo_cdm_service_context.h"
@@ -61,7 +60,7 @@ class FairPlayProcessMedia final
 
   // The tab mute observer one of the process's documents made for |handoff|
   // (FairPlayFrameMedia.CreateMuteStateHandoff), once, or an invalid one.
-  mojo::PendingReceiver<mojom::MuteStateObserver> TakeMuteStateHandoff(
+  mojo::PendingReceiver<mojom::FairPlayMuteStateObserver> TakeMuteStateHandoff(
       const base::UnguessableToken& handoff);
 
  private:
@@ -105,7 +104,7 @@ class FairPlayFrameMedia final
 
   // The observer CreateMuteStateHandoff() made here for |handoff|, or an
   // invalid one.
-  mojo::PendingReceiver<mojom::MuteStateObserver> TakeMuteStateHandoff(
+  mojo::PendingReceiver<mojom::FairPlayMuteStateObserver> TakeMuteStateHandoff(
       const base::UnguessableToken& handoff);
 
  private:
@@ -128,8 +127,9 @@ class FairPlayFrameMedia final
       pending_mojo_cdm_services_;
   // Tab mute observers the browser holds the other ends of, until a player
   // follows them; the oldest go past a few.
-  std::vector<std::pair<base::UnguessableToken,
-                        mojo::PendingReceiver<mojom::MuteStateObserver>>>
+  std::vector<
+      std::pair<base::UnguessableToken,
+                mojo::PendingReceiver<mojom::FairPlayMuteStateObserver>>>
       mute_state_handoffs_;
   // After the CDMs, so they go first: they hold CdmContextRefs.
   mojo::UniqueReceiverSet<mojom::FairPlayHlsPlayer> hls_player_receivers_;

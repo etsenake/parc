@@ -38,11 +38,11 @@
 #include "media/base/pipeline_status.h"
 #include "media/base/ranges.h"
 #include "media/base/waiting.h"
-#include "media/mojo/mojom/renderer_extensions.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/size_f.h"
 #include "url/gurl.h"
@@ -72,7 +72,7 @@ class NativeHlsDemuxer final : public media::Demuxer,
   using StartLoadCallback = media::ParcNativeHlsDemuxerParams::StartLoadCB;
 
   // Made on the main thread with the player's endpoints, already connected
-  // through the frame's InterfaceFactory; everything else runs on
+  // through the frame's FairPlayMediaHost; everything else runs on
   // `params.media_task_runner`. Without `params.start_load_cb` every load
   // fails.
   NativeHlsDemuxer(
