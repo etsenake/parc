@@ -407,7 +407,7 @@ def verify_workspace(engine: Path, repo: Path) -> tuple[Path, dict]:
     if any(generated_args.get(k, "").strip() != v for k, v in expected_args.items()):
         raise Refusal("Generated engine configuration differs from the reviewed Release ARM64 build")
     proof_names = PROOF_FILES + (
-        "parc/BUILD.gn", "parc/framework.exports", "parc/helper/BUILD.gn", "parc/helper/main.cc",
+        "parc/BUILD.gn", "parc/helper/BUILD.gn", "parc/helper/main.cc",
         "parc/parc_content_clients.mm", "parc/parc_bundle_mac.mm", "chrome/common/chrome_constants.cc")
     proof = {name: sha(source / name) for name in proof_names}
     proof["out/" + engine.name + "/args.gn"] = sha(args_path)

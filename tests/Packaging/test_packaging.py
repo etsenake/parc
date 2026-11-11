@@ -279,7 +279,7 @@ Load command 4
         record_path.write_text(json.dumps({"identity": identity, "targets": records}))
         proofs = pkg.PROOF_FILES
         proofs = proofs + (
-            "parc/BUILD.gn", "parc/framework.exports", "parc/helper/BUILD.gn", "parc/helper/main.cc",
+            "parc/BUILD.gn", "parc/helper/BUILD.gn", "parc/helper/main.cc",
             "parc/parc_content_clients.mm", "parc/parc_bundle_mac.mm", "chrome/common/chrome_constants.cc")
         for name in proofs:
             target = source / name
