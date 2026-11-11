@@ -67,6 +67,10 @@ namespace gcm {
 class GCMClient;
 }
 
+namespace input {
+struct NativeWebKeyboardEvent;
+}
+
 namespace content {
 class ClientCertificateDelegate;
 class RenderFrameHost;
@@ -310,6 +314,17 @@ void SetNativeDevtoolsPresentation(
                                   bool update_contents),
     bool (*scrim)(DevtoolsUIController&, content::WebContents*, bool visible),
     void (*tear_down)(DevtoolsUIController&));
+
+// chrome/browser/devtools/devtools_window.cc, and devtools_window_views.cc for
+// the key handler. `prepare` runs on a DevTools frontend's contents before its
+// first navigation. `key` returns nullopt to keep Chromium's routing; a value is
+// final, including a rejected skip_if_unhandled event.
+void SetNativeDevtoolsFrontend(
+    void (*prepare)(content::WebContents* inspected,
+                    content::WebContents& tools),
+    std::optional<bool> (*key)(content::WebContents* inspected,
+                               content::WebContents* tools,
+                               const input::NativeWebKeyboardEvent&));
 
 // Easel-owned pages that session and tab restore never record:
 // components/sessions/content/session_tab_helper.cc,

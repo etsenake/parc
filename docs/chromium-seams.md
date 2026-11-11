@@ -245,7 +245,8 @@ the public testing registration cannot preserve.
 
 DevTools presents through hooks in the docked-tools controller, whose header is Chromium's own again. For
 a Browser Parc hosts, Parc answers the controller's update, scrim and teardown calls, and holds the modal
-host of docked tools as a lease over the public dialog manager. The page commands (Developer Tools,
+host of docked tools as a lease over the public dialog manager. Its keyboard routing and the preparation
+of a new frontend's contents are hooks too, so the DevTools files no longer include Parc. The page commands (Developer Tools,
 Inspect, Console, Network) keep a small patch in `DevToolsWindow`: whether the window is closing or
 loaded, and the counter that drops a stale panel reply, are private with no public query. A Parc port
 couldn't tell a closing window from a loading one and would run beforeunload twice. The public toggle

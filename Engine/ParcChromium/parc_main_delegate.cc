@@ -88,6 +88,8 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
       &NativeBrowser::CreateWebContentsDelegate);
   parc_hooks::SetNativeDevtoolsPresentation(
       &UpdateAppKitDevtools, &SetAppKitDevtoolsScrim, &TearDownAppKitDevtools);
+  parc_hooks::SetNativeDevtoolsFrontend(&PrepareNativeDevtoolsContents,
+                                        &HandleNativeDevtoolsKey);
   parc_hooks::SetUnloadControllerLifetime(&OnUnloadControllerCreated,
                                           &OnUnloadControllerDestroyed);
   parc_hooks::SetUnloadControllerTabEvents(

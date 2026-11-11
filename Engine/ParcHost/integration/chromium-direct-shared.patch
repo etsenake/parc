@@ -58,27 +58,43 @@
  FrameTree* WebContentsImpl::GetOwnedDocumentPictureInPictureFrameTree() {
 --- a/chrome/browser/devtools/devtools_window_views.cc
 +++ b/chrome/browser/devtools/devtools_window_views.cc
-@@ -14,6 +14,7 @@
- #include "components/web_modal/web_contents_modal_dialog_manager.h"
- #include "content/public/browser/keyboard_event_processing_result.h"
- #include "content/public/browser/render_process_host.h"
-+#include "parc/native/native_browser.h"
- #include "printing/buildflags/buildflags.h"
+@@ -1,6 +1,8 @@
+ // Copyright 2025 The Chromium Authors
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
++
++#include <optional>
 -
 +
- #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
-@@ -88,6 +89,10 @@
+ #include "chrome/browser/devtools/devtools_ui_controller.h"
+ #include "chrome/browser/devtools/devtools_window.h"
+@@ -21,6 +23,12 @@
+ #endif
+-
++
+ using content::WebContents;
++
++namespace parc_hooks {
++std::optional<bool> HandleDevToolsKey(WebContents* inspected,
++                                      WebContents* tools,
++                                      const input::NativeWebKeyboardEvent&);
++}  // namespace parc_hooks
+-
++
+ // static
+ void DevToolsWindow::ToggleDevToolsWindow(BrowserWindowInterface* browser,
+@@ -88,6 +96,10 @@
  bool DevToolsWindow::HandleKeyboardEvent(
      WebContents* source,
      const input::NativeWebKeyboardEvent& event) {
-+  if (auto result = parc::HandleNativeDevtoolsKey(GetInspectedWebContents(),
++  if (auto result = parc_hooks::HandleDevToolsKey(GetInspectedWebContents(),
 +                                                  source, event)) {
 +    return *result;
 +  }
    if (event.windows_key_code == 0x08) {
      // Do not navigate back in history on Windows (http://crbug.com/40529649).
      return true;
-@@ -145,13 +150,14 @@
+@@ -145,13 +157,14 @@
      BrowserWindowInterface* browser) {
    web_modal::WebContentsModalDialogManager::CreateForWebContents(
        main_web_contents_);

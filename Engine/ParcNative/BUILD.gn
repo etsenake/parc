@@ -81,17 +81,6 @@ source_set("native_split_link_api") {
   sources = public
 }
 
-# The DevTools Chromium files still call the native Browser seam directly.
-# //parc:browser holds its implementation.
-source_set("native_browser_api") {
-  public = [ "native_browser.h" ]
-  sources = public
-  public_deps = [
-    "//base",
-    "//ui/base/unowned_user_data",
-  ]
-}
-
 source_set("native_components") {
   public = [
     "content_drop_bridge.h",
