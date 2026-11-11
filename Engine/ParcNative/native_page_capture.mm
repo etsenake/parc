@@ -175,6 +175,12 @@ void PostFailure(CaptureCompletion completion, NSString* error) {
       }, [completion copy], result));
 }
 
+// Any pane the window currently shows, not only its focused one: a window
+// copies each pane of a split it has just received.
+bool PageShownInWindow(PCNativeBrowserWindow* binding, PCNativePage* page) {
+  return [[binding.client visibleNativePages] containsObject:page];
+}
+
 bool CaptureEligible(PCNativePage* page, content::WebContents* contents,
                      NSWindow* window, bool require_key) {
   if (!page || page.closed || !contents || contents->IsBeingDestroyed() ||
@@ -202,7 +208,7 @@ bool CaptureEligible(PCNativePage* page, content::WebContents* contents,
       !browser->GetWindow() ||
       browser->GetWindow()->GetNativeWindow().GetNativeNSWindow() != window) return false;
   auto* binding = AppKitBindingForBrowser(browser);
-  return binding && [binding.client selectedNativePage] == page;
+  return binding && PageShownInWindow(binding, page);
 }
 class PageCapture;
 auto& ActiveCaptures() {
@@ -292,7 +298,7 @@ class PageCapture final : public content::WebContentsObserver,
         ContentsForNativePage(page) != contents ||
         document_.AsRenderFrameHostIfValid() != contents->GetPrimaryMainFrame()) return false;
     auto* binding = AppKitBindingForBrowser(browser_.get());
-    return binding && [binding.client selectedNativePage] == page &&
+    return binding && PageShownInWindow(binding, page) &&
         GeometryMatches() && PolicyAllowsCapture();
   }
   bool Capturing() const { return completion_ || element_completion_; }

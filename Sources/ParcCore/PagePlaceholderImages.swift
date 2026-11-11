@@ -44,17 +44,10 @@ final class PagePlaceholderImages {
 }
 
 enum PagePlaceholderCaptureOrder {
-    struct Step: Equatable {
-        let tab: UUID
-        /// The engine copies only the selected page of a window, so any other
-        /// pane is copied with the selection lent to it for the copy.
-        let lendsSelection: Bool
-    }
-
-    /// The order a window takes the copies of its arrived pages: the selected
-    /// pane's first, then each other pane in arrival order, one at a time.
-    static func steps(_ pending: [UUID], selected: UUID?) -> [Step] {
-        let first = pending.filter { $0 == selected }
-        return (first + pending.filter { $0 != selected }).map { Step(tab: $0, lendsSelection: $0 != selected) }
+    /// A window takes the copy of its focused pane before those of the other
+    /// panes that arrived with it.
+    static func mayCapture(_ tab: UUID, pending: Set<UUID>, focused: UUID?) -> Bool {
+        guard let focused, focused != tab else { return true }
+        return !pending.contains(focused)
     }
 }
