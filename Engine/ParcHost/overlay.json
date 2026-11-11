@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 666,
+  "version": 667,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -339,7 +339,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_application.mm",
       "target": "parc/native/native_appkit_application.mm",
-      "sha256": "149d1d3b6b3e3707728b4e4571c72be4628ebc51b38d2513f0b2b8f09c0e854c"
+      "sha256": "b02b5dc80027cae4cc599aa9cefa1d8a629c1685e96190236e0e48f5186a4a58"
     },
     {
       "source": "Engine/ParcNative/native_appkit_bridge.h",
@@ -2019,7 +2019,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "6b9fde275a117ecf8bc7af2edb67df7732735e6ab6808d6be241e88a58477e9b"
+      "sha256": "59679bd77f258cd780428b93cf73461a10c3d806aad0991aad877364382c9a34"
     },
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
@@ -2052,6 +2052,16 @@
       "sha256": "72055b0aa30a1b800732cf9913bf67d4fed4cc874c17aaa870d53f5ec26fccc4"
     },
     {
+      "source": "Engine/ParcChromium/parc_branding.h",
+      "target": "parc/parc_branding.h",
+      "sha256": "c9b328aafa1207fb44b0f98213f3130eb11e98811534706f5c71d69245fe396f"
+    },
+    {
+      "source": "Engine/ParcChromium/parc_branding.cc",
+      "target": "parc/parc_branding.cc",
+      "sha256": "4ccb039e0bda89db97bc83041d43e6fbc7460b06a8c0ebeb1fab8fb72318a7a6"
+    },
+    {
       "source": "Engine/ParcChromium/parc_content_clients.h",
       "target": "parc/parc_content_clients.h",
       "sha256": "78709e60687a0216a9e7bf84e321895ad794f796c5efe486607c203242160d6d"
@@ -2059,7 +2069,7 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.cc",
       "target": "parc/parc_content_clients.cc",
-      "sha256": "f2cce81bd6e3fb036dc374b75fe95c3e48b50e4c39ae824abda869d76299a595"
+      "sha256": "c90aca97b2f77629bf6c0e1333e641c770583aa7e6d2dd93b7d24daec0c2193d"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",
@@ -6117,49 +6127,13 @@
       ]
     },
     {
-      "source": "Engine/ParcHost/integration/native-version-direct.patch",
-      "sha256": "8f54d8ca4b1f18f112bf826ea43ffdc9714e612e0fce281f9f6d416a88c63a39",
+      "source": "Engine/ParcHost/integration/native-license-host.patch",
+      "sha256": "a84427c13ece826fd30062ed2d694b098558f7b0a428bcdf4a90d4ac44e5a2ed",
       "files": [
-        {
-          "target": "chrome/browser/ui/webui/version/version_ui.cc",
-          "before_sha256": "398dfcc4397a2c74a97cca5daf5b9ab4162df30c853684e4b2dfad9c08d98422",
-          "after_sha256": "c6e20f46600a06c8caffd2c77eb4bb8b3478cfd6697ca062c5ecb29543b0b254"
-        },
-        {
-          "target": "components/webui/version/resources/about_version.html",
-          "before_sha256": "fa17a0e833186729c3aff7031929e1c0dcd54b412ca990289627e262d9a847e9",
-          "after_sha256": "3400bc88e113b39de3f9ac69adcc45122723af10d889334a6d103aca402fb153"
-        }
-      ]
-    },
-    {
-      "source": "Engine/ParcHost/integration/native-license-direct.patch",
-      "sha256": "55a9d2706d39a784b93d5de4c5b887d78ba2eb51eff27130602c41385ca86102",
-      "files": [
-        {
-          "target": "chrome/browser/ui/webui/about/about_ui.cc",
-          "before_sha256": "82b71dd662a8f01634cc869b282fef64b5dcc4c346b2fbc0c685b58d5d0f2e9d",
-          "after_sha256": "fa958be7ad42374cc1043a41ad7ff7b519b9ad096f7aae849d00007041c01577"
-        },
-        {
-          "target": "chrome/browser/ui/webui/about/about_ui.h",
-          "before_sha256": "8e88bf4d57efc5fc60b327f30f091e640552a4af8b581fa6724f9423a99784ad",
-          "after_sha256": "843f8e4a6880d0be1c3f3415e68d921fac03a0755ab6082a7e7bb9f2751bf6d8"
-        },
-        {
-          "target": "chrome/browser/ui/webui/chrome_web_ui_configs.cc",
-          "before_sha256": "daf53cfff18969192d13c7db7a98bb93ba183ebe8c7c4ba6e297029c302ce9e2",
-          "after_sha256": "275bfbfe9e3cf6b59040a7feab77bb89d38c7ffaedcd20501eaf90d64084f994"
-        },
         {
           "target": "chrome/common/webui_url_constants.cc",
           "before_sha256": "c2ac21117140d1a6b40e802bdd30bbe8aa52fb1aca2ae221ab06d72c6e021572",
-          "after_sha256": "a2b15a6a2a090b36ff23fd1a2a37ec673ff95d0c48cea4a3e86f0d2b94f5b20c"
-        },
-        {
-          "target": "chrome/common/webui_url_constants.h",
-          "before_sha256": "81ff2f72c736006172e7b189cfbecaa9cac0d0dc42ab93683b7faa45ca489920",
-          "after_sha256": "391d9a44ace3677c7805e30e2938b689df24ba3294d08d9a9844224958d67a38"
+          "after_sha256": "473f3f19b94421c35b7022f6194ca2f96e5dee222b80c04f952efede366b2683"
         }
       ]
     },
