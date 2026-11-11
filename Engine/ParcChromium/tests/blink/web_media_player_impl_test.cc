@@ -36,7 +36,6 @@
 #include "base/test/mock_callback.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
-#include "base/test/simple_test_tick_clock.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "base/trace_event/memory_dump_manager.h"
@@ -49,7 +48,6 @@
 #include "media/base/media_log.h"
 #include "media/base/media_observer.h"
 #include "media/base/media_switches.h"
-#include "media/base/memory_dump_provider_proxy.h"
 #include "media/base/mock_audio_renderer_sink.h"
 #include "media/base/mock_filters.h"
 #include "media/base/mock_media_log.h"
@@ -78,7 +76,6 @@
 #include "third_party/blink/public/platform/cross_variant_mojo_util.h"
 #include "third_party/blink/public/platform/media/web_media_player_builder.h"
 #include "third_party/blink/public/platform/media/web_media_player_delegate.h"
-#include "third_party/blink/public/platform/web_fullscreen_video_status.h"
 #include "third_party/blink/public/platform/web_media_player.h"
 #include "third_party/blink/public/platform/web_media_player_encrypted_media_client.h"
 #include "third_party/blink/public/platform/web_media_player_source.h"
@@ -402,23 +399,6 @@ class MockWebMediaPlayerDelegate : public WebMediaPlayerDelegate {
 
   bool IsPageHidden() override { return is_page_hidden_; }
 
-  void SetIdleForTesting(bool is_idle) { is_idle_ = is_idle; }
-
-  void SetStaleForTesting(bool is_stale) {
-    is_idle_ |= is_stale;
-    is_stale_ = is_stale;
-  }
-
-  // Returns true if the player does in fact expire.
-  bool ExpireForTesting() {
-    if (is_idle_ && !is_stale_) {
-      is_stale_ = true;
-      observer_->OnIdleTimeout();
-    }
-
-    return is_stale_;
-  }
-
   void SetPageHiddenForTesting(bool is_page_hidden) {
     is_page_hidden_ = is_page_hidden;
   }
@@ -637,7 +617,6 @@ class ParcWebMediaPlayerImplTest
 
   void SetPaused(bool is_paused) { wmpi_->paused_ = is_paused; }
   void SetSeeking(bool is_seeking) { wmpi_->seeking_ = is_seeking; }
-  void SetEnded(bool is_ended) { wmpi_->ended_ = is_ended; }
   bool IsPaused() const { return wmpi_->paused_; }
   void OnEnded() { wmpi_->OnEnded(); }
   void SetHasFirstFrame() { wmpi_->has_first_frame_ = true; }
@@ -656,16 +635,8 @@ class ParcWebMediaPlayerImplTest
         media::VideoFrame::CreateBlackFrame(gfx::Size(16, 16)),
         /*repaint_duplicate_frame=*/false);
   }
-  void SetTickClock(const base::TickClock* clock) {
-    wmpi_->SetTickClockForTest(clock);
-  }
   void SetWasSuspendedForFrameClosed(bool is_suspended) {
     wmpi_->was_suspended_for_frame_closed_or_frozen_ = is_suspended;
-  }
-
-  void SetFullscreen(bool is_fullscreen) {
-    wmpi_->overlay_enabled_ = is_fullscreen;
-    wmpi_->overlay_info_.is_fullscreen = is_fullscreen;
   }
 
   void SetMetadata(bool has_audio, bool has_video) {
@@ -685,10 +656,6 @@ class ParcWebMediaPlayerImplTest
       wmpi_->pipeline_metadata_.audio_decoder_config =
           TestAudioConfig::Normal();
     }
-  }
-
-  void SetError(media::PipelineStatus status = media::PIPELINE_ERROR_DECODE) {
-    wmpi_->OnError(status);
   }
 
   void OnMetadata(const media::PipelineMetadata& metadata) {
@@ -868,36 +835,6 @@ class ParcWebMediaPlayerImplTest
   void ParcClearChunkDemuxer() { wmpi_->parc_->chunk_demuxer_ = nullptr; }
 #endif  // BUILDFLAG(IS_MAC)
 
-  WebMediaPlayerImpl::PlayState ComputePlayState() {
-    return wmpi_->UpdatePlayState_ComputePlayState(false, true, false, false,
-                                                   false);
-  }
-
-  WebMediaPlayerImpl::PlayState ComputePlayState_FrameHidden() {
-    return wmpi_->UpdatePlayState_ComputePlayState(false, true, false, true,
-                                                   false);
-  }
-
-  WebMediaPlayerImpl::PlayState ComputePlayState_Suspended() {
-    return wmpi_->UpdatePlayState_ComputePlayState(false, true, true, false,
-                                                   false);
-  }
-
-  WebMediaPlayerImpl::PlayState ComputePlayState_Flinging() {
-    return wmpi_->UpdatePlayState_ComputePlayState(true, true, false, false,
-                                                   false);
-  }
-
-  WebMediaPlayerImpl::PlayState ComputePlayState_BackgroundedStreaming() {
-    return wmpi_->UpdatePlayState_ComputePlayState(false, false, false, true,
-                                                   false);
-  }
-
-  WebMediaPlayerImpl::PlayState ComputePlayState_FrameHiddenPictureInPicture() {
-    return wmpi_->UpdatePlayState_ComputePlayState(false, true, false, true,
-                                                   true);
-  }
-
   bool IsSuspended() { return wmpi_->pipeline_controller_->IsSuspended(); }
 
   bool IsPipelineStable() { return wmpi_->pipeline_controller_->IsStable(); }
@@ -975,10 +912,6 @@ class ParcWebMediaPlayerImplTest
     return wmpi_->demuxer_manager_->GetDataSourceMemoryUsage();
   }
 
-  void AddBufferedRanges() {
-    wmpi_->buffered_data_source_host_->AddBufferedByteRange(0, 1);
-  }
-
   void SetDelegateState(WebMediaPlayerImpl::DelegateState state) {
     wmpi_->SetDelegateState(state, false);
   }
@@ -989,10 +922,6 @@ class ParcWebMediaPlayerImplTest
 
   void SetUpBackgroundVideoPlayback(bool enable) {
     is_background_video_playback_enabled_ = enable;
-  }
-
-  bool IsBackgroundVideoPlaybackAllowed() const {
-    return wmpi_->allow_background_video_playback_;
   }
 
   bool IsPausedBecausePageHidden() const {
@@ -1078,7 +1007,6 @@ class ParcWebMediaPlayerImplTest
   }
 
   void ScheduleIdlePauseTimer() { wmpi_->ScheduleIdlePauseTimer(); }
-  void FireIdlePauseTimer() { wmpi_->background_pause_timer_.FireNow(); }
 
   bool IsIdlePauseTimerRunning() {
     return wmpi_->background_pause_timer_.IsRunning();
@@ -1092,17 +1020,7 @@ class ParcWebMediaPlayerImplTest
     wmpi_->load_type_ = load_type;
   }
 
-  bool IsVideoTrackDisabled() const { return wmpi_->video_track_disabled_; }
-
   bool IsPageHidden() const { return wmpi_->IsPageHidden(); }
-
-  bool IsDisableVideoTrackPending() const {
-    return !wmpi_->is_background_status_change_cancelled_;
-  }
-
-  gfx::Size GetNaturalSize() const {
-    return wmpi_->pipeline_metadata_.natural_size;
-  }
 
   bool ShouldCancelUponDefer() const {
     auto* ds = wmpi_->demuxer_manager_->GetDataSourceForTesting();
@@ -1119,13 +1037,6 @@ class ParcWebMediaPlayerImplTest
     CHECK_NE(ds, nullptr);
     // See comment in |ShouldCancelUponDefer|.
     return static_cast<MultiBufferDataSource*>(ds);
-  }
-
-  bool IsDataSourceMarkedAsPlaying() const {
-    auto* ds = wmpi_->demuxer_manager_->GetDataSourceForTesting();
-    CHECK_NE(ds, nullptr);
-    // See comment in |ShouldCancelUponDefer|.
-    return static_cast<const MultiBufferDataSource*>(ds)->media_has_played();
   }
 
   scoped_refptr<media::VideoFrame> CreateFrame() {
@@ -1245,22 +1156,6 @@ class ParcWebMediaPlayerImplTest
                              WebMediaPlayer::kReadyStateHaveCurrentData);
   }
 
-  void WaitForReadyStateHaveCurrentData() {
-    // This runs until we reach the have current data state. Attempting to wait
-    // for states < kReadyStateHaveCurrentData is unreliable due to asynchronous
-    // execution of tasks on the base::test:TaskEnvironment.
-    while (wmpi_->GetReadyState() <
-           WebMediaPlayer::kReadyStateHaveCurrentData) {
-      base::RunLoop loop;
-      EXPECT_CALL(client_, ReadyStateChanged())
-          .WillRepeatedly(RunClosure(loop.QuitClosure()));
-      loop.Run();
-
-      // Clear the mock so it doesn't have a stale QuitClosure.
-      testing::Mock::VerifyAndClearExpectations(&client_);
-    }
-  }
-
   void CycleThreads() {
     // Ensure any tasks waiting to be posted to the media thread are posted.
     base::RunLoop().RunUntilIdle();
@@ -1366,13 +1261,6 @@ class ParcWebMediaPlayerImplTest
     CycleThreads();
   }
 #endif  // BUILDFLAG(IS_MAC)
-
-  media::MemoryDumpProviderProxy* GetMainThreadMemDumper() {
-    return wmpi_->main_thread_mem_dumper_.get();
-  }
-  media::MemoryDumpProviderProxy* GetMediaThreadMemDumper() {
-    return wmpi_->media_thread_mem_dumper_.get();
-  }
 
   test::TaskEnvironment task_environment_;
 

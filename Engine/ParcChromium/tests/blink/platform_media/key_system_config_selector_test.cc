@@ -489,31 +489,12 @@ class ParcKeySystemConfigSelectorTest : public testing::Test {
     ASSERT_NE(not_supported_count_, 0);
   }
 
-  void SelectConfigRequestsPermissionAndReturnsConfig() {
-    SelectConfig();
-    EXPECT_EQ(1, media_permission_->requests);
-    EXPECT_EQ(1, succeeded_count_);
-    EXPECT_EQ(0, not_supported_count_);
-    ASSERT_NE(media_permission_->requests, 0);
-    ASSERT_NE(succeeded_count_, 0);
-  }
-
-  void SelectConfigRequestsPermissionAndReturnsError() {
-    SelectConfig();
-    EXPECT_EQ(1, media_permission_->requests);
-    EXPECT_EQ(0, succeeded_count_);
-    EXPECT_EQ(1, not_supported_count_);
-    ASSERT_NE(media_permission_->requests, 0);
-    ASSERT_NE(not_supported_count_, 0);
-  }
-
   void OnConfigSelected(KeySystemConfigSelector::Status status,
                         WebMediaKeySystemConfiguration* config,
-                        media::CdmConfig* cdm_config) {
+                        media::CdmConfig*) {
     if (status == KeySystemConfigSelector::Status::kSupported) {
       succeeded_count_++;
       config_ = *config;
-      cdm_config_ = *cdm_config;
     } else {
       not_supported_count_++;
     }
@@ -527,9 +508,8 @@ class ParcKeySystemConfigSelectorTest : public testing::Test {
   WebString key_system_ = WebString::FromUtf8(kSupportedKeySystem);
   std::vector<WebMediaKeySystemConfiguration> configs_;
 
-  // Holds the selected key system, configuration and CdmConfig.
+  // Holds the selected key system configuration.
   WebMediaKeySystemConfiguration config_;
-  media::CdmConfig cdm_config_;
 
   int succeeded_count_;
   int not_supported_count_;

@@ -30,7 +30,6 @@
 #include "third_party/blink/public/platform/web_url.h"
 #include "third_party/blink/public/platform/web_url_response.h"
 #include "third_party/blink/renderer/platform/media/buffered_data_source_host_impl.h"
-#include "third_party/blink/renderer/platform/media/multi_buffer_reader.h"
 #include "third_party/blink/renderer/platform/media/resource_multi_buffer_data_provider.h"
 #include "third_party/blink/renderer/platform/media/testing/mock_resource_fetch_context.h"
 #include "third_party/blink/renderer/platform/media/testing/mock_web_associated_url_loader.h"
@@ -40,7 +39,6 @@
 namespace blink {
 
 using ::testing::_;
-using ::testing::Assign;
 using ::testing::InSequence;
 using ::testing::NiceMock;
 using ::testing::StrictMock;
@@ -70,21 +68,9 @@ class TestMultiBufferDataProvider : public ResourceMultiBufferDataProvider {
   // ResourceMultiBufferDataProvider overrides.
   void Start() override {
     ResourceMultiBufferDataProvider::Start();
-    if (on_start_)
-      std::move(on_start_).Run();
-  }
-  void SetDeferred(bool defer) override {
-    deferred_ = defer;
-    ResourceMultiBufferDataProvider::SetDeferred(defer);
   }
 
   bool loading() const { return !!active_loader_; }
-  bool deferred() const { return deferred_; }
-  void RunOnStart(base::OnceClosure cb) { on_start_ = std::move(cb); }
-
- private:
-  bool deferred_ = false;
-  base::OnceClosure on_start_;
 };
 
 class TestUrlData;
@@ -120,7 +106,6 @@ class TestResourceMultiBuffer : public ResourceMultiBuffer {
       return nullptr;
     return *test_data_providers.begin();
   }
-  bool HasProvider() const { return test_data_providers.size() == 1U; }
   bool loading() {
     if (test_data_providers.empty())
       return false;
@@ -240,7 +225,6 @@ class MockMultiBufferDataSource : public MultiBufferDataSource {
   bool downloading() { return downloading_; }
   void set_downloading(bool downloading) { downloading_ = downloading; }
   bool range_supported() { return url_data_->range_supported(); }
-  void CallSeekTask() { SeekTask(); }
 
  private:
   // Whether the resource is downloading or deferred.
@@ -251,14 +235,13 @@ static const int64_t kFileSize = 5000000;
 static const int kDataSize = 32 << 10;
 
 static const char kHttpUrl[] = "http://localhost/foo.webm";
-static const char kFileUrl[] = "file:///tmp/bar.webm";
 static const char kHttpDifferentPathUrl[] = "http://localhost/bar.webm";
 
 }  // namespace
 
 class ParcMultiBufferDataSourceTest : public testing::Test {
  public:
-  ParcMultiBufferDataSourceTest() : preload_(MultiBufferDataSource::AUTO) {
+  ParcMultiBufferDataSourceTest() {
     ON_CALL(fetch_context_, CreateUrlLoader(_))
         .WillByDefault([](const WebAssociatedURLLoaderOptions&) {
           return std::make_unique<NiceMock<MockWebAssociatedURLLoader>>();
@@ -280,12 +263,12 @@ class ParcMultiBufferDataSourceTest : public testing::Test {
     data_source_ = std::make_unique<MockMultiBufferDataSource>(
         task_runner_, url_index_.GetByUrl(url, cors_mode, UrlData::kNormal),
         media_log_.get(), &host_);
-    data_source_->SetPreload(preload_);
+    data_source_->SetPreload(MultiBufferDataSource::AUTO);
 
     response_generator_ =
         std::make_unique<TestResponseGenerator>(url, file_size);
     EXPECT_CALL(*this, OnInitialize(expected));
-    data_source_->SetIsClientAudioElement(is_client_audio_element_);
+    data_source_->SetIsClientAudioElement(false);
     data_source_->Initialize(
         BindOnce(&ParcMultiBufferDataSourceTest::OnInitialize, Unretained(this)));
     base::RunLoop().RunUntilIdle();
@@ -318,17 +301,6 @@ class ParcMultiBufferDataSourceTest : public testing::Test {
     EXPECT_CALL(host_, SetTotalBytes(response_generator_->content_length()));
     Respond(response_generator_->Generate206(0));
     EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize));
-    ReceiveData(kDataSize);
-  }
-
-  // Helper to initialize tests with a valid file:// response.
-  void InitializeWithFileResponse() {
-    Initialize(kFileUrl, true);
-
-    EXPECT_CALL(host_, SetTotalBytes(kFileSize));
-    EXPECT_CALL(host_, AddBufferedByteRange(0, kFileSize));
-    Respond(response_generator_->GenerateFileResponse(0));
-
     ReceiveData(kDataSize);
   }
 
@@ -378,11 +350,6 @@ class ParcMultiBufferDataSourceTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  void FailLoading() {
-    data_provider()->DidFail(response_generator_->GenerateError());
-    base::RunLoop().RunUntilIdle();
-  }
-
   MOCK_METHOD1(ReadCallback, void(int size));
 
   void ReadAt(int64_t position, int howmuch = kDataSize) {
@@ -392,69 +359,6 @@ class ParcMultiBufferDataSourceTest : public testing::Test {
         BindOnce(&ParcMultiBufferDataSourceTest::ReadCallback, Unretained(this)));
     base::RunLoop().RunUntilIdle();
   }
-
-  void ExecuteMixedResponseSuccessTest(const WebURLResponse& response1,
-                                       const WebURLResponse& response2) {
-    EXPECT_CALL(host_, SetTotalBytes(kFileSize));
-    EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize * 2));
-    EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize));
-    EXPECT_CALL(*this, ReadCallback(kDataSize)).Times(2);
-
-    Respond(response1);
-    ReceiveData(kDataSize);
-    ReadAt(0);
-    EXPECT_TRUE(loading());
-
-    FinishLoading();
-    Start();
-    ReadAt(kDataSize);
-    Respond(response2);
-    ReceiveData(kDataSize);
-    FinishLoading();
-    Stop();
-  }
-
-  void ExecuteMixedResponseFailureTest(const WebURLResponse& response1,
-                                       const WebURLResponse& response2) {
-    EXPECT_CALL(host_, SetTotalBytes(kFileSize));
-    EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize));
-    EXPECT_CALL(*this, ReadCallback(kDataSize));
-    // Stop() will also cause the readback to be called with kReadError, but
-    // we want to make sure it was called before Stop().
-    bool failed_ = false;
-    EXPECT_CALL(*this, ReadCallback(media::DataSource::kReadError))
-        .WillOnce(Assign(&failed_, true));
-
-    Respond(response1);
-    ReceiveData(kDataSize);
-    ReadAt(0);
-    EXPECT_TRUE(loading());
-
-    FinishLoading();
-    Start();
-    ReadAt(kDataSize);
-    Respond(response2);
-    EXPECT_TRUE(failed_);
-    Stop();
-  }
-
-  void CheckCapacityDefer() {
-    EXPECT_EQ(2 << 20, preload_low());
-    EXPECT_EQ(3 << 20, preload_high());
-  }
-
-  void CheckReadThenDefer() {
-    EXPECT_EQ(2 << 14, preload_low());
-    EXPECT_EQ(3 << 14, preload_high());
-  }
-
-  void CheckNeverDefer() {
-    EXPECT_EQ(1LL << 40, preload_low());
-    EXPECT_EQ(1LL << 40, preload_high());
-  }
-
-  // Accessors for private variables on |data_source_|.
-  MultiBufferReader* loader() { return data_source_->reader_.get(); }
 
   TestResourceMultiBuffer* multibuffer() {
     return url_index_.last_url_data()->test_multibuffer();
@@ -478,52 +382,13 @@ class ParcMultiBufferDataSourceTest : public testing::Test {
   }
   bool loading() { return multibuffer()->loading(); }
 
-  MultiBufferDataSource::Preload preload() { return data_source_->preload_; }
-  void set_preload(MultiBufferDataSource::Preload preload) {
-    preload_ = preload;
-  }
-  int64_t preload_high() {
-    CHECK(loader());
-    return loader()->preload_high();
-  }
-  int64_t preload_low() {
-    CHECK(loader());
-    return loader()->preload_low();
-  }
-  int data_source_bitrate() { return data_source_->bitrate_; }
-  int64_t max_buffer_forward() { return loader()->max_buffer_forward_; }
-  int64_t max_buffer_backward() { return loader()->max_buffer_backward_; }
-  int64_t buffer_size() {
-    return loader()->current_buffer_size_ * 32768 /* block size */;
-  }
-  double data_source_playback_rate() { return data_source_->playback_rate_; }
-  bool is_local_source() { return data_source_->AssumeFullyBuffered(); }
-  bool is_client_audio_element() { return loader()->is_client_audio_element_; }
   scoped_refptr<UrlData> url_data() { return data_source_->url_data_; }
-  void set_might_be_reused_from_cache_in_future(bool value) {
-    url_data()->set_cacheable(value);
-  }
-  void set_is_client_audio_element(bool value) {
-    is_client_audio_element_ = value;
-  }
-
-  media::DataSource::Preload GetPreload(MultiBufferDataSource* source) {
-    return source->preload_;
-  }
-  bool GetIsClientAudioElement(MultiBufferDataSource* source) {
-    return source->is_client_audio_element_;
-  }
   bool LoadsForCast(MultiBufferDataSource* source) {
     return source->url_data_->ParcCasting();
-  }
-  void CallOnRedirected(MultiBufferDataSource* source,
-                        const scoped_refptr<UrlData>& data) {
-    source->OnRedirected(data);
   }
 
  protected:
   base::test::SingleThreadTaskEnvironment task_environment_;
-  MultiBufferDataSource::Preload preload_;
   NiceMock<MockResourceFetchContext> fetch_context_;
   const scoped_refptr<base::SingleThreadTaskRunner> task_runner_ =
       task_environment_.GetMainThreadTaskRunner();
@@ -538,8 +403,6 @@ class ParcMultiBufferDataSourceTest : public testing::Test {
 
   // Used for calling MultiBufferDataSource::Read().
   uint8_t buffer_[kDataSize * 2];
-
-  bool is_client_audio_element_ = false;
 };
 
 // Parc: a source whose player a Safari-identity element moved to another frame
