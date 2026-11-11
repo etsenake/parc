@@ -54,3 +54,9 @@
 +    deps += [ "//components/global_media_controls/parc_tests:unit_tests" ]
 +  }
  }
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -4234,2 +4234,3 @@
+   if (is_mac) {
++    deps += [ "//chrome/browser/parc_tests/file_selector:unit_tests" ]
+     sources += [
