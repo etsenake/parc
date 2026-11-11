@@ -18,6 +18,7 @@ source_set("media_tests") {
     "renderer_controller_test.cc",
     "stream_parser_factory_test.cc",
     "video_decoder_config_mojom_traits_test.cc",
+    "video_renderer_impl_test.cc",
     "source_buffer_state_test.cc",
     "source_buffer_stream_test.cc",
   ]
