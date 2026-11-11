@@ -214,6 +214,52 @@ func run() {
     expect(gesture.release(now: 12.2), "a release held full for over 0.1 s creates a Space")
     expect(!gesture.release(now: 12.3), "and only once")
 
+    // A lone Space still tracks past its trailing edge so the same feedback
+    // can fill, hold and create; without activation it springs back in place.
+    let only = SidebarSpacePager.Page(id: UUID(), profileID: UUID())
+    var onlySelected = only.id
+    var onlyFeedback = G()
+    var onlyFeedbackTime: CFTimeInterval = 13
+    var onlyCreated = 0
+    var onlyClock: CFTimeInterval = 13
+    let onlyPager = SidebarSpacePager()
+    onlyPager.pages = { [only] }
+    onlyPager.selectedID = { onlySelected }
+    onlyPager.pageWidth = { 240 }
+    onlyPager.canBegin = { true }
+    onlyPager.canTrackSinglePageCreation = { true }
+    onlyPager.canSelect = { _ in true }
+    onlyPager.select = { onlySelected = $0.id }
+    onlyPager.setOffset = { offset in
+        let overscroll = G.overscroll(selected: 0, offset: offset, width: 240, count: 1)
+        _ = onlyFeedback.update(progress: G.progress(overscroll), now: onlyFeedbackTime)
+    }
+    onlyPager.trackingEnded = {
+        if onlyFeedback.release(now: onlyFeedbackTime) { onlyCreated += 1 }
+    }
+    onlyPager.now = { onlyClock }
+    expect(onlyPager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 13),
+           "a phased swipe starts with one Space")
+    onlyFeedbackTime = 13.01
+    expect(onlyPager.gesture(phase: .changed, momentum: false, dx: -45, dy: 0, time: 13.01)
+           && onlyPager.offset == -22.5 && onlyFeedback.isActivated,
+           "one Space reaches the same create threshold")
+    onlyFeedbackTime = 13.2
+    expect(onlyPager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 13.2)
+           && onlyCreated == 1 && onlySelected == only.id,
+           "releasing the held edge creates without paging to a missing Space")
+    onlyClock += 2; onlyPager.tick()
+    expect(onlyPager.offset == 0 && !onlyPager.isAnimating, "the lone Space settles back after creation")
+    onlyFeedbackTime = 14
+    _ = onlyPager.gesture(phase: .began, momentum: false, dx: -2, dy: 0, time: 14)
+    onlyFeedbackTime = 14.01
+    _ = onlyPager.gesture(phase: .changed, momentum: false, dx: -20, dy: 0, time: 14.01)
+    onlyFeedbackTime = 14.05
+    _ = onlyPager.gesture(phase: .ended, momentum: false, dx: 0, dy: 0, time: 14.05)
+    expect(onlyCreated == 1 && onlyPager.isAnimating, "a short lone-Space swipe creates nothing and springs back")
+    onlyClock += 2; onlyPager.tick()
+    expect(onlyPager.offset == 0 && onlySelected == only.id, "the short swipe settles on the only Space")
+
     // The spring the create-Space edge slides on (response 0.4, damping 0.8).
     var spring = SidebarSpring(response: 0.4, damping: 0.8)
     spring.retarget(1, now: 0)

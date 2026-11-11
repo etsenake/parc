@@ -2484,6 +2484,10 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             return self.window != nil && self.isPresented && self.creationView == nil && !self.isEditingTitle
                 && !self.contentSurface.isHidden && self.hierarchyState != nil
         }
+        spacePager.canTrackSinglePageCreation = { [weak self] in
+            guard let self else { return false }
+            return !self.isPrivateBrowsing && !self.isSpaceManagement && self.onNewSpace != nil
+        }
         spacePager.canSelect = { [weak self] page in self?.canSelectSpace?(page.id, page.profileID) ?? false }
         spacePager.select = { [weak self] page in self?.onSelectSpace?(page.id, page.profileID) }
         spacePager.setOffset = { [weak self] offset in self?.showPageStrip(at: offset) }
