@@ -1,0 +1,105 @@
+// Copyright 2026 Parc contributors.
+// Installed by the reviewed overlay at
+// //third_party/parc_fairplay/chromium/fairplay_media.mojom.
+//
+// Parc's FairPlay media service. A GPU-process service hosts each document's
+// FairPlay CDMs, FairPlay Renderers and native HLS players; a browser host per
+// document connects to it and serves that document's render process. In
+// media.mojom, beside the FairPlay types its interfaces carry.
+module media.mojom;
+
+import "media/mojo/mojom/content_decryption_module.mojom";
+import "media/mojo/mojom/frame_interface_factory.mojom";
+import "media/mojo/mojom/media_types.mojom";
+import "media/mojo/mojom/renderer.mojom";
+import "media/mojo/mojom/renderer_extensions.mojom";
+import "mojo/public/mojom/base/file_path.mojom";
+import "mojo/public/mojom/base/unguessable_token.mojom";
+import "sandbox/policy/mojom/sandbox.mojom";
+
+// The browser's end of one document's FairPlay media, for the GPU process.
+interface FairPlayFrameHost {
+  // The directory where the document's FairPlay CDMs keep AVFoundation's
+  // expired-session reports (Safari's persistent-usage-record sessions), as
+  // WebKit's MediaKeys storage: one per Profile, top-level origin and origin,
+  // inside the Profile's engine folder and created by the browser. Empty off
+  // the record or for an opaque origin, where Safari keeps none.
+  GetStorageDirectory() => (mojo_base.mojom.FilePath directory);
+
+  // The document's media device ID salt, as WebKit's MediaKeys hash salt (one
+  // per document origin and top-level origin, replaced when site data is
+  // cleared), which randomizes the device identifier in the CDM's license
+  // requests. Empty when there is none.
+  GetDeviceIdSalt() => (string salt);
+
+  // Whether the document's profile is off the record, WebKit's ephemeral
+  // session (Page::usesEphemeralSession), which keeps the native HLS player's
+  // asset from a persistent cache and AVFoundation from logging its URLs.
+  IsEphemeralSession() => (bool ephemeral);
+
+  // The Core Audio device UID of the audio output `hashed_device_id` names for
+  // the document (HTMLMediaElement.setSinkId), for a FairPlay Renderer or
+  // native HLS player, whose audio bypasses the audio service. Null when no
+  // such device is there.
+  GetAudioOutputDeviceUid(string hashed_device_id) => (string? unique_id);
+
+  // Answers `observer` with the tab's mute at once and on every change.
+  RegisterMuteStateObserver(pending_remote<MuteStateObserver> observer);
+};
+
+// One document's FairPlay media in the GPU process. Its renderers and players
+// resolve a CDM ID among the CDMs of every document of its render process,
+// and of no other process.
+interface FairPlayFrameMedia {
+  // A FairPlay Streaming CDM, as InterfaceFactory.CreateCdm.
+  CreateCdm(CdmConfig cdm_config) =>
+      (pending_remote<ContentDecryptionModule>? cdm,
+       CdmContext? cdm_context,
+       CreateCdmStatus status);
+
+  // The FairPlay Streaming Renderer. `client_extension` receives its display
+  // layer token and its FairPlayRendererExtension.
+  CreateRenderer(
+      pending_receiver<Renderer> renderer,
+      pending_remote<FairPlayRendererClientExtension> client_extension);
+
+  // Safari's native HLS player (an AVPlayer), which holds `lifetime` for as
+  // long as it lives.
+  CreateHlsPlayer(pending_receiver<FairPlayHlsPlayer> player,
+                  pending_remote<FairPlayHlsPlayerClient> client,
+                  pending_remote<FairPlayHlsPlayerLifetime> lifetime);
+
+  // Watches the document's tab mute for a FairPlay Renderer or native HLS
+  // player made in another document of the render process, which a
+  // Safari-identity page moved its element from. The player follows it from
+  // FollowMuteStateHandoff(`handoff`) on.
+  CreateMuteStateHandoff() => (mojo_base.mojom.UnguessableToken? handoff);
+};
+
+// Implemented by the GPU process; the browser binds it with
+// content::BindInterfaceInGpuProcess.
+[ServiceSandbox=sandbox.mojom.Sandbox.kGpu]
+interface FairPlayMediaService {
+  // The FairPlay media of a document of the render process
+  // `render_process_id`, whose other documents' CDMs its renderers may use.
+  CreateFrameMedia(int32 render_process_id,
+                   pending_remote<FairPlayFrameHost> frame_host,
+                   pending_receiver<FairPlayFrameMedia> frame_media);
+};
+
+// Implemented by the browser for each document; the render process reaches
+// it through the frame's BrowserInterfaceBroker.
+interface FairPlayMediaHost {
+  // As FairPlayFrameMedia.CreateRenderer, for documents that created a
+  // FairPlay CDM or present Safari's identity.
+  CreateRenderer(
+      pending_receiver<Renderer> renderer,
+      pending_remote<FairPlayRendererClientExtension> client_extension);
+
+  // As FairPlayFrameMedia.CreateHlsPlayer; the browser holds the lifetime.
+  CreateHlsPlayer(pending_receiver<FairPlayHlsPlayer> player,
+                  pending_remote<FairPlayHlsPlayerClient> client);
+
+  // As FairPlayFrameMedia.CreateMuteStateHandoff.
+  CreateMuteStateHandoff() => (mojo_base.mojom.UnguessableToken? handoff);
+};

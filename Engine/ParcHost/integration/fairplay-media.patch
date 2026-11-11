@@ -13521,15 +13521,19 @@
      "//base",
 --- a/content/test/BUILD.gn
 +++ b/content/test/BUILD.gn
-@@ -3456,6 +3456,9 @@
- 
+@@ -3456,6 +3456,11 @@
+-
++
    if (is_mac) {
      data_deps += [ "//device/fido/strings:fido_test_strings" ]
 +
-+    # Parc: Safari's native HLS route (content/renderer/media/fairplay).
++    # Parc: Safari's native HLS route (content/renderer/media/fairplay), and
++    # Parc's FairPlay media service.
 +    sources += [ "../renderer/media/fairplay/native_hls_unittest.cc" ]
++    deps += [ "//third_party/parc_fairplay:unit_tests" ]
    }
- 
+-
++
    if (is_posix) {
 --- a/media/formats/mp4/fourccs.h
 +++ b/media/formats/mp4/fourccs.h

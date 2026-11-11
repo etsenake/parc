@@ -11,6 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "media/base/cdm_factory.h"
 #include "media/mojo/mojom/frame_interface_factory.mojom.h"
+#include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 
 namespace media {
 
@@ -21,6 +22,9 @@ class FairPlayCdmFactory final : public CdmFactory {
   // configuration allows persistent state. It outlives this factory (both
   // belong to the media service's InterfaceFactoryImpl).
   explicit FairPlayCdmFactory(mojom::FrameInterfaceFactory* frame_interfaces);
+  // The same answers from Parc's FairPlay media service's |frame_host|, which
+  // outlives this factory (both belong to the document's FairPlayFrameMedia).
+  explicit FairPlayCdmFactory(mojom::FairPlayFrameHost* frame_host);
   FairPlayCdmFactory(const FairPlayCdmFactory&) = delete;
   FairPlayCdmFactory& operator=(const FairPlayCdmFactory&) = delete;
   ~FairPlayCdmFactory() override;
@@ -53,6 +57,7 @@ class FairPlayCdmFactory final : public CdmFactory {
       const base::FilePath& storage_directory);
 
   const raw_ptr<mojom::FrameInterfaceFactory> frame_interfaces_;
+  const raw_ptr<mojom::FairPlayFrameHost> frame_host_;
   base::WeakPtrFactory<FairPlayCdmFactory> weak_factory_{this};
 };
 

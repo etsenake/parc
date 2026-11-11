@@ -7,7 +7,20 @@
 # It lives under third_party so Chromium's clang style plugin and
 # unsafe-buffers checks, which the core predates, don't apply to it.
 
+import("//mojo/public/tools/bindings/mojom.gni")
+
 assert(is_mac)
+
+# Parc's FairPlay media service, its browser host and their render-process
+# end.
+mojom("mojom") {
+  sources = [ "chromium/fairplay_media.mojom" ]
+  public_deps = [
+    "//media/mojo/mojom",
+    "//mojo/public/mojom/base",
+    "//sandbox/policy/mojom",
+  ]
+}
 
 # Key system names only, for the browser and the renderer.
 source_set("key_system") {
@@ -84,7 +97,10 @@ source_set("core") {
 # //media/mojo/services. The render process's client is compiled into
 # //content/renderer (content/renderer/media/fairplay).
 source_set("gpu") {
-  visibility = [ "//media/mojo/services:*" ]
+  visibility = [
+    ":*",
+    "//media/mojo/services:*",
+  ]
   sources = [
     "chromium/fairplay_cdm_adapter.cc",
     "chromium/fairplay_cdm_adapter.h",
@@ -98,7 +114,10 @@ source_set("gpu") {
     "chromium/fairplay_renderer_adapter.mm",
     "chromium/fairplay_task_runner.h",
   ]
-  public_deps = [ ":key_system" ]
+  public_deps = [
+    ":key_system",
+    ":mojom",
+  ]
   deps = [
     ":core",
     "//base",
@@ -114,5 +133,44 @@ source_set("gpu") {
   frameworks = [
     "AVFoundation.framework",
     "QuartzCore.framework",
+  ]
+}
+
+# Parc's FairPlay media service, which Parc's GPU client exposes to the
+# browser (fairplay_media_service.h).
+source_set("service") {
+  visibility = [
+    ":*",
+    "//parc:*",
+  ]
+  sources = [
+    "chromium/fairplay_media_service.cc",
+    "chromium/fairplay_media_service.h",
+  ]
+  public_deps = [
+    ":gpu",
+    ":mojom",
+    "//media/mojo/services",
+  ]
+  deps = [
+    "//base",
+    "//media",
+    "//mojo/public/cpp/bindings",
+  ]
+}
+
+# Linked into content_unittests (content/test/BUILD.gn).
+source_set("unit_tests") {
+  testonly = true
+  visibility = [ "//content/test:*" ]
+  sources = [ "chromium/fairplay_media_service_unittest.cc" ]
+  deps = [
+    ":service",
+    "//base",
+    "//base/test:test_support",
+    "//media",
+    "//media/mojo/services",
+    "//mojo/public/cpp/bindings",
+    "//testing/gtest",
   ]
 }
