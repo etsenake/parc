@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 694,
+  "version": 695,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -6261,7 +6261,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/chromium-direct-shared.patch",
-      "sha256": "63099d76ae2886a318bcecfc02e79f75d13268ea4373ae448876b6c5bc225d11",
+      "sha256": "c3a52d6ec5192b2cfaebd8716023836c86fafffd4d05c57585d68a5d4f1af38a",
       "files": [
         {
           "target": "content/browser/web_contents/web_contents_impl.cc",
@@ -6276,7 +6276,12 @@
         {
           "target": "chrome/browser/file_select_helper.cc",
           "before_sha256": "b2a7c45ce2f2e78fc0f3a18cfbd9115e834c209680fed9c08ca724c6c17f9cda",
-          "after_sha256": "67de1da7d978ac7746f13078fdfc25c6fc67378fb0e17aba890a21ab24b1ff28"
+          "after_sha256": "145671ac8da6931eae0e022d11a1f390c21db4bb5349e51972f4695fcfe90d37"
+        },
+        {
+          "target": "chrome/browser/file_select_helper_unittest.cc",
+          "before_sha256": "605d24c087468fe4c5ea0a20a5891f0b74a2bb7cf5cd91483987e7e9754f29c6",
+          "after_sha256": "f3b100a126652e589e244e90026257583cc2750cc1dccd166b50fde6989f4496"
         },
         {
           "target": "chrome/browser/ui/BUILD.gn",
