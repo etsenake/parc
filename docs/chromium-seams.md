@@ -84,33 +84,20 @@ Browser, window and startup covers 28 patches: 5 SEAM, 12 HOOK and 11 STAY. Chro
 construction, its private startup stages and its deletion rules can't be overridden, so they keep small
 `.cc` hooks rather than observers. Observers would run too late to guard native deletion. The 11 STAY patches
 are genuine Chromium fixes, build dependencies, Keychain naming, and three behaviours with no lossless
-replacement yet:
-- atomic browser import;
-- native link transport;
-- one fullscreen failure transition.
+replacement yet: atomic browser import, native link transport and one fullscreen failure transition.
 
 Media covers about 24,150 product lines. About 2,100 leave Chromium files through seams, about 8,900 move
 into Parc files behind hooks or accessors, and about 13,000 stay as patches, mostly hooks and state
 machines (all ±20%). About 10,000 of its 15,335 upstream test lines can follow into Parc test files. A
 Parc-owned media player is rejected. Chromium picks the player once, from the URL, before any CDM
-exists, so a separate player would mean forking WebMediaPlayerImpl. What stays patched has no seam:
-- the HTMLMediaElement algorithm steps, though their state moves to a supplement;
-- Media Source gap bridging and late SourceBuffers;
-- format support in the parsers and the AudioToolbox decoder;
-- reverse playback and audio mixing in the renderers;
-- the CALayer compositing core;
-- the EME enums;
-- the Cast device dialog.
+exists, so a separate player would mean forking WebMediaPlayerImpl. What stays patched has no seam: the
+HTMLMediaElement algorithm steps (their state moves to a supplement), Media Source gap bridging and late
+SourceBuffers, format support in the parsers and the AudioToolbox decoder, reverse playback and audio
+mixing in the renderers, the CALayer compositing core, the EME enums and the Cast device dialog.
 
-These widely included headers leave:
-- `execution_context.h`, `element.h`, `node_rare_data.h` and `page.h`;
-- `web_preferences.h` and its mojom;
-- the local-frame clients;
-- the `html_names`/`event_type_names` regeneration;
-- the renderer-factory struct;
-- the four FairPlay mojoms;
-- the overlay-window and picture-in-picture interfaces;
-- the stable media-session mojoms.
+These widely included headers leave: `execution_context.h`, `element.h`, `node_rare_data.h` and `page.h`;
+the local-frame clients; the `html_names`/`event_type_names` regeneration; the renderer-factory struct;
+the four FairPlay mojoms; and the overlay-window and picture-in-picture interfaces.
 
 Build and tests: Parc-owned build targets per subsystem, owned test targets for the 53 upstream test files,
 and a shared compile cache. Chromium's build tool can use the NativeLink server on the second Mac as a cache
@@ -145,7 +132,7 @@ context-menu and file-selector work shares files across areas, so it goes throug
      The ManagedMediaSource listener's tag lies past every suppression mask, so nothing can silence its
      purge. The picture-in-picture caption boxes sit in a Parc set. The `ParcSafariIdentityEme` runtime
      feature stays, because Blink's IDL reader requires every `[SecureContext=…]` name to be one.
-     `page.h` leaves with the WebPreferences fields in step 8.
+     `page.h` leaves in step 8.
 
    Browser state stays in `Browser` and the restore-state headers until step 4's ownership work lands.
 4. **Move bodies behind hooks.** This is most of the refit win:
@@ -185,11 +172,11 @@ reader stays until those tests pass on the new path.
    tests rely on. Parc-owned sources install into layer-local test targets when Chromium's visibility rules
    require it, and those targets remain dependencies of the original test binaries. The overlay-scrollbar
    fade, AudioToolbox AMR, native presentation-request retirement, reentrant media-item closure,
-   supplemental picker lifecycle and wallet-reminder lifetime regressions are the first suites moved this
-   way.
-8. **Smaller conversions.** Auto-PiP occlusion, the playback-controls dispatcher, PiP captions over a Parc
-   mojom bound to a session token, the decodeAudioData hook (measured first), and WebPreferences fields over
-   a Parc mojom, whose first value must arrive before any media plays.
+   supplemental picker lifecycle, wallet-reminder lifetime, desktop wallet-delegate and file-selector MIME
+   regressions are the first suites moved this way.
+8. **Smaller conversions.** Auto-PiP, playback controls, PiP captions and the WebPreferences fields are
+   settled (media boundaries). The decodeAudioData hook waits for a throughput measurement in a running
+   browser. Worker script requests keep their user-agent patch: a throttle would set it after Chrome's own.
 9. **Compile cache.** Add the macOS cache configuration to both build recipes, prove cache hits with no
    remote execution, and keep existing objects untouched.
 10. **Patches as a branch.** The export and equivalence tooling comes first, and can start alongside
@@ -221,12 +208,9 @@ a separate FairPlay process with `CALayerHost`.
   - nested-pass and copy-request handling;
   - PiP layer ownership and `preventsCapture`;
   - re-checking compositor features at the Chromium 157 upgrade.
-- **Browser:**
-  - refusing a window before a Browser exists;
-  - draining the native host before deletion;
-  - deferring off-the-record operations;
-  - rolling back a transfer when its last tab fails;
-  - crash-safe profile removal.
+- **Browser:** refusing a window before a Browser exists, draining the native host before deletion,
+  deferring off-the-record operations, rolling back a transfer when its last tab fails, and crash-safe
+  profile removal.
 - **Interface:** every prompt keeps its source page and window checks, is cancelled on detach and
   navigation, and completes exactly once.
 
@@ -388,8 +372,10 @@ The player header still declares Parc methods: overrides of Parc's player,
 demuxer and track interfaces, and the orchestration that drives the player's
 own state machine, namely the FairPlay hand-off and restarts, the AirPlay
 route switch, document moves, casting while frozen and the readyState gates.
-They stay in Chromium's file because they read and change the player's
-private state in place, in an order Safari-identity pages depend on.
+They stay in Chromium's file because they read and change the player's private state in place, in an order
+Safari-identity pages depend on. Hidden Safari-identity video keeps its track by the player's own identity
+check, not the frame's background-track playback option: a player copies that option once, and keeps it
+when Parc moves it to another document.
 
 HTMLMediaElement's Parc state and steps live in a Parc supplement that the
 element makes in its constructor, so it lasts exactly as long as the element.
@@ -483,6 +469,20 @@ copy-request and nested-pass handling, black capture fallbacks, Picture in
 Picture ownership and `preventsCapture`. Renderer window planning and mixing
 arithmetic remain patched until that separate move ships with a real playback
 check.
+
+Automatic picture in picture keeps its tab-helper patch: Chromium's occlusion helper exists only behind an
+off flag, merges the shell's and the page's states that Parc keeps apart, and goes quiet while not
+observing, and entry's wait for the renderer's hidden acknowledgement starts and is cancelled at seven
+private points. Only that acknowledgement is a hook. Captions reach Parc's window over a navigation-associated
+Parc interface, so Chromium's session interface and window class are stock. Each names its session by the
+document's count of started sessions, which both processes keep, so a replaced session's never show. Scrubbing keeps Chromium's stable media-session and controller interfaces:
+the media controls send it on their play and pause pipe, in order, and read Safari-style scrubbing from
+the same session info, so a direct dispatcher would race them. Parc's window scrubs through a call in the
+controller's `.cc`, so the public controller and media-session headers are stock; the player observer
+keeps its two virtuals, the session's only route to its players. The shell's in-window and power values
+still ride in WebPreferences, which reach a renderer with its view's creation and in order with its page
+lifecycle, so the first precedes any media; a Parc mojom could promise neither. A Parc page supplement
+holds them, so `page.h` and the page-visibility observer are stock.
 
 ## Decisions
 

@@ -179,6 +179,7 @@ source_set("browser") {
     "native/sad_tab.h",
     "native/sad_tab.mm",
     "native/video_overlay_window.mm",
+    "native/video_picture_in_picture_captions.h",
     "parc_branding.cc",
     "parc_branding.h",
     "parc_bundle_mac.h",

@@ -192,6 +192,21 @@ class OverlayTests(unittest.TestCase):
         self.save()
         self.assert_unchanged_refusal()
 
+    def test_ordered_patch_chain_uses_each_reviewed_intermediate(self):
+        final = b"group(\"parc\") {\n  deps = [ \":parc_fixture\", \":tests\" ]\n}\n"
+        self.add_patch("tests.patch", "parc/BUILD.gn", self.after, final)
+        self.save()
+        self.assertTrue(self.call()["applied"])
+        self.assertEqual(self.target.read_bytes(), final)
+        record = engine.recorded_overlay(
+            self.workspace, engine.read_marker(self.workspace, self.sha))
+        self.assertEqual(record["targets"]["parc/BUILD.gn"]["original"],
+                         self.before.decode())
+        self.spec["version"] = 2
+        self.spec["patches"].reverse()
+        self.save()
+        self.assert_unchanged_refusal()
+
     def test_bad_input_hash_wrong_upstream_or_duplicate_target_fail_closed(self):
         original = copy.deepcopy(self.spec)
         for change in ("hash", "upstream", "duplicate"):

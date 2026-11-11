@@ -79,6 +79,7 @@ namespace content {
 class ClientCertificateDelegate;
 class RenderFrameHost;
 class WebContents;
+struct MediaPlayerId;
 }
 
 namespace net {
@@ -310,6 +311,18 @@ void SetTabUIUpdateGate(
 // chrome/browser/ui/tabs/tab_strip_api/tab_strip_model_impl/
 // tab_strip_model_adapter_impl.cc. Native Browsers can genuinely be empty.
 void SetEmptyTabColorProvider(const ui::ColorProvider* (*provider)());
+
+// chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc.
+// Automatic entry waits for the renderer to acknowledge the page is hidden;
+// unhooked builds enter at once, as Chromium does.
+void SetAutoPictureInPictureVisibilitySync(
+    void (*sync)(content::WebContents*, base::OnceCallback<void(bool)>));
+
+// content/browser/picture_in_picture/
+// video_picture_in_picture_window_controller_impl.cc. Runs as each video
+// picture-in-picture session starts, before its window shows.
+void SetVideoPictureInPictureSessionStarted(
+    void (*started)(const content::MediaPlayerId& player));
 
 // chrome/browser/ui/views/frame/browser_window_factory.cc; a null window keeps
 // Chrome's.

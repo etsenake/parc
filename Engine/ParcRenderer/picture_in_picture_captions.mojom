@@ -1,0 +1,20 @@
+// Copyright 2026 Parc contributors.
+module parc.mojom;
+
+import "skia/public/mojom/bitmap.mojom";
+import "ui/gfx/geometry/mojom/geometry.mojom";
+
+// Captions for Parc's video picture-in-picture window. Navigation-associated,
+// so each call reaches the browser while its document is still the frame's.
+// Captions travel apart from the picture-in-picture session, so each names its
+// session by how many the browser has started for that document; the window
+// shows only its latest session's.
+interface PictureInPictureCaptionsHost {
+  // The video's displayed text track cues, painted for the window, as WebKit
+  // sends Safari's (VideoPresentationManager::
+  // updateTextTrackRepresentationForVideoElement). `bounds` places them as a
+  // fraction of the video frame the window shows; a null `captions` removes
+  // them.
+  UpdateCaptions(uint64 session, skia.mojom.BitmapN32? captions,
+                 gfx.mojom.RectF bounds);
+};

@@ -6,7 +6,10 @@ assert(is_mac)
 source_set("unit_tests") {
   visibility = [ "//chrome/browser/ui/autofill/payments:*" ]
   testonly = true
-  sources = [ "wallet_reminder_notice_bubble_controller_test.cc" ]
+  sources = [
+    "wallet_reminder_notice_bubble_controller_test.cc",
+    "wallet_reminder_notice_ui_delegate_desktop_test.cc",
+  ]
 
   deps = [
     "//base",
@@ -19,6 +22,8 @@ source_set("unit_tests") {
     "//chrome/browser/ui/page_action:test_support",
     "//chrome/browser/ui:test_support",
     "//chrome/test/base:chrome_render_view_host_test_harness",
+    "//components/autofill/content/browser:test_support",
+    "//components/autofill/core/browser:test_support",
     "//components/tabs:test_support",
     "//content/public/browser",
     "//content/test:test_support",

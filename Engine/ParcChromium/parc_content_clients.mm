@@ -51,10 +51,13 @@
 #include "parc/native/sad_tab.h"
 #include "parc/native/site_permissions.h"
 #include "parc/native/video_overlay_window.h"
+#include "parc/native/video_picture_in_picture_captions.h"
 #include "parc/native/webauthn.h"
 #include "parc/parc_bundle_mac.h"
 #include "parc/parc_branding.h"
 #include "parc/renderer/website_theme_agent.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
+#include "third_party/blink/public/mojom/parc/picture_in_picture_captions.mojom.h"
 #include "third_party/parc_fairplay/chromium/fairplay_cdm_info.h"
 #include "third_party/parc_fairplay/chromium/fairplay_media.mojom.h"
 #include "third_party/parc_fairplay/chromium/fairplay_media_service.h"
@@ -111,6 +114,8 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
     parc_hooks::SetTabSharingProfile(&TabSharingCapturerProfile);
     parc_hooks::SetPaneFocusRotation(&RotateAppKitPaneFocus);
     parc_hooks::SetFairPlayCdmCreator(&FairPlayDocumentHost::CreateCdm);
+    parc_hooks::SetVideoPictureInPictureSessionStarted(
+        &StartPictureInPictureCaptionsSession);
     RegisterNativePageContextMenu();
     RegisterNativeFileDialogs();
     RegisterLicenseWebUI();
@@ -242,6 +247,18 @@ void ParcContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
   // The document's FairPlay Renderers and native HLS players.
   map->Add<media::mojom::FairPlayMediaHost>(
       base::BindRepeating(&FairPlayDocumentHost::BindMediaHost));
+}
+
+void ParcContentBrowserClient::
+    RegisterAssociatedInterfaceBindersForRenderFrameHost(
+        content::RenderFrameHost& render_frame_host,
+        blink::AssociatedInterfaceRegistry& associated_registry) {
+  ChromeContentBrowserClient::
+      RegisterAssociatedInterfaceBindersForRenderFrameHost(render_frame_host,
+                                                           associated_registry);
+  associated_registry.AddInterface<mojom::PictureInPictureCaptionsHost>(
+      base::BindRepeating(&BindPictureInPictureCaptionsHost,
+                          &render_frame_host));
 }
 
 bool ParcContentBrowserClient::IsHandledURL(const GURL& url) {

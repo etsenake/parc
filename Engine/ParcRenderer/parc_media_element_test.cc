@@ -3333,7 +3333,8 @@ TEST_P(ParcMediaElementTest, ParcSafariBackForwardCacheRestoreHeldUntilShown) {
   Media()->addEventListener(event_type_names::kPlay, play);
   Media()->addEventListener(event_type_names::kPause, pause);
 
-  Media()->GetDocument().GetPage()->SetParcPageInWindow(false);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetInWindow(false);
   SetPageVisibility(mojom::blink::PageVisibilityState::kHidden);
   GetExecutionContext()->SetIsInBackForwardCache(true);
   GetExecutionContext()->SetLifecycleState(
@@ -3355,7 +3356,8 @@ TEST_P(ParcMediaElementTest, ParcSafariBackForwardCacheRestoreHeldUntilShown) {
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 
   EXPECT_CALL(*MockMediaPlayer(), Play()).Times(testing::AtLeast(1));
-  Media()->GetDocument().GetPage()->SetParcPageInWindow(true);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetInWindow(true);
   SetPageVisibility(mojom::blink::PageVisibilityState::kVisible);
   EXPECT_FALSE(Media()->paused());
   EXPECT_TRUE(MediaIsPlaying());
@@ -3380,7 +3382,8 @@ TEST_P(ParcMediaElementTest, ParcSafariBackForwardCacheRestoreVisibleResumes) {
   Media()->addEventListener(event_type_names::kPlay, play);
   Media()->addEventListener(event_type_names::kPause, pause);
 
-  Media()->GetDocument().GetPage()->SetParcPageInWindow(false);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetInWindow(false);
   SetPageVisibility(mojom::blink::PageVisibilityState::kHidden);
   GetExecutionContext()->SetIsInBackForwardCache(true);
   GetExecutionContext()->SetLifecycleState(
@@ -3391,7 +3394,8 @@ TEST_P(ParcMediaElementTest, ParcSafariBackForwardCacheRestoreVisibleResumes) {
   EXPECT_CALL(*MockMediaPlayer(), Play()).Times(testing::AtLeast(1));
   GetExecutionContext()->SetLifecycleState(
       mojom::blink::FrameLifecycleState::kRunning);
-  Media()->GetDocument().GetPage()->SetParcPageInWindow(true);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetInWindow(true);
   SetPageVisibility(mojom::blink::PageVisibilityState::kVisible);
   GetExecutionContext()->SetIsInBackForwardCache(false);
   EXPECT_FALSE(Media()->paused());
@@ -3415,7 +3419,8 @@ TEST_P(ParcMediaElementTest,
   Media()->addEventListener(event_type_names::kPlay, play);
   Media()->addEventListener(event_type_names::kPause, pause);
 
-  Media()->GetDocument().GetPage()->SetParcPageInWindow(false);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetInWindow(false);
   SetPageVisibility(mojom::blink::PageVisibilityState::kHidden);
   EXPECT_CALL(*MockMediaPlayer(), OnFrozen());
   GetExecutionContext()->SetIsInBackForwardCache(true);
@@ -3428,7 +3433,8 @@ TEST_P(ParcMediaElementTest,
   GetExecutionContext()->SetLifecycleState(
       mojom::blink::FrameLifecycleState::kRunning);
   GetExecutionContext()->SetIsInBackForwardCache(false);
-  Media()->GetDocument().GetPage()->SetParcPageInWindow(true);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetInWindow(true);
   SetPageVisibility(mojom::blink::PageVisibilityState::kVisible);
   EXPECT_TRUE(Media()->paused());
   EXPECT_FALSE(MediaIsPlaying());
@@ -3452,7 +3458,8 @@ TEST_P(ParcMediaElementTest,
   Media()->addEventListener(event_type_names::kPlay, play);
   Media()->addEventListener(event_type_names::kPause, pause);
 
-  Media()->GetDocument().GetPage()->SetParcPageInWindow(false);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetInWindow(false);
   SetPageVisibility(mojom::blink::PageVisibilityState::kHidden);
   GetExecutionContext()->SetIsInBackForwardCache(true);
   GetExecutionContext()->SetLifecycleState(
@@ -3474,7 +3481,8 @@ TEST_P(ParcMediaElementTest,
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 
   EXPECT_CALL(*MockMediaPlayer(), Play()).Times(testing::AtLeast(1));
-  Media()->GetDocument().GetPage()->SetParcPageInWindow(true);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetInWindow(true);
   EXPECT_EQ(Media()->GetDocument().GetPage()->GetVisibilityState(),
             mojom::blink::PageVisibilityState::kHiddenButPainting);
   EXPECT_FALSE(Media()->paused());
@@ -3499,7 +3507,8 @@ TEST_P(ParcMediaElementTest,
   Media()->addEventListener(event_type_names::kPlay, play);
   Media()->addEventListener(event_type_names::kPause, pause);
 
-  Media()->GetDocument().GetPage()->SetParcPageInWindow(true);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetInWindow(true);
   SetPageVisibility(mojom::blink::PageVisibilityState::kHidden);
   GetExecutionContext()->SetIsInBackForwardCache(true);
   GetExecutionContext()->SetLifecycleState(
@@ -3510,7 +3519,8 @@ TEST_P(ParcMediaElementTest,
   EXPECT_CALL(*MockMediaPlayer(), Play()).Times(testing::AtLeast(1));
   GetExecutionContext()->SetLifecycleState(
       mojom::blink::FrameLifecycleState::kRunning);
-  Media()->GetDocument().GetPage()->SetParcPageInWindow(true);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetInWindow(true);
   EXPECT_EQ(Media()->GetDocument().GetPage()->GetVisibilityState(),
             mojom::blink::PageVisibilityState::kHidden);
   GetExecutionContext()->SetIsInBackForwardCache(false);
@@ -5502,7 +5512,8 @@ TEST_P(ParcMediaMockTimeTest, EndedGestureExpiresAfterOneSecond) {
 
 TEST_P(ParcMediaElementTest, ParcPowerRestrictedMutedPlaybackSafari) {
   SetUserAgent(kParcSafariUserAgent);
-  Media()->GetDocument().GetPage()->SetParcMediaPowerRestricted(true);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetMediaPowerRestricted(true);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
   test::RunPendingTasks();
   ParcStickyActivationOnly(Media());
@@ -5511,14 +5522,16 @@ TEST_P(ParcMediaElementTest, ParcPowerRestrictedMutedPlaybackSafari) {
   EXPECT_EQ(Media()->Play().has_value(), safari_video);
   Media()->pause();
   if (safari_video) {
-    Media()->GetDocument().GetPage()->SetParcMediaPowerRestricted(false);
+    ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetMediaPowerRestricted(false);
     EXPECT_FALSE(Media()->Play().has_value());
     Media()->pause();
   }
 }
 TEST_P(ParcMediaElementTest, ParcPowerRestrictedMutedPlaybackChrome) {
   SetUserAgent(kParcChromeUserAgent);
-  Media()->GetDocument().GetPage()->SetParcMediaPowerRestricted(true);
+  ParcPageMediaState::From(*Media()->GetDocument().GetPage())
+      .SetMediaPowerRestricted(true);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
   test::RunPendingTasks();
   ParcStickyActivationOnly(Media());

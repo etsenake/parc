@@ -867,6 +867,7 @@ def prepare_overlay(workspace: Path, lock: dict, state: dict, manifest: Path,
     old = previous["targets"] if previous else {}
     targets = {}
     used = set()
+    patched_targets = {}
 
     def input_bytes(item):
         file = internal_path(input_root / relative_source(item["source"]), input_root)
@@ -902,9 +903,20 @@ def prepare_overlay(workspace: Path, lock: dict, state: dict, manifest: Path,
     for patch in spec.get("patches", []):
         originals = {}
         expected = {}
+        patch_targets = set()
         for item in patch["files"]:
             target = item["target"]
-            data = original(target)
+            folded = target.casefold()
+            if folded in patch_targets:
+                raise Refusal(f"Duplicate patch target: {target}")
+            patch_targets.add(folded)
+            if folded in patched_targets:
+                if patched_targets[folded] != target:
+                    raise Refusal(f"Duplicate overlay target: {target}")
+                data = writes[target]
+            else:
+                data = original(target)
+                patched_targets[folded] = target
             if digest(data) != item["before_sha256"]:
                 raise Refusal(f"Overlay base digest mismatch: {target}")
             originals[target] = data

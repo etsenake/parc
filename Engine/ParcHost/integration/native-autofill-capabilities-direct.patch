@@ -3036,28 +3036,6 @@
  
   private:
    const raw_ref<ContentAutofillClient> client_;
---- a/chrome/browser/ui/autofill/payments/wallet_reminder_notice_ui_delegate_desktop_unittest.cc
-+++ b/chrome/browser/ui/autofill/payments/wallet_reminder_notice_ui_delegate_desktop_unittest.cc
-@@ -80,7 +80,8 @@
-   std::unique_ptr<WalletReminderNoticeUiDelegateDesktop> delegate_;
- };
- 
--TEST_F(WalletReminderNoticeUiDelegateDesktopTest, ShowWalletReminderNotice) {
-+TEST_F(WalletReminderNoticeUiDelegateDesktopTest,
-+       MissingBrowserDoesNotPresentNoticeOrShowIcon) {
-   LegalMessageLines legal_message_lines = {TestLegalMessageLine("Line 1.")};
- 
-   auto* bubble_controller =
-@@ -88,7 +89,8 @@
-   ASSERT_TRUE(bubble_controller);
-   EXPECT_TRUE(bubble_controller->GetLegalMessageLines().empty());
- 
--  EXPECT_CALL(*mock_page_action_controller_, Show(kActionWalletReminderNotice));
-+  EXPECT_CALL(*mock_page_action_controller_, Show(kActionWalletReminderNotice))
-+      .Times(0);
- 
-   delegate_->ShowWalletReminderNotice(legal_message_lines);
- 
 --- a/components/autofill/core/browser/BUILD.gn
 +++ b/components/autofill/core/browser/BUILD.gn
 @@ -1228,6 +1228,7 @@
