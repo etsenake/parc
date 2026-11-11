@@ -15797,16 +15797,6 @@
    output->set_target_output_sample_format(target_output_sample_format);
 -
 +
---- a/media/mojo/mojom/audio_decoder_config_mojom_traits_unittest.cc
-+++ b/media/mojo/mojom/audio_decoder_config_mojom_traits_unittest.cc
-@@ -62,6 +62,7 @@
-                    48000, EmptyExtraData(), EncryptionScheme::kUnencrypted,
-                    base::TimeDelta(), 0);
-   input.set_profile(AudioCodecProfile::kXHE_AAC);
-+  input.set_parc_ts_audio_type(0x7a616368);
-   std::vector<uint8_t> data = mojom::AudioDecoderConfig::Serialize(&input);
-   AudioDecoderConfig output;
-   EXPECT_TRUE(mojom::AudioDecoderConfig::Deserialize(std::move(data), &output));
 --- a/media/mojo/mojom/BUILD.gn
 +++ b/media/mojo/mojom/BUILD.gn
 @@ -36,6 +36,9 @@
