@@ -54,7 +54,7 @@ media::mojom::FairPlayMediaService& FairPlayMediaService() {
 }
 
 // Forwards the FairPlay Renderer's client extension from the GPU process to
-// the render process, and holds the document's audibility-bypass grant while
+// the render process, and holds its player's audibility-bypass grant while
 // that Renderer lives. Its audio plays through AVSampleBufferAudioRenderer, not
 // the audio service, so this is how AudioStreamMonitor may count it audible.
 class RendererClientExtensionProxy final
@@ -81,8 +81,8 @@ class RendererClientExtensionProxy final
   content::AudibilityBypassTracker::ScopedGrant grant_;
 };
 
-// The browser's end of a native HLS player's lifetime handle. It holds the
-// document's audibility-bypass grant until the GPU player closes the pipe:
+// The browser's end of a native HLS player's lifetime handle. It holds its
+// player's audibility-bypass grant until the GPU player closes the pipe:
 // AVPlayer's audio goes straight to CoreAudio, not through the audio service,
 // so this is how AudioStreamMonitor may count the player audible.
 class HlsPlayerLifetime final
@@ -147,6 +147,7 @@ bool FairPlayDocumentHost::CreateCdm(
 }
 
 void FairPlayDocumentHost::CreateRenderer(
+    int32_t player_id,
     mojo::PendingReceiver<media::mojom::Renderer> receiver,
     mojo::PendingRemote<media::mojom::FairPlayRendererClientExtension>
         client_extension) {
@@ -163,19 +164,22 @@ void FairPlayDocumentHost::CreateRenderer(
   mojo::MakeSelfOwnedReceiver(
       std::make_unique<RendererClientExtensionProxy>(
           std::move(client_extension),
-          content::AudibilityBypassTracker::AddGrant(&render_frame_host())),
+          content::AudibilityBypassTracker::AddPlayerGrant(
+              &render_frame_host(), player_id)),
       gpu_client_extension.InitWithNewPipeAndPassReceiver());
   FrameMedia().CreateRenderer(std::move(receiver),
                               std::move(gpu_client_extension));
 }
 
 void FairPlayDocumentHost::CreateHlsPlayer(
+    int32_t player_id,
     mojo::PendingReceiver<media::mojom::FairPlayHlsPlayer> player,
     mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client) {
   mojo::PendingRemote<media::mojom::FairPlayHlsPlayerLifetime> lifetime;
   mojo::MakeSelfOwnedReceiver(
       std::make_unique<HlsPlayerLifetime>(
-          content::AudibilityBypassTracker::AddGrant(&render_frame_host())),
+          content::AudibilityBypassTracker::AddPlayerGrant(
+              &render_frame_host(), player_id)),
       lifetime.InitWithNewPipeAndPassReceiver());
   FrameMedia().CreateHlsPlayer(std::move(player), std::move(client),
                                std::move(lifetime));

@@ -26,6 +26,10 @@ void FairPlayRendererClientFactory::SetMediaHost(
   media_host_ = media_host;
 }
 
+void FairPlayRendererClientFactory::SetPlayerId(int32_t player_id) {
+  player_id_ = player_id;
+}
+
 std::unique_ptr<Renderer> FairPlayRendererClientFactory::CreateRenderer(
     const scoped_refptr<base::SequencedTaskRunner>& media_task_runner,
     const scoped_refptr<base::TaskRunner>& /*worker_task_runner*/,
@@ -40,7 +44,8 @@ std::unique_ptr<Renderer> FairPlayRendererClientFactory::CreateRenderer(
   auto client_extension_receiver =
       client_extension_remote.InitWithNewPipeAndPassReceiver();
   mojo::PendingRemote<mojom::Renderer> renderer_remote;
-  media_host_->CreateRenderer(renderer_remote.InitWithNewPipeAndPassReceiver(),
+  media_host_->CreateRenderer(player_id_,
+                              renderer_remote.InitWithNewPipeAndPassReceiver(),
                               std::move(client_extension_remote));
   // FairPlayRendererClient paints the video hole frames itself.
   auto mojo_renderer = std::make_unique<MojoRenderer>(

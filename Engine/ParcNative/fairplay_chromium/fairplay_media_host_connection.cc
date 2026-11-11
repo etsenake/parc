@@ -36,30 +36,33 @@ void FairPlayMediaHostConnection::OnDestruct() {
 }
 
 void FairPlayMediaHostConnection::CreateRenderer(
+    int32_t player_id,
     mojo::PendingReceiver<media::mojom::Renderer> receiver,
     mojo::PendingRemote<media::mojom::FairPlayRendererClientExtension>
         client_extension) {
   if (!task_runner_->BelongsToCurrentThread()) {
     task_runner_->PostTask(
         FROM_HERE, base::BindOnce(&FairPlayMediaHostConnection::CreateRenderer,
-                                  weak_this_, std::move(receiver),
+                                  weak_this_, player_id, std::move(receiver),
                                   std::move(client_extension)));
     return;
   }
-  Host()->CreateRenderer(std::move(receiver), std::move(client_extension));
+  Host()->CreateRenderer(player_id, std::move(receiver),
+                         std::move(client_extension));
 }
 
 void FairPlayMediaHostConnection::CreateHlsPlayer(
+    int32_t player_id,
     mojo::PendingReceiver<media::mojom::FairPlayHlsPlayer> player,
     mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client) {
   if (!task_runner_->BelongsToCurrentThread()) {
     task_runner_->PostTask(
         FROM_HERE, base::BindOnce(&FairPlayMediaHostConnection::CreateHlsPlayer,
-                                  weak_this_, std::move(player),
+                                  weak_this_, player_id, std::move(player),
                                   std::move(client)));
     return;
   }
-  Host()->CreateHlsPlayer(std::move(player), std::move(client));
+  Host()->CreateHlsPlayer(player_id, std::move(player), std::move(client));
 }
 
 void FairPlayMediaHostConnection::CreateMuteStateHandoff(

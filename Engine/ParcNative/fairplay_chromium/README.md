@@ -35,7 +35,7 @@ this guide covers demuxed samples and the Chromium/CDM boundary.
 | CDM routing | `MediaInterfaceProxy::CreateCdm` runs Parc's CDM creator (`parc_hooks::SetFairPlayCdmCreator`, `FairPlayDocumentHost::CreateCdm`) after the Widevine observer. FairPlay key systems go to the document's `FairPlayFrameMedia`, before the library CDM path (which would look for a CDM binary) |
 | Renderer selection | `CdmContext::RequiresFairPlayRenderer()`, carried to the render process as `mojom::CdmContext.requires_fairplay_renderer`; `PipelineImpl` then asks for `RendererType::kFairPlay`. In the GPU process the FairPlay renderer and HLS player reach the key session with `FairPlayCdmAdapter::GetFairPlayCdm()` |
 | GPU `media::Renderer` | `fairplay_renderer_adapter.{h,mm}` over `parc::fairplay::FairPlayRenderer`, created by `FairPlayFrameMedia::CreateRenderer` |
-| Render-process client | `fairplay_renderer_client{,_factory}.{h,cc}` → `//content/renderer/media/fairplay`, registered as `kFairPlay` (never the base renderer) by `fairplay_renderer_factories.{h,cc}`, which `MediaFactory` calls to add and move the FairPlay and native HLS factories. `fairplay_media_host_connection.{h,cc}` is the frame's pipe to its `FairPlayMediaHost`, callable from any thread |
+| Render-process client | `fairplay_renderer_client{,_factory}.{h,cc}` → `//content/renderer/media/fairplay`, registered as `kFairPlay` (never the base renderer) by `fairplay_renderer_factories.{h,cc}`, which `MediaFactory` calls to add the FairPlay and native HLS factories, give them the built player's ID and move them. `fairplay_media_host_connection.{h,cc}` is the frame's pipe to its `FairPlayMediaHost`, callable from any thread |
 | Display handoff | layer token over `mojom::FairPlayRendererClientExtension.OnLayerRegistered`; `ui::ProtectedLayerRegistry` and the compositor side in [COMPOSITING.md](COMPOSITING.md) (fairplay-compositing) |
 | Native HLS (Safari's AVPlayer route) | [NATIVE_HLS.md](NATIVE_HLS.md): `mojom::FairPlayHlsPlayer` over `FairPlayMediaHost.CreateHlsPlayer`; GPU `fairplay_hls_player_service.{h,mm}` (`FairPlayFrameMedia::CreateHlsPlayer`); render-process loads `fairplay_hls_loader.{h,cc}` → `//third_party/blink/renderer/platform/media` |
 | Key system registration | `fairplay_cdm_info.{h,cc}` and `fairplay_key_system_info.{h,cc}` (`:registration`), from one capability: `ParcContentClient::AddContentDecryptionModules` lists the `CdmInfo` after Chrome's CDMs (browser), and `ParcContentRendererClient::GetSupportedKeySystems` adds the `KeySystemInfo` to each of Chrome's key system updates (renderer) |
@@ -225,7 +225,11 @@ EME's false, when there are none), other types reject with NotSupported.
   - Indicator: `FairPlayDocumentHost::CreateRenderer` holds an
     `AudibilityBypassTracker` grant in the proxy it puts between the GPU
     adapter and the render-process client, so the grant ends with the GPU
-    renderer. The player reports that it doesn't use the audio service, so
+    renderer. The grant is the player's own
+    (`AudibilityBypassTracker::AddPlayerGrant`, keyed by the ID `MediaFactory`
+    gives the factories once the player exists), so players never take each
+    other's, and an unclaimed grant follows its player to another frame of the
+    process. The player reports that it doesn't use the audio service, so
     `MediaWebContentsObserver` claims the grant and registers it with
     `AudioStreamMonitor` while the player is audible. A frame gets the grant
     only after it asked `CreateCdm` for a registered FairPlay key system, or
@@ -346,13 +350,6 @@ one rebuffer. This also affects casting, PiP and background tabs.
 The current core supports VP9 and Vorbis for Safari-identity media, but has no
 VP8 or MP3 renderer implementation. Transitions into Dolby Vision beside those
 codecs can fail, and late FairPlay attachment can require restart.
-
-Native players in one frame receive audibility grants from a shared pending
-pool, without the originating player's identity. If they claim grants in a
-different order from creation, closing one renderer can revoke the surviving
-player's grant and remove its speaker indicator. Grants do follow document
-moves. Bind each new grant to its player and cover reversed claim/close order
-in the browser observer tests.
 
 The MSE FairPlay client and GPU adapter also omit `SetPreservesPitch`, so a
 page cannot disable pitch preservation on this route. The core supports the

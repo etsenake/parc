@@ -9,6 +9,8 @@
 #ifndef PARC_NATIVE_FAIRPLAY_MEDIA_HOST_H_
 #define PARC_NATIVE_FAIRPLAY_MEDIA_HOST_H_
 
+#include <stdint.h>
+
 #include <string>
 
 #include "content/public/browser/document_user_data.h"
@@ -48,10 +50,12 @@ class FairPlayDocumentHost final
 
   // media::mojom::FairPlayMediaHost:
   void CreateRenderer(
+      int32_t player_id,
       mojo::PendingReceiver<media::mojom::Renderer> receiver,
       mojo::PendingRemote<media::mojom::FairPlayRendererClientExtension>
           client_extension) override;
   void CreateHlsPlayer(
+      int32_t player_id,
       mojo::PendingReceiver<media::mojom::FairPlayHlsPlayer> player,
       mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client)
       override;

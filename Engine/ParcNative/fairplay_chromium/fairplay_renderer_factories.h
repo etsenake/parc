@@ -26,6 +26,11 @@ namespace parc::fairplay {
 void AddRendererFactories(media::RendererFactorySelector& selector,
                           content::RenderFrame* render_frame);
 
+// Once the player exists: its FairPlay renderers and native HLS players hold
+// its own audibility grant (WebMediaPlayer::GetPlayerId).
+void SetRendererFactoriesPlayer(media::RendererFactorySelector& selector,
+                                int player_id);
+
 // For a player moved to this frame: its FairPlay renderers find a CDM another
 // frame of the process made and get this frame's tab mute, which the one
 // playing follows too (FairPlayMediaHost.CreateMuteStateHandoff).

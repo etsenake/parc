@@ -26,6 +26,10 @@ void NativeHlsRendererFactory::SetMediaHost(
   media_host_ = media_host;
 }
 
+void NativeHlsRendererFactory::SetPlayerId(int32_t player_id) {
+  player_id_ = player_id;
+}
+
 std::unique_ptr<media::Renderer> NativeHlsRendererFactory::CreateRenderer(
     const scoped_refptr<base::SequencedTaskRunner>& media_task_runner,
     const scoped_refptr<base::TaskRunner>& /*worker_task_runner*/,
@@ -52,7 +56,8 @@ NativeHlsRendererFactory::CreateParcNativeHlsDemuxer(
   mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client;
   mojo::PendingReceiver<media::mojom::FairPlayHlsPlayerClient> client_receiver =
       client.InitWithNewPipeAndPassReceiver();
-  media_host_->CreateHlsPlayer(player.InitWithNewPipeAndPassReceiver(),
+  media_host_->CreateHlsPlayer(player_id_,
+                               player.InitWithNewPipeAndPassReceiver(),
                                std::move(client));
   media_task_runner_ = params.media_task_runner;
   auto demuxer = std::make_unique<NativeHlsDemuxer>(

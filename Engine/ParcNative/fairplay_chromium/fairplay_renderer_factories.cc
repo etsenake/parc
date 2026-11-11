@@ -22,6 +22,17 @@ void AddRendererFactories(media::RendererFactorySelector& selector,
                       std::make_unique<NativeHlsRendererFactory>(media_host));
 }
 
+void SetRendererFactoriesPlayer(media::RendererFactorySelector& selector,
+                                int player_id) {
+  if (auto* factory = selector.GetFactory(media::RendererType::kFairPlay)) {
+    static_cast<media::FairPlayRendererClientFactory*>(factory)->SetPlayerId(
+        player_id);
+  }
+  if (auto* factory = selector.GetFactory(media::RendererType::kFairPlayHls)) {
+    static_cast<NativeHlsRendererFactory*>(factory)->SetPlayerId(player_id);
+  }
+}
+
 void MoveRendererFactories(media::RendererFactorySelector& selector,
                            content::RenderFrame* render_frame) {
   FairPlayMediaHostConnection* media_host =

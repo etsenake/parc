@@ -230,10 +230,11 @@
  namespace {
  
  // This limit is much higher than it needs to be right now, because the logic
-@@ -464,14 +469,7 @@
+@@ -464,14 +469,11 @@
    }
  #endif
- 
+-
++
 -  if (!media_player_builder_) {
 -    media_player_builder_ = std::make_unique<blink::WebMediaPlayerBuilder>(
 -        *web_frame,
@@ -242,14 +243,25 @@
 -  }
 -
 -  return media_player_builder_->Build(
-+  return GetMediaPlayerBuilder().Build(
++#if BUILDFLAG(IS_MAC)
++  media::RendererFactorySelector* parc_factory_selector =
++      factory_selector.get();
++#endif  // BUILDFLAG(IS_MAC)
++  auto player = GetMediaPlayerBuilder().Build(
        web_frame, client, encrypted_client, delegate,
        std::move(factory_selector), std::move(submitter), std::move(media_log),
        player_id,
-@@ -497,6 +495,77 @@
+@@ -495,6 +497,83 @@
+           .is_background_video_track_optimization_supported,
+       std::move(demuxer_override),
        blink::Platform::Current()->GetBrowserInterfaceBroker());
- }
--
++#if BUILDFLAG(IS_MAC)
++  // Parc: each FairPlay player's renderers hold its own audibility grant.
++  parc::fairplay::SetRendererFactoriesPlayer(*parc_factory_selector,
++                                             player->GetPlayerId());
++#endif  // BUILDFLAG(IS_MAC)
++  return player;
++}
 +
 +bool MediaFactory::ParcAdoptMediaPlayer(
 +    blink::WebMediaPlayer& player,
@@ -320,12 +332,11 @@
 +            blink::TaskType::kNetworkingUnfreezable));
 +  }
 +  return *media_player_builder_;
-+}
+ }
+-
 +
  blink::WebEncryptedMediaClient* MediaFactory::EncryptedMediaClient() {
-   if (!web_encrypted_media_client_) {
-     web_encrypted_media_client_ =
-@@ -658,6 +727,11 @@
+@@ -658,6 +737,11 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
 -
@@ -11728,15 +11739,18 @@
      "//base",
 --- a/content/test/BUILD.gn
 +++ b/content/test/BUILD.gn
-@@ -3456,6 +3456,11 @@
+@@ -3456,6 +3456,14 @@
 -
 +
    if (is_mac) {
      data_deps += [ "//device/fido/strings:fido_test_strings" ]
 +
 +    # Parc: Safari's native HLS route (content/renderer/media/fairplay), and
-+    # Parc's FairPlay media service.
-+    sources += [ "../renderer/media/fairplay/native_hls_unittest.cc" ]
++    # Parc's FairPlay media service and its audibility grants.
++    sources += [
++      "../browser/media/parc_audibility_grant_unittest.cc",
++      "../renderer/media/fairplay/native_hls_unittest.cc",
++    ]
 +    deps += [ "//third_party/parc_fairplay:unit_tests" ]
    }
 -
@@ -16668,41 +16682,62 @@
  class WebContentsImpl;
  
  // Used to authorize a frame to bypass the browser's audio service for
-@@ -84,11 +85,17 @@
+@@ -76,6 +77,9 @@
+   using ScopedGrant = base::ScopedClosureRunner;
+-
++
+   static ScopedGrant AddGrant(RenderFrameHost* rfh);
++  // Parc: a grant for the player `player_id` of `rfh`'s document alone, which
++  // follows it to another document of the process (FairPlay players).
++  static ScopedGrant AddPlayerGrant(RenderFrameHost* rfh, int player_id);
+   static bool ClaimGrant(const MediaPlayerId& id);
+   static void ReleaseGrant(const MediaPlayerId& id);
+-
++
+@@ -84,11 +88,23 @@
    explicit AudibilityBypassTracker(RenderFrameHost* rfh);
    DOCUMENT_USER_DATA_KEY_DECL();
- 
--  static void RevokeGrant(GlobalRenderFrameHostId rfh_id, int grant_id);
 -
--  int next_grant_id_ = 0;
++
+-  static void RevokeGrant(GlobalRenderFrameHostId rfh_id, int grant_id);
 +  static void RevokeGrant(int grant_id);
 +
 +  // Parc: the document holding each grant; a moved player's grant leaves for
 +  // the player's new document.
 +  static base::flat_map<int, GlobalRenderFrameHostId>& GrantHolders();
 +
++  // Parc: removes and returns a grant this document released or holds pending
++  // for `player_id`.
++  std::optional<int> TakePlayerGrant(int player_id);
+-
++
+-  int next_grant_id_ = 0;
    base::flat_set<int> pending_grants_;
++  // Parc: AddPlayerGrant()'s unclaimed grants, to their player ids.
++  base::flat_map<int, int> pending_player_grants_;
    base::flat_map<MediaPlayerId, int> active_grants_;
 +  // Parc: grants of players whose registration here ended, by player id, for
 +  // the same player registered with another document.
 +  base::flat_map<int, int> released_grants_;
  };
- 
+-
++
  // This class manages all RenderFrame based media related managers at the
-@@ -154,6 +161,12 @@
- 
+@@ -155,6 +171,12 @@
    // Returns whether or not the given player id is active.
    bool IsPlayerActive(const MediaPlayerId& player_id) const;
+-
 +
 +  // Parc: whether a player in |main_frame|'s page renders on a cast receiver.
 +  static bool IsRemotePlaybackStartedInPage(RenderFrameHostImpl* main_frame);
 +  // Parc: the AirPlay handler hears that |player_id|'s registration ended
 +  // (content/public/browser/parc_playback_target.h).
 +  void ParcPlaybackTargetPlayerGone(const MediaPlayerId& player_id);
- 
++
    bool has_audio_wake_lock_for_testing() const {
      return has_audio_wake_lock_for_testing_;
-@@ -260,6 +273,13 @@
+   }
+@@ -260,6 +282,13 @@
      void OnVideoVisibilityChanged(bool meets_visibility_threshold) override;
      void NotifyAudioStreamMonitorIfNeeded();
      void OnVideoFrameAvailabilityChanged(bool available) override;
@@ -16716,7 +16751,7 @@
  
     private:
      PlayerInfo* GetPlayerInfo();
-@@ -278,6 +298,7 @@
+@@ -278,6 +307,7 @@
  
      // Helps monitor audio stream when not using AudioService.
      bool uses_audio_service_ = true;
@@ -16802,11 +16837,10 @@
  
    auto* audio_stream_monitor =
        media_web_contents_observer_->web_contents_impl()->audio_stream_monitor();
-@@ -686,6 +713,101 @@
-     OnVideoFrameAvailabilityChanged(bool available) {
-   media_web_contents_observer_->session_controllers_manager()
+@@ -688,6 +715,101 @@
        ->OnVideoFrameAvailabilityChanged(media_player_id_, available);
-+}
+ }
+-
 +
 +namespace {
 +ParcPlaybackTargetHandler* g_parc_playback_target_handler = nullptr;
@@ -16901,9 +16935,11 @@
 +  point.SetToMin(gfx::Point(size.width(), size.height()));
 +  g_parc_playback_target_handler->OnShowPlaybackTargetPicker(
 +      media_web_contents_observer_->web_contents(), media_player_id_, point);
- }
- 
++}
++
  bool MediaWebContentsObserver::IsMediaPlayerRemoteAvailable(
+     const MediaPlayerId& player_id) {
+   return media_player_remotes_.contains(player_id);
 @@ -793,6 +915,7 @@
            observer->fullscreen_player_.reset();
          }
@@ -16912,13 +16948,29 @@
        },
        base::Unretained(this), player_id));
  
-@@ -839,10 +962,12 @@
+@@ -834,19 +957,60 @@
+-
++
+ AudibilityBypassTracker::~AudibilityBypassTracker() = default;
+-
++
++namespace {
++
++// Parc: unique across documents, so a grant can follow its player.
++int NextGrantId() {
++  static int next_grant_id = 0;
++  return ++next_grant_id;
++}
++
++}  // namespace
++
+ // static
+ AudibilityBypassTracker::ScopedGrant AudibilityBypassTracker::AddGrant(
      RenderFrameHost* rfh) {
    if (rfh) {
      auto* tracker = GetOrCreateForCurrentDocument(rfh);
 -    int grant_id = ++tracker->next_grant_id_;
-+    static int next_grant_id = 0;
-+    int grant_id = ++next_grant_id;
++    int grant_id = NextGrantId();
      tracker->pending_grants_.insert(grant_id);
 -    return ScopedGrant(base::BindOnce(&AudibilityBypassTracker::RevokeGrant,
 -                                      rfh->GetGlobalId(), grant_id));
@@ -16928,35 +16980,65 @@
    }
    return ScopedGrant();
  }
-@@ -857,6 +982,27 @@
+-
++
++// static
++AudibilityBypassTracker::ScopedGrant AudibilityBypassTracker::AddPlayerGrant(
++    RenderFrameHost* rfh,
++    int player_id) {
++  int grant_id = NextGrantId();
++  GetOrCreateForCurrentDocument(rfh)->pending_player_grants_[grant_id] =
++      player_id;
++  GrantHolders()[grant_id] = rfh->GetGlobalId();
++  return ScopedGrant(
++      base::BindOnce(&AudibilityBypassTracker::RevokeGrant, grant_id));
++}
++
++std::optional<int> AudibilityBypassTracker::TakePlayerGrant(int player_id) {
++  std::optional<int> grant_id;
++  if (auto released = released_grants_.find(player_id);
++      released != released_grants_.end()) {
++    grant_id = released->second;
++    released_grants_.erase(released);
++  } else if (auto pending = std::ranges::find_if(
++                 pending_player_grants_,
++                 [player_id](const auto& entry) {
++                   return entry.second == player_id;
++                 });
++             pending != pending_player_grants_.end()) {
++    grant_id = pending->first;
++    pending_player_grants_.erase(pending);
++  }
++  return grant_id;
++}
++
+ // static
+ bool AudibilityBypassTracker::ClaimGrant(const MediaPlayerId& id) {
+   auto* rfh = RenderFrameHost::FromID(id.frame_routing_id);
+@@ -857,6 +1021,22 @@
    if (tracker && tracker->active_grants_.contains(id)) {
      return true;
    }
 +  // Parc: player ids are unique in their render process, so a grant a
-+  // document of this process released for the same id is this player's: a
-+  // Safari-identity page moved it here with its element
-+  // (HTMLMediaElement::ParcMovePlayerToFrame), and its grant follows it.
-+  std::optional<int> moved_grant_id;
++  // document of this process made for or released by the same id is this
++  // player's, wherever a Safari-identity page moved it with its element
++  // (HTMLMediaElement::ParcMovePlayerToFrame).
++  std::optional<int> player_grant_id;
 +  rfh->GetProcess()->ForEachRenderFrameHost([&](RenderFrameHost* other) {
 +    auto* other_tracker = GetForCurrentDocument(other);
-+    if (moved_grant_id || !other_tracker) {
-+      return;
-+    }
-+    auto released = other_tracker->released_grants_.find(id.player_id);
-+    if (released != other_tracker->released_grants_.end()) {
-+      moved_grant_id = released->second;
-+      other_tracker->released_grants_.erase(released);
++    if (!player_grant_id && other_tracker) {
++      player_grant_id = other_tracker->TakePlayerGrant(id.player_id);
 +    }
 +  });
-+  if (moved_grant_id) {
-+    GetOrCreateForCurrentDocument(rfh)->active_grants_[id] = *moved_grant_id;
-+    GrantHolders()[*moved_grant_id] = id.frame_routing_id;
++  if (player_grant_id) {
++    GetOrCreateForCurrentDocument(rfh)->active_grants_[id] = *player_grant_id;
++    GrantHolders()[*player_grant_id] = id.frame_routing_id;
 +    return true;
 +  }
    if (tracker && !tracker->pending_grants_.empty()) {
      int grant_id = *tracker->pending_grants_.begin();
      tracker->pending_grants_.erase(tracker->pending_grants_.begin());
-@@ -873,15 +1019,36 @@
+@@ -873,15 +1053,36 @@
      return;
    }
    auto* tracker = GetForCurrentDocument(rfh);
@@ -16999,7 +17081,17 @@
    if (!rfh) {
      return;
    }
-@@ -903,9 +1070,20 @@
+@@ -889,7 +1090,8 @@
+   if (!tracker) {
+     return;
+   }
+-  if (tracker->pending_grants_.erase(grant_id)) {
++  if (tracker->pending_grants_.erase(grant_id) ||
++      tracker->pending_player_grants_.erase(grant_id)) {
+     return;
+   }
+   for (auto it = tracker->active_grants_.begin();
+@@ -903,9 +1105,20 @@
          web_contents->media_web_contents_observer()->OnAudibilityBypassRevoked(
              id);
        }

@@ -54,6 +54,8 @@ class NativeHlsRendererFactory final : public media::RendererFactory {
       media::ParcNativeHlsDemuxerParams params) override;
 
   void SetMediaHost(media::mojom::FairPlayMediaHost* media_host);
+  // As FairPlayRendererClientFactory::SetPlayerId.
+  void SetPlayerId(int32_t player_id);
   // Parc: as FairPlayRendererClientFactory::ParcMuteStateHandoffTarget, for
   // the last player made.
   using MuteStateHandoffTarget = base::OnceCallback<void(
@@ -62,6 +64,7 @@ class NativeHlsRendererFactory final : public media::RendererFactory {
 
  private:
   raw_ptr<media::mojom::FairPlayMediaHost> media_host_;
+  int32_t player_id_ = 0;
   scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
   base::WeakPtr<NativeHlsDemuxer> demuxer_;
   uint64_t mute_state_handoff_requests_ = 0;

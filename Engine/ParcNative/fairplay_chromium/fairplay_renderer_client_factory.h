@@ -51,6 +51,10 @@ class FairPlayRendererClientFactory final : public RendererFactory {
       const gfx::ColorSpace& target_color_space) override;
 
   void SetMediaHost(mojom::FairPlayMediaHost* media_host);
+  // The player the renderers are for (WebMediaPlayer::GetPlayerId), whose
+  // audibility grant each holds. Set on the main thread before the player
+  // loads.
+  void SetPlayerId(int32_t player_id);
 
   // Parc: gives the last renderer made, if it lives, a mute state handoff
   // (FairPlayMediaHost.CreateMuteStateHandoff) of the frame a Safari-identity
@@ -61,6 +65,7 @@ class FairPlayRendererClientFactory final : public RendererFactory {
 
  private:
   raw_ptr<mojom::FairPlayMediaHost> media_host_;
+  int32_t player_id_ = 0;
   scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
   base::WeakPtr<FairPlayRendererClient> renderer_;
   uint64_t mute_state_handoff_requests_ = 0;

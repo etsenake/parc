@@ -146,9 +146,8 @@ The remaining work is specific to these paths:
   before navigation, and narrow same-source Connecting labels and speaker-only
   discovery. Media Source on a frozen page cannot append beyond its buffered
   range. [Casting and media boundaries](safari-media-edges.md).
-- FairPlay needs player-specific audibility-grant association and MSE pitch-policy
-  forwarding. VP8/MP3 and protected Opus/PCM remain unsupported; codec eligibility
-  and fallback behavior belong in
+- FairPlay needs MSE pitch-policy forwarding. VP8/MP3 and protected Opus/PCM
+  remain unsupported; codec eligibility and fallback behavior belong in
   [FairPlay integration](../Engine/ParcNative/fairplay_chromium/README.md).
 - Protected playback also retains reused-context start-date, nested translucent
   video-layer and encrypted AC-3/E-AC-3 channel-layout limits.

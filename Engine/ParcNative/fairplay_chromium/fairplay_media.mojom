@@ -473,13 +473,18 @@ interface FairPlayMediaService {
 // it through the frame's BrowserInterfaceBroker.
 interface FairPlayMediaHost {
   // As FairPlayFrameMedia.CreateRenderer, for documents that created a
-  // FairPlay CDM or present Safari's identity.
+  // FairPlay CDM or present Safari's identity. The renderer holds the
+  // audibility grant of the player `player_id` (WebMediaPlayer::GetPlayerId)
+  // alone, which puts it in the tab's speaker indicator.
   CreateRenderer(
+      int32 player_id,
       pending_receiver<Renderer> renderer,
       pending_remote<FairPlayRendererClientExtension> client_extension);
 
-  // As FairPlayFrameMedia.CreateHlsPlayer; the browser holds the lifetime.
-  CreateHlsPlayer(pending_receiver<FairPlayHlsPlayer> player,
+  // As FairPlayFrameMedia.CreateHlsPlayer, with the same grant for its
+  // player; the browser holds the lifetime.
+  CreateHlsPlayer(int32 player_id,
+                  pending_receiver<FairPlayHlsPlayer> player,
                   pending_remote<FairPlayHlsPlayerClient> client);
 
   // As FairPlayFrameMedia.CreateMuteStateHandoff.

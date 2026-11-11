@@ -172,10 +172,10 @@ context-menu and file-selector work shares files across areas, so it goes throug
    - the media supplements: HTMLMediaElement with AirPlay; EME and MediaCapabilities; the
      WebMediaPlayerImpl rules; //media/filters; the Viz planner; and the renderer arithmetic, which ships
      only together with a real playback check.
-5. **Parc FairPlay media service.** A Parc GPU service and a per-document browser host replace our
+5. **Parc FairPlay media service.** Done. A Parc GPU service and a per-document browser host replace our
    additions to Chromium's media factories and mojoms; 24 files are pristine again, 4 mojoms and 8 headers
-   among them. Binding each audio grant to its own player, which fixes the lost speaker indicator, is next.
-   The CreateCdm hook and the MojoRenderer CDM swap stay, for ordering reasons given in
+   among them. Each audio grant is now its own player's, so one closing player can't take another's speaker
+   indicator. The CreateCdm hook and the MojoRenderer CDM swap stay, for ordering reasons given in
    [FairPlay in Chromium](../Engine/ParcNative/fairplay_chromium/README.md#widevine-request-hook).
 6. **FairPlay hand-off out of the pipeline.** A Parc helper owned by the renderer wrapper, plus a decorator
    stream, replaces the hand-off code in PipelineImpl and ChunkDemuxer. Its tests come first, and the old

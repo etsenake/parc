@@ -10,6 +10,8 @@
 #ifndef CONTENT_RENDERER_MEDIA_FAIRPLAY_FAIRPLAY_MEDIA_HOST_CONNECTION_H_
 #define CONTENT_RENDERER_MEDIA_FAIRPLAY_FAIRPLAY_MEDIA_HOST_CONNECTION_H_
 
+#include <stdint.h>
+
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
@@ -35,10 +37,12 @@ class FairPlayMediaHostConnection final
 
   // media::mojom::FairPlayMediaHost, on any thread:
   void CreateRenderer(
+      int32_t player_id,
       mojo::PendingReceiver<media::mojom::Renderer> receiver,
       mojo::PendingRemote<media::mojom::FairPlayRendererClientExtension>
           client_extension) override;
   void CreateHlsPlayer(
+      int32_t player_id,
       mojo::PendingReceiver<media::mojom::FairPlayHlsPlayer> player,
       mojo::PendingRemote<media::mojom::FairPlayHlsPlayerClient> client)
       override;
