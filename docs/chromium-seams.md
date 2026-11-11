@@ -164,16 +164,15 @@ context-menu and file-selector work shares files across areas, so it goes throug
    among them. Each audio grant is now its own player's, so one closing player can't take another's speaker
    indicator. The CreateCdm hook and the MojoRenderer CDM swap stay, for ordering reasons given in
    [FairPlay in Chromium](../Engine/ParcNative/fairplay_chromium/README.md#widevine-request-hook).
-6. **FairPlay hand-off out of the pipeline.** A Parc helper owned by the renderer wrapper, plus a decorator
-   stream, replaces the hand-off code in PipelineImpl and ChunkDemuxer. Its tests come first, and the old
-reader stays until those tests pass on the new path.
+6. **FairPlay hand-off out of the pipeline.** A Parc helper owned by the renderer wrapper and a decorator
+   stream replace the hand-off code in PipelineImpl and ChunkDemuxer; the old reader stays until their tests pass.
 7. **Tests out of upstream files.** Start with the small suites (scrollbar, Viz capture, AMR), then cast,
    autofill, controls and PiP, then the large media and Blink fixtures. Keep the compatibility edits those
    tests rely on. Parc-owned sources install into layer-local test targets when Chromium's visibility rules
    require it, and those targets remain dependencies of the original test binaries. The overlay-scrollbar
    fade, AudioToolbox AMR, native presentation-request retirement, reentrant media-item closure,
-   supplemental picker lifecycle, wallet-reminder lifetime, desktop wallet-delegate and file-selector MIME
-   regressions are the first suites moved this way.
+   supplemental picker lifecycle, wallet-reminder lifetime, desktop wallet-delegate, file-selector MIME and
+   remoting-request regressions are the first suites moved this way.
 8. **Smaller conversions.** Auto-PiP, playback controls, PiP captions and the WebPreferences fields are
    settled (media boundaries). The decodeAudioData hook waits for a throughput measurement in a running
    browser. Worker script requests keep their user-agent patch: a throttle would set it after Chrome's own.

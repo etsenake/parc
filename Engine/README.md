@@ -30,8 +30,8 @@ Generation writes explicit GN arguments. It builds
 resource dependencies. `Release_GN_arm64` deliberately keeps its name so existing
 output consumers and compiled objects remain usable. Chromium's gclient hooks
 still run. Overlay patches run in their
-reviewed manifest order against Chromium; each target has one consolidated patch
-with checked input and output hashes.
+reviewed manifest order against Chromium; each target has checked input and
+output hashes, including every intermediate in a reviewed patch sequence.
 
 The engine uses ARM64 Release, `dcheck_always_on=false`,
 `disable_fieldtrial_testing_config=true`, no dSYM bundles and the workspace's

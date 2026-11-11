@@ -117,14 +117,29 @@ def main():
         require_hash(contained(tree, target), item["sha256"])
         sources[source] = target
         outputs[target] = item["sha256"]
+    patch_outputs = {}
+    output_names = {target.casefold(): target for target in outputs}
     for patch in manifest["patches"]:
         require_hash(contained(repo, patch["source"]), patch["sha256"])
+        patch_targets = set()
         for item in patch["files"]:
             target = item["target"]
-            if target in outputs:
+            folded = target.casefold()
+            if folded in patch_targets:
+                raise ValueError(f"duplicate patch target: {target}")
+            patch_targets.add(folded)
+            if folded in patch_outputs:
+                if (output_names[folded] != target or
+                        patch_outputs[folded] != item["before_sha256"]):
+                    raise ValueError(f"broken overlay patch chain: {target}")
+            elif folded in output_names:
                 raise ValueError(f"duplicate overlay output: {target}")
-            require_hash(contained(tree, target), item["after_sha256"])
+            else:
+                output_names[folded] = target
+            patch_outputs[folded] = item["after_sha256"]
             outputs[target] = item["after_sha256"]
+    for target, expected in outputs.items():
+        require_hash(contained(tree, target), expected)
     for path in (manifest_path, lock_path, build / "args.gn"):
         snapshots[path] = digest(path)
 

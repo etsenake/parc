@@ -4,7 +4,7 @@
 Chromium workspace. It records owned source inputs, patch preimages and patched
 output hashes. Startup files install under `parc/`, native services under
 `parc/native/`, and retained tests under `parc/tests/`. Each patched target
-appears once.
+appears once unless reviewed patch entries form a hash-verified sequence.
 
 Use the commands in [Engine](../README.md) and
 [development setup](../../docs/development-setup.md). Edit repository inputs,

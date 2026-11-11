@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 704,
+  "version": 705,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -2515,6 +2515,16 @@
       "source": "Engine/ParcChromium/tests/browser/file_selector/file_select_helper_test.cc",
       "target": "chrome/browser/parc_tests/file_selector/file_select_helper_test.cc",
       "sha256": "3209da10cbcc39b2a7305534ae620f79741e37e7902dec034b62ceadececf5da"
+    },
+    {
+      "source": "Engine/ParcChromium/tests/cast/remoting/BUILD.gn",
+      "target": "chrome/browser/media/parc_tests/BUILD.gn",
+      "sha256": "df0de235871d50d926e9fec643bc8dad7077dd49170e7aadf77591fde948bf77"
+    },
+    {
+      "source": "Engine/ParcChromium/tests/cast/remoting/cast_remoting_connector_test.cc",
+      "target": "chrome/browser/media/parc_tests/cast_remoting_connector_test.cc",
+      "sha256": "52bdd49c137de52330392dbe91a07cd75cb4f5ec7b184741cc717ce61038e6fe"
     }
   ],
   "patches": [
@@ -3249,7 +3259,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "213edf12be4213a9181cc8f5e41f464db557bdfb8d9e82751af62fe107aac58e",
+      "sha256": "14bb7abe121eec53ac4ff98f1373a601df4f63adb2a592409102d599874217f9",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
@@ -3384,12 +3394,7 @@
         {
           "target": "chrome/browser/media/cast_remoting_connector.h",
           "before_sha256": "c88d760bd8510478bd81bb9c1a170acf4bf61437d2d3de66d8bb8ee6320c1f8c",
-          "after_sha256": "3ec0c2a74083aa55cb95198a54b67ee659b790c4d4479c6c92ba1b4c7efb473d"
-        },
-        {
-          "target": "chrome/browser/media/cast_remoting_connector_unittest.cc",
-          "before_sha256": "1fb344a6cbc7159f88c3dfd6a1e866e6e5d875f89e296ef21608f1b03cead8b7",
-          "after_sha256": "5be347d2d685c94d781a47537378f9d03e5eed5a31edbabb3d5c50ee30c00425"
+          "after_sha256": "6ce4fc81173b934c753f5d1d6f9c26ec95b513e9d7b411fad3d5f6dfb1b33180"
         },
         {
           "target": "chrome/browser/media/remoting_bridge.cc",
@@ -3426,7 +3431,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/parc-owned-tests.patch",
-      "sha256": "f31a63b91d6dd953832f547f057835118dfda75c619d9e41aea50b0150e0add8",
+      "sha256": "3eb623e06828d535427723ff91f7eedcf107392dd72cdb1059053ddc58ad28e0",
       "files": [
         {
           "target": "third_party/blink/renderer/controller/BUILD.gn",
@@ -3447,6 +3452,11 @@
           "target": "chrome/browser/BUILD.gn",
           "before_sha256": "3e9b2665405f5482dc04c3cc70d2ea6c12061334334b4d6a5ad2c51f80cd5096",
           "after_sha256": "5c1cdfe2dffcab2836b9593fa750c5e212d75f693d56a3de68cd9c5f2dacd0b5"
+        },
+        {
+          "target": "chrome/browser/media/BUILD.gn",
+          "before_sha256": "7afb4247e7ee29da50a2b6f086c1e3bd51a56b66e9968403b9215155f88367b0",
+          "after_sha256": "e15f63fe02235d05eb579935a77db3f8e328f6fa6ba412609ee5aa83e0a71a7e"
         }
       ]
     },

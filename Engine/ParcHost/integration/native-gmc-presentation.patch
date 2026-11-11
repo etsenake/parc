@@ -2482,37 +2482,12 @@
  
    // Used by Mirroring Service to connect the media remoter with this source.
    void ConnectWithMediaRemoter(
---- a/chrome/browser/media/cast_remoting_connector_unittest.cc
-+++ b/chrome/browser/media/cast_remoting_connector_unittest.cc
-@@ -266,6 +266,28 @@
-   RunUntilIdle();
- }
- 
-+// Parc: a cast that failed to launch takes back the remoting request its pick
-+// sent, from each of the tab's sources while no session runs.
-+TEST_F(CastRemotingConnectorTest, ParcDropsRemotingRequestsWithoutSession) {
-+  MockRemotingSource source;
-+  mojo::Remote<media::mojom::Remoter> remoter(CreateRemoter(&source));
-+  RunUntilIdle();
-+
-+  EXPECT_CALL(source, OnStartFailed(RemotingStartFailReason::ROUTE_TERMINATED));
-+  GetConnector()->ParcDropRemotingRequests();
-+  RunUntilIdle();
-+  testing::Mock::VerifyAndClearExpectations(&source);
-+
-+  std::unique_ptr<MockMediaRemoter> media_remoter =
-+      std::make_unique<MockMediaRemoter>(GetConnector());
-+  EXPECT_CALL(source, OnSinkAvailable(_));
-+  media_remoter->OnSinkAvailable();
-+  RunUntilIdle();
-+  EXPECT_CALL(source, OnStartFailed(_)).Times(0);
-+  GetConnector()->ParcDropRemotingRequests();
-+  RunUntilIdle();
-+}
-+
- TEST_F(CastRemotingConnectorTest, UserDisableRemoting) {
-   MockRemotingSource source1;
-   mojo::Remote<media::mojom::Remoter> remoter1(CreateRemoter(&source1));
+@@ -113,4 +119,5 @@
+   // have a complete browser (i.e., with a WebContents and RenderFrameHost) to
+   // work with.
+   friend class CastRemotingConnectorTest;
++  friend class ParcCastRemotingConnectorTest;
+   friend class RedirectionConnectorTest;
 --- a/chrome/browser/media/remoting_bridge.cc
 +++ b/chrome/browser/media/remoting_bridge.cc
 @@ -106,6 +106,14 @@

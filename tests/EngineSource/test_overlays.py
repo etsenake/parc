@@ -207,6 +207,35 @@ class OverlayTests(unittest.TestCase):
         self.save()
         self.assert_unchanged_refusal()
 
+    def test_patch_chain_rejects_alias_same_patch_and_owned_overlap(self):
+        original = copy.deepcopy(self.spec)
+        final = b"group(\"parc\") {\n  deps = [ \":parc_fixture\", \":tests\" ]\n}\n"
+
+        self.add_patch("tests.patch", "parc/BUILD.gn", self.after, final)
+        alias = self.spec["patches"][-1]
+        alias_source = self.inputs / alias["source"]
+        data = alias_source.read_bytes().replace(b"parc/BUILD.gn",
+                                                  b"parc/build.gn")
+        alias_source.write_bytes(data)
+        alias["sha256"] = engine.digest(data)
+        alias["files"][0]["target"] = "parc/build.gn"
+        self.save()
+        self.assert_unchanged_refusal()
+
+        self.spec = copy.deepcopy(original)
+        self.spec["patches"][0]["files"].append(
+            copy.deepcopy(self.spec["patches"][0]["files"][0]))
+        self.save()
+        self.assert_unchanged_refusal()
+
+        self.spec = copy.deepcopy(original)
+        self.spec["patches"] = []
+        owned = b"// owned Objective-C++\n"
+        self.add_patch("owned.patch", "parc/native/parc.mm", owned,
+                       owned + b"// changed\n")
+        self.save()
+        self.assert_unchanged_refusal()
+
     def test_bad_input_hash_wrong_upstream_or_duplicate_target_fail_closed(self):
         original = copy.deepcopy(self.spec)
         for change in ("hash", "upstream", "duplicate"):
@@ -309,6 +338,9 @@ class OverlayTests(unittest.TestCase):
         self.assert_unchanged_refusal()
 
     def test_write_failure_rolls_back_applied_files_and_marker(self):
+        final = b"group(\"parc\") {\n  deps = [ \":parc_fixture\", \":tests\" ]\n}\n"
+        self.add_patch("tests.patch", "parc/BUILD.gn", self.after, final)
+        self.save()
         original_write = engine.write_source
         calls = 0
         def fail_second(*args):

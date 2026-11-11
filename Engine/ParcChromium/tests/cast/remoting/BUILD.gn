@@ -1,0 +1,22 @@
+# Installed at //chrome/browser/media/parc_tests so this owned test target
+# stays beside the remoting layer it exercises.
+
+assert(is_mac)
+
+source_set("unit_tests") {
+  visibility = [ "//chrome/browser/media:*" ]
+  testonly = true
+  sources = [ "cast_remoting_connector_test.cc" ]
+
+  deps = [
+    "//base",
+    "//chrome/browser/media:impl",
+    "//components/sessions:session_id",
+    "//components/sync_preferences:test_support",
+    "//content/test:test_support",
+    "//media/mojo/mojom:remoting",
+    "//mojo/public/cpp/bindings",
+    "//testing/gmock",
+    "//testing/gtest",
+  ]
+}

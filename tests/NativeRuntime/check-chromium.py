@@ -59,13 +59,29 @@ def main():
         check(contained(tree, item["target"]), item["sha256"])
         outputs[item["target"]] = item["sha256"]
         sources[item["source"]] = item["target"]
+    patch_outputs = {}
+    output_names = {target.casefold(): target for target in outputs}
     for patch in manifest["patches"]:
         check(contained(repo, patch["source"]), patch["sha256"])
+        patch_targets = set()
         for item in patch["files"]:
-            if item["target"] in outputs:
-                raise ValueError("duplicate patched output")
-            check(contained(tree, item["target"]), item["after_sha256"])
-            outputs[item["target"]] = item["after_sha256"]
+            target = item["target"]
+            folded = target.casefold()
+            if folded in patch_targets:
+                raise ValueError(f"duplicate patch target: {target}")
+            patch_targets.add(folded)
+            if folded in patch_outputs:
+                if (output_names[folded] != target or
+                        patch_outputs[folded] != item["before_sha256"]):
+                    raise ValueError(f"broken overlay patch chain: {target}")
+            elif folded in output_names:
+                raise ValueError(f"duplicate overlay output: {target}")
+            else:
+                output_names[folded] = target
+            patch_outputs[folded] = item["after_sha256"]
+            outputs[target] = item["after_sha256"]
+    for target, expected in outputs.items():
+        check(contained(tree, target), expected)
     target = sources["tests/NativeRuntime/runtime_driver.mm"]
     flags_file = build / ('obj/parc/tests/parc_native_runtime/driver.ninja')
     if not shared["contains_object"](flags_file, "objcxx", target):
