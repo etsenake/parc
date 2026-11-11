@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 671,
+  "version": 672,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -1959,7 +1959,7 @@
     {
       "source": "Engine/ParcNative/native_page_observers.mm",
       "target": "parc/native/native_page_observers.mm",
-      "sha256": "ac5bfb94a26aaa280f30dee1ba0c310072dc4d381f6d533eb0bcc708b5c17e7c"
+      "sha256": "3a303634e7b6a519e0185048e6554aff8d5cacb1613b2468c12c2f528ee9006b"
     },
     {
       "source": "Engine/ParcNative/javascript_dialog_manager.h",

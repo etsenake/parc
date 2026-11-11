@@ -220,8 +220,9 @@ content immediately. The reload link uses native pointer, keyboard and
 accessibility actions; hover changes the cursor. The hung-renderer sheet uses
 Chromium's text and the unresponsive widget's actual renderer process. Wait
 restarts its hang timer; Exit terminates that process. A replacement request or
-page detach invalidates the old decision. The sheet lists titles without
-favicons and retains the application icon. Renderer and ordinary navigation failures
+page detach invalidates the old decision. The sheet is Parc's dialog: it lists
+titles without favicons under Parc's mark, Wait answers Return and Escape, and
+Exit is an unbadged neutral button. Renderer and ordinary navigation failures
 must not be conflated merely because both show an error surface.
 
 ## Webpage actions, keyboard, focus and accessibility — WEB18
