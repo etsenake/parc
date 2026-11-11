@@ -94,8 +94,8 @@ class NativeHlsSource {
   virtual Timeline GetTimeline() const = 0;
 
   // A legacy clear key (org.w3c.clearkey) for the player's clearkey://
-  // requests (WebMediaPlayer::ParcProvideClearKey): `key_id` is WebKit's key
-  // ID, `key` the raw key.
+  // requests (ParcWebMediaPlayerExtension::ParcProvideClearKey): `key_id` is
+  // WebKit's key ID, `key` the raw key.
   virtual void ProvideClearKey(const std::string& key_id,
                                const std::vector<uint8_t>& key) = 0;
 

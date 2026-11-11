@@ -1154,10 +1154,10 @@ inline constexpr char kParcWebKitMediaKeysScript[] = R"PARC_WKMK_JS(
 
   // Legacy clear key on the player side. A clearkey:// request reaches the
   // key-needed hook with provideKey(keyId, key), which hands the player that
-  // made it a key (Blink: WebMediaPlayer::ParcProvideClearKey). The requests
-  // an element's player holds wait in elementClearKeyRequests (key ID ->
-  // that request's provideKey) until the element's keys have their key. Read
-  // with natives only: the hook runs inside a media callback.
+  // made it a key (Blink: ParcWebMediaPlayerExtension::ParcProvideClearKey).
+  // The requests an element's player holds wait in elementClearKeyRequests
+  // (key ID -> that request's provideKey) until the element's keys have their
+  // key. Read with natives only: the hook runs inside a media callback.
   const elementClearKeyRequests = new NativeWeakMap();
   // HTMLMediaElement::mediaPlayerCachedKeyForKeyId: the element's own keys'
   // WebKitMediaKeys::cachedKeyForKeyId (its first session holding the key).

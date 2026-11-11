@@ -103,8 +103,9 @@ struct MEDIA_EXPORT ParcNativeHlsDemuxerParams {
   // main thread.
   base::RepeatingClosure time_jumped_cb;
   // AirPlay: the element's playback target when the demuxer is made
-  // (WebMediaPlayer::ParcSetPlaybackTarget, NativeHlsSource::SetPlaybackTarget
-  // after), and whether the element disables external playback.
+  // (ParcWebMediaPlayerExtension::ParcSetPlaybackTarget, then
+  // NativeHlsSource::SetPlaybackTarget), and whether the element disables
+  // external playback.
   std::string playback_target_id;
   bool should_play_to_playback_target = false;
   bool wireless_video_playback_disabled = false;

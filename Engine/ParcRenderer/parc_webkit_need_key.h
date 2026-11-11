@@ -38,6 +38,7 @@
 #include "media/mojo/mojom/parc_video_toolbox_decoding.mojom-blink.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+#include "third_party/blink/public/platform/parc_web_media_player_extension.h"
 #include "third_party/blink/public/platform/web_media_player.h"
 #include "third_party/blink/renderer/bindings/core/v8/parc_webkit_skd_init_data.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
@@ -162,7 +163,9 @@ inline void ParcProvideClearKey(
   v8::Local<v8::Uint8Array> array = info[1].As<v8::Uint8Array>();
   std::vector<uint8_t> key(array->ByteLength());
   array->CopyContents(key.data(), key.size());
-  player->ParcProvideClearKey(key_id, key);
+  if (ParcWebMediaPlayerExtension* parc = player->GetParcExtension()) {
+    parc->ParcProvideClearKey(key_id, key);
+  }
 }
 
 // HTMLMediaElement::mediaPlayerKeyNeeded: queues webkitneedkey at |element|
