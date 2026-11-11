@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.3 (2026-11-11)
+
+### Fixed
+
+- **dialogs:** Bring a page's silenced alerts back when Chromium resets the page
+
 ## 1.12.2 (2026-11-10)
 
 ### Fixed

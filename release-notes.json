@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "1.12.3",
+      "build": 29,
+      "date": "2026-11-11",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "dialogs",
+          "summary": "Bring a page's silenced alerts back when Chromium resets the page",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "1.12.2",
       "build": 28,
       "date": "2026-11-10",
