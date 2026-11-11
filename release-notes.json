@@ -10,6 +10,12 @@
           "scope": "dialogs",
           "summary": "Bring a page's silenced alerts back when Chromium resets the page",
           "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "pip",
+          "summary": "Give picture-in-picture captions the screen details they were squinting without",
+          "breaking": false
         }
       ]
     },
