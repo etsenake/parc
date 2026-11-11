@@ -28,6 +28,9 @@
 
 namespace parc {
 namespace {
+bool UsesNativeStartup() {
+  return true;
+}
 ui::ResourceBundle::Delegate* NativeResourceBundle(void* context) {
   return context
              ? static_cast<NativeApplication*>(context)->ResourceBundleDelegate()
@@ -47,6 +50,8 @@ class ParcContentUtilityClient final : public ChromeContentUtilityClient {
 ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
     : ChromeMainDelegate({.exe_entry_point_ticks = base::TimeTicks::Now()}),
       application_(application) {
+  parc_hooks::SetMainStartupPolicy(&UsesNativeStartup);
+  parc_hooks::SetBrowserStartupPolicy(&UsesNativeStartup);
   parc_hooks::SetMainResourceBundleFactory(&NativeResourceBundle, application);
   parc_hooks::SetBrowserResourceBundleFactory(&NativeResourceBundle, application);
 }

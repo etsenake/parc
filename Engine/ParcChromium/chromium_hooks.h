@@ -47,6 +47,10 @@ void SetMainResourceBundleFactory(ResourceBundleFactory factory, void* context);
 void SetBrowserResourceBundleFactory(ResourceBundleFactory factory,
                                      void* context);
 
+// Early startup policy in chrome_main_delegate.cc / chrome_browser_main.cc.
+void SetMainStartupPolicy(bool (*policy)());
+void SetBrowserStartupPolicy(bool (*policy)());
+
 }  // namespace parc_hooks
 
 #endif  // PARC_CHROMIUM_HOOKS_H_
