@@ -49,12 +49,15 @@ never treat these historical numbers as a new whole-product completion score.
 
 ## Delivery snapshot
 
-Reviewed on November 10, 2026:
+Reviewed on November 11, 2026:
 
-- Source version: **1.12.2**.
-- Latest completed delivery confirmed by local release receipts: **1.12.2**,
-  published November 10 with signed/notarized app and DMG,
+- Source version: **1.13.0**.
+- Latest completed delivery confirmed by local release receipts: **1.13.0**,
+  published November 11 with signed/notarized app and DMG,
   signed update feed and Homebrew cask. See [release operations](master-release.md).
+- Engine architecture: most of Parc's Chromium logic lives in Parc-owned code
+  behind Chromium's extension points and one-call hooks; each remaining direct
+  patch has a recorded reason. See [how Parc changes Chromium](chromium-seams.md).
 
 Keep this one snapshot current from `app-version.json`, `Engine/ParcHost/overlay.json`
 and completed delivery receipts; use the

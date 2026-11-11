@@ -162,6 +162,31 @@ The remaining work is specific to these paths:
   [web surface](fairplay-safari-surface.md) and [identity](fairplay-identity.md)
   guides own these limits and the output-protection/codec details.
 
+## Engine architecture
+
+These shrink what each Chromium upgrade must refit, or what an engine build costs. None changes
+what users see or hear today, and each must keep it that way.
+[How Parc changes Chromium](chromium-seams.md) owns the details.
+
+- Reverse playback's window planning and Safari's multi-track audio mixing still sit inside
+  Chromium's renderers, so every upgrade must refit them there. Moving them into Parc files ships
+  only with a real playback check that backward playback still shows frames and Safari-identity
+  pages with two audio tracks still mix them.
+- The AAC `decodeAudioData` path could become a hook. If the hook lost today's pipelined decoding,
+  pages decoding AAC audio could wait roughly a second longer per three-minute track, so measure
+  decode throughput in a running browser before switching.
+- Optional experiments that could remove more patched media code, each needing its own measurement
+  and approval because a regression would show as stalled or mis-composited protected video: the
+  wait-for-key latch inside the player, `SetOutputIsSecure` in place of the parked-compositor flag,
+  a composite renderer and a separate FairPlay process with `CALayerHost`.
+- Carrying Parc's Chromium changes as a branch moved by three-way merges, and the Chromium 157 (or
+  158) upgrade taken through it, are separately authorized work. The upgrade is what brings users
+  that release's Chromium security fixes; the export tooling it needs is ready.
+- The shared compile cache is implemented but unproven, so engine builds can't yet count on reusing
+  the other Mac's compiled objects. Verify it on a real build: matching actions hit, a real
+  input change misses, the server sees no remote execution, and switching back to local builds
+  leaves completed steps up to date.
+
 ## Deferred
 
 - **SCRIPT10–SCRIPT13:** broader scripting commands, error contexts, collection

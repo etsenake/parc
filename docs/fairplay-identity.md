@@ -222,7 +222,7 @@ list; the inverse menu restores Safari. Open pages update accordingly.
 | `fairplay-identity-blink-direct.patch` | Identity-gated APIs, trusted events and memory-pressure listener |
 | `fairplay-media.patch` | Codec/EME integration and real managed-buffer eviction |
 | `fairplay-identity-workers.patch` | Worker identity and script-request hooks |
-| `native-host-route.patch` | Per-local-root renderer identity |
+| `native-host-route-direct-overlay.patch` | Per-local-root renderer identity |
 
 ## Known limits
 

@@ -1,6 +1,6 @@
 # Native application relaunch
 
-The already-running Chromium process forwards a second launch to the required AppKit application client. Returning false from `OnAlreadyRunningAppRelaunch` would create a default-styled Chrome window (`cef/include/cef_browser_process_handler.h:103–119`); this native implementation always consumes the handoff, including during shutdown, and never chooses stock browser presentation.
+The already-running Chromium process forwards a second launch to the AppKit application through a hook in `startup_browser_creator.cc`, installed in `PostBrowserStart` before Chrome lets the process singleton deliver launches and removed after the main loop. An installed handler always consumes the launch, including when the native application declines it, so a second launch never opens a stock Chrome window.
 
 The Swift shell selects only its own ready BrowserWindowController registry, verifies the exact NSWindow registration and client, restores that window if minimized, and activates it. If there is no ready window, the shell's existing new-window command creates one. Explicit HTTP/HTTPS/file destinations go through the actual `application(_:open:)` handler; `--parc-open` search input uses the existing command-bar parser. Requests before shell readiness wait for the first window; requests during aggregate termination are ignored. The existing process's profile, diagnostic mode and engine settings are not changed by a second process. Broader custom URL schemes are not accepted by this relaunch parser.
 

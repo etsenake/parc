@@ -84,8 +84,8 @@ tab/window binding and containment, the shell must attach it again, including
 same-window reattachment. Native movement, close and WebContents destruction
 also cancel. No request is transferred to a different window.
 
-The canonical `native-host-route.patch` connects typed preparation and the
-BrowserWindow/platform factories. `native_appkit_host.mm` performs attachment
+Parc's own WebContentsDelegate, which the native window-features hook installs
+for each native Browser, returns this manager. `native_appkit_host.mm` performs attachment
 after genuine Browser/tab registration; the Swift `BrowserWindowController`
 registers its supplied window and brackets native page reparenting with
 `pageWillDetach`/`pageDidAttach`. Current first-tab feature hooks are also

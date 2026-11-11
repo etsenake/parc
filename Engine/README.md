@@ -4,6 +4,8 @@ Parc builds Chromium directly with its source-owned native integration. The
 canonical [source lock](source-lock.json) pins Chromium and depot_tools; the
 canonical [overlay](ParcHost/overlay.json) records reviewed source inputs.
 Builds have no CEF checkout or installed-browser dependency.
+[How Parc changes Chromium](../docs/chromium-seams.md) explains where Parc's code
+lives, how its hooks reach Chromium and why each remaining patch stays.
 
 ## Build configuration
 

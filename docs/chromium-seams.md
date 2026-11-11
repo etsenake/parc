@@ -1,500 +1,406 @@
-# Chromium seams plan
+# How Parc changes Chromium
 
-This is the plan for the next major release. When it's done, this document becomes the durable
-architecture guide. Parc stops changing Chromium's own files wherever Chromium already gives an embedder
-a way in. Our logic moves into Parc-owned code. What can't move shrinks to a one-call hook inside a
-Chromium source file, except for the named exceptions below, which keep a real patch: the STAY patches,
-a few narrow core media headers, and some `.mm`, GN and Keychain changes. With CEF gone, Parc owns the main delegate,
-the content and browser clients, its own BrowserWindow and WebContentsDelegate, so most of those ways in
-are now ours to use.
+Parc builds pinned Chromium with its own code beside it. This guide explains where that code lives, how
+it reaches Chromium, which Chromium files are still patched and why, and what a new change must guard.
+The [engine guide](../Engine/README.md) covers building and the [overlay README](../Engine/ParcHost/README.md)
+covers the manifest.
 
-There are three goals. Each Chromium upgrade, starting with 157, should become a version bump plus small
-refits. Day-to-day engine work should stop recompiling large parts of Chromium. And performance and
-behaviour must stay exactly as good as today, or get better.
+The rule is simple. Use an extension point Chromium already gives an embedder. Where there is none,
+put Parc's logic in a Parc-owned file and leave a one-call hook in the Chromium file that owns the
+behaviour. Keep a real patch only when neither preserves the behaviour exactly, and record why below.
+This keeps three promises: a Chromium upgrade is a version bump plus small refits, day-to-day engine
+work recompiles little of Chromium, and behaviour and performance stay exactly as they were.
 
-The four research reports behind this plan classify every one of our 78 patches. They're kept in the
-ignored `work/chromium-seams/` folder.
+## Rules every change keeps
 
-## Fixed constraints
-
-- Settled product decisions stay settled ([product status](parity.md)). Above all, protected and
-  Safari-identity video stays in Chromium, on the FairPlay route, with automatically learned site
-  identity. No WKWebView, no fixed site list, no pages moved out of Chromium.
-- Chromium's media parsers and demuxers are never forked or copied, so their security fixes keep reaching
-  us.
+- Settled product decisions stay settled ([product status](parity.md)). Protected and Safari-identity
+  video stays in Chromium on the FairPlay route, with automatically learned site identity. No
+  WKWebView, no fixed site list and no pages moved out of Chromium.
+- Chromium's media parsers and demuxers are never forked or copied, so their security fixes keep
+  reaching Parc.
 - Nothing on the decode or display path changes: VideoToolbox, AVSampleBufferDisplayLayer and CALayer
-  placement stay as they are. No timers, extra IPC hops or frame copies are added. A hook is the same
-  direct call it replaces.
-- No user-visible behaviour is removed. A STAY patch keeps its behaviour until a lossless replacement is
-  designed and reviewed.
-- Builds use the release script. The only other compile is a targeted compile of the files a slice
-  touches, on the engine copy.
+  placement stay as they are. A hook is the same direct call it replaces, with no timer, extra IPC hop
+  or frame copy.
+- No user-visible behaviour is removed. A kept patch keeps its behaviour until a lossless replacement
+  has been designed and reviewed.
+- Builds go through the release script; engine operations need explicit authorization
+  ([working contract](../AGENTS.md#engine-and-release-operations)).
 
-## Where we start
+## Where the code lives
 
-The 78 patches add about 46,700 lines inside Chromium files, beside 409 Parc-owned files. Together they edit
-284 Chromium headers. The build's recorded dependencies show the widest of those pulled into up to about
-4,400 compile steps. Those records are older and partial, so read the figure as the scale of the problem,
-not an exact current count.
+[`overlay.json`](../Engine/ParcHost/overlay.json) lists every owned file with its install location
+and every patch with the exact bytes it expects before and after. Owned files come from these
+repository folders:
 
-About 84% of the patch lines are media: FairPlay plus WebKit behaviour on Safari-identity pages. About 14%
-route Chromium's interface to Parc's native interface, and the rest is startup and browser ownership. About
-15,300 of the lines are Parc tests appended to 53 upstream test files.
+| Repository folder | Installed at | Holds |
+|---|---|---|
+| `Engine/ParcChromium` | `//parc` | Main delegate, content clients, hook header, branding, page preferences, frame focus, web push |
+| `Engine/ParcNative` | `//parc/native` | Native BrowserWindow and Browser, page hosts, dialogs, prompts, extensions, DevTools, FairPlay host |
+| `Engine/ParcRenderer` | Blink and `//media/base` layers | Media element and page supplements, player rules and state, EME, MediaCapabilities, Safari scripts, top band |
+| `Engine/ParcNative/fairplay_chromium` | `//third_party/parc_fairplay`, media, content, Viz layers | FairPlay service, CDM and renderer adapters, native HLS, Media Source policy, hand-off, compositing |
+| `Engine/ParcNative/fairplay` | `//third_party/parc_fairplay/core` | The FairPlay playback core ([guide](../Engine/ParcNative/fairplay/README.md)) |
+| `Engine/ParcChromium/tests` | `parc_tests` folders inside each layer | Parc's regression suites for Chromium code |
+| `Engine/ParcImport`, `Engine/ParcInternalExtension` | `//parc/importer`, `//parc/internal_extension` | Browser import service and the internal extension |
+
+Patches live in `Engine/ParcHost/integration/`. A Parc file that must see a layer's internals, such as
+a Media Source policy that touches ChunkDemuxer's locked state, is installed inside that layer, for
+example `media/filters/parc_source_buffer_eviction.cc`, and the layer's BUILD file lists it. Editing
+it recompiles that file and relinks; it never touches the Chromium headers around it.
+
+## Extension points come first
+
+With CEF gone, Parc owns Chromium's embedder classes and uses them before anything else:
+
+- `ParcMainDelegate` chooses the content clients, sets the exact user-data root before the sandbox,
+  keeps Parc's own application and strings, and registers Parc's utility services.
+- `ParcContentBrowserClient` overrides the public browser-client methods it needs: HTTP authentication
+  through an owned coordinator, helper paths for the CDM and Alerts helpers, per-frame interface
+  binders, WebPreferences recomputation, the WebAuthn request delegate, the video picture-in-picture
+  window, the web-contents view delegate and internal URLs.
+- `ParcContentGpuClient` exposes the FairPlay media service. `ParcContentRendererClient` adds the
+  FairPlay key systems, the ALAC answer and Parc's renderer observers. `ParcContentClient` adds the
+  internal scheme and the FairPlay CDM entry.
+- `ParcBrowserMainExtraParts` installs the native file-dialog factory and the licence WebUI.
+- Parc's BrowserWindow, Browser record and WebContentsDelegate serve each native window, so
+  JavaScript dialogs and new pages reach Parc through Chromium's own interfaces.
 
 ## The hook pattern
 
-Where Chromium has no extension point, the Chromium `.cc` that owns the behaviour gets a function pointer
-and a setter, defined in that file. A single Parc header, `parc/chromium_hooks.h`, declares the setters.
-Chromium never includes a Parc file, so there are no BUILD edits or buildflag includes for a hook, and
-upstream unit tests still link. Parc installs its interface-routing hooks in
-`ParcBrowserMainExtraParts::PreMainMessageLoopRun`, beside the file-dialog factory it already installs there.
-Startup and browser hooks run earlier than that: during resource initialization and before profile
-services exist. Those are installed from the main delegate's early startup, never from a late
-ExtraParts callback. A signature mismatch fails at link time; nothing
-fails silently at runtime.
+Where Chromium has no extension point, the Chromium `.cc` that owns the behaviour declares a function
+pointer and a setter, and defines both. Site permissions are the reference example:
+`permission_prompt_factory.cc` declares `parc_hooks::SetPermissionPromptFactory`, stores the factory
+in a file-local pointer and, when it is set, returns Parc's result, a null "no prompt" included,
+before any Chrome prompt logic runs. Unhooked Chromium keeps its original path.
 
-Site permissions are the reference conversion. `permission_prompt_factory.cc` declares and defines
-`parc_hooks::SetPermissionPromptFactory`, and its factory returns Parc's result, a null one included, exactly
-as the old patch did. The header belongs to `//parc:browser`, and only the install points include it. A
-feature exposes its factory in its own header, here `CreateSitePermissionPrompt`, and the install point
-passes that factory to the setter, so the `//parc/native` targets never depend on `//parc:browser`.
-A hook defined inside a component library, such as `content` or `media` in component builds, carries
-that library's export macro on its `.cc` declaration, as `service_factory.cc` does for
-`parc_hooks::SetCdmServiceChildFlags`.
+[`parc/chromium_hooks.h`](../Engine/ParcChromium/chromium_hooks.h) declares every browser-side setter
+with a comment naming the Chromium file that defines it. Chromium files never include it; only Parc's
+install points do. A signature that drifts fails at link time, never silently at runtime, and there
+are no BUILD edits or buildflag includes for a hook, so upstream unit tests still link. A feature
+exposes its factory in its own header, such as `CreateSitePermissionPrompt`, and the install point
+passes it to the setter, so `//parc/native` targets never depend on `//parc:browser`.
 
-Parc state that today lives as members of Chromium classes moves into Parc-owned objects:
-- Blink supplements;
-- `UserData` and tab features;
-- one Parc accessor per media interface, replacing many Parc methods in core headers.
+### Install points
 
-Policy and heavy includes live in Parc `.cc`/`.mm` files behind a narrow owned API. A policy edit then
-recompiles that Parc file and relinks. A hook edit recompiles the one Chromium file and relinks.
+A hook is installed before the first moment Chromium can call it:
 
-## What the research found
+- The `ParcMainDelegate` constructor installs startup and browser hooks: the Mac main parts and quit
+  path, Browser admission, lifetime, registration and deletion, the off-the-record deferral, navigator
+  and tab-strip hooks, the native window factory and features, DevTools, unload transactions,
+  profile removal and deletion, restore omission, profile defaults, session-state restore, the Gaia
+  guard, startup policy and both resource-bundle factories. These run before resource initialization
+  and before profile services exist.
+- The `ParcContentBrowserClient` constructor installs frame focus, web push and the internal extension.
+- `CreateBrowserMainParts` selects the CDM helper's child flags before the UI thread forbids blocking.
+- `ParcBrowserMainExtraParts::PostBrowserStart` installs the second-launch handler before Chrome's own
+  PostBrowserStart lets the process singleton deliver launches; PostMainMessageLoopRun removes it.
+- `ParcBrowserMainExtraParts::PreMainMessageLoopRun` installs the interface hooks before any page
+  exists: autofill presentation, permissions, authentication validation, extension install and
+  uninstall, folder upload, sad tab, external protocols, certificates, passwords, tab sharing, pane
+  focus, the FairPlay CDM creator, picture-in-picture captions and the native page menu.
 
-The initial interface-routing research classified 35 patches: 14 SEAM, 17 HOOK and 4 STAY. These patches edit about 60 Chromium
-headers today. Afterwards about 8 remain, none with more than 42 direct includers, and the 7 Parc headers
-injected into Chromium's tree go away. It proposed three shared funnels for most dialogs: the extension
-dialog utilities, `ShowTabModal` and the page-info dialog. The first two carry too little context for the
-dialogs Parc presents; the confirmed boundaries below say what replaced them. It initially proposed
-deleting the 4,744-line autofill capability patch, but the per-feature audit found its presentation
-results and request state are required, so the decision below keeps it while freeing its client headers.
+### Hooks inside component libraries and Blink
 
-Browser, window and startup covers 28 patches: 5 SEAM, 12 HOOK and 11 STAY. Chromium's concrete
-construction, its private startup stages and its deletion rules can't be overridden, so they keep small
-`.cc` hooks rather than observers. Observers would run too late to guard native deletion. The 11 STAY patches
-are genuine Chromium fixes, build dependencies, Keychain naming, and three behaviours with no lossless
-replacement yet: atomic browser import, native link transport and one fullscreen failure transition.
+A hook defined inside a component library carries that library's export macro on its declaration,
+as `service_factory.cc` does with `CONTENT_EXPORT` for `SetCdmServiceChildFlags`. The CDM creator,
+the picture-in-picture session hooks and the session-restore omissions follow the same rule.
 
-Media covers about 24,150 product lines. About 2,100 leave Chromium files through seams, about 8,900 move
-into Parc files behind hooks or accessors, and about 13,000 stay as patches, mostly hooks and state
-machines (all ±20%). About 10,000 of its 15,335 upstream test lines can follow into Parc test files. A
-Parc-owned media player is rejected. Chromium picks the player once, from the URL, before any CDM
-exists, so a separate player would mean forking WebMediaPlayerImpl. What stays patched has no seam: the
-HTMLMediaElement algorithm steps (their state moves to a supplement), Media Source gap bridging and late
-SourceBuffers, format support in the parsers and the AudioToolbox decoder, reverse playback and audio
-mixing in the renderers, the CALayer compositing core, the EME enums and the Cast device dialog.
+Renderer-side hooks use a Parc header installed inside the layer instead. Blink's player move is
+declared in `parc_media_player_move.h` under `blink::parc_hooks`, defined in `html_media_element.cc`
+and installed by `ModulesInitializer`, as Blink installs its own module hooks. The Widevine request
+observer and the Safari-identity query live in the owned `content/browser/media/parc_fairplay_hooks.h`.
 
-These widely included headers leave: `execution_context.h`, `element.h`, `node_rare_data.h` and `page.h`;
-the local-frame clients; the `html_names`/`event_type_names` regeneration; the renderer-factory struct;
-the four FairPlay mojoms; and the overlay-window and picture-in-picture interfaces.
+## Parc state in Parc-owned objects
 
-Build and tests: Parc-owned build targets per subsystem, owned test targets for the 53 upstream test files,
-and a shared compile cache. Chromium's build tool can use the NativeLink server on the second Mac as a cache
-only, with no remote execution. That still needs macOS-specific configuration and verification. Releases
-already reuse a sealed engine when its inputs are unchanged, so once engine changes are small and rare, the
-production engine build mostly happens at Chromium upgrades.
+Parc state that used to sit in Chromium classes now lives in objects Parc owns:
 
-## Order of work
+- Blink supplements: the media element and AirPlay supplements on HTMLMediaElement, page media state
+  on Page, and the top-band tracker and network-activity counter on LocalFrame.
+- One Parc accessor per media interface. Renderer, AudioRenderer, VideoRenderer, Pipeline (with
+  PipelineController), Demuxer and DemuxerStream each declare a single `GetParcExtension()`, null by
+  default, and WebMediaPlayer has its own. Parc's playback, seeking, hand-off and stream calls change
+  behind it without rebuilding every includer of those headers.
+- One Parc state object per WebMediaPlayerImpl, its only Parc member.
+- Browser-side records Parc keeps for each native Browser, page and unload controller.
 
-Each step is its own reviewable change. Each one keeps Parc working and is compiled on the engine copy
-before it lands. Slices run in parallel only when their files are verified to be disjoint. The DevTools,
-context-menu and file-selector work shares files across areas, so it goes through one owner.
+## Interface routing
 
-1. **Pattern and proof.** Add `parc/chromium_hooks.h` and the install point. Convert site permissions to
-   the hook pattern as the thinnest slice that proves it end to end.
-2. **Delete what upstream already offers.** These need no patch:
-   - interface routing: the action icon, version, licence and logo branding, and the import utility
-     service use existing extension points; HTTP authentication uses an owned coordinator and tab
-     helper with a narrow credential-validation hook;
-   - browser: the five SEAM patches;
-   - media stage 1: the key-system and CDM registration seams, the VideoToolbox facts binder, the AV1 and
-     ALAC support switches, the PiP window creation seam, and presentation routing. Renderer-factory
-     registration moves its bodies out, but keeps one registration call and the renderer enum and
-     accessor as a small patch.
-3. **Freeze headers.** This is most of the rebuild win:
-   - 2a: one media accessor per interface across Renderer, Pipeline, Demuxer, the audio and video
-     renderers and DemuxerStream;
-   - 2b: the Blink public and platform accessors;
-   - 2c: the widely included Blink and base headers listed above. The HTML and event names,
-     `execution_context.h`, `memory_pressure_listener.h`, `element.h` and `node_rare_data.h` are back
-     to Chromium's. WebKit's names are Parc statics. The EME bindings test Safari's identity themselves.
-     The ManagedMediaSource listener's tag lies past every suppression mask, so nothing can silence its
-     purge. The picture-in-picture caption boxes sit in a Parc set. The `ParcSafariIdentityEme` runtime
-     feature stays, because Blink's IDL reader requires every `[SecureContext=…]` name to be one.
-     `page.h` leaves in step 8.
+Every prompt keeps its source page and window checks, is cancelled on detach and navigation, and
+completes exactly once. Sad tab, open-in-app requests, certificate viewing and client-certificate
+selection are one-call hooks: Parc presents installed pages natively and gives any
+other page Chromium's own interface. The sad tab's focus goes through Parc's view delegate.
 
-   Browser state stays in `Browser` and the restore-state headers until step 4's ownership work lands.
-4. **Move bodies behind hooks.** This is most of the refit win:
-   - the interface funnels with the native dialog host;
-   - page-scoped prompts such as sad tab, external protocol, certificate viewer and client certificates;
-   - extension install;
-   - autofill and passwords, after their audit;
-   - WebAuthn and capture;
-   - startup plumbing without lifecycle changes, and the central policy hooks (profile prefs, session
-     cookies, the Gaia guard);
-   - browser admission: first keep today's construction and deletion behind thin `.cc` calls, then
-     replace the `Browser` fields with a scoped creation context and an owned lifetime record;
-   - deletion and retirement, as separate slices: the central drain, the off-the-record deferral, then
-     transactional close and transfer;
-   - profile removal and embedded sessions, which move behind final-destruction hooks, then the
-     restore-state fields leave once exact owned associations exist;
-   - renderer state and page appearance:
-     - WebPreferences recomputation moves into the owned browser client;
-     - frame-focus subscriptions move into an owned registry;
-     - top-band state moves into a supplement, keeping its exact `.cc` event hooks, its post-canvas
-       sampling and its document invalidation;
-   - the branding outputs, inventoried and moved with their owner, including translated outputs that
-     aren't in pak files;
-   - the media supplements: HTMLMediaElement with AirPlay; EME and MediaCapabilities; the
-     WebMediaPlayerImpl rules; //media/filters; the Viz planner; and the renderer arithmetic, which ships
-     only together with a real playback check.
-5. **Parc FairPlay media service.** Done. A Parc GPU service and a per-document browser host replace our
-   additions to Chromium's media factories and mojoms; 24 files are pristine again, 4 mojoms and 8 headers
-   among them. Each audio grant is now its own player's, so one closing player can't take another's speaker
-   indicator. The CreateCdm hook and the MojoRenderer CDM swap stay, for ordering reasons given in
-   [FairPlay in Chromium](../Engine/ParcNative/fairplay_chromium/README.md#widevine-request-hook).
-6. **FairPlay hand-off out of the pipeline.** A Parc helper owned by the renderer wrapper and a decorator
-   stream replace the hand-off code in PipelineImpl and ChunkDemuxer; the old reader stays until their tests pass.
-7. **Tests out of upstream files.** Start with the small suites (scrollbar, Viz capture, AMR), then cast,
-   autofill, controls and PiP, then the large media and Blink fixtures. Keep the compatibility edits those
-   tests rely on. Parc-owned sources install into layer-local test targets when Chromium's visibility rules
-   require it, and those targets remain dependencies of the original test binaries. The overlay-scrollbar
-   fade, AudioToolbox AMR, native presentation-request retirement, reentrant media-item closure,
-   supplemental picker lifecycle, wallet-reminder lifetime, desktop wallet-delegate, file-selector MIME,
-   remoting-request, cast-service, native cast-dialog, route-result, SourceBuffer, media-controls, PiP-caption,
-   Remote Playback, media-progress, key-system, playback-controls, inspector, Viz protected-video planning, CALayer ownership, resource-loader, web-audio, audio/video-config Mojo, parser, renderer-controller, audio-renderer, video-renderer, renderer, back-forward-cache, WebMediaPlayerImpl, MediaStream, multi-buffer, ChunkDemuxer and pipeline regressions move this way.
-8. **Smaller conversions.** Auto-PiP, playback controls, PiP captions and the WebPreferences fields are
-   settled (media boundaries). The decodeAudioData hook waits for a throughput measurement in a running
-   browser. Worker script requests keep their user-agent patch: a throttle would set it after Chrome's own.
-9. **Compile cache.** Add the macOS cache configuration to both build recipes, prove cache hits with no
-   remote execution, and keep existing objects untouched.
-10. **Patches as a branch.** The export and equivalence tooling comes first, and can start alongside
-    step 1. Carry our Chromium changes as a branch moved by three-way merges, with a deterministic export to
-    the overlay manifest. The export must match file bytes and modes exactly. There's one way to
-    materialize the source, and the manifest's validation stays in place. Then take Chromium 157, or 158
-    once it's stable, with that merge, as its own separately authorized build.
+Native page menus enter through an implementation-only hook in Chromium's Cocoa menu file, before the
+Views widget lookup. Parc validates the source document, page and window, and cancels the menu on
+navigation, detach or window invalidation. The extension context menu's uninstall command reaches
+Parc through a hook; Parc binds consent to the asking Browser, page and extension, reserves the window
+before the icon loads, and subclasses Chromium's uninstall dialog to build the same model as Views.
 
-Optional items that each need a measured experiment and their own approval: moving the wait-for-key latch
-into the player, using `SetOutputIsSecure` instead of the parked-compositor flag, a composite renderer, and
-a separate FairPlay process with `CALayerHost`.
+Folder-upload consent arrives through a hook in FileSelectHelper that hands Parc the asking frame, so
+Parc can cancel when that frame navigates or goes away. The consent stays Chromium's Views dialog in
+Parc's sheet. DevTools presents through hooks in the docked-tools controller: for a Browser Parc
+hosts, Parc answers update, scrim and teardown, holds the docked modal host as a lease over the public
+dialog manager, and routes keys and prepares new frontends through hooks, so the DevTools files no
+longer include Parc.
 
-## Risks that each step must guard
+HTTP authentication uses an owned coordinator and tab helper with a source-only validation hook.
+WebAuthn request creation runs in Parc's browser client. The password sheet, tab-sharing bar and its
+page-info link and profile are hooks. The autofill capability query is a free function backed by a
+core-client hook, so `autofill_client.h` and `chrome_autofill_client.h` are Chromium's own. Product
+names use owned numeric-ID tables in every process. The toolbar and narrow-window drawers share an
+owned dark logo, so they show Parc's logo in dark mode as well as light.
 
-- **Media:**
-  - the order of media events on Safari-identity elements;
-  - the clock during the hand-off to the FairPlay renderer;
-  - FairPlay and HLS players never being suspended;
-  - audio grants and mute;
-  - CDM lifetime;
-  - persistent usage records never in private windows;
-  - one superlayer per CALayer, plus the parked-compositor flag;
-  - the hot paths: the ChunkDemuxer lock, the video renderer lock and the audio render callback;
-  - the Widevine hold, where held callbacks never run and are destroyed after their pipes;
-  - reconnecting after a GPU crash;
-  - one CDM service context per renderer process, with CDM IDs resolved only inside that process's context;
-  - the worker decoding route;
-  - the black fallback for captures;
-  - nested-pass and copy-request handling;
-  - PiP layer ownership and `preventsCapture`;
-  - re-checking compositor features at the Chromium 157 upgrade.
-- **Browser:** refusing a window before a Browser exists, draining the native host before deletion,
-  deferring off-the-record operations, rolling back a transfer when its last tab fails, and crash-safe
-  profile removal.
-- **Interface:** every prompt keeps its source page and window checks, is cancelled on detach and
-  navigation, and completes exactly once.
+## Browser and startup ownership
 
-## Confirmed interface boundaries
+Chromium's Browser, window factory, window features, manager and navigator reach native Browsers
+through `.cc` hooks. Admission refuses a native window before a Browser is allocated. A scoped creation
+context gives exactly the next Browser its opener and the shell's one-use window reservation, and
+Parc's record of each native Browser runs from the start of its constructor to the end of its
+destructor, so features and the window never outlive it. `browser.h`, `browser_manager_service.h`,
+`unload_controller.h` and `profile_manager.h` are Chromium's own.
 
-Three proposed zero-patch routes retain their current patches. JavaScript app-modal dialogs need
-factory capture when queued and ownership validation after queue advancement; the public view factory
-runs only when shown and cannot preserve both guarantees. The intent picker needs its source page
-through asynchronous icon loading; the BrowserWindow method does not receive that page. The context-menu
-observer must run first for command dispatch; the public testing registration appends it after Chrome’s
-observers. These are STAY boundaries until a lossless hook is designed. Shared DevTools and page-menu
-hunks remain with their core owner.
+Deletion drains the native host first, defers off-the-record destruction while a native operation
+needs it, and runs close and transfer as transactions in Parc's unload records. Profile removal and
+embedded sessions move behind final-destruction and restore-omission hooks. Startup keeps
+Chromium's order: the staged content entry stays in Chromium's startup file, resource factories and
+startup policy are installed before Chromium touches installer preferences, crash reporting or root
+selection, and the Mac main-parts factory keeps Chromium's full extra-parts sequence. The
+[engine guide](../Engine/README.md#native-construction-and-startup-source-integration) describes the
+lifecycle in detail.
 
-Native page-menu presentation now enters Parc through an implementation-only hook in Chromium’s Cocoa
-implementation, before the Views widget lookup. That Cocoa file no longer includes Parc, and its Cocoa
-build target no longer carries a page-menu dependency. Parc still validates the source document, page
-and window, and cancels the menu on navigation, detach or window invalidation. The observer patch above
-remains deliberately separate: its first-dispatch, last-construction ordering is private behavior that
-the public testing registration cannot preserve.
+Navigator internal-address canonicalization is a hook at the original early point; only the URL is
+replaced. Three tab-strip details are hooks too: AddTabAt's address-bar transition, the synchronous
+loading-UI gate for a delegated tab that has not reached its strip, and the native color provider for
+a genuinely empty Browser. Unhooked Chromium keeps all three original paths.
 
-DevTools presents through hooks in the docked-tools controller, whose header is Chromium's own again. For
-a Browser Parc hosts, Parc answers the controller's update, scrim and teardown calls, and holds the modal
-host of docked tools as a lease over the public dialog manager. Its keyboard routing and the preparation
-of a new frontend's contents are hooks too, so the DevTools files no longer include Parc. The page commands (Developer Tools,
-Inspect, Console, Network) keep a small patch in `DevToolsWindow`: whether the window is closing or
-loaded, and the counter that drops a stale panel reply, are private with no public query. A Parc port
-couldn't tell a closing window from a loading one and would run beforeunload twice. The public toggle
-also closes with another reason and reveals an undocked window instead of closing it. The frontend's
-panel query stays too.
+## Renderer state and page appearance
 
-HTTP authentication keeps a source-only validation hook because a stale request’s cancellation defers
-modal-list mutation. Credentials propagated from a matching request must be rejected during that gap.
-The import service uses an owned utility client and protocol target; its atomic history and web-data
-transaction patch stays unchanged. The licence WebUI is owned by Parc; a literal licence-host entry
-stays in Chromium’s host list for address completion and bookmark import. Product-name translations now
-use owned numeric-ID tables in every process; extension message JSON keeps its narrow formatter patch.
-
-The toolbar and narrow-window drawers share the owned dark-logo resource. This also fixes a branding
-bug: those drawers showed Chrome’s logo in dark mode while already showing Parc’s in light mode.
-
-Extension uninstall doesn't use the extension-dialog funnel, which only sees the window once the icon
-has loaded. Parc binds consent to the asking Browser, page and extension instance, and reserves the
-window, before loading starts. The context menu's uninstall command reaches Parc through a hook, and
-Parc subclasses Chromium's uninstall dialog, building the same model as the Views version. The crash
-the research expected in that funnel isn't reachable: nothing in Chromium calls its BrowserView overload.
-
-Folder-upload consent doesn't use `ShowTabModal` either, because Parc cancels it when the asking frame
-navigates or goes away and `ShowTabModal` only receives the page. A hook in FileSelectHelper hands Parc
-the frame too. The consent stays Chromium's Views dialog in Parc's sheet, so its acceptance check stays
-a patch: a dialog model's accept action can only be run by a dialog host.
-
-FileSelectHelper’s per-accept-type filter construction also stays patched. It builds the combined filter
-first and, when multiple accept types match, appends their individual filters afterwards. Parc’s
-file-dialog factory only receives the merged extension list, after the per-type groups and labels are
-gone, so it cannot reconstruct those choices. A sole recognized type keeps its specific label even when
-an unrecognized type follows it. The existing folder-upload hook in the same file remains untouched.
-
-The neighboring extension-menu pin guard stays. Pinning still updates the preference and metrics, but
-optional element-tracker feedback is skipped when a native Browser has no `BrowserElements`. Parc could
-instead register a minimal `BrowserElements` for every native window, but that would change what every
-Chromium caller gets when it looks up a native window’s `BrowserElements`. The local guard keeps the
-exception at the only optional-feedback call that needs it.
-
-Sad tab, open-in-app, certificate viewing and client-certificate routing are one-call hooks. Parc presents
-installed pages natively and gives any other page Chromium's own interface. The sad tab's focus goes
-through Parc's view delegate. Two client-certificate pieces stay patched. The selector refuses a stale
-choice before Chromium shares it with other requests for the same host, which a wrapped delegate would
-only see afterwards. Parc also still hosts Chromium's Views certificate list, so its first-row setup stays
-exposed. The picture-in-picture occlusion registry and build dependency that rode in the open-in-app and
-certificate-viewer patches stay there for their owner.
-
-WebAuthn request creation moved to Parc's browser client, which tells the page's native context about
-each request Chromium's scheduler makes. The rest of the WebAuthn patch stays. Its call sites ask
-an opt-in page context and otherwise run Chromium's own dialog, ambient bubble and recovery window
-unchanged. Final-answer hooks would make Parc rebuild those for every other page, and the recovery
-window holds a typed lease object inside Chromium's window class.
-
-The tab-sharing bar, its page-info link and its session profile are hooks, and the unused message
-accessor the patch added is gone. Two capture fixes stay as small patches and are worth sending
-upstream: the share-this-tab picker reports its own destruction and its hiding, which Parc needs to
-keep the window reserved until the dialog is really gone, and the delegated system picker keeps only
-an accepted session. The reader keeps private-window caches private with a plain edit, since this tree
-only builds Parc. The side panel stays: Chromium has no deregistration observer for a pending entry,
-the borrowed extension host has no seam, and the load-time mark is private. So does the
-protocol-handler accessor, which has no public alternative.
-
-## Browser integration boundaries
-
-Page preference state and frame-focus subscriptions belong to Parc. The top-band
-tracker is a Blink `LocalFrame` supplement. Its lifecycle observer alternative is
-not equivalent: observers run before canvas onpaint, while sampling must run after
-it. The frame-install, post-canvas, parsing, LCP, new-document and resource-load
-implementation hooks stay.
-Website-theme already uses an owned renderer observer and needs no replacement.
-
-Navigator internal-address canonicalization uses an implementation-only hook at the original early
-point, before profile and incognito policy. The hook replaces only the URL; request body, referrer,
-initiator and callback remain on the same `NavigateParams`. Chromium’s navigator no longer includes
-Parc or carries the internal-address build dependency.
-
-Three tab-strip details use implementation-only hooks. `AddTabAt` gets Parc’s typed, from-address-bar
-transition from owned policy. Synchronous loading UI asks Parc whether the delegated tab has reached its
-strip yet; moving that check later would miss the early load and attaching the delegate later would change
-lifetime ordering. The tab-strip API asks Parc for its native-theme color provider only when a Browser is
-genuinely empty, without inserting a dummy tab or disconnecting the API. Unhooked Chromium keeps all three
-of its original paths.
-
-These remaining browser patches preserve private implementation behavior or keep
-required build inputs. Declaration-only changes can move separately from the
-implementation they describe:
-
-| Boundary | Why the current patch stays |
-|---|---|
-| Fullscreen entry failure | Recovery needs the controller's private pending transition and original window frame. Public exit returns early once failure has made the window windowed. |
-| History swipes | Cancellation must reach the retained AppKit tracker, its generation and overlay before a stale gesture can navigate. Keep the implementation's weak-owner checks, bounds coordinates and Reduce Motion behavior. The cancellation declarations can move separately into owned Objective-C categories. |
-| Overlay scrollbar fading | No embedder seam wraps the private fade timer. Its callback hands visibility back to a changed theme without leaving an invisible hit target. Keep its regression test. |
-| Script-requested window sizes | Blink clamps before the browser receives the request. Keep the current global 52-pixel minimum, including its effect on ordinary popups. Native PiP bounds cannot replace that clamp. |
-| Mac framework layout and Keychain | Pristine GetFrameworkBundlePath rebuilds Chrome's versioned layout instead of honoring the installed framework override; PathService does not reach direct callers. Keep the Mac source and its Parc buildflag dependency as an exception to the no-Parc-includes rule. The Keychain compile definition must make its namespace mutable in both implementation and callers. |
-| Native diagnostics | Responder and accessibility observers do not expose the patched branch rejection/results. Keep the opt-in probes at those branches. |
-| Build dependencies | Safe Browsing needs its direct protobuf/buildflag dependencies; background extension dependencies must remain conditional. UI-owned declarations and test registrations move only with their consumers. |
-| Blink top-band targets | The tracker uses internal layout/paint types and Blink's exports. Keep its core build registration and existing Mojo target until an owned target preserves that internal access and generated ABI. |
-
-The internal extension has owned resource packaging and an exact-ID allowlist.
-Its installation callback stays at Chromium's background-component registration
-point: a later profile callback omits some profile types and cannot reproduce the
-private test override of background-extension suppression. Its manifest key and
-worker bytes stay unchanged. GCM's factory selects Parc's legacy-registration
-policy; modern registration and transport remain upstream.
+WebPreferences recomputation lives in Parc's browser client and page-preference records. Frame-focus
+subscriptions live in an owned registry, so `web_contents_observer.h` is Chromium's own. The top-band
+tracker is a LocalFrame supplement whose event hooks stay at their exact `.cc` points: frame install,
+post-canvas sampling, parsing, LCP, new documents and resource loads. A lifecycle observer would run
+before canvas onpaint, too early to sample. Website themes use an owned renderer observer.
 
 ## Media player boundaries
 
-WebMediaPlayerImpl keeps every call site that drives its own state: readyState
-changes, seek completion, restarts, suspend decisions and observer
-notifications stay in Chromium's file, in their current order. What moves out
-is Parc's own machinery. The two main-thread task runners, the one that
-follows a moved element's frame and the one that keeps a cast's pipeline
-running in a frozen page, live in a Parc header that WebMediaPlayerImpl and
-WebMediaPlayerMS include. The rules the player applies to values it holds are
-pure functions in a Parc file: which codecs the FairPlay Renderer plays and
-accepts through `changeType()`, the type AVFoundation is told for a file
-played to an AirPlay target, and the readyState a Safari-identity Media
-Source's buffered ranges give. The player still runs that check where WebKit
-runs `monitorSourceBuffers`, and still makes the readyState change and the
-seek's time notification itself.
+WebMediaPlayerImpl keeps every call site that drives its own state: readyState changes, seek
+completion, restarts, suspend decisions and observer notifications stay in Chromium's file, in their
+order. Parc's machinery lives outside it. The task runners that follow a moved element's frame and
+keep a cast's pipeline running in a frozen page are in `parc_media_task_runners.h`. The rules the
+player applies to its values are pure functions in `parc_web_media_player_rules`: which codecs the
+FairPlay renderer plays and accepts through `changeType()`, the type AVFoundation is told for AirPlay,
+and the readyState a Safari-identity Media Source's buffered ranges give.
 
-Parc's per-player state lives in one object, the player's only Parc member,
-which the player befriends and which reaches the player the same way. The key
-tracker runs inside it: when a Safari-identity element starts and stops
-waiting for a key, and which CDM it asks. Its callbacks still go through the
-player's weak pointer, so they stop at the same moment as before, and the
-player still calls it from the same points. The object is built before the
-player's main-thread task runner, which on Safari-identity pages is the
-object's frame task runner. Two of its fields are now destroyed slightly
-later in the player's destructor than before, the native HLS loader and a
-replaced CDM reference; both go after `Shutdown()` has stopped the pipeline,
-so nothing can observe the difference.
+Parc's per-player state lives in `parc_web_media_player_state`, which the player befriends. It holds
+the key tracker for Safari-identity elements that wait for a key, and its callbacks still go through
+the player's weak pointer, so they stop exactly when they did. The player header still declares Parc
+overrides and the orchestration that changes the player's private state in place: the FairPlay
+hand-off and restarts, the AirPlay route switch, document moves, casting while frozen and readyState
+gates. Hidden Safari-identity video keeps its track by the player's own identity check, because a
+player copies the frame's background-track option once and keeps it after Parc moves it.
 
-The player header still declares Parc methods: overrides of Parc's player,
-demuxer and track interfaces, and the orchestration that drives the player's
-own state machine, namely the FairPlay hand-off and restarts, the AirPlay
-route switch, document moves, casting while frozen and the readyState gates.
-They stay in Chromium's file because they read and change the player's private state in place, in an order
-Safari-identity pages depend on. Hidden Safari-identity video keeps its track by the player's own identity
-check, not the frame's background-track playback option: a player copies that option once, and keeps it
-when Parc moves it to another document.
+HTMLMediaElement's Parc state and steps live in `parc_media_element`, a supplement the element makes
+in its constructor. The element's algorithm still runs in Chromium's file, because readyState, seeks,
+timeupdate scheduling, the load algorithm, document moves and the event queue are private; each
+Safari-identity gate there is a one-line call into the supplement, in the same order. AirPlay's state
+lives in a second supplement, and WebKit's AirPlay members reach it through core partial interfaces
+with `[ImplementedAs]`, which keeps the prototype's property order. The supplement's timeupdate
+throttle uses WebKit's 250 ms. Chromium's element test is its own again, apart from two empty handlers
+for the messages Parc adds to the player observer.
 
-HTMLMediaElement's Parc state and steps live in a Parc supplement that the
-element makes in its constructor, so it lasts exactly as long as the element.
-It is also the Parc side the player reaches through `ParcClient()`. The
-element's own algorithm still runs in Chromium's file: readyState changes,
-seeks and their completion, timeupdate scheduling, the load algorithm,
-document moves and the event queue are private, with no extension point, so
-each Safari-identity gate stays where it was as a one-line call into the
-supplement, in the same order. The element header keeps what the bindings and
-overrides need: the currentTime setter, `fastSeek()` and `getStartDate()`,
-whose place in the IDL fixes the prototype's member order; the identity
-check; the load algorithm's explicit-load flag; and friend lines. AirPlay's
-state and steps live in a second supplement, and WebKit's AirPlay members
-reach it through core partial interfaces with `[ImplementedAs]`, as remote
-playback does. Core IDL files merge before every modules partial, so the
-members keep their place in the prototype's property order. The element still
-receives the player's AirPlay messages and listener changes and passes them
-on. The video element's Parc hooks, including the AirPlay placard, became type
-checks, which are exact because HTMLVideoElement is final. The
-supplement's timeupdate throttle uses WebKit's 250 ms, which is also
-Chromium's progress-timer interval; if Chromium changes its interval, the
-Safari path keeps WebKit's. Its tests live in a Parc test file with their own
-copy of Chromium's element fixture. Chromium's element test is its own again,
-apart from two empty handlers for the messages Parc added to the player
-observer interface, which its observer must implement.
+MediaCapabilities answers Safari-identity documents as WebKit's `decodingInfo` does, with the HEVC and
+Dolby Vision parsers and video rules in `parc_media_capabilities`. EME's configuration rules for
+Safari's identity and FairPlay live in `parc_encrypted_media`; each initializer calls them where the
+check used to run, and the small gates in MediaKeySession, MediaKeys and MediaKeySystemAccess stay in
+place. Safari's script APIs are installed by `parc_safari_scripts` from LocalWindowProxy, where a
+context is created or a document takes over its window, and from the worker controller.
+`DidCreateScriptContext` would miss the take-over path and cannot reach Blink's trusted events.
 
-The FairPlay hand-off and the silent reverse turn live in a Parc helper owned
-by PipelineImpl's renderer wrapper, which keeps one call where each step ran,
-so its state changes keep their order. Renderer choice stays upstream's
-Windows pattern in `CreateRendererInternal`; `pipeline.h` and
-`pipeline_impl.h` don't gain anything in this step. The split readers live in Parc-owned filter
-files: a hand-off object each stream owns, with the decorator stream the
-incoming renderer reads, and the demuxer's resource over those streams and its
-split negotiation. The pipeline's helper can't own that decorator: the split
-is placed under the stream's lock as data arrives, sees a config change
-without taking it, and both readers' seeks, aborts, disabling and shutdown are
-answered in that locked step. A decorator outside the lock would split a read
-later, could pass the playing renderer frames past the split, and would add
-work to every Safari-identity Media Source read. The hand-off, fast-seek
-landing and renderer preference now share one Demuxer accessor; `demuxer.h`
-keeps only that seam. The old reader stays, unused, until the compiled hand-off
-tests pass on the new one.
+Picture in picture: captions reach Parc's window over a navigation-associated Parc interface, so the
+session interface and window class are stock. Scrubbing keeps Chromium's media-session and controller
+interfaces, because the controls send it on their play and pause pipe in order. The shell's in-window
+and power values ride in WebPreferences, which reach a renderer in order with its page lifecycle, and
+a page supplement holds them, so `page.h` is stock.
 
-MediaCapabilities answers Safari-identity documents as WebKit's `decodingInfo`
-does. Its HEVC and Dolby Vision codec-string parsers, the video rules over
-VideoToolbox's facts and the shape of a finished result live in a Parc file
-beside it. Chromium's file still parses the video's content type and checks
-that the type plays, then hands the parsed codecs to the Parc rules. Those
-two steps stay because they use that file's private content-type parser and
-Media Source support check, and they run in the same order as before.
+## The FairPlay media service
 
-Safari's Media Source eviction, ManagedMediaSource purge, buffered-interval
-math, gap tolerances and type mapping live in Parc-owned media filter files.
-ChunkDemuxer still calls the policy under its existing lock and keeps every
-stream lookup, range removal and parser construction primitive in place.
-SourceBufferStream still advances its read cursor from `GetNextBuffer`, while a
-private Parc state pointer keeps the interval history out of the Chromium
-headers. Parser codec validation and the ignore-declared-codecs flag remain
-with Chromium's parser factory and parser.
+FairPlay has its own GPU service, `fairplay_media_service`, and one browser host per document,
+`FairPlayDocumentHost` in `//parc/native`, built from Chromium's public media service classes.
+Chromium's media service, interface factories and the interface-factory, frame-interface-factory,
+renderer-extension and media-service mojoms are pristine; `media_factory.cc` keeps only the calls
+that add and move Parc's renderer factories. Each document's CDMs, FairPlay renderers and native HLS
+players live together in that service, and a render process's documents share one CDM service
+context, so CDM IDs resolve only inside that process. Each audio grant belongs to its own player, so
+closing one player can't take another's speaker indicator. `MediaInterfaceProxy::CreateCdm` keeps the
+Widevine hold and one CDM-creator hook, and MojoRenderer keeps its CDM swap; the
+[FairPlay guide](../Engine/ParcNative/fairplay_chromium/README.md#widevine-request-hook) explains why
+their order requires that.
 
-EME's configuration rules for Safari's identity and FairPlay live in a Parc
-file beside the encrypted-media module: which init data types, codecs,
-content types, containers, encryption schemes and session types a document
-may ask for, which enum values throw a TypeError, and which capabilities
-AVFoundation must judge and how its answers rewrite them. The initializers call
-each rule at the step where it used to run, so the order of the checks is
-unchanged. The AVFoundation request itself stays with the request's
-initializer, a garbage-collected Blink object that owns the Mojo connection
-and resumes the request when the answers arrive. The small
-gates inside MediaKeySession, MediaKeys and MediaKeySystemAccess stay in
-place: each is a few lines tied to that object's own events, promises or
-pending updates, so moving them would only add a wrapper.
+## The FairPlay hand-off
 
-Safari-identity documents get Safari's script APIs before any page script
-runs: ManagedMediaSource, the prefixed EME, Safari's MediaKeys, the video
-presentation API and AirPlay availability, without `navigator.userAgentData`.
-That installer lives in a Parc bindings file. LocalWindowProxy calls it where
-a context is created and where a document takes over its window's context,
-from a microtask in the latter case, so no script runs during the commit.
-WorkerOrWorkletScriptController calls its worker half after a worker's
-features are installed. These stay call sites rather than an embedder
-callback, because `DidCreateScriptContext` misses the take-over path and
-can't reach Blink's trusted-event internals.
+When a Safari-identity Media Source element needs FairPlay mid-playback, playback hands off from
+Chromium's renderer to the FairPlay renderer at a future video keyframe. The hand-off and the silent
+reverse turn live in `parc_renderer_transitions`, owned by PipelineImpl's renderer wrapper, which keeps
+one call where each step ran. Renderer choice stays upstream's pattern in `CreateRendererInternal`, and
+`pipeline.h` carries only the pipeline accessor. `pipeline_impl.h` declares the extension it
+implements, a backward flag on its end notification and a native-HLS flag.
 
-The nested protected-video render-pass planner and the process-wide CALayer
-claim and hand-on policy live in Parc-owned Viz files. Chromium keeps one
-direct planner call and one claim hook; its candidate construction, rounded
-mask primitive, root-pass processing and parked-compositor flag stay at their
-original call sites. The owned policy preserves one superlayer per video,
-copy-request and nested-pass handling, black capture fallbacks, Picture in
-Picture ownership and `preventsCapture`. Renderer window planning and mixing
-arithmetic remain patched until that separate move ships with a real playback
-check.
+The split readers live in `parc_chunk_demuxer_hand_off`: a hand-off object each stream owns, the
+decorator stream the incoming renderer reads, and the demuxer's split negotiation. The split is placed
+under the stream's lock as data arrives, sees a config change without taking it, and answers both
+readers' seeks, aborts, disabling and shutdown in that locked step. A decorator outside the lock would
+split later, could pass the playing renderer frames past the split and would add work to every read.
+The hand-off, fast-seek landing and renderer preference share the one Demuxer accessor, which is all
+`demuxer.h` carries. The hand-off lives only in `ParcStreamHandOff`, `ParcDemuxerHandOff` and the
+pipeline helper; ChunkDemuxer has no hand-off reader of its own.
 
-Automatic picture in picture keeps its tab-helper patch: Chromium's occlusion helper exists only behind an
-off flag, merges the shell's and the page's states that Parc keeps apart, and goes quiet while not
-observing, and entry's wait for the renderer's hidden acknowledgement starts and is cancelled at seven
-private points. Only that acknowledgement is a hook. Captions reach Parc's window over a navigation-associated
-Parc interface, so Chromium's session interface and window class are stock. Each names its session by the
-document's count of started sessions, which both processes keep, so a replaced session's never show. Scrubbing keeps Chromium's stable media-session and controller interfaces:
-the media controls send it on their play and pause pipe, in order, and read Safari-style scrubbing from
-the same session info, so a direct dispatcher would race them. Parc's window scrubs through a call in the
-controller's `.cc`, so the public controller and media-session headers are stock; the player observer
-keeps its two virtuals, the session's only route to its players. The shell's in-window and power values
-still ride in WebPreferences, which reach a renderer with its view's creation and in order with its page
-lifecycle, so the first precedes any media; a Parc mojom could promise neither. A Parc page supplement
-holds them, so `page.h` and the page-visibility observer are stock.
+## Media Source, formats and compositing
+
+Safari's eviction, ManagedMediaSource purge, buffered-interval math, gap tolerances and type mapping
+live in owned `media/filters` files. ChunkDemuxer calls them under its existing lock and keeps every
+stream lookup, range removal and parser construction primitive. Formats Chromium lacks get owned
+elementary-stream parsers, an Ogg parser and VideoToolbox decoders; the format rules inside
+Chromium's own parsers and the AudioToolbox decoder stay patched, because those parsers are never
+forked.
+
+The nested protected-video render-pass planner and the CALayer claim and hand-on policy live in owned
+Viz and accelerated-widget files. Chromium keeps one planner call and one claim hook; candidate
+construction, the rounded mask, root-pass processing and the parked-compositor flag stay at their
+call sites. Renderer window planning and mixing arithmetic stay patched for now
+([backlog](backlog.md#engine-architecture)).
+
+## Parc-owned test targets
+
+Parc's regression tests for Chromium code live in `Engine/ParcChromium/tests` and install into
+`parc_tests` folders inside each layer, such as `//media/parc_tests` and
+`//third_party/blink/renderer/parc_tests`, so they keep that layer's internal visibility and compiler
+configs. Each target is a dependency of the original test binary, so `media_unittests`,
+`blink_unittests`, `content_unittests`, `components_unittests` and `unit_tests` still run them.
+`parc-owned-tests.patch` wires the browser, cast, autofill and core Blink suites; the media,
+compositing, identity, cast-presentation and codec patches wire the targets beside their own edits. Suites are named with a `Parc` prefix. Upstream test files are Chromium's own except
+for compatibility edits a changed interface needs. Parc files beside a layer, such as
+`parc_media_element_test.cc` and `parc_chunk_demuxer_hand_off_unittest.cc`, keep their own fixtures.
+
+## Kept patches and why
+
+These patches carry only hooks, their setters and the minimal state they need:
+`native-site-permissions-direct`, `native-sad-tab`, `native-server-certificate-viewer-direct`,
+`native-http-auth`, `native-web-push-direct`, `native-session-cookies-direct`,
+`native-signin-disabled-direct`, `internal-extension`, `cdm-helper`, `native-tab-sharing-direct`,
+`extension_context_menu_native`, `native-page-context-menu-direct-overlay`,
+`native-password-prompt-direct`, `native-embedded-pages`, `native-page-retirement` and
+`native-browser-overlay`. The last three put their `.cc` gates at Chromium's private restore, close
+and deletion points; the browser overlay also carries the DevTools page-command body. The rest keep real behaviour:
+
+| Patch | Why it stays |
+|---|---|
+| `chromium-direct-startup` | Startup hooks, plus two exceptions: the Mac framework path honors the installed framework, which PathService can't reach for direct callers, and the Keychain definition makes its namespace mutable in both implementation and callers. |
+| `chromium-direct-shared` | Frame-focus and DevTools key hooks; FileSelectHelper's per-type filters, which Parc's dialog factory can't rebuild from the merged list; the context-menu observer, which must run first for command dispatch. |
+| `native-host-direct` | Profile-removal hooks, capture-picker revocation and indicator fixes, tab previews and Parc's action and side-panel IDs. |
+| `native-host-route-direct-overlay` | Native link transport: a link's policy query runs before Chromium creates its navigation request, which no public hook reaches. Also per-local-root renderer identity, player adoption across frames and a longer cache stay for a casting page. |
+| `native-devtools-auxiliary` | App-modal JavaScript dialogs for auxiliary pages such as DevTools capture their factory when queued and validate ownership after the queue advances; the public view factory runs only when shown and can't do both. |
+| `native-devtools-direct-overlay`, `native-developer-panels` | The docked-controller hooks, plus the page commands (Developer Tools, Inspect, Console, Network) in DevToolsWindow, its toggle action and the frontend's panel query. They need whether the window is closing or loaded and a counter that drops a stale panel reply; a Parc port couldn't tell closing from loading and would run beforeunload twice. |
+| `native-intent-picker-direct-overlay` | Keeps the source page through asynchronous icon loading. |
+| `native-client-certificates` | Refuses a stale choice before Chromium shares it for the host, and exposes the Views list's first-row setup. |
+| `native-external-protocol` | The hook, plus the picture-in-picture occlusion registry that rides with it. |
+| `native-folder-upload-direct-overlay` | Only a dialog host can run a dialog model's accept action. |
+| `native-extension-install` | Binds consent when the prompt is created, before the icon loads ([decisions](#decisions)). |
+| `native-webauthn` | Opt-in page context; other pages run Chromium's dialogs unchanged, and the recovery window holds a typed lease. |
+| `native-autofill-capabilities-direct`, `native-autofill-controllers-direct`, `native-address-editor`, `native-address-account` | Presentation results and request state for native offers, and routes for native owners without a Views widget ([decisions](#decisions)). |
+| `native-side-panel` | No deregistration observer for a pending entry, no seam for the borrowed host, private load-time mark. |
+| `native-protocol-handler-request` | Exposes the request's handler, with no public alternative. |
+| `native-current-tab-picker`, `native-delegated-picker` | The share-this-tab picker reports its destruction and hiding; the delegated picker keeps only an accepted session. Both are upstream candidates. |
+| `native-reader-direct` | Private-window Reader caches stay private. |
+| `native-file-dialogs-direct-overlay` | Native parents for background downloads and print preview, and directory listing. |
+| `native-internal-urls-direct-overlay`, `native-license-host` | Address completion and bookmark import classify Parc's internal and licence addresses. |
+| `native-window-lookup-direct`, `native-views-bubble-guards`, `native-document-pip-content-settings` | Native windows have no BrowserView, toast anchor or Views frame for these callers. |
+| `native-video-pip-direct` | Split links, repost warnings and picture-in-picture windows in Chromium's delegate, and caption compositing in Blink. |
+| `native-fullscreen-window` | Recovery needs the controller's private pending transition and original frame. |
+| `native-history-swipe-direct` | Cancellation must reach the retained AppKit tracker before a stale gesture navigates. |
+| `blink-overlay-scrollbar-fade` | No seam wraps the private fade timer that hands visibility back after a theme change. |
+| `document-pip-minimum-size` | Blink clamps script-requested sizes before the browser sees them; keep the global 52-pixel minimum. |
+| `native-input-diagnostics-direct` | Opt-in probes at responder and accessibility branches no observer exposes. |
+| `native-external-split-drop` | Page drops reach Parc's split router from the content view, which has no drop callback. |
+| `native-applescript-lifecycle` | Keeps a page runnable and orders visibility for native requests; the lifecycle manager's state is private. |
+| `native-media-controls` | Per-session volume and scrub recipients live in MediaSessionImpl's private state. |
+| `native-cast`, `native-presentation`, `native-gmc-presentation` | The Cast device dialog and presentation requests honor native page revocation and Parc's cast flow. |
+| `color-provider-manager-observer` | Chromium has no observer for color-provider resets. |
+| `native-viz-capture-direct` | A capture fix: failed or stale copies must complete the oracle's capture. |
+| `native-atomic-import` | Import's history and web-data writes are one transaction. |
+| `native-auto-pip-host-occlusion-direct` | Chromium's occlusion helper is behind an off flag, merges shell and page states Parc keeps apart and goes quiet while not observing; entry's wait for the renderer's hidden acknowledgement starts and is cancelled at seven private points. Only that acknowledgement is a hook. |
+| `native-safe-browsing-direct`, `native-extensions-background-mode`, `product-name` | Build inputs: Safe Browsing's direct dependencies, conditional background-extension dependencies and the extension-message formatter. |
+| `top-band-color` | The tracker's event hooks and its Blink build registration and Mojo target. |
+| `fairplay-media` | Accessors, player orchestration, the CreateCdm and renderer-registration calls, Media Source gap bridging, late SourceBuffers, reverse playback and mixing in the renderers. |
+| `fairplay-identity-blink-direct`, `fairplay-tracks`, `fairplay-idl-validation` | Element algorithm gates, EME enums, Safari tracks and the `ParcSafariIdentityEme` runtime feature Blink's IDL reader requires. |
+| `fairplay-identity-workers` | Worker identity and script requests; a throttle would set the user agent after Chrome's own. |
+| `fairplay-playback-controls` | The player observer's two virtuals and the controller's scrub call. |
+| `fairplay-compositing-direct` | The planner call, claim hook and CALayer compositing core. |
+| `platform-codecs`, `webaudio-aac` | Format support in parsers and the AudioToolbox decoder, and pipelined MojoAudioDecoder decodes for `decodeAudioData`. |
+| `parc-owned-tests` | Adds the owned test targets to Chromium's test binaries. |
+
+A few kept patches still include a narrow Parc API header from an `//parc/native:*_api` target or
+`parc/features.h`: the context menu, internal URLs, tabs API window state, intent picker, tab
+previews, download picker, browser delegate, autofill and the Mac framework path. Each is the
+smallest include that preserves its behaviour.
 
 ## Decisions
 
-- **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
-- **Autofill capability patch:** decided, it stays. Parc presents almost every gated offer natively,
-  using the patch's presentation results and request state; otherwise a refused sheet would count as
-  ignored and collect strikes. The password sheet's routing moved behind a hook; the capability query
-  is now a free function in Parc's presentation header, backed by a core-client hook, and both
-  `autofill_client.h` and `chrome_autofill_client.h` are stock.
-- **Extension install:** decided, it stays. The research's show-time hooks only see the page once the
-  prompt is ready, but Parc binds consent to the asking page's document and Browser when the prompt is
-  created, and starts watching for navigation and detach before the icon loads.
-- **STAY patches:** a few are better sent upstream to Chromium and WebRTC than carried forever. The
-  candidates are the macOS system screen-picker fix, mp2t multi-audio, ipcm/fpcm in MP4, pipelined
-  MojoAudioDecoder decodes, the global-media-controls reentrancy fix, and FFmpeg's ADTS parameters.
+- **AMR and H.263:** they keep playing only on Safari-identity pages, so that small patch stays.
+- **Autofill capability patch:** it stays. Parc presents almost every gated offer natively using the
+  patch's presentation results and request state; otherwise a refused sheet would count as ignored and
+  collect strikes.
+- **Extension install:** it stays. Show-time hooks see the page only once the prompt is ready, but
+  Parc binds consent to the asking document and Browser when the prompt is created.
+- **App-modal JavaScript dialogs, intent picker and context-menu observer:** these keep patches until a lossless
+  hook exists; the public routes run too late or lose the source page.
+- **Parc-owned media player:** rejected. Chromium picks the player once, from the URL, before any CDM
+  exists, so a separate player would mean forking WebMediaPlayerImpl.
+- **Upstream candidates:** the macOS system screen-picker fix, mp2t multi-audio, ipcm and fpcm in MP4,
+  pipelined MojoAudioDecoder decodes, the global-media-controls reentrancy fix and FFmpeg's ADTS
+  parameters are better sent to Chromium and WebRTC than carried forever.
+
+## Risks every change must guard
+
+Media:
+- the order of media events on Safari-identity elements, and the clock during the hand-off;
+- FairPlay and HLS players never being suspended; audio grants and mute; CDM lifetime;
+- persistent usage records never in private windows;
+- one superlayer per CALayer, the parked-compositor flag, PiP layer ownership and `preventsCapture`;
+- the hot paths: the ChunkDemuxer lock, the video renderer lock and the audio render callback;
+- the Widevine hold, where held callbacks never run and are destroyed after their pipes;
+- reconnecting after a GPU crash, and one CDM service context per render process;
+- the worker decoding route, the black capture fallback, nested passes and copy requests;
+- compositor features, rechecked at every Chromium upgrade.
+
+Browser: refuse a window before a Browser exists, drain the native host before deletion, defer
+off-the-record operations, roll back a transfer when its last tab fails, and keep profile removal
+crash-safe.
+
+Interface: keep each prompt's source page and window checks, cancel on detach and navigation, and
+complete exactly once.
+
+## Adding a hook
+
+1. Look for an extension point first: a content-client or main-delegate override, an extra-parts
+   callback, a BrowserWindow or WebContentsDelegate method, a Blink supplement or a public observer.
+   Check that it runs at the same moment and with the same context as the code it replaces.
+2. Otherwise, in the Chromium `.cc` that owns the behaviour, declare the setter in `namespace
+   parc_hooks`, keep the pointer file-local and call it at exactly the original point. Return early
+   only with a value Chromium would accept, and leave the unhooked path unchanged. Add the library's
+   export macro if the file is in a component library.
+3. Declare the setter in `parc/chromium_hooks.h` with a comment naming that file. Renderer and media
+   hooks use a Parc header installed in their layer instead.
+4. Put the logic in a Parc-owned file and install the hook at the earliest point Chromium can call it.
+5. Move the Parc tests into the layer's `parc_tests` target, and make the unhooked upstream test pass
+   unchanged.
+6. Record the patch change for the manifest integrator, who alone edits `overlay.json`, then update
+   this guide and the area's guide in place.
+
+## Builds and upgrades
+
+Both engine recipes can use a shared compile cache on a trusted builder, with remote execution off and
+every miss compiled locally ([cache setup](../tests/EngineSource/README.md#shared-compile-cache)).
+`scripts/engine-overlay-export.py` exports a committed Chromium branch to a candidate manifest and
+proves byte-for-byte equivalence with the current one
+([export](../tests/EngineSource/README.md#branch-export-and-equivalence)); the release pipeline still
+materializes pinned Chromium plus the overlay once. Carrying the changes as a branch, the next Chromium
+upgrade and other open engine work are in the [backlog](backlog.md#engine-architecture).
