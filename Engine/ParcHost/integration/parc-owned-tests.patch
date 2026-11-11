@@ -95,14 +95,3 @@
 +  if (is_mac) {
 +    deps += [ "//chrome/browser/ui/media_router/parc_tests:unit_tests" ]
 +  }
---- a/third_party/blink/renderer/modules/BUILD.gn
-+++ b/third_party/blink/renderer/modules/BUILD.gn
-@@ -795,2 +795,8 @@
-     "//v8",
-   ]
-+
-+  if (is_mac) {
-+    deps += [
-+      "//third_party/blink/renderer/modules/parc_pip_tests:unit_tests",
-+    ]
-+  }

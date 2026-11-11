@@ -5835,13 +5835,16 @@
      "mediastream/browser_capture_media_stream_track_test.cc",
      "mediastream/html_media_track_element_media_track_test.cc",
      "mediastream/html_user_media_element_media_stream_test.cc",
-@@ -795,6 +797,10 @@
+@@ -795,6 +797,13 @@
      "//v8",
    ]
 -
 +
 +  if (is_mac) {
-+    deps += [ "//third_party/blink/renderer/modules/parc_tests:unit_tests" ]
++    deps += [
++      "//third_party/blink/renderer/modules/parc_pip_tests:unit_tests",
++      "//third_party/blink/renderer/modules/parc_tests:unit_tests",
++    ]
 +  }
 +
    # This uses target_os rather than current_os (which is what is_android is set
