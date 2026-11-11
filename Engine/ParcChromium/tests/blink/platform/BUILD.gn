@@ -1,0 +1,26 @@
+# Installed at //third_party/blink/renderer/platform/parc_tests.
+
+assert(is_mac)
+
+source_set("unit_tests") {
+  visibility = [ "//third_party/blink/renderer/platform:*" ]
+  testonly = true
+  sources = [ "web_audio_source_provider_impl_test.cc" ]
+
+  configs += [
+    "//third_party/blink/renderer:config",
+    "//third_party/blink/renderer:inside_blink",
+    "//third_party/blink/renderer/platform:blink_platform_pch",
+  ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//media",
+    "//media:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/blink/public:blink",
+    "//third_party/blink/renderer/platform",
+  ]
+}

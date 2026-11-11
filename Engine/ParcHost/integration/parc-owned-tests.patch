@@ -123,3 +123,19 @@
 -
 +
    # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+--- a/third_party/blink/renderer/platform/BUILD.gn
++++ b/third_party/blink/renderer/platform/BUILD.gn
+@@ -2545,7 +2545,11 @@
+   deps += [
+     ":bridge_ice_controller_tests",
+     ":rustfft_ffi_unittests",
+   ]
++
++  if (is_mac) {
++    deps += [ "//third_party/blink/renderer/platform/parc_tests:unit_tests" ]
++  }
+-
++
+   data_deps = [ ":blink_platform_unittests_data" ]
+-
++
