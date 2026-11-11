@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 660,
+  "version": 661,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -6508,6 +6508,27 @@
           "target": "chrome/browser/ui/navigator/BUILD.gn",
           "before_sha256": "40dba9884f123d262086c9c168e61a77c3ee1790b51fd2f3fbf8b9a98d55ec2e",
           "after_sha256": "2365bf379cd115f78114c2ee974149d7d8eeabbb37d05f218e17eeb18e21e9dd"
+        }
+      ]
+    },
+    {
+      "source": "Engine/ParcHost/integration/color-provider-manager-observer.patch",
+      "sha256": "da99da4716050e06e4e112e7e14fec0675098b210822dbe779656b576d0b9416",
+      "files": [
+        {
+          "target": "ui/color/color_provider_manager.cc",
+          "before_sha256": "71c06836a83b396e091acbf4e4a03f6b9af1e30f686f2eb09ea21a0ba40965b3",
+          "after_sha256": "9edcf18b76595d5f1dbab7ba3d6164f537f93411329f257a9f9567f0161254a6"
+        },
+        {
+          "target": "ui/color/color_provider_manager.h",
+          "before_sha256": "cb8b171465bf704e05247743dc5da066af4b54710b08b313d28e08094d9ed8c9",
+          "after_sha256": "dbce6a2247bf2148d852e34ece7d377f62e1b9324bb64e346609abb1f83ec404"
+        },
+        {
+          "target": "ui/native_theme/native_theme.cc",
+          "before_sha256": "19575902fe0b7b0c9159182e69ea16b2ab3ede3db715c9c0a3b417a1f99e9a27",
+          "after_sha256": "a6e9ca84d79d84baaf9267befe84d887cafde8bdc5b4183373a6f181d6d66903"
         }
       ]
     }
