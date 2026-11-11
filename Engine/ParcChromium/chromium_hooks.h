@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "components/permissions/permission_prompt.h"
+#include "ui/base/resource/resource_bundle.h"
 
 class LoginHandler;
 
@@ -38,6 +39,13 @@ using AlreadyRunningCommandLineHandler =
     void (*)(const base::CommandLine&, const base::FilePath&, void*);
 void SetAlreadyRunningCommandLineHandler(
     AlreadyRunningCommandLineHandler handler, void* context);
+
+// chrome/app/chrome_main_delegate.cc
+// chrome/browser/chrome_resource_bundle_helper.cc
+using ResourceBundleFactory = ui::ResourceBundle::Delegate* (*)(void*);
+void SetMainResourceBundleFactory(ResourceBundleFactory factory, void* context);
+void SetBrowserResourceBundleFactory(ResourceBundleFactory factory,
+                                     void* context);
 
 }  // namespace parc_hooks
 

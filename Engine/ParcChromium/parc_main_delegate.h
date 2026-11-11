@@ -44,7 +44,6 @@ class ParcMainDelegate final : public ChromeMainDelegate {
   content::ContentBrowserClient* CreateContentBrowserClient() override;
   content::ContentRendererClient* CreateContentRendererClient() override;
   content::ContentUtilityClient* CreateContentUtilityClient() override;
-  ui::ResourceBundle::Delegate* GetResourceBundleDelegate() override;
 
   const raw_ptr<NativeApplication> application_;
   ParcContentClient content_client_;

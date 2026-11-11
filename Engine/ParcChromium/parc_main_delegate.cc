@@ -20,6 +20,7 @@
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
+#include "parc/chromium_hooks.h"
 #include "parc/native/native_appkit_host.h"
 #include "chrome/utility/chrome_content_utility_client.h"
 #include "mojo/public/cpp/bindings/service_factory.h"
@@ -27,6 +28,11 @@
 
 namespace parc {
 namespace {
+ui::ResourceBundle::Delegate* NativeResourceBundle(void* context) {
+  return context
+             ? static_cast<NativeApplication*>(context)->ResourceBundleDelegate()
+             : nullptr;
+}
 class ParcContentUtilityClient final : public ChromeContentUtilityClient {
  public:
   void RegisterMainThreadServices(mojo::ServiceFactory& services) override {
@@ -40,9 +46,15 @@ class ParcContentUtilityClient final : public ChromeContentUtilityClient {
 
 ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
     : ChromeMainDelegate({.exe_entry_point_ticks = base::TimeTicks::Now()}),
-      application_(application) {}
+      application_(application) {
+  parc_hooks::SetMainResourceBundleFactory(&NativeResourceBundle, application);
+  parc_hooks::SetBrowserResourceBundleFactory(&NativeResourceBundle, application);
+}
 
-ParcMainDelegate::~ParcMainDelegate() = default;
+ParcMainDelegate::~ParcMainDelegate() {
+  parc_hooks::SetMainResourceBundleFactory(nullptr, nullptr);
+  parc_hooks::SetBrowserResourceBundleFactory(nullptr, nullptr);
+}
 
 ParcContentBrowserClient& ParcMainDelegate::browser_client() {
   return static_cast<ParcContentBrowserClient&>(
@@ -138,7 +150,4 @@ content::ContentUtilityClient* ParcMainDelegate::CreateContentUtilityClient() {
   return chrome_content_utility_client_.get();
 }
 
-ui::ResourceBundle::Delegate* ParcMainDelegate::GetResourceBundleDelegate() {
-  return application_ ? application_->ResourceBundleDelegate() : nullptr;
-}
 }  // namespace parc
