@@ -81,8 +81,8 @@ source_set("native_split_link_api") {
   sources = public
 }
 
-# Browser, BrowserManagerService, navigator and DevTools hooks name the native
-# Browser seam. //parc:browser holds its implementation.
+# The DevTools Chromium files still call the native Browser seam directly.
+# //parc:browser holds its implementation.
 source_set("native_browser_api") {
   public = [ "native_browser.h" ]
   sources = public

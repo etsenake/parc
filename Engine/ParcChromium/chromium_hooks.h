@@ -228,6 +228,11 @@ void SetBrowserRegistration(void (*registered)(BrowserWindowInterface*));
 // keyed-service Shutdown requires `ready`.
 void SetBrowserDeletionGate(bool (*deferred)(BrowserWindowInterface*),
                             bool (*ready)(const BrowserWindowInterface*));
+// Same file: after a primary OTR Profile's last Browser is released,
+// DestroyUnusedOTRProfile destroys it when appropriate unless `deferred` keeps
+// it for a native operation; Parc calls it again once that operation ends.
+void SetOTRProfileDestructionDeferral(bool (*deferred)(Profile&));
+void DestroyUnusedOTRProfile(Profile& profile);
 
 // chrome/browser/ui/navigator/browser_navigator.cc, after Navigate creates new
 // contents for a Browser and before their first load.

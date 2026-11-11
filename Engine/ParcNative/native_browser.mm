@@ -28,6 +28,7 @@
 #include "native_host_route.h"
 #include "native_page_binding.h"
 #include "native_profiles.h"
+#include "parc/chromium_hooks.h"
 
 namespace parc {
 namespace {
@@ -289,7 +290,7 @@ void RetryNativeOTRProfileDestruction() {
       DeferredOTRProfiles().push_back(profile);
     } else if (ProfileBrowserCollection::GetForProfile(profile.get())
                    ->IsEmpty()) {
-      BrowserManagerService::DestroyUnusedOTRProfile(*profile);
+      parc_hooks::DestroyUnusedOTRProfile(*profile);
     }
   }
 }
