@@ -3,39 +3,15 @@
 @@ -2,6 +2,7 @@
  # Use of this source code is governed by a BSD-style license that can be
  # found in the LICENSE file.
--
-+
+ 
 +import("//parc/features.gni")
  import("//base/allocator/allocator.gni")
  import("//build/buildflag_header.gni")
  import("//build/config/buildflags_paint_preview.gni")
-@@ -482,12 +483,16 @@
--
-+
- if (!is_android) {
-   source_set("certificate_viewer") {
--    public = [ "certificate_viewer.h" ]
--    deps = [
-+    public = [
-+      "certificate_viewer.h",
-+      "native_server_certificate_viewer.h",
-+    ]
-+    public_deps = [
-+      "//base",
-       "//content/public/browser",
--      "//net",
-       "//ui/gfx:native_ui_types",
-     ]
-+    deps = [ "//net" ]
-   }
--
-+
-   source_set("repost_form_warning_controller") {
-@@ -1517,7 +1522,12 @@
+@@ -1517,7 +1518,12 @@
      }
    }
--
-+
+ 
 +  deps += [ "//parc:buildflags" ]
 +
    if (is_mac) {
@@ -47,22 +23,41 @@
        "browser_process_platform_part_mac.mm",
 --- a/chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.cc
 +++ b/chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.cc
-@@ -25,6 +25,7 @@
- #include "base/time/time.h"
- #include "base/values.h"
- #include "chrome/browser/certificate_viewer.h"
-+#include "chrome/browser/native_server_certificate_viewer.h"
- #include "chrome/browser/platform_util.h"
- #include "chrome/browser/ui/certificate_dialogs.h"
- #include "chrome/browser/ui/webui/certificate_viewer/certificate_viewer_ui.h"
-@@ -341,6 +342,10 @@
+@@ -48,7 +48,17 @@
+ 
+ using chrome_browser_server_certificate_database::CertificateTrust;
+ 
++namespace parc_hooks {
++using CertificateViewer = void (*)(content::WebContents* web_contents,
++                                   gfx::NativeWindow parent,
++                                   net::X509Certificate* cert);
++void SetCertificateViewer(CertificateViewer viewer);
++}  // namespace parc_hooks
++
+ namespace {
++
++// Replaces the WebUI viewer below for every page.
++parc_hooks::CertificateViewer g_parc_certificate_viewer = nullptr;
+ 
+ CertificateViewerDialog::MockShowCallback& GetMockCallbackInstance() {
+   static base::NoDestructor<CertificateViewerDialog::MockShowCallback> instance;
+@@ -341,9 +351,19 @@
  void ShowCertificateViewer(WebContents* web_contents,
                             gfx::NativeWindow parent,
                             net::X509Certificate* cert) {
-+  if (auto* native = NativeServerCertificateViewer::Get(web_contents)) {
-+    native->Show(*web_contents, parent, cert);
++  if (g_parc_certificate_viewer) {
++    g_parc_certificate_viewer(web_contents, parent, cert);
 +    return;
 +  }
    CertificateViewerDialog::ShowConstrained(cert->CopyCertBuffers(),
                                             web_contents, parent);
  }
++
++namespace parc_hooks {
++void SetCertificateViewer(CertificateViewer viewer) {
++  g_parc_certificate_viewer = viewer;
++}
++}  // namespace parc_hooks
+ 
+ #if !(BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
+ void ShowCertificateViewerForClientAuth(content::WebContents* web_contents,

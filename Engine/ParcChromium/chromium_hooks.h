@@ -14,6 +14,7 @@
 #include "content/public/browser/weak_document_ptr.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/native_ui_types.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -42,6 +43,10 @@ class GCMClient;
 namespace content {
 class RenderFrameHost;
 class WebContents;
+}
+
+namespace net {
+class X509Certificate;
 }
 
 namespace ui {
@@ -95,6 +100,12 @@ using ExternalProtocolPrompt =
              content::WeakDocumentPtr initiator_document,
              const std::u16string& program_name);
 void SetExternalProtocolPrompt(ExternalProtocolPrompt prompt);
+
+// chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.cc
+using CertificateViewer = void (*)(content::WebContents* web_contents,
+                                   gfx::NativeWindow parent,
+                                   net::X509Certificate* cert);
+void SetCertificateViewer(CertificateViewer viewer);
 
 // chrome/browser/ui/login/login_handler.cc
 void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));

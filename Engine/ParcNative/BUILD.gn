@@ -748,6 +748,7 @@ source_set("native_certificate_viewer") {
     "//chrome/browser:certificate_viewer",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/webui/certificate_viewer",
     "//components/tabs:public",
     "//content/public/browser",
     "//net",

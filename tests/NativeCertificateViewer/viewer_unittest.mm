@@ -7,7 +7,6 @@
 #include "base/test/bind.h"
 #import "certificate_viewer.h"
 #include "chrome/browser/certificate_viewer.h"
-#include "chrome/browser/native_server_certificate_viewer.h"
 #include "chrome/browser/ssl/ssl_error_controller_client.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.h"
@@ -22,6 +21,12 @@
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
 #import "window_security_reservation.h"
+
+namespace parc_hooks {
+void SetCertificateViewer(void (*)(content::WebContents*,
+                                   gfx::NativeWindow,
+                                   net::X509Certificate*));
+}
 
 namespace parc {
 namespace {
@@ -60,6 +65,7 @@ class NativeCertificateViewerTest : public BrowserWithTestWindowTest {
     contents()->GetController().GetVisibleEntry()->GetSSL().certificate =
         certificate_;
     contents()->GetController().GetVisibleEntry()->GetSSL().initialized = true;
+    parc_hooks::SetCertificateViewer(&ShowServerCertificateViewer);
     InstallNativeServerCertificateViewer(*contents());
     SetNativeServerCertificateViewerAttached(*contents(), true);
   }
@@ -70,6 +76,7 @@ class NativeCertificateViewerTest : public BrowserWithTestWindowTest {
     }
     browser()->GetTabStripModel()->CloseAllTabs();
     Pump();
+    parc_hooks::SetCertificateViewer(nullptr);
     BrowserWithTestWindowTest::TearDown();
     [window_ close];
     window_ = nil;
@@ -262,7 +269,8 @@ TEST_F(NativeCertificateViewerTest, NativeRefusalDoesNotFallBackToStockViewer) {
   Pump();
   EXPECT_EQ(stock_calls, 0);
   EXPECT_FALSE(window_.attachedSheet);
-  NativeServerCertificateViewer::Set(*contents(), nullptr);
+  // A page without the native route keeps Chromium's viewer.
+  AddTab(browser(), GURL("https://other.example/"));
   Show();
   EXPECT_EQ(stock_calls, 1);
   EXPECT_FALSE(window_.attachedSheet);

@@ -8,9 +8,10 @@
 #include "base/check.h"
 #include "base/memory/weak_ptr.h"
 #import "certificate_viewer_presenter.h"
-#include "chrome/browser/native_server_certificate_viewer.h"
+#include "base/supports_user_data.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
@@ -28,18 +29,20 @@
 namespace parc {
 namespace {
 class Request;
-class Context final : public NativeServerCertificateViewer {
+constexpr char kContextKey[] = "native-server-certificate-viewer";
+// An installed page handles even a refusal. It must never fall back to an
+// unrelated Views window when its page is detached or stale.
+class Context final : public base::SupportsUserData::Data {
  public:
   ~Context() override;
-  void Show(content::WebContents&,
-            gfx::NativeWindow,
-            net::X509Certificate*) override;
+  void Show(content::WebContents&, gfx::NativeWindow, net::X509Certificate*);
   bool attached = false;
   uint64_t epoch = 0;
   std::shared_ptr<Request> request;
 };
 Context* GetContext(content::WebContents* contents) {
-  return static_cast<Context*>(NativeServerCertificateViewer::Get(contents));
+  return contents ? static_cast<Context*>(contents->GetUserData(kContextKey))
+                  : nullptr;
 }
 class Request final : public content::WebContentsObserver,
                       public std::enable_shared_from_this<Request> {
@@ -223,9 +226,19 @@ void Context::Show(content::WebContents& contents,
 }  // namespace
 void InstallNativeServerCertificateViewer(content::WebContents& contents) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (!NativeServerCertificateViewer::Get(&contents)) {
-    NativeServerCertificateViewer::Set(contents, std::make_unique<Context>());
+  if (!GetContext(&contents)) {
+    contents.SetUserData(kContextKey, std::make_unique<Context>());
   }
+}
+void ShowServerCertificateViewer(content::WebContents* contents,
+                                 gfx::NativeWindow parent,
+                                 net::X509Certificate* certificate) {
+  if (auto* context = GetContext(contents)) {
+    context->Show(*contents, parent, certificate);
+    return;
+  }
+  CertificateViewerDialog::ShowConstrained(certificate->CopyCertBuffers(),
+                                           contents, parent);
 }
 void SetNativeServerCertificateViewerAttached(content::WebContents& contents,
                                               bool attached) {
