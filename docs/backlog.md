@@ -182,10 +182,6 @@ what users see or hear today, and each must keep it that way.
 - Carrying Parc's Chromium changes as a branch moved by three-way merges, and the Chromium 157 (or
   158) upgrade taken through it, are separately authorized work. The upgrade is what brings users
   that release's Chromium security fixes; the export tooling it needs is ready.
-- The shared compile cache is implemented but unproven, so engine builds can't yet count on reusing
-  the other Mac's compiled objects. Verify it on a real build: matching actions hit, a real
-  input change misses, the server sees no remote execution, and switching back to local builds
-  leaves completed steps up to date.
 
 ## Deferred
 
