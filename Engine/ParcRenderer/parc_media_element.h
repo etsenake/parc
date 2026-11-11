@@ -22,6 +22,7 @@
 #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink-forward.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+#include "third_party/blink/renderer/core/html/media/parc_page_media_state.h"
 #include "third_party/blink/renderer/core/page/page_visibility_observer.h"
 #include "third_party/blink/renderer/platform/bindings/exception_code.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
@@ -160,19 +161,22 @@ class CORE_EXPORT ParcMediaElement final
   friend class HTMLMediaElement;
   friend class ParcMediaElementTest;
 
-  // Tells the element when its page's visibility changes, while playback is
-  // held for the back/forward cache or its player belongs to another page's
-  // frame.
+  // Tells the element when its page's visibility or its view's window
+  // changes, while playback is held for the back/forward cache or its player
+  // belongs to another page's frame.
   class PageObserver final : public GarbageCollected<PageObserver>,
-                             public PageVisibilityObserver {
+                             public PageVisibilityObserver,
+                             public ParcPageMediaState::InWindowObserver {
    public:
     explicit PageObserver(ParcMediaElement* parc);
+
+    void Observe(Page* page);
 
     void Trace(Visitor* visitor) const final;
 
    private:
     void PageVisibilityChanged() final;
-    void ParcPageInWindowChanged() final;
+    void PageInWindowChanged(Page& page) final;
 
     Member<ParcMediaElement> parc_;
   };

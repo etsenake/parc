@@ -1080,7 +1080,7 @@ bool ParcMediaElement::ContextLifecycleStateChanged(
       if (!page_observer_) {
         page_observer_ = MakeGarbageCollected<PageObserver>(this);
       }
-      page_observer_->SetPage(element.GetDocument().GetPage());
+      page_observer_->Observe(element.GetDocument().GetPage());
       ResumeAfterBackForwardCacheIfAllowed();
     }
     return true;
@@ -1112,7 +1112,7 @@ void ParcMediaElement::ResumeAfterBackForwardCacheIfAllowed() {
       context->ContextPauseState() !=
           mojom::blink::FrameLifecycleState::kRunning ||
       !element.GetDocument().GetPage() ||
-      !element.GetDocument().GetPage()->ParcPageInWindow()) {
+      !ParcPageMediaState::From(*element.GetDocument().GetPage()).InWindow()) {
     return;
   }
   paused_for_back_forward_cache_ = false;
@@ -1140,7 +1140,7 @@ void ParcMediaElement::UpdatePlayerPageVisibility() {
     if (!page_observer_) {
       page_observer_ = MakeGarbageCollected<PageObserver>(this);
     }
-    page_observer_->SetPage(page);
+    page_observer_->Observe(page);
   }
   if (auto* parc = element.web_media_player_->GetParcExtension()) {
     parc->ParcSetPageHidden(is_page_hidden);
@@ -1260,12 +1260,30 @@ SkBitmap ParcMediaElement::PaintTextTracksForPictureInPicture(
 ParcMediaElement::PageObserver::PageObserver(ParcMediaElement* parc)
     : PageVisibilityObserver(nullptr), parc_(parc) {}
 
+void ParcMediaElement::PageObserver::Observe(Page* page) {
+  if (page == GetPage()) {
+    return;
+  }
+  if (GetPage()) {
+    ParcPageMediaState::From(*GetPage()).RemoveInWindowObserver(this);
+  }
+  SetPage(page);
+  if (page) {
+    ParcPageMediaState::From(*page).AddInWindowObserver(this);
+  }
+}
+
 void ParcMediaElement::PageObserver::Trace(Visitor* visitor) const {
   PageVisibilityObserver::Trace(visitor);
   visitor->Trace(parc_);
 }
 
-void ParcMediaElement::PageObserver::ParcPageInWindowChanged() {
+void ParcMediaElement::PageObserver::PageInWindowChanged(Page& page) {
+  // A destroyed page ends observation without leaving `page`'s list; only the
+  // page still observed counts, as with Page's own observer list.
+  if (GetPage() != &page) {
+    return;
+  }
   parc_->ResumeAfterBackForwardCacheIfAllowed();
 }
 
