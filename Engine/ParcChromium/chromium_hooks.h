@@ -37,6 +37,7 @@ class Profile;
 class SadTab;
 class StartupData;
 class UnloadController;
+struct BrowserWindowCreateParams;
 struct BrowserWindowDeleter;
 
 namespace base {
@@ -209,6 +210,19 @@ void SetSessionRestorePolicy(bool (*policy)());
 
 // components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
 void SetGaiaAccountsPolicy(bool (*policy)(PrefService*));
+
+// chrome/browser/ui/browser.cc, Browser::Create before any allocation; false
+// cancels the creation.
+void SetBrowserAdmission(bool (*admission)(BrowserWindowCreateParams&));
+
+// chrome/browser/ui/browser_manager_service.cc, in AddBrowser once ownership
+// and subscriptions exist and before any collection observer.
+void SetBrowserRegistration(void (*registered)(BrowserWindowInterface*));
+
+// chrome/browser/ui/navigator/browser_navigator.cc, after Navigate creates new
+// contents for a Browser and before their first load.
+void SetNavigatorContentsCreated(
+    void (*created)(BrowserWindowInterface*, content::WebContents&));
 
 // chrome/browser/ui/views/frame/browser_window_factory.cc; a null window keeps
 // Chrome's.

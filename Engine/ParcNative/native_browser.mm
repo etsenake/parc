@@ -96,11 +96,16 @@ NativeBrowser::CreateWindow(BrowserWindowInterface* browser) {
                               native->reservation_->Bind(*native->browser_)));
 }
 
-void NativeBrowser::OnRegistered() {
-  auto reservation = std::exchange(reservation_, {});
+// static
+void NativeBrowser::OnRegistered(BrowserWindowInterface* browser) {
+  auto* native = From(browser);
+  if (!native) {
+    return;
+  }
+  auto reservation = std::exchange(native->reservation_, {});
   CHECK(reservation);
-  CHECK(WindowOf(*browser_).AttachToNativeWindow(
-      reservation->GetNativeWindow()));
+  CHECK(WindowOf(*native->browser_)
+            .AttachToNativeWindow(reservation->GetNativeWindow()));
 }
 
 bool NativeBrowser::DeletionReady() const {
@@ -177,11 +182,17 @@ void NativeBrowser::SetAsDelegate(content::WebContents& contents,
   binding->SetBrowser(set_delegate ? &*browser_ : nullptr);
 }
 
-void NativeBrowser::OnWebContentsCreated(content::WebContents& contents) {
+// static
+void NativeBrowser::OnWebContentsCreated(BrowserWindowInterface* browser,
+                                         content::WebContents& contents) {
+  auto* native = From(browser);
+  if (!native) {
+    return;
+  }
   // Navigate starts the first load before inserting the tab. Its delegate
   // callbacks during that load already belong to this Browser.
-  contents.SetDelegate(BrowserWebContentsDelegate::From(&*browser_));
-  SetAsDelegate(contents, true);
+  contents.SetDelegate(BrowserWebContentsDelegate::From(&*native->browser_));
+  native->SetAsDelegate(contents, true);
 }
 
 bool IsNativeBrowser(const BrowserWindowInterface* browser) {

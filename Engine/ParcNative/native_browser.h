@@ -59,9 +59,9 @@ class NativeBrowser final {
   // BrowserWindow::CreateBrowserWindow; null for an ordinary Browser.
   static std::unique_ptr<BrowserWindow, BrowserWindowDeleter> CreateWindow(
       BrowserWindowInterface* browser);
-  // BrowserManagerService::AddBrowser, once it owns the Browser. Attaches the
-  // window to the reserved NSWindow.
-  void OnRegistered();
+  // BrowserManagerService::AddBrowser, once it owns the Browser and before
+  // any observer. Attaches a native Browser's window to its reserved NSWindow.
+  static void OnRegistered(BrowserWindowInterface* browser);
   // true keeps BrowserManagerService ownership until `retry`, which is posted
   // only after every native host has drained.
   bool DeferDeletion(base::OnceClosure retry);
@@ -83,8 +83,9 @@ class NativeBrowser final {
 
   // Browser::SetAsDelegate: binds or releases the page's native presentation.
   void SetAsDelegate(content::WebContents& contents, bool set_delegate);
-  // chrome::Navigate created `contents` for this Browser before inserting it.
-  void OnWebContentsCreated(content::WebContents& contents);
+  // chrome::Navigate created `contents` for `browser` before inserting it.
+  static void OnWebContentsCreated(BrowserWindowInterface* browser,
+                                   content::WebContents& contents);
 
  private:
   NativeBrowser(Browser& browser,

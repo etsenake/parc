@@ -436,11 +436,3 @@
      ":navigator",
      "//base",
      "//chrome/browser:browser_about_handler",
-@@ -97,6 +97,7 @@
-       "//chrome/browser/ui/web_applications",
-       "//chrome/browser/ui/web_applications:launch_utils",
-       "//chrome/browser/ui/window_feature_controller",
-+      "//parc/native:native_browser_api",
-     ]
-   }
- }
