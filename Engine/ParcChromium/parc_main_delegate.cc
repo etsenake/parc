@@ -72,6 +72,8 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
                                  &NativeBrowser::OnBrowserDestroyed);
   parc_hooks::SetBrowserDelegateChange(&NativeBrowser::SetAsDelegate);
   parc_hooks::SetBrowserRegistration(&NativeBrowser::OnRegistered);
+  parc_hooks::SetBrowserDeletionGate(&NativeBrowser::DeferDeletion,
+                                     &NativeBrowser::DeletionReady);
   parc_hooks::SetNavigatorContentsCreated(&NativeBrowser::OnWebContentsCreated);
   parc_hooks::SetNavigatorBrowserCreator(&CreateBrowserWindowFrom);
   parc_hooks::SetDevToolsBrowserCreator(&CreateBrowserWindowFrom);

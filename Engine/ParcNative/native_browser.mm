@@ -105,7 +105,7 @@ NativeBrowser::NativeBrowser(Browser& browser,
       scoped_data_holder_(browser.GetUnownedUserDataHost(), *this) {}
 
 NativeBrowser::~NativeBrowser() {
-  CHECK(DeletionReady());
+  CHECK(deletion_ == Deletion::kReady);
   NotifyNativeEngineOwnershipChanged();
 }
 
@@ -134,40 +134,43 @@ void NativeBrowser::OnRegistered(BrowserWindowInterface* browser) {
             .AttachToNativeWindow(reservation->GetNativeWindow()));
 }
 
-bool NativeBrowser::DeletionReady() const {
-  return deletion_ == Deletion::kReady;
+// static
+bool NativeBrowser::DeletionReady(const BrowserWindowInterface* browser) {
+  const auto* native = From(browser);
+  return !native || native->deletion_ == Deletion::kReady;
 }
 
-bool NativeBrowser::DeferDeletion(base::OnceClosure retry) {
-  if (DeletionReady()) {
+// static
+bool NativeBrowser::DeferDeletion(BrowserWindowInterface* browser) {
+  auto* native = From(browser);
+  if (!native || native->deletion_ == Deletion::kReady) {
     return false;
   }
-  if (deletion_ == Deletion::kDraining) {
+  if (native->deletion_ == Deletion::kDraining) {
     return true;
   }
-  deletion_ = Deletion::kDraining;
+  native->deletion_ = Deletion::kDraining;
   PrepareAppKitBrowserForDeletion(
-      *browser_,
+      *native->browser_,
       base::BindOnce(
-          [](base::WeakPtr<BrowserWindowInterface> browser,
-             base::OnceClosure retry) {
+          [](base::WeakPtr<BrowserWindowInterface> browser) {
             // Never destroy the Browser on the service's final callback stack.
             base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
                 FROM_HERE,
                 base::BindOnce(
-                    [](base::WeakPtr<BrowserWindowInterface> browser,
-                       base::OnceClosure retry) {
+                    [](base::WeakPtr<BrowserWindowInterface> browser) {
                       auto* native = NativeBrowser::From(browser.get());
                       if (!native) {
                         return;
                       }
                       CHECK(native->deletion_ == Deletion::kDraining);
                       native->deletion_ = Deletion::kReady;
-                      std::move(retry).Run();
+                      BrowserManagerService::SynchronouslyDestroyBrowser(
+                          browser.get());
                     },
-                    browser, std::move(retry)));
+                    browser));
           },
-          browser_->GetWeakPtr(), std::move(retry)));
+          native->browser_->GetWeakPtr()));
   return true;
 }
 

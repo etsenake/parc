@@ -224,6 +224,10 @@ void SetBrowserDelegateChange(
 // chrome/browser/ui/browser_manager_service.cc, in AddBrowser once ownership
 // and subscriptions exist and before any collection observer.
 void SetBrowserRegistration(void (*registered)(BrowserWindowInterface*));
+// Same file: DeleteBrowser keeps a Browser while `deferred` is true, and
+// keyed-service Shutdown requires `ready`.
+void SetBrowserDeletionGate(bool (*deferred)(BrowserWindowInterface*),
+                            bool (*ready)(const BrowserWindowInterface*));
 
 // chrome/browser/ui/navigator/browser_navigator.cc, after Navigate creates new
 // contents for a Browser and before their first load.

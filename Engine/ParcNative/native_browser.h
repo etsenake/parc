@@ -5,7 +5,6 @@
 #include <memory>
 #include <optional>
 
-#include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
 #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
@@ -65,10 +64,11 @@ class NativeBrowser final {
   // BrowserManagerService::AddBrowser, once it owns the Browser and before
   // any observer. Attaches a native Browser's window to its reserved NSWindow.
   static void OnRegistered(BrowserWindowInterface* browser);
-  // true keeps BrowserManagerService ownership until `retry`, which is posted
-  // only after every native host has drained.
-  bool DeferDeletion(base::OnceClosure retry);
-  bool DeletionReady() const;
+  // BrowserManagerService::DeleteBrowser, before it releases the Browser. true
+  // keeps the service's ownership until every native host has drained, then
+  // posts SynchronouslyDestroyBrowser again. An ordinary Browser is ready.
+  static bool DeferDeletion(BrowserWindowInterface* browser);
+  static bool DeletionReady(const BrowserWindowInterface* browser);
 
   // BrowserWindowFeatures::InitPostWindowConstruction. The color source is
   // null for an ordinary Browser; only native ones reach the delegate factory.

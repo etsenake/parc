@@ -15,7 +15,7 @@ this irreversible boundary.
 - The overlay maps `tab_retirement.h/.cc` to `//parc/native`; the production `BUILD.gn` defines their shared `tab_retirement` source set.
 - The overlay compiles `native_page_retirement.mm` in the production `//parc:browser` mac source list with `//parc/native:tab_retirement` in its deps. The canonical public bridge category and application/page changes are part of the same cohort.
 - The test BUILD/source map to `//parc/tests/native_page_retirement`, with the `unit_tests` source set registered in `//chrome/test:unit_tests` under `is_mac`.
-- `native-page-retirement.patch` owns both contextual UnloadController changes and retains the earlier `RequestBrowserDeletion` drain gate. Every target remains bound to its pinned original and final SHA-256.
+- `native-page-retirement.patch` owns both contextual UnloadController changes. The posted empty-Browser destruction keeps Chromium's `SynchronouslyDestroyBrowser`, whose `DeleteBrowser` hook drains native hosts first. Every target remains bound to its pinned original and final SHA-256.
 
 After normal generation, build `unit_tests` and run:
 

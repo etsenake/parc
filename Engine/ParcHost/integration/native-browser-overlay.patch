@@ -82,16 +82,10 @@
 +
 --- a/chrome/browser/ui/browser_manager_service.h
 +++ b/chrome/browser/ui/browser_manager_service.h
-@@ -34,6 +34,16 @@
+@@ -34,6 +34,10 @@
    // requesting the browser close via BrowserWindow::Close(), which happens
    // async and allows graceful teardown of the tab strip and associated data.
    static void SynchronouslyDestroyBrowser(BrowserWindowInterface* browser);
-+
-+  // Destroys `browser` once a native shell window's engine-owned UI hosts
-+  // have drained, keeping the Browser owned until that posted completion.
-+  // Ordinary Browsers are destroyed at once. Call only after real close
-+  // approval, with an empty TabStripModel.
-+  static void RequestBrowserDeletion(BrowserWindowInterface* browser);
 +
 +  // The last Browser of a primary OTR Profile is gone: destroy that Profile
 +  // when appropriate, unless a native operation still uses it.
@@ -102,7 +96,7 @@
    void Shutdown() override;
 --- a/chrome/browser/ui/browser_manager_service.cc
 +++ b/chrome/browser/ui/browser_manager_service.cc
-@@ -19,7 +19,17 @@
+@@ -19,7 +19,25 @@
  #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
  #include "components/keep_alive_registry/keep_alive_registry.h"
  #include "components/keep_alive_registry/keep_alive_types.h"
@@ -112,47 +106,27 @@
 +namespace parc_hooks {
 +namespace {
 +void (*browser_registered)(BrowserWindowInterface*) = nullptr;
++bool (*browser_deletion_deferred)(BrowserWindowInterface*) = nullptr;
++bool (*browser_deletion_ready)(const BrowserWindowInterface*) = nullptr;
 +}  // namespace
 +void SetBrowserRegistration(void (*registered)(BrowserWindowInterface*)) {
 +  browser_registered = registered;
++}
++void SetBrowserDeletionGate(
++    bool (*deferred)(BrowserWindowInterface*),
++    bool (*ready)(const BrowserWindowInterface*)) {
++  browser_deletion_deferred = deferred;
++  browser_deletion_ready = ready;
 +}
 +}  // namespace parc_hooks
 -
 +
  BrowserManagerService::BrowserManagerService(Profile* profile)
      : ProfileBrowserCollection(profile) {
-@@ -39,10 +49,64 @@
+@@ -39,10 +57,36 @@
        ->DeleteBrowser(browser);
  }
 -
-+
-+// static
-+void BrowserManagerService::RequestBrowserDeletion(
-+    BrowserWindowInterface* browser) {
-+  CHECK(browser);
-+  auto* manager =
-+      BrowserManagerServiceFactory::GetForProfile(browser->GetProfile());
-+  // Already removed Browsers and repeated drain requests cannot reach a
-+  // native service or produce a second destruction.
-+  if (!std::ranges::any_of(manager->browsers_and_subscriptions_,
-+                           [browser](const BrowserAndSubscriptions& entry) {
-+                             return entry.browser.get() == browser;
-+                           })) {
-+    return;
-+  }
-+  if (auto* native = parc::NativeBrowser::From(browser);
-+      native && native->DeferDeletion(base::BindOnce(
-+                    [](base::WeakPtr<BrowserWindowInterface> browser) {
-+                      if (browser) {
-+                        RequestBrowserDeletion(browser.get());
-+                      }
-+                    },
-+                    browser->GetWeakPtr()))) {
-+    return;
-+  }
-+  // This may delete the manager and Profile; touch neither afterwards.
-+  manager->DeleteBrowser(browser);
-+}
 +
 +// static
 +void BrowserManagerService::DestroyUnusedOTRProfile(Profile& profile) {
@@ -182,13 +156,13 @@
 +    // Keyed-service shutdown cannot pump a native drain. Engine shutdown
 +    // refuses until native Browsers have died; reaching here first is a
 +    // contract failure.
-+    auto* native =
-+        parc::NativeBrowser::From(browsers_and_subscriptions_.back().browser.get());
-+    CHECK(!native || native->DeletionReady());
++    CHECK(!parc_hooks::browser_deletion_ready ||
++          parc_hooks::browser_deletion_ready(
++              browsers_and_subscriptions_.back().browser.get()));
      BrowserAndSubscriptions entry =
          std::move(browsers_and_subscriptions_.back());
      browsers_and_subscriptions_.pop_back();
-@@ -101,6 +165,15 @@
+@@ -101,6 +145,15 @@
 -
 +
    base::WeakPtr<BrowserWindowInterface> browser_weak_ptr =
@@ -205,17 +179,21 @@
    for (BrowserCollectionObserver& observer : observers()) {
      if (browser_weak_ptr) {
        observer.OnBrowserCreated(browser_weak_ptr.get());
-@@ -120,6 +193,9 @@
+@@ -120,6 +173,13 @@
          return browser_and_subscriptions.browser.get() == removed_browser;
        });
    if (it != browsers_and_subscriptions_.end()) {
-+    // Native Browsers come through RequestBrowserDeletion's drain first.
-+    auto* native = parc::NativeBrowser::From(removed_browser);
-+    CHECK(!native || native->DeletionReady());
++    // A native Browser first drains its engine-owned hosts, even during
++    // logoff, while this service keeps owning it and its keep-alives. The
++    // drain retries through SynchronouslyDestroyBrowser; repeats coalesce.
++    if (parc_hooks::browser_deletion_deferred &&
++        parc_hooks::browser_deletion_deferred(removed_browser)) {
++      return;
++    }
      std::erase(browsers_activation_order_, it->browser.get());
      target_browser_and_subscriptions = std::move(*it);
      browsers_and_subscriptions_.erase(it);
-@@ -142,23 +218,16 @@
+@@ -142,23 +202,16 @@
    //
    // TODO(crbug.com/40159237): Use ScopedProfileKeepAlive for Incognito too,
    // instead of separate logic for Incognito and regular profiles.
@@ -536,19 +514,6 @@
    BrowserWindowInterface* source_browser = params->browser;
    if (source_browser) {
      params->initiating_profile = source_browser->GetProfile();
---- a/chrome/browser/lifetime/browser_close_manager.cc
-+++ b/chrome/browser/lifetime/browser_close_manager.cc
-@@ -233,7 +233,9 @@
-           // the tabs to make sure the browser is destroyed and cleanup can
-           // happen.
-           browser_window->GetTabStripModel()->CloseAllTabs();
--          BrowserManagerService::SynchronouslyDestroyBrowser(browser_window);
-+          // Native windows still drain their engine-owned hosts during
-+          // logoff; ownership and keep-alives remain until that finishes.
-+          BrowserManagerService::RequestBrowserDeletion(browser_window);
-         }
-         return true;
-       });
 --- a/chrome/browser/devtools/devtools_window.cc
 +++ b/chrome/browser/devtools/devtools_window.cc
 @@ -94,11 +94,13 @@
