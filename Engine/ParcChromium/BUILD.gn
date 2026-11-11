@@ -213,6 +213,9 @@ source_set("browser") {
     "//parc/native:tab_retirement",
     "//parc/native:tab_transfer",
 
+    # FairPlay Streaming's CDM and key system registration.
+    "//third_party/parc_fairplay:registration",
+
     # Chromium services the native sources use directly.
     "//chrome/browser/autocomplete",
     "//chrome/browser/enterprise",
@@ -250,6 +253,7 @@ source_set("browser") {
     "//chrome/browser/ui/login",
     "//chrome/browser/ui/views/tab_sharing",
     "//chrome/common:mojo_bindings",
+    "//chrome/renderer:process_state",
     "//parc/importer:interfaces",
     "//parc/importer:service",
     "//components/autofill/core/browser",

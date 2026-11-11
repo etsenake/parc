@@ -1,19 +1,14 @@
-// Installed by the reviewed overlay at
-// //components/cdm/renderer/fairplay_key_system_info.h.
-//
 // KeySystemInfo for Apple FairPlay Streaming ("com.apple.fps" and its
-// versioned sub key systems such as "com.apple.fps.3_0"), built from the
-// capability the browser's CdmRegistry reports. The CDM and its renderer run
-// in the GPU process's media service.
-#ifndef COMPONENTS_CDM_RENDERER_FAIRPLAY_KEY_SYSTEM_INFO_H_
-#define COMPONENTS_CDM_RENDERER_FAIRPLAY_KEY_SYSTEM_INFO_H_
+// versioned sub key systems such as "com.apple.fps.3_0").
+#ifndef THIRD_PARTY_PARC_FAIRPLAY_CHROMIUM_FAIRPLAY_KEY_SYSTEM_INFO_H_
+#define THIRD_PARTY_PARC_FAIRPLAY_CHROMIUM_FAIRPLAY_KEY_SYSTEM_INFO_H_
 
 #include <string>
 
 #include "base/containers/flat_set.h"
 #include "media/base/key_system_info.h"
 
-namespace cdm {
+namespace parc::fairplay {
 
 class FairPlayKeySystemInfo : public media::KeySystemInfo {
  public:
@@ -53,6 +48,6 @@ class FairPlayKeySystemInfo : public media::KeySystemInfo {
   const bool persistent_usage_record_;
 };
 
-}  // namespace cdm
+}  // namespace parc::fairplay
 
-#endif  // COMPONENTS_CDM_RENDERER_FAIRPLAY_KEY_SYSTEM_INFO_H_
+#endif  // THIRD_PARTY_PARC_FAIRPLAY_CHROMIUM_FAIRPLAY_KEY_SYSTEM_INFO_H_

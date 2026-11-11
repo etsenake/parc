@@ -14,6 +14,7 @@
 #include "chrome/browser/ui/login/http_auth_coordinator.h"
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/renderer/process_state.h"
 #include "content/public/browser/browser_url_handler.h"
 #include "content/public/common/content_switches.h"
 #include "parc/chromium_hooks.h"
@@ -26,6 +27,7 @@
 #include "parc/parc_bundle_mac.h"
 #include "parc/parc_branding.h"
 #include "parc/renderer/website_theme_agent.h"
+#include "third_party/parc_fairplay/chromium/fairplay_cdm_info.h"
 
 namespace parc {
 namespace {
@@ -81,6 +83,15 @@ void ParcContentClient::AddAdditionalSchemes(Schemes* schemes) {
   schemes->secure_schemes.push_back(kInternalScheme);
   schemes->cors_enabled_schemes.push_back(kInternalScheme);
   schemes->savable_schemes.push_back(kInternalScheme);
+}
+
+void ParcContentClient::AddContentDecryptionModules(
+    std::vector<content::CdmInfo>* cdms,
+    std::vector<media::CdmHostFilePath>* cdm_host_file_paths) {
+  ChromeContentClient::AddContentDecryptionModules(cdms, cdm_host_file_paths);
+  if (cdms) {
+    cdms->push_back(fairplay::GetFairPlayCdmInfo());
+  }
 }
 
 ParcContentBrowserClient::ParcContentBrowserClient(
@@ -167,5 +178,24 @@ void ParcContentRendererClient::RenderFrameCreated(
   ChromeContentRendererClient::RenderFrameCreated(render_frame);
   // Owned by the frame it observes.
   new WebsiteThemeAgent(render_frame);
+}
+
+std::unique_ptr<media::KeySystemSupportRegistration>
+ParcContentRendererClient::GetSupportedKeySystems(
+    content::RenderFrame* render_frame,
+    media::GetSupportedKeySystemsCB cb) {
+  // Chrome builds its key systems from the browser's capabilities and skips
+  // FairPlay's, so FairPlay joins each update. Persistence follows Chrome's
+  // rule for its own key systems.
+  return ChromeContentRendererClient::GetSupportedKeySystems(
+      render_frame,
+      base::BindRepeating(
+          [](bool can_persist_data, const media::GetSupportedKeySystemsCB& cb,
+             media::KeySystemInfos key_systems) {
+            key_systems.push_back(
+                fairplay::CreateFairPlayKeySystemInfo(can_persist_data));
+            cb.Run(std::move(key_systems));
+          },
+          !process_state::IsIncognitoProcess(), std::move(cb)));
 }
 }  // namespace parc

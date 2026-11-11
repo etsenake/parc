@@ -1,6 +1,4 @@
-// Installed by the reviewed overlay at
-// //components/cdm/renderer/fairplay_key_system_info.cc.
-#include "components/cdm/renderer/fairplay_key_system_info.h"
+#include "third_party/parc_fairplay/chromium/fairplay_key_system_info.h"
 
 #include <utility>
 
@@ -12,7 +10,7 @@ using media::EmeInitDataType;
 using media::EmeMediaType;
 using media::SupportedCodecs;
 
-namespace cdm {
+namespace parc::fairplay {
 
 FairPlayKeySystemInfo::FairPlayKeySystemInfo(
     SupportedCodecs codecs,
@@ -25,12 +23,12 @@ FairPlayKeySystemInfo::FairPlayKeySystemInfo(
 FairPlayKeySystemInfo::~FairPlayKeySystemInfo() = default;
 
 std::string FairPlayKeySystemInfo::GetBaseKeySystemName() const {
-  return parc::fairplay::kFairPlayKeySystem;
+  return kFairPlayKeySystem;
 }
 
 bool FairPlayKeySystemInfo::IsSupportedKeySystem(
     const std::string& key_system) const {
-  return parc::fairplay::IsFairPlayKeySystem(key_system);
+  return IsFairPlayKeySystem(key_system);
 }
 
 bool FairPlayKeySystemInfo::ShouldUseBaseKeySystemName() const {
@@ -117,4 +115,4 @@ EmeFeatureSupport FairPlayKeySystemInfo::GetDistinctiveIdentifierSupport()
   return EmeFeatureSupport::NOT_SUPPORTED;
 }
 
-}  // namespace cdm
+}  // namespace parc::fairplay

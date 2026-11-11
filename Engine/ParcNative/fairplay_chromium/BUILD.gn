@@ -15,6 +15,25 @@ source_set("key_system") {
   sources = public
 }
 
+# FairPlay's CdmInfo and KeySystemInfo, registered by Parc's content clients.
+source_set("registration") {
+  visibility = [ "//parc:*" ]
+  sources = [
+    "chromium/fairplay_cdm_info.cc",
+    "chromium/fairplay_cdm_info.h",
+    "chromium/fairplay_key_system_info.cc",
+    "chromium/fairplay_key_system_info.h",
+  ]
+  public_deps = [
+    "//content/public/common",
+    "//media",
+  ]
+  deps = [
+    ":key_system",
+    "//base",
+  ]
+}
+
 source_set("core") {
   visibility = [ ":*" ]
   public = [

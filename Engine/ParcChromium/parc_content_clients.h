@@ -6,6 +6,7 @@
 #define PARC_PARC_CONTENT_CLIENTS_H_
 
 #include <memory>
+#include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
@@ -22,6 +23,9 @@ class NativeApplication;
 class ParcContentClient final : public ChromeContentClient {
  public:
   void AddAdditionalSchemes(Schemes* schemes) override;
+  void AddContentDecryptionModules(
+      std::vector<content::CdmInfo>* cdms,
+      std::vector<media::CdmHostFilePath>* cdm_host_file_paths) override;
 };
 
 class ParcContentBrowserClient final : public ChromeContentBrowserClient {
@@ -54,6 +58,9 @@ class ParcContentBrowserClient final : public ChromeContentBrowserClient {
 class ParcContentRendererClient final : public ChromeContentRendererClient {
  public:
   void RenderFrameCreated(content::RenderFrame* render_frame) override;
+  std::unique_ptr<media::KeySystemSupportRegistration> GetSupportedKeySystems(
+      content::RenderFrame* render_frame,
+      media::GetSupportedKeySystemsCB cb) override;
 };
 }  // namespace parc
 
