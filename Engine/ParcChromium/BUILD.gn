@@ -281,6 +281,7 @@ source_set("browser") {
     "//ui/display",
     "//ui/gfx/codec",
     "//ui/menus",
+    "//ui/webui/resources",
   ]
 
   frameworks = [

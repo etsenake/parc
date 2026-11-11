@@ -11,6 +11,7 @@
 #include "base/check.h"
 #include "native_internal_urls.h"
 #include "base/apple/scoped_cftyperef.h"
+#include "base/base64.h"
 #include "base/callback_list.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -80,6 +81,7 @@
 #include "url/url_constants.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/resource/resource_scale_factor.h"
+#include "ui/webui/resources/grit/webui_resources.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 
@@ -593,10 +595,8 @@ void InitializeNativeProfile(Profile& profile) {
 }
 //
 // white on dark ones, both served by the browser's chrome://theme. Parc's
-// toolbar does the same with Parc's mark; the toolbar patch asks for
-// current-channel-logo-white, which ThemeSource serves as
-// IDR_PRODUCT_LOGO_NAME_22_WHITE. Only the browser process publishes this,
-// once its context exists.
+// toolbar and narrow-window drawer use the same Parc mark in both themes.
+// Only the browser process publishes this, once its context exists.
 struct ProductBranding {
   int light_logo = -1;
 };
@@ -665,8 +665,12 @@ ProductLogos MakeProductLogos() {
   logos.dark_2x = MarkPNG(mark.get(), 1, 64);
   return logos;
 }
-// Serves Parc's mark for Chrome's product-logo resources. ResourceBundle may
-// ask from any thread, so it reads only the published branding.
+const ProductLogos& ProductLogoResources() {
+  static const base::NoDestructor<ProductLogos> logos(MakeProductLogos());
+  return *logos;
+}
+// Serves Parc’s immutable logo resources. ResourceBundle may ask from any
+// thread; the light-logo resource ID is published once the context exists.
 class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
  public:
   base::FilePath GetPathForResourcePack(
@@ -696,6 +700,16 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
           &html, 0, "$i18n{application_label}", "Parc");
       return base::MakeRefCounted<base::RefCountedString>(std::move(html));
     }
+    if (resource_id == IDR_WEBUI_IMAGES_CHROME_LOGO_DARK_SVG) {
+      const auto& logos = ProductLogoResources();
+      if (logos.dark_2x.empty()) {
+        return nullptr;
+      }
+      return base::MakeRefCounted<base::RefCountedString>(
+          "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\">"
+          "<image width=\"24\" height=\"24\" href=\"data:image/png;base64," +
+          base::Base64Encode(logos.dark_2x) + "\"/></svg>");
+    }
     return nullptr;
   }
   std::optional<std::string> LoadDataResourceString(int resource_id) override {
@@ -717,12 +731,12 @@ class ProductBrandingDelegate final : public ui::ResourceBundle::Delegate {
       return false;
     }
     // Rendered on first use and kept, since the bundle doesn't copy it.
-    static const base::NoDestructor<ProductLogos> logos(MakeProductLogos());
+    const auto& logos = ProductLogoResources();
     const bool double_scale =
         ui::GetScaleForResourceScaleFactor(scale_factor) > 1;
     const std::string& bytes =
-        light ? (double_scale ? logos->light_2x : logos->light_1x)
-              : (double_scale ? logos->dark_2x : logos->dark_1x);
+        light ? (double_scale ? logos.light_2x : logos.light_1x)
+              : (double_scale ? logos.dark_2x : logos.dark_1x);
     if (bytes.empty()) {
       return false;
     }

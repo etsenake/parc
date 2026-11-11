@@ -234,7 +234,12 @@ hunks remain with their core owner.
 HTTP authentication keeps a source-only validation hook because a stale request’s cancellation defers
 modal-list mutation. Credentials propagated from a matching request must be rejected during that gap.
 The import service uses an owned utility client and protocol target; its atomic history and web-data
-transaction patch stays unchanged. Product-name and translated branding outputs remain in step 4.
+transaction patch stays unchanged. The licence WebUI is owned by Parc; a literal licence-host entry
+stays in Chromium’s host list for address completion and bookmark import. Product-name and translated
+branding outputs remain in step 4.
+
+The toolbar and narrow-window drawers share the owned dark-logo resource. This also fixes a branding
+bug: those drawers showed Chrome’s logo in dark mode while already showing Parc’s in light mode.
 
 ## Decisions
 

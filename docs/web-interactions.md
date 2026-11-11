@@ -125,6 +125,8 @@ whole-window/tab consent rather than using ordinary alert suppression.
 The resource-bundle delegate supplies Parc’s version-page title, licence links
 and logo text. A Parc WebUI configuration serves the licence page, which
 remains available to internal-address completion through the retained host list.
+The shared dark-logo resource supplies Parc’s white mark to the toolbar and
+narrow-window drawers; drawers now retain Parc’s branding in dark mode.
 
 HTTP authentication uses the actual authority, including proxy text, and the
 native trust explanation. Return submits and Escape cancels. Native secure text
