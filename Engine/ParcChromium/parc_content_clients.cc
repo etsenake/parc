@@ -27,6 +27,7 @@
 #include "mojo/public/cpp/bindings/binder_map.h"
 #include "parc/chromium_hooks.h"
 #include "parc/frame_focus.h"
+#include "parc/page_preferences.h"
 #include "parc/native/file_dialog.h"
 #include "parc/native/http_auth.h"
 #include "parc/native/native_appkit_host.h"
@@ -108,6 +109,13 @@ ParcContentBrowserClient::ParcContentBrowserClient(
     NativeApplication& application)
     : application_(application) {
   parc_hooks::SetFrameFocusNotifier(&NotifyFrameFocus);
+}
+
+void ParcContentBrowserClient::OverrideWebPreferences(
+    content::WebContents* contents, content::SiteInstance& site,
+    blink::web_pref::WebPreferences* prefs) {
+  ChromeContentBrowserClient::OverrideWebPreferences(contents, site, prefs);
+  ApplyPagePreferences(*contents, *prefs);
 }
 
 ParcContentBrowserClient::~ParcContentBrowserClient() = default;

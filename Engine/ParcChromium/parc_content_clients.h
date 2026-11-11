@@ -46,6 +46,9 @@ class ParcContentBrowserClient final : public ChromeContentBrowserClient {
   void RegisterBrowserInterfaceBindersForFrame(
       content::RenderFrameHost* render_frame_host,
       mojo::BinderMapWithContext<content::RenderFrameHost*>* map) override;
+  void OverrideWebPreferences(content::WebContents* web_contents,
+                              content::SiteInstance& main_frame_site,
+                              blink::web_pref::WebPreferences* prefs) override;
   bool IsHandledURL(const GURL& url) override;
   void BrowserURLHandlerCreated(content::BrowserURLHandler* handler) override;
   std::unique_ptr<content::WebContentsViewDelegate> GetWebContentsViewDelegate(

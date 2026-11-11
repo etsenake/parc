@@ -1,5 +1,6 @@
 // Copyright 2026 Parc contributors.
 #include "fairplay_identity.h"
+#include "parc/page_preferences.h"
 
 #import <Foundation/Foundation.h>
 
@@ -313,11 +314,7 @@ class FairPlayIdentityHelper final
     NSProcessInfo* info = NSProcessInfo.processInfo;
     bool restricted = info.lowPowerModeEnabled ||
         info.thermalState >= NSProcessInfoThermalStateSerious;
-    auto prefs = contents->GetOrCreateWebPreferences();
-    if (prefs.parc_media_power_restricted == restricted)
-      return;
-    prefs.parc_media_power_restricted = restricted;
-    contents->SetWebPreferences(prefs);
+    SetMediaPowerRestricted(*contents, restricted);
   }
   std::vector<id> power_observers_;
   friend content::WebContentsUserData<FairPlayIdentityHelper>;

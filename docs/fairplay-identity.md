@@ -254,3 +254,7 @@ models, renderer identity gates and service capability fixtures. Native codec,
 FairPlay/HLS and Blink component/compiler checks cover their separate layers.
 Check commands and fixtures live with their owning components. Follow
 [the working contract](../AGENTS.md) before running them.
+
+Page attachment and system power restrictions live in Parc-owned per-page state.
+The browser client reapplies them after Chrome computes page preferences, so
+settings refreshes retain the current window and power policy.

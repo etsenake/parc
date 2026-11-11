@@ -47,6 +47,19 @@ source_set("renderer") {
   ]
 }
 
+source_set("page_preferences") {
+  sources = [ "page_preferences.cc", "page_preferences.h" ]
+  deps = [ "//base", "//content/public/browser", "//third_party/blink/public/common" ]
+}
+
+source_set("page_preferences_tests") {
+  testonly = true
+  sources = [ "page_preferences_unittest.cc" ]
+  deps = [ ":page_preferences", "//content/public/browser", "//content/public/common", "//content/test:test_support", "//testing/gtest", "//third_party/blink/public/common" ]
+}
+
+
+
 # Startup, the content clients and the native application, compiled into the
 # framework binary. Chrome's main delegate is compiled here, not in
 # //chrome:chrome_dll, whose ChromeMain Parc doesn't use.
@@ -167,6 +180,7 @@ source_set("browser") {
   ]
 
   deps = [
+    ":page_preferences",
     ":buildflags",
     ":mojom",
     ":renderer",

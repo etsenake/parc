@@ -1,5 +1,6 @@
 // Copyright 2026 Parc contributors.
 #include "native_appkit_host.h"
+#include "parc/page_preferences.h"
 #include "native_internal_urls.h"
 #include "native_link_routing.h"
 
@@ -1210,10 +1211,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
       // even when its window is minimised or fully covered.
       const bool in_window = [visible containsObject:page] &&
                              (window.visible || window.miniaturized);
-      auto prefs = contents->GetOrCreateWebPreferences();
-      if (prefs.parc_page_in_window != in_window) {
-        prefs.parc_page_in_window = in_window;
-        contents->SetWebPreferences(prefs);
+      if (SetPageInWindow(*contents, in_window)) {
         if (!attached_here()) {
           return;
         }
@@ -1780,10 +1778,7 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
     }
     auto weak = weak_factory_.GetWeakPtr();
     auto contents_weak = contents.GetWeakPtr();
-    auto prefs = contents.GetOrCreateWebPreferences();
-    if (prefs.parc_page_in_window) {
-      prefs.parc_page_in_window = false;
-      contents.SetWebPreferences(prefs);
+    if (SetPageInWindow(contents, false)) {
       if (!weak || !contents_weak) return;
     }
     CloseNativeIntentPicker(contents);

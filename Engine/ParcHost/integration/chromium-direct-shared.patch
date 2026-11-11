@@ -21,33 +21,7 @@
 +}
 +}  // namespace parc_hooks
 +namespace content {
-@@ -4002,6 +4011,10 @@
-   CHECK(main_frame->is_main_frame());
--
-+
-   blink::web_pref::WebPreferences prefs;
-+  // The embedder updates this browser-owned state on macOS power changes.
-+  // Ordinary preference recomputation must preserve the latest value.
-+  if (web_preferences_)
-+    prefs.parc_media_power_restricted = web_preferences_->parc_media_power_restricted;
--
-+
-   // Sets the hardware-related fields in |prefs| that are slow to compute. The
-   // fields are set from cache if available, otherwise recomputed.
-@@ -4258,6 +4271,10 @@
--
-+
-   GetContentClient()->browser()->OverrideWebPreferences(
-       this, *main_frame->GetSiteInstance(), &prefs);
-+  // Parc: shell attachment is WebContents state, not a computed preference.
-+  // Preserve it through settings recomputation and BFCache restoration.
-+  if (web_preferences_)
-+    prefs.parc_page_in_window = web_preferences_->parc_page_in_window;
-   return prefs;
- }
--
-+
-@@ -6970,6 +6987,22 @@
+@@ -6970,6 +6979,22 @@
    if (delegate_) {
      delegate_->ResizeDueToAutoResize(this, new_size);
    }
@@ -71,7 +45,7 @@
 -
 +
  WebContents* WebContentsImpl::OpenURL(
-@@ -11217,6 +11250,8 @@
+@@ -11217,6 +11242,8 @@
    }
 -
 +
