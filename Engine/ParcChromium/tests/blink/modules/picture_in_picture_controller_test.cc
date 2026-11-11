@@ -1,0 +1,831 @@
+// Copyright 2019 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#include <memory>
+#include <utility>
+
+#include "base/functional/function_ref.h"
+#include "base/run_loop.h"
+#include "media/mojo/mojom/media_player.mojom-blink.h"
+#include "mojo/public/cpp/bindings/associated_receiver.h"
+#include "mojo/public/cpp/bindings/pending_associated_receiver.h"
+#include "mojo/public/cpp/bindings/pending_associated_remote.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/receiver.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/blink/public/mojom/parc/picture_in_picture_captions.mojom-blink.h"
+#include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_text_track_kind.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_text_track_mode.h"
+#include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/dom/shadow_root.h"
+#include "third_party/blink/renderer/core/frame/frame_test_helpers.h"
+#include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
+#include "third_party/blink/renderer/core/html/html_div_element.h"
+#include "third_party/blink/renderer/core/html/media/html_media_test_helper.h"
+#include "third_party/blink/renderer/core/html/media/html_video_element.h"
+#include "third_party/blink/renderer/core/html/media/parc_media_element.h"
+#include "third_party/blink/renderer/core/html/media/parc_page_captions.h"
+#include "third_party/blink/renderer/core/html/media/parc_picture_in_picture_captions.h"
+#include "third_party/blink/renderer/core/html/track/text_track.h"
+#include "third_party/blink/renderer/core/html/track/vtt/vtt_cue.h"
+#include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
+#include "third_party/blink/renderer/core/testing/wait_for_event.h"
+#include "third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/testing/empty_web_media_player.h"
+#include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
+
+using ::testing::_;
+
+namespace blink {
+
+viz::SurfaceId ParcTestSurfaceId() {
+  // Use a fake but valid viz::SurfaceId.
+  return {viz::FrameSinkId(1, 1),
+          viz::LocalSurfaceId(
+              11, base::UnguessableToken::CreateForTesting(0x111111, 0))};
+}
+
+// The ParcMockPictureInPictureSession implements a PictureInPicture session in
+// the same process as the test and guarantees that the callbacks are called in
+// order for the events to be fired.
+class ParcMockPictureInPictureSession
+    : public mojom::blink::PictureInPictureSession {
+ public:
+  ParcMockPictureInPictureSession(
+      mojo::PendingReceiver<mojom::blink::PictureInPictureSession> receiver)
+      : receiver_(this, std::move(receiver)) {
+    ON_CALL(*this, Stop(_)).WillByDefault([](StopCallback callback) {
+      std::move(callback).Run();
+    });
+  }
+  ~ParcMockPictureInPictureSession() override = default;
+
+  MOCK_METHOD(void, Stop, (StopCallback));
+  MOCK_METHOD(void,
+              Update,
+              (uint32_t,
+               mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>,
+               const viz::SurfaceId&,
+               const gfx::Size&,
+               bool));
+  MOCK_METHOD(void,
+              UpdateMediaPosition,
+              (media_session::mojom::blink::MediaPositionPtr));
+
+ private:
+  mojo::Receiver<mojom::blink::PictureInPictureSession> receiver_;
+};
+
+// Parc: the browser's host for the window's captions.
+class ParcMockPictureInPictureCaptionsHost
+    : public parc::mojom::blink::PictureInPictureCaptionsHost {
+ public:
+  void Bind(mojo::ScopedInterfaceEndpointHandle handle) {
+    receiver_.Bind(mojo::PendingAssociatedReceiver<
+                   parc::mojom::blink::PictureInPictureCaptionsHost>(
+        std::move(handle)));
+  }
+
+  MOCK_METHOD(void,
+              UpdateCaptions,
+              (uint64_t, const SkBitmap&, const gfx::RectF&));
+
+ private:
+  mojo::AssociatedReceiver<parc::mojom::blink::PictureInPictureCaptionsHost>
+      receiver_{this};
+};
+
+// The ParcMockPictureInPictureService implements the PictureInPicture service
+// in the same process as the test and guarantees that the callbacks are called
+// in order for the events to be fired.
+class ParcMockPictureInPictureService
+    : public mojom::blink::PictureInPictureService {
+ public:
+  ParcMockPictureInPictureService() {
+    // Setup default implementations.
+    ON_CALL(*this, StartSession(_, _, _, _, _, _, _, _, _, _))
+        .WillByDefault(testing::Invoke(
+            this, &ParcMockPictureInPictureService::StartSessionInternal));
+  }
+
+  ParcMockPictureInPictureService(
+      const ParcMockPictureInPictureService&) = delete;
+  ParcMockPictureInPictureService& operator=(
+      const ParcMockPictureInPictureService&) = delete;
+
+  ~ParcMockPictureInPictureService() override = default;
+
+  void Bind(mojo::ScopedMessagePipeHandle handle) {
+    receiver_.Bind(mojo::PendingReceiver<mojom::blink::PictureInPictureService>(
+        std::move(handle)));
+
+    session_ = std::make_unique<ParcMockPictureInPictureSession>(
+        session_remote_.InitWithNewPipeAndPassReceiver());
+  }
+
+  MOCK_METHOD(
+      void,
+      StartSession,
+      (uint32_t,
+       mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>,
+       const viz::SurfaceId&,
+       const gfx::Size&,
+       bool,
+       mojo::PendingRemote<mojom::blink::PictureInPictureSessionObserver>,
+       const gfx::Rect&,
+       bool,
+       const media::VideoSpatialFormat&,
+       StartSessionCallback));
+
+  void StartSessionInternal(
+      uint32_t,
+      mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>,
+      const viz::SurfaceId&,
+      const gfx::Size&,
+      bool,
+      mojo::PendingRemote<mojom::blink::PictureInPictureSessionObserver>,
+      const gfx::Rect& source_bounds,
+      bool,
+      const media::VideoSpatialFormat&,
+      StartSessionCallback callback) {
+    source_bounds_ = source_bounds;
+    std::move(callback).Run(std::move(session_remote_), gfx::Size());
+  }
+
+  const gfx::Rect& source_bounds() const { return source_bounds_; }
+
+ private:
+  mojo::Receiver<mojom::blink::PictureInPictureService> receiver_{this};
+  std::unique_ptr<ParcMockPictureInPictureSession> session_;
+  mojo::PendingRemote<mojom::blink::PictureInPictureSession> session_remote_;
+  gfx::Rect source_bounds_;
+};
+
+class ParcPictureInPictureControllerPlayer final : public EmptyWebMediaPlayer {
+ public:
+  ParcPictureInPictureControllerPlayer() = default;
+
+  ParcPictureInPictureControllerPlayer(
+      const ParcPictureInPictureControllerPlayer&) = delete;
+  ParcPictureInPictureControllerPlayer& operator=(
+      const ParcPictureInPictureControllerPlayer&) = delete;
+
+  ~ParcPictureInPictureControllerPlayer() override = default;
+
+  ReadyState GetReadyState() const override { return kReadyStateHaveMetadata; }
+  bool HasVideo() const override { return true; }
+  void OnRequestPictureInPicture() override {
+    surface_id_ = ParcTestSurfaceId();
+  }
+  std::optional<viz::SurfaceId> GetSurfaceId() override { return surface_id_; }
+
+ private:
+  std::optional<viz::SurfaceId> surface_id_;
+};
+
+class ParcPictureInPictureTestWebFrameClient
+    : public frame_test_helpers::TestWebFrameClient {
+ public:
+  explicit ParcPictureInPictureTestWebFrameClient(
+      std::unique_ptr<WebMediaPlayer> web_media_player)
+      : web_media_player_(std::move(web_media_player)) {}
+
+  std::unique_ptr<WebMediaPlayer> CreateMediaPlayer(
+      const WebMediaPlayerSource&,
+      WebMediaPlayerClient*,
+      blink::MediaInspectorContext*,
+      WebMediaPlayerEncryptedMediaClient*,
+      WebContentDecryptionModule*,
+      const WebString& sink_id,
+      const cc::LayerTreeSettings* settings,
+      scoped_refptr<base::TaskRunner> compositor_worker_task_runner) override {
+    return std::move(web_media_player_);
+  }
+
+ private:
+  std::unique_ptr<WebMediaPlayer> web_media_player_;
+};
+
+// PictureInPictureController tests that require a Widget.
+// Video PiP tests typically do, while Document PiP tests typically do not.
+// If you need to mock the ChromeClient, then this is not the right test harness
+// for you. If you need to mock the client and have a Widget, then you'll
+// probably need to modify `WebViewHelper`.
+class ParcPictureInPictureControllerTestWithWidget : public RenderingTest {
+ public:
+  void SetUp() override {
+    client_ = std::make_unique<ParcPictureInPictureTestWebFrameClient>(
+        std::make_unique<ParcPictureInPictureControllerPlayer>());
+
+    helper_.Initialize(client_.get());
+
+    GetFrame().GetBrowserInterfaceBroker().SetBinderForTesting(
+        mojom::blink::PictureInPictureService::Name_,
+        BindRepeating(&ParcMockPictureInPictureService::Bind,
+                      Unretained(&mock_service_)));
+    GetFrame()
+        .GetRemoteNavigationAssociatedInterfaces()
+        ->OverrideBinderForTesting(
+            parc::mojom::blink::PictureInPictureCaptionsHost::Name_,
+            BindRepeating(&ParcMockPictureInPictureCaptionsHost::Bind,
+                          Unretained(&captions_host_)));
+
+    video_ = MakeGarbageCollected<HTMLVideoElement>(GetDocument());
+    GetDocument().body()->AppendChild(video_);
+    Video()->SetReadyState(HTMLMediaElement::ReadyState::kHaveMetadata);
+    layer_ = cc::Layer::Create();
+    Video()->SetCcLayerForTesting(layer_.get());
+
+    Video()->SetSrc(AtomicString("http://example.com/foo.mp4"));
+
+    test::RunPendingTasks();
+  }
+
+  void TearDown() override {
+    GetFrame().GetBrowserInterfaceBroker().SetBinderForTesting(
+        mojom::blink::PictureInPictureService::Name_, {});
+    GetFrame()
+        .GetRemoteNavigationAssociatedInterfaces()
+        ->OverrideBinderForTesting(
+            parc::mojom::blink::PictureInPictureCaptionsHost::Name_, {});
+    RenderingTest::TearDown();
+  }
+
+  HTMLVideoElement* Video() const { return video_.Get(); }
+  ParcMockPictureInPictureCaptionsHost& CaptionsHost() {
+    return captions_host_;
+  }
+
+  LocalFrame& GetFrame() const { return *helper_.LocalMainFrame()->GetFrame(); }
+
+  Document& GetDocument() const { return *GetFrame().GetDocument(); }
+
+  WebViewImpl* GetWebView() const { return helper_.GetWebView(); }
+
+ private:
+  Persistent<HTMLVideoElement> video_;
+  std::unique_ptr<frame_test_helpers::TestWebFrameClient> client_;
+  testing::NiceMock<ParcMockPictureInPictureService> mock_service_;
+  testing::NiceMock<ParcMockPictureInPictureCaptionsHost> captions_host_;
+  scoped_refptr<cc::Layer> layer_;
+  frame_test_helpers::WebViewHelper helper_;
+};
+
+// Parc: the window shows the displayed cues, as Safari's does, and drops them
+// when the track stops showing.
+TEST_F(ParcPictureInPictureControllerTestWithWidget, CaptionsReachWindow) {
+  TextTrack* track =
+      Video()->addTextTrack(V8TextTrackKind(V8TextTrackKind::Enum::kCaptions),
+                            g_empty_atom, g_empty_atom, ASSERT_NO_EXCEPTION);
+  track->addCue(
+      MakeGarbageCollected<VTTCue>(GetDocument(), 0, 10, "Caption text"));
+  track->setMode(V8TextTrackMode(V8TextTrackMode::Enum::kShowing));
+  // Playback leaves the poster state, so the cue becomes active.
+  Video()->Play();
+  test::RunPendingTasks();
+
+  // Entry clears whatever the window showed; the mock's window has no size
+  // yet, so that first update carries no cues.
+  EXPECT_CALL(CaptionsHost(), UpdateCaptions(_, _, _))
+      .Times(testing::AnyNumber());
+  PictureInPictureControllerImpl::From(GetDocument())
+      .EnterPictureInPicture(Video(), /*promise=*/nullptr);
+  MakeGarbageCollected<WaitForEvent>(Video(),
+                                     event_type_names::kEnterpictureinpicture);
+
+  base::RunLoop painted;
+  // The browser started this document's first session.
+  EXPECT_CALL(CaptionsHost(),
+              UpdateCaptions(1u, testing::Truly([](const SkBitmap& captions) {
+                               for (int y = 0; y < captions.height(); ++y) {
+                                 for (int x = 0; x < captions.width(); ++x) {
+                                   if (SkColorGetA(captions.getColor(x, y))) {
+                                     return true;
+                                   }
+                                 }
+                               }
+                               return false;
+                             }),
+                             // The 2:1 video fills the window's width, so
+                             // its bottom line ends near the frame's bottom,
+                             // not 40 DIPs above the 4:3 window's.
+                             testing::Truly([](const gfx::RectF& bounds) {
+                               return gfx::RectF(0, 0, 1, 1).Contains(bounds) &&
+                                      bounds.y() > 0.5 && bounds.bottom() > 0.9;
+                             })))
+      .WillOnce(testing::InvokeWithoutArgs([&] { painted.Quit(); }))
+      .RetiresOnSaturation();
+  // A cross-origin player scrolled out of view throttles its frame; its cues
+  // still reach the window.
+  GetDocument().View()->SetLifecycleUpdatesThrottledForTesting();
+  PictureInPictureControllerImpl::From(GetDocument())
+      .OnWindowSizeChanged(gfx::Size(320, 240));
+  painted.Run();
+
+  base::RunLoop cleared;
+  EXPECT_CALL(CaptionsHost(),
+              UpdateCaptions(1u, testing::Truly([](const SkBitmap& captions) {
+                               return captions.drawsNothing();
+                             }),
+                             _))
+      .WillOnce(testing::InvokeWithoutArgs([&] { cleared.Quit(); }));
+  track->setMode(V8TextTrackMode(V8TextTrackMode::Enum::kHidden));
+  cleared.Run();
+}
+
+// Parc: a caption style change, as System Settings' reaches pages, repaints
+// the cues the window shows (WebKit's
+// MediaControlTextTrackContainerElement::captionPreferencesChanged).
+TEST_F(ParcPictureInPictureControllerTestWithWidget,
+       CaptionStyleReachesWindow) {
+  TextTrack* track =
+      Video()->addTextTrack(V8TextTrackKind(V8TextTrackKind::Enum::kCaptions),
+                            g_empty_atom, g_empty_atom, ASSERT_NO_EXCEPTION);
+  track->addCue(
+      MakeGarbageCollected<VTTCue>(GetDocument(), 0, 10, "Caption text"));
+  track->setMode(V8TextTrackMode(V8TextTrackMode::Enum::kShowing));
+  Video()->Play();
+  test::RunPendingTasks();
+
+  EXPECT_CALL(CaptionsHost(), UpdateCaptions(_, _, _))
+      .Times(testing::AnyNumber());
+  PictureInPictureControllerImpl::From(GetDocument())
+      .EnterPictureInPicture(Video(), /*promise=*/nullptr);
+  MakeGarbageCollected<WaitForEvent>(Video(),
+                                     event_type_names::kEnterpictureinpicture);
+  PictureInPictureControllerImpl::From(GetDocument())
+      .OnWindowSizeChanged(gfx::Size(320, 240));
+  test::RunPendingTasks();
+
+  base::RunLoop repainted;
+  EXPECT_CALL(CaptionsHost(),
+              UpdateCaptions(1u, testing::Truly([](const SkBitmap& captions) {
+                               return !captions.drawsNothing();
+                             }),
+                             _))
+      .WillOnce(testing::InvokeWithoutArgs([&] { repainted.Quit(); }))
+      .RetiresOnSaturation();
+  GetDocument().GetSettings()->SetTextTrackTextColor("rgb(255, 255, 0)");
+  repainted.Run();
+}
+
+// Parc: pages that draw their own captions (ParcPageCaptions). Each player
+// copies the caption and controls markup its service's current scripts build
+// (fetched November 8, 2026); `show` changes the captions as the service does.
+class ParcPictureInPicturePageCaptionsTest
+    : public ParcPictureInPictureControllerTestWithWidget {
+ protected:
+  // Puts the video at #video-slot in `player` and enters picture in picture.
+  ParcPageCaptions& Enter(const char* player) {
+    GetWebView()->MainFrameViewWidget()->Resize(gfx::Size(640, 360));
+    GetDocument().body()->setAttribute(html_names::kStyleAttr,
+                                       AtomicString("margin: 0"));
+    GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(player);
+    Video()->setAttribute(html_names::kStyleAttr,
+                          AtomicString("display: block; width: 640px; "
+                                       "height: 360px"));
+    Find("video-slot").AppendChild(Video());
+    Controller().EnterPictureInPicture(Video(), /*promise=*/nullptr);
+    MakeGarbageCollected<WaitForEvent>(
+        Video(), event_type_names::kEnterpictureinpicture);
+    Controller().OnWindowSizeChanged(gfx::Size(640, 360));
+    return *Controller().PageCaptionsForTesting();
+  }
+
+  PictureInPictureControllerImpl& Controller() {
+    return PictureInPictureControllerImpl::From(GetDocument());
+  }
+
+  Element& Find(const char* id) {
+    return *GetDocument().getElementById(AtomicString(id));
+  }
+
+  // Shows each line in turn, an empty one clearing the captions, while the
+  // player's clock ticks, and checks the window shows only captions, from
+  // the first line on when `at_once`; returns the first box shown after the
+  // last line.
+  Element* Play(ParcPageCaptions& page,
+                base::FunctionRef<void(const char*)> show,
+                Element* clock,
+                base::FunctionRef<bool(const Element&)> is_captions,
+                bool at_once = true) {
+    int second = 0;
+    for (const char* line : {"I never asked for this.", "", "Neither did I.",
+                             "Then why are we here?"}) {
+      show(line);
+      ++second;
+      if (clock) {
+        clock->setTextContent("0:0" + String::Number(second));
+      }
+      page.Update();
+      for (const Element* shown : page.Shown()) {
+        EXPECT_TRUE(is_captions(*shown));
+      }
+      if (at_once && second == 1) {
+        EXPECT_EQ(page.Shown().size(), 1u);
+      }
+    }
+    return page.Shown().empty() ? nullptr : page.Shown()[0].Get();
+  }
+
+  // The shown captions paint something, in the bottom of the window.
+  void ExpectPainted(ParcPageCaptions& page) {
+    gfx::RectF bounds;
+    const SkBitmap bitmap = page.Paint(gfx::SizeF(640, 360), 1, bounds);
+    ASSERT_FALSE(bitmap.drawsNothing());
+    EXPECT_TRUE(Painted(bitmap));
+    EXPECT_TRUE(gfx::RectF(0, 0, 1, 1).Contains(bounds));
+    EXPECT_GT(bounds.y(), 0.5);
+  }
+
+  static bool Painted(const SkBitmap& bitmap) {
+    for (int y = 0; y < bitmap.height(); ++y) {
+      for (int x = 0; x < bitmap.width(); ++x) {
+        if (SkColorGetA(bitmap.getColor(x, y))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  static float Opacity(const Element& element) {
+    return element.GetComputedStyle()->Opacity();
+  }
+};
+
+// Netflix's player-timedtext (cadmium-playercore-6.0065.004.911.js): a
+// container over the player, emptied between lines, under the bottom
+// controls' buttons, title and time remaining. It shows from the first line,
+// hidden in the tab meanwhile, and comes back to the tab when picture in
+// picture ends.
+TEST_F(ParcPictureInPicturePageCaptionsTest, NetflixTimedText) {
+  ParcPageCaptions& page = Enter(R"HTML(
+    <div class="watch-video" tabindex="0"
+         style="position: relative; width: 640px; height: 360px">
+      <div class="watch-video--player-view"
+           style="position: absolute; inset: 0">
+        <div id="video-slot"></div>
+        <div class="player-timedtext" id="timedtext"
+             style="position: absolute; left: 0; top: 0; right: 0;
+                    bottom: 0; display: block"></div>
+      </div>
+      <div class="watch-video--bottom-controls-container"
+           style="position: absolute; left: 0; right: 0; bottom: 0">
+        <button aria-label="Play" data-uia="control-play-pause-play"></button>
+        <div data-uia="video-title" style="text-align: center">
+          <h4>Show</h4><span>E1</span><span>Pilot</span>
+        </div>
+        <span id="clock" data-uia="controls-time-remaining">0:00</span>
+        <button aria-label="Audio &amp; Subtitles"
+                data-uia="control-audio-subtitle">Audio &amp; Subtitles</button>
+      </div>
+    </div>)HTML");
+  Element& timed_text = Find("timedtext");
+  EXPECT_EQ(Play(
+                page,
+                [&](const char* line) {
+                  timed_text.SetInnerHTMLWithoutTrustedTypes(
+                      *line ? R"(<div class="player-timedtext-text-container"
+                                     style="position: absolute; left: 0;
+                                            right: 0; bottom: 30px;
+                                            text-align: center">
+                                  <span style="font-size: 24px; color: white;
+                                               text-shadow: black 0 0 7px">)" +
+                                  String(line) + "</span></div>"
+                            : String());
+                },
+                &Find("clock"),
+                [&](const Element& shown) { return shown == timed_text; }),
+            &timed_text);
+  EXPECT_TRUE(IsParcPictureInPictureCaptions(timed_text));
+  GetDocument().UpdateStyleAndLayoutTree();
+  EXPECT_EQ(Opacity(timed_text), 0);
+  ExpectPainted(page);
+
+  Controller().ExitPictureInPicture(Video(), nullptr);
+  MakeGarbageCollected<WaitForEvent>(Video(),
+                                     event_type_names::kLeavepictureinpicture);
+  EXPECT_FALSE(IsParcPictureInPictureCaptions(timed_text));
+  GetDocument().UpdateStyleAndLayoutTree();
+  EXPECT_EQ(Opacity(timed_text), 1);
+  // The look stops with picture in picture.
+  EXPECT_EQ(Controller().PageCaptionsForTesting(), nullptr);
+  EXPECT_FALSE(Controller().IsPageCaptionsTimerActiveForTesting());
+}
+
+// YouTube's caption window (captions.js, player a5c2aafe): focusable, so its
+// captions-text is painted; windows come and go with the lines. Its controls'
+// time display and an ad countdown in a corner change too.
+TEST_F(ParcPictureInPicturePageCaptionsTest, YouTubeCaptionWindow) {
+  ParcPageCaptions& page = Enter(R"HTML(
+    <div id="movie_player" class="html5-video-player"
+         style="position: relative; width: 640px; height: 360px">
+      <div class="html5-video-container"><div id="video-slot"></div></div>
+      <div class="ytp-caption-window-container"
+           id="ytp-caption-window-container"
+           style="position: absolute; inset: 0"></div>
+      <div class="ytp-ad-player-overlay">
+        <div id="countdown" class="ytp-ad-text"
+             style="position: absolute; left: 8px; bottom: 60px">Ad</div>
+        <button class="ytp-ad-skip-button">Skip</button>
+      </div>
+      <div class="ytp-chrome-bottom"
+           style="position: absolute; left: 12px; right: 12px; bottom: 0">
+        <button class="ytp-play-button ytp-button" aria-label="Play"></button>
+        <div class="ytp-time-display"><span id="clock"
+          class="ytp-time-current">0:00</span><span> / 10:00</span></div>
+      </div>
+    </div>)HTML");
+  Element& container = Find("ytp-caption-window-container");
+  auto is_captions = [](const Element& shown) {
+    return shown.getAttribute(html_names::kClassAttr) == "captions-text";
+  };
+  ASSERT_NE(Play(
+                page,
+                [&](const char* line) {
+                  Find("countdown").setTextContent(
+                      *line ? "Ad 0:0" + String::Number(strlen(line) % 10)
+                            : String());
+                  container.SetInnerHTMLWithoutTrustedTypes(
+                      *line ? R"(<div class="caption-window
+                                         ytp-caption-window-bottom"
+                                         id="caption-window-1" tabindex="0"
+                                         style="position: absolute; left: 0;
+                                                right: 0; bottom: 20px;
+                                                text-align: center">
+                                       <span class="captions-text"
+                                             style="display: block">
+                                         <span class="caption-visual-line"
+                                               style="display: block">
+                                           <span class="ytp-caption-segment"
+                                                 style="display: inline-block;
+                                                        background:
+                                                          rgba(8, 8, 8, .75);
+                                                        color: white;
+                                                        font-size: 20px">)" +
+                                  String(line) + "</span></span></span></div>"
+                            : String());
+                },
+                &Find("clock"), is_captions),
+            nullptr);
+  ExpectPainted(page);
+}
+
+// Disney+'s timed-text-override-region (dwp-Ba8nLNEi.js): the hive renderer's
+// cue boxes in a shadow root's region, beside an aria-live skip overlay
+// whose label is a button.
+TEST_F(ParcPictureInPicturePageCaptionsTest, DisneyTimedTextRegion) {
+  ParcPageCaptions& page = Enter(R"HTML(
+    <div class="hive-video"
+         style="position: relative; width: 640px; height: 360px">
+      <div id="video-slot"></div>
+      <div id="region-host" style="position: absolute; inset: 0"></div>
+      <div class="skip-overlay" aria-live="assertive"
+           style="position: absolute; right: 24px; bottom: 120px">
+        <button id="skip">SKIP INTRO</button>
+      </div>
+      <div class="controls-overlay"
+           style="position: absolute; left: 0; right: 0; bottom: 0">
+        <button aria-label="Play"></button><span id="clock">0:00</span>
+      </div>
+    </div>)HTML");
+  Element& host = Find("region-host");
+  ShadowRoot& shadow = host.AttachShadowRootForTesting(ShadowRootMode::kOpen);
+  shadow.SetInnerHTMLWithoutTrustedTypes(R"HTML(
+    <div class="timed-text-override-region controls-decayed" aria-hidden="true"
+         style="position: absolute; inset: 120px 0 40px 0"></div>)HTML");
+  Element& region = *shadow.firstElementChild();
+  EXPECT_EQ(Play(
+                page,
+                [&](const char* line) {
+                  Find("skip").setTextContent(line);
+                  region.SetInnerHTMLWithoutTrustedTypes(
+                      *line ? R"(<div class="hive-subtitle-renderer-cue-positioning-box"
+                                          style="position: absolute; left: 0;
+                                                 right: 0; bottom: 0;
+                                                 text-align: center">
+                                       <span style="background:
+                                                      rgba(0, 0, 0, .75);
+                                                    color: white;
+                                                    font-size: 22px">)" +
+                                  String(line) + "</span></div>"
+                            : String());
+                },
+                &Find("clock"),
+                [&](const Element& shown) { return shown == host; }),
+            &host);
+  ExpectPainted(page);
+}
+
+// TELUS TV+'s captions (main.c8ba1c06.js): its own Shaka text displayer
+// mounts a fixed data-id="captions" list for each line and unmounts it
+// between lines. On entering picture in picture Shaka shows the native track
+// its lines come from, whose cues the page's stylesheet (main.75dba21b.css)
+// hides, so the window shows the page's lines.
+TEST_F(ParcPictureInPicturePageCaptionsTest, TelusCaptionList) {
+  ParcPageCaptions& page = Enter(R"HTML(
+    <style>video::-webkit-media-text-track-container{visibility:hidden}</style>
+    <div class="sc-rF" style="width: 640px; height: 360px">
+      <div id="video-slot"></div>
+      <div class="sc-player-controls"
+           style="position: absolute; left: 0; right: 0; top: 0">
+        <button aria-label="Pause"></button>
+        <div><span class="current" id="clock">0:00</span>
+             <span class="end">1:00:00</span></div>
+      </div>
+    </div>)HTML");
+  TextTrack* track =
+      Video()->addTextTrack(V8TextTrackKind(V8TextTrackKind::Enum::kSubtitles),
+                            g_empty_atom, g_empty_atom, ASSERT_NO_EXCEPTION);
+  track->addCue(
+      MakeGarbageCollected<VTTCue>(GetDocument(), 0, 100, "Hidden line"));
+  track->setMode(V8TextTrackMode(V8TextTrackMode::Enum::kShowing));
+  Video()->Play();
+  test::RunPendingTasks();
+  ASSERT_TRUE(Video()->TextTracksVisible());
+  gfx::RectF cue_bounds;
+  EXPECT_TRUE(ParcMediaElement::From(*Video())
+                  .PaintTextTracksForPictureInPicture(gfx::SizeF(640, 360), 1,
+                                                      cue_bounds)
+                  .drawsNothing());
+  Element& player = *Find("video-slot").parentElement();
+  auto is_captions = [](const Element& shown) {
+    return shown.getAttribute(AtomicString("data-id")) == "captions";
+  };
+  ASSERT_NE(Play(
+                page,
+                [&](const char* line) {
+                  if (Element* list = GetDocument().QuerySelector(
+                          AtomicString("[data-id=captions]"))) {
+                    list->remove();
+                  }
+                  if (*line) {
+                    auto* parsed =
+                        MakeGarbageCollected<HTMLDivElement>(GetDocument());
+                    parsed->SetInnerHTMLWithoutTrustedTypes(
+                        R"(<div class="sc-iF" data-id="captions"
+                                style="width: 100%; position: fixed;
+                                       bottom: 40px; display: flex;
+                                       flex-direction: column;
+                                       align-items: center">
+                             <div class="sc-oF"
+                                  style="font: 22px sans-serif;
+                                         padding: 4px 12px;
+                                         background-color: rgba(0, 0, 0, .8);
+                                         color: white">)" +
+                        String(line) + "</div></div>");
+                    player.AppendChild(parsed->firstElementChild());
+                  }
+                },
+                &Find("clock"), is_captions),
+            nullptr);
+  ExpectPainted(page);
+}
+
+// Boxes no caption names mark show once one has cleared and come back
+// different, centred below the middle; a corner badge's changing text never
+// does.
+TEST_F(ParcPictureInPicturePageCaptionsTest, UnnamedCentredLines) {
+  ParcPageCaptions& page = Enter(R"HTML(
+    <div style="position: relative; width: 640px; height: 360px">
+      <div id="video-slot"></div>
+      <div id="lines" style="position: absolute; left: 0; right: 0;
+                             bottom: 20px; text-align: center;
+                             font-size: 20px; color: white"></div>
+      <span id="clock" class="badge"
+            style="position: absolute; left: 8px; top: 8px">0</span>
+    </div>)HTML");
+  Element& lines = Find("lines");
+  EXPECT_EQ(Play(
+                page, [&](const char* line) { lines.setTextContent(line); },
+                &Find("clock"),
+                [&](const Element& shown) { return shown == lines; },
+                /*at_once=*/false),
+            &lines);
+  ExpectPainted(page);
+}
+
+// Controls are never captions: a centred button and slider whose labels come
+// and go, a title that comes and goes, a corner badge and a centred bezel
+// that change and clear, and a running clock.
+TEST_F(ParcPictureInPicturePageCaptionsTest, ControlsAreNotCaptions) {
+  ParcPageCaptions& page = Enter(R"HTML(
+    <div style="position: relative; width: 640px; height: 360px">
+      <div id="video-slot"></div>
+      <div style="position: absolute; left: 0; right: 0; bottom: 20px;
+                  text-align: center">
+        <button id="skip" style="font-size: 20px"></button>
+        <div id="title" class="title"></div>
+        <span id="slider" role="slider" aria-valuenow="0"></span>
+      </div>
+      <span id="badge" class="badge"
+            style="position: absolute; left: 8px; top: 8px"></span>
+      <div id="bezel" class="bezel"
+           style="position: absolute; left: 0; right: 0; top: 170px;
+                  text-align: center"></div>
+      <span id="clock" class="clock" style="position: absolute; left: 0;
+                                            right: 0; bottom: 60px;
+                                            text-align: center">0:00</span>
+    </div>)HTML");
+  EXPECT_EQ(Play(
+                page,
+                [&](const char* line) {
+                  Find("skip").setTextContent(line);
+                  Find("title").setTextContent(*line ? "Pilot" : "");
+                  Find("slider").setTextContent(line);
+                  Find("badge").setTextContent(line);
+                  Find("bezel").setTextContent(line);
+                },
+                &Find("clock"), [](const Element&) { return false; },
+                /*at_once=*/false),
+            nullptr);
+}
+
+// Two boxes at once, a speaker's positioned line at the top and the main
+// line at the bottom, each paint at their place.
+TEST_F(ParcPictureInPicturePageCaptionsTest, SeveralBoxes) {
+  ParcPageCaptions& page = Enter(R"HTML(
+    <div style="position: relative; width: 640px; height: 360px">
+      <div id="video-slot"></div>
+      <div id="top" class="captions-top"
+           style="position: absolute; left: 0; right: 0; top: 30px;
+                  text-align: center; font-size: 20px">Up here!</div>
+      <div id="bottom" class="captions-bottom"
+           style="position: absolute; left: 0; right: 0; bottom: 30px;
+                  text-align: center; font-size: 20px">Down here.</div>
+    </div>)HTML");
+  page.Update();
+  ASSERT_EQ(page.Shown().size(), 2u);
+  EXPECT_TRUE(page.Shown().Contains(&Find("top")));
+  EXPECT_TRUE(page.Shown().Contains(&Find("bottom")));
+  GetDocument().UpdateStyleAndLayoutTree();
+  EXPECT_EQ(Opacity(Find("top")), 0);
+  gfx::RectF bounds;
+  const SkBitmap bitmap = page.Paint(gfx::SizeF(640, 360), 1, bounds);
+  ASSERT_FALSE(bitmap.drawsNothing());
+  EXPECT_TRUE(Painted(bitmap));
+  EXPECT_LT(bounds.y(), 0.3);
+  EXPECT_GT(bounds.bottom(), 0.8);
+  // Between the two lines the bitmap is clear.
+  bool middle = false;
+  for (int x = 0; x < bitmap.width(); ++x) {
+    middle |= SkColorGetA(bitmap.getColor(x, bitmap.height() / 2)) != 0;
+  }
+  EXPECT_FALSE(middle);
+
+  // A box that stops being captions shows in the tab again.
+  Find("top").SetInnerHTMLWithoutTrustedTypes("<button>Up here!</button>");
+  EXPECT_TRUE(page.Update());
+  EXPECT_FALSE(IsParcPictureInPictureCaptions(Find("top")));
+  GetDocument().UpdateStyleAndLayoutTree();
+  EXPECT_EQ(Opacity(Find("top")), 1);
+  EXPECT_EQ(Opacity(Find("bottom")), 0);
+}
+
+// The video's own text tracks take over when they show, and the page's box
+// shows in the tab again.
+TEST_F(ParcPictureInPicturePageCaptionsTest, TextTracksTakeOver) {
+  ParcPageCaptions& page = Enter(R"HTML(
+    <div style="position: relative; width: 640px; height: 360px">
+      <div id="video-slot"></div>
+      <div id="lines" class="subtitles"
+           style="position: absolute; left: 0; right: 0; bottom: 20px">
+        Hello.</div>
+    </div>)HTML");
+  EXPECT_TRUE(page.Update());
+  ASSERT_EQ(page.Shown().size(), 1u);
+  TextTrack* track =
+      Video()->addTextTrack(V8TextTrackKind(V8TextTrackKind::Enum::kCaptions),
+                            g_empty_atom, g_empty_atom, ASSERT_NO_EXCEPTION);
+  track->setMode(V8TextTrackMode(V8TextTrackMode::Enum::kShowing));
+  EXPECT_TRUE(page.Update());
+  EXPECT_TRUE(page.Shown().empty());
+  EXPECT_FALSE(IsParcPictureInPictureCaptions(Find("lines")));
+}
+
+// Between lines the look costs nothing: with the document unchanged it runs
+// no style or layout, though some is pending.
+TEST_F(ParcPictureInPicturePageCaptionsTest, NoWorkWhileUnchanged) {
+  ParcPageCaptions& page = Enter(R"HTML(
+    <div style="position: relative; width: 640px; height: 360px">
+      <div id="video-slot"></div>
+      <div class="subtitles" style="position: absolute; left: 0; right: 0;
+                                    bottom: 20px">Hello.</div>
+    </div>)HTML");
+  EXPECT_TRUE(page.Update());
+  GetDocument().body()->SetInlineStyleProperty(CSSPropertyID::kColor, "red");
+  ASSERT_TRUE(GetDocument().NeedsLayoutTreeUpdate());
+  EXPECT_FALSE(page.Update());
+  EXPECT_TRUE(GetDocument().NeedsLayoutTreeUpdate());
+}
+
+}  // namespace blink
