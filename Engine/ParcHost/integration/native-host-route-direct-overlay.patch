@@ -479,20 +479,3 @@
    navigation_info->should_check_main_world_content_security_policy =
        should_check_main_world_content_security_policy;
    navigation_info->blob_url_token = std::move(blob_url_token);
-@@ -1063,6 +1074,15 @@
-       html_media_element);
- }
--
-+
-+bool LocalFrameClientImpl::ParcMoveWebMediaPlayer(
-+    HTMLMediaElement& html_media_element) {
-+  if (!web_frame_->Client()) {
-+    return false;
-+  }
-+  return CoreInitializer::GetInstance().ParcMoveWebMediaPlayer(
-+      web_frame_->Client(), html_media_element);
-+}
-+
- void LocalFrameClientImpl::DidChangeName(const String& name) {
-   if (!web_frame_->Client()) {
-     return;
