@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 674,
+  "version": 675,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -1954,7 +1954,7 @@
     {
       "source": "Engine/ParcNative/native_profiles.mm",
       "target": "parc/native/native_profiles.mm",
-      "sha256": "6fe7253f4d3bfb31835d7cee11ad5c8b9877257d6dbc1c2162f9e7afe6bf0720"
+      "sha256": "895b7a2317064f4b06e71a4aa7fa282a713c127b535ffabe979e37180dd2a4a2"
     },
     {
       "source": "Engine/ParcNative/native_page_observers.h",
@@ -2034,7 +2034,7 @@
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "4a2a9d91a9a03195392e66401a9c6f10f16d57988c3d7b51c29a1799cfeb2442"
+      "sha256": "1e70a8f44c7cf63e2eb27ca394f3024bde5dd94f525f2f397285a416e72fc396"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2089,7 +2089,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.cc",
       "target": "parc/parc_main_delegate.cc",
-      "sha256": "1f81a8af21bbef65bc9de66993490cb23f5cce5c760259e90b067d29141a04e6"
+      "sha256": "ba578586f21dcb9f941298f8cff44976d2a564ff0d06101173afd76085c37783"
     },
     {
       "source": "Engine/ParcNative/native_application.mm",
@@ -2119,7 +2119,7 @@
     {
       "source": "Engine/ParcNative/native_profile_policy.h",
       "target": "parc/native/native_profile_policy.h",
-      "sha256": "be2181d00bea05673da80dd5858d868f0d1dc1b1df57eadfff6c3723298e9f57"
+      "sha256": "0fcfb38fade87ce21dd6a8c173cca2bec7f4d18546e04e9cc8f72d801157eb05"
     }
   ],
   "patches": [
@@ -5664,12 +5664,12 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-signin-disabled-direct.patch",
-      "sha256": "ca4b84e66f69678965e71d9451d9daed37da4408fa142e94ba17ae9272a89847",
+      "sha256": "bd75f0a5e4f6978cac3de689dd8167d26de7c5d1c380da6cfdba1b9a1a6419c2",
       "files": [
         {
           "target": "components/signin/internal/identity_manager/gaia_cookie_manager_service.cc",
           "before_sha256": "065fb50c3c08b7577ad3bb5a8bf7065bdec88bdb56cba7294a5f1d317e5bb7e4",
-          "after_sha256": "9a78e6637f0d1f6f3d8c38c461965ae69ee8119e249f3bb0c771357b24f78e2a"
+          "after_sha256": "85c6ad291d69a011eb250d017d207b2547437185d368e1af98fd4cccf8f140ff"
         }
       ]
     },
