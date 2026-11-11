@@ -2,8 +2,9 @@
 // Installed by the reviewed overlay at
 // //third_party/blink/renderer/platform/media/parc_web_media_player_rules.h.
 // The rules WebMediaPlayerImpl applies to values it holds: which codecs the
-// FairPlay Renderer plays, and the type AVFoundation is told for a file played
-// to an AirPlay target. WebMediaPlayerImpl keeps every decision that acts on
+// FairPlay Renderer plays, the type AVFoundation is told for a file played to
+// an AirPlay target, and the readyState a Safari-identity Media Source's
+// buffered ranges give. WebMediaPlayerImpl keeps every decision that acts on
 // them.
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_MEDIA_PARC_WEB_MEDIA_PLAYER_RULES_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_MEDIA_PARC_WEB_MEDIA_PLAYER_RULES_H_
@@ -11,7 +12,10 @@
 #include <optional>
 #include <string>
 
+#include "base/time/time.h"
 #include "media/base/container_names.h"
+#include "media/filters/chunk_demuxer.h"
+#include "third_party/blink/public/platform/web_media_player.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 
 namespace media {
@@ -44,6 +48,14 @@ PLATFORM_EXPORT std::optional<std::string> ParcNativeFileMimeType(
 // (a SourceBuffer added after the one it replaces was removed).
 PLATFORM_EXPORT void ParcAddStreams(const media::PipelineMetadata& added,
                                     media::PipelineMetadata* metadata);
+
+// The readyState `source`'s buffered ranges give at `now`, as WebKit's
+// MediaSource::monitorSourceBuffers decides it. `time_progressing`: playback
+// advances (WebKit's future data threshold is then zero).
+PLATFORM_EXPORT WebMediaPlayer::ReadyState ParcSourceBufferReadyState(
+    const media::ChunkDemuxer::ParcBufferedState& source,
+    base::TimeDelta now,
+    bool time_progressing);
 
 }  // namespace blink
 

@@ -3,6 +3,7 @@
 // //third_party/blink/renderer/platform/media/parc_web_media_player_rules.cc.
 #include "third_party/blink/renderer/platform/media/parc_web_media_player_rules.h"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@
 #include "media/base/media_types.h"
 #include "media/base/mime_util.h"
 #include "media/base/pipeline_metadata.h"
+#include "media/base/ranges.h"
 #include "media/base/sample_format.h"
 #include "media/base/video_codecs.h"
 #include "media/base/video_decoder_config.h"
@@ -187,6 +189,126 @@ void ParcAddStreams(const media::PipelineMetadata& added,
     metadata->has_video = true;
     metadata->video_decoder_config = added.video_decoder_config;
   }
+}
+
+// WebKit's MediaSourcePrivate buffered checks, which
+// MediaSource::monitorSourceBuffers runs.
+WebMediaPlayer::ReadyState ParcSourceBufferReadyState(
+    const media::ChunkDemuxer::ParcBufferedState& source,
+    base::TimeDelta now,
+    bool time_progressing) {
+  // MediaSourcePrivate.h; the future data threshold is 1001/24000 s.
+  constexpr base::TimeDelta kStartGapAllowance = base::Seconds(1);
+  constexpr base::TimeDelta kMidStreamGapTolerance = base::Milliseconds(125);
+  constexpr base::TimeDelta kAudioCoveredGapTolerance =
+      base::Milliseconds(250);
+  constexpr base::TimeDelta kFutureDataThreshold = base::Microseconds(41708);
+  constexpr base::TimeDelta kHaveEnoughDataThreshold = base::Seconds(3);
+  const media::Ranges<base::TimeDelta>& buffered = source.buffered;
+
+  // PlatformTimeRanges::nearest; |ranges| isn't empty.
+  auto nearest = [](const media::Ranges<base::TimeDelta>& ranges,
+                    base::TimeDelta time) {
+    base::TimeDelta result;
+    base::TimeDelta closest = base::TimeDelta::Max();
+    for (size_t i = 0; i < ranges.size(); ++i) {
+      if (time >= ranges.start(i) && time <= ranges.end(i)) {
+        return time;
+      }
+      for (base::TimeDelta edge : {ranges.start(i), ranges.end(i)}) {
+        if ((edge - time).magnitude() < closest) {
+          closest = (edge - time).magnitude();
+          result = edge;
+        }
+      }
+    }
+    return result;
+  };
+  auto within_start_gap = [&](base::TimeDelta time) {
+    return time >= base::TimeDelta() && time < kStartGapAllowance &&
+           !buffered.empty() && buffered.start(0) <= kStartGapAllowance &&
+           time < buffered.start(0);
+  };
+  auto contains = [](const media::Ranges<base::TimeDelta>& ranges,
+                     base::TimeDelta time) {
+    for (size_t i = 0; i < ranges.size(); ++i) {
+      if (time >= ranges.start(i) && time <= ranges.end(i)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  auto tolerance = [&](base::TimeDelta time) {
+    if (within_start_gap(time)) {
+      return kStartGapAllowance;
+    }
+    return contains(source.audio, time) ? kAudioCoveredGapTolerance
+                                        : kMidStreamGapTolerance;
+  };
+  auto has_buffered_time = [&](base::TimeDelta time) {
+    return time <= source.duration && !buffered.empty() &&
+           (nearest(buffered, time) - time).magnitude() <= tolerance(time);
+  };
+  // PlatformTimeRanges::containWithEpsilon over [start, end].
+  auto is_buffered = [&](base::TimeDelta start, base::TimeDelta end) {
+    if (end <= start) {
+      return has_buffered_time(start);
+    }
+    media::Ranges<base::TimeDelta> needed;
+    needed.Add(start, end);
+    const media::Ranges<base::TimeDelta> covered =
+        buffered.IntersectionWith(needed);
+    if (covered.empty()) {
+      return false;
+    }
+    for (base::TimeDelta time : {start, end}) {
+      if ((nearest(covered, time) - time).magnitude() > tolerance(time)) {
+        return false;
+      }
+    }
+    for (size_t i = 1; i < covered.size(); ++i) {
+      if (covered.start(i) - covered.end(i - 1) >
+          tolerance(covered.end(i - 1))) {
+        return false;
+      }
+    }
+    return true;
+  };
+  auto has_future_time = [&](base::TimeDelta time, base::TimeDelta threshold) {
+    if (time >= source.duration || buffered.empty()) {
+      return false;
+    }
+    const base::TimeDelta closest = nearest(buffered, time);
+    if ((closest - time).magnitude() > tolerance(time)) {
+      return false;
+    }
+    for (size_t i = 0; i < buffered.size(); ++i) {
+      if (closest >= buffered.start(i) && closest <= buffered.end(i)) {
+        return buffered.end(i) == source.duration ||
+               buffered.end(i) - time > threshold;
+      }
+    }
+    return false;
+  };
+
+  WebMediaPlayer::ReadyState state;
+  if (!has_buffered_time(now) && !within_start_gap(now)) {
+    state = WebMediaPlayer::kReadyStateHaveMetadata;
+  } else {
+    base::TimeDelta ahead = now + kHaveEnoughDataThreshold;
+    if (source.ended) {
+      ahead = std::min(source.duration, ahead);
+    }
+    if (is_buffered(now, std::max(now, ahead))) {
+      state = WebMediaPlayer::kReadyStateHaveEnoughData;
+    } else if (has_future_time(now, time_progressing ? base::TimeDelta()
+                                                     : kFutureDataThreshold)) {
+      state = WebMediaPlayer::kReadyStateHaveFutureData;
+    } else {
+      state = WebMediaPlayer::kReadyStateHaveCurrentData;
+    }
+  }
+  return state;
 }
 
 }  // namespace blink

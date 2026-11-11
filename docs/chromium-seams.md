@@ -315,8 +315,11 @@ follows a moved element's frame and the one that keeps a cast's pipeline
 running in a frozen page, live in a Parc header that WebMediaPlayerImpl and
 WebMediaPlayerMS include. The rules the player applies to values it holds are
 pure functions in a Parc file: which codecs the FairPlay Renderer plays and
-accepts through `changeType()`, and the type AVFoundation is told for a file
-played to an AirPlay target.
+accepts through `changeType()`, the type AVFoundation is told for a file
+played to an AirPlay target, and the readyState a Safari-identity Media
+Source's buffered ranges give. The player still runs that check where WebKit
+runs `monitorSourceBuffers`, and still makes the readyState change and the
+seek's time notification itself.
 
 ## Decisions
 
