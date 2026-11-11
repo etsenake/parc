@@ -58,6 +58,9 @@ Site permissions are the reference conversion. `permission_prompt_factory.cc` de
 as the old patch did. The header belongs to `//parc:browser`, and only the install points include it. A
 feature exposes its factory in its own header, here `CreateSitePermissionPrompt`, and the install point
 passes that factory to the setter, so the `//parc/native` targets never depend on `//parc:browser`.
+A hook defined inside a component library, such as `content` or `media` in component builds, carries
+that library's export macro on its `.cc` declaration, as `service_factory.cc` does for
+`parc_hooks::SetCdmServiceChildFlags`.
 
 Parc state that today lives as members of Chromium classes moves into Parc-owned objects:
 - Blink supplements;

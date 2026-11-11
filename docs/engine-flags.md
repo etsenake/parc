@@ -188,8 +188,8 @@ Protected video is not capturable as ordinary pixels.
 
 ### Library validation
 
-Only the CDM helper weakens library validation. `cdm-helper.patch` supplies
-`SetCdmServiceChildFlags`; Parc's browser client selects the dedicated helper
+Only the CDM helper weakens library validation. `cdm-helper.patch` supplies the
+`parc_hooks::SetCdmServiceChildFlags` hook; Parc's browser client selects the dedicated helper
 only when it exists in the bundle. The process retains the CDM sandbox and all
 bundle path restrictions. Packaging refuses an engine that cannot route the
 CDM to the expected helper. No default network/storage/audio helper receives

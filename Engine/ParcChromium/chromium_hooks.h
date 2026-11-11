@@ -61,6 +61,12 @@ void SetMacMainPartsFactory(MacMainPartsFactory factory);
 // chrome/browser/browser_process_impl.cc; null omits Chrome's AppController.
 void SetMacMainLoopEndHandler(void (*handler)());
 
+// content/browser/media/service_factory.cc
+// The ChildProcessHost flags CdmService processes start with, set before the
+// first CDM use. A value other than CHILD_NORMAL must be resolved by
+// ContentBrowserClient::GetChildProcessPath().
+void SetCdmServiceChildFlags(int flags);
+
 }  // namespace parc_hooks
 
 #endif  // PARC_CHROMIUM_HOOKS_H_

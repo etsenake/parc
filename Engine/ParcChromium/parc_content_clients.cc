@@ -14,7 +14,6 @@
 #include "chrome/browser/ui/login/http_auth_coordinator.h"
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/common/chrome_constants.h"
-#include "content/browser/media/service_factory.h"
 #include "content/public/browser/browser_url_handler.h"
 #include "content/public/common/content_switches.h"
 #include "parc/chromium_hooks.h"
@@ -33,6 +32,9 @@ namespace {
 // Only this helper is signed without library validation, because the
 // component-updated Widevine CDM carries Google's code signature.
 constexpr char kMacHelperSuffixCdm[] = " (CDM)";
+// The flag after Chrome's own helper flags.
+constexpr int kChildProcessHelperCdm =
+    std::to_underlying(ChildProcessHostFlags::kChildProcessHelperAlerts) + 1;
 constexpr char kInputDiagnostics[] = "parc-input-diagnostics";
 }  // namespace
 
@@ -93,8 +95,7 @@ ParcContentBrowserClient::CreateBrowserMainParts(bool is_integration_test) {
   // runs before the UI thread disallows blocking work.
   if (base::apple::AmIBundled() &&
       base::PathExists(HelperExecutablePath(kMacHelperSuffixCdm))) {
-    content::SetCdmServiceChildFlags(
-        std::to_underlying(ChildProcessHostFlags::kChildProcessHelperCdm));
+    parc_hooks::SetCdmServiceChildFlags(kChildProcessHelperCdm);
   }
   auto parts =
       ChromeContentBrowserClient::CreateBrowserMainParts(is_integration_test);
@@ -109,8 +110,7 @@ ParcContentBrowserClient::CreateHttpAuthCoordinator() {
 }
 
 base::FilePath ParcContentBrowserClient::GetChildProcessPath(int flags) {
-  if (flags ==
-      std::to_underlying(ChildProcessHostFlags::kChildProcessHelperCdm)) {
+  if (flags == kChildProcessHelperCdm) {
     return base::apple::AmIBundled() ? HelperExecutablePath(kMacHelperSuffixCdm)
                                      : base::FilePath();
   }
