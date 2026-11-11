@@ -897,13 +897,11 @@
  };
 --- a/media/base/demuxer.cc
 +++ b/media/base/demuxer.cc
-@@ -16,4 +16,29 @@
+@@ -15,5 +15,26 @@
+ // Most Demuxer implementations don't need to disable canChangeType.
  // Do nothing by default.
  void Demuxer::DisableCanChangeType() {}
- 
-+void Demuxer::RestrictCanChangeType(ChangeTypeFilter filter) {}
-+
-+void Demuxer::ParcSetClearDolbyVisionAllowed(bool allowed) {}
+-
 +
 +bool Demuxer::ParcPrefersFairPlayRenderer() {
 +  return false;
@@ -929,42 +927,24 @@
  }  // namespace media
 --- a/media/base/demuxer.h
 +++ b/media/base/demuxer.h
-@@ -9,8 +9,10 @@
- 
- #include <memory>
+@@ -11,6 +11,7 @@
  #include <optional>
-+#include <string>
  #include <vector>
  
 +#include "base/functional/callback.h"
  #include "base/time/time.h"
  #include "media/base/container_names.h"
  #include "media/base/demuxer_stream.h"
-@@ -181,6 +183,55 @@
+@@ -181,6 +182,40 @@
  
    // Allow canChangeType to be disabled.
    virtual void DisableCanChangeType();
 +
-+  // Parc: limits canChangeType to the types `filter` accepts (the content
-+  // type and codecs SourceBuffer.changeType() names), for a renderer that
-+  // switches only among the codecs it plays (the FairPlay Renderer).
-+  using ChangeTypeFilter =
-+      base::RepeatingCallback<bool(const std::string& content_type,
-+                                   const std::string& codecs)>;
-+  virtual void RestrictCanChangeType(ChangeTypeFilter filter);
-+
-+  // Parc: lets clear Dolby Vision profile 5 and 8 through Media Source's
-+  // init segment check (SourceBufferState::OnNewConfigs), which otherwise
-+  // takes Dolby Vision only encrypted, on documents presenting Safari's
-+  // identity and while the player's CDM is FairPlay: Safari plays it clear,
-+  // with keys set before, after or never, and so does the FairPlay Renderer
-+  // that Dolby Vision is routed to. Called on the main thread.
-+  virtual void ParcSetClearDolbyVisionAllowed(bool allowed);
 +  // Parc: whether the pipeline picks the FairPlay Renderer without a FairPlay
 +  // CDM: a SourceBuffer took Dolby Vision where clear Dolby Vision is allowed
-+  // (above), at the start or later (changeType()). That renderer also plays
-+  // the H.264, HEVC or AV1 before a switch into Dolby Vision. Any thread.
-+  // False by default.
++  // (ChunkDemuxer::ParcSetClearDolbyVisionAllowed()), at the start or later
++  // (changeType()). That renderer also plays the H.264, HEVC or AV1 before a
++  // switch into Dolby Vision. Any thread. False by default.
 +  virtual bool ParcPrefersFairPlayRenderer();
 +
 +  // Parc: HTMLMediaElement.fastSeek on a Safari-identity page
@@ -3851,12 +3831,24 @@
    // Gets the currently buffered ranges for the specified ID.
    Ranges<base::TimeDelta> GetBufferedRanges(const std::string& id) const;
  
-@@ -313,6 +416,57 @@
+@@ -313,6 +416,69 @@
    void SetPlaybackRate(double rate) override {}
  
    void DisableCanChangeType() override;
-+  void RestrictCanChangeType(ChangeTypeFilter filter) override;
-+  void ParcSetClearDolbyVisionAllowed(bool allowed) override;
++  // Parc: limits canChangeType to the types `filter` accepts (the content
++  // type and codecs SourceBuffer.changeType() names), for a renderer that
++  // switches only among the codecs it plays (the FairPlay Renderer).
++  using ChangeTypeFilter =
++      base::RepeatingCallback<bool(const std::string& content_type,
++                                   const std::string& codecs)>;
++  void RestrictCanChangeType(ChangeTypeFilter filter);
++  // Parc: lets clear Dolby Vision profile 5 and 8 through Media Source's
++  // init segment check (SourceBufferState::OnNewConfigs), which otherwise
++  // takes Dolby Vision only encrypted, on documents presenting Safari's
++  // identity and while the player's CDM is FairPlay: Safari plays it clear,
++  // with keys set before, after or never, and so does the FairPlay Renderer
++  // that Dolby Vision is routed to. Called on the main thread.
++  void ParcSetClearDolbyVisionAllowed(bool allowed);
 +  bool ParcPrefersFairPlayRenderer() override;
 +  MediaResource* ParcBeginHandOff() override;
 +  void ParcSplitForHandOff(
@@ -3909,7 +3901,7 @@
  
    // Appends media data to the source buffer's stream parser associated with
    // `id`. No parsing is done, just buffering the media data for future parsing
-@@ -378,6 +532,34 @@
+@@ -378,6 +544,34 @@
    // associated with |id|.
    void Remove(const std::string& id, base::TimeDelta start,
                base::TimeDelta end);
@@ -3944,7 +3936,7 @@
  
    // Returns whether or not the source buffer associated with |id| can change
    // its parser type to one which parses |content_type| and |codecs|.
-@@ -491,6 +673,15 @@
+@@ -491,6 +685,15 @@
    // SourceBufferState callbacks.
    void OnSourceInitDone(const std::string& source_id,
                          const StreamParser::InitParameters& params);
@@ -3960,7 +3952,7 @@
  
    // Creates a DemuxerStream of the specified |type| for the SourceBufferState
    // with the given |source_id|.
-@@ -550,6 +741,7 @@
+@@ -550,6 +753,7 @@
    raw_ptr<DemuxerHost, DanglingUntriaged> host_ = nullptr;
    base::OnceClosure open_cb_;
    const base::RepeatingClosure progress_cb_;
@@ -3968,15 +3960,14 @@
    EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
  
    // MediaLog for reporting messages and properties to debug content and engine.
-@@ -597,6 +789,84 @@
+@@ -597,6 +801,83 @@
        track_id_to_demux_stream_map_;
  
    bool supports_change_type_ = true;
-+  // Parc: see Demuxer::RestrictCanChangeType(). Guarded by `lock_`.
++  // Parc: see RestrictCanChangeType(). Guarded by `lock_`.
 +  ChangeTypeFilter change_type_filter_;
-+  // Parc: see Demuxer::ParcSetClearDolbyVisionAllowed(), handed to every
-+  // SourceBufferState, and Demuxer::ParcPrefersFairPlayRenderer(). Guarded by
-+  // `lock_`.
++  // Parc: see ParcSetClearDolbyVisionAllowed(), handed to every
++  // SourceBufferState, and ParcPrefersFairPlayRenderer(). Guarded by `lock_`.
 +  bool parc_clear_dolby_vision_allowed_ = false;
 +  bool parc_dolby_vision_appended_ = false;
 +  base::RepeatingClosure parc_dolby_vision_appended_cb_;
@@ -4066,18 +4057,22 @@
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
  #include "base/time/time.h"
-@@ -232,6 +234,21 @@
+@@ -232,6 +234,25 @@
    demuxer_->DisableCanChangeType();
  }
  
 +void DemuxerManager::RestrictDemuxerCanChangeType(
-+    Demuxer::ChangeTypeFilter filter) {
-+  demuxer_->RestrictCanChangeType(std::move(filter));
++    ChunkDemuxer::ChangeTypeFilter filter) {
++  if (demuxer_->GetDemuxerType() == DemuxerType::kChunkDemuxer) {
++    static_cast<ChunkDemuxer*>(demuxer_.get())
++        ->RestrictCanChangeType(std::move(filter));
++  }
 +}
 +
 +void DemuxerManager::ParcSetDemuxerClearDolbyVisionAllowed(bool allowed) {
-+  if (demuxer_) {
-+    demuxer_->ParcSetClearDolbyVisionAllowed(allowed);
++  if (demuxer_ && demuxer_->GetDemuxerType() == DemuxerType::kChunkDemuxer) {
++    static_cast<ChunkDemuxer*>(demuxer_.get())
++        ->ParcSetClearDolbyVisionAllowed(allowed);
 +  }
 +}
 +
@@ -4088,7 +4083,7 @@
  PipelineStatus DemuxerManager::CreateDemuxer(
      bool load_media_source,
      DataSource::Preload preload,
-@@ -241,6 +258,9 @@
+@@ -241,6 +262,9 @@
    if (!client_) {
      return DEMUXER_ERROR_COULD_NOT_OPEN;
    }
@@ -4098,7 +4093,7 @@
  
    // We can only do a universal suspend for posters, unless the flag is enabled.
    auto suspended_mode = Pipeline::StartType::kSuspendAfterMetadataForAudioOnly;
-@@ -249,12 +269,48 @@
+@@ -249,12 +273,48 @@
    }
  
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
@@ -4150,7 +4145,7 @@
               /*is_static=*/false);
    }
  #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -315,6 +371,14 @@
+@@ -315,6 +375,14 @@
    if (data_source_) {
      data_source_->SetPreload(preload);
    }
@@ -4165,7 +4160,7 @@
  }
  
  void DemuxerManager::StopAndResetClient() {
-@@ -382,8 +446,124 @@
+@@ -382,8 +450,124 @@
      return !demuxer_->IsSeekable();
    }
    return false;
@@ -4290,7 +4285,7 @@
  bool DemuxerManager::IsManifestDemuxerURL() const {
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    return loaded_url_.path().ends_with(".m3u8");
-@@ -408,7 +588,7 @@
+@@ -408,7 +592,7 @@
  
  std::unique_ptr<Demuxer> DemuxerManager::CreateFFmpegDemuxer() {
    DCHECK(data_source_);
@@ -4299,7 +4294,7 @@
        media_task_runner_, data_source_.get(),
        base::BindPostTaskToCurrentDefault(
            base::BindRepeating(&DemuxerManager::OnEncryptedMediaInitData,
-@@ -417,6 +597,8 @@
+@@ -417,6 +601,8 @@
            base::BindRepeating(&DemuxerManager::OnFFmpegMediaTracksUpdated,
                                weak_factory_.GetWeakPtr())),
        media_log_.get(), IsLocalFile(loaded_url_));
@@ -4308,7 +4303,7 @@
  }
  
  void DemuxerManager::OnFFmpegMediaTracksUpdated(
-@@ -474,6 +656,121 @@
+@@ -474,6 +660,121 @@
            std::move(engine), media_log_.get()));
  }
  
@@ -4479,14 +4474,15 @@
    };
  
    // Demuxer, StartType, IsStreaming, IsStatic
-@@ -111,6 +144,19 @@
+@@ -111,6 +144,20 @@
    std::optional<container_names::MediaContainerName> GetContainerForMetrics();
    void RespondToDemuxerMemoryUsageReport(base::OnceCallback<void(int64_t)> cb);
    void DisableDemuxerCanChangeType();
-+  // Parc: see Demuxer::RestrictCanChangeType().
-+  void RestrictDemuxerCanChangeType(Demuxer::ChangeTypeFilter filter);
-+  // Parc: see Demuxer::ParcSetClearDolbyVisionAllowed(). No-op before the
-+  // demuxer exists.
++  // Parc: see ChunkDemuxer::RestrictCanChangeType(); every other demuxer
++  // ignores it.
++  void RestrictDemuxerCanChangeType(ChunkDemuxer::ChangeTypeFilter filter);
++  // Parc: see ChunkDemuxer::ParcSetClearDolbyVisionAllowed(). No-op before the
++  // demuxer exists and for every demuxer but a ChunkDemuxer.
 +  void ParcSetDemuxerClearDolbyVisionAllowed(bool allowed);
 +  // Parc: see Demuxer::ParcPrefersFairPlayRenderer(). False before the
 +  // demuxer exists.
@@ -4499,7 +4495,7 @@
  
    // Returns a forwarded error/success from |on_demuxer_created|, or an error
    // if a demuxer couldn't be created.
-@@ -140,6 +186,39 @@
+@@ -140,6 +187,39 @@
    bool DataSourceFullyBuffered() const;
    bool IsStreaming() const;
    bool IsLiveContent() const;
@@ -4539,7 +4535,7 @@
    bool IsManifestDemuxerURL() const;
  
   private:
-@@ -154,6 +233,25 @@
+@@ -154,6 +234,25 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
    CreateHlsDemuxer();
@@ -4565,7 +4561,7 @@
  
    void AddTrack(const MediaTrack&);
    void RemoveTrack(const MediaTrack&);
-@@ -207,6 +305,13 @@
+@@ -207,6 +306,13 @@
    // which becomes the default demuxer to use.
    std::unique_ptr<Demuxer> demuxer_override_;
  
@@ -10302,7 +10298,7 @@
 +
 +#if BUILDFLAG(IS_MAC)
 +  // Parc: whether clear Dolby Vision goes through Media Source (see
-+  // media::Demuxer::ParcSetClearDolbyVisionAllowed()): on a document
++  // media::ChunkDemuxer::ParcSetClearDolbyVisionAllowed()): on a document
 +  // presenting Safari's identity, or while the CDM being attached, else the
 +  // attached one, is FairPlay.
 +  bool ParcClearDolbyVisionAllowed();
@@ -14325,7 +14321,7 @@
  #include "base/functional/bind.h"
  #include "base/memory/memory_pressure_listener.h"
  #include "base/memory/raw_ptr.h"
-@@ -98,6 +100,69 @@ class MEDIA_EXPORT SourceBufferState {
+@@ -98,6 +100,69 @@
                base::TimeDelta end,
                base::TimeDelta duration);
  
@@ -14375,7 +14371,7 @@
 +  bool ParcLeftOutOfMediaSource() const;
 +  bool ParcPurgedWhileInactive() const { return parc_purged_while_inactive_; }
 +
-+  // Parc: see Demuxer::ParcSetClearDolbyVisionAllowed().
++  // Parc: see ChunkDemuxer::ParcSetClearDolbyVisionAllowed().
 +  void ParcSetClearDolbyVisionAllowed(bool allowed) {
 +    parc_clear_dolby_vision_allowed_ = allowed;
 +  }
@@ -14906,7 +14902,7 @@
 +        // a FairPlay CDM), clear Dolby Vision of the profiles the FairPlay
 +        // Renderer plays (5 and 8, and 10 under Safari's init segment rules)
 +        // goes through too, as in Safari; see
-+        // Demuxer::ParcSetClearDolbyVisionAllowed().
++        // ChunkDemuxer::ParcSetClearDolbyVisionAllowed().
 +        const bool parc_fairplay_plays_clear =
 +            parc_clear_dolby_vision_allowed_ &&
 +            (video_config.profile() == DOLBYVISION_PROFILE5 ||
@@ -14980,8 +14976,8 @@
 +#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
 +// Parc: clear Dolby Vision passes the init segment check only where the
 +// demuxer allows it (a Safari-identity document or a FairPlay CDM, see
-+// Demuxer::ParcSetClearDolbyVisionAllowed()), and only in the profiles the
-+// FairPlay Renderer plays, 5 and 8.
++// ChunkDemuxer::ParcSetClearDolbyVisionAllowed()), and only in the profiles
++// the FairPlay Renderer plays, 5 and 8.
 +class SourceBufferStateClearDolbyVisionTest : public SourceBufferStateTest {
 + public:
 +  SourceBufferStateClearDolbyVisionTest() {

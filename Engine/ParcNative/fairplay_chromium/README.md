@@ -130,7 +130,7 @@ EME's false, when there are none), other types reject with NotSupported.
    stays allowed for FairPlay players (Netflix switches audio languages, e.g.
    E-AC-3 to AAC, and video codecs the same way), but only among the codecs
    the renderer plays: `WebMediaPlayerImpl` gives the demuxer a filter
-   (`Demuxer::RestrictCanChangeType`) that accepts AAC, AC-3, E-AC-3, FLAC,
+   (`ChunkDemuxer::RestrictCanChangeType`) that accepts AAC, AC-3, E-AC-3, FLAC,
    Opus, ALAC, H.264, HEVC and Dolby Vision 5 and 8 (and on Safari-identity
    pages 10, played as a 'dav1' entry with av1C and dvvC, PCM, `ipcm` and
    `fpcm`, AV1, VP9 profiles 0 and 2, and Vorbis), so any other codec makes
@@ -388,7 +388,7 @@ Vision 5 and AC-3/E-AC-3 when they see Safari.
     `encv` or `tenc`, as in a clear lead) is accepted in profiles 5 and 8,
     whatever the key timing. `WebMediaPlayerImpl` tells the demuxer when the
     Media Source opens, before the page can add a SourceBuffer
-    (`Demuxer::ParcSetClearDolbyVisionAllowed`, handed to each
+    (`ChunkDemuxer::ParcSetClearDolbyVisionAllowed`, handed to each
     `SourceBufferState`). Chrome-identity documents still reject clear Dolby
     Vision as on Windows ("only supported via platform decryptor") unless a
     FairPlay CDM is set; the global
