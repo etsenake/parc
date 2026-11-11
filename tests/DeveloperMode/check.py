@@ -8,7 +8,7 @@ root = Path(__file__).resolve().parents[2]
 import sys
 sys.path.insert(0, str(root / "tests/Tooltip"))
 from support import tooltip_sources
-# One switch with Chromium's developer tools (a Josh request): every entry point
+# One switch with Chromium's developer tools (a user request): every entry point
 # goes through setDeveloperMode, which opens the console and closes the tools.
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
 for use in ("setDeveloperMode(!DeveloperModePreferences.shared.isEnabled(host: request.host), host: request.host,",

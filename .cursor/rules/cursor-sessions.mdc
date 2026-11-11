@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Keep long jobs and handoffs intact
 
-Cursor kills a background shell job when Josh sends a message. Start an
+Cursor kills a background shell job when the user sends a message. Start an
 authorized `scripts/release.sh` run in its own session, for example through
 `nohup perl -e 'use POSIX qw(setsid); setsid(); exec @ARGV' …`, and follow it
 with a separate watcher, so an interruption can't stop the release.

@@ -15,7 +15,7 @@ Use permitted source, compiler and model checks.
 
 Engine work stays inside the [Chromium boundary](AGENTS.md#chromium-boundary):
 extension points first, then Parc-owned code. Any new or larger Chromium patch,
-hook, header or BUILD edit waits for Josh's approval of that change.
+hook, header or BUILD edit waits for the user's approval of that change.
 
 Maintain existing docs in place. Markdown guides are limited to **500 lines** (changelogs are exempt);
 normal guides should be 150–300 lines and entry points shorter. Do not append

@@ -83,7 +83,7 @@ struct ExtensionPinnedArtwork {
 }
 
 /// Parc's pinned-action badge, a deliberate departure from Chromium's
-/// bottom-right badge (Josh, November 1): an iPhone-style pill over the icon's
+/// bottom-right badge (November 1 request): an iPhone-style pill over the icon's
 /// top-right corner, overhanging it by `overhang` and growing leftward.
 enum ExtensionActionBadgeMetrics {
     static let height: CGFloat = 11

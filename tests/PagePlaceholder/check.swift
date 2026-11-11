@@ -57,7 +57,7 @@ struct PagePlaceholderCheck {
         }
         guard let screenshot = NSImage(contentsOf: URL(fileURLWithPath: arguments[1]))?
             .cgImage(forProposedRect: nil, context: nil, hints: nil) else { fatalError("unreadable screenshot") }
-        // Josh's screenshot (1024×584): the live pane at x 160, the frozen one
+        // The user's screenshot (1024×584): the live pane at x 160, the frozen one
         // 512 points to the right; below y 270 both show the same content.
         let paneSize = CGSize(width: 345, height: 568)
         let live = pixels(screenshot.cropping(to: CGRect(origin: CGPoint(x: 160, y: 12), size: paneSize))!)

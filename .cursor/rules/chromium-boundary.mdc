@@ -1,5 +1,5 @@
 ---
-description: Parc's engine logic stays in Parc-owned code; Chromium changes need Josh's approval
+description: Parc's engine logic stays in Parc-owned code; Chromium changes need the user's approval
 alwaysApply: true
 ---
 
@@ -9,6 +9,6 @@ Use a Chromium extension point first, then Parc-owned code under `Engine/Parc*`.
 Any new or larger patch, hook, Chromium header edit or Chromium BUILD edit is a
 last resort. Try the alternatives against the real code and write down why
 each fails for behaviour, speed, protected media, security fixes, upgrades and
-rebuilds. Then tell Josh plainly and wait for his approval of that change.
+rebuilds. Then tell the user plainly and wait for their approval of that change.
 No exception for small, temporary, test-only or release-blocking changes.
 See [AGENTS.md](../../AGENTS.md#chromium-boundary).

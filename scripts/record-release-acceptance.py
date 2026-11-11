@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Verify a fresh installed candidate, open it normally, and record bounded startup acceptance.
 
-Run only after Josh authorizes the ready candidate. Never kills an app, changes
+Run only after the user authorizes the ready candidate. Never kills an app, changes
 profiles, inspects protected authorization, or reads Keychain items.
 """
 import argparse
@@ -178,7 +178,7 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--seconds", type=int, default=90)
     parser.add_argument("--user-confirmed", action="store_true",
-                        help="record existing explicit Josh approval; verify the preserved artifact without any app launch")
+                        help="record the user's existing explicit approval; verify the preserved artifact without any app launch")
     parser.add_argument("--statement-file", type=Path)
     parser.add_argument("--confirmed-at", help="ISO 8601 timestamp with timezone of the recorded user confirmation")
     parser.add_argument("--raw-observation", type=Path, help="retain an interrupted observation unchanged as separate evidence")

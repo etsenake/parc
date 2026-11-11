@@ -52,7 +52,7 @@ engine builds, packaging or installations.
 ## Chromium boundary
 
 Parc's engine logic lives in Parc-owned code. Chromium's own files change only
-as a last resort and only with Josh's approval of that specific change.
+as a last resort and only with the user's approval of that specific change.
 [How Parc changes Chromium](docs/chromium-seams.md) defines where code goes, the
 hook pattern and every patch kept today with its reason. The boundary keeps a
 Chromium upgrade to a version bump plus small refits, keeps engine work from
@@ -82,9 +82,9 @@ Before any Chromium change:
   energy); protected-media behaviour; the flow of Chromium security fixes;
   upgrade refit cost; and rebuild cost, since a header edit recompiles every
   file that includes it.
-- Stop and tell Josh in plain words before writing it: what the change is for,
+- Stop and tell the user in plain words before writing it: what the change is for,
   which Chromium file it touches, each alternative and why it doesn't work, and
-  what it costs at upgrades and in rebuilds. Wait for his explicit approval of
+  what it costs at upgrades and in rebuilds. Wait for their explicit approval of
   that change. Silence, an assignment, an approval for something else, a
   release in progress or a reviewer's suggestion is not approval.
 - Once approved, use the smallest form that works: a one-call hook in the `.cc`

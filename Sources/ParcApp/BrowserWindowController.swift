@@ -13409,7 +13409,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     @objc private func toggleDeveloperModeMenuItem(_ sender: NSMenuItem) { toggleDeveloperMode(from: sender) }
 
     /// Developer Mode and Chromium's developer tools are one switch, at
-    /// Josh's request: on shows this site's developer toolbar and opens this
+    /// the user's request: on shows this site's developer toolbar and opens this
     /// page's JavaScript console; off hides the toolbar and closes this
     /// page's tools. Engines that can't say whether the tools are open keep
     /// the two separate.

@@ -6,7 +6,7 @@ import Foundation
 /// minutes, and installs when the Mac is away and a restart would interrupt
 /// nothing. The Mac is away five minutes into a sleep, display sleep, screen
 ///
-/// pointer input while nothing keeps the display on (Josh's addition, for a
+/// pointer input while nothing keeps the display on (the user's addition, for a
 /// Mac that never sleeps or locks).
 /// Times are awake time, which stops while the Mac sleeps: time asleep doesn't
 /// count, awake time already spent away does.

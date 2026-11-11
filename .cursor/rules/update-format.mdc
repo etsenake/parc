@@ -1,11 +1,11 @@
 ---
-description: Talk to Josh in plain spoken paragraphs
+description: Talk to the user in plain spoken paragraphs
 alwaysApply: true
 ---
 
 # Talk in plain spoken paragraphs
 
-Every reply, not only status, is plain spoken paragraphs Josh could listen to:
+Every reply, not only status, is plain spoken paragraphs the user could listen to:
 no tables, bullets, numbered lists or headings, and no hashes, file paths, code
 names or agent IDs unless he asks. Name things by what they do and say what
 each change means for someone using Parc.

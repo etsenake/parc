@@ -26,7 +26,7 @@ TITLE = 'Parc Developer ID 94HKA7L2DR'
 SPARKLE_TITLE = 'Parc Sparkle EdDSA key'
 NOTARY_TITLE = 'Parc notary profile'
 PROFILE = os.environ.get('PARC_NOTARY_PROFILE', 'parc-notary')
-# Josh's 1Password account holds the backups; 1Password's own OP_ACCOUNT can override it.
+# The user's 1Password account holds the backups; 1Password's own OP_ACCOUNT can override it.
 os.environ.setdefault('OP_ACCOUNT', 'my.1password.ca')
 spec = importlib.util.spec_from_file_location('parc_signing_sparkle', Path(__file__).with_name('sparkle.py'))
 sparkle = importlib.util.module_from_spec(spec)

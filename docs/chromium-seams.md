@@ -395,7 +395,7 @@ complete exactly once.
 6. Update `overlay.json` under the [overlay rules](../AGENTS.md#engine-and-release-operations), list
    the patch's reason in [kept patches](#kept-patches-and-why), and update the area's guide in place.
 
-A new hook or any other Chromium change first needs Josh's approval, with the alternatives tried and
+A new hook or any other Chromium change first needs the user's approval, with the alternatives tried and
 why each fails ([Chromium boundary](../AGENTS.md#chromium-boundary)).
 
 ## Builds and upgrades

@@ -4,7 +4,7 @@ import ImageIO
 ///
 ///
 /// `BlurredSnapshotView`: the snapshot is an aspect-filled `Image` at the
-/// content's full size, taken as the page leaves and never updated (as Josh
+/// content's full size, taken as the page leaves and never updated (as the user
 ///
 ///
 /// `FirstResponderAcceptingView` whose click sends `onDidClickBackground`

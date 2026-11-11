@@ -245,7 +245,7 @@ final class PArcContextMenuView: NSView {
 }
 
 ///
-/// at Josh's request in place of AppKit's grey menu at the pointer. The card
+/// at the user's request in place of AppKit's grey menu at the pointer. The card
 /// hangs beside the control like a submenu beside its row, and submenus hang
 /// the same way. Like NSMenu, `present` runs its own event loop and returns
 /// once the menu has closed and the chosen item has been performed, so the

@@ -141,7 +141,7 @@ def require_evidence(acceptance):
                 or confirmed_at.tzinfo is None or confirmation.get("scope") != "normal-startup"
                 or not isinstance(confirmation.get("statement"), str) or not confirmation["statement"].strip()
                 or acceptance.get("automatic_startup_acceptance_claimed") is not False):
-            raise ValueError("User-confirmed acceptance requires Josh's explicit dated normal-startup statement")
+            raise ValueError("User-confirmed acceptance requires the user's explicit dated normal-startup statement")
     else:
         raise ValueError("Acceptance must explicitly identify automatic or user-confirmed evidence")
 
