@@ -57,6 +57,8 @@ PC_DIALOG_COLOR(DestructiveButtonPressed, 0xD02F11, 1, 0xD02F11, 1)
 PC_DIALOG_COLOR(DestructiveButtonShadow, 0xB4250A, .3, 0xB4250A, .3)
 PC_DIALOG_COLOR(Indigo4, 0xE8E9FF, 1, 0x1C1D4F, 1)
 PC_DIALOG_COLOR(Indigo6, 0xC8CAFA, 1, 0x22246E, 1)
+// The Space name card's tint, behind a dialog input.
+PC_DIALOG_COLOR(FieldFill, 0x060E2B, .07, 0xEEEEF6, .10)
 }  // namespace
 #undef PC_DIALOG_COLOR
 
@@ -188,13 +190,14 @@ NSImageView* ExtensionArt(NSImage* icon) {
 }
 
 CGFloat AddHeading(NSView* root, NSString* title, NSString* message, CGFloat y,
-                   CGFloat maxMessageHeight) {
+                   CGFloat maxMessageHeight, bool selectableMessage) {
   const CGFloat width = kWidth - 2 * kInset;
   NSTextField* heading = Label(title, TitleFont(), PopoverTitle(), 4);
   [root addSubview:heading];
   y += 17 + PlaceLabel(heading, kInset, y + 17, width) + 8;
   if (!message.length) return y;
   NSTextField* label = Label(message, BodyFont(), PopoverMessage(), 1);
+  label.selectable = selectableMessage;
   CGFloat height = PlaceLabel(label, kInset, y, width);
   if (height <= maxMessageHeight) {
     [root addSubview:label];
@@ -221,36 +224,70 @@ CGFloat AddHeading(NSView* root, NSString* title, NSString* message, CGFloat y,
 }
 
 CGFloat PlaceFooter(NSView* root, CGFloat y, NSButton* checkbox, NSArray<NSButton*>* buttons) {
-  CGFloat buttonsWidth = 0;
-  for (NSButton* button in buttons) {
-    buttonsWidth += ((PCDialogButton*)button).bodyWidth;
-  }
-  const CGFloat buttonsX =
-      kWidth - 28 - buttonsWidth - 8 * (CGFloat)(buttons.count ? buttons.count - 1 : 0);
-  CGFloat footerHeight = 36;
-  if (checkbox) {
-    const CGFloat available = buttonsX - 8 - kInset;
-    NSSize size;
-    if ([checkbox isKindOfClass:PCDialogCheckbox.class]) {
-      size = [(PCDialogCheckbox*)checkbox sizeForWidth:available];
+  const CGFloat left = 28, right = kWidth - 28, rowWidth = right - left, gap = 8;
+  // Rows of buttons, the first being the bottom row with the Return button.
+  NSMutableArray<NSMutableArray<PCDialogButton*>*>* rows = [NSMutableArray array];
+  CGFloat used = 0;
+  for (NSButton* item in buttons) {
+    PCDialogButton* button = (PCDialogButton*)item;
+    if (button.bodyWidth > rowWidth) button.maximumWidth = rowWidth;
+    const CGFloat width = button.bodyWidth;
+    if (!rows.count || used + gap + width > rowWidth) {
+      [rows addObject:[NSMutableArray arrayWithObject:button]];
+      used = width;
     } else {
-      size = [checkbox.cell cellSizeForBounds:NSMakeRect(0, 0, available, CGFLOAT_MAX)];
-      size = NSMakeSize(std::min(ceil(size.width), available), ceil(size.height));
+      [rows.lastObject addObject:button];
+      used += gap + width;
     }
-    footerHeight = std::max(footerHeight, size.height);
-    checkbox.frame =
-        NSMakeRect(kInset, y + (footerHeight - size.height) / 2, size.width, size.height);
+  }
+  CGFloat bottomWidth = 0;
+  for (PCDialogButton* button in rows.firstObject) {
+    bottomWidth += button.bodyWidth + (bottomWidth ? gap : 0);
+  }
+  // A checkbox shares the bottom row only with room for a readable label.
+  NSSize checkboxSize = NSZeroSize;
+  BOOL checkboxRow = NO;
+  if (checkbox) {
+    CGFloat available = right - bottomWidth - gap - kInset;
+    if (available < 100) {
+      checkboxRow = YES;
+      available = kWidth - 2 * kInset;
+    }
+    if ([checkbox isKindOfClass:PCDialogCheckbox.class]) {
+      checkboxSize = [(PCDialogCheckbox*)checkbox sizeForWidth:available];
+    } else {
+      checkboxSize = [checkbox.cell cellSizeForBounds:NSMakeRect(0, 0, available, CGFLOAT_MAX)];
+      checkboxSize = NSMakeSize(std::min(ceil(checkboxSize.width), available),
+                                ceil(checkboxSize.height));
+    }
+    if (checkboxRow) {
+      checkbox.frame = NSMakeRect(kInset, y, checkboxSize.width, checkboxSize.height);
+      [root addSubview:checkbox];
+      y += checkboxSize.height + 16;
+    }
+  }
+  auto placeRow = [&](NSArray<PCDialogButton*>* row, CGFloat top, CGFloat height) {
+    CGFloat x = right;
+    for (PCDialogButton* button in row) {
+      // The view extends past the 36-point body for its centered border and lip.
+      const CGFloat width = button.bodyWidth;
+      button.frame = NSMakeRect(x - width - .5, top + (height - 36) / 2 - .5, width + 1, 38.5);
+      [root addSubview:button];
+      x -= width + gap;
+    }
+  };
+  for (NSInteger i = (NSInteger)rows.count - 1; i > 0; --i) {
+    placeRow(rows[i], y, 36);
+    y += 36 + 10;
+  }
+  CGFloat footerHeight = 36;
+  if (checkbox && !checkboxRow) {
+    footerHeight = std::max(footerHeight, checkboxSize.height);
+    checkbox.frame = NSMakeRect(kInset, y + (footerHeight - checkboxSize.height) / 2,
+                                checkboxSize.width, checkboxSize.height);
     [root addSubview:checkbox];
   }
-  CGFloat right = kWidth - 28;
-  for (NSButton* button in buttons) {
-    // The view extends past the 36-point body for its centered border and lip.
-    const CGFloat buttonWidth = ((PCDialogButton*)button).bodyWidth;
-    button.frame = NSMakeRect(right - buttonWidth - .5, y + (footerHeight - 36) / 2 - .5,
-                              buttonWidth + 1, 38.5);
-    [root addSubview:button];
-    right -= buttonWidth + 8;
-  }
+  if (rows.count) placeRow(rows.firstObject, y, footerHeight);
   return y + footerHeight + 28;
 }
 }  // namespace parc_dialog
@@ -316,6 +353,7 @@ using namespace parc_dialog;
 }
 @synthesize keyEvent = _keyEvent;
 @synthesize showsHint = _showsHint;
+@synthesize maximumWidth = _maximumWidth;
 - (instancetype)initWithTitle:(NSString*)title primary:(BOOL)primary {
   return [self initWithTitle:title primary:primary destructive:NO];
 }
@@ -368,7 +406,8 @@ using namespace parc_dialog;
   return [self.title sizeWithAttributes:@{NSFontAttributeName : ButtonFont()}].width;
 }
 - (CGFloat)bodyWidth {
-  return 12 + [self labelWidth] + (_showsHint ? 8 + [self hintSize].width : 0) + 12;
+  const CGFloat natural = 12 + [self labelWidth] + (_showsHint ? 8 + [self hintSize].width : 0) + 12;
+  return _maximumWidth > 0 ? std::min(natural, _maximumWidth) : natural;
 }
 // The view extends past the 36-point body for the centered border and the
 // two-point shadow below it.
@@ -457,15 +496,21 @@ using namespace parc_dialog;
     shape.lineWidth = 1;
     [shape stroke];
   }
+  NSMutableParagraphStyle* paragraph = [[NSMutableParagraphStyle alloc] init];
+  paragraph.lineBreakMode = NSLineBreakByTruncatingTail;
   NSDictionary* attributes = @{
     NSFontAttributeName : ButtonFont(),
-    NSForegroundColorAttributeName : foreground
+    NSForegroundColorAttributeName : foreground,
+    NSParagraphStyleAttributeName : paragraph
   };
-  const NSSize label = [self.title sizeWithAttributes:attributes];
-  [self.title drawAtPoint:NSMakePoint(NSMinX(body) + 12, NSMidY(body) - label.height / 2)
-           withAttributes:attributes];
-  if (!_showsHint) return;
   const NSSize hint = [self hintSize];
+  const NSSize label = [self.title sizeWithAttributes:attributes];
+  const CGFloat labelWidth =
+      NSWidth(body) - 24 - (_showsHint ? 8 + hint.width : 0);
+  [self.title drawInRect:NSMakeRect(NSMinX(body) + 12, NSMidY(body) - label.height / 2,
+                                    std::max<CGFloat>(labelWidth, 0), label.height)
+          withAttributes:attributes];
+  if (!_showsHint) return;
   const NSRect badge = NSMakeRect(NSMaxX(body) - 12 - hint.width,
                                   NSMidY(body) - hint.height / 2, hint.width, hint.height);
   NSBezierPath* badgeShape = ContinuousRect(badge, 4);
@@ -493,78 +538,39 @@ using namespace parc_dialog;
 }
 @end
 
+//
+// are the selection marks, so AppKit lays it out and draws keyboard focus.
 @implementation PCDialogCheckbox
 - (instancetype)initWithTitle:(NSString*)title target:(id)target action:(SEL)action {
   if ((self = [super initWithFrame:NSZeroRect])) {
-    // The switch type keeps the checkbox role and AppKit's click/Space toggle.
     [self setButtonType:NSButtonTypeSwitch];
     self.bordered = NO;
-    self.title = title;
-    self.font = BodyFont();
+    self.imagePosition = NSImageLeading;
+    NSImageSymbolConfiguration* large =
+        [NSImageSymbolConfiguration configurationWithScale:NSImageSymbolScaleLarge];
+    self.image = [[NSImage imageWithSystemSymbolName:@"circle" accessibilityDescription:nil]
+        imageWithSymbolConfiguration:large];
+    self.alternateImage =
+        [[NSImage imageWithSystemSymbolName:@"checkmark.circle.fill" accessibilityDescription:nil]
+            imageWithSymbolConfiguration:large];
+    self.contentTintColor = SelectionColor();
+    self.attributedTitle = [[NSAttributedString alloc]
+        initWithString:title
+            attributes:@{
+              NSFontAttributeName : BodyFont(),
+              NSForegroundColorAttributeName : PopoverMessage()
+            }];
+    self.cell.wraps = YES;
+    self.cell.lineBreakMode = NSLineBreakByWordWrapping;
     self.target = target;
     self.action = action;
     self.state = NSControlStateValueOff;
   }
   return self;
 }
-- (BOOL)isFlipped {
-  return YES;
-}
-- (NSImage*)markForState:(NSControlStateValue)state {
-  NSImageSymbolConfiguration* configuration =
-      [NSImageSymbolConfiguration configurationWithPointSize:14
-                                                      weight:NSFontWeightRegular
-                                                       scale:NSImageSymbolScaleLarge];
-  NSString* name = state == NSControlStateValueOn ? @"checkmark.circle.fill" : @"circle";
-  return [[NSImage imageWithSystemSymbolName:name accessibilityDescription:nil]
-      imageWithSymbolConfiguration:configuration];
-}
-- (NSSize)markSize {
-  return [self markForState:NSControlStateValueOff].size;
-}
-- (NSDictionary*)labelAttributes {
-  return @{
-    NSFontAttributeName : BodyFont(),
-    NSForegroundColorAttributeName : self.enabled
-        ? PopoverMessage()
-        : [PopoverMessage() colorWithAlphaComponent:.3]
-  };
-}
-- (NSSize)labelSizeForWidth:(CGFloat)width {
-  const NSRect bounds =
-      [self.title boundingRectWithSize:NSMakeSize(std::max<CGFloat>(width, 1), CGFLOAT_MAX)
-                               options:NSStringDrawingUsesLineFragmentOrigin
-                            attributes:[self labelAttributes]];
-  return NSMakeSize(ceil(NSWidth(bounds)), ceil(NSHeight(bounds)));
-}
-- (CGFloat)firstLineHeight {
-  NSFont* font = BodyFont();
-  return ceil(font.ascender - font.descender + font.leading);
-}
 - (NSSize)sizeForWidth:(CGFloat)width {
-  const NSSize mark = [self markSize];
-  const NSSize label = [self labelSizeForWidth:width - mark.width - 8];
-  return NSMakeSize(std::min(width, ceil(mark.width) + 8 + label.width),
-                    std::max(ceil(mark.height), label.height));
-}
-- (NSSize)intrinsicContentSize {
-  return [self sizeForWidth:CGFLOAT_MAX];
-}
-- (NSRect)markRect {
-  const NSSize mark = [self markSize];
-  return NSMakeRect(0, std::max<CGFloat>(0, ([self firstLineHeight] - mark.height) / 2),
-                    mark.width, mark.height);
-}
-- (void)setState:(NSControlStateValue)state {
-  const BOOL changed = state != self.state;
-  [super setState:state];
-  if (!changed) return;
-  self.needsDisplay = YES;
-  NSAccessibilityPostNotification(self, NSAccessibilityValueChangedNotification);
-}
-- (void)setEnabled:(BOOL)enabled {
-  [super setEnabled:enabled];
-  self.needsDisplay = YES;
+  const NSSize size = [self.cell cellSizeForBounds:NSMakeRect(0, 0, width, CGFLOAT_MAX)];
+  return NSMakeSize(std::min(ceil(size.width), width), ceil(size.height));
 }
 - (NSAccessibilityRole)accessibilityRole {
   return NSAccessibilityCheckBoxRole;
@@ -572,79 +578,39 @@ using namespace parc_dialog;
 - (id)accessibilityValue {
   return self.state == NSControlStateValueOn ? @"Selected" : @"Not selected";
 }
+- (BOOL)sendAction:(SEL)action to:(id)target {
+  NSAccessibilityPostNotification(self, NSAccessibilityValueChangedNotification);
+  return [super sendAction:action to:target];
+}
 - (void)resetCursorRects {
   if (self.enabled) [self addCursorRect:self.bounds cursor:NSCursor.pointingHandCursor];
 }
-// Space toggles; Return and Escape continue to the sheet's buttons.
+// Space toggles (not Command-, Option- or Control-Space, nor a repeat); every
+// other key, Return and Escape included, continues to the dialog.
 - (void)keyDown:(NSEvent*)event {
-  const NSEventModifierFlags modifiers =
-      event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
-                             NSEventModifierFlagOption | NSEventModifierFlagShift);
-  if (!modifiers && [event.charactersIgnoringModifiers isEqualToString:@" "]) {
-    if (self.enabled) [self performClick:self];
+  if (event.keyCode == 49 &&
+      !(event.modifierFlags &
+        (NSEventModifierFlagCommand | NSEventModifierFlagOption | NSEventModifierFlagControl))) {
+    if (!event.isARepeat) [self performClick:nil];
     return;
   }
   [self.nextResponder keyDown:event];
 }
-- (NSRect)focusRingMaskBounds {
-  return [self markRect];
-}
-- (void)drawFocusRingMask {
-  [[NSBezierPath bezierPathWithOvalInRect:NSInsetRect([self markRect], .5, .5)] fill];
-}
-- (void)viewDidChangeEffectiveAppearance {
-  self.needsDisplay = YES;
-}
-- (void)drawRect:(NSRect)dirtyRect {
-  const NSRect mark = [self markRect];
-  CGContextRef context = NSGraphicsContext.currentContext.CGContext;
-  CGContextSaveGState(context);
-  if (!self.enabled) CGContextSetAlpha(context, .5);
-  // Monochrome tint, so the checkmark stays cut out of the filled circle.
-  CGContextBeginTransparencyLayerWithRect(context, NSRectToCGRect(mark), nullptr);
-  [[self markForState:self.state] drawInRect:mark fromRect:NSZeroRect
-                                   operation:NSCompositingOperationSourceOver
-                                    fraction:1 respectFlipped:YES hints:nil];
-  [SelectionColor() set];
-  NSRectFillUsingOperation(mark, NSCompositingOperationSourceAtop);
-  CGContextEndTransparencyLayer(context);
-  CGContextRestoreGState(context);
-  const CGFloat x = ceil(NSWidth(mark)) + 8;
-  const CGFloat width = NSWidth(self.bounds) - x;
-  const NSSize label = [self labelSizeForWidth:width];
-  const CGFloat y = std::max<CGFloat>(0, (NSHeight(mark) - [self firstLineHeight]) / 2);
-  [self.title drawWithRect:NSMakeRect(x, y, width, label.height)
-                   options:NSStringDrawingUsesLineFragmentOrigin
-                attributes:[self labelAttributes]];
-}
 @end
 
-@interface PCDialogInputTextField : NSTextField
-@property(nonatomic, weak) NSView* frameView;
-@end
-@implementation PCDialogInputTextField
-@synthesize frameView = _frameView;
-- (BOOL)becomeFirstResponder {
-  const BOOL accepted = [super becomeFirstResponder];
-  _frameView.needsDisplay = YES;
-  return accepted;
-}
-- (void)textDidEndEditing:(NSNotification*)notification {
-  [super textDidEndEditing:notification];
-  _frameView.needsDisplay = YES;
-}
-@end
-
+//
+// card without a focus ring, and a press on the card's padding focuses it.
 @implementation PCDialogInputField {
-  PCDialogInputTextField* _field;
-  NSArray<id>* _keyObservers;
+  NSTextField* _field;
 }
-// The body is 36 points tall, like the buttons, inside a 3-point halo margin.
-static const CGFloat kHalo = 3;
+static const CGFloat kFieldPadding = 12;
 - (instancetype)initWithText:(NSString*)text {
-  if ((self = [super initWithFrame:NSMakeRect(0, 0, 100, 36 + 2 * kHalo)])) {
-    _field = [[PCDialogInputTextField alloc] initWithFrame:NSZeroRect];
-    _field.frameView = self;
+  return [self initWithText:text secure:NO];
+}
+- (instancetype)initWithText:(NSString*)text secure:(BOOL)secure {
+  if ((self = [super initWithFrame:NSMakeRect(0, 0, 100, 36)])) {
+    _field = secure ? [[NSSecureTextField alloc] initWithFrame:NSZeroRect]
+                    : [[NSTextField alloc] initWithFrame:NSZeroRect];
     _field.stringValue = text;
     _field.bordered = NO;
     _field.bezeled = NO;
@@ -666,72 +632,172 @@ static const CGFloat kHalo = 3;
 - (NSTextField*)field {
   return _field;
 }
-- (NSRect)body {
-  return NSInsetRect(self.bounds, kHalo, kHalo);
-}
 - (void)layOutField {
-  const NSRect body = [self body];
   const CGFloat height = ceil(_field.intrinsicContentSize.height);
-  // Like the labels, the text (not the cell's 2-point inset) sits 12 points in.
-  _field.frame = NSMakeRect(NSMinX(body) + 10, NSMidY(body) - height / 2,
-                            NSWidth(body) - 20, height);
+  // The cell's 2-point inset puts the text itself on the 12-point padding.
+  _field.frame = NSMakeRect(kFieldPadding - 2, (NSHeight(self.bounds) - height) / 2,
+                            NSWidth(self.bounds) - 2 * kFieldPadding + 4, height);
 }
 - (void)setFrameSize:(NSSize)size {
   [super setFrameSize:size];
   [self layOutField];
 }
-- (BOOL)editing {
-  NSWindow* window = self.window;
-  NSText* editor = _field.currentEditor;
-  return window.isKeyWindow && editor && window.firstResponder == editor;
-}
-- (void)viewWillMoveToWindow:(NSWindow*)window {
-  for (id observer in _keyObservers) {
-    [NSNotificationCenter.defaultCenter removeObserver:observer];
-  }
-  _keyObservers = nil;
-  if (!window) return;
-  __weak PCDialogInputField* weak = self;
-  void (^redraw)(NSNotification*) = ^(NSNotification*) {
-    weak.needsDisplay = YES;
-  };
-  _keyObservers = @[
-    [NSNotificationCenter.defaultCenter addObserverForName:NSWindowDidBecomeKeyNotification
-                                                    object:window
-                                                     queue:nil
-                                                usingBlock:redraw],
-    [NSNotificationCenter.defaultCenter addObserverForName:NSWindowDidResignKeyNotification
-                                                    object:window
-                                                     queue:nil
-                                                usingBlock:redraw],
-  ];
-}
-- (void)dealloc {
-  for (id observer in _keyObservers) {
-    [NSNotificationCenter.defaultCenter removeObserver:observer];
-  }
-}
 - (void)mouseDown:(NSEvent*)event {
   [self.window makeFirstResponder:_field];
-}
-- (void)resetCursorRects {
-  [self addCursorRect:[self body] cursor:NSCursor.IBeamCursor];
 }
 - (void)viewDidChangeEffectiveAppearance {
   self.needsDisplay = YES;
 }
 - (void)drawRect:(NSRect)dirtyRect {
-  const NSRect body = [self body];
-  const BOOL editing = [self editing];
-  if (editing) {
-    [[SelectionColor() colorWithAlphaComponent:.18] setFill];
-    [ContinuousRect(NSInsetRect(body, -kHalo, -kHalo), 8 + kHalo) fill];
+  [FieldFill() setFill];
+  [ContinuousRect(self.bounds, 8) fill];
+}
+@end
+
+@implementation PCDialogPanel
+@synthesize enterButton = _enterButton;
+@synthesize escapeButton = _escapeButton;
+- (BOOL)composing {
+  NSResponder* responder = self.firstResponder;
+  return [responder isKindOfClass:NSTextView.class] && ((NSTextView*)responder).hasMarkedText;
+}
+- (void)cancelOperation:(id)sender {
+  NSButton* button = _escapeButton;
+  if (button.enabled && !self.composing) [button performClick:self];
+}
+- (BOOL)performKeyEquivalent:(NSEvent*)event {
+  if (event.type != NSEventTypeKeyDown) return [super performKeyEquivalent:event];
+  if (self.composing) return NO;
+  const BOOL plain = !(event.modifierFlags &
+                       (NSEventModifierFlagCommand | NSEventModifierFlagControl |
+                        NSEventModifierFlagOption | NSEventModifierFlagShift));
+  NSButton* enter = _enterButton;
+  if (plain && enter &&
+      (event.keyCode == 76 || [event.charactersIgnoringModifiers isEqualToString:@"\003"])) {
+    if (enter.enabled) [enter performClick:self];
+    return YES;
   }
-  NSBezierPath* shape = ContinuousRect(NSInsetRect(body, .5, .5), 8);
-  [NeutralButtonFace() setFill];
-  [shape fill];
-  [(editing ? SelectionColor() : NeutralButtonBorder()) setStroke];
-  shape.lineWidth = 1;
-  [shape stroke];
+  return [super performKeyEquivalent:event];
+}
+@end
+
+@implementation PCDialogPrompt {
+  NSString* _title;
+  NSString* _message;
+  NSMutableArray<NSButton*>* _buttons;
+  PCDialogPanel* _window;
+}
+@synthesize icon = _icon;
+@synthesize escapeButton = _escapeButton;
+- (instancetype)initWithTitle:(NSString*)title message:(NSString*)message {
+  if ((self = [super init])) {
+    _title = [title copy];
+    _message = [message copy];
+    _buttons = [NSMutableArray array];
+  }
+  return self;
+}
+- (NSButton*)addButtonWithTitle:(NSString*)title
+                           role:(PCDialogPromptRole)role
+                       response:(NSModalResponse)response {
+  NSAssert(!_window, @"Add buttons before laying out the prompt");
+  const BOOL primary = role == PCDialogPromptPrimary || role == PCDialogPromptDestructive;
+  PCDialogButton* button = [[PCDialogButton alloc] initWithTitle:title
+                                                         primary:primary
+                                                     destructive:role == PCDialogPromptDestructive];
+  button.tag = response;
+  button.target = self;
+  button.action = @selector(respond:);
+  if (primary) {
+    button.keyEquivalent = @"\r";
+  } else if (role == PCDialogPromptCancel) {
+    button.keyEquivalent = @"\033";
+    if (!_escapeButton) _escapeButton = button;
+  } else {
+    button.showsHint = NO;
+  }
+  button.keyEquivalentModifierMask = 0;
+  [_buttons addObject:button];
+  return button;
+}
+- (void)respond:(NSButton*)sender {
+  __attribute__((objc_precise_lifetime)) PCDialogPrompt* keep = self;
+  (void)keep;
+  NSWindow* window = _window;
+  if (sender.window == window && window.sheetParent) {
+    [window.sheetParent endSheet:window returnCode:sender.tag];
+  }
+}
+- (NSWindow*)window {
+  if (_window) return _window;
+  PCDialogPanel* panel = [[PCDialogPanel alloc] initWithContentRect:NSMakeRect(0, 0, kWidth, 200)
+                                                          styleMask:NSWindowStyleMaskTitled
+                                                            backing:NSBackingStoreBuffered
+                                                              defer:YES];
+  panel.releasedWhenClosed = NO;
+  panel.becomesKeyOnlyIfNeeded = NO;
+  panel.title = _title;
+  panel.accessibilityLabel = _title;
+  PrepareSheet(panel);
+  PCDialogBaseView* root = [[PCDialogBaseView alloc] initWithFrame:NSZeroRect];
+  CGFloat y = kInset;
+  NSView* art;
+  if (_icon) {
+    NSImageView* image = [NSImageView imageViewWithImage:_icon];
+    image.imageScaling = NSImageScaleProportionallyUpOrDown;
+    image.frame = NSMakeRect(0, 0, kArtSize, kArtSize);
+    art = image;
+  } else {
+    NSRect markRect;
+    NSImage* mark = ParcMark(&markRect);
+    art = [[PCDialogPictureIcon alloc] initWithImage:mark imageRect:markRect];
+  }
+  [art setAccessibilityElement:NO];
+  art.frameOrigin = NSMakePoint(kInset, y);
+  [root addSubview:art];
+  y = AddHeading(root, _title, _message, y + kArtSize, 240, true) + 22;
+  // Footer order, right to left: the Return button, Cancel, then auxiliaries.
+  NSMutableArray<NSButton*>* ordered = [NSMutableArray array];
+  for (NSButton* button in _buttons) {
+    if ([button.keyEquivalent isEqualToString:@"\r"]) [ordered addObject:button];
+  }
+  for (NSButton* button in _buttons) {
+    if ([button.keyEquivalent isEqualToString:@"\033"]) [ordered addObject:button];
+  }
+  for (NSButton* button in _buttons) {
+    if (!button.keyEquivalent.length) [ordered addObject:button];
+  }
+  y = PlaceFooter(root, y, nil, ordered);
+  root.frame = NSMakeRect(0, 0, kWidth, y);
+  panel.contentView = root;
+  [panel setContentSize:NSMakeSize(kWidth, y)];
+  NSButton* enter = nil;
+  for (NSButton* button in _buttons) {
+    if ([button.keyEquivalent isEqualToString:@"\r"]) {
+      enter = button;
+      break;
+    }
+  }
+  panel.enterButton = enter;
+  panel.escapeButton = _escapeButton;
+  if (enter) [panel setAccessibilityDefaultButton:enter];
+  _window = panel;
+  return panel;
+}
+- (void)setEscapeButton:(NSButton*)button {
+  _escapeButton = button;
+  _window.escapeButton = button;
+}
+- (void)beginSheetModalForWindow:(NSWindow*)parent
+               completionHandler:(void (^)(NSModalResponse))handler {
+  NSWindow* window = self.window;
+  void (^completion)(NSModalResponse) = [handler copy];
+  // The completion retains this prompt (and its button targets) until the
+  // sheet ends.
+  [parent beginSheet:window
+      completionHandler:^(NSModalResponse response) {
+        (void)self;
+        if (completion) completion(response);
+      }];
 }
 @end

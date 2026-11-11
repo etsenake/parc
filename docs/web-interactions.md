@@ -118,9 +118,9 @@ unrelated page or answered after its original owner retires.
 
 Page dialogs use the engine's shared Parc dialog (`dialog_style.mm`): Parc's
 mark, the bold title, the page's text (scrolling when very long), key-badged
-**Cancel** (Escape) and **OK** (Return or keypad Enter). A prompt's field sits
-16 points below the text, 36 points tall, and edits without the system focus
-ring: its border and soft halo take Parc's selection blue. OK stays inert for
+**Cancel** (Escape) and **OK** (Return or keypad Enter). A prompt's field is
+the app dialog's tinted rounded card ([dialogs](dialogs.md)): 16 points below
+the text, 36 points tall with 12-point padding and no focus ring. OK stays inert for
 half a second after the sheet appears, and a held Return or one pressed before
 then never accepts, so a page cannot time a dialog under a keystroke. An input
 method composing in the field keeps Return and Escape. A plain alert still has

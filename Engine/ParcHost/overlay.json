@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 667,
+  "version": 668,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -14,7 +14,7 @@
     {
       "source": "Engine/ParcNative/BUILD.gn",
       "target": "parc/native/BUILD.gn",
-      "sha256": "82c63859011452fefcf273544a369b8c9125e7550e9cd4526dd9c2cb92522b3b"
+      "sha256": "fbd92d3a96c79825d0a68c23bb0542b268c0e2c7144958feda7c260baef1e6cb"
     },
     {
       "source": "Engine/ParcNative/page_host.h",
@@ -139,7 +139,7 @@
     {
       "source": "Engine/ParcNative/javascript_dialog_presenter.mm",
       "target": "parc/native/javascript_dialog_presenter.mm",
-      "sha256": "6c3203a78abe96233ba1ee0a930f6ed66ab3f30b7f6624d891fd48eb47df07d8"
+      "sha256": "584f1040b8669405ec4b8a4cbf725c87b55f1253938006c4bbee801d24808be2"
     },
     {
       "source": "Engine/ParcNative/autofill_save_presenter.h",
@@ -499,12 +499,12 @@
     {
       "source": "Engine/ParcNative/dialog_style.h",
       "target": "parc/native/dialog_style.h",
-      "sha256": "02800c196016793b1694640b757195734f1220d1ee7d304a8edfa1bb9d09ec66"
+      "sha256": "544b50d5dae2c092ff270b737b36b3b7f528dc357d04d2ead75f7d8ab441bdfc"
     },
     {
       "source": "Engine/ParcNative/dialog_style.mm",
       "target": "parc/native/dialog_style.mm",
-      "sha256": "1a3087020d9f0a62bcc2edbc2a02bcbe737117ab78059543f1cd27999ea49d98"
+      "sha256": "96ac360bb2c471b6fccaed9d9e5dc43e22a53dc4915c1223ebcf72962672c26d"
     },
     {
       "source": "Engine/ParcNative/tab_transfer.h",
