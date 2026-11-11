@@ -42,7 +42,8 @@ repository folders:
 | `Engine/ParcChromium/tests` | `parc_tests` folders inside each layer | Parc's regression suites for Chromium code |
 | `Engine/ParcImport`, `Engine/ParcInternalExtension` | `//parc/importer`, `//parc/internal_extension` | Browser import service and the internal extension |
 
-Patches live in `Engine/ParcHost/integration/`. A Parc file that must see a layer's internals, such as
+Patches live in `Engine/ParcHost/integration/`, except the extension context-menu patch, which sits
+beside its Parc code in `Engine/ParcNative/`. A Parc file that must see a layer's internals, such as
 a Media Source policy that touches ChunkDemuxer's locked state, is installed inside that layer, for
 example `media/filters/parc_source_buffer_eviction.cc`, and the layer's BUILD file lists it. Editing
 it recompiles that file and relinks; it never touches the Chromium headers around it.
