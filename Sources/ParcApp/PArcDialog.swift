@@ -11,13 +11,16 @@ import SwiftUI
 ///
 @MainActor
 final class PArcDialog: NSObject, NSTextFieldDelegate {
-    enum Response: Equatable { case confirm, alwaysConfirm, auxiliary, cancel }
+    enum Response: Equatable { case confirm, alwaysConfirm, secondary, auxiliary, cancel }
 
     ///
     ///
     /// `BorderlessTextFieldView` — 14-point regular PopoverTitle text, no
     ///
-    /// confirm button while the trimmed text is empty (`isValidWhenEmpty`).
+    /// rounded card its other name inputs use (the Space name card), so the
+    /// field reads as an input and, like those, shows focus by its caret alone.
+    /// `required` disables the confirm button while the trimmed text is empty
+    /// (`isValidWhenEmpty`).
     struct Field {
         var value: String
         var placeholder: String
@@ -34,8 +37,15 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
         /// `ButtonsConfig.auxiliaryButton`: a neutral button without a hotkey
         /// hint left of Cancel, such as Quit's "Quit, and don’t ask again".
         var auxiliary: String?
+        /// A neutral button without a hotkey hint directly left of the confirm
+        /// button, for a second action that is not Cancel (Retry, then Close).
+        /// With no Cancel button, Escape leaves the dialog open, as `NSAlert` did.
+        var secondary: String?
         /// The text input, below the title and any message.
         var field: Field?
+        /// Selectable read-only text in a scrolling card below the message, for
+        /// a long error that the message would truncate.
+        var details: String?
         ///
         var width: CGFloat = 450
         /// `ButtonsConfig.destructive` / `DialogButtonType.primaryAction(isDestructive:)`:
@@ -48,7 +58,8 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
     let confirmButton: PArcDialogButton
     let cancelButton: PArcDialogButton?
     let auxiliaryButton: PArcDialogButton?
-    let suppression: NSButton?
+    let secondaryButton: PArcDialogButton?
+    let suppression: ParcSelectionCheckbox?
     let textField: NSTextField?
     private let requiresText: Bool
     private weak var parent: NSWindow?
@@ -64,7 +75,9 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
         confirmButton = PArcDialogButton(title: content.confirm, primary: true, destructive: content.destructive)
         cancelButton = content.cancel.map { PArcDialogButton(title: $0, primary: false) }
         auxiliaryButton = content.auxiliary.map { PArcDialogButton(title: $0, primary: false, hint: false) }
-        suppression = content.suppression.map { PointingHandButton(checkboxWithTitle: $0, target: nil, action: nil) }
+        secondaryButton = content.secondary.map { PArcDialogButton(title: $0, primary: false, hint: false) }
+        suppression = content.suppression.map { ParcSelectionCheckbox(title: $0, labelAttributes: [
+            .font: NSFont.systemFont(ofSize: 14), .foregroundColor: PArcDialogStyle.popoverMessage]) }
         textField = content.field.map { field in
             let text = NSTextField(string: field.value)
             text.placeholderString = field.placeholder
@@ -78,11 +91,12 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
         requiresText = content.field?.required ?? false
         super.init()
         textField?.delegate = self
-        (panel as? PArcDialogPanel)?.onCancel = { [weak self] in self?.cancel(nil) }
+        (panel as? PArcDialogPanel)?.onCancel = { [weak self] in self?.escape() }
         (panel as? PArcDialogPanel)?.onConfirm = { [weak self] in self?.confirmButton.performClick(nil) }
         confirmButton.target = self; confirmButton.action = #selector(confirm(_:)); confirmButton.keyEquivalent = "\r"
         cancelButton?.target = self; cancelButton?.action = #selector(cancel(_:)); cancelButton?.keyEquivalent = "\u{1b}"
         auxiliaryButton?.target = self; auxiliaryButton?.action = #selector(auxiliary(_:))
+        secondaryButton?.target = self; secondaryButton?.action = #selector(secondary(_:))
 
         let inset: CGFloat = 38, width = content.width - 2 * inset
         let root = PArcDialogBaseView(frame: .zero)
@@ -100,26 +114,34 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
             root.addSubview(label)
             y += PArcDialogStyle.place(label, x: inset, y: y, width: width)
         }
+        // Between the message and an input (or the title's own padding and one).
+        let accessoryGap: CGFloat = content.message != nil ? 16 : 8
+        if let details = content.details {
+            y += accessoryGap
+            let card = PArcDialogFieldCard(frame: NSRect(x: inset, y: y, width: width, height: PArcDialogStyle.detailsHeight))
+            let scroll = PArcDialogStyle.detailsView(details, size: card.bounds.insetBy(dx: 4, dy: 4).size)
+            scroll.frame = card.bounds.insetBy(dx: 4, dy: 4); card.addSubview(scroll)
+            root.addSubview(card)
+            y += card.frame.height
+        }
         if let textField {
-            if content.message != nil { y += 12 }
-            // Like the labels, the text (not the cell's 2-point inset) sits on the inset.
+            y += accessoryGap
+            // The cell's 2-point inset puts the text itself on the card's 12-point padding.
+            let card = PArcDialogFieldCard(frame: NSRect(x: inset, y: y, width: width, height: PArcDialogStyle.fieldHeight))
             let height = ceil(textField.intrinsicContentSize.height)
-            textField.frame = NSRect(x: inset - 2, y: y, width: width + 4, height: height)
-            root.addSubview(textField)
-            y += height
+            textField.frame = NSRect(x: PArcDialogStyle.fieldPadding - 2, y: (card.frame.height - height) / 2,
+                                     width: width - 2 * PArcDialogStyle.fieldPadding + 4, height: height)
+            card.addSubview(textField); card.field = textField
+            root.addSubview(card)
+            y += card.frame.height
         }
         y += 22
 
-        let buttons = [confirmButton] + [cancelButton, auxiliaryButton].compactMap { $0 }
+        let buttons = [confirmButton] + [secondaryButton, cancelButton, auxiliaryButton].compactMap { $0 }
         var footerHeight: CGFloat = 36
         if let suppression {
-            suppression.attributedTitle = NSAttributedString(string: suppression.title, attributes: [
-                .font: NSFont.systemFont(ofSize: 14), .foregroundColor: PArcDialogStyle.popoverMessage])
-            suppression.cell?.wraps = true; suppression.cell?.lineBreakMode = .byWordWrapping
             let buttonsX = content.width - 28 - buttons.map(\.bodyWidth).reduce(0, +) - CGFloat(buttons.count - 1) * 8
-            let available = buttonsX - 8 - inset
-            let size = suppression.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: available, height: .greatestFiniteMagnitude)) ?? .zero
-            let fitted = NSSize(width: min(ceil(size.width), available), height: ceil(size.height))
+            let fitted = suppression.fittedSize(maxWidth: buttonsX - 8 - inset)
             footerHeight = max(footerHeight, fitted.height)
             suppression.frame = NSRect(x: inset, y: y + (footerHeight - fitted.height) / 2, width: fitted.width, height: fitted.height)
             root.addSubview(suppression)
@@ -161,7 +183,7 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
             if confirmButton.isEnabled { confirmButton.performClick(nil) }
             return true
         }
-        if commandSelector == #selector(NSResponder.cancelOperation(_:)) { cancel(nil); return true }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) { escape(); return true }
         return false
     }
 
@@ -177,6 +199,26 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
         if let textField { panel.makeFirstResponder(textField); textField.currentEditor()?.selectAll(nil) }
         return true
     }
+
+    /// The app-modal form of `begin(for:)`, for an alert with no window to hang
+    /// from. Returns once a button or Escape has ended it.
+    func runModal() -> Response {
+        guard parent == nil else { return .cancel }
+        panel.center()
+        NSApp.runModal(for: panel)
+        panel.orderOut(nil)
+        return response
+    }
+
+    /// Shows an informational or error alert as a sheet and forgets it. A
+    /// window that already shows a sheet refuses, unless `queued`.
+    @discardableResult
+    static func inform(in window: NSWindow, _ content: Content, queued: Bool = false) -> Bool {
+        PArcDialog(content).begin(for: window, queued: queued) { _ in }
+    }
+
+    /// `NSResponder.presentError`: an app-modal alert for `error`.
+    static func present(_ error: Error) { _ = PArcDialog(.init(error: error)).runModal() }
 
     ///
     /// message, the confirm button and Cancel. `decided` receives true for the
@@ -197,16 +239,35 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
     @objc private func confirm(_ sender: Any?) {
         // An input method composing in the field keeps its Return.
         guard confirmButton.isEnabled, (textField?.currentEditor() as? NSTextView)?.hasMarkedText() != true else { return }
-        response = suppression?.state == .on ? .alwaysConfirm : .confirm
-        parent?.endSheet(panel)
+        end(suppression?.state == .on ? .alwaysConfirm : .confirm)
     }
-    @objc private func auxiliary(_ sender: Any?) {
-        response = .auxiliary
-        parent?.endSheet(panel)
+    @objc private func secondary(_ sender: Any?) { end(.secondary) }
+    @objc private func auxiliary(_ sender: Any?) { end(.auxiliary) }
+    @objc private func cancel(_ sender: Any?) { end(.cancel) }
+
+    /// Escape cancels, but a choice between actions with no Cancel button
+    /// stays open until one is picked, like `NSAlert`; a lone OK still closes.
+    private func escape() {
+        guard cancelButton != nil || (secondaryButton == nil && auxiliaryButton == nil) else { return }
+        cancel(nil)
     }
-    @objc private func cancel(_ sender: Any?) {
-        response = .cancel
-        parent?.endSheet(panel)
+
+    private func end(_ response: Response) {
+        self.response = response
+        if let parent { parent.endSheet(panel) } else if NSApp.modalWindow === panel { NSApp.stopModal() }
+    }
+}
+
+extension PArcDialog.Content {
+    /// An informational alert in plain text, as `NSAlert` showed it.
+    init(title: String, message: String? = nil, confirm: String = "OK", cancel: String? = nil) {
+        self.init(title: [(title, false)], message: message.map { [($0, false)] }, confirm: confirm, cancel: cancel)
+    }
+
+    /// `NSAlert(error:)`: the error's description, or `title` in its place,
+    /// with its recovery suggestion as the message.
+    init(error: Error, title: String? = nil) {
+        self.init(title: title ?? error.localizedDescription, message: (error as NSError).localizedRecoverySuggestion)
     }
 }
 
@@ -215,6 +276,13 @@ private final class PArcDialogPanel: NSPanel {
     var onCancel: (() -> Void)?
     var onConfirm: (() -> Void)?
     override func cancelOperation(_ sender: Any?) { onCancel?() }
+    // Return reaches the confirm button's key equivalent from any control, but
+    // a composing input method keeps the key to commit its text.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if (firstResponder as? NSTextView)?.hasMarkedText() == true,
+           event.modifierFlags.intersection([.command, .control, .option]).isEmpty { return false }
+        return super.performKeyEquivalent(with: event)
+    }
     // Keypad Enter types U+0003, so the button's Return equivalent misses it.
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 76, event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty { onConfirm?(); return }
@@ -261,6 +329,25 @@ enum PArcDialogStyle {
     static let destructiveShadow = color(0xB4250A, 0.3, 0xB4250A, 0.3)
     static let indigo4 = color(0xE8E9FF, 1, 0x1C1D4F, 1)
     static let indigo6 = color(0xC8CAFA, 1, 0x22246E, 1)
+    /// Parc's soft input card, the Space name card's tint over PopoverBackground.
+    static let fieldFill = color(0x060E2B, 0.07, 0xEEEEF6, 0.10)
+    static let fieldHeight: CGFloat = 36
+    static let fieldPadding: CGFloat = 12
+    static let detailsHeight: CGFloat = 128
+
+    static func detailsView(_ text: String, size: NSSize) -> NSScrollView {
+        let scroll = NSScrollView(frame: NSRect(origin: .zero, size: size))
+        scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true; scroll.drawsBackground = false
+        let view = NSTextView(frame: scroll.bounds)
+        view.string = text; view.isEditable = false; view.isSelectable = true; view.drawsBackground = false
+        view.font = .systemFont(ofSize: 13); view.textColor = popoverTitle
+        view.textContainerInset = NSSize(width: 8, height: 6)
+        view.isVerticallyResizable = true; view.isHorizontallyResizable = false; view.autoresizingMask = [.width]
+        view.textContainer?.widthTracksTextView = true
+        view.setAccessibilityLabel("Details")
+        scroll.documentView = view
+        return scroll
+    }
 
     static let buttonFont = NSFont.systemFont(ofSize: 13, weight: .medium)
     static var hintFont: NSFont {
@@ -326,6 +413,80 @@ enum PArcDialogStyle {
         path.close()
         return path
     }
+}
+
+/// Parc's selection mark, the onboarding bookmark picker's: the SF Symbol
+/// `circle`, or `checkmark.circle.fill` when selected, at large scale in the
+/// selection colour, read as "Selected" or "Not selected".
+enum ParcSelectionMark {
+    /// The onboarding action blue (`OnboardingSetupPalette.action`).
+    static let tint = NSColor(srgbRed: 49 / 255, green: 57 / 255, blue: 251 / 255, alpha: 1)
+    static func symbolName(selected: Bool) -> String { selected ? "checkmark.circle.fill" : "circle" }
+    static func accessibilityValue(selected: Bool) -> String { selected ? "Selected" : "Not selected" }
+}
+
+/// The mark for SwiftUI rows, such as the bookmark picker's.
+struct ParcSelectionMarkImage: View {
+    let selected: Bool
+    let color: NSColor
+    var body: some View {
+        Image(systemName: ParcSelectionMark.symbolName(selected: selected))
+            .imageScale(.large).foregroundColor(Color(nsColor: color))
+    }
+}
+
+/// A labelled checkbox drawn with that mark, for AppKit modals. It stays an
+/// `NSButton` switch, so VoiceOver reads a checkbox, Space and clicks toggle it
+/// and the system draws keyboard focus; every other key, Return and Escape
+/// included, passes on to the dialog.
+@MainActor
+final class ParcSelectionCheckbox: PointingHandButton {
+    init(title: String, tint: NSColor = ParcSelectionMark.tint, labelAttributes: [NSAttributedString.Key: Any]) {
+        super.init(frame: .zero)
+        setButtonType(.switch); isBordered = false; imagePosition = .imageLeading
+        image = Self.symbol(selected: false); alternateImage = Self.symbol(selected: true)
+        contentTintColor = tint
+        attributedTitle = NSAttributedString(string: title, attributes: labelAttributes)
+        cell?.wraps = true; cell?.lineBreakMode = .byWordWrapping
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private static func symbol(selected: Bool) -> NSImage? {
+        NSImage(systemSymbolName: ParcSelectionMark.symbolName(selected: selected), accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(scale: .large))
+    }
+    func fittedSize(maxWidth: CGFloat) -> NSSize {
+        let size = cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: maxWidth, height: .greatestFiniteMagnitude)) ?? .zero
+        return NSSize(width: min(ceil(size.width), maxWidth), height: ceil(size.height))
+    }
+    override func accessibilityValue() -> Any? { ParcSelectionMark.accessibilityValue(selected: state == .on) }
+    override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
+        NSAccessibility.post(element: self, notification: .valueChanged)
+        return super.sendAction(action, to: target)
+    }
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 49, event.modifierFlags.intersection([.command, .option, .control]).isEmpty {
+            if !event.isARepeat { performClick(nil) }
+        } else {
+            nextResponder?.keyDown(with: event)
+        }
+    }
+}
+
+/// The tinted rounded card behind an input, like the Space name card. A press
+/// on its padding still focuses the field.
+@MainActor
+private final class PArcDialogFieldCard: NSView {
+    weak var field: NSTextField?
+    override var isFlipped: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        PArcDialogStyle.fieldFill.setFill()
+        PArcDialogStyle.continuousRect(bounds, radius: 8).fill()
+    }
+    override func mouseDown(with event: NSEvent) {
+        if let field { window?.makeFirstResponder(field) } else { super.mouseDown(with: event) }
+    }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
 }
 
 /// `DialogViewBase` paints PopoverBackground itself: an attached sheet's frame

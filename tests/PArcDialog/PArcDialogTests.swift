@@ -193,9 +193,19 @@ struct PArcDialogTests {
                                     confirm: "Create Profile", cancel: "Cancel", field: .init(value: "", placeholder: "Profile name")))
         let nameField = named.textField!
         let messageLabel = named.panel.contentView!.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue.hasPrefix("What") }!
+        let nameRoot = named.panel.contentView!
+        let fieldFrame = nameField.convert(nameField.bounds, to: nameRoot)
+        let card = nameField.superview!
         expect(!nameField.isBordered && !nameField.drawsBackground && nameField.focusRingType == .none && nameField.font?.pointSize == 14
-               && nameField.frame.minY >= messageLabel.frame.maxY && nameField.frame.maxY < named.confirmButton.frame.minY,
-               "The borderless field sits between the message and the buttons")
+               && card.frame.minY == messageLabel.frame.maxY + 16 && card.frame.maxY + 22 == named.confirmButton.frame.minY + 0.5,
+               "The field's card sits 16 points under the message and 22 above the buttons")
+        expect(card.frame.minX == 38 && card.frame.width == 450 - 76 && card.frame.height == 36,
+               "The card spans the text column at the buttons' 36-point height")
+        expect(fieldFrame.minX + 2 == card.frame.minX + 12 && abs(fieldFrame.midY - card.frame.midY) <= 0.5,
+               "The text sits on the card's 12-point padding, centered")
+        expect(close(pixel(nameRoot, 44, card.frame.midY), 0xFAFBFF, in: nameRoot) == false
+               && close(pixel(nameRoot, 445, card.frame.midY), 0xFAFBFF, in: nameRoot),
+               "The card is tinted against the popover background and stops at the column")
         expect(!named.confirmButton.isEnabled && named.panel.initialFirstResponder === nameField, "Blank required text disables confirm; the field takes focus")
         nameField.stringValue = "  "; named.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: nameField))
         expect(!named.confirmButton.isEnabled, "Whitespace is still blank")
@@ -204,11 +214,143 @@ struct PArcDialogTests {
         final class Composing: NSTextView { override func hasMarkedText() -> Bool { true } }
         expect(!named.control(nameField, textView: Composing(), doCommandBy: #selector(NSResponder.insertNewline(_:))),
                "Composition keeps Return")
+        expect(!named.control(nameField, textView: Composing(), doCommandBy: #selector(NSResponder.cancelOperation(_:))),
+               "Composition keeps Escape")
         var namedResponse: PArcDialog.Response?
         expect(named.begin(for: host) { namedResponse = $0 }, "The text dialog begins")
         expect(named.control(nameField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:))), "Return is handled")
         drain()
         expect(namedResponse == .confirm && host.attachedSheet == nil, "Return confirms a valid name")
+
+        // Plain-text and error alerts: NSAlert(error:)'s title and recovery suggestion.
+        struct Failure: LocalizedError {
+            var errorDescription: String? { "The disk is full." }
+            var recoverySuggestion: String? { "Free some space and try again." }
+        }
+        let plain = PArcDialog.Content(title: "Couldn’t open search", message: "Try again.")
+        expect(plain.title.map(\.0) == ["Couldn’t open search"] && plain.message?.map(\.0) == ["Try again."]
+               && plain.confirm == "OK" && plain.cancel == nil, "A plain alert is a title, a message and OK")
+        let failed = PArcDialog.Content(error: Failure())
+        expect(failed.title.map(\.0) == ["The disk is full."] && failed.message?.map(\.0) == ["Free some space and try again."],
+               "An error alert shows its description and recovery suggestion")
+        let retitled = PArcDialog.Content(error: Failure(), title: "Parc couldn’t save these settings.")
+        expect(retitled.title.map(\.0) == ["Parc couldn’t save these settings."] && retitled.message?.map(\.0) == ["Free some space and try again."],
+               "A given title replaces the description, as setting NSAlert.messageText did")
+        expect(PArcDialog.inform(in: host, .init(title: "One")) && !PArcDialog.inform(in: host, .init(title: "Two"))
+               && PArcDialog.inform(in: host, .init(title: "Three"), queued: true),
+               "An alert refuses a window that shows a sheet unless queued")
+        for _ in 0..<2 { (host.attachedSheet?.contentView?.subviews.compactMap { $0 as? PArcDialogButton }.first { $0.primary })?.performClick(nil); drain() }
+        expect(host.attachedSheet == nil, "Both alerts dismiss with OK")
+
+        // Choices without a Cancel button (Retry, Close, Keep Open): left to right
+        // Keep Open, Close, Retry; only Retry answers Return; Escape leaves the sheet.
+        var trio = PArcDialog.Content(title: "The page move needs attention", confirm: "Retry")
+        trio.secondary = "Close Page"; trio.auxiliary = "Keep Open"
+        let choice = PArcDialog(trio)
+        expect(choice.auxiliaryButton!.frame.maxX < choice.secondaryButton!.frame.minX
+               && choice.secondaryButton!.frame.maxX < choice.confirmButton.frame.minX && choice.cancelButton == nil
+               && !choice.secondaryButton!.hint && !choice.auxiliaryButton!.hint, "Retry, Close Page and Keep Open keep NSAlert's order")
+        var chosen: PArcDialog.Response?
+        expect(choice.begin(for: host) { chosen = $0 }, "The choice begins")
+        choice.panel.cancelOperation(nil); choice.panel.sendEvent(key(53, "\u{1b}", in: choice.panel)); drain()
+        expect(chosen == nil && host.attachedSheet === choice.panel, "Escape does not answer a choice that has no Cancel")
+        choice.secondaryButton!.performClick(nil); drain()
+        expect(chosen == .secondary && host.attachedSheet == nil, "The second button answers with its own response")
+        let lone = PArcDialog(.init(title: "Done"))
+        var loneResponse: PArcDialog.Response?
+        expect(lone.begin(for: host) { loneResponse = $0 }, "The lone OK begins")
+        lone.panel.cancelOperation(nil); drain()
+        expect(loneResponse == .cancel && host.attachedSheet == nil, "Escape dismisses a lone OK")
+
+        // A long error in a scrolling, selectable, read-only card.
+        var detailed = PArcDialog.Content(title: "Air Traffic Control Details", confirm: "Done")
+        detailed.details = String(repeating: "Could not save the routes. ", count: 40)
+        let details = PArcDialog(detailed)
+        let detailsText = details.panel.contentView!.subviews.compactMap { $0.subviews.first as? NSScrollView }.first?.documentView as? NSTextView
+        expect(detailsText?.string == detailed.details && detailsText?.isEditable == false && detailsText?.isSelectable == true
+               && details.confirmButton.title == "Done", "The details are selectable read-only text")
+
+        // The suppression checkbox is Parc's circular selection mark on an NSButton switch.
+        guard let mark = sample.suppression else { fatalError("Missing checkbox") }
+        mark.performClick(nil)
+        expect(mark.state == NSControl.StateValue.on, "A click toggles the NSButton switch, which VoiceOver reads as a checkbox")
+        mark.state = .off
+        expect(mark.showsPointingHand, "The checkbox shows the pointing hand")
+        expect(mark.contentTintColor == ParcSelectionMark.tint, "The checkbox takes the selection tint")
+        expect(ParcSelectionMark.symbolName(selected: false) == "circle"
+               && ParcSelectionMark.symbolName(selected: true) == "checkmark.circle.fill", "The checkbox uses the picker's symbols")
+        expect((mark.accessibilityValue() as? String) == "Not selected", "An unchecked mark reads Not selected")
+        mark.state = .on
+        expect((mark.accessibilityValue() as? String) == "Selected", "A checked mark reads Selected")
+        mark.state = .off
+        func tinted(_ view: NSView) -> Int {
+            let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+            view.cacheDisplay(in: view.bounds, to: rep)
+            var count = 0
+            for x in 0..<rep.pixelsWide { for y in 0..<rep.pixelsHigh {
+                guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), color.alphaComponent > 0.9 else { continue }
+                if color.blueComponent > 0.9 && color.redComponent < 0.35 && color.greenComponent < 0.35 { count += 1 }
+            } }
+            return count
+        }
+        let outline = tinted(mark)
+        mark.state = .on
+        expect(outline > 0 && tinted(mark) > 2 * outline, "The mark draws an outline circle, filled when checked")
+        mark.state = .off
+
+        // Return confirms and Escape cancels wherever focus is: the field, the
+        // checkbox, or a composing input method that keeps its own keys.
+        var focusedContent = PArcDialog.Content(title: [("Rename", false)], confirm: "Rename", cancel: "Cancel",
+                                               field: .init(value: "Work", placeholder: "Name", required: false))
+        focusedContent.suppression = "Don’t ask again"
+        func answer(focus: (PArcDialog) -> Void, press code: UInt16, _ characters: String, _ flags: NSEvent.ModifierFlags = []) -> PArcDialog.Response? {
+            let dialog = PArcDialog(focusedContent)
+            var response: PArcDialog.Response?
+            expect(dialog.begin(for: host) { response = $0 }, "The focus dialog begins")
+            focus(dialog)
+            dialog.panel.sendEvent(key(code, characters, flags, in: dialog.panel)); drain()
+            if response == nil { dialog.cancelButton!.performClick(nil); drain() }
+            return response
+        }
+        let onField: (PArcDialog) -> Void = { _ = $0.panel.makeFirstResponder($0.textField) }
+        let onCheckbox: (PArcDialog) -> Void = { expect($0.panel.makeFirstResponder($0.suppression), "The checkbox takes focus") }
+        for (name, focus) in [("field", onField), ("checkbox", onCheckbox)] {
+            expect(answer(focus: focus, press: 36, "\r") == .confirm, "Return confirms from the \(name)")
+            expect(answer(focus: focus, press: 76, "\u{3}", [.numericPad]) == .confirm, "Keypad Enter confirms from the \(name)")
+            expect(answer(focus: focus, press: 53, "\u{1b}") == .cancel, "Escape cancels from the \(name)")
+        }
+        let spaced = PArcDialog(focusedContent)
+        _ = spaced.begin(for: host) { _ in }
+        expect(spaced.panel.makeFirstResponder(spaced.suppression), "The checkbox takes focus for Space")
+        spaced.panel.sendEvent(key(49, " ", in: spaced.panel))
+        drain()
+        spaced.panel.sendEvent(key(49, " ", [.option], in: spaced.panel))
+        expect(spaced.suppression!.state == NSControl.StateValue.on, "Option-Space does not toggle the checkbox again")
+        expect(spaced.suppression!.state == NSControl.StateValue.on && host.attachedSheet === spaced.panel, "Space toggles the checkbox and keeps the dialog open")
+        spaced.cancelButton!.performClick(nil); drain()
+        let composing = PArcDialog(focusedContent)
+        var composed: PArcDialog.Response?
+        _ = composing.begin(for: host) { composed = $0 }
+        final class Marked: NSTextView { override func hasMarkedText() -> Bool { true } }
+        let marked = Marked(frame: NSRect(x: 0, y: 0, width: 50, height: 20))
+        composing.panel.contentView!.addSubview(marked)
+        _ = composing.panel.makeFirstResponder(marked)
+        expect(!composing.panel.performKeyEquivalent(with: key(36, "\r", in: composing.panel)) && composed == nil,
+               "A composing input method keeps Return for its candidate")
+        marked.removeFromSuperview(); _ = composing.panel.makeFirstResponder(composing.textField)
+        composing.cancelButton!.performClick(nil); drain()
+
+        // The app-modal form returns the button's response.
+        func modal(_ content: PArcDialog.Content, _ act: @escaping (PArcDialog) -> Void) -> PArcDialog.Response {
+            let dialog = PArcDialog(content)
+            dialog.panel.alphaValue = 0
+            DispatchQueue.main.async { act(dialog) }
+            return dialog.runModal()
+        }
+        expect(modal(.init(title: "Restore", confirm: "Retry")) { $0.confirmButton.performClick(nil) } == .confirm, "A modal alert returns its confirm")
+        expect(modal(.init(title: "Restore", confirm: "Retry", cancel: "Cancel")) { $0.panel.cancelOperation(nil) } == .cancel, "Escape ends a modal with Cancel")
+        var modalChoice = PArcDialog.Content(title: "Update error!", confirm: "OK"); modalChoice.secondary = "Download manually"
+        expect(modal(modalChoice) { $0.secondaryButton!.performClick(nil) } == .secondary, "A modal returns its second button")
         print("Parc dialog: \(count) checks passed")
     }
 }
