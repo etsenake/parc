@@ -31,7 +31,7 @@ this guide covers demuxed samples and the Chromium/CDM boundary.
 | `media::ContentDecryptionModule` + `CdmContext` | `fairplay_cdm_adapter.{h,cc}` over `parc::fairplay::FairPlayCdm` |
 | GPU media service CDM factory | `fairplay_cdm_factory.{h,cc}`, returned by `GpuMojoMediaClientMac::CreatePlatformCdmFactory` |
 | CDM routing | `MediaInterfaceProxy::CreateCdm` sends FairPlay key systems to the frame's GPU media service `InterfaceFactory`, before the library CDM path (which would look for a CDM binary) |
-| Renderer selection | `CdmContext::RequiresFairPlayRenderer()` / `GetFairPlayCdm()`, carried to the render process as `mojom::CdmContext.requires_fairplay_renderer`; `PipelineImpl` then asks for `RendererType::kFairPlay` |
+| Renderer selection | `CdmContext::RequiresFairPlayRenderer()`, carried to the render process as `mojom::CdmContext.requires_fairplay_renderer`; `PipelineImpl` then asks for `RendererType::kFairPlay`. In the GPU process the FairPlay renderer and HLS player reach the key session with `FairPlayCdmAdapter::GetFairPlayCdm()` |
 | GPU `media::Renderer` | `fairplay_renderer_adapter.{h,mm}` over `parc::fairplay::FairPlayRenderer`, created by `GpuMojoMediaClientMac::CreateFairPlayRenderer` through `InterfaceFactory.CreateFairPlayRenderer` |
 | Render-process client | `fairplay_renderer_client{,_factory}.{h,cc}` → `//content/renderer/media/fairplay`, registered as `kFairPlay` (never the base renderer) by `fairplay_renderer_factories.{h,cc}`, which `MediaFactory` calls to add and move the FairPlay and native HLS factories |
 | Display handoff | layer token over `mojom::FairPlayRendererClientExtension.OnLayerRegistered`; `ui::ProtectedLayerRegistry` and the compositor side in [COMPOSITING.md](COMPOSITING.md) (fairplay-compositing) |

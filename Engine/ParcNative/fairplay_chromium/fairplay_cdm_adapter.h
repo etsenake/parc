@@ -61,6 +61,13 @@ class FairPlayCdmAdapter final : public ContentDecryptionModule,
   FairPlayCdmAdapter(const FairPlayCdmAdapter&) = delete;
   FairPlayCdmAdapter& operator=(const FairPlayCdmAdapter&) = delete;
 
+  // The FairPlay key session behind `cdm_context`, which the FairPlay
+  // Renderer and native HLS player of this media service join as a content
+  // key recipient; null for a null or other CDM. Every CdmContext here that
+  // RequiresFairPlayRenderer() is a FairPlayCdmAdapter: FairPlayCdmFactory
+  // makes every CDM of the GPU process's media service.
+  static parc::fairplay::FairPlayCdm* GetFairPlayCdm(CdmContext* cdm_context);
+
   // ContentDecryptionModule implementation.
   void SetServerCertificate(const std::vector<uint8_t>& certificate,
                             std::unique_ptr<SimpleCdmPromise> promise) override;
@@ -86,7 +93,6 @@ class FairPlayCdmAdapter final : public ContentDecryptionModule,
   std::unique_ptr<CallbackRegistration> RegisterEventCB(
       EventCB event_cb) override;
   bool RequiresFairPlayRenderer() override;
-  parc::fairplay::FairPlayCdm* GetFairPlayCdm() override;
   void ParcHasSessionForInitData(EmeInitDataType init_data_type,
                                  const std::vector<uint8_t>& init_data,
                                  ParcHasSessionForInitDataCB done) override;

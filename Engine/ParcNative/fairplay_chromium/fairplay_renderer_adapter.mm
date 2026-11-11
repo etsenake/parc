@@ -22,6 +22,7 @@
 #include "media/base/timestamp_constants.h"
 #include "media/base/video_codecs.h"
 #include "media/base/waiting.h"
+#include "third_party/parc_fairplay/chromium/fairplay_cdm_adapter.h"
 #include "third_party/parc_fairplay/chromium/fairplay_task_runner.h"
 #include "third_party/parc_fairplay/core/fairplay_key_session.h"
 #include "ui/accelerated_widget_mac/protected_layer_registry.h"
@@ -462,7 +463,7 @@ void FairPlayRendererAdapter::SetCdm(CdmContext* cdm_context,
                                      CdmAttachedCB cdm_attached_cb) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   bool success = false;
-  fp::FairPlayCdm* cdm = cdm_context ? cdm_context->GetFairPlayCdm() : nullptr;
+  fp::FairPlayCdm* cdm = FairPlayCdmAdapter::GetFairPlayCdm(cdm_context);
   if (!cdm_context) {
     // setMediaKeys(null) on a Safari-identity page (PipelineImpl's
     // SetCdm(nullptr)): protected samples wait from now on, as WebKit's

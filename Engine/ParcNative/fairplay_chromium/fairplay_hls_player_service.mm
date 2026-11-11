@@ -29,6 +29,7 @@
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "mojo/public/cpp/system/simple_watcher.h"
 #include "net/base/net_errors.h"
+#include "third_party/parc_fairplay/chromium/fairplay_cdm_adapter.h"
 #include "third_party/parc_fairplay/chromium/fairplay_hls_track_bridge.h"
 #include "third_party/parc_fairplay/chromium/fairplay_task_runner.h"
 #include "third_party/parc_fairplay/core/fairplay_hls_keys.h"
@@ -370,9 +371,10 @@ class FairPlayHlsPlayerService::KeyLoaderClient final
   }
   void OnDetachedCdmIdle(fp::FairPlayCdm* cdm) override {
     std::erase_if(service_->detached_cdm_context_refs_,
-                 [cdm](const std::unique_ptr<CdmContextRef>& ref) {
-                   return ref->GetCdmContext()->GetFairPlayCdm() == cdm;
-                 });
+                  [cdm](const std::unique_ptr<CdmContextRef>& ref) {
+                    return FairPlayCdmAdapter::GetFairPlayCdm(
+                               ref->GetCdmContext()) == cdm;
+                  });
   }
 
  private:
@@ -535,7 +537,7 @@ void FairPlayHlsPlayerService::Initialize(const GURL& url,
     key_loader_client_ = std::make_unique<KeyLoaderClient>(this);
     key_loader_ = std::make_unique<fp::FairPlayHlsKeyLoader>(
         fp::HlsPlayerAsset(player_->impl()),
-        cdm_context ? cdm_context->GetFairPlayCdm() : nullptr,
+        FairPlayCdmAdapter::GetFairPlayCdm(cdm_context),
         key_loader_client_.get(), post_task);
     fp::SetHlsKeyRequestHandler(player_->impl(), key_loader_.get());
     result = player_->Start();
@@ -578,7 +580,7 @@ void FairPlayHlsPlayerService::SetCdm(
   }
   std::unique_ptr<CdmContextRef> ref = get_cdm_context_.Run(*cdm_id);
   CdmContext* cdm_context = ref ? ref->GetCdmContext() : nullptr;
-  fp::FairPlayCdm* cdm = cdm_context ? cdm_context->GetFairPlayCdm() : nullptr;
+  fp::FairPlayCdm* cdm = FairPlayCdmAdapter::GetFairPlayCdm(cdm_context);
   if (!cdm) {
     std::move(callback).Run(false);
     return;

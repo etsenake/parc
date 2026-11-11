@@ -308,9 +308,15 @@ bool FairPlayCdmAdapter::RequiresFairPlayRenderer() {
   return true;
 }
 
-parc::fairplay::FairPlayCdm* FairPlayCdmAdapter::GetFairPlayCdm() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return cdm_.get();
+// static
+parc::fairplay::FairPlayCdm* FairPlayCdmAdapter::GetFairPlayCdm(
+    CdmContext* cdm_context) {
+  if (!cdm_context || !cdm_context->RequiresFairPlayRenderer()) {
+    return nullptr;
+  }
+  auto* adapter = static_cast<FairPlayCdmAdapter*>(cdm_context);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(adapter->sequence_checker_);
+  return adapter->cdm_.get();
 }
 
 void FairPlayCdmAdapter::ParcHasSessionForInitData(

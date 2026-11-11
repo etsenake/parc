@@ -803,17 +803,13 @@
  
 --- a/media/base/cdm_context.cc
 +++ b/media/base/cdm_context.cc
-@@ -59,4 +59,21 @@
+@@ -59,4 +59,17 @@
  }
  #endif
  
 +#if BUILDFLAG(IS_MAC)
 +bool CdmContext::RequiresFairPlayRenderer() {
 +  return false;
-+}
-+
-+parc::fairplay::FairPlayCdm* CdmContext::GetFairPlayCdm() {
-+  return nullptr;
 +}
 +
 +void CdmContext::ParcHasSessionForInitData(
@@ -841,20 +837,7 @@
  #include "media/base/media_export.h"
  #include "media/media_buildflags.h"
  
-@@ -21,6 +23,12 @@
- #if BUILDFLAG(IS_CHROMEOS)
- namespace chromeos {
- class ChromeOsCdmContext;
-+}
-+#endif
-+
-+#if BUILDFLAG(IS_MAC)
-+namespace parc::fairplay {
-+class FairPlayCdm;
- }
- #endif
- 
-@@ -56,6 +64,9 @@
+@@ -56,6 +58,9 @@
      // A hardware reset happened. Some hardware context, e.g. hardware decoder
      // context may be lost.
      kHardwareContextReset,
@@ -864,7 +847,7 @@
    };
  
    // Callback to notify the occurrence of an Event.
-@@ -125,6 +136,30 @@
+@@ -125,6 +130,25 @@
    virtual chromeos::ChromeOsCdmContext* GetChromeOsCdmContext();
  #endif
  
@@ -874,11 +857,6 @@
 +  // Like RequiresMediaFoundationRenderer(), this is a sync call made in the
 +  // render process to set up the media pipeline.
 +  virtual bool RequiresFairPlayRenderer();
-+
-+  // Parc: returns the FairPlay key session behind this CDM, which the
-+  // FairPlay Renderer in the same process joins as a content key recipient.
-+  // Returns nullptr for every other CDM and in the render process.
-+  virtual parc::fairplay::FairPlayCdm* GetFairPlayCdm();
 +
 +  // Parc: answers whether a session of this CDM already has a key request,
 +  // answered or not, for a key ID |init_data| names. Safari's Media Source
