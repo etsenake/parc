@@ -8,11 +8,11 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "certificate_viewer.h"
-#include "chrome/browser/extensions/extension_install_native_host.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "client_certificates.h"
+#include "extension_install.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
 #include "extension_uninstall.h"
@@ -257,7 +257,7 @@ void NativePageBinding::PageHostWillDetach() {
     return;
   }
   if (Browser* owner = browser()) {
-    if (auto* install = extensions::ExtensionInstallNativeHost::Get(
+    if (auto* install = NativeExtensionInstallService::Get(
             owner->GetUnownedUserDataHost())) {
       install->PageHostWillDetach(web_contents());
     }

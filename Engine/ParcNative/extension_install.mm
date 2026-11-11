@@ -4,15 +4,19 @@
 
 #include "base/check.h"
 #include "base/functional/bind.h"
+#include "base/location.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/supports_user_data.h"
 #include "base/task/single_thread_task_runner.h"
+#include "chrome/browser/extensions/extension_install_prompt_show_params.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/tab_list/tab_list_interface_observer.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/views/extensions/security_dialog_tracker.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
@@ -43,6 +47,34 @@ namespace parc {
 using Result = extensions::ExtensionInstallPromptClient::Result;
 using Payload = extensions::ExtensionInstallPromptClient::DoneCallbackPayload;
 using Done = extensions::ExtensionInstallPromptClient::DoneCallback;
+DEFINE_USER_DATA(NativeExtensionInstallService);
+namespace {
+constexpr char kNativeInstallProfile[] = "parc-native-extension-install";
+class RefusedInstallBinding final
+    : public extensions::ExtensionInstallNativeBinding {
+ public:
+  bool Begin(const extensions::Extension*, Done done) override {
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostNonNestableTask(
+        FROM_HERE,
+        base::BindOnce(std::move(done), Payload(Result::ABORTED)));
+    return false;
+  }
+  bool CanContinue() const override { return false; }
+  void Show(std::unique_ptr<extensions::InstallPromptData>) override {}
+  void Cancel() override {}
+  void ShowParentApproval(const extensions::Extension* extension,
+                          const gfx::ImageSkia&,
+                          Done done) override {
+    Begin(extension, std::move(done));
+  }
+  void InstallationFinished(const extensions::Extension*,
+                            bool,
+                            const std::u16string&,
+                            const SkBitmap*,
+                            bool) override {}
+};
+}  // namespace
+
 class NativeExtensionInstallService::Request final
     : public extensions::ExtensionInstallNativeBinding,
       public std::enable_shared_from_this<Request>,
@@ -525,10 +557,60 @@ NativeExtensionInstallService::NativeExtensionInstallService(
     : browser_(browser),
       host_(host),
       registration_(browser.GetUnownedUserDataHost(), *this) {
-  ExtensionInstallNativeHost::MarkProfile(browser.GetProfile());
+  MarkProfile(browser.GetProfile());
 }
 NativeExtensionInstallService::~NativeExtensionInstallService() {
   Shutdown();
+}
+void NativeExtensionInstallService::MarkProfile(Profile* profile) {
+  profile->SetUserData(kNativeInstallProfile,
+                       std::make_unique<base::SupportsUserData::Data>());
+}
+std::shared_ptr<extensions::ExtensionInstallNativeBinding>
+NativeExtensionInstallService::CaptureFor(
+    ExtensionInstallPromptShowParams& params) {
+  auto* profile = params.profile();
+  if (!profile) {
+    return nullptr;
+  }
+  const bool native_profile =
+      profile->GetUserData(kNativeInstallProfile) != nullptr;
+  if (!native_profile) {
+    return nullptr;
+  }
+  if (params.WasParentDestroyed()) {
+    return std::make_shared<RefusedInstallBinding>();
+  }
+  auto* collection = GlobalBrowserCollection::GetInstance();
+  BrowserWindowInterface* owner = nullptr;
+  auto* page = params.GetParentWebContents();
+  if (page) {
+    owner = collection->FindBrowserWithTab(page);
+  } else if (auto window = params.GetParentWindow()) {
+    // Several native Browsers can share one NSWindow. An ambiguous bare
+    // window cannot choose one Profile/Space or page for consent.
+    bool ambiguous = false;
+    collection->ForEach([&](BrowserWindowInterface* browser) {
+      if (browser->GetProfile() == profile && browser->GetWindow() &&
+          browser->GetWindow()->GetNativeWindow() == window) {
+        if (owner) {
+          ambiguous = true;
+        } else {
+          owner = browser;
+        }
+      }
+      return true;
+    });
+    if (ambiguous) {
+      return std::make_shared<RefusedInstallBinding>();
+    }
+  }
+  if (owner && owner->GetProfile() == profile) {
+    if (auto* service = Get(owner->GetUnownedUserDataHost())) {
+      return service->Capture(page);
+    }
+  }
+  return std::make_shared<RefusedInstallBinding>();
 }
 std::shared_ptr<extensions::ExtensionInstallNativeBinding>
 NativeExtensionInstallService::Capture(content::WebContents* page) {

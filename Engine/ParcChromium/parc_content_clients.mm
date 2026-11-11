@@ -39,6 +39,7 @@
 #include "parc/web_push.h"
 #include "parc/native/certificate_viewer.h"
 #include "parc/native/client_certificates.h"
+#include "parc/native/extension_install.h"
 #include "parc/native/extension_uninstall.h"
 #include "parc/native/external_protocol.h"
 #include "parc/native/fairplay_media_host.h"
@@ -112,6 +113,8 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
         &SupportsAutofillUiPresentation);
     parc_hooks::SetPermissionPromptFactory(&CreateSitePermissionPrompt);
     parc_hooks::SetLoginHandlerAuthValidator(&ValidateNativeLoginHandlerAuth);
+    parc_hooks::SetExtensionInstallCapture(
+        &NativeExtensionInstallService::CaptureFor);
     parc_hooks::SetExtensionUninstallHandler(&BeginExtensionUninstall);
     parc_hooks::SetFolderUploadConfirmation(&ShowFolderUploadConfirmation);
     parc_hooks::SetSadTabFactory(&CreateSadTab);

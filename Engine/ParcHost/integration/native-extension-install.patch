@@ -1,19 +1,6 @@
 --- a/chrome/browser/extensions/extension_install_prompt.cc
 +++ b/chrome/browser/extensions/extension_install_prompt.cc
-@@ -10,9 +10,12 @@
- #include "base/functional/bind.h"
- #include "base/location.h"
- #include "base/task/single_thread_task_runner.h"
-+#include "chrome/browser/extensions/extension_install_native_host.h"
- #include "chrome/browser/extensions/extension_install_prompt_show_params.h"
- #include "chrome/browser/extensions/extension_util.h"
- #include "chrome/browser/profiles/profile.h"
-+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
- #include "chrome/browser/ui/extensions/extension_install_ui.h"
- #include "chrome/common/buildflags.h"
- #include "content/public/browser/web_contents.h"
-@@ -21,6 +24,7 @@
+@@ -21,6 +21,7 @@
  #include "extensions/browser/extension_prefs.h"
  #include "extensions/browser/extension_util.h"
  #include "extensions/browser/image_loader.h"
@@ -21,7 +8,7 @@
  #include "extensions/buildflags/buildflags.h"
  #include "extensions/common/extension.h"
  #include "extensions/common/extension_resource.h"
-@@ -28,6 +32,7 @@
+@@ -28,6 +29,7 @@
  #include "extensions/common/manifest.h"
  #include "extensions/common/manifest_handlers/icons_handler.h"
  #include "extensions/common/permissions/permission_set.h"
@@ -29,90 +16,31 @@
  #include "ui/base/resource/resource_bundle.h"
  #include "ui/base/resource/resource_scale_factor.h"
  #include "ui/base/ui_base_types.h"
-@@ -43,14 +48,95 @@
+@@ -43,14 +45,36 @@
  using extensions::PermissionMessages;
  using extensions::PermissionSet;
  
-+namespace extensions {
-+DEFINE_USER_DATA(ExtensionInstallNativeHost);
 +namespace {
-+constexpr char kNativeInstallProfile[] = "parc-native-extension-install";
-+class RefusedInstallBinding final : public ExtensionInstallNativeBinding {
-+ public:
-+  bool Begin(const Extension*,
-+             ExtensionInstallPromptClient::DoneCallback done) override {
-+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostNonNestableTask(
-+        FROM_HERE,
-+        base::BindOnce(std::move(done),
-+                       ExtensionInstallPromptClient::DoneCallbackPayload(
-+                           ExtensionInstallPromptClient::Result::ABORTED)));
-+    return false;
-+  }
-+  bool CanContinue() const override { return false; }
-+  void Show(std::unique_ptr<InstallPromptData>) override {}
-+  void Cancel() override {}
-+  void ShowParentApproval(const Extension* extension, const gfx::ImageSkia&,
-+                          ExtensionInstallPromptClient::DoneCallback done) override {
-+    Begin(extension, std::move(done));
-+  }
-+  void InstallationFinished(const Extension*,
-+                            bool,
-+                            const std::u16string&, const SkBitmap*, bool) override {}
-+};
++using ExtensionInstallCapture =
++    std::shared_ptr<extensions::ExtensionInstallNativeBinding> (*)(
++        ExtensionInstallPromptShowParams&);
++ExtensionInstallCapture g_extension_install_capture = nullptr;
 +}  // namespace
-+void ExtensionInstallNativeHost::MarkProfile(Profile* profile) {
-+  profile->SetUserData(kNativeInstallProfile,
-+                       std::make_unique<base::SupportsUserData::Data>());
-+}
++
++namespace extensions {
 +std::shared_ptr<ExtensionInstallNativeBinding>
-+ExtensionInstallNativeHost::CaptureFor(
++CaptureExtensionInstallNativeBinding(
 +    ExtensionInstallPromptShowParams& params) {
-+  auto* profile = params.profile();
-+  if (!profile) {
-+    return nullptr;
-+  }
-+  const bool native_profile =
-+      profile->GetUserData(kNativeInstallProfile) != nullptr;
-+  if (!native_profile) {
-+    return nullptr;
-+  }
-+  if (params.WasParentDestroyed()) {
-+    return native_profile ? std::make_shared<RefusedInstallBinding>() : nullptr;
-+  }
-+  auto* collection = GlobalBrowserCollection::GetInstance();
-+  BrowserWindowInterface* owner = nullptr;
-+  auto* page = params.GetParentWebContents();
-+  if (page) {
-+    owner = collection->FindBrowserWithTab(page);
-+  } else if (auto window = params.GetParentWindow()) {
-+    // Several native Browsers can share one NSWindow. An ambiguous bare
-+    // window cannot choose one Profile/Space or page for consent.
-+    bool ambiguous = false;
-+    collection->ForEach([&](BrowserWindowInterface* browser) {
-+      if (browser->GetProfile() == profile && browser->GetWindow() &&
-+          browser->GetWindow()->GetNativeWindow() == window) {
-+        if (owner) {
-+          ambiguous = true;
-+        } else {
-+          owner = browser;
-+        }
-+      }
-+      return true;
-+    });
-+    if (ambiguous) {
-+      return native_profile ? std::make_shared<RefusedInstallBinding>()
-+                            : nullptr;
-+    }
-+  }
-+  if (owner && owner->GetProfile() == profile) {
-+    if (auto* host =
-+            ExtensionInstallNativeHost::Get(owner->GetUnownedUserDataHost())) {
-+      return host->Capture(page);
-+    }
-+  }
-+  return native_profile ? std::make_shared<RefusedInstallBinding>() : nullptr;
++  return g_extension_install_capture ? g_extension_install_capture(params)
++                                     : nullptr;
 +}
 +}  // namespace extensions
++
++namespace parc_hooks {
++void SetExtensionInstallCapture(ExtensionInstallCapture capture) {
++  g_extension_install_capture = capture;
++}
++}  // namespace parc_hooks
 +
  namespace {
  
@@ -128,18 +56,19 @@
    return image
        .GetRepresentation(ui::GetScaleForMaxSupportedResourceScaleFactor())
        .GetBitmap();
-@@ -86,7 +172,9 @@
+@@ -86,7 +110,10 @@
        install_ui_(ExtensionInstallUI::Create(profile_)),
        show_params_(new ExtensionInstallPromptShowParams(contents)),
        prompt_(std::move(prompt)),
 -      did_call_show_dialog_(false) {}
 +      did_call_show_dialog_(false) {
-+  native_ = extensions::ExtensionInstallNativeHost::CaptureFor(*show_params_);
++  native_ =
++      extensions::CaptureExtensionInstallNativeBinding(*show_params_);
 +}
  
  ExtensionInstallPrompt::ExtensionInstallPrompt(
      Profile* profile,
-@@ -98,9 +186,24 @@
+@@ -98,9 +125,25 @@
        show_params_(
            new ExtensionInstallPromptShowParams(profile, native_window)),
        prompt_(std::move(prompt)),
@@ -147,7 +76,8 @@
 -
 -ExtensionInstallPrompt::~ExtensionInstallPrompt() = default;
 +      did_call_show_dialog_(false) {
-+  native_ = extensions::ExtensionInstallNativeHost::CaptureFor(*show_params_);
++  native_ =
++      extensions::CaptureExtensionInstallNativeBinding(*show_params_);
 +}
 +
 +ExtensionInstallPrompt::ExtensionInstallPrompt(
@@ -167,7 +97,7 @@
  
  void ExtensionInstallPrompt::ShowDialog(
      DoneCallback done_callback,
-@@ -123,8 +226,9 @@
+@@ -123,8 +166,9 @@
  
    extension_ = extension;
    done_callback_ = std::move(done_callback);
@@ -178,7 +108,7 @@
    custom_permissions_ = std::move(custom_permissions);
    show_dialog_callback_ = show_dialog_callback;
  
-@@ -138,6 +242,13 @@
+@@ -138,6 +182,13 @@
      return;
    }
  
@@ -192,7 +122,7 @@
    LoadImageIfNeeded();
  }
  
-@@ -147,19 +258,38 @@
+@@ -147,19 +198,38 @@
    extension_ = extension;
    SetIcon(icon);
  
@@ -231,7 +161,7 @@
    install_ui_->SetSkipPostInstallUI(skip_ui);
  }
  
-@@ -216,10 +346,11 @@
+@@ -216,10 +286,11 @@
  }
  
  void ExtensionInstallPrompt::SetIcon(const SkBitmap* image) {
@@ -245,7 +175,7 @@
    if (icon_.empty()) {
      // Let's set default icon bitmap whose size is equal to the default icon's
      // pixel size under maximal supported scale factor. If the bitmap is larger
-@@ -259,6 +390,10 @@
+@@ -259,6 +330,10 @@
  }
  
  void ExtensionInstallPrompt::ShowConfirmation() {
@@ -256,7 +186,7 @@
    std::unique_ptr<const PermissionSet> permissions_to_display;
  
    if (custom_permissions_.get()) {
-@@ -276,6 +411,18 @@
+@@ -276,6 +351,18 @@
  
    prompt_->set_icon(gfx::Image::CreateFrom1xBitmap(icon_));
  
@@ -275,7 +205,7 @@
    if (show_params_->WasParentDestroyed()) {
      std::move(done_callback_).Run(DoneCallbackPayload(Result::ABORTED));
      return;
-@@ -288,11 +435,13 @@
+@@ -288,11 +375,13 @@
    prompt_->OnDialogOpened();
  
    // If true, auto confirm is enabled and already handled the result.
@@ -295,7 +225,13 @@
    auto cb = std::move(done_callback_);
 --- a/chrome/browser/extensions/extension_install_prompt.h
 +++ b/chrome/browser/extensions/extension_install_prompt.h
-@@ -33,12 +33,13 @@
+@@ -30,2 +30,5 @@
+ class ExtensionInstallPromptShowParams;
+ class Profile;
++namespace gfx {
++class ImageSkia;
++}
+@@ -33,12 +36,32 @@
  namespace content {
  class BrowserContext;
  class WebContents;
@@ -306,11 +242,30 @@
  class CrxInstallError;
  class Extension;
  class PermissionSet;
-+class ExtensionInstallNativeBinding;
++class ExtensionInstallNativeBinding {
++ public:
++  virtual ~ExtensionInstallNativeBinding() = default;
++  virtual bool Begin(const Extension*,
++                     ExtensionInstallPromptClient::DoneCallback) = 0;
++  virtual bool CanContinue() const = 0;
++  virtual void Show(std::unique_ptr<InstallPromptData>) = 0;
++  virtual void Cancel() = 0;
++  virtual void ShowParentApproval(
++      const Extension*,
++      const gfx::ImageSkia&,
++      ExtensionInstallPromptClient::DoneCallback) = 0;
++  virtual void InstallationFinished(const Extension*,
++                                    bool success,
++                                    const std::u16string& message,
++                                    const SkBitmap* icon = nullptr,
++                                    bool app_installed_bubble = false) = 0;
++};
++std::shared_ptr<ExtensionInstallNativeBinding>
++CaptureExtensionInstallNativeBinding(ExtensionInstallPromptShowParams&);
  }  // namespace extensions
  
  // Displays all the UI around extension installation.
-@@ -78,6 +79,13 @@
+@@ -78,6 +101,13 @@
    ExtensionInstallPrompt(Profile* profile,
                           gfx::NativeWindow native_window,
                           std::unique_ptr<extensions::InstallPromptData> prompt);
@@ -324,7 +279,7 @@
  
    ExtensionInstallPrompt(const ExtensionInstallPrompt&) = delete;
    ExtensionInstallPrompt& operator=(const ExtensionInstallPrompt&) = delete;
-@@ -178,6 +186,12 @@
+@@ -178,6 +208,12 @@
    // Used to show the confirm dialog.
    ShowDialogCallback show_dialog_callback_;
  
@@ -343,7 +298,7 @@
  
  #include "base/functional/bind.h"
  #include "base/task/single_thread_task_runner.h"
-+#include "chrome/browser/extensions/extension_install_native_host.h"
++#include "chrome/browser/extensions/extension_install_prompt.h"
 +#include "chrome/browser/extensions/extension_install_prompt_show_params.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/supervised_user/extension_icon_loader.h"
@@ -404,7 +359,7 @@
 +  std::shared_ptr<ExtensionInstallNativeBinding> native;
 +  if (web_contents && web_contents->GetBrowserContext() == context_) {
 +    ExtensionInstallPromptShowParams params(web_contents);
-+    native = ExtensionInstallNativeHost::CaptureFor(params);
++    native = CaptureExtensionInstallNativeBinding(params);
 +  }
    auto icon_callback = base::BindOnce(
 -      &SupervisedUserExtensionsDelegateImpl::RequestExtensionApproval,
@@ -439,7 +394,7 @@
 +
 +  if (contents && contents->GetBrowserContext() == context_) {
 +    ExtensionInstallPromptShowParams params(contents);
-+    if (auto binding = ExtensionInstallNativeHost::CaptureFor(params)) {
++    if (auto binding = CaptureExtensionInstallNativeBinding(params)) {
 +      parent_permission_dialog_ = std::make_unique<NativeParentPermissionDialog>(
 +          std::move(binding), &extension, icon, std::move(inner_done_callback));
 +      parent_permission_dialog_->ShowDialog();

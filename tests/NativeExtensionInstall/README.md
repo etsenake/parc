@@ -29,7 +29,9 @@ PiP overlap protection. Ownerless/ambiguous native requests abort. Navigation,
 selection change, detach, extension replacement and shutdown invalidate consent;
 a competing reservation acquired during completion also invalidates acceptance.
 Installer results present no native surface; only a non-bubble app opens the
-Apps page. No grant or successful installation is manufactured.
+Apps page. No grant or successful installation is manufactured. Chromium's
+prompt header owns the consent-binding interface; a narrow capture hook routes
+to Parc's Browser-owned service without injecting another Chromium header.
 
 The production/test targets share the implementation. Compiler checks validate
 actual generated flags and source membership.

@@ -8,29 +8,7 @@
  import("//chrome/common/features.gni")
  import("//components/enterprise/buildflags/buildflags.gni")
  import("//components/guest_view/buildflags/buildflags.gni")
-@@ -298,6 +299,7 @@
-     "extension_garbage_collector_factory.h",
-     "extension_install_error_menu_item_id_provider.cc",
-     "extension_install_error_menu_item_id_provider.h",
-+    "extension_install_native_host.h",
-     "extension_install_prompt.cc",
-     "extension_install_prompt.h",
-     "extension_install_prompt_show_params.cc",
-@@ -641,12 +643,12 @@
-     "//storage/browser",
-     "//third_party/zlib/google:zip",
-     "//ui/base/accelerators/global_accelerator_listener",
--    "//ui/base/unowned_user_data",
-     "//ui/menus",
-     "//ui/native_window_tracker",
-     "//ui/shell_dialogs",
-   ]
-   public_deps = [
-+    "//ui/base/unowned_user_data",
-     "//chrome/browser/extensions/api/messaging",
-     "//chrome/browser/media/webrtc",
-     "//chrome/browser/supervised_user",
-@@ -665,6 +667,9 @@
+@@ -665,6 +666,9 @@
 -
 +
    if (is_mac) {
@@ -41,7 +19,7 @@
    }
    if (enable_spellcheck) {
      deps += [ "//chrome/browser/spellchecker" ]
-@@ -3173,10 +3178,10 @@
+@@ -3173,10 +3177,10 @@
 -
 +
      if (!is_chromeos) {

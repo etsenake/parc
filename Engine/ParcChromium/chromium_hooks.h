@@ -34,6 +34,7 @@ class ChromeBrowserMainParts;
 class DesktopBrowserWindowCapabilities;
 class DevtoolsUIController;
 class ExclusiveAccessManager;
+class ExtensionInstallPromptShowParams;
 class LoginHandler;
 class PrefRegistrySimple;
 class PrefService;
@@ -70,6 +71,7 @@ class BrowserCommandController;
 namespace extensions {
 class ComponentLoader;
 class Extension;
+class ExtensionInstallNativeBinding;
 }
 
 namespace gcm {
@@ -124,6 +126,12 @@ void SetPermissionPromptFactory(PermissionPromptFactory factory);
 
 // chrome/browser/extensions/component_loader.cc
 void SetInternalExtensionInstaller(void (*installer)(extensions::ComponentLoader*));
+
+// chrome/browser/extensions/extension_install_prompt.cc
+using ExtensionInstallCapture =
+    std::shared_ptr<extensions::ExtensionInstallNativeBinding> (*)(
+        ExtensionInstallPromptShowParams&);
+void SetExtensionInstallCapture(ExtensionInstallCapture capture);
 
 // components/gcm_driver/gcm_client_factory.cc
 void SetWebPushFactory(std::unique_ptr<gcm::GCMClient> (*factory)());
