@@ -1,8 +1,5 @@
 import AppKit
 
-///
-/// response 0.35 / damping ratio 0.87 spring and a 90 ms latest-value throttle.
-/// The already recovered Motion solver keeps velocity when the target changes.
 struct CaptureLensMotion {
     static let throttle = 0.09
     private var origin = DownloadArrivalSpring()
@@ -54,8 +51,6 @@ struct CaptureLensMotion {
 }
 
 @MainActor enum CaptureMotion {
-    /// CapturedImageView 1019aa88c reveals its actual image, using the cubic
-    /// returned by 10088e1c4. It is not a synthetic shutter flash.
     static func reveal(_ layer: CALayer?, reduceMotion: Bool) {
         guard let layer else { return }
         layer.removeAnimation(forKey: "captureReveal")
@@ -65,9 +60,6 @@ struct CaptureLensMotion {
         animation.timingFunction = CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1)
         layer.add(animation, forKey: "captureReveal")
     }
-    /// Portrait's outer spring is 0.5 / 0.7 (101308494). The native
-    /// compositor supplies flattened bitmaps, so blend only those owned display
-    /// images. Interruptions settle the prior result before replacing it.
     static func blendPortrait(_ view: NSImageView, previous: NSImage?) {
         settleImageBlend(view)
         guard let previous, view.image != nil, view.window != nil,
@@ -99,10 +91,6 @@ struct CaptureLensMotion {
     }
 }
 
-/// Records native focus without activating an app or borrowing another window.
-/// A child can close before AppKit gives key status back to its parent. A single
-/// pending restoration is therefore consumed on that exact window's next key
-/// notification, provided no user moved its responder in the meantime.
 @MainActor final class CaptureFocusReturn {
     private weak var window: NSWindow?
     private weak var target: NSView?

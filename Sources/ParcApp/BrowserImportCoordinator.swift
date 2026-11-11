@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 
-/// Bookmarks are read first; remaining data keeps importing after results close.
 @MainActor
 final class BrowserImportCoordinator {
     enum Stage { case sources, loading, profiles, safariAccess, importing, passwordChoice, safariPasswords, bookmarks, finished }
@@ -11,11 +10,9 @@ final class BrowserImportCoordinator {
         let destination: BrowserImportDestination
         var selection: BrowserImportSelection
         var committed = false
-        /// What the last accepted Next added, and the ticks it had then.
         var placement = BrowserImportPlacement()
         var accepted: BrowserImportSelection?
         var discarded = false
-        /// Setup's Skip leaves these out; Back to the bookmark step offers them again.
         var skipped = false
     }
     let store: BrowserStore
@@ -23,7 +20,6 @@ final class BrowserImportCoordinator {
     private weak var window: NSWindow?
     private let ownerIsCurrent: () -> Bool
     private let onboarding: Bool
-    /// Setup offers Apple's iCloud Passwords extension before the file step.
     let supportsICloudPasswords: Bool
     var onChange: (() -> Void)?
     private(set) var stage: Stage = .loading {
@@ -38,13 +34,11 @@ final class BrowserImportCoordinator {
     private(set) var message = "Finding your browsers…"
     private(set) var warnings: [String] = []
     private(set) var error: String?
-    /// Every import keeps the existing cookies of the Parc Profile it lands in.
     private let skipExistingCookies = true
     private(set) var safariAccessReady = false
     private var requiresSafariAccess = false
     private(set) var checkingSafariAccess = false
     private(set) var restarting = false
-    /// A restart held until the import detached by setup's Back finishes.
     private var restartWaitingToken: UUID?
     var retryRestart: (() -> Void)?
     private(set) var continueAfterSafariRefresh = false
@@ -61,21 +55,14 @@ final class BrowserImportCoordinator {
     private(set) var passwordError: String?
     private var passwordSession: PCNativePasswordFileImportSession?
     private var passwordStageOffered = false
-    /// Back keeps the password method the user picked when the step returns.
     private var keepsPasswordChoice = false
-    /// Setup reached Safari's password steps without Full Disk Access.
     private var passwordsWithoutData = false
-    /// Setup went Back to the browser cards after its data was read; Next on
-    /// the same browser returns to this step instead of importing again.
     private(set) var parkedStage: Stage?
-    /// Setup found no browser to import from and leaves its import step out.
     private(set) var foundNoSources = false
     private var generation = UUID()
     private var discovery: PCNativeImportDiscovery?
     private var session: PCNativeImportSession?
     private static var detachedImports: [BrowserImportCoordinator] = []
-    /// Native import holds each Profile for one session, so a new import
-    /// waits for any earlier one still finishing in the background.
     private static var waitingStarts: [() -> Void] = []
     private static var earlierImportRunning: Bool { detachedImports.contains { $0.hasBackgroundWork } }
     private var detached = false
@@ -86,13 +73,11 @@ final class BrowserImportCoordinator {
     private var backgroundPending = Set<UUID>()
     private var startingBackground = false
     private var backgroundDeferred = false
-    /// Background work outlives later choices on screen; only cancel stops it.
     private var backgroundToken = UUID()
 
     func detach(onAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?) {
         guard hasBackgroundWork, !cancelled else { cancel(); return }
         onChange = nil
-        // A finished file's session still holds the Profile the data needs.
         if !importingPasswords { passwordSession?.cancel(); passwordSession = nil; startDeferredBackground() }
         onDetachedAdBlockers = onAdBlockers
         if !detached { detached = true; Self.detachedImports.append(self) }
@@ -100,12 +85,9 @@ final class BrowserImportCoordinator {
 
     private func reportBackgroundWarnings(_ lines: [String]) { warnings += lines }
 
-    /// Whether a profile's data failed to import, and whether any came in; a
-    /// browser window says which once the whole import is over.
     private var dataFailed = false, dataImported = false, dataFailureReported = false
     private func record(_ result: PCNativeImportResult) {
         switch result.outcome {
-        // A stopped profile keeps what it had already brought in.
         case .cancelled: dataImported = true
         case .completed where result.error == nil: dataImported = true
         case .partial: dataImported = true; dataFailed = true
@@ -134,15 +116,12 @@ final class BrowserImportCoordinator {
         }
     }
     private var activeDestination: BrowserImportDestination?
-    /// Each profile's extensions install after the last profile's data.
     private var pendingExtensions: [(profile: PCNativeImportProfile, destination: BrowserImportDestination, ids: Set<String>)] = []
     private var extensionInstall: PCNativeImportSession?
     private var extensionBatch: UUID?
     private let arcSidebarURL: URL
     private let arcPreferencesURL: URL
     private var queue: [PCNativeImportProfile] = []
-    /// Chosen profiles' known Parc destinations; any other gets a Parc Profile
-    /// of its name when its turn comes, never one it might not use.
     private var queuedDestinations: [String: BrowserImportDestination] = [:]
     private var usedProfiles = Set<UUID>()
     private var completed = 0
@@ -166,8 +145,6 @@ final class BrowserImportCoordinator {
                 if !self.isCurrent {
                     self.cancel()
                 } else if self.activeDestination.map({ !$0.isCurrent(in: self.store.state) }) == true {
-                    // Let the accepted native session drain and complete; its
-                    // lost destination must not erase earlier bookmark results.
                     self.queue = []
                     self.session?.cancel()
                     self.message = "Stopping import because its destination was removed…"
@@ -216,7 +193,6 @@ final class BrowserImportCoordinator {
                 (priorities[$0.element.identifier] ?? 2, $0.offset) < (priorities[$1.element.identifier] ?? 2, $1.offset)
             }.map(\.element)
             if self.onboarding && sources.isEmpty {
-                //
                 self.foundNoSources = true; self.stage = .finished
                 self.message = "No supported browsers were found."; self.onChange?(); return
             }
@@ -239,9 +215,6 @@ final class BrowserImportCoordinator {
         self.source = source; error = nil; onChange?()
     }
 
-    /// BrowserSelection keeps profile choices below the selected browser, in
-    /// setup and the import window alike. Discovery may change while this
-    /// screen stays visible; old native leases must not win.
     var isChoosingSourceInline: Bool {
         stage == .sources || stage == .profiles || (stage == .loading && source != nil)
     }
@@ -270,8 +243,6 @@ final class BrowserImportCoordinator {
         stage == .profiles && isCurrent && (parkedStage != nil || requiresSafariAccess || hasImportableSelection)
     }
 
-    /// Another browser chosen after setup's Back starts its own import from
-    /// the same cards, without discovering them again.
     func chooseSourceInline(_ source: PCNativeImportSource, from sources: [PCNativeImportSource]) {
         guard stage == .loading, discovery == nil, isCurrent, sources.contains(where: { $0 === source }) else { return }
         self.sources = sources; stage = .sources; message = "Bring your browsing with you."
@@ -286,13 +257,10 @@ final class BrowserImportCoordinator {
         if requiresSafariAccess {
             stage = .safariAccess; onChange?()
         } else {
-            // The browser's main profile goes into the Parc Profile import was
-            // opened from; there is no destination to choose.
             startInOriginalDestination()
         }
     }
 
-    /// An inline choice waits for Next before Safari's access step.
     func loadProfiles(inline: Bool = false) {
         guard stage == .sources, let source, isCurrent else { return }
         generation = UUID(); let token = generation
@@ -308,22 +276,16 @@ final class BrowserImportCoordinator {
 
     private func applyProfiles(_ result: PCNativeImportProfileResult) {
         profiles = result.profiles; warnings = []
-        // Every readable profile comes along; there is no choice, as for extensions.
-        // An unreadable one stays chosen so Full Disk Access can follow.
         let readable = result.profiles.filter { $0.supportedCategories.rawValue != 0 }
         selectedProfiles = Set((readable.isEmpty ? Array(result.profiles.prefix(1)) : readable).map(\.identifier))
         error = result.error?.localizedDescription
         message = result.profiles.isEmpty ? "No readable profiles were found." : "Bring your browsing with you."
-        // This describes selected-source readability, never a fabricated TCC
-        // grant. Missing history or an incomplete result cannot enable Restart.
         safariAccessReady = result.error == nil && result.access == .complete && result.profiles.contains {
             $0.access == .complete && $0.supportedCategories.contains(.history)
         }
     }
 
     func refreshSafariAccess() {
-        // A held restart is what grants access; checking meanwhile would only
-        // race it.
         guard stage == .safariAccess, !checkingSafariAccess, !restarting, restartWaitingToken == nil,
               isCurrent, let source else { return }
         checkingSafariAccess = true; generation = UUID(); let token = generation
@@ -347,10 +309,6 @@ final class BrowserImportCoordinator {
         refreshSafariAccess()
     }
 
-    ///
-    /// readable and move on. Safari's password steps don't need Full Disk
-    /// Access, so they still follow; any other browser with nothing readable
-    /// finishes the import.
     private func continueSetupAfterSafariAccess() {
         if hasImportableSelection { startInOriginalDestination(); return }
         if source.map(Self.isSafari) == true {
@@ -367,8 +325,6 @@ final class BrowserImportCoordinator {
     func beginSafariRestart() -> Bool {
         guard stage == .safariAccess, isCurrent, safariAccessReady, !checkingSafariAccess,
               !restarting, source != nil else { return false }
-        // Quitting now would cut off the browser imported before Back, which
-        // only Safari's import resumes after a restart.
         if Self.earlierImportRunning {
             guard restartWaitingToken == nil else { return false }
             let token = UUID(); restartWaitingToken = token
@@ -397,12 +353,8 @@ final class BrowserImportCoordinator {
         safariAccessError = message; onChange?()
     }
 
-    /// Some chosen profile still has data or extensions to import.
     var hasImportableSelection: Bool { isCurrent && !chosenProfiles.isEmpty }
 
-    /// Both presentations import into the Space and Profile they were opened
-    /// from: setup's first one, or the window's. Import must not follow a later
-    /// selection elsewhere. Source discovery alone never submits data.
     func startInOriginalDestination() {
         guard stage == .profiles, isCurrent, hasImportableSelection else { return }
         if Self.earlierImportRunning {
@@ -422,9 +374,6 @@ final class BrowserImportCoordinator {
         importNext()
     }
 
-    /// The browser's default profile goes to the original destination; each
-    /// other chosen profile goes to a Parc Profile of its own name. Every
-    /// extension a chosen profile has comes with it.
     private var chosenProfiles: [PCNativeImportProfile] {
         let chosen = profiles.filter { profile in
             var categories = profile.supportedCategories
@@ -444,8 +393,6 @@ final class BrowserImportCoordinator {
         generation = UUID()
     }
 
-    /// `known` destinations win and the first profile takes the primary one;
-    /// the rest get theirs as they import.
     private func queueProfiles(_ chosen: [PCNativeImportProfile], primaryDestination: BrowserImportDestination?,
                                known: [String: BrowserImportDestination] = [:]) {
         for (index, profile) in chosen.enumerated() {
@@ -455,8 +402,6 @@ final class BrowserImportCoordinator {
         queue = chosen
     }
 
-    /// A chosen profile without a known destination reuses an unused Parc
-    /// Profile of its name, else gets a new one.
     private func destination(named name: String, excluding used: Set<UUID>) throws -> BrowserImportDestination {
         let state = store.state
         if let profile = state.profiles.first(where: { profile in !used.contains(profile.id)
@@ -468,8 +413,6 @@ final class BrowserImportCoordinator {
         return try store.createImportDestination(name: name, basedOn: originalDestination)
     }
 
-    ///
-    /// Profile first; its browser data then imports there as any browser's does.
     private func startArc(_ chosen: [PCNativeImportProfile]) {
         beginImport(); passwordDestination = nil
         let token = generation
@@ -494,15 +437,12 @@ final class BrowserImportCoordinator {
                     standardProfileID: originalDestination.profileID, primary: keyed[0].key, into: originalDestination.profileID)
                 var known: [String: BrowserImportDestination] = [:]
                 for item in keyed { known[item.profile.identifier] = destinations[item.key] }
-                // The opened Space stays the primary destination, as it is for any browser.
                 known[keyed[0].profile.identifier] = originalDestination
                 queueProfiles(chosen, primaryDestination: nil, known: known)
             } else {
-                //
                 queueProfiles(chosen, primaryDestination: originalDestination)
             }
         } catch {
-            // Back on the browser cards with the reason, as Chrome's start does.
             queue = []; queuedDestinations = [:]; stage = .profiles; self.error = error.localizedDescription; onChange?(); return
         }
         importNext()
@@ -511,12 +451,8 @@ final class BrowserImportCoordinator {
     private func importNext() {
         guard isCurrent, let window else { cancel(); return }
         guard !queue.isEmpty else {
-            // Native import holds a Profile for one session, so Safari's data
-            // waits until its password file step is over.
             if passwordDestination?.isCurrent(in: store.state) == true { hasBackgroundWork = true; backgroundDeferred = true }
             else { startBackground(in: window) }
-            // Setup accepts bookmarks before offering the separate Safari
-            // password step. The menu keeps its existing import sequence.
             if !(onboarding && hasPendingBookmarks), presentPasswordStageIfNeeded() {
                 onChange?(); return
             }
@@ -631,7 +567,6 @@ final class BrowserImportCoordinator {
     private func startDeferredBackground() {
         guard backgroundDeferred, !cancelled else { return }
         backgroundDeferred = false
-        // A closing import window leaves any visible window to host the sessions.
         guard let host = (window?.isVisible == true ? window : nil) ?? NSApp.windows.first(where: { $0.isVisible }) ?? window else {
             if !backgroundProfiles.isEmpty { dataFailed = true }
             reportBackgroundWarnings(backgroundProfiles.map { "\($0.profile.displayName) could not be imported." })
@@ -648,7 +583,6 @@ final class BrowserImportCoordinator {
         installExtensions()
     }
 
-    ///
     private func installExtensions() {
         let pending = pendingExtensions; pendingExtensions = []
         var requests: [PCNativeImportExtensionRequest] = [], requested: [String: Set<String>] = [:]
@@ -673,10 +607,8 @@ final class BrowserImportCoordinator {
         extensionBatch = batch
 
         extensionInstall = PCNativeBrowserApplication.installImportedExtensions(requests, completion: { [weak self] result in
-            // Always ends the background phase, so a detached import is released.
             guard let self, self.backgroundToken == token, !self.cancelled else { return }
             self.extensionInstall = nil
-            // A data failure's toast already covers the whole import.
             self.reportFailedExtensions(result.failedNames, announcing: !self.dataFailed)
             ImportedExtensionFailures.clearFailed(result.installedIdentifiers)
             let added = result.installedIdentifiers.union(result.installingIdentifiers)
@@ -697,7 +629,6 @@ final class BrowserImportCoordinator {
         }, backgroundFailures: { [weak self] names in
             ImportedExtensionFailures.recordFailed(items.filter { names.contains($0.displayName) }.map(\.identifier))
             self?.importedAdBlockers.removeAll { ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
-            // An import still open records them once; either way a browser window says so.
             if let self, !self.detached, self.isCurrent, self.extensionBatch == batch {
                 self.reportFailedExtensions(names, announcing: !self.dataFailed); self.onChange?()
             } else { ImportedExtensionFailures.add(names) }
@@ -705,7 +636,6 @@ final class BrowserImportCoordinator {
         if extensionInstall == nil { reportFailedExtensions(items.map(\.displayName), announcing: !dataFailed); finishBackground() }
     }
 
-    /// The import shows no results, so a browser window reports them.
     private func reportFailedExtensions(_ names: [String], announcing: Bool = true) {
         var seen = Set(warnings)
         let fresh = names.filter { seen.insert("\($0) couldn’t be added.").inserted }
@@ -717,16 +647,11 @@ final class BrowserImportCoordinator {
         bookmarkPages.contains { !$0.committed && !$0.discarded && !$0.skipped }
     }
 
-    /// Changes presentation only. Exported credentials are never read until an
-    /// explicit file choice; the captured destination and native lease remain
-    /// authoritative across both import presentations.
     private func presentPasswordStageIfNeeded() -> Bool {
         guard !passwordStageOffered, let destination = passwordDestination,
               destination.isCurrent(in: store.state) else { return false }
         passwordStageOffered = true
         stage = onboarding && supportsICloudPasswords ? .passwordChoice : .safariPasswords
-        // Original setup initializes the recommendation when the included
-        // Safari extension-choice path is enabled. Next still owns acceptance.
         if !keepsPasswordChoice { wantsICloudPasswords = stage == .passwordChoice }
         message = stage == .passwordChoice ? "Choose how to bring your Safari passwords with you." : "Import your exported Safari passwords."
         return true
@@ -744,10 +669,7 @@ final class BrowserImportCoordinator {
     func continuePasswordChoice() {
         guard canChoosePasswordMethod, let destination = passwordDestination else { return }
         if wantsICloudPasswords {
-            // Transfer only an accepted pending choice to the setup owner.
-            // The installation belongs to finishing setup, never row selection.
             acceptedICloudPasswordsDestination = destination
-            // A file imported before going Back keeps its passwords.
             passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
             passwordDestination = nil; stage = .finished; startDeferredBackground()
             message = "Your import has finished."
@@ -776,7 +698,6 @@ final class BrowserImportCoordinator {
         let token = UUID(); passwordRequestID = token; onChange?()
         passwordSession = PCNativeBrowserApplication.importPasswordFile(url,
             toProfilePath: store.independentEngineProfilePath(for: destination.profileID), in: window) { [weak self] result in
-            // A removable file's session still holds the Profile; nothing on screen can remove it now.
             if let self, self.detached { self.passwordSession?.cancel(); self.passwordSession = nil; self.startDeferredBackground() }
             guard let self, self.isCurrent, self.stage == .safariPasswords, self.passwordRequestID == token else { return }
             self.importingPasswords = false; self.passwordResult = result
@@ -819,7 +740,6 @@ final class BrowserImportCoordinator {
 
     private func finishSourceFailure(_ failure: String) {
         queue = []; passwordDestination = nil; failed(failure); error = nil
-        // Profiles that already imported still get their extensions.
         if !pendingExtensions.isEmpty || !backgroundProfiles.isEmpty { importNext(); return }
         stage = bookmarkPages.isEmpty ? .finished : .bookmarks
         message = bookmarkPages.isEmpty ? "Import stopped. Data already imported has been kept." :
@@ -839,13 +759,10 @@ final class BrowserImportCoordinator {
         return try originals.map { try convert($0, depth: 0) }
     }
 
-    /// A page whose bookmarks can still be shown, or opened folder by folder.
     func canShowBookmarks(_ page: BookmarkPage) -> Bool {
         !page.discarded && page.destination.isCurrent(in: store.state)
     }
 
-    ///
-    /// editable; Next then changes what it added. The menu adds a page once.
     func canChooseBookmarks(_ page: BookmarkPage) -> Bool { (onboarding || !page.committed) && canShowBookmarks(page) }
 
     func toggleBookmark(page: Int, id: String, expansion: Bool) {
@@ -856,8 +773,6 @@ final class BrowserImportCoordinator {
         onChange?()
     }
 
-    /// SwiftUI actions keep their exact result-page identity through renders.
-    /// They cannot address a later result merely because it reuses an index.
     func toggleBookmark(pageID: UUID, id: String?, expansion: Bool = false) {
         guard stage == .bookmarks, isCurrent,
               let index = bookmarkPages.firstIndex(where: { $0.id == pageID }),
@@ -891,8 +806,6 @@ final class BrowserImportCoordinator {
             })
             for (index, placement) in zip(indices, placements) {
                 bookmarkPages[index].committed = true; bookmarkPages[index].placement = placement
-                // An unticked bookmark the user already opened stays in the
-                // sidebar, so its tick does too.
                 var accepted = bookmarkPages[index].selection
                 let spaceID = bookmarkPages[index].destination.spaceID
                 for (sourceID, written) in placement.tabs where !accepted.selected.contains(sourceID)
@@ -911,7 +824,6 @@ final class BrowserImportCoordinator {
 
     var passwordImportCompleted: Bool { passwordResult?.outcome == .completed }
 
-    ///
     var setupSkipTitle: String? {
         guard onboarding else { return nil }
         switch stage {
@@ -931,21 +843,16 @@ final class BrowserImportCoordinator {
         }
     }
 
-    /// Setup's Next on Stay logged in waits for a completed password file;
-    /// Do this later moves on without one.
     var canContinueSetupPasswords: Bool {
         stage == .safariPasswords && passwordImportCompleted && !importingPasswords && !removingPasswordFile
     }
 
-    ///
-    /// this one would have added.
     func skipInSetup() {
         guard canSkipInSetup else { return }
         switch stage {
         case .safariAccess:
             continueSafariWithoutRestarting()
         case .bookmarks:
-            // A page already added keeps what it added, and its ticks again show that.
             for index in bookmarkPages.indices {
                 if let accepted = bookmarkPages[index].accepted { bookmarkPages[index].selection = accepted }
                 else { bookmarkPages[index].skipped = true }
@@ -956,7 +863,6 @@ final class BrowserImportCoordinator {
             }
             onChange?()
         case .passwordChoice, .safariPasswords:
-            // Skipping never installs the iCloud Passwords extension.
             wantsICloudPasswords = false; acceptedICloudPasswordsDestination = nil
             passwordSession?.cancel(); passwordSession = nil; passwordDestination = nil; passwordRequestID = nil
             startDeferredBackground()
@@ -966,7 +872,6 @@ final class BrowserImportCoordinator {
         }
     }
 
-    ///
     var canGoBackInSetup: Bool {
         guard onboarding, isCurrent else { return false }
         switch stage {
@@ -977,8 +882,6 @@ final class BrowserImportCoordinator {
         }
     }
 
-    /// Back keeps everything already imported. The browser cards keep the
-    /// chosen browser, and Next on it returns here without importing again.
     func goBackInSetup() {
         guard canGoBackInSetup else { return }
         switch stage {
@@ -999,7 +902,6 @@ final class BrowserImportCoordinator {
                 for index in bookmarkPages.indices { bookmarkPages[index].skipped = false }
                 stage = .bookmarks
             } else if passwordsWithoutData {
-                // Nothing was readable, so the access page is still the one before.
                 passwordSession?.cancel(); passwordSession = nil; passwordRequestID = nil
                 passwordStageOffered = false; passwordDestination = nil
                 requiresSafariAccess = true; stage = .safariAccess
@@ -1019,7 +921,6 @@ final class BrowserImportCoordinator {
         guard stage == .importing else { return }
         queue = []; queuedDestinations = [:]; passwordDestination = nil; pendingExtensions = []; backgroundProfiles = []
         guard let session else {
-            //
             generation = UUID(); stage = .finished
             message = "Import stopped. Data already imported has been kept."; onChange?(); return
         }
@@ -1028,7 +929,6 @@ final class BrowserImportCoordinator {
 
     func cancel() {
         guard !cancelled else { return }
-        // A profile still importing when the import closes counts as stopped.
         if session != nil || !backgroundSessions.isEmpty { dataImported = true }
         cancelled = true; generation = UUID(); discovery?.cancel(); discovery = nil; restartWaitingToken = nil
         checkingSafariAccess = false; restarting = false; continueAfterSafariRefresh = false
@@ -1044,8 +944,6 @@ final class BrowserImportCoordinator {
     }
 }
 
-/// An import whose data partly or wholly failed, waiting for a browser window
-/// to say so once.
 @MainActor
 enum ImportedBrowserDataFailures {
     enum Outcome { case partial, failed }
@@ -1056,16 +954,13 @@ enum ImportedBrowserDataFailures {
         present?()
     }
     static func take() -> Outcome? { defer { pending = nil }; return pending }
-    /// Kept for the next window when this one couldn't show it.
     static func restore(_ outcome: Outcome) { if pending == nil { pending = outcome } }
 }
 
-/// Imported extensions that failed, waiting for a browser window to say so.
 @MainActor
 enum ImportedExtensionFailures {
     static let didFail = Notification.Name("ParcImportedExtensionsDidFail")
     private(set) static var pending: [String] = []
-    /// Setup's ad-blocker step leaves these out.
     private(set) static var failedIdentifiers = Set<String>()
     static var present: (() -> Void)?
     static func clearFailed(_ identifiers: Set<String>) { failedIdentifiers.subtract(identifiers) }
@@ -1078,12 +973,9 @@ enum ImportedExtensionFailures {
         present?()
     }
     static func take() -> [String] { defer { pending = [] }; return pending }
-    /// Kept for the next window when this one couldn't show them.
     static func restore(_ names: [String]) { pending = names + pending.filter { !names.contains($0) } }
 }
 
-///
-///
 enum ArcSidebarSnapshot {
     static var defaultURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -1095,8 +987,6 @@ enum ArcSidebarSnapshot {
     }
     static let maximumSize = 64 * 1024 * 1024
 
-    ///
-    /// each Parc Profile keeps its own archive setting.
     static func read(_ source: URL, preferences: URL) throws -> (ArcSidebarImport, [String: Any]) {
         let files = FileManager.default
         let directory = files.temporaryDirectory.appendingPathComponent("ParcArcImport-\(UUID().uuidString)", isDirectory: true)

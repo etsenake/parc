@@ -5,8 +5,6 @@ import ImageIO
 import QuickLookThumbnailing
 import UniformTypeIdentifiers
 
-/// A file reference, never a SavedCapture or a copied catalog asset. Path identity
-///
 struct ExternalMediaFile: Equatable, Identifiable, Sendable {
     enum Kind: String, Sendable { case image, movie }
     struct Revision: Equatable, Hashable, Sendable {
@@ -147,11 +145,9 @@ final class ExternalMediaLibrary: ObservableObject {
     }
     func contains(_ item: ExternalMediaFile) -> Bool { items.contains(item) }
     func grant(_ url: URL) async throws {
-        // Called only with the actual URL selected by the native folder panel.
         try await disk.grant(url); refresh()
     }
     func setEnabled(_ enabled: Bool, folder: URL) async throws {
-        // Remove visible results synchronously before changing access preferences.
         generation &+= 1; refreshTask?.cancel(); stopWatching()
         items.removeAll { $0.folder == folder }
         try await disk.setEnabled(enabled, folder: folder); refresh()
@@ -179,7 +175,6 @@ final class ExternalMediaLibrary: ObservableObject {
         }
     }
     private func scheduleRefresh() {
-        // Coalesce bursts from an atomic save or recording producer.
         generation &+= 1; let token = generation
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in

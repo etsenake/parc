@@ -23,8 +23,6 @@ enum NoteDocumentAppearance {
         paragraph.lineHeightMultiple = 1.25; paragraph.paragraphSpacingBefore = 4; paragraph.paragraphSpacing = 8
         return [.font: bodyFont, .foregroundColor: bodyColor, .paragraphStyle: paragraph]
     }
-    /// Defaults belong to new/unformatted text. The fullBlob carrier's authored
-    /// ranges replace them exactly, including an explicit native default style.
     static func attributedBody(_ body: NoteBody) -> NSAttributedString {
         let result = NSMutableAttributedString(string: body.text, attributes: bodyAttributes)
         for run in body.richText.runs {
@@ -32,8 +30,6 @@ enum NoteDocumentAppearance {
         }
         return result
     }
-    // Original named-color consumers, with the surviving shipped sRGB values.
-    // The transparent editor inherits the actual document appearance.
     private static func adaptive(_ name: String, light: NSColor, dark: NSColor) -> NSColor {
         NSColor(name: NSColor.Name("Parc.Note." + name)) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
@@ -64,8 +60,6 @@ enum NoteDocumentAppearance {
     }
 }
 
-/// Recovered constraints govern the original native text views. Text measurement
-/// changes geometry only: it does not replace attributed text, selection or Undo.
 @MainActor
 final class NoteDocumentLayout: NSView {
     let column = NSView()
@@ -110,9 +104,6 @@ final class NoteDocumentLayout: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     func arrange(viewport: NSSize, title: NSTextView, body: NSTextView) {
-        // An unattached/zero-width pane cannot satisfy even the two minimum
-        // insets. Relax just that degenerate case; normal split panes use the
-        // original required 20-point margins and soft 250-point field width.
         let inset = min(20, max(0, viewport.width) / 2)
         for (index, constraint) in minimumInsets.enumerated() { constraint.constant = index.isMultiple(of: 2) ? inset : -inset }
         setFrameSize(NSSize(width: max(0, viewport.width), height: max(145, viewport.height)))
@@ -122,9 +113,6 @@ final class NoteDocumentLayout: NSView {
         applyMeasuredHeight(viewport: viewport, title: title, body: body, titleUsed: titleUsed, bodyUsed: bodyUsed)
     }
 
-    /// Typing does not change footer chrome or column insets. Use the same
-    /// title/body measurements as arrange, and skip the constraint pass when
-    /// document height is already that size.
     @discardableResult
     func reflowIfHeightChanged(viewport: NSSize, title: NSTextView, body: NSTextView) -> Bool {
         let width = titleContainer.bounds.width
@@ -155,14 +143,11 @@ final class NoteDocumentLayout: NSView {
         container.containerSize = NSSize(width: max(1, width - 2 * text.textContainerInset.width), height: .greatestFiniteMagnitude)
         layout.ensureLayout(for: container)
         let line = layout.defaultLineHeight(for: text.font ?? .systemFont(ofSize: 15))
-        // Include the real trailing empty line (including after a newline).
         let extra = layout.extraLineFragmentTextContainer === container ? layout.extraLineFragmentRect.maxY : 0
         return ceil(max(line, layout.usedRect(for: container).maxY, extra) + 2 * text.textContainerInset.height)
     }
 }
 
-/// Load failure has its own document view. Save failures must keep the existing
-/// editor and draft, so this view is only constructed by the failed load owner.
 @MainActor
 final class NoteLoadErrorView: NoteCanvasView {
     let heading = NSTextField(wrappingLabelWithString: "Can't load this note")
@@ -173,8 +158,6 @@ final class NoteLoadErrorView: NoteCanvasView {
         detail = NSTextField(wrappingLabelWithString: error.localizedDescription)
         super.init(frame: .zero)
         heading.font = NoteDocumentAppearance.titleFont; heading.textColor = NoteDocumentAppearance.titleColor
-        // Local disk/version failures replace obsolete network/account advice.
-        // The subtitle and body share the original Nunito-Regular18 getter.
         detail.font = NoteDocumentAppearance.bodyFont; detail.textColor = .secondaryLabelColor
         for label in [heading, detail] {
             label.alignment = .center; label.maximumNumberOfLines = 0; label.isSelectable = true
@@ -198,17 +181,6 @@ final class NoteLoadErrorView: NoteCanvasView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
-/// Draw the recovered translucent document surface under the transparent editor.
-/// AppKit resolves named colors for this view's appearance without rewriting text,
-/// its selection, Undo, composition, or persisted authored color runs.
-///
-///
-///
-///
-/// `windowTheme.background.contentOverBackgroundAppearance` through
-///
-/// otherwise Aqua or DarkAqua. That is SPACE17's `ThemeChromePalette.contentAppearance`.
-/// The excluded Share `semanticColorPalette` never colors this surface.
 @MainActor
 class NoteCanvasView: LocalContentDropView {
     override var isOpaque: Bool { false }
@@ -216,8 +188,6 @@ class NoteCanvasView: LocalContentDropView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         NoteDocumentAppearance.backgroundColor.setFill()
-        // Source-over keeps NotesBackground's recovered 0.85/0.5 alpha so the
-        // enclosing Space theme underlay participates in the original composite.
         dirtyRect.fill(using: .sourceOver)
     }
     override func viewDidChangeEffectiveAppearance() {
@@ -225,9 +195,6 @@ class NoteCanvasView: LocalContentDropView {
         needsDisplay = true
     }
 
-    /// Apply the enclosing Space's content-over-background appearance. Passing
-    /// nil restores inherited window appearance, matching Optional.none at
-    ///
     func inheritSpaceContentAppearance(_ appearance: NSAppearance?) {
         guard self.appearance != appearance else { return }
         self.appearance = appearance

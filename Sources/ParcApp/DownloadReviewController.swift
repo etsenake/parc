@@ -1,7 +1,5 @@
 import AppKit
 
-/// A profile-owned review surface. Chromium supplies the warning and offered
-/// choices; this controller never infers that a blocked file may be kept.
 @MainActor
 final class DownloadReviewController: NSWindowController, NSTextFieldDelegate, NSTextViewDelegate {
     private(set) var review: PCNativeDownloadReview
@@ -32,8 +30,6 @@ final class DownloadReviewController: NSWindowController, NSTextFieldDelegate, N
     private var parentCloseObserver: NSObjectProtocol?
     private var finished = false
 
-    ///
-    /// whose window appearance is Dark Aqua.
     init(review: PCNativeDownloadReview, theme: SpaceTheme, incognito: Bool = false) {
         self.review = review
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 340),

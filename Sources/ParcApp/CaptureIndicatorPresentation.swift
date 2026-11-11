@@ -1,7 +1,5 @@
 import AppKit
 
-// Ephemeral producer state only; it is never serialized in BrowserState.
-// The sidebar row's capture badge and Stop menu draw it.
 struct CaptureIndicatorPresentation: Equatable {
     let camera: Bool
     let microphone: Bool

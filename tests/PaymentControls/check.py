@@ -34,8 +34,6 @@ assert body.count("sidebar.layoutSubtreeIfNeeded()") == 1, \
     "refreshPaymentControls must layout the sidebar only inside the changed-entry gate"
 assert (
     "guard sidebarPresentation != .hidden, sidebar.isPaymentEntryVisible else { return }\n"
-    "        // The copied action carries the original document, suggestion request,\n"
-    "        // and chip generation. Reentrant refresh cannot acknowledge a successor.\n"
     "        for action in actions where action.requiresPresentationAcknowledgment {"
 ) in body, "refreshPaymentControls no longer acknowledges payment presentation after the layout gate"
 assert (

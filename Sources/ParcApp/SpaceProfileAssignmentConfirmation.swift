@@ -1,11 +1,5 @@
 import AppKit
 
-///
-///
-/// in its `Dialogs` sheet at the inter-Profile width: "Switch to your <Profile>
-///
-///
-/// illustration is not reproduced.
 @MainActor enum SpaceProfileAssignmentConfirmation {
     static func present(on window: NSWindow, store: BrowserStore, space: BrowserSpace, profile: BrowserProfile,
                         ownerValid: @escaping () -> Bool,

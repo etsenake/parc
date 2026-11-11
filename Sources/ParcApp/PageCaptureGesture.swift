@@ -1,7 +1,5 @@
 import AppKit
 
-/// The gesture belongs to the original hit-tested page. Admission only retains
-/// that owner; the capture lease is created when AppKit actually begins its pan.
 @MainActor
 final class PageCaptureGesture: NSObject, NSGestureRecognizerDelegate {
     struct Admission {

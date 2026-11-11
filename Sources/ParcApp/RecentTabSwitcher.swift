@@ -1,8 +1,6 @@
 import AppKit
 import Combine
 
-/// The ordinary menu / native priority dispatch starts this controller. Its
-/// monitor exists only while that already-authorized switcher session is alive.
 @MainActor
 final class RecentTabSwitcher {
     struct Component {
@@ -10,10 +8,8 @@ final class RecentTabSwitcher {
         let title: String
         let page: PCNativePage?
         let localPreview: NSImage?
-        /// The snapshot style's template, shown until a page snapshot arrives.
         var template: RecentTabSwitcherView.Template? = nil
         var favicon: NSImage? = nil
-        /// A cached page icon for a component without a live page favicon.
         var faviconRequest: ((@escaping (NSImage?) -> Void) -> Void)? = nil
         var isRecordingMedia = false
     }
@@ -22,7 +18,6 @@ final class RecentTabSwitcher {
         let components: [Component]
         let spaceName: String
         var customInfo: RecentTabSwitcherView.CustomInfo? = nil
-        /// A Peek above the item (`State.Item.overlayComponent`).
         var overlay: Component? = nil
         var id: String { selection.id }
         var allComponents: [Component] { components + (overlay.map { [$0] } ?? []) }
@@ -61,8 +56,6 @@ final class RecentTabSwitcher {
         self.parent = parent; self.next = next; self.previous = previous
         revision = KeyboardShortcuts.shared.revision
         input = RecentTabSwitcherInput(next: next?.flags.rawValue, previous: previous?.flags.rawValue)
-        //
-        //
         panel.isReleasedWhenClosed = false; panel.isRestorable = false
         panel.hasShadow = false; panel.animationBehavior = .none
         panel.backgroundColor = .clear; panel.isOpaque = false
@@ -79,8 +72,6 @@ final class RecentTabSwitcher {
     func start(event: NSEvent?) {
         guard valid(), !items.isEmpty else { finish(select: false); return }
         if displayedItems.count == 1 || !holding {
-            // Menu invocation without a held binding modifier, or a renderer
-            // ACK after release: complete once without flashing an overlay.
             finish(select: true); return
         }
         let center = NotificationCenter.default
@@ -108,8 +99,6 @@ final class RecentTabSwitcher {
             MainActor.assumeIsolated { if let self { result = self.handle(event) } }
             return result
         }
-        //
-        // time from presentationRequestTime before scheduling its timer.
         let elapsed = event.map { max(0, ProcessInfo.processInfo.systemUptime - $0.timestamp) } ?? 0
         let work = DispatchWorkItem { [weak self] in self?.show() }
         presentation = work
@@ -130,8 +119,6 @@ final class RecentTabSwitcher {
         let action = event.type == .keyDown ? input.keyDown(
             matchesNext: next != nil && shortcut == next, matchesPrevious: previous != nil && shortcut == previous,
             keyCode: event.keyCode, flags: event.modifierFlags.rawValue) : nil
-        // Close owns its real asynchronous consent. Never preview/select a
-        // retiring page or swallow events intended for its security dialog.
         if closing {
             if event.type == .flagsChanged {
                 if !input.continues(event.modifierFlags.rawValue) { finish(select: false) }
@@ -148,8 +135,6 @@ final class RecentTabSwitcher {
             finish(select: false); return event
         }
         if event.type == .flagsChanged {
-            //
-            // modifier or releasing the binding commits, as release does.
             if !input.continues(event.modifierFlags.rawValue) { finish(select: true) }
             return nil
         }
@@ -158,8 +143,6 @@ final class RecentTabSwitcher {
         case .backward: cycle(forward: false)
         case .cancel: finish(select: false)
         case .close: closeItem(focused)
-        //
-        // session; page, menu and editing commands never see them.
         case .consume, nil: break
         }
         return nil
@@ -169,7 +152,6 @@ final class RecentTabSwitcher {
         presentation = nil
         guard valid(), let parent else { finish(select: false); return }
         if !holding { finish(select: true); return }
-        // The factory keeps maximum + 1 items with the final replacement hidden.
         let shown = displayedItems.count
         surface.setItems(items.enumerated().map { Self.presentation($1, hidden: $0 >= shown) }, focused: focused)
         layout(); parent.addChildWindow(panel, ordered: .above)
@@ -201,8 +183,6 @@ final class RecentTabSwitcher {
                      components: item.components.map(component), customInfo: item.customInfo,
                      overlay: item.overlay.map(component), isHidden: hidden)
     }
-    /// Unloaded pages read their cached icon once; delivery revalidates the
-    /// same live session and original component.
     private func requestFavicons() {
         for component in items.flatMap(\.components) where !requestedFavicons.contains(component.id) {
             guard let request = component.faviconRequest else { continue }

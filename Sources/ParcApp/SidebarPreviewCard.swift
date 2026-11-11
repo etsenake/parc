@@ -1,8 +1,5 @@
 import AppKit
 
-/// A source-owned, themed provider list, or a tab's last picture. It never
-/// captures a webpage itself or creates a tab. Hover does not focus it; the
-/// explicit Preview action does.
 @MainActor
 final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
     static let searchMiss = "No tabs matching that search\n🤔"
@@ -11,7 +8,6 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     var onSettings: (() -> Void)?
     var onHeightChange: (() -> Void)?
     var requestFavicon: ((URL, @escaping (NSImage?) -> Void) -> Void)? { didSet { loadProviderIcon() } }
-    ///
     var modifierFlags: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
     private let domain: SidebarRecentDomain?
     private let providerURL: URL?
@@ -24,7 +20,6 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     private let picture = SidebarPreviewPicture()
     private let showsPicture: Bool
     private let search = NSTextField()
-    ///
     private let divider = SidebarPreviewDivider()
     private let message = NSTextField(wrappingLabelWithString: "")
     private let scroll = NSScrollView()
@@ -37,9 +32,6 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
     private var providerIconRequested = false
     private var trackedMenu: NSMenu?
 
-    ///
-    /// row. A tab's card (`picture`) is Parc's: that header with the tab's title
-    /// and site, over the picture.
     init(title: String, domain: SidebarRecentDomain?, providerURL: URL?, picture image: NSImage? = nil, site: String = "") {
         self.domain = domain; self.providerURL = providerURL; showsPicture = image != nil
         super.init(frame: .zero)
@@ -80,13 +72,11 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             icon.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: 12, weight: .heavy))
             icon.contentTintColor = secondary
-            // The 'Search ' prefix is recovered; appending the folder title is inferred.
             let placeholder = "Search " + title
             search.isBordered = false; search.isBezeled = false; search.drawsBackground = false
             search.focusRingType = .none; search.usesSingleLineMode = true
             search.cell?.isScrollable = true; search.cell?.wraps = false
             search.font = .systemFont(ofSize: 13); search.textColor = primary
-            // The custom field's text colours were not recovered; AppKit's placeholder colour stands in.
             search.placeholderAttributedString = NSAttributedString(string: placeholder,
                 attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.placeholderTextColor])
             search.setAccessibilityLabel(placeholder)
@@ -121,13 +111,9 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
         button.title = ""; button.imagePosition = .imageOnly; button.toolTip = label
         button.image = button.image?.withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
         button.setAccessibilityLabel(label); button.contentTintColor = tint
-        //
-        // Keyboard Access stop instead of leaving it unmarked.
         button.focusRingCornerRadius = 5
     }
 
-    ///
-    /// picture keeps its aspect at the card's width, inset 8 pt.
     override var preferredHeight: CGFloat {
         if showsPicture { return SidebarPreviewMetrics.header + pictureHeight + 8 }
         let body = filtered.isEmpty ? messageHeight + 24 : CGFloat(filtered.count) * (table.rowHeight + 1) + 4
@@ -162,11 +148,9 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             heading.frame = NSRect(x: icon.frame.maxX + 8, y: (header - 18) / 2,
                                    width: max(0, create.frame.minX - icon.frame.maxX - 16), height: 18)
         } else {
-            // Search row: 8 pt horizontal padding, 5 pt glass inset, 9 pt spacing.
             icon.frame = NSRect(x: 13, y: (header - 16) / 2, width: 14, height: 16)
             search.frame = NSRect(x: icon.frame.maxX + 9, y: (header - 20) / 2,
                                   width: max(0, width - icon.frame.maxX - 17), height: 20)
-            // Inside the border rings, which it would otherwise cover.
             divider.frame = NSRect(x: 1, y: header - 1, width: max(0, width - 2), height: 1)
         }
         scroll.frame = NSRect(x: 4, y: header, width: max(0, width - 8), height: max(0, bounds.height - header - 4))
@@ -183,8 +167,6 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
         }
         return false
     }
-    /// Explicit entry. The folder search keeps focus and moves the list's
-    /// keyboard selection; recents have no search, so the list takes focus.
     func focusKeyboard() {
         guard !showsPicture else { return }
         if !filtered.indices.contains(table.selectedRow), !filtered.isEmpty { select(0) }
@@ -195,14 +177,11 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
         guard showsPicture else { return }
         heading.stringValue = title; self.site.stringValue = site
     }
-    /// A shown tab card follows the tab's newer pictures.
     func setPicture(_ image: NSImage) {
         guard showsPicture else { return }
         picture.image = image; needsLayout = true
         onHeightChange?()
     }
-    /// Also refreshes a shown folder card in place; its delivered favicons,
-    /// search and keyboard selection carry over.
     func setRows(_ values: [SidebarPreviewRow]) {
         dataGeneration &+= 1; rows = values
         guard !showsPicture else { return }
@@ -269,7 +248,6 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             requestFavicon?(value.url) { [weak self] image in
                 guard let self, self.dataGeneration == token else { return }
                 if let image { self.icons[value.url] = image }
-                // Reload only extant rows with this URL; filtering may change indexes.
                 let indexes = IndexSet(self.filtered.indices.filter { self.filtered[$0].url == value.url })
                 if !indexes.isEmpty { self.table.reloadData(forRowIndexes: indexes, columnIndexes: IndexSet(integer: 0)) }
             }
@@ -290,7 +268,6 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
             menu.addItem(MenuAction.item(title) { [weak self] in self?.onAction?(value, action) })
         }
         if value.tabID != nil {
-            //
             add("Copy URL", .copyURL)
             add("Open in Split View", .split)
             add("Duplicate", .duplicate)
@@ -313,7 +290,6 @@ final class SidebarPreviewCard: SidebarPreviewSurface, NSTableViewDataSource, NS
         case #selector(NSResponder.moveUp(_:)):
             if !filtered.isEmpty { select(max(0, table.selectedRow - 1)) }
             return true
-        //
         case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
              #selector(NSResponder.insertLineBreak(_:)):
             activateSelection(); return true
@@ -356,9 +332,6 @@ private final class SidebarPreviewTable: NSTableView {
         super.mouseExited(with: event)
         if event.trackingArea === hoverArea { hoveredRow = -1 }
     }
-    ///
-    /// only when released over itself, using its own index rather than a
-    /// selection a Command-click may have toggled.
     override func mouseDown(with event: NSEvent) {
         let index = row(at: convert(event.locationInWindow, from: nil))
         super.mouseDown(with: event)
@@ -379,9 +352,6 @@ private final class SidebarPreviewTable: NSTableView {
     }
 }
 
-///
-/// BasePrimary and FullOpacityForegroundPrimary are black, or white in Dark
-/// Aqua; PreviewBackgroundColor is white, or sRGB 0.129, 0.133, 0.133.
 enum SidebarPreviewColors {
     static func primary(_ alpha: CGFloat) -> NSColor {
         NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .white.withAlphaComponent(alpha) : .black.withAlphaComponent(alpha) }
@@ -391,7 +361,6 @@ enum SidebarPreviewColors {
     }
 }
 
-/// The tab's picture with 4 pt corners and the divider's hairline.
 private final class SidebarPreviewPicture: NSView {
     var image: NSImage? { didSet { needsDisplay = true } }
     override var isFlipped: Bool { true }
@@ -411,7 +380,6 @@ private final class SidebarPreviewPicture: NSView {
     }
 }
 
-///
 final class SidebarPreviewDivider: NSView {
     override var wantsUpdateLayer: Bool { true }
     override func updateLayer() {

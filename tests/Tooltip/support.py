@@ -6,10 +6,10 @@ KeyboardShortcut and ViewDisplayFrameDriver cut from them."""
 from pathlib import Path
 
 SLICES = {
-    "ThemeRenderer.swift": ("TooltipThemePalette.swift", None, "// Opt-in native delivery diagnostics", ""),
+    "ThemeRenderer.swift": ("TooltipThemePalette.swift", None, "@MainActor\nenum NativeInputDiagnostics", ""),
     "KeyboardShortcuts.swift": ("TooltipKeyboardShortcut.swift", None, "@MainActor\nfinal class KeyboardShortcuts", ""),
     "ReloadControl.swift": ("TooltipFrameDriver.swift", "@MainActor final class ViewDisplayFrameDriver",
-                            "/// Arc's TranslucentButton reload icon", "import AppKit\n\n"),
+                            "@MainActor final class ReloadGlyph {", "import AppKit\n\n"),
 }
 
 

@@ -1,19 +1,12 @@
 import AppKit
 import SwiftUI
 
-///
-/// TranslucentButton showing `.animatedIcon(.plusMenu(isOpen:))` at
-///
-///
-///
-/// configures it, so it has no tooltip.
 @MainActor final class SidebarPlusButtonState: ObservableObject {
     @Published var hovered = false
     @Published var pressed = false
     @Published var open = false
     @Published var colors = TranslucentButtonColors.standard(dark: false)
 
-    /// Renders the face over `button`, which keeps the pointer, keyboard and accessibility.
     func install(in button: NSButton) {
         let host = LibraryRenderingHostingView(rootView: SidebarPlusButtonFace(state: self))
         host.sizingOptions = []
@@ -23,12 +16,6 @@ import SwiftUI
     }
 }
 
-///
-///
-///
-/// × 2 with 1-point corners, the second turned π/2; open turns the pair π/4
-/// into an × on spring(response: 0.2, dampingFraction: 0.5). Reduce Motion
-/// switches the glyph immediately (Parc accessibility adaptation).
 struct SidebarPlusButtonFace: View {
     @ObservedObject var state: SidebarPlusButtonState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -48,8 +35,6 @@ struct SidebarPlusButtonFace: View {
             .animation(.easeIn(duration: 0.1), value: state.hovered)
     }
 
-    ///
-    /// the translucent GrayA foreground (1.170 screenshots).
     private struct PlusGlyph: Shape {
         func path(in rect: CGRect) -> Path {
             var path = Path()

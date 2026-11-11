@@ -1,14 +1,10 @@
 import AppKit
 
-///
-/// `.browserPopup` entry point. Its normal key/main eligibility is explicit.
 final class BrowserPopupWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
     override func makeKey() {
-        // LittleBrowserWindow's browser-popup entry point temporarily rises
-        // to level 24 while becoming key, then returns to normal next turn.
         level = NSWindow.Level(rawValue: 24)
         super.makeKey()
         DispatchQueue.main.async { [weak self] in

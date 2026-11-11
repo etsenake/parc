@@ -1,36 +1,19 @@
 import AppKit
 import QuartzCore
 
-///
-///
-///
-///
-/// SidebarItemBackground, and SidebarItemHoveredBackground while the pointer is
-///
-/// In an incognito window (WindowStyle standard, sidebar context incognito)
-/// the scheme's resting fill is CommandBarPlaceholderIncognitoBackground
-///
 @MainActor final class SidebarAddressPillView: NSView {
     static let cornerRadius: CGFloat = 12
     static let hoverDuration: CFTimeInterval = 0.12
 
-    /// SidebarItemBackground / SidebarItemHoveredBackground (Display P3).
     static func fill(dark: Bool, hovered: Bool) -> NSColor {
         dark ? NSColor(displayP3Red: 0.98, green: 0.984, blue: 1, alpha: hovered ? 0.15 : 0.1)
              : NSColor(displayP3Red: 0.055, green: 0.059, blue: 0.063, alpha: hovered ? 0.1 : 0.05)
     }
-    /// BaseAssets CommandBarPlaceholderIncognitoBackground: Display P3 white
-    /// at 0.15 in every appearance.
     static let incognitoFill = NSColor(displayP3Red: 1, green: 1, blue: 1, alpha: 0.15)
     static func fill(dark: Bool, hovered: Bool, incognito: Bool) -> NSColor {
         incognito && !hovered ? incognitoFill : fill(dark: dark, hovered: hovered)
     }
 
-    /// Parc's shared-quote mode shrinks the pill to the URL line with the quote
-    /// below it, Parc's earlier surface: 7-point corners in the theme's hover
-    ///
-    /// (`CommandBarPlaceholderButtonState.StaticButtonState.copyQuoteLink`),
-    /// whose presentation was not recovered.
     enum Style: Equatable { case urlBar, sharedQuote(fill: NSColor) }
     static let sharedQuoteCornerRadius: CGFloat = 7
 
@@ -79,8 +62,6 @@ import QuartzCore
         applyFill(animated: animated)
     }
 
-    /// A theme-free shared-quote fill is a system colour that equals itself
-    /// across appearances, so `style` alone never re-resolves it.
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); applyFill(animated: false) }
 
     private func applyFill(animated: Bool) {
@@ -107,17 +88,8 @@ import QuartzCore
     }
 }
 
-/// The empty URL bar's `CommandBarPlaceholderView.iconView`, a
-/// `CommandBarIconView` whose `IconType` has `searchOutline`, beside
-///
-///
-/// glyph's centre, its 11-point ink and the text's start are measured on
-///
 @MainActor final class SidebarAddressSearchIcon: NSImageView {
     static let placeholder = "Search or Enter URL…"
-    /// The URL bar reads the page's host without one leading "www.": the
-    ///
-    ///
     static func host(of url: URL) -> String? {
         guard let host = url.host else { return nil }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
@@ -137,11 +109,6 @@ import QuartzCore
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-///
-///
-/// its anchor and then shows its popover from it at once, so this hold
-/// follows the next popover shown and ends when that popover closes, or on
-/// the next turn of the run loop if none was shown.
 @MainActor final class AddressPopoverRevealHold {
     private var observers: [NSObjectProtocol] = []
     private var popover: NSPopover?
@@ -182,12 +149,6 @@ import QuartzCore
     }
 }
 
-///
-/// pinned extensions are revealed by the view state's computed predicate
-///
-///
-///
-/// change from the presentation opacity over 0.15 s ease-out.
 enum SidebarAddressButtonsReveal {
     static let fadeDuration: CFTimeInterval = 0.15
 
@@ -196,9 +157,6 @@ enum SidebarAddressButtonsReveal {
     }
     static func showsSiteControlCenter(revealed: Bool, copyQuoteLink: Bool) -> Bool { revealed || copyQuoteLink }
 
-    /// Parc adaptation: a hidden button stays in the key-view loop and the
-    ///
-    /// also reveals while one of the pill's controls has keyboard focus.
     @MainActor static func apply(_ shown: Bool, to view: NSView, animated: Bool) {
         let alpha: CGFloat = shown ? 1 : 0
         guard view.alphaValue != alpha else { return }

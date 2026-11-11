@@ -1,8 +1,6 @@
 import AppKit
 import Combine
 
-/// One editor/window's real auxiliary pages. Durable objects live in the shared
-/// session; WebContents and input/permission ownership stay window-local.
 @MainActor
 final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserViewDelegate {
     private static var owners: [UUID: EaselBrowserObjects] = [:]
@@ -45,8 +43,6 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
         var attempt = UUID()
         func cancelRequest() {
             request?.cancel()
-            // A committed native request cannot be cancelled. Keep the entry
-            // and accept its actual page callback rather than abandoning it.
             guard request?.isPending != true else { return }
             attempt = UUID(); request = nil
         }
@@ -75,15 +71,12 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
                 } == true
             }
         }
-        // Observe each committed value synchronously: a delete followed by Undo
-        // before the next layout must retire the closed entry, so restoration
-        // can create a fresh runtime page for that same durable object.
         documentObserver = session.$document.sink { [weak self] next in
             guard let self else { return }
             for (id, entry) in self.entries {
                 if let item = next.items.first(where: { $0.id == id && $0.kind == .browser }), let url = item.url,
                    self.session.isRecordingBrowserNavigation(id, from: entry.originalURL, to: url) {
-                    entry.originalURL = url // Same real page; never replay this observation.
+                    entry.originalURL = url
                 }
             }
             for (id, entry) in Array(self.entries) where
@@ -97,8 +90,6 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
         canvas.pageObjects = self
     }
 
-    /// A retained original pool snapshot. It never represents a new page or
-    /// grants a view permission to claim an arbitrary native Browser.
     final class WindowTransfer {
         fileprivate let generation: UInt64
         fileprivate let owner: UUID
@@ -169,8 +160,6 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
         guard canFinishWindowTransfer(transfer) else { return false }
         windowTransfer = nil
         windowTransferGeneration &+= 1
-        // The collection clears all pool/window gates before its ordinary
-        // render/layout publication. No callback can interleave this release.
         return true
     }
 
@@ -183,8 +172,6 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
         selectionChanged()
         if selectedPage === page { canvas?.window?.makeFirstResponder(page.nativeView) }
     }
-    /// Native keyboard/AX entry uses the same selected original page as pointer
-    /// interaction. A loading/error surface can focus its real recovery control.
     func focusPage(for id: UUID) -> Bool {
         guard let surface = accessibilitySurface(for: id) as? EaselBrowserSurface,
               let window = surface.window, window.attachedSheet == nil else { return false }
@@ -209,8 +196,6 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
         (view as? EaselBrowserSurface).map { !$0.inputAvailable } ?? false
     }
     var pages: [PCNativePage] { entries.values.compactMap { $0.page }.filter { !$0.isClosed } }
-    /// An engine without the embedded snapshot, a refused or empty reply and a
-    /// surface not yet laid out all leave their object to the export's card.
     func exportSnapshots(within deadline: TimeInterval, _ completion: @escaping ([UUID: EaselPageSnapshot]) -> Void) {
         let collection = SnapshotCollection(completion)
         for (id, entry) in entries where !disposed && session.document.items.contains(where: { $0.id == id && entry.matches($0) }) {
@@ -228,8 +213,6 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
         collection.requested()
         DispatchQueue.main.asyncAfter(deadline: .now() + deadline) { MainActor.assumeIsolated { collection.expire() } }
     }
-    /// Replies once: when every requested page has answered, or at the deadline
-    /// with what has arrived.
     @MainActor private final class SnapshotCollection {
         private var snapshots: [UUID: EaselPageSnapshot] = [:]
         private var pending = 0, requesting = true, delivered = false
@@ -288,7 +271,7 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
                   self.selectedPage === entry.page, !self.retirementPending,
                   entry.view.window?.attachedSheet == nil, let page = entry.page,
                   page.embeddedOwnerValid, page.canPerformNavigation(.reload) else { return false }
-            entry.view.browser.loadURL(url) // Chromium owns navigation/beforeunload, not canvas replacement.
+            entry.view.browser.loadURL(url)
             return true
         }
         entry.view.onDone = { [weak self, weak entry] in
@@ -313,7 +296,7 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
         entry.started = true
         entry.attempt = UUID(); let attempt = entry.attempt
         entry.view.setStatus("Loading webpage…")
-        Self.owners[token] = self // Keep a refused actual close owned, never orphaned.
+        Self.owners[token] = self
         let validate = { [weak self, weak entry, weak binding] in
             guard let self, let entry, let binding else { return false }
             return !self.disposed && self.windowTransfer == nil && !self.retirementPending && self.validOwner()
@@ -407,9 +390,6 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
     func disposeAfterClosure() {
         disposed = true
         entries.values.forEach { $0.view.positioningAllowed = false; $0.cancelRequest() }
-        // Parent/tab retirement must already have closed every page. If a
-        // caller violates that boundary, retain the real owner rather than
-        // silently destroying or re-creating its WebContents.
         guard pages.isEmpty && !hasPendingCreation else { return }
         entries.values.forEach { $0.view.cancelPositioning(); $0.view.browser.delegate = nil; $0.view.removeFromSuperview() }; entries.removeAll()
         if let replacementObserver { session.removeReplacementObserver(replacementObserver); self.replacementObserver = nil }
@@ -430,8 +410,6 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
         guard let entry = entries.values.first(where: { $0.view.browser === view }) else { return }
         let previous = entry.crash; entry.crash = crash
         if let crash {
-            //
-            //
             entry.view.setStatus(SadTabContent.plainMessage, retry: true)
             entry.view.setRetryTitle(crash.actionTitle)
             if selectedPage === entry.page { _ = entry.page?.rendererCrashDidPresent(crash) }
@@ -451,7 +429,7 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
               let (id, entry) = entries.first(where: { $0.value.view.browser === view && $0.value.page === page }),
               entry.request == nil, entry.captureLayout == nil else { return }
         do { _ = try session.recordBrowserNavigation(url, itemID: id, expectedURL: entry.originalURL) }
-        catch EaselStoreError.browserInUse { /* A different owner is still admitting its page. Retry on its next metadata event. */ }
+        catch EaselStoreError.browserInUse { }
         catch { onError?(error) }
     }
     func browserView(_ view: PCBrowserView, didChangeLoading loading: Bool, canGoBack back: Bool, canGoForward forward: Bool) {
@@ -465,7 +443,6 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
         if !loading { recordURL(view) }
         refresh(view)
     }
-    /// The engine learned a FairPlay site for Safari's identity (docs/fairplay-identity.md).
     func browserView(_ view: PCBrowserView, didLearnSafariIdentityForSite site: String,
                      profilePath: String, offTheRecord: Bool) {
         FairPlayIdentityController.shared.didLearn(site, profilePath: profilePath, offTheRecord: offTheRecord)
@@ -489,9 +466,6 @@ final class EaselBrowserObjects: NSObject, EaselBrowserObjectHosting, PCBrowserV
     }
 }
 
-/// The native page stays intact below a canvas input blocker. A separate
-/// control strip makes current security/navigation state available without
-/// replaying a durable URL update back into the live navigation stack.
 @MainActor
 private final class EaselBrowserSurface: NSView {
     let browser: PCBrowserView
@@ -583,10 +557,9 @@ private final class EaselBrowserSurface: NSView {
         onLayout?()
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard interactive else { return nil } // Canvas owns select/move/marquee.
+        guard interactive else { return nil }
         return super.hitTest(point)
     }
-    /// Where the page's pixels sit in this surface, and the part of them shown.
     var pageArea: (page: NSRect, visible: NSRect) { (convert(browser.bounds, from: browser), clip.frame) }
     func setRetryTitle(_ title: String) { retry.title = title }
     func focusRetry() { if interactive && !retry.isHidden { window?.makeFirstResponder(retry) } }
@@ -652,8 +625,6 @@ private final class EaselBrowserSurface: NSView {
         let generation = positionGeneration
         browser.frame = NSRect(x: 0, y: 0, width: layout.viewport.x * zoom, height: layout.viewport.y * zoom)
         setStatus("Positioning live capture…")
-        // Keep the renderer attached and sized while positioning; cover it until
-        // its real document acknowledges the captured offset.
         positioning = page.positionLiveCapture(NSRect(x: layout.region.x, y: layout.region.y,
             width: layout.region.width, height: layout.region.height),
             scrollOffset: NSPoint(x: layout.scroll.x, y: layout.scroll.y), displayWidth: width) { [weak self, weak page] success in

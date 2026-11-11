@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The renderer owns the command/expiry. This original-window child owns only
-/// the attributed toast presentation; it never installs another key handler.
 @MainActor
 final class ShortcutPriorityHintView: NSView {
     var onEdit: (() -> Void)?
@@ -121,13 +119,9 @@ final class ShortcutPriorityHintView: NSView {
     private func requestDismissal() {
         guard !isRetiring, let parent = originalWindow, let panel = toastWindow,
               panel.parent === parent else { return }
-        // The native queue revalidates its page/document. A view being hidden
-        // or detached must still request consumption of that exact old cue.
         onDismiss?()
     }
 
-    /// Revoke input synchronously. Only the same passive child may finish its
-    /// original exit; no delayed callback can clear a replacement command.
     func dismiss(animated: Bool) {
         guard !isRetiring else { if !animated { closePresentation() }; return }
         let shouldAnimate = animated && isAvailable && !state.reduceMotion
@@ -143,7 +137,6 @@ final class ShortcutPriorityHintView: NSView {
             self.closePresentation()
         }
         closeWork = work
-        // The original ToastWindow retains its passive child for one second.
         DispatchQueue.main.asyncAfter(deadline: .now() + PArcToastTiming.retirement, execute: work)
     }
     private func closePresentation() {
@@ -160,8 +153,6 @@ final class ShortcutPriorityHintView: NSView {
             panel.orderOut(nil); panel.contentView = nil; panel.close()
         }
     }
-    ///
-    /// then moves with its parent. A full-screen transition consumes the cue.
     private func observe(_ parent: NSWindow) {
         for name in [NSWindow.willEnterFullScreenNotification, NSWindow.willExitFullScreenNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: parent, queue: .main) { [weak self] _ in

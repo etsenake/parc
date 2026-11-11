@@ -1,7 +1,5 @@
 import AppKit
 
-/// The original window owns the draft and its page identities. This sidebar
-/// surface edits only that draft; opening or dismissing it never creates a Space.
 @MainActor
 final class SpaceCreationView: NSView, NSTextFieldDelegate {
     static let profileHelp = "Profiles keep website accounts, cookies and browsing data separate."
@@ -27,7 +25,6 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
     private let profileInfo = PointingHandButton()
     private let themeButton = PointingHandButton()
     private let createButton = SpaceCreationCreateButton()
-    ///
     var palette: ThemeChromePalette? { didSet { createButton.palette = palette } }
     private let cancelButton = PointingHandButton()
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
@@ -79,7 +76,6 @@ final class SpaceCreationView: NSView, NSTextFieldDelegate {
         profileCard.addSubview(profilePicker)
         configure(profileInfo, title: "", action: #selector(showProfileInfo(_:)))
         profileInfo.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: "About profiles")
-        //
         LiveShortcutToolTip.set(profileInfo, Self.profileHelp, behavior: .onMouseIdle(delay: 0))
         profileInfo.setAccessibilityLabel("About profiles")
         profileCard.addSubview(profileInfo)
@@ -206,8 +202,6 @@ private final class SpaceCreationCard: NSView {
     }
 }
 
-/// Original native artwork for the observed three-card Space illustration.
-/// Static placement is intentional until the reference entry motion is pinned.
 private final class SpaceCreationCards: NSView {
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
@@ -225,13 +219,6 @@ private final class SpaceCreationCards: NSView {
     }
 }
 
-///
-///
-/// radius token. A light Space fills it with the palette's maxContrastColor,
-/// its HSL lightness lowered by 0.1, at 0.9, with white text; a dark Space
-/// with black at 0.1 and foregroundPrimary text. Black at 0.1, radius 2 shadows
-/// it, a press scales it to 0.98 and a disabled button is at 0.4 — never the
-/// system accent.
 @MainActor
 final class SpaceCreationCreateButton: PointingHandButton {
     var palette: ThemeChromePalette? { didSet { needsDisplay = true } }
@@ -253,7 +240,6 @@ final class SpaceCreationCreateButton: PointingHandButton {
     }
     var ink: NSColor { isDark ? (palette?.foregroundPrimary ?? .labelColor) : .white }
     override func draw(_ dirtyRect: NSRect) {
-        // The cell highlights itself during a click; a pressed button draws at 0.98.
         let pressed = cell?.isHighlighted == true
         let rect = pressed ? bounds.insetBy(dx: bounds.width * 0.01, dy: bounds.height * 0.01) : bounds
         let path = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)

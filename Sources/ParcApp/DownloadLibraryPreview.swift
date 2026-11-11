@@ -1,8 +1,6 @@
 import AppKit
 import Quartz
 
-/// The original parent owns this borderless overlay and its selected file.
-/// Quick Look supplies real file rendering; it never invents a file URL.
 @MainActor final class DownloadLibraryPreview: NSWindowController, NSWindowDelegate {
     var onMove: ((Bool) -> Void)?
     var onOpen: (() -> Void)?
@@ -10,7 +8,6 @@ import Quartz
     var onMenu: (() -> NSMenu?)?
     var onClosed: (() -> Void)?
     var sourceRect: (() -> NSRect?)?
-    /// The invoking row artwork, captured once without reading the file again.
     var sourceImage: NSImage?
     private let imageView = DownloadPreviewImage()
     private let content = DownloadPreviewModal()
@@ -151,8 +148,6 @@ import Quartz
         modal.frame = DownloadPreviewGeometry.modalFrame(in: root.bounds)
         modal.layer?.anchorPoint = NSPoint(x: 0.5, y: 0.5)
         modal.layer?.position = NSPoint(x: modal.frame.midX, y: modal.frame.midY)
-        // AppKit re-establishes default backing clipping on attachment.
-        // The outer transform/shadow owner must remain unclipped.
         modal.clipsToBounds = false; modal.layer?.masksToBounds = false
         content.frame = modal.bounds
         modal.layer?.shadowPath = CGPath(roundedRect: modal.bounds, cornerWidth: 10, cornerHeight: 10, transform: nil)
@@ -161,7 +156,6 @@ import Quartz
         }
         layoutSourceImage()
         let width = modal.bounds.width, height = modal.bounds.height
-        // Native font metrics complete the recovered 14pt toolbar and 8pt insets.
         let toolbarHeight = min(height, ceil(name.font!.ascender - name.font!.descender + name.font!.leading) + 14)
         let control: CGFloat = 28, y = max(0, (toolbarHeight - control) / 2)
         dismissButton.frame = NSRect(x: 8, y: y, width: control, height: control)
@@ -249,7 +243,6 @@ import Quartz
         root.onDismiss = nil; originalParent = nil
         callback?(); finishing = nil
     }
-    /// Context/profile/item retirement always tears down immediately.
     override func close() { finishClose(); super.close() }
 }
 
@@ -287,7 +280,6 @@ import Quartz
     override func mouseDown(with event: NSEvent) {}
 }
 
-/// The transition image never intercepts the live content's controls.
 @MainActor private final class DownloadPreviewImage: NSImageView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

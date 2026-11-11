@@ -2,8 +2,6 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
-///
-///
 enum FavoriteTileMetrics {
     static let inset: CGFloat = 8
     static let spacing: CGFloat = 8
@@ -21,21 +19,12 @@ enum FavoriteTileMetrics {
     static let washRefreshInterval: CFTimeInterval = 0.25
 }
 
-///
-///
-///
 struct FavoriteSelectedStyle: Equatable {
-    /// White .8 (light) / .45 (dark), halved when dimmed.
     let fillAlpha: CGFloat
-    /// Light 0/.1 and dark .2/.3 for idle/hovered; 0 when dimmed.
     let washOpacity: Float
-    /// Black .1, or 0 when dimmed.
     let shadowOpacity: Float
-    /// A dimmed outline hides its wash image and fills the ring with
-    /// mutedColor (`colorWithAlphaComponent:` 0.2) instead.
     let outlineShowsWash: Bool
     let outlineFillAlpha: CGFloat?
-    ///
     let washAnimates: Bool
 
     init(dark: Bool, hovered: Bool, dimmed: Bool) {
@@ -48,10 +37,7 @@ struct FavoriteSelectedStyle: Equatable {
     }
 }
 
-/// The App Tray grid is row-balanced: the fitted column count is spread evenly
-/// over the rows it needs, so five Favorites form 3 + 2 rather than 4 + 1.
 enum FavoriteGridLayout {
-    /// Top-left based tile frames inside a tray of `width`, and the tray height.
     static func frames(count: Int, width: CGFloat) -> (frames: [CGRect], height: CGFloat) {
         guard count > 0 else { return ([], 0) }
         let m = FavoriteTileMetrics.self
@@ -72,12 +58,9 @@ enum FavoriteGridLayout {
 
 struct FavoriteChildLayout: Equatable {
     let rect: CGRect
-    /// Corners in flipped (top-left) geometry that touch the tile's outer corners.
     let corners: CACornerMask
 }
 
-///
-/// Favorites give each page its own cell; only outer corners stay rounded.
 enum FavoriteChildLayouts {
     static func layouts(count: Int, size: CGSize, gap: CGFloat,
                         orientation: SplitOrientation) -> [FavoriteChildLayout] {
@@ -87,8 +70,6 @@ enum FavoriteChildLayouts {
         var cells: [CGRect] = []
         switch orientation {
         case .horizontal:
-            //
-            // remaining columns, each of those columns takes the full height.
             let columns = max(1, min(count, Int((size.width / (size.height * 0.5)).rounded(.down))))
             let rows = (count + columns - 1) / columns
             let width = size.width / CGFloat(columns)
@@ -103,7 +84,6 @@ enum FavoriteChildLayouts {
                 remaining -= inColumn
             }
         case .vertical:
-            //
             let slices = (count + 1) / 2
             let width = size.width / CGFloat(slices)
             let height = size.height * 0.5
@@ -120,7 +100,6 @@ enum FavoriteChildLayouts {
         return cells.map { cell($0, in: size, gap: gap) }
     }
 
-    /// Inner edges lose half the gap; outer edges and their corners are kept.
     private static func cell(_ raw: CGRect, in size: CGSize, gap: CGFloat) -> FavoriteChildLayout {
         let tolerance: CGFloat = 0.001
         let left = raw.minX <= tolerance, top = raw.minY <= tolerance
@@ -138,9 +117,6 @@ enum FavoriteChildLayouts {
     }
 }
 
-/// True no-op gate for `FavoriteTile.layout`. Identical shadow/selection/outline
-/// frames and paths plus matching child fill/icon/corner/glyph geometry skip the
-/// CATransaction rewrite; `overlays.layout` and `refreshWash` stay ungated.
 enum FavoriteTileLayerLayoutSkip {
     struct CellGeometry: Equatable {
         var fillFrame: CGRect
@@ -177,7 +153,6 @@ enum FavoriteTileLayerLayoutSkip {
             && cells == expectedCells
     }
 
-    /// Matches `FavoriteTileCell.layoutGlyph` frame/font size for a cell slot.
     static func glyphGeometry(in size: CGSize, single: Bool) -> (frame: CGRect, fontSize: CGFloat) {
         let font = NSFont.systemFont(ofSize: single ? 15 : 11, weight: .semibold)
         let height = ceil(font.ascender - font.descender)
@@ -192,16 +167,12 @@ enum FavoriteTilePaths {
         Path(roundedRect: rect, cornerRadius: radius, style: .continuous).cgPath
     }
 
-    ///
-    /// radius 12 − 1, so the 2-point stroke is flush with the outer edge.
     static func highlightRing(bounds: CGRect) -> CGPath {
         let m = FavoriteTileMetrics.self
         return roundedRect(bounds.insetBy(dx: m.highlightRingInset, dy: m.highlightRingInset),
                            radius: m.cornerRadius - m.highlightRingInset)
     }
 
-    ///
-    /// inside the tile edge, with the same layout carving split dividers.
     static func selectionRing(bounds: CGRect, count: Int, orientation: SplitOrientation) -> CGPath {
         let m = FavoriteTileMetrics.self
         let path = CGMutablePath()
@@ -221,7 +192,6 @@ enum FavoriteTilePaths {
         return path
     }
 
-    /// Flipped-geometry rectangle with circular arcs only on `corners`.
     private static func partiallyRounded(_ rect: CGRect, radius: CGFloat, corners: CACornerMask) -> CGPath {
         let r = min(radius, rect.width / 2, rect.height / 2)
         func corner(_ mask: CACornerMask) -> CGFloat { corners.contains(mask) ? r : 0 }

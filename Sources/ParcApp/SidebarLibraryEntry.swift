@@ -2,25 +2,10 @@ import AppKit
 import Combine
 import SwiftUI
 
-//
-//
-//
-//
-//
-// .medium) with the "View Library" tooltip, the "Home" label, the "Show media
-// from:" menu and the badge cells. [I] marks an inference; Parc adaptations
-// are marked as such.
-
-///
-/// Downloads, screenshotsAndCaptures → Media (captures), easelsAndNotes →
-/// Easels & Notes (documents), archive → Archive and spaces → Spaces. Boosts
-/// remain excluded.
 enum LibraryEntryPage: String, CaseIterable {
     case downloads, captures, documents, archive, spaces
 }
 
-///
-///
 enum LibraryBadgeSource: String, CaseIterable {
     case documents, desktop, screenshots, captures, downloads
     var title: String {
@@ -28,19 +13,13 @@ enum LibraryBadgeSource: String, CaseIterable {
         case .documents: return "Documents"
         case .desktop: return "Desktop"
         case .screenshots: return "Screenshots"
-        //
-        // is Saved Captures (Window → View Media, Library → Media).
         case .captures: return "Saved Captures"
         case .downloads: return "Downloads"
         }
     }
-    ///
-    /// Screenshots, plus the browser's Downloads and Saved Captures catalogs.
     var isAvailable: Bool { true }
 }
 
-/// `HomePreferences.lastSelectedHomePage` and
-/// `HomeBadgingPreferences.dataSourcePreferences`, shared by every window.
 @MainActor final class LibraryEntryPreferences {
     static let shared = LibraryEntryPreferences()
     static let didChange = Notification.Name("ParcLibraryEntryPreferencesDidChange")
@@ -51,20 +30,11 @@ enum LibraryBadgeSource: String, CaseIterable {
     private func value(_ key: String) -> Any? { defaults.object(forKey: key) }
     private func set(_ value: Any, _ key: String) { defaults.set(value, forKey: key) }
 
-    ///
-    /// item names one ([I] from `didUpdateLastSelectedHomePage`); with none
-    /// saved, Downloads, `HomePageID`'s first case and Parc's former entry
-    /// page [I].
     var lastSelectedPage: LibraryEntryPage {
         get { (value(pageKey) as? String).flatMap(LibraryEntryPage.init(rawValue:)) ?? .downloads }
         set { set(newValue.rawValue, pageKey) }
     }
 
-    ///
-    /// reads the stored dictionary; with none stored, HomePreferences takes
-    ///
-    ///
-    ///
     func isEnabled(_ source: LibraryBadgeSource) -> Bool {
         guard source.isAvailable else { return false }
         return ((value(sourcesKey) as? [String: Bool]) ?? [:])[source.rawValue] ?? true
@@ -78,53 +48,24 @@ enum LibraryBadgeSource: String, CaseIterable {
     }
 }
 
-/// `HomeBadgingClient.State.mostRecentUnreadItemVisibility`: the page the
-/// newest visible badge item names and when it became visible.
 struct LibraryEntryUnread: Equatable {
     let page: LibraryEntryPage
     let since: Date
 }
 
-///
-///
 enum LibraryEntryRoute {
-    /// `now − event.date ≥ 300` names no page.
     static let recentInterval: TimeInterval = 300
-    /// Downloads when the newest unread badge item is a download, Media
-    /// (Parc's captures page) when it is a file or capture, provided it became
-    /// visible less than 300 s ago; otherwise none, so the Library reopens on
-    /// its last page.
     static func target(unread: LibraryEntryUnread?, now: Date) -> LibraryEntryPage? {
         guard let unread, now.timeIntervalSince(unread.since) < recentInterval else { return nil }
         return unread.page
     }
     enum Decision: Equatable { case open(LibraryEntryPage), close }
-    ///
-    /// a click closes it when it already shows the target, or when there is
-    /// no target; otherwise it opens the target, or the last selected page.
     static func decide(target: LibraryEntryPage?, showing: LibraryEntryPage?, lastSelected: LibraryEntryPage) -> Decision {
         if let showing, target == nil || target == showing { return .close }
         return .open(target ?? lastSelected)
     }
 }
 
-///
-/// collapsed badge cell shows, and when it goes away.
-/// - `create` badges the new download (case 2/1 → `updateVisibleBadgeItemIfPossible`,
-///
-///   badged yet (DL26's original-item selection, `DownloadActivity.active`).
-/// - `itemsChanged` badges the newest item when it is younger than 300 s
-///
-///   those changes.
-/// - `updateVisibleBadgeItemIfPossible` (case 4) ignores the visible id, else
-///   sets it with its unread time and runs the dismissal: 5 s for a file,
-///   capture, failed or cancelled download, 30 s for a completed one, none
-///
-///
-/// - A visible download's update to a terminal status runs that dismissal
-///
-/// - `onDidExpandFlyout` dismisses a visible download whose status is terminal
-///
 @MainActor final class LibraryBadgeLifecycle {
     static let recentInterval: TimeInterval = 300
     static let dismissal: TimeInterval = 5
@@ -136,7 +77,6 @@ enum LibraryEntryRoute {
     var after: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { body() } }
     }
-    /// The visible item changed (nil: dismissed).
     var onChange: ((String?) -> Void)?
     private(set) var items: [LibraryFlyoutItem] = []
     private var badgedDownloads = Set<DownloadLibraryIdentity>()
@@ -144,22 +84,13 @@ enum LibraryEntryRoute {
 
     var visibleItem: LibraryFlyoutItem? { visibleID.flatMap { id in items.first { $0.id == id } } }
 
-    /// A source publication: every merged item, newest first. `newestLive` is
-    /// the newest live download (a creation the first time it is seen);
-    /// `itemsChanged` marks a capture-library publication.
     func update(_ next: [LibraryFlyoutItem], newestLive: DownloadLibraryIdentity?, itemsChanged: Bool) {
         let previous = visibleItem
         items = next
         if let id = visibleID {
             if let item = visibleItem {
-                // Parc publishes whole lists, so the terminal update is the
-                // visible download's status transition into completed, failed
-                // or cancelled.
                 if let status = item.downloadStatus, status.isTerminal, previous?.downloadStatus != status { scheduleDismissal(item) }
             } else {
-                // Parc adaptation: the visible item left the list (hidden,
-                //
-                // with it, so the badge is dismissed.
                 dismiss(id)
             }
         }
@@ -172,22 +103,17 @@ enum LibraryEntryRoute {
             setVisible(first)
         }
     }
-    /// `onDidExpandFlyout` (case 9).
     func flyoutDidExpand() {
         guard let item = visibleItem, item.downloadStatus?.isTerminal == true else { return }
         dismiss(item.id)
     }
-    /// `dismissVisibleBadgeItem(id)` (case 5): only the matching visible id.
     func dismiss(_ id: String) {
         guard visibleID == id else { return }
         visibleID = nil
         cancelDismissal()
         onChange?(nil)
     }
-    /// `onDidOpenArcHome` (case 11) clears the unread item.
     func markRead() { unread = nil }
-    /// The window stopped badging (closing, not ready, detached). Badging
-    /// again starts afresh, as a new window's entry does.
     func reset() {
         items = []
         badgedDownloads.removeAll()
@@ -220,38 +146,22 @@ enum LibraryEntryRoute {
     private func cancelDismissal() { dismissalToken &+= 1 }
 }
 
-///
-///
 enum LibraryEntryLayout {
     static let buttonSize: CGFloat = 32
     static let cellHeight: CGFloat = 56
-    /// A collapsed visible cell's width; an expanded one is
-    /// min(containerWidth, 1000) − 16.
     static let collapsedCellWidth: CGFloat = 40
     static let badgeGrowth: CGFloat = 10
     static let maximumWidth: CGFloat = 1000
     static let expandedInset: CGFloat = 16
-    /// The cell VStack's offset from the button's bottom-leading corner.
     static let overlayOffset = CGSize(width: -4, height: -30)
-    ///
-    /// (56 + 0) × index + 30 for its row in the newest-first stack, which
-    /// returns any row to the bottom slot and cancels the overlay's −30 so the
-    /// cell's bottom meets the button's. Parc's pose keeps the bottom slot's
-    /// 30; the canvas adds the 56 × reverseIndex of the cell's row.
     static let collapsedCellX: CGFloat = 10
     static let collapsedCellY: CGFloat = 30
-    ///
     static func totalHeight(count: Int) -> CGFloat { (cellHeight + 0) * CGFloat(count) + buttonSize }
     static func expandedCellWidth(containerWidth: CGFloat) -> CGFloat { min(containerWidth, maximumWidth) - expandedInset }
-    ///
-    /// badge, min(containerWidth, 1000) × maxHeight (256) while expanded.
     static func hostSize(badgeVisible: Bool, expanded: Bool = false, containerWidth: CGFloat = 0) -> CGSize {
         if expanded { return CGSize(width: min(containerWidth, maximumWidth), height: totalHeight(count: LibraryFlyoutItems.limit)) }
         return badgeVisible ? CGSize(width: buttonSize + badgeGrowth, height: buttonSize + badgeGrowth) : CGSize(width: buttonSize, height: buttonSize)
     }
-    /// Room the entry's canvas keeps around the button for the badge cell's
-    /// travel and the flyout's four rows with their 80-point insertion drop
-    ///
     static let canvasInsets = NSEdgeInsets(top: 320, left: 8, bottom: 8, right: 24)
     static func canvasSize(containerWidth: CGFloat) -> CGSize {
         CGSize(width: max(canvasInsets.left + buttonSize + canvasInsets.right, min(containerWidth, maximumWidth)),
@@ -259,8 +169,6 @@ enum LibraryEntryLayout {
     }
 }
 
-/// One badge cell's `@State` pose: x and y offsets, opacity, scale and
-/// rotation (degrees), as HomeBadgingCellStack applies them.
 struct LibraryEntryCellPose: Equatable {
     var x: CGFloat = 0
     var y: CGFloat = 0
@@ -269,26 +177,15 @@ struct LibraryEntryCellPose: Equatable {
     var rotation: Double = 0
 }
 
-///
-///
-///
 @MainActor final class LibraryEntryModel: ObservableObject {
     enum Phase: Equatable { case hidden, landing, shown, hiding }
     @Published var buttonYOffset: CGFloat = 0
-    /// Scales the button 1.2 (0x3ff3333333333333). The show seed and the hide
-    /// clear it; no traced path sets it.
     @Published var buttonScaled = false
     @Published var cell = LibraryEntryCellPose()
-    /// The visible badge item's id (HomeBadgingCellStack's `visibleBadgeItemID` State).
     @Published private(set) var visibleBadge: String?
-    /// The item the visible cell draws (its BadgingIcon), kept current with
-    /// the item's status.
     @Published var visibleItem: LibraryFlyoutItem?
-    /// Whether the DL27 renderer currently draws (running, or its completion
-    /// transaction); the completed item's image shows once it has retired.
     @Published var ringActive = false
     @Published private(set) var phase = Phase.hidden
-    /// The hide's cleanup ran (the visible cell no longer presents its row).
     var onHidden: (() -> Void)?
     var after: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { body() } }
@@ -298,24 +195,14 @@ struct LibraryEntryCellPose: Equatable {
     private static let landing = Animation.timingCurve(0.78, 0, 0.7, 1, duration: 0.2)
     private static let settling = Animation.interpolatingSpring(mass: 1, stiffness: 500, damping: 25, initialVelocity: 10)
     private static let leaving = Animation.linear(duration: 0.14)
-    ///
     static let base = LibraryEntryLayout.collapsedCellY
 
     private func change(_ animation: Animation?, _ body: () -> Void) {
         if let animation { withAnimation(animation, body) } else { body() }
     }
 
-    ///
-    /// capture or completed download, 0.8 for any other download.
     static func scale(compact: Bool) -> CGFloat { compact ? 0.55 : 0.8 }
 
-    /// A new visible badge item. Seed without animation: x 10, y b − 8,
-    ///
-    /// timingCurve(0.78, 0, 0.7, 1) drops the cell to b + 12 at full opacity
-    /// and nudges the button 6 down; 0.22 s later a spring (mass 1, stiffness
-    /// 500, damping 25, velocity 10) returns both to rest. The seeded scale
-    /// State stays until the next seed or expansion reset, so a download that
-    /// completes while visible keeps its 0.8.
     func show(_ id: String, compact: Bool) {
         generation &+= 1
         let token = generation, b = Self.base
@@ -334,10 +221,6 @@ struct LibraryEntryCellPose: Equatable {
         }
     }
 
-    /// The visible item went away: clear buttonScaled, then 0.14 s linear to
-    ///
-    /// opacity 0, scale 0.2 and −45 (read as degrees [I]); the cell is cleared
-    ///
     func hide() {
         guard visibleBadge != nil else { return }
         generation &+= 1
@@ -357,19 +240,11 @@ struct LibraryEntryCellPose: Equatable {
         }
     }
 
-    /// The newest-first slot (reverseIndex) of the row the visible cell draws
-    ///
-    /// no visible item, an item outside the four rows, or Reduce Motion,
-    /// where the cell fades at the button and the stack draws the row.
     func presentedSlot(in rows: [LibraryFlyoutItem], reduceMotion: Bool) -> Int? {
         guard !reduceMotion, phase != .hidden, let id = visibleItem?.id else { return nil }
         return rows.firstIndex { $0.id == id }
     }
 
-    ///
-    ///
-    /// now, rotation 0, the button at rest, opacity 1. It runs in the
-    /// expansion's transaction (the rows' spring).
     func resetPose(compact: Bool) {
         guard visibleBadge != nil, phase == .landing || phase == .shown else { return }
         cell = LibraryEntryCellPose(x: LibraryEntryLayout.collapsedCellX, y: Self.base, opacity: 1,
@@ -378,29 +253,15 @@ struct LibraryEntryCellPose: Equatable {
     }
 }
 
-///
-/// DownloadActivityBadge renderer, centred in its cell. It stays in the tree
-/// so the badge keeps its window and progress across choreography.
 private struct LibraryEntryBadgeCell: NSViewRepresentable {
     let badge: DownloadActivityBadge
     func makeNSView(context: Context) -> DownloadActivityBadge { badge }
     func updateNSView(_ nsView: DownloadActivityBadge, context: Context) {}
-    /// The cell's frame sizes the renderer; AppKit's fitting size is never
-    /// asked (its engine frame is meaningless mid-retirement).
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: DownloadActivityBadge, context: Context) -> CGSize? {
         proposal.replacingUnspecifiedDimensions()
     }
 }
 
-/// The visible HomeBadgingCell. Its BadgingIcon: a running download draws
-/// DownloadProgressBadge (Parc's DL27 renderer, kept in the tree so it keeps
-/// its window); a completed download its QuickLook image, a capture its image
-/// in the dashed outline; a paused, pending, failed or cancelled download
-/// nothing (EmptyView). BadgingIcon swaps branches with no transition. While
-/// it presents its expanded row (shouldShowDetails) the row's details and
-/// hover background join it. Parc adaptation: DL26/DL27 confirm completion by
-///
-/// the renderer once that completion transaction has retired.
 private struct LibraryEntryVisibleCell: View {
     @ObservedObject var model: LibraryEntryModel
     @ObservedObject var flyout: LibraryFlyoutModel
@@ -420,10 +281,6 @@ private struct LibraryEntryVisibleCell: View {
     }
 }
 
-/// HomeButtonView/HomeBadgingCellStack laid out on the entry's canvas: the
-/// button at the canvas's inset, its offset and scale, and the cell overlay
-/// at its bottom-leading corner offset (−4, −30): the flyout's rows and the
-/// collapsed visible badge cell.
 struct LibraryEntryCanvas: View {
     @ObservedObject var model: LibraryEntryModel
     @ObservedObject var flyout: LibraryFlyoutModel
@@ -442,12 +299,6 @@ struct LibraryEntryCanvas: View {
             .overlay(alignment: .bottomLeading) {
                 ZStack(alignment: .bottomLeading) {
                     LibraryFlyoutStack(model: flyout, presented: row?.id, ring: ring, subtitle: subtitle)
-                    //
-                    // shapes a row: collapsed 40 × 56 in its choreography pose,
-                    //
-                    // reverseIndex + 30); expanded the full row at (0, 0), its
-                    // width, scale and offset on the row's spring. Without a
-                    // presented row it fades at the button instead.
                     LibraryEntryVisibleCell(model: model, flyout: flyout, badge: badge, row: row, details: opened, subtitle: subtitle)
                         .frame(width: opened ? flyout.expandedCellWidth : LibraryEntryLayout.collapsedCellWidth,
                                height: LibraryEntryLayout.cellHeight)
@@ -468,57 +319,36 @@ struct LibraryEntryCanvas: View {
     }
 }
 
-/// The sidebar's Library entry. Its frame is a drawing canvas around the
-/// 32-point button (`buttonRect`); only the button, the visible badge cell
-/// and the expanded flyout's rows take the pointer.
 @MainActor final class SidebarLibraryEntry: TranslucentBoxOfThingsItem, NSDraggingSource {
-    ///
     static let accessibilityTitle = "Home"
-    /// NSLocalizedString("View Library", comment: "Title for tooltip on the
-    /// button to open Library"); 1.170 ships no English table, so the key.
-    /// The current Library binding shows as keycaps when one is assigned.
     static let tooltipText = "View Library"
     static let menuTitle = "Show media from:"
 
     let model = LibraryEntryModel()
     let flyout = LibraryFlyoutModel()
     let hover = LibraryFlyoutHoverTracker()
-    /// HomeBadgingItems' visible badge item and its dismissal.
     let lifecycle = LibraryBadgeLifecycle()
-    /// The visible cell's DownloadProgressBadge: DL26/DL27's renderer, fed the
-    /// visible download only.
     let badge = DownloadActivityBadge(frame: .zero)
     var preferences = LibraryEntryPreferences.shared { didSet { recomputeRows() } }
-    /// `.delegate(.onDidClickEntryPoint)`: the window's route with the target
-    /// page, nil when no recent unread item names one.
     var onOpen: ((LibraryEntryPage?) -> Void)?
-    /// A row's download or capture action through the window's routes.
     var onItemAction: ((LibraryFlyoutAction) -> Bool)?
-    /// The window's file URL for a download (Library's native file route).
     var downloadFileURL: ((BrowserDownload) -> URL?)?
-    /// The flyout's expansion, for the sidebar content mask, with its row count.
     var onFlyoutExpansion: ((Bool, Int) -> Void)?
     var now: () -> Date {
         get { flyout.now }
         set { flyout.now = newValue; lifecycle.now = newValue }
     }
-    /// The newest unread visible item's page and time; a click reads it.
     var unread: LibraryEntryUnread? { lifecycle.unread }
     private var preferenceObserver: NSObjectProtocol?
     private var captureObservation: AnyCancellable?
     private var downloads: [BrowserDownload] = []
     private var captures: [SavedCapture] = []
     private var files: [LibraryFlyoutFile] = []
-    /// Every merged item (newest first); the flyout shows the first four.
     private var items: [LibraryFlyoutItem] = []
-    /// The window's badging condition; the entry badges only while attached.
     private var badgingAllowed = false
-    /// A closed window never badges again, even if a late publication arrives.
     private weak var retiredWindow: NSWindow?
     private var badging: Bool { badgingAllowed && window != nil && window !== retiredWindow }
     private var rings: [DownloadLibraryIdentity: DownloadActivityBadge] = [:]
-    /// Whether rows' rings render: from expansion until the collapse has
-    /// faded the rows (`LibraryFlyoutLayout.ringRetirement`).
     private var ringsShown = false
     private var ringGeneration = 0
     private var ringProfiles: Set<UUID> = []
@@ -533,11 +363,8 @@ struct LibraryEntryCanvas: View {
     private(set) var preview: DownloadLibraryPreview?
     private var previewIdentity: DownloadLibraryIdentity?
     private var previewURL: URL?
-    /// The previewable items listed when the preview was presented (Previous/Next).
     private var previewOrder: [DownloadLibraryIdentity] = []
     private var previewGeneration = 0
-    /// Starts a drag after this many points of movement (Parc's sidebar drag
-    /// threshold; SwiftUI's drag start distance is untraced).
     static let dragThreshold: CGFloat = 4
     private lazy var homeElement: LibraryEntryElement = {
         let element = LibraryEntryElement(host: self, label: Self.accessibilityTitle)
@@ -558,15 +385,11 @@ struct LibraryEntryCanvas: View {
         let button = buttonRect
         flyout.stackOrigin = CGPoint(x: button.minX + LibraryEntryLayout.overlayOffset.width, y: button.maxY + LibraryEntryLayout.overlayOffset.height)
         action = { [weak self] in self?.click() }
-        // The renderer only reports whether it draws; the visible item and its
-        // lifetime are the lifecycle's.
         badge.onChange = { [weak self] activity in
             guard let self, self.model.ringActive != (activity != nil) else { return }
             self.model.ringActive = activity != nil
         }
         model.onHidden = { [weak self] in self?.refreshRings() }
-        //
-        // itself is not one.
         setAccessibilityElement(false)
         hover.after = { [weak self] delay, body in self?.model.after(delay, body) }
         flyout.after = { [weak self] delay, body in self?.model.after(delay, body) }
@@ -587,20 +410,16 @@ struct LibraryEntryCanvas: View {
         if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
     }
 
-    /// The 32-point button inside the canvas.
     override var buttonRect: NSRect {
         let insets = LibraryEntryLayout.canvasInsets
         return NSRect(x: insets.left, y: insets.top, width: LibraryEntryLayout.buttonSize, height: LibraryEntryLayout.buttonSize)
     }
-    ///
-    /// bottom-left corner while a badge is visible or the flyout is expanded.
     var hostRect: NSRect {
         let size = LibraryEntryLayout.hostSize(badgeVisible: model.visibleBadge != nil, expanded: flyout.expanded,
                                                containerWidth: flyout.containerWidth)
         let button = buttonRect
         return NSRect(x: button.minX, y: button.maxY - size.height, width: size.width, height: size.height)
     }
-    /// The sidebar's width (LayoutSpec.containerWidth).
     var containerWidth: CGFloat {
         get { flyout.containerWidth }
         set {
@@ -610,12 +429,10 @@ struct LibraryEntryCanvas: View {
             updateHover()
         }
     }
-    /// The window's `canExpandHomeBadge` (see LibraryFlyoutModel.canExpand).
     var canExpand: Bool {
         get { flyout.canExpand }
         set { guard newValue != flyout.canExpand else { return }; flyout.canExpand = newValue; updateHover() }
     }
-    /// Puts the button on `button`, a rect in the (flipped) superview.
     func place(button: NSRect) {
         let insets = LibraryEntryLayout.canvasInsets, size = LibraryEntryLayout.canvasSize(containerWidth: flyout.containerWidth)
         let flipped = superview?.isFlipped ?? true
@@ -623,7 +440,6 @@ struct LibraryEntryCanvas: View {
                        y: flipped ? button.minY - insets.top : button.minY - insets.bottom,
                        width: size.width, height: size.height)
     }
-    /// Whether the Downloads source badges the entry.
     var showsDownloadBadges: Bool { preferences.isEnabled(.downloads) }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -632,15 +448,11 @@ struct LibraryEntryCanvas: View {
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        // Build the SwiftUI tree now, so the badge has its window before the
-        // first download publication.
         host.layoutSubtreeIfNeeded()
         resolveFlyoutColors()
         if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
         closeObserver = nil
         if let window {
-            // Nothing the entry owns outlives its window (DL27's rule for the
-            // renderer, applied to the badge item, drags and preview).
             closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
                 object: window, queue: .main) { [weak self, weak window] _ in
                     MainActor.assumeIsolated { self?.retiredWindow = window; self?.retirePresentation() }
@@ -648,10 +460,6 @@ struct LibraryEntryCanvas: View {
             recomputeRows()
         }
     }
-    /// Retires every presentation the entry owns: pointer (and with it the
-    /// part its tooltip follows), rings, images, the visible badge item and
-    /// its renderer, drags and preview. The window's TooltipController hides
-    /// a shown tooltip itself.
     private func retirePresentation() {
         pointerMoved(to: nil)
         ringGeneration &+= 1; ringsShown = false
@@ -667,49 +475,27 @@ struct LibraryEntryCanvas: View {
         resolveFlyoutColors()
     }
     override var appearance: NSAppearance? { didSet { resolveFlyoutColors() } }
-    /// The BaseAssets colours follow the entry's appearance (the sidebar sets
-    /// it from the theme, as for the button's GrayA colours).
     private func resolveFlyoutColors() {
         let colors = LibraryFlyoutColors.standard(dark: effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
         if flyout.colors != colors { flyout.colors = colors }
     }
 
-    // MARK: Click route
-
     private func click() {
         onOpen?(LibraryEntryRoute.target(unread: lifecycle.unread, now: now()))
     }
-    /// `onDidOpenArcHome`: the window's layout setter (WindowState+WindowLayout
-    ///
-    /// client's sixth closure) on every switch into the Library, whichever
-    ///
-    ///
-    /// the Library reads nothing.
     func libraryDidOpen() { lifecycle.markRead() }
-    /// `onDidCloseArcHome`: the Library's close date (HomeBadgingFeatureState
-    /// `lastClosedArcHomeAt`).
     func libraryDidClose() { flyout.libraryClosedAt = now() }
 
-    // MARK: Items
-
-    /// The window's downloads (`downloadStore.downloadItems`) for its profiles.
-    /// A private window lists only its private downloads, a normal window none
-    ///
-    /// is false while the window cannot badge (closing, not ready, private
-    /// downloads unavailable): no visible badge item or renderer then.
     func updateFlyoutDownloads(_ items: [BrowserDownload], profiles: Set<UUID>, privateWindow: Bool, badging: Bool = true) {
         let next = items.filter { item in
             item.profileID.map(profiles.contains) == true && (item.privateContextID != nil) == privateWindow
         }
-        // Every page title, URL and loading change republishes downloads;
-        // rebuilding identical rows cost each of those a merge, sort and layout.
         guard next != downloads || profiles != ringProfiles || badging != badgingAllowed else { return }
         ringProfiles = profiles
         downloads = next
         badgingAllowed = badging
         recomputeRows()
     }
-    /// The active profile's capture library, nil in a private window.
     var captureStore: CaptureLibraryStore? {
         didSet {
             guard captureStore !== oldValue else { return }
@@ -719,13 +505,10 @@ struct LibraryEntryCanvas: View {
             if captureStore == nil { updateFlyoutCaptures([]) }
         }
     }
-    /// The capture library's records (the Saved Captures source). A
-    ///
     func updateFlyoutCaptures(_ items: [SavedCapture]) {
         captures = items
         recomputeRows(itemsChanged: true)
     }
-    /// Documents, Desktop and Screenshots folder files (`fileQueryResultsLoaded`).
     func updateFlyoutFiles(_ next: [LibraryFlyoutFile]) {
         let changed = next != files
         files = next
@@ -748,7 +531,6 @@ struct LibraryEntryCanvas: View {
         revalidatePreview()
         updateHover()
     }
-    /// The row's DownloadProgressBadge, for a running download.
     private func ring(for item: LibraryFlyoutItem) -> DownloadActivityBadge? {
         guard let identity = item.downloadIdentity, item.downloadStatus?.isInProgress == true else { return nil }
         if let ring = rings[identity] { return ring }
@@ -757,10 +539,6 @@ struct LibraryEntryCanvas: View {
         rings[identity] = ring
         return ring
     }
-    /// Rings render only while the flyout shows them: a row leaving retires
-    /// its renderer at once, collapsing once the rows have faded (DL27's
-    /// retirement guarantees). The row the visible cell presents draws that
-    /// cell's renderer instead.
     private func refreshRings() {
         let presented = model.presentedSlot(in: flyout.rows, reduceMotion: flyout.reduceMotion).map { flyout.rows[$0].id }
         let live = Dictionary(flyout.rows.compactMap { item -> (DownloadLibraryIdentity, BrowserDownload)? in
@@ -793,10 +571,6 @@ struct LibraryEntryCanvas: View {
         }
     }
 
-    // MARK: Badge
-
-    ///
-    ///
     private func visibleItemChanged(_ id: String?) {
         setVisibleBadgeHovered(false)
         if let id, let item = lifecycle.visibleItem {
@@ -809,7 +583,6 @@ struct LibraryEntryCanvas: View {
         refreshRings()
         updateHover()
     }
-    ///
     private static func compact(_ item: LibraryFlyoutItem) -> Bool {
         item.file != nil || item.capture != nil || item.downloadStatus == .completed
     }
@@ -818,20 +591,12 @@ struct LibraryEntryCanvas: View {
         if let item, model.visibleItem != item { model.visibleItem = item }
         refreshBadgeRenderer()
     }
-    /// Feeds the visible cell's renderer the visible download alone: while it
-    /// downloads, and on completion so DL27's completion transaction plays
-    /// and retires. Any other state, or no visible download, retires it at
-    /// once (BadgingIcon's EmptyView for paused, pending, failed, cancelled).
     private func refreshBadgeRenderer() {
         guard badging, let download = lifecycle.visibleItem?.download,
               download.status == .downloading || download.status == .completed else { badge.reset(); return }
         badge.update([download], profiles: ringProfiles, enabled: window != nil)
     }
 
-    // MARK: Hover and expansion
-
-    /// The collapsed visible cell: 40 × 56 at the cell stack's offset, moved
-    /// by its pose (`onHover` sits inside the pose's geometry effects).
     var visibleCellRect: NSRect? {
         guard model.visibleBadge != nil, !flyout.expanded else { return nil }
         let button = buttonRect, pose = model.cell, offset = LibraryEntryLayout.overlayOffset
@@ -840,9 +605,6 @@ struct LibraryEntryCanvas: View {
                              y: button.maxY + offset.height - LibraryEntryLayout.cellHeight / 2 + pose.y)
         return NSRect(x: centre.x - width / 2, y: centre.y - height / 2, width: width, height: height)
     }
-    ///
-    /// the button; the dock to its right, as tall as the button; the flyout
-    /// from the button's corner across the host.
     var hoverRegions: [LibraryFlyoutHoverTracker.Region: NSRect] {
         let button = buttonRect, host = hostRect
         return [.button: button,
@@ -864,7 +626,6 @@ struct LibraryEntryCanvas: View {
         switch region {
         case .button: flyout.setButtonHovered(hovered)
         case .flyout: flyout.setFlyoutHovered(hovered)
-        //
         case .dock: if hovered { flyout.setFlyoutHovered(false) }
         }
         updateHover()
@@ -881,8 +642,6 @@ struct LibraryEntryCanvas: View {
         updateTooltip(lastPointer)
         refreshRowHover()
         flyout.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        //
-        // onDidExpandFlyout dismisses a finished visible download (case 9).
         if let item = lifecycle.visibleItem { model.resetPose(compact: Self.compact(item)) }
         if expanded { lifecycle.flyoutDidExpand() }
         ringGeneration &+= 1
@@ -901,10 +660,6 @@ struct LibraryEntryCanvas: View {
         NSAccessibility.post(element: self, notification: .layoutChanged)
     }
 
-    // MARK: Accessibility
-
-    ///
-    /// each expanded row, or the collapsed visible badge cell.
     override func accessibilityChildren() -> [Any]? {
         var children: [Any] = [homeElement]
         let ids = Set(flyout.rows.map(\.id))
@@ -945,8 +700,6 @@ struct LibraryEntryCanvas: View {
         return element
     }
 
-    // MARK: Pointer
-
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden, let superview else { return nil }
         let local = convert(point, from: superview)
@@ -961,21 +714,11 @@ struct LibraryEntryCanvas: View {
         updateTooltip(point)
     }
 
-    // MARK: Rows
-
     private func item(_ id: String) -> LibraryFlyoutItem? {
         flyout.rows.first { $0.id == id } ?? (lifecycle.visibleID == id ? lifecycle.visibleItem : nil)
     }
     private func perform(_ action: LibraryFlyoutAction) -> Bool { onItemAction?(action) ?? false }
 
-    ///
-    ///
-    ///
-    /// download, the Library's Downloads page for any other
-    /// (onDidSelectInProgressDownload). A completed download is previewable
-    ///
-    /// Parc adaptation: a capture's preview is the Library's (Media page), so a
-    /// capture opens that page.
     @discardableResult func tapRow(_ id: String) -> Bool {
         guard let item = item(id) else { return false }
         if flyout.animating { click(); return true }
@@ -989,13 +732,10 @@ struct LibraryEntryCanvas: View {
             return perform(.download(download, .open))
         }
     }
-    /// The visible cell's tap: shouldShowDetails is false, so no preview, and
-    /// `onDidTapItem` acts only while expanded.
     @discardableResult func tapVisibleBadge() -> Bool {
         if flyout.animating { click(); return true }
         return false
     }
-    ///
     @discardableResult func cancel(_ id: String) -> Bool {
         guard let download = item(id)?.download, LibraryFlyoutDownloadStatus(download).isInProgress else { return false }
         return perform(.download(download, .cancel))
@@ -1016,8 +756,6 @@ struct LibraryEntryCanvas: View {
         if visibleCellRect?.contains(point) == true { return .badge }
         return nil
     }
-
-    //
 
     func makeMenu() -> NSMenu {
         let menu = NSMenu(title: Self.menuTitle)
@@ -1059,7 +797,6 @@ struct LibraryEntryCanvas: View {
         guard let target = press else { super.mouseDragged(with: event); return }
         let point = convert(event.locationInWindow, from: nil)
         guard let start = pressStart, hypot(point.x - start.x, point.y - start.y) > Self.dragThreshold else { return }
-        // A drag ends the press: no tap follows it.
         press = nil; pressStart = nil
         switch target {
         case .row(let id): beginItemDrag(id, event: event)
@@ -1077,14 +814,7 @@ struct LibraryEntryCanvas: View {
         case .badge: tapVisibleBadge()
         }
     }
-    //
 
-    ///
-    /// `localURL` as a file URL whatever its status (an unfinished one's path
-    /// does not exist yet) and a capture through CapturePasteboardWriter.
-    /// Parc drags a completed download through DL28's DownloadFileDrag (copy
-    /// only, lazy, revalidated against the original item) and a capture as its
-    /// PNG; an unfinished download drags nothing.
     func dragWriter(for id: String) -> NSPasteboardWriting? {
         guard let item = item(id), let parent = window else { return nil }
         switch item {
@@ -1120,8 +850,6 @@ struct LibraryEntryCanvas: View {
         dragging.setDraggingFrame(frame, contents: dragImage(frame, id: id))
         beginDraggingSession(with: [dragging], event: event, source: self)
     }
-    /// The cell as drawn (SwiftUI's drag preview is the view itself), or its
-    /// image when the rendering cannot be cached.
     private func dragImage(_ rect: NSRect, id: String) -> NSImage {
         if let bitmap = bitmapImageRepForCachingDisplay(in: rect) {
             cacheDisplay(in: rect, to: bitmap)
@@ -1134,7 +862,6 @@ struct LibraryEntryCanvas: View {
         .copy
     }
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        // The receiver owns its copy; a move never removes the original.
         retireDrags()
     }
     private func retireDrags() {
@@ -1142,28 +869,6 @@ struct LibraryEntryCanvas: View {
         captureDrags.forEach { $0.invalidate() }; captureDrags.removeAll()
     }
 
-    //
-
-    /// ItemPreviewPresenter builds BaseHomeComponents.MediaPreviewWindow
-    ///
-    /// same) and presents it on the cell's window with the cell's frame as the
-    /// source, no source image, and the Library button's frame as the frame it
-    ///
-    /// MediaPreviewWindow is DL23/DL24's DownloadLibraryPreview. The file is
-    /// checked off the main thread as the Library does (DownloadFileActivation):
-    /// readable media previews, anything else opens, an unreadable file does
-    /// nothing.
-    ///
-    /// Previous/Next walk ItemPreviewPresenter's items: `present` reads the
-    /// tapped cell's scoped store state once (Store state subject +0x68), and
-    ///
-    ///
-    ///
-    /// screenshot files, and files or completed downloads whose URL
-    /// `canPresentHomePreview`, newest first. MediaPreviewWindow takes that
-    /// list as it stands at the tap. Parc adaptation: a capture previews on
-    /// the Library's Media page, so Parc's list holds the previewable
-    /// completed download rows; each step resolves the item again.
     @discardableResult func previewDownload(_ original: BrowserDownload, rowID: String) -> Bool {
         guard let parent = window, parent.attachedSheet == nil, let url = downloadFileURL?(original) else { return false }
         previewGeneration &+= 1
@@ -1225,11 +930,8 @@ struct LibraryEntryCanvas: View {
         controller.sourceRect = { source }
         updatePreview(controller, item, url: url)
         controller.present(on: parent)
-        // Closing returns to the Library button (the presenter's view).
         controller.sourceRect = { [weak self] in self.map { $0.convert($0.buttonRect, to: nil) } }
     }
-    /// The nearest item of the presented list before or after the current
-    /// one that is still the same completed download with its file.
     private func previewNeighbour(forward: Bool) -> (BrowserDownload, URL)? {
         guard let identity = previewIdentity, let index = previewOrder.firstIndex(of: identity) else { return nil }
         let candidates = forward ? Array(previewOrder[(index + 1)...]) : Array(previewOrder[..<index].reversed())
@@ -1245,8 +947,6 @@ struct LibraryEntryCanvas: View {
         controller.update(url: url, title: name, ordinal: index + 1, count: max(1, previewOrder.count), canOpen: item.canOpen,
                           canMovePrevious: previewNeighbour(forward: false) != nil, canMoveNext: previewNeighbour(forward: true) != nil)
     }
-    /// The previewed download must stay the same completed file; its
-    /// neighbours are resolved again.
     private func revalidatePreview() {
         guard let controller = preview, let identity = previewIdentity else { return }
         guard let current = downloads.first(where: { DownloadLibraryIdentity($0) == identity }), current.status == .completed,
@@ -1260,11 +960,6 @@ struct LibraryEntryCanvas: View {
         controller?.onClosed = nil; controller?.close()
     }
 
-    //
-
-    ///
-    ///
-    ///
     private func tooltip(at point: NSPoint) -> TooltipConfiguration? {
         if buttonRect.contains(point) { return buttonTooltip }
         if let item = flyout.cancelHit(point), let rect = flyout.cancelFrame(item.id) { return Self.tooltip(LibraryFlyoutMenu.cancelTitle, rect: rect) }
@@ -1274,18 +969,12 @@ struct LibraryEntryCanvas: View {
         }
         return nil
     }
-    /// HomeButtonBadgingViewState.homeKeyboardShortcut is viewLibrary's live
-    ///
     private var buttonTooltip: TooltipConfiguration {
         Self.tooltip(Self.tooltipText, shortcut: .command("viewLibrary:"), rect: buttonRect)
     }
     private static func tooltip(_ text: String, shortcut: TooltipConfiguration.Shortcut? = nil, rect: NSRect) -> TooltipConfiguration {
         TooltipConfiguration(text, shortcut: shortcut, anchorRect: rect)
     }
-    /// The parts are drawn, not subviews, so the entry's one tooltip follows
-    /// the part under the pointer. Between parts it keeps the last one, which
-    /// shows nothing there because no part takes the pointer; once the pointer
-    /// leaves, the button's is restored for the next entry.
     private func updateTooltip(_ point: NSPoint?) {
         guard let point else { parcTooltip = buttonTooltip; return }
         if let configuration = tooltip(at: point) { parcTooltip = configuration }

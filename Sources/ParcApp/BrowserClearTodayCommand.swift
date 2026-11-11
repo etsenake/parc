@@ -1,7 +1,5 @@
 import AppKit
 
-/// Clear belongs to the captured browser context. The existing retirement owner
-/// collects Today tabs only when invoked and owns consent, persistence and Reopen Closed Tab.
 @MainActor final class BrowserClearTodayCommand {
     private weak var window: NSWindow?
     private let ownerIsAvailable: () -> Bool
@@ -30,6 +28,6 @@ import AppKit
         prepare()
         guard availableWindow === original, original.isKeyWindow else { return false }
         clear()
-        return true // Requested; native retirement can still refuse asynchronously.
+        return true
     }
 }

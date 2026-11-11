@@ -2,15 +2,6 @@ import AppKit
 
 extension SidebarTabRow: SplitDropCardSource {}
 
-///
-/// `SplitViewCellState`): one outline row whose `CellSelectionStateView`
-/// draws the current, key-dragged, multi-selected, hovered (always
-///
-/// `SplitViewCellChildrenContainerView` lays the children out with separator
-/// layers, or whose `SplitViewCellCustomInfoView` replaces them; and whose own
-/// Close shows while it is hovered. Geometry and producers are in
-/// `SidebarSplitCellLayout`. The container keeps each original child's AX,
-/// close/capture controls and authenticated drag source.
 @MainActor
 final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
     var deferredAccessibilityActions: (index: Int, make: () -> [NSAccessibilityCustomAction])?
@@ -27,11 +18,8 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
     private let titleView: SidebarSplitTitleView
     private let hasCustomTitle: Bool
     private var captureButtons: [ActionButton] = []
-    /// Whether the cell has its own close configuration (its children carry
-    ///
     let hasClose: Bool
     let closeAction: SidebarSplitCellLayout.CloseAction
-    /// `isCurrentItem` / `ChildrenContainerView.ViewState.isGroupSelected`.
     let selected: Bool
     private var hover = false
     private var dimmed = false
@@ -39,12 +27,8 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
     private var windowObservers: [NSObjectProtocol] = []
     private var palette: ThemeChromePalette?
     var multiSelected = false { didSet { if multiSelected != oldValue { updateAppearance() } } }
-    ///
     var keyboardHighlighted = false { didSet { if keyboardHighlighted != oldValue { updateAppearance() } } }
-    /// Tab-into-list focus uses the split's HighlightRingView, not a clipped
-    /// 1-point accent border on this cell's layer.
     var listFocusRing = false { didSet { if listFocusRing != oldValue { updateAppearance() } } }
-    /// The split is the key item of an in-progress sidebar drag.
     var keyDragged = false { didSet { if keyDragged != oldValue { updateAppearance() } } }
     var onKeyDrag: ((Bool) -> Void)? { didSet { moveSurface.onKeyDrag = onKeyDrag } }
     var prepareActivation: (() -> (() -> Bool)?)? {
@@ -53,13 +37,9 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
     var beginMove: (() -> SidebarMoveSession?)? { didSet { moveSurface.beginMove = beginMove } }
     var selectionClick: ((NSEvent) -> Bool)? { didSet { moveSurface.selectionClick = selectionClick; titleView.selectionClick = selectionClick } }
     var selectionContext: (() -> NSMenu?)? { didSet { moveSurface.selectionContext = selectionContext } }
-    ///
-    /// action is prepared only when pressed; `closeAvailable` is the cheap
-    /// check that enables the button.
     var prepareClose: (() -> (() -> Bool)?)? { didSet { closeButton.prepareAction = prepareClose; closeButton.refreshAvailability() } }
     var closeAvailable: (() -> Bool)? { didSet { closeButton.isAvailable = closeAvailable; closeButton.refreshAvailability() } }
     override func menu(for event: NSEvent) -> NSMenu? { selectionContext?() ?? super.menu(for: event) }
-    /// The split menu is built when it opens, so VoiceOver's Show Menu asks for it too.
     override func accessibilityPerformShowMenu() -> Bool {
         guard window != nil, !isHiddenOrHasHiddenAncestor, let menu = selectionContext?() ?? menu else { return false }
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: bounds.maxY), in: self)
@@ -77,9 +57,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
                                           count: rows.count, named: name != nil)
         closeButton = SidebarRowActionButton(SidebarSplitCellLayout.closeTitle(closeAction, privateWindow: privateWindow))
         super.init(frame: .zero)
-        // Separator sublayers need a host layer; rounding and the selected
-        // shadow belong to CellSelectionStateView. Clipping here swallowed
-        // TabCellShadowSelected and the children's TabCellChildBackground pills.
         wantsLayer = true
         clipsToBounds = false
         layer?.masksToBounds = false
@@ -91,8 +68,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
         rows.forEach {
             $0.translatesAutoresizingMaskIntoConstraints = true; $0.compactSplitChild = true
             $0.splitChildCloseAvailable = childClose; addSubview($0)
-            // A child's press belongs to the split's one outline row: its drag
-            //
             $0.beginGroupDrag = { [weak self] press, drag in self?.moveSurface.beginDrag(from: press, with: drag) }
         }
         addSubview(titleView)
@@ -100,7 +75,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
             guard let capture = row.capture else { continue }
             let button = ActionButton("Active capture", symbol: capture.symbol)
             button.imagePosition = .imageOnly
-            //
             LiveShortcutToolTip.set(button, "This tab is using your camera or microphone"); button.setAccessibilityLabel(capture.summary)
             button.actionBlock = { [weak row, weak button] in
                 guard let row, let button else { return }
@@ -108,11 +82,8 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
             }
             captureButtons.append(button); addSubview(button)
         }
-        //
-        // is one of the split's accessibility children.
         closeButton.imagePosition = .imageOnly
         closeButton.isHidden = true
-        //
         LiveShortcutToolTip.set(closeButton, SidebarSplitCellLayout.closeTitle(closeAction, privateWindow: privateWindow),
                                 commandID: "closeTab:")
         addSubview(closeButton)
@@ -134,8 +105,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     deinit { for observer in windowObservers { NotificationCenter.default.removeObserver(observer) } }
-    ///
-    ///
     var appearanceAnchorRect: NSRect { convert(titleView.iconContainerFrame, from: titleView) }
     func applyPalette(_ palette: ThemeChromePalette) {
         self.palette = palette
@@ -147,8 +116,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
     private var dark: Bool {
         palette?.isDark ?? (effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
     }
-    /// The cell's `CellSelectionStateView` and the container's separators
-    ///
     private func updateAppearance() {
         background.dark = dark
         background.ringColor = palette?.maxContrastColor ?? .labelColor
@@ -165,8 +132,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
         CATransaction.commit()
     }
     private var customInfoShown: Bool { hasCustomTitle || titleView.editingTitle }
-    /// Close shows while the cell is hovered and has a close configuration
-    ///
     private var closeShown: Bool { hover && hasClose && !titleView.editingTitle }
     private func updateTitlePresentation() {
         let custom = customInfoShown
@@ -197,7 +162,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
         if let tracking { removeTrackingArea(tracking) }
         let area = NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .inVisibleRect], owner: self)
         addTrackingArea(area); tracking = area
-        // A rebuilt row under a stationary pointer reconciles its hover.
         setHover(window.map { $0.isKeyWindow && bounds.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false)
     }
     override func mouseEntered(with event: NSEvent) {
@@ -206,7 +170,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
     override func mouseExited(with event: NSEvent) {
         if event.trackingArea === tracking { setHover(false) } else { super.mouseExited(with: event) }
     }
-    /// The split's page left the screen with the pointer over it.
     func resetPointer() { setHover(false) }
     private func setHover(_ value: Bool) {
         guard hover != value else { return }
@@ -214,13 +177,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
         closeButton.refreshAvailability()
         updateAppearance(); needsLayout = true
     }
-    ///
-    ///
-    /// the outline's width and the 40-point row and cached as a bitmap
-    ///
-    /// the split's selection state without the hover fill or the cell's Close.
-    /// Parc's row is the cell's visible background, so its own bounds frame the
-    ///
     func dragImage() -> NSImage {
         let wasHovered = hover
         setHover(false); layoutSubtreeIfNeeded()
@@ -251,8 +207,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); updateDim() }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateAppearance() }
     override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); needsLayout = true }
-    /// `SplitViewCellState.shouldDim` from the window's key/main state, as
-    /// ordinary rows take it (TAB19).
     private func updateDim() {
         let value = window.map { !$0.isKeyWindow && !$0.isMainWindow } ?? false
         guard dimmed != value else { return }
@@ -279,7 +233,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
         titleView.frame = bounds
         titleView.titleTrailing = layout.infoTitleTrailing
         for (index, button) in captureButtons.enumerated() {
-            // Parc's active-capture controls sit before the title's trailing edge.
             button.frame = NSRect(x: max(SidebarSplitCellLayout.infoTitleInset, layout.infoTitleTrailing - CGFloat(index + 1) * 23),
                                   y: ((bounds.height - 25) / 2).rounded(.down), width: 23, height: 25)
         }
@@ -287,10 +240,6 @@ final class SidebarSplitGroupView: NSView, SidebarDeferredAccessibilityActions {
     }
 }
 
-///
-///
-///
-/// separate handle. A press in the cell (outside a child) activates the split.
 @MainActor
 final class SidebarSplitMoveSurface: SidebarMoveHandle {
     var prepareActivation: (() -> (() -> Bool)?)?
@@ -319,7 +268,6 @@ final class SidebarSplitMoveSurface: SidebarMoveHandle {
         super.mouseDragged(with: event)
         if !dragging, sidebarDrag != nil { pendingActivation = nil; onKeyDrag?(true) }
     }
-    /// A drag that starts on the custom-info cell.
     func beginDrag(from press: NSEvent, with drag: NSEvent) {
         super.mouseDown(with: press)
         pendingActivation = nil
@@ -330,12 +278,6 @@ final class SidebarSplitMoveSurface: SidebarMoveHandle {
         super.draggingSession(session, endedAt: screenPoint, operation: operation)
         if dragging { onKeyDrag?(false) }
     }
-    ///
-    ///
-    ///
-    ///
-    /// page or editor accepts the split. A cancelled or refused drag slides
-    ///
     override func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         guard context == .withinApplication else { return .copy }
         return sidebarDrag?.allowsCopy == true ? [.move, .copy] : .move

@@ -8,7 +8,7 @@ python3 - "$output/ThemePalette.swift" <<'EOF'
 import sys
 from pathlib import Path
 text = Path("Sources/ParcApp/ThemeRenderer.swift").read_text()
-marker = "// Opt-in native delivery diagnostics"
+marker = "@MainActor\nenum NativeInputDiagnostics"
 if marker not in text:
     raise SystemExit("ThemeRenderer.swift no longer contains the palette slice marker")
 Path(sys.argv[1]).write_text(text[:text.index(marker)])

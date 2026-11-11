@@ -1,7 +1,5 @@
 import AppKit
 
-///
-/// the local reversible crop editor are deliberate adaptations; see the contract.
 enum CapturePresentation {
     static let paletteWidth: CGFloat = 273
     static let paletteInset: CGFloat = 10
@@ -24,9 +22,6 @@ enum CapturePresentation {
         if editing {
             imageArea.size.height = max(1, imageArea.height - min(editingFooterHeight, imageArea.height - 1))
         }
-        // The native reference retains the original rectangle and lets its
-        // low-priority palette anchors overlap for large captures. Narrow Parc
-        // split panes instead reserve separate visible image/palette bands.
         let compact = !editing && bounds.width < 2 * paletteWidth + 30
         var menu = NSRect(origin: safe.origin, size: paletteSize)
         if compact {
@@ -43,8 +38,6 @@ enum CapturePresentation {
             let border = image.insetBy(dx: -imageBorder, dy: -imageBorder)
             let right = border.maxX + paletteInset
             menu.origin.x = border.maxX + paletteWidth < bounds.maxX ? right : border.minX - paletteInset - menu.width
-            // Original side selection uses 273 as its vertical threshold, then
-            // the page-edge constraints bound the menu's actual fitting height.
             menu.origin.y = bounds.maxY - (border.minY - imageBorder + paletteWidth) < paletteInset
                 ? border.maxY - menu.height : border.minY
             menu.origin.x = min(max(menu.minX, safe.minX), safe.maxX - menu.width)
@@ -74,8 +67,6 @@ enum CapturePresentation {
     }
 }
 
-///
-/// executable is never loaded. All layer colors resolve for their owning view.
 @MainActor enum CaptureAppearance {
     static func dark(_ appearance: NSAppearance) -> Bool {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -99,7 +90,6 @@ enum CapturePresentation {
     static let directory = Bundle.main.resourceURL?.appendingPathComponent("Capture", isDirectory: true)
     static func image(_ name: String) -> NSImage? {
         guard let directory, let image = NSImage(contentsOf: directory.appendingPathComponent(name + ".pdf")) else { return nil }
-        // Keep the original vector and compiled bitmap renditions together.
         for suffix in [".png", "@2x.png"] {
             if let bytes = try? Data(contentsOf: directory.appendingPathComponent(name + suffix)),
                let representation = NSBitmapImageRep(data: bytes) {

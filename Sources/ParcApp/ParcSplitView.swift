@@ -1,7 +1,5 @@
 import AppKit
 
-/// The recovered pair snap starts unarmed. It arms outside the 14-point band,
-/// then admits a slow approach; leaving a snapped band produces one release.
 struct SplitDividerSnapState {
     private(set) var canSnap = false
     private(set) var isSnapped = false
@@ -15,8 +13,6 @@ struct SplitDividerSnapState {
     }
 }
 final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
-    // The reference container is a plain NSView. NSSplitView repairs child
-    // geometry to fit its own bounds, which would discard expanded minima.
     private(set) var arrangedSubviews: [NSView] = []
     private(set) var isVertical = true
     func addArrangedSubview(_ view: NSView) { insertArrangedSubview(view, at: arrangedSubviews.count) }
@@ -28,8 +24,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         let previous = index > 0 ? arrangedSubviews[index - 1] : nil
         addSubview(view, positioned: previous == nil ? .below : .above, relativeTo: previous)
     }
-    /// Diffs the arranged list in place. Surviving views stay in this hierarchy;
-    /// callers park or dispose only the views that actually left.
     @discardableResult
     func reconcileArrangedSubviews(_ views: [NSView]) -> [NSView] {
         let leaving = arrangedSubviews.filter { current in !views.contains { $0 === current } }
@@ -65,11 +59,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         removeArrangedSubview(subview)
         super.willRemoveSubview(subview)
     }
-    ///
-    ///
-    ///
-    ///
-    /// have no such inset, so the border spans the whole pane slot.
     fileprivate final class DropRegionView: NSView {
         var insertionColor: (() -> NSColor)?
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -85,8 +74,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             super.viewDidChangeEffectiveAppearance(); refreshAppearance()
         }
     }
-    /// A presentation lease over the exact original surfaces. No temporary page,
-    /// saved group or selection is created while an incoming item is hovering.
     final class DropReservation {
         private weak var owner: ParcSplitView?
         private weak var host: NSView?
@@ -103,9 +90,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         private var splitBounds: NSRect
         private var paneFrames: [NSRect]
         private var contentFrames: [NSRect]
-        ///
-        /// each with its own top bar (`topBarPanelComponents`), so targets and
-        /// the incoming region use full pane frames, header included.
         private var paneHostFrames: [NSRect]
         private var updating = false
         private(set) var ended = false
@@ -113,16 +97,12 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         fileprivate var index: Int?
         fileprivate var orientation: SplitOrientation
         private var target: SplitDropTarget?
-        /// Whether the last proposal used a drop region already present at its
-        ///
         private(set) var reusedRegion = false
         private var retiredIndex: Int?
         func setInsertionColor(_ color: @escaping () -> NSColor) {
             region.insertionColor = color; region.refreshAppearance()
         }
         func refreshAppearance() { region.refreshAppearance() }
-        /// The current lease's split begins the drag's edit; the edit outlives
-        /// this presentation lease.
         func beginInteractivePaneEdit() -> InteractivePaneEdit? {
             guard !ended, let owner, owner.dropReservation === self else { return nil }
             return owner.beginInteractivePaneEdit()
@@ -140,9 +120,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             paneHostFrames = panes.map { $0.convert($0.bounds, to: host) }
             region.wantsLayer = true; region.setAccessibilityElement(false); region.setAccessibilityChildren([])
         }
-        ///
-        ///
-        /// more pane than it shows, by its full height, whatever the orientation.
         var incomingPaneSize: NSSize {
             NSSize(width: splitBounds.width / CGFloat(panes.count + 1), height: splitBounds.height)
         }
@@ -154,8 +131,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                   owner.savedFactors == originalFactors, panes.count == owner.arrangedSubviews.count,
                   zip(panes, owner.arrangedSubviews).allSatisfy({ $0 === $1 }),
                   contents.enumerated().allSatisfy({ $0.element.isDescendant(of: panes[$0.offset]) }) else { return false }
-            // Only the synchronous frame publication owned by this lease may
-            // temporarily differ. No queued callback receives this exemption.
             if updating { return true }
             return owner.frame == splitFrame && owner.bounds == splitBounds
                 && panes.map(\.frame) == paneFrames
@@ -175,8 +150,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         func containsReservedPoint(_ point: NSPoint) -> Bool {
             isCurrent && regionFrame?.contains(point) == true
         }
-        ///
-        /// full-height split destination that no page receiver covers.
         func containsHandoffPoint(_ point: NSPoint) -> Bool {
             guard isCurrent else { return false }
             if regionFrame?.contains(point) == true { return true }
@@ -196,7 +169,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             guard let proposed else { clear(animated: true); return nil }
             guard case .insert(let next) = proposed.0 else {
                 clear(animated: true)
-                // A replacement is now expressed in the restored original frame.
                 if case .replace(let i) = proposed.0 { return (proposed.0, originalOrientation, paneHostFrames[i]) }
                 return proposed
             }
@@ -213,8 +185,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                 if region.superview !== owner { owner.addSubview(region) }
                 region.frame = collapsed; region.layer?.opacity = 0
                 let start = visible ?? owner.captureDropRegion(region)
-                // Index/orientation changed: apply reserved frames. Flush only
-                // when geometry or a dirty subtree still needs layout.
                 owner.applyDropReserveLayout()
                 capture(); updating = false
                 if isCurrent {
@@ -236,8 +206,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                 ? NSRect(x: edge, y: 0, width: 0, height: owner.bounds.height)
                 : NSRect(x: 0, y: edge, width: owner.bounds.width, height: 0)
         }
-        /// Exit can be followed by reentry in the same native drag. Authority
-        /// and native geometry restore immediately; only the border may retire.
         func clear(animated: Bool = false) {
             guard let owner, owner.dropReservation === self, !ended else { return }
             guard let previousIndex = index else {
@@ -270,8 +238,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             ended = true
             guard let owner, owner.dropReservation === self else { region.removeFromSuperview(); return }
             owner.dropReservation = nil
-            // A completed clear already owns its passive transition. No drag
-            // authority or delayed model/focus callback remains after this end.
             if animate, previousIndex == nil { return }
             region.removeFromSuperview()
             owner.applyDropReserveLayout()
@@ -297,28 +263,13 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         return lease
     }
     private func retireDropReservation() { dropReservation?.end() }
-    ///
-    ///
-    /// drag first creates destination state, `draggingExited:` keeps it, and
-    ///
-    /// route owner holds it across its previews and leases and ends it at the
-    /// drag's terminal callback.
     @MainActor final class InteractivePaneEdit {
         fileprivate weak var owner: ParcSplitView?
         private(set) var ended = false
         private var fallback: Timer?
         fileprivate init(owner: ParcSplitView) { self.owner = owner }
-        /// Whether one of the route's receivers currently has the drag. While
-        /// none does, a drag whose terminal callback never reaches Parc (an
-        /// external drop elsewhere, another window or app) still ends this
-        /// edit: a common-modes check ends it once the primary button is up.
-        /// It ends only this drag's edit, so a newer drag's edit is untouched.
         var isDragInside = true { didSet { updateFallback() } }
         private func updateFallback() {
-            // Keep the 50ms common-modes poll. Ending early while the button
-            // is still down (or while another route still holds the drag) is
-            // not a true no-op: it clears splitInteractiveEditing and would
-            // break external-drop cleanup when draggingEnded never arrives.
             guard !ended, !isDragInside else { fallback?.invalidate(); fallback = nil; return }
             guard fallback == nil else { return }
             let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] timer in
@@ -341,17 +292,10 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             owner?.interactivePaneEditDidEnd(self)
         }
     }
-    /// The drag's button state for the outside-drag fallback.
     var primaryMouseButtonIsDown: () -> Bool = { NSEvent.pressedMouseButtons & 1 != 0 }
-    ///
-    ///
-    ///
-    /// then keeps its size while the reserved layout moves around it.
     private var interactivePaneEdit: InteractivePaneEdit?
     var isInteractivePaneEditing: Bool { interactivePaneEdit != nil }
     var onInteractivePaneEditing: ((Bool) -> Void)?
-    ///
-    /// unterminated older one without reporting a gap.
     fileprivate func beginInteractivePaneEdit() -> InteractivePaneEdit? {
         guard window != nil else { return nil }
         let previous = interactivePaneEdit
@@ -366,13 +310,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         interactivePaneEdit = nil
         onInteractivePaneEditing?(false)
     }
-    //
-    // DraggingDestinationForwardingView container, SplitViewContentPaneView
-    // and both dragger handle views override no accessibility selector, and
-    // the executable never sets an accessibility role or posts an
-    // accessibility notification. AppKit therefore ignores the plain views:
-    // each pane's content is reached directly and no splitter is exposed.
-    /// Admission captures the original group at native gesture admission.
     var prepareDividerResize: (() -> (([Double]) -> Bool)?)?
     private var dividerGrips: [CALayer] = []
     private var dividerTrackingAreas: [NSTrackingArea] = []
@@ -414,7 +351,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         CATransaction.commit()
         region.refreshAppearance()
         layer.removeAnimation(forKey: regionAnimationKey)
-        //
         guard let previous, previous.parent === layer.superlayer, window != nil,
               !isHiddenOrHasHiddenAncestor else {
             if removing { region.removeFromSuperview() }
@@ -453,10 +389,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private var layoutLayers: [CALayer] {
         arrangedSubviews.compactMap(\.layer) + dividerGrips + arrangedSubviews.compactMap { paneShadows[ObjectIdentifier($0)] }
     }
-    /// Each divided pane clips its own rounded card, so its content shadow
-    /// (`ContentShadowImage`) is a layer below it here. A lone pane keeps one
-    /// hidden, so the split that divides it moves its shadow with it; the
-    /// window draws that lone card's shadow outside the clipping host.
     private var paneShadows: [ObjectIdentifier: CALayer] = [:]
     private func synchronizePaneShadows() {
         guard let layer else { return }
@@ -481,7 +413,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             if shadow.contents == nil || shadow.contentsScale != paneBackingScale {
                 ContentShadowImage.apply(to: shadow, scale: paneBackingScale)
             }
-            // The pane's layer as AppKit placed it, in this layer's own space.
             shadow.frame = ContentShadowImage.frame(around: pane.layer?.frame ?? pane.frame)
             shadow.isHidden = !divided
         }
@@ -511,9 +442,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         animateLayout(from: positions, key: reservedAnimationKey)
     }
     private func animateLayout(from positions: [LayerPosition], key: String) {
-        //
-        //
-        // accessibilityDisplayShouldReduceMotion, so neither does Parc.
         guard window != nil, !isHiddenOrHasHiddenAncestor else { return }
         let current = layoutLayers
         for previous in positions where current.contains(where: { $0 === previous.layer })
@@ -527,8 +455,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             let animation = CAAnimationGroup()
             animation.animations = [position, bounds]; animation.duration = 0.2
             animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            // Interpolate only these same live surfaces after logical geometry
-            // publication. No delayed frame, focus, model or removal callback.
             animatedLayers.append(AnimatedLayer(layer))
             layer.add(animation, forKey: key)
             (layer.delegate as? SplitLayoutFollowing)?.followSplitLayout(from: previous.bounds, animation: animation)
@@ -556,13 +482,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
     private var resize: Resize?
     private var isTrackingDivider: Bool { resize != nil }
-    ///
-    /// SplitViewContentPaneView (`userInteractionEnabled`, read by its
-    ///
-    ///
-    ///
-    ///
-    /// never sets either.
     private(set) var isDividerPanActive = false {
         didSet { if oldValue != isDividerPanActive { onDividerPanActivity?(isDividerPanActive) } }
     }
@@ -572,16 +491,8 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     override var isFlipped: Bool { true }
     var dividerColor: NSColor { .clear }
     override var isOpaque: Bool { false }
-    // The browser's WindowContents state supplies this ten-point inset to
-    // the original split controller, whose expanded pane minimum is 220.
     var dividerThickness: CGFloat { 10 }
     private let expandedPaneMinimum: CGFloat = 220
-    ///
-    /// trailing handle (side-by-side panes) drags, hovers and shows its cursor
-    ///
-    ///
-    /// FlippedView; a bottom handle (stacked panes) excludes 8 points at each
-    ///
     private let draggableTopInset: CGFloat = 53
     private let draggableEndInset: CGFloat = 8
     private weak var constrainedHost: NSView?
@@ -589,8 +500,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private var minimumWidthConstraint: NSLayoutConstraint?
     private var minimumHeightConstraint: NSLayoutConstraint?
 
-    /// The original split owns its minimum; the surrounding content edges
-    /// yield at 750. No window resize or replacement page is involved.
     func constrain(to host: NSView) {
         guard superview === host else { return }
         if constrainedHost !== host {
@@ -613,9 +522,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private func updateContainerMinimum() {
         guard let host = constrainedHost, superview === host else { return }
         let count = arrangedSubviews.count + (dropReservation?.index == nil ? 0 : 1)
-        //
-        // its split constraint to divided content; single-page/popup sizing
-        // retains the existing owner policy.
         let width = count > 1 ? expandedPaneMinimum * CGFloat(count) + dividerThickness * CGFloat(count - 1) : 0
         let height: CGFloat = count > 1 ? 382 : 0
         let widthChanged = minimumWidthConstraint?.constant != width
@@ -631,9 +537,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         }
     }
 
-    /// Drop reserve / clear / end: update the host minimum, apply saved pane
-    /// factors, then flush this split only when geometry or a dirty subtree
-    /// still needs layout. Identical restored frames are a true no-op.
     fileprivate func applyDropReserveLayout() {
         updateContainerMinimum()
         applySavedFrames()
@@ -647,15 +550,12 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
 
 
     private func alignedPaneFrame(_ frame: NSRect) -> NSRect {
-        // Original layout rounds both edges, not just the extent. Adjacent
-        // panes therefore retain the exact divider gap at fractional shares.
         let left = frame.minX.rounded(), top = frame.minY.rounded()
         return NSRect(x: left, y: top, width: max(0, frame.maxX.rounded() - left),
                       height: max(0, frame.maxY.rounded() - top))
     }
 
     private var paneBackingScale: CGFloat {
-        // The original context reads the owning window, with 1 when detached.
         let scale = window?.backingScaleFactor ?? 1
         return scale.isFinite && scale > 0 ? scale : 1
     }
@@ -665,22 +565,12 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         return max(0, total - dividerThickness * CGFloat(max(0, arrangedSubviews.count - 1)))
     }
 
-    /// The weights a divider edits. Ordinarily these are the saved weights, as
-    ///
-    /// minimum redistribution displays it with room to move (Expand leaves the
-    ///
-    /// Parc resizes from every pane's displayed length instead. The divider
-    /// then moves only the space its two panes occupy, and every other pane
-    /// keeps its size. A pair displayed at its two minimums stays put.
     private func resizableFactors(at divider: Int) -> [Double]? {
         guard arrangedSubviews.indices.contains(divider), arrangedSubviews.indices.contains(divider + 1),
               let factors = BrowserSplitLayout.normalized(savedFactors, count: arrangedSubviews.count) else { return nil }
         guard CGFloat(factors[divider] + factors[divider + 1]) * availablePaneLength < 2 * minimumPaneLength else { return factors }
         var lengths = arrangedSubviews.map { Double(isVertical ? $0.frame.width : $0.frame.height) }
         let pair = lengths[divider] + lengths[divider + 1]
-        // Independently rounded lengths need not sum to the available length
-        // (they can overrun it by a point). The pair takes up that remainder so
-        // the other panes' shares reproduce their displayed lengths exactly.
         let room = Double(availablePaneLength) - (lengths.reduce(0, +) - pair)
         guard pair > 2 * Double(minimumPaneLength), room > 2 * Double(minimumPaneLength) else { return factors }
         lengths[divider] *= room / pair; lengths[divider + 1] *= room / pair
@@ -690,8 +580,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     private func dividerFraction(distance: CGFloat, pairShare: Double) -> Double? {
         let available = availablePaneLength
         guard distance.isFinite, available.isFinite, available > 0 else { return nil }
-        // The original mutation divides by the whole layout's available
-        // length, not the adjacent pair's rounded displayed length.
         let minimum = Double(minimumPaneLength / available)
         let fraction = max(minimum, min(Double(distance / available), pairShare - minimum))
         guard fraction.isFinite, fraction > 0, pairShare - fraction > 0 else { return nil }
@@ -707,8 +595,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         dividerPan.delaysPrimaryMouseButtonEvents = false
         addGestureRecognizer(dividerPan)
     }
-    ///
-    /// backing and rounded clipping. Keep the existing single-page host policy.
     func configureBacking(in host: NSView, hasTranslucentPane: Bool, backing: NSColor = .white) {
         let divided = arrangedSubviews.count > 1
         CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -758,7 +644,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
     override func resetCursorRects() {
         super.resetCursorRects()
-        //
         let cursor: NSCursor = isVertical ? .resizeLeftRight : .resizeUpDown
         for rect in dividerRegions where !rect.isEmpty { addCursorRect(rect, cursor: cursor) }
     }
@@ -770,8 +655,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             guard !visible.isEmpty, !visible.isNull,
                   visible.minX.isFinite, visible.minY.isFinite,
                   visible.width.isFinite, visible.height.isFinite else { return nil }
-            //
-            // so enter/exit also arrive while a mouse button is held.
             let area = NSTrackingArea(rect: visible,
                 options: [.mouseEnteredAndExited, .activeInKeyWindow, .enabledDuringMouseDrag], owner: self, userInfo: nil)
             addTrackingArea(area); return area
@@ -808,10 +691,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                 : NSRect(x: 0, y: pane.frame.maxY, width: bounds.width, height: dividerThickness)
         }
     }
-    /// The original handle regions that admit the pan and double click
-    ///
-    /// inside the handle's draggableRegion), hover and cursor. The grip stays
-    ///
     private var dividerRegions: [NSRect] {
         dividerRects.map { rect in
             isVertical
@@ -821,8 +700,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                          width: max(0, rect.width - 2 * draggableEndInset), height: rect.height)
         }
     }
-    /// The page margin's handle (SplitMarginHandleView): the split shows its
-    /// grip only with one arranged page and no incoming reserved pane.
     weak var marginHandle: SplitMarginHandleView? { didSet { synchronizeDividerPresentation(animated: false) } }
     private func synchronizeDividerPresentation(animated: Bool) {
         marginHandle?.splitAllows = arrangedSubviews.count == 1 && dropReservation?.index == nil
@@ -847,8 +724,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
                 : NSRect(x: rect.midX - 12, y: rect.midY - 1, width: 24, height: 2)
             grip.backgroundColor = color
             CATransaction.commit()
-            //
-            // Reduce Motion setting.
             if changed, animated, let previous {
                 let transition = CABasicAnimation(keyPath: "backgroundColor")
                 transition.fromValue = previous; transition.toValue = color; transition.duration = 0.16
@@ -859,8 +734,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
 
     func configure(orientation: SplitOrientation, factors: [Double]) {
-        // isVertical names the divider direction; the saved enum names the
-        // page arrangement, as in the recovered horizontal/vertical enum.
         let changed = savedOrientation != orientation || savedFactors != factors
         if changed { retireDropReservation() }
         savedOrientation = orientation
@@ -874,8 +747,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         if isTrackingDivider, resize?.bounds != bounds { finishDividerResize(commit: false) }
         else if !isTrackingDivider { applySavedFrames() }
         guard bounds.size != oldSize else { return }
-        // A view kept here outside the arrangement (a pane held over a tab
-        // switch) follows the page area by its autoresizing mask.
         for view in subviews where !arrangedSubviews.contains(where: { $0 === view }) && !view.autoresizingMask.isEmpty {
             view.resize(withOldSuperviewSize: oldSize)
         }
@@ -913,9 +784,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         var lengths = Array(repeating: CGFloat(0), count: count)
         var remaining = available
         var pending = Array(0..<count)
-        // Expanded flexible panes retain their real minimum even if their
-        // parent cannot fit them. The original factor redistribution exhausts
-        // the available flexible surplus, never shrinking an expanded pane.
         let minimum = count > 1 ? expandedPaneMinimum : 0
         while !pending.isEmpty {
             let weight = pending.reduce(0.0) { $0 + factors[$1] }
@@ -931,9 +799,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         var position: CGFloat = 0
         var anyFrameChanged = false
         for (index, pane) in views.enumerated() {
-            // Each original pane rounds independently at backing scale. Its
-            // position sums those lengths; the last pane does not fill a
-            // rounding remainder. Final frame edges still round in points.
             let length = max(minimum, (lengths[index] * scale).rounded() / scale)
             let frame = alignedPaneFrame(isVertical
                 ? NSRect(x: position, y: 0, width: length, height: bounds.height)
@@ -945,9 +810,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
             }
             position += length + dividerThickness
             guard pane !== reservation?.region else { continue }
-            // True no-op: identical pane frames with a clean subtree skip the
-            // forced needsLayout + layoutSubtree walk. Drop index/orientation
-            // changes move frames and still flush.
             if frameChanged { pane.needsLayout = true }
             if SplitLayoutFlushSkip.shouldFlush(
                 frameChanged: frameChanged,
@@ -970,7 +832,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
-        // A pane refusing hit testing leaves the point to this container.
         guard isPaneInputLocked, let hit, hit !== self,
               arrangedSubviews.contains(where: { hit === $0 || hit.isDescendant(of: $0) }) else { return hit }
         return self
@@ -978,8 +839,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard let divider = divider(at: point) else { super.mouseDown(with: event); return }
-        // The native pan recognizer owns ordinary divider movement; this
-        // handler owns only the separately attributed double click.
         guard event.clickCount == 2 else { return }
         finishDividerResize(commit: false)
         guard let commit = prepareDividerResize?(),
@@ -989,8 +848,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         let half = (factors[divider] + factors[divider + 1]) / 2
         factors[divider] = half; factors[divider + 1] = half
         let accepted = commit(factors)
-        // Publication can synchronously reconcile other owners. Never animate
-        // a replacement selection or bounds/orientation that changed in it.
         let current = originalBounds == bounds && orientation == savedOrientation
             && views.count == arrangedSubviews.count
             && zip(views, arrangedSubviews).allSatisfy { $0 === $1 }
@@ -1015,7 +872,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         if newWindow !== window { retireDropReservation() }
         if newWindow !== window {
             clearLayoutAnimation(); finishDividerResize(commit: false)
-            // A split leaving its window receives no terminal drag callback.
             interactivePaneEdit?.end()
         }
         super.viewWillMove(toWindow: newWindow)
@@ -1032,19 +888,14 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         switch recognizer.state {
         case .began: beginDividerPan(at: recognizer.location(in: self))
         case .changed:
-            // The original consumer takes velocityInView's x component, also
-            // for vertical layouts. Preserve that attributed behavior.
             updateDividerResize(at: recognizer.location(in: self), velocity: recognizer.velocity(in: self).x)
         case .ended: finishDividerResize(commit: true)
         case .cancelled, .failed: finishDividerResize(commit: false)
         default: break
         }
     }
-    /// The native pan's `.began`, after mouse-down owner admission.
     func beginDividerPan(at point: NSPoint) {
         guard resizeIsCurrent, point.x.isFinite, point.y.isFinite else { finishDividerResize(commit: false); return }
-        //
-        // the earlier mouse-down location used for owner admission.
         resize?.origin = point
         isPaneInputLocked = true
         isDividerPanActive = true
@@ -1073,8 +924,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         let firstLength = horizontal ? first.width : first.height
         guard point.x.isFinite, point.y.isFinite, velocity.isFinite else { return }
         let delta = horizontal ? point.x - current.origin.x : point.y - current.origin.y
-        // The reference asks for the pointer in the live original pane.
-        // Minimum redistribution can move that pane's origin between updates.
         let liveFirst = current.views[current.divider].frame
         let originShift = horizontal ? liveFirst.minX - first.minX : liveFirst.minY - first.minY
         let proposed = firstLength + delta - originShift
@@ -1087,9 +936,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         let nextSecond = pairShare - nextFirst
         let factorsChanged = nextFirst != current.factors[current.divider]
             || nextSecond != current.factors[current.divider + 1]
-        // First move materializes resize factors (may differ from savedFactors
-        // when resizing from displayed lengths). Later identical-factor moves
-        // (including snap hold) skip applyFrames — true no-op of geometry.
         if SplitLayoutFlushSkip.shouldApplyDividerMove(
             factorsChanged: factorsChanged, alreadyMoved: current.moved
         ) {
@@ -1109,9 +955,6 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         let valid = resizeIsCurrent
         guard let current = resize else { return }
         resize = nil
-        //
-        //
-        //
         isPaneInputLocked = false
         if commit, valid, current.moved, current.commit(current.factors) { savedFactors = current.factors }
         applySavedFrames()
@@ -1121,13 +964,9 @@ final class ParcSplitView: NSView, NSGestureRecognizerDelegate {
         expandedPaneMinimum
     }
     func drawDivider(in rect: NSRect) {
-        // The recovered DraggingDestinationForwardingView draws no separator
-        // band. The original window background shows through beside the grip.
     }
 }
 
-/// Lets a pane's passive highlight follow this owner's pane-layer transition,
-///
 @MainActor
 protocol SplitLayoutFollowing: AnyObject {
     func followSplitLayout(from previous: CGRect, animation: CAAnimation)

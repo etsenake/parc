@@ -1,32 +1,20 @@
 import AppKit
 
-///
-/// with optional keycaps, presented by `TooltipController` for any view that
-///
 struct TooltipConfiguration: Equatable {
-    ///
     enum Anchor: Int, CaseIterable {
         case top, bottom, leading, trailing, topLeading, topTrailing, bottomLeading, bottomTrailing, cursor
     }
     enum Behavior: Equatable {
-        /// Shown `delay` seconds after the pointer stops over the view.
         case onMouseIdle(delay: TimeInterval)
         case immediate
     }
     enum Shortcut: Equatable {
         case fixed(KeyboardShortcut)
-        /// A registry command's live binding, read each time the tooltip is shown.
         case command(String)
     }
     enum Style: Equatable {
-        /// The label as plain text (`StandardTooltipContentView`'s content).
         case standard
-        ///
-        /// most four lines over an optional, dimmer subtitle.
         case label(subtitle: String?)
-        ///
-        ///
-        /// `ProfileIndicatorView` in the keycap colours.
         case dockItem(profileName: String?)
     }
 
@@ -37,21 +25,12 @@ struct TooltipConfiguration: Equatable {
     var shortcut: Shortcut?
     var anchor: Anchor
     var behavior: Behavior
-    /// Nil is `defaultMaxWidth`.
     var maxWidth: CGFloat?
-    /// Modifiers that may be held without blocking presentation.
     var allowedModifierKeys: NSEvent.ModifierFlags
-    /// Nil takes the window's Space-theme palette, or the neutral one.
     var palette: TooltipColorPalette?
-    ///
-    ///
     var requiresShortcut: Bool
-    /// The anchor's rect in the view's bounds coordinates; nil is the bounds.
-    /// For a view that draws its tooltipped parts instead of hosting them as
-    /// subviews.
     var anchorRect: CGRect?
 
-    ///
     init(_ label: String, style: Style = .standard, shortcut: Shortcut? = nil, anchor: Anchor = .bottomTrailing,
          behavior: Behavior = .onMouseIdle(delay: 0.45), maxWidth: CGFloat? = nil,
          allowedModifierKeys: NSEvent.ModifierFlags = [], palette: TooltipColorPalette? = nil,
@@ -62,8 +41,6 @@ struct TooltipConfiguration: Equatable {
     }
 }
 
-///
-///
 struct TooltipColorPalette: Equatable {
     struct Color: Equatable {
         var light: NSColor
@@ -74,9 +51,7 @@ struct TooltipColorPalette: Equatable {
     }
     var title: Color
     var background: Color
-    /// The raised keycap face.
     var keyForeground: Color
-    /// The keycap body and the lip below its face.
     var keyBackground: Color
     var keyTitle: Color
 
@@ -85,8 +60,6 @@ struct TooltipColorPalette: Equatable {
         self.keyForeground = keyForeground; self.keyBackground = keyBackground; self.keyTitle = keyTitle
     }
 
-    ///
-    /// for windows without a theme palette.
     static let neutral: TooltipColorPalette = {
         func gray(_ white: CGFloat) -> NSColor {
             NSColor(colorSpace: .extendedSRGB, components: [white, white, white, 1], count: 4)
@@ -98,12 +71,6 @@ struct TooltipColorPalette: Equatable {
                                    keyTitle: Color(light: gray(0), dark: gray(1)))
     }()
 
-    ///
-    /// keep the semantic palette's light/dark split; the key colours take the
-    /// light palette's hover, focus and maxContrastColor in both appearances.
-    /// A theme without colour has no themed semantic palette in Parc
-    /// (ThemeChromePalette falls back to system colours), so it keeps the
-    /// neutral palette.
     init(theme: SpaceTheme) {
         guard theme.isValid, theme.primaryColor != nil else { self = .neutral; return }
         let light = ThemeChromePalette(theme: theme, isDark: false)
@@ -115,7 +82,6 @@ struct TooltipColorPalette: Equatable {
     }
 }
 
-///
 struct TooltipKeycap: Equatable {
     enum Trigger: Equatable {
         case modifier(NSEvent.ModifierFlags)
@@ -124,7 +90,6 @@ struct TooltipKeycap: Equatable {
     let glyph: String
     let trigger: Trigger
 
-    ///
     static let modifierOrder: [(flag: NSEvent.ModifierFlags, symbol: String)] =
         [(.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘")]
 
@@ -133,13 +98,10 @@ struct TooltipKeycap: Equatable {
             + [TooltipKeycap(glyph: glyph(forKey: shortcut.key), trigger: .key(shortcut.key))]
     }
 
-    ///
-    /// the Essentials keycaps' key text, which spells Tab out.
     static func glyph(forKey key: String) -> String {
         KeyboardShortcut(key: key, flags: []).keycapSymbols.last!
     }
 
-    ///
     func isPressed(modifiers: NSEvent.ModifierFlags, characters: String?) -> Bool {
         switch trigger {
         case .modifier(let flag): return modifiers.contains(flag)
@@ -148,8 +110,6 @@ struct TooltipKeycap: Equatable {
     }
 }
 
-///
-/// 3 on the corner that points at a diagonal anchor or the cursor.
 struct TooltipCorners: Equatable {
     var topLeft: CGFloat, topRight: CGFloat, bottomRight: CGFloat, bottomLeft: CGFloat
 
@@ -170,8 +130,6 @@ struct TooltipCorners: Equatable {
         }
     }
 
-    /// A path in a top-left-origin (flipped) space, each radius limited to
-    /// half the shorter side.
     func path(in rect: CGRect) -> CGPath {
         let limit = min(rect.width, rect.height) / 2
         let tl = min(topLeft, limit), tr = min(topRight, limit), br = min(bottomRight, limit), bl = min(bottomLeft, limit)
@@ -186,10 +144,7 @@ struct TooltipCorners: Equatable {
     }
 }
 
-///
-/// cast by the fill together with the first.
 struct TooltipShadow: Equatable {
-    /// SwiftUI's radius; the offset is in SwiftUI's y-down space.
     let radius: CGFloat
     let offset: CGSize
     let opacity: CGFloat
@@ -197,35 +152,24 @@ struct TooltipShadow: Equatable {
     static let standard = [TooltipShadow(radius: 2.5, offset: .zero, opacity: 0.18),
                            TooltipShadow(radius: 10, offset: CGSize(width: 0, height: 2.5), opacity: 0.15)]
 
-    ///
-    /// the largest offset plus three times the largest radius, 32.5 points.
     static var windowMargin: CGFloat {
         (standard.map { max(abs($0.offset.width), abs($0.offset.height)) }.max() ?? 0)
             + 3 * (standard.map(\.radius).max() ?? 0)
     }
 }
 
-///
-///
 enum TooltipTiming {
     static let presentDuration: CFTimeInterval = 0.05
     static let exitDuration: TimeInterval = 0.3
     static let cursorExitDuration: TimeInterval = 0.1
-    /// Mouse down, scroll wheel and Escape.
     static let interruptionDuration: TimeInterval = 0.1
     static let shortcutDismissalDelay: TimeInterval = 0.25
-    ///
     static let pointerStopDelay: TimeInterval = 0.08
     static let hitTestInterval: TimeInterval = 0.25
     static let cursorWarmInterval: TimeInterval = 0.6
     static let cursorWarmDelay: TimeInterval = 0.01
 }
 
-///
-/// outside `allowed` is. The raw flags are compared unmasked, so Caps Lock
-///
-/// `.always` window behaviour (Picture in Picture, the Boosts editor) has no
-/// Parc adopter.
 enum TooltipEligibility {
     static func permits(pressedMouseButtons: Int, modifierFlags: NSEvent.ModifierFlags, allowed: NSEvent.ModifierFlags,
                         keyInParentChain: () -> Bool) -> Bool {
@@ -234,11 +178,6 @@ enum TooltipEligibility {
     }
 }
 
-/// TooltipController's presentation rules apart from AppKit: scheduling
-///
-///
-///
-/// decisions name; `Target` identifies a tooltipped view.
 struct TooltipPresentationState<Target: Hashable> {
     enum Phase: Equatable {
         case tracking
@@ -260,7 +199,6 @@ struct TooltipPresentationState<Target: Hashable> {
     }
 
     private(set) var phase = Phase.tracking
-    /// A tooltip window is up or still fading out.
     private(set) var isShowing = false
     private(set) var lastDismissal = Date.distantPast
 
@@ -273,8 +211,6 @@ struct TooltipPresentationState<Target: Hashable> {
     var isScheduled: Bool { if case .scheduled = phase { return true }; return false }
     var isPresented: Bool { if case .presented = phase { return true }; return false }
 
-    /// For an eligible view. While a window is up or fading, a view-anchored
-    /// tooltip replaces it at once and a cursor-anchored one is not scheduled.
     mutating func schedule(_ target: Target, anchor: TooltipConfiguration.Anchor, behavior: TooltipConfiguration.Behavior,
                            now: Date) -> Request? {
         if isShowing { return anchor == .cursor ? nil : .present }
@@ -290,25 +226,16 @@ struct TooltipPresentationState<Target: Hashable> {
     }
 
     mutating func didPresent(_ target: Target) { phase = .presented(target); isShowing = true }
-    /// A failed presentation closes any tooltip window.
     mutating func didFailToPresent() { phase = .tracking; isShowing = false }
     mutating func cancelSchedule() { if isScheduled { phase = .tracking } }
 
-    /// MouseListener movement cancels a pending presentation; true when it did.
     mutating func pointerMoved() -> Bool {
         guard isScheduled else { return false }
         phase = .tracking
         return true
     }
-    /// MouseListener's stop schedules the view under the pointer only while tracking.
     var schedulesWhenPointerStops: Bool { phase == .tracking }
 
-    /// After a mouse exit: keep the tooltip while its view is still under the
-    /// pointer, hand off to an enclosing tooltipped view under it, or hide.
-    ///
-    ///
-    /// while a window is up or fading, so such a view is not handed off to:
-    /// the tooltip hides and the next pointer stop schedules it.
     func exit(targetUnderPointer: Bool, enclosing: Target?, enclosingAnchor: TooltipConfiguration.Anchor?,
               anchor: TooltipConfiguration.Anchor) -> Exit {
         guard target != nil, !targetUnderPointer else { return .keep }
@@ -316,9 +243,6 @@ struct TooltipPresentationState<Target: Hashable> {
         return .hide(Fade(duration: anchor == .cursor ? TooltipTiming.cursorExitDuration : TooltipTiming.exitDuration))
     }
 
-    /// Cancels a pending presentation and returns the fade for a window that
-    /// is up. Nothing happens when nothing is scheduled or shown. A scroll
-    /// leaves no warm state for cursor tooltips.
     mutating func hide(_ fade: Fade, scrolled: Bool = false, now: Date) -> Fade? {
         guard isShowing || phase != .tracking else { return nil }
         lastDismissal = scrolled ? .distantPast : now
@@ -326,8 +250,6 @@ struct TooltipPresentationState<Target: Hashable> {
         return isShowing ? fade : nil
     }
 
-    /// Escape fades quickly and completing the shown shortcut fades after
-    /// 0.25 s; other keys never dismiss, so the keycaps can show them.
     mutating func keyDown(escape: Bool, modifiers: NSEvent.ModifierFlags, characters: String?,
                           shortcut: KeyboardShortcut?, now: Date) -> Fade? {
         if escape { return hide(Fade(duration: TooltipTiming.interruptionDuration), now: now) }
@@ -336,8 +258,6 @@ struct TooltipPresentationState<Target: Hashable> {
         return hide(Fade(duration: TooltipTiming.exitDuration, delay: TooltipTiming.shortcutDismissalDelay), now: now)
     }
 
-    /// A fade-out finished. True when its window goes: no presentation
-    /// replaced the tooltip while it faded.
     mutating func fadeDidFinish() -> Bool {
         guard !isPresented else { return false }
         isShowing = false
@@ -345,8 +265,6 @@ struct TooltipPresentationState<Target: Hashable> {
     }
 }
 
-///
-/// top-left-origin space: y = 0 is the top of the window frame.
 enum TooltipPlacement {
     static let edgeGap: CGFloat = 4
     static let cornerOverlap: CGFloat = 6
@@ -370,7 +288,6 @@ enum TooltipPlacement {
         }
     }
 
-    /// The clamp region: the screen's part of the window, inset by 8.
     static func clampRegion(windowFrame: CGRect, screenFrame: CGRect) -> CGRect {
         let visible = windowFrame.intersection(screenFrame)
         guard !visible.isNull else { return .zero }
@@ -378,8 +295,6 @@ enum TooltipPlacement {
                       width: visible.width, height: visible.height).insetBy(dx: clampInset, dy: clampInset)
     }
 
-    /// The screen holding most of the anchor's screen rect, which a window
-    /// spanning displays may not share with its own `screen`; nil when none.
     static func screenIndex(containing anchor: CGRect, screens: [CGRect]) -> Int? {
         let areas = screens.map { screen -> CGFloat in
             let shared = screen.intersection(anchor)
@@ -393,9 +308,6 @@ enum TooltipPlacement {
         CGRect(x: windowFrame.minX + rect.minX, y: windowFrame.maxY - rect.maxY, width: rect.width, height: rect.height)
     }
 
-    /// The preferred anchor's screen frame when it lies on the screen;
-    /// otherwise the fitting candidate (the eight edges, then the cursor)
-    /// whose centre is nearest the preferred frame's. Nil when none fits.
     static func screenFrame(preferred: TooltipConfiguration.Anchor, size: CGSize, anchorRect: CGRect, mouse: CGPoint,
                             windowFrame: CGRect, screenFrame: CGRect) -> CGRect? {
         let clamp = clampRegion(windowFrame: windowFrame, screenFrame: screenFrame)

@@ -1,33 +1,6 @@
 import AppKit
 import QuartzCore
 
-///
-/// row's icon: a stroked back with its tab and a front flap, both layers, that
-/// tilt open in 3D while the folder is expanded.
-///
-///
-/// radius round(w / 7); line width 1.25 points rounded to device pixels; the
-/// back's tab runs to 0.42 w, slopes to 0.58 w and drops floor(tab / 1.5)
-/// where tab is round(0.25 h); the front flap is the bounds below that tab
-/// height, a rounded rectangle. Both pivot on their bottom-leading corner
-/// (anchor (0, 1) at (minX, maxY)).
-///
-///
-/// under a perspective of m34 = −1 / 343.3: collapsed and peekedClosed are flat;
-/// expanded translates 3 points, turns 32° about y, tips the back 28° and the
-/// front −30° about x; peekedOpen is half of that. The shading gradients
-///
-/// black 0.36 on the back) show while open; the back keeps 0.2 of its shading
-/// closed. Changes run in one transaction whose actions are disabled unless
-/// animated, so an animated change takes Core Animation's implicit actions.
-///
-/// A peeked folder (collapsed, showing some of its items) draws the SF
-///
-///
-///
-/// (Change Icon…) sits on the flap in a square of the flap's shorter side less
-///
-/// drawn, a catalog icon or symbol tinted with the stroke color.
 @MainActor
 final class SidebarFolderIconView: NSView {
     enum State: Equatable { case collapsed, expanded, peekedOpen, peekedClosed }
@@ -45,7 +18,6 @@ final class SidebarFolderIconView: NSView {
     private let frontPath = CAShapeLayer()
     private let frontShading = CAGradientLayer()
     private let frontShadingMask = CAShapeLayer()
-    /// The ellipsis, tinted with the stroke color through its symbol mask.
     private let ellipsis = CALayer()
     private let ellipsisMask = CALayer()
     private let custom = CALayer()
@@ -118,9 +90,6 @@ final class SidebarFolderIconView: NSView {
         guard let host = layer else { return }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
-        // AppKit lays a flipped view's sublayers out top-down, as it does its
-        // subviews. Guessing a flip from contentsAreFlipped() drew the icon
-        // upside down in the sidebar.
         root.frame = host.bounds
         let w = bounds.width, h = bounds.height
         func pixel(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
@@ -130,7 +99,6 @@ final class SidebarFolderIconView: NSView {
         let drop = (tab / 1.5).rounded(.down)
         let tabEnd = pixel(0.42 * w), slopeEnd = pixel(0.58 * w)
 
-        // Each layer pivots on its bottom-leading corner.
         func pin(_ layer: CALayer, frame: CGRect) {
             layer.transform = CATransform3DIdentity
             layer.anchorPoint = CGPoint(x: 0, y: 1)
@@ -177,7 +145,6 @@ final class SidebarFolderIconView: NSView {
         customMask.frame = custom.bounds
         let image = customIcon?.image(size: iconSide)
         if case .emoji = customIcon {
-            // An emoji keeps its own colors.
             custom.mask = nil; custom.backgroundColor = nil
             custom.contentsGravity = .resizeAspect; custom.contentsScale = scale
             custom.contents = image?.layerContents(forContentsScale: scale)
@@ -190,8 +157,6 @@ final class SidebarFolderIconView: NSView {
         applyState(animated: false)
     }
 
-    /// A system colour equals itself across appearances, so the colour
-    /// setters alone never re-resolve it.
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); applyColors() }
 
     private func applyColors() {

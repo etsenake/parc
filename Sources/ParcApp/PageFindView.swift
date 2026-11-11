@@ -1,7 +1,5 @@
 import AppKit
 
-/// Only actual results for the exact displayed document/query become visible.
-/// Unknown is separate from a genuine zero-match response.
 enum PageFindResultPresentation: Equatable {
     case pending, notFound, matches(ordinal: Int, total: Int)
     static func resolve(query: String, revision: UInt, resultQuery: String?, resultRevision: UInt?,
@@ -23,8 +21,6 @@ enum PageFindResultPresentation: Equatable {
     var canAdvance: Bool { if case .matches = self { return true }; return false }
 }
 
-/// An in-page overlay, anchored to the original native page (also in split or
-/// Peek). It never reserves renderer height or owns another page's Find state.
 @MainActor final class PageFindView: NSView {
     let field = NSTextField()
     let previous = PageFindButton(), next = PageFindButton(), close = PageFindButton()
@@ -60,9 +56,6 @@ enum PageFindResultPresentation: Equatable {
         resultLabel.setAccessibilityLabel("Find results")
         resultLabel.lineBreakMode = .byClipping
         resultLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-        //
-        //
-        //
         for (button, title, tooltip, commandID, symbol, action) in [
             (previous, "Previous match", "Previous", "findPrevious:", "chevron.up", #selector(previousPressed)),
             (next, "Next match", "Next", "findNext:", "chevron.down", #selector(nextPressed)),
@@ -77,8 +70,6 @@ enum PageFindResultPresentation: Equatable {
         }
         separator.wantsLayer = true; separator.setAccessibilityElement(false)
         for view in [search, field, resultLabel, previous, next, separator, close] { addSubview(view) }
-        // AppKit owns Tab/Shift-Tab traversal and Full Keyboard Access.
-        // There is no parallel key monitor or invented closed focus loop.
         update(result: .pending, available: true)
         updateColors()
     }
@@ -152,8 +143,6 @@ enum PageFindResultPresentation: Equatable {
     @objc private func closePressed() { guard close.isEnabled else { return }; onClose?() }
 }
 
-/// Find's original control is a native momentary-change button. Its hover
-/// surface is decoration; AppKit still owns pressing, key traversal and AX.
 @MainActor final class PageFindButton: PointingHandButton {
     private var hoverTrackingArea: NSTrackingArea?
     private var resignationObserver: NSObjectProtocol?
@@ -182,7 +171,6 @@ enum PageFindResultPresentation: Equatable {
         layer?.cornerCurve = .continuous
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            //
             layer?.backgroundColor = (isHovered && isEnabled
                 ? NSColor(srgbRed: dark ? 1 : 0, green: dark ? 1 : 0,
                           blue: dark ? 1 : 0, alpha: dark ? 0.077 : 0.071)
@@ -247,7 +235,6 @@ enum PageFindResultPresentation: Equatable {
     }
 }
 
-/// The count is one readable AX label and cannot intercept native input.
 @MainActor final class PageFindResultLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

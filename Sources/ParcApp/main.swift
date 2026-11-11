@@ -13,8 +13,6 @@ final class ParcApplication: PCNativeApplication, CrAppControlProtocol {
         return super.accessibilityRole()
     }
 
-    // This exact legacy AppKit entry still carries AXManualAccessibility and
-    // AXEnhancedUserInterface. Match its inherited availability annotation.
     @available(macOS, deprecated: 10.10)
     override func accessibilitySetValue(_ value: Any?, forAttribute attribute: NSAccessibility.Attribute) {
         PCNativeBrowserApplication.accessibilitySetValue(value, forAttribute: attribute.rawValue)
@@ -36,12 +34,9 @@ final class ParcApplication: PCNativeApplication, CrAppControlProtocol {
             [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
              .otherMouseDown, .otherMouseUp].contains(event.type)
         if traceMouse {
-            // Event identity only: no coordinates, keys, URLs or page content.
             NSLog("[ParcInput] phase=app-send event=%ld window=%ld type=%lu time=%.6f",
                   event.eventNumber, event.windowNumber, event.type.rawValue, event.timestamp)
         }
-        // Instrumentation only. Weak captures cannot keep a page/window alive
-        // through local monitors or AppKit dispatch, and perform no hit test.
         let inputSnapshot = NativeInputDiagnostics.beforeDispatch(event)
         super.sendEvent(event)
         NativeInputDiagnostics.afterDispatch(event, snapshot: inputSnapshot)
@@ -51,8 +46,6 @@ final class ParcApplication: PCNativeApplication, CrAppControlProtocol {
         }
     }
 
-    // The engine must unwind its own run loop before shutdown. Do not enter
-    // AppKit's NSTerminateLater nested loop while waiting for that same unwind.
     override func terminate(_ sender: Any?) {
         if approvedTermination {
             super.terminate(sender)
@@ -64,8 +57,6 @@ final class ParcApplication: PCNativeApplication, CrAppControlProtocol {
     func finishApprovedTermination(_ sender: Any?) {
         guard !approvedTermination else { return }
         approvedTermination = true
-        // Genuine browser consent, native-service drain and engine shutdown
-        // have finished. Preserve AppKit's final termination/notification behavior.
         super.terminate(sender)
     }
 }

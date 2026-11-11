@@ -2,8 +2,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// One address-editing session. Navigation rows retain Chromium's classified
-/// request; tab rows retain a tab ID; command rows retain the original menu item.
 @MainActor final class CommandBar: NSObject, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
     private struct Result {
         let id: String
@@ -11,9 +9,7 @@ import SwiftUI
         let detail: String
         let symbol: String
         var subtitle: String? = nil
-        /// The trailing Switch to Tab accessory, for tab rows only.
         var caption: CommandBarResultText.TabCaption? = nil
-        /// Search glyphs stay off the selected row's icon tile.
         var isSearch = false
         var url: URL? = nil
         var tabID: UUID? = nil
@@ -36,13 +32,9 @@ import SwiftUI
     var onNavigate: ((String) -> Void)?
     var onSearchNavigation: ((PCNativeSearchNavigation) -> Void)?
     var onSelectTab: ((UUID) -> Void)?
-    ///
-    ///
     var tabCaption: ((BrowserTab) -> CommandBarResultText.TabCaption)? {
         didSet { lastOpenResultsFingerprint = nil }
     }
-    /// The original window may own a temporary destination presentation. Mark
-    /// only real input/navigation/tab submission before the common dismissal.
     var onWillSubmitDestination: (() -> Void)?
     var onRejectedDestination: (() -> Void)?
     var canFocusSpace: ((CommandBarSpaceAction) -> Bool)?
@@ -57,20 +49,14 @@ import SwiftUI
     var onPerformFavorite: ((CommandBarFavoriteAction) -> Void)?
     var canRenameFavorite: ((CommandBarFavoriteRenameAction) -> Bool)?
     var onRenameFavorite: ((CommandBarFavoriteRenameAction) -> Void)?
-    ///
-    /// answers availability while the bar is open and rechecks on commit.
     var canPerformTypedCommand: ((CommandBarTypedCommand) -> Bool)?
     var onPerformTypedCommand: ((CommandBarTypedCommand) -> Void)?
     var canSplitSelection: ((UUID?) -> Bool)?
     var onSplitInput: ((String) -> Void)?
     var onSplitNavigation: ((PCNativeSearchNavigation) -> Void)?
     var onSplitTab: ((UUID) -> Void)?
-    /// Add Split's blank pane can be filled by New Note / New Easel. Ordinary
-    /// command-bar commands still do not acquire a split destination.
     var canSplitCommand: ((KeyboardShortcuts.MenuCommand) -> Bool)?
     var onSplitCommand: ((KeyboardShortcuts.MenuCommand) -> Void)?
-    // Completion reports an actual background page outcome. Validation stays
-    // live during profile acquisition; no displayed URL substitutes for a token.
     var onBackgroundNavigation: ((PCNativeSearchNavigation, @escaping () -> Bool, @escaping (String?) -> Void) -> Void)?
     var onBackgroundInput: ((String, @escaping () -> Bool, @escaping (String?) -> Void) -> Void)?
     var onBackgroundTab: ((UUID, @escaping () -> Bool, @escaping (String?) -> Void) -> Void)?
@@ -78,37 +64,26 @@ import SwiftUI
     private var backgroundGeneration: UInt64 = 0
     private var retainedBackgroundHistory: (result: Result, row: Int)?
     var onDismiss: (() -> Void)?
-    /// Runs after dismissal and any selected action have both returned.
     var onDismissalSettled: (() -> Void)?
     private var submissionDepth = 0
     var onManagePasswords: (() -> Void)?
     var onOpenDocument: ((CommandBarDocument) -> Void)?
     var onMuteAllTabs: ((Bool) -> Bool)?
     var onManageSiteSearch: (() -> Void)?
-    /// The privacy banner's Search Settings…, after the bar is dismissed.
     var onSearchSettings: (() -> Void)?
     private let privacyBanner = CommandBarSearchPrivacyBanner()
     private let privacyInfoButton = CommandBarPrivacyInfoButton()
     private let privacyPolicy = CommandBarSearchPrivacyPolicy(defaults: .standard)
     private var privacyBannerVisible = false
-    ///
-    /// banner stays under the scoped results too.
     private var showsPrivacyBanner: Bool { privacyBannerVisible && sidebarAnchor == nil && !addressOnly }
     private var privacyBannerHeight: CGFloat { privacyBanner.isHidden ? 0 : privacyBanner.frame.height }
-    /// Profile/page-owned extension launch candidates, distinct from an
-    /// extension's optional omnibox keyword and its query suggestions.
     var extensionLaunchActions: (() -> [PCNativeExtensionAction])? { didSet { extensionLaunchSnapshotIsStale = true } }
     var onLaunchExtension: ((PCNativeExtensionAction) -> Bool)?
     private var extensionLaunchSnapshot: [PCNativeExtensionAction] = []
-    /// Set when the engine reports a change to its extension actions.
     private var extensionLaunchSnapshotIsStale = true
     var isOwnerValid: (() -> Bool)?
-    /// Text the command field copied (the Super Copy upsell's input).
     var onCopyText: ((String) -> Void)?
     var restorePageFocus: (() -> Void)?
-    /// Whether the responder saved at opening lies where the owner's close puts
-    /// focus; one outside it gives way to `restorePageFocus`. Unset, any
-    /// eligible saved responder returns.
     var mayRestoreOriginal: ((NSView) -> Bool)?
     var onSidebarMove: ((Int) -> Void)?
     var onSidebarCommit: (() -> Void)?
@@ -129,20 +104,17 @@ import SwiftUI
     private var scopeMenuLease: PCNativeOmniboxScopeMenu?
     private var scopeAlert: PArcDialog?
     private let scopeOfferButton = CommandBarScopeHint()
-    ///
     private var scopeColor: NSColor?
     private var scopeColorRequest = 0
     private let extensionDisposition: PCNativeOmniboxExtensionDisposition?
     private let initialInput: String
     private var scopeOffers: [PCNativeOmniboxScope] = []
-    /// Every active website engine in the snapshot that published `nativeResults`.
     private var siteScopes: [PCNativeOmniboxScope] = []
     private var activeScope: PCNativeOmniboxScope?
     private var enteringScopeName: String?
     private var scopeInvalidated = false
     private var unavailableScopeName: String?
     private var queryBeforeScope = ""
-    /// The input the current native results answered.
     private var nativeInput = ""
     private var previousInput = ""
     private var editState: CommandBarEditState
@@ -160,8 +132,6 @@ import SwiftUI
     private let table = CommandResultsTable()
     private let scroll = NSScrollView()
     private let emptyLabel = NSTextField(labelWithString: "Search or Enter URL…")
-    ///
-    /// the window stays key and its material blends within the window.
     private let host = CommandBarHost()
     private let container = PopoverBackgroundView(blending: .withinWindow)
     private let shadowView = CommandBarShadowView()
@@ -173,7 +143,6 @@ import SwiftUI
     private var showsScopeSplash = false
     private let divider = CommandBarHairline()
     private var palette: CommandBarPalette
-    /// The window's Space theme (its private-window palette in a private window).
     var theme: SpaceTheme {
         didSet {
             guard theme != oldValue else { return }
@@ -187,18 +156,10 @@ import SwiftUI
     private var tabs: [BrowserTab]
     private var history: [BrowserHistoryEntry]
     private var rankedHistory: [BrowserHistoryEntry]
-    /// Store visit-list generation plus the current-URL exclusion used when the
-    /// controller filtered `history`. Together they identify the scan input
-    /// without remapping every visit on idle open-bar ticks.
     private var historyRevision: UInt64
     private var historyExcludedURL: String?
-    /// Last empty-query history scan key and the visits it produced. Reused
-    /// when query + historyRevision + excluded URL + tab URLs match.
     private var lastHistoryScanKey: CommandBarHistoryScanSkip.Key?
     private var cachedHistoryVisits: [CommandBarHistoryScanSkip.Visit] = []
-    /// The profile's newest pages from Chromium's history, the one the History
-    /// page shows, imported visits included. Asked for by the window; Parc's
-    /// own visit list stands in until they arrive.
     private var recentPages: [(url: String, title: String)]?
     private var recentPagesGeneration = 0
     private var spaces: [CommandBarSpaceAction]
@@ -206,18 +167,13 @@ import SwiftUI
     private let folderMoves: [CommandBarFolderMove]
     private let favoriteAction: CommandBarFavoriteAction?
     private let favoriteRename: CommandBarFavoriteRenameAction?
-    /// Notes and Easels without a sidebar tab, read once on the first query.
     private let documentSource: (() -> [CommandBarDocument])?
     private lazy var documents: [CommandBarDocument] = documentSource?() ?? []
-    /// Counted off the main thread by the window, which owns their cache.
     private var topDomainList: [CommandBarRanking.Domain] = []
     private var topDomainGeneration = 0
     private let typedCommands: [CommandBarTypedCommand]
     private var commands: [KeyboardShortcuts.MenuCommand] = []
-    /// Each command's displayed title and lowercased searchable text, by index.
     private var commandSearch: [(title: String, text: String)] = []
-    /// Builds the searchable text once per command list, not for every
-    /// command on every update while typing.
     private func adoptCommands(_ list: [KeyboardShortcuts.MenuCommand]) {
         commands = addressOnly ? [] : list
         commandSearch = commands.map { command in
@@ -241,17 +197,8 @@ import SwiftUI
     private var dismissed = false
     private var presented = false
     private var initialEditSelection: NSRange?
-    /// Last presented open-bar query/result-identity fingerprint. Refresh paths
-    /// that leave query and result identity unchanged skip Result rebuild,
-    /// `reloadData`, and `layoutContents`. Closed-bar gating stays separate.
     private var lastOpenResultsFingerprint: String?
-    ///
     private var presentedRows: [CommandBarRowDiff.Row] = []
-    ///
-    ///
-    /// current query, so typing never shows an intermediate list. A source
-    ///
-    ///
     private var nativeHold = CommandBarNativeHold()
     private var nativeHoldDeadline: DispatchWorkItem?
 
@@ -267,8 +214,6 @@ import SwiftUI
         initialEditSelection = initialEdit?.1
         self.tabs = tabs; self.history = history; self.rankedHistory = BrowserHistoryOrder.newestFirst(history)
         self.historyRevision = historyRevision
-        // Prefer the controller's filter exclusion; fall back to the field seed
-        // so membership tokens stay aligned with commandBarHistory.
         self.historyExcludedURL = historyExcludedURL ?? (currentURL == "about:blank" ? nil : currentURL)
         self.spaces = spaces; self.folders = folders; self.favoriteAction = favoriteAction; self.folderMoves = folderMoves; self.favoriteRename = favoriteRename; self.documentSource = documents; self.typedCommands = typedCommands; self.parent = parent; self.profilePath = profilePath
         if let editor = parent.firstResponder as? NSTextView, editor.isFieldEditor,
@@ -296,8 +241,6 @@ import SwiftUI
         input.isBordered = false; input.drawsBackground = false
         input.font = CommandBarTypography.field
         input.placeholderString = "Search or Enter URL…"
-        // CommandBarTextField is single-line unless isMultiline: a long URL
-        // scrolls in place rather than wrapping under the field.
         input.usesSingleLineMode = true; input.cell?.wraps = false
         input.cell?.isScrollable = true; input.lineBreakMode = .byClipping
         input.focusRingType = .none; input.delegate = self
@@ -315,11 +258,8 @@ import SwiftUI
         scopeOfferButton.isHidden = true; container.addSubview(scopeOfferButton)
         container.addSubview(divider)
         table.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("suggestion")))
-        // SuggestionsView's ordinary NSTableView: rows span the clip, with no
-        //
         table.style = .plain
         table.headerView = nil; table.rowHeight = 50; table.intercellSpacing = .zero
-        //
         table.backgroundColor = .clear; table.selectionHighlightStyle = .none
         table.dataSource = self; table.delegate = self
         table.focusRingType = .none; table.allowsEmptySelection = false
@@ -340,8 +280,6 @@ import SwiftUI
         }
         privacyBanner.onSearchSettings = { [weak self] in
             guard let self, !self.dismissed else { return }
-            // Focus returns to the page first, so a Settings window that can't
-            // open leaves it where Escape would.
             let action = self.onSearchSettings, valid = self.isOwnerValid
             self.dismiss()
             if valid?() != false { action?() }
@@ -351,8 +289,6 @@ import SwiftUI
         applyPalette()
         adoptCommands(KeyboardShortcuts.shared.menuCommands(in: parent))
         bindings = KeyboardShortcuts.shared.$revision.dropFirst().sink { [weak self] _ in
-            // Published emits before assignment; snapshot the committed registry
-            // revision on the next main turn, not the previous revision.
             DispatchQueue.main.async { [weak self] in
                 guard let self, let parent = self.parent, !self.dismissed else { return }
                 self.adoptCommands(KeyboardShortcuts.shared.menuCommands(in: parent))
@@ -364,8 +300,6 @@ import SwiftUI
         session.snapshotChanged = { [weak self, weak session] snapshot in
             guard let self, !self.dismissed, snapshot.revision >= self.snapshotRevision else { return }
             guard self.isOwnerValid?() != false else { self.dismiss(restoreFocus: false); return }
-            // Local Actions never adopts an autocomplete result, error or website
-            // scope published by an earlier query. Exit starts a fresh request.
             if self.actionsScope { self.snapshotRevision = snapshot.revision; return }
             guard self.nativeHold.accept(input: snapshot.input, isError: snapshot.error != nil) else {
                 self.snapshotRevision = snapshot.revision; return
@@ -385,8 +319,6 @@ import SwiftUI
             self.extensionActions = snapshot.extensionActions
             self.nativeError = snapshot.error?.localizedDescription ?? invalidationMessage
             if lostScope {
-                // A removed/changed engine must not silently turn a scoped
-                // Return into a request through the default search provider.
                 self.scopeInvalidated = true; self.nativeResults = []; self.extensionActions = []
                 self.nativeHold.reset()
                 self.applyPalette()
@@ -419,17 +351,12 @@ import SwiftUI
                     guard !owner.applyingCompletion,
                           let storage = (owner.input.currentEditor() as? NSTextView)?.textStorage,
                           storage.editedMask.contains(.editedCharacters) else { return }
-                    // Observe the actual replacement, including Cut/AX/native
-                    // bindings. Replacing a selected address with shorter text
-                    // is an insertion, not a reason to suppress completion.
                     owner.deletingCharacters = CommandBarEditState.deletesCharacters(
                         editedRange: storage.editedRange, changeInLength: storage.changeInLength)
                 }
             }
             observe(NSTextView.didChangeSelectionNotification, object: editor) { owner in
                 guard !owner.applyingCompletion, let projection = owner.editState.projection else { return }
-                // Native caret/mouse selection belongs to the user. Preserve
-                // its original intent while async provider results arrive.
                 owner.editState.stopAutomaticCompletion()
                 owner.explicitSelectionID = projection.resultID
             }
@@ -438,9 +365,6 @@ import SwiftUI
             if let alert = owner.scopeAlert, owner.parent?.attachedSheet === alert.panel { return }
             owner.dismiss(restoreFocus: false)
         }
-        //
-        // (`CommandBarContainer.onDidResignFirstResponder`). Handing the field
-        // its editor passes through other responders, so judge once it settles.
         focusObservation = parent.observe(\.firstResponder) { [weak self] _, _ in
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
@@ -462,16 +386,12 @@ import SwiftUI
     private var holdsFirstResponder: Bool {
         (parent?.firstResponder as? NSView)?.isDescendant(of: host) == true
     }
-    /// The bar's field (or its results) is first responder in its key window.
     var hasFocus: Bool { presented && !dismissed && parent?.isKeyWindow == true && holdsFirstResponder }
-    /// The window's sheet is the bar's own site-search alert, part of its session.
     var ownsAttachedSheet: Bool { scopeAlert.map { $0.panel === parent?.attachedSheet } ?? false }
-    /// A press on the bar itself; one anywhere else in the window closes it.
     func contains(_ event: NSEvent) -> Bool {
         presented && !dismissed && event.window === parent
             && container.bounds.contains(container.convert(event.locationInWindow, from: nil))
     }
-    /// The field's own editor, which reports its copies.
     func fieldEditor(for client: Any?) -> Any? {
         (client as? NSTextField) === input ? fieldEditor : nil
     }
@@ -490,8 +410,6 @@ import SwiftUI
             let height = sidebarBrowsing ? anchorRect.height : min(isScoped || scopeInvalidated ? compactScopeHeight : 309, available.height - 32)
             let x = min(max(anchorRect.minX, available.minX + 8), available.maxX - width - 8)
             let y = min(max(anchorRect.maxY - height, available.minY + 8), available.maxY - height - 8)
-            // The inline sidebar bar has no material, border or shadow
-            //
             showsShadow = !sidebarBrowsing
             container.sidebarBrowsing = sidebarBrowsing
             container.cornerRadius = sidebarBrowsing ? 7 : 12
@@ -501,21 +419,14 @@ import SwiftUI
             return
         }
         let width = max(260, min(addressOnly ? 350 : 765, parent.frame.width - 48, available.width - 24))
-        // A 64-point header, the 4-point list inset, five 50-point rows and 8 below.
         let baselineHeight = min(addressOnly ? 309 : 326, max(180, available.height - 32))
-        //
-        // SuggestionsView does, without moving the input's top edge.
         let bannerHeight = showsPrivacyBanner ? privacyBanner.preferredHeight(forWidth: width) : 0
         let height = min((isScoped || scopeInvalidated ? compactScopeHeight : baselineHeight) + bannerHeight, available.height - 32)
         let x = min(max(parent.frame.midX - width / 2, available.minX + 12), available.maxX - width - 12)
-        // Scoped results grow below the original input edge, as observed in
-        // the installed reference, without moving the field under the user.
         let top = addressOnly ? parent.frame.maxY - 48 : parent.frame.midY + baselineHeight / 2
         let y = min(max(top - height, available.minY + 16), available.maxY - height - 16)
         setSurfaceFrame(NSRect(x: x, y: y, width: width, height: height))
     }
-    /// `surface` is in screen coordinates, as the bar has always been placed;
-    /// it then stays inside its window, which clips it.
     private func setSurfaceFrame(_ surface: NSRect) {
         guard let parent else { return }
         var frame = host.convert(parent.convertFromScreen(surface), from: nil)
@@ -525,7 +436,6 @@ import SwiftUI
         if container.frame != frame { container.frame = frame; container.needsLayout = true }
         syncShadow()
     }
-    /// The shadow follows the bar while it's shown; the inline sidebar bar has none.
     private func syncShadow() {
         guard presented, !dismissed, showsShadow, host.window != nil else {
             shadowView.isHidden = true
@@ -539,16 +449,12 @@ import SwiftUI
         shadowView.isHidden = false
         splashView?.frame = bar.insetBy(dx: -CommandBarSplashView.padding, dy: -CommandBarSplashView.padding)
     }
-    /// The Space's content appearance, which only the empty sidebar bar takes.
     var contentAppearance: NSAppearance? { didSet { applyAppearance() } }
     private func applyAppearance() {
-        // A hidden sidebar lays the bar out centred, so it takes the window's too.
         let inline = sidebarAnchor.map { $0.window === parent && !$0.isHiddenOrHasHiddenAncestor } ?? false
         let appearance = CommandBarPalette.panelAppearance(inlineEmpty: inline && sidebarBrowsing, space: contentAppearance, window: parent?.appearance)
         if host.appearance != appearance { host.appearance = appearance }
     }
-    /// CustomSelectionColorTextField puts its colour on the current editor when
-    ///
     private func applySelectionColor() {
         let attributes: [NSAttributedString.Key: Any] = [.backgroundColor: palette.inputSelection]
         fieldEditor.selectedTextAttributes = attributes
@@ -566,11 +472,6 @@ import SwiftUI
         }
         updateScopeSplash()
     }
-    ///
-    ///
-    /// splashes behind the bar and the bar bounces; when the scope loses it,
-    /// the splash goes and the bar bounces again. The inline sidebar bar does
-    /// neither.
     private func updateScopeSplash() {
         let shows = isWebsiteScoped && scopeColor != nil
         guard shows != showsScopeSplash else { return }
@@ -584,7 +485,6 @@ import SwiftUI
             splash.frame = container.frame.insetBy(dx: -CommandBarSplashView.padding, dy: -CommandBarSplashView.padding)
             host.addSubview(splash, positioned: .below, relativeTo: shadowView)
             splashView = splash
-            // Faded out by then; the view goes rather than waiting for the scope to end.
             DispatchQueue.main.asyncAfter(deadline: .now() + CommandBarSplashView.duration + 0.1) { [weak self, weak splash] in
                 MainActor.assumeIsolated {
                     guard let self, let splash, self.splashView === splash else { return }
@@ -592,13 +492,10 @@ import SwiftUI
                 }
             }
         }
-        // Bounce at the size this change lays out: entry shrinks the bar to its
-        // empty scoped surface.
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.presented, !self.dismissed, self.host.window != nil else { return }
                 CommandBarBounce.play(on: self.container.layer)
-                //
                 if !self.shadowView.isHidden {
                     CommandBarBounce.play(on: self.shadowView.shadowLayer, about: self.shadowView.barCentreOffset)
                 }
@@ -635,8 +532,6 @@ import SwiftUI
     func reconcile(tabs: [BrowserTab], history: [BrowserHistoryEntry], historyRevision: UInt64, historyExcludedURL: String?, spaces: [CommandBarSpaceAction], folders: [CommandBarFolderAction]) {
         guard !dismissed else { return }
         guard isOwnerValid?() != false else { dismiss(restoreFocus: false); return }
-        // historyRevision + excluded URL identify the filtered visit input; skip
-        // full-array equality and newestFirst when that input has not changed.
         let historyInputChanged = historyRevision != self.historyRevision
             || historyExcludedURL != self.historyExcludedURL
         guard tabs != self.tabs || historyInputChanged || spaces != self.spaces || folders != self.folders else { return }
@@ -672,8 +567,6 @@ import SwiftUI
         scopeOffers = []; activeScope = nil; enteringScopeName = nil; actionsScope = false
         removeSplash()
         if heldFocus, let parent {
-            // The window's responder goes back to what held it before the bar.
-            // Only Escape or a commit falls back to the page.
             if mayRestore, parent.isVisible, !parent.isMiniaturized, parent.attachedSheet == nil {
                 if !returnFocus(in: parent) { parent.makeFirstResponder(nil); restorePageFocus?() }
             } else if !returnFocus(in: parent) { parent.makeFirstResponder(nil) }
@@ -702,15 +595,10 @@ import SwiftUI
                            didBackspace: deletingCharacters)
         deletingCharacters = false
         previousInput = edited
-        //
-        // actual profile preference and selected native offer own eligibility;
-        // composition and arbitrary whitespace/paste transformations stay editing.
         if (input.currentEditor() as? NSTextView)?.hasMarkedText() != true,
            !before.isEmpty, edited == before + " ",
            selectedScopeOffer?.spaceTriggerEnabled == true,
            enterScope(restoring: before) { return }
-        // Explicit editing after an invalidation begins a new ordinary query;
-        // merely receiving a native failure never does that on the user's behalf.
         scopeInvalidated = false; unavailableScopeName = nil
         explicitSelectionID = nil
         refreshResults(holdsPresentation: true)
@@ -719,15 +607,11 @@ import SwiftUI
         nativeHold.end()
         nativeHoldDeadline?.cancel(); nativeHoldDeadline = nil
     }
-    /// An edit keeps a native error until the next publication replaces it:
-    /// a session that failed for good publishes nothing more.
     private func clearNativeResults(keepingError: Bool = false) {
         nativeResults = []; extensionActions = []; scopeOffers = []
         if !keepingError { nativeError = nil }
         nativeHold.reset()
     }
-    ///
-    /// 2,000 ms source timeout, or before Return/Tab act on the first row.
     private func releaseNativeHold() {
         guard nativeHold.isHolding else { return }
         endNativeHold(); clearNativeResults(keepingError: true)
@@ -735,9 +619,6 @@ import SwiftUI
     }
     private func refreshResults(requestNative: Bool = true, holdsPresentation: Bool = false) {
         guard !dismissed else { return }
-        // Snapshot rasterizes each extension's icons, so it is taken again
-        // only after the engine reports a change (`reconcileExtensionActions`),
-        // not on every keystroke and suggestion update; never per row.
         if extensionLaunchSnapshotIsStale {
             extensionLaunchSnapshot = extensionLaunchActions?() ?? []
             extensionLaunchSnapshotIsStale = false
@@ -775,25 +656,15 @@ import SwiftUI
             case .present:
                 endNativeHold(); clearNativeResults(keepingError: holdsPresentation)
             }
-            // Trimming changes the native query boundary, so it cannot own an
-            // inline suffix for the untrimmed field. Scope retains its own owner.
             omnibox?.updateInput(query, allowsInlineCompletion: !isScoped && query == editState.query && editState.allowsInlineCompletion)
         }
         if nativeHold.isHolding { return }
-        // True no-op: same open-bar query and result-identity fingerprint as the
-        // last presentation. Skip Result rebuild, tab/history filtering into
-        // rows, reloadData, and layoutContents. Membership tokens are still
-        // hashed above; they are not the filtered result rows.
         let fingerprint = openResultsFingerprint(query: query)
         if CommandBarOpenResultsSkip.shouldSkip(previous: lastOpenResultsFingerprint, next: fingerprint) {
             return
         }
         lastOpenResultsFingerprint = fingerprint
-        // A retained row must never activate a newer publication that happens
-        // to reuse its label/URL/id. It captures this presentation and payload.
         resultPublication = UUID()
-        // A selected contextual command that disappears cannot silently become a
-        // web search when a model/native publication arrives under Return.
         let selectedContext = explicitSelectionID.flatMap { id in
             results.first { $0.id == id && ($0.spaceAction != nil || $0.folderAction != nil || $0.favoriteAction != nil || $0.folderMove != nil || $0.favoriteRename != nil || $0.typedCommand != nil || $0.extensionAction != nil || $0.extensionLaunch != nil) }
         }
@@ -803,12 +674,8 @@ import SwiftUI
                                   detail: "", symbol: "globe", url: url, input: initialInput))
         }
         if actionsScope {
-            //
-            // These remain original menu/typed commands, never navigation text.
             results = Array(commandResults(query: query, includesEmpty: true).prefix(100))
         } else if isWebsiteScoped {
-            // There is no string/URL fallback in scope. Only an actual native
-            // keyword-mode match can be activated (including Option-Return).
             results = nativeResultRows(scoped: true)
         } else if !scopeInvalidated {
             if !query.isEmpty {
@@ -817,11 +684,6 @@ import SwiftUI
                 results += tabs.filter { $0.archivedAt == nil && (!addressOnly || Self.isAddressSuggestion($0.url)) }.prefix(8).map(tabResult)
             }
             if query.isEmpty {
-                // This uses the profile's Chromium history (`recentPages`), else
-                // Parc's own visit records. Recency is a
-                //
-                // Ranked recents match sorted-by-date descending; the top-8 slice is
-                // reused while query + historyRevision + excluded URL + tab URLs match.
                 let tabURLs = tabs.map(\.url)
                 let scanKey = CommandBarHistoryScanSkip.key(
                     query: query,
@@ -833,10 +695,6 @@ import SwiftUI
                 if CommandBarHistoryScanSkip.shouldReuse(previous: lastHistoryScanKey, next: scanKey) {
                     visits = cachedHistoryVisits
                 } else {
-                    // Cache a max-8 history slice; the combined empty-query
-                    // tab+history budget below may take only a prefix.
-                    // Chromium's pages include the current one; Parc's list
-                    // already leaves it out.
                     visits = CommandBarHistoryScanSkip.emptyQueryVisits(
                         rankedURLsAndTitles: recentPages ?? rankedHistory.map { ($0.url, $0.title) },
                         tabURLs: Set(tabURLs + [historyExcludedURL].compactMap { $0 }),
@@ -845,8 +703,6 @@ import SwiftUI
                     lastHistoryScanKey = scanKey
                     cachedHistoryVisits = visits
                 }
-                // Pre-cache contract: tabs already occupy part of the 8-row
-                // empty-query budget; only fill the remainder from history.
                 let historyBudget = max(0, 8 - results.count)
                 for visit in visits.prefix(historyBudget) {
                     guard let url = URL(string: visit.url) else { continue }
@@ -857,9 +713,6 @@ import SwiftUI
                 }
             }
         }
-        // The newly opened tab must not remove the still-selected empty-query
-        // history intent through the usual open-URL deduplication. Retain that
-        // original input only until the user edits or chooses another result.
         if !isScoped, !scopeInvalidated, editState.query.isEmpty,
            let retained = retainedBackgroundHistory,
            !results.contains(where: { $0.id == retained.result.id }) {
@@ -877,7 +730,6 @@ import SwiftUI
         let diff = CommandBarRowDiff(old: presentedRows, new: rows)
         presentedRows = rows
         selectingProgrammatically = true; table.apply(diff); selectingProgrammatically = false
-        // Rows kept by the diff now present this publication's payload.
         for row in results.indices {
             if let view = table.rowView(atRow: row, makeIfNecessary: false) as? CommandResultRowView { bind(view, to: results[row]) }
             if let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false) as? CommandResultCell { bind(cell, to: results[row]) }
@@ -897,8 +749,6 @@ import SwiftUI
             let retainsProjection = editState.projection?.resultID == results[row].id
             let automatic = editState.projection?.automatic == true
             if retainsProjection && automatic {
-                // No selection/field write for an unchanged accepted publication:
-                // preserve native caret movement and the provider-owned suffix.
                 selectingProgrammatically = true
                 table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 selectingProgrammatically = false
@@ -925,12 +775,7 @@ import SwiftUI
             }
         }
     }
-    /// Query plus every input that feeds open-bar result identity. Everyday
-    /// title/`lastAccessed` chrome noise is outside tab tokens; membership and
-    /// selection changes alter the fingerprint and still rebuild.
     private func openResultsFingerprint(query: String) -> String {
-        // A pristine URL and a field the user cleared both rank zero-query
-        // suggestions, but only the former owns the current-address row.
         "\(addressOnly):\(addressWasEdited):" + CommandBarOpenResultsSkip.fingerprint(
             query: query,
             actionsScope: actionsScope,
@@ -944,8 +789,6 @@ import SwiftUI
                 "native:\($0.search):\($0.url.absoluteString):\($0.title)"
             },
             extensionActionIDs: extensionActions.map {
-                // resultIndex owns insertion order among natives; omit it and a
-                // reorder can skip with a stale table.
                 "extension:\($0.extensionID):\($0.editText):\($0.title):\($0.resultIndex)"
             },
             extensionLaunchIDs: extensionLaunchSnapshot.map {
@@ -956,9 +799,6 @@ import SwiftUI
                                                    archived: $0.archivedAt != nil, customTitle: $0.customTitle,
                                                    caption: caption(for: $0).text)
             },
-            // Revision + excluded URL replace a full visit-token map so idle
-            // open-bar ticks do not walk history just to decide skip vs rebuild.
-            // Typed queries rank top domains counted from that history.
             historyTokens: [CommandBarHistoryScanSkip.historyMembershipToken(revision: historyRevision,
                                                                              excludedURL: historyExcludedURL)]
                 + (query.isEmpty ? ["recent-pages:\(recentPagesGeneration)"] : ["top-domains:\(topDomainGeneration)"]),
@@ -987,17 +827,12 @@ import SwiftUI
     }
     private func commandResults(query: String, includesEmpty: Bool) -> [Result] {
         guard !addressOnly else { return [] }
-        // This actual app-owned command is not a registered menu action.
-        // Ordinary search inserts it separately to retain its existing order.
         let passwords: [Result] = includesEmpty && (query.isEmpty || CommandBarScopeKeyboard.matchesPasswords(query: query))
             ? [Result(id: "passwords", title: "Manage Passwords", detail: "", symbol: "key", managesPasswords: true)] : []
         let words = query.lowercased().split(whereSeparator: \.isWhitespace)
         let lowercasedQuery = query.lowercased()
         let matching = zip(commands, commandSearch).compactMap { command, search -> (command: KeyboardShortcuts.MenuCommand, title: String)? in
-            // The Type Travel dialog is distinct from the menu's inline
-            // editing-ID command; do not show a second disabled alias.
             if favoriteRename != nil && command.id == "renameCurrentItem:" { return nil }
-            //
             return words.allSatisfy({ search.text.contains($0) }) ? (command, search.title) : nil
         }.sorted { lhs, rhs in
             let left = lhs.title.lowercased().hasPrefix(lowercasedQuery)
@@ -1033,8 +868,6 @@ import SwiftUI
             let name = $0.name.lowercased()
             return ((query.isEmpty && includesEmpty) || words.allSatisfy { name.contains($0) })
         }.sorted { $0.modelIndex < $1.modelIndex }.map {
-            // The generation belongs to the exact document/model snapshot.
-            // Replacing an extension must not reuse a selected result identity.
             Result(id: "extension-launch:\($0.identifier):\($0.generation)",
                    title: $0.name, detail: "Extension", symbol: "puzzlepiece.extension",
                    extensionLaunch: $0)
@@ -1042,7 +875,6 @@ import SwiftUI
         let audioCommands: [Result] = onMuteAllTabs == nil ? [] : [true, false].compactMap { muted in
             let title = muted ? "Mute All Tabs" : "Unmute All Tabs"
             guard (query.isEmpty && includesEmpty) || (!query.isEmpty && words.allSatisfy({ title.lowercased().contains($0) })) else { return nil }
-            //
             return Result(id: muted ? "mute-all-tabs" : "unmute-all-tabs", title: title,
                           detail: "", symbol: muted ? "speaker.slash.fill" : "speaker.wave.2.fill", muteAllTabs: muted)
         }
@@ -1068,7 +900,6 @@ import SwiftUI
                detail: "", symbol: InternalPage.sidebarFallbackSymbol(urlString: tab.url), caption: caption(for: tab),
                url: URL(string: tab.url), tabID: tab.id)
     }
-    ///
     private func rankedResults(query: String) -> [Result] {
         var pool: [Result] = []
         var candidates: [CommandBarRanking.Candidate] = []
@@ -1087,12 +918,8 @@ import SwiftUI
                 menuCommandID: result.command?.id, menuText: result.command.map { $0.title + " " + $0.group },
                 typed: result.typedCommand))
         }
-        // The leading native request survives presentation filtering. A literal
-        // input fallback is needed only before a native answer or after failure.
         let nativeRows = nativeResultRows(scoped: false)
         if nativeRows.isEmpty || explicitSelectionID == "query:" + query {
-            // An explicitly selected input row remains the same intent when
-            // autocomplete arrives. Do not move Return onto a new command.
             add(Result(id: "query:" + query, title: query, detail: nativeError ?? "",
                        symbol: "magnifyingglass", subtitle: nativeError, isSearch: true, input: query),
                 .init(archetype: .chromium, key: "query:" + query))
@@ -1111,7 +938,6 @@ import SwiftUI
             let key = InternalPage(urlString: tab.url).map {
                 $0.noteID.map { "document:" + $0.uuidString.lowercased() } ?? "easel:" + ($0.easelID?.uuidString.lowercased() ?? "")
             } ?? url.map { CommandBarRanking.pageKey($0, title: tab.title) } ?? "tab:" + tab.id.uuidString
-            // The displayed title (a custom title first) is searchable as well as the page's.
             let row = tabResult(tab)
             add(row, .init(archetype: .tab, key: key, texts: [row.title, tab.title, url?.host ?? "", tab.url],
                            urlKey: url.map(CommandBarRowDiff.pageKey)))
@@ -1126,7 +952,6 @@ import SwiftUI
         let typed = query.lowercased()
         if !typed.contains(where: \.isWhitespace) {
             for domain in topDomainList where domain.host.hasPrefix(typed) {
-                //
                 add(Result(id: "top-domain:" + domain.host, title: domain.siteName, detail: "", symbol: "globe",
                            subtitle: CommandBarResultText.urlSubtitle(domain.url.absoluteString),
                            url: domain.url, input: domain.url.absoluteString),
@@ -1141,16 +966,12 @@ import SwiftUI
         topDomainList = domains; topDomainGeneration += 1
         if !editState.query.isEmpty && !isScoped { refreshResults(requestNative: false) }
     }
-    /// An empty answer (a timed-out query, or history just cleared) falls back
-    /// to Parc's own list; an engine without the all-pages query (before
-    /// overlay 323) never answers.
     func updateRecentPages(_ pages: [(url: String, title: String)]) {
         guard !dismissed, !pages.isEmpty || recentPages != nil else { return }
         recentPages = pages.isEmpty ? nil : pages; recentPagesGeneration += 1
         lastHistoryScanKey = nil; cachedHistoryVisits = []
         if (editState.query.isEmpty || (addressOnly && !addressWasEdited)) && !isScoped { refreshResults(requestNative: false) }
     }
-    ///
     private static func iconImage(_ name: String) -> NSImage? {
         NSImage(systemSymbolName: name, accessibilityDescription: nil) ?? SidebarPlusMenuArtwork.image(name)
     }
@@ -1168,8 +989,6 @@ import SwiftUI
             while !keys.insert(id).inserted { occurrence += 1; id = "native:\(key)#\(occurrence)" }
             return nativeRow(navigation, id: id, scoped: scoped, preserveDefault: index == 0 && !extensionFirst)
         }
-        // Extension action positions refer to the same original native order;
-        // they carry no copyable URL or synthetic navigation destination.
         for action in extensionActions.sorted(by: { $0.resultIndex < $1.resultIndex }) {
             let row = Result(id: "extension:\(action.extensionID):\(action.editText):\(action.title)",
                              title: action.title.isEmpty ? action.detail : action.title,
@@ -1180,14 +999,10 @@ import SwiftUI
         return rows.compactMap { $0 }
     }
     private func nativeRow(_ navigation: PCNativeSearchNavigation, id: String, scoped: Bool, preserveDefault: Bool) -> Result? {
-        // A keyword scope lists only its own engine's matches.
         if scoped {
             return Result(id: id, title: navigation.title.isEmpty ? input.stringValue : navigation.title, detail: "",
                           symbol: "magnifyingglass", isSearch: true, url: navigation.url, navigation: navigation)
         }
-        // A held snapshot belongs to the input it answered, not the field's text.
-        // Chromium's history keeps What's New's file address; its Release
-        // Notes command is the row that opens it.
         guard !WhatsNewPage.matches(navigation.url.absoluteString),
               let row = CommandBarResultText.nativeRow(matchType: Self.matchType(of: navigation), isSearch: navigation.search,
                                                       contents: navigation.title, description: navigation.detail,
@@ -1199,8 +1014,6 @@ import SwiftUI
     private func caption(for tab: BrowserTab) -> CommandBarResultText.TabCaption {
         tabCaption?(tab) ?? .switchToTab
     }
-    /// Chromium's AutocompleteMatchType name; engines before overlay 297 don't
-    /// expose it. The single reader of the match type, calculator included.
     private static func matchType(of navigation: PCNativeSearchNavigation) -> String? {
         navigation.responds(to: #selector(getter: PCNativeSearchNavigation.matchType)) ? navigation.matchType : nil
     }
@@ -1247,8 +1060,6 @@ import SwiftUI
         select(row: row, explicit: true, projectCompletion: true)
     }
     func tableViewSelectionDidChange(_ notification: Notification) {
-        // A direct accessibility/native table selection shares the keyboard
-        // projection. Pointer hover has its own row owner and never selects.
         if !selectingProgrammatically, results.indices.contains(table.selectedRow) {
             backgroundGeneration &+= 1
             if retainedBackgroundHistory?.result.id != results[table.selectedRow].id { retainedBackgroundHistory = nil }
@@ -1288,8 +1099,6 @@ import SwiftUI
     private func applyCompletion(preserveEditorSelection: Bool = false) {
         guard !dismissed, isOwnerValid?() != false,
               (input.currentEditor() as? NSTextView)?.hasMarkedText() != true else { return }
-        // A late provider refresh with the same displayed result must not undo
-        // AppKit caret/selection changes (mouse, Left/Right or text bindings).
         if preserveEditorSelection, input.stringValue == editState.displayedText { return }
         applyingCompletion = true
         defer { applyingCompletion = false }
@@ -1310,11 +1119,8 @@ import SwiftUI
         case .leaveScope: leaveScope(); return true
         case .complete: break
         }
-        // As for Return, a scope offer or completion belongs to this query's rows.
         if nativeHold.presentsBeforeSubmitting(explicitSelection: explicitSelectionID != nil) { releaseNativeHold() }
         if selectedScopeOffer != nil { enterOfferedScope(); return true }
-        // Tab is an editing action. Never submit a command, switch an original
-        // tab or turn a typed local action into a URL/query string.
         if !isScoped, !scopeInvalidated, results.indices.contains(table.selectedRow),
            nativeHold.nativeRowsAnswer(editState.query.trimmingCharacters(in: .whitespacesAndNewlines)),
            results[table.selectedRow].navigation?.canCompleteWithTab == true {
@@ -1336,8 +1142,6 @@ import SwiftUI
         updateInputIcon(); layoutScopeHeader()
     }
     private func updateInputIcon() {
-        // Zero-query tab/history selection does not replace the empty field's
-        // search affordance, including when a favicon arrives asynchronously.
         guard (isScoped || scopeInvalidated || !input.stringValue.isEmpty),
               results.indices.contains(table.selectedRow) else {
             inputIcon.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil); return
@@ -1371,8 +1175,6 @@ import SwiftUI
         return cell
     }
     private func accessoryText(_ result: Result) -> String {
-        // TypeTravelCandidate.renameCurrentTab carries the Rename binding,
-        //
         let shortcut = result.favoriteRename != nil
             ? KeyboardShortcuts.shared.activeShortcut(for: "renameCurrentItem:") : result.command?.shortcut
         return result.tabID != nil ? (result.caption ?? .switchToTab).text : shortcut?.display ?? ""
@@ -1382,7 +1184,6 @@ import SwiftUI
         if let action = result.extensionAction { return omnibox?.canDeleteExtensionAction(action) == true }
         return false
     }
-    /// Everything a cell draws. A kept row whose content changes gets a new cell.
     private func rowContent(_ result: Result) -> String {
         let context = result.spaceAction.map { "\($0.name)\u{1}\($0.symbol)" }
             ?? (result.folderAction ?? result.folderMove?.folder).map { "\($0.name)\u{1}\($0.detail)" } ?? ""
@@ -1391,7 +1192,6 @@ import SwiftUI
                 result.tabID == nil ? "" : "tab", enabled(result) ? "on" : "off", isDeletable(result) ? "delete" : "",
                 result.extensionLaunch.map { "\($0.generation)" } ?? "", context].joined(separator: "\u{0}")
     }
-    /// A retained row or cell activates only this publication's payload.
     private func bind(_ view: CommandResultRowView, to result: Result) {
         let publication = resultPublication
         view.onPress = { [weak self] event in
@@ -1402,8 +1202,6 @@ import SwiftUI
     private func bind(_ cell: CommandResultCell, to result: Result) {
         let publication = resultPublication
         if let navigation = result.navigation, omnibox?.canDeleteResult(navigation) == true {
-            // Capture the actual native publication object, never a row index,
-            // display URL or string ID that a later result might reuse.
             cell.onDelete = { [weak self] in self?.deleteSuggestion(navigation) ?? false }
         } else if let action = result.extensionAction, omnibox?.canDeleteExtensionAction(action) == true {
             cell.onDelete = { [weak self] in self?.deleteExtensionSuggestion(action) ?? false }
@@ -1423,9 +1221,6 @@ import SwiftUI
               let row = results.firstIndex(where: { $0.navigation === navigation }),
               omnibox?.deleteResult(navigation) == true else { return false }
         backgroundGeneration &+= 1
-        // Native removal has accepted the exact provider object. Remove only
-        // that presentation immediately; its authoritative replacement snapshot
-        // follows on main without starting a fresh search or navigation.
         editState.stopAutomaticCompletion()
         clearCompletion()
         nativeResults.removeAll { $0 === navigation }
@@ -1477,31 +1272,19 @@ import SwiftUI
             guard !navigation.search, nativeResults.contains(where: { $0 === navigation }) else { return nil }
             pageURL = navigation.url
         } else if result.tabID != nil || result.input != nil {
-            //
-            //
-            // a native website result becomes Switch to Tab. Return still
-            // uses the original tab ID, never this URL as a navigation token.
             pageURL = result.url
         } else {
             return nil
         }
-        //
-        //
         guard let pageURL, ["http", "https"].contains(pageURL.scheme?.lowercased() ?? ""),
               let host = pageURL.host else { return nil }
         return CommandBarSiteColor.scope(forPageHost: host, in: siteScopes) { Self.site(of: $0)?.host }
     }
-    /// The engine's template, empty-query search host and prepopulated flag.
-    /// An engine built before these bridge fields has none.
     private static func site(of scope: PCNativeOmniboxScope) -> (template: String, host: String, prepopulated: Bool)? {
         guard scope.responds(to: #selector(getter: PCNativeOmniboxScope.searchHost)) else { return nil }
         return (scope.templateURL, scope.searchHost, scope.isPrepopulated)
     }
-    /// The theme's selected colour, or the site's while a website scope has one.
     private var selectedRowColor: NSColor { (isWebsiteScoped ? scopeColor : nil) ?? palette.selected }
-    /// A bundled engine's colour applies at once. Any other engine waits for
-    ///
-    ///
     private func refreshScopeColor(for scope: PCNativeOmniboxScope) {
         scopeColorRequest &+= 1
         let request = scopeColorRequest
@@ -1531,8 +1314,6 @@ import SwiftUI
         scopeColor = nil
         applyPalette()
     }
-    ///
-    /// host, one result. The open page leads, as it is the Profile's newest visit.
     private func siteVisit(searchHost: String) -> URL? {
         func matches(_ text: String) -> Bool { text.localizedCaseInsensitiveContains(searchHost) }
         let visit = historyExcludedURL.flatMap { matches($0) ? $0 : nil }
@@ -1543,7 +1324,6 @@ import SwiftUI
         let showsScope = isScoped || scopeInvalidated
         let displayedName = unavailableScopeName ?? scopedName
         scopePill.isHidden = !showsScope
-        // Extension ownership does not expose the saved website-template menu.
         if actionsScope { scopePill.showActions() }
         else if activeScope?.isExtension == true { scopePill.showExtension(name: displayedName) }
         else { scopePill.showSite(name: displayedName, unavailable: scopeInvalidated) }
@@ -1551,7 +1331,6 @@ import SwiftUI
         input.placeholderString = isScoped ? "Search…" : (sidebarBrowsing ? "Search…" : "Search or Enter URL…")
         let baseX: CGFloat = sidebarAnchor == nil && !addressOnly ? 49 : 38
         let right: CGFloat = sidebarAnchor == nil && !addressOnly ? 22 : 11
-        // The pill and the offered hint share one centre line.
         let headerCentre: CGFloat = sidebarAnchor == nil && !addressOnly ? 32 : 24
         var left = baseX
         if showsScope {
@@ -1623,8 +1402,6 @@ import SwiftUI
         retireScopeMenu()
         actionsScope = true
         endNativeHold(); clearNativeResults(); explicitSelectionID = nil
-        // Invalidate any outstanding ordinary publication without destroying
-        // the original native session needed after this local scope exits.
         omnibox?.updateInput("", allowsInlineCompletion: false)
         setScopeInput("", selectAll: false)
         refreshResults(requestNative: false)
@@ -1640,8 +1417,6 @@ import SwiftUI
     @discardableResult private func enterScope(restoring query: String) -> Bool {
         guard !dismissed, isOwnerValid?() != false, let offer = selectedScopeOffer,
               let omnibox, omnibox.enterScope(offer) else { return false }
-        // Entry invalidates earlier native publishes synchronously. Its next
-        // authoritative snapshot owns a fresh active-scope identity.
         queryBeforeScope = query
         enteringScopeName = offer.name; endNativeHold(); clearNativeResults()
         scopeInvalidated = false; unavailableScopeName = nil; explicitSelectionID = nil
@@ -1657,21 +1432,15 @@ import SwiftUI
         if actionsScope {
             actionsScope = false; explicitSelectionID = nil
             endNativeHold(); clearNativeResults()
-            //
-            // restores that input, not the address from before Cmd-L editing.
             setScopeInput("", selectAll: !restoringQuery)
             refreshResults(); position(); layoutContents()
             announceScope("Actions search ended")
             return
         }
-        // An invalidated provider has already been retired natively. A user
-        // exit may restore ordinary input; a notification alone never may.
         if !scopeInvalidated, omnibox?.leaveScope() != true { dismiss(); return }
         clearScopeColor()
         activeScope = nil; enteringScopeName = nil; endNativeHold(); clearNativeResults()
         scopeInvalidated = false; unavailableScopeName = nil; explicitSelectionID = nil; nativeError = nil
-        // Empty Backspace restores the immediate pre-scope query with caret at
-        // its end. Escape restores the address/new-tab session's selected input.
         setScopeInput(restoringQuery ? queryBeforeScope : initialInput, selectAll: !restoringQuery)
         refreshResults()
         position(); layoutContents()
@@ -1715,10 +1484,7 @@ import SwiftUI
                 self.activeScope = nil; self.enteringScopeName = choice.name
                 self.endNativeHold(); self.clearNativeResults()
                 self.explicitSelectionID = nil
-                //
                 self.refreshScopeColor(for: choice)
-                // Preserve the original native edit range; only the chosen
-                // engine changes. A projected old result cannot become a request.
                 self.setScopeInput(editing.query, selectAll: false)
                 self.restoreScopeSelection(editing.selectionForQuery)
                 self.refreshResults(requestNative: false)
@@ -1811,8 +1577,6 @@ import SwiftUI
               isOwnerValid?() != false, !scopeInvalidated, !sidebarBrowsing,
               (input.currentEditor() as? NSTextView)?.hasMarkedText() != true,
               enabled(result) else { return false }
-        // Keep the exact row payload. In particular, a native request is not
-        // looked up by URL, and a typed folder/Space command never becomes text.
         submitResult(result, disposition: disposition, retainsSelection: false)
         return true
     }
@@ -1829,8 +1593,6 @@ import SwiftUI
     private func submitResult(_ result: Result, disposition: CommandBarSubmission, retainsSelection: Bool) {
         let inSplit = disposition == .split
         guard enabled(result) else { NSSound.beep(); return }
-        // A local document opens in the window like its Library row; it has no
-        // split request or background page.
         if result.document != nil, disposition != .ordinary { NSSound.beep(); return }
         submissionDepth += 1
         defer {
@@ -1838,9 +1600,6 @@ import SwiftUI
             if dismissed && submissionDepth == 0 { onDismissalSettled?() }
         }
         if let action = result.extensionLaunch {
-            // A launch operates in the original page. It cannot promise a new
-            // split/background destination. Dismiss the command surface before
-            // Chromium validates and opens its genuine popup/context fallback.
             guard disposition == .ordinary, !dismissed, parent?.isKeyWindow == true,
                   isOwnerValid?() != false,
                   (input.currentEditor() as? NSTextView)?.hasMarkedText() != true else {
@@ -1852,9 +1611,6 @@ import SwiftUI
             return
         }
         if let action = result.extensionAction {
-            // Original Chromium onInputEntered must run while its keyword
-            // provider is alive. Cancellation first would send the wrong event.
-            // Extension API supports tab dispositions, not Parc split promises.
             guard let extensionDisposition, !inSplit, !dismissed, parent?.isKeyWindow == true,
                   isOwnerValid?() != false,
                   (input.currentEditor() as? NSTextView)?.hasMarkedText() != true,
@@ -1868,8 +1624,6 @@ import SwiftUI
             } else { dismiss() }
             return
         }
-        // The same original folder row has a distinct force-open copy action.
-        // Option-Return is still a navigation-only split intent.
         if let move = result.folderMove,
            disposition == .split || (disposition == .background && canCopyToFolder?(move) != true) {
             NSSound.beep(); return
@@ -1880,8 +1634,6 @@ import SwiftUI
         }
         let splitCommand = result.command.flatMap { canSplitCommand?($0) == true ? $0 : nil }
         if inSplit {
-            // A split destination is an actual navigation, original tab, or the
-            // New Note / New Easel commands that fill Add Split's blank pane.
             guard result.navigation != nil || result.input != nil || result.tabID != nil || splitCommand != nil,
                   splitCommand != nil || canSplitSelection?(result.tabID) == true else { NSSound.beep(); return }
             let canCommit = splitCommand != nil ? onSplitCommand != nil
@@ -1890,8 +1642,6 @@ import SwiftUI
                 : onSplitInput != nil
             guard canCommit else { NSSound.beep(); return }
         }
-        // Keep the original token alive across cancellation of its producer.
-        // The native token retains POST/headers and its original profile lease.
         let navigate = onNavigate, search = onSearchNavigation, selectTab = onSelectTab
         let splitInput = onSplitInput, splitNavigation = onSplitNavigation, splitTab = onSplitTab
         let splitCommandHandler = onSplitCommand
@@ -1926,7 +1676,6 @@ import SwiftUI
         else if let action = result.favoriteRename { renameFavorite?(action) }
         else if let command = result.typedCommand { performTyped?(command) }
         else if let muted = result.muteAllTabs { if muteAllTabs?(muted) != true { NSSound.beep() } }
-        // Revalidated now the bar is gone; a refusal never runs another target.
         else if let command = result.command { if !KeyboardShortcuts.shared.performMenuCommand(command) { NSSound.beep() } }
         else if let id = result.tabID { selectTab?(id) }
         else if result.managesPasswords { managePasswords?() }
@@ -1947,9 +1696,6 @@ import SwiftUI
                   self.backgroundOperation == operation, self.backgroundGeneration == generation, self.isOwnerValid?() != false,
                   self.omnibox?.canSubmit == true, self.editState.query == query,
                   self.activeScope === scope, !self.scopeInvalidated else { return false }
-            // The admitted request is immutable. Provider refresh or this
-            // operation's own model publication cannot retarget/cancel it.
-            // Actual user editing/selection invalidates the generation instead.
             return true
         }
         let completed: (String?) -> Void = { [weak self] error in
@@ -1972,8 +1718,6 @@ import SwiftUI
         submitSelection(.background); return true
     }
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        // Let the input method commit/cancel marked text before handling a
-        // command-bar action. Ordinary editing/selection/copy stays AppKit-owned.
         guard !textView.hasMarkedText() else { return false }
         if let disposition = CommandBarSubmission.resolveTextCommand(commandSelector,
             event: NSApp.currentEvent, hasMarkedText: textView.hasMarkedText()) {
@@ -2015,9 +1759,6 @@ import SwiftUI
     }
 }
 
-///
-///
-/// stays its own, not the browser window's.
 private final class CommandFieldEditor: NSTextView {
     var onCopy: ((String) -> Void)?
     private let undo = UndoManager()
@@ -2032,9 +1773,6 @@ private final class CommandFieldEditor: NSTextView {
         if let text, pasteboard.changeCount != before { onCopy?(text) }
     }
 }
-/// The bar's place in its browser window: the topmost view over the page,
-/// sidebar and Peek. Only the bar takes the mouse, so a press anywhere else,
-/// its shadow included, lands on what is underneath.
 private final class CommandBarHost: NSView {
     weak var bar: NSView?
     var onKeyEquivalent: ((NSEvent) -> Bool)?
@@ -2045,7 +1783,6 @@ private final class CommandBarHost: NSView {
         onKeyEquivalent?(event) == true || super.performKeyEquivalent(with: event)
     }
     override var mouseDownCanMoveWindow: Bool { false }
-    //
     override func mouseDown(with event: NSEvent) {}
     override func rightMouseDown(with event: NSEvent) {}
     override func otherMouseDown(with event: NSEvent) {}

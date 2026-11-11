@@ -39,8 +39,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var replayWindow: ReplayWindow?
     private var replayReturnOwner: BrowserWindowController?
     private var replaySessionActive = false
-    // Keep these exact owners alive: recreating a popup or a private browser
-    // would lose its native context even if its saved tabs looked identical.
     private var hiddenReplayWindows: [BrowserWindowController] = []
     private var deferredReplayTermination: (() -> Void)?
     private var replayRestoreError: Error?
@@ -59,11 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var appKitRestorationCancelled = false
     private var sessionRestorationInitialized = false
     private var unrestoredWindowRecords: [BrowserWindowRecord] = []
-    /// After a crash or an update every saved window comes back; otherwise only
-    ///
     private var restoresEveryWindow = false
-    /// A Parc run has started on this data before (every release writes
-    /// launch.json), so a launch without a release-notes record is an update.
     private var previousRunRecorded = false
     private var launchWindowID: UUID?
     private var requiresOnboarding: Bool {
@@ -81,13 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var applicationRestart: ApplicationRestart?
     private var restartCompletion: ((String?) -> Void)?
     private var pendingImportResume: BrowserImportRestartIntent?
-    /// The import owner whose restart is pending, so another owner cannot cancel it.
     private weak var restartOwner: AnyObject?
-    /// The armed restart reopens a saved replay; any other quit discards that draft.
     private var armedReplayRestart = false
     private var quitWarning: ApplicationQuitWarning?
     private var quitWarningApprovalPending = false
-    /// Set only while the Quit command's own terminate runs.
     private var quitCommandPending = false
     private var privateWindowCreations: [UUID: PendingBrowserCreation<BrowserWindowController>] = [:]
     private let archiveScheduling = ArchiveScheduling()
@@ -111,9 +102,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var spacesMenuIsTracking = false
     private var spaceMenuSubscription: AnyCancellable?
     private var registeredSpaceCommandIDs = Set<String>()
-    /// What the Spaces menu was last built from. Each window activation asks
-    /// for it again, and a rebuild registers every entry anew, each one
-    /// refreshing every live shortcut tooltip, so unchanged entries are kept.
     private struct SpacesMenuSource: Equatable {
         weak var owner: BrowserWindowController?
         let activeSpaceID: UUID?
@@ -142,25 +130,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             ?? ready.last
     }
 
-    // Unlike general app commands, Space navigation never falls back to a
-    // previously active browser behind Settings, Downloads or another window.
     private var spaceCommandWindow: BrowserWindowController? {
         windows.first { $0.ownsSpaceCommandFocus }
     }
 
-    /// An open command bar or history chooser can request an operation
-    /// that dismisses it and revalidates the same browser before proceeding.
     private var browserWindowCommandOwner: BrowserWindowController? {
         windows.first { $0.ownsWindowCommandFocus && $0.windowCommandSecurityAvailable }
     }
 
-    /// Copy URL also belongs to an open command bar, but not to a
-    /// navigation-history chooser or an unrelated auxiliary window.
     private var browserCopyCommandOwner: BrowserWindowController? {
         windows.first { $0.ownsSpaceCommandFocus && $0.windowCommandSecurityAvailable }
     }
 
-    /// Native input commands require the browser itself to be key.
     private var browserInputCommandWindow: BrowserWindowController? {
         guard let owner = browserWindowCommandOwner, let window = owner.window,
               window.isKeyWindow, PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return nil }
@@ -168,9 +149,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func scheduleMiniPlayerRefresh() {
-        // BrowserWindowController.refreshMiniPlayers gates ordinary chrome
-        // ticks when its mini-player source signature is unchanged; window
-        // open/close and forced transfer paths still enter here.
         guard !miniPlayerRefreshPending, !terminationInProgress else { return }
         miniPlayerRefreshPending = true
         DispatchQueue.main.async { [weak self] in
@@ -179,8 +157,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             guard !self.terminationInProgress else { return }
             let owners = self.windows
             guard !owners.isEmpty else { return }
-            // Retire invalid sources across every window before any new
-            // admission can evict an otherwise live episode.
             owners.forEach { $0.prepareMiniPlayerSourcesForAdmission() }
             for host in owners {
                 host.applyMiniPlayers(owners.flatMap { $0.miniPlayerItems(for: host) })
@@ -240,11 +216,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                                                   appropriateFor: nil, create: true).appendingPathComponent("Parc", isDirectory: true)
             }
             store = try BrowserStore(directory: root)
-            // With session restore off, every tab starts afresh.
             store.tabHistory?.prune(keeping: store.state.settings.restoreSession
                 ? Set(store.state.tabs.lazy.filter { $0.archivedAt == nil }.map(\.id)) : [])
-            // Deleted history must not come back as an unloaded tab's back/forward
-            // entries, nor stay in the visits behind the command bar.
             historyDeletionObserver = NotificationCenter.default.addObserver(
                 forName: TopBarColorClient.historyDidDeleteNotification, object: nil, queue: .main
             ) { [weak self] note in
@@ -277,8 +250,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             }
             AppAppearance.restore()
             buildMenus()
-            // Keep dynamic numbered commands live before the user opens a menu.
-            // Space-only changes avoid invalidating shortcuts on ordinary page updates.
             spaceMenuSubscription = store.statePublisher.map(\.spaces).removeDuplicates()
                 .receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshSpaceCommands() }
             guard let frameworks = Bundle.main.privateFrameworksPath else {
@@ -288,8 +259,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             launchWindowID = unrestoredWindowRecords.first?.id
             beginLaunchContinuity(root: root)
             sessionRestorationInitialized = true
-            // Install before engine startup: AppKit may begin restoration while
-            // CEF initializes, before Parc can create a native browser owner.
             NotificationCenter.default.addObserver(self, selector: #selector(didFinishRestoringWindows(_:)),
                 name: NSApplication.didFinishRestoringWindowsNotification, object: NSApp)
             NotificationCenter.default.addObserver(self, selector: #selector(didEndWindowSheet(_:)),
@@ -304,8 +273,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             let startup = PCBrowserEngine.start(frameworkPath: frameworks + "/Chromium Embedded Framework.framework", cachePath: store.independentEngineRoot.path)
             switch startup.status {
             case .earlyExit:
-                // CEF's singleton handoff and other normal early exits are not
-                // errors. Preserve the engine's code without showing browser UI.
                 cancelPendingAppKitRestorations()
                 return .exit(startup.exitCode)
             case .failed:
@@ -317,21 +284,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 pendingImportResume = try? BrowserImportRestartIntent.take(from: root)
                 if pendingImportResume?.replay != true { Self.removeReplayRestartDraft(in: root) }
                 ProfileRemovalController.shared.configure(store: store)
-                // Only a window someone is looking at; otherwise the next one to become key.
                 let presentImportFailures = { [weak self] in
                     guard NSApp.isActive, let front = self?.front, front.window?.isKeyWindow == true else { return }
                     front.showImportFailures()
                 }
                 ImportedExtensionFailures.present = presentImportFailures
                 ImportedBrowserDataFailures.present = presentImportFailures
-                // Safari's identity for learned FairPlay sites, before any page loads.
                 FairPlayIdentityController.shared.start(profilePaths: store.state.profiles.map {
                     store.independentEngineProfilePath(for: $0.id)
                 })
-                // Only a run that actually started counts: a failed start or a
-                // launch handed to an already running Parc leaves the marker.
-                // The release-notes record first: a launch marker without one
-                // would make the next run read this one as an older Parc's.
                 SoftwareUpdateBanner.shared.launch(in: root, existingData: previousRunRecorded)
                 LaunchContinuity(running: true, build: Self.buildIdentity).write(in: root)
                 resumePendingAppKitRestorations()
@@ -345,8 +306,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 FileHandle.standardError.write(Data(("Parc startup failed: " + error.localizedDescription + "\n").utf8))
                 return .exit(failureExitCode)
             }
-            // A startup failure can come before any Parc window or engine exists,
-            // so it stays the system alert.
             let alert = NSAlert()
             alert.messageText = "Parc couldn’t start"
             alert.informativeText = error.localizedDescription
@@ -356,7 +315,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
-    ///
     private var automaticUpdateActivity: AutomaticUpdate.Activity {
         AutomaticUpdate.Activity(
             enabled: SoftwareUpdater.shared.automaticallyInstallsUpdates,
@@ -371,8 +329,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             displayKeptOn: Self.displayKeptOn)
     }
 
-    /// Any process holds `kIOPMAssertPreventUserIdleDisplaySleep`, as video
-    /// calls and players do. Held when it can't be read.
     private static var displayKeptOn: Bool {
         var status: Unmanaged<CFDictionary>?
         guard IOPMCopyAssertionsStatus(&status) == kIOReturnSuccess,
@@ -380,10 +336,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return (levels["PreventUserIdleDisplaySleep"]?.intValue ?? 0) > 0
     }
 
-    ///
-    /// since the last keyboard or pointer event. Only the HID event system
-    /// resets it, so power assertions and `caffeinate` don't. Zero, which
-    /// counts as in use, when it can't be read.
     private static var inputIdleTime: TimeInterval {
         let system = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOHIDSystem"))
         guard system != 0 else { return 0 }
@@ -455,8 +407,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             controller.onComplete = { [weak self, weak controller] in
                 guard let self, !self.terminationInProgress else { throw CocoaError(.userCancelled) }
                 guard let controller, self.onboarding === controller else { throw CocoaError(.userCancelled) }
-                // Prepare the real browser while the welcome owner still holds
-                // presentation. Its close callback performs the first reveal.
                 _ = try self.makeBrowserWindow(renderInitialSelection: true, showImmediately: false)
             }
             controller.onRevealCompleted = { [weak self] in
@@ -490,8 +440,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
-    /// Replay uses the production flow. The ordinary window-close transaction
-    /// resolves notes, Settings and page beforeunload before welcome is shown.
     @objc func replayOnboarding(_ sender: Any?) {
         guard let settings = sender as? SettingsWindow,
               started, initialBrowserOpened, !terminationInProgress, !replayCloseInProgress,
@@ -543,20 +491,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         replayCloseInProgress = true
         onboarding = controller
         let finishClose: (Bool) -> Void = { [weak self, weak controller] approved in
-            // windowWillClose completes before AppDelegate's onClose removes
-            // the original owner. Continue after that notification unwinds.
             DispatchQueue.main.async {
                 guard let self, let controller, self.onboarding === controller else { return }
                 self.replayCloseInProgress = false
                 if !approved {
-                    // Cancel means retain this window and cancel replay. A Quit
-                    // queued behind the same consent must not immediately ask again.
                     self.deferredReplayTermination = nil
                     self.cancelApplicationRestart("Restart cancelled. Your browser is still open.")
                     self.finishOnboardingReplay()
                 } else if self.deferredReplayTermination != nil {
-                    // Finish the local close before a global close can touch its
-                    // reservation. Restore first so a denied Quit retains a browser.
                     self.finishOnboardingReplay()
                 } else {
                     self.hiddenReplayWindows = NSApp.orderedWindows.compactMap { window in
@@ -568,8 +510,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 }
             }
         }
-        // Settings also exists for private browsers and popups. Preserve those
-        // exact native owners; only a regular browser is closed and reconstructed.
         if closesOriginal, let original { original.closeForOnboarding(completion: finishClose) }
         else if let original { original.prepareAuxiliaryWindowForOnboarding(completion: finishClose) }
         else { finishClose(true) }
@@ -579,9 +519,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         guard let saved = replayWindow else {
             if let original = replayReturnOwner,
                let live = windows.first(where: { $0 === original && $0.hasReadyPresentation }) { return live }
-            // Application Settings can outlive its browser, and an auxiliary
-            // page can close itself while replay is up. Never reconstruct that
-            // private/popup context; return to a normal browser instead.
             return try windows.first(where: { $0.store === store && !$0.isPopupWindow && $0.hasReadyPresentation })
                 ?? makeBrowserWindow(renderInitialSelection: true, showImmediately: false)
         }
@@ -613,8 +550,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             let directory = self.store.directory
             do { try controller.saveReplayForImportRestart() }
             catch { completion(error.localizedDescription); return }
-            // Completed setup has no onboarding gate after relaunch; the replay
-            // intent tells the ordinary resume to reopen this saved replay.
             let resumed = BrowserImportRestartIntent(destination: intent.destination, onboarding: false,
                                                      replay: true, sourceBundleID: intent.sourceBundleID)
             self.requestBrowserImportRestart(resumed, owner: controller, ownerIsCurrent: { [weak self, weak controller] in
@@ -675,8 +610,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private func presentReplayRestoreFailure() {
-        // onCancel runs inside the setup window's close notification. Do not
-        // attach the recovery UI to that closing owner or clear its saved record.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.replaySessionActive, let error = self.replayRestoreError,
                   !self.terminationInProgress, self.replayRestoreAlert == nil else { return }
@@ -699,9 +632,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
 
     private func finishInitialBrowserPresentation() {
         guard restorationLaunch.mayPresent(terminating: terminationInProgress, cancelled: appKitRestorationCancelled), !initialBrowserOpened, !requiresOnboarding else { return }
-        // AppKit resolves original identifiers first. An early synchronous
-        // download prompt may have made an empty owner, so it must not suppress
-        // the legacy fallback record when AppKit restored no browser windows.
         func regularLaunchOwners() -> [BrowserWindowController] {
             windows.filter { WindowRestorationLaunch.isRegularLaunchOwner(mainStore: $0.store === store,
                                                                            popup: $0.isPopupWindow, ready: $0.hasReadyPresentation) }
@@ -730,8 +660,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         recordWindowSessions()
         if !hasRestoredWindow { launchOwner.window?.makeKeyAndOrderFront(nil) }
         if let input = argument("--parc-open") { launchOwner.openInput(input) }
-        // Test instances only: `--parc-settings=Advanced` (a Pane rawValue)
-        // opens Settings so it can be captured without keyboard or menu input.
         if arguments.contains("--parc-smoke"), let name = argument("--parc-settings") {
             launchOwner.showSettings(pane: SettingsWindow.Pane(rawValue: name) ?? .membership)
         }
@@ -742,9 +670,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         drainInitialActions()
         refreshVisibleActivity()
-        //
-        // separate 300s/6h clocks. Wake belongs to its update-idle tracker,
-        // not Archive: let the continuous clocks resume their own deadlines.
         for job in [ArchiveScheduling.Job.initialArchive, .archive] {
             archiveScheduling.start(job) { [weak self] in
                 guard let self, !self.terminationInProgress else { return }
@@ -781,8 +706,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 return editors.isEmpty ? nil : (ObjectIdentifier(owner), editors)
             })
         }
-        // Retain the actual original editors through the async decision; pointer
-        // identities alone could be recycled after an owner is replaced.
         let originalNoteOwners = noteOwners(windows)
         func notesAreOriginal(_ windows: [BrowserWindowController]) -> Bool {
             let current = noteOwners(windows)
@@ -807,17 +730,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 }
             }
         }
-        // Reserve the complete shell set before Chromium dispatches any
-        // beforeunload. Native page-close notifications must not individually
-        // mutate the whole-set saved transaction.
         for entry in pages { entry.owner.beginPageRetirement(entry.id) }
         PCNativeBrowserApplication.requestClosePages(pages.map(\.page), shouldCommit: { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, !self.terminationInProgress,
                       notesAreOriginal(self.windows),
-                      // A Note can receive edits/IME or fail its delayed save
-                      // while another original page awaits beforeunload consent.
-                      // Use its real flush barrier again before any unload.
                       self.windows.allSatisfy({ $0.prepareNotesToClose(ids) }),
                       notesAreOriginal(self.windows),
                       !self.windows.contains(where: { $0.hasPendingNativePage(in: ids) }),
@@ -830,9 +747,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }, completion: { [weak self] allowed in
             MainActor.assumeIsolated {
                 for entry in pages { entry.owner.finishPageRetirement(entry.id, page: entry.page, closed: allowed) }
-                // Native unload completion is asynchronous. Local editors can
-                // still change after admission; a late failed draft must keep
-                // the saved tree intact even when its web pages already closed.
                 let documentsReady = allowed && self.map { owner in
                     !owner.terminationInProgress && notesAreOriginal(owner.windows)
                         && owner.windows.allSatisfy({ $0.prepareNotesToClose(ids) })
@@ -840,10 +754,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 } == true
                 completion(documentsReady)
                 if !allowed, let self {
-                    // An independent page destruction can cancel preparation.
-                    // It is not group success, but its already-closed page must
-                    // not be reconstructed from saved navigation. Reentry may
-                    // have supplied a new owner/request: preserve those.
                     for entry in pages where entry.page.isClosed && !entry.page.isEmbedded {
                         guard !entry.owner.store.retiringTabIDs.contains(entry.id),
                               !self.windows.contains(where: {
@@ -857,9 +767,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         })
     }
 
-    /// Retain the exact Easel editors while page consent is pending. A changed
-    /// editor set or unfinished native composition/pointer gesture refuses the
-    /// move before it can discard a draft or publish another Profile's owner.
     private func prepareLocalDocumentRelocation(_ ids: Set<UUID>) -> (() -> Bool)? {
         let model = store
         func editors(_ owners: [BrowserWindowController]) -> [ObjectIdentifier: [UUID: EaselEditorViewController]] {
@@ -883,9 +790,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
-    /// A cross-Profile move takes its Notes/Easels into the destination
-    /// Profile's stores: every original editor closes first (drafts flushed),
-    /// then the exact documents move. Returns the reverse move for a failed save.
     private func relocateLocalDocuments(_ ids: Set<UUID>, pages: [InternalPage], from: UUID, to: UUID) throws -> () -> Void {
         let owners = windows.filter { $0.store === store }
         let affected = owners.filter {
@@ -931,15 +835,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         return {
             rollback.run()
-            // Empty/static documents have no native page completion to trigger
-            // a render after rollback. Restore their fresh source editors too.
             restoreEditors()
         }
     }
 
-    /// The one other window that could give `requester` the tab now: the
-    /// window holding its page, Note or Easel, or a window whose claim has
-    /// nothing behind it. A page still being created has no holder yet.
     private func tabHolder(_ id: UUID, for requester: BrowserWindowController) -> BrowserWindowController.TabHolder {
         guard !terminationInProgress, pageOwnership.owner(of: id) != nil,
               let holder = windows.first(where: { $0 !== requester && $0.store === requester.store && $0.claimsTab(id) })
@@ -960,8 +859,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let protected = snapshots.reduce(into: Set<UUID>()) { $0.formUnion($1.protectedIDs) }
         store.archiveExpiredTabs(protectedTabIDs: protected, currentProtection: { [weak self] in
             guard let self else { return Set(snapshots.flatMap { $0.protectedIDs }) }
-            // Re-read actual pages and selections in EVERY physical window
-            // immediately before the native transaction unloads anything.
             return self.windows.reduce(into: Set<UUID>()) {
                 $0.formUnion($1.automaticArchiveProtectionSnapshot.protectedIDs)
             }
@@ -1004,10 +901,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return menu
     }
 
-    /// Handoff from an iPhone, iPad or another Mac: a web page continues here
-    /// when Parc is the default browser and declares the browsing activity
-    ///
-    /// from another app.
     func application(_ application: NSApplication, willContinueUserActivityWithType userActivityType: String) -> Bool {
         userActivityType == NSUserActivityTypeBrowsingWeb
     }
@@ -1041,9 +934,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 pendingURLs.append(contentsOf: urls[index...]); return
             }
             do {
-                //
-                //
-                // frontmost window showing its Space, not the oldest one.
                 let eligible = windows.filter { $0.canAcceptExternalLink }
                 let ordered = NSApp.orderedWindows.compactMap { window in eligible.first { $0.window === window } }
                 let regular = ordered + eligible.reversed().filter { candidate in !ordered.contains { $0 === candidate } }
@@ -1055,8 +945,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 let owner: BrowserWindowController
                 let destination: UUID
                 if missingExplicitSpace {
-                    //
-                    // a missing target then uses that window's focused Space.
                     let eligibleIDs = Set(regular.compactMap { $0.window.map(ObjectIdentifier.init) })
                     let selectedID = LinkRoutingUnavailableSpace.firstEligibleWindow(
                         ordered: NSApp.orderedWindows.map(ObjectIdentifier.init), eligible: eligibleIDs)
@@ -1136,7 +1024,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         catch { NSLog("Parc session could not be saved: %@", error.localizedDescription) }
     }
 
-    /// Every live page's back/forward entries, written before Quit closes them.
     private func persistTabHistory() {
         guard let archive = store?.tabHistory else { return }
         windows.forEach { $0.persistTabHistory(all: true) }
@@ -1145,10 +1032,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     private var windowSessionRecordScheduled = false
-    /// A window's selection, focus and width changes report here several times
-    /// per tab switch, and NSApp.orderedWindows is a synchronous WindowServer
-    /// round trip, so they coalesce into one record shortly after. Launch,
-    /// window creation, saving and quitting still record at once.
     private func scheduleWindowSessionRecord() {
         guard !windowSessionRecordScheduled else { return }
         windowSessionRecordScheduled = true
@@ -1159,9 +1042,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
-    /// Windows and lifecycle hook (SIDE16): the main store's standard windows'
-    /// records in BrowserWindowRecord.sessionOrder. Quit keeps the records
-    /// taken as it began, before closing windows.
     private func recordWindowSessions() {
         guard sessionRestorationInitialized, !terminationInProgress, !replaySessionActive else { return }
         let order = NSApp.orderedWindows
@@ -1188,20 +1068,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             (NSApp as? ParcApplication)?.finishApprovedTermination(sender)
             return
         }
-        //
-        // ordinary termination. It never stacks another warning sheet.
         if let quitWarning {
-            // Retired first, so its cancellation is not a declined Quit (which
-            // would also cancel a restart that is asking to terminate now).
             self.quitWarning = nil
             quitWarning.cancel()
             continueApplicationTermination(sender)
             return
         }
-        //
-        //
-        // or a restart terminates without it. The warning never displaces an
-        //
         if fromQuitCommand, QuitWarningPreferences.shared.state.isEnabled, let owner = quitWarningOwner,
            let parent = owner.window {
             let warning = ApplicationQuitWarning(preferences: .shared)
@@ -1290,12 +1162,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let pendingPrivate = Array(privateWindowCreations.values)
         privateWindowCreations.removeAll()
         pendingPrivate.forEach { $0.finish(.failure(BrowserScriptError.cancelled)) }
-        // Consent can be declined by an existing replay page. Retain the
-        // welcome's view, cue and draft until shutdown is actually approved.
         trace("command.quit")
         saveSession()
-        // Current CEF requires an asynchronous terminate override: preserve
-        // genuine aggregate consent/drain while its ordinary loop keeps running.
         PCBrowserEngine.requestTermination { [weak self] allowed in
             guard let self else { return }
             if allowed {
@@ -1318,9 +1186,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
-    /// Reads how the previous run on this data ended. Keeps AppKit's window
-    ///
-    /// restore after an update or a crash.
     private func beginLaunchContinuity(root: URL) {
         let defaults = UserDefaults.standard
         if let domain = Bundle.main.bundleIdentifier,
@@ -1332,7 +1197,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         restoresEveryWindow = LaunchContinuity.restoresEveryWindow(previous: previous, build: Self.buildIdentity)
     }
 
-    /// This executable's identity: a new build replaces it.
     private static var buildIdentity: String {
         guard let url = Bundle.main.executableURL,
               let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]) else { return "" }
@@ -1340,14 +1204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     func finishShutdown() {
-        //
         if let store, var continuity = LaunchContinuity.read(in: store.directory), continuity.running {
             continuity.running = false
             continuity.write(in: store.directory)
         }
-        // Completion can synchronously post AppKit's launch notification. Close
-        // the launch gate before resolving callbacks, including unexpected loop
-        // returns that did not pass through the approved termination branch.
         cancelPendingAppKitRestorations()
         quitWarningApprovalPending = false
         quitWarning?.cancel()
@@ -1414,9 +1274,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
 
-    // The queued no-browser request owns its newly created browser. If an
-    // auxiliary window or security dialog is key, wait for that same owner;
-    // never retarget the request to a different restored window.
     private func deliverDeferredNewNote(spaceID: UUID, profileID: UUID) -> Bool {
         guard NSApp.isActive, NSApp.modalWindow == nil else { return false }
         guard store.state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }),
@@ -1426,7 +1283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         if deferredNoteOwnerCreated, deferredNoteOwner == nil {
             deferredNoteOwnerCreated = false
-            return true // The original owner closed; retire the stale request.
+            return true
         }
         if !deferredNoteOwnerCreated {
             if NSApp.keyWindow != nil {
@@ -1480,9 +1337,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if !initialBrowserOpened { restorationLaunch.deferAction(.newWindow); return }
         createStandardWindow(showCommandBar: true)
     }
-    ///
-    /// onCreateNewBlankWindow: the same standard window without New Window's
-    /// command bar (WindowCreationOptions.showCommandBar).
     @objc func newBlankWindow(_ sender: Any?) {
         guard started, !terminationInProgress else { return }
         if !initialBrowserOpened { restorationLaunch.deferAction(.blankWindow); return }
@@ -1503,8 +1357,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             let controller = try makeBrowserWindow(renderInitialSelection: true, preferredProfileID: preferredProfileID,
                                                    restoredRecord: record)
             if !initialBrowserOpened, record == nil { finishInitialBrowserPresentation() }
-            // The retained New Window action always requests a standard window
-            // and its command bar. Startup restoration has a separate entry.
             if showCommandBar { controller.newTab() }
             return controller
         } catch {
@@ -1566,9 +1418,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             guard let self, let controller else { return }
             self.lastActiveWindow = controller
             if controller.hasCommandBarDuringActivation {
-                // Dismissal makes the original browser key before dispatching
-                // its selected menu item. Rebuilding Spaces here increments
-                // the registry revision and invalidates that very selection.
                 spaceRefreshDeferredForCommandBar = true
             } else {
                 spaceRefreshDeferredForCommandBar = false
@@ -1624,8 +1473,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                     guard !page.isClosed,
                           page.profilePath == self.store.independentEngineProfilePath(for: original.profileID) else { return nil }
                 }
-                // The original copy helper reads materialized WebContentState.url,
-                // then SidebarTab.savedURL. A shared model's last URL is not that owner.
                 result.destinations[original.id] = pages.first?.url?.absoluteString ?? original.savedURL
             }
             return result.validates(originals) ? result : nil
@@ -1705,7 +1552,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             controller.shutdownBrowsers()
             self?.windows.removeAll { $0 === controller }
             for other in self?.windows ?? [] where other.store === controller.store { other.retryHeldReturns() }
-            // Private windows' site colours live only until the last one closes.
             if controller.isPrivateBrowsing, self?.windows.contains(where: \.isPrivateBrowsing) == false {
                 TopBarColorClient.privateBrowsing.forgetAll()
                 FairPlayIdentityController.shared.forgetPrivateChoices()
@@ -1716,22 +1562,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             DispatchQueue.main.async { [weak self] in self?.drainInitialActions() }
         }
         windows.append(controller)
-        // Consume only after creation succeeds, before presentation can reenter
-        // startup or save a legacy record without an ID alongside its replacement.
         if let restoredRecord, sessionRestorationInitialized,
            let index = unrestoredWindowRecords.firstIndex(of: restoredRecord) {
             unrestoredWindowRecords.remove(at: index)
         }
         recordWindowSessions()
         scheduleMiniPlayerRefresh()
-        // Incoming WebContents must arrive before the preflight shell appears;
-        // a background disposition must not steal focus or reveal a window.
         if renderInitialSelection && showImmediately { controller.showWindow(nil) }
         return controller
     }
 
-    /// The engine learned a FairPlay site for Safari's identity, whichever page
-    /// asked (docs/fairplay-identity.md).
     func nativeApplicationDidLearnSafariIdentity(forSite site: String, profilePath: String, offTheRecord: Bool) {
         FairPlayIdentityController.shared.didLearn(site, profilePath: profilePath, offTheRecord: offTheRecord)
     }
@@ -1755,8 +1595,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         guard started, !terminationInProgress, !requiresOnboarding, onboarding == nil,
               let profileID = store.profileID(forEnginePath: profilePath),
               store.state.spaces.contains(where: { $0.profileID == profileID }) else { return nil }
-        // Rank only exact-profile owners. An unrelated key/main window never
-        // becomes the owner of a background extension or restored download.
         let candidates = windows.filter {
             !$0.isPrivateBrowsing && $0.canOwnDownloadDialog(for: profileID) && $0.window?.attachedSheet == nil
         }
@@ -1767,9 +1605,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         } else {
             var earlyID: UUID?
             do {
-                // This synchronous native download prompt cannot wait for
-                // AppKit's remaining callbacks. Seed an empty physical owner
-                // during restoration so it cannot claim another saved pane.
                 let seed: BrowserWindowRecord?
                 if !initialBrowserOpened, let space = store.state.spaces.first(where: { $0.profileID == profileID }) {
                     let id = UUID(); earlyID = id; earlyDownloadWindowIDs.insert(id)
@@ -1835,9 +1670,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
 
     @objc private func newTab(_ sender: Any?) {
-        //
-        // Do not forward a command from the import or its native sheets to the
-        // last active browser behind it.
         guard BrowserImportWindow.owning(NSApp.keyWindow) == nil else { return }
         if let education = NSApp.keyWindow?.windowController as? ShortcutEssentialsWindow {
             education.activateCommand("newTab:", event: NSApp.currentEvent)
@@ -1869,8 +1701,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         item.representedObject = target; item.title = target.title
         return target.isValid
     }
-    /// True means this was a plural intent, including a cancelled/stale one.
-    /// Never let a refused selection command fall through to the active page.
     private func performSidebarCommand(_ sender: Any?, kind: SidebarSelectionCommandKind) -> Bool {
         if let target = (sender as? NSMenuItem)?.representedObject as? SidebarSelectionCommandTarget {
             if target.kind == kind { _ = target.perform() }
@@ -1881,8 +1711,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         return true
     }
 
-    /// The settings controller owns Command-W, including when one of its
-    /// sheets is key. Never route that command to a browser behind it.
     private func settingsOwning(_ window: NSWindow?) -> SettingsWindow? {
         var current = window
         while let candidate = current {
@@ -1960,7 +1788,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             item.title = "Close Setup"
             return OnboardingCloseCommand.isAvailable(setup: onboarding.window)
         }
-        // Replay leaves a key browser window's own Close Tab in place.
         if requiresOnboarding || onboarding != nil, requiresOnboarding || item.action != #selector(closeTab) {
             return item.action == #selector(newWindow) || item.action == #selector(newBlankWindow)
                 || item.action == #selector(about) || item.action == #selector(quitMenu)
@@ -2265,8 +2092,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 self.armedReplayRestart = intent.replay
             } catch { self.cancelApplicationRestart(error.localizedDescription); return }
             self.requestApplicationTermination(nil)
-            // An existing system sheet can refuse to begin Quit. Keep the
-            // chooser usable and revoke the already registered waiter.
             if !self.terminationInProgress && self.quitWarning == nil && !self.quitWarningApprovalPending {
                 self.cancelApplicationRestart("Finish the open dialog before restarting Parc.")
             }
@@ -2329,8 +2154,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             applicationSettings = nil
         }
         if applicationSettings == nil {
-            // This is application Settings, with no private Space assignment.
-            // It survives closing the originating private window.
             let settings = SettingsWindow(store: store, spaceID: nil, applicationProfileID: profileID)
             applicationSettings = settings; applicationSettingsProfileID = profileID
             settings.onMoreSettings = { [weak self, weak settings] spaceID, profileID in
@@ -2365,8 +2188,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             } else {
                 opened = owner.showAdvancedSettings(spaceID: spaceID, profileID: profileID, from: settings)
             }
-            // A newly created real window is always presented, including when
-            // a native security gate refuses the page-opening request.
             if owner.window?.isVisible == false { owner.showWindow(nil) }
             return opened
         } catch { presentWindowCreationError(error); return false }
@@ -2393,8 +2214,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         guard let owner = browserInputCommandWindow, !owner.hasSidebarCommandSelection else { return }
         owner.copyCurrentURLAsQuote()
     }
-    /// Reached only when no responder in the chain answers Paste and Match
-    /// Style itself; forwards to the engine page view's own selector.
     @objc func pasteAsPlainText(_ sender: Any?) { WebpageEditCommands.pasteMatchingStyle(from: sender) }
     @objc private func toggleArcToolbar(_ sender: NSMenuItem) { spaceCommandWindow?.toggleToolbar(from: sender) }
     @objc private func toggleSidebar(_ sender: Any?) { browserInputCommandWindow?.toggleSidebar() }
@@ -2539,8 +2358,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         spaceCommandWindow?.registerAppearanceUndo(from: previous, to: value)
     }
     @objc private func printPage(_ sender: Any?) { front?.performPageTool(.print) }
-    ///
-    /// owns `save:`; otherwise an Easel exports and a webpage saves.
     @objc private func savePage(_ sender: Any?) {
         if let editor = NSApp.keyWindow as? EaselImageExporting { return editor.exportEaselImage() }
         if front?.canExportEaselImage == true { front?.exportEaselImage() } else { front?.performPageTool(.save) }
@@ -2594,7 +2411,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         performLibraryMenuCommand { owner in
             guard owner.canExportNotes else { return }
             let profile = owner.activeProfileID
-            // Include drafts in every original window of this profile.
             guard windows.allSatisfy({ $0.prepareNotesForExport(profileID: profile) }),
                   owner.activeProfileID == profile, libraryCommandWindow === owner,
                   owner.canExportNotes else { return }
@@ -2602,7 +2418,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
     }
     @objc private func showDocuments(_ sender: Any?) { performLibraryMenuCommand { $0.showLibrary(.documents) } }
-    //
     @objc private func openInCurrentSpace(_ sender: NSMenuItem) {
         _ = (sender.representedObject as? PeekOpenCommand)?.perform()
     }
@@ -2650,7 +2465,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         PArcDialog.inform(in: window, .init(title: "Couldn’t open Easels", message: error.localizedDescription))
     }
     @objc private func quitMenu(_ sender: Any?) {
-        //
         DispatchQueue.main.async { [weak self] in
             self?.quitCommandPending = true
             NSApp.terminate(sender)
@@ -2669,7 +2483,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private func trace(_ value: @autoclosure () -> String) {
         if arguments.contains("--parc-smoke") { FileHandle.standardError.write(Data(("Parc test: " + value() + "\n").utf8)) }
     }
-    /// Wall-clock milliseconds, comparable with a page's performance.timeOrigin.
     private static func epochMilliseconds() -> String {
         String(format: "%.1f", Date().timeIntervalSince1970 * 1000)
     }
@@ -2704,9 +2517,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if menu === windowCommandsMenu { windowCommandsMenuIsTracking = false }
         if menu === spacesMenu {
             spacesMenuIsTracking = false
-            // Tracking must finish before replacing the item whose action AppKit
-            // is delivering. The next run-loop turn also catches changes deferred
-            // while the original menu targets were frozen.
             DispatchQueue.main.async { [weak self] in self?.refreshSpaceCommands() }
         }
         if menu === clearTodayCommandsMenu { clearTodayMenuIsTracking = false }
@@ -2760,8 +2570,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             item.isHidden = !(front?.prepareFairPlayIdentityMenuItem(item) ?? false)
         }
         if menu === splitCommandsMenu {
-            // Freeze each command's original pane before menu tracking. A
-            // later selection/window change disables it instead of retargeting.
             for item in menu.items {
                 if let expanded = folderDisclosure(for: item.action) {
                     item.representedObject = nil
@@ -2804,7 +2612,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if source == spacesMenuSource, !menu.items.isEmpty { return }
         spacesMenuSource = source
         menu.removeAllItems()
-        // MainMenu 1195/1424/442: New Space…, Edit Theme…, Rename Space (no chord).
         for (title, selector) in [("New Space…", #selector(createSpace)), ("Edit Theme…", #selector(editTheme)),
                                   ("Rename Space", #selector(renameFocusedSpace))] {
             let entry = NSMenuItem(title: title, action: selector, keyEquivalent: "")
@@ -2818,9 +2625,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             changeProfile.representedObject = SpaceMenuSelection(owner: owner, space: space)
         }
         menu.insertItem(changeProfile, at: 3)
-        //
-        //
-        // Space; only the first nine receive Control-digit defaults.
         var numberedIDs = Set<String>()
         for (offset, space) in spaces.enumerated() {
             let entry = NSMenuItem(title: space.name, action: #selector(selectSpace), keyEquivalent: "")
@@ -2869,10 +2673,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             if let equivalentOf { KeyboardShortcuts.shared.registerEquivalent(entry, for: equivalentOf, shortcut: .init(key: key, flags: modifiers)) }
             else { KeyboardShortcuts.shared.register(entry, group: menu.title, bindingID: bindingID, discoverable: false) }
         }
-        //
-        // Toolbar (1095), Reveal Current Tab (778), Duplicate (566), Reset Tab
-        // to Original URL (1348), both Cycle Tab items (871, 172) and both Tab
-        // Switcher items (1018, 207); their shortcuts and Actions still work.
         func hideKeepingShortcut(_ menu: NSMenu) {
             menu.items.last?.isHidden = true; menu.items.last?.allowsKeyEquivalentWhenHidden = true
         }
@@ -2897,11 +2697,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let file = menu("File")
         selectionFileMenu = file; file.delegate = self
         item("New Tab", #selector(newTab), "t", in: file)
-        // MainMenu 240 (addressBar) sits in File.
         item("Open Command Bar", #selector(focusAddress), "l", in: file)
         item("New Window", #selector(newWindow), "n", in: file)
         item("New Incognito Window", #selector(newIncognitoWindow), "n", in: file, modifiers: [.command, .shift])
-        // MainMenu 1485: binding newBlankWindow, Control–Command–N, no priority.
         item("Blank Window", #selector(newBlankWindow), "n", in: file, modifiers: [.command, .control])
         item("New Space…", #selector(createSpace), in: file)
         item("New Profile", #selector(newProfile), in: file)
@@ -2914,8 +2712,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         item("Close Window", #selector(closeWindow), "w", in: file, modifiers: [.command, .shift])
         item("Archive Tab", #selector(closeTab), "w", in: file)
         item("Reopen Last Closed Tab", #selector(restoreTab), "t", in: file, modifiers: [.command, .shift])
-        // Shipped MainMenu order and titles (objects 602, 263/1242, 1207, 901):
-        // the page actions close the File menu, after Close Window/Archive Tab.
         file.addItem(.separator())
         item("Share…", #selector(sharePage), in: file)
         item("Capture Portion…", #selector(capturePage), in: file)
@@ -2940,10 +2736,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 item("Copy URL as Quote", #selector(copyCurrentURLAsQuote), "c", in: edit, modifiers: [.command, .control, .shift])
             }
             if selector == "paste:" {
-                // MainMenu object 740 (binding pasteAndMatchStyle, no priority)
-                //
-                //
-                // targeted so native text keeps its own pasteAsPlainText:.
                 let style = NSMenuItem(title: "Paste and Match Style", action: WebpageEditCommands.pasteMatchingStyle, keyEquivalent: "v")
                 style.keyEquivalentModifierMask = [.command, .shift]
                 edit.addItem(style)
@@ -2960,9 +2752,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let findMenu = NSMenu(title: "Find"); findMenu.delegate = self; findCommandsMenu = findMenu
         let findRoot = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
         findRoot.submenu = findMenu; edit.addItem(findRoot)
-        // Shipped MainMenu order and tags: 799 (1), 822 (12), 1254 (2), 487 (3),
-        // 926 (7), 543 (none). Find and Replace and Jump to Selection are
-        // available only while a Note editor owns the responder chain.
         item("Find…", #selector(find), "f", in: findMenu)
         item("Find and Replace", #selector(findAndReplace), "f", in: findMenu, modifiers: [.command, .option])
         item("Find Next", #selector(findNext), "g", in: findMenu)
@@ -2980,7 +2769,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         item("Show / Hide Sidebar", #selector(toggleSidebar), "s", in: view)
         item("Show Toolbar", #selector(toggleArcToolbar), "d", in: view, modifiers: [.command, .shift])
         hideKeepingShortcut(view)
-        // MainMenu 778 (focusSidebar) sits in View.
         item("Reveal Current Tab", #selector(focusSidebar), " ", in: view, modifiers: [.control])
         hideKeepingShortcut(view)
         view.addItem(.separator())
@@ -2992,16 +2780,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         item("Clear Cache and Refresh", #selector(clearCacheAndRefresh), in: view)
         view.items.last?.toolTip = "Reload this page without using cached resources."
         item("Clear Browsing Data…", #selector(clearBrowsingData), in: view)
-        //
-        // Center's extension picker (WEB14); a hidden shortcut, not a command.
         alternate("Open Extensions", #selector(openExtensions), "e", in: view, modifiers: .command)
         view.addItem(.separator())
         item("Add Split View", #selector(split), "=", in: view, modifiers: [.control, .shift])
         item("Close this Split Pane", #selector(closeSplitPane), "-", in: view, modifiers: [.control, .shift])
         item("Separate Page from Split View", #selector(separateSplitPane), in: view)
         item("Expand Current Split", #selector(expandSplitPane), in: view)
-        //
-        // commands for numbered and adjacent pane focus (not tab cycling).
         for (title, selector, key) in [
             ("Switch to Split View 1", #selector(firstSplitPane), "1"),
             ("Switch to Split View 2", #selector(secondSplitPane), "2"),
@@ -3023,7 +2807,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         view.addItem(.separator())
         item("Enter Reader", #selector(toggleReaderMode), in: view)
         item("Cast", #selector(castPage), in: view)
-        // Shown only for a site with an identity choice (docs/fairplay-identity.md).
         item("Use Chrome Identity for This Site", #selector(toggleFairPlayIdentity), in: view)
         view.items.last?.toolTip = "Sites that play video through Apple FairPlay offer it only to Safari, so Parc shows them Safari's identity."
         view.items.last?.isHidden = true
@@ -3048,14 +2831,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         }
         view.addItem(.separator())
         item("Enter Full Screen", #selector(toggleFullScreen), "f", in: view, modifiers: [.command, .control])
-        //
-        // no binding ID, so it stays outside the editable registry.
         let globeFullScreen = NSMenuItem(title: "Toggle Full Screen", action: #selector(toggleFullScreen), keyEquivalent: "f")
         globeFullScreen.keyEquivalentModifierMask = .function; globeFullScreen.target = self
         globeFullScreen.isHidden = true; globeFullScreen.allowsKeyEquivalentWhenHidden = true
         view.addItem(globeFullScreen)
-        // Registered for Shortcuts/Actions/custom keys; native Escape retains
-        // AppKit text/IME and the original renderer acknowledgment owner.
         item("Exit", #selector(exit), "\u{1b}", in: view, modifiers: [])
         view.items.last?.isHidden = true
         view.items.last?.allowsKeyEquivalentWhenHidden = true
@@ -3063,34 +2842,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         spacesMenu = spaces; spaces.delegate = self; menuNeedsUpdate(spaces)
         let tabs = menu("Tabs")
         clearTodayCommandsMenu = tabs; tabs.delegate = self
-        // MainMenu 959 (newFolder) sits in Tabs.
         item("New Folder…", #selector(createFolder), in: tabs)
         item("Pin / Unpin Tab", #selector(togglePin), "d", in: tabs)
-        // MainMenu 566 (duplicate) and 752 (revealTabInSidebar): Tabs, no chord.
-        // Duplicate has a binding ID but no arcTypeTravelID: menu/Shortcuts only.
         item("Duplicate", #selector(duplicateCurrentItem), in: tabs, discoverable: false)
         hideKeepingShortcut(tabs)
         item("Reveal Tab in Sidebar", #selector(revealCurrentTabInSidebar), in: tabs)
-        // MainMenu 1495 openTabIn: Command-O / Use Both, no Actions identity.
         item("Open Peek in Current Space", #selector(openInCurrentSpace), "o", in: tabs, discoverable: false)
         tabs.items.last?.isHidden = true
-        // Validate against the real modal even after an earlier absent context.
         tabs.items.last?.allowsKeyEquivalentWhenHidden = true
         item("Reset Tab to Original URL", #selector(resetTab), in: tabs)
         hideKeepingShortcut(tabs)
         item("Clear Today", #selector(clearToday), "k", in: tabs, modifiers: [.command, .shift])
         item("Reset all tabs in this Space", #selector(resetVisibleSavedTabs), in: tabs)
-        //
-        // without a default chord. Use the same genuine menu registry owner.
         item("Rename Current Tab…", #selector(renameCurrentItem), in: tabs)
         tabs.items.last?.isHidden = true
         tabs.items.last?.allowsKeyEquivalentWhenHidden = true
         item("Next Tab", #selector(nextTab), "\u{f701}", in: tabs, modifiers: [.command, .option])
         item("Previous Tab", #selector(previousTab), "\u{f700}", in: tabs, modifiers: [.command, .option])
-        //
-        //
-        // the hidden items' equivalents), so they are absent from Shortcuts and
-        // their chords reach the page. Saved custom bindings stay in the file.
         if TabSelectionHistory.isEnabled {
             item("Cycle Tab Forward", #selector(cycleTabForward), "\u{f703}", in: tabs, modifiers: [.command, .control])
             hideKeepingShortcut(tabs)
@@ -3101,23 +2869,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         hideKeepingShortcut(tabs)
         item("Switch to Previous Recent Tab", #selector(cycleToPreviousRecentTab), "\t", in: tabs, modifiers: [.control, .shift])
         hideKeepingShortcut(tabs)
-        //
-        // nextTab/previousTab on the same positional actions, with symbolic
-        // Command–} / Command–{ and no priority.
         alternate("Next Tab (Alternate)", #selector(nextTab), "}", in: tabs, modifiers: .command, bindingID: "nextTab")
         alternate("Previous Tab (Alternate)", #selector(previousTab), "{", in: tabs, modifiers: .command, bindingID: "previousTab")
-        // MainMenu 134/164 (collapseAllFolders/expandAllFolders) live in Tabs with
-        // no default chord. Keep their real menu identities available to command
-        // search and custom shortcuts without conflating them with the newer
-        // Collapse Pinned Tabs menu section.
         for (title, selector) in [("Collapse All Folders", #selector(collapseAllFolders)),
                                   ("Expand All Folders", #selector(expandAllFolders))] {
             item(title, selector, in: tabs)
             tabs.items.last?.isHidden = true
             tabs.items.last?.allowsKeyEquivalentWhenHidden = true
         }
-        //
-        // Command-digit 1…9, binding IDs item1…item9, one switchToTab: action.
         for number in 1...9 {
             let title = number == 9 ? "Go to last Sidebar Item" : "Go to Sidebar Item \(number)"
             let entry = NSMenuItem(title: title, action: #selector(goToSidebarItem), keyEquivalent: String(number))
@@ -3127,8 +2886,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             KeyboardShortcuts.shared.register(entry, group: tabs.title, bindingID: NumberedTarget.itemBindingID(number))
         }
         let archiveMenu = menu("Archive")
-        // Shipped MainMenu Archive objects 946/361/61/1447: page history
-        // navigation opens this menu, above the history/archive views.
         item("Go Back", #selector(goBack), "[", in: archiveMenu)
         alternate("Go Back (Alternate)", #selector(goBackArrow), "\u{f702}", in: archiveMenu,
                   modifiers: .command, bindingID: "goBack_Alternate")
@@ -3136,12 +2893,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         alternate("Go Forward (Alternate)", #selector(goForwardArrow), "\u{f703}", in: archiveMenu,
                   modifiers: .command, bindingID: "goForward_Alternate")
         archiveMenu.addItem(.separator())
-        // MainMenu 1144/935/1171 order and titles.
         item("View History", #selector(history), "y", in: archiveMenu)
         item("View Archive", #selector(archive), in: archiveMenu)
         archiveMenu.addItem(.separator())
         item("Clear Archive", #selector(clearArchive), in: archiveMenu)
-        // MainMenu Extensions menu (978/1232): MainMenuAction 75/74.
         let extensions = menu("Extensions")
         item("Manage Extensions…", #selector(manageExtensions), in: extensions)
         item("Add Extension…", #selector(addExtension), in: extensions)
@@ -3155,21 +2910,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let minimize = NSMenuItem(title: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         window.addItem(minimize); NSApp.windowsMenu = window
         KeyboardShortcuts.shared.register(minimize, group: "Window")
-        // MainMenu 1726: standard Zoom, no binding ID.
         window.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: ""))
         window.addItem(.separator())
-        // MainMenu Window records 451/150/668/1516: the Library destinations.
         item("Manage Spaces…", #selector(openSpaceManager), in: window)
         item("View Library", #selector(viewLibrary), "l", in: window, modifiers: [.command, .shift])
         item("View Downloads", #selector(downloads), "j", in: window, modifiers: [.command, .shift])
         item("View Media", #selector(captureLibrary), in: window)
         item("View Easels & Notes", #selector(showDocuments), in: window)
         window.addItem(.separator())
-        // MainMenu 1732: standard Bring All to Front, no binding ID.
         window.addItem(NSMenuItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: ""))
         let help = menu("Help")
         item("Essential Keyboard Shortcuts", #selector(showEssentialShortcuts), in: help)
-        // MainMenu Help order: Release Notes follows Essential Keyboard Shortcuts.
         item("Release Notes", #selector(showReleaseNotes), in: help)
         NSApp.helpMenu = help
         NSApp.mainMenu = main

@@ -1,8 +1,6 @@
 import AppKit
 import QuartzCore
 
-///
-/// The shared 356×508 editor is unchanged; this chrome is setup-only.
 enum OnboardingThemeEditorLayout {
     static let editorSize = NSSize(width: 356, height: 508)
     static let scale: CGFloat = 0.83
@@ -13,12 +11,7 @@ enum OnboardingThemeEditorLayout {
     static let appearDuration: TimeInterval = 0.1
     static let spaceNameHeight: CGFloat = 36
     static let emptyStateText = "Click to pick a color"
-    ///
-    /// the stock 356-wide editor minus 8-point insets.
     static let colorPadSize: CGFloat = 340
-    ///
-    /// emphasized false. The representable then applies the recovered 16-point
-    ///
     static let wrapMaterial = NSVisualEffectView.Material.popover
     static let wrapMaterialState = NSVisualEffectView.State.followsWindowActiveState
     static let wrapBlendingMode = NSVisualEffectView.BlendingMode.withinWindow
@@ -33,13 +26,9 @@ enum OnboardingThemeEditorLayout {
                width: visualSize.width, height: visualSize.height)
     }
 
-    /// `render()` snapshots whether the chrome is still in the content column
-    /// before tearing that column down. Only a first attach plays the fade.
     static func shouldAnimateAppearance(alreadyVisible: Bool) -> Bool { !alreadyVisible }
 }
 
-///
-/// action; Parc keeps the existing draft Space name here.
 final class OnboardingSpaceNameField: NSView, NSTextFieldDelegate {
     let field = NSTextField()
     var themeTextColor: NSColor? { didSet { updateColors() } }
@@ -90,12 +79,7 @@ final class OnboardingSpaceNameField: NSView, NSTextFieldDelegate {
     }
 }
 
-///
-///
-/// so the parent NewSetupView chrome owns the drop shadow.
 final class OnboardingThemeEditorPopoverBackground: NSView {
-    ///
-    /// stack a second popover material on the stock editor.
     let translucency = NSVisualEffectView()
     override var isFlipped: Bool { true }
 
@@ -126,8 +110,6 @@ final class OnboardingThemeEditorPopoverBackground: NSView {
         translucency.frame = bounds
     }
 
-    ///
-    /// then a configured flag. Parent chrome supplies black 0.25 / 30 / y 7.
     func applyClearShadow() {
         layer?.shadowColor = NSColor.clear.cgColor
         layer?.shadowOpacity = 0
@@ -137,8 +119,6 @@ final class OnboardingThemeEditorPopoverBackground: NSView {
     }
 }
 
-///
-///
 final class OnboardingThemeEditorHitRegion: NSView {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
@@ -150,8 +130,6 @@ final class OnboardingThemeEditorHitRegion: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func mouseDown(with _: NSEvent) {
-        // Recovered MouseDownView only super-inits; swallowing the click here
-        // keeps the content-column padding from falling through the card.
     }
 }
 
@@ -159,14 +137,10 @@ private final class OnboardingThemeEditorComposition: NSView {
     override var isFlipped: Bool { true }
 }
 
-/// Setup presentation of `SpaceStyleEditorView`: popover fill, 16-point continuous
-/// corners, black 0.25/30/7 shadow, then 0.83 scale around center.
 final class OnboardingThemeEditorChrome: NSView {
     let editor: SpaceThemeEditorView
     let popoverBackground = OnboardingThemeEditorPopoverBackground(frame: .zero)
     let hitRegion = OnboardingThemeEditorHitRegion(frame: .zero)
-    /// NewSetupView's shadow/scale host. Frame is the 0.83 visual size; bounds
-    /// stay the unscaled 356×508 editor so `shadowPath` is not scaled.
     let composition: NSView = OnboardingThemeEditorComposition(frame: .zero)
     override var isFlipped: Bool { true }
 

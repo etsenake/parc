@@ -1,14 +1,11 @@
 import AppKit
 
-// Captured at pointer-down, so a delayed press cannot act on a different tab.
 struct NavigationControlInteraction {
     var activate: (Bool) -> Void
     var showHistory: ((NSView) -> Void)?
 }
 
 
-// One physical press owns one original navigation interaction. A history menu
-// consumes the press before AppKit finishes tracking the button's mouse-up.
 @MainActor
 final class NavigationControlPress {
     static let historyHoldDuration: TimeInterval = 0.3

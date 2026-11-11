@@ -1,8 +1,5 @@
 import AppKit
 
-///
-/// browser's own two colours, deep one first. Browsers not listed take the
-/// two strongest hues of their icon.
 @MainActor
 enum BrowserImportTheme {
     static let brands: [String: (UInt32, UInt32)] = [
@@ -24,9 +21,6 @@ enum BrowserImportTheme {
     }
     private static var sampled: [URL: BrowserImportWash] = [:]
 
-    /// The icon's two strongest hues, weighted toward saturated mid tones and
-    /// at least 40° apart, as deep and bright colours; one hue pairs with its
-    /// neighbour 40° on.
     static func pair(sampling icon: NSImage) -> (UInt32, UInt32)? {
         let side = 32
         var rect = NSRect(x: 0, y: 0, width: side, height: side)
@@ -62,9 +56,6 @@ enum BrowserImportTheme {
     }
 }
 
-///
-///
-///
 @MainActor
 enum BrowserImportArcIcon {
     static func icon(appURL: URL) -> NSImage {

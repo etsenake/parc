@@ -1,7 +1,5 @@
 import AppKit
 
-/// A one-use return from an original Peek responder. It does not choose a page,
-/// capture a key, or retain a window/control after its owner has gone away.
 @MainActor
 final class PeekFocusReturn {
     private weak var window: NSWindow?
@@ -18,9 +16,6 @@ final class PeekFocusReturn {
         observation = window.observe(\.firstResponder, options: [.new]) { [weak self] window, _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                // AppKit can temporarily vacate a disappearing view. A new
-                // concrete responder, including another Peek control or text
-                // editor, owns focus even if it later moves away again.
                 if let current = window.firstResponder,
                    current !== window, current !== self.responder {
                     self.invalidated = true
@@ -31,8 +26,6 @@ final class PeekFocusReturn {
 
     func cancel() { consumed = true; observation = nil }
 
-    /// The caller revalidates the original page/session and native key/security
-    /// gate. Never activates a window, guesses a replacement, or retries later.
     @discardableResult
     func perform(in original: NSWindow, ownerIsAvailable: () -> Bool,
                  action: (NSResponder?) -> Void) -> Bool {

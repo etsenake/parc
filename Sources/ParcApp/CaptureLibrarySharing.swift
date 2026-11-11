@@ -1,7 +1,5 @@
 import AppKit
 
-/// Library's recovered payload differs from the active capture palette:
-/// Messages attaches the image and source-address text; AirDrop sends the image.
 @MainActor
 struct CaptureLibrarySharePayload {
     enum Destination: CaseIterable {

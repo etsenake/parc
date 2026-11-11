@@ -23,8 +23,6 @@ final class LinksSettingsView: NSView {
         open.isBordered = true; open.bezelStyle = .rounded; open.contentTintColor = .labelColor
         open.frame = NSRect(x: 360, y: 22, width: 184, height: 30)
         group.addSubview(open); addSubview(group)
-        //
-        // inset divider, trailing switches and the pinned/favorite note.
         let explanation = NSTextField(wrappingLabelWithString: "Peek is a way to preview a link without opening a new tab. It’s perfect for quickly looking at a link from an email, news article, or tweet.")
         explanation.font = .systemFont(ofSize: 13)
         explanation.frame = NSRect(x: 74, y: 20, width: 536, height: 38)
@@ -80,8 +78,6 @@ final class LinksSettingsView: NSView {
     }
 }
 
-//
-// Persistence and conflict recovery remain explicit Parc adaptations.
 @MainActor
 final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextFieldDelegate, NSMenuDelegate {
     private let browserStore: BrowserStore
@@ -373,9 +369,6 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
                     addChoice(profile.name + " · Most Recent Space", .profile(profile.id))
                     for space in spaces { addChoice(profile.name + " · " + space.name, .space(space.id)) }
                 }
-                //
-                // Spaces, so a rule whose Space was removed keeps it and shows
-                // no title; nothing rewrites the rule.
                 if !choices.contains(rule.destination) {
                     addChoice("", rule.destination); popup.lastItem?.isEnabled = false
                     popup.setAccessibilityValueDescription(destinationTitle(rule.destination))

@@ -1,33 +1,20 @@
 import Foundation
 
-///
-///
-/// preferred maximum rank per archetype (`ASE2.PreferredMaxRankConfig`
-///
-/// arrive in a remote `StorableASEConfiguration.json`, so the weights, caps
-/// and match tiers here are Parc's own.
 enum CommandBarRanking {
     enum Archetype: Int, Comparable {
-        // Dedup keeps the first of these that shares a key.
         case tab, document, typeTravel, chromium, topDomain
         static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
     }
     struct Candidate {
         let archetype: Archetype
         let key: String
-        /// Texts the query is matched against; Chromium rows are already matched.
         var texts: [String] = []
-        /// Position in Chromium's published, relevance-ordered result.
         var chromiumRank = 0
-        /// The page's URL key, when the dedup key is its title and host.
         var urlKey: String? = nil
-        ///
         var bump: Double = 0
     }
     static let limit = 15
     static let caps: [Archetype: Int] = [.tab: 5, .document: 3, .typeTravel: 5, .chromium: 8, .topDomain: 1]
-    ///
-    /// sites dedup rows by title and host rather than by URL.
     static let titleAndHostSites: Set<String> = ["figma.com", "maps.google.com", "notion.so", "app.notion.com", "zoom.us",
         "opentable.com", "zillow.com", "github.com", "app.mode.com", "console.cloud.google.com"]
 
@@ -38,13 +25,10 @@ enum CommandBarRanking {
         return CommandBarRowDiff.pageKey(url)
     }
 
-    /// A query normalized once per ranking rather than once per candidate.
     struct Query {
         let text: String
         let words: [String]
-        /// A word with punctuation in it can never start a word of a text.
         let wordsAreAlphanumeric: Bool
-        /// The query's lowercased bytes when it is plain ASCII.
         let asciiText: [UInt8]?
         let asciiWords: [[UInt8]]
         init(_ query: String) {
@@ -56,11 +40,6 @@ enum CommandBarRanking {
         }
     }
     static func match(_ query: String, _ texts: [String]) -> Double { match(Query(query), texts) }
-    /// 1 exact, 0.9 a text starts with the query, 0.7 every query word starts
-    /// a word (a run of letters and numbers), 0.4 every word appears anywhere,
-    /// else no match. Every open tab's texts go through this on each update
-    /// while typing, so words are found in place rather than by splitting
-    /// each text into new strings.
     static func match(_ query: Query, _ texts: [String]) -> Double {
         let q = query.text
         guard !q.isEmpty else { return 0 }
@@ -79,10 +58,6 @@ enum CommandBarRanking {
         }
         return best
     }
-    /// `match` for one text when it and the query are plain ASCII (most titles
-    /// and URLs), compared byte by byte without lowercasing into a new string;
-    /// nil sends the text through the general path. A carriage return is one
-    /// character with a following newline, so it takes the general path too.
     private static func asciiMatch(_ query: Query, _ raw: String) -> Double? {
         guard let q = query.asciiText else { return nil }
         var raw = raw
@@ -124,20 +99,14 @@ enum CommandBarRanking {
         return false
     }
 
-    /// Indices into `candidates`, best first.
     static func rank(_ candidates: [Candidate], query: String) -> [Int] {
         var kept: [String: Int] = [:]
-        // A top domain is also covered by a row for its page under a
-        // title-and-host key.
         let pages = Set(candidates.filter { $0.archetype != .topDomain }.compactMap(\.urlKey))
         for (index, candidate) in candidates.enumerated() {
             if candidate.archetype == .topDomain, pages.contains(candidate.key) { continue }
             if let other = kept[candidate.key], candidates[other].archetype <= candidate.archetype { continue }
             kept[candidate.key] = index
         }
-        // Dedup can replace Chromium's default with an existing tab. That
-        // surviving row inherits the default's admission and preferred rank;
-        // otherwise a search for "google.com" beats the www.google.com tab.
         let defaultIndex = candidates.first(where: { $0.archetype == .chromium && $0.chromiumRank == 0 })
             .flatMap { kept[$0.key] }
         let prepared = Query(query)
@@ -161,9 +130,6 @@ enum CommandBarRanking {
             let a = candidates[lhs.index].archetype, b = candidates[rhs.index].archetype
             return a != b ? a < b : lhs.index < rhs.index
         }
-        //
-        // (“New Easel” for “new eas”, “Archive Tab” for “arc”); Chromium's
-        // default result keeps the next row, its preferred maximum rank.
         var order: [Int] = []
         var counts: [Archetype: Int] = [:]
         func take(_ index: Int) {
@@ -180,8 +146,6 @@ enum CommandBarRanking {
         return order
     }
 
-    ///
-    /// profile's most visited sites, from its local visit history.
     struct Domain: Equatable {
         let host: String
         let url: URL
@@ -206,8 +170,6 @@ enum CommandBarRanking {
     }
 }
 
-/// A local Note or Easel offered as a result even when no sidebar tab holds
-///
 struct CommandBarDocument: Equatable {
     enum Kind: Equatable { case note, easel }
     let kind: Kind

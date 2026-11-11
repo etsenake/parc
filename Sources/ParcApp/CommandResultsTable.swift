@@ -3,9 +3,6 @@ import AppKit
 final class CommandResultsTable: NSTableView {
     var onKey: ((NSEvent) -> Bool)?
 
-    /// AppKit's inset table style adds horizontal margins outside its column.
-    /// Fit the entire document to the clip view, not just the column, so a
-    /// sideways gesture cannot reveal blank space beside the suggestions.
     func fit(in scroll: NSScrollView, rowCount: Int) {
         guard let column = tableColumns.first else { return }
         let height = CGFloat(rowCount) * rowHeight
@@ -21,9 +18,6 @@ final class CommandResultsTable: NSTableView {
         }
     }
 
-    /// Query results wrap; the separate empty-query/sidebar cursor does not.
-    /// Read the live table snapshot so a provider publication cannot leave an
-    /// index into a previous result list. Activation stays with CommandBar.
     func keyboardSelectionRow(moving delta: Int, wrapping: Bool) -> Int? {
         guard numberOfRows > 0, delta == -1 || delta == 1 else { return nil }
         let last = numberOfRows - 1

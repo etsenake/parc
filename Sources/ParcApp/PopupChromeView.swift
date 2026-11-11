@@ -1,7 +1,5 @@
 import AppKit
 
-// Native popup chrome uses the same controls and theme as the regular shell.
-// Chromium owns the destination type; this view has no page or navigation copy.
 final class PopupChromeView: NSView {
     var onNavigation: ((NavigationControlKind) -> NavigationControlInteraction?)?
     var onAddress: (() -> Void)? { didSet { address.actionBlock = onAddress } }
@@ -30,8 +28,6 @@ final class PopupChromeView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         back.prepareInteraction = { [weak self] in self?.onNavigation?(.back) }
-        // LittleBrowser's Back label renders Feather U+E92F at 16 points
-        //
         back.image = SidebarIconCatalog.featherImage(0xE92F, size: 16)
         addSubview(addressBackground)
         for button in [back, address, extensions, copy] as [NSButton] { addSubview(button) }
@@ -47,7 +43,6 @@ final class PopupChromeView: NSView {
         extensions.symbol = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 16, weight: .medium))
         extensions.isHidden = true
-        //
         LiveShortcutToolTip.set(extensions, "Extensions", anchor: .bottom)
         updateCopyTooltip()
         applyPalette()
@@ -55,7 +50,6 @@ final class PopupChromeView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func layout() {
         super.layout()
-        // Leave the standard macOS close/minimize/zoom controls unobstructed.
         let start: CGFloat = 70
         back.frame = NSRect(x: start, y: 8, width: 31, height: 31)
         let next = start + (back.isHidden ? 0 : 32)
@@ -73,20 +67,14 @@ final class PopupChromeView: NSView {
     }
     func update(url: URL?, canGoBack: Bool, loading: Bool) {
         back.isEnabled = canGoBack
-        // LittleBrowserToolbar builds this button only for an item that can
-        //
         if back.isHidden == canGoBack { back.isHidden = !canGoBack; needsLayout = true }
         let hideCopy = url == nil
         if copy.isHidden != hideCopy { copy.isHidden = hideCopy; needsLayout = true }
         copy.refreshAvailability()
-        //
-        //
         let fontSize: CGFloat = loading ? 11 : 13
         if addressLabel.font?.pointSize != fontSize {
             addressLabel.font = .systemFont(ofSize: fontSize); needsLayout = true
         }
-        // Read the current engine URL; a requested destination or an opener
-        // cannot supply the popup's displayed origin.
         addressLabel.stringValue = url?.host ?? url?.absoluteString ?? "Loading…"
         address.toolTip = url?.absoluteString
         address.setAccessibilityLabel(url.map { "Address: " + $0.absoluteString } ?? "Address")
@@ -143,13 +131,10 @@ final class PopupChromeView: NSView {
     func updateCopyTooltip() { LiveShortcutToolTip.set(copy, "Copy URL", commandID: "copyCurrentURL:", anchor: .bottom) }
 }
 
-/// The address button remains the input/AX owner while its centered label
-/// yields equal space around the trailing Copy control.
 final class PopupAddressLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-///
 final class PopupAddressBackground: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

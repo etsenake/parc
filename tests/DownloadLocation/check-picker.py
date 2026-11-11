@@ -28,7 +28,7 @@ def between(text, start, end):
 helpers = (between(settings, "    @discardableResult\n    private func label(", "    private func place(")
            + between(settings, "    private func place(", "\n    }\n") + "\n    }\n")
 card = between(settings, "        let downloads = group(", "\n\n") + "\n"
-group_view = between(presentation, "final class SettingsGroupView: LayoutView {", "/// Passive glyph;")
+group_view = between(presentation, "final class SettingsGroupView: LayoutView {", "@MainActor\nfinal class SettingsSymbolBadge")
 for use in ("label(\"Download location\", in: downloads,", "place(downloadLocationPicker, in: downloads,",
             "width: DownloadLocationPicker.width", "place(downloadHelp, in: downloads,", "place(downloadRetry, in: downloads,"):
     assert use in card, f"The Downloads card no longer lays out: {use}"
@@ -69,9 +69,7 @@ for use in (
         "                _ = try PCNativeBrowserApplication.setPromptForDownload(false, for: chosen)\n"
         "                self.refreshDownloadPreferences()\n"
         "            } catch { self.reportDownloadPreferenceError(error) }",
-        "panel?.cancel(nil)\n        // The retired callback never refreshes, so restore the picker's\n"
-        "        // items (emptied while the panel ran) to the effective value here.\n"
-        "        if panel != nil { renderDownloadLocation() }",
+        "panel?.cancel(nil)\n        if panel != nil { renderDownloadLocation() }",
         "if selectedPane != pane {\n            cancelDownloadFolderSelection()",
         "if displayedProfileID != selectedProfileID { cancelDownloadFolderSelection() }",
         "if removing { cancelDownloadFolderSelection() }",

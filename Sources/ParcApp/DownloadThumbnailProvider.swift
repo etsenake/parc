@@ -1,9 +1,6 @@
 import AppKit
 import QuickLookThumbnailing
 
-/// The Library owns the cache; a file path alone is never a cache identity.
-/// Only policy-approved completed files enter Quick Look, and no directory is
-/// enumerated or file decoded synchronously on the main thread.
 @MainActor final class DownloadThumbnailProvider {
     struct Key: Hashable {
         let item: DownloadLibraryIdentity
@@ -37,7 +34,6 @@ import QuickLookThumbnailing
             guard let self, self.generation == originalGeneration,
                   self.pending[token] != nil else { return }
             guard valid() else { self.cancel(token); return }
-            // Validation can call the original native file owner and reenter.
             guard self.generation == originalGeneration, self.pending[token] != nil else { return }
             let image: NSImage?
             switch delivery {
@@ -52,7 +48,6 @@ import QuickLookThumbnailing
             }
             completion(image)
         }
-        // An injected/native completion may already have finished synchronously.
         if pending[token] != nil { pending[token] = cancel } else { cancel() }
         return token
     }
@@ -73,8 +68,6 @@ import QuickLookThumbnailing
     }
 }
 
-/// File icon and low-quality thumbnail are independent original-file producers.
-/// The icon may appear first; a late icon never overwrites a real thumbnail.
 @MainActor final class DownloadArtworkRequest {
     typealias ImageLoader = @MainActor (URL, @escaping @MainActor (NSImage?) -> Void) -> (() -> Void)
     private let url: URL

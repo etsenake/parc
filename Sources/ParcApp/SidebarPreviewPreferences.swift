@@ -20,15 +20,12 @@ enum SidebarPreviewPreference: String, CaseIterable {
     }
 
     func isEnabled(in defaults: UserDefaults) -> Bool {
-        // Keep existing installations and their original fallback intact.
         defaults.object(forKey: rawValue) as? Bool ?? true
     }
 
     func setEnabled(_ enabled: Bool, in defaults: UserDefaults) {
         guard isEnabled(in: defaults) != enabled else { return }
         defaults.set(enabled, forKey: rawValue)
-        // Reconcile every live preview and sidebar action before returning to
-        // the event loop. UserDefaults also supplies its ordinary notification.
         NotificationCenter.default.post(name: Self.didChangeNotification, object: defaults)
     }
 }

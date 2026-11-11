@@ -1,7 +1,5 @@
 import AppKit
 
-/// Styling is independent of the original document's native capture lease.
-///
 struct PortraitCaptureOptions {
     enum Background: Int, CaseIterable { case color, page, desktop }
     var background: Background
@@ -102,8 +100,6 @@ enum PortraitCaptureRenderer {
         let rounded = CGPath(roundedRect: frame, cornerWidth: 10, cornerHeight: 10, transform: nil)
         context.addPath(rounded); context.setStrokeColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.6))
         context.setLineWidth(1); context.strokePath()
-        // The original applies shadow to the border, then fills the translucent
-        // frame and clips the source image to a smaller six-point radius.
         context.saveGState()
         context.setShadow(offset: CGSize(width: 0, height: -4), blur: 16, color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1))
         context.addPath(rounded); context.strokePath()
@@ -131,7 +127,6 @@ enum PortraitCaptureRenderer {
             context.setBlendMode(blend); context.drawLinearGradient(gradient, start: from, end: to, options: [])
         }
         func shifted(_ delta: CGFloat) -> NSColor {
-            //
             let r = rgb.redComponent, g = rgb.greenComponent, b = rgb.blueComponent
             let high = max(r, g, b), low = min(r, g, b), difference = high - low
             let lightness = (high + low) / 2
@@ -187,8 +182,6 @@ enum PortraitCaptureRenderer {
         return light >= 0.75 ? NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.45) : NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.75)
     }
     private static func drawWatermark(in context: CGContext, center: CGPoint, color: NSColor) {
-        //
-        // never bundled or read. The optional bottom-center mark keeps that slot.
         let ink = watermarkInk(on: color)
         let word = NSAttributedString(string: "Parc", attributes: [.font: NSFont.systemFont(ofSize: 28, weight: .semibold), .foregroundColor: ink])
         let mark = ParcBrandMark.image(.monochrome)
@@ -203,8 +196,6 @@ enum PortraitCaptureRenderer {
     }
 }
 
-/// A retained styling value, including the captured page tint and same-screen
-/// wallpaper. Editing options does not mutate the already committed output.
 @MainActor
 struct PortraitCaptureComposition {
     var options: PortraitCaptureOptions
@@ -219,10 +210,6 @@ struct PortraitCaptureComposition {
     }
 }
 
-///
-/// 8-point stack spacing, a 32-point SkeuPrimaryButtonStyle capture control,
-/// a 140×96 preview and the color/website/desktop row. In-window placement and
-/// Apply Frame remain the unified post-capture adaptation.
 enum PortraitCaptureLayout {
     static let padding: CGFloat = 10
     static let spacing: CGFloat = 8
@@ -245,8 +232,6 @@ enum PortraitCaptureLayout {
     }
 }
 
-/// The recovered compact control arrangement stays in the original capture
-/// overlay, so Escape and Apply preserve the user's unified reversible editor.
 @MainActor
 final class PortraitCaptureView: NSView {
     var onCapture: (() -> Void)?
@@ -399,8 +384,6 @@ final class PortraitCaptureView: NSView {
     }
     @objc private func capture() {
         previewTask?.cancel(); previewTask = nil
-        // Commit the exact current control value even if its throttled preview
-        // is waiting. The production compositor owns final validation/encoding.
         if captureButton.isEnabled { onCapture?() }
     }
     override func cancelOperation(_ sender: Any?) { onCancel?() }
@@ -420,8 +403,6 @@ final class PortraitCaptureView: NSView {
         options.background = .color; options.fraction = slider.doubleValue
         options.saveColor(to: defaults); options.saveBackground(to: defaults)
         website.state = .off; wallpaper.state = .off
-        // Match the recovered main-queue latest-value throttle without queuing
-        // hundreds of image compositions during a continuous native slider drag.
         guard previewTask == nil else { return }
         previewTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 50_000_000)
@@ -441,8 +422,6 @@ final class PortraitCaptureView: NSView {
         do {
             let image = try PortraitCaptureRenderer.render(source: source, options: options, palette: palette,
                 pageColor: pageColor, desktop: desktop, backingScale: backingScale, preview: true)
-            // NSImage logical size is explicit; AppKit chooses backing pixels
-            // for the actual screen without turning pixels into layout points.
             let previous = preview.image
             preview.image = wantsSavedDesktop ? nil : NSImage(cgImage: image, size: NSSize(width: CGFloat(image.width) / 2, height: CGFloat(image.height) / 2))
             CaptureMotion.blendPortrait(preview, previous: previous)
@@ -453,8 +432,6 @@ final class PortraitCaptureView: NSView {
     }
 }
 
-///
-/// height, radius-6 continuous clip, Return-key capture control.
 @MainActor
 final class PortraitPrimaryButton: PointingHandButton {
     init(title: String) {
@@ -507,8 +484,6 @@ final class PortraitPrimaryButton: PointingHandButton {
     }
 }
 
-///
-/// 5-point outer corners, white at 0.4 and black shadow at 0.15.
 @MainActor
 private final class PortraitPreviewChrome: NSView {
     override init(frame frameRect: NSRect) {
@@ -537,7 +512,6 @@ private final class PortraitOptionButton: PointingHandButton {
         title = ""; image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         isBordered = false; imagePosition = .imageOnly; imageScaling = .scaleProportionallyDown
         focusRingType = .exterior; setButtonType(.momentaryChange)
-        //
         setAccessibilityLabel(label); LiveShortcutToolTip.set(self, label)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }

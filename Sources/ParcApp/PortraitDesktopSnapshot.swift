@@ -1,8 +1,6 @@
 import AppKit
 import ScreenCaptureKit
 
-/// Captures only the system wallpaper window. A missing/denied desktop is not
-/// replaced by a static file or by a capture of the user's visible applications.
 @MainActor
 enum PortraitDesktopSnapshot {
     enum Failure: LocalizedError {
@@ -27,8 +25,6 @@ enum PortraitDesktopSnapshot {
             guard layer <= Int(CGWindowLevelForKey(.desktopWindow)), bounds.width > 0, bounds.height > 0,
                   abs(bounds.minX - display.minX) < 1, abs(bounds.minY - display.minY) < 1,
                   abs(bounds.width - display.width) < 1, abs(bounds.height - display.height) < 1 else { return false }
-            //
-            // moved wallpaper ownership to Wallpaper/WindowManager.
             switch bundle {
             case "com.apple.dock": return !title.isEmpty && title != "Dock"
             case "com.apple.WindowManager": return title == "Wallpaper"

@@ -1,6 +1,5 @@
 import AppKit
 
-/// Parc-owned UI marks, distinct from the user's selected Dock/Finder tile.
 @MainActor
 enum ParcBrandMark {
     enum Style: String { case borderless = "Borderless", monochrome = "Monochrome" }
@@ -12,8 +11,6 @@ enum ParcBrandMark {
         return image
     }
 
-    /// Draw the actual mark alpha, leaving both the bowl and surrounding area clear.
-    /// Direct CGContext tinting also works in exported portraits, outside an NSView.
     static func drawMonochrome(_ image: NSImage, in rect: CGRect, color: NSColor, context: CGContext) {
         guard rect.width > 0, rect.height > 0,
               let mask = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }

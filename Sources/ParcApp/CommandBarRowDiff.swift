@@ -1,13 +1,5 @@
 import AppKit
 
-///
-/// returns early when the row keys and trailing accessories are unchanged;
-/// otherwise it applies
-/// `newKeys.difference(from: oldKeys)` as unanimated removals and insertions
-///
-/// options 0). Surviving rows keep their row views. Parc also reloads the cell
-/// of a surviving row whose displayed content changed, because its keys can
-/// outlive a title, shortcut, availability or deletion change.
 struct CommandBarRowDiff: Equatable {
     struct Row: Equatable {
         let id: String
@@ -15,7 +7,6 @@ struct CommandBarRowDiff: Equatable {
     }
     private(set) var removals = IndexSet()
     private(set) var insertions = IndexSet()
-    /// New indices of surviving rows whose content changed.
     private(set) var changed = IndexSet()
     var isEmpty: Bool { removals.isEmpty && insertions.isEmpty && changed.isEmpty }
 
@@ -35,16 +26,10 @@ struct CommandBarRowDiff: Equatable {
         }
     }
 
-    ///
-    ///
     static func keepsSelection(at row: Int, old: [String], new: [String]) -> Bool {
         old.indices.contains(row) && new.indices.contains(row) && old[row] == new[row]
     }
 
-    ///
-    ///
-    /// destination also carries the typed text (Google's `oq=`), so keying on
-    /// it would replace every suggestion on each keystroke.
     static func searchKey(_ terms: String) -> String {
         "search:" + terms.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }

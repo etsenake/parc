@@ -1,14 +1,9 @@
 import Foundation
 
-///
-/// separate lifetimes. See docs/archive.md; these clocks never reset the
-/// persisted eligibility start time or substitute for native close consent.
 @MainActor
 final class ArchiveScheduling {
     enum Job: CaseIterable, Hashable {
         case initialArchive, initialCleanup, archive, cleanup, activity
-        ///
-        ///
         case discard
 
         var delay: TimeInterval {
@@ -62,8 +57,6 @@ final class ArchiveScheduling {
         subscriptions[job] = Subscription(id: id)
         let cancellation = schedule(job) { [weak self] in
             guard let self, self.subscriptions[job]?.id == id else { return }
-            // A cancelled or superseded queued callback cannot reach its
-            // former owner. One-shot work retires before invoking its action.
             if job.interval == nil { self.subscriptions.removeValue(forKey: job) }
             action()
         }
@@ -77,8 +70,6 @@ final class ArchiveScheduling {
         previous.values.forEach { $0.cancellation?.cancel() }
     }
 
-    /// The shipped Clocks timer retains its nominal deadline, skipping whole
-    /// missed periods before the next sleep. It never replays every missed tick.
     static func nextDeadline(last: ContinuousClock.Instant?, now: ContinuousClock.Instant,
                              interval: Duration) -> ContinuousClock.Instant {
         let previous = last ?? now
@@ -91,8 +82,6 @@ final class ArchiveScheduling {
     private static func scheduleWork(_ job: Job,
                                      action: @escaping @MainActor () -> Void) -> Cancellation {
         if let interval = job.interval {
-            //
-            // run-loop timer would give sleep a different elapsed-time policy.
             let clock = ContinuousClock(), step = Duration.seconds(interval)
             let task = Task { @MainActor in
                 var deadline = nextDeadline(last: nil, now: clock.now, interval: step)
@@ -106,8 +95,6 @@ final class ArchiveScheduling {
             }
             return Cancellation { task.cancel() }
         }
-        // Launch uses the independent mainQueue delay effects, not the
-        // recurring continuous clock, and cancellation owns both kinds.
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + job.delay)
         timer.setEventHandler { MainActor.assumeIsolated { action() } }

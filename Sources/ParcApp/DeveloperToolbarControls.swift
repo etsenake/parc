@@ -1,10 +1,6 @@
 import AppKit
 import QuartzCore
 
-///
-/// buttons: clear at rest, GrayA4 while hovered, GrayA5 while pressed, radius
-/// 5, no scale and no fill fade. Distinct from ordinary toolbar
-/// `TopBarButtonStyle`. Disabled and non-key windows keep a clear surface.
 @MainActor final class DeveloperToolbarButton: PointingHandButton {
     var actionBlock: (() -> Void)?
     private var hoverTrackingArea: NSTrackingArea?
@@ -146,12 +142,6 @@ import QuartzCore
     }
 }
 
-///
-///
-/// replaces that spring with response 0.3 / damping 0.4 for offset −5, then
-///
-///
-///
 @MainActor
 enum DeveloperToolbarSpring {
     static let restResponse: CGFloat = 0.2
@@ -191,8 +181,6 @@ enum DeveloperToolbarSpring {
         return animation
     }
 
-    /// Offset returns to 0 on the shake spring; init rest 0.2/0.6 is not
-    ///
     static func resetToRest(_ view: NSView) {
         animate(view, to: 0)
     }
@@ -226,8 +214,6 @@ enum DeveloperToolbarSpring {
     }
 }
 
-/// First-edit `selectAll:` plus ContentPanel shake, invoked from
-/// `DeveloperAddressField.becomeFirstResponder`.
 @MainActor
 enum DeveloperToolbarFirstEdit {
     static func apply(_ field: NSTextField, reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
@@ -236,9 +222,6 @@ enum DeveloperToolbarFirstEdit {
     }
 }
 
-///
-/// `validateMenuItem` falls through to `return true`; original-page/window
-/// ownership still gates dispatch (`changeZoom` requires a tab identity).
 enum PageZoomAvailability {
     static func canChange(windowReady: Bool, closing: Bool, hasOriginalPage: Bool) -> Bool {
         windowReady && !closing && hasOriginalPage

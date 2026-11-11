@@ -1,10 +1,5 @@
 import AppKit
 
-/// PCBrowserView's renderer frames for PageContentResizer, in this view's own
-/// size. The engine reports the renderer's viewport: the page host's content
-/// view, below the host's infobar shelf, beside docked DevTools. Each report is
-/// converted with the geometry at hand when it arrives, outside layout, where
-/// the engine's own layout has framed that view. Older engines report nothing.
 extension PCBrowserView: RenderFrameReporting {
     var renderFrameViewport: CGSize {
         guard let page = nativePage, !page.isClosed,

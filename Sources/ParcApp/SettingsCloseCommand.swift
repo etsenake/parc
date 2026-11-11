@@ -1,7 +1,5 @@
 import AppKit
 
-/// Settings owns Close Tab while it is key; the native window delegate still
-/// decides whether the actual window can close.
 @MainActor
 enum SettingsCloseCommand {
     static func isAvailable(window: NSWindow?, appIsActive: Bool) -> Bool {

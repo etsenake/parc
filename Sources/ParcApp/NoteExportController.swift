@@ -1,8 +1,6 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// One export belongs to its original window/Profile and immutable documents.
-/// Preparing the archive never occupies the UI thread or writes browser state.
 @MainActor
 final class NoteExportController {
     private weak var window: NSWindow?
@@ -50,8 +48,6 @@ final class NoteExportController {
                     guard result == .OK, let destination = panel.url, self.isValid() else {
                         self.finish(); return
                     }
-                    // The save dialog authorized this exact immutable archive
-                    // and destination. Copy/atomic replacement is off-main too.
                     self.task = Task { [weak self] in
                         guard let self else { return }
                         let scoped = destination.startAccessingSecurityScopedResource()

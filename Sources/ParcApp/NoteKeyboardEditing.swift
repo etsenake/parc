@@ -1,6 +1,5 @@
 import AppKit
 
-/// Native title input stays separate from the attributed body and its Undo owner.
 @MainActor
 final class NoteTitleTextView: LocalContentDropTextView {
     let localUndo = UndoManager()
@@ -13,8 +12,6 @@ final class NoteTitleTextView: LocalContentDropTextView {
     @discardableResult func pasteTitle(from board: NSPasteboard) -> Bool {
         guard isEditable, !hasMarkedText(), selectedRanges.count == 1,
               let value = board.pasteboardItems?.first?.string(forType: .string) else { return false }
-        //
-        // character and joins the pieces with spaces, including empty pieces.
         insertText(value.components(separatedBy: .newlines).joined(separator: " "), replacementRange: selectedRange())
         return true
     }
@@ -24,13 +21,9 @@ final class NoteTitleTextView: LocalContentDropTextView {
         for _ in 0..<level { localUndo.beginUndoGrouping() }
         localUndo.groupsByEvent = automatic
     }
-    //
-    // NSTextView. AppKit draws it with native layout and composition rules;
-    // it is never inserted into the title, selected, copied or persisted.
     @objc var placeholderAttributedString: NSAttributedString? {
         didSet {
             needsDisplay = true; invalidateIntrinsicContentSize()
-            // Expose the hint separately from the real, possibly empty value.
             setAccessibilityPlaceholderValue(placeholderAttributedString?.string)
         }
     }
@@ -56,7 +49,6 @@ enum NoteKeyboardEditing {
         let source = string as NSString
         let newline = source.rangeOfCharacter(from: .newlines)
         guard newline.location != NSNotFound else { return (string, NSRange(location: 0, length: source.length)) }
-        // Consume a whole CRLF in current AppKit rather than leave a stray LF.
         var end = NSMaxRange(newline)
         if source.character(at: newline.location) == 13, end < source.length, source.character(at: end) == 10 { end += 1 }
         return (source.substring(to: newline.location), NSRange(location: 0, length: end))
@@ -75,32 +67,22 @@ enum NoteKeyboardEditing {
         return current.minY == first.minY
     }
     static func hasDefaultTyping(_ text: EaselStyledTextView) -> Bool {
-        // The reference compares the complete typing dictionary to its default.
-        // Compare the normalized current carrier, preserving explicit formatting.
         let sample = NSAttributedString(string: "x", attributes: text.typingAttributes)
         let base = NSAttributedString(string: "x", attributes: NoteDocumentAppearance.bodyAttributes)
         guard let actual = try? EaselRichTextCodec.snapshot(sample), let expected = try? EaselRichTextCodec.snapshot(base) else { return false }
         return actual == expected
     }
-    ///
-    /// line-prefix caret before Up/Left/Return. Title never consumes them.
     static func isBeginningOfLine(_ command: Selector) -> Bool {
         command == #selector(NSResponder.moveToBeginningOfLine(_:))
             || command == #selector(NSResponder.moveToLeftEndOfLine(_:))
             || command == #selector(NSResponder.moveToBeginningOfParagraph(_:))
     }
-    ///
-    ///
-    /// characters from that start against the whole string. A too-short remainder
-    /// keeps the line start; otherwise the caret is `min(end-1, prefixEnd)`.
     static func beginningOfLineCaret(in string: String, selection: NSRange) -> NSRange? {
         guard valid(selection, in: string) else { return nil }
         let source = string as NSString
         var line = source.lineRange(for: selection)
         if line.length > 0, source.character(at: NSMaxRange(line) - 1) == 10 {
             line.length -= 1
-            // Original Character compare only drops LF. Consume a preceding CR so
-            // a CRLF terminator cannot occupy the five-unit prefix window.
             if line.length > 0, source.character(at: NSMaxRange(line) - 1) == 13 { line.length -= 1 }
         }
         let units = source.length

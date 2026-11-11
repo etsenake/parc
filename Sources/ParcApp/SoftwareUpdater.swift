@@ -1,11 +1,6 @@
 import AppKit
 import Sparkle
 
-///
-///
-/// download silently and leave the install for the sidebar banner, the next
-/// quit or a time the Mac is away (`AutomaticUpdate`). The state lives in
-/// `SoftwareUpdateSession`; see docs/software-update.md, "Updater API".
 @MainActor final class SoftwareUpdater: NSObject {
     typealias Phase = SoftwareUpdateSession.Phase
 
@@ -15,16 +10,12 @@ import Sparkle
     var phase: Phase { session.phase }
     var installsWithoutWindow: Bool { session.installsWithoutWindow }
 
-    ///
-    /// whether a downloaded update installs by itself while the Mac is away.
-    /// Sparkle's silent download (`SUAutomaticallyUpdate`) stays on either way.
     var automaticallyInstallsUpdates: Bool {
         get { UserDefaults.standard.object(forKey: Self.automaticInstallKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: Self.automaticInstallKey) }
     }
     private static let automaticInstallKey = "ParcAutomaticallyInstallsUpdates"
 
-    /// What a restart would interrupt, from the app's windows and downloads.
     var activity: (() -> AutomaticUpdate.Activity?)?
     private var automatic = AutomaticUpdate()
 
@@ -39,15 +30,10 @@ import Sparkle
     private var unavailable: Error?
     private var updateWindow: SoftwareUpdateWindow?
     private var statusWindow: SoftwareUpdateStatusWindow?
-    /// The update Sparkle reported, kept until its session ends so a
-    /// scheduled find can be shown when the user asks for it.
     private var found: SUAppcastItem?
     private var downloadProgress = SoftwareUpdateDownloadProgress()
     private var pendingDownloadProgress: DispatchWorkItem?
 
-    /// A disposable profile shares this app's bundle identifier, defaults and
-    /// Sparkle installer with the installed Parc, so it never updates itself;
-    ///
     func start(disabled: Bool) {
         guard session.hasFeed else { return }
         if disabled {
@@ -55,8 +41,6 @@ import Sparkle
                                   userInfo: [NSLocalizedDescriptionKey: "Application is not allowed to update."])
             return
         }
-        // The checkbox used to turn off Sparkle's download, which nothing else
-        // can turn back on; carry that choice over to automatic installs.
         if UserDefaults.standard.object(forKey: "SUAutomaticallyUpdate") as? Bool == false {
             automaticallyInstallsUpdates = false
             UserDefaults.standard.removeObject(forKey: "SUAutomaticallyUpdate")
@@ -66,8 +50,6 @@ import Sparkle
         scheduleAutomaticCheck()
     }
 
-    ///
-    /// saver active and screen locked.
     private typealias AwayEvent = (reason: AutomaticUpdate.Away, began: Bool)
     private static let workspaceEvents: [Notification.Name: AwayEvent] = [
         NSWorkspace.willSleepNotification: (.sleep, true),
@@ -86,8 +68,6 @@ import Sparkle
         for name in Self.workspaceEvents.keys {
             NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(awayChanged(_:)), name: name, object: nil)
         }
-        // AppKit holds distributed notices while Parc isn't active, which
-        // would delay a lock made from another app until Parc is next used.
         for name in Self.distributedEvents.keys {
             DistributedNotificationCenter.default().addObserver(self, selector: #selector(awayChanged(_:)), name: name,
                                                                 object: nil, suspensionBehavior: .deliverImmediately)
@@ -103,7 +83,6 @@ import Sparkle
         }
     }
 
-    /// Every five minutes of awake time, which stops while the Mac sleeps.
     private func scheduleAutomaticCheck() {
         DispatchQueue.main.asyncAfter(deadline: .now() + AutomaticUpdate.delay) { [weak self] in
             MainActor.assumeIsolated { self?.automaticCheck() }
@@ -112,18 +91,14 @@ import Sparkle
 
     private func automaticCheck() {
         scheduleAutomaticCheck()
-        // `activity` reads every page, so only once an update is waiting.
         guard installsWithoutWindow, let activity = activity?(),
               automatic.allows(activity, at: ProcessInfo.processInfo.systemUptime),
               let feed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
               let url = URL(string: feed) else { return }
-        //
-        // 60-second timeout), so the restored pages can load again.
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 60)
         request.httpMethod = "HEAD"
         Task { [weak self, request] in
             let status = (try? await URLSession.shared.data(for: request).1 as? HTTPURLResponse)?.statusCode
-            // The Mac may be back in use by now.
             guard let self, let status, (200..<300).contains(status), let activity = self.activity?(),
                   automatic.allows(activity, at: ProcessInfo.processInfo.systemUptime) else { return }
             installAndRelaunch()
@@ -136,7 +111,6 @@ import Sparkle
         updater.checkForUpdates()
     }
 
-    /// Restart and Update: install the downloaded update now and relaunch.
     func installAndRelaunch() {
         switch session.installAndRelaunch() {
         case .run(let reply)?: reply()
@@ -147,7 +121,6 @@ import Sparkle
 
     private func presentFound() {
         guard let item = found else { return }
-        // Also true when a window closed at Ready to Install is reopened.
         let ready = if case .readyToInstall = phase { true } else { false }
         closeUpdateWindow()
         let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -217,7 +190,6 @@ extension SoftwareUpdater: NSMenuItemValidation {
 
 extension SoftwareUpdater: SPUUserDriver {
     func show(_ request: SPUUpdatePermissionRequest, reply: @escaping (SUUpdatePermissionResponse) -> Void) {
-        // Info.plist enables automatic checks, so Sparkle never asks.
         reply(SUUpdatePermissionResponse(automaticUpdateChecks: true, sendSystemProfile: false))
     }
 
@@ -289,8 +261,6 @@ extension SoftwareUpdater: SPUUserDriver {
 
     private func scheduleDownloadProgressRefresh() {
         guard pendingDownloadProgress == nil, statusWindow != nil else { return }
-        // Network chunks can arrive much faster than a readable counter. Show
-        // the latest count at most ten times a second, without queuing frames.
         let refresh = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -332,7 +302,6 @@ extension SoftwareUpdater: SPUUserDriver {
     func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool,
                               retryTerminatingApplication: @escaping () -> Void) {
         session.beginInstalling(retry: applicationTerminated ? nil : retryTerminatingApplication)
-        // Install and Relaunch in the update window skips Ready to Install.
         closeUpdateWindow()
         status().show(status: "Installing update... ", action: "Install and Relaunch", progress: 1, enabled: false)
     }
@@ -346,7 +315,6 @@ extension SoftwareUpdater: SPUUserDriver {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        // A status window closed mid-way reopens at its step, not the offer.
         switch phase {
         case .preparing: status().show(status: "Preparing…", action: "Cancel", progress: nil, enabled: false)
         case .installing: status().show(status: "Installing update... ", action: "Install and Relaunch", progress: 1, enabled: false)
@@ -363,8 +331,6 @@ extension SoftwareUpdater: SPUUserDriver {
 }
 
 extension SoftwareUpdater: SPUUpdaterDelegate {
-    ///
-    /// still installs the update when Parc quits.
     func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
                  immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
         session.downloadedInBackground(version: item.displayVersionString, install: immediateInstallHandler)

@@ -1,7 +1,5 @@
 import AppKit
 
-/// A window-owned editor for a new object or the exact existing embedded page.
-/// It has no page factory and cannot outlive its captured owner/selection.
 @MainActor
 final class EaselWebInput: NSViewController, NSTextFieldDelegate, NSPopoverDelegate {
     private let popover = NSPopover()
@@ -85,7 +83,6 @@ final class EaselWebInput: NSViewController, NSTextFieldDelegate, NSPopoverDeleg
         if restoreFocus, validOwner(), let parentWindow, parentWindow.isKeyWindow, parentWindow.attachedSheet == nil,
            let previousResponder {
             if let previousView = previousResponder as? NSView {
-                // Never into a sidebar hidden meanwhile (SavedFocus).
                 if SavedFocus.mayReturn(to: previousView, in: parentWindow) { parentWindow.makeFirstResponder(previousView) }
             } else { parentWindow.makeFirstResponder(previousResponder) }
         }

@@ -19,9 +19,6 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
     private let priority = PointingHandPopUpButton(frame: .zero, pullsDown: false)
     private let priorityHelp = NSTextField(wrappingLabelWithString: "")
     private let detailDivider = NSBox()
-    //
-    // bindings: Favorites on item1…item8; item9 shows its ninth-item toggle,
-    //
     private let includeFavorites = PointingHandButton(checkboxWithTitle: "Include Favorites in ordering.", target: nil, action: nil)
     private let ninthItem = PointingHandButton(checkboxWithTitle: "Switch to ninth tab.", target: nil, action: nil)
     private let captureGesture = PointingHandButton(checkboxWithTitle: "Hold Command and Shift to start a Capture.", target: nil, action: nil)
@@ -129,8 +126,6 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
             if case .command(let command) = $0 { return command.id == id }; return false
         }) else { return false }
         table.scrollRowToVisible(row)
-        // Selection reveals the editor; it does not start recording or consume
-        // the next key that the user intended for normal Settings navigation.
         return true
     }
 
@@ -144,8 +139,6 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
         guard let window, window.isKeyWindow, window.isVisible, window.attachedSheet == nil,
               !isHiddenOrHasHiddenAncestor else { return }
         if let editor = search.currentEditor() as? NSTextView {
-            // Use the original editor so selection, marked text and its Undo
-            // history belong to AppKit. A deliberate clear replaces its text.
             editor.insertText("", replacementRange: NSRange(location: 0, length: (editor.string as NSString).length))
         } else {
             search.stringValue = ""
@@ -271,7 +264,6 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
                             "captureFullPage:": "Captures the entire webpage as an image.", "cycleToNextRecentTab:": "Switches to a recently used tab.",
                             "cycleToPreviousRecentTab:": "Switches backward through recently used tabs.",
                             "copyCurrentURL:": "Copies the current tab’s URL.", "split:": "Adds a new page to your current Split View.",
-                            //
                             "closeSplitPane:": "Closes the Split View page that’s currently in focus.",
                             "separateSplitPane:": "Separate Page from Split View.",
                             "firstSplitPane:": "Jumps to the first Split View page in your current window.",
@@ -292,8 +284,6 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
         explanation.stringValue = command.flatMap { descriptions[$0.id]
             ?? NumberedTarget.description(for: $0.id, excludeFavorites: excludeFavorites, ninthItemEnabled: ninthEnabled) } ?? (command == nil
             ? "Change shortcuts for your favorite actions, and choose whether Parc or a website takes priority." : "")
-        // The binding, not an in-progress modifier preview, owns priority.
-        //
         let showsPriority = command != nil && savedBinding != nil
         priority.isHidden = !showsPriority; detailDivider.isHidden = !showsPriority; priorityHelp.isHidden = !showsPriority
         priority.isEnabled = command.map { shortcuts.supportsPriority($0.id) } == true && shortcuts.loadError == nil
@@ -321,8 +311,6 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
         updateDetails()
     }
     private func layoutDetails() {
-        // Original VStack: 64-point keycap region, 24 below, title, 8 below,
-        // natural description height, 24 below, then the conditional priority.
         func fittedHeight(_ field: NSTextField) -> CGFloat {
             guard !field.stringValue.isEmpty else { return 0 }
             field.preferredMaxLayoutWidth = 200
@@ -340,14 +328,10 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
             toggle.frame = NSRect(x: 420, y: toggleY, width: 200, height: height)
             toggleY += height + 8
         }
-        // Extra settings share the detail column without covering save feedback.
         let feedbackY = max(402, toggleY + 8)
         feedback.frame = NSRect(x: 420, y: feedbackY, width: 200,
                                 height: max(0, reset.frame.minY - feedbackY - 8))
         feedback.toolTip = feedback.stringValue
-        // These wrapping fields change between one and several lines while
-        // retaining their native cells. Re-layout the original text subviews
-        // after manual frame changes; otherwise AppKit can keep the old clip.
         for field in [heading, explanation, priorityHelp] {
             field.needsLayout = true
             field.layoutSubtreeIfNeeded()
@@ -381,8 +365,6 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
                       self.shortcuts.conflictingCommands(for: commandID).map(\.id) == ids,
                       let row = self.rows.firstIndex(where: { if case .command(let command) = $0 { return command.id == first.id }; return false }),
                       let clip = self.table.enclosingScrollView?.contentView else { return }
-                // Original ScrollViewProxy.scrollTo(id, anchor: .center): reveal
-                // only. Preserve the query, detail selection, edit and responder.
                 let rect = self.table.rect(ofRow: row)
                 let y = max(0, min(rect.midY - clip.bounds.height / 2, self.table.bounds.height - clip.bounds.height))
                 clip.scroll(to: NSPoint(x: clip.bounds.minX, y: y))
@@ -419,8 +401,6 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
     }
     private func resetAll() {
         guard let window, permitsSettingsAction(in: window, revision: shortcuts.revision), shortcuts.hasOverrides else { return }
-        // Original Action.keyBinding(.onResetToDefaults) directly invokes the
-        // client reset. No extra confirmation sheet or delayed completion.
         do { try shortcuts.resetAll(); refresh(); showStatus("Default shortcuts restored.") }
         catch { showStatus(error.localizedDescription, error: true) }
     }
@@ -463,8 +443,6 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
             refresh(); showStatus("Conflicting shortcuts removed.")
         } catch { showStatus(error.localizedDescription, error: true) }
     }
-    /// A row menu does not select the row or move native text focus.
-    /// Its receipt keeps later actions on this original command.
     func commandMenu(for id: String) -> NSMenu? {
         guard shortcuts.commands.contains(where: { $0.id == id }), let target = menuTarget(for: id) else { return nil }
         stopRecorder()
@@ -506,8 +484,6 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
         guard let id = commandID(from: sender), shortcuts.shortcut(for: id) != nil else { return }
         let effect = id == selectedID ? ShortcutRemovalEffect.capture(keycaps) : nil
         do {
-            // The file commit can fail. Preserve the original frame, but show
-            // removal only after the durable write succeeds.
             try shortcuts.set(nil, for: id)
             effect?.show(); refresh(); showStatus("Shortcut removed.")
         } catch { showStatus(error.localizedDescription, error: true) }
@@ -574,8 +550,6 @@ private final class ShortcutTableView: NSTableView {
     }
 }
 
-///
-/// a custom keycap transition. Native conversion handles flipped view geometry.
 @MainActor
 struct ShortcutRemovalEffect {
     private weak var view: ShortcutKeycapView?
@@ -602,7 +576,6 @@ struct ShortcutRemovalEffect {
     }
 }
 
-/// Original warning owns only its action/tooltip. It never selects a row.
 @MainActor private final class ShortcutCellView: NSView {
     private var warning: NSView?
     private var onReveal: (() -> Void)?
@@ -632,9 +605,6 @@ struct ShortcutRemovalEffect {
 }
 
 
-/// The callout keeps the actual SwiftUI prominent Button, including its native
-/// focus, pressed and accessibility behavior. Its parent remains the Settings
-/// action owner; the background and symbol do not introduce separate actions.
 @MainActor final class ShortcutBasicsBanner: NSHostingView<ShortcutBasicsContent> {
     var onPress: (() -> Void)?
     required init(rootView: ShortcutBasicsContent) { super.init(rootView: rootView) }
@@ -684,9 +654,6 @@ struct ShortcutBasicsContent: View {
     @Published var active = false
 }
 
-/// One real borderless SwiftUI Button owns the attributed opacity spring.
-/// Removing the conditional subtree retires its hover/animation state. Native
-/// editing, composition and Undo remain with the adjacent NSTextField editor.
 @MainActor final class ShortcutSearchClearControl: NSHostingView<ShortcutClearContent> {
     private let presentation: ShortcutClearPresentation
     private var observations: [NSObjectProtocol] = []
@@ -727,8 +694,6 @@ struct ShortcutBasicsContent: View {
     func refreshPresence() {
         let present = window != nil && !isHiddenOrHasHiddenAncestor
         let active = present && window?.isKeyWindow == true && window?.isVisible == true && window?.attachedSheet == nil
-        // Retire hover state first when its original owner is lost. Unchanged
-        // query updates leave the existing SwiftUI subtree and focus intact.
         if presentation.active != active { presentation.active = active }
         if presentation.present != present { presentation.present = present }
     }
@@ -774,9 +739,6 @@ private struct ShortcutClearButton: View {
     }
 }
 
-/// The original Shortcuts producer uses a plain native text field with no
-/// focus ring, plus independent search and clear controls. NSSearchField's
-/// bezel/cell offsets are not part of this presentation.
 @MainActor final class ShortcutSearchHeader: NSView {
     let field = NSTextField(string: "")
     private let icon = NSImageView()

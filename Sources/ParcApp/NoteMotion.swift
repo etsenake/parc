@@ -1,17 +1,5 @@
 import AppKit
 
-///
-///
-/// `Animation.spring(response: 0.15, dampingFraction: 0.825, blendDuration: 0)`
-/// as `_AnimationModifier<Int>` on `FormatMenu.State.selectedIndex`. Item rows
-///
-///
-/// `addSubview` / `setFrame:` / `removeFromSuperview` with no animation API.
-///
-/// canvas appearance only invalidates display. Helpers found no Notes-owned
-/// haptic, `UIImpactFeedback`, `NSHapticFeedback` or `performFeedbackPattern:`
-/// call; tab-reorder and drop haptics belong to other families and are not
-/// copied here.
 @MainActor
 enum NoteMotion {
     static let selectedIndexResponse: CGFloat = 0.15
@@ -78,14 +66,10 @@ enum NoteMotion {
         view.subviews.forEach(settle)
     }
 
-    ///
-    /// its laid-out frame with no recovered presentation animation.
     static func presentImmediately(_ view: NSView, in host: NSView) {
         host.addSubview(view)
     }
 
-    ///
-    /// no recovered dismissal animation.
     static func dismissImmediately(_ view: NSView?) {
         guard let view else { return }
         settle(view)

@@ -1,9 +1,6 @@
 import AppKit
 import ObjectiveC
 
-/// Native editor entry points depend only on AppKit. The application ancestor
-/// supplies the same engine-backed router used by renderer views; this layer
-/// neither decodes a URL nor owns a split transaction.
 @MainActor
 protocol LocalContentDropRouting: AnyObject {
     var claimed: Bool { get }
@@ -31,8 +28,6 @@ final class LocalContentDropForwarder {
     private var router: (any LocalContentDropRouting)?
     private var claimed = false
     init(view: NSView) { self.view = view }
-    /// Nil keeps the original AppKit/content receiver. An empty operation from
-    /// an already claimed router is a refusal, never a second drop destination.
     func begin(_ info: NSDraggingInfo) -> NSDragOperation? {
         end(); claimed = false
         guard let view else { return nil }
@@ -53,14 +48,10 @@ final class LocalContentDropForwarder {
     func update(_ info: NSDraggingInfo) -> NSDragOperation? { claimed ? router?.update(info) ?? [] : nil }
     func prepare(_ info: NSDraggingInfo) -> Bool? { claimed ? router?.prepare(info) ?? false : nil }
     func perform(_ info: NSDraggingInfo) -> Bool? { claimed ? router?.perform(info) ?? false : nil }
-    // Retain the claimed tombstone until the next real draggingEntered. AppKit
-    // may still deliver prepare/perform after a detach or conclusion callback.
     func exit(_ info: NSDraggingInfo?) { router?.exit(info) }
     func end() { let old = router; router = nil; old?.end() }
 }
 
-/// Native text drag behavior stays in NSTextView unless the original ancestor
-/// accepts the gesture. Copy, paste, Undo and IME are otherwise untouched.
 @MainActor
 class LocalContentDropTextView: NSTextView {
     private lazy var contentDrop = LocalContentDropForwarder(view: self)
@@ -92,16 +83,12 @@ class LocalContentDropTextView: NSTextView {
     }
     override func draggingEnded(_ sender: NSDraggingInfo) {
         contentDrop.end()
-        // NSDraggingDestination is optional; NSView need not implement this
-        // terminal selector. Preserve a real native text implementation only.
         if class_getInstanceMethod(NSTextView.self, #selector(NSView.draggingEnded(_:))) != nil {
             super.draggingEnded(sender)
         }
     }
 }
 
-/// Covers the document/canvas background. A concrete canvas can retain its own
-/// image/rich-text receiver by testing the optional forwarding result first.
 @MainActor
 class LocalContentDropView: NSView {
     lazy var contentDrop = LocalContentDropForwarder(view: self)

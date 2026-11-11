@@ -1,30 +1,14 @@
 import AppKit
 import SwiftUI
 
-//
-//
-//
-//
-// build it (TranslucentButtonIconAnimation.things, 0xe000000000000008; the
-//
-//
-
-///
-///
 @MainActor final class BoxOfThingsIconState: ObservableObject {
     @Published private(set) var isHovered = false
     @Published private(set) var twinkle1 = false
     @Published private(set) var twinkle2 = false
-    /// `DispatchQueue.main.asyncAfter`; checks substitute a manual clock.
     var after: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { body() } }
     }
 
-    /// On each hover change, entering and leaving: nothing at all under Reduce
-    /// Motion (the early return, so the pose and twinkles never change);
-    /// otherwise the pose follows the pointer and toggle twinkle1 now, both
-    ///
-    /// with no withAnimation, so only the hover change rides the spring.
     func hover(_ hovering: Bool, reduceMotion: Bool) {
         guard !reduceMotion else { return }
         isHovered = hovering
@@ -34,14 +18,9 @@ import SwiftUI
     }
 }
 
-///
-///
-/// the button's foreground (the glow sets its own white). Offsets are points
-/// from the centre, +y down; angles are the binary's radians.
 struct BoxOfThingsIcon: View {
     @ObservedObject var state: BoxOfThingsIconState
     @Environment(\.colorScheme) private var colorScheme
-    ///
     private let animation = Animation.spring(response: 0.5, dampingFraction: 1.0, blendDuration: 0)
 
     var body: some View {
@@ -60,10 +39,7 @@ struct BoxOfThingsIcon: View {
                 .offset(x: -2.5, y: hovered ? -4.5 : -3)
                 .shadow(color: .white.opacity(dark && hovered ? 1 : 0), radius: 1)
                 .animation(animation, value: hovered)
-                // Cut off just above the box's top edge, so it sits inside.
                 .mask(Rectangle().frame(width: 28, height: 11).foregroundColor(.green).offset(x: 0, y: -8))
-            //
-            // triangle and dot; a font has no effect on an image.
             artwork("triangle")
                 .scaleEffect(t1 ? 0.15 : 1)
                 .rotationEffect(.radians(hovered ? 1.4835298641951802 : 3.9269908169872414))
@@ -84,8 +60,6 @@ struct BoxOfThingsIcon: View {
         .shadow(color: .white.opacity(dark && hovered ? 0.2 : 0), radius: 2, x: 0, y: 0)
     }
 
-    /// `Image(nsImage:)` of the named template; the rendering mode restates
-    /// the catalog image's template flag.
     private func artwork(_ name: String) -> some View {
         Group {
             if let image = LibraryArtwork.boxOfThings(name) { Image(nsImage: image).renderingMode(.template) }
@@ -93,8 +67,6 @@ struct BoxOfThingsIcon: View {
     }
 }
 
-///
-/// (MouseInsideModifier over the 32-point frame) and the Button's `isPressed`.
 @MainActor final class TranslucentItemState: ObservableObject {
     @Published var hovered = false
     @Published var pressed = false
@@ -106,7 +78,6 @@ struct BoxOfThingsIcon: View {
     var foreground: NSColor { colors.foreground(pressed: pressed, enabled: enabled) }
 }
 
-///
 struct TranslucentItemFace: View {
     @ObservedObject var state: TranslucentItemState
     var body: some View {
@@ -124,8 +95,6 @@ struct TranslucentItemFace: View {
     }
 }
 
-/// Rendering only: the AppKit owner takes the pointer, keyboard and
-/// accessibility, so the hosted SwiftUI tree never becomes a second control.
 @MainActor final class LibraryRenderingHostingView<Content: View>: NSHostingView<Content> {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override var acceptsFirstResponder: Bool { false }
@@ -135,16 +104,11 @@ struct TranslucentItemFace: View {
     override func accessibilityChildren() -> [Any]? { [] }
 }
 
-/// A 32-point TranslucentButtonItem showing BoxOfThingsIcon. Hover, press and
-/// the action run in AppKit with the SwiftUI Button's semantics: pressed while
-/// the pointer is down inside, the action on mouse-up inside, no modifiers.
 @MainActor class TranslucentBoxOfThingsItem: NSView {
     static let side: CGFloat = 32
     let state: TranslucentItemState
     var action: (() -> Void)?
-    /// Nil follows the effective appearance with the standard GrayA colours.
     var colors: TranslucentButtonColors? { didSet { resolveColors() } }
-    /// The SwiftUI rendering of the item (and, for the entry, its cells).
     private(set) var host: LibraryRenderingHostingView<AnyView>!
     private var tracking: NSTrackingArea?
     private var cursorArea: NSTrackingArea?
@@ -162,7 +126,6 @@ struct TranslucentItemFace: View {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// Replaces the rendered content; it fills the view and never sizes it.
     func install(_ content: AnyView) {
         host?.removeFromSuperview()
         let view = LibraryRenderingHostingView(rootView: content)
@@ -172,7 +135,6 @@ struct TranslucentItemFace: View {
     }
 
     override var isFlipped: Bool { true }
-    // No keyboard stop: neither AppKit's loop nor makeFirstResponder focuses it.
     override var acceptsFirstResponder: Bool { false }
     override func becomeFirstResponder() -> Bool { false }
     override var canBecomeKeyView: Bool { false }
@@ -183,10 +145,7 @@ struct TranslucentItemFace: View {
         if state.colors != resolved { state.colors = resolved }
     }
 
-    ///
     var buttonRect: NSRect { bounds }
-    /// BoxOfThingsIcon's own hover region: its ZStack, laid out at the glow's
-    /// 81 × 27 around the centre, within the button's host.
     var iconHoverRect: NSRect {
         let button = buttonRect
         return button.intersection(NSRect(x: button.midX - 40.5, y: button.midY - 13.5, width: 81, height: 27))
@@ -202,7 +161,6 @@ struct TranslucentItemFace: View {
         cursorArea = NSTrackingArea(rect: buttonRect, options: [.cursorUpdate, .activeInKeyWindow], owner: self)
         addTrackingArea(cursorArea!)
     }
-    /// The decorative download-bin item does nothing on a click.
     var showsPointingHand: Bool { state.enabled }
     override func cursorUpdate(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
@@ -212,7 +170,6 @@ struct TranslucentItemFace: View {
     override func mouseMoved(with event: NSEvent) { pointerMoved(to: convert(event.locationInWindow, from: nil)) }
     override func mouseExited(with event: NSEvent) { pointerMoved(to: nil) }
 
-    /// Applies the pointer (nil: gone) to both hover regions.
     func pointerMoved(to point: NSPoint?) {
         let inButton = point.map { buttonRect.contains($0) } ?? false
         if state.hovered != inButton { state.hovered = inButton }
@@ -220,7 +177,6 @@ struct TranslucentItemFace: View {
         if state.icon.isHovered != inIcon { state.icon.hover(inIcon, reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) }
         pointerDidMove(to: point)
     }
-    /// Subclass hook for pointer-driven presentation (the entry's tooltip).
     func pointerDidMove(to point: NSPoint?) {}
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -245,18 +201,11 @@ struct TranslucentItemFace: View {
         state.pressed = false
         if inside { perform() }
     }
-    ///
     func perform() { if state.enabled { action?() } }
 }
 
-///
-/// clear backgrounds and maxContrastColor foregrounds, size `_32`, weight
-///
-///
 @MainActor final class DownloadBinBoxOfThingsItem: TranslucentBoxOfThingsItem {
     init(palette: ThemeChromePalette) {
-        // Its colorScheme (the Dark Aqua beam) follows the arrival window, as
-        // the bin's shadow does (DownloadArrivalBinView.updateColors).
         super.init(colors: .bin(maxContrast: palette.maxContrastColor), action: {})
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }

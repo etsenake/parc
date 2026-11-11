@@ -7,8 +7,6 @@ import AppKit
     var onMove: ((Bool) -> Void)?
     var canCopy: (() -> Bool)?
     var canDrag: ((IndexSet) -> Bool)?
-    /// Capture the original item before AppKit tracks this mouse sequence.
-    /// Its normal action commits that exact lease; rows can reorder meanwhile.
     var prepareClick: ((Int) -> (() -> Void)?)?
     private var originalClick: (() -> Void)?
     override func mouseDown(with event: NSEvent) {
@@ -32,8 +30,6 @@ import AppKit
         return super.validateUserInterfaceItem(item)
     }
     @objc func copy(_ sender: Any?) { onCopy?() }
-    // The original Library owns one optional item. Do not let the responder
-    // chain manufacture a plural selection that its menu/action never captured.
     override func selectAll(_ sender: Any?) {}
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
@@ -50,8 +46,6 @@ import AppKit
         switch event.keyCode {
         case 125: onMove?(true)
         case 126: onMove?(false)
-        // The original page key reducer confirms its cursor; it does not
-        // dispatch the separate file Open command for Return or keypad Enter.
         case 36, 76: onConfirmSelection?()
         case 49: onPreview?()
         case 53: onClose?()

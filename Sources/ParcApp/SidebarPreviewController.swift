@@ -1,8 +1,5 @@
 import AppKit
 
-/// A tab row previews its provider's recent pages, or otherwise the tab's own
-///
-/// and the 200 ms hover commit are recorded in docs/sidebar-previews.md.
 enum SidebarPreviewTarget: Hashable {
     case tab(UUID)
     case folder(UUID)
@@ -14,7 +11,6 @@ enum SidebarRecentDomain: String, CaseIterable {
         switch self { case .notion: return "Notion"; case .figma: return "Figma"
         case .linear: return "Linear"; case .confluence: return "Confluence" }
     }
-    ///
     var createTitle: String {
         switch self { case .figma: return "New File"; case .linear: return "New Issue"; case .notion, .confluence: return "New Page" }
     }
@@ -43,7 +39,6 @@ enum SidebarRecentDomain: String, CaseIterable {
               let host = url.host?.lowercased() else { return nil }
         func matches(_ suffix: String) -> Bool { host == suffix || host.hasSuffix("." + suffix) }
         if matches("notion.so") || matches("notion.site") {
-            //
             guard !matches("calendar.notion.so") else { return nil }
             return .notion
         }
@@ -54,30 +49,21 @@ enum SidebarRecentDomain: String, CaseIterable {
     }
 }
 
-/// Folder rows are original tabs; recent rows (no tab) are history pages.
 struct SidebarPreviewRow: Equatable {
     let id: String
     let tabID: UUID?
     let title: String
     let url: URL
     let visitedAt: Date?
-    /// FolderPreviewItem.isBadged: an emphasized "Recently Added" subtitle.
-    ///
     var isBadged = false
 
-    ///
     var hasIcon: Bool { tabID != nil }
-    /// Computed when drawn, so a shown card's source never ages.
     func subtitle(now: Date = Date()) -> String {
         if isBadged { return "Recently Added" }
-        //
         if tabID == nil { return RecentPageText.subtitle(url: url, visitedAt: visitedAt, now: now) }
         return visitedAt.map { RecentPageText.relativeTime($0, now: now) } ?? ""
     }
 
-    ///
-    /// order, deduplicated by tidy title and then by recognized page identity.
-    /// Every returned URL is checked against its genuine provider first.
     static func recentPages(_ rows: [SidebarPreviewRow], domain: SidebarRecentDomain) -> [SidebarPreviewRow] {
         let tidy = rows.filter { $0.tabID == nil && SidebarRecentDomain.matching($0.url) == domain }.map {
             SidebarPreviewRow(id: $0.id, tabID: nil, title: RecentPageText.tidyTitle(domain.textProvider, url: $0.url, title: $0.title),
@@ -85,19 +71,15 @@ struct SidebarPreviewRow: Equatable {
         }
         return RecentPageText.deduplicated(tidy, title: \.title, url: \.url)
     }
-    ///
     static func folderTitle(custom: String?, url: URL, title: String) -> String {
         custom ?? TidyTitles.title(for: url, title: title) ?? title
     }
-    ///
-    /// sidebar order for equal dates.
     static func newestFirst(_ rows: [SidebarPreviewRow]) -> [SidebarPreviewRow] {
         rows.enumerated().sorted { left, right in
             let a = left.element.visitedAt ?? .distantPast, b = right.element.visitedAt ?? .distantPast
             return a != b ? a > b : left.offset < right.offset
         }.map(\.element)
     }
-    ///
     func matches(_ query: String) -> Bool {
         query.isEmpty || title.localizedCaseInsensitiveContains(query) || url.absoluteString.localizedCaseInsensitiveContains(query)
     }
@@ -115,16 +97,11 @@ struct SidebarPreviewSource: Equatable {
     let originalURL: URL?
     let rows: [SidebarPreviewRow]
 
-    /// A tab without a recent-pages provider shows its own picture.
     var showsPicture: Bool {
         if case .tab = target { return domain == nil }
         return false
     }
 
-    ///
-    /// shown folder card from the folder's current children, so only its
-    /// rows may change without ending the session; a tab's picture card also
-    /// follows its tab's title and address.
     func hasSameOwner(as other: SidebarPreviewSource) -> Bool {
         target == other.target && profileID == other.profileID && spaceID == other.spaceID
             && selectedTabIDs == other.selectedTabIDs && focusedTabID == other.focusedTabID && theme == other.theme
@@ -133,15 +110,11 @@ struct SidebarPreviewSource: Equatable {
 }
 
 enum SidebarPreviewAction: Equatable {
-    /// A row click or Return with the modifiers held at activation.
     case activate(SidebarPreviewModifiers)
-    ///
     case create(SidebarPreviewModifiers)
     case split, duplicate, archive, copyURL
-    ///
     case copyIssueID(String)
 
-    ///
     func activation(for row: SidebarPreviewRow) -> SidebarPreviewActivation? {
         switch self {
         case .activate(let modifiers): return row.tabID == nil ? .recentPage(modifiers) : .folderItem(modifiers)
@@ -151,20 +124,13 @@ enum SidebarPreviewAction: Equatable {
     }
 }
 
-/// Pointer-motion no-ops for a live preview session. Linger/reveal/dismiss still
-/// run when the pointer leaves these regions or aim no longer keeps the card.
 enum SidebarPreviewMotion {
-    /// True when `windowPoint` lies in the anchor's own visible bounds.
     static func remainsOnAnchor(windowPoint: NSPoint, anchor: NSView) -> Bool {
         guard anchor.window != nil, !anchor.isHiddenOrHasHiddenAncestor else { return false }
         let local = anchor.convert(windowPoint, from: nil)
         return anchor.visibleRect.intersection(anchor.bounds).contains(local)
     }
 
-    /// True when a local hit still names this row the same way `previewTarget`
-    /// would: the anchor itself or a non-`NSButton` descendant. Close/share/
-    /// mute/capture chrome must not keep the session — that remains a dismiss
-    /// or aim fallthrough, matching the full sidebar walk.
     static func keepsSessionTarget(windowPoint: NSPoint, anchor: NSView) -> Bool {
         guard remainsOnAnchor(windowPoint: windowPoint, anchor: anchor),
               let superview = anchor.superview else { return false }
@@ -180,14 +146,10 @@ final class SidebarPreviewController {
     var permitted: (() -> Bool)?
     var perform: ((SidebarPreviewSource, SidebarPreviewRow, SidebarPreviewAction) -> Void)?
     var requestRecent: ((SidebarRecentDomain, UUID, @escaping ([SidebarPreviewRow]) -> Void) -> (() -> Void)?)?
-    /// The tab's pictures until cancelled; nil means the picture went away.
     var requestPicture: ((UUID, @escaping (NSImage?) -> Void) -> (() -> Void)?)?
     var favicon: ((URL, UUID, @escaping (NSImage?) -> Void) -> Void)?
     var onPresentationChange: (() -> Void)?
     var openSettings: (() -> Void)?
-    ///
-    /// that has no card yet and starts no new hover session; keyboard previews
-    /// and a shown card keep their own owners.
     var isHoverEnabled = true {
         didSet { if !isHoverEnabled, current != nil, card == nil, !keyboardPresentation { dismiss() } }
     }
@@ -196,7 +158,6 @@ final class SidebarPreviewController {
     private weak var window: NSWindow?
     private var current: SidebarPreviewSource?
     private var anchor = NSRect.zero
-    /// A card already shows its row's title, so tooltips wait until it goes.
     private var card: SidebarPreviewCard? {
         didSet {
             guard let window, (card == nil) != (oldValue == nil) else { return }
@@ -216,19 +177,15 @@ final class SidebarPreviewController {
     private var lastPointer: NSPoint?
     private var trackingView: SidebarPreviewTrackingView?
     private weak var previousResponder: NSResponder?
-    /// The live sidebar row last confirmed by `reconcile()`. Pointer motion
-    /// compares this identity instead of rebuilding the tab/folder source.
     private weak var lastAnchorView: NSView?
 
     var isPresented: Bool { card != nil }
-    /// An exiting card is presentation only: it neither holds the sidebar nor takes clicks.
     var holdsSidebarOpen: Bool { card != nil || dwell != nil || cancelQuery != nil }
     func contains(windowPoint: NSPoint) -> Bool {
         guard let host, let card else { return false }
         return card.frame.contains(host.convert(windowPoint, from: nil))
     }
 
-    /// `host` is the window's flipped root view; card geometry is top-down.
     init(sidebar: SidebarView, host: NSView, window: NSWindow) {
         self.sidebar = sidebar; self.host = host; self.window = window
         previousAcceptsMouseMoved = window.acceptsMouseMovedEvents
@@ -255,7 +212,6 @@ final class SidebarPreviewController {
                 self?.sidebar?.onPreviewPreferencesChanged?()
             }
         })
-        //
         observers.append(center.addObserver(forName: NSView.frameDidChangeNotification, object: host, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -293,16 +249,8 @@ final class SidebarPreviewController {
         window?.acceptsMouseMovedEvents = previousAcceptsMouseMoved
     }
 
-    /// Sidebar rows are rebuilt by the model. Never retain an obsolete view or
-    /// execute its captured tab model after a navigation/Space/profile change.
-    /// Pointer motion must not take this path: `handle` skips it while the live
-    /// row view, geometry and presentation permission are unchanged. Window
-    /// render still calls this after a real rebuild so folder children refresh.
     func reconcile() {
         guard var current else { return }
-        // A shown folder card follows its folder's current children (a
-        // duplicate, a visit) in place, and a picture card its tab's title and
-        // address; any other change ends the session.
         if let card, current.domain == nil, let fresh = source?(current.target), fresh != current, fresh.hasSameOwner(as: current) {
             current = fresh; self.current = fresh; card.setRows(fresh.rows)
             if fresh.showsPicture { card.setHeading(fresh.title, site: Self.site(fresh.originalURL)) }
@@ -312,14 +260,11 @@ final class SidebarPreviewController {
         }
         lastAnchorView = sidebar?.previewAnchor(for: current.target)
         guard next != anchor else { return }
-        //
         anchor = next
         if let card { card.placement.row = next; card.place() }
     }
 
     func showFromKeyboard(_ target: SidebarPreviewTarget) {
-        // A menu action is delivered before AppKit finishes tracking. Dispatch
-        // once out of that stack so its end notification cannot cancel the card.
         let token = generation
         DispatchQueue.main.async { [weak self] in
             guard let self, self.generation == token else { return }
@@ -327,7 +272,6 @@ final class SidebarPreviewController {
         }
     }
 
-    ///
     func dismiss() { dismiss(animated: true) }
 
     private func dismiss(animated: Bool) {
@@ -341,7 +285,6 @@ final class SidebarPreviewController {
                    let responder = previousResponder as? NSView, SavedFocus.mayReturn(to: responder, in: window) {
                     window.makeFirstResponder(responder)
                 }
-                // Removal used to release this focus; an exiting card must not keep it.
                 if card.ownsFirstResponder { window.makeFirstResponder(nil) }
             }
             card.retire()
@@ -359,12 +302,6 @@ final class SidebarPreviewController {
         permitted?() == true && source?(value.target) == value && window?.isKeyWindow == true
             && window?.isVisible == true && window?.isMiniaturized == false && window?.attachedSheet == nil
     }
-    /// True when pointer motion must re-resolve the session: the sidebar
-    /// replaced the row view, its visible geometry moved, or presentation
-    /// permission dropped. Same view, same rect, still permitted is a no-op.
-    /// Prefers the last confirmed anchor view so an unchanged session does not
-    /// walk `previewAnchors` on every event; window render still reconciles
-    /// after a real rebuild.
     private func sessionNeedsReconcile() -> Bool {
         guard current != nil else { return false }
         guard permitted?() == true, let window, window.isKeyWindow, window.isVisible,
@@ -383,8 +320,6 @@ final class SidebarPreviewController {
         if visible.isEmpty { return true }
         return host.convert(visible, from: view) != anchor
     }
-    /// The anchor's own visible part: a view that does not clip reports its
-    /// clipping ancestors' region as `visibleRect`, not one within its bounds [C].
     private func anchorRect(_ target: SidebarPreviewTarget) -> NSRect? {
         guard let sidebar, let host, let view = sidebar.previewAnchor(for: target),
               view.window === window, !view.isHiddenOrHasHiddenAncestor else { return nil }
@@ -392,8 +327,6 @@ final class SidebarPreviewController {
         guard !visible.isEmpty else { return nil }
         return host.convert(visible, from: view)
     }
-    ///
-    /// the favorites grid width); every other sidebar row uses the right one.
     private func location(_ target: SidebarPreviewTarget) -> SidebarPreviewLocation {
         sidebar?.previewAnchor(for: target) is FavoriteTile ? .diagonal : .right
     }
@@ -402,7 +335,6 @@ final class SidebarPreviewController {
         if current == next && card != nil {
             if keyboard { keyboardPresentation = true; card?.focusKeyboard() }; return
         }
-        // Scheduling another item un-commits the previous one immediately.
         dismiss(); current = next; anchor = rect; keyboardPresentation = keyboard
         lastAnchorView = sidebar?.previewAnchor(for: target)
         let token = generation
@@ -417,8 +349,6 @@ final class SidebarPreviewController {
         dwell = work
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(200), execute: work)
     }
-    ///
-    /// card, and unavailable history presents nothing.
     private func commit(_ value: SidebarPreviewSource, token: UInt64) {
         guard generation == token, valid(value) else { dismiss(); return }
         if value.showsPicture, case .tab(let id) = value.target { commitPicture(value, tabID: id, token: token); return }
@@ -434,14 +364,11 @@ final class SidebarPreviewController {
         if cancel == nil { timeout.cancel(); self.timeout = nil }
         onPresentationChange?()
     }
-    /// A tab with no picture presents nothing, as a provider without data does.
-    /// The subscription lives with the card, which follows newer pictures.
     private func commitPicture(_ value: SidebarPreviewSource, tabID: UUID, token: UInt64) {
         let timeout = scheduleTimeout(token: token)
         let cancel = requestPicture?(tabID) { [weak self] image in
             guard let self, self.generation == token else { return }
             guard let image else {
-                // The page went away; end the session once the native callback returns.
                 DispatchQueue.main.async { [weak self] in if self?.generation == token { self?.dismiss() } }
                 return
             }
@@ -473,7 +400,6 @@ final class SidebarPreviewController {
         let card = SidebarPreviewCard(title: value.title, domain: value.domain, providerURL: value.originalURL,
                                       picture: picture, site: Self.site(value.originalURL))
         card.placement = SidebarPreviewPlacement(row: anchor, location: location(value.target))
-        // The session's live source: a folder card's rows may refresh in place.
         let live: () -> SidebarPreviewSource? = { [weak self] in
             guard let self, self.generation == token, let current = self.current,
                   current.target == value.target, self.valid(current) else { return nil }
@@ -486,7 +412,6 @@ final class SidebarPreviewController {
             } else if case .copyIssueID(let id) = action {
                 NSPasteboard.general.clearContents(); NSPasteboard.general.setString(id, forType: .string)
             } else {
-                //
                 if action.activation(for: row)?.dismissesPreview != false { self.dismiss() }
                 self.perform?(value, row, action)
             }
@@ -511,8 +436,6 @@ final class SidebarPreviewController {
         if keyboardPresentation { card.focusKeyboard() }
         onPresentationChange?()
     }
-    /// Inferred destination: the gear opens the existing Previews Settings in
-    ///
     private func showSettings(token: UInt64, live: () -> SidebarPreviewSource?) {
         guard generation == token, live() != nil else { return }
         dismiss()
@@ -530,22 +453,14 @@ final class SidebarPreviewController {
         let point = window.mouseLocationOutsideOfEventStream
         pointerMoved(to: host.convert(point, from: nil), windowPoint: point, from: nil)
     }
-    ///
-    /// its widened region is hovered, or while the pointer aims at it.
     private func pointerMoved(to point: NSPoint, windowPoint: NSPoint, from last: NSPoint?) {
-        //
-        // area) is hovered, even over another row.
         if let card, card.hoverFrame.contains(point) { return }
-        // Still on the live session row with the same previewTarget semantics
-        // (non-button hit). Skip the full sidebar walk; button chrome and leave
-        // fall through so aim/dismiss stay identical.
         if current != nil, let view = lastAnchorView,
            SidebarPreviewMotion.keepsSessionTarget(windowPoint: windowPoint, anchor: view) {
             return
         }
         let target = targetUnderPointer()
         if let target, target == current?.target { return }
-        // Adaptation: the aim test also bridges gaps between Parc's sidebar rows.
         if let card, let last, let sidebar, sidebar.bounds.contains(sidebar.convert(windowPoint, from: nil)),
            SidebarPreviewAim.keepsCurrent(from: last, to: windowPoint, location: card.placement.location) { return }
         if let target {
@@ -560,10 +475,6 @@ final class SidebarPreviewController {
         }
         guard permitted?() == true else { dismiss(); return event }
         if current != nil {
-            // MouseMoved over the open card cannot change row geometry by itself;
-            // scroll, resize, and window render still reconcile. Skip the per-move
-            // anchor walk while the pointer stays on the card. Host-nil still
-            // reconciles so a detached host dismisses as before.
             let overCard: Bool
             if event.type == .mouseMoved, let host {
                 overCard = card?.hoverFrame.contains(host.convert(event.locationInWindow, from: nil)) == true
@@ -589,7 +500,6 @@ final class SidebarPreviewController {
         case .keyDown:
             if card != nil, event.keyCode == 53 { dismiss(); return nil }
             if let card, card.ownsFirstResponder { return event }
-            // A hover never consumes typing or shortcuts meant for the page.
             if card != nil { dismiss() }
         default: break
         }

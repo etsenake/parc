@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 
-/// One app-wide choice; profiles and Spaces do not own the application's identity.
 @MainActor
 final class AppIconController: ObservableObject {
     static let shared = AppIconController(resources: Bundle.main.resourceURL)
@@ -30,13 +29,8 @@ final class AppIconController: ObservableObject {
             guard catalog.default == "Original", Set(catalog.variants) == approved,
                   catalog.variants.count == approved.count else { throw CocoaError(.fileReadCorruptFile) }
             let titles = ["Original": "The Original Parc", "Candy": "Candy Parc", "FlutedGlass": "Fluted Glass", "EarlyBirds": "Early Birds"]
-            //
-            // age/referral unlocks are excluded (docs/app-icon-availability.md).
-            // The first six retain the observed reference preference order.
             let order = ["Original", "Candy", "Neon", "FlutedGlass", "Schoolbook", "Colorful", "Hologram", "EarlyBirds", "Canary", "Dev"]
             variants = try order.map { id in
-                // Use the same native size representations as the non-running
-                // Dock plugin. PNGs support source-only previews without ICNS.
                 let native = root.appendingPathComponent(id + ".icns")
                 let artwork = FileManager.default.fileExists(atPath: native.path)
                     ? native : root.appendingPathComponent(id + ".png")
@@ -58,8 +52,6 @@ final class AppIconController: ObservableObject {
             view.imageScaling = .scaleProportionallyUpOrDown
             tile.contentView = view
             tile.display()
-            // A disposable --parc-profile instance must not change the installed
-            // app or the persistent Dock tile belonging to the normal session.
             guard updatesSystemIdentity else { return nil }
             DistributedNotificationCenter.default().postNotificationName(
                 Self.changedNotification, object: Bundle.main.bundleURL.resolvingSymlinksInPath().path,
@@ -71,8 +63,6 @@ final class AppIconController: ObservableObject {
         }
     }
 
-    /// The injected applier keeps component checks and appearance previews from
-    /// changing either the running app, Finder metadata, or the user's Dock.
     func configure(preferenceURL: URL, apply: @escaping (NSImage) -> String?) {
         self.preferenceURL = preferenceURL
         self.apply = apply

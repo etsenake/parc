@@ -1,13 +1,5 @@
 import AppKit
 
-///
-///
-///
-/// appearance. The card and tail put `backgroundExtra` over white or black
-///
-///
-///
-/// which hold the same grey.
 struct PArcMenuColors {
     let base: NSColor
     let background: NSColor

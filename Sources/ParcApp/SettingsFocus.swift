@@ -1,7 +1,5 @@
 import AppKit
 
-/// Native Settings keeps each pane's responder and the sheet's original control.
-/// Weak bookmarks never keep an old pane, field editor or window alive.
 @MainActor
 final class SettingsFocusState {
     private final class Bookmark {
@@ -19,14 +17,10 @@ final class SettingsFocusState {
         bookmarks[context] = Bookmark(view: view, selection: editor?.isFieldEditor == true ? editor?.selectedRange() : nil)
     }
 
-    /// Returns only to the same attached, visible, enabled native control. The
-    /// OS decides which buttons/switches participate under its keyboard setting.
     @discardableResult
     func restore(in window: NSWindow, root: NSView, context: String?, fallback: NSView? = nil) -> Bool {
         guard window.isVisible, window.isKeyWindow, NSApp.isActive,
               window.attachedSheet == nil, root.window === window else { return false }
-        // Nil deliberately chooses initial/fallback focus after the original
-        // Profile disappeared, even if the surviving Profile has a bookmark.
         let bookmark = context.flatMap { bookmarks[$0] }
         let candidate = bookmark?.view
         let target = candidate.flatMap { Self.isAvailable($0, in: root, window: window) ? $0 : nil }
@@ -58,9 +52,6 @@ final class SettingsFocusState {
             && view.acceptsFirstResponder
     }
 
-    /// The composition is hierarchical: a profile list/footer is traversed as
-    /// one group before its detail groups. Native tables and controls are leaves;
-    /// their cell/editor descendants must not become duplicate key targets.
     static func controls(in root: NSView) -> [NSView] {
         if let field = root as? NSTextField { return field.isEditable || field.isSelectable ? [field] : [] }
         if root is NSControl { return [root] }
@@ -82,8 +73,6 @@ final class SettingsFocusState {
     }
 }
 
-///
-///
 @MainActor
 final class SettingsNativeWindow: NSWindow {
     override func responds(to selector: Selector!) -> Bool {

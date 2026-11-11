@@ -1,8 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// An unsaved, original native page. The BrowserWindowController owns the
-/// parent relation; neither this view nor promotion reconstructs a navigation.
 @MainActor
 final class PeekController: NSObject, PCBrowserViewDelegate {
     let identity = UUID()
@@ -13,7 +11,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     let browser: PCBrowserView
     let view = PeekHostView()
     private let failure = PageFailureView()
-    /// A navigation failure or renderer crash covers the page.
     var showsFailure: Bool { failure.presentation != nil }
     private var swipeMonitor: Any?
     private var reduceMotionObserver: NSObjectProtocol?
@@ -21,17 +18,10 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     private var closeFocusReturn: PeekFocusReturn?
     private var finished = false
     private(set) var closePending = false
-    /// Last Peek-visible presentation fingerprint applied by `refresh` /
-    /// `publishPresentationIfChanged`. Identical title/URL/loading/capture/
-    /// crash/favicon/chrome ticks are a true no-op.
     private var lastPresentedFingerprint: String?
-    ///
-    ///
     private(set) var dismissedURL: URL?
-    /// That dismissal's back/forward entries, captured before the page closes.
     private(set) var dismissedNavigationState: NSObject?
     var onClose: (() -> Void)?
-    /// The page refused a dismissal's close (its leave-page dialog).
     var onCloseRefused: (() -> Void)?
     var onPromote: ((Bool) -> Void)?
     var onUpdate: (() -> Void)?
@@ -71,8 +61,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
                   (responder === self.view || responder.isDescendant(of: self.view)),
                   responder !== self.page.nativeView,
                   !responder.isDescendant(of: self.page.nativeView) else { return false }
-            // BrowserWindow.cancelOperation -> MainMenuAction.exit -> Exit(7),
-            // distinct from a renderer Escape carrying its confirmation Bool.
             self.requestDismiss(.exit)
             return true
         }
@@ -88,9 +76,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
 
     typealias Dismissal = PeekDismissalConfirmation.Dismissal
 
-    ///
-    ///
-    /// shows every control and awaiting confirmation leaves them ordinary.
     enum ModalPhase { case presented, awaitingDismissConfirmation, dismissing }
     var modalPhase: ModalPhase {
         closePending ? .dismissing : dismissConfirmation.reason != nil ? .awaitingDismissConfirmation : .presented
@@ -124,8 +109,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     }
     var canRequestExit: Bool {
         guard let window = view.window else { return false }
-        // Existing native window-action admission also excludes a reserved
-        // security surface even when it is not an attached AppKit sheet.
         return canPrepareExit && PCNativeBrowserApplication.canUseWindowUndo(in: window)
     }
 
@@ -137,13 +120,8 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     func requestDismiss(_ mechanism: Dismissal) {
         guard !finished, !closePending, canInteract?() == true,
               let window = view.window, window.attachedSheet == nil else { return }
-        //
-        // phone.down.fill/Hang up configurations, keyed by the real dismissal
-        // reason. Keep this confirmation in the modal controls, not a sheet.
         let mediaInput = browser.captureState.map { $0.camera || $0.microphone } ?? false
         if let reason = dismissConfirmation.request(mechanism, mediaInput: mediaInput, onExpiry: { [weak self] in
-                // The original host's reset emits didFailToConfirmDismissal.
-                // Return to the base control without closing or stealing focus.
                 self?.view.confirmationTitle = nil
                 self?.onUpdate?()
             }) {
@@ -163,9 +141,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         view.confirmationTitle = nil
     }
 
-    /// The window closes this Peek while its parent isn't shown (Redo of
-    /// Close Peek): the same page close and dismissal record as a user
-    /// dismissal, without controls to confirm in or focus to return.
     func closeWhileHidden() {
         guard !finished, !closePending, view.isHidden, !page.isClosed else { return }
         closeConfirmed()
@@ -195,8 +170,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
                 self.onCloseRefused?()
             }
         }
-        // Owners observe the dismissal start and a refused close: the Favorite
-        //
         if closePending { onUpdate?() }
     }
 
@@ -221,8 +194,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     private func restoreFocusAfterRefusal(_ focusReturn: PeekFocusReturn?) {
         guard let window = view.window else { return }
         focusReturn?.perform(in: window, ownerIsAvailable: { self.canFocus }) { [self] original in
-            // Refusal keeps the actual control or renderer editor if it still
-            // owns focus. It must not reset selection/composition to page root.
             guard window.firstResponder !== original, let original = original as? NSView,
                   original.window === window, !original.isHiddenOrHasHiddenAncestor else { return }
             if original === page.nativeView || original.isDescendant(of: page.nativeView) {
@@ -233,9 +204,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         }
     }
 
-    /// Applies Peek chrome from the live browser/page. Returns false when the
-    /// Peek-visible presentation fingerprint already matches the last apply —
-    /// a true no-op that must not fan into the window `onUpdate` bridge.
     @discardableResult
     func refresh() -> Bool {
         guard !finished else { return false }
@@ -248,8 +216,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         return true
     }
 
-    /// Refresh + window notify only when Peek-visible bits changed. Dismissal
-    /// confirmation / modal-phase `onUpdate` paths stay ungated.
     private func publishPresentationIfChanged() {
         if refresh() { onUpdate?() }
     }
@@ -308,8 +274,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
         onPromote?(split)
     }
 
-    /// After actual close, or after the same wrapper was transferred to a saved
-    /// pane. This is presentation teardown, never a second page-close route.
     func finish() {
         guard !finished else { return }
         finished = true
@@ -334,8 +298,6 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
                       self.canInteract?() == true, self.view.window?.attachedSheet == nil,
                       self.contains(event), event.deltaX > 0,
                       abs(event.deltaX) > abs(event.deltaY) else { return false }
-                // Only completed AppKit swipe remains a shell input adaptation.
-                // Renderer Escape is delivered by the exact native ACK owner.
                 self.requestDismiss(.swipe)
                 return true
             }
@@ -350,18 +312,13 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
     func browserView(_ view: PCBrowserView, didChangeLoading loading: Bool, canGoBack: Bool, canGoForward: Bool) { publishPresentationIfChanged() }
     func browserView(_ view: PCBrowserView, didChangeCaptureState state: PCNativeCaptureState?) { publishPresentationIfChanged() }
     func browserView(_ view: PCBrowserView, didChangeRendererCrash crash: PCNativeRendererCrash?) { publishPresentationIfChanged() }
-    /// Peek's own chrome shows no media; the window's Mini Player does.
     func browserViewDidChangeMedia(_ view: PCBrowserView) { if view === browser { onMediaChange?() } }
-    /// The Peek bar alone, as the window repaints a pane's.
     func browserViewDidChangePageColor(_ view: PCBrowserView) {
         guard view === browser, !self.view.browserToolbar.isHidden else { return }
         self.view.browserToolbar.showPageColor(of: page, failing: showsFailure)
     }
     func browserView(_ view: PCBrowserView, requestFocusForRendererCrash crash: PCNativeRendererCrash) { refresh(); focus() }
-    /// A loaded icon arrives only as a favicon-only change; the owner's
-    /// Favorite tile badge shows this Peek's live favicon (BR-03).
     func browserViewDidChangeFavicon(_ view: PCBrowserView) { publishPresentationIfChanged() }
-    /// The engine learned a FairPlay site for Safari's identity (docs/fairplay-identity.md).
     func browserView(_ view: PCBrowserView, didLearnSafariIdentityForSite site: String,
                      profilePath: String, offTheRecord: Bool) {
         FairPlayIdentityController.shared.didLearn(site, profilePath: profilePath, offTheRecord: offTheRecord)
@@ -375,18 +332,11 @@ final class PeekController: NSObject, PCBrowserViewDelegate {
 
 @MainActor
 final class PeekHostView: NSView {
-    ///
-    ///
     private(set) var toastContentRect = NSRect.zero
     var onNativeCancel: (() -> Bool)?
     override func cancelOperation(_ sender: Any?) {
         if onNativeCancel?() != true { super.cancelOperation(sender) }
     }
-    /// The host takes first responder for Escape only and is no key view
-    /// (WindowKeyViewLoop `passesThrough`), so no link leads on from it. Tab
-    /// and Shift-Tab from the host enter the window loop where it crosses into
-    /// the Peek: its first key view here, or its last going backward, keeping
-    /// AppKit's selection direction for the page's renderer.
     override func keyDown(with event: NSEvent) {
         guard event.keyCode == 48, event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
               let window, window.firstResponder === self else { super.keyDown(with: event); return }
@@ -407,8 +357,6 @@ final class PeekHostView: NSView {
     let content = LayoutView()
     let developerToolbar = DeveloperToolbarView()
     let browserToolbar = BrowserToolbarView()
-    ///
-    ///
     let loadingIndicator = PageLoadingIndicator()
     private let chrome = NSVisualEffectView()
     private let titleLabel = NSTextField(labelWithString: "")
@@ -427,7 +375,6 @@ final class PeekHostView: NSView {
             layoutSubtreeIfNeeded(); controls.layoutSubtreeIfNeeded()
             guard oldValue != confirmationTitle, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
                   let previous, let layer = closeButton.layer else { return }
-            // Recovered control-state spring, distinct from modal presentation.
             let animation = CASpringAnimation(keyPath: "bounds")
             let frequency = 2 * Double.pi / 0.25
             animation.mass = 1; animation.stiffness = frequency * frequency
@@ -464,9 +411,6 @@ final class PeekHostView: NSView {
         titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
         titleLabel.textColor = .secondaryLabelColor; titleLabel.lineBreakMode = .byTruncatingTail
         controls.orientation = .vertical; controls.spacing = 7; controls.alignment = .leading
-        // ModalV2KeyBindings: close carries archiveTab's live binding and
-        //
-        // same original page and current window destination.
         for (button, name, id) in [(closeButton, "Close Peek", "closeTab:"), (expandButton, "Open Peek as Tab", "openInCurrentSpace:"),
                                    (splitButton, "Add Peek to Split View", nil)] as [(NSButton, String, String?)] {
             LiveShortcutToolTip.set(button, name, commandID: id); button.setAccessibilityLabel(name)
@@ -489,14 +433,9 @@ final class PeekHostView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func layout() {
         super.layout()
-        //
-        // content-width ratio and 12-point vertical inset. Clamp adapts tiny
-        // Parc windows; the title band and 12-point radius remain adaptations.
         let width = min(max(0, bounds.width - 80), bounds.width * 0.8)
         let card = NSRect(x: (bounds.width - width) / 2, y: 12, width: width, height: max(0, bounds.height - 24))
         chrome.frame = card
-        //
-        // card and in the inset above it, backing-aligned.
         let loaderWidth = min(PageLoadingIndicator.size.width, width), loaderHeight = PageLoadingIndicator.size.height
         loadingIndicator.frame = backingAlignedRect(NSRect(x: card.midX - loaderWidth / 2, y: (card.minY - loaderHeight) / 2,
                                                            width: loaderWidth, height: loaderHeight), options: .alignAllEdgesNearest)
@@ -520,9 +459,6 @@ final class PeekHostView: NSView {
     func animatePresentation() {
         settleMotion()
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        //
-        //
-        // ease-out, from 0 as the host appears. It never resizes Chromium per frame.
         let opacity = CABasicAnimation(keyPath: "opacity")
         opacity.fromValue = 0; opacity.toValue = 1; opacity.duration = 0.3
         opacity.timingFunction = CAMediaTimingFunction(name: .easeOut)

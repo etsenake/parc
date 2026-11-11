@@ -28,7 +28,6 @@ assert setter.splitlines()[1].strip() == mapping, "setSidebarPresentation no lon
 # without a tab, so the rule is applied again before anything uses the result.
 assert ("if presentation == .hidden, spaceCreation != nil {\n"
         "            cancelSpaceCreation(restoreFocus: false)\n"
-        "            // The cancel can return the window to having no tab.\n"
         "            presentation = EmptyWindowSidebarRule.presentation(for: requested, noActiveItem: emptyWindowHoldsSidebar)\n"
         "        }\n") in setter, "cancelling Space creation no longer re-applies the no-tab rule"
 assert setter.count("EmptyWindowSidebarRule.presentation(") == 2

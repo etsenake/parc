@@ -1,14 +1,8 @@
 import AppKit
 import SwiftUI
 
-///
-/// its own `ToastWindow` child, shared by every toast Parc presents. See
-/// docs/toasts.md for the recovered addresses behind each value.
 struct PArcToastContent: Equatable {
-    /// `ToastContent.Button`. Parc presents only `shareButton(items:)`.
     enum Button: Equatable { case share([URL]) }
-    /// `ToastContentOptions`: `.default(icon:label:subLabel:buttons:)` and
-    /// `.shortcut(leadingLabel:shortcut:trailingLabel:)`.
     enum Body: Equatable {
         case standard(icon: String?, label: String, subLabel: String?, buttons: [Button])
         case shortcut(leading: String?, shortcut: String, trailing: String?)
@@ -22,122 +16,76 @@ struct PArcToastContent: Equatable {
                         accessibilityText: [label, subLabel].compactMap { $0 }.joined(separator: ", "))
     }
     private static func share(_ urls: [URL]) -> [Button] { urls.isEmpty ? [] : [.share(urls)] }
-    ///
-    ///
     static func copiedCurrentURL(_ url: URL?) -> PArcToastContent {
         standard("Copied Current URL", buttons: share(url.map { [$0] } ?? []))
     }
-    ///
     static func copiedItemLinks(_ urls: [URL]) -> PArcToastContent {
         standard("Copied item links", buttons: share(urls))
     }
-    ///
     static func copiedQuoteLink(_ url: URL?) -> PArcToastContent {
         standard("Copied Link", icon: "quote.bubble.fill", subLabel: "With Quote", buttons: share(url.map { [$0] } ?? []))
     }
-    ///
-    /// (ToastType.copyTabURLQuote's label, without its quote).
     static func copiedLink(_ url: URL) -> PArcToastContent { standard("Copied Link", buttons: share([url])) }
-    ///
-    ///
     static let copiedBuildInfo = standard("Copied Build Info")
-    ///
     static let cannotAddNewPane = standard("Cannot Add New Pane")
-    ///
     static let copiedImage = standard("Copied Image")
-    ///
-    ///
     static func copiedFile(_ urls: [URL]) -> PArcToastContent { standard("Copied File", buttons: share(urls)) }
-    ///
-    ///
     static func zoom(percent: Int) -> PArcToastContent { standard("\(percent)%") }
-    ///
     static func fullScreenExit(shortcut: String) -> PArcToastContent {
         standard("To exit full screen, press " + shortcut + ".")
     }
-    ///
     static let archiveCleared = standard("Archive Cleared")
-    /// Parc's: an imported extension that failed after the import finished,
-    /// worded like Parc's other "Couldn’t add …" toasts.
     static func extensionsNotAdded(_ names: [String]) -> PArcToastContent {
         standard(names.count == 1 ? "Couldn’t add " + names[0] : "Couldn’t add \(names.count) extensions")
     }
-    ///
-    ///
     static let importPartial = standard("Only some of your data imported. Please try again!")
     static let importFailed = standard("We weren’t able to import… please try again!")
-    ///
-    ///
     static func tabRestored(to location: String, selected: Bool) -> PArcToastContent {
         standard("Tab restored to " + location + (selected ? "" : ". Click to view."))
     }
-    ///
     static func pinnedToFolder(_ name: String) -> PArcToastContent { standard("Pinned to “" + name + "”") }
-    /// ToastType.backgroundTabCreated (case 31) as `BackgroundTabAffordanceView`
-    ///
     static func backgroundTabCreated(inSpace space: String?, document: Bool) -> PArcToastContent {
         if document { return standard("New Document Created") }
         return standard(space.map { "New Tab Created in " + $0 } ?? "New Tab Created")
     }
     var showsShortcut: Bool { if case .shortcut = body { return true } else { return false } }
-    ///
     static func pressAgain(shortcut: String, title: String) -> PArcToastContent {
         PArcToastContent(body: .shortcut(leading: nil, shortcut: shortcut, trailing: "again to " + title),
                         accessibilityText: "Press " + shortcut + " again to " + title)
     }
-    /// ToastType.undo (case 12) becomes `.undoable(text, showShortcutHint: true)`
-    ///
-    ///
-    ///
-    ///
-    ///
     static func undoable(_ text: String) -> PArcToastContent {
         PArcToastContent(body: .shortcut(leading: text + "! Use", shortcut: "⌘Z", trailing: "to undo."),
                         accessibilityText: text + "! Use ⌘Z to undo.")
     }
-    ///
     static let clearedTabs = undoable("Cleared Tabs")
 }
 
-/// `ToastAccessoryOptions`: the delayed pill below the card.
 struct PArcToastAccessory: Equatable {
     let text: String
     let image: String?
     let accessibilityLabel: String
 }
 
-/// An anchor whose window content is only part of its bounds.
 @MainActor protocol PArcToastAnchoring: NSView {
     var toastContentRect: NSRect { get }
 }
 
 enum PArcToastPlacement {
-    ///
     static let windowSide: CGFloat = 600
-    ///
-    ///
     static func windowFrame(for parent: NSRect) -> NSRect {
         NSRect(x: parent.maxX - windowSide, y: parent.maxY - windowSide, width: windowSide, height: windowSide)
     }
-    ///
-    /// `.windowContent` toast in the Spaces layout: the content view's upper
-    ///
     static func contentFrame(for content: NSRect) -> NSRect {
         NSRect(x: content.minX, y: content.minY + content.height / 2, width: content.width, height: content.height / 2)
     }
 }
 
 enum PArcToastTiming {
-    ///
     static let duration: TimeInterval = 5
-    ///
     static let retirement: TimeInterval = 1
-    ///
     static let accessoryDelay: TimeInterval = 0.5
 }
 
-/// `ToastAnimator`'s `ScrollWheelObserver`: a scroll that moves in the parent
-/// or toast window dismisses; a resting finger's zero-distance event does not.
 enum PArcToastScroll {
     static func dismisses(window: NSWindow?, deltaX: CGFloat, deltaY: CGFloat, owners: [NSWindow?]) -> Bool {
         guard deltaX != 0 || deltaY != 0, let window else { return false }
@@ -145,19 +93,11 @@ enum PArcToastScroll {
     }
 }
 
-///
-/// remote experiment is excluded; every toast uses the attributed color
-/// material branch, with the original per-color HSL adjustment before averaging.
 struct PArcToastPalette {
     let background: NSColor
     let foreground: NSColor
     let isDark: Bool
 
-    ///
-    ///
-    /// static incognito theme. Its `basicColor` background is the one colour
-    ///
-    ///
     init(theme: SpaceTheme, isDark: Bool, basicBackground: NSColor? = nil) {
         if let basicBackground { self.init(colors: [basicBackground]); return }
         let appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)!
@@ -175,8 +115,6 @@ struct PArcToastPalette {
                     components: [value.red, value.green, value.blue, 1], count: 4)
             }
             if colors.isEmpty {
-                // Parc's existing uncolored Space follows the native window
-                // appearance; no remote palette or service state is introduced.
                 colors = [NSColor.windowBackgroundColor.usingColorSpace(.displayP3) ?? .gray]
             }
         }
@@ -220,17 +158,14 @@ final class PArcToastState: ObservableObject {
     let content: PArcToastContent
     let accessory: PArcToastAccessory?
     @Published var theme: SpaceTheme
-    /// An incognito window's basic background, in place of the theme's colours.
     @Published var basicBackground: NSColor?
     @Published var showing = false
     @Published var showAccessory = false
     @Published var reduceMotion = false
-    ///
     @Published var maxWidth: CGFloat = PArcToastPlacement.windowSide
     init(content: PArcToastContent, accessory: PArcToastAccessory? = nil, theme: SpaceTheme, basicBackground: NSColor? = nil) {
         self.content = content; self.accessory = accessory; self.theme = theme; self.basicBackground = basicBackground
     }
-    ///
     func show() {
         withAnimation(reduceMotion ? nil : Self.spring) { showing = true }
     }
@@ -254,7 +189,6 @@ private struct PArcToastFrameKey: PreferenceKey {
 }
 
 struct PArcToastActions {
-    ///
     var tap: (() -> Void)?
     var accessory: (() -> Void)?
     var dismiss: () -> Void
@@ -262,8 +196,6 @@ struct PArcToastActions {
     var frames: (PArcToastFrames) -> Void
 }
 
-/// `ShinyToastDropdown` with its `ToastContentView` and `ToastAccessoryView`,
-///
 struct PArcToastCard: View {
     @ObservedObject var state: PArcToastState
     let actions: PArcToastActions
@@ -273,8 +205,6 @@ struct PArcToastCard: View {
         PArcToastPalette(theme: state.theme, isDark: colorScheme == .dark, basicBackground: state.basicBackground)
     }
     private var ink: Color { Color(nsColor: palette.foreground) }
-    ///
-    ///
     static let iconFont: Font = {
         let label = NSFont.systemFont(ofSize: 13)
         return Font(label.familyName.flatMap {
@@ -295,9 +225,6 @@ struct PArcToastCard: View {
     }
 
     private var card: some View {
-        //
-        // app's primary colour and vanishes when the card's scheme differs.
-        // Everything in the card takes the toast's ink.
         content.foregroundStyle(ink)
             .padding(.horizontal, 12).padding(.vertical, 10).frame(minHeight: 42)
             .background(backdrop(accessory: false))
@@ -316,8 +243,6 @@ struct PArcToastCard: View {
             .shadow(color: .black.opacity(0.2), radius: 16, x: 0, y: 6)
     }
 
-    /// Caps the card at the window's width without widening it, so the
-    /// scale-in stays anchored on the card itself.
     private struct WidthLimit: Layout {
         let maxWidth: CGFloat
         func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -332,15 +257,11 @@ struct PArcToastCard: View {
     @ViewBuilder private var content: some View {
         switch state.content.body {
         case .standard(let icon, let label, let subLabel, let buttons):
-            //
             HStack(spacing: 8) {
                 if let icon { Image(systemName: icon).font(Self.iconFont) }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label).font(.system(size: 14, weight: .medium))
                         .fixedSize(horizontal: false, vertical: true)
-                    //
-                    //
-                    // on a light card; 0.7 keeps it secondary and readable.
                     if let subLabel {
                         Text(subLabel).font(.system(size: 11, weight: .semibold)).foregroundStyle(ink.opacity(0.7))
                     }
@@ -358,7 +279,6 @@ struct PArcToastCard: View {
                 }
             }
         case .shortcut(let leading, let shortcut, let trailing):
-            //
             HStack {
                 Group {
                     if let leading { Text(leading) }
@@ -431,7 +351,6 @@ struct PArcToastCard: View {
     }
 }
 
-///
 struct PArcToastButtonStyle: ButtonStyle {
     let ink: Color
     let isDark: Bool
@@ -481,15 +400,12 @@ private final class PArcToastWindow: NSWindow {
     override var canBecomeMain: Bool { false }
 }
 
-/// One presented toast: its passive child window, five-second repeating
-///
 @MainActor
 final class PArcToastPresentation: NSView {
     let state: PArcToastState
     private let duration: TimeInterval
     private var onTap: (() -> Void)?
     var onRetire: (() -> Void)?
-    /// Where the pointer is, in screen coordinates.
     var pointerLocation: () -> NSPoint = { NSEvent.mouseLocation }
     private weak var originalWindow: NSWindow?
     private weak var panel: PArcToastWindow?
@@ -529,8 +445,6 @@ final class PArcToastPresentation: NSView {
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
     }
 
-    /// The child frame for `anchor`'s content, or the window placement when
-    /// there is no attached, visible content (the delegate's nil frame).
     static func frame(in parent: NSWindow, over anchor: NSView?) -> NSRect {
         if let anchor, anchor.window === parent, !anchor.isHiddenOrHasHiddenAncestor {
             let content = (anchor as? PArcToastAnchoring)?.toastContentRect ?? anchor.bounds
@@ -596,12 +510,10 @@ final class PArcToastPresentation: NSView {
 
     func performTap() {
         guard !isRetiring, let onTap else { return }
-        //
         dismiss(animated: true)
         onTap()
     }
 
-    /// Input is revoked at once; only this passive child finishes its exit.
     func dismiss(animated: Bool) {
         guard !isRetiring else { if !animated { closePresentation() }; return }
         let shouldAnimate = animated && panel?.isVisible == true && !state.reduceMotion
@@ -662,15 +574,10 @@ final class PArcToastPresentation: NSView {
     }
 }
 
-/// A window's toast slot. Presenting removes every existing window toast first
-///
 @MainActor
 final class PArcToastPresenter {
     private(set) var current: PArcToastPresentation?
-    ///
     private let share: @MainActor ([URL]) -> Void
-    /// The window's basic background, in place of its theme's colours: an
-    /// incognito window's, whose theme context is the static incognito theme.
     var basicBackground: NSColor?
     init(share: @escaping @MainActor ([URL]) -> Void = { _ in }) { self.share = share }
 
@@ -691,7 +598,6 @@ final class PArcToastPresenter {
         return next
     }
     func dismiss(animated: Bool) { current?.dismiss(animated: animated) }
-    /// A changed binding retires only a toast that shows a shortcut.
     func dismissShortcutToasts() {
         if current?.state.content.showsShortcut == true { current?.dismiss(animated: true) }
     }

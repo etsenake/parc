@@ -1,11 +1,6 @@
 import AppKit
 
-///
-/// engines carry a brand colour; any other engine takes the dominant colour of
-/// a visited page's favicon on its site.
 enum CommandBarSiteColor {
-    ///
-    ///
     static let bundled: [(template: String, hex: String)] = [
         ("https://drive.google.com/drive/search?q={searchTerms}", "0F9D58"),
         ("https://mail.google.com/mail/ca/u/0/#apps/{searchTerms}", "D44638"),
@@ -28,16 +23,10 @@ enum CommandBarSiteColor {
         ("https://open.spotify.com/search/{searchTerms}", "1DB954"),
     ]
 
-    ///
-    ///
-    /// URL is the matcher's receiver and the page host its argument.
     static func scope<Scope>(forPageHost pageHost: String, in scopes: [Scope], searchHost: (Scope) -> String?) -> Scope? {
         scopes.first { scope in searchHost(scope).map { !$0.isEmpty && host($0, matches: pageHost) } == true }
     }
 
-    ///
-    ///
-    /// whose host the engine's search host matches.
     static func bundledColor(template: String, searchHost: String, prepopulated: Bool) -> NSColor? {
         guard !prepopulated else { return nil }
         let entry = bundled.first { $0.template == template } ?? bundled.first { entry in
@@ -47,21 +36,17 @@ enum CommandBarSiteColor {
         return entry.flatMap { color(hex: $0.hex) }
     }
 
-    ///
     static func color(hex: String) -> NSColor? {
         guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }
         return NSColor(displayP3Red: CGFloat(value >> 16 & 0xff) / 255, green: CGFloat(value >> 8 & 0xff) / 255,
                        blue: CGFloat(value & 0xff) / 255, alpha: 1)
     }
 
-    ///
-    /// `site` as one dot-separated label of `host`.
     static func host(_ host: String, matches site: String) -> Bool {
         let host = host.lowercased(), site = site.lowercased()
         return host == site || host.hasSuffix("." + site) || host.components(separatedBy: ".").contains(site)
     }
 
-    ///
     static func faviconPixels(_ image: NSImage) -> [UInt8]? {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         let info = cgImage.bitmapInfo.rawValue, alpha = info & CGBitmapInfo.alphaInfoMask.rawValue
@@ -86,22 +71,16 @@ enum CommandBarSiteColor {
         return drawn ? bytes : nil
     }
 
-    ///
-    ///
-    /// bright, else the first entry. Pure data, so it runs off the main thread.
     static func dominantRGB(_ pixels: [UInt8]) -> (UInt8, UInt8, UInt8)? {
         guard let palette = MedianCutPalette.palette(pixels, colorCount: 5, quality: 10, ignoresWhite: true),
               let first = palette.first else { return nil }
         return palette.first { brightness($0) >= 0.15 } ?? first
     }
 
-    ///
-    ///
     static func faviconColor(_ rgb: (UInt8, UInt8, UInt8)) -> NSColor {
         lightnessAdjusted(red: CGFloat(rgb.0) / 255, green: CGFloat(rgb.1) / 255, blue: CGFloat(rgb.2) / 255, by: -0.15)
     }
 
-    ///
     static func lightnessAdjusted(red r: CGFloat, green g: CGFloat, blue b: CGFloat, by delta: CGFloat,
                                   alpha: CGFloat = 1) -> NSColor {
         let high = max(r, g, b), low = min(r, g, b), lightness = (high + low) / 2
@@ -131,9 +110,6 @@ enum CommandBarSiteColor {
     }
 }
 
-///
-///
-/// and near-white skipped, 75% of the cuts by population, the rest by volume.
 enum MedianCutPalette {
     private static let significantBits = 5, shift = 8 - 5, side = 1 << 5
 
@@ -151,7 +127,6 @@ enum MedianCutPalette {
             cachedCount = total
             return total
         }
-        /// A cut can leave a box one past empty along its axis; it holds no cells.
         func levels(_ channel: Int) -> StrideThrough<Int> { stride(from: low[channel], through: high[channel], by: 1) }
         func forEachCell(_ body: (Int) -> Void) {
             for r in levels(0) { for g in levels(1) { for b in levels(2) { body(index(r, g, b)) } } }

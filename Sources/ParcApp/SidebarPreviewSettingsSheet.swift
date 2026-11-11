@@ -1,7 +1,5 @@
 import AppKit
 
-/// General's original Settings window owns this immediate-preference sheet.
-/// Done dismisses it; it does not commit or roll back a second preference copy.
 @MainActor
 final class SidebarPreviewSettingsSheet: NSWindowController {
     private let defaults: UserDefaults
@@ -14,8 +12,6 @@ final class SidebarPreviewSettingsSheet: NSWindowController {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        // Keep the observed 24pt inset and row spacing; omitted live providers
-        // reduce the height without leaving dead controls or empty rows.
         let size = NSSize(width: 422, height: 272)
         let sheet = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                              styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)

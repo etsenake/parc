@@ -1,10 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The one browser choice both import presentations use: setup's 278 × 92
-/// BrowserSelection row and the import window's 48-point radio row. The whole
-/// card is the button, so a click anywhere selects it; hover, focus, keyboard
-/// activation and accessibility are the same in both.
 struct BrowserImportSourceCard: View {
     enum Layout { case setup, window }
     let layout: Layout
@@ -101,7 +97,6 @@ private struct BrowserImportSetupCardFace: View {
     }
 }
 
-/// The import window's observed row: radio, uppercase name, divider and icon.
 private struct BrowserImportWindowCardFace: View {
     let title: String
     let icon: NSImage?

@@ -1,12 +1,6 @@
 import AppKit
 import Combine
 
-///
-/// opaque 140 × 140 tiles, 12-point insets, 18-point colored artwork, wrapping
-/// 15-point semibold title, hairline and light-mode shadow. Dark space uses the
-/// catalog's `-dark` artwork on an opaque raised tile with light title — not a
-/// translucent smear of Space ink. Card contrast is independent of the Space
-/// tint behind the grid.
 enum DocumentCardChrome {
     static let side: CGFloat = 140
     static let padding: CGFloat = 12
@@ -45,10 +39,6 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private let empty = NSTextField(wrappingLabelWithString: "")
     private var rows: [Row] = []
     private var subscription: AnyCancellable?
-    /// Last Documents-visible catalog snapshot this view applied. Duplicate
-    /// `NoteStore.changes` admissions that leave notes, easels, and profile
-    /// removal pending untouched return before filter/sort/rebuild; real list,
-    /// persist, and visibility flips miss and reload. Search uses `force`.
     private var observedNotes: [NoteDocument] = []
     private var observedEasels: [EaselSummary] = []
     private var observedProfileRemovalPending = false
@@ -107,12 +97,6 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     }
     func focusSearch() { window?.makeFirstResponder(search); search.selectText(nil) }
     func reload(force: Bool = false) {
-        // `NoteStore.changes` sinks here while Documents is open (and rename/
-        // delete may reload again after an already-applied notify). Skip before
-        // filter/sort/rebuild when the Documents-visible catalog fingerprint
-        // already matches the last applied snapshot. Real list/persist/
-        // membership and profile-removal flips miss and reload; search and the
-        // first apply force.
         let selected = selectedPage
         do {
             let notes = try NoteStore.sharedStore(directory: store.notesDirectory(for: profileID)).list()
@@ -141,10 +125,6 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
         }
     }
 
-    /// True when this view already applied the Documents-visible note/easel
-    /// catalog and create-button pending bit. Duplicate `NoteStore.changes`
-    /// admissions that leave those untouched return before filter/sort.
-    /// Title/body/membership/persist and profile-removal flips still miss.
     private func shouldSkipCatalogReload(notes: [NoteDocument], easels: [EaselSummary], pending: Bool) -> Bool {
         notes == observedNotes
             && easels == observedEasels
@@ -261,8 +241,6 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
             } catch { self.empty.stringValue = error.localizedDescription; self.empty.isHidden = self.rows.isEmpty == false }
         }
     }
-    ///
-    /// in its destructive `Dialogs` sheet with these strings.
     private func delete(_ row: Row) {
         guard valid, let window, window.attachedSheet == nil else { return }
         let note = row.page.noteID != nil

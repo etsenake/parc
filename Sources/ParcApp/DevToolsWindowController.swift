@@ -1,8 +1,5 @@
 import AppKit
 
-//
-// that shell, never the WebContents. Chromium owns docking and the original
-// tools page; it must notify the client after its final Browser has drained.
 @MainActor
 final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
                                       PCNativeBrowserWindowClient, PCNativePageObserver {
@@ -24,7 +21,6 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
         self.profilePath = profilePath
         sourceBinding = source
         sourceClient = source?.client
-        //
         let window = NSWindow(contentRect: .zero,
                               styleMask: DevToolsWindowGeometry.styleMask,
                               backing: .buffered, defer: false)
@@ -37,9 +33,6 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
             bundleIdentifier: Bundle.main.bundleIdentifier)
         windowFrameAutosaveName = autosave
         DevToolsWindowGeometry.restoreFrame(window, using: autosave)
-        // Geometry moves sync Chromium hosts; reveal must still run on
-        // identical-geometry layout so late tools attach can show the shell
-        // after preflight (containerFor often cannot present yet).
         root.onGeometryChanged = { [weak self] in
             self?.synchronizeLayout()
         }
@@ -57,9 +50,6 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
             window.close()
             throw error
         }
-        // Preflight reserves an attached container, not a visible empty window.
-        //
-        // exists in the constructor; Chromium attaches the tools page later.
         root.layoutSubtreeIfNeeded()
     }
 
@@ -94,8 +84,6 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
               let window, root.pageContainer.window === window,
               PCNativeBrowserApplication.owner(of: incoming) === browser else { return nil }
         if let page { return page === incoming ? root.pageContainer : nil }
-        // The actual tools page is not a saved tab and is never reloaded here.
-        // A conflicting observer means another client still owns presentation.
         guard incoming.observer == nil || incoming.observer === self else { return nil }
         page = incoming
         incoming.observer = self
@@ -132,8 +120,6 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
     func nativeBrowser(_ browser: PCNativeBrowserWindow, didClose incoming: PCNativePage) {
         guard browser === binding, page === incoming else { return }
         releasePage(incoming)
-        // Page destruction precedes Browser/service teardown. Keep the shell
-        // alive until nativeBrowserDidReleaseLastBrowser, never close here.
     }
     func nativeBrowser(_ browser: PCNativeBrowserWindow, didSelect incoming: PCNativePage) {
         guard browser === binding, page === incoming, !closed, !closePending, !closeApproved,
@@ -167,9 +153,6 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
         page = nil
     }
 
-    // Optional native ownership notification, delivered only after the last
-    // exact Browser unregisters. Docking preserves WebContents, so page-close
-    // notifications cannot substitute for this event.
     @objc func nativeBrowserDidReleaseLastBrowser(_ browser: PCNativeBrowserWindow) {
         guard browser === binding, !closed else { return }
         closeApproved = true
@@ -248,7 +231,6 @@ final class DevToolsWindowController: NSWindowController, NSWindowDelegate,
         }
         root.needsLayout = true
         root.layoutSubtreeIfNeeded()
-        // Native BrowserWindow still owns the NSWindow fullscreen transition.
         return true
     }
     func nativeBrowserShowTabSearch(_ browser: PCNativeBrowserWindow) {
@@ -299,9 +281,7 @@ private final class DevToolsRootView: NSView {
     let sidePanel = NSView()
     let errorLabel = NSTextField(wrappingLabelWithString: "")
     var sidePanelVisible = false
-    /// Fired after every layout so late tools attach can reveal a preflight shell.
     var onLayout: (() -> Void)?
-    /// Fired only when root child frames/hidden actually change.
     var onGeometryChanged: (() -> Void)?
     override var isFlipped: Bool { true }
 
@@ -319,10 +299,6 @@ private final class DevToolsRootView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func layout() {
         super.layout()
-        // AppKit can re-enter root layout with unchanged geometry while tools
-        // stay open. Frame writes and synchronizeLayout are a true no-op when
-        // surfaces already match; reveal still runs. Window key/occlusion/
-        // resize and page-change paths still call synchronizeLayout directly.
         let plan = DevToolsRootLayoutSkip.plan(
             bounds: bounds,
             sidePanelVisible: sidePanelVisible,
@@ -334,7 +310,6 @@ private final class DevToolsRootView: NSView {
             pageContainerFrame: pageContainer.frame,
             errorLabelFrame: errorLabel.frame)
         if !matched {
-            // Hidden containers retain genuine geometry before renderer creation.
             sidePanel.frame = plan.sidePanelFrame
             sidePanel.isHidden = plan.sidePanelHidden
             pageContainer.frame = plan.pageContainerFrame

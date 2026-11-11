@@ -1,7 +1,5 @@
 import AppKit
 
-/// Original ImportKeychainView's named color roles; sRGB values resolved from
-/// ARC_ImportFeature in the installed 1.170 reference. No runtime bundle lookup.
 enum OnboardingPasswordPalette {
     static let background = adaptive(
         NSColor(srgbRed: 0.878, green: 0.882, blue: 1, alpha: 1),
@@ -23,9 +21,6 @@ enum OnboardingPasswordPalette {
     }
 }
 
-/// ImportKeychainView's original click/file-drop surface (460 × 200, radius 20,
-/// 2.5-point [7, 5] dashed outline). Results come from the existing CSV owner;
-/// a selected file alone never produces the reference's success presentation.
 @MainActor
 final class OnboardingPasswordDropTarget: PointingHandButton {
     enum Presentation { case ready, working, removingExport, saved, needsAttention }

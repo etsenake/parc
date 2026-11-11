@@ -1,7 +1,5 @@
 import AppKit
 
-/// The capture caller supplies its original source URL and explicitly no text.
-/// Preparing this immutable payload neither opens Messages nor contacts anyone.
 @MainActor
 struct CaptureMessagePayload {
     let pngData: Data
@@ -16,8 +14,6 @@ struct CaptureMessagePayload {
     }
 
     var items: [Any] {
-        //
-        // Capture's text is nil; page titles and brand copy are never invented.
         var result: [Any] = []
         if let sourceURL { result.append(sourceURL) }
         result.append(image)
@@ -25,9 +21,6 @@ struct CaptureMessagePayload {
     }
 }
 
-/// The real macOS Compose Message service owns its composer and immutable image
-/// after perform(withItems:). It has no public cancellation API. Detaching a
-/// retired page drops our callback; it cannot retract the user's OS composer.
 @MainActor
 final class CaptureMessageSharing: NSObject, NSSharingServiceDelegate {
     enum Outcome { case completed, cancelled, failed(Error) }
@@ -74,7 +67,6 @@ final class CaptureMessageSharing: NSObject, NSSharingServiceDelegate {
     }
     func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
         guard sharingService === service else { return }
-        // This is the service's completion, not proof of delivery to a recipient.
         finish(.completed)
     }
     func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {

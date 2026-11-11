@@ -24,7 +24,7 @@ assert "private func rememberAppliedCatalog()" in source, \
     "rememberAppliedCatalog missing"
 
 reload = re.search(
-    r"private func reload\(force: Bool = false\) \{(?P<body>.*?)\n    \}\n\n    /// True when this view already applied the Captures-visible",
+    r"private func reload\(force: Bool = false\) \{(?P<body>.*?)\n    \}\n\n    private func shouldSkipCatalogReload\(\) -> Bool \{",
     source, re.S)
 assert reload, "reload(force:) not found"
 body = reload.group("body")

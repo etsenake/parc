@@ -1,7 +1,5 @@
 import AppKit
 
-///
-/// This is content only. The sidebar host owns lifetime, movement and focus.
 @MainActor
 final class AutoArchiveEducationView: NSView, NSTextViewDelegate {
     var onDismiss: (() -> Void)?

@@ -3,8 +3,6 @@ import Combine
 import CoreText
 import SwiftUI
 
-/// Reference-sized education window. Its commands keep the originating browser
-/// owner; closing it never archives a background tab or changes a binding.
 @MainActor
 final class ShortcutEssentialsWindow: NSWindowController {
     static let commandIDs = ["newTab:", "cycleToNextRecentTab:", "copyCurrentURL:", "split:"]
@@ -44,14 +42,11 @@ final class ShortcutEssentialsWindow: NSWindowController {
     @discardableResult
     func activateCommand(_ id: String, event: NSEvent? = nil) -> Bool {
         guard canActivateCommand(id) else { return false }
-        // The original parent reducer keeps its education state for shortcut
-        // actions. Only View All and actual window close remove that state.
         onCommand?(id, event); return true
     }
 
     func escape() {
         guard ownsPresentation else { return }
-        // Escape is the parent command-bar dismissal, not education close.
         onEscape?()
     }
 
@@ -75,8 +70,6 @@ final class ShortcutEssentialsWindow: NSWindowController {
         }
         showWindow(nil); window.makeKeyAndOrderFront(nil)
     }
-    /// Original WindowProvider's selected physical window supplies placement.
-    /// AppKit subsequently constrains this frame to the screen as usual.
     static func origin(parent: NSRect, education: NSSize) -> NSPoint {
         NSPoint(x: parent.maxX - education.width - 10,
                 y: parent.maxY - education.height - 10)
@@ -113,8 +106,6 @@ private final class EssentialsSurface: NSView {
     private let title = NSTextField(labelWithString: "Essential Keyboard Shortcuts")
     private var separators: [NSBox] = []
     private lazy var instructions = InstructionsAccessibility(owner: self)
-    //
-    // same reading order without making its labels/keycaps keyboard controls.
     private var instructionRows: [(text: String, frame: NSRect)] {
         caps.indices.compactMap { index in
             let cap = caps[index], name = titles[index + 1], detail = details[index]
@@ -242,8 +233,6 @@ private final class EssentialsSurface: NSView {
     }
 }
 
-/// Uses the original native SwiftUI Button, preserving platform keyboard/AX and
-/// press behavior. The surrounding border is decoration, never an input owner.
 @MainActor
 final class EssentialsViewAllControl: NSHostingView<EssentialsViewAllLabel> {
     var onPress: (() -> Void)?

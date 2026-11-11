@@ -1,29 +1,18 @@
 import AppKit
 
-///
-///
-/// holds a 24-point `SidebarCellImageContainerView` with the item-count icon or
-///
-///
-/// original activation/close owners.
 @MainActor
 final class SidebarSplitTitleView: NSView {
     private let titleLabel = NSTextField(labelWithString: "")
-    /// `SplitViewCellItemCountIconView`: a rounded box behind a bold count.
     private let countIcon = NSView()
     private let countLabel = NSTextField(labelWithString: "")
     private let iconView = NSImageView()
     private let titleField = SidebarTitleField()
     private let defaultIconText: String
     var trailingControlWidth: CGFloat = 0 { didSet { needsLayout = true } }
-    /// The title's trailing edge: the stack's 18-point trailing inset before
-    /// the split's Close, or before the cell edge (`SidebarSplitCellLayout`).
     var titleTrailing: CGFloat? { didSet { if titleTrailing != oldValue { needsLayout = true } } }
     var prepareActivation: (() -> (() -> Bool)?)?
     var selectionClick: ((NSEvent) -> Bool)?
     var makeMenu: (() -> NSMenu?)?
-    ///
-    /// on it moves the whole split (the press and the drag events).
     var beginMoveDrag: ((NSEvent, NSEvent) -> Void)?
     private var pendingActivation: (() -> Bool)?
     private var pressEvent: NSEvent?
@@ -32,13 +21,10 @@ final class SidebarSplitTitleView: NSView {
     var editingTitle: Bool { titleField.editingTitle }
     override var isFlipped: Bool { true }
 
-    ///
-    /// the split's own name; accessibility then names only the split.
     init(title: String, count: Int, named: Bool = true) {
         defaultIconText = String(count)
         super.init(frame: .zero)
         titleLabel.stringValue = title
-        // SidebarCellConstants.Title.font, one weight whether or not current.
         titleLabel.font = .systemFont(ofSize: SidebarSplitCellLayout.titleFontSize)
         titleLabel.textColor = .parcInk
         titleLabel.lineBreakMode = .byTruncatingTail
@@ -61,18 +47,10 @@ final class SidebarSplitTitleView: NSView {
         setIcon(nil)
         setAccessibilityElement(true); setAccessibilityRole(.button)
         setAccessibilityLabel(!named || title.isEmpty ? "Split View, \(count) tabs" : "\(title), Split View, \(count) tabs")
-        //
-        //
-        // one has none.
         parcTooltip = named && !title.isEmpty ? TooltipConfiguration(title, behavior: .onMouseIdle(delay: 0.01)) : nil
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    ///
-    /// icon drawn at the favicon size, `SidebarCustomIcon.image(withSize:)`
-    ///
-    /// Symbol, or its EmojiIcon image fitted to 16 points, which the
-    /// ForegroundSecondary tint does not recolor.
     func setIcon(_ icon: SidebarGroupIcon?) {
         iconView.image = icon?.image(size: SidebarSplitCellLayout.countIconSize)
         iconView.isHidden = iconView.image == nil
@@ -80,21 +58,15 @@ final class SidebarSplitTitleView: NSView {
         countLabel.stringValue = defaultIconText
         needsLayout = true
     }
-    /// The 24-point icon container (`SidebarCellImageContainerView`), which
-    ///
     var iconContainerFrame: NSRect {
         NSRect(x: SidebarSplitCellLayout.infoLeadingInset,
                y: ((bounds.height - SidebarSplitCellLayout.infoIconSlot) / 2).rounded(.down),
                width: SidebarSplitCellLayout.infoIconSlot, height: SidebarSplitCellLayout.infoIconSlot)
     }
-    /// The title takes the palette's title color, the count its
-    ///
-    ///
     func applyColors(title: NSColor, secondary: NSColor, countText: NSColor? = nil,
                      countBackground: NSColor? = nil, dark: Bool = false) {
         titleLabel.textColor = title; titleField.textColor = title
         countLabel.textColor = countText ?? secondary
-        //
         countIcon.layer?.backgroundColor = countBackground?.withAlphaComponent(SidebarSplitCellLayout.countBackgroundAlpha).cgColor(in: effectiveAppearance)
         iconView.contentTintColor = SidebarSplitCellLayout.customIconTint(dark: dark)
     }

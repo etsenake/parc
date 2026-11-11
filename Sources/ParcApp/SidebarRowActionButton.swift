@@ -1,19 +1,11 @@
 import AppKit
 import QuartzCore
 
-/// A row action retains its original owner's one-use command from press until
-/// release. Native NSButton tracking, keyboard activation and cancellation stay
-/// authoritative; a disappearing/replaced row cannot dispatch a fresh command.
 final class SidebarRowActionButton: PointingHandButton {
     var prepareAction: (() -> (() -> Bool)?)?
-    /// A cheap stand-in for `prepareAction() != nil` when preparing the action
-    /// is costly; the action itself is then prepared only on press.
     var isAvailable: (() -> Bool)?
     var makeMenu: (() -> NSMenu?)?
-    /// A SidebarCellButtonSystemImageContentView glyph in place of Close's bars.
     var symbol: NSImage? { didSet { needsDisplay = true } }
-    /// Decorative content can persist across row reconstruction; input remains
-    /// owned by this button and its original action lease.
     var decoration: NSView? {
         didSet {
             oldValue?.removeFromSuperview()
@@ -47,7 +39,6 @@ final class SidebarRowActionButton: PointingHandButton {
     deinit { if let windowObserver { NotificationCenter.default.removeObserver(windowObserver) } }
 
     func refreshAvailability() {
-        // A hidden button refreshes when it is shown again.
         guard !isHidden else { return }
         isEnabled = window != nil && available
     }
@@ -107,8 +98,6 @@ final class SidebarRowActionButton: PointingHandButton {
         hovering = isTopmost(atWindowPoint: event.locationInWindow); refreshAvailability(); needsDisplay = true
     }
     override func mouseExited(with event: NSEvent) { hovering = false; needsDisplay = true }
-    /// Sliding out from under something drawn over the row, such as the
-    /// command bar, hovers the button; sliding back under doesn't.
     override func mouseMoved(with event: NSEvent) {
         let value = isTopmost(atWindowPoint: event.locationInWindow)
         guard value != hovering else { return }
@@ -146,8 +135,6 @@ final class SidebarRowActionButton: PointingHandButton {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, window != nil else {
             layer.removeAnimation(forKey: "rowActionPress"); return
         }
-        //
-        // ratio and .3 response. Reversals use the current presentation value.
         let spring = CASpringAnimation(keyPath: "transform")
         spring.mass = 1; spring.stiffness = pow(2 * Double.pi / 0.3, 2)
         spring.damping = 4 * Double.pi * 0.6 / 0.3
@@ -155,15 +142,12 @@ final class SidebarRowActionButton: PointingHandButton {
         spring.duration = spring.settlingDuration; layer.add(spring, forKey: "rowActionPress")
     }
     override func draw(_ dirtyRect: NSRect) {
-        //
-        // 24-point square; the 5-point corners remain Parc's placement.
         if (hovering || pressed) && isEnabled {
             SidebarRowAppearance.controlFill(pressed: pressed, dark: dark).setFill()
             NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 5, yRadius: 5).fill()
         }
         if decoration != nil { return }
         if let symbol {
-            //
             let tint = dark ? NSColor(white: 1, alpha: 0.592) : NSColor(white: 0, alpha: 0.565)
             let image = NSImage(size: symbol.size, flipped: false) { rect in
                 symbol.draw(in: rect); tint.set(); rect.fill(using: .sourceAtop); return true
@@ -174,10 +158,6 @@ final class SidebarRowActionButton: PointingHandButton {
                        from: .zero, operation: .sourceOver, fraction: isEnabled ? 1 : 0.35, respectFlipped: true, hints: nil)
             return
         }
-        // SidebarCellButtonCloseContentView: two 14×2 rounded bars at ±π/4,
-        //
-        //
-        // One path keeps the crossing no darker than the bars.
         let alpha: CGFloat = (dark ? 0.592 : 0.565) * (isEnabled ? 1 : 0.35)
         let cross = NSBezierPath()
         for angle: CGFloat in [-45, 45] {
@@ -197,15 +177,11 @@ final class SidebarRowActionButton: PointingHandButton {
     }
 }
 
-///
-/// lifts as one layer and leaves pointer input to the row.
 final class SidebarRowTitleStack: NSView {
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-///
-/// from (1, 1) to (width − 1, height − 1). Decorative only.
 final class SidebarRowSlashView: NSView {
     var color = SidebarRowAppearance.slashColor(dark: false) { didSet { needsDisplay = true } }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -218,9 +194,6 @@ final class SidebarRowSlashView: NSView {
     }
 }
 
-///
-/// with per-region corners (TabCellRegionalBackgroundButton.updateLayer
-///
 class SidebarRowRegionView: PointingHandButton {
     var dark = false { didSet { if dark != oldValue { refreshFill() } } }
     var corners: CACornerMask = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner] {
@@ -241,22 +214,17 @@ class SidebarRowRegionView: PointingHandButton {
         guard let layer else { return }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.backgroundColor = pressed || hovered ? SidebarRowAppearance.regionFill(pressed: pressed, dark: dark).cgColor : nil
-        // The region radius follows the row's 12-point continuous background.
         layer.cornerRadius = SidebarRowAppearance.cornerRadius; layer.cornerCurve = .continuous
         layer.maskedCorners = corners
         CATransaction.commit()
     }
 }
 
-/// The non-interactive body region of a resettable row.
 final class SidebarRowBodyRegionView: SidebarRowRegionView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func isAccessibilityElement() -> Bool { false }
 }
 
-///
-/// hovered on a resettable row, and Command picks the separate variant
-///
 enum SidebarRowHoverSubtitle: Equatable {
     case reset, resetAndSeparate
 
@@ -265,19 +233,10 @@ enum SidebarRowHoverSubtitle: Equatable {
     }
 }
 
-///
-///
-///
-///
-/// so a Command-click separates the live page instead of resetting it. Like
-/// the row's other controls it holds the original owner's one-use command from
-/// press to release; a drag that starts on it moves the row instead.
 final class SidebarRowResetRegion: SidebarRowRegionView {
     var prepareAction: (() -> (() -> Bool)?)?
-    /// Separate From Pinned Tab, available whenever reset is.
     var prepareSeparate: (() -> (() -> Bool)?)?
     var makeMenu: (() -> NSMenu?)?
-    /// Called when the region's hover or its hover subtitle state changes.
     var onHoverChange: (() -> Void)?
     private(set) var hoverSubtitle: SidebarRowHoverSubtitle?
     private var pendingAction: (() -> Bool)?
@@ -301,7 +260,6 @@ final class SidebarRowResetRegion: SidebarRowRegionView {
     func refreshAvailability() {
         isEnabled = window != nil && prepareAction?() != nil
     }
-    /// Keyboard activation (Full Keyboard Access) takes a fresh command.
     @objc private func invoke() {
         guard window != nil, !isHiddenOrHasHiddenAncestor else { return }
         _ = prepareAction?()?()
@@ -313,19 +271,13 @@ final class SidebarRowResetRegion: SidebarRowRegionView {
     override func isAccessibilityEnabled() -> Bool {
         window != nil && !isHiddenOrHasHiddenAncestor && prepareAction?() != nil
     }
-    /// The one-use command a click with these modifiers takes.
     func lease(_ flags: NSEvent.ModifierFlags) -> (() -> Bool)? {
         flags.contains(.command) ? prepareSeparate?() : prepareAction?()
     }
-    /// A region without a current command for the held modifiers (the page is
-    /// held by another window or a Peek, a sheet is open) leaves the click to
-    /// the row's own selection and activation owners.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point), window != nil, lease(NSEvent.modifierFlags) != nil else { return nil }
         return hit
     }
-    /// Like the row around it, a background window's first click only
-    /// activates the window; it never resets the page.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { false }
     override func mouseDown(with event: NSEvent) {
         if event.modifierFlags.contains(.control) { rightMouseDown(with: event); return }
@@ -337,7 +289,6 @@ final class SidebarRowResetRegion: SidebarRowRegionView {
         guard let down = downEvent, pendingAction != nil else { return }
         let start = convert(down.locationInWindow, from: nil), point = convert(event.locationInWindow, from: nil)
         guard hypot(point.x - start.x, point.y - start.y) <= 4 else {
-            // A drag from the icon moves the row, as from anywhere else on it.
             pendingAction = nil; downEvent = nil; pressed = false
             superview?.mouseDown(with: down); superview?.mouseDragged(with: event)
             return
@@ -373,15 +324,12 @@ final class SidebarRowResetRegion: SidebarRowRegionView {
         if let trackingArea { removeTrackingArea(trackingArea) }
         let area = NSTrackingArea(rect: .zero, options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect], owner: self)
         addTrackingArea(area); trackingArea = area
-        // A row rebuilt under a stationary pointer reconciles its actual hover.
         setPointerInside(window.map { window in
             let point = window.mouseLocationOutsideOfEventStream
             return window.isKeyWindow && !isHiddenOrHasHiddenAncestor && bounds.contains(convert(point, from: nil))
                 && isTopmost(atWindowPoint: point)
         } == true)
     }
-    // Under something drawn over the row, such as the command bar, the
-    // pointer isn't on the button; moves re-read it as it slides out.
     override func mouseEntered(with event: NSEvent) { setPointerInside(isTopmost(atWindowPoint: event.locationInWindow)) }
     override func mouseMoved(with event: NSEvent) { setPointerInside(isTopmost(atWindowPoint: event.locationInWindow)) }
     override func mouseExited(with event: NSEvent) { setPointerInside(false) }
@@ -407,8 +355,6 @@ final class SidebarRowResetRegion: SidebarRowRegionView {
     private func setPointerInside(_ inside: Bool) {
         let wasHovered = hovered
         hovered = inside && isEnabled
-        //
-        // `monitor`), so Command can switch the hover without pointer motion.
         if hovered, flagsMonitor == nil {
             flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
                 MainActor.assumeIsolated { _ = self?.updateHoverSubtitle(event.modifierFlags) }
@@ -419,7 +365,6 @@ final class SidebarRowResetRegion: SidebarRowRegionView {
         }
         if !updateHoverSubtitle(NSEvent.modifierFlags), wasHovered != hovered { onHoverChange?() }
     }
-    /// Re-derives the hover subtitle state for the held modifiers.
     @discardableResult func updateHoverSubtitle(_ flags: NSEvent.ModifierFlags) -> Bool {
         let next: SidebarRowHoverSubtitle? = hovered ? (flags.contains(.command) ? .resetAndSeparate : .reset) : nil
         guard next != hoverSubtitle else { return false }

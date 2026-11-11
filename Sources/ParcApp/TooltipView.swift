@@ -1,10 +1,6 @@
 import AppKit
 import SwiftUI
 
-///
-///
-/// the tooltip window; the tooltip sits `margin(scale:)` inside so its
-/// shadows are not clipped.
 @MainActor final class TooltipView: NSView {
     struct Content: Equatable {
         var label: String
@@ -14,36 +10,24 @@ import SwiftUI
         var maxWidth: CGFloat
         var style: TooltipConfiguration.Style = .standard
     }
-    /// Frames relative to the tooltip's own origin. `size` is the frame placed
-    /// against the anchor; a wrapped label's `pill` can be narrower, leading.
     struct Layout: Equatable {
         var size: CGSize
         var pill: CGRect
         var label: CGRect
         var keycaps: [CGRect]
-        /// The `.label` style's subtitle, below the label.
         var subtitle: CGRect? = nil
-        /// The `.dockItem` style's Profile capsule, after the label.
         var profile: CGRect? = nil
     }
 
-    ///
     static let labelFont = NSFont.systemFont(ofSize: 12, weight: .medium)
-    ///
     static let glyphFont = NSFont.systemFont(ofSize: 10, weight: .bold)
     static let minHeight: CGFloat = 28
     static let horizontalPadding: CGFloat = 10
     static let shortcutSpacing: CGFloat = 6
-    /// A taller tooltip's background reaches this far above and below it.
     static let backgroundOverhang: CGFloat = 7
     static let borderWidth: CGFloat = 1
     static let darkBorder = NSColor.white.withAlphaComponent(0.1)
 
-    ///
-    /// spacing (0 between these texts) of the label, `lineLimit(4)`, over the
-    ///
-    ///
-    /// descent: 15 and 14 points.
     enum Label {
         static let subtitleFont = NSFont.systemFont(ofSize: 11)
         static let lineLimit = 4
@@ -51,16 +35,6 @@ import SwiftUI
         static func lineHeight(_ font: NSFont) -> CGFloat { ceil(font.ascender) + ceil(-font.descender) }
     }
 
-    ///
-    ///
-    /// with the Space header's full-size geometry: 5 points leading, 6
-    /// trailing and 4 above and below, a 20-point icon slot, 2 points, then
-    /// the name in 11-point medium, in a capsule. The face colour fills it and
-    ///
-    /// pressed colours never apply under a tooltip, which takes no mouse.
-    ///
-    /// Like the header's indicator, the capsule is capped (at half the row's
-    /// room) and a longer name truncates at its tail, so the title keeps room.
     enum Profile {
         static let spacing: CGFloat = 6
         static let font = NSFont.systemFont(ofSize: 11, weight: .medium)
@@ -96,16 +70,12 @@ import SwiftUI
             needsDisplay = true
         }
     }
-    /// The scale the layout is aligned to: the destination screen's before the
-    /// window moves there, then the window's own.
     var backingScale: CGFloat = 2 {
         didSet {
             guard backingScale != oldValue else { return }
             contentLayout = Self.layout(for: content, scale: backingScale); needsDisplay = true
         }
     }
-    /// `TooltipShadow.windowMargin` on a device pixel, so the pill's edges and
-    /// text land on whole pixels at every scale.
     static func margin(scale: CGFloat) -> CGFloat { ceil(TooltipShadow.windowMargin * scale - 0.001) / scale }
     private(set) var contentLayout: Layout
     private var pressProgress: [CGFloat] = []
@@ -131,8 +101,6 @@ import SwiftUI
         if let scale = window?.backingScaleFactor { backingScale = scale }
     }
 
-    /// The shown keycaps follow the keys held while the tooltip is up; a face
-    /// drops to its pressed inset on `.easeOut(duration: 0.12)`.
     func setPressed(modifiers: NSEvent.ModifierFlags, characters: String?) {
         let targets = content.keycaps.map { $0.isPressed(modifiers: modifiers, characters: characters) ? CGFloat(1) : 0 }
         guard targets != pressTargets else { return }
@@ -155,7 +123,6 @@ import SwiftUI
         return running
     }
 
-    /// CAMediaTimingFunction(name: .easeOut): cubic Bézier (0, 0) (0.58, 1).
     static func easeOut(_ x: Double) -> CGFloat {
         guard x > 0 else { return 0 }
         guard x < 1 else { return 1 }
@@ -178,7 +145,6 @@ import SwiftUI
     static func glyphString(_ glyph: String, color: NSColor = .black) -> NSAttributedString {
         NSAttributedString(string: glyph, attributes: [.font: glyphFont, .foregroundColor: color])
     }
-    /// A `.label` style text on SwiftUI's line height.
     static func lineString(_ text: String, font: NSFont, color: NSColor = .black) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byWordWrapping
@@ -186,9 +152,6 @@ import SwiftUI
         return NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: paragraph])
     }
 
-    /// `HStack(alignment: .center, spacing: 6) { label.frame(minHeight: 28); keycaps }`,
-    /// padded 10 points either side, vertically fixed and at most `maxWidth`
-    /// wide; the label wraps rather than exceed it.
     static func layout(for content: Content, scale: CGFloat) -> Layout {
         func pixel(_ value: CGFloat) -> CGFloat { ceil(value * scale - 0.001) / scale }
         func aligned(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
@@ -199,7 +162,6 @@ import SwiftUI
         let keycapsWidth = widths.reduce(0, +) + Keycap.spacing * CGFloat(max(0, widths.count - 1))
         let shortcutWidth = widths.isEmpty ? 0 : shortcutSpacing + keycapsWidth
         let available = max(0, content.maxWidth - 2 * horizontalPadding - shortcutWidth)
-        /// The text's size within `available` less `reserved`, and whether it wraps.
         func measure(_ text: NSAttributedString, lines: CGFloat? = nil, reserved: CGFloat = 0) -> (size: CGSize, wraps: Bool) {
             let room = max(0, available - reserved)
             let natural = text.boundingRect(with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude), options: options).size
@@ -258,9 +220,6 @@ import SwiftUI
         if background.height > Self.minHeight { background = background.insetBy(dx: 0, dy: -Self.backgroundOverhang) }
         let shape = content.corners.path(in: background)
 
-        // CGContext shadows ignore the CTM, so map SwiftUI's y-down offset and
-        // radius (the blur's standard deviation; CG's blur is twice it) to
-        // device space.
         let device = context.userSpaceToDeviceSpaceTransform
         let linear = CGAffineTransform(a: device.a, b: device.b, c: device.c, d: device.d, tx: 0, ty: 0)
         let scale = hypot(device.a, device.b)
@@ -336,7 +295,6 @@ import SwiftUI
                   options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine])
     }
 
-    /// The Profile name on its one line, tail-truncated as the Space header's is.
     static func profileString(_ name: String, color: NSColor = .black) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail

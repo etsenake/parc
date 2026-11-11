@@ -3,9 +3,6 @@ import MetalKit
 import simd
 
 extension NSColor {
-    /// A layer's fixed colour, resolved in the appearance it is shown in. A
-    /// system colour's `cgColor` otherwise resolves in AppKit's current
-    /// drawing appearance, which during an appearance switch is still the old one.
     func cgColor(in appearance: NSAppearance?) -> CGColor {
         guard let appearance else { return cgColor }
         var resolved: CGColor?
@@ -14,9 +11,6 @@ extension NSColor {
     }
 }
 
-/// Source-owned implementation of the installed WindowTheme renderer's measured
-/// color math. The evidence and remaining parity limits live in the theme
-///
 struct ThemeChromePalette: Equatable {
     let isDark: Bool
     let foregroundPrimary: NSColor
@@ -31,14 +25,10 @@ struct ThemeChromePalette: Equatable {
     let cutoutColor: NSColor
     let title: NSColor
     let subtitle: NSColor
-    ///
-    ///
     let shaded: NSColor
     let shadedDark: NSColor
     private var inheritedContentAppearance: NSAppearance?
 
-    /// Content over the theme has its own appearance. Do not apply this to the
-    /// window/background: its material and Metal underlay use the app appearance.
     var contentAppearance: NSAppearance? {
         inheritedContentAppearance ?? NSAppearance(named: isDark ? .darkAqua : .aqua)
     }
@@ -54,9 +44,6 @@ struct ThemeChromePalette: Equatable {
         }
         self.init(theme: theme, isDark: dark)
         if theme.appearance == .automatic && (!theme.isValid || theme.primaryColor == nil) {
-            //
-            // neighbor needs the real window's appearance explicitly, or it
-            // would inherit the current Space's contrasting text appearance.
             inheritedContentAppearance = appearance
         }
     }
@@ -71,14 +58,10 @@ struct ThemeChromePalette: Equatable {
             backgroundExtra = .controlBackgroundColor; background = .windowBackgroundColor
             focus = .selectedContentBackgroundColor; hover = .quaternaryLabelColor
             cutoutColor = .windowBackgroundColor; title = .labelColor; subtitle = .secondaryLabelColor
-            // No primary palette exists for this system fallback; keep the
-            // same semantic positions the themed palette derives from it.
             shaded = isDark ? foregroundTertiary : foregroundPrimary
             shadedDark = isDark ? minContrastColor : maxContrastColor
             return
         }
-        //
-        // luminance is in the target band; these are not HSL-lightness bounds.
         let light = ThemeRenderMath.luminanceAdjusted(primary, minimum: 0.85, maximum: 0.95)
         let mid = ThemeRenderMath.luminanceAdjusted(primary, minimum: 0.3, maximum: 0.5)
         let shade = ThemeRenderMath.luminanceAdjusted(primary, minimum: 0, maximum: 0.5)
@@ -90,8 +73,6 @@ struct ThemeChromePalette: Equatable {
         }
         let white = SIMD4<Float>(1, 1, 1, 1), black = SIMD4<Float>(0, 0, 0, 1)
         shaded = color(shade); shadedDark = color(dark)
-        //
-        // and BasePrimaryLight is black in the shipped asset catalog.
         if isDark {
             foregroundPrimary = color(light); foregroundSecondary = color(mid)
             foregroundTertiary = color(shade); maxContrastColor = color(light)
@@ -112,22 +93,12 @@ struct ThemeChromePalette: Equatable {
         }
     }
 
-    ///
-    ///
-    /// so a view takes the theme's light or dark palette by its own
-    /// appearance, whatever the theme's forced appearance.
     static func appearanceBasedMaxContrast(theme: SpaceTheme) -> NSColor {
         NSColor(name: nil) { appearance in
             ThemeChromePalette(theme: theme, isDark: appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua).maxContrastColor
         }
     }
 
-    ///
-    /// address scheme. Values come from this window's actual theme and palette.
-    ///
-    /// Display P3 components to eight-digit uppercase hex, including alpha.
-    /// A `basicColor` background, the incognito theme's, exports its one
-    /// colour as the simple colour (inferred from the single-colour branch).
     func websiteStylesheet(theme: SpaceTheme, basicBackground: NSColor? = nil) -> String {
         var values: [(String, NSColor)] = [
             ("foregroundPrimary", foregroundPrimary), ("foregroundSecondary", foregroundSecondary),
@@ -166,20 +137,10 @@ struct ThemeChromePalette: Equatable {
         let components = [converted.redComponent, converted.greenComponent,
                           converted.blueComponent, converted.alphaComponent]
         guard components.allSatisfy(\.isFinite) else { return nil }
-        //
-        // conversion is recovered; this bounds adaptation keeps malformed
-        // values from entering the stylesheet.
         return "#" + components.map { String(format: "%02X", Int((min(1, max(0, $0)) * 255).rounded())) }.joined()
     }
 }
 
-///
-/// contrast-selected content appearance (10160a630), while the gradient
-/// underlay reads the native window appearance (101383c18). Stored forced
-/// appearances predate that recovered separation in Parc; preserve their
-/// explicit choice for compatibility. The exception is a floating surface's
-///
-/// inferred to, so a forced side's text may sit on the window's blur.
 struct ThemeSurfaceStyle {
     let backgroundIsDark: Bool
     let material: NSVisualEffectView.Material
@@ -187,8 +148,6 @@ struct ThemeSurfaceStyle {
     init(theme: SpaceTheme, appearance: NSAppearance, colorRenderingAvailable: Bool = true) {
         let hasColor = theme.isValid && theme.colorCount > 0
         if hasColor && !colorRenderingAvailable {
-            // Without the color canvas, the native material is the entire
-            // backdrop. Keep it legible with the published content palette.
             backgroundIsDark = ThemeChromePalette(theme: theme, appearance: appearance).isDark
             material = NSVisualEffectView.Material(rawValue: backgroundIsDark ? 2 : 1)!
             return
@@ -200,18 +159,12 @@ struct ThemeSurfaceStyle {
         case .dark: backgroundIsDark = true
         }
         let darkMaterial = hasColor ? theme.appearance == .dark : backgroundIsDark
-        // Original WindowBackgroundTranslucencyViewAppKit uses material 1/2
-        // (101392e3c, constants103444dd0/103444dc8), emphasized and follows-key.
-        // The numeric initializer avoids deprecated Swift spellings while
-        // retaining the shipped native material, rather than substituting sidebar.
         material = NSVisualEffectView.Material(rawValue: darkMaterial ? 2 : 1)!
     }
 }
 
 @MainActor
 enum ThemeWindowActivity {
-    ///
-    /// main state and every parent; an editor child must not dim the main theme.
     static func isActive(_ window: NSWindow?) -> Bool {
         var owner = window
         while let current = owner {
@@ -272,9 +225,6 @@ private enum ThemeRenderMath {
     }
 
     static func luminanceAdjusted(_ base: ThemeColor, minimum: Double, maximum: Double) -> SIMD4<Float> {
-        // Native HSL adjustment preserves the original RGB color space. Its
-        // luminance helper reads components in that space before the semantic
-        // palette converts the resulting colors to extended sRGB.
         func components(_ value: ThemeColor) -> SIMD4<Float> {
             SIMD4(Float(value.red), Float(value.green), Float(value.blue), 1)
         }
@@ -307,16 +257,12 @@ private enum ThemeRenderMath {
             let first = luminance(base) + 0.05, second = luminance(rgb) + 0.05
             return max(first, second) / min(first, second)
         }
-        //
-        // The installed sidebar-dark-mode-bias flag has a baked default of0.
         let light = ThemeChromePalette(theme: theme, isDark: false)
         let dark = ThemeChromePalette(theme: theme, isDark: true)
         return contrast(dark.title) >= contrast(light.title)
     }
 }
 
-// Opt-in native delivery diagnostics only: no content/URLs/keys, hit tests,
-// layout, focus or window changes. Tree/ancestor walks have fixed bounds.
 @MainActor
 enum NativeInputDiagnostics {
     static let enabled = CommandLine.arguments.contains("--parc-input-diagnostics")
@@ -396,8 +342,6 @@ enum NativeInputDiagnostics {
     }
     static func afterDispatch(_ event: NSEvent, snapshot: Snapshot?, phase: String = "dispatch") {
         guard let snapshot else { return }
-        // Log the same weak original owner even if the event's current window
-        // changed. A fresh bounded tree separately identifies new page views.
         let window = snapshot.window
         windowState(event, phase + "-after-window", window)
         log(event, phase + "-after-owner", "original_window=\(snapshot.windowNumber) event_native_window=\(event.window?.windowNumber ?? 0) same_window=\(window != nil && event.window === window)")
@@ -417,103 +361,46 @@ enum NativeInputDiagnostics {
     }
 }
 
-///
-///
-///
-/// `basicColor` with no translucency style, no content appearance and not
-/// vibrant, so the window and its floating sidebar are opaque; its window
-/// appearance is `.single(.dark)`.
 enum IncognitoWindowTheme {
-    ///
     static let background = NSColor(displayP3Red: 0.054, green: 0.06, blue: 0.075, alpha: 1)
-    /// Both palettes come from BaseAssets BrandBlue, Display P3 (49, 57, 251)/255,
-    ///
-    ///
-    ///
-    /// ThemeColor cannot hold, so it is clamped to 1.
     static let paletteTheme = SpaceTheme.singleColor(ThemeColor(red: 0.18420, green: 0.22480, blue: 1)!)
 }
 
-/// A background container: normal child controls remain interactive. Only its
-/// backing surfaces (the material, the theme canvas and a floating surface's
-/// shadow) pass pointer events through to the container's content.
 @MainActor
 final class ThemeRendererView: NSView {
     var onLayout: (() -> Void)?
-    /// Set to the full-window background when this view paints a smaller
-    /// sidebar surface. Both surfaces then sample one continuous gradient.
     weak var coordinateSpace: NSView? { didSet { invalidateCoordinates() } }
     var theme = SpaceTheme() { didSet { if theme != oldValue { refreshTheme() } } }
-    /// A private window draws `IncognitoWindowTheme` in place of its Space's
-    /// theme: an opaque fill with no material or canvas, and the brand palette
-    /// resolved against the window's appearance.
     var incognito = false { didSet { if incognito != oldValue { refreshTheme() } } }
-    /// The theme whose semantic palette this surface publishes.
     var paletteTheme: SpaceTheme { incognito ? IncognitoWindowTheme.paletteTheme : theme }
-    /// Locked sidebars use the window's existing surface. Floating sidebars
-    /// paint their own surface above page content, without hiding child controls.
     var drawsBackground = true { didSet { updateBackgroundVisibility() } }
-    /// Library Space cards paint the theme over their own card fill rather
-    /// than the window's behind-window material.
     var drawsMaterial = true { didSet { updateBackgroundVisibility() } }
-    /// A floating sidebar's surface (FloatingSidebarSurface): the material
-    ///
-    /// it and the theme round to this radius inside the view's edge and
-    /// shadow. The view does not clip, so content that must stay rounded
-    /// clips itself. Nil draws the window's surface.
     var floatingCornerRadius: CGFloat? { didSet { if floatingCornerRadius != oldValue { updateFloatingSurface() } } }
-    ///
-    /// locked group fades `blurView` and `shadowView` out and
-    /// `behindWindowBlurView` in with the slide, and keeps the corners and
-    ///
-    ///
     var docksFloatingSurface = false {
         didSet {
             guard docksFloatingSurface != oldValue else { return }
             updateFloatingShadow()
             updateDockMaterial()
-            // A dock reversed before it settles floats again at once.
             if !docksFloatingSurface {
                 for view in [material, dockMaterial, floatingShadow] as [NSView?] { view?.layer?.removeAnimation(forKey: "opacity") }
             }
         }
     }
-    ///
-    ///
     var preparesFloatingDock = false { didSet { if preparesFloatingDock != oldValue { updateDockMaterial() } } }
-    ///
-    /// `transitioning(from:to:progress:)` configuration, for the pages either
-    /// side of the strip's position, to the window's background and the
-    ///
-    /// mixes the two themes' inputs by the progress (`ThemeMetalRenderer.draw`).
-    /// While it is set the surface's own theme is not drawn, so a commit that
-    /// changes that theme leaves the canvas unchanged.
     var pagingTransition: ThemePagingTransition? {
         didSet { if pagingTransition != oldValue { updateBackgroundVisibility() } }
     }
     private(set) var palette = ThemeChromePalette(theme: SpaceTheme(), isDark: false)
     var onPaletteChange: ((ThemeChromePalette) -> Void)?
     private let material = ThemeMaterialView()
-    ///
-    /// the `from` style's material, with the `to` style at alpha = progress
-    /// while a swipe's two styles differ, and hides it otherwise
-    ///
-    ///
     private var pagingMaterial: ThemeMaterialView?
-    ///
-    /// material over the floating blur, shown only while the surface docks.
     private var dockMaterial: ThemeMaterialView?
     private var floatingShadow: FloatingSidebarShadowView?
     private var canvas: ThemeMetalCanvas?
     private var renderer: ThemeMetalRenderer?
     private var observers: [NSObjectProtocol] = []
     private var windowAppearanceObservation: NSKeyValueObservation?
-    /// Last key/main activity bit sampled into a Metal draw, or scheduled by an
-    /// activity dirty. Observers compare against this so redundant key↔main
-    /// flips that leave `ThemeWindowActivity.isActive` unchanged skip.
     private var publishedWindowActive: Bool?
-    /// Window-activity dirties that actually wrote `canvas.needsDisplay`. Used
-    /// to observe true no-op skips; AppKit may keep `needsDisplay` set until draw.
     private(set) var canvasActivityDisplayInvalidations = 0
     private(set) var surfaceStyle = ThemeSurfaceStyle(theme: SpaceTheme(), appearance: NSAppearance(named: .aqua)!)
     override var isFlipped: Bool { true }
@@ -536,7 +423,6 @@ final class ThemeRendererView: NSView {
             self.renderer = renderer; self.canvas = canvas
             addSubview(canvas)
         } catch {
-            // Keep the native material usable on machines without Metal.
             NSLog("Parc theme renderer unavailable: %@", error.localizedDescription)
         }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
@@ -555,8 +441,6 @@ final class ThemeRendererView: NSView {
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // Instrument the actual root result without another hit test or any
-        // change to dispatch. Nested sidebar surfaces use the same superclass.
         let result = super.hitTest(point)
         if NativeInputDiagnostics.enabled, window?.contentView === self,
            let event = NSApp.currentEvent, NativeInputDiagnostics.isLeftClick(event) {
@@ -567,11 +451,6 @@ final class ThemeRendererView: NSView {
 
     override func layout() {
         super.layout()
-        // AppKit still marks the window root dirty when chrome geometry is
-        // unchanged. Material/canvas sync is the local proxy for a bounds move
-        // that requires chrome onLayout (BrowserWindowController.layoutChrome);
-        // Cmd-S and other chrome owners call layoutChrome directly. Skip the
-        // fan-out when those surfaces already match bounds.
         var surfacesMoved = false
         if material.frame != bounds {
             material.frame = bounds
@@ -588,11 +467,7 @@ final class ThemeRendererView: NSView {
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        // Ownership changed; the next draw re-samples activity for this window.
         publishedWindowActive = nil
-        // A Library Space card's surface lives under the Library's forced,
-        // contrast-selected content appearance; effective-appearance
-        // propagation alone then misses app changes.
         windowAppearanceObservation = window?.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.refreshTheme() }
         }
@@ -603,30 +478,18 @@ final class ThemeRendererView: NSView {
 
     func invalidateCoordinates() { canvas?.needsDisplay = true }
 
-    /// Key/main notifications only affect Metal noise strength via
-    /// `ThemeWindowActivity.isActive`. Skip when the canvas is already dirty,
-    /// hidden/idle, noise cannot sample activity, or the active bit matches the
-    /// last draw/schedule. Real activity flips and theme/appearance refresh still dirty.
     private func invalidateCanvasForWindowActivityIfNeeded() {
         guard let canvas, !canvas.isHidden else { return }
-        // ThemeOutputUniforms.z is noise * max * (active ? 1 : 0.25); with noise
-        // 0 the multiplier never reaches a fragment (hasTexture stays false).
         guard theme.isValid, theme.colorCount > 0, theme.noise > 0 else { return }
         let active = ThemeWindowActivity.isActive(window)
         if publishedWindowActive == active { return }
-        // Pending theme/layout/activity draw will sample live isActive; avoid a
-        // redundant needsDisplay write. Do not publish here — draw reconciles.
         if canvas.needsDisplay { return }
         canvasActivityDisplayInvalidations += 1
-        // Publish scheduled intent so same-turn key+main does not rewrite.
         publishedWindowActive = active
         canvas.needsDisplay = true
     }
 
     private func refreshTheme() {
-        // A Library Space card's surface lives below the Library's
-        // contrast-selected content appearance. Always resolve its backing
-        // against its real window, never that unrelated text appearance.
         let appearance = window?.effectiveAppearance ?? effectiveAppearance
         palette = incognito
             ? ThemeChromePalette(theme: IncognitoWindowTheme.paletteTheme,
@@ -649,9 +512,6 @@ final class ThemeRendererView: NSView {
         updatePagingMaterial()
         updateDockMaterial()
     }
-    /// Only the window's own surface: the sidebar's samples the window
-    /// (`coordinateSpace`), and floating it hides translucency. Its base
-    /// material takes the left page's (`from`) style through a swipe.
     private func updatePagingMaterial() {
         guard coordinateSpace == nil, floatingCornerRadius == nil, !incognito else {
             if pagingMaterial?.isHidden == false { pagingMaterial?.isHidden = true }
@@ -689,9 +549,6 @@ final class ThemeRendererView: NSView {
         pagingMaterial = view
         return view
     }
-    ///
-    /// emphasized, under a theme view with no translucency of its own
-    ///
     private func updateFloatingSurface() {
         let radius = floatingCornerRadius
         let blending: NSVisualEffectView.BlendingMode = radius == nil ? .behindWindow : .withinWindow
@@ -705,8 +562,6 @@ final class ThemeRendererView: NSView {
             if canvas.clipsToBounds != (radius != nil) { canvas.clipsToBounds = radius != nil }
         }
         if layer?.cornerRadius != radius ?? 0 { layer?.cornerRadius = radius ?? 0 }
-        // AppKit clips a view once its layer has a corner radius; the shadow
-        // lies outside.
         if clipsToBounds { clipsToBounds = false }
         let borderWidth = radius == nil ? 0 : FloatingSidebarSurface.borderWidth
         if layer?.borderWidth != borderWidth { layer?.borderWidth = borderWidth }
@@ -726,13 +581,6 @@ final class ThemeRendererView: NSView {
         updateDockMaterial()
         updatePagingMaterial()
     }
-    ///
-    ///
-    ///
-    /// inferred to, and a Space swipe or its commit leaves it as it is. Where
-    /// the blur is the whole backdrop (no colour, or no Metal) it keeps the
-    /// side the palette's text was chosen for, in the window's own variant
-    /// when the window is on that side.
     private func updateMaterialAppearance() {
         let side: NSAppearance.Name = surfaceStyle.backgroundIsDark ? .darkAqua : .aqua
         let windowAppearance = window?.effectiveAppearance
@@ -748,9 +596,6 @@ final class ThemeRendererView: NSView {
         let alpha = docksFloatingSurface && !hidden ? 0 : FloatingSidebarSurface.shadowAlpha
         if shadow.alphaValue != alpha { shadow.alphaValue = alpha }
     }
-    ///
-    /// behind-window, emphasized and masked like `blurView`. Its material is
-    /// the window surface's, so the dock ends on the surface it settles onto.
     private func updateDockMaterial() {
         let floating = floatingCornerRadius != nil
         let shown = floating && drawsBackground && drawsMaterial && !incognito && (preparesFloatingDock || docksFloatingSurface)
@@ -768,8 +613,6 @@ final class ThemeRendererView: NSView {
     }
     private func makeDockMaterial() -> ThemeMaterialView {
         let view = ThemeMaterialView(frame: bounds)
-        // Its layer otherwise waits for the next commit, so the first dock's
-        // group, in the preparation's turn, could not fade it in.
         view.wantsLayer = true
         view.blendingMode = .behindWindow
         view.isEmphasized = true
@@ -802,8 +645,6 @@ final class ThemeRendererView: NSView {
     }
 }
 
-/// A swipe between two Spaces' themes, the left page's and the right page's:
-/// `theme` has come in by `progress` over `from`.
 struct ThemePagingTransition: Equatable {
     var from: SpaceTheme
     var theme: SpaceTheme
@@ -826,28 +667,15 @@ private final class ThemeMetalCanvas: MTKView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-///
-///
-/// the theme, both rounded, and a fine edge over its unclipped layer.
-/// `ThemeRendererView.floatingCornerRadius` draws it for Parc's sidebar
-///
 @MainActor enum FloatingSidebarSurface {
-    ///
-    ///
     static let cornerRadius: CGFloat = 8
-    /// `SidebarBorderColor`, white at 0.3 in both appearances, 1 point wide
-    ///
     static let borderWidth: CGFloat = 1
     static let borderColor = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.3).cgColor
-    ///
-    ///
     static let shadowAlpha: CGFloat = 0.2
     static let shadowOutset: CGFloat = 10
     static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("FloatingSidebar", isDirectory: true)
     private static var cachedShadow: NSImage?
 
-    /// `CellDropShadow` as the catalog's NSImage holds it: both bitmaps at
-    /// 40 points with its cap insets.
     static var shadowImage: NSImage? {
         if let cachedShadow { return cachedShadow }
         guard let directory,
@@ -866,8 +694,6 @@ private final class ThemeMetalCanvas: MTKView {
         return image
     }
 
-    ///
-    /// its r-point caps.
     static func mask(radius: CGFloat) -> NSImage? {
         guard radius > 0 else { return nil }
         let side = radius * 2 + 1
@@ -882,10 +708,6 @@ private final class ThemeMetalCanvas: MTKView {
     }
 }
 
-///
-/// axes independently, but as layer contents: a resize, a docking slide's
-/// included, is one bounds animation with no redraw. It passes every click
-/// through.
 @MainActor final class FloatingSidebarShadowView: NSView {
     var image: NSImage? { didSet { needsDisplay = true } }
     override init(frame frameRect: NSRect) {
@@ -902,7 +724,6 @@ private final class ThemeMetalCanvas: MTKView {
         layer.contentsScale = scale
         layer.contents = image.layerContents(forContentsScale: scale)
         layer.contentsGravity = .resize
-        // Unit coordinates from the image's bottom-left corner.
         let caps = image.capInsets, size = image.size
         layer.contentsCenter = CGRect(x: caps.left / size.width, y: caps.bottom / size.height,
                                       width: max(0, size.width - caps.left - caps.right) / size.width,
@@ -919,7 +740,6 @@ struct ThemeGradientUniforms {
     var overlay0 = SIMD4<Float>.zero
     var overlay1 = SIMD4<Float>.zero
     var underlay = SIMD4<Float>.zero
-    // x: gradient alpha, y: base count, z: overlay count
     var parameters = SIMD4<Float>.zero
 
     init(theme: SpaceTheme, backgroundIsDark: Bool, pointSize: NSSize) {
@@ -960,8 +780,6 @@ private final class ThemeMetalRenderer {
     private let outputPipeline: MTLRenderPipelineState
     private let library: MTLLibrary
     private let gradient: MTLTexture
-    /// Built on the first draw with a paging transition, so surfaces that
-    /// never page do not hold them; nil if they cannot be built.
     private lazy var transition: (gradient: MTLRenderPipelineState, output: MTLRenderPipelineState)? = {
         guard let gradient = try? Self.pipeline(device, library, vertex: "themeGradientVertex", fragment: "themeTransitionGradientFragment"),
               let output = try? Self.pipeline(device, library, vertex: "themeOutputVertex", fragment: "themeTransitionFragment") else {
@@ -996,8 +814,6 @@ private final class ThemeMetalRenderer {
         return try device.makeRenderPipelineState(descriptor: descriptor)
     }
 
-    /// The recovered native renderer uses a 32×32 gradient target; the
-    /// display pass samples it linearly while retaining full-resolution grain.
     private static func gradientTarget(_ device: MTLDevice) -> MTLTexture? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 32, height: 32, mipmapped: false)
         descriptor.usage = [.renderTarget, .shaderRead]; descriptor.storageMode = .private
@@ -1027,8 +843,6 @@ private final class ThemeMetalRenderer {
         }
     }
 
-    ///
-    /// straight alpha. Opaque images pass through unchanged.
     private static func premultiplied(_ image: CGImage) -> CGImage? {
         guard image.alphaInfo == .last || image.alphaInfo == .first else { return image }
         guard let space = image.colorSpace,
@@ -1040,11 +854,6 @@ private final class ThemeMetalRenderer {
         return context.makeImage()
     }
 
-    ///
-    /// renderer does: its gradient pass mixes the two layers' straight colours
-    /// by p before premultiplying (`gradientFragment`), and its overlay pass
-    /// mixes the two textures, each at its own strength (`overlayFragment`).
-    /// A theme without colour contributes no layer or texture.
     func draw(in view: MTKView, theme: SpaceTheme, isDark: Bool, next requested: (theme: SpaceTheme, isDark: Bool, progress: Float)? = nil,
               isActive: Bool, pointSize: NSSize, sampleRect: SIMD4<Float>) {
         let transition = requested == nil ? nil : self.transition
@@ -1057,15 +866,12 @@ private final class ThemeMetalRenderer {
         outputPass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
         let progress = next?.progress ?? 0
         guard (theme.rendersColor && progress < 1) || (incoming && progress > 0) else {
-            // A visible canvas with nothing to draw, such as a swipe's end in
-            // an uncoloured Space, must not keep showing its last frame.
             command.makeRenderCommandEncoder(descriptor: outputPass)?.endEncoding()
             command.present(drawable); command.commit()
             return
         }
         var uniforms = ThemeGradientUniforms(theme: theme, backgroundIsDark: isDark, pointSize: pointSize)
         let nextUniforms = next.map { ThemeGradientUniforms(theme: $0.theme, backgroundIsDark: $0.isDark, pointSize: pointSize) }
-        // An uncoloured theme's uniforms leave the gradient line unset.
         var line = theme.rendersColor ? uniforms : nextUniforms ?? uniforms
         var mixing = SIMD4<Float>(progress, theme.rendersColor ? 1 : 0, incoming ? 1 : 0, 0)
         let pass = MTLRenderPassDescriptor()
@@ -1105,9 +911,6 @@ private final class ThemeMetalRenderer {
         display.endEncoding(); command.present(drawable); command.commit()
     }
 
-    // Re-expression of gradientVertex/gradientFragment/renderFragment recovered
-    // from default.metallib AIR, with explicit sRGB↔OKLab conversion. The static
-    // texture-alpha pass is folded into display; no original shader binary loads.
     private static let shader = #"""
     #include <metal_stdlib>
     using namespace metal;

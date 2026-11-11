@@ -1,19 +1,10 @@
 import AppKit
 
-///
-///
-///
-///
-/// draws the shadow.
 final class PopoverBackgroundView: NSView {
-    ///
-    /// state, within-window blending, not emphasized.
     let translucency = NSVisualEffectView()
-    /// The wash sits in its own view over the material.
     let wash = NSView()
     let outerBorder = CALayer()
     let innerBorder = CALayer()
-    /// The command bar's inline sidebar variant.
     var sidebarBrowsing = false { didSet { if sidebarBrowsing != oldValue { needsDisplay = true; needsLayout = true } } }
     var cornerRadius: CGFloat = 12 { didSet { needsDisplay = true; needsLayout = true } }
     var onLayout: (() -> Void)?
@@ -68,9 +59,6 @@ final class PopoverBackgroundView: NSView {
             view.layer?.cornerRadius = radius; view.layer?.cornerCurve = .continuous
         }
         translucency.layer?.masksToBounds = true; wash.layer?.masksToBounds = true
-        // The outer ring is one device pixel on the edge; the inner ring is a
-        // point wide just inside it, its radius reduced by the same pixel
-        //
         outerBorder.frame = bounds; outerBorder.cornerRadius = radius
         outerBorder.borderWidth = sidebarBrowsing ? 0 : hairline
         let pixel = outerBorder.borderWidth
@@ -84,8 +72,6 @@ final class PopoverBackgroundView: NSView {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         if sidebarBrowsing {
-            //
-            //
             translucency.isHidden = true; wash.isHidden = true
             layer?.backgroundColor = (dark
                 ? NSColor(displayP3Red: 0.98, green: 0.984, blue: 1, alpha: 0.1)
@@ -93,12 +79,8 @@ final class PopoverBackgroundView: NSView {
         } else {
             translucency.isHidden = false; wash.isHidden = false
             layer?.backgroundColor = nil
-            //
-            //
             wash.layer?.backgroundColor = (dark ? NSColor(srgbRed: 0.065, green: 0.065, blue: 0.065, alpha: 0.7)
                                          : NSColor.white.withAlphaComponent(0.7)).cgColor
-            // `.decorative`: black 0.9 dark / 0.34 light outside, and white
-            // 0.23 inside in dark only.
             outerBorder.borderColor = NSColor.black.withAlphaComponent(dark ? 0.9 : 0.34).cgColor
             innerBorder.borderColor = dark ? NSColor.white.withAlphaComponent(0.23).cgColor : NSColor.clear.cgColor
         }

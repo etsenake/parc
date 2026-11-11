@@ -1,9 +1,5 @@
 import AppKit
 
-/// The immediate hover state used by Settings' recovered custom controls.
-/// Subclasses own their palette; NSButton continues to own accepted actions,
-/// pressed tracking, keyboard activation and accessibility. No timing, scale or
-/// haptic is shared between controls. See docs/settings-motion.md (SET25).
 @MainActor
 class SettingsHoverButton: PointingHandButton {
     private var hovered = false

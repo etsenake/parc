@@ -1,13 +1,10 @@
 import AppKit
 import WebKit
 
-///
-/// `ARC_SoftwareUpdaterClient`'s button background).
 private enum UpdaterColors {
     static func dynamic(dark: NSColor, light: NSColor) -> NSColor {
         NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light }
     }
-    ///
     static let background = dynamic(dark: NSColor(displayP3Red: 0x1F / 255, green: 0x23 / 255, blue: 0x2D / 255, alpha: 1),
                                      light: .windowBackgroundColor)
     static let primary = dynamic(dark: NSColor.white.withAlphaComponent(0.8),
@@ -17,8 +14,6 @@ private enum UpdaterColors {
     static let notes = dynamic(dark: .black, light: .white)
 }
 
-///
-///
 private final class UpdaterButton: PointingHandButton {
     private let filled: Bool
 
@@ -58,11 +53,7 @@ private final class UpdaterButton: PointingHandButton {
     }
 }
 
-///
-///
-/// legacy background, movable by its background and centred.
 @MainActor class SoftwareUpdatePanel: NSWindowController, NSWindowDelegate {
-    /// Called when the person closes the window, not after `dismiss()`.
     var onClose: (() -> Void)?
 
     init(content: NSView, size: NSSize, hidesOnDeactivate: Bool) {
@@ -101,7 +92,6 @@ private final class UpdaterButton: PointingHandButton {
         closed?()
     }
 
-    ///
     static func icon(_ source: NSImage) -> NSImageView {
         let image = (source.copy() as? NSImage) ?? NSImage()
         image.size = NSSize(width: 64, height: 64)
@@ -122,8 +112,6 @@ private final class UpdaterButton: PointingHandButton {
     }
 }
 
-///
-/// its release notes beside it.
 @MainActor final class SoftwareUpdateWindow: SoftwareUpdatePanel {
     enum Style {
         case upToDate
@@ -149,7 +137,6 @@ private final class UpdaterButton: PointingHandButton {
     @objc private func primaryClicked() { onPrimary?() }
     @objc private func secondaryClicked() { onSecondary?() }
 
-    ///
     static func content(style: Style, info: [String: Any], icon image: NSImage) -> (NSView, NSButton, NSButton?) {
         let content = NSView()
         let column = NSView()
@@ -189,8 +176,6 @@ private final class UpdaterButton: PointingHandButton {
             versionLabel.topAnchor.constraint(equalTo: title.bottomAnchor),
             versionLabel.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             versionLabel.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            // The 11-point font's line height. AppKit pads the label to 14,
-            //
             versionLabel.heightAnchor.constraint(equalToConstant: 13),
             prompt.topAnchor.constraint(equalTo: versionLabel.bottomAnchor, constant: 20),
             prompt.widthAnchor.constraint(equalToConstant: 206),
@@ -226,8 +211,6 @@ private final class UpdaterButton: PointingHandButton {
     }
 }
 
-///
-/// installing, with a progress bar and one action button.
 @MainActor final class SoftwareUpdateStatusWindow: SoftwareUpdatePanel {
     var onAction: (() -> Void)?
     private let content: SoftwareUpdateStatusView
@@ -250,7 +233,6 @@ private final class UpdaterButton: PointingHandButton {
     @objc private func actionClicked() { onAction?() }
 }
 
-/// The status content can be checked without creating a window or a web view.
 @MainActor final class SoftwareUpdateStatusView: NSView {
     let status = SoftwareUpdatePanel.label("", font: .monospacedDigitSystemFont(ofSize: 13, weight: .bold),
                                            color: .labelColor)
@@ -286,7 +268,6 @@ private final class UpdaterButton: PointingHandButton {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// A nil progress is indeterminate and animating.
     func show(status text: String, action title: String, progress value: Double?, enabled: Bool = true,
               widthTemplate: String? = nil) {
         if status.stringValue != text { status.stringValue = text }
@@ -314,8 +295,6 @@ private final class UpdaterButton: PointingHandButton {
     }
 }
 
-///
-/// web view whose top and bottom 30 pt fade out.
 private final class ReleaseNotesView: NSView, WKNavigationDelegate {
     private static let style = """
     <style>
@@ -350,7 +329,6 @@ private final class ReleaseNotesView: NSView, WKNavigationDelegate {
     private let notes: NSView
 
     init(title: String?, html: String?, appName: String) {
-        // Release notes are markup only, as Sparkle's own view treats them.
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         let web = WKWebView(frame: .zero, configuration: configuration)
@@ -410,7 +388,6 @@ private final class ReleaseNotesView: NSView, WKNavigationDelegate {
         CATransaction.commit()
     }
 
-    /// Web links open in the default browser instead of inside the notes.
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
         if navigationAction.navigationType == .linkActivated {

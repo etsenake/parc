@@ -1,12 +1,6 @@
 import AppKit
 import SwiftUI
 
-///
-/// SidebarBanner slot, used by the auto-archive education and Update Complete
-///
-/// + opacity, with a 0.6/0.4 spring on entry and 0.25-second ease-in on exit.
-/// The shared reducer retains the dismissing banner for 0.7 seconds. See
-/// docs/archive.md (AUTO12) and docs/software-update.md.
 @MainActor
 final class SidebarBannerHost: NSView {
     enum Phase: Equatable { case absent, initial, appeared, dismissing }
@@ -47,8 +41,6 @@ final class SidebarBannerHost: NSView {
     let card: NSView
     var onLayoutChanged: (() -> Void)?
     var onInteractionChanged: ((Bool) -> Void)?
-    /// Called before removing a card that actually owns the first responder.
-    /// It must not activate a window or restore an old page selection.
     var onRelinquishFocus: (() -> Void)?
     private let presentation = Presentation()
     private var hosting: NSHostingView<Content>!
@@ -59,7 +51,6 @@ final class SidebarBannerHost: NSView {
     private var accessibilityObserver: NSObjectProtocol?
     var phase: Phase { presentation.phase }
     var occupiesSpace: Bool { phase != .absent }
-    /// Asked to show (not leaving): the slot sizes to this card first.
     var isShowing: Bool { desiredVisible }
     var isInteractive: Bool { presentation.interactive }
     override var isFlipped: Bool { true }
@@ -120,8 +111,6 @@ final class SidebarBannerHost: NSView {
         updateInteraction()
     }
 
-    /// Window destruction and replacement invalidate both delayed entry and
-    /// exit. An old completion never removes a newer card.
     func reset() {
         desiredVisible = false
         invalidateScheduled()
@@ -159,15 +148,12 @@ final class SidebarBannerHost: NSView {
             guard let self, self.generation == token, self.window != nil,
                   self.desiredVisible, self.phase == .initial else { return }
             self.scheduled = nil
-            // The native sidebar establishes this card's measured slot before
-            // SwiftUI starts its bottom-edge insertion.
             self.superview?.layoutSubtreeIfNeeded()
             self.layoutSubtreeIfNeeded()
             self.setPhase(.appeared)
             self.onLayoutChanged?()
         }
         scheduled = work
-        //
         DispatchQueue.main.async(execute: work)
     }
     private func setPhase(_ phase: Phase, animated: Bool = true) {

@@ -1,8 +1,6 @@
 import AppKit
 import QuartzCore
 
-///
-/// docs/sidebar-previews.md.
 enum SidebarPreviewMetrics {
     static let width: CGFloat = 240, maximumHeight: CGFloat = 320, header: CGFloat = 48
     static let windowInset: CGFloat = 18, gap: CGFloat = 4, hoverExtension: CGFloat = 40
@@ -10,17 +8,12 @@ enum SidebarPreviewMetrics {
     static let duration: CFTimeInterval = 0.1
 }
 
-///
 enum SidebarPreviewLocation { case right, diagonal }
 
 struct SidebarPreviewPlacement: Equatable {
-    /// The previewed row in the host's top-down (flipped) coordinates.
     var row: NSRect
     var location: SidebarPreviewLocation
 
-    ///
-    /// priority-250 row alignment, and content height yields only when the
-    /// host is shorter than the card. There is no leading-side flip.
     func frame(height: CGFloat, hostHeight: CGFloat) -> NSRect {
         let inset = SidebarPreviewMetrics.windowInset, gap = SidebarPreviewMetrics.gap
         let height = min(height, SidebarPreviewMetrics.maximumHeight, max(0, hostHeight - 2 * inset))
@@ -29,15 +22,11 @@ struct SidebarPreviewPlacement: Equatable {
         return NSRect(x: x, y: min(max(inset, y), max(inset, hostHeight - inset - height)),
                       width: SidebarPreviewMetrics.width, height: height)
     }
-    /// The row edge the card grows out of.
     var anchor: NSPoint { NSPoint(x: row.maxX, y: location == .right ? row.midY : row.maxY) }
 }
 
-///
-/// pointer crosses on its way there. Points are non-flipped window coordinates;
-/// a level rightward move returns before the reach test, as in the original.
 enum SidebarPreviewAim {
-    static let reach: CGFloat = 478 // 8 + 8 + 4 × 47 + 3 × 8 + 250
+    static let reach: CGFloat = 478
     static func keepsCurrent(from last: NSPoint, to point: NSPoint, location: SidebarPreviewLocation) -> Bool {
         switch location {
         case .right:
@@ -51,17 +40,11 @@ enum SidebarPreviewAim {
 }
 
 enum SidebarPreviewHighlight {
-    /// ItemView's FullOpacityForegroundPrimary opacity: hover and keyboard
-    /// focus are separate states that add up.
     static func opacity(hovered: Bool, focused: Bool) -> CGFloat {
         hovered && focused ? 0.16 : hovered != focused ? 0.08 : 0
     }
 }
 
-/// PreviewBackgroundView: an unclipped shadow owner around a clipped
-/// PopoverBackgroundView, with EaselUI ToolTipAnimations' anchored scale and
-/// fade. It takes the window's appearance, not the Space's: nothing in the
-/// preview sets one. There is no Reduce Motion branch in the original helpers.
 @MainActor
 class SidebarPreviewSurface: NSView {
     var placement = SidebarPreviewPlacement(row: .zero, location: .right)
@@ -75,7 +58,6 @@ class SidebarPreviewSurface: NSView {
     private var motionAnchor: NSPoint?
     override var isFlipped: Bool { true }
     var preferredHeight: CGFloat { SidebarPreviewMetrics.maximumHeight }
-    ///
     var hoverFrame: NSRect {
         NSRect(x: frame.minX - SidebarPreviewMetrics.hoverExtension, y: frame.minY,
                width: frame.width + SidebarPreviewMetrics.hoverExtension, height: frame.height)
@@ -85,9 +67,6 @@ class SidebarPreviewSurface: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.masksToBounds = false
-        // AppKit copies this offset to the backing layer, whose superlayer is
-        // the flipped root's geometry-flipped layer: positive height falls
-        //
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.4); shadow.shadowBlurRadius = 16
         shadow.shadowOffset = NSSize(width: 0, height: 5)
@@ -97,7 +76,6 @@ class SidebarPreviewSurface: NSView {
         content.layer?.masksToBounds = true
         popover.cornerRadius = SidebarPreviewMetrics.cornerRadius
         background.wantsLayer = true
-        // The fill sits under the border rings, which are the popover's sublayers.
         content.addSubview(popover); popover.addSubview(background, positioned: .above, relativeTo: popover.wash)
         addSubview(content)
         updateColors()
@@ -126,7 +104,6 @@ class SidebarPreviewSurface: NSView {
         if let hoverArea { removeTrackingArea(hoverArea) }
         hoverArea = nil
         guard !isRetired else { return }
-        //
         let rect = NSRect(x: -SidebarPreviewMetrics.hoverExtension, y: 0,
                           width: bounds.width + SidebarPreviewMetrics.hoverExtension, height: bounds.height)
         let area = NSTrackingArea(rect: rect, options: [.mouseEnteredAndExited, .activeInKeyWindow], owner: self)
@@ -138,19 +115,16 @@ class SidebarPreviewSurface: NSView {
     override func mouseExited(with event: NSEvent) {
         if event.trackingArea === hoverArea { onHover?(false) } else { super.mouseExited(with: event) }
     }
-    // The card swallows its own background clicks so they never reach the page.
     override func mouseDown(with event: NSEvent) {}
     override func rightMouseDown(with event: NSEvent) {}
     override func hitTest(_ point: NSPoint) -> NSView? { isRetired ? nil : super.hitTest(point) }
 
-    /// An exiting card stays visible for its animation only: no input or hover.
     func retire() {
         isRetired = true; onHover = nil
         if let hoverArea { removeTrackingArea(hoverArea) }
         hoverArea = nil
     }
 
-    /// `anchor` is in this view's coordinates.
     func animateIn(from anchor: NSPoint, duration: CFTimeInterval = SidebarPreviewMetrics.duration) {
         motionAnchor = anchor
         guard let layer else { return }
@@ -166,8 +140,6 @@ class SidebarPreviewSurface: NSView {
         }
     }
 
-    /// Starts from the presented values, so an interrupted entrance turns
-    /// around in place, and lasts the original duration times that opacity.
     func animateOut(duration: CFTimeInterval = SidebarPreviewMetrics.duration, completion: @escaping @MainActor () -> Void) {
         let presented = layer?.presentation()
         let opacity = presented?.opacity ?? layer?.opacity ?? 0
@@ -190,7 +162,6 @@ class SidebarPreviewSurface: NSView {
         CATransaction.commit()
     }
 
-    /// translate(a) · scale(0.8) · translate(-a), relative to the layer's anchor point.
     private func scaled(about point: NSPoint) -> CATransform3D {
         guard let layer else { return CATransform3DIdentity }
         let x = point.x - layer.anchorPoint.x * bounds.width, y = point.y - layer.anchorPoint.y * bounds.height
@@ -203,9 +174,6 @@ private final class SidebarPreviewClipView: NSView {
     override var isFlipped: Bool { true }
 }
 
-///
-/// HStack spacing; one-line 13 pt title and 11 pt secondary subtitle, bold
-/// when emphasized. A row without an icon starts its text at the padding.
 final class SidebarPreviewItemView: NSTableCellView {
     static let titleFont = NSFont.systemFont(ofSize: 13), subtitleFont = NSFont.systemFont(ofSize: 11)
     static let iconSize: CGFloat = 16
@@ -244,7 +212,6 @@ final class SidebarPreviewItemView: NSTableCellView {
     }
 }
 
-/// Draws ItemView's rounded highlight instead of the system selection.
 final class SidebarPreviewRowView: NSTableRowView {
     var highlight: NSColor = .labelColor { didSet { needsDisplay = true } }
     var isHovered = false { didSet { if isHovered != oldValue { needsDisplay = true } } }
@@ -255,7 +222,6 @@ final class SidebarPreviewRowView: NSTableRowView {
     override func drawBackground(in dirtyRect: NSRect) {
         guard highlightOpacity > 0 else { return }
         highlight.withAlphaComponent(highlightOpacity).setFill()
-        //
         NSBezierPath(roundedRect: bounds.insetBy(dx: 0, dy: 0.5), xRadius: 4, yRadius: 4).fill()
     }
 }

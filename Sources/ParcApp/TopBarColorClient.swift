@@ -1,25 +1,5 @@
 import AppKit
 
-///
-/// each page's top bar displays and a per-site cache of settled colours.
-///
-///
-/// - A sample is cached for the host of the document it was sampled from when
-///   tracking has just started, when it is within 0.015 of the previous
-///   sample from that host, or when it matches the cache. Otherwise the page's
-///   current sample is re-read after 400 ms, at most four times, so a colour
-///
-///   `NullString` entry; Parc caches only documents with a host.
-/// - Tracking a page re-reads its sample after 250 ms without convergence
-///
-/// - A bar shown for a page starts with the page's displayed colour, else the
-///
-/// - The cache keeps the 50 most recently updated hosts and is written to the
-///
-///
-///   closes. History deletions forget their hosts and times.
-///
-/// See docs/top-band-color.md.
 @MainActor final class TopBarColorClient {
     static let shared = TopBarColorClient(defaults: .standard)
     static let privateBrowsing = TopBarColorClient(defaults: nil)
@@ -34,18 +14,13 @@ import AppKit
     static let persistDelay: TimeInterval = 1
 
     struct Entry: Equatable { var color: NSColor; var lastUpdated: TimeInterval }
-    ///
-    ///
     struct State {
         var colorToDisplay: NSColor?
         var currentColorSample: NSColor?
-        /// The host `currentColorSample` was sampled from; only a sample from
-        /// the same host shows convergence.
         var currentColorSampleHost: String?
         var numConvergenceAttempts = 0
         var requireConvergence = true
     }
-    /// What the client reads from a page, so tests need no engine.
     struct Sample { var color: NSColor?; var host: String? }
 
     private let defaults: UserDefaults?
@@ -74,11 +49,8 @@ import AppKit
         }
     }
 
-    /// The engine's history deletions (overlay 294; see native_appkit_bridge.h).
     nonisolated static let historyDidDeleteNotification = Notification.Name("PCNativeHistoryDidDeleteNotification")
 
-    /// Starts tracking `key`'s page; `read` returns its current sample, or nil
-    /// once the page is gone.
     func track(_ key: AnyObject, read: @escaping () -> Sample?) {
         let id = ObjectIdentifier(key)
         guard tracked[id]?.key !== key else { return }
@@ -88,8 +60,6 @@ import AppKit
         recheck(id, requireConvergence: false, after: Self.trackingDelay)
     }
 
-    /// The engine's current delivery for a tracked page; each new delivery is
-    ///
     @discardableResult
     func deliver(_ sample: Sample, for key: AnyObject) -> Bool {
         let id = ObjectIdentifier(key)
@@ -114,12 +84,10 @@ import AppKit
         return domainCache[host]?.color
     }
 
-    /// The bar's colour when it starts showing this page.
     func initialColor(for key: AnyObject, host: String?) -> NSColor {
         colorToDisplay(for: key) ?? cachedColor(forHost: host) ?? .white
     }
 
-    /// A delivered sample; true when the displayed colour changed.
     @discardableResult
     func receive(_ sample: Sample, for key: AnyObject) -> Bool {
         receive(sample, id: ObjectIdentifier(key))
@@ -154,8 +122,6 @@ import AppKit
         return changed
     }
 
-    ///
-    /// page's current sample after `delay`.
     private func recheck(_ id: ObjectIdentifier, requireConvergence: Bool, after delay: TimeInterval) {
         var state = states[id] ?? State()
         state.requireConvergence = requireConvergence
@@ -169,10 +135,8 @@ import AppKit
         }
     }
 
-    /// Posted with the page as object when a re-read changes its colour.
     static let displayColorDidChangeNotification = Notification.Name("TopBarColorClientDisplayColorDidChange")
 
-    ///
     nonisolated static func distance(_ a: NSColor, _ b: NSColor) -> Double {
         guard let a = a.usingColorSpace(.sRGB), let b = b.usingColorSpace(.sRGB) else { return .greatestFiniteMagnitude }
         let red = Double(a.redComponent - b.redComponent)
@@ -191,15 +155,12 @@ import AppKit
         }
     }
 
-    ///
     private func trim() {
         guard domainCache.count > Self.maximumEntries else { return }
         let kept = domainCache.sorted { $0.value.lastUpdated > $1.value.lastUpdated }.prefix(Self.maximumEntries)
         domainCache = Dictionary(uniqueKeysWithValues: kept.map { ($0.key, $0.value) })
     }
 
-    /// A history deletion's hosts and, for a time range, the colours cached
-    /// during it; all of them for all history. Written at once.
     func forgetHistory(_ info: [AnyHashable: Any]) {
         if info["allHistory"] as? Bool == true { forgetAll(); return }
         let hosts = Set(info["hosts"] as? [String] ?? [])
@@ -213,8 +174,6 @@ import AppKit
         if domainCache.count != before { persist() }
     }
 
-    /// Every cached site colour: all history deleted, or the last private
-    /// window closed.
     func forgetAll() {
         domainCache.removeAll()
         for id in states.keys { states[id]?.requireConvergence = true }
@@ -230,7 +189,6 @@ import AppKit
         defaults.set(encoded, forKey: Self.defaultsKey)
     }
 
-    ///
     nonisolated static func load(from defaults: UserDefaults) -> [String: Entry] {
         guard let stored = defaults.dictionary(forKey: defaultsKey) else { return [:] }
         var cache: [String: Entry] = [:]

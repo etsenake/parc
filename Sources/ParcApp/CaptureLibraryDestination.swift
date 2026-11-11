@@ -1,7 +1,5 @@
 import Foundation
 
-/// Exact durable owner for an explicit capture output. Private windows use the
-/// real parent profile but never serialize their ephemeral Space identity.
 @MainActor
 struct CaptureLibraryDestination {
     let store: BrowserStore

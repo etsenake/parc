@@ -5,8 +5,6 @@ enum OnboardingBookmarkPalette {
     static let stroke = NSColor(srgbRed: 0.192, green: 0.220, blue: 0.988, alpha: 1)
 }
 
-/// ImportFeature's folder label embeds FolderIcon's retained, two-plane native
-/// drawing. Geometry/state attribution and the import palette are in onboarding.md.
 struct OnboardingBookmarkFolderIcon: NSViewRepresentable {
     let expanded: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -45,7 +43,6 @@ final class OnboardingBookmarkFolderView: NSView {
         layer?.addSublayer(frontContainer)
         frontContainer.addSublayer(front)
         front.addSublayer(frontShade)
-        // Surviving ARC_ImportFeature named colors, identical in Aqua/Dark Aqua.
         back.fillColor = NSColor(srgbRed: 0.753, green: 0.757, blue: 0.957, alpha: 1).cgColor
         front.fillColor = NSColor(srgbRed: 0.941, green: 0.941, blue: 0.937, alpha: 1).cgColor
         let stroke = OnboardingBookmarkPalette.stroke.cgColor

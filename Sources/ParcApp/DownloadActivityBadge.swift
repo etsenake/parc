@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The shared download owner projects the newest active item, not aggregate
-/// throughput. Restored metadata without a live manager incarnation is inert.
 struct DownloadActivity: Equatable {
     let identity: DownloadLibraryIdentity
     let name: String
@@ -13,9 +11,6 @@ struct DownloadActivity: Equatable {
         newest(in: downloads, profiles: profiles, statuses: [.downloading, .pending])
     }
 
-    ///
-    ///
-    ///
     static func inFlight(in downloads: [BrowserDownload], profiles: Set<UUID>) -> DownloadActivity? {
         newest(in: downloads, profiles: profiles, statuses: [.downloading])
     }
@@ -59,22 +54,13 @@ struct DownloadActivityState {
     mutating func reset() { displayed = nil; completionDeadline = nil }
 }
 
-/// The window theme's SemanticColorPalette roles DownloadProgressBadge reads
-///
-///
 struct DownloadBadgeColors: Equatable {
-    /// foregroundPrimary: the disc's 1-point outline, at 0.5.
     var foreground: NSColor
-    /// maxContrastColor: the icon, the 0.2 track and the progress stroke.
     var maxContrast: NSColor
-    /// cutoutColor: the disc's fill.
     var cutout: NSColor
     static let standard = DownloadBadgeColors(foreground: .labelColor, maxContrast: .labelColor, cutout: .windowBackgroundColor)
 }
 
-/// Source-owned rendering of the recovered SwiftUI badge. Keep each original
-/// animation on its original subtree: progress trim, the two ring rotations,
-/// and whole-badge completion are separate transactions, not one keyframe curve.
 private struct DownloadBadgeContent: View {
     let activity: DownloadActivity
     let colors: DownloadBadgeColors
@@ -87,7 +73,6 @@ private struct DownloadBadgeContent: View {
 
     init(activity: DownloadActivity, colors: DownloadBadgeColors, reduceMotion: Bool) {
         self.activity = activity; self.colors = colors; self.reduceMotion = reduceMotion
-        // Rebuilding for an accessibility change must not replay completion.
         _ringOpacity = State(initialValue: activity.completed ? 0.5 : 1)
         _iconName = State(initialValue: activity.completed ? "checkmark" : "arrow.down")
         _iconSize = State(initialValue: activity.completed ? 9 : 10)
@@ -142,8 +127,6 @@ private struct DownloadBadgeContent: View {
     private func complete() {
         iconName = "checkmark"; iconSize = 9; ringOpacity = 0.5
         guard !reduceMotion else { return }
-        //
-        // scheduling/interpolation instead of inventing linear intermediate keys.
         withAnimation(.default) { overallScale = 0.9 }
         withAnimation(.spring(response: 0.5, dampingFraction: 1, blendDuration: 0).delay(0.15)) {
             overallScale = 1
@@ -152,20 +135,14 @@ private struct DownloadBadgeContent: View {
         withAnimation(.easeIn(duration: 0.15).delay(1.3)) {
             overallScale = 0.97; overallOpacity = 0
         }
-        // The reference also writes completionScale/completionOpacity, but its
-        // actual Body never reads those fields. Do not synthesize an echo ring.
     }
 }
 
-/// NSHostingView supplies its own accessibility bridge, so suppress that bridge
-/// explicitly as well as hiding the SwiftUI content. The parent button owns AX.
 @MainActor private final class DownloadBadgeHostingView: NSHostingView<DownloadBadgeContent> {
     override func isAccessibilityElement() -> Bool { false }
     override func accessibilityChildren() -> [Any]? { [] }
 }
 
-/// Non-interactive decoration of the existing Downloads button. It never owns
-/// a second command or intercepts the button's pointer/keyboard/accessibility.
 @MainActor final class DownloadActivityBadge: NSView {
     var onChange: ((DownloadActivity?) -> Void)?
     var colors = DownloadBadgeColors.standard { didSet { if colors != oldValue { updateContent() } } }
@@ -174,8 +151,6 @@ private struct DownloadBadgeContent: View {
     private var content: DownloadBadgeHostingView?
     private var retirement: DispatchWorkItem?
     private var generation: UInt64 = 0
-    /// The rail's played completion has reached its deadline: the renderer is
-    /// gone, while the activity, and so the tile's badge slot, remain.
     private var settled = false
     private var motionObserver: NSObjectProtocol?
     private var closeObserver: NSObjectProtocol?
@@ -230,15 +205,9 @@ private struct DownloadBadgeContent: View {
         updateContent()
         let token = generation
         onChange?(next)
-        // A publisher can synchronously retire this exact window/item.
         guard generation == token, activity == next else { return }
         if justCompleted { complete() }
     }
-    /// The Library rail's DownloadProgressBadge (DownloadsPage.SidebarView
-    ///
-    /// progress follows whichever download that is. Its completion plays when
-    ///
-    /// settles at DL27's deadline; the slot leaves only when nothing is in flight.
     func updateInFlight(_ downloads: [BrowserDownload], profiles: Set<UUID>, enabled: Bool) {
         guard enabled, let window, window !== retiredWindow,
               let flight = DownloadActivity.inFlight(in: downloads, profiles: profiles) else { reset(); return }
@@ -275,9 +244,6 @@ private struct DownloadBadgeContent: View {
             addSubview(host); content = host
         }
     }
-    /// DL27's 1.45-second completion deadline. The entry badge then retires.
-    /// The rail keeps its slot while anything is in flight and drops only the
-    /// renderer, whatever Reduce Motion or a rebuild left of its fade.
     private func complete(keepingSlot: Bool = false) {
         cancelRetirement()
         let token = generation
@@ -290,8 +256,6 @@ private struct DownloadBadgeContent: View {
         retirement = task; DispatchQueue.main.asyncAfter(deadline: .now() + 1.45, execute: task)
     }
     private func motionChanged() {
-        // Retire the actual renderer to stop its repeating/delayed animations.
-        // The original item and completion deadline remain owned by this badge.
         retireContent(); updateContent()
     }
 }

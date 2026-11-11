@@ -1,14 +1,11 @@
 import Foundation
 import Combine
 
-///
-/// Copy URL as Quote command, onboarding audio, or page/script clipboard policy.
 @MainActor
 final class SharedQuotePreferences: ObservableObject {
     static let shared = SharedQuotePreferences()
     struct State: Codable, Equatable {
         var version = 1
-        // Enabled in the installed reference. Factory registration is unrecovered.
         var isEnabled = true
     }
     @Published private(set) var state: State
@@ -38,9 +35,6 @@ final class SharedQuotePreferences: ObservableObject {
     }
 }
 
-/// The recovered controller admits drag/multiple-click selection, waits for
-/// mouse release, then debounces on the main queue for 200 ms. It never consumes
-/// input. Tokens contain no selected text and are revalidated at delivery/action.
 @MainActor
 final class SharedQuoteSession<Token: AnyObject> {
     private(set) var selection: Token?

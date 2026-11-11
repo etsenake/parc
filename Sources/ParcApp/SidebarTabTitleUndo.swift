@@ -1,8 +1,6 @@
 import AppKit
 
 extension FolderUndoManager {
-    /// Called only after a committed rename. No-op, cancelled and failed edits
-    /// do not register or discard the user's existing Redo branch.
     @discardableResult
     func appendTabTitleChange(_ change: SidebarTabTitleChange, store: BrowserStore,
                                 available: @escaping () -> Bool,

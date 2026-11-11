@@ -2,18 +2,11 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
-///
-/// asset catalog into `Resources/NavigationControls` (provenance in its README).
 @MainActor enum NavigationControlArtwork {
     static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("NavigationControls", isDirectory: true)
     private static var cachedForceReload: NSImage?
     private static var symbols: [String: NSImage] = [:]
 
-    ///
-    /// `Image(systemName:)` under `.font(.system(size:weight: .medium))`.
-    /// SwiftUI scales the glyph to its own bounds, while AppKit fits it into
-    /// the whole-point symbol image, up to a point smaller at 16 points. Both
-    /// scales share one whole-point frame, so neither bitmap is resampled.
     static func symbol(_ name: String, pointSize: CGFloat) -> NSImage? {
         let key = "\(name) \(pointSize)"
         if let cached = symbols[key] { return cached }
@@ -36,7 +29,6 @@ import SwiftUI
         return image
     }
 
-    /// `icon-browser-navigation-force-reload`, 22 × 15 points, template.
     static var forceReload: NSImage? {
         if let cachedForceReload { return cachedForceReload }
         let name = "icon-browser-navigation-force-reload"
@@ -59,8 +51,6 @@ import SwiftUI
     }
 }
 
-///
-///
 enum DeveloperReloadState: String { case reload, forceReload }
 
 @MainActor enum DeveloperReloadPreference {
@@ -71,11 +61,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
     }
 }
 
-///
-///
-/// the reload TranslucentButton is SwiftUI (display-linked). Parc uses the view's
-/// display link — the same CVDisplayLink adaptation as download arrival — or a
-/// 60 Hz elapsed-time timer before macOS 14. `onFrame` returns false when idle.
 @MainActor final class ViewDisplayFrameDriver: NSObject {
     private var onFrame: (() -> Bool)?
     private var link: AnyObject?
@@ -109,32 +94,14 @@ enum DeveloperReloadState: String { case reload, forceReload }
     }
 }
 
-///
-/// stacks SF Symbols `arrow.clockwise` over `xmark` in the button style's
-///
-/// `SidebarChromeLayout.navigationGlyphPointSize`). Loading scales the idle
-/// glyph to 0.7 and fades it out while `xmark` grows from 0.7 to 1 and fades
-/// in; idle is the inverse. That change runs on SwiftUI's
-/// spring(response: 0.2, dampingFraction: 0.6) delayed 0.2 s entering loading
-///
-/// `_showAfterActionAnimation`: a 2π spin on spring(response: 0.4,
-///
-/// (Parc accessibility adaptation). Frames stop when both springs have settled.
 @MainActor final class ReloadGlyph {
-    /// The pane top bar's TopBarButtonStyle glyph size is unrecovered.
     static let toolbarPointSize: CGFloat = 13
-    ///
-    ///
-    ///
     static let clipCornerRadius: CGFloat = 6
     static let response = 0.2, dampingFraction = 0.6
     static let actionResponse = 0.4, actionDamping = 0.6
     static let actionRotation: CGFloat = 2 * .pi
     static func delay(enteringLoading: Bool) -> CFTimeInterval { enteringLoading ? 0.2 : 0.1 }
 
-    ///
-    /// `Image._RotationEffect._OffsetEffect._ScaleEffect._OpacityEffect`,
-    ///
     static let pressedRotation: CGFloat = .pi / 2
     static let pressedOffset: CGFloat = 1
 
@@ -145,8 +112,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
             view?.needsDisplay = true
         }
     }
-    ///
-    /// whose TopBarButtonStyle was not recovered, keeps AppKit's vector symbol.
     private let rasterized: Bool
     private var arrowImage: NSImage?
     private var stopImage: NSImage?
@@ -161,9 +126,7 @@ enum DeveloperReloadState: String { case reload, forceReload }
     private weak var view: NSView?
     private(set) var loading = false
     private(set) var forceReload = false
-    /// 0 idle, 1 loading; the spring may overshoot either end.
     private(set) var progress: CGFloat = 0
-    /// Radians; a press adds `actionRotation`.
     private(set) var rotation: CGFloat = 0
     private var from: CGFloat = 0, target: CGFloat = 0
     private var start: CFTimeInterval = 0, delay: CFTimeInterval = 0
@@ -198,8 +161,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
         startFrames()
     }
 
-    ///
-    /// 2π about the centre on spring(response 0.4, damping 0.6).
     func playActionSpin(animated: Bool) {
         let next = rotation + Self.actionRotation
         guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
@@ -227,7 +188,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
     }
     private func stopFrames() { frames.stop() }
 
-    /// Returns whether the load or spin spring still has frames to sample.
     private func tick() -> Bool {
         let now = CACurrentMediaTime()
         var keep = false
@@ -258,7 +218,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
         return keep
     }
 
-    /// Underdamped unit step of SwiftUI's spring(response:dampingFraction:).
     static func spring(_ t: Double) -> CGFloat { unitSpring(t, response: response, damping: dampingFraction) }
     static func actionSpring(_ t: Double) -> CGFloat { unitSpring(t, response: actionResponse, damping: actionDamping) }
     static func unitSpring(_ t: Double, response: Double, damping: Double) -> CGFloat {
@@ -266,7 +225,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
         let damped = omega * (1 - damping * damping).squareRoot()
         return CGFloat(1 - exp(-decay * t) * (cos(damped * t) + decay / damped * sin(damped * t)))
     }
-    /// Envelope below 0.1% of the change.
     static func settlingDuration(response: Double, damping: Double) -> CFTimeInterval {
         log(1000) / (damping * 2 * Double.pi / response)
     }
@@ -275,8 +233,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
 
     var idleImage: NSImage? { forceReload ? NavigationControlArtwork.forceReload ?? arrowImage : arrowImage }
 
-    /// `press` is the button style's pressed progress; only the
-    /// `arrow.clockwise` icon reacts to it (`ForceReloadIcon` has no press).
     func draw(in bounds: NSRect, tint: NSColor, press: CGFloat = 0, in view: NSView) {
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(roundedRect: bounds, xRadius: Self.clipCornerRadius, yRadius: Self.clipCornerRadius).addClip()
@@ -303,7 +259,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
         let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
         var rect = NSRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height)
         if abs(press) > 0.0001 {
-            // SwiftUI's y grows downward; the scale applies after the offset.
             let down: CGFloat = view.isFlipped ? 1 : -1
             rect = rect.offsetBy(dx: Self.pressedOffset * press * scale, dy: Self.pressedOffset * press * scale * down)
             Self.rotate(by: Self.pressedRotation * press * (view.isFlipped ? 1 : -1),
@@ -315,8 +270,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
                                       respectFlipped: true, hints: nil)
     }
 
-    /// Cached by the opaque tint; the tint's alpha is the drawing fraction, so
-    /// a press that only changes alpha allocates nothing per frame.
     private func tintedImage(_ image: NSImage, _ color: NSColor) -> NSImage {
         let opaque = color.withAlphaComponent(1)
         if tinted?.color != opaque { tinted = (opaque, [:]) }
@@ -332,9 +285,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
     }
 }
 
-///
-/// chevron "Reload options" button: Reload, Refresh (Ignore Cache), a separator
-/// and Clear Cookies and Refresh. The checkmark marks the stored default.
 @MainActor enum ReloadOptionsMenu {
     enum Choice { case reload, forceReload, clearCookies }
 
@@ -345,7 +295,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
         let reload = item("Reload") { choose(.reload) }
         let force = item("Refresh (Ignore Cache)") { choose(.forceReload) }
         let cookies = item("Clear Cookies and Refresh") { choose(.clearCookies) }
-        //
         copyKeyEquivalent(of: "reload:", to: reload)
         copyKeyEquivalent(of: "forceReload:", to: force)
         reload.state = state == .reload ? .on : .off
@@ -385,7 +334,6 @@ enum DeveloperReloadState: String { case reload, forceReload }
            event.window === button.window {
             NSMenu.popUpContextMenu(menu, with: event, for: button)
         } else {
-            // Keyboard or accessibility activation has no pointer location.
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.isFlipped ? button.bounds.maxY : 0), in: button)
         }
     }

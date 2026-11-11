@@ -1,13 +1,10 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// A single original page owns selection, pixels and output. The overlay never
-/// reparents the renderer or captures the window chrome. See page-capture.md.
 @MainActor
 final class PageCaptureController: NSObject {
     enum Mode { case region, viewport, fullPage, portrait }
     private enum State { case selecting, capturing, configuringPortrait, preview, editing, output, finished }
-    /// The image reached the pasteboard and the capture closed.
     var onCopied: (() -> Void)?
     private weak var parent: NSWindow?
     private weak var sourceView: NSView?
@@ -22,7 +19,6 @@ final class PageCaptureController: NSObject {
     private var savedCapture: SavedCapture?
     private var libraryWriteInProgress = false
     private let lease: PCNativePageCapture
-    // What's New is a path into the app, so its captures have no source address.
     private var sourceURL: String { WhatsNewPage.presented(lease.sourceURL) }
     private let valid: () -> Bool
     private let finished: (Bool) -> Void
@@ -111,8 +107,6 @@ final class PageCaptureController: NSObject {
         if mode == .region { overlay.showSelection() } else { capture(mode) }
     }
 
-    /// The window's native pan continues into this same page-owned selection.
-    ///
     func handleCaptureGesture(_ recognizer: NSPanGestureRecognizer) {
         reconcile()
         guard state == .selecting, parent?.isKeyWindow == true else { return }
@@ -122,8 +116,6 @@ final class PageCaptureController: NSObject {
         overlay.handleCaptureGesture(state: recognizer.state, point: recognizer.location(in: overlay))
     }
 
-    /// Called from the window's layout/model reconciliation, including split and
-    /// Peek selection changes. Never move a pending crop to a different viewport.
     func reconcile() {
         guard state != .finished else { return }
         guard valid(), lease.isValid, let sourceView, let containerView, let host, let parent,
@@ -131,9 +123,6 @@ final class PageCaptureController: NSObject {
               parent.frame == parentFrame, host.bounds == hostBounds,
               host.convert(containerView.bounds, from: containerView) == containerFrame,
               host.convert(sourceView.bounds, from: sourceView) == nativeFrame,
-              // The lease owns the immutable renderer inset (including native
-              // infobars). Native validity checks actual renderer geometry and
-              // owns its full-page surface override; app geometry stays fixed.
               host.convert(lease.viewportFrame, from: sourceView) == sourceFrame else {
             dismiss(restoreFocus: false); return
         }
@@ -186,8 +175,6 @@ final class PageCaptureController: NSObject {
     private func selectedElement(_ target: PCNativePageCaptureTarget?, at point: NSPoint) {
         guard state == .selecting, valid(), lease.isValid else { return }
         if let target { capture(.region, element: target); return }
-        // A click before the first hover reply still queries the real document.
-        // No guessed rectangle or whole-page capture substitutes for no target.
         hoverRequest &+= 1; request &+= 1
         let generation = request
         state = .capturing; overlay.showBusy()
@@ -237,8 +224,6 @@ final class PageCaptureController: NSObject {
                     InterfaceSoundEffects.shared.playCapture()
                     self.showPreview(changed: true)
                     self.overlay.revealCapturedImage()
-                    // Compatibility toolbar shortcut; the editor and output
-                    // are the same ones available to every captured image.
                     if mode == .portrait { self.configurePortrait() }
                 } catch {
                     self.state = .selecting
@@ -270,8 +255,6 @@ final class PageCaptureController: NSObject {
         view.onCancel = { [weak self] in self?.cancelEditingOrDismiss() }
         portrait = view; state = .configuringPortrait
         overlay.showConfiguration()
-        // The configuration card may extend beyond a narrow split viewport,
-        // while its lease and dimming overlay stay on the original page.
         if let host {
             host.addSubview(view, positioned: .above, relativeTo: overlay)
             let top = host.isFlipped ? sourceFrame.minY + 12 : sourceFrame.maxY - view.frame.height - 12
@@ -371,7 +354,7 @@ final class PageCaptureController: NSObject {
         case .message: shareMessage()
         case .newEasel: placeOnEasel(nil)
         case .easel(let id, _): placeOnEasel(id)
-        case .expand: break // The palette consumes its own expansion action.
+        case .expand: break
         }
     }
 
@@ -419,8 +402,6 @@ final class PageCaptureController: NSObject {
         input.capturedAt = capturedAt
         input.captureLayout = image?.isOriginalOutput == true ? captureLayout : nil
         do {
-            // The callback commits the original UUID and bytes before opening
-            // that same Easel. It also retires this capture before model selection.
             try addToEasel(input, id)
             if state != .finished { dismiss(restoreFocus: false) }
         } catch {
@@ -464,8 +445,6 @@ final class PageCaptureController: NSObject {
         let input = destination.input(id: id, expectedRevision: savedCapture?.revision, capturedAt: capturedAt,
             title: lease.pageTitle, sourceURL: sourceURL, kind: captureKind, pngData: pngData)
         libraryWriteInProgress = true; overlay.setLibraryBusy(true)
-        // The user's explicit save transfers these immutable bytes into the
-        // durable catalog. Closing the page cannot revoke a committed save.
         Task { [weak self, library] in
             do {
                 let item = try await reservation.perform { try await library.save(input) }
@@ -523,8 +502,6 @@ final class PageCaptureController: NSObject {
     }
 }
 
-/// Page-coordinate selection and output palette. The fixed reference geometry
-/// is adapted to small split panes. Motion and native focus retain this owner.
 @MainActor
 final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
     typealias Action = CaptureDestinationAction
@@ -819,7 +796,6 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
         window?.makeFirstResponder(self)
         mouseDownTarget = target; target = nil; start = p; dragging = false; selection = nil
         updateTargetAccessibility(false)
-        // Stop new hover publications while preserving this exact offered token.
         onHover?(nil); needsDisplay = true
     }
     override func mouseDragged(with event: NSEvent) {
@@ -960,7 +936,6 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
     private func activate(_ action: Action) {
         guard !libraryBusy, !outputBusy else { return }
         if action == .expand {
-            // The former expansion row becomes the first newly exposed Easel.
             let next = actions.firstIndex(of: .expand) ?? 0
             destinationsExpanded = true; rebuildActions(); layoutSubtreeIfNeeded()
             selectedAction = min(next, max(0, actions.count - 1)); updateSelectedAction()
@@ -978,8 +953,6 @@ final class PageCaptureOverlay: NSView, NSSearchFieldDelegate {
             : ([searchField] + buttons.filter(\.isEnabled))
         guard let first = controls.first else { return }
         for (index, control) in controls.enumerated() { control.nextKeyView = index + 1 < controls.count ? controls[index + 1] : first }
-        // NSView also sets reciprocal previousKeyView. The preview ring must
-        // not gain a second incoming edge from the enclosing overlay.
         if first !== self { nextKeyView = nil }
     }
     func revealCapturedImage() {
@@ -1033,16 +1006,6 @@ private final class CapturePreviewImageView: NSImageView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// The reference lens is a ShadowView framing a clear live-page region. It is
-/// not a magnifier or a second image capture. Paths share one presentation so
-/// interruption never leaves the dimming cutout behind the outline.
-///
-/// The 60 Hz `.common` timer samples the recovered FocusRectAnimator spring
-/// only while geometry is still moving. Identical settled focus (same inset
-/// rect, springs resolved) is a true no-op: hover / capture probes that repeat
-/// the current presentation must not re-arm the timer or rebuild paths. Ticks
-/// that leave `motion.rect` unchanged also skip path work, then idle-stop when
-/// `!motion.isAnimating` — same pattern as ReloadControl / PageLoadingIndicator.
 @MainActor
 private final class CaptureElementLens: CaptureFlippedView {
     private let grayscale = CAShapeLayer()
@@ -1083,9 +1046,6 @@ private final class CaptureElementLens: CaptureFlippedView {
     }
     func setTarget(_ rect: NSRect?, animated: Bool) {
         let inset = rect?.insetBy(dx: -6, dy: -6)
-        // Settled identical focus: do not refresh CaptureLensMotion.pending or
-        // re-arm the timer (repeated hover probes would otherwise keep 60 Hz
-        // ticks alive with no presentation change).
         if inset == focusRect, !motion.isAnimating {
             stopFrames()
             return
@@ -1100,7 +1060,6 @@ private final class CaptureElementLens: CaptureFlippedView {
         applyMotionPresentation()
         if !motion.isAnimating { stopFrames() }
     }
-    /// Rebuilds shade/outline paths only when the presented focus rect changes.
     private func applyMotionPresentation() {
         let next = motion.rect
         guard next != focusRect else { return }
@@ -1133,8 +1092,6 @@ private final class CaptureElementLens: CaptureFlippedView {
         let shade = CGMutablePath(); shade.addRect(bounds)
         var border: CGPath?
         if let outer = focusRect, !outer.isEmpty {
-            // Recovered 6-point focus expansion, 4-point border and 7-point
-            // outer corner; the native click copy owns its 2-point pixel inset.
             shade.addRoundedRect(in: outer.insetBy(dx: 4, dy: 4), cornerWidth: 3, cornerHeight: 3)
             border = CGPath(roundedRect: outer.insetBy(dx: 2, dy: 2), cornerWidth: 5, cornerHeight: 5, transform: nil)
         }
@@ -1148,9 +1105,6 @@ private final class CaptureElementLens: CaptureFlippedView {
     }
     static func cameraCursor() -> NSCursor {
         guard let image = CaptureArtwork.image("camera-cross-cursor") else { return .crosshair }
-        // The cross center is (24, 25) in the original 53.2969 × 50 artwork.
-        // AppKit owns the cursor hotspot; the reference uses a 64-point image
-        // view following the pointer instead. This is an explicit shell adaptation.
         return NSCursor(image: image, hotSpot: NSPoint(x: 24, y: 25))
     }
 
@@ -1237,8 +1191,6 @@ private final class CaptureActionButton: PointingHandButton {
     }
 }
 
-/// Recovered instruction-card type, padding, corners and gradient colors. The
-/// text wraps in compact panes instead of clipping an unbounded SwiftUI label.
 @MainActor
 private final class CaptureHintView: NSView {
     var stringValue = "" { didSet {

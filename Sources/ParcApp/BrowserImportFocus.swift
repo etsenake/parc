@@ -1,7 +1,5 @@
 import AppKit
 
-/// An import may return to its original browser only while the user still owns
-/// that interaction. The caller separately verifies the browser's live owner.
 @MainActor
 enum BrowserImportFocus {
     static func mayReturn(requested: Bool, appIsActive: Bool, parent: NSWindow,
@@ -11,10 +9,6 @@ enum BrowserImportFocus {
         return key == nil || key === parent || (importer != nil && key === importer)
     }
 
-    /// Every control in the embedded import, each root in reading order, for
-    /// setup's Tab loop. Hidden and disabled controls stay listed so a later
-    /// stage of the same import needs no new loop; Tab skips them. A SwiftUI
-    /// host is one entry and keeps its own order inside.
     static func keyViews(in roots: [NSView]) -> [NSView] {
         roots.flatMap { root in
             controls(in: root).map { ($0, $0.convert($0.bounds, to: nil)) }

@@ -1,14 +1,6 @@
 import AppKit
 import ImageIO
 
-///
-///
-/// `BlurredSnapshotView`: the snapshot is an aspect-filled `Image` at the
-/// content's full size, taken as the page leaves and never updated (as the user
-///
-///
-/// `FirstResponderAcceptingView` whose click sends `onDidClickBackground`
-///
 final class PagePlaceholderView: NSView {
     var onClick: (() -> Void)?
     private var snapshotLayer: CALayer?
@@ -54,8 +46,6 @@ final class PagePlaceholderView: NSView {
     }
     override func accessibilityPerformPress() -> Bool { onClick?(); return onClick != nil }
 
-    /// The smallest copy of `image` that still fills `pixels` at its own
-    /// aspect ratio, as the aspect-filled layer draws it; never enlarged.
     static func downsampled(_ image: CGImage, toFill pixels: CGSize) -> CGImage {
         let scale = max(pixels.width / CGFloat(image.width), pixels.height / CGFloat(image.height))
         guard scale < 1, scale > 0 else { return image }
@@ -71,12 +61,7 @@ final class PagePlaceholderView: NSView {
     }
 }
 
-/// The placeholder's one frame arrives from the engine as PNG data. It is
-/// decoded straight to the pane's size on a background queue; the main
-/// thread receives only that small image.
 enum PagePlaceholderSnapshot {
-    /// The longest side a copy of a `source`-sized capture needs to fill
-    /// `target` at its own aspect ratio; never more than the capture.
     static func maxPixelSize(source: CGSize, filling target: CGSize?) -> Int {
         guard source.width > 0, source.height > 0 else { return 0 }
         let scale = target.map { max($0.width / source.width, $0.height / source.height) } ?? 1
@@ -104,14 +89,8 @@ enum PagePlaceholderSnapshot {
 }
 
 enum PagePlaceholderDim {
-    /// `DimState.dimmed(.placeholder)`: windowModal 0.3, popover 0.7, placeholder 0.6.
     static let opacity: Float = 0.6
 
-    ///
-    ///
-    ///
-    ///
-    /// 4π·fraction/response, each times mass.
     static func apply(_ dimmed: Bool, to layer: CALayer, animated: Bool) {
         let target: Float = dimmed ? opacity : 1
         guard layer.opacity != target || layer.animation(forKey: "placeholderDim") != nil else { return }

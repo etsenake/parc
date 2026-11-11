@@ -1,17 +1,10 @@
 import AppKit
 
-/// AppKit's synchronous registration stack cannot wait for Chromium's
-/// beforeunload result. This window fallback exposes the native Undo/Redo
-/// surface while moving a typed window action only after its actual completion.
-/// Container names and close groups share chronology. Native text editors use
-/// their own ordinary UndoManager and never register in this window stack.
 @MainActor
 final class FolderUndoManager: UndoManager {
     enum Direction { case undo, redo }
     final class Entry {
         let id = UUID()
-        ///
-        /// items it will close again.
         let name: (Direction) -> String
         let isValid: (Direction) -> Bool
         let isAvailable: (Direction) -> Bool
@@ -67,11 +60,6 @@ final class FolderUndoManager: UndoManager {
         return true
     }
 
-    /// A close that commits while an Undo or Redo still waits (a page's
-    /// leave-page dialog) joins once that one finishes, in commit order: it
-    /// clears the Redo stack as it stood, an Undo that then commits still goes
-    ///
-    /// close registers when its own close completes.
     func appendWhenIdle(_ entry: Entry, appended: @escaping () -> Void) {
         guard pending != nil else {
             if append(entry) { appended() }
@@ -82,8 +70,6 @@ final class FolderUndoManager: UndoManager {
 
     private func top(_ direction: Direction) -> Entry? {
         guard pending == nil else { return nil }
-        // A restored/permanently removed/changed original is no longer an undo
-        // capability. Modal sheets and transient page reservations are separate.
         switch direction {
         case .undo:
             while let entry = undoEntries.last, !entry.isValid(direction) { undoEntries.removeLast(); revision &+= 1 }
@@ -112,7 +98,6 @@ final class FolderUndoManager: UndoManager {
         entry.perform(direction) { [weak self, weak entry] committed in
             guard let self, let entry, self.epoch == version, self.pending?.id == request else { return }
             self.pending = nil
-            // Groups that committed while this waited registered first.
             let undone = committed && direction == .undo && self.undoEntries.last === entry
             var redone: Entry?
             if committed, direction == .redo, self.redoEntries.last === entry { self.redoEntries.removeLast(); redone = entry }
@@ -134,8 +119,6 @@ final class FolderUndoManager: UndoManager {
     }
 }
 
-/// Redo refreshes this transaction's afterimage only after the new close has
-/// actually committed. The history entry itself retains its LIFO identity.
 @MainActor
 final class FolderUndoOperation {
     var record: FolderDeletionUndo

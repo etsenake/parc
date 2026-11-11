@@ -35,7 +35,7 @@ for needle in (
     assert needle in fp_body, f"fingerprint no longer includes {needle}"
 
 refresh = re.search(
-    r"private func refreshCaptureIndicators\(\) \{(?P<body>.*?)\n    \}\n\n    /// TAB16 Favorite tile overlays",
+    r"private func refreshCaptureIndicators\(\) \{(?P<body>.*?)\n    \}\n\n    private func favoriteOverlayStates\(",
     controller, re.S)
 assert refresh, "refreshCaptureIndicators not found"
 body = refresh.group("body")

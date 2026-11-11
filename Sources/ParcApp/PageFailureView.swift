@@ -1,9 +1,5 @@
 import AppKit
 
-// A display value copied from the exact native page's current crash snapshot,
-//
-// when a crash presentation exists; the shell does not classify Chromium
-// termination codes or infer recovery from a Reload click.
 struct RendererCrashPresentation: Equatable {
     let pageIdentifier: String
     let identity: AnyObject
@@ -15,17 +11,6 @@ struct RendererCrashPresentation: Equatable {
     }
 }
 
-///
-/// `SadTabHostView` / `SadTabView` (docs/web-interactions.md, WEB17): over the
-/// web content's `FullOpacityBackgroundPrimary` backing, the `SadTab` artwork,
-/// 96 points high, then 64 points below it "Tab crashed. Maybe reload the
-/// page?" with "reload" as an underlined link, centred as one column, and
-/// "Error code: N" 20 points in from the bottom-trailing corner, all in
-///
-///
-///
-/// counterpart (Chromium renders its own error page there), so Parc shows its
-/// message in the same composition without the artwork.
 @MainActor
 final class PageFailureView: NSView {
     enum Presentation: Equatable {
@@ -34,8 +19,6 @@ final class PageFailureView: NSView {
     }
 
     private(set) var presentation: Presentation?
-    // The pane retains the real registered browser view. Only visibility is
-    // changed here; neither the page nor its native host is replaced.
     weak var pageView: NSView? {
         willSet { restorePage() }
         didSet { if presentation != nil { hidePage() } }
@@ -46,9 +29,7 @@ final class PageFailureView: NSView {
     var onRendererPresented: ((RendererCrashPresentation) -> Bool)?
     private var acknowledged: RendererCrashPresentation?
     let artwork = NSImageView()
-    /// The sentence and its link, the column's second row.
     let sentence = PageFailureText()
-    /// The bottom-trailing error code (a navigation failure's message).
     let corner = PageFailureText()
 
     override var isFlipped: Bool { true }
@@ -58,14 +39,10 @@ final class PageFailureView: NSView {
         artwork.image = SadTabContent.artwork
         artwork.imageScaling = .scaleProportionallyUpOrDown
         artwork.contentTintColor = SadTabContent.foreground
-        // SwiftUI would name the image "SadTab"; it carries no information.
         artwork.setAccessibilityElement(false)
         sentence.identifier = NSUserInterfaceItemIdentifier("page-failure-retry")
         sentence.onActivate = { [weak self] in self?.invokeRetry() }
         addSubview(artwork); addSubview(sentence); addSubview(corner)
-        // Sidebar ⌘S contract (docs/sidebar-motion.md): the text is drawn once
-        // at its size and held centred while the pane's width animates; the
-        // solid backing scales with the view.
         SidebarMotionController.pinDrawnContent(self, to: .scaleAxesIndependently)
         SidebarMotionController.pinDrawnContent(sentence, to: .center)
         SidebarMotionController.pinDrawnContent(corner, to: .center)
@@ -137,10 +114,6 @@ final class PageFailureView: NSView {
             onReload?()
         case .renderer(let crash):
             guard isActuallyVisible, acknowledged == crash else { return }
-            //
-            // real SadTab's button reloads (unbranded Chromium never offers
-            // feedback), and the crash stays visible until the native
-            // producer clears it. The callback validates page and snapshot.
             onRetryRenderer?(crash)
         case nil:
             break
@@ -170,12 +143,8 @@ final class PageFailureView: NSView {
         dirtyRect.fill()
         guard isActuallyVisible, case .renderer(let crash) = presentation,
               acknowledged != crash else { return }
-        // Actual native drawing, not a nonnull snapshot or hidden preparation,
-        // satisfies the real SadTab model's first-paint prerequisite.
         let accepted = onRendererPresented?(crash) == true
         guard presentation == .renderer(crash) else {
-            // AppKit may clear this draw's dirty bit after callback reentry.
-            // A replacement needs its own later real draw, never the old ACK.
             if case .renderer(let replacement) = presentation {
                 DispatchQueue.main.async { [weak self] in
                     guard let self, self.presentation == .renderer(replacement) else { return }
@@ -192,25 +161,18 @@ final class PageFailureView: NSView {
         needsDisplay = true
     }
 
-    /// SadTabView's body: a full-size ZStack holding the bottom-trailing
-    /// error code and the centred column (artwork, 64 points, sentence).
     override func layout() {
         super.layout()
         let width = bounds.width, height = bounds.height
         let showsArtwork = !artwork.isHidden
         let art = showsArtwork ? SadTabContent.artworkSize : .zero
         let spacing = showsArtwork ? SadTabContent.artworkSpacing : 0
-        // The column is offered the full width (`frame(maxWidth: .infinity)`).
         let line = sentence.fittingSize(width: width)
         let column = art.height + spacing + line.height
         let top = (height - column) / 2
         artwork.frame = aligned(NSRect(x: (width - art.width) / 2, y: top, width: art.width, height: art.height))
         sentence.frame = aligned(NSRect(x: (width - line.width) / 2, y: top + art.height + spacing,
                                         width: line.width, height: line.height))
-        // `.frame(maxWidth: .infinity, maxHeight: .infinity, alignment:
-        //
-        // the two; only Parc's own long navigation message is cut short of
-        // the column instead of running under it.
         let inset = SadTabContent.cornerInset
         corner.maximumHeight = showsArtwork ? .greatestFiniteMagnitude
             : max(SadTabContent.lineHeight, height - inset - max(0, top + column) - 8)
@@ -224,13 +186,6 @@ final class PageFailureView: NSView {
     }
 }
 
-/// One row of SadTabView's text: an `HStack(spacing: 0)` of `Text`s in the
-///
-/// Hovering the link pushes the pointing-hand cursor and a tap activates it
-///
-/// explicit crash focus, so a crash in the focused page keeps the keyboard on
-/// its action; a click does not focus it and it stays out of the key-view
-///
 @MainActor
 final class PageFailureText: NSView {
     var segments: [SadTabContent.Segment] = [] {
@@ -241,7 +196,6 @@ final class PageFailureText: NSView {
     }
     var isEnabled = false { didSet { if isEnabled != oldValue { refreshLink() } } }
     var onActivate: (() -> Void)?
-    /// A cap on each text's height; its last visible line is truncated.
     var maximumHeight: CGFloat = .greatestFiniteMagnitude {
         didSet { if maximumHeight != oldValue { rects = []; needsLayout = true; needsDisplay = true } }
     }
@@ -263,10 +217,6 @@ final class PageFailureText: NSView {
                                          options: [.usesLineFragmentOrigin, .usesFontLeading]).size
     }
 
-    /// The HStack's layout for a proposed width: each text keeps its ideal
-    /// width when they all fit; otherwise the narrowest first takes at most an
-    /// equal share of what remains and wraps inside it. Heights are capped by
-    /// `maximumHeight`; texts are centred vertically.
     private func layoutRects(width: CGFloat) -> [NSRect] {
         let ideal = segments.map { measure($0, width: .greatestFiniteMagnitude).width }
         var widths = ideal
@@ -278,7 +228,6 @@ final class PageFailureText: NSView {
                 remaining -= widths[index]
             }
         }
-        // Measured with the same slack `draw` gives each text.
         let heights = segments.indices.map { min(maximumHeight, ceil(measure(segments[$0], width: widths[$0] + 1).height)) }
         let rowHeight = heights.max() ?? 0
         var x: CGFloat = 0
@@ -308,8 +257,6 @@ final class PageFailureText: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         for (segment, rect) in zip(segments, currentRects) {
-            // Fractional widths are kept, as SwiftUI keeps them; the slack
-            // keeps a measured line from wrapping on rounding.
             attributed(segment).draw(with: NSRect(x: rect.minX, y: rect.minY, width: rect.width + 1, height: rect.height),
                                      options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine])
         }
@@ -329,7 +276,6 @@ final class PageFailureText: NSView {
         if isEnabled, hasLink { addCursorRect(linkRect, cursor: .pointingHand) }
     }
 
-    /// Only the link takes the pointer; the rest of the text passes it on.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard isEnabled, hasLink, let superview, linkRect.contains(convert(point, from: superview)) else { return nil }
         return self
@@ -345,14 +291,11 @@ final class PageFailureText: NSView {
         if pressedInLink, inside { performClick(nil) }
     }
 
-    /// The link's action, as a click, Space or Return, or AX press sends it.
     @objc func performClick(_ sender: Any?) {
         guard isEnabled, hasLink else { return }
         onActivate?()
     }
 
-    /// Only the engine's explicit crash focus moves the keyboard here; a
-    ///
     private var takingExplicitFocus = false
     func takeExplicitFocus() -> Bool {
         guard let window else { return false }
@@ -372,7 +315,6 @@ final class PageFailureText: NSView {
         }
     }
 
-    //
     override var focusRingMaskBounds: NSRect { NSApp.isFullKeyboardAccessEnabled ? linkRect : .zero }
     override func drawFocusRingMask() {
         guard NSApp.isFullKeyboardAccessEnabled else { return }

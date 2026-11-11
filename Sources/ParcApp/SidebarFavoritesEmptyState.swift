@@ -1,34 +1,14 @@
 import AppKit
 import QuartzCore
 
-///
-/// NSView hosting the SwiftUI EmptyStateView over a view model of
-///
-///
-///
-/// AppTray action 6 from its Dismiss button and the tray's Hide item
-///
-///
-///
-/// (docs/sidebar-resize.md#app-tray-empty-state), so Parc shows the view only
-/// undismissed and the button is always present. Parc draws the same parts in
-/// AppKit; the geometry is SidebarChromeLayout.AppTrayEmptyState.
 final class FavoritesEmptyStateView: NSView {
-    ///
-    ///
     static let title = "Drag to add Favorites"
     static let subtitle = "Favorites keep your most used sites and apps close"
-    /// The Dismiss button's SwiftUI label and AccessibilityIdentifier case 15
-    ///
     static let dismissLabel = "Dismiss"
     static let dismissIdentifier = "sidebarFavoritesEmptyStateDismissButton"
-    ///
     static let hideTitle = "Hide"
 
     private var onDismiss: (() -> Void)?
-    ///
-    ///
-    ///
     private(set) var isDraggingOver = false { didSet { if isDraggingOver != oldValue { applyStyle(animated: true) } } }
 
     private let card = CALayer()
@@ -52,36 +32,22 @@ final class FavoritesEmptyStateView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        //
-        // fill, a 1-point top-to-bottom gradient stroke inside it at opacity
-        // 0.3, and a 1-point radius-13 stroke 1 point outside it, dashed [5]
-        //
         card.cornerRadius = 12; card.cornerCurve = .continuous
         innerBorderShape.fillColor = nil; innerBorderShape.strokeColor = NSColor.black.cgColor; innerBorderShape.lineWidth = 1
         innerBorder.mask = innerBorderShape; innerBorder.opacity = 0.3
         outerBorder.fillColor = nil; outerBorder.lineWidth = 1; outerBorder.lineJoin = .round
         for sublayer in [card, innerBorder, outerBorder] { layer?.addSublayer(sublayer) }
 
-        // star.circle.fill at .system(size: 16, weight: .medium) in a palette
-        //
-        //
-        // Image it stays an AX image; its description is not yet compared.
         icon.imageScaling = .scaleNone
-        //
-        // the 13-point medium system font, the subtitle in 12-point regular
-        // with a −0.2 kern.
         let centred = NSMutableParagraphStyle(); centred.alignment = .center
         titleLabel.attributedStringValue = NSAttributedString(string: Self.title, attributes: [
             .paragraphStyle: centred, .font: NSFont.systemFont(ofSize: 13, weight: .medium)])
         subtitleLabel.attributedStringValue = NSAttributedString(string: Self.subtitle, attributes: [
             .paragraphStyle: centred, .kern: -0.2, .font: NSFont.systemFont(ofSize: 12, weight: .regular)])
-        // Both wrap within the text width, as SwiftUI's Text does in its frame.
         for label in [titleLabel, subtitleLabel] {
             label.cell?.lineBreakMode = .byWordWrapping; label.isSelectable = false; label.drawsBackground = false
         }
 
-        //
-        //
         let mark = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 9, weight: .bold))
         dismissButton.image = mark; dismissButton.imagePosition = .imageOnly
@@ -100,11 +66,6 @@ final class FavoritesEmptyStateView: NSView {
         applyStyle(animated: false)
     }
 
-    /// Shows the view in an empty tray until its profile dismisses it
-    /// (SidebarChromeLayout.showsAppTrayEmptyState); Dismiss and Hide then
-    /// call `dismiss` with that profile. Hiding the view under a focused
-    /// Dismiss makes AppKit focus Dismiss's next valid key view, the sidebar
-    /// chain's following stop, and only without one the window [C].
     func update(favorites: Int, profileID: UUID?, settings: BrowserSettings, privateWindow: Bool,
                 dismiss: @escaping (UUID) -> Void) {
         onDismiss = profileID.map { profile in { dismiss(profile) } }
@@ -112,22 +73,15 @@ final class FavoritesEmptyStateView: NSView {
             favorites: favorites, dismissed: settings.favoritesEmptyStateDismissed(for: $0), privateWindow: privateWindow) } ?? false)
     }
 
-    /// The App Tray's height: the Favorites grid's, else this view's fitting
-    /// height while shown (SidebarChromeLayout.appTrayHeight).
     func trayHeight(gridHeight: CGFloat, width: CGFloat) -> CGFloat {
         SidebarChromeLayout.appTrayHeight(gridHeight: gridHeight, emptyState: isHidden ? nil : fittingHeight(width: width))
     }
 
-    /// A Favorites drag over the tray, or its end: the shown view takes its
-    /// dragging style. It then stands in for the insertion cue [I], since
-    ///
-    /// state was not traced; returns whether it does.
     @discardableResult func showsDrop(_ over: Bool) -> Bool {
         isDraggingOver = over && !isHidden
         return isDraggingOver
     }
 
-    /// AppTrayEmptyState's fitting height with the measured icon and text.
     func fittingHeight(width: CGFloat) -> CGFloat {
         let sizes = measure(width: width)
         return SidebarChromeLayout.AppTrayEmptyState.height(icon: sizes.icon, title: sizes.title, subtitle: sizes.subtitle)
@@ -145,11 +99,7 @@ final class FavoritesEmptyStateView: NSView {
         innerBorder.frame = frames.card
         innerBorderShape.path = CGPath(roundedRect: CGRect(origin: .zero, size: frames.card.size).insetBy(dx: 0.5, dy: 0.5),
                                        cornerWidth: 11.5, cornerHeight: 11.5, transform: nil)
-        // CoreGraphics has no continuous rounded-rect path, so the strokes
-        //
         outerBorder.path = CGPath(roundedRect: frames.card.insetBy(dx: -0.5, dy: -0.5), cornerWidth: 12.5, cornerHeight: 12.5, transform: nil)
-        // The stroke runs top to bottom in the view, whichever way its layer
-        // tree is flipped.
         let top: CGFloat = innerBorder.contentsAreFlipped() ? 0 : 1
         innerBorder.startPoint = CGPoint(x: 0.5, y: top); innerBorder.endPoint = CGPoint(x: 0.5, y: 1 - top)
         CATransaction.commit()
@@ -174,14 +124,6 @@ final class FavoritesEmptyStateView: NSView {
         return (icon.image?.size ?? .zero, size(titleLabel), size(subtitleLabel))
     }
 
-    ///
-    ///
-    /// subtitle 0.7 / 0.3 of the theme's title; icon maxContrastColor 1 / 0.5
-    /// over minContrastColor 0.5 / 0.3; fill backgroundExtra 0.15 / 0.3; the
-    /// inner gradient 0.2 → 0.8 of backgroundExtra in light themes, else
-    /// minContrastColor; the outer border maxContrastColor 0.3. Palette roles
-    /// are SemanticColorPalette offsets 0x150, 0x70, 0x90 and 0xb0 in the
-    /// field order the theme exports.
     private func applyStyle(animated: Bool) {
         let dragging = isDraggingOver
         let animates = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -212,9 +154,6 @@ final class FavoritesEmptyStateView: NSView {
     }
 }
 
-/// A borderless image button gives AppKit no focus ring mask, so the Dismiss
-///
-/// was not compared [I].
 private final class DismissButton: PointingHandButton {
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() { NSBezierPath(ovalIn: bounds).fill() }

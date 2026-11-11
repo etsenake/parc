@@ -1,8 +1,6 @@
 import AppKit
 import Combine
 
-///
-/// This is an app preference, shared by windows; it never changes web security.
 @MainActor
 final class DeveloperModePreferences: ObservableObject {
     static let shared = DeveloperModePreferences()
@@ -46,7 +44,6 @@ final class DeveloperModePreferences: ObservableObject {
     }
 }
 
-/// One toolbar belongs to one original page; the owner validates every action.
 @MainActor
 final class DeveloperToolbarView: NSView, NSTextFieldDelegate {
     enum Action { case siteInfo, copy, portrait, capture, console, network, inspect, extensions, split, tools }
@@ -84,8 +81,6 @@ final class DeveloperToolbarView: NSView, NSTextFieldDelegate {
             (.capture, "Capture", "camera"), (.console, "JavaScript Console", "terminal"),
             (.network, "Network Inspector", "network"), (.inspect, "Inspect Element", "scope"),
             (.extensions, "Extensions Menu", "puzzlepiece.extension"), (.split, "Split View Menu", "rectangle.split.2x1")]
-        // ContentPanelView's tooltips carry the live bindings of Copy URL,
-        //
         let bindings: [Action: String] = [.copy: "copyCurrentURL:", .capture: "capturePage:",
                                           .console: "javaScriptConsole:", .inspect: "inspectElements:"]
         for (action, title, symbol) in specs {
@@ -167,8 +162,6 @@ final class DeveloperToolbarView: NSView, NSTextFieldDelegate {
     }
 }
 
-///
-///
 @MainActor private final class DeveloperAddressField: NSTextField {
     override func becomeFirstResponder() -> Bool {
         guard super.becomeFirstResponder() else { return false }
@@ -177,7 +170,6 @@ final class DeveloperToolbarView: NSView, NSTextFieldDelegate {
     }
 }
 
-///
 @MainActor private final class VerticallyAlignedTextFieldCell: NSTextFieldCell {
     override func drawingRect(forBounds rect: NSRect) -> NSRect {
         let title = super.titleRect(forBounds: rect)

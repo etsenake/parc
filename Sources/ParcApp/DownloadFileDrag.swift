@@ -1,7 +1,5 @@
 import AppKit
 
-/// An outgoing copy of an actual completed file. The lazy pasteboard provider
-/// rechecks the original row/window/manager lease at the point of delivery.
 @MainActor final class DownloadFileDrag: NSObject {
     let item = NSPasteboardItem()
     private var resolve: (() -> URL?)?
@@ -20,9 +18,6 @@ import AppKit
         item.setString(url.absoluteString, forType: .fileURL)
     }
 
-    // NSPasteboardItem retains its provider. A weak forwarding owner avoids an
-    // item/provider cycle and makes a retained pasteboard harmless after the
-    // Library releases its actual drag session.
     @MainActor private final class Provider: NSObject, NSPasteboardItemDataProvider {
         weak var owner: DownloadFileDrag?
         nonisolated func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem,

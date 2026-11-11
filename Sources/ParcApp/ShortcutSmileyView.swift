@@ -1,9 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The Preferences smiley is a bundled, five-second vector animation. This
-/// reader implements its actual three stroked paths, parent transforms and
-/// interpolated path/transform keyframes; it is not a general Lottie player.
 struct ShortcutSmileyArtwork {
     private let layers: [[String: Any]]
     let frameRate: Double
@@ -116,7 +113,7 @@ struct ShortcutSmileyArtwork {
                       let stroke = items.first(where: { $0["ty"] as? String == "st" }) else { continue }
                 context.saveGState()
                 if let tr = items.first(where: { $0["ty"] as? String == "tr" }) { transform(tr, frame: frame, context: context) }
-                context.setStrokeColor(NSColor.white.cgColor) // Original artwork is an accent-color mask.
+                context.setStrokeColor(NSColor.white.cgColor)
                 context.setLineWidth(value(stroke["w"], frame: frame, fallback: [8])[0]); context.setLineCap(.round)
                 for item in items where item["ty"] as? String == "sh" {
                     if let ks = item["ks"] as? [String: Any], let path = path(ks, frame: frame) {
@@ -129,9 +126,6 @@ struct ShortcutSmileyArtwork {
         }
     }
 
-    /// Samples the same transform/path/stroke values `draw` uses. Hold regions
-    /// (before the first keyframe and after the last) share one fingerprint so
-    /// the 60 Hz cue timer can skip `needsDisplay` when pixels cannot change.
     func presentationFingerprint(seconds: Double, size: CGSize) -> Int {
         let frame = min(endFrame, max(0, seconds * frameRate))
         var hasher = Hasher()
@@ -204,10 +198,6 @@ struct ShortcutSmileyArtwork {
     }
 }
 
-/// The Preferences smiley is a bundled, five-second vector animation. The 60 Hz
-/// `.common` timer advances playback only while the cue can still change: hidden
-/// / detached / Reduce Motion / post-settle ticks idle-stop, and ticks whose
-/// presentation fingerprint matches the last dirty skip `needsDisplay`.
 @MainActor final class ShortcutSmileyView: NSView {
     private static let artwork: ShortcutSmileyArtwork? = Bundle.main.url(forResource: "smiley", withExtension: "json", subdirectory: "Shortcuts")
         .flatMap { try? Data(contentsOf: $0) }.flatMap(ShortcutSmileyArtwork.init)
@@ -215,8 +205,6 @@ struct ShortcutSmileyArtwork {
     private var startedAt = 0.0
     private var elapsed = 0.0
     private var lastDisplayFingerprint: Int?
-    /// True after playback has left the end-frame pose; returning to that pose is settle.
-    /// (This artwork's start near-rest is not bit-identical to the end frame.)
     private var leftRestingPose = false
     private var motionObserver: NSObjectProtocol?
     override var isFlipped: Bool { true }
@@ -252,7 +240,6 @@ struct ShortcutSmileyArtwork {
         elapsed = min(artwork.duration, CACurrentMediaTime() - startedAt)
         let fingerprint = artwork.presentationFingerprint(seconds: elapsed, size: bounds.size)
         let endFingerprint = artwork.presentationFingerprint(seconds: artwork.duration, size: bounds.size)
-        // Only treat a return to the end-frame pose as settle (start may differ).
         if fingerprint != endFingerprint { leftRestingPose = true }
         if fingerprint != lastDisplayFingerprint {
             lastDisplayFingerprint = fingerprint

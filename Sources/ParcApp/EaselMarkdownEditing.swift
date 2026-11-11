@@ -1,7 +1,5 @@
 import AppKit
 
-/// Typed markdown is an original-range edit, never a whole-document parser.
-///
 @MainActor
 enum EaselMarkdownEditing {
     struct Admission {
@@ -51,8 +49,6 @@ enum EaselMarkdownEditing {
             }
             return replacing(line, in: original, with: edit)
         }
-        // Only the newly typed closing delimiter may complete an inline token.
-        // Imported/pasted tokens are never restyled by a later unrelated edit.
         guard ["*", "_", "-"].contains(admission.character) else { return nil }
         let delimiter = NSRegularExpression.escapedPattern(for: admission.character)
         let pattern = "(?:^|\\s)(" + delimiter + "\\w+(?:\\s\\w+)*" + delimiter + ")(?=\\s|$)"

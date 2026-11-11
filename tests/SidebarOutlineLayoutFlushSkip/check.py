@@ -18,7 +18,7 @@ assert "frameChanged || needsLayout || subtreeNeedsLayout" in skip, \
     "shouldFlush must require a moved frame or dirty tree"
 
 layout = re.search(
-    r"override func layout\(\) \{(?P<body>.*?)\n    \}\n\n    /// The selected Space",
+    r"override func layout\(\) \{(?P<body>.*?)\n    \}\n\n    private func updateDockItems\(\) \{",
     sidebar, re.S)
 assert layout, "SidebarView.layout not found"
 body = layout.group("body")

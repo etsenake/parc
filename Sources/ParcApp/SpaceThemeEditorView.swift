@@ -3,34 +3,20 @@ import Combine
 import QuartzCore
 import SwiftUI
 
-/// Shared by a Space popover and setup. The owner captures the Space identity;
-/// previews never write persistence, and each committed gesture writes once.
 final class SpaceThemeEditorView: NSView {
     var onPreview: ((SpaceTheme) -> Void)?
     var onCommit: ((SpaceTheme) -> Void)?
-    /// Existing Spaces use the original window's durable history. The returned
-    /// value is authoritative after an accepted, stale or failed transaction.
     var onCommitChange: ((SpaceTheme, SpaceTheme) -> SpaceTheme)?
     weak var windowThemeUndo: UndoManager?
     override var undoManager: UndoManager? { windowThemeUndo ?? super.undoManager }
     var onDismiss: (() -> Void)?
-    /// Appearance buttons delegate to the app parent, independently of the
-    /// Space palette. The owner retains its original window/session identity.
     var onSetAppearance: ((AppAppearance) -> Void)?
-    /// The theme shown while the editor is in a window, on arrival and on
-    ///
-    /// window's tooltips with it; setup has no such owner.
     var onTooltipThemeChange: ((SpaceTheme) -> Void)?
-    ///
-    /// WindowState.currentThemeEditorPresetPage does.
     var onPresetPageChange: ((Int) -> Void)?
-    ///
     enum Presentation { case setup, sidebar }
     var presentation: Presentation = .sidebar { didSet { applyPresentation() } }
     var theme: SpaceTheme { editor.theme }
-    ///
     static let colorPadSide: CGFloat = 340
-    ///
     static let sidebarEmptyStateText = "Tap to pick a color for this space"
     var emptyStatePrompt: String? {
         guard theme.primaryColor == nil else { return nil }
@@ -62,8 +48,6 @@ final class SpaceThemeEditorView: NSView {
     override var acceptsFirstResponder: Bool { true }
     override var intrinsicContentSize: NSSize { NSSize(width: 356, height: 508) }
 
-    /// `presetPage` is the owning window's page; setup always opens on the
-    ///
     init(theme: SpaceTheme, presetPage: Int = 0,
          performHapticFeedback: @escaping @MainActor () -> Void = ThemeHapticFeedback.perform) {
         editor = SpaceThemeEditorState(theme: theme)
@@ -135,8 +119,6 @@ final class SpaceThemeEditorView: NSView {
         noise.onClick = { [weak self] in guard let self else { return }; self.discrete { self.editor.cycleTexture() } }
         addSubview(noise)
         setAccessibilityLabel("Space theme editor")
-        // Observe the explicit override, including nil ↔ Aqua while the system
-        // is already light. Effective-appearance changes alone miss that case.
         appearanceObservation = NSApplication.shared.observe(\.appearance, options: [.new]) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.refreshAppearance() }
         }
@@ -154,7 +136,6 @@ final class SpaceThemeEditorView: NSView {
         remove.frame = NSRect(x: center - 36, y: pad.bounds.height - 48, width: 32, height: 32)
         add.frame = NSRect(x: center + 4, y: pad.bounds.height - 48, width: 32, height: 32)
         let rowY = pad.frame.maxY + 18
-        //
         previous.frame = NSRect(x: 8, y: rowY - 4, width: 32, height: 32)
         next.frame = NSRect(x: bounds.width - 40, y: rowY - 4, width: 32, height: 32)
         let spacing = (bounds.width - 120) / 8
@@ -164,8 +145,6 @@ final class SpaceThemeEditorView: NSView {
         intensity.frame = NSRect(x: 10, y: rowY + 56, width: bounds.width - 116, height: 60)
         noise.frame = NSRect(x: bounds.width - 98, y: rowY + 46, width: 80, height: 80)
     }
-    /// Setup's Tab loop enters the editor here. The sidebar popover never
-    /// calls these, so its own key-view loop is unchanged.
     var firstKeyView: NSView { pad }
     func chainKeyViews(to following: NSView) {
         let controls: [NSView] = [pad] + appearanceButtons + [remove, add, previous] + presets + [next, intensity, noise]
@@ -177,8 +156,6 @@ final class SpaceThemeEditorView: NSView {
         reportedTooltipTheme = nil
         if window == nil { finishEditing() } else { reportTooltipTheme() }
     }
-    /// Refresh runs on every preview frame; the owner derives a palette from
-    /// each report, so only a changed theme is reported.
     private func reportTooltipTheme() {
         guard window != nil, theme != reportedTooltipTheme else { return }
         reportedTooltipTheme = theme
@@ -189,8 +166,6 @@ final class SpaceThemeEditorView: NSView {
         completeGesture()
     }
     private func beginEditing(_ input: Input) {
-        // Pending wheel delivery and subthreshold rotation have no model
-        // snapshot yet. Retire other controls even without an active input.
         if input != .pad { pad.cancelGesture() }
         if input != .intensity { intensity.cancelGesture() }
         if input != .noise { noise.cancelGesture() }
@@ -224,16 +199,12 @@ final class SpaceThemeEditorView: NSView {
         committedTheme = accepted
         if accepted != proposed { replaceEditorTheme(accepted); onPreview?(accepted) }
     }
-    /// A parent Undo or competing window edit rebuilds transient pad state from
-    ///
     @discardableResult func synchronizeTheme(_ theme: SpaceTheme) -> Bool {
         guard theme != committedTheme else { return false }
         committedTheme = theme
         replaceEditorTheme(theme)
         return true
     }
-    ///
-    /// history even when the theme itself is unchanged.
     func resetTheme(_ theme: SpaceTheme) {
         committedTheme = theme
         replaceEditorTheme(theme)
@@ -250,8 +221,6 @@ final class SpaceThemeEditorView: NSView {
         case .setup:
             layer?.cornerRadius = 16
             layer?.cornerCurve = .continuous
-            // NewSetupView's PopoverBackgroundView wrap owns popover material
-            //
             background.isHidden = true
         case .sidebar:
             layer?.cornerRadius = 12
@@ -388,18 +357,12 @@ private enum ThemeEditorResources {
     }
 }
 
-///
-///
 @MainActor
 private enum ThemeEditorColors {
     static let separator = color(dark: 0.15, light: 0.15)
-    /// SineSlider's track is the separator at 0.5 opacity.
     static let track = color(dark: 0.075, light: 0.075)
     static let foreground = color(dark: 0.45, light: 0.3)
-    /// The chevron label's `Color.primary.opacity(0.6)`: SwiftUI's primary is
-    /// labelColor resolved per appearance (0.847 normally), times 0.6.
     static let chevron = labelColor(opacity: 0.6)
-    /// Slider thumb and dial indicator: white in Dark, black in Light, at 0.05.
     static let thumbShadow: NSShadow = {
         let shadow = NSShadow()
         shadow.shadowColor = color(dark: 0.05, light: 0.05)
@@ -434,12 +397,8 @@ private class ThemeIconButton: NSButton {
         contentTintColor = tint
         (cell as? NSButtonCell)?.imageDimsWhenDisabled = false
         target = self; action = #selector(invoke)
-        // The theme picker's tooltips sit below their controls ("Add color"
-        //
         setAccessibilityLabel(label); LiveShortcutToolTip.set(self, label, anchor: .bottom)
     }
-    ///
-    /// `Color.primary.opacity(0.6)`, framed 32 × 32.
     static func chevron(_ symbol: String, label: String) -> ThemeIconButton {
         ThemeIconButton(symbol: symbol, label: label,
                         configuration: NSImage.SymbolConfiguration(pointSize: 16, weight: .semibold, scale: .medium),
@@ -454,12 +413,7 @@ private class ThemeIconButton: NSButton {
         tracking = NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .cursorUpdate], owner: self)
         addTrackingArea(tracking!)
     }
-    ///
-    /// the enabled state.
     override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
-    /// SpaceStyleButtonStyle's `hoverStyleEnabled`: always on for the
-    ///
-    ///
     var hoverStyleEnabled = true { didSet { if hoverStyleEnabled != oldValue { updateHover(animated: false) } } }
     override var isEnabled: Bool {
         didSet { if isEnabled != oldValue { updateHover(animated: false); needsDisplay = true } }
@@ -469,8 +423,6 @@ private class ThemeIconButton: NSButton {
     override func mouseExited(with event: NSEvent) { hovered = false; updateHover(animated: true) }
     override func highlight(_ flag: Bool) {
         super.highlight(flag)
-        //
-        //
         hovered = ThemeButtonMotionDriver.pointerInside(self); updateHover(animated: true)
         motion.update(pressed: flag)
     }
@@ -499,8 +451,6 @@ private final class ThemePresetButton: PointingHandButton {
     override func mouseDown(with event: NSEvent) { window?.makeFirstResponder(self); super.mouseDown(with: event) }
     override func draw(_ dirtyRect: NSRect) {
         guard let color else { return }
-        //
-        // 2-point inner black 0.1 border.
         color.setFill(); NSBezierPath(ovalIn: bounds).fill()
         NSColor.black.withAlphaComponent(isHighlighted ? 0.22 : 0.1).setStroke()
         let width: CGFloat = isHighlighted ? 3 : 2
@@ -508,8 +458,6 @@ private final class ThemePresetButton: PointingHandButton {
     }
 }
 
-/// Only visual state is animated. Immediate input, layout and retirement own
-/// the model position and must remove an older presentation-layer spring.
 enum ThemeColorPadMotion {
     static func update(_ handle: CALayer, position: CGPoint, scale: CGFloat,
                        animatePosition: Bool, allowsMotion: Bool) {
@@ -544,10 +492,6 @@ enum ThemeColorPadMotion {
     }
 }
 
-///
-/// spring(0.3, 0.5). While hovered, with hover styling on and the control
-/// enabled, the hover fill appears and the whole button scales 1.05, on the
-///
 struct ThemeButtonMotion {
     private(set) var isHovered = false
     private(set) var isPressed = false
@@ -555,7 +499,6 @@ struct ThemeButtonMotion {
     private var pressVelocity = 0.0
     private var hoverFrom: CGFloat = 0
     private var hoverElapsed = 0.1
-    /// 0 at rest and 1 hovered: the hover fill's share of its opacity.
     var hover: CGFloat {
         let target: CGFloat = isHovered ? 1 : 0
         return hoverElapsed >= 0.1 ? target : hoverFrom + (target - hoverFrom) * CGFloat(Self.easeOut(hoverElapsed / 0.1))
@@ -575,7 +518,6 @@ struct ThemeButtonMotion {
     mutating func settle() { hoverElapsed = 0.1; press = pressTarget; pressVelocity = 0 }
     mutating func advance(_ dt: Double) {
         hoverElapsed = min(0.1, hoverElapsed + dt)
-        // SwiftUI's spring: ω = 2π / response, damping ratio 0.5.
         let w0 = 2 * Double.pi / 0.3, zeta = 0.5, wd = w0 * (1 - zeta * zeta).squareRoot()
         let x0 = Double(press - pressTarget), a = pressVelocity + zeta * w0 * x0
         let e = exp(-zeta * w0 * dt), c = cos(wd * dt), s = sin(wd * dt)
@@ -584,7 +526,6 @@ struct ThemeButtonMotion {
         if abs(x) < 0.0005 && abs(pressVelocity) < 0.005 { press = pressTarget; pressVelocity = 0 }
         else { press = pressTarget + CGFloat(x) }
     }
-    /// `Animation.easeOut`'s cubic Bézier (0, 0), (0.58, 1), (1, 1).
     private static func easeOut(_ x: Double) -> Double {
         var low = 0.0, high = 1.0
         for _ in 0..<24 {
@@ -596,9 +537,6 @@ struct ThemeButtonMotion {
     }
 }
 
-/// Runs one control's `ThemeButtonMotion` on a 60 Hz `.common` timer until it
-/// settles. Reduce Motion, or a control outside a window, applies changes
-/// without motion.
 @MainActor final class ThemeButtonMotionDriver {
     private(set) var motion = ThemeButtonMotion()
     private weak var view: NSView?
@@ -652,15 +590,10 @@ struct ThemeButtonMotion {
     }
 }
 
-/// SpaceStyleButtonStyle's drawing for an AppKit control:
-/// `label.scaleEffect(press).background(hover fill).scaleEffect(hover)`, clipped
-/// to the frame's 8-point continuous rounded rectangle and drawn at 0.33
-///
 @MainActor enum ThemeButtonStyle {
     static func shape(_ rect: NSRect) -> CGPath {
         RoundedRectangle(cornerRadius: 8, style: .continuous).path(in: rect).cgPath
     }
-    ///
     static func fill(_ share: CGFloat = 1) -> NSColor {
         let secondary = NSColor.secondaryLabelColor.usingColorSpace(.sRGB) ?? .gray
         return secondary.withAlphaComponent(secondary.alphaComponent * 0.2 * share)
@@ -703,8 +636,6 @@ private final class ThemeColorPad: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true; layer?.cornerRadius = 8; layer?.cornerCurve = .continuous; layer?.masksToBounds = true
-        // AppKit already gives a flipped view's layer flipped sublayer
-        // geometry. Flipping the container again mirrors knobs vertically.
         layer?.addSublayer(handleContainer)
         setAccessibilityElement(true)
         setAccessibilityRole(.slider); setAccessibilityLabel("Theme color pad")
@@ -725,7 +656,6 @@ private final class ThemeColorPad: NSView {
         if window == nil { handles.forEach { $0.removeAllAnimations() } }
     }
     override func draw(_ dirtyRect: NSRect) {
-        //
         NSColor.labelColor.withAlphaComponent(0.05).setFill(); bounds.fill()
         if let grid, let context = NSGraphicsContext.current?.cgContext {
             context.saveGState(); context.beginTransparencyLayer(auxiliaryInfo: nil)
@@ -764,8 +694,6 @@ private final class ThemeColorPad: NSView {
         for (index, color) in colors.enumerated() {
             let handle = handles[index], normalized = editor.normalizedPosition(for: color)
             let point = CGPoint(x: (normalized.x + 1) * bounds.width / 2, y: (normalized.y + 1) * bounds.height / 2)
-            // New knobs appear at their target. A real existing knob at the
-            // pad's zero corner is still a valid spring origin.
             if index >= existingCount { handle.position = point }
             let size: CGFloat = index == 0 ? 44 : 27
             handle.bounds = CGRect(x: 0, y: 0, width: size, height: size)
@@ -790,15 +718,12 @@ private final class ThemeColorPad: NSView {
     private func handle(at point: NSPoint) -> Int? {
         handles.indices.first { handles[$0].frame.insetBy(dx: -4, dy: -4).contains(point) }
     }
-    /// Pad buttons receive their own clicks, so they win over a knob beneath.
     private func buttonContains(_ point: NSPoint) -> Bool {
         subviews.contains { !$0.isHidden && $0.frame.contains(point) }
     }
     private func hoverCursor(at point: NSPoint) -> NSCursor {
         buttonContains(point) ? .pointingHand : handle(at: point) == nil ? .arrow : .openHand
     }
-    ///
-    /// their hover styling while a knob is hovered or dragged.
     private func updateButtonHoverStyle(at point: NSPoint?) {
         let enabled = dragHandleOrigin == nil && point.map { handle(at: $0) == nil } ?? true
         for case let button as ThemeIconButton in subviews { button.hoverStyleEnabled = enabled }
@@ -820,7 +745,6 @@ private final class ThemeColorPad: NSView {
     }
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        // A disabled pad button forwards its press up the responder chain.
         guard !buttonContains(point) else { return }
         window?.makeFirstResponder(self)
         onBegin?()
@@ -829,8 +753,6 @@ private final class ThemeColorPad: NSView {
         dragHandleOrigin = handle(at: point).map { handles[$0].position }
         if dragHandleOrigin != nil { NSCursor.closedHand.set() }
         updateButtonHoverStyle(at: point)
-        //
-        // knob therefore becomes the primary at the zero-distance drag start.
         updateColor(dragHandleOrigin ?? point)
     }
     override func mouseDragged(with event: NSEvent) {
@@ -841,8 +763,6 @@ private final class ThemeColorPad: NSView {
             updateColor(NSPoint(x: handleOrigin.x + point.x - origin.x, y: handleOrigin.y + point.y - origin.y))
         } else {
             updateColor(point)
-            //
-            // arriving under the pointer pushes its open hand.
             hoverCursor(at: point).set()
             updateButtonHoverStyle(at: point)
         }
@@ -852,7 +772,6 @@ private final class ThemeColorPad: NSView {
         let draggedKnob = dragHandleOrigin != nil
         dragOrigin = nil; dragHandleOrigin = nil; onEnd?()
         let point = convert(event.locationInWindow, from: nil)
-        // No later mouseMoved reaches the pad to correct a release outside it.
         if draggedKnob { (bounds.contains(point) ? NSCursor.openHand : NSCursor.arrow).set() }
         updateButtonHoverStyle(at: bounds.contains(point) ? point : nil)
     }
@@ -893,9 +812,6 @@ private final class ThemeIntensityControl: NSControl {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func draw(_ dirtyRect: NSRect) {
-        // The native SineSlider is 224×44 with 8-point wave padding. Its
-        // thumb grows by 15*value in both dimensions, and may overhang the
-        // slider frame. Eight extra points on each side preserve that overhang.
         let width = bounds.width - 16, padding = 8.0, waveWidth = width - 2 * padding
         let amplitude = 15 * value, frequency = waveWidth / (2 * .pi - 0.25)
         let centerX = 8 + padding + waveWidth * value
@@ -907,8 +823,6 @@ private final class ThemeIntensityControl: NSControl {
         }
         wave.lineWidth = 5; wave.lineCapStyle = .round
         ThemeEditorColors.separator.setStroke(); wave.stroke()
-        // The thumb's leading side is a half-opacity separator capsule under
-        //
         NSGraphicsContext.saveGraphicsState()
         NSRect(x: 0, y: 0, width: centerX, height: bounds.height).clip()
         ThemeEditorColors.track.setFill()
@@ -992,21 +906,13 @@ private final class ThemeNoiseControl: NSControl {
         super.setFrameSize(newSize)
         updateTooltip()
     }
-    ///
-    ///
-    /// whole dial still triggers it: the controller has no hit region.
     private func updateTooltip() {
         parcTooltip = TooltipConfiguration("Noise", anchor: .bottom, anchorRect: knobRect)
     }
-    ///
-    ///
-    /// hover and cursor track this frame (MouseInsideModifier).
     private var knobRect: NSRect {
         let side = min(bounds.width, bounds.height) / 2
         return NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
     }
-    /// The Button's `contentShape(Circle())`: presses and rotation inside it
-    /// belong to the knob, never to the dial's drag.
     private func knobContains(_ point: NSPoint) -> Bool {
         hypot(point.x - knobRect.midX, point.y - knobRect.midY) <= knobRect.width / 2
     }
@@ -1016,24 +922,15 @@ private final class ThemeNoiseControl: NSControl {
     }
     override func draw(_ dirtyRect: NSRect) {
         let center = NSPoint(x: bounds.midX, y: bounds.midY)
-        //
-        //
-        // slot stays empty. The lit ring is trimmed clockwise from the top to
-        // the value; a zero-length trim lights nothing.
         for index in 1..<20 {
             let step = (index + 10) % 20
             let a = (90 + Double(index) * 18) * .pi / 180
             let p = NSPoint(x: center.x + cos(a) * 32, y: center.y + sin(a) * 32)
             let lit = value > 0 && Double(step) <= value * 20 + 1e-9
-            //
-            //
             let dot = NSBezierPath(ovalIn: NSRect(x: p.x - 2.5, y: p.y - 2.5, width: 5, height: 5))
             ThemeEditorColors.separator.setFill(); dot.fill()
             if lit { ThemeEditorColors.foreground.setFill(); dot.fill() }
         }
-        // The knob image is `opacity(0.6).scaleEffect(1.2)` inside its frame,
-        //
-        // hover and press scales zoom it inside that fixed circle.
         let name = texture.rawValue.prefix(1).uppercased() + texture.rawValue.dropFirst() + "Knob"
         let knob = knobRect, side = knob.width * 1.2 * knobMotion.motion.scale
         NSGraphicsContext.saveGraphicsState()
@@ -1078,8 +975,6 @@ private final class ThemeNoiseControl: NSControl {
     }
 
     private func observeScroll() {
-        // ScrollWheelObserver throttles the event before dropping a zero delta.
-        // Keep the latest event, including an ending zero, on the main queue.
         scrollDelivery = scrollEvents
             .throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] delta in
@@ -1116,8 +1011,6 @@ private final class ThemeNoiseControl: NSControl {
     }
     override func mouseDragged(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        // The knob's hover tracking stays enabled during drags; its press
-        // shows only while the pointer is over it.
         knobMotion.update(hovered: knobRect.contains(p), pressed: pressedKnob && knobContains(p))
         guard let startPoint, !pressedKnob else { return }
         if !didDrag {
@@ -1138,7 +1031,6 @@ private final class ThemeNoiseControl: NSControl {
     }
     override func rotate(with event: NSEvent) {
         if event.phase.contains(.began) {
-            //
             guard knobContains(convert(event.locationInWindow, from: nil)) else { cancelledRotation = true; return }
             cancelScrollInput()
             cancelledRotation = false; pendingRotation = 0; rotationSequenceActive = true
@@ -1163,8 +1055,6 @@ private final class ThemeNoiseControl: NSControl {
             guard abs(admittedRotation) >= 1 else { return }
             if didDrag { didDrag = false; onEnd?() }
             onBegin?()
-            // Completing another control can synchronously replace the theme.
-            // Capture this newly admitted physical stream only after that call.
             startPoint = nil; pressedKnob = false; rotationActive = true
             rotationSequenceActive = true; cancelledRotation = false
             knobMotion.update(pressed: false)
@@ -1176,8 +1066,6 @@ private final class ThemeNoiseControl: NSControl {
     override func scrollWheel(with event: NSEvent) {
         let phased = !event.phase.isEmpty || !event.momentumPhase.isEmpty
         if cancelledScroll {
-            // A physical end can be followed by momentum. Only a new begin
-            // or a new unphased wheel burst after idle releases this barrier.
             if event.phase.contains(.began) || (!phased && event.timestamp >= cancelledScrollUntil) {
                 cancelledScroll = false; scrollSequenceActive = false
             } else {
@@ -1203,14 +1091,6 @@ private final class ThemeNoiseControl: NSControl {
     override func accessibilityPerformPress() -> Bool { onClick?(); return true }
 }
 
-/// The installed appearance assets use only static filled Bezier paths and
-/// animated layer scale/rotation. This reader supports that complete subset;
-/// it does not attempt to serve as a general Lottie implementation.
-///
-/// Appearance-button playback loops while selected. The 60 Hz `.common` timer
-/// idle-stops when hidden / detached / unselected / Reduce Motion (settled
-/// freeze), and ticks whose presentation fingerprint matches the last dirty
-/// skip `needsDisplay`. Active keyframe motion still dirties.
 struct ThemeAppearanceAnimation {
     let layers: [[String: Any]]
     let frameRate: Double
@@ -1281,9 +1161,6 @@ struct ThemeAppearanceAnimation {
             }
         }
     }
-    /// Samples the same transform values `draw` uses. Post-keyframe holds share
-    /// one fingerprint so the 60 Hz playback timer can skip `needsDisplay` when
-    /// pixels cannot change.
     func presentationFingerprint(seconds: Double, size: CGSize) -> Int {
         let span = end - start
         let frame = start + (seconds * frameRate).truncatingRemainder(dividingBy: span)
@@ -1382,7 +1259,6 @@ final class ThemeAppearanceButton: NSButton {
         target = self; action = #selector(invoke)
         setAccessibilityRole(.radioButton)
         setAccessibilityLabel(appearance == .automatic ? "Automatic appearance" : appearance == .light ? "Light appearance" : "Dark appearance")
-        //
         parcTooltip = TooltipConfiguration(appearance == .automatic ? "Automatic Appearance" : appearance == .light ? "Light Appearance" : "Dark Appearance",
                                            anchor: .bottom)
     }
@@ -1453,8 +1329,6 @@ final class ThemeAppearanceButton: NSButton {
         addTrackingArea(tracking!)
     }
     override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
-    /// The pad turns SpaceStyleButtonStyle's hover styling off while a knob
-    ///
     var hoverStyleEnabled = true { didSet { if hoverStyleEnabled != oldValue { updateHover(animated: false) } } }
     override var isEnabled: Bool {
         didSet { if isEnabled != oldValue { updateHover(animated: false); invalidateDisplay() } }
@@ -1464,7 +1338,6 @@ final class ThemeAppearanceButton: NSButton {
     override func mouseExited(with event: NSEvent) { hovered = false; updateHover(animated: true) }
     override func highlight(_ flag: Bool) {
         super.highlight(flag)
-        // NSButton's press tracking holds back exit and entry (see ThemeIconButton).
         hovered = ThemeButtonMotionDriver.pointerInside(self); updateHover(animated: true)
         motion.update(pressed: flag)
     }
@@ -1473,8 +1346,6 @@ final class ThemeAppearanceButton: NSButton {
     }
     override func draw(_ dirtyRect: NSRect) {
         ThemeButtonStyle.draw(in: bounds, motion: motion.motion, isEnabled: isEnabled) {
-            //
-            // colour in the same 8-point continuous shape, framed 32 × 32.
             if isSelected, let context = NSGraphicsContext.current?.cgContext {
                 ThemeButtonStyle.fill().setFill(); context.addPath(ThemeButtonStyle.shape(bounds)); context.fillPath()
             }

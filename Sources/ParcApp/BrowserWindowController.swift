@@ -10,31 +10,20 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private let popupChrome = PopupChromeView()
     private let ownership: NativePageOwnership
     private let folderUndo = FolderUndoManager()
-    /// Live close groups on `folderUndo`, told when Reopen takes one of their steps.
     private let closeUndoOperations = NSHashTable<ClosedTabsUndoOperation>.weakObjects()
     private let peekUndoOperations = NSHashTable<ClosedPeekUndoOperation>.weakObjects()
-    /// A Redo of Close Peek waiting for that Peek's close to finish.
     private var peekRedo: (peek: UUID, done: (ClosedPeekRecord?) -> Void)?
-    /// An Undo of Close Peek waiting for the engine to offer the Peek it
-    /// opened over this parent page, which may be out of view.
     private var peekUndoOpen: (parent: String, operation: ClosedPeekUndoOperation, token: UUID)? {
         didSet {
             guard oldValue != nil, peekUndoOpen == nil else { return }
             let retry = peekUndoSlotWaiters.release(selected: selectedTabIDs)
             guard !retry.isEmpty else { return }
-            // The slot clears inside the engine's page offer, which must not open another page.
             DispatchQueue.main.async { [weak self] in retry.forEach { self?.openAwaitedPeek(over: $0) } }
         }
     }
     private var peekUndoSlotWaiters = PeekUndoSlotWaiters()
-    /// Undos of Close Peek whose parent tab had no live page, by parent: each
-    /// Peek opens once its parent is shown and has loaded its page.
     private var peekUndoAwaitingParent: [UUID: ClosedPeekUndoOperation] = [:]
-    /// Parents whose waiting Peek was refused admission when tried; they try
-    /// again only when the window becomes key or the parent is selected again.
     private var awaitedPeekRetries: Set<UUID> = []
-    /// The Peek an Undo opened behind a parent out of view. The engine reports
-    ///
     private var undoHiddenPeek: UUID?
     private var retiringPageHistory: [UUID: NSObject] = [:]
     private var closedItems = WindowClosedItems()
@@ -133,29 +122,20 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private weak var sidebarMoveToast: PArcToastPresentation?
     private var sidebarPreviews: SidebarPreviewController?
-    /// The pending move of focus to newly selected content (`focusSelectedContent`).
     private var contentFocusRequest: ContentFocusRequest?
     private let pageHost = ExternalSplitDropHost()
     private let pageShadow = PageCardShadowView()
     private let extensionSidePanel = ExtensionSidePanelView()
     private let parkedPages = LayoutView()
     private let splitView = ParcSplitView()
-    /// The single page's right-margin handle (SplitMarginHandleView).
     private let splitMarginHandle = SplitMarginHandleView()
     private var splitDropView: SplitDropView?
-    ///
-    /// drag proposes, and whether a drag-and-drop pane edit is active.
     private var splitDropReplacementID: UUID?
-    /// Another Profile's original sidebar tab, dragged from another window.
     private var foreignSplitDropView: SplitDropView?
     private var interProfileDialog: InterProfileMoveDialog?
     private let loadingIndicator = PageLoadingIndicatorHost()
     private var paneFrameObservers: [UUID: NSObjectProtocol] = [:]
     private let findHost = PageFindView(frame: .zero)
-    /// Tab crosses between the page side and the sidebar (WindowKeyViewLoop,
-    /// docs/sidebar-accessibility.md). Pages and the extension side panel hold
-    /// the engine's forwarding page hosts; the Peek's host takes focus only for
-    /// Escape.
     private lazy var windowKeyViews = WindowKeyViewLoop(
         root: rootView, sidebar: sidebar,
         excluded: { [sidebarContainer, parkedPages, pageHost, weak self] in
@@ -176,17 +156,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var windowDraggingSubscription: AnyCancellable?
     private var toolbarSubscription: AnyCancellable?
     private var websiteThemeSubscription: AnyCancellable?
-    /// Last stylesheet pushed through `nativeBinding.setWebsiteThemeStylesheet`.
-    /// `.none` means never pushed; `.some(nil)` is an explicit disable. Palette
-    /// and preference republishes that rebuild the same CSS (or nil) skip the
-    /// full-window native fan-out; real theme edits, enable/disable, and a new
-    /// binding still push. Native ownership still applies the stored value to
-    /// new/reparented pages without a shell re-push.
     private var lastPushedWebsiteTheme: (binding: ObjectIdentifier, stylesheet: String?)?
     private var shortcutDiscoverySubscription: AnyCancellable?
-    /// Last copy-tooltip + site-control shortcut fingerprint applied from
-    /// `LiveShortcutToolTip.didChange`. Identical rediscovery skips dismiss and
-    /// reapply on this window; a first apply or any string change still updates.
     private var lastAppliedShortcutTooltipDiscovery: String?
     private var browsers: [UUID: PCBrowserView] = [:] {
         didSet {
@@ -197,30 +168,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
     private var tabHistoryCapture: DispatchWorkItem?
-    /// Tabs whose page navigated or loaded since their history was last saved.
     private var tabHistoryChanged = Set<UUID>()
     private var cookieFlush: DispatchWorkItem?
     private var peeks: [String: PeekController] = [:] { didSet { noteReturnGate() } }
-    ///
-    ///
-    /// current page. The lease reserves the record until its Peek closes or
-    /// Expand restores the original item with that same page.
     private var archivePreviewRequest: (parent: String, lease: ArchivePreviewLease, token: UUID)?
     private var archivePreviews: [UUID: ArchivePreviewLease] = [:]
-    /// A row clicked while another preview shows opens once that one closes.
     private var queuedArchivePreview: (id: UUID, profileID: UUID)?
-    /// A preview whose item was restored but whose page couldn't move into
-    /// it; it closes without joining close history.
     private var archivePreviewRemnants = Set<UUID>()
-    // Survives a parent observer's synchronous close callback until the
-    // whole-set transaction reports completion. Do not promote a child while
-    // that same transaction is committing its actual close.
     private var peekRetirementParents = Set<UUID>()
-    /// The Favorite tile badge image shown per Peek, with its TIFF data.
     private var favoriteBadgeIcons: [UUID: (image: NSImage, data: Data)] = [:]
-    /// Last applied TAB16 Favorite overlay presentation fingerprint. Everyday
-    /// title/URL/loading chrome ticks skip rebuild when this matches; media
-    /// session status is fingerprinted only for listed music-host Favorites.
     private var lastFavoriteOverlayFingerprint: String?
     private var promotingPeek = false { didSet { noteReturnGate() } }
     private var activePeek: PeekController? {
@@ -267,7 +223,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
     private var sidebarPresentation: SidebarPresentation = .locked {
-        // The stored hover activation only holds a floating sidebar.
         didSet {
             if sidebarPresentation != .floating { sidebarHoverActive = false }
             if (sidebarPresentation == .locked) != (oldValue == .locked) { onSessionRecordChange?() }
@@ -275,28 +230,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private let sidebarMotion = SidebarMotionController()
     private var sidebarMotionLayoutKey: [CGFloat]?
-    ///
     private var libraryContentWidth: CGFloat = 0
     private let libraryMotion = SidebarMotionController()
-    /// Last chrome-geometry fingerprint applied by `layoutChrome`. Identical
-    /// Cmd-S / motion / setting passes return early; real geometry or
-    /// presentation changes still run the full pass.
     private var lastAppliedChromeGeometryFingerprint: LayoutChromeGeometryFingerprint?
     private var preparingSidebarMotion = false
     private enum SidebarChromePass { case full, preparation, geometry }
     private var sidebarChromePass = SidebarChromePass.full
     private var sidebarMotionVisible = false
     private var sidebarFloatingSurface = false
-    ///
-    ///
-    /// while the presentation is still hidden, places by Parc's.
     private var sidebarRevealsAnchored = false
     private var fullscreenPhase: WindowFullscreenPhase?
     private var systemWindowButtons: [NSButton] = []
     private let sidebarResizeRegion = SidebarResizeRegionView()
     private var sidebarResize: SidebarResizeGesture?
-    /// This window's own width, seeded from its saved record when reopened
-    /// and otherwise from the app-wide last-used value.
     private var windowSidebarWidth: SidebarWindowWidth {
         didSet { if windowSidebarWidth != oldValue { onSessionRecordChange?() } }
     }
@@ -309,23 +255,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         window.level = stayOnTop ? NSWindow.Level(rawValue: 3) : originalWindowLevel
         onSessionRecordChange?()
     }
-    /// The frame autosave name every standard window asks for; AppKit gives it
-    /// to one open window at a time.
     static let sharedFrameAutosaveName = "ParcBrowserWindow"
-    ///
-    /// frame, then, when another browser window is active, that window's frame
-    /// cascaded down and right from it, so a new window never covers the one
-    /// it came from. With nothing saved yet Parc keeps its centred default.
     private static func placeNewStandardWindow(_ window: NSWindow) {
         if !window.setFrameUsingName(sharedFrameAutosaveName) { window.center() }
         guard let source = activeBrowserWindow(excluding: window) else { return }
         window.setFrame(source.frame, display: false)
         window.cascadeTopLeft(from: source.cascadeTopLeft(from: .zero))
     }
-    ///
-    ///
-    /// returns Little windows; Parc skips popups, whose frame is below a
-    /// standard window's minimum size.
     private static func activeBrowserWindow(excluding window: NSWindow) -> NSWindow? {
         func isBrowser(_ candidate: NSWindow?) -> Bool {
             guard let candidate, candidate !== window,
@@ -336,7 +272,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if isBrowser(NSApp.mainWindow) { return NSApp.mainWindow }
         return NSApp.orderedWindows.first { isBrowser($0) }
     }
-    /// What this window's session record saves (Windows and lifecycle hook).
     var sessionRecord: BrowserWindowRecord {
         BrowserWindowRecord(sidebarWidth: windowSidebarWidth.width, itemLastActiveDates: closedItems.itemLastActiveDates,
                             id: sessionID, focusedSpaceID: activeSpaceID, selectedTabIDs: selectedTabIDs,
@@ -344,23 +279,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                             stayOnTop: stayOnTop, peekedFolders: savedFolderPeeks.isEmpty ? nil : savedFolderPeeks)
     }
     var onSessionRecordChange: (() -> Void)?
-    /// The sidebar's peeked folders as of the last render, for the record.
     private var savedFolderPeeks: [UUID: [SidebarItemReference]] = [:]
     private var isSidebarResizing = false {
         didSet {
             sidebarResizeRegion.isResizing = isSidebarResizing
             refreshPreviewHover()
-            //
             sidebarHover.isEnabled = !isSidebarResizing
-            //
             setContentResizeReason(.sidebarResize, active: isSidebarResizing)
         }
     }
-    ///
-    /// while any reason is set every displayed pane's page holds its size by
-    /// the mode the reasons imply (docs/sidebar-resize.md). Each owner sets only
-    /// its own reason. A pane takes the mode when render() shows it and
-    /// intrinsic when it parks; a parked page never changes size.
     private var contentResizeReasons: PageContentResizeReasons = [] {
         didSet {
             guard contentResizeReasons.mode != oldValue.mode else { return }
@@ -370,22 +297,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func setContentResizeReason(_ reason: PageContentResizeReasons, active: Bool) {
         if active { contentResizeReasons.insert(reason) } else { contentResizeReasons.remove(reason) }
     }
-    ///
-    /// animates or resizes.
     private func refreshPreviewHover() {
         sidebarPreviews?.isHoverEnabled = !sidebarMotion.isAnimating && !isSidebarResizing
     }
-    ///
-    /// tells the store only when the gesture ends; otherwise the window's own
-    /// width (WindowState.sidebarWidth) applies.
     private var sidebarLayoutWidth: CGFloat {
         CGFloat(sidebarResize.map { $0.isPreviewingHidden ? $0.widthOnBegin : $0.effectiveWidth } ?? windowSidebarWidth.width)
     }
     private var sidebarPreviewingHidden: Bool { sidebarResize?.isPreviewingHidden == true }
     private var sidebarAccessibilityObserver: NSObjectProtocol?
     private var sidebarPointerDown = false
-    ///
-    /// the hysteresis input; SidebarHoverPresentationRule owns its update.
     private var sidebarHoverActive = false
     private var sidebarHoverLayoutKey: [CGFloat]?
     private var navigationHistory: NavigationHistoryController?
@@ -404,35 +324,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var transferContainers: [String: NSView] = [:]
     private var transferRecoveries: [UUID: () -> Void] = [:]
     private var resolvingTransfers = Set<UUID>()
-    /// Pages that arrived here whose copy is still to be taken for the
-    /// placeholders they left in other windows.
     private var placeholderCapturesPending: [UUID: Int] = [:]
     private var placeholderCaptureGeneration = 0
     private var untargetedReturnScheduled = false
-    /// Content this window has shown since it arrived: only that can be
-    ///
     private var shownSinceArrival = Set<UUID>()
-    /// Deselected pages whose return the window keeping their placeholder
-    /// couldn't take; they go back on the next change that could clear that.
     private var heldReturns = Set<UUID>()
-    /// Pages whose started return left them here: retried on one more change,
-    /// then left until shown and deselected again, so a move the engine
-    /// keeps failing never repeats itself.
     private var failedReturns = Set<UUID>()
-    /// A started return that failed before reporting it started has already
-    /// been held or dropped by `holdFailedReturn`.
     private var failedDuringReturn: UUID?
     private var returnGateWasOpen = true
     private var returnGateSpaceID: UUID?
     private var ejectionAttempts = Set<UUID>()
     private var closeAfterEjecting = false
-    ///
-    /// still holding a placeholder for a page it returns.
     private(set) var lastActivatedAt = Date.distantPast
-    /// Returns a page this window holds but no longer shows to another window
-    /// keeping its placeholder.
     var onUntargetedReturn: ((UUID, BrowserWindowController, PageReparenting.Trigger) -> PageReparenting.ReturnOutcome)?
-    /// A move, full screen, close or Space that could have refused a return ended.
     var onReturnUnblocked: (() -> Void)?
     private var liveTabModels: [UUID: BrowserTab] = [:]
     var scriptingAuthorization: (() -> Bool)?
@@ -455,7 +359,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var switchHold = PageSwitchHold<BrowserPane>()
     private var rendering = false
     private var lastChromeState: BrowserState?
-    /// The store publication `lastChromeState` was presented at.
     private var lastChromeRevision: UInt64?
     private var synchronizingNativeLayout = false
     private var applyingNativeSelection = false
@@ -484,8 +387,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var sidebarKeyboardCursor: SidebarKeyboardCursor?
     private var sidebarKeyboardBrowsing = false
     private var commandBarHostCache: (profileID: UUID, revision: UInt64, hosts: Set<String>)?
-    /// Whole-sidebar model checks behind typed commands, which the open command
-    /// bar asks on every update while typing; they read only published state.
     private var commandBarModelChecks: (revision: UInt64, spaceID: UUID, profileID: UUID,
                                         items: [SidebarItemReference], answers: [String: Bool])?
     private var commandBar: CommandBar? {
@@ -498,17 +399,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             noteReturnGate()
         }
     }
-    /// Key restoration during command-bar dismissal happens before its
-    /// selected menu item has been dispatched.
     var hasCommandBarDuringActivation: Bool { commandBar != nil }
     var onCommandBarDismissalSettled: (() -> Void)?
-    ///
     private var commandBarCreatesNewTab = false
-    ///
-    /// bar whose display info shows suggestions in the centre. The New Tab
-    ///
-    /// pass the default display info; the focus-sidebar bar shows no
-    ///
     private var commandBarShowsNewTabPlaceholder = false
     private func refreshNewTabPlaceholder() {
         let active = commandBar != nil && commandBarShowsNewTabPlaceholder
@@ -535,7 +428,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.libraryView == nil && self.pageCapture == nil && self.selectedNativePage() === page
     }, display: { [weak self] selection in
         guard let self else { return }
-        // A quote's link is the page's address, which What's New doesn't have.
         guard let selection, let page = self.selectedNativePage(), self.commandBar == nil,
               self.libraryView == nil, self.pageCapture == nil, !self.isClosing, !self.wholeWindowClose,
               !WhatsNewPage.matches(page.url?.absoluteString ?? "") else {
@@ -548,54 +440,31 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     })
     private var capturePresentations: [UUID: CaptureIndicatorPresentation] = [:]
-    /// Last applied capture map, drawn by the sidebar rows. Everyday title/URL
-    /// chrome ticks still walk live browsers/peeks/easel pages; when the
-    /// presentation fingerprint (active tab ids + camera/mic/tab/window/
-    /// display/mirrored/shared bits) is unchanged, the map isn't replaced.
-    /// Real start/stop and bit flips still apply.
     private var lastCapturePresentationFingerprint: String?
-    /// Last applied shareable-tab set + audio map for this window. Everyday
-    /// title/URL/loading chrome ticks still walk browsers and probe audio; when
-    /// the fingerprint (shareable ids + lease identity + audible/muted) matches
-    /// the last apply, skip republishing those maps into live sidebar metadata.
-    /// Real shareable and audible/mute flips still hand off.
     private var lastShareableAudioFingerprint: String?
     private var lastAppliedShareable = Set<UUID>()
     private var lastAppliedAudio: [UUID: SidebarTabAudio] = [:]
     private var themePopover: NSPopover? { didSet { noteReturnGate() } }
-    /// The open Site Control Center (WEB14), its controller and page.
     private var siteControlCenter: SiteControlCenterController? { didSet { noteReturnGate() } }
-    /// An attached Site Control Center defers the window's other surfaces;
-    /// a detached one is an ordinary window and does not.
     private var siteControlCenterDefers: Bool { siteControlCenter.map { !$0.isDetached } ?? false }
     private let siteControlCenterDismissal = SiteControlCenterDismissal()
     private var extensionActionGeneration = UUID()
     private weak var extensionControlsPage: PCNativePage?
     private var siteControlCenterItems: [String: ExtensionControlItem] = [:]
     private var siteControlCenterPermissions: [[String: Any]] = []
-    /// Shown permission rows' PageInfo index and revision, by row id.
     private var siteControlCenterPermissionTargets: [String: (Int, UInt)] = [:]
     private var siteControlCenterRevision: UInt?
-    /// The open card's page tools, read while the browser window still held key.
     private var siteControlCenterPageTools: Set<PCNativePageTool> = []
-    /// The Space and Profile the open card belongs to.
     private var siteControlCenterOwner: (space: UUID, profile: UUID)?
-    /// Last applied visible extension-control model. Everyday chrome ticks still
-    /// read the live Snapshot; only identical identifiers/names/tooltips/a11y/
-    /// icons (bridge generation)/pin/enabled/canChangePin plus pin-surface and
-    /// popup availability skip closure rebuild and sidebar/toolbar republish.
     private var lastExtensionControlsSignature: String?
     private var themeEditor: SpaceThemeEditorView?
     private var themeEditingSpaceID: UUID?
     private var themeEditingProfileID: UUID?
     private var themeEditingContextSpaceID: UUID?
     private var themePreview: (spaceID: UUID, theme: SpaceTheme)?
-    ///
-    /// kept for the window's life and never saved (CodableWindowData has none).
     private var themeEditorPresetPage = 0
     private var downloadReview: DownloadReviewController?
     private var downloadReviewItem: BrowserDownload?
-    ///
     private let downloadArrival = DownloadArrivalOwner()
     private var recyclingDownloads: [String: DownloadLibraryIdentity] = [:]
     private var loadingDownloadProfiles = Set<UUID>()
@@ -610,43 +479,25 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var renderedSpaceCreationID: UUID?
     var onClose: (() -> Void)?
     var onActivateWindow: (() -> Void)?
-    /// AppDelegate coalesces source changes across physical windows.
     var onMiniPlayerSourceChange: (() -> Void)?
-    /// Admission-input fingerprint last observed before scheduling a shared
-    /// sweep. Ordinary title/URL/loading chrome ticks that leave this unchanged
-    /// skip AppDelegate's multi-window prepare/admit/apply pass.
     private var lastMiniPlayerSourceSignature: String?
     private let mediaRefresh = NextTurnCoalescer()
     var onRequestBrowserTab: ((String?) -> Void)?
-    /// The optional placement runs here once the page has moved; see `transferTab`.
-    /// Moves a page another window holds here; true when the move started.
     var onRequestTabTransfer: ((UUID, BrowserWindowController, (() -> Bool)?) -> Bool)?
-    /// Which other window could hand the tab to this one now.
     var tabHolder: ((UUID, BrowserWindowController) -> TabHolder)?
-    /// Closes a tab in the window holding it; true when the close was dispatched.
     enum TabHolder {
         case none
-        /// A live page, Note or Easel the holder can move here.
         case content(BrowserWindowController)
-        /// A claim with nothing behind it yet (a blank tab, a Note or Easel
-        /// that failed to open): the holder can simply let this window have it.
         case emptyClaim(BrowserWindowController)
     }
     var onPrepareLinkRoute: ((PCNativeLinkRoute) -> PCNativeBrowserWindow?)?
     private var preparedForRoutedPage = false
     var retirementUnavailableReason: ((Set<UUID>) -> String?)?
     var prepareSidebarSpaceMoveOwners: ((Set<UUID>) -> (() -> Bool)?)?
-    /// Set by the application: other windows may offer this original row a pane target.
     var onSplitDragBegan: ((SidebarSplitDrag, BrowserWindowController) -> Void)?
-    /// Set by the application: every physical window drops page-less claims on moved records.
     var onInterProfileMoveCommitted: ((Set<UUID>) -> Void)?
     var resolveSidebarCopyDestinations: (([BrowserTab]) -> SidebarCopySources?)?
 
-    ///
-    ///
-    /// The engine refuses pages a reload would hurt, including one with a
-    ///
-    /// and back/forward entries and reloads when shown again.
     static let discardAfter: TimeInterval = 14_400
     private func discardIdleBackgroundPages() {
         guard !isClosing, !wholeWindowClose, presentation.isReady else { return }
@@ -668,8 +519,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return Set(renderedPaneIDs)
     }
     var automaticArchiveProtectionSnapshot: (protectedIDs: Set<UUID>, unavailable: Int) {
-        // Current content exclusion is independent of occlusion and of the
-        // model selection, whose render may still be queued on the run loop.
         var protected = Set(renderedPaneIDs).union(selectedTabIDs), unavailable = 0
         if let pending = pendingNativeSelection?.tabID { protected.insert(pending) }
         protected.formUnion(transferringTabIDs)
@@ -688,9 +537,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         return (protected, unavailable)
     }
-    /// A live page plays, records or captures media, is in Picture in Picture
-    ///
-    /// automatic update, the same activity that keeps a tab from archiving.
     var hasPageInUse: Bool {
         let inUse = { (view: PCBrowserView) in view.automaticArchiveProtectionState == .protected }
         return browsers.values.contains(where: inUse) || easelEditors.values.contains { pane in
@@ -702,8 +548,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             settleSidebarMotion()
             layoutChrome()
         }
-        // Archive activity samples occlusion on its window-owned clock.
-        // Occlusion transitions themselves do not alter the last-active date.
         refreshPaymentControls()
     }
 
@@ -712,17 +556,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         PCNativeBrowserWindow.nativeWindowDidFailToEnterFullscreen(window)
         setFullscreenPhase(window.styleMask.contains(.fullScreen) ? .expanded : nil)
     }
-    // SharedWindowFeature.FullscreenState's entering/expanded/exiting phases
-    // decide which traffic lights show (refreshWindowButtons).
     func windowWillEnterFullScreen(_ notification: Notification) { setFullscreenPhase(.entering) }
     func windowDidEnterFullScreen(_ notification: Notification) {
         setFullscreenPhase(.expanded)
-        // ToastType.didEnterFullScreen (case 44) carries the live binding of
-        //
-        //
-        //
-        // unbound Exit does not leave full screen in Parc, so it names the live
-        // Toggle Full Screen binding instead.
         guard !isPopupWindow,
               let exit = KeyboardShortcuts.shared.activeShortcut(for: "exit:")
                 ?? KeyboardShortcuts.shared.activeShortcut(for: "toggleFullScreen:") else { return }
@@ -736,8 +572,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func windowDidExitFullScreen(_ notification: Notification) {
         setFullscreenPhase(window?.styleMask.contains(.fullScreen) == true ? .expanded : nil)
     }
-    // AppKit still sends did-exit after failure-to-exit. The engine observes
-    // that actual notification; no synthesized exit or replacement delegate.
 
     func windowDidBecomeKey(_ notification: Notification) {
         guard notification.object as? NSWindow === window else { return }
@@ -778,13 +612,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         window.title = "Parc"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        //
-        //
         window.isMovableByWindowBackground = popup
         window.minSize = popup ? NSSize(width: 300, height: 360) : NSSize(width: 760, height: 540)
         window.isReleasedWhenClosed = false
         window.backgroundColor = .windowBackgroundColor
-        // Popup and private windows must not leave AppKit restoration state.
         if popup || store.isEphemeral { window.isRestorable = false }
         else {
             window.identifier = NSUserInterfaceItemIdentifier(ParcWindowRestoration.identifierPrefix + sessionID.uuidString)
@@ -820,8 +651,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if request.initialFrame.width > 0 { frame.size.width = max(window.minSize.width, request.initialFrame.width) }
             if request.initialFrame.height > 0 { frame.size.height = max(window.minSize.height, request.initialFrame.height) }
             if request.initialOriginSpecified {
-                // Chromium uses a top-left origin. The bridge converts its
-                // complete rectangle; preserve its top edge if size defaults.
                 frame.origin.x = request.initialFrame.minX
                 frame.origin.y = request.initialFrame.maxY - frame.height
             } else {
@@ -861,15 +690,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         popupChrome.isHidden = !popup
         rootView.addSubview(sidebarContainer)
         sidebarContainer.coordinateSpace = rootView
-        //
-        //
-        // false for a popup's `little` window style.
         let incognitoTheme = store.isEphemeral && !popup
         rootView.incognito = incognitoTheme; sidebarContainer.incognito = incognitoTheme
         toasts.basicBackground = windowBasicBackground
         sidebarContainer.addSubview(sidebar)
-        // Its floating surface's theme canvas renders once at its final size
-        // inside the floating → locked group (SidebarMotionController.pinSurface).
         SidebarMotionController.pinSurface(of: sidebarContainer, except: sidebar)
         rootView.onPaletteChange = { [weak self] palette in
             if let self, let window = self.window {
@@ -887,7 +711,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.commandBar?.contentAppearance = palette.contentAppearance
             }
             self?.popupChrome.palette = palette
-            // Pages AirPlaying from this window recolour their button and placard.
             NotificationCenter.default.post(name: NSNotification.Name(PCNativeAirPlayThemeDidChangeNotification), object: self?.window)
             self?.pageHost.refreshDropAppearance()
             self?.splitDropView?.refreshAppearance(); self?.foreignSplitDropView?.refreshAppearance()
@@ -910,7 +733,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let self else { return false }
             return self.captureOwnerIDs(of: id).contains { self.capturePresentations[$0]?.active == true }
         }
-        //
         sidebar.prepareShareThisTab = { [weak self] id in
             guard let self, let browser = self.browsers[id], browser.window === self.window,
                   self.ownership.canUse(id, owner: self.presentationID), browser.canShareThisTabInstead else { return nil }
@@ -920,8 +742,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
         rootView.addSubview(sidebarResizeRegion)
-        // The sidebar itself moves offscreen for the hidden preview; the root
-        // gives the same translation without that jump.
         sidebarResizeRegion.referenceView = rootView
         sidebarResizeRegion.color = rootView.palette.foregroundPrimary
         sidebarResizeRegion.onPan = { [weak self] state, translation, velocity in
@@ -933,8 +753,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.store.updateSettings { $0.sidebarWidth = lastUsed }
             self.layoutChrome()
         }
-        //
-        // host clips the page, including a single pane whose own radius is 0.
         pageHost.wantsLayer = true
         pageHost.layer?.cornerRadius = PageCard.cornerRadius
         pageHost.layer?.cornerCurve = .continuous
@@ -942,16 +760,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         pageHost.layer?.backgroundColor = NSColor.white.cgColor
         pageHost.addSubview(splitView)
         splitView.prepareDividerResize = { [weak self] in self?.prepareSplitResize() }
-        //
-        // (divider pan, slots 8/9) and 0x4 (interactive pane editing, slots 6/7).
         splitView.onDividerPanActivity = { [weak self] in self?.setContentResizeReason(.splitDividerResize, active: $0) }
         splitView.onInteractivePaneEditing = { [weak self] active in
             self?.setContentResizeReason(.splitInteractiveEditing, active: active)
             self?.splitPaneEditDidChange(active)
         }
         splitView.constrain(to: pageHost)
-        //
-        // ⌘S group; it draws only layer content, so it takes no resize redraw.
         loadingIndicator.appearance = rootView.palette.contentAppearance
         setupFindBar()
         sidebar.isPrivateBrowsing = store.isEphemeral
@@ -973,7 +787,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         })
         menuObservers.append(notifications.addObserver(forName: SidebarPlusMenuController.visibilityDidChange, object: window, queue: .main) { [weak self] note in
-            // The plus HUD holds a floating sidebar open; closing it re-tests the pointer.
             MainActor.assumeIsolated { if note.userInfo?["shown"] as? Bool == false { self?.refreshSidebarPointer() } }
         })
         menuObservers.append(notifications.addObserver(forName: Self.expandCurrentSplitNotification, object: nil, queue: .main) { [weak self] _ in
@@ -1027,7 +840,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let self else { return }
                 self.refreshDeveloperToolbars()
                 self.refreshNavigationControls()
-                // A selected Favorite's developer-tab ring follows the same host state.
                 self.refreshFavoriteOverlays(from: self.presentedState)
             }
         }
@@ -1038,14 +850,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.sidebarHover.setNeedsRefresh()
         }
         windowDraggingSubscription = WebpageWindowDraggingPreferences.shared.$state.sink { [weak self] _ in
-            // @Published emits before storage changes. Refresh after this write;
-            // every hit also consults the current preference synchronously.
             DispatchQueue.main.async { [weak self] in self?.refreshDeveloperToolbars() }
         }
         if renderInitialSelection { render(store.state); requestNativeSelection() }
-        // Import Chromium download history once the window is up. Opening
-        // Downloads used to be the only refresh, and an empty GUID set wiped
-        // persisted rows. Private windows still need it after OTR adoption.
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.isClosing, !self.wholeWindowClose else { return }
             self.refreshDownloadProfiles()
@@ -1053,8 +860,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .otherMouseDown]) { [weak self] event in
             guard let self else { return event }
-            // Intentional clicks use the real native frames. Keyboard reversals
-            // instead retain the visible position of the current transition.
             if event.window === self.window, event.type != .leftMouseUp, self.sidebarMotion.isAnimating {
                 self.settleSidebarMotion()
                 self.layoutChrome()
@@ -1064,18 +869,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.refreshSidebarPointer()
             }
             if event.type == .leftMouseDown, event.window === self.window {
-                // Observe this existing monitor only; preserve every branch,
-                // selection operation and the original returned event.
                 let inputSnapshot = NativeInputDiagnostics.beforeDispatch(event, phase: "monitor")
                 defer { NativeInputDiagnostics.afterDispatch(event, snapshot: inputSnapshot, phase: "monitor") }
                 if self.commandBar?.contains(event) == true { return event }
                 if self.activePeek?.contains(event) == true { return event }
                 let point = self.rootView.convert(event.locationInWindow, from: nil)
-                // Preview controls own their hit region; a click here must not
-                // select a pane underneath or collapse the floating sidebar.
                 if self.sidebarPreviews?.contains(windowPoint: event.locationInWindow) == true { return event }
-                // The resize strip straddles the page edge and owns its press: it
-                // neither selects the pane beneath nor dismisses a floating sidebar.
                 if !self.sidebarResizeRegion.isHidden, self.sidebarResizeRegion.frame.contains(point) {
                     self.sidebarPointerDown = self.sidebarPresentation == .floating
                 } else {
@@ -1106,8 +905,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    // BrowserStore's selection is a persisted last-used presentation, not a
-    // broadcast to every live window. Only an initiating command captures it.
     private func prepareStoreContext(restoringSplitLayout: BrowserSplitLayout? = nil) {
         presentation.reconcile(store.state) { ownership.canUse($0, owner: presentationID) }
         let restoredLayout = restoringSplitLayout.flatMap {
@@ -1155,8 +952,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         resolveInput(input, replacing: nil)
     }
 
-    /// An exact address Parc chose itself skips the address classifier; a
-    /// popup still hands it to a browser window as input.
     func openAddress(_ url: URL) {
         if isPopupWindow { openInput(url.absoluteString) } else { openExactAddress(url) }
     }
@@ -1172,7 +967,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let tabID { inputRevisions[tabID] = revision }
         PCNativeBrowserApplication.resolveSearchInput(input,
             profilePath: store.independentEngineProfilePath(for: profileID), page: currentBrowser?.nativePage, window: nativeBinding) { [weak self, weak originalPage] navigation, error in
-            // The native resolver retains its main-thread profile callback contract.
             MainActor.assumeIsolated {
                 guard let self, self.activeSpaceID == spaceID, self.activeProfileID == profileID,
                       !self.isClosing, !self.wholeWindowClose else { return }
@@ -1201,8 +995,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             profileID: activeProfileID, state: store.state)
     }
 
-    // The saved item of a native creation source, resolved through its actual
-    // owner window. Expired, closing or transferring owners yield nil.
     private func creationSourceTab(_ page: PCNativePage) -> UUID? {
         guard !page.isClosed,
               let binding = PCNativeBrowserApplication.owner(of: page),
@@ -1219,13 +1011,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               !original.transferringTabIDs.contains(id), !store.retiringTabIDs.contains(id) else { return nil }
         return id
     }
-    ///
-    /// each through TabCreation with a referrer. Arrows look the source up in
-    ///
-    /// referrer, and they place at the explicit top of the current Space's
-    ///
-    ///
-    /// already the engine disposition. Older engine packages lack the receipt.
     private func alternateNavigationReceipt(_ page: PCNativePage) -> (referrer: UUID?, top: Bool)? {
         guard page.responds(to: #selector(getter: PCNativePage.alternateNavigationSourcePage)),
               let source = page.alternateNavigationSourcePage,
@@ -1237,10 +1022,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return (referrer, top)
     }
 
-    //
-    // created-contents route reads modalByWindowContent's `.sidebarItem` source
-    //
-    // so the modal's original parent tab becomes the referrer.
     private func peekSource(of page: PCNativePage) -> UUID? {
         guard let peek = peeks[page.identifier], peek.page === page, !page.isClosed,
               !peek.parentPage.isClosed, browsers[peek.parentTabID]?.nativePage === peek.parentPage,
@@ -1272,9 +1053,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    // App-owned external URLs already have an exact URL. Do not send them
-    // through the asynchronous omnibox classifier or turn native requests into
-    // strings: its selected-Space guard would discard a multi-Space URL batch.
     var canAcceptExternalLink: Bool {
         !isPrivateBrowsing && !isPopupWindow && presentation.isReady && !isClosing && !wholeWindowClose &&
         !windowClosePending && !windowCloseApproved && transferringTabIDs.isEmpty && resolvingTransfers.isEmpty
@@ -1284,10 +1062,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func openExternalURL(_ url: URL, inSpace spaceID: UUID) -> Bool {
         guard canAcceptExternalLink,
               store.state.spaces.contains(where: { $0.id == spaceID }) else { return false }
-        // Already on that Space: the command's own render is the only one the
-        // page waits for; a second whole-window render only delays its load.
-        // A New Space draft still ends first, so the new tab records the tab
-        // it was opened from.
         if activeSpaceID != spaceID { selectSpace(spaceID) }
         else { cancelSpaceCreation(restoreFocus: false); sidebarPreviews?.dismiss() }
         guard activeSpaceID == spaceID, canAcceptExternalLink else { return false }
@@ -1374,7 +1148,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         view.palette = rootView.palette
         view.onClose = { [weak self] in self?.closeLibrary() }
-        //
         view.onToast = { [weak self, weak view] content in
             guard let self, let view, self.libraryView === view else { return }
             self.showToast(content, at: .window)
@@ -1391,7 +1164,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         view.onRestore = { [weak self, weak view] ids, destination in
             guard let self, let view, self.libraryView === view, self.activeProfileID == profileID else { return }
-            // The item a preview holds comes back through that preview's Expand.
             if let peek = self.activePeek, let lease = self.archivePreviews[peek.identity],
                ids.contains(where: { id in lease.tabs.contains { $0.id == id } }) {
                 if ids.count == 1 { self.promotePeek(peek, split: false) }
@@ -1426,9 +1198,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.setLibraryContentWidth(view.contentWidth)
         }
         configureSpaceManager(view)
-        //
-        // for the sidebar entry's next click, and opening by any route reads
-        // the entry's unread item (onDidOpenArcHome).
         view.onShowKind = { [weak self] kind in self?.recordLibraryPage(kind) }
         recordLibraryPage(view.kind)
         sidebar.libraryDidOpen()
@@ -1514,11 +1283,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let self, targetValid(), let space = self.managementSpace(id), self.selectSpaceFromUser(id, profileID: space.profileID) else { return }
                 self.closeLibrary(restoreFocus: false); self.newTab()
             }
-            // UnpinnedSectionDividerState carries the card's own Space ID, so
-            // Clear archives that Space's Today tabs (onDidClickClearButton).
-            // As the card's Close Tab, it leaves pages another window owns,
-            // and with nothing else to clear it is disabled, as the window
-            // sidebar's Clear is without Today tabs.
             let clearable = { [weak self] () -> Set<UUID> in
                 guard let self, let space = self.managementSpace(id) else { return [] }
                 return SpaceClearToday.ids(in: self.store.state, spaceID: id, profileID: space.profileID)
@@ -1569,11 +1333,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         libraryView?.clearAll()
     }
 
-    ///
-    ///
-    /// already shows the target page or none is named, otherwise open the
-    /// target or the last selected page. Private Media uses the original normal
-    /// parent catalog; other not-yet-supported private pages fall back to Downloads.
     func showLibraryFromEntry(_ target: LibraryEntryPage?) {
         let showing = libraryView.flatMap { $0.profileID == activeProfileID ? Self.libraryPage($0.kind) : nil }
         switch LibraryEntryRoute.decide(target: target, showing: showing,
@@ -1582,9 +1341,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         case .open(let page): showLibrary(isPrivateBrowsing && page != .captures ? .downloads : Self.libraryKind(page))
         }
     }
-    /// The Library entry flyout's row actions (LibraryFlyout.swift): a
-    /// download through the Library's download route, a capture through the
-    /// capture library's copy, source and page routes.
     private func performLibraryFlyout(_ action: LibraryFlyoutAction) -> Bool {
         switch action {
         case let .download(item, command): return performLibraryDownload(item, action: command)
@@ -1619,17 +1375,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return NSPasteboard.general.writeObjects([file.url as NSURL])
         }
     }
-    /// The capture library a flyout capture belongs to, while this window may
-    /// still act on it (its active profile, not private).
     private func libraryFlyoutCaptureStore(_ capture: SavedCapture) -> CaptureLibraryStore? {
         guard !isPrivateBrowsing, !isClosing, !wholeWindowClose, capture.profileID == activeProfileID else { return nil }
         let library = CaptureLibraryStore.shared(directory: store.capturesDirectory(for: capture.profileID), profileID: capture.profileID)
         return library.contains(capture) ? library : nil
     }
-    /// Send via iMessage / AirDrop (HomeBadgingFeature cases 6 and 8): the
-    /// capture's image (iMessage adds its source address), a completed image
-    /// file's image, any other completed file's URL (LibraryFlyout.swift).
-    /// The original item is resolved again before the service performs.
     private func shareLibraryFlyoutItem(_ item: LibraryFlyoutItem, _ share: LibraryFlyoutShare) -> Bool {
         guard let parent = window, parent.attachedSheet == nil else { return false }
         switch item {
@@ -1668,8 +1418,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return true
         }
     }
-    ///
-    /// then the capture library's delete route; a failure reports its error.
     private func deleteLibraryFlyoutCapture(_ capture: SavedCapture) -> Bool {
         guard let parent = window, parent.attachedSheet == nil, libraryFlyoutCaptureStore(capture) != nil else { return false }
         return LibraryFlyoutCaptureDeletion.confirm(in: parent) { [weak self, weak parent] approved in
@@ -1687,13 +1435,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
     }
-    ///
-    ///
-    /// switcher (ModalItemSwitcher `isPresented`) or the command bar is
-    ///
-    ///
-    ///
-    /// `.sidebarItem` source, which never blocks expansion.
     private func updateLibraryEntryExpansion() {
         sidebar.libraryEntryExpansionAllowed = libraryView == nil && tabSwitcher == nil && commandBar == nil
     }
@@ -1735,9 +1476,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             else { focusSelectedLocalContent() }
         }
     }
-    ///
-    ///
-    ///
     private func setLibraryContentWidth(_ width: CGFloat) {
         guard libraryContentWidth != width else { return }
         libraryContentWidth = width
@@ -1751,8 +1489,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             layoutChrome()
         } completion: { [weak self] in
             guard let self, !self.isClosing, self.libraryView != nil else { return }
-            // The page and side panel moved inside the group; their native
-            // layout synchronizes once, in the full pass.
             self.pageHost.needsLayout = true
             self.extensionSidePanel.needsLayout = true
             self.layoutChrome()
@@ -1777,7 +1513,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let items = store.archivedItems(profileID: profileID).filter { ids.contains($0.id) }
         let allIDs = items.flatMap { $0.tabs.map(\.id) }
         guard !allIDs.isEmpty, allIDs.allSatisfy({ !store.retiringTabIDs.contains($0) }) else { return }
-        // A claim on an archived tab is a page that another window is still closing.
         guard allIDs.allSatisfy({ ownership.canUse($0, owner: presentationID) }) else { refuseTabMove(); return }
         var restored: [UUID] = []
         performWindowCommand {
@@ -1785,9 +1520,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 restored += store.restoreArchivedTab(item.id, profileID: profileID, destination: destination)
             }
         }
-        // ToastType.tabUnarchived (case 34): a window toast naming the
-        //
-        // so the toast adds ". Click to view."; clicking opens the tab.
         guard let first = restored.first, let tab = store.state.tabs.first(where: { $0.id == first }),
               let space = store.state.spaces.first(where: { $0.id == tab.spaceID }) else { return }
         showToast(.tabRestored(to: space.name, selected: selectedTabIDs.contains(first)), at: .window, onTap: { [weak self] in
@@ -1799,15 +1531,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         })
     }
 
-    /// Fixed fresh identities and typed-document references for the saved
-    ///
-    /// home must alias a still-valid local document; nil refuses the change.
     private func splitHomePlan(_ homes: [BrowserTab]) -> (ids: [UUID: UUID], documents: [UUID: SidebarDocumentReference])? {
         SplitMembership.homePlan(homes) { [resolveSidebarCopyDestinations] typed in resolveSidebarCopyDestinations?(typed)?.documents }
     }
 
-    /// The copy's shouldOpen option (`0x101`) opens each fresh web home in the
-    /// background through the existing duplicate opener, after the commit.
     private func openSplitHomes(_ ids: [UUID: UUID], profileID: UUID, originatingSpaceID: UUID) {
         guard let window else { return }
         for homeID in ids.values {
@@ -1817,10 +1544,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// Selecting an item whose pages another window holds moves them here
-    ///
-    ///
-    /// follows once the last page arrives; true means accepted.
     @discardableResult
     private func selectTab(_ id: UUID, extendingSplit: Bool = false) -> Bool {
         sidebarPreviews?.dismiss()
@@ -1838,10 +1561,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if !elsewhere.isEmpty {
             return movePagesHere(elsewhere[...]) { [weak self] in self?.selectTab(id, extendingSplit: extendingSplit) ?? false }
         }
-        //
-        // Split View) copies saved members that newly join the split.
         if extendingSplit {
-            // Plan after the shared model holds this window's selection.
             let space = activeSpaceID, profile = activeProfileID
             var plan: (ids: [UUID: UUID], documents: [UUID: SidebarDocumentReference])?
             performWindowCommand(selectNativePage: false) {
@@ -1852,8 +1572,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let plan else { return false }
             if selectedTabIDs.contains(id) { openSplitHomes(plan.ids, profileID: profile, originatingSpaceID: space) }
         } else {
-            //
-            // leaving the set can presentMediaControls (flag 0).
             let previous = selectedTabIDs
             let expected: [UUID] = {
                 guard let tab = store.state.tabs.first(where: { $0.id == id }) else { return [id] }
@@ -1868,8 +1586,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 }
             performWindowCommand(selectNativePage: false, afterCapture: { if committed { removal?() } }) {
                 store.selectTab(id, extendingSplit: false)
-                // presentation.selectedTabIDs updates only in captureCommand after
-                // this action; store state is the commit signal (same as Separate).
                 committed = store.state.selectedTabIDs == expected
             }
         }
@@ -1879,30 +1595,21 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return false
     }
 
-    // Space commands originate in this physical browser window. Execution
-    // checks the actual native window/security gate again before mutation.
     var ownsSpaceCommandFocus: Bool {
         guard let window, NSApp.isActive, window.isVisible, !window.isMiniaturized else { return false }
         return window.isKeyWindow
     }
 
-    /// Existing registered-window/security admission. It does not initiate a
-    /// page transfer.
     var windowCommandSecurityAvailable: Bool {
         guard let window, let binding = nativeBinding, binding.window === window else { return false }
         return binding.canParticipateInPageTransfer
     }
 
-    /// Window-owned commands may dismiss the original history chooser or
-    /// command bar before rechecking the browser itself.
     var ownsWindowCommandFocus: Bool {
         guard let window, NSApp.isActive, window.isVisible, !window.isMiniaturized else { return false }
         return ownsSpaceCommandFocus || (window.isMainWindow && navigationHistory?.ownsKeyWindow(in: window) == true)
     }
 
-    /// A menu command belongs to this exact native window, including its own
-    /// command bar or history chooser. Cleanup can synchronously change
-    /// focus or security ownership, so validate again after each dismissal.
     func prepareLibraryMenuCommand() -> Bool {
         let profileID = activeProfileID
         guard let original = window, ownsWindowCommandFocus,
@@ -1923,9 +1630,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private var canCloseBrowserWindow: Bool {
-        // This closes the physical browser, including its original private or
-        // popup context. Local editing and Peek are handled by the existing
-        // whole-window close owner, not by the selected-tab close command.
         presentation.isReady && nativeBinding != nil && !isClosing
             && !wholeWindowClose && !windowClosePending && !windowCloseApproved
             && ownsSpaceCommandFocus
@@ -1972,8 +1676,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.cancelSpaceCreation(); return true
             }
         } else if let peek = activePeek {
-            // Modal identity has priority. Refusal
-            // never falls through to the parent window's fullscreen operation.
             available = { [weak self, weak peek] in
                 guard let self, let peek else { return false }
                 return common() && self.activePeek === peek && self.peeks[peek.page.identifier] === peek
@@ -1990,7 +1692,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             execute = { native.perform() }
         } else {
-            // A page-fullscreen request must not degrade into a window toggle.
             guard nativeFullscreenTabID == nil,
                   original.styleMask.contains(.fullScreen) else { return false }
             let fullscreen = BrowserWindowFullscreenCommand(window: original,
@@ -2049,11 +1750,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         commandBar?.dismiss()
         guard canSelectSpace(id, profileID: profileID), let window,
               PCNativeBrowserApplication.canPresentTabSwitcher(in: window) else { return false }
-        // Footer/navigation explicitly leaves the draft, including selecting
-        // the original Space whose actual pages have only been parked.
         cancelSpaceCreation(restoreFocus: false)
-        // Selecting the checked menu item must not collapse a split, discard
-        // its focused pane or disturb an accepted Peek in the same Space.
         guard activeSpaceID != id else { return true }
         navigationHistory?.dismiss()
         sidebarPreviews?.dismiss()
@@ -2083,8 +1780,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebarPreviews?.dismiss()
         guard presentation.isReady, !isClosing, !wholeWindowClose, transferringTabIDs.isEmpty else { return }
         let previousProfile = activeProfileID
-        // Space switch replaces the window presentation set; outgoing pages can
-        // presentMediaControls the same way ItemSelection removals do.
         let outgoing = renderedPaneIDs
         let removal = presentationSetMediaRemoval(capturing: outgoing, remaining: { Set(self.renderedPaneIDs) }) {
             self.activeSpaceID == id
@@ -2106,9 +1801,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         noteReturnGate()
     }
 
-    /// Moves each page that another window owns here through the ordinary
-    /// transfer, one at a time, then runs `completion`. A refused transfer
-    /// ends the chain; pages already moved stay with this window.
     private func movePagesHere(_ ids: ArraySlice<UUID>, then completion: @escaping () -> Bool) -> Bool {
         guard let id = ids.first else { return completion() }
         guard ownership.isClaimed(id), !ownership.canUse(id, owner: presentationID),
@@ -2116,10 +1808,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return request(id, self) { [weak self] in self?.movePagesHere(ids.dropFirst(), then: completion) ?? false }
     }
 
-    /// Moves sidebar roots' pages another window owns here, one at a time,
-    /// then runs `close` with the pages moved. A refused move, or one that
-    /// ends with the page left where it was, sends the pages already moved
-    /// back, so a Close never leaves part of its set here unseen.
     private func moveRootsHere(_ ids: ArraySlice<UUID>, moved: [UUID], then close: @escaping ([UUID]) -> Bool) -> Bool {
         guard let id = ids.first else { return close(moved) }
         guard ownership.isClaimed(id), !ownership.canUse(id, owner: presentationID),
@@ -2127,8 +1815,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let arrival = PendingArrival { [weak self] in self?.returnMovedRoots(moved) }
         let started = request(id, self) { [weak self] in
             arrival.ran = true
-            // The chain presents or returns every moved page itself, so the
-            // arrival is never selected here.
             _ = self?.moveRootsHere(ids.dropFirst(), moved: moved + [id], then: close)
             return true
         }
@@ -2137,29 +1823,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private func returnMovedRoots(_ ids: [UUID]) { for id in ids { returnIfUnshown(id) } }
 
-    ///
-    /// page cannot move right now (a window closing, another move under way,
-    /// the page in full screen) only beeps.
     func refuseTabMove() { NSSound.beep() }
 
     func displaysPlaceholder(for id: UUID) -> Bool { presentation.displayedPlaceholders.contains(id) }
     func showsPlaceholder(for id: UUID) -> Bool { presentation.showsPlaceholder(id) }
 
-    /// Clicking the frozen pane brings its page back, as selecting its row
-    ///
     private func pullBackPlaceholder(_ id: UUID) {
         guard presentation.displayedPlaceholders.contains(id), commandBar == nil, activePeek == nil,
               window?.attachedSheet == nil else { return }
         _ = selectTab(id)
     }
 
-    /// The placeholder's frozen frame is a compositor copy of the page's
-    /// viewport, taken once as the page moves, in the window it moved to: a
-    /// copy needs the page visible in its key window, which the leaving
-    /// window no longer is. It is never updated afterwards. The copy belongs
-    /// to the tab (`PagePlaceholderImages`), so every window showing its
-    /// placeholder uses it. The engine copies any pane the window shows; the
-    /// focused pane's copy is taken first.
     private func capturePlaceholderSnapshot(_ id: UUID, page: PCNativePage, from source: BrowserWindowController,
                                             attempt: Int = 0, generation: Int? = nil) {
         let generation = generation ?? { placeholderCaptureGeneration += 1; return placeholderCaptureGeneration }()
@@ -2174,7 +1848,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   self.browsers[id]?.nativePage === page, page.nativeView.window === window else {
                 self.placeholderCapturesPending.removeValue(forKey: id); return
             }
-            // Another pane waits briefly for the focused pane's copy, never indefinitely.
             if attempt < 3, !PagePlaceholderCaptureOrder.mayCapture(id, pending: Set(self.placeholderCapturesPending.keys),
                                                                     focused: self.currentTabID) {
                 self.capturePlaceholderSnapshot(id, page: page, from: source ?? self, attempt: attempt + 1, generation: generation)
@@ -2209,12 +1882,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// What this window shows as placeholders, for the frames its store keeps.
     private func syncPlaceholderImageHolders() {
         store.placeholderImages.setShown(presentation.allPlaceholders, in: presentationID)
     }
-    /// A page has one capture slot (the engine's `ActiveCaptures`). The
-    /// placeholder borrows it briefly and gives it up to a capture the user starts.
     private static var placeholderCaptureLeases: [ObjectIdentifier: PCNativePageCapture] = [:]
     private static func yieldPlaceholderCapture(of page: PCNativePage) {
         placeholderCaptureLeases.removeValue(forKey: ObjectIdentifier(page))?.invalidate()
@@ -2224,17 +1894,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let scale = window?.backingScaleFactor ?? 2
         return CGSize(width: size.width * scale, height: size.height * scale)
     }
-    /// Only the pane's pixels are kept, not the full-resolution copy.
     private func paneSizedSnapshot(_ image: CGImage, for id: UUID) -> CGImage {
         guard let pixels = placeholderPixelSize(for: id) else { return image }
         return PagePlaceholderView.downsampled(image, toFill: pixels)
     }
 
-    ///
-    /// holds but no longer shows goes back to the window still showing its
-    /// placeholder. One move at a time; the next render continues. A return
-    /// that window can't take now is held until a move, full screen, close or
-    /// Space in any window ends, never on a timer.
     private func scheduleUntargetedReturns() {
         guard !untargetedReturnScheduled, onUntargetedReturn != nil else { return }
         untargetedReturnScheduled = true
@@ -2261,7 +1925,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         heldReturns.removeAll()
         scheduleUntargetedReturns()
     }
-    /// An untargeted move that ended with the page still here.
     private func holdFailedReturn(_ id: UUID) {
         failedDuringReturn = id
         guard !presentation.displayedTabIDs.contains(id), heldContentIDs.contains(id) || holdsEmptyClaim(id) else { return }
@@ -2269,19 +1932,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             failedReturns.remove(id); heldReturns.remove(id); shownSinceArrival.remove(id)
         }
     }
-    /// The move just tried for this return started and failed; no other
-    /// window is tried in the same pass.
     func returnFailed(_ id: UUID) -> Bool { failedDuringReturn == id }
-    /// This window's own state, besides moves, full screen and closes, that
-    /// can refuse a returned page coming here or leaving.
     private var returnGateOpen: Bool {
         presentation.isReady && activePeek == nil && !promotingPeek && commandBar == nil && tabSwitcher == nil
             && themePopover == nil && !siteControlCenterDefers && closingTabIDs.isEmpty && modelRetirementIDs.isEmpty
             && peekRetirementParents.isEmpty && peeks.values.allSatisfy({ !$0.closePending })
             && !store.isProfileRemovalPending(activeProfileID) && nativeBinding?.canParticipateInPageTransfer == true
     }
-    /// Fires when the gate opens or this window shows another Space, so a
-    /// placeholder it now shows can take its page back.
     private func noteReturnGate() {
         let open = returnGateOpen, space = activeSpaceID
         defer { returnGateWasOpen = open; returnGateSpaceID = space }
@@ -2291,28 +1948,20 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var heldContentIDs: Set<UUID> {
         Set(browsers.keys).union(noteEditors.keys).union(easelEditors.keys)
     }
-    /// Content, or an empty claim, that could go back to a placeholder. A
-    /// handed-over claim that was never shown has no pane here.
     private var returnableIDs: Set<UUID> {
         heldContentIDs.union(panes.keys.filter(holdsEmptyClaim)).union(shownSinceArrival.union(heldReturns).filter(holdsEmptyClaim))
     }
-    /// A page that arrived for a selection that then didn't happen (a later
-    /// page of the split refused to move) goes back to its placeholder
-    /// rather than sitting here unseen.
     private func returnIfUnshown(_ id: UUID) {
         guard !presentation.displayedTabIDs.contains(id), heldContentIDs.contains(id) || holdsEmptyClaim(id) else { return }
         shownSinceArrival.insert(id)
         scheduleUntargetedReturns()
     }
-    /// Runs a move's placement in its destination, else selects the page
-    /// there; a page neither shows is returned.
     private func placeArrival(_ id: UUID, placement: @escaping () -> Bool) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if !placement(), !self.selectTab(id) { self.returnIfUnshown(id) }
         }
     }
-    /// A live page, Note or Easel of this window that a move could take now.
     private func canHandOverPage(_ id: UUID) -> Bool {
         guard claimsTab(id), switcherCanUse(id), !peekRetirementParents.contains(id) else { return false }
         if let browser = browsers[id] { return browser.nativePage.map { !$0.isClosed } == true }
@@ -2323,18 +1972,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let window { PArcDialog.inform(in: window, .init(title: "This tab couldn’t move", message: detail)) }
     }
 
-    // The temporary container receives the same engine page while the original
-    // PCBrowserView remains its sole observer. No second wrapper is adopted.
-    // A placement presents the moved page in the destination itself; when it
-    // returns false the page is selected there as an ordinary selection.
-    //
-    // page to a window still showing its placeholder without activating it.
     @discardableResult
     func transferTab(_ id: UUID, to destination: BrowserWindowController, placement: (() -> Bool)? = nil,
                      untargeted: Bool = false) -> Bool {
         if untargeted { failedDuringReturn = nil }
-        // A handed-over empty claim goes back the same way; the window
-        // keeping its placeholder rejoins it in its slot.
         if untargeted, holdsEmptyClaim(id) {
             guard handOverEmptyClaim(id, to: destination) else { return false }
             if !destination.rendering { destination.render(destination.store.state) }
@@ -2346,7 +1987,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if browsers[id] == nil, noteEditors[id] != nil || easelEditors[id] != nil {
             return transferDocument(id, to: destination, placement: placement, untargeted: untargeted)
         }
-        //
         guard self !== destination, store === destination.store, !isPopupWindow, !destination.isPopupWindow,
               transferringTabIDs.isEmpty, destination.transferringTabIDs.isEmpty,
               !isClosing, !wholeWindowClose, !destination.isClosing, !destination.wholeWindowClose,
@@ -2382,9 +2022,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return true
     }
 
-    /// A Note or Easel moves with its live editor through the window-move
-    ///
-    /// contents too). Its frozen frame is the editor's own drawing.
     private func transferDocument(_ id: UUID, to destination: BrowserWindowController,
                                   placement: (() -> Bool)?, untargeted: Bool) -> Bool {
         let snapshot: CGImage? = panes[id].flatMap { pane in
@@ -2438,9 +2075,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.transferringTabIDs.remove(id)
             destination.transferringTabIDs.remove(id)
             destination.transferContainers.removeValue(forKey: page.identifier)
-            // Rendering can be deferred or skipped. Reconsider the original
-            // sources after both transfer gates are clear, including closure
-            // and rollback; AppDelegate coalesces this into one later sweep.
             self.refreshMiniPlayers(force: true)
             destination.refreshMiniPlayers(force: true)
             self.schedulePresentationSessionRecord()
@@ -2463,9 +2097,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         var resolved = false
         var moved = false
         var leftPlaceholder = false
-        // Neither the result enum nor the view's present superview proves the
-        // current Browser owner after callback reentry. Reconcile only actual
-        // membership, successful final attachment, and the reserved claims.
         if browsers[id] === browser, ownership.isCurrent(reservation),
            let binding = destination.nativeBinding, owner === binding,
            let destinationWindow = destination.window {
@@ -2499,8 +2130,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 if loading { destination.loadingTabs.insert(id) }
                 browser.delegate = destination
                 destination.attachedPageIDs.insert(page.identifier)
-                // The destination selects the page only after the actual
-                // transfer; a placement presents it itself once attached.
                 destination.presentation.adopt(id, state: store.state, foreground: placement == nil)
                 if placement == nil { destination.focusedTabID = id }
                 resolved = true
@@ -2531,8 +2160,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 destination.prepareStoreContext()
                 if !untargeted { destination.window?.makeKeyAndOrderFront(nil) }
                 if leftPlaceholder { destination.capturePlaceholderSnapshot(id, page: page, from: self) }
-                // Run after this native callback returns: a placement may start
-                // the next transfer or rearrange the destination's panes.
                 if let placement { destination.placeArrival(id, placement: placement) }
             } else if detail != nil, !untargeted {
                 destination.refuseTabMove()
@@ -2541,9 +2168,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             return
         }
-        // Keep both owners reserved and the temporary page/container mapping.
-        // Ordinary rendering, navigation and model retirement remain blocked;
-        // a third/unknown native owner is never published as the source owner.
         let retry: () -> Void = { [weak self, weak destination, browser, page, container] in
             guard let self, let destination else { return }
             self.resolveTabTransfer(id, reservation: reservation, tab: tab, browser: browser,
@@ -2574,12 +2198,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// A parent with an open Peek moves with it: both pages leave the same
-    /// Browser in one native collection transfer, so a Peek never sits in a
-    /// different window from its parent, and the same `PeekController` moves
-    ///
-    ///
-    /// cannot stay behind over a placeholder.
     private func transferTabWithPeek(_ id: UUID, peek: PeekController, to destination: BrowserWindowController,
                                      placement: (() -> Bool)?, untargeted: Bool) -> Bool {
         guard self !== destination, store === destination.store, !isPopupWindow, !destination.isPopupWindow,
@@ -2767,9 +2385,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         presentTransferRecovery(id, destination: destination, pages: live, retry: retry)
     }
 
-    /// Drops the pane a move that didn't happen prepared here. A pane still on
-    /// screen (this window's placeholder when pulling a page back) is rebuilt
-    /// by the next render rather than leaving a hole.
     private func discardTransferPane(_ id: UUID) {
         guard browsers[id] == nil, let pane = panes.removeValue(forKey: id) else { return }
         pane.browser = nil
@@ -2781,7 +2396,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard let page = browsers[id]?.nativePage, !page.isClosed else { return nil }
         return page
     }
-    /// A live page, Note or Easel this window holds for the tab.
     func holdsContent(forTabID id: UUID) -> Bool {
         nativePage(forTabID: id) != nil || noteEditors[id] != nil || easelEditors[id] != nil
     }
@@ -2852,8 +2466,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             openNote(id: session.document.id, title: session.displayTitle, inSplit: inSplit)
         } catch { showNoteError(error) }
     }
-    // An app document selects its exact local owner; it never sends a fake
-    // chrome://note request or destroys the webpage from which it was opened.
     private func openLocalNoteAddress(_ input: String) -> Bool {
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let parts = URLComponents(string: value), parts.scheme?.lowercased() == "parc",
@@ -2872,8 +2484,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         performWindowCommand { _ = store.openNote(id: id, title: title, inSplit: inSplit) }
         focusSelectedLocalContent()
     }
-    /// The asynchronous native close transaction binds the exact local editors
-    /// as well as native pages; another editor cannot inherit an earlier flush.
     func noteEditorsForRetirement(in ids: Set<UUID>) -> [UUID: NoteEditorViewController] {
         Dictionary(uniqueKeysWithValues: noteEditors.filter { ids.contains($0.key) }.map {
             ($0.key, $0.value.editor)
@@ -2886,7 +2496,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         return accepted
     }
-    /// A failed command's alert, which a window that has gone away no longer shows.
     private func showError(_ error: Error) {
         if window != nil { PArcDialog.present(error) }
     }
@@ -3031,7 +2640,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 return SidebarPreviewSource(target: target, profileID: profileID, spaceID: activeSpaceID,
                     selectedTabIDs: selectedTabIDs, focusedTabID: focusedTabID, theme: activeSpace.theme, title: domain.title, domain: domain, originalURL: url, rows: [])
             }
-            // The tab's own picture, only for a page loaded here and not already on screen.
             guard SidebarPreviewPreference.tabPictures.isEnabled, !selectedTabIDs.contains(id),
                   let page = browsers[id]?.nativePage, !page.isClosed,
                   let presented = URL(string: WhatsNewPage.presented(tab.url)) else { return nil }
@@ -3043,7 +2651,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         case .folder(let id):
             guard SidebarPreviewPreference.folders.isEnabled,
                   let folder = store.state.folders.first(where: { $0.id == id && $0.spaceID == activeSpaceID }) else { return nil }
-            //
             let orderedIDs = SidebarHierarchy.tabIDs(in: .folder(id), state: store.state, spaceID: activeSpaceID)
             let rows = orderedIDs.compactMap { tabID -> SidebarPreviewRow? in
                 guard let tab = store.state.tabs.first(where: { $0.id == tabID }) else { return nil }
@@ -3070,14 +2677,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   !store.retiringTabIDs.contains(id) else { return }
             switch action {
             case .activate(let modifiers):
-                //
                 switch SidebarPreviewActivation.folderItem(modifiers) {
                 case .selectOriginal(let split):
                     revealPreviewTab(id)
                     if !split || !insertPreviewSplit(tabID: id) { selectTab(id) }
                 case .duplicate:
-                    //
-                    // the original in its folder; selection and expansion are untouched.
                     guard !SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID).contains(where: { $0.tabIDs.contains(id) }) else { return }
                     _ = prepareSidebarDuplicate([.tab(id)])?()
                 case .reveal:
@@ -3086,19 +2690,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 }
             case .split: selectTab(id, extendingSplit: true)
             case .archive:
-                // This may be an original tab owned by another window. Use
-                // the shared retirement coordinator, including beforeunload.
                 closeTabsWithReopen(Set([id]), reason: .manual)
             case .duplicate:
-                //
-                // options 0x100) as Command-Shift.
                 guard !SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID).contains(where: { $0.tabIDs.contains(id) }) else { return }
                 _ = prepareSidebarDuplicate([.tab(id)])?()
-            case .copyURL, .copyIssueID, .create: break // Clipboard needs no page; creation rows have no tab.
+            case .copyURL, .copyIssueID, .create: break
             }
         } else {
-            // A recent-page row, or the provider's own creation link, routes
-            // from the previewed tab in this original profile and Space.
             guard let domain = source.domain, case .tab(let sourceID) = source.target,
                   let sourceTab = visibleTabs.first(where: { $0.id == sourceID }),
                   let activation = action.activation(for: row) else { return }
@@ -3111,11 +2709,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    ///
-    ///
-    /// selects it, or its policy creates the tab instead. Option asks for the
-    /// split-after-focused presentation of a created tab.
     private func openRecentPreviewURL(_ url: URL, from sourceTab: BrowserTab, activation: SidebarPreviewActivation) {
         func openNewTab(split: Bool) {
             let creation = TabCreationProvenance(referrerID: sourceTab.id, activeTabID: currentTabID,
@@ -3135,12 +2728,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 inSplit: group != nil, currentHost: page?.url?.host ?? URL(string: sourceTab.url)?.host,
                 savedHost: URL(string: sourceTab.savedURL)?.host, authenticationUnlocked: page?.authenticationFlowUnlocked == true)
             guard route == .inPlace else { openNewTab(split: split); return }
-            // In place uses the address bar's model navigation of that same tab;
-            // a refused selection must not leave it navigated in the background.
             guard canPerformSidebarTabAction(sourceTab, closing: false),
                   let elsewhere = PageReparenting.pagesToMove(group?.tabIDs ?? [sourceTab.id],
                       usableHere: switcherCanUse, movable: canMovePageHere) else { return }
-            // Pages another window holds come here first, as selecting them does.
             if !elsewhere.isEmpty {
                 _ = movePagesHere(elsewhere[...]) { [weak self] in
                     self?.openRecentPreviewURL(url, from: sourceTab, activation: activation); return self != nil
@@ -3154,7 +2744,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
     @discardableResult
     private func revealPreviewTab(_ id: UUID) -> Bool {
         guard !store.isEphemeral, window != nil else { return false }
@@ -3165,9 +2754,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         catch { showError(error); return false }
     }
 
-    ///
-    /// split owner: an existing original tab, or a new URL, joins after the
-    /// focused pane in one model publication. False leaves everything as it was.
     private func insertPreviewSplit(tabID existing: UUID? = nil, url: URL? = nil, creation: TabCreationProvenance? = nil,
                                     after anchor: UUID? = nil) -> Bool {
         let selection = selectedTabIDs, id = existing ?? UUID()
@@ -3190,9 +2776,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return true
     }
 
-    // The engine has already created and transferred this exact page. The
-    // model may move a same-Profile routed tab into the originating split,
-    // but never opens a replacement URL or changes its BrowserContext.
     private func joinOriginalSplitPage(_ id: UUID, page: PCNativePage, source: PCNativePage,
                                        browser: PCNativeBrowserWindow, lease: SplitLinkLease) -> Bool {
         guard switcherCanUse(id), browsers[id]?.nativePage === page,
@@ -3224,9 +2807,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.onSettings = { [weak self] in self?.showSettings() }
         sidebar.onBannerRelinquishFocus = { [weak self] in
             guard let self, let window = self.window else { return }
-            // The host calls this only for its own responder. A background
-            // original window also drops that disappearing control, without
-            // activating itself or taking focus away from Settings/a sheet.
             window.makeFirstResponder(nil)
             guard !self.isClosing, !self.wholeWindowClose, window.isKeyWindow,
                   window.attachedSheet == nil, self.commandBar == nil,
@@ -3267,7 +2847,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.prepareFavoriteSplitRename = { [weak self] in self?.prepareFavoriteSplitRename($0) }
         sidebar.prepareSplitAppearance = { [weak self] in self?.prepareSplitAppearance($0, reset: $1) }
         sidebar.onTitleEditFinished = { [weak self] in
-            // Read current state after the field has relinquished its editor.
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.isClosing else { return }
                 self.render(self.store.state)
@@ -3285,11 +2864,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         sidebar.prepareFavoriteActivation = { [weak self] tab in self?.prepareFavoriteActivation(tab) }
         sidebar.prepareFavoriteClose = { [weak self] tab in self?.prepareFavoriteAction(tab, closing: true) }
-        // Sidebar hook: the Favorites empty state's dismissal is an app-wide
-        // per-profile preference, so every window of the profile hides it.
         sidebar.dismissFavoritesEmptyState = { [weak self] profileID in self?.store.dismissFavoritesEmptyState(profileID: profileID) }
-        //
-        // app-wide setting, so every window follows it.
         sidebar.toggleSpaceHeaderOnSingleUnnamedSpaces = { [weak self] in self?.store.toggleSpaceHeaderOnSingleUnnamedSpaces() }
         sidebar.onArchiveTabs = { [weak self] anchor, order, ids in
             self?.archiveTodayTabs(anchor: anchor, order: order, ids: ids)
@@ -3322,8 +2897,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let self, lease.isValid,
                       let current = FolderLinks.links(in: self.store.state, items: items, spaceID: spaceID, profileID: profileID),
                       let text = FolderLinks.text(for: current, format: format) else { return false }
-                // This exports original sidebar records like Copy All Links;
-                // it never impersonates a live-page text/quote clipboard request.
                 self.copyLinkOperation = UUID()
                 NSPasteboard.general.clearContents()
                 let copied = NSPasteboard.general.setString(text, forType: .string)
@@ -3338,21 +2911,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return self.prepareSidebarRootsClose(items, archive: target.archivesItems,
                 requiresConfirmation: target.requiresConfirmation, isSelectionCommand: true, selectionIsCurrent: current)
         }
-        //
-        //
-        //
-        // and keeps a pinned split's saved items.
         sidebar.prepareSplitClose = { [weak self] id in
-            // The action is read when pressed, so a child gaining or losing
-            // its page cannot leave a stale close/archive choice.
             guard let self, let action = self.splitCellCloseAction(id) else { return nil }
             return self.prepareSidebarRootsClose([.split(id)], archive: action == .close, requiresConfirmation: false,
                                                  isSelectionCommand: false, selectionIsCurrent: { true })
         }
         sidebar.canCloseSplit = { [weak self] id in self?.splitCellCloseAvailable(id) ?? false }
         sidebar.prepareSplitCellCommand = { [weak self] id, command in self?.prepareSplitCellCommand(id, command) }
-        //
-        // split item, through the same owners as the cell's Close.
         sidebar.prepareSplitCellClose = { [weak self] id, archive in
             self?.prepareSidebarRootsClose([.split(id)], archive: archive, requiresConfirmation: false,
                                            isSelectionCommand: false, selectionIsCurrent: { true })
@@ -3361,9 +2926,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
         sidebar.canSelectSpace = { [weak self] id, profile in self?.canSelectSpace(id, profileID: profile) ?? false }
         sidebar.onSelectSpace = { [weak self] id, profile in _ = self?.selectSpaceFromUser(id, profileID: profile) }
-        //
-        //
-        // surface draws no background, so the window's shows through it.
         sidebar.onPagingTheme = { [weak self] transition in
             self?.rootView.pagingTransition = transition; self?.sidebarContainer.pagingTransition = transition
         }
@@ -3419,15 +2981,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         for id in Array(browsers.keys) where !liveIDs.contains(id)
             || state.tabs.first(where: { $0.id == id })?.profileID != browserProfiles[id]
             || state.tabs.first(where: { $0.id == id }).map({ InternalPage.isInternal($0.url) }) == true {
-            // A model change is not consent to destroy a live document. Ask
-            // the real page first; keep its wrapper until the result arrives.
             retireBrowserAfterModelChange(id)
         }
         for id in Array(noteEditors.keys) {
             guard let cached = noteEditors[id] else { continue }
             let tab = state.tabs.first { $0.id == id && $0.archivedAt == nil }
             if tab?.profileID != cached.profileID || tab.flatMap({ InternalPage(urlString: $0.url)?.noteID }) != cached.documentID {
-                // A model mutation alone cannot discard a draft whose disk write failed.
                 guard cached.editor.prepareToClose() else {
                     _ = store.restoreLiveTab(cached.originalTab, replacing: store.state.tabs.first { $0.id == id })
                     continue
@@ -3454,8 +3013,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             ownership.release(id, owner: presentationID)
             panes[id]?.removeFromSuperview(); panes.removeValue(forKey: id)
             failures.removeValue(forKey: id); easelFailures.removeValue(forKey: id)
-            // A background archive must not detach and rebuild the current
-            // page hierarchy or disturb its first responder.
             if renderedPaneIDs.contains(id) { renderedPaneIDs = [] }
         }
         let placeholderIDs = presentation.displayedPlaceholders
@@ -3482,8 +3039,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
         let layout = placeholderIDs.isEmpty ? activeSplitLayout : presentation.displayedSplitLayout
-        //
-        // laid out side by side; a draft or a split has none.
         splitMarginHandle.windowAllows = displayed.count == 1 && layout == nil
             && splitInsertion == nil && spaceCreation == nil && !isPopupWindow
         splitView.configure(orientation: splitInsertion?.request.orientation ?? layout?.orientation ?? .horizontal,
@@ -3495,8 +3050,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 }
                 continue
             }
-            // A retiring Easel keeps its real child hierarchy attached until
-            // beforeunload settles; a replacement cannot steal the same pane.
             if closingTabIDs.contains(tab.id), easelEditors[tab.id] != nil { continue }
             guard ownership.claim(tab.id, owner: presentationID), let pane = panes[tab.id] else { continue }
             if InternalPage.isInternal(tab.url) {
@@ -3507,8 +3060,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 var restoredHistory: NSObject?
                 if browsers[tab.id] == nil {
                     guard !applyingNativeSelection, !store.retiringTabIDs.contains(tab.id) else { continue }
-                    // A tab Undo or Reopen restored gets its back/forward entries back,
-                    // and so does a tab's first page after a relaunch.
                     restoredHistory = store.closedPageHistory.takeRestored(tab.id) as? NSObject ?? launchHistory(for: tab)
                     pane.layoutSubtreeIfNeeded()
                     let browser = PCBrowserView(frame: pane.contentBounds, profilePath: store.independentEngineProfilePath(for: tab.profileID))
@@ -3558,18 +3109,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         presentation.isReady && !isClosing && !wholeWindowClose && !rendering && !promotingPeek
             && transferringTabIDs.isEmpty && collectionTransfer == nil
     }
-    /// A tab with no address yet and no page shows the pane's blank backing.
     private func rendersBlank(_ tab: BrowserTab) -> Bool {
         (tab.url == "about:blank" || tab.url.isEmpty) && browsers[tab.id]?.nativePage == nil
             && pendingSearchNavigations[tab.id] == nil
     }
 
-    /// The shell side of the engine's page self-checks (overlays 330 and 334):
-    /// after every render, metadata-only refresh and presentation change, a
-    /// displayed tab that render would give its page, but whose pane still
-    /// shows the blank backing, a placeholder or native content, or has no
-    /// page view, gets a few short renders. A path that never rendered after
-    /// its page arrived then corrects itself; a clean check resets the budget.
     private var panePresentationRetries = 0
     private var panePresentationRetryPending = false
     private func checkPanePresentation() {
@@ -3585,14 +3129,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
             self.panePresentationRetryPending = false
-            // A transfer renders when it ends and that render's check resumes
-            // from here, without this attempt spent.
             guard self.canRender else { self.panePresentationRetries -= 1; return }
             if self.panesMissingTheirPage() { self.render(self.store.state) } else { self.panePresentationRetries = 0 }
         }
     }
-    /// Only what render itself would change: its per-tab branches, read
-    /// without claiming or creating anything.
     private func panesMissingTheirPage() -> Bool {
         let placeholderIDs = presentation.displayedPlaceholders
         for id in presentation.displayedTabIDs {
@@ -3634,8 +3174,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
            transferringTabIDs.isEmpty, collectionTransfer == nil,
            let previous = lastChromeState, sharedState.preservesChromeLayout(relativeTo: previous),
            !needsNativeLoad(sharedState) {
-            // Nothing was published since this window presented: its own tab
-            // selection renders before the store's publication arrives.
             if store.stateRevision == lastChromeRevision { return }
             applyLivePageMetadata(sharedState)
             return
@@ -3643,8 +3181,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         render(sharedState)
     }
 
-    /// Command/model URL writes still go through `render`'s load path. Engine
-    /// `didChangeURL` sets `requestedURLs` first, so this is false on that tick.
     private func needsNativeLoad(_ sharedState: BrowserState) -> Bool {
         let state = presentation.projected(sharedState)
         return state.tabs.contains { tab in
@@ -3675,10 +3211,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if !rendering { render(store.state) }
     }
 
-    /// Title, URL, loading, favicon, capture and Peek metadata. Does not attach
-    /// panes, rebuild sidebar rows or force window chrome layout.
-    /// Returns false when existing cells cannot present the change; callers
-    /// reconstruct through `render`.
     @discardableResult
     private func refreshLivePageChrome() -> Bool {
         guard presentation.isReady, !isClosing, !wholeWindowClose else { return true }
@@ -3820,21 +3352,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         commandBar?.theme = rootView.paletteTheme
         commandBar?.contentAppearance = rootView.palette.contentAppearance
     }
-    /// The stored theme for surfaces that take only its palette: the active
-    /// Space's, or the incognito theme in a private window.
     private var windowPaletteTheme: SpaceTheme { rootView.incognito ? IncognitoWindowTheme.paletteTheme : activeSpace.theme }
-    /// The incognito theme's `basicColor` background in a private window: the
-    /// website stylesheet's simple colour, and the colour toasts and the Press
-    ///
     private var windowBasicBackground: NSColor? { rootView.incognito ? IncognitoWindowTheme.background : nil }
 
     private func refreshWebsiteTheme(enabled: Bool? = nil) {
         guard !isClosing else { return }
         let allowed = (enabled ?? WebsiteThemePreferences.shared.state.isEnabled)
             && !WebsiteThemePreferences.shared.loadError
-        // Native ownership also applies the current value to new/reparented
-        // pages. This covers parked tabs, split panes, Peek and Easel webpages
-        // without reconstructing a profile or replaying a website URL.
         guard let binding = nativeBinding else { return }
         let stylesheet = allowed ? rootView.palette.websiteStylesheet(
             theme: rootView.theme, basicBackground: windowBasicBackground) : nil
@@ -3879,8 +3403,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.libraryView?.spaceManager.previewTheme(theme, spaceID: spaceID)
             guard self.activeSpaceID == spaceID, self.activeProfileID == profileID else { return }
             self.themePreview = (spaceID, theme)
-            // Keep browser views, focus, scroll position and sidebar controls
-            // intact during a continuous gesture. Persist its completed value.
             self.applyChromeTheme(theme)
         }
         editor.onSetAppearance = { [weak self, weak editor] appearance in
@@ -3906,8 +3428,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                         }, onError: { [weak self] in self?.showError($0) })
                 }
             } catch {
-                // A competing edit invalidates this draft without overwriting
-                // it. A real disk failure retains the original durable value.
                 if (error as NSError).code != CocoaError.userCancelled.rawValue { showError(error) }
             }
             return self.store.state.spaces.first { $0.id == spaceID && $0.profileID == profileID }?.theme ?? previous
@@ -3924,9 +3444,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         editor.window?.makeFirstResponder(editor)
     }
 
-    /// The popover editors share this window's preset page, and their window's
-    ///
-    ///
     private func makeThemeEditor(theme: SpaceTheme) -> SpaceThemeEditorView {
         let editor = SpaceThemeEditorView(theme: theme, presetPage: themeEditorPresetPage)
         editor.onPresetPageChange = { [weak self] page in self?.themeEditorPresetPage = page }
@@ -3969,8 +3486,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         applyChromeTheme(activeSpace.theme)
         refreshSidebarPointerIfKey()
     }
-    /// A popover that took key is still key while it closes. The hover tracker
-    /// re-tests when this window becomes key again, with the floating zones.
     private func refreshSidebarPointerIfKey() {
         if window?.isKeyWindow == true { refreshSidebarPointer() }
     }
@@ -3978,15 +3493,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         failures.removeValue(forKey: id); easelFailures.removeValue(forKey: id)
         if let tab = store.state.tabs.first(where: { $0.id == id }), InternalPage.isInternal(tab.url) {
             if let cached = easelEditors[id] {
-                // Reloading the local document must not destroy a live child
-                // or replay it in a second renderer. Refresh the same owner.
                 cached.editor.refreshPageVisibility(); render(store.state); return
             }
             panes[id]?.clearNativeContent()
             render(store.state)
         } else if let browser = browsers[id] {
-            // Reload does not prove recovery. Keep any actual native crash
-            // presentation until SadTabHelper clears its exact snapshot.
             refreshPagePresentation(id)
             browser.reload()
         }
@@ -4027,16 +3538,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let restorePageFocus = pane.rendererFailureOwnsFocus
         let crash = rendererPresentation(browser)
         if let crash {
-            // This new native failure supersedes a navigation error from the
-            // prior presentation. Do not resurrect it when recovery clears
-            // the crash. A later navigation error after reset is independent.
             if pane.rendererPresentation != crash { failures.removeValue(forKey: id) }
             pane.showRendererFailure(crash)
         }
         else if let message = failures[id] { pane.showError(message) }
         else { pane.showBrowser() }
-        // Hiding keeps the registered hierarchy attached. This synchronizes
-        // actual renderer visibility before any focus restoration.
         synchronizeNativeLayout()
         guard browsers[id] === browser else { return }
         if let crash, moveFocusToError {
@@ -4056,51 +3562,31 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func refreshPageHostBacking() {
-        // The gaps reveal the existing window surface; each original pane
-        // retains its own backing, including Notes' translucent canvas.
         let translucentPane = splitView.arrangedSubviews.contains {
             guard let pane = $0 as? BrowserPane else { return false }
             return pane.showsNoteCanvas || pane.showsTopBar || pane.showsPlaceholder
         }
-        // A window with no tab shows the empty content's translucent backing.
         let showsEmpty = splitView.arrangedSubviews.count == 1 && splitView.arrangedSubviews.first is SplitPanePlaceholder
         let backing = (splitView.arrangedSubviews.first as? BrowserPane)?.contentBacking ?? .white
         splitView.configureBacking(in: pageHost, hasTranslucentPane: translucentPane || showsEmpty, backing: backing)
         refreshPageShadow()
         refreshSplitPaneHighlights()
     }
-    /// The lone card's content shadow; a divided split draws one per pane and
-    /// a page in full screen fills the window.
     private func refreshPageShadow() {
         pageShadow.isHidden = splitView.arrangedSubviews.count > 1 || nativeFullscreenTabID != nil
     }
 
-    ///
-    /// contentOverBackgroundAppearance to the document host. Notes keep named
-    /// NotesBackground; Easels resolve named white/black paper. The Share
-    /// palette is unused.
     private func refreshNoteCanvasTheme(_ palette: ThemeChromePalette) {
         for pane in panes.values { pane.inheritNoteCanvasTheme(palette.contentAppearance) }
     }
 
-    ///
-    /// border when it is the proposed replacement target (three points) or the
-    /// focused content of a multi-pane split while no drag-and-drop pane edit
-    ///
-    /// `shaded` in a dark appearance and `shadedDark` otherwise.
     private func refreshSplitPaneHighlights() {
         let palette = rootView.palette
         let color = palette.isDark ? palette.shaded : palette.shadedDark
         let shown = splitView.arrangedSubviews
         let placeholder = splitInsertion?.placeholder
-        // Add Split's pending content is the focused content (its command bar
-        //
-        // treats no content as focused while a command bar whose destination
-        // is createNewTab is presented (window state +0x290 presentation info,
-        // +0x2b9 destinationType == 2), which includes Add Split's own bar.
         let focused: NSView? = commandBar != nil && commandBarCreatesNewTab ? nil
             : placeholder.flatMap { $0.superview === splitView ? $0 : nil } ?? currentTabID.flatMap { panes[$0] }
-        // The proposed pane by its rendered ID (no per-pane identity search).
         let proposedPane: NSView? = splitDropReplacementID.flatMap { renderedPaneIDs.contains($0) ? panes[$0] : nil }
         for view in shown {
             let highlight: SplitPaneHighlight
@@ -4119,23 +3605,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    /// content; an insertion or no proposal clears it.
     private func setSplitDropProposal(_ target: SplitDropTarget?, selection: [UUID]) {
         if case .replace(let index)? = target, selection.indices.contains(index) {
             splitDropReplacementID = selection[index]
         } else { splitDropReplacementID = nil }
         refreshSplitPaneHighlights()
     }
-    ///
-    /// `InteractivePaneEdit` begins on the drag's first admitted entry and ends
-    /// only at its terminal, so the focus border returns exactly then.
     private func splitPaneEditDidChange(_ active: Bool) {
         if !active { splitDropReplacementID = nil }
         refreshSplitPaneHighlights()
     }
-    ///
-    /// Surviving pages stay attached; only departing panes detach and park.
     private func updateSplitArrangement(displayed: [BrowserTab], displayedIDs: [UUID]) {
         var wanted: [NSView] = displayed.map { tab in
             let pane = panes[tab.id] ?? makePane(tab)
@@ -4148,13 +3627,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         if wanted.isEmpty {
             if spaceCreation != nil {
-                // Draft entry parks original panes; it does not create an
-                // intermediate blank tab or a replacement native page.
                 wanted = [LayoutView()]
             } else {
-                //
-                // when no tab is open: the same empty backing as Add Split's
-                // pending pane, with no page, title or input of its own.
                 let empty = SplitPanePlaceholder(frame: .zero)
                 empty.setAccessibilityLabel("No tab open")
                 wanted = [empty]
@@ -4221,8 +3695,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             completion(page.favicon)
             return
         }
-        // An unloaded normal tab may use its exact profile's cached page icon.
-        // A private tab must never consult its persistent parent's history.
         guard mayReadCachedFavicons, let url = URL(string: expected.url) else { completion(nil); return }
         PCNativeBrowserApplication.favicon(for: url,
             profilePath: store.independentEngineProfilePath(for: expected.profileID)) { [weak self] image in
@@ -4237,9 +3709,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
     }
-    ///
-    ///
-    /// destination; a private window never consults its parent's history.
     private func requestSidebarSavedFavicon(_ expected: BrowserTab, completion: @escaping (NSImage?) -> Void) {
         let spaceID = activeSpaceID
         guard sidebarSavedFaviconIsCurrent(expected, spaceID: spaceID), mayReadCachedFavicons,
@@ -4252,24 +3721,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
     }
-    /// Whether unloaded rows may show their Profile's cached page icons. Never
-    /// in a private window. A regular window has no Browser until its first
-    /// page exists, so right after launch its context is still unavailable;
-    /// requiring `.regular` then left every unvisited tab without its icon.
     private var mayReadCachedFavicons: Bool {
         guard !store.isEphemeral, let binding = nativeBinding, !binding.isPrivateBrowsing else { return false }
         return binding.browsingContextKind == .regular || binding.browsingContextKind == .unavailable
     }
-    /// Match visibleTabs membership without building its entire array for each
-    /// favicon request. Keep the live lookup: asynchronous results still have
-    /// to validate the current profile and Space before reaching a row.
     private func isSidebarFaviconTabVisible(_ id: UUID) -> Bool {
         let spaceID = activeSpaceID, profileID = activeProfileID
         return store.state.tabs.contains { $0.id == id && $0.archivedAt == nil && $0.profileID == profileID
             && ($0.kind == .favorite || $0.spaceID == spaceID) }
     }
-    /// Title ticks must not drop an in-flight favicon. URL identity still
-    /// cancels a request for a superseded page.
     private func sidebarFaviconTabMatches(_ expected: BrowserTab) -> Bool {
         store.state.tabs.contains {
             $0.id == expected.id && $0.url == expected.url && $0.profileID == expected.profileID
@@ -4285,21 +3745,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             && !resolvingTransfers.contains(expected.id) && transferRecoveries[expected.id] == nil
     }
 
-    /// Installing too: a page that cancels the quit leaves Restart and Update to retry.
     static var updateReadyToInstall: Bool {
         switch SoftwareUpdater.shared.phase {
         case .readyToInstall, .installing: return true
         default: return false
         }
     }
-    ///
-    /// else the auto-archive education card (whose producer waits while
-    /// another banner shows).
     private func refreshSidebarBanners() {
         let presentable = !isPrivateBrowsing && !isPopupWindow && presentation.isReady && !isClosing && !wholeWindowClose
-        // Update ready: the downloaded update Restart and Update installs
-        // (SharedAppFeature.SoftwareUpdate's availableUpdate). It takes the
-        // slot from the other banners.
         let mayActOnReady: () -> Bool = { [weak self] in
             guard let self else { return false }
             return Self.updateReadyToInstall && !self.isClosing && !self.wholeWindowClose
@@ -4316,7 +3769,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
         let updateComplete = SoftwareUpdateBanner.shared
         let completeVisible = presentable && updateComplete.showsCompletedUpdate && !Self.updateReadyToInstall
-        // Recorded once a sidebar actually shows it; a hidden one carries it on.
         if completeVisible && sidebarPresentation != .hidden && libraryView == nil && nativeFullscreenTabID == nil {
             updateComplete.markCompletedUpdateShown()
         }
@@ -4356,8 +3808,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         sidebar.onAutoArchiveEducationSettings = { [weak self] in
             guard mayAct(), let self else { return }
-            // The live Archive control belongs to this window's original
-            // profile in Parc's Profiles pane. Settings opens only on intent.
             self.showSettings(pane: .profiles)
             guard self.settings?.showAutoArchiveSettings(profileID: originalProfile) == true else { return }
             self.store.dismissAutoArchiveEducation()
@@ -4366,12 +3816,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.showAutoArchiveEducation(visible)
     }
 
-    ///
-    ///
-    /// eligible for Handoff for an http(s) page, which AppKit makes current while
-    /// the window is main, so an iPhone or iPad can continue it. A private
-    /// window publishes nothing, as Safari's and Chrome's don't, nor does a
-    /// closing one.
     private func refreshHandoffActivity() {
         let url = isPrivateBrowsing || isClosing || wholeWindowClose ? nil : store.state.tabs.first { $0.id == currentTabID }
             .flatMap { URL(string: $0.url) }.flatMap(HandoffActivity.publishable)
@@ -4392,14 +3836,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         refreshMiniPlayers()
         let state = presentedState
         refreshFavoriteOverlays(from: state)
-        //
-        //
-        // Everyday chrome ticks that still take updateNavigation (full-render
-        // fallback, loading/favicon/capture) rebuild the whole sidebar even
-        // when membership/selection already match. Prefer live metadata when
-        // existing cells can present the change; otherwise reconstruct.
-        // Shareable/audio maps are fingerprinted with the live path so identical
-        // ticks skip republishing those maps into applyLivePageMetadata.
         let published = publishedShareableAndAudio()
         let canBack = navigationPage?.canShowBackHistory ?? false
         let canForward = navigationPage?.canShowForwardHistory ?? false
@@ -4422,9 +3858,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         noteReturnGate()
     }
 
-    ///
-    /// windows; in a stacked split only the first pane; each follows its own
-    /// pane's loading state.
     private func refreshLoadingIndicators() {
         for (id, observer) in paneFrameObservers where panes[id] == nil {
             NotificationCenter.default.removeObserver(observer); paneFrameObservers.removeValue(forKey: id)
@@ -4435,7 +3868,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         loadingIndicator.update(eligible.compactMap { id in
             guard let pane = panes[id] else { return nil }
             if paneFrameObservers[id] == nil {
-                // Divider drags move panes without a chrome layout pass.
                 paneFrameObservers[id] = NotificationCenter.default.addObserver(
                     forName: NSView.frameDidChangeNotification, object: pane, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.refreshLoadingIndicators() }
@@ -4471,32 +3903,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         browsers[id] ?? peeks.values.first(where: { $0.identity == id })?.browser ?? embeddedCaptureOwner(id)?.2
     }
     private func refreshMiniPlayers(force: Bool = false) {
-        // AppDelegate installs the callback and schedules an initial pass once
-        // this owner joins its window list. No local pass can bypass the
-        // cross-window retirement sweep during controller initialization.
-        // Chrome title/URL/loading ticks call this with force false; skip when
-        // nothing that feeds mini-player admission or the live deck changed.
-        // A live session status without an admitted mediaState still schedules
-        // every tick so unmute/controllable/audio-track flips that leave status
-        // Active can discover admission (historical chrome-tick contract).
         let (signature, pendingAdmission) = miniPlayerSourceSignature()
         if !force, !pendingAdmission, signature == lastMiniPlayerSourceSignature { return }
         lastMiniPlayerSourceSignature = signature
         onMiniPlayerSourceChange?()
     }
 
-    /// Cheap read-only fingerprint of the inputs `prepareMiniPlayerSourcesForAdmission`
-    /// / `miniPlayerItems` / `applyMiniPlayers` consume. Uses non-admitting
-    /// `mediaState` plus `mediaSessionStatus` so a newly eligible session still
-    /// schedules without calling `admitMediaState` on the chrome path.
-    /// - Returns: `(token, pendingAdmission)` where `pendingAdmission` means a
-    ///   page has non-inactive session status but no admitted episode yet.
     private func miniPlayerSourceSignature() -> (String, Bool) {
         var parts: [String] = [
             canPresentMiniPlayers ? "P1" : "P0",
             (isClosing || wholeWindowClose || windowClosePending || windowCloseApproved) ? "W1" : "W0",
-            // Host OTR/regular presentability gates miniPlayerItems independently
-            // of coarse canPresentMiniPlayers.
             "H\(canPresentMiniPlayer(offTheRecord: false) ? 1 : 0)\(canPresentMiniPlayer(offTheRecord: true) ? 1 : 0)",
         ]
         func appendGate(_ prefix: String, _ ids: Set<UUID>) {
@@ -4540,8 +3956,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                                          revisionSel: Selector, audioSel: Selector)
         -> (token: String, pendingAdmission: Bool) {
         let status = page.responds(to: statusSel) ? page.mediaSessionStatus.rawValue : -1
-        // Bumped on MediaSession info/actions/metadata/mute; catches Inactive
-        // mic/cam CanAdmit flips that leave mediaSessionStatus unchanged.
         let revision = page.responds(to: revisionSel) ? page.mediaControlsRevision : 0
         var part = "\(kind):\(id.uuidString)|\(profileID.uuidString)|\(page.identifier)|s\(status)|g\(revision)"
         if page.responds(to: audioSel), let audio = page.tabAudioState,
@@ -4552,7 +3966,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             part += "|tm-|ta-"
         }
         if let media = page.mediaState {
-            // Admitted episode: include the fields applyMiniPlayers pushes into the deck.
             part += "|m\(media.identifier)|a\(media.admissionSequence)|o\(media.isOffTheRecord ? 1 : 0)"
             part += "|play\(media.playing ? 1 : 0)|mute\(media.muted ? 1 : 0)|vol\(Int((media.volume * 100).rounded()))"
             part += "|t\(media.title)|u\(media.sourceURL)"
@@ -4571,8 +3984,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return (part, false)
         }
         part += "|m-"
-        // Status alone is not CanAdmit; keep scheduling while a live session has
-        // not yet produced an admitted episode.
         let pending = status != PCNativeMediaSessionStatus.inactive.rawValue && status >= 0
         return (part, pending)
     }
@@ -4592,8 +4003,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
     func applyMiniPlayers(_ items: [MiniPlayerItem]) {
-        // A later candidate may evict an earlier one during this pass.
-        // Revalidate before exposing the bounded, source-ordered pool.
         let current = canPresentMiniPlayers ? items.filter { $0.valid() }.sorted {
             $0.state.admissionSequence < $1.state.admissionSequence
         } : []
@@ -4711,8 +4120,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return items
     }
 
-    ///
-    /// Share This Tab Instead.
     private func liveShareableTabs() -> Set<UUID> {
         Set(browsers.compactMap { id, browser in
             ownership.canUse(id, owner: presentationID) && browser.window === window
@@ -4720,7 +4127,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         })
     }
 
-    /// Live tab-audio map for this window's owned pages in the active profile.
     private func liveTabAudio() -> [UUID: SidebarTabAudio] {
         browsers.reduce(into: [UUID: SidebarTabAudio]()) { result, pair in
             let (id, browser) = pair
@@ -4736,9 +4142,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// Stable fingerprint of shareable ids + audio lease identity and flags.
-    /// Everyday chrome ticks still walk/probe; identical fingerprints skip the
-    /// sidebar shareable/audio handoff.
     private func shareableAudioFingerprint(shareable: Set<UUID>,
                                            audio: [UUID: SidebarTabAudio]) -> String {
         let sharePart = shareable.map(\.uuidString).sorted().joined(separator: ",")
@@ -4754,10 +4157,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return sharePart + "\u{1e}" + audioPart
     }
 
-    /// Walk live shareable/audio, then reuse the last applied maps when the
-    /// fingerprint is unchanged. `changed` is false only for a true no-op.
-    /// Does not record the fingerprint — callers commit with
-    /// `rememberAppliedShareableAudio` only after rows actually receive the maps.
     private func publishedShareableAndAudio()
         -> (shareable: Set<UUID>, audio: [UUID: SidebarTabAudio], changed: Bool) {
         let shareable = liveShareableTabs()
@@ -4769,7 +4168,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return (shareable, audio, true)
     }
 
-    /// Record maps only after sidebar rows (or a full `render`) received them.
     private func rememberAppliedShareableAudio(shareable: Set<UUID>,
                                                audio: [UUID: SidebarTabAudio]) {
         lastShareableAudioFingerprint = shareableAudioFingerprint(shareable: shareable, audio: audio)
@@ -4777,9 +4175,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         lastAppliedAudio = audio
     }
 
-    /// Stable fingerprint of the capture presentation map. Everyday chrome
-    /// ticks rebuild this from live `captureState`; identical values leave the
-    /// map as it is.
     private func capturePresentationFingerprint(
         _ presentations: [UUID: CaptureIndicatorPresentation]
     ) -> String {
@@ -4817,8 +4212,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 }
             }
         }
-        // Always walk live captureState. Skip only when the presentation
-        // fingerprint is unchanged — never drop a real start/stop or bit flip.
         let fingerprint = capturePresentationFingerprint(next)
         if fingerprint == lastCapturePresentationFingerprint {
             return
@@ -4827,10 +4220,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         lastCapturePresentationFingerprint = fingerprint
     }
 
-    /// Skip Favorite overlay rebuild when the presentation fingerprint is
-    /// unchanged. Media session status is read only for listed music hosts
-    /// (same gate as `favoriteOverlayStates`); identical non-music chrome ticks
-    /// never arm observers as a side effect of this path.
     private func refreshFavoriteOverlays(from state: BrowserState) {
         let fingerprint = favoriteOverlayPresentationFingerprint(state)
         if FavoriteOverlayPresentationSkip.shouldSkip(previous: lastFavoriteOverlayFingerprint,
@@ -4841,9 +4230,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.updateFavoriteOverlays(favoriteOverlayStates(state))
     }
 
-    /// Overlay-relevant inputs for every live single-page Favorite: recording,
-    /// Peek badge pixels, developer-tab, and music. `mediaSessionStatus` is
-    /// read only when `needsMediaSessionRead` is true.
     private func favoriteOverlayPresentationFingerprint(_ state: BrowserState) -> String {
         guard !isPopupWindow, presentation.isReady, !isClosing, !wholeWindowClose else {
             return FavoriteOverlayPresentationSkip.gatedToken
@@ -4884,7 +4270,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 music = FavoriteTileOverlayRules.showsMusic(singlePage: true, status: status,
                                                             savedURL: tab.savedURL)
             } else {
-                // Not a music-host Favorite (or no bridge): never read status.
                 music = false
             }
             parts.append(FavoriteOverlayPresentationSkip.tileToken(
@@ -4894,15 +4279,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return parts.sorted().joined(separator: ";")
     }
 
-    /// TAB16 Favorite tile overlays, from each single-page Favorite's own page
-    ///
-    /// capture (#11), Peek, Developer Mode and media (#14) producers. The dot
-    /// and developer-tab flag read the item's own window content (REC-P1);
-    /// inferred from WindowContent.Blueprint having no split case, a split
-    ///
-    /// the badge by the Peek's source item (BR-03) and its source for a split
-    /// member is untraced; Parc parents a Peek to the member page, so split
-    /// tiles show no badge (adaptation).
     private func favoriteOverlayStates(_ state: BrowserState) -> [UUID: FavoriteTileOverlayState] {
         guard !isPopupWindow, presentation.isReady, !isClosing, !wholeWindowClose else {
             favoriteBadgeIcons = [:]; return [:]
@@ -4926,15 +4302,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     microphone: capture.microphone, tab: capture.tab, window: capture.window,
                     display: capture.display, mirrored: capture.mirrored, shared: capture.shared)
             }
-            // A Peek opened from this page, until its dismissal starts (closePending
-            //
             if !peekRetirementParents.contains(id), let peek = peeks.values
                 .filter({ $0.parentTabID == id && $0.parentPage === page && !$0.page.isClosed
                     && !$0.closePending && $0.browser.window === window })
                 .min(by: { $0.identity.uuidString < $1.identity.uuidString }) {
-                // The engine returns a new copy on every read; keep the shown
-                // image while its pixels match, so only a real icon change
-                //
                 var favicon = peek.page.favicon
                 if let icon = favicon, let data = icon.tiffRepresentation {
                     if let shown = favoriteBadgeIcons[peek.identity], shown.data == data { favicon = shown.image }
@@ -4942,16 +4313,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 }
                 overlay.badge = FavoriteTileBadge(favicon: favicon)
             }
-            //
-            //
-            // developerModeContextFlags bits are untraced, so the mapping is
-            // an inference.
             if let host = page.developerModeSiteHost {
                 overlay.developerTab = DeveloperModePreferences.shared.isEnabled(host: host)
             }
-            // The status (whose first read starts the engine's session observer)
-            // is read only for a listed saved host; an engine without the
-            // MediaSession bridge keeps the particles hidden.
             let listed = FavoriteTileOverlayRules.isMusicHost(URL(string: tab.savedURL)?.host)
             let status = listed && page.responds(to: sessionStatus)
                 ? FavoriteMediaSessionStatus(rawStatus: page.mediaSessionStatus.rawValue) : nil
@@ -4961,7 +4325,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return overlays
     }
 
-    /// The tab and the Peeks and Easel pages it owns, each with its own capture.
     private func captureOwnerIDs(of tabID: UUID) -> [UUID] {
         [tabID] + peeks.values.filter { $0.parentTabID == tabID }.map(\.identity)
             + Array(easelEditors[tabID]?.editor.pageObjects?.ownedViews.keys ?? Dictionary<UUID, PCBrowserView>().keys)
@@ -5018,18 +4381,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func layoutChrome() {
-        //
-        // sidebar origin, the contents frame and its subtree. Visibility,
-        // surface and native/payment refreshes belong to the full passes
-        // before and after that group.
         let fingerprint = chromeGeometryFingerprint()
         let dirtyHostedLayout = pageHost.needsLayout
             || pageHost.subviews.contains(where: \.needsLayout)
             || extensionSidePanel.needsLayout
             || extensionSidePanel.subviews.contains(where: \.needsLayout)
-        // True no-op: Cmd-S / motion / setting ticks that leave chrome geometry
-        // and presentation inputs unchanged skip frame writes, hover-zone
-        // refresh and sync. Dirty hosted trees still enter for P1-W/P1-S.
         if LayoutChromeGeometrySkip.shouldReturnEarly(
             previous: lastAppliedChromeGeometryFingerprint,
             next: fingerprint,
@@ -5048,8 +4404,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         defer { if fullPass { pageCapture?.reconcile() } }
         let sidebarAvailable = libraryView == nil && !isPopupWindow && nativeFullscreenTabID == nil
         let sidebarVisible = sidebarAvailable && sidebarPresentation != .hidden
-        // Hiding the strip cancels a drag, which commits and lays out again;
-        // read the width only after that has settled.
         let resizable = sidebarVisible && (!sidebarMotionVisible || isSidebarResizing)
         if !resizable { sidebarResizeRegion.isHidden = true }
         let sidebarWidth = sidebarLayoutWidth
@@ -5060,21 +4414,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             extensionSidePanelVisible ? 1 : 0]
         if sidebarMotionLayoutKey != layoutKey {
             sidebarPreviews?.dismiss()
-            // The settled group's completion would have flushed the page.
             if libraryMotion.isAnimating {
                 libraryMotion.cancel(); pageHost.needsLayout = true; extensionSidePanel.needsLayout = true
             }
             if !preparingSidebarMotion, sidebarMotion.isAnimating {
-                // Live resize, a shelf/panel, Archive or fullscreen owns the new
-                // geometry. A pending sidebar completion cannot undo that layout.
                 settleSidebarMotion()
             }
         }
         sidebarMotionLayoutKey = layoutKey
-        //
-        //
-        // leaves in the accessibility tree [C]. Only a window without a sidebar
-        // hides it; isPresented tells pointer state, Tab and anchors.
         sidebarContainer.isHidden = !sidebarAvailable
         let floatingSurface = sidebarPresentation == .floating || sidebarFloatingSurface
         if sidebarContainer.drawsBackground != floatingSurface { sidebarContainer.drawsBackground = floatingSurface }
@@ -5082,58 +4429,37 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let sidebarMoved = sidebarContainer.frame != frames.sidebar
         sidebarContainer.frame = frames.sidebar
         sidebarContainer.floatingCornerRadius = floatingSurface ? FloatingSidebarSurface.cornerRadius : nil
-        // A full pass while the dock slides keeps what the dock faded.
         sidebarContainer.docksFloatingSurface = fullPass && sidebarFloatingSurface && sidebarPresentation == .locked
         if fullPass { sidebarContainer.preparesFloatingDock = false }
-        // Its content, a Space swipe's neighbouring page included, stays
-        // inside the rounded surface; a locked sidebar stays unclipped.
         sidebar.layer?.cornerRadius = floatingSurface ? FloatingSidebarSurface.cornerRadius : 0
         sidebar.clipsToBounds = floatingSurface
-        // The canvas samples its model frame when it draws; a sliding surface
-        // keeps its current sampling until the transition settles.
         if fullPass, sidebarMoved { sidebarContainer.invalidateCoordinates() }
         sidebar.frame = sidebarContainer.bounds
-        // After the frames, so a return re-tests the pointer where it lands.
         let presented = sidebarAvailable && sidebarPresentation.presents(inMotion: sidebarMotionVisible)
         let dismissed = sidebar.isPresented && !presented
         sidebar.isPresented = presented
-        // Hiding the container gave focus inside it to the window [C]; the
-        // unhidden hidden sidebar gives it up the same way, including focus
-        // that entered it while it slid away.
         if dismissed, sidebarOwnsFirstResponder { window?.makeFirstResponder(nil) }
-        // Pressing the toggle locks a floating or hidden sidebar.
         sidebar.setFloating(sidebarPresentation != .locked)
-        //
-        // locked or floating sidebar, hidden while hidden or transitioning.
         if resizable {
             sidebarResizeRegion.frame = SidebarResizeRegionView.frame(trailing: sidebarContainer.frame, in: bounds)
             sidebarResizeRegion.isHidden = false
         }
         libraryView?.isHidden = nativeFullscreenTabID != nil
-        // A page in full screen fills the screen edge to edge.
         pageHost.layer?.cornerRadius = nativeFullscreenTabID == nil ? PageCard.cornerRadius : 0
         libraryView?.frame = frames.library
         popupChrome.isHidden = frames.popupChrome.height == 0
         popupChrome.frame = frames.popupChrome
-        // Parent frame changes do not dirty hosted Chromium views; force a
-        // pageHost layout only when this chrome pass actually moves it.
-        // Unchanged geometry keeps PageContentResizer / BrowserPane skips.
-        // Track real hosted flushes so full-pass synchronizeNativeLayout is
-        // not a no-op walk of every AppKit browser when chrome is current.
         var flushedHostedLayout = false
         let pageHostMoved = pageHost.frame != frames.pageHost
         pageHost.frame = frames.pageHost
         pageShadow.place(around: frames.pageHost)
         refreshPageShadow()
         splitMarginHandle.frame = splitMarginFrame(frames)
-        // The extension side panel is a real sibling of the renderer view.
         let sidePanelHidden = !frames.showsSidePanel
         let sidePanelMoved = extensionSidePanel.isHidden != sidePanelHidden
             || extensionSidePanel.frame != frames.sidePanel
         extensionSidePanel.isHidden = sidePanelHidden
         extensionSidePanel.frame = frames.sidePanel
-        // Cmd-S / panel show-hide / width changes still flush; identical
-        // geometry with a clean subtree is a no-op.
         if sidePanelMoved || extensionSidePanel.needsLayout
             || extensionSidePanel.subviews.contains(where: \.needsLayout) {
             extensionSidePanel.layoutSubtreeIfNeeded()
@@ -5149,8 +4475,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             flushedHostedLayout = true
         } else if pageHost.needsLayout
             || pageHost.subviews.contains(where: \.needsLayout) {
-            // Already-dirty chrome children still flush; do not restamp an
-            // unchanged page surface the way an unconditional needsLayout did.
             pageHost.layoutSubtreeIfNeeded()
             flushedHostedLayout = true
         }
@@ -5163,13 +4487,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         layoutFindBar()
         refreshPaymentControls()
         commandBar?.refreshPosition()
-        // Every presentation, pane, Library, find and panel change ends here.
-        // WindowKeyViewLoop.relink already skips rewriting an installed chain.
         windowKeyViews.relink()
     }
 
-    /// Cheap chrome-geometry + full-pass eligibility inputs for the
-    /// layoutChrome early-return skip.
     private func chromeGeometryFingerprint() -> LayoutChromeGeometryFingerprint {
         let bounds = rootView.bounds
         return LayoutChromeGeometryFingerprint(
@@ -5196,8 +4516,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         )
     }
 
-    ///
-    /// trailing handle; none in full screen or beside the extension panel.
     private func splitMarginFrame(_ frames: SidebarChromeFrames) -> NSRect {
         let page = frames.pageHost, inset = SidebarChromeFrames.pageInset
         guard !frames.showsSidePanel, nativeFullscreenTabID == nil, page.height > 0,
@@ -5205,11 +4523,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return NSRect(x: page.maxX, y: page.minY, width: inset, height: page.height)
     }
 
-    ///
-    /// frames (SidebarChromeFrames, whose library, popup, capture and side-panel
-    /// geometry are Parc's): a hidden sidebar is the anchored hide's end while
-    /// it slides, then settles where the floating container waits; a floating
-    /// transition stays in that geometry.
     private func chromeFrames(sidebarWidth: CGFloat, in bounds: NSRect) -> SidebarChromeFrames {
         let placement = SidebarPresentationFrame(sidebarPresentation, inMotion: sidebarMotionVisible,
                                                  floatingSurface: sidebarFloatingSurface, revealsAnchored: sidebarRevealsAnchored)
@@ -5218,18 +4531,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             libraryContentWidth: libraryContentWidth, popup: isPopupWindow,
             sidePanel: extensionSidePanelVisible)
     }
-    ///
-    ///
-    ///
-    /// the sidebar's presentation, so nothing pops when ⌘S starts or settles;
-    /// the header's lights move with the sidebar inside the group. The style
-    /// mask covers a full-screen change whose callbacks never reached here.
     private func refreshWindowButtons() {
         let sidebarless = isPopupWindow && nativeFullscreenTabID == nil
         let phase = WindowFullscreenPhase.current(fullscreenPhase, inFullScreen: window?.styleMask.contains(.fullScreen) == true)
         let showsOwn = WindowFullscreenPhase.apply(phase, sidebarless: sidebarless, system: systemWindowButtons)
         sidebar.showsWindowButtons = showsOwn
-        //
         libraryView?.showsWindowButtons = showsOwn && !sidebarless
     }
     private func setFullscreenPhase(_ phase: WindowFullscreenPhase?) {
@@ -5238,10 +4544,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         refreshWindowButtons()
     }
 
-    /// The frames layoutChrome assigns for the current presentation, without
-    /// visibility (beyond the side panel's, which follows its frame), tracking,
-    /// window-button or native refresh side effects. The header's traffic
-    /// lights are sidebar content and move with it.
     private func layoutChromeGeometry() {
         let bounds = rootView.bounds
         let frames = chromeFrames(sidebarWidth: sidebarLayoutWidth, in: bounds)
@@ -5301,16 +4603,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.highlightItemForKeyboard(sidebarKeyboardBrowsing ? item?.reference : nil, scrollToHighlight: scroll)
     }
 
-    /// Add Split's existing-tab results: the Profile's Favorites and its tabs
-    /// in every Space.
     private func splitInsertionTabs(profileID: UUID) -> [BrowserTab] {
         let spaces = Set(store.state.spaces.filter { $0.profileID == profileID }.map(\.id))
         return store.state.tabs.filter { $0.archivedAt == nil && $0.profileID == profileID
             && ($0.kind == .favorite || spaces.contains($0.spaceID)) }
     }
-    /// Notes and Easels with no live sidebar tab in this profile; a tab
-    /// already presents the others. Both stores write by rename, so the
-    /// catalog is re-read only after a documents directory changes.
     private func commandBarDocuments(profileID: UUID) -> [CommandBarDocument] {
         guard !isPopupWindow, !isPrivateBrowsing, !store.isProfileRemovalPending(profileID),
               let notes = try? NoteStore.sharedStore(directory: store.notesDirectory(for: profileID)),
@@ -5325,14 +4622,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             let noteList = try? notes.list(), easelList = try? easels.list()
             all = (noteList ?? []).map { CommandBarDocument(kind: .note, id: $0.id, title: $0.title) }
                 + (easelList ?? []).map { CommandBarDocument(kind: .easel, id: $0.id, title: $0.title) }
-            // A failed read is retried on the next query, not remembered.
             commandBarDocumentCache = noteList != nil && easelList != nil ? (profileID, stamp, all) : nil
         }
         let open = store.state.tabs.filter { $0.profileID == profileID && $0.archivedAt == nil }.compactMap { InternalPage(urlString: $0.url) }
         return all.filter { !open.contains($0.kind == .note ? .note($0.id) : .easel($0.id)) }
     }
-    /// Top domains need a pass over every visit, so they're counted off the
-    /// main thread once per history revision and handed to the open bar.
     private func deliverCommandBarTopDomains(to panel: CommandBar, profileID: UUID) {
         if let cache = commandBarTopDomainCache, cache.profileID == profileID, cache.revision == store.historyRevision {
             panel.updateTopDomains(cache.domains); return
@@ -5347,8 +4641,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
     }
-    /// The open bar's empty list reads Chromium's history, where imported
-    /// visits live; asked again whenever the profile's history changes.
     private func deliverCommandBarRecentPages(to panel: CommandBar, profileID: UUID) {
         commandBarRecentPages?.query.invalidate()
         commandBarRecentPages = nil
@@ -5396,8 +4688,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private func reconcileCommandBar() {
         reconcileSidebarKeyboardFocus()
-        // Optional chaining still evaluates reconcile arguments when commandBar
-        // is nil; keep tab/history/space/folder snapshots inside the presented gate.
         CommandBarReconcileInputs.withPresentedBar(commandBar) { bar in
             let profileID = activeProfileID
             let currentURL = currentBrowser?.url?.absoluteString ?? store.state.tabs.first(where: { $0.id == currentTabID })?.url
@@ -5412,9 +4702,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
     private func presentCommandBar(newTab: Bool, inSidebar: Bool = false, addressAnchor: NSView? = nil, initialEdit: (String, NSRange)? = nil) {
-        // A background or sheet-covered window must not lose its current
-        // sessions just because a command was routed to it. An owned command
-        // panel can be key, so its native admission is checked after dismissal.
         let originalProfileID = activeProfileID
         guard let original = window, ownsWindowCommandFocus, original.attachedSheet == nil,
               canOwnDownloadDialog(for: originalProfileID), windowCommandSecurityAvailable else { return }
@@ -5448,8 +4735,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             sidebar.setKeyboardSearchActive(true)
             reconcileSidebarKeyboardFocus(scroll: true)
         }
-        // Capture the sidebar collection as the bar opens. Unsupported
-        // original collections do not fall back to one tab.
         let membershipItems = sidebar.commandBarSelectionItems()
             ?? (selectedTabIDs.count == 1 ? currentTabID.map { [.tab($0)] } : nil) ?? []
         let favoriteAction = !isPrivateBrowsing && !isPopupWindow && activePeek == nil
@@ -5472,8 +4757,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 return true
             }
         } ?? []
-        // A current whole split is one original item. Sidebar selection, when
-        // present, is authoritative even if its collection cannot be moved.
         let folderMoveItems = sidebar.commandBarSelectionItems() ?? {
             if let group = SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID).first(where: {
                 $0.tabIDs == selectedTabIDs && $0.sidebarAnchorID != nil
@@ -5489,8 +4772,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             ($0, ownership.claimSnapshot($0))
         })
         let folderMoveFocus = focusedTabID
-        // Unlike membership commands, Rename uses the window's current item;
-        // a highlighted or multi-selected sidebar row cannot replace that owner.
         let favoriteRenameAction = !isPrivateBrowsing && !isPopupWindow && activePeek == nil
             ? CommandBarFavoriteRenameAction(state: store.state, spaceID: activeSpaceID,
                 profileID: activeProfileID, selectedTabIDs: selectedTabIDs) : nil
@@ -5525,13 +4806,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             return true
         }
-        // History exclusion follows the live page URL even for new-tab bars whose
-        // field seed is empty; keep that filter key aligned with commandBarHistory.
         let historyExcludedURL = currentBrowser?.url?.absoluteString
             ?? store.state.tabs.first(where: { $0.id == commandTab })?.url
         let seedURL = newTab || WhatsNewPage.matches(historyExcludedURL ?? "") ? nil : historyExcludedURL
-        // Captured as the bar opens, like the sidebar collection the Pin to
-        // folder and Favorite actions retain.
         let typedItems = currentSidebarMenuItems
         let typedCommands = commandBarTypedCommands(items: typedItems, profileID: commandProfile)
         let panel = CommandBar(parent: window,
@@ -5559,8 +4836,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         panel.canPerformTypedCommand = canPerformTyped
         panel.onPerformTypedCommand = { [weak self] command in
-            // The window's own move, folder, duplicate and split owners refuse
-            // while a command bar is open; they run once it has dismissed.
             guard let self, self.commandBar == nil, canPerformTyped(command),
                   let action = self.prepareTypedCommand(command, items: typedItems, profileID: commandProfile),
                   action() else { NSSound.beep(); return }
@@ -5612,8 +4887,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             do {
                 guard try self.store.performFavoriteAction(action) else { return }
                 self.render(self.store.state)
-                // Membership changes no page or focused pane; no load/close is
-                // needed and the original command dismissal restores focus.
             } catch { showError(error) }
         }
         let canMoveToFolder: (CommandBarFolderMove) -> Bool = { [weak self] move in
@@ -5621,8 +4894,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   self.selectedTabIDs == commandSelection, self.focusedTabID == folderMoveFocus,
                   self.spaceCommandsAvailable, self.activePeek == nil,
                   move.source == folderMoveSource, folderMoves.contains(move),
-                  // The original reducer also excludes the active item's own
-                  // parent, independently of a separate sidebar collection.
                   self.store.state.tabs.first(where: { $0.id == commandTab })?.folderID != move.folder.folderID,
                   move.isCurrent(in: self.store.state), folderMoveOwners?() == true,
                   move.tabIDs.allSatisfy({ id in
@@ -5669,8 +4940,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             do {
                 guard try self.store.performCommandBarFolderMove(move) else { return }
                 self.render(self.store.state); self.requestNativeSelection()
-                //
-                // a window toast with no tap.
                 self.showToast(.pinnedToFolder(move.folder.name), at: .window)
             } catch { showError(error) }
         }
@@ -5693,8 +4962,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let self, self.commandBar == nil, canRenameFavorite(action),
                   let tab = action.currentTab(in: self.store.state, spaceID: self.activeSpaceID,
                       profileID: self.activeProfileID, selectedTabIDs: self.selectedTabIDs) else { return }
-            // Type Travel already owns this selection. Context Rename has a
-            // separate original-item activation before it opens the same dialog.
             _ = self.prepareFavoriteRename(tab, selectOriginal: false)?()
         }
         panel.canFocusSpace = { [weak self] target in
@@ -5748,12 +5015,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 else { self.selectRecentItem(selection) }
             }
         }
-        //
-        //
-        // KB25). The saved responder returns only inside that same target,
-        // where focusing the content would land on it anyway, keeping its
-        // caret and native selection; one elsewhere (a sidebar or toolbar
-        // control, the list stop, a page under an open Find) gives way.
         panel.mayRestoreOriginal = { [weak self] view in
             guard isOriginal(), let self else { return false }
             let find = self.visibleFind.flatMap { self.isCurrentFind($0) && !self.findHost.isHidden ? self.findHost : nil }
@@ -5766,8 +5027,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if let find = self.visibleFind, self.isCurrentFind(find), !self.findHost.isHidden,
                self.window?.makeFirstResponder(self.findField) == true { return }
             if let browser = self.currentBrowser { self.window?.makeFirstResponder(browser.nativePage?.nativeView ?? browser); return }
-            // Local content (Note, Easel) is the focused content too; a blank
-            // tab has none, so the window takes focus.
             guard self.activePeek == nil, let id = self.currentTabID, self.renderedPaneIDs.contains(id) else { return }
             if let editor = self.noteEditors[id]?.editor { editor.focusContent() }
             else if let editor = self.easelEditors[id]?.editor { editor.focusContent() }
@@ -5788,7 +5047,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         panel.onSelectTab = { [weak self] id in
             guard isOriginal(), let self,
                   self.commandBarTabs(profileID: commandProfile, excluding: commandTab).contains(where: { $0.id == id }) else { return }
-            // selectTab preserves the real tab and its Space/window ownership.
             self.selectTab(id)
         }
         let canSplit: (UUID?) -> Bool = { [weak self] target in
@@ -5803,8 +5061,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                           && !self.closingTabIDs.contains(id) && !self.modelRetirementIDs.contains(id)
                   }), commandSelection.contains(commandTab) else { return false }
             if let target {
-                // The command bar's tab rows cover the Profile's Spaces; a
-                // chosen tab from another Space joins (SplitCrossSpaceAdd).
                 guard self.visibleTabs.contains(where: { $0.id == target })
                         || self.splitInsertionTabs(profileID: commandProfile).contains(where: { $0.id == target }),
                       self.ownership.canUse(target, owner: self.presentationID) || self.canMovePageHere(target),
@@ -5825,9 +5081,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             var inserted = false
             var homeIDs: [UUID: UUID] = [:]
             self.performWindowCommand(selectNativePage: false) {
-                // A chosen saved result or displayed saved pane newly joining the
-                //
-                // planned once the shared model holds this window's selection.
                 guard let homes = self.store.commandBarSplitHomes(after: commandTab, expectedSelection: commandSelection,
                           tabID: id, isNew: existingID == nil) ?? (commandSelection.contains(id) ? [] : nil),
                       let plan = self.splitHomePlan(homes) else { return }
@@ -5848,8 +5101,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         panel.canSplitSelection = canSplit
         panel.onSplitNavigation = { navigation in commitSplit(navigation, nil) }
-        //
-        // disposition selection does, then joins the split.
         panel.onSplitTab = { [weak self] id in
             guard let self, self.canMovePageHere(id), canSplit(id) else { commitSplit(nil, id); return }
             _ = self.movePagesHere([id]) { guard canSplit(id) else { return false }; commitSplit(nil, id); return true }
@@ -5906,8 +5157,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   !InternalPage.isInternal(original.url) else {
                 complete("This tab cannot open as a new background page."); return
             }
-            // Force-open duplicates the original tab's current address. It does
-            // not move that tab or flatten local Note/Easel identity into a URL.
             let stillOriginal: () -> Bool = { [weak self] in
                 guard let self, valid(), backgroundOwner() else { return false }
                 return self.commandBarTabs(profileID: commandProfile, excluding: commandTab).contains {
@@ -5928,14 +5177,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard isOriginal(), let self, !self.isPrivateBrowsing else { return }
             let creation = self.creationProvenance(activeTabID: self.currentTabID)
             self.performWindowCommand {
-                // A fixed settings destination in the originating Space/Profile;
-                // no scoped query or result URL is replayed for this action.
                 let id = self.store.open("parc://settings/searchEngines", creation: creation)
                 self.presentation.recordCreation(id, state: self.store.state)
             }
         }
-        //
-        // suggestions"; Parc keeps that switch with the Profile's search engine.
         panel.onSearchSettings = { [weak self] in if isOriginal() { self?.showSettings(pane: .profiles) } }
         panel.onDismiss = { [weak self, weak panel] in
             guard let self, self.commandBar === panel else { return }
@@ -6035,12 +5280,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if sidebarResize != nil { sidebarResizeRegion.cancelInteraction() }
         if presentation == .hidden, spaceCreation != nil {
             cancelSpaceCreation(restoreFocus: false)
-            // The cancel can return the window to having no tab.
             presentation = EmptyWindowSidebarRule.presentation(for: requested, noActiveItem: emptyWindowHoldsSidebar)
         }
         if presentation == .hidden {
             SidebarPlusMenuController.dismiss(in: window)
-            // A card hanging from the pill goes with the sidebar; a detached one stays.
             if let open = siteControlCenter, !open.isDetached, open.isAnchored(to: sidebar.pageControlsAnchor) {
                 dismissSiteControlCenter()
             }
@@ -6048,9 +5291,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         navigationHistory?.dismiss()
         sidebarPreviews?.dismiss()
         guard !isPopupWindow, !isClosing, libraryView == nil, nativeFullscreenTabID == nil else { return }
-        // A Parc reveal that is not hover-driven keeps the sidebar while the
-        // pointer stays in a keep zone, as an active hover region would.
-        // Leaving floating clears it (sidebarPresentation's didSet).
         if presentation == .floating { sidebarHoverActive = true }
         guard sidebarPresentation != presentation else { return }
         if presentation == .hidden, commandBar?.isSidebarSession == true { commandBar?.dismiss() }
@@ -6062,14 +5302,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             let transition = SidebarTransition(from: previous, to: presentation)
             preparingSidebarMotion = true
             sidebarMotionVisible = true
-            // A floating surface stays drawn through its transition; leaving
-            // it for locked fades its shadow inside the group and keeps its
-            // corners and edge until it settles.
             sidebarFloatingSurface = transition.keepsFloatingSurface
-            //
-            // tracking state before the implicit group, at the old geometry.
-            // Only a reveal lays out and flushes that state first; the anchored
-            // one first moves the sidebar to its start, x − width.
             sidebarRevealsAnchored = transition.revealsAnchored
             sidebarChromePass = .preparation
             layoutChrome()
@@ -6085,8 +5318,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.sidebarFloatingSurface = false
                 self.refreshPreviewHover()
                 self.layoutChrome()
-                // A reveal's preparation re-tested the header lights and the
-                // dock off-screen; test them again where the sidebar arrived.
                 if self.sidebarPresentation != .hidden { self.sidebar.retestPointer() }
                 if self.sidebarPresentation == .floating { self.refreshSidebarPointer() }
             }
@@ -6099,16 +5330,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             sidebarPresentation = presentation
             layoutChrome()
         }
-        // A sidebar that stops hiding now shows any shared banner it holds.
         if presentation != .hidden { refreshSidebarBanners() }
-        // Layout and animation completion never select or focus a renderer.
-        // Only hiding the currently focused sidebar explicitly returns focus;
-        // a window that is not key keeps none in its off-screen sidebar.
         if moveFocus { if window?.isKeyWindow == true { requestNativeSelection() } else { window?.makeFirstResponder(nil) } }
     }
-    ///
-    /// store update at the end, and a locked release at or below 82 points
-    /// collapses while keeping the width the drag started with.
     private func sidebarResizeChanged(_ state: NSGestureRecognizer.State, translationX: CGFloat, velocityX: CGFloat) {
         switch state {
         case .began:
@@ -6133,8 +5357,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             sidebarResize = nil
             if let lastUsed = windowSidebarWidth.end(commit, completion) { store.updateSettings { $0.sidebarWidth = lastUsed } }
             isSidebarResizing = false
-            // The hidden preview already shows hidden geometry, so the collapse
-            // settles there instead of animating from the restored width.
             if commit.collapses { setSidebarPresentation(.hidden, allowsMotion: false) } else { layoutChrome() }
             refreshSidebarPointer()
         default: break
@@ -6160,9 +5382,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         case .hidden: .hidden
         }
     }
-    /// Each split pane gets the compact top bar (URL, pinned extensions, Site
-    /// Control Center, split menu, Close). Show Toolbar still controls a
-    /// single pane. Developer Mode content is excluded per pane.
     private var paneTopBarDisplayed: Bool {
         PaneTopBarAdmission.displayed(
             toolbarVisible: BrowserToolbarPreferences.shared.state.isVisible,
@@ -6174,7 +5393,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var sidebarHoverShowsToolbar: Bool {
         !isPopupWindow && libraryView == nil && BrowserToolbarPreferences.shared.state.isVisible
     }
-    ///
     private func sidebarHoverRegions(_ info: SidebarHoverInfo) -> [SidebarHoverRegion: NSRect] {
         guard let window, libraryView == nil, !isPopupWindow, !isClosing, nativeFullscreenTabID == nil else { return [:] }
         let bounds = rootView.bounds
@@ -6184,8 +5402,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                                             showingToolbar: sidebarHoverShowsToolbar, trafficLightHeight: trafficLight, info: info)
         return rects.mapValues { NSRect(x: $0.minX, y: bounds.height - $0.maxY, width: $0.width, height: $0.height) }
     }
-    /// WindowHoverTracker updates its zones as soon as the window bounds, the
-    /// presentation, the width or the toolbar change, not after the motion.
     private func refreshSidebarHoverZones() {
         let key: [CGFloat] = [rootView.bounds.width, rootView.bounds.height, sidebarLayoutWidth,
             sidebarPresentation == .locked ? 0 : sidebarPresentation == .floating ? 1 : 2,
@@ -6194,10 +5410,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebarHoverLayoutKey = key
         sidebarHover.setNeedsRefresh()
     }
-    ///
-    ///
-    /// the tracker's current states; Parc's guards only defer a dismissal, and
-    /// each guard's end refreshes the pointer and applies it again.
     private func applySidebarHover() {
         guard libraryView == nil, !isPopupWindow, !isClosing, nativeFullscreenTabID == nil, !isSidebarResizing else { return }
         let decision = SidebarHoverPresentationRule.decide(stored: sidebarHoverActive, presentation: sidebarHoverPresentation,
@@ -6215,8 +5427,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         case .dismiss: setSidebarPresentation(.hidden)
         }
     }
-    /// A guard ended or the geometry settled: start or stop listening for the
-    /// current key state, re-test the pointer and apply the activation.
     private func refreshSidebarPointer() {
         sidebarHover.refresh()
         applySidebarHover()
@@ -6243,19 +5453,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func navigationRequested(on page: PCNativePage) {
         guard navigationPage === page, let id = currentTabID, browsers[id]?.nativePage === page else { return }
         failures.removeValue(forKey: id)
-        // A requested navigation does not clear native SadTab recovery state.
         refreshPagePresentation(id)
     }
-    ///
-    /// BrowserNavigationButtons `isInDeveloperMode`).
     private var developerReloadPage: PCNativePage? {
         guard let page = navigationPage, let host = page.developerModeSiteHost,
               DeveloperModePreferences.shared.isEnabled(host: host) else { return nil }
         return page
     }
-    ///
-    ///
-    ///
     private var reloadAction: PCNativeNavigationAction {
         developerReloadPage != nil && DeveloperReloadPreference.state == .forceReload ? .reloadBypassingCache : .reload
     }
@@ -6270,7 +5474,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                                           canReload: page.canPerformNavigation(.reload),
                                           canForceReload: page.canPerformNavigation(.reloadBypassingCache),
                                           canClearCookies: canPerformPageTool(.clearCookiesAndRefresh)) { [weak self, weak page, weak browser] choice in
-            // A tracking menu can outlive selection; keep its original page.
             guard let self, let page, isOriginal() else { return }
             switch choice {
             case .reload, .forceReload:
@@ -6310,8 +5513,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         return NavigationControlInteraction(activate: { [weak self, weak page] alternate in
             guard isOriginal(), let page else { return }
-            // Preserve the history list captured by this physical press. A
-            // navigation during tracking must not retarget Back/Forward.
             if kind != .reload, snapshot?.isValid != true { return }
             self?.navigationHistory?.dismiss()
             if page.performNavigation(action, inNewTab: alternate), !alternate, action != .stop {
@@ -6371,7 +5572,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     && !ownership.isClaimed(id) && browsers[id] == nil
             }) ? step : nil
         case .folder(let undo):
-            // The same admission as this deletion's folder Undo entry.
             let ids = Set(undo.tabs.map(\.id))
             return !folderUndo.isBusy && folderUndoContextAvailable && undo.documentsAreAvailable
                 && ids.isDisjoint(with: store.retiringTabIDs) && ids.allSatisfy({ switcherCanUse($0) }) ? step : nil
@@ -6406,25 +5606,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return !closing || retirementUnavailableReason?([expected.id]) == nil
     }
 
-    /// The window conditions every sidebar tab action needs, without the
-    /// key-window check ordinary row actions add.
     private var sidebarTabActionWindowAvailable: Bool {
         !isPopupWindow && presentation.isReady && !isClosing && !wholeWindowClose
             && !windowClosePending && !windowCloseApproved && nativeFullscreenTabID == nil
             && window?.attachedSheet == nil && !store.isProfileRemovalPending(activeProfileID)
     }
 
-    /// The per-tab conditions every sidebar tab action needs, wherever its
-    /// page is: the action itself checks which window holds it.
     private func sidebarTabActionAvailable(_ id: UUID) -> Bool {
         !closingTabIDs.contains(id) && !transferringTabIDs.contains(id) && !resolvingTransfers.contains(id)
             && transferRecoveries[id] == nil && !store.retiringTabIDs.contains(id)
     }
 
-    /// Closing sidebar roots (the split cell's Close and keyboard Close of
-    /// selected roots) takes ordinary row Close's conditions for every
-    /// original tab, without its key-window check and with no command bar open:
-    /// a page another window holds must be able to move here first.
     private func sidebarRootsCloseAvailable(_ ids: Set<UUID>, movingHere: Bool = true) -> Bool {
         guard sidebarTabActionWindowAvailable, commandBar == nil, !ids.isEmpty,
               ids.allSatisfy({ id in
@@ -6463,8 +5655,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               SidebarTabTitle.sameItemForEditing(current, expected),
               let window, PCNativeBrowserApplication.canPresentTabSwitcher(in: window),
               canPerformSidebarTabAction(current, closing: false) else { return }
-        // Expose the original row without selecting/reloading a page. The
-        // existing disclosure transaction preserves every window's selection.
         if !store.isEphemeral {
             guard let reveal = SidebarItemReveal(item: .tab(current.id), spaceID: activeSpaceID,
                 profileID: activeProfileID, state: store.state) else { return }
@@ -6479,10 +5669,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         _ = sidebar.beginTitleEditing(target)
     }
 
-    // MARK: KB03 main-menu inventory owners
-
-    /// The current sidebar item the Tabs menu acts on: the focused original
-    /// multi-selection, otherwise the selected page's split or tab.
     private var currentSidebarMenuItems: [SidebarItemReference]? {
         if let selection = sidebar.commandBarSelectionItems() { return selection }
         guard activePeek == nil, let id = currentTabID else { return nil }
@@ -6491,8 +5677,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         return [.tab(id)]
     }
-    ///
-    /// original Duplicate transaction; unavailable items keep the item disabled.
     var canDuplicateCurrentItem: Bool {
         commandBar == nil && currentSidebarMenuItems.flatMap { prepareSidebarDuplicate($0) } != nil
     }
@@ -6502,17 +5686,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         _ = duplicate()
     }
 
-    ///
-    /// no Parc menu item. Each reuses the window's existing owner.
     private func commandBarTypedCommands(items: [SidebarItemReference]?, profileID: UUID) -> [CommandBarTypedCommand] {
         guard !isPopupWindow else { return [] }
         var commands: [CommandBarTypedCommand] = []
         if let undo = folderUndo.command(.undo), !undo.name.isEmpty { commands.append(.init(kind: .undo(undo.name))) }
         if let redo = folderUndo.command(.redo), !redo.name.isEmpty { commands.append(.init(kind: .redo(redo.name))) }
         if let items, !isPrivateBrowsing {
-            //
-            // sidebar without a Profile filter; another Profile's Space goes
-            // through the existing inter-Profile move decision.
             let profiles = Dictionary(uniqueKeysWithValues: store.state.profiles.map { ($0.id, $0.name) })
             commands += store.state.spaces.filter { space in
                 space.id != activeSpaceID && commandBarSpaceMoveIsPossible(items, to: space)
@@ -6538,13 +5717,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         commands += CommandBarTypedCommand.SettingsPane.allCases.map { .init(kind: .settingsPane($0)) }
         commands += CommandBarTypedCommand.Appearance.allCases.map { .init(kind: .appearance($0)) }
         commands += [.init(kind: .copyAppInfo), .init(kind: .revealAppData), .init(kind: .capturePortrait)]
-        // An engine without the task manager tool answers false here, so the
-        // row isn't offered.
         if canPerformPageTool(.taskManager) { commands.append(.init(kind: .openTaskManager)) }
         return commands
     }
 
-    /// The Profile's visited hosts, rescanned only when its history changes.
     private func commandBarVisitedHosts(profileID: UUID) -> Set<String> {
         if let cache = commandBarHostCache, cache.profileID == profileID, cache.revision == store.historyRevision {
             return cache.hosts
@@ -6580,7 +5756,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// The pure model checks behind Move to Space, before a row is offered.
     private func sidebarSpaceMoveIsPossible(_ items: [SidebarItemReference], to space: BrowserSpace) -> Bool {
         guard let source = SidebarHierarchySnapshot(state: store.state, spaceID: activeSpaceID, profileID: activeProfileID),
               let target = SidebarHierarchySnapshot(state: store.state, spaceID: space.id, profileID: space.profileID) else { return false }
@@ -6598,7 +5773,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// The current saved tab whose page has moved away from its home.
     private var replaceablePinnedTab: (tab: BrowserTab, url: String)? {
         guard activePeek == nil, !isPrivateBrowsing, let id = currentTabID,
               let tab = visibleTabs.first(where: { $0.id == id }), tab.resetDestination != nil else { return nil }
@@ -6607,8 +5781,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return (tab, url)
     }
 
-    /// Availability while the original command bar is open. The commit
-    /// owners in `prepareTypedCommand` check everything again after dismissal.
     private func typedCommandIsAvailable(_ command: CommandBarTypedCommand, items: [SidebarItemReference]?, profileID: UUID) -> Bool {
         switch command.kind {
         case .undo(let name):
@@ -6639,7 +5811,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         case .newWebDocument, .searchSettings, .airTrafficControl:
             return !isPrivateBrowsing && !isPopupWindow
         case .settingsPane, .appearance, .copyAppInfo:
-            // A private window's request opens the application's Settings.
             return !isPopupWindow && !isClosing
         case .revealAppData:
             return !store.isEphemeral && !isPrivateBrowsing && !isPopupWindow
@@ -6703,7 +5874,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return { [weak self] in
                 guard let self else { return false }
                 self.showSettings(pane: destination)
-                // A private window hands the request to the application's Settings.
                 return self.isPrivateBrowsing || self.settings?.window?.isVisible == true
             }
         case .appearance(let appearance):
@@ -6721,8 +5891,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             let directory = store.directory
             return { NSWorkspace.shared.activateFileViewerSelecting([directory]); return true }
         case .capturePortrait:
-            // The Developer toolbar's compatibility path: one viewport capture
-            // straight into the unified framing editor, not a separate flow.
             return { [weak self] in
                 guard let self, self.canCapturePage else { return false }
                 self.capturePage(.portrait)
@@ -6738,8 +5906,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    ///
     private static var buildInfo: String {
         let info = Bundle.main.infoDictionary ?? [:]
         let version = info["CFBundleShortVersionString"] as? String ?? "unknown"
@@ -6751,8 +5917,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"].joined(separator: "\n")
     }
 
-    /// A fixed destination in a new tab of the originating Space and Profile,
-    /// as Manage… in the website scope menu opens search settings.
     private func openTypedDestination(_ url: String) -> () -> Bool {
         { [weak self] in
             guard let self, !self.isPrivateBrowsing else { return false }
@@ -6766,9 +5930,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return opened
         }
     }
-    ///
-    /// expose the current item without selecting another page or taking focus,
-    /// unlike Reveal Current Tab (Control–Space, `focusSidebar:`).
     private var currentRevealSidebarItem: SidebarItemReference? {
         guard activePeek == nil, let id = currentTabID else { return nil }
         if let group = SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID).first(where: { $0.tabIDs.contains(id) }) {
@@ -6789,8 +5950,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               activeSpaceID == spaceID, activeProfileID == profileID else { return }
         revealSidebarItem(item, spaceID: spaceID, profileID: profileID)
     }
-    ///
-    /// rename owner as the Space header and sidebar Space menus.
     var canRenameActiveSpace: Bool {
         spaceCommandsAvailable && managementSpace(activeSpaceID) != nil && !sidebar.isEditingSpaceName
     }
@@ -6798,8 +5957,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard canRenameActiveSpace else { return }
         renameSpace(activeSpaceID)
     }
-    ///
-    /// profile-creation sheet in Settings → Profiles.
     var canCreateProfile: Bool {
         !isPrivateBrowsing && spaceCommandsAvailable && settings?.window?.attachedSheet == nil
     }
@@ -6811,23 +5968,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         showSettings(pane: .profiles, contextSpaceID: spaceID)
         settings?.beginProfileCreation()
     }
-    /// A regular window opens the Extensions and History pages in a new tab.
     var canOpenPageInNewTab: Bool {
         presentation.isReady && !isClosing && !wholeWindowClose && !isPrivateBrowsing && !isPopupWindow
     }
-    ///
-    /// same destinations as the Site Control Center's extension rows.
     func openExtensionsPage(addExtension: Bool) {
         openPageInNewTab(addExtension ? "https://chromewebstore.google.com/category/extensions" : "parc://extensions/")
     }
-    ///
-    ///
-    /// imported visits included, is the one history.
     func openHistoryPage() { openPageInNewTab("parc://history/") }
-    ///
-    ///
-    /// See What's New adds the update's `fragment` so the page marks the
-    /// releases it skipped.
     func openReleaseNotes(fragment: String? = nil) {
         guard let url = SoftwareUpdateBanner.releaseNotesURL else { return }
         openPageInNewTab(url.absoluteString + (fragment.map { "#" + $0 } ?? ""))
@@ -6837,9 +5984,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let url = URL(string: address) else { return }
         openExactAddress(url)
     }
-    /// An app-owned exact address opens directly, like an external link: the
-    /// address classifier would first wait for the profile's search engines,
-    /// with no tab to show loading yet, and then open a blank page before it.
     private func openExactAddress(_ url: URL) {
         let creation = creationProvenance(activeTabID: currentTabID)
         performWindowCommand {
@@ -6848,8 +5992,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// Rename edits a presented sidebar: a hidden one floats in first, settled
-    /// and laid out, so the field takes focus on screen.
     private func revealSidebarForEditing() {
         if sidebarPresentation == .hidden { setSidebarPresentation(.floating) }
         settleSidebarMotion(); layoutChrome(); rootView.layoutSubtreeIfNeeded()
@@ -6960,9 +6102,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var favoriteSplitRename: FavoriteRenameDialog?
     private var splitIconPicker: SidebarGroupIconPicker?
 
-    /// The actual original group, selection and physical content owners form
-    /// one editor lease. Its own sheet/popover may take key focus; another may not.
-    /// `current` lets an open editor follow its own committed appearance.
     private func splitCustomizationOwner(_ expected: SidebarSplitTitleEdit,
         presentationWindow: @escaping () -> NSWindow? = { nil },
         current: @escaping () -> SidebarSplitTitleEdit? = { nil }) -> (() -> Bool)? {
@@ -7053,9 +6192,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 catch { showError(error); return false }
             }
             guard let anchor = self.sidebar.appearanceAnchor(for: expected.group), anchor.window === self.window else { return false }
-            //
-            // choice keeps the picker open, so each commit renews the editor
-            // lease against the group it just wrote.
             let picker = SidebarGroupIconPicker(selected: expected.group.customIcon, iconSet: .tabAndSpacePicker)
             var current = expected
             guard let owner = self.splitCustomizationOwner(expected, presentationWindow: { [weak picker] in picker?.presentationWindow },
@@ -7073,9 +6209,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.splitIconPicker = nil
             }
             used = true; self.splitIconPicker = picker
-            // Each commit rebuilds the split row, so the popover anchors the
-            // row's icon rect in the stable list it scrolls with; a closed
-            // positioning view would otherwise dismiss the open picker.
             let rect = (anchor as? SidebarSplitGroupView)?.appearanceAnchorRect ?? anchor.bounds
             let host = anchor.enclosingScrollView?.documentView ?? anchor
             picker.present(from: host, rect: host.convert(rect, from: anchor))
@@ -7179,15 +6312,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if intent == .openInSplit { return prepareFavoriteOptionRelease(expected) }
         let force = intent == .resetAndSelect
         guard let reset = prepareSavedTabReset(expected, allowUnchanged: force) else { return nil }
-        // Double-click does not reselect or create an editor. Command-click's
-        // reset helper requests selection of that same original item.
         if force && prepareFavoriteAction(expected, closing: false) == nil { return nil }
         return { [weak self] in
             guard let self, reset() else { return false }
             if force {
-                // A dormant reset may synchronously publish a new live URL;
-                // resolve a fresh lease for that same incarnation, never a
-                // different current page or a stale pre-reset record.
                 guard let current = self.visibleTabs.first(where: { $0.id == expected.id }),
                       current.profileID == expected.profileID, current.kind == .favorite,
                       current.createdAt == expected.createdAt, current.savedURL == expected.savedURL,
@@ -7198,20 +6326,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    /// in this window, moving one that another window displays; a split is
-    /// selected whole once each of its pages has moved here.
     private func prepareFavoriteActivation(_ expected: BrowserTab) -> (() -> Bool)? {
         prepareFavoriteTransferOffer(expected) ?? prepareFavoriteAction(expected, closing: false)
     }
 
-    /// The panes selecting this item presents: its split's members, or itself.
     private func favoritePanes(_ expected: BrowserTab) -> [UUID] {
         SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID)
             .first { $0.tabIDs.contains(expected.id) }?.tabIDs ?? [expected.id]
     }
 
-    /// The tile's original Favorite as now recorded, after its page moved or navigated.
     private func currentFavorite(_ expected: BrowserTab) -> BrowserTab? {
         visibleTabs.first { $0.id == expected.id && $0.kind == .favorite
             && $0.profileID == expected.profileID && $0.createdAt == expected.createdAt }
@@ -7226,9 +6349,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             && visibleTabs.contains(expected)
     }
 
-    /// A tab another physical window claims that can come here now: its
-    /// page, Note or Easel by the ordinary transfer, or a claim with nothing
-    /// behind it handed over.
     private func canMovePageHere(_ id: UUID) -> Bool {
         guard !isPopupWindow, !closingTabIDs.contains(id), !transferringTabIDs.contains(id), !resolvingTransfers.contains(id),
               transferRecoveries[id] == nil, !store.retiringTabIDs.contains(id),
@@ -7237,16 +6357,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return true
     }
 
-    /// This window's claim on the tab has no page, Note or Easel behind it.
     func holdsEmptyClaim(_ id: UUID) -> Bool {
         !isPopupWindow && !isClosing && claimsTab(id)
             && browsers[id] == nil && noteEditors[id] == nil && easelEditors[id] == nil
             && !transferringTabIDs.contains(id) && !closingTabIDs.contains(id) && !modelRetirementIDs.contains(id)
             && !store.retiringTabIDs.contains(id) && pendingSearchNavigations[id] == nil
     }
-    /// Gives an empty claim to `destination`, keeping this window's pane as a
-    /// placeholder as a moved page's does. The claim changes hands at once,
-    /// so this window's next render cannot take the tab back.
     func handOverEmptyClaim(_ id: UUID, to destination: BrowserWindowController) -> Bool {
         guard destination !== self, destination.store === store, !destination.isPopupWindow, holdsEmptyClaim(id) else { return false }
         ownership.release(id, owner: presentationID)
@@ -7260,9 +6376,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return true
     }
 
-    /// The destination-side checks every move of this window's content for
-    /// the tab makes before reserving it, so a closing window can pass over
-    /// one that would refuse.
     func canMoveContent(_ id: UUID, to destination: BrowserWindowController) -> Bool {
         guard destination !== self, store === destination.store, !isPopupWindow, !destination.isPopupWindow,
               !destination.isClosing, !destination.wholeWindowClose, destination.transferringTabIDs.isEmpty,
@@ -7270,8 +6383,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let destinationWindow = destination.window, destinationWindow !== window, destination.nativeBinding != nil,
               let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
               tab.profileID == destination.activeProfileID, destination.browsers[id] == nil else { return false }
-        // A command bar or switcher in the destination is the usual way a move
-        // starts, and is gone by the time the move checks it again.
         if browsers[id] == nil, noteEditors[id] != nil || easelEditors[id] != nil {
             return !destination.isPrivateBrowsing && !destination.store.isEphemeral && destination.presentation.isReady
                 && !destination.windowClosePending && !destination.windowCloseApproved && destination.activePeek == nil
@@ -7279,17 +6390,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if peeks.values.contains(where: { $0.parentTabID == id && !$0.page.isClosed }) { return destination.activePeek == nil }
         return true
     }
-    /// This window holds the tab's claim, with or without content behind it.
     func claimsTab(_ id: UUID) -> Bool { ownership.owner(of: id) == presentationID }
-    /// A row's Close for a tab another window holds moves it here first, so
-    /// a leave-page prompt appears where the row was used and the close goes
-    /// on this window's Undo and Reopen. A refused move beeps.
     private func closeTabMovingHere(_ id: UUID) -> Bool {
         if ownership.canUse(id, owner: presentationID) { return closeTab(id) }
         guard canMovePageHere(id), let request = onRequestTabTransfer else { refuseTabMove(); return false }
         return request(id, self) { [weak self] in self?.closeTab(id) ?? false }
     }
-    /// The destination of an empty claim selects the tab once it is its own.
     func finishEmptyClaimHandOver(_ id: UUID, placement: (() -> Bool)?) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -7297,8 +6403,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// The item's pages that another window owns, in pane order; empty when
-    /// there are none or one of them cannot move now.
     private func favoritePagesElsewhere(_ expected: BrowserTab) -> [UUID] {
         guard canOfferFavoriteTransfer(expected) else { return [] }
         let pages = favoritePanes(expected).filter {
@@ -7316,7 +6420,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let self, !used, self.activeSpaceID == space, self.favoritePanes(expected) == panes,
                   self.favoritePagesElsewhere(expected) == pages else { return false }
             used = true
-            // A lone Favorite is selected by the transfer once its page arrives.
             guard panes.count > 1 else { return self.onRequestTabTransfer?(first, self, nil) ?? false }
             return self.movePagesHere(pages[...]) { [weak self] in
                 guard let self, self.activeSpaceID == space, self.favoritePanes(expected) == panes,
@@ -7336,8 +6439,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    /// .splitViewMaximumPanesExceeded) and has ToastType.maxNumberPanes for it.
     private func prepareFavoritePaneLimit(_ expected: BrowserTab) -> (() -> Bool)? {
         guard expected.kind == .favorite, !isPrivateBrowsing, splitCommandsAvailable, commandBar == nil,
               window?.isKeyWindow == true, window?.attachedSheet == nil,
@@ -7355,11 +6456,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    /// moves its page here into a new pane after the focused pane (disposition
-    /// `0x43`). Parc moves it through the page transfer, then inserts it through
-    /// `prepareFavoriteSplit` while this window keeps the Space, panes and focus
-    /// of the release; otherwise the moved page is selected.
     private func prepareFavoriteSplitTransfer(_ expected: BrowserTab) -> (() -> Bool)? {
         guard splitCommandsAvailable, commandBar == nil, canOfferFavoriteTransfer(expected),
               canMovePageHere(expected.id), let focus = currentTabID else { return nil }
@@ -7393,8 +6489,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         let browser = browsers[expected.id], page = browser?.nativePage
         let hadBrowser = browser != nil
-        // A materialized original supplies its actual current address. A
-        // dormant saved item has no live navigation history to duplicate.
         let sourceURL: String
         if let browser {
             guard browser.window === window, browserProfiles[expected.id] == expected.profileID,
@@ -7407,8 +6501,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             sourceURL = expected.savedURL
         }
         let revision = browser?.readerRevision
-        // The release's item selection copies each newly joining saved member
-        // (the Favorite itself unless it is focused and duplicated).
         guard let probe = FavoriteSplitRequest(favorite: expected, spaceID: space,
                   selection: selection, focusedID: focus, state: store.state,
                   duplicateURL: sourceURL, duplicateTitle: page?.title),
@@ -7472,8 +6564,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             used = true
             if closing {
-                // Dispatch to the same retirement/beforeunload owner. Acceptance
-                // here does not claim that asynchronous close consent succeeded.
                 return self.closeTabMovingHere(expected.id)
             }
             return self.selectTab(expected.id)
@@ -7514,11 +6604,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self.resetSavedTab(expected, allowUnchanged: allowUnchanged); return true
         }
     }
-    ///
-    ///
-    /// `resetTabToSavedURL(_:shouldSelect: true, shouldSeparateCurrent:)`
-    ///
-    ///
     private func prepareSavedTabIconReset(_ expected: BrowserTab, separating: Bool) -> (() -> Bool)? {
         guard let action = separating ? prepareSavedTabSeparation(expected) : prepareSavedTabReset(expected) else { return nil }
         return { [weak self] in
@@ -7527,8 +6612,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return true
         }
     }
-    ///
-    ///
     private func prepareSavedTabSeparation(_ expected: BrowserTab) -> (() -> Bool)? {
         guard expected.kind == .pinned, nativeFullscreenTabID != expected.id, canResetSavedTab(expected),
               !SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID)
@@ -7550,10 +6633,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return self.separateFromPinnedTab(expected, browser: browser, page: page)
         }
     }
-    /// Moves the pinned item's live page, wrapper and claim to a new Today tab,
-    ///
-    /// rebinds the window content to the new item). The pinned item is left
-    /// without a page and opens its saved destination when presented.
     private func separateFromPinnedTab(_ expected: BrowserTab, browser: PCBrowserView, page: PCNativePage) -> Bool {
         guard let binding = nativeBinding, !page.isClosed, browser.window === window,
               PCNativeBrowserApplication.owner(of: page) === binding else { return false }
@@ -7569,8 +6648,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let pane = makePane(tab)
         pane.frame = pageHost.bounds; parkedPages.addSubview(pane)
         pane.browser = browser; pane.showBrowser(); pane.layoutSubtreeIfNeeded()
-        // A refusal returns the same wrapper and records to the pinned item;
-        // it never creates a replacement page.
         func restore() {
             pane.browser = nil; pane.removeFromSuperview()
             source?.browser = browser
@@ -7595,10 +6672,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if pendingNativeSelection?.tabID == expected.id { pendingNativeSelection = nil }
         panes[id] = pane; attachedPageIDs.insert(page.identifier)
         render(store.state); requestNativeSelection()
-        //
-        //
-        // the focused content whose tap selects the item. Parc shows it once
-        // selection has settled.
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.isClosing, let tab = self.store.state.tabs.first(where: { $0.id == id }) else { return }
             let other = tab.spaceID != self.activeSpaceID ? self.store.state.spaces.first { $0.id == tab.spaceID }?.name : nil
@@ -7620,9 +6693,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     var canResetVisibleSavedTabs: Bool { visibleSavedResetTargets.contains { canResetSavedTab($0) } }
     func resetVisibleSavedTabs() {
-        // Snapshot Favorites, expanded pinned folders and split children in
-        // sidebar order. Each original page owns its independent navigation
-        // and beforeunload decision; this does not await one reset to start another.
         let actions = visibleSavedResetTargets.compactMap { prepareSavedTabReset($0) }
         for action in actions { _ = action() }
     }
@@ -7638,9 +6708,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let destination = savedResetDestination(expected, allowUnchanged: allowUnchanged) else { return }
         navigationHistory?.dismiss(); sidebarPreviews?.dismiss(); tabSwitcher?.cancel()
         if let browser = browsers[expected.id] {
-            // Keep the actual WebContents and its navigation controller. LoadURL
-            // runs Chromium's ordinary beforeunload navigation; do not precommit
-            // a URL/title in the model, retire the page, or reset its auth state.
             pendingSearchNavigations.removeValue(forKey: expected.id)
             inputRevisions.removeValue(forKey: expected.id)
             browser.loadURL(destination)
@@ -7650,8 +6717,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func archiveTodayTabs(anchor: BrowserTab, order: [UUID], ids: Set<UUID>) {
-        // The order is the sidebar's Today list (SidebarTodayArchive), not
-        // the model's tab array order.
         guard !isPopupWindow, !isClosing, !wholeWindowClose, !windowClosePending,
               window?.isKeyWindow == true, window?.attachedSheet == nil,
               anchor.profileID == activeProfileID, anchor.spaceID == activeSpaceID,
@@ -7660,21 +6725,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         archiveTabs(ids, reason: .manual)
     }
 
-    /// `space` names a Library card's Space; nil is the window's active Space.
     private func archiveTabs(_ ids: Set<UUID>, reason: ArchiveReason, in space: BrowserSpace? = nil) {
         guard !isClosing, !wholeWindowClose, !ids.isEmpty else { return }
         if let message = retirementUnavailableReason?(ids) {
             if let window { PArcDialog.inform(in: window, .init(title: "These tabs can’t be closed together yet", message: message)) }
             return
         }
-        // Every original page (including child Peeks and other window owners)
-        // joins one retirement transaction. Refusal preserves the entire set.
         let originSpace = activeSpaceID, originProfile = activeProfileID
         let spaceID = space?.id ?? originSpace, profileID = space?.profileID ?? originProfile
         prepareStoreContext()
-        // Clear's group is "Clear Tab(s)" and toasts "Cleared Tabs" once it is
-        //
-        //
         let undo: CloseUndo = reason == .clearButton
             ? .register(.clear, registered: { [weak self] in self?.showToast(.clearedTabs, at: .window) })
             : .register(.archive)
@@ -7693,18 +6752,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// How a committed close joins this window's Undo: as its own group, or
-    /// as the close a Redo reissued, which hands back its new record.
     private enum CloseUndo {
         case register(ClosedTabsUndo.Prompt, registered: (() -> Void)? = nil)
         case redo(ClosedTabsUndo.Prompt, (ClosedTabsUndo?) -> Void)
     }
 
-    ///
-    ///
-    ///
-    /// sheet the close's own consent left attached does not lose it;
-    /// performing still waits for one.
     private func registerClosedTabsUndo(_ record: ClosedTabsUndo, registered: (() -> Void)?) {
         guard windowUndoOwnerAvailable else { return }
         let operation = folderUndo.appendClosedTabs(record, store: store, canUse: { [weak self] ids, direction in
@@ -7714,7 +6766,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let self, self.windowUndoContextAvailable else { done(nil); return }
             self.prepareStoreContext()
             self.closeTabsWithReopen(ids, reason: .manual, undo: .redo(record.prompt, done), shouldCommit: { [weak self] in
-                // As the original close does: the same tabs, back where they were.
                 guard let self, self.windowUndoOwnerAvailable else { return false }
                 return current()
             }) { [weak self] approved in
@@ -7793,9 +6844,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 let applied = self.presentation.finishFolderRemoval(nextSelection, state: self.store.state,
                     available: { self.switcherCanUse($0) })
                 if applied { self.focusedTabID = nextSelection.focusedTabID }
-                // A pinned Note or Easel the close unloaded lets its editor go,
-                //
-                //
                 for id in ids where !self.selectedTabIDs.contains(id)
                     && self.store.state.tabs.contains(where: { $0.id == id && $0.archivedAt == nil }) {
                     if let note = self.noteEditors[id], note.editor.prepareToClose() {
@@ -7814,7 +6862,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// Whether a close started; its leave-page consent settles later.
     @discardableResult
     private func closeTab(_ id: UUID) -> Bool {
         guard prepareNotesToClose([id]) else { return false }
@@ -7825,8 +6872,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         prepareStoreContext()
         closeTabsWithReopen([id]) { [weak self] approved in
             guard let self, !self.isClosing else { return }
-            // A page moved here to be closed whose leave-page prompt was
-            // declined goes back to the placeholder it left.
             guard approved else { self.returnIfUnshown(id); return }
             self.presentation.remove(id)
             if self.focusedTabID == id { self.focusedTabID = self.presentation.preferredFocusedTabID }
@@ -7835,10 +6880,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return true
     }
 
-    /// Pane chrome X, Close this Split Pane, and a sidebar child's Close all
-    ///
-    /// that pane first: focusing posts native selection of one page and can
-    /// unload the rest of the split.
     private func closeClickedSplitPane(_ id: UUID) {
         guard SplitPaneCloseAdmission.accepts(tabID: id, selected: selectedTabIDs, isPeek: activePeek != nil) else { return }
         closeTab(id)
@@ -7873,16 +6914,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         archiveTabs(SpaceClearToday.ids(in: store.state, spaceID: activeSpaceID, profileID: activeProfileID), reason: .clearButton)
     }
 
-    /// Commits cookie changes now rather than on Chromium's 30-second timer.
     static func flushCookieStores() {
         if PCNativeBrowserApplication.responds(to: #selector(PCNativeBrowserApplication.flushCookieStores)) {
             PCNativeBrowserApplication.flushCookieStores()
         }
     }
 
-    /// Saves live pages' back/forward entries for the next launch, so a
-    /// relaunch or crash brings their tabs back where they were: only the
-    /// tabs that changed, unless `all`.
     func persistTabHistory(all: Bool = false) {
         tabHistoryCapture?.cancel(); tabHistoryCapture = nil
         let ids = all ? Set(browsers.keys) : tabHistoryChanged
@@ -7898,7 +6935,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// A navigation reaches disk within a couple of seconds, for a crash.
     private func scheduleTabHistoryCapture(_ id: UUID) {
         guard store.tabHistory != nil else { return }
         tabHistoryChanged.insert(id)
@@ -7916,8 +6952,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                                             profilePath: store.independentEngineProfilePath(for: tab.profileID))
     }
 
-    /// The cookies a sign-in sets reach disk within a couple of seconds of
-    /// its page loading, so a crash or force quit keeps the login.
     private func scheduleCookieFlush() {
         guard cookieFlush == nil, !store.isEphemeral else { return }
         let flush = DispatchWorkItem { [weak self] in
@@ -8010,8 +7044,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if result == .closed { self.releaseClosedTab(id, updateSavedTab: false) }
             else if let original {
                 if !self.store.restoreLiveTab(original, replacing: expected) {
-                    // Keep the actual page alive when newer model edits mean a
-                    // rollback would overwrite user work. Never force close.
                     self.failures[id] = "This page is still open because closing was cancelled."
                 }
             }
@@ -8019,11 +7051,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// Pages leaving the arrangement end their prompts and dialogs and give up
-    /// keyboard focus at once, as a detach did, even while held on screen.
-    /// They stay attached with their compositors and saved frames; one that
-    /// could not stay attached, or an engine without parking, is detached and
-    /// attachOwnedPages attaches it again.
     private func retirePages(_ leaving: [BrowserPane]) {
         for pane in leaving {
             if let page = pane.browser?.nativePage, let binding = nativeBinding, attachedPageIDs.contains(page.identifier) {
@@ -8037,7 +7064,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             resignFocus(in: pane)
         }
     }
-    /// Panes leaving the arrangement stay in this window, hidden.
     private func parkPanes(_ leaving: [BrowserPane]) {
         for pane in leaving where pane.superview === splitView && !splitView.arrangedSubviews.contains(where: { $0 === pane }) {
             resignFocus(in: pane)
@@ -8049,15 +7075,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             window?.makeFirstResponder(nil)
         }
     }
-    /// Holding needs the engine's frame reports.
     private var canHoldPageSwitch: Bool {
         guard let window, window.isVisible, !window.isMiniaturized, !isClosing, !wholeWindowClose,
               let binding = nativeBinding else { return false }
         return binding.responds(to: #selector(PCNativeBrowserWindow.reportNextFrame(of:)))
     }
-    /// A displayed tab whose live page has drawn a document reports its frame
-    /// when shown; a page still loading its first document does not hold the
-    /// switch.
     private func drawsReportedFrame(_ tab: BrowserTab) -> Bool {
         guard !InternalPage.isInternal(tab.url), !rendersBlank(tab), !presentation.showsPlaceholder(tab.id),
               failures[tab.id] == nil, !closingTabIDs.contains(tab.id),
@@ -8066,8 +7088,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               page.responds(to: #selector(getter: PCNativePage.pageBackgroundColor)) else { return false }
         return page.pageBackgroundColor != nil
     }
-    /// One timer per hold, for the time left until its deadline; switching
-    /// again while it is up never extends it.
     private func scheduleSwitchHoldCap() {
         guard let deadline = switchHold.deadline else { return }
         let hold = switchHold.hold
@@ -8109,8 +7129,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         nativeBinding?.synchronizeLayout()
     }
 
-    // Only an explicit shell selection/focus command creates this request.
-    // Readiness can finish it later, but metadata and layout cannot create one.
     private func requestNativeSelection() {
         reconcileCommandBar()
         navigationHistory?.validate()
@@ -8154,8 +7172,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         switch pending {
         case .local(let id):
-            // Explicit Start/Easel/empty selection must deselect the old native
-            // Browser, but an unready preflight or creating web page must not.
             guard presentation.isLocalSelection(id, state: store.state,
                                                 hasNativeWrapper: currentBrowser != nil),
                   selectedNativePage() == nil else {
@@ -8169,7 +7185,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 pendingNativeSelection = nil
                 return
             }
-            // The original wrapper may still be creating its one real page.
             guard let page = view.nativePage else { return }
             guard request.pageIdentifier == nil || request.pageIdentifier == page.identifier,
                   existingNativeSelection(binding, page)?.1 === view else {
@@ -8181,8 +7196,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard attachedPageIDs.contains(page.identifier),
                   page.nativeView.window === window, page.nativeView.isDescendant(of: view) else { return }
         }
-        // Consume before calling native code: callbacks cannot repeat or revive
-        // this request, and a later engine selection supersedes it entirely.
         pendingNativeSelection = nil
         synchronizingNativeLayout = true
         defer { synchronizingNativeLayout = false }
@@ -8223,8 +7236,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         peeks.values.filter { $0.parentTabID == id && !$0.page.isClosed }.map(\.page)
     }
 
-    // Native asks these policy questions synchronously. Read only the current
-    // model/window/page; destination creation is a separate later callback.
     @MainActor private final class SplitLinkLease: NSObject {
         weak var owner: BrowserWindowController?
         weak var source: PCNativePage?
@@ -8282,9 +7293,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let id = browsers.first(where: { $0.value.nativePage === page })?.key,
               let tab = store.state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
               tab.profileID == activeProfileID else { return nil }
-        //
-        // the matcher. Pinned/favorite sources first keep their current/saved
-        // hosts and recognized authentication continuations in the same tab.
         if selectedTabIDs.count == 1 && (tab.kind == .favorite || tab.kind == .pinned) {
             guard let targetHost = targetURL.host,
                   targetHost != page.url?.host,
@@ -8340,9 +7348,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return nativeBinding
     }
 
-    //
-    // hosts before choosing a modal. Native code applies the recovered nine
-    // authentication exceptions to the original current URL and target.
     func nativeBrowser(_ browser: PCNativeBrowserWindow, shouldOpenCurrentLinkInPeekFrom page: PCNativePage,
                        targetURL: URL) -> Bool {
         guard nativeBrowser(browser, shouldOpenNewPageInPeekFrom: page, targetURL: targetURL),
@@ -8370,23 +7375,18 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return tab.kind == .favorite || tab.kind == .pinned
     }
 
-    /// Undo of Close Peek also opens one over a parent out of view, which
-    ///
-    /// content (`ModalWindowContentStateV2.modalByWindowContent`).
     func nativeBrowser(_ browser: PCNativeBrowserWindow, canPresentPeekFrom page: PCNativePage) -> Bool {
         let shown = activePeek == nil && selectedNativePage() === page
         return (shown || peekUndoOpen?.parent == page.identifier)
             && canHostPeek(browser, over: page, overLibrary: archivePreviewRequest?.parent == page.identifier)
     }
 
-    /// Peek admission apart from whether the parent is the page in view.
     private func canHostPeek(_ browser: PCNativeBrowserWindow, over page: PCNativePage, overLibrary: Bool = false) -> Bool {
         windowAdmitsPeek(browser, overLibrary: overLibrary) && !page.isClosed
             && PCNativeBrowserApplication.owner(of: page) === browser
             && !peeks.values.contains { $0.parentPage === page }
     }
 
-    /// Only an Archive row's own preview opens while the Library is shown.
     private func windowAdmitsPeek(_ browser: PCNativeBrowserWindow, overLibrary: Bool = false) -> Bool {
         browser === nativeBinding && !isPopupWindow
             && !isClosing && !wholeWindowClose && !windowClosePending && !windowCloseApproved && nativeFullscreenTabID == nil
@@ -8396,9 +7396,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             && window?.isKeyWindow == true
     }
 
-    ///
-    ///
-    /// shows only web pages, so splits, Notes and Easels are not previewed.
     @discardableResult
     private func previewArchivedItem(_ id: UUID, profileID: UUID) -> Bool {
         if let peek = activePeek, archivePreviews[peek.identity] != nil {
@@ -8423,7 +7420,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard parent.openPeek(url: url) else {
             archivePreviewRequest = nil; store.releaseArchivePreview(lease); return false
         }
-        // As with Undo's Peek, a page the engine never offers is let go.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             guard let self, let request = self.archivePreviewRequest, request.token == token else { return }
             self.archivePreviewRequest = nil; self.store.releaseArchivePreview(request.lease)
@@ -8434,14 +7430,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func adoptPeek(_ page: PCNativePage, binding: PCNativeBrowserWindow) -> NSView? {
         guard let parent = page.peekParent else { return nil }
         var undo = peekUndoOpen.flatMap { $0.parent == parent.identifier ? $0.operation : nil }
-        // An engine without the flag is matched by the record's address.
         if let pending = undo, !(page.responds(to: #selector(getter: PCNativePage.isReopenedPeek))
             ? page.isReopenedPeek : page.url?.absoluteString == pending.record.url.absoluteString) {
-            // Not the Peek that Undo asked for: it gets no out-of-view admission.
             undo = nil; peekUndoOpen = nil
         }
         defer { if undo != nil { peekUndoOpen = nil } }
-        // The Archive's requested preview is the Peek the engine reports it opened.
         let request = archivePreviewRequest.flatMap { $0.parent == parent.identifier ? $0 : nil }
         let admitted = nativeBrowser(binding, canPresentPeekFrom: parent)
         if request != nil { archivePreviewRequest = nil }
@@ -8465,7 +7458,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         undo?.openedPeek = peek.identity
         wirePeek(peek, binding: binding)
         let shown = activePeek === peek
-        //
         if shown { tabSwitcher?.cancel(); sidebarPreviews?.dismiss(); if archive == nil { closeLibrary(restoreFocus: false) } }
         else if undo != nil { undoHiddenPeek = peek.identity }
         let entryFocus = PeekFocusReturn(source: parent.nativeView)
@@ -8487,11 +7479,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return peek.browser
     }
 
-    /// Binds a Peek's admission and actions to this window. A Peek carried
-    /// here with its parent is rebound the same way.
     private func wirePeek(_ peek: PeekController, binding: PCNativeBrowserWindow) {
         let page = peek.page, id = peek.parentTabID
-        // A Peek opened here or moved here takes this window's Space appearance.
         peek.view.loadingIndicator.appearance = rootView.palette.contentAppearance
         peek.canInteract = { [weak self, weak peek] in
             guard let self, let peek else { return false }
@@ -8538,9 +7527,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// A committed user dismissal joins this window's close history and its
-    /// Undo as Close Peek, or is the close a Redo of Close Peek asked for.
-    /// Promotion is not a close; an engine without the reopen API records nothing.
     private func recordClosedPeek(_ peek: PeekController, url: URL) {
         let redo = peekRedo.flatMap { $0.peek == peek.identity ? $0 : nil }
         if redo != nil { peekRedo = nil }
@@ -8555,10 +7541,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let redo { redo.done(record) } else { registerClosedPeekUndo(record) }
     }
 
-    ///
-    /// incognito branch). Undo leaves selection alone: the Peek shows if its
-    /// parent is in view and waits behind it otherwise. A parent with no live
-    /// page gets the Peek once its page has loaded, when it is next shown.
     private func registerClosedPeekUndo(_ record: ClosedPeekRecord) {
         guard windowUndoOwnerAvailable, record.isValid(in: store.state) else { return }
         let operation = folderUndo.appendClosedPeek(record, state: { [weak self] in self?.store.state }, canOpen: { [weak self] operation in
@@ -8598,7 +7580,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }, close: { [weak self] operation, done in
             guard let self, self.windowUndoContextAvailable, self.peekRedo == nil else { done(nil); return }
             if let parent = self.peekUndoAwaitingParent.first(where: { $0.value === operation })?.key {
-                // The Peek never opened; closing it is a close of the same Peek.
                 self.peekUndoAwaitingParent.removeValue(forKey: parent); self.awaitedPeekRetries.remove(parent)
                 let previous = operation.record
                 let record = ClosedPeekRecord(id: UUID(), url: previous.url, parentTabID: previous.parentTabID,
@@ -8618,8 +7599,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         peekUndoOperations.add(operation)
     }
 
-    /// A Peek is a child page of its parent's live page in this window
-    /// (`-[PCNativePage openPeekWithURL:]`).
     private func closedPeekParentPage(_ record: ClosedPeekRecord) -> PCNativePage? {
         guard let page = browsers[record.parentTabID]?.nativePage, !page.isClosed,
               page.profilePath == store.independentEngineProfilePath(for: record.profileID),
@@ -8636,9 +7615,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let token = UUID()
         peekUndoOpen = (page.identifier, operation, token)
         guard openClosedPeek(operation.record, over: page) else { peekUndoOpen = nil; return false }
-        // Adoption, or an ordinary-tab offer of that page, clears the slot. The
-        // engine offers it from a non-nestable task, which waits out a menu's
-        // nested run loop, so a page never offered is let go a little later.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             guard let self, self.peekUndoOpen?.token == token else { return }
             self.peekUndoOpen = nil
@@ -8646,8 +7622,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return true
     }
 
-    /// The engine offers the new page through the ordinary Peek adoption,
-    /// restored with the closed Peek's back/forward entries when it can.
     private func openClosedPeek(_ record: ClosedPeekRecord, over page: PCNativePage) -> Bool {
         guard let history = store.closedPageHistory.take(record.id) as? NSObject else { return page.openPeek(url: record.url) }
         let opened = page.responds(to: #selector(PCNativePage.openPeek(url:navigationState:)))
@@ -8656,10 +7630,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return opened
     }
 
-    /// Tried once the parent is shown and its page has loaded; a refused
-    /// admission waits for the window to become key or the parent to be
-    /// selected again, never for later loads. Refused while another Undo's
-    /// Peek is being adopted, a selected parent also tries when that ends.
     private func openAwaitedPeek(over parentTabID: UUID) {
         pruneAwaitedPeeks()
         guard let operation = peekUndoAwaitingParent[parentTabID], selectedTabIDs.contains(parentTabID),
@@ -8673,8 +7643,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// A waiting Peek whose parent left (archived, deleted, taken by another
-    /// window) can no longer open.
     private func pruneAwaitedPeeks() {
         for (parent, operation) in peekUndoAwaitingParent
         where !operation.record.isValid(in: store.state) || !ownership.canUse(parent, owner: presentationID) {
@@ -8684,9 +7652,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func removePeek(_ peek: PeekController) {
         guard peeks[peek.page.identifier] === peek else { return }
-        // The engine delivers didClosePage, which removes the Peek, before the
-        // dismissal's own close completion; record a closed dismissal here.
-        // A closed preview leaves its item in the Archive, not in close history.
         let archive = archivePreviews.removeValue(forKey: peek.identity)
         if let archive { store.releaseArchivePreview(archive) }
         else if archivePreviewRemnants.remove(peek.identity) == nil, peek.page.isClosed, let url = peek.dismissedURL {
@@ -8726,8 +7691,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    /// and Expand control converge on the same current-window-Space adoption.
     private func peekPromotionDestination(_ peek: PeekController) -> BrowserSpace? {
         guard activePeek === peek, peek.canInteract?() == true,
               let parent = store.state.tabs.first(where: { $0.id == peek.parentTabID && $0.archivedAt == nil }),
@@ -8775,8 +7738,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let creation: TabCreationProvenance?
         let destinationID: UUID
         if orphaned {
-            // Preserving a child whose parent actually closed is separate from
-            //
             creation = nil
             destinationID = peek.sourceSpaceID
         } else {
@@ -8791,15 +7752,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   peek.page.profilePath == store.independentEngineProfilePath(for: parent.profileID)
             else { return }
             destinationID = destination.id
-            // The accepted modal's original sidebar source supplies both
-            // creation identities. Do not substitute current selection or the
-            // admission-only native peekParent getter after navigation.
             creation = TabCreationProvenance(referrerID: parent.id, activeTabID: nil,
                 profileID: parent.profileID, state: store.state)
         }
-        // An Archive preview's Expand restores the original archived item into
-        //
-        //
         let archive = orphaned ? nil : archivePreviews.removeValue(forKey: peek.identity)
         if orphaned, let lease = archivePreviews.removeValue(forKey: peek.identity) { store.releaseArchivePreview(lease) }
         let restored = archive.map { store.restoreArchivePreview($0, destination: .putBack(currentSpaceID: destinationID, requestedSpaceID: nil)) }
@@ -8817,12 +7772,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let view = peek.browser
         pane.browser = view; pane.showBrowser(); parkedPages.addSubview(pane)
         guard binding.pageDidAttach(peek.page, container: view) else {
-            // Restore the existing wrapper and claim before removing the new
-            // saved record. Refusal never creates a replacement WebContents.
             pane.browser = nil; pane.removeFromSuperview()
             peek.view.content.addSubview(view); view.frame = peek.view.content.bounds
             _ = binding.pageDidAttach(peek.page, container: view)
-            // A restored item stays restored and loads its own page.
             if archive == nil { store.removeTab(id) } else { abandonRestoredPreview(peek) }
             return
         }
@@ -8843,11 +7795,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         attachedPageIDs.insert(peek.page.identifier)
         zoomLevels[id] = zoomLevels.removeValue(forKey: peek.identity)
         inputRevisions.removeValue(forKey: peek.identity)
-        // Both native attachment and the saved-item claim succeeded. Refused
-        // promotion/dismissal never publishes this modal-specific pool change.
         if !orphaned { presentation.recordPeekPromotion(id, state: store.state) }
-        //
-        // ItemSelection removal path). Split Expand only adds the Peek.
         let removal = (!split && !orphaned)
             ? presentationSetMediaRemoval(capturing: oldSelection, remaining: { Set(self.selectedTabIDs) }) {
                 self.selectedTabIDs == [id]
@@ -8859,7 +7807,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             presentation.captureCommand(store.state) { ownership.canUse($0, owner: presentationID) }
         }
         if !orphaned { focusedTabID = id }
-        //
         if archive != nil { closeLibrary(restoreFocus: false) }
         promotingPeek = false
         render(store.state)
@@ -8877,8 +7824,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// The restored item is already selected in the model; show it and close
-    /// the preview, whose page it will load itself.
     private func abandonRestoredPreview(_ peek: PeekController) {
         archivePreviewRemnants.insert(peek.identity)
         promotingPeek = false
@@ -8907,8 +7852,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.closingTabIDs.remove(id); self.modelRetirementIDs.remove(id)
                 if allowed { self.releaseClosedTab(id, updateSavedTab: updateSavedTab) }
                 else if page.isClosed {
-                    // An independent parent close may cancel preparation. Keep
-                    // its live child, but never recreate the closed parent.
                     for child in children {
                         if let peek = self.peeks[child.identifier], !child.isClosed {
                             self.promotePeek(peek, split: false, orphaned: true)
@@ -8947,8 +7890,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               !(responder is NSTextView),
               !(selectedNativePage().map { responder === $0.nativeView || responder.isDescendant(of: $0.nativeView) } ?? false)
         else { super.cancelOperation(sender); return }
-        // AppKit's original responder chain gets first refusal. A renderer key
-        // never reaches this Exit route; it uses its acknowledged page event.
         let item = NSMenuItem(title: "Exit", action: nil, keyEquivalent: "")
         guard prepareExitMenuItem(item), let command = item.representedObject as? BrowserExitCommand,
               command.perform() else { super.cancelOperation(sender); return }
@@ -9004,9 +7945,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               selectedNativePage() === page, !page.isClosed, !isClosing,
               window?.isKeyWindow == true, page.nativeView.window === window,
               !page.nativeView.isHiddenOrHasHiddenAncestor else { return false }
-        //
-        // no modal is presented and the window's fullscreen phase is expanded.
-        // Otherwise the website keeps the key and no cue or queue is armed.
         if KeyboardShortcuts.shared.isExitCommand(command) {
             let phase = WindowFullscreenPhase.current(fullscreenPhase,
                 inFullScreen: window?.styleMask.contains(.fullScreen) == true)
@@ -9049,8 +7987,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               selectedNativePage() === page else { return false }
         return shortcutHint?.containsPointer == true
     }
-    /// The cue's own dismissal: consuming its queued command makes the native
-    /// router retire it (Clear → dismissShortcutHint).
     private func retireShortcutHint() {
         if let command = shortcutHintCommand, let page = shortcutHintPage { _ = page.consumeShortcutHint(command) }
         removeShortcutHint(animated: true)
@@ -9068,7 +8004,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return browser.nativePage
         }
         let embedded = renderedPaneIDs.flatMap { easelEditors[$0]?.editor.pageObjects?.visiblePages ?? [] }
-        // Outgoing pages keep drawing until the incoming ones have drawn.
         let held: [PCNativePage] = switchHold.held.compactMap { pane in
             guard pane.superview === splitView, let browser = pane.browser, !browser.isHiddenOrHasHiddenAncestor else { return nil }
             return browser.nativePage
@@ -9082,7 +8017,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let peek = peeks[page.identifier] { return peek.browser }
         if page.isEmbedded { return embeddedEaselOwner(page)?.1.container(for: page) }
         if disposition == .peek { return adoptPeek(page, binding: browser) }
-        // The page an Undo of Close Peek opened came as an ordinary tab.
         if let pending = peekUndoOpen, page.creationSourcePage?.identifier == pending.parent { peekUndoOpen = nil }
         if let container = transferContainers[page.identifier] { return container }
         if let existing = browsers.values.first(where: { $0.nativePage === page }) { return existing }
@@ -9091,8 +8025,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let splitAdmitted = splitLease.flatMap { lease in
             splitSource.map { nativeBrowser(browser, isSplitLinkLeaseCurrent: lease, for: $0) }
         } == true
-        // Let the host retry its captured ordinary disposition if the lease
-        // changed after the native presentation query.
         if disposition == .splitTab && !splitAdmitted { return nil }
         let routedSpaceID: UUID?
         if let route = page.routedSpaceIdentifier {
@@ -9102,20 +8034,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   !store.isProfileRemovalPending(space.profileID) else { return nil }
             routedSpaceID = id
         } else { routedSpaceID = nil }
-        //
-        //
-        // creating window's active item when the tab item is created, which
-        // is this adoption. A routed page always leaves the creating window's
-        // Space, and both matched routes place it at the explicit top
-        //
-        // matched link carries no referrer, and a cross-Profile destination
-        // never borrows this window's selection (see TabCreationProvenance).
         let alternate = routedSpaceID == nil ? alternateNavigationReceipt(page) : nil
         let source = alternate?.referrer ?? page.creationSourcePage.flatMap(creationSourceTab)
         let creation: TabCreationProvenance
         if routedSpaceID != nil {
-            // Older engine packages lack the flag; their same-Profile carrier
-            // keeps the source as referrer until the overlay is applied.
             let openedLink = page.responds(to: #selector(getter: PCNativePage.routedLinkCreation))
                 && page.routedLinkCreation
             creation = TabCreationProvenance(routedFrom: source, openedLink: openedLink,
@@ -9136,12 +8058,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         browsers[id] = view; browserProfiles[id] = tab.profileID; liveTabModels[id] = tab
         requestedURLs[id] = tab.url
         panes[id] = pane; pane.browser = view; pane.showBrowser()
-        // Keep exact NSWindow ownership during the engine's insertion callback.
-        // Presentation happens after that stack unwinds, without navigation.
         parkedPages.addSubview(pane)
-        // A newly accepted native page changes this original window's owner
-        // set. Leave the editing draft before recording its genuine creation;
-        // background disposition still preserves the original selection.
         cancelSpaceCreation(restoreFocus: false, renderContent: false)
         let firstPage = !presentation.isReady
         preparedForRoutedPage = false
@@ -9154,10 +8071,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         DispatchQueue.main.async { [weak self, weak page, weak browser, weak splitSource, weak view] in
             defer { if let page, let lease = splitLease { page.finishSplitLinkLease(lease) } }
             guard let self else { return }
-            // The page arrives already loading (a link from another app). The
-            // delegate's replay of that load came before the view was in
-            // `browsers`, so it was dropped, and PCBrowserView only reports the
-            // load's end: without this the loading bar never showed for it.
             if let view, self.browsers[id] === view, view.isLoading { self.loadingTabs.insert(id) }
             self.render(self.store.state)
             if splitAdmitted, let page, let browser, let lease = splitLease, let source = splitSource,
@@ -9183,8 +8096,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             embeddedEaselOwner(page)?.1.didClose(page); refreshCaptureIndicators(); return
         }
         if browser === nativeBinding, let peek = peeks[page.identifier] { removePeek(peek); return }
-        // A page can close itself independently of a shell retirement. Preserve
-        // its still-live child as the same document in Today, never orphan it.
         if browser === nativeBinding, !wholeWindowClose {
             for peek in Array(peeks.values) where peek.parentPage === page && !peek.page.isClosed
                 && !closingTabIDs.contains(peek.parentTabID) && !modelRetirementIDs.contains(peek.parentTabID)
@@ -9199,21 +8110,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, didSelect page: PCNativePage) {
         if browser === nativeBinding, spaceCreation != nil {
-            // A parked renderer's delayed activation cannot replace the draft.
             browser.synchronizeSelectionAndLayout(); return
         }
         if browser === nativeBinding, page.isEmbedded {
-            // The exact canvas selection owns activation. A renderer/background
-            // request cannot replace the Easel's sidebar identity or focus.
             if selectedNativePage() !== page { browser.synchronizeSelectionAndLayout() }
             return
         }
         if browser === nativeBinding, let peek = peeks[page.identifier], !page.isClosed {
             if undoHiddenPeek == peek.identity {
                 undoHiddenPeek = nil
-                // The tab strip made the Peek Undo opened out of view its
-                // active page so it could be adopted; give the engine back the
-                // shell's selection rather than switching to the parent.
                 if peek.view.isHidden { browser.synchronizeSelectionAndLayout(); return }
             }
             guard !applyingNativeSelection, !isClosing, !wholeWindowClose else { return }
@@ -9235,8 +8140,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.nativeBinding?.synchronizeSelectionAndLayout()
             }
         }
-        // The engine has already selected this exact page. Store publications,
-        // layout and rendering must not send the former shell selection back.
         applyingNativeSelection = true
         defer { applyingNativeSelection = false }
         presentation = next
@@ -9272,9 +8175,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return (id, view)
     }
 
-    /// The engine reports a new window it couldn't create (a popup or a
-    /// Picture-in-Picture window) to every window of that Profile. The page
-    /// that asked is unaffected, so nothing covers it.
     func nativeBrowser(_ browser: PCNativeBrowserWindow, didFailWithError error: Error) {
         guard browser === nativeBinding else { return }
         NSLog("Parc native window: %@", error.localizedDescription)
@@ -9302,10 +8202,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func nativeBrowser(_ browser: PCNativeBrowserWindow, setTabFullscreenPage page: PCNativePage?) -> Bool {
         guard browser === nativeBinding, !wholeWindowClose, !isClosing else { return false }
         guard let page else { restoreNativeFullscreenPresentation(); render(store.state); return true }
-        //
-        //
-        // same source-owned promotion as Expand supplies its provenance,
-        // placement and pool; a refused promotion leaves the Peek unchanged.
         if let peek = peeks[page.identifier] {
             guard activePeek === peek else { return false }
             promotePeek(peek, split: false)
@@ -9313,9 +8209,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         guard let id = browsers.first(where: { $0.value.nativePage === page })?.key,
               renderedPaneIDs.contains(id) else { return false }
-        //
-        // web-content fullscreen shrinks the presentation set; removed siblings
-        // can presentMediaControls.
         let outgoing = renderedPaneIDs.filter { $0 != id }
         let removal = presentationSetMediaRemoval(capturing: outgoing, remaining: { Set(self.renderedPaneIDs) }) {
             self.nativeFullscreenTabID == id && self.renderedPaneIDs == [id]
@@ -9345,7 +8238,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     func nativeBrowser(_ browser: PCNativeBrowserWindow, capabilityUnavailable capability: String) {
         guard browser === nativeBinding else { return }
-        // An unfinished capability is an error, never simulated consent.
         NSLog("Parc capability unavailable: %@", capability)
         if let window { PArcDialog.inform(in: window, .init(title: "This feature isn’t available yet", message: capability)) }
     }
@@ -9378,13 +8270,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    /// clicked split's stored orientation and re-presents it if displayed.
     private func prepareSplitCellCommand(_ id: UUID, _ command: SplitCellMenuCommand) -> (() -> Bool)? {
         switch command {
         case .separateAll:
@@ -9402,8 +8287,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// New Folder with *n* Items (SidebarFolderFromItems) under the sidebar
-    ///
     private func prepareFolderFromItems(_ items: [SidebarItemReference]) -> (() -> Bool)? {
         guard !isPrivateBrowsing, folderUndoContextAvailable, !folderUndo.isBusy, let window,
               let lease = prepareSidebarMoves(items),
@@ -9418,10 +8301,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let receipt = try self.store.createFolder(containing: items, folderID: UUID(), expected: expected) else { return false }
                 self.registerFolderCreationUndo(receipt)
                 self.render(self.store.state)
-                //
-                //
-                //
-                // which edits the folder row's title in place.
                 self.sidebar.scrollItemToVisible(.folder(receipt.folderID))
                 let spaceID = receipt.spaceID
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak window] in
@@ -9457,7 +8336,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }))
     }
 
-    /// Convert to Vertical/Horizontal Split View for any split of this Space.
     private func prepareSplitOrientationFlip(_ id: UUID) -> (() -> Bool)? {
         guard splitCommandsAvailable, let window,
               let group = SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID).first(where: { $0.id == id }),
@@ -9477,8 +8355,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// One separation of `group`'s original children, valid while the window,
-    /// selection, focus and every child's native owner are unchanged.
     private func prepareSplitSeparation(_ group: BrowserSplitLayout, perform: @escaping (UUID?) -> Bool) -> (() -> Bool)? {
         guard splitCommandsAvailable, let window,
               group.tabIDs.allSatisfy({ switcherCanUse($0) }) else { return nil }
@@ -9507,19 +8383,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    ///
-    /// before the mutation; consume only IDs that actually left the displayed
-    /// set while source/document/profile leases still match.
     private func presentationSetMediaRemoval(
         capturing candidates: [UUID],
         remaining: @escaping () -> Set<UUID>,
         gate: (() -> Bool)? = nil
     ) -> (() -> Void)? {
         guard let window, let binding = nativeBinding, !candidates.isEmpty else { return nil }
-        // Do not freeze activeSpaceID/profile here: ItemSelection Return,
-        // space switch and cross-space recent items legitimately change them.
-        // Callers that need a stable space encode it in `gate`.
         let originals = Array(Set(candidates)).compactMap { id -> (UUID, PCBrowserView, PCNativePage, NSObject, UUID)? in
             guard let view = browsers[id], view.window === window,
                   let page = view.nativePage, !page.isClosed,
@@ -9554,9 +8423,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    // A recovered Separate producer evaluates only original contents removed
-    // from this physical window's presentation. Capture native document and
-    // suppression order before the model commit, then consume synchronously.
     private func splitMediaRemoval(_ group: BrowserSplitLayout, expectedSelection: [UUID]) -> (() -> Void)? {
         guard splitCommandsAvailable, nativeFullscreenTabID == nil,
               selectedTabIDs == group.tabIDs, renderedPaneIDs == group.tabIDs,
@@ -9599,8 +8465,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// Separate All Tabs: the split dissolves; a displayed split keeps its
-    /// focused original page on screen.
     @discardableResult
     private func separateAllSplitTabs(_ group: BrowserSplitLayout, originalFocus: UUID?) -> Bool {
         var committed = false
@@ -9624,8 +8488,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             committed = store.separateTabFromSplit(id, expected: group, focusedID: originalFocus)
         }
         guard committed else { return false }
-        // Presentation capture keeps the focused original if it survives. In
-        // the focused-separation branch, that is the standalone original page.
         requestNativeSelection()
         reclaimFocusAfterSplitPresentation()
         return true
@@ -9639,8 +8501,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard spaceCommandsAvailable, commandBar == nil, let window,
               var expected = SidebarHierarchySnapshot(state: store.state, spaceID: activeSpaceID, profileID: activeProfileID, includesFavorites: true),
               let collection = SidebarMoveCollection(items: items, spaceID: activeSpaceID, profileID: activeProfileID, state: store.state) else { return nil }
-        // A folder springing open under the drag changes only disclosure; the
-        // move keeps its hierarchy and takes the new disclosure as expected.
         func undisclosed(_ state: BrowserState) -> SidebarHierarchySnapshot? {
             var state = state
             for index in state.folders.indices { state.folders[index].isExpanded = false }
@@ -9671,8 +8531,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 return owners[id] == actual
             }
         }
-        // Whole splits dragged from their cell may be copied (SP23); ordinary
-        // rows stay move-only.
         let wholeSplits = items.allSatisfy { if case .split = $0 { return true } else { return false } }
         let session = SidebarMoveSession(items: items, window: window,
             validate: { [weak self] in self?.spaceCommandsAvailable == true && valid() },
@@ -9723,9 +8581,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return { transaction.begin() }
     }
 
-    ///
-    ///
-    /// carry another Profile's browser context, so the originals reload here.
     private func prepareInterProfileWindowDrop(_ session: SidebarMoveSession, from source: BrowserWindowController,
                                                to location: SidebarContainerLocation,
                                                before: SidebarItemReference?) -> (() -> Bool)? {
@@ -9737,8 +8592,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   to: location, before: before, state: store.state), move.crossesProfiles,
               Set(move.tabIDs).isDisjoint(with: store.retiringTabIDs) else { return nil }
         let selection = selectedTabIDs, spaceID = activeSpaceID, profileID = activeProfileID
-        // Bind the gesture to both hierarchies' placement, not to whole tab
-        // values: navigation while the decision is pending changes no placement.
         let placement: (BrowserState) -> BrowserState? = { state in
             guard SidebarHierarchySnapshot(state: state, spaceID: move.source.spaceID, profileID: move.source.profileID,
                                            includesFavorites: true) == move.source,
@@ -9765,8 +8618,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     switch result {
                     case .success(true):
                         self.onInterProfileMoveCommitted?(moved)
-                        // Existing destination focus is retained; an empty
-                        // destination selects the first moved item's whole split.
                         if selection.isEmpty, self.selectedTabIDs.isEmpty, let first = move.tabIDs.first {
                             self.finishInterProfileArrival(first)
                         } else { self.render(self.store.state) }
@@ -9778,21 +8629,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    ///
-    ///
-    /// original ordinary or Favorite splits with fresh identities and the
-    /// recovered open options and places the copies at the drop location — a
-    /// row, folder, section or the App Tray here, or a Space in the dock. A
-    ///
-    ///
-    /// placed in this window's Space opens its children in the background and
-    ///
-    /// originals, their pages, owners and selection stay where they are.
     private func prepareSidebarCopyDrop(_ session: SidebarMoveSession, items: [SidebarItemReference],
                                         to location: SidebarContainerLocation, before: SidebarItemReference?) -> (() -> Bool)? {
-        // Dragging updates repeat the proposal; it resolves Note/Easel stores,
-        // so one result serves the same target until the state changes.
         let key = ([session.identifier.uuidString, location.key, before.map { "\($0)" } ?? ""] + items.map { "\($0)" })
             .joined(separator: "|")
         if let cached = copyDropCache, cached.key == key, cached.revision == store.stateRevision { return cached.action }
@@ -9814,12 +8652,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let copy = SidebarSplitCopy(items: items, spaceID: source.activeSpaceID,
                   profileID: source.activeProfileID, state: store.state) else { return nil }
         let sourceProfile = source.activeProfileID, spaceID = activeSpaceID, profileID = activeProfileID
-        // Selection follows the source split's focused child, else its first.
         let focus = source.focusedTabID
         let focusIndex = copy.groups.last.flatMap { group in focus.flatMap { group.tabIDs.firstIndex(of: $0) } } ?? 0
-        // The session validates its source when the drop runs (`copy(_:)`),
-        // then ends. The action binds the splits' placement, not their whole
-        // records: it rebuilds the copy and resolves its current sources.
         let current: () -> (copy: SidebarSplitCopy, sources: SidebarCopySources)? = { [weak self] in
             guard let self, self.folderDuplicateContextAvailable,
                   let now = SidebarSplitCopy(items: copy.roots, spaceID: copy.source.spaceID,
@@ -9830,13 +8664,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard let proposed = current(),
               store.canCopySidebarSplits(proposed.copy, to: location, before: before,
                   destinations: proposed.sources.destinations, documents: proposed.sources.documents) else { return nil }
-        // The source window showed these originals: after a cross-Profile
-        //
         let sourceShown = source.selectedTabIDs.filter { id in copy.tabs.contains { $0.id == id } }
         let sourceFocus = source.focusedTabID.flatMap { sourceShown.contains($0) ? $0 : nil } ?? sourceShown.first
         let sourceSpace = source.activeSpaceID
-        //
-        //
         let arrive: (SidebarDuplicateResult) -> Void = { [weak self, weak window] result in
             guard let self, let window, self.window === window else { return }
             if location.spaceID != self.activeSpaceID {
@@ -9885,8 +8715,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard !consumed, let self else { return false }
             consumed = true
             guard destinationProfile != sourceProfile else { return perform() }
-            // A remembered choice proceeds at once and reports perform's own
-            // result; after the sheet, a refusal is heard.
             var deciding = true
             var immediate: Bool?
             let began = self.confirmInterProfileMove(tabCount: copy.tabs.count, sourceProfiles: [sourceProfile],
@@ -9899,14 +8727,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    /// the items not already in that Space go to index 0 of its Pinned or
-    ///
-    ///
-    /// whose inter-Profile decision applies, and the window then focuses that
-    ///
-    /// window lands in the same Space; Parc moves the pages with SP19's window
-    /// transfer after this window shows that Space.
     private func prepareSidebarDockDrop(_ session: SidebarMoveSession, items: [SidebarItemReference],
                                         to location: SidebarContainerLocation, before: SidebarItemReference?) -> (() -> Bool)? {
         guard !items.isEmpty, session.isValidForWindowTransfer, let window,
@@ -9918,8 +8738,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let move = SidebarWindowMove(items: items, sourceSpaceID: source.activeSpaceID, profileID: source.activeProfileID,
                   destinationProfileID: space.profileID, to: location, before: before, state: store.state) else { return nil }
         if source !== self {
-            // The window transfer itself is prepared once this window shows
-            // the dock's Space, still under the live session.
             guard items == session.items, sidebarWindowMoveAvailable, source.sidebarWindowMoveAvailable else { return nil }
             return { [weak self, weak window] in
                 guard let self, let window, self.window === window else { return false }
@@ -9934,7 +8752,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         guard sidebarWindowMoveAvailable, let validateOwners = prepareSidebarSpaceMoveOwners?(Set(move.tabIDs)) else { return nil }
         let claims = Dictionary(uniqueKeysWithValues: move.tabIDs.map { ($0, ownership.claimSnapshot($0)) })
-        // A whole split moves only with every live child in this window.
         let splitChildren = Set(move.collection.roots.flatMap { root -> [UUID] in
             guard case .split(let id) = root else { return [] }
             return move.source.groups.first { $0.id == id }?.tabIDs ?? []
@@ -9942,8 +8759,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard claims.values.allSatisfy({ $0.transfer == nil }),
               splitChildren.allSatisfy({ claims[$0]?.owner == nil || claims[$0]?.owner == presentationID }) else { return nil }
         let selection = selectedTabIDs, focus = focusedTabID, spaceID = activeSpaceID, profileID = activeProfileID
-        // The gesture binds placement: the same items, recomputed against the
-        // current state, still form this move.
         let current: (BrowserState) -> SidebarWindowMove? = { state in
             guard let now = SidebarWindowMove(items: move.roots, sourceSpaceID: move.source.spaceID, profileID: move.source.profileID,
                       destinationProfileID: move.destination.profileID, to: move.location, before: move.before, state: state),
@@ -9987,25 +8802,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// Both physical windows retain this transaction until all original native
-    /// owners and attachments agree. A result enum never releases a claim.
     @MainActor private final class SidebarWindowTransfer {
         let source: BrowserWindowController
         let destination: BrowserWindowController
-        /// The admitted model change: an ordinary sidebar drop, or an original
-        ///
-        /// share this native/editor owner.
         struct Plan {
             let tabIDs: [UUID]
             let sourceSpaceID: UUID, profileID: UUID, destinationSpaceID: UUID
             let isCurrent: (BrowserState) -> Bool
             let commit: (BrowserStore) throws -> Bool
-            /// After commit, select this item's group in the destination.
             var arrival: UUID? = nil
-            /// A selection move: the source keeps its panes as placeholders.
             var leavesPlaceholder = false
-            /// A drop explains a failed move; a selection only beeps, as a
-            /// page's does, and an automatic return says nothing.
             enum FailureReport { case alert, beep, silent }
             var failureReport = FailureReport.alert
         }
@@ -10172,8 +8978,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             let closed = Set(pages.filter { $0.value.isClosed }.map(\.key)).intersection(ids)
             guard pages.allSatisfy({ $0.value.isClosed || PCNativeBrowserApplication.owner(of: $0.value) === target.nativeBinding }),
                   source.ownership.isCurrent(reservation, closed: closed) else { presentRecovery(); return }
-            // First attach every surviving original view. Local editors and
-            // model claims move only after the full native set is confirmed.
             for id in plan.tabIDs {
                 guard let page = pages[id], !page.isClosed, let browser = wrappers[id],
                       let tab = source.store.state.tabs.first(where: { $0.id == id }) else { continue }
@@ -10187,9 +8991,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                       browser.window === targetWindow, !page.isClosed,
                       PCNativeBrowserApplication.owner(of: page) === target.nativeBinding else { presentRecovery(); return }
             }
-            // Move each existing editor/pool as one native subtree, then bind
-            // every original auxiliary wrapper to its already-transferred page.
-            // No authoring URL, new request or replacement provider is involved.
             for id in plan.tabIDs {
                 guard let easel = easels[id], let tab = source.store.state.tabs.first(where: { $0.id == id }) else { continue }
                 let pane = target.panes[id] ?? target.makePane(tab); target.panes[id] = pane
@@ -10210,8 +9011,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let transfer = easelTransfers[id] else { return false }
                 return easels[id]?.editor.pageObjects?.canFinishWindowTransfer(transfer) == true
             }), source.ownership.finishCollection(reservation, moved: committed, closed: closed) else { presentRecovery(); return }
-            // These pure owner checks just passed above. Clear the pool gate
-            // before ordinary rendering, while both window gates still hold.
             for id in begunEasels {
                 if let transfer = easelTransfers[id] { _ = easels[id]?.editor.pageObjects?.finishWindowTransfer(transfer) }
             }
@@ -10253,8 +9052,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     source.renderedPaneIDs.removeAll { $0 == id }
                 }
                 if source.focusedTabID.map(ids.contains) == true { source.focusedTabID = source.presentation.preferredFocusedTabID }
-                // Existing destination focus is retained. An empty destination
-                // adopts the first transferred item using its whole split.
                 if let arrival = plan.arrival {
                     if destination.presentation.selectExistingTab(arrival, state: source.store.state,
                         available: { destination.ownership.canUse($0, owner: destination.presentationID) }) {
@@ -10274,8 +9071,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             source.transferringTabIDs.subtract(ids); destination.transferringTabIDs.subtract(ids)
             source.collectionTransfer = nil; destination.collectionTransfer = nil
-            // A render may short-circuit even though ownership is settled.
-            // Schedule the shared source sweep after both window gates clear.
             source.refreshMiniPlayers(force: true); destination.refreshMiniPlayers(force: true)
             source.schedulePresentationSessionRecord(); destination.schedulePresentationSessionRecord()
             source.render(source.store.state); destination.render(destination.store.state)
@@ -10342,8 +9137,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// A Space move changes placement, never native ownership. Every physical
-    /// owner contributes a lease so a background page cannot race the commit.
     func prepareSidebarSpaceRelocationOwnership(_ ids: Set<UUID>) -> (() -> Bool)? {
         guard ids.contains(where: { ownership.claimSnapshot($0).owner == presentationID || browsers[$0] != nil || easelEditors[$0] != nil || noteEditors[$0] != nil }) else { return { true } }
         guard !store.isEphemeral, !isPrivateBrowsing, !isClosing, !wholeWindowClose,
@@ -10424,10 +9217,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    ///
-    /// then the original items, folders and whole splits move and their pages
-    /// reload in the destination Profile. No live page changes Profile in place.
     private func prepareInterProfileSpaceMove(_ items: [SidebarItemReference], to destination: BrowserSpace,
                                               pinsToday: Bool = false) -> (() -> Bool)? {
         guard !store.isEphemeral, !isPrivateBrowsing, spaceCommandsAvailable, commandBar == nil,
@@ -10470,9 +9259,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebarMoveToast?.dismiss(animated: false); sidebarMoveToast = nil
     }
 
-    /// ToastType.clickToReveal (case 32): the message is the label, the
-    ///
-    ///
     private func showSidebarMoveNotice(item: SidebarItemReference, space: UUID, profile: UUID, message: String? = nil) {
         dismissSidebarMoveNotice()
         let toast = showToast(.standard(message ?? "Tab moved! Click to go there."), at: .window, onTap: { [weak self] in
@@ -10484,8 +9270,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebarMoveToast = toast
     }
 
-    /// Shared by a move's click-to-reveal and original-item command results.
-    /// Space focus is allowed; the revealed item is never selected as a page.
     @discardableResult
     func revealSidebarItem(_ item: SidebarItemReference, spaceID: UUID, profileID: UUID) -> Bool {
         guard !store.isEphemeral, !isPrivateBrowsing, activeProfileID == profileID,
@@ -10507,7 +9291,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard !store.isEphemeral, nativeWindowRequest?.isOffTheRecord != true,
               let binding = nativeBinding, !binding.isPrivateBrowsing else { return false }
         switch binding.browsingContextKind {
-        case .regular, .unavailable: return true // Bare normal shell may have only saved items.
+        case .regular, .unavailable: return true
         case .offTheRecord, .mixed: return false
         @unknown default: return false
         }
@@ -10541,8 +9325,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             do {
                 guard let result = try self.store.duplicateSidebarItems(target, destinations: urls.destinations, documents: urls.documents,
                     creation: self.creationProvenance(activeTabID: self.currentTabID)) else { return false }
-                // The original indexed-root/split policy requests eager pages. Copies
-                // are already durable; original views/selection are untouched.
                 self.openDuplicatedChildren(result.openTabIDs, spaceID: target.hierarchy.spaceID,
                     profileID: target.hierarchy.profileID, window: window)
                 return true
@@ -10556,14 +9338,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         prepareSidebarDeletion([.folder(folderID)])
     }
 
-    /// Keyboard Close of original sidebar roots and the split cell's Close:
-    /// archiving goes through the deletion path (never in a private window);
-    /// otherwise the roots' pages close and saved references stay. Validity
-    /// follows the hierarchy, selection, focus and retirement rather than the
-    /// window-move lease, so private windows close too. A selection command
-    /// also holds the sidebar selection. Pages another window holds move here
-    /// first, as a row's Close does, and the close is prepared once they have;
-    /// `declined` runs when a started close is cancelled or refused.
     private func prepareSidebarRootsClose(_ items: [SidebarItemReference], archive: Bool, requiresConfirmation: Bool,
                                           isSelectionCommand: Bool, selectionIsCurrent current: @escaping () -> Bool,
                                           declined: @escaping () -> Void = {}) -> (() -> Bool)? {
@@ -10615,8 +9389,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             consumed = true
             self.prepareStoreContext()
             self.closeTabsWithReopen(ids, shouldCommit: { [weak self] in
-                // The retirement coordinator owns its own pages now. Its
-                // close flags must not invalidate the originating intent.
                 guard let self, !self.isClosing, !self.wholeWindowClose, current(),
                       self.activeSpaceID == expected.spaceID, self.activeProfileID == expected.profileID,
                       self.selectedTabIDs == selection, self.focusedTabID == focus else { return false }
@@ -10631,14 +9403,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// The split cell's Close enables with the same conditions as its press;
-    /// only the close transaction is prepared on press.
     private func splitCellCloseAvailable(_ id: UUID) -> Bool {
         guard let group = SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID).first(where: { $0.id == id }) else { return false }
         return sidebarRootsCloseAvailable(Set(group.tabIDs))
     }
 
-    ///
     private func splitCellCloseAction(_ id: UUID) -> SidebarSplitCellLayout.CloseAction? {
         guard let group = SidebarSplitItems.groups(in: store.state, spaceID: activeSpaceID).first(where: { $0.id == id }),
               let location = SidebarHierarchy.location(of: .split(id), state: store.state, spaceID: activeSpaceID) else { return nil }
@@ -10646,8 +9415,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             anyChildPresented: group.tabIDs.contains { hasPresentedContent($0) })
     }
 
-    ///
-    /// live page or local document editor in this window.
     private func hasPresentedContent(_ id: UUID) -> Bool {
         browsers[id] != nil || noteEditors[id] != nil || easelEditors[id] != nil
     }
@@ -10666,9 +9433,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let ids = Set(target.tabs.map(\.id))
         guard retirementUnavailableReason?(ids) == nil else { return nil }
         let selection = selectedTabIDs, focus = focusedTabID
-        // Keep the existing physical-window manual Today reopen steps. Saved
-        // references archived by a mixed command restore through its whole Undo;
-        // their separate bulk saved Reopen consumer is not fabricated here.
         let reopen = recordsKeyboardReopen ? ClosedItemIntent(
             ids: Set(target.tabs.filter { $0.kind == .today }.map(\.id)), state: store.state,
             spaceID: activeSpaceID, profileID: activeProfileID, focusedTabID: currentTabID) : nil
@@ -10683,32 +9447,23 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let releaseSelection = isSelectionCommand ? self.sidebar.retainItemSelectionForSheet(items) : {} else { return false }
             consumed = true
             let proceed: (Bool) -> Void = { [weak self, weak window] approved in
-                // Let AppKit finish detaching our confirmation sheet before
-                // admitting Chromium's own original-page beforeunload dialogs.
                 DispatchQueue.main.async {
                     guard let self, let window, self.window === window else { releaseSelection(); lease.end(); return }
                     guard approved, selectionIsCurrent(), lease.isValid,
                           !self.folderUndo.isBusy, self.folderDuplicateContextAvailable,
                           self.retirementUnavailableReason?(ids) == nil else {
                         releaseSelection(); lease.end()
-                        // Rebuild one-shot menu/AX capabilities after Cancel.
                         self.updateNavigation(); declined()
                         return
                     }
                     lease.end()
-                    // This command is already explicitly Space/Profile-bound;
-                    // do not stamp another shared last-used selection first.
                     self.store.deleteFolder(target, selection: nextSelection, documents: documents, shouldCommit: { [weak self, weak window] in
-                        // Native retirement now reserves every real page owner;
-                        // its close flags are expected, not a stale-intent test.
                         guard let self, let window, self.window === window,
                               !self.isClosing, !self.wholeWindowClose, !self.windowClosePending,
                               !self.folderUndo.isBusy, self.folderDuplicateContextAvailable,
                               self.activeSpaceID == target.hierarchy.spaceID,
                               self.activeProfileID == target.hierarchy.profileID,
                               self.selectedTabIDs == selection, self.focusedTabID == focus, selectionIsCurrent() else { return false }
-                        // Replacement pages are still owned/available here;
-                        // native close flags on removed pages are expected.
                         return FolderRemovalSelection.resolve(target: target, state: self.store.state,
                             selected: selection, focused: focus, referrerPool: self.presentation.referrerPool,
                             previouslySelectedItemID: self.presentation.previouslySelectedItemID,
@@ -10716,8 +9471,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     }, didCommit: { [weak self, weak window] undo in
                         guard let self, let window, self.window === window, !self.isClosing else { return }
                         self.registerFolderUndo(undo)
-                        //
-                        // shares with Undo; one Reopen restores this folder Delete.
                         if !target.folderIDs.isEmpty {
                             if !self.isPrivateBrowsing { self.closedItems.recordFolderDeletion(undo) }
                         } else if let reopen { self.closedItems.record(reopen, in: self.store.state) }
@@ -10731,10 +9484,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                                 available: { self.switcherCanUse($0) })
                             if applied { self.focusedTabID = nextSelection.focusedTabID }
                             self.render(self.store.state)
-                            // Background deletion preserves the original first
-                            // responder. A retired selection focuses its actual
-                            // replacement; with no tab left the window keeps focus
-                            // over the empty content.
                             if applied && !ids.isDisjoint(with: selection) {
                                 self.requestNativeSelection(); self.focusSelectedLocalContent()
                             }
@@ -10745,8 +9494,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 }
             }
             if requiresConfirmation {
-                //
-                // destructive Dialogs sheet, not an NSAlert.
                 let singleFolder = target.roots.count == 1 && !target.folderIDs.isEmpty
                 PArcDialog.confirm(in: window,
                     title: singleFolder ? "Delete your “\(target.name)” folder?"
@@ -10772,8 +9519,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               !windowClosePending, !windowCloseApproved,
               transferringTabIDs.isEmpty, resolvingTransfers.isEmpty, transferRecoveries.isEmpty,
               window?.isVisible == true else { return false }
-        // Private container names belong to the real OTR window's memory-only
-        // store. Folder deletion keeps its distinct normal-profile guard below.
         switch binding.browsingContextKind {
         case .regular: return !store.isEphemeral && !binding.isPrivateBrowsing
         case .offTheRecord: return store.isEphemeral && binding.isPrivateBrowsing
@@ -10794,9 +9539,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         folderUndoOwnerAvailable && window?.attachedSheet == nil
     }
 
-    /// The renderer always implements undo:/redo:, even outside an editor.
-    /// Its exact focused editable/IME/security state decides whether the window
-    /// window action may take over. Local editing keeps its own responder.
     private var usesFolderUndoResponder: Bool {
         if windowUndoContextAvailable, let editor = themeEditor,
            editor.window?.isKeyWindow == true,
@@ -10841,10 +9583,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return folderUndo.canPerform(command)
     }
 
-    ///
-    ///
-    /// An entry whose expected appearance was replaced since is no longer valid.
-    /// Private and popup windows have no window undo stack to hold it.
     func registerAppearanceUndo(from previous: AppAppearance, to next: AppAppearance) {
         guard folderUndoContextAvailable else { return }
         folderUndo.append(.init(name: "Update Appearance",
@@ -10924,8 +9662,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 previouslySelectedItemID: presentation.previouslySelectedItemID,
                 available: { self.switcherCanUse($0) }) : nil
         guard space != target.hierarchy.spaceID || nextSelection != nil else { completion(false); return }
-        // Redo replays the genuine close action, not its already-dismissed
-        // confirmation sheet. Chromium's original documents still get consent.
         store.deleteFolder(target, selection: nextSelection, documents: operation.record.documentReferences, shouldCommit: { [weak self, weak window] in
             guard let self, let window, self.window === window, self.folderUndoOwnerAvailable,
                   self.activeSpaceID == space, self.activeProfileID == profile,
@@ -10937,7 +9673,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             available: { self.switcherCanUse($0) }) == nextSelection
         }, didCommit: { [weak self] undo in
             operation.record = undo
-            // Redo replays the genuine close, which records it again.
             if let self, !target.folderIDs.isEmpty, !self.isPrivateBrowsing { self.closedItems.recordFolderDeletion(undo) }
         }) { [weak self, weak window] result in
             guard let self, let window, self.window === window else { completion(false); return }
@@ -10965,7 +9700,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   !store.isProfileRemovalPending(profileID), !store.retiringTabIDs.contains(id),
                   !closingTabIDs.contains(id), !transferringTabIDs.contains(id),
                   browsers[id] == nil,
-                  // Favorites are Profile-wide; their stored home Space may differ.
                   let tab = store.state.tabs.first(where: { $0.id == id && ($0.spaceID == spaceID || $0.kind == .favorite)
                       && $0.profileID == profileID && $0.archivedAt == nil }),
                   FolderDuplicateTarget.validDestination(tab.url), let url = URL(string: tab.url),
@@ -10981,8 +9715,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             pane.browser = browser; pane.showBrowser(); pane.layoutSubtreeIfNeeded()
             requestedURLs[id] = tab.url
             if browser.loadBackgroundURL(url) {
-                // The recovered shouldOpen duplicate enters ordinary
-                // TabCreation (10256cedc → 10261ae54); saved-only copies do not.
                 presentation.recordCreation(id, state: store.state)
             } else {
                 failures[id] = "This copied page could not open. Select it to try again."
@@ -10992,8 +9724,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         attachOwnedPages()
     }
 
-    /// The original content owner is captured before preview. A local document
-    /// never becomes a synthetic browser page, and its dirty editor is not closed.
     private func externalSplitDropContent(_ id: UUID) -> (view: NSView, local: Bool, valid: () -> Bool)? {
         if let browser = browsers[id], let page = browser.nativePage {
             return (page.nativeView, false, { [weak self, weak browser, weak page] in
@@ -11027,9 +9757,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func beginExternalSplitDrop(from nativeView: NSView, info: NSDraggingInfo) -> ExternalSplitDropSession? {
-        //
-        // window (including another Profile's) targets this window under the
-        // pointer, which need not be key; the drag-destination gate applies.
         let otherWindow = window.map { !$0.isKeyWindow && NSApp.isActive && info.draggingSource != nil } ?? false
         guard otherWindow ? interProfileDropAvailable : splitCommandsAvailable,
               splitDropView == nil, commandBar == nil, pageCapture == nil,
@@ -11044,8 +9771,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard contents.count == selection.count,
               let receiver = contents.first(where: { nativeView === $0.view || nativeView.isDescendant(of: $0.view) }) else { return nil }
         if receiver.local {
-            // A document's own rich text/images and within-editor drags retain
-            // their original receiver instead of becoming a new split URL.
             let richTypes: [NSPasteboard.PasteboardType] = [EaselStyledText.pasteboardType,
                 EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType,
                 .rtfd, .rtf, .png, .tiff]
@@ -11094,9 +9819,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         let creation = TabCreationProvenance(referrerID: nil, activeTabID: focusID,
             profileID: profileID, state: store.state)
-        // Hit testing has a finite set of target/orientation pairs. Reuse its
-        // admission result only after the original owner, hierarchy and saved
-        // metadata pass validation again; construct/save fresh state at commit.
         var admissions: [(target: SplitDropTarget, orientation: SplitOrientation, allowed: Bool)] = []
         let session = ExternalSplitDropSession(host: pageHost, info: info, frames: frames,
             orientation: layout?.orientation ?? .horizontal, reservation: reservation, validate: validate,
@@ -11146,13 +9868,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let source = store.state.tabs.first(where: { $0.id == sourceID && $0.archivedAt == nil }),
               source.profileID == activeProfileID, source.spaceID == activeSpaceID, source.kind != .favorite,
               switcherCanUse(sourceID) || canMovePageHere(sourceID), peekPages(forTabID: sourceID).isEmpty else { return nil }
-        // A row whose page another window shows drops into the model first;
-        // selecting the new split then moves its page here.
         let sourceElsewhere = !switcherCanUse(sourceID)
         let selection = selectedTabIDs, layout = activeSplitLayout
-        // The source is an ordinary sidebar row: split children have no drag
-        //
-        // cannot join itself.
         guard !selection.contains(sourceID) else { return nil }
         let spaceID = activeSpaceID, profileID = activeProfileID, focusID = currentTabID
         let frame = pageHost.bounds, windowFrame = window.frame
@@ -11255,11 +9972,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return drag
     }
 
-    //
-
-    /// A row drag offers this window's own panes and, through the application,
-    /// another Profile's windows. A row whose window has no local pane target
-    /// can still offer the latter; authority stays with the original row.
     private func beginSidebarSplitDrag(_ sourceID: UUID) -> SidebarSplitDrag? {
         guard let drag = beginSplitDrag(sourceID) ?? beginForeignOnlySplitDrag(sourceID) else { return nil }
         onSplitDragBegan?(drag, self)
@@ -11281,8 +9993,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }, commit: { _, _ in false }, finish: {})
     }
 
-    /// A drop destination need not be key. The registered-window/security gate
-    /// for drag destinations (`canParticipateInPageTransfer`) still applies.
     private var interProfileDropAvailable: Bool {
         guard !isPopupWindow, !isPrivateBrowsing, !store.isEphemeral, presentation.isReady,
               !isClosing, !wholeWindowClose, !windowClosePending, !windowCloseApproved,
@@ -11297,12 +10007,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return binding.canParticipateInPageTransfer
     }
 
-    ///
-    /// window, whatever its Profile (the SharedWindows reducer forwards
-    ///
-    ///
-    ///
-    /// page/editor here; another Profile reloads it after the decision.
     func beginForeignSplitDrop(_ drag: SidebarSplitDrag, from source: BrowserWindowController) {
         guard source !== self, source.store === store, source.ownership === ownership,
               foreignSplitDropView == nil, interProfileDropAvailable, drag.isValid,
@@ -11348,7 +10052,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         let proposal: (ForeignSplitDrop.Request, BrowserState) -> BrowserState? = { value, state in
             guard let required = ForeignSplitDrop.destinationHomes(value, state: state) else { return nil }
-            // The source's saved home is an alias only when the item keeps its Profile.
             let checked = original.profileID == profileID ? required : required.filter { $0.id != original.id }
             let ids = Set(checked.map(\.id))
             guard SidebarDocumentReference.validates(checked, references: documents.filter { ids.contains($0.key) }) else { return nil }
@@ -11398,9 +10101,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// Same Profile: SP19's collection owner moves the original's actual page,
-    /// Note or Easel editor (with its embedded pages) into this window, then
-    /// one durable save publishes the split placement. Nothing reloads.
     private func moveForeignSplitDropHere(_ id: UUID, from source: BrowserWindowController, sourceSpaceID: UUID,
                                           proposal: @escaping (BrowserState) -> BrowserState?,
                                           sourceHomeID: UUID, homeIDs: [UUID]) -> Bool {
@@ -11422,11 +10122,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return transaction.begin()
     }
 
-    ///
-    /// preference proceeds; otherwise the `.to(spaceID)` dialog asks as a sheet
-    /// on this window. "Move it" proceeds, with "Don’t ask again" checked it
-    /// stores the preference first (alwaysProceed), Cancel aborts. Returns
-    /// whether the move proceeds or awaits the decision.
     private func confirmInterProfileMove(tabCount: Int, sourceProfiles: Set<UUID>, destinationSpaceID: UUID,
                                          proceed: @escaping () -> Void) -> Bool {
         guard let destination = store.state.spaces.first(where: { $0.id == destinationSpaceID }),
@@ -11440,10 +10135,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   let prompt = InterProfileMovePrompt(tabCount: tabCount, destinationSpaceID: destinationSpaceID, state: store.state) else { return false }
             let dialog = InterProfileMoveDialog(prompt: prompt)
             interProfileDialog = dialog
-            // A drop can land on a background window; its sheet needs it in front.
             if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
             let began = dialog.begin(for: window) { [weak self] decision in
-                // Continue after the sheet has detached from the window.
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     self.interProfileDialog = nil
@@ -11458,8 +10151,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// Arrival selects the original's group here only after every other owner
-    /// released the original page. Its fresh page loads in this Profile.
     private func finishInterProfileArrival(_ id: UUID) {
         if presentation.selectExistingTab(id, state: store.state, available: { ownership.canUse($0, owner: presentationID) }) {
             presentation.recordFocusedTab(id); focusedTabID = id
@@ -11471,8 +10162,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         Dictionary(uniqueKeysWithValues: easelEditors.filter { ids.contains($0.key) }.map { ($0.key, $0.value.editor) })
     }
 
-    /// Before Notes/Easels move to another Profile's storage, every original
-    /// editor closes (its draft flushed) so no session writes the old copy.
     func closeLocalDocumentEditors(_ ids: Set<UUID>) -> Bool {
         guard ids.allSatisfy({ noteEditors[$0]?.editor.prepareToClose() ?? true }),
               ids.allSatisfy({ embeddedEaselPages(forTabID: $0).isEmpty && !hasPendingNativePage(in: [$0]) }),
@@ -11487,14 +10176,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return true
     }
 
-    /// The source window owns a fresh saved home's background opening.
     func openSavedHomeInBackground(_ id: UUID) {
         guard let window, let home = store.state.tabs.first(where: { $0.id == id }) else { return }
         openDuplicatedChildren([id], spaceID: home.spaceID, profileID: home.profileID, window: window)
     }
 
-    /// A claim without a live page or editor here (an unmaterialized or Start
-    /// original) is not an owner of a record that moved to another Profile.
     func releaseInterProfileClaims(_ ids: Set<UUID>) {
         let released = ids.filter { id in
             browsers[id] == nil && noteEditors[id] == nil && easelEditors[id] == nil
@@ -11531,17 +10217,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let target = self.splitCommandTarget(command, paneID: paneID) else { return nil }
             return { target.perform() }
         }
-        // The menu takes the bar's resolved scheme, dark over a dark page
-        //
         menu.appearance = anchor.effectiveAppearance
         pane.trackSplitMenu {
             menu.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.maxY), in: anchor)
         }
     }
 
-    /// New Note / New Easel occupy Add Split's drafted slot and orientation,
-    /// the same commit URL and existing-tab submits use. File → New Note in
-    /// Split View still appends through `createNote(inSplit:)`.
     private func fillSplitInsertionWithNewDocument(_ session: SplitPaneInsertionSession,
                                                    create: () throws -> (InternalPage, String),
                                                    reportError: (Error) -> Void) {
@@ -11587,11 +10268,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         render(store.state)
         guard restoreFocus else { return }
         requestNativeSelection()
-        //
-        //
-        // field, else the content itself (SP32).
         if let find = visibleFind, isCurrentFind(find), !findHost.isHidden, window?.isKeyWindow == true {
-            // Re-making the field first responder would select all over its caret.
             if let editor = findField.currentEditor(), window?.firstResponder === editor { return }
             if window?.makeFirstResponder(findField) == true { return }
         }
@@ -11606,12 +10283,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let index = selectedTabIDs.firstIndex(of: paneID),
               let owner = splitCommandTarget(.focus(index + 1), paneID: paneID) else { return }
         let focus = currentTabID, binding = nativeBinding
-        //
-        //
-        // Add Split also offers the Profile's tabs in its other Spaces; one
-        // from another Space joins here (SplitCrossSpaceAdd).
-        // A tab another window shows is offered too; choosing it moves its
-        //
         let candidates = splitInsertionTabs(profileID: request.profileID).filter { !selectedTabIDs.contains($0.id)
             && (switcherCanUse($0.id) && ownership.canUse($0.id, owner: presentationID) || canMovePageHere($0.id)) }
         let elsewhere = Set(candidates.filter { canMovePageHere($0.id) }.map(\.id))
@@ -11664,8 +10335,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             contentAppearance: rootView.palette.contentAppearance)
         panel.tabCaption = { [weak self] tab in self?.commandBarTabCaption(tab)
             ?? .switchToTab }
-        // A non-navigation command cancels the placeholder before dispatch. Its
-        // original window remains independently valid after that dismissal.
         panel.isOwnerValid = session.validate
         panel.onWillSubmitDestination = { [weak session] in session?.submitting = true }
         panel.onRejectedDestination = { [weak self, weak session] in
@@ -11678,8 +10347,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if !session.submitting { self.cancelSplitInsertion(restoreFocus: true) }
         }
         panel.restorePageFocus = { [weak self] in self?.requestNativeSelection(); self?.focusSelectedLocalContent() }
-        // The panel owns the submission; a move under way holds it only until
-        // its page arrives, so it never retains itself.
         @MainActor final class Submission { var run: (PCNativeSearchNavigation?, UUID?) -> Void = { _, _ in } }
         let submission = Submission()
         submission.run = { [weak self, weak session, weak window, weak submission] navigation, existing in
@@ -11720,8 +10387,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             let homeIDs = plan.ids, documents = plan.documents
             if let navigation { self.pendingSearchNavigations[id] = navigation }
-            // End only the transient presentation before the one durable commit.
-            // The captured original owners above are still authoritative.
             self.splitInsertion = nil; session.cancel()
             var committed = false
             self.performWindowCommand(selectNativePage: false) {
@@ -11740,8 +10405,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         panel.onSearchNavigation = { submission.run($0, nil) }
         panel.onSelectTab = { submission.run(nil, $0) }
-        // Add Split is already the split destination, so Option-Return fills
-        // the drafted pane the same way Return does.
         panel.onSplitNavigation = { submission.run($0, nil) }
         panel.onSplitTab = { submission.run(nil, $0) }
         panel.canSplitSelection = { [weak session] existing in
@@ -11790,8 +10453,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         panel.onNavigate = navigate
         panel.onSplitInput = navigate
-        //
-        //
         commandBarCreatesNewTab = true; commandBarShowsNewTabPlaceholder = true
         commandBar = panel; panel.present()
     }
@@ -11802,8 +10463,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let page: String?
     }
 
-    // Menus hold the original group and page owners. They never reconstruct a
-    // URL, adopt another window's selection or retarget a changed focused pane.
     @MainActor final class SplitCommandTarget {
         private weak var owner: BrowserWindowController?
         private weak var window: NSWindow?
@@ -11847,8 +10506,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// A divider owns the original layout and actual displayed pages through
-    /// AppKit's nested tracking loop; a later selection cannot receive its ratios.
     private func prepareSplitResize() -> (([Double]) -> Bool)? {
         guard splitInsertion == nil, renderedPaneIDs == selectedTabIDs,
               let window, window.isKeyWindow, let layout = activeSplitLayout,
@@ -11941,12 +10598,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return item
     }
 
-    /// Moves focus to the content an explicit selection just displayed, as
-    ///
-    /// else the selected page or its renderer-failure surface through the
-    /// window's native focus manager, else local content. It waits for a page
-    /// the engine has not yet shown and leaves focus that a sidebar control,
-    /// panel or field outside the content holds.
     private func focusSelectedContent() {
         contentFocusRequest?.cancel(); contentFocusRequest = nil
         guard let window, window.isKeyWindow, presentation.isReady else { return }
@@ -11964,8 +10615,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 return (window.firstResponder as? NSView)?.isDescendant(of: peek.view) == true ? .focused : .waiting
             }
             guard let id = tabID else { return .cancelled }
-            // Each target reports focus only once it actually holds it; a web
-            // tab whose wrapper or page is still being created keeps waiting.
             let paneHoldsFocus = { @MainActor () -> Bool in
                 guard let pane = self.panes[id] else { return false }
                 return (window.firstResponder as? NSView)?.isDescendant(of: pane) == true
@@ -11979,8 +10628,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 return self.nativeBinding?.requestFocus(for: page) == true ? .focused : .waiting
             }
             guard self.presentation.isLocalSelection(id, state: self.store.state, hasNativeWrapper: false) else { return .waiting }
-            // A blank tab has nothing to focus: the window takes it from the
-            // page that held it, and the request is done.
             if self.panes[id]?.showsBlank == true { window.makeFirstResponder(nil); return .focused }
             self.focusSelectedLocalContent()
             return paneHoldsFocus() ? .focused : .waiting
@@ -11989,14 +10636,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         request.start()
     }
 
-    /// Separate and pane moves change what the split shows, not what holds
-    ///
-    ///
-    /// eight request posters; Expand, which only reweights, posts none either).
-    /// Focus moves to the focused content only when the change took it away:
-    /// Parc parks an undisplayed page in a hidden container, and re-parenting
-    ///
-    /// nil fallback (docs/split-groups.md, SP32).
     private func reclaimFocusAfterSplitPresentation() {
         guard let window, ContentFocusRequest.lostByPresentation(window.firstResponder, window: window) else { return }
         focusSelectedContent()
@@ -12017,8 +10656,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         case .focus, .next, .previous:
             pendingNativeSelection = nil
             focusedTabID = targetID
-            // Render before synchronizing native focus; this also updates the
-            // window-local per-Space focus memory.
             render(store.state)
             requestNativeSelection()
             focusSelectedContent()
@@ -12049,9 +10686,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard let group = activeSplitLayout else { return }
             separateSplitTab(targetID, group: group, originalFocus: currentTabID)
         case .expand:
-            //
-            // nil object, and every window's container observes it with a nil
-            //
             NotificationCenter.default.post(name: Self.expandCurrentSplitNotification, object: nil)
         case .orientation(let orientation):
             guard let layout = activeSplitLayout else { return }
@@ -12061,11 +10695,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     static let expandCurrentSplitNotification = Notification.Name("ParcExpandCurrentSplit")
 
-    ///
-    /// focused content weight 1 and every other pane 0 through the bulk update
-    ///
-    /// ones as a resize end (delegate slot 9) and lays out immediately. There is
-    /// no restore toggle, and every pane stays displayed.
     private func expandDisplayedSplit() {
         guard !isPopupWindow, presentation.isReady, !isClosing, !wholeWindowClose, !windowClosePending,
               spaceCreation == nil, splitInsertion == nil, nativeFullscreenTabID == nil,
@@ -12083,7 +10712,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let first = selectedTabIDs.first, selectedTabIDs.allSatisfy({ switcherCanUse($0) }) {
             closedItems.recordSelection(selectedTabIDs, focusedTabID: currentTabID ?? first, state: store.state)
             onSessionRecordChange?()
-            //
             if TabSelectionHistory.isEnabled { tabSelectionHistory.record(.init(tabIDs: selectedTabIDs, focusedTabID: currentTabID ?? first,
                 spaceID: activeSpaceID, profileID: activeProfileID,
                 orientation: activeSplitLayout?.orientation ?? .horizontal)) }
@@ -12096,14 +10724,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             && !modelRetirementIDs.contains(id) && !transferringTabIDs.contains(id)
             && !store.retiringTabIDs.contains(id) && transferRecoveries[id] == nil
     }
-    /// Usable here, or held by another window that would move it here on
-    ///
     private func canUseOrMoveHere(_ id: UUID) -> Bool { switcherCanUse(id) || canMovePageHere(id) }
     private func canCloseOrMoveHere(_ id: UUID) -> Bool { ownership.canUse(id, owner: presentationID) || canMovePageHere(id) }
 
-    /// An open Peek doesn't block these: selecting another item keeps it
-    ///
-    /// shows a Peek's snapshot over its parent's (docs/tab-switcher.md).
     private var tabCommandsAvailable: Bool {
         guard !isPopupWindow, presentation.isReady, !isClosing, !wholeWindowClose,
               !windowClosePending, transferringTabIDs.isEmpty, resolvingTransfers.isEmpty,
@@ -12128,12 +10751,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return PositionalTabNavigation.destination(items, selected: selectedTabIDs, forward: forward)
     }
 
-    //
-    //
-    //
-    // never per direction. A repeated key at an endpoint, or with no other
-    // item, is consumed by the menu and refused silently; it never falls
-    // through to the page. Parc's ownership gates remain authoritative.
     func canSelectAdjacentTab(forward: Bool) -> Bool {
         tabCommandsAvailable && tabSwitcher == nil
     }
@@ -12145,8 +10762,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         selectRecentItem(item)
     }
 
-    /// Go to Sidebar Item N (Command-1…9) indexes the unfiltered sidebar list,
-    /// so a transiently unavailable item never shifts the others (KB04).
     private func sidebarItemDestination(number: Int) -> RecentTabOrder.Item? {
         let defaults = UserDefaults.standard
         let items = PositionalTabNavigation.items(state: store.state, spaceID: activeSpaceID,
@@ -12238,14 +10853,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if let selection { self.selectRecentItem(selection) }
         }
         controller.onCloseItem = { [weak self, weak controller, weak window] selection, completion in
-            // Closing goes through the shared close coordinator, which also
-            // retires a page another window holds, as the sidebar's close does.
             guard let self, let controller, self.tabSwitcher === controller,
                   let window, self.window === window,
                   selection.tabIDs.allSatisfy({ self.canUseOrMoveHere($0) }),
                   self.retirementUnavailableReason?(Set(selection.tabIDs)) == nil else { completion(nil); return }
-            // As a row's Close does, a tab another window holds moves here
-            // first and closes here; the switcher ends while it moves.
             let elsewhere = selection.tabIDs.filter { !self.ownership.canUse($0, owner: self.presentationID) }
             if !elsewhere.isEmpty {
                 completion(nil)
@@ -12273,8 +10884,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self.render(self.store.state); self.requestNativeSelection()
                 guard let controller, self.tabSwitcher === controller,
                       let window, self.window === window else { completion(nil); return }
-                // Only this accepted close may advance the original ownership
-                // snapshot. An unrelated change still dismisses the switcher.
                 sourceIDs = self.selectedTabIDs; sourceSpace = self.activeSpaceID
                 let available = self.recentTabOrder.items(state: self.store.state,
                     selected: sourceIDs, currentSpace: sourceSpace, available: {
@@ -12287,17 +10896,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         controller.start(event: event)
     }
 
-    ///
-    ///
-    ///
     private func recentSwitcherItems(_ selections: [RecentTabOrder.Item], in window: NSWindow) -> [RecentTabSwitcher.Item] {
         let privateWindow = store.isEphemeral
         return selections.map { selection in
             let components = selection.tabIDs.compactMap { id -> RecentTabSwitcher.Component? in
                 guard let tab = store.state.tabs.first(where: { $0.id == id }) else { return nil }
                 var preview: NSImage? = store.placeholderImages.image(for: id, in: presentationID).map { NSImage(cgImage: $0, size: .zero) }
-                // Native local pages may provide their actual AppKit contents.
-                // Web pixels always come from the real engine thumbnail helper.
                 if preview == nil, InternalPage(urlString: tab.url) == nil, browsers[id] == nil, let pane = panes[id], pane.window === window,
                    !pane.isHiddenOrHasHiddenAncestor,
                    let bitmap = pane.bitmapImageRepForCachingDisplay(in: pane.bounds) {
@@ -12307,8 +10911,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 let title = tab.title.isEmpty ? (tab.url.isEmpty ? "New Tab" : tab.url) : tab.title
                 var component = RecentTabSwitcher.Component(id: id, title: title,
                     page: browsers[id]?.nativePage, localPreview: preview)
-                // Notes and Easels take their catalog illustration and title; a
-                // private window's page without a snapshot takes the incognito one.
                 switch InternalPage(urlString: tab.url) {
                 case .note?: component.template = RecentSwitcherArtwork.note.map { .init(image: $0, title: title) }
                 case .easel?: component.template = RecentSwitcherArtwork.easel.map { .init(image: $0, title: title) }
@@ -12321,8 +10923,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 } else if let page = browsers[id]?.nativePage, !page.isClosed, let icon = page.favicon {
                     component.favicon = icon
                 } else if !privateWindow, mayReadCachedFavicons, let url = URL(string: tab.url) {
-                    // An unloaded page's cached icon from its exact profile; a
-                    // private window never consults its parent's history.
                     let path = store.independentEngineProfilePath(for: tab.profileID)
                     component.faviconRequest = { [weak self] completion in
                         PCNativeBrowserApplication.favicon(for: url, profilePath: path) { [weak self] image in
@@ -12344,7 +10944,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             var item = RecentTabSwitcher.Item(selection: selection, components: components,
                 spaceName: store.state.spaces.first(where: { $0.id == selection.spaceID })?.name ?? "")
-            // A split with its own title or icon shows that custom info.
             if selection.tabIDs.count > 1,
                let layout = store.state.splitLayouts.first(where: { Set($0.tabIDs) == Set(selection.tabIDs) }),
                SidebarSplitCellLayout.usesCustomInfo(title: layout.customTitle, hasIcon: layout.customIcon != nil, editing: false) {
@@ -12352,7 +10951,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     ?? SidebarSplitCellLayout.defaultTitle(count: selection.tabIDs.count)
                 item.customInfo = .init(icon: layout.customIcon?.image(size: SidebarSplitCellLayout.countIconSize), title: title)
             }
-            // A single page's live Peek appears above it.
             if selection.tabIDs.count == 1, let id = selection.tabIDs.first, !peekRetirementParents.contains(id),
                let page = browsers[id]?.nativePage,
                let peek = peeks.values.filter({ $0.parentTabID == id && $0.parentPage === page
@@ -12374,11 +10972,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               } }),
               let elsewhere = PageReparenting.pagesToMove(item.tabIDs, usableHere: switcherCanUse, movable: canMovePageHere)
         else { return false }
-        //
         if !elsewhere.isEmpty { return movePagesHere(elsewhere[...]) { [weak self] in self?.selectRecentItem(item) ?? false } }
-        // Next/Prev, sidebar Return, ModalItemSwitcher commit, and linear
-        // history all enter ItemSelection → presentation mutation; removals
-        // can presentMediaControls. Same lease/fence path as Separate.
         let previous = selectedTabIDs
         let expected = item.tabIDs
         var committed = false
@@ -12386,13 +10980,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             : presentationSetMediaRemoval(capturing: previous, remaining: { Set(self.selectedTabIDs) }) {
                 self.selectedTabIDs == expected && self.store.state.selectedTabIDs == expected
             }
-        // One real selection commits the original model/page identities. No URL
-        // is reopened and preview focus never creates a replacement WebContents.
         performWindowCommand(selectNativePage: false, afterCapture: { if committed { removal?() } }) {
             store.selectSpace(item.spaceID)
             store.setSplit(item.tabIDs)
-            // presentation.selectedTabIDs updates only in captureCommand after
-            // this action; store state is the commit signal (same as Separate).
             committed = store.state.selectedTabIDs == expected
         }
         guard selectedTabIDs == item.tabIDs else { return false }
@@ -12424,9 +11014,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         case .peek(let record): reopenClosedPeek(record)
         }
     }
-    ///
-    /// recorded focused item is selected; the store transaction is the same
-    /// one the folder's Undo entry uses, which then expires as restored.
     private func reopenDeletedFolder(_ undo: FolderDeletionUndo) {
         guard let window else { return }
         do {
@@ -12443,10 +11030,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if focused { requestNativeSelection(); focusSelectedLocalContent() }
         } catch { showError(error) }
     }
-    ///
-    /// parent must be this window's live original page; a parent that is not
-    /// loaded is selected first and the step stays for the next Reopen. A
-    /// parent another window holds moves here first, then the Peek opens.
     private func reopenClosedPeek(_ record: ClosedPeekRecord) {
         if canMovePageHere(record.parentTabID) {
             _ = movePagesHere([record.parentTabID]) { [weak self] in
@@ -12464,11 +11047,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private func restoreClosedRecord(_ record: ClosedItemRecord) {
         var restored = false
-        // Reopen selects the tabs, so their pages are created within the command.
         store.closedPageHistory.restore(record.tabIDs)
         performWindowCommand(selectNativePage: false) {
-            // Surviving split panes rejoin even when another window shows
-            // them; their pages come here with the selection below.
             do { restored = try store.restoreClosedItem(record, regroupable: { self.canUseOrMoveHere($0) }) }
             catch {
                 if let window { PArcDialog.inform(in: window, .init(title: "This tab couldn’t be reopened", message: error.localizedDescription)) }
@@ -12485,8 +11065,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         updateNavigation(); requestNativeSelection(); focusSelectedLocalContent()
     }
     func toggleSplit() {
-        // MainMenuAction34 reaches the same blank-content creator as the pane
-        // menu. It never closes the existing group or creates about:blank.
         guard let last = selectedTabIDs.last else { return }
         beginSplitInsertion(activeSplitLayout?.orientation == .vertical ? .addBelow : .addAfter, paneID: last)
     }
@@ -12534,8 +11112,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard page.canCopyLink(as: .plain) else { return }
             copyPageLink(as: .plain)
         } else {
-            // Address result copying retains the command bar's genuine selected
-            // result. Unloaded model tabs retain the existing plain-URL route.
             copyLinkOperation = UUID()
             NSPasteboard.general.clearContents()
             if NSPasteboard.general.setString(url, forType: .string) { showToast(.copiedCurrentURL(URL(string: url))) }
@@ -12549,12 +11125,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard canCopyCurrentURLAsQuote else { return }
         copyPageLink(as: .quote)
     }
-    ///
-    ///
-    /// `NSSharingServicePicker(items: [url])` on a one-point strip along the top
-    ///
-    ///
-    /// content; a Library, sheet or closing window has no shareable page.
     private var sharePageTarget: (browser: PCBrowserView, url: URL)? {
         guard presentation.isReady, !isClosing, !wholeWindowClose, !windowClosePending,
               libraryView == nil, window?.attachedSheet == nil,
@@ -12572,8 +11142,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             relativeTo: NSRect(x: bounds.minX, y: top, width: bounds.width, height: 1),
             of: browser, preferredEdge: browser.isFlipped ? .maxY : .minY)
     }
-    /// Share Split View… on the pane menu. System share of the split's page
-    ///
     private func splitShareURLs() -> [URL] {
         selectedTabIDs.compactMap { id in
             if let url = browsers[id]?.url, !url.absoluteString.isEmpty { return WhatsNewPage.matches(url.absoluteString) ? nil : url }
@@ -12618,19 +11186,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
     }
-    /// The link a copy just wrote, when the pasteboard holds one with the
-    /// page's scheme (a quote's text-fragment link); otherwise the page's URL.
     private func copiedLink(page url: URL?) -> URL? {
         guard let scheme = url?.scheme?.lowercased(),
               let copied = NSPasteboard.general.string(forType: .string).flatMap({ URL(string: $0) }),
               copied.scheme?.lowercased() == scheme else { return url }
         return copied
     }
-    ///
-    /// pane, else the focused content (a presented Peek's card, else the focused
-    /// pane); `.window` is the window's top right.
     private enum ToastLocation { case content(UUID?), window }
-    /// An import's failed data, then extensions that failed after it, one toast at a time.
     func showImportFailures() {
         guard presentation.isReady, !isClosing, !isPrivateBrowsing, !isPopupWindow else { return }
         if let outcome = ImportedBrowserDataFailures.take() {
@@ -12652,12 +11214,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         switch location {
         case .window: anchor = nil
         case .content(let id):
-            //
             anchor = id.flatMap { panes[$0] } ?? activePeek.flatMap { $0.view.isHidden ? nil : $0.view }
                 ?? currentTabID.flatMap { panes[$0] }
         }
         let toast = toasts.show(content, in: window, over: anchor, theme: rootView.theme, onTap: onTap, onRetire: onRetire)
-        //
         if toast != nil { retireShortcutHint() }
         return toast
     }
@@ -12695,8 +11255,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 let previousEvent = self.shortcutInvocationEvent
                 self.shortcutInvocationEvent = event
                 defer { self.shortcutInvocationEvent = previousEvent }
-                // Copy leaves education focused. Interactive actions transfer to
-                // the same browser owner, without destroying the education UI.
                 if id != "copyCurrentURL:" { originalWindow.makeKeyAndOrderFront(nil) }
                 switch id {
                 case "newTab:": self.newTab()
@@ -12768,14 +11326,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               resolvingTransfers.isEmpty, transferRecoveries.isEmpty,
               !store.isProfileRemovalPending(profileID),
               store.state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }) else { return false }
-        // Advanced preferences dispatch to the genuine profile-owned WebUI.
-        // This exact original window/Space is retained even if another window
-        // became frontmost while its Settings window was open.
         window.makeKeyAndOrderFront(nil)
         guard spaceCommandsAvailable else { return false }
-        // A same-Profile Space selection intentionally retains Library. A
-        // Settings page command must reveal its real destination after the
-        // original native window has accepted presentation.
         closeLibrary(restoreFocus: false)
         selectSpace(spaceID)
         guard activeSpaceID == spaceID, activeProfileID == profileID else { return false }
@@ -12786,8 +11338,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return BrowserInternalURL.isWebUI(url) && url.host == "settings"
         }
         if let existing {
-            // Preserve a Settings subpage and its current edits, without
-            // taking over a tab held by another physical browser window.
             guard selectTab(existing.id) else { return false }
         } else {
             var createdID: UUID?
@@ -12816,9 +11366,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               store.state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }) else { return false }
         window.makeKeyAndOrderFront(nil)
         guard spaceCommandsAvailable else { return false }
-        // A same-Profile Space selection intentionally retains Library. A
-        // Settings page command must reveal its real destination after the
-        // original native window has accepted presentation.
         closeLibrary(restoreFocus: false)
         selectSpace(spaceID)
         guard activeSpaceID == spaceID, activeProfileID == profileID else { return false }
@@ -12847,9 +11394,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func showPasswordManager(spaceID: UUID, profileID: UUID) -> Bool {
         guard presentation.isReady, !isClosing, !wholeWindowClose, transferringTabIDs.isEmpty,
               store.state.spaces.contains(where: { $0.id == spaceID && $0.profileID == profileID }) else { return false }
-        //
-        // Parc uses the independent engine's equivalent, in the originating
-        // Space's profile, retaining Chromium's editing and macOS reauth flow.
         let destination = "parc://password-manager/passwords"
         selectSpace(spaceID)
         guard activeSpaceID == spaceID, activeProfileID == profileID else { return false }
@@ -12861,8 +11405,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         if let existing {
             guard selectTab(existing.id) else { return false }
-            // Preserve a manager already displaying a credential's details.
-            // Its authenticated state and unsaved edits belong to this page.
             window?.makeKeyAndOrderFront(nil)
             return true
         }
@@ -12890,22 +11432,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func zoomIn() { changeZoom(1) }
     func zoomOut() { changeZoom(-1) }
     func actualSize() { changeZoom(0) }
-    ///
-    /// per-site levels, e.g. 0.523 for 110%): preset steps from the page's
-    /// real level, which another tab on the same site may already have set.
     private func changeZoom(_ direction: Int) {
         guard canChangePageZoom, let id = activePeek?.identity ?? currentTabID, let browser = currentBrowser else { return }
         if browser.zoomPage(direction) {
             if browser.nativePage != nil { showZoomToast(browser.pageZoomLevel) }
             return
         }
-        // An engine before overlay 314 has no zoom command: Parc's former
-        // half-level steps from this tab's own record.
         let level = direction == 0 ? 0 : min(5, max(-5, (zoomLevels[id] ?? 0) + 0.5 * Double(direction)))
         zoomLevels[id] = level; browser.setZoomLevel(level); showZoomToast(level)
     }
-    ///
-    /// a percentage over that content. Chromium's zoom factor is 1.2^level.
     private func showZoomToast(_ level: Double) {
         showToast(.zoom(percent: Int((pow(1.2, level) * 100).rounded())))
     }
@@ -12934,8 +11469,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return hit === content || hit.isDescendant(of: content)
         }), let page = browser.nativePage else { return nil }
         let revision = browser.readerRevision, profileID = activeProfileID, spaceID = activeSpaceID
-        // A pointer starts on its actual split pane, just like its toolbar.
-        // Native capture eligibility then checks that exact selected page.
         guard (currentBrowser === browser || activateDeveloperPage(browser, page: page, revision: revision)),
               page.canCapture(in: window) else { return nil }
         let current: () -> Bool = { [weak self, weak browser, weak page, weak window] in
@@ -13041,8 +11574,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     self.store.easelsDirectory(for: profileID))
                 let result = try EaselImagePlacement.place(image, in: destinationStore,
                     destinationID: destinationID, newTitle: image.pageTitle)
-                // Commit succeeds before changing selection. Open the same local
-                // document in this original Space/profile; no URL replay occurs.
                 self.pageCapture?.dismiss(restoreFocus: false)
                 withExtendedLifetime(result) { self.openEasel(id: result.id, title: result.title) }
             }, finished: { [weak self, weak browser, weak parent] restoreFocus in
@@ -13055,7 +11586,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 }
             })
         sharedQuotes.invalidate()
-        //
         controller.onCopied = { [weak self] in self?.showToast(.copiedImage) }
         pageCapture = controller; controller.present(mode)
     }
@@ -13114,13 +11644,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.usesContentToolbar = !sidebarShowsAddressBar
         sidebar.navigationInContentToolbar = selectedBrowserToolbar != nil
     }
-    ///
-    /// the hidden-sidebar (`noChrome`) style and the window's first displayed
-    /// content, for every content kind; a Peek is never that content.
-    /// `tabID` is the pane that owns this bar; Peek has none. `failing`: a
-    /// navigation failure or renderer crash covers the page. `themeBackground`
-    /// is what the colourless bar sits over: the Space theme for a pane, nil
-    /// over Peek's own material, whose ink follows the window.
     private func configureBrowserToolbar(_ toolbar: BrowserToolbarView, browser: PCBrowserView?, visible: Bool, failing: Bool, themeBackground: NSColor?, leading: Bool = false, tabID: UUID? = nil) {
         guard visible, !isPopupWindow, libraryView == nil,
               let browser, let page = browser.nativePage, !page.isClosed else {
@@ -13142,8 +11665,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             fullURL: BrowserToolbarPreferences.shared.state.showsFullURL,
             enabled: enabled, canBack: page.canShowBackHistory, canForward: page.canShowForwardHistory,
             loading: page.loading, canReload: page.canPerformNavigation(page.loading ? .stop : .reload),
-            //
-            // its action focuses this pane first, then copies its link.
             canCopy: !whatsNew && (selected ? canCopyCurrentURL : browser.url != nil && page.canCopyLink(as: .plain)),
             canShowSiteInfo: true,
             canSplit: activePeek?.canSplit?() ?? true,
@@ -13168,9 +11689,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         toolbar.onAction = { [weak self, weak browser, weak page] action, anchor in
             guard let self else { return }
-            // Close this pane's original page without focusing it first.
-            // `original()` posts native selection of one page, which unloads
-            // the rest of the split; sidebar child Close already skips that.
             if action == .closeSplit {
                 if let tabID { self.closeClickedSplitPane(tabID) }
                 return
@@ -13179,11 +11697,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             switch action {
             case .address: self.focusAddress(anchor: anchor)
             case .copy: self.copyCurrentURL()
-            // didClickSiteSettingsButton and didClickSiteInsecureButton share
-            //
-            // web content's Site Control Center, whose popover the top bar
-            //
-            // Toolbar passes that button as the anchor for both.
             case .siteInfo, .siteInsecure: self.showSiteControlCenter(from: anchor)
             case .pageMenu: self.showPageMenu(from: anchor)
             case .split: self.showDeveloperSplitMenu(from: anchor, browser: browser, page: page, revision: revision)
@@ -13193,22 +11706,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// The same top bar for a pane without a live page: a Note, an Easel, a
-    /// native page or a blank tab. TopBarPanelView builds its navigation
-    ///
-    /// contents have no history or reload; there is no Site Control Center
-    /// state, extension action, secure context or copyable page. The title,
-    /// split menu, Close and sidebar button keep their original owners.
     private func configureDocumentToolbar(_ pane: BrowserPane, tabID: UUID, visible: Bool, leading: Bool) {
         let toolbar = pane.browserToolbar
         guard visible, !isPopupWindow, libraryView == nil,
               let tab = store.state.tabs.first(where: { $0.id == tabID && $0.archivedAt == nil }) else {
-            // As for a page's bar: a hidden bar returns focus to its content.
             if toolbar.ownsFocus, window?.isKeyWindow == true, commandBar == nil { focusSelectedLocalContent() }
             toolbar.isHidden = true; toolbar.setPageColor(nil, for: nil); toolbar.invalidate(); return
         }
         toolbar.isHidden = false; toolbar.themeBackground = rootView.palette.background
-        // TopBarColorClient tracks web contents only; a document's bar is clear.
         toolbar.setPageColor(nil, for: nil)
         let enabled = !isClosing && !wholeWindowClose && !windowClosePending && commandBar == nil
             && window?.isKeyWindow == true
@@ -13218,8 +11723,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             canReload: false, canCopy: false, canShowSiteInfo: false, canSplit: true,
             close: activeSplitLayout != nil, showSidebar: leading && sidebarPresentation != .locked,
             siteControls: false, extensionItems: [])
-        // The pane is admitted as the Toolbar's page controls are: original
-        // pane, no Peek over it, key window; admission focuses it.
         let admit: () -> Bool = { [weak self, weak pane] in
             guard let self, let pane, self.panes[tabID] === pane, self.selectedTabIDs.contains(tabID),
                   pane.livePage == nil, self.activePeek == nil, self.commandBar == nil,
@@ -13243,8 +11746,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             guard admit() else { return }
             switch action {
-            //
-            //
             case .address: self.focusAddress(anchor: anchor)
             case .split: self.showSplitPaneMenu(tabID, from: anchor)
             case .closeSplit: break
@@ -13254,21 +11755,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    ///
-    ///
-    /// URL; web capture entries; Manage Extensions…; then Show/Hide
-    /// Full URL, the Toolbar toggle and Shared Quotes. Page actions first
-    /// re-admit their original pane, as the Toolbar's controls do.
     private func paneTitleMenu(browser: PCBrowserView?, tab: BrowserTab? = nil, admit: @escaping () -> Bool) -> NSMenu? {
         guard presentation.isReady, !isClosing, !wholeWindowClose, !windowClosePending,
               commandBar == nil, libraryView == nil, let window, window.isKeyWindow else { return nil }
-        // A presented Peek obstructs every other content's top bar; its menu,
-        // including the preference items, is not reachable underneath.
         if let peek = activePeek, peek.browser !== browser { return nil }
         let content = PaneMenuContent(livePage: browser?.nativePage.map { !$0.isClosed } == true, tabURL: tab?.url,
                                       localDocument: tab.map { InternalPage.isInternal($0.url) } == true)
-        //
         guard content != .none else { return nil }
         let isWeb = content == .web
         let shareURL = (browser?.url ?? tab.flatMap { URL(string: $0.url) })
@@ -13288,7 +11780,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             item.isEnabled = enabled; return item
         }
-        //
         let copyURL = page("Copy URL", enabled: browser == nil || shareURL != nil) { $0.copyCurrentURL() }
         KeyboardShortcuts.shared.showBinding(on: copyURL, for: "copyCurrentURL:")
         menu.addItem(copyURL)
@@ -13339,8 +11830,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             revision = browser.readerRevision; self.host = host
         }
     }
-    /// View > Use Chrome/Safari Identity for This Site (docs/fairplay-identity.md):
-    /// the current page's site and the choice it offers, bound to that page.
     @MainActor
     private final class FairPlayIdentityMenuRequest {
         weak var owner: BrowserWindowController?
@@ -13354,8 +11843,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             profilePath = page.profilePath; self.offTheRecord = offTheRecord; self.useChrome = useChrome
         }
     }
-    /// Offered only for a site Parc learned (Chrome identity) or one the user
-    /// moved back to Chrome (Safari identity).
     func prepareFairPlayIdentityMenuItem(_ item: NSMenuItem) -> Bool {
         item.representedObject = nil
         guard let page = currentBrowser?.nativePage, !page.isClosed, let site = page.fairPlayIdentitySite else { return false }
@@ -13408,11 +11895,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     @objc private func toggleDeveloperModeMenuItem(_ sender: NSMenuItem) { toggleDeveloperMode(from: sender) }
 
-    /// Developer Mode and Chromium's developer tools are one switch, at
-    /// the user's request: on shows this site's developer toolbar and opens this
-    /// page's JavaScript console; off hides the toolbar and closes this
-    /// page's tools. Engines that can't say whether the tools are open keep
-    /// the two separate.
     private func setDeveloperMode(_ on: Bool, host: String, browser: PCBrowserView, page: PCNativePage) {
         do {
             try DeveloperModePreferences.shared.setEnabled(on, host: host)
@@ -13426,9 +11908,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         page.responds(to: #selector(getter: PCNativePage.hasDeveloperTools))
     }
 
-    /// Developer Tools runs that switch by whether this page's tools are open,
-    /// on a page with a Developer Mode site; elsewhere (a private window, an
-    /// internal page, an earlier engine) it toggles the tools alone.
     private func toggleDeveloperTools(_ browser: PCBrowserView) {
         guard let page = browser.nativePage, Self.knowsDeveloperTools(page),
               let request = makeDeveloperModeRequest(), request.page === page else {
@@ -13485,23 +11964,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   let host = page.nativeView as? PCNativePageHost,
                   let rendererContainer = host.contentView, !rendererContainer.isHiddenOrHasHiddenAncestor,
                   rendererContainer.bounds.contains(rendererContainer.convert(event.locationInWindow, from: nil)) else { return false }
-            // The native host's genuine managed container excludes its infobar
-            // shelf. This never focuses, selects, reparents or recreates a page.
             return true
         }
     }
 
     private func refreshDeveloperToolbars() {
-        //
-        // every pane's top bar; while it dismisses, onlyShowEssentialControls
-        // is false; awaiting a dismissal confirmation, panes stay ordinary.
         let modal = activePeek?.modalPhase
         let leading = renderedPaneIDs.first
-        // Everyday full-navigation refreshes used to stamp needsLayout and walk
-        // every pane/peek; the live chrome path already configures without that.
-        // Skip forced layoutSubtree when strip geometry is current and the host
-        // does not need layout. Frame changes, newly shown DevTools, first
-        // attach, and an already-dirty host still flush and synchronize.
         var flushedChromeLayout = false
         for (id, pane) in panes {
             let obstructed = modal == .presented
@@ -13511,11 +11980,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             configureWebpageDragging(pane, tabID: id)
             configurePaneDeveloperToolbar(pane,
                 visible: selectedTabIDs.contains(id) && activePeek == nil && nativeFullscreenTabID == nil)
-            // A Peek covers, but does not remove, each pane's top bar
-            // (WindowContentViewController keeps its topBarPanelComponents).
-            //
-            // content's developerModeContextFlags: Developer Mode content has
-            // no top bar, under a Peek or not; its panel is a separate owner.
             let developerPage = pane.browser?.nativePage?.developerModeSiteHost
                 .map { DeveloperModePreferences.shared.isEnabled(host: $0) } == true
             let topBar = selectedTabIDs.contains(id) && paneTopBarDisplayed && !developerPage
@@ -13571,8 +12035,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             synchronizeNativeLayout()
         }
     }
-    /// A pane builds its Developer Mode toolbar only once it will show one; an
-    /// unbuilt toolbar is already hidden, with nothing to unbind.
     private func configurePaneDeveloperToolbar(_ pane: BrowserPane, visible: Bool) {
         let shows = visible && libraryView == nil
             && pane.browser?.nativePage?.developerModeSiteHost.map { DeveloperModePreferences.shared.isEnabled(host: $0) } == true
@@ -13622,8 +12084,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             switch action {
             case .siteInfo: if browser.canShowSiteInfo { _ = browser.showSiteInfo(from: anchor) }
             case .copy: self.copyCurrentURL()
-            // Route both entries through the one existing capture owner. CAP-10
-            // can change post-capture framing without a second pixel pipeline.
             case .portrait: self.capturePage(.portrait)
             case .capture: self.capturePage(.region)
             case .console: self.performPageTool(.javaScriptConsole)
@@ -13675,9 +12135,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         runPageTool(tool, in: browser)
     }
 
-    /// Developer Tools runs the Developer Mode switch; Console, Network and
-    /// Inspect open their panel, and when that opens the tools they turn this
-    /// site's developer toolbar on too.
     private func runPageTool(_ tool: PCNativePageTool, in browser: PCBrowserView) {
         if tool == .developerTools { toggleDeveloperTools(browser); return }
         let opens = browser.nativePage.map { Self.knowsDeveloperTools($0) && !$0.hasDeveloperTools } ?? false
@@ -13814,8 +12271,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func pageToolItem(_ title: String, tool: PCNativePageTool) -> NSMenuItem {
-        // A tracking menu can outlive tab selection. Keep its original page;
-        // never run a previous page's command against a newly selected tab.
         let browser = currentBrowser
         let revision = browser?.readerRevision
         let item = MenuAction.item(title) { [weak self, weak browser] in
@@ -13872,10 +12327,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return state.matches(selectedNativePage(), revision: page.readerRevision)
     }
     private func reconcileFind() {
-        // Idle chrome ticks always defer into reconcileFind. Skip only when
-        // Find is closed and there is nothing to dismiss — a true no-op of the
-        // filter/dismiss/update/layout path. An open bar, stale dismiss, match
-        // updates, and find-result notifications keep the full reconcile.
         if FindReconcileSkip.shouldSkip(isPresented: visibleFind != nil) { return }
         findStates = findStates.filter { _, state in
             guard let page = state.owner else { return false }
@@ -13898,12 +12349,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard canOwnFind, let window else { return false }
         let prepare: () -> Void = { [weak self] in self?.commandBar?.dismiss() }
         let command: BrowserFindCommand
-        //
-        // four responders implement (docs/keyboard-navigation.md, KB04). No
-        // NSTextView or NSTextField does, so there is no generic native-text
-        // consumer. A Note editor owning the responder chain answers every tag,
-        // including Jump to Selection (0) and Find and Replace (12), by showing
-        //
         if let responder = window.firstResponder as? NSView, activePeek == nil,
            let entry = noteEditors.first(where: { $0.value.editor.isViewLoaded
                && responder.isDescendant(of: $0.value.editor.view) }),
@@ -13923,7 +12368,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 self?.dismissFind(restoreFocus: false); editor?.findInDocument()
             })
         } else if action.isNativeTextOnly {
-            //
             return false
         } else if action == .show, let libraryView {
             command = BrowserFindCommand(action: action, window: window, available: { [weak self, weak libraryView] in
@@ -14031,16 +12475,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let actions = binding.paymentActions(for: page)
         let title = actions.count > 1 ? "Payment methods" : actions.first?.title
         let saved = actions.map(\.savedLabel).filter { !$0.isEmpty }.joined(separator: " · ")
-        // Everyday title/URL/loading chrome ticks republish the same payment
-        // entry; skip the forced sidebar layout walk until a visible field
-        // changes. Acknowledgment and AX still run when the entry is visible.
         if sidebar.updatePaymentEntry(title: title, symbol: actions.first?.symbolName ?? "creditcard",
                                       enabled: actions.contains { $0.isEnabled }, savedLabel: saved) {
             sidebar.layoutSubtreeIfNeeded()
         }
         guard sidebarPresentation != .hidden, sidebar.isPaymentEntryVisible else { return }
-        // The copied action carries the original document, suggestion request,
-        // and chip generation. Reentrant refresh cannot acknowledge a successor.
         for action in actions where action.requiresPresentationAcknowledgment {
             _ = binding.paymentFeedbackPresented(action, for: page)
             guard !isClosing, !page.isClosed, nativeBinding === binding,
@@ -14049,8 +12488,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard !saved.isEmpty else { return }
         NSAccessibility.post(element: sidebar, notification: .announcementRequested,
                              userInfo: [.announcement: saved, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
-        // Consume feedback only after the original controller's actual saved
-        // state has reached the visible native control and accessibility.
         for action in actions where !action.savedLabel.isEmpty {
             _ = binding.paymentFeedbackPresented(action, for: page)
         }
@@ -14104,9 +12541,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// Where page controls open while the sidebar that would anchor them waits
-    /// off-screen, unhidden (sidebar-accessibility.md): a point square in the
-    /// page's top leading corner, and a menu's origin there.
     private var hiddenSidebarAnchor: (view: NSView, rect: NSRect, menuPoint: NSPoint) {
         let page: NSView = currentBrowser ?? pageHost
         let top = page.isFlipped ? page.bounds.minY : page.bounds.maxY - 1
@@ -14114,14 +12548,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 NSPoint(x: page.bounds.minX, y: page.isFlipped ? page.bounds.minY : page.bounds.maxY))
     }
 
-    /// The engine's site-permission popover anchor (WEB15, web-interactions.md):
-    ///
-    ///
-    ///
-    /// the same entries the Site Control Center opens from. Only the current
-    /// page anchors there (a Peek only to its own toolbar); any other page, or
-    /// a sidebar waiting off-screen, returns nil so the engine anchors to that
-    /// page's own top leading corner.
     @objc(parcSitePermissionAnchorForPage:)
     func sitePermissionAnchor(forPage page: NSView) -> NSDictionary? {
         guard let current = currentBrowser, page === current || page.isDescendant(of: current) else { return nil }
@@ -14129,8 +12555,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             ?? (activePeek != nil ? nil : isPopupWindow ? popupChrome.pageControlsAnchor
                 : sidebar.isPresented ? sidebar.pageControlsAnchor : nil)
         guard let anchor, anchor.window === window, !anchor.isHiddenOrHasHiddenAncestor else { return nil }
-        // The prompt shows from this anchor at once; keep the pill's faded
-        //
         if anchor === sidebar.pageControlsAnchor { holdAddressButtonsForPermissionPrompt() }
         return ["view": anchor, "rect": NSValue(rect: anchor.bounds),
                 "edge": NSNumber(value: NSRectEdge.maxY.rawValue)]
@@ -14194,10 +12618,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    /// Visible model `ExtensionToolbarView` / SCC / popup chrome apply. Always
-    /// built from a fresh Snapshot so real extension/page changes cannot be
-    /// missed; bridge `generation` is icon identity because Snapshot copies a
-    /// new NSImage each pass while icon/nav/title observers bump generation.
     private func extensionControlsSignature(page: PCNativePage?,
                                             actions: [PCNativeExtensionAction],
                                             sidebarOwns: Bool,
@@ -14235,11 +12655,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return binding.hasEnabledExtensions(for: page)
     }
 
-    /// Every extension action's menu, from a Site Control Center tile or a
-    /// pinned button: Parc's themed menu beside the control, in the card's
-    /// colours, with an open card left open. On the card it hangs from the
-    /// card's edge, its tile lit. Earlier engines show their own menu at the
-    /// pointer. A menu supersedes an action still waiting for the card to close.
     private func showExtensionContextMenu(_ action: PCNativeExtensionAction, binding: PCNativeBrowserWindow,
                                           page: PCNativePage, beside control: NSView) {
         extensionActionGeneration = UUID()
@@ -14254,16 +12669,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let screen = SiteControlCenterPlacement.screen(at: CGPoint(x: rect.midX, y: rect.midY)) ?? window.screen?.visibleFrame
         let menu = PArcContextMenu(anchor: rect, regions: SiteControlCenterPlacement.regions(window: window.frame, screen: screen),
                                   parent: window, colors: PArcMenuColors(theme: rootView.theme))
-        // The sidebar's pinned buttons stay revealed under their menu, as under the card.
         let inSidebar = control.isDescendant(of: sidebar)
         if inSidebar { sidebar.setAddressPopover(menu, open: true) }
         if let center = siteControlCenter { center.keepingOpen { show(menu) } } else { show(menu) }
         if inSidebar { sidebar.setAddressPopover(menu, open: false) }
     }
 
-    /// Opening a popup before the popover's native close completes lets its
-    /// returning parent-key notification dismiss the new popup. Dispatch only
-    /// after that close, retaining the original action lease and page context.
     private func performExtensionActionAfterDismissingControls(_ action: @escaping () -> Void) {
         guard !isClosing, !wholeWindowClose, let window, let binding = nativeBinding,
               let browser = currentBrowser, let page = browser.nativePage, !page.isClosed else { return }
@@ -14278,17 +12689,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   self.nativeBinding === binding, self.currentBrowser === browser,
                   self.activeSpaceID == spaceID, browser.nativePage === page, !page.isClosed,
                   browser.readerRevision == revision else { return }
-            // Consume before dispatch: callbacks may replace the page, close
-            // the window or synchronously schedule another extension action.
             self.extensionActionGeneration = UUID()
             action()
         }
     }
 
     private func refreshExtensionControls() {
-        // A new page or document closes it, as Chromium's page bubbles close,
-        // and so does another Space or Profile, even showing the same page (a
-        // Favorite shared across Spaces), attached or detached.
         if siteControlCenter != nil && (extensionControlsPage !== currentBrowser?.nativePage
             || currentBrowser?.readerRevision != siteControlCenterRevision
             || siteControlCenterOwner.map { $0.space != activeSpaceID || $0.profile != activeProfileID } ?? false) {
@@ -14301,9 +12707,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let binding = nativeBinding
         let sidebarOwns = sidebarShowsAddressBar
         let popupAvailable = extensionControlsPopupAvailable(binding: binding, page: page)
-        // Always read the live Snapshot. Skip only when the visible model that
-        // sidebar/toolbar/SCC/popup would apply is unchanged — never drop a
-        // distinct extension/page change for speed.
         let actions: [PCNativeExtensionAction]
         if let binding, let page {
             actions = binding.extensionActions(for: page)
@@ -14361,11 +12764,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    /// unifying the page's action buttons, its extensions and its site
-    /// settings, opened from the address pill, the Toolbar and Open Extensions
-    /// (⌘E, `picker`). Its anchors and fallbacks are the former Extensions
-    /// popover's.
     private func showSiteControlCenter(from sourceAnchor: NSView? = nil, picker: Bool = false) {
         guard presentation.isReady, !isClosing, !wholeWindowClose, !windowClosePending,
               let initialWindow = window, initialWindow.isKeyWindow, windowCommandSecurityAvailable else { return }
@@ -14407,9 +12805,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         controller.onClose = { [weak self, weak controller, weak page] in
             guard let self, let controller, self.siteControlCenter === controller else { return }
             self.siteControlCenterDismissal.track(controller)
-            // Remove this session before closing PageInfo. Its terminal rows
-            // callback may reenter; it must not cancel this close's action or
-            // close a replacement session on the same page.
             self.siteControlCenter = nil; self.extensionControlsPage = nil
             self.siteControlCenterItems = [:]; self.siteControlCenterPermissions = []
             self.siteControlCenterPermissionTargets = [:]; self.siteControlCenterRevision = nil
@@ -14418,16 +12813,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if page?.responds(to: #selector(PCNativePage.closeSiteControls)) == true { page?.closeSiteControls() }
             self.refreshSidebarPointerIfKey()
         }
-        //
-        // ordinary window and no longer holds the pill's buttons revealed.
         controller.onDetach = { [weak self, weak controller] in
             guard let self, let controller, self.siteControlCenter === controller else { return }
             self.sidebar.setAddressPopover(controller, open: false)
         }
-        //
-        //
         if browser.hasPageInfo, page.responds(to: #selector(PCNativePage.openSiteControls(handler:))) {
-            // Genuine PageInfo permission rows; nil ends the session.
             _ = page.openSiteControls { [weak self, weak controller, weak page] rows in
                 guard let self, let controller, let page, self.siteControlCenter === controller else { return }
                 guard let rows else { self.dismissSiteControlCenter(); return }
@@ -14436,7 +12826,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         }
         if let anchor = sourceAnchor ?? (isPopupWindow ? popupChrome.pageControlsAnchor : sidebar.isPresented ? sidebar.pageControlsAnchor : nil) {
-            //
             let pill = sourceAnchor == nil && !isPopupWindow
             if anchor === sidebar.pageControlsAnchor { sidebar.setAddressPopover(controller, open: true) }
             controller.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY,
@@ -14450,7 +12839,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if picker { controller.beginPicker() }
     }
 
-    /// `action` runs once the popover has gone and the window holds key again.
     private func dismissSiteControlCenter(then action: (() -> Void)? = nil) {
         siteControlCenterDismissal.close(siteControlCenter, then: action)
     }
@@ -14458,9 +12846,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         siteControlCenterDismissal.close(siteControlCenter, when: valid, then: action)
     }
 
-    ///
-    /// availability, the profile's toolbar actions, the Settings rows and the
-    ///
     private func updateSiteControlCenter(_ controller: SiteControlCenterController, page: PCNativePage,
                                          items: [ExtensionControlItem]?) {
         let model = controller.model
@@ -14468,8 +12853,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         model.canCopy = canCopy
         model.canShare = canSharePage
         model.captureAvailable = privateCaptureContextIsValid
-        // The open card holds key, and capture and the page tools need the
-        // browser window key, so they keep what was read before it opened.
         if window?.isKeyWindow == true {
             model.canCapture = canCapturePage
             siteControlCenterPageTools = Set([PCNativePageTool.developerTools, .clearCacheAndRefresh,
@@ -14480,8 +12863,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if let items {
             siteControlCenterItems = Dictionary(items.map { ($0.identifier, $0) }) { $1 }
             let extensions = items.map {
-                // An engine with the unbadged canvas lets the shell draw the
-                // pinned strips' top-right badge; older ones keep the baked badge.
                 SiteControlCenterModel.Extension(id: $0.identifier, name: $0.name, tooltip: $0.tooltip,
                     accessibilityLabel: $0.accessibilityLabel, icon: $0.pinnedArtwork?.image ?? $0.image,
                     isPinned: $0.pinnedIndex != nil, canChangePin: $0.canChangePin,
@@ -14492,7 +12873,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 model.focusedExtension = extensions.first?.id
             }
         }
-        //
         let internalPage = ["chrome", "parc"].contains(page.url?.scheme?.lowercased() ?? "parc")
             || WhatsNewPage.matches(page.url?.absoluteString ?? "")
         model.isSecure = internalPage ? nil : page.developerModeSecure
@@ -14508,8 +12888,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         })
     }
 
-    /// Discovered copy-tooltip and site-control shortcut strings this window's
-    /// `LiveShortcutToolTip.didChange` sink would apply.
     private func shortcutTooltipDiscoveryFingerprint() -> String {
         let shortcuts = KeyboardShortcuts.shared
         return ShortcutTooltipDiscoverySkip.fingerprint(
@@ -14521,12 +12899,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         )
     }
 
-    ///
-    /// lists Developer Mode alone; a secure one lists Preview for a page with
-    ///
-    /// Picture-in-Picture, then the page's content settings, here the genuine
-    ///
-    ///
     private func siteControlCenterSettings(page: PCNativePage) -> [SiteControlCenterModel.Setting] {
         typealias Setting = SiteControlCenterModel.Setting
         var rows: [Setting] = []
@@ -14564,7 +12936,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let model = controller.model
         let revision = browser.readerRevision
         let profileID = activeProfileID, spaceID = activeSpaceID, parent = window
-        // Every action re-checks the exact page it was opened for.
         let current: () -> Bool = { [weak self, weak browser, weak page, weak parent] in
             guard let self, let browser, let page, let parent,
                   !self.isClosing, !self.wholeWindowClose, !page.isClosed else { return false }
@@ -14580,7 +12951,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard currentPresentation(), let self, let controller else { return }
             switch button {
             case .share:
-                // The Share command's page (WEB18), its picker at this button.
                 guard let url = self.sharePageTarget?.url, let (rect, view) = controller.rect(for: .share) else { return }
                 NSSharingServicePicker(items: [url]).show(relativeTo: rect, of: view, preferredEdge: .minY)
             case .copyURL: self.dismissSiteControlCenter { [weak self] in self?.copyCurrentURL() }
@@ -14589,15 +12959,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             case .captureVisiblePage: self.dismissSiteControlCenter(when: current) { [weak self] in self?.capturePage(.viewport) }
             }
         }
-        // The retained toolbar-action leases already dismiss before dispatch.
         model.onExtension = { [weak self] id in
             guard currentPresentation(), let self else { return }
             self.siteControlCenterItems[id]?.execute()
         }
         controller.preparePickerSelection = { [weak self] in
             guard currentPresentation(), let self else { return nil }
-            // Preserve the exact extension instance's action lease through the
-            // held-Command gesture, even if the registry replaces the same ID.
             let items = self.siteControlCenterItems
             return { id in items[id]?.execute() }
         }
@@ -14636,14 +13003,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         model.onSecurity = { [weak self, weak browser, weak page] in
             guard currentPresentation(), let self, let browser, let page else { return }
-            //
-            //
             if page.responds(to: #selector(PCNativePage.showCertificate)) {
                 guard page.canShowCertificate else { return }
                 self.dismissSiteControlCenter(when: afterDismissal) { [weak page] in _ = page?.showCertificate() }
                 return
             }
-            // Earlier engines: the genuine PageInfo identity and certificate view.
             let anchor: NSView = self.isPopupWindow ? self.popupChrome.pageControlsAnchor :
                 self.sidebar.isPresented ? self.sidebar.pageControlsAnchor : browser
             self.dismissSiteControlCenter { [weak self, weak browser, weak anchor] in
@@ -14664,7 +13028,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         case "preview":
             SidebarPreviewPreference.recentPages.isEnabled.toggle()
         case "developerMode":
-            // The developer tools open in the browser window, so it takes key back first.
             dismissSiteControlCenter(when: afterDismissal) { [weak self, weak page] in
                 guard let self, let page, let host = page.developerModeSiteHost, !self.isPrivateBrowsing,
                       self.canPerformPageTool(.developerTools),
@@ -14678,14 +13041,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    ///
     private func siteControlCenterMoreMenu(current: @escaping () -> Bool,
                                            afterDismissal: @escaping () -> Bool,
                                            openExtensionDestination: @escaping (String) -> Void) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        // Each item retains the exact page and original window through dismissal.
         let close: (@escaping () -> Void) -> Void = { [weak self] action in
             guard let self, current() else { return }
             self.dismissSiteControlCenter(when: afterDismissal, then: action)
@@ -14711,7 +13071,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return menu
     }
 
-    /// Chromium's own per-site settings page for the current origin.
     private func openSiteControlCenterSiteSettings() {
         guard let url = currentBrowser?.url, let scheme = url.scheme, let host = url.host,
               ["http", "https"].contains(scheme.lowercased()) else { openAddress(URL(string: "parc://settings/content")!); return }
@@ -14721,9 +13080,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         openAddress(components?.url ?? URL(string: "parc://settings/content")!)
     }
 
-    ///
-    /// in its extension picker, which selects when Command is released, so the
-    /// picker starts only while Command is held; otherwise the popover opens.
     func openExtensionPicker() {
         guard presentation.isReady, !isClosing, !wholeWindowClose, commandBar == nil else { return }
         showSiteControlCenter(from: selectedBrowserToolbar?.siteControlCenterAnchor,
@@ -14742,14 +13098,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func nativeBrowserExtensionPopupAnchor(_ browser: PCNativeBrowserWindow) -> PCNativeExtensionPopupAnchor {
         guard browser === nativeBinding else { return .window() }
-        //
-        // then the focused content view. A top bar is never the popup anchor.
-        // The sidebar URL bar stays beside split bars (sidebarShowsAddressBar).
         if sidebar.isPresented && sidebarShowsAddressBar {
             return .sidebar(width: sidebarContainer.bounds.width)
         }
-        // The reference subject uses WindowContentViewController.view
-        //
         if let peek = activePeek, peek.view.content.window === window {
             return .focusedView(peek.view.content)
         }
@@ -14785,7 +13136,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                       !self.isClosing, !self.wholeWindowClose,
                       self.currentBrowser === browser, browser.readerRevision == revision,
                       browser.canShowSiteInfo else { return }
-                // A hidden sidebar stays unhidden off-screen (sidebar-accessibility.md).
                 let anchor: NSView = self.isPopupWindow ? self.popupChrome.pageControlsAnchor :
                     self.sidebar.isPresented ? self.sidebar.pageControlsAnchor : browser
                 _ = browser.showSiteInfo(from: anchor)
@@ -14858,7 +13208,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         menu.addItem(pageToolItem("JavaScript Console", tool: .javaScriptConsole))
         menu.addItem(pageToolItem("Network Inspector", tool: .networkInspector))
         let developer = NSMenuItem(title: developerModeTitle, action: nil, keyEquivalent: "")
-        // This menu's captured request is independent from subsequent menu validation.
         let developerRequest = makeDeveloperModeRequest()
         developer.representedObject = developerRequest
         developer.target = self; developer.action = #selector(toggleDeveloperModeMenuItem(_:))
@@ -14901,9 +13250,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let source = SidebarHierarchySnapshot(state: store.state, spaceID: activeSpaceID, profileID: activeProfileID),
               let draft = SidebarNewSpaceDraft(items: items, from: source, state: store.state,
                   theme: store.state.spaces.first { $0.id == source.spaceID }.map(store.savedTheme(of:))) else { return nil }
-        // Capture every original live owner before deselecting or parking it.
-        // Background items in another physical window contribute their existing
-        // relocation lease; whole splits must be owned here or unmaterialized.
         let ids = Set(draft.tabIDs + selectedTabIDs)
         guard let owners = prepareSidebarSpaceMoveOwners?(ids), owners(),
               !hasPendingNativePage(in: ids) else { return nil }
@@ -14930,10 +13276,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    ///
-    /// newSpaceFromFolder): no sheet and no Undo case, unlike Turn into Folder.
-    /// The folder's items move, in order, into a new Space after this one with
-    /// the folder's name and this Space's theme, which then takes the window.
     private func prepareTurnFolderIntoSpace(_ folderID: UUID) -> (() -> Bool)? {
         guard spaceCreationCanBegin,
               let folder = store.state.folders.first(where: { $0.id == folderID }), folder.spaceID == activeSpaceID,
@@ -14977,7 +13319,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               closingTabIDs.isDisjoint(with: session.claims.keys),
               modelRetirementIDs.isDisjoint(with: session.claims.keys),
               session.claims.allSatisfy({ ownership.claimSnapshot($0.key) == $0.value }) else { return false }
-        // Blank text is an editable state, never an implicit persisted title.
         var probe = session.draft; probe.name = "Space"
         return probe.applying(to: store.state) != nil
     }
@@ -15041,7 +13382,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func finishSpaceCreation(_ session: SpaceCreationSession) {
-        // Clear identity first: closing a child surface cannot commit a late edit.
         spaceCreation = nil
         session.iconPicker?.cancel(); session.iconPicker = nil
         session.themePopover?.close(); session.themePopover = nil; session.themeEditor = nil
@@ -15097,7 +13437,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             presentation.reconcile(store.state) { ownership.canUse($0, owner: presentationID) }
             focusedTabID = presentation.preferredFocusedTabID
             selectSpace(id)
-            // The new Space has no invented tab or current-page fallback.
             window.makeFirstResponder(sidebar)
         } catch {
             session.committing = false; refreshSpaceCreation(session)
@@ -15155,9 +13494,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func createProfileForSpace(_ session: SpaceCreationSession) {
         guard creationOwnerIsCurrent(session), !session.committing, session.draft.roots.isEmpty,
               let window = session.window, window.attachedSheet == nil else { return }
-        //
-        //
-        // button, and the name field is the dialog's borderless text input.
         let dialog = PArcDialog(.init(title: [("Create a new Profile", false)],
             message: [("Profiles make your Spaces truly separate — with their own history, saved passwords, extensions, and other browsing data. No more flipping between work and personal accounts!\n\nWhat do you want to call this Profile?", false)],
             confirm: "Create Profile", cancel: "Cancel", field: .init(value: "", placeholder: "Profile name")))
@@ -15177,8 +13513,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard response == .confirm, self.creationOwnerIsCurrent(session),
                   !session.committing, (name.currentEditor() as? NSTextView)?.hasMarkedText() != true,
                   !name.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            // Explicit Profile creation uses the existing local Profile owner.
-            // It never migrates an original selected page into that Profile.
             session.draft.profileID = self.store.createProfile(name: name.stringValue)
             self.refreshSpaceCreation(session); session.view.focusName()
         }
@@ -15191,8 +13525,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               activeSpaceID == target.spaceID, activeProfileID == target.profileID,
               let links = FolderLinks.links(in: store.state, target: target),
               let text = FolderLinks.text(for: links, format: format) else { return }
-        // This is a Sidebar model operation. It must not select a tab, reopen an
-        // unloaded page, retarget BrowserStore's active window or alter a split.
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
@@ -15253,9 +13585,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private func createFolder(in id: UUID, parent: BrowserFolder? = nil) {
         guard let expected = managementSpace(id), spaceCommandsAvailable, let window else { return }
-        //
-        //
-        // has no row of this window's to edit in, so it keeps the prompt.
         if id == activeSpaceID, libraryView == nil, activePeek == nil, !sidebar.isEditingTitle {
             let folderID: UUID?
             do {
@@ -15280,8 +13609,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             catch { showError(error) }
         }
     }
-    /// The row's inline rename keeps the original folder, Space and Profile;
-    /// a folder renamed, moved or removed meanwhile refuses the name.
     private func prepareFolderInlineRename(_ expected: BrowserFolder) -> ((String) -> Bool)? {
         guard let space = managementSpace(expected.spaceID), store.state.folders.contains(where: { $0.id == expected.id }) else { return nil }
         return { [weak self, weak window] name in
@@ -15295,13 +13622,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         case unavailable
         var errorDescription: String? { "This folder changed while its icon was being chosen. Please try again." }
     }
-    ///
-    ///
-    /// split picker's slot holds it, so the window's existing picker guards
-    /// and teardown apply.
     private func prepareFolderIconChange(_ expected: BrowserFolder) -> (() -> Bool)? {
-        // The menu is built at render and kept until the next rebuild, so the
-        // transient editors are checked when the item is chosen.
         guard let space = managementSpace(expected.spaceID),
               store.state.folders.contains(where: { $0.id == expected.id }) else { return nil }
         var used = false
@@ -15449,7 +13770,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard let documents = typed.isEmpty ? [:] : resolveSidebarCopyDestinations?(typed)?.documents,
               SidebarDocumentReference.validates(target.tabs, references: documents) else { return }
         let wasFocused = activeSpaceID == id, selection = selectedTabIDs, focus = focusedTabID
-        //
         PArcDialog.confirm(in: window, title: "Delete your “\(target.space.name)” Space?",
                           message: "This will archive all the tabs and folders inside it.",
                           confirm: "Delete", destructive: true) { [weak self, weak window] approved in
@@ -15473,8 +13793,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard let window, retirementUnavailableReason?(target.tabIDs) == nil else { completion(false); return }
         var record: SpaceDeletionUndo?
         store.deleteSpace(target, documents: documents, shouldCommit: { [weak self, weak window] in
-            // Native retirement owns the original pages now; its close flags
-            // are expected. The physical window and target remain authoritative.
             guard let self, let window, self.window === window else { return false }
             return !self.isClosing && !self.wholeWindowClose && !self.windowClosePending
                 && !self.windowCloseApproved && self.spaceCreation == nil
@@ -15680,8 +13998,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    // Shared Downloads presentation is separate from a private window's local
-    // tab/Space model. Only the catalog's regular records are serialized.
     var downloadCatalog: BrowserStore? {
         didSet {
             privateProfileIndicatorSubscription = nil
@@ -15711,16 +14027,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func showDownloads() { showLibrary(.downloads) }
     func nativeBrowser(_ browser: PCNativeBrowserWindow, privateDownloadDidUpdate update: [String: Any]) {
-        // The application callback publishes one shared memory-only record.
         guard isPrivateBrowsing, browser === nativeBinding, browser.window === window else { return }
         refreshDownloads()
     }
-    ///
-    /// genuine creation while this window was key and its page visible. The bin
-    ///
-    /// fixed destination constants are used and no sidebar frame is read. A
-    ///
-    ///
     func nativeBrowser(_ browser: PCNativeBrowserWindow, downloadDidBegin arrival: PCNativeDownloadArrival) {
         guard let parent = window, browser === nativeBinding, browser.window === parent,
               !isClosing, !wholeWindowClose, presentation.isReady else { return }
@@ -15744,8 +14053,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         libraryFlyoutFileActivation = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshLibraryFlyoutFiles() } }
-        // The scan resolves the folders off the main thread and starts the
-        // watch; the monitor rescans once that watch is in place.
         libraryFlyoutFileMonitor = LibraryFlyoutFolderMonitor { [weak self] in self?.refreshLibraryFlyoutFiles() }
         refreshLibraryFlyoutFiles()
     }
@@ -15823,7 +14130,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var downloadActivityEnabled: Bool {
         (!isPrivateBrowsing || nativeBinding?.privateDownloadsAvailable == true) && !isClosing && !wholeWindowClose && presentation.isReady
     }
-    /// The Library rail's Downloads tile reads the sidebar entry's source.
     private func refreshLibraryDownloadActivity() {
         libraryView?.updateDownloadActivity(downloadStore.downloadItems, profiles: downloadActivityProfiles,
                                             privateWindow: isPrivateBrowsing, enabled: downloadActivityEnabled)
@@ -15941,8 +14247,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                   !downloadStore.isProfileRemovalPending(profile), let source = current.sourceURL, let url = URL(string: source) else { return false }
             if action == .openSource { return onOpenDownloadSource?(current, url) ?? false }
             NSPasteboard.general.clearContents()
-            //
-            // and onOpenSourceURL); Parc reuses the copied-URL window toast.
             guard NSPasteboard.general.setString(source, forType: .string) else { return false }
             showToast(.copiedCurrentURL(url), at: .window)
             return true
@@ -15957,8 +14261,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard item.canRemove, let url = libraryDownloadFileURL(item) else { return false }
             recyclingDownloads[item.id] = DownloadLibraryIdentity(item)
             libraryView?.setDownloadOperation(item, message: "Moving to Trash…")
-            // Finder's asynchronous Trash operation is the actual outcome. A
-            // failed move leaves the manager record; no optimistic deletion.
             NSWorkspace.shared.recycle([url]) { [weak self] moved, error in
                 let succeeded = error == nil && moved[url] != nil
                 let message = error?.localizedDescription
@@ -15993,10 +14295,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func id(for browser: PCBrowserView) -> UUID? { browsers.first { $0.value === browser }?.key }
-    ///
-    /// disposition 13 → ADK.OpenDisposition.splitView): the link joins the
-    /// split as a new pane after the page it was chosen in, referred by it.
-    ///
     func browserView(_ view: PCBrowserView, openLinkInSplitView url: URL) {
         guard browserViewCanOpenLinkInSplitView(view), let id = id(for: view),
               let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) else { return }
@@ -16006,8 +14304,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if selectedTabIDs.count >= 4 { showToast(.cannotAddNewPane, at: .window) }
     }
 
-    /// The same window state the split-after owner checks, except the pane
-    ///
     func browserViewCanOpenLinkInSplitView(_ view: PCBrowserView) -> Bool {
         guard let id = id(for: view), selectedTabIDs.contains(id), browserProfiles[id] == activeProfileID,
               let window, window.attachedSheet == nil, !isClosing, commandBar == nil else { return false }
@@ -16048,8 +14344,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         sidebar.reloadFavicon(for: id)
         refreshFavoriteOverlays(from: presentedState)
     }
-    /// Repaints this page's visible pane bar only; a Peek's bar is its
-    /// controller's. Background transitions can notify per frame.
     func browserViewDidChangePageColor(_ view: PCBrowserView) {
         guard let id = id(for: view), let pane = panes[id], pane.browser === view, !isClosing, !wholeWindowClose else { return }
         pane.showPageBacking(of: view.nativePage)
@@ -16064,9 +14358,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard id(for: view) != nil, !rendering, !isClosing, !wholeWindowClose else { return }
         refreshLivePageChromeOrRender()
     }
-    /// Whether a store publication will refresh this window's live chrome
-    /// soon: its RunLoop.main sink waits out event tracking (menus, live
-    /// resize), and `render` does nothing during a transfer.
     private var publicationRefreshesChrome: Bool {
         RunLoop.current.currentMode == .default && !promotingPeek
             && transferringTabIDs.isEmpty && collectionTransfer == nil
@@ -16075,8 +14366,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard let id = id(for: view) else { return }
         let revision = store.stateRevision
         store.updateTab(id, title: title)
-        // A published change reaches applyPublishedState, which refreshes the
-        // live chrome; refreshing here as well did that work twice per title.
         if store.stateRevision == revision || !publicationRefreshesChrome,
            !rendering, !isClosing, !wholeWindowClose { refreshLivePageChromeOrRender() }
     }
@@ -16093,9 +14382,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if id == currentTabID { refreshHandoffActivity() }
         }
     }
-    /// Play/pause, mute, audibility, track actions and routes reach the Mini
-    /// Player and the tab's audio indicator only through this. A volume drag
-    /// publishes per step, so a burst refreshes once per run-loop turn.
     func browserViewDidChangeMedia(_ view: PCBrowserView) {
         guard id(for: view) != nil else { return }
         scheduleMediaRefresh()
@@ -16108,8 +14394,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     func browserView(_ view: PCBrowserView, didChangeRendererCrash crash: PCNativeRendererCrash?) {
         if selectedTabIDs.contains(where: { browsers[$0] === view }) { pageHost.cancelDrop() }
-        // Read current state again; a previous callback may have moved/reloaded
-        // the same page. Never retain a window-local copy as crash authority.
         guard let id = id(for: view) else { return }
         refreshPagePresentation(id)
     }
@@ -16130,9 +14414,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 loadingTabs.remove(id); scheduleCookieFlush(); scheduleTabHistoryCapture(id)
             }
             refreshLivePageChromeOrRender()
-            // A typed or command-bar navigation shows its URL before it commits,
-            // so the row re-read the previous page's icon then; a new page with
-            // no icon never reports one. Re-read it from the committed page.
             if !loading, !rendering, !isClosing, !wholeWindowClose { sidebar.reloadFavicon(for: id) }
             if pendingNativeSelection?.view === view { attachOwnedPages() }
             if !loading, peekUndoAwaitingParent[id] != nil, !awaitedPeekRetries.contains(id) {
@@ -16144,7 +14425,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard let id = id(for: view), view.nativePage?.isClosed == true else { return }
         releaseClosedTab(id, updateSavedTab: !wholeWindowClose && !modelRetirementIDs.contains(id) && !transferringTabIDs.contains(id))
     }
-    /// The engine learned a FairPlay site for Safari's identity (docs/fairplay-identity.md).
     func browserView(_ view: PCBrowserView, didLearnSafariIdentityForSite site: String,
                      profilePath: String, offTheRecord: Bool) {
         FairPlayIdentityController.shared.didLearn(site, profilePath: profilePath, offTheRecord: offTheRecord)
@@ -16160,8 +14440,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     func shutdownBrowsers() {
         guard !isClosing else { return }
-        // App termination and window closure reach here only after the engine
-        // has destroyed the real pages. Disposal is not a second close route.
         guard browsers.values.allSatisfy({ $0.nativePage == nil || $0.nativePage?.isClosed == true }),
               peeks.values.allSatisfy({ $0.page.isClosed }) else {
             NSLog("Parc refused window disposal with live native pages")
@@ -16202,8 +14480,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         easelEditors.removeAll(); easelFailures.removeAll()
         if let eventMonitor { NSEvent.removeMonitor(eventMonitor); self.eventMonitor = nil }
     }
-    // Native callbacks are posted only after the binding has no Browsers and
-    // no pending reservations. They do not substitute for beforeunload consent.
     @objc func nativeBrowserCreationReservationDidAbort(_ browser: PCNativeBrowserWindow) {
         guard browser === nativeBinding, nativeWindowRequest != nil || preparedForRoutedPage,
               !presentation.isReady, browsers.isEmpty, !isClosing else { return }
@@ -16211,15 +14487,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     @objc func nativeBrowserDidReleaseLastBrowser(_ browser: PCNativeBrowserWindow) {
         guard browser === nativeBinding, nativeWindowRequest != nil || preparedForRoutedPage || isPrivateBrowsing, !isClosing else { return }
-        // A standard window whose last page moved away still shows its
-        //
         guard !presentation.hasPlaceholders else { return }
         retireEmptyNativeWindow()
     }
     private func retireEmptyNativeWindow() {
-        // The native callback's empty/no-reservations guarantee is valid only
-        // at this boundary. Keep the owner alive while Settings is visible;
-        // closing it or retrying later could reenter after ownership changes.
         guard settings?.window?.isVisible != true,
               settings?.window?.attachedSheet == nil else { return }
         windowCloseApproved = true
@@ -16235,9 +14506,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         render(store.state)
     }
     func ownsSettings(_ candidate: SettingsWindow) -> Bool { settings === candidate }
-    /// Private browsers and popups must retain their native context. Ask their
-    /// complete page set for real beforeunload consent, then release the native
-    /// reservation without unloading; replay can hide the exact owner on approval.
     func prepareAuxiliaryWindowForOnboarding(completion: @escaping (Bool) -> Void) {
         guard isPrivateBrowsing || isPopupWindow, hasReadyPresentation, let window,
               window.attachedSheet == nil, !isClosing, !wholeWindowClose,
@@ -16268,7 +14536,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         PCNativeBrowserApplication.requestClosePages(originals, shouldCommit: {
             MainActor.assumeIsolated {
                 consented = isCurrent()
-                return false // Release the reservation; keep every original page.
+                return false
             }
         }, completion: { [weak self] _ in
             MainActor.assumeIsolated {
@@ -16279,9 +14547,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
         })
     }
-    /// The same close path as the red window control, with a result for replay.
-    /// A refusal before native consent must settle too; it must never leave a
-    /// pending replay that can fire after an unrelated later close.
     func closeForOnboarding(completion: @escaping (Bool) -> Void) {
         guard hasReadyPresentation, let window, window.attachedSheet == nil,
               !isClosing, !wholeWindowClose, !windowClosePending,
@@ -16308,9 +14573,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard sender === window else { return false }
-        // Replay freezes the exact saved editors before native consent begins.
-        // Native approval has already drained every Browser and is irreversible;
-        // do not introduce another save/transfer refusal after that boundary.
         if windowCloseApproved, onboardingCloseNotes != nil { return true }
         guard !windowClosePending else { return false }
         func refuse() -> Bool { finishScriptingWindowClose(false); return false }
@@ -16334,8 +14596,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return false
         }
         if onboardingCloseRequested {
-            // Flush and freeze in this same main-thread turn: there is no gap
-            // for a new local draft while another page awaits beforeunload.
             guard prepareNotesToClose() else { return refuse() }
             onboardingCloseNotes = noteEditors.values.map { note in
                 let editor = note.editor
@@ -16364,10 +14624,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         return false
     }
-    ///
-    /// the window asks its pages to close, each page another window still
-    /// shows as a placeholder moves there live. One move at a time; the close
-    /// resumes when it settles. A page is tried once per close attempt.
     private func ejectPageBeforeClose() -> Bool {
         for id in heldContentIDs.sorted(by: { $0.uuidString < $1.uuidString })
         where !ejectionAttempts.contains(id) && canHandOverPage(id) {
@@ -16397,10 +14653,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         cancelPendingCommandSplit()
         sidebar.updateSpaceAvailability()
         sidebarPreviews?.dismiss()
-        //
-        //
-        // unless an owner guard defers it. Applying here does not depend on
-        // the tracker's observer running first or on a state having changed.
         refreshSidebarPointer()
     }
     func windowDidEndSheet(_ notification: Notification) {
@@ -16412,9 +14664,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
 extension SidebarView: SidebarKeyViewEnds {}
 
-/// A move's placement step. A transfer that ends without moving the page
-/// (it stayed, closed or was refused late) drops the step unrun, and only
-/// releasing it reports that. The engine may release it on any thread.
 private final class PendingArrival {
     var ran = false
     private let abandoned: () -> Void
@@ -16427,9 +14676,6 @@ private final class PendingArrival {
 
 private final class BrowserPane: NSView {
     let content = LayoutView()
-    /// Developer Mode's toolbar, built the first time this pane shows a
-    /// Developer Mode site. Building it with every pane was most of a new
-    /// tab's pane cost, paid before its page could start loading.
     private(set) var loadedDeveloperToolbar: DeveloperToolbarView?
     var developerToolbar: DeveloperToolbarView {
         if let loadedDeveloperToolbar { return loadedDeveloperToolbar }
@@ -16442,11 +14688,8 @@ private final class BrowserPane: NSView {
     let browserToolbar = BrowserToolbarView()
     let windowGrabber = WebpageWindowGrabber()
     private let controlVisibility = PaneControlVisibility()
-    ///
     let splitHighlight = SplitPaneHighlight()
     var controlsFocused = true { didSet { needsLayout = true } }
-    /// isObstructedByModal: a presented Peek hides the revealed controls and
-    /// Back/Forward with the original 0.17-second fade.
     var controlsObstructed = false {
         didSet {
             guard oldValue != controlsObstructed else { return }
@@ -16456,20 +14699,13 @@ private final class BrowserPane: NSView {
     func trackSplitMenu(_ body: () -> Void) { controlVisibility.trackMenu(body) }
     private let error = PageFailureView()
     private var nativeContent: NSView?
-    /// A tab with no address yet: no page, content or failure, nothing to focus.
     private(set) var showsBlank = false
     private(set) var showsNoteCanvas = false
-    /// The top bar's clear fill needs the window surface behind it.
     private(set) var showsTopBar = false
     private var noteCanvasContentAppearance: NSAppearance?
     var onContentBackingChange: (() -> Void)?
-    /// The page's own opaque background, which shows behind the page while it
-    /// has not drawn, as its gutter does; white until the page reports one.
     private var pageBacking: NSColor?
-    /// What the content backing shows.
     var contentBacking: NSColor { showsNoteCanvas ? .clear : (surface == .page ? pageBacking : nil) ?? .white }
-    /// Outgoing, still on screen over the incoming panes until their pages
-    /// have drawn (PageSwitchHold). Clicks reach the incoming panes beneath.
     var heldOverSwitch = false {
         didSet {
             guard heldOverSwitch != oldValue else { return }
@@ -16497,12 +14733,8 @@ private final class BrowserPane: NSView {
         CATransaction.commit()
         onContentBackingChange?()
     }
-    ///
-    /// hold (docs/sidebar-resize.md); intrinsic keeps autoresizing to content.
     let contentResize = PageContentResizer()
     var browser: PCBrowserView? { didSet { oldValue?.removeFromSuperview(); error.pageView = browser; if let browser { content.addSubview(browser); contentResize.place(browser, in: content) } } }
-    /// What the pane shows, by content kind rather than view visibility: a
-    /// navigation failure or renderer crash still belongs to web content.
     private var surface = PaneSurface.page {
         didSet {
             guard surface != oldValue else { return }
@@ -16511,14 +14743,11 @@ private final class BrowserPane: NSView {
             browserToolbar.showPageColor(of: livePage?.nativePage, failing: showsFailure)
         }
     }
-    /// A live page in this pane, as opposed to a Note, an Easel, a native page
-    /// or a blank tab; the window chooses its top-bar content from it.
     var livePage: PCBrowserView? {
         guard let browser, surface.usesPageBar(pageLive: browser.nativePage.map { !$0.isClosed } == true) else { return nil }
         return browser
     }
     var showsFailure: Bool { surface == .failure }
-    /// The blank backing, a placeholder or native content stands in for the page.
     var showsLocalContent: Bool { surface == .local }
     var onReload: (() -> Void)? { didSet { error.onReload = onReload } }
     var onRetryRenderer: ((RendererCrashPresentation) -> Void)? { didSet { error.onRetryRenderer = onRetryRenderer } }
@@ -16533,8 +14762,6 @@ private final class BrowserPane: NSView {
     override var isFlipped: Bool { true }
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        // The white page backing covers the content only: the top bar's clear
-        //
         wantsLayer = true; content.wantsLayer = true; content.layer?.backgroundColor = NSColor.white.cgColor
         splitHighlight.attach(to: self)
         addSubview(content); addSubview(windowGrabber)
@@ -16562,9 +14789,6 @@ private final class BrowserPane: NSView {
         let nextContent = NSRect(x: 0, y: headerHeight, width: bounds.width, height: bounds.height - headerHeight)
         let contentMoved = content.frame != nextContent
         content.frame = nextContent
-        // content.layoutSubtreeIfNeeded always recurses into every Chromium
-        // descendant. place already runs flushHostedLayout for a real page-size
-        // change; identical hosted chrome must not pay that O(n) walk (P0-K).
         if contentMoved { content.needsLayout = true }
         if PaneContentHostedLayoutFlush.shouldLayoutContent(
             frameChanged: contentMoved, needsLayout: content.needsLayout
@@ -16598,9 +14822,6 @@ private final class BrowserPane: NSView {
         setNoteCanvasBacking(view is NoteCanvasView)
         applyNoteCanvasTheme()
     }
-    /// SPACE17's contentAppearance is the recovered Optional Aqua/DarkAqua
-    /// override. Store it even while a pane shows a page so a later Note or
-    /// Easel receives the current Space without waiting for another palette publish.
     func inheritNoteCanvasTheme(_ appearance: NSAppearance?) {
         noteCanvasContentAppearance = appearance
         applyNoteCanvasTheme()
@@ -16620,8 +14841,6 @@ private final class BrowserPane: NSView {
         onContentBackingChange?()
     }
     func clearNativeContent() { nativeContent?.removeFromSuperview(); nativeContent = nil; setNoteCanvasBacking(false) }
-    /// A tab with no address yet shows the pane's own blank white backing, as
-    ///
     func showBlank() { hidePlaceholder(); error.clear(); browser?.isHidden = true; nativeContent?.isHidden = true; showsBlank = true; surface = .local; setNoteCanvasBacking(false) }
     func showBrowser() {
         hidePlaceholder(); error.clear(); browser?.isHidden = false; nativeContent?.isHidden = true; showsBlank = false; surface = .page; setNoteCanvasBacking(false)
@@ -16630,8 +14849,6 @@ private final class BrowserPane: NSView {
     func showError(_ message: String) { hidePlaceholder(); error.showNavigationFailure(message); browser?.isHidden = true; nativeContent?.isHidden = true; showsBlank = false; surface = .failure; setNoteCanvasBacking(false) }
     private var placeholder: PagePlaceholderView?
     private var placeholderSnapshot: CGImage?
-    /// The page lives in another window: its last frame, dimmed over the
-    /// window surface, until it returns.
     private(set) var showsPlaceholder = false
     func showPlaceholder(_ snapshot: CGImage?, title: String, onClick: @escaping () -> Void) {
         let view = placeholder ?? PagePlaceholderView(frame: content.bounds)
@@ -16659,10 +14876,6 @@ private final class BrowserPane: NSView {
     }
     func showRendererFailure(_ crash: RendererCrashPresentation) {
         hidePlaceholder()
-        //
-        // registered NSWindow/container relationship intact while hiding that
-        // native hierarchy; the failure view also explicitly hides its AX
-        // subtree. Recovery restores this same view and prior AX state.
         error.showRendererFailure(crash)
         browser?.isHidden = true; nativeContent?.isHidden = true; showsBlank = false
         surface = .failure
@@ -16680,11 +14893,7 @@ extension SplitPanePlaceholder: SplitLayoutFollowing {
     func cancelSplitLayoutFollow() { splitHighlight.cancelFollow() }
 }
 
-// The transient hint must not change renderer focus or intercept page clicks.
 
-
-// AppleScript commands carry their original physical window and model IDs.
-// No responder-chain/front-window fallback is used by this owner.
 extension BrowserWindowController: BrowserScriptOwner {
     var scriptingID: UUID { presentationID }
     var scriptingIsIncognito: Bool { isPrivateBrowsing }
@@ -16782,8 +14991,6 @@ extension BrowserWindowController: BrowserScriptOwner {
             return
         }
         let browser = try scriptingBrowser(id, profile: profile)
-        // These existing engine methods act on this same WebContents, including
-        // parked background pages; toolbar/menu focus gates are not substituted.
         switch action {
         case .back: if browser.canGoBack { browser.goBack() }
         case .forward: if browser.canGoForward { browser.goForward() }
@@ -16811,13 +15018,9 @@ extension BrowserWindowController: BrowserScriptOwner {
     }
 
     func scriptingNavigate(_ url: URL, tab id: UUID, profile: UUID) throws {
-        // Validate before touching the original request owner; in particular a
-        // javascript: URL cannot become a scripting-permission bypass.
         let url = try BrowserScriptError.url(url.absoluteString)
         let browser = try scriptingBrowser(id, profile: profile)
         inputRevisions.removeValue(forKey: id); pendingSearchNavigations.removeValue(forKey: id)
-        // Do not commit a proposed URL into history. The same native page's
-        // navigation observer publishes the actual committed/visible URL.
         browser.loadURL(url)
     }
     func scriptingMakeTab(_ url: URL, space: UUID?, profile: UUID?) throws -> ScriptTabRecord {
@@ -16853,10 +15056,6 @@ extension BrowserWindowController: BrowserScriptOwner {
         try scriptingCheck()
         if let tab, let profile {
             _ = try scriptingTab(tab, profile: profile)
-            // BrowserStore already performs one whole-set retirement including
-            // Peek children, and publishes saved-tab/archive state only after
-            // native beforeunload approval. Keep the original identity checked
-            // through that asynchronous transaction.
             closeTabsWithReopen([tab], shouldCommit: { [weak self] in
                 guard let self, !self.isClosing, !self.wholeWindowClose,
                       self.ownership.canUse(tab, owner: self.presentationID) else { return false }
@@ -16875,9 +15074,6 @@ extension BrowserWindowController: BrowserScriptOwner {
     }
 }
 
-///
-/// overlay is this window theme's SemanticColorPalette background, in the same
-/// light/dark variant as the palette (WEB16, docs/web-interactions.md).
 extension BrowserWindowController: PCNativeStatusTextThemeSource {
     func statusTextThemeBackgroundColor() -> NSColor? { rootView.palette.background }
     func statusTextThemeAppearance() -> NSAppearance? {
@@ -16885,7 +15081,6 @@ extension BrowserWindowController: PCNativeStatusTextThemeSource {
     }
 }
 
-/// The page's own AirPlay button and placard take the Mini Player's tint.
 extension BrowserWindowController: PCNativeAirPlayThemeSource {
     func airPlayThemeTintColor() -> NSColor? {
         ThemeChromePalette.airPlayOnDarkSurfaceColor(theme: rootView.paletteTheme)
@@ -16896,8 +15091,6 @@ extension BrowserWindowController: PCNativeAirPlayThemeSource {
 }
 
 extension PCNativePage {
-    ///
-    ///
     var developerModeSiteHost: String? {
         if let host = developerModeHost { return host }
         guard responds(to: #selector(getter: PCNativePage.developerModeExtensionHost)) else { return nil }
@@ -16905,5 +15098,4 @@ extension PCNativePage {
     }
 }
 
-/// Top bars take their window's private state for the colour cache.
 extension BrowserWindowController: TopBarColorWindow {}

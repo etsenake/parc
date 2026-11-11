@@ -1,8 +1,5 @@
 import AppKit
 
-///
-/// Re-crossing 100% in the original direction may pulse again; starting within
-/// the inclusive 0.99...1.01 band never admits feedback for that gesture.
 struct EaselZoomInteraction {
     let initial: CGFloat
     private(set) var previous: CGFloat
@@ -20,8 +17,6 @@ struct EaselZoomInteraction {
     }
 }
 
-/// Transient presentation belongs to the original canvas/scroll-view pair.
-/// It does not persist zoom, alter document geometry, or own embedded pages.
 @MainActor
 final class EaselCanvasMotion: NSObject {
     static let annotationDuration: TimeInterval = 0.1
@@ -105,8 +100,6 @@ final class EaselCanvasMotion: NSObject {
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { settleAnnotations() }
     }
 
-    /// Preserve the reference's native implicit-animation group and immediate
-    /// logical visibility. There is no delayed hide, opacity curve or spring.
     static func setAnnotationHidden(_ hidden: Bool, view: NSView, animated: Bool) {
         guard view.isHidden != hidden else { return }
         NSAnimationContext.runAnimationGroup { context in

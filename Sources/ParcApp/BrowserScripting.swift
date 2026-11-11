@@ -1,7 +1,5 @@
 import AppKit
 
-// Script wrappers are locators, never page owners. Every command resolves the
-// original window and stable model/profile identity again at dispatch time.
 struct ScriptTabRecord {
     let id: UUID
     let profileID: UUID
@@ -36,9 +34,6 @@ func scriptWindowCreationIsIncognito(_ properties: [String: Any]) throws -> Bool
     return result
 }
 
-// Chromium can load a parent Profile asynchronously even when its original
-// app window shows no page (no tab, or a blank tab). Only private-window creation
-// uses this command path; ordinary object factories retain Cocoa insertion.
 @MainActor
 final class PendingBrowserCreation<Value> {
     let id = UUID()
@@ -98,9 +93,6 @@ private final class ScriptPrivateWindowReply {
     }
 }
 
-//
-// Creation provenance and actual live context are separate facts: a copied
-// regular-profile path must never make an OTR or mixed window scriptable here.
 enum ScriptWindowOrigin { case application, nativeBrowser, auxiliary, offTheRecord }
 enum ScriptWindowContext { case unavailable, regular, offTheRecord, mixed }
 func scriptWindowHasNormalOwner(origin: ScriptWindowOrigin, context: ScriptWindowContext) -> Bool {
@@ -162,8 +154,6 @@ enum BrowserScriptError: Error, LocalizedError {
         guard let value = value as? String, !value.isEmpty,
               !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
               let url = URL(string: value), let scheme = url.scheme, !scheme.isEmpty else { throw Self.invalidURL }
-        // JavaScript has its own profile permission and asynchronous result
-        // contract. URL assignment must not bypass that gate.
         guard scheme.lowercased() != "javascript" else {
             throw Self.unsupported("JavaScript from Apple Events is not enabled by URL assignment.")
         }
@@ -184,8 +174,6 @@ private func scriptResult<T>(_ body: () throws -> T) -> T? {
 @MainActor
 private func scriptClose(_ owner: any BrowserScriptOwner, tab: UUID? = nil,
                          profile: UUID? = nil, command: NSScriptCommand) {
-    // Suspension precedes dispatch because a local/unloaded tab may finish
-    // synchronously. A denied beforeunload resumes with an AppleScript error.
     command.suspendExecution()
     do {
         try owner.scriptingClose(tab: tab, profile: profile) { approved in
@@ -198,8 +186,6 @@ private func scriptClose(_ owner: any BrowserScriptOwner, tab: UUID? = nil,
     }
 }
 
-// A native request owns its completion until a result, cancellation or timeout.
-// Keep that lease alive while Cocoa is suspended; release it after one reply.
 @MainActor
 private final class ScriptJavaScriptReply {
     private var command: NSScriptCommand?
@@ -222,10 +208,6 @@ private final class ScriptJavaScriptReply {
     }
 }
 
-// Cocoa's scripting insertion obtains the collection again after the factory
-// returns. The real object may already be present, so the proposed array can
-// contain its ordinary locator plus the issued factory token. Acknowledge only
-// that one insertion and preserve the existing collection/order unchanged.
 @MainActor
 func acceptScriptInsertion<T: AnyObject>(_ proposed: [T], existing: [T],
     id: (T) -> String, pending: (T) -> Bool, owned: (T) -> Bool,
@@ -243,8 +225,6 @@ func acceptScriptInsertion<T: AnyObject>(_ proposed: [T], existing: [T],
 final class ParcScriptWindow: NSObject {
     private weak var owner: (any BrowserScriptOwner)?
     private let identity: UUID
-    // The factory has already committed the object when Cocoa asks to insert
-    // it. Accept that exact insertion once; never duplicate a page/window.
     private var pendingInsertion: Bool
     init(owner: any BrowserScriptOwner, pendingInsertion: Bool = false) {
         self.owner = owner; identity = owner.scriptingID; self.pendingInsertion = pendingInsertion
@@ -259,8 +239,6 @@ final class ParcScriptWindow: NSObject {
         owner === candidate && identity == candidate.scriptingID
     }
     func acceptInsertion(owner candidate: any BrowserScriptOwner) -> Bool {
-        // Creation is committed before the native first page becomes ready.
-        // Token acknowledgment checks the exact retained owner, not page readiness.
         guard pendingInsertion, belongs(to: candidate) else { return false }
         pendingInsertion = false; return true
     }
@@ -274,8 +252,6 @@ final class ParcScriptWindow: NSObject {
     @objc dynamic var isVisible: Bool { (try? resolve().scriptingWindow?.isVisible) ?? false }
     @objc dynamic var isZoomable: Bool { (try? resolve().scriptingWindow?.isZoomable) ?? false }
     @objc dynamic var isZoomed: Bool { (try? resolve().scriptingWindow?.isZoomed) ?? false }
-    // The normal-owner gate also applies to property reads: a locator cannot
-    // silently describe a retired or newly private/mixed owner as normal.
     @objc dynamic var mode: String {
         get { scriptResult { try resolve().scriptingIsIncognito ? "incognito" : "normal" } ?? "" }
         set { BrowserScriptError.report(BrowserScriptError.unsupported("Window mode can be specified only when creating a window.")) }
@@ -386,8 +362,6 @@ final class ParcScriptTab: NSObject {
             let reply = ScriptJavaScriptReply(command)
             do {
                 let cancel = try owner.scriptingExecuteJavaScript(code, tab: tabID, profile: profileID) { [self] result in
-                    // Native validates the document. The wrapper also checks the
-                    // exact window/tab/profile locator before publishing a result.
                     guard (try? resolve()) != nil else { reply.finish(.failure(BrowserScriptError.missing)); return }
                     reply.finish(result)
                 }

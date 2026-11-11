@@ -3,8 +3,6 @@ import Combine
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Durable, profile-local captures. Explicit Save to Library transfers immutable
-/// bytes into storage; saved bytes survive navigation and window destruction.
 struct SavedCapture: Codable, Equatable, Identifiable, Sendable {
     enum Kind: String, Codable, Sendable { case region, viewport, fullPage, portrait }
     let id: UUID
@@ -40,8 +38,6 @@ final class CaptureLibraryStore: ObservableObject {
     private struct OwnerKey: Hashable { let directory: String; let profileID: UUID }
     private static var owners: [OwnerKey: Weak] = [:]
     static func shared(directory: URL, profileID: UUID) -> CaptureLibraryStore {
-        // URL directory hints can change when the first save creates this path.
-        // Its standardized path remains the same owner before and after creation.
         let key = OwnerKey(directory: directory.standardizedFileURL.path, profileID: profileID)
         if let existing = owners[key]?.value { return existing }
         owners = owners.filter { $0.value.value != nil }
@@ -73,8 +69,6 @@ final class CaptureLibraryStore: ObservableObject {
     func delete(_ item: SavedCapture) async throws {
         do { apply(try await disk.delete(item)) }
         catch {
-            // A rollback can itself fail on disk exhaustion. Publish the actual
-            // committed catalog before reporting failure to the output owner.
             if let snapshot = try? await disk.snapshot() { apply(snapshot) }
             throw error
         }
@@ -86,8 +80,6 @@ final class CaptureLibraryStore: ObservableObject {
         try await Task.detached(priority: .userInitiated) { try data.write(to: url, options: .atomic) }.value
     }
     func contains(_ item: SavedCapture) -> Bool { items.contains(item) }
-    /// Bind deletion to this catalog's exact durable profile owner before any
-    /// asynchronous disk work can race a profile removal.
     func reserveDeletion(owner: BrowserStore, item: SavedCapture) -> ProfileWriteReservation? {
         guard item.profileID == profileID, contains(item),
               directoryPath == owner.capturesDirectory(for: profileID).standardizedFileURL.path else { return nil }
@@ -112,9 +104,6 @@ private enum CaptureLibraryFailure: LocalizedError {
     }
 }
 
-/// One actor serializes disk reads and mutations for every window of a profile.
-/// Images are immutable revisions. The atomic catalog replacement is the commit
-/// point; a failed write cannot replace an existing capture's bytes or metadata.
 private actor CaptureLibraryDisk {
     struct Snapshot: Sendable { let generation: UInt64; let items: [SavedCapture] }
     private struct Catalog: Codable { let version: Int; var items: [SavedCapture] }
@@ -165,8 +154,6 @@ private actor CaptureLibraryDisk {
         next.items.sort { $0.createdAt > $1.createdAt }
         do {
             let result = try commit(next)
-            // A committed replacement no longer references the old immutable
-            // revision. Failed cleanup is harmless and retried on next mutation.
             cleanUnreferencedImages(in: next)
             return result
         } catch { try? FileManager.default.removeItem(at: imageURL); throw error }
@@ -180,8 +167,6 @@ private actor CaptureLibraryDisk {
         do {
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
         } catch {
-            // Keep the item visible when actual file deletion fails. If disk
-            // failure also prevents rollback, report the error rather than success.
             _ = try commit(previous); throw error
         }
         cleanUnreferencedImages(in: next)

@@ -1,9 +1,6 @@
 import AppKit
 import SwiftUI
 
-///
-///
-/// pressed, then hovered. The entry is never disabled.
 struct TranslucentButtonColors: Equatable {
     var background: NSColor
     var hoveredBackground: NSColor
@@ -13,10 +10,6 @@ struct TranslucentButtonColors: Equatable {
     var disabledBackground: NSColor
     var disabledForeground: NSColor
 
-    ///
-    /// GrayA4, GrayA5, GrayA11, GrayA12, clear, GrayA8. The named colours are
-    ///
-    /// alphas in Aqua, white in Dark Aqua. Not the window theme palette.
     static func standard(dark: Bool) -> TranslucentButtonColors {
         func gray(_ aqua: CGFloat, _ darkAqua: CGFloat) -> NSColor {
             dark ? NSColor(srgbRed: 1, green: 1, blue: 1, alpha: darkAqua) : NSColor(srgbRed: 0, green: 0, blue: 0, alpha: aqua)
@@ -27,8 +20,6 @@ struct TranslucentButtonColors: Equatable {
                                        disabledForeground: gray(0.220, 0.249))
     }
 
-    ///
-    /// backgrounds and the palette's maxContrastColor for every foreground.
     static func bin(maxContrast: NSColor) -> TranslucentButtonColors {
         TranslucentButtonColors(background: .clear, hoveredBackground: .clear, pressedBackground: .clear,
                                 foreground: maxContrast, pressedForeground: maxContrast,
@@ -43,15 +34,6 @@ struct TranslucentButtonColors: Equatable {
     }
 }
 
-///
-/// TranslucentButtons, drawn by their AppKit owner: the default properties
-/// (`TranslucentButtonColors.standard`, resolved by the view's appearance), a
-/// background over the whole frame clipped to 6-point corners, and
-/// `.scaleEffect(isPressed ? 0.95 : 1)`. Press changes ride
-/// spring(response: 0.3, dampingFraction: 0.6) and hover changes
-/// easeIn(duration: 0.1). The style also publishes `isPressed` to the label
-///
-/// spring, to the arrow and reload glyphs.
 @MainActor final class TranslucentButtonFace {
     static let cornerRadius: CGFloat = 6
     static let pressedScale: CGFloat = 0.95
@@ -62,9 +44,7 @@ struct TranslucentButtonColors: Equatable {
     private let frames = ViewDisplayFrameDriver()
     private var hovered = false
     private var pressed = false
-    /// 0 at rest, 1 hovered.
     private var hoverProgress: CGFloat = 0
-    /// 0 released, 1 pressed; the spring may overshoot either end.
     private(set) var pressProgress: CGFloat = 0
     private var hoverFrom: CGFloat = 0, hoverStart: CFTimeInterval = 0
     private var pressFrom: CGFloat = 0, pressStart: CFTimeInterval = 0
@@ -96,7 +76,6 @@ struct TranslucentButtonColors: Equatable {
         .standard(dark: view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
     }
 
-    /// The pressed foreground blends in on the press spring; disabled wins.
     func foreground(enabled: Bool, in view: NSView) -> NSColor {
         let colors = colors(for: view)
         guard enabled else { return colors.disabledForeground }
@@ -104,7 +83,6 @@ struct TranslucentButtonColors: Equatable {
     }
 
     private var plate: (bounds: NSRect, path: CGPath)?
-    /// `clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))`.
     private func platePath(_ bounds: NSRect) -> CGPath {
         if let plate, plate.bounds == bounds { return plate.path }
         let path = Path(roundedRect: bounds, cornerRadius: Self.cornerRadius, style: .continuous).cgPath
@@ -112,7 +90,6 @@ struct TranslucentButtonColors: Equatable {
         return path
     }
 
-    /// Fills the background, then draws the glyph inside the press scale.
     func draw(in bounds: NSRect, enabled: Bool, view: NSView, glyph: (NSColor) -> Void) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         let colors = colors(for: view)
@@ -137,9 +114,6 @@ struct TranslucentButtonColors: Equatable {
     }
 
     private var tintedGlyph: (image: NSImage, color: NSColor, result: NSImage)?
-    /// A template glyph centred in the bounds, shifted horizontally by `shiftX`.
-    /// The palette's states differ only in alpha, so the cached image holds the
-    /// opaque tint and the alpha is applied as the drawing fraction.
     func drawGlyph(_ image: NSImage, tint: NSColor, in bounds: NSRect, shiftX: CGFloat = 0, view: NSView) {
         let opaque = tint.withAlphaComponent(1)
         if tintedGlyph?.image !== image || tintedGlyph?.color != opaque {
@@ -158,19 +132,16 @@ struct TranslucentButtonColors: Equatable {
         }
     }
 
-    /// Unclamped as SwiftUI's spring is, with the alpha kept in range.
     static func blend(_ from: NSColor, _ to: NSColor, _ progress: CGFloat) -> NSColor {
         guard let a = from.usingColorSpace(.sRGB), let b = to.usingColorSpace(.sRGB) else { return progress < 0.5 ? from : to }
         func mix(_ x: CGFloat, _ y: CGFloat) -> CGFloat { x + (y - x) * progress }
         let alpha = min(1, max(0, mix(a.alphaComponent, b.alphaComponent)))
-        // A clear end takes the other end's colour, as premultiplied interpolation does.
         let red = a.alphaComponent == 0 ? b.redComponent : b.alphaComponent == 0 ? a.redComponent : mix(a.redComponent, b.redComponent)
         let green = a.alphaComponent == 0 ? b.greenComponent : b.alphaComponent == 0 ? a.greenComponent : mix(a.greenComponent, b.greenComponent)
         let blue = a.alphaComponent == 0 ? b.blueComponent : b.alphaComponent == 0 ? a.blueComponent : mix(a.blueComponent, b.blueComponent)
         return NSColor(srgbRed: min(1, max(0, red)), green: min(1, max(0, green)), blue: min(1, max(0, blue)), alpha: alpha)
     }
 
-    /// CAMediaTimingFunction(name: .easeIn): cubic Bézier (0.42, 0) (1, 1).
     static func easeIn(_ x: Double) -> CGFloat {
         guard x > 0 else { return 0 }
         guard x < 1 else { return 1 }

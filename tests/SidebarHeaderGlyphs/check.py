@@ -113,7 +113,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-header-glyphs-") as direct
     slices = {
         "ActionButton.swift": ("SidebarView.swift", "final class MenuAction"),
         "NavigationControlButton.swift": ("NavigationControls.swift", "final class NavigationHistoryController"),
-        "ThemePalette.swift": ("ThemeRenderer.swift", "// Opt-in native delivery diagnostics"),
+        "ThemePalette.swift": ("ThemeRenderer.swift", "@MainActor\nenum NativeInputDiagnostics"),
     }
     for target, (source, marker) in slices.items():
         text = (app / source).read_text()

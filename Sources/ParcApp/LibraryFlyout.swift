@@ -4,16 +4,6 @@ import QuickLookThumbnailing
 import SwiftUI
 import UniformTypeIdentifiers
 
-//
-//
-//
-//
-//
-//
-// value cites the flyout contract (claude-downloads-rea/flyout/CONTRACT.md);
-// [I] marks an inference and "Parc adaptation" a recorded difference.
-
-///
 enum LibraryFlyoutDownloadStatus: Equatable {
     case inProgress(Double?), paused, notStarted, completed, failed, cancelled
     init(_ download: BrowserDownload) {
@@ -29,15 +19,9 @@ enum LibraryFlyoutDownloadStatus: Equatable {
         }
     }
     var isInProgress: Bool { if case .inProgress = self { return true }; return false }
-    ///
-    /// with payload 1…3).
     var isTerminal: Bool { self == .completed || self == .failed || self == .cancelled }
 }
 
-/// `HomeBadgingFile` (`id`, `dateCreated`, `title`, `path`, `isScreenshot`).
-/// Documents, Desktop and Screenshots each contribute folder files; a Desktop
-/// screenshots location still tags screenshot-named files as the Screenshots
-/// source so that source can be toggled on its own.
 struct LibraryFlyoutFile: Equatable {
     let url: URL
     let dateCreated: Date
@@ -47,7 +31,6 @@ struct LibraryFlyoutFile: Equatable {
     var path: String { url.path }
 }
 
-///
 enum LibraryFlyoutFiles {
     static func defaultFolders() -> [(LibraryBadgeSource, URL)] {
         let manager = FileManager.default
@@ -93,27 +76,13 @@ enum LibraryFlyoutFiles {
     }
 }
 
-///
-/// descriptor per source folder with delete/write/rename events, so folder
-/// files are rescanned when a folder changes instead of on a polling clock.
 @MainActor
 final class LibraryFlyoutFolderMonitor {
-    /// An iCloud Desktop or Documents folder or a privacy check can hold
-    /// `open` for seconds. One serial queue keeps that off the main thread
-    /// without leaving another blocked thread behind on every activation.
     private static let openQueue = DispatchQueue(label: "org.parc.library-flyout-folders", qos: .utility)
-    /// One source per watched folder. A folder without one (missing,
-    /// unmounted, or moved since) is opened again by the next `watch`, and
-    /// the others keep watching meanwhile.
     private var sources: [String: DispatchSourceFileSystemObject] = [:]
     private var requested: [String] = []
-    /// Folders macOS refused (no privacy access): not asked again on every
-    /// activation, only when the window's monitor is rebuilt.
     private var refused: Set<String> = []
-    /// Folders whose descriptors are being opened on `openQueue`.
     private var opening: Set<String> = []
-    /// Bumped when the requested folders change and by `cancel`; descriptors
-    /// from a superseded open are closed instead of watched.
     private var openGeneration: UInt64 = 0
     private var pending: DispatchWorkItem?
     private let onChange: () -> Void
@@ -156,9 +125,6 @@ final class LibraryFlyoutFolderMonitor {
                             self.refused.insert(path)
                         }
                     }
-                    // The scan that asked for this watch ran before these
-                    // folders were watched; one more catches a change made in
-                    // between. A folder that keeps failing adds nothing.
                     if added { self.scheduleChange() }
                 }
             }
@@ -190,8 +156,6 @@ final class LibraryFlyoutFolderMonitor {
         sources = [:]; requested = []; refused = []
     }
 
-    /// One rescan shortly after the first change of a burst (an atomic save,
-    /// a screenshot's temporary file); later changes in the burst join it.
     private func scheduleChange() {
         guard pending == nil else { return }
         let work = DispatchWorkItem { [weak self] in
@@ -204,7 +168,6 @@ final class LibraryFlyoutFolderMonitor {
     }
 }
 
-///
 enum LibraryFlyoutItem: Identifiable, Equatable {
     case download(BrowserDownload)
     case capture(SavedCapture)
@@ -217,8 +180,6 @@ enum LibraryFlyoutItem: Identifiable, Equatable {
         case .file(let item): return "file:" + item.path
         }
     }
-    ///
-    ///
     var dateCreated: Date {
         switch self {
         case .download(let item): return item.startedAt ?? .distantPast
@@ -226,12 +187,9 @@ enum LibraryFlyoutItem: Identifiable, Equatable {
         case .file(let item): return item.dateCreated
         }
     }
-    /// The file name a download's `localURL.lastPathComponent` names.
     private static func fileName(_ item: BrowserDownload) -> String {
         item.path.isEmpty ? item.name : URL(fileURLWithPath: item.path).lastPathComponent
     }
-    ///
-    /// the download's file name, or the folder file's name.
     var title: String {
         switch self {
         case .download(let item): return Self.fileName(item)
@@ -239,8 +197,6 @@ enum LibraryFlyoutItem: Identifiable, Equatable {
         case .file(let item): return item.title
         }
     }
-    ///
-    ///
     var accessibilityLabel: String {
         switch self {
         case .download(let item): return "Download \u{2014} " + Self.fileName(item)
@@ -248,8 +204,6 @@ enum LibraryFlyoutItem: Identifiable, Equatable {
         case .file(let item): return "File \u{2014} " + item.title
         }
     }
-    ///
-    ///
     var uniqueKey: String {
         switch self {
         case .download(let item): return item.path.isEmpty ? "download-record:" + item.id : "file:" + item.path
@@ -262,10 +216,7 @@ enum LibraryFlyoutItem: Identifiable, Equatable {
     var file: LibraryFlyoutFile? { if case .file(let item) = self { return item }; return nil }
     var downloadStatus: LibraryFlyoutDownloadStatus? { download.map(LibraryFlyoutDownloadStatus.init) }
     var downloadIdentity: DownloadLibraryIdentity? { download.map(DownloadLibraryIdentity.init) }
-    ///
-    ///
     var showsImage: Bool { file != nil || capture != nil || downloadStatus == .completed }
-    /// A changed file or capture revision needs a new image.
     var imageKey: String {
         switch self {
         case .download(let item): return id + "|" + item.path + "|\(item.receivedBytes)"
@@ -276,9 +227,6 @@ enum LibraryFlyoutItem: Identifiable, Equatable {
 }
 
 enum LibraryFlyoutItems {
-    /// The flyout lists HomeButtonBadgingViewState's `items`: the first
-    ///
-    ///
     static let limit = 4
     static func merge(downloads: [BrowserDownload], captures: [SavedCapture],
                       files: [LibraryFlyoutFile] = []) -> [LibraryFlyoutItem] {
@@ -287,17 +235,12 @@ enum LibraryFlyoutItems {
             + captures.map(LibraryFlyoutItem.capture)
             + files.map(LibraryFlyoutItem.file)
         where seen.insert(item.uniqueKey).inserted { items.append(item) }
-        // Equal dates keep their source order (Parc: a stable sort).
         return items.enumerated().sorted {
             $0.element.dateCreated != $1.element.dateCreated ? $0.element.dateCreated > $1.element.dateCreated : $0.offset < $1.offset
         }.map(\.element)
     }
 }
 
-///
-/// `SidebarItemBackground`, `ForegroundPrimary`, `ForegroundSecondary` and
-///
-///
 struct LibraryFlyoutColors: Equatable {
     let itemBackground: NSColor
     let primary: NSColor
@@ -315,66 +258,37 @@ struct LibraryFlyoutColors: Equatable {
     }
 }
 
-/// HomeBadgingCell and HomeBadgingCellStack geometry and motion.
 enum LibraryFlyoutLayout {
-    ///
     static let iconSize: CGFloat = 40
-    ///
     static let detailInset: CGFloat = 12
-    ///
-    /// 8 × 0.5 = 4).
     static let padding: CGFloat = 4
-    ///
     static let cornerRadius: CGFloat = 12
-    /// The cancel button: 24 × 24, radius 6, then a 2-point Spacer
-    ///
     static let cancelSize: CGFloat = 24
     static let cancelRadius: CGFloat = 6
     static let cancelTrailing: CGFloat = 2
-    ///
-    /// outline: radius 8 − 1, 1-point stroke dashed [3, 2] at opacity 0.3,
-    ///
     static let imageRadius: CGFloat = 6
     static let captureOutlineRadius: CGFloat = 7
     static let captureOutlinePadding: CGFloat = 1
-    ///
-    /// others 56.
     static func hiddenOffset(reverseIndex: Int) -> CGFloat { reverseIndex == 0 ? 20 : 56 }
-    ///
-    /// response and the isAnimating window.
     static let animationDuration: TimeInterval = 0.15
-    ///
     static func stagger(reverseIndex: Int) -> TimeInterval { min(max(Double(reverseIndex) / 4, 0), 1) * 0.05 }
     static func animation(reverseIndex: Int) -> Animation {
         .interactiveSpring(response: animationDuration, dampingFraction: 0.86, blendDuration: 0.25).delay(stagger(reverseIndex: reverseIndex))
     }
-    ///
-    /// from above and scale 1.5; removal is opacity.
     static let transition = AnyTransition.asymmetric(
         insertion: .opacity.combined(with: AnyTransition.offset(x: 0, y: -80).combined(with: .scale(scale: 1.5, anchor: .center))),
         removal: .opacity)
-    /// Parc adaptation: a collapsed row's DL27 renderer retires once the
-    /// collapse has faded it (the spring is within 0.5% by 0.17 s, after the
-    ///
     static let ringRetirement: TimeInterval = 0.25
 }
 
-///
-/// dock and flyout regions, registered only while tracked, each reporting
-/// once its HoverState passes the region's fidelity.
 @MainActor final class LibraryFlyoutHoverTracker {
     enum Region: CaseIterable { case button, dock, flyout }
-    ///
     static let linger: [Region: TimeInterval] = [.button: 0.15, .dock: 0.5, .flyout: 0.15]
-    /// The button and dock report once the pointer has lingered (HoverState
-    ///
     static func reportsWhenInside(_ region: Region) -> Bool { region == .flyout }
 
     var after: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { body() } }
     }
-    ///
-    /// change of its cached state).
     var onChange: ((Region, Bool) -> Void)?
     private var inside: [Region: Bool] = [:]
     private var lingered: [Region: Bool] = [:]
@@ -386,17 +300,10 @@ enum LibraryFlyoutLayout {
 
     func isHovered(_ region: Region) -> Bool { reported[region] ?? false }
 
-    /// The pointer (nil: gone), each region's rect and which regions are
-    /// registered. Unregistering (HoverRegionTracker.unregisterRegion
-    ///
-    ///
-    /// reports that it is no longer hovered. A newly tracked one starts from
-    /// `none`.
     func update(pointer: NSPoint?, rects: [Region: NSRect], tracked: Set<Region>) {
         self.pointer = pointer; self.rects = rects; self.tracked = tracked
         for region in Region.allCases { evaluate(region) }
     }
-    /// Whether registration or a region's rect changed since the last update.
     func needsPass(tracked: Set<Region>, rects: [Region: NSRect]) -> Bool { tracked != self.tracked || rects != self.rects }
 
     private func evaluate(_ region: Region) {
@@ -429,32 +336,16 @@ enum LibraryFlyoutLayout {
     }
 }
 
-/// HomeBadgingFeatureState's hover and expansion fields with the reducer's
-/// rules, and the cell stack's per-row presentation state.
 @MainActor final class LibraryFlyoutModel: ObservableObject {
-    /// Newest first; the view draws them oldest at the top, newest beside the
-    /// button.
     @Published private(set) var rows: [LibraryFlyoutItem] = []
-    /// `displayAsExpanded` = canExpand && eligibleToExpand && !items.isEmpty
-    ///
     @Published private(set) var expanded = false
-    /// The cell stack's `animationUUID != nil`: true for animationDuration
-    ///
     @Published private(set) var animating = false
-    ///
     @Published var hoveredRow: String?
     @Published var containerWidth: CGFloat = 228
-    ///
-    /// cell stack reads no reduce-motion environment): rows fade in place and
-    /// the visible badge fades at the button instead of travelling.
     @Published var reduceMotion = false
     @Published private(set) var images: [String: NSImage] = [:]
-    /// Row and cancel-button frames as the layout reports them (including the
-    /// rows' current offsets); hit testing uses `rowFrame`/`cancelFrame`.
     @Published var measuredRowFrames: [String: CGRect] = [:]
     @Published var measuredCancelFrames: [String: CGRect] = [:]
-    /// The cell stack's bottom-leading corner in the canvas: the button's
-    /// bottom-left offset (−4, −30).
     var stackOrigin = CGPoint.zero
     @Published var colors = LibraryFlyoutColors.standard(dark: false)
 
@@ -462,22 +353,15 @@ enum LibraryFlyoutLayout {
     private(set) var flyoutHovered = false
     private(set) var visibleBadgeHovered = false
     private(set) var eligibleToExpand = false
-    /// The window's `canExpandHomeBadge` (Parc adaptation: the window's
-    ///
     var canExpand = false { didSet { if canExpand != oldValue { updateExpanded() } } }
-    /// `lastClosedArcHomeAt`: hover within 100 ms of the Library closing
-    ///
     var libraryClosedAt: Date?
     var now: () -> Date = Date.init
     var after: (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { MainActor.assumeIsolated { body() } }
     }
-    /// Loads a row image (QuickLook icon or thumbnail for a file, the capture's
-    /// thumbnail); returns a cancel.
     var imageLoader: (LibraryFlyoutItem, @escaping @MainActor (NSImage?) -> Void) -> (() -> Void) = { _, completion in
         completion(nil); return {}
     }
-    /// Expansion changes for the sidebar's content mask and the entry.
     var onExpansionChange: ((Bool) -> Void)?
     private var animationToken = 0
     private var loads: [String: (key: String, cancel: () -> Void)] = [:]
@@ -494,14 +378,10 @@ enum LibraryFlyoutLayout {
         updateExpanded()
     }
 
-    // MARK: Hover (HomeBadgingFeature cases 0–2, 17)
-
     func setButtonHovered(_ hovered: Bool) { buttonHovered = hovered; hoverChanged() }
     func setFlyoutHovered(_ hovered: Bool) { flyoutHovered = hovered; hoverChanged() }
     func setVisibleBadgeHovered(_ hovered: Bool) { visibleBadgeHovered = hovered; hoverChanged() }
 
-    ///
-    /// Library closed at most 100 ms ago while something is hovered.
     private func hoverChanged() {
         let hovered = buttonHovered || flyoutHovered || visibleBadgeHovered
         if hovered, let closed = libraryClosedAt, now().timeIntervalSince(closed) * 1000 <= 100 { return }
@@ -509,8 +389,6 @@ enum LibraryFlyoutLayout {
         updateExpanded()
     }
 
-    /// Which hover regions HomeButtonHoverRegionTracker.ViewState registers
-    ///
     var trackedRegions: Set<LibraryFlyoutHoverTracker.Region> {
         var regions = Set<LibraryFlyoutHoverTracker.Region>()
         if canExpand { regions.insert(.button) }
@@ -523,7 +401,6 @@ enum LibraryFlyoutLayout {
         let next = canExpand && eligibleToExpand && !rows.isEmpty
         guard next != expanded else { return }
         expanded = next
-        //
         animationToken &+= 1
         let token = animationToken
         animating = true
@@ -532,15 +409,12 @@ enum LibraryFlyoutLayout {
             self.animating = false
         }
         if next {
-            // onDidExpandFlyout (case 17): the visible badge's hover clears.
             visibleBadgeHovered = false
         } else {
             hoveredRow = nil
         }
         onExpansionChange?(next)
     }
-
-    //
 
     private func loadImages() {
         let wanted = Dictionary(rows.filter(\.showsImage).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -563,19 +437,15 @@ enum LibraryFlyoutLayout {
         loads.removeAll(); images.removeAll()
     }
 
-    /// A row's expanded slot: 56 points tall, stacked up from the stack's
-    /// corner, the newest lowest.
     func rowFrame(_ id: String) -> CGRect? {
         guard let index = rows.firstIndex(where: { $0.id == id }) else { return nil }
         let height = LibraryEntryLayout.cellHeight
         return CGRect(x: stackOrigin.x, y: stackOrigin.y - height * CGFloat(index + 1), width: expandedCellWidth, height: height)
     }
-    /// The cancel button where the layout put it within its row.
     func cancelFrame(_ id: String) -> CGRect? {
         guard let row = rowFrame(id), let measuredRow = measuredRowFrames[id], let cancel = measuredCancelFrames[id] else { return nil }
         return cancel.offsetBy(dx: row.minX - measuredRow.minX, dy: row.minY - measuredRow.minY)
     }
-    /// The row under a point in the canvas, while expanded.
     func row(at point: NSPoint) -> LibraryFlyoutItem? {
         guard expanded else { return nil }
         return rows.first { rowFrame($0.id)?.contains(point) == true }
@@ -586,8 +456,6 @@ enum LibraryFlyoutLayout {
     }
 }
 
-// MARK: - Views
-
 private struct LibraryFlyoutRowFrames: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) { value.merge(nextValue()) { $1 } }
@@ -597,7 +465,6 @@ private struct LibraryFlyoutCancelFrames: PreferenceKey {
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) { value.merge(nextValue()) { $1 } }
 }
 
-/// A downloading row's DownloadProgressBadge: Parc's DL26/DL27 renderer.
 struct LibraryFlyoutRing: NSViewRepresentable {
     let badge: DownloadActivityBadge
     func makeNSView(context: Context) -> DownloadActivityBadge { badge }
@@ -607,10 +474,6 @@ struct LibraryFlyoutRing: NSViewRepresentable {
     }
 }
 
-///
-///
-/// (1, 0, −1: radius 1, y −1 [I]) in `Shadow`; a 40 × 40 Rectangle until the
-/// image arrives.
 private struct LibraryFlyoutIconImage: View {
     let image: NSImage?
     let colors: LibraryFlyoutColors
@@ -626,10 +489,6 @@ private struct LibraryFlyoutIconImage: View {
     }
 }
 
-///
-/// outline, a downloading item's progress ring, a completed download's image,
-/// nothing for a paused, pending, failed or cancelled download. The rows and
-/// the collapsed visible badge cell both draw it.
 struct LibraryFlyoutIcon: View {
     let item: LibraryFlyoutItem
     let image: NSImage?
@@ -659,16 +518,9 @@ struct LibraryFlyoutIcon: View {
     }
 }
 
-///
-/// a 12-point spacer, title (14 regular, ForegroundPrimary, one line) over
-/// subtitle (12, ForegroundSecondary, one line), then either a Spacer or, for
-/// a running download, Spacer, the 24 × 24 xmark cancel button and a 2-point
-/// Spacer; padded 4, the hovered row on SidebarItemBackground, clipped to a
-/// 12-point continuous rounded rectangle.
 struct LibraryFlyoutCell<Icon: View>: View {
     let item: LibraryFlyoutItem?
     let subtitle: String
-    /// `shouldShowDetails`: false only for the collapsed visible badge cell.
     let showsDetails: Bool
     let hovered: Bool
     let colors: LibraryFlyoutColors
@@ -684,9 +536,6 @@ struct LibraryFlyoutCell<Icon: View>: View {
                 }
                 if item.downloadStatus?.isInProgress == true {
                     Spacer()
-                    // The xmark in ForegroundPrimary withAlphaSafe(0.6)
-                    //
-                    // opacity 0.1 behind it.
                     Image(systemName: "xmark").foregroundColor(Color(nsColor: colors.primary.withAlphaComponent(0.6)))
                         .frame(width: LibraryFlyoutLayout.cancelSize, height: LibraryFlyoutLayout.cancelSize)
                         .background(hovered ? Color(nsColor: colors.primary).opacity(0.1) : Color.clear)
@@ -714,14 +563,6 @@ extension LibraryFlyoutCell where Icon == LibraryFlyoutIcon {
     }
 }
 
-/// The cell stack's rows (VStack leading, spacing 0), drawn oldest at the top
-/// so the newest sits beside the button. Each row is
-/// `.frame(width, 56).scaleEffect.rotationEffect.offset.opacity
-/// .animation(spring.delay(stagger), value: expanded).transition(…)`.
-/// Parc adaptation: the visible badge keeps its own cell (DL26/27's renderer
-/// must stay in the tree), which draws its row in both states; that row here
-/// only keeps its slot and frames (`presented`). Under Reduce Motion rows
-/// fade in place and insert without the drop.
 struct LibraryFlyoutStack: View {
     static let space = "LibraryFlyoutCanvas"
     @ObservedObject var model: LibraryFlyoutModel
@@ -757,19 +598,12 @@ struct LibraryFlyoutStack: View {
     }
 }
 
-// MARK: - Text
-
 enum LibraryFlyoutText {
-    ///
-    /// full units).
     @MainActor static let relative: RelativeDateTimeFormatter = {
         let value = RelativeDateTimeFormatter()
         value.dateTimeStyle = .numeric; value.unitsStyle = .full
         return value
     }()
-    ///
-    /// download; otherwise `DownloadsInterfaceUtils.downloadSubtitleString`
-    ///
     @MainActor static func subtitle(_ item: LibraryFlyoutItem, now: Date) -> String {
         switch item {
         case .capture(let capture): return relative.localizedString(for: capture.createdAt, relativeTo: now)
@@ -779,7 +613,6 @@ enum LibraryFlyoutText {
             return DownloadRowSubtitle.text(for: download)
         }
     }
-    ///
     static func kindDescription(_ url: URL, mimeType: String? = nil) -> String {
         let ext = url.pathExtension
         guard let type = UTType(filenameExtension: ext) ?? mimeType.flatMap({ UTType(mimeType: $0) }) else { return "File" }
@@ -791,7 +624,6 @@ enum LibraryFlyoutText {
     static func kindDescription(_ item: BrowserDownload) -> String {
         kindDescription(URL(fileURLWithPath: item.path.isEmpty ? item.name : item.path), mimeType: item.mimeType)
     }
-    ///
     static func openInApp(_ url: URL?) -> String {
         guard let url, let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return "Open" }
         let bundle = Bundle(url: app)
@@ -800,7 +632,6 @@ enum LibraryFlyoutText {
             ?? app.deletingPathExtension().lastPathComponent
         return name.isEmpty ? "Open" : "Open in " + name
     }
-    ///
     static func canPreview(_ item: BrowserDownload) -> Bool {
         let ext = URL(fileURLWithPath: item.path.isEmpty ? item.name : item.path).pathExtension
         guard let type = UTType(filenameExtension: ext) ?? item.mimeType.flatMap({ UTType(mimeType: $0) }) else { return false }
@@ -808,38 +639,24 @@ enum LibraryFlyoutText {
     }
 }
 
-// MARK: - Actions and menu
-
 enum LibraryFlyoutFileAction: Equatable {
     case open, reveal, copyFile
 }
 
-/// What a row asks of the window: Parc's existing download and capture routes
-/// plus opening a folder file.
 enum LibraryFlyoutAction {
     case download(BrowserDownload, DownloadLibraryAction)
     case file(LibraryFlyoutFile, LibraryFlyoutFileAction)
-    /// Parc adaptation for ItemPreviewPresenter on a capture: Parc's capture
-    /// preview belongs to the Library's Media page, so the tap opens that page.
     case showCapture(SavedCapture)
     case copyCapture(SavedCapture)
     case openCaptureSource(SavedCapture)
     case copyCaptureSource(SavedCapture)
-    /// "Send via iMessage" and "AirDrop" (Feature actions 6 and 8).
     case share(LibraryFlyoutItem, LibraryFlyoutShare)
-    ///
-    ///
     case deleteCapture(SavedCapture)
 }
 
 enum LibraryFlyoutMenu {
     static let cancelTitle = "Cancel Download"
-    ///
     static let hideTitle = "Hide from Parc"
-    ///
-    /// Dividers. The menu has no disabled modifier, so Send via iMessage and
-    /// AirDrop are always enabled; the copy, open, reveal, hide and trash
-    /// items keep the download route's policy gates (Parc's DL18/DL28 rules).
     @MainActor static func make(_ item: LibraryFlyoutItem, fileURL: URL?, perform: @escaping (LibraryFlyoutAction) -> Void) -> NSMenu? {
         let menu = NSMenu(); menu.autoenablesItems = false
         func add(_ title: String, _ action: LibraryFlyoutAction?, enabled: Bool = true) {
@@ -891,29 +708,18 @@ enum LibraryFlyoutMenu {
     }
 }
 
-//
-
-/// The two share items of a cell's menu.
 enum LibraryFlyoutShare: Equatable {
-    ///
     case message
-    ///
     case airDrop
     var serviceName: NSSharingService.Name { self == .message ? .composeMessage : .sendViaAirDrop }
 }
 
 enum LibraryFlyoutSharing {
-    ///
-    ///
     static func isImage(_ url: URL) -> Bool {
         let type = (try? url.resourceValues(forKeys: [.contentTypeKey]))?.contentType
             ?? UTType(filenameExtension: url.pathExtension, conformingTo: .data)
         return type?.conforms(to: .image) == true
     }
-    ///
-    ///
-    ///
-    /// and, for a capture, its source address as text.
     static func items(_ share: LibraryFlyoutShare, image: NSImage?, url: URL?, text: String?) -> [Any] {
         switch share {
         case .airDrop:
@@ -929,10 +735,6 @@ enum LibraryFlyoutSharing {
 }
 
 extension LibraryFlyoutSharing {
-    /// The real macOS service performs the items and owns its own UI, as
-    ///
-    ///
-    /// performed without items or a service.
     @MainActor @discardableResult static func perform(_ share: LibraryFlyoutShare, items: [Any]) -> Bool {
         guard !items.isEmpty, let service = NSSharingService(named: share.serviceName) else { return false }
         service.perform(withItems: items)
@@ -940,15 +742,9 @@ extension LibraryFlyoutSharing {
     }
 }
 
-//
-
 enum LibraryFlyoutCaptureDeletion {
-    ///
-    ///
     static let title = "Are you sure you want to delete this capture?"
     static let message = "Doing so will delete this capture permanently."
-    ///
-    /// sets `ButtonsConfig.destructive`), not an NSAlert.
     @MainActor static func dialog() -> PArcDialog {
         var content = PArcDialog.Content(title: [(title, false)], message: [(message, false)], confirm: "Delete", cancel: "Cancel")
         content.destructive = true
@@ -959,13 +755,6 @@ enum LibraryFlyoutCaptureDeletion {
     }
 }
 
-//
-
-///
-///
-/// Parc offers the PNG bytes only: they are read from the profile's capture
-/// store when the drag starts and supplied lazily, after the original capture
-/// is checked again, at delivery. Copy only, like DL28's file drag.
 @MainActor final class LibraryCaptureDrag: NSObject {
     let item = NSPasteboardItem()
     private var valid: (() -> Bool)?
@@ -1002,14 +791,8 @@ enum LibraryFlyoutCaptureDeletion {
     }
 }
 
-// MARK: - Accessibility
-
-///
-///
-/// its "Cancel Download" button. None carries a value.
 @MainActor final class LibraryEntryElement: NSAccessibilityElement {
     weak var host: NSView?
-    /// The row listing this element (a Cancel Download button's cell).
     weak var parentElement: LibraryEntryElement?
     var rect: () -> NSRect = { .zero }
     var press: () -> Bool = { false }
@@ -1021,8 +804,6 @@ enum LibraryFlyoutCaptureDeletion {
         setAccessibilityLabel(label)
     }
     override func isAccessibilityElement() -> Bool { true }
-    /// Its row, otherwise the canvas's unignored ancestor: the canvas is no
-    /// element, so its children are promoted to that ancestor.
     override func accessibilityParent() -> Any? {
         if let parentElement { return parentElement }
         return host.flatMap { NSAccessibility.unignoredAncestor(of: $0) }
@@ -1036,38 +817,20 @@ enum LibraryFlyoutCaptureDeletion {
     override func accessibilityValue() -> Any? { nil }
 }
 
-// MARK: - Sidebar content mask
-
-///
-///
-///
-/// above the dock hides the content under the rows.
-///
-///
-/// from the dock's top up. Core Animation rasterizes coincident gradient stops
-/// softly, by an amount that grows with the layer's height, so a single
-/// full-height gradient let the mini-player deck resting on the dock show
-/// through as a bar above it.
 @MainActor final class LibraryFlyoutContentMask {
     let layer = CALayer()
     let band = CAGradientLayer()
     private let dock = CALayer()
-    ///
-    /// clear/black 0.8, clear/black 0.8, black, black.
     static var expandedColors: [CGColor] { [CGColor.black, CGColor.black, CGColor.clear, CGColor.clear, CGColor.black, CGColor.black] }
     static var restingColors: [CGColor] {
         let partial = NSColor.black.withAlphaComponent(0.8).cgColor
         return [CGColor.black, CGColor.black, partial, partial, CGColor.black, CGColor.black]
     }
-    ///
-    /// height / H and h = totalHeight(count) / H; k is 0.04 expanded and
-    /// 0.14 resting.
     static func locations(totalHeight: CGFloat, height: CGFloat, dockHeight: CGFloat, inset: CGFloat) -> [NSNumber] {
         let denominator = height > 0 ? height : totalHeight * 3
         let dock = dockHeight / denominator, band = dock + totalHeight / denominator - inset
         return [0, dock, dock, band, band + 0.15, 1].map { NSNumber(value: Double($0)) }
     }
-    /// `locations` from the dock's top (stop 2) up, over the band layer.
     static func bandLocations(_ locations: [NSNumber]) -> [NSNumber] {
         let values = locations.map { CGFloat($0.doubleValue) }, dock = values[2], span = 1 - dock
         return values.dropFirst(2).map { NSNumber(value: Double(span > 0 ? max(0, $0 - dock) / span : 0)) }
@@ -1084,7 +847,6 @@ enum LibraryFlyoutCaptureDeletion {
         layer.addSublayer(dock); layer.addSublayer(band)
     }
 
-    /// Installs and animates the mask from its resting band to the expanded one.
     func expand(on view: NSView, totalHeight: CGFloat, dockHeight: CGFloat) {
         generation &+= 1
         self.view = view
@@ -1101,7 +863,6 @@ enum LibraryFlyoutCaptureDeletion {
         installed = true
         animate(locations: from, to: to, colors: fromColors, to: Self.bandColors(Self.expandedColors), completion: nil)
     }
-    /// Animates back to the resting band, then removes the mask.
     func collapse(totalHeight: CGFloat, dockHeight: CGFloat) {
         guard installed, let host = view?.layer else { return }
         generation &+= 1
@@ -1129,8 +890,6 @@ enum LibraryFlyoutCaptureDeletion {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.frame = host.bounds
         let bounds = layer.bounds, dockHeight = min(self.dockHeight, bounds.height)
-        //
-        // its flipped content view).
         let flipped = view?.isFlipped ?? true
         dock.frame = CGRect(x: 0, y: flipped ? bounds.height - dockHeight : 0, width: bounds.width, height: dockHeight)
         band.frame = CGRect(x: 0, y: flipped ? 0 : dockHeight, width: bounds.width, height: bounds.height - dockHeight)
@@ -1139,8 +898,6 @@ enum LibraryFlyoutCaptureDeletion {
     }
     private func animate(locations from: [Any], to: [NSNumber], colors fromColors: [Any], to toColors: [CGColor], completion: (() -> Void)?) {
         CATransaction.begin()
-        // Setting the model values would otherwise add Core Animation's 0.25 s
-        // implicit actions over the 0.1 s animations below.
         CATransaction.setDisableActions(true)
         CATransaction.setCompletionBlock(completion.map { body in { MainActor.assumeIsolated { body() } } })
         let locations = CABasicAnimation(keyPath: "locations")
@@ -1157,11 +914,7 @@ enum LibraryFlyoutCaptureDeletion {
     }
 }
 
-// MARK: - Images
-
 enum LibraryFlyoutImages {
-    ///
-    /// for icon and thumbnail representations, delivered on the main queue.
     static func fileThumbnail(_ url: URL, completion: @escaping @MainActor (NSImage?) -> Void) -> () -> Void {
         let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 256, height: 256),
                                                    scale: NSScreen.main?.backingScaleFactor ?? 2,

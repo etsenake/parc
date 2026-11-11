@@ -11,7 +11,6 @@ final class SharedQuoteController {
     private let isCurrent: (PCNativePage) -> Bool
     private let session: SharedQuoteSession<PCNativeSharedQuoteSelection>
     private var draggingFromPage = false
-    /// Mirrors the preference feed into `session.setEnabled`; gates the local mouse monitor.
     private var quotesEnabled = false
     init(isCurrent: @escaping (PCNativePage) -> Bool,
          display: @escaping (PCNativeSharedQuoteSelection?) -> Void) {
@@ -29,7 +28,6 @@ final class SharedQuoteController {
     }
     deinit {
         if let monitor { NSEvent.removeMonitor(monitor) }
-        // Observation's native destructor revokes every issued token.
     }
     func bind(_ page: PCNativePage?, window: NSWindow?) {
         guard self.page !== page || self.window !== window || observation == nil else { return }
@@ -55,9 +53,6 @@ final class SharedQuoteController {
         guard let page, isCurrent(page) else { return false }
         return session.canPerform(selection)
     }
-    /// Install the process-local left-button monitor only while quotes are enabled
-    /// and a page is bound. Otherwise every left-button event in the process would
-    /// enter `observe` before the page/window filters (true no-op of that path).
     private func updateMonitor() {
         let needed = quotesEnabled && page != nil
         if needed {
@@ -71,7 +66,6 @@ final class SharedQuoteController {
         guard let monitor else { return }
         NSEvent.removeMonitor(monitor)
         self.monitor = nil
-        // Prefer-off mid-drag would otherwise miss mouseUp and leave session.mouseDown.
         if draggingFromPage {
             session.pointer(down: false, tracksSelection: false)
             draggingFromPage = false

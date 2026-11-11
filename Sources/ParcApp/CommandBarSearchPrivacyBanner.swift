@@ -1,30 +1,16 @@
 import AppKit
 
-///
-/// starts with the banner hidden and the dismissal read from the user default
-///
-///
 struct CommandBarSearchPrivacyPolicy {
-    ///
-    ///
     static let dismissedKey = "commandBarSearchSuggestionsPrivacyHasBeenExplicitlyDismissed"
     let defaults: UserDefaults
     var hasBeenExplicitlyDismissed: Bool { defaults.bool(forKey: Self.dismissedKey) }
     func dismiss() { defaults.set(true, forKey: Self.dismissedKey) }
-    ///
-    /// `searchPrivacyInfo` when no site-search hint is offered, the bar is
-    /// unscoped and has results, and the banner is neither dismissed nor
-    ///
-    /// don't apply to Parc; the sidebar session has no banner surface.
     static func showsInfoAccessory(dismissed: Bool, bannerVisible: Bool, scoped: Bool, offeringSiteSearch: Bool,
                                    hasResults: Bool, sidebarSession: Bool) -> Bool {
         !dismissed && !bannerVisible && !scoped && !offeringSiteSearch && hasResults && !sidebarSession
     }
 }
 
-///
-///
-/// the `info.circle` symbol the banner uses, in the bar's accessory colour.
 final class CommandBarPrivacyInfoButton: PointingHandButton {
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -45,14 +31,6 @@ final class CommandBarPrivacyInfoButton: PointingHandButton {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
-///
-///
-///
-///
-///
-/// buttons under the text. SuggestionsView reserves 60 points, or 133 condensed
-///
-///
 final class CommandBarSearchPrivacyBanner: NSView {
     static let titleColor = CommandBarPalette.either(NSColor(srgbRed: 0.09, green: 0.09, blue: 0.09, alpha: 1),
                                                      NSColor(srgbRed: 0.93, green: 0.93, blue: 0.93, alpha: 1))
@@ -102,8 +80,6 @@ final class CommandBarSearchPrivacyBanner: NSView {
             + settingsButton.intrinsicContentSize.width + Self.buttonSpacing
             + dismissButton.intrinsicContentSize.width + Self.trailingInset
     }
-    ///
-    /// whenever the single row doesn't fit the bar.
     func isCondensed(forWidth width: CGFloat) -> Bool { width < regularContentWidth }
     func preferredHeight(forWidth width: CGFloat) -> CGFloat {
         isCondensed(forWidth: width) ? Self.condensedHeight : Self.regularHeight
@@ -143,11 +119,6 @@ final class CommandBarSearchPrivacyBanner: NSView {
     }
 }
 
-///
-///
-///
-/// a 36-point continuous radius-6 body, a 1-point border and a 2-point lip in
-/// the neutral palette, with no hotkey badge. Pressed precedes hover.
 final class CommandBarPrivacyButton: PointingHandButton {
     static let bodyHeight: CGFloat = 36
     private var hovered = false { didSet { needsDisplay = true } }

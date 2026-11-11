@@ -2,22 +2,13 @@ import AppKit
 import Combine
 import QuartzCore
 
-///
-/// options 0x227): an 8 pt strip centred on the sidebar's trailing edge. The
-/// window owner keeps SidebarResizeGesture and the width; this view owns the
-/// cursor, the hover indicator and recognizer forwarding.
 @MainActor
 final class SidebarResizeRegionView: NSView, ResizeHandleView {
     static let width: CGFloat = 8
-    ///
-    /// the 5 pt window inset plus 6. Both rects are in the region's superview;
-    /// the insets are symmetric, so Parc's flipped root needs no conversion.
     static func frame(trailing edge: NSRect, in container: NSRect) -> NSRect {
         NSRect(x: edge.maxX - width / 2, y: container.minY + 11, width: width, height: max(0, container.height - 22))
     }
 
-    ///
-    /// sidebar, whose origin stays fixed while the strip follows the pointer.
     weak var referenceView: NSView?
     var onPan: ((NSGestureRecognizer.State, CGFloat, CGFloat) -> Void)?
     var onDoubleClick: (() -> Void)?
@@ -55,14 +46,10 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
         wantsLayer = true; layer?.masksToBounds = false
         indicatorLayer.actions = ["position": NSNull(), "bounds": NSNull(), "path": NSNull(), "hidden": NSNull(),
                                   "opacity": NSNull(), "fillColor": NSNull(), "strokeColor": NSNull()]
-        //
         indicatorLayer.isHidden = true; indicatorLayer.opacity = 0.5
         layer?.addSublayer(indicatorLayer)
         addGestureRecognizer(panGestureRecognizer)
         addGestureRecognizer(doubleClickGestureRecognizer)
-        //
-        // switchToLatest → !resizing. A hover ending first cancels the delay.
-        // The initial value is not a transition and starts no fade.
         hoverSubscription = $isHovered.removeDuplicates().dropFirst()
             .filter { [weak self] _ in self?.isResizing == false }
             .map { hovered -> AnyPublisher<Bool, Never> in
@@ -89,13 +76,10 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
     }
     override func layout() {
         super.layout()
-        //
         let height = max(0, bounds.height - 8)
         indicatorLayer.frame = CGRect(x: 0, y: 0, width: 3, height: height)
         indicatorLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         indicatorLayer.position = CGPoint(x: 0, y: bounds.midY)
-        // The original passes radius 4 on this 3 pt rect; CoreGraphics accepts
-        // at most half of each side, so the clamped equivalent is a capsule.
         let radius = min(1.5, height / 2)
         indicatorLayer.path = CGPath(roundedRect: CGRect(x: 0, y: 0, width: 3, height: height),
                                      cornerWidth: radius, cornerHeight: radius, transform: nil)
@@ -120,8 +104,6 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
         }
         NSCursor.resizeLeftRight.set()
     }
-    ///
-    /// its child windows, must be this strip or one of its descendants.
     func isUnobstructed(atWindowPoint point: NSPoint) -> Bool {
         guard let window, !isHiddenOrHasHiddenAncestor else { return false }
         let screenPoint = window.convertPoint(toScreen: point)
@@ -155,8 +137,6 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
     }
     override var isHidden: Bool { didSet { if isHidden { cancelInteraction() } } }
 
-    /// Ends hover and reports an active drag once as cancelled, so its owner
-    /// restores the starting width. Later native callbacks belong to no session.
     func cancelInteraction() {
         isHovered = false
         guard dragging else { return }
@@ -171,7 +151,6 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
         case .began:
             if dragging { finishDrag(.cancelled, translation: lastTranslation, velocity: 0) }
             dragging = true; lastTranslation = translation
-            //
             cursorWindow = window; window?.disableCursorRects()
             NSCursor.resizeLeftRight.set()
             onPan?(.began, translation, velocity)
@@ -206,7 +185,6 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
             }
         }
     }
-    ///
     func pulseSnap() {
         fadeGeneration &+= 1
         indicatorLayer.removeAllAnimations(); indicatorLayer.isHidden = false
@@ -228,7 +206,6 @@ final class SidebarResizeRegionView: NSView, ResizeHandleView {
         fadeGeneration &+= 1
         let generation = fadeGeneration
         CATransaction.begin()
-        // Only the newest fade may hide; a later show or resize supersedes it.
         CATransaction.setCompletionBlock { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.fadeGeneration == generation else { return }

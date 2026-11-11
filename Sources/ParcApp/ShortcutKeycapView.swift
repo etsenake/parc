@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Passive representation of an existing binding. The hosting view never owns
-/// keyboard events; recording, dispatch and conflict resolution keep their owners.
 @MainActor
 final class ShortcutKeycapView: NSView {
     enum Size { case small, large }
@@ -36,8 +34,6 @@ final class ShortcutKeycapView: NSView {
     static func largeSide(width: CGFloat, count: Int) -> CGFloat {
         min(64, max(0, (width - CGFloat(max(0, count - 1)) * spacing(count: count)) / CGFloat(max(1, count))))
     }
-    /// Intrinsic HStack rectangle inside the detail column. The reference
-    /// measures this content before its surrounding VStack stretches it.
     var keycapBounds: NSRect {
         let count = presentation == .binding ? symbols.count : 2
         guard count > 0 else { return .zero }
@@ -87,8 +83,6 @@ private struct KeycapContent: View {
     }
 }
 
-///
-/// continuous face and white highlight. No press/hover state is synthesized.
 private struct KeycapFace: View {
     @Environment(\.colorScheme) private var colorScheme
     let symbol: String

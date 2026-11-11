@@ -1,7 +1,5 @@
 import Foundation
 
-/// The provider query and a temporarily displayed result are different owners.
-/// Moving among results never starts another search or replaces its request.
 struct CommandBarEditState {
     struct Projection: Equatable {
         let resultID: String
@@ -22,8 +20,6 @@ struct CommandBarEditState {
         allowsInlineCompletion = false
     }
 
-    /// A user edit captures eligibility for this provider request. A later native
-    /// publication must still recheck the actual editor selection/composition.
     mutating func userEdit(_ value: String, selection: NSRange, hasMarkedText: Bool, didBackspace: Bool) {
         edit(value)
         allowsInlineCompletion = !value.isEmpty && !hasMarkedText && !didBackspace &&
@@ -65,8 +61,6 @@ struct CommandBarEditState {
         guard let projection, !projection.accepted else {
             return NSRange(location: text.length, length: 0)
         }
-        // NSTextView selection uses UTF-16. Foundation's anchored match retains
-        // the actual matched range even when case-folding changes its length.
         let prefix = text.range(of: query, options: [.anchored, .caseInsensitive])
         if !query.isEmpty, prefix.location == 0 {
             return NSRange(location: NSMaxRange(prefix), length: text.length - NSMaxRange(prefix))

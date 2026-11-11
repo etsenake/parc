@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-preview-") as directory:
     scratch = Path(directory)
     slices = {
         "ActionButton.swift": ("SidebarView.swift", "class LayoutView"),
-        "ThemePalette.swift": ("ThemeRenderer.swift", "// Opt-in native delivery diagnostics"),
+        "ThemePalette.swift": ("ThemeRenderer.swift", "@MainActor\nenum NativeInputDiagnostics"),
         "SidebarPreviewModel.swift": ("SidebarPreviewController.swift", "@MainActor\nfinal class SidebarPreviewController"),
     }
     for target, (source, marker) in slices.items():

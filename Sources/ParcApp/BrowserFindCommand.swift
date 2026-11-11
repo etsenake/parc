@@ -1,9 +1,5 @@
 import AppKit
 
-///
-/// all of which send `arc_performFindPanelAction:`. Jump to Selection carries
-/// no tag (0) and Find and Replace tag 12; the browser rejects both, and only
-/// a Note editor consumes them (docs/keyboard-navigation.md, KB04).
 enum BrowserFindAction: Int, CaseIterable {
     case jumpToSelection = 0, show = 1, next = 2, previous = 3, useSelection = 7, replace = 12
     var title: String {
@@ -16,7 +12,6 @@ enum BrowserFindAction: Int, CaseIterable {
         case .jumpToSelection: return "Jump to Selection"
         }
     }
-    ///
     var isNativeTextOnly: Bool { self == .jumpToSelection || self == .replace }
     static func fieldAction(_ selector: Selector, shift: Bool, composing: Bool) -> BrowserFindAction? {
         guard !composing else { return nil }
@@ -29,7 +24,6 @@ enum BrowserFindAction: Int, CaseIterable {
     }
 }
 
-/// A Find request retains the original owner, never a later front window or page.
 @MainActor final class BrowserFindCommand {
     let action: BrowserFindAction
     private weak var window: NSWindow?
@@ -56,8 +50,6 @@ enum BrowserFindAction: Int, CaseIterable {
     }
 }
 
-/// Window-local query storage is weakly bound to one real document. It never
-/// uses the system Find pasteboard to seed another Profile's page.
 @MainActor final class BrowserFindState<Owner: AnyObject> {
     private(set) weak var owner: Owner?
     let revision: UInt

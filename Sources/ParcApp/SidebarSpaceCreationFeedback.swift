@@ -1,17 +1,10 @@
 import AppKit
 import QuartzCore
 
-///
-///
-/// plus ring that slide in from the trailing edge while the strip is dragged
-/// past the last Space. 85 points wide, pinned to the sidebar's trailing,
-///
-///
 @MainActor
 final class SidebarSpaceCreationFeedbackView: NSView {
     static let width: CGFloat = 85
 
-    ///
     var presentation: CGFloat = 0 {
         didSet { if presentation != oldValue { spring.retarget(presentation, now: CACurrentMediaTime()); run() } }
     }
@@ -26,7 +19,6 @@ final class SidebarSpaceCreationFeedbackView: NSView {
 
     private let glow = CAGradientLayer()
     private let ring = SidebarSpaceCreationRing(frame: NSRect(x: 0, y: 0, width: 30, height: 30))
-    ///
     private var spring = SidebarSpring(response: 0.4, damping: 0.8)
     private var timer: Timer?
 
@@ -34,7 +26,6 @@ final class SidebarSpaceCreationFeedbackView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.masksToBounds = true
-        //
         glow.type = .radial
         glow.startPoint = CGPoint(x: 0.5, y: 0.5)
         glow.endPoint = CGPoint(x: 0, y: 1)
@@ -54,15 +45,11 @@ final class SidebarSpaceCreationFeedbackView: NSView {
         updateGlowColors()
     }
 
-    ///
     private func updateGlowColors() {
         let key = NSColor(displayP3Red: 49 / 255, green: 57 / 255, blue: 251 / 255, alpha: 0.22)
         glow.colors = [key.cgColor, key.withAlphaComponent(0).cgColor]
     }
 
-    ///
-    /// from 5 points outside the edge to 12 inside, centred vertically; the
-    /// glow, twice the view's width, slides from 10 points in to cover it.
     override func layout() {
         super.layout()
         let p = min(1, max(0, spring.value(at: CACurrentMediaTime()))), w = bounds.width, h = bounds.height
@@ -73,8 +60,6 @@ final class SidebarSpaceCreationFeedbackView: NSView {
         CATransaction.commit()
     }
 
-    ///
-    /// the glow over its first half.
     private func apply(_ value: CGFloat) {
         let p = min(1, max(0, value))
         ring.alphaValue = min(1, p / 0.2)
@@ -105,10 +90,6 @@ final class SidebarSpaceCreationFeedbackView: NSView {
     }
 }
 
-///
-/// a 30-point disc with a 2.5-point ring and a 16-point medium plus, in
-///
-///
 @MainActor
 final class SidebarSpaceCreationRing: NSView {
     static let lineWidth: CGFloat = 2.5
@@ -134,7 +115,6 @@ final class SidebarSpaceCreationRing: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.masksToBounds = false
-        //
         shadowLayer.shadowColor = NSColor.black.cgColor
         shadowLayer.shadowOpacity = 0.3
         shadowLayer.shadowRadius = 1.5
@@ -156,13 +136,10 @@ final class SidebarSpaceCreationRing: NSView {
 
     override var wantsUpdateLayer: Bool { true }
 
-    ///
-    /// width inside the disc's edge.
     override func layout() {
         super.layout()
         let radius = bounds.width / 2
         container.frame = bounds
-        //
         container.layer?.cornerRadius = radius
         container.layer?.anchorPoint = CGPoint(x: 0.5, y: 0.5)
         container.layer?.position = CGPoint(x: bounds.midX, y: bounds.midY)
@@ -176,8 +153,6 @@ final class SidebarSpaceCreationRing: NSView {
         CATransaction.commit()
     }
 
-    ///
-    /// starting at the bottom and running anticlockwise.
     private static func ringPath(in rect: CGRect) -> CGPath {
         let radius = rect.width / 2
         let path = CGMutablePath()
@@ -186,7 +161,6 @@ final class SidebarSpaceCreationRing: NSView {
         return path
     }
 
-    ///
     override func updateLayer() {
         container.layer?.backgroundColor = Self.color(.background, appearance: effectiveAppearance).cgColor
         CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -201,12 +175,8 @@ final class SidebarSpaceCreationRing: NSView {
         needsDisplay = true
     }
 
-    /// Activated, the ring's stroke grows to the disc's width less its own.
     private var lineWidth: CGFloat { isActivated ? bounds.width - Self.lineWidth : Self.lineWidth }
 
-    ///
-    /// activation then bounces the disc to 1.15 and back, 0.07 s each way
-    /// with ease-out, starting 0.05 s later.
     private func activationChanged() {
         let tint = Self.color(isActivated ? .activatedIcon : .icon, appearance: effectiveAppearance)
         let width = lineWidth
@@ -228,9 +198,6 @@ final class SidebarSpaceCreationRing: NSView {
 
     enum Role { case background, progress, icon, activatedIcon }
 
-    ///
-    /// `…IconTintColor` and `…IconActivatedTintColor` (asset catalog, Any and
-    /// Dark Aqua).
     static func color(_ role: Role, appearance: NSAppearance) -> NSColor {
         let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let purple = NSColor(displayP3Red: 0.153, green: 0.008, blue: 0.761, alpha: 1)

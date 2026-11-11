@@ -1,7 +1,5 @@
 import AppKit
 
-/// The pasteboard string is only an identifier. Authority stays with this
-/// originating source object, window and one-shot validation/commit closure.
 @MainActor
 final class SidebarSplitDrag {
     static let pasteboardType = NSPasteboard.PasteboardType("org.parc.sidebar-split-drag")
@@ -18,7 +16,6 @@ final class SidebarSplitDrag {
         self.tabID = tabID; self.window = window; self.validate = validate; self.commit = commit; self.finish = finish
     }
     var isValid: Bool { !ended && validate() }
-    /// Another physical window's pane target retires with this one gesture.
     func onEnd(_ handler: @escaping () -> Void) {
         if ended { handler() } else { endHandlers.append(handler) }
     }
@@ -30,8 +27,6 @@ final class SidebarSplitDrag {
     }
 }
 
-/// The dragged sidebar row as the split overlay sees it: its one-shot split
-///
 @MainActor
 protocol SplitDropCardSource: AnyObject {
     var splitDrag: SidebarSplitDrag? { get }
@@ -44,12 +39,8 @@ final class SplitDropView: NSView {
     let drag: SidebarSplitDrag
     private let reservation: ParcSplitView.DropReservation
     private var proposal: (SplitDropTarget, SplitOrientation, NSRect)?
-    /// Proposed-target owner: replacement presentation and haptic feedback.
     let targets = SplitDropTargetTracker()
-    ///
-    /// another window) commits through its own owner, not the source's.
     private let perform: ((SplitDropTarget, SplitOrientation) -> Bool)?
-    /// Whether this entry turned the drag's own item into the placeholder card.
     private(set) var showsCard = false
     override var isFlipped: Bool { true }
     init(frame: NSRect, drag: SidebarSplitDrag, reservation: ParcSplitView.DropReservation,
@@ -75,10 +66,6 @@ final class SplitDropView: NSView {
         return proposal == nil ? [] : .move
     }
     var canPropose: (SplitDropTarget, SplitOrientation) -> Bool = { _, _ in false }
-    /// This overlay lives exactly as long as its sidebar drag. The admitted
-    ///
-    /// exit and lease retirement keep it, and the drag's end (this overlay's
-    /// draggingEnded or removal at the drag's finish) ends it.
     private var edit: ParcSplitView.InteractivePaneEdit?
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         let admitted = accepts(sender)
@@ -90,18 +77,12 @@ final class SplitDropView: NSView {
     private func ownsItem(_ item: NSPasteboardItem) -> Bool {
         item.string(forType: SidebarSplitDrag.pasteboardType) == drag.identifier.uuidString
     }
-    ///
-    ///
     private func presentPlaceholderCard(_ sender: NSDraggingInfo) -> Bool {
         guard reservation.isCurrent, let row = sender.draggingSource as? SplitDropCardSource,
               let image = SplitDropPlaceholderCard.image(icon: row.splitDropCardContent.icon,
                   title: row.splitDropCardContent.title, incomingPane: reservation.incomingPaneSize) else { return false }
         return !SplitDropPlaceholderCard.present(image, on: sender, admits: ownsItem).isEmpty
     }
-    ///
-    /// Parc instead puts the row's own image back on its item at the same
-    /// bottom-left, because AppKit does not promise a cleared image returns
-    /// and Parc's sidebar sets none of its own.
     private func restoreRowImage(_ sender: NSDraggingInfo?) {
         guard let sender, let image = (sender.draggingSource as? SplitDropCardSource)?.splitDragImage else { return }
         SplitDropPlaceholderCard.present(image, on: sender, admits: ownsItem)

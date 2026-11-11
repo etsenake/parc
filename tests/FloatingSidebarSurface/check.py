@@ -16,7 +16,6 @@ root = Path(__file__).resolve().parents[2]
 app = root / "Sources/ParcApp"
 controller = (app / "BrowserWindowController.swift").read_text()
 for use in ("        sidebarContainer.floatingCornerRadius = floatingSurface ? FloatingSidebarSurface.cornerRadius : nil\n"
-            "        // A full pass while the dock slides keeps what the dock faded.\n"
             "        sidebarContainer.docksFloatingSurface = fullPass && sidebarFloatingSurface && sidebarPresentation == .locked\n",
             "        sidebar.layer?.cornerRadius = floatingSurface ? FloatingSidebarSurface.cornerRadius : 0\n"
             "        sidebar.clipsToBounds = floatingSurface\n",

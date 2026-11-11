@@ -1,15 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// The import result keeps each source profile's tree and selection separate.
-/// A folder's circle selects its subtree; its icon/title only expands it.
 struct OnboardingImportBookmarksPicker: View {
     struct Page: Identifiable {
         let id: UUID
         let title: String
         let selection: BrowserImportSelection
-        /// Whether ticks can change. A page the menu window already added
-        /// shows as disabled, but its folders still open.
         let enabled: Bool
         let expandable: Bool
         let select: (String?) -> Void
@@ -36,12 +32,8 @@ struct OnboardingImportBookmarksPicker: View {
             .background(.white)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.black.opacity(0.1), lineWidth: 1))
-            // BookmarksSelectionView forces this white surface to light; the
-            // surrounding setup card keeps its own appearance and theme.
             .environment(\.colorScheme, .light)
         }
-        // The setup parent supplies the original 384 × 430 frame. The scroll view
-        // fills it; source-row padding does not belong around this surface.
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Choose bookmarks to bring to Parc")
     }
@@ -113,8 +105,6 @@ private struct OnboardingImportBookmarkBranch: View {
             .padding(.bottom, 12)
             if expanded {
                 ForEach(item.children) { child in
-                    // Type erasure terminates the recursive View type; source IDs
-                    // remain the row identity and no collapsed descendants render.
                     AnyView(OnboardingImportBookmarkBranch(item: child, depth: depth + 1, page: page,
                         selectionColor: selectionColor, reduceMotion: reduceMotion))
                 }
@@ -124,8 +114,6 @@ private struct OnboardingImportBookmarkBranch: View {
     }
 }
 
-/// Own the cursor without intercepting row clicks or scroll-wheel events.
-/// This also covers disabled rows on macOS 13 and 14.
 private struct BookmarkArrowCursor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { ArrowView() }
     func updateNSView(_ nsView: NSView, context: Context) {}

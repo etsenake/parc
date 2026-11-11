@@ -2,15 +2,9 @@ import AppKit
 
 @MainActor
 enum SplitPaneMenu {
-    ///
-    /// item its own `ContextMenus` artwork (`SplitPaneMenuArtwork`). The split's
-    /// orientation picks the Separate, Convert and Share variants: item types 5,
-    /// 7 and 9 for a horizontal split, 6, 8 and 10 for a vertical one.
     static func make(orientation: SplitOrientation, index: Int, count: Int,
                      prepare: (SplitPaneOperation) -> (() -> Void)?) -> NSMenu {
         let vertical = orientation == .vertical
-        // The original content-panel producer has a separate single-content
-        // list: both orientations are available before a split exists.
         let horizontal: [(String, String, SplitPaneOperation)?] = [
             ("Add Left Split", "icon-split-add-left", .addBefore),
             ("Add Right Split", "icon-split-add-right", .addAfter)
@@ -55,12 +49,6 @@ enum SplitPaneMenu {
     }
 }
 
-///
-///
-///
-/// Convert. The catalog has light and dark renditions and no template: the
-/// frame is a lighter tone than the arrow or plus, and Separate's arrow is
-/// blue. Each image draws the rendition for the appearance it is drawn in.
 @MainActor
 enum SplitPaneMenuArtwork {
     static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("SplitPaneMenu", isDirectory: true)
@@ -73,7 +61,6 @@ enum SplitPaneMenuArtwork {
             (isDark ? dark : light).draw(in: rect)
             return true
         }
-        // A menu draws in its own appearance; never reuse another's raster.
         image.cacheMode = .never
         return image
     }
@@ -102,8 +89,6 @@ private final class SplitPaneMenuAction: NSObject {
     @objc func invoke() { action?() }
 }
 
-/// This original-window draft has no URL, saved item or native page. Canceling
-/// it removes only the presentation; a chosen request is owned by its callback.
 @MainActor
 final class SplitPaneInsertionSession {
     let id = UUID()
@@ -120,18 +105,8 @@ final class SplitPaneInsertionSession {
     func cancel() { cancelled = true; placeholder.removeFromSuperview() }
 }
 
-///
-///
-///
-/// the command bar is the only input owner while the pane is pending. A window
-/// with no tab open shows the same content.
-///
-///
-///
-/// only the scrim loader), so it follows the window's own appearance.
 @MainActor
 final class SplitPanePlaceholder: NSView {
-    /// White at 0.666 alpha (light) or 0.1 alpha (dark), resolved per appearance.
     static let emptyContentBackground = NSColor(name: "emptyWindowContentBackgroundColor") { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             ? NSColor(red: 1, green: 1, blue: 1, alpha: 0.1)

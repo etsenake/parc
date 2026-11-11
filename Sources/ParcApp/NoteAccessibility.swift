@@ -1,16 +1,5 @@
 import AppKit
 
-/// Keyboard, accessibility and viewport-focus presentation for existing Notes
-/// surfaces. Title/body Tab/Return/arrow/Backspace/Escape boundaries and native
-/// Find remain in NOTE13. This type does not invent editor commands.
-///
-///
-///
-///
-///
-/// the body; FormatMenu.Action carries `didPressEnter` / `didDismissMenu`;
-/// image completion returns to the original text view. Footer Retry/Discard
-/// and Format Selection/Paragraph remain the documented AX alternatives.
 @MainActor
 enum NoteAccessibility {
     static let loadErrorTitle = "Can't load this note"
@@ -46,10 +35,6 @@ enum NoteAccessibility {
         return true
     }
 
-    /// Removing a focused menu can resign first responder to the window before
-    /// the owner restores the original body. Pointer presentation already keeps
-    /// that body, so this is a no-op when it is still the responder. A nil
-    /// `owned` menu, or a live control that is not that menu, is left alone.
     static func restoreBodyIfMenuRelinquished(_ text: NSTextView, owned: NSView?) {
         guard let window = text.window, window.firstResponder !== text, let owned else { return }
         let first = window.firstResponder

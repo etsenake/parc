@@ -1,16 +1,9 @@
 import AppKit
 
-/// One close's window Undo group. Redo replaces the record with the close it
-///
 @MainActor
 final class ClosedTabsUndoOperation {
     var record: ClosedTabsUndo
-    ///
-    ///
-    /// Put Back leaves its step.
     private(set) var reopened: Set<UUID> = []
-    ///
-    ///
     var redoScope: Set<UUID> = []
     init(_ record: ClosedTabsUndo) { self.record = record }
     func didReopen(_ step: ClosedItemRecord) { reopened.formUnion(record.reopenedIDs(step)) }
@@ -18,29 +11,17 @@ final class ClosedTabsUndoOperation {
     fileprivate func redid(_ next: ClosedTabsUndo) { record = next; reopened = [] }
 }
 
-///
-///
-///
-///
-///
-/// record, as it registers a fresh group.
 @MainActor
 final class ClosedPeekUndoOperation {
     static let actionName = "Close Peek"
     private(set) var record: ClosedPeekRecord
-    ///
-    ///
     private(set) var reopened = false
-    /// The Peek this group's Undo opened, which its Redo closes.
     var openedPeek: UUID?
     init(_ record: ClosedPeekRecord) { self.record = record }
     func didReopen(_ step: ClosedPeekRecord) { if step.id == record.id { reopened = true } }
     fileprivate func redid(_ next: ClosedPeekRecord) { record = next; reopened = false; openedPeek = nil }
 }
 
-/// Parents whose waiting Peek was refused only because another Undo's Peek
-/// was still being adopted. When that adoption ends the selected ones try
-/// again; the rest wait for reselection or the window becoming key.
 struct PeekUndoSlotWaiters {
     private var parents: Set<UUID> = []
     mutating func refused(_ parent: UUID) { parents.insert(parent) }
@@ -51,13 +32,6 @@ struct PeekUndoSlotWaiters {
 }
 
 extension FolderUndoManager {
-    ///
-    /// and selects only the one that was focused when closed, which `didUndo`
-    /// does. Redo reissues the close for the group's tabs that are back in
-    ///
-    /// `close`, whose commit must still pass `current`, and which reports its
-    /// new record. `appended` runs once the group is on the stack; the
-    /// operation is returned at once, so Reopen can reach it while it waits.
     @discardableResult
     func appendClosedTabs(_ record: ClosedTabsUndo, store: BrowserStore,
                           canUse: @escaping (Set<UUID>, Direction) -> Bool,
@@ -108,9 +82,6 @@ extension FolderUndoManager {
         return operation
     }
 
-    /// `open` asks for the recorded Peek over its parent; `isOpen` says
-    /// whether the Peek it opened, or is still opening, can yet be closed;
-    /// `close` dismisses exactly that Peek and reports the record of its close.
     @discardableResult
     func appendClosedPeek(_ record: ClosedPeekRecord, state: @escaping () -> BrowserState?,
                           canOpen: @escaping (ClosedPeekUndoOperation) -> Bool,

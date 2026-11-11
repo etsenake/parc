@@ -1,8 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// A noninteractive child behind the welcome window, never a browser window or
-/// a macOS fullscreen Space. The recovered sequence is recorded in onboarding.md.
 @MainActor
 final class OnboardingBackdrop {
     private weak var parent: NSWindow?
@@ -27,8 +25,6 @@ final class OnboardingBackdrop {
         screenChanged()
     }
 
-    ///
-    /// dim still waiting for the main screen must not start during setup.
     func welcomeEnded() {
         if overlay == nil { cancel() }
     }

@@ -6,13 +6,7 @@ enum FavoritePointerAction: Hashable {
     case activate, resetAndSelect, resetIfNeeded, openInSplit
 }
 
-///
-/// has no multi-selection of its own: Shift and Command never build a set, and
-/// the outline's ordered multi-set reconciles to outline rows, so a Favorite is
-/// never a member here and its deferred member branch does not arise.
 enum FavoritePointerPolicy {
-    ///
-    /// without Option. Every other first click is resolved by its release.
     static func selectsOnDown(modifiers: NSEvent.ModifierFlags, isKey: Bool) -> Bool {
         isKey && !modifiers.contains(.option)
     }
@@ -20,7 +14,6 @@ enum FavoritePointerPolicy {
     static func mouseUp(modifiers: NSEvent.ModifierFlags, clickCount: Int,
                         isKey: Bool) -> FavoritePointerAction? {
         guard clickCount == 1, !selectsOnDown(modifiers: modifiers, isKey: isKey) else { return nil }
-        // Release drops numeric-pad/Caps Lock/help/function before comparing.
         let flags = modifiers.intersection([.shift, .control, .option, .command])
         if flags == [.option, .command] { return nil }
         return flags == .option ? .openInSplit : .activate
@@ -29,12 +22,8 @@ enum FavoritePointerPolicy {
     static func mouseDown(modifiers: NSEvent.ModifierFlags, clickCount: Int,
                           isKey: Bool) -> FavoritePointerAction? {
         guard !modifiers.contains(.control) else { return nil }
-        // Repeated down takes the double-click branch whatever the key state or
-        // modifiers; the reset owner still applies its own window gate.
         if clickCount >= 2 { return .resetIfNeeded }
         guard clickCount == 1, selectsOnDown(modifiers: modifiers, isKey: isKey) else { return nil }
-        // The reference compares the complete normalized flags here, including
-        // Caps Lock/function/numeric-pad, rather than only command/shift.
         return modifiers.intersection(.deviceIndependentFlagsMask) == .command
             ? .resetAndSelect : .activate
     }
@@ -47,17 +36,12 @@ struct FavoritePointerOwner: Equatable {
     let createdAt: Date
 }
 
-///
-///
-/// joins them with ", " and falls back to "Favorite item" for an empty list.
 enum FavoriteAccessibilityTitle {
     static func text(_ titles: [String]) -> String {
         titles.isEmpty ? "Favorite item" : titles.joined(separator: ", ")
     }
 }
 
-/// A profile-wide saved item. The button does not own a page, selection or
-/// destructive action: every activation/menu/AX request asks its original owner.
 final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
     var beginMove: (() -> SidebarMoveSession?)?
     private(set) var sidebarDrag: SidebarMoveSession?
@@ -76,13 +60,9 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
     var selected = false {
         didSet { if selected != oldValue { applyState(hoverChanged: false); overlays.setSelected(selected) } }
     }
-    /// AppItem.shouldDim (INC-01), from this tile's window; applied at once (S29).
     private(set) var dimmed = false { didSet { if dimmed != oldValue { applyState(hoverChanged: false) } } }
     private var pressed = false
     private var windowObserver: NSObjectProtocol?
-    // Layer order follows the recovered App Tray tile: shadow, selected
-    // background with its icon wash, page cells, then the selection outline,
-    // whose masked ring holds the wash image or, dimmed, a muted fill.
     let shadowLayer = CALayer()
     let selectionFill = CALayer()
     let washLayer = CALayer()
@@ -99,20 +79,15 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
     private var washKey: FavoriteWashKey?
     private var washGeneratedAt: CFTimeInterval = -.infinity
     private var pendingWash: DispatchWorkItem?
-    /// Recording dot, Peek badge and music particles (FavoriteTileOverlays.swift).
     private(set) lazy var overlays = FavoriteTileOverlays(host: self)
-    /// The window key/main input for `dimmed` (FavoriteTileOverlays.swift).
     private(set) lazy var windowActivity = FavoriteWindowActivity { [weak self] dim in self?.dimmed = dim }
 
-    /// `title` is the spoken item title (see `FavoriteAccessibilityTitle`).
     init(title: String, monogram: String, url: String) {
         super.init(frame: .zero)
         isBordered = false; bezelStyle = .regularSquare
         self.title = ""; imagePosition = .noImage
         wantsLayer = true
         focusRingType = .exterior
-        //
-        // described as "Favorite" that speaks a title, not a description.
         setAccessibilityTitle(title)
         setAccessibilityRoleDescription("Favorite")
         setAccessibilityHelp(url)
@@ -161,7 +136,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         setAccessibilityTitle(title); setAccessibilityHelp(url)
     }
 
-    /// One cell per original page: a split Favorite shows each page's icon.
     func setPages(_ monograms: [String], orientation: SplitOrientation) {
         let count = max(1, monograms.count)
         if customGlyph || cells.count != count || self.orientation != orientation {
@@ -177,7 +151,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         applyState(hoverChanged: false)
     }
 
-    /// A container's own emoji or symbol replaces the page icons.
     func setCustomGlyph(image: NSImage?, text: String?) {
         if !customGlyph { setPages([""], orientation: .horizontal); customGlyph = true }
         let cell = cells[0]
@@ -187,8 +160,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         refreshWash()
     }
 
-    /// Real page artwork replaces the monogram; a nil reply keeps the monogram.
-    /// The previous image stays until the reply so redraws do not flicker.
     func loadFavicon(page index: Int = 0, _ request: (@escaping (NSImage?) -> Void) -> Void) {
         guard !customGlyph, cells.indices.contains(index) else { return }
         let cell = cells[index]
@@ -202,15 +173,10 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         }
     }
 
-    /// True when every page cell already shows settled non-nil favicon art.
-    /// Used to skip re-arm only for a true on-screen no-op; monogram-only
-    /// tiles keep loading so a later same-URL history hit is not dropped.
     func hasSettledPageFavicons(count: Int) -> Bool {
         !customGlyph && cells.count == count && cells.allSatisfy { $0.favicon != nil }
     }
 
-    ///
-    /// (S18); `highlightColor` is its maxContrastColor.
     func applyPalette(isDark: Bool, glyphColor: NSColor, highlightColor: NSColor? = nil) {
         paletteIsDark = isDark; self.glyphColor = glyphColor
         cells.forEach(refreshCell)
@@ -231,8 +197,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         let bounds = self.bounds
         let local = CGRect(origin: .zero, size: bounds.size)
         let shadowPath = FavoriteTilePaths.roundedRect(bounds, radius: m.cornerRadius)
-        // After apply, outlineLayer.bounds is the local tile size; compute the
-        // ring against that so the skip compares the post-layout path.
         let outlinePath = FavoriteTilePaths.selectionRing(bounds: local, count: cells.count,
                                                           orientation: orientation)
         let layouts = FavoriteChildLayouts.layouts(count: cells.count, size: bounds.size, gap: m.childGap,
@@ -263,9 +227,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
                 glyphFontSize: cell.glyph.fontSize
             )
         }
-        // Sidebar chrome can mark the tray dirty without changing tile bounds,
-        // split orientation, or child frames. Skip the CATransaction when those
-        // layer writes would be identical; overlays and wash keep their own paths.
         if FavoriteTileLayerLayoutSkip.shouldSkip(
             bounds: bounds,
             shadowFrame: shadowLayer.frame,
@@ -313,7 +274,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if tracking == nil {
-            //
             let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved,
                                                               .activeInKeyWindow, .inVisibleRect],
                                       owner: self, userInfo: nil)
@@ -331,13 +291,8 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
     }
     override func mouseExited(with event: NSEvent) { super.mouseExited(with: event); setHovered(false) }
 
-    /// App Tray pointer hover. Tests assert enter/exit and the mouseMoved no-op skip.
     var isPointerHovered: Bool { hovered }
 
-    /// No App Tray item view (wrapper → FlippedView → NSView, tile → HoverableView
-    /// → TaggableView → NSView) accepts first mouse, so the click that activates
-    /// an inactive window neither presses, selects nor starts a drag. NSButton
-    /// would otherwise accept it.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { false }
 
     override func mouseDown(with event: NSEvent) {
@@ -350,13 +305,9 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         setPressed(true)
         if let intent = FavoritePointerPolicy.mouseDown(modifiers: event.modifierFlags,
                 clickCount: event.clickCount, isKey: window.isKeyWindow) {
-            // Ask before dispatch; a synchronous render must not turn a down
-            // selection into a second release activation of a rebuilt tile.
             let action = preparePointerAction?(intent)
             _ = action?()
         }
-        // Prepare after any synchronous down action so Option added before up
-        // sees that original resulting selection. The release event owns flags.
         if event.clickCount == 1, pointerWindow === window {
             if let split = preparePointerAction?(.openInSplit) { releaseActions[.openInSplit] = split }
             if let activate = preparePointerAction?(.activate) { releaseActions[.activate] = activate }
@@ -367,7 +318,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         let intent = FavoritePointerPolicy.mouseUp(modifiers: event.modifierFlags,
             clickCount: event.clickCount, isKey: window?.isKeyWindow == true)
         let action = intent.flatMap { releaseActions[$0] }
-        // Key state belongs to the policy above; each lease applies its own gate.
         let eligible = pointerEventNumber != nil && window === pointerWindow
             && event.windowNumber == window?.windowNumber
             && !isHiddenOrHasHiddenAncestor && isEnabled
@@ -386,10 +336,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         guard hypot(point.x - start.x, point.y - start.y) > 4 else { return }
         let original = pendingMove; pendingMove = nil
         cancelPress()
-        // Option-copy is a distinct reference route. Only a whole Favorite
-        //
-        // SP23); a move-only source never changes an Option gesture into a
-        // destructive move.
         guard let session = original, session.isValid,
               !event.modifierFlags.contains(.option) || session.allowsCopy else { original?.end(); return }
         sidebarDrag = session
@@ -399,8 +345,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         dragging.setDraggingFrame(bounds, contents: dragImage())
         beginDraggingSession(with: [dragging], event: event, source: self)
     }
-    ///
-    /// tile admits copy only when its session can copy (a whole split).
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         guard context == .withinApplication else { return [] }
         return sidebarDrag?.allowsCopy == true ? [.move, .copy] : .move
@@ -440,8 +384,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         for sublayer in [shadowLayer, selectionFill, washLayer, outlineLayer, outlineImage, outlineMask] {
             FavoriteTileCell.disableActions(sublayer)
         }
-        //
-        // its opacity is part of the selected style.
         shadowLayer.shadowColor = NSColor.black.cgColor
         shadowLayer.shadowRadius = 2
         shadowLayer.shadowOffset = CGSize(width: 0, height: 1)
@@ -449,7 +391,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         selectionFill.masksToBounds = true
         washLayer.contentsGravity = .resize
         selectionFill.addSublayer(washLayer)
-        // AppTrayItemSelectionOutlineView: a masked content view holding an image view.
         outlineImage.contentsGravity = .resize
         outlineLayer.addSublayer(outlineImage)
         outlineMask.fillColor = NSColor.black.cgColor
@@ -476,15 +417,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         applyState(hoverChanged: animated)
     }
 
-    /// Resolves whether the pointer is over this tile (or a descendant).
-    ///
-    /// Tracking delivers `mouseMoved` for every point inside the area. When the
-    /// tile is already hovered and the pointer remains inside local bounds, the
-    /// hover bit cannot change without leaving those bounds (`mouseExited`
-    /// clears; App Tray tiles do not stack non-descendant hit targets over the
-    /// tile). Skip the window-wide `contentView.hitTest` in that true no-op
-    /// case. Enter, leave, resign-key, hide, and first resolution while
-    /// unhovered still hit-test.
     private func refreshHover(atWindowPoint windowPoint: NSPoint? = nil) {
         guard let window, window.isKeyWindow, !isHiddenOrHasHiddenAncestor,
               let content = window.contentView else { setHovered(false); return }
@@ -497,9 +429,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         setHovered(hit === self || hit?.isDescendant(of: self) == true)
     }
 
-    /// Selection, dim, idle and hover states. Only hover changes animate
-    /// (0.12 s); selection and dim are immediate, as in the recovered sinks
-    ///
     private func applyState(hoverChanged: Bool) {
         let dark = isDark
         let style = FavoriteSelectedStyle(dark: dark, hovered: hovered, dimmed: dimmed)
@@ -531,8 +460,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         if selected { refreshWash() }
     }
 
-    /// AppTrayVisualEffectImageProvider: the first image is immediate and later
-    /// changes are throttled to the latest request every 0.25 s.
     private func refreshWash() {
         guard selected, bounds.width > 0, bounds.height > 0 else { return }
         let icons = customGlyph ? [] : cells.map(\.favicon)
@@ -592,8 +519,6 @@ final class FavoriteTile: NSButton, NSDraggingSource, SidebarItemDragSource {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, window != nil else {
             layer.removeAnimation(forKey: "favoritePress"); return
         }
-        //
-        // response .2; both transitions start at the current presentation.
         let spring = CASpringAnimation(keyPath: "transform")
         spring.mass = 1
         spring.stiffness = pow(2 * Double.pi / 0.2, 2)
@@ -611,8 +536,6 @@ private struct FavoriteWashKey: Equatable {
     let orientation: SplitOrientation
 }
 
-/// One page cell: recovered idle/hover fill (BaseAssets SidebarItemBackground /
-/// SidebarItemHoveredBackground), a centered icon and Parc's monogram fallback.
 private final class FavoriteTileCell {
     let fill = CALayer()
     let icon = CALayer()
@@ -632,7 +555,6 @@ private final class FavoriteTileCell {
         fill.addSublayer(icon); fill.addSublayer(glyph)
     }
 
-    ///
     func layoutGlyph(in size: CGSize, single: Bool) {
         let font = NSFont.systemFont(ofSize: single ? 15 : 11, weight: .semibold)
         let height = ceil(font.ascender - font.descender)
@@ -645,7 +567,6 @@ private final class FavoriteTileCell {
     func setFill(_ color: CGColor, animated: Bool) {
         guard fill.backgroundColor != color else { return }
         if animated {
-            //
             let animation = CABasicAnimation(keyPath: "backgroundColor")
             animation.fromValue = fill.backgroundColor
             animation.toValue = color
@@ -661,7 +582,6 @@ private final class FavoriteTileCell {
              : NSColor(displayP3Red: 0.055, green: 0.059, blue: 0.063, alpha: hovered ? 0.1 : 0.05).cgColor
     }
 
-    /// Template symbols keep their own aspect; the icon layer fits them to the slot.
     static func tinted(_ image: NSImage, color: NSColor) -> NSImage {
         guard image.isTemplate else { return image }
         return NSImage(size: image.size, flipped: false) { rect in
@@ -680,9 +600,6 @@ private final class FavoriteTileCell {
     }
 }
 
-///
-/// (radius 5), saturated (1.5, brightness .05, contrast .85) and drawn centered
-/// on its cell at renderSize × tileWidth / 5.
 @MainActor private enum FavoriteWash {
     static let context = CIContext()
 

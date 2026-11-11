@@ -38,7 +38,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     private let emptyContent: DownloadEmptyContentView
     private let emptyIcon = NSImageView(image: NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)!)
     private let empty = NSTextField(wrappingLabelWithString: "")
-    ///
     private let footer = NSTextField(labelWithString: "")
     private let retryLoad = ActionButton("Retry", symbol: "arrow.clockwise")
     private var rows: [Row] = []
@@ -81,8 +80,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
             guard let self, self.ownerValid(), !self.filtersExpanded,
                   !self.searchBackdrop.isHiddenOrHasHiddenAncestor,
                   let window = self.window, window.attachedSheet == nil else { return }
-            // The original surface tap focuses the existing field. It does not
-            // select all or disturb an already active range/composition.
             if self.search.currentEditor() !== window.firstResponder { window.makeFirstResponder(self.search) }
         }
         searchBackdrop.setAccessibilityElement(false)
@@ -152,8 +149,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
         guard tableView === table, let original = dragItem(at: row), let parent = window else { return nil }
         let generation = contextGeneration, identity = DownloadLibraryIdentity(original)
-        // Re-resolve by immutable identity, never a row index that a progress,
-        // sort or filter publication could have reassigned during native drag.
         guard let drag = DownloadFileDrag(resolve: { [weak self, weak parent] in
             guard let self, let parent, self.window === parent, self.contextGeneration == generation,
                   self.ownerValid(), parent.attachedSheet == nil,
@@ -170,8 +165,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     }
     func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession,
                    endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-        // The receiver owns its copy. A move result never removes the file or
-        // original DownloadManager record on behalf of an external application.
         retireFileDrags()
     }
     private func closePreview(restoringFocus: Bool = false) {
@@ -231,12 +224,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         }
     }
     private func reload(force: Bool = false) {
-        // `$state` and `$transientDownloads` both sink here while Downloads is
-        // open. Skip before filter/sort/rebuild when the Downloads-visible
-        // catalog fingerprint (persisted + transient progress bits Equatable
-        // carries, and profiles for filters/row labels) already matches the
-        // last applied snapshot. Real list/progress/filter/membership changes
-        // miss and reload; force paths always apply.
         if !force && shouldSkipCatalogReload() { return }
         rememberAppliedCatalog()
         if let selectedProfile, !store.state.profiles.contains(where: { $0.id == selectedProfile }) {
@@ -251,8 +238,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
             (query.isEmpty || item.name.localizedCaseInsensitiveContains(query) ||
              (item.sourceURL?.localizedCaseInsensitiveContains(query) ?? false))
         }.sorted {
-            // The original comparator is strict createdAt descending. Swift's
-            // stable merge sort retains source order for ties, including nil.
             ($0.startedAt ?? .distantPast) > ($1.startedAt ?? .distantPast)
         }
         rebuildFilters()
@@ -263,9 +248,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         var previous: String?
         let now = Date()
         for item in next {
-            //
-            // A missing start date sorts as distant past, so it stays last, and
-            // takes the plain Earlier heading instead of that relative string.
             let heading = item.startedAt.map { DownloadSectionHeading.title(for: $0, now: now) } ?? DownloadSectionHeading.undatedTitle
             if previous != heading { rows.append(.heading(heading)); previous = heading }
             rows.append(.item(item))
@@ -279,8 +261,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         }
         renderedContextGeneration = contextGeneration
         if sameLayout {
-            // Progress for one item must not tear down every visible thumbnail
-            // request or churn keyboard selection/preview for another item.
             let changed = IndexSet(rows.indices.filter { previousRows[$0] != rows[$0] })
             restoringSelection = true
             refreshCells(at: changed)
@@ -307,11 +287,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         needsLayout = true
     }
 
-    /// True when this view already applied the Downloads-visible store catalog.
-    /// Everyday title/URL `$state` ticks and duplicate `$transientDownloads`
-    /// publishes that leave downloads, live transient progress, and profiles
-    /// untouched return before filter/sort. Progress byte/status flips,
-    /// membership, and profile filter identity still miss and reload.
     private func shouldSkipCatalogReload() -> Bool {
         store.state.downloads == observedDownloads
             && store.transientDownloads == observedTransient
@@ -334,8 +309,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     }
     private func setFiltersExpanded(_ expanded: Bool, animated: Bool = true) {
         guard ownerValid(), let window, window.attachedSheet == nil, expanded != filtersExpanded else { return }
-        // Hide no active composition. End ordinary field editing while retaining
-        // its exact query/range; pointer entry from the page never steals focus.
         if expanded, let editor = search.currentEditor() as? NSTextView,
            window.firstResponder === editor {
             guard !editor.hasMarkedText() else { return }
@@ -345,18 +318,12 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         let focusWasInFilters = (window.firstResponder as? NSView)?.isDescendant(of: filterContent) == true
         let restoreSearch = !expanded && savedSearchSelection != nil &&
             (window.firstResponder === filter || focusWasInFilters)
-        // Prep lays out the current header/list and flushes before the expand/
-        // collapse group. Skip only when that forced pass is a true no-op for
-        // the first animated frame: the subtree is already clean and no pending
-        // layer geometry would change.
         Self.prepareFilterLayoutFlushIfNeeded(for: self)
         invalidate(settlePresentation: false)
         filtersExpanded = expanded
         reload(force: true)
         let token = filterAnimationGeneration
         let duration = animated && !reduceMotion ? 0.3 : 0
-        // Model frames and hit/AX eligibility change together. AppKit animates
-        // only this header/list layout, never another window or a file preview.
         searchBackdrop.isHidden = false; search.isHidden = false; filterTitle.isHidden = false
         filterScroll.isHidden = false; selectedFilter.isHidden = selectedProfile == nil
         search.isEnabled = !expanded
@@ -392,16 +359,10 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         }
     }
 
-    /// True when filter expand/collapse prep would still change the first
-    /// animated frame: dirty AppKit layout, or layer geometry whose presentation
-    /// has not yet caught the model (an origin-only prep move can leave
-    /// `needsLayout` false while position is still uncommitted).
     static func shouldPrepareFilterLayoutFlush(of root: NSView) -> Bool {
         subtreeNeedsLayout(root) || subtreeHasUncommittedGeometry(root)
     }
 
-    /// Runs the pre-animation layout+flush only when it would affect the first
-    /// frame. Returns whether the forced flush ran.
     @discardableResult
     static func prepareFilterLayoutFlushIfNeeded(for root: NSView) -> Bool {
         guard shouldPrepareFilterLayoutFlush(of: root) else { return false }
@@ -432,7 +393,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     private func settleFilterAnimation() {
         filterAnimationGeneration &+= 1
         for view in [searchBackdrop, search, filterTitle, filterScroll, selectedFilter, scroll, emptyContent] {
-            // These layers belong exclusively to this Library presentation.
             for key in ["position", "bounds", "opacity"] { view.layer?.removeAnimation(forKey: key) }
         }
         searchBackdrop.alphaValue = filtersExpanded ? 0 : 1; searchBackdrop.isHidden = filtersExpanded
@@ -457,7 +417,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         let name = selectedProfile.flatMap { id in store.state.profiles.first { $0.id == id }?.name }
         selectedFilter.title = name ?? ""
         selectedFilter.setAccessibilityLabel("Remove \(name ?? "Profile") Filter")
-        //
         LiveShortcutToolTip.set(selectedFilter, "Remove \(name ?? "Profile") Filter", behavior: .onMouseIdle(delay: 0.6))
         search.placeholderString = selectedProfile == nil ? "Search Downloads…" : "Search…"
         let label = NSTextField(labelWithString: "Profiles"); label.font = .systemFont(ofSize: 12, weight: .semibold)
@@ -585,8 +544,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         let token = activationGeneration, generation = contextGeneration
         let identity = DownloadLibraryIdentity(original)
         let responder = parent.firstResponder, wasKey = parent.isKeyWindow
-        // The original non-media branch opens a completed item or toggles its
-        // unfinished flag. Modern manager security/capabilities remain final.
         guard original.status == .completed else {
             if original.canToggleOpen { act(.toggleOpen, items: [original]) }
             return
@@ -594,8 +551,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         guard let url = fileURL?(original) else {
             reportActionFailure("This file is no longer available."); return
         }
-        // Resolve resource type off the main thread. This reads one original
-        // file's metadata, never the Downloads directory or its contents.
         DispatchQueue.global(qos: .userInitiated).async { [weak self, weak parent, weak responder] in
             let route = DownloadFileActivation.inspect(url)
             DispatchQueue.main.async { [weak self, weak parent, weak responder] in
@@ -624,14 +579,10 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
             let urls = originals.compactMap { fileURL?($0) }
             guard urls.count == originals.count else { reportActionFailure("The selected files are no longer available to copy."); return }
             NSPasteboard.general.clearContents()
-            //
             if NSPasteboard.general.writeObjects(urls.map { $0 as NSURL }) { onToast?(.copiedFile(urls)) }
             else { reportActionFailure("The files couldn’t be copied.") }
             return
         }
-        //
-        // Hide leaves completed files alone; Trash reports the real asynchronous
-        // file outcome. Native manager policy/identity checks remain authoritative.
         dispatch(action, items: originals)
     }
 
@@ -645,7 +596,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         return resolved
     }
     private func dispatch(_ action: DownloadLibraryAction, items: [BrowserDownload]) {
-        // The original manager performs its final policy/lifetime checks.
         for item in items {
             guard ownerValid(), let ownerWindow = window, ownerWindow.attachedSheet == nil,
                   let current = resolvedItems(for: action, items: [item])?.first,
@@ -769,8 +719,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false); table.scrollRowToVisible(row)
     }
     private func reloadRows(selecting selection: IndexSet) {
-        // AppKit may report an intermediate index selection during reload.
-        // Never let that temporary index open a different item's preview.
         restoringSelection = true
         table.reloadData(); table.selectRowIndexes(selection, byExtendingSelection: false)
         restoringSelection = false
@@ -811,7 +759,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         let contentTop = LibraryPageHeader.contentTop
         selectedFilter.frame = NSRect(x: inset, y: contentTop, width: min(width, selectedFilter.fittingSize.width), height: 32)
         let top: CGFloat = filtersExpanded ? 60 + filterHeight + 8 : selectedProfile == nil ? contentTop : contentTop + 40
-        // ContentCell rows and section headers own their 8/12pt list insets.
         let statusHeight: CGFloat = footer.isHidden ? 0 : 36
         place(scroll, NSRect(x: 0, y: top, width: bounds.width, height: max(0, bounds.height - top - statusHeight)))
         footer.frame = NSRect(x: 12, y: bounds.height - 27, width: max(0, width - (retryLoad.isHidden ? 0 : 62)), height: 18)
@@ -824,9 +771,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
 
 }
 
-/// The actual empty-state subtree owns one appearance, independently of the
-/// loading/error label and the rows. These constants come from the original
-/// HomeAppearAnimationModifier attached by EmptyStateView, not a row effect.
 @MainActor final class DownloadEmptyContentView: NSView {
     enum Mode { case hidden, status, empty }
     private let ownerValid: () -> Bool
@@ -911,9 +855,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     }
 }
 
-/// Shared Library page header geometry. Height, top padding and the 3-point
-///
-///
 enum LibraryPageHeader {
     static let inset: CGFloat = 8
     static let top: CGFloat = 10
@@ -922,10 +863,6 @@ enum LibraryPageHeader {
     static let contentTop: CGFloat = 56
 }
 
-/// SwiftUI `Image(systemName:).resizable()` stretches the symbol's drawn
-/// bounds to its frame; AppKit symbol images carry extra padding instead.
-/// The returned image is larger than its 15-point alignment rect so the
-/// stroke's antialiasing is not cut off by the bitmap edge.
 @MainActor enum LibraryHeaderGlyph {
     static let side: CGFloat = 15
     private static var cache: [String: NSImage] = [:]
@@ -940,8 +877,6 @@ enum LibraryPageHeader {
         cache[key] = image
         return image
     }
-    /// The full painted glyph fills `side`, centered, with a point of clear
-    /// margin so the bitmap edge cannot slice the stroke.
     private static func fitted(_ symbol: NSImage, painted: NSRect) -> NSImage {
         let scale = side / max(painted.width, painted.height)
         let drawn = NSSize(width: painted.width * scale, height: painted.height * scale)
@@ -983,14 +918,11 @@ enum LibraryPageHeader {
             minX = min(minX, x); maxX = max(maxX, x); minRow = min(minRow, row); maxRow = max(maxRow, row)
         } }
         guard maxX >= minX, maxRow >= minRow else { return nil }
-        // Bitmap rows run top-down; image coordinates run bottom-up.
         return NSRect(x: CGFloat(minX) / scale, y: CGFloat(height - 1 - maxRow) / scale,
                       width: CGFloat(maxX - minX + 1) / scale, height: CGFloat(maxRow - minRow + 1) / scale)
     }
 }
 
-/// PageHeaderView's plain TextField: 14-point medium primary text over the
-/// native placeholder color, with no bezel, clear button or focus ring.
 @MainActor final class DownloadSearchField: NSTextField {
     static let textFont = NSFont.systemFont(ofSize: 14, weight: .medium)
     override init(frame: NSRect) {
@@ -1011,8 +943,6 @@ enum LibraryPageHeader {
     }
 }
 
-/// PageHeaderView's plain native text-field surface. The original hover
-/// modifier changes primary opacity directly; it is not a system search bezel.
 @MainActor final class DownloadSearchBackdrop: NSView {
     var ink: NSColor = .labelColor { didSet { needsDisplay = true } }
     var onFocus: (() -> Void)?
@@ -1024,8 +954,6 @@ enum LibraryPageHeader {
     override var wantsUpdateLayer: Bool { true }
     override init(frame: NSRect) {
         super.init(frame: frame)
-        //
-        // filter glyph matches regular.
         icon.image = LibraryHeaderGlyph.image("magnifyingglass", weight: .semibold)
         icon.imageScaling = .scaleAxesIndependently
         icon.setAccessibilityElement(false)
@@ -1044,9 +972,6 @@ enum LibraryPageHeader {
     }
     override func layout() {
         super.layout()
-        // Original HStack: 10pt padding, 15pt image with 4.5pt on each
-        // side, then 10pt spacing. SwiftUI centers the text line in the 36pt
-        // row and its glyphs start at 44pt; NSTextField's start 3pt inside.
         let optical = NSRect(x: 14.5, y: (bounds.height - LibraryHeaderGlyph.side) / 2,
                               width: LibraryHeaderGlyph.side, height: LibraryHeaderGlyph.side)
         let alignment = icon.image?.alignmentRect ?? NSRect(origin: .zero, size: optical.size)
@@ -1126,8 +1051,6 @@ enum LibraryPageHeader {
     var symbol: String? { didSet { needsDisplay = true } }
     private var hovered = false
     private var tracking: NSTrackingArea?
-    /// `.header` is PageHeaderView's Filter/Done action, sized by `fittingSize`
-    /// and drawn in GrayA11 (it ignores `ink`); `.chip` is a filter item.
     enum Style { case header, chip }
     let style: Style
     init(_ title: String, symbol: String? = nil, style: Style = .chip, action: (() -> Void)? = nil) {
@@ -1144,11 +1067,8 @@ enum LibraryPageHeader {
     override var fittingSize: NSSize {
         let text = ceil((title as NSString).size(withAttributes: [.font: font!]).width)
         guard style == .header else { return NSSize(width: text + (symbol == nil ? 24 : 43), height: 32) }
-        // HStack(spacing 4) of the 15pt image and Text.
         return NSSize(width: headerPadding * 2 + (symbol == nil ? 0 : LibraryHeaderGlyph.side + 4) + text, height: LibraryPageHeader.height)
     }
-    ///
-    ///
     private var headerPadding: CGFloat { symbol == nil ? 12 : 10 }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
     @objc private func run() { actionBlock?() }
@@ -1175,10 +1095,6 @@ enum LibraryPageHeader {
         }
         (title as NSString).draw(in: NSRect(x: 12 + iconWidth, y: (bounds.height - h) / 2, width: max(0, bounds.width - 24 - iconWidth), height: h), withAttributes: attributes)
     }
-    ///
-    ///
-    ///
-    /// background.
     private func drawHeader() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -1203,17 +1119,12 @@ enum LibraryPageHeader {
     override var focusRingMaskBounds: NSRect { bounds }
 }
 
-///
-/// in GrayA11, leading, padded 12 horizontally, 8 top and 4 bottom. Dated
-///
 @MainActor final class DownloadSectionHeading: NSView {
     static let font = NSFont.systemFont(ofSize: 12, weight: .semibold)
     static let height: CGFloat = (8 + font.ascender - font.descender + font.leading + 4).rounded()
     private static let relative: RelativeDateTimeFormatter = {
         let value = RelativeDateTimeFormatter(); value.unitsStyle = .full; return value
     }()
-    ///
-    /// reads as thousands of years ago, so Parc uses this plain heading.
     static let undatedTitle = "Earlier"
     static func title(for date: Date, now: Date = Date()) -> String {
         if Calendar.current.isDateInToday(date) { return "Today" }
@@ -1235,7 +1146,6 @@ enum LibraryPageHeader {
     }
     override func layout() {
         super.layout()
-        // NSTextField insets its text by the 2pt line-fragment padding.
         label.frame = NSRect(x: 10, y: 8, width: max(0, bounds.width - 22), height: label.intrinsicContentSize.height)
     }
 }
@@ -1245,8 +1155,6 @@ enum LibraryPageHeader {
     init(_ action: @escaping () -> Void) { self.action = action }
     @objc func run() { action() }
 }
-/// The reference subtitle is a projection of one original download, not a
-/// Chromium bubble string. Native security/operation text still takes priority.
 @MainActor enum DownloadRowSubtitle {
     private static let bytes: ByteCountFormatter = {
         let value = ByteCountFormatter()
@@ -1276,7 +1184,6 @@ enum LibraryPageHeader {
             return ["Cancelled", source].compactMap { $0 }.joined(separator: " · ")
         case .failed: return "Failed to Download"
         case .downloading:
-            //
             guard item.totalBytes > 0 else { return "" }
             if item.openWhenComplete {
                 let fraction = Float(max(0, item.receivedBytes)) / Float(item.totalBytes)
@@ -1288,8 +1195,6 @@ enum LibraryPageHeader {
                 let received = bytes.string(fromByteCount: item.receivedBytes)
                 let total = bytes.string(fromByteCount: item.totalBytes)
                 var leading = received
-                // Elide only an identical unit, retaining numeric precision and
-                // both units when transfer and total use different magnitudes.
                 let receivedParts = received.split(whereSeparator: \.isWhitespace)
                 let totalParts = total.split(whereSeparator: \.isWhitespace)
                 if receivedParts.count > 1, totalParts.count > 1,
@@ -1320,9 +1225,6 @@ enum LibraryPageHeader {
     }
 }
 
-/// ContentCell has a 24-point file image and distinct 32-point accessory
-///
-/// BaseAssets artwork (LibraryArtwork), whose two layers composite to 72/255.
 @MainActor enum DownloadRowArtwork {
     enum Kind { case file, emptyFavicon, none, security }
     static func kind(for item: BrowserDownload) -> Kind {
@@ -1345,7 +1247,6 @@ enum LibraryPageHeader {
 @MainActor private final class DownloadArtworkView: NSImageView {
     var kind = DownloadRowArtwork.Kind.none { didSet { refreshPlaceholder() } }
     private let placeholder = CALayer()
-    /// EmptyFavicon's template alpha, tinting the placeholder's primary fill.
     private let emptyFaviconMask = CALayer()
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -1368,8 +1269,6 @@ enum LibraryPageHeader {
         placeholder.frame = NSRect(x: (bounds.width-size)/2, y: (bounds.height-size)/2, width: size, height: size)
         placeholder.cornerRadius = isFile ? 8 : 0
         if let favicon {
-            // The template tinted by semantic primary: primary's own alpha
-            // times the artwork's (72/255 inside its rounded square).
             let scale = window?.backingScaleFactor ?? 2
             emptyFaviconMask.frame = placeholder.bounds
             emptyFaviconMask.contentsGravity = .resize
@@ -1395,8 +1294,6 @@ enum LibraryPageHeader {
     var thumbnailToken: UUID?
     private let more = DownloadRowButton()
     var previewSourceBounds: NSRect { icon.convert(icon.bounds, to: nil) }
-    /// Render only the already-owned artwork at the reference 2× scale.
-    /// This never reads a path or asks Quick Look to render another file.
     func previewSourceImage() -> NSImage? {
         let size = icon.bounds.size
         guard icon.window != nil, size.width > 0, size.height > 0,
@@ -1421,8 +1318,6 @@ enum LibraryPageHeader {
         for label in [name, detail] {
             label.lineBreakMode = .byTruncatingTail; label.setAccessibilityHidden(true); addSubview(label)
         }
-        // The native cell speaks its complete title/status once. Artwork and
-        // labels decorate that item; More remains a separate native control.
         icon.setAccessibilityHidden(true)
         addSubview(icon); addSubview(progress)
         LiveShortcutToolTip.set(more, "More download actions"); more.setAccessibilityLabel("More download actions")
@@ -1440,8 +1335,6 @@ enum LibraryPageHeader {
         refreshTitleColor()
         detail.stringValue = operation ?? DownloadRowSubtitle.text(for: item)
         detail.font = .systemFont(ofSize: 12); detail.textColor = .secondaryLabelColor
-        // Profile provenance and the full native warning stay accessible without
-        // replacing the original state-specific two-line row presentation.
         let host = item.sourceURL.flatMap(URL.init(string:))?.host
         source.stringValue = [profile,
             host.flatMap { detail.stringValue.contains("from " + $0) ? nil : $0 },
@@ -1450,14 +1343,10 @@ enum LibraryPageHeader {
         icon.kind = DownloadRowArtwork.kind(for: item)
         icon.image = item.requiresReview ? NSImage(systemSymbolName: "exclamationmark.shield", accessibilityDescription: nil) : nil
         icon.contentTintColor = detail.textColor
-        // DownloadCell's inProgress branch owns the same badge as the entry.
-        // Its paused branch is EmptyView; all other states leave that subtree.
         icon.isHidden = !item.requiresReview && (item.status == .downloading || item.status == .paused)
         progress.colors = DownloadBadgeColors(foreground: palette?.foregroundPrimary ?? .labelColor,
             maxContrast: palette?.maxContrastColor ?? .labelColor, cutout: palette?.cutoutColor ?? .windowBackgroundColor)
         refreshProgress()
-        // DownloadCell supplies only its original More accessory. Ordinary
-        // file/progress/security commands remain in the captured-item menu.
         more.refreshTint()
         needsLayout = true
         toolTip = [item.name, detail.stringValue, source.stringValue].filter { !$0.isEmpty }.joined(separator: "\n")
@@ -1466,9 +1355,6 @@ enum LibraryPageHeader {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func accessibilityChildren() -> [Any]? {
-        // NSTableCellView otherwise synthesizes text/image children from its
-        // decorative subviews despite their hidden accessibility attributes.
-        // The complete item is named by the cell; its sole child is actionable.
         more.isHidden ? [] : [more]
     }
     override func viewDidMoveToWindow() {
@@ -1511,17 +1397,11 @@ enum LibraryPageHeader {
     }
     func setAccessoryVisible(_ visible: Bool) {
         guard more.isHidden == visible else { return }
-        // A scrolling row removes its trailing accessory. Keep a native
-        // keyboard focus owner if that exact control had first responder.
         if !visible { returnFocus(from: more) }
         more.isHidden = !visible; needsLayout = true
     }
     override func layout() {
         super.layout()
-        // Actual file images use the list's 24pt default. Only the independent
-        // progress/EmptyFavicon/security accessories retain their 32pt frame.
-        // ContentCell list: 8pt row inset plus 12pt content padding, a 24pt
-        // leading slot and 8pt spacing.
         let artworkSize: CGFloat = icon.kind == .file ? 24 : 32
         icon.frame = NSRect(x: 32 - artworkSize/2, y: (bounds.height-artworkSize)/2,
                             width: artworkSize, height: artworkSize)
@@ -1530,13 +1410,10 @@ enum LibraryPageHeader {
         let textX: CGFloat = 52
         let controlsX = max(textX, bounds.width - 20 - trailingWidth)
         let textWidth = max(0, controlsX - 8 - textX)
-        // VStack(spacing 2) of both text lines, centered in the row.
         func line(_ field: NSTextField) -> CGFloat { field.font.map { $0.ascender - $0.descender + $0.leading } ?? 16 }
         let top = (bounds.height - line(name) - 2 - line(detail)) / 2
         name.frame = backingAlignedRect(NSRect(x: textX - 2, y: top, width: textWidth, height: 18), options: .alignAllEdgesNearest)
         detail.frame = backingAlignedRect(NSRect(x: textX - 2, y: top + line(name) + 2, width: textWidth, height: 16), options: .alignAllEdgesNearest)
-        // The original leading 32pt frame contains a 24pt badge with 4pt
-        // trailing padding. Preserve its center independently of text width.
         progress.frame = NSRect(x: 16, y: 12, width: 28, height: 32)
         var x = controlsX
         for control in controls {
@@ -1547,8 +1424,6 @@ enum LibraryPageHeader {
     }
 }
 
-/// Native tracking/focus with the recovered 14pt medium accessory glyph.
-/// Its pressed/disabled behavior remains NSButton-owned; no synthetic action.
 @MainActor private final class DownloadRowButton: PointingHandButton {
     var actionBlock: (() -> Void)?
     private var area: NSTrackingArea?
@@ -1561,8 +1436,6 @@ enum LibraryPageHeader {
         image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
         imagePosition = .imageOnly; focusRingType = .default
-        // Explicit cell children otherwise expose this custom image-only button
-        // as AXUnknown. Preserve its genuine NSButton action/focus owner.
         setAccessibilityElement(true); setAccessibilityRole(.button)
         target = self; self.action = #selector(invoke)
     }
@@ -1593,8 +1466,6 @@ enum LibraryPageHeader {
     @objc private func invoke() { actionBlock?() }
 }
 
-/// Source-owned values of the recovered GrayA6/A7 and GrayA11/A12 colors.
-/// No installed resource or synthetic input handler is needed at runtime.
 @MainActor enum DownloadAccessoryColors {
     static func background(pressed: Bool, appearance: NSAppearance) -> NSColor {
         let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -1606,9 +1477,6 @@ enum LibraryPageHeader {
     }
 }
 
-/// Original ContentCell.list background is primary at 10% for highlight OR
-/// selection, continuous radius12, height56, then horizontal padding8.
-/// Keep this decoration outside the cell's original input/accessibility owner.
 @MainActor final class DownloadRowBackdrop: NSView {
     var highlighted = false { didSet { needsDisplay = true } }
     var emphasized = false { didSet { needsDisplay = true } }
@@ -1642,7 +1510,6 @@ enum LibraryPageHeader {
         layer?.cornerRadius = 12; layer?.cornerCurve = .continuous
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(NSColor.labelColor.alphaComponent * (highlighted ? 0.1 : 0)).cgColor
-            // Native Increase Contrast focus is an explicit accessibility adaptation.
             layer?.borderWidth = highlighted && emphasized && NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast ? 1 : 0
             layer?.borderColor = NSColor.keyboardFocusIndicatorColor.cgColor
         }
@@ -1706,8 +1573,6 @@ enum LibraryPageHeader {
         shouldHighlight = hovered && !scrolling
     }
     private func updatePresentation() {
-        //
-        // otherwise its size/opacity follows highlight OR original selection.
         let visible = !scrolling && (shouldHighlight || isSelected)
         for cell in subviews.compactMap({ $0 as? DownloadLibraryCell }) {
             cell.setAccessoryVisible(visible); cell.setHighlighted(shouldHighlight || isSelected)
@@ -1716,16 +1581,11 @@ enum LibraryPageHeader {
         backdrop.emphasized = isSelected && isEmphasized
         needsDisplay = true
     }
-    // The retained decoration draws once for hover and selection. AppKit's
-    // default selected-row drawing must not overlay a second native tint.
     override func drawBackground(in dirtyRect: NSRect) {}
     override func drawSelection(in dirtyRect: NSRect) {}
 
 }
 
-/// Original ContentCell activation accepts media by real resource type first,
-/// then the filename fallback. Quick Look's wider supported set is not this
-/// pointer policy. The actual native manager supplies and revalidates the URL.
 enum DownloadFileActivation {
     enum Route { case preview, open, unavailable }
     static func inspect(_ url: URL) -> Route {

@@ -11,7 +11,7 @@ import sys
 repo, output = map(Path, sys.argv[1:])
 source = (repo / "Sources/ParcApp/CommandBar.swift").read_text()
 start = source.index("    private var selectedScopeOffer:")
-end = source.index("    /// The engine's template,", start)
+end = source.index("    private static func site(of scope: PCNativeOmniboxScope)", start)
 resolver = source[start:end].replace("private var selectedScopeOffer:", "var selectedScopeOffer:", 1)
 (output / "Resolver.swift").write_text("import AppKit\nextension ScopeOfferFixture {\n" + resolver + "}\n")
 PY

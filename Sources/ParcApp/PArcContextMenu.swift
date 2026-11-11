@@ -1,38 +1,23 @@
 import AppKit
 
-/// The dock + menu's inset, plate, type and separators, with 32-point rows:
-/// the Site Control Center's tile and footer height.
 @MainActor
 enum PArcContextMenuMetrics {
     static let rowHeight: CGFloat = 32
     static let inset = SidebarPlusMenuView.inset
     static let minimumWidth: CGFloat = 180
     static let maximumWidth: CGFloat = 320
-    /// Title inset from the row's edges, and with a state column.
     static let titleInset: CGFloat = 10
     static let stateTitleInset: CGFloat = 28
     static let stateCenterX: CGFloat = 15
     static let imageSize: CGFloat = 16
     static let chevronWidth: CGFloat = 16
     static let chevronCenterInset: CGFloat = 14
-    /// Between the card and the control or row it hangs from.
     static let gap: CGFloat = 4
-    /// How long a row waits while the pointer heads into an open submenu.
     static let submenuAimDelay: TimeInterval = 0.25
-    ///
-    /// 3, one point down; the window pads the card for it.
     static let shadowMargin: CGFloat = 8
     static let shadowOpacity: CGFloat = 0.2
     static let shadowRadius: CGFloat = 3
 
-    /// The card beside `row` (screen coordinates), its first row level with
-    /// `row`, in the first of `regions` that holds the row and has room for
-    /// the card on one side of it (the window's part on screen, then the
-    /// screen), so moving in from an edge keeps it beside the row. There it takes
-    /// the side `right` names when `reach` (it and its deepest submenus) fits,
-    /// else the other side if that fits it, else the first side the card
-    /// alone fits. With room nowhere it takes the roomier side of the last
-    /// region and moves onto it. No regions leave it where it hangs.
     static func frame(card size: NSSize, reach: CGFloat, beside row: NSRect, right: Bool,
                       regions: [NSRect]) -> (frame: NSRect, right: Bool) {
         func placed(_ right: Bool) -> NSRect {
@@ -56,8 +41,6 @@ enum PArcContextMenuMetrics {
         return (frame, side)
     }
 
-    /// The items a menu shows: visible ones, without leading, trailing or
-    /// repeated separators.
     static func shownItems(_ menu: NSMenu) -> [NSMenuItem] {
         var items: [NSMenuItem] = []
         for item in menu.items where !item.isHidden {
@@ -69,13 +52,10 @@ enum PArcContextMenuMetrics {
     }
 }
 
-/// One level of the menu: its card and rows, padded for the shadow.
 @MainActor
 final class PArcContextMenuView: NSView {
-    /// The menu this card shows.
     let source: NSMenu
     let items: [NSMenuItem]
-    /// Each item's row, separators included, in this view's coordinates.
     private(set) var rows: [NSRect] = []
     var highlighted: Int? { didSet { if highlighted != oldValue { needsDisplay = true } } }
     var colors: PArcMenuColors { didSet { needsDisplay = true } }
@@ -119,7 +99,6 @@ final class PArcContextMenuView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// The card and, beside it, its widest chain of submenus.
     var reach: CGFloat { Self.reach(items) }
 
     static func reach(_ items: [NSMenuItem]) -> CGFloat {
@@ -127,7 +106,6 @@ final class PArcContextMenuView: NSView {
         return cardWidth(items) + (chains.max() ?? 0)
     }
 
-    /// A card's width for `items`: its titles, state column and chevrons.
     static func cardWidth(_ items: [NSMenuItem]) -> CGFloat {
         let m = PArcContextMenuMetrics.self
         let titleWidth = items.map { title($0, color: .black).size().width }.max() ?? 0
@@ -136,15 +114,12 @@ final class PArcContextMenuView: NSView {
         return min(m.maximumWidth, max(m.minimumWidth, ceil(2 * m.inset + leading + titleWidth + trailing)))
     }
 
-    /// The card, inside the shadow's margin.
     var card: NSRect { bounds.insetBy(dx: PArcContextMenuMetrics.shadowMargin, dy: PArcContextMenuMetrics.shadowMargin) }
 
-    /// Where `row`'s submenu hangs from: the card's edges at the row's height.
     func submenuAnchor(_ row: Int) -> NSRect {
         NSRect(x: card.minX, y: rows[row].minY, width: card.width, height: rows[row].height)
     }
 
-    /// The item row (not a separator) under `point`, in this view's coordinates.
     func row(at point: NSPoint) -> Int? {
         rows.indices.first { rows[$0].contains(point) && !items[$0].isSeparatorItem }
     }
@@ -156,7 +131,6 @@ final class PArcContextMenuView: NSView {
             .font: SidebarPlusRowButton.titleFont, .foregroundColor: color, .paragraphStyle: paragraph])
     }
 
-    /// `image` filled with `color` where it has ink, centred on `center`.
     private static func draw(_ image: NSImage, size: NSSize, color: NSColor?, center: NSPoint) {
         let rect = NSRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
         let tinted = color.map { color in
@@ -225,7 +199,6 @@ final class PArcContextMenuView: NSView {
         }
     }
 
-    /// A row as VoiceOver sees it; pressing it chooses the item.
     private final class Element: NSAccessibilityElement {
         let index: Int
         weak var view: PArcContextMenuView?
@@ -244,12 +217,6 @@ final class PArcContextMenuView: NSView {
     }
 }
 
-///
-/// at the user's request in place of AppKit's grey menu at the pointer. The card
-/// hangs beside the control like a submenu beside its row, and submenus hang
-/// the same way. Like NSMenu, `present` runs its own event loop and returns
-/// once the menu has closed and the chosen item has been performed, so the
-/// engine's model lease spans the command.
 @MainActor
 final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
     private let anchor: NSRect
@@ -260,19 +227,11 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
     private var running = false
     private var done = false
     private var chosen: NSMenuItem?
-    /// Where the pointer last was, and a row switch waiting while it heads
-    /// into an open submenu.
     private var pointer: NSPoint?
     private var pendingRow: Timer?
-    /// The row whose tooltip is up or waiting for the pointer to rest (with
-    /// that wait), and the tooltip's presenter on its card, kept until its
-    /// fade ends.
     private var tip: (level: Int, row: Int, timer: Timer?, delay: TimeInterval)?
     private var tipPresenter: (presenter: TooltipPresenter, level: Int)?
 
-    /// `anchor` is the control's rectangle on screen and `regions` where the
-    /// cards look for room, in order; the cards are child windows of
-    /// `parent`, in its appearance.
     init(anchor: NSRect, regions: [NSRect], parent: NSWindow, colors: PArcMenuColors) {
         self.anchor = anchor
         self.regions = regions
@@ -290,7 +249,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
                                                             object: NSApp, queue: nil) { [weak self] _ in
             MainActor.assumeIsolated { self?.done = true }
         }
-        // NSMenu's mode: page and engine work continues; default-mode timers wait.
         while !done, parent.isVisible {
             guard let event = NSApp.nextEvent(matching: .any, until: .distantFuture, inMode: .eventTracking,
                                               dequeue: true) else { continue }
@@ -299,7 +257,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         NotificationCenter.default.removeObserver(resign)
         close()
         running = false
-        // AppKit performs the chosen item after the menu has closed.
         if let item = chosen, let owner = item.menu {
             chosen = nil
             owner.performActionForItem(at: owner.index(of: item))
@@ -314,8 +271,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         wake()
     }
 
-    /// Engine work and VoiceOver end the menu between events; the loop waits
-    /// for one.
     private func wake() {
         if let event = NSEvent.otherEvent(with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
                                           windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0) {
@@ -326,9 +281,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
     private static let ignored: Set<NSEvent.EventType> = [.keyUp, .flagsChanged, .scrollWheel, .magnify, .rotate, .swipe,
                                                           .smartMagnify, .beginGesture, .endGesture, .pressure]
 
-    /// NSMenu's handling: the pointer and keys drive the cards, a press
-    /// outside them closes the menu without reaching anything else, and the
-    /// window server's and the app's own events pass through.
     private func handle(_ event: NSEvent) {
         switch event.type {
         case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
@@ -350,7 +302,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? event.locationInWindow
     }
 
-    /// The deepest card under `point` (screen), and the item row there.
     private func hit(_ point: NSPoint) -> (level: Int, row: Int?)? {
         for index in levels.indices.reversed() {
             let (view, window, _) = levels[index]
@@ -360,10 +311,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         return nil
     }
 
-    /// The row under the pointer takes the highlight and opens its submenu;
-    /// another row closes it, after a moment while the pointer heads into
-    /// the open submenu, as NSMenu's does. Off every card the deepest card
-    /// lets go.
     private func track(_ point: NSPoint) {
         let previous = pointer
         pointer = point
@@ -389,11 +336,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         highlight(row, in: level)
     }
 
-    /// A row's toolTip (the engine's reason a row is unavailable) shows as
-    /// Parc's tooltip with TooltipController's behaviour: after its stop
-    /// and idle delays once the pointer rests on the row, at once while a
-    /// tooltip is still up or fading, moving that tooltip on the same card,
-    /// and fading out when the pointer leaves. Timers run in this loop's mode.
     private func hover(_ row: Int?, in level: Int?) {
         if let tip, tip.level == level, tip.row == row {
             tip.timer?.fireDate = Date(timeIntervalSinceNow: tip.delay)
@@ -403,7 +345,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         tip?.timer?.invalidate()
         tip = nil
         guard let level, let row, let reason = levels[level].view.items[row].toolTip, !reason.isEmpty else {
-            // Leaving a reason row starts the one fade; moving on doesn't restart it.
             if left { fadeTip(TooltipTiming.exitDuration) }
             return
         }
@@ -445,7 +386,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         }
     }
 
-    /// The tooltip fades; a show before the fade ends takes it back.
     private func fadeTip(_ duration: TimeInterval) {
         guard let current = tipPresenter else { return }
         current.presenter.dismiss(duration: duration, delay: 0) { [weak self] in
@@ -471,8 +411,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         if !opened, item.isEnabled, let submenu = item.submenu { openSubmenu(submenu, from: level, row: row) }
     }
 
-    /// Whether `to` lies in the triangle from `from` to the near corners of
-    /// the card at `level`: the pointer is on its way into that card.
     private func heading(from: NSPoint, to: NSPoint, into level: Int) -> Bool {
         let (view, window, right) = levels[level]
         let card = window.convertToScreen(view.convert(view.card, to: nil))
@@ -483,8 +421,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         return !(sides.contains { $0 < 0 } && sides.contains { $0 > 0 })
     }
 
-    /// As in NSMenu, the card with the lit row has the keys, even under a
-    /// submenu the pointer opened; Right or Return goes into that submenu.
     private func key(_ event: NSEvent) {
         pendingRow?.invalidate()
         pendingRow = nil
@@ -512,7 +448,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         }
     }
 
-    /// The next enabled row, wrapping; from none, the first or the last.
     private func move(_ delta: Int, in level: Int) {
         guard levels.indices.contains(level) else { return }
         let view = levels[level].view
@@ -540,8 +475,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         open(submenu, beside: window.convertToScreen(view.convert(view.submenuAnchor(row), to: nil)), right: right)
     }
 
-    /// A card for `menu` beside `row` (screen), in a child window of the card
-    /// it hangs from. The cards never become key; this loop reads the keys.
     private func open(_ menu: NSMenu, beside row: NSRect, right: Bool) {
         guard let owner = levels.last?.window ?? parent else { return }
         menu.update()
@@ -569,18 +502,15 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         SidebarPlusMenuMotion.animateOpen(view, about: Self.pivot(view, right: placed.right))
     }
 
-    ///
     private static func pivot(_ view: PArcContextMenuView, right: Bool) -> NSPoint {
         NSPoint(x: right ? view.card.minX : view.card.maxX, y: view.card.maxY)
     }
 
-    /// Submenus close at once, as NSMenu's do.
     private func closeLevels(after level: Int) {
         if let tip, tip.level > level {
             tip.timer?.invalidate()
             self.tip = nil
         }
-        // A tooltip goes with its card.
         if let current = tipPresenter, current.level > level {
             current.presenter.close()
             tipPresenter = nil
@@ -593,7 +523,6 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         }
     }
 
-    ///
     private func close() {
         pendingRow?.invalidate()
         pendingRow = nil

@@ -1,11 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// NewSetupView `_confetti` overlay: `HStack(spacing: 200) { ForEach(0..<6) { Confetti } }`
-///
-///
-///
-///
 final class OnboardingConfettiView: NSView {
     enum Config {
         static let cannons = 6
@@ -21,24 +16,18 @@ final class OnboardingConfettiView: NSView {
         static let openingDegrees: ClosedRange<Double> = 60...120
         static let radius: CGFloat = 300
         static let rainHeight: CGFloat = 800
-        ///
         static let rainDuration: Double = Double(rainHeight + radius) / 200
-        ///
         static let fadeDelay: ClosedRange<Double> = 1...4
         static let fadeDuration: Double = 0.5
-        /// Explosion: `.spring(response: 0.5, dampingFraction: 0.75).delay(random(0.05...0.1))`.
         static let springResponse: Double = 0.5
         static let springDamping: Double = 0.75
         static let burstDelay: ClosedRange<Double> = 0.05...0.1
-        ///
         static let distance: ClosedRange<Double> = 0.5...2
-        /// Spin speeds `1 + random(0..<1)`; x spin repeats 10 times, z forever.
         static let spinSpeed: ClosedRange<Double> = 1...2
         static let xSpinRepeats: Float = 10
         static var lifetime: Double { max(rainDuration, fadeDelay.upperBound + fadeDuration) }
     }
 
-    /// One piece's randomized ConfettiView/ConfettiAnimationView state.
     struct Piece {
         var cannon: Int
         var glyph: Int
@@ -67,7 +56,6 @@ final class OnboardingConfettiView: NSView {
                          anchor: Bool.random(using: &generator) ? 1 : 0)
         }
 
-        /// Offset from the cannon (y up), opacity and spin angles `time` seconds after the burst.
         func sample(at time: Double) -> (offset: CGVector, opacity: Double, xAngle: Double, zAngle: Double) {
             let burst = OnboardingConfettiView.spring(time - burstDelay)
             let rain = OnboardingConfettiView.rainCurve(min(1, max(0, time / Config.rainDuration)))
@@ -82,7 +70,6 @@ final class OnboardingConfettiView: NSView {
     private let pieces = CALayer()
     private var pending: DispatchWorkItem?
     private var cleanup: DispatchWorkItem?
-    /// NewSetupView sets its counter to `!reduceMotion`, so a second visit doesn't refire.
     private(set) var hasFired = false
     var isPending: Bool { pending != nil }
     var livePieceCount: Int { pieces.sublayers?.count ?? 0 }
@@ -106,7 +93,6 @@ final class OnboardingConfettiView: NSView {
         CATransaction.commit()
     }
 
-    /// Cannon centres along the view's horizontal centre line.
     static func cannonPoints(in bounds: NSRect) -> [CGPoint] {
         (0..<Config.cannons).map { index in
             CGPoint(x: bounds.midX + (CGFloat(index) - CGFloat(Config.cannons - 1) / 2) * Config.cannonSpacing,
@@ -120,15 +106,12 @@ final class OnboardingConfettiView: NSView {
         }
     }
 
-    /// Fires once, `delay` seconds from now, unless cancelled or already fired.
     func fire(after delay: TimeInterval) {
         guard !hasFired, pending == nil else { return }
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.pending = nil
-            // The delayed writer re-reads Reduce Motion when it runs.
             guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-            // A minimised or not-yet-shown window gets its burst once it is seen.
             guard let window = self.window, window.isVisible, !window.isMiniaturized,
                   !self.isHiddenOrHasHiddenAncestor else { self.fire(after: 0.25); return }
             self.hasFired = true
@@ -175,7 +158,6 @@ final class OnboardingConfettiView: NSView {
         holder.bounds = CGRect(origin: .zero, size: size)
         holder.position = point
         holder.opacity = 0
-        // ConfettiAnimationView: rotation3DEffect about x, then about z at UnitPoint(anchor, anchor).
         let orbit = CALayer()
         orbit.bounds = holder.bounds
         orbit.anchorPoint = CGPoint(x: piece.anchor, y: 1 - piece.anchor)
@@ -227,11 +209,9 @@ final class OnboardingConfettiView: NSView {
         return holder
     }
 
-    /// `timingCurve(0.12, 0, 0.39, 0)` for the rain and the fade.
     private static let rainTiming = CAMediaTimingFunction(controlPoints: 0.12, 0, 0.39, 0)
 
     static func rainCurve(_ x: Double) -> Double {
-        // Cubic Bézier (0.12, 0) (0.39, 0): solve x(t) by bisection, return y(t).
         func bezier(_ t: Double, _ a: Double, _ b: Double) -> Double {
             3 * (1 - t) * (1 - t) * t * a + 3 * (1 - t) * t * t * b + t * t * t
         }
@@ -245,7 +225,6 @@ final class OnboardingConfettiView: NSView {
         return bezier((low + high) / 2, 0, 0)
     }
 
-    /// Unit-step response of `.spring(response: 0.5, dampingFraction: 0.75)`.
     static func spring(_ time: Double) -> Double {
         guard time > 0 else { return 0 }
         let omega = 2 * Double.pi / Config.springResponse, zeta = Config.springDamping
@@ -253,7 +232,6 @@ final class OnboardingConfettiView: NSView {
         return 1 - exp(-zeta * omega * time) * (cos(damped * time) + zeta * omega / damped * sin(damped * time))
     }
 
-    /// `[glyph][color]` images of `Text(glyph).font(.system(size: 12))`.
     static func glyphImages(scale: CGFloat) -> [[(CGImage, CGSize)?]] {
         Config.glyphs.map { glyph in
             Config.colors.map { color in

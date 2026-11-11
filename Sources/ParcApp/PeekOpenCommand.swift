@@ -1,7 +1,5 @@
 import AppKit
 
-/// One original modal and destination survive menu tracking. A later validation
-/// or dispatch cannot substitute another Peek, Space or physical window.
 @MainActor final class PeekOpenCommand {
     private weak var window: NSWindow?
     private let targetIsAvailable: () -> Bool

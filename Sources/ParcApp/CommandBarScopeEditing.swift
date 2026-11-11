@@ -1,7 +1,5 @@
 import AppKit
 
-/// The menu owns the original provider query and native UTF-16 edit range.
-/// It never promotes a selected suggestion's displayed text into a request.
 struct CommandBarScopeEditing {
     let query: String
     let displayedText: String
@@ -17,8 +15,6 @@ struct CommandBarScopeEditing {
         displayedText == query ? selection : NSRange(location: (query as NSString).length, length: 0)
     }
     func removingScope(prefix: String?) -> (text: String, selection: NSRange) {
-        //
-        // query without an added separator, placing the caret at that boundary.
         guard let prefix else {
             return (query, NSRange(location: 0, length: (query as NSString).length))
         }
@@ -27,19 +23,12 @@ struct CommandBarScopeEditing {
     }
 }
 
-///
-///
-/// keyword scopes the same token. Only a site's pill opens the site search menu.
 final class CommandBarScopePill: PointingHandButton {
     var onOpen: (() -> Void)?
-    ///
     var focusColor: NSColor = CommandBarPalette.colourless.scopePill {
         didSet { if focusColor != oldValue { refreshGlow(); refreshLayer() } }
     }
-    ///
-    ///
     private static let titleInsets = NSEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
-    ///
     let titleLabel = NSTextField(labelWithString: "")
     private var opensMenu = false
     init() {
@@ -63,7 +52,6 @@ final class CommandBarScopePill: PointingHandButton {
         setAccessibilityValue(unavailable ? "\(name), unavailable" : name)
         setAccessibilityHelp("Open the site search menu to change, remove or manage this search scope.")
     }
-    /// Actions has no site-provider menu, so it reads as a scope label.
     func showActions() {
         show("Actions", color: .white, opensMenu: false)
         setAccessibilityRole(.staticText)
@@ -91,8 +79,6 @@ final class CommandBarScopePill: PointingHandButton {
     override func layout() {
         super.layout()
         let insets = Self.titleInsets
-        //
-        // text padding. A pill held at its 50-point minimum centres a short title.
         let width = max(0, min(titleLabel.intrinsicContentSize.width, bounds.width - insets.left - insets.right))
         titleLabel.frame = titleLabel.frame(forAlignmentRect: NSRect(x: ((bounds.width - width) / 2).rounded(),
             y: insets.bottom, width: width, height: max(0, bounds.height - insets.top - insets.bottom)))
@@ -101,8 +87,6 @@ final class CommandBarScopePill: PointingHandButton {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance(); refreshGlow(); refreshLayer()
     }
-    /// CommandBarInputScopedSearchPillView draws a half-height continuous capsule
-    ///
     private func refreshLayer() {
         guard let layer else { return }
         let radius = (bounds.height / 2).rounded(.towardZero)
@@ -110,7 +94,6 @@ final class CommandBarScopePill: PointingHandButton {
         effectiveAppearance.performAsCurrentDrawingAppearance { layer.backgroundColor = focusColor.cgColor }
         layer.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
-    ///
     private func refreshGlow() {
         let glow = NSShadow()
         glow.shadowBlurRadius = 8; glow.shadowOffset = NSSize(width: 0, height: -1)
@@ -124,25 +107,18 @@ final class CommandBarScopePill: PointingHandButton {
         guard isEnabled, opensMenu, !isHidden else { return false }
         openMenu(); return true
     }
-    /// Clicks on the title belong to the pill.
     override func hitTest(_ point: NSPoint) -> NSView? {
         isHidden || !frame.contains(point) ? nil : self
     }
 }
 
-///
-/// CommandBarTextSecondaryColor, then each trigger key on a keycap, 8 points
-///
-///
 final class CommandBarScopeHint: NSButton {
     static let textColor = NSColor(name: nil) { $0.isDark ? .white.withAlphaComponent(0.33) : .black.withAlphaComponent(0.33) }
     static let keyColor = NSColor(name: nil) { $0.isDark ? .white.withAlphaComponent(0.66) : .black.withAlphaComponent(0.5) }
     static let keyFill = NSColor(name: nil) { $0.isDark ? .white.withAlphaComponent(0.05) : .black.withAlphaComponent(0.05) }
     static let spacing: CGFloat = 8, keyPadding: CGFloat = 4, keyRadius: CGFloat = 4
-    ///
     static let font = CommandBarTypography.label
 
-    /// Hint text and "or" are drawn here; each key is a keycap subview.
     private var hint = ""
     private(set) var textFrames: [(text: String, frame: NSRect)] = []
     private var keycaps: [CommandBarKeycap] = []
@@ -165,7 +141,6 @@ final class CommandBarScopeHint: NSButton {
     }
     static var textHeight: CGFloat { ceil(font.ascender - font.descender + font.leading) }
     static func width(_ text: String) -> CGFloat { ceil((text as NSString).size(withAttributes: [.font: font]).width) }
-    /// Hint, then Space, "or" and Tab when Space also enters the scope.
     private var parts: [Any] {
         keycaps.count == 2 ? [hint, keycaps[0], "or", keycaps[1]] : [hint] + keycaps
     }
@@ -177,8 +152,6 @@ final class CommandBarScopeHint: NSButton {
         return NSSize(width: parts.map(partWidth).reduce(0, +) + Self.spacing * CGFloat(max(0, parts.count - 1)),
                       height: Self.textHeight + 2 * Self.keyPadding)
     }
-    /// Keys keep their size at the trailing edge; a narrow frame tail-truncates
-    /// the hint text, then drops it.
     override func layout() {
         super.layout()
         let parts = parts, natural = intrinsicContentSize.width, hintWidth = partWidth(hint)
@@ -211,7 +184,6 @@ final class CommandBarScopeHint: NSButton {
     }
 }
 
-///
 final class CommandBarKeycap: NSView {
     let key: String
     init(key: String) {
@@ -237,8 +209,6 @@ private extension NSAppearance {
     var isDark: Bool { bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
 }
 
-/// Native Tab is scope entry/exit only at the actual empty-query boundary.
-/// Nonempty scoped Tab remains editing; no command is executed by completion.
 enum CommandBarScopeKeyboard {
     enum Scope { case ordinary, actions, website, unavailable }
     enum TabAction { case enterActions, leaveScope, complete }

@@ -1,7 +1,5 @@
 import AppKit
 
-///
-/// The original window's admission callback remains the placement authority.
 @MainActor
 enum SplitDropGeometry {
     typealias Proposal = (SplitDropTarget, SplitOrientation, NSRect)
@@ -17,8 +15,6 @@ enum SplitDropGeometry {
         let single = frames.count == 1
         var insertion: (before: Bool, axis: SplitOrientation)?
 
-        // The original unflipped classifier checks vertical edges first when a
-        // single pane permits either axis. Exact threshold equality is center.
         if single && allowsSinglePaneVertical {
             let vertical = min(rect.height * 0.25, 50)
             if y < vertical { insertion = (true, .vertical) }
@@ -38,22 +34,13 @@ enum SplitDropGeometry {
         if let insertion {
             let target = SplitDropTarget.insert(index + (insertion.before ? 0 : 1))
             if canPropose(target, insertion.axis) {
-                // The classified pane's exact captured frame, header included.
-                //
                 return (target, insertion.axis, rect)
             }
         }
-        // The native proposal owner asks replacement permission when edge
-        // insertion is refused; an unavailable insertion is not a dead region.
         return canPropose(.replace(index), orientation) ? (.replace(index), orientation, rect) : nil
     }
 }
 
-///
-///
-/// which publishes a replacement pane as `proposedWindowContentDropTarget`)
-/// and, when the new proposal has no drop region already at its slot, performs
-/// generic haptic feedback (`isDragDropHapticFeedbackEnabled` defaults to true).
 @MainActor
 final class SplitDropTargetTracker {
     private(set) var target: SplitDropTarget?
@@ -67,8 +54,5 @@ final class SplitDropTargetTracker {
         onChange?(next)
         if next != nil, !reusedRegion { performFeedback() }
     }
-    ///
-    /// proposal without feedback. The interactive pane edit itself (delegate
-    /// slots 6/7) is `ParcSplitView.InteractivePaneEdit`.
     func reset() { update(nil, reusedRegion: true) }
 }

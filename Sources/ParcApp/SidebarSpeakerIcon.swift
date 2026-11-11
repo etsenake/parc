@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The reference uses a persistent SpeakerIcon, rather than replacing the
-/// system symbol when the page's mute state changes.
 @MainActor final class SidebarSpeakerModel: ObservableObject {
     @Published var muted: Bool
     @Published var color: NSColor = .labelColor
@@ -51,8 +49,6 @@ struct SidebarSpeakerIcon: View {
     }
 }
 
-/// The clip is the full icon less a rotating rounded diagonal. Its length is
-///
 private struct SpeakerCutout: Shape {
     var progress: CGFloat
     var animatableData: CGFloat { get { progress } set { progress = newValue } }
@@ -69,7 +65,6 @@ private struct SpeakerCutout: Shape {
     }
 }
 
-/// Normalized filled paths recovered from the three 8×12 wave Shapes.
 private struct SpeakerWave: Shape {
     let index: Int
     private typealias Curve = (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat, CGFloat)

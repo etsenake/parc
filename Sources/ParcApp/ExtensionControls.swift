@@ -1,9 +1,6 @@
 import AppKit
 import QuartzCore
 
-///
-///
-///
 enum ExtensionControlStyle {
     case sidebar, toolbar
     var surfaceSize: NSSize {
@@ -11,15 +8,9 @@ enum ExtensionControlStyle {
     }
     var cornerRadius: CGFloat { self == .sidebar ? 9 : 6 }
     static let iconSize: CGFloat = 16
-    /// The engine's action image canvas (extension_action_bridge.mm).
     static let iconCanvas: CGFloat = 32
 }
 
-/// Chromium centres the 16-point icon in the requested canvas and anchors its
-/// badge to the centred 28-point icon area (IconWithBadgeImageSource), so the
-/// canvas is shown at its own size around the surface's centre, independent of
-/// the click surface. Any other image, such as the fallback symbol, keeps the
-/// centred 16-point rect. Never mutate that shared image or draw a second badge.
 private final class ExtensionActionButtonCell: NSButtonCell {
     override func highlight(_ flag: Bool, withFrame cellFrame: NSRect, in controlView: NSView) {
         super.highlight(flag, withFrame: cellFrame, in: controlView)
@@ -34,8 +25,6 @@ private final class ExtensionActionButtonCell: NSButtonCell {
     }
 }
 
-// Value presentation only. The callback retains the engine's immutable action
-// lease; an extension ID alone never authorizes dispatch to a replacement model.
 @MainActor
 struct ExtensionControlItem {
     let identifier: String
@@ -46,30 +35,22 @@ struct ExtensionControlItem {
     let pinnedIndex: Int?
     let canChangePin: Bool
     let execute: () -> Void
-    /// Shows the action's menu beside `control`, its button or tile.
     let showContextMenu: (_ control: NSView) -> Void
     let setPinned: (Bool) -> Void
-    /// The pinned strips' artwork. Nil shows `image`, the engine's baked canvas.
     var pinnedArtwork: ExtensionPinnedArtwork? = nil
-    /// The action's badge text, whichever canvas shows it.
     var badgeText = ""
 }
 
-/// The engine's resolved badge colours (Chromium's defaults for unset ones).
 struct ExtensionActionBadge: Equatable {
     let text: String
     let textColor: NSColor
     let backgroundColor: NSColor
 }
 
-/// The unbadged action canvas, grayscale and blocked decoration intact, with
-/// the badge the pinned strips draw over it themselves.
 struct ExtensionPinnedArtwork {
     let image: NSImage
     let badge: ExtensionActionBadge?
 
-    /// Nil, so the baked canvas is shown, when an older engine has no unbadged
-    /// canvas or lacks a colour for a badge it reports.
     init?(unbadged: NSImage?, badgeText: String, textColor: NSColor?, backgroundColor: NSColor?) {
         guard let unbadged else { return nil }
         if badgeText.isEmpty {
@@ -82,14 +63,10 @@ struct ExtensionPinnedArtwork {
     }
 }
 
-/// Parc's pinned-action badge, a deliberate departure from Chromium's
-/// bottom-right badge (November 1 request): an iPhone-style pill over the icon's
-/// top-right corner, overhanging it by `overhang` and growing leftward.
 enum ExtensionActionBadgeMetrics {
     static let height: CGFloat = 11
     static let overhang: CGFloat = 4
     static let horizontalPadding: CGFloat = 2.5
-    /// Reaches the 28-point sidebar surface's leading edge; "9999" fits.
     static let maxWidth: CGFloat = 26
     static let font = NSFont.systemFont(ofSize: 8, weight: .bold)
 
@@ -97,7 +74,6 @@ enum ExtensionActionBadgeMetrics {
         let textWidth = (text as NSString).size(withAttributes: [.font: font]).width
         return min(maxWidth, max(height, (textWidth + horizontalPadding * 2).rounded(.up)))
     }
-    /// The badge frame for a 16-point icon centred in `bounds` (flipped).
     static func frame(text: String, in bounds: NSRect) -> NSRect {
         let icon = ExtensionControlStyle.iconSize
         let iconMinY = (bounds.midY - icon / 2).rounded(.down)
@@ -144,7 +120,6 @@ final class ExtensionActionButton: PointingHandButton {
     private var pressed = false
     private var keyObserver: NSObjectProtocol?
     private let badgeView = ExtensionActionBadgeView()
-    /// The shell-drawn badge's frame, or nil without one.
     var badgeFrame: NSRect? { badgeView.isHidden ? nil : badgeView.frame }
 
     init(item: ExtensionControlItem, style: ExtensionControlStyle = .sidebar) {
@@ -160,9 +135,6 @@ final class ExtensionActionButton: PointingHandButton {
         action = #selector(invoke)
         wantsLayer = true
         layer?.cornerRadius = style.cornerRadius
-        // The 32-point canvas exceeds the 24-point toolbar surface: a baked
-        // badge crosses the plate by 2 points and the blocked decoration's
-        // shadow overhangs it, both inside the 32-point bar.
         clipsToBounds = false
         focusRingType = .exterior
         addSubview(badgeView)
@@ -184,12 +156,7 @@ final class ExtensionActionButton: PointingHandButton {
         LiveShortcutToolTip.set(self, item.tooltip.isEmpty ? item.name : item.tooltip)
         image = item.pinnedArtwork?.image ?? item.image
             ?? NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)
-        // Setting the native cell's image may restore imageOverlaps. Keep the
-        // title available to AppKit without painting it over the action icon.
         imagePosition = .imageOnly
-        // A baked canvas already carries Chromium's badge; only the unbadged
-        // one gets the shell's. Do not suppress the model's disabled-action
-        // context-menu fallback by disabling this button.
         badgeView.badge = item.pinnedArtwork?.badge
         needsLayout = true
         invokeAction = item.execute
@@ -213,7 +180,6 @@ final class ExtensionActionButton: PointingHandButton {
 
     @objc private func invoke() {
         guard available else { return }
-        // A callback may replace/remove this button synchronously.
         let perform = trackingMouseDown ? mouseDownAction : invokeAction
         perform?()
     }
@@ -240,9 +206,6 @@ final class ExtensionActionButton: PointingHandButton {
         if event.modifierFlags.contains(.control) {
             rightMouseDown(with: event)
         } else {
-            // Hold the presented lease for this gesture. A model notification
-            // during AppKit tracking must not retarget its eventual mouse-up
-            // to a new extension instance with the same ID.
             mouseDownAction = invokeAction
             trackingMouseDown = true
             defer { trackingMouseDown = false; mouseDownAction = nil; setPressed(false) }
@@ -262,8 +225,6 @@ final class ExtensionActionButton: PointingHandButton {
     }
     override func mouseEntered(with event: NSEvent) { hovered = true; updateHighlight() }
     override func mouseExited(with event: NSEvent) { hovered = false; updateHighlight() }
-    /// AppKit mouse tracking highlights the cell directly, not NSButton's
-    /// convenience highlight method. The cell forwards that real transition.
     fileprivate func nativeHighlight(_ flag: Bool) {
         setPressed(style == .sidebar && flag && available && window?.isKeyWindow == true)
     }
@@ -293,8 +254,6 @@ final class ExtensionActionButton: PointingHandButton {
     }
     private func updateHighlight() {
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        //
-        //
         let fill = dark ? NSColor(white: 1, alpha: pressed ? 0.103 : 0.077)
                         : NSColor(white: 0, alpha: pressed ? 0.09 : 0.071)
         CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -314,8 +273,6 @@ final class ExtensionActionButton: PointingHandButton {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, window != nil else {
             layer.removeAnimation(forKey: "extensionPress"); return
         }
-        //
-        // the presentation value. Reduce Motion settles immediately.
         let spring = CASpringAnimation(keyPath: "transform")
         spring.mass = 1; spring.stiffness = pow(2 * Double.pi / 0.3, 2)
         spring.damping = 4 * Double.pi * 0.6 / 0.3
@@ -329,24 +286,16 @@ final class ExtensionActionButton: PointingHandButton {
     }
 }
 
-// Native pinned-action row. Snapshot order comes from the profile's real
-// ToolbarActionsModel. Compression hides excess pins only here; the complete
-// collection remains available in the Site Control Center (WEB14).
 @MainActor
 final class ExtensionToolbarView: NSView {
     let style: ExtensionControlStyle
     private var buttons: [String: ExtensionActionButton] = [:]
     private var orderedIDs: [String] = []
     var onWidthChange: (() -> Void)?
-    /// Called when the pinned buttons or their order change, so the sidebar can
-    /// relink its key views.
     var onButtonsChange: (() -> Void)?
     private(set) var desiredWidth: CGFloat = 0
-    /// The pinned buttons in their leading-to-trailing order.
     var orderedButtons: [NSView] { orderedIDs.compactMap { buttons[$0] } }
     override var isFlipped: Bool { true }
-    /// False makes the fully transparent toolbar pass clicks through; keyboard
-    /// and accessibility access stay.
     var hitTestsWhenTransparent = true
     override func hitTest(_ point: NSPoint) -> NSView? {
         if !hitTestsWhenTransparent, alphaValue < 0.01 { return nil }

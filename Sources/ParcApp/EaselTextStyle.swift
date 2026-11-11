@@ -1,8 +1,6 @@
 import AppKit
 import CoreText
 
-/// The original object-wide font palette remains the base style for new text.
-/// Range attributes are carried separately and are never flattened into it.
 enum EaselTextAppearance {
     private static let registerFonts: Void = {
         let names = ["SpaceMono-Regular", "SpaceMono-Bold", "EBGaramond-VariableFont_wght",
@@ -75,9 +73,6 @@ enum EaselTextAppearance {
     }
 }
 
-/// A single TextKit geometry owner for canvas drawing and the native editor.
-///
-/// indexed caller discards that return value. Native glyph metrics remain real.
 @MainActor
 enum EaselTextLayout {
     static let inset = NSSize(width: 5, height: 4)
@@ -112,9 +107,6 @@ enum EaselTextLayout {
         }
     }
 
-    ///
-    /// native bounds, use cap height plus descent padding, then pad horizontally.
-    /// Attachments keep their actual cell bounds; they are not font glyphs.
     static func lineRects(manager: NSLayoutManager, container: NSTextContainer) -> [NSRect] {
         guard let storage = manager.textStorage else { return [] }
         manager.ensureLayout(for: container)
@@ -142,8 +134,6 @@ enum EaselTextLayout {
                 if !rect.isEmpty { line = line.union(rect) }
             }
             guard !line.isNull, !line.isEmpty else { return }
-            // The shipped plain-text owner takes its first native font here.
-            // Per-line font selection extends that contract to mixed rich text.
             let characters = manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
             let font = characters.location < storage.length ? storage.attribute(.font, at: characters.location, effectiveRange: nil) as? NSFont : nil
             let padding = max(6, CTFontGetDescent(font ?? NSFont.systemFont(ofSize: 12)) * 1.3)
@@ -152,8 +142,6 @@ enum EaselTextLayout {
         return result
     }
 
-    ///
-    /// compares only the previous pass's adjacent line edges, with strict <.
     static func smoothed(_ input: [NSRect], radius: CGFloat) -> [NSRect] {
         var rectangles = input
         for _ in 0..<3 {
@@ -175,8 +163,6 @@ enum EaselTextLayout {
         for rect in smoothed(rects, radius: radius) where !rect.isEmpty && !rect.isNull {
             rectangles.addRect(rect)
         }
-        //
-        // All input rectangles share winding; normalization removes inner edges.
         let union = rectangles.normalized(using: .winding)
         let rounded = CGMutablePath()
         var vertices: [CGPoint] = []
@@ -201,7 +187,7 @@ enum EaselTextLayout {
             case .moveToPoint: finishContour(); vertices.append(element.pointee.points[0])
             case .addLineToPoint: vertices.append(element.pointee.points[0])
             case .closeSubpath: finishContour()
-            default: break // Rectangular union contains only straight segments.
+            default: break
             }
         }
         finishContour()
@@ -257,8 +243,6 @@ struct EaselStyledText: Codable, Equatable {
         try validate()
         let encoded = try JSONEncoder().encode(self)
         let value = attributed
-        // AppKit's RTF exporter substitutes its private system font; the
-        // versioned carrier remains authoritative for exact Clean styling.
         let images = EaselTextAttachments.hasImages(value)
         let native = try value.data(from: NSRange(location: 0, length: value.length),
             documentAttributes: [.documentType: images ? NSAttributedString.DocumentType.rtfd : NSAttributedString.DocumentType.rtf])
@@ -305,8 +289,6 @@ struct EaselStyledText: Codable, Equatable {
     }
 }
 
-/// A text object owns its local editing history, as in EaselTextView's
-/// undoManagerForTextView:. Document-level undo stays with EaselSession.
 final class EaselStyledTextView: LocalContentDropTextView {
     let localUndo = UndoManager()
     var hasLoadedDocument = false
@@ -325,8 +307,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
         }
         needsDisplay = true; onObjectLayoutChanged?()
     }
-    /// A document editor may own a different default body size than the Easel
-    /// palette. Nil keeps the existing object palette behavior for canvas text.
     var paragraphBodyPointSize: CGFloat?
     var objectColor = "#252525"
     var onClipboardError: ((Error) -> Void)?
@@ -368,8 +348,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
     }
     func retire() { linkPopover?.close(); linkPopover = nil; editRevision = UUID() }
     func resetEditingHistory() {
-        // Shared-session rollback can run inside an active native event group.
-        // Clear its actions while preserving the caller's balanced grouping.
         let level = localUndo.groupingLevel, automatic = localUndo.groupsByEvent
         localUndo.groupsByEvent = false
         localUndo.removeAllActions()
@@ -379,8 +357,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
             let revision = editRevision
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.editRevision == revision, self.localUndo.groupingLevel == 0 else { return }
-                // Drop only empty replacement groups after their original
-                // caller/event closes them. A newer edit keeps its own history.
                 self.localUndo.removeAllActions()
             }
         }
@@ -413,7 +389,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
         typing.removeValue(forKey: .attachment); typing.removeValue(forKey: .link)
         let input = NSAttributedString(string: text, attributes: typing)
         var replacement = range
-        // Match native structured insertion when a paste joins list paragraphs.
         if (before.string as NSString).substring(with: range).contains("\n"), NSMaxRange(range) < before.length {
             let ending = (before.string as NSString).paragraphRange(for: NSRange(location: NSMaxRange(range), length: 0))
             let prefix = EaselParagraphEditing.markerRange(before, paragraph: ending)
@@ -423,27 +398,17 @@ final class EaselStyledTextView: LocalContentDropTextView {
         EaselParagraphEditing.replace(&edit, range: replacement, with: input)
         edit.selection = NSRange(location: replacement.location + input.length, length: 0)
         if text.contains("\n") || (before.string as NSString).substring(with: range).contains("\n") { EaselParagraphEditing.renumber(&edit) }
-        // Joining differently styled paragraphs makes NSTextStorage choose one
-        // paragraph style. Validate and compare that native result, not the
-        // pre-normalization ranges which would report failure after a real edit.
         let normalized = NSTextStorage(attributedString: edit.text)
         normalized.fixAttributes(in: NSRange(location: 0, length: normalized.length))
         edit.text = NSMutableAttributedString(attributedString: normalized)
         _ = try EaselRichTextCodec.snapshot(edit.text)
-        // NSTextView's insertText preserves a replaced link even for an
-        // attributed argument without .link. Commit the explicit plain candidate
-        // through the existing delegate/Undo owner so that link cannot leak.
         commitParagraph(edit, name: "Paste text")
         return attributedString().isEqual(to: edit.text)
     }
-    ///
-    /// selected self-labelled link, which is replaced by the incoming URL.
     private func pasteLink(_ url: URL) throws -> Bool {
         let before = attributedString(), range = selectedRange()
         guard Self.validFormattingRanges([range], length: before.length) else { return false }
         let selected = before.attributedSubstring(from: range)
-        // A URL must never replace an attachment's only byte-bearing character
-        // merely to make it a label. Keep that unsupported edit atomic.
         guard !EaselTextAttachments.hasImages(selected) else { throw EaselTextClipboardError.unsupportedAttachment }
         var typing = typingAttributes
         typing.removeValue(forKey: .attachment); typing.removeValue(forKey: .link)
@@ -455,8 +420,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
         var edit = EaselParagraphEditing.Edit(text: NSMutableAttributedString(attributedString: before), selection: range, typing: typing)
         EaselParagraphEditing.replace(&edit, range: range, with: replacement)
         edit.selection = NSRange(location: range.location + replacement.length, length: 0)
-        // Validate the entire candidate before entering the native delegate and
-        // single undo transaction; imported labels keep their original styles.
         _ = try EaselRichTextCodec.snapshot(edit.text)
         commitParagraph(edit, name: "Paste link")
         return attributedString().isEqual(to: edit.text)
@@ -475,15 +438,12 @@ final class EaselStyledTextView: LocalContentDropTextView {
         }
         let character = EaselTextAttachments.character(image, attributes: typing)
         replacement.append(character)
-        // NSTextStorage makes paragraph attributes uniform through its newline.
-        // Include that native normalization in the prepared transaction too.
         var boundary = character.attributes(at: 0, effectiveRange: nil); boundary.removeValue(forKey: .attachment)
         replacement.append(NSAttributedString(string: "\n", attributes: boundary))
         var edit = EaselParagraphEditing.Edit(text: NSMutableAttributedString(attributedString: before), selection: range, typing: typing)
         EaselParagraphEditing.replace(&edit, range: range, with: replacement)
         edit.selection = NSRange(location: range.location + replacement.length, length: 0)
         EaselParagraphEditing.renumber(&edit)
-        // One undo includes the original range, line boundaries and image.
         commitParagraph(edit, name: "Insert image")
         return attributedString().isEqual(to: edit.text)
     }
@@ -504,8 +464,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
         }
         guard hasList else { super.insertText(insertString, replacementRange: replacementRange); return }
         var replacement = range
-        // Joining paragraphs consumes the following structural marker, rather
-        // than leaving an apparent second bullet in the middle of a sentence.
         if (value.string as NSString).substring(with: range).contains("\n"), NSMaxRange(range) < value.length {
             let ending = (value.string as NSString).paragraphRange(for: NSRange(location: NSMaxRange(range), length: 0))
             let prefix = EaselParagraphEditing.markerRange(value, paragraph: ending)
@@ -559,9 +517,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
     override func pasteAsRichText(_ sender: Any?) { paste(sender) }
     override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool { pasteContent(from: pboard) }
 
-    /// AppKit may replace a rendered glyph's font while retaining the authored
-    /// face in NSOriginalFont. Edit that face, as the durable codec already does,
-    /// then let layout choose a fresh fallback for the newly formatted glyph.
     private func authoredAttributes(_ attributes: [NSAttributedString.Key: Any]) throws -> [NSAttributedString.Key: Any] {
         let key = NSAttributedString.Key("NSOriginalFont")
         guard let value = attributes[key] else { return attributes }
@@ -571,8 +526,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
         return result
     }
 
-    /// Attribute edits use the same native text-storage/undo owner as typing.
-    /// A collapsed selection changes typing attributes only, never other text.
     func format(_ name: String, ranges suppliedRanges: [NSRange]? = nil, _ change: ([NSAttributedString.Key: Any]) throws -> [NSAttributedString.Key: Any]) {
         guard isEditable, !hasMarkedText() else { return }
         let selections = selectedRanges.map(\.rangeValue)
@@ -604,8 +557,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
         window?.makeFirstResponder(self)
     }
     private func restoreFormatting(_ value: NSAttributedString, selections: [NSRange], name: String, replacingSelection: [NSRange]? = nil) {
-        // Native shouldChangeText may temporarily select its combined edit
-        // span. Undo belongs to the selection before that delegate preflight.
         let original = NSAttributedString(attributedString: attributedString()), originalSelections = replacingSelection ?? selectedRanges.map(\.rangeValue)
         localUndo.registerUndo(withTarget: self) { view in view.restoreFormatting(original, selections: originalSelections, name: name) }
         localUndo.setActionName(name)
@@ -640,8 +591,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
     }
     private func commitParagraph(_ edit: EaselParagraphEditing.Edit, name: String) {
         do { _ = try EaselRichTextCodec.snapshot(edit.text) } catch { onClipboardError?(error); return }
-        // Ask the native delegate before mutation, but own one complete undo
-        // record; NSTextView otherwise also records its replace-characters undo.
         let originalSelections = selectedRanges.map(\.rangeValue)
         localUndo.disableUndoRegistration()
         let accepted = shouldChangeText(in: NSRange(location: 0, length: (string as NSString).length), replacementString: edit.text.string)
@@ -658,8 +607,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
         localUndo.disableUndoRegistration()
         textStorage?.setAttributedString(value); selectedRanges = selections.map(NSValue.init(range:)); typingAttributes = typing
         localUndo.enableUndoRegistration()
-        // The durable edit delegate may reject a save and clear native history.
-        // Restore registration before that reentrant owner runs.
         didChangeText()
     }
     func changeListIndent(outdent: Bool) -> Bool {
@@ -667,8 +614,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
         if let edit = EaselParagraphEditing.indent(attributedString(), selection: selectedRange(), typing: typingAttributes, outdent: outdent, base: objectStyle) {
             commitParagraph(edit, name: outdent ? "Decrease list indent" : "Increase list indent"); return true
         }
-        // A list at the recovered maximum depth consumes Tab without inserting
-        // an unstructured tab into its marker. Ordinary text keeps native Tab.
         return paragraphKind() == .bullets || paragraphKind() == .numbers
     }
     override func insertTab(_ sender: Any?) {
@@ -724,8 +669,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
             var style = matched ?? EaselTextStyle(family: EaselTextAppearance.paletteFamily(current) ?? self.objectStyle.family, size: .body)
             mutation(&style)
             let replacement = try EaselTextAppearance.font(style, preservingEmphasisFrom: current)
-            // Changing family must not replace a paragraph heading's actual
-            // 32/26/22-point size with the object palette's unrelated Body size.
             next[.font] = matched == nil && preservingSize
                 ? NSFontManager.shared.convert(replacement, toSize: current.pointSize) : replacement
             return next
@@ -805,8 +748,6 @@ final class EaselStyledTextView: LocalContentDropTextView {
 
 }
 
-/// Recovered 50×88 TextMenu rail. The inline disclosure preserves native rich
-/// formatting/fill controls in the same responder subtree as the text owner.
 final class EaselTextStyleBar: NSView {
     var onVisibilityChange: ((Bool) -> Void)?
     private let details = EaselSurfaceView(frame: .zero)
@@ -875,8 +816,6 @@ final class EaselTextStyleBar: NSView {
     }
     override func layout() {
         super.layout()
-        // The rail keeps its original dimensions even when the rich disclosure
-        // is taller; controls are 24pt with 4pt inter-control spacing.
         let railY = (bounds.height - 88) / 2
         larger.frame = NSRect(x: 13, y: railY + 60, width: 24, height: 24)
         fontButton.frame = NSRect(x: 13, y: railY + 32, width: 24, height: 24)
@@ -942,8 +881,6 @@ final class EaselTextStyleBar: NSView {
         } else { families.isEnabled = true; sizes.isEnabled = true }
     }
     @objc private func selectFill() {
-        // AppKit cycles on → mixed for a tristate checkbox. Mixed is only a
-        // selection summary here; activation toggles the displayed on state.
         onFill?(displayedFillState == .on ? .none : .contentHugging)
         fill.state = displayedFillState
     }

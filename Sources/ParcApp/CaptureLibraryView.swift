@@ -3,8 +3,6 @@ import Combine
 import UniformTypeIdentifiers
 import ImageIO
 
-/// Saved captures and external files share presentation, retaining separate
-/// storage, permission, revision and action owners.
 @MainActor
 final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFieldDelegate {
     let store: CaptureLibraryStore
@@ -12,8 +10,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private let media: ExternalMediaLibrary
     var onClose: (() -> Void)?
     var onOpenSource: ((String) -> Void)?
-    ///
-    ///
     var onToast: ((PArcToastContent) -> Void)?
     var palette: ThemeChromePalette? { didSet { collection.backgroundColors = [.clear] } }
     private let search: NSTextField
@@ -30,8 +26,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         var cacheKey: String { switch self { case .capture(let item): return item.revision.uuidString; case .file(let item): return item.id + String(describing: item.revision) } }
     }
     private var items: [Item] = []
-    ///
-    /// has no permanent status or item-count footer.
     private let accessStatus = NSTextField(labelWithString: "")
     private var actionError: String?
     private let mediaClient = UUID()
@@ -41,13 +35,8 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private var ownedSheet: NSWindow?
     private var windowObservers: [NSObjectProtocol] = []
     private var scrollObservers: [NSObjectProtocol] = []
-    ///
     private var isScrolling = false
     private var subscriptions = Set<AnyCancellable>()
-    /// Last Captures-visible catalog snapshot this view applied. Duplicate
-    /// store/media `@Published` admissions that leave these fields untouched
-    /// return before filter/sort/rebuild; real list/error/loading/folder flips
-    /// miss and reload.
     private var observedCaptures: [SavedCapture] = []
     private var observedCaptureLoadError: String?
     private var observedCaptureLoading = false
@@ -58,9 +47,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private var thumbnails: [String: NSImage] = [:]
     private var thumbnailTasks: [String: (id: UUID, task: Task<Void, Never>)] = [:]
     private var generation: UInt64 = 0
-    /// Only retirement of this long-lived presentation invalidates reporting.
-    /// Preview/navigation work intentionally advances `generation` without
-    /// hiding an error or preventing the media catalog's recovery refresh.
     private var presentationGeneration: UInt64 = 0
     private var captureSharing: CaptureLibrarySharing?
     private var shareRequest: UUID?
@@ -107,8 +93,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
             return self.captureMenu(capture)
         }
         collection.onEmptyMenu = { [weak self] in self?.foldersMenu() }
-        // A load-error message can overlay existing items; only an empty
-        // grid's message stands in for the grid's own empty-area menu.
         message.onMenu = { [weak self] in
             guard let self, self.items.isEmpty else { return nil }
             return self.foldersMenu()
@@ -151,8 +135,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         if let ownedSheet, window?.attachedSheet === ownedSheet { window?.endSheet(ownedSheet, returnCode: .cancel) }
         ownedSheet = nil; media.deactivate(mediaClient); thumbnails = [:]
         thumbnailTasks.values.forEach { $0.task.cancel() }; thumbnailTasks = [:]
-        // This view is long-lived and re-shown on later presentations; a
-        // file-action failure from the previous presentation must not persist.
         if actionError != nil { actionError = nil; setAccessStatus(statusText()) }
     }
     override func viewDidMoveToWindow() {
@@ -163,7 +145,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
             windowObservers.append(center.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.invalidate() }
             })
-            // Tile hover tracking is limited to the key window.
             for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
                 windowObservers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated {
@@ -175,7 +156,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         activate()
     }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
-        // A scroll interrupted by removal may never post its end.
         if newWindow == nil { invalidate(); setScrolling(false) }
         super.viewWillMove(toWindow: newWindow)
     }
@@ -198,12 +178,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         return false
     }
     private func reload(force: Bool = false) {
-        // `$items`/`$loadError`/`$isLoading` and media `$items`/`$folders`/
-        // `$error`/`$isLoading` all sink here while Captures is open. Skip
-        // before filter/sort/rebuild when the Captures-visible catalog
-        // fingerprint already matches the last applied snapshot. Real capture
-        // list, media membership, folder access, loading/error, and filter
-        // (force) changes miss and reload; force paths always apply.
         if !force && shouldSkipCatalogReload() { return }
         rememberAppliedCatalog()
         let selected = selectedItem?.id
@@ -242,10 +216,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         }
     }
 
-    /// True when this view already applied the Captures-visible store/media
-    /// catalog. Duplicate combineLatest admissions that leave captures, media
-    /// files, folders, and loading/error bits untouched return before
-    /// filter/sort. Membership, folder access, and status flips still miss.
     private func shouldSkipCatalogReload() -> Bool {
         store.items == observedCaptures
             && store.loadError == observedCaptureLoadError
@@ -288,14 +258,11 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
                     guard !Task.isCancelled, self.generation == generation, self.contains(item), let image = NSImage(data: data) else { return }
                     if self.thumbnails.count >= 128, let key = self.thumbnails.keys.first { self.thumbnails.removeValue(forKey: key) }
                     self.thumbnails[item.cacheKey] = image
-                    // Reloading the item would deselect it and replace its hovered tile.
                     if let index = self.items.firstIndex(of: item),
                        let cell = self.collection.item(at: IndexPath(item: index, section: 0)) as? CaptureLibraryCell {
                         cell.setImage(image)
                     }
                 } catch {
-                    // Missing bytes remain an explicit unavailable image; opening
-                    // it presents the disk error, never a fabricated screenshot.
                 }
             }
             thumbnailTasks[item.cacheKey] = (taskID, task)
@@ -355,9 +322,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         open(item)
         if case .capture(let capture) = item, preview?.selectedItem == capture { preview?.deleteImage() }
     }
-    /// Shift-F10, Control-Return and Show Menu open the selected item's menu,
-    /// or the folder menu when nothing is selected; with Option, or from the
-    /// accessibility action, they always open the folder menu.
     private func showKeyboardMenu(foldersOnly: Bool) -> Bool {
         guard let request = keyboardMenu(foldersOnly: foldersOnly) else { return false }
         request.menu.popUp(positioning: nil, at: request.point, in: collection)
@@ -375,8 +339,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
                             y: min(max(selectedFrame.maxY, visible.minY), visible.maxY))
         return (menu, point)
     }
-    /// Media folder sources: the menu for the grid's empty area, the empty-state
-    /// message and the keyboard/accessibility routes.
     private func foldersMenu() -> NSMenu? {
         guard ownerValid() else { return nil }
         beginUserAction()
@@ -463,8 +425,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         guard unavailable > 0 else { return "" }
         return "\(unavailable) folder\(unavailable == 1 ? " needs" : "s need") access. Right-click empty space to fix."
     }
-    /// A file-action failure outlives the refresh that follows it and clears
-    /// on the next search edit, menu, or item command.
     private func report(_ error: Error) {
         guard ownerValid() else { return }
         actionError = error.localizedDescription; setAccessStatus(statusText())
@@ -499,7 +459,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
         menu.addItem(MenuAction.item("Open in Default App") { [weak self] in self?.openFile(file) })
         menu.addItem(MenuAction.item("Show in Finder") { [weak self] in
             guard let self, self.ownerValid(), self.media.contains(file) else { return }
-            // Finder also permits downloading a cloud placeholder, which Parc never reads automatically.
             NSWorkspace.shared.activateFileViewerSelecting([file.url])
         })
         menu.addItem(MenuAction.item("Copy File") { [weak self] in self?.copyFile(file) })
@@ -542,7 +501,6 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
                   CGImageSourceCreateWithData(data as CFData, nil) != nil else { throw CocoaError(.fileReadCorruptFile) }
             NSPasteboard.general.clearContents()
             guard NSPasteboard.general.setData(data, forType: NSPasteboard.PasteboardType(type.identifier)) else { throw CocoaError(.fileWriteUnknown) }
-            // HomeScreenshotPageDelegateAction.copyImage(path:) → ToastType.copyFile.
             self.onToast?(.copiedFile([file.url]))
         }
     }
@@ -737,14 +695,6 @@ private final class CaptureLibraryCell: NSCollectionViewItem {
     override var isSelected: Bool { didSet { tile.isSelected = isSelected } }
 }
 
-///
-/// thumbnail on white paper (captures get a dashed white border instead).
-/// Hover outside a live scroll, or selection, grows the plate to the cell
-/// edge, the thumbnail frame from 95% to 100% and deepens the paper shadow on
-/// one spring(response 0.18, damping 0.8). A scroll keeps a current highlight
-/// until the pointer leaves but refuses new hovers until it ends. Hover and
-///
-/// content shape beyond what it draws.
 @MainActor
 private final class CaptureLibraryTile: NSView {
     enum Kind { case capture, image, video }
@@ -759,8 +709,6 @@ private final class CaptureLibraryTile: NSView {
     private var applied: Bool?
     private let plate = CALayer(), placeholder = CALayer(), paper = CALayer()
     private let border = CAShapeLayer(), artwork = CALayer(), play = CALayer()
-    /// The badge's black 20% shadow (one point down, blur 2 = layer radius 1)
-    /// is drawn into the image so the layer needs no offscreen shadow pass.
     private static let playGlyph: NSImage? = {
         guard let symbol = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 22, weight: .bold)) else { return nil }
@@ -887,7 +835,6 @@ private final class CaptureLibraryTile: NSView {
             }
         }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        //
         let down: CGFloat = paper.contentsAreFlipped() ? 1 : -1
         let plateRect = plateFrame(lit)
         plate.position = CGPoint(x: plateRect.midX, y: plateRect.midY)
@@ -926,8 +873,6 @@ private final class CaptureLibraryTile: NSView {
     }
 }
 
-/// The centred empty-state text sits over the grid's empty area, so its
-/// right-click opens the same folder menu.
 @MainActor
 private final class CaptureEmptyMessage: NSTextField {
     var onMenu: (() -> NSMenu?)?
@@ -938,7 +883,6 @@ private final class CaptureEmptyMessage: NSTextField {
 final class CaptureCollectionView: NSCollectionView {
     var onMenu: ((Int) -> NSMenu?)?
     var onEmptyMenu: (() -> NSMenu?)?
-    /// A tile only takes events on its plate; the rest of its cell is grid space.
     private func tileIndex(at event: NSEvent) -> IndexPath? {
         let point = convert(event.locationInWindow, from: nil)
         guard let index = indexPathForItem(at: point), let tile = item(at: index)?.view, tile.hitTest(point) != nil else { return nil }
@@ -1233,7 +1177,6 @@ private final class CaptureLibraryPreview: NSObject {
         guard !finished, !closing, valid(), store.contains(selected), outputSheet == nil,
               panel.attachedSheet == nil else { return }
         let item = selected
-        //
         var content = PArcDialog.Content(title: [("Delete this capture?", false)],
             message: [("The saved image will be permanently removed from this profile’s Library. Exported files and copies in Easels are kept.", false)],
             confirm: "Delete", cancel: "Cancel")

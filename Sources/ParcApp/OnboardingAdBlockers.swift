@@ -1,9 +1,6 @@
 import AppKit
 import SwiftUI
 
-///
-/// native option and its "Recommended" row are omitted because Parc has no
-/// native ad blocker.
 struct OnboardingAdBlockersChoice: View {
     let blockers: [OnboardingDraft.ImportedAdBlocker]
     let choice: OnboardingDraft.AdBlockerChoice?
@@ -12,7 +9,6 @@ struct OnboardingAdBlockersChoice: View {
     let onSelect: (OnboardingDraft.AdBlockerChoice) -> Void
 
     static func height(blockerCount: Int) -> CGFloat {
-        //
         guard blockerCount > 0 else { return 2 * rowHeight + spacing }
         let rows = CGFloat(blockerCount + 1)
         return rows * rowHeight + rows * spacing + 1

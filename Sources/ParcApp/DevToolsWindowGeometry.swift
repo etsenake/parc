@@ -1,19 +1,11 @@
 import AppKit
 
-///
-/// Docked left/right/bottom bounds stay with Chromium's resizing strategy.
 enum DevToolsWindowGeometry {
-    ///
     static let autosaveSuffix = ".devToolsWindowAutosaveFrame"
-    /// `initWithContentRect:styleMask:backing:defer:` mask `0x800f`.
     static let styleMask: NSWindow.StyleMask = [
         .titled, .closable, .miniaturizable, .resizable, .fullSizeContentView
     ]
-    /// `setCollectionBehavior:` value `0x100`.
     static let collectionBehavior: NSWindow.CollectionBehavior = .fullScreenPrimary
-    /// Used only when `setFrameUsingName:` fails and the window is still empty.
-    ///
-    /// Parc has no hosting controller, so this first-open size is an adaptation.
     static let emptyRestoreFallbackSize = NSSize(width: 840, height: 640)
 
     static func frameAutosaveName(bundleIdentifier: String?) -> String {
@@ -41,9 +33,6 @@ enum DevToolsWindowGeometry {
     }
 }
 
-/// Planned undocked DevTools root frames for one layout pass. Identical child
-/// frames/hidden mean frame writes + `synchronizeLayout` are a true no-op;
-/// reveal (`showToolsWindowIfHidden`) still runs on every layout.
 struct DevToolsRootLayoutPlan: Equatable {
     var sidePanelFrame: NSRect
     var pageContainerFrame: NSRect
@@ -51,8 +40,6 @@ struct DevToolsRootLayoutPlan: Equatable {
     var sidePanelHidden: Bool
 }
 
-/// True no-op gate for undocked root frame writes / geometry sync. Real bounds,
-/// side panel, or error-footer changes still rewrite frames and sync hosts.
 enum DevToolsRootLayoutSkip {
     static func plan(bounds: NSRect, sidePanelVisible: Bool,
                      errorHidden: Bool) -> DevToolsRootLayoutPlan {
@@ -72,7 +59,6 @@ enum DevToolsRootLayoutSkip {
         )
     }
 
-    /// Surfaces already match the plan: skip frame writes and onLayout.
     static func surfacesAlreadyMatch(
         _ plan: DevToolsRootLayoutPlan,
         sidePanelFrame: NSRect,

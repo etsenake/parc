@@ -10,8 +10,6 @@ struct AboutParcInfo {
         let info = bundle.infoDictionary ?? [:]
         version = info["CFBundleShortVersionString"] as? String ?? "Development"
         build = info["CFBundleVersion"] as? String ?? "unversioned"
-        // Written by the packager from the source lock verified against the
-        // sealed engine. CEF's framework plist contains a truncated version.
         chromium = info["ParcChromiumVersion"] as? String ?? "Unavailable in this build"
         webKit = Bundle(path: "/System/Library/Frameworks/WebKit.framework")?
             .object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "System version"

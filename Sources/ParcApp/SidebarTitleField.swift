@@ -1,7 +1,5 @@
 import AppKit
 
-/// The native field editor owns selection, composition, undo and ordinary keys.
-/// An edit completes once; Escape and owner removal never publish a name.
 final class SidebarTitleField: NSTextField, NSTextFieldDelegate {
     var onFinish: ((String?) -> Void)?
     private(set) var editingTitle = false
@@ -32,8 +30,6 @@ final class SidebarTitleField: NSTextField, NSTextFieldDelegate {
     private func finish(_ value: String?) {
         guard editingTitle else { return }
         editingTitle = false
-        // Hide before ending AppKit editing so its end notification cannot
-        // recursively commit or target a newly rebuilt row.
         isHidden = true
         abortEditing()
         onFinish?(value)
@@ -50,9 +46,6 @@ final class SidebarTitleField: NSTextField, NSTextFieldDelegate {
     func controlTextDidEndEditing(_ notification: Notification) {
         guard editingTitle, notification.object as? NSTextField === self else { return }
         let value = stringValue, generation = editGeneration
-        // AppKit sends didEndEditing before willMove during removal. Let that
-        // ownership change cancel first, while preserving ordinary click-away
-        // completion from the same native field/editor session.
         DispatchQueue.main.async { [weak self, weak originalWindow = window] in
             guard let self, self.editingTitle, self.editGeneration == generation else { return }
             guard let originalWindow, self.window === originalWindow,

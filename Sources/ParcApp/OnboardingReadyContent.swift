@@ -2,9 +2,6 @@ import AppKit
 import Combine
 import UniformTypeIdentifiers
 
-///
-/// Share/Download/Randomize match Setup.Action.downloadTapped / randomTapped
-/// and UserCard.sharingItem. Replay must not regenerate the saved card.
 @MainActor
 final class OnboardingReadyContent: NSView, @preconcurrency NSSharingServicePickerDelegate {
     private let card = MembershipCardView(frame: NSRect(origin: .zero, size: MembershipCardArtwork.size))
@@ -22,8 +19,6 @@ final class OnboardingReadyContent: NSView, @preconcurrency NSSharingServicePick
     override init(frame: NSRect) {
         super.init(frame: frame)
         addSubview(card)
-        //
-        //
         for (button, help, label) in [
             (share, "Share", "Share card"), (download, "Download", "Download card"),
             (randomize, "Randomize", "Randomize card design")
@@ -84,7 +79,6 @@ final class OnboardingReadyContent: NSView, @preconcurrency NSSharingServicePick
         card.frame = NSRect(x: (bounds.width - cardSize.width) / 2,
                             y: max(72, (bounds.height - cardSize.height) / 2 - 12),
                             width: cardSize.width, height: cardSize.height)
-        //
         let buttons = [share, download, randomize]
         let total = CGFloat(buttons.count * 32 + max(0, buttons.count - 1) * 10)
         var x = bounds.midX - total / 2
@@ -125,7 +119,6 @@ final class OnboardingReadyContent: NSView, @preconcurrency NSSharingServicePick
 
     private func downloadCard() {
         guard actionWindow != nil, savePanel == nil else { return }
-        //
         let panel = NSSavePanel(); panel.allowedContentTypes = [.png]; panel.canCreateDirectories = true
         panel.nameFieldStringValue = Self.downloadName(cardName: cardName)
         let generation = UUID(); saveGeneration = generation; savePanel = panel
@@ -133,8 +126,6 @@ final class OnboardingReadyContent: NSView, @preconcurrency NSSharingServicePick
             guard let self, let panel, self.saveGeneration == generation else { return }
             self.savePanel = nil
             guard response == .OK, let url = panel.url else { return }
-            // The panel is modeless, so Randomize may have run meanwhile:
-            // save the card as it is now.
             do {
                 guard let data = try self.snapshot().representation(using: .png, properties: [:]) else {
                     throw MembershipCardFailure.unreadable
@@ -144,7 +135,6 @@ final class OnboardingReadyContent: NSView, @preconcurrency NSSharingServicePick
         }
     }
 
-    /// Leaving the step or closing setup drops an open save panel, as Settings' card does.
     func cancelPresentation() {
         saveGeneration = UUID()
         savePanel?.cancel(nil); savePanel = nil
@@ -157,10 +147,8 @@ final class OnboardingReadyContent: NSView, @preconcurrency NSSharingServicePick
         catch { report(error.localizedDescription) }
     }
 
-    ///
     static let shareText = "I just set up Parc!"
 
-    ///
     static func downloadName(cardName: String) -> String {
         let name = cardName.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")

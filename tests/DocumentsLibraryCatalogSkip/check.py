@@ -23,7 +23,7 @@ assert "private func rememberAppliedCatalog(notes: [NoteDocument], easels: [Ease
     "rememberAppliedCatalog missing"
 
 reload = re.search(
-    r"func reload\(force: Bool = false\) \{(?P<body>.*?)\n    \}\n\n    /// True when this view already applied the Documents-visible",
+    r"func reload\(force: Bool = false\) \{(?P<body>.*?)\n    \}\n\n    private func shouldSkipCatalogReload\(notes:",
     source, re.S)
 assert reload, "reload(force:) not found"
 body = reload.group("body")

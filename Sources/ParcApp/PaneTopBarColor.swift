@@ -1,32 +1,12 @@
 import AppKit
 
-///
-///
-/// content it sets `canAnimateBackgroundColor` and `backgroundColor` from the
-///
-///
-///
-/// colour's contrast, else the window's own appearance. See docs/split-groups.md.
 enum PaneTopBarColor {
     static let crossfadeDuration: TimeInterval = 0.18
 
-    ///
-    /// BasePrimaryDark (white) at 0.75 are composited over the page colour
-    ///
-    ///
-    /// those components as already linear; this keeps that.
     static func usesDarkScheme(on background: NSColor) -> Bool? {
         components(background).map { usesDarkScheme(over: $0, compositesGammaEncoded: false) }
     }
 
-    ///
-    /// for a content without a blueprint: the Space theme's background under
-    ///
-    /// content takes the window's appearance here instead, but its sampler
-    /// nearly always supplies a colour; Parc uses this branch so a light
-    ///
-    /// composites gives white ink at about 2:1 over a dark theme in a light
-    /// window, so this branch decodes them as WCAG does.
     @MainActor static func usesDarkScheme(backingOver theme: NSColor, windowDark: Bool) -> Bool? {
         var resolved: RGBA?
         NSAppearance(named: windowDark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
@@ -38,17 +18,12 @@ enum PaneTopBarColor {
         return usesDarkScheme(over: surface, compositesGammaEncoded: true)
     }
 
-    ///
-    ///
     @MainActor static var backing: NSColor { SplitPanePlaceholder.emptyContentBackground }
 
-    /// TopBarButtonStyle's FullOpacityForegroundPrimary glyph ink while enabled.
     static func glyph(dark: Bool) -> NSColor {
         (dark ? NSColor.white : .black).withAlphaComponent(dark ? 0.675 : 0.55)
     }
 
-    /// A page colour the bar can fill with: opaque after conversion to sRGB.
-    /// Transparent or partly transparent colours leave the bar clear.
     static func fill(from color: NSColor?) -> NSColor? {
         guard let rgb = color?.usingColorSpace(.sRGB), rgb.alphaComponent >= 1 else { return nil }
         return rgb
@@ -64,8 +39,6 @@ enum PaneTopBarColor {
             >= contrast(surfaceLuminance, luminance(black, gammaEncoded: compositesGammaEncoded))
     }
 
-    ///
-    /// are read as gamma-encoded.
     private static func components(_ color: NSColor) -> RGBA? {
         guard let rgb = color.usingColorSpace(.deviceRGB) else { return nil }
         return RGBA(red: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent, alpha: rgb.alphaComponent)

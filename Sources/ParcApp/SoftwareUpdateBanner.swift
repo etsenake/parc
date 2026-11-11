@@ -1,24 +1,13 @@
 import Foundation
 
-///
-/// `updateSummary`): one state that every browser window's sidebar shows.
 @MainActor
 final class SoftwareUpdateBanner: ObservableObject {
     static let shared = SoftwareUpdateBanner()
-    /// The What's New page in the bundle's Resources (UPD06 renders it at build
-    /// time); a build without it has no release notes to open.
     static var releaseNotesURL: URL? { Bundle.main.url(forResource: "WhatsNew", withExtension: "html") }
-    /// Where Share Parc points: the public releases page.
     static let shareURL = URL(string: "https://github.com/etsenake/parc-releases")!
 
-    /// Update Complete!: the update this run is the first since, until the
-    /// banner is retired.
     @Published private(set) var completedUpdate: AppVersion?
-    /// The version the completed update replaced, when known.
     private(set) var updatedFrom: AppVersion?
-    /// See What's New opens the page at this fragment, such as
-    /// `from=1.7.0&to=1.9.0`, and the page marks the releases in between. Naming
-    /// both ends lets a tab restored after a later update ignore the old range.
     var completedUpdateFragment: String? {
         guard let completedUpdate, let updatedFrom else { return nil }
         return "from=\(updatedFrom.version)&to=\(completedUpdate.version)"
@@ -26,10 +15,8 @@ final class SoftwareUpdateBanner: ObservableObject {
     private var record: ReleaseNotesLaunch?
     private var directory: URL?
 
-    /// The banner offers See What's New, so a build without the page shows none.
     var showsCompletedUpdate: Bool { completedUpdate != nil && Self.releaseNotesURL != nil }
 
-    /// Records a run that actually started on `directory`.
     func launch(in directory: URL, existingData: Bool,
                 current: AppVersion? = AppVersion(infoDictionary: Bundle.main.infoDictionary)) {
         guard let current else { return }
@@ -41,8 +28,6 @@ final class SoftwareUpdateBanner: ObservableObject {
         updatedFrom = record.updatedFrom
     }
 
-    ///
-    /// one launch only; a launch that never reaches a browser window keeps it.
     func markCompletedUpdateShown() {
         guard var record, let directory, record.pending != nil else { return }
         record.markShown()
@@ -50,7 +35,6 @@ final class SoftwareUpdateBanner: ObservableObject {
         self.record = record
     }
 
-    /// See What's New or the close button.
     func retireCompletedUpdate() {
         markCompletedUpdateShown()
         completedUpdate = nil

@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// AuthFeature owns this presentation above its setup card. Closing help must
-/// never close, advance or replace the retained browser-import controller.
 @MainActor
 final class OnboardingPasswordHelp: NSView {
     private let presentation = Presentation()
@@ -17,8 +15,6 @@ final class OnboardingPasswordHelp: NSView {
         host = NSHostingView(rootView: Content(presentation: presentation, dismiss: { [weak self] in self?.dismiss() }))
         host.frame = bounds; host.autoresizingMask = [.width, .height]
         addSubview(host)
-        // This overlay has one actionable control. Keep native Tab traversal
-        // inside its host instead of returning to the covered setup controls.
         host.nextKeyView = host
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -37,7 +33,6 @@ final class OnboardingPasswordHelp: NSView {
         previousResponder = nil
         setPresented(false, animated: animated)
         onDismiss?()
-        // Never pull focus back from another app/window, or into a retired view.
         if owner?.isKeyWindow == true, let view = responder as? NSView, view.window === owner {
             owner?.makeFirstResponder(view)
         }
@@ -68,8 +63,6 @@ final class OnboardingPasswordHelp: NSView {
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         static let cardSize = CGSize(width: 950, height: 680)
         static let margin: CGFloat = 24
-        /// The full card centers 793-point instructions; a narrower card keeps
-        /// the same text sizes and wraps them inside at least this inset.
         static let instructionsWidth: CGFloat = 793
         static let minimumInset: CGFloat = 32
 
@@ -129,7 +122,6 @@ final class OnboardingPasswordHelp: NSView {
             return "Exporting Safari Passwords"
         }
 
-        /// The full card's title sits 6.5 points inside its instructions' edge.
         private func page(inset: CGFloat, width: CGFloat) -> some View {
             VStack(spacing: 0) {
                 Text(title).font(.system(size: 36, weight: .bold)).fixedSize(horizontal: false, vertical: true)
@@ -141,9 +133,6 @@ final class OnboardingPasswordHelp: NSView {
 
         @ViewBuilder private func instructions(width: CGFloat) -> some View {
             if #available(macOS 15, *) {
-                // macOS 15 moved password export out of Safari. Keep the same
-                // help owner and three-step composition, with current commands;
-                // do not present Ventura's screenshot as the current interface.
                 VStack(alignment: .leading, spacing: 32) {
                     instruction(1, title: "Open Passwords", detail: "Open Apple’s Passwords app and unlock it yourself.")
                     instruction(2, title: "Export your passwords", detail: "Choose File → Export All Passwords to File, then save the CSV.")
@@ -152,7 +141,6 @@ final class OnboardingPasswordHelp: NSView {
                 .frame(width: width, alignment: .leading)
                 .padding(.top, 24)
             } else {
-                // The full card draws the illustration at 793×468.
                 SafariIllustration().frame(width: width, height: width * 468 / Self.instructionsWidth)
             }
         }
@@ -179,8 +167,6 @@ final class OnboardingPasswordHelp: NSView {
         }
     }
 
-    ///
-    /// Its GrayA4/GrayA5 surfaces change on hover/press without a scale effect.
     private struct HelpCloseButtonStyle: ButtonStyle {
         @Environment(\.colorScheme) private var colorScheme
         @State private var hovered = false

@@ -101,7 +101,7 @@ assert "shouldCommitResize" not in fn, \
     "finishDividerResize must not gate away performWindowCommand side effects"
 
 minimum = re.search(
-    r"private func updateContainerMinimum\(\) \{(?P<body>.*?)\n    \}\n\n    /// Drop reserve",
+    r"private func updateContainerMinimum\(\) \{(?P<body>.*?)\n    \}\n\n    fileprivate func applyDropReserveLayout\(\) \{",
     split, re.S)
 assert minimum, "updateContainerMinimum not found"
 mn = minimum.group("body")

@@ -21,8 +21,6 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
     var hasPendingBodyPublication: Bool { pendingBodyPublication != nil }
     private(set) var chromeLayoutCount = 0
     private var laidOutErrorChrome = false
-    /// Last chrome geometry `layoutDocument` applied. Identical inputs skip
-    /// footer/scroll/format/key-loop work; document height reflow still runs.
     private var lastAppliedChromeFingerprint: NoteEditorChromeFingerprint?
     private var base: NoteDocument
     private var publishing = false
@@ -84,7 +82,6 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
         formatting.onError = { [weak self] in self?.showError($0) }
         formatting.bindMotion()
         documentView.addSubview(formatting)
-        // Native keyboard/AX access complements the recovered hover gutter.
         formatButton.target = formatting; formatButton.action = #selector(NoteFormattingView.formatSelection(_:))
         formatButton.bezelStyle = .inline; formatButton.font = .systemFont(ofSize: 11)
         NoteAccessibility.configureFormatFallback(formatButton, selection: false); root.addSubview(formatButton)
@@ -96,9 +93,6 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
         NoteAccessibility.configureFooter(retry: retry, discard: discard, status: status)
         root.onLayout = { [weak self] in self?.layoutDocument() }
         apply(base)
-        //
-        // true). Title updates remain immediate. Disk save is a separate
-        // 3-second delayed DocumentsClient.save effect.
         bodyPublicationSubscription = bodyPublications
             .throttle(for: .milliseconds(500), scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] token in
@@ -119,9 +113,6 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
             guard let self, !self.publishing else { return }
             if document.revision != self.base.revision { self.formatting.contentsChanged() }
             if document.deleted {
-                // The durable tombstone intentionally clears its stored fields.
-                // Retain this view's original text/selection for read-only Copy;
-                // never apply the tombstone as a replacement empty document.
                 self.base.revision = document.revision; self.base.deleted = true
                 self.text.isEditable = false; self.titleText.isEditable = false
                 self.formatting.retire(); self.formatButton.isEnabled = false
@@ -172,10 +163,6 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
             stackedError: stackedError
         )
         let formatEnabled = text.isEditable && !text.hasMarkedText()
-        // Same spirit as Easel document chrome (`lastChromeSize`): when the
-        // note chrome geometry fingerprint already matches, skip footer /
-        // scroll / format / key-loop writes. Typing may still change document
-        // height — reflow that without marking the whole chrome dirty.
         if NoteEditorChromeLayoutSkip.shouldSkip(
             previous: lastAppliedChromeFingerprint,
             next: fingerprint
@@ -200,8 +187,6 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
         retry.frame = NSRect(x: size.width - 195, y: size.height - 29, width: 62, height: 26)
         discard.frame = NSRect(x: size.width - 130, y: size.height - 29, width: 116, height: 26)
         if stackedError {
-            // Local durability controls remain usable in a narrow split pane.
-            // This footer is an explicit adaptation, separate from load errors.
             status.frame = NSRect(x: 18, y: size.height - 86, width: max(0, size.width - 36), height: 18)
             retry.frame = NSRect(x: 18, y: size.height - 62, width: min(62, max(0, size.width - 36)), height: 26)
             discard.frame = NSRect(x: 18, y: size.height - 32, width: min(116, max(0, size.width - 36)), height: 26)
@@ -215,16 +200,12 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
     }
     func textDidChange(_ notification: Notification) {
         guard !publishing, let source = notification.object as? NSTextView else { return }
-        // Do not set needsLayout on every keystroke. layoutDocument skips
-        // chrome when the geometry fingerprint matches and still reflows
-        // document height when typing changes it.
         if source === titleText {
             titleDirty = true; titleText.needsDisplay = true
             layoutDocument()
             if !titleText.hasMarkedText() { _ = saveTitle() } else { updateStatus() }
         } else if source === text {
             formatting.contentsChanged(); bodyDirty = true
-            // A composing draft cannot be published by an older queued edit.
             pendingBodyPublication = nil
             layoutDocument()
             if !text.hasMarkedText() {
@@ -270,8 +251,6 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
             bodyDirty = false; if !titleDirty { error = nil }; updateStatus(); return true
         } catch { showError(error); return false }
     }
-    // Called before original tab/window/profile retirement and app shutdown.
-    // A failed disk write keeps the real draft and refuses that close.
     func prepareToClose() -> Bool {
         guard isViewLoaded, !session.document.deleted else { return true }
         formatting.retire(); pendingBodyPublication = nil
@@ -306,8 +285,6 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
         status.toolTip = error?.localizedDescription; retry.isHidden = error == nil || session.document.deleted
         discard.isHidden = retry.isHidden
         NoteAccessibility.configureFooter(retry: retry, discard: discard, status: status)
-        // Footer height follows error presence, including a deleted document
-        // whose Retry/Discard controls stay hidden.
         if retry.isHidden != retryWasHidden || (error != nil) != laidOutErrorChrome {
             view.needsLayout = true
         }
@@ -340,8 +317,6 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
                let caret = NoteKeyboardEditing.beginningOfLineCaret(in: text.string, selection: text.selectedRange()) {
                 text.setSelectedRange(caret); return true
             }
-            // Body `insertNewline:` is witness slot 10 / FormatMenu.didPressEnter.
-            // Absent a menu the selector stays native. Alternate-Return is not mapped.
             if command == #selector(NSResponder.insertNewline(_:)), formatting.isPresentingMenu {
                 formatting.pressEnter(); return true
             }
@@ -378,8 +353,6 @@ final class NoteEditorViewController: NSViewController, NSTextViewDelegate {
     }
     private func transferBodyLine() {
         let line = NoteKeyboardEditing.firstLine(text.string), offset = titleText.string.utf16.count
-        // The plain title cannot carry embedded images. Keep the original body
-        // intact rather than silently erase an attachment's only local bytes.
         let first = text.attributedString().attributedSubstring(from: line.removal)
         guard !EaselTextAttachments.hasImages(first) else { showError(EaselTextClipboardError.unsupportedFormatting); return }
         let next = NSMutableAttributedString(attributedString: text.attributedString()); next.deleteCharacters(in: line.removal)
@@ -428,9 +401,6 @@ private final class NoteLayoutView: NoteCanvasView {
     override func layout() { super.layout(); onLayout?() }
 }
 
-/// Inputs `NoteEditorViewController.layoutDocument` uses to place scroll,
-/// footer, format control and the key loop. Identical values mean those chrome
-/// frames would only be rewritten; document height reflow is separate.
 struct NoteEditorChromeFingerprint: Equatable {
     var width: CGFloat
     var height: CGFloat
@@ -438,10 +408,6 @@ struct NoteEditorChromeFingerprint: Equatable {
     var stackedError: Bool
 }
 
-/// True no-op gate for note editor chrome layout. A first apply
-/// (`previous == nil`) or any bounds/error-footer input change still runs the
-/// full chrome pass. Matching fingerprints skip footer/scroll/format/key-loop
-/// work while typing may still reflow document height.
 enum NoteEditorChromeLayoutSkip {
     static func shouldSkip(
         previous: NoteEditorChromeFingerprint?,

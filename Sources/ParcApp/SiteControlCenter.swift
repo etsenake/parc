@@ -2,23 +2,10 @@ import AppKit
 import Combine
 import SwiftUI
 
-//
-// order and actions, presented and styled as the dock plus HUD by user
-// direction (November 1): its card, tail, motion, colours and row plates.
-// Recovered layout, values and adaptations are in
-// docs/web-interactions.md#site-control-center--web14. Boosts are excluded
-// scope, so the Boost section, the New Boost button and the Boost menu items
-// are not built.
-
-///
-///
-/// (provenance in its README): the compiled 1× and 2× bitmaps plus a vector PDF
-/// of the catalog's SVG rendition, at the 1× point size, as a template.
 @MainActor enum SiteControlCenterArtwork {
     static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("SiteControlCenter", isDirectory: true)
     private static var cache: [String: NSImage] = [:]
 
-    ///
     static var controlCenter: NSImage? { image("icon-control-center") }
 
     static func image(_ name: String) -> NSImage? {
@@ -44,9 +31,6 @@ import SwiftUI
     }
 }
 
-///
-///
-/// that inset: two insets, three spacings and four 48-point buttons.
 enum SiteControlCenterMetrics {
     static let padding = SidebarPlusMenuView.inset
     static let sectionSpacing: CGFloat = 10
@@ -56,22 +40,16 @@ enum SiteControlCenterMetrics {
     static let columns = 4
     static let settingIcon: CGFloat = 32
     static let extensionIcon: CGFloat = 16
-    /// The engine's action image canvas (extension_action_bridge.mm).
     static let extensionCanvas: CGFloat = 32
     static let pin: CGFloat = 14
     static let footerHeight: CGFloat = 32
 }
 
-///
-/// tile's fills, each resolved by the Site Control Center's own appearance.
 struct SiteControlCenterColors {
     let menu: PArcMenuColors
     let restingFill = Self.libraryFill(LibraryRailTile.fillOpacity(selected: false, hovered: true))
     let selectedFill = Self.libraryFill(LibraryRailTile.fillOpacity(selected: true, hovered: true))
-    /// An on setting's or pinned badge's plate: the theme's focus, which keeps
-    /// the title-colour glyph above 6:1 in the green and purple themes.
     let onPlate: NSColor
-    /// An off setting's or unpinned badge's plate.
     var offPlate: NSColor { selectedFill }
 
     init(theme: SpaceTheme) {
@@ -96,7 +74,6 @@ struct SiteControlCenterColors {
 
 @MainActor
 final class SiteControlCenterModel: ObservableObject {
-    ///
     enum Button: Int, CaseIterable, Identifiable {
         case share, copyURL, capture, captureFullPage, captureVisiblePage
         var id: Int { rawValue }
@@ -109,7 +86,6 @@ final class SiteControlCenterModel: ObservableObject {
             case .captureVisiblePage: return "Capture the visible area"
             }
         }
-        /// The command whose live binding the tooltip's keycaps show.
         var commandID: String? {
             switch self {
             case .share: return nil
@@ -128,9 +104,7 @@ final class SiteControlCenterModel: ObservableObject {
         let icon: NSImage?
         let isPinned: Bool
         let canChangePin: Bool
-        /// The shell-drawn badge over an unbadged `icon`; nil with a baked one.
         var badge: ExtensionActionBadge? = nil
-        /// The action's badge text, whichever canvas shows it.
         var badgeText = ""
         static func == (lhs: Extension, rhs: Extension) -> Bool {
             lhs.id == rhs.id && lhs.name == rhs.name && lhs.tooltip == rhs.tooltip && lhs.icon === rhs.icon
@@ -138,7 +112,6 @@ final class SiteControlCenterModel: ObservableObject {
                 && lhs.accessibilityLabel == rhs.accessibilityLabel && lhs.badge == rhs.badge && lhs.badgeText == rhs.badgeText
         }
     }
-    ///
     struct Setting: Identifiable, Equatable {
         let id: String
         let symbol: String
@@ -152,20 +125,14 @@ final class SiteControlCenterModel: ObservableObject {
 
     @Published var canShare = false
     @Published var canCopy = false
-    ///
     @Published var captureAvailable = false
     @Published var canCapture = false
     @Published var extensions: [Extension] = []
-    /// ExtensionPickerState.focusedExtension; nil outside the picker.
     @Published var focusedExtension: String?
-    /// The extension whose menu is open; its tile stays lit, as a menu's row
-    /// does beside its open submenu.
     @Published var menuExtension: String?
     @Published var settings: [Setting] = []
-    /// FooterView.State?: nil hides the divider and footer.
     @Published var isSecure: Bool?
     @Published var colors = SiteControlCenterColors(theme: SpaceTheme())
-    /// Each button's frame in the content's coordinate space, for anchoring.
     var buttonFrames: [Button: CGRect] = [:]
     var shortcuts: [Button: String] = [:]
 
@@ -181,8 +148,6 @@ final class SiteControlCenterModel: ObservableObject {
     var onMore: (() -> Void)?
 
     var buttons: [Button] {
-        //
-        // slot (whose reference fallback is Copy URL), retaining four columns.
         captureAvailable ? [.share, .captureVisiblePage, .capture, .captureFullPage]
             : [.share, .copyURL]
     }
@@ -198,7 +163,6 @@ final class SiteControlCenterModel: ObservableObject {
         return button.title + "  " + shortcut
     }
 
-    /// Picker focus moves through the extension order and wraps.
     func moveFocus(_ step: Int) {
         guard !extensions.isEmpty else { focusedExtension = nil; return }
         guard let index = focusedExtension.flatMap({ id in extensions.firstIndex { $0.id == id } }) else {
@@ -214,8 +178,6 @@ final class SiteControlCenterModel: ObservableObject {
         onSecurity = nil; onMore = nil
     }
 }
-
-//
 
 struct SiteControlCenterView: View {
     static let coordinateSpace = "SiteControlCenter"
@@ -259,16 +221,8 @@ private struct SiteControlCenterFrames: PreferenceKey {
     }
 }
 
-/// A Site Control Center item's state as its face draws it.
 enum SiteControlCenterTileState: Equatable { case rest, hovered, pressed }
 
-///
-/// button style) on the plus HUD's card, by user direction. Rows rest bare
-/// and take the rail's selected fill while hovered or highlighted. Tiles rest
-///
-///
-///
-/// spring. Content is the plus HUD's title colour at full strength.
 struct SiteControlCenterTileStyle: ButtonStyle {
     let colors: SiteControlCenterColors
     var highlighted = false
@@ -300,7 +254,6 @@ struct SiteControlCenterTileStyle: ButtonStyle {
     }
 }
 
-/// An item's plate, edge and shadow in `state`.
 struct SiteControlCenterTileFace<Label: View>: View {
     let label: Label
     let state: SiteControlCenterTileState
@@ -336,8 +289,6 @@ struct SiteControlCenterTileFace<Label: View>: View {
     }
 }
 
-/// The plus HUD's separator (SidebarPlusMenuView): one point of the hover
-/// colour, rounded, inset 4 inside the edge inset.
 struct SiteControlCenterSeparator: View {
     let colors: PArcMenuColors
 
@@ -350,8 +301,6 @@ struct SiteControlCenterSeparator: View {
     }
 }
 
-///
-/// in a 48 × 32 item.
 struct SiteControlCenterActionButton: View {
     let button: SiteControlCenterModel.Button
     let colors: SiteControlCenterColors
@@ -369,9 +318,6 @@ struct SiteControlCenterActionButton: View {
         .accessibilityHint(help)
     }
 
-    /// Offsets put each glyph's ink centroid on the tile's centre (measured
-    /// at 2x). Visible Area takes the full-strength `photo.artframe` symbol:
-    ///
     @ViewBuilder private var icon: some View {
         switch button {
         case .share:
@@ -389,12 +335,6 @@ struct SiteControlCenterActionButton: View {
     }
 }
 
-///
-/// header and the content, 5 points of bottom padding. The header's title and
-/// its hover text (shown while the section is hovered) take the plus HUD's
-/// title font and its trailing shortcut font. Parc draws them in the menu's
-///
-/// a pale theme.
 struct SiteControlCenterSectionView<Content: View>: View {
     let title: String
     let hoverAccessoryText: String
@@ -435,22 +375,14 @@ struct SiteControlCenterSectionView<Content: View>: View {
     }
 }
 
-///
 enum SiteControlCenterMotion {
-    ///
     static let interaction = Animation.easeOut(duration: 0.1)
-    ///
     static let rowHover = Animation.easeOut(duration: 0.12)
-    ///
     static func pinHover(_ hovering: Bool, reduceMotion: Bool = false) -> Animation {
-        // The dwell is hover intent, so Reduce Motion keeps it and drops only the fade.
         (reduceMotion ? Animation.linear(duration: 0) : .easeInOut(duration: 0.12)).delay(hovering ? 0.36 : 0)
     }
 }
 
-///
-/// then rows of four 48 × 32 items (the extensions, then Add Extension) with
-///
 struct SiteControlCenterExtensionsView: View {
     @ObservedObject var model: SiteControlCenterModel
 
@@ -497,10 +429,6 @@ struct SiteControlCenterExtensionsView: View {
     }
 }
 
-///
-///
-/// focuses it, and the pin badge at the bottom-trailing corner, offset (3, 3),
-///
 struct SiteControlCenterExtensionButton: View {
     let item: SiteControlCenterModel.Extension
     let isHighlighted: Bool
@@ -515,9 +443,6 @@ struct SiteControlCenterExtensionButton: View {
         SwiftUI.Button(action: onClick) {
             let canvas = SiteControlCenterMetrics.extensionCanvas
             ZStack {
-                // Chromium centres the 16-point action icon in the requested
-                // canvas (IconWithBadgeImageSource), so that canvas is shown at
-                // its own size, as the toolbar strips do; any other image at 16.
                 if let icon = item.icon, icon.size == NSSize(width: canvas, height: canvas) {
                     Image(nsImage: icon).resizable().frame(width: canvas, height: canvas)
                 } else {
@@ -535,7 +460,6 @@ struct SiteControlCenterExtensionButton: View {
         .parcTooltip(TooltipConfiguration(item.tooltip.isEmpty ? item.name : item.tooltip))
         .overlay(alignment: .topLeading) {
             if let badge = item.badge {
-                // The pinned strips' badge over the centred icon's top-right corner.
                 let frame = ExtensionActionBadgeMetrics.frame(text: badge.text, in: NSRect(origin: .zero, size: SiteControlCenterMetrics.button))
                 SiteControlCenterBadge(badge: badge)
                     .frame(width: frame.width, height: frame.height)
@@ -550,7 +474,6 @@ struct SiteControlCenterExtensionButton: View {
         .accessibilityIdentifier("extension-action-" + item.id)
         .accessibilityAction(named: "Show Menu", onRightClick)
         .accessibilityActions {
-            // The hover-only badge must not be the only way to pin using AX.
             if item.canChangePin {
                 SwiftUI.Button(item.isPinned ? "Unpin" : "Pin", action: onPin)
             }
@@ -569,7 +492,6 @@ struct SiteControlCenterExtensionButton: View {
     }
 }
 
-/// The grid's Add Extension item: a 13-point semibold plus.
 struct SiteControlCenterAddExtensionButton: View {
     let colors: SiteControlCenterColors
     let action: () -> Void
@@ -587,9 +509,6 @@ struct SiteControlCenterAddExtensionButton: View {
     }
 }
 
-///
-/// weight, turned 33°, in the title colour on a 14-point circle: the theme's
-/// focus when pinned, the rail's selected fill otherwise; tooltip Pin / Unpin.
 struct SiteControlCenterExtensionPinButton: View {
     let name: String
     let isPinned: Bool
@@ -614,15 +533,12 @@ struct SiteControlCenterExtensionPinButton: View {
     }
 }
 
-/// The pinned strips' badge view (ExtensionControls.swift) in a tile.
 struct SiteControlCenterBadge: NSViewRepresentable {
     let badge: ExtensionActionBadge
     func makeNSView(context: Context) -> ExtensionActionBadgeView { ExtensionActionBadgeView() }
     func updateNSView(_ view: ExtensionActionBadgeView, context: Context) { view.badge = badge }
 }
 
-///
-/// extension's genuine context menu; ordinary clicks pass to the button.
 struct SiteControlCenterAlternateClick: NSViewRepresentable {
     let extensionID: String
     let action: () -> Void
@@ -631,7 +547,6 @@ struct SiteControlCenterAlternateClick: NSViewRepresentable {
         view.action = action
         view.identifier = Self.identifier(extensionID)
     }
-    /// Names the tile for its menu's anchor.
     static func identifier(_ extensionID: String) -> NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("extension-tile:" + extensionID)
     }
@@ -656,8 +571,6 @@ struct SiteControlCenterAlternateClick: NSViewRepresentable {
     }
 }
 
-///
-/// rows, eight points apart like the tiles.
 struct SiteControlCenterSettingsView: View {
     @ObservedObject var model: SiteControlCenterModel
 
@@ -674,11 +587,6 @@ struct SiteControlCenterSettingsView: View {
     }
 }
 
-///
-/// laid out as a plus HUD row in the Library tile treatment: the symbol
-/// in the title colour on a 32-point circle (the theme's focus when on, the
-/// rail's selected fill when off) centred on the row's icon point, then the
-/// title over the state line at the row's title inset.
 struct SiteControlCenterSettingRow: View {
     let setting: SiteControlCenterModel.Setting
     let colors: SiteControlCenterColors
@@ -713,9 +621,6 @@ struct SiteControlCenterSettingRow: View {
     }
 }
 
-///
-/// Secure / Insecure, padded 8 / 10, 32 high) and the 32-point ellipsis, as
-/// Library tiles in the plus HUD's title font.
 struct SiteControlCenterFooterView: View {
     let isSecure: Bool
     let colors: SiteControlCenterColors
@@ -726,7 +631,6 @@ struct SiteControlCenterFooterView: View {
         HStack(alignment: .center) {
             SwiftUI.Button(action: onSecurity) {
                 Text("\(Image(systemName: isSecure ? "lock.fill" : "lock.slash.fill")) \(isSecure ? "Secure" : "Insecure")")
-                    // BaseAssets BrandRed (Display P3) at 0.9 when insecure.
                     .foregroundColor(isSecure ? Color(nsColor: colors.menu.title)
                         : Color(.displayP3, red: 0.8431372549, green: 0.2823529412, blue: 0.0274509804).opacity(0.9))
                     .padding(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 10))
@@ -747,20 +651,13 @@ struct SiteControlCenterFooterView: View {
     }
 }
 
-// MARK: - Presentation
-
-/// A Site Control Center presentation as its window's dismissal sees it.
 @MainActor
 protocol SiteControlCenterPresentation: AnyObject {
-    /// True from the start of closing until the window is gone.
     var isAwaitingNativeClose: Bool { get }
     var onDidClose: (() -> Void)? { get set }
     func close()
 }
 
-/// The window removes its current PageInfo session as the card starts
-/// closing, but a new action must still cross that card's exit animation.
-/// Keep that barrier separate, and let every later dismissal cancel queued work.
 @MainActor
 final class SiteControlCenterDismissal {
     private var retiring: [ObjectIdentifier: any SiteControlCenterPresentation] = [:]
@@ -808,14 +705,6 @@ final class SiteControlCenterDismissal {
     }
 }
 
-///
-/// popover centres on the button with its arrow on the button's midpoint
-///
-/// card hangs from the button inside the part of the window on screen, on
-/// the button's other side when its own has no room there; failing both, it
-/// hangs from the button on the screen past the window. Only with room on
-/// neither side of the button anywhere does it take the roomier side and
-/// move onto the screen over the button.
 @MainActor
 enum SiteControlCenterPlacement {
     static func windowFrame(anchor: CGRect, card: CGSize, below: Bool, parent: CGRect,
@@ -829,7 +718,6 @@ enum SiteControlCenterPlacement {
         let side = fits(below, in: region) ? below
             : fits(!below, in: region) ? !below : anchor.minY - region.minY >= region.maxY - anchor.maxY
         let y = max(region.minY, min(side ? anchor.minY - height : anchor.maxY, region.maxY - height))
-        // Across, the card keeps to the window wherever it is wide enough.
         let across = regions.first { card.width <= $0.width } ?? region
         let x = max(across.minX, min(anchor.midX - card.width / 2, across.maxX - card.width))
         let frame = CGRect(x: x, y: y, width: card.width, height: height)
@@ -838,27 +726,19 @@ enum SiteControlCenterPlacement {
         return (frame, tailX, side)
     }
 
-    /// Where a card or menu looks for room, in order: the part of `window` on
-    /// `screen` (a visible frame), then the screen.
     static func regions(window: CGRect, screen: CGRect?) -> [CGRect] {
         guard let screen else { return [window] }
         let visible = window.intersection(screen)
         return visible.isNull || visible.isEmpty ? [screen] : [visible, screen]
     }
 
-    /// The visible frame of the display showing `point`; a window across two
-    /// displays opens its card on the button's.
     static func screen(at point: CGPoint) -> CGRect? {
         NSScreen.screens.first { $0.frame.contains(point) }?.visibleFrame
     }
 }
 
-/// The plus HUD's window. A drag that starts on the card's background, not
-///
-///
 @MainActor
 final class SiteControlCenterWindow: SidebarPlusMenuWindow {
-    /// Starts the window drag with the press that began it.
     var onDragOut: ((NSEvent) -> Void)?
     private var press: NSEvent?
 
@@ -879,7 +759,6 @@ final class SiteControlCenterWindow: SidebarPlusMenuWindow {
         super.sendEvent(event)
     }
 
-    /// Every item carries a tooltip anchor over its frame.
     static func isItem(at point: NSPoint, in view: NSView?) -> Bool {
         guard let view else { return false }
         if view is TooltipAnchorView, view.convert(view.bounds, to: nil).contains(point) { return true }
@@ -887,8 +766,6 @@ final class SiteControlCenterWindow: SidebarPlusMenuWindow {
     }
 }
 
-/// The card: the plus HUD's background and corners around the hosted view.
-///
 @MainActor
 final class SiteControlCenterCard: NSView {
     var colors: PArcMenuColors { didSet { needsDisplay = true } }
@@ -924,16 +801,10 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     private let card: SiteControlCenterCard
     private var panel: SiteControlCenterWindow?
     private var chrome: PArcMenuChrome?
-    /// The button's rectangle in its own coordinates, that rectangle in its
-    /// window at opening (if the button goes), and the side the card hangs from.
     private var placement: (rect: CGRect, opened: CGRect, below: Bool)?
-    /// Torn off its button: an ordinary window that stays open.
     private(set) var isDetached = false
-    /// Dismissals that end once the card detaches.
     nonisolated(unsafe) private var transientObservers: [NSObjectProtocol] = []
     private var pickerMonitor: Any?
-    // The owner drops its controller at onClose. Keep this controller alive
-    // until the card's exit animation finishes and delivers onDidClose.
     private var closingLifetime: SiteControlCenterController?
     private var closing = false
     private(set) var isAwaitingNativeClose = false
@@ -944,22 +815,17 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
     private var modelChange: AnyCancellable?
     private var sizeCheck: Timer?
-    /// The open extension menu; it closes with the card.
     private weak var extensionMenu: PArcContextMenu?
     private var keptOpen = 0
     private var pendingShow: UUID?
     var onClose: (() -> Void)?
     var onDidClose: (() -> Void)?
     var onDetach: (() -> Void)?
-    /// Capture the original action leases once per held-Command gesture.
     var preparePickerSelection: (() -> ((String) -> Void)?)?
-    /// The window's live theme; an open card recolours with it.
     var theme = SpaceTheme() {
         didSet { if theme != oldValue { applyTheme() } }
     }
 
-    /// The press on a window's button that closed its card; the same press's
-    /// action must not reopen it, as with the plus HUD.
     private static var closingPresses: [ObjectIdentifier: Int] = [:]
 
     init(model: SiteControlCenterModel) {
@@ -985,11 +851,6 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
 
     func isAnchored(to view: NSView) -> Bool { anchorView === view }
 
-    /// Runs `body`, a menu from another control, without closing for losing
-    /// key: a Control-click makes the browser window key first, and the
-    /// losing-key check it queued runs inside the menu. Afterwards an
-    /// attached card takes key back if the window kept it, or closes as it
-    /// would have if the menu's command moved key elsewhere.
     func keepingOpen(_ body: () -> Void) {
         keptOpen += 1
         body()
@@ -1002,7 +863,6 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         }
     }
 
-    /// Whether the key window is `panel` or a window it opened.
     private static func holdsKey(_ panel: NSWindow) -> Bool {
         var key = NSApp.keyWindow
         while let window = key {
@@ -1012,17 +872,12 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         return false
     }
 
-    /// Extension `id`'s tile on this card.
     func tile(for id: String) -> NSView? { Self.view(SiteControlCenterAlternateClick.identifier(id), in: host.view) }
 
-    /// Runs `show` with a menu for extension `id` that hangs from this card
-    /// like a submenu, level with `tile`, which stays lit until `show`
-    /// returns. False when `tile` is not on the open card.
     func presentExtensionMenu(beside tile: NSView, for id: String, _ show: (PArcContextMenu) -> Void) -> Bool {
         guard let panel, !closing, tile.window === panel else { return false }
         let row = panel.convertToScreen(tile.convert(tile.bounds, to: nil))
         let edges = panel.convertToScreen(card.convert(card.bounds, to: nil))
-        // The menu looks for room as the card does; a torn-off card's only on screen.
         let screen = SiteControlCenterPlacement.screen(at: CGPoint(x: row.midX, y: row.midY)) ?? panel.screen?.visibleFrame
         var regions = screen.map { [$0] } ?? []
         if let window = anchorWindow, !isDetached {
@@ -1043,13 +898,11 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         return nil
     }
 
-    ///
     private var contentSize: NSSize {
         let size = host.sizeThatFits(in: NSSize(width: SiteControlCenterMetrics.width, height: .greatestFiniteMagnitude))
         return NSSize(width: SiteControlCenterMetrics.width, height: ceil(size.height))
     }
 
-    /// A pending delayed show counts, so a second click closes rather than stacks.
     var isShown: Bool { (panel != nil && !closing) || pendingShow != nil }
 
     private func applyTheme() {
@@ -1060,11 +913,6 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         if let panel { TooltipController.controller(for: panel).palette = TooltipColorPalette(theme: theme) }
     }
 
-    ///
-    /// or 100 ms when the pill's button is missing or hidden) behind a token;
-    /// `close` or a newer show makes the pending one stale. Toolbar and
-    /// hidden-sidebar hosts show at once. `preferredEdge` names the side of
-    /// `rect` in `view`'s coordinates, as for a popover.
     func show(relativeTo rect: NSRect, of view: NSView, preferredEdge: NSRectEdge,
               after delay: DispatchTimeInterval? = nil, expectedWindow: NSWindow?, when valid: @escaping () -> Bool) {
         guard !closing, view.window === expectedWindow, valid() else { close(); return }
@@ -1091,16 +939,12 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
             MainActor.assumeIsolated {
                 guard let self, self.pendingShow == token else { return }
                 self.pendingShow = nil
-                //
-                // also retains the original owner through the delayed show.
                 guard let view, let originalWindow, view.window === originalWindow, valid() else { self.close(); return }
                 self.present(relativeTo: rect, of: view, below: below)
             }
         }
     }
 
-    /// The plus HUD's key child window, tail and opening motion, in the
-    /// parent's appearance (a private window's dark), as a popover takes it.
     private func present(relativeTo rect: NSRect, of view: NSView, below: Bool) {
         guard panel == nil, let parent = view.window else { close(); return }
         let anchor = view.convert(rect, to: nil)
@@ -1130,15 +974,11 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         TooltipController.controller(for: panel).palette = TooltipColorPalette(theme: theme)
         parent.addChildWindow(panel, ordered: .above)
         panel.makeKeyAndOrderFront(nil)
-        // The hosted buttons take Tab and Full Keyboard Access; Escape
-        // reaches the card through the responder chain.
         panel.makeFirstResponder(host.view)
         observe(parent)
         SidebarPlusMenuMotion.animateOpen(chrome, about: chrome.tailTip)
     }
 
-    /// SwiftUI applies a model change later in this run loop pass, so the
-    /// hosted size is measured on the next one, in every mode (menus track).
     private func scheduleSizeCheck() {
         guard sizeCheck == nil else { return }
         let timer = Timer(timeInterval: 0, repeats: false) { [weak self] _ in
@@ -1151,9 +991,6 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         sizeCheck = timer
     }
 
-    /// Rows and extensions arrive after opening; the card keeps its tail on
-    /// the button, where the button is now, and grows away from it, flipping
-    /// and clamping as at opening. A detached card keeps its top edge.
     private func updateSize() {
         guard let panel, let placement, !closing, let parent = anchorWindow else { return }
         let size = contentSize
@@ -1175,18 +1012,12 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
             panel.contentView = next
             self.chrome = next
             self.placement = (placement.rect, placement.opened, placed.below)
-            // Replacing the content view drops the hosted buttons' focus.
             panel.makeFirstResponder(host.view)
         }
         panel.setFrame(placed.frame, display: true)
         self.chrome?.needsDisplay = true
     }
 
-    ///
-    /// detached window of its own, so AppKit's applies: the card leaves its
-    /// button, loses its tail, stops closing on outside clicks, resizes and
-    /// deactivation, and moves on its own until closed. Escape, the window
-    /// closing and the owner's dismissals still close it.
     private func detach(dragging press: NSEvent) {
         guard let panel, let chrome, !closing, !isDetached else { return }
         isDetached = true
@@ -1209,8 +1040,6 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         if NSEvent.pressedMouseButtons & 1 != 0 { panel.performDrag(with: press) }
     }
 
-    /// The plus HUD's dismissals: the parent closing, miniaturizing or
-    /// beginning a sheet closes at once; a resize or deactivation animates.
     private func observe(_ parent: NSWindow) {
         let center = NotificationCenter.default
         for name in [NSWindow.willCloseNotification, NSWindow.willMiniaturizeNotification,
@@ -1227,9 +1056,6 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         }
     }
 
-    /// The plus HUD's attemptCloseUponLosingFocus. A window the card itself
-    /// opened (a share picker) keeps it; a press on the card's own button is
-    /// remembered so that press does not reopen it.
     private func lostFocus() {
         guard let panel, !closing, !isDetached, keptOpen == 0 else { return }
         if let event = NSApp.currentEvent, event.type == .leftMouseDown, let anchor = anchorView, let window = anchor.window,
@@ -1247,9 +1073,6 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         [.leftMouseDown, .leftMouseUp, .leftMouseDragged].contains(event.type)
     }
 
-    ///
-    /// right/down/E go forward; Return or Command release selects. Keypad
-    /// Enter is not Return. Other key-downs cancel and are consumed.
     enum PickerInput: Equatable {
         case previous, next, select, cancel
         static func resolve(type: NSEvent.EventType, keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Self {
@@ -1264,25 +1087,18 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         }
     }
 
-    /// Monitors belong to the exact anchor and its card's window, including
-    /// the short delayed-show interval. They never consume another window's
-    /// input or select after application deactivation.
     private func owns(_ event: NSEvent) -> Bool {
         guard NSApp.isActive, let anchorWindow, anchorView?.window === anchorWindow,
               anchorWindow.attachedSheet == nil else { return false }
         let contentWindow = host.view.window
         let key = NSApp.keyWindow
         guard key === anchorWindow || (contentWindow != nil && key === contentWindow) else { return false }
-        // Some flagsChanged events carry no window; the already-validated key
-        // owner is authoritative for that modifier transition only.
         return (event.window == nil && event.type == .flagsChanged)
             || event.window === anchorWindow || (contentWindow != nil && event.window === contentWindow)
     }
 
     func beginPicker() {
         guard isShown, !model.extensions.isEmpty else { return }
-        // Re-entry moves selection without installing a second monitor or
-        // replacing the gesture's original immutable dispatch leases.
         if pickerMonitor != nil { model.moveFocus(1); return }
         guard let select = preparePickerSelection?() else { return }
         pickerSelection = select
@@ -1317,7 +1133,6 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         } else { close() }
     }
 
-    /// A button's rectangle in the hosted view's own coordinates.
     func rect(for button: SiteControlCenterModel.Button) -> (NSRect, NSView)? {
         guard let frame = model.buttonFrames[button] else { return nil }
         let view = host.view
@@ -1325,10 +1140,6 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         return (NSRect(x: frame.minX, y: y, width: frame.width, height: frame.height), view)
     }
 
-    /// The window's dismissal coordinator owns any after-close action.
-    /// This controller owns only the presentation: `onClose` as the card
-    /// starts closing, with the parent key again, and `onDidClose` once its
-    /// window is gone.
     func close() { close(animated: true) }
 
     private func close(animated: Bool) {

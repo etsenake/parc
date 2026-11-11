@@ -1,8 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// Local first-responder capture. Provisional modifiers never change a menu
-/// binding; only the owner's commit callback can persist a completed chord.
 @MainActor
 final class ShortcutRecorderView: NSView {
     var shortcut: KeyboardShortcut? { didSet { needsDisplay = true; setAccessibilityValue(shortcut?.spokenDisplay ?? "No shortcut") } }
@@ -118,15 +116,11 @@ final class ShortcutRecorderView: NSView {
         }
         if onChange?(value) == true { shortcut = value }
         else { NSSound.beep() }
-        //
-        // first responder. An error never leaves a hidden capture monitor armed.
         cancelRecording()
     }
     override func updateLayer() { refreshPresentation(reduceMotion: reducesMotion) }
     func refreshPresentation(reduceMotion: Bool) {
         let focused = isRecording && window?.firstResponder === self
-        //
-        // named Gray colors resolve in the view's drawing appearance.
         let explicitDark = NSApp.appearance?.name == .darkAqua
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let tint: NSColor? = isConflicting ? .systemRed :
@@ -148,13 +142,9 @@ final class ShortcutRecorderView: NSView {
         focusBorderLayer.opacity = 0
         label.stringValue = isRecording && !pendingSymbols.isEmpty ? pendingSymbols.joined() : (shortcut?.display ?? "---")
         label.textColor = ink
-        // The native cell supplies its own text padding. Fit that complete cell
-        // to the recorder instead of adding another inset around its padding.
         let availableWidth = max(0, bounds.width)
         label.font = .systemFont(ofSize: 12, weight: .medium)
         if label.cell!.cellSize.width > availableWidth {
-            // AppKit's cell includes text insets and size-dependent glyph
-            // metrics. Scaling NSString's width alone can clip a complete chord.
             var lower: CGFloat = 8, upper: CGFloat = 12
             for _ in 0..<10 {
                 let size = (lower + upper) / 2

@@ -1,7 +1,5 @@
 import AppKit
 
-/// Static EaselUI 1.122 contracts. Colors are the retained ARC_EaselUI catalog
-/// values; native controls retain their existing action, focus and undo owners.
 @MainActor
 enum EaselAppearance {
     static let selection = NSColor(srgbRed: 108 / 255, green: 186 / 255, blue: 217 / 255, alpha: 1)
@@ -26,7 +24,6 @@ enum EaselAppearance {
             ? NSColor(displayP3Red: 0.522, green: 0.529, blue: 0.557, alpha: 1)
             : NSColor(srgbRed: 0.373, green: 0.345, blue: 0.502, alpha: 1)
     }
-    ///
     static let toolbarFill = NSColor(srgbRed: 0.086, green: 0.106, blue: 0.129, alpha: 1)
     static let toolbarSelected = NSColor(srgbRed: 0.290, green: 0.435, blue: 0.533, alpha: 1)
     static let toolbarGlyph = NSColor(srgbRed: 0.820, green: 0.898, blue: 0.945, alpha: 1)
@@ -36,8 +33,6 @@ enum EaselAppearance {
     static let toolbarSelectedRadius: CGFloat = 8
     static func configureToolbarScroll(_ scroll: NSScrollView) {
         scroll.drawsBackground = false; scroll.hasHorizontalScroller = true; scroll.autohidesScrollers = true
-        // Reserve the full36pt control +8pt inset height even under the system's
-        // always-visible/legacy preference. This strip deliberately overlays.
         scroll.scrollerStyle = .overlay
     }
     static func drawHandle(at point: NSPoint, scale: CGFloat) {
@@ -52,9 +47,6 @@ enum EaselAppearance {
     }
 }
 
-///
-/// Native pressed, checked and keyboard-ring feedback are explicit AppKit
-/// adaptations; drawing never changes the button's logical state or action.
 @MainActor
 final class EaselPaletteButton: PointingHandButton {
     var usesToolbarInk = false
@@ -135,8 +127,6 @@ final class EaselPaletteButton: PointingHandButton {
     override var focusRingMaskBounds: NSRect { bounds }
 }
 
-///
-/// icon-only tools.
 @MainActor
 final class EaselToolbarPill: NSView {
     override init(frame frameRect: NSRect) {
@@ -171,9 +161,6 @@ final class EaselDocumentView: NSView {
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
     override func layout() { super.layout(); onLayout?() }
 
-    /// Apply the enclosing Space's content-over-background appearance. Passing
-    /// nil restores inherited window appearance, matching Optional.none at
-    ///
     func inheritSpaceContentAppearance(_ appearance: NSAppearance?) {
         guard self.appearance != appearance else { return }
         self.appearance = appearance

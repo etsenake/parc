@@ -1,151 +1,74 @@
 import AppKit
 
-/// One visible entry of the sidebar's item list: an item (tab, Split View or
-/// folder) or one of the list's own rows (pinned header, divider with Clear,
-/// New Tab, the private heading).
 @MainActor
 struct SidebarOutlineEntry {
-    /// Identifies the entry's row across renders.
     let key: AnyHashable
-    /// The entry's own view, unchanged: the row's cell holds it. The pinned
-    /// header's cell is empty.
     let content: NSView?
-    /// Builds an item's view when its row nears the visible area or something
-    ///
-    ///
     var make: (() -> NSView)?
-    ///
     let row: SidebarChromeLayout.TablistRow
-    /// Folder depth (AXDisclosureLevel; the cell starts 16 points in per
-    /// level) and the key of the folder row that discloses this one.
     var level = 0
     var disclosedBy: AnyHashable?
-    /// Folders only: the expanded state and its toggle.
     var expanded: Bool?
     var toggle: (() -> Void)?
-    /// Tabs, Split Views and folders, as opposed to the list's controls.
     var isItem = false
-    /// An expandable item with no children (the pinned header): its row is
-    /// listed collapsed and takes AXDisclosing, which leaves it collapsed.
     var expandableWithoutChildren = false
 
-    /// A tab's or Split View's item row, keyed by its reference. `depth` is
-    /// its AXDisclosureLevel and the row of `folder`, its parent, discloses it.
     static func item(_ item: SidebarItemReference, content: NSView, depth: Int, in folder: UUID?) -> Self {
         Self(key: item, content: content, row: .item, level: depth,
              disclosedBy: folder.map { SidebarItemReference.folder($0) }, isItem: true)
     }
 
-    /// A folder's item row, placed as `item` places a tab, with its expanded
-    /// state (AXDisclosing) and the toggle that setting it runs.
     static func folder(_ id: UUID, content: NSView, depth: Int, in parent: UUID?,
                        expanded: Bool, toggle: @escaping () -> Void) -> Self {
         Self(key: SidebarItemReference.folder(id), content: content, row: .item, level: depth,
              disclosedBy: parent.map { SidebarItemReference.folder($0) }, expanded: expanded, toggle: toggle, isItem: true)
     }
 
-    /// `item`, with its view built on demand by `make`.
     static func item(_ item: SidebarItemReference, depth: Int, in folder: UUID?, make: @escaping () -> NSView) -> Self {
         Self(key: item, content: nil, make: make, row: .item, level: depth,
              disclosedBy: folder.map { SidebarItemReference.folder($0) }, isItem: true)
     }
 
-    /// `folder`, with its view built on demand by `make`.
     static func folder(_ id: UUID, depth: Int, in parent: UUID?, expanded: Bool, toggle: @escaping () -> Void,
                        make: @escaping () -> NSView) -> Self {
         Self(key: SidebarItemReference.folder(id), content: nil, make: make, row: .item, level: depth,
              disclosedBy: parent.map { SidebarItemReference.folder($0) }, expanded: expanded, toggle: toggle, isItem: true)
     }
 
-    ///
-    /// itself expandable for a folder and for this accessory (OutlineViewItem
-    ///
-    /// while the pinned items are the header's siblings, so AppKit lists the
-    /// row collapsed with AXDisclosing settable (the 1.170 tree's Expand).
-    /// Setting it asks the delegate, which allows it for accessories
-    ///
-    /// children collapsed (inert probe); the expand handlers would keep only
-    ///
     static func pinnedHeader(_ key: AnyHashable) -> Self {
         Self(key: key, content: nil, row: SidebarChromeLayout.TablistSlot.pinnedHeader.row, expandableWithoutChildren: true)
     }
 }
 
-///
-///
-/// `NSOutlineView` and overrides no accessibility method. Its overrides are
-///
-///
-/// `shouldCollapseAutoExpandedItemsForDeposited:`, `setFrameSize:`, drags, the
-/// drop highlight and init.
-/// Its rows are `SidebarTableRowView`s (NSTableRowView, no accessibility
-/// override) and `TablistView` holds one lazy NSTableColumn. AppKit's own
-/// outline accessibility therefore applies: rows each holding one cell (the
-/// 1.170 capture), then the column (the AppKit probe;
-/// docs/sidebar-accessibility.md). This list is that outline: each visible
-/// entry is a row view whose cell view lays out the entry's existing element,
-///
-/// (SidebarChromeLayout.tablist): each is its cell plus the 1-point intercell
-/// gap below it, and the outline ends with the 120-point bottom inset that
-///
-/// constraints, a long list's rows and all their views filled the window's
-/// layout engine, which grew faster than the rows did.
-///
-/// near the visible area: every row keeps its place, disclosure and
-/// accessibility element, and its view is built as it nears the visible
-///
-///
-/// Every view in the window joins its layout engine, so a long list with a
-/// view per row made AppKit's layout passes grow with the list.
 @MainActor
 final class SidebarOutlineView: NSView {
     override var isFlipped: Bool { true }
     let orientation = NSUserInterfaceLayoutOrientation.vertical
     let spacing: CGFloat = 0
     let edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: SidebarChromeLayout.tablistBottomInset, right: 0)
-    /// The rows in order, hidden ones included; a hidden row takes no space.
-    /// Only rows with a view near the visible area are subviews.
     private(set) var arrangedSubviews: [NSView] = []
     override init(frame: NSRect) {
         super.init(frame: frame)
-        // TablistViewController's lazy getter names the new outline
-        //
-        //
-        // setAccessibilityIdentifier:, read by AX clients as AXIdentifier.
         setAccessibilityIdentifier("sidebarAllTabList")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     deinit { if let clipObservers { for observer in clipObservers { NotificationCenter.default.removeObserver(observer) } } }
-    ///
-    /// stop stands in for it, so while it holds focus the outline is the
-    /// focused element (adaptation).
     weak var focusOwner: NSView?
-    /// Visible rows in order, as AXRows.
     private(set) var rows: [SidebarOutlineRow] = []
     private var rowsByKey: [AnyHashable: SidebarOutlineRow] = [:]
-    /// The selected rows' keys as last posted.
     private var selectedKeys: Set<AnyHashable> = []
     private lazy var column = SidebarOutlineColumn(outline: self)
-    /// An item's view the list let go of.
     var releaseContent: ((AnyHashable, NSView) -> Void)?
-    /// An item's view left the window but is kept.
     var contentLeftWindow: ((NSView) -> Void)?
-    /// Items whose views stay while far from the visible area (a rename, a drag).
     var keepsContent: ((AnyHashable) -> Bool)?
-    /// Layout builds the views rows near the visible area lack; off, a page
-    /// beside the shown one leaves that to `prepareRows`, a few per turn.
     var preparesRowsInLayout = true
-    /// Views built so far, and whether rows near the visible area still lack one.
     private(set) var builtViews = 0
     private(set) var hasUnbuiltRows = false
-    /// Rows a disclosure animation slides, kept until it ends.
     private var animatingKeys: Set<AnyHashable> = []
     private var animationGeneration = 0
     private weak var observedClip: NSClipView?
     private var clipObservers: [NSObjectProtocol]?
 
-    /// The list's fitting height: each shown row's fixed height (its cell and
-    /// the intercell gap) plus the insets.
     var contentHeight: CGFloat {
         let shown = arrangedSubviews.compactMap { $0.isHidden ? nil : $0 as? SidebarOutlineRow }
         return shown.reduce(edgeInsets.top + edgeInsets.bottom) { $0 + $1.rowHeight }
@@ -165,7 +88,6 @@ final class SidebarOutlineView: NSView {
         updateRows(budget: preparesRowsInLayout ? .max : 0)
     }
 
-    /// Frames every shown row, with or without a view.
     private func placeRows() {
         var y = edgeInsets.top
         let width = max(0, bounds.width - edgeInsets.left - edgeInsets.right)
@@ -176,14 +98,8 @@ final class SidebarOutlineView: NSView {
         }
     }
 
-    /// The entries' own views, top to bottom (hidden ones included), for
-    /// rows that have one.
     var contents: [NSView] { arrangedSubviews.compactMap { ($0 as? SidebarOutlineRow)?.cell.content } }
 
-    /// Replaces the list with `entries`. A row keeps its element across
-    /// renders while its key stays; its cell takes the entry's new view. An
-    /// item near the visible area builds its view now, at most `budget` of
-    /// them (`prepareRows` builds the rest); false while some remain.
     @discardableResult
     func reload(_ entries: [SidebarOutlineEntry], budget: Int = .max) -> Bool {
         let previousKeys = rows.map(\.key)
@@ -192,7 +108,6 @@ final class SidebarOutlineView: NSView {
         var arranged: [SidebarOutlineRow] = []
         var keptRows: [AnyHashable: SidebarOutlineRow] = [:]
         for entry in entries {
-            // A repeated key gets a row of its own rather than share one.
             let reused = keptRows[entry.key] == nil ? rowsByKey[entry.key] ?? spareRows.removeValue(forKey: entry.key) : nil
             let row = reused ?? SidebarOutlineRow(key: entry.key, outline: self)
             if keptRows[entry.key] == nil { keptRows[entry.key] = row }
@@ -222,7 +137,6 @@ final class SidebarOutlineView: NSView {
         placeRows()
         needsLayout = true
         let done = updateRows(budget: budget)
-        // Rows a reload moved keep drawing in the list's order.
         let ordered = arrangedSubviews.filter { $0.superview === self }
         if subviews.count != ordered.count || zip(subviews, ordered).contains(where: { $0 !== $1 }) { subviews = ordered }
         if rows.map(\.key) != previousKeys { NSAccessibility.post(element: self, notification: .rowCountChanged) }
@@ -233,36 +147,24 @@ final class SidebarOutlineView: NSView {
         return done
     }
 
-    /// Rows made ahead for a reload's new keys.
     private var spareRows: [AnyHashable: SidebarOutlineRow] = [:]
-    /// Makes the rows a coming reload of `entries` needs that the list lacks,
-    /// so a long list's reload, built ahead, spreads over several turns.
     func prepareReload(_ entries: ArraySlice<SidebarOutlineEntry>) {
         for entry in entries where rowsByKey[entry.key] == nil && spareRows[entry.key] == nil {
             spareRows[entry.key] = SidebarOutlineRow(key: entry.key, outline: self)
         }
     }
 
-    /// Builds up to `budget` views rows near the visible area lack; true
-    /// once none are left.
     @discardableResult
     func prepareRows(budget: Int) -> Bool { updateRows(budget: budget) }
 
-    /// The list's visible part, from its scroll view's clip whether or not the
-    /// page is on screen; outside a scroll view every row counts as visible.
     private var visibleArea: NSRect? {
         guard let clip = enclosingScrollView?.contentView else { return nil }
         return convert(clip.bounds, from: clip)
     }
-    /// Half a screen beyond the visible area is built ahead of a scroll; views
-    /// a screen and a half away are let go.
     private static func area(_ visible: NSRect, beyond screens: CGFloat) -> NSRect {
         visible.insetBy(dx: 0, dy: -max(60, visible.height * screens))
     }
 
-    /// Gives the rows near the visible area their views, the visible ones
-    /// first, building at most `budget`; takes the others out of the window
-    /// and lets go of views far away. True once every near row has its view.
     @discardableResult
     private func updateRows(budget: Int) -> Bool {
         observeClip()
@@ -307,8 +209,6 @@ final class SidebarOutlineView: NSView {
         return done
     }
 
-    /// Puts `row` in the window above the rows before it: drawing order
-    /// follows the list's order, as the stack's did.
     private func attach(_ row: SidebarOutlineRow) {
         guard row.superview !== self else { return }
         guard let index = arrangedSubviews.firstIndex(where: { $0 === row }),
@@ -330,9 +230,6 @@ final class SidebarOutlineView: NSView {
         row.needsLayout = true
     }
 
-    /// The view of `key`'s row; with `building`, built now if it has none
-    /// and placed in the window at its row, as NSTableView's
-    /// viewAtColumn:row:makeIfNecessary: does.
     func content(for key: AnyHashable, building: Bool = false) -> NSView? {
         guard let row = rowsByKey[key] else { return nil }
         if building, !row.isHidden, row.make != nil {
@@ -343,20 +240,12 @@ final class SidebarOutlineView: NSView {
         return row.cell.content
     }
 
-    /// `key`'s row's view frame in the list, built or not: the cell's span
-    /// past the row's indentation.
     func itemFrame(for key: AnyHashable) -> NSRect? {
         guard let row = rowsByKey[key], !row.isHidden else { return nil }
         if needsLayout { placeRows() }
         return row.contentFrame
     }
 
-    /// Scrolls the least that shows `key`'s row's view with `inset` points
-    /// around it, or with `wholeRow` its whole row as AppKit's
-    ///
-    /// runs scrollRowToVisible: in an animation group with implicit animation
-    ///
-    /// build as it goes.
     func scrollRowToVisible(_ key: AnyHashable, inset: CGFloat = 0, wholeRow: Bool = false, animated: Bool = true) {
         if needsLayout { placeRows() }
         let rowFrame = wholeRow ? rowsByKey[key].flatMap { $0.isHidden ? nil : $0.frame } : itemFrame(for: key)
@@ -376,8 +265,6 @@ final class SidebarOutlineView: NSView {
         }
     }
 
-    /// Watches the clip, so a scroll or a taller list builds the rows that
-    /// come into view in the same turn.
     private func observeClip() {
         let clip = enclosingScrollView?.contentView
         guard clip !== observedClip else { return }
@@ -399,8 +286,6 @@ final class SidebarOutlineView: NSView {
     }
     override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); observeClip() }
 
-    /// Takes the last row in the window out of an outline being let go;
-    /// false once none are left, when the rest go at once.
     func removeLastRow() -> Bool {
         if let row = subviews.last {
             row.removeFromSuperview()
@@ -410,7 +295,6 @@ final class SidebarOutlineView: NSView {
         return false
     }
 
-    /// Each visible row's frame by key, for `animateDisclosure(from:)`.
     func rowFrames() -> [AnyHashable: NSRect] {
         if needsLayout { placeRows() }
         var frames: [AnyHashable: NSRect] = [:]
@@ -418,14 +302,6 @@ final class SidebarOutlineView: NSView {
         return frames
     }
 
-    /// An outline's animated expand or collapse: after a reload, rows that
-    /// stay slide from their `previous` frames to their new ones and rows a
-    /// folder newly discloses fade in, as NSOutlineView animates a disclosure
-    ///
-    /// screen keep their views until the slide ends, even when it takes them
-    /// out of view, and rows coming into view start from their old places
-    /// off screen. Duration and curve are Parc's; Reduce Motion leaves the
-    /// change in place.
     func animateDisclosure(from previous: [AnyHashable: NSRect], duration: CFTimeInterval = 0.25) {
         guard window != nil, !previous.isEmpty, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         if let visible = visibleArea {
@@ -470,16 +346,10 @@ final class SidebarOutlineView: NSView {
         }
     }
 
-    /// Marks the selected rows (AXSelectedRows): the sidebar's multi-selection
-    ///
-    ///
-    ///
-    /// holds this set at rest is inferred (docs/sidebar-accessibility.md).
     func select(_ items: [SidebarItemReference], single: SidebarItemReference?, active: SidebarItemReference?) {
         select(Set((items + [single, active].compactMap { $0 }).map(AnyHashable.init)))
     }
 
-    /// Marks the visible rows of `keys` selected and posts the change.
     private func select(_ keys: Set<AnyHashable>) {
         let selected = keys.intersection(rows.map(\.key))
         for row in rows { row.selected = selected.contains(row.key) }
@@ -488,9 +358,6 @@ final class SidebarOutlineView: NSView {
         NSAccessibility.post(element: self, notification: .selectedRowsChanged)
     }
 
-    /// An accessibility client reached a row without a view: as AppKit's
-    /// table makes a view for a row it is asked about, the row takes its
-    /// view and its place in the window until the list next scrolls past it.
     fileprivate func buildForAccessibility(_ row: SidebarOutlineRow) {
         guard row.superview == nil, row.make != nil, !row.isHidden else { return }
         _ = content(for: row.key, building: true)
@@ -498,17 +365,12 @@ final class SidebarOutlineView: NSView {
 
     override func isAccessibilityElement() -> Bool { !isHidden }
     override func accessibilityRole() -> NSAccessibility.Role? { .outline }
-    /// AppKit lists the rows, then the column.
     override func accessibilityChildren() -> [Any]? { rows + [column] }
     override func accessibilityRows() -> [Any]? { rows }
     override func accessibilityVisibleRows() -> [Any]? { rows.filter { visibleRect.intersects($0.frame) } }
     override func accessibilitySelectedRows() -> [Any]? { rows.filter(\.selected) }
     override func accessibilityColumns() -> [Any]? { [column] }
     override func accessibilityVisibleColumns() -> [Any]? { [column] }
-    /// Focused only while the stop could be tabbed to: its canBecomeKeyView
-    /// holds (SidebarView's needs the sidebar presented, as a hidden one waits
-    /// unhidden off-screen), the list is shown and an item row gives its arrow
-    /// keys something to move.
     override func isAccessibilityFocused() -> Bool {
         guard let focusOwner, focusOwner.canBecomeKeyView, let window = focusOwner.window,
               window.firstResponder === focusOwner else { return false }
@@ -516,8 +378,6 @@ final class SidebarOutlineView: NSView {
     }
 }
 
-/// One outline row: AppKit's AXRow / AXOutlineRow with its disclosure
-/// attributes. Its only child is the cell.
 @MainActor
 final class SidebarOutlineRow: NSView {
     let key: AnyHashable
@@ -531,18 +391,11 @@ final class SidebarOutlineRow: NSView {
     fileprivate weak var disclosingRow: SidebarOutlineRow?
     fileprivate var disclosedRows: [SidebarOutlineRow] = []
     private var toggle: (() -> Void)?
-    /// An expandable row with no children: AXDisclosing is settable and
-    /// changes nothing.
     private var disclosesNothing = false
     private var cellHeight: CGFloat = 0
-    /// The cell and the intercell gap below it.
     fileprivate private(set) var rowHeight: CGFloat = 0
-    /// Last configure apply. Identical content/size/appearance fingerprints skip
-    /// setContent and needsLayout; membership/size/appearance deltas still dirty.
     private var lastConfigureFingerprint: SidebarOutlineConfigureFingerprint?
-    /// Builds an item's view on demand; nil for the list's own rows.
     fileprivate var make: (() -> NSView)?
-    /// The view came from an earlier build and is built again before use.
     fileprivate var contentStale = false
     fileprivate weak var outline: SidebarOutlineView?
     override var isFlipped: Bool { true }
@@ -551,9 +404,6 @@ final class SidebarOutlineRow: NSView {
         self.key = key
         self.outline = outline
         super.init(frame: .zero)
-        // TabCellShadowSelected paints 1 point below the 36-point visible row,
-        // into this cell's 2-point padding. Clipping here flattens current
-        // and hover cards, including split groups.
         clipsToBounds = false
         cell.autoresizingMask = [.width, .height]
         addSubview(cell)
@@ -578,22 +428,13 @@ final class SidebarOutlineRow: NSView {
             disclosesNothing: nextDisclosesNothing,
             disclosedByKey: entry.disclosedBy
         )
-        // True no-op of setContent/needsLayout when the cell already holds this
-        // content with matching size/appearance. Still refresh toggle so AX
-        // disclosing keeps the entry's current closure. Membership/size/
-        // appearance deltas fall through and dirty layout.
-        // A view another Space's outline showed since (the one New Tab row)
-        // comes back to this cell.
         if let content = entry.content, content.superview !== cell { lastConfigureFingerprint = nil }
-        // A built view belongs to the build that made it; the new build's
-        // `make` builds it again before it's used.
         make = entry.make
         if make != nil, cell.content != nil { contentStale = true }
         if SidebarOutlineConfigureSkip.shouldSkip(previous: lastConfigureFingerprint, next: fingerprint) {
             toggle = entry.toggle
             return
         }
-        // AppKit's row is the cell and the intercell gap below it.
         cellHeight = nextHeight
         if rowHeight != cellHeight + SidebarChromeLayout.tablistIntercellSpacing {
             rowHeight = cellHeight + SidebarChromeLayout.tablistIntercellSpacing
@@ -609,8 +450,6 @@ final class SidebarOutlineRow: NSView {
         lastConfigureFingerprint = fingerprint
     }
 
-    ///
-    ///
     override func layout() {
         super.layout()
         let indent = CGFloat(level) * SidebarChromeLayout.tablistIndentation
@@ -618,15 +457,12 @@ final class SidebarOutlineRow: NSView {
         cell.layoutContent()
     }
 
-    /// Where the row's view sits in the list, built or not.
     fileprivate var contentFrame: NSRect {
         let indent = CGFloat(level) * SidebarChromeLayout.tablistIndentation
         let span = cell.span ?? SidebarChromeLayout.TablistSpan(minY: 0, height: cellHeight)
         return NSRect(x: frame.minX + indent, y: frame.minY + span.minY, width: max(0, frame.width - indent), height: span.height)
     }
 
-    /// A row without a view is still the outline's row at its place in the
-    /// list; asked for its children, it takes its view (`buildForAccessibility`).
     override func accessibilityParent() -> Any? { superview == nil ? outline : super.accessibilityParent() }
     override func accessibilityFrame() -> NSRect {
         guard superview == nil, let outline, outline.window != nil else { return super.accessibilityFrame() }
@@ -636,7 +472,6 @@ final class SidebarOutlineRow: NSView {
         outline?.buildForAccessibility(self)
         return super.accessibilityChildren()
     }
-    /// Moving the accessibility focus to a row out of view scrolls it in.
     override func setAccessibilityFocused(_ focused: Bool) {
         if focused, let outline, !outline.visibleRect.intersects(frame) || superview == nil {
             outline.scrollRowToVisible(key, wholeRow: true, animated: false)
@@ -650,10 +485,6 @@ final class SidebarOutlineRow: NSView {
     override func accessibilityIndex() -> Int { index }
     override func accessibilityDisclosureLevel() -> Int { level }
     override func isAccessibilityDisclosed() -> Bool { expanded == true }
-    /// AppKit's outline rows take AXDisclosing; a folder row runs its entry's
-    /// toggle, which expands or collapses the folder. A row without children
-    /// has no toggle and stays collapsed, as AppKit's outline leaves an item
-    /// without children.
     override func setAccessibilityDisclosed(_ disclosed: Bool) {
         guard let expanded, disclosed != expanded else { return }
         toggle?()
@@ -661,7 +492,6 @@ final class SidebarOutlineRow: NSView {
     override func accessibilityDisclosedRows() -> Any? { disclosedRows }
     override func accessibilityDisclosedByRow() -> Any? { disclosingRow }
     override func isAccessibilitySelected() -> Bool { selected }
-    /// Selection stays with the items' own press and custom actions.
     override func isAccessibilitySelectorAllowed(_ selector: Selector) -> Bool {
         switch selector {
         case #selector(setAccessibilityDisclosed(_:)): return expanded != nil && (toggle != nil || disclosesNothing)
@@ -672,9 +502,6 @@ final class SidebarOutlineRow: NSView {
     }
 }
 
-/// The row's single cell (AXCell). It lays out the entry's view: an item's
-/// visible row centred in it, any other view filling it. AppKit exposes that
-/// view, or a control's cell, as its child.
 @MainActor
 final class SidebarOutlineCell: NSView {
     private(set) var content: NSView?
@@ -692,7 +519,6 @@ final class SidebarOutlineCell: NSView {
         if content?.superview === self { content?.removeFromSuperview() }
         content = view
         guard let view else { return }
-        // Width changes between layouts follow the cell.
         view.translatesAutoresizingMaskIntoConstraints = true
         view.autoresizingMask = [.width, .height]
         addSubview(view)
@@ -713,8 +539,6 @@ final class SidebarOutlineCell: NSView {
     override func isAccessibilitySelected() -> Bool { row?.selected ?? false }
 }
 
-/// The outline's one column (TablistView's lazy NSTableColumn), listed after
-/// the rows. It spans the list's visible area.
 @MainActor
 private final class SidebarOutlineColumn: NSAccessibilityElement {
     private weak var outline: SidebarOutlineView?

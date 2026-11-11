@@ -10,10 +10,6 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
     var showingHistory = false { didSet { needsDisplay = true } }
     private let hold = NSPressGestureRecognizer()
     private let symbol: String
-    ///
-    /// TranslucentButton draws it at this medium size
-    ///
-    /// keeps AppKit's symbol at the button font and the toolbar reload size.
     var glyphPointSize: CGFloat? {
         didSet {
             guard glyphPointSize != oldValue, let glyphPointSize else { return }
@@ -23,18 +19,9 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
         }
     }
     private var translucentFace: TranslucentButtonFace?
-    ///
-    ///
-    ///
-    /// 6-point corners, and tints its image view, inset 1.5 points, GrayA12
-    /// while pressed and GrayA11 otherwise, without animation.
     var windowControlStyle = false { didSet { needsDisplay = true } }
-    ///
-    ///
     private var pressedArrowShift: CGFloat { symbol == "arrow.left" ? -3 : symbol == "arrow.right" ? 3 : 0 }
 
-    ///
-    ///
     init(_ title: String, symbol: String, history: Bool = false, commandID: String? = nil, glyphPointSize: CGFloat? = nil) {
         self.symbol = symbol
         self.glyphPointSize = glyphPointSize
@@ -51,8 +38,6 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
         if history {
             hold.target = self; hold.action = #selector(held(_:)); hold.delegate = self
             hold.buttonMask = 1
-            //
-            // the original mouse event available to the button immediately.
             hold.minimumPressDuration = NavigationControlPress.historyHoldDuration
             hold.delaysPrimaryMouseButtonEvents = false
             addGestureRecognizer(hold)
@@ -67,8 +52,6 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
         }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    /// Opt-in keyboard ring over the bounds with this corner radius (the
-    /// sidebar's TranslucentButton-class controls); nil keeps the exterior default.
     var focusRingCornerRadius: CGFloat? { didSet { noteFocusRingMaskChanged() } }
     override var focusRingMaskBounds: NSRect { focusRingCornerRadius == nil ? super.focusRingMaskBounds : bounds }
     override func drawFocusRingMask() {
@@ -85,7 +68,6 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
     override func mouseExited(with event: NSEvent) { hovering = false }
     override func draw(_ dirtyRect: NSRect) {
         if let face = translucentFace {
-            // The cell redraws whenever its tracking highlight changes.
             face.setPressed(isHighlighted && isEnabled)
             face.draw(in: bounds, enabled: isEnabled, view: self) { tint in
                 if let reloadGlyph {
@@ -111,13 +93,10 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
         }
         super.draw(dirtyRect)
         if let reloadGlyph {
-            // AppKit's template rendering: secondary label without a tint and
-            // half the tint's alpha while disabled (measured on NSButton).
             let tint = contentTintColor ?? .secondaryLabelColor
             reloadGlyph.draw(in: bounds, tint: isEnabled ? tint : tint.withAlphaComponent(tint.alphaComponent * 0.5), in: self)
         }
     }
-    /// NSImageView's default scaling: proportionally down into the inset frame, centred.
     private func drawWindowControlImage(_ image: NSImage, tint: NSColor) {
         let frame = bounds.insetBy(dx: 1.5, dy: 1.5)
         let scale = min(1, frame.width / max(image.size.width, 1), frame.height / max(image.size.height, 1))
@@ -158,8 +137,6 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
         }
     }
     private func beginPress(_ event: NSEvent) {
-        // AppKit can ask the recognizer before delivering mouseDown to NSButton.
-        // Both paths must retain the same owner and pointer-down modifiers.
         if press?.eventNumber == event.eventNumber { return }
         press?.cancel()
         press = prepareInteraction?().map { NavigationControlPress(event: event, interaction: $0) }
@@ -170,8 +147,6 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
         return press?.hasHistory == true
     }
     @objc private func held(_ recognizer: NSPressGestureRecognizer) {
-        // End/cancel must not clear the consumed state while NSButton is still
-        // tracking this press: its release action must remain suppressed.
         if recognizer.state == .cancelled { press?.cancel(); return }
         guard recognizer.state == .began, isEnabled else { return }
         press?.showHistory(from: self)
@@ -182,14 +157,10 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
             if !press.finished { playReloadAction() }
             press.activate()
         } else {
-            // Keyboard and accessibility activation have no pointer-down event.
-            // An unrelated NSApp.currentEvent must never request a duplicate.
             playReloadAction()
             prepareInteraction?()?.activate(false)
         }
     }
-    /// `_showAfterActionAnimation` on the reload TranslucentButton. History
-    /// disclosure is not an action, so it does not spin.
     private func playReloadAction() {
         reloadGlyph?.playActionSpin(animated: window != nil && !isHiddenOrHasHiddenAncestor)
     }
@@ -197,21 +168,13 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
         if window !== newWindow { press?.cancel(); hovering = false }
         super.viewWillMove(toWindow: newWindow)
     }
-    ///
-    ///
-    /// label stays truthful. `forceReload` is the Developer Mode default.
-    ///
-    /// Parc's Stop label shows Stop Loading's.
     func setLoading(_ loading: Bool, enabled: Bool, idleLabel: String = "Reload this page", forceReload: Bool = false) {
         let label = loading ? "Stop Loading" : idleLabel
-        // The glyph is drawn manually and the button's image is nil. AppKit
-        // otherwise draws the nonempty title even with imagePosition .imageOnly.
         title = ""; setAccessibilityLabel(label)
         LiveShortcutToolTip.set(self, label, commandID: loading ? "stopLoading:" : forceReload ? "forceReload:" : "reload:")
         let glyph = reloadGlyph ?? ReloadGlyph(view: self, pointSize: glyphPointSize ?? ReloadGlyph.toolbarPointSize,
                                                rasterized: glyphPointSize != nil)
         if reloadGlyph == nil { reloadGlyph = glyph }
-        // AppKit can restore a title position when title is assigned, even "".
         image = nil
         imagePosition = .imageOnly
         glyph.update(loading: loading, forceReload: forceReload, animated: window != nil && !isHiddenOrHasHiddenAncestor)
@@ -225,9 +188,6 @@ final class NavigationControlButton: PointingHandButton, NSGestureRecognizerDele
     }
 }
 
-///
-///
-///
 enum NavigationHistoryMenuMetrics {
     static let width: CGFloat = 220
     static let edgeInset: CGFloat = 8
@@ -241,7 +201,6 @@ enum NavigationHistoryMenuMetrics {
     static let shadowOpacity: Float = 0.2
     static let shadowRadius: CGFloat = 3
     static let shadowOffset = CGSize(width: 0, height: -1)
-    /// Room around the card for its shadow inside the transparent window.
     static let shadowMargin: CGFloat = 8
     static let hiddenScale: CGFloat = 0.95
     static let openTransformDuration: CFTimeInterval = 0.1
@@ -251,10 +210,6 @@ enum NavigationHistoryMenuMetrics {
     static var font: NSFont { .systemFont(ofSize: 13, weight: .medium) }
 
     static func cardHeight(rows: Int) -> CGFloat { CGFloat(rows) * rowHeight + 2 * edgeInset }
-    /// Below the anchor, horizontally centered on it and kept inside the
-    ///
-    ///
-    /// card to the screen's visible frame so every row stays reachable.
     static func cardFrame(anchor: NSRect, parent: NSRect, screen: NSRect?, rows: Int) -> NSRect {
         var height = cardHeight(rows: rows)
         if let screen {
@@ -274,8 +229,6 @@ private final class NavigationHistoryMenuWindow: NSWindow {
     override func resignKey() { super.resignKey(); onResignKey?() }
 }
 
-///
-/// 6-point spacing; the focused row fills with the palette hover color.
 private final class NavigationHistoryRowView: NSTableRowView {
     var hoverColor: NSColor = .clear
     var focused = false { didSet { if focused != oldValue { needsDisplay = true } } }
@@ -291,7 +244,6 @@ private final class NavigationHistoryRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {}
 }
 
-/// Row content that answers an accessibility press (VoiceOver VO-Space).
 private final class NavigationHistoryCellView: NSTableCellView {
     var onPress: (() -> Void)?
     override func accessibilityPerformPress() -> Bool { onPress?(); return onPress != nil }
@@ -314,8 +266,6 @@ private final class NavigationHistoryTable: NSTableView {
         let row = row(at: convert(event.locationInWindow, from: nil))
         return row >= 0 ? row : nil
     }
-    //
-    // exit; hover and keyboard share this single focused item.
     override func mouseMoved(with event: NSEvent) { focus?(pointerRow(event)) }
     override func mouseEntered(with event: NSEvent) { focus?(pointerRow(event)) }
     override func mouseExited(with event: NSEvent) { focus?(nil) }
@@ -338,7 +288,6 @@ private final class NavigationHistoryTable: NSTableView {
     }
 }
 
-///
 private final class NavigationHistoryFill: NSView {
     private let color: NSColor
     init(color: NSColor) {
@@ -351,9 +300,6 @@ private final class NavigationHistoryFill: NSView {
     override func updateLayer() { layer?.backgroundColor = color.cgColor }
 }
 
-///
-/// under the palette's backgroundExtra, 12-point continuous corners and a
-/// black 0.2-opacity, 3-point shadow offset one point down.
 private final class NavigationHistoryCardView: NSView {
     let clip = NSView()
     private let base: NavigationHistoryFill
@@ -385,8 +331,6 @@ private final class NavigationHistoryCardView: NSView {
     }
 }
 
-//
-//
 final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     let page: PCNativePage
     private let snapshot: PCNativeNavigationHistory
@@ -404,7 +348,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
     var stillSelected: (() -> Bool)?
     var onClose: (() -> Void)?
     var onNavigate: (() -> Void)?
-    /// What an entry shows of its URL; nil for a page with no address to show.
     var address: (URL) -> String? = { $0.absoluteString }
 
     init(page: PCNativePage, snapshot: PCNativeNavigationHistory, window: NSWindow, theme: SpaceTheme) {
@@ -445,7 +388,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         card.clip.addSubview(scroll)
         menuWindow.contentView = card
         menuWindow.onResignKey = { [weak self] in
-            //
             guard let self, !self.finished else { return }
             self.dismiss()
         }
@@ -470,7 +412,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         let center = NotificationCenter.default
         for name in [NSWindow.willCloseNotification, NSWindow.willMiniaturizeNotification,
                      NSWindow.willBeginSheetNotification] {
-            // Window-level dismissals close at once, without the exit animation.
             observers.append(center.addObserver(forName: name, object: parent, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.finish(selection: nil, restoreFocus: false, animated: false) }
             })
@@ -483,10 +424,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         })
         trackOpeningPress()
     }
-    ///
-    /// still down, dragging focuses the row under the pointer and releasing
-    /// over a row selects it. Releasing elsewhere keeps the menu open, unless
-    /// a fresh press (within 0.1 s) is released more than 0.35 s later.
     private func trackOpeningPress() {
         let pressed = NSEvent.pressedMouseButtons
         guard pressed & 0b11 != 0 else { return }
@@ -497,9 +434,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         let freshPress = NSApp.currentEvent.map {
             [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains($0.type) && start - $0.timestamp <= 0.1
         } ?? false
-        //
-        // the tracked events; Parc dequeues them and re-posts the final left
-        // release (below) so a still-tracking opening button can end.
         while !finished {
             guard let event = NSApp.nextEvent(matching: mask, until: Date(timeIntervalSinceNow: 0.25),
                                               inMode: .eventTracking, dequeue: true) else {
@@ -518,14 +452,10 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
             }
             if row >= 0 { choose(row, alternate: event.modifierFlags.contains(.command)) }
             else if freshPress, ProcessInfo.processInfo.systemUptime - start > 0.35 { dismiss() }
-            // The opening button may still be tracking this press; give it the
-            // release so its own loop ends (the press is already consumed).
             if event.type == .leftMouseUp { NSApp.postEvent(event, atStart: true) }
             break
         }
     }
-    /// The child belongs only to its captured parent, never to another
-    /// browser merely because it is the active key window.
     func ownsKeyWindow(in window: NSWindow) -> Bool {
         !finished && parent === window && menuWindow.isKeyWindow && snapshot.isValid && stillSelected?() == true
     }
@@ -549,7 +479,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         let width = m.width - 2 * m.edgeInset
         let cell = NavigationHistoryCellView(frame: NSRect(x: 0, y: 0, width: width, height: m.rowHeight))
         cell.onPress = { [weak self] in self?.choose(row, alternate: false) }
-        //
         let primary = colors.title
         let side = m.imageDimension
         let icon = NSImageView(frame: NSRect(x: m.rowHorizontalInset, y: (m.rowHeight - side) / 2, width: side, height: side))
@@ -573,7 +502,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         for index in [old, row].compactMap({ $0 }) {
             (table.rowView(atRow: index, makeIfNecessary: false) as? NavigationHistoryRowView)?.focused = index == row
         }
-        // Mirror focus into the (undrawn) table selection so VoiceOver reads it.
         if let row {
             table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             table.scrollRowToVisible(row)
@@ -581,7 +509,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
             table.deselectAll(nil)
         }
     }
-    /// Table action: VoiceOver press and accessibility activation.
     @objc private func pressed() {
         let row = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
         if row >= 0 { choose(row, alternate: false) }
@@ -589,8 +516,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
     private func moveFocus(_ delta: Int) {
         let count = snapshot.entries.count
         guard count > 0 else { return }
-        //
-        // focused item Down focuses the first and Up the last.
         guard let focused else { setFocus(delta > 0 ? 0 : count - 1); return }
         setFocus(((focused + delta) % count + count) % count)
     }
@@ -604,8 +529,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         anchor?.showingHistory = false
         observers.forEach(NotificationCenter.default.removeObserver); observers.removeAll()
         let validOwner = stillSelected?() == true
-        // Return key focus to the parent before the menu animates out, so
-        // native execution and focus restoration happen in the browser window.
         if let parent, menuWindow.isKeyWindow, parent.isVisible, NSApp.isActive { parent.makeKey() }
         animateOut(animated: animated)
         if let selection, validOwner {
@@ -619,8 +542,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
             if restoreFocus, validOwner {
                 let stillSelected = stillSelected
                 DispatchQueue.main.async { [weak parent, weak oldResponder] in
-                    // A saved view returns only where it may still take focus,
-                    // never into a sidebar hidden meanwhile (SavedFocus).
                     if stillSelected?() == true, let parent, parent.isKeyWindow, let oldResponder,
                        (oldResponder as? NSView).map({ SavedFocus.mayReturn(to: $0, in: parent) }) ?? true {
                         parent.makeFirstResponder(oldResponder)
@@ -630,7 +551,6 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
         }
         onClose?()
     }
-    ///
     private func scaled(_ scale: CGFloat) -> CATransform3D {
         let m = NavigationHistoryMenuMetrics.self
         let x = m.shadowMargin + anchorOffset, y = card.bounds.height - m.shadowMargin

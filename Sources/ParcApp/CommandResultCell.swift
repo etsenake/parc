@@ -13,13 +13,9 @@ final class CommandResultCell: NSView {
     static let iconTileIdentifier = NSUserInterfaceItemIdentifier("CommandResultIconTile")
     private let deleteButton = PointingHandButton()
     private var isHovered = false
-    /// The row theme's selected colour, which a selected row's glyphs and
-    /// keycap take on their white tiles.
     var selectedColor: NSColor = CommandBarPalette.colourless.selected { didSet { setSelected(isSelected) } }
     private var isSelected = false
     private let isAction: Bool
-    /// Type Travel rows sit their glyph on a tile; a default suggestion's
-    ///
     private let iconTile = NSView()
     private let icon = NSImageView()
     private var baseIcon: NSImage?
@@ -45,9 +41,6 @@ final class CommandResultCell: NSView {
         self.hasContext = spaceAction != nil || folderAction != nil
         self.isAction = isAction
         super.init(frame: .zero)
-        // DefaultSuggestionIconContainerView is 24 points square for one icon
-        //
-        // radius belongs to the row highlight.
         iconTile.wantsLayer = true; iconTile.layer?.cornerRadius = 4; iconTile.layer?.cornerCurve = .continuous
         iconTile.identifier = Self.iconTileIdentifier
         addSubview(iconTile)
@@ -58,12 +51,9 @@ final class CommandResultCell: NSView {
         badgeLabel.font = .systemFont(ofSize: isTab ? 17 : 12, weight: .medium)
         if isTab { badgeLabel.alignment = .center }
         badge.wantsLayer = true
-        //
         badge.layer?.cornerRadius = 4; badge.layer?.cornerCurve = .continuous; badge.layer?.masksToBounds = true
         badge.isHidden = badgeLabel.stringValue.isEmpty
         badge.addSubview(badgeLabel)
-        // DefaultSuggestionTitleView's title truncates its tail and its
-        //
         label.lineBreakMode = .byTruncatingTail; label.maximumNumberOfLines = 1
         subtitleLabel.lineBreakMode = .byTruncatingMiddle; subtitleLabel.maximumNumberOfLines = 1
         subtitleLabel.isHidden = hasContext || (subtitle ?? "").isEmpty
@@ -71,7 +61,6 @@ final class CommandResultCell: NSView {
         deleteButton.isBordered = false
         deleteButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)
         deleteButton.imageScaling = .scaleProportionallyDown
-        //
         deleteButton.parcTooltip = TooltipConfiguration("Delete Suggestion",
                                                         shortcut: .fixed(KeyboardShortcut(key: "\u{7f}", flags: [.command, .option])))
         deleteButton.setAccessibilityHelp("Delete Suggestion (⌘⌥⌫)"); deleteButton.cell?.setAccessibilityHelp("Delete Suggestion (⌘⌥⌫)")
@@ -106,12 +95,9 @@ final class CommandResultCell: NSView {
         let secondary = value ? CommandBarPalette.selectedSecondaryText : CommandBarPalette.textSecondary
         let font = CommandBarTypography.label
         label.attributedStringValue = Self.line(title, font: font, color: primary, truncation: .byTruncatingTail)
-        //
         subtitleLabel.attributedStringValue = Self.line(subtitle ?? "", font: font, color: secondary, truncation: .byTruncatingMiddle)
         accessory.textColor = value ? CommandBarPalette.selectedText : CommandBarPalette.textSecondary
         iconTile.isHidden = !showsTile
-        // A selected row's emphasized style draws a template image white, so a
-        // glyph on the selected white tile gets a tinted, non-template copy.
         if value, showsTile, let base = baseIcon, base.isTemplate {
             icon.image = Self.tinted(base, selectedColor)
         } else {
@@ -126,7 +112,6 @@ final class CommandResultCell: NSView {
         if isTab {
             badgeLabel.textColor = badgeColor
         } else {
-            //
             let clipping = NSMutableParagraphStyle(); clipping.lineBreakMode = .byClipping
             badgeLabel.attributedStringValue = NSAttributedString(string: badgeLabel.stringValue, attributes: [
                 .font: badgeLabel.font ?? .systemFont(ofSize: 12, weight: .medium), .foregroundColor: badgeColor,
@@ -148,36 +133,25 @@ final class CommandResultCell: NSView {
     }
     override func layout() {
         super.layout()
-        // CommandBar.KeyboardShortcutView pins its label 4 points in from the
-        // top, leading and bottom edges and 2 from the trailing edge, where the
-        //
         let text = badgeLabel.intrinsicContentSize
         let badgeSize = badge.isHidden ? .zero : isTab ? NSSize(width: 23, height: 23)
             : NSSize(width: ceil(text.width) + 6, height: ceil(text.height) + 8)
         let badgeWidth = badgeSize.width
-        // The cell's own size, padding included: the label's intrinsic width
-        // can lag its font and truncate Switch to Tab.
         let textWidth = isTab ? min(bounds.width * 0.30, accessory.singleLineWidth) : 0
         let deleteWidth: CGFloat = onDelete == nil ? 0 : 23
         let trailing = max(deleteWidth, badgeWidth + (textWidth > 0 ? textWidth + 8 : 0))
         deleteButton.frame = NSRect(x: max(0, bounds.width - 35), y: 14, width: min(23, bounds.width), height: 23)
         iconTile.frame = NSRect(x: 11, y: 13, width: 24, height: 24)
-        //
         icon.frame = NSRect(x: 16, y: 18, width: 14, height: 14)
         badge.frame = NSRect(x: bounds.width - badgeWidth - 12, y: 14 + (23 - badgeSize.height) / 2,
                              width: badgeWidth, height: badgeSize.height)
-        // Constraints pin a label's alignment rect, inside its 2-point text padding.
         badgeLabel.frame = isTab ? badge.bounds
             : badgeLabel.frame(forAlignmentRect: NSRect(x: 4, y: 4, width: ceil(text.width), height: ceil(text.height)))
-        // Labels draw their 16-point line at the top of the frame; a 17-point
-        // frame from y 16 centres that line on the 50-point row with the icon.
         accessory.frame = NSRect(x: bounds.width - trailing - 12, y: 16, width: textWidth, height: 17)
         let available = max(0, bounds.width - trailing - 70)
         if hasContext {
             let prefixWidth = min(label.singleLineWidth, available)
             label.frame = NSRect(x: 44, y: 16, width: prefixWidth, height: 17)
-            // Contextual names need visible destination context even when the destination
-            // name is long. The complete values remain available to AX/tooltips.
             let detailWidth = detail.isEmpty ? 0 : min(spaceDetail.singleLineWidth, available * 0.3)
             let reserve = detailWidth > 0 ? detailWidth + 8 : 0
             let capsuleWidth = min(max(0, available - prefixWidth - 8 - reserve), spaceLabel.singleLineWidth + 32)
@@ -188,9 +162,6 @@ final class CommandResultCell: NSView {
             let detailX = spaceCapsule.frame.maxX + 8
             spaceDetail.frame = NSRect(x: detailX, y: 16, width: max(0, 44 + available - detailX), height: 17)
         } else {
-            // DefaultSuggestionTitleView sizes the title to fit within 480 points,
-            // then gives the subtitle up to 280 of what remains, 4 points after
-            //
             let titleWidth = min(label.singleLineWidth, 480, available)
             label.frame = NSRect(x: 44, y: 16, width: titleWidth, height: 17)
             let subtitleX = label.frame.maxX + 4
@@ -207,18 +178,13 @@ final class CommandResultCell: NSView {
         return copy
     }
     private static func line(_ string: String, font: NSFont, color: NSColor, truncation: NSLineBreakMode) -> NSAttributedString {
-        // An attributed value without its own paragraph style wraps at a word
-        // break instead of showing the label's ellipsis.
         let style = NSMutableParagraphStyle(); style.lineBreakMode = truncation
         return NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: style])
     }
-    // The row owns pointer tracking independently of keyboard/AX selection.
     func setHovered(_ value: Bool) {
         isHovered = value; updateDeleteVisibility()
     }
     private func updateDeleteVisibility() {
-        //
-        // the same action remains accessible without pointer hover.
         deleteButton.isHidden = !isHovered || onDelete == nil
         deleteButton.isEnabled = enabled && onDelete != nil
     }

@@ -1,7 +1,5 @@
 import AppKit
 
-/// Pointer highlight is independent of the table's keyboard/AX selection.
-/// The original row payload is captured by CommandBar, not looked up on hover.
 final class CommandResultRowView: NSTableRowView {
     var onPress: ((NSEvent) -> Bool)?
     private(set) var isHovered = false
@@ -54,7 +52,6 @@ final class CommandResultRowView: NSTableRowView {
         isHovered = value; cells.forEach { $0.setHovered(value) }; refreshHighlight()
     }
     override func mouseEntered(with event: NSEvent) {
-        //
     }
     override func mouseMoved(with event: NSEvent) { setHovered(containsPointer(event)) }
     override func mouseExited(with event: NSEvent) {
@@ -63,8 +60,6 @@ final class CommandResultRowView: NSTableRowView {
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
-        // A real accessory keeps its own mouse tracking/action. Decorative text
-        // and images route to the row without NSTableView selecting/focusing it.
         var view: NSView? = hit
         while let current = view, current !== self {
             if current is NSControl && !(current is NSTextField) { return hit }
@@ -76,13 +71,7 @@ final class CommandResultRowView: NSTableRowView {
         guard event.type == .leftMouseDown, containsPointer(event) else { return }
         _ = onPress?(event)
     }
-    ///
-    /// it precedence over the hovered colour.
     var selectedColor: NSColor = CommandBarPalette.colourless.selected { didSet { refreshHighlight() } }
-    ///
-    ///
-    ///
-    /// frame changes take Core Animation's implicit 0.25-second action.
     let highlight = CALayer()
 
     override init(frame frameRect: NSRect) {

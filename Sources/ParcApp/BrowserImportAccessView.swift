@@ -1,7 +1,5 @@
 import AppKit
 
-/// Guidance only: the user grants access in macOS. This view never reads TCC,
-/// changes a grant, or treats opening System Settings as successful permission.
 @MainActor
 final class BrowserImportAccessView: LayoutView {
     var onOpenSettings: (() -> Void)?
@@ -74,7 +72,6 @@ final class BrowserImportAccessView: LayoutView {
         restartButton.isEnabled = ready && !checking && !continuing && !restarting && restartAvailable
         restartButton.title = restarting ? "Restarting…" : "Restart Parc"
         continueButton.title = continuing ? "Checking access…" : "Continue without restarting"
-        // The buttons show progress; only a problem needs words.
         status.stringValue = error ?? ""
         needsLayout = true
     }

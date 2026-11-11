@@ -1,14 +1,11 @@
 import AppKit
 import Combine
 
-///
 @MainActor
 final class WebpageWindowDraggingPreferences: ObservableObject {
     static let shared = WebpageWindowDraggingPreferences()
     struct State: Codable, Equatable {
         var version = 1
-        // The installed reference is enabled. Registration was not recovered;
-        //
         var isEnabled = true
     }
     @Published private(set) var state: State
@@ -38,8 +35,6 @@ final class WebpageWindowDraggingPreferences: ObservableObject {
     }
 }
 
-///
-/// movement accounting. No timing threshold, synthetic click or haptic is added.
 struct WebpageWindowDragState: Equatable {
     enum Phase: Equatable { case inactive, began, committed(x: CGFloat, y: CGFloat) }
     private(set) var phase = Phase.inactive
@@ -55,7 +50,6 @@ struct WebpageWindowDragState: Equatable {
     mutating func begin(eligible: Bool) { phase = eligible ? .began : .inactive }
     mutating func commit() { phase = .committed(x: 0, y: 0) }
     mutating func cancel() { phase = .inactive }
-    /// True means the real event is consumed. Unrelated events stay untouched.
     mutating func consume(_ type: NSEvent.EventType, deltaX: CGFloat, deltaY: CGFloat) -> Bool {
         guard case .committed(let x, let y) = phase else { return false }
         if type == .leftMouseDragged {
@@ -69,9 +63,6 @@ struct WebpageWindowDragState: Equatable {
     }
 }
 
-/// Transparent renderer overlay. A webpage receives its original mouseDown.
-/// Chromium's native Cocoa event path re-hit-tests the window for each mouse
-/// event; that same original dragged NSEvent commits NSWindow.performDrag.
 @MainActor
 final class WebpageWindowGrabber: NSView {
     private weak var owner: AnyObject?
@@ -113,17 +104,10 @@ final class WebpageWindowGrabber: NSView {
         guard !committing, let event = NSApp?.currentEvent,
               event.type == .leftMouseDown || event.type == .leftMouseDragged,
               super.hitTest(point) === self, let window, event.window === window else { return nil }
-        // Inactive has no armed sequenceWindow and no monitor. A left-drag in the
-        // strip cannot arm, commit, install a monitor, or take the click from the
-        // page; eligibility/cursor work cannot change that outcome. Left-down and
-        // armed/committed drag still evaluate — those paths can begin, cancel, or
-        // commit when owner/current/hidden/arrow/eligibility flip.
         if event.type == .leftMouseDragged, drag.phase == .inactive { return nil }
         let eligible = owner != nil && isCurrent?() == true && !isHiddenOrHasHiddenAncestor && NSCursor.current == NSCursor.arrow && eligibility?(event) == true
         if event.type == .leftMouseDown {
             cancel(); drag.begin(eligible: eligible); sequenceWindow = eligible ? window : nil
-            // The recovered web-content delegate leaves the real down with the
-            // renderer. In particular, a click is never replayed or substituted.
             return nil
         }
         guard eligible, sequenceWindow === window else { cancel(); return nil }
@@ -133,8 +117,6 @@ final class WebpageWindowGrabber: NSView {
             committing = true
             window.performDrag(with: event)
             committing = false
-            // Native dragging runs AppKit tracking and may synchronously close,
-            // hide, replace or detach the original page/window.
             guard self.window === window, sequenceWindow === window, owner != nil,
                   !isHiddenOrHasHiddenAncestor, isCurrent?() == true else { cancel(); return nil }
             drag.commit(); installMonitor()

@@ -1,7 +1,5 @@
 import AppKit
 
-/// The native renderer's real NSDraggingInfo is handed to this ancestor before
-/// Chromium sees a claimed gesture. It remains the one drop owner across preview.
 @MainActor
 final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, LocalContentDropHosting {
     func contentDropRouter(for view: NSView) -> any LocalContentDropRouting {
@@ -16,16 +14,8 @@ final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, L
     var makeSession: ((NSView, NSDraggingInfo) -> ExternalSplitDropSession?)?
     private var session: ExternalSplitDropSession?
     private weak var sourceView: NSView?
-    ///
-    ///
-    /// re-entries and the per-entry sessions and leases do not end it. A
-    /// content router left on exit stays claimed so its view's terminal
-    /// draggingEnded/conclude still reaches `contentViewDidEndDrop`; while no
-    /// session or handoff has the drag, the edit's button-release fallback
-    /// guarantees the end if that terminal never arrives.
     private var edit: ParcSplitView.InteractivePaneEdit?
     private var editSequence = 0
-    /// The host's own router ends are not terminal callbacks of the drag.
     private var endingRouter = false
     private func endEdit() { let old = edit; edit = nil; old?.end() }
     private func syncEditPresence() { edit?.isDragInside = session != nil || handoffRouter != nil }
@@ -43,11 +33,6 @@ final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, L
     func contentView(_ view: NSView, updateDrop info: NSDraggingInfo) -> NSDragOperation { view === sourceView ? session?.update(info) ?? [] : [] }
     func contentView(_ view: NSView, prepareDrop info: NSDraggingInfo) -> Bool { view === sourceView && !(session?.update(info).isEmpty ?? true) }
     func contentView(_ view: NSView, performDrop info: NSDraggingInfo) -> Bool { view === sourceView && (session?.perform(info) ?? false) }
-    /// Reached from a content router's end: its view's terminal draggingEnded
-    /// or conclude, a completed perform, an invalid recipient, or the
-    /// router's own restart when the drag re-enters that view, whose
-    /// beginDrop follows synchronously and begins the drag's edit again
-    /// before any layout runs.
     func contentViewDidEndDrop(_ view: NSView) {
         defer { syncEditPresence() }
         if view === sourceView { tearDown(animated: true) }
@@ -60,15 +45,11 @@ final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, L
             handoffRouter = router
             return true
         }
-        // Leaving the page ends its preview, not the drag's edit: keep the
-        // router claimed as the witness of the drag's terminal callback.
         guard let edit, !edit.ended, editSequence == info.draggingSequenceNumber else { return false }
         if handoffRouter === router { handoffRouter = nil }
         endSession(animated: true)
         return true
     }
-    // The host can only continue an accepted original content gesture. A URL
-    // over an unclaimed gap or the empty content cannot manufacture a new page owner.
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { updateHandoff(sender) }
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { updateHandoff(sender) }
     private func updateHandoff(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -83,8 +64,6 @@ final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, L
         guard prepareForDragOperation(sender), let router = handoffRouter else { cancelDrop(animated: false); return false }
         return router.perform(sender)
     }
-    /// Leaving the host's handoff area ends the preview; the handed-off router
-    /// stays claimed as the terminal witness, as on a page exit.
     override func draggingExited(_ sender: NSDraggingInfo?) {
         handoffRouter = nil; endSession(animated: true); syncEditPresence()
     }
@@ -99,7 +78,6 @@ final class ExternalSplitDropHost: LayoutView, PCNativeContentDropDestination, L
         session = nil; sourceView = nil
         old?.end(animated: animated)
     }
-    /// Ends the current session and handoff without ending the drag's edit.
     func cancelDrop(animated: Bool = true) { tearDown(animated: animated); syncEditPresence() }
     private func tearDown(animated: Bool) {
         let router = handoffRouter
@@ -126,18 +104,14 @@ final class ExternalSplitDropSession {
     private let commit: (SplitDropTarget, SplitOrientation) -> Bool
     private let reservation: ParcSplitView.DropReservation?
     private var proposal: (SplitDropTarget, SplitOrientation, NSRect)?
-    /// Proposed-target owner: replacement presentation and haptic feedback.
     let targets = SplitDropTargetTracker()
     private weak var info: NSDraggingInfo?
-    /// The link's own images the placeholder card replaced, put back when the
-    /// session ends without a drop.
     private var replacedImages: [Int: SplitDropPlaceholderCard.ItemImage] = [:]
     private(set) var ended = false
     var isValid: Bool { !ended && validate() && host?.window === window && window != nil }
 
     static func readURL(_ pasteboard: NSPasteboard) -> URL? {
         guard let items = pasteboard.pasteboardItems, items.count == 1,
-              // Internal drags retain their original identity/transaction owner.
               !items[0].types.contains(SidebarSplitDrag.pasteboardType),
               !items[0].types.contains(SidebarMoveSession.pasteboardType),
               !items[0].types.contains(.fileURL) else { return nil }
@@ -156,10 +130,6 @@ final class ExternalSplitDropSession {
         self.validate = validate; self.canPropose = canPropose; self.commit = commit; self.info = info
         reservation?.setInsertionColor(insertionColor)
     }
-    ///
-    ///
-    ///
-    /// for the incoming pane.
     static let linkGlyph = String(Character(Unicode.Scalar(0xE98A)!))
     func presentPlaceholderCard() {
         guard replacedImages.isEmpty, let info, matches(info), let reservation, reservation.isCurrent,
@@ -171,16 +141,12 @@ final class ExternalSplitDropSession {
         let images = replacedImages; replacedImages = [:]
         if let info { SplitDropPlaceholderCard.restore(images, on: info) }
     }
-    /// The drag's interactive pane edit begins with this admitted session; its
-    /// host keeps it after the session ends.
     func beginInteractivePaneEdit() -> ParcSplitView.InteractivePaneEdit? { reservation?.beginInteractivePaneEdit() }
     private func matches(_ info: NSDraggingInfo) -> Bool {
         isValid && info.draggingDestinationWindow === window && info.draggingSequenceNumber == sequence &&
         info.draggingPasteboard === pasteboard && pasteboard.changeCount == changeCount &&
         info.draggingSourceOperationMask.contains(.copy) && Self.readURL(pasteboard) == url
     }
-    /// The host continues the content's gesture over the reserved region and
-    ///
     func canHandoff(_ info: NSDraggingInfo) -> Bool {
         guard matches(info), let host, let reservation else { return false }
         return reservation.containsHandoffPoint(host.convert(info.draggingLocation, from: nil))
@@ -201,7 +167,6 @@ final class ExternalSplitDropSession {
     func refreshAppearance() { reservation?.refreshAppearance() }
     func perform(_ info: NSDraggingInfo) -> Bool {
         guard !update(info).isEmpty, let p = proposal, matches(info) else { end(animated: false); return false }
-        // Consume first: model/native publication can synchronously reenter layout.
         reservation?.clear()
         guard matches(info) else { end(animated: false); return false }
         ended = true; proposal = nil; replacedImages = [:]
@@ -213,8 +178,6 @@ final class ExternalSplitDropSession {
     func end(animated: Bool = true) {
         guard !ended else { return }
         let attached = window != nil && host?.window === window
-        // Validation is an external owner callback and may retire this session.
-        // Revoke first so terminal reentry cannot validate or finish twice.
         ended = true; proposal = nil
         targets.reset()
         restoreImages()
@@ -228,8 +191,6 @@ final class ExternalSplitDropSession {
 
 }
 
-/// Only an API adapter: the original native ancestor/gesture/window/pasteboard
-/// lease remains authoritative for both renderer and local document receivers.
 @MainActor
 private final class NativeLocalContentDropRouter: LocalContentDropRouting {
     private let router: PCNativeContentDropRouting

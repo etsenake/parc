@@ -1,14 +1,5 @@
 import AppKit
 
-///
-///
-///
-///
-/// "Update Appearance" undo, then sets NSApp.appearance
-///
-/// Websites (Chromium follows NSApp.effectiveAppearance) and Notes then use that
-/// appearance; Parc's Easel editor still forces Aqua (Easels contract in
-/// web-interactions.md). Storing it in user defaults is Parc's persistence owner.
 @MainActor
 enum AppAppearance: String, CaseIterable {
     case automatic, light, dark
@@ -43,17 +34,13 @@ enum AppAppearance: String, CaseIterable {
         }
     }
 
-    /// Reapply the saved choice before windows and the engine read appearance.
     static func restore(defaults: UserDefaults = .standard) {
         guard let raw = defaults.string(forKey: defaultsKey), let saved = AppAppearance(rawValue: raw) else { return }
         NSApp.appearance = saved.appearance
     }
 
-    /// Show a choice without saving it (onboarding replay until Finish).
     static func preview(_ value: AppAppearance) { NSApp.appearance = value.appearance }
 
-    /// End a preview: show the saved choice again, but only while `applied`
-    /// is still showing, so a choice made elsewhere meanwhile stays.
     @discardableResult static func endPreview(_ applied: AppAppearance, defaults: UserDefaults = .standard) -> Bool {
         guard current == applied else { return false }
         let saved = defaults.string(forKey: defaultsKey).flatMap(AppAppearance.init(rawValue:)) ?? .automatic
@@ -61,9 +48,6 @@ enum AppAppearance: String, CaseIterable {
         return true
     }
 
-    /// Returns whether the explicit choice changed, for the owner's Undo entry.
-    /// Reconcile persistence even when unchanged: Automatic clears a saved
-    /// override even if the native appearance has already returned to nil.
     @discardableResult static func apply(_ value: AppAppearance, defaults: UserDefaults = .standard) -> Bool {
         let changed = value != current
         if changed { NSApp.appearance = value.appearance }

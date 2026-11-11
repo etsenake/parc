@@ -1,12 +1,8 @@
 import AppKit
 
-///
-/// modifier combinations in the native responder chain rather than submitting.
 enum CommandBarSubmission: Equatable {
     case ordinary, split, background
 
-    // Existing pointer and key-equivalent routing is deliberately separate
-    // from Command-Return's field-editor command phase.
     static func resolve(_ flags: NSEvent.ModifierFlags) -> Self? {
         switch flags.intersection([.command, .option, .control, .shift]) {
         case []: return .ordinary
@@ -30,8 +26,6 @@ enum CommandBarSubmission: Equatable {
             let flags = event?.modifierFlags.intersection([.command, .option, .control, .shift])
             return flags == nil || flags == .option ? .split : nil
         case "noop:":
-            //
-            // doCommand fallback matches these exact keys and Command mask.
             guard let event, event.type == .keyDown, [36, 76].contains(event.keyCode),
                   event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command else { return nil }
             return .background

@@ -1,15 +1,11 @@
 import Foundation
 
-// Commands carry the copied original row. The window resolves its live
-// profile/GUID/incarnation before dispatch; menu tracking cannot retarget it.
 enum DownloadLibraryAction {
     case open, reveal, copyFile, copyLink, openSource, toggleOpen
     case pause, resume, cancel, retry, review, remove, trash
 }
 
 
-/// The manager GUID can be reused after retirement. Selection and commands keep
-/// its live incarnation as well as the owning profile and public record ID.
 struct DownloadLibraryIdentity: Hashable {
     let record: String
     let profile: UUID?
@@ -32,8 +28,6 @@ struct DownloadLibrarySelection {
         })
     }
 
-    /// Resolve the whole captured set before dispatch. A vanished/replaced item
-    /// refuses the command rather than silently applying it to a subset.
     static func resolve(_ originals: [BrowserDownload], in current: [BrowserDownload],
                         profiles: Set<UUID>) -> [BrowserDownload]? {
         guard !originals.isEmpty else { return nil }
@@ -51,8 +45,6 @@ struct DownloadLibrarySelection {
 
     static func resolve(_ originals: [BrowserDownload], for action: DownloadLibraryAction,
                         in state: BrowserState) -> [BrowserDownload]? {
-        // The recovered container, row and DownloadMenu carry one optional
-        // original item, not a range. A fabricated plural command is refused.
         guard originals.count == 1,
               let current = resolve(originals, in: state.downloads, profiles: Set(state.profiles.map(\.id))),
               current.allSatisfy({ eligible($0, action, spaces: state.spaces) }) else { return nil }
@@ -61,7 +53,6 @@ struct DownloadLibrarySelection {
         if [.review, .openSource, .copyLink].contains(action), current.count != 1 { return nil }
         if action == .copyLink || action == .openSource,
            zip(originals, current).contains(where: { $0.sourceURL != $1.sourceURL }) { return nil }
-        // Chromium toggles each original; mixed values have no shared outcome.
         if action == .toggleOpen,
            Set(current.map(\.openWhenComplete)).count != 1 ||
            zip(originals, current).contains(where: { $0.openWhenComplete != $1.openWhenComplete }) { return nil }
@@ -77,8 +68,6 @@ struct DownloadLibrarySelection {
         case .openSource:
             guard let profileID = item.profileID, let url = item.sourceURL.flatMap(URL.init(string:)),
                   ["http", "https", "parc", "chrome", "chrome-extension"].contains(url.scheme?.lowercased() ?? "") else { return false }
-            // A live OTR owner need not have a remaining regular Space. Its
-            // context lease is revalidated again by the original window route.
             return item.privateContextID != nil || spaces.contains(where: { $0.profileID == profileID })
         case .toggleOpen: return item.canToggleOpen
         case .pause: return item.canPause
@@ -90,9 +79,6 @@ struct DownloadLibrarySelection {
         case .trash: return item.canRemove && item.canCopyFile
         }
     }
-    /// Ordinary arrow movement follows displayed items, not date-header rows.
-    /// The original Library reducer selects the first item from no selection
-    /// and stops at each end. Shift-arrow moves that same single cursor.
     static func nextRow(in selectable: IndexSet, selected: IndexSet, forward: Bool) -> Int? {
         guard let first = selectable.first else { return nil }
         let existing = selected.intersection(selectable)

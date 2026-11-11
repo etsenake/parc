@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// A pending setup choice. Selecting a row neither reads a file nor installs
-/// an extension; the original setup owner accepts it with Next.
 struct OnboardingPasswordChoice: View {
     let installExtension: Bool
     let enabled: Bool

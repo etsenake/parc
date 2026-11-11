@@ -1,22 +1,14 @@
 import AppKit
 import QuartzCore
 
-/// URLTextView's presentation on the existing native button. The page owner
-/// supplies the action; neither these display runs nor hover can navigate.
 @MainActor final class PaneTitleControl: PointingHandButton {
     var actionBlock: (() -> Void)?
-    ///
-    ///
-    /// pointer with no positioning item. The menu never navigates by itself.
     var menuProvider: (() -> NSMenu?)?
     private let label = PaneTitleLabel(labelWithString: "")
     private let surface = CALayer()
     private var primary = ""
     private var suffix: String?
     private var webURL = false
-    // The parent allocation, not the smaller native hit surface, owns fit.
-    // Retaining it prevents an appearance/layout refresh from hiding a suffix
-    // that was admitted before the button shrank to its intrinsic text width.
     private var allocatedTitleWidth: CGFloat?
     private var area: NSTrackingArea?
     private var observers: [NSObjectProtocol] = []
@@ -39,8 +31,6 @@ import QuartzCore
         label.isSelectable = false; label.maximumNumberOfLines = 1
         label.cell?.usesSingleLineMode = true; label.alignment = .center
         label.setAccessibilityElement(false); addSubview(label)
-        // Sidebar round 3: inside the ⌘S group the label is drawn once at its
-        // final size and held centred, not resized and redrawn every frame.
         SidebarMotionController.pinDrawnContent(label, to: .center)
         setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityChildren([])
         appearanceObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -59,8 +49,6 @@ import QuartzCore
         toolTip = title; setAccessibilityLabel(title)
         refresh(animated: false); needsLayout = true; superview?.needsLayout = true
     }
-    /// Keep the padded text's native hit surface inside the parent's allocation.
-    /// AppKit measures the actual attributed runs; no page or action is replaced.
     func place(in slot: NSRect) {
         allocatedTitleWidth = max(0, slot.width)
         refreshText()
@@ -73,8 +61,6 @@ import QuartzCore
     @objc private func invoke() { guard isEnabled else { return }; actionBlock?() }
     override func layout() {
         super.layout()
-        // Only an implicit-animation group (the ⌘S slide) may move the passive
-        // surface, with that group's timing; elsewhere it follows at once.
         CATransaction.begin()
         CATransaction.setDisableActions(!NSAnimationContext.current.allowsImplicitAnimation)
         surface.frame = bounds
@@ -82,9 +68,6 @@ import QuartzCore
         refreshText()
         let textSize = label.attributedStringValue.size()
         let height = min(max(0, bounds.height - 8), ceil(textSize.height))
-        // NSTextFieldCell contributes its own horizontal text inset. Subtract
-        // that measured inset from the six-point SwiftUI text padding instead
-        // of counting it twice and clipping an otherwise fitting host name.
         let cellInset = max(0, ((label.cell?.cellSize.width ?? textSize.width) - textSize.width) / 2)
         let inset = max(0, 6 - cellInset)
         label.frame = NSRect(x: inset, y: (bounds.height - height) / 2,
@@ -92,11 +75,6 @@ import QuartzCore
     }
     private func refreshText() {
         let complete = displayText(includingSuffix: true)
-        // Original frames producer measures the complete attributed pair, adds
-        // twelve points of text padding plus two two-point gaps, then the
-        // visibility reducer requires ten further points. In this centered
-        // native allocation, url.width + 2 * min(leading, trailing) is exactly
-        // the parent's available span, regardless of the current hit width.
         let available = allocatedTitleWidth ?? bounds.width
         let fits = complete.size().width + 16 + 10 <= available
         label.attributedStringValue = displayText(includingSuffix: fits)
@@ -165,7 +143,6 @@ import QuartzCore
         animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         surface.add(animation, forKey: "pane-title-opacity")
     }
-    /// The current content's menu, or nil when its owner refuses.
     func titleMenu() -> NSMenu? {
         guard isEnabled, !isHiddenOrHasHiddenAncestor, window?.isKeyWindow == true else { return nil }
         return menuProvider?()
@@ -218,10 +195,6 @@ import QuartzCore
     }
 }
 
-/// The center stack is independent of the edge controls. The measured left
-///
-/// Frames reducer; invisible 24-point slugs with trailing -5 balance Copy and,
-///
 struct PaneTitleLayout {
     static let balanceWidth: CGFloat = 19
     static func slot(in bounds: NSRect, leftEssential: CGFloat, rightEssential: CGFloat,
@@ -234,9 +207,6 @@ struct PaneTitleLayout {
         let left = max(0, leftEssential - bounds.minX)
         let right = max(0, bounds.maxX - rightEssential)
         let stack = max(150, bounds.width - 2 * max(left, right) - 4)
-        // Native edge controls still use their existing compact presentation.
-        // Contain the real title in unusually narrow allocations rather than
-        // letting the reference stack floor cover an essential native button.
         let room = max(0, 2 * min(bounds.midX - requiredLeft, requiredRight - bounds.midX))
         let width = min(room, max(0, stack - 2 * side))
         return NSRect(x: bounds.midX - width / 2, y: bounds.minY,
@@ -244,12 +214,6 @@ struct PaneTitleLayout {
     }
 }
 
-///
-/// URLs, each titled `menuItemTitle` with its `image` and performing
-///
-/// sits directly in the menu. The URL menu's "Share" item holds it as a
-///
-///
 @MainActor enum PaneShareMenu {
     static func item(for url: URL?, services: @MainActor ([URL]) -> [NSSharingService] = sharingServices(for:)) -> NSMenuItem {
         let item = NSMenuItem(title: "Share", action: nil, keyEquivalent: "")
@@ -273,10 +237,6 @@ struct PaneTitleLayout {
     static func popUp(for urls: [URL]) {
         menu(for: urls)?.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
-    ///
-    /// SDK deprecates it for the picker's standard menu item, which adds its
-    /// own entries; the same class method is reached dynamically so the list
-    ///
     static func sharingServices(for urls: [URL]) -> [NSSharingService] {
         let selector = NSSelectorFromString("sharingServicesForItems:")
         let owner: AnyObject = NSSharingService.self
@@ -291,17 +251,8 @@ struct PaneTitleLayout {
     }
 }
 
-///
-/// content URL (no URL, no actions), the sidebar item (only a tab adds Share,
-/// the captures, Show/Hide Full URL and Shared Quotes) and the classifier
-///
-/// (7) results drop Manage Extensions for any content that has a blueprint;
-/// web contents (0/1) keep it. A live page, including an error or renderer
-/// crash and Parc's own web pages, is web content; a Note or Easel is a
-/// document; a blank tab has no URL.
 enum PaneMenuContent: Equatable {
     case web, document, none
-    /// `localDocument` is the owner's `InternalPage` test of the same URL.
     init(livePage: Bool, tabURL: String?, localDocument: Bool) {
         if livePage { self = .web; return }
         guard let tabURL, !tabURL.isEmpty, tabURL != "about:blank" else { self = .none; return }
@@ -309,10 +260,6 @@ enum PaneMenuContent: Equatable {
     }
 }
 
-///
-/// view presents, so a navigation failure or renderer crash over a live page
-/// keeps the page's bar; a Note, an Easel, a native page or a blank tab
-/// takes the content bar.
 enum PaneSurface: Equatable {
     case page, failure, local
     func usesPageBar(pageLive: Bool) -> Bool { pageLive && self != .local }

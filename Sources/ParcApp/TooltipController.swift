@@ -3,8 +3,6 @@ import Carbon.HIToolbox
 import SwiftUI
 
 extension NSView {
-    ///
-    /// the AppKit help tag and tracks the pointer; nil removes the tooltip.
     var parcTooltip: TooltipConfiguration? {
         get { TooltipTracker.attached(to: self)?.configuration }
         set { TooltipController.setConfiguration(newValue, of: self) }
@@ -12,8 +10,6 @@ extension NSView {
 }
 
 extension View {
-    ///
-    /// configuration on a `TooltipAnchorView` overlaid on the content.
     func parcTooltip(_ configuration: TooltipConfiguration?) -> some View {
         overlay {
             if let configuration { TooltipAnchor(configuration: configuration).accessibilityHidden(true) }
@@ -21,7 +17,6 @@ extension View {
     }
 }
 
-///
 private struct TooltipAnchor: NSViewRepresentable {
     let configuration: TooltipConfiguration
     func makeNSView(context: Context) -> TooltipAnchorView {
@@ -32,10 +27,6 @@ private struct TooltipAnchor: NSViewRepresentable {
     func updateNSView(_ view: TooltipAnchorView, context: Context) { view.parcTooltip = configuration }
 }
 
-///
-/// SwiftUI control's tooltip but is transparent to every hit test except its
-/// window controller's own for it, so the control keeps its clicks, hover
-/// and cursor while the controller still finds the pointer inside the view.
 final class TooltipAnchorView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let window, TooltipController.controller(for: window).hitTestingView === self else { return nil }
@@ -43,18 +34,11 @@ final class TooltipAnchorView: NSView {
     }
 }
 
-///
-/// (KB38), and the same text ("Go back ⌘[") as its accessibility help. The
-/// binder the app installs at launch keeps that help on the current binding,
-/// so these controls carry no registry dependency; without a binder the help
-/// is the title alone.
 @MainActor enum LiveShortcutToolTip {
     static let didChange = Notification.Name("Parc.LiveShortcutDiscoveryDidChange")
     static var binder: ((NSView, String, String?, Bool) -> Void)?
-    /// The title with the command's live binding, read when needed.
     static var resolver: ((String, String?) -> String)?
     static func text(_ title: String, commandID: String?) -> String { resolver?(title, commandID) ?? title }
-    /// `requiresBinding` shows nothing while the command has no valid binding (Reset Tab).
     static func set(_ view: NSView, _ title: String, commandID: String? = nil, requiresBinding: Bool = false,
                     anchor: TooltipConfiguration.Anchor = .bottomTrailing,
                     behavior: TooltipConfiguration.Behavior = .onMouseIdle(delay: 0.45)) {
@@ -62,7 +46,6 @@ final class TooltipAnchorView: NSView {
                                                 behavior: behavior, requiresShortcut: requiresBinding)
         help(view, title, commandID: commandID, requiresBinding: requiresBinding)
     }
-    ///
     static func help(_ view: NSView, _ title: String, commandID: String?, requiresBinding: Bool = false) {
         if let binder { binder(view, title, commandID, requiresBinding); return }
         let text = requiresBinding ? nil : title
@@ -70,12 +53,7 @@ final class TooltipAnchorView: NSView {
     }
 }
 
-///
-/// `TooltipPresentationState`'s decisions with timers, hit tests and the
-/// tooltip window (docs/tooltips.md).
 @MainActor final class TooltipController {
-    /// The shortcut registry's live binding for a command; the app installs
-    /// it at launch, as it does for `LiveShortcutToolTip`.
     static var commandShortcut: ((String) -> KeyboardShortcut?)?
 
     private typealias State = TooltipPresentationState<ObjectIdentifier>
@@ -85,8 +63,6 @@ final class TooltipAnchorView: NSView {
         init(_ view: NSView) { self.view = view }
     }
 
-    ///
-    ///
     private static let controllerKey = UnsafeMutableRawPointer.allocate(byteCount: 1, alignment: 1)
 
     static func setConfiguration(_ configuration: TooltipConfiguration?, of view: NSView) {
@@ -111,30 +87,20 @@ final class TooltipAnchorView: NSView {
         objc_getAssociatedObject(window, controllerKey) as? TooltipController
     }
 
-    ///
-    /// every theme change. Nil shows the neutral palette.
     var palette: TooltipColorPalette?
-    /// Nothing presents while set, and setting it fades a shown tooltip.
     var isSuppressed = false {
         didSet { if isSuppressed && !oldValue { hide(TooltipTiming.exitDuration) } }
     }
-    /// The tooltipped view this controller is hit-testing for, only during
-    /// that hit test (TooltipController field 11, set and cleared around
-    ///
-    ///
     private(set) weak var hitTestingView: NSView?
 
     private weak var window: NSWindow?
     private var state = State()
-    /// The view `state.target` names.
     private weak var targetView: NSView?
     private var entered: [WeakView] = []
     private var presentationTimer: Timer?
     private var hitTestTimer: Timer?
-    /// MouseListener's stop timer; movement moves its fire date.
     private var stopTimer: Timer?
     private var lastMoveTimestamp: TimeInterval = -1
-    /// Exists while `state.isShowing`.
     private var presenter: TooltipPresenter?
     private var presentedShortcut: KeyboardShortcut?
     private var monitor: Any?
@@ -163,13 +129,6 @@ final class TooltipAnchorView: NSView {
         return view
     }
 
-    // MARK: Pointer tracking
-
-    /// Only a view the pointer actually reaches (not one obscured by another)
-    ///
-    /// every entered view and leaves the hit test to scheduling, so a view
-    /// whose hit region is smaller than its bounds (the Library entry's
-    /// canvas) still gets its tooltip once the pointer reaches that region.
     fileprivate func mouseEntered(_ view: NSView, event: NSEvent) {
         entered.removeAll { $0.view == nil || $0.view === view }
         entered.append(WeakView(view))
@@ -191,7 +150,6 @@ final class TooltipAnchorView: NSView {
         updateMonitor()
     }
 
-    /// Every tooltipped view under the pointer forwards the same event.
     fileprivate func mouseMoved(_ event: NSEvent) {
         guard event.timestamp != lastMoveTimestamp else { return }
         lastMoveTimestamp = event.timestamp
@@ -217,7 +175,6 @@ final class TooltipAnchorView: NSView {
         return hit.isDescendant(of: view)
     }
 
-    /// The innermost entered view under the pointer.
     private func viewUnderPointer() -> NSView? {
         entered.reversed().compactMap(\.view).first { $0.parcTooltip != nil && isPointer(over: $0) }
     }
@@ -232,8 +189,6 @@ final class TooltipAnchorView: NSView {
         case .hide(let fade): apply(state.hide(fade, now: Date()))
         }
     }
-
-    // MARK: Presentation
 
     private func shortcut(for configuration: TooltipConfiguration) -> KeyboardShortcut? {
         switch configuration.shortcut {
@@ -303,10 +258,6 @@ final class TooltipAnchorView: NSView {
         updateMonitor()
     }
 
-    ///
-    /// Only views the pointer has left stop counting as entered; one that
-    /// still holds it where it passes the pointer through (the Library
-    /// entry's canvas) stays, so a stop on its part schedules it again.
     private func verifyPointer() {
         guard state.isPresented else { return }
         if let view = currentView, isPointer(over: view) { return }
@@ -315,7 +266,6 @@ final class TooltipAnchorView: NSView {
         updateMonitor()
     }
 
-    /// The pointer is within the view's visible rect, whatever its hit test.
     private func holdsPointer(_ view: NSView) -> Bool {
         guard let window = view.window, window === self.window, !view.isHiddenOrHasHiddenAncestor else { return false }
         return view.visibleRect.contains(view.convert(window.mouseLocationOutsideOfEventStream, from: nil))
@@ -325,9 +275,6 @@ final class TooltipAnchorView: NSView {
         apply(state.hide(State.Fade(duration: duration), now: Date()))
     }
 
-    /// Stops the timers the state no longer names and fades a shown window.
-    /// Only the latest fade completes; a superseded one leaves the window to
-    /// whatever replaced it.
     private func apply(_ fade: State.Fade?) {
         syncTimers()
         guard let fade, let presenter else { updateMonitor(); return }
@@ -343,9 +290,6 @@ final class TooltipAnchorView: NSView {
         if !state.isPresented { hitTestTimer?.invalidate(); hitTestTimer = nil }
     }
 
-    /// A changed configuration replaces a shown tooltip only while the pointer
-    /// is still over its view; a view that resets its tooltip as the pointer
-    /// leaves, before this controller sees the exit, hides it instead.
     private func configurationDidChange(for view: NSView) {
         guard state.target == ObjectIdentifier(view) else { return }
         if state.isPresented {
@@ -366,13 +310,6 @@ final class TooltipAnchorView: NSView {
         syncTimers(); updateMonitor()
     }
 
-    // MARK: Dismissal and keyboard tracking
-
-    /// Installed while the pointer is over a tooltipped view or a tooltip is
-    ///
-    /// and key and modifier changes drive the keycaps (KeyboardShortcutTracker).
-    /// Views that went away, left the window or were hidden without an exit no
-    /// longer count as hovered.
     private func updateMonitor() {
         entered.removeAll { $0.view.map { $0.window !== window || $0.isHiddenOrHasHiddenAncestor } ?? true }
         let active = !entered.isEmpty || state.isShowing || state.phase != .tracking
@@ -412,11 +349,6 @@ final class TooltipAnchorView: NSView {
     }
 }
 
-/// A tooltipped view's configuration and tracking-area owner (the role of
-///
-///
-/// Entered and exited name the owner's own view; a mouse-moved event carries
-/// no tracking area, so it routes by its window.
 @MainActor private final class TooltipTracker: NSResponder {
     private static let key = UnsafeMutableRawPointer.allocate(byteCount: 1, alignment: 1)
 
@@ -461,15 +393,11 @@ final class TooltipAnchorView: NSView {
     }
 }
 
-///
-///
-/// window that never takes key or mouse events.
 @MainActor final class TooltipPresenter {
     private weak var parent: NSWindow?
     private let window: NSWindow
     private let view = TooltipView(content: TooltipView.Content(label: "", keycaps: [], corners: TooltipCorners(anchor: .bottomTrailing),
                                                                 palette: .neutral, maxWidth: TooltipConfiguration.defaultMaxWidth))
-    /// The latest opacity animation; a replaced one's completion is ignored.
     private var animation: UUID?
 
     init(parent: NSWindow) {
@@ -483,7 +411,6 @@ final class TooltipAnchorView: NSView {
         window.contentView = view
     }
 
-    ///
     func present(_ content: TooltipView.Content, anchor: TooltipConfiguration.Anchor, from anchorView: NSView, rect: NSRect) -> Bool {
         guard let parent, anchorView.window === parent else {
             NSLog("Cannot present tooltip. View or window hierarchy is unexpected."); return false
@@ -516,7 +443,6 @@ final class TooltipAnchorView: NSView {
         view.setPressed(modifiers: modifiers, characters: characters)
     }
 
-    /// `completion` runs only if this fade is still the latest animation.
     func dismiss(duration: TimeInterval, delay: TimeInterval, completion: @escaping () -> Void) {
         animateOpacity(to: 0, duration: duration, delay: delay) { [weak self] in
             self?.close()
@@ -531,8 +457,6 @@ final class TooltipAnchorView: NSView {
         window.close()
     }
 
-    ///
-    ///
     private func animateOpacity(to target: Float, duration: CFTimeInterval, delay: CFTimeInterval = 0,
                                 completion: (() -> Void)? = nil) {
         let token = UUID()
@@ -560,7 +484,6 @@ final class TooltipAnchorView: NSView {
     }
 }
 
-/// Never key or main, and hidden from accessibility like a help tag.
 private final class TooltipWindow: NSWindow {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }

@@ -5,18 +5,13 @@ protocol SidebarItemDragSource: AnyObject {
     var sidebarDrag: SidebarMoveSession? { get }
 }
 
-/// An item row whose move, Duplicate and Delete actions are made when an
-/// accessibility client asks for them: each move checks the window's lease
-/// for every destination, too costly to repeat for every row on each render.
 @MainActor
 protocol SidebarDeferredAccessibilityActions: NSView {
-    /// The actions set on the row, without the deferred ones.
     var storedAccessibilityActions: [NSAccessibilityCustomAction] { get }
     var deferredAccessibilityActions: (index: Int, make: () -> [NSAccessibilityCustomAction])? { get set }
 }
 
 extension SidebarDeferredAccessibilityActions {
-    /// The deferred actions follow the actions set so far and precede any set later.
     func deferAccessibilityActions(_ make: @escaping () -> [NSAccessibilityCustomAction]) {
         deferredAccessibilityActions = (storedAccessibilityActions.count, make)
     }
@@ -28,9 +23,6 @@ extension SidebarDeferredAccessibilityActions {
     }
 }
 
-/// A process-local source capability. The pasteboard only identifies this exact
-/// one-shot session. Another window must obtain a separate original-owner grant;
-/// external text and stale rows never authorize a move.
 @MainActor
 final class SidebarMoveSession {
     static let pasteboardType = NSPasteboard.PasteboardType("org.parc.sidebar-item-move")
@@ -44,10 +36,6 @@ final class SidebarMoveSession {
     private let propose: (SidebarContainerLocation, SidebarItemReference?) -> Bool
     private let commit: (SidebarContainerLocation, SidebarItemReference?) -> Bool
     private(set) var ended = false
-    ///
-    ///
-    ///
-    /// against this session's owner and validity.
     let allowsCopy: Bool
     init(items: [SidebarItemReference], window: NSWindow, validate: @escaping () -> Bool,
          validateTransfer: (() -> Bool)? = nil, allowsCopy: Bool = false,
@@ -72,14 +60,11 @@ final class SidebarMoveSession {
         ended = true
         return commit()
     }
-    /// A destination that finishes preparing its transfer against this
-    /// still-live session (a dock Space it first shows), then ends the drag.
     func transferThenEnd(_ commit: () -> Bool) -> Bool {
         guard isValidForWindowTransfer else { return false }
         defer { ended = true }
         return commit()
     }
-    /// A prepared copy runs once and ends the drag; the originals never move.
     func copy(_ commit: () -> Bool) -> Bool {
         guard allowsCopy, isValidForWindowTransfer else { return false }
         ended = true
@@ -95,12 +80,8 @@ class SidebarMoveHandle: NSView, NSDraggingSource, SidebarItemDragSource {
     var activate: (() -> Void)?
     var selectionClick: ((NSEvent) -> Bool)?
     var selectionContext: (() -> NSMenu?)?
-    /// Takes a plain double-click's second press before selection and
-    /// activation; true when it handled it.
     var doubleClick: ((NSEvent) -> Bool)?
-    /// The view a drag's preview captures, when it is not the handle itself.
     weak var dragPreview: NSView?
-    /// Renders the preview's drag image in place of a live capture.
     var makeDragImage: (() -> NSImage?)?
     private var down: NSPoint?
     private var selectionEvent: NSEvent?
@@ -150,18 +131,9 @@ class SidebarMoveHandle: NSView, NSDraggingSource, SidebarItemDragSource {
     override func menu(for event: NSEvent) -> NSMenu? { selectionContext?() ?? super.menu(for: event) }
 }
 
-///
-/// `FolderIcon.FolderIconView` in the tab cell's 24-point image slot, the title
-/// at the tab title inset in `FontSet.listHeader` (system 14 semibold,
-///
-/// `CellSelectionStateView` fills as a tab row for hover, multi-selection and
-///
-/// with the "Folder Title" placeholder. The row outlives renders, so a
-/// disclosure change animates its icon open or closed.
 @MainActor
 final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityActions {
     static let titlePlaceholder = "Folder Title"
-    /// The folder's context menu, built when it opens.
     var makeMenu: (() -> NSMenu?)?
     override var menu: NSMenu? {
         get { makeMenu?() ?? super.menu }
@@ -179,29 +151,19 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
     private let icon = SidebarFolderIconView()
     private let label = SidebarChromeLabel(labelWithString: "")
     private let titleField = SidebarTitleField()
-    /// The trailing button of a peeked folder (`FolderTrailingButtonType
-    /// .closePeek`), a SidebarCellButton with a system image and the "Close
-    ///
     private let closePeekButton = SidebarRowActionButton("Close This Folder")
     private(set) var expanded: Bool
     private var hover = false
-    /// `isLeadingRegionHovered`: the pointer is over the icon slot.
     private var leadingHover = false
     private var tracking: NSTrackingArea?
-    /// The window the row last refreshed its fill in.
     private weak var trackedWindow: NSWindow?
     private var keyObservers: [NSObjectProtocol] = []
     var palette: ThemeChromePalette? { didSet { updateColor() } }
     var multiSelected = false { didSet { if multiSelected != oldValue { updateColor() } } }
     var keyboardHighlighted = false { didSet { if keyboardHighlighted != oldValue { updateColor() } } }
     var listFocusRing = false { didSet { if listFocusRing != oldValue { updateColor() } } }
-    ///
-    /// icon until it leaves or the folder springs open.
     var dropTarget = false { didSet { if dropTarget != oldValue { updateIconState(animated: true) } } }
-    ///
-    /// `SidebarItemExpansionState.peeked`, `ListHeaderCellState.isPeeked`).
     var peeked = false { didSet { if peeked != oldValue { updateIconState(animated: true); updateClosePeek() } } }
-    /// Hides the folder's peeked items.
     var closePeek: (() -> Void)?
     var iconFrame: NSRect { icon.frame }
 
@@ -226,8 +188,6 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// Takes the folder's current name and disclosure; an animated change
-    /// opens or closes the icon on Core Animation's implicit actions.
     func update(_ folder: BrowserFolder, animated: Bool) {
         if label.stringValue != folder.name { label.stringValue = folder.name }
         icon.customIcon = folder.customIcon
@@ -239,8 +199,6 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
         updateClosePeek()
     }
 
-    ///
-    /// folder shows its ellipsis, half open while its icon is hovered.
     private func updateIconState(animated: Bool) {
         let state: SidebarFolderIconView.State
         if expanded || dropTarget { state = .expanded }
@@ -277,8 +235,6 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
         let title = palette?.title ?? .parcInk
         label.textColor = title
         if titleField.editingTitle { titleField.textColor = title }
-        //
-        // maxContrastColor, foregroundSecondary and cutoutColor.
         icon.strokeColor = palette?.maxContrastColor ?? .labelColor
         icon.backFillColor = palette?.foregroundSecondary ?? .secondaryLabelColor
         icon.frontFillColor = palette?.cutoutColor ?? .windowBackgroundColor
@@ -294,8 +250,6 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
     override func layout() {
         super.layout()
         background.frame = bounds
-        //
-        // 24-point image slot.
         let slot = SidebarRowAppearance.iconSlotFrame(in: bounds)
         icon.frame = NSRect(x: slot.midX - Self.iconSize / 2, y: slot.midY - Self.iconSize / 2,
                             width: Self.iconSize, height: Self.iconSize)
@@ -311,12 +265,10 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
         if let tracking { removeTrackingArea(tracking) }
         let area = NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved, .inVisibleRect], owner: self)
         addTrackingArea(area); tracking = area
-        // A row can be rebuilt or moved under a stationary pointer.
         let point = window.flatMap { $0.isKeyWindow ? convert($0.mouseLocationOutsideOfEventStream, from: nil) : nil }
         let wasHover = hover
         hover = point.map { bounds.contains($0) } ?? false
         updateLeadingHover(point)
-        // AppKit asks every row again as the list scrolls or resizes.
         guard window !== trackedWindow || hover != wasHover else { return }
         trackedWindow = window
         updateColor()
@@ -330,7 +282,6 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
         updateLeadingHover(nil)
         guard hover else { return }; hover = false; updateColor()
     }
-    /// A kept page's outline hides, or leaves the screen, with its rows under the pointer.
     override func viewDidHide() { super.viewDidHide(); resetPointer() }
     func resetPointer() {
         updateLeadingHover(nil)
@@ -360,10 +311,7 @@ final class SidebarFolderRow: SidebarMoveHandle, SidebarDeferredAccessibilityAct
         updateColor()
     }
 
-    // The field editor takes its own presses while the title is edited; the
-    // row's press neither toggles nor drags meanwhile.
     override func mouseDown(with event: NSEvent) {
-        // A Control-click opens the row's menu, as the tab row's does.
         if event.modifierFlags.contains(.control) { rightMouseDown(with: event); return }
         guard !titleField.editingTitle else { return }
         super.mouseDown(with: event)
@@ -386,8 +334,6 @@ final class SidebarDropFeedbackView: NSView {
     var isInsertion = false
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    ///
-    /// at an open circle on its leading end.
     static let insertionCircle: CGFloat = 6
     override func draw(_ dirtyRect: NSRect) {
         guard let rect = targetRect else { return }

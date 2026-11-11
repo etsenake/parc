@@ -35,10 +35,6 @@ final class MembershipCardSettingsView: LayoutView, @preconcurrency NSSharingSer
         super.init(frame: NSRect(x: 0, y: 0, width: 684, height: 562))
         autoresizingMask = [.width]
         addSubview(card)
-        //
-        // column of grouped rows, 34 points apart. The account/sync/referral
-        // groups become the local name and the card's details. Rows are 56
-        //
         addSubview(nameGroup); addSubview(detailsGroup)
         let nameTitle = NSTextField(labelWithString: "Display name")
         nameTitle.font = .systemFont(ofSize: 13); nameTitle.frame = NSRect(x: 16, y: 19, width: 100, height: 18)
@@ -65,7 +61,6 @@ final class MembershipCardSettingsView: LayoutView, @preconcurrency NSSharingSer
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
             button.imagePosition = .imageOnly; button.isBordered = false
             button.focusRingType = .exterior
-            // MemberCardActionButtonColor: 43.5% grey in both appearances.
             button.contentTintColor = NSColor(srgbRed: 0.435, green: 0.435, blue: 0.435, alpha: 1)
             button.target = self; button.action = action; button.toolTip = label
             button.setAccessibilityLabel(label); addSubview(button)
@@ -84,17 +79,12 @@ final class MembershipCardSettingsView: LayoutView, @preconcurrency NSSharingSer
         }
     }
     override func layout() { super.layout(); layoutContent() }
-    ///
-    /// browser is the default; the rest of the pane re-centres without it.
     func showDefaultBrowserPrompt(_ visible: Bool, waiting: Bool, failure: String? = nil) {
         defaultPrompt.waiting = waiting
         defaultPrompt.failure = failure
         defaultPrompt.isHidden = !visible
         needsLayout = true
     }
-    ///
-    /// the card column (240×360 card, 24 points, 32-point controls) beside the
-    /// top-aligned grouped column.
     private func layoutContent() {
         let banner = defaultPrompt.isHidden ? 0 : MembershipDefaultBrowserPrompt.height + 38
         let cardX = max(16, ((bounds.width - 614) / 2).rounded())
@@ -256,7 +246,6 @@ private final class MembershipCardNameSheet: NSWindowController, NSTextFieldDele
     }
     private func submit() {
         guard save.isEnabled, let window, window.sheetParent != nil else { return }
-        // Marked text must be committed by its native input method first.
         guard !((field.currentEditor() as? NSTextView)?.hasMarkedText() ?? false) else { return }
         do {
             try commit(field.stringValue)
@@ -268,7 +257,6 @@ private final class MembershipCardNameSheet: NSWindowController, NSTextFieldDele
     }
 }
 
-/// Pointer/pressed treatment only; NSButton owns activation and accessibility.
 @MainActor
 private final class MembershipCardActionButton: SettingsHoverButton {
     override func draw(_ dirtyRect: NSRect) {
@@ -282,8 +270,6 @@ private final class MembershipCardActionButton: SettingsHoverButton {
     override var focusRingMaskBounds: NSRect { bounds }
 }
 
-///
-/// dark) holding the message and a heart button with the loadable-button fill.
 @MainActor
 private final class MembershipDefaultBrowserPrompt: LayoutView {
     static let height: CGFloat = 36
@@ -291,7 +277,6 @@ private final class MembershipDefaultBrowserPrompt: LayoutView {
     private let button = SettingsPillButton(title: "Make Parc your default", symbol: "heart.fill", loadable: true)
     var onMakeDefault: (() -> Void)?
     var waiting = false { didSet { button.isEnabled = !waiting } }
-    /// A refused request replaces the message, so the banner can't fail silently.
     var failure: String? {
         didSet {
             message.stringValue = failure ?? "Parc isn’t your default browser."
@@ -309,8 +294,6 @@ private final class MembershipDefaultBrowserPrompt: LayoutView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     var fittingWidth: CGFloat { 16 + ceil(message.intrinsicContentSize.width) + 8 + button.fittingWidth + 16 }
-    // Frame-based: the pane sizes the banner after its first layout, so lay
-    // out again whenever the width changes (the message was truncating).
     override func setFrameSize(_ newSize: NSSize) { super.setFrameSize(newSize); needsLayout = true }
     override func layout() {
         super.layout()

@@ -1,37 +1,9 @@
 import AppKit
 
-///
-/// pane's trailing `SplitViewDraggerHandleView`.
-///
-/// - Its grip shows while the handle's `ViewState.isHandleVisible`
-///
-///
-///
-///   reports as 2, false for the last ID of the split's `windowContentIDs`
-///   and false in a stacked arrangement, so only a page that is not in a
-///   split (an empty `windowContentIDs`) laid out side by side keeps it.
-///   The grip is the ordinary two-by-24 grip centred on the handle
-///
-///
-///   gives this last handle the draggable region (0, midY − 22, width, 44)
-///
-///
-///
-///
-/// - Nothing drags it: the split controller's `gestureRecognizerShouldBegin`
-///
-///
-///   begins inside the band, but its handler returns without a trailing pane
-///
-///   is empty) and the margin keeps its existing behaviour.
 @MainActor
 final class SplitMarginHandleView: NSView {
-    ///
     static let regionHeight: CGFloat = 44
-    /// The window's part of `isHandleVisible`: it shows exactly one page that
-    /// is not in a split, has the page margin, and no draft or expanded split.
     var windowAllows = false { didSet { if windowAllows != oldValue { refresh() } } }
-    /// The split's part: one arranged page and no incoming reserved pane.
     var splitAllows = false { didSet { if splitAllows != oldValue { refresh() } } }
     var isShown: Bool { windowAllows && splitAllows && !bounds.isEmpty }
     private(set) var isHovered = false
@@ -57,7 +29,6 @@ final class SplitMarginHandleView: NSView {
     override var isOpaque: Bool { false }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// The handle's draggable region, empty while the grip is hidden.
     var region: NSRect {
         guard isShown else { return .zero }
         return NSRect(x: 0, y: bounds.midY - Self.regionHeight / 2, width: bounds.width, height: Self.regionHeight)
@@ -72,7 +43,6 @@ final class SplitMarginHandleView: NSView {
         if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
         resignObserver = nil
         if let window {
-            // The tracking area is active in the key window only.
             resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification,
                 object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.setHovered(false, animated: false) }
@@ -108,7 +78,6 @@ final class SplitMarginHandleView: NSView {
         trackingArea = nil
         let band = region
         guard !band.isEmpty else { return }
-        //
         let area = NSTrackingArea(rect: band, options: [.mouseEnteredAndExited, .activeInKeyWindow, .enabledDuringMouseDrag],
                                   owner: self, userInfo: nil)
         addTrackingArea(area); trackingArea = area
@@ -132,9 +101,6 @@ final class SplitMarginHandleView: NSView {
         updateColor(animated: animated)
     }
 
-    /// DragHint (idle) and DragHintHighlighted (hover): black in light and
-    /// white in dark appearance at 0.2 and 0.5, with the handle's 0.16-second
-    ///
     private func updateColor(animated: Bool) {
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let color = NSColor(srgbRed: dark ? 1 : 0, green: dark ? 1 : 0, blue: dark ? 1 : 0,

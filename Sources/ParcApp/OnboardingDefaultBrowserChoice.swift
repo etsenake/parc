@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-///
-/// pending-choice behavior. macOS consent belongs to the onboarding owner.
 struct OnboardingDefaultBrowserChoice: View {
     let selected: Bool
     let selectionColor: NSColor
@@ -27,8 +25,6 @@ struct OnboardingDefaultBrowserChoice: View {
     }
 }
 
-/// Both original setup choices use this same RadioGroupLabel configuration.
-/// The caller owns the label and whether selection may show the preferred heart.
 struct OnboardingChoiceRow<Label: View>: View {
     let selected: Bool
     let preferred: Bool
@@ -43,7 +39,6 @@ struct OnboardingChoiceRow<Label: View>: View {
     @State private var showHeart = false
 
     private var tint: Color { Color(nsColor: selectionColor) }
-    //
     private var titleColor: Color {
         colorScheme == .dark ? .white : Color(.sRGB, red: 0.094, green: 0.106, blue: 0.122)
     }

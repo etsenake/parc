@@ -2,13 +2,9 @@ import AppKit
 import Combine
 import QuartzCore
 
-//
-// page stays alive beside it. Only implemented categories appear in this rail.
-//
 @MainActor
 final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate {
     enum Kind: Equatable { case archive, captures, downloads, documents, spaces }
-    /// The parent catalog is explicit: the private window keeps its own tab model.
     struct PrivateMediaContext {
         let store: BrowserStore
         let profileID: UUID
@@ -37,34 +33,21 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     private var privateMediaSubscription: AnyCancellable?
     var onClose: (() -> Void)?
     var onOpenURLs: (([String]) -> Void)?
-    ///
     var onToast: ((PArcToastContent) -> Void)?
     var onRestore: (([UUID], UUID?) -> Void)?
-    ///
-    ///
     var onPreview: ((UUID) -> Bool)?
     private var clickStartedPreview = false
-    /// The physical window supplies its current Library/Profile lifetime.
     var archiveOwnerValid: (() -> Bool)?
     var onDownloadAction: ((BrowserDownload, DownloadLibraryAction) -> Bool)?
     var downloadFileURL: ((BrowserDownload) -> URL?)?
     var onLoadDownloads: (() -> Void)?
-    /// Each page the Library shows after opening (the window keeps the last).
     var onShowKind: ((Kind) -> Void)?
     var onLeaveSpaces: (() -> Void)?
-    /// The shown page's HomePage content width, which HomePageView reports to
-    ///
-    /// the protocol default. A later Space count change keeps it; the strip
-    /// scrolls instead.
     private(set) var contentWidth = SidebarChromeFrames.libraryMinimumWidth
     private var contentWidthKind: Kind?
-    /// A page change may change `contentWidth`.
     var onContentWidthChange: (() -> Void)?
-    // Bound by the window to Chromium's exact-profile favicon service. A
-    // missing image stays absent; the library never fetches a site itself.
     var requestIcon: ((URL, UUID, @escaping (NSImage?) -> Void) -> Void)? { didSet { table.reloadData() } }
     var palette: ThemeChromePalette? { didSet { applyPalette() } }
-    /// Set by the window from the same full-screen rule as the sidebar header.
     var showsWindowButtons = false {
         didSet { if showsWindowButtons != oldValue { windowButtons.isHidden = !showsWindowButtons } }
     }
@@ -110,8 +93,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     func setDownloadOperation(_ item: BrowserDownload, message: String?) {
         downloadsView.setOperation(item, message: message)
     }
-    /// The sidebar Library entry's feed: this window's kind of download
-    /// (private or not) in `profiles`, of which the rail shows the in-flight one.
     func updateDownloadActivity(_ items: [BrowserDownload], profiles: Set<UUID>, privateWindow: Bool, enabled: Bool) {
         downloadsButton.progress?.updateInFlight(items.filter { ($0.privateContextID != nil) == privateWindow },
                                                  profiles: profiles, enabled: enabled)
@@ -359,9 +340,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     }
     private func reload() {
         guard store.state.profiles.contains(where: { $0.id == profileID }) else { onClose?(); return }
-        // Everyday title/URL publishes still sink here while Library is open.
-        // Skip before kind layout, archive scans, or child reloads when the
-        // Library-relevant catalog fingerprint already matches this view.
         if shouldSkipCatalogReload() { return }
         defer {
             if contentWidthKind != kind {
@@ -466,11 +444,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         reloadRows()
     }
 
-    /// True when this view already applied the Library-relevant store catalog
-    /// for the current kind. Title/URL publishes that leave Archive,
-    /// Downloads, Documents, Captures, or Spaces catalogs untouched return
-    /// before expensive reload work. Real document/folder/filter and archive
-    /// membership changes still miss and reload.
     private func shouldSkipCatalogReload() -> Bool {
         guard renderedKind == kind else { return false }
         switch kind {
@@ -481,8 +454,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
                spaceSignature == filterSpaceSignature { return true }
             let archived = store.state.tabs.filter { $0.archivedAt != nil && $0.profileID == profileID }
             if archived == observedArchivedTabs, spaceSignature == filterSpaceSignature {
-                // Live title/URL ticks replace the tabs buffer; keep the CoW
-                // pointer current so the next publish can take the cheap path.
                 observedTabs = store.state.tabs
                 return true
             }
@@ -491,22 +462,15 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
             return downloadsView.superview != nil && !downloadsView.isHidden
         case .captures:
             if store.isEphemeral {
-                // Match the ephemeral body: invalid private media must fall
-                // through to Downloads, not stick on a visible Media pane.
                 return privateMediaContext?.isValid() == true
                     && privateMediaView?.superview != nil
                     && privateMediaView?.isHidden == false
             }
             return capturesView.superview != nil && !capturesView.isHidden
         case .documents:
-            // Note/Easel catalogs subscribe separately; BrowserStore title ticks
-            // must not re-list documents. Profile-removal pending still reloads.
             return documentsView.superview != nil && !documentsView.isHidden
                 && observedProfileRemovalPending == store.isProfileRemovalPending(profileID)
         case .spaces:
-            // Space cards re-render live sidebars, so tab title/URL CoW changes
-            // and settings the embedded SidebarView.render consumes must miss
-            // this skip. Unrelated identical publications no-op.
             return libraryArrayUnchanged(store.state.tabs, observedTabs)
                 && libraryArrayUnchanged(store.state.spaces, observedSpaces)
                 && libraryArrayUnchanged(store.state.profiles, observedProfiles)
@@ -581,8 +545,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         formatter.unitsStyle = .full
         return formatter
     }()
-    /// Archive sections: "Today", "Yesterday", then the relative formatter's
-    /// whole-day distance ("2 days ago", "1 week ago").
     static func heading(for date: Date, relativeTo now: Date) -> String {
         let calendar = Calendar.current
         let day = calendar.startOfDay(for: date), today = calendar.startOfDay(for: now)
@@ -614,7 +576,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         switch rows[row] {
         case .heading(let title):
-            //
             let field = LibraryInkField(string: title, size: 12, weight: .semibold, light: 0.565, dark: 0.592)
             let view = LayoutView(); view.addSubview(field)
             view.onLayout = { [weak field, weak view] in field?.frame = NSRect(x: 10, y: 8.5, width: max(0, (view?.bounds.width ?? 0) - 20), height: 16) }
@@ -649,9 +610,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
             return view
         }
     }
-    /// Web pages read as their address without the scheme, `www.` or a lone
-    /// trailing slash; Parc's own pages keep the scheme that identifies them.
-    /// Embedded credentials are never shown, as in Chromium's URL formatting.
     static func subtitle(urls: [String], spaceName: String?) -> String {
         func address(_ string: String) -> String {
             guard let url = URL(string: string), let scheme = url.scheme?.lowercased() else { return string }
@@ -671,8 +629,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         if urls.count > 1 { return "\(urls.count) tabs · \(spaceName ?? first)" }
         return first
     }
-    /// The hover controls act on the row's original grouped record only while
-    /// this window still owns the Archive and the record is unchanged.
     private func archiveAction(_ item: Item, _ action: (LibraryView) -> Void) {
         guard validArchiveOwner, archiveOwnerValid?() == true, let snapshot = item.archivedTabs,
               store.archivedItems(profileID: profileID).first(where: { $0.id == item.id })?.tabs == snapshot else { return }
@@ -685,7 +641,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         guard kind == .archive, rows.indices.contains(row), case let .item(item) = rows[row] else { return }
         archiveAction(item) { $0.clickStartedPreview = $0.onPreview?(item.id) == true }
     }
-    ///
     @objc private func doubleClickRow() {
         if !clickStartedPreview { activate() }
     }
@@ -706,17 +661,13 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     }
     func clearAll() {
         guard kind == .archive else { return }
-        //
         confirm(message: "Are you sure you'd like to Clear Archive?", detail: "This action is permanent.",
                 button: "Clear Archive") { [weak self] in
             guard let self else { return }
             self.store.clearArchive(profileID: self.profileID)
-            // The confirmation sheet is still attached in its completion.
             DispatchQueue.main.async { [weak self] in self?.onToast?(.archiveCleared) }
         }
     }
-    ///
-    ///
     private func confirm(message: String, detail: String, button: String, action: @escaping () -> Void) {
         guard let window, window.attachedSheet == nil else { return }
         PArcDialog.confirm(in: window, title: message, message: detail, confirm: button, destructive: true) { [weak self] approved in
@@ -736,9 +687,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
             guard validArchiveOwner, archiveOwnerValid?() == true,
                   let originalWindow = window, let snapshot = item.archivedTabs,
                   store.archivedItems(profileID: profileID).first(where: { $0.id == item.id })?.tabs == snapshot else { return nil }
-            // Menu tracking can outlive a row, profile, category or physical window.
-            // Compare every original member, including archived date and provenance,
-            // against the live grouped item before dispatching either action.
             let generation = archiveMenuGeneration
             let lease = ArchiveMenuLease(store: store, profileID: profileID, tabs: snapshot)
             let valid: () -> Bool = { [weak self, weak originalWindow] in
@@ -763,7 +711,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         }
         return nil
     }
-    /// The list's background menu, which also holds Clear Archive.
     private func clearMenu() -> NSMenu? {
         guard validArchiveOwner else { return nil }
         let menu = NSMenu(); menu.addItem(clearItem()); return menu
@@ -891,8 +838,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         func place(_ view: NSView, _ frame: NSRect) {
             if animatingFilterLayout { view.animator().frame = frame } else { view.frame = frame }
         }
-        // HomePageView's content column starts 8 points past the rail; the
-        // filter chips and empty state stop 10 points from the trailing edge.
         let railWidth = LibraryRailLayout.width, listX = railWidth + 8, listRight = bounds.width - 10
         let listWidth = max(0, listRight - listX)
         depth.frame = NSRect(x: 0, y: 0, width: LibraryDepthView.width, height: bounds.height)
@@ -920,7 +865,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
         searchBackdrop.frame = NSRect(x: headerX, y: LibraryPageHeader.top, width: max(0, fieldWidth), height: LibraryPageHeader.height)
         place(filter, NSRect(x: headerX + headerWidth - filterWidth, y: LibraryPageHeader.top, width: filterWidth, height: LibraryPageHeader.height))
         filterTitle.frame = NSRect(x: listX + 4, y: 19, width: max(0, listWidth - filterWidth - 8), height: 18)
-        // Filter Archived Tabs: 12-point labels over 31-point chips, 7 apart.
         let chipHeight: CGFloat = 31, gap: CGFloat = 7
         var x: CGFloat = 0, y: CGFloat = 5
         for view in filterControls {
@@ -951,8 +895,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     private func applyPalette() {
         appearance = palette?.contentAppearance
         windowButtons.appearance = palette.map { NSAppearance(named: $0.isDark ? .darkAqua : .aqua) } ?? nil
-        //
-        // +0x130 for the compositions' primaryColor and secondaryColor layers.
         let iconColors = palette.map { ($0.maxContrastColor, $0.cutoutColor) }
         for button in categoryButtons { button.iconColors = iconColors }
         downloadsButton.progress?.colors = DownloadBadgeColors(foreground: palette?.foregroundPrimary ?? .labelColor,
@@ -968,9 +910,6 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     }
 }
 
-/// True when both arrays still share the same CoW buffer. A BrowserStore
-/// publication that did not mutate this collection keeps that buffer, so
-/// Archive/Downloads can ignore unrelated title and tab ticks.
 private func libraryArrayUnchanged<T>(_ current: [T], _ observed: [T]) -> Bool {
     current.withUnsafeBufferPointer { left in
         observed.withUnsafeBufferPointer { right in
@@ -979,8 +918,6 @@ private func libraryArrayUnchanged<T>(_ current: [T], _ observed: [T]) -> Bool {
     }
 }
 
-// Observe intervening state synchronously: a restore and rearchive can reuse
-// the same ID and even the same clock value while an NSMenu is tracking.
 @MainActor
 private final class ArchiveMenuLease {
     private(set) var isValid = true
@@ -1038,7 +975,6 @@ private final class LibraryTable: NSTableView {
         }
         super.viewWillMove(toWindow: newWindow)
     }
-    /// Scrolling, reloads and key changes move rows under a still pointer.
     func resampleHover() {
         guard let window, window.isKeyWindow, !isHiddenOrHasHiddenAncestor else { hoveredRow = -1; return }
         let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
@@ -1086,8 +1022,6 @@ private final class LibraryTable: NSTableView {
     }
 }
 
-/// ContentCell.list's highlight: primary 0.1 for hover or selection,
-/// continuous radius 12, inset 8 from the list edge; no native selection.
 @MainActor
 private final class LibraryRowView: NSTableRowView {
     var isHeading = false
@@ -1118,15 +1052,12 @@ private final class LibraryRowView: NSTableRowView {
     }
 }
 
-/// GrayA11 (black 0.565 / white 0.592) is the filter label and section header ink.
 @MainActor enum LibraryInk {
     static func chrome(_ appearance: NSAppearance) -> NSColor {
         DownloadAccessoryColors.foreground(hovered: false, appearance: appearance)
     }
 }
 
-/// Draws its string with a real alpha. NSTextField's own text color drops that
-/// alpha when a layer renders it, which turned this ink opaque black.
 @MainActor final class LibraryInkField: NSTextField {
     var lightAlpha: CGFloat { didSet { needsDisplay = true } }
     var darkAlpha: CGFloat { didSet { needsDisplay = true } }
@@ -1151,11 +1082,8 @@ private final class LibraryRowView: NSTableRowView {
     }
 }
 
-/// ContentCell.list: a 16-point favicon, 14-point title over a 12-point
-/// secondary subtitle, and the row's trailing Delete and Put Back controls.
 @MainActor
 private final class LibraryItemView: NSTableCellView {
-    /// SwiftUI's `primary` (labelColor) at an opacity, resolved when drawn.
     static func primary(_ opacity: CGFloat) -> NSColor {
         NSColor(name: nil) { appearance in
             var color = NSColor.black
@@ -1171,7 +1099,6 @@ private final class LibraryItemView: NSTableCellView {
     private let icon = NSImageView()
     private let placeholder = NSView()
     private let deleteButton = LibraryRowButton(symbol: "trash", label: "Delete")
-    ///
     private let putBackButton = LibraryRowButton(symbol: "arrow.uturn.backward", label: "Put Back", tooltip: "Restore")
     private var highlighted = false
     var image: NSImage? { didSet { icon.image = image; placeholder.isHidden = image != nil } }
@@ -1212,7 +1139,6 @@ private final class LibraryItemView: NSTableCellView {
     }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); refreshColors() }
     private func refreshColors() {
-        //
         title.lightAlpha = highlighted ? 0.85 : 0.75
         title.darkAlpha = highlighted ? 0.92 : 0.85
         effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -1221,7 +1147,6 @@ private final class LibraryItemView: NSTableCellView {
     }
     override func layout() {
         super.layout()
-        // Offsets are from the row highlight, which starts 8 points in.
         let leading: CGFloat = 8, trailing = bounds.width - 8
         placeholder.frame = NSRect(x: leading + 10, y: (bounds.height - 24) / 2, width: 24, height: 24)
         icon.frame = NSRect(x: leading + 14, y: (bounds.height - 16) / 2, width: 16, height: 16)
@@ -1234,8 +1159,6 @@ private final class LibraryItemView: NSTableCellView {
     }
 }
 
-/// ContentCell's 32-point trailing accessory: a 14-point medium glyph in
-/// the GrayA11/A12 accessory colours over GrayA6/A7 while hovered or pressed.
 @MainActor
 private final class LibraryRowButton: PointingHandButton {
     var actionBlock: (() -> Void)?
@@ -1276,9 +1199,6 @@ private final class LibraryRowButton: PointingHandButton {
     @objc private func invoke() { actionBlock?() }
 }
 
-///
-/// trailing edge over its 112 points, a 1-point primary 0.1 divider, then
-/// black 0.05 fading 32 points into the content.
 @MainActor
 private final class LibraryDepthView: NSView {
     static let width = LibraryRailLayout.width + 1 + 32

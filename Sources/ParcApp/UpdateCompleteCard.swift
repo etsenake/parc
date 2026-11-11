@@ -1,11 +1,6 @@
 import AppKit
 import SwiftUI
 
-///
-///
-/// `BannerHeaderView`, `SecondaryButton` rows and `BannerBackgroundContainer`.
-/// Content only: `SidebarBannerHost` owns lifetime and motion. The recovered
-/// values and the open ones are in docs/software-update.md.
 @MainActor
 final class UpdateCompleteCard: NSView {
     var onSeeWhatsNew: (() -> Void)?
@@ -14,12 +9,10 @@ final class UpdateCompleteCard: NSView {
     private let model = UpdateCompleteModel()
     private var hosting: NSHostingController<UpdateCompleteBanner>!
     private var measured: (width: CGFloat, height: CGFloat)?
-    // Round, so its ring follows the card corner it sits in.
     private let close = UpdateBannerKeyStop(label: "Dismiss", cornerRadius: 12)
     private let whatsNew = UpdateBannerKeyStop(label: "See What’s New", cornerRadius: 4)
     private let share = UpdateBannerKeyStop(label: "Share Parc", cornerRadius: 4)
     override var isFlipped: Bool { true }
-    /// The header's close button, then the rows: the banner's visual order.
     var keyViewControls: [NSView] { [close, whatsNew, share] }
 
     override init(frame: NSRect) {
@@ -28,7 +21,6 @@ final class UpdateCompleteCard: NSView {
         share.onPress = { [weak self] in self?.perform(self?.onShare) }
         close.onPress = { [weak self] in self?.perform(self?.onDismiss) }
         hosting = NSHostingController(rootView: UpdateCompleteBanner(model: model, close: close, whatsNew: whatsNew, share: share))
-        // The sidebar sizes the slot; the content must not add constraints.
         hosting.sizingOptions = []
         hosting.view.frame = bounds
         hosting.view.autoresizingMask = [.width, .height]
@@ -45,7 +37,6 @@ final class UpdateCompleteCard: NSView {
         model.interactive = enabled
         for stop in [close, whatsNew, share] { stop.isEnabled = enabled }
     }
-    /// Asked on every sidebar layout while the banner occupies the slot.
     func preferredHeight(for width: CGFloat) -> CGFloat {
         if let measured, measured.width == width { return measured.height }
         let height = ceil(hosting.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude)).height)
@@ -58,16 +49,9 @@ final class UpdateCompleteCard: NSView {
     }
 }
 
-/// A banner control's stop in the sidebar's key loop, native like the
-/// auto-archive card's controls: an empty borderless button laid over the
-/// SwiftUI control that draws only its focus ring, presses with Space, and
-/// is the control's VoiceOver element. SwiftUI keeps the pointer, so the
-/// stop is pressed only from the keyboard or VoiceOver.
 @MainActor
 final class UpdateBannerKeyStop: NSButton {
     var onPress: () -> Void = {}
-    /// Set to take focus once SwiftUI next puts the stop in a window: the
-    /// controls a banner reveals arrive a view update after the change.
     var takesFocusOnArrival = false
     private let cornerRadius: CGFloat
 
@@ -76,7 +60,6 @@ final class UpdateBannerKeyStop: NSButton {
         super.init(frame: .zero)
         title = ""
         isBordered = false
-        // Its card enables it while the banner takes input.
         isEnabled = false
         target = self
         action = #selector(press)
@@ -85,8 +68,6 @@ final class UpdateBannerKeyStop: NSButton {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     @objc func press() { onPress() }
-    // Enabled exactly while its control takes a click. A cursor rect, since
-    // under SwiftUI the cursor update goes to the hosting view.
     override var isEnabled: Bool { didSet { if isEnabled != oldValue { window?.invalidateCursorRects(for: self) } } }
     override func resetCursorRects() {
         if isEnabled { addCursorRect(visibleRect, cursor: .pointingHand) }
@@ -113,7 +94,6 @@ final class UpdateBannerKeyStop: NSButton {
 }
 
 extension View {
-    /// Covers this control with its key stop, which speaks for it to VoiceOver.
     func updateBannerKeyStop(_ stop: UpdateBannerKeyStop) -> some View {
         accessibilityHidden(true).overlay { UpdateBannerKeyStop.Slot(stop: stop).allowsHitTesting(false) }
     }
@@ -125,14 +105,9 @@ final class UpdateCompleteModel: ObservableObject {
     @Published var interactive = false
     @Published var gradientBase = Color.accentColor
 
-    /// `ButtonBackground` fills from the theme palette and falls back to a
-    ///
-    /// entries it reads is inferred; see the doc.
     static func gradientBase(_ palette: ThemeChromePalette) -> NSColor {
         guard let color = (palette.isDark ? palette.maxContrastColor : palette.minContrastColor).usingColorSpace(.sRGB)
         else { return .controlAccentColor }
-        // HSL saturation: the palette lifts the theme colour's lightness,
-        // which keeps it but drains HSB saturation from a pastel.
         let high = max(color.redComponent, color.greenComponent, color.blueComponent)
         let low = min(color.redComponent, color.greenComponent, color.blueComponent)
         let spread = 1 - abs(high + low - 1)
@@ -152,9 +127,6 @@ struct UpdateCompleteBanner: View {
             UpdateBannerHeader(title: "Update Complete!", dark: model.dark, sparkles: !reduceMotion, sparkleColor: model.gradientBase,
                                close: close)
             VStack(alignment: .leading) {
-                //
-                // hover gradient Parc drops: on a pale theme it hid the text.
-                //
                 UpdateBannerRow(title: "See What’s New", icon: "heart.circle.fill", dark: model.dark, stop: whatsNew)
                 UpdateBannerRow(title: "Share Parc", icon: "gift", dark: model.dark, stop: share)
             }
@@ -162,13 +134,11 @@ struct UpdateCompleteBanner: View {
         }
         .padding(.bottom, 8)
         .background(UpdateBannerCard(dark: model.dark))
-        // Not .disabled: that would dim the rows through the exit fade.
         .allowsHitTesting(model.interactive)
         .environment(\.colorScheme, model.dark ? .dark : .light)
     }
 }
 
-///
 struct UpdateBannerCard: View {
     let dark: Bool
     var body: some View {
@@ -183,28 +153,20 @@ struct UpdateBannerCard: View {
     }
 }
 
-///
-/// leading once it no longer fits beside the close button, over a hairline.
 struct UpdateBannerHeader: View {
     let title: String
     let dark: Bool
     let sparkles: Bool
     let sparkleColor: Color
-    ///
     let close: UpdateBannerKeyStop?
-    /// Collapsed, the header is the whole banner: its own fill, no divider.
     var expanded = true
     var hovered = false
-    // Kept here, not in the label, so a switch between the two layouts
-    //
     @State private var sparkling = true
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            //
             ViewThatFits(in: .horizontal) {
                 label.fixedSize().padding(.horizontal, 20)
-                // A long title truncates rather than leaving the card.
                 label.frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, minHeight: 24)
@@ -216,7 +178,6 @@ struct UpdateBannerHeader: View {
             }
         }
         .background {
-            //
             if !expanded {
                 let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
                 shape.fill((dark ? Color.white : .black).opacity((dark ? 0.1 : 0.03) * (hovered ? 2 : 1)))
@@ -224,7 +185,6 @@ struct UpdateBannerHeader: View {
             }
         }
         .onAppear {
-            // Always scheduled: sparkles turned on later still time out.
             DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
                 withAnimation(.easeOut(duration: 0.4)) { sparkling = false }
             }
@@ -239,7 +199,6 @@ struct UpdateBannerHeader: View {
             .padding(.horizontal, 8)
             .lineLimit(1)
             .overlay {
-                // The gradient's palette treatment, so a pastel stays visible on the light card.
                 if sparkles && sparkling {
                     UpdateBannerSparkles(color: sparkleColor).brightness(dark ? 0.6 : -0.2).saturation(dark ? 1 : 2)
                         .padding(-2).opacity(0.7)
@@ -249,7 +208,6 @@ struct UpdateBannerHeader: View {
     }
 }
 
-///
 private struct UpdateBannerCloseButton: View {
     let dark: Bool
     let stop: UpdateBannerKeyStop
@@ -265,7 +223,6 @@ private struct UpdateBannerCloseButton: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle((dark ? Color.white : .black).opacity(hovered ? 1 : 0.4))
             }
-            // The whole 24-point button takes the hover and click, not only the glyph.
             .frame(width: 24, height: 24)
             .contentShape(Rectangle())
         }
@@ -275,8 +232,6 @@ private struct UpdateBannerCloseButton: View {
     }
 }
 
-///
-/// bottom-left 2): the plate follows the card's 12-point corner.
 private struct CloseButtonPlate: Shape {
     func path(in rect: CGRect) -> Path {
         let topLeft: CGFloat = 2, topRight: CGFloat = 11, bottomRight: CGFloat = 2, bottomLeft: CGFloat = 2
@@ -295,7 +250,6 @@ private struct CloseButtonPlate: Shape {
     }
 }
 
-///
 struct UpdateBannerRow: View {
     let title: String
     let icon: String
@@ -316,7 +270,6 @@ struct UpdateBannerRow: View {
     }
 
     private var label: some View {
-        //
         HStack(spacing: 4) {
             Image(systemName: icon)
             Text(title).font(.system(size: 12))
@@ -327,12 +280,8 @@ struct UpdateBannerRow: View {
     }
 }
 
-///
-/// hue-shifted capsules turning over the base colour. The turn durations were
-/// not recovered.
 struct UpdateBannerGradient: View {
     let base: Color
-    /// `PrimaryButtonStyle` passes 12 and 0.5.
     let blurRadius: CGFloat
     let blurOpacity: Double
     @State private var size = CGSize.zero
@@ -378,9 +327,6 @@ struct UpdateBannerGradient: View {
     }
 }
 
-///
-/// `update-complete-sparkle-timeout-in-seconds` (15). Their glyph, count and
-/// timing were not recovered; they take the theme colour the view reads.
 private struct UpdateBannerSparkles: View {
     let color: Color
     private struct Sparkle: Identifiable {
@@ -410,7 +356,6 @@ private struct UpdateBannerSparkles: View {
             sparkles = (0..<6).map { _ in
                 Sparkle(x: .random(in: 0...1), y: .random(in: 0...1), size: .random(in: 5...8), delay: .random(in: 0...0.8))
             }
-            // Inserted dark first, so the repeating animation sees lit change.
             DispatchQueue.main.async { lit = true }
         }
     }

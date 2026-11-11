@@ -1,23 +1,15 @@
 import AppKit
 
-///
-/// The small-screen fit is a Parc adaptation; ordinary dimensions are recovered.
 enum OnboardingSetupLayout {
     static let size = NSSize(width: 967, height: 548)
     static let instructionWidth: CGFloat = 357
     static let padding: CGFloat = 50
     static let cornerRadius: CGFloat = 20
     static let borderWidth: CGFloat = 1
-    /// CALayer borders paint inset from bounds, so expanding 1pt puts the 1pt
-    /// stroke at −1…0 (centerline −0.5).
     static let outerStrokeInset: CGFloat = 1
-    /// The theme texture's repeat, shared with the sidebar's theme renderer.
     static let grainTileSize = NSSize(width: ThemeTexturePitch.points, height: ThemeTexturePitch.points)
-    /// `StrokeStyle` lineWidth 1, lineCap butt, lineJoin miter, miterLimit 10.
     static let strokeMiterLimit: CGFloat = 10
-    /// Horizontal margin kept when the window is smaller than the 967-point card.
     static let horizontalInset: CGFloat = 24
-    /// Vertical margin kept when the window is smaller than the 548-point card.
     static let verticalInset: CGFloat = 48
 
     static func frame(in bounds: NSRect) -> NSRect {
@@ -29,12 +21,6 @@ enum OnboardingSetupLayout {
     }
 }
 
-///
-///
-/// `NSColor.colorNamed:bundle:` once and store CardBackground, CardInnerBorder
-/// and CardOuterBorder in `__common`. Parc registers the recovered names with
-/// the unthemed catalog values rather than loading that bundle. A chosen Space
-/// supplies the card's semantic background instead of CardBackground.
 enum OnboardingSetupPalette {
     static let cardBackgroundName: NSColor.Name = "CardBackground"
     static let innerBorderName: NSColor.Name = "CardInnerBorder"
@@ -53,13 +39,11 @@ enum OnboardingSetupPalette {
             ? .white : NSColor(srgbRed: 118 / 255, green: 118 / 255, blue: 118 / 255, alpha: 1)
     }
     static let action = NSColor(srgbRed: 49 / 255, green: 57 / 255, blue: 251 / 255, alpha: 1)
-    /// CardInnerBorder: light white/0, dark white/0.2.
     static let innerBorder = NSColor(name: innerBorderName) { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             ? NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.2)
             : NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0)
     }
-    /// CardOuterBorder: light black/0, dark black/0.61.
     static let outerBorder = NSColor(name: outerBorderName) { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             ? NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.61)
@@ -67,8 +51,6 @@ enum OnboardingSetupPalette {
     }
 }
 
-/// A persistent setup card. Only its content changes when the reducer advances;
-/// the owning window and animated background remain in place.
 final class OnboardingSetupCard: NSView {
     final class Column: NSView {
         override var isFlipped: Bool { true }
@@ -76,8 +58,6 @@ final class OnboardingSetupCard: NSView {
         override func layout() { super.layout(); onLayout?() }
     }
 
-    /// Clipped grain fill. AuthFeature.Card overlays tiled grain on the
-    /// background shape; clicks fall through to the card and its controls.
     final class Chrome: NSView {
         let grain = TiledGrainLayer()
         var themeSurface: NSView? {
@@ -110,11 +90,6 @@ final class OnboardingSetupCard: NSView {
         }
     }
 
-    /// Inner and outer 1pt continuous strokes sit above the content column so
-    /// full-bleed steps cannot cover CardInnerBorder. Inner uses the full
-    /// bounds: a 1pt inside border has centerline 0.5 and occupies 0…1, so it
-    /// does not need the grain clip. Outer is expanded 1pt so its inset ink
-    /// occupies −1…0. Shadow lives on the unclipped card layer.
     final class Borders: NSView {
         let inner = CardStrokeLayer()
         let outer = CardStrokeLayer()
@@ -143,9 +118,6 @@ final class OnboardingSetupCard: NSView {
         }
     }
 
-    /// Recovered `StrokeStyle`: lineWidth 1, lineCap butt, lineJoin miter,
-    /// miterLimit 10. Visible ink is the continuous CALayer border so the
-    /// stroke follows the fill's `cornerCurve` rather than a circular path.
     final class CardStrokeLayer: CAShapeLayer {
         override init() {
             super.init()
@@ -169,7 +141,6 @@ final class OnboardingSetupCard: NSView {
         var tileSize = OnboardingSetupLayout.grainTileSize
         override func draw(in ctx: CGContext) {
             guard let tile, tileSize.width > 0, tileSize.height > 0 else { return }
-            // Bilinear, as the theme renderer's linear sampler.
             ctx.interpolationQuality = .low
             var y: CGFloat = 0
             while y < bounds.height {
@@ -183,8 +154,6 @@ final class OnboardingSetupCard: NSView {
         }
     }
 
-    /// Holds the outgoing heading and message while they slide away, above
-    /// the instructions and below the step content, as in NewSetupView's HStack.
     final class OutgoingText: NSView {
         override var isFlipped: Bool { true }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -204,7 +173,6 @@ final class OnboardingSetupCard: NSView {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 
-    /// The heading and message as drawn before a step change.
     struct TextSnapshot {
         fileprivate let heading: (image: CGImage, frame: NSRect, offset: Double)?
         fileprivate let message: (image: CGImage, frame: NSRect, offset: Double)?
@@ -217,9 +185,7 @@ final class OnboardingSetupCard: NSView {
     let borders = Borders()
     let heading = NSTextField(wrappingLabelWithString: "")
     let message = NSTextField(wrappingLabelWithString: "")
-    /// The import's backdrop, behind every step of it.
     let backdrop = BrowserImportBackdrop()
-    /// Same ink as sidebar page titles on the selected Space surface.
     var themeTextColor: NSColor? {
         didSet {
             heading.textColor = titleColor
@@ -231,20 +197,14 @@ final class OnboardingSetupCard: NSView {
         }
     }
     var titleColor: NSColor { themeTextColor ?? OnboardingSetupPalette.title }
-    /// The import's pages set every line in the title's colour.
     var importInk = false { didSet { if importInk != oldValue { styleMessage() } } }
     private var messageText = ""
-    /// The import step's own text reaches across the content column too.
     var textSpansCard = false { didSet { if textSpansCard != oldValue { updateColors() } } }
     var messageColor: NSColor { themeTextColor ?? (importInk ? titleColor : OnboardingSetupPalette.message) }
-    /// The card's own fill, which the wash fades into.
     var fill: NSColor { themeBackground ?? OnboardingSetupPalette.card }
     var chromeColor: NSColor { themeTextColor ?? (importInk ? titleColor : OnboardingSetupPalette.message) }
     var themeBackground: NSColor? { didSet { updateColors() } }
-    /// The chosen Space theme's texture, drawn as the sidebar's theme renderer
-    /// draws it. No theme, or one without colour, draws none.
     var grainTheme: SpaceTheme? { didSet { if grainTheme != oldValue { updateColors() } } }
-    /// The sidebar's `ThemeWindowActivity` state; inactive draws a quarter.
     var grainIsActive = true { didSet { if grainIsActive != oldValue { updateColors() } } }
     override var isFlipped: Bool { true }
 
@@ -294,11 +254,8 @@ final class OnboardingSetupCard: NSView {
             borders.inner.borderColor = OnboardingSetupPalette.innerBorder.cgColor
             borders.outer.borderColor = OnboardingSetupPalette.outerBorder.cgColor
         }
-        // On an opaque fill, multiply is the theme renderer's themeComposite
-        // and layer opacity is its strength scale of the premultiplied texture.
         let theme = grainTheme.flatMap { $0.isValid && $0.primaryColor != nil ? $0 : nil }
         let strength = theme?.textureStrength(isActive: grainIsActive) ?? 0
-        // The card fill changes at once, like the sidebar's; so does the grain.
         CATransaction.begin(); CATransaction.setDisableActions(true)
         chrome.grain.compositingFilter = "multiplyBlendMode"
         chrome.grain.opacity = Float(strength)
@@ -313,8 +270,6 @@ final class OnboardingSetupCard: NSView {
                    back: NSView, next: NSView, skip: NSView, progress: NSView,
                    accessory: NSView?, accessoryHeight: CGFloat = 30) {
         let controls = [heading, message, back, next, skip, progress] + (accessory.map { [$0] } ?? [])
-        // Access refreshes update this card once a second. Keep existing native
-        // controls attached so a refresh cannot discard keyboard focus/hover.
         instructions.subviews.filter { view in !controls.contains { $0 === view } }
             .forEach { $0.removeFromSuperview() }
         let paragraph = NSMutableParagraphStyle()
@@ -352,9 +307,6 @@ final class OnboardingSetupCard: NSView {
         needsLayout = true
     }
 
-    ///
-    ///
-    ///
     private func styleMessage() {
         let font = NSFont.systemFont(ofSize: 15, weight: .regular)
         let paragraph = NSMutableParagraphStyle()
@@ -367,7 +319,6 @@ final class OnboardingSetupCard: NSView {
         message.textColor = messageColor
     }
 
-    /// Call before the heading and message change; nil when nothing is drawn.
     func captureText() -> TextSnapshot? {
         guard !isHiddenOrHasHiddenAncestor, window != nil else { return nil }
         func capture(_ field: NSTextField) -> (image: CGImage, frame: NSRect, offset: Double)? {
@@ -376,7 +327,6 @@ final class OnboardingSetupCard: NSView {
             field.effectiveAppearance.performAsCurrentDrawingAppearance {
                 field.cacheDisplay(in: field.bounds, to: rep)
             }
-            // Text still springing in leaves from where it is on screen.
             let offset = field.layer?.presentation()?.value(forKeyPath: "transform.translation.x") as? Double ?? 0
             return rep.cgImage.map { ($0, field.frame, offset) }
         }
@@ -384,9 +334,6 @@ final class OnboardingSetupCard: NSView {
         return snapshot.heading == nil && snapshot.message == nil ? nil : snapshot
     }
 
-    /// The step change after `configure`: the content crossfades in place;
-    /// with `slides`, the new heading and message spring in from one side
-    /// while the snapshot of the old ones springs out the other, fully opaque.
     func animateStepChange(from outgoing: TextSnapshot?, direction: OnboardingTransitionDirection,
                            slides: Bool, fades: Bool) {
         typealias Motion = OnboardingStepMotion
@@ -446,7 +393,6 @@ final class OnboardingSetupCard: NSView {
         content.needsLayout = true
     }
 
-    /// The same bundled `ThemeTextures` file the theme renderer samples.
     static func grainTile(_ texture: SpaceTheme.Texture) -> CGImage? {
         if let cached = grainTiles[texture] { return cached }
         let tile = Bundle.main.url(forResource: texture.rawValue, withExtension: "png", subdirectory: "ThemeTextures")

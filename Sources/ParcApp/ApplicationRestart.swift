@@ -1,8 +1,5 @@
 import AppKit
 
-///
-/// Parc uses the same lifetime, with a pipe for revocation and a kernel watch on
-/// the exact process instead of bundle-name polling through System Events.
 @MainActor
 final class ApplicationRestart {
     private let process = Process()
@@ -25,8 +22,6 @@ final class ApplicationRestart {
             + (profileDirectory.map { ["--parc-profile", $0.path] } ?? [])
         process.standardInput = commands; process.standardOutput = readiness
         process.standardError = FileHandle.nullDevice
-        // readToEnd returns after the helper closes its READY output. The
-        // timeout/cancel path closes the child, so no reader can live forever.
         let reader = readiness.fileHandleForReading
         process.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async { [weak self] in
@@ -36,8 +31,6 @@ final class ApplicationRestart {
         }
         do { try process.run() }
         catch { finishPreparation(error.localizedDescription); return }
-        // The parent must not retain the writer which the child closes after
-        // READY, otherwise readToEnd would wait for its own inherited handle.
         try? readiness.fileHandleForWriting.close()
         try? commands.fileHandleForReading.close()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in

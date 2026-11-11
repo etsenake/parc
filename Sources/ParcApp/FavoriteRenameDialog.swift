@@ -1,9 +1,5 @@
 import AppKit
 
-/// Favorite names use the recovered explicit Rename/Cancel dialog, not an
-///
-/// `TextInputDialogContext` with "Keep it short and sweet!"), recreated by
-///
 @MainActor
 final class FavoriteRenameDialog: NSObject, NSTextFieldDelegate {
     let dialog: PArcDialog
@@ -67,7 +63,6 @@ final class FavoriteRenameDialog: NSObject, NSTextFieldDelegate {
         } catch {
             committing = false
             updateValidity()
-            // The draft stays for an explicit retry; the reason shows over the dialog.
             if sheetWindow.isVisible, sheetWindow.attachedSheet == nil {
                 PArcDialog.inform(in: sheetWindow, .init(error: error))
             }
@@ -79,8 +74,6 @@ final class FavoriteRenameDialog: NSObject, NSTextFieldDelegate {
 
     private func closeSheet() {
         guard !finished else { return }
-        // Mark before ending native editing; repeated Return, sheet completion
-        // and owner removal cannot publish or finish twice.
         finished = true; updateValidity(); field.abortEditing()
         if let error = sheetWindow.attachedSheet { sheetWindow.endSheet(error) }
         if let parent, parent.attachedSheet === sheetWindow {

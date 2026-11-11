@@ -1,6 +1,5 @@
 import Foundation
 
-/// Both native preview owners use the same filtered, mixed-source grid order.
 struct MediaLibraryNavigation: Equatable {
     let orderedIDs: [String]
     let selectedID: String
@@ -12,8 +11,6 @@ struct MediaLibraryNavigation: Equatable {
     }
 }
 
-/// A clipboard action must survive neither owner retirement nor a new preview,
-/// even if the old file remains present when its asynchronous read completes.
 struct MediaLibraryActionTicket {
     let generation: UInt64
     func canCommit(generation current: UInt64, ownerValid: Bool, itemCurrent: Bool) -> Bool {
@@ -21,8 +18,6 @@ struct MediaLibraryActionTicket {
     }
 }
 
-/// Cancellation completes the Swift await itself; it does not rely on Quick
-/// Look delivering a callback for a canceled request. Late callbacks are inert.
 final class MediaLibraryThumbnailOperation: @unchecked Sendable {
     typealias Completion = (Result<Data, Error>) -> Void
     private let start: (@escaping Completion) -> Void
@@ -41,8 +36,6 @@ final class MediaLibraryThumbnailOperation: @unchecked Sendable {
                 if cancelled || finished { lock.unlock(); continuation.resume(throwing: CancellationError()); return }
                 self.continuation = continuation; lock.unlock()
                 start { [weak self] result in self?.finish(result) }
-                // A cancellation between registration and native start must also
-                // stop the request that was just submitted.
                 lock.lock(); let cancelAfterStart = cancelled; lock.unlock()
                 if cancelAfterStart { stop() }
             }

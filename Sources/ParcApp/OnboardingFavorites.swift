@@ -8,9 +8,6 @@ private final class OnboardingFavoritesState: ObservableObject {
     var onToggle: ((OnboardingDraft.FavoriteChoice) -> Void)?
 }
 
-/// AuthFeature.TopApps is an interactive sidebar illustration, not a list of
-/// text buttons. Its nine fixed slots and local hover owner survive selection.
-/// Reference addresses and resource provenance are recorded in onboarding.md.
 private struct OnboardingFavoritesView: View {
     @ObservedObject var state: OnboardingFavoritesState
     @Environment(\.colorScheme) private var colorScheme
@@ -103,7 +100,6 @@ private struct OnboardingFavoritesView: View {
         .buttonStyle(OnboardingFavoriteButtonStyle())
         .disabled(!state.enabled)
         .onHover { inside in
-            // An exit from the preceding tile cannot clear the new tile owner.
             if inside { hovered = choice.id }
             else if hovered == choice.id { hovered = nil }
         }
@@ -142,19 +138,14 @@ private enum OnboardingFavoriteArtwork {
     }
 }
 
-/// Keep the SwiftUI host alive as the draft changes; re-rendering the complete
-/// setup card on every toggle discards hover, focus and the native press owner.
 final class OnboardingFavoritesControl: NSView {
     private let state = OnboardingFavoritesState()
     private var host: NSHostingView<OnboardingFavoritesView>!
     var onToggle: ((OnboardingDraft.FavoriteChoice) -> Void)?
-    /// The setup Tab loop targets the SwiftUI host that owns the tiles.
     var keyboardView: NSView { host }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        // The reference illustration deliberately extends past the card. Clip
-        // it at this right column's card corners, without clipping card shadow.
         wantsLayer = true
         layer?.cornerRadius = 20
         layer?.cornerCurve = .continuous

@@ -1,40 +1,23 @@
 import AppKit
 
-///
-///
 enum DeveloperToolbarLayout {
-    ///
     static let height: CGFloat = 40
-    ///
     static let leadingInset: CGFloat = 8
-    ///
     static let trailingInset: CGFloat = 5
-    ///
     static let buttonSize: CGFloat = 28
-    /// Default `HStack` spacing between the lock and the address.
     static let addressLeadingSpacing: CGFloat = 8
-    /// Floor kept so the address remains hittable after trailing collapse.
     static let addressMinWidth: CGFloat = 20
-    ///
     static let dividerWidth: CGFloat = 1.5
     static let dividerHeight: CGFloat = 20
-    ///
     static let dividerPadding: CGFloat = 7.5
-    /// Trailing controls left of the 1.5-point divider: Copy, Portrait, Capture.
     static let dividerAfterTrailingIndex = 2
     static let trailingCount = 8
 
-    ///
     static let stripeDegrees: Double = -45
-    ///
     static let stripeBarWidth: CGFloat = 15
-    ///
     static let stripeBarSpacing: CGFloat = 15
-    ///
     static let stripeForegroundAlphaLight: CGFloat = 0.3
-    ///
     static let stripeForegroundAlphaDark: CGFloat = 0.02
-    /// Fallback fill when the page has no theme color.
     static let fallbackTint = NSColor(calibratedRed: 0.05, green: 0.33, blue: 0.43, alpha: 1)
 
     struct Frames: Equatable {
@@ -75,8 +58,6 @@ enum DeveloperToolbarLayout {
         return path
     }
 
-    ///
-    ///
     static func scheduleFirstEditSelection(_ field: NSTextField) {
         DispatchQueue.main.async {
             field.currentEditor()?.selectAll(field)
@@ -126,12 +107,7 @@ enum DeveloperToolbarLayout {
     }
 }
 
-/// Pane and Peek developer/browser strip frames used to skip forced
-/// `layoutSubtreeIfNeeded` in `refreshDeveloperToolbars` when chrome is
-/// already current. Heights are the laid-out strip heights (0 when hidden).
 enum DeveloperChromeGeometry {
-    /// BrowserPane.layout: developer and browser bars share the top edge;
-    /// content starts below `max(developer, browser)`.
     static func paneIsCurrent(
         bounds: NSRect,
         developerHeight: CGFloat,
@@ -147,7 +123,6 @@ enum DeveloperChromeGeometry {
                                       height: bounds.height - headerHeight)
     }
 
-    /// PeekHostView.layout: strip sits on the card below the 30-point title band.
     static func peekIsCurrent(
         bounds: NSRect,
         developerHeight: CGFloat,

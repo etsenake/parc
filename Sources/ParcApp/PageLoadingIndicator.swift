@@ -1,10 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// Layer values one loading-pill display-link tick would write. Identical
-/// fingerprints are a true presentation no-op: the display link still samples
-/// pulse/sweep so the recovered motion continues, but `needsDisplay`-equivalent
-/// CALayer transactions skip when scale/opacity/stroke would not change.
 struct PageLoadingPresentation: Equatable {
     var scale: Float
     var fillOpacity: Float
@@ -13,59 +9,18 @@ struct PageLoadingPresentation: Equatable {
     var strokeEnd: Float
 }
 
-/// True no-op gate for loading-pill presentation. Display-link ticks whose
-/// pulse/sweep fingerprint already matches the last apply skip the layer
-/// transaction; a changed frame still presents. The link keeps running while
-/// loading/sweeping (or hidden settle) can still produce a different frame.
 enum PageLoadingPresentationSkip {
     static func shouldSkip(previous: PageLoadingPresentation?, next: PageLoadingPresentation) -> Bool {
         previous == next
     }
 }
 
-///
-/// `WindowContentViewController.scrimLoader` places over the window content
-///
-///
-///
-///   half its height, continuous curve, clipping) with a 128 × 4 fill layer
-///
-///
-///
-///
-///
-///
-///
-///
-///   `NSColor(named:bundle:)`), not the Space palette. It resolves under the
-///   Space's content appearance, which the window content sets on the loader
-///
-///
-///   load starts the loading phase, whose `pulseProgress` runs on an undamped
-///
-///
-///
-///   it sweeps: the pulse settles to 1 (damping 0.92, response 0.8 s), fill
-///
-///
-///
-///
-///   after initialising it to clear, so its brightness reads 0.
-///
-///
-/// not have. Reduce Motion keeps a static, fully shown 48-point track while
-/// loading and never sweeps (adaptation). The display link pauses while the
-/// window is occluded or minimized and resumes from the current phase; it stops
-/// when idle (hidden and settled, or Reduce Motion's static track). While the
-/// link runs, identical pulse/sweep presentation fingerprints skip the layer
-/// write.
 @MainActor final class PageLoadingIndicator: NSView {
     static let size = NSSize(width: 128, height: 4)
     static let sweepDelay: CFTimeInterval = 3.2
     static let sweepPeriod: CFTimeInterval = 1.125
     static let sweepBarOpacity: Float = 0.92
 
-    ///
     static func foregroundPrimary(dark: Bool) -> NSColor {
         dark ? NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.8)
              : NSColor(displayP3Red: 14.0 / 255, green: 15.0 / 255, blue: 16.0 / 255, alpha: 0.9)
@@ -75,8 +30,6 @@ enum PageLoadingPresentationSkip {
         CGSize(width: sweeping ? size.width : 48, height: size.height)
     }
 
-    ///
-    /// response 0.8 s.
     static func phaseSpring(keyPath: String, from: Any?, to: Any?) -> CASpringAnimation {
         let omega = 2 * Double.pi / 0.8
         let spring = CASpringAnimation(keyPath: keyPath)
@@ -101,9 +54,6 @@ enum PageLoadingPresentationSkip {
     private var lastPresentation: PageLoadingPresentation?
     private let frames = ViewDisplayFrameDriver()
 
-    /// Centred over one pane (its horizontal span in the host) in the host's
-    ///
-    /// were not recovered.
     static func frame(paneMinX: CGFloat, paneWidth: CGFloat, bandHeight: CGFloat) -> NSRect {
         let width = min(size.width, max(0, paneWidth))
         return NSRect(x: (paneMinX + paneWidth / 2 - width / 2).rounded(), y: max(0, bandHeight / 2 - size.height / 2),
@@ -150,8 +100,6 @@ enum PageLoadingPresentationSkip {
         CATransaction.commit()
     }
 
-    ///
-    /// on-screen bounds.
     private func setTrackSize(animated: Bool) {
         let target = CGRect(origin: .zero, size: Self.trackSize(sweeping: phase == .sweeping))
         guard track.bounds != target else { return }
@@ -184,8 +132,6 @@ enum PageLoadingPresentationSkip {
         if needsFrames { startFrames() } else { stopFrames(); if !loading, !windowVisible { settleHidden() } }
     }
 
-    /// True while the recovered pulse/sweep still has work. Reduce Motion's
-    /// static shown track and a settled hidden rest are no-ops.
     private var needsFrames: Bool {
         guard windowVisible else { return false }
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
@@ -223,7 +169,6 @@ enum PageLoadingPresentationSkip {
             }
         case .sweeping:
             if reduceMotion {
-                // A preference change mid-sweep returns to the static track.
                 phase = .loading; pulse = 1; velocity = 0
                 setBarVisible(false); setTrackSize(animated: false)
             } else {
@@ -241,7 +186,6 @@ enum PageLoadingPresentationSkip {
         return needsFrames
     }
 
-    /// Spring toward `target` (SwiftUI-style response / damping fraction).
     private func integrate(target: Double, response: Double, damping: Double, step: Double) {
         let omega = 2 * Double.pi / response
         var remaining = step
@@ -252,8 +196,6 @@ enum PageLoadingPresentationSkip {
         }
     }
 
-    ///
-    /// start for 0.375 s, then stays empty for 0.375 s.
     static func stroke(at time: CFTimeInterval) -> (start: CGFloat, end: CGFloat) {
         let t = time.truncatingRemainder(dividingBy: sweepPeriod)
         if t < 0.375 { return (0, CGFloat(t / 0.375)) }
@@ -261,7 +203,6 @@ enum PageLoadingPresentationSkip {
         return (0, 0)
     }
 
-    /// Samples the same scale/opacity/stroke values a tick would write.
     static func presentation(
         pulse: Double,
         sweeping: Bool,
@@ -291,7 +232,6 @@ enum PageLoadingPresentationSkip {
             bar.removeAnimation(forKey: "opacity")
         }
         bar.opacity = target
-        // Track opacity depends on bar opacity; force the next present.
         lastPresentation = nil
     }
 
@@ -331,8 +271,6 @@ enum PageLoadingPresentationSkip {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    /// Stops at once and returns to the hidden resting state (window close,
-    /// pane removal).
     func reset() {
         stopFrames()
         phase = .hidden
@@ -344,7 +282,6 @@ enum PageLoadingPresentationSkip {
         guard let window, !isHiddenOrHasHiddenAncestor else { return false }
         return window.occlusionState.contains(.visible) && !window.isMiniaturized
     }
-    /// A hidden Peek or indicator host pauses the pulse like an occluded window.
     override func viewDidHide() { super.viewDidHide(); occlusionChanged() }
     override func viewDidUnhide() { super.viewDidUnhide(); occlusionChanged() }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -364,8 +301,6 @@ enum PageLoadingPresentationSkip {
     private func occlusionChanged() {
         if !windowVisible {
             stopFrames()
-            // A load that ends while nothing can see the fade-out rests at
-            // once, so no fading pill shows up on return.
             if phase == .hidden { settleHidden() }
         } else if needsFrames { startFrames() }
     }
@@ -377,28 +312,16 @@ enum PageLoadingPresentationSkip {
     }
 }
 
-///
-/// `scrimLoadingIndicatorEnabledAboveWindowContent` (WindowContent.State field
-///
-///
-/// of the split's window contents or whose split is not stacked vertically. Each
-///
-///
 @MainActor final class PageLoadingIndicatorHost: NSView {
     struct Pane: Equatable {
         let id: UUID
-        /// The pane's horizontal span in host coordinates.
         let minX: CGFloat, width: CGFloat
         let loading: Bool
     }
     private(set) var indicators: [UUID: PageLoadingIndicator] = [:]
 
-    ///
     static func eligible(_ ids: [UUID], stacked: Bool) -> [UUID] { stacked ? Array(ids.prefix(1)) : ids }
 
-    ///
-    /// without a scrim (page full screen, inset 0) was not recovered, so the
-    /// band then has no height and the host hides (adaptation).
     static func frame(pageHost: NSRect) -> NSRect {
         NSRect(x: pageHost.minX, y: 0, width: pageHost.width, height: max(0, min(10, pageHost.minY)))
     }

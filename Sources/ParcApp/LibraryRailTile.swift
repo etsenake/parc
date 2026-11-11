@@ -1,9 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// HomePageView's rail: 112 wide, padding 48 top, 8 leading and bottom, 7
-/// trailing, its pages centred in slots of at most 100 (`maxHeight`) above
-/// the Back control. A slot under 65 points drops the label.
 enum LibraryRailLayout {
     static let width: CGFloat = 112
     static let tileHeight: CGFloat = 80
@@ -20,30 +17,18 @@ enum LibraryRailLayout {
     static func back(height: CGFloat) -> NSRect { NSRect(x: 8, y: max(0, height - 37), width: 30, height: 28) }
 }
 
-/// `HomeButton.PageSidebarItem`: the animated icon over an 11-point bold label
-/// (VStack spacing 4), both at full opacity when selected and 0.7 otherwise. Its
-///
-/// continuous radius 12, inset 2 while pressed with spring(0.18, 0.8).
 @MainActor
 final class LibraryRailTile: PointingHandButton {
-    /// `_AnimatedPageSidebarItemView` constrains itself to 28 × 28
-    ///
-    ///
     static let iconSize: CGFloat = 28
-    /// DownloadProgressBadge's 24-point disc keeps its own size in the VStack.
     static let progressSize: CGFloat = 24
     nonisolated static let cornerRadius: CGFloat = 12
     nonisolated static let pressedInset: CGFloat = 2
-    /// spring(response: 0.18, dampingFraction: 0.8) on the pressed inset.
     nonisolated static let pressResponse = 0.18, pressDamping = 0.8
     nonisolated static func fillOpacity(selected: Bool, hovered: Bool) -> CGFloat { selected ? 0.1 : hovered ? 0.05 : 0 }
-    /// The fill in the current drawing appearance.
     nonisolated static func fill(opacity: CGFloat) -> NSColor {
         NSColor.labelColor.withAlphaComponent(NSColor.labelColor.alphaComponent * opacity)
     }
-    /// The icon's opacity; the label dims with it.
     nonisolated static func artOpacity(selected: Bool) -> CGFloat { selected ? 1 : 0.7 }
-    /// The Library assigns selection; a click only reports the page.
     private final class Cell: NSButtonCell {
         override var nextState: Int { state.rawValue }
     }
@@ -53,8 +38,6 @@ final class LibraryRailTile: PointingHandButton {
     }
     var actionBlock: (() -> Void)?
     var iconColors: (primary: NSColor, secondary: NSColor)? { didSet { art.needsDisplay = true } }
-    /// PageSidebarItem gives a tile its title as a tooltip only while the slot
-    ///
     var showsLabel = true {
         didSet {
             guard showsLabel != oldValue else { return }
@@ -62,13 +45,7 @@ final class LibraryRailTile: PointingHandButton {
             parcTooltip = showsLabel ? nil : TooltipConfiguration(title)
         }
     }
-    ///
-    /// place of the icon while `downloadsState.inFlightDownload?.progress`
-    ///
-    /// It never dims with the label.
     let progress: DownloadActivityBadge?
-    /// The badge renders each progress tick itself; the tile relayouts only
-    /// when it takes or gives back the icon's place.
     fileprivate private(set) var showsProgress = false
     private let animationName: LibraryRailAnimation.Name
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
@@ -78,9 +55,6 @@ final class LibraryRailTile: PointingHandButton {
     private var pressed = false { didSet { if pressed != oldValue { refreshFill(animated: true) } } }
     private var tracking: NSTrackingArea?
     private var playback: (timer: Timer, start: CFTimeInterval, from: Double, end: Double)?
-    /// Lottie shows the composition's start frame until a selection plays.
-    ///
-    /// the play finished.
     private var parkedFrame: Double?
 
     init(_ title: String, animation: LibraryRailAnimation.Name, hasProgressBadge: Bool = false) {
@@ -124,9 +98,6 @@ final class LibraryRailTile: PointingHandButton {
         guard let playback else { return parkedFrame ?? animation.startFrame }
         return min(playback.end, playback.from + (CACurrentMediaTime() - playback.start) * animation.frameRate)
     }
-    ///
-    /// becomes selected in a window, unless Reduce Motion is on. Deselection
-    /// does not touch the view, so a play still running finishes.
     private func playSelection() {
         guard window != nil, !reduceMotion, let animation,
               let from = animation.frame(forMarker: "hover-start"),
@@ -161,11 +132,6 @@ final class LibraryRailTile: PointingHandButton {
         progress?.frame = slot().icon
         refreshFill()
     }
-    //
-    //
-    // The column is 80 wide: "Easels & Notes" is 83pt, so it wraps after
-    //
-    //
     fileprivate func label(color: NSColor) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
@@ -173,7 +139,6 @@ final class LibraryRailTile: PointingHandButton {
         return NSAttributedString(string: title, attributes: [.font: NSFont.systemFont(ofSize: 11, weight: .bold),
                                                               .foregroundColor: color, .paragraphStyle: paragraph])
     }
-    /// The icon (or badge) and label, centered together in a flipped tile.
     fileprivate func slot() -> (icon: NSRect, label: NSRect) {
         let size = showsProgress ? Self.progressSize : Self.iconSize
         let labelWidth: CGFloat = 80, gap: CGFloat = 4

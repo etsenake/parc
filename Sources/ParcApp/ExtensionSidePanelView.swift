@@ -1,16 +1,11 @@
 import AppKit
 
-///
-/// panel baseline (extensions-side-panel-adaptation.md).
-/// The engine embeds its genuine page only in `content`, below shell controls.
 @MainActor final class ExtensionSidePanelView: NSView {
     static let headerHeight: CGFloat = PaneTopBarLayout.height
     let content: NSView = ExtensionSidePanelContentView()
     let closeButton = SplitPaneControl(.close)
     private let titleLabel = NSTextField(labelWithString: "Extension")
     var onClose: (() -> Bool)?
-    /// Layout/appearance passes that dirtied the painted header fill. Used to
-    /// observe true no-op skips; AppKit may keep `needsDisplay` set until draw.
     private(set) var headerDisplayInvalidations = 0
     override var isFlipped: Bool { true }
 
@@ -19,7 +14,6 @@ import AppKit
         titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
         titleLabel.textColor = .secondaryLabelColor
         titleLabel.lineBreakMode = .byTruncatingTail
-        // This is a category label, not a fabricated extension name.
         titleLabel.setAccessibilityElement(false)
         LiveShortcutToolTip.set(closeButton, "Close Extension Side Panel")
         closeButton.setAccessibilityLabel("Close Extension Side Panel")
@@ -52,9 +46,6 @@ import AppKit
                                 width: size.width, height: size.height)
         let titleHidden = header < 17 || width < 110
         let titleFrame = NSRect(x: 8, y: max(0, (header - 17) / 2), width: max(0, width - size.width - 23), height: 17)
-        // layoutChrome still flushes the panel via layoutSubtreeIfNeeded. Skip
-        // header-fill redraw when content/close/title placement is already
-        // current; rewritten frames still dirty the painted fill.
         var chromeMoved = false
         if content.frame != contentFrame { content.frame = contentFrame; chromeMoved = true }
         if closeButton.isHidden != closeHidden { closeButton.isHidden = closeHidden; chromeMoved = true }
@@ -66,8 +57,6 @@ import AppKit
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        // Header fill uses windowBackgroundColor; appearance flips must still
-        // redraw even when layout leaves frames unchanged.
         invalidateHeaderFill()
     }
 

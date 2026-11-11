@@ -1,18 +1,11 @@
 import AppKit
 
-/// True no-op gate for `SpaceManagerView.reload`. Everyday title/URL publishes
-/// while Space Management is open must skip; space membership, order, theme,
-/// profile, folder, split, selection and settings bits that reload feeds the
-/// mini-sidebars must still miss and apply.
 enum SpaceManagerReloadSkip {
     static func shouldSkip(previous: BrowserState?, next: BrowserState) -> Bool {
         guard let previous else { return false }
         return catalogMatches(next, previous)
     }
 
-    /// Space-Management catalog equality: spaces/profiles (membership, order,
-    /// theme), selection, folders/splits/sidebar order/settings/profile
-    /// removals, and tab membership/chrome fields — not live title/URL.
     static func catalogMatches(_ current: BrowserState, _ previous: BrowserState) -> Bool {
         current.profiles == previous.profiles
             && current.spaces == previous.spaces
@@ -52,26 +45,18 @@ enum SpaceManagerReloadSkip {
     }
 }
 
-/// Clear's targets for one Space: its unarchived Today tabs in its Profile,
-/// for the window's sidebar and for a Library card alike.
 enum SpaceClearToday {
     static func ids(in state: BrowserState, spaceID: UUID, profileID: UUID) -> Set<UUID> {
         Set(state.tabs.filter { $0.archivedAt == nil && $0.kind == .today && $0.spaceID == spaceID && $0.profileID == profileID }.map(\.id))
     }
 }
 
-///
-///
-///
-/// more gap, centred on the collection's height.
 enum SpaceManagementLayout {
     static let cardWidth: CGFloat = 240
     static let gap: CGFloat = 24
     static let verticalInset: CGFloat = 48
     static let horizontalInset: CGFloat = 24
     static let addItemSide: CGFloat = 48
-    ///
-    /// centred in the item.
     static let addCircleSide: CGFloat = 30
 
     static func cardFrame(index: Int, height: CGFloat) -> NSRect {
@@ -89,22 +74,11 @@ enum SpaceManagementLayout {
     static func contentWidth(count: Int) -> CGFloat {
         addItemFrame(count: count, height: 0).maxX + horizontalInset
     }
-    ///
-    /// 3 × (leading + trailing inset) + count × (card + gap) + the add item and
-    /// one more gap, 216 + 264 × count.
     static func libraryWidth(count: Int) -> CGFloat {
         3 * (2 * horizontalInset) + CGFloat(count) * (cardWidth + gap) + addItemSide + gap
     }
-    ///
-    /// screenshot places the strip 4 points in from each side of the page
-    /// column. The owner of that inset was not recovered.
     static let pageInset: CGFloat = 4
 
-    ///
-    /// shadow, theme and clipped container fill the card. The sidebar sits in
-    /// the unflipped container 34 + 10 points above its bottom and 5 below its
-    ///
-    /// card's bottom in the flipped item view.
     static let controlsHeight: CGFloat = 34
     static func sidebarFrame(in bounds: NSRect) -> NSRect {
         NSRect(x: 0, y: 5, width: bounds.width, height: max(0, bounds.height - controlsHeight - 15))
@@ -112,13 +86,9 @@ enum SpaceManagementLayout {
     static func controlsFrame(in bounds: NSRect) -> NSRect {
         NSRect(x: 0, y: max(0, bounds.height - controlsHeight - 5), width: bounds.width, height: controlsHeight)
     }
-    ///
     static let cornerRadius: CGFloat = 12
 }
 
-///
-/// `SpaceManagementLayout`'s cards. Native drag identity and keyboard
-/// alternatives share one guarded ordered-model mutation.
 @MainActor final class SpaceManagerView: NSView {
     static let dragType = NSPasteboard.PasteboardType("org.parc.space-manager")
     var configureSidebar: ((UUID, SidebarView) -> Void)? {
@@ -129,10 +99,7 @@ enum SpaceManagementLayout {
     var onClose: (() -> Void)?
     var onReorder: ((UUID, UUID?, [UUID]) -> Bool)?
     var ownerValid: () -> Bool = { false }
-    /// The owning window's current Space; the store's active Space can
-    /// belong to another window.
     var windowSpaceID: () -> UUID? = { nil }
-    /// The window Space's theme from the last reload, for appearance changes.
     private var addTheme: SpaceTheme?
     private let scroll = NSScrollView()
     private let content = LayoutView()
@@ -140,8 +107,6 @@ enum SpaceManagementLayout {
     private var cards: [UUID: SpaceManagementCard] = [:]
     private var order: [UUID] = []
     private var dragging: (UUID, [UUID])?
-    /// Last BrowserState catalog applied by `reload`. Title/URL-only publishes
-    /// that still match this fingerprint return before card/sidebar rebuild.
     private var lastAppliedState: BrowserState?
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -161,15 +126,11 @@ enum SpaceManagementLayout {
     func cancelEditing() { for card in cards.values { card.sidebar.cancelSpaceNameEditing() } }
     func previewTheme(_ theme: SpaceTheme, spaceID: UUID) {
         cards[spaceID]?.theme.theme = theme
-        // Live preview paints outside the store catalog; force the next reload
-        // (commit or cancel) to reapply so cards do not keep a stale preview.
         lastAppliedState = nil
     }
     func sidebar(for id: UUID) -> SidebarView? { cards[id]?.sidebar }
     func anchor(for id: UUID) -> NSView? { cards[id]?.appearanceAnchor }
     func reload(_ state: BrowserState) {
-        // SpaceManagementAddSpaceView.ViewState.colorPalette: the window's
-        // current Space theme, which the catalog skip below does not cover.
         let windowSpace = windowSpaceID().flatMap { id in state.spaces.first { $0.id == id } } ?? state.spaces.first
         if addTheme != windowSpace?.theme { addTheme = windowSpace?.theme; updateAddPalette() }
         if SpaceManagerReloadSkip.shouldSkip(previous: lastAppliedState, next: state) { return }
@@ -277,8 +238,6 @@ enum SpaceManagementLayout {
     let sidebar = SidebarView(frame: .zero)
     private let more = SpaceManagementMoreButton()
     private let grip = SpaceManagementGrip(frame: .zero)
-    /// Theme and icon popovers attach to the shown Space header, else to
-    /// More: a hidden header leaves no Space-specific anchor in the card.
     var appearanceAnchor: NSView {
         if let anchor = sidebar.spaceAppearanceAnchor(id), anchor !== sidebar, !anchor.isHiddenOrHasHiddenAncestor { return anchor }
         return more
@@ -317,8 +276,6 @@ enum SpaceManagementLayout {
         ])
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    /// EaselBackground under the theme, the controls' ForegroundSecondary
-    /// and their hover fills follow the card theme's backing appearance.
     func applyPalette() {
         let dark = theme.surfaceStyle.backgroundIsDark
         base.dark = dark; grip.dark = dark; more.dark = dark
@@ -328,8 +285,6 @@ enum SpaceManagementLayout {
         typealias Layout = SpaceManagementLayout
         base.frame = bounds; theme.frame = bounds
         sidebar.frame = Layout.sidebarFrame(in: theme.bounds)
-        //
-        // insets 4/8/4/8, the grabber leading and More trailing, each 28 square.
         let controls = Layout.controlsFrame(in: bounds), side: CGFloat = 28
         grip.frame = NSRect(x: controls.minX + 8, y: controls.midY - side / 2, width: side, height: side)
         more.frame = NSRect(x: controls.maxX - 8 - side, y: controls.midY - side / 2, width: side, height: side)
@@ -356,9 +311,6 @@ enum SpaceManagementLayout {
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) { endDrag?() }
 }
 
-///
-/// 0.5) rounded 12 under a black 0.15 shadow of radius 12, offset 1. An own
-/// sublayer, as ShadowView's, so AppKit's view shadow management keeps out.
 @MainActor private final class SpaceManagementCardBase: NSView {
     var dark = false { didSet { if dark != oldValue { updateColors() } } }
     private let backgroundLayer = CAShapeLayer()
@@ -386,10 +338,6 @@ enum SpaceManagementLayout {
     }
 }
 
-///
-///
-///
-///
 @MainActor private enum SpaceManagementControlStyle {
     static func draw(_ glyph: UInt32, in bounds: NSRect, dark: Bool, hovered: Bool, pressed: Bool) {
         if hovered || pressed {
@@ -406,8 +354,6 @@ enum SpaceManagementLayout {
     }
 }
 
-///
-/// with the open-hand cursor.
 @MainActor private final class SpaceManagementGrip: NSView {
     var beginDrag: ((NSEvent) -> Void)?
     var dark = false { didSet { if dark != oldValue { needsDisplay = true } } }
@@ -437,8 +383,6 @@ enum SpaceManagementLayout {
     }
 }
 
-///
-/// glyph U+E9A4 in a hoverable button.
 @MainActor private final class SpaceManagementMoreButton: PointingHandButton {
     var actionBlock: (() -> Void)?
     var dark = false { didSet { if dark != oldValue { needsDisplay = true } } }
@@ -452,7 +396,6 @@ enum SpaceManagementLayout {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     @objc private func invoke() { actionBlock?() }
     override var isHighlighted: Bool { didSet { if isHighlighted != oldValue { needsDisplay = true } } }
-    /// The keyboard ring follows the hover fill's 6-point corners.
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill() }
     override func updateTrackingAreas() {
@@ -472,10 +415,6 @@ enum SpaceManagementLayout {
     }
 }
 
-///
-///
-///
-///
 @MainActor private final class SpaceManagementAddButton: PointingHandButton {
     var palette: ThemeChromePalette? { didSet { updateColors() } }
     var actionBlock: (() -> Void)?
@@ -509,8 +448,6 @@ enum SpaceManagementLayout {
     }
     override var focusRingMaskBounds: NSRect { bounds }
     override func drawFocusRingMask() { NSBezierPath(ovalIn: bounds).fill() }
-    /// The unthemed palette's colours are dynamic; resolve them, and draw the
-    /// tinted glyph, under the palette's own appearance.
     private func updateColors() {
         let tint = palette?.maxContrastColor ?? .labelColor, fill = palette?.cutoutColor ?? .white
         let scale = window?.backingScaleFactor ?? 2

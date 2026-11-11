@@ -14,8 +14,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private let applicationProfileID: UUID?
     private let engine = PointingHandPopUpButton()
     private let searchSuggestions = PointingHandSwitch()
-    ///
-    /// the engine picker's tooltip and accessibility help.
     private var searchNote = "" {
         didSet { engine.toolTip = searchNote.isEmpty ? nil : searchNote; engine.setAccessibilityHelp(engine.toolTip) }
     }
@@ -54,7 +52,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         case membership = "Membership", general = "General", profiles = "Profiles", links = "Links", shortcuts = "Shortcuts", icon = "Icon", advanced = "Advanced"
         var identifier: NSToolbarItem.Identifier { .init("Parc.Settings." + rawValue) }
         var symbol: String {
-            //
             switch self { case .membership: return "person.crop.square.filled.and.at.rectangle"; case .general: return "gearshape"; case .profiles: return "person"; case .shortcuts: return "keyboard"; case .icon: return "app"; case .links: return "macwindow.on.rectangle"; case .advanced: return "slider.horizontal.3" }
         }
     }
@@ -73,8 +70,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private let removeProfile = ActionButton("", symbol: "minus")
     private var removalSubscription: AnyCancellable?
 
-    //
-    // DownloadLocationPicker.swift.
     private let downloadLocationPicker = DownloadLocationPicker()
     private let downloadHelp = NSTextField(wrappingLabelWithString: "")
     private var profilePageButtons: [ProfileSettingsPage: NSButton] = [:]
@@ -109,9 +104,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             ?? store.state.profiles.first { $0.id == savedProfileID }?.id
             ?? store.state.spaces.first { $0.id == spaceID }?.profileID
             ?? store.state.profiles.first?.id
-        //
-        // pane; PreferencesPaneContainer fixes the content at 562 points tall
-        //
         let window = SettingsNativeWindow(contentRect: NSRect(x: 0, y: 0, width: 684, height: 562),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = Pane.general.rawValue
@@ -153,8 +145,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             Snapshot(settings: state.settings, profiles: state.profiles, spaces: state.spaces)
         }.removeDuplicates().receive(on: RunLoop.main).sink { [weak self] snapshot in
             guard let self else { return }
-            // Pane selection is independent of this Space's profile assignment.
-            // A removed target cannot retain an in-flight folder selection.
             if let id = self.displayedProfileID, !snapshot.profiles.contains(where: { $0.id == id }) {
                 self.cancelDownloadFolderSelection()
             }
@@ -276,10 +266,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
     }
 
-    ///
-    ///
-    ///
-    /// onboarding below them.
     private func makeGeneralPane() -> NSScrollView {
         let (scroll, content) = pane()
         let quitting = group(in: content, y: 20, height: 37)
@@ -308,9 +294,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     @objc private func openPreviewSettings() { showPreviewSettings() }
     @objc private func openProfilesPane() { showPane(.profiles) }
 
-    ///
-    /// more, a 206-point list beside a 340-point column of three sections, all
-    /// inside the 562-point pane with nothing below and no scrolling.
     private func makeProfilesPane() -> NSScrollView {
         let (scroll, content) = pane()
         let intro = NSTextField(labelWithAttributedString: profilesIntroduction())
@@ -339,7 +322,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         profileScroll.drawsBackground = false
         profileScroll.hasVerticalScroller = true; profileScroll.autohidesScrollers = true
         profileScroll.documentView = profileList; list.addSubview(profileScroll)
-        //
         let add = ActionButton("", symbol: "plus") { [weak self] in self?.createProfile() }
         add.contentTintColor = .labelColor; add.setAccessibilityLabel("New profile")
         add.toolTip = applicationProfileID == nil ? "Create a profile for this Space" : "Create a regular profile"
@@ -350,7 +332,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             let rule = NSBox(frame: NSRect(x: x, y: 452, width: 1, height: 19)); rule.boxType = .separator; list.addSubview(rule)
         }
 
-        // Rows are centred 22 points from their section's top, 45 apart.
         let searching = group(in: content, x: 280, y: 72, width: 340, height: 125)
         label("Search engine", in: searching, NSRect(x: 10, y: 13, width: 138, height: 18))
         place(engine, in: searching, NSRect(x: 150, y: 10, width: 180, height: 25))
@@ -363,15 +344,11 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         place(searchSuggestions, in: searching, NSRect(x: 292, y: 97, width: 38, height: 22))
 
         let downloads = group(in: content, x: 280, y: 206, width: 340, height: 129)
-        //
-        // spacer, then the 180-pt picker at the trailing edge.
         downloadLocationPicker.rowTitle = label("Download location", in: downloads, NSRect(x: 10, y: 58, width: 132, height: 18))
         place(downloadLocationPicker, in: downloads, NSRect(x: 150, y: 54, width: DownloadLocationPicker.width, height: 28))
         place(downloadHelp, in: downloads, NSRect(x: 10, y: 92, width: 240, height: 32))
         place(downloadRetry, in: downloads, NSRect(x: 260, y: 94, width: 70, height: 28))
 
-        //
-        // trailing 180-point picker, with no invented per-sweep status rows.
         label("Archive tabs after", in: downloads, NSRect(x: 10, y: 13, width: 116, height: 18))
         place(archiveInfo, in: downloads, NSRect(x: 128, y: 14, width: 16, height: 16))
         place(archive, in: downloads, NSRect(x: 150, y: 10, width: 180, height: 25))
@@ -393,8 +370,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private weak var profileDataTitle: NSTextField?
     private weak var profileData: SettingsGroupView?
 
-    /// The download card grows only to show a failure or managed-policy note
-    ///
     private func layoutProfileCards() {
         guard let cards = profileCards, let title = profileDataTitle, let data = profileData else { return }
         let note = !downloadHelp.isHidden || !downloadRetry.isHidden
@@ -436,9 +411,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         var note: String? = nil
     }
 
-    ///
-    /// note) grouped into sections 10 points apart with 1-point dividers, then
-    /// More Settings… and a trailing Export Data.
     private func makeAdvancedPane() -> NSScrollView {
         let (scroll, content) = pane()
         var y: CGFloat = 20
@@ -517,7 +489,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             cancelDownloadFolderSelection()
         }
         if pane == .general { DefaultBrowserController.shared.refresh() }
-        //
         if selectedPane == pane, paneHost.pane === content {
             window.title = pane == .membership ? membershipPane.displayName : pane.rawValue
             window.toolbar?.selectedItemIdentifier = pane.identifier
@@ -532,11 +503,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         window.title = pane == .membership ? membershipPane.displayName : pane.rawValue
         window.toolbar?.selectedItemIdentifier = pane.identifier
         content.documentView?.setAccessibilityLabel(pane.rawValue + " settings")
-        // Dynamic Icon/Shortcuts controls retain native recalculation as their
-        // filtered rows and details change; static panes use the explicit chain.
         window.autorecalculatesKeyViewLoop = pane == .shortcuts || pane == .icon
         window.recalculateKeyViewLoop()
-        // Explicit chains take precedence over AppKit's geometry reconstruction.
         if pane != .shortcuts && pane != .icon { SettingsFocusState.connectKeyViews(in: content) }
         restorePaneFocus()
     }
@@ -567,7 +535,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         window?.toolbar?.items.forEach { $0.isEnabled = true }
         guard !isClosing else { return }
         let revision = lifecycleRevision
-        // Sheet completion can refresh controls or present an error sheet first.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.lifecycleRevision == revision, self.window?.attachedSheet == nil else { return }
             self.onSheetEnded?()
@@ -575,8 +542,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             self.reportRemovalFailures()
             if context?.hasPrefix(Pane.profiles.rawValue + ":") == true, self.selectedPane == .profiles,
                context != self.focusContext {
-                // The surviving Profile may have its own remembered control;
-                // deletion returns to the list rather than adopting that control.
                 if let window = self.window, let content = window.contentView {
                     self.focusState.restore(in: window, root: content, context: nil, fallback: self.profileList)
                 }
@@ -690,8 +655,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         if AutoArchiveInterval.settingsChoices.contains(interval) {
             archive.selectItem(at: AutoArchiveInterval.settingsChoices.firstIndex(of: interval)!)
         } else {
-            // Display an existing older value truthfully without offering it
-            // as a new normal option or silently changing the saved policy.
             archive.addItem(withTitle: "Saved setting: " + interval.title)
             archive.lastItem?.isEnabled = false
             archive.select(archive.lastItem)
@@ -730,7 +693,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         shortcutsPane.endRecording()
     }
 
-    /// The command bar's Air Traffic Control opens the Links pane's own editor.
     @discardableResult func showAirTrafficControl() -> Bool {
         showPane(.links)
         guard let links = panes[.links]?.documentView as? LinksSettingsView else { return false }
@@ -774,8 +736,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         shortcutsPane.endRecording()
         searchGeneration &+= 1; searchPreferences = nil
         cancelDownloadFolderSelection()
-        // Covers platform alerts, creation/reassignment and Links' nested sheet.
-        // Retire the innermost sheet first; no accepted response is synthesized.
         if let window { SettingsFocusState.cancelAttachedSheets(of: window) }
         window?.makeFirstResponder(nil)
         focusState.forget()
@@ -796,7 +756,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     @objc private func exportBrowserData() {
         guard let parent = window, parent.isVisible, parent.attachedSheet == nil,
               dataExportID == nil else { return }
-        //
         let snapshot = BrowserDataExport(state: store.state)
         let id = UUID(), panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "md", conformingTo: .data) ?? .plainText]
@@ -809,8 +768,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             guard response == .OK, let url = panel.url else {
                 self.dataExportID = nil; self.exportData.isEnabled = true; return
             }
-            // Confirmation owns the output. Closing Settings afterward must not
-            // silently cancel an already approved file write or hide its error.
             Task { @MainActor [self] in
                 do { try await Task.detached(priority: .utility) { try snapshot.write(to: url) }.value }
                 catch { PArcDialog.present(error) }
@@ -848,8 +805,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
     }
 
-    /// The Settings window in front reports a stopped removal once; Retry stays
-    /// on the Profile's remove button.
     private func reportRemovalFailures() {
         guard !isClosing, let window, window.isVisible, window.isKeyWindow, window.attachedSheet == nil else { return }
         for profile in store.state.profiles {
@@ -918,8 +873,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
     }
 
-    // A page-opening command retains this Settings owner, never whichever
-    // browser happens to be frontmost after a menu or asynchronous operation.
     func permitsPage(in ownerStore: BrowserStore, spaceID: UUID, profileID: UUID) -> Bool {
         store === ownerStore && !store.isEphemeral && window?.isKeyWindow == true
             && window?.attachedSheet == nil && !store.isProfileRemovalPending(profileID)
@@ -944,11 +897,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private func cancelDownloadFolderSelection() {
         let panel = downloadFolderPanel
         downloadFolderPanel = nil
-        // Retire this request before AppKit invokes any terminal callback.
-        // Closing/reopening Settings cannot revive an already queued OK.
         panel?.cancel(nil)
-        // The retired callback never refreshes, so restore the picker's
-        // items (emptied while the panel ran) to the effective value here.
         if panel != nil { renderDownloadLocation() }
     }
 
@@ -982,8 +931,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
     }
     private func renderDownloadLocation() {
-        // A managed folder or prompt fixes both choices: show the effective
-        // value without offering a change Parc could not apply.
         let current = downloadPreferences
         downloadLocationPicker.update(current.map { .init(directory: $0.directoryURL, prompt: $0.promptForDownload) },
                                       enabled: current.map { !$0.directoryManaged && !$0.promptManaged } ?? false,
@@ -993,7 +940,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         let current = downloadPreferences
         renderDownloadLocation()
         let name = store.state.profiles.first { $0.id == displayedProfileID }?.name ?? "Default"
-        // Two wrapped lines, so managed and failure messages stay readable.
         downloadHelp.maximumNumberOfLines = 2
         downloadHelp.lineBreakMode = .byWordWrapping
         downloadHelp.cell?.truncatesLastVisibleLine = true
@@ -1001,7 +947,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             ? "Some download settings for “\(name)” are managed by your organization."
             : "Applies to all Spaces using the “\(name)” profile.")
         downloadHelp.toolTip = downloadHelp.stringValue
-        //
         let managed = current?.directoryManaged == true || current?.promptManaged == true
         downloadHelp.isHidden = !(managed || !downloadRetry.isHidden || (message != nil && current != nil))
         layoutProfileCards()
@@ -1019,9 +964,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         guard let current = currentDownloadPreferences(), !current.directoryManaged, !current.promptManaged else {
             refreshDownloadPreferences(); return
         }
-        //
-        // onDidSetPromptForFileDownloadPath(false), "Ask every time" sends
-        //
         if choice == .other { chooseDownloadDirectory(); return }
         do {
             _ = try PCNativeBrowserApplication.setPromptForDownload(choice == .prompt, for: current)
@@ -1032,10 +974,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         guard let window, window.attachedSheet == nil, downloadFolderPanel == nil,
               let current = currentDownloadPreferences(), !current.directoryManaged, !current.promptManaged,
               let profileID = displayedProfileID else { downloadLocationPicker.revert(); return }
-        //
-        // folders only, may create one, single selection, and confirms with
-        //
-        // app-modal runModal, so pane, profile and removal changes can retire it.
         let panel = NSOpenPanel()
         panel.prompt = "Select"
         panel.canChooseFiles = false; panel.canChooseDirectories = true
@@ -1051,15 +989,12 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
                   self.store.state.profiles.contains(where: { $0.id == profileID }),
                   let url = panel.url else { self.refreshDownloadPreferences(); return }
             do {
-                //
-                // forces the prompt off so the chosen folder is used.
                 let chosen = try PCNativeBrowserApplication.setDownloadDirectory(url, for: current)
                 _ = try PCNativeBrowserApplication.setPromptForDownload(false, for: chosen)
                 self.refreshDownloadPreferences()
             } catch { self.reportDownloadPreferenceError(error) }
         }
     }
-    ///
     func beginProfileCreation() {
         showPane(.profiles)
         createProfile()
@@ -1139,8 +1074,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     @objc private func showArchiveInformation() {
         guard archiveInfo.isEnabled, window?.attachedSheet == nil else { return }
         if archiveInfoPopover?.isShown == true { archiveInfoPopover?.close(); return }
-        //
-        // the independent application while preserving its information entry.
         let controller = NSViewController()
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 126))
         let text = NSTextField(wrappingLabelWithString: "Parc automatically archives inactive Today tabs after this Profile’s selected interval. Pinned tabs and Favorites stay put. Find automatically closed tabs in Library → Archive and choose Put Back to restore them.")
@@ -1167,7 +1100,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
         let path = store.independentEngineProfilePath(for: profileID)
         PCNativeBrowserApplication.searchPreferences(profilePath: path) { [weak self] preferences, error in
-            // Native profile completions are delivered on the Chromium UI thread.
             MainActor.assumeIsolated {
                 guard let self, self.searchGeneration == generation, self.displayedProfileID == profileID,
                       self.store.state.profiles.contains(where: { $0.id == profileID }) else { return }
@@ -1305,9 +1237,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 }
 
-///
-/// ease-in-out animation group with a crossfade transition; the host keeps one
-/// pane at a time so focus bookkeeping still sees only the visible pane.
 @MainActor
 final class SettingsPaneHost: NSView {
     private(set) var pane: NSView?

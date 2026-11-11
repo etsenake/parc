@@ -1,7 +1,5 @@
 import AppKit
 
-///
-/// copied into `Resources/SidebarPlusMenu`.
 @MainActor enum SidebarPlusMenuArtwork {
     static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("SidebarPlusMenu", isDirectory: true)
     private static var cache: [String: NSImage] = [:]
@@ -29,14 +27,6 @@ import AppKit
     }
 }
 
-///
-/// New Folder, New Easel, New Split and New Tab. New Note takes the excluded
-///
-///
-///
-///
-///
-/// at their natural size in the 1.170 reference.
 enum SidebarPlusAction: Equatable {
     case space, folder, easel, note, split, tab
 }
@@ -72,15 +62,6 @@ enum SidebarPlusMenuModel {
     }
 }
 
-/// Where the HUD window sits in screen coordinates, and where its tail is.
-///
-/// key child window, location `.above`, disclosure alignment `.bottomOrRight`
-///
-///
-/// The 1.170 crop this HUD is matched to sits the card's trailing edge flush
-/// with the button's, the tail center 3.25 points left of the button's center
-/// (19.25 points in from the card's trailing edge on a 32-point button), and
-/// 16 points of cream between the card and the button.
 @MainActor
 enum SidebarPlusMenuPlacement {
     static let tailBase: CGFloat = 11
@@ -99,9 +80,6 @@ enum SidebarPlusMenuPlacement {
     }
 }
 
-///
-/// plus HUD or above it for a card hanging under its button. The tail is
-/// outside the card, which clips to its own rounded corners.
 @MainActor
 class PArcMenuChrome: NSView {
     let content: NSView
@@ -124,7 +102,6 @@ class PArcMenuChrome: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// The tail's tip, in this view's coordinates.
     var tailTip: NSPoint { NSPoint(x: tailX, y: tailOnTop ? bounds.height : 0) }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -139,7 +116,6 @@ class PArcMenuChrome: NSView {
     }
 }
 
-/// The plus HUD's card and tail.
 @MainActor
 final class SidebarPlusMenuChrome: PArcMenuChrome {
     let card: SidebarPlusMenuView
@@ -154,8 +130,6 @@ final class SidebarPlusMenuChrome: PArcMenuChrome {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
-///
-/// values the history chooser uses (navigation.md "Motion").
 @MainActor
 enum SidebarPlusMenuMotion {
     static let hiddenScale: CGFloat = 0.95
@@ -164,16 +138,12 @@ enum SidebarPlusMenuMotion {
     static let closeDuration: CFTimeInterval = 0.07
     static var timing: CAMediaTimingFunction { CAMediaTimingFunction(controlPoints: 0.215, 0.61, 0.355, 1) }
 
-    ///
-    /// a context menu opens from.
     static func scaled(_ scale: CGFloat, about point: NSPoint) -> CATransform3D {
         var transform = CATransform3DMakeTranslation(point.x, point.y, 0)
         transform = CATransform3DScale(transform, scale, scale, 1)
         return CATransform3DTranslate(transform, -point.x, -point.y, 0)
     }
 
-    /// A 0.95 scale about `point` to identity over 0.1 s and opacity 0 to 1
-    /// over 0.05 s.
     static func animateOpen(_ view: NSView, about point: NSPoint) {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let layer = view.layer else { return }
         let transform = CABasicAnimation(keyPath: "transform")
@@ -190,9 +160,6 @@ enum SidebarPlusMenuMotion {
         layer.add(opacity, forKey: "opacity_animation")
     }
 
-    /// From the presentation values back to the 0.95 scale and opacity 0 over
-    /// 0.07 s, fill-forwards; false when it cannot animate and the caller
-    /// removes the window itself.
     static func animateClose(_ view: NSView, about point: NSPoint, completion: @escaping () -> Void) -> Bool {
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, let layer = view.layer else { return false }
         let current = layer.presentation()
@@ -217,8 +184,6 @@ enum SidebarPlusMenuMotion {
     }
 }
 
-///
-/// arrows, Return and Escape and loses focus on an outside click.
 class SidebarPlusMenuWindow: NSWindow {
     var onResignKey: (() -> Void)?
     override var canBecomeKey: Bool { true }
@@ -226,26 +191,18 @@ class SidebarPlusMenuWindow: NSWindow {
     override func resignKey() { super.resignKey(); onResignKey?() }
 }
 
-/// Presents the HUD in a key child window and tears it down. Every close path
-/// ends in `close(animated:)`, which is where `onVisibilityChange(false)` fires;
-/// `onVisibilityChange(true)` fires as the window opens.
 @MainActor
 final class SidebarPlusMenuController: NSObject {
-    /// Posted with the parent window as object when the HUD opens or starts
-    /// closing; `userInfo["shown"]` is the new state.
     static let visibilityDidChange = Notification.Name("SidebarPlusMenuVisibilityDidChange")
     private static var shown: [ObjectIdentifier: SidebarPlusMenuController] = [:]
-    /// Whether a HUD is open over `window`.
     static func isShown(in window: NSWindow?) -> Bool {
         window.map { shown[ObjectIdentifier($0)] != nil } ?? false
     }
-    /// Closes the HUD over `window`, if any (the sidebar hid or went away).
     static func dismiss(in window: NSWindow?) {
         window.flatMap { shown[ObjectIdentifier($0)] }?.dismiss()
     }
 
     var onVisibilityChange: ((Bool) -> Void)?
-    /// The window's live theme; an open HUD recolours with it.
     var theme = SpaceTheme() {
         didSet { if theme != oldValue { chrome?.colors = PArcMenuColors(theme: theme) } }
     }
@@ -255,8 +212,6 @@ final class SidebarPlusMenuController: NSObject {
     private weak var anchor: NSView?
     nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
     private var closing = false
-    /// The mouse-down that closed the HUD by pressing its own + button; the
-    /// button's action for that same press must not reopen it.
     private var closingPress: Int?
 
     func toggle(from button: NSView, rows: [SidebarPlusRow], perform: @escaping (SidebarPlusAction) -> Void) {
@@ -293,8 +248,6 @@ final class SidebarPlusMenuController: NSObject {
         self.chrome = chrome
         self.parent = parent
         self.anchor = button
-        // The parent resigns key inside makeKeyAndOrderFront. Register first so
-        // that resignation still sees the HUD as open.
         Self.shown[ObjectIdentifier(parent)] = self
         announce(true)
         parent.addChildWindow(panel, ordered: .above)
@@ -310,12 +263,10 @@ final class SidebarPlusMenuController: NSObject {
         let center = NotificationCenter.default
         for name in [NSWindow.willCloseNotification, NSWindow.willMiniaturizeNotification,
                      NSWindow.willBeginSheetNotification] {
-            // Window-level dismissals close at once, without the exit animation.
             observers.append(center.addObserver(forName: name, object: parent, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.close(animated: false) }
             })
         }
-        //
         for (name, object) in [(NSWindow.didResizeNotification, parent as AnyObject?),
                                (NSMenu.didSendActionNotification, nil),
                                (NSApplication.didResignActiveNotification, nil)] {
@@ -325,8 +276,6 @@ final class SidebarPlusMenuController: NSObject {
         }
     }
 
-    ///
-    /// is remembered so that press's toggle does not reopen the HUD.
     private func lostFocus() {
         guard panel != nil, !closing else { return }
         if let event = NSApp.currentEvent, event.type == .leftMouseDown, let anchor, let window = anchor.window,
@@ -387,7 +336,6 @@ final class SidebarPlusMenuView: NSView {
     private var buttons: [SidebarPlusRowButton] = []
     private var separators: [NSRect] = []
     private var highlighted = 0
-    /// False once the HUD starts closing; rows and keys do nothing then.
     var acceptsActions = true
     var colors: PArcMenuColors {
         didSet {
@@ -398,12 +346,9 @@ final class SidebarPlusMenuView: NSView {
     static let width: CGFloat = 210
     static let rowHeight: CGFloat = 40
     nonisolated static let inset: CGFloat = 8
-    ///
-    ///
     static let separatorInsets = NSEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
     static let divider = separatorInsets.top + 1 + separatorInsets.bottom
 
-    /// The card's 12-point continuous corners, which its content clips to.
     static func shapeCard(_ view: NSView) {
         view.wantsLayer = true
         view.layer?.cornerRadius = SidebarPlusMenuPlacement.cornerRadius
@@ -512,9 +457,6 @@ final class SidebarPlusRowButton: NSButton {
     var colors: PArcMenuColors { didSet { needsDisplay = true } }
     private let icon: NSImage?
     private let iconIsArtwork: Bool
-    ///
-    ///
-    ///
     static let titleFont = NSFont.systemFont(ofSize: 13, weight: .medium)
     static let shortcutFont = NSFont.systemFont(ofSize: 13, weight: .regular)
     private static let shortcutKern: CGFloat = 2
@@ -522,7 +464,6 @@ final class SidebarPlusRowButton: NSButton {
     static let iconCenter = NSPoint(x: 20, y: 20)
     private static let artworkSize = NSSize(width: 24, height: 24)
     static let titleOrigin = NSPoint(x: 42, y: 12)
-    /// The highlighted row's plate.
     static let plateRadius: CGFloat = 8
     private static let shortcutRightInset: CGFloat = 10
 

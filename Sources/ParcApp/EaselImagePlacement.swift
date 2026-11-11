@@ -1,8 +1,6 @@
 import AppKit
 import ImageIO
 
-/// Immutable genuine renderer pixels, with the source lease retained by `valid`.
-/// Both context-image and screenshot inputs use the same local persistence path.
 @MainActor
 struct EaselImageInput {
     let pngData: Data
@@ -15,15 +13,10 @@ struct EaselImageInput {
     var isValid: Bool { valid() }
 }
 
-/// One real image-import transaction shared by the page menu's chooser and the
-/// capture palette. The ID is resolved again at commit; a stale row never creates
-/// a substitute Easel. New-document rollback keeps failed output out of the list.
 @MainActor
 enum EaselImagePlacement {
     @MainActor
     struct Result {
-        // Keep the import/undo session alive until the destination editor takes
-        // it from the store's weak session registry.
         let session: EaselSession
         var id: UUID { session.document.id }
         var title: String { session.document.title }

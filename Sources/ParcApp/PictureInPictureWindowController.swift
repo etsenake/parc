@@ -1,12 +1,5 @@
 import AppKit
 
-// Document Picture-in-Picture (`documentPictureInPicture.requestWindow`, as
-// Google Meet uses) opens its page in a Chromium browser of the PiP type. The
-//
-//
-// (PictureInPictureFrame) with a 48 pt bar holding Back to Tab and Close above
-//
-// resize requests and its closing.
 @MainActor
 final class PictureInPictureWindowController: NSWindowController, NSWindowDelegate,
                                               PCNativeBrowserWindowClient, PCNativePageObserver {
@@ -40,8 +33,6 @@ final class PictureInPictureWindowController: NSWindowController, NSWindowDelega
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
-        // Registration requires the side-panel container inside this window;
-        // as the Developer Tools window does, it stays hidden beside the page.
         root.frame = NSRect(origin: .zero, size: window.frame.size)
         container.frame = DocumentPictureInPictureLayout.pageFrame(in: root.bounds)
         container.autoresizingMask = [.width, .height]
@@ -55,7 +46,6 @@ final class PictureInPictureWindowController: NSWindowController, NSWindowDelega
         motion = PictureInPictureMotion(window: window)
         super.init(window: window)
         window.delegate = self
-        // Chromium attaches the page after it has the container.
         container.onAttach = { [weak self] in self?.presentIfReady() }
         topBar.onReturnToTab = { [weak self] in self?.returnToTab() }
         topBar.onClose = { [weak self] in self?.requestUserClose() }
@@ -65,7 +55,6 @@ final class PictureInPictureWindowController: NSWindowController, NSWindowDelega
             root.addGestureRecognizer(NSMagnificationGestureRecognizer(
                 target: motion, action: #selector(PictureInPictureMotion.magnify(_:))))
         }
-        // Chromium sizes the page it asked for; the bar sits above it.
         let screen = request.source?.window?.screen ?? NSScreen.main
         var frame = window.frame
         if request.initialFrame.width > 0 { frame.size.width = request.initialFrame.width }
@@ -121,7 +110,6 @@ final class PictureInPictureWindowController: NSWindowController, NSWindowDelega
         return true
     }
 
-    /// Shown without focus; the panel becomes key only when clicked.
     private func presentIfReady() {
         guard pageIsAttached(), let window else { return }
         topBar.showsReturnToTab = binding?.canReturnPictureInPictureToOpener ?? false
@@ -165,7 +153,6 @@ final class PictureInPictureWindowController: NSWindowController, NSWindowDelega
         page = nil
     }
 
-    // Chromium releases the shell only after its last Browser unregisters.
     @objc func nativeBrowserDidReleaseLastBrowser(_ browser: PCNativeBrowserWindow) {
         guard browser === binding, !closed else { return }
         closeApproved = true
@@ -184,7 +171,6 @@ final class PictureInPictureWindowController: NSWindowController, NSWindowDelega
         window?.close()
     }
 
-    /// The panel has no close button, so ⌘W and the close control ask here.
     func requestUserClose() {
         guard let window, windowShouldClose(window) else { return }
         window.close()
@@ -213,7 +199,6 @@ final class PictureInPictureWindowController: NSWindowController, NSWindowDelega
     func windowWillClose(_ notification: Notification) {
         guard notification.object as? NSWindow === window, !closed else { return }
         closed = true
-        // A click on Close or Back to Tab closes the panel under the pointer.
         topBar.endHover()
         if let page { releasePage(page) }
         container.onAttach = nil
@@ -237,8 +222,6 @@ final class PictureInPictureWindowController: NSWindowController, NSWindowDelega
         updateSizeLimits(on: window.screen)
     }
 
-    ///
-    /// and grows to MovableWindow's screen-relative maximum, at any aspect.
     private func updateSizeLimits(on screen: NSScreen?) {
         guard let window else { return }
         let minimum = DocumentPictureInPictureLayout.minimumSize
@@ -260,7 +243,6 @@ final class PictureInPictureWindowController: NSWindowController, NSWindowDelega
         return window.firstResponder !== before
     }
 
-    // A PiP window has no address bar, tab search, Profiles, bookmarks or side panel.
     func nativeBrowserFocusAddress(_ browser: PCNativeBrowserWindow) {}
     func nativeBrowserShowTabSearch(_ browser: PCNativeBrowserWindow) {}
     func nativeBrowserCloseTabSearch(_ browser: PCNativeBrowserWindow) {}
@@ -278,10 +260,6 @@ final class PictureInPictureWindowController: NSWindowController, NSWindowDelega
     }
 }
 
-// Chromium shows PiP with makeKeyAndOrderFront, also when auto-PiP opens it
-// while another app is frontmost; a non-activating panel would then take that
-// app's typing. It becomes key only once clicked, and clicking it never
-// activates Parc, so leaving and returning to Parc drive auto-PiP as for video.
 @MainActor
 private final class PictureInPicturePanel: NSPanel {
     private var clicked = false
@@ -300,9 +278,6 @@ private final class PictureInPicturePanel: NSPanel {
     }
 }
 
-//
-// the top 48 pt; the page fills the rest and runs a point under the bar and
-// past the other three edges, so the frame's border, not a seam, meets it.
 enum DocumentPictureInPictureLayout {
     static let topBarHeight: CGFloat = 48
     static let minimumSize = NSSize(width: 284, height: 246)
@@ -313,7 +288,6 @@ enum DocumentPictureInPictureLayout {
         NSRect(x: bounds.minX - 1, y: bounds.minY - 1, width: bounds.width + 2,
                height: max(0, bounds.height - topBarHeight + 2))
     }
-    /// The window height that gives the page `height` points.
     static func windowHeight(forPage height: CGFloat) -> CGFloat { height + topBarHeight - 2 }
 }
 
@@ -327,13 +301,6 @@ private final class PictureInPictureFrameView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 
-// DocumentPiPTopBarView: an opaque bar (DocumentPiPTopBarBackgroundColor)
-// whose bottom hairline (DocumentPiPHairlineColor) covers the page's top
-// point, Back to Tab 10 pt from the leading edge and Close 16 pt from the
-//
-// MovableWindow does; a double-click there toggles its largest size unless
-// the system's title-bar double-click is set to do nothing or minimize
-// (handleTopBarDoubleClick; a PiP has no Dock tile).
 @MainActor
 private final class DocumentPictureInPictureTopBar: NSView {
     private static let backInset: CGFloat = 10
@@ -378,7 +345,6 @@ private final class DocumentPictureInPictureTopBar: NSView {
         let pill = back.fittingSize
         back.frame = NSRect(x: Self.backInset, y: ((bounds.height - pill.height) / 2).rounded(),
                             width: pill.width, height: pill.height)
-        //
         close.side = bounds.width < 400 ? 16 : 18
         close.frame = NSRect(x: bounds.width - Self.closeInset - close.side,
                              y: ((bounds.height - close.side) / 2).rounded(),
@@ -396,18 +362,12 @@ private final class DocumentPictureInPictureTopBar: NSView {
     }
     override func mouseDragged(with event: NSEvent) { motion?.drag(with: event) }
     override func mouseUp(with event: NSEvent) { motion?.endDrag(with: event) }
-    // System Settings › Desktop & Dock › "Double-click a window's title bar to".
     private static var doubleClickZooms: Bool {
         let action = UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") ?? "Maximize"
         return action != "None" && action != "Minimize"
     }
 }
 
-// A bar control under the pointer: full opacity instead of 92.5%, 70% while
-//
-// and BackToTabButtonStyle). The panel is rarely key, so hover is tracked
-// always and the cursor set on entering and leaving, also behind another
-// app, rather than left to cursor rects, which apply only in the key window.
 @MainActor
 private class PictureInPictureBarControl: NSButton {
     static let easing = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1)
@@ -428,7 +388,6 @@ private class PictureInPictureBarControl: NSButton {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     @objc private func activate() { perform?() }
-    // The first click on an unfocused panel must press the control, not only focus.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -442,12 +401,10 @@ private class PictureInPictureBarControl: NSButton {
     override func mouseEntered(with event: NSEvent) { setHovering(true) }
     override func mouseExited(with event: NSEvent) { setHovering(false) }
     override func mouseDown(with event: NSEvent) {
-        // The button tracks the press inside super until the mouse goes up.
         alphaValue = 0.7
         super.mouseDown(with: event)
         alphaValue = hovering ? 1 : 0.925
     }
-    // Hidden or removed under the pointer, no exit comes.
     override func viewDidHide() {
         super.viewDidHide()
         setHovering(false)
@@ -477,9 +434,6 @@ private class PictureInPictureBarControl: NSButton {
     }
 }
 
-// Back to Tab: the up-left arrow alone in a 26 pt circle, as the video PiP's;
-// the circle fills white at 33% under the pointer (BackToTabButtonStyle
-//
 @MainActor
 private final class PictureInPictureBackToTabButton: PictureInPictureBarControl {
     private static let side: CGFloat = 26
@@ -501,8 +455,6 @@ private final class PictureInPictureBackToTabButton: PictureInPictureBarControl 
     }
 }
 
-// Close: a bare bold cross, growing to 110% about its centre under the
-//
 @MainActor
 private final class PictureInPictureCloseButton: PictureInPictureBarControl {
     var side: CGFloat = 18 {
@@ -523,7 +475,6 @@ private final class PictureInPictureCloseButton: PictureInPictureBarControl {
     }
     override func hoverChanged() {
         guard let layer else { return }
-        // AppKit anchors a view's layer at its origin; scale about the centre.
         let scale: CGFloat = hovering ? 1.1 : 1
         let dx = bounds.width * (0.5 - layer.anchorPoint.x)
         let dy = bounds.height * (0.5 - layer.anchorPoint.y)

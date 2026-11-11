@@ -119,10 +119,10 @@ WindowStandardButtons.swift""".splitlines()
 with tempfile.TemporaryDirectory(prefix="parc-space-manager-") as directory:
     scratch = Path(directory)
     excerpts = [
-        ("SidebarPreviewController.swift", None, "/// Folder rows", ""),
+        ("SidebarPreviewController.swift", None, "struct SidebarPreviewRow: Equatable {", ""),
         ("NavigationControls.swift", None, "enum NavigationHistoryMenuMetrics", ""),
         ("SiteControlCenter.swift", None, "enum SiteControlCenterMetrics", ""),
-        ("DownloadLibraryView.swift", "@MainActor enum DownloadRowSubtitle", "/// BaseAssets artwork", "import AppKit\nimport UniformTypeIdentifiers\n"),
+        ("DownloadLibraryView.swift", "@MainActor enum DownloadRowSubtitle", "@MainActor enum DownloadRowArtwork {", "import AppKit\nimport UniformTypeIdentifiers\n"),
         #
         ("OnboardingProgressionButton.swift", "struct PArcButtonSpinner", "extension NSColor", "import SwiftUI\n"),
     ]

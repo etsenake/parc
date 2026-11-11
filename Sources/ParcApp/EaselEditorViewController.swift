@@ -3,8 +3,6 @@ import Combine
 import UniformTypeIdentifiers
 import ImageIO
 
-// Native editing over the recovered object/position model. Storage and UI are
-//
 @MainActor
 final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     private static var stores: [String: EaselStore] = [:]
@@ -87,8 +85,6 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    // Explicit pane selection returns focus to this existing editor. Preserve
-    // an active title/text edit when the command selects the same pane again.
     func focusContent() {
         guard isViewLoaded, let window = view.window, window.isKeyWindow,
               window.attachedSheet == nil, !view.isHiddenOrHasHiddenAncestor else { return }
@@ -116,8 +112,6 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
 
         let tools = NSStackView()
         tools.orientation = .horizontal; tools.spacing = 4
-        // Both palettes take their frames in onLayout; before it, a zero
-        // frame must not conflict with the buttons' required sizes.
         tools.setClippingResistancePriority(.init(999), for: .horizontal)
         tools.setClippingResistancePriority(.init(999), for: .vertical)
         tools.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 6)
@@ -142,7 +136,6 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
             b.heightAnchor.constraint(equalToConstant: buttonSize).isActive = true
             tools.addArrangedSubview(b); return b
         }
-        //
         let select = tool("Select objects", "cursorarrow", #selector(selectTool))
         select.setButtonType(.pushOnPushOff); select.state = .on
         _ = tool("Add image", "photo", #selector(addImage))
@@ -226,8 +219,6 @@ final class EaselEditorViewController: NSViewController, NSTextFieldDelegate {
         guard canExportImage else { return }
         EaselImageExport.shareMenu { [weak self] in self?.exportImage() }.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
-    /// The window's own admission (transfers, Peeks, the current pane), which
-    /// Save Page As, the Share row and Command-Shift-S all share.
     var exportAdmission: (() -> Bool)?
     var canExportImage: Bool {
         !session.isClosed && view.window != nil && view.window?.attachedSheet == nil && !view.isHiddenOrHasHiddenAncestor

@@ -2,8 +2,6 @@ import AppKit
 import Carbon.HIToolbox
 import Combine
 
-///
-/// Admission checks presence of Command/Shift, allowing additional modifiers.
 enum CaptureGesturePreference {
     static let disabledKey = "parc.capture.dragDisabled"
     static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
@@ -17,8 +15,6 @@ enum CaptureGesturePreference {
     }
 }
 
-/// App-owned commands use the native menu's existing targets and validation.
-/// The engine's post-renderer menu route therefore sees the same live bindings.
 struct KeyboardShortcut: Codable, Equatable, Hashable {
     let key: String
     let modifiers: UInt
@@ -35,7 +31,6 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
         (!flags.intersection([.control, .option, .command]).isEmpty || isSpecialKey || key == "\u{1b}")
     }
     var isReserved: Bool {
-        //
         (flags == .command && ["z", "x", "v", "i", "b", "u", "a"].contains(key))
             || (flags == [.command, .shift] && key == "z")
             || (flags == .option && key == "\t")
@@ -46,10 +41,6 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
     private var isSpecialKey: Bool {
         key.unicodeScalars.contains { (0xF700...0xF747).contains($0.value) }
     }
-    ///
-    ///
-    /// every other named key. Keypad Enter and Help reach Parc as layout
-    /// control characters, so they take those stored glyphs here.
     private var namedKey: String? {
         switch key {
         case "\t": return "⇥"
@@ -73,19 +64,14 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
             return "F\(value - 0xF703)"
         }
     }
-    ///
-    ///
     var keyLabel: String { namedKey ?? key.uppercased() }
     private var modifierSymbols: [String] {
         [(NSEvent.ModifierFlags.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘")]
             .filter { flags.contains($0.0) }.map(\.1)
     }
-    ///
     var symbols: [String] { modifierSymbols + [namedKey ?? key.localizedUppercase] }
-    ///
     var keycapSymbols: [String] { modifierSymbols + [key == "\t" ? "TAB" : namedKey ?? key.localizedUppercase] }
     var display: String { (modifierSymbols + [keyLabel]).joined() }
-    /// VoiceOver reads ⎵ by its symbol name, so accessibility values say Space.
     var spokenDisplay: String { key == " " ? (modifierSymbols + ["Space"]).joined() : display }
     var searchText: String {
         var names = [display, keyLabel]
@@ -96,8 +82,6 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
         return names.joined(separator: " ").lowercased()
     }
 
-    /// Physical recorder keys whose Shift translation produces a menu symbol.
-    /// Uses the active ASCII-capable layout; no US-keyboard alias table.
     static func physicalKeys(producingShifted symbol: String) -> Set<String> {
         guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
               let property = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return [] }
@@ -123,23 +107,18 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
         return value.isValid ? value : nil
     }
 
-    /// Hardware F-key codes used by physical capture and the unmodified-key gate.
     private static let functionKeyNumbers: [UInt16: UInt32] = [
         122: 1, 120: 2, 99: 3, 118: 4, 96: 5, 97: 6, 98: 7, 100: 8,
         101: 9, 109: 10, 103: 11, 111: 12, 105: 13, 107: 14, 113: 15, 106: 16,
         64: 17, 79: 18, 80: 19, 90: 20
     ]
 
-    /// Unmodified letters cannot be native shortcuts. Keep Escape and F-keys so
-    /// Prefer Parc Exit and recovered function-key bindings still resolve.
     static func canBeNativeShortcut(_ event: NSEvent) -> Bool {
         if !event.modifierFlags.intersection([.command, .control, .option]).isEmpty { return true }
         return event.keyCode == 53 || functionKeyNumbers[event.keyCode] != nil
     }
 
     static func keyForPhysicalCode(_ keyCode: UInt16) -> String? {
-        //
-        // ASCII-capable layout, with no modifiers. Keep Shift separate.
         let specials: [UInt16: String] = [36: "\r", 48: "\t", 49: " ", 51: "\u{7f}", 53: "\u{1b}",
             117: "\u{f728}", 123: "\u{f702}", 124: "\u{f703}", 125: "\u{f701}", 126: "\u{f700}",
             115: "\u{f729}", 119: "\u{f72b}", 116: "\u{f72c}", 121: "\u{f72d}"]
@@ -161,8 +140,6 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
         }
         return key
     }
-    ///
-    /// snapshot is advisory; it never registers, intercepts or changes a key.
     @MainActor static func systemShortcuts() -> Set<KeyboardShortcut> {
         var result: Unmanaged<CFArray>?
         guard CopySymbolicHotKeys(&result) == noErr, let result else { return [] }
@@ -181,7 +158,6 @@ struct KeyboardShortcut: Codable, Equatable, Hashable {
                                      (optionKey, .option), (shiftKey, .shift), (cmdKey, .command)] {
                 if modifiers & UInt(carbon) != 0 { flags.insert(native) }
             }
-            // The reference omits unmodified OS records, even function keys.
             guard !flags.isEmpty else { return nil }
             return KeyboardShortcut(key: key, flags: flags)
         })
@@ -218,7 +194,6 @@ final class KeyboardShortcuts: ObservableObject {
     private struct Document: Codable {
         var version = 3
         var overrides: [String: Override]
-        // Optional for compatibility with existing version-one shortcut files.
         var priorities: [String: Priority]?
         var developerDefaults: Int? = 1
         var selectionCommandDefaults: Int? = 1
@@ -259,25 +234,14 @@ final class KeyboardShortcuts: ObservableObject {
     @Published private(set) var revision = 0
     private(set) var loadError: String?
     private var fileURL: URL?
-    /// Last pretty/sorted JSON bytes successfully written (or loaded as such).
     private var lastWrittenBytes: Data?
     private var commandsByID: [String: Command] = [:] { didSet { bindingUses = nil } }
     private var overrides: [String: Override] = [:] { didSet { bindingUses = nil } }
-    /// How many commands each binding is assigned to. Every tooltip and
-    /// accessibility help asks `activeShortcut`, so it is counted once per
-    /// change of commands or overrides instead of scanning (and sorting) every
-    /// command per question.
     private var bindingUses: [KeyboardShortcut: Int]?
     private var priorities: [String: Priority] = [:]
     private var references: [MenuReference] = []
-    ///
-    /// `shortcutToBinding` and InterceptionView a `Set` of shortcuts
-    ///
     private var nativeChords: [KeyboardShortcut: [MenuReference]] = [:]
-    /// Assigned chords including conflicting/disabled-target owners that still
-    /// block the symbolic Shift fallback.
     private var assignedPhysicalChords: Set<KeyboardShortcut> = []
-    /// Default symbolic menu chords ("+", "}", "{") keyed without Shift.
     private var symbolicDefaults: [KeyboardShortcut: [MenuReference]] = [:]
     private let textEditingActions: Set<String> = ["undo:", "redo:", "cut:", "copy:", "paste:", "selectAll:"]
     var commands: [Command] { commandsByID.values.filter { !textEditingActions.contains($0.id) }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending } }
@@ -305,8 +269,6 @@ final class KeyboardShortcuts: ObservableObject {
                 guard (1...3).contains(document.version), document.overrides.values.allSatisfy({ $0.shortcut == nil || ($0.shortcut!.isValid && !$0.shortcut!.isReserved) }) else { throw Failure.unreadable }
                 let needsMigration = document.version < 3
                 if document.version == 1 {
-                    // Parc previously mislabeled MRU as Next/Previous Tab. Move
-                    // user bindings and priority with their original behavior.
                     for (old, new) in [("nextTab:", "cycleToNextRecentTab:"), ("previousTab:", "cycleToPreviousRecentTab:")] {
                         if let value = document.overrides.removeValue(forKey: old), document.overrides[new] == nil {
                             document.overrides[new] = value
@@ -315,8 +277,6 @@ final class KeyboardShortcuts: ObservableObject {
                             document.priorities?[new] = value
                         }
                     }
-                    // A newly introduced default must not steal an existing
-                    // custom chord. Explicit Reset may then save a visible conflict.
                     let newDefaults: [(String, KeyboardShortcut)] = [
                         ("nextTab:", .init(key: "\u{f701}", flags: [.command, .option])),
                         ("previousTab:", .init(key: "\u{f700}", flags: [.command, .option])),
@@ -331,8 +291,6 @@ final class KeyboardShortcuts: ObservableObject {
                     document.version = 2
                 }
                 if document.version < 3 {
-                    // Old files omitted Prefer Websites, including explicit user
-                    // choices. Preserve that behavior for the existing URL command.
                     var savedPriorities = document.priorities ?? [:]
                     if savedPriorities["copyCurrentURL:"] == nil { savedPriorities["copyCurrentURL:"] = .preferWebsites }
                     document.priorities = savedPriorities
@@ -354,8 +312,6 @@ final class KeyboardShortcuts: ObservableObject {
                         loadError = "Your shortcuts remain available, but their command migration could not be saved: " + error.localizedDescription
                     }
                 }
-                // New Control-Space entry must not take a saved custom chord.
-                // This additive check preserves the current document schema.
                 let reveal = KeyboardShortcut(key: " ", flags: [.control])
                 if document.overrides["focusSidebar:"] == nil,
                    document.overrides.contains(where: { $0.key != "focusSidebar:" && $0.value.shortcut == reveal }) {
@@ -367,7 +323,6 @@ final class KeyboardShortcuts: ObservableObject {
                         loadError = "Your existing shortcut remains available, but the new Reveal Current Tab binding could not be saved: " + error.localizedDescription
                     }
                 }
-                // Add the recovered commands without taking an existing custom chord.
                 var developerMigration = false
                 for (id, binding) in [
                     ("toggleDeveloperMode:", KeyboardShortcut(key: "d", flags: [.control])),
@@ -379,8 +334,6 @@ final class KeyboardShortcuts: ObservableObject {
                     }
                 }
                 if document.developerDefaults == nil {
-                    // Preserve the previously delivered policy of existing commands.
-                    //
                     var saved = document.priorities ?? [:]
                     for id in ["developerTools:", "viewSource:"] where saved[id] == nil { saved[id] = .preferWebsites }
                     document.priorities = saved; document.developerDefaults = 1; developerMigration = true
@@ -392,8 +345,6 @@ final class KeyboardShortcuts: ObservableObject {
                     } catch { loadError = "Your shortcuts remain available, but the Developer command migration could not be saved: " + error.localizedDescription }
                 }
                 if document.selectionCommandDefaults == nil {
-                    // Preserve the previously delivered implicit website priority
-                    //
                     var saved = document.priorities ?? [:]
                     if saved["closeTab:"] == nil { saved["closeTab:"] = .preferWebsites }
                     document.priorities = saved; document.selectionCommandDefaults = 1
@@ -403,9 +354,6 @@ final class KeyboardShortcuts: ObservableObject {
                     } catch { loadError = "Your shortcuts remain available, but the Close Tab priority migration could not be saved: " + error.localizedDescription }
                 }
                 if document.menuPriorityDefaults == nil {
-                    // Old setPriority omitted an explicit Prefer Websites choice
-                    // just like an untouched default. Preserve both on migration;
-                    // individual/Reset All deliberately adopt the recovered policy.
                     var saved = document.priorities ?? [:]
                     for id in Self.recoveredMenuPriorities.keys where saved[id] == nil {
                         saved[id] = .preferWebsites
@@ -417,10 +365,6 @@ final class KeyboardShortcuts: ObservableObject {
                     } catch { loadError = "Your shortcuts remain available, but their menu priority migration could not be saved: " + error.localizedDescription }
                 }
                 if document.creationShortcutDefaults == nil {
-                    // Previously these commands had no default. The old setter
-                    // erased an explicit clear just like an untouched nil default.
-                    // Preserve both; fresh settings and explicit Reset adopt the
-                    // shipped chords without taking another saved custom binding.
                     for id in Self.recoveredCreationShortcuts.keys where document.overrides[id] == nil {
                         document.overrides[id] = Override(shortcut: nil)
                     }
@@ -431,8 +375,6 @@ final class KeyboardShortcuts: ObservableObject {
                     } catch { loadError = "Your shortcuts remain available, but their creation-command migration could not be saved: " + error.localizedDescription }
                 }
                 if document.alternateShortcutDefaults == nil {
-                    // New independently editable entries must not undo an old
-                    // explicit customization/disable or take a saved user chord.
                     for (id, parent, chord) in Self.recoveredAlternates where document.overrides[id] == nil {
                         if document.overrides[parent] != nil || document.overrides.contains(where: {
                             $0.key != id && $0.value.shortcut == chord
@@ -445,7 +387,6 @@ final class KeyboardShortcuts: ObservableObject {
                     } catch { loadError = "Your shortcuts remain available, but their alternate-command migration could not be saved: " + error.localizedDescription }
                 }
                 if document.clearTodayShortcutDefaults == nil {
-                    // Newly registered command: never take a saved custom chord.
                     if document.overrides["clearToday:"] == nil,
                        document.overrides.contains(where: {
                            $0.key != "clearToday:" && $0.value.shortcut == Self.clearTodayShortcut
@@ -469,9 +410,6 @@ final class KeyboardShortcuts: ObservableObject {
                     } catch { loadError = "Your shortcuts remain available, but their Find-command migration could not be saved: " + error.localizedDescription }
                 }
                 if document.closeWindowShortcutDefaults == nil {
-                    // This is a new command, not a formerly implicit generic
-                    // priority. Preserve explicit saved choices and do not take
-                    // a chord already assigned to another command.
                     if document.overrides["closeWindow:"] == nil,
                        document.overrides.contains(where: {
                            $0.key != "closeWindow:" && $0.value.shortcut == Self.closeWindowShortcut
@@ -483,8 +421,6 @@ final class KeyboardShortcuts: ObservableObject {
                     } catch { loadError = "Your shortcuts remain available, but their Close Window migration could not be saved: " + error.localizedDescription }
                 }
                 if document.fullscreenShortcutDefaults == nil {
-                    // Newly introduced command: absence adopts the recovered
-                    // default unless an explicit saved chord already owns it.
                     if document.overrides["toggleFullScreen:"] == nil,
                        document.overrides.contains(where: {
                            $0.key != "toggleFullScreen:" && $0.value.shortcut == Self.fullscreenShortcut
@@ -507,8 +443,6 @@ final class KeyboardShortcuts: ObservableObject {
                     } catch { loadError = "Your shortcuts remain available, but their Exit migration could not be saved: " + error.localizedDescription }
                 }
                 if document.numberedTargetShortcutDefaults == nil {
-                    // Newly registered numbered targets and native-text Find
-                    // items: never take a chord a saved choice already owns.
                     for (id, chord) in Self.numberedTargetShortcuts where document.overrides[id] == nil {
                         if document.overrides.contains(where: { $0.key != id && $0.value.shortcut == chord }) {
                             document.overrides[id] = Override(shortcut: nil)
@@ -521,7 +455,6 @@ final class KeyboardShortcuts: ObservableObject {
                     } catch { loadError = "Your shortcuts remain available, but their numbered-target migration could not be saved: " + error.localizedDescription }
                 }
                 if document.pasteStyleShortcutDefaults == nil {
-                    // Newly registered Paste and Match Style: never take a saved custom chord.
                     if document.overrides["pasteAsPlainText:"] == nil,
                        document.overrides.contains(where: {
                            $0.key != "pasteAsPlainText:" && $0.value.shortcut == Self.pasteStyleShortcut
@@ -533,8 +466,6 @@ final class KeyboardShortcuts: ObservableObject {
                     } catch { loadError = "Your shortcuts remain available, but their Paste and Match Style migration could not be saved: " + error.localizedDescription }
                 }
                 if document.inventoryShortcutDefaults == nil {
-                    //
-                    // saved custom chord; absence otherwise adopts the default.
                     for (id, chord) in Self.recoveredInventoryShortcuts where document.overrides[id] == nil {
                         if document.overrides.contains(where: { $0.key != id && $0.value.shortcut == chord }) {
                             document.overrides[id] = Override(shortcut: nil)
@@ -547,8 +478,6 @@ final class KeyboardShortcuts: ObservableObject {
                     } catch { loadError = "Your shortcuts remain available, but their new command migration could not be saved: " + error.localizedDescription }
                 }
                 if document.peekOpenShortcutDefaults == nil {
-                    // Newly recovered Peek command: retain explicit disables and
-                    // customizations, and never take another saved command's chord.
                     if document.overrides["openInCurrentSpace:"] == nil,
                        document.overrides.contains(where: {
                            $0.key != "openInCurrentSpace:" && $0.value.shortcut == Self.peekOpenShortcut
@@ -561,17 +490,12 @@ final class KeyboardShortcuts: ObservableObject {
                 }
                 overrides = document.overrides
                 priorities = document.priorities ?? [:]
-                // Seed from the same Document shape commit encodes so an
-                // identical recommit can skip without rewriting the file.
                 let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 lastWrittenBytes = try? encoder.encode(Document(overrides: overrides, priorities: priorities))
             } catch { loadError = Failure.unreadable.localizedDescription }
         }
         apply(); didChange()
     }
-    // Original MainMenu records 690, 1220, 1263 and 263. These four existing
-    // actions previously registered without a chord. Apply one default to all
-    // real menu references, Settings keycaps and command-search snapshots.
     private static let recoveredCreationShortcuts: [String: KeyboardShortcut] = [
         "createNote:": .init(key: "n", flags: [.control, .shift]),
         "createNoteInSplit:": .init(key: "n", flags: [.control, .option]),
@@ -583,35 +507,24 @@ final class KeyboardShortcuts: ObservableObject {
     private static let fullscreenShortcut = KeyboardShortcut(key: "f", flags: [.command, .control])
     private static let peekOpenShortcut = KeyboardShortcut(key: "o", flags: [.command])
     private static let closeWindowShortcut = KeyboardShortcut(key: "w", flags: [.command, .shift])
-    // Original MainMenu record 740 (pasteAsPlainText:, binding pasteAndMatchStyle).
     private static let pasteStyleShortcut = KeyboardShortcut(key: "v", flags: [.command, .shift])
     private static let recoveredAlternates: [(String, String, KeyboardShortcut)] = [
         ("goBack_Alternate", "goBack:", .init(key: "\u{f702}", flags: .command)),
         ("goForward_Alternate", "goForward:", .init(key: "\u{f703}", flags: .command)),
         ("developerTools_Alternate", "developerTools:", .init(key: "\u{f70f}", flags: []))
     ]
-    // KB03 inventory. MainMenu records 1485 (newBlankWindow, Control-Command-N)
-    // and 451 (viewLibrary, Command-Shift-L); hidden programmatic items from
-    //
-    // / Command-{ (keys 125/123, mask Command). None carries a priority.
     static let recoveredInventoryShortcuts: [String: KeyboardShortcut] = [
         "newBlankWindow:": .init(key: "n", flags: [.command, .control]),
         "viewLibrary:": .init(key: "l", flags: [.command, .shift]),
         "nextTab": .init(key: "}", flags: .command),
         "previousTab": .init(key: "{", flags: .command)
     ]
-    /// Menu symbols AppKit matches when Shift produced them. Recorder keys stay
-    /// physical, so these defaults need the symbolic bridge in native dispatch.
     static let symbolicShiftedKeys: Set<String> = ["+", "}", "{"]
-    // Go to Sidebar Item 1…9 (Command-digit), the Spaces menu's first nine
-    // entries (Control-digit) and MainMenu 822/543 (Find and Replace,
-    // Jump to Selection).
     static let numberedTargetShortcuts: [String: KeyboardShortcut] = {
         var value: [String: KeyboardShortcut] = [
             "findAndReplace:": .init(key: "f", flags: [.command, .option]),
             "jumpToSelection:": .init(key: "j", flags: [.command])
         ]
-        //
         for number in 1...9 {
             value["item\(number)"] = .init(key: String(number), flags: [.command])
             value["space\(number)"] = .init(key: String(number), flags: [.control])
@@ -628,8 +541,6 @@ final class KeyboardShortcuts: ObservableObject {
         guard let action = item.action else { return }
         let id = bindingID ?? NSStringFromSelector(action)
         if commandsByID[id] == nil {
-            // AppKit may clear a duplicate equivalent while adding the menu item.
-            // Reset metadata comes from the original source record, before overrides.
             let windowShortcut: KeyboardShortcut?
             switch id {
             case "clearToday:": windowShortcut = Self.clearTodayShortcut
@@ -647,15 +558,12 @@ final class KeyboardShortcuts: ObservableObject {
                 ?? (item.keyEquivalent.isEmpty ? nil : KeyboardShortcut(key: item.keyEquivalent, flags: item.keyEquivalentModifierMask))
             commandsByID[id] = Command(id: id, title: title ?? item.title, group: group, defaultShortcut: shortcut)
         } else if let title, let existing = commandsByID[id], existing.title != title {
-            // A dynamic entry (a Space's numbered target) follows its current name.
             commandsByID[id] = Command(id: id, title: title, group: existing.group, defaultShortcut: existing.defaultShortcut)
         }
         references.removeAll { $0.item == nil || $0.item === item }
         references.append(MenuReference(item, id: id, discoverable: discoverable))
         apply(); didChange()
     }
-    /// A dynamic menu's numbered command whose entry no longer exists (a
-    /// removed Space) leaves Settings and search; saved choices are kept.
     func retireCommands(_ ids: [String]) {
         let retired = ids.filter { commandsByID[$0] != nil }
         guard !retired.isEmpty else { return }
@@ -663,9 +571,6 @@ final class KeyboardShortcuts: ObservableObject {
         references.removeAll { $0.item == nil || retired.contains($0.id) }
         apply(); didChange()
     }
-    /// A fixed menu equivalent is subordinate to its customizable command.
-    ///
-    /// their primary is customized/disabled or another command owns the chord.
     func registerEquivalent(_ item: NSMenuItem, for id: String, shortcut chord: KeyboardShortcut) {
         guard commandsByID[id] != nil, let action = item.action,
               references.contains(where: { $0.id == id && $0.item?.action == action }) else { return }
@@ -681,8 +586,6 @@ final class KeyboardShortcuts: ObservableObject {
               !commandsByID.keys.contains(where: { $0 != reference.id && shortcut(for: $0) == equivalent }) else { return nil }
         return equivalent
     }
-    //
-    // exclude any NSTextView/NSTextField ancestor of the original responder.
     static func permitsArrowNavigation(in window: NSWindow?) -> Bool {
         guard let window else { return false }
         var view = window.firstResponder as? NSView
@@ -709,20 +612,13 @@ final class KeyboardShortcuts: ObservableObject {
             for other in commandsByID.keys { if let shortcut = shortcut(for: other) { uses[shortcut, default: 0] += 1 } }
             bindingUses = uses
         }
-        // This command's own binding is one use; any other is a conflict.
         return (bindingUses?[binding] ?? 0) > (commandsByID[id] == nil ? 0 : 1)
     }
-    /// Original menu projection admits only KeyBinding.State.valid. Keep the
-    /// saved chord visible in Settings while every conflicting action is inert.
     func activeShortcut(for id: String) -> KeyboardShortcut? {
         guard commandsByID[id] != nil, !isConflicting(id) else { return nil }
         return shortcut(for: id)
     }
     func isCustomized(_ id: String) -> Bool { overrides[id] != nil || priorities[id] != nil }
-    // Explicit arcKeyBindingPriority attributes from the shipped MainMenu,
-    // mapped to these existing Parc action owners. No policy is inferred from
-    // the title/chord or from a missing attribute. Keep this additive set stable:
-    // it also identifies the legacy defaults whose absence was ambiguous.
     private static let recoveredMenuPriorities: [String: Priority] = [
         "goBack:": .preferParc, "goForward:": .preferParc,
         "cycleTabForward:": .preferParc, "cycleTabBackward:": .preferParc,
@@ -790,14 +686,6 @@ final class KeyboardShortcuts: ObservableObject {
         symbolicDefaults = symbolic
     }
 
-    // MARK: Live binding discovery (KB38)
-    //
-    //
-    // valid (non-conflicting) binding; Parc's equivalent is `activeShortcut`.
-    //
-    // title. This text form, the title and the visible display after one
-    // space, feeds the window controller's shortcut-change fingerprint;
-    // accessibility help is built in `apply` with the spoken form.
     static func toolTip(_ title: String, shortcut: KeyboardShortcut?) -> String {
         shortcut.map { "\(title) \($0.display)" } ?? title
     }
@@ -815,16 +703,9 @@ final class KeyboardShortcuts: ObservableObject {
     }
     private var liveHelp: [ObjectIdentifier: LiveHelp] = [:]
     private var liveHelpPruneThreshold = 64
-    /// The application forwards committed changes to shared presentation owners.
-    /// Component controls can use that signal without a native-engine dependency.
     var onDiscoveryChange: (() -> Void)?
     private var liveMenuBindings: [ObjectIdentifier: MenuReference] = [:]
     private var liveMenuPruneThreshold = 64
-    ///
-    /// the command's current binding: a later change, clear, conflict or
-    /// reset updates it without rebuilding the owner. A nil command ID gives
-    /// the title alone; `requiresBinding` clears the help while the command
-    /// has no valid binding (Reset Tab). An NSControl's exposed cell gets it too.
     func bindHelp(_ view: NSView, title: String, commandID: String?, requiresBinding: Bool = false) {
         if liveHelp.count >= liveHelpPruneThreshold {
             liveHelp = liveHelp.filter { $0.value.view != nil }
@@ -837,7 +718,6 @@ final class KeyboardShortcuts: ObservableObject {
     private func apply(_ entry: LiveHelp) {
         guard let view = entry.view else { return }
         let shortcut = entry.id.flatMap { activeShortcut(for: $0) }
-        // VoiceOver reads ⎵ by its symbol name, so the help says Space.
         let help = entry.requiresBinding && shortcut == nil ? nil : shortcut.map { "\(entry.title) \($0.spokenDisplay)" } ?? entry.title
         view.setAccessibilityHelp(help); (view as? NSControl)?.cell?.setAccessibilityHelp(help)
     }
@@ -845,9 +725,6 @@ final class KeyboardShortcuts: ObservableObject {
         liveHelp = liveHelp.filter { $0.value.view != nil }
         liveHelp.values.forEach(apply)
     }
-    ///
-    /// its command's live binding. Retained sidebar menus also refresh without
-    /// rebuilding their original action owner. These are not registry commands.
     func showBinding(on item: NSMenuItem, for id: String) {
         if liveMenuBindings.count >= liveMenuPruneThreshold {
             liveMenuBindings = liveMenuBindings.filter { $0.value.item != nil }
@@ -864,12 +741,6 @@ final class KeyboardShortcuts: ObservableObject {
         item.keyEquivalentModifierMask = shortcut?.flags ?? []
     }
 
-    ///
-    /// chord ahead of the web view whatever element has focus. Its only context
-    /// exception is the reserved editing set, checked against the physical key
-    ///
-    /// so a layout that types a reserved chord from another key still reaches
-    /// the page. Renderer editable state does not change priority.
     static func typesReservedCharacters(_ event: NSEvent) -> Bool {
         guard let characters = event.characters, characters.count == 1 else { return false }
         return KeyboardShortcut(key: characters, flags: event.modifierFlags).isReserved
@@ -878,11 +749,6 @@ final class KeyboardShortcuts: ObservableObject {
         guard event.type == .keyDown, !event.isARepeat, KeyboardShortcut.canBeNativeShortcut(event),
               let shortcut = KeyboardShortcut.capture(event),
               !shortcut.isReserved, !Self.typesReservedCharacters(event) else { return nil }
-        // Only modified commands and registered function keys are arbitrated;
-        // F12 has a recovered Use Both binding; no printable-key swallowing.
-        //
-        // consumed-command queue. Only an explicit Prefer Parc default exits
-        // before the renderer; otherwise existing native Escape owns the key.
         let preferredExit = shortcut == Self.exitShortcut && self.shortcut(for: "exit:") == shortcut
             && priority(for: "exit:") == .preferParc
         guard preferredExit || shortcut.isFunctionKey || !shortcut.flags.intersection([.command, .control, .option]).isEmpty else { return nil }
@@ -906,8 +772,6 @@ final class KeyboardShortcuts: ObservableObject {
         } else if !item.isEnabled { return nil }
         return target
     }
-    /// A command-bar row owns the actual registered menu item, never a selector
-    /// reconstructed against whichever window happens to become frontmost later.
     @MainActor final class MenuCommand {
         let id: String
         let title: String
@@ -923,15 +787,11 @@ final class KeyboardShortcuts: ObservableObject {
         }
     }
     func menuCommands(in window: NSWindow) -> [MenuCommand] {
-        // Copy URL uses the focused address suggestion, like native text copy;
-        // listing it as its own selected result would remove that source URL.
         var seen = Set<String>()
         return references.compactMap { reference in
             guard reference.discoverable, !textEditingActions.contains(reference.id), !["copyCurrentURL:", "copyCurrentURLAsMarkdown:", "copyCurrentURLAsQuote:"].contains(reference.id), let item = reference.item,
                   isAttached(item), !item.isSeparatorItem, !item.hasSubmenu,
                   let metadata = commandsByID[reference.id], seen.insert(reference.id).inserted else { return nil }
-            // Validation may update a dynamic title or representedObject. Retain
-            // that original item and revalidate it again when the row is chosen.
             _ = validatedTarget(item)
             return MenuCommand(id: reference.id, item: item, group: metadata.group,
                                shortcut: activeShortcut(for: reference.id), window: window, revision: revision)
@@ -951,18 +811,9 @@ final class KeyboardShortcuts: ObservableObject {
         return NSApp.sendAction(action, to: target, from: item)
     }
 
-    ///
-    /// priority to editable and non-editable page content, so it does not filter.
     func nativeCommand(for event: NSEvent, editable: Bool) -> PCNativeShortcutCommand? {
         guard let shortcut = eligibleShortcut(event) else { return nil }
-        // Validate the actual target directly. Updating the whole main menu
-        // would rebuild dynamic menus and invalidate this query's own revision.
         if let command = firstValidNativeCommand(from: nativeChords[shortcut] ?? []) { return command }
-        // AppKit matches a symbolic menu equivalent ("+", "}", "{") when Shift
-        // produced that glyph; recorder normalization deliberately retains the
-        // physical key plus Shift. Keep those original menu owners in native
-        // priority arbitration without inventing a separately editable alias.
-        // Any explicit physical-chord owner wins, even when its target is currently unavailable.
         if shortcut.flags.contains(.shift), let symbol = event.charactersIgnoringModifiers,
            Self.symbolicShiftedKeys.contains(symbol),
            !assignedPhysicalChords.contains(shortcut) {
@@ -978,8 +829,6 @@ final class KeyboardShortcuts: ObservableObject {
         }
         return nil
     }
-    /// Settings uses the registered identity of this exact menu item. A stale
-    /// cue cannot resolve a title/selector against a newly rebuilt command.
     func settingsCommandID(for command: PCNativeShortcutCommand) -> String? {
         guard command.revision == UInt64(revision), let item = command.item, isAttached(item),
               let reference = references.first(where: { $0.item === item }),
@@ -987,9 +836,6 @@ final class KeyboardShortcuts: ObservableObject {
               priority(for: reference.id).native == command.priority else { return nil }
         return reference.id
     }
-    ///
-    /// a Use Both Exit queues its Press Again cue only while Exit has a target
-    ///
     func isExitCommand(_ command: PCNativeShortcutCommand) -> Bool {
         guard let item = command.item else { return false }
         return references.contains { $0.id == "exit:" && $0.item === item }
@@ -999,13 +845,9 @@ final class KeyboardShortcuts: ObservableObject {
               let current = nativeCommand(for: event, editable: editable), current.item === item,
               current.revision == command.revision, current.priority == command.priority,
               let target = validatedTarget(item), let action = item.action else { return false }
-        // Use the original validated menu item as sender (including dynamic tag
-        // and representedObject), never resolve a selector against another item.
         return NSApp.sendAction(action, to: target, from: item)
     }
 
-    /// A conflict receipt captures the exact other assignments shown to the user.
-    /// Removing those assignments remains one durable, revision-checked write.
     struct ConflictProposal {
         let commandID: String
         let shortcut: KeyboardShortcut
@@ -1075,8 +917,6 @@ final class KeyboardShortcuts: ObservableObject {
     }
     private func apply() {
         references.removeAll { $0.item == nil }
-        // A symbolic default yields to an explicit physical owner of the same
-        // Shift-produced chord, so AppKit's menu fallback cannot bypass it.
         var suppressedSymbolic = Set<String>()
         for (id, command) in commandsByID {
             guard let primary = shortcut(for: id), Self.symbolicShiftedKeys.contains(primary.key),
@@ -1090,9 +930,6 @@ final class KeyboardShortcuts: ObservableObject {
         for reference in references {
             guard let item = reference.item else { continue }
             let value = shortcut(for: reference)
-            // The default bare Escape must reach the actual first responder,
-            // never a pre-renderer menu equivalent. Its hardwired native Cancel
-            // and acknowledged Peek paths survive custom/disabled menu chords.
             let suppressed = (suppressedSymbolic.contains(reference.id) && reference.equivalent == nil)
                 || (reference.id == "exit:" && value == Self.exitShortcut)
             item.keyEquivalent = suppressed ? "" : value?.key ?? ""

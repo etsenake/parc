@@ -1,8 +1,6 @@
 import AppKit
 import Combine
 
-/// One application-wide request owns the genuine macOS consent callbacks.
-///
 @MainActor
 final class DefaultBrowserController: ObservableObject {
     typealias Completion = @MainActor (Error?) -> Void
@@ -55,8 +53,6 @@ final class DefaultBrowserController: ObservableObject {
         func owns(_ scheme: String) -> Bool {
             guard isApplication, let url = URL(string: scheme + "://"),
                   let handler = lookup(url) else { return false }
-            // Different development copies can share a name or identifier.
-            // Only the actual running application counts as this request's owner.
             return handler.standardizedFileURL.resolvingSymlinksInPath() == applicationURL
         }
         next.handlesHTTP = owns("http"); next.handlesHTTPS = owns("https")

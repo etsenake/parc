@@ -1,18 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// ModalItemSwitcherView's presentation only. Original page leases, held input,
-/// consent and selection remain in RecentTabSwitcher.
 @MainActor
 final class RecentTabSwitcherView: NSView {
-    ///
-    /// catalog illustration for an item without a page snapshot.
     struct Template: Equatable {
         let image: NSImage
         let title: String?
     }
-    /// `State.Item.Component`: the page snapshot (`.image`) when one has been
-    /// delivered, else its template, else none; `favicon` feeds the caption.
     struct Component: Identifiable, Equatable {
         let id: UUID
         let title: String
@@ -21,8 +15,6 @@ final class RecentTabSwitcherView: NSView {
         var favicon: NSImage? = nil
         var isRecordingMedia = false
     }
-    /// `State.Item.CustomInfo`: a split's own icon (or none, for the count
-    /// badge) and its title.
     struct CustomInfo: Equatable {
         let icon: NSImage?
         let title: String
@@ -34,9 +26,7 @@ final class RecentTabSwitcherView: NSView {
         let vertical: Bool
         var components: [Component]
         var customInfo: CustomInfo? = nil
-        /// `State.Item.overlayComponent`: a Peek shown above the item.
         var overlay: Component? = nil
-        /// The factory's hidden replacement (maximum + 1).
         var isHidden = false
     }
     enum Metrics {
@@ -88,8 +78,6 @@ final class RecentTabSwitcherView: NSView {
         publication?.cancel()
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
     }
-    /// The content is centered in the original parent. Shadow padding must not
-    /// shift that content's center. Tiny-screen containment is a Parc adaptation.
     static func panelFrame(itemCount: Int, parent: NSRect, screen: NSRect) -> NSRect {
         let width = min(Metrics.contentWidth(itemCount), max(1, min(parent.width, screen.width) - 80))
         let content = NSRect(x: max(screen.minX + 40, min(parent.midX - width / 2, screen.maxX - width - 40)),
@@ -103,9 +91,6 @@ final class RecentTabSwitcherView: NSView {
         NSRect(x: Metrics.shadow.left, y: Metrics.shadow.top,
                width: max(0, bounds.width - Metrics.shadow.left - Metrics.shadow.right), height: Metrics.height)
     }
-    /// The palette entries the original views read: focus/hover for the
-    /// focused fill, maxContrastColor (+0x70) and cutoutColor (+0x130) for the
-    /// template placeholder and count badge.
     func configure(isDark: Bool, focus: NSColor, hover: NSColor, maxContrast: NSColor, cutout: NSColor) {
         guard !retired else { return }
         let focusColor = isDark ? hover : focus
@@ -116,7 +101,6 @@ final class RecentTabSwitcherView: NSView {
     }
     func setItems(_ items: [Item], focused: Int) {
         guard !retired else { return }
-        // Keep already-delivered snapshots and favicons for the same original component.
         let old = catalog.items.flatMap { $0.components + ($0.overlay.map { [$0] } ?? []) }
         let images = Dictionary(old.map { ($0.id, $0.image) }, uniquingKeysWith: { first, _ in first })
         let favicons = Dictionary(old.map { ($0.id, $0.favicon) }, uniquingKeysWith: { first, _ in first })
@@ -172,7 +156,6 @@ final class RecentTabSwitcherView: NSView {
         guard !retired, let window, window.isVisible, !isHiddenOrHasHiddenAncestor else { return false }
         return canInteract?() == true
     }
-    /// The hidden replacement is laid out but never hovered, chosen or focused.
     private func index(_ id: String) -> Int? { catalog.items.firstIndex { $0.id == id && !$0.isHidden } }
     func hover(_ id: String) {
         guard available, let index = index(id) else { return }
@@ -183,8 +166,6 @@ final class RecentTabSwitcherView: NSView {
         onChoose?(index)
     }
     private func publish(frames: [String: CGRect]) {
-        // SwiftUI preference delivery cannot create/destroy a native thumbnail
-        // subscription from inside its own view update. Revalidate the same host.
         publication?.cancel()
         let token = generation
         let work = DispatchWorkItem { [weak self, weak originalWindow = window] in
@@ -226,8 +207,6 @@ final class RecentTabSwitcherView: NSView {
     }
 }
 
-/// Items and palette. Held-key focus lives on RecentSwitcherFocus so a
-/// focus-only step does not rebuild the hosted card stack.
 @MainActor private final class RecentSwitcherCatalog: ObservableObject {
     @Published var items: [RecentTabSwitcherView.Item] = []
     @Published var isDark = false
@@ -288,7 +267,6 @@ private struct RecentSwitcherScrollBridge: View {
             .allowsHitTesting(false)
             .onChange(of: focus.focusedID) { id in
                 guard let id else { return }
-                //
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.1)) { proxy.scrollTo(id, anchor: .center) }
             }
             .onAppear { if let id = focus.focusedID { proxy.scrollTo(id) } }
@@ -310,8 +288,6 @@ private struct RecentSwitcherRow: View {
                     RecentSwitcherCard(item: item, focus: focus,
                                        isDark: catalog.isDark, reduceMotion: catalog.reduceMotion,
                                        maxContrast: catalog.maxContrastColor, cutout: catalog.cutoutColor)
-                        //
-                        // keyed to isHidden with the index spring.
                         .opacity(item.isHidden ? 0 : 1)
                         .animation(catalog.reduceMotion ? nil : .spring(response: 0.15, dampingFraction: 0.95, blendDuration: 0), value: item.isHidden)
                         .frame(width: RecentTabSwitcherView.Metrics.cardWidth,
@@ -336,8 +312,6 @@ private struct RecentSwitcherRow: View {
                 }
             }
             .background(alignment: .topLeading) {
-                // The original tracks each item rect and draws one shared
-                // fill behind the focused item; there is no blue outline.
                 RecentSwitcherFocusFill(focus: focus, isDark: catalog.isDark,
                                         color: catalog.focusColor, frames: cardFrames)
             }
@@ -345,8 +319,6 @@ private struct RecentSwitcherRow: View {
         }
         .coordinateSpace(name: viewportSpace)
         .onPreferenceChange(RecentSwitcherFrames.self) { value in
-            // Row offset is recovered from the first actual card; the
-            // viewport frames also drive the original preview subscriptions.
             let next: [String: CGRect]
             if let first = catalog.items.first, let origin = value[first.id]?.minX {
                 next = value.mapValues { $0.offsetBy(dx: -origin, dy: 0) }
@@ -394,20 +366,14 @@ private struct RecentSwitcherMaterial: NSViewRepresentable {
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
-///
 private enum RecentSwitcherColors {
-    ///
     static func gray1(_ dark: Bool) -> Color { gray(dark ? 0.085 : 0.99) }
-    ///
     static func gray2(_ dark: Bool) -> Color { gray(dark ? 0.11 : 0.973) }
-    ///
     static func backing(_ dark: Bool) -> Color { gray(dark ? 0 : 1) }
-    ///
     static func secondary(_ dark: Bool) -> Color { Color(.sRGB, white: dark ? 1 : 0, opacity: 0.5) }
     private static func gray(_ white: Double) -> Color { Color(.sRGB, white: white, opacity: 1) }
 }
 
-///
 private struct RecentSwitcherCard: View {
     let item: RecentTabSwitcherView.Item
     let focus: RecentSwitcherFocus
@@ -426,14 +392,10 @@ private struct RecentSwitcherCard: View {
         .padding(12)
     }
 
-    //
-
     private var preview: some View {
         ZStack {
             components
             if let overlay = item.overlay {
-                //
-                // shadow, inset 12 inside the item.
                 RecentSwitcherSnapshot(component: overlay, cornerRadius: 4, stroke: false,
                                        isDark: isDark, maxContrast: maxContrast)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -443,8 +405,6 @@ private struct RecentSwitcherCard: View {
             }
         }
     }
-    ///
-    /// single template, at radius 4 inset 4, all over a Gray1 radius-6 box.
     private var components: some View {
         let single = item.components.count == 1
         let inset = !single || (item.components.first.map { $0.image == nil && $0.template != nil } ?? false)
@@ -459,13 +419,11 @@ private struct RecentSwitcherCard: View {
         .padding(inset ? 4 : 0)
         .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(RecentSwitcherColors.gray1(isDark)))
     }
-    ///
     private func panes(radius: CGFloat) -> some View {
         let single = item.components.count == 1
         return ForEach(item.components) { component in
             RecentSwitcherSnapshot(component: component, cornerRadius: radius, stroke: single,
                                    isDark: isDark, maxContrast: maxContrast)
-                // A Peek above the item dims the page beneath it.
                 .overlay(item.overlay == nil ? Color.clear : Color.black.opacity(0.5))
                 .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
                 .background(RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -482,8 +440,6 @@ private struct RecentSwitcherCard: View {
 
 }
 
-/// Caption observes focus so a held-key step can retint the selected title
-/// without rebuilding the snapshot stack.
 private struct RecentSwitcherCaption: View {
     let item: RecentTabSwitcherView.Item
     @ObservedObject var focus: RecentSwitcherFocus
@@ -494,13 +450,10 @@ private struct RecentSwitcherCaption: View {
     private var captionColor: Color { isDark ? .white : .black.opacity(selected ? 1 : 0.7) }
     var body: some View {
         if let info = item.customInfo {
-            // A split's own icon, or its item-count badge, before its title.
             HStack(spacing: 8) {
                 if let icon = info.icon {
                     captionIcon(icon)
                 } else {
-                    //
-                    // cutoutColor, at least 16 × 16 in a 4-point box.
                     Text("\(item.components.count)")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(Color(nsColor: maxContrast))
@@ -517,8 +470,6 @@ private struct RecentSwitcherCaption: View {
             }
             .padding(.horizontal, 2)
         } else {
-            // A split without its own name: one favicon per pane, each centred
-            // over its share of the row.
             HStack(spacing: 4) {
                 ForEach(item.components) { component in
                     favicon(component).frame(maxWidth: .infinity)
@@ -527,7 +478,6 @@ private struct RecentSwitcherCaption: View {
             .padding(.horizontal, 4)
         }
     }
-    ///
     private func favicon(_ component: RecentTabSwitcherView.Component) -> some View {
         captionIcon(component.favicon ?? RecentSwitcherArtwork.fallbackFavicon)
             .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -538,7 +488,6 @@ private struct RecentSwitcherCaption: View {
             .frame(width: 16, height: 16)
             .foregroundColor(RecentSwitcherColors.secondary(isDark))
     }
-    ///
     private func title(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 14, weight: .medium))
@@ -547,32 +496,26 @@ private struct RecentSwitcherCaption: View {
     }
 }
 
-///
 private struct RecentSwitcherSnapshot: View {
     let component: RecentTabSwitcherView.Component
     let cornerRadius: CGFloat
-    /// The template outline is drawn only for a single-pane item.
     let stroke: Bool
     let isDark: Bool
     let maxContrast: NSColor
     var body: some View {
         if let image = component.image {
-            //
             GeometryReader { geometry in
                 Image(nsImage: image).interpolation(.high).antialiased(true)
                     .resizable()
                     .frame(width: geometry.size.width, alignment: .topLeading)
             }
         } else if let template = component.template {
-            //
-            // a two-line title; a single pane adds a 2-point .1 outline.
             ZStack {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(Color(nsColor: maxContrast).opacity(0.05))
                 Image(nsImage: template.image).renderingMode(.template).resizable()
                     .foregroundColor(Color(nsColor: maxContrast))
                 if let title = template.title {
-                    //
                     Text(title)
                         .font(.system(size: 15, weight: .semibold))
                         .lineLimit(2).multilineTextAlignment(.center)
@@ -594,8 +537,6 @@ private struct RecentSwitcherSnapshot: View {
     }
 }
 
-///
-/// stroke 3, padding 0, with its shadow; the core pulses 0.4 ↔ 1.
 private struct RecentSwitcherRecordingDot: View {
     let reduceMotion: Bool
     @State private var dim = false
@@ -618,12 +559,9 @@ private struct RecentSwitcherRecordingDot: View {
     }
 }
 
-///
 @MainActor enum RecentSwitcherArtwork {
     static let directory: URL? = Bundle.main.resourceURL?.appendingPathComponent("RecentSwitcher", isDirectory: true)
     private static var cache: [String: NSImage] = [:]
-    ///
-    ///
     static var note: NSImage? { template("NotePreviewThumbnail") }
     static var easel: NSImage? { template("EaselPreviewThumbnail") }
     static var incognito: NSImage? { template("IncognitoTabPreviewThumbnail") }
@@ -635,7 +573,6 @@ private struct RecentSwitcherRecordingDot: View {
         cache[name] = image
         return image
     }
-    /// The sidebar row's own fallback glyph for a page without a favicon.
     static let fallbackFavicon: NSImage = {
         let image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil) ?? NSImage()
         image.isTemplate = true

@@ -9,8 +9,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     enum Mode { case firstLaunch, replay(spaceID: UUID, resuming: OnboardingDraft? = nil) }
     private let mode: Mode
     private var isReplay: Bool { if case .replay = mode { return true }; return false }
-    /// First launch creates a browser after setup commits; replay applies the
-    /// same choices to its originating Space and returns to the existing browser.
     var onComplete: (() throws -> Void)?
     var onCancel: (() -> Void)?
     var onRevealCompleted: (() -> Void)?
@@ -45,7 +43,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private let root = LayoutView()
     private var body: OnboardingSetupCard.Column { setupCard.content }
     private let next = OnboardingProgressionControl(frame: .zero)
-    /// NewSetupView: `Image(systemName: "arrow.left") + Text(" Back")`, 13 pt medium.
     private let back: ActionButton = {
         let button = ActionButton("Back", symbol: "arrow.left")
         button.font = .systemFont(ofSize: 13, weight: .medium)
@@ -64,11 +61,9 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
     private var defaultChoice: NSHostingView<OnboardingDefaultBrowserChoice>?
     private var adBlockerHost: NSHostingView<OnboardingAdBlockersChoice>?
     private let favoritePicker = OnboardingFavoritesControl(frame: .zero)
-    /// Replay's unsaved light/dark preview: saved on Finish, dropped otherwise.
     private var replayAppearance: AppAppearance?
     private var pendingReplayTheme: SpaceTheme?
     private var replayThemeFrame: DispatchWorkItem?
-    /// Replay never removes tabs, so a Favorite the profile already has stays selected.
     private var replayExistingFavorites: Set<String> = []
 
     init(store: BrowserStore, mode: Mode = .firstLaunch) throws {
@@ -76,13 +71,10 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         self.mode = mode
         switch mode {
         case .firstLaunch:
-            // Save the initial Space identity before persisting a separate draft.
             try store.save()
             draft = try OnboardingDraft.load(directory: store.directory, space: store.activeSpace)
         case .replay(let spaceID, let resuming):
             let space = store.state.spaces.first { $0.id == spaceID } ?? store.activeSpace
-            // Replay never loads or writes onboarding.json. Its draft lives in
-            // this controller until Finish applies it to the originating Space.
             let existing = Set(store.state.tabs.filter {
                 $0.profileID == space.profileID && $0.kind == .favorite && $0.archivedAt == nil
             }.map { OnboardingDraft.choiceURL(forSaved: $0.savedURL) })
@@ -196,7 +188,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         if draft.stage.isWelcome {
-            // An interrupted welcome replays from its beginning; setup resumes.
             startWelcome()
         } else if draft.stage == .bookmarks { beginBrowserImport() }
         if !draft.stage.isWelcome {
@@ -221,16 +212,12 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         background?.removeFromSuperview(); background = nil
     }
 
-    /// Every browser window showing the originating Space repaints with the
-    /// replay theme; the session keeps the saved theme until Finish.
     private func previewReplayTheme(_ theme: SpaceTheme) {
         replayThemeFrame?.cancel(); replayThemeFrame = nil; pendingReplayTheme = nil
         guard isReplay, !isClosed, !setupCommitted else { return }
         store.previewSpaceTheme(draft.spaceID, theme: theme)
     }
 
-    /// A continuous drag republishes the store at most every 50 ms; the setup
-    /// card itself follows every frame.
     private func scheduleReplayThemePreview(_ theme: SpaceTheme) {
         guard isReplay else { return }
         pendingReplayTheme = theme
@@ -249,8 +236,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         replayAppearance = appearance; draft.replayAppearance = appearance.rawValue
     }
 
-    /// An unfinished replay applies nothing: drop the theme and light/dark
-    /// previews, unless something else has replaced them meanwhile.
     private func restoreReplayPreview() {
         guard isReplay, !setupCommitted else { return }
         replayThemeFrame?.cancel(); replayThemeFrame = nil; pendingReplayTheme = nil
@@ -259,7 +244,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         replayAppearance = nil
     }
 
-    /// Saved before a Safari restart so relaunch reopens this replay at its import.
     func saveReplayForImportRestart() throws {
         guard isReplay, !isClosed, !isFinishing else { throw CocoaError(.userCancelled) }
         captureDraft()
@@ -306,8 +290,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         applyMusicPolicy(.replay)
         applyMusicPolicy(.startWelcome)
         transition(to: .introAnimation)
-        // Welcome-phase advances leave focus unchanged. Rebuilding the host
-        // (first present, restart, replay) still has to focus it.
         if let welcome, let window, window.isKeyWindow, window.attachedSheet == nil {
             window.makeFirstResponder(welcome)
         }
@@ -320,9 +302,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         let previous = draft.stage
         transitionDirection = OnboardingExperience.direction(from: previous, to: stage)
         draft.stage = stage; persistDraft()
-        // The single music cue belongs to the onboarding owner, not a welcome
-        // phase. Let it finish naturally while setup continues; close, finish
-        // and an explicit replay still stop or replace it.
         applyMusicPolicy(.changeStage)
         if !stage.isWelcome { welcomeBackdrop.welcomeEnded() }
         if stage == .bookmarks { beginBrowserImport() }
@@ -350,8 +329,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         let previousResponder = window?.firstResponder
         let entering = previous ?? lastStage
         let isWelcome = draft.stage.isWelcome
-        // UnboxingView owns one background and one window across every stage.
-        // Do not turn setup into a smaller, Space-colored dialog.
         if let background {
             background.rootView = OnboardingBackgroundView(reduceMotion: reduceMotion,
                 startsSettled: background.rootView.startsSettled)
@@ -364,7 +341,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         applySetupPalette()
         if !draft.stage.isWelcome, let leaving = welcome {
             welcome = nil
-            //
             if reduceMotion {
                 leaving.removeFromSuperview()
             } else {
@@ -372,7 +348,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                 leaving.wantsLayer = true
                 CATransaction.begin()
                 CATransaction.setCompletionBlock { leaving.removeFromSuperview() }
-                // Explicit from-values: the hidden card's committed opacity is already 1.
                 for (view, from) in [(leaving as NSView, 1.0), (setupCard, 0.0)] {
                     let fade = CABasicAnimation(keyPath: "opacity")
                     fade.fromValue = from; fade.toValue = 1 - from
@@ -425,8 +400,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         let ordinal = order.firstIndex(of: draft.stage.current) ?? 0
         let isReady = draft.stage == .ready
         progress.stringValue = (isReady ? "Ready" : "\(ordinal + 1) of \(draft.displayedSetupCount())")
-        // Back from the first step after an import that found no browsers
-        // would only reopen it and bounce here again.
         back.isHidden = isReady || draft.previousStage() == nil
             || (importFoundNoSources && draft.previousStage()?.current == .bookmarks)
         skip.title = "Skip for now"
@@ -479,7 +452,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             defaultChoice = host
             lower = [host]
         } else if stage == .adBlockers {
-            //
             skip.title = "Use all imported ad blockers"
             skip.isHidden = draft.importedAdBlockers.isEmpty
             let shown = draft.adBlockerChoice
@@ -538,8 +510,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         let regular = size.width > 1_280 || size.height > 800
         let reference = regular ? NSSize(width: 1_280, height: 800)
             : NSSize(width: size.width - 72, height: size.height - 72)
-        // Keep the recovered dimensions on ordinary screens, but fit unusually
-        // narrow displays and available work areas rather than hiding controls.
         return NSSize(width: min(reference.width, screen.visibleFrame.width),
                       height: min(reference.height, screen.visibleFrame.height - 28))
     }
@@ -584,8 +554,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         }
     }
 
-    /// The outgoing heading and message, taken before a directed step change
-    /// replaces them.
     private func stepTextSnapshot() -> OnboardingSetupCard.TextSnapshot? {
         guard transitionDirection != nil, !draft.stage.isWelcome,
               OnboardingExperience.StepMotion.slidesText(reduceMotion: reduceMotion) else { return nil }
@@ -601,8 +569,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             fades: OnboardingExperience.StepMotion.fadesContent(reduceMotion: reduceMotion))
     }
 
-    ///
-    /// window-level overlay does; only a burst still waiting is cancelled.
     private func updateConfetti(from previous: OnboardingDraft.Stage?) {
         if draft.stage != .ready { readyContent.cancelPresentation() }
         guard OnboardingExperience.shouldPlayConfetti(reduceMotion: reduceMotion) else {
@@ -613,7 +579,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         else if previous != .ready { confetti.fire(after: OnboardingExperience.readyConfettiDelay) }
     }
 
-    ///
     func handleCloseCommand() -> Bool {
         guard passwordHelp?.isPresented == true else { return false }
         dismissPasswordHelp()
@@ -622,8 +587,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
 
     private func restoreFocus(from previous: OnboardingDraft.Stage?, previousResponder: NSResponder?) {
         if !draft.stage.isWelcome {
-            // Back, the step's own controls, Skip, then Next. Hosted SwiftUI
-            //
             typealias Segment = (first: NSView, link: (NSView) -> Void)
             func views(_ list: [NSView]) -> [Segment] { list.map { view in (view, { view.nextKeyView = $0 }) } }
             var loop = views(back.isHidden ? [] : [back])
@@ -655,8 +618,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         case .next:
             window.makeFirstResponder(next.keyboardView)
         case .unchanged:
-            // An import page change can hide the control that had focus (Back
-            // on the browser cards); Next takes it then.
             if let view = previousResponder as? NSView, view.window === window, view.acceptsFirstResponder {
                 window.makeFirstResponder(view.isHiddenOrHasHiddenAncestor ? next.keyboardView : view)
             }
@@ -675,15 +636,11 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         setupCard.appearance = NSAppearance(named: palette.isDark ? .darkAqua : .aqua)
         setupCard.themeTextColor = hasTheme ? palette.title : nil
         spaceName.themeTextColor = setupCard.themeTextColor
-        // The inner card previews the actual Space surface. The animated blue
-        // background remains independent. Picker chrome follows app appearance,
-        // while card text follows the Space's contrast palette.
         themeChrome.appearance = NSApp.effectiveAppearance
         themePreview.appearance = NSApp.effectiveAppearance
         themePreview.theme = selectedTheme
         setupCard.themeBackground = selectedTheme.isValid && selectedTheme.primaryColor != nil
             ? palette.backgroundExtra : nil
-        // ThemeRenderer owns both the gradient and its texture; don't double it.
         setupCard.grainTheme = nil
         setupCard.grainIsActive = ThemeWindowActivity.isActive(window)
         let backdrop = draft.stage == .bookmarks ? browserImport?.backdrop : nil
@@ -692,8 +649,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         setupCard.textSpansCard = browserImport?.isSafariPasswords == true
         progress.textColor = setupCard.chromeColor
         persistenceStatus.textColor = draft.stage.isWelcome ? .white : .systemRed
-        // ProgressionButton's theme getters select maxContrastColor (+0x70)
-        // and backgroundExtra (+0xb0). Unthemed setup uses AuthFeature assets.
         next.configure(background: hasTheme ? palette.maxContrastColor : OnboardingSetupPalette.action,
                        foreground: hasTheme ? palette.backgroundExtra : .white,
                        reduceMotion: reduceMotion)
@@ -717,9 +672,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         }
         if let browserImport { browserImport.advance(); return }
         if draft.stage == .ready { finish(); return }
-        //
-        // at once. The shared request starts nothing when Parc is already
-        // default or one is in flight, and keeps its outcome for Settings.
         if draft.stage == .defaultBrowser, draft.wantsDefaultBrowser { defaultBrowser.makeDefault() }
         if let next = draft.nextStage() { transition(to: next) }
     }
@@ -764,15 +716,11 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
                 setupCommitted = true
                 if let appearance = replayAppearance, AppAppearance.current == appearance { AppAppearance.apply(appearance) }
             }
-            // Keep the setup window visible if the native browser cannot be
-            // created. Retrying is idempotent because completion is persisted.
             guard let onComplete else { throw CocoaError(.featureUnsupported) }
             try onComplete()
             if !submittedICloudPasswords, let profileID = draft.iCloudPasswordsProfileID,
                BrowserImportDestination(spaceID: draft.spaceID, profileID: profileID).isCurrent(in: store.state) {
                 submittedICloudPasswords = true
-                // This is the accepted setup choice, after successful browser
-                // preparation. Native completion outlives the welcome window.
                 PCNativeBrowserApplication.installICloudPasswordsExtension(
                     toProfilePath: store.independentEngineProfilePath(for: profileID)) { error in
                         if let error { NSLog("Parc could not install the selected iCloud Passwords extension: %@", error.localizedDescription) }
@@ -794,9 +742,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             welcome?.removeFromSuperview(); welcome = nil
             background?.removeFromSuperview(); background = nil
             isClosed = true
-            // UnboxingManager closes its retained controller directly. Prepare
-            // the local browser first, close this owner, then hand back focus.
-            // There is no additional closing animation or delayed callback.
             close()
             onRevealCompleted?()
         } catch {
@@ -824,8 +769,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         persistDraft()
     }
 
-    /// Extensions finish after setup moved on; their ad blockers still reach
-    /// the ad-blocker step while setup hasn't passed it.
     private func adoptBackgroundAdBlockers(_ blockers: [OnboardingDraft.ImportedAdBlocker]) {
         let order = OnboardingDraft.Stage.setupOrder(includingAdBlockers: true, retaining: draft.stage.current)
         guard !isClosed, !isFinishing, let here = order.firstIndex(of: draft.stage.current),
@@ -834,16 +777,11 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         settleAdBlockerChoice(); persistDraft(); render()
     }
 
-    /// Only the step makes a choice; a changed import before it leaves none,
-    /// so finish never applies a preselection the user didn't see.
     private func settleAdBlockerChoice() {
         draft.adBlockerChoice = draft.stage == .adBlockers
             ? .settled(draft.adBlockerChoice, for: draft.importedAdBlockers) : nil
     }
 
-    ///
-    /// sent when setup completes. A choice exists only once the step was
-    /// passed; keep-all, from the step's Skip, changes nothing.
     private func applyAdBlockerChoice() {
         guard let choice = draft.adBlockerChoice,
               let space = store.state.spaces.first(where: { $0.id == draft.spaceID }) else { return }
@@ -868,14 +806,11 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         }
     }
 
-    /// An imported ad blocker whose download later failed isn't offered.
     private func dropFailedAdBlockers() {
         guard !isClosed, !isFinishing else { return }
         let before = draft.importedAdBlockers.count
         draft.importedAdBlockers.removeAll { ImportedExtensionFailures.failedIdentifiers.contains($0.identifier) }
         guard draft.importedAdBlockers.count != before else { return }
-        // Past the step a choice already made stands: keeping a blocker that
-        // later failed still removes the others.
         let order = OnboardingDraft.Stage.setupOrder(includingAdBlockers: true, retaining: draft.stage.current)
         if let here = order.firstIndex(of: draft.stage.current), let step = order.firstIndex(of: .adBlockers),
            here <= step { settleAdBlockerChoice() }
@@ -895,7 +830,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         guard !isClosed, !isFinishing,
               window?.attachedSheet == nil, passwordHelp?.isPresented != true else { return }
         if let browserImport {
-            // Each import page's skip moves through the import; its end closes it.
             if browserImport.isImporting { browserImport.stopImport() } else { browserImport.skip() }
             return
         }
@@ -990,7 +924,6 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
         importer.selectionColor = selectedTheme.primaryColor == nil ? OnboardingSetupPalette.action : palette.maxContrastColor
         next.title = importer.nextTitle; next.isEnabled = importer.canAdvance; next.isLoading = importer.isLoading
         back.isHidden = !importer.canGoBack; back.isEnabled = true
-        //
         skip.title = importer.isImporting ? "Stop Import" : importer.skipTitle ?? ""
         skip.isHidden = !importer.isImporting && importer.skipTitle == nil
         skip.isEnabled = importer.isImporting || importer.canSkip

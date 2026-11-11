@@ -1,13 +1,5 @@
 import Foundation
 
-///
-///
-///
-/// queues the toast "Copy links faster by pressing" + that binding (ToastType
-///
-///
-/// Calendar.dateComponents([.day])). Recording the date when the toast is
-/// shown is inferred from that persisted key.
 struct SuperCopyUpsell {
     static let lastSeenKey = "superCopyUpsellLastSeen"
     static let prefix = "Copy links faster by pressing"
@@ -25,7 +17,6 @@ struct SuperCopyUpsell {
 }
 
 extension PArcToastContent {
-    ///
     static func superCopyUpsell(shortcut: String, message: String) -> PArcToastContent {
         PArcToastContent(body: .shortcut(leading: SuperCopyUpsell.prefix, shortcut: shortcut, trailing: nil),
                         accessibilityText: message)

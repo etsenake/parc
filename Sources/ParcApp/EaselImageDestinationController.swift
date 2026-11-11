@@ -1,9 +1,6 @@
 import AppKit
 import ImageIO
 
-//
-// page-to-Easel delegate seam is recovered; this local picker layout is a Parc
-// adaptation. Persistence and undo use the same sessions as the Easel editor.
 @MainActor
 final class EaselImageDestinationController: NSWindowController {
     private let image: EaselImageInput

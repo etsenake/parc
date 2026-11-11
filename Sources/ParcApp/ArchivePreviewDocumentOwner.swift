@@ -1,8 +1,5 @@
 import AppKit
 
-/// One archived member's original local document editor in the initiating
-/// physical window. The containing preview owns the archive lease, attachment,
-/// callbacks and whole-set retirement; this object never restores a tab.
 @MainActor
 final class ArchivePreviewDocumentOwner {
     enum Editor {
@@ -50,23 +47,17 @@ final class ArchivePreviewDocumentOwner {
     var embeddedPages: [PCNativePage] { easelEditor?.pageObjects?.pages ?? [] }
     var hasPendingPageCreation: Bool { easelEditor?.pageObjects?.hasPendingCreation == true }
 
-    /// Recheck before and after asynchronous native close consent. An Easel's
-    /// in-progress edit must also finish without discarding its draft.
     func prepareToClose() -> Bool {
         switch editor {
         case .note(let editor):
             guard editor.prepareToClose() else { return false }
             guard !editor.session.document.deleted else { return true }
-            // The editor may not have loaded its view, while another alias
-            // has a delayed save on the shared session.
             do { try editor.session.flushDelayedDiskSave(); return true }
             catch { return false }
         case .easel(let editor): return editor.prepareForPreviewClose()
         }
     }
 
-    /// Call only after the shared close coordinator has closed every embedded
-    /// page. A refused or still-pending close keeps the original owner intact.
     func retireAfterClose() -> Bool {
         guard !hasPendingPageCreation, embeddedPages.isEmpty, prepareToClose() else { return false }
         easelEditor?.retirePageOwner()

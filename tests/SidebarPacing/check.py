@@ -46,7 +46,6 @@ for use in ("let transition = SidebarTransition(from: previous, to: presentation
             "        pageHost.layoutSubtreeIfNeeded()\n",
             "        if sidebarFloatingSurface && sidebarPresentation == .locked { sidebarContainer.docksFloatingSurface = true }\n",
             "        sidebarContainer.floatingCornerRadius = floatingSurface ? FloatingSidebarSurface.cornerRadius : nil\n"
-            "        // A full pass while the dock slides keeps what the dock faded.\n"
             "        sidebarContainer.docksFloatingSurface = fullPass && sidebarFloatingSurface && sidebarPresentation == .locked\n"
             "        if fullPass { sidebarContainer.preparesFloatingDock = false }\n",
             "        pageHost.frame = frames.pageHost\n"

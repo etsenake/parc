@@ -1,8 +1,6 @@
 import AppKit
 import ImageIO
 
-/// Original encoded image bytes travel with the attributed character. The cell
-/// owns presentation only; resizing its NSImage never rewrites that carrier.
 @MainActor
 final class EaselImageAttachment: NSTextAttachment {
     let source: EaselRichText.Image
@@ -29,8 +27,6 @@ final class EaselImageAttachmentCell: NSTextAttachmentCell {
     }
     private func ownedCellSize() -> NSSize {
         guard let width = textContainer?.size.width ?? canvasWidth, width.isFinite, width > 0 else { return originalSize }
-        //
-        // width minus 60, and adds 60 to the scaled image's height.
         let available = max(1, width - 60)
         let scale = min(1, available / originalSize.width, available / originalSize.height)
         let size = NSSize(width: originalSize.width * scale, height: originalSize.height * scale)
@@ -57,8 +53,6 @@ enum EaselTextAttachments {
         let value = EaselRichText.Image(data: data, fileType: type, width: image.size.width, height: image.size.height)
         try value.validate(); return value
     }
-    /// A user-supplied local file is copied once into the range carrier; the
-    /// document never keeps a path or reads it again during layout/restoration.
     static func pastedImageData(from board: NSPasteboard) throws -> Data? {
         if let raw = board.string(forType: .fileURL) {
             guard let url = URL(string: raw), url.isFileURL,
@@ -84,8 +78,6 @@ enum EaselTextAttachments {
             return try attachmentImage(data)
         }
         if let data = attachment.contents { return try attachmentImage(data) }
-        // Image-only native attachments have no encoded original; use their
-        // actual TIFF representation. Never fetch a URL or external wrapper.
         guard let image = attachment.image ?? (attachment.attachmentCell as? NSTextAttachmentCell)?.image,
               let data = image.tiffRepresentation else { throw EaselTextClipboardError.unsupportedAttachment }
         return try self.image(data: data)
@@ -133,13 +125,9 @@ enum EaselTextAttachments {
     static func plainString(_ value: String) -> String { value.replacingOccurrences(of: "\u{FFFC}", with: "") }
 }
 
-///
-/// rich editor recognizes only HTTP(S) for its selection-to-link paste path.
 @MainActor
 enum EaselClipboardURL {
     static func read(from board: NSPasteboard) throws -> URL? {
-        // A private carrier is authoritative for copied rich text; do not
-        // reinterpret its plain fallback and lose authored ranges or images.
         guard board.availableType(from: [EaselStyledText.pasteboardType,
             EaselStyledText.previousPasteboardType, EaselStyledText.legacyPasteboardType]) == nil,
               board.availableType(from: [.fileURL]) == nil,

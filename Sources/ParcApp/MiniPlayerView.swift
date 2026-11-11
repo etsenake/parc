@@ -1,14 +1,6 @@
 import AppKit
 
-/// Gate for forced `layoutSubtreeIfNeeded` after mini-player height/content updates.
-///
-/// Deck `resize` and row `failure` previously always walked layout even when the
-/// owning sidebar flush already left frames current. Skip only when no frame
-/// moved and the tree is already clean; keep the flush when height/content
-/// changes or a child still needs layout.
 enum MiniPlayerLayoutFlushSkip {
-    /// True no-op: identical geometry with a clean subtree skips layoutSubtree.
-    /// A moved frame, a dirty view, or a dirty child still flushes.
     static func shouldFlush(
         frameChanged: Bool = false,
         needsLayout: Bool,
@@ -18,8 +10,6 @@ enum MiniPlayerLayoutFlushSkip {
     }
 }
 
-/// A prepared row keeps the original page and media episode. It never opens a
-/// URL or materializes a replacement browser to control background playback.
 @MainActor
 final class MiniPlayerHostLease {
     weak var window: NSWindow?
@@ -77,8 +67,6 @@ final class MiniPlayerDeck: NSView {
         scroll.autohidesScrollers = true; scroll.documentView = content
         addSubview(scroll); addSubview(expand)
         expand.font = .systemFont(ofSize: 10, weight: .medium)
-        // Sidebar key-view ring (docs/sidebar-accessibility.md): an
-        // ActionButton has none by default.
         expand.focusRingCornerRadius = 5
         expand.actionBlock = { [weak self] in guard let self else { return }; self.setExpanded(!self.expanded) }
         setAccessibilityElement(false)
@@ -111,8 +99,6 @@ final class MiniPlayerDeck: NSView {
                 row.removeFromSuperview()
             }
         }
-        // The source registry preserves admission order even across a
-        // temporary transfer; row instances remain keyed by their episode.
         order = visible.map(\.id)
         for item in visible {
             let row = rows[item.id] ?? MiniPlayerRow()
@@ -147,8 +133,6 @@ final class MiniPlayerDeck: NSView {
         }
         resize()
     }
-    /// A retiring row must not leave a focused control in the detached
-    /// subtree. Continue after the deck only in the active owning window.
     private func relinquishFocus(in row: NSView) {
         guard NSApp.isActive, let window, window.isKeyWindow, window.attachedSheet == nil,
               let focused = window.firstResponder as? NSView,
@@ -165,9 +149,6 @@ final class MiniPlayerDeck: NSView {
     private func resize() {
         let root = superview?.superview ?? self
         motion.layout(in: root, deck: self, companion: motionCompanion?(), animated: true) {
-            // Height/content changes still dirty and notify the sidebar. The
-            // owning onHeightChanged flush often leaves this deck clean; skip a
-            // second layoutSubtree walk when frames/subtree are already current.
             needsLayout = true
             onHeightChanged?()
             if MiniPlayerLayoutFlushSkip.shouldFlush(
@@ -205,9 +186,6 @@ final class MiniPlayerDeck: NSView {
         expand.setAccessibilityExpanded(expanded)
         expand.cell?.setAccessibilityExpanded(expanded)
         expand.frame = NSRect(x: 0, y: 0, width: bounds.width, height: header)
-        // The clip view reaches past the cards by their shadow's radius, so it
-        // doesn't cut the shadow off; the overhang takes no clicks. A list
-        // scrolled past its cap keeps its vertical edges.
         let pad = Self.shadowPad
         let scrolls = expanded && order.reduce(0) { $0 + (rows[$1]?.desiredHeight ?? 0) + 5 } - 5 > 276
         let vPad = scrolls ? 0 : pad
@@ -228,8 +206,6 @@ final class MiniPlayerDeck: NSView {
         } else {
             let height = 33 + CGFloat(max(0, order.count - 1)) * 7
             content.frame = NSRect(x: 0, y: 0, width: scroll.contentSize.width, height: height + 2 * pad)
-            // Add the leading episode last in z-order: the other cards remain
-            // visible behind it, but never intercept its controls.
             for (index, id) in order.enumerated().reversed() {
                 guard let row = rows[id] else { continue }
                 let inset = min(90, CGFloat(index) * 10) / 2
@@ -287,8 +263,6 @@ final class MiniPlayerDeck: NSView {
     }
 }
 
-/// The slider stays in the layer tree while its recovered opacity animates,
-/// but a collapsed control cannot receive pointer or accessibility input.
 @MainActor
 private final class MiniPlayerVolumeSlider: NSSlider {
     var allowsInteraction = false
@@ -297,9 +271,6 @@ private final class MiniPlayerVolumeSlider: NSSlider {
     }
 }
 
-///
-/// falls outside it, so the clip lives here and the shadow on the row. The
-/// row stays the click and focus target for the card's own area.
 @MainActor
 private final class MiniPlayerSurface: NSView {
     override var isFlipped: Bool { true }
@@ -329,8 +300,6 @@ private final class MiniPlayerRow: NSView {
     private let mute = ActionButton("Mute Tab", symbol: "speaker.slash")
     private let microphone = ActionButton("Microphone", symbol: "mic.fill")
     private let camera = ActionButton("Camera", symbol: "video.fill")
-    /// The transport's last button: AirPlay on Safari-identity pages, Cast on
-    /// Chrome-identity ones, in one style with the same states.
     private let route = ActionButton("AirPlay", symbol: "airplayvideo")
     private var routeChooserOpen = false
     private let routePulse = ViewDisplayFrameDriver()
@@ -358,9 +327,6 @@ private final class MiniPlayerRow: NSView {
         volumeExpanded && deckExpanded && item?.state.canSetVolume == true
     }
     var isCurrent: Bool { current != nil }
-    /// The page's snapshot of this row's episode now. The row's own snapshot
-    /// can be older than its episode: a cast keeps the episode across a page
-    /// change, and the engine validates every action against its document.
     private var current: PCNativeMediaState? {
         guard let item, item.valid(), !item.page.isClosed,
               let state = item.page.mediaState, state.identifier == item.id else { return nil }
@@ -415,9 +381,6 @@ private final class MiniPlayerRow: NSView {
             button.focusRingType = .exterior
             button.showsHoverFill = button !== mute
         }
-        // Sidebar key-view rings (docs/sidebar-accessibility.md): the row, a
-        // stop for Return and Space, draws one around its card; the title is
-        // an ActionButton with none by default.
         focusRingType = .exterior; title.focusRingCornerRadius = 5
         applyPalette()
     }
@@ -436,7 +399,6 @@ private final class MiniPlayerRow: NSView {
         let displayTitle = state.title.isEmpty ? (URL(string: state.sourceURL)?.host ?? "Playing media") : state.title
         marquee.text = displayTitle
         titleArtwork.image = item.icon ?? NSImage(systemSymbolName: "music.note", accessibilityDescription: nil)
-        //
         LiveShortcutToolTip.set(title, "Back to Tab")
         SidebarAccessibility.label(title, "Back to Tab — " + displayTitle)
         play.image = NSImage(systemSymbolName: state.playing ? "pause.fill" : "play.fill", accessibilityDescription: nil)
@@ -462,8 +424,6 @@ private final class MiniPlayerRow: NSView {
         keepFocusVisible(focus)
         if previousCapabilities != keyCapabilities { onKeyViewsChanged?() }
     }
-    ///
-    /// camera and microphone buttons "Toggle Camera" and "Toggle Microphone".
     private func name(_ button: ActionButton, _ label: String, tooltip: String? = nil) {
         SidebarAccessibility.label(button, label)
         LiveShortcutToolTip.set(button, tooltip ?? label)
@@ -471,8 +431,6 @@ private final class MiniPlayerRow: NSView {
     private func updateVolumeAccessibility() {
         volumeButton.setAccessibilityExpanded(showsVolumeDrawer)
         volumeButton.cell?.setAccessibilityExpanded(showsVolumeDrawer)
-        // MiniPlayerView gives the volume button HoverableButtonStyle's
-        //
         volumeButton.showsSelectedFill = showsVolumeDrawer
     }
     private enum RouteKind { case airPlay, cast }
@@ -505,9 +463,6 @@ private final class MiniPlayerRow: NSView {
         updateRouteMotion()
     }
     private static let airPlayGlyph = NSImage(systemSymbolName: "airplayvideo", accessibilityDescription: nil)
-    /// Chromium's Cast icon (media_router_idle), the 24-unit Material "cast"
-    /// glyph, as a template in the AirPlay symbol's image, its ink as wide as
-    /// AirPlay's (13 points) so the two buttons match.
     private static let castGlyph: NSImage = {
         let size = airPlayGlyph?.size ?? NSSize(width: 17, height: 14)
         let image = NSImage(size: size, flipped: true) { rect in
@@ -535,9 +490,6 @@ private final class MiniPlayerRow: NSView {
         return image
     }()
     private var routeActiveColor: NSColor { palette?.airPlayActiveColor ?? .controlAccentColor }
-    /// Connecting pulses the glyph alone, drawn by the button's own cell, so
-    /// its fill and focus ring stay put. Reduce Motion leaves it at 1, as
-    ///
     func updateRouteMotion() {
         let pulses = currentRoute?.connecting == true && window != nil && !route.isHidden
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -550,8 +502,6 @@ private final class MiniPlayerRow: NSView {
             return true
         }
     }
-    /// AirPlay opens the system's route list; Cast opens Chromium's media
-    /// controls chooser with its devices, or Stop casting while it casts.
     private func showRouteChooser() {
         guard !routeChooserOpen, let kind = currentRoute?.kind else { return }
         guard let item, let state = current, let host = item.host.window, host === window else { refresh(); return }
@@ -568,8 +518,6 @@ private final class MiniPlayerRow: NSView {
         if !shown { routeChooserOpen = false }
         refresh()
     }
-    ///
-    /// opens it on hover. A click anywhere else, or Escape, closes it.
     private func setVolumeOpen(_ open: Bool) {
         volumeOpen = open && deckExpanded && item?.state.canSetVolume == true
         if !volumeOpen { endVolumeDismissal() } else if volumeDismissal.isEmpty { watchVolumeDismissal() }
@@ -590,9 +538,6 @@ private final class MiniPlayerRow: NSView {
         volumeDismissal.forEach(NSEvent.removeMonitor)
         volumeDismissal = []
     }
-    /// The button's own action toggles the drawer, and the slider is inside
-    /// it. Closing shrinks the deck, so it waits until the click has reached
-    /// what it was aimed at, outside any control's tracking loop.
     private func closeVolume(clickedBy event: NSEvent) {
         if event.window === window, [volumeButton, volume].contains(where: {
             $0.bounds.contains($0.convert(event.locationInWindow, from: nil))
@@ -602,7 +547,6 @@ private final class MiniPlayerRow: NSView {
             MainActor.assumeIsolated { self?.applyVolumeExpansion() }
         }
     }
-    /// Escape still reaches the page unless the focus is in this card.
     private func closeVolume(escape event: NSEvent) -> Bool {
         guard event.keyCode == 53, event.window === window else { return false }
         let focused = focusedControl != nil || window?.firstResponder === self
@@ -620,8 +564,6 @@ private final class MiniPlayerRow: NSView {
         needsLayout = true
         onHeightChanged?()
     }
-    // A refused action whose episode is still there (the window wasn't key,
-    // a chooser had nothing to offer yet) only refreshes the row.
     private func perform(_ action: PCNativeMediaAction) {
         if let item, let state = current, let host = item.host.window, host === window {
             _ = item.page.performMediaAction(action, state: state, in: host)
@@ -649,12 +591,8 @@ private final class MiniPlayerRow: NSView {
     private func reveal() { guard isCurrent, let item else { return }; item.reveal() }
     private func showUnavailable() {
         unavailable.stringValue = "This media is no longer available."
-        // The collapsed card clips the error. Expand first and let the owning
-        // sidebar lay it out before exposing or announcing the message.
         onFocus?()
         needsLayout = true; onHeightChanged?()
-        // onFocus / onHeightChanged often already flushed; skip a window-wide
-        // layoutSubtree walk when this row and its children are already clean.
         if MiniPlayerLayoutFlushSkip.shouldFlush(
             needsLayout: needsLayout,
             subtreeNeedsLayout: subviews.contains(where: \.needsLayout)
@@ -676,9 +614,6 @@ private final class MiniPlayerRow: NSView {
     }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); applyPalette() }
     deinit { volumeDismissal.forEach(NSEvent.removeMonitor) }
-    /// AppKit gives a clicked view that accepts first responder the focus, and
-    /// with it this card's ring. A click reveals the page instead; only the key
-    /// view loop (Tab) focuses the card.
     override func becomeFirstResponder() -> Bool {
         if let type = NSApp.currentEvent?.type, [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(type) { return false }
         if !restoringVolumeFocus { onFocus?() }
@@ -726,9 +661,6 @@ private final class MiniPlayerRow: NSView {
     private var focusedControl: NSView? {
         (window?.firstResponder as? NSView).flatMap { $0 !== self && $0.isDescendant(of: self) ? $0 : nil }
     }
-    /// A control hidden while it holds keyboard focus (AppKit then leaves the
-    /// window itself focused) hands it to the next visible control in the
-    /// row, else the card, so focus is never invisible.
     private func keepFocusVisible(_ focused: NSView?) {
         guard let window, let focused, focused.isHiddenOrHasHiddenAncestor,
               window.firstResponder === focused || window.firstResponder === window else { return }
@@ -781,10 +713,6 @@ private final class MiniPlayerRow: NSView {
         unavailable.frame = NSRect(x: 9, y: desiredHeight - 25, width: max(0, bounds.width - 18), height: 20)
         unavailable.isHidden = !deckExpanded || unavailable.stringValue.isEmpty
     }
-    ///
-    /// backgroundExtra, and a 0.5-point white 10% border only in a dark
-    ///
-    /// 0.2 in dark with radius 4, read as the card's shadow.
     private func applyPalette() {
         let dark = palette?.isDark ?? (effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
         surface.layer?.backgroundColor = palette.map { $0.backgroundExtra.cgColor(in: $0.contentAppearance) } ?? NSColor.white.withAlphaComponent(0.35).cgColor
@@ -801,8 +729,6 @@ private final class MiniPlayerRow: NSView {
     }
 }
 
-/// Text is kept separate from the native button so its accessible name and
-/// activation continue to describe the original page while the text scrolls.
 @MainActor
 private final class MiniPlayerArtwork: NSImageView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -878,33 +804,16 @@ private final class MiniPlayerMarquee: NSView {
 }
 
 extension ThemeChromePalette {
-    /// AirPlay's connecting and connected tint, the theme's own hue in the
-    /// luminance band farthest from the card: maxContrastColor (0 to 0.1) on
-    /// light themes and foregroundSecondary (0.3 to 0.5) on dark ones. Either
-    /// stays legible on backgroundExtra and distinct from the title-coloured
-    /// neighbours.
     var airPlayActiveColor: NSColor { isDark ? foregroundSecondary : maxContrastColor }
 
-    /// The same tint for the always-dark surfaces of a page's own AirPlay
-    /// button and placard, whatever the window's appearance: the theme's
-    /// dark-appearance airPlayActiveColor, lightened toward white only as far
-    /// as 4.5:1 needs against the placard's black and the controls' scrim at
-    /// the button row (mediaControls.css's gradient at 64.7%, alpha 0.741,
-    /// over a white frame), which also covers the dark overflow menu
-    /// (#3B3B3B).
     static func airPlayOnDarkSurfaceColor(theme: SpaceTheme) -> NSColor {
         airPlaySurfaceTint(theme: theme, dark: true)
     }
 
-    /// The tint for the controls' overflow menu on a light page (white): the
-    /// theme's light-appearance airPlayActiveColor, the Mini Player's rule on
-    /// a light card, darkened toward black only as far as 4.5:1 needs.
     static func airPlayOnLightSurfaceColor(theme: SpaceTheme) -> NSColor {
         airPlaySurfaceTint(theme: theme, dark: false)
     }
 
-    /// A dynamic colour (a themeless Space's) resolves in the surface's
-    /// appearance, its alpha laid over the surface.
     private static func airPlaySurfaceTint(theme: SpaceTheme, dark: Bool) -> NSColor {
         let tint = ThemeChromePalette(theme: theme, isDark: dark).airPlayActiveColor
         var resolved: NSColor?

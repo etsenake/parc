@@ -2,9 +2,6 @@ import AppKit
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Notes' original picker returns one NSImage from JPEG, PNG, PDF, BMP or TIFF.
-/// Parc's local attributed carrier stores validated raster bytes. Existing raster
-/// formats keep their bytes; BMP and the first PDF page become a bounded PNG.
 @MainActor
 enum NoteImageImport {
     private static let byteLimit = 4_194_304
@@ -51,9 +48,6 @@ enum NoteImageImport {
             bitmap.size = native.size
             return try png(bitmap)
         }
-        // NSImage's PDF representation initially selects page zero. Rasterize
-        // that page only, at one pixel per point, independently of screen scale.
-        // This is a local storage adaptation, not a PDF document/page importer.
         guard let provider = CGDataProvider(data: data as CFData),
               let document = CGPDFDocument(provider), document.isUnlocked,
               document.numberOfPages > 0, let image = NSPDFImageRep(data: data) else { throw EaselStoreError.invalidImage }

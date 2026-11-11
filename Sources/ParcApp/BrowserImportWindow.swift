@@ -1,8 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// The application menu owns a separate import window. First launch embeds the
-/// same presentation in its setup window and never creates this controller.
 @MainActor
 final class BrowserImportWindow: NSWindowController, NSWindowDelegate {
     var onClose: ((Bool) -> Void)?
@@ -22,8 +20,6 @@ final class BrowserImportWindow: NSWindowController, NSWindowDelegate {
         window.title = "Import from Another Browser"; window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true; window.isReleasedWhenClosed = false
         window.isMovableByWindowBackground = true; window.tabbingMode = .disallowed
-        // ImportDialogView sits in a Dialogs sheet: PopoverBackground, which
-        // follows the system appearance (the navy seen in dark mode).
         window.backgroundColor = PArcDialogStyle.popoverBackground
         for kind: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
             window.standardWindowButton(kind)?.isHidden = true
@@ -59,9 +55,6 @@ final class BrowserImportWindow: NSWindowController, NSWindowDelegate {
     }
     func windowWillClose(_ notification: Notification) {
         guard !closed else { return }
-        // Only the active import (or one of its sheets) may return focus to
-        // its original browser. A background close must not raise that browser
-        // over the window the user has since chosen.
         let restoreFocus = !parentIsClosing && NSApp.isActive && Self.owning(NSApp.keyWindow) === self
         closed = true; content.cancel()
         if let parentCloseObserver { NotificationCenter.default.removeObserver(parentCloseObserver) }
@@ -79,8 +72,6 @@ final class BrowserImportWindow: NSWindowController, NSWindowDelegate {
     }
 }
 
-/// Leave composition keys in the native field editor before the window's
-/// Return/Escape equivalents can submit or cancel this import.
 @MainActor
 private final class BrowserImportNativeWindow: NSWindow {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -90,7 +81,6 @@ private final class BrowserImportNativeWindow: NSWindow {
     }
 }
 
-/// AppKit owns the interpolation, so a new request starts at the visible frame.
 @MainActor
 enum BrowserImportGeometry {
     private static let targets = NSMapTable<NSView, NSValue>(keyOptions: .weakMemory, valueOptions: .strongMemory)
@@ -107,7 +97,6 @@ enum BrowserImportGeometry {
     }
 
     static func resize(_ window: NSWindow, contentSize: NSSize) {
-        // Repeated renders during a resize must not restart its animation.
         guard windowSizes.object(forKey: window)?.sizeValue != contentSize else { return }
         windowSizes.setObject(NSValue(size: contentSize), forKey: window)
         let current = window.frame
@@ -128,7 +117,6 @@ enum BrowserImportGeometry {
         guard let window = view.window, view.frame.width > 0, view.frame.height > 0 else {
             view.frame = target; view.layoutSubtreeIfNeeded(); return
         }
-        // Use the same native duration as a window changing by this amount.
         let reference = NSRect(origin: window.frame.origin, size: NSSize(
             width: window.frame.width + target.width - view.frame.width,
             height: window.frame.height + target.height - view.frame.height))

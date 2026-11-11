@@ -1,17 +1,8 @@
 import AppKit
 
-//
-//
-//
-//
-// 1 pt white 12% border over whatever it holds. Nothing inside adds a radius
-// of its own, so the content meets the frame's corner exactly.
 enum PictureInPictureFrame {
     static let cornerRadius: CGFloat = 6
-    //
-    // the content names no minimum of its own.
     static let defaultMinimumSize = NSSize(width: 224, height: 126)
-    //
     static let screenMargin: CGFloat = 10
 
     static func style(_ layer: CALayer?) {
@@ -24,8 +15,6 @@ enum PictureInPictureFrame {
         layer.borderColor = NSColor(white: 1, alpha: 0.12).cgColor
     }
 
-    ///
-    ///
     static func maximumSize(on screen: NSScreen?, minimum: NSSize) -> NSSize {
         guard let screen = screen ?? NSScreen.main else {
             return NSSize(width: max(minimum.width, 1280), height: max(minimum.height, 800))
@@ -34,9 +23,6 @@ enum PictureInPictureFrame {
                       height: max(minimum.height, screen.visibleFrame.height - 2 * screenMargin))
     }
 
-    /// Size limits for a window that keeps the content's aspect ratio: the
-    ///
-    ///
     static func limits(aspect: NSSize, minimum: NSSize, on screen: NSScreen?) -> (minimum: NSSize, maximum: NSSize) {
         let maximum = maximumSize(on: screen, minimum: minimum)
         guard aspect.width > 0, aspect.height > 0, aspect.width.isFinite, aspect.height.isFinite else {
@@ -48,8 +34,6 @@ enum PictureInPictureFrame {
                 NSSize(width: aspect.width * high, height: aspect.height * high))
     }
 
-    /// Moves a frame inside the screen's visible area less the margin,
-    /// shrinking it only when it can't fit.
     static func constrain(_ frame: NSRect, to screen: NSScreen?) -> NSRect {
         guard let screen = screen ?? NSScreen.main else { return frame }
         let area = restingArea(on: screen)
@@ -61,13 +45,10 @@ enum PictureInPictureFrame {
         return result
     }
 
-    /// Where a window may come to rest: the screen's visible area less the margin.
     static func restingArea(on screen: NSScreen) -> NSRect {
         screen.visibleFrame.insetBy(dx: screenMargin, dy: screenMargin)
     }
 
-    /// The resting area of the screen under the pointer, else of the screen
-    ///
     static func restingArea(for frame: NSRect, pointer: NSPoint) -> NSRect {
         let screens = NSScreen.screens
         func overlap(_ screen: NSScreen) -> CGFloat {
@@ -80,17 +61,6 @@ enum PictureInPictureFrame {
     }
 }
 
-//
-// window follows the pointer, giving way to only 35% of any distance past the
-// screen margin; on release it springs back inside the margin or, flung faster
-//
-// corner. A fling carries its speed into the spring whether or not it reaches
-// a corner; with Reduce Motion on, the window only springs back. Pinching
-//
-// its size limits with a haptic tick as it crosses one, and springs back
-// within them on release. Double-clicking toggles its largest size about its
-//
-//
 @MainActor
 final class PictureInPictureMotion: NSObject {
     private static let edgeGive: CGFloat = 0.35
@@ -107,7 +77,6 @@ final class PictureInPictureMotion: NSObject {
     private var pinchStart: NSRect?
     private var pastLimit = false
     private var frameBeforeLargest: NSRect?
-    //
     private var originSpring = DownloadArrivalSpring()
     private var sizeSpring = DownloadArrivalSpring()
     private var target = NSRect.zero
@@ -133,9 +102,6 @@ final class PictureInPictureMotion: NSObject {
         let mouse = NSEvent.mouseLocation
         if grab == nil {
             guard hypot(mouse.x - dragStart.x, mouse.y - dragStart.y) >= Self.dragThreshold else { return }
-            //
-            // stops it once it begins; a plain click leaves it running. The
-            // window then follows the pointer's whole way from the press.
             stop()
             grab = NSPoint(x: dragStart.x - window.frame.minX, y: dragStart.y - window.frame.minY)
         }
@@ -157,7 +123,6 @@ final class PictureInPictureMotion: NSObject {
             samples.removeAll()
         }
         guard let window, pressed, grab != nil else { return }
-        // The speed over the last 0.1 s up to release, so a pause first is no fling.
         samples.append((event.timestamp, NSEvent.mouseLocation))
         samples.removeAll { event.timestamp - $0.time > 0.1 }
         var velocity = CGVector.zero
@@ -209,7 +174,6 @@ final class PictureInPictureMotion: NSObject {
 
     func toggleLargest() {
         guard let window, window.styleMask.contains(.resizable) else { return }
-        // Mid-move, the size it is heading for counts as its size.
         let current = ticker == nil ? window.frame : target
         let largest = window.maxSize
         let grown = PictureInPictureFrame.constrain(
@@ -224,7 +188,6 @@ final class PictureInPictureMotion: NSObject {
         }
     }
 
-    /// Stops a move where it is, as a new drag, pinch or resize does.
     func stop() {
         ticker?.invalidate()
         ticker = nil
@@ -255,8 +218,6 @@ final class PictureInPictureMotion: NSObject {
                 y: min(max(origin.y, area.minY), max(area.minY, area.maxY - size.height)))
     }
 
-    /// The corner whose direction from the window is nearest the fling's,
-    /// if within 45° of it.
     private static func corner(toward velocity: CGVector, from frame: NSRect, in area: NSRect) -> NSPoint? {
         let heading = atan2(velocity.dy, velocity.dx)
         let corners = [NSPoint(x: area.minX, y: area.minY), NSPoint(x: area.maxX - frame.width, y: area.minY),
@@ -315,7 +276,6 @@ final class PictureInPictureMotion: NSObject {
             if window.frame != target { window.setFrame(target, display: true) }
             return
         }
-        // Whole points: a sub-point change would only make the page lay out again.
         let frame = NSRect(x: originSpring.value.x.rounded(), y: originSpring.value.y.rounded(),
                            width: sizeSpring.value.x.rounded(), height: sizeSpring.value.y.rounded())
         if frame.size != window.frame.size {
@@ -326,12 +286,6 @@ final class PictureInPictureMotion: NSObject {
     }
 }
 
-// The video presenter (Sources/ParcEngine/VideoPiPWindow.m) is an overlay
-//
-// panel: the clipped container, a single radius (the presenter also rounds
-// the video view, rounding each corner twice), the aspect-locked size limits
-// it never set, and MovableWindow's drag, pinch and double-click in place of
-// the presenter's plain window drag.
 @MainActor
 final class VideoPictureInPictureFrame {
     private weak var panel: NSPanel?
@@ -350,8 +304,6 @@ final class VideoPictureInPictureFrame {
         panel.contentView?.addGestureRecognizer(
             NSMagnificationGestureRecognizer(target: motion, action: #selector(PictureInPictureMotion.magnify(_:))))
         let center = NotificationCenter.default
-        // The aspect arrives with the first natural size, which also sizes
-        // the panel; a later change is caught before the next user resize.
         for name in [NSWindow.didResizeNotification, NSWindow.willStartLiveResizeNotification,
                      NSWindow.didChangeScreenNotification] {
             observers.append(center.addObserver(forName: name, object: panel, queue: .main) { [weak self] _ in
@@ -362,8 +314,6 @@ final class VideoPictureInPictureFrame {
                                             queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.motion.stop() }
         })
-        // A transparent window's shadow follows its shape only when redrawn:
-        // after a pinch or settle step, and once a live resize ends.
         for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification] {
             observers.append(center.addObserver(forName: name, object: panel, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -397,9 +347,6 @@ final class VideoPictureInPictureFrame {
     }
 }
 
-// Lies over the presenter's video and controls and takes the clicks that
-// reach no button or slider, which AppKit delivers only away from the panel's
-// resize edges; the presenter's own handler would start a plain window drag.
 @MainActor
 private final class VideoPictureInPictureDragSurface: NSView {
     weak var motion: PictureInPictureMotion?

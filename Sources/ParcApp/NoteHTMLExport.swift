@@ -1,7 +1,5 @@
 import AppKit
 
-/// Native attributed text remains the authored formatting owner. Export embeds
-/// inline images so the HTML archive never points at a private temporary file.
 @MainActor
 enum NoteHTMLExport {
     static func document(_ note: NoteDocument) throws -> NoteExportDocument {
@@ -9,8 +7,6 @@ enum NoteHTMLExport {
         try note.body.richText.validate(text: note.body.text)
         let value = NSMutableAttributedString(attributedString: EaselRichTextCodec.attributed(
             note.body.text, richText: note.body.richText, style: .init(), color: "#252525"))
-        // Export has no native appearance owner. Resolve only tagged default ink
-        // to its explicit light fallback; authored colors remain byte-for-byte.
         for run in note.body.richText.runs where run.attributes.semanticInk != nil {
             value.addAttribute(.foregroundColor, value: EaselRichTextCodec.color(run.attributes.ink),
                 range: NSRange(location: run.location, length: run.length))

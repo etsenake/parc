@@ -1,16 +1,11 @@
 import AppKit
 import QuartzCore
 
-///
-/// tabs and Spaces use `tabAndSpacePicker`; lists and tab groups use
-///
 enum SidebarIconPickerSet {
     case folderPicker, tabAndSpacePicker
     var icons: [SidebarIconType] { self == .folderPicker ? SidebarIconType.folderPicker : SidebarIconType.tabAndSpacePicker }
 }
 
-///
-///
 enum SidebarIconPickerMetrics {
     static let horizontalPadding: CGFloat = 4
     static let verticalPadding: CGFloat = 6
@@ -24,22 +19,16 @@ enum SidebarIconPickerMetrics {
     static let cornerRadius: CGFloat = 4
     static let removeWidth: CGFloat = 22
     static let removeGlyphSize: CGFloat = 15
-    static let removeCornerRadius: CGFloat = 5  // HoverableButtonStyle
-    /// SwiftUI's default HStack spacing between the page control and Remove [I].
+    static let removeCornerRadius: CGFloat = 5
     static let headerSpacing: CGFloat = 8
-    /// 30 · 8 + 8 · 2 + 16 = 272.
     static let width = buttonDimension * CGFloat(columns) + headerPadding * 2 + 16
     static func rows(_ set: SidebarIconPickerSet) -> Int { Int((Double(set.icons.count) / Double(columns)).rounded(.up)) }
-    /// rows · 30 + 8 · 2 + rows · 2 + 20 + 6 · 2: 272 for tabs/Spaces, 144 for folders.
     static func size(_ set: SidebarIconPickerSet) -> NSSize {
         let rows = CGFloat(self.rows(set))
         return NSSize(width: width, height: rows * buttonDimension + headerPadding * 2 + rows * 2 + headerHeight + verticalPadding * 2)
     }
 }
 
-/// The key-focus half of a split customization lease: the browser window or
-/// the editor's own presentation (sheet, picker popover or a window it owns)
-/// is key, and no other sheet is attached.
 enum SplitCustomizationFocus {
     @MainActor static func isHeld(window: NSWindow, presentation: NSWindow?) -> Bool {
         (window.isKeyWindow || presentation?.isKeyWindow == true)
@@ -47,13 +36,6 @@ enum SplitCustomizationFocus {
     }
 }
 
-/// The original icon picker shared by split groups and Space creation, as
-///
-/// commits at once; Remove (shown only with an icon) commits nil. Through
-/// `CustomInfoPickerHostingView` the picker stays open, as its
-/// `didSelectIcon` closes nothing; Space creation's `TextAndIconPicker`
-/// hides it on every choice (`closesAfterChoice`). Dismissal never changes
-/// the model.
 @MainActor
 final class SidebarGroupIconPicker: NSViewController, NSPopoverDelegate {
     enum Page { case icon, emoji }
@@ -65,14 +47,9 @@ final class SidebarGroupIconPicker: NSViewController, NSPopoverDelegate {
     private(set) var finished = false
     var isCurrent: () -> Bool = { false }
     var onCommit: ((SidebarGroupIcon?) throws -> Void)?
-    /// A failed durable commit keeps the picker and old state for retry.
     var onFailure: ((Error) -> Void)?
     var onFinish: (() -> Void)?
-    ///
-    ///
     var closesAfterChoice = false
-    /// The picker's own window, or the key window it owns: the skin-tone
-    ///
     var presentationWindow: NSWindow? {
         guard isViewLoaded, let own = view.window else { return nil }
         let tone = pickerView?.emojiPage?.skinTonePopover?.popover.contentViewController.flatMap { $0.isViewLoaded ? $0.view.window : nil }
@@ -86,8 +63,6 @@ final class SidebarGroupIconPicker: NSViewController, NSPopoverDelegate {
 
     init(selected: SidebarGroupIcon?, iconSet: SidebarIconPickerSet = .tabAndSpacePicker) {
         self.selected = selected; self.iconSet = iconSet
-        //
-        // otherwise an emoji or no icon opens Emoji, an icon or symbol Icon.
         switch (iconSet, selected) {
         case (.folderPicker, _), (_, .icon?), (_, .symbol?): initialPage = .icon
         default: initialPage = .emoji
@@ -102,15 +77,11 @@ final class SidebarGroupIconPicker: NSViewController, NSPopoverDelegate {
         view = root
     }
 
-    ///
-    ///
-    /// with AppKit's default animation.
     func present(from anchor: NSView, rect: NSRect? = nil) {
         guard !finished, anchor.window?.isKeyWindow == true, isCurrent() else { cancel(); return }
         configurePopover()
         popover.show(relativeTo: rect ?? anchor.bounds, of: anchor, preferredEdge: anchor.isFlipped ? .maxY : .minY)
     }
-    /// The popover retains this controller until it has closed.
     func configurePopover() {
         popover.contentViewController = self
         popover.behavior = .transient
@@ -119,7 +90,6 @@ final class SidebarGroupIconPicker: NSViewController, NSPopoverDelegate {
     }
     func reconcile() { if !committing && !finished && !isCurrent() { cancel() } }
 
-    /// One `didSelectIcon` publication. The same icon is not republished.
     func choose(_ icon: SidebarGroupIcon?) {
         guard !finished, !committing, icon != selected, icon?.isValid != false else { return }
         guard isCurrent(), let onCommit else { cancel(); return }
@@ -142,8 +112,6 @@ final class SidebarGroupIconPicker: NSViewController, NSPopoverDelegate {
         finished = true
         pickerView?.emojiPage?.closeSkinTone()
         popover.close()
-        // Break popover → controller once nothing is shown; an animated close
-        // finishes in popoverDidClose.
         if !popover.isShown { popover.contentViewController = nil }
         let done = onFinish; onFinish = nil; onCommit = nil; done?()
     }
@@ -153,8 +121,6 @@ final class SidebarGroupIconPicker: NSViewController, NSPopoverDelegate {
     }
 }
 
-///
-/// the current page, padded 4 horizontally and 6 vertically.
 @MainActor
 final class SidebarIconPickerView: NSView {
     typealias Page = SidebarGroupIconPicker.Page
@@ -177,14 +143,12 @@ final class SidebarIconPickerView: NSView {
         iconGrid = SidebarIconGridView(icons: set.icons)
         if case .icon(let type)? = selected { iconGrid.selectedIcon = type }
         if set == .tabAndSpacePicker {
-            //
             let control = PointingHandSegmentedControl(labels: ["Emoji", "Icon"], trackingMode: .selectOne, target: nil, action: nil)
             control.segmentDistribution = .fillEqually
             control.selectedSegment = page == .emoji ? 0 : 1
             segmentedControl = control; heading = nil
             emojiPage = SidebarEmojiPickerView(selectedEmoji: selected?.emoji)
         } else {
-            //
             let title = NSTextField(labelWithString: "Icon")
             title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
             heading = title; segmentedControl = nil; emojiPage = nil
@@ -202,7 +166,6 @@ final class SidebarIconPickerView: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// The selected icon after a commit (or the unchanged one after a failure).
     func update(selected: SidebarGroupIcon?) {
         if case .icon(let type)? = selected { iconGrid.selectedIcon = type } else { iconGrid.selectedIcon = nil }
         emojiPage?.selectedEmoji = selected?.emoji
@@ -216,8 +179,6 @@ final class SidebarIconPickerView: NSView {
         let inset = m.horizontalPadding + m.headerPadding
         return NSRect(x: inset, y: m.verticalPadding + m.headerPadding, width: bounds.width - inset * 2, height: controlHeight)
     }
-    /// The header's control and Remove; Remove takes 22 points at the end.
-    /// The folder title keeps its natural width, centered in what remains.
     func headerFrames(removable: Bool) -> (control: NSRect, remove: NSRect) {
         let m = SidebarIconPickerMetrics.self, header = headerFrame
         let reserved = removable ? m.removeWidth + m.headerSpacing : 0
@@ -229,13 +190,11 @@ final class SidebarIconPickerView: NSView {
         let remove = NSRect(x: header.maxX - m.removeWidth, y: header.minY, width: m.removeWidth, height: header.height)
         return (control, remove)
     }
-    /// The page area under the header (`.frame(maxHeight: .infinity)`).
     var pageFrame: NSRect {
         let m = SidebarIconPickerMetrics.self, top = headerFrame.maxY + m.headerPadding
         return NSRect(x: m.horizontalPadding, y: top, width: bounds.width - m.horizontalPadding * 2,
                       height: max(0, bounds.height - m.verticalPadding - top))
     }
-    /// IconPickerGrid at its natural size, centered in the page area.
     var gridFrame: NSRect {
         let page = pageFrame, size = iconGrid.fittingSize
         return NSRect(x: page.midX - size.width / 2, y: page.midY - size.height / 2, width: size.width, height: size.height)
@@ -249,8 +208,6 @@ final class SidebarIconPickerView: NSView {
     }
     override func resizeSubviews(withOldSize oldSize: NSSize) { super.resizeSubviews(withOldSize: oldSize); layoutPicker() }
 
-    /// `.animation(.easeOut(duration: 0.12), value: canRemoveIcon)` on the
-    ///
     private func setCanRemoveIcon(_ removable: Bool) {
         guard removable != canRemoveIcon else { return }
         canRemoveIcon = removable
@@ -272,9 +229,6 @@ final class SidebarIconPickerView: NSView {
         })
     }
 
-    /// `$page.animation(.easeOut(duration: 0.2))`: the icon page moves in from
-    /// and out to the trailing edge, the emoji page the leading edge, each by
-    ///
     @objc private func pageChanged(_ sender: NSSegmentedControl) { show(sender.selectedSegment == 0 ? .emoji : .icon) }
     func show(_ next: Page) {
         guard next != page, let emojiPage else { return }
@@ -304,10 +258,6 @@ final class SidebarIconPickerView: NSView {
     }
 }
 
-///
-/// trash glyph (U+E9F0) under `HoverableButtonStyle(cornerRadius: 5)`, clear
-///
-/// while the window is key. Its action publishes `didSelectIcon(nil)`.
 @MainActor
 final class SidebarPickerRemoveButton: NSView {
     var onPress: (() -> Void)?
@@ -357,10 +307,6 @@ final class SidebarPickerRemoveButton: NSView {
     }
 }
 
-///
-/// 30-point items one point apart; indexes past the catalog stay empty.
-/// Before macOS 14 the grid is focusable and arrows move the selection
-///
 @MainActor
 final class SidebarIconGridView: NSView {
     let icons: [SidebarIconType]
@@ -398,14 +344,12 @@ final class SidebarIconGridView: NSView {
         for (index, item) in items.enumerated() { item.frame = itemFrame(at: index) }
     }
 
-    ///
     func selectIcon(at index: Int) {
         guard icons.indices.contains(index), icons[index] != selectedIcon else { return }
         onSelect?(icons[index])
     }
 
     override var acceptsFirstResponder: Bool { !Self.isMacOS14 }
-    /// Arrows from the selected index, handled even when nothing moves.
     override func keyDown(with event: NSEvent) {
         guard !Self.isMacOS14, let selectedIcon, let index = icons.firstIndex(of: selectedIcon) else { super.keyDown(with: event); return }
         switch event.keyCode {
@@ -422,13 +366,6 @@ final class SidebarIconGridView: NSView {
     }
 }
 
-///
-/// button, white in the dark appearance and BrandGray otherwise. The
-/// background is clear, 0.1 of that colour while hovered, 0.25 while selected
-///
-/// scales the content to 0.9 at 0.75 opacity with a spring (response 0.2,
-/// damping fraction 0.4) while the background stays (`ScaleButtonStyle`
-///
 @MainActor
 final class SidebarIconItemView: NSView {
     let type: SidebarIconType
@@ -436,7 +373,6 @@ final class SidebarIconItemView: NSView {
     var onSelected: (() -> Void)?
     private(set) var hovered = false { didSet { if hovered != oldValue { needsDisplay = true } } }
     private(set) var pressed = false
-    /// The scaled label content; the background stays on this view's layer.
     let glyphView = NSImageView()
 
     init(type: SidebarIconType) {
@@ -499,14 +435,11 @@ final class SidebarIconItemView: NSView {
         pressed = value
         applyPressTransform(animated: true)
     }
-    /// Scale about the glyph's center whatever the layer's anchor point.
     private func pressTransform(_ scale: CGFloat, in layer: CALayer) -> CATransform3D {
         let anchor = CGPoint(x: layer.anchorPoint.x * layer.bounds.width, y: layer.anchorPoint.y * layer.bounds.height)
         let dx = layer.bounds.midX - anchor.x, dy = layer.bounds.midY - anchor.y
         return CATransform3DTranslate(CATransform3DScale(CATransform3DMakeTranslation(dx, dy, 0), scale, scale, 1), -dx, -dy, 0)
     }
-    /// Spring(response 0.2, dampingFraction 0.4): stiffness (2π / 0.2)²,
-    /// damping 4π · 0.4 / 0.2, unit mass, from the presented value.
     private func applyPressTransform(animated: Bool) {
         guard let layer = glyphView.layer else { return }
         let transform = pressTransform(pressed ? 0.9 : 1, in: layer)

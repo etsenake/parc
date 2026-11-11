@@ -37,7 +37,7 @@ assert "private var lastConfigureFingerprint: SidebarOutlineConfigureFingerprint
 
 configure = re.search(
     r"fileprivate func configure\(_ entry: SidebarOutlineEntry\) \{(?P<body>.*?)\n    \}\n\n"
-    r"    /// TablistOutlineView's cell frame",
+    r"    override func layout\(\) \{",
     outline, re.S)
 assert configure, "SidebarOutlineRow.configure not found"
 body = configure.group("body")

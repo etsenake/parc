@@ -1,7 +1,5 @@
 import AppKit
 
-/// Explicit file admission and aggregate outcomes only; credential values stay
-/// in the native CSV service and original Profile's encrypted password store.
 @MainActor
 final class BrowserImportPasswordsView: NSView {
     var onChooseFile: (() -> Void)?
@@ -10,9 +8,6 @@ final class BrowserImportPasswordsView: NSView {
     var onContinue: (() -> Void)?
     var onStop: (() -> Void)?
     var onRemoveFile: (() -> Void)?
-    //
-    // area, whose own label shows the import's state. The window adds the
-    // title and footer button the setup card otherwise supplies.
     private let title = NSTextField(wrappingLabelWithString: "Stay logged in.")
     private let detail = NSTextField(wrappingLabelWithString: "To manually import passwords from Safari, you’ll have to export them.")
     private let help = ActionButton("How do I find this?")
@@ -58,7 +53,6 @@ final class BrowserImportPasswordsView: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     @objc private func continueClicked() { onContinue?() }
-    /// The page's one text colour.
     private var ink: NSColor { usesSetupCard ? OnboardingSetupPalette.title : PArcDialogStyle.popoverTitle }
     private func configurePresentation() {
         title.isHidden = usesSetupCard; detail.isHidden = usesSetupCard; continueButton.isHidden = usesSetupCard
@@ -79,7 +73,6 @@ final class BrowserImportPasswordsView: NSView {
         let continueTitle = result == nil ? "Skip Passwords" : "Continue"
         if continueButton.title != continueTitle { continueButton.title = continueTitle; needsLayout = true }
         remove.isHidden = !canRemove; remove.isEnabled = canRemove && !removing
-        // The drop area says how it went; only a problem needs words.
         var problem = error
         if problem == nil, !busy, let outcome = result?.outcome, outcome != .completed {
             problem = outcome == .cancelled ? "Import stopped." : outcome == .partial
@@ -98,8 +91,6 @@ final class BrowserImportPasswordsView: NSView {
     override func layout() {
         super.layout()
         let width = bounds.width
-        // Original ImportKeychainView: ordered guidance, then a 25-point gap
-        // and the fixed 460 × 200 drop area.
         let left = (width - 460) / 2, top: CGFloat = usesSetupCard ? 0 : 90
         if !usesSetupCard {
             title.frame = NSRect(x: left, y: 50, width: 460, height: 34)
@@ -107,14 +98,10 @@ final class BrowserImportPasswordsView: NSView {
         }
         instructions[0].frame = NSRect(x: left, y: top + 60, width: 460, height: 30)
         instructions[1].frame = NSRect(x: left, y: top + 95, width: 460, height: 30)
-        // ClickOnPasswords owns the help control; it precedes the upload
-        // instruction instead of appearing after the entire ordered list.
         help.frame = NSRect(x: left + 28, y: top + 127, width: 190, height: 22)
         instructions[2].frame = NSRect(x: left, y: top + 155, width: 460, height: 30)
         dropTarget.frame = NSRect(x: left, y: top + 210, width: 460, height: 200)
         status.frame = NSRect(x: left, y: top + 418, width: 460, height: 44)
-        // Stop shows only while importing, removal only after; the window
-        // keeps them beside its footer button.
         let controls = usesSetupCard ? top + 465 : bounds.height - 60
         stop.frame = NSRect(x: left, y: controls, width: 150, height: 30)
         remove.frame = NSRect(x: left, y: controls, width: 270, height: 30)
@@ -122,9 +109,6 @@ final class BrowserImportPasswordsView: NSView {
                                       width: continueButton.bodyWidth + 1, height: 38.5)
     }
 }
-/// OrderedListCounter's 20-point Circle and 12-point semibold number, beside
-/// the original 14-point light Text with semibold menu names. AppKit retains
-/// native text layout; the counter is decoration within one spoken instruction.
 @MainActor
 final class OnboardingPasswordInstructionRow: NSView {
     enum Fragment { case text(String), menu(String), separator }

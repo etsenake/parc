@@ -1,16 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// The content's animation lifetime starts with sellIntro and is then independent
-/// of the reducer's phases. Keep this host alive until setup begins. See onboarding.md.
 struct OnboardingWelcomeView: View {
     let stage: OnboardingDraft.Stage
     let reduceMotion: Bool
     let onContinue: () -> Void
-    /// Fading out into setup: Return and clicks belong to the setup card.
     var isLeaving = false
-    // Once inserted, the content keeps its timers even if Reduce Motion is
-    // turned off again before sellIntro.
     @State private var contentStarted = false
 
     var body: some View {
@@ -48,8 +43,6 @@ private struct OnboardingWelcomeContent: View {
         ZStack {
             Image(nsImage: logo).resizable().interpolation(.high)
                 .aspectRatio(contentMode: .fit)
-                //
-                // Preserve that slot while retaining the approved Parc P mark.
                 .frame(width: 120, height: 101)
                 .opacity(opacity).blur(radius: blur).scaleEffect(scale).offset(y: offset)
                 .accessibilityHidden(true)
@@ -98,11 +91,9 @@ private struct OnboardingWelcomeContent: View {
                 headlineVisible = true
                 try await Task.sleep(nanoseconds: 1_600_000_000)
                 buttonVisible = true
-            } catch { /* Removing the host cancels every pending visual cue. */ }
+            } catch { }
         }
         .onChange(of: reduceMotion) { reduced in
-            // A live preference change settles the current sequence; it does not
-            // replay music, restart the welcome or leave an invisible default action.
             if reduced { settleMotion() }
         }
         .onDisappear { advanceTask?.cancel(); advanceTask = nil }
@@ -122,7 +113,6 @@ private struct OnboardingWelcomeContent: View {
         advancing = true
         advanceTask = Task { @MainActor in
             do {
-                // WelcomeScreenView's button dispatches nextPressed after 200ms.
                 try await Task.sleep(nanoseconds: 200_000_000)
                 try Task.checkCancellation()
                 onContinue()

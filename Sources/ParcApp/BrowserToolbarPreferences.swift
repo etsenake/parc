@@ -1,8 +1,6 @@
 import AppKit
 import Combine
 
-///
-/// full URLs are BoolKey 76. Appearance belongs to the app, including OTR windows.
 @MainActor
 final class BrowserToolbarPreferences: ObservableObject {
     static let shared = BrowserToolbarPreferences()
@@ -37,8 +35,6 @@ final class BrowserToolbarPreferences: ObservableObject {
     }
 }
 
-/// Presentation only: the URL comes from the original native page. No display
-/// string is used to navigate, copy, or identify a page or profile.
 struct BrowserToolbarAddress: Equatable {
     let primary: String
     let suffix: String?
@@ -57,8 +53,6 @@ struct BrowserToolbarAddress: Equatable {
             short = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         } else { short = fullURL }
         let long = Self.longDisplay(fullURL)
-        // The original producer splits only an actual prefix. Display strings
-        // never become navigation, copy, origin or page-identity inputs.
         if full, !short.isEmpty, long.hasPrefix(short), long.count > short.count {
             primary = short; suffix = String(long.dropFirst(short.count))
         } else { primary = short; suffix = nil }

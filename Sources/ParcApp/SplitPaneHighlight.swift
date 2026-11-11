@@ -1,12 +1,7 @@
 import AppKit
 
-///
-/// owns one passive `CAShapeLayer` above its content. The window state decides
-/// whether it is shown (focused split pane, or the proposed replacement drop
-/// target) and its width; this owner only presents that state.
 @MainActor
 final class SplitPaneHighlight {
-    ///
     static let transitionDuration: TimeInterval = 0.11
     let layer = CAShapeLayer()
     private(set) var display = false
@@ -17,7 +12,6 @@ final class SplitPaneHighlight {
     private weak var host: NSView?
 
     init() {
-        //
         layer.fillColor = nil
         layer.lineJoin = .round
         layer.lineCap = .round
@@ -36,8 +30,6 @@ final class SplitPaneHighlight {
         refreshColor()
     }
 
-    ///
-    /// rectangle of the same bounds with the view's corner radius.
     func layout(bounds: NSRect, cornerRadius: CGFloat) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.frame = bounds
@@ -50,15 +42,11 @@ final class SplitPaneHighlight {
         return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
 
-    ///
-    /// previously published value; a width-only change applies immediately.
     func update(display: Bool, width: CGFloat) {
         guard !published || display != self.display || width != self.width else { return }
         let animated = published && display != self.display && host?.window != nil
             && host?.isHiddenOrHasHiddenAncestor == false
         published = true; self.display = display; self.width = width
-        //
-        // clipped by the rounded content host); opacity is one or zero.
         let apply = { [layer] in
             layer.lineWidth = width * 2
             layer.opacity = display ? 1 : 0
@@ -67,8 +55,6 @@ final class SplitPaneHighlight {
             CATransaction.begin(); CATransaction.setDisableActions(true); apply(); CATransaction.commit()
             return
         }
-        //
-        // animation allowed and duration 0.11, using the context's default timing.
         NSAnimationContext.runAnimationGroup { context in
             context.allowsImplicitAnimation = true
             context.duration = Self.transitionDuration
@@ -76,8 +62,6 @@ final class SplitPaneHighlight {
         }
     }
 
-    ///
-    /// bounds animation for `path`, so the border stays on the moving edge.
     func followLayout(from previous: CGRect, animation: CAAnimation) {
         guard let path = layer.path, previous.size != layer.bounds.size else { return }
         let radius = host?.layer?.cornerRadius ?? 0
@@ -102,14 +86,10 @@ final class SplitPaneHighlight {
     }
 }
 
-///
 struct SplitPaneHighlightState: Equatable {
     var display: Bool
     var width: CGFloat
 
-    /// `proposedWindowContentDropTarget == contentID` shows a three-point
-    /// border; the focused content of a multi-pane split shows two points
-    /// while no interactive pane edit (drag and drop) is active.
     static func resolve(isProposedDropTarget: Bool, isFocused: Bool, paneCount: Int,
                         dragEditActive: Bool) -> SplitPaneHighlightState {
         let focused = isFocused && paneCount > 1 && !dragEditActive

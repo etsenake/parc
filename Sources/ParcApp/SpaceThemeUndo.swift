@@ -1,8 +1,6 @@
 import AppKit
 
 extension FolderUndoManager {
-    ///
-    /// Space's WindowTheme; the window retains the Update Theme inverse.
     @discardableResult
     func appendSpaceThemeChange(_ change: SpaceThemeChange, store: BrowserStore,
                                 available: @escaping () -> Bool,

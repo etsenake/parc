@@ -1,8 +1,6 @@
 import AppKit
 import Combine
 
-/// Application appearance preferences, shared by normal and private windows.
-/// These do not control webpage audio, onboarding music or native error beeps.
 @MainActor
 final class InterfaceFeedbackPreferences: ObservableObject {
     static let shared = InterfaceFeedbackPreferences()
@@ -46,8 +44,6 @@ protocol InterfaceCaptureSound: AnyObject {
 }
 extension NSSound: InterfaceCaptureSound {}
 
-/// One native cached sound; NSSound owns repeat/overlap behavior. No artificial
-/// stop/restart, loop, fade, pending retry or fallback beep is added.
 @MainActor
 final class InterfaceSoundEffects {
     static let shared = InterfaceSoundEffects(preferences: .shared, isActive: { NSApp?.isActive == true }) {
@@ -76,9 +72,6 @@ final class InterfaceSoundEffects {
     }
 }
 
-/// Mirrors the outline owner's distinct child-index stream combined with its
-/// live enabled preference. Its history lasts for this sidebar's lifetime:
-/// exiting/cancelling a drag does not manufacture another index or a cue.
 @MainActor
 final class SidebarReorderingFeedback {
     private let indices = PassthroughSubject<Int, Never>()

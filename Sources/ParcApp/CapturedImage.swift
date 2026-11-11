@@ -2,8 +2,6 @@ import AppKit
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Captured pixels are immutable. Cropping and framing commit together only
-/// after their real image and PNG have been produced; no edit recaptures a page.
 @MainActor
 final class CapturedImage {
     let originalPixels: CGImage
@@ -39,8 +37,6 @@ final class CapturedImage {
         frame = nil; pixels = unframedPixels; pngData = unframedPNG
     }
 
-    /// An accepted fixed-canvas edit replaces only the source layer. Crop and
-    /// Portrait are reapplied before any committed pixels change.
     func applyEditedOriginal(_ edited: CGImage) throws {
         guard edited.width == originalPixels.width, edited.height == originalPixels.height else { throw PortraitCaptureError.encoding }
         let sourceData = try Self.png(edited, backingScale: backingScale)
@@ -56,8 +52,6 @@ final class CapturedImage {
         unframedPixels = cropped; unframedPNG = data; pixels = rendered; pngData = encoded
     }
 
-    /// The crop editor always displays the full edited source, allowing recrop
-    /// without accumulated rounding, scaling or baked-in Portrait decorations.
     func crop(to rect: CGRect) throws {
         let bounds = CGRect(x: 0, y: 0, width: sourcePixels.width, height: sourcePixels.height)
         guard rect.origin.x.isFinite, rect.origin.y.isFinite,

@@ -1,11 +1,7 @@
 import AppKit
 
-/// Conversion is shared by canvas drawing, editing, document persistence and
-/// both clipboard representations. No keyed archive or external file is read.
 @MainActor
 enum EaselRichTextCodec {
-    // The native named BodyText color remains semantic across local save/reopen.
-    // Explicit NSColor black/white are different authored values, never tagged.
     static let noteBodyColor = NSColor(name: NSColor.Name("Parc.Note.BodyText")) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
     }
@@ -27,12 +23,6 @@ enum EaselRichTextCodec {
     }
     static func font(_ value: EaselRichText.Font) -> NSFont {
         let traits = NSFontDescriptor.SymbolicTraits(rawValue: value.traits)
-        // AppKit's private system-font names are not loadable named fonts.
-        // Headings can have a size outside the object palette, so restore their
-        // actual system family through the public API before applying traits.
-        // The public monospaced system family has private serialized names too.
-        // Reconstruct that family before adding its original traits/axes; using
-        // ordinary systemFont here silently loses authored monospace on reopen.
         let monospaced = value.name.hasPrefix(".AppleSystemUIFontMonospaced") || value.name.hasPrefix(".SFMono")
         let system = monospaced
             ? NSFont.monospacedSystemFont(ofSize: value.size, weight: NSFont.Weight(rawValue: value.weight))
@@ -60,9 +50,6 @@ enum EaselRichTextCodec {
         var runs: [EaselRichText.Run] = [], error: Error?
         value.enumerateAttributes(in: NSRange(location: 0, length: value.length)) { attrs, range, stop in
             do {
-                // NSLayoutManager writes this original-font marker when it
-                // substitutes a glyph font (for example emoji). Persist the
-                // authored font, not transient layout fallback metadata.
                 let originalFont = NSAttributedString.Key("NSOriginalFont")
                 guard attrs[originalFont] == nil || attrs[originalFont] is NSFont else {
                     throw EaselTextClipboardError.unsupportedFormatting
@@ -167,8 +154,6 @@ enum EaselRichTextCodec {
     }
 }
 
-/// An editor-owned popover retains only the selected range and text revision.
-/// Closing/removing the canvas retires it; no global link panel can edit a new object.
 @MainActor
 final class EaselLinkEditor: NSViewController, NSTextFieldDelegate {
     private let field = NSTextField()

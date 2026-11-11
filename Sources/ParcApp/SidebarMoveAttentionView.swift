@@ -1,14 +1,6 @@
 import AppKit
 import QuartzCore
 
-///
-/// command reveals: the item's cell (`SelectableCellView.shakeAnimator`, built
-///
-/// response and damping ratio 0.2, kicked from rest at 200 points a second
-///
-/// frame sets the cell layer's transform to that horizontal translation
-///
-/// animation, ending once the swing stays under a tenth of a point.
 enum SidebarAttentionShake {
     static let key = "parc.sidebar.attention"
     static let response = 0.8
@@ -17,7 +9,6 @@ enum SidebarAttentionShake {
     private static var omega: Double { 2 * .pi / response }
     private static var dampedOmega: Double { omega * (1 - dampingRatio * dampingRatio).squareRoot() }
 
-    /// The underdamped spring released at 0 with the kick's velocity.
     static func offset(at time: Double) -> Double {
         velocity / dampedOmega * exp(-dampingRatio * omega * time) * sin(dampedOmega * time)
     }

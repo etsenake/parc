@@ -1,15 +1,5 @@
 import AppKit
 
-///
-///
-///
-///
-///
-///
-///
-///
-/// trait 2), centred, three word-wrapped lines with the last truncated, and
-///
 @MainActor
 final class SplitDropPlaceholderCard: NSView {
     static let longestSide: CGFloat = 250
@@ -36,8 +26,6 @@ final class SplitDropPlaceholderCard: NSView {
         stack.alignment = .centerX
         stack.spacing = Self.spacing
         super.init(frame: .zero)
-        //
-        // fill; Parc asks for the layer explicitly.
         wantsLayer = true
         stack.translatesAutoresizingMaskIntoConstraints = false
         iconView.translatesAutoresizingMaskIntoConstraints = false
@@ -66,9 +54,6 @@ final class SplitDropPlaceholderCard: NSView {
         titleView.preferredMaxLayoutWidth = bounds.width - 2 * Self.inset
     }
 
-    ///
-    ///
-    /// pane gives an infinite side; Parc makes no card.
     static func size(forIncomingPane pane: NSSize) -> NSSize? {
         guard pane.width > 0, pane.height > 0, pane.width.isFinite, pane.height.isFinite else { return nil }
         return pane.height >= pane.width
@@ -76,11 +61,6 @@ final class SplitDropPlaceholderCard: NSView {
             : NSSize(width: longestSide, height: longestSide * pane.height / pane.width)
     }
 
-    ///
-    ///
-    /// `cacheDisplayInRect:toBitmapImageRep:`, `NSImage(size:)`). The card
-    /// never joins a window, so that rep is 1× and the card takes the
-    ///
     static func image(icon: NSImage?, title: String, incomingPane: NSSize) -> NSImage? {
         guard let size = size(forIncomingPane: incomingPane) else { return nil }
         let card = SplitDropPlaceholderCard(icon: icon ?? NSImage(size: NSSize(width: iconSide, height: iconSide)), title: title)
@@ -93,32 +73,22 @@ final class SplitDropPlaceholderCard: NSView {
         return image
     }
 
-    /// An item's own image before the card replaced it.
     struct ItemImage {
         let size: NSSize
-        /// Nil when the item's source keeps its image to itself.
         let contents: Any?
     }
 
-    ///
-    /// admitted dragged item the image, keeping its frame's unflipped origin
-    /// (the split's `DraggingDestinationForwardingView` is not flipped), so
-    /// the card grows up and right from the item's bottom-left corner. Returns
-    /// the replaced items' own images by index.
     @discardableResult
     static func present(_ image: NSImage, on sender: NSDraggingInfo, admits: @escaping (NSPasteboardItem) -> Bool) -> [Int: ItemImage] {
         var replaced: [Int: ItemImage] = [:]
         sender.enumerateDraggingItems(options: [], for: nil, classes: [NSPasteboardItem.self], searchOptions: [:]) { item, index, _ in
             guard let pasteboardItem = item.item as? NSPasteboardItem, admits(pasteboardItem) else { return }
-            // The provider, not `imageComponents`, which caches the old
-            // components past the replacement below.
             replaced[index] = ItemImage(size: item.draggingFrame.size, contents: item.imageComponentsProvider?().first?.contents)
             item.setDraggingFrame(NSRect(origin: item.draggingFrame.origin, size: image.size), contents: image)
         }
         return replaced
     }
 
-    /// Puts each replaced item's own image back at the same bottom-left.
     static func restore(_ images: [Int: ItemImage], on sender: NSDraggingInfo) {
         guard !images.isEmpty else { return }
         sender.enumerateDraggingItems(options: [], for: nil, classes: [NSPasteboardItem.self], searchOptions: [:]) { item, index, _ in

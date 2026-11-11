@@ -1,7 +1,5 @@
 import AppKit
 
-///
-/// menu actions; no delayed action may retarget the current caret or new text.
 @MainActor
 final class NoteSelectionTarget {
     let document: NoteFormattingTarget
@@ -18,8 +16,6 @@ final class NoteSelectionTarget {
             return !(0xdc00...0xdfff).contains(source.character(at: index)) ||
                 !(0xd800...0xdbff).contains(source.character(at: index - 1))
         }
-        // Current Foundation can represent a String.Index inside a UTF-16
-        // surrogate pair. Such a range is not an authored selection boundary.
         guard ranges.allSatisfy({ scalarBoundary($0.location) && scalarBoundary(NSMaxRange($0)) }) else { return nil }
         let selected = ranges.map { source.substring(with: $0) }.joined()
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,8 +46,6 @@ enum NoteSelectionGeometry {
         let firstSelection = host.convert(firstSelected.offsetBy(dx: origin.x, dy: origin.y), from: text)
         let visible = host.visibleRect.insetBy(dx: 2, dy: 2)
         guard visible.width > 0, visible.height >= size.height, visible.intersects(selected) else { return nil }
-        //
-        // gap. Width clamping/scrolling is a deliberate narrow-pane adaptation.
         let width = min(size.width, visible.width)
         let below = selected.minY + line.height
         let above = selected.minY - size.height - 5
@@ -61,9 +55,6 @@ enum NoteSelectionGeometry {
     }
 }
 
-/// Owns the transient selection menu, never the editor or its data. Automatic
-/// presentation leaves the actual NSTextView first responder; the footer offers
-/// keyboard/AX entry. Queued notifications are invalidated by any retirement.
 @MainActor
 final class NoteSelectionFormatting: NSObject {
     private weak var text: EaselStyledTextView?
@@ -102,8 +93,6 @@ final class NoteSelectionFormatting: NSObject {
         guard !performing else { return }
         dismiss(restoreFocus: false)
         let request = pending
-        // Coalesces native selection updates after the current editing event.
-        // The original callback's notification timing is not recovered.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.pending == request else { return }
             self.present()
@@ -111,8 +100,6 @@ final class NoteSelectionFormatting: NSObject {
     }
     func localBodyPublished(previous: NoteDocument) {
         guard let text else { return }
-        // Retained menu/link choices keep immutable ranges/content. Only their
-        // known successful local durability revision advances.
         for token in [target, linkTarget].compactMap({ $0 }) where token.matches(text: text, document: previous) {
             token.document.localBodyPublished(text: text, previous: previous, current: session.document)
         }
@@ -189,8 +176,6 @@ final class NoteSelectionFormatting: NSObject {
         performing = true
         text.toggle(emphasis, ranges: token.ranges)
         performing = false
-        // A real successful mutation may synchronously publish a new revision.
-        // Re-admit the same native editor/selection, never reuse the old token.
         present(focus: hadKeyboardFocus)
         if hadKeyboardFocus { bar?.restoreKeyboardSelection(selectedIndex) }
     }
@@ -214,8 +199,6 @@ final class NoteSelectionFormatting: NSObject {
     private func showParagraphMenu() {
         guard let menu = makeParagraphMenu(), let bar, let host else { return }
         paragraphMenu = menu
-        // Original native presenter passes selection-view frame.origin in its
-        // document content view, not a new anchor below the menu surface.
         menu.popUp(positioning: nil, at: bar.frame.origin, in: host)
         if paragraphMenu === menu { paragraphMenu = nil }
     }
@@ -269,8 +252,6 @@ final class NoteSelectionBar: NSView {
          onLink: @escaping () -> Void, onCancel: @escaping () -> Void) {
         self.canInteract = canInteract; cancel = onCancel
         super.init(frame: .zero)
-        // The original six-control selection view instantiates the same
-        // TextEditorFormatMenu as the gutter, with horizontal orientation.
         surface.wantsLayer = true; surface.layer?.cornerRadius = 7
         surface.layer?.shadowColor = NSColor.black.cgColor
         surface.layer?.shadowOpacity = 0.12; surface.layer?.shadowRadius = 7
@@ -283,8 +264,6 @@ final class NoteSelectionBar: NSView {
                                    (.italic, .italic), (.underline, .underline), (.strikethrough, .strikethrough)] {
             add(action, label: emphasis.rawValue.capitalized, checked: text.hasEmphasis(emphasis, ranges: ranges)) { onEmphasis(emphasis) }
         }
-        // Original packed Link flag comes from attribute(.link) at the first
-        // character of the actual primary selectedRange, not all ranges.
         let primary = text.selectedRange(), attributed = text.attributedString()
         let linked = primary.length > 0 && primary.location < attributed.length &&
             attributed.attribute(.link, at: primary.location, effectiveRange: nil) != nil
@@ -323,9 +302,6 @@ final class NoteSelectionBar: NSView {
     }
     override func layout() {
         super.layout()
-        // Retain the 225.5 x 50.5 original host and recovered 34pt inner
-        // cross-axis. Slot allocation/overflow remain the native adaptation;
-        // no inferred SwiftUI minimum-width redistribution is claimed.
         surface.frame = NSRect(x: 0, y: max(0, (bounds.height - 34) / 2), width: bounds.width, height: min(34, bounds.height))
         scroll.frame = surface.bounds.insetBy(dx: 6, dy: 0)
         content.frame = NSRect(x: 0, y: 0, width: 213.5, height: scroll.contentSize.height)

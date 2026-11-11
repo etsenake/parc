@@ -1,9 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// True no-op gate for SplitPaneControl layout. Identical centered surface
-/// frames skip the CATransaction rewrite; identical glyph frames skip the
-/// view-frame write. Hover/press/refresh remain ungated.
 enum SplitPaneControlLayoutSkip {
     static func surfaceFrame(bounds: NSRect, surfaceSize: NSSize) -> NSRect {
         NSRect(x: bounds.midX - surfaceSize.width / 2, y: bounds.midY - surfaceSize.height / 2,
@@ -19,16 +16,9 @@ enum SplitPaneControlLayoutSkip {
     }
 }
 
-/// TopBarPanelView's symbol controls. NSButton retains native input, focus
-/// and AX; the original page/menu callback remains the action authority.
-///
-/// slot, red `lock.slash.fill` at 11-point semibold, and the same hover/press
-///
 @MainActor final class SplitPaneControl: PointingHandButton {
     enum Kind { case menu, close, insecure }
     static let surfaceSize = NSSize(width: 32, height: 24)
-    ///
-    ///
     static let insecureSurfaceSize = NSSize(width: 24, height: 24)
     let kind: Kind
     var surfaceSize: NSSize { kind == .insecure ? Self.insecureSurfaceSize : Self.surfaceSize }
@@ -51,12 +41,8 @@ enum SplitPaneControlLayoutSkip {
         target = self; action = #selector(invoke)
         setAccessibilityElement(true); setAccessibilityRole(.button); setAccessibilityChildren([])
         switch kind {
-        //
-        //
-        //
         case .menu: LiveShortcutToolTip.set(self, "Split View Options"); setAccessibilityLabel("Split View Menu")
         case .close: LiveShortcutToolTip.set(self, "Remove Tab from Split View"); setAccessibilityLabel("Close Split View Pane")
-        //
         case .insecure: LiveShortcutToolTip.set(self, "Site is not secure"); setAccessibilityLabel("Site is not secure")
         }
         wantsLayer = true
@@ -81,9 +67,6 @@ enum SplitPaneControlLayoutSkip {
     override func layout() {
         super.layout()
         let nextSurface = SplitPaneControlLayoutSkip.surfaceFrame(bounds: bounds, surfaceSize: surfaceSize)
-        // Chrome re-layout can dirty the control without moving its centered
-        // 32×24 (or 24×24 insecure) surface. Skip the CATransaction when the
-        // frame already matches; hover/press/refresh stay ungated.
         if surface.frame != nextSurface {
             CATransaction.begin(); CATransaction.setDisableActions(true)
             surface.frame = nextSurface
@@ -119,9 +102,7 @@ enum SplitPaneControlLayoutSkip {
     }
     private func refresh(animated: Bool, pressed: Bool = false) {
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        // FullOpacityForegroundPrimary (black/white), not the Space accent.
         let ink = dark ? NSColor.white : NSColor.black
-        //
         glyph.contentTintColor = kind == .insecure ? .systemRed
             : ink.withAlphaComponent(isEnabled ? (dark ? 0.675 : 0.55) : 0.25)
         let opacity: Float = !isEnabled ? 0 : isPressed ? (dark ? 0.13 : 0.09) : isHovered ? (dark ? 0.09 : 0.05) : 0
@@ -171,9 +152,6 @@ enum SplitPaneControlLayoutSkip {
     }
 }
 
-//
-// The parent does not derive its content inset from the symbol's 24-point hit
-// surface. Developer Mode and Peek's outer card retain their separate owners.
 enum PaneTopBarLayout {
     static let height: CGFloat = 32
     static let horizontalInset: CGFloat = 5
@@ -183,42 +161,26 @@ enum PaneTopBarLayout {
     }
 }
 
-///
-/// menu item for the recovered `show-toolbar-in-split-view-enabled` string;
-/// gating on it (or on the separate Show Toolbar preference) hid the chrome.
 enum PaneTopBarAdmission {
     static func displayed(toolbarVisible: Bool, inSplit: Bool, isPopup: Bool = false,
                           hasLibrary: Bool = false, tabFullscreen: Bool = false) -> Bool {
         !isPopup && !hasLibrary && !tabFullscreen && (toolbarVisible || inSplit)
     }
-    /// Peek's own bar still follows Show Toolbar. Split admission must not
-    /// leak onto it: Peek is never a split pane.
     static func peekDisplayed(toolbarVisible: Bool, isActivePeek: Bool,
                               developerToolbarHidden: Bool) -> Bool {
         toolbarVisible && isActivePeek && developerToolbarHidden
     }
-    /// The sidebar URL bar (`WindowViewController.ViewState
-    ///
-    ///
-    /// keeps it beside split panes' bars, showing the focused pane, so only
-    /// the Toolbar preference hides it here.
     static func sidebarAddressBarShown(focusedHasTopBar: Bool, toolbarVisible: Bool) -> Bool {
         !(focusedHasTopBar && toolbarVisible)
     }
 }
 
-/// The pane chrome X closes that pane's original page, matching the sidebar
-///
-/// for Peek and for a single displayed page.
 enum SplitPaneCloseAdmission {
     static func accepts(tabID: UUID, selected: [UUID], isPeek: Bool = false) -> Bool {
         !isPeek && selected.count > 1 && selected.contains(tabID)
     }
 }
 
-/// Opacity changes of top-bar controls. TopBarPanelView's body animates hover
-/// changes with 0.18-second and modal-obstruction changes with 0.17-second
-///
 @MainActor enum PaneTopBarFade {
     static let hover: TimeInterval = 0.18
     static let obstruction: TimeInterval = 0.17
@@ -237,14 +199,7 @@ enum SplitPaneCloseAdmission {
     }
 }
 
-/// TopBarPanelViewModel's ordinary-pane essential-control rule. Tracking is
-///
-/// extends beyond the bar; this owner never receives clicks or changes focus.
-/// The menu shows for `!isObstructedByModal && (!onlyShowEssentialControls ||
-///
-/// onlyShowEssentialControls and `obstructed` is isObstructedByModal.
 @MainActor final class PaneControlVisibility: NSResponder {
-    /// The new reveal and the original transition duration, nil for immediate.
     var onChange: ((Bool, TimeInterval?) -> Void)?
     private weak var host: NSView?
     private weak var trackingView: NSView?
@@ -320,16 +275,9 @@ enum SplitPaneCloseAdmission {
     }
     override func mouseMoved(with event: NSEvent) {
         guard event.window === originalWindow else { return }
-        // Tracking delivers moved only while the pointer stays inside the
-        // installed hover-region area. When already hovered and live window/
-        // key/active/host gates still admit hover — or still refuse while not
-        // hovered — the hover bit cannot flip without mouseExited, resign-key/
-        // active, or update rebuilding geometry. Skip convert/contains/publish.
-        // Enter/exit/key/active/focus/obstruction/menuDepth still sample.
         if isHovered == hoverGatesOpen { return }
         samplePointer()
     }
-    /// Window/key/active/host visibility that admit a hover bit of true.
     private var hoverGatesOpen: Bool {
         guard let host, let window = originalWindow, host.window === window, window.isKeyWindow,
               applicationIsActive(), !host.isHiddenOrHasHiddenAncestor, host.visibleRect.intersects(topBar) else {
@@ -344,16 +292,12 @@ enum SplitPaneCloseAdmission {
         publish()
     }
     func trackMenu(_ body: () -> Void) {
-        // AppKit's synchronous menu tracking substitutes for the original
-        // retained popover state. It cannot extend the original action lease.
         menuDepth += 1; publish()
         defer { menuDepth -= 1; samplePointer() }
         body()
     }
     private func publish() {
         let value = !obstructed && (focused || isHovered || menuDepth > 0)
-        // The hover animation modifier is nearer the content than the modal
-        // one, so it wins when both change in one update.
         let duration: TimeInterval? = isHovered != publishedHover ? PaneTopBarFade.hover
             : obstructed != publishedObstruction ? PaneTopBarFade.obstruction : nil
         publishedHover = isHovered; publishedObstruction = obstructed
@@ -368,7 +312,6 @@ enum SplitPaneCloseAdmission {
         if let oldView, let oldArea { oldView.removeTrackingArea(oldArea) }
     }
     deinit {
-        // All owners are native views; their teardown stays on the main thread.
         MainActor.assumeIsolated { retireTracking() }
     }
 }

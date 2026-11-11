@@ -1,8 +1,6 @@
 import AppKit
 import Combine
 
-/// An accepted edit remains a model snapshot, so reopening the editor preserves
-/// object identity and never flattens its own previous output into the source.
 struct CaptureImageEditSnapshot {
     let document: EaselDocument
     let assets: [String: Data]
@@ -129,7 +127,6 @@ final class CaptureImageEditor: NSObject {
     private func accept() {
         guard !finished, importPanel == nil, valid() else { return }
         canvas.finishImageEditing()
-        // A no-op Apply preserves the exact original PNG bytes.
         guard session.document.items != initial.items else { close(); return }
         do {
             let image = try canvas.renderImage(pixelSize: pixelSize, backingScale: backingScale, colorSpace: sourceColorSpace)
@@ -139,8 +136,6 @@ final class CaptureImageEditor: NSObject {
     }
 
     fileprivate var canExportImage: Bool { !finished && valid() && panel.attachedSheet == nil }
-    ///
-    /// export covers the whole image; its untitled document suggests Untitled Easel.
     fileprivate func exportImage() {
         guard canExportImage else { return }
         EaselImageExport.run(canvas: canvas, title: nil, in: panel) { [weak self] in self?.canExportImage == true }

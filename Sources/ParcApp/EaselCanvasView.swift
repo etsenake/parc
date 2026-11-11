@@ -2,8 +2,6 @@ import AppKit
 import Combine
 import ImageIO
 
-/// A live embedded page's pixels for an export, placed like its surface:
-/// both frames are relative to the object's top-left corner.
 struct EaselPageSnapshot {
     let image: NSImage
     let pageFrame: NSRect
@@ -18,8 +16,6 @@ protocol EaselBrowserObjectHosting: AnyObject {
     func accessibilitySurface(for id: UUID) -> NSView?
     func prepareReplacement(_ next: EaselDocument, valid: @escaping () -> Bool,
                             completion: @escaping (Bool) -> Void)
-    /// Calls back once on main, by `deadline` at the latest, with every live
-    /// page it could capture.
     func exportSnapshots(within deadline: TimeInterval, _ completion: @escaping ([UUID: EaselPageSnapshot]) -> Void)
 }
 
@@ -86,7 +82,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private var trackedCanvasScale: Double?
     private var trackedHidesAnnotations = false
     private var textLayouts: [UUID: CachedTextLayout] = [:]
-    /// Test probes for presentation no-op skips vs real dirty applies.
     private(set) var presentationNoOpSkipCount = 0
     private(set) var presentationDirtyCount = 0
 
@@ -145,8 +140,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             window?.invalidateCursorRects(for: self)
         }
     }
-    /// Fixed image editing shares the ordinary Easel object/undo owner, but
-    /// does not grow the canvas or add browser objects.
     var fixedCanvasSize: NSSize?
     private var insertionColor = "#252525"
     var onImageEditingCancel: (() -> Void)?
@@ -182,8 +175,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard canFinishEditingForTransfer else { return false }
         return finishEditing()
     }
-    /// Render model artwork only, at the original pixel density. Selection,
-    /// handles, controls and the viewport are never part of the output.
     func renderImage(pixelSize: NSSize, backingScale: CGFloat, colorSpace: CGColorSpace? = nil) throws -> CGImage {
         guard finishImageEditing() else { throw EaselStoreError.invalidDocument("finish the current text edit") }
         guard pixelSize.width.isFinite, pixelSize.height.isFinite, pixelSize.width > 0, pixelSize.height > 0,
@@ -203,11 +194,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard let output = context.makeImage() else { throw EaselStoreError.invalidImage }
         return output
     }
-    ///
-    /// bounds; otherwise the canvas width down to the lowest object, but at
-    ///
-    /// artwork of this moment is drawn over the app's white or black, so an
-    /// open text editor stays open. Rows render in strips as the image is read.
     func exportImage(backingScale: CGFloat, pages: [UUID: EaselPageSnapshot] = [:]) -> CGImage? {
         let content = session.document.items.sorted { $0.zIndex < $1.zIndex }
         let width = bounds.width
@@ -232,8 +218,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             NSGraphicsContext.restoreGraphicsState()
         }
     }
-    /// The page's pixels where its surface shows them, over the surface's
-    /// rounded paper. The surface's own controls are not part of the page.
     private func drawLivePage(_ page: EaselPageSnapshot, in frame: NSRect) {
         let shape = NSBezierPath(roundedRect: frame, xRadius: 8, yRadius: 8)
         EaselAppearance.surface.setFill(); shape.fill()
@@ -244,15 +228,10 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         NSGraphicsContext.restoreGraphicsState()
     }
     private var collectingExportPages = false
-    ///
-    /// their pixels first. Calls back once on main, or returns false while an
-    /// earlier export is still collecting.
     func collectExportPages(_ completion: @escaping ([UUID: EaselPageSnapshot]) -> Void) -> Bool {
         guard !collectingExportPages else { return false }
         guard let pageObjects, session.document.items.contains(where: \.ownsEmbeddedPage) else { completion([:]); return true }
         collectingExportPages = true
-        // Past the engine's own five-second snapshot limit; a missing reply
-        // still ends the collection.
         pageObjects.exportSnapshots(within: 8) { [weak self] pages in self?.collectingExportPages = false; completion(pages) }
         return true
     }
@@ -325,9 +304,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override func setFrameSize(_ newSize: NSSize) {
-        // The captured guide anchors use this logical canvas width. A new
-        // coordinate owner cancels the original transaction instead of moving
-        // a retained center to a new canvas while the mouse is still down.
         if geometryEdit != nil, newSize.width != frame.width { cancelPointerInteraction() }
         super.setFrameSize(newSize)
     }
@@ -442,8 +418,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         menu.popUp(positioning: nil, at: NSPoint(x: rect(item).minX, y: rect(item).maxY), in: self)
         return true
     }
-    /// Native accessibility actions expose the existing visible manipulation
-    /// handles. They use the original geometry lease, with no new key binding.
     private func accessibleManipulationControls() -> [NSAccessibilityElement] {
         guard accessibleOwnerAvailable, editor == nil, let owner = window,
               let edit = EaselGeometryEdit(document: session.document, selection: selection) else { return [] }
@@ -508,8 +482,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     private var usesObjectSurfaces: Bool { pageObjects != nil && items.contains { $0.ownsEmbeddedPage } }
     private func displayBounds(of item: EaselItem) -> NSRect {
-        // Cover arrow heads (~16pt) and content-hugging fills that extend
-        // past the model frame so incremental fills cannot drop those pixels.
         let pad = 16 / max(canvasScale, 0.2) + 16
         return rect(item).insetBy(dx: -pad, dy: -pad)
     }
@@ -557,10 +529,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         trackedCanvasScale = canvasScale
         trackedHidesAnnotations = hidesPassiveAnnotations
     }
-    /// True no-op: every paint input already matches the last remembered
-    /// presentation. Chrome/metadata `$document` republishes (title/dates) must
-    /// not walk objects or re-dirty multi-select outlines when items, selection,
-    /// hover, marquee, guides, scale and annotation visibility are unchanged.
     private func presentationMatchesPaintedArtwork() -> Bool {
         guard let trackedCanvasScale, trackedCanvasScale == canvasScale,
               trackedHidesAnnotations == hidesPassiveAnnotations,
@@ -576,9 +544,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         return true
     }
     private func invalidateIncrementalDisplay(layout: Bool = false) {
-        // Skip full-object dirty / decoration walks on identical presentation.
-        // Group-outline invalidation otherwise re-dirties selection chrome on
-        // every call even when nothing visible changed.
         if presentationMatchesPaintedArtwork() {
             presentationNoOpSkipCount += 1
             return
@@ -650,8 +615,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                 decoration.needsDisplay = true
             }
         } else if scaleChanged || hideChanged {
-            // Scale-compensated outlines and pinch-hidden handles are not
-            // covered by item dirty rects; keep the original full paint.
             presentationDirtyCount += 1
             needsDisplay = true
         } else if !dirty.isNull {
@@ -709,9 +672,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if subviews.map(ObjectIdentifier.init) != ordered.map(ObjectIdentifier.init) {
             for view in ordered { addSubview(view, positioned: .above, relativeTo: nil) }
         }
-        // Do not advance painted-presentation tracking here. The document sink
-        // can resize→layout before invalidateIncrementalDisplay; remembering
-        // new items early would make a real change look like a no-op skip.
     }
     override func draw(_ dirtyRect: NSRect) {
         if fixedCanvasSize == nil {
@@ -782,7 +742,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
                     easelSelectionColor.setStroke()
                     let outline = NSBezierPath(rect: group); outline.lineWidth = 2.5 / canvasScale; outline.stroke()
                 }
-                // Edge handles retain native hit targets but no painted mark.
                 for location in EaselResizeHandle.allCases where location.isCorner && showsFrameAnnotation(location) {
                     let point = location.point(in: frame)
                     EaselAppearance.drawHandle(at: NSPoint(x: point.x, y: point.y), scale: canvasScale)
@@ -842,9 +801,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         case .text:
             let style = item.resolvedTextStyle
             width = [2.5, 3, 3.5, 3.5, 3.5][style.size.index]
-            // Native glyph bounds remain owned by TextKit. An exclusive text
-            // selection uses the recovered rounded union; hovered/group text
-            // uses the same content-hugging line contour as its artwork.
             let layout = cachedTextLayout(for: item)
             let lines = EaselTextLayout.lineRects(manager: layout.manager, container: layout.container)
                 .map { $0.offsetBy(dx: r.minX + EaselTextLayout.inset.width, dy: r.minY + EaselTextLayout.inset.height) }
@@ -893,8 +849,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private func showsArrowAnnotation(_ endpoint: EaselArrowEndpoint) -> Bool {
         !motion.isInteracting && (!hidesPassiveAnnotations || arrowEndpoint == endpoint)
     }
-    /// Hiding or retiring an editor must not leave a pinch lease attached to a
-    /// surviving scroll view. Existing native page visibility remains its owner.
     func refreshMotionOwnership() {
         if !canPresentMotion || isHiddenOrHasHiddenAncestor || window == nil { motion.cancel() }
     }
@@ -917,7 +871,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     private func resizeHandle(at point: NSPoint) -> EaselResizeHandle? {
         guard let frame = resizeBounds else { return nil }
-        // Corner hit regions take precedence over adjoining edge strips.
         return EaselResizeHandle.allCases.first { handle in
             guard showsFrameAnnotation(handle), let r = handle.hitRect(in: frame, scale: canvasScale) else { return false }
             return NSRect(x: r.x, y: r.y, width: r.width, height: r.height).contains(point)
@@ -1023,8 +976,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         text.onUndoDocument = { [weak self] in self?.undo(nil) }
         text.onRedoDocument = { [weak self] in self?.redo(nil) }
         text.canUndoDocument = { [weak self] in self?.session.canUndo == true }
-        // Native actions keep their own undo boundaries. Durable snapshots
-        // coalesce this editor lifetime so their inverses never become new edits.
         text.canRedoDocument = { [weak self] in self?.session.canRedo == true }
         updateEditor(item)
         if window?.makeFirstResponder(text) == true {
@@ -1038,8 +989,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private func updateEditor(_ item: EaselItem) {
         guard let text = editor else { return }
         if text.hasMarkedText() {
-            // Keep live input-method composition unless a different session
-            // owner changed the original saved text/ranges beneath it.
             guard let previous = editingTextSnapshot,
                   previous.text != item.text || previous.rich != item.richText else { return }
             text.inputContext?.discardMarkedText(); text.unmarkText()
@@ -1053,7 +1002,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         let current = try? EaselRichTextCodec.snapshot(text.attributedString())
         let desired = try? EaselRichTextCodec.snapshot(target)
         if !text.hasLoadedDocument || text.string != item.text || current != desired {
-            text.retire() // A pending range action cannot follow external content replacement.
+            text.retire()
             text.textStorage?.setAttributedString(target); text.resetEditingHistory()
             if target.length == 0 { text.typingAttributes = [.font: EaselTextAppearance.font(item.resolvedTextStyle), .foregroundColor: color(item.color)] }
         }
@@ -1073,8 +1022,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         finishingEditor = true
         defer { finishingEditor = false }
         text.finishComposition()
-        // Only this editor's current saved text may be disposed. A shared
-        // session can publish new content before its queued UI update arrives.
         if removingEmpty, let item = session.document.items.first(where: { $0.id == id }),
            let snapshot = editingTextSnapshot, item.text == snapshot.text, item.richText == snapshot.rich,
            item.text == text.string, EaselTextEditing.isEmpty(item) {
@@ -1090,8 +1037,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     }
     func textDidEndEditing(_ notification: Notification) {
         guard let text = notification.object as? EaselStyledTextView, text === editor, !finishingEditor else { return }
-        // Let native responder changes settle. Range controls keep the same
-        // editor while a text palette control or its link popover owns focus.
         DispatchQueue.main.async { [weak self, weak text] in
             guard let self, let text, self.editor === text, !text.hasPendingRangeAction,
                   let responder = self.window?.firstResponder, responder !== text else { return }
@@ -1126,8 +1071,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
               historyAnchor == nil || session.undoDestination == historyAnchor,
               original.allSatisfy({ state in session.document.items.contains { $0.id == state.id && $0.kind == .text && $0.textStyle == state.style } }) else { return }
         guard zip(replacement, original).contains(where: { $0.style != $1.style }) else { return }
-        // Native inverses remain in the original durable editing group. Its
-        // snapshot anchor refuses inverses after another owner's transaction.
         editingOwner?.breakUndoCoalescing()
         let saved = commit("Text fill", coalescing: editingOwner == nil ? nil : textUndoGroup) { document in
             for state in replacement {
@@ -1268,8 +1211,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if hit === editor || editor.map({ hit.isDescendant(of: $0) }) == true
             || hit === textStyleBar || hit.isDescendant(of: textStyleBar) { return hit }
         let local = convert(point, from: superview)
-        // A higher drawn object or original resize handle owns this point even
-        // when a selected renderer underneath has a native hit target.
         guard resizeHandle(at: local) == nil, arrowEndpoint(at: local) == nil,
               let item = object(at: local), item.ownsEmbeddedPage, selection == [item.id],
               let surface = artwork[item.id], hit === surface || hit.isDescendant(of: surface) else { return self }
@@ -1322,8 +1263,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if let previous = lastDragLocation {
             dragDistance += hypot(point.x - previous.x, point.y - previous.y)
             if let last = lastDragTimestamp, timestamp > last {
-                // Travel cancellation is measured in screen points. The guide
-                // solver consumes canvas velocity and applies magnification once.
                 let local = convert(point, from: nil), prior = convert(previous, from: nil)
                 dragVelocity = .init(x: (local.x - prior.x) / (timestamp - last),
                                      y: (local.y - prior.y) / (timestamp - last))
@@ -1351,9 +1290,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             cancelPointerInteraction(); return
         }
         let translation = EaselPoint(x: point.x - start.x, y: point.y - start.y)
-        // Shift affects guide correction only; the resize itself retains the
-        // original frame ratio. Web cards own their immutable captured image,
-        //
         var intrinsicGuideRatio: Double?
         if flags.contains(.shift), edit.originals.count == 1, let item = edit.originals.first {
             switch item.kind {
@@ -1394,8 +1330,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
             }
         } else if let edit = geometryEdit, edit.ids == selection, edit.isCurrent(in: session.document),
                   guides?.matchesCanvas(width: bounds.width) == true {
-            //
-            // Frame control points have their own end route without this test.
             guard resizing || dragDistance > 3 else { return }
             commit(arrowEndpoint != nil ? "Move arrow endpoint" : resizing ? "Resize objects" : "Move objects") { document in
                 guard let next = edit.applying(draft, to: document) else { return }
@@ -1427,7 +1361,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         else { drawing = false; selection.removeAll(); invalidateIncrementalDisplay(layout: true) }
     }
     override func keyDown(with event: NSEvent) {
-        // An unhandled renderer key must never become a canvas mutation.
         guard window?.firstResponder === self || (window?.firstResponder as? EaselAccessibleObject)?.canvas === self else {
             super.keyDown(with: event); return
         }
@@ -1438,7 +1371,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         }
         if event.keyCode == 53 { cancelOperation(nil); return }
         guard start == nil else { return }
-        //
         if event.keyCode == 1, event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.command, .shift],
            let onExportImage { onExportImage(); return }
         if event.keyCode == 51 || event.keyCode == 117 { deleteObjects(nil); return }
@@ -1557,9 +1489,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         guard hasCurrentMenuOwner(sender) else { return }
         _ = readPasteboard(NSPasteboard.general)
     }
-    ///
-    /// answers pasteAsPlainText: before any ancestor, so only canvas focus or
-    /// the canvas's own menu inserts a text object.
     private func embeddedPageOwnsTextCommand(_ sender: Any?) -> Bool {
         if (sender as? NSMenuItem)?.representedObject is MenuTarget { return false }
         guard let page = WebpageEditCommands.pageTarget(in: window) as? NSView else { return false }
@@ -1703,8 +1632,6 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
 
 
 
-/// Rows of an export image rendered on demand for a sequential data provider,
-/// one strip at a time, so encoding never holds more than a strip of pixels.
 @MainActor
 private final class EaselExportStrips {
     private static let rowsPerStrip = 256
@@ -1809,8 +1736,6 @@ private final class EaselCanvasDecoration: NSView {
     override func draw(_ dirtyRect: NSRect) { canvas?.drawDecorations(in: dirtyRect) }
 }
 
-/// One stable native focus/AX stop per durable object. It never takes pointer
-/// input or draws over artwork; all operations re-enter the canvas's owners.
 @MainActor
 private final class EaselAccessibleObject: NSView {
     weak var canvas: EaselCanvasView?

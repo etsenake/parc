@@ -1,17 +1,9 @@
 import AppKit
 import SwiftUI
 
-///
-///
-/// paging strip; a new choice springs the strip's position to that page and
-/// the backdrop mixes the two pages either side of it (`transitioning(from:to:
-///
-/// the mix is. The first choice, and leaving the import, fade the backdrop on
-/// the same spring over the page's own fill.
 @MainActor
 final class BrowserImportBackdrop: NSView {
     private let back = BrowserImportWashView(), front = BrowserImportWashView()
-    ///
     private var position = SidebarSpring(response: SidebarSpacePagingModel.springResponse, damping: 1)
     private var visibility = SidebarSpring(response: SidebarSpacePagingModel.springResponse, damping: 1)
     private var pages: [BrowserImportWash] = []
@@ -30,15 +22,12 @@ final class BrowserImportBackdrop: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// One wash per browser in order, and the chosen browser's index.
     func show(_ next: [BrowserImportWash], selected: Int?) {
         guard next != pages || selected != page else { return }
-        // Already leaving: the kept pages are fading out.
         if next.isEmpty && selected == nil && page == nil { return }
         let animate = window?.isVisible == true && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let now = CACurrentMediaTime()
         let hidden = visibility.value(at: now) < 0.01
-        // Leaving the import keeps the last pages so the backdrop fades out.
         if !next.isEmpty || selected != nil { pages = next }
         page = selected
         if let selected {
@@ -59,7 +48,6 @@ final class BrowserImportBackdrop: NSView {
         tick()
     }
 
-    /// Places the strip and fade directly, for a still frame of the motion.
     func showFrame(position value: CGFloat, visibility shown: CGFloat) {
         position.place(value); visibility.place(shown); apply(value, shown)
     }
@@ -82,8 +70,6 @@ final class BrowserImportBackdrop: NSView {
         guard !pages.isEmpty else { back.alphaValue = 0; front.alphaValue = 0; return }
         let clamped = min(CGFloat(pages.count - 1), max(0, value))
         let lower = Int(clamped.rounded(.down)), upper = Int(clamped.rounded(.up))
-        // The next page lies over the last by the strip's progress, so the mix
-        // never dips to the page fill between two washes.
         back.wash = toned(pages[lower]); front.wash = toned(pages[upper])
         back.alphaValue = shown; front.alphaValue = lower == upper ? 0 : shown * (clamped - CGFloat(lower))
     }
@@ -93,9 +79,6 @@ final class BrowserImportBackdrop: NSView {
         if window == nil { settle() }
     }
 
-    /// The page's fill, its one text colour, and the fraction of the page's
-    /// width its text spans: each wash darkens or lightens there just enough
-    /// for that colour to read on it.
     func setPage(fill: NSColor, ink: NSColor, text: ClosedRange<CGFloat>) {
         guard fill != surface.fill || ink != surface.ink || text != surface.text else { return }
         surface = (fill, ink, text); retone()
@@ -138,18 +121,12 @@ final class BrowserImportBackdrop: NSView {
     }
 }
 
-///
-/// the first deep at the left, the second at the right, with the dialog's
-/// lighter blends between them.
 struct BrowserImportWash: Hashable {
     let locations: [CGFloat]
     let colors: [UInt32]
 
-    ///
     static let arc = BrowserImportWash(locations: [0, 0.11, 0.21, 0.31, 0.42, 0.52, 0.62, 0.72, 1],
         colors: [0x3320B4, 0x4B3EC8, 0x5954D8, 0x786FDF, 0x9F75D4, 0xC86BB5, 0xEA6D93, 0xF85F72, 0xFD5967])
-    /// How much closer to white each of the dialog's stops is than a plain
-    /// blend of its two end colours.
     private static let lift: [CGFloat] = [0, 0.153, 0.245, 0.34, 0.367, 0.345, 0.358, 0.307, 0]
 
     static func pair(_ first: UInt32, _ second: UInt32) -> BrowserImportWash {
@@ -162,12 +139,6 @@ struct BrowserImportWash: Hashable {
         return BrowserImportWash(locations: arc.locations, colors: colors)
     }
 
-    /// Each colour stop behind text (`span` of the width, with the stops either
-    /// side so no blend between them crosses it) moves toward black under light
-    /// ink, or toward white under dark ink, by the least amount that gives the
-    /// ink 4.5:1 on it, WCAG's floor for body text; never more than the page's
-    /// own fill gives. Hue stays. Past the text the change eases off over a
-    /// third of the width, so no seam shows where it ends.
     func toned(ink: [CGFloat], fill: [CGFloat], across span: ClosedRange<CGFloat>) -> BrowserImportWash {
         let target = min(4.5, BrowserImportBackdrop.contrast(fill, ink))
         let toward: CGFloat = BrowserImportBackdrop.contrast(ink, [0, 0, 0]) > BrowserImportBackdrop.contrast(ink, [1, 1, 1]) ? 0 : 1
@@ -185,7 +156,6 @@ struct BrowserImportWash: Hashable {
                 let t = (low + high) / 2
                 if BrowserImportBackdrop.contrast(mixed(t), ink) < target { low = t } else { high = t }
             }
-            // Rounding toward the target colour keeps the contrast just reached.
             return mixed(high * weight).reduce(0) { result, channel in
                 let value = channel * 255
                 return result << 8 | UInt32(min(255, max(0, toward == 0 ? value.rounded(.down) : value.rounded(.up))))
@@ -195,12 +165,8 @@ struct BrowserImportWash: Hashable {
     }
 }
 
-/// One wash: solid across the top and fading into the page below, with the
-///
 @MainActor
 final class BrowserImportWashView: NSView {
-    /// The fraction of the page's height that stays solid, and where the
-    /// colour is gone; the dialog's own header is shorter than these pages'.
     static let solid: CGFloat = 0.3, clear: CGFloat = 0.64
     private static let fadeLevels: [CGFloat] = [1, 1, 0.55, 0.15, 0]
     private static let fadeLocations: [CGFloat] = [0, solid, solid + (clear - solid) * 0.4, solid + (clear - solid) * 0.75, clear]
@@ -225,7 +191,6 @@ final class BrowserImportWashView: NSView {
         let rows = max(1, Int(bounds.height * 2))
         let mask = CGContext(data: nil, width: 1, height: rows, bitsPerComponent: 8, bytesPerRow: 0,
                              space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
-        // Bitmap rows run bottom-up; the solid end belongs at the view's top.
         mask.drawLinearGradient(Self.fade, start: CGPoint(x: 0, y: CGFloat(rows)), end: .zero, options: [])
         context.saveGState()
         context.clip(to: bounds, mask: mask.makeImage()!)

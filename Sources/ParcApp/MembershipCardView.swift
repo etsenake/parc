@@ -2,7 +2,6 @@ import AppKit
 import QuartzCore
 import CoreImage
 
-///
 @MainActor
 enum MembershipCardArtwork {
     static let size = NSSize(width: 240, height: 360)
@@ -26,8 +25,6 @@ enum MembershipCardArtwork {
             NSColor(srgbRed: 1, green: 0.99, blue: 0.92, alpha: 1).setFill()
             NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
             let artwork = NSRect(x: 16, y: 16, width: 208, height: 192)
-            // The live view owns the masked gradient in `art` so hover/focus
-            // cannot composite a second silhouette over this chrome.
             if includeArtwork, let art = staticArtwork(state) { art.draw(in: artwork) }
             let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingTail
             (state.name as NSString).draw(in: NSRect(x: 16, y: 224, width: 208, height: 32), withAttributes: [
@@ -63,8 +60,6 @@ enum MembershipCardArtwork {
         NSGraphicsContext.restoreGraphicsState()
         return bitmap
     }
-    ///
-    /// centered card and a palette-colored shadow (80-point radius, y16).
     static func sharingBitmap(_ state: MembershipCardState) -> NSBitmapImageRep? {
         guard let card = render(state) else { return nil }
         let matteSize = NSSize(width: 412, height: 531)
@@ -89,8 +84,6 @@ enum MembershipCardArtwork {
         NSGraphicsContext.restoreGraphicsState()
         return bitmap
     }
-    /// The masked artwork as it rests on screen: background colour and the
-    /// fifteen blurred blobs, clipped to the name's shape.
     static func staticArtwork(_ state: MembershipCardState) -> NSImage? {
         guard let mask = image("Shape\(state.shape)") else { return nil }
         let field = MembershipCardBlobField(state)
@@ -104,8 +97,6 @@ enum MembershipCardArtwork {
                 context.translateBy(x: artworkSize.width / 2, y: artworkSize.height / 2)
                 context.rotate(by: blob.rotation)
                 context.translateBy(x: blob.offset.x, y: blob.offset.y)
-                // The handler's context is flipped and CGContext.draw ignores
-                // that; un-flip so each blob is upright, as layer contents are.
                 context.scaleBy(x: blob.scale / blobTextureScale, y: -blob.scale / blobTextureScale)
                 let size = texture.size
                 context.draw(texture.image, in: CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height))
@@ -117,12 +108,8 @@ enum MembershipCardArtwork {
         return result
     }
     static let artworkSize = NSSize(width: 208, height: 192)
-    ///
-    ///
     static let blobSize = NSSize(width: 634, height: 669)
     static let blobBlur: CGFloat = 50
-    /// Textures are drawn once at the middle of the .2….35 range and scaled per
-    /// blob; heavy blur lets them sit at half a pixel per point.
     static let blobTextureScale: CGFloat = 0.275
     private static var textureCache: [String: (image: CGImage, size: CGSize)] = [:]
     private static let blurContext = CIContext(options: [.cacheIntermediates: false])
@@ -156,14 +143,6 @@ enum MembershipCardArtwork {
     }
 }
 
-///
-/// under fifteen tinted AnimatingCardBlob images. Each blob is scaled .2….35,
-/// offset 0…300 points in x and y, then rotated −360…360° about the artwork
-///
-/// they ease to a second random set and back forever over one 8…15 s duration
-///
-/// them from the saved design so a randomized card is a new arrangement and the
-/// shared image matches what is on screen.
 @MainActor
 struct MembershipCardBlobField {
     struct Blob { var color: Int; var scale: CGFloat; var offset: CGPoint; var rotation: CGFloat }
@@ -186,7 +165,6 @@ struct MembershipCardBlobField {
         moved = state.backgroundBlobInfo.map(roll)
         duration = 8 + random.unit() * 7
     }
-    /// SplitMix64 over the saved design, so the same card always rests the same way.
     private struct Seeded {
         var value: UInt64
         init(_ state: MembershipCardState) {
@@ -209,7 +187,6 @@ struct MembershipCardBlobField {
 
 @MainActor
 final class MembershipCardView: NSView {
-    /// UserCard's `scaleEffect(scale)`, kept apart from the hover tilt on `surface`.
     private let squishLayer = CALayer()
     private let surface = CALayer()
     private let art = CALayer()
@@ -229,8 +206,6 @@ final class MembershipCardView: NSView {
         wantsLayer = true
         surface.bounds = NSRect(origin: .zero, size: MembershipCardArtwork.size)
         surface.position = NSPoint(x: 120, y: 180)
-        // The flipped view's backing layer already gives sublayers top-left
-        // geometry; flipping again put the artwork over the name and ticket.
         surface.shadowColor = NSColor(white: 0.22, alpha: 1).cgColor
         surface.shadowOpacity = 0.1; surface.shadowRadius = 54
         surface.shadowOffset = NSSize(width: 0, height: 24)
@@ -297,9 +272,6 @@ final class MembershipCardView: NSView {
             let textures = field.colors.map(MembershipCardArtwork.blobTexture)
             let center = CGPoint(x: art.bounds.midX, y: art.bounds.midY)
             for blob in field.rest {
-                // Rotor carries the rotation about the artwork centre; its child
-                // carries the offset and scale, so each animates like SwiftUI's
-                // offset/rotationEffect values rather than an interpolated matrix.
                 let rotor = CALayer()
                 rotor.bounds = .zero; rotor.position = center
                 rotor.setValue(blob.rotation, forKeyPath: "transform.rotation.z")
@@ -330,10 +302,7 @@ final class MembershipCardView: NSView {
         updateActivity()
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
-    ///
-    ///
     func squish() {
-        // A second Randomize mid-squish would restart it from 1, a visible snap.
         guard canAnimate, squishLayer.animation(forKey: "squish") == nil else { return }
         let step = 1.0 / 120
         let squish = CAKeyframeAnimation(keyPath: "transform.scale")
@@ -344,13 +313,11 @@ final class MembershipCardView: NSView {
         squishLayer.add(squish, forKey: "squish")
     }
 
-    /// Scale samples of the retargeted spring, from 1 back to rest at 1.
     static func squishCurve(step: Double) -> [Double] {
         let omega = 2 * Double.pi / 0.4
         let stiffness = omega * omega, damping = 2 * 0.8 * omega
         var value = 1.0, velocity = 0.0, time = 0.0
         var samples = [value]
-        // Up to 1.5 s, stopping once the spring has settled at rest.
         while time < 1.5 {
             let target = time < 0.05 ? 0.93 : 1
             let substeps = 8, h = step / Double(substeps)
@@ -406,8 +373,6 @@ final class MembershipCardView: NSView {
         for rotor in blobs {
             rotor.removeAllAnimations(); rotor.sublayers?.forEach { $0.removeAllAnimations() }
         }
-        // Keep the one name-derived silhouette. Hide only pointer shine/tilt;
-        // hiding `art` used to reveal a second copy composited into the card bitmap.
         art.isHidden = state == nil
         CATransaction.commit()
     }

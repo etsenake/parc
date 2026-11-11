@@ -1,8 +1,5 @@
 import AppKit
 
-///
-///
-/// separator stroke clipped by the same shape (one point visible inside).
 @MainActor
 final class SettingsGroupView: LayoutView {
     override init(frame: NSRect) {
@@ -28,7 +25,6 @@ final class SettingsGroupView: LayoutView {
     }
 }
 
-/// Passive glyph; the original native control retains input and accessibility.
 @MainActor
 final class SettingsSymbolBadge: NSView {
     let symbol: String
@@ -54,8 +50,6 @@ final class SettingsSymbolBadge: NSView {
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateColors() }
 }
 
-///
-/// glyph, native label and accent arrow, padded by five points on all sides.
 @MainActor
 final class SettingsCommandButton: SettingsHoverButton {
     private let badge: SettingsSymbolBadge
@@ -94,8 +88,6 @@ final class SettingsCommandButton: SettingsHoverButton {
         arrow.frame = NSRect(x: max(0, bounds.width - 22), y: (bounds.height - 16) / 2, width: 16, height: 16)
     }
     override func draw(_ dirtyRect: NSRect) {
-        // Native NSButton continues to track accepted clicks/keys. The original
-        // onTapGesture has no separately invented pressed color or animation.
         CATransaction.begin(); CATransaction.setDisableActions(true)
         effectiveAppearance.performAsCurrentDrawingAppearance {
             hoverLayer.backgroundColor = (isEnabled && isHovered ? NSColor.controlAccentColor.withAlphaComponent(0.15) : .clear).cgColor
@@ -133,9 +125,6 @@ final class SettingsProfileCell: NSTableCellView {
     }
 }
 
-///
-///
-/// not the bright source-list selection.
 @MainActor
 final class SettingsProfileRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
@@ -145,13 +134,8 @@ final class SettingsProfileRowView: NSTableRowView {
     override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
 }
 
-///
-/// fill (black 15% light, near-white 7% dark), 6-point corners and the
-/// PreferencesButtonForegroundColor title.
 @MainActor
 final class SettingsPillButton: PointingHandButton {
-    /// PreferencesLoadableButtonBackgroundColor (white; white 15% dark), used
-    /// on the default-browser banner.
     private let loadable: Bool
     init(title: String, symbol: String? = nil, loadable: Bool = false) {
         self.loadable = loadable
@@ -186,7 +170,6 @@ final class SettingsPillButton: PointingHandButton {
         fill.setFill()
         let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
         shape.fill()
-        // White on the white banner needs an edge to read as a button.
         if loadable && !dark { NSColor.separatorColor.setStroke(); shape.stroke() }
         super.draw(dirtyRect)
     }

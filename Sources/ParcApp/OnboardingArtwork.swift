@@ -3,7 +3,6 @@ import AVFoundation
 import CoreText
 import SwiftUI
 
-/// Onboarding resources. No resource is resolved through an installed browser.
 enum OnboardingArtwork {
     static func url(_ name: String, extension ext: String) -> URL? {
         Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "Onboarding")
@@ -27,8 +26,6 @@ enum OnboardingArtwork {
     }()
 }
 
-/// WindowBackgroundView's two video layers and masked grain share the welcome
-/// owner's lifetime, across welcome and setup. Replaying replaces this host.
 struct OnboardingBackgroundView: View {
     let reduceMotion: Bool
     var startsSettled = false
@@ -44,7 +41,6 @@ struct OnboardingBackgroundView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Reference video surfaces are square, 100 points wider than the window.
                 OnboardingVideo(name: "background", animates: !reduceMotion)
                     .frame(width: geometry.size.width + 100, height: geometry.size.width + 100)
                     .blur(radius: 75, opaque: true)
@@ -94,7 +90,7 @@ struct OnboardingBackgroundView: View {
                 }
                 try await Task.sleep(nanoseconds: 1_000_000_000)
                 settled = true
-            } catch { /* Host removal cancels pending visual cues. */ }
+            } catch { }
         }
         .onChange(of: reduceMotion) { reduced in if reduced { settle() } }
     }
@@ -150,7 +146,6 @@ private struct OnboardingGrain: NSViewRepresentable {
     }
 }
 
-///
 enum OnboardingVideoHandoff {
     static let posterFadeDuration: TimeInterval = 0.5
     static let imageOpacityKey = "imageOpacity"
@@ -160,20 +155,14 @@ enum OnboardingVideoHandoff {
         case fadeVideo(from: Float, duration: TimeInterval)
     }
 
-    ///
     static func recoveredDuration(imageBeginTime: TimeInterval, now: TimeInterval) -> TimeInterval {
         min(imageBeginTime + posterFadeDuration - now, 0)
     }
 
-    /// Core Animation duration is nonnegative. The recovered value is never
-    /// positive, so this is always 0.
     static func mediaDuration(recovered: TimeInterval) -> TimeInterval {
         max(recovered, 0)
     }
 
-    ///
-    /// `imageOpacity` animation cuts; otherwise the video fades from the poster
-    /// presentation opacity with the clamped duration.
     static func action(
         presentationOpacity: Float?,
         imageBeginTime: TimeInterval?,
@@ -279,7 +268,6 @@ private struct OnboardingVideo: NSViewRepresentable {
                 fadePosterIn()
             }
             guard videoLayer.isReadyForDisplay else {
-                // The bundled first frame also covers a missing/failed decoder.
                 player.pause()
                 if videoRevealed {
                     videoLayer.removeAllAnimations()

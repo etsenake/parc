@@ -19,8 +19,6 @@ final class IconSettingsView: NSView {
         super.init(frame: NSRect(x: 0, y: 0, width: 684, height: 562))
         autoresizingMask = [.width]
         addSubview(group); addSubview(status); addSubview(retry)
-        //
-        //
         list.drawsBackground = false; list.hasVerticalScroller = true; list.autohidesScrollers = true
         list.documentView = choices; group.addSubview(list)
         list.wantsLayer = true; list.layer?.cornerRadius = 7; list.layer?.cornerCurve = .continuous
@@ -56,8 +54,6 @@ final class IconSettingsView: NSView {
     }
     private func select(_ id: String) {
         icons.select(id)
-        // The controller publishes before mutation. Read its final result now,
-        // including save failure, instead of letting a native cell toggle first.
         refresh()
     }
     private func move(from row: IconChoiceRow, direction: Int) {
@@ -79,8 +75,6 @@ final class IconSettingsView: NSView {
         let height = max(rowHeight + 2, min(515, content + 2, 562 - 40 - noticeHeight))
         group.frame = NSRect(x: 64, y: 20 + noticeHeight, width: max(0, bounds.width - 128), height: height)
         list.frame = group.bounds.insetBy(dx: 1, dy: 1)
-        // Size the rows after the scroller settles, so a legacy (always
-        // visible) scroller can't cover their trailing edge.
         choices.frame = NSRect(x: 0, y: 0, width: list.contentSize.width, height: content)
         list.tile()
         choices.frame = NSRect(x: 0, y: 0, width: list.contentSize.width, height: content)
@@ -164,8 +158,6 @@ final class IconChoiceRow: PointingHandButton {
         NSColor.separatorColor.setFill()
         NSRect(x: 40, y: bounds.height - 1, width: max(0, bounds.width - 80), height: 0.5).fill()
     }
-    // One full-row control owns hit testing, focus, press feedback and AX. The
-    // artwork and labels must not become separate click/selection owners.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard bounds.contains(convert(point, from: superview)) else { return nil }
         return super.hitTest(point) == nil ? nil : self
@@ -264,9 +256,6 @@ final class IconChoiceRow: PointingHandButton {
     @objc private func selectIcon() { onChoose?() }
 }
 
-// AppIconOptionView disables RadioGroupButton's hover scaling and row border.
-// Its ordinary selection changes immediately; the preferred-option heart spring
-// is not enabled here. AppKit owns the pressed highlight without row animation.
 @MainActor
 private final class IconRadioCell: NSButtonCell {
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView) {

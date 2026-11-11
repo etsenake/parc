@@ -2,11 +2,6 @@ import AppKit
 import CoreText
 import UniformTypeIdentifiers
 
-///
-/// A menu/picker may act only on its admitted local document and attributed
-/// contents. Its durability revision advances only when the same editor saves
-/// those exact contents. Replacing equal text with different formatting
-/// is a change too; ranges alone cannot authorize a delayed action.
 @MainActor
 final class NoteFormattingTarget {
     let bodyID: UUID
@@ -25,9 +20,6 @@ final class NoteFormattingTarget {
         !document.deleted && document.body.id == bodyID && document.revision == revision &&
         text.isEditable && !text.hasMarkedText() && contents.isEqual(to: text.attributedString())
     }
-    /// Only the original editor's successful publication may advance durability.
-    /// The captured content, body identity and range never change; a competing
-    /// publication still retires this owner through contentsChanged().
     func localBodyPublished(text: NSTextView, previous: NoteDocument, current: NoteDocument) {
         guard matches(text: text, document: previous), !current.deleted,
               current.body.id == bodyID, current.body.text == contents.string,
@@ -55,23 +47,17 @@ enum NoteParagraphGeometry {
         layout.ensureLayout(for: container)
         let origin = text.textContainerOrigin
         let p = NSPoint(x: max(0, point.x - origin.x), y: point.y - origin.y)
-        // Keep the native hit test from clamping distant empty canvas into a
-        // live range. This viewport admission is a Parc adaptation.
         let extent = layout.usedRect(for: container).union(layout.extraLineFragmentRect)
         guard p.y >= extent.minY, p.y <= extent.maxY else { return nil }
         let index = min(layout.characterIndex(for: p, in: container, fractionOfDistanceBetweenInsertionPoints: nil), text.string.utf16.count)
         guard let target = resolveHit(in: text, index: index, windowPoint: text.convert(point, to: nil)) else { return nil }
         if target.afterNewline { return target }
-        // The extra fragment is genuine native end-of-body insertion geometry,
-        // even on systems whose hit test clamps it to the last newline glyph.
         if let end = Self.target(in: text, containing: text.string.utf16.count), end.range.length == 0,
            point.y >= end.bounds.minY, point.y <= end.bounds.maxY { return end }
         guard point.y >= target.bounds.minY, point.y <= target.bounds.maxY else { return nil }
         return target
     }
 
-    /// Native hit index and original-window point arrive together. The newline
-    /// half-height decision does not re-hit-test or substitute another line.
     static func resolveHit(in text: NSTextView, index: Int, windowPoint: NSPoint) -> Target? {
         guard let target = make(in: text, index: index, afterNewline: false) else { return nil }
         if let window = text.window, isNewline(in: text.string, at: index), let anchor = target.windowAnchor {
@@ -85,8 +71,6 @@ enum NoteParagraphGeometry {
         make(in: text, index: index, afterNewline: false)
     }
 
-    /// Refresh the retained native metadata; scrolling cannot change a captured
-    /// zero-length newline target into the following nonempty paragraph.
     static func refresh(_ target: Target, in text: NSTextView) -> Target? {
         guard let next = make(in: text, index: target.sourceIndex, afterNewline: target.afterNewline),
               next.range == target.range, next.sourceRange == target.sourceRange else { return nil }
@@ -139,9 +123,6 @@ enum NoteParagraphGeometry {
                 ? ((text.attributedString().attribute(.font, at: start, effectiveRange: nil) as? NSFont)?.pointSize ?? 18) / 2 - 9 : 0
             var y = rect.minY + fontOffset
             if afterNewline {
-                // Original producer sums its native enclosing rectangle heights.
-                // Convert UTF-16 ranges to actual glyph indices before querying
-                // current TextKit, preserving emoji/ligature ownership.
                 var height: CGFloat = 0
                 layout.enumerateEnclosingRects(forGlyphRange: glyphs, withinSelectedGlyphRange: glyphs, in: container) { rect, _ in
                     if rect.height > 0 { height += rect.height }
@@ -157,8 +138,6 @@ enum NoteParagraphGeometry {
     }
 }
 
-///
-/// labels are intentionally narrower than every format the shared editor knows.
 enum NoteFormatAction: Int, CaseIterable {
     case heading1, heading2, heading3, text, bullets, numbers
     case bold, italic, underline, strikethrough, image, link
@@ -191,9 +170,6 @@ enum NoteFormatAction: Int, CaseIterable {
     }
 }
 
-///
-/// original producer examines marker text and the first actual font run; a
-/// paragraph header level alone does not select a heading icon.
 @MainActor
 enum NoteGutterIcon: Equatable {
     case text, heading1, heading2, heading3, bullets, numbers, plus
@@ -220,9 +196,6 @@ enum NoteGutterIcon: Equatable {
         if prefix.first == "\t", let end = prefix.dropFirst().firstIndex(of: "\t"),
            Int(String(prefix[1..<end]), radix: 10) != nil { return .numbers }
 
-        // Current AppKit's genuine NSTextList markers differ from the retained
-        //
-        // metadata without its real marker never determines the gutter icon.
         if range.length > 0 {
             let marker = EaselParagraphEditing.markerRange(contents, paragraph: range)
             if marker.location == range.location, marker.length > 0 {
@@ -247,10 +220,6 @@ enum NoteGutterIcon: Equatable {
     }
 }
 
-/// The named OrderedList/UnorderedList assets are proven by the retained
-/// 1.122 factory. These vector contours come from the surviving 1.170 catalog;
-///
-/// or copied executable is needed at runtime (see docs/notes.md).
 @MainActor
 enum NoteListGlyph {
     static func image(numbered: Bool) -> NSImage {
@@ -325,9 +294,6 @@ enum NoteListGlyph {
     }
 }
 
-///
-/// 1.122; these sRGB pairs are its separately retained 1.170 resource values.
-/// Controls inherit their document appearance, never a guessed Space palette.
 @MainActor
 enum NoteFormattingAppearance {
     private static func adaptive(_ name: String, light: NSColor, dark: NSColor) -> NSColor {
@@ -357,27 +323,18 @@ enum NoteFormattingAppearance {
         dark: NSColor(srgbRed: 0.204, green: 0.200, blue: 0.302, alpha: 1))
 
     static func ink(for item: NoteFormatMenu.Item, checked: Bool) -> NSColor {
-        // The factory explicitly styles Text/H1–H3; their foreground is not
-        // the outer item’s checked HeaderText environment. Other glyphs use
-        // SelectedMenuItem only for actual checked state, not hover/focus.
         switch item {
         case .action(.text), .action(.heading1), .action(.heading2), .action(.heading3): text
         default: checked ? selectedInk : text
         }
     }
 
-    ///
-    /// GutterMenuItemSelected; otherwise hovered (including press) uses
-    /// HoveredMenuItemBackground. There is no distinct pressed fill.
     static func gutterFill(selected: Bool, hovered: Bool) -> NSColor? {
         if selected { return gutterSelected }
         if hovered { return hover }
         return nil
     }
 
-    ///
-    /// otherwise hovered or keyboard-selected (including press) uses
-    /// HoveredMenuItemBackground. Press never replaces a checked fill.
     static func itemFill(checked: Bool, hovered: Bool) -> NSColor? {
         if checked { return selected }
         if hovered { return hover }
@@ -385,16 +342,11 @@ enum NoteFormattingAppearance {
     }
 }
 
-/// Recovered FormatMenuTextIconType glyphs. Nunito 14.4 letters, 6pt disclosure,
-/// 11pt plus/text-formatting symbols, and Feather icomoon insertImage /
-/// formattedHyperlink at the original IconFontImageCache 20pt square.
 @MainActor
 enum NoteFormatGlyph {
     static let size: CGFloat = 14.4
     static let iconCacheSize: CGFloat = 20
-    ///
     static let insertImageCode: UInt32 = 0xE981
-    ///
     static let formattedHyperlinkCode: UInt32 = 0xE998
 
     static let iconFontDirectory: URL? = Bundle.main.resourceURL?.appendingPathComponent("CustomInfoPicker", isDirectory: true)
@@ -469,7 +421,6 @@ enum NoteFormatGlyph {
         }
         let scalar = Unicode.Scalar(code).map { String(Character($0)) } ?? ""
         let text = NSAttributedString(string: scalar, attributes: [.font: font, .foregroundColor: NSColor.black])
-        //
         let image = NSImage(size: NSSize(width: iconCacheSize, height: iconCacheSize), flipped: false) { rect in
             let measured = text.size()
             text.draw(at: NSPoint(x: (rect.width - measured.width) * 0.5, y: (rect.height - measured.height) * 0.5))
@@ -500,9 +451,6 @@ private enum NoteFormatControl {
     }
 }
 
-/// The retained gutter is one plain button, with a paragraph glyph and a
-/// disclosure triangle unless it represents an empty paragraph. AppKit owns
-/// its press, keyboard and accessibility action; drawing never modifies text.
 @MainActor
 final class NoteGutterButton: PointingHandButton {
     static let controlSize = NSSize(width: 42, height: 30)
@@ -511,9 +459,6 @@ final class NoteGutterButton: PointingHandButton {
     private(set) var hovered = false
     var paragraphKind: EaselParagraphEditing.Kind = .text { didSet { needsDisplay = true } }
     var showsPlus = true { didSet { needsDisplay = true } }
-    /// Original `displayAsSelected`. Selected fill is independent of press.
-    /// Production sets this while the paragraph menu is admitted; mouse-exit
-    /// keeps the gutter visible then, so GutterMenuItemSelected can show.
     var showsSelected = false { didSet { needsDisplay = true } }
     var contentOpacity: CGFloat { hovered || isHighlighted || showsSelected ? 1 : 0.33 }
     override var isFlipped: Bool { true }
@@ -575,9 +520,6 @@ final class NoteGutterButton: PointingHandButton {
     }
 }
 
-/// One transparent sibling of the original NSTextView. It intercepts only its
-/// gutter and inline menu; native text selection, IME, dragging and links keep
-/// their original responder. Geometry always comes from the actual layout.
 @MainActor
 final class NoteFormattingView: NSView {
     private weak var text: EaselStyledTextView?
@@ -610,8 +552,6 @@ final class NoteFormattingView: NSView {
         setAccessibilityElement(false)
         NotificationCenter.default.addObserver(self, selector: #selector(windowResigned(_:)), name: NSWindow.didResignKeyNotification, object: nil)
     }
-    /// Reduce Motion settles in-flight selected-index/item springs. Present and
-    /// dismiss stay immediate; no Notes haptic is installed.
     func bindMotion() {
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(reduceMotionChanged),
@@ -629,7 +569,6 @@ final class NoteFormattingView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden else { return nil }
-        // NSView receives point in its superview's coordinates.
         let local = convert(point, from: superview)
         if let hit = selection.hitTest(local) { return hit }
         if let formatMenu, formatMenu.frame.contains(local) { return formatMenu.hitTest(local) }
@@ -654,8 +593,6 @@ final class NoteFormattingView: NSView {
     override func mouseEntered(with event: NSEvent) {
         guard event.trackingArea === tracking else { super.mouseEntered(with: event); return }
         pointerInside = true
-        //
-        // paragraph. Never reconstruct an action from a stale integer range.
         if let hover, validHover { positionGutter(hover) }
     }
     override func mouseExited(with event: NSEvent) {
@@ -697,7 +634,6 @@ final class NoteFormattingView: NSView {
     func selectionChanged() {
         guard !changingSelection else { return }
         dismissParagraph(); selection.selectionChanged(); hideGutter()
-        // A picker can outlive native focus loss, but not an edited selection.
         if let target, text?.selectedRange() != target.range { cancelImage() }
     }
     func retire() { dismiss(); hideGutter(); cancelImage(); stopLinkPopoverObserver(); selection.stopLinkPopoverObserver() }
@@ -711,8 +647,6 @@ final class NoteFormattingView: NSView {
     private func positionGutter(_ value: NoteParagraphGeometry.Target) {
         guard let text, let window else { return }
         let range = value.iconRange
-        // Metadata carries a separate window anchor and icon range for a
-        // newline insertion target; its action range remains zero-length.
         let first = window.convertFromScreen(text.firstRect(forCharacterRange: value.sourceRange, actualRange: nil))
         let fontOffset = value.sourceRange.location < text.attributedString().length
             ? ((text.attributedString().attribute(.font, at: value.sourceRange.location, effectiveRange: nil) as? NSFont)?.pointSize ?? 18) / 2 - 9 : 0
@@ -730,8 +664,6 @@ final class NoteFormattingView: NSView {
         present(range: hover.range, source: hover)
     }
 
-    /// Native toolbar/AX alternative to the hover-only affordance. No invented
-    /// global shortcut steals native Tab, Find or text editing commands.
     @objc func formatSelection(_ sender: Any? = nil) {
         guard let text, let paragraph = NoteParagraphGeometry.target(in: text, containing: text.selectedRange().location) else { return }
         if text.selectedRange().length > 0 {
@@ -741,8 +673,6 @@ final class NoteFormattingView: NSView {
     func present(range: NSRange, source: NoteParagraphGeometry.Target? = nil, focus: Bool = false) {
         guard let text, let window, window.isKeyWindow, window.attachedSheet == nil else { return }
         retire()
-        // Ending title editing can publish a new document revision. Admit only
-        // after that native focus transition, never with a pre-commit token.
         changingSelection = true
         let focused = window.makeFirstResponder(text)
         changingSelection = false
@@ -769,8 +699,6 @@ final class NoteFormattingView: NSView {
         NoteMotion.presentImmediately(formatMenu, in: self)
         positionParagraphMenu(); gutter.isHidden = true
         gutter.showsSelected = true
-        //
-        // Footer/AX entry focuses the menu so didPressEnter can use selectedIndex.
         if focus { window.makeFirstResponder(formatMenu) }
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] event in
             MainActor.assumeIsolated {
@@ -787,9 +715,6 @@ final class NoteFormattingView: NSView {
                                                 preferredHeight: formatMenu.preferredHeight)
         formatMenu.needsLayout = true; formatMenu.layoutSubtreeIfNeeded()
     }
-    ///
-    /// owned paragraph or selection menu. A nil keyboard index is a no-op and
-    /// still consumes the selector so a newline cannot be inserted.
     func pressEnter() {
         if formatMenu != nil { formatMenu?.pressEnter(); return }
         if selection.isPresenting { selection.pressEnter() }
@@ -818,8 +743,6 @@ final class NoteFormattingView: NSView {
         if action == .image { chooseImage(target: target, window: window); return }
         if action == .link {
             guard target.range.length > 0 else { return }
-            // Link popover retains the original view/range guard; anchor remains
-            // installed after the inline menu has been removed.
             hover = NoteParagraphGeometry.target(in: text, containing: target.range.location)
             hoverAdmission = target; pointerInside = true
             if let hover { positionGutter(hover) }
@@ -866,9 +789,6 @@ final class NoteFormattingView: NSView {
     }
 }
 
-/// Recovered vertical TextEditorFormatMenu: 34pt cross-axis, 2pt padding
-/// and spacing, six paragraph icons, separators and an inline expandable
-/// emphasis item. No copied document or detached formatting selection lives here.
 @MainActor
 final class NoteFormatMenu: NSView {
     enum Item: Equatable {
@@ -914,8 +834,6 @@ final class NoteFormatMenu: NSView {
         })
         super.init(frame: .zero)
         wantsLayer = true; layer?.cornerRadius = 7
-        // Current AppKit shadow and scroll fallback remain adaptations of
-        // SwiftUI's composition. Named fill and dark-only border are recovered.
         layer?.shadowColor = NSColor.black.cgColor; layer?.shadowOpacity = 0.12; layer?.shadowRadius = 7
         NoteAccessibility.configureParagraphMenu(self)
         scroll.drawsBackground = false; scroll.hasVerticalScroller = false
@@ -930,8 +848,6 @@ final class NoteFormatMenu: NSView {
         super.viewDidMoveToWindow(); refreshAppearance()
     }
     private func refreshAppearance() {
-        // CALayer stores resolved CGColor values. Refresh those values under
-        // this original owner, without rebuilding rows or replacing selection.
         CATransaction.begin(); CATransaction.setDisableActions(true)
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = NoteFormattingAppearance.background.cgColor
@@ -939,7 +855,6 @@ final class NoteFormatMenu: NSView {
             layer?.borderColor = (dark ? NoteFormattingAppearance.border : NSColor.clear).cgColor
             layer?.borderWidth = 0.5
             for separator in separators {
-                // Divider geometry/opacity is the existing native adaptation.
                 separator.layer?.backgroundColor = NoteFormattingAppearance.border.withAlphaComponent(0.2).cgColor
             }
         }
@@ -948,8 +863,6 @@ final class NoteFormatMenu: NSView {
         buttons.forEach { $0.needsDisplay = true }
     }
     static func frame(anchoredTo anchor: NSRect, in visible: NSRect, preferredHeight: CGFloat) -> NSRect {
-        //
-        // centerY equality has priority750, below its containment constraints.
         let inset = min(10, max(0, visible.height / 2))
         let available = visible.insetBy(dx: 0, dy: inset)
         let size = NSSize(width: min(width, max(0, available.width)), height: min(preferredHeight, max(0, available.height)))
@@ -1033,7 +946,6 @@ final class NoteFormatMenu: NSView {
                 old.removeFromSuperview(); highlight?.removeFromSuperview()
             }
         }
-        // Drop leftover separators from the previous tree; they are not identity-matched.
         separators.forEach { $0.removeFromSuperview() }
         buttons = nextButtons; highlights = nextHighlights; separators = nextSeparators
         refreshAppearance(); refreshHighlight(animated: animated); needsLayout = true
@@ -1059,8 +971,6 @@ final class NoteFormatMenu: NSView {
         switch items[index] {
         case .action(let action): onAction(action)
         case .emphasis:
-            // FormatMenu.reduce(.select(expandable)) replaces just the
-            // matching option with its children, preserving the other slots.
             items.replaceSubrange(index...index, with: [.action(.bold), .action(.italic), .action(.underline), .action(.strikethrough)])
             rebuild(animated: true); onResize()
             if let selectedIndex, let button = buttons.first(where: { $0.tag == selectedIndex }) {
@@ -1072,9 +982,6 @@ final class NoteFormatMenu: NSView {
     override func keyDown(with event: NSEvent) {
         guard active else { return }
         guard canInteract() else { onCancel(); return }
-        // didDismissMenu is Escape; Tab ends the footer/AX transaction.
-        // didPressEnter activates the optional selectedIndex without inventing
-        // a first highlight. Hover never overwrites that index.
         guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { super.keyDown(with: event); return }
         switch event.keyCode {
         case 53, 48: onCancel()
@@ -1120,8 +1027,6 @@ private final class NoteFormatRows: NSView {
 final class NoteFormatButton: NSButton {
     let item: NoteFormatMenu.Item
     let showsDisclosure: Bool
-    /// The owner's highlight view (the recovered selected-index spring) draws
-    /// a keyboard-selected row's hover fill; the row draws none of its own.
     var keyboardSelected = false { didSet { needsDisplay = true } }
     private(set) var hovered = false
     private var tracking: NSTrackingArea?

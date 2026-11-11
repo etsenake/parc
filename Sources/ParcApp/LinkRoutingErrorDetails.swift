@@ -1,6 +1,5 @@
 import AppKit
 
-/// Full, selectable persistence feedback for the bounded routing footer.
 @MainActor
 enum LinkRoutingErrorDetails {
     static func present(_ message: String?, in window: NSWindow?) {

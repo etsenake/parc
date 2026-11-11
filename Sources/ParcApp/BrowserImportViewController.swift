@@ -2,22 +2,15 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// One import presentation retains its original window through source discovery,
-/// native permissions and final bookmark admission. Onboarding embeds this owner;
-/// the application menu wraps it in its dedicated import window.
 @MainActor
 final class BrowserImportViewController: NSViewController {
     var onClose: (() -> Void)?
     var onChange: (() -> Void)?
-    /// Set for the `onChange` that shows a different page: back after setup's
-    /// Back, otherwise forward. Nil for the first page and for updates within
-    /// a page.
     private(set) var pageDirection: OnboardingExperience.TransitionDirection?
     private var shownPage: BrowserImportCoordinator.Stage?
     private var pendingBack = false
     var onShowPasswordHelp: (() -> Void)?
     var onHidePasswordHelp: (() -> Void)?
-    /// Ad blockers the import adds after its presentation closed.
     var onBackgroundAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?
     var selectionColor: NSColor = OnboardingSetupPalette.action { didSet { updateSourcePicker(); updateBookmarksPicker(); updatePasswordChoice() } }
     private var sourcePicker: NSHostingView<BrowserImportSourcePicker>?
@@ -40,7 +33,6 @@ final class BrowserImportViewController: NSViewController {
         }
     }
     private var onboardingAccess: OnboardingSafariAccessView?
-    /// Setup's “No, I want to type in all my passwords again.” card.
     private var skipSelected = false
     var isChoosingSource: Bool { coordinator.isChoosingSourceInline }
     private weak var window: NSWindow?
@@ -52,18 +44,13 @@ final class BrowserImportViewController: NSViewController {
     var setupAccessory: NSView? { isSafariAccess ? onboardingAccess?.actions : nil }
     var headingText: String { heading.stringValue }
     var message: String { detail.stringValue }
-    // The setup owner uses its shared Next control through the import steps;
-    // menu-wizard labels do not replace that progression control.
     var nextTitle: String { embedded ? "Next" : next.title }
     private(set) var canAdvance = false
-    /// Setup's second button on this import page, or nil for none.
     var skipTitle: String? { closed ? nil : coordinator.setupSkipTitle }
     var canSkip: Bool { !closed && coordinator.canSkipInSetup }
     var canGoBack: Bool { !closed && coordinator.canGoBackInSetup }
     var foundNoSources: Bool { coordinator.foundNoSources }
     var isImporting: Bool { coordinator.stage == .importing }
-    ///
-    /// button spinner, the import's only loading presentation.
     var isLoading: Bool {
         switch coordinator.stage {
         case .loading, .importing: return true
@@ -76,8 +63,6 @@ final class BrowserImportViewController: NSViewController {
     private let root = LayoutView()
     private let heading = NSTextField(wrappingLabelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
-    // ImportDialogButtonView's body is a Dialogs.DialogButtonView: primary for
-    // Next/Import/Done, neutral for Maybe Later/Back, no hotkey badge.
     private let next = PArcDialogButton(title: "Next", primary: true, hint: false)
     private let cancelButton = PArcDialogButton(title: "Maybe Later", primary: false, hint: false)
     private let windowBackdrop = BrowserImportBackdrop()
@@ -94,8 +79,6 @@ final class BrowserImportViewController: NSViewController {
     private var restartRequest: UUID?
     private var coordinator: BrowserImportCoordinator!
     private let ownerIsCurrent: () -> Bool
-    /// Setup went Back after an import and chose another browser; the earlier
-    /// import finishes on its own and its ad blockers still count.
     private var earlierImport = false
     private var earlierAdBlockers: [OnboardingDraft.ImportedAdBlocker] = []
     private var lateAdBlockers: (([OnboardingDraft.ImportedAdBlocker]) -> Void)?
@@ -190,15 +173,12 @@ final class BrowserImportViewController: NSViewController {
         coordinator.goBackInSetup()
     }
 
-    /// Another browser chosen on the cards after Back gets an import of its
-    /// own; the earlier one keeps what it brought in and finishes by itself.
     private func startOver(with source: PCNativeImportSource) {
         guard let window, let earlier = coordinator else { return }
         earlierImport = true
         earlierAdBlockers = Self.merged(earlierAdBlockers, earlier.importedAdBlockers)
         earlier.onChange = nil
         if earlier.hasBackgroundWork {
-            // Held until the earlier import finishes, so its ad blockers reach setup.
             earlier.detach(onAdBlockers: { [self] blockers in
                 earlierAdBlockers = Self.merged(earlierAdBlockers, blockers)
                 if closed { lateAdBlockers?(importedAdBlockers) }
@@ -213,8 +193,6 @@ final class BrowserImportViewController: NSViewController {
         first + second.filter { blocker in !first.contains { $0.identifier == blocker.identifier } }
     }
 
-    /// A persisted restart intent never contains source/profile leases. Obtain
-    /// new descriptors and stop before any user-approved import submission.
     func resumeSafariImport(sourceBundleID: String = "com.apple.Safari") {
         guard !closed else { return }
         coordinator.discover(resumingSourceBundleID: sourceBundleID)
@@ -260,8 +238,6 @@ final class BrowserImportViewController: NSViewController {
             accessTimer?.invalidate(); accessTimer = nil; return
         }
         guard accessTimer == nil else { return }
-        //
-        // owner bounded to the visible stage; activation also requests a refresh.
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshSafariAccessIfVisible() }
         }
@@ -276,11 +252,9 @@ final class BrowserImportViewController: NSViewController {
         accessTimer?.invalidate(); accessTimer = nil
         if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
         activationObserver = nil
-        //
         coordinator.onChange = nil
         var forward = onBackgroundAdBlockers
         if earlierImport, let setup = forward {
-            // Setup's list also keeps the earlier import's ad blockers.
             lateAdBlockers = setup
             forward = { [self] _ in setup(importedAdBlockers) }
         }
@@ -316,8 +290,6 @@ final class BrowserImportViewController: NSViewController {
             sourcePicker?.frame = NSRect(x: 314, y: 100, width: width - 336, height: height - 180)
             bookmarksPicker?.frame = NSRect(x: 34, y: 104, width: width - 68, height: height - 184)
         }
-        // Dialogs footer: 28 points from the right and bottom, 8 between buttons;
-        // each view extends past its 36-point body for the border and lip.
         func place(_ button: PArcDialogButton, right: CGFloat) -> CGFloat {
             button.frame = NSRect(x: right - button.bodyWidth - 0.5, y: height - 64.5, width: button.bodyWidth + 1, height: 38.5)
             return button.isHidden ? right : right - button.bodyWidth - 8
@@ -327,8 +299,6 @@ final class BrowserImportViewController: NSViewController {
         else { cancelButton.frame = NSRect(x: 27.5, y: height - 64.5, width: cancelButton.bodyWidth + 1, height: 38.5) }
     }
 
-    ///
-    /// only the cards' state changes.
     var showsSourceCards: Bool {
         switch coordinator.stage {
         case .sources, .profiles, .importing: return true
@@ -342,8 +312,6 @@ final class BrowserImportViewController: NSViewController {
     private func render() {
         guard !closed else { return }
         if coordinator.stage == .finished {
-            //
-            // next step and the window closes. Leave the view update stack first.
             guard !queuedSetupCompletion else { return }
             queuedSetupCompletion = true
             DispatchQueue.main.async { [weak self] in
@@ -388,7 +356,6 @@ final class BrowserImportViewController: NSViewController {
             let name = coordinator.source?.displayName ?? "this browser"
             if embedded {
                 heading.stringValue = "Import from \(name)."
-                //
                 detail.stringValue = coordinator.source.map(BrowserImportCoordinator.isSafari) == true
                     ? "To import Safari browser history, Parc will need Full Disk Access. Feel free to remove access when this step is finished."
                     : "To import from \(name), Parc will need Full Disk Access. Feel free to remove access when this step is finished."
@@ -412,9 +379,7 @@ final class BrowserImportViewController: NSViewController {
             next.isEnabled = coordinator.canChoosePasswordMethod
             updatePasswordChoice()
         case .safariPasswords:
-            // The window's passwords view draws its own title and text.
             heading.stringValue = "Stay logged in"
-            //
             detail.stringValue = (coordinator.supportsICloudPasswords
                 ? "To manually import passwords from Safari, you’ll have to export them."
                 : "To use your Safari passwords in Parc, you’ll have to export them from Safari.")
@@ -428,7 +393,6 @@ final class BrowserImportViewController: NSViewController {
                 result: coordinator.passwordResult, canRemove: coordinator.canRemovePasswordFile, error: coordinator.passwordError)
             schedulePasswordFileConsent()
         case .bookmarks:
-            //
             next.title = "Add to Parc"
             heading.stringValue = "Treat your bookmarks to an upgrade."
             detail.stringValue = ""
@@ -436,8 +400,6 @@ final class BrowserImportViewController: NSViewController {
         case .finished: break
         }
         if isChoosingSource {
-            // Source cards remain in place while their real profile request is
-            // pending or a profile is selected. Next alone moves on.
             next.isEnabled = (embedded && skipSelected) || coordinator.canContinueSourceInline
         }
         if cards { updateSourcePicker() } else { sourcePicker?.isHidden = true }
@@ -452,7 +414,6 @@ final class BrowserImportViewController: NSViewController {
         }
         reconcileAccessTimer()
         root.needsLayout = true; root.layoutSubtreeIfNeeded()
-        // Finding browsers, choosing them and importing share the browser cards.
         let page: BrowserImportCoordinator.Stage = cards || stage == .loading ? .sources : stage
         pageDirection = shownPage.flatMap { $0 == page ? nil : pendingBack ? .back : .forward }
         if pageDirection != nil { pendingBack = false }
@@ -489,8 +450,6 @@ final class BrowserImportViewController: NSViewController {
         }
     }
 
-    /// Setup presents this help above its card; the menu window presents the
-    /// same panel above its own content.
     private func showPasswordHelp() {
         guard canShowPasswordHelp, let window, window.attachedSheet == nil else { return }
         if embedded {
@@ -519,7 +478,6 @@ final class BrowserImportViewController: NSViewController {
 
     private var helpCoversContent: Bool { passwordHelp?.isPresented == true }
 
-    /// The covered content leaves accessibility and gives up its Escape close.
     private func coverContent(_ covered: Bool) {
         guard !closed else { return }
         root.subviews.forEach { if $0 !== passwordHelp { $0.setAccessibilityHidden(covered) } }
@@ -535,8 +493,6 @@ final class BrowserImportViewController: NSViewController {
         guard coordinator.canRemovePasswordFile, let token = coordinator.passwordRequestID,
               promptedPasswordRequest != token else { return }
         promptedPasswordRequest = token
-        // The original reducer schedules its separate consent action after
-        // 600 ms. Parc waits for actual persistence before starting that delay.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self, !self.closed, self.coordinator.passwordRequestID == token,
                   self.coordinator.canRemovePasswordFile else { return }
@@ -548,8 +504,6 @@ final class BrowserImportViewController: NSViewController {
         guard !closed, coordinator.canRemovePasswordFile, let window,
               window.attachedSheet == nil else { return }
         let token = coordinator.passwordRequestID
-        //
-        // sheet with these strings, not an NSAlert; the file goes to Trash.
         PArcDialog.confirm(in: window, title: "Want us to delete \(coordinator.passwordFileName ?? "Passwords.csv")?",
                           message: "For your security, it’s best to remove this file. Now that you’re done importing, you won’t need it again.",
                           confirm: "Yes, delete", cancel: "I'll do this later") { [weak self] approved in
@@ -559,9 +513,6 @@ final class BrowserImportViewController: NSViewController {
         }
     }
 
-    /// The import's backdrop: every discovered browser's wash in order, and
-    /// the chosen browser's, which carries through every step of its import.
-    /// Setup draws it across its own card; the menu window draws it here.
     var backdrop: (pages: [BrowserImportWash], selected: Int?) {
         guard !closed, coordinator != nil else { return ([], nil) }
         let pages = coordinator.sources.map { source in BrowserImportTheme.wash(for: source, icon: Self.icon(source)) }
@@ -572,7 +523,6 @@ final class BrowserImportViewController: NSViewController {
     private func updateBackdrop() {
         guard !embedded else { return }
         let value = backdrop
-        // The browser cards keep their own fill; only the left column's text is on the wash.
         windowBackdrop.setPage(fill: PArcDialogStyle.popoverBackground, ink: PArcDialogStyle.popoverTitle,
                                text: showsSourceCards || coordinator.stage == .loading ? 28 / 580...318 / 580 : 0...1)
         windowBackdrop.show(value.pages, selected: value.selected)
@@ -593,7 +543,6 @@ final class BrowserImportViewController: NSViewController {
                 selected: !skipSelected && coordinator.source === source, choose: { [weak self, weak source] in
                     guard let self, let source, self.canChooseSource else { return }
                     self.skipSelected = false
-                    // After Back, the imported browser stays as it was.
                     if self.coordinator.parkedStage == nil { self.coordinator.selectSourceInline(source) }
                     else if self.coordinator.source === source { self.render() }
                     else { self.startOver(with: source) }

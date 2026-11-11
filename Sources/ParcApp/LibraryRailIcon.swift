@@ -1,15 +1,5 @@
 import AppKit
 
-///
-/// `screenshots`, `downloads`, `easels`, `spaces`, `archive`.json) shown by
-/// `HomeButton._AnimatedPageSidebarItemView`. This draws the shape-layer subset
-/// those files use: parented layer transforms, additive masks, groups, paths,
-/// fills and strokes, with eased keyframes. Layers named `primaryColor` and
-///
-///
-///
-/// is inferred to skip them too; if it applies them, those shapes draw about
-/// 0.1 point fuller per edge here at 28 points.
 final class LibraryRailAnimation {
     enum Name: String { case media = "screenshots", downloads, easels, spaces, archive }
     @MainActor static let directory = Bundle.main.resourceURL?.appendingPathComponent("Library", isDirectory: true)
@@ -46,7 +36,6 @@ final class LibraryRailAnimation {
 
     func frame(forMarker name: String) -> Double? { markers[name] }
 
-    /// Draws `frame` aspect-fitted into `rect` of a flipped context.
     func draw(in context: CGContext, rect: CGRect, frame: Double, primary: CGColor, secondary: CGColor) {
         let scale = min(rect.width / size.width, rect.height / size.height)
         context.saveGState()
@@ -169,8 +158,6 @@ final class LibraryRailAnimation {
             }
         }
 
-        /// Each fill or stroke paints the paths listed before it in its group,
-        /// including those of nested groups, as Lottie's renderer does.
         func draw(in context: CGContext, frame: Double, color: CGColor) {
             guard case let .group(items, transform) = self else { return }
             context.saveGState()
@@ -237,8 +224,6 @@ final class LibraryRailAnimation {
         }
     }
 
-    /// A static value or eased keyframes. Values between keyframes use the
-    /// keyframe's cubic timing curve; hold keyframes step.
     private struct Property<Value> {
         private struct Keyframe {
             let time: Double
@@ -286,7 +271,6 @@ final class LibraryRailAnimation {
             }
             return CGPoint(x: first("x") ?? fallback.x, y: first("y") ?? fallback.y)
         }
-        /// The y of the cubic (0,0)–c1–c2–(1,1) whose x is `t`.
         private static func ease(_ t: Double, _ c1: CGPoint, _ c2: CGPoint) -> Double {
             func bezier(_ s: Double, _ a: Double, _ b: Double) -> Double {
                 3 * (1 - s) * (1 - s) * s * a + 3 * (1 - s) * s * s * b + s * s * s
@@ -310,8 +294,6 @@ final class LibraryRailAnimation {
         }
     }
 
-    /// Lottie morphs shape keyframes vertex by vertex; both ends share a
-    /// vertex count in these files.
     fileprivate static func blend(_ a: CGPath, _ b: CGPath, _ t: Double) -> CGPath? {
         func elements(_ path: CGPath) -> [(CGPathElementType, [CGPoint])] {
             var result: [(CGPathElementType, [CGPoint])] = []

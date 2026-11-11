@@ -1,11 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// ImportFeature.BrowserSelection: a plain stack of browser cards in setup's
-/// 278 × 92 rows or the import window's 48-point rows. Nothing appears under a
-///
-/// view, so when the browsers outgrow the space the rows tighten instead. Only
-/// actual discovered source descriptors are admitted by the presentation owner.
 struct BrowserImportSourcePicker: View {
     struct Source: Identifiable {
         let id: String
@@ -15,7 +10,6 @@ struct BrowserImportSourcePicker: View {
         let selected: Bool
         let choose: () -> Void
     }
-    /// BrowserSelectionOption's last case: import nothing.
     struct Skip {
         let selected: Bool
         let choose: () -> Void
@@ -38,12 +32,9 @@ struct BrowserImportSourcePicker: View {
     var body: some View {
         ViewThatFits(in: .vertical) {
             ForEach(metrics.indices.dropLast(), id: \.self) { stack(metrics[$0]) }
-            // Past the tightest rows the stack scales down whole rather than scroll.
             BrowserImportScaledToFit { stack(metrics[metrics.count - 1]) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout == .setup ? .center : .top)
-        //
-        //
         .environment(\.colorScheme, layout == .setup ? .light : colorScheme)
         .disabled(!enabled)
         .accessibilityElement(children: .contain)
@@ -71,8 +62,6 @@ struct BrowserImportSourcePicker: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Original BrowserSource colors; discovery's app identity supplies the key.
-    /// Unknown Chromium-family sources keep a neutral background.
     static func iconBackground(bundleIdentifier: String?) -> NSColor {
         switch bundleIdentifier {
         case "com.google.Chrome": return NSColor(parcHex: "FFCBB0")
@@ -89,7 +78,6 @@ struct BrowserImportSourcePicker: View {
     }
 }
 
-/// Scales its content down uniformly to the offered height; never up.
 private struct BrowserImportScaledToFit<Content: View>: View {
     @ViewBuilder let content: () -> Content
     @State private var height: CGFloat = 0

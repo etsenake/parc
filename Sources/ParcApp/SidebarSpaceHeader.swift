@@ -1,33 +1,11 @@
 import AppKit
 import QuartzCore
 
-///
-///
-/// it above the tablist; geometry and visibility are
-/// `SidebarChromeLayout.SpaceHeader`, evidence in docs/sidebar-resize.md.
-///
-/// Built: the icon (only for a Space with a custom icon), the name field
-///
-/// single line, tail truncation, an untitled Space's "Space N" as its AppKit
-/// placeholder; identifier `sidebarSpaceName`, UITestContract case 16), the
-/// "…" edit button (`SidebarSpaceHeaderEditButton`, shown under the pointer)
-/// and the context menu (`menuForEvent:` → menuProvider), whose items here
-///
-///
-///
-///
-/// inline rename, icon picking and profile choice use the original Space owner.
-/// The drop target remains in the sidebar contract. See docs/space-management.md.
 @MainActor
 final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
     static let nameIdentifier = "sidebarSpaceName"
-    ///
     static let editButtonIdentifier = "sidebarSpaceEditButton"
 
-    ///
-    /// clear background, not editable or selectable, masking enabled.
-    /// Drawing a (clear) background keeps AppKit's alignment insets at 0, so
-    /// the frame is the stack's slot [C].
     let nameField = SidebarMaskedTextField()
     private let symbolView = NSImageView()
     private let emojiField = NSTextField(labelWithString: "")
@@ -40,9 +18,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
     func updateProfile(name: String?, menu: (() -> NSMenu?)?) {
         profileButton.isHidden = name == nil
         profileButton.title = name ?? ""
-        //
-        //
-        //
         profileButton.parcTooltip = name == nil ? nil : TooltipConfiguration(menu == nil ? "Current profile" : "Edit Space profile")
         profileButton.setAccessibilityLabel(name.map { "Profile: " + $0 } ?? "Profile")
         profileButton.cell?.setAccessibilityLabel(name.map { "Profile: " + $0 } ?? "Profile")
@@ -52,16 +27,12 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         needsLayout = true
     }
 
-    /// The private unpinned header replaces its title with the left-aligned
-    /// incognito indicator when the original application has multiple Profiles
-    ///
     func updateIncognitoIndicator(shown: Bool) {
         isPrivateUnpinnedHeader = true
         isIncognitoIndicator = shown
         nameField.isHidden = shown
         profileButton.isHidden = true
         incognitoIndicator.isHidden = !shown
-        // This header has no profile-menu provider; don't invent a destination.
         profileMenuProvider = nil
         needsLayout = true
     }
@@ -69,30 +40,12 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         profileMenuProvider?()?.popUp(positioning: nil, at: NSPoint(x: 0, y: profileButton.bounds.maxY), in: profileButton)
     }
 
-    ///
-    /// "ellipsis" symbol (accessibility description "") at 13 points
-    /// semibold, tinted GrayA11, aimed at `didClickEditButton:`, with no
-    /// label or tooltip of its own, so AppKit reads the symbol's own
-    /// description ("More" on this system) [C]. It is never hidden; alpha
-    /// and width hide it.
     let editButton = SidebarSpaceHeaderEditButton()
     private var editButtonWidth: CGFloat = 0
     private var dark = false
-    ///
-    /// ViewState displayHeaderButtonsWhenPossible, which is the window
-    /// layout's presentation being `.spaces` rather than `.home` [I].
-    /// SidebarView sets it for Parc's window layout, which has no `.home`
-    /// presentation.
     var canShowHeaderButtonsIfPossible = false {
         didSet { if canShowHeaderButtonsIfPossible != oldValue { updateEditButton(animated: false) } }
     }
-    ///
-    ///
-    /// Entering clears the image and titles the button "Done"; leaving
-    /// restores the ellipsis and an empty title; either re-evaluates the
-    ///
-    /// font for "Done", was not recovered, so the title keeps AppKit's
-    /// button font. The original Space rename session owns this state.
     var isEditing = false {
         didSet {
             guard isEditing != oldValue else { return }
@@ -106,13 +59,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
             updateEditButton(animated: true)
         }
     }
-    /// HoverableView.isHovered, from the header's own tracking area (options
-    /// 0x223: entered and exited, moved, active in the key window, in the
-    ///
-    /// the edit button on the main queue after
-    /// `SpaceHeader.editButtonHoverDelay`, animated while the header shows
-    ///
-    /// state of 0, which Parc always has).
     private(set) var isHovered = false {
         didSet {
             guard isHovered != oldValue else { return }
@@ -122,7 +68,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
             }
         }
     }
-    ///
     static var ellipsis: NSImage? {
         NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "")?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .semibold))
@@ -134,8 +79,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
     var onRenameSpace: (() -> Void)? { didSet { refreshActions() } }
     var onEditTheme: (() -> Void)? { didSet { refreshActions() } }
     var onNewFolder: (() -> Void)? { didSet { refreshActions() } }
-    /// Flips showSpaceHeaderOnSingleUnnamedSpaces; the menu offers it under
-    /// `toggleTitle` (SidebarChromeLayout.SpaceHeader.toggleTitle).
     var onToggleHeader: (() -> Void)? { didSet { refreshActions() } }
     private(set) var toggleTitle: String?
 
@@ -152,11 +95,7 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         nameField.isSelectable = false
         nameField.lineBreakMode = .byTruncatingTail
         nameField.font = .systemFont(ofSize: SidebarChromeLayout.SpaceHeader.fontSize, weight: .semibold)
-        //
-        // slot +0x70) to true.
         nameField.isMaskingEnabled = true
-        // AppKit exposes the field's cell as the static text, so the cell
-        // carries the identifier and actions too [C].
         nameField.setAccessibilityIdentifier(Self.nameIdentifier)
         nameField.cell?.setAccessibilityIdentifier(Self.nameIdentifier)
         symbolView.imageScaling = .scaleNone
@@ -168,10 +107,7 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
             view.isHidden = true
         }
         profileButton.isBordered = false
-        //
         profileButton.font = .systemFont(ofSize: 11, weight: .medium)
-        //
-        // system Profile glyph while retaining the recovered full-size label.
         profileButton.image = NSImage(systemSymbolName: "person.crop.circle", accessibilityDescription: nil)
         profileButton.symbolConfiguration = .init(pointSize: 11, weight: .medium)
         profileButton.lineBreakMode = .byTruncatingTail
@@ -182,29 +118,18 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         editButton.image = Self.ellipsis
         editButton.target = self
         editButton.action = #selector(didClickEditButton(_:))
-        // AppKit exposes the button's cell as the AXButton, so the cell
-        // carries the identifier too [C].
         editButton.setAccessibilityIdentifier(Self.editButtonIdentifier)
         editButton.cell?.setAccessibilityIdentifier(Self.editButtonIdentifier)
-        // Parc's choice: no keyboard stop, since only the pointer reveals
-        // the button; the name's custom actions carry the same menu.
         editButton.refusesFirstResponder = true
         incognitoIndicator.isHidden = true
         for view in [symbolView, emojiField, nameField, profileButton, incognitoIndicator, editButton] as [NSView] { addSubview(view) }
         addTrackingArea(NSTrackingArea(rect: .zero, options: SidebarSpaceHeaderEditButton.trackingOptions, owner: self))
-        // The header takes their clicks, so it answers their cursor updates too.
         symbolView.addCursorUpdateArea(owner: self); emojiField.addCursorUpdateArea(owner: self)
         applyStyle(dark: false, tint: nil)
         updateEditButton(animated: false)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    /// The decision from `SidebarChromeLayout.SpaceHeader.content` and the
-    /// Space's custom icon, a symbol image or an emoji; neither hides the
-    ///
-    ///
-    ///
-    /// setPlaceholderString:).
     func update(_ content: SidebarChromeLayout.SpaceHeader.Content, symbol: NSImage?, emoji: String?) {
         if !isEditing, nameField.stringValue != content.title { nameField.stringValue = content.title }
         if nameField.placeholderString != content.placeholder { nameField.placeholderString = content.placeholder }
@@ -215,19 +140,9 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         symbolView.isHidden = symbolView.image == nil
         emojiField.isHidden = emoji == nil
         let icon = !symbolView.isHidden || !emojiField.isHidden
-        //
         if icon != showsIcon { showsIcon = icon; needsLayout = true; updateEditButton(animated: false) }
     }
 
-    ///
-    /// BaseAssets: sRGB black or white at 0.45). The icon takes the header's
-    /// tint, ViewState headerTintColor, else ForegroundTertiary (black or
-    ///
-    /// effective appearance, as in the dock. The header and the Space menu it
-    ///
-    ///
-    /// 1.170's catalog: sRGB black at 0.565, white at 0.592) and its hover
-    /// fills with GrayA4 (`SidebarRowAppearance.controlFill`).
     func applyStyle(dark: Bool, tint: NSColor?) {
         self.dark = dark
         profileButton.dark = dark
@@ -239,14 +154,10 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         editButton.hoveredBackgroundColor = editButtonHoverFill
     }
 
-    ///
     private var editButtonHoverFill: NSColor {
         isEditing ? .clear : SidebarRowAppearance.controlFill(pressed: false, dark: dark)
     }
 
-    ///
-    ///
-    ///
     private func updateEditButton(animated: Bool) {
         typealias H = SidebarChromeLayout.SpaceHeader
         let shown = H.showsEditButton(editing: isEditing, hovered: isHovered, canShowHeaderButtons: canShowHeaderButtonsIfPossible)
@@ -271,10 +182,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         let frames = SidebarChromeLayout.SpaceHeader.frames(width: bounds.width, icon: showsIcon,
                                                             titleHeight: nameField.intrinsicContentSize.height,
                                                             editButtonWidth: editButtonWidth)
-        //
-        // then applies top 8 / bottom 2 / right 8 insets and a 14-point
-        // leading inset, reduced by 3.5 for the incognito indicator
-        //
         let titleFrame: NSRect
         if isPrivateUnpinnedHeader {
             let leading: CGFloat = isIncognitoIndicator ? 10.5 : 14
@@ -303,9 +210,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
 
     override func mouseEntered(with event: NSEvent) { isHovered = true }
     override func mouseExited(with event: NSEvent) { isHovered = false }
-    // Parc adaptations, as in the dock strip: a hidden view gets no
-    // mouseExited, and resigning key clears the hover the key-window
-    // tracking areas set.
     override func viewDidHide() { super.viewDidHide(); clearHover() }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
@@ -315,11 +219,8 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
         clearHover()
     }
     @objc private func windowDidResignKey(_ notification: Notification) { clearHover() }
-    /// Also when its page leaves the screen with the pointer over it.
     func clearHover() { isHovered = false; editButton.clearHover() }
 
-    ///
-    /// `menuForEvent:`); of its subviews only the edit button is a control.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let hit = super.hitTest(point) else { return nil }
         if hit === editButton || hit === profileButton || isEditing && (hit === nameField || hit.isDescendant(of: nameField)) { return hit }
@@ -351,9 +252,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
     func cancelNameEditing() { finishNameEditing(cancelled: true) }
     private func finishNameEditing(cancelled: Bool) {
         guard isEditing else { return }
-        // Done must not discard an in-progress input-method composition. The
-        // field editor owns that text until it commits; external cancellation
-        // still ends the original session without saving its draft.
         if !cancelled, (nameField.currentEditor() as? NSTextView)?.hasMarkedText() == true { return }
         let result = cancelled ? nil : nameField.stringValue
         let completion = renameFinished; renameFinished = nil
@@ -370,18 +268,12 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
     }
     override func menu(for event: NSEvent) -> NSMenu? { makeMenu() }
 
-    ///
-    /// ends the rename (`makeFirstResponder(nil)`); otherwise it pops the
-    /// Space context menu, the one right-click shows, up at the button for
-    /// the current event, with NSMenu.popUpContextMenu(_:with:for:).
     @objc private func didClickEditButton(_ sender: Any?) {
         if isEditing { finishNameEditing(cancelled: false); return }
         guard let event = NSApp.currentEvent else { return }
         NSMenu.popUpContextMenu(makeMenu(), with: event, for: editButton)
     }
 
-    ///
-    /// items) for the header's Space.
     func makeMenu() -> NSMenu { spaceMenu?.makeMenu() ?? NSMenu() }
 
     private var spaceMenu: SidebarSpaceMenu? {
@@ -390,8 +282,6 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
                          toggleTitle: toggleTitle, toggleHeader: onToggleHeader)
     }
 
-    /// The menu's actions on the name element, so VoiceOver reaches them
-    /// without the pointer.
     private func refreshActions() {
         let custom = spaceMenu?.accessibilityActions ?? []
         nameField.setAccessibilityCustomActions(custom)
@@ -399,20 +289,10 @@ final class SidebarSpaceHeaderView: NSView, NSTextFieldDelegate {
     }
 }
 
-///
-///
-///
-/// momentary change, borderless, its own tracking area (entered and exited,
-/// moved, active in the key window, in the visible rect), corner radius 6
-///
-/// the layer with `hoveredBackgroundColor` while hovered (or forced) and
-/// enabled, else with its clear `backgroundColor`. No pressed fill, and no
-/// animation of the fill, was found.
 @MainActor
 final class SidebarSpaceHeaderEditButton: PointingHandButton {
     static let trackingOptions: NSTrackingArea.Options = [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect]
     static let cornerRadius: CGFloat = 6
-    ///
     var hoveredBackgroundColor: NSColor = .clear { didSet { needsDisplay = true } }
     private(set) var isHovered = false { didSet { if isHovered != oldValue { needsDisplay = true } } }
 
@@ -429,7 +309,6 @@ final class SidebarSpaceHeaderEditButton: PointingHandButton {
 
     override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
 
-    // Not passed on: the header follows its own tracking area, not the button's.
     override func mouseEntered(with event: NSEvent) { isHovered = true }
     override func mouseExited(with event: NSEvent) { isHovered = false }
     func clearHover() { isHovered = false }
@@ -447,18 +326,11 @@ final class SidebarSpaceHeaderEditButton: PointingHandButton {
 extension SidebarChromeLayout.SpaceHeader {
     struct Content: Equatable {
         var isShown: Bool
-        /// The field's text: the Space's title, or empty while untitled.
         var title: String
-        ///
         var placeholder: String?
-        /// The menu's Show/Hide Space Header title when the menu offers it.
         var toggleTitle: String?
     }
 
-    /// What the header shows for a window's Spaces: its visibility, the
-    /// field's text and placeholder, and the menu's header toggle. A Space
-    /// with no authored title is untitled. A window without the active Space
-    /// shows no header.
     static func content(spaces: [BrowserSpace], activeSpaceID: UUID?, privateWindow: Bool,
                         showOnSingleUnnamedSpace: Bool) -> Content {
         guard let position = spaces.firstIndex(where: { $0.id == activeSpaceID }) else {
@@ -476,19 +348,6 @@ extension SidebarChromeLayout.SpaceHeader {
     }
 }
 
-///
-/// leadingMask, shouldDisableWritingTools): a text field that fades its
-/// leading 16 points while its text runs past an edge. `leadingMask`
-///
-///
-/// locations [0, 16 / width] without implicit animation. The mask applies
-///
-/// text, and either its field editor is scrolled (visibleRect.minX > 0) or,
-/// not editing, the text does not fit (a non-zero expansion frame); it is
-///
-/// for its original-Space rename session.
-/// shouldDisableWritingTools (slot +0x88, also set by the header) only
-/// configures a field editor and is not built.
 @MainActor
 final class SidebarMaskedTextField: NSTextField {
     static let rampWidth: CGFloat = 16
@@ -499,13 +358,10 @@ final class SidebarMaskedTextField: NSTextField {
         layer.endPoint = CGPoint(x: 1, y: 0.5)
         return layer
     }()
-    ///
-    /// installed" as its input.
     var isMaskingEnabled = false { didSet { updateMask(layer?.mask != nil) } }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        // The sidebar is layer-backed; the mask needs the field's own layer.
         wantsLayer = true
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -544,9 +400,6 @@ final class SidebarMaskedTextField: NSTextField {
     }
 }
 
-/// The full Profile indicator's native button adapter. The recovered label is
-/// 11-point medium, with 4/2 padding and a 6-point background shape. Native
-/// mouse/keyboard/AX activation retains the original menu owner.
 @MainActor final class SpaceProfileIndicatorButton: PointingHandButton {
     var dark = false { didSet { needsDisplay = true } }
     private var hover = false { didSet { needsDisplay = true } }
@@ -572,8 +425,6 @@ final class SidebarMaskedTextField: NSTextField {
     }
 }
 
-/// The private header's indicator has no menu callback; expose one passive
-/// text element instead of an enabled control with no destination.
 @MainActor final class IncognitoProfileIndicatorView: NSView {
     private let icon = NSImageView()
     private let label = NSTextField(labelWithString: "Incognito")
@@ -596,9 +447,6 @@ final class SidebarMaskedTextField: NSTextField {
         applyColor()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    //
-    // vertical padding around a 2-point-spaced HStack. The symbol is centered
-    //
     override var intrinsicContentSize: NSSize {
         NSSize(width: 5 + 20 + 2 + label.intrinsicContentSize.width + 6,
                height: max(11, label.intrinsicContentSize.height) + 8)
@@ -623,7 +471,6 @@ final class SidebarMaskedTextField: NSTextField {
     private func applyColor() {
         let color = NSColor(white: dark ? 1 : 0, alpha: 0.3)
         icon.contentTintColor = color; label.textColor = color
-        //
         layer?.backgroundColor = NSColor(srgbRed: dark ? 0.11 : 0.973,
                                          green: dark ? 0.11 : 0.973,
                                          blue: dark ? 0.11 : 0.973, alpha: 0.3).cgColor

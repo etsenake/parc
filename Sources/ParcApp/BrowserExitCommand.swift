@@ -1,7 +1,5 @@
 import AppKit
 
-/// A contextual Exit keeps its original modal/fullscreen target. Dismissal of
-/// the command panel cannot substitute a newly selected page or another window.
 @MainActor final class BrowserExitCommand {
     private weak var window: NSWindow?
     private let targetIsAvailable: () -> Bool

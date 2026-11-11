@@ -1,8 +1,6 @@
 import Foundation
 
 extension CommandBarRanking {
-    ///
-    /// matched on its own) and its candidate bump at `CommandBarMenuItemInfo.bumpWeight`.
     static func commandCandidate(key: String, texts: [String], menuCommandID: String? = nil, menuText: String? = nil,
                                  typed: CommandBarTypedCommand? = nil) -> Candidate {
         var texts = texts

@@ -1,8 +1,6 @@
 import AppKit
 import Combine
 
-/// Process-owned removal survives the Settings sheet and publishes model removal
-/// only after the native owner reports real destruction/data cleanup.
 @MainActor
 final class ProfileRemovalController: ObservableObject {
     static let shared = ProfileRemovalController()
@@ -26,8 +24,6 @@ final class ProfileRemovalController: ObservableObject {
 
     func status(for profileID: UUID) -> Progress? { progress[profileID] }
 
-    /// Hands a stopped removal's failure to exactly one presenter, however many
-    /// Settings windows observe the controller.
     func claimFailure(for profileID: UUID) -> Progress? {
         guard let status = progress[profileID], !status.running, status.error != nil, !status.reported else { return nil }
         progress[profileID]?.reported = true
@@ -46,9 +42,6 @@ final class ProfileRemovalController: ObservableObject {
         } catch { set(profileID, message: error.localizedDescription, running: false, canCancel: true, error: error) }
     }
 
-    /// A retry retains the sheet's original IDs/names, skips actual completed
-    /// removals and recovers existing journals instead of creating new leases.
-    /// Native operations are already keyed by exact profile path.
     func removeUnusedProfiles(_ profiles: [BrowserProfile]) throws {
         guard let store else { throw ProfileRemovalError.unavailable }
         guard !profiles.isEmpty, Set(profiles.map(\.id)).count == profiles.count else {
@@ -67,8 +60,6 @@ final class ProfileRemovalController: ObservableObject {
                 newProfiles.append(expected)
             }
         }
-        // Every new target is validated and staged before any native side
-        // effect. Recovery still owns its original committed record.
         let records = newProfiles.isEmpty ? [] : try store.stageUnusedProfileRemovals(newProfiles)
         for record in recovering { recover(record) }
         for record in records { prepare(record) }
@@ -91,8 +82,6 @@ final class ProfileRemovalController: ObservableObject {
             progress.removeValue(forKey: profileID); revision &+= 1; return
         }
         cancelling.insert(record.id)
-        // A preparation callback can still be outstanding; it owns the final
-        // cancellation so its native reservation cannot outlive the app record.
         if let lease = leases.removeValue(forKey: record.id) {
             lease.cancel()
             cancelPrepared(record)
@@ -103,8 +92,6 @@ final class ProfileRemovalController: ObservableObject {
         guard let store else { lease?.cancel(); return }
         let nativeError = error as NSError?
         if lease == nil, nativeError?.domain == "ParcProfileRemoval", nativeError?.code == 6 {
-            // Even a queued Cancel cannot override a native journal that has
-            // already crossed commit. Recover without releasing app metadata.
             cancelling.remove(record.id)
             set(record.profileID, message: "Recovering this profile’s removal…", running: false, canCancel: false)
             recover(record)
@@ -161,8 +148,6 @@ final class ProfileRemovalController: ObservableObject {
                     running: false, canCancel: false, error: error)
             }
         case .failed:
-            // Native .failed guarantees it did not cross its irreversible
-            // boundary. It is safe to release the app's pending record.
             failedBeforeCommit(record, error: error ?? ProfileRemovalError.unavailable)
         case .pending:
             set(record.profileID, message: error?.localizedDescription ?? "Removal is incomplete. Retry to finish this profile’s cleanup.",

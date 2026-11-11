@@ -1,7 +1,5 @@
 import AppKit
 
-/// The first-launch Safari step belongs to NewSetupView's existing card. Its
-/// right column is a passive System Settings illustration, not a permission UI.
 @MainActor
 final class OnboardingSafariAccessView: NSView {
     let actions = LayoutView()
@@ -47,22 +45,16 @@ final class OnboardingSafariAccessView: NSView {
         revealApplication.isEnabled = !restarting
         restart.isEnabled = ready && !checking && !continuing && !restarting && restartAvailable
         restart.title = restarting ? "Restarting…" : "Restart Parc"
-        // The buttons and Next's spinner show progress; only a problem needs words.
         status.stringValue = error ?? ""
         status.textColor = OnboardingSetupPalette.title
     }
 
     override func layout() {
         super.layout()
-        // Original importFromSafari branch: resizable illustration, top48,
-        // top-aligned in the entire right column. It is not the 384×430 list.
         illustration.frame = NSRect(x: 0, y: 48, width: bounds.width, height: max(0, bounds.height - 48))
     }
 }
 
-/// Source-owned reconstruction of the reference SystemPreferencesVentura
-///
-///
 @MainActor
 private final class OnboardingSafariAccessIllustration: NSView {
     private let parcIcon: NSImage? = Bundle.main.url(forResource: "Original", withExtension: "png", subdirectory: "AppIcons")
@@ -148,7 +140,6 @@ private final class OnboardingSafariAccessIllustration: NSView {
             box(NSRect(x: 910, y: y + 3, width: 19, height: 19), .white, radius: 10)
         }
         text("+  −", NSRect(x: 356, y: 503, width: 80, height: 28), size: 24, color: .gray)
-        // The asset's dashed guide and callout are outside the Settings window.
         context.resetClip()
         let line = NSBezierPath(); line.move(to: NSPoint(x: 364, y: 546)); line.line(to: NSPoint(x: 364, y: 914))
         line.lineWidth = 4; line.lineCapStyle = .round; line.setLineDash([8, 12], count: 2, phase: 0)

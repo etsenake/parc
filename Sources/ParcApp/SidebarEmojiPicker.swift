@@ -1,8 +1,6 @@
 import AppKit
 import CoreText
 
-///
-///
 struct SidebarEmojiModel {
     struct Emoji: Equatable {
         let emoji: String
@@ -11,19 +9,13 @@ struct SidebarEmojiModel {
         let category: Int
         let supportsSkinTones: Bool
     }
-    /// `Emojis.Emojis.Category` order; each keeps its Feather glyph from
-    ///
     static let categories: [(name: String, glyph: UInt32)] = [
         ("Smileys & People", 0xE9DE), ("Animals & Nature", 0xE9E3), ("Food & Drink", 0xE943), ("Activities", 0xE919),
         ("Travel & Places", 0xE9F6), ("Objects", 0xE971), ("Symbols", 0xE97D), ("Flags", 0xE96B)]
-    ///
     private static let categoryNames = ["smileys & emotion": 0, "people & body": 0, "animals & nature": 1,
         "food & drink": 2, "activities": 3, "travel & places": 4, "objects": 5, "symbols": 6, "flags": 7]
 
-    /// Flat grid order: categories in case order, entries in file order
-    ///
     let emojis: [Emoji]
-    /// The first entry of each of the eight categories, if any remain.
     let categoryStarts: [Int?]
 
     init(_ entries: [Emoji]) {
@@ -35,8 +27,6 @@ struct SidebarEmojiModel {
         emojis = flat; categoryStarts = starts
     }
 
-    /// Loaded once. A missing file or any undecodable entry yields an empty
-    ///
     static let shared: SidebarEmojiModel = {
         guard let url = SidebarIconCatalog.resourceDirectory?.appendingPathComponent("emojis.json"),
               let data = try? Data(contentsOf: url),
@@ -47,8 +37,6 @@ struct SidebarEmojiModel {
             guard let emoji = item["emoji"] as? String, emoji.count == 1,
                   let description = item["description"] as? String,
                   let category = (item["category"] as? String).flatMap({ categoryNames[$0.lowercased()] }) else { return SidebarEmojiModel([]) }
-            //
-            // glyph in Apple Color Emoji; no OS-version table is consulted.
             let units = Array(emoji.utf16)
             var glyphs = [CGGlyph](repeating: 0, count: units.count)
             guard CTFontGetGlyphsForCharacters(font, units, &glyphs, units.count) else { continue }
@@ -58,10 +46,6 @@ struct SidebarEmojiModel {
         return SidebarEmojiModel(entries)
     }()
 
-    ///
-    /// escaped, matched case-insensitively against the description or any
-    /// keyword; the query containing the emoji itself also matches. An empty
-    /// query keeps everything. Order is preserved.
     func filtered(_ query: String) -> SidebarEmojiModel {
         guard !query.isEmpty else { return self }
         let pattern = ".*" + query.replacingOccurrences(of: " ", with: ".*") + ".*"
@@ -73,10 +57,7 @@ struct SidebarEmojiModel {
         return SidebarEmojiModel(emojis.filter { matches($0.description) || $0.keywords.contains(where: matches) || query.contains($0.emoji) })
     }
 
-    ///
     static let skinToneModifiers = ["", "\u{1F3FB}", "\u{1F3FC}", "\u{1F3FD}", "\u{1F3FE}", "\u{1F3FF}"]
-    ///
-    /// after the first scalar; anything else returns the base unchanged.
     static func applying(_ modifier: String, to base: String) -> String {
         let scalars = Array(modifier.unicodeScalars)
         guard scalars.count == 1, (0x1F3FB...0x1F3FF).contains(scalars[0].value) else { return base }
@@ -86,20 +67,15 @@ struct SidebarEmojiModel {
         return String(view)
     }
     static func variants(of base: String) -> [String] { skinToneModifiers.map { applying($0, to: base) } }
-    ///
     static let skinToneExclusions: Set<String> = ["🧑‍🤝‍🧑", "👭", "👫", "👬", "💏", "👩‍❤️‍💋‍👨", "👨‍❤️‍💋‍👨",
         "👩‍❤️‍💋‍👩", "💑", "👩‍❤️‍👨", "👨‍❤️‍👨", "👩‍❤️‍👩"]
 
-    ///
-    /// a toned choice marks its base cell.
     func index(containing selected: String?) -> Int? {
         guard let selected else { return nil }
         return emojis.firstIndex { Self.variants(of: $0.emoji).contains(selected) }
     }
 }
 
-///
-/// flow-layout grid and a bottom category bar. AppKit owns keyboard and AX.
 @MainActor
 final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollectionViewDelegateFlowLayout, NSSearchFieldDelegate {
     var onEmojiSelected: ((String) -> Void)?
@@ -127,13 +103,9 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
         model = .shared
         super.init(frame: .zero)
         currentIndex = model.index(containing: selectedEmoji)
-        //
-        // background. No placeholder until the text first changes.
         searchField.font = .systemFont(ofSize: 13)
         searchField.backgroundColor = .clear
         searchField.delegate = self
-        //
-        // one section, selectable; the scroll view keeps no scroller.
         collectionView.collectionViewLayout = NSCollectionViewFlowLayout()
         collectionView.isSelectable = true
         collectionView.dataSource = self; collectionView.delegate = self
@@ -163,7 +135,6 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
             categoryBar.topAnchor.constraint(equalTo: scrollView.bottomAnchor),
             categoryBar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 7), barTrailing, barBottom])
-        //
         liveScrollObserver = NotificationCenter.default.addObserver(forName: NSScrollView.didLiveScrollNotification, object: scrollView, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.closeSkinToneIfScrolledAway() }
         }
@@ -174,7 +145,6 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
     }
 
     override var wantsUpdateLayer: Bool { true }
-    ///
     override func updateLayer() {
         scrollView.drawsBackground = false
         collectionView.backgroundColors = [.clear]
@@ -184,16 +154,10 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
         scrollToSelected()
     }
 
-    // MARK: Search
-
-    ///
-    /// only once the text has been emptied; every change feeds the query.
     func controlTextDidChange(_ notification: Notification) {
         searchField.placeholderString = searchField.stringValue.isEmpty ? "Search" : nil
         submit(searchField.stringValue)
     }
-    /// removeDuplicates, then a 0.2-second debounce before filtering
-    ///
     func submit(_ query: String) {
         guard query != pendingQuery ?? lastQuery else { return }
         pendingQuery = query
@@ -209,8 +173,6 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
         model = SidebarEmojiModel.shared.filtered(query)
     }
 
-    // MARK: Grid
-
     func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int { model.emojis.count }
     func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
         let item = collectionView.makeItem(withIdentifier: SidebarEmojiItem.identifier, for: indexPath)
@@ -220,8 +182,6 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
         }
         return item
     }
-    /// 24 + 4 = 28-point cells, ten-point side insets, line spacing 5 and
-    ///
     func collectionView(_ collectionView: NSCollectionView, layout collectionViewLayout: NSCollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> NSSize {
         NSSize(width: SidebarIconPickerMetrics.emojiDimension + SidebarIconPickerMetrics.horizontalPadding,
                height: SidebarIconPickerMetrics.emojiDimension + SidebarIconPickerMetrics.horizontalPadding)
@@ -232,8 +192,6 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
     func collectionView(_ collectionView: NSCollectionView, layout collectionViewLayout: NSCollectionViewLayout, minimumLineSpacingForSectionAt section: Int) -> CGFloat { 5 }
     func collectionView(_ collectionView: NSCollectionView, layout collectionViewLayout: NSCollectionViewLayout, minimumInteritemSpacingForSectionAt section: Int) -> CGFloat { 2 }
 
-    ///
-    /// picker; any other selects at once. The grid's own selection is cleared.
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
         closeSkinTone()
         for indexPath in indexPaths where model.emojis.indices.contains(indexPath.item) {
@@ -248,7 +206,6 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
         collectionView.reloadItems(at: indexPaths)
     }
 
-    ///
     func select(_ emoji: String, at index: Int) {
         selectedEmoji = emoji
         onEmojiSelected?(emoji)
@@ -261,8 +218,6 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
         if !changed.isEmpty { collectionView.reloadItems(at: Set(changed.map { IndexPath(item: $0, section: 0) })) }
     }
 
-    ///
-    /// otherwise an offscreen current cell scrolls to the top.
     func scrollToSelected() {
         guard window != nil, let index = currentIndex else { collectionView.deselectAll(nil); return }
         layoutSubtreeIfNeeded()
@@ -272,15 +227,11 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
         }
     }
 
-    ///
     @objc func scrollToCategory(_ sender: NSButton) {
         guard model.categoryStarts.indices.contains(sender.tag), let index = model.categoryStarts[sender.tag] else { return }
         collectionView.scrollToItems(at: [IndexPath(item: index, section: 0)], scrollPosition: .top)
     }
 
-    // MARK: Skin tones
-
-    ///
     private func showSkinTones(for emoji: String, at index: Int) {
         let picker = SidebarSkinToneViewController(variants: SidebarEmojiModel.variants(of: emoji))
         picker.onPick = { [weak self] value in
@@ -306,14 +257,11 @@ final class SidebarEmojiPickerView: NSView, NSCollectionViewDataSource, NSCollec
     }
 }
 
-/// `EmojiStackView`: equal-width category buttons along the bottom with a
-/// hairline top border.
 @MainActor
 final class SidebarEmojiCategoryBar: NSStackView {
     private let topBorder = CALayer()
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        //
         orientation = .horizontal; spacing = 2
         edgeInsets = NSEdgeInsets(top: 5, left: 2, bottom: 0, right: 2)
         alignment = .bottom; distribution = .fillEqually
@@ -322,8 +270,6 @@ final class SidebarEmojiCategoryBar: NSStackView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override var wantsUpdateLayer: Bool { true }
-    ///
-    /// at 0.25 (sRGB black or white at 0.25).
     override func updateLayer() {
         let height = 1 / (window?.backingScaleFactor ?? 1)
         let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -335,8 +281,6 @@ final class SidebarEmojiCategoryBar: NSStackView {
     }
     override func layout() { super.layout(); needsDisplay = true }
 
-    ///
-    /// ForegroundSecondary for the application's appearance (`.sourceIn`).
     static func glyph(_ code: UInt32) -> NSImage {
         let glyph = SidebarIconCatalog.featherImage(code, size: 14)
         let dark = NSApp?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -349,8 +293,6 @@ final class SidebarEmojiCategoryBar: NSStackView {
     }
 }
 
-///
-/// hovered background (GrayA4 unless overridden), clear otherwise.
 @MainActor
 final class SidebarPickerHoverButton: PointingHandButton {
     var contentInsets = NSEdgeInsets() { didSet { invalidateIntrinsicContentSize() } }
@@ -389,14 +331,12 @@ final class SidebarPickerHoverButton: PointingHandButton {
     }
 }
 
-/// `EmojiCollectionViewItem` with its `EmojiCollectionItemView`.
 @MainActor
 final class SidebarEmojiItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("EmojiCollectionViewItem")
     private let emojiImageView = FirstMouseImageView()
     var emojiType: String? {
         didSet {
-            //
             guard emojiType != oldValue else { return }
             emojiImageView.image = emojiType.map { SidebarIconCatalog.emojiImage($0, size: 17) }
             emojiImageView.setAccessibilityLabel(emojiType)
@@ -422,8 +362,6 @@ final class SidebarEmojiItem: NSCollectionViewItem {
     }
 }
 
-///
-/// SidebarItemBackground while hovered, else clear; radius 5, no animation.
 @MainActor
 final class SidebarEmojiItemView: NSView {
     var isCurrent = false { didSet { needsDisplay = true } }
@@ -431,7 +369,6 @@ final class SidebarEmojiItemView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        // Tracking options 0x281: entered/exited, always active, visible rect.
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -448,8 +385,6 @@ final class SidebarEmojiItemView: NSView {
     }
 }
 
-///
-/// six 28-point buttons, four points apart, centered.
 @MainActor
 final class SidebarSkinToneViewController: NSViewController {
     static let size = NSSize(width: 198, height: 38)
@@ -475,7 +410,6 @@ final class SidebarSkinToneViewController: NSViewController {
         NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: root.centerXAnchor), stack.centerYAnchor.constraint(equalTo: root.centerYAnchor)])
         view = root
     }
-    ///
     override func viewDidAppear() { super.viewDidAppear(); view.window?.makeKeyAndOrderFront(view) }
     @objc private func picked(_ sender: NSButton) { onPick?(sender.title) }
 }

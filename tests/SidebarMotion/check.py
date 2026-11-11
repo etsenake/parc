@@ -46,7 +46,6 @@ for use in ("        libraryView = view\n        libraryContentWidth = view.cont
             "        layoutChrome()\n",
             "        if sidebarMotionLayoutKey != layoutKey {\n"
             "            sidebarPreviews?.dismiss()\n"
-            "            // The settled group's completion would have flushed the page.\n"
             "            if libraryMotion.isAnimating {\n"
             "                libraryMotion.cancel(); pageHost.needsLayout = true; extensionSidePanel.needsLayout = true\n",
             "        settleSidebarMotion()\n        libraryMotion.cancel()\n",
