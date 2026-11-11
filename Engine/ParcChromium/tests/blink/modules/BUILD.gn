@@ -1,0 +1,44 @@
+# Installed at //third_party/blink/renderer/modules/parc_tests.
+
+assert(is_mac)
+
+source_set("unit_tests") {
+  visibility = [ "//third_party/blink/renderer/modules:*" ]
+  testonly = true
+  sources = [ "media_controls_impl_test.cc" ]
+
+  configs += [
+    "//third_party/blink/renderer:config",
+    "//third_party/blink/renderer:inside_blink",
+    "//third_party/blink/renderer/core:blink_core_pch",
+  ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//cc",
+    "//components/viz/test:test_support",
+    "//gpu/command_buffer/client",
+    "//gpu/command_buffer/client:test_support",
+    "//media",
+    "//media/gpu",
+    "//media/gfx:test_support",
+    "//media:test_support",
+    "//media/video:test_support",
+    "//mojo/public/cpp/bindings",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/blink/public:blink",
+    "//third_party/blink/public:blink_headers",
+    "//third_party/blink/public:test_headers",
+    "//third_party/blink/renderer/controller:blink_bindings_test_sources",
+    "//third_party/blink/renderer/core",
+    "//third_party/blink/renderer/core:testing",
+    "//third_party/blink/renderer/core:unit_test_support",
+    "//third_party/blink/renderer/modules",
+    "//third_party/blink/renderer/platform",
+    "//third_party/blink/renderer/platform:test_support",
+    "//third_party/blink/renderer/platform/wtf",
+    "//ui/gfx",
+  ]
+}

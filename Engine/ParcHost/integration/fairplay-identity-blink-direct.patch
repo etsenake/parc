@@ -3480,7 +3480,7 @@
    // Timers used to schedule one-shot tasks with no delay.
    HeapTaskRunnerTimer<HTMLMediaElement> load_timer_;
    HeapTaskRunnerTimer<HTMLMediaElement> audio_tracks_timer_;
-@@ -1079,12 +1116,15 @@
+@@ -1079,12 +1116,16 @@
    Member<Document> opener_document_;
    Member<OpenerContextObserver> opener_context_observer_;
 -
@@ -3492,6 +3492,7 @@
    friend class Internals;
    friend class TrackDisplayUpdateScope;
    friend class MediaControlsImplTest;
++  friend class ParcMediaControlsImplTest;
    friend class HTMLMediaElementTest;
 +  friend class ParcMediaElementTest;
    friend class HTMLMediaElementEventListenersTest;
@@ -4435,7 +4436,8 @@
  #include "media/mojo/mojom/webrtc_video_perf.mojom-blink.h"
  #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 @@ -150,6 +151,9 @@
- 
+-
++
      Member<ScriptPromiseResolverBase> resolver;
      Member<MediaKeySystemAccess> key_system_access;
 +    // Parc: the decoding query, so its result takes the asking document's
@@ -4468,13 +4470,15 @@
 +      bool power_efficient,
 +      const Vector<uint32_t>& sources);
 +  void ParcBindVideoToolbox(ExecutionContext*);
- 
+-
++
    ScriptPromise<MediaCapabilitiesDecodingInfo> GetEmeSupport(
        ScriptState*,
 @@ -265,6 +289,13 @@
    HeapMojoRemote<media::mojom::blink::WebrtcVideoPerfHistory>
        webrtc_history_service_;
- 
+-
++
 +  // Parc: VideoToolbox's decoder facts for Safari-identity documents, asked
 +  // of the browser once (ParcSafariDecodingInfo).
 +  HeapMojoRemote<media::mojom::blink::ParcVideoToolboxDecoding>
@@ -5831,6 +5835,18 @@
      "mediastream/browser_capture_media_stream_track_test.cc",
      "mediastream/html_media_track_element_media_track_test.cc",
      "mediastream/html_user_media_element_media_stream_test.cc",
+@@ -795,6 +797,10 @@
+     "//v8",
+   ]
+-
++
++  if (is_mac) {
++    deps += [ "//third_party/blink/renderer/modules/parc_tests:unit_tests" ]
++  }
++
+   # This uses target_os rather than current_os (which is what is_android is set
+   # from) for the case of generating the v8 context snapshot for android. When
+   # generating the snapshot for android, blink is compiled with
 --- a/third_party/blink/renderer/core/html/media/media_source_attachment.h
 +++ b/third_party/blink/renderer/core/html/media/media_source_attachment.h
 @@ -5,6 +5,7 @@
@@ -6593,407 +6609,6 @@
 +
    // Returns a subtitle for the overflow menu text, or a null String if there
    // should not be a subtitle.
---- a/third_party/blink/renderer/modules/media_controls/media_controls_impl_test.cc
-+++ b/third_party/blink/renderer/modules/media_controls/media_controls_impl_test.cc
-@@ -7,14 +7,20 @@
- #include <limits>
- #include <memory>
--
-+
-+#include "base/run_loop.h"
- #include "base/test/metrics/histogram_tester.h"
- #include "build/build_config.h"
- #include "testing/gtest/include/gtest/gtest.h"
- #include "third_party/blink/public/common/input/web_mouse_event.h"
-+#include "third_party/blink/public/mojom/frame/user_activation_notification_type.mojom-blink.h"
- #include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
-+#include "third_party/blink/public/platform/parc_web_media_player_extension.h"
-+#include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
-+#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
- #include "third_party/blink/renderer/bindings/core/v8/v8_gc_controller.h"
- #include "third_party/blink/renderer/bindings/core/v8/v8_mouse_event_init.h"
- #include "third_party/blink/renderer/bindings/core/v8/v8_pointer_event_init.h"
-+#include "third_party/blink/renderer/bindings/modules/v8/v8_remote_playback_state.h"
- #include "third_party/blink/renderer/core/css/css_property_value_set.h"
- #include "third_party/blink/renderer/core/css/document_style_environment_variables.h"
- #include "third_party/blink/renderer/core/css/style_engine.h"
-@@ -31,6 +37,8 @@
- #include "third_party/blink/renderer/core/html/html_head_element.h"
- #include "third_party/blink/renderer/core/html/media/html_media_element.h"
- #include "third_party/blink/renderer/core/html/media/html_video_element.h"
-+#include "third_party/blink/renderer/core/html/media/parc_media_element_air_play.h"
-+#include "third_party/blink/renderer/core/html/media/parc_media_element_names.h"
- #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
- #include "third_party/blink/renderer/core/html/track/text_track.h"
- #include "third_party/blink/renderer/core/html/track/vtt/vtt_cue.h"
-@@ -55,6 +63,7 @@
- #include "third_party/blink/renderer/modules/media_controls/elements/media_control_timeline_element.h"
- #include "third_party/blink/renderer/modules/media_controls/elements/media_control_volume_slider_element.h"
- #include "third_party/blink/renderer/modules/remoteplayback/remote_playback.h"
-+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
- #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
- #include "third_party/blink/renderer/platform/heap/thread_state.h"
- #include "third_party/blink/renderer/platform/media/remote_playback_client.h"
-@@ -90,14 +99,27 @@
-   display::ScreenInfo screen_info_;
- };
--
-+
--class MockWebMediaPlayerForImpl : public EmptyWebMediaPlayer {
-+class MockWebMediaPlayerForImpl : public EmptyWebMediaPlayer,
-+                                  public ParcWebMediaPlayerExtension {
-  public:
-   // WebMediaPlayer overrides:
-   WebTimeRanges Seekable() const override { return seekable_; }
-   bool HasVideo() const override { return true; }
-   bool HasAudio() const override { return has_audio_; }
-+  ParcWebMediaPlayerExtension* GetParcExtension() override { return this; }
-+
-+  // ParcWebMediaPlayerExtension overrides:
-+  bool ParcSupportsPlaybackTarget() const override {
-+    return parc_supports_playback_target_;
-+  }
-+  void ParcFastSeek(double seconds, double tolerance_before) override {
-+    Seek(seconds);
-+  }
-+  void ParcEnabledAudioTracksChanged(
-+      const std::vector<TrackId>& enabled_track_ids) override {}
--
-+
-   bool has_audio_ = false;
-+  bool parc_supports_playback_target_ = false;
-   WebTimeRanges seekable_;
- };
--
-+
-@@ -114,6 +136,27 @@
-       HTMLMediaElement& element) override {
-     return &RemotePlayback::From(element);
-   }
-+};
-+
-+// Parc: a Safari-identity page whose players play to AirPlay targets, as
-+// the native HLS player does.
-+class StubSafariLocalFrameClientForImpl : public StubLocalFrameClientForImpl {
-+ public:
-+  explicit StubSafariLocalFrameClientForImpl(const char* user_agent)
-+      : user_agent_(user_agent) {}
-+
-+  std::unique_ptr<WebMediaPlayer> CreateWebMediaPlayer(
-+      HTMLMediaElement& element,
-+      const WebMediaPlayerSource& source,
-+      WebMediaPlayerClient* client) override {
-+    auto player = std::make_unique<MockWebMediaPlayerForImpl>();
-+    player->parc_supports_playback_target_ = true;
-+    return player;
-+  }
-+  String UserAgent() override { return user_agent_; }
-+
-+ private:
-+  String user_agent_;
- };
--
-+
- Element* GetElementByShadowPseudoId(Node& root_node,
-@@ -213,6 +256,12 @@
-     test::RunPendingTasks();
-   }
--
-+
-+  void SetElementSize(int width, int height) {
-+    media_controls_->NotifyElementSizeChanged(
-+        DOMRectReadOnly::FromRect(gfx::Rect(0, 0, width, height)));
-+    test::RunPendingTasks();
-+  }
-+
-   void SimulateHideMediaControlsTimerFired() {
-     media_controls_->HideMediaControlsTimerFired(nullptr);
-   }
-@@ -327,6 +376,16 @@
-   void SetReady() {
-     MediaControls().MediaElement().SetReadyState(
-         HTMLMediaElement::kHaveEnoughData);
-+  }
-+
-+  void SetReadyState(HTMLMediaElement::ReadyState state) {
-+    MediaControls().MediaElement().SetReadyState(state);
-+  }
-+
-+  // Parc: the player's isCurrentPlaybackTargetWireless.
-+  void SetPlayerWireless(bool wireless) {
-+    ParcMediaElementAirPlay::From(MediaControls().MediaElement())
-+        .PlaybackTargetIsWirelessChanged(wireless);
-   }
--
-+
-   // Set the focus .
-@@ -2032,4 +2091,265 @@
-   }
- }
--
-+
-+// Parc: WebKit's AirPlay for an element whose player plays to AirPlay
-+// targets on a Safari-identity page: the controls' AirPlay button
-+// (AirplaySupport), the placard (PlacardSupport) and Remote Playback as
-+// AirPlay (RemotePlayback.cpp).
-+class MediaControlsImplParcAirPlayTest : public MediaControlsImplTest {
-+ protected:
-+  static constexpr char kSafariUserAgent[] =
-+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
-+      "(KHTML, like Gecko) Version/27.2 Safari/605.1.15";
-+  static constexpr char kChromeUserAgent[] =
-+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-+      "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
-+
-+  void SetUp() override { InitializePage(kSafariUserAgent); }
-+
-+  void InitializePage(const char* user_agent) {
-+    SetupPageWithClients(
-+        MakeGarbageCollected<FakeChromeClient>(),
-+        MakeGarbageCollected<StubSafariLocalFrameClientForImpl>(user_agent));
-+    GetDocument().write("<video controls></video>");
-+    SetMediaControlsFromElement(To<HTMLVideoElement>(
-+        *GetDocument().QuerySelector(AtomicString("video"))));
-+    GetFrame().GetSettings()->SetScriptEnabled(true);
-+    LoadMediaWithDuration(60);
-+    SetReady();
-+  }
-+
-+  HTMLVideoElement& Video() {
-+    return To<HTMLVideoElement>(MediaControls().MediaElement());
-+  }
-+  media::mojom::blink::MediaPlayer& Player() { return Video(); }
-+  RemotePlayback& Remote() { return RemotePlayback::From(Video()); }
-+
-+  void Play() {
-+    LocalFrame::NotifyUserActivation(
-+        &GetFrame(), mojom::UserActivationNotificationType::kTest);
-+    Video().Play();
-+    base::RunLoop().RunUntilIdle();
-+  }
-+
-+  // The element's media element tasks, then the events they queue.
-+  void SetWireless(bool wireless) {
-+    SetPlayerWireless(wireless);
-+    base::RunLoop().RunUntilIdle();
-+  }
-+
-+  ScriptPromise<IDLUndefined> Prompt(ScriptState* script_state,
-+                                     ExceptionState& exception_state) {
-+    LocalFrame::NotifyUserActivation(
-+        &GetFrame(), mojom::UserActivationNotificationType::kTest);
-+    return Remote().prompt(script_state, exception_state);
-+  }
-+
-+  bool HasClass(Element& element, const char* name) {
-+    return element.classList().contains(AtomicString(name));
-+  }
-+
-+  String PlacardText() {
-+    Node* interstitial = Video().UserAgentShadowRoot()->firstChild();
-+    return interstitial && interstitial->IsMediaRemotingInterstitial()
-+               ? interstitial->textContent()
-+               : String();
-+  }
-+};
-+
-+TEST_F(MediaControlsImplParcAirPlayTest, ButtonFollowsDevicesAndPlayback) {
-+  MediaControlCastButtonElement* button = CastButtonElement();
-+  ASSERT_TRUE(Remote().ParcUsesAirPlay());
-+  EXPECT_TRUE(HasClass(*button, "parc-airplay"));
-+  EXPECT_EQ(button->getAttribute(html_names::kAriaLabelAttr), "AirPlay");
-+  EXPECT_FALSE(button->IsWanted());
-+
-+  // Devices nearby: shown once the media has played, in the bar.
-+  Player().ParcSetPlaybackTargetAvailability(true);
-+  EXPECT_TRUE(Remote().RemotePlaybackAvailable());
-+  EXPECT_FALSE(button->IsWanted());
-+  Play();
-+  EXPECT_TRUE(button->IsWanted());
-+  SetElementSize(800, 450);
-+  EXPECT_TRUE(button->DoesFit());
-+  EXPECT_FALSE(IsOverflowElementVisible(*button));
-+
-+  // x-webkit-airplay="deny" takes it away.
-+  Video().setAttribute(parc_media_element_names::XWebkitAirplayAttr(),
-+                       AtomicString("deny"));
-+  test::RunPendingTasks();
-+  EXPECT_FALSE(Remote().RemotePlaybackAvailable());
-+  EXPECT_FALSE(button->IsWanted());
-+}
-+
-+TEST_F(MediaControlsImplParcAirPlayTest, NoOverlayButton) {
-+  Video().SetBooleanAttribute(html_names::kControlsAttr, false);
-+  Element* overlay = GetElementByShadowPseudoId(
-+      MediaControls(), "-internal-media-controls-overlay-cast-button");
-+  ASSERT_NE(nullptr, overlay);
-+  Player().ParcSetPlaybackTargetAvailability(true);
-+  Play();
-+  EXPECT_FALSE(IsElementVisible(*overlay));
-+}
-+
-+// prompt() opens the AirPlay list; a pick settles it and the state follows
-+// the route: connecting, connected once the player plays to the device,
-+// disconnected when the route ends. The button and the placard follow.
-+TEST_F(MediaControlsImplParcAirPlayTest, PromptAndStateFollowTheRoute) {
-+  V8TestingScope scope;
-+  EnsureSizing();
-+  Player().ParcSetPlaybackTargetAvailability(true);
-+  Play();
-+  MediaControlCastButtonElement* button = CastButtonElement();
-+
-+  ScriptPromiseTester prompt(scope.GetScriptState(),
-+                             Prompt(scope.GetScriptState(),
-+                                    scope.GetExceptionState()));
-+  EXPECT_FALSE(scope.GetExceptionState().HadException());
-+  scope.PerformMicrotaskCheckpoint();
-+  EXPECT_FALSE(prompt.IsFulfilled());
-+  EXPECT_FALSE(prompt.IsRejected());
-+
-+  Player().ParcSetPlaybackTarget("6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11",
-+                                 "Living Room", true, /*tint_argb=*/0,
-+                                 /*tint_on_light_argb=*/0);
-+  scope.PerformMicrotaskCheckpoint();
-+  EXPECT_TRUE(prompt.IsFulfilled());
-+  base::RunLoop().RunUntilIdle();
-+  EXPECT_EQ(V8RemotePlaybackState::Enum::kConnecting,
-+            Remote().state().AsEnum());
-+  EXPECT_TRUE(HasClass(*button, "parc-connecting"));
-+  EXPECT_FALSE(HasClass(*button, "on"));
-+  EXPECT_EQ(button->getAttribute(html_names::kAriaLabelAttr),
-+            "Connecting to Living Room");
-+
-+  SetWireless(true);
-+  EXPECT_EQ(V8RemotePlaybackState::Enum::kConnected,
-+            Remote().state().AsEnum());
-+  EXPECT_TRUE(HasClass(*button, "on"));
-+  EXPECT_FALSE(HasClass(*button, "parc-connecting"));
-+  EXPECT_EQ(button->getAttribute(html_names::kAriaLabelAttr),
-+            "Playing on Living Room");
-+  EXPECT_TRUE(Video().IsRemotingInterstitialVisible());
-+  EXPECT_EQ(PlacardText(),
-+            String(u"AirPlayThis video is playing on \u201CLiving Room\u201D."));
-+
-+  Player().ParcSetPlaybackTarget(String(), String(), false, /*tint_argb=*/0,
-+                                 /*tint_on_light_argb=*/0);
-+  base::RunLoop().RunUntilIdle();
-+  EXPECT_EQ(V8RemotePlaybackState::Enum::kDisconnected,
-+            Remote().state().AsEnum());
-+  EXPECT_FALSE(HasClass(*button, "on"));
-+  EXPECT_FALSE(Video().IsRemotingInterstitialVisible());
-+}
-+
-+// The placard names "Apple TV" when the device has no name.
-+TEST_F(MediaControlsImplParcAirPlayTest, PlacardWithoutDeviceName) {
-+  Player().ParcSetPlaybackTarget("6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11",
-+                                 String(), true, /*tint_argb=*/0,
-+                                 /*tint_on_light_argb=*/0);
-+  SetWireless(true);
-+  EXPECT_TRUE(Video().IsRemotingInterstitialVisible());
-+  EXPECT_EQ(PlacardText(),
-+            String(u"AirPlayThis video is playing on \u201CApple TV\u201D."));
-+}
-+
-+// The window's Space tint (the Mini Player's) colours the connecting and
-+// connected button and the placard's glyph; without one, the CSS accent.
-+TEST_F(MediaControlsImplParcAirPlayTest, SpaceTintColoursButtonAndPlacard) {
-+  Player().ParcSetPlaybackTargetAvailability(true);
-+  Play();
-+  MediaControlCastButtonElement* button = CastButtonElement();
-+  auto background = [](Element& element) {
-+    const CSSPropertyValueSet* style = element.InlineStyle();
-+    return style ? style->GetPropertyValue(CSSPropertyID::kBackgroundImage)
-+                 : String();
-+  };
-+  EXPECT_TRUE(background(*button).empty());
-+
-+  Player().ParcSetPlaybackTarget("6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11",
-+                                 "Living Room", true, 0xFF4D3B8A, 0xFF1C5B84);
-+  base::RunLoop().RunUntilIdle();
-+  EXPECT_TRUE(background(*button).contains("rgba(77,59,138,1)"));
-+
-+  SetWireless(true);
-+  EXPECT_TRUE(background(*button).contains("rgba(77,59,138,1)"));
-+  Element* icon = GetElementByShadowPseudoId(
-+      *Video().UserAgentShadowRoot(), "-internal-media-remoting-cast-icon");
-+  ASSERT_NE(nullptr, icon);
-+  EXPECT_TRUE(background(*icon).contains("rgba(77,59,138,1)"));
-+
-+  // The overflow menu's item takes the tint for the menu's light or dark
-+  // background.
-+  MediaControlInputElement* item = button->OverflowElementForTests();
-+  ASSERT_NE(nullptr, item);
-+  EXPECT_TRUE(background(*item).starts_with("light-dark("));
-+  EXPECT_TRUE(background(*item).contains("rgba(28,91,132,1)"));
-+  EXPECT_TRUE(background(*item).contains("rgba(77,59,138,1)"));
-+
-+  // The Space changes while connected: both recolour at once.
-+  Player().ParcSetPlaybackTarget("6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11",
-+                                 "Living Room", true, 0xFFA487D6, 0xFF1C5B84);
-+  EXPECT_TRUE(background(*button).contains("rgba(164,135,214,1)"));
-+  EXPECT_TRUE(background(*icon).contains("rgba(164,135,214,1)"));
-+  EXPECT_TRUE(background(*item).contains("rgba(164,135,214,1)"));
-+
-+  Player().ParcSetPlaybackTarget(String(), String(), false, /*tint_argb=*/0,
-+                                 /*tint_on_light_argb=*/0);
-+  base::RunLoop().RunUntilIdle();
-+  EXPECT_TRUE(background(*button).empty());
-+}
-+
-+// playbackTargetPickerWasDismissed rejects the prompt with NotAllowedError.
-+TEST_F(MediaControlsImplParcAirPlayTest, DismissedListRejectsPrompt) {
-+  V8TestingScope scope;
-+  Player().ParcSetPlaybackTargetAvailability(true);
-+  ScriptPromiseTester prompt(scope.GetScriptState(),
-+                             Prompt(scope.GetScriptState(),
-+                                    scope.GetExceptionState()));
-+  Player().ParcPlaybackTargetPickerDismissed();
-+  scope.PerformMicrotaskCheckpoint();
-+  EXPECT_TRUE(prompt.IsRejected());
-+  EXPECT_EQ(V8RemotePlaybackState::Enum::kDisconnected,
-+            Remote().state().AsEnum());
-+}
-+
-+// RemotePlayback::prompt() on macOS: NotSupportedError before metadata and
-+// without devices while disconnected.
-+TEST_F(MediaControlsImplParcAirPlayTest, PromptNeedsMetadataAndDevices) {
-+  V8TestingScope scope;
-+  Player().ParcSetPlaybackTargetAvailability(true);
-+  SetReadyState(HTMLMediaElement::kHaveNothing);
-+  {
-+    DummyExceptionStateForTesting exception_state;
-+    Prompt(scope.GetScriptState(), exception_state);
-+    EXPECT_EQ(exception_state.CodeAs<DOMExceptionCode>(),
-+              DOMExceptionCode::kNotSupportedError);
-+  }
-+  SetReady();
-+  Player().ParcSetPlaybackTargetAvailability(false);
-+  {
-+    DummyExceptionStateForTesting exception_state;
-+    Prompt(scope.GetScriptState(), exception_state);
-+    EXPECT_EQ(exception_state.CodeAs<DOMExceptionCode>(),
-+              DOMExceptionCode::kNotSupportedError);
-+  }
-+}
-+
-+class MediaControlsImplParcAirPlayChromeTest
-+    : public MediaControlsImplParcAirPlayTest {
-+ protected:
-+  void SetUp() override { InitializePage(kChromeUserAgent); }
-+};
-+
-+// A Chrome-identity page keeps Chrome's Cast button and Remote Playback.
-+TEST_F(MediaControlsImplParcAirPlayChromeTest, ChromePageKeepsCast) {
-+  EnsureSizing();
-+  EXPECT_FALSE(Remote().ParcUsesAirPlay());
-+  EXPECT_FALSE(HasClass(*CastButtonElement(), "parc-airplay"));
-+  Player().ParcSetPlaybackTargetAvailability(true);
-+  EXPECT_FALSE(Remote().RemotePlaybackAvailable());
-+  SimulateRemotePlaybackAvailable();
-+  EXPECT_TRUE(IsOverflowElementVisible(*CastButtonElement()));
-+}
-+
- }  // namespace blink
 --- a/third_party/blink/renderer/modules/media_controls/resources/mediaControls.css
 +++ b/third_party/blink/renderer/modules/media_controls/resources/mediaControls.css
 @@ -424,6 +424,82 @@
@@ -7182,6 +6797,14 @@
    // TODO(mlamouri): this method is needed in order to notify the controls that
    // the `MediaControlsEnabled` setting has changed.
    void OnMediaControlsEnabledChange() override {
+@@ -232,6 +234,7 @@
+   friend class MediaControlsOrientationLockAndRotateToFullscreenDelegateTest;
+   friend class MediaControlsRotateToFullscreenDelegateTest;
+   friend class MediaControlsImplTest;
++  friend class ParcMediaControlsImplTest;
+   friend class MediaControlsImplInProductHelpTest;
+   friend class MediaControlDisplayCutoutFullscreenButtonElementTest;
+   friend class MediaControlPopupMenuElementTest;
 --- a/third_party/blink/renderer/modules/media_capabilities/BUILD.gn
 +++ b/third_party/blink/renderer/modules/media_capabilities/BUILD.gn
 @@ -10,6 +10,8 @@
