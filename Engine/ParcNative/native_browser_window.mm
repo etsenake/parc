@@ -765,9 +765,6 @@ void NativeBrowserWindow::Show() {
       return impl && !impl->tearing_down_ && impl->selected_ &&
              impl->association_.window == window;
     };
-    if (show_state == ui::mojom::WindowShowState::kHidden) {
-      return;
-    }
     if (show_state == ui::mojom::WindowShowState::kInactive) {
       [window orderFront:nil];
       return;
@@ -1110,9 +1107,6 @@ void NativeBrowserWindow::ShowInactive() {
     return impl && !impl->tearing_down_ && impl->selected_ &&
            impl->association_.window == window;
   };
-  if (show_state == ui::mojom::WindowShowState::kHidden) {
-    return;
-  }
   if (show_state == ui::mojom::WindowShowState::kMaximized &&
       state->create_params().can_maximize && !window.isZoomed) {
     [window zoom:nil];

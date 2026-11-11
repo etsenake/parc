@@ -43,6 +43,9 @@ events. `PreHandleKeyboardEvent` returns NOT_HANDLED; Chromium's exclusive-acces
 manager runs before it. The native client's earlier menu route must not dispatch
 extensions a second time.
 
+Initial window presentation uses Chromium's standard show states. Hidden shell
+windows and pages remain under the existing AppKit visibility controls.
+
 `Close()` uses Chromium's real UnloadController. The shell coordinator must wait
 for all Browsers sharing a native window to approve closing; a native close
 notification does not grant beforeunload consent. The adapter performs required
