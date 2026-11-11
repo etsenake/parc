@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 662,
+  "version": 663,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -109,7 +109,7 @@
     {
       "source": "Engine/ParcNative/native_browser_window.mm",
       "target": "parc/native/native_browser_window.mm",
-      "sha256": "db104c43a60b37df2906f896741454a1cfabe242e2a223813a22510402b9acda"
+      "sha256": "985b137ffd0e9ba9c032e132da9c7b322c53283954c554f0794ebdb09e916b70"
     },
     {
       "source": "Engine/ParcNative/focus_manager.h",
@@ -6404,42 +6404,6 @@
           "target": "chrome/browser/ui/tabs/tab_strip_api/tab_strip_model_impl/tab_strip_model_adapter_impl.cc",
           "before_sha256": "5d778dfb95a737f2fa9ef966b78f3820d2c7f5a718779566d49f99fa2dc3460d",
           "after_sha256": "c0317c287656020072249e8d3a8d59980789813fd162f277959a9bdee50fdcbb"
-        }
-      ]
-    },
-    {
-      "source": "Engine/ParcHost/integration/window-hidden-state.patch",
-      "sha256": "738917ab16de81a7333397f8e14ea1030ab1db64a5a460119567f9684fb7d1f8",
-      "files": [
-        {
-          "target": "ui/base/mojom/window_show_state.mojom",
-          "before_sha256": "59a321949001d0eb2500159e0aee76145b7f19e83ba016afdabba0672e896274",
-          "after_sha256": "d12f9db28e0b9d0638a5cfd8d6215f7cc6b1689ebc1fb655106860fa863aee00"
-        },
-        {
-          "target": "chrome/browser/extensions/api/sessions/sessions_api.cc",
-          "before_sha256": "8af0bbb4c3c5432bc715cdc857012707f421852c2112ea751b67bf00714f174d",
-          "after_sha256": "f87b0e00d1d42726d324e5f40951acd11c9a372eeb80651a203d3783a557c197"
-        },
-        {
-          "target": "components/sessions/core/session_service_commands.cc",
-          "before_sha256": "3aae79e965de734673bf31c726fbd6a0db2de648b46f9d21203e86509830928e",
-          "after_sha256": "8ea9a0dd5cfb606cc32ede714c7d0da80f3321ea1e676b88b0f3c7a9d35a5b44"
-        },
-        {
-          "target": "components/sessions/core/tab_restore_service_impl.cc",
-          "before_sha256": "c501a73c296fcaf835ad967d716017baede39e7fd0e11ab8105f2f8390c5175f",
-          "after_sha256": "7fa7e76c11f7336be1bf250441e72204483a7165a5a9b2b85dea948db8be0385"
-        },
-        {
-          "target": "third_party/blink/renderer/core/frame/web_frame_widget_impl.cc",
-          "before_sha256": "fc7f2035ad48120dfbb05910f51898f2e23b6c4f8837361fc2009cc4cc768d5b",
-          "after_sha256": "f49c53f337b5b339cfc9d15e09fc35031335d04518a423f52cd67aa953add761"
-        },
-        {
-          "target": "ui/views/widget/native_widget_mac.mm",
-          "before_sha256": "70bc19b9ef4c9d9f203dbe1f8b001ae7a9014dd55a2cc904e87209757cbc9b40",
-          "after_sha256": "3fa92ae2459039a676dcf6f1baeca0d136696e32c0cc943958f66e2fd65e8181"
         }
       ]
     },
