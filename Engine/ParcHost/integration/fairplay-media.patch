@@ -7204,16 +7204,17 @@
 +
    // Test helper methods for exercising media suspension. Once called, when
    // |target_state| is reached or exceeded the stale flag will be set when
-@@ -375,6 +400,7 @@
+@@ -375,6 +400,8 @@
   private:
    friend class WebMediaPlayerImplTest;
    friend class WebMediaPlayerImplBackgroundBehaviorTest;
++  friend class ParcWebMediaPlayerImplTest;
 +  friend class ParcWebMediaPlayerState;
 -
 +
    // Helper function that can be used for generating different UMA records:
    // |key| is the UMA prefix, such as "Media.TimeToPlayReady", for example.
-@@ -421,6 +447,14 @@
+@@ -421,6 +448,14 @@
    void OnPipelineResumed();
    void OnPipelineSeeked(bool time_updated);
 -
@@ -7229,7 +7230,7 @@
    // media::Pipeline::Client overrides.
    void OnError(media::PipelineStatus status) override;
    void OnFallback(media::PipelineStatus status) override;
-@@ -445,6 +479,10 @@
+@@ -445,6 +480,10 @@
    void OnProgress() override;
    void OnEncryptedMediaInitData(media::EmeInitDataType init_data_type,
                                  const std::vector<uint8_t>& init_data) override;
@@ -7240,7 +7241,7 @@
    void MakeDemuxerThreadDumper(media::Demuxer* demuxer) override;
    bool CouldPlayIfEnoughData() override;
    void StopForDemuxerReset() override;
-@@ -455,6 +493,51 @@
+@@ -455,6 +494,51 @@
    void RemoveTrack(const media::MediaTrack&) override;
    void SetTrackState(const media::MediaTrack&,
                       media::MediaTrack::State) override;
@@ -7293,7 +7294,7 @@
 +
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    void GetUrlData(const GURL& gurl,
-@@ -463,6 +546,7 @@
+@@ -463,6 +547,7 @@
                    base::OnceCallback<void(scoped_refptr<UrlData>)> cb);
    base::SequenceBound<media::HlsDataSourceProvider> GetHlsDataSourceProvider()
        override;
@@ -7302,7 +7303,7 @@
 -
 +
    // Simplified watch time reporting.
-@@ -511,6 +595,9 @@
+@@ -511,6 +596,9 @@
 -
 +
    // Finishes starting the pipeline due to a call to load().
@@ -7314,7 +7315,7 @@
 +
    // Restart the player/pipeline as soon as possible. This will destroy the
    // current renderer, if any, and create a new one via the RendererFactory; and
-@@ -533,6 +620,35 @@
+@@ -533,6 +621,35 @@
 -
 +
    // Called when a CDM has been attached to the |pipeline_|.
@@ -7352,7 +7353,7 @@
 +
    // Inspects the current playback state and:
    //   - notifies |delegate_|,
-@@ -598,6 +714,11 @@
+@@ -598,6 +715,11 @@
    // Returns true if the player's hosting page (WebView) is hidden or closed.
    bool IsPageHidden() const;
 -
@@ -7365,7 +7366,7 @@
    // Returns true if the player's host frame is hidden or closed in the host
    // page.
    bool IsFrameHidden() const;
-@@ -695,6 +816,11 @@
+@@ -695,6 +817,11 @@
    // negative or kInfiniteDuration value. See http://crbug.com/40382058,
    // http://crbug.com/41274857, and http://crbug.com/40533294 for reasons why.
    base::TimeDelta GetCurrentTimeInternal() const;
@@ -7378,7 +7379,7 @@
 +
    // Called by the compositor the very first time a frame is received.
    void OnFirstFrame(base::TimeTicks frame_time, bool is_frame_readable);
-@@ -758,6 +884,10 @@
+@@ -758,6 +885,10 @@
    // Poster state (for UMA reporting).
    bool has_poster_ = false;
 -
@@ -7390,7 +7391,7 @@
    // Task runner for posting tasks on Chrome's main thread. Also used
    // for DCHECKs so methods calls won't execute in the wrong thread.
    const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
-@@ -929,6 +1059,16 @@
+@@ -929,6 +1060,16 @@
    // Tracks if we are currently using a remote renderer. See
    // SwitchToRemoteRenderer().
    bool is_remote_rendering_ = false;
