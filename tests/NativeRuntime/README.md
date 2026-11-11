@@ -6,13 +6,7 @@ run. Source/model checks do not grant that authorization.
 
 This focused AppKit application uses the **production** `parc_engine_initialize` → `parc_engine_run_message_loop` → genuine all-window close → idle callback → `parc_engine_shutdown_if_idle` lifecycle. Its default controller suite registers an actual supplied NSWindow and opens one real `PCNativePage` at the exact nonempty data-document URL shared by `runtime_driver.h`, the launcher and the driver. The document contains ordinary HTML controls, needs no external server, and remains the exact required URL across the real renderer crash/reload. It does not use `ChromeUnitTestSuite`, `TestingBrowserProcess`, `BrowserTaskEnvironment`, or a second engine startup.
 
-The internal driver is compiled into Parc's framework browser target only for
-component development builds. Official non-component releases omit it. No new
-GN argument, source-lock variant or product UI is added. The driver refuses an
-ordinary app process: it requires the explicit harness switch, Chromium's
-official `--use-mock-keychain`, exact `runtime-profile` path, and owned
-disposable-root marker. The launcher and executable separately reject profile
-reuse before startup. This is a test seam, not a web-accessible API.
+The internal driver lives in Parc's `//parc/tests/parc_native_runtime:driver` boundary, which already links the internal test driver into its framework. No new GN argument, source-lock variant or product UI is added. The driver refuses an ordinary app process: it requires the explicit harness switch, Chromium's official `--use-mock-keychain`, exact `runtime-profile` path, and owned disposable-root marker. The launcher and executable separately reject profile reuse before startup. This is a test seam, not a web-accessible API.
 
 ## Optional extension-action regression
 
@@ -158,10 +152,9 @@ The challenge is **synthetic** and loopback-labelled; no request is sent to port
 
 ## Build closure
 
-The overlay maps the runtime driver beneath `//parc/tests/parc_native_runtime`,
-and the component-build framework compiles it from there. It uses production
-controller targets and the direct engine startup; no alternate engine lock or
-helper recipe is supported.
+The overlay maps the runtime driver to `//parc/tests/parc_native_runtime`. It uses
+production controller targets and the direct engine startup; no alternate engine
+lock or helper recipe is supported.
 
 
 After the reviewed cohort is applied and the normal engine build completes:
