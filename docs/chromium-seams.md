@@ -393,6 +393,17 @@ gates inside MediaKeySession, MediaKeys and MediaKeySystemAccess stay in
 place: each is a few lines tied to that object's own events, promises or
 pending updates, so moving them would only add a wrapper.
 
+Safari-identity documents get Safari's script APIs before any page script
+runs: ManagedMediaSource, the prefixed EME, Safari's MediaKeys, the video
+presentation API and AirPlay availability, without `navigator.userAgentData`.
+That installer lives in a Parc bindings file. LocalWindowProxy calls it where
+a context is created and where a document takes over its window's context,
+from a microtask in the latter case, so no script runs during the commit.
+WorkerOrWorkletScriptController calls its worker half after a worker's
+features are installed. These stay call sites rather than an embedder
+callback, because `DidCreateScriptContext` misses the take-over path and
+can't reach Blink's trusted-event internals.
+
 ## Decisions
 
 - **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
