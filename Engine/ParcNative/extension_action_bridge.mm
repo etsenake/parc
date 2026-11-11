@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
@@ -14,6 +15,9 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/browser/ui/extensions/extension_action_view_model.h"
+#include "chrome/browser/ui/extensions/icon_with_badge_image_source.h"
+#include "chrome/browser/extensions/api/side_panel/side_panel_service.h"
+#include "extensions/common/extension_features.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "components/tabs/public/tab_interface.h"
@@ -23,6 +27,8 @@
 #include "content/public/browser/web_contents.h"
 #include "extension_action_container.h"
 #include "extensions/browser/extension_action.h"
+#include "extensions/browser/extension_action_icon_factory.h"
+#include "extensions/browser/permissions/site_permissions_helper.h"
 #include "extensions/browser/extension_action_manager.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/image_loader.h"
@@ -31,6 +37,9 @@
 #include "extensions/common/manifest_handlers/icons_handler.h"
 #include "ui/base/resource/resource_scale_factor.h"
 #include "ui/color/color_provider.h"
+#include "ui/color/color_provider_manager.h"
+#include "ui/native_theme/native_theme.h"
+#include "ui/base/models/image_model.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/color_utils.h"
@@ -154,6 +163,46 @@ struct NativeEnabledExtensionToken {
 
 namespace parc {
 namespace {
+ui::ImageModel IconWithoutBadge(ExtensionActionViewModel& model,
+                                Profile& profile,
+                                content::WebContents& contents,
+                                const gfx::Size& size) {
+  const auto* extension = model.GetExtension();
+  if (!extension) {
+    return {};
+  }
+  auto* action = extensions::ExtensionActionManager::Get(&profile)
+                     ->GetExtensionAction(*extension);
+  if (!action) {
+    return {};
+  }
+  auto source = std::make_unique<IconWithBadgeImageSource>(
+      size, base::BindRepeating(
+                [](base::WeakPtr<content::WebContents> page) {
+                  return page ? &page->GetColorProvider()
+                              : ui::ColorProviderManager::Get().GetColorProviderFor(
+                                    ui::NativeTheme::GetInstanceForNativeUi()
+                                        ->GetColorProviderKey(nullptr));
+                }, contents.GetWeakPtr()));
+  const int tab_id = sessions::SessionTabHelper::IdForTab(&contents).id();
+  extensions::ExtensionActionIconFactory factory(extension, action, &model);
+  source->SetIcon(factory.GetIcon(tab_id));
+  auto* side_panel = extensions::SidePanelService::Get(&profile);
+  source->set_grayscale(
+      !action->GetIsVisible(tab_id) &&
+      !(side_panel && side_panel->HasSidePanelActionForTab(*extension, tab_id)) &&
+      model.GetSiteInteraction(&contents) ==
+          extensions::SitePermissionsHelper::SiteInteraction::kNone);
+  if (!base::FeatureList::IsEnabled(
+          extensions_features::kExtensionsMenuAccessControl)) {
+    source->set_paint_blocked_actions_decoration(
+        extensions::SitePermissionsHelper(&profile).HasBeenBlocked(*extension,
+                                                                  &contents));
+  }
+  return ui::ImageModel::FromImageSkia(
+      gfx::ImageSkia(std::move(source), size));
+}
+
 NSColor* NativeColor(SkColor color) {
   return [NSColor colorWithSRGBRed:SkColorGetR(color) / 255.0
                              green:SkColorGetG(color) / 255.0
@@ -538,7 +587,8 @@ NSArray<PCNativeExtensionAction*>* NativeExtensionActionBridge::Snapshot(
       value.icon = gfx::NSImageFromImageSkia(*image.GetImage().ToImageSkia());
     }
     const auto unbadged =
-        model->GetIconWithoutBadge(&contents, gfx::Size(32, 32));
+        IconWithoutBadge(*model, *browser_.GetProfile(), contents,
+                         gfx::Size(32, 32));
     if (unbadged.IsImage()) {
       value.iconWithoutBadge =
           gfx::NSImageFromImageSkia(*unbadged.GetImage().ToImageSkia());

@@ -47,6 +47,10 @@ badge appears. Decorative rings and alternate-click wrappers are not duplicate
 accessible elements. Actual extension popup/side-panel contents retain their
 native host/window focus; there is no second shortcut dispatcher into web content.
 
+The native toolbar builds its badge-free icon from Chromium’s public icon factory
+and image source, preserving disabled and blocked-action decoration. The shell
+continues to draw badges in the extension’s own colors.
+
 ## Checks
 
 Inert extension-control and Site Control Center components cover action/menu
