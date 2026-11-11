@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 682,
+  "version": 683,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -14,7 +14,7 @@
     {
       "source": "Engine/ParcNative/BUILD.gn",
       "target": "parc/native/BUILD.gn",
-      "sha256": "d0ccd410b5247f4d84142acad0cd8cf0baae2e67d37f9bcaea1ecaec0c596280"
+      "sha256": "136aa9603fd4dee9a3fb9a4830602afdb5afe64dfd05a99de8dec5e1c6b84ba1"
     },
     {
       "source": "Engine/ParcNative/page_host.h",
@@ -1969,12 +1969,12 @@
     {
       "source": "Engine/ParcNative/native_browser.h",
       "target": "parc/native/native_browser.h",
-      "sha256": "87953a4756ed39ef8e4924c4ecec534bd2ed6f11cd65649e00d55a54794a0e8d"
+      "sha256": "8e8137572c7a9480fc0aef276c190abdfdae33cb3d587656f1bd72630591a81d"
     },
     {
       "source": "Engine/ParcNative/native_browser.mm",
       "target": "parc/native/native_browser.mm",
-      "sha256": "4a9a50a72cd54fc1213329762911eeb9e82ffc1ee4dc5f5e6d358e3b20ff0cf0"
+      "sha256": "f9f22da11014b40a274ab9831d07ea0eed3784440e3cbdfcbfc34e6dec1c3e6c"
     },
     {
       "source": "Engine/ParcNative/native_browser_web_contents_delegate.h",
@@ -2014,7 +2014,7 @@
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "223e1b44cfee785d696d922b8178bb6d162883284cf27157ecac650ab2dc1bdc"
+      "sha256": "864ed6a14767fea547ed44e09b310f186ba04ad484e762a1cbfa33f2c81551f9"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2069,7 +2069,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.cc",
       "target": "parc/parc_main_delegate.cc",
-      "sha256": "ba578586f21dcb9f941298f8cff44976d2a564ff0d06101173afd76085c37783"
+      "sha256": "5f291fdc0f121f3ed3051d1c0492d4b31e8f1104e3c877917762eabc22b48976"
     },
     {
       "source": "Engine/ParcNative/native_application.mm",
@@ -6139,7 +6139,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-browser-overlay.patch",
-      "sha256": "0d468b35babc9658c93b630273c58bc0803ff9987da31777d691167bc0e6024d",
+      "sha256": "4825a094ae7205f6b4252c60aabb94499baf5f306a8cb1a94fd220a7d9a77cd8",
       "files": [
         {
           "target": "chrome/browser/ui/browser_window/public/create_browser_window.h",
@@ -6154,7 +6154,7 @@
         {
           "target": "chrome/browser/ui/browser.cc",
           "before_sha256": "5cbe9caf9acd876d90dba893c73cac921400cf8156fe651d7cd4b33be7e984e5",
-          "after_sha256": "3d50de849fca584a5b8aca360545b1675416fc7144f0d3a113554e4267880750"
+          "after_sha256": "ab8696d9cf6ffbe848081f887e06f7fe7d2c0aa1d0f1e3b9f00fba9884e4b9af"
         },
         {
           "target": "chrome/browser/ui/browser_manager_service.h",
@@ -6164,27 +6164,17 @@
         {
           "target": "chrome/browser/ui/browser_manager_service.cc",
           "before_sha256": "492fbdf3867cddffe1c93ce83da91a3b8226635f8293640ebd89f792b2fa5d84",
-          "after_sha256": "c4fd18340fe42edcaacb71dd046403bc617f3d6748c3e8523341fc30c8479b1f"
+          "after_sha256": "e0d7f67a10ec55b73db6ab6dd37cc3062e4f6680aa51660d7c94bfe129fa1a61"
         },
         {
           "target": "chrome/browser/ui/views/frame/browser_window_factory.cc",
           "before_sha256": "48515fc4eb091e99e99aa1e945750badd41e2c654aeac551856cda861498cf76",
-          "after_sha256": "5cc8600556c846f0d6f9d85a0169837242451e4b1467e444ad37f341f8aa0859"
-        },
-        {
-          "target": "chrome/browser/ui/views/frame/BUILD.gn",
-          "before_sha256": "6b83d705190dc7830cf53a0b265bee6e8ba72932cec1b391eee6dd0b3a5b0c40",
-          "after_sha256": "6a17f6ac58a350242f81c3e0ff5f3c71e4a9d22f237debffcb7708f01739466a"
+          "after_sha256": "0bc867240f6ad8972d7c2e933273ded11116eb0272d59b35f53432e999734be3"
         },
         {
           "target": "chrome/browser/ui/browser_window/internal/browser_window_features.cc",
           "before_sha256": "6608a64be354b7f8479f6b74204653e051ffcf9cbe6c77f34bd44aef02f8f561",
-          "after_sha256": "9122386571490c7ae8f51540a0a36002f61116a8d0919e6500084c11bcc156bd"
-        },
-        {
-          "target": "chrome/browser/ui/browser_window/internal/BUILD.gn",
-          "before_sha256": "b2e529641faf734378f233c096e6bdc03134e5531eb06a622578836d80041c01",
-          "after_sha256": "c1f8525d9799c532a0ab2214277a14f657eb05b3c6d1350d178d07f5b2b705ce"
+          "after_sha256": "493d824f2bfb24f4c45651fe479593ef02e9cf49bb33e11dae2a957296f1eb15"
         },
         {
           "target": "chrome/browser/ui/focus/browser_focus_controller.h",
@@ -6194,7 +6184,7 @@
         {
           "target": "chrome/browser/ui/navigator/browser_navigator.cc",
           "before_sha256": "97e34edc3add4fa7fdebee8250ff6148c86b2db14af83202109a1fe48e4ee166",
-          "after_sha256": "07cbb372b7bcda276765b42670f7c28cec26eb35f11851b0738a84023a2f7ef7"
+          "after_sha256": "0f63d8da434693574a6c674922bc614cbdd27dc4075810859693daff82d95d5d"
         },
         {
           "target": "chrome/browser/lifetime/browser_close_manager.cc",
@@ -6246,7 +6236,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/chromium-direct-shared.patch",
-      "sha256": "44a92e3c85ce64df085a8a2117a7cd59cddbec44fd75c0b13e3b8a7d251e7164",
+      "sha256": "61e80f03dd1a65be91f8c97be8cc8e74cfae431fd0f3e5678a3880b55b41814e",
       "files": [
         {
           "target": "content/browser/web_contents/web_contents_impl.cc",
@@ -6281,7 +6271,7 @@
         {
           "target": "chrome/browser/ui/navigator/BUILD.gn",
           "before_sha256": "40dba9884f123d262086c9c168e61a77c3ee1790b51fd2f3fbf8b9a98d55ec2e",
-          "after_sha256": "2365bf379cd115f78114c2ee974149d7d8eeabbb37d05f218e17eeb18e21e9dd"
+          "after_sha256": "597aea3d2eb7ebf58bef58733ba38df420ea040cb693aee221fe9432970b5778"
         }
       ]
     }
