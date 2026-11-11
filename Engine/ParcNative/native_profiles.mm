@@ -248,6 +248,9 @@ void ShutdownNativeProfiles() {
   state.initialize.Reset();
   state.changed.Reset();
 }
+bool NativeGaiaAccountsAllowed(PrefService* preferences) {
+  return preferences->GetBoolean(prefs::kSigninAllowed);
+}
 bool RestoreNativeSessionState() {
   return true;
 }

@@ -66,6 +66,7 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
       application_(application) {
   parc_hooks::SetMacMainLoopEndHandler(nullptr);
   parc_hooks::SetMacMainPartsFactory(&CreateMacMainParts);
+  parc_hooks::SetGaiaAccountsPolicy(&NativeGaiaAccountsAllowed);
   parc_hooks::SetSessionRestorePolicy(&RestoreNativeSessionState);
   parc_hooks::SetRegisterProfilePrefs(&RegisterNativeProfilePrefs);
   parc_hooks::SetMainStartupPolicy(&UsesNativeStartup);

@@ -164,7 +164,9 @@ after Chrome and both dependency managers register their defaults, before
 services start; these defaults preserve stored user preferences. The
 central native restore policy keeps website and extension session cookies and
 session-scoped permission decisions across relaunches without enabling Chrome's
-window/session restoration.
+window/session restoration. The same early policy installation keeps Gaia
+account-list requests behind the registered browser sign-in preference; ordinary
+website sign-ins keep their existing paths.
 Keep normal encryption separate from disposable test-Keychain modes, and
 preserve signing continuity.
 See [relaunch checks](../tests/NativeRelaunch/README.md) and

@@ -13,6 +13,7 @@
 class ChromeBrowserMainParts;
 class LoginHandler;
 class PrefRegistrySimple;
+class PrefService;
 class StartupData;
 
 namespace base {
@@ -73,6 +74,9 @@ void SetRegisterProfilePrefs(void (*registration)(PrefRegistrySimple*));
 
 // chrome/browser/profiles/profile_impl.cc; cookies and session settings.
 void SetSessionRestorePolicy(bool (*policy)());
+
+// components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
+void SetGaiaAccountsPolicy(bool (*policy)(PrefService*));
 
 }  // namespace parc_hooks
 

@@ -1,12 +1,31 @@
 diff --git a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
 --- a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
 +++ b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
-@@ -525,6 +525,10 @@ GaiaCookieManagerService::GetCachedListAccounts() {
+@@ -55,6 +55,15 @@
+ #include "services/network/public/mojom/url_response_head.mojom.h"
+ #include "url/url_util.h"
+-
++
++namespace parc_hooks {
++namespace {
++bool (*gaia_accounts_policy)(PrefService*) = nullptr;
++}  // namespace
++void SetGaiaAccountsPolicy(bool (*policy)(PrefService*)) {
++  gaia_accounts_policy = policy;
++}
++}  // namespace parc_hooks
++
+ namespace {
+-
++
+ // The maximum number of retries for a fetcher used in this class.
+@@ -525,6 +534,11 @@
  }
 -
 +
  void GaiaCookieManagerService::TriggerListAccounts() {
-+  if (!signin_client_->GetPrefs()->GetBoolean(prefs::kSigninAllowed)) {
++  if (parc_hooks::gaia_accounts_policy &&
++      !parc_hooks::gaia_accounts_policy(signin_client_->GetPrefs())) {
 +    return;
 +  }
 +
