@@ -4711,86 +4711,6 @@
 +
    // Every test implicitly requires these, so they must be set. They are set to
    // values that are likely to cause tests to fail if they are accidentally
-@@ -972,6 +984,77 @@
-   EXPECT_EQ(MediaKeysRequirement::kRequired, config_.distinctive_identifier);
- }
--
-+
-+// Parc: Safari's FairPlay on macOS takes "persistent-license" beside
-+// "temporary" (CDMPrivateFairPlayStreaming::supportsConfiguration), so only
-+// MediaKeys creation fails, and refuses it alone or after "temporary" is
-+// refused by a required persistent state.
-+TEST_F(KeySystemConfigSelectorTest,
-+       ParcSafariFairPlay_PersistentLicenseBesideTemporary) {
-+  key_systems_->persistent_state = EmeFeatureSupport::REQUESTABLE;
-+  key_systems_->persistent_usage_record =
-+      EmeConfig{.persistence = EmeConfigRuleState::kRequired};
-+
-+  auto config = UsableConfiguration();
-+  config.parc_safari_fairplay = true;
-+  config.persistent_state = MediaKeysRequirement::kOptional;
-+  config.session_types = {WebEncryptedMediaSessionType::kTemporary,
-+                          WebEncryptedMediaSessionType::kPersistentLicense};
-+  configs_.push_back(config);
-+
-+  SelectConfigReturnsConfig();
-+  EXPECT_EQ(MediaKeysRequirement::kRequired, config_.persistent_state);
-+  ASSERT_EQ(2u, config_.session_types.size());
-+  EXPECT_EQ(WebEncryptedMediaSessionType::kTemporary, config_.session_types[0]);
-+  EXPECT_EQ(WebEncryptedMediaSessionType::kPersistentLicense,
-+            config_.session_types[1]);
-+}
-+
-+TEST_F(KeySystemConfigSelectorTest, ParcSafariFairPlay_PersistentLicenseAlone) {
-+  key_systems_->persistent_state = EmeFeatureSupport::REQUESTABLE;
-+  key_systems_->persistent_usage_record =
-+      EmeConfig{.persistence = EmeConfigRuleState::kRequired};
-+
-+  auto config = UsableConfiguration();
-+  config.parc_safari_fairplay = true;
-+  config.persistent_state = MediaKeysRequirement::kOptional;
-+  config.session_types = {WebEncryptedMediaSessionType::kPersistentLicense};
-+  configs_.push_back(config);
-+
-+  SelectConfigReturnsError();
-+}
-+
-+TEST_F(KeySystemConfigSelectorTest,
-+       ParcSafariFairPlay_TemporaryAfterPersistentLicense) {
-+  key_systems_->persistent_state = EmeFeatureSupport::REQUESTABLE;
-+  key_systems_->persistent_usage_record =
-+      EmeConfig{.persistence = EmeConfigRuleState::kRequired};
-+
-+  auto config = UsableConfiguration();
-+  config.parc_safari_fairplay = true;
-+  config.persistent_state = MediaKeysRequirement::kOptional;
-+  config.session_types = {WebEncryptedMediaSessionType::kPersistentLicense,
-+                          WebEncryptedMediaSessionType::kTemporary};
-+  configs_.push_back(config);
-+
-+  SelectConfigReturnsError();
-+}
-+
-+TEST_F(KeySystemConfigSelectorTest,
-+       ParcSafariFairPlay_PersistentLicenseWithoutPersistentState) {
-+  // A process that can't persist data (a private window).
-+  key_systems_->persistent_state = EmeFeatureSupport::REQUESTABLE;
-+  key_systems_->persistent_usage_record = EmeConfig::UnsupportedRule();
-+
-+  auto config = UsableConfiguration();
-+  config.parc_safari_fairplay = true;
-+  config.persistent_state = MediaKeysRequirement::kOptional;
-+  config.session_types = {WebEncryptedMediaSessionType::kTemporary,
-+                          WebEncryptedMediaSessionType::kPersistentLicense};
-+  configs_.push_back(config);
-+
-+  SelectConfigReturnsError();
-+}
-+
- // --- videoCapabilities ---
--
-+
- TEST_F(KeySystemConfigSelectorTest, VideoCapabilities_Empty) {
 --- a/third_party/blink/renderer/platform/media/web_content_decryption_module_session_impl.cc
 +++ b/third_party/blink/renderer/platform/media/web_content_decryption_module_session_impl.cc
 @@ -51,6 +51,8 @@
@@ -9172,13 +9092,16 @@
    deps = [
      ":media",
      "//base",
-@@ -154,6 +176,10 @@
+@@ -154,6 +176,13 @@
      "//third_party/blink/renderer/platform:test_support",
    ]
 -
 +
 +  if (is_mac) {
-+    deps += [ "//third_party/blink/renderer/platform/media/parc_tests:unit_tests" ]
++    deps += [
++      "//third_party/blink/renderer/platform/media/parc_key_system_tests:unit_tests",
++      "//third_party/blink/renderer/platform/media/parc_tests:unit_tests",
++    ]
 +  }
 +
    # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
