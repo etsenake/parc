@@ -16654,23 +16654,26 @@
  }  // namespace blink
 --- a/media/filters/ffmpeg_demuxer.h
 +++ b/media/filters/ffmpeg_demuxer.h
-@@ -244,6 +244,12 @@
+@@ -243,6 +243,12 @@
+   // about capacity and what buffered data is available.
    void NotifyCapacityAvailable();
    void NotifyBufferingChanged();
- 
++
 +  // Parc: a Safari-identity page plays AMR and H.263 streams, which
 +  // AudioToolbox and VideoToolbox decode in the GPU process, as Safari plays
 +  // them. Set before Initialize().
 +  void ParcSetSafariCodecs(bool safari) { parc_safari_codecs_ = safari; }
 +  bool ParcPlaysSafariCodecs() const { return parc_safari_codecs_; }
+-
 +
    // Attaches to `buffer` the metadata that applies to it from every timed
    // metadata track that references it. Returns false if any of that metadata
-   // has not been demuxed yet.
 @@ -431,6 +437,8 @@
- 
+-
++
    const bool is_local_file_;
- 
+-
++
 +  bool parc_safari_codecs_ = false;
 +
    // NOTE: Weak pointers must be invalidated before all other member variables.
