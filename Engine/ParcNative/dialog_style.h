@@ -68,6 +68,11 @@ CGFloat PlaceFooter(NSView* root, CGFloat y, NSButton* _Nullable checkbox,
 - (instancetype)initWithTitle:(NSString*)title target:(nullable id)target action:(nullable SEL)action;
 - (NSSize)sizeForWidth:(CGFloat)width;
 @end
+//
+// padding focuses `field`.
+@interface PCDialogCard : PCDialogFlippedView
+@property(nonatomic, weak, nullable) NSView* field;
+@end
 // A single-line input on a tinted rounded card, 36 points tall with 12-point
 // padding and no focus ring, matching the app's dialog field.
 @interface PCDialogInputField : PCDialogFlippedView

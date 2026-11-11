@@ -21,8 +21,11 @@ repeat or from a keyDown whose timestamp precedes the end of the current input
 delay, so a Return held or pressed as the sheet appears cannot accept it.
 Enterprise requests, pending policy, parent approval, re-enable, repair,
 additional-permission and app/theme requests keep their actual
-upstream-specific text and controls. Those Chromium 156 security/service
-requirements are explicit current-engine adaptations.
+upstream-specific text and controls, drawn in the same Parc dialog: the
+justification box and parent password sit on the field card, any checkbox is
+the round one, and their accept button has no Return badge because Return
+never accepts them. Those Chromium 156 security/service requirements are
+explicit current-engine adaptations.
 
 Removing an extension uses the same Parc dialog: the extension's artwork, the
 **Remove “name”?** title, any requesting-extension text, Parc's circular

@@ -492,6 +492,135 @@ int main() {
     [p invalidate];
     Pump();
     EXPECT(results == 12 && choice == PCExtensionInstallInterrupted);
+    // Enterprise justification: Parc's card editor, live counter, no Return accept.
+    results = 0;
+    p = [[PCExtensionInstallPresenter alloc]
+        initWithWindow:w
+                 title:@"Request example?"
+                  icon:nil
+               heading:@"Your administrator reviews requests."
+           permissions:@[]
+               details:@[]
+           acceptLabel:@"Request"
+           cancelLabel:@"Cancel"
+         checkboxLabel:nil
+              validate:^BOOL { return YES; }
+          inputAllowed:^BOOL(NSWindow*) { return YES; }
+                result:result];
+    [p configureJustificationLabel:@"Why do you need it?"
+                       placeholder:@"Reason"
+                       counterText:^NSString*(NSUInteger length) {
+                         return [NSString stringWithFormat:@"%lu/280", (unsigned long)length];
+                       }];
+    [p start];
+    Pump();
+    NSView* card = View(p.sheet.contentView, @"PCDialogCard");
+    NSTextView* reason = nil;
+    for (NSView* view = card; view && !reason; view = view.subviews.firstObject) {
+      if ([view isKindOfClass:NSScrollView.class]) {
+        reason = ((NSScrollView*)view).documentView;
+      }
+    }
+    EXPECT(card && [reason isKindOfClass:NSTextView.class] &&
+           [reason.accessibilityLabel isEqual:@"Why do you need it?"]);
+    EXPECT(Text(p.sheet.contentView, @"Request example?") && Text(p.sheet.contentView, @"0/280"));
+    EXPECT(NSWidth(p.sheet.frame) == 450 &&
+           (p.sheet.styleMask & NSWindowStyleMaskFullSizeContentView));
+    [p.sheet makeFirstResponder:reason];
+    reason.string = @"Needed for work";
+    [reason didChangeText];
+    EXPECT(Text(p.sheet.contentView, @"15/280"));
+    EXPECT([p.justification isEqual:@"Needed for work"]);
+    NSButton* request = Button(p.sheet.contentView, @"Request");
+    EXPECT(request.keyEquivalent.length == 0);
+    NSView* sheetRoot = p.sheet.contentView;
+    [sheetRoot layoutSubtreeIfNeeded];
+    const NSRect requestFrame = [request convertRect:request.bounds toView:sheetRoot];
+    const NSRect cancelFrame =
+        [Button(sheetRoot, @"Cancel") convertRect:Button(sheetRoot, @"Cancel").bounds
+                                           toView:sheetRoot];
+    const NSRect cardFrame = [card convertRect:card.bounds toView:sheetRoot];
+    EXPECT(std::abs(NSMaxX(requestFrame) - (450 - 28 + .5)) <= .5 && NSWidth(requestFrame) > 40 &&
+           NSMaxX(cancelFrame) < NSMinX(requestFrame) &&
+           NSContainsRect(sheetRoot.bounds, cancelFrame) &&
+           NSContainsRect(sheetRoot.bounds, requestFrame) &&
+           NSMinY(requestFrame) > NSMaxY(cardFrame));
+    BOOL ambiguous = NO;
+    NSMutableArray<NSView*>* pending = [NSMutableArray arrayWithObject:sheetRoot];
+    while (pending.count) {
+      NSView* view = pending.lastObject;
+      [pending removeLastObject];
+      ambiguous = ambiguous || view.hasAmbiguousLayout;
+      [pending addObjectsFromArray:view.subviews];
+    }
+    EXPECT(!ambiguous);
+    [reason setMarkedText:@"か" selectedRange:NSMakeRange(1, 0)
+         replacementRange:NSMakeRange(NSNotFound, 0)];
+    NSEvent* escape = [NSEvent keyEventWithType:NSEventTypeKeyDown
+                                       location:NSZeroPoint
+                                  modifierFlags:0
+                                      timestamp:NSProcessInfo.processInfo.systemUptime
+                                   windowNumber:p.sheet.windowNumber
+                                        context:nil
+                                     characters:@"\033"
+                    charactersIgnoringModifiers:@"\033"
+                                      isARepeat:NO
+                                        keyCode:53];
+    EXPECT(![p.sheet performKeyEquivalent:escape] && results == 0);
+    [reason unmarkText];
+    EXPECT([p.sheet performKeyEquivalent:escape]);
+    Pump();
+    EXPECT(results == 1 && choice == PCExtensionInstallCancel);
+    [p invalidate];
+    // Parent approval: secure field on Parc's card, growing error, cleared credential.
+    results = 0;
+    __block NSInteger submittedParent = -1;
+    __block NSString* submitted = nil;
+    p = Make(w, ^BOOL { return YES; }, ^BOOL(NSWindow*) { return YES; }, result);
+    [p configureParentAccounts:@[ @"parent@example.test", @"other@example.test" ]
+                  instructions:@[ @"A parent must approve this extension." ]
+                 passwordLabel:@"Parent password"
+                        submit:^(NSInteger parent, NSString* credential) {
+                          submittedParent = parent;
+                          submitted = credential;
+                        }];
+    [p start];
+    Pump();
+    NSSecureTextField* secret = nil;
+    for (NSView* view in @[ p.sheet.contentView ]) {
+      NSMutableArray* queue = [NSMutableArray arrayWithObject:view];
+      while (queue.count && !secret) {
+        NSView* next = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        if ([next isKindOfClass:NSSecureTextField.class]) secret = (NSSecureTextField*)next;
+        [queue addObjectsFromArray:next.subviews];
+      }
+    }
+    EXPECT(secret && secret.focusRingType == NSFocusRingTypeNone &&
+           [secret.superview.className isEqual:@"PCDialogInputField"] &&
+           [secret.accessibilityLabel isEqual:@"Parent password"]);
+    EXPECT(Text(p.sheet.contentView, @"A parent must approve this extension."));
+    add = Button(p.sheet.contentView, @"Add");
+    Pump(.6);
+    EXPECT(!add.enabled);
+    secret.stringValue = @"hunter2";
+    [[NSNotificationCenter defaultCenter] postNotificationName:NSControlTextDidChangeNotification
+                                                        object:secret];
+    Pump(.1);
+    EXPECT(add.enabled);
+    [add performClick:nil];
+    EXPECT(submittedParent == 0 && [submitted isEqual:@"hunter2"] && !secret.stringValue.length);
+    const CGFloat before = NSHeight(p.sheet.frame);
+    [p setParentApprovalPending:YES error:@""];
+    EXPECT(!secret.enabled && !add.enabled);
+    [p setParentApprovalPending:NO
+                          error:@"That password didn't work. Check it and try again, or ask "
+                                @"another parent to approve this extension for you."];
+    EXPECT(secret.enabled && NSHeight(p.sheet.frame) >= before);
+    [p.sheet cancelOperation:nil];
+    Pump();
+    EXPECT(results == 1 && choice == PCExtensionInstallCancel);
+    [p invalidate];
     [w close];
     printf("PASS %d native extension-install AppKit assertions\n", assertions);
   }
