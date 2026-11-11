@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 678,
+  "version": 679,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -2029,12 +2029,12 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "4011cc6b6bf41a2d07ed78d8b08729c127b5b714e81adb6014a31ca4264f3cda"
+      "sha256": "572f6e796d081be16745584d59d45672567a40422608cface04f366bab58f41d"
     },
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "bdc20751735cfe78c8667f47e35bde760f43ebd6230a8ac4f412234288ab4ec9"
+      "sha256": "75e71984bf57e25102391f012ca0f409166323406c916532bad4f6328d98c860"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2079,7 +2079,7 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.cc",
       "target": "parc/parc_content_clients.cc",
-      "sha256": "8079aa54713a239063d63838f28fd832a734656e6bd07c5c6f47e6efbc21c088"
+      "sha256": "9e30c53018b1b2e4f84b62c06a776ba541cbfbf7293853815542b979349e1a64"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",
@@ -2145,6 +2145,16 @@
       "source": "Engine/ParcChromium/page_preferences_unittest.cc",
       "target": "parc/page_preferences_unittest.cc",
       "sha256": "962d5a732b447c732c3097f9694769cb1901b44a165f307d515f41361aa634d8"
+    },
+    {
+      "source": "Engine/ParcChromium/web_push.h",
+      "target": "parc/web_push.h",
+      "sha256": "bf644cb94e4da316fe63290093a5cba4311296ef908602e2c33defd8f537a603"
+    },
+    {
+      "source": "Engine/ParcChromium/web_push.cc",
+      "target": "parc/web_push.cc",
+      "sha256": "41cc39507bd52a988d28b513c65fdf9bc4f44c13b2f7232f5983c34a7d53360a"
     }
   ],
   "patches": [
@@ -6078,12 +6088,12 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-web-push-direct.patch",
-      "sha256": "82795235ae7febf1872688af9cc58541bfc9f1c323a18a765e1a469480294682",
+      "sha256": "419ca502dcdeced4f6e605495ad44cb95dbcc163945d0189d2e775467aa3282d",
       "files": [
         {
-          "target": "components/gcm_driver/gcm_client_impl.cc",
-          "before_sha256": "694e3d26d492256a6b4af9a9993b3d35d41dbbf47cb731166686616244115163",
-          "after_sha256": "80674c613eecf76bcc4567116b28d49327d0067bc0bdec1e87812e4d85fc39bf"
+          "target": "components/gcm_driver/gcm_client_factory.cc",
+          "before_sha256": "b54dfffb1a04622fcd17632def630141c695eefe0b6945c162cd783b8d5d7303",
+          "after_sha256": "630c78a8828ed3dedfc50948e5d7b30234ca17122ecd3770a814aead3666273f"
         }
       ]
     },
