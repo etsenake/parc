@@ -3,6 +3,7 @@
 // chrome_browser_context.cc, Copyright 2020 The Chromium Embedded Framework
 // Authors. All rights reserved. BSD-style license: see LICENSE.
 #include "native_profiles.h"
+#include "native_profile_policy.h"
 #include <map>
 #include <utility>
 #include <vector>

@@ -514,26 +514,19 @@
 +
 --- a/chrome/browser/profiles/pref_service_builder_utils.cc
 +++ b/chrome/browser/profiles/pref_service_builder_utils.cc
-@@ -35,6 +35,7 @@
- #include "components/supervised_user/core/browser/family_link_settings_service.h"
- #include "components/sync_preferences/pref_service_syncable.h"
- #include "components/variations/service/variations_service.h"
-+#include "parc/features.h"
- #include "content/public/browser/network_service_instance.h"
- #include "services/preferences/public/mojom/tracked_preference_validation_delegate.mojom.h"
- #include "ui/base/l10n/l10n_util.h"
-@@ -63,6 +64,14 @@
+@@ -63,6 +63,15 @@
    }
  }
 -
 +
-+#if BUILDFLAG(ENABLE_PARC)
-+namespace parc {
-+// Defined by Parc's native profile registry; called after every Chrome and
-+// service registration, so it may also change those preferences' defaults.
-+void RegisterNativeProfilePrefs(PrefRegistrySimple* registry);
-+}  // namespace parc
-+#endif
++namespace parc_hooks {
++namespace {
++void (*register_profile_prefs)(PrefRegistrySimple*) = nullptr;
++}  // namespace
++void SetRegisterProfilePrefs(void (*registration)(PrefRegistrySimple*)) {
++  register_profile_prefs = registration;
++}
++}  // namespace parc_hooks
 +
  void RegisterProfilePrefs(bool is_signin_profile,
                            const std::string& locale,
@@ -542,9 +535,9 @@
        pref_registry);
    BrowserContextDependencyManager::GetInstance()
        ->RegisterProfilePrefsForServices(pref_registry);
-+#if BUILDFLAG(ENABLE_PARC)
-+  parc::RegisterNativeProfilePrefs(pref_registry);
-+#endif
++  if (parc_hooks::register_profile_prefs) {
++    parc_hooks::register_profile_prefs(pref_registry);
++  }
  }
 -
 +

@@ -12,6 +12,7 @@
 
 class ChromeBrowserMainParts;
 class LoginHandler;
+class PrefRegistrySimple;
 class StartupData;
 
 namespace base {
@@ -66,6 +67,9 @@ void SetMacMainLoopEndHandler(void (*handler)());
 // first CDM use. A value other than CHILD_NORMAL must be resolved by
 // ContentBrowserClient::GetChildProcessPath().
 void SetCdmServiceChildFlags(int flags);
+
+// chrome/browser/profiles/pref_service_builder_utils.cc; after all defaults.
+void SetRegisterProfilePrefs(void (*registration)(PrefRegistrySimple*));
 
 }  // namespace parc_hooks
 

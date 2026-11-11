@@ -23,6 +23,7 @@
 #include "content/public/common/content_switches.h"
 #include "parc/chromium_hooks.h"
 #include "parc/native/native_appkit_host.h"
+#include "parc/native/native_profile_policy.h"
 #include "chrome/utility/chrome_content_utility_client.h"
 #include "mojo/public/cpp/bindings/service_factory.h"
 #include "parc/importer/import_service.h"
@@ -65,6 +66,7 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
       application_(application) {
   parc_hooks::SetMacMainLoopEndHandler(nullptr);
   parc_hooks::SetMacMainPartsFactory(&CreateMacMainParts);
+  parc_hooks::SetRegisterProfilePrefs(&RegisterNativeProfilePrefs);
   parc_hooks::SetMainStartupPolicy(&UsesNativeStartup);
   parc_hooks::SetBrowserStartupPolicy(&UsesNativeStartup);
   parc_hooks::SetMainResourceBundleFactory(&NativeResourceBundle, application);

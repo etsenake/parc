@@ -160,7 +160,8 @@ search and history work alive until their callbacks finish. Removal waits for
 those leases as well as windows, private profiles and downloads. Private windows
 use their parent's primary off-the-record profile; its retirement waits for
 private operations. Profile defaults disable browser sign-in and translation
-before services start; these defaults preserve stored user preferences. The
+after Chrome and both dependency managers register their defaults, before
+services start; these defaults preserve stored user preferences. The
 existing policy of not restoring session cookies also stays in place.
 Keep normal encryption separate from disposable test-Keychain modes, and
 preserve signing continuity.

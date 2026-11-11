@@ -8,7 +8,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 class Profile;
-class PrefRegistrySimple;
 class ScopedProfileKeepAlive;
 namespace parc {
 // UI-thread operation ownership. Private operations also block parent removal;
@@ -43,6 +42,5 @@ bool NativeProfileHasOperations(Profile& profile);
 // expected must be ProfileManager::GetProfileByPath(path), also used at release.
 NSError* CheckNativeProfileRegistryRemoval(const base::FilePath&, Profile* expected);
 void ReleaseNativeProfileRegistry(const base::FilePath&);
-void RegisterNativeProfilePrefs(PrefRegistrySimple*);
 }  // namespace parc
 #endif

@@ -123,6 +123,7 @@ source_set("browser") {
     "native/native_profile_removal.h",
     "native/native_profile_removal.mm",
     "native/native_profiles.h",
+    "native/native_profile_policy.h",
     "native/native_profiles.mm",
     "native/native_recent_pages.mm",
     "native/native_search.h",
