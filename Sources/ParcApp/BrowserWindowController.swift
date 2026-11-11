@@ -404,14 +404,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var transferContainers: [String: NSView] = [:]
     private var transferRecoveries: [UUID: () -> Void] = [:]
     private var resolvingTransfers = Set<UUID>()
-    /// Copies of the pages that arrived here, still to take for the placeholders
-    /// they left in other windows; one at a time, as the engine allows.
-    private var placeholderCaptureQueue: [PlaceholderCapture] = []
-    private var placeholderCaptureBusy = false
-    private var placeholderCapturePumpScheduled = false
-    private var placeholderCaptureToken = 0
-    /// The page the engine is told is selected while it copies a pane that is not.
-    private var placeholderSelectionLoan: PCNativePage?
+    /// Pages that arrived here whose copy is still to be taken for the
+    /// placeholders they left in other windows.
+    private var placeholderCapturesPending: [UUID: Int] = [:]
+    private var placeholderCaptureGeneration = 0
     private var untargetedReturnScheduled = false
     /// Content this window has shown since it arrived: only that can be
     ///
@@ -536,17 +532,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private lazy var sharedQuotes: SharedQuoteController = SharedQuoteController(isCurrent: { [weak self] page in
         guard let self else { return false }
         return !self.isClosing && !self.wholeWindowClose && self.commandBar == nil &&
-            self.libraryView == nil && self.pageCapture == nil && self.focusedNativePage() === page
+            self.libraryView == nil && self.pageCapture == nil && self.selectedNativePage() === page
     }, display: { [weak self] selection in
         guard let self else { return }
         // A quote's link is the page's address, which What's New doesn't have.
-        guard let selection, let page = self.focusedNativePage(), self.commandBar == nil,
+        guard let selection, let page = self.selectedNativePage(), self.commandBar == nil,
               self.libraryView == nil, self.pageCapture == nil, !self.isClosing, !self.wholeWindowClose,
               !WhatsNewPage.matches(page.url?.absoluteString ?? "") else {
             self.sidebar.updateSharedQuote(action: nil); return
         }
         self.sidebar.updateSharedQuote { [weak self, weak page] in
-            guard let self, let page, self.focusedNativePage() === page,
+            guard let self, let page, self.selectedNativePage() === page,
                   self.sharedQuotes.canPerform(selection) else { return }
             self.copySharedQuote(selection, page: page)
         }
@@ -1981,16 +1977,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             available = { [weak self, weak peek] in
                 guard let self, let peek else { return false }
                 return common() && self.activePeek === peek && self.peeks[peek.page.identifier] === peek
-                    && self.focusedNativePage() === peek.page && peek.canPrepareExit
+                    && self.selectedNativePage() === peek.page && peek.canPrepareExit
             }
             execute = { [weak peek] in
                 guard let peek, peek.canRequestExit else { return false }
                 peek.requestDismiss(.exit); return true
             }
-        } else if let page = focusedNativePage(), let native = binding.prepareFullscreenExit(for: page) {
+        } else if let page = selectedNativePage(), let native = binding.prepareFullscreenExit(for: page) {
             available = { [weak self, weak page] in
                 guard let self, let page else { return false }
-                return common() && self.activePeek == nil && self.focusedNativePage() === page && native.isAvailable
+                return common() && self.activePeek == nil && self.selectedNativePage() === page && native.isAvailable
             }
             execute = { native.perform() }
         } else {
@@ -2157,100 +2153,60 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         _ = selectTab(id)
     }
 
-    private struct PlaceholderCapture {
-        let id: UUID
-        weak var page: PCNativePage?
-        weak var source: BrowserWindowController?
-        var attempt = 0
-    }
-
     /// The placeholder's frozen frame is a compositor copy of the page's
     /// viewport, taken once as the page moves, in the window it moved to: a
     /// copy needs the page visible in its key window, which the leaving
     /// window no longer is. It is never updated afterwards. The copy belongs
     /// to the tab (`PagePlaceholderImages`), so every window showing its
-    /// placeholder uses it. The engine copies only a window's selected page,
-    /// so this window takes its arrivals' copies one at a time and lends the
-    /// selection to each pane that is not the focused one.
-    private func queuePlaceholderCapture(_ id: UUID, page: PCNativePage, from source: BrowserWindowController) {
-        source.syncPlaceholderImageHolders()
-        placeholderCaptureQueue.removeAll { $0.id == id }
-        placeholderCaptureQueue.append(PlaceholderCapture(id: id, page: page, source: source))
-        schedulePlaceholderCapture(after: 0.05)
-    }
-
-    private func schedulePlaceholderCapture(after delay: Double) {
-        guard !placeholderCapturePumpScheduled else { return }
-        placeholderCapturePumpScheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self else { return }
-            self.placeholderCapturePumpScheduled = false
-            self.takeNextPlaceholderCapture()
+    /// placeholder uses it. The engine copies any pane the window shows; the
+    /// focused pane's copy is taken first.
+    private func capturePlaceholderSnapshot(_ id: UUID, page: PCNativePage, from source: BrowserWindowController,
+                                            attempt: Int = 0, generation: Int? = nil) {
+        let generation = generation ?? { placeholderCaptureGeneration += 1; return placeholderCaptureGeneration }()
+        if attempt == 0 {
+            source.syncPlaceholderImageHolders()
+            placeholderCapturesPending[id] = generation
         }
-    }
-
-    private func takeNextPlaceholderCapture() {
-        guard !placeholderCaptureBusy else { return }
-        placeholderCaptureQueue.removeAll { entry in
-            guard let page = entry.page, !page.isClosed, browsers[entry.id]?.nativePage === page,
-                  store.placeholderImages.isShown(entry.id) else { return true }
-            return entry.attempt > 5
-        }
-        let steps = PagePlaceholderCaptureOrder.steps(placeholderCaptureQueue.map(\.id), selected: currentTabID)
-        for step in steps where beginPlaceholderCapture(step) { return }
-        guard !placeholderCaptureQueue.isEmpty else { return }
-        for index in placeholderCaptureQueue.indices { placeholderCaptureQueue[index].attempt += 1 }
-        schedulePlaceholderCapture(after: 0.15)
-    }
-
-    private func beginPlaceholderCapture(_ step: PagePlaceholderCaptureOrder.Step) -> Bool {
-        guard let entry = placeholderCaptureQueue.first(where: { $0.id == step.tab }), let page = entry.page,
-              pageCapture == nil, let window, page.nativeView.window === window else { return false }
-        let key = ObjectIdentifier(page)
-        guard Self.placeholderCaptureLeases[key] == nil else { return false }
-        placeholderSelectionLoan = step.lendsSelection ? page : nil
-        guard page.canCapture(in: window), let capture = page.beginCapture(in: window) else {
-            placeholderSelectionLoan = nil; return false
-        }
-        Self.placeholderCaptureLeases[key] = capture
-        placeholderCaptureBusy = true
-        placeholderCaptureToken += 1
-        let token = placeholderCaptureToken
-        // The copy's callback may never come; the lent selection and the queue must not wait for it.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            if Self.placeholderCaptureLeases[key] === capture {
-                capture.invalidate(); Self.placeholderCaptureLeases.removeValue(forKey: key)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05 + Double(attempt) * 0.15) { [weak self, weak source, weak page] in
+            guard let self, self.placeholderCapturesPending[id] == generation else { return }
+            guard let page, !page.isClosed, self.store.placeholderImages.isShown(id),
+                  self.pageCapture == nil, let window = self.window,
+                  self.browsers[id]?.nativePage === page, page.nativeView.window === window else {
+                self.placeholderCapturesPending.removeValue(forKey: id); return
             }
-            self?.finishPlaceholderCapture(step.tab, token: token)
-        }
-        capture.captureViewport { [weak self] result in
-            capture.invalidate()
-            if Self.placeholderCaptureLeases[key] === capture { Self.placeholderCaptureLeases.removeValue(forKey: key) }
-            guard let self, self.placeholderCaptureToken == token else { return }
-            self.placeholderSelectionLoan = nil
-            guard let data = result.pngData, self.store.placeholderImages.isShown(step.tab) else {
-                self.finishPlaceholderCapture(step.tab, token: token); return
+            // Another pane waits briefly for the focused pane's copy, never indefinitely.
+            if attempt < 3, !PagePlaceholderCaptureOrder.mayCapture(id, pending: Set(self.placeholderCapturesPending.keys),
+                                                                    focused: self.currentTabID) {
+                self.capturePlaceholderSnapshot(id, page: page, from: source ?? self, attempt: attempt + 1, generation: generation)
+                return
             }
-            let size = PagePlaceholderSnapshot.maxPixelSize(source: result.pixelSize,
-                filling: entry.source?.placeholderPixelSize(for: step.tab))
-            PagePlaceholderSnapshot.thumbnail(fromPNG: data, maxPixelSize: size) { [weak self] image in
-                MainActor.assumeIsolated {
-                    guard let self, self.placeholderCaptureToken == token else { return }
-                    entry.source?.syncPlaceholderImageHolders()
-                    if let image { self.store.placeholderImages.store(image, for: step.tab) }
-                    self.finishPlaceholderCapture(step.tab, token: token)
+            let key = ObjectIdentifier(page)
+            guard Self.placeholderCaptureLeases[key] == nil, page.canCapture(in: window),
+                  let capture = page.beginCapture(in: window) else {
+                if attempt < 5, let source {
+                    self.capturePlaceholderSnapshot(id, page: page, from: source, attempt: attempt + 1, generation: generation)
+                } else { self.placeholderCapturesPending.removeValue(forKey: id) }
+                return
+            }
+            Self.placeholderCaptureLeases[key] = capture
+            capture.captureViewport { [weak self, weak source] result in
+                capture.invalidate()
+                if Self.placeholderCaptureLeases[key] === capture { Self.placeholderCaptureLeases.removeValue(forKey: key) }
+                guard let self, self.placeholderCapturesPending[id] == generation else { return }
+                guard let data = result.pngData, self.store.placeholderImages.isShown(id) else {
+                    self.placeholderCapturesPending.removeValue(forKey: id); return
+                }
+                let size = PagePlaceholderSnapshot.maxPixelSize(source: result.pixelSize, filling: source?.placeholderPixelSize(for: id))
+                PagePlaceholderSnapshot.thumbnail(fromPNG: data, maxPixelSize: size) { [weak self, weak source] image in
+                    MainActor.assumeIsolated {
+                        guard let self, self.placeholderCapturesPending[id] == generation else { return }
+                        self.placeholderCapturesPending.removeValue(forKey: id)
+                        source?.syncPlaceholderImageHolders()
+                        if let image { self.store.placeholderImages.store(image, for: id) }
+                    }
                 }
             }
         }
-        return true
-    }
-
-    private func finishPlaceholderCapture(_ id: UUID, token: Int) {
-        guard placeholderCaptureToken == token, placeholderCaptureBusy else { return }
-        placeholderSelectionLoan = nil
-        placeholderCaptureBusy = false
-        placeholderCaptureQueue.removeAll { $0.id == id }
-        takeNextPlaceholderCapture()
     }
 
     /// What this window shows as placeholders, for the frames its store keeps.
@@ -2574,7 +2530,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             if moved {
                 destination.prepareStoreContext()
                 if !untargeted { destination.window?.makeKeyAndOrderFront(nil) }
-                if leftPlaceholder { destination.queuePlaceholderCapture(id, page: page, from: self) }
+                if leftPlaceholder { destination.capturePlaceholderSnapshot(id, page: page, from: self) }
                 // Run after this native callback returns: a placement may start
                 // the next transfer or rearrange the destination's panes.
                 if let placement { destination.placeArrival(id, placement: placement) }
@@ -2777,7 +2733,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             requestNativeSelection(); destination.requestNativeSelection()
             destination.prepareStoreContext()
             if !untargeted { destination.window?.makeKeyAndOrderFront(nil) }
-            if leftPlaceholder, !page.isClosed { destination.queuePlaceholderCapture(id, page: page, from: self) }
+            if leftPlaceholder, !page.isClosed { destination.capturePlaceholderSnapshot(id, page: page, from: self) }
             if let placement { destination.placeArrival(id, placement: placement) }
             return
         }
@@ -4058,7 +4014,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let pane = panes[id], pane.window === window,
               renderedPaneIDs.contains(id), !pane.isHiddenOrHasHiddenAncestor,
               pane.rendererPresentation == expected,
-              !selected || focusedNativePage() === page else { return nil }
+              !selected || selectedNativePage() === page else { return nil }
         return (browser, crash)
     }
 
@@ -4087,7 +4043,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             focusRendererFailure(id, crash)
         } else if crash == nil, restorePageFocus, failures[id] == nil,
                   let page = browser.nativePage, !page.isClosed, page.rendererCrash == nil,
-                  focusedNativePage() === page, let binding = nativeBinding,
+                  selectedNativePage() === page, let binding = nativeBinding,
                   PCNativeBrowserApplication.owner(of: page) === binding,
                   let window, browser.window === window, !browser.isHiddenOrHasHiddenAncestor {
             window.makeFirstResponder(page.nativeView)
@@ -5551,13 +5507,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let sourcePeek = activePeek
         let commandPeek = newTab ? nil : sourcePeek
         let commandBrowser = currentBrowser
-        let commandPage = focusedNativePage()
+        let commandPage = selectedNativePage()
         let isOriginal: () -> Bool = { [weak self, weak window] in
             guard let self, let window, self.window === window,
                   self.canOwnDownloadDialog(for: commandProfile),
                   self.activeSpaceID == commandSpace, self.activeProfileID == commandProfile,
                   self.currentTabID == commandTab, self.activePeek === sourcePeek,
-                  self.currentBrowser === commandBrowser, self.focusedNativePage() === commandPage,
+                  self.currentBrowser === commandBrowser, self.selectedNativePage() === commandPage,
                   commandPage?.isClosed != true, window.isVisible, !window.isMiniaturized,
                   window.attachedSheet == nil || self.commandBar?.ownsAttachedSheet == true else { return false }
             if inSidebar && (self.libraryView != nil || self.sidebarPresentation == .hidden
@@ -6267,7 +6223,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private var navigationPage: PCNativePage? {
         guard !isClosing, !wholeWindowClose, !windowClosePending, libraryView == nil,
-              let page = focusedNativePage(), page.nativeView.window === window, !page.isClosed else { return nil }
+              let page = selectedNativePage(), page.nativeView.window === window, !page.isClosed else { return nil }
         return page
     }
     func canPerformNavigation(_ action: PCNativeNavigationAction) -> Bool {
@@ -8167,7 +8123,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             return
         }
         closedItems.selected(selectedTabIDs)
-        if currentBrowser == nil, focusedNativePage()?.isEmbedded == true {
+        if currentBrowser == nil, selectedNativePage()?.isEmbedded == true {
             pendingNativeSelection = nil; nativeBinding?.synchronizeSelectionAndLayout(); refreshNavigationControls(); return
         }
         recordRecentTabSelection()
@@ -8202,7 +8158,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             // Browser, but an unready preflight or creating web page must not.
             guard presentation.isLocalSelection(id, state: store.state,
                                                 hasNativeWrapper: currentBrowser != nil),
-                  focusedNativePage() == nil else {
+                  selectedNativePage() == nil else {
                 pendingNativeSelection = nil
                 return
             }
@@ -8309,7 +8265,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             && nativeFullscreenTabID == nil && closingTabIDs.isEmpty && modelRetirementIDs.isEmpty
             && transferringTabIDs.isEmpty && resolvingTransfers.isEmpty && commandBar == nil
             && libraryView == nil && window?.attachedSheet == nil && window?.isKeyWindow == true
-            && focusedNativePage() === page && !page.isClosed
+            && selectedNativePage() === page && !page.isClosed
             && PCNativeBrowserApplication.owner(of: page) === browser
             && !store.isProfileRemovalPending(activeProfileID)
     }
@@ -8418,7 +8374,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     ///
     /// content (`ModalWindowContentStateV2.modalByWindowContent`).
     func nativeBrowser(_ browser: PCNativeBrowserWindow, canPresentPeekFrom page: PCNativePage) -> Bool {
-        let shown = activePeek == nil && focusedNativePage() === page
+        let shown = activePeek == nil && selectedNativePage() === page
         return (shown || peekUndoOpen?.parent == page.identifier)
             && canHostPeek(browser, over: page, overLibrary: archivePreviewRequest?.parent == page.identifier)
     }
@@ -8454,7 +8410,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         guard archivePreviewRequest == nil, peekUndoOpen == nil, activePeek == nil, let binding = nativeBinding,
               let current = currentTabID, store.state.tabs.contains(where: { $0.id == current && $0.archivedAt == nil }),
-              let parent = browsers[current]?.nativePage, focusedNativePage() === parent,
+              let parent = browsers[current]?.nativePage, selectedNativePage() === parent,
               PCNativePage.instancesRespond(to: #selector(PCNativePage.openPeek(url:))),
               canHostPeek(binding, over: parent, overLibrary: true),
               let lease = store.acquireArchivePreview(id: id, profileID: profileID) else { return false }
@@ -8967,18 +8923,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func nativeBrowserWindow() -> NSWindow { window! }
-    /// What the engine is told is selected. Only its copy eligibility needs the
-    /// lent page; this window's own commands keep using the focused one.
-    func selectedNativePage() -> PCNativePage? { placeholderSelectionLoan ?? focusedNativePage() }
-
-    private func focusedNativePage() -> PCNativePage? {
+    func selectedNativePage() -> PCNativePage? {
         if let page = currentBrowser?.nativePage { return page }
         guard let id = currentTabID else { return nil }
         return easelEditors[id]?.editor.pageObjects?.selectedPage
     }
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, allowsHistorySwipeFor page: PCNativePage) -> Bool {
-        browser === nativeBinding && focusedNativePage() === page && !page.isClosed
+        browser === nativeBinding && selectedNativePage() === page && !page.isClosed
             && !isClosing && !wholeWindowClose && !windowClosePending && !windowCloseApproved
             && closingTabIDs.isEmpty && modelRetirementIDs.isEmpty && peekRetirementParents.isEmpty
             && transferringTabIDs.isEmpty && resolvingTransfers.isEmpty
@@ -8993,7 +8945,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         guard let responder = window?.firstResponder as? NSView,
               !(responder is NSTextView),
-              !(focusedNativePage().map { responder === $0.nativeView || responder.isDescendant(of: $0.nativeView) } ?? false)
+              !(selectedNativePage().map { responder === $0.nativeView || responder.isDescendant(of: $0.nativeView) } ?? false)
         else { super.cancelOperation(sender); return }
         // AppKit's original responder chain gets first refusal. A renderer key
         // never reaches this Exit route; it uses its acknowledged page event.
@@ -9005,7 +8957,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func nativeBrowser(_ browser: PCNativeBrowserWindow, canHandlePeekEscapeFrom page: PCNativePage) -> Bool {
         guard browser === nativeBinding, let peek = activePeek,
               peek.page === page, peeks[page.identifier] === peek,
-              focusedNativePage() === page, PCNativeBrowserApplication.owner(of: page) === browser,
+              selectedNativePage() === page, PCNativeBrowserApplication.owner(of: page) === browser,
               browser.window === window, commandBar == nil, libraryView == nil,
               findHost.isHidden, pageCapture == nil, nativeFullscreenTabID == nil,
               !wholeWindowClose, !windowClosePending,
@@ -9023,7 +8975,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, shortcutFor event: NSEvent,
                        page: PCNativePage, editable: Bool) -> PCNativeShortcutCommand? {
-        guard browser === nativeBinding, focusedNativePage() === page, !page.isClosed,
+        guard browser === nativeBinding, selectedNativePage() === page, !page.isClosed,
               !isClosing, !wholeWindowClose, !windowClosePending,
               transferringTabIDs.isEmpty, resolvingTransfers.isEmpty,
               window?.isKeyWindow == true, NSApp.isActive else { return nil }
@@ -9049,7 +9001,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard browser === nativeBinding else { return false }
         removeShortcutHint()
         guard let command, let item = command.item, let page,
-              focusedNativePage() === page, !page.isClosed, !isClosing,
+              selectedNativePage() === page, !page.isClosed, !isClosing,
               window?.isKeyWindow == true, page.nativeView.window === window,
               !page.nativeView.isHiddenOrHasHiddenAncestor else { return false }
         //
@@ -9094,7 +9046,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func nativeBrowser(_ browser: PCNativeBrowserWindow, isShortcutHintHovered command: PCNativeShortcutCommand,
                        page: PCNativePage) -> Bool {
         guard browser === nativeBinding, shortcutHintCommand === command, shortcutHintPage === page,
-              focusedNativePage() === page else { return false }
+              selectedNativePage() === page else { return false }
         return shortcutHint?.containsPointer == true
     }
     /// The cue's own dismissal: consuming its queued command makes the native
@@ -9253,7 +9205,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         if browser === nativeBinding, page.isEmbedded {
             // The exact canvas selection owns activation. A renderer/background
             // request cannot replace the Easel's sidebar identity or focus.
-            if focusedNativePage() !== page { browser.synchronizeSelectionAndLayout() }
+            if selectedNativePage() !== page { browser.synchronizeSelectionAndLayout() }
             return
         }
         if browser === nativeBinding, let peek = peeks[page.identifier], !page.isClosed {
@@ -10855,7 +10807,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
               let responder = window.firstResponder else { return false }
         if responder is NSTextView || responder is NSControl { return false }
         guard let view = responder as? NSView else { return responder === window }
-        if let page = focusedNativePage(), view === page.nativeView || view.isDescendant(of: page.nativeView) {
+        if let page = selectedNativePage(), view === page.nativeView || view.isDescendant(of: page.nativeView) {
             return page.canUseWindowUndo
         }
         return view === sidebar || view.isDescendant(of: sidebar) || view === rootView || view === pageHost
@@ -11708,7 +11660,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let panel = CommandBar(parent: window, tabs: candidates, history: commandBarHistory(profileID: request.profileID),
             historyRevision: store.historyRevision, historyExcludedURL: splitHistoryExcludedURL,
             currentURL: nil, profilePath: store.independentEngineProfilePath(for: request.profileID),
-            page: focusedNativePage(), nativeWindow: nativeBinding, extensionDisposition: nil, theme: windowPaletteTheme,
+            page: selectedNativePage(), nativeWindow: nativeBinding, extensionDisposition: nil, theme: windowPaletteTheme,
             contentAppearance: rootView.palette.contentAppearance)
         panel.tabCaption = { [weak self] tab in self?.commandBarTabCaption(tab)
             ?? .switchToTab }
@@ -11827,7 +11779,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             guard session.isValid else { self.cancelSplitInsertion(restoreFocus: false); return }
             PCNativeBrowserApplication.resolveSearchInput(input,
                 profilePath: self.store.independentEngineProfilePath(for: request.profileID),
-                page: self.focusedNativePage(), window: self.nativeBinding) { [weak self, weak session] navigation, error in
+                page: self.selectedNativePage(), window: self.nativeBinding) { [weak self, weak session] navigation, error in
                     MainActor.assumeIsolated {
                         guard let self, let session, self.splitInsertion === session else { return }
                         guard session.isValid else { self.cancelSplitInsertion(restoreFocus: false); return }
@@ -12548,7 +12500,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     var canCopyCurrentURL: Bool {
         guard currentURLForCopy != nil else { return false }
         if commandBar != nil { return true }
-        if let page = focusedNativePage() { return page.canCopyLink(as: .plain) }
+        if let page = selectedNativePage() { return page.canCopyLink(as: .plain) }
         return true
     }
     private func preparePopupCopyURL() -> (() -> Bool)? {
@@ -12560,7 +12512,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return { [weak self, weak window, weak browser, weak page] in
             guard !used, let self, let window, let browser, let page,
                   self.window === window, browser.window === window,
-                  self.currentBrowser === browser, self.focusedNativePage() === page,
+                  self.currentBrowser === browser, self.selectedNativePage() === page,
                   browser.readerRevision == revision, browser.url == url, !page.isClosed, self.commandBar == nil,
                   self.canCopyCurrentURL else { return false }
             used = true
@@ -12570,15 +12522,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     var canCopyCurrentURLAsMarkdown: Bool {
         commandBar == nil && currentURLForCopy != nil &&
-            focusedNativePage()?.canCopyLink(as: .markdown) == true
+            selectedNativePage()?.canCopyLink(as: .markdown) == true
     }
     var canCopyCurrentURLAsQuote: Bool {
         commandBar == nil && currentURLForCopy != nil &&
-            focusedNativePage()?.canCopyLink(as: .quote) == true
+            selectedNativePage()?.canCopyLink(as: .quote) == true
     }
     func copyCurrentURL() {
         guard let url = currentURLForCopy else { return }
-        if commandBar == nil, let page = focusedNativePage() {
+        if commandBar == nil, let page = selectedNativePage() {
             guard page.canCopyLink(as: .plain) else { return }
             copyPageLink(as: .plain)
         } else {
@@ -12635,7 +12587,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         NSSharingServicePicker(items: urls).show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
     }
     private func copyPageLink(as format: PCNativeLinkCopyFormat) {
-        guard let page = focusedNativePage(), page.canCopyLink(as: format) else { return }
+        guard let page = selectedNativePage(), page.canCopyLink(as: format) else { return }
         performLinkCopy(page: page, format: format) { completion in
             page.copyLink(as: format, completion: completion)
         }
@@ -12651,7 +12603,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         start { [weak self, weak page] result in
             MainActor.assumeIsolated {
                 guard let self, let page, self.copyLinkOperation == operation,
-                      self.focusedNativePage() === page, !page.isClosed,
+                      self.selectedNativePage() === page, !page.isClosed,
                       !self.isClosing, !self.wholeWindowClose else { return }
                 switch result {
                 case .copied:
@@ -12728,7 +12680,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 guard let self else { return false }
                 guard id == "copyCurrentURL:" else { return true }
                 guard self.currentURLForCopy != nil else { return false }
-                guard self.commandBar == nil, let page = self.focusedNativePage() else {
+                guard self.commandBar == nil, let page = self.selectedNativePage() else {
                     return self.canCopyCurrentURL
                 }
                 return !page.isClosed && page.nativeView.window === self.window
@@ -12750,7 +12702,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 case "newTab:": self.newTab()
                 case "cycleToNextRecentTab:": self.cycleRecentTab(forward: true)
                 case "copyCurrentURL:":
-                    if self.commandBar == nil, let page = self.focusedNativePage(),
+                    if self.commandBar == nil, let page = self.selectedNativePage(),
                        let binding = self.nativeBinding, let commandWindow = controller?.window {
                         self.performLinkCopy(page: page, format: .plain) { completion in
                             page.copyURL(fromCommandWindow: commandWindow, browser: binding, completion: completion)
@@ -13096,7 +13048,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }, finished: { [weak self, weak browser, weak parent] restoreFocus in
                 guard let self else { return }
                 self.pageCapture = nil
-                self.sharedQuotes.bind(self.focusedNativePage(), window: self.window)
+                self.sharedQuotes.bind(self.selectedNativePage(), window: self.window)
                 self.easelImageDestination?.dismissIfInvalid()
                 if restoreFocus, valid(), let browser, let parent, parent.isKeyWindow, parent.attachedSheet == nil {
                     parent.makeFirstResponder(browser.nativePage?.nativeView ?? browser)
@@ -13917,7 +13869,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
     private func isCurrentFind(_ state: BrowserFindState<PCNativePage>) -> Bool {
         guard let page = state.owner, !page.isClosed else { return false }
-        return state.matches(focusedNativePage(), revision: page.readerRevision)
+        return state.matches(selectedNativePage(), revision: page.readerRevision)
     }
     private func reconcileFind() {
         // Idle chrome ticks always defer into reconcileFind. Skip only when
@@ -13999,7 +13951,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 else { editor.text.performTextFinderAction(sender) }
             })
         } else {
-            guard libraryView == nil, let page = focusedNativePage(), page.canFindInPage else { return false }
+            guard libraryView == nil, let page = selectedNativePage(), page.canFindInPage else { return false }
             let state = findState(for: page)
             command = BrowserFindCommand(action: action, window: window, available: { [weak self, weak page] in
                 guard let self, let page, self.canOwnFind, self.libraryView == nil,
@@ -14069,7 +14021,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     private func refreshPaymentControls() {
-        sharedQuotes.bind(isClosing || wholeWindowClose ? nil : focusedNativePage(), window: window)
+        sharedQuotes.bind(isClosing || wholeWindowClose ? nil : selectedNativePage(), window: window)
         guard !isClosing, let binding = nativeBinding,
               let page = currentBrowser?.nativePage, !page.isClosed else {
             paymentFeedbackWork?.cancel(); paymentFeedbackWork = nil
@@ -16077,7 +16029,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 valid: { [weak self, weak view, weak page] in
                     guard let self, let view, let page else { return false }
                     return !self.isClosing && self.activeProfileID == profileID
-                        && self.focusedNativePage() === page && view.nativePage === page
+                        && self.selectedNativePage() === page && view.nativePage === page
                         && (self.browserProfiles[id] ?? self.easelEditors[id]?.profileID) == profileID && self.selectedTabIDs.contains(id)
                         && !self.transferringTabIDs.contains(id) && image.isValid
                 }, saved: { [weak self] documentID, title in
@@ -16217,8 +16169,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
         isClosing = true
         store.placeholderImages.removeWindow(presentationID)
-        placeholderCaptureQueue.removeAll(); placeholderSelectionLoan = nil
-        placeholderCaptureBusy = false; placeholderCaptureToken += 1
+        placeholderCapturesPending.removeAll()
         stopLibraryFlyoutFileQuery()
         archiveActivityScheduling.cancel()
         for peek in peeks.values { peek.finish() }; peeks.removeAll()

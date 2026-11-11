@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.13.0 (2026-11-11)
+
+### New
+
+- **engine:** Give Parc a brand-new Chromium engine, freshly patched against the web's latest troublemakers
+- **extensions:** Give the Remove extension dialog Parc's good looks and a red button that means business
+- **dialogs:** Dress up page alerts, confirms and prompts in Parc's own sheet so sneaky timed Return presses can't click OK for you
+- **dialogs:** Give name prompts a cozy rounded field and swap the stock checkbox for the onboarding circle
+- **dialogs:** Match engine dialog fields and checkboxes to the app's cozy card and onboarding circle, and wrap crowded buttons
+- **passwords:** Give password, address and card save prompts Parc's own sheet, with Never on this site politely off to the side
+- **sign-in:** Restyle website sign-in with roomy labelled fields that glow blue instead of wearing a focus ring
+- **apps:** Show open-in-app requests in Parc's dialog with the app's own icon front and center
+- **pages:** Ask about frozen pages in Parc's dialog, where Escape now just means keep waiting
+- **notifications:** Dress the notification permission nudge in Parc's dialog so Never Mind answers Escape
+- **windows:** Put download, caret browsing and private window decisions in Parc's dialog
+- **devtools:** Give DevTools-window alerts and prompts Parc's dialog, round checkbox and all
+- **extensions:** Bring enterprise, parent-approval and repair install requests into Parc's dialog, cozy password card included
+
+### Fixed
+
+- **spaces:** Let your only Space swipe invite a friend
+- **profiles:** Let Delete Profile ask nicely in one plain dialog instead of making you type its name
+- **files:** Keep Image Files from vanishing in upload dialogs
+- **dialogs:** Evict the last macOS pop-ups so every alert, rename and error talks like Parc
+- **windows:** Give every window and every split pane the same frozen picture of a moved tab instead of leaving some staring at white
+- **windows:** Let every pane of a moved split keep its frozen picture without borrowing focus from your keyboard
+
 ## 1.12.3 (2026-11-11)
 
 ### Fixed

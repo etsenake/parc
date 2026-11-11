@@ -16,35 +16,36 @@ struct PagePlaceholderImagesTests {
         return context.makeImage()!
     }
 
-    /// The engine copies only the page its window has selected, or the one the
-    /// window has lent the selection to for that copy.
-    struct Engine {
-        var selected: UUID
-        func copies(_ step: PagePlaceholderCaptureOrder.Step) -> CGImage? {
-            step.lendsSelection || step.tab == selected ? frame(10) : nil
-        }
-    }
-
     static func main() throws {
         let first = UUID(), second = UUID(), third = UUID()
         let one = UUID(), two = UUID(), three = UUID()
 
-        // A split of two tabs moves to another window: both panes get a frame.
+        // A split of two tabs moves to another window: every pane gets a frame,
+        // the focused pane's first. The engine copies any pane the window shows.
         let images = PagePlaceholderImages()
         images.setShown([first, second], in: one)
-        var pending = [first, second]
-        let engine = Engine(selected: first)
-        for step in PagePlaceholderCaptureOrder.steps(pending, selected: engine.selected) {
-            if let copy = engine.copies(step) { images.store(copy, for: step.tab); pending.removeAll { $0 == step.tab } }
+        var pending: Set<UUID> = [first, second], copied: [UUID] = []
+        for _ in 0..<4 {
+            for tab in [second, first] where pending.contains(tab)
+                && PagePlaceholderCaptureOrder.mayCapture(tab, pending: pending, focused: first) {
+                images.store(frame(10), for: tab); pending.remove(tab); copied.append(tab)
+            }
         }
         expect(pending.isEmpty && images.image(for: first, in: one) != nil && images.image(for: second, in: one) != nil,
                "a split moved to another window gets a frozen image for both panes")
-        let order = PagePlaceholderCaptureOrder.steps([second, first, third], selected: first)
-        expect(order.map(\.tab) == [first, second, third] && order.map(\.lendsSelection) == [false, true, true],
-               "the selected pane is copied first with nothing lent; each other pane borrows the selection")
-        expect(PagePlaceholderCaptureOrder.steps([second], selected: first) == [.init(tab: second, lendsSelection: true)]
-               && PagePlaceholderCaptureOrder.steps([], selected: first).isEmpty,
-               "a lone arrival that is not selected still borrows it")
+        expect(copied == [first, second], "the focused pane is copied before the other panes")
+        expect(PagePlaceholderCaptureOrder.mayCapture(second, pending: [second], focused: first)
+               && PagePlaceholderCaptureOrder.mayCapture(second, pending: [first, second], focused: nil)
+               && PagePlaceholderCaptureOrder.mayCapture(first, pending: [first, second], focused: first)
+               && !PagePlaceholderCaptureOrder.mayCapture(second, pending: [first, second], focused: first),
+               "a pane waits only while the focused pane's copy is still to come")
+
+        // The engine's copy rule: any pane the window shows, never only the selected one.
+        let engineSource = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Engine/ParcNative/native_page_capture.mm")
+        let capture = try String(contentsOf: engineSource, encoding: .utf8)
+        expect(capture.contains("visibleNativePages") && !capture.contains("selectedNativePage"),
+               "a window's non-focused pane can be copied, so a moved split's panes all get an image")
 
         // A third window showing the same placeholder reuses the one image.
         let shared = frame(20)

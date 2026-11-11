@@ -75,6 +75,15 @@
 - (void)cancelOperation:(id)sender {
   [self.request finish:PCExtensionInstallCancel];
 }
+// An input method composing in a field keeps its Return and Escape.
+- (BOOL)performKeyEquivalent:(NSEvent*)event {
+  NSResponder* responder = self.firstResponder;
+  if (event.type == NSEventTypeKeyDown && [responder isKindOfClass:NSTextView.class] &&
+      ((NSTextView*)responder).hasMarkedText) {
+    return NO;
+  }
+  return [super performKeyEquivalent:event];
+}
 @end
 static void Later(void (^block)(void)) {
   [NSRunLoop.mainRunLoop
@@ -254,8 +263,7 @@ using namespace parc_dialog;
       NSAccessibilityPostNotification(_parentError, NSAccessibilityValueChangedNotification);
   }
   _accept.enabled = [self acceptAllowed];
-  [_sheet.contentView layoutSubtreeIfNeeded];
-  [_sheet setContentSize:NSMakeSize(480, MAX(230, _stack.fittingSize.height + 44))];
+  [self fitStandardSheet:_sheet];
 }
 - (void)configureInstallationEducationWithName:(NSString*)name {
   NSParameterAssert(!_started && name.length && !_parentAccounts);
@@ -392,27 +400,46 @@ using namespace parc_dialog;
   sheet.contentView = root;
   [sheet setContentSize:NSMakeSize(dialogWidth, y)];
 }
+// Fits the special-request sheet to its stack, which may grow with an error,
+// and the footer 22 points below it (38.5 points with the buttons' lip).
+- (void)fitStandardSheet:(NSWindow*)sheet {
+  [sheet.contentView layoutSubtreeIfNeeded];
+  [sheet setContentSize:NSMakeSize(
+      kWidth, MAX(230, ceil(_stack.fittingSize.height) + kInset + 22 + 38.5 + 28))];
+}
+// Special requests (policy, enterprise justification, parent approval, repair,
+// re-enable, additional permissions, apps and themes) keep their own text and
+// controls in Parc's dialog. Return never accepts them, so the accept button
+// carries no Return badge.
 - (void)layOutStandardInSheet:(NSWindow*)sheet {
+  PrepareSheet(sheet);
+  PCDialogBaseView* root = [[PCDialogBaseView alloc] initWithFrame:NSMakeRect(0, 0, kWidth, 320)];
+  sheet.contentView = root;
+  const CGFloat width = kWidth - 2 * kInset;
   NSStackView* stack = [NSStackView stackViewWithViews:@[]];
   _stack = stack;
   stack.orientation = NSUserInterfaceLayoutOrientationVertical;
   stack.alignment = NSLayoutAttributeLeading;
   stack.spacing = 12;
   stack.translatesAutoresizingMaskIntoConstraints = NO;
+  auto addLabel = ^NSTextField*(NSString* text, NSFont* font, NSColor* color, CGFloat spacing) {
+    NSTextField* label = Label(text, font, color, spacing);
+    label.preferredMaxLayoutWidth = width;
+    [stack addArrangedSubview:label];
+    [label.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
+    return label;
+  };
   if (_icon) {
-    NSImageView* image = [NSImageView imageViewWithImage:_icon];
-    [image.widthAnchor constraintEqualToConstant:48].active = YES;
-    [image.heightAnchor constraintEqualToConstant:48].active = YES;
+    NSImageView* image = ExtensionArt(_icon);
+    [image.widthAnchor constraintEqualToConstant:kArtSize].active = YES;
+    [image.heightAnchor constraintEqualToConstant:kArtSize].active = YES;
     [stack addArrangedSubview:image];
+    [stack setCustomSpacing:17 afterView:image];
   }
-  NSTextField* title = [NSTextField wrappingLabelWithString:_title];
-  title.font = [NSFont boldSystemFontOfSize:15];
-  [stack addArrangedSubview:title];
-  [title.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
+  NSTextField* title = addLabel(_title, TitleFont(), PopoverTitle(), 4);
+  [stack setCustomSpacing:8 afterView:title];
   if (_heading.length) {
-    NSTextField* heading = [NSTextField wrappingLabelWithString:_heading];
-    [stack addArrangedSubview:heading];
-    [heading.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
+    addLabel(_heading, BodyFont(), PopoverMessage(), 1);
   }
   NSStackView* list = [NSStackView stackViewWithViews:@[]];
   list.orientation = NSUserInterfaceLayoutOrientationVertical;
@@ -420,12 +447,12 @@ using namespace parc_dialog;
   list.spacing = 10;
   list.translatesAutoresizingMaskIntoConstraints = NO;
   for (NSUInteger i = 0; i < _permissions.count; ++i) {
-    NSTextField* permission = [NSTextField wrappingLabelWithString:
-        [@"• " stringByAppendingString:_permissions[i]]];
+    NSTextField* permission =
+        Label([@"• " stringByAppendingString:_permissions[i]], BodyFont(), PopoverMessage(), 1);
     [list addArrangedSubview:permission];
     [permission.widthAnchor constraintEqualToAnchor:list.widthAnchor].active = YES;
     if (_details[i].length) {
-      NSTextField* detail = [NSTextField wrappingLabelWithString:_details[i]];
+      NSTextField* detail = Label(_details[i], BodyFont(), PopoverMessage(), 1);
       [list addArrangedSubview:detail];
       [detail.widthAnchor constraintEqualToAnchor:list.widthAnchor].active = YES;
     }
@@ -433,46 +460,58 @@ using namespace parc_dialog;
   NSScrollView* scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
   scroll.hasVerticalScroller = YES;
   scroll.drawsBackground = NO;
+  scroll.contentView.drawsBackground = NO;
   scroll.documentView = list;
-  [list.widthAnchor constraintEqualToAnchor:scroll.contentView.widthAnchor]
-      .active = YES;
+  [NSLayoutConstraint activateConstraints:@[
+    [list.widthAnchor constraintEqualToAnchor:scroll.contentView.widthAnchor],
+    [list.leadingAnchor constraintEqualToAnchor:scroll.contentView.leadingAnchor],
+    [list.topAnchor constraintEqualToAnchor:scroll.contentView.topAnchor],
+  ]];
   [stack addArrangedSubview:scroll];
   [scroll.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
   CGFloat permissionHeight = _permissions.count
       ? (_parentAccounts.count ? 160 : 220) : 0;
   [scroll.heightAnchor constraintEqualToConstant:permissionHeight].active = YES;
   if (_checkboxLabel.length) {
-    _checkbox = [NSButton checkboxWithTitle:_checkboxLabel
-                                     target:nil
-                                     action:nil];
-    _checkbox.state = NSControlStateValueOff;
+    _checkbox = [[PCDialogCheckbox alloc] initWithTitle:_checkboxLabel target:nil action:nil];
     [stack addArrangedSubview:_checkbox];
+    [_checkbox.widthAnchor constraintLessThanOrEqualToAnchor:stack.widthAnchor].active = YES;
   }
   if (_justificationLabel.length) {
-    [stack addArrangedSubview:[NSTextField
-        wrappingLabelWithString:_justificationLabel]];
-    NSScrollView* editor = [[NSScrollView alloc] initWithFrame:NSZeroRect];
-    editor.borderType = NSBezelBorder;
+    NSTextField* label = addLabel(_justificationLabel, BodyFont(), PopoverMessage(), 1);
+    [stack setCustomSpacing:8 afterView:label];
+    PCDialogCard* card = [[PCDialogCard alloc] initWithFrame:NSMakeRect(0, 0, width, 72)];
+    NSScrollView* editor = [[NSScrollView alloc] initWithFrame:NSInsetRect(card.bounds, 4, 4)];
+    editor.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    editor.borderType = NSNoBorder;
+    editor.drawsBackground = NO;
+    editor.contentView.drawsBackground = NO;
     editor.hasVerticalScroller = YES;
+    editor.autohidesScrollers = YES;
     PCExtensionJustificationTextView* input =
         [[PCExtensionJustificationTextView alloc]
-            initWithFrame:NSMakeRect(0, 0, 432, 72)];
-    input.font = [NSFont systemFontOfSize:13];
+            initWithFrame:NSMakeRect(0, 0, width - 8, 64)];
+    input.font = BodyFont();
+    input.textColor = PopoverTitle();
+    input.drawsBackground = NO;
     input.richText = NO;
     input.importsGraphics = NO;
     input.verticallyResizable = YES;
     input.horizontallyResizable = NO;
     input.autoresizingMask = NSViewWidthSizable;
     input.textContainer.widthTracksTextView = YES;
-    input.textContainerInset = NSMakeSize(6, 6);
+    input.textContainerInset = NSMakeSize(4, 4);
     input.placeholder = _justificationPlaceholder;
     input.delegate = self;
     [input setAccessibilityLabel:_justificationLabel];
     _justificationInput = input;
     editor.documentView = input;
-    [stack addArrangedSubview:editor];
-    [editor.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
-    [editor.heightAnchor constraintEqualToConstant:72].active = YES;
+    [card addSubview:editor];
+    card.field = input;
+    [stack addArrangedSubview:card];
+    [card.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
+    [card.heightAnchor constraintEqualToConstant:72].active = YES;
+    [stack setCustomSpacing:6 afterView:card];
     _justificationCounter = [NSTextField
         labelWithString:_justificationCounterText(0)];
     _justificationCounter.font = [NSFont systemFontOfSize:11];
@@ -481,21 +520,28 @@ using namespace parc_dialog;
   }
   if (_parentAccounts.count) {
     for (NSString* instruction in _parentInstructions) {
-      [stack addArrangedSubview:[NSTextField wrappingLabelWithString:instruction]];
+      addLabel(instruction, BodyFont(), PopoverMessage(), 1);
     }
     _parentChoice = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
     [_parentChoice addItemsWithTitles:_parentAccounts];
     _parentChoice.accessibilityLabel = @"Parent account";
     [stack addArrangedSubview:_parentChoice];
-    [stack addArrangedSubview:[NSTextField labelWithString:_parentPasswordLabel]];
-    _parentPassword = [[NSSecureTextField alloc] initWithFrame:NSZeroRect];
+    NSTextField* passwordLabel = addLabel(_parentPasswordLabel,
+        [NSFont systemFontOfSize:13 weight:NSFontWeightMedium], PopoverMessage(), 0);
+    [stack setCustomSpacing:6 afterView:passwordLabel];
+    PCDialogInputField* password = [[PCDialogInputField alloc] initWithText:@"" secure:YES];
+    _parentPassword = (NSSecureTextField*)password.field;
     _parentPassword.delegate = self;
     _parentPassword.accessibilityLabel = _parentPasswordLabel;
-    [stack addArrangedSubview:_parentPassword];
-    [_parentPassword.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
+    [stack addArrangedSubview:password];
+    [password.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
+    [password.heightAnchor constraintEqualToConstant:36].active = YES;
     _parentError = [NSTextField wrappingLabelWithString:@""];
+    _parentError.font = BodyFont();
     _parentError.textColor = NSColor.systemRedColor;
+    _parentError.preferredMaxLayoutWidth = width;
     [stack addArrangedSubview:_parentError];
+    [_parentError.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
     [_parentError.heightAnchor constraintGreaterThanOrEqualToConstant:32].active = YES;
     _parentProgress = [[NSProgressIndicator alloc] initWithFrame:NSZeroRect];
     _parentProgress.style = NSProgressIndicatorStyleSpinning;
@@ -504,38 +550,43 @@ using namespace parc_dialog;
     _parentProgress.hidden = YES;
     [stack addArrangedSubview:_parentProgress];
   }
-  NSButton* cancel = [NSButton buttonWithTitle:_cancelLabel
-                                        target:self
-                                        action:@selector(cancel:)];
+  PCDialogButton* cancel = [[PCDialogButton alloc] initWithTitle:_cancelLabel primary:NO];
+  cancel.target = self;
+  cancel.action = @selector(cancel:);
   cancel.keyEquivalent = @"\033";
-  NSMutableArray<NSView*>* buttonViews = [NSMutableArray arrayWithObject:cancel];
+  NSStackView* buttons = [NSStackView stackViewWithViews:@[]];
+  buttons.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+  buttons.spacing = 8;
+  buttons.translatesAutoresizingMaskIntoConstraints = NO;
+  NSMutableArray<PCDialogButton*>* buttonViews = [NSMutableArray arrayWithObject:cancel];
   if (_acceptLabel.length) {
-    _accept = [NSButton buttonWithTitle:_acceptLabel
-                                 target:self
-                                 action:@selector(accept:)];
-    _accept.enabled = NO;
-    _accept.keyEquivalent = @"";
-    [buttonViews addObject:_accept];
+    PCDialogButton* accept = [[PCDialogButton alloc] initWithTitle:_acceptLabel primary:YES];
+    accept.target = self;
+    accept.action = @selector(accept:);
+    accept.enabled = NO;
+    accept.keyEquivalent = @"";
+    accept.showsHint = NO;
+    _accept = accept;
+    [buttonViews addObject:accept];
   }
-  NSStackView* buttons = [NSStackView stackViewWithViews:buttonViews];
-  buttons.spacing = 10;
-  [stack addArrangedSubview:buttons];
-  [sheet.contentView addSubview:stack];
+  for (PCDialogButton* button in buttonViews) {
+    // The view extends past the 36-point body for its centered border and lip.
+    [button.widthAnchor constraintEqualToConstant:button.bodyWidth + 1].active = YES;
+    [button.heightAnchor constraintEqualToConstant:38.5].active = YES;
+    [buttons addView:button inGravity:NSStackViewGravityTrailing];
+  }
+  [root addSubview:stack];
+  // The footer keeps Parc's 28-point side inset, wider than the content column;
+  // the buttons' centered border extends half a point past it, as in PlaceFooter.
+  [root addSubview:buttons];
   [NSLayoutConstraint activateConstraints:@[
-    [stack.leadingAnchor
-        constraintEqualToAnchor:sheet.contentView.leadingAnchor
-                       constant:24],
-    [stack.trailingAnchor
-        constraintEqualToAnchor:sheet.contentView.trailingAnchor
-                       constant:-24],
-    [stack.topAnchor constraintEqualToAnchor:sheet.contentView.topAnchor
-                                    constant:22],
-    [stack.bottomAnchor constraintEqualToAnchor:sheet.contentView.bottomAnchor
-                                       constant:-22]
+    [stack.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:kInset],
+    [stack.widthAnchor constraintEqualToConstant:width],
+    [stack.topAnchor constraintEqualToAnchor:root.topAnchor constant:kInset],
+    [buttons.trailingAnchor constraintEqualToAnchor:root.trailingAnchor constant:-27.5],
+    [buttons.topAnchor constraintEqualToAnchor:stack.bottomAnchor constant:22],
   ]];
-  [sheet.contentView layoutSubtreeIfNeeded];
-  [sheet setContentSize:NSMakeSize(480,
-                                   MAX(230, stack.fittingSize.height + 44))];
+  [self fitStandardSheet:sheet];
 }
 - (void)start {
   NSCAssert(NSThread.isMainThread, @"UI thread required");
@@ -553,7 +604,7 @@ using namespace parc_dialog;
       return;
     }
     PCExtensionInstallSheet* sheet = [[PCExtensionInstallSheet alloc]
-        initWithContentRect:NSMakeRect(0, 0, 480, 320)
+        initWithContentRect:NSMakeRect(0, 0, kWidth, 320)
                   styleMask:NSWindowStyleMaskTitled
                     backing:NSBackingStoreBuffered
                       defer:NO];

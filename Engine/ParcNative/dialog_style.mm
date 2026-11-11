@@ -598,6 +598,25 @@ using namespace parc_dialog;
 }
 @end
 
+@implementation PCDialogCard
+@synthesize field = _field;
+- (void)mouseDown:(NSEvent*)event {
+  NSView* field = _field;
+  if (field) {
+    [self.window makeFirstResponder:field];
+  } else {
+    [super mouseDown:event];
+  }
+}
+- (void)viewDidChangeEffectiveAppearance {
+  self.needsDisplay = YES;
+}
+- (void)drawRect:(NSRect)dirtyRect {
+  [FieldFill() setFill];
+  [ContinuousRect(self.bounds, 8) fill];
+}
+@end
+
 //
 // card without a focus ring, and a press on the card's padding focuses it.
 @implementation PCDialogInputField {
