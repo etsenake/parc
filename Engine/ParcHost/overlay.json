@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 709,
+  "version": 710,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -14,7 +14,7 @@
     {
       "source": "Engine/ParcNative/BUILD.gn",
       "target": "parc/native/BUILD.gn",
-      "sha256": "4facb7f1a9f9215ff162b3829ce1219871c07c530fade7178291a78874e78d66"
+      "sha256": "5022e4e52b468bfb082f462939b9f09e3eafe97b1e19302a06663160c75939f0"
     },
     {
       "source": "Engine/ParcNative/page_host.h",
@@ -640,11 +640,6 @@
       "source": "tests/NativeDevTools/devtools_browsertest.mm",
       "target": "parc/tests/parc_native_devtools/devtools_browsertest.mm",
       "sha256": "2c6a919f29759f756b0e40b75c430b52e901c5c7c183e14be19395428f1388d1"
-    },
-    {
-      "source": "tests/NativeRuntime/BUILD.gn",
-      "target": "parc/tests/parc_native_runtime/BUILD.gn",
-      "sha256": "267c1f474f46b78a9b7311d824d809f414fc4a204116e9efb692c088de1d7cd9"
     },
     {
       "source": "tests/NativeRuntime/runtime_driver.h",
@@ -2024,7 +2019,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "2b76a37c867291433526d809e8626554e371bbdeddf748c469889d01262b4b70"
+      "sha256": "4aa9da230c075c3834fe58d38749a051d023459dc8299169d515ef8d1f744833"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",
@@ -4110,7 +4105,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "60af6a424589ded0b04c02504bb8d2a1af693198f6ab5afb37cb2ca7f9099087",
+      "sha256": "b5073cfb33895322da4995f092cd870ccefe2da17f249163ab680f83c4130a98",
       "files": [
         {
           "target": "components/cdm/renderer/external_clear_key_key_system_info.cc",
@@ -4205,12 +4200,12 @@
         {
           "target": "media/filters/chunk_demuxer.cc",
           "before_sha256": "bfe9309a25c772e3362e2da90ccf528e21ad98abb3621566484e585d6ca4c3ee",
-          "after_sha256": "b0769155ac7cd73497ce54cb99535b09f6e29c467975725ce2837dd4139cbdea"
+          "after_sha256": "c6ae2acf048b09e1730f3d924f1a72f5cc2de3a7cbdacaa89b3ee3ca5d766faa"
         },
         {
           "target": "media/filters/chunk_demuxer.h",
           "before_sha256": "7882b1b7d0ec10bc36f06ca11b835bd474163070b8b0d032e719c8ecbd5250d9",
-          "after_sha256": "2f38514f65f7c37620d9fdb5c540483fac01460a9369ed0c21d68cd054d67856"
+          "after_sha256": "395ba1864247c0c243b07900b8fe1d7097772d662a6b87a637fe9a344fbef81c"
         },
         {
           "target": "media/filters/demuxer_manager.cc",
@@ -5638,7 +5633,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-window-lookup-direct.patch",
-      "sha256": "c1ffed11ebd5aefac3ecc2a7484ba3ee96d95a349a6326460acc6364521ef968",
+      "sha256": "cfc6af4d1e0980eb1e2d2d98dd599eb645312717618b01f91b41e0221bcefbbf",
       "files": [
         {
           "target": "chrome/browser/ui/views/frame/browser_view.cc",
@@ -5653,7 +5648,7 @@
         {
           "target": "chrome/test/BUILD.gn",
           "before_sha256": "c6ee1786182381e83e79cddde5d6d1e6d8c545dd64eb396869ebc370030dcf07",
-          "after_sha256": "45c3c98e626a146c75fdfca363ed59a144b3551344b44d220a2fa7787d7e9c56"
+          "after_sha256": "7347f76438538bf61b125fea7c87d2904cb8f934823f713bbb576ea1e3d79db9"
         }
       ]
     },
