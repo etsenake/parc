@@ -7,6 +7,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "content/renderer/media/fairplay/native_hls_demuxer.h"
 #include "content/renderer/media/fairplay/native_hls_renderer.h"
+#include "media/base/parc_native_hls_demuxer_params.h"
 #include "media/mojo/mojom/interface_factory.mojom.h"
 #include "media/mojo/mojom/renderer_extensions.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"

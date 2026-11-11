@@ -28,6 +28,7 @@
 #include "media/base/mock_demuxer_host.h"
 #include "media/base/mock_filters.h"
 #include "media/base/mock_video_renderer_sink.h"
+#include "media/base/parc_native_hls_demuxer_params.h"
 #include "media/base/renderer_factory.h"
 #include "media/base/test_helpers.h"
 #include "media/base/timestamp_constants.h"

@@ -17,6 +17,7 @@
 #include "base/test/task_environment.h"
 #include "media/base/media_util.h"
 #include "media/base/mock_filters.h"
+#include "media/base/parc_native_hls_demuxer_params.h"
 #include "media/base/renderer_factory.h"
 #include "media/filters/demuxer_manager.h"
 #include "media/filters/hls_test_helpers.h"
