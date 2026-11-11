@@ -98,6 +98,24 @@ Chromium change while preserving behaviour needs no approval. Reviewers treat
 an unapproved diff to `Engine/ParcHost/integration/`, a new hook or a Chromium
 header or BUILD edit as a blocking finding.
 
+## No code comments
+
+Code carries no comments. Names, types and structure say what code does;
+behaviour and decisions belong in the area's guide, and history belongs in Git.
+Never add comments, documentation comments, `MARK` lines, docstrings or
+commented-out code, and delete the comments in any code you change. Keep only
+text a tool reads: shebang lines, `swift-tools-version`, encoding lines,
+compiler, lint and formatter directives, `nogncheck` markers, and a docstring
+the program prints through `__doc__`. Licence notices for code copied from
+other projects stay.
+
+The engine inputs listed in `Engine/ParcHost/overlay.json`, Parc's owned engine
+files and its patches, recompile parts of Chromium when they change, so never
+edit one only to remove comments. When a change already edits one, strip every
+Parc comment in that file in the same change. In a patch, that means the
+comment lines Parc added; Chromium's own comments stay, because removing them
+would grow the patch. Reviewers treat a new comment as a blocking finding.
+
 ## Documentation is current state, not a diary
 
 **Repository Markdown documents have a hard limit of 500 lines**, except

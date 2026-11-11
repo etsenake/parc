@@ -1,0 +1,14 @@
+---
+description: Code carries no comments; delete comments in code you change
+alwaysApply: true
+---
+
+# No code comments
+
+Never add comments, doc comments, MARK lines, docstrings or commented-out
+code, and delete the comments in code you change. Keep only text a tool reads
+(shebangs, tool-version, lint and compiler directives, `nogncheck`, a printed
+`__doc__`) and licence notices for copied code. Don't edit an engine input from
+`Engine/ParcHost/overlay.json` just to strip comments; when you already change
+one, strip Parc's comments in it, never Chromium's own lines.
+See [AGENTS.md](../../AGENTS.md#no-code-comments).

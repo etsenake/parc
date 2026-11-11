@@ -72,8 +72,8 @@ pointer and a setter, and defines both. Site permissions are the reference examp
 in a file-local pointer and, when it is set, returns Parc's result, a null "no prompt" included,
 before any Chrome prompt logic runs. Unhooked Chromium keeps its original path.
 
-[`parc/chromium_hooks.h`](../Engine/ParcChromium/chromium_hooks.h) declares every browser-side setter
-with a comment naming the Chromium file that defines it. Chromium files never include it; only Parc's
+[`parc/chromium_hooks.h`](../Engine/ParcChromium/chromium_hooks.h) declares every browser-side setter,
+grouped by the Chromium file that defines it. Chromium files never include it; only Parc's
 install points do. A signature that drifts fails at link time, never silently at runtime, and there
 are no BUILD edits or buildflag includes for a hook, so upstream unit tests still link. A feature
 exposes its factory in its own header, such as `CreateSitePermissionPrompt`, and the install point
@@ -387,7 +387,7 @@ complete exactly once.
    parc_hooks`, keep the pointer file-local and call it at exactly the original point. Return early
    only with a value Chromium would accept, and leave the unhooked path unchanged. Add the library's
    export macro if the file is in a component library.
-3. Declare the setter in `parc/chromium_hooks.h` with a comment naming that file. Renderer and media
+3. Declare the setter in `parc/chromium_hooks.h`, beside the setters for the same Chromium file. Renderer and media
    hooks use a Parc header installed in their layer instead.
 4. Put the logic in a Parc-owned file and install the hook at the earliest point Chromium can call it.
 5. Move the Parc tests into the layer's `parc_tests` target, and make the unhooked upstream test pass
