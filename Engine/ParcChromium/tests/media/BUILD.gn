@@ -10,6 +10,7 @@ source_set("media_tests") {
     "audio_toolbox_amr_test.cc",
     "chunk_demuxer_test.cc",
     "pipeline_impl_test.cc",
+    "video_decoder_config_mojom_traits_test.cc",
     "source_buffer_state_test.cc",
     "source_buffer_stream_test.cc",
   ]
@@ -21,6 +22,7 @@ source_set("media_tests") {
     "//base/test:test_support",
     "//media",
     "//media:test_support",
+    "//media/mojo/mojom",
     "//testing/gmock",
     "//testing/gtest",
   ]

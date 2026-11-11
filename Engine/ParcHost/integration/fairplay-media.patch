@@ -17819,32 +17819,6 @@
    output->set_level(input.level());
    output->set_aspect_ratio(aspect_ratio);
    output->set_hdr_metadata(hdr_metadata);
---- a/media/mojo/mojom/video_decoder_config_mojom_traits_unittest.cc
-+++ b/media/mojo/mojom/video_decoder_config_mojom_traits_unittest.cc
-@@ -20,6 +20,21 @@
- static const gfx::Size kNaturalSize(320, 240);
--
-+
- }  // namespace
-+
-+TEST(VideoDecoderConfigStructTraitsTest, SafariDolbyVisionSDRSurvivesMojo) {
-+  for (bool safari_sdr : {false, true}) {
-+    VideoDecoderConfig input(VideoCodec::kDolbyVision, DOLBYVISION_PROFILE8,
-+        VideoDecoderConfig::AlphaMode::kIsOpaque, VideoColorSpace::REC709(),
-+        kNoTransformation, kCodedSize, kVisibleRect, kNaturalSize,
-+        EmptyExtraData(), EncryptionScheme::kUnencrypted);
-+    input.set_parc_dolby_vision_sdr(safari_sdr);
-+    auto data = media::mojom::VideoDecoderConfig::Serialize(&input);
-+    VideoDecoderConfig output;
-+    ASSERT_TRUE(media::mojom::VideoDecoderConfig::Deserialize(std::move(data), &output));
-+    EXPECT_EQ(safari_sdr, output.parc_dolby_vision_sdr());
-+    EXPECT_TRUE(output.Matches(input));
-+  }
-+}
--
-+
- TEST(VideoDecoderConfigStructTraitsTest, ConvertVideoDecoderConfig_Normal) {
-   const uint8_t kExtraData[] = "config extra data";
 --- a/third_party/blink/renderer/core/html/media/remote_playback_controller.h
 +++ b/third_party/blink/renderer/core/html/media/remote_playback_controller.h
 @@ -11,6 +11,7 @@
