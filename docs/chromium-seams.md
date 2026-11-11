@@ -215,10 +215,9 @@ a separate FairPlay process with `CALayerHost`.
 - **Interface:** every prompt keeps its source page and window checks, is cancelled on detach and
   navigation, and completes exactly once.
 
-## Open decisions
+## Decisions
 
-- **AMR and H.263 files:** keep them limited to Safari-identity pages, which keeps a small patch, or allow
-  them on every page through the existing decoder-support seam, which deletes it.
+- **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
 - **Autofill capability patch:** whether it's deleted depends on the per-feature audit in step 4.
 - **STAY patches:** a few are better sent upstream to Chromium and WebRTC than carried forever. The
   candidates are the macOS system screen-picker fix, mp2t multi-audio, ipcm/fpcm in MP4, pipelined
