@@ -1,7 +1,7 @@
 # Native HTTP and proxy authentication
 
 
-The handler binds the original document, Browser, Profile, native page and NSWindow. Native detach closes the attachment gate before cancellation. Credentials are revalidated after modal dismissal and security-reservation release, then passed to the real LoginHandler on a non-nestable task. The additive `CanSetAuth()` guard also covers matching-credential propagation from another handler. The genuine WebContentsModalDialogManager owns native-modal bookkeeping and renderer blocking. Its adapter closes synchronously when the manager requests closure; host-change notifications defer list mutation.
+The handler binds the original document, Browser, Profile, native page and NSWindow. Native detach closes the attachment gate before cancellation. Credentials are revalidated after modal dismissal and security-reservation release, then passed to the real LoginHandler on a non-nestable task. The credential-validation hook in Chromium’s handler also covers matching-credential propagation from another handler. The genuine WebContentsModalDialogManager owns native-modal bookkeeping and renderer blocking. Its adapter closes synchronously when the manager requests closure; host-change notifications defer list mutation.
 
 
 `login_unittest.mm` contains **13 genuine Browser/Profile/LoginHandler/WebContentsModalDialogManager cases**: submission, proxy identity/warning, handler destruction, detach/reattach, navigation, release-time competing security UI, existing lease, concurrent request refusal, propagated-credential guard, manager close, completion reentry, hidden-window refusal and invalid-host restoration before deferred cancellation.

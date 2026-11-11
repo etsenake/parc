@@ -29,8 +29,6 @@ NATIVE = (
 UPSTREAM = (
     ("chrome/browser/ui/login/login_handler.cc",
      "obj/chrome/browser/ui/login/impl.ninja"),
-    ("chrome/browser/ui/views/login_handler_views.cc",
-     "obj/chrome/browser/ui/views/login_handler_views.ninja"),
 )
 RULE_PREFIX = (
     "../../third_party/llvm-build/Release+Asserts/bin/clang++ "

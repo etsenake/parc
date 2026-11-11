@@ -2,6 +2,7 @@
 #include "http_auth.h"
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -9,6 +10,7 @@
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
+#include "base/no_destructor.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/supports_user_data.h"
 #include "base/task/single_thread_task_runner.h"
@@ -16,6 +18,8 @@
 #include "chrome/browser/ui/blocked_content/popunder_preventer.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/login/login_handler.h"
+#include "chrome/browser/ui/login/http_auth_coordinator.h"
+#include "chrome/browser/ui/login/login_tab_helper.h"
 #include "components/password_manager/core/browser/http_auth_observer.h"
 #include "components/tabs/public/tab_interface.h"
 #include "components/web_modal/single_web_contents_dialog_manager.h"
@@ -34,6 +38,10 @@
 namespace parc {
 namespace {
 class Request;
+auto& NativeHandlers() {
+  static base::NoDestructor<std::map<LoginHandler*, std::weak_ptr<Request>>> handlers;
+  return *handlers;
+}
 constexpr char kPageState[] = "parc-native-http-auth-page";
 class PageState final : public base::SupportsUserData::Data {
  public:
@@ -414,8 +422,11 @@ class NativeLoginHandler final : public LoginHandler {
                      content::WebContents* contents,
                      content::LoginDelegate::LoginAuthRequiredCallback callback)
       : LoginHandler(info, contents, std::move(callback)),
-        popunder_preventer_(std::make_unique<PopunderPreventer>(contents)) {}
+        popunder_preventer_(std::make_unique<PopunderPreventer>(contents)) {
+    NativeHandlers().emplace(this, std::weak_ptr<Request>());
+  }
   ~NativeLoginHandler() override {
+    NativeHandlers().erase(this);
     weak_factory_.InvalidateWeakPtrs();
     CloseDialog();
   }
@@ -444,6 +455,7 @@ class NativeLoginHandler final : public LoginHandler {
                          }
                        },
                        weak_factory_.GetWeakPtr()));
+    NativeHandlers()[this] = request_;
     auto& requests = State(contents)->requests;
     std::erase_if(requests,
                   [](const auto& request) { return request.expired(); });
@@ -451,7 +463,6 @@ class NativeLoginHandler final : public LoginHandler {
     auto request = request_;
     return request->Build(authority, explanation, auth_info().is_proxy, model);
   }
-  bool CanSetAuth() override { return request_ && request_->CanAuthorize(); }
   void CloseDialog() override {
     auto request = std::move(request_);
     if (request) {
@@ -463,22 +474,69 @@ class NativeLoginHandler final : public LoginHandler {
   std::unique_ptr<PopunderPreventer> popunder_preventer_;
   base::WeakPtrFactory<NativeLoginHandler> weak_factory_{this};
 };
+class NativeLoginTabHelper final : public LoginTabHelper {
+ public:
+  explicit NativeLoginTabHelper(content::WebContents* contents)
+      : LoginTabHelper(contents) {}
+
+ protected:
+  std::unique_ptr<LoginHandler> CreateLoginHandler(
+      const net::AuthChallengeInfo& info, content::WebContents* contents,
+      content::LoginDelegate::LoginAuthRequiredCallback callback) override {
+    if (!State(contents)) {
+      return LoginTabHelper::CreateLoginHandler(info, contents,
+                                                std::move(callback));
+    }
+    return std::make_unique<NativeLoginHandler>(info, contents,
+                                                 std::move(callback));
+  }
+};
+
+class NativeHttpAuthCoordinator final : public HttpAuthCoordinator {
+ public:
+  void CreateLoginTabHelper(content::WebContents* contents) override {
+    if (!LoginTabHelper::FromWebContents(contents)) {
+      contents->SetUserData(LoginTabHelper::UserDataKey(),
+                           std::make_unique<NativeLoginTabHelper>(contents));
+    }
+  }
+
+  std::unique_ptr<content::LoginDelegate> CreateLoginDelegateFromLoginHandler(
+      content::WebContents* contents, const net::AuthChallengeInfo& info,
+      const content::GlobalRequestID& request_id, const GURL& url,
+      scoped_refptr<net::HttpResponseHeaders> headers,
+      content::LoginDelegate::LoginAuthRequiredCallback callback) override {
+    if (!State(contents)) {
+      return HttpAuthCoordinator::CreateLoginDelegateFromLoginHandler(
+          contents, info, request_id, url, std::move(headers),
+          std::move(callback));
+    }
+    auto handler = std::make_unique<NativeLoginHandler>(info, contents,
+                                                       std::move(callback));
+    handler->ShowLoginPrompt(url);
+    return handler;
+  }
+};
 }  // namespace
+
+bool ValidateNativeLoginHandlerAuth(LoginHandler* handler) {
+  auto found = NativeHandlers().find(handler);
+  if (found == NativeHandlers().end()) {
+    return true;
+  }
+  auto request = found->second.lock();
+  return request && request->CanAuthorize();
+}
+
+std::unique_ptr<HttpAuthCoordinator> CreateNativeHttpAuthCoordinator() {
+  return std::make_unique<NativeHttpAuthCoordinator>();
+}
 
 void InstallNativeHTTPAuth(content::WebContents& contents) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!State(&contents)) {
     contents.SetUserData(kPageState, std::make_unique<PageState>());
   }
-  LoginHandler::SetNativeFactoryForWebContents(
-      contents,
-      base::BindRepeating(
-          [](const net::AuthChallengeInfo& info, content::WebContents* contents,
-             content::LoginDelegate::LoginAuthRequiredCallback callback)
-              -> std::unique_ptr<LoginHandler> {
-            return std::make_unique<NativeLoginHandler>(info, contents,
-                                                        std::move(callback));
-          }));
 }
 void SetNativeHTTPAuthAttached(content::WebContents& contents, bool attached) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);

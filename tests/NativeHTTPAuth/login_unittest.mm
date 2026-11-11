@@ -11,6 +11,7 @@
 #include "base/test/bind.h"
 #include "base/time/time.h"
 #include "chrome/browser/ui/login/login_handler.h"
+#include "chrome/browser/ui/login/http_auth_coordinator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -22,6 +23,10 @@
 #include "url/gurl.h"
 #include "url/scheme_host_port.h"
 #import "window_security_reservation.h"
+
+namespace parc_hooks {
+void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));
+}
 
 namespace parc {
 namespace {
@@ -138,8 +143,11 @@ class NativeHTTPAuthTest : public BrowserWithTestWindowTest {
     info.realm = "private";
     info.challenger = url::SchemeHostPort(GURL(
         proxy ? "http://proxy.example:8080" : "https://auth.example:8443"));
-    auto handler = LoginHandler::Create(
-        info, contents(),
+    parc_hooks::SetLoginHandlerAuthValidator(&ValidateNativeLoginHandlerAuth);
+    auto coordinator = CreateNativeHttpAuthCoordinator();
+    auto handler = coordinator->CreateLoginDelegateFromLoginHandler(
+        contents(), info, content::GlobalRequestID(),
+        GURL("https://auth.example:8443/page"), nullptr,
         base::BindOnce(
             [](Outcome* out, base::OnceClosure reenter,
                const std::optional<net::AuthCredentials>& credentials) {
@@ -150,8 +158,8 @@ class NativeHTTPAuthTest : public BrowserWithTestWindowTest {
               }
             },
             out, std::move(on_reply)));
-    handler->ShowLoginPrompt(GURL("https://auth.example:8443/page"));
-    handlers_.push_back(std::move(handler));
+    handlers_.push_back(std::unique_ptr<LoginHandler>(
+        static_cast<LoginHandler*>(handler.release())));
     return *out;
   }
   void FillAndAccept() {

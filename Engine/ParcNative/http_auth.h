@@ -1,10 +1,15 @@
 // Copyright 2026 Parc contributors.
 #ifndef PARC_NATIVE_HTTP_AUTH_H_
 #define PARC_NATIVE_HTTP_AUTH_H_
+#include <memory>
+class HttpAuthCoordinator;
+class LoginHandler;
 namespace content {
 class WebContents;
 }
 namespace parc {
+std::unique_ptr<HttpAuthCoordinator> CreateNativeHttpAuthCoordinator();
+bool ValidateNativeLoginHandlerAuth(LoginHandler* handler);
 // UI-thread lifecycle seam. Install on the actual native WebContents before
 // navigation. Closing the attachment gate cancels only requests captured for
 // that page; a late reply cannot authorize a page transferred to another owner.

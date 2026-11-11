@@ -11,6 +11,7 @@
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "chrome/browser/child_process_host_flags.h"
+#include "chrome/browser/ui/login/http_auth_coordinator.h"
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/chrome_constants.h"
@@ -19,6 +20,7 @@
 #include "content/public/common/content_switches.h"
 #include "parc/chromium_hooks.h"
 #include "parc/native/file_dialog.h"
+#include "parc/native/http_auth.h"
 #include "parc/native/native_appkit_host.h"
 #include "parc/native/native_internal_urls.h"
 #include "parc/native/native_web_contents_view_delegate.h"
@@ -54,6 +56,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
   void PreMainMessageLoopRun() override {
     // Before any page exists.
     parc_hooks::SetPermissionPromptFactory(&CreateSitePermissionPrompt);
+    parc_hooks::SetLoginHandlerAuthValidator(&ValidateNativeLoginHandlerAuth);
     RegisterNativeFileDialogs();
   }
   void PostMainMessageLoopRun() override {
@@ -93,6 +96,11 @@ ParcContentBrowserClient::CreateBrowserMainParts(bool is_integration_test) {
   static_cast<ChromeBrowserMainParts*>(parts.get())
       ->AddParts(std::make_unique<ParcBrowserMainExtraParts>(*this));
   return parts;
+}
+
+std::unique_ptr<HttpAuthCoordinator>
+ParcContentBrowserClient::CreateHttpAuthCoordinator() {
+  return CreateNativeHttpAuthCoordinator();
 }
 
 base::FilePath ParcContentBrowserClient::GetChildProcessPath(int flags) {

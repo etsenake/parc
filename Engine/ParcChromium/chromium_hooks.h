@@ -9,6 +9,8 @@
 
 #include "components/permissions/permission_prompt.h"
 
+class LoginHandler;
+
 namespace content {
 class WebContents;
 }
@@ -21,6 +23,9 @@ using PermissionPromptFactory =
         content::WebContents* web_contents,
         permissions::PermissionPrompt::Delegate* delegate);
 void SetPermissionPromptFactory(PermissionPromptFactory factory);
+
+// chrome/browser/ui/login/login_handler.cc
+void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));
 
 }  // namespace parc_hooks
 

@@ -124,7 +124,9 @@ whole-window/tab consent rather than using ordinary alert suppression.
 
 HTTP authentication uses the actual authority, including proxy text, and the
 native trust explanation. Return submits and Escape cancels. Native secure text
-fields, original callbacks and sheet lifetime remain authoritative.
+fields, original callbacks and sheet lifetime remain authoritative. Parc supplies
+Chromium’s HTTP-auth coordinator and main-frame tab helper; a narrow credential
+validation hook rejects peer credentials while a stale sheet closes.
 
 External-protocol remembering uses Chromium's per-origin policy. Its input
 protection gates both buttons and Return. Missing origin/application information
