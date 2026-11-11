@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 685,
+  "version": 686,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -344,7 +344,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
       "target": "parc/native/native_appkit_host.h",
-      "sha256": "b0147309994baee86c745c2ea48c21ad9681f53b40d8b2315c6274004300f92e"
+      "sha256": "3a0936de3e16fc0f0e3bacdd0f333fa5e00f3aa50749b2489d41da106fe622a1"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
@@ -359,7 +359,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_page.mm",
       "target": "parc/native/native_appkit_page.mm",
-      "sha256": "33c701275ccb1ed202c95c6ccd836f1043022e7b29220dfa8a58343202ac18d2"
+      "sha256": "d0f0e3a3fe91de9081f173421cfd1631b6d268c36fe816a959d5d2479b0976fc"
     },
     {
       "source": "Engine/ParcNative/native_page_shell_notify.h",
@@ -2014,7 +2014,7 @@
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "c8010bc7103f822bb3c0f652902c1c1d59c4a4ef49d67b7fd11c756fe3522852"
+      "sha256": "1410adb3224c8845399b9b8466f7ab048347f4a16cc39d4e088530ade705bdcd"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2069,7 +2069,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.cc",
       "target": "parc/parc_main_delegate.cc",
-      "sha256": "be88092cb11a46339217f175b42b8a5967b93a02c0cb483a90c1af777ae7acc8"
+      "sha256": "90ea7bede7e3bc878d501707a68f1ce4fb6167816f4c1a3eaff1b9534b018009"
     },
     {
       "source": "Engine/ParcNative/native_application.mm",
@@ -2742,42 +2742,22 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-embedded-pages.patch",
-      "sha256": "a3da097ac75b4578702088c9c1636013952801bf7b8145d441d9584fea3e344e",
+      "sha256": "8b4f64b16f10a57dd4a54dea48e8a222ce9ee24fd617220e767b101941b134e9",
       "files": [
-        {
-          "target": "components/sessions/content/session_tab_helper.h",
-          "before_sha256": "bdcdf3411b24343aeb7a9fd78a102d24dbce600b67b607b14c7d58612cbf5488",
-          "after_sha256": "40eef195db94e7e09061586d12dbbafb36038fb1660f859d50b448f973791030"
-        },
         {
           "target": "components/sessions/content/session_tab_helper.cc",
           "before_sha256": "8cbc8d20cc7937f182a3cfe8f7f50e3a40573d02f0c61eb65e5759523e88babc",
-          "after_sha256": "beba803690401021e44f9d2768a15f2d03a3856e561a4a113460d4b87e99ad91"
-        },
-        {
-          "target": "components/sessions/core/live_tab.h",
-          "before_sha256": "e793387ebd457cfcda44992952706175c9c19642572e8958b199498aa63157dd",
-          "after_sha256": "4514d4526930a74596d850967bf795065a2184083078dba13d0698a2b9af6b5f"
-        },
-        {
-          "target": "components/sessions/content/content_live_tab.h",
-          "before_sha256": "c5a8286e7ef4ce93c10c64dd1e23fff0a87fddb63de24938f4d5337bb789cfaf",
-          "after_sha256": "0fdde7b17dea6fb85111fd8efcafaf6782d8e1882296774023876441b085a0c4"
-        },
-        {
-          "target": "components/sessions/content/content_live_tab.cc",
-          "before_sha256": "49fc7f921ce1c239e0b0bf9ec0ca6d945d284dac229e17955d4e779462b126bc",
-          "after_sha256": "bdd255276302864648beb02a3414d925cd2edb1c6b4288b8fbae2528fdb1094c"
+          "after_sha256": "3d366969071e0d0093154aada2d2fde5e8682d45c56af666fb7cc94754779e23"
         },
         {
           "target": "components/sessions/core/tab_restore_service_helper.cc",
           "before_sha256": "e59b5d010ae61300756f43694d1267f3d480bff4654e4dbe4974c973943193d3",
-          "after_sha256": "335098ced050fa54f9578dcc147e97d88c2b49f9bcb423764f9386120212afb3"
+          "after_sha256": "adf5c3d5af953cd2255112f9862677ac5f9e6838588f37649936427f43bf61d4"
         },
         {
           "target": "chrome/browser/sessions/session_service_base.cc",
           "before_sha256": "87a9a1f9600672f4aefc62487a00c028bcae1f7b9bd2015c961a53a272327bf9",
-          "after_sha256": "ff3194037fdef29a55114f136cdbf44f2c74dc6528c185d2376b8b6690640556"
+          "after_sha256": "0a76ece35afdcaef7a1aaaf4a8db9aafbb98fb6d8a4fcdb383f29ef7aef79c03"
         }
       ]
     },
