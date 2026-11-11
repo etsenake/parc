@@ -8,8 +8,18 @@
 #include "chrome/browser/devtools/devtools_contents_resizing_strategy.h"
 #include "content/public/browser/web_contents_observer.h"
 #import "devtools_pane_view.h"
+namespace content {
+class WebContents;
+}
 namespace parc {
 class NativeAuxiliaryPage;
+// Makes `inspected`'s Browser the modal host of its docked tools, once the
+// docked view is registered with its presenter. The returned lease clears that
+// host on release, unless a later binding or the undocked window's own Browser
+// replaced it. Existing docked tools keep this when the inspected tab moves
+// into another Browser, a popup included. Empty when the tools aren't docked.
+base::ScopedClosureRunner BindDockedModalHost(content::WebContents* inspected,
+                                              content::WebContents* tools);
 // One real inspected page's presentation, owned by its exact native
 // PageBinding. DevToolsWindow retains the actual tools/toolbox WebContents;
 // this never navigates, clones, adopts a tab, or deletes engine contents.

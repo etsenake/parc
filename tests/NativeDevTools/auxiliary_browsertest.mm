@@ -1,6 +1,9 @@
 // Copyright 2026 Parc contributors.
 // Actual Browser, DevToolsWindow, AppModal queue/controller and native chooser.
 // These source tests do not substitute a tab for the auxiliary WebContents.
+#include <optional>
+#include <vector>
+
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
@@ -29,45 +32,60 @@
 #include "ui/shell_dialogs/selected_file_info.h"
 #import "window_security_reservation.h"
 
+namespace parc_hooks {
+void SetNativeDevtoolsPresentation(
+    std::optional<bool> (*)(DevtoolsUIController&,
+                            content::WebContents*,
+                            bool),
+    bool (*)(DevtoolsUIController&, content::WebContents*, bool),
+    void (*)(DevtoolsUIController&));
+}  // namespace parc_hooks
+
 namespace parc {
 class NativeAuxiliaryBrowserTest : public InProcessBrowserTest,
                                    public ui::SelectFileDialog::Listener {
  public:
   NativeAuxiliaryBrowserTest() {
+    current_ = this;
+    parc_hooks::SetNativeDevtoolsPresentation(&Update, &SetScrim, &TearDown);
     override_ = BrowserWindowFeatures::GetUserDataFactoryForTesting()
                     .AddOverrideForTesting(base::BindRepeating(
-                        [](NativeAuxiliaryBrowserTest* fixture,
-                           BrowserWindowInterface& owner) {
+                        [](BrowserWindowInterface& owner) {
                           return std::make_unique<DevtoolsUIController>(
-                              &owner, std::make_unique<Delegate>(*fixture));
-                        },
-                        base::Unretained(this)));
+                              &owner,
+                              std::vector<raw_ptr<ContentsContainerView,
+                                                  DanglingUntriaged>>());
+                        }));
+  }
+  ~NativeAuxiliaryBrowserTest() override {
+    parc_hooks::SetNativeDevtoolsPresentation(nullptr, nullptr, nullptr);
+    current_ = nullptr;
   }
 
  protected:
-  class Delegate final : public DevtoolsUIController::NativeDelegate {
-   public:
-    explicit Delegate(NativeAuxiliaryBrowserTest& fixture)
-        : fixture_(fixture) {}
-    bool Update(content::WebContents* contents, bool replace) override {
-      return !fixture_.hold_native_update_ && fixture_.pane_ &&
-             fixture_.inspected_ == contents &&
-             fixture_.pane_->Refresh(replace);
+  // The hooks ParcMainDelegate installs; every controller here is the
+  // fixture's.
+  static std::optional<bool> Update(DevtoolsUIController&,
+                                    content::WebContents* contents,
+                                    bool replace) {
+    auto* fixture = current_.get();
+    return !fixture->hold_native_update_ && fixture->pane_ &&
+           fixture->inspected_ == contents && fixture->pane_->Refresh(replace);
+  }
+  static bool SetScrim(DevtoolsUIController&,
+                       content::WebContents* contents,
+                       bool visible) {
+    auto* fixture = current_.get();
+    if (fixture->pane_ && fixture->pane_->tools() == contents) {
+      fixture->pane_->SetBlocked(visible);
     }
-    void SetScrim(content::WebContents* contents, bool visible) override {
-      if (fixture_.pane_ && fixture_.pane_->tools() == contents) {
-        fixture_.pane_->SetBlocked(visible);
-      }
+    return true;
+  }
+  static void TearDown(DevtoolsUIController&) {
+    if (auto* fixture = current_.get(); fixture->pane_) {
+      fixture->pane_->Detach();
     }
-    void TearDown() override {
-      if (fixture_.pane_) {
-        fixture_.pane_->Detach();
-      }
-    }
-
-   private:
-    NativeAuxiliaryBrowserTest& fixture_;
-  };
+  }
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
     inspected_ = browser()->GetTabStripModel()->GetActiveWebContents();
@@ -203,6 +221,7 @@ class NativeAuxiliaryBrowserTest : public InProcessBrowserTest,
   PCNativeWindowSecurityReservation* __strong competing_;
   bool reserve_on_release_ = false;
   bool rebind_on_result_ = false;
+  static inline raw_ptr<NativeAuxiliaryBrowserTest> current_ = nullptr;
   bool reopen_on_result_ = false, hold_native_update_ = false;
   std::vector<bool> decisions_;
   javascript_dialogs::AppModalDialogController::ExtraDataMap extra_data_;

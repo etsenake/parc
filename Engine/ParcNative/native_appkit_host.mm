@@ -2085,33 +2085,57 @@ class AppKitFocusController final : public BrowserFocusController {
  private:
   base::WeakPtr<AppKitBrowserHost> host_;
 };
-class AppKitDevtoolsDelegate final
-    : public DevtoolsUIController::NativeDelegate {
- public:
-  explicit AppKitDevtoolsDelegate(BrowserWindowInterface& browser)
-      : host_(Hosts().at(&browser)) {}
-  bool Update(content::WebContents* contents, bool update) override {
-    return host_ && host_->UpdateDevtools(contents, update);
-  }
-  void SetScrim(content::WebContents* tools, bool visible) override {
-    if (host_) {
-      host_->SetDevtoolsScrim(tools, visible);
-    }
-  }
-  void TearDown() override {
-    auto host = std::exchange(host_, {});
-    if (host) {
-      host->DetachDevtools();
-    }
-  }
-
- private:
-  base::WeakPtr<AppKitBrowserHost> host_;
-};
+// A controller exists only for a Browser Parc hosts. Chromium's hooks consult
+// this registry, and a missing entry keeps Chrome's Views behavior.
+namespace {
+std::map<const DevtoolsUIController*, base::WeakPtr<AppKitBrowserHost>>&
+DevtoolsHosts() {
+  static base::NoDestructor<
+      std::map<const DevtoolsUIController*, base::WeakPtr<AppKitBrowserHost>>>
+      value;
+  return *value;
+}
+}  // namespace
 std::unique_ptr<DevtoolsUIController> CreateAppKitDevtoolsController(
     BrowserWindowInterface& browser) {
-  return std::make_unique<DevtoolsUIController>(
-      &browser, std::make_unique<AppKitDevtoolsDelegate>(browser));
+  auto controller = std::make_unique<DevtoolsUIController>(
+      &browser,
+      std::vector<raw_ptr<ContentsContainerView, DanglingUntriaged>>());
+  DevtoolsHosts().insert_or_assign(controller.get(), Hosts().at(&browser));
+  return controller;
+}
+std::optional<bool> UpdateAppKitDevtools(DevtoolsUIController& controller,
+                                         content::WebContents* contents,
+                                         bool update_contents) {
+  auto found = DevtoolsHosts().find(&controller);
+  if (found == DevtoolsHosts().end()) {
+    return std::nullopt;
+  }
+  return found->second &&
+         found->second->UpdateDevtools(contents, update_contents);
+}
+bool SetAppKitDevtoolsScrim(DevtoolsUIController& controller,
+                            content::WebContents* tools,
+                            bool visible) {
+  auto found = DevtoolsHosts().find(&controller);
+  if (found == DevtoolsHosts().end()) {
+    return false;
+  }
+  if (found->second) {
+    found->second->SetDevtoolsScrim(tools, visible);
+  }
+  return true;
+}
+void TearDownAppKitDevtools(DevtoolsUIController& controller) {
+  auto found = DevtoolsHosts().find(&controller);
+  if (found == DevtoolsHosts().end()) {
+    return;
+  }
+  auto host = std::move(found->second);
+  DevtoolsHosts().erase(found);
+  if (host) {
+    host->DetachDevtools();
+  }
 }
 bool RequestAppKitDevtools(content::WebContents& contents) {
   auto* profile = Profile::FromBrowserContext(contents.GetBrowserContext());

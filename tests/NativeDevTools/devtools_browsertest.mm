@@ -2,6 +2,10 @@
 // Genuine current-engine DevToolsWindow + native pane tests. The test runner's
 // ordinary Browser supplies Profile/tab policy; this does not prove the native
 // application factory or Swift auxiliary window integration.
+#include <map>
+#include <optional>
+#include <vector>
+
 #include "base/functional/bind.h"
 #include "chrome/browser/devtools/devtools_ui_controller.h"
 #include "chrome/browser/devtools/devtools_window.h"
@@ -20,6 +24,15 @@
 #include "devtools_pane.h"
 #import "page_host.h"
 #include "ui/base/unowned_user_data/user_data_factory.h"
+
+namespace parc_hooks {
+void SetNativeDevtoolsPresentation(
+    std::optional<bool> (*)(DevtoolsUIController&,
+                            content::WebContents*,
+                            bool),
+    bool (*)(DevtoolsUIController&, content::WebContents*, bool),
+    void (*)(DevtoolsUIController&));
+}  // namespace parc_hooks
 
 namespace parc {
 // Uses the actual WebContentsModalDialogManager and Browser delegate. Only the
@@ -46,44 +59,68 @@ class TrackingDialog final : public web_modal::SingleWebContentsDialogManager {
 class NativeDevToolsBrowserTest : public InProcessBrowserTest {
  public:
   NativeDevToolsBrowserTest() {
+    current_ = this;
+    parc_hooks::SetNativeDevtoolsPresentation(&Update, &SetScrim, &TearDown);
     override_ =
         BrowserWindowFeatures::GetUserDataFactoryForTesting()
             .AddOverrideForTesting(base::BindRepeating(
                 [](NativeDevToolsBrowserTest* fixture,
                    BrowserWindowInterface& owner) {
-                  return std::make_unique<DevtoolsUIController>(
-                      &owner, std::make_unique<Delegate>(*fixture, owner));
+                  auto controller = std::make_unique<DevtoolsUIController>(
+                      &owner,
+                      std::vector<
+                          raw_ptr<ContentsContainerView, DanglingUntriaged>>());
+                  fixture->owners_.emplace(controller.get(), &owner);
+                  return controller;
                 },
                 base::Unretained(this)));
   }
+  ~NativeDevToolsBrowserTest() override {
+    parc_hooks::SetNativeDevtoolsPresentation(nullptr, nullptr, nullptr);
+    current_ = nullptr;
+  }
 
  protected:
-  class Delegate final : public DevtoolsUIController::NativeDelegate {
-   public:
-    Delegate(NativeDevToolsBrowserTest& fixture, BrowserWindowInterface& owner)
-        : fixture_(fixture), owner_(owner) {}
-    bool Update(content::WebContents* inspected, bool replace) override {
-      return fixture_.pane_ && fixture_.inspected_ == inspected &&
-             &owner_ == fixture_.presentation_owner_ &&
-             fixture_.pane_->Refresh(replace);
+  // The hooks ParcMainDelegate installs, answering for the controllers this
+  // fixture made.
+  static std::optional<bool> Update(DevtoolsUIController& controller,
+                                    content::WebContents* inspected,
+                                    bool replace) {
+    auto* fixture = current_.get();
+    auto owner = fixture->owners_.find(&controller);
+    if (owner == fixture->owners_.end()) {
+      return std::nullopt;
     }
-    void SetScrim(content::WebContents* tools, bool visible) override {
-      fixture_.scrim_owner_ = &owner_;
-      fixture_.scrim_visible_ = visible;
-      if (fixture_.pane_ && fixture_.pane_->tools() == tools) {
-        fixture_.pane_->SetBlocked(visible);
-      }
+    return fixture->pane_ && fixture->inspected_ == inspected &&
+           owner->second == fixture->presentation_owner_ &&
+           fixture->pane_->Refresh(replace);
+  }
+  static bool SetScrim(DevtoolsUIController& controller,
+                       content::WebContents* tools,
+                       bool visible) {
+    auto* fixture = current_.get();
+    auto owner = fixture->owners_.find(&controller);
+    if (owner == fixture->owners_.end()) {
+      return false;
     }
-    void TearDown() override {
-      if (fixture_.pane_ && &owner_ == fixture_.presentation_owner_) {
-        fixture_.pane_->Detach();
-      }
+    fixture->scrim_owner_ = owner->second;
+    fixture->scrim_visible_ = visible;
+    if (fixture->pane_ && fixture->pane_->tools() == tools) {
+      fixture->pane_->SetBlocked(visible);
     }
-
-   private:
-    NativeDevToolsBrowserTest& fixture_;
-    BrowserWindowInterface& owner_;
-  };
+    return true;
+  }
+  static void TearDown(DevtoolsUIController& controller) {
+    auto* fixture = current_.get();
+    auto owner = fixture->owners_.find(&controller);
+    if (owner == fixture->owners_.end()) {
+      return;
+    }
+    if (fixture->pane_ && owner->second == fixture->presentation_owner_) {
+      fixture->pane_->Detach();
+    }
+    fixture->owners_.erase(owner);
+  }
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
     presentation_owner_ = browser();
@@ -125,7 +162,7 @@ class NativeDevToolsBrowserTest : public InProcessBrowserTest {
   DevToolsWindow* OpenDocked() {
     auto* controller = DevtoolsUIController::From(browser());
     CHECK(controller && controller->CanDockDevtools() &&
-          controller->HasNativePresentation());
+          owners_.contains(controller));
     auto* tools =
         DevToolsWindowTesting::OpenDevToolsWindowSync(inspected_, true);
     if (tools) {
@@ -169,6 +206,9 @@ class NativeDevToolsBrowserTest : public InProcessBrowserTest {
     browser()->GetTabStripModel()->AppendTab(std::move(restored), true);
     presentation_owner_ = browser();
   }
+  static inline raw_ptr<NativeDevToolsBrowserTest> current_ = nullptr;
+  std::map<const DevtoolsUIController*, raw_ptr<BrowserWindowInterface>>
+      owners_;
   raw_ptr<BrowserWindowInterface> presentation_owner_ = nullptr;
   raw_ptr<BrowserWindowInterface> scrim_owner_ = nullptr;
   bool scrim_visible_ = false;
@@ -254,9 +294,8 @@ IN_PROC_BROWSER_TEST_F(NativeDevToolsBrowserTest,
   auto* manager =
       web_modal::WebContentsModalDialogManager::FromWebContents(tools);
   ASSERT_TRUE(manager);
-  auto old = DevToolsWindow::BindNativeDockedModalDialogHost(inspected_, tools);
-  auto current =
-      DevToolsWindow::BindNativeDockedModalDialogHost(inspected_, tools);
+  auto old = BindDockedModalHost(inspected_, tools);
+  auto current = BindDockedModalHost(inspected_, tools);
   old.RunAndReset();
   EXPECT_EQ(manager->delegate(),
             BrowserWindowModalDialogDelegate::From(browser()));

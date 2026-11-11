@@ -611,6 +611,9 @@ source_set("native_devtools") {
     ":native_http_auth",
     ":native_client_certificates",
     "//chrome/browser/devtools",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/web_modal:browser_window_modal_dialog_delegate",
+    "//components/web_modal",
     "//ui/gfx",
     "//ui/gfx/geometry",
   ]

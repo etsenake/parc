@@ -58,16 +58,7 @@
  FrameTree* WebContentsImpl::GetOwnedDocumentPictureInPictureFrameTree() {
 --- a/chrome/browser/devtools/devtools_window_views.cc
 +++ b/chrome/browser/devtools/devtools_window_views.cc
-@@ -2,6 +2,7 @@
- // Use of this source code is governed by a BSD-style license that can be
- // found in the LICENSE file.
--
-+
-+#include "base/functional/bind.h"
- #include "chrome/browser/devtools/devtools_ui_controller.h"
- #include "chrome/browser/devtools/devtools_window.h"
- #include "chrome/browser/ui/browser_window.h"
-@@ -14,6 +15,7 @@
+@@ -14,6 +14,7 @@
  #include "components/web_modal/web_contents_modal_dialog_manager.h"
  #include "content/public/browser/keyboard_event_processing_result.h"
  #include "content/public/browser/render_process_host.h"
@@ -76,7 +67,7 @@
 -
 +
  #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
-@@ -88,6 +90,10 @@
+@@ -88,6 +89,10 @@
  bool DevToolsWindow::HandleKeyboardEvent(
      WebContents* source,
      const input::NativeWebKeyboardEvent& event) {
@@ -87,91 +78,25 @@
    if (event.windows_key_code == 0x08) {
      // Do not navigate back in history on Windows (http://crbug.com/40529649).
      return true;
-@@ -141,17 +147,76 @@
-   }
- }
--
-+
--void DevToolsWindow::RegisterModalDialogManager(
-+base::ScopedClosureRunner DevToolsWindow::BindNativeDockedModalDialogHost(
-+    WebContents* inspected,
-+    WebContents* tools) {
-+  auto* window = GetInstanceForInspectedWebContents(inspected);
-+  if (!window || !window->is_docked_ || window->main_web_contents_ != tools) {
-+    return {};
-+  }
-+  auto* browser =
-+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(inspected);
-+  auto* controller = browser ? DevtoolsUIController::From(browser) : nullptr;
-+  // CanDockDevtools governs initial creation. An already-docked inspected tab
-+  // may legitimately transfer into a native popup Browser; its still-existing
-+  // main contents need that exact destination's modal owner too.
-+  if (!controller || !controller->HasNativePresentation()) {
-+    return {};
-+  }
-+  auto weak = window->weak_factory_.GetWeakPtr();
-+  auto owner = browser->GetWeakPtr();
-+  auto page = inspected->GetWeakPtr();
-+  auto contents = tools->GetWeakPtr();
-+  const uint64_t generation = window->RegisterModalDialogManager(browser);
-+  base::ScopedClosureRunner binding(base::BindOnce(
-+      [](base::WeakPtr<DevToolsWindow> window,
-+         base::WeakPtr<BrowserWindowInterface> owner, uint64_t generation) {
-+        if (!window || !owner || !window->is_docked_ ||
-+            window->native_modal_host_generation_ != generation) {
-+          return;
-+        }
-+        ++window->native_modal_host_generation_;
-+        auto* manager =
-+            web_modal::WebContentsModalDialogManager::FromWebContents(
-+                window->main_web_contents_);
-+        if (manager &&
-+            manager->delegate() ==
-+                BrowserWindowModalDialogDelegate::From(owner.get())) {
-+          manager->SetDelegate(nullptr);  // Last call: may notify native hosts.
-+        }
-+      },
-+      weak, owner, generation));
-+  if (!weak || !owner || !page || !contents ||
-+      weak->native_modal_host_generation_ != generation || !weak->is_docked_ ||
-+      weak->main_web_contents_ != contents.get() ||
-+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(page.get()) !=
-+          owner.get()) {
-+    return {};
-+  }
-+  // SetDelegate skips an identical owner. Replay the real blocked state after
-+  // the new pane is registered, including deferred first attachment and a new
-+  // pane in the same Browser. No synthetic input or dialog manager is created.
-+  auto* manager =
-+      web_modal::WebContentsModalDialogManager::FromWebContents(contents.get());
-+  if (auto* current = DevtoolsUIController::From(owner.get())) {
-+    current->SetDevtoolsScrimVisibility(contents.get(),
-+                                        manager->IsDialogActive());
-+  }
-+  return binding;
-+}
-+
-+uint64_t DevToolsWindow::RegisterModalDialogManager(
+@@ -145,13 +150,14 @@
      BrowserWindowInterface* browser) {
-+  const uint64_t generation = ++native_modal_host_generation_;
    web_modal::WebContentsModalDialogManager::CreateForWebContents(
        main_web_contents_);
 -  web_modal::WebContentsModalDialogManager::FromWebContents(main_web_contents_)
 -      ->SetDelegate(BrowserWindowModalDialogDelegate::From(browser));
 -
--  // Observer `browser` destruction/removal to reset `SetDelegate(nullptr)`
++
+   // Observer `browser` destruction/removal to reset `SetDelegate(nullptr)`
 -  // before the dialog manager's `raw_ptr` becomes dangling.
-+  // Observe before SetDelegate can notify actual modal/native hosts and reenter
-+  // Browser removal. Existing Show and native attachment share this ownership.
++  // before the dialog manager's `raw_ptr` becomes dangling. Observe before
++  // SetDelegate, which can notify native hosts and reenter Browser removal.
    if (!browser_collection_observation_.IsObserving()) {
      browser_collection_observation_.Observe(
          GlobalBrowserCollection::GetInstance());
    }
--}
 +  web_modal::WebContentsModalDialogManager::FromWebContents(main_web_contents_)
 +      ->SetDelegate(BrowserWindowModalDialogDelegate::From(browser));
-+  return generation;  // No member access after callback-capable SetDelegate.
-+}
+ }
 --- a/chrome/browser/file_select_helper.cc
 +++ b/chrome/browser/file_select_helper.cc
 @@ -70,7 +70,19 @@

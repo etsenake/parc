@@ -19,7 +19,7 @@ the engine.
 
 The twelve cases cover exact engine/window identity, reentrant lease replacement, actual default prompt/suppression, a genuinely queued old-owner request, detach cancellation, real chooser cancellation, unbound rejection, release-time competing security UI, real inspected-tab activation, queue-advancement lease revocation, final pane-owner release and reentrant frontend replacement during old-tools destruction. Result state lives in the fixture through teardown.
 
-The browser fixture substitutes the native presentation delegate over a real
+The browser fixture installs the native presentation hooks over a real
 test Browser. Execution requires a valid Chromium process/context. Toolbox contents
 are outside this main-frontend lease; they cannot borrow the inspected page's
 service authority.

@@ -300,6 +300,17 @@ void SetNativeBrowserWindowFeatures(
 // Widget lookup. True means the native window rotated focus.
 void SetPaneFocusRotation(bool (*rotation)(ui::BaseWindow*, bool));
 
+// chrome/browser/devtools/devtools_ui_controller.cc. A controller Parc made
+// answers for itself: `update` returns nullopt to keep Chrome's Views, `scrim`
+// returns true once it has handled the call, and `tear_down` runs first in
+// DevtoolsUIController::TearDown.
+void SetNativeDevtoolsPresentation(
+    std::optional<bool> (*update)(DevtoolsUIController&,
+                                  content::WebContents*,
+                                  bool update_contents),
+    bool (*scrim)(DevtoolsUIController&, content::WebContents*, bool visible),
+    void (*tear_down)(DevtoolsUIController&));
+
 // Easel-owned pages that session and tab restore never record:
 // components/sessions/content/session_tab_helper.cc,
 // components/sessions/core/tab_restore_service_helper.cc and

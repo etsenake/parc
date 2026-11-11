@@ -2,6 +2,7 @@
 #ifndef PARC_NATIVE_NATIVE_APPKIT_HOST_H_
 #define PARC_NATIVE_NATIVE_APPKIT_HOST_H_
 #include <memory>
+#include <optional>
 
 #include <string>
 
@@ -51,8 +52,17 @@ std::unique_ptr<NativeBrowserWindowHost> CreateAppKitBrowserHost(
 std::unique_ptr<BrowserFocusController> CreateAppKitFocusController(
     BrowserWindowInterface&);
 bool RotateAppKitPaneFocus(ui::BaseWindow*, bool forward);
+// The controller and the hooks that give it Parc's presentation; a controller
+// made elsewhere gets none.
 std::unique_ptr<DevtoolsUIController> CreateAppKitDevtoolsController(
     BrowserWindowInterface&);
+std::optional<bool> UpdateAppKitDevtools(DevtoolsUIController&,
+                                         content::WebContents*,
+                                         bool update_contents);
+bool SetAppKitDevtoolsScrim(DevtoolsUIController&,
+                            content::WebContents* tools,
+                            bool visible);
+void TearDownAppKitDevtools(DevtoolsUIController&);
 bool HandleAppKitDevtoolsKey(content::WebContents*,
                              content::WebContents&,
                              const input::NativeWebKeyboardEvent&);

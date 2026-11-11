@@ -8,8 +8,15 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/functional/bind.h"
+#include "base/supports_user_data.h"
+#include "chrome/browser/devtools/devtools_ui_controller.h"
 #include "chrome/browser/devtools/devtools_window.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+#include "chrome/browser/ui/web_modal/browser_window_modal_dialog_delegate.h"  // nogncheck
 #include "client_certificates.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "http_auth.h"
 #include "native_auxiliary_page.h"
@@ -18,6 +25,83 @@
 #include "pane_compositor.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 namespace parc {
+namespace {
+// Each binding takes the next generation, so a binding released late never
+// clears a newer one. The tools' own contents carry it.
+const int kModalHostKey = 0;
+struct GenerationData : base::SupportsUserData::Data {
+  uint64_t value = 0;
+};
+uint64_t& ModalHostGeneration(content::WebContents& tools) {
+  auto* data = static_cast<GenerationData*>(tools.GetUserData(&kModalHostKey));
+  if (!data) {
+    auto created = std::make_unique<GenerationData>();
+    data = created.get();
+    tools.SetUserData(&kModalHostKey, std::move(created));
+  }
+  return data->value;
+}
+bool IsDockedMain(content::WebContents* tools) {
+  auto* window = DevToolsWindow::AsDevToolsWindow(tools);
+  return window && window->IsDocked();
+}
+void ReleaseModalHost(base::WeakPtr<content::WebContents> tools,
+                      base::WeakPtr<BrowserWindowInterface> owner,
+                      uint64_t generation) {
+  if (!tools || !owner || !IsDockedMain(tools.get()) ||
+      ModalHostGeneration(*tools) != generation) {
+    return;
+  }
+  ++ModalHostGeneration(*tools);
+  auto* manager =
+      web_modal::WebContentsModalDialogManager::FromWebContents(tools.get());
+  if (manager && manager->delegate() ==
+                     BrowserWindowModalDialogDelegate::From(owner.get())) {
+    manager->SetDelegate(nullptr);  // Last call: may notify native hosts.
+  }
+}
+}  // namespace
+base::ScopedClosureRunner BindDockedModalHost(content::WebContents* inspected,
+                                              content::WebContents* tools) {
+  auto* window = DevToolsWindow::GetInstanceForInspectedWebContents(inspected);
+  if (!window || !window->IsDocked() ||
+      window->GetDevToolsWebContents() != tools) {
+    return {};
+  }
+  auto* browser =
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(inspected);
+  if (!browser) {
+    return {};
+  }
+  auto owner = browser->GetWeakPtr();
+  auto page = inspected->GetWeakPtr();
+  auto contents = tools->GetWeakPtr();
+  const uint64_t generation = ++ModalHostGeneration(*tools);
+  web_modal::WebContentsModalDialogManager::CreateForWebContents(tools);
+  web_modal::WebContentsModalDialogManager::FromWebContents(tools)->SetDelegate(
+      BrowserWindowModalDialogDelegate::From(browser));
+  base::ScopedClosureRunner binding(
+      base::BindOnce(&ReleaseModalHost, contents, owner, generation));
+  // SetDelegate can notify native hosts and reenter; drop the lease if the
+  // page, the tools or the Browser changed meanwhile.
+  if (!owner || !page || !contents ||
+      ModalHostGeneration(*contents) != generation ||
+      !IsDockedMain(contents.get()) ||
+      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(page.get()) !=
+          owner.get()) {
+    return {};
+  }
+  // SetDelegate skips an identical owner. Replay the real blocked state after
+  // the new pane is registered, including deferred first attachment and a new
+  // pane in the same Browser. No synthetic input or dialog manager is created.
+  auto* manager =
+      web_modal::WebContentsModalDialogManager::FromWebContents(contents.get());
+  if (auto* current = DevtoolsUIController::From(owner.get())) {
+    current->SetDevtoolsScrimVisibility(contents.get(),
+                                        manager->IsDialogActive());
+  }
+  return binding;
+}
 class NativeDevToolsPane::ToolsObserver : public content::WebContentsObserver {
  public:
   ToolsObserver(content::WebContents* tools,
@@ -161,8 +245,7 @@ bool NativeDevToolsPane::Refresh(bool update_contents) {
     }
   }
   if (!detached_ && tools_ && show_tools_) {
-    auto binding = DevToolsWindow::BindNativeDockedModalDialogHost(
-        web_contents(), tools_.get());
+    auto binding = BindDockedModalHost(web_contents(), tools_.get());
     if (detached_) {
       return changed;
     }
