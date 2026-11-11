@@ -10,13 +10,11 @@
 #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
 
 class Browser;
-class BrowserFocusController;
 class BrowserUiController;
 class BrowserWebContentsDelegate;
 class BrowserWindow;
 class BrowserWindowInterface;
 class DesktopBrowserWindowCapabilities;
-class DevtoolsUIController;
 class Profile;
 class ExclusiveAccessManager;
 class UnloadController;
@@ -58,8 +56,9 @@ class NativeBrowser final {
   NativeBrowser(const NativeBrowser&) = delete;
   NativeBrowser& operator=(const NativeBrowser&) = delete;
 
-  // BrowserWindow::CreateBrowserWindow.
-  std::unique_ptr<BrowserWindow, BrowserWindowDeleter> CreateWindow();
+  // BrowserWindow::CreateBrowserWindow; null for an ordinary Browser.
+  static std::unique_ptr<BrowserWindow, BrowserWindowDeleter> CreateWindow(
+      BrowserWindowInterface* browser);
   // BrowserManagerService::AddBrowser, once it owns the Browser. Attaches the
   // window to the reserved NSWindow.
   void OnRegistered();
@@ -68,11 +67,12 @@ class NativeBrowser final {
   bool DeferDeletion(base::OnceClosure retry);
   bool DeletionReady() const;
 
-  // BrowserWindowFeatures::InitPostWindowConstruction.
-  ui::ColorProviderSource& ColorProviderSource();
-  std::unique_ptr<BrowserFocusController> CreateFocusController();
-  std::unique_ptr<DevtoolsUIController> CreateDevtoolsController();
-  std::unique_ptr<BrowserWebContentsDelegate> CreateWebContentsDelegate(
+  // BrowserWindowFeatures::InitPostWindowConstruction. The color source is
+  // null for an ordinary Browser; only native ones reach the delegate factory.
+  static ui::ColorProviderSource* ColorProviderSource(
+      BrowserWindowInterface* browser);
+  static std::unique_ptr<BrowserWebContentsDelegate> CreateWebContentsDelegate(
+      BrowserWindowInterface* browser,
       ExclusiveAccessManager& exclusive_access_manager,
       chrome::BrowserCommandController& command_controller,
       UnloadController& unload_controller,

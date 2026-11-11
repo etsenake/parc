@@ -10,7 +10,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
 #include "base/task/single_thread_task_runner.h"
-#include "chrome/browser/devtools/devtools_ui_controller.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -19,7 +18,6 @@
 #include "chrome/browser/ui/browser_window_deleter.h"
 #include "chrome/browser/ui/browser_window/public/create_browser_window.h"
 #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
-#include "chrome/browser/ui/focus/browser_focus_controller.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "native_appkit_host.h"
@@ -85,11 +83,17 @@ NativeBrowser::~NativeBrowser() {
   NotifyNativeEngineOwnershipChanged();
 }
 
+// static
 std::unique_ptr<BrowserWindow, BrowserWindowDeleter>
-NativeBrowser::CreateWindow() {
-  CHECK(reservation_);
+NativeBrowser::CreateWindow(BrowserWindowInterface* browser) {
+  auto* native = From(browser);
+  if (!native) {
+    return nullptr;
+  }
+  CHECK(native->reservation_);
   return std::unique_ptr<BrowserWindow, BrowserWindowDeleter>(
-      new NativeBrowserWindow(*browser_, reservation_->Bind(*browser_)));
+      new NativeBrowserWindow(*native->browser_,
+                              native->reservation_->Bind(*native->browser_)));
 }
 
 void NativeBrowser::OnRegistered() {
@@ -136,21 +140,17 @@ bool NativeBrowser::DeferDeletion(base::OnceClosure retry) {
   return true;
 }
 
-ui::ColorProviderSource& NativeBrowser::ColorProviderSource() {
-  return WindowOf(*browser_);
+// static
+ui::ColorProviderSource* NativeBrowser::ColorProviderSource(
+    BrowserWindowInterface* browser) {
+  auto* native = From(browser);
+  return native ? &WindowOf(*native->browser_) : nullptr;
 }
 
-std::unique_ptr<BrowserFocusController> NativeBrowser::CreateFocusController() {
-  return CreateAppKitFocusController(*browser_);
-}
-
-std::unique_ptr<DevtoolsUIController>
-NativeBrowser::CreateDevtoolsController() {
-  return CreateAppKitDevtoolsController(*browser_);
-}
-
+// static
 std::unique_ptr<BrowserWebContentsDelegate>
 NativeBrowser::CreateWebContentsDelegate(
+    BrowserWindowInterface* browser,
     ExclusiveAccessManager& exclusive_access_manager,
     chrome::BrowserCommandController& command_controller,
     UnloadController& unload_controller,
@@ -159,7 +159,7 @@ NativeBrowser::CreateWebContentsDelegate(
     DesktopBrowserWindowCapabilities& capabilities,
     BrowserUiController& browser_ui_controller) {
   return std::make_unique<NativeBrowserWebContentsDelegate>(
-      &*browser_, exclusive_access_manager, command_controller,
+      browser, exclusive_access_manager, command_controller,
       unload_controller, app_browser_controller, window, capabilities,
       browser_ui_controller);
 }

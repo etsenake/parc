@@ -81,8 +81,8 @@ source_set("native_split_link_api") {
   sources = public
 }
 
-# Browser, BrowserManagerService, window factory, navigator and DevTools hooks
-# name the native Browser seam. //parc:browser holds its implementation.
+# Browser, BrowserManagerService, navigator and DevTools hooks name the native
+# Browser seam. //parc:browser holds its implementation.
 source_set("native_browser_api") {
   public = [ "native_browser.h" ]
   sources = public

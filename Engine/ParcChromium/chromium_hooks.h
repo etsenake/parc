@@ -21,18 +21,31 @@
 #include "url/gurl.h"
 #include "url/origin.h"
 
+class BrowserFocusController;
+class BrowserUiController;
+class BrowserWebContentsDelegate;
+class BrowserWindow;
 class BrowserWindowInterface;
 class ChromeBrowserMainParts;
+class DesktopBrowserWindowCapabilities;
+class DevtoolsUIController;
+class ExclusiveAccessManager;
 class LoginHandler;
 class PrefRegistrySimple;
 class PrefService;
 class Profile;
 class SadTab;
 class StartupData;
+class UnloadController;
+struct BrowserWindowDeleter;
 
 namespace base {
 class CommandLine;
 class FilePath;
+}
+
+namespace chrome {
+class BrowserCommandController;
 }
 
 namespace extensions {
@@ -56,7 +69,12 @@ class X509Certificate;
 }
 
 namespace ui {
+class ColorProviderSource;
 class DialogModel;
+}
+
+namespace web_app {
+class AppBrowserController;
 }
 
 namespace parc_hooks {
@@ -191,6 +209,33 @@ void SetSessionRestorePolicy(bool (*policy)());
 
 // components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
 void SetGaiaAccountsPolicy(bool (*policy)(PrefService*));
+
+// chrome/browser/ui/views/frame/browser_window_factory.cc; a null window keeps
+// Chrome's.
+void SetNativeBrowserWindowFactory(
+    std::unique_ptr<BrowserWindow, BrowserWindowDeleter> (*factory)(
+        BrowserWindowInterface*));
+
+// chrome/browser/ui/browser_window/internal/browser_window_features.cc
+// A non-null color source marks a native shell window, which then gets the
+// other three in place of its Views or WebUI ones.
+using NativeWebContentsDelegateFactory =
+    std::unique_ptr<BrowserWebContentsDelegate> (*)(
+        BrowserWindowInterface*,
+        ExclusiveAccessManager&,
+        chrome::BrowserCommandController&,
+        UnloadController&,
+        web_app::AppBrowserController*,
+        BrowserWindow&,
+        DesktopBrowserWindowCapabilities&,
+        BrowserUiController&);
+void SetNativeBrowserWindowFeatures(
+    ui::ColorProviderSource* (*color_provider_source)(BrowserWindowInterface*),
+    std::unique_ptr<BrowserFocusController> (*focus_controller)(
+        BrowserWindowInterface&),
+    std::unique_ptr<DevtoolsUIController> (*devtools_controller)(
+        BrowserWindowInterface&),
+    NativeWebContentsDelegateFactory web_contents_delegate);
 
 }  // namespace parc_hooks
 

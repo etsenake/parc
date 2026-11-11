@@ -262,92 +262,128 @@
    // If we're exiting, send out the APP_TERMINATING notification to allow other
 --- a/chrome/browser/ui/views/frame/browser_window_factory.cc
 +++ b/chrome/browser/ui/views/frame/browser_window_factory.cc
-@@ -13,6 +13,7 @@
- #include "chrome/browser/ui/webui_browser/webui_browser.h"
- #include "chrome/browser/ui/webui_browser/webui_browser_window.h"
- #include "chrome/browser/ui/window_feature_controller/window_feature_controller.h"
-+#include "parc/native/native_browser.h"
- #include "ui/views/widget/widget.h"
+@@ -27,11 +27,29 @@
+ #include "chromeos/components/kiosk/kiosk_utils.h"
+ #endif
 -
 +
- #if defined(USE_AURA)
-@@ -32,6 +33,9 @@
++namespace parc_hooks {
++namespace {
++std::unique_ptr<BrowserWindow, BrowserWindowDeleter> (*native_browser_window)(
++    BrowserWindowInterface*) = nullptr;
++}  // namespace
++void SetNativeBrowserWindowFactory(
++    std::unique_ptr<BrowserWindow, BrowserWindowDeleter> (*factory)(
++        BrowserWindowInterface*)) {
++  native_browser_window = factory;
++}
++}  // namespace parc_hooks
++
+ // static
+ std::unique_ptr<BrowserWindow, BrowserWindowDeleter>
  BrowserWindow::CreateBrowserWindow(BrowserWindowInterface* browser,
                                     bool user_gesture,
                                     bool in_tab_dragging) {
-+  if (auto* native = parc::NativeBrowser::From(browser)) {
-+    return native->CreateWindow();
++  // Parc's native shell window; null for any other Browser.
++  if (auto factory = parc_hooks::native_browser_window) {
++    if (auto window = factory(browser)) {
++      return window;
++    }
 +  }
    if (webui_browser::IsWebUIBrowserEnabled() &&
        browser->GetType() == BrowserWindowInterface::Type::TYPE_NORMAL) {
      return std::unique_ptr<BrowserWindow, BrowserWindowDeleter>(
---- a/chrome/browser/ui/views/frame/BUILD.gn
-+++ b/chrome/browser/ui/views/frame/BUILD.gn
-@@ -983,6 +983,10 @@
-     "//ui/views",
-   ]
--
-+
-+  if (is_mac) {
-+    deps += [ "//parc/native:native_browser_api" ]
-+  }
-+
-   if (use_aura) {
-     deps += [ "//ui/aura" ]
-   }
 --- a/chrome/browser/ui/browser_window/internal/browser_window_features.cc
 +++ b/chrome/browser/ui/browser_window/internal/browser_window_features.cc
-@@ -79,6 +79,7 @@
- #include "chrome/browser/ui/focus/browser_focus_controller.h"
- #include "chrome/browser/ui/focus/browser_focus_controller_views.h"
- #include "chrome/browser/ui/focus/browser_focus_controller_webui.h"
-+#include "parc/native/native_browser.h"
- #include "chrome/browser/ui/fullscreen/browser_window_fullscreen_controller.h"
- #include "chrome/browser/ui/immersive/immersive_mode_controller.h"
- #include "chrome/browser/ui/lens/lens_overlay_entry_point_controller.h"
-@@ -692,6 +693,7 @@
+@@ -243,6 +243,40 @@
+ #include "chrome/browser/ui/overscroll_pref_manager.h"
+ #endif  // defined(USE_AURA)
+-
++
++namespace parc_hooks {
++using NativeWebContentsDelegateFactory =
++    std::unique_ptr<BrowserWebContentsDelegate> (*)(
++        BrowserWindowInterface*,
++        ExclusiveAccessManager&,
++        chrome::BrowserCommandController&,
++        UnloadController&,
++        web_app::AppBrowserController*,
++        BrowserWindow&,
++        DesktopBrowserWindowCapabilities&,
++        BrowserUiController&);
++namespace {
++ui::ColorProviderSource* (*native_color_provider_source)(
++    BrowserWindowInterface*) = nullptr;
++std::unique_ptr<BrowserFocusController> (*native_focus_controller)(
++    BrowserWindowInterface&) = nullptr;
++std::unique_ptr<DevtoolsUIController> (*native_devtools_controller)(
++    BrowserWindowInterface&) = nullptr;
++NativeWebContentsDelegateFactory native_web_contents_delegate = nullptr;
++}  // namespace
++void SetNativeBrowserWindowFeatures(
++    ui::ColorProviderSource* (*color_provider_source)(BrowserWindowInterface*),
++    std::unique_ptr<BrowserFocusController> (*focus_controller)(
++        BrowserWindowInterface&),
++    std::unique_ptr<DevtoolsUIController> (*devtools_controller)(
++        BrowserWindowInterface&),
++    NativeWebContentsDelegateFactory web_contents_delegate) {
++  native_color_provider_source = color_provider_source;
++  native_focus_controller = focus_controller;
++  native_devtools_controller = devtools_controller;
++  native_web_contents_delegate = web_contents_delegate;
++}
++}  // namespace parc_hooks
++
+ BrowserWindowFeatures::BrowserWindowFeatures() = default;
+ BrowserWindowFeatures::~BrowserWindowFeatures() = default;
+-
++
+@@ -692,6 +726,11 @@
        BrowserView::GetBrowserViewForBrowser(browser);
    WebUIBrowserWindow* const webui_browser_window =
        WebUIBrowserWindow::FromBrowser(browser);
-+  parc::NativeBrowser* const native_browser = parc::NativeBrowser::From(browser);
++  // Non-null exactly when Parc's native shell window hosts this Browser.
++  ui::ColorProviderSource* const native_color_source =
++      parc_hooks::native_color_provider_source
++          ? parc_hooks::native_color_provider_source(browser)
++          : nullptr;
    views::FocusManager* focus_manager = nullptr;
    if (browser_view) {
      focus_manager = browser_view->GetFocusManager();
-@@ -722,6 +724,9 @@
+@@ -722,6 +761,9 @@
      browser_focus_controller_ =
          GetUserDataFactory().CreateInstance<BrowserFocusControllerWebUI>(
              *browser, browser->GetWindow(), browser->GetUnownedUserDataHost());
-+  } else if (native_browser) {
-+    browser_focus_controller_ = native_browser->CreateFocusController();
++  } else if (native_color_source) {
++    browser_focus_controller_ = parc_hooks::native_focus_controller(*browser);
 +    CHECK(browser_focus_controller_);
    } else {
      browser_focus_controller_ =
          GetUserDataFactory().CreateInstance<StubBrowserFocusController>(
-@@ -743,6 +748,11 @@
+@@ -743,6 +785,10 @@
      color_provider_browser_helper_ =
          std::make_unique<ColorProviderBrowserHelper>(
              browser->GetTabStripModel(), browser_view->GetWidget(), browser);
-+  } else if (native_browser) {
++  } else if (native_color_source) {
 +    color_provider_browser_helper_ =
 +        std::make_unique<ColorProviderBrowserHelper>(
-+            browser->GetTabStripModel(), &native_browser->ColorProviderSource(),
-+            browser);
++            browser->GetTabStripModel(), native_color_source, browser);
    }
 -
 +
    if (browser_view) {
-@@ -793,6 +803,9 @@
+@@ -793,6 +839,9 @@
      devtools_ui_controller_ =
          GetUserDataFactory().CreateInstance<DevtoolsUIController>(
              *browser, browser_, browser_view->GetContentsContainerViews());
-+  } else if (native_browser) {
-+    devtools_ui_controller_ = native_browser->CreateDevtoolsController();
++  } else if (native_color_source) {
++    devtools_ui_controller_ = parc_hooks::native_devtools_controller(*browser);
 +    CHECK(devtools_ui_controller_);
    }
 -
 +
    // Must be before exclusive_access_manager_ (whose construction calls
-@@ -812,11 +825,20 @@
+@@ -812,11 +861,20 @@
 -
 +
    // Must be after exclusive_access_manager_,
@@ -357,9 +393,9 @@
 -      *unload_controller_, app_browser_controller_.get(),
 -      *BrowserWindow::FromBrowser(browser),
 -      *desktop_browser_window_capabilities_, *browser_ui_controller_);
-+  if (native_browser) {
-+    browser_web_contents_delegate_ = native_browser->CreateWebContentsDelegate(
-+        *exclusive_access_manager_, *browser_command_controller_,
++  if (native_color_source) {
++    browser_web_contents_delegate_ = parc_hooks::native_web_contents_delegate(
++        browser, *exclusive_access_manager_, *browser_command_controller_,
 +        *unload_controller_, app_browser_controller_.get(),
 +        *BrowserWindow::FromBrowser(browser),
 +        *desktop_browser_window_capabilities_, *browser_ui_controller_);
@@ -375,20 +411,6 @@
 +
    // Must be after exclusive_access_manager_.
  #if !BUILDFLAG(IS_CHROMEOS)
---- a/chrome/browser/ui/browser_window/internal/BUILD.gn
-+++ b/chrome/browser/ui/browser_window/internal/BUILD.gn
-@@ -179,6 +179,10 @@
-       "//components/search",
-     ]
--
-+
-+    if (is_mac) {
-+      deps += [ "//parc/native:native_browser_api" ]
-+    }
-+
-     if (is_win || is_mac) {
-       deps += [
-         "//chrome/browser/ui/pdf/infobar",
 --- a/chrome/browser/ui/focus/browser_focus_controller.h
 +++ b/chrome/browser/ui/focus/browser_focus_controller.h
 @@ -30,7 +30,7 @@
