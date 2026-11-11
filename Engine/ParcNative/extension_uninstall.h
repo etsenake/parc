@@ -58,9 +58,11 @@ class NativeExtensionUninstallService final {
 };
 // Chromium's uninstall dialog presented through a binding instead of Views.
 // Confirm arms the binding before Chromium loads the icon; a refused binding
-// reports cancellation.
+// reports cancellation. The delegate hears one outcome, including Chromium's
+// own profile and parent-window cancellations.
 class NativeExtensionUninstallDialog final
-    : public extensions::ExtensionUninstallDialog {
+    : private extensions::ExtensionUninstallDialog::Delegate,
+      public extensions::ExtensionUninstallDialog {
  public:
   NativeExtensionUninstallDialog(
       Profile* profile,
@@ -75,14 +77,16 @@ class NativeExtensionUninstallDialog final
  private:
   void Show() override;
   void Close() override;
+  void OnExtensionUninstallDialogClosed(bool did_start_uninstall,
+                                        const std::u16string& error) override;
   void Accepted();
   void Closing();
   void Report(CloseAction action);
 
+  const raw_ptr<Delegate> owner_;
   const std::shared_ptr<ExtensionUninstallNativeBinding> binding_;
   // The shown model, cleared before its close is reported.
   raw_ptr<ui::DialogModel> model_ = nullptr;
-  // Chromium's delegate hears the outcome once.
   bool reported_ = false;
   base::WeakPtrFactory<NativeExtensionUninstallDialog> weak_factory_{this};
 };

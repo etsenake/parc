@@ -531,7 +531,8 @@ NativeExtensionUninstallDialog::NativeExtensionUninstallDialog(
     gfx::NativeWindow parent,
     Delegate* delegate,
     std::shared_ptr<ExtensionUninstallNativeBinding> binding)
-    : ExtensionUninstallDialog(profile, parent, delegate),
+    : ExtensionUninstallDialog(profile, parent, this),
+      owner_(delegate),
       binding_(std::move(binding)) {}
 NativeExtensionUninstallDialog::~NativeExtensionUninstallDialog() {
   // A synchronous native close must not report from this destructor.
@@ -614,7 +615,7 @@ void NativeExtensionUninstallDialog::Show() {
 void NativeExtensionUninstallDialog::Close() {
   if (model_) {
     binding_->Close();
-  } else if (!reported_) {
+  } else {
     Report(CLOSE_ACTION_CANCELED);
   }
 }
@@ -633,8 +634,17 @@ void NativeExtensionUninstallDialog::Closing() {
   }
 }
 void NativeExtensionUninstallDialog::Report(CloseAction action) {
-  reported_ = true;
-  OnDialogClosed(action);
+  if (!reported_) {
+    OnDialogClosed(action);
+  }
+}
+void NativeExtensionUninstallDialog::OnExtensionUninstallDialogClosed(
+    bool did_start_uninstall,
+    const std::u16string& error) {
+  if (std::exchange(reported_, true)) {
+    return;
+  }
+  owner_->OnExtensionUninstallDialogClosed(did_start_uninstall, error);
 }
 
 void BeginExtensionUninstall(BrowserWindowInterface* browser,
