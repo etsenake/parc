@@ -305,6 +305,16 @@ private test override of background-extension suppression. Its manifest key and
 worker bytes stay unchanged. GCM's factory selects Parc's legacy-registration
 policy; modern registration and transport remain upstream.
 
+## Media player boundaries
+
+WebMediaPlayerImpl keeps every call site that drives its own state: readyState
+changes, seek completion, restarts, suspend decisions and observer
+notifications stay in Chromium's file, in their current order. What moves out
+is Parc's own machinery. The two main-thread task runners, the one that
+follows a moved element's frame and the one that keeps a cast's pipeline
+running in a frozen page, live in a Parc header that WebMediaPlayerImpl and
+WebMediaPlayerMS include.
+
 ## Decisions
 
 - **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
