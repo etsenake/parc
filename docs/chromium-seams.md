@@ -274,6 +274,18 @@ navigates or goes away and `ShowTabModal` only receives the page. A hook in File
 the frame too. The consent stays Chromium's Views dialog in Parc's sheet, so its acceptance check stays
 a patch: a dialog model's accept action can only be run by a dialog host.
 
+FileSelectHelper’s per-accept-type filter construction also stays patched. It builds the combined filter
+first and, when multiple accept types match, appends their individual filters afterwards. Parc’s
+file-dialog factory only receives the merged extension list, after the per-type groups and labels are
+gone, so it cannot reconstruct those choices. A sole recognized type keeps its specific label even when
+an unrecognized type follows it. The existing folder-upload hook in the same file remains untouched.
+
+The neighboring extension-menu pin guard stays. Pinning still updates the preference and metrics, but
+optional element-tracker feedback is skipped when a native Browser has no `BrowserElements`. Parc could
+instead register a minimal `BrowserElements` for every native window, but that would change what every
+Chromium caller gets when it looks up a native window’s `BrowserElements`. The local guard keeps the
+exception at the only optional-feedback call that needs it.
+
 Sad tab, open-in-app, certificate viewing and client-certificate routing are one-call hooks. Parc presents
 installed pages natively and gives any other page Chromium's own interface. The sad tab's focus goes
 through Parc's view delegate. Two client-certificate pieces stay patched. The selector refuses a stale
