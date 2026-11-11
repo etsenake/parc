@@ -1572,46 +1572,11 @@
  }
 -
 +
-@@ -344,10 +456,176 @@
+@@ -344,10 +456,37 @@
             << "type " << type_
             << " - " << state_ << " -> " << state;
    state_ = state;
 +}
-+
-+// Parc: the hand-off reader before ParcStreamHandOff, unused. It stays,
-+// with ParcHandOff and |parc_handoff_|, until the hand-off tests pass on
-+// ParcStreamHandOff.
-+class ChunkDemuxerStream::ParcHandOffStreamReader final
-+    : public DemuxerStream,
-+      public ParcDemuxerStreamExtension {
-+ public:
-+  explicit ParcHandOffStreamReader(ChunkDemuxerStream* stream)
-+      : stream_(stream) {}
-+
-+  void Read(uint32_t count, ReadCB read_cb) final {
-+    stream_->ParcHandOffRead(count, std::move(read_cb));
-+  }
-+  Type type() const final { return stream_->type(); }
-+  StreamLiveness liveness() const final { return stream_->liveness(); }
-+  AudioDecoderConfig audio_decoder_config() final {
-+    return stream_->audio_decoder_config();
-+  }
-+  VideoDecoderConfig video_decoder_config() final {
-+    return stream_->video_decoder_config();
-+  }
-+  bool SupportsConfigChanges() final { return true; }
-+  ParcDemuxerStreamExtension* GetParcExtension() final { return this; }
-+
-+  // ParcDemuxerStreamExtension methods.
-+  bool ParcIsEnabled() const final { return stream_->ParcIsEnabled(); }
-+  DemuxerStream* ParcHandOffSource() final { return stream_; }
-+
-+ private:
-+  const raw_ptr<ChunkDemuxerStream> stream_;
-+};
-+
-+ChunkDemuxerStream::ParcHandOff::ParcHandOff() = default;
-+ChunkDemuxerStream::ParcHandOff::~ParcHandOff() = default;
 +
 +DemuxerStream* ChunkDemuxerStream::ParcHandOffReader() {
 +  base::AutoLock auto_lock(lock_);
@@ -1633,110 +1598,6 @@
 +  return parc_stream_hand_off_->SplitAt(time, unread, reader_there);
 +}
 +
-+void ChunkDemuxerStream::ParcPullToSplit_Locked() {
-+  ParcHandOff& handoff = *parc_handoff_;
-+  if (state_ == SHUTDOWN || handoff.split) {
-+    return;
-+  }
-+  auto starts_after = [&](const StreamParserBuffer& buffer) {
-+    return buffer.end_of_stream() ||
-+           (buffer.timestamp() >= *handoff.target &&
-+            (type_ != VIDEO || buffer.is_key_frame()));
-+  };
-+  bool pulled = false;
-+  while (true) {
-+    if (handoff.first) {
-+      if (starts_after(*handoff.first)) {
-+        break;
-+      }
-+      const StreamParserBuffer& taken = *handoff.first;
-+      if (handoff.before_end == kNoTimestamp ||
-+          taken.timestamp() + taken.duration() > handoff.before_end) {
-+        handoff.before_end = taken.timestamp() + taken.duration();
-+      }
-+      handoff.before.push_back(std::move(handoff.first));
-+      pulled = true;
-+    }
-+    // What an earlier hand-off gave back comes before |stream_|.
-+    if (!parc_returned_.empty()) {
-+      handoff.first = std::move(parc_returned_.front());
-+      parc_returned_.pop_front();
-+      continue;
-+    }
-+    if (stream_->IsNextBufferConfigChanged()) {
-+      handoff.config_split = true;
-+      break;
-+    }
-+    scoped_refptr<StreamParserBuffer> buffer;
-+    switch (stream_->GetNextBuffer(&buffer)) {
-+      case SourceBufferStreamStatus::kSuccess:
-+        handoff.first = std::move(buffer);
-+        break;
-+      case SourceBufferStreamStatus::kNeedBuffer:
-+        return;
-+      case SourceBufferStreamStatus::kEndOfStream:
-+        handoff.first = StreamParserBuffer::CreateEOSBuffer();
-+        break;
-+      case SourceBufferStreamStatus::kConfigChange:
-+        NOTREACHED();  // IsNextBufferConfigChanged() said no.
-+    }
-+  }
-+  handoff.split = true;
-+  handoff.reader_there = !pulled && handoff.before.empty();
-+  if (handoff.first && !handoff.first->end_of_stream()) {
-+    handoff.split_time = handoff.first->timestamp();
-+  } else if (handoff.before_end != kNoTimestamp) {
-+    handoff.split_time = handoff.before_end;
-+  } else {
-+    handoff.split_time = *handoff.target;
-+  }
-+}
-+
-+void ChunkDemuxerStream::ParcHandOffRead(uint32_t count, ReadCB read_cb) {
-+  base::AutoLock auto_lock(lock_);
-+  DCHECK(parc_handoff_);
-+  DCHECK(!parc_handoff_->read_cb);
-+  parc_handoff_->read_cb =
-+      base::BindPostTaskToCurrentDefault(std::move(read_cb));
-+  parc_handoff_->count = count;
-+  ParcCompleteHandOffRead_Locked();
-+}
-+
-+void ChunkDemuxerStream::ParcCompleteHandOffRead_Locked() {
-+  ParcHandOff& handoff = *parc_handoff_;
-+  DCHECK(handoff.read_cb);
-+  if (!is_enabled_ || state_ == SHUTDOWN) {
-+    std::move(handoff.read_cb)
-+        .Run(kOk, {StreamParserBuffer::CreateEOSBuffer()});
-+    return;
-+  }
-+  if (state_ == RETURNING_ABORT_FOR_READS) {
-+    std::move(handoff.read_cb).Run(kAborted, {});
-+    return;
-+  }
-+  if (state_ != RETURNING_DATA_FOR_READS || !handoff.split) {
-+    return;
-+  }
-+  if (handoff.first) {
-+    std::move(handoff.read_cb).Run(kOk, {std::move(handoff.first)});
-+    return;
-+  }
-+  if (!parc_returned_.empty()) {
-+    std::move(handoff.read_cb).Run(kOk, {std::move(parc_returned_.front())});
-+    parc_returned_.pop_front();
-+    return;
-+  }
-+  auto [status, buffers] = GetPendingBuffers_Locked(handoff.count);
-+  if (status == SourceBufferStreamStatus::kNeedBuffer && buffers.empty()) {
-+    return;
-+  }
-+  if (status == SourceBufferStreamStatus::kConfigChange) {
-+    std::move(handoff.read_cb).Run(kConfigChanged, {});
-+    return;
-+  }
-+  std::move(handoff.read_cb).Run(kOk, std::move(buffers));
-+}
-+
 +void ChunkDemuxerStream::ParcEndHandOff() {
 +  base::AutoLock auto_lock(lock_);
 +  if (parc_stream_hand_off_) {
@@ -1751,7 +1612,7 @@
  void ChunkDemuxerStream::CompletePendingReadIfPossible_Locked() {
    lock_.AssertAcquired();
    DCHECK(read_cb_);
-@@ -373,8 +651,26 @@
+@@ -373,8 +512,26 @@
    }
    DCHECK(state_ == RETURNING_DATA_FOR_READS);
 -
@@ -1781,7 +1642,7 @@
    // If the status from |stream_| is kNeedBuffer and there's no buffers,
    // then after ChunkDemuxerStream::Append, try to read data again,
    // 'requested_buffer_count_' does not need to be cleared to 0.
-@@ -396,16 +692,16 @@
+@@ -396,16 +553,16 @@
  }
 -
 +
@@ -1802,7 +1663,7 @@
                 << ", out_size=" << output_buffers.size();
        return {SourceBufferStreamStatus::kSuccess, std::move(output_buffers)};
      }
-@@ -420,13 +716,13 @@
+@@ -420,13 +577,13 @@
          // Return early with calling |read_cb_| if output_buffers has buffers
          // since there is no more readable data.
          DVLOG(3) << __func__ << " status=" << (int)status << ", type=" << type_
@@ -1818,7 +1679,7 @@
                   << ", out_size=" << output_buffers.size();
          return {status, std::move(output_buffers)};
        case SourceBufferStreamStatus::kConfigChange:
-@@ -436,20 +732,20 @@
+@@ -436,20 +593,20 @@
          // loop|, i.e. output_buffers should be empty.
          DCHECK(output_buffers.empty());
          DVLOG(3) << __func__ << " status=" << (int)status << ", type=" << type_
@@ -1844,7 +1705,7 @@
  ChunkDemuxer::ChunkDemuxer(
      base::OnceClosure open_cb,
      base::RepeatingClosure progress_cb,
-@@ -527,11 +823,29 @@
+@@ -527,11 +684,29 @@
      cancel_next_seek_ = false;
      RunSeekCB_Locked(PIPELINE_OK);
      return;
@@ -1876,7 +1737,7 @@
    if (IsSeekWaitingForData_Locked()) {
      DVLOG(1) << "Seek() : waiting for more data to arrive.";
      return;
-@@ -634,6 +948,8 @@
+@@ -634,6 +809,8 @@
 -
 +
    AbortPendingReads_Locked();
@@ -1887,7 +1748,7 @@
 +
    if (!seek_cb_) {
      cancel_next_seek_ = true;
-@@ -643,6 +959,43 @@
+@@ -643,6 +820,43 @@
    RunSeekCB_Locked(PIPELINE_OK);
  }
 -
@@ -1932,7 +1793,7 @@
  ChunkDemuxer::Status ChunkDemuxer::AddId(
      const std::string& id,
      std::unique_ptr<AudioDecoderConfig> audio_config) {
-@@ -656,12 +1009,13 @@
+@@ -656,12 +870,13 @@
    if (!audio_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
 -
@@ -1950,7 +1811,7 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(audio_config)),
                         std::nullopt);
  }
-@@ -679,12 +1033,13 @@
+@@ -679,12 +894,13 @@
    if (!video_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
 -
@@ -1968,7 +1829,7 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(video_config)),
                         std::nullopt);
  }
-@@ -696,17 +1051,18 @@
+@@ -696,17 +912,18 @@
             << " codecs=" << codecs;
    base::AutoLock auto_lock(lock_);
 -
@@ -1993,7 +1854,7 @@
    if (!stream_parser) {
      DVLOG(1) << __func__ << " failed: unsupported content_type=" << content_type
               << " codecs=" << codecs;
-@@ -762,6 +1118,11 @@
+@@ -762,6 +979,11 @@
            base::BindRepeating(&ChunkDemuxer::CreateDemuxerStream,
                                base::Unretained(this), id),
            media_log_.get());
@@ -2006,7 +1867,7 @@
 +
    // TODO(wolenetz): Change these to DCHECKs or switch to returning
    // kReachedIdLimit once less verification in release build is needed. See
-@@ -774,7 +1135,18 @@
+@@ -774,7 +996,18 @@
 -
 +
    source_state->Init(base::BindOnce(&ChunkDemuxer::OnSourceInitDone,
@@ -2028,7 +1889,7 @@
 +
    // TODO(wolenetz): Change to DCHECKs once less verification in release build
    // is needed. See https://crbug.com/786975.
-@@ -802,7 +1174,10 @@
+@@ -802,7 +1035,10 @@
  void ChunkDemuxer::RemoveId(const std::string& id) {
    DVLOG(1) << __func__ << " id=" << id;
    base::AutoLock auto_lock(lock_);
@@ -2040,7 +1901,7 @@
 +
    source_state_map_.erase(id);
    pending_source_init_ids_.erase(id);
-@@ -830,6 +1205,7 @@
+@@ -830,6 +1066,7 @@
      CHECK(stream_found);
    }
    id_to_streams_map_.erase(id);
@@ -2049,7 +1910,7 @@
 -
 +
  Ranges<base::TimeDelta> ChunkDemuxer::GetBufferedRanges(
-@@ -870,35 +1246,263 @@
+@@ -870,35 +1107,263 @@
                                     base::TimeDelta curr_time,
                                     TrackChangeCB change_completed_cb) {
    base::AutoLock auto_lock(lock_);
@@ -2332,7 +2193,7 @@
  bool ChunkDemuxer::EvictCodedFrames(const std::string& id,
                                      base::TimeDelta currentMediaTime,
                                      size_t newDataSize) {
-@@ -913,7 +1517,31 @@
+@@ -913,7 +1378,31 @@
      LOG(WARNING) << __func__ << " stream " << id << " not found";
      return false;
    }
@@ -2366,7 +2227,7 @@
 -
 +
  bool ChunkDemuxer::AppendToParseBuffer(const std::string& id,
-@@ -1013,6 +1641,7 @@
+@@ -1013,6 +1502,7 @@
                   << state_;
          return StreamParser::ParseStatus::kFailed;
      }
@@ -2375,7 +2236,7 @@
 +
      // Check to see if newly parsed data was at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1075,6 +1704,8 @@
+@@ -1075,6 +1565,8 @@
          DVLOG(1) << "AppendChunks(): called in unexpected state " << state_;
          return false;
      }
@@ -2385,7 +2246,7 @@
 +
      // Check to see if data was appended at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1102,6 +1733,7 @@
+@@ -1102,6 +1594,7 @@
    source_state_map_[id]->ResetParserState(append_window_start,
                                            append_window_end,
                                            timestamp_offset);
@@ -2393,7 +2254,7 @@
    // ResetParserState can possibly emit some buffers.
    // Need to check whether seeking can be completed.
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
-@@ -1136,10 +1768,113 @@
+@@ -1136,10 +1629,113 @@
    if (start == duration_)
      return;
 -
@@ -2509,7 +2370,7 @@
  bool ChunkDemuxer::CanChangeType(const std::string& id,
                                   const std::string& content_type,
                                   const std::string& codecs) {
-@@ -1159,6 +1894,25 @@
+@@ -1159,6 +1755,25 @@
    DCHECK(IsValidId_Locked(id));
 -
 +
@@ -2537,7 +2398,7 @@
    }
 -
 +
-@@ -1166,7 +1920,7 @@
+@@ -1166,7 +1781,7 @@
    // initialization segment for the source buffer corresponding to |id|.
 -
 +
@@ -2548,7 +2409,7 @@
  }
 -
 +
-@@ -1182,7 +1936,7 @@
+@@ -1182,7 +1797,7 @@
    DCHECK(IsValidId_Locked(id));
 -
 +
@@ -2558,7 +2419,7 @@
    // Caller should query CanChangeType() first to protect from failing this.
    DCHECK(stream_parser);
    source_state_map_[id]->ChangeType(std::move(stream_parser),
-@@ -1244,6 +1998,7 @@
+@@ -1244,6 +1859,7 @@
    DCHECK(duration_td.is_positive());
 -
 +
@@ -2568,7 +2429,7 @@
    host_->SetDuration(duration_);
 -
 +
-@@ -1251,6 +2006,7 @@
+@@ -1251,6 +1867,7 @@
         ++itr) {
      itr->second->OnSetDuration(duration_);
    }
@@ -2577,7 +2438,7 @@
 -
 +
  bool ChunkDemuxer::IsParsingMediaSegment(const std::string& id) {
-@@ -1316,6 +2072,7 @@
+@@ -1316,6 +1933,7 @@
         ++itr) {
      itr->second->MarkEndOfStream();
    }
@@ -2587,7 +2448,7 @@
    CompletePendingReadsIfPossible();
 -
 +
-@@ -1332,6 +2089,10 @@
+@@ -1332,6 +1950,10 @@
 -
 +
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
@@ -2600,7 +2461,7 @@
 -
 +
  void ChunkDemuxer::UnmarkEndOfStream() {
-@@ -1440,6 +2201,10 @@
+@@ -1440,6 +2062,10 @@
    CHECK(IsValidId_Locked(source_id));
    CHECK(pending_source_init_ids_.find(source_id) !=
          pending_source_init_ids_.end());
@@ -2611,7 +2472,7 @@
    CHECK(init_cb_);
    CHECK_EQ(state_, INITIALIZING);
    if (audio_streams_.empty() && video_streams_.empty()) {
-@@ -1486,6 +2251,57 @@
+@@ -1486,6 +2112,57 @@
    CHECK_EQ(state_, INITIALIZING);
    ChangeState_Locked(INITIALIZED);
    RunInitCB_Locked(PIPELINE_OK);
@@ -2670,7 +2531,7 @@
 -
 +
  // static
-@@ -1523,8 +2339,22 @@
+@@ -1523,8 +2200,22 @@
    DCHECK(track_id_to_demux_stream_map_.find(media_track_id) ==
           track_id_to_demux_stream_map_.end());
    track_id_to_demux_stream_map_[media_track_id] = stream.get();
@@ -2694,7 +2555,7 @@
    owning_vector->push_back(std::move(stream));
    return owning_vector->back().get();
  }
-@@ -1598,6 +2428,13 @@
+@@ -1598,6 +2289,13 @@
    SourceBufferState::RangesList ranges_list;
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
@@ -2709,7 +2570,7 @@
    }
 -
 +
-@@ -1605,13 +2442,17 @@
+@@ -1605,13 +2303,17 @@
  }
 -
 +
@@ -2729,7 +2590,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->AbortReads();
-@@ -1619,6 +2460,8 @@
+@@ -1619,6 +2321,8 @@
  }
 -
 +
@@ -2739,7 +2600,7 @@
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->Seek(seek_time);
-@@ -1650,6 +2493,28 @@
+@@ -1650,6 +2354,28 @@
  void ChunkDemuxer::RunSeekCB_Locked(PipelineStatus status) {
    lock_.AssertAcquired();
    DCHECK(seek_cb_);
@@ -2844,7 +2705,7 @@
    // If the buffer is full, attempts to try to free up space, as specified in
    // the "Coded Frame Eviction Algorithm" in the Media Source Extensions Spec.
    // Returns false iff buffer is still full after running eviction.
-@@ -135,10 +163,44 @@
+@@ -135,10 +163,42 @@
    AudioDecoderConfig audio_decoder_config() override;
    VideoDecoderConfig video_decoder_config() override;
    bool SupportsConfigChanges() override;
@@ -2879,8 +2740,6 @@
 +  std::optional<base::TimeDelta> ParcSplitAt(base::TimeDelta time,
 +                                             bool unread,
 +                                             bool* reader_there = nullptr);
-+  // The unused ParcHandOffStreamReader's DemuxerStream::Read().
-+  void ParcHandOffRead(uint32_t count, ReadCB read_cb);
 +  // One reader again: the incoming renderer, which read the hand-off reader,
 +  // is gone. Buffers taken for an unfinished split go back to this stream's
 +  // reader.
@@ -2892,7 +2751,7 @@
    void SetStreamMemoryLimit(size_t memory_limit);
 -
 +
-@@ -174,7 +236,45 @@
+@@ -174,7 +234,13 @@
    void CompletePendingReadIfPossible_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 -
 +
@@ -2906,48 +2765,15 @@
 +  // After |stream_| was sought: only the hand-off reader reads on.
 +  void ParcRestartHandOffAfterSeek_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 +
-+  // Parc: the hand-off reader before ParcStreamHandOff, unused. It stays,
-+  // with ParcHandOffRead() and |parc_handoff_|, until the hand-off tests
-+  // pass on ParcStreamHandOff.
-+  class ParcHandOffStreamReader;
-+  struct ParcHandOff {
-+    ParcHandOff();
-+    ~ParcHandOff();
-+    std::unique_ptr<ParcHandOffStreamReader> reader;
-+    std::optional<base::TimeDelta> target;  // Set by ParcSplitAt().
-+    bool split = false;
-+    // Once split: where, whether at a config change, whether this stream's
-+    // reader had read up to it (nothing went into |before|), and whether
-+    // that reader got its end of stream; the last two fix the split.
-+    base::TimeDelta split_time;
-+    bool config_split = false;
-+    bool reader_there = false;
-+    bool end_sent = false;
-+    // What this stream's reader gets before the split, and the latest end
-+    // among them.
-+    BufferQueue before;
-+    base::TimeDelta before_end = kNoTimestamp;
-+    // The hand-off reader's first buffer (end of stream included), or null
-+    // when the split is at a config change or the stream was unread.
-+    scoped_refptr<StreamParserBuffer> first;
-+    ReadCB read_cb;
-+    uint32_t count = 0;
-+  };
-+  // Moves buffers from |stream_| into |before| until the split.
-+  void ParcPullToSplit_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
-+  // Answers the hand-off reader's pending read if possible.
-+  void ParcCompleteHandOffRead_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 -
-+
    // Specifies the type of the stream.
    const Type type_;
-@@ -198,6 +298,13 @@
+@@ -198,6 +264,12 @@
    State state_ GUARDED_BY(lock_);
    ReadCB read_cb_ GUARDED_BY(lock_);
    bool is_enabled_ GUARDED_BY(lock_);
 +  // Parc: handed to |stream_| when it is created.
 +  bool parc_safari_media_source_ GUARDED_BY(lock_) = false;
-+  std::optional<ParcHandOff> parc_handoff_ GUARDED_BY(lock_);
 +  // Parc: see ParcHandOffReader().
 +  std::unique_ptr<ParcStreamHandOff> parc_stream_hand_off_ GUARDED_BY(lock_);
 +  // Taken for a hand-off that ended before its split: read before |stream_|.
@@ -2956,12 +2782,12 @@
 -
 +
  // Demuxer implementation that allows chunks of media data to be passed
-@@ -204,2 +311,3 @@
+@@ -204,2 +276,3 @@
  // from JavaScript to the media stack.
 -class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
 +class MEDIA_EXPORT ChunkDemuxer : public Demuxer,
 +                                  public ParcDemuxerExtension {
-@@ -248,6 +356,11 @@
+@@ -248,6 +321,11 @@
    // associated JS method calls.
    void StartWaitingForSeek(base::TimeDelta seek_time) override;
    void CancelPendingSeek(base::TimeDelta seek_time) override;
@@ -2974,7 +2800,7 @@
 +
    // Registers a new `id` to use for AppendToParseBuffer(),
    // RunSegmentParserLoop(), AppendChunks(), etc calls. `content_type` indicates
-@@ -293,7 +406,11 @@
+@@ -293,7 +371,11 @@
    // Removed an ID & associated resources that were previously added with
    // AddId().
    void RemoveId(const std::string& id);
@@ -2988,7 +2814,7 @@
    Ranges<base::TimeDelta> GetBufferedRanges(const std::string& id) const;
 -
 +
-@@ -313,6 +430,69 @@
+@@ -313,6 +395,69 @@
    void SetPlaybackRate(double rate) override {}
 -
 +
@@ -3060,7 +2886,7 @@
 +
    // Appends media data to the source buffer's stream parser associated with
    // `id`. No parsing is done, just buffering the media data for future parsing
-@@ -378,6 +558,34 @@
+@@ -378,6 +523,34 @@
    // associated with |id|.
    void Remove(const std::string& id, base::TimeDelta start,
                base::TimeDelta end);
@@ -3096,7 +2922,7 @@
 +
    // Returns whether or not the source buffer associated with |id| can change
    // its parser type to one which parses |content_type| and |codecs|.
-@@ -491,6 +699,15 @@
+@@ -491,6 +664,15 @@
    // SourceBufferState callbacks.
    void OnSourceInitDone(const std::string& source_id,
                          const StreamParser::InitParameters& params);
@@ -3113,7 +2939,7 @@
 +
    // Creates a DemuxerStream of the specified |type| for the SourceBufferState
    // with the given |source_id|.
-@@ -550,6 +767,7 @@
+@@ -550,6 +732,7 @@
    raw_ptr<DemuxerHost, DanglingUntriaged> host_ = nullptr;
    base::OnceClosure open_cb_;
    const base::RepeatingClosure progress_cb_;
@@ -3122,7 +2948,7 @@
 -
 +
    // MediaLog for reporting messages and properties to debug content and engine.
-@@ -595,10 +813,84 @@
+@@ -595,10 +778,84 @@
 -
 +
    std::map<MediaTrack::Id, raw_ptr<ChunkDemuxerStream, CtnExperimental>>
