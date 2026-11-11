@@ -1,9 +1,11 @@
 --- a/chrome/browser/extensions/extension_context_menu_model.cc
 +++ b/chrome/browser/extensions/extension_context_menu_model.cc
 @@ -91,9 +91,20 @@
- 
+-
++
  static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
- 
+-
++
 +namespace parc_hooks {
 +using ExtensionUninstallHandler =
 +    void (*)(BrowserWindowInterface* browser,
@@ -12,13 +14,15 @@
 +}  // namespace parc_hooks
 +
  namespace extensions {
- 
+-
++
  namespace {
 +
 +// Replaces the confirmation and removal flow below for every Browser.
 +parc_hooks::ExtensionUninstallHandler g_parc_extension_uninstall_handler =
 +    nullptr;
- 
+-
++
  // Returns true if the given |item| is of the given |type|.
  bool MenuItemMatchesAction(const std::optional<ActionInfo::Type> action_type,
 @@ -550,9 +561,12 @@
@@ -50,7 +54,8 @@
        break;
 @@ -1129,3 +1147,9 @@
  }
- 
+-
++
  }  // namespace extensions
 +
 +namespace parc_hooks {

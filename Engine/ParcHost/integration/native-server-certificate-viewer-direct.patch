@@ -3,7 +3,8 @@
 @@ -2,6 +2,7 @@
  # Use of this source code is governed by a BSD-style license that can be
  # found in the LICENSE file.
- 
+-
++
 +import("//parc/features.gni")
  import("//base/allocator/allocator.gni")
  import("//build/buildflag_header.gni")
@@ -11,7 +12,8 @@
 @@ -1517,7 +1518,12 @@
      }
    }
- 
+-
++
 +  deps += [ "//parc:buildflags" ]
 +
    if (is_mac) {
@@ -24,9 +26,11 @@
 --- a/chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.cc
 +++ b/chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.cc
 @@ -48,7 +48,17 @@
- 
+-
++
  using chrome_browser_server_certificate_database::CertificateTrust;
- 
+-
++
 +namespace parc_hooks {
 +using CertificateViewer = void (*)(content::WebContents* web_contents,
 +                                   gfx::NativeWindow parent,
@@ -38,7 +42,8 @@
 +
 +// Replaces the WebUI viewer below for every page.
 +parc_hooks::CertificateViewer g_parc_certificate_viewer = nullptr;
- 
+-
++
  CertificateViewerDialog::MockShowCallback& GetMockCallbackInstance() {
    static base::NoDestructor<CertificateViewerDialog::MockShowCallback> instance;
 @@ -341,9 +351,19 @@
@@ -58,6 +63,7 @@
 +  g_parc_certificate_viewer = viewer;
 +}
 +}  // namespace parc_hooks
- 
+-
++
  #if !(BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC))
  void ShowCertificateViewerForClientAuth(content::WebContents* web_contents,

@@ -3,7 +3,8 @@
 @@ -38,7 +38,29 @@
  #include "ui/base/ui_base_features.h"
  #include "ui/strings/grit/ui_strings.h"
- 
+-
++
 +namespace parc_hooks {
 +using TabSharingPageInfo = void (*)(content::WebContents* web_contents);
 +void SetTabSharingPageInfo(TabSharingPageInfo page_info);
@@ -28,10 +29,12 @@
 +parc_hooks::TabSharingInfoBarFactory g_parc_tab_sharing_infobar_factory =
 +    nullptr;
  using TabRole = ::TabSharingInfoBarDelegate::TabRole;
- 
+-
++
  constexpr int kCapturedSurfaceControlIndicatorButtonIconHeight = 16;
 @@ -147,6 +169,10 @@
- 
+-
++
    void Click(infobars::InfoBar* infobar) override {
      if (!web_contents_) {
 +      return;
@@ -44,7 +47,8 @@
 @@ -213,12 +239,19 @@
    CHECK(infobar_manager);
    CHECK(ui);
- 
+-
++
 -  std::unique_ptr<infobars::InfoBar> new_infobar = CreateTabSharingInfoBar(
 -      base::WrapUnique(new TabSharingInfoBarDelegate(
 -          web_contents, role, share_this_tab_instead_button_state,
@@ -64,7 +68,8 @@
 +                                    capturer_id, shared_tab_name,
 +                                    capturer_name, role, capture_type,
 +                                    ui->GetUmaLogger().GetWeakPtr());
- 
+-
++
    return old_infobar ? infobar_manager->ReplaceInfoBar(old_infobar,
                                                         std::move(new_infobar))
 @@ -345,3 +378,12 @@
@@ -85,7 +90,8 @@
 @@ -69,7 +69,16 @@
  #include "ui/views/widget/native_widget_aura.h"
  #endif
- 
+-
++
 +namespace parc_hooks {
 +using TabSharingProfile =
 +    Profile* (*)(content::GlobalRenderFrameHostId capturer);
@@ -96,7 +102,8 @@
 +
 +// Replaces the last-used profile below as the capture session's profile.
 +parc_hooks::TabSharingProfile g_parc_tab_sharing_profile = nullptr;
- 
+-
++
  using TabRole = ::TabSharingInfoBarDelegate::TabRole;
  using content::GlobalRenderFrameHostId;
 @@ -188,7 +197,9 @@

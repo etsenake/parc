@@ -3,7 +3,8 @@
 @@ -13,7 +13,16 @@
  #include "ui/views/view.h"
  #include "ui/views/view_utils.h"
- 
+-
++
 +namespace parc_hooks {
 +using SadTabFactory = std::unique_ptr<SadTab> (*)(content::WebContents*,
 +                                                  SadTabKind);
@@ -14,7 +15,8 @@
 +
 +// Replaces the Views sad tab below for every page.
 +parc_hooks::SadTabFactory g_parc_sad_tab_factory = nullptr;
- 
+-
++
  ContentsWebView* FindContentsWebView(content::WebContents* web_contents) {
    tabs::TabInterface* tab =
 @@ -126,5 +135,14 @@

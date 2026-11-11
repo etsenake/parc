@@ -31,7 +31,8 @@
      "//chrome/browser/media/webrtc",
      "//chrome/browser/supervised_user",
 @@ -665,6 +667,9 @@
- 
+-
++
    if (is_mac) {
      deps += [ "//chrome/browser/mac" ]
 +    if (enable_parc) {
@@ -41,7 +42,8 @@
    if (enable_spellcheck) {
      deps += [ "//chrome/browser/spellchecker" ]
 @@ -3173,10 +3178,10 @@
- 
+-
++
      if (!is_chromeos) {
        # Chrome OS doesn't use background mode or download bubbles.
 -      deps += [
@@ -53,5 +55,6 @@
 +      }
 +      deps += [ "//chrome/browser/download/bubble" ]
      }
- 
+-
++
      if (enable_background_mode) {

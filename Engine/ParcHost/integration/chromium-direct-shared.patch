@@ -175,9 +175,11 @@
 --- a/chrome/browser/file_select_helper.cc
 +++ b/chrome/browser/file_select_helper.cc
 @@ -70,7 +70,19 @@
- 
+-
++
  DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kCancelButtonId);
- 
+-
++
 +namespace parc_hooks {
 +using FolderUploadConfirmation =
 +    void (*)(std::unique_ptr<ui::DialogModel> model,
@@ -191,12 +193,14 @@
 +// Replaces the tab-modal folder-upload confirmation below.
 +parc_hooks::FolderUploadConfirmation g_parc_folder_upload_confirmation =
 +    nullptr;
- 
+-
++
  void DeleteFiles(std::vector<base::FilePath> paths) {
    for (auto& file_path : paths)
 @@ -99,6 +111,12 @@
  #endif
- 
+-
++
  }  // namespace
 +
 +namespace parc_hooks {
@@ -204,7 +208,8 @@
 +  g_parc_folder_upload_confirmation = confirmation;
 +}
 +}  // namespace parc_hooks
- 
+-
++
  struct FileSelectHelper::ActiveDirectoryEnumeration {
    explicit ActiveDirectoryEnumeration(const std::u16string& display_name)
 @@ -268,6 +286,11 @@
@@ -222,7 +227,8 @@
 @@ -526,17 +549,24 @@
    std::vector<base::FilePath::StringType>* extensions =
        &file_type->extensions.back();
- 
+-
++
 +  // Create individual filters for each accept type.
 +  std::vector<std::vector<base::FilePath::StringType>> all_extensions;
 +  std::vector<std::u16string> all_overrides;
@@ -296,7 +302,8 @@
 +        file_type->extension_description_overrides.end(), all_overrides.begin(),
 +        all_overrides.end());
    }
- 
+-
++
    return file_type;
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn

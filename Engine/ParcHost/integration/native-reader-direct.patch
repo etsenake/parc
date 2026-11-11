@@ -20,7 +20,8 @@
                // Ash Internals.
                .WithAshInternals(ProfileSelection::kRedirectedToOriginal)
 @@ -107,10 +106,13 @@
- 
+-
++
    std::unique_ptr<DistilledPagePrefs> distilled_page_prefs =
        std::make_unique<DistilledPagePrefs>(profile->GetPrefs());
 +  // Off-record profiles inherit default zoom but do not own ChromeZoomLevelPrefs.
@@ -37,7 +38,8 @@
                                weak_ptr_factory_.GetWeakPtr(),
 @@ -136,8 +138,11 @@
    DistilledPagePrefs* distilled_page_prefs = service->GetDistilledPagePrefs();
- 
+-
++
    Profile* profile = Profile::FromBrowserContext(context);
 +  // Off-record profiles inherit default zoom but do not own ChromeZoomLevelPrefs.
 +  // The distilled-page prefs above still write to the actual private PrefService.
@@ -46,5 +48,6 @@
 -      profile->GetZoomLevelPrefs()->GetDefaultZoomFactor());
 +      zoom_profile->GetZoomLevelPrefs()->GetDefaultZoomFactor());
  }
- 
+-
++
  }  // namespace dom_distiller

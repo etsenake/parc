@@ -25,7 +25,8 @@
 +    }
    }
    child_dialogs_.emplace_back(dialog, std::move(manager));
- 
+-
++
    if (child_dialogs_.size() == 1) {
      BlockWebContentsInteraction(true);
 -    if (delegate_ && delegate_->IsWebContentsVisible(web_contents())) {
@@ -53,7 +54,8 @@
 @@ -1312,6 +1311,26 @@
                                  bottom_margin >= 0 ? bottom_margin : 0, 0));
  }
- 
+-
++
 +void BubbleDialogModelHost::SetNativeAcceptanceValidation(
 +    base::RepeatingCallback<bool()> validation) {
 +  native_acceptance_validation_ = std::move(validation);
@@ -82,7 +84,8 @@
 @@ -120,6 +120,11 @@
        bool autosize = true,
        bool owned_by_widget = true);
- 
+-
++
 +  // Optional external native-parent guard. A refused acceptance runs the
 +  // original model cancellation, retaining its actual callbacks and controls.
 +  void SetNativeAcceptanceValidation(
@@ -96,13 +99,15 @@
    void Close() override;
    void OnDialogButtonChanged() override;
 -
- 
+-
++
   private:
    // Observes the ContentsView for theme changes (to update the window icon)
 @@ -176,6 +180,8 @@
    void OnExtraLinkClicked(const ui::Event& event);
    bool IsPossiblyUnintendedInteraction(const ui::Event& event);
- 
+-
++
 +  bool AcceptModel();
 +  base::RepeatingCallback<bool()> native_acceptance_validation_;
    std::unique_ptr<ui::DialogModel> model_;
