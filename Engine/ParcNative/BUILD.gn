@@ -84,7 +84,6 @@ source_set("native_split_link_api") {
 source_set("native_components") {
   public = [
     "content_drop_bridge.h",
-    "native_internal_urls.h",
     "autofill_save_presenter.h",
     "browser_window.h",
     "devtools_pane_view.h",
@@ -460,6 +459,7 @@ source_set("native_downloads") {
     "//ui/shell_dialogs",
   ]
   deps = [
+    ":native_internal_urls_api",
     ":native_download_dialog_api",
     ":native_auxiliary_page",
     ":native_components",

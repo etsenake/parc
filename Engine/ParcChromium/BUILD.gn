@@ -306,6 +306,7 @@ source_set("browser") {
 
     # Parc's native services.
     "//parc/native:autofill_save_sessions",
+    "//parc/native:native_internal_urls_api",
     "//parc/native:native_auxiliary_page",
     "//parc/native:native_auxiliary_services",
     "//parc/native:native_capture_picker",
