@@ -1,12 +1,14 @@
 --- a/ui/accelerated_widget_mac/BUILD.gn
 +++ b/ui/accelerated_widget_mac/BUILD.gn
-@@ -14,6 +14,11 @@
+@@ -14,6 +14,13 @@
      "ca_layer_tree_coordinator.mm",
      "ca_renderer_layer_tree.h",
      "ca_renderer_layer_tree.mm",
 +
 +    # Parc: FairPlay renderers' display layers, by token, for
 +    # CARendererLayerTree to place.
++    "parc_protected_layer_claims.h",
++    "parc_protected_layer_claims.mm",
 +    "protected_layer_registry.h",
 +    "protected_layer_registry.mm",
    ]
@@ -35,7 +37,7 @@
 -
 +
  // The CARendererLayerTree will construct a hierarchy of CALayers from a linear
-@@ -97,8 +102,15 @@
+@@ -97,8 +102,10 @@
    class ContentLayer;
    friend class ContentLayer;
 -
@@ -45,17 +47,12 @@
    using CALayerMap =
 -      std::unordered_map<IOSurfaceRef, base::WeakPtr<ContentLayer>>;
 +      std::unordered_map<const void*, base::WeakPtr<ContentLayer>>;
-+
-+  // Parc: the committed content layers that show each registered protected
-+  // layer, process-wide, for handing the layer on when its holder lets go.
-+  struct ProtectedLayerClaims;
-+  static ProtectedLayerClaims& GetProtectedLayerClaims();
 -
 +
    void MatchLayersToOldTree(CARendererLayerTree* old_tree);
 -
 +
-@@ -242,7 +254,9 @@
+@@ -242,7 +249,9 @@
                   bool nearest_neighbor_filter,
                   const gfx::HDRMetadata& hdr_metadata,
                   gfx::ProtectedVideoType protected_video_type,
@@ -67,24 +64,7 @@
 +
      ContentLayer(ContentLayer&& layer) = delete;
      ContentLayer(const ContentLayer&) = delete;
-@@ -251,6 +265,15 @@
-     // See the behavior of RootLayer for the effects of these functions.
-     ~ContentLayer();
-     void CommitToCA(CALayer* last_committed_ca_layer);
-+
-+    // Puts `protected_layer_` in this layer's host, filling it, and records
-+    // this committed layer as showing it.
-+    void CommitProtectedLayer();
-+    // Sizes the registered layer to fill this layer's host.
-+    void FillProtectedLayer();
-+    // When no committed tree attached to its coordinator holds `layer`, moves
-+    // it into the host of the most recently committed layer that shows it.
-+    static void HandOnProtectedLayer(CALayer* layer);
--
-+
-     CARendererLayerTree* tree() { return parent_layer_->tree(); }
-     void UpdateMapAndMatchOldLayers(CALayerMap& old_ca_layer_map,
-@@ -298,6 +321,12 @@
+@@ -298,6 +307,12 @@
      // AVSampleBufferDisplayLayer, then |ca_layer| will point to |av_layer|.
      AVSampleBufferDisplayLayer* __strong av_layer_;
 -
@@ -100,71 +80,16 @@
      CALayer* __strong update_indicator_layer_;
 --- a/ui/accelerated_widget_mac/ca_renderer_layer_tree.mm
 +++ b/ui/accelerated_widget_mac/ca_renderer_layer_tree.mm
-@@ -12,6 +12,7 @@
--
-+
- #include <array>
- #include <utility>
-+#include <vector>
--
-+
- #include "base/apple/foundation_util.h"
- #include "base/apple/scoped_cftyperef.h"
-@@ -26,6 +27,7 @@
+@@ -26,6 +26,8 @@
  #include "components/viz/common/resources/shared_image_format.h"
  #include "third_party/skia/include/core/SkCanvas.h"
  #include "third_party/skia/include/core/SkColor.h"
++#include "ui/accelerated_widget_mac/parc_protected_layer_claims.h"
 +#include "ui/accelerated_widget_mac/protected_layer_registry.h"
  #include "ui/base/cocoa/animation_utils.h"
  #include "ui/base/ui_base_switches.h"
  #include "ui/gfx/geometry/dip_util.h"
-@@ -280,6 +282,17 @@
-                                                         cv_pixel_buffer.get());
- }
--
-+
-+// Parc: whether `host`, a content layer's CALayer, is still in a committed
-+// tree attached to its coordinator. Five superlayers up are the transform,
-+// rounded-corner, clipping and root layers, then the coordinator's layer.
-+bool IsHostInLiveTree(CALayer* host) {
-+  CALayer* layer = host;
-+  for (int depth = 0; depth < 5 && layer; ++depth) {
-+    layer = layer.superlayer;
-+  }
-+  return layer != nil;
-+}
-+
- CATransform3D ToCATransform3D(const gfx::Transform& t) {
-   return CATransform3D{
-       t.rc(0, 0), t.rc(1, 0), t.rc(2, 0), t.rc(3, 0),  //
-@@ -392,6 +405,25 @@
-   return map.get();
- }
--
-+
-+// Every CALayerTreeCoordinator in the GPU process commits on its main thread,
-+// so this is only used there.
-+struct CARendererLayerTree::ProtectedLayerClaims {
-+  struct Claim {
-+    uint64_t sequence = 0;
-+    raw_ptr<ContentLayer> content_layer;
-+  };
-+  uint64_t last_sequence = 0;
-+  // Keyed by the registered layer, which each claimant retains.
-+  std::unordered_map<const void*, std::vector<Claim>> by_layer;
-+};
-+
-+// static
-+CARendererLayerTree::ProtectedLayerClaims&
-+CARendererLayerTree::GetProtectedLayerClaims() {
-+  static base::NoDestructor<ProtectedLayerClaims> claims;
-+  return *claims;
-+}
-+
- CARendererLayerTree::CARendererLayerTree(
-     bool allow_av_sample_buffer_display_layer,
-     bool allow_solid_color_layers,
-@@ -462,7 +494,11 @@
+@@ -462,7 +464,11 @@
      CALayerMap& old_ca_layer_map,
      int& layer_order,
      int& last_old_layer_order) {
@@ -178,7 +103,7 @@
 +
    if (!io_surface_ref)
      return;
-@@ -673,7 +709,8 @@
+@@ -673,7 +679,8 @@
            return false;
 -
 +
@@ -189,7 +114,7 @@
            found_video_layer = true;
            if (!transform_layer.transform_.IsPositiveScaleOrTranslation())
              return false;
-@@ -789,7 +826,8 @@
+@@ -789,7 +796,8 @@
      bool nearest_neighbor_filter,
      const gfx::HDRMetadata& hdr_metadata,
      gfx::ProtectedVideoType protected_video_type,
@@ -199,7 +124,7 @@
      : parent_layer_(parent_layer),
        io_surface_(io_surface),
        cv_pixel_buffer_(cv_pixel_buffer),
-@@ -843,9 +881,19 @@
+@@ -843,9 +851,19 @@
    }
 -
 +
@@ -223,30 +148,21 @@
      type_ = CALayerType::kHDRCopier;
    } else if (io_surface) {
      // Only allow YUV frames which fill the layer's contents or protected
-@@ -903,6 +951,21 @@
+@@ -903,6 +921,12 @@
  CARendererLayerTree::ContentLayer::~ContentLayer() {
    [ca_layer_ removeFromSuperlayer];
    [update_indicator_layer_ removeFromSuperlayer];
 +  if (protected_layer_) {
-+    // Drop this layer's claim, then hand the registered layer on if it was in
-+    // this host (now detached) or another tree that let it go.
-+    auto& by_layer = GetProtectedLayerClaims().by_layer;
-+    auto it = by_layer.find((__bridge const void*)protected_layer_);
-+    if (it != by_layer.end()) {
-+      std::erase_if(it->second, [this](const ProtectedLayerClaims::Claim& c) {
-+        return c.content_layer == this;
-+      });
-+      if (it->second.empty()) {
-+        by_layer.erase(it);
-+      }
-+    }
-+    HandOnProtectedLayer(protected_layer_);
++    ParcUpdateProtectedLayerClaim(
++        ParcProtectedLayerClaimAction::kRelease, this, &ca_layer_,
++        &protected_layer_,
++        /*hosted_layer=*/nullptr, /*scale_factor=*/1.f);
 +  }
  }
 -
 +
  bool CARendererLayerTree::RootLayer::AddContentLayer(
-@@ -968,7 +1031,8 @@
+@@ -968,7 +992,8 @@
        params.contents_rect, params.rect, params.background_color,
        params.io_surface_color_space, params.edge_aa_mask, params.opacity,
        params.nearest_neighbor_filter, params.hdr_metadata,
@@ -257,7 +173,7 @@
 -
 +
  void CARendererLayerTree::RootLayer::CommitToCA(CALayer* superlayer,
-@@ -1163,12 +1227,14 @@
+@@ -1163,12 +1188,14 @@
      DCHECK(old_layer_->ca_layer_);
      std::swap(ca_layer_, old_layer_->ca_layer_);
      std::swap(av_layer_, old_layer_->av_layer_);
@@ -273,7 +189,7 @@
      // If the HDR headroom has changed then the HDRCopierLayer's tone mapping
      // may change, so re-draw this layer.
      if (old_layer_->type_ == CALayerType::kHDRCopier &&
-@@ -1209,6 +1275,12 @@
+@@ -1209,6 +1236,12 @@
          break;
        case CALayerType::kDefault:
          ca_layer_ = [[CALayer alloc] init];
@@ -286,7 +202,7 @@
      }
      ca_layer_.anchorPoint = CGPointZero;
    }
-@@ -1265,6 +1337,9 @@
+@@ -1265,6 +1298,9 @@
          // https://crbug.com/702369
        }
        break;
@@ -296,7 +212,7 @@
      case CALayerType::kDefault:
        if (update_contents) {
          if (io_surface_) {
-@@ -1279,7 +1354,8 @@
+@@ -1279,7 +1315,8 @@
        break;
    }
 -
@@ -307,7 +223,7 @@
      if (@available(macOS 26, iOS 26, *)) {
        float max_hdr_headroom = cc::ToneMapUtil::GetMaxHdrHeadroom(
            io_surface_color_space_, hdr_metadata_);
-@@ -1298,7 +1374,7 @@
+@@ -1298,7 +1335,7 @@
    }
 -
 +
@@ -317,18 +233,20 @@
        ca_layer_.contentsRect = contents_rect_.ToCGRect();
    }
    if (update_rect) {
-@@ -1329,6 +1405,9 @@
+@@ -1329,6 +1366,11 @@
    if (update_ca_filter) {
      ca_layer_.magnificationFilter = ca_filter_;
      ca_layer_.minificationFilter = ca_filter_;
 +  }
 +  if (type_ == CALayerType::kProtectedLayer) {
-+    CommitProtectedLayer();
++    ParcUpdateProtectedLayerClaim(
++        ParcProtectedLayerClaimAction::kCommit, this, &ca_layer_,
++        &protected_layer_, &hosted_layer_, tree()->scale_factor_);
    }
 -
 +
  #if BUILDFLAG(IS_MAC)
-@@ -1360,6 +1439,11 @@
+@@ -1360,6 +1402,11 @@
            green = blue = 1;
          }
          break;
@@ -340,135 +258,6 @@
        case CALayerType::kDefault:
          if (pixel_format == 0) {
            // Grey is no IOSurface (a solid color layer).
-@@ -1412,4 +1496,127 @@
- #endif
- }
--
-+
-+void CARendererLayerTree::ContentLayer::CommitProtectedLayer() {
-+  // Let go of a layer this host took for another token, handing it on to
-+  // another tree that still shows it.
-+  if (hosted_layer_ && hosted_layer_ != protected_layer_ &&
-+      hosted_layer_.superlayer == ca_layer_) {
-+    CALayer* released = hosted_layer_;
-+    [released removeFromSuperlayer];
-+    HandOnProtectedLayer(released);
-+  }
-+  hosted_layer_ = protected_layer_;
-+  if (!protected_layer_) {
-+    return;
-+  }
-+
-+  ProtectedLayerClaims& claims = GetProtectedLayerClaims();
-+  claims.by_layer[(__bridge const void*)protected_layer_].push_back(
-+      {++claims.last_sequence, this});
-+
-+  // A layer has one superlayer, and the tree committing now takes it. A tree
-+  // that stopped drawing (a hidden or parked compositor) keeps its last tree
-+  // but never commits, so it can't hold the layer away from the compositor
-+  // that shows the page now. Two trees that both keep drawing the same token
-+  // (one surface embedded twice) would trade it each frame; Picture in Picture
-+  // must stop the page from drawing it (COMPOSITING.md).
-+  if (protected_layer_.superlayer != ca_layer_) {
-+    [ca_layer_ addSublayer:protected_layer_];
-+  }
-+  FillProtectedLayer();
-+}
-+
-+void CARendererLayerTree::ContentLayer::FillProtectedLayer() {
-+  // The host carries the quad's rect and opacity; its ancestors carry the
-+  // transform, clip and rounded corners.
-+  const CGRect bounds = ca_layer_.bounds;
-+  // The native HLS player's AVPlayerLayer gets the display's scale, as WebKit
-+  // gives its AVPlayerLayer the page's (mediaPlayerContentsScale), before its
-+  // bounds: it takes its player at its first size, and AVFoundation then
-+  // keeps HLS variants to that size on screen (fairplay_hls_player_layer.h).
-+  if ([protected_layer_ isKindOfClass:[AVPlayerLayer class]] &&
-+      protected_layer_.contentsScale != tree()->scale_factor_) {
-+    protected_layer_.contentsScale = tree()->scale_factor_;
-+  }
-+  if (!CGPointEqualToPoint(protected_layer_.anchorPoint, CGPointZero)) {
-+    protected_layer_.anchorPoint = CGPointZero;
-+  }
-+  if (!CGPointEqualToPoint(protected_layer_.position, CGPointZero)) {
-+    protected_layer_.position = CGPointZero;
-+  }
-+  if (!CGRectEqualToRect(protected_layer_.bounds, bounds)) {
-+    protected_layer_.bounds = bounds;
-+  }
-+  if (!CATransform3DIsIdentity(protected_layer_.transform)) {
-+    protected_layer_.transform = CATransform3DIdentity;
-+  }
-+  if (protected_layer_.opacity != 1) {
-+    protected_layer_.opacity = 1;
-+  }
-+  if (protected_layer_.hidden) {
-+    protected_layer_.hidden = NO;
-+  }
-+  if ([protected_layer_ isKindOfClass:[AVSampleBufferDisplayLayer class]]) {
-+    AVSampleBufferDisplayLayer* av_layer =
-+        static_cast<AVSampleBufferDisplayLayer*>(protected_layer_);
-+    // Protected video is never captured: screenshots and screen sharing show
-+    // black here, as in Safari.
-+    if (!av_layer.preventsCapture) {
-+      av_layer.preventsCapture = YES;
-+    }
-+    // cc laid the quad out at the video's display aspect ratio (object-fit is
-+    // already applied), so the frame fills it, as Chromium's own video
-+    // AVSampleBufferDisplayLayers do.
-+    if (![av_layer.videoGravity isEqualToString:AVLayerVideoGravityResize]) {
-+      av_layer.videoGravity = AVLayerVideoGravityResize;
-+    }
-+    // The workaround Chromium's video layers use for transformed HDR content,
-+    // which is otherwise flipped vertically (https://crbug.com/398425794).
-+    if (!av_layer.geometryFlipped) {
-+      av_layer.geometryFlipped = YES;
-+    }
-+  } else if ([protected_layer_ isKindOfClass:[AVPlayerLayer class]]) {
-+    // The native HLS player's layer (NATIVE_HLS.md) fills the quad the same
-+    // way. AVFoundation itself keeps FairPlay video from an AVPlayer out of
-+    // screenshots and screen sharing; clear HLS can be captured, as in
-+    // Safari. Its geometry is left alone: the flip above works around an
-+    // AVSampleBufferDisplayLayer bug, and WebKit doesn't flip its
-+    // AVPlayerLayer.
-+    AVPlayerLayer* player_layer = static_cast<AVPlayerLayer*>(protected_layer_);
-+    if (![player_layer.videoGravity
-+            isEqualToString:AVLayerVideoGravityResize]) {
-+      player_layer.videoGravity = AVLayerVideoGravityResize;
-+    }
-+  }
-+}
-+
-+// static
-+void CARendererLayerTree::ContentLayer::HandOnProtectedLayer(CALayer* layer) {
-+  if (IsHostInLiveTree(layer.superlayer)) {
-+    return;
-+  }
-+  // Its holder let it go or went away. A tree that showed it may not commit
-+  // again for a long time (video plays without compositor frames), so move it
-+  // now to the newest committed layer that shows it, if one is still live.
-+  auto& by_layer = GetProtectedLayerClaims().by_layer;
-+  auto it = by_layer.find((__bridge const void*)layer);
-+  if (it == by_layer.end()) {
-+    return;
-+  }
-+  ContentLayer* newest = nullptr;
-+  uint64_t newest_sequence = 0;
-+  for (const auto& claim : it->second) {
-+    ContentLayer* candidate = claim.content_layer;
-+    if (claim.sequence > newest_sequence && candidate->ca_layer_ &&
-+        IsHostInLiveTree(candidate->ca_layer_)) {
-+      newest = candidate;
-+      newest_sequence = claim.sequence;
-+    }
-+  }
-+  if (newest) {
-+    [newest->ca_layer_ addSublayer:layer];
-+    newest->FillProtectedLayer();
-+  }
-+}
-+
- }  // namespace ui
 --- a/ui/accelerated_widget_mac/ca_layer_tree_unittest_mac.mm
 +++ b/ui/accelerated_widget_mac/ca_layer_tree_unittest_mac.mm
 @@ -15,6 +15,7 @@
@@ -828,34 +617,15 @@
    // A (ideally) unique key used to temporally identify a specific overlay
 --- a/components/viz/service/display/ca_layer_overlay.cc
 +++ b/components/viz/service/display/ca_layer_overlay.cc
-@@ -7,8 +7,10 @@
- #include <algorithm>
- #include <limits>
- #include <variant>
-+#include <vector>
--
-+
- #include "base/mac/mac_util.h"
-+#include "base/memory/raw_ptr.h"
- #include "base/metrics/histogram_macros.h"
- #include "build/build_config.h"
- #include "components/viz/common/features.h"
-@@ -17,9 +19,13 @@
- #include "components/viz/common/quads/solid_color_draw_quad.h"
+@@ -18,6 +18,7 @@
  #include "components/viz/common/quads/texture_draw_quad.h"
  #include "components/viz/common/quads/tile_draw_quad.h"
-+#include "components/viz/common/quads/video_hole_draw_quad.h"
  #include "components/viz/service/display/display_resource_provider.h"
++#include "components/viz/service/display/parc_ca_layer_overlay.h"
  #include "ui/base/cocoa/remote_layer_api.h"
  #include "ui/gfx/buffer_types.h"
-+#include "ui/gfx/geometry/mask_filter_info.h"
-+#include "ui/gfx/geometry/rect.h"
-+#include "ui/gfx/geometry/rect_conversions.h"
  #include "ui/gfx/geometry/rrect_f.h"
- #include "ui/gl/gl_bindings.h"
--
-+
-@@ -213,8 +219,26 @@
+@@ -213,8 +214,26 @@
    return gfx::kCALayerSuccess;
  }
 -
@@ -883,7 +653,7 @@
    gfx::CALayerResult FromDrawQuad(
        const DisplayResourceProvider* resource_provider,
        const gfx::RectF& display_rect,
-@@ -295,6 +319,18 @@
+@@ -295,6 +314,18 @@
              ca_layer_overlay);
        case DrawQuad::Material::kSurfaceContent:
          return gfx::kCALayerFailedSurfaceContent;
@@ -902,7 +672,7 @@
        default:
          break;
      }
-@@ -306,8 +342,11 @@
+@@ -306,8 +337,11 @@
    bool video_with_odd_height() { return video_with_odd_height_; }
    bool video_with_odd_x() { return video_with_odd_x_; }
    bool video_with_odd_y() { return video_with_odd_y_; }
@@ -915,7 +685,7 @@
    bool video_with_odd_width_ = false;
    bool video_with_odd_height_ = false;
    bool video_with_odd_x_ = false;
-@@ -403,10 +442,27 @@
+@@ -403,10 +437,27 @@
        }
      }
 -
@@ -944,7 +714,7 @@
          failed = true;
          break;
        }
-@@ -424,6 +480,7 @@
+@@ -424,6 +475,7 @@
    const QuadList& quad_list = render_pass->quad_list;
    gfx::CALayerResult result = gfx::kCALayerSuccess;
    size_t num_visible_quads = quad_list.size();
@@ -953,7 +723,7 @@
 +
    // Skip overlay processing
    if (!overlays_allowed_ || !enable_ca_renderer_) {
-@@ -447,7 +504,7 @@
+@@ -447,7 +499,7 @@
 -
 +
    int render_pass_draw_quad_count = 0;
@@ -963,7 +733,7 @@
    for (auto it = quad_list.BackToFrontBegin();
         result == gfx::kCALayerSuccess && it != quad_list.BackToFrontEnd();
         ++it) {
-@@ -480,6 +537,10 @@
+@@ -480,6 +532,10 @@
      ca_layer_overlays->push_back(ca_layer);
    }
 -
@@ -975,7 +745,7 @@
    // Fails if there are more draw quads than allowed for CoreAnimation.
    size_t max_number = (yuv_draw_quad_count < kMaxNumVideos)
                            ? layer_limit_default_
-@@ -506,7 +567,7 @@
+@@ -506,7 +562,7 @@
      const DrawQuad* quad,
      gfx::ProtectedVideoType protected_video_type,
      OverlayCandidateList* ca_layer_overlays) const {
@@ -984,318 +754,11 @@
    OverlayCandidate ca_layer;
    bool skip = false;
    bool render_pass_draw_quad = false;
-@@ -534,4 +595,445 @@
+@@ -534,4 +590,30 @@
    ca_layer_result_ = result;
  }
 -
 +
-+namespace {
-+
-+// Parc: the render pass draw quad that draws a non-root pass into its parent.
-+struct PassEmbedding {
-+  raw_ptr<AggregatedRenderPass> parent = nullptr;
-+  raw_ptr<const AggregatedRenderPassDrawQuad> quad = nullptr;
-+  int count = 0;
-+};
-+
-+using PassEmbeddings = base::flat_map<AggregatedRenderPassId, PassEmbedding>;
-+
-+PassEmbeddings FindPassEmbeddings(AggregatedRenderPassList& render_passes) {
-+  PassEmbeddings embeddings;
-+  for (auto& pass : render_passes) {
-+    for (const DrawQuad* quad : pass->quad_list) {
-+      if (const auto* rpdq =
-+              quad->DynamicCast<AggregatedRenderPassDrawQuad>()) {
-+        PassEmbedding& embedding = embeddings[rpdq->render_pass_id];
-+        embedding.parent = pass.get();
-+        embedding.quad = rpdq;
-+        ++embedding.count;
-+      }
-+    }
-+  }
-+  return embeddings;
-+}
-+
-+// Parc: one render pass draw quad between a FairPlay hole and the root, with
-+// the hole's footprint in the space of the pass that quad draws into.
-+struct NestedLevel {
-+  raw_ptr<const AggregatedRenderPassDrawQuad> quad = nullptr;
-+  // The pass `quad` draws, and the pass `quad` is in.
-+  AggregatedRenderPassId pass_id;
-+  raw_ptr<AggregatedRenderPass> parent = nullptr;
-+  float opacity = 1.f;
-+  // The hole quad's transform, clip and rounded clip in `parent`'s space.
-+  gfx::Transform transform;
-+  std::optional<gfx::Rect> clip_rect;
-+  gfx::RRectF rounded_corners;
-+};
-+
-+// Parc: a FairPlay video drawn inside a non-root render pass, and the
-+// protected layer that shows it in root space.
-+struct NestedHole {
-+  raw_ptr<AggregatedRenderPass> pass = nullptr;
-+  raw_ptr<const DrawQuad> quad = nullptr;
-+  // From `pass` up to the root, innermost first.
-+  std::vector<NestedLevel> levels;
-+  OverlayCandidate layer;
-+};
-+
-+enum class NestedHolePlan {
-+  kShow,
-+  // Nothing of it can be seen, so it needs no layer.
-+  kInvisible,
-+  // A CALayer can't show it as the page draws it. SkiaRenderer draws it black.
-+  kKeepBlack,
-+};
-+
-+// Parc: adds a mask filter's clip, a plain rect to `clip` and rounded corners
-+// to `rounded`. False for what a CALayer can't show: a gradient mask, corners
-+// of different radii, or a second rounded clip that differs from the first.
-+bool AddMaskClip(const gfx::MaskFilterInfo& mask,
-+                 gfx::RectF* clip,
-+                 gfx::RRectF* rounded) {
-+  if (mask.IsEmpty()) {
-+    return true;
-+  }
-+  if (mask.HasGradientMask()) {
-+    return false;
-+  }
-+  const gfx::RRectF& bounds = mask.rounded_corner_bounds();
-+  if (!mask.HasRoundedCorners()) {
-+    clip->Intersect(bounds.rect());
-+    return true;
-+  }
-+  if (!IsMaskableRRect(bounds) || (!rounded->IsEmpty() && *rounded != bounds)) {
-+    return false;
-+  }
-+  *rounded = bounds;
-+  return true;
-+}
-+
-+// Parc: works out where a FairPlay hole drawn in the non-root `hole->pass`
-+// shows, in each pass up to the root, walking the render pass draw quads. A
-+// CALayer can carry opacity, scale and translation, clips and one uniform
-+// rounded clip. Anything else on the way changes how the video looks, so it
-+// stays black, as Safari leaves video it can't composite: a filter, backdrop
-+// filter, mask, gradient mask, blend mode other than src-over, rotation, skew
-+// or perspective, a 3D sorting context, or a pass drawn more than once or not
-+// at all (a pass kept only for a copy request).
-+NestedHolePlan PlanNestedHole(const DisplayResourceProvider* resource_provider,
-+                              const AggregatedRenderPass* root,
-+                              const PassEmbeddings& embeddings,
-+                              NestedHole* hole) {
-+  CALayerOverlayProcessorInternal processor(/*protected_layers_allowed=*/true);
-+  bool skip = false;
-+  bool render_pass_draw_quad = false;
-+  int yuv_draw_quad_count = 0;
-+  if (processor.FromDrawQuad(resource_provider, gfx::RectF(root->output_rect),
-+                             hole->quad, &hole->layer, &skip,
-+                             &render_pass_draw_quad,
-+                             yuv_draw_quad_count) != gfx::kCALayerSuccess) {
-+    return NestedHolePlan::kKeepBlack;
-+  }
-+  if (skip) {
-+    return NestedHolePlan::kInvisible;
-+  }
-+
-+  // The geometry is kept in the space of the pass being walked: first the
-+  // hole's pass, then each parent up to the root.
-+  const SharedQuadState* sqs = hole->quad->shared_quad_state;
-+  gfx::Transform transform = sqs->quad_to_target_transform;
-+  gfx::RectF clip(hole->pass->output_rect);
-+  if (sqs->clip_rect) {
-+    clip.Intersect(gfx::RectF(*sqs->clip_rect));
-+  }
-+  gfx::RRectF rounded;
-+  if (!AddMaskClip(sqs->mask_filter_info, &clip, &rounded)) {
-+    return NestedHolePlan::kKeepBlack;
-+  }
-+
-+  const AggregatedRenderPass* pass = hole->pass;
-+  while (pass != root) {
-+    auto found = embeddings.find(pass->id);
-+    if (found == embeddings.end() || found->second.count != 1 ||
-+        hole->levels.size() >= embeddings.size()) {
-+      return NestedHolePlan::kKeepBlack;
-+    }
-+    AggregatedRenderPass* parent = found->second.parent;
-+    const AggregatedRenderPassDrawQuad* rpdq = found->second.quad;
-+    const SharedQuadState* rpdq_sqs = rpdq->shared_quad_state;
-+    if (rpdq_sqs->opacity == 0.f || rpdq->visible_rect.IsEmpty()) {
-+      return NestedHolePlan::kInvisible;
-+    }
-+    if (rpdq_sqs->blend_mode != SkBlendMode::kSrcOver ||
-+        !rpdq->filters.IsEmpty() || !rpdq->backdrop_filters.IsEmpty() ||
-+        rpdq->mask_resource_id() != kInvalidResourceId ||
-+        rpdq_sqs->sorting_context_id != 0 ||
-+        !rpdq_sqs->quad_to_target_transform.IsScaleOrTranslation()) {
-+      return NestedHolePlan::kKeepBlack;
-+    }
-+
-+    // A pass's backing starts at its output rect's origin and is drawn at the
-+    // render pass draw quad's rect.
-+    gfx::Transform parent_from_pass = rpdq_sqs->quad_to_target_transform;
-+    parent_from_pass.Translate(rpdq->rect.x() - pass->output_rect.x(),
-+                               rpdq->rect.y() - pass->output_rect.y());
-+    transform.PostConcat(parent_from_pass);
-+    clip = parent_from_pass.MapRect(clip);
-+    clip.Intersect(rpdq_sqs->quad_to_target_transform.MapRect(
-+        gfx::RectF(rpdq->rect)));
-+    if (rpdq_sqs->clip_rect) {
-+      clip.Intersect(gfx::RectF(*rpdq_sqs->clip_rect));
-+    }
-+    if (parent != root) {
-+      clip.Intersect(gfx::RectF(parent->output_rect));
-+    }
-+    if (!rounded.IsEmpty()) {
-+      gfx::MaskFilterInfo mapped(rounded);
-+      mapped.ApplyTransform(parent_from_pass);
-+      // A non-uniform scale makes corners elliptical.
-+      if (mapped.IsEmpty() ||
-+          !IsMaskableRRect(mapped.rounded_corner_bounds())) {
-+        return NestedHolePlan::kKeepBlack;
-+      }
-+      rounded = mapped.rounded_corner_bounds();
-+    }
-+    if (!AddMaskClip(rpdq_sqs->mask_filter_info, &clip, &rounded)) {
-+      return NestedHolePlan::kKeepBlack;
-+    }
-+
-+    // SkiaRenderer draws the hole flattened into its pass.
-+    NestedLevel& level = hole->levels.emplace_back();
-+    level.quad = rpdq;
-+    level.pass_id = pass->id;
-+    level.parent = parent;
-+    level.opacity = rpdq_sqs->opacity;
-+    level.transform = transform;
-+    level.transform.Flatten();
-+    const gfx::RectF footprint =
-+        level.transform.MapRect(gfx::RectF(hole->quad->rect));
-+    gfx::RectF visible = footprint;
-+    visible.Intersect(clip);
-+    if (!rounded.IsEmpty()) {
-+      visible.Intersect(rounded.rect());
-+    }
-+    if (visible.IsEmpty()) {
-+      return NestedHolePlan::kInvisible;
-+    }
-+    if (!clip.Contains(footprint)) {
-+      level.clip_rect = gfx::ToEnclosingRect(clip);
-+    }
-+    level.rounded_corners = rounded;
-+    pass = parent;
-+  }
-+
-+  const NestedLevel& outermost = hole->levels.back();
-+  OverlayCandidate& layer = hole->layer;
-+  layer.transform = outermost.transform;
-+  layer.clip_rect = outermost.clip_rect;
-+  layer.rounded_corners = outermost.rounded_corners;
-+  layer.sorting_context_id = 0;
-+  // Where the occlusion culler trimmed the hole because its pass draws
-+  // something opaque over it, the layer is left out too: below a translucent
-+  // pass's CALayer it would otherwise show through that opaque content.
-+  if (hole->quad->visible_rect != hole->quad->rect &&
-+      outermost.transform.Preserves2dAxisAlignment()) {
-+    const gfx::Rect visible = gfx::ToEnclosingRect(
-+        outermost.transform.MapRect(gfx::RectF(hole->quad->visible_rect)));
-+    layer.clip_rect = layer.clip_rect
-+                          ? gfx::IntersectRects(*layer.clip_rect, visible)
-+                          : visible;
-+  }
-+  return NestedHolePlan::kShow;
-+}
-+
-+// Parc: the layer's opacity when the pass drawn in the root is a CALayer
-+// above it, with the hole punched out of the pass and the pass's opacity
-+// applying to what is left. With c the video's own opacity times every
-+// pass's (its share of the pixel) and a the outermost pass's opacity, it is
-+// c / (1 - a + c). That is exact whenever at most one of them is below 1,
-+// assuming what a translucent video covers in its own pass is opaque: a
-+// fading dialog (c = a) gets a; a translucent video in an opaque dialog gets
-+// 1, the dialog showing through the punch's remainder.
-+float CALayerRouteOpacity(const NestedHole& hole) {
-+  float c = hole.quad->shared_quad_state->opacity;
-+  for (const NestedLevel& level : hole.levels) {
-+    c *= level.opacity;
-+  }
-+  const float a = hole.levels.back().opacity;
-+  return c / (1.f - a + c);
-+}
-+
-+// Parc: a black DstOut copy of a hole's footprint, drawn in `parent` just
-+// below the render pass draw quad that draws `pass_id`, at that quad's
-+// opacity. It takes from what `parent` draws below that pass the share the
-+// video covers (all of it when the pass is opaque), so the protected layer
-+// shows through from below. Plain data: it is drawn after everything that
-+// points at quads, since inserting a quad moves the pass's other quads.
-+struct BelowPassPunch {
-+  raw_ptr<AggregatedRenderPass> parent = nullptr;
-+  AggregatedRenderPassId pass_id;
-+  gfx::Rect rect;
-+  // Where the hole's pass draws something opaque over it, the parent's
-+  // content is left alone: the pass covers it there.
-+  gfx::Rect visible_rect;
-+  gfx::Transform transform;
-+  std::optional<gfx::Rect> clip_rect;
-+  gfx::RRectF rounded_corners;
-+  float opacity = 1.f;
-+};
-+
-+BelowPassPunch MakeBelowPassPunch(const NestedHole& hole,
-+                                  const NestedLevel& level) {
-+  return BelowPassPunch{level.parent,          level.pass_id,
-+                        hole.quad->rect,       hole.quad->visible_rect,
-+                        level.transform,       level.clip_rect,
-+                        level.rounded_corners, level.opacity};
-+}
-+
-+void DrawBelowPassPunch(const BelowPassPunch& punch) {
-+  QuadList& quads = punch.parent->quad_list;
-+  for (auto it = quads.begin(); it != quads.end(); ++it) {
-+    const auto* rpdq = it->DynamicCast<AggregatedRenderPassDrawQuad>();
-+    if (!rpdq || rpdq->render_pass_id != punch.pass_id) {
-+      continue;
-+    }
-+    SharedQuadState* sqs = punch.parent->CreateAndAppendSharedQuadState();
-+    sqs->SetAll(punch.transform, punch.rect, punch.rect,
-+                gfx::MaskFilterInfo(punch.rounded_corners), punch.clip_rect,
-+                /*contents_opaque=*/false, punch.opacity, SkBlendMode::kDstOut,
-+                /*sorting_context=*/0, /*layer_id=*/0u,
-+                /*fast_rounded_corner=*/false);
-+    // QuadList runs front to back, so the copy is drawn just before the pass.
-+    auto copy =
-+        quads.InsertAfterAndInvalidateAllPointers<SolidColorDrawQuad>(it, 1u);
-+    static_cast<SolidColorDrawQuad*>(*copy)->SetNew(
-+        sqs, punch.rect, punch.visible_rect, SkColors::kBlack,
-+        /*anti_aliasing_off=*/false);
-+    return;
-+  }
-+}
-+
-+// Parc: redraws `id`'s pass whole this frame, with every pass that draws it,
-+// because its hole punch started or stopped. The root isn't touched.
-+void RedrawPassAndEmbedders(
-+    AggregatedRenderPassId id,
-+    const AggregatedRenderPassList& render_passes,
-+    const PassEmbeddings& embeddings) {
-+  const AggregatedRenderPass* root = render_passes.back().get();
-+  for (size_t steps = 0; steps < render_passes.size(); ++steps) {
-+    auto pass = std::ranges::find(render_passes, id, &AggregatedRenderPass::id);
-+    if (pass == render_passes.end() || pass->get() == root) {
-+      return;
-+    }
-+    (*pass)->has_damage_from_contributing_content = true;
-+    (*pass)->damage_rect = (*pass)->output_rect;
-+    auto found = embeddings.find(id);
-+    if (found == embeddings.end()) {
-+      return;
-+    }
-+    id = found->second.parent->id;
-+  }
-+}
-+
-+}  // namespace
 +
 +void CALayerOverlayProcessor::ProcessNestedProtectedLayers(
 +    const DisplayResourceProvider* resource_provider,
@@ -1303,131 +766,23 @@
 +    bool all_ca_layers,
 +    OverlayCandidateList* ca_layer_overlays,
 +    gfx::Rect* root_damage_rect) {
-+  // Every frame costs one look at each non-root quad.
-+  AggregatedRenderPass* root = render_passes->back().get();
-+  bool has_hole = false;
-+  for (const auto& pass : *render_passes) {
-+    if (pass.get() == root || has_hole) {
-+      break;
-+    }
-+    has_hole = std::ranges::any_of(pass->quad_list, [](const DrawQuad* quad) {
-+      return quad->material == DrawQuad::Material::kVideoHole;
-+    });
-+  }
-+  if (!has_hole && punched_passes_.empty()) {
-+    return;
-+  }
-+  if (has_hole) {
-+    had_protected_layer_ = true;
-+  }
-+
-+  base::flat_set<AggregatedRenderPassId> punched;
-+  std::vector<BelowPassPunch> below_pass_punches;
-+  {
-+    const PassEmbeddings embeddings = FindPassEmbeddings(*render_passes);
-+    std::vector<NestedHole> holes;
-+    // A parked display leaves every hole black, as in the root pass.
-+    if (has_hole && protected_layers_allowed_) {
-+      for (const auto& pass : *render_passes) {
-+        if (pass.get() == root) {
-+          break;
-+        }
-+        for (const DrawQuad* quad : pass->quad_list) {
-+          if (quad->material != DrawQuad::Material::kVideoHole) {
-+            continue;
-+          }
-+          NestedHole hole;
-+          hole.pass = pass.get();
-+          hole.quad = quad;
-+          if (PlanNestedHole(resource_provider, root, embeddings, &hole) ==
-+              NestedHolePlan::kShow) {
-+            holes.push_back(std::move(hole));
-+          }
-+        }
-+      }
-+    }
-+
-+    for (NestedHole& hole : holes) {
-+      // One video is one layer; a second hole naming it stays black.
-+      if (std::ranges::any_of(*ca_layer_overlays,
-+                              [&](const OverlayCandidate& candidate) {
-+                                return candidate.protected_layer_token ==
-+                                       hole.layer.protected_layer_token;
-+                              })) {
-+        continue;
-+      }
-+      if (all_ca_layers) {
-+        // The layer goes right below the CALayer of the pass drawn in the
-+        // root, so that pass's content stays above the video and the root's
-+        // content below the pass stays below it.
-+        auto pass_layer = std::ranges::find_if(
-+            *ca_layer_overlays, [&](const OverlayCandidate& candidate) {
-+              return candidate.rpdq == hole.levels.back().quad;
-+            });
-+        if (pass_layer == ca_layer_overlays->end()) {
-+          continue;
-+        }
-+        // One layer more than the root's quads; the CALayer count limit is a
-+        // performance guard, and a video is one layer either way.
-+        hole.layer.opacity = CALayerRouteOpacity(hole);
-+        ca_layer_overlays->insert(pass_layer, hole.layer);
-+        // Each pass in between draws the inner pass over what it draws below
-+        // it, which the video covers too.
-+        for (size_t i = 0; i + 1 < hole.levels.size(); ++i) {
-+          below_pass_punches.push_back(
-+              MakeBelowPassPunch(hole, hole.levels[i]));
-+        }
-+      } else {
-+        // An underlay below the primary plane, as for a hole in the root
-+        // pass. Every pass up to the root draws the inner pass over what it
-+        // draws below it, so each of those is punched as well. The punches
-+        // carry the opacity, so the layer is drawn at full strength: exact
-+        // when at most one of the video and its passes is translucent, the
-+        // page being opaque.
-+        hole.layer.opacity = 1.f;
-+        ca_layer_overlays->push_back(hole.layer);
-+        for (const NestedLevel& level : hole.levels) {
-+          below_pass_punches.push_back(MakeBelowPassPunch(hole, level));
-+        }
-+      }
-+
-+      // The video shows through a transparent punch in its own pass (DstOut
-+      // when it is translucent, keeping the rest of what it covers), under
-+      // whatever that pass draws over it.
-+      for (auto it = hole.pass->quad_list.begin();
-+           it != hole.pass->quad_list.end(); ++it) {
-+        if (*it == hole.quad) {
-+          hole.pass->ReplaceExistingQuadWithHolePunch(it);
-+          break;
-+        }
-+      }
-+      punched.insert(hole.pass->id);
-+    }
-+
-+    // A pass whose punch starts or stops is redrawn even if nothing else in
-+    // it changed, so its cached backing never shows a stale punch or black.
-+    // On the underlay route the root is drawn, and its punches changed too.
-+    if (punched != punched_passes_) {
-+      for (AggregatedRenderPassId id : punched) {
-+        if (!punched_passes_.contains(id)) {
-+          RedrawPassAndEmbedders(id, *render_passes, embeddings);
-+        }
-+      }
-+      for (AggregatedRenderPassId id : punched_passes_) {
-+        if (!punched.contains(id)) {
-+          RedrawPassAndEmbedders(id, *render_passes, embeddings);
-+        }
-+      }
-+      if (!all_ca_layers) {
-+        *root_damage_rect = root->output_rect;
-+      }
-+    }
-+  }
-+
-+  for (const BelowPassPunch& punch : below_pass_punches) {
-+    DrawBelowPassPunch(punch);
-+  }
-+  punched_passes_ = std::move(punched);
++  ParcProcessNestedProtectedLayers(
++      resource_provider, render_passes, protected_layers_allowed_,
++      all_ca_layers,
++      [](const DisplayResourceProvider* builder_resource_provider,
++         const gfx::RectF& display_rect, const DrawQuad* quad,
++         OverlayCandidate* candidate, bool* skip) {
++        CALayerOverlayProcessorInternal processor(
++            /*protected_layers_allowed=*/true);
++        bool render_pass_draw_quad = false;
++        int yuv_draw_quad_count = 0;
++        return processor.FromDrawQuad(
++                   builder_resource_provider, display_rect, quad, candidate,
++                   skip, &render_pass_draw_quad, yuv_draw_quad_count) ==
++               gfx::kCALayerSuccess;
++      },
++      &IsMaskableRRect, ca_layer_overlays, root_damage_rect,
++      &punched_passes_, &had_protected_layer_);
 +}
 +
  }  // namespace viz
@@ -2510,3 +1865,14 @@
  #if BUILDFLAG(IS_MAC)
    void SetVSyncDisplayID(int64_t display_id) override {}
  #endif
+--- a/components/viz/service/BUILD.gn
++++ b/components/viz/service/BUILD.gn
+@@ -383,6 +383,8 @@
+       "display/ca_layer_overlay.h",
+       "display/overlay_processor_mac.cc",
+       "display/overlay_processor_mac.h",
++      "display/parc_ca_layer_overlay.cc",
++      "display/parc_ca_layer_overlay.h",
+       "display_embedder/software_output_device_mac.cc",
+       "display_embedder/software_output_device_mac.h",
+     ]

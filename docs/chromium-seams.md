@@ -416,6 +416,16 @@ features are installed. These stay call sites rather than an embedder
 callback, because `DidCreateScriptContext` misses the take-over path and
 can't reach Blink's trusted-event internals.
 
+The nested protected-video render-pass planner and the process-wide CALayer
+claim and hand-on policy live in Parc-owned Viz files. Chromium keeps one
+direct planner call and one claim hook; its candidate construction, rounded
+mask primitive, root-pass processing and parked-compositor flag stay at their
+original call sites. The owned policy preserves one superlayer per video,
+copy-request and nested-pass handling, black capture fallbacks, Picture in
+Picture ownership and `preventsCapture`. Renderer window planning and mixing
+arithmetic remain patched until that separate move ships with a real playback
+check.
+
 ## Decisions
 
 - **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
