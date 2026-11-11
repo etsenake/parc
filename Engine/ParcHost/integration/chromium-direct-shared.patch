@@ -11,7 +11,17 @@
  #include <stddef.h>
 -
 +
-@@ -4002,6 +4003,10 @@
+@@ -290,1 +291,9 @@
+ namespace content {
++}  // namespace content
++namespace parc_hooks {
++namespace { void (*frame_focus_notifier)(content::WebContents*) = nullptr; }
++CONTENT_EXPORT void SetFrameFocusNotifier(void (*notifier)(content::WebContents*)) {
++  frame_focus_notifier = notifier;
++}
++}  // namespace parc_hooks
++namespace content {
+@@ -4002,6 +4011,10 @@
    CHECK(main_frame->is_main_frame());
 -
 +
@@ -24,7 +34,7 @@
 +
    // Sets the hardware-related fields in |prefs| that are slow to compute. The
    // fields are set from cache if available, otherwise recomputed.
-@@ -4258,6 +4263,10 @@
+@@ -4258,6 +4271,10 @@
 -
 +
    GetContentClient()->browser()->OverrideWebPreferences(
@@ -37,7 +47,7 @@
  }
 -
 +
-@@ -6970,6 +6979,22 @@
+@@ -6970,6 +6987,22 @@
    if (delegate_) {
      delegate_->ResizeDueToAutoResize(this, new_size);
    }
@@ -61,13 +71,13 @@
 -
 +
  WebContents* WebContentsImpl::OpenURL(
-@@ -11217,6 +11242,8 @@
+@@ -11217,6 +11250,8 @@
    }
 -
 +
    CloseListenerManager::DidChangeFocusedFrame(this);
-+  observers_.NotifyObservers(&WebContentsObserver::OnFrameFocused,
-+                             node->current_frame_host());
++  if (parc_hooks::frame_focus_notifier)
++    parc_hooks::frame_focus_notifier(this);
  }
 -
 +

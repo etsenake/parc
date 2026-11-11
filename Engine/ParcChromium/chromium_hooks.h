@@ -34,6 +34,9 @@ using PermissionPromptFactory =
         permissions::PermissionPrompt::Delegate* delegate);
 void SetPermissionPromptFactory(PermissionPromptFactory factory);
 
+// content/browser/web_contents/web_contents_impl.cc
+void SetFrameFocusNotifier(void (*notifier)(content::WebContents*));
+
 // chrome/browser/ui/login/login_handler.cc
 void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));
 

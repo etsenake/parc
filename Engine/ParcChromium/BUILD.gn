@@ -56,6 +56,8 @@ source_set("browser") {
     "//chrome/app/chrome_main_delegate.h",
     "chromium_hooks.h",
     "content_main.h",
+    "frame_focus.cc",
+    "frame_focus.h",
     "native/extension_keybinding_registry.cc",
     "native/extension_keybinding_registry.h",
     "native/fairplay_identity.h",

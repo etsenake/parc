@@ -26,6 +26,7 @@
 #include "media/mojo/mojom/parc_video_toolbox_decoding.mojom.h"
 #include "mojo/public/cpp/bindings/binder_map.h"
 #include "parc/chromium_hooks.h"
+#include "parc/frame_focus.h"
 #include "parc/native/file_dialog.h"
 #include "parc/native/http_auth.h"
 #include "parc/native/native_appkit_host.h"
@@ -105,7 +106,9 @@ void ParcContentClient::AddContentDecryptionModules(
 
 ParcContentBrowserClient::ParcContentBrowserClient(
     NativeApplication& application)
-    : application_(application) {}
+    : application_(application) {
+  parc_hooks::SetFrameFocusNotifier(&NotifyFrameFocus);
+}
 
 ParcContentBrowserClient::~ParcContentBrowserClient() = default;
 

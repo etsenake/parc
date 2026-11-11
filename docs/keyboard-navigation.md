@@ -293,3 +293,7 @@ Swift work also needs whole-module SIL under [the working contract](../AGENTS.md
 Edit → Format → Font has no application-menu entry; Notes and Easels retain
 their own formatting controls. The [command-bar guide](command-bar.md#checks-and-remaining-work)
 owns the remaining Task Manager, Restore Data and Pinned-section requests.
+
+Frame-focus changes invalidate pending page shortcuts through a Parc-owned
+subscription registry, at the focused-frame change itself. Each page owns its
+subscriptions; callbacks remain safe if a shortcut closes the page.

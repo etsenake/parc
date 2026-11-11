@@ -2,6 +2,7 @@
 #include "native_shortcuts.h"
 #include <utility>
 #include "base/functional/bind.h"
+#include "parc/frame_focus.h"
 #include "base/task/single_thread_task_runner.h"
 #include "native_escape_state.h"
 #include "base/memory/weak_ptr.h"
@@ -131,6 +132,8 @@ class EscapeRouter final : public content::WebContentsObserver,
       : content::WebContentsObserver(contents),
         content::WebContentsUserData<EscapeRouter>(*contents) {
     auto weak = weak_factory_.GetWeakPtr();
+    focus_subscription_ = SubscribeFrameFocus(*contents, base::BindRepeating(
+        &EscapeRouter::Invalidate, weak));
     NSMutableArray* tokens = [NSMutableArray array];
     for (NSString* name in @[
            NSWindowDidResignKeyNotification, NSWindowWillCloseNotification,
@@ -271,7 +274,6 @@ class EscapeRouter final : public content::WebContentsObserver,
   void OnFocusChangedInPage(const content::FocusedNodeDetails&) override {
     Invalidate();
   }
-  void OnFrameFocused(content::RenderFrameHost*) override { Invalidate(); }
   void OnWebContentsLostFocus(content::RenderWidgetHost*) override {
     Invalidate();
   }
@@ -306,6 +308,7 @@ class EscapeRouter final : public content::WebContentsObserver,
   base::ScopedObservation<content::RenderWidgetHost,
                           content::RenderWidgetHostObserver>
       widget_{this};
+  base::CallbackListSubscription focus_subscription_;
   base::WeakPtrFactory<EscapeRouter> weak_factory_{this};
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
@@ -418,6 +421,8 @@ class ShortcutRouter final : public content::WebContentsObserver,
       : content::WebContentsObserver(contents),
         content::WebContentsUserData<ShortcutRouter>(*contents) {
     auto weak = weak_factory_.GetWeakPtr();
+    focus_subscription_ = SubscribeFrameFocus(*contents, base::BindRepeating(
+        &ShortcutRouter::Clear, weak));
     NSMutableArray* tokens = [NSMutableArray array];
     for (NSString* name in @[NSWindowDidResignKeyNotification,
                             NSWindowWillCloseNotification,
@@ -547,7 +552,6 @@ class ShortcutRouter final : public content::WebContentsObserver,
     timer_.Start(FROM_HERE, kRepeatCueLifetime, this, &ShortcutRouter::CueTimerTick);
   }
   void OnFocusChangedInPage(const content::FocusedNodeDetails&) override { Clear(); }
-  void OnFrameFocused(content::RenderFrameHost*) override { Clear(); }
   void OnWebContentsLostFocus(content::RenderWidgetHost*) override { Clear(); }
   void DidStartNavigation(content::NavigationHandle*) override { Clear(); }
   void PrimaryPageChanged(content::Page&) override { Clear(); }
@@ -579,6 +583,7 @@ class ShortcutRouter final : public content::WebContentsObserver,
   base::RepeatingTimer timer_;
   base::ScopedObservation<content::RenderWidgetHost, content::RenderWidgetHost::InputEventObserver> input_{this};
   base::ScopedObservation<content::RenderWidgetHost, content::RenderWidgetHostObserver> widget_{this};
+  base::CallbackListSubscription focus_subscription_;
   base::WeakPtrFactory<ShortcutRouter> weak_factory_{this};
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
