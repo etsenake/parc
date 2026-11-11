@@ -244,6 +244,37 @@ branding outputs remain in step 4.
 The toolbar and narrow-window drawers share the owned dark-logo resource. This also fixes a branding
 bug: those drawers showed Chrome’s logo in dark mode while already showing Parc’s in light mode.
 
+## Browser integration boundaries
+
+Page preference state and frame-focus subscriptions belong to Parc. The top-band
+tracker is a Blink `LocalFrame` supplement. Its lifecycle observer alternative is
+not equivalent: observers run before canvas onpaint, while sampling must run after
+it. The frame-install, post-canvas, parsing, LCP, new-document and resource-load
+implementation hooks stay.
+Website-theme already uses an owned renderer observer and needs no replacement.
+
+These remaining browser patches preserve private implementation behavior or keep
+required build inputs. Declaration-only changes can move separately from the
+implementation they describe:
+
+| Boundary | Why the current patch stays |
+|---|---|
+| Fullscreen entry failure | Recovery needs the controller's private pending transition and original window frame. Public exit returns early once failure has made the window windowed. |
+| History swipes | Cancellation must reach the retained AppKit tracker, its generation and overlay before a stale gesture can navigate. Keep the implementation's weak-owner checks, bounds coordinates and Reduce Motion behavior. The cancellation declarations can move separately into owned Objective-C categories. |
+| Overlay scrollbar fading | No embedder seam wraps the private fade timer. Its callback hands visibility back to a changed theme without leaving an invisible hit target. Keep its regression test. |
+| Script-requested window sizes | Blink clamps before the browser receives the request. Keep the current global 52-pixel minimum, including its effect on ordinary popups. Native PiP bounds cannot replace that clamp. |
+| Mac framework layout and Keychain | Pristine GetFrameworkBundlePath rebuilds Chrome's versioned layout instead of honoring the installed framework override; PathService does not reach direct callers. Keep the Mac source and its Parc buildflag dependency as an exception to the no-Parc-includes rule. The Keychain compile definition must make its namespace mutable in both implementation and callers. |
+| Native diagnostics | Responder and accessibility observers do not expose the patched branch rejection/results. Keep the opt-in probes at those branches. |
+| Build dependencies | Safe Browsing needs its direct protobuf/buildflag dependencies; background extension dependencies must remain conditional. UI-owned declarations and test registrations move only with their consumers. |
+| Blink top-band targets | The tracker uses internal layout/paint types and Blink's exports. Keep its core build registration and existing Mojo target until an owned target preserves that internal access and generated ABI. |
+
+The internal extension has owned resource packaging and an exact-ID allowlist.
+Its installation callback stays at Chromium's background-component registration
+point: a later profile callback omits some profile types and cannot reproduce the
+private test override of background-extension suppression. Its manifest key and
+worker bytes stay unchanged. GCM's factory selects Parc's legacy-registration
+policy; modern registration and transport remain upstream.
+
 ## Decisions
 
 - **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
