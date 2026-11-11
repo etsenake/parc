@@ -1,0 +1,20 @@
+# Installed at //ui/accelerated_widget_mac/parc_tests so the existing macOS
+# unit-test binary keeps Parc's protected-layer ownership regressions.
+
+assert(is_mac)
+
+source_set("unit_tests") {
+  visibility = [ "//ui/accelerated_widget_mac:*" ]
+  testonly = true
+  sources = [ "ca_layer_tree_unittest_mac.mm" ]
+
+  deps = [
+    "//base",
+    "//components/viz/common",
+    "//skia",
+    "//testing/gtest",
+    "//ui/accelerated_widget_mac",
+    "//ui/gfx:test_support",
+    "//ui/gl",
+  ]
+}
