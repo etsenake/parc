@@ -5,7 +5,10 @@ assert(is_mac)
 source_set("unit_tests") {
   visibility = [ "//third_party/blink/renderer/modules:*" ]
   testonly = true
-  sources = [ "media_controls_impl_test.cc" ]
+  sources = [
+    "media_controls_impl_test.cc",
+    "web_media_player_ms_test.cc",
+  ]
 
   configs += [
     "//third_party/blink/renderer:config",
