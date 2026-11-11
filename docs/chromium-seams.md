@@ -346,6 +346,12 @@ route switch, document moves, casting while frozen and the readyState gates.
 They stay in Chromium's file because they read and change the player's
 private state in place, in an order Safari-identity pages depend on.
 
+MediaCapabilities answers Safari-identity documents as WebKit's `decodingInfo`
+does. Its HEVC and Dolby Vision codec-string parsers and the shape of a
+finished result live in a Parc file beside it. The capability computation
+itself stays in Chromium's file for now, because it calls that file's private
+content-type parser and Media Source support check.
+
 ## Decisions
 
 - **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
