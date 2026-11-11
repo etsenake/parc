@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 692,
+  "version": 693,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -344,12 +344,12 @@
     {
       "source": "Engine/ParcNative/native_appkit_host.h",
       "target": "parc/native/native_appkit_host.h",
-      "sha256": "3a0936de3e16fc0f0e3bacdd0f333fa5e00f3aa50749b2489d41da106fe622a1"
+      "sha256": "9db8af64797456ff8c2ced41e1d284db9b68b5457d92afd4c5f6ce01d865cb82"
     },
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
       "target": "parc/native/native_appkit_host.mm",
-      "sha256": "b4125b4ee96e815633460e53296924dd31665fdc46a96afe5764cb21ff220dd7"
+      "sha256": "d38d90ef62360479e3ae5a575cfc0fedd11547938ae65580fe3e1b50f60ae444"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.h",
@@ -2024,7 +2024,7 @@
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "1410adb3224c8845399b9b8466f7ab048347f4a16cc39d4e088530ade705bdcd"
+      "sha256": "42bbbcf851b59ba9cea1167c8661726c581e2950de6f90f37e11d99b1710cf36"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2069,7 +2069,7 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.cc",
       "target": "parc/parc_content_clients.cc",
-      "sha256": "7b30bb46c497cebe5121ad3d60bf65cff67424317b24063542baea300f518f0f"
+      "sha256": "32737d564d728520b40607bfcb4832e43b32c039d156d763b0ddeffc88be6cac"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",
@@ -6144,7 +6144,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-browser-overlay.patch",
-      "sha256": "dad29712645106331f50b90f91eef8635c5a6ff8688fcb7d97a6aeb21a1c650b",
+      "sha256": "f59d4486bcbc734c289096f3480255c672ce4ed1d2ce4c569eeedbee9a51ce91",
       "files": [
         {
           "target": "chrome/browser/ui/browser.cc",
@@ -6167,9 +6167,9 @@
           "after_sha256": "493d824f2bfb24f4c45651fe479593ef02e9cf49bb33e11dae2a957296f1eb15"
         },
         {
-          "target": "chrome/browser/ui/focus/browser_focus_controller.h",
-          "before_sha256": "932a9b10e82d76a863b486d3d3392bf0a651785e3c802589be061c482db08c70",
-          "after_sha256": "d3a65c9c7bd570813d07c8811a2d4d1608b3ec16b5dc9672e4760db5e0c99c7d"
+          "target": "chrome/browser/ui/focus/browser_focus_controller.cc",
+          "before_sha256": "fb70dd1bace60d8faf44b15d0bdfbacf8ec6d50935083e7a573b10cb4ce86692",
+          "after_sha256": "94cd3fa84a34281d012b378e03536879c8c07e5eb1dcc9e08d8c04fde74f3826"
         },
         {
           "target": "chrome/browser/ui/navigator/browser_navigator.cc",
