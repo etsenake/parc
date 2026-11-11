@@ -24,6 +24,7 @@ class WebContents;
 class BrowserFocusController;
 class DevtoolsUIController;
 class Profile;
+class SessionID;
 namespace parc {
 struct NativeWindowRequest;
 class PreparedNativeWindow;
@@ -57,6 +58,9 @@ bool RequestAppKitDevtools(content::WebContents&);
 // Exact external shell container, never the native page's interior superview.
 NSView* AppKitPageContainer(BrowserWindowInterface&, PCNativePage*);
 void AppKitPageOwnerChanged(BrowserWindowInterface*, content::WebContents&);
+// An Easel-owned page keeps its real tab and window identity but is never
+// recorded for session or tab restore.
+bool IsSessionOmittedFromRestore(SessionID session_id);
 void SynchronizeAppKitBrowser(BrowserWindowInterface&);
 // Applies the shell's current page visibility now, for a shell request made
 // after it rearranged its panes. It may run inside a TabStripModel change

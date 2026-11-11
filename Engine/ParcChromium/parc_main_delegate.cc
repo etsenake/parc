@@ -102,6 +102,9 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
       &RunNativeProfileDiskCleanup);
   parc_hooks::SetNativeProfileDeletion(&LoadNativeProfileForDeletion,
                                        &RunNativeProfileDiskCleanup);
+  parc_hooks::SetSessionTabRestoreOmission(&IsSessionOmittedFromRestore);
+  parc_hooks::SetTabRestoreOmission(&IsSessionOmittedFromRestore);
+  parc_hooks::SetSessionServiceOmission(&IsSessionOmittedFromRestore);
   parc_hooks::SetGaiaAccountsPolicy(&NativeGaiaAccountsAllowed);
   parc_hooks::SetSessionRestorePolicy(&RestoreNativeSessionState);
   parc_hooks::SetRegisterProfilePrefs(&RegisterNativeProfilePrefs);

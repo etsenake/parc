@@ -37,6 +37,7 @@ class PrefService;
 class Profile;
 class ProfileManager;
 class SadTab;
+class SessionID;
 class StartupData;
 class UnloadController;
 struct BrowserWindowCreateParams;
@@ -277,6 +278,14 @@ void SetNativeBrowserWindowFeatures(
     std::unique_ptr<DevtoolsUIController> (*devtools_controller)(
         BrowserWindowInterface&),
     NativeWebContentsDelegateFactory web_contents_delegate);
+
+// Easel-owned pages that session and tab restore never record:
+// components/sessions/content/session_tab_helper.cc,
+// components/sessions/core/tab_restore_service_helper.cc and
+// chrome/browser/sessions/session_service_base.cc.
+void SetSessionTabRestoreOmission(bool (*omitted)(SessionID));
+void SetTabRestoreOmission(bool (*omitted)(SessionID));
+void SetSessionServiceOmission(bool (*omitted)(SessionID));
 
 // chrome/browser/profiles/profile_manager.cc. Parc's native Profile removal:
 // the manager's lifetime, with whether a path still has a Profile object and

@@ -245,6 +245,12 @@ std::map<content::WebContents*, PageRecord>& Pages() {
 
 namespace parc {
 namespace {
+// Easel-owned pages, which are never restored as ordinary tabs. Session IDs
+// stay unique for the run, so an entry outliving its page matches no other.
+std::set<SessionID>& OmittedSessions() {
+  static base::NoDestructor<std::set<SessionID>> value;
+  return *value;
+}
 // Opt-in diagnostics of the actual primary widget only. Arrival at this
 // observer is distinct from a renderer ACK; neither is proof that a DOM handler
 // ran.
@@ -814,7 +820,7 @@ class NativePageState final
     embedded_ = true;
     auto* session = sessions::SessionTabHelper::FromWebContents(contents_.get());
     CHECK(session);
-    session->OmitFromSessionRestore();
+    OmittedSessions().insert(session->session_id());
     contents_->GetController().GetDefaultSessionStorageNamespace()->SetShouldPersist(false);
     auto* browser = this->browser();
     CHECK(browser);
@@ -1647,6 +1653,9 @@ void SetNativePageClosedCallback(PCNativePage* page,
                                  base::OnceClosure callback) {
   CHECK(page);
   [page state]->SetClosed(std::move(callback));
+}
+bool IsSessionOmittedFromRestore(SessionID session_id) {
+  return OmittedSessions().contains(session_id);
 }
 }  // namespace parc
 
