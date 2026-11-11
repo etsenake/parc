@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 714,
+  "version": 715,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -2299,12 +2299,12 @@
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_ca_layer_overlay.h",
       "target": "components/viz/service/display/parc_ca_layer_overlay.h",
-      "sha256": "509e1080baecb021b23b92e2cd1b92e538fdb72913d4f9d1143822743eee859c"
+      "sha256": "82598462d799cd7b6a33920de091ceab37282a03ee456f93f06bc390b3d2f6b5"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_ca_layer_overlay.cc",
       "target": "components/viz/service/display/parc_ca_layer_overlay.cc",
-      "sha256": "03fc03c7685748d6eec498e9df3880b894b2dcb94df9cf92009d80adb53d0920"
+      "sha256": "be701d59f434ac978c5340f4b9b4d1c28d375982bee7e2aec774de8f6fb2a902"
     },
     {
       "source": "Engine/ParcNative/fairplay_chromium/parc_protected_layer_claims.h",
@@ -3989,7 +3989,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-compositing-direct.patch",
-      "sha256": "19ad37bc9309c437b080d3010e8a693dcf3ba94044d914e35d7603292279a014",
+      "sha256": "0e98a49a677b7eeed7555ac806055a16438203b0ac8952cd5c7c8f3cf7459e6e",
       "files": [
         {
           "target": "ui/accelerated_widget_mac/BUILD.gn",
@@ -4019,7 +4019,7 @@
         {
           "target": "components/viz/service/display/ca_layer_overlay.cc",
           "before_sha256": "5cd1ee86cff67c5fa24995edd03f8d84ae8200f86445fd610959564fbfd16689",
-          "after_sha256": "8970ceec720c353ab47b7d90ea4112c5619bc242e2184f48852fea7cd8c6178b"
+          "after_sha256": "8aed876ae90457f2844b9b9f1ab740f327da6435dd58640956ba215801544760"
         },
         {
           "target": "components/viz/service/display/skia_renderer.cc",

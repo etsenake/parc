@@ -13,6 +13,7 @@
 #include "components/viz/common/quads/aggregated_render_pass_draw_quad.h"
 #include "components/viz/common/quads/draw_quad.h"
 #include "components/viz/common/quads/solid_color_draw_quad.h"
+#include "components/viz/common/quads/video_hole_draw_quad.h"
 #include "components/viz/service/display/display_resource_provider.h"
 #include "ui/gfx/geometry/mask_filter_info.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -317,6 +318,18 @@ void RedrawPassAndEmbedders(
 }
 
 }  // namespace
+
+gfx::CALayerResult ParcFromVideoHoleQuad(const DrawQuad* quad,
+                                         OverlayCandidate* ca_layer_overlay) {
+  const auto* hole = VideoHoleDrawQuad::MaterialCast(quad);
+  if (hole->overlay_plane_id.is_empty()) {
+    return gfx::kCALayerFailedUnknown;
+  }
+  ca_layer_overlay->protected_layer_token = hole->overlay_plane_id;
+  ca_layer_overlay->protected_video_type =
+      gfx::ProtectedVideoType::kHardwareProtected;
+  return gfx::kCALayerSuccess;
+}
 
 void ParcProcessNestedProtectedLayers(
     const DisplayResourceProvider* resource_provider,

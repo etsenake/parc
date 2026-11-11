@@ -7,6 +7,7 @@
 #include "base/containers/flat_set.h"
 #include "components/viz/common/quads/aggregated_render_pass.h"
 #include "components/viz/service/display/overlay_candidate.h"
+#include "ui/gfx/ca_layer_result.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/rrect_f.h"
@@ -23,6 +24,13 @@ using ParcProtectedLayerCandidateBuilder = bool (*)(
     OverlayCandidate* candidate,
     bool* skip);
 using ParcMaskableRRectPredicate = bool (*)(const gfx::RRectF& rrect);
+
+// A FairPlay video's video-hole quad. Its frames exist only inside the
+// renderer's AVSampleBufferDisplayLayer in the GPU process, so the quad can
+// only be shown as a CALayer; CARendererLayerTree puts the layer registered
+// under the token at this quad's place.
+gfx::CALayerResult ParcFromVideoHoleQuad(const DrawQuad* quad,
+                                         OverlayCandidate* ca_layer_overlay);
 
 // Plans protected video layers nested in non-root render passes. Chromium
 // supplies its existing candidate and CALayer-mask primitives, so their

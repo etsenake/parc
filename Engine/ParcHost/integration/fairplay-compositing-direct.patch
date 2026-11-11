@@ -322,25 +322,10 @@
  #include "ui/base/cocoa/remote_layer_api.h"
  #include "ui/gfx/buffer_types.h"
  #include "ui/gfx/geometry/rrect_f.h"
-@@ -213,8 +214,26 @@
+@@ -213,8 +214,11 @@
    return gfx::kCALayerSuccess;
  }
 -
-+
-+// Parc: a FairPlay video. Its frames exist only inside the renderer's
-+// AVSampleBufferDisplayLayer in the GPU process, so the quad can only be shown
-+// as a CALayer; CARendererLayerTree puts the layer registered under the token
-+// at this quad's place.
-+gfx::CALayerResult FromVideoHoleQuad(const VideoHoleDrawQuad* quad,
-+                                     OverlayCandidate* ca_layer_overlay) {
-+  if (quad->overlay_plane_id.is_empty()) {
-+    return gfx::kCALayerFailedUnknown;
-+  }
-+  ca_layer_overlay->protected_layer_token = quad->overlay_plane_id;
-+  ca_layer_overlay->protected_video_type =
-+      gfx::ProtectedVideoType::kHardwareProtected;
-+  return gfx::kCALayerSuccess;
-+}
 +
  class CALayerOverlayProcessorInternal {
   public:
@@ -350,7 +335,7 @@
    gfx::CALayerResult FromDrawQuad(
        const DisplayResourceProvider* resource_provider,
        const gfx::RectF& display_rect,
-@@ -295,6 +314,18 @@
+@@ -295,6 +299,17 @@
              ca_layer_overlay);
        case DrawQuad::Material::kSurfaceContent:
          return gfx::kCALayerFailedSurfaceContent;
@@ -364,12 +349,11 @@
 +          ca_layer_overlay->is_solid_color = true;
 +          return gfx::kCALayerSuccess;
 +        }
-+        return FromVideoHoleQuad(VideoHoleDrawQuad::MaterialCast(quad),
-+                                 ca_layer_overlay);
++        return ParcFromVideoHoleQuad(quad, ca_layer_overlay);
        default:
          break;
      }
-@@ -306,8 +337,11 @@
+@@ -306,8 +321,11 @@
    bool video_with_odd_height() { return video_with_odd_height_; }
    bool video_with_odd_x() { return video_with_odd_x_; }
    bool video_with_odd_y() { return video_with_odd_y_; }
@@ -382,7 +366,7 @@
    bool video_with_odd_width_ = false;
    bool video_with_odd_height_ = false;
    bool video_with_odd_x_ = false;
-@@ -403,10 +437,27 @@
+@@ -403,10 +421,27 @@
        }
      }
 -
@@ -411,7 +395,7 @@
          failed = true;
          break;
        }
-@@ -424,6 +475,7 @@
+@@ -424,6 +459,7 @@
    const QuadList& quad_list = render_pass->quad_list;
    gfx::CALayerResult result = gfx::kCALayerSuccess;
    size_t num_visible_quads = quad_list.size();
@@ -420,7 +404,7 @@
 +
    // Skip overlay processing
    if (!overlays_allowed_ || !enable_ca_renderer_) {
-@@ -447,7 +499,7 @@
+@@ -447,7 +483,7 @@
 -
 +
    int render_pass_draw_quad_count = 0;
@@ -430,7 +414,7 @@
    for (auto it = quad_list.BackToFrontBegin();
         result == gfx::kCALayerSuccess && it != quad_list.BackToFrontEnd();
         ++it) {
-@@ -480,6 +532,10 @@
+@@ -480,6 +516,10 @@
      ca_layer_overlays->push_back(ca_layer);
    }
 -
@@ -442,7 +426,7 @@
    // Fails if there are more draw quads than allowed for CoreAnimation.
    size_t max_number = (yuv_draw_quad_count < kMaxNumVideos)
                            ? layer_limit_default_
-@@ -506,7 +562,7 @@
+@@ -506,7 +546,7 @@
      const DrawQuad* quad,
      gfx::ProtectedVideoType protected_video_type,
      OverlayCandidateList* ca_layer_overlays) const {
@@ -451,7 +435,7 @@
    OverlayCandidate ca_layer;
    bool skip = false;
    bool render_pass_draw_quad = false;
-@@ -534,4 +590,30 @@
+@@ -534,4 +574,30 @@
    ca_layer_result_ = result;
  }
 -
