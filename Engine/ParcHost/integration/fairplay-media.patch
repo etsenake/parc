@@ -9172,6 +9172,18 @@
    deps = [
      ":media",
      "//base",
+@@ -154,6 +176,10 @@
+     "//third_party/blink/renderer/platform:test_support",
+   ]
+-
++
++  if (is_mac) {
++    deps += [ "//third_party/blink/renderer/platform/media/parc_tests:unit_tests" ]
++  }
++
+   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+   # enable the diagnostic by removing this line.
+   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 --- a/content/test/BUILD.gn
 +++ b/content/test/BUILD.gn
 @@ -3456,6 +3456,14 @@
@@ -15909,19 +15921,18 @@
     private:
      void OnUrlData(base::OnceCallback<
                         void(std::unique_ptr<media::CrossOriginDataSource>)> cb,
-@@ -90,6 +98,9 @@
+@@ -89,6 +97,9 @@
+     scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
 -
 +
      std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
--
 +
 +    bool parc_casting_ = false;
 +    std::vector<base::WeakPtr<MultiBufferDataSource>> parc_sources_;
+-
 +
      base::WeakPtrFactory<Factory> weak_factory_{this};
    };
--
-+
 @@ -162,6 +173,19 @@
      is_client_audio_element_ = is_client_audio_element;
    }
@@ -15944,19 +15955,29 @@
 -
 +
   protected:
-@@ -200,6 +224,9 @@
+@@ -180,6 +204,7 @@
+   void SetReader(std::unique_ptr<MultiBufferReader> reader);
+-
++
+   friend class MultiBufferDataSourceTest;
++  friend class ParcMultiBufferDataSourceTest;
+-
++
+   // Task posted to perform actual reading on the render thread.
+   void ReadTask();
+@@ -199,6 +224,9 @@
+-
++
    // Stops |reader_| if present. Used by Abort() and Stop().
    void StopLoader();
--
 +
 +  // Parc: ParcMoveToUrlIndex()'s move, now.
 +  void ParcLoadThroughUrlIndex(UrlIndex& url_index);
+-
 +
    // Tells |reader_| the bitrate of the media.
    void SetBitrateTask(int bitrate);
--
-+
-@@ -324,6 +351,14 @@
+@@ -324,6 +352,14 @@
    // a persistent reference. This avoids problems with the thread-safety of
    // reaching into this class from multiple threads to attain a WeakPtr.
    base::WeakPtr<MultiBufferDataSource> weak_ptr_;
@@ -16463,206 +16484,6 @@
 +}
 +
  }  // namespace content
---- a/third_party/blink/renderer/platform/media/multi_buffer_data_source_unittest.cc
-+++ b/third_party/blink/renderer/platform/media/multi_buffer_data_source_unittest.cc
-@@ -17,6 +17,7 @@
- #include "base/run_loop.h"
- #include "base/strings/string_number_conversions.h"
- #include "base/task/single_thread_task_runner.h"
-+#include "base/test/bind.h"
- #include "base/test/task_environment.h"
- #include "media/base/media_switches.h"
- #include "media/base/media_util.h"
-@@ -508,6 +509,9 @@
-   bool GetIsClientAudioElement(MultiBufferDataSource* source) {
-     return source->is_client_audio_element_;
-   }
-+  bool LoadsForCast(MultiBufferDataSource* source) {
-+    return source->url_data_->ParcCasting();
-+  }
-   void CallOnRedirected(MultiBufferDataSource* source,
-                         const scoped_refptr<UrlData>& data) {
-     source->OnRedirected(data);
-@@ -534,6 +538,60 @@
-   bool is_client_audio_element_ = false;
- };
--
-+
-+// Parc: a source whose player a Safari-identity element moved to another frame
-+// keeps what it loaded and loads the rest through that frame's index, which
-+// takes what the response told about the resource (ParcMoveToUrlIndex()).
-+TEST_F(MultiBufferDataSourceTest, ParcMoveToUrlIndexLoadsThroughNewIndex) {
-+  InitializeWith206Response();
-+  NiceMock<MockResourceFetchContext> moved_fetch_context;
-+  TestUrlIndex moved_url_index(&moved_fetch_context, task_runner_);
-+  EXPECT_CALL(moved_fetch_context, CreateUrlLoader(_))
-+      .Times(testing::AtLeast(1))
-+      .WillRepeatedly([](const WebAssociatedURLLoaderOptions&) {
-+        return std::make_unique<NiceMock<MockWebAssociatedURLLoader>>();
-+      });
-+  EXPECT_CALL(fetch_context_, CreateUrlLoader(_)).Times(0);
-+
-+  data_source_->ParcMoveToUrlIndex(moved_url_index);
-+  base::RunLoop().RunUntilIdle();
-+  EXPECT_EQ(moved_url_index.last_url_data(), url_data());
-+  EXPECT_EQ(kFileSize, url_data()->length());
-+  EXPECT_TRUE(url_data()->range_supported());
-+  EXPECT_TRUE(url_data()->multibuffer()->Contains(0));
-+
-+  data_source_->Stop();
-+  base::RunLoop().RunUntilIdle();
-+}
-+
-+// Parc: a resource read without ranges goes on loading in the old frame, and
-+// through the new frame's index, with what it loaded, once that load fails, as
-+// when the old frame goes.
-+TEST_F(MultiBufferDataSourceTest, ParcMovedLoadWithoutRangesGoesOnWhenItFails) {
-+  InitializeWith200Response();
-+  scoped_refptr<UrlData> old_url_data = url_data();
-+  NiceMock<MockResourceFetchContext> moved_fetch_context;
-+  TestUrlIndex moved_url_index(&moved_fetch_context, task_runner_);
-+  EXPECT_CALL(moved_fetch_context, CreateUrlLoader(_)).Times(0);
-+  data_source_->ParcMoveToUrlIndex(moved_url_index);
-+  base::RunLoop().RunUntilIdle();
-+  EXPECT_EQ(old_url_data, url_data());
-+  testing::Mock::VerifyAndClearExpectations(&moved_fetch_context);
-+
-+  EXPECT_CALL(moved_fetch_context, CreateUrlLoader(_))
-+      .Times(testing::AtLeast(1))
-+      .WillRepeatedly([](const WebAssociatedURLLoaderOptions&) {
-+        return std::make_unique<NiceMock<MockWebAssociatedURLLoader>>();
-+      });
-+  old_url_data->Fail();
-+  base::RunLoop().RunUntilIdle();
-+  EXPECT_EQ(moved_url_index.last_url_data(), url_data());
-+  EXPECT_TRUE(url_data()->multibuffer()->Contains(0));
-+  EXPECT_FALSE(url_data()->range_supported());
-+
-+  data_source_->Stop();
-+  base::RunLoop().RunUntilIdle();
-+}
-+
- TEST_F(MultiBufferDataSourceTest, Range_Supported) {
-   InitializeWith206Response();
--
-+
-@@ -734,6 +792,60 @@
-   Stop();
- }
--
-+
-+// Parc: a casting player's source keeps its loads running in a frozen frame
-+// (UrlData::ParcSetCasting()).
-+TEST_F(MultiBufferDataSourceTest, ParcCastingSourceLoadsRunWhileFrozen) {
-+  InitializeWith206Response();
-+  auto* loader = static_cast<MockWebAssociatedURLLoader*>(active_loader());
-+  EXPECT_CALL(*loader, ParcSetRunsWhileFrozen(true));
-+  data_source_->ParcSetCasting(true);
-+  testing::Mock::VerifyAndClearExpectations(loader);
-+
-+  // A load started while casting runs while frozen from its start.
-+  EXPECT_CALL(fetch_context_, CreateUrlLoader(_))
-+      .WillOnce([](const WebAssociatedURLLoaderOptions&) {
-+        auto new_loader =
-+            std::make_unique<NiceMock<MockWebAssociatedURLLoader>>();
-+        InSequence sequence;
-+        EXPECT_CALL(*new_loader, ParcSetRunsWhileFrozen(true));
-+        EXPECT_CALL(*new_loader, LoadAsynchronously(_, _));
-+        return new_loader;
-+      })
-+      .RetiresOnSaturation();
-+  EXPECT_CALL(*this, ReadCallback(kDataSize));
-+  ReadAt(0);
-+  ReadAt(kDataSize);
-+  FinishLoading();
-+  Start();
-+
-+  loader = static_cast<MockWebAssociatedURLLoader*>(active_loader());
-+  EXPECT_CALL(*loader, ParcSetRunsWhileFrozen(false));
-+  data_source_->ParcSetCasting(false);
-+  testing::Mock::VerifyAndClearExpectations(loader);
-+
-+  Respond(response_generator_->Generate206(kDataSize));
-+  EXPECT_CALL(*this, ReadCallback(kDataSize));
-+  EXPECT_CALL(host_, AddBufferedByteRange(0, kDataSize * 2));
-+  ReceiveData(kDataSize);
-+  Stop();
-+}
-+
-+// A source that isn't casting leaves its loads to its frame's freezing.
-+TEST_F(MultiBufferDataSourceTest, ParcSourceNotCastingLeavesLoadsFrozen) {
-+  EXPECT_CALL(fetch_context_, CreateUrlLoader(_))
-+      .WillOnce([](const WebAssociatedURLLoaderOptions&) {
-+        auto new_loader =
-+            std::make_unique<NiceMock<MockWebAssociatedURLLoader>>();
-+        EXPECT_CALL(*new_loader, ParcSetRunsWhileFrozen(_)).Times(0);
-+        return new_loader;
-+      })
-+      .RetiresOnSaturation();
-+  InitializeWith206Response();
-+  EXPECT_CALL(*this, ReadCallback(kDataSize));
-+  ReadAt(0);
-+  Stop();
-+}
-+
- TEST_F(MultiBufferDataSourceTest, Http_RetryOnError) {
-   InitializeWith206Response();
--
-+
-@@ -2204,6 +2316,52 @@
-   EXPECT_TRUE(redirect_called);
- }
--
-+
-+// Parc: the sources of Chromium's HLS player follow their factory's casting,
-+// those it made before included.
-+TEST_F(MultiBufferDataSourceTest, ParcFactorySourcesLoadForCast) {
-+  MultiBufferDataSource::Factory factory(
-+      std::make_unique<NiceMock<media::MockMediaLog>>(),
-+      base::BindRepeating(
-+          [](UrlIndex* url_index, const GURL& url,
-+             media::DataSource::CacheMode cache_mode,
-+             media::DataSource::EncodingMode encoding_mode,
-+             base::OnceCallback<void(scoped_refptr<UrlData>)> cb) {
-+            std::move(cb).Run(
-+                url_index->GetByUrl(KURL(url), UrlData::CORS_UNSPECIFIED,
-+                                    UrlData::kNormal, encoding_mode));
-+          },
-+          base::Unretained(&url_index_)),
-+      /*is_audio_element=*/false,
-+      /*preload=*/media::DataSource::AUTO, base::DoNothing(), nullptr,
-+      task_runner_);
-+  auto create = [&factory](const char* url) {
-+    std::unique_ptr<media::CrossOriginDataSource> created_source;
-+    factory.Create(
-+        GURL(url), media::DataSource::CacheMode::kHitCache,
-+        media::DataSource::EncodingMode::kIdentity,
-+        base::BindLambdaForTesting(
-+            [&](std::unique_ptr<media::CrossOriginDataSource> source) {
-+              created_source = std::move(source);
-+            }));
-+    base::RunLoop().RunUntilIdle();
-+    return created_source;
-+  };
-+
-+  auto before = create(kHttpUrl);
-+  auto* before_source = static_cast<MultiBufferDataSource*>(before.get());
-+  EXPECT_FALSE(LoadsForCast(before_source));
-+
-+  factory.ParcSetCasting(true);
-+  EXPECT_TRUE(LoadsForCast(before_source));
-+  auto during = create(kHttpDifferentPathUrl);
-+  auto* during_source = static_cast<MultiBufferDataSource*>(during.get());
-+  EXPECT_TRUE(LoadsForCast(during_source));
-+
-+  before.reset();
-+  factory.ParcSetCasting(false);
-+  EXPECT_FALSE(LoadsForCast(during_source));
-+}
-+
- TEST_F(MultiBufferDataSourceTest, FactoryCreationDefault) {
-   auto media_log = std::make_unique<NiceMock<media::MockMediaLog>>();
-   MultiBufferDataSource::Factory factory(
 --- a/third_party/blink/renderer/modules/presentation/presentation_controller.h
 +++ b/third_party/blink/renderer/modules/presentation/presentation_controller.h
 @@ -68,6 +68,14 @@
@@ -18064,6 +17885,15 @@
 +
    // WebAssociatedURLLoaderClient implementation.
    bool WillFollowRedirect(const WebURL& new_url,
+@@ -69,6 +70,7 @@
+   // Use protected instead of private for testing purposes.
+  protected:
+   friend class MultiBufferDataSourceTest;
++  friend class ParcMultiBufferDataSourceTest;
+   friend class ResourceMultiBufferDataProviderTest;
+-
++
+   // Callback used when we're asked to fetch data after the end of the file.
 --- a/third_party/blink/renderer/platform/media/resource_multi_buffer_data_provider.cc
 +++ b/third_party/blink/renderer/platform/media/resource_multi_buffer_data_provider.cc
 @@ -146,6 +146,9 @@
@@ -18771,3 +18601,15 @@
      "picture_in_picture_events_info.cc",
      "picture_in_picture_events_info.h",
      "pipeline.h",
+--- a/third_party/blink/renderer/platform/media/multi_buffer_reader.h
++++ b/third_party/blink/renderer/platform/media/multi_buffer_reader.h
+@@ -111,6 +111,7 @@
+-
++
+  private:
+   friend class MultiBufferDataSourceTest;
++  friend class ParcMultiBufferDataSourceTest;
+-
++
+   // Returns the block for a particular byte position.
+   MultiBufferBlockId block(int64_t byte_pos) const {
