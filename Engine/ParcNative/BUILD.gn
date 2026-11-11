@@ -350,6 +350,29 @@ source_set("native_extensions") {
 
 # The production native bridge and genuine-controller unit tests share this exact
 # implementation. It has no //parc:browser dependency or startup-private include.
+# Close and transfer transactions behind UnloadController's hooks, shared by
+# retirement, transfer and their tests.
+source_set("unload_transactions") {
+  public = [ "unload_transactions.h" ]
+  sources = [
+    "unload_transactions.cc",
+    "unload_transactions.h",
+  ]
+  public_deps = [ "//base" ]
+  deps = [
+    "//chrome/browser/devtools",
+    "//chrome/browser/tab_contents",
+    "//chrome/browser/ui:unload_controller",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/browser/ui/web_applications",
+    "//components/performance_manager",
+    "//components/tabs:public",
+    "//content/public/browser",
+    "//ui/base",
+  ]
+}
+
 source_set("tab_retirement") {
   public = [ "tab_retirement.h" ]
   sources = [
@@ -358,6 +381,7 @@ source_set("tab_retirement") {
   ]
   public_deps = [ "//base" ]
   deps = [
+    ":unload_transactions",
     "//chrome/browser/ui:unload_controller",
     "//chrome/browser/ui:unload_controller_impl",
     "//chrome/browser/ui/browser_window",
@@ -410,6 +434,7 @@ source_set("tab_transfer") {
   ]
   public_deps = [ "//base" ]
   deps = [
+    ":unload_transactions",
     "//chrome/browser/ui:unload_controller",
     "//chrome/browser/ui:unload_controller_impl",
     "//chrome/browser/ui/browser_window",

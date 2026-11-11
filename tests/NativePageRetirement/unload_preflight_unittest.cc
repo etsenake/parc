@@ -19,9 +19,52 @@
 #include "content/public/test/web_contents_tester.h"
 #include "tab_retirement.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "unload_transactions.h"
+
+namespace parc_hooks {
+void SetUnloadControllerLifetime(void (*)(UnloadController&,
+                                          BrowserWindowInterface&,
+                                          base::RepeatingCallback<bool()>,
+                                          parc::UnloadEventsRunner),
+                                 void (*)(UnloadController&));
+void SetUnloadControllerTabEvents(
+    void (*)(UnloadController&, content::WebContents*),
+    void (*)(UnloadController&, content::WebContents*),
+    void (*)(UnloadController&, content::WebContents*),
+    bool (*)(UnloadController&));
+void SetUnloadControllerCloseGates(bool (*)(const UnloadController&),
+                                   bool (*)(const UnloadController&),
+                                   bool (*)(const UnloadController&));
+void SetUnloadControllerPageGates(
+    bool (*)(const UnloadController&, content::WebContents*),
+    std::optional<bool> (*)(const UnloadController&, content::WebContents*),
+    bool (*)(content::WebContents*),
+    bool (*)(UnloadController&, content::WebContents*, bool));
+}  // namespace parc_hooks
 
 namespace parc {
 namespace {
+// The hooks ParcMainDelegate installs, set before any test Browser exists.
+void InstallUnloadTransactions(bool install) {
+  parc_hooks::SetUnloadControllerLifetime(
+      install ? &OnUnloadControllerCreated : nullptr,
+      install ? &OnUnloadControllerDestroyed : nullptr);
+  parc_hooks::SetUnloadControllerTabEvents(
+      install ? &OnUnloadControllerTabAttached : nullptr,
+      install ? &OnUnloadControllerTabDetached : nullptr,
+      install ? &OnUnloadControllerRenderProcessGone : nullptr,
+      install ? &AbsorbsTabStripEmpty : nullptr);
+  parc_hooks::SetUnloadControllerCloseGates(
+      install ? &BlocksWindowClose : nullptr,
+      install ? &HoldsClosingStatus : nullptr,
+      install ? &BlocksShutdownBeforeUnload : nullptr);
+  parc_hooks::SetUnloadControllerPageGates(
+      install ? &HoldsContents : nullptr,
+      install ? &UnloadEventsResult : nullptr,
+      install ? &HasTabCloseReply : nullptr,
+      install ? &ConsumesBeforeUnloadReply : nullptr);
+}
+
 class Confirmations final : public UnloadController::TabUnloadHandler {
  public:
   bool ShouldSkipBeforeUnload(content::WebContents*) override { return false; }
@@ -56,6 +99,7 @@ class Confirmations final : public UnloadController::TabUnloadHandler {
 class NativePageRetirementTest : public BrowserWithTestWindowTest {
  protected:
   void SetUp() override {
+    InstallUnloadTransactions(true);
     BrowserWithTestWindowTest::SetUp();
     a_ = Append();
     b_ = Append();
@@ -67,13 +111,14 @@ class NativePageRetirementTest : public BrowserWithTestWindowTest {
   }
   void TearDown() override {
     if (token_) {
-      controller()->ReleaseTabClosePreflight(*token_);
+      ReleaseTabClosePreflight(*controller(), *token_);
     }
     handler_->selected.clear();
     handler_->callbacks.clear();
     base::RunLoop().RunUntilIdle();
     BrowserWithTestWindowTest::TearDown();
     base::RunLoop().RunUntilIdle();
+    InstallUnloadTransactions(false);
   }
   content::WebContents* Append() {
     auto contents =
@@ -84,11 +129,11 @@ class NativePageRetirementTest : public BrowserWithTestWindowTest {
   }
   UnloadController* controller() { return UnloadController::From(browser()); }
   void Begin() {
-    token_ = controller()->ReserveTabClosePreflight(
+    token_ = ReserveTabClosePreflight(*controller(),
         {a_, b_}, base::BindLambdaForTesting(
                       [this](bool allow) { results_.push_back(allow); }));
     ASSERT_TRUE(token_);
-    ASSERT_TRUE(controller()->RunTabClosePreflight(*token_));
+    ASSERT_TRUE(RunTabClosePreflight(*controller(), *token_));
     EXPECT_TRUE(results_.empty());
     base::RunLoop().RunUntilIdle();
   }
@@ -97,7 +142,7 @@ class NativePageRetirementTest : public BrowserWithTestWindowTest {
   raw_ptr<content::WebContents> b_ = nullptr;
   raw_ptr<content::WebContents> untouched_ = nullptr;
   raw_ptr<Confirmations> handler_ = nullptr;
-  std::optional<UnloadController::TabCloseToken> token_;
+  std::optional<TabCloseToken> token_;
   std::vector<bool> results_;
 };
 
@@ -112,7 +157,7 @@ TEST_F(NativePageRetirementTest, LaterStayPreservesEarlierApprovedLivePage) {
   EXPECT_EQ(Count(), 3);
   EXPECT_EQ(browser()->GetTabStripModel()->GetWebContentsAt(0), a_);
   EXPECT_EQ(browser()->GetTabStripModel()->GetWebContentsAt(1), b_);
-  EXPECT_FALSE(controller()->HasTabClosePreflight());
+  EXPECT_FALSE(HasTabClosePreflight(*controller()));
 }
 
 TEST_F(NativePageRetirementTest, EveryApprovalPrecedesPostedActualUnload) {
@@ -123,8 +168,8 @@ TEST_F(NativePageRetirementTest, EveryApprovalPrecedesPostedActualUnload) {
   handler_->Reply(b_, true);
   ASSERT_EQ(results_, std::vector<bool>({true}));
   EXPECT_EQ(Count(), 3);
-  ASSERT_TRUE(controller()->IsTabClosePreflightReady(*token_));
-  ASSERT_TRUE(controller()->CommitTabClosePreflight(*token_));
+  ASSERT_TRUE(IsTabClosePreflightReady(*controller(), *token_));
+  ASSERT_TRUE(CommitTabClosePreflight(*controller(), *token_));
   EXPECT_EQ(Count(), 3);  // Commit must not run a renderer or native callback.
   // Blank TestWebContents have no renderer/unload handler; actual ClosePage
   // reaches Browser's genuine CloseContents/TabStripModel removal synchronously
@@ -142,16 +187,16 @@ TEST_F(NativePageRetirementTest, EveryApprovalPrecedesPostedActualUnload) {
 
 TEST_F(NativePageRetirementTest, LateCustomLeaveAfterCancellationCannotClose) {
   Begin();
-  controller()->ReleaseTabClosePreflight(*token_);
+  ReleaseTabClosePreflight(*controller(), *token_);
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(results_, std::vector<bool>({false}));
-  EXPECT_FALSE(controller()->ReserveTabClosePreflight(
+  EXPECT_FALSE(ReserveTabClosePreflight(*controller(),
       {a_, b_}, base::BindRepeating([](bool) {})));
   handler_->Reply(a_,
                   true);  // Old generation is consumed, never ordinary close.
   EXPECT_EQ(Count(), 3);
   EXPECT_EQ(results_.size(), 1u);
-  token_ = controller()->ReserveTabClosePreflight(
+  token_ = ReserveTabClosePreflight(*controller(),
       {a_, b_},
       base::BindLambdaForTesting([this](bool v) { results_.push_back(v); }));
   ASSERT_TRUE(token_);
@@ -164,7 +209,7 @@ TEST_F(NativePageRetirementTest, PreparedDocumentReplacementInvalidatesCommit) {
   NavigateAndCommit(a_, GURL("https://example.test/new-document"));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(results_, std::vector<bool>({true, false}));
-  EXPECT_FALSE(controller()->CommitTabClosePreflight(*token_));
+  EXPECT_FALSE(CommitTabClosePreflight(*controller(), *token_));
   EXPECT_EQ(Count(), 3);
 }
 
@@ -195,7 +240,7 @@ TEST_F(NativePageRetirementTest,
   EXPECT_TRUE(
       UnloadController::From(other.get())->RunUnloadEventsHelper(identity));
   EXPECT_FALSE(UnloadController::From(other.get())->CanCloseContents(identity));
-  EXPECT_TRUE(UnloadController::From(other.get())->HasTabClosePreflight());
+  EXPECT_TRUE(HasTabClosePreflight(*UnloadController::From(other.get())));
   EXPECT_FALSE(UnloadController::From(other.get())->HandleBeforeClose());
   EXPECT_FALSE(
       UnloadController::From(other.get())->BeforeUnloadFired(identity, true));
@@ -211,16 +256,16 @@ TEST_F(NativePageRetirementTest,
 
 TEST_F(NativePageRetirementTest, NewDocumentRetiresCancelledReplyReservation) {
   Begin();
-  controller()->ReleaseTabClosePreflight(*token_);
+  ReleaseTabClosePreflight(*controller(), *token_);
   NavigateAndCommit(a_, GURL("https://example.test/after-cancel"));
   base::RunLoop().RunUntilIdle();
-  EXPECT_FALSE(controller()->HasTabClosePreflight());
-  auto fresh = controller()->ReserveTabClosePreflight(
+  EXPECT_FALSE(HasTabClosePreflight(*controller()));
+  auto fresh = ReserveTabClosePreflight(*controller(),
       {a_}, base::BindRepeating([](bool) {}));
   ASSERT_TRUE(fresh);
   handler_->Reply(a_, true);  // Old custom callback cannot approve fresh token.
-  EXPECT_FALSE(controller()->IsTabClosePreflightReady(*fresh));
-  controller()->ReleaseTabClosePreflight(*fresh);
+  EXPECT_FALSE(IsTabClosePreflightReady(*controller(), *fresh));
+  ReleaseTabClosePreflight(*controller(), *fresh);
 }
 
 TEST_F(NativePageRetirementTest,
@@ -235,19 +280,19 @@ TEST_F(NativePageRetirementTest,
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(results_, std::vector<bool>({false}));
   EXPECT_TRUE(a_->IsCrashed());
-  EXPECT_FALSE(controller()->HasTabClosePreflight());
+  EXPECT_FALSE(HasTabClosePreflight(*controller()));
   NavigateAndCommit(a_, GURL("https://example.test/recovered"));
-  token_ = controller()->ReserveTabClosePreflight(
+  token_ = ReserveTabClosePreflight(*controller(),
       {a_}, base::BindLambdaForTesting(
                 [this](bool allow) { results_.push_back(allow); }));
   ASSERT_TRUE(token_);
-  ASSERT_TRUE(controller()->RunTabClosePreflight(*token_));
+  ASSERT_TRUE(RunTabClosePreflight(*controller(), *token_));
   base::RunLoop().RunUntilIdle();
   std::move(stale).Run(true);
-  EXPECT_FALSE(controller()->IsTabClosePreflightReady(*token_));
+  EXPECT_FALSE(IsTabClosePreflightReady(*controller(), *token_));
   handler_->Reply(a_, true);
   EXPECT_EQ(results_, std::vector<bool>({false, true}));
-  EXPECT_TRUE(controller()->IsTabClosePreflightReady(*token_));
+  EXPECT_TRUE(IsTabClosePreflightReady(*controller(), *token_));
   EXPECT_EQ(Count(), 3);
 }
 
@@ -268,13 +313,13 @@ TEST_F(NativePageRetirementTest, WindowCloseCannotReplaceSubsetCallback) {
 }
 
 TEST_F(NativePageRetirementTest, DuplicateOrNonmemberTargetsAreRejected) {
-  EXPECT_FALSE(controller()->ReserveTabClosePreflight(
+  EXPECT_FALSE(ReserveTabClosePreflight(*controller(),
       {a_, a_}, base::BindRepeating([](bool) {})));
   auto outside =
       content::WebContentsTester::CreateTestWebContents(profile(), nullptr);
-  EXPECT_FALSE(controller()->ReserveTabClosePreflight(
+  EXPECT_FALSE(ReserveTabClosePreflight(*controller(),
       {a_, outside.get()}, base::BindRepeating([](bool) {})));
-  EXPECT_FALSE(controller()->ReserveTabClosePreflight(
+  EXPECT_FALSE(ReserveTabClosePreflight(*controller(),
       {nullptr}, base::BindRepeating([](bool) {})));
   EXPECT_EQ(Count(), 3);
 }
@@ -286,17 +331,17 @@ TEST_F(NativePageRetirementTest,
   EXPECT_EQ(handler_->shows, 2);
   EXPECT_EQ(results_, std::vector<bool>({true}));
   EXPECT_EQ(Count(), 3);
-  controller()->ReleaseTabClosePreflight(*token_);
+  ReleaseTabClosePreflight(*controller(), *token_);
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(results_, std::vector<bool>({true, false}));
 }
 
 TEST_F(NativePageRetirementTest, OtherPageIsNotRequestedOrDestroyed) {
-  token_ = controller()->ReserveTabClosePreflight(
+  token_ = ReserveTabClosePreflight(*controller(),
       {a_}, base::BindLambdaForTesting(
                 [this](bool allow) { results_.push_back(allow); }));
   ASSERT_TRUE(token_);
-  ASSERT_TRUE(controller()->RunTabClosePreflight(*token_));
+  ASSERT_TRUE(RunTabClosePreflight(*controller(), *token_));
   base::RunLoop().RunUntilIdle();
   handler_->Reply(a_, true);
   EXPECT_EQ(handler_->shows, 1);
@@ -326,7 +371,7 @@ TEST_F(NativePageRetirementTest, CommittedReplacementIsNeverClosed) {
   Begin();
   handler_->Reply(a_, true);
   handler_->Reply(b_, true);
-  ASSERT_TRUE(controller()->CommitTabClosePreflight(*token_));
+  ASSERT_TRUE(CommitTabClosePreflight(*controller(), *token_));
   NavigateAndCommit(a_, GURL("https://example.test/after-commit"));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(results_, std::vector<bool>({true, false}));
@@ -338,7 +383,7 @@ TEST_F(NativePageRetirementTest,
   Begin();
   handler_->Reply(a_, true);
   handler_->Reply(b_, true);
-  ASSERT_TRUE(controller()->CommitTabClosePreflight(*token_));
+  ASSERT_TRUE(CommitTabClosePreflight(*controller(), *token_));
   auto moved =
       browser()->GetTabStripModel()->DetachWebContentsAtForInsertion(0);
   base::RunLoop().RunUntilIdle();

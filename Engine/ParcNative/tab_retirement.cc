@@ -19,6 +19,7 @@
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "unload_transactions.h"
 
 namespace parc {
 namespace {
@@ -92,7 +93,7 @@ class TabRetirement final : public std::enable_shared_from_this<TabRetirement> {
   struct Group {
     base::WeakPtr<BrowserWindowInterface> browser;
     std::vector<base::WeakPtr<content::WebContents>> pages;
-    std::optional<UnloadController::TabCloseToken> token;
+    std::optional<TabCloseToken> token;
     bool warned = false;
     bool started = false;
     bool ready = false;
@@ -126,7 +127,7 @@ class TabRetirement final : public std::enable_shared_from_this<TabRetirement> {
       }
       auto* controller = UnloadController::From(identity);
       if (controller->is_attempting_to_close_browser() ||
-          controller->HasTabClosePreflight() ||
+          HasTabClosePreflight(*controller) ||
           controller->GetBrowserClosingStatus() ==
               BrowserWindowInterface::ClosingStatus::kDeniedByPolicy) {
         Finish(false);
@@ -179,9 +180,10 @@ class TabRetirement final : public std::enable_shared_from_this<TabRetirement> {
       for (auto contents : group.pages) {
         targets.push_back(contents.get());
       }
-      group.token = UnloadController::From(identity)->ReserveTabClosePreflight(
-          targets, base::BindRepeating(&TabRetirement::Prepared,
-                                       weak_factory_.GetWeakPtr(), identity));
+      group.token = ReserveTabClosePreflight(
+          *UnloadController::From(identity), targets,
+          base::BindRepeating(&TabRetirement::Prepared,
+                              weak_factory_.GetWeakPtr(), identity));
       if (!group.token) {
         Finish(false);
         return;
@@ -197,8 +199,8 @@ class TabRetirement final : public std::enable_shared_from_this<TabRetirement> {
       if (!group.started) {
         group.started = true;
         if (!group.browser ||
-            !UnloadController::From(identity)->RunTabClosePreflight(
-                *group.token)) {
+            !RunTabClosePreflight(*UnloadController::From(identity),
+                                  *group.token)) {
           Finish(false);
         }
       }
@@ -226,8 +228,8 @@ class TabRetirement final : public std::enable_shared_from_this<TabRetirement> {
         RunNextGroup();
         return;
       }
-      if (!UnloadController::From(browser)->IsTabClosePreflightReady(
-              *group.token)) {
+      if (!IsTabClosePreflightReady(*UnloadController::From(browser),
+                                    *group.token)) {
         Finish(false);
         return;
       }
@@ -242,8 +244,8 @@ class TabRetirement final : public std::enable_shared_from_this<TabRetirement> {
     }
     for (const auto& [browser, group] : groups_) {
       if (!group.browser ||
-          !UnloadController::From(browser)->IsTabClosePreflightReady(
-              *group.token)) {
+          !IsTabClosePreflightReady(*UnloadController::From(browser),
+                                    *group.token)) {
         Finish(false);
         return;
       }
@@ -253,8 +255,8 @@ class TabRetirement final : public std::enable_shared_from_this<TabRetirement> {
     // therefore cannot cause a destructive partial transaction.
     committed_ = true;
     for (const auto& [browser, group] : groups_) {
-      CHECK(UnloadController::From(browser)->CommitTabClosePreflight(
-          *group.token));
+      CHECK(CommitTabClosePreflight(*UnloadController::From(browser),
+                                    *group.token));
     }
   }
   void Destroyed(content::WebContents* contents) {
@@ -275,8 +277,8 @@ class TabRetirement final : public std::enable_shared_from_this<TabRetirement> {
     weak_factory_.InvalidateWeakPtrs();
     for (auto& [identity, group] : groups_) {
       if (group.browser && group.token) {
-        UnloadController::From(identity)->ReleaseTabClosePreflight(
-            *group.token);
+        ReleaseTabClosePreflight(*UnloadController::From(identity),
+                                 *group.token);
       }
     }
     auto callback = std::move(completion_);

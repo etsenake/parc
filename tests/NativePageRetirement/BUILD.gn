@@ -10,6 +10,7 @@ source_set("unit_tests") {
     "//base",
     "//base/test:test_support",
     "//parc/native:tab_retirement",
+    "//parc/native:unload_transactions",
     "//chrome/browser/ui:unload_controller",
     "//chrome/browser/ui:unload_controller_impl",
     "//chrome/browser/ui/tabs:tab_strip",

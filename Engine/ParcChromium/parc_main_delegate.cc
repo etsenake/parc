@@ -25,6 +25,7 @@
 #include "parc/native/native_appkit_host.h"
 #include "parc/native/native_browser.h"
 #include "parc/native/native_profile_policy.h"
+#include "parc/native/unload_transactions.h"
 #include "chrome/utility/chrome_content_utility_client.h"
 #include "mojo/public/cpp/bindings/service_factory.h"
 #include "parc/importer/import_service.h"
@@ -85,6 +86,16 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
       &NativeBrowser::ColorProviderSource, &CreateAppKitFocusController,
       &CreateAppKitDevtoolsController,
       &NativeBrowser::CreateWebContentsDelegate);
+  parc_hooks::SetUnloadControllerLifetime(&OnUnloadControllerCreated,
+                                          &OnUnloadControllerDestroyed);
+  parc_hooks::SetUnloadControllerTabEvents(
+      &OnUnloadControllerTabAttached, &OnUnloadControllerTabDetached,
+      &OnUnloadControllerRenderProcessGone, &AbsorbsTabStripEmpty);
+  parc_hooks::SetUnloadControllerCloseGates(
+      &BlocksWindowClose, &HoldsClosingStatus, &BlocksShutdownBeforeUnload);
+  parc_hooks::SetUnloadControllerPageGates(&HoldsContents, &UnloadEventsResult,
+                                           &HasTabCloseReply,
+                                           &ConsumesBeforeUnloadReply);
   parc_hooks::SetGaiaAccountsPolicy(&NativeGaiaAccountsAllowed);
   parc_hooks::SetSessionRestorePolicy(&RestoreNativeSessionState);
   parc_hooks::SetRegisterProfilePrefs(&RegisterNativeProfilePrefs);

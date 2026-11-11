@@ -277,6 +277,34 @@ void SetNativeBrowserWindowFeatures(
         BrowserWindowInterface&),
     NativeWebContentsDelegateFactory web_contents_delegate);
 
+// chrome/browser/ui/unload_controller.cc. Parc's close and transfer
+// transactions: the controller's lifetime, with its private unclosable-app
+// policy and beforeunload runner; its tab-strip and renderer events; and the
+// gates where those transactions refuse or consume Chromium's close paths.
+using UnloadEventsRunner = base::RepeatingCallback<
+    bool(content::WebContents*, base::OnceCallback<void(bool)>)>;
+void SetUnloadControllerLifetime(
+    void (*created)(UnloadController&,
+                    BrowserWindowInterface&,
+                    base::RepeatingCallback<bool()>,
+                    UnloadEventsRunner),
+    void (*destroyed)(UnloadController&));
+void SetUnloadControllerTabEvents(
+    void (*attached)(UnloadController&, content::WebContents*),
+    void (*detached)(UnloadController&, content::WebContents*),
+    void (*render_process_gone)(UnloadController&, content::WebContents*),
+    bool (*absorbs_tab_strip_empty)(UnloadController&));
+void SetUnloadControllerCloseGates(
+    bool (*blocks_window_close)(const UnloadController&),
+    bool (*holds_closing_status)(const UnloadController&),
+    bool (*blocks_shutdown)(const UnloadController&));
+void SetUnloadControllerPageGates(
+    bool (*holds_contents)(const UnloadController&, content::WebContents*),
+    std::optional<bool> (*events_result)(const UnloadController&,
+                                         content::WebContents*),
+    bool (*has_reply)(content::WebContents*),
+    bool (*consumes_reply)(UnloadController&, content::WebContents*, bool));
+
 }  // namespace parc_hooks
 
 #endif  // PARC_CHROMIUM_HOOKS_H_

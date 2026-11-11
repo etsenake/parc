@@ -23,12 +23,56 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/web_contents_tester.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "unload_transactions.h"
+
+namespace parc_hooks {
+void SetUnloadControllerLifetime(void (*)(UnloadController&,
+                                          BrowserWindowInterface&,
+                                          base::RepeatingCallback<bool()>,
+                                          parc::UnloadEventsRunner),
+                                 void (*)(UnloadController&));
+void SetUnloadControllerTabEvents(
+    void (*)(UnloadController&, content::WebContents*),
+    void (*)(UnloadController&, content::WebContents*),
+    void (*)(UnloadController&, content::WebContents*),
+    bool (*)(UnloadController&));
+void SetUnloadControllerCloseGates(bool (*)(const UnloadController&),
+                                   bool (*)(const UnloadController&),
+                                   bool (*)(const UnloadController&));
+void SetUnloadControllerPageGates(
+    bool (*)(const UnloadController&, content::WebContents*),
+    std::optional<bool> (*)(const UnloadController&, content::WebContents*),
+    bool (*)(content::WebContents*),
+    bool (*)(UnloadController&, content::WebContents*, bool));
+}  // namespace parc_hooks
 
 namespace parc {
 namespace {
+// The hooks ParcMainDelegate installs, set before any test Browser exists.
+void InstallUnloadTransactions(bool install) {
+  parc_hooks::SetUnloadControllerLifetime(
+      install ? &OnUnloadControllerCreated : nullptr,
+      install ? &OnUnloadControllerDestroyed : nullptr);
+  parc_hooks::SetUnloadControllerTabEvents(
+      install ? &OnUnloadControllerTabAttached : nullptr,
+      install ? &OnUnloadControllerTabDetached : nullptr,
+      install ? &OnUnloadControllerRenderProcessGone : nullptr,
+      install ? &AbsorbsTabStripEmpty : nullptr);
+  parc_hooks::SetUnloadControllerCloseGates(
+      install ? &BlocksWindowClose : nullptr,
+      install ? &HoldsClosingStatus : nullptr,
+      install ? &BlocksShutdownBeforeUnload : nullptr);
+  parc_hooks::SetUnloadControllerPageGates(
+      install ? &HoldsContents : nullptr,
+      install ? &UnloadEventsResult : nullptr,
+      install ? &HasTabCloseReply : nullptr,
+      install ? &ConsumesBeforeUnloadReply : nullptr);
+}
+
 class NativeTabTransferTest : public BrowserWithTestWindowTest {
  protected:
   void SetUp() override {
+    InstallUnloadTransactions(true);
     BrowserWithTestWindowTest::SetUp();
     destination_ =
         CreateBrowser(profile(), BrowserWindowInterface::TYPE_NORMAL, false);
@@ -43,6 +87,7 @@ class NativeTabTransferTest : public BrowserWithTestWindowTest {
     base::RunLoop().RunUntilIdle();
     BrowserWithTestWindowTest::TearDown();
     base::RunLoop().RunUntilIdle();
+    InstallUnloadTransactions(false);
   }
   content::WebContents* Append(BrowserWindowInterface* browser) {
     auto page = content::WebContentsTester::CreateTestWebContents(
@@ -87,9 +132,9 @@ TEST_F(NativeTabTransferTest,
   auto* window = static_cast<TestBrowserWindow*>(destination_->GetWindow());
   ASSERT_FALSE(window->IsClosed());
   auto* controller = UnloadController::From(destination_.get());
-  auto token = controller->ReserveTabTransfer();
+  auto token = ReserveTabTransfer(*controller);
   ASSERT_TRUE(token);
-  controller->ReleaseTabTransfer(*token);
+  ReleaseTabTransfer(*controller, *token);
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(window->IsClosed());
   EXPECT_TRUE(destination_->GetTabStripModel()->empty());
@@ -154,10 +199,10 @@ TEST_F(NativeTabTransferTest, RollbackPreservesPreexistingEmptyDestination) {
       ->SetCloseCallback(base::BindLambdaForTesting([&] { ++closes; }));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(closes, 0);
-  auto token = UnloadController::From(destination_.get())->ReserveTabTransfer();
+  auto token = ReserveTabTransfer(*UnloadController::From(destination_.get()));
   ASSERT_TRUE(token);
   EXPECT_FALSE(
-      UnloadController::From(destination_.get())->ReleaseTabTransfer(*token));
+      ReleaseTabTransfer(*UnloadController::From(destination_.get()), *token));
 }
 
 TEST_F(NativeTabTransferTest, FailedSourceReattachmentReportsInterruption) {
@@ -246,9 +291,9 @@ TEST_F(NativeTabTransferTest,
   EXPECT_EQ(presented_, std::vector<BrowserWindowInterface*>(
                             {destination_.get(), browser()}));
   // A premature TabStripEmpty close would leave the real controller past Idle.
-  auto token = UnloadController::From(browser())->ReserveTabTransfer();
+  auto token = ReserveTabTransfer(*UnloadController::From(browser()));
   ASSERT_TRUE(token);
-  UnloadController::From(browser())->ReleaseTabTransfer(*token);
+  ReleaseTabTransfer(*UnloadController::From(browser()), *token);
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(browser()->GetTabStripModel()->GetActiveWebContents(), page_);
 }
@@ -365,13 +410,13 @@ TEST_F(NativeTabTransferTest, FailedAttachmentRestoresSourceOpenerGraph) {
 
 TEST_F(NativeTabTransferTest, PendingBeforeUnloadReservationRefusesTransfer) {
   auto* controller = UnloadController::From(browser());
-  auto token = controller->ReserveTabClosePreflight(
+  auto token = ReserveTabClosePreflight(*controller,
       {page_}, base::BindRepeating([](bool) {}));
   ASSERT_TRUE(token);
   EXPECT_EQ(Move(), TabTransferResult::kRefused);
   EXPECT_TRUE(presented_.empty());
   EXPECT_EQ(browser()->GetTabStripModel()->GetTabAtIndex(0), tab_);
-  controller->ReleaseTabClosePreflight(*token);
+  ReleaseTabClosePreflight(*controller, *token);
 }
 
 TEST_F(NativeTabTransferTest, HoldRejectsCompetingCloseAndNestedTransfer) {
@@ -386,7 +431,7 @@ TEST_F(NativeTabTransferTest, HoldRejectsCompetingCloseAndNestedTransfer) {
                   EXPECT_FALSE(UnloadController::From(&owner)->CanCloseContents(
                       &actual));
                   EXPECT_FALSE(
-                      UnloadController::From(&owner)->ReserveTabClosePreflight(
+                      ReserveTabClosePreflight(*UnloadController::From(&owner),
                           {&actual}, base::BindRepeating([](bool) {})));
                   EXPECT_EQ(TransferLiveTab(
                                 actual, *browser(),
@@ -432,8 +477,8 @@ TEST_F(NativeTabTransferTest, CollectionCommitsOnlyAfterAllOriginalPagesAttach) 
         EXPECT_TRUE(HasLiveTabTransfer());
         EXPECT_TRUE(IsLiveTabTransferTarget(original));
         EXPECT_TRUE(IsLiveTabTransferTarget(second));
-        EXPECT_FALSE(UnloadController::From(browser())->ReserveTabTransfer());
-        EXPECT_FALSE(UnloadController::From(destination_.get())->ReserveTabTransfer());
+        EXPECT_FALSE(ReserveTabTransfer(*UnloadController::From(browser())));
+        EXPECT_FALSE(ReserveTabTransfer(*UnloadController::From(destination_.get())));
         ++attached;
         return true;
       }), base::BindLambdaForTesting([&] {

@@ -20,6 +20,7 @@
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
+#include "unload_transactions.h"
 
 namespace parc {
 namespace {
@@ -48,12 +49,12 @@ class Reservation {
  public:
   Reservation(BrowserWindowInterface& browser, base::OnceClosure* close)
       : browser_(browser.GetWeakPtr()),
-        token_(UnloadController::From(&browser)->ReserveTabTransfer()),
+        token_(ReserveTabTransfer(*UnloadController::From(&browser))),
         close_(close) {}
   ~Reservation() {
     if (browser_ && token_) {
-      auto close =
-          UnloadController::From(browser_.get())->ReleaseTabTransfer(*token_);
+      auto close = ReleaseTabTransfer(*UnloadController::From(browser_.get()),
+                                      *token_);
       if (close_) {
         *close_ = std::move(close);
       }
@@ -65,7 +66,7 @@ class Reservation {
 
  private:
   base::WeakPtr<BrowserWindowInterface> browser_;
-  std::optional<UnloadController::TabCloseToken> token_;
+  std::optional<TabCloseToken> token_;
   base::OnceClosure* close_;
 };
 class ActiveTransfer {

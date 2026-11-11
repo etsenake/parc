@@ -247,6 +247,7 @@ source_set("browser") {
     "//parc/native:native_webauthn",
     "//parc/native:tab_retirement",
     "//parc/native:tab_transfer",
+    "//parc/native:unload_transactions",
 
     # FairPlay Streaming's CDM and key system registration.
     "//third_party/parc_fairplay:registration",
