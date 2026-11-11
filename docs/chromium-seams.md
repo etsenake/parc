@@ -382,6 +382,23 @@ route switch, document moves, casting while frozen and the readyState gates.
 They stay in Chromium's file because they read and change the player's
 private state in place, in an order Safari-identity pages depend on.
 
+HTMLMediaElement's Parc state and steps live in a Parc supplement that the
+element makes in its constructor, so it lasts exactly as long as the element.
+It is also the Parc side the player reaches through `ParcClient()`. The
+element's own algorithm still runs in Chromium's file: readyState changes,
+seeks and their completion, timeupdate scheduling, the load algorithm,
+document moves and the event queue are private, with no extension point, so
+each Safari-identity gate stays where it was as a one-line call into the
+supplement, in the same order. The element header keeps what the bindings and
+overrides need: the currentTime setter, `fastSeek()` and `getStartDate()`,
+whose place in the IDL fixes the prototype's member order; the identity
+check; the load algorithm's explicit-load flag; and a friend line. AirPlay's
+state still sits on the element. The video element's two Parc hooks became a
+type check, which is exact because HTMLVideoElement is final. The
+supplement's timeupdate throttle uses WebKit's 250 ms, which is also
+Chromium's progress-timer interval; if Chromium changes its interval, the
+Safari path keeps WebKit's.
+
 MediaCapabilities answers Safari-identity documents as WebKit's `decodingInfo`
 does. Its HEVC and Dolby Vision codec-string parsers, the video rules over
 VideoToolbox's facts and the shape of a finished result live in a Parc file

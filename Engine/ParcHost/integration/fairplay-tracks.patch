@@ -346,18 +346,20 @@
   private:
 --- a/third_party/blink/renderer/core/html/build.gni
 +++ b/third_party/blink/renderer/core/html/build.gni
-@@ -506,6 +506,10 @@
+@@ -506,6 +506,12 @@
    "media/html_media_element.h",
    "media/html_media_element_controls_list.cc",
    "media/html_media_element_controls_list.h",
 +  "media/parc_inband_text_track.cc",
 +  "media/parc_inband_text_track.h",
++  "media/parc_media_element.cc",
++  "media/parc_media_element.h",
 +  "media/parc_page_captions.cc",
 +  "media/parc_page_captions.h",
    "media/html_video_element.cc",
    "media/html_video_element.h",
    "media/lazy_load_media_observer.cc",
-@@ -564,6 +568,8 @@
+@@ -564,6 +570,8 @@
    "track/automatic_track_selection.h",
    "track/cue_timeline.cc",
    "track/cue_timeline.h",

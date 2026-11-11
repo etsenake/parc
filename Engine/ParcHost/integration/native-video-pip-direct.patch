@@ -602,7 +602,7 @@
  #include "media/mojo/mojom/media_player.mojom-blink.h"
  #include "mojo/public/cpp/bindings/pending_associated_remote.h"
  #include "mojo/public/cpp/bindings/pending_receiver.h"
-@@ -18,12 +20,22 @@
+@@ -18,12 +20,23 @@
  #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
@@ -618,6 +618,7 @@
 +#include "third_party/blink/renderer/core/html/html_div_element.h"
  #include "third_party/blink/renderer/core/html/media/html_media_test_helper.h"
  #include "third_party/blink/renderer/core/html/media/html_video_element.h"
++#include "third_party/blink/renderer/core/html/media/parc_media_element.h"
 +#include "third_party/blink/renderer/core/html/media/parc_page_captions.h"
 +#include "third_party/blink/renderer/core/html/media/parc_picture_in_picture_captions.h"
 +#include "third_party/blink/renderer/core/html/track/text_track.h"
@@ -625,7 +626,7 @@
  #include "third_party/blink/renderer/core/layout/layout_image.h"
  #include "third_party/blink/renderer/core/loader/empty_clients.h"
  #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
-@@ -140,6 +152,7 @@
+@@ -140,6 +153,7 @@
    MOCK_METHOD(void,
                UpdateMediaPosition,
                (media_session::mojom::blink::MediaPositionPtr));
@@ -634,8 +635,7 @@
 +
   private:
    mojo::Receiver<mojom::blink::PictureInPictureSession> receiver_;
-@@ -372,7 +385,554 @@
-   EXPECT_NE(nullptr, PictureInPictureControllerImpl::From(GetDocument())
+@@ -373,6 +387,553 @@
                           .PictureInPictureElement());
  }
 -
@@ -1012,9 +1012,9 @@
 +  test::RunPendingTasks();
 +  ASSERT_TRUE(Video()->TextTracksVisible());
 +  gfx::RectF cue_bounds;
-+  EXPECT_TRUE(Video()
-+                  ->PaintTextTracksForPictureInPicture(gfx::SizeF(640, 360), 1,
-+                                                       cue_bounds)
++  EXPECT_TRUE(ParcMediaElement::From(*Video())
++                  .PaintTextTracksForPictureInPicture(gfx::SizeF(640, 360), 1,
++                                                      cue_bounds)
 +                  .drawsNothing());
 +  Element& player = *Find("video-slot").parentElement();
 +  auto is_captions = [](const Element& shown) {

@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
+#include "third_party/blink/renderer/core/html/media/parc_media_element.h"
 #include "third_party/blink/renderer/core/script/classic_script.h"
 #include "third_party/blink/renderer/core/workers/worker_or_worklet_global_scope.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
@@ -64,7 +65,8 @@ void ParcPresentationMediaGesture(
   HTMLMediaElement* element =
       info.Length() ? V8HTMLMediaElement::ToWrappable(info.GetIsolate(), info[0])
                     : nullptr;
-  info.GetReturnValue().Set(element && element->ParcHadMediaUserGesture());
+  info.GetReturnValue().Set(
+      element && ParcMediaElement::From(*element).HadMediaUserGesture());
 }
 
 // allowPictureInPicture(video): lets the next picture-in-picture request go
@@ -77,7 +79,7 @@ void ParcPresentationAllowPictureInPicture(
   HTMLVideoElement* video =
       info.Length() ? V8HTMLVideoElement::ToWrappable(info.GetIsolate(), info[0])
                     : nullptr;
-  if (!video || !video->ParcHadMediaUserGesture()) {
+  if (!video || !ParcMediaElement::From(*video).HadMediaUserGesture()) {
     return;
   }
   PictureInPictureController& controller =
