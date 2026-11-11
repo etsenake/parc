@@ -16,8 +16,11 @@
 #include "ui/base/base_window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/strings/grit/ui_strings.h"
+#import "dialog_style.h"
 #include "native_page_tool_appearance.h"
 #include "window_security_reservation.h"
+
+using namespace parc_dialog;
 
 @interface PCNativeHostDecision : NSPanel <NSWindowDelegate>
 + (instancetype)showForWindow:(NSWindow*)window
@@ -60,9 +63,10 @@
     completion(NO);
     return nil;
   }
-  // TOOLS16: private-profile Clear Browsing Data uses this shared 430×180
-  // AppKit decision sheet. Profile Clear Browsing Data itself is Chromium
-  // WebUI; Settings DataActionButton chrome stays in SettingsCommandButton.
+  // TOOLS16: private-profile Clear Browsing Data uses this shared AppKit
+  // decision sheet, drawn as Parc's dialog. Profile Clear Browsing Data itself
+  // is Chromium WebUI; Settings DataActionButton chrome stays in
+  // SettingsCommandButton.
   PCNativeHostDecision* sheet = [[self alloc]
       initWithContentRect:NSMakeRect(0, 0, kPCPageToolPrivateDecisionWidth,
                                      kPCPageToolPrivateDecisionHeight)
@@ -79,28 +83,38 @@
   }
   sheet->_lease = sheet;
   sheet.title = title;
+  sheet.accessibilityLabel = title;
   sheet.releasedWhenClosed = NO;
-  NSTextField* label = [NSTextField wrappingLabelWithString:message];
-  label.frame = NSMakeRect(24, 70, 382, 80);
-  [sheet.contentView addSubview:label];
-  NSButton* cancel = [NSButton buttonWithTitle:dismiss
-                                        target:sheet
-                                        action:@selector(cancelOperation:)];
-  [cancel sizeToFit];
-  const CGFloat cancelWidth = std::max<CGFloat>(90, cancel.frame.size.width + 16);
+  PrepareSheet(sheet);
+  PCDialogBaseView* root = [[PCDialogBaseView alloc] initWithFrame:NSZeroRect];
+  CGFloat y = kInset;
+  NSRect markRect;
+  NSImage* mark = ParcMark(&markRect);
+  PCDialogPictureIcon* art = [[PCDialogPictureIcon alloc] initWithImage:mark
+                                                             imageRect:markRect];
+  [art setAccessibilityElement:NO];
+  art.frameOrigin = NSMakePoint(kInset, y);
+  [root addSubview:art];
+  y = AddHeading(root, title, message, y + kArtSize, 200) + 22;
+  // The Return button carries the primary face; when Cancel is the default,
+  // the accepting button has no key.
+  PCDialogButton* cancel = [[PCDialogButton alloc] initWithTitle:dismiss
+                                                         primary:!acceptDefault];
+  cancel.target = sheet;
+  cancel.action = @selector(cancelOperation:);
   cancel.keyEquivalent = acceptDefault ? @"\033" : @"\r";
-  NSButton* okay = [NSButton buttonWithTitle:accept
-                                      target:sheet
-                                      action:@selector(accept:)];
-  [okay sizeToFit];
-  const CGFloat acceptWidth = std::max<CGFloat>(105, okay.frame.size.width + 16);
-  okay.frame = NSMakeRect(406 - acceptWidth, 20, acceptWidth, 32);
-  cancel.frame = NSMakeRect(okay.frame.origin.x - 10 - cancelWidth, 20,
-                            cancelWidth, 32);
+  PCDialogButton* okay = [[PCDialogButton alloc] initWithTitle:accept
+                                                       primary:acceptDefault];
+  okay.target = sheet;
+  okay.action = @selector(accept:);
   okay.keyEquivalent = acceptDefault ? @"\r" : @"";
-  [sheet.contentView addSubview:cancel];
-  [sheet.contentView addSubview:okay];
+  okay.showsHint = acceptDefault;
+  y = PlaceFooter(root, y, nil, acceptDefault ? @[ okay, cancel ] : @[ cancel, okay ]);
+  root.frame = NSMakeRect(0, 0, kWidth, y);
+  sheet.contentView = root;
+  [sheet setContentSize:NSMakeSize(kWidth, y)];
   sheet.defaultButtonCell = acceptDefault ? okay.cell : cancel.cell;
+  [sheet setAccessibilityDefaultButton:acceptDefault ? okay : cancel];
   __weak PCNativeHostDecision* weak = sheet;
   sheet->_closing = [NSNotificationCenter.defaultCenter
       addObserverForName:NSWindowWillCloseNotification
@@ -242,8 +256,8 @@ PCNativeHostDecision* ShowNativePrivateProfileDecision(
   // Current Chromium consumes these internal navigations before calling us;
   // this explicit native adaptation preserves its actual private-profile
   // policy and localized information instead of silently swallowing the URL.
-  // TOOLS16: the sheet is the shared 430×180 AppKit decision chrome; ordinary
-  // profile Clear Browsing Data remains Chromium WebUI.
+  // TOOLS16: the sheet is the shared Parc decision dialog; ordinary profile
+  // Clear Browsing Data remains Chromium WebUI.
   return [PCNativeHostDecision
       showForWindow:window title:string(title) message:string(message)
       accept:string(close) dismiss:string(dismiss)

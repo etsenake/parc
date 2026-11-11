@@ -127,7 +127,9 @@ method composing in the field keeps Return and Escape. A plain alert still has
 only OK and ignores Escape.
 
 The notifications-permission sheet (**Open System Preferences**, or **Never
-Mind** with Escape) uses the same dialog.
+Mind** with Escape) uses the same dialog. So do the browser's decision sheets
+for active downloads, caret browsing and private-window data, where the
+Return button carries the primary face.
 
 JavaScript prompts offer **Don't show this again** from the sixth page dialog.
 Suppression returns the native cancellation result; primary-page change resets
