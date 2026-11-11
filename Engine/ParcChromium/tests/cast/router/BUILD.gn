@@ -1,0 +1,30 @@
+# Installed at //chrome/browser/ui/media_router/parc_tests so this owned test
+# target stays beside the Chrome media-router layer it exercises.
+
+assert(is_mac)
+
+source_set("unit_tests") {
+  visibility = [ "//chrome/browser/ui/media_router:*" ]
+  testonly = true
+  sources = [ "media_router_ui_test.cc" ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/media/router",
+    "//chrome/browser/media/router:media_router_feature",
+    "//chrome/browser/media/router:test_support",
+    "//chrome/browser/sessions",
+    "//chrome/browser/ui/media_router",
+    "//chrome/test/base:chrome_render_view_host_test_harness",
+    "//components/media_router/browser",
+    "//components/media_router/browser:test_support",
+    "//components/media_router/common",
+    "//components/media_router/common:test_support",
+    "//components/sessions",
+    "//content/test:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//url",
+  ]
+}

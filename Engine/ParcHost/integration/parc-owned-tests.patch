@@ -83,3 +83,15 @@
 +      "//chrome/browser/ui/views/global_media_controls/parc_tests:unit_tests",
 +    ]
 +  }
+--- a/chrome/browser/ui/media_router/BUILD.gn
++++ b/chrome/browser/ui/media_router/BUILD.gn
+@@ -128,5 +128,9 @@
+     "//components/sync_preferences:test_support",
+     "//content/test:test_support",
+     "//extensions:test_support",
+     "//url",
+   ]
++
++  if (is_mac) {
++    deps += [ "//chrome/browser/ui/media_router/parc_tests:unit_tests" ]
++  }
