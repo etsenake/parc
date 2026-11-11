@@ -15,14 +15,16 @@
 #ifndef CONTENT_BROWSER_MEDIA_PARC_VIDEO_TOOLBOX_DECODING_H_
 #define CONTENT_BROWSER_MEDIA_PARC_VIDEO_TOOLBOX_DECODING_H_
 
-#include "media/mojo/mojom/video_decode_perf_history.mojom.h"
+#include "content/common/content_export.h"
+#include "media/mojo/mojom/parc_video_toolbox_decoding.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 
 namespace content {
 
-bool ParcAV1HardwareDecoderAvailable();
+// Exported because ParcContentBrowserClient, outside content, calls both.
+CONTENT_EXPORT bool ParcAV1HardwareDecoderAvailable();
 
-void BindParcVideoToolboxDecoding(
+CONTENT_EXPORT void BindParcVideoToolboxDecoding(
     mojo::PendingReceiver<media::mojom::ParcVideoToolboxDecoding> receiver);
 
 }  // namespace content

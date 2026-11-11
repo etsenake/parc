@@ -1,0 +1,60 @@
+// Copyright 2026 Parc contributors.
+module media.mojom;
+
+// VideoToolbox's decoder facts behind WebKit's MediaCapabilities
+// answers on macOS (PlatformMediaEngineConfigurationFactoryCocoa.cpp,
+// HEVCUtilitiesCocoa.mm), which documents presenting Safari's identity get.
+// The browser reads them (content/browser/media/parc_video_toolbox_decoding.h)
+// because a renderer can't ask VideoToolbox from its sandbox.
+struct ParcHevcProfileSupport {
+  int16 profile_idc;
+  // kVTHEVCDecoderProfileCapability_IsHardwareAccelerated.
+  bool hardware_accelerated;
+  // kVTHEVCDecoderProfileCapability_MaxDecodeLevel and _MaxPlaybackLevel,
+  // when VideoToolbox gives them.
+  bool has_max_decode_level;
+  int16 max_decode_level;
+  bool has_max_playback_level;
+  int16 max_playback_level;
+};
+
+struct ParcVideoToolboxDecodingFacts {
+  // VTIsHardwareDecodeSupported exists, and its answer for H.264.
+  bool hardware_decode_query;
+  bool h264_hardware;
+  // VTSelectAndCreateVideoDecoderInstance finds a decoder for H.264, HEVC and
+  // HEVC with alpha.
+  bool h264_decoder;
+  bool hevc_decoder;
+  bool hevc_with_alpha_decoder;
+  // The profiles VTCopyHEVCDecoderCapabilitiesDictionary supports that carry
+  // a usable per-profile entry; null when the dictionary or a key is missing.
+  array<ParcHevcProfileSupport>? hevc_profiles;
+  // The same dictionary's Dolby Vision profiles and levels; null when missing
+  // or unparsable.
+  array<uint16>? dolby_vision_profiles;
+  array<uint16>? dolby_vision_levels;
+  bool dolby_vision_hardware;
+};
+
+// Bound for frames and dedicated workers on macOS.
+interface ParcVideoToolboxDecoding {
+  GetFacts() => (ParcVideoToolboxDecodingFacts facts);
+  // AudioToolbox's spatial audio sources ('mlti', 'most', 'binh') for the
+  // default output device and content type ('moov' with video, 'soun'
+  // without), as WebKit's SpatialAudioPlaybackHelperMac asks them; empty when
+  // the call fails or names none. Read at each call, since they follow the
+  // output device.
+  GetSpatialAudioSources(bool audiovisual) => (array<uint32> sources);
+  // WebKit's AVAssetMIMETypeCache::canDecodeType for `mime_type`: whether
+  // AVFoundation's player takes the container and, when codecs are named,
+  // plays them (-[AVURLAsset isPlayableExtendedMIMEType:]), as WebKit's
+  // AVFoundation player key systems and FairPlay capabilities ask it.
+  // Synchronous for the legacy WebKitMediaKeys.isTypeSupported, which is.
+  [Sync]
+  CanPlayAVFoundationType(string mime_type) => (bool supported);
+  // -[AVURLAsset isPlayableExtendedMIMEType:] for `type` as given, WebKit's
+  // FairPlay capability check (CDMInstanceFairPlayStreamingAVFObjC::
+  // supportsMediaCapability) for requestMediaKeySystemAccess.
+  IsPlayableExtendedMIMEType(string type) => (bool playable);
+};

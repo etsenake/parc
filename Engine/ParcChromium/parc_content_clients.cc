@@ -15,10 +15,14 @@
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/renderer/process_state.h"
+#include "content/browser/media/parc_video_toolbox_decoding.h"
 #include "content/public/browser/browser_url_handler.h"
 #include "content/public/common/content_switches.h"
 #include "media/base/audio_codecs.h"
 #include "media/base/media_types.h"
+#include "media/base/parc_av1_support.h"
+#include "media/mojo/mojom/parc_video_toolbox_decoding.mojom.h"
+#include "mojo/public/cpp/bindings/binder_map.h"
 #include "parc/chromium_hooks.h"
 #include "parc/native/file_dialog.h"
 #include "parc/native/http_auth.h"
@@ -143,13 +147,33 @@ void ParcContentBrowserClient::AppendExtraCommandLineSwitches(
     int child_process_id) {
   ChromeContentBrowserClient::AppendExtraCommandLineSwitches(command_line,
                                                              child_process_id);
+  if (command_line->GetSwitchValueASCII(switches::kProcessType) !=
+      switches::kRendererProcess) {
+    return;
+  }
+  // Renderers can't ask VideoToolbox from their sandbox.
+  command_line->AppendSwitchASCII(
+      media::kParcAV1HardwareDecoder,
+      content::ParcAV1HardwareDecoderAvailable() ? "1" : "0");
   // The input-diagnostics opt-in follows only the renderer receiving the
   // observed input.
-  if (command_line->GetSwitchValueASCII(switches::kProcessType) ==
-          switches::kRendererProcess &&
-      base::CommandLine::ForCurrentProcess()->HasSwitch(kInputDiagnostics)) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(kInputDiagnostics)) {
     command_line->AppendSwitch(kInputDiagnostics);
   }
+}
+
+void ParcContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
+    content::RenderFrameHost* render_frame_host,
+    mojo::BinderMapWithContext<content::RenderFrameHost*>* map) {
+  ChromeContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
+      render_frame_host, map);
+  // VideoToolbox's decoder facts for Safari-identity documents.
+  map->Add<media::mojom::ParcVideoToolboxDecoding>(base::BindRepeating(
+      [](content::RenderFrameHost*,
+         mojo::PendingReceiver<media::mojom::ParcVideoToolboxDecoding>
+             receiver) {
+        content::BindParcVideoToolboxDecoding(std::move(receiver));
+      }));
 }
 
 bool ParcContentBrowserClient::IsHandledURL(const GURL& url) {

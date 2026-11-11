@@ -395,10 +395,9 @@
 +++ b/third_party/blink/renderer/modules/encryptedmedia/navigator_request_media_key_system_access.cc
 @@ -8,17 +8,22 @@
  #include <vector>
--
-+
+ 
  #include "base/memory/ptr_util.h"
-+#include "media/mojo/mojom/video_decode_perf_history.mojom-blink.h"
++#include "media/mojo/mojom/parc_video_toolbox_decoding.mojom-blink.h"
  #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 +#include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
 +#include "third_party/blink/public/platform/task_type.h"
@@ -429,12 +428,10 @@
 +#include "third_party/blink/renderer/platform/wtf/hash_map.h"
  #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
  #include "third_party/blink/renderer/platform/wtf/vector.h"
--
-+
+ 
 @@ -65,8 +74,31 @@
    void StartRequestAsync();
--
-+
+ 
    void Trace(Visitor* visitor) const override {
 +    visitor->Trace(parc_avfoundation_);
      MediaKeySystemAccessInitializerBase::Trace(visitor);
@@ -462,8 +459,7 @@
 +  HeapMojoRemote<media::mojom::blink::ParcVideoToolboxDecoding>
 +      parc_avfoundation_;
  };
--
-+
+ 
  MediaKeySystemAccessInitializer::MediaKeySystemAccessInitializer(
 @@ -80,7 +112,45 @@
            resolver,
@@ -509,8 +505,7 @@
 +    }
 +  }
 +}
--
-+
+ 
  void MediaKeySystemAccessInitializer::RequestSucceeded(
      std::unique_ptr<WebContentDecryptionModuleAccess> access) {
 @@ -109,6 +179,12 @@
@@ -523,8 +518,7 @@
 +    ParcAskAVFoundation();
 +    return;
 +  }
--
-+
+ 
    // 6. Asynchronously determine support, and if allowed, create and
    //    initialize the MediaKeySystemAccess object.
 @@ -118,6 +194,120 @@
@@ -646,13 +640,11 @@
 +  parc_avfoundation_.reset();
 +  StartRequestAsync();
  }
--
-+
+ 
  }  // namespace
 @@ -133,7 +323,14 @@
    DVLOG(3) << __func__;
--
-+
+ 
    LocalDOMWindow* window = LocalDOMWindow::From(script_state);
 -  if (!window->IsFeatureEnabled(
 +  if (IsParcSafariIdentityUserAgent(window->UserAgent()) &&
@@ -669,8 +661,7 @@
 @@ -189,6 +386,15 @@
            window, resolver, key_system, supported_configurations);
    auto promise = resolver->Promise();
--
-+
+ 
 +  // Parc: a document presenting Safari's identity is refused Widevine as
 +  // Chromium refuses a key system it does not support.
 +  if (IsParcSafariHiddenKeySystem(key_system) &&
@@ -685,8 +676,7 @@
      window->document()->AddPostPrerenderingActivationStep(
 @@ -198,11 +404,9 @@
    }
--
-+
+ 
    // 6. Asynchronously determine support, and if allowed, create and
 -  //    initialize the MediaKeySystemAccess object.
 -  WebEncryptedMediaClient* media_client =
@@ -696,8 +686,7 @@
 +  //    initialize the MediaKeySystemAccess object. (Parc: StartRequestAsync,
 +  //    which asks AVFoundation first under Safari's identity.)
 +  initializer->StartRequestAsync();
--
-+
+ 
    // 7. Return promise.
    return promise;
 --- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
@@ -7426,9 +7415,16 @@
  void SourceBuffer::AppendError(
 --- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
 +++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
-@@ -150,6 +150,9 @@
--
-+
+@@ -10,6 +10,7 @@
+ #include "base/time/time.h"
+ #include "media/base/video_codecs.h"  // for media::VideoCodecProfile
+ #include "media/base/video_color_space.h"
++#include "media/mojo/mojom/parc_video_toolbox_decoding.mojom-blink.h"
+ #include "media/mojo/mojom/video_decode_perf_history.mojom-blink.h"
+ #include "media/mojo/mojom/webrtc_video_perf.mojom-blink.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
+@@ -150,6 +151,9 @@
+ 
      Member<ScriptPromiseResolverBase> resolver;
      Member<MediaKeySystemAccess> key_system_access;
 +    // Parc: the decoding query, so its result takes the asking document's
@@ -7437,7 +7433,7 @@
      std::optional<bool> is_supported;
      std::optional<bool> is_bad_window_prediction_smooth;
      std::optional<bool> is_nnr_prediction_smooth;
-@@ -182,6 +185,26 @@
+@@ -182,6 +186,26 @@
    // Lazily binds to the WebrtcVideoPerfHistory service. Returns whether it was
    // successful. Returns true if it was already bound.
    bool EnsureWebrtcPerfHistoryService(ExecutionContext* execution_context);
@@ -7461,15 +7457,13 @@
 +      bool power_efficient,
 +      const Vector<uint32_t>& sources);
 +  void ParcBindVideoToolbox(ExecutionContext*);
--
-+
+ 
    ScriptPromise<MediaCapabilitiesDecodingInfo> GetEmeSupport(
        ScriptState*,
-@@ -265,6 +288,13 @@
+@@ -265,6 +289,13 @@
    HeapMojoRemote<media::mojom::blink::WebrtcVideoPerfHistory>
        webrtc_history_service_;
--
-+
+ 
 +  // Parc: VideoToolbox's decoder facts for Safari-identity documents, asked
 +  // of the browser once (ParcSafariDecodingInfo).
 +  HeapMojoRemote<media::mojom::blink::ParcVideoToolboxDecoding>

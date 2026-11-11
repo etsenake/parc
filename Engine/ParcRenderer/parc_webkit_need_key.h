@@ -35,7 +35,7 @@
 #include <vector>
 
 #include "base/containers/span.h"
-#include "media/mojo/mojom/video_decode_perf_history.mojom-blink.h"
+#include "media/mojo/mojom/parc_video_toolbox_decoding.mojom-blink.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/platform/web_media_player.h"

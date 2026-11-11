@@ -43,6 +43,9 @@ class ParcContentBrowserClient final : public ChromeContentBrowserClient {
   base::FilePath GetChildProcessPath(int flags) override;
   void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
                                       int child_process_id) override;
+  void RegisterBrowserInterfaceBindersForFrame(
+      content::RenderFrameHost* render_frame_host,
+      mojo::BinderMapWithContext<content::RenderFrameHost*>* map) override;
   bool IsHandledURL(const GURL& url) override;
   void BrowserURLHandlerCreated(content::BrowserURLHandler* handler) override;
   std::unique_ptr<content::WebContentsViewDelegate> GetWebContentsViewDelegate(

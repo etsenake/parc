@@ -15433,70 +15433,6 @@
  void WebSourceBufferImpl::RemovedFromMediaSource() {
    demuxer_->RemoveId(id_);
    demuxer_ = nullptr;
---- a/media/mojo/mojom/video_decode_perf_history.mojom
-+++ b/media/mojo/mojom/video_decode_perf_history.mojom
-@@ -15,3 +15,61 @@
-   // conversion to bool higher in the stack.
-   GetPerfInfo(PredictionFeatures features) => (bool is_smooth, bool is_power_efficient);
- };
-+
-+// Parc: VideoToolbox's decoder facts behind WebKit's MediaCapabilities
-+// answers on macOS (PlatformMediaEngineConfigurationFactoryCocoa.cpp,
-+// HEVCUtilitiesCocoa.mm), which documents presenting Safari's identity get.
-+// The browser reads them (content/browser/media/parc_video_toolbox_decoding.h)
-+// because a renderer can't ask VideoToolbox from its sandbox.
-+struct ParcHevcProfileSupport {
-+  int16 profile_idc;
-+  // kVTHEVCDecoderProfileCapability_IsHardwareAccelerated.
-+  bool hardware_accelerated;
-+  // kVTHEVCDecoderProfileCapability_MaxDecodeLevel and _MaxPlaybackLevel,
-+  // when VideoToolbox gives them.
-+  bool has_max_decode_level;
-+  int16 max_decode_level;
-+  bool has_max_playback_level;
-+  int16 max_playback_level;
-+};
-+
-+struct ParcVideoToolboxDecodingFacts {
-+  // VTIsHardwareDecodeSupported exists, and its answer for H.264.
-+  bool hardware_decode_query;
-+  bool h264_hardware;
-+  // VTSelectAndCreateVideoDecoderInstance finds a decoder for H.264, HEVC and
-+  // HEVC with alpha.
-+  bool h264_decoder;
-+  bool hevc_decoder;
-+  bool hevc_with_alpha_decoder;
-+  // The profiles VTCopyHEVCDecoderCapabilitiesDictionary supports that carry
-+  // a usable per-profile entry; null when the dictionary or a key is missing.
-+  array<ParcHevcProfileSupport>? hevc_profiles;
-+  // The same dictionary's Dolby Vision profiles and levels; null when missing
-+  // or unparsable.
-+  array<uint16>? dolby_vision_profiles;
-+  array<uint16>? dolby_vision_levels;
-+  bool dolby_vision_hardware;
-+};
-+
-+// Bound for frames and dedicated workers on macOS.
-+interface ParcVideoToolboxDecoding {
-+  GetFacts() => (ParcVideoToolboxDecodingFacts facts);
-+  // AudioToolbox's spatial audio sources ('mlti', 'most', 'binh') for the
-+  // default output device and content type ('moov' with video, 'soun'
-+  // without), as WebKit's SpatialAudioPlaybackHelperMac asks them; empty when
-+  // the call fails or names none. Read at each call, since they follow the
-+  // output device.
-+  GetSpatialAudioSources(bool audiovisual) => (array<uint32> sources);
-+  // WebKit's AVAssetMIMETypeCache::canDecodeType for `mime_type`: whether
-+  // AVFoundation's player takes the container and, when codecs are named,
-+  // plays them (-[AVURLAsset isPlayableExtendedMIMEType:]), as WebKit's
-+  // AVFoundation player key systems and FairPlay capabilities ask it.
-+  // Synchronous for the legacy WebKitMediaKeys.isTypeSupported, which is.
-+  [Sync]
-+  CanPlayAVFoundationType(string mime_type) => (bool supported);
-+  // -[AVURLAsset isPlayableExtendedMIMEType:] for `type` as given, WebKit's
-+  // FairPlay capability check (CDMInstanceFairPlayStreamingAVFObjC::
-+  // supportsMediaCapability) for requestMediaKeySystemAccess.
-+  IsPlayableExtendedMIMEType(string type) => (bool playable);
-+};
 --- a/content/browser/browser_interface_binders.cc
 +++ b/content/browser/browser_interface_binders.cc
 @@ -43,6 +43,9 @@
@@ -15509,27 +15445,13 @@
  #include "content/browser/network/reporting_service_proxy.h"
  #include "content/browser/picture_in_picture/picture_in_picture_service_impl.h"
  #include "content/browser/preloading/anchor_element_interaction_host_impl.h"
-@@ -1293,6 +1296,14 @@
-         host->GetProcess()->BindVideoDecodePerfHistory(std::move(receiver));
-       }));
- 
-+#if BUILDFLAG(IS_MAC)
-+  // Parc: VideoToolbox's decoder facts for Safari-identity documents.
-+  map->Add<media::mojom::ParcVideoToolboxDecoding>(base::BindRepeating(
-+      [](RenderFrameHost*,
-+         mojo::PendingReceiver<media::mojom::ParcVideoToolboxDecoding>
-+             receiver) { BindParcVideoToolboxDecoding(std::move(receiver)); }));
-+#endif
-+
-   map->Add<network::mojom::RestrictedCookieManager>(
-       &BindRenderFrameHostImpl<
-           &RenderFrameHostImpl::BindRestrictedCookieManager>);
-@@ -1618,6 +1629,11 @@
+@@ -1618,6 +1621,12 @@
    // RenderProcessHost binders
    map->Add<media::mojom::VideoDecodePerfHistory>(BindWorkerReceiver(
        &RenderProcessHostImpl::BindVideoDecodePerfHistory, host));
 +#if BUILDFLAG(IS_MAC)
-+  // Parc: VideoToolbox's decoder facts for Safari-identity documents.
++  // Parc: VideoToolbox's decoder facts for Safari-identity documents. Frames
++  // get them from ParcContentBrowserClient.
 +  map->Add<media::mojom::ParcVideoToolboxDecoding>(
 +      base::BindRepeating(&BindParcVideoToolboxDecoding));
 +#endif
@@ -20885,32 +20807,6 @@
  
  TEST_F(BoxDefinitionsTest, Stereoscopic3DBoxParsing) {
    // Box size = 13 bytes (0x0d), FourCC = 'st3d', Full box version = 0, flags =
---- a/content/browser/renderer_host/render_process_host_impl.cc
-+++ b/content/browser/renderer_host/render_process_host_impl.cc
-@@ -6,6 +6,11 @@
- // channel. There will be one RenderProcessHost per renderer process.
- 
- #include "content/browser/renderer_host/render_process_host_impl.h"
-+
-+#if BUILDFLAG(IS_MAC)
-+#include "content/browser/media/parc_video_toolbox_decoding.h"
-+#include "media/base/parc_av1_support.h"
-+#endif
- 
- #include <algorithm>
- #include <atomic>
-@@ -3767,6 +3772,11 @@
- 
- void RenderProcessHostImpl::AppendRendererCommandLine(
-     base::CommandLine* command_line) {
-+#if BUILDFLAG(IS_MAC)
-+  command_line->AppendSwitchASCII(
-+      media::kParcAV1HardwareDecoder,
-+      content::ParcAV1HardwareDecoderAvailable() ? "1" : "0");
-+#endif
-   // Pass the process type first, so it shows first in process listings.
-   command_line->AppendSwitchASCII(switches::kProcessType,
-                                   switches::kRendererProcess);
 --- a/media/base/demuxer_stream.h
 +++ b/media/base/demuxer_stream.h
 @@ -113,6 +113,14 @@
@@ -27349,3 +27245,15 @@
    std::vector<uint8_t> data = mojom::AudioDecoderConfig::Serialize(&input);
    AudioDecoderConfig output;
    EXPECT_TRUE(mojom::AudioDecoderConfig::Deserialize(std::move(data), &output));
+--- a/media/mojo/mojom/BUILD.gn
++++ b/media/mojo/mojom/BUILD.gn
+@@ -36,6 +36,9 @@
+     "media_player.mojom",
+     "media_service.mojom",
+     "output_protection.mojom",
++
++    # Parc: VideoToolbox's decoder facts for Safari-identity documents.
++    "parc_video_toolbox_decoding.mojom",
+     "playback_events_recorder.mojom",
+     "provision_fetcher.mojom",
+     "renderer.mojom",
