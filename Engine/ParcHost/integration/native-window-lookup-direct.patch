@@ -46,7 +46,27 @@
  import("//chrome/browser/buildflags.gni")
  import("//chrome/browser/downgrade/buildflags.gni")
  import("//chrome/common/features.gni")
-@@ -2597,6 +2598,18 @@
+@@ -485,10 +486,14 @@
+   }
+-
++
+   if (is_mac) {
+-    sources += [
+-      "//chrome/app/chrome_crash_reporter_client.cc",
+-      "//chrome/app/chrome_crash_reporter_client_mac.mm",
+-    ]
++    if (enable_parc) {
++      deps += [ "//parc:crash_reporter_client" ]
++    } else {
++      sources += [
++        "//chrome/app/chrome_crash_reporter_client.cc",
++        "//chrome/app/chrome_crash_reporter_client_mac.mm",
++      ]
++    }
+     deps += [
+       "//build:branding_buildflags",
+       "//chrome/app_shim",
+@@ -2597,6 +2602,18 @@
          "//chrome/browser/ui:browser_commands_mac",
          "//chrome/updater:browser_sources",
        ]
@@ -66,7 +86,7 @@
 -
 +
      if (enable_guest_view) {
-@@ -7491,6 +7504,25 @@
+@@ -7491,6 +7508,25 @@
        "../browser/ui/views/web_apps/view_visible_in_active_widget_notifier_unittest.cc",
      ]
      sources += [ "../browser/ui/views/profiles/avatar_badge_view_unittest.cc" ]
@@ -93,7 +113,9 @@
 +
      # TODO(crbug.com/353332589): Remove this dependency when the
      # views/autofill/popup/ unit tests get modularized.
-@@ -7631,4 +7663,7 @@
+@@ -7629,6 +7665,9 @@
+     deps += [ "//chrome/browser/ui/startup/default_browser_prompt:unit_tests" ]
+   }
 -
 +
 +  if (is_mac && enable_parc) {

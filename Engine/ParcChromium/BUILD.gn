@@ -115,15 +115,30 @@ source_set("page_preferences_tests") {
   deps = [ ":page_preferences", "//content/public/browser", "//content/public/common", "//content/test:test_support", "//testing/gtest", "//third_party/blink/public/common" ]
 }
 
-# Startup, the content clients and the native application, compiled into the
-# framework binary. Chrome's main delegate is compiled here, not in
-# //chrome:chrome_dll, whose ChromeMain Parc doesn't use. The crash reporter
-# client comes along because //chrome/app_shim calls it.
-source_set("browser") {
+# Chrome's Mac test support needs this implementation too. Keep one source
+# owner so test binaries that also link Parc's browser do not get duplicate
+# crash-client symbols.
+source_set("crash_reporter_client") {
   sources = [
     "//chrome/app/chrome_crash_reporter_client.cc",
     "//chrome/app/chrome_crash_reporter_client.h",
     "//chrome/app/chrome_crash_reporter_client_mac.mm",
+  ]
+  deps = [
+    "//build:branding_buildflags",
+    "//chrome:dependencies",
+    "//chrome/app:chrome_crash_reporter_client",
+    "//chrome/app_shim",
+    "//components/crash/core/app",
+    "//components/upload_list",
+  ]
+}
+
+# Startup, the content clients and the native application, compiled into the
+# framework binary. Chrome's main delegate is compiled here, not in
+# //chrome:chrome_dll, whose ChromeMain Parc doesn't use.
+source_set("browser") {
+  sources = [
     "//chrome/app/chrome_main_delegate.cc",
     "//chrome/app/chrome_main_delegate.h",
     _product_name_source,
@@ -235,6 +250,13 @@ source_set("browser") {
     "parc_main_delegate.mm",
   ]
 
+  if (is_component_build) {
+    sources += [
+      "tests/parc_native_runtime/runtime_driver.h",
+      "tests/parc_native_runtime/runtime_driver.mm",
+    ]
+  }
+
   public_deps = [
     "//parc/native:native_background_picture_in_picture_api",
     "//parc/native:native_download_dialog_api",
@@ -246,6 +268,7 @@ source_set("browser") {
   ]
 
   deps = [
+    ":crash_reporter_client",
     ":internal_extension_manifest",
     ":product_name_strings",
     "//chrome/browser/extensions",
@@ -402,6 +425,26 @@ source_set("browser") {
     "QuartzCore.framework",
     "Security.framework",
   ]
+
+  if (is_component_build) {
+    deps += [
+      "//base",
+      "//chrome/browser/profiles:profile",
+      "//chrome/browser/tab_list",
+      "//chrome/browser/ui/login:impl",
+      "//chrome/browser/ui/toolbar",
+      "//chrome/common",
+      "//components/prefs",
+      "//components/web_modal",
+      "//content/public/browser",
+      "//content/public/common",
+      "//extensions/browser",
+      "//extensions/common",
+      "//net",
+      "//ui/base",
+      "//url",
+    ]
+  }
 }
 
 tweak_info_plist("parc_framework_plist") {
