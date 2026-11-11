@@ -6,20 +6,27 @@ assert(is_mac)
 source_set("unit_tests") {
   visibility = [ "//chrome/browser/ui/global_media_controls:*" ]
   testonly = true
-  sources = [ "presentation_request_notification_producer_test.cc" ]
+  sources = [
+    "media_notification_service_test.cc",
+    "presentation_request_notification_producer_test.cc",
+  ]
 
   deps = [
     "//base",
     "//base/test:test_support",
     "//chrome/browser/media/router",
     "//chrome/browser/media/router:media_router_feature",
+    "//chrome/browser/sessions",
     "//chrome/browser/ui/global_media_controls:impl",
     "//chrome/browser/ui/global_media_controls:test_support",
     "//chrome/test/base:chrome_render_view_host_test_harness",
+    "//components/global_media_controls",
     "//components/global_media_controls:test_support",
     "//components/media_router/browser:test_support",
+    "//components/sessions",
     "//content/public/browser",
     "//content/test:test_support",
+    "//media",
     "//testing/gmock",
     "//testing/gtest",
     "//url",

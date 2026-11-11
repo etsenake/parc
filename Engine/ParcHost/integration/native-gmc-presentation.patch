@@ -714,9 +714,11 @@
    // global_media_controls::mojom::DeviceService:
    void GetDeviceListHostForSession(
        const std::string& session_id,
-@@ -163,6 +197,28 @@
+@@ -163,6 +197,30 @@
    friend class MediaToolbarButtonControllerTest;
    friend class ash::GlobalMediaControlsCastStartTest;
++  friend class ParcMediaNotificationServiceTest;
++  friend class ParcMediaNotificationServiceCastTest;
  
 +  void StartPresentationContext(
 +      std::unique_ptr<media_router::StartPresentationContext> context,
@@ -743,7 +745,7 @@
    // Instantiates a MediaRouterViewsUI object associated with the Session with
    // the given |session_id|.
    std::unique_ptr<media_router::CastDialogController>
-@@ -180,7 +236,9 @@
+@@ -180,7 +238,9 @@
            host_receiver,
        mojo::PendingRemote<global_media_controls::mojom::DeviceListClient>
            client_remote,
@@ -754,7 +756,7 @@
  
    // True if there is a presentation context for the given session ID.
    bool HasPresentationContextForSession(const std::string& session_id);
-@@ -248,6 +306,15 @@
+@@ -248,6 +308,15 @@
        mojo::SelfOwnedReceiverRef<global_media_controls::mojom::DeviceListHost>>
        host_receivers_;
  
@@ -770,188 +772,6 @@
    bool shutdown_has_started_ = false;
  
    struct IphState {
---- a/chrome/browser/ui/global_media_controls/media_notification_service_unittest.cc
-+++ b/chrome/browser/ui/global_media_controls/media_notification_service_unittest.cc
-@@ -15,6 +15,7 @@
- #include "base/unguessable_token.h"
- #include "build/build_config.h"
- #include "chrome/browser/media/router/chrome_media_router_factory.h"
-+#include "chrome/browser/sessions/session_tab_helper_factory.h"
- #include "chrome/browser/ui/global_media_controls/cast_device_list_host.h"
- #include "chrome/browser/ui/global_media_controls/cast_media_notification_producer.h"
- #include "chrome/browser/ui/global_media_controls/test_helper.h"
-@@ -34,11 +35,17 @@
- #include "components/media_message_center/media_notification_item.h"
- #include "components/media_message_center/media_notification_util.h"
- #include "components/media_router/browser/presentation/start_presentation_context.h"
-+#include "components/media_router/browser/media_router_factory.h"
- #include "components/media_router/browser/test/mock_media_router.h"
-+#include "components/sessions/content/session_tab_helper.h"
-+#include "content/public/browser/back_forward_cache.h"
- #include "content/public/browser/media_session.h"
- #include "content/public/browser/web_contents.h"
-+#include "content/public/test/back_forward_cache_util.h"
- #include "content/public/test/browser_task_environment.h"
-+#include "media/base/audio_codecs.h"
- #include "media/base/media_switches.h"
-+#include "media/base/video_codecs.h"
- #include "services/media_session/public/mojom/audio_focus.mojom.h"
- #include "services/media_session/public/mojom/media_session.mojom.h"
- #include "testing/gmock/include/gmock/gmock.h"
-@@ -252,6 +259,16 @@
-       std::vector<media_router::MediaRoute> routes) {
-     ON_CALL(*presentation_manager_, GetMediaRoutes())
-         .WillByDefault(Return(routes));
-+  }
-+
-+  base::OnceCallback<void(bool)> ParcRequestMediaRemoting(
-+      const std::string& item_id) {
-+    return MediaNotificationService::ParcRequestMediaRemoting(item_id);
-+  }
-+
-+  void SetDefaultPresentationRequest(
-+      const content::PresentationRequest& request) {
-+    presentation_manager_->SetDefaultPresentationRequest(request);
-   }
- 
-   base::WeakPtr<PresentationRequestNotificationItem>
-@@ -748,8 +765,103 @@
-   SimulatePlayingControllableMedia(id);
-   // TODO(takumif): Confirm that this calls the MediaNotificationItem.
-   service()->OnMediaRemotingRequested(id.ToString());
-+}
-+
-+// Parc: the Mini Player's Cast follows the route that casts the page: its
-+// default presentation's launch while it connects, then the presentation the
-+// page started, until the router ends it; else its Remote Playback.
-+TEST_F(MediaNotificationServiceCastTest, ParcCastRouteForWebContents) {
-+  CreateSessionServiceTabHelper(web_contents());
-+  const GURL url("cast:233637DE");
-+  MediaRoute launching("launching",
-+                       media_router::MediaSource::ForPresentationUrl(url),
-+                       "sink_id", "description", /*is_local=*/true);
-+  launching.set_is_connecting(true);
-+  EXPECT_FALSE(MediaNotificationService::ParcCastRouteForWebContents(
-+      web_contents(), {launching}));
-+
-+  SetDefaultPresentationRequest(content::PresentationRequest(
-+      main_rfh()->GetGlobalId(), {url},
-+      url::Origin::Create(GURL("https://example.test"))));
-+  auto route = MediaNotificationService::ParcCastRouteForWebContents(
-+      web_contents(), {launching});
-+  ASSERT_TRUE(route);
-+  EXPECT_TRUE(route->is_connecting());
-+
-+  // Connected, the same app's route is only this page's once it started it.
-+  MediaRoute connected = launching;
-+  connected.set_is_connecting(false);
-+  EXPECT_FALSE(MediaNotificationService::ParcCastRouteForWebContents(
-+      web_contents(), {connected}));
-+  SetMediaRoutesManagedByPresentationManager({launching});
-+  route = MediaNotificationService::ParcCastRouteForWebContents(
-+      web_contents(), {connected});
-+  ASSERT_TRUE(route);
-+  EXPECT_EQ("launching", route->media_route_id());
-+  EXPECT_FALSE(route->is_connecting());
-+  EXPECT_FALSE(
-+      MediaNotificationService::ParcCastRouteForWebContents(web_contents(), {}));
-+
-+  SetMediaRoutesManagedByPresentationManager({});
-+  MediaRoute remote(
-+      "remote",
-+      media_router::MediaSource::ForRemotePlayback(
-+          sessions::SessionTabHelper::IdForTab(web_contents()).id(),
-+          media::VideoCodec::kH264, media::AudioCodec::kAAC),
-+      "sink_id", "description", /*is_local=*/true);
-+  route = MediaNotificationService::ParcCastRouteForWebContents(
-+      web_contents(), {connected, remote});
-+  ASSERT_TRUE(route);
-+  EXPECT_EQ("remote", route->media_route_id());
-+}
-+
-+// Parc: a session item that loses audio focus is frozen, neither listed nor
-+// gone, until its freeze times out.
-+TEST_F(MediaNotificationServiceCastTest, ParcFrozenSessionForWebContents) {
-+  EXPECT_FALSE(service()->ParcHasFrozenSessionForWebContents(web_contents()));
-+  auto id = SimulatePlayingControllableMediaForWebContents(web_contents());
-+  EXPECT_TRUE(service()->HasActiveNotificationsForWebContents(web_contents()));
-+  EXPECT_FALSE(service()->ParcHasFrozenSessionForWebContents(web_contents()));
-+
-+  SimulateFocusLost(id);
-+  EXPECT_FALSE(service()->HasActiveNotificationsForWebContents(web_contents()));
-+  EXPECT_TRUE(service()->ParcHasFrozenSessionForWebContents(web_contents()));
-+
-+  task_environment()->FastForwardBy(base::Seconds(3));
-+  EXPECT_EQ(nullptr, GetNotificationSessionItem(id));
-+  EXPECT_FALSE(service()->HasActiveNotificationsForWebContents(web_contents()));
-+  EXPECT_FALSE(service()->ParcHasFrozenSessionForWebContents(web_contents()));
- }
- 
-+// Parc: a cast picked for a session's player requests its remoting at the
-+// pick. Once launched, it stays while the player's page does; after the page
-+// is gone, the launch ends rather than waiting for a player.
-+TEST_F(MediaNotificationServiceCastTest, ParcRemotingLaunchedAfterNavigation) {
-+  NavigateAndCommit(GURL("https://example.test/"));
-+  content::DisableBackForwardCacheForTesting(
-+      web_contents(), content::BackForwardCache::TEST_REQUIRES_NO_CACHING);
-+  CreateSessionServiceTabHelper(web_contents());
-+  auto id = SimulatePlayingControllableMediaForWebContents(web_contents());
-+  auto* router = static_cast<media_router::MockMediaRouter*>(
-+      media_router::MediaRouterFactory::GetApiForBrowserContext(profile()));
-+  MediaRoute remote(
-+      "remote",
-+      media_router::MediaSource::ForRemotePlayback(
-+          sessions::SessionTabHelper::IdForTab(web_contents()).id(),
-+          media::VideoCodec::kH264, media::AudioCodec::kAAC),
-+      "sink_id", "description", /*is_local=*/true);
-+  ON_CALL(*router, GetCurrentRoutes())
-+      .WillByDefault(Return(std::vector<MediaRoute>{remote}));
-+  EXPECT_CALL(*router, TerminateRoute(_)).Times(0);
-+  ParcRequestMediaRemoting(id.ToString()).Run(true);
-+  testing::Mock::VerifyAndClearExpectations(router);
-+
-+  auto launched = ParcRequestMediaRemoting(id.ToString());
-+  NavigateAndCommit(GURL("https://other.test/"));
-+  EXPECT_CALL(*router, TerminateRoute("remote"));
-+  std::move(launched).Run(true);
-+}
-+
- TEST_F(MediaNotificationServiceCastTest, OnSinksDiscoveredForLocalMedia) {
-   // Playing the media.
-   auto id = SimulatePlayingControllableMediaForWebContents(web_contents());
-@@ -795,6 +907,32 @@
- }
- 
- TEST_F(MediaNotificationServiceCastTest,
-+       ReplacementRequestCancelsIfOldCallbackDestroysItsPage) {
-+  SimulatePlayingControllableMediaForWebContents(web_contents());
-+  std::unique_ptr<content::WebContents> second(CreateTestWebContents());
-+  SimulatePlayingControllableMediaForWebContents(second.get());
-+  auto old = CreateStartPresentationContext(
-+      CreatePresentationRequest(), base::DoNothing(),
-+      base::BindOnce([](std::unique_ptr<content::WebContents>* page,
-+                        const blink::mojom::PresentationError&) { page->reset(); },
-+                     &second));
-+  service()->OnStartPresentationContextCreated(std::move(old));
-+  content::PresentationRequest request(
-+      second->GetPrimaryMainFrame()->GetGlobalId(), {GURL(), GURL()},
-+      url::Origin::Create(GURL()));
-+  bool canceled = false;
-+  auto replacement = CreateStartPresentationContext(
-+      request, base::DoNothing(),
-+      base::BindOnce([](bool* canceled, const blink::mojom::PresentationError&) {
-+        *canceled = true;
-+      }, &canceled));
-+  service()->OnStartPresentationContextCreated(std::move(replacement));
-+  EXPECT_FALSE(second);
-+  EXPECT_TRUE(canceled);
-+  EXPECT_FALSE(HasPresentationContext());
-+}
-+
-+TEST_F(MediaNotificationServiceCastTest,
-        PresentationRequestOriginNotResetByNewDummyRequest) {
-   auto id = SimulatePlayingControllableMediaForWebContents(web_contents());
-   auto* item = GetNotificationSessionItem(id);
 --- a/chrome/browser/ui/global_media_controls/presentation_request_notification_producer.cc
 +++ b/chrome/browser/ui/global_media_controls/presentation_request_notification_producer.cc
 @@ -6,10 +6,12 @@

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 705,
+  "version": 706,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -2354,7 +2354,7 @@
     {
       "source": "Engine/ParcChromium/tests/cast/gmc/BUILD.gn",
       "target": "chrome/browser/ui/global_media_controls/parc_tests/BUILD.gn",
-      "sha256": "4ff921f2c62aa7c53226b3b5f70ee12414277c9620d8877b3c0eb65ebdd8dbb3"
+      "sha256": "f1034f7ddb1dd074b48a0a1db8db262b8f3e37dadfaba00ff05f4013f2a67f0e"
     },
     {
       "source": "Engine/ParcChromium/tests/cast/gmc/presentation_request_notification_producer_test.cc",
@@ -2525,6 +2525,11 @@
       "source": "Engine/ParcChromium/tests/cast/remoting/cast_remoting_connector_test.cc",
       "target": "chrome/browser/media/parc_tests/cast_remoting_connector_test.cc",
       "sha256": "52bdd49c137de52330392dbe91a07cd75cb4f5ec7b184741cc717ce61038e6fe"
+    },
+    {
+      "source": "Engine/ParcChromium/tests/cast/gmc/media_notification_service_test.cc",
+      "target": "chrome/browser/ui/global_media_controls/parc_tests/media_notification_service_test.cc",
+      "sha256": "f1502adcbb1e17b8c1b5b3994af92841edf4ee5d9ee147aeb69438e10ef00086"
     }
   ],
   "patches": [
@@ -3259,7 +3264,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "14bb7abe121eec53ac4ff98f1373a601df4f63adb2a592409102d599874217f9",
+      "sha256": "28a5889076b6d33b9f370b714f9fe3c89f38506fe6ef236724d8684e721bb344",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
@@ -3279,12 +3284,7 @@
         {
           "target": "chrome/browser/ui/global_media_controls/media_notification_service.h",
           "before_sha256": "f54ed351b6ff7f5d519e51b9eb8a97db6239f8a0ed7355de627c341d75fd754f",
-          "after_sha256": "38b6cdfa6e0728cc1d88168058807f3f6717c7947b41604cf32482a2adddd098"
-        },
-        {
-          "target": "chrome/browser/ui/global_media_controls/media_notification_service_unittest.cc",
-          "before_sha256": "7386ce0b9e2267a443fbb2615fb3d8eb88b699dbd22bec448b5e46a0f1d9080f",
-          "after_sha256": "d73fd76734c7126094f5046e006b44b61c3210a2e4a775357db6458bc9c04299"
+          "after_sha256": "8f75a80f20895df16242f9ff95f40a1654c58b46567f2245be3ab0e1fd12231d"
         },
         {
           "target": "chrome/browser/ui/global_media_controls/presentation_request_notification_producer.cc",
