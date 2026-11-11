@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 660,
+  "version": 661,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -819,7 +819,7 @@
     {
       "source": "Engine/ParcNative/extension_action_bridge.mm",
       "target": "parc/native/extension_action_bridge.mm",
-      "sha256": "ef145f6a355303aa1086baa6eab1576d8172a4bc0e30c73072a98be8bcdd4cd0"
+      "sha256": "50670ec0c58bf3e4ee6d8c1757eeaad70423a40165ddf4b3439b6acded940123"
     },
     {
       "source": "tests/NativeExtensionActions/BUILD.gn",
@@ -3315,22 +3315,6 @@
           "target": "content/browser/media/service_factory.h",
           "before_sha256": "f55d1b4e24157e109c55916645a355fc2c07b1c0207c79051e209db818f85800",
           "after_sha256": "9cd16af19aaaf9d00d1cc4ec32720e7d2e3c9652e7f68a13396fd3e952d5da5a"
-        }
-      ]
-    },
-    {
-      "source": "Engine/ParcHost/integration/native-extension-action-icon.patch",
-      "sha256": "5961f13a4e056a01a279e31159ddde55408905975bc004872d782deeebcf3977",
-      "files": [
-        {
-          "target": "chrome/browser/ui/extensions/extension_action_view_model.h",
-          "before_sha256": "464e8a97529dcf5f6e4dd81590d115b7ed4e7c240f26d57c879ae728d6ae6713",
-          "after_sha256": "aad7aa5eb36001f52f1c8e98d34c389fea258e081832db60f441e1de3cb8934b"
-        },
-        {
-          "target": "chrome/browser/ui/extensions/extension_action_view_model.cc",
-          "before_sha256": "dc9dee1aa4332b3664614f83901c2c0774bb03f9734fa3eeba6f5ec4f85feb6e",
-          "after_sha256": "98900b000ab29c2b4eddc34f9e7005c55fd526b5aa72c18d9981d6ce32ae98c9"
         }
       ]
     },
