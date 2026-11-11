@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 665,
+  "version": 666,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -14,7 +14,7 @@
     {
       "source": "Engine/ParcNative/BUILD.gn",
       "target": "parc/native/BUILD.gn",
-      "sha256": "525354f46d98fb53d2311e2a17bac4768da375fb589aca0c276b1c9a084aee7e"
+      "sha256": "82c63859011452fefcf273544a369b8c9125e7550e9cd4526dd9c2cb92522b3b"
     },
     {
       "source": "Engine/ParcNative/page_host.h",
@@ -289,7 +289,7 @@
     {
       "source": "Engine/ParcNative/extension_uninstall_presenter.mm",
       "target": "parc/native/extension_uninstall_presenter.mm",
-      "sha256": "46bcb1d842bd2aca55f3fe2a4993b72e76f352bbb7b9e0471904924c5aaf524e"
+      "sha256": "30acbe33187693228cd12997786ac12cc940224f50744f2746684aaaffc5a76a"
     },
     {
       "source": "Engine/ParcNative/window_security_reservation.h",
@@ -494,7 +494,17 @@
     {
       "source": "Engine/ParcNative/extension_install_presenter.mm",
       "target": "parc/native/extension_install_presenter.mm",
-      "sha256": "f4dcabde67f7ee49228c8f9da9d883859d5efe755d722ee62085c33355c51222"
+      "sha256": "fe41a2ae1f47805a4125bd051801a3c03495a860b371732958781c7560a09983"
+    },
+    {
+      "source": "Engine/ParcNative/dialog_style.h",
+      "target": "parc/native/dialog_style.h",
+      "sha256": "02800c196016793b1694640b757195734f1220d1ee7d304a8edfa1bb9d09ec66"
+    },
+    {
+      "source": "Engine/ParcNative/dialog_style.mm",
+      "target": "parc/native/dialog_style.mm",
+      "sha256": "1a3087020d9f0a62bcc2edbc2a02bcbe737117ab78059543f1cd27999ea49d98"
     },
     {
       "source": "Engine/ParcNative/tab_transfer.h",

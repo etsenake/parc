@@ -134,6 +134,8 @@ source_set("native_components") {
     "browser_window.mm",
     "devtools_pane_view.h",
     "devtools_pane_view.mm",
+    "dialog_style.h",
+    "dialog_style.mm",
     "extension_install_presenter.h",
     "extension_install_presenter.mm",
     "extension_uninstall_presenter.h",

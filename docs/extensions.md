@@ -24,6 +24,12 @@ additional-permission and app/theme requests keep their actual
 upstream-specific text and controls. Those Chromium 156 security/service
 requirements are explicit current-engine adaptations.
 
+Removing an extension uses the same Parc dialog: the extension's artwork, the
+**Remove “name”?** title, any requesting-extension text, Parc's circular
+**Report abuse** checkbox, **Cancel** (Escape) and a red **Remove** (Return).
+Chromium's removal model still supplies the text, checkbox result and enabled
+buttons. The engine's shared look lives in `Engine/ParcNative/dialog_style.mm`.
+
 Installer results present no separate native confirmation. A successful extension,
 theme or bubble-app install shows no sheet, toast, pin or picker; an
 extension's own welcome page still opens through Chromium if it creates one.
