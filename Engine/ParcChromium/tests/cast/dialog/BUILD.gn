@@ -1,0 +1,30 @@
+# Installed at //chrome/browser/ui/views/global_media_controls/parc_tests so
+# this owned test target stays beside the Views layer it exercises.
+
+assert(is_mac)
+
+source_set("unit_tests") {
+  visibility = [ "//chrome/browser/ui/views/global_media_controls:*" ]
+  testonly = true
+  sources = [ "media_dialog_view_test.cc" ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/accessibility",
+    "//chrome/browser/media/router",
+    "//chrome/browser/ui/global_media_controls",
+    "//chrome/browser/ui/global_media_controls:impl",
+    "//chrome/browser/ui/views/global_media_controls",
+    "//chrome/browser/ui/views/global_media_controls:impl",
+    "//chrome/test:test_support",
+    "//chrome/test/base:testing_profile",
+    "//chrome/test/views",
+    "//components/media_router/browser:test_support",
+    "//content/test:test_support",
+    "//testing/gtest",
+    "//ui/gfx",
+    "//ui/views",
+    "//ui/views:test_support",
+  ]
+}

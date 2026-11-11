@@ -71,3 +71,15 @@
 +    if (is_mac) {
 +      deps += [ "//chrome/browser/media/parc_tests:unit_tests" ]
 +    }
+--- a/chrome/browser/ui/views/global_media_controls/BUILD.gn
++++ b/chrome/browser/ui/views/global_media_controls/BUILD.gn
+@@ -146,3 +146,9 @@
+       "//components/prefs",
+     ]
+   }
++
++  if (is_mac) {
++    deps += [
++      "//chrome/browser/ui/views/global_media_controls/parc_tests:unit_tests",
++    ]
++  }

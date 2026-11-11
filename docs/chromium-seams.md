@@ -172,7 +172,7 @@ context-menu and file-selector work shares files across areas, so it goes throug
    require it, and those targets remain dependencies of the original test binaries. The overlay-scrollbar
    fade, AudioToolbox AMR, native presentation-request retirement, reentrant media-item closure,
    supplemental picker lifecycle, wallet-reminder lifetime, desktop wallet-delegate, file-selector MIME,
-   remoting-request and cast-service regressions are the first suites moved this way.
+   remoting-request, cast-service and native cast-dialog regressions are the first suites moved this way.
 8. **Smaller conversions.** Auto-PiP, playback controls, PiP captions and the WebPreferences fields are
    settled (media boundaries). The decodeAudioData hook waits for a throughput measurement in a running
    browser. Worker script requests keep their user-agent patch: a throttle would set it after Chrome's own.

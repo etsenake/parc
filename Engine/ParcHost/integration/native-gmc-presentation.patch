@@ -1993,45 +1993,6 @@
    MediaActionButton* CreateMediaActionButton(views::View* parent,
                                               int button_id,
                                               const gfx::VectorIcon& vector_icon,
---- a/chrome/browser/ui/views/global_media_controls/media_dialog_view_unittest.cc
-+++ b/chrome/browser/ui/views/global_media_controls/media_dialog_view_unittest.cc
-@@ -144,6 +144,9 @@
-   content::WebContents* web_contents() { return web_contents_.get(); }
-   media_router::MockMediaRouter* media_router() { return media_router_; }
-   MediaDialogView* view() { return view_; }
-+  MediaNotificationService* notification_service() {
-+    return notification_service_.get();
-+  }
- 
-  private:
-   base::test::ScopedFeatureList feature_list_;
-@@ -222,6 +225,26 @@
-   EXPECT_TRUE(media_item_ui_updated_view()->GetDeviceSelectorForTesting());
- }
- 
-+// Parc: an empty token opens the page's media session dialog without a
-+// presentation request (the Mini Player's Cast); any other token must be the
-+// service's prepared native presentation.
-+TEST_F(MediaDialogViewTest, ParcNativePageDialogWithoutPresentation) {
-+  HideDialog();
-+  auto create = [&](base::UnguessableToken token) {
-+    return MediaDialogView::CreateDialogForNativePage(
-+        anchor_widget()->GetNativeView(), gfx::Rect(10, 10, 0, 0),
-+        notification_service(), profile(), web_contents(), token,
-+        base::BindRepeating([] { return true; }));
-+  };
-+  views::Widget* widget = create(base::UnguessableToken());
-+  ASSERT_TRUE(widget);
-+  EXPECT_TRUE(MediaDialogView::IsNativeDialogCurrent(widget));
-+  views::test::WidgetDestroyedWaiter destroyed(widget);
-+  MediaDialogView::CloseNativeDialog(widget);
-+  destroyed.Wait();
-+  EXPECT_FALSE(create(base::UnguessableToken::Create()));
-+}
-+
- // Regression test for crbug.com/468238180. The dialog reads and writes the
- // original profile's prefs, so it must observe that same profile.
- TEST_F(MediaDialogViewTest, LiveCaptionUpdatesInIncognito) {
 --- a/chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc
 +++ b/chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc
 @@ -4,7 +4,10 @@
