@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 677,
+  "version": 678,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -354,7 +354,7 @@
     {
       "source": "Engine/ParcNative/native_appkit_host.mm",
       "target": "parc/native/native_appkit_host.mm",
-      "sha256": "bb954e4c751efe3c1f1f897ae13679d238d75559af99b6bbedc479080440ce4b"
+      "sha256": "b4125b4ee96e815633460e53296924dd31665fdc46a96afe5764cb21ff220dd7"
     },
     {
       "source": "Engine/ParcNative/native_appkit_page.h",
@@ -1614,7 +1614,7 @@
     {
       "source": "Engine/ParcNative/fairplay_identity.mm",
       "target": "parc/native/fairplay_identity.mm",
-      "sha256": "33bc982f353bfe5ebe7cf34b27f6d075a7a12cc147a244d59a583c99b0a1b214"
+      "sha256": "17520e43ea1978b1f0b38223206c7c46d42a7402ca7933f306a9c69253bad6ad"
     },
     {
       "source": "Engine/ParcRenderer/parc_safari_identity.h",
@@ -2029,7 +2029,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "cd1c1c74d356cb680b174bf6852afe67649b237897d799da35a12288209516b8"
+      "sha256": "4011cc6b6bf41a2d07ed78d8b08729c127b5b714e81adb6014a31ca4264f3cda"
     },
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
@@ -2074,12 +2074,12 @@
     {
       "source": "Engine/ParcChromium/parc_content_clients.h",
       "target": "parc/parc_content_clients.h",
-      "sha256": "37a868a8d8a590dc47992d7610d17f27e0d00eaf86d4a9115de7b83289c5bdc4"
+      "sha256": "7c9191123a6dfbac575dfafaa2360b8e283e66e0f6ebed7ea8508d13fd62b416"
     },
     {
       "source": "Engine/ParcChromium/parc_content_clients.cc",
       "target": "parc/parc_content_clients.cc",
-      "sha256": "e377b74ba38b9f2ed2c00f598fda4bc8cb8ccab19a49382f3d0bdedc3da7d54e"
+      "sha256": "8079aa54713a239063d63838f28fd832a734656e6bd07c5c6f47e6efbc21c088"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",
@@ -2130,6 +2130,21 @@
       "source": "Engine/ParcChromium/frame_focus.cc",
       "target": "parc/frame_focus.cc",
       "sha256": "f5e8038b19b1ef0faac92d4b49153d314206c75e8eeb2ec483c8c0c3bd146515"
+    },
+    {
+      "source": "Engine/ParcChromium/page_preferences.h",
+      "target": "parc/page_preferences.h",
+      "sha256": "afb90eb5049b0a5bfc213965a8e60507b45bd74aa7788dc71e7ee6f0dd3eece2"
+    },
+    {
+      "source": "Engine/ParcChromium/page_preferences.cc",
+      "target": "parc/page_preferences.cc",
+      "sha256": "273236e022461c086b5d83ac0095fcf0d59abfdec68eba0310f992dc43b47cd6"
+    },
+    {
+      "source": "Engine/ParcChromium/page_preferences_unittest.cc",
+      "target": "parc/page_preferences_unittest.cc",
+      "sha256": "962d5a732b447c732c3097f9694769cb1901b44a165f307d515f41361aa634d8"
     }
   ],
   "patches": [
@@ -2187,7 +2202,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-host-route-direct-overlay.patch",
-      "sha256": "9940f305a40ef59522126026bfeac971af161fae23d57774fd9f516850571f3b",
+      "sha256": "dda04b7b040e23679c72c0586d92bdd087e472d10330864e868d0aff0fb7e0e9",
       "files": [
         {
           "target": "content/browser/renderer_host/navigator.cc",
@@ -2278,11 +2293,6 @@
           "target": "third_party/blink/renderer/core/frame/local_frame_client_impl.cc",
           "before_sha256": "f6c4f4c5b8a6ef4a4570f031b315f801cc9f64fb1ab5c156c054a3dfc73403d5",
           "after_sha256": "5aeb4d1c76b7ff53941e4b734f1b36f27f67142a3d36d4df38bb9453109cff6b"
-        },
-        {
-          "target": "content/browser/web_contents/web_contents_impl_unittest.cc",
-          "before_sha256": "2cdec5a07b351eeb8a0adfe81df572c3ec6fa912481a85019bcff232a9f20e4b",
-          "after_sha256": "48d3826e6af1e5052d084df3c3fd1eaa3e75aa3f10f68ff4e6c1c2944883ffca"
         }
       ]
     },
@@ -5382,7 +5392,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-window-lookup-direct.patch",
-      "sha256": "f2b687e6a21634d0d6c6216a1d759e7d90df79508f7ad08ef54580220ee1f433",
+      "sha256": "c1ffed11ebd5aefac3ecc2a7484ba3ee96d95a349a6326460acc6364521ef968",
       "files": [
         {
           "target": "chrome/browser/ui/views/frame/browser_view.cc",
@@ -5397,7 +5407,7 @@
         {
           "target": "chrome/test/BUILD.gn",
           "before_sha256": "c6ee1786182381e83e79cddde5d6d1e6d8c545dd64eb396869ebc370030dcf07",
-          "after_sha256": "c2582ae34631ed6f9bb2607c4b6010c2f7aeecd3cda850fe8726baccd2778ec3"
+          "after_sha256": "45c3c98e626a146c75fdfca363ed59a144b3551344b44d220a2fa7787d7e9c56"
         }
       ]
     },
@@ -6332,12 +6342,12 @@
     },
     {
       "source": "Engine/ParcHost/integration/chromium-direct-shared.patch",
-      "sha256": "65fa9a6604b5c4fa6341fb10b208d4d31f038573c5e053b49285f90ee5d84917",
+      "sha256": "c1feaa54584dde794de54507bfedbc5e55dd2bcf3916e9ca6c9cf5e016e150bc",
       "files": [
         {
           "target": "content/browser/web_contents/web_contents_impl.cc",
           "before_sha256": "debf4bbfb70d0339256b39bf5b4221f9055eda8077c42b91eaa05b323516246f",
-          "after_sha256": "5c6d71e3f0182555524b193590b90be8e187c3fff5629f596dd39ac624c631e7"
+          "after_sha256": "bdfe9ef5dbde53e8f679e48ff4d56e15a5ad62157d1894b52a06ca6ec730af2a"
         },
         {
           "target": "chrome/browser/devtools/devtools_window_views.cc",
