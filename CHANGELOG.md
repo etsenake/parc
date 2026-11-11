@@ -5,6 +5,7 @@
 ### Fixed
 
 - **dialogs:** Bring a page's silenced alerts back when Chromium resets the page
+- **pip:** Give picture-in-picture captions the screen details they were squinting without
 
 ## 1.12.2 (2026-11-10)
 
