@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/html/media/parc_media_element.h"
+#include "third_party/blink/renderer/core/html/media/parc_media_element_air_play.h"
 #include "third_party/blink/renderer/core/script/classic_script.h"
 #include "third_party/blink/renderer/core/workers/worker_or_worklet_global_scope.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
@@ -186,7 +187,7 @@ void InstallParcSafariScripts(ScriptState* script_state,
                                  result.GetSuccessValueOrEmpty());
       }
       if (source == kParcWebKitPlaybackTargetScript) {
-        HTMLMediaElement::SetParcPlaybackTargetEventHook(
+        ParcMediaElementAirPlay::SetPlaybackTargetEventHook(
             script_state, result.GetSuccessValueOrEmpty());
       }
       if (source == kParcWebKitPresentationScript) {

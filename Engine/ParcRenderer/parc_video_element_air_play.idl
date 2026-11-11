@@ -1,0 +1,11 @@
+// Copyright 2026 Parc contributors.
+// Installed by the reviewed overlay at
+// //third_party/blink/renderer/core/html/media/parc_video_element_air_play.idl.
+// WebKit's AirPlay attribute of a video element, on Safari-identity pages only
+// (parc_media_element_air_play.h).
+
+[
+    ImplementedAs=ParcMediaElementAirPlay
+] partial interface HTMLVideoElement {
+    [ContextEnabled=ParcSafariIdentity, CEReactions] attribute boolean webkitWirelessVideoPlaybackDisabled;
+};

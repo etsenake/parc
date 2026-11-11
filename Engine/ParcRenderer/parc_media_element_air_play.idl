@@ -1,0 +1,12 @@
+// Copyright 2026 Parc contributors.
+// Installed by the reviewed overlay at
+// //third_party/blink/renderer/core/html/media/parc_media_element_air_play.idl.
+// WebKit's AirPlay members of a media element, on Safari-identity pages only
+// (parc_media_element_air_play.h).
+
+[
+    ImplementedAs=ParcMediaElementAirPlay
+] partial interface HTMLMediaElement {
+    [ContextEnabled=ParcSafariIdentity] undefined webkitShowPlaybackTargetPicker();
+    [ContextEnabled=ParcSafariIdentity] readonly attribute boolean webkitCurrentPlaybackTargetIsWireless;
+};

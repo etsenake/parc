@@ -400,9 +400,14 @@ each Safari-identity gate stays where it was as a one-line call into the
 supplement, in the same order. The element header keeps what the bindings and
 overrides need: the currentTime setter, `fastSeek()` and `getStartDate()`,
 whose place in the IDL fixes the prototype's member order; the identity
-check; the load algorithm's explicit-load flag; and a friend line. AirPlay's
-state still sits on the element. The video element's two Parc hooks became a
-type check, which is exact because HTMLVideoElement is final. The
+check; the load algorithm's explicit-load flag; and friend lines. AirPlay's
+state and steps live in a second supplement, and WebKit's AirPlay members
+reach it through core partial interfaces with `[ImplementedAs]`, as remote
+playback does. Core IDL files merge before every modules partial, so the
+members keep their place in the prototype's property order. The element still
+receives the player's AirPlay messages and listener changes and passes them
+on. The video element's Parc hooks, including the AirPlay placard, became type
+checks, which are exact because HTMLVideoElement is final. The
 supplement's timeupdate throttle uses WebKit's 250 ms, which is also
 Chromium's progress-timer interval; if Chromium changes its interval, the
 Safari path keeps WebKit's. Its tests live in a Parc test file with their own

@@ -63,6 +63,7 @@
 #include "third_party/blink/renderer/core/html/media/media_source_attachment.h"
 #include "third_party/blink/renderer/core/html/media/media_video_visibility_tracker.h"
 #include "third_party/blink/renderer/core/html/media/parc_media_element.h"
+#include "third_party/blink/renderer/core/html/media/parc_media_element_air_play.h"
 #include "third_party/blink/renderer/core/html/media/parc_media_element_names.h"
 #include "third_party/blink/renderer/core/html/media/parc_media_player_move.h"
 #include "third_party/blink/renderer/core/html/time_ranges.h"
@@ -639,7 +640,8 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
                                    tint_argb, tint_on_light_argb);
   }
   void ParcPlaybackTargetIsWirelessChanged(bool wireless) {
-    Media()->ParcPlaybackTargetIsWirelessChanged(wireless);
+    ParcMediaElementAirPlay::From(*Media()).PlaybackTargetIsWirelessChanged(
+        wireless);
   }
 
   TestMediaPlayerObserver& media_player_observer() {
@@ -776,8 +778,9 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
 
   // checkPlaybackTargetCompatibility, run now instead of by its timer.
   void CheckParcPlaybackTargetCompatibility() {
-    Media()->parc_check_playback_target_compatibility_timer_.Stop();
-    Media()->ParcCheckPlaybackTargetCompatibility(nullptr);
+    ParcMediaElementAirPlay& air_play = ParcMediaElementAirPlay::From(*Media());
+    air_play.check_playback_target_compatibility_timer_.Stop();
+    air_play.CheckPlaybackTargetCompatibility(nullptr);
   }
 
   size_t PendingPlayPromiseCount() const {
@@ -5663,9 +5666,11 @@ TEST_P(ParcMediaElementTest, ParcSafariAirPlayTargetAndWirelessEvent) {
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 
   ParcPlaybackTargetIsWirelessChanged(true);
-  EXPECT_FALSE(Media()->webkitCurrentPlaybackTargetIsWireless());
+  EXPECT_FALSE(
+      ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
   test::RunPendingTasks();
-  EXPECT_TRUE(Media()->webkitCurrentPlaybackTargetIsWireless());
+  EXPECT_TRUE(
+      ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
   EXPECT_EQ(listener->count(), 1);
 
   // Taken off the target: plays locally again.
@@ -5673,7 +5678,8 @@ TEST_P(ParcMediaElementTest, ParcSafariAirPlayTargetAndWirelessEvent) {
               ParcSetPlaybackTarget(std::string_view(), false));
   ParcSetPlaybackTarget(String(), String(), false);
   test::RunPendingTasks();
-  EXPECT_FALSE(Media()->webkitCurrentPlaybackTargetIsWireless());
+  EXPECT_FALSE(
+      ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
   EXPECT_EQ(listener->count(), 2);
 }
 
@@ -5691,7 +5697,8 @@ TEST_P(ParcMediaElementTest, ParcSafariAirPlayTintAloneLeavesThePlayer) {
   EXPECT_CALL(*MockMediaPlayer(), ParcSetPlaybackTarget(_, _)).Times(0);
   ParcSetPlaybackTarget(kParcAirPlayContextId, "Living Room", true, 0xFFBAA4E0);
   EXPECT_TRUE(
-      Media()->ParcAirPlayTintedGlyph().contains("rgba(186,164,224,1)"));
+      ParcMediaElementAirPlay::From(*Media()).AirPlayTintedGlyph().contains(
+          "rgba(186,164,224,1)"));
 }
 
 // A wireless report the element didn't ask for (no target) changes nothing.
@@ -5702,7 +5709,8 @@ TEST_P(ParcMediaElementTest, ParcSafariWirelessNeedsTheTarget) {
   base::RunLoop().RunUntilIdle();
   ParcPlaybackTargetIsWirelessChanged(true);
   test::RunPendingTasks();
-  EXPECT_FALSE(Media()->webkitCurrentPlaybackTargetIsWireless());
+  EXPECT_FALSE(
+      ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
 }
 
 TEST_P(ParcMediaElementTest, ParcChromeIgnoresAirPlayTarget) {
@@ -5711,7 +5719,8 @@ TEST_P(ParcMediaElementTest, ParcChromeIgnoresAirPlayTarget) {
   ParcSetPlaybackTarget(kParcAirPlayContextId, "Living Room", true);
   ParcPlaybackTargetIsWirelessChanged(true);
   test::RunPendingTasks();
-  EXPECT_FALSE(Media()->webkitCurrentPlaybackTargetIsWireless());
+  EXPECT_FALSE(
+      ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
 }
 
 // isWirelessPlaybackTargetDisabledChanged: x-webkit-airplay="deny" (and
@@ -5844,7 +5853,8 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceSwitchesToAirPlaySource) {
 
   ParcSetPlaybackTarget(kParcAirPlayContextId, "Living Room", true);
   test::RunPendingTasks();
-  EXPECT_TRUE(Media()->webkitCurrentPlaybackTargetIsWireless());
+  EXPECT_TRUE(
+      ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
   EXPECT_EQ(listener->count(), 1);
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(media_player_observer().received_playback_target_state());
@@ -5867,7 +5877,8 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceSwitchesToAirPlaySource) {
   test::RunPendingTasks();
   EXPECT_EQ(Media()->currentSrc(), KURL(alternative));
   EXPECT_FALSE(Media()->paused());
-  EXPECT_FALSE(Media()->webkitCurrentPlaybackTargetIsWireless());
+  EXPECT_FALSE(
+      ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
   EXPECT_EQ(listener->count(), 2);
 
   EXPECT_CALL(*MockMediaPlayer(), Seek(0.5));
@@ -5878,7 +5889,8 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceSwitchesToAirPlaySource) {
 
   ParcPlaybackTargetIsWirelessChanged(true);
   test::RunPendingTasks();
-  EXPECT_TRUE(Media()->webkitCurrentPlaybackTargetIsWireless());
+  EXPECT_TRUE(
+      ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
   EXPECT_EQ(listener->count(), 3);
 }
 
@@ -5895,7 +5907,8 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceWithoutAirPlaySourceStays) {
 
   ParcSetPlaybackTarget(kParcAirPlayContextId, "Living Room", true);
   test::RunPendingTasks();
-  ASSERT_TRUE(Media()->webkitCurrentPlaybackTargetIsWireless());
+  ASSERT_TRUE(
+      ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(media_player_observer().received_playback_target_state());
   EXPECT_FALSE(media_player_observer()
@@ -5906,13 +5919,15 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceWithoutAirPlaySourceStays) {
 
   CheckParcPlaybackTargetCompatibility();
   test::RunPendingTasks();
-  EXPECT_FALSE(Media()->webkitCurrentPlaybackTargetIsWireless());
+  EXPECT_FALSE(
+      ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
   EXPECT_EQ(Media()->currentSrc(), KURL(SrcSchemeToURL(TestURLScheme::kBlob)));
 
   // Given the target again, it stays here.
   ParcSetPlaybackTarget(kParcAirPlayContextId, "Living Room", true);
   test::RunPendingTasks();
-  EXPECT_FALSE(Media()->webkitCurrentPlaybackTargetIsWireless());
+  EXPECT_FALSE(
+      ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
 }
 
 // MediaElementSession::showPlaybackTargetPicker: nothing before
@@ -5922,11 +5937,11 @@ TEST_P(ParcMediaElementTest, ParcSafariPlaybackTargetPickerNeedsMetadata) {
   WaitForPlayer();
   // The state the new player reported first.
   base::RunLoop().RunUntilIdle();
-  Media()->webkitShowPlaybackTargetPicker();
+  ParcMediaElementAirPlay::webkitShowPlaybackTargetPicker(*Media());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(media_player_observer().received_playback_target_pickers(), 0);
   SetReadyState(HTMLMediaElement::kHaveMetadata);
-  Media()->webkitShowPlaybackTargetPicker();
+  ParcMediaElementAirPlay::webkitShowPlaybackTargetPicker(*Media());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(media_player_observer().received_playback_target_pickers(), 1);
 }
@@ -5967,26 +5982,32 @@ TEST_P(ParcMediaElementTest, ParcSafariWebkitWirelessVideoPlaybackDisabled) {
     GTEST_SKIP();
   }
   SetUserAgent(kParcSafariUserAgent);
-  EXPECT_TRUE(video->webkitWirelessVideoPlaybackDisabled());
+  EXPECT_TRUE(
+      ParcMediaElementAirPlay::webkitWirelessVideoPlaybackDisabled(*video));
   WaitForPlayer();
-  EXPECT_FALSE(video->webkitWirelessVideoPlaybackDisabled());
+  EXPECT_FALSE(
+      ParcMediaElementAirPlay::webkitWirelessVideoPlaybackDisabled(*video));
 
   EXPECT_CALL(*MockMediaPlayer(), ParcSetWirelessVideoPlaybackDisabled(true));
-  video->setWebkitWirelessVideoPlaybackDisabled(true);
+  ParcMediaElementAirPlay::setWebkitWirelessVideoPlaybackDisabled(*video, true);
   EXPECT_TRUE(video->FastHasAttribute(
       parc_media_element_names::WebkitwirelessvideoplaybackdisabledAttr()));
-  EXPECT_TRUE(video->webkitWirelessVideoPlaybackDisabled());
+  EXPECT_TRUE(
+      ParcMediaElementAirPlay::webkitWirelessVideoPlaybackDisabled(*video));
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 
   EXPECT_CALL(*MockMediaPlayer(), ParcSetWirelessVideoPlaybackDisabled(false));
-  video->setWebkitWirelessVideoPlaybackDisabled(false);
+  ParcMediaElementAirPlay::setWebkitWirelessVideoPlaybackDisabled(*video,
+                                                                  false);
   EXPECT_FALSE(video->FastHasAttribute(
       parc_media_element_names::WebkitwirelessvideoplaybackdisabledAttr()));
-  EXPECT_FALSE(video->webkitWirelessVideoPlaybackDisabled());
+  EXPECT_FALSE(
+      ParcMediaElementAirPlay::webkitWirelessVideoPlaybackDisabled(*video));
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 
   video->SetBooleanAttribute(html_names::kDisableremoteplaybackAttr, true);
-  EXPECT_TRUE(video->webkitWirelessVideoPlaybackDisabled());
+  EXPECT_TRUE(
+      ParcMediaElementAirPlay::webkitWirelessVideoPlaybackDisabled(*video));
 }
 
 }  // namespace blink

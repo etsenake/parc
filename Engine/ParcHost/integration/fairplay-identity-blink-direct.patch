@@ -1116,7 +1116,7 @@
  #include <limits>
  #include <utility>
  #include <variant>
-@@ -50,10 +51,16 @@
+@@ -50,10 +51,13 @@
  #include "third_party/blink/public/common/features.h"
  #include "third_party/blink/public/mojom/frame/user_activation_notification_type.mojom-shared.h"
  #include "third_party/blink/public/platform/modules/mediastream/web_media_stream.h"
@@ -1126,99 +1126,52 @@
  #include "third_party/blink/public/platform/web_media_player_source.h"
  #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 +#include "third_party/blink/renderer/bindings/core/v8/parc_webkit_need_key.h"
-+#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
-+#include "third_party/blink/renderer/bindings/core/v8/v8_event.h"
-+#include "third_party/blink/renderer/bindings/core/v8/v8_script_runner.h"
 +#include "third_party/blink/renderer/bindings/core/v8/script_value.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_can_play_type_result.h"
  #include "third_party/blink/renderer/core/core_initializer.h"
  #include "third_party/blink/renderer/core/core_probes_inl.h"
-@@ -71,6 +78,9 @@
+@@ -71,6 +75,7 @@
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 +#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
-+#include "third_party/blink/renderer/core/frame/visual_viewport.h"
-+#include "third_party/blink/renderer/core/input/event_handler.h"
  #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
  #include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
-@@ -86,6 +96,10 @@
+@@ -86,6 +91,9 @@
  #include "third_party/blink/renderer/core/html/media/media_source_attachment.h"
  #include "third_party/blink/renderer/core/html/media/media_source_handle.h"
  #include "third_party/blink/renderer/core/html/media/media_source_tracer.h"
 +#include "third_party/blink/renderer/core/html/media/parc_media_element.h"
++#include "third_party/blink/renderer/core/html/media/parc_media_element_air_play.h"
 +#include "third_party/blink/renderer/core/html/media/parc_media_element_names.h"
-+#include "third_party/blink/renderer/core/html/media/parc_remote_playback_extension.h"
-+#include "third_party/blink/renderer/core/html/media/remote_playback_controller.h"
  #include "third_party/blink/renderer/core/html/time_ranges.h"
  #include "third_party/blink/renderer/core/html/track/audio_track.h"
  #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
-@@ -130,6 +144,7 @@
- #include "third_party/blink/renderer/platform/wtf/vector.h"
- #include "ui/accessibility/accessibility_features.h"
- #include "ui/display/screen_info.h"
-+#include "ui/gfx/geometry/point_conversions.h"
--
-+
- #ifndef LOG_MEDIA_EVENTS
- // Default to not logging events because so many are generated they can
-@@ -458,12 +473,17 @@
-       deferred_load_timer_(document.GetTaskRunner(TaskType::kInternalMedia),
-                            this,
-                            &HTMLMediaElement::DeferredLoadTimerFired),
-+      parc_check_playback_target_compatibility_timer_(
-+          document.GetTaskRunner(TaskType::kInternalMedia),
-+          this,
-+          &HTMLMediaElement::ParcCheckPlaybackTargetCompatibility),
-       audio_tracks_(MakeGarbageCollected<AudioTrackList>(*this)),
-       video_tracks_(MakeGarbageCollected<VideoTrackList>(*this)),
-       autoplay_policy_(MakeGarbageCollected<AutoplayPolicy>(this)),
+@@ -464,6 +472,8 @@
        controls_list_(MakeGarbageCollected<HTMLMediaElementControlsList>(this)) {
    DVLOG(1) << "HTMLMediaElement(" << *this << ")";
 -
 +
 +  ParcMediaElement::ProvideTo(*this);
++  ParcMediaElementAirPlay::ProvideTo(*this);
    ResetMojoState();
 -
 +
    LocalFrame* frame = document.GetFrame();
-@@ -502,6 +522,20 @@
-   progress_event_timer_.Shutdown();
-   playback_progress_timer_.Shutdown();
- }
-+
-+namespace {
-+
-+// The Parc operations of `player`, or null without a player or without them.
-+ParcWebMediaPlayerExtension* ParcExtension(WebMediaPlayer* player) {
-+  return player ? player->GetParcExtension() : nullptr;
-+}
-+
-+bool ParcPlayerSupportsPlaybackTarget(WebMediaPlayer* player) {
-+  ParcWebMediaPlayerExtension* parc = ParcExtension(player);
-+  return parc && parc->ParcSupportsPlaybackTarget();
-+}
-+
-+}  // namespace
--
-+
- void HTMLMediaElement::DidMoveToNewDocument(Document& old_document) {
-   DVLOG(3) << "didMoveToNewDocument(" << *this << ")";
-@@ -524,6 +558,10 @@
+@@ -524,6 +534,9 @@
        GetDocument().GetTaskRunner(TaskType::kInternalMedia));
    removed_from_document_timer_.MoveToNewTaskRunner(
        GetDocument().GetTaskRunner(TaskType::kInternalMedia));
 +  ParcMediaElement& parc_media = ParcMediaElement::From(*this);
 +  parc_media.MoveTimersToNewTaskRunner();
-+  parc_check_playback_target_compatibility_timer_.MoveToNewTaskRunner(
-+      GetDocument().GetTaskRunner(TaskType::kInternalMedia));
++  ParcMediaElementAirPlay::From(*this).MoveTimerToNewTaskRunner();
 -
 +
    autoplay_policy_->DidMoveToNewDocument(old_document);
 -
 +
-@@ -554,7 +592,40 @@
+@@ -554,7 +567,40 @@
    // changes so that playback can be resumed properly.
    // TODO(liberato): Consider checking that the new document's opener is the old
    // document: GetDocument().GetFrame()->Opener() == old_document.GetFrame().
@@ -1261,7 +1214,7 @@
 +
    // Experimental: Try to avoid destroying the media player when transferring a
    // media element to a new document. This is a work in progress, and may cause
-@@ -567,19 +638,35 @@
+@@ -567,19 +613,35 @@
    // guaranteed not to outlive its opener document because
    // DocumentPictureInPictureController watches the destruction and navigation
    // of the opener's WebContents.
@@ -1300,7 +1253,7 @@
    } else {
      // Moving to a new document, so make sure that the player's opener is not
      // closed while we're still using it.
-@@ -593,8 +680,11 @@
+@@ -593,8 +655,11 @@
        // then we'll get this wrong.  Somebody would have to set
        // `opener_document_` correctly before we get here, so we'd end up in the
        // case above, instead.  They'd also have to create the context observer.
@@ -1314,7 +1267,7 @@
        opener_context_observer_ =
            MakeGarbageCollected<OpenerContextObserver>(this);
      }
-@@ -616,30 +706,44 @@
+@@ -616,30 +681,44 @@
    // player at this point. We generally destroy the player when moving the
    // element between frames (see the `ShouldReusePlayer()` check above).
    // Therefore, `GetWebMediaPlayer()` will be null here and reparenting will be
@@ -1365,7 +1318,7 @@
  bool HTMLMediaElement::ShouldReusePlayer(Document& old_document,
                                           Document& new_document) const {
    // A NULL frame implies a NULL domWindow, so just check one of them
-@@ -700,6 +804,10 @@
+@@ -700,6 +779,10 @@
  }
 -
 +
@@ -1377,7 +1330,7 @@
    ExecutionContext* context = GetDocument().GetExecutionContext();
    return !context ||
           context->IsFeatureEnabled(network::mojom::PermissionsPolicyFeature::
-@@ -803,6 +911,14 @@
+@@ -803,6 +886,14 @@
  void HTMLMediaElement::ParseAttribute(
      const AttributeModificationParams& params) {
    const QualifiedName& name = params.name;
@@ -1392,19 +1345,21 @@
    if (name == html_names::kSrcAttr) {
      DVLOG(2) << "parseAttribute(" << *this
               << ", kSrcAttr, old=" << params.old_value
-@@ -845,6 +961,11 @@
+@@ -845,6 +936,13 @@
              !params.new_value.IsNull());
        }
      }
-+    ParcWirelessPlaybackTargetDisabledChanged();
++    ParcMediaElementAirPlay::From(*this)
++        .WirelessPlaybackTargetDisabledChanged();
 +  } else if (name == parc_media_element_names::XWebkitAirplayAttr() ||
 +             name == parc_media_element_names::
 +                         WebkitwirelessvideoplaybackdisabledAttr()) {
-+    ParcWirelessPlaybackTargetDisabledChanged();
++    ParcMediaElementAirPlay::From(*this)
++        .WirelessPlaybackTargetDisabledChanged();
    } else if (name == html_names::kLatencyhintAttr &&
               RuntimeEnabledFeatures::MediaLatencyHintEnabled()) {
      if (web_media_player_)
-@@ -916,7 +1037,20 @@
+@@ -916,7 +1014,20 @@
    if (insertion_point.isConnected()) {
      if (auto* frame = insertion_point.GetDocument().GetFrame()) {
        frame->AddVisibilityObserver(this);
@@ -1426,7 +1381,7 @@
      }
      // Cancel any pending removed-from-document timer: the element has been
      // (re-)inserted into a document, so it should not be paused by that timer.
-@@ -932,6 +1066,7 @@
+@@ -932,6 +1043,7 @@
        ignore_preload_none_ = false;
        InvokeLoadAlgorithm();
      }
@@ -1435,7 +1390,7 @@
 -
 +
    return kInsertionShouldCallDidNotifySubtreeInsertions;
-@@ -1018,6 +1153,12 @@
+@@ -1018,6 +1130,12 @@
    }
 -
 +
@@ -1450,7 +1405,7 @@
 -
 +
  MediaError* HTMLMediaElement::error() const {
-@@ -1069,10 +1210,45 @@
+@@ -1069,10 +1187,45 @@
    return network_state_;
  }
 -
@@ -1499,7 +1454,7 @@
 +
    V8CanPlayTypeResult can_play =
        V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
-@@ -1101,7 +1277,13 @@
+@@ -1101,7 +1254,13 @@
    autoplay_policy_->TryUnlockingUserGesture();
 -
 +
@@ -1516,7 +1471,7 @@
 -
 +
  // Implements the "media element load algorithm" as defined by
-@@ -1110,8 +1292,14 @@
+@@ -1110,8 +1269,14 @@
  // invokeLoadAlgorithm() in all places except load(). Move it inside here
  // once microtask is implemented for "Await a stable state" step
  // in resource selection algorithm.
@@ -1528,12 +1483,12 @@
 +  parc_media.PrepareForLoad();
 +  // A new load ends a switch to a <source> alternative, which WebKit's
 +  // prepareForLoad leaves to the next load's future data.
-+  parc_remote_playback_time_.reset();
++  ParcMediaElementAirPlay::From(*this).remote_playback_time_.reset();
 -
 +
    // Capture the user-visible playback position now, before the player is torn
    // down. ResetMediaPlayerAndMediaSource() nulls web_media_player_, after which
-@@ -1123,10 +1311,12 @@
+@@ -1123,10 +1288,12 @@
    // Perform the cleanup required for the resource load algorithm to run.
    StopPeriodicTimers();
    load_timer_.Stop();
@@ -1546,7 +1501,7 @@
    }
    pending_action_flags_ &= ~kLoadMediaResource;
    if (sent_stalled_event_) {
-@@ -1134,6 +1324,9 @@
+@@ -1134,6 +1301,9 @@
      PseudoStateChanged(CSSSelector::kPseudoStalled);
    }
    have_fired_loaded_data_ = false;
@@ -1558,7 +1513,7 @@
    autoplay_policy_->StopAutoplayMutedWhenVisible();
 -
 +
-@@ -1176,6 +1369,8 @@
+@@ -1176,6 +1346,8 @@
    if (network_state_ == kNetworkLoading || network_state_ == kNetworkIdle)
      ScheduleNamedEvent(event_type_names::kAbort);
 -
@@ -1569,7 +1524,7 @@
 -
 +
    // 6 - If the media element's networkState is not set to NETWORK_EMPTY, then
-@@ -1196,6 +1391,7 @@
+@@ -1196,6 +1368,7 @@
      // state.
      ready_state_ = kHaveNothing;
      ready_state_maximum_ = kHaveNothing;
@@ -1578,7 +1533,7 @@
 -
 +
      DCHECK(!paused_ || play_promise_resolvers_.empty());
-@@ -1214,6 +1410,7 @@
+@@ -1214,6 +1387,7 @@
 -
 +
      // 4.7 - If seeking is true, set it to false.
@@ -1588,7 +1543,7 @@
 +
      // 4.8 - Set the current playback position to 0.
      //       Set the official playback position to 0.
-@@ -1222,7 +1419,7 @@
+@@ -1222,7 +1396,7 @@
      // 4.9 - Set the initial playback position to 0.
      SetOfficialPlaybackPosition(0);
      if (old_playback_position != 0) {
@@ -1598,7 +1553,7 @@
      GetCueTimeline().OnReadyStateReset();
 -
 +
-@@ -1236,11 +1433,38 @@
+@@ -1236,11 +1410,38 @@
      // verify the assumption that it's a very rare situation.
      UseCounter::Count(GetDocument(),
                        WebFeature::kHTMLMediaElementLoadNetworkEmptyNotPaused);
@@ -1641,7 +1596,7 @@
 +
    // 8 - Set the error attribute to null and the can autoplay flag to true.
    SetError(nullptr);
-@@ -1352,12 +1576,22 @@
+@@ -1352,12 +1553,22 @@
      // to deal with this properly. https://crbug.com/789737
      load_state_ = kWaitingForSource;
      SetShouldDelayLoadEvent(false);
@@ -1667,7 +1622,7 @@
      UpdateLayoutObject();
 -
 +
-@@ -1383,7 +1617,12 @@
+@@ -1383,7 +1594,12 @@
      }
      // Note: Autoplay is handled by existing AutoplayPolicy which already
      // uses IntersectionObserver to defer muted autoplay until visible.
@@ -1681,7 +1636,7 @@
      SetShouldDelayLoadEvent(false);
      return;
    }
-@@ -1513,6 +1752,8 @@
+@@ -1513,6 +1729,8 @@
      return;
    }
 -
@@ -1692,18 +1647,18 @@
    SetNetworkState(kNetworkLoading);
 -
 +
-@@ -1568,7 +1809,9 @@
+@@ -1568,7 +1786,9 @@
      if (!media_source_attachment_) {
        attempt_load = false;
      }
 -  } else {
-+  } else if (!parc_remote_playback_time_) {
++  } else if (!ParcMediaElementAirPlay::From(*this).remote_playback_time_) {
 +    // Parc: not for the <source> an AirPlay target switched to (WebKit's
 +    // loadResource under m_remotePlaybackConfiguration).
      media_source_attachment_ =
          MediaSourceAttachment::LookupMediaSource(url.GetString());
    }
-@@ -1605,10 +1848,25 @@
+@@ -1605,10 +1825,25 @@
    if (attempt_load && can_load_resource) {
      DCHECK(!web_media_player_);
 -
@@ -1731,7 +1686,7 @@
          EffectivePreloadType() == WebMediaPlayer::kPreloadNone) {
        DVLOG(3) << "loadResource(" << *this
                 << ") : Delaying load because preload == 'none'";
-@@ -1707,7 +1965,9 @@
+@@ -1707,7 +1942,9 @@
    // the page to operate without JavaScript. The media element is too
    // complicated to continue running in this state, so fail.
    // See https://crbug.com/1345473 for more information.
@@ -1742,7 +1697,7 @@
        GetDocument().domWindow()->IsContextDestroyed()) {
      MediaLoadingFailed(
          WebMediaPlayer::kNetworkStateFormatError,
-@@ -1760,6 +2020,14 @@
+@@ -1760,6 +1997,14 @@
      source = WebMediaPlayerSource(WebURL(kurl));
    }
 -
@@ -1759,7 +1714,7 @@
        frame->Client()->CreateWebMediaPlayer(*this, source, this);
 -
 +
-@@ -1775,14 +2043,7 @@
+@@ -1775,14 +2020,7 @@
    // Setup the communication channels between the renderer and browser processes
    // via the MediaPlayer and MediaPlayerObserver mojo interfaces.
    DCHECK(media_player_receiver_set_->Value().empty());
@@ -1776,7 +1731,7 @@
 +
    if (GetLayoutObject())
      GetLayoutObject()->SetShouldDoFullPaintInvalidation();
-@@ -1798,8 +2059,27 @@
+@@ -1798,8 +2036,15 @@
 -
 +
    web_media_player_->RequestRemotePlaybackDisabled(
@@ -1785,19 +1740,7 @@
 +  // AirPlay target; createMediaPlayer queues an availability event for its
 +  // listeners.
 +  if (PresentsParcSafariIdentity()) {
-+    parc_player_wireless_ = false;
-+    parc_player_should_play_ = false;
-+    parc_failed_to_play_to_wireless_target_ = false;
-+    if (parc_playing_to_wireless_target_) {
-+      ParcUpdatePlayingToWirelessTarget();
-+    }
-+    ParcApplyPlaybackTargetToPlayer();
-+    ParcReportPlaybackTargetState();
-+    if (ParcHasPlaybackTargetAvailabilityListeners() &&
-+        !parc_wireless_playback_target_disabled_) {
-+      ParcEnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/false);
-+    }
-+    ParcRemoteAvailabilityChanged();
++    ParcMediaElementAirPlay::From(*this).PlayerCreated();
 +  }
 -
 +
@@ -1807,7 +1750,7 @@
 +
    bool is_cache_disabled = false;
    probe::IsCacheDisabled(GetDocument().GetExecutionContext(),
-@@ -1824,6 +2104,7 @@
+@@ -1824,6 +2069,7 @@
  }
 -
 +
@@ -1817,7 +1760,7 @@
      web_media_player_->SetPreload(EffectivePreloadType());
 -
 +
-@@ -2125,6 +2406,11 @@
+@@ -2125,6 +2371,11 @@
    // is set to MEDIA_ERR_NETWORK/MEDIA_ERR_DECODE.
    SetError(err);
 -
@@ -1831,7 +1774,7 @@
    ScheduleNamedEvent(event_type_names::kError);
 -
 +
-@@ -2142,6 +2428,7 @@
+@@ -2142,6 +2393,7 @@
  void HTMLMediaElement::CancelPendingEventsAndCallbacks() {
    DVLOG(3) << "cancelPendingEventsAndCallbacks(" << *this << ")";
    async_event_queue_->CancelAllEvents();
@@ -1840,7 +1783,7 @@
 +
    for (HTMLSourceElement* source =
             Traversal<HTMLSourceElement>::FirstChild(*this);
-@@ -2202,19 +2489,31 @@
+@@ -2202,19 +2454,31 @@
      return;
    }
 -
@@ -1877,7 +1820,7 @@
        // Generate a more meaningful error message to differentiate the two types
        // of MEDIA_SRC_ERR_NOT_SUPPORTED.
        NoneSupported(BuildElementErrorMessage(
-@@ -2241,6 +2540,9 @@
+@@ -2241,6 +2505,9 @@
    if (state == WebMediaPlayer::kNetworkStateFormatError ||
        state == WebMediaPlayer::kNetworkStateNetworkError ||
        state == WebMediaPlayer::kNetworkStateDecodeError) {
@@ -1887,7 +1830,7 @@
      MediaLoadingFailed(state, web_media_player_->GetErrorMessage());
      return;
    }
-@@ -2248,6 +2550,11 @@
+@@ -2248,6 +2515,11 @@
    if (state == WebMediaPlayer::kNetworkStateIdle) {
      if (network_state_ > kNetworkIdle) {
        ChangeNetworkStateFromLoadingToIdle();
@@ -1899,7 +1842,7 @@
      } else {
        SetNetworkState(kNetworkIdle);
      }
-@@ -2262,6 +2569,9 @@
+@@ -2262,6 +2534,9 @@
    if (state == WebMediaPlayer::kNetworkStateLoaded) {
      if (network_state_ != kNetworkIdle)
        ChangeNetworkStateFromLoadingToIdle();
@@ -1910,7 +1853,7 @@
  }
 -
 +
-@@ -2271,7 +2581,10 @@
+@@ -2271,7 +2546,10 @@
    if (!MediaShouldBeOpaque()) {
      // Schedule one last progress event so we guarantee that at least one is
      // fired for files that load very quickly.
@@ -1922,7 +1865,7 @@
        ScheduleNamedEvent(event_type_names::kProgress);
      ScheduleNamedEvent(event_type_names::kSuspend);
      SetNetworkState(kNetworkIdle);
-@@ -2283,16 +2596,30 @@
+@@ -2283,16 +2561,30 @@
  }
 -
 +
@@ -1959,7 +1902,7 @@
 +
    ReadyState old_state = ready_state_;
    ReadyState new_state = state;
-@@ -2363,10 +2690,13 @@
+@@ -2363,10 +2655,13 @@
 -
 +
    if (new_state > ready_state_maximum_)
@@ -1976,7 +1919,7 @@
    if (seeking_) {
      // 4.8.12.9, step 9 note: If the media element was potentially playing
      // immediately before it started seeking, but seeking caused its readyState
-@@ -2376,8 +2706,24 @@
+@@ -2376,8 +2671,24 @@
        ScheduleNamedEvent(event_type_names::kWaiting);
 -
 +
@@ -2003,7 +1946,7 @@
    } else {
      if (was_potentially_playing && ready_state_ < kHaveFutureData) {
        // Force an update to official playback position. Automatic updates from
-@@ -2396,6 +2742,9 @@
+@@ -2396,6 +2707,9 @@
    // Once enough of the media data has been fetched to determine the duration of
    // the media resource, its dimensions, and other metadata...
    if (ready_state_ >= kHaveMetadata && old_state < kHaveMetadata) {
@@ -2014,7 +1957,7 @@
 -
 +
      MediaFragmentURIParser fragment_parser(current_src_.GetSource());
-@@ -2408,9 +2757,27 @@
+@@ -2408,9 +2722,23 @@
      duration_ = web_media_player_->Duration();
      ScheduleNamedEvent(event_type_names::kDurationchange);
 -
@@ -2034,17 +1977,13 @@
 +    // Parc: WebKit's HAVE_METADATA availability event; the player now knows
 +    // whether it can play to an AirPlay device.
 +    if (PresentsParcSafariIdentity()) {
-+      if (ParcHasPlaybackTargetAvailabilityListeners() &&
-+          !parc_wireless_playback_target_disabled_) {
-+        ParcEnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/true);
-+      }
-+      ParcReportPlaybackTargetState();
++      ParcMediaElementAirPlay::From(*this).MetadataLoaded();
 +    }
 -
 +
      if (RuntimeEnabledFeatures::AudioVideoTracksEnabled()) {
        Vector<String> default_tracks = fragment_parser.DefaultTracks();
-@@ -2466,7 +2833,10 @@
+@@ -2466,7 +2794,10 @@
      UpdateLayoutObject();
    }
 -
@@ -2057,17 +1996,19 @@
    if (ready_state_ >= kHaveCurrentData && old_state < kHaveCurrentData &&
        !have_fired_loaded_data_) {
      // Force an update to official playback position to catch non-zero start
-@@ -2481,11 +2851,21 @@
+@@ -2481,11 +2812,23 @@
      OnLoadFinished();
    }
 -
 +
 +  // Parc: applyConfiguration, once the <source> an AirPlay target switched
 +  // to has future data.
-+  if (parc_remote_playback_time_ && tracks_are_ready &&
++  std::optional<double>& parc_remote_playback_time =
++      ParcMediaElementAirPlay::From(*this).remote_playback_time_;
++  if (parc_remote_playback_time && tracks_are_ready &&
 +      ready_state_ >= kHaveFutureData && old_state < kHaveFutureData) {
 +    if (const double time =
-+            *std::exchange(parc_remote_playback_time_, std::nullopt)) {
++            *std::exchange(parc_remote_playback_time, std::nullopt)) {
 +      setCurrentTime(time);
 +    }
 +  }
@@ -2082,7 +2023,7 @@
 -
 +
    if (ready_state_ == kHaveEnoughData && old_state < kHaveEnoughData &&
-@@ -2493,19 +2873,24 @@
+@@ -2493,19 +2836,24 @@
      if (old_state <= kHaveCurrentData) {
        ScheduleNamedEvent(event_type_names::kCanplay);
        if (is_potentially_playing)
@@ -2117,7 +2058,7 @@
 -
 +
    UpdatePlayState();
-@@ -2549,6 +2934,15 @@
+@@ -2549,6 +2897,15 @@
      return;
    }
 -
@@ -2134,7 +2075,7 @@
    // If this is an cross-origin request, and we haven't discovered whether
    // the media is actually playable yet, don't fire any progress events as
    // those may let the page know information about the resource that it's
-@@ -2666,6 +3060,11 @@
+@@ -2666,6 +3023,11 @@
    if (!web_media_player_ || ready_state_ == kHaveNothing)
      return;
 -
@@ -2148,7 +2089,7 @@
    SetIgnorePreloadNone();
 -
 +
-@@ -2727,7 +3126,14 @@
+@@ -2727,7 +3089,14 @@
    ScheduleNamedEvent(event_type_names::kSeeking);
 -
 +
@@ -2166,7 +2107,7 @@
 -
 +
    // 14-17 are handled, if necessary, when the engine signals a readystate
-@@ -2737,22 +3143,41 @@
+@@ -2737,22 +3106,41 @@
  void HTMLMediaElement::FinishSeek() {
    DVLOG(3) << "finishSeek(" << *this << ")";
    DCHECK(seeking_);
@@ -2215,7 +2156,7 @@
 -
 +
  HTMLMediaElement::ReadyState HTMLMediaElement::getReadyState() const {
-@@ -2781,6 +3206,11 @@
+@@ -2781,6 +3169,11 @@
    }
    seeking_ = seeking;
    PseudoStateChanged(CSSSelector::kPseudoSeeking);
@@ -2228,7 +2169,7 @@
 -
 +
  // https://www.w3.org/TR/html51/semantics-embedded-content.html#earliest-possible-position
-@@ -2883,6 +3313,15 @@
+@@ -2883,6 +3276,15 @@
      return last_seek_time_;
    }
 -
@@ -2246,7 +2187,7 @@
  }
 -
 +
-@@ -2898,6 +3337,21 @@
+@@ -2898,6 +3300,21 @@
    ReportCurrentTimeToMediaSource();
  }
 -
@@ -2269,7 +2210,7 @@
  double HTMLMediaElement::duration() const {
    return duration_;
  }
-@@ -2910,7 +3364,13 @@
+@@ -2910,7 +3327,13 @@
    if (paused_ == paused) {
      return;
    }
@@ -2283,7 +2224,7 @@
    PseudoStateChanged(CSSSelector::kPseudoPaused);
    PseudoStateChanged(CSSSelector::kPseudoPlaying);
    PseudoStateChanged(CSSSelector::kPseudoBuffering);
-@@ -2927,8 +3387,11 @@
+@@ -2927,8 +3350,11 @@
    if (GetLoadType() == WebMediaPlayer::kLoadTypeMediaStream)
      return;
 -
@@ -2299,7 +2240,7 @@
 +
    default_playback_rate_ = rate;
    ScheduleNamedEvent(event_type_names::kRatechange);
-@@ -2946,7 +3409,8 @@
+@@ -2946,7 +3372,8 @@
    if (GetLoadType() == WebMediaPlayer::kLoadTypeMediaStream)
      return;
 -
@@ -2311,7 +2252,7 @@
                        WebFeature::kHTMLMediaElementMediaPlaybackRateOutOfRange);
 -
 +
-@@ -2961,6 +3425,14 @@
+@@ -2961,6 +3388,14 @@
      return;
    }
 -
@@ -2327,7 +2268,7 @@
    if (playback_rate_ != rate) {
      playback_rate_ = rate;
      ScheduleNamedEvent(event_type_names::kRatechange);
-@@ -2971,13 +3443,29 @@
+@@ -2971,13 +3406,29 @@
    // web_media_player_ is cleared but readystate is not set to kHaveNothing.
    if (web_media_player_) {
      if (PotentiallyPlaying())
@@ -2361,7 +2302,7 @@
 -
 +
  HTMLMediaElement::DirectionOfPlayback HTMLMediaElement::GetDirectionOfPlayback()
-@@ -2989,6 +3477,10 @@
+@@ -2989,6 +3440,10 @@
    // 4.8.12.8 Playing the media resource
    // The ended attribute must return true if the media element has ended
    // playback and the direction of playback is forwards, and false otherwise.
@@ -2373,7 +2314,7 @@
  }
 -
 +
-@@ -3024,6 +3516,17 @@
+@@ -3024,6 +3479,17 @@
 -
 +
    lazy_media_load_state_ = LazyMediaLoadState::kFullMedia;
@@ -2393,7 +2334,7 @@
 +
    // Post the resource selection to a microtask to avoid re-entrancy issues
    // when the IntersectionObserver callback fires during SelectMediaResource.
-@@ -3083,6 +3586,14 @@
+@@ -3083,6 +3549,14 @@
      UseCounter::Count(GetDocument(),
                        WebFeature::kHTMLMediaElementPreloadMetadata);
      return WebMediaPlayer::kPreloadMetaData;
@@ -2409,7 +2350,7 @@
 -
 +
    // Force preload to 'metadata' on cellular connections.
-@@ -3115,12 +3626,24 @@
+@@ -3115,12 +3589,24 @@
  }
 -
 +
@@ -2438,7 +2379,7 @@
 +
    return preload;
  }
-@@ -3160,6 +3683,7 @@
+@@ -3160,6 +3646,7 @@
 -
 +
  std::optional<DOMExceptionCode> HTMLMediaElement::Play() {
@@ -2448,7 +2389,7 @@
 +
    std::optional<DOMExceptionCode> exception_code =
        autoplay_policy_->RequestPlay();
-@@ -3210,6 +3734,16 @@
+@@ -3210,6 +3697,16 @@
      player_lazy_load_intersection_observer_ = nullptr;
    }
 -
@@ -2466,7 +2407,7 @@
    // 4.8.12.8. Playing the media resource
    if (network_state_ == kNetworkEmpty)
      InvokeResourceSelectionAlgorithm();
-@@ -3223,6 +3757,12 @@
+@@ -3223,6 +3720,12 @@
    if (paused_) {
      SetPaused(false);
      SetShowPosterFlag(false);
@@ -2480,7 +2421,7 @@
      ScheduleNamedEvent(event_type_names::kPlay);
 -
 +
-@@ -3247,15 +3787,25 @@
+@@ -3247,15 +3750,25 @@
 -
 +
    autoplay_policy_->StopAutoplayMutedWhenVisible();
@@ -2512,7 +2453,7 @@
 +
    if (!paused_) {
      SetPaused(true);
-@@ -3313,6 +3863,7 @@
+@@ -3313,6 +3826,7 @@
  }
 -
 +
@@ -2522,7 +2463,7 @@
      return;
 -
 +
-@@ -3400,14 +3951,25 @@
+@@ -3400,14 +3914,25 @@
      return;
    }
 -
@@ -2553,7 +2494,7 @@
 +
    // If playback was not paused by the autoplay policy and got audible, the
    // element is marked as being allowed to play unmuted.
-@@ -3428,8 +3990,11 @@
+@@ -3428,8 +3953,11 @@
    // ever do support it.
    static_assert(kMinPlaybackRate >= 0);
 -
@@ -2569,7 +2510,7 @@
    }
 -
 +
-@@ -3438,26 +4003,43 @@
+@@ -3438,26 +3966,43 @@
 -
 +
  void HTMLMediaElement::setMuted(bool muted) {
@@ -2630,7 +2571,7 @@
 +
    // If playback was not paused by the autoplay policy and got unmuted, the
    // element is marked as being allowed to play unmuted.
-@@ -3470,6 +4052,13 @@
+@@ -3470,6 +4015,13 @@
      web_media_player_->SetVolume(EffectiveMediaVolume());
 -
 +
@@ -2646,7 +2587,7 @@
 -
 +
  void HTMLMediaElement::SetUserWantsControlsVisible(bool visible) {
-@@ -3499,10 +4088,13 @@
+@@ -3499,10 +4051,13 @@
      return;
 -
 +
@@ -2662,7 +2603,7 @@
    if (!std::isnan(fragment_end_time_) && currentTime() >= fragment_end_time_ &&
        GetDirectionOfPlayback() == kForward) {
      fragment_end_time_ = std::numeric_limits<double>::quiet_NaN();
-@@ -3528,6 +4120,11 @@
+@@ -3528,6 +4083,11 @@
    if (web_media_player_)
      web_media_player_->OnTimeUpdate();
 -
@@ -2675,454 +2616,47 @@
    // Per spec, consult current playback position to check for changing time.
    double media_time = CurrentPlaybackPosition();
    bool media_time_has_progressed =
-@@ -3549,6 +4146,445 @@
+@@ -3549,6 +4109,38 @@
    }
  }
 -
-+
-+// Parc: AirPlay on a Safari-identity page, as WebKit's WIRELESS_PLAYBACK_TARGET
-+// on macOS (HTMLMediaElement.cpp, MediaElementSession.cpp). The browser
-+// watches for AirPlay devices, shows the system's route list and hands the
-+// element its route picker's AVOutputContext; only the native HLS player
-+// plays to it, through AVPlayer, as only Safari's AVFoundation player does
-+// (NATIVE_HLS.md "AirPlay").
-+bool HTMLMediaElement::ParcWirelessPlaybackTargetDisabled() const {
-+  return EqualIgnoringAsciiCase(
-+             FastGetAttribute(parc_media_element_names::XWebkitAirplayAttr()),
-+             "deny") ||
-+         FastHasAttribute(parc_media_element_names::
-+                              WebkitwirelessvideoplaybackdisabledAttr()) ||
-+         FastHasAttribute(html_names::kDisableremoteplaybackAttr);
-+}
-+
-+namespace {
-+
-+// A V8 private symbol, kept on the context's own global object, so a
-+// navigation's new context starts without the previous document's hook.
-+v8::Local<v8::Private> ParcPlaybackTargetEventHookKey(v8::Isolate* isolate) {
-+  return v8::Private::ForApi(
-+      isolate, V8AtomicString(isolate, "Parc::WebKitPlaybackTargetEvent"));
-+}
-+
-+// The event WebKit's enqueuePlaybackTargetAvailabilityChangedEvent queues, or
-+// null when the window has no hook (its scripts can't run, so no page script
-+// listens either).
-+Event* CreateParcPlaybackTargetAvailabilityEvent(LocalDOMWindow& window,
-+                                                 bool available) {
-+  if (window.IsContextDestroyed() || !window.GetFrame()) {
-+    return nullptr;
-+  }
-+  ScriptState* script_state = ToScriptStateForMainWorld(window.GetFrame());
-+  if (!script_state || !script_state->ContextIsValid()) {
-+    return nullptr;
-+  }
-+  ScriptState::Scope scope(script_state);
-+  v8::Isolate* isolate = script_state->GetIsolate();
-+  v8::Local<v8::Context> context = script_state->GetContext();
-+  v8::Local<v8::Value> hook;
-+  if (!context->Global()
-+           ->GetPrivate(context, ParcPlaybackTargetEventHookKey(isolate))
-+           .ToLocal(&hook) ||
-+      !hook->IsFunction()) {
-+    return nullptr;
-+  }
-+  v8::TryCatch try_catch(isolate);
-+  v8::Local<v8::Value> argv[] = {v8::Boolean::New(isolate, available)};
-+  v8::Local<v8::Value> event;
-+  if (!V8ScriptRunner::CallFunction(hook.As<v8::Function>(), &window,
-+                                    v8::Undefined(isolate), std::size(argv),
-+                                    argv, isolate)
-+           .ToLocal(&event)) {
-+    return nullptr;
-+  }
-+  Event* result = V8Event::ToWrappable(isolate, event);
-+  return result && result->type() ==
-+                       parc_media_element_names::
-+                           Webkitplaybacktargetavailabilitychanged()
-+             ? result
-+             : nullptr;
-+}
-+
-+}  // namespace
-+
-+// The script returns nothing when the context already has the interface (a
-+// document taking over its window's context keeps the first hook).
-+void HTMLMediaElement::SetParcPlaybackTargetEventHook(
-+    ScriptState* script_state,
-+    v8::Local<v8::Value> hook) {
-+  if (hook.IsEmpty() || !hook->IsFunction()) {
-+    return;
-+  }
-+  v8::Local<v8::Context> context = script_state->GetContext();
-+  std::ignore = context->Global()->SetPrivate(
-+      context, ParcPlaybackTargetEventHookKey(script_state->GetIsolate()),
-+      hook);
-+}
-+
-+bool HTMLMediaElement::ParcHasPlaybackTargetAvailabilityListeners() const {
-+  return HasEventListeners(
-+      parc_media_element_names::Webkitplaybacktargetavailabilitychanged());
-+}
-+
-+// isWirelessPlaybackTargetDisabledChanged: listeners hear the change, the
-+// last "available" taken back with one "not-available".
-+void HTMLMediaElement::ParcWirelessPlaybackTargetDisabledChanged() {
-+  if (!PresentsParcSafariIdentity()) {
-+    return;
-+  }
-+  ParcOpenIfDeferredOpen();
-+  const bool disabled = ParcWirelessPlaybackTargetDisabled();
-+  if (disabled == parc_wireless_playback_target_disabled_) {
-+    return;
-+  }
-+  parc_wireless_playback_target_disabled_ = disabled;
-+  if (ParcHasPlaybackTargetAvailabilityListeners() &&
-+      (!disabled || parc_last_availability_event_)) {
-+    ParcEnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/false);
-+  }
-+  if (auto* parc = ParcExtension(web_media_player_.get())) {
-+    parc->ParcSetWirelessVideoPlaybackDisabled(disabled);
-+  }
-+  ParcReportPlaybackTargetState();
-+  ParcRemoteAvailabilityChanged();
-+}
-+
-+void HTMLMediaElement::ParcEnqueuePlaybackTargetAvailabilityEvent(
-+    bool only_when_changed) {
-+  const bool has_targets =
-+      !parc_wireless_playback_target_disabled_ && parc_has_playback_targets_;
-+  if (only_when_changed && has_targets == parc_last_availability_event_) {
-+    return;
-+  }
-+  parc_last_availability_event_ = has_targets;
-+  auto* window = DynamicTo<LocalDOMWindow>(GetExecutionContext());
-+  if (Event* event = window ? CreateParcPlaybackTargetAvailabilityEvent(
-+                                  *window, has_targets)
-+                            : nullptr) {
-+    event->SetTarget(this);
-+    ScheduleEvent(event);
-+  }
-+}
 +
 +void HTMLMediaElement::AddedEventListener(
 +    const AtomicString& event_type,
 +    RegisteredEventListener& registered_listener) {
 +  HTMLElement::AddedEventListener(event_type, registered_listener);
-+  if (event_type !=
-+          parc_media_element_names::Webkitplaybacktargetavailabilitychanged() ||
-+      !PresentsParcSafariIdentity() ||
-+      parc_wireless_playback_target_disabled_) {
-+    return;
-+  }
-+  ParcReportPlaybackTargetState();
-+  // "Ensure the event listener gets at least one event."
-+  ParcEnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/false);
++  ParcMediaElementAirPlay::From(*this).EventListenerAdded(event_type);
 +}
 +
 +void HTMLMediaElement::RemovedEventListener(
 +    const AtomicString& event_type,
 +    const RegisteredEventListener& registered_listener) {
 +  HTMLElement::RemovedEventListener(event_type, registered_listener);
-+  if (event_type ==
-+          parc_media_element_names::Webkitplaybacktargetavailabilitychanged() &&
-+      PresentsParcSafariIdentity() &&
-+      !ParcHasPlaybackTargetAvailabilityListeners()) {
-+    ParcReportPlaybackTargetState();
-+  }
++  ParcMediaElementAirPlay::From(*this).EventListenerRemoved(event_type);
 +}
 +
-+// MediaElementSession::showPlaybackTargetPicker: nothing before
-+// HAVE_METADATA. Safari on macOS needs no gesture for it (its gesture rule
-+// applies only where playback needs one); the browser shows the list only for
-+// the selected page of the key window. It opens at the last mouse position,
-+// as Document::showPlaybackTargetPicker places it.
-+void HTMLMediaElement::webkitShowPlaybackTargetPicker() {
-+  LocalFrame* frame = GetDocument().GetFrame();
-+  if (!frame || ready_state_ < kHaveMetadata) {
-+    return;
-+  }
-+  gfx::PointF position =
-+      frame->GetEventHandler().LastKnownMousePositionInRootFrame();
-+  if (frame->LocalFrameRoot().IsOutermostMainFrame()) {
-+    position =
-+        frame->GetPage()->GetVisualViewport().RootFrameToViewport(position);
-+  }
-+  if (FrameWidget* widget = frame->GetWidgetForLocalRoot()) {
-+    position =
-+        widget->BlinkSpaceToDIPs(gfx::RectF(position, gfx::SizeF())).origin();
-+  }
-+  const gfx::Point dips = gfx::ToFlooredPoint(position);
-+  for (auto& observer : media_player_observer_remote_set_->Value()) {
-+    observer->OnParcShowPlaybackTargetPicker(dips);
-+  }
-+}
-+
-+// MediaElementSession::externalOutputDeviceAvailableDidChange, then
-+// wirelessRoutesAvailableDidChange.
 +void HTMLMediaElement::ParcSetPlaybackTargetAvailability(bool available) {
-+  if (!PresentsParcSafariIdentity() ||
-+      available == parc_has_playback_targets_) {
-+    return;
-+  }
-+  parc_has_playback_targets_ = available;
-+  if (!parc_wireless_playback_target_disabled_) {
-+    ParcEnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/true);
-+  }
-+  ParcRemoteAvailabilityChanged();
++  ParcMediaElementAirPlay::From(*this).SetPlaybackTargetAvailability(available);
 +}
 +
-+// setWirelessPlaybackTarget and setShouldPlayToPlaybackTarget.
 +void HTMLMediaElement::ParcSetPlaybackTarget(const String& output_context_id,
 +                                             const String& device_name,
 +                                             bool should_play,
 +                                             uint32_t tint_argb,
 +                                             uint32_t tint_on_light_argb) {
-+  if (!PresentsParcSafariIdentity()) {
-+    return;
-+  }
-+  // The placard shows the device's name in the tint; the button the tint.
-+  const bool tint_changed =
-+      tint_argb != parc_playback_target_tint_ ||
-+      tint_on_light_argb != parc_playback_target_tint_on_light_;
-+  const bool placard_changed =
-+      tint_changed || device_name != parc_playback_target_device_name_;
-+  const bool target_changed =
-+      output_context_id != parc_playback_target_id_ ||
-+      (should_play && !output_context_id.empty()) !=
-+          parc_should_play_to_playback_target_;
-+  parc_playback_target_id_ = output_context_id;
-+  parc_playback_target_device_name_ = device_name;
-+  parc_playback_target_tint_ = tint_argb;
-+  parc_playback_target_tint_on_light_ = tint_on_light_argb;
-+  parc_should_play_to_playback_target_ =
-+      should_play && !output_context_id.empty();
-+  // A new tint alone (the Space changed) leaves the player as it plays.
-+  if (target_changed || !tint_changed) {
-+    ParcApplyPlaybackTargetToPlayer();
-+  }
-+  if (!parc_should_play_to_playback_target_ &&
-+      parc_playing_to_wireless_target_) {
-+    ParcUpdatePlayingToWirelessTarget();
-+  }
-+  ParcReportPlaybackTargetState();
-+  if (placard_changed && parc_playing_to_wireless_target_ &&
-+      parc_should_play_to_playback_target_) {
-+    ParcPlayingToWirelessTargetChanged();
-+  }
-+  if (tint_changed && media_controls_) {
-+    media_controls_->ParcAirPlayTintChanged();
-+  }
-+  if (auto* remote = RemotePlaybackController::From(*this)) {
-+    remote->GetParcExtension().ParcShouldPlayToRemoteTargetChanged(
-+        parc_should_play_to_playback_target_);
-+  }
++  ParcMediaElementAirPlay::From(*this).SetPlaybackTarget(
++      output_context_id, device_name, should_play, tint_argb,
++      tint_on_light_argb);
 +}
 +
-+// playbackTargetPickerWasDismissed.
 +void HTMLMediaElement::ParcPlaybackTargetPickerDismissed() {
-+  if (!PresentsParcSafariIdentity()) {
-+    return;
-+  }
-+  if (auto* remote = RemotePlaybackController::From(*this)) {
-+    remote->GetParcExtension().ParcPlaybackTargetPickerDismissed();
-+  }
-+}
-+
-+// WebKit's Airplay.svg (modern-media-controls/images/macOS), the glyph
-+// mediaControls.css and mediaInterstitials.css draw, filled with the tint.
-+String HTMLMediaElement::ParcAirPlayTintedGlyph(bool on_light_surface) const {
-+  static constexpr char kGlyphPath[] =
-+      "M11.1001033,9.39348478 L11.9211522,10.324939 L14.5705804,10.324939 "
-+      "C15.4675804,10.324939 15.9642652,9.83506087 15.9642652,8.93120761 "
-+      "L15.9642652,1.39681739 C15.9642652,0.492978261 15.4675804,0.01 "
-+      "14.5705804,0.01 L1.43372717,0.01 C0.585067391,0.01 "
-+      "0.04,0.492978261 0.04,1.39681739 L0.04,8.93120761 C0.04,9.83506087 "
-+      "0.536769565,10.324939 1.43372717,10.324939 L4.09007935,10.324939 "
-+      "L4.90423261,9.39348478 L1.60621739,9.39348478 "
-+      "C1.22673043,9.39348478 1.02664348,9.18650217 1.02664348,8.80701522 "
-+      "L1.02664348,1.52100978 C1.02664348,1.1346413 "
-+      "1.22673043,0.934554348 1.60621739,0.934554348 "
-+      "L14.3980478,0.934554348 C14.7775913,0.934554348 "
-+      "14.9776783,1.1346413 14.9776783,1.52100978 L14.9776783,8.80701522 "
-+      "C14.9776783,9.18650217 14.7775913,9.39348478 14.3980478,9.39348478 "
-+      "L11.1001033,9.39348478 Z M12.2178348,12.9881967 "
-+      "C12.5421565,12.9881967 12.666363,12.6501134 12.4593522,12.4155255 "
-+      "L8.29884348,7.703075 C8.1401587,7.52368913 7.86417717,7.52368913 "
-+      "7.70547826,7.703075 L3.54501196,12.4155255 C3.33801522,12.6501134 "
-+      "3.46220761,12.9881967 3.78648696,12.9881967 L12.2178348,12.9881967 "
-+      "Z";
-+  const uint32_t tint = on_light_surface ? parc_playback_target_tint_on_light_
-+                                         : parc_playback_target_tint_;
-+  if (!tint) {
-+    return String();
-+  }
-+  return StrCat({"url(\"data:image/svg+xml,<svg "
-+                "xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 13' "
-+                "fill='rgba(",
-+                String::Number((tint >> 16) & 0xff), ",",
-+                String::Number((tint >> 8) & 0xff), ",",
-+                String::Number(tint & 0xff), ",",
-+                String::Number(((tint >> 24) & 0xff) / 255.0), ")'><path d='",
-+                kGlyphPath, "'/></svg>\")"});
-+}
-+
-+bool HTMLMediaElement::ParcPlaysToPlaybackTargets() const {
-+  return PresentsParcSafariIdentity() && ParcSupportsPlaybackTarget();
-+}
-+
-+// Only the native HLS player and a clear file's native route play to a
-+// target. A Media Source element can't, but checkPlaybackTargetCompatibility
-+// switches it to its <source> alternative.
-+bool HTMLMediaElement::ParcSupportsPlaybackTarget() const {
-+  return web_media_player_ &&
-+         (ParcPlayerSupportsPlaybackTarget(web_media_player_.get()) ||
-+          (GetLoadType() == WebMediaPlayer::kLoadTypeMediaSource &&
-+           !parc_failed_to_play_to_wireless_target_ &&
-+           ParcHasWirelessPlaybackTargetAlternative()));
-+}
-+
-+// A <source> child with a URL that isn't blob:, while the element loads
-+// from its <source> children. WebKit also asks isSafeToLoadURL, whose
-+// Content Security Policy check would report here each time this is asked.
-+bool HTMLMediaElement::ParcHasWirelessPlaybackTargetAlternative() const {
-+  if (load_state_ != kLoadingFromSourceElement) {
-+    return false;
-+  }
-+  for (HTMLSourceElement& source :
-+       Traversal<HTMLSourceElement>::ChildrenOf(*this)) {
-+    const KURL url = source.GetNonEmptyURLAttribute(html_names::kSrcAttr);
-+    if (url.IsValid() && !url.ProtocolIs("blob")) {
-+      return true;
-+    }
-+  }
-+  return false;
-+}
-+
-+bool HTMLMediaElement::ParcDeferredMediaSourceOpenCanProgress() const {
-+  return ParcWirelessPlaybackTargetDisabled() ||
-+         ParcHasWirelessPlaybackTargetAlternative();
-+}
-+
-+void HTMLMediaElement::ParcOpenIfDeferredOpen() {
-+  if (parc_deferred_web_media_source_ && media_source_attachment_ &&
-+      ParcDeferredMediaSourceOpenCanProgress()) {
-+    media_source_attachment_->CompleteAttachingToMediaElement(
-+        media_source_tracer_, std::move(parc_deferred_web_media_source_));
-+  }
-+}
-+
-+// checkPlaybackTargetCompatibility: an element playing to the target whose
-+// player can't goes on to its next <source>, else stops playing to it.
-+void HTMLMediaElement::ParcCheckPlaybackTargetCompatibility(TimerBase*) {
-+  if (!parc_playing_to_wireless_target_ || !web_media_player_ ||
-+      ParcPlayerSupportsPlaybackTarget(web_media_player_.get())) {
-+    return;
-+  }
-+  if (!parc_remote_playback_time_ && load_state_ == kLoadingFromSourceElement &&
-+      HavePotentialSourceChild()) {
-+    parc_remote_playback_time_ = currentTime();
-+    ScheduleNextSourceChild();
-+    return;
-+  }
-+  parc_remote_playback_time_.reset();
-+  parc_failed_to_play_to_wireless_target_ = true;
-+  ParcPlaybackTargetIsWirelessChanged(false);
-+}
-+
-+void HTMLMediaElement::ParcRemoteAvailabilityChanged() {
-+  if (auto* remote = RemotePlaybackController::From(*this)) {
-+    remote->GetParcExtension().ParcAirPlayAvailabilityChanged();
-+  }
-+}
-+
-+void HTMLMediaElement::ParcApplyPlaybackTargetToPlayer() {
-+  if (!web_media_player_) {
-+    return;
-+  }
-+  if (auto* parc = web_media_player_->GetParcExtension()) {
-+    parc->ParcSetWirelessVideoPlaybackDisabled(
-+        parc_wireless_playback_target_disabled_);
-+    parc->ParcSetPlaybackTarget(parc_playback_target_id_.Utf8(),
-+                                parc_should_play_to_playback_target_);
-+  }
-+  // WebKit's Media Source player reports it plays to the target once told
-+  // to, though it can't (MediaPlayerPrivateMediaSourceAVFObjC::
-+  // setShouldPlayToPlaybackTarget), until the compatibility check.
-+  if (GetLoadType() == WebMediaPlayer::kLoadTypeMediaSource &&
-+      parc_should_play_to_playback_target_ != parc_player_should_play_) {
-+    parc_player_should_play_ = parc_should_play_to_playback_target_;
-+    ParcPlaybackTargetIsWirelessChanged(parc_player_should_play_);
-+  }
-+}
-+
-+void HTMLMediaElement::ParcReportPlaybackTargetState() {
-+  if (!media_player_observer_remote_set_) {
-+    return;
-+  }
-+  // MediaElementSession's RequiresPlaybackTargetMonitoring, and the native
-+  // HLS player too, so the browser's own controls can offer AirPlay.
-+  const bool supports_target =
-+      !parc_wireless_playback_target_disabled_ && ParcSupportsPlaybackTarget();
-+  const bool requires_monitoring =
-+      !parc_wireless_playback_target_disabled_ &&
-+      (ParcHasPlaybackTargetAvailabilityListeners() || supports_target);
-+  for (auto& observer : media_player_observer_remote_set_->Value()) {
-+    // The Mini Player shows a Media Source element connecting, not
-+    // connected, until its alternative plays on the device.
-+    observer->OnParcPlaybackTargetStateChanged(
-+        requires_monitoring, supports_target,
-+        parc_should_play_to_playback_target_,
-+        parc_playing_to_wireless_target_ &&
-+            ParcPlayerSupportsPlaybackTarget(web_media_player_.get()));
-+  }
-+}
-+
-+void HTMLMediaElement::ParcPlaybackTargetIsWirelessChanged(bool wireless) {
-+  parc_player_wireless_ = wireless;
-+  // A file the native route couldn't open no longer supports a target.
-+  if (!wireless) {
-+    ParcReportPlaybackTargetState();
-+    ParcRemoteAvailabilityChanged();
-+  }
-+  ParcUpdatePlayingToWirelessTarget();
-+}
-+
-+void HTMLMediaElement::ParcUpdatePlayingToWirelessTarget() {
-+  GetDocument()
-+      .GetTaskRunner(TaskType::kMediaElementEvent)
-+      ->PostTask(FROM_HERE,
-+                 BindOnce(&HTMLMediaElement::ParcDidChangePlayingToWirelessTarget,
-+                          WrapWeakPersistent(this)));
-+}
-+
-+// The value as it stands when the task runs, as setIsPlayingToWirelessTarget
-+// takes it: the current player's own report, while the element plays to the
-+// target.
-+void HTMLMediaElement::ParcDidChangePlayingToWirelessTarget() {
-+  const bool wireless = parc_player_wireless_ &&
-+                        parc_should_play_to_playback_target_ &&
-+                        web_media_player_;
-+  if (!GetExecutionContext() || GetExecutionContext()->IsContextDestroyed() ||
-+      wireless == parc_playing_to_wireless_target_) {
-+    return;
-+  }
-+  parc_playing_to_wireless_target_ = wireless;
-+  if (auto* remote = RemotePlaybackController::From(*this)) {
-+    remote->GetParcExtension().ParcPlayingToRemoteTargetChanged(wireless);
-+  }
-+  ParcReportPlaybackTargetState();
-+  ParcPlayingToWirelessTargetChanged();
-+  parc_check_playback_target_compatibility_timer_.StartOneShot(
-+      base::Milliseconds(500), FROM_HERE);
-+  DispatchEvent(*Event::CreateCancelable(
-+      parc_media_element_names::
-+          Webkitcurrentplaybacktargetiswirelesschanged()));
++  ParcMediaElementAirPlay::From(*this).PlaybackTargetPickerDismissed();
 +}
 +
  void HTMLMediaElement::TogglePlayState() {
    if (paused())
      Play();
-@@ -3562,10 +4598,25 @@
+@@ -3562,10 +4154,25 @@
 -
 +
  void HTMLMediaElement::AudioTrackChanged(AudioTrack* track,
@@ -3150,7 +2684,7 @@
 +
    if (track->enabled()) {
      audioTracks().TrackEnabled(track->id(), track->IsExclusive());
-@@ -3583,6 +4634,23 @@
+@@ -3583,6 +4190,23 @@
  }
 -
 +
@@ -3175,7 +2709,7 @@
    for (unsigned i = 0; i < audioTracks().length(); ++i) {
      AudioTrack* track = audioTracks().AnonymousIndexedGetter(i);
      if (track->enabled()) {
-@@ -3622,6 +4690,9 @@
+@@ -3622,6 +4246,9 @@
  }
 -
 +
@@ -3186,7 +2720,7 @@
    // `track.label()` and `track.language()` may contains invalid UTF-8
    // sequences, and AtomicString::FromUtf8() doesn't accept invalid sequences.
    switch (track.type()) {
-@@ -3682,6 +4753,7 @@
+@@ -3682,6 +4309,7 @@
  void HTMLMediaElement::ForgetResourceSpecificTracks() {
    audio_tracks_->RemoveAll();
    video_tracks_->RemoveAll();
@@ -3195,7 +2729,7 @@
 +
    audio_tracks_timer_.Stop();
  }
-@@ -3690,6 +4762,16 @@
+@@ -3690,6 +4318,16 @@
                                            const AtomicString& label,
                                            const AtomicString& language,
                                            ExceptionState& exception_state) {
@@ -3213,7 +2747,7 @@
 -
 +
    // The addTextTrack(kind, label, language) method of media elements, when
-@@ -3898,7 +4980,8 @@
+@@ -3898,7 +4536,8 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
@@ -3224,7 +2758,7 @@
      }
 -
 +
-@@ -3936,9 +5019,24 @@
+@@ -3936,9 +4575,23 @@
    DVLOG(3) << "sourceWasAdded(" << *this << ") - 'src' is "
             << UrlForLoggingMedia(url);
 -
@@ -3232,8 +2766,7 @@
 +  // Parc: an AirPlay alternative opens a deferred ManagedMediaSource and
 +  // lets a Media Source element play to a target.
 +  if (PresentsParcSafariIdentity()) {
-+    ParcOpenIfDeferredOpen();
-+    ParcReportPlaybackTargetState();
++    ParcMediaElementAirPlay::From(*this).SourceWasAdded();
 +  }
 +
    // We should only consider a <source> element when there is neither a
@@ -3251,19 +2784,19 @@
    }
 -
 +
-@@ -4010,6 +5108,10 @@
+@@ -4010,6 +4663,10 @@
    KURL url = source->GetNonEmptyURLAttribute(html_names::kSrcAttr);
    DVLOG(3) << "sourceWasRemoved(" << *this << ") - 'src' is "
             << UrlForLoggingMedia(url);
 +
 +  if (PresentsParcSafariIdentity()) {
-+    ParcReportPlaybackTargetState();
++    ParcMediaElementAirPlay::From(*this).SourceWasRemoved();
 +  }
 -
 +
    // We should only consider a <source> element when there is neither a
    // srcObject nor a src attribute at all.
-@@ -4043,20 +5145,47 @@
+@@ -4043,20 +4700,47 @@
 -
 +
    // 4.8.12.9 steps 12-14. Needed if no ReadyState change is associated with the
@@ -3316,7 +2849,7 @@
        Seek(EarliestPossiblePosition());
      } else {
        // Queue a task to fire a simple event named timeupdate at the media
-@@ -4069,7 +5198,14 @@
+@@ -4069,7 +4753,14 @@
          // Trigger an update to `official_playback_position_` (if necessary)
          // BEFORE calling `SetPaused(true)`, to ensure a final sync with
          // `WebMediaPlayer()->CurrentPlaybackPosition()`.
@@ -3333,7 +2866,7 @@
 +
          // changes paused to true and fires a simple event named pause at the
          // media element.
-@@ -4080,8 +5216,17 @@
+@@ -4080,8 +4771,17 @@
              PauseReasonToPlayPromiseError(pause_reason.value()));
        }
        // Queue a task to fire a simple event named ended at the media element.
@@ -3353,7 +2886,7 @@
    }
    UpdatePlayState(pause_reason);
  }
-@@ -4221,6 +5366,13 @@
+@@ -4221,6 +4921,13 @@
  }
 -
 +
@@ -3368,7 +2901,7 @@
    // If we have infinite duration, we'll never have played for long enough to
    // have ended playback.
    const double dur = duration();
-@@ -4234,7 +5386,19 @@
+@@ -4234,7 +4941,19 @@
    if (ready_state_ < kHaveMetadata)
      return false;
 -
@@ -3389,7 +2922,7 @@
    if (web_media_player_) {
      return web_media_player_->IsEnded() &&
             (loop_condition == LoopCondition::kIgnored || !Loop() ||
-@@ -4257,8 +5421,24 @@
+@@ -4257,8 +4976,24 @@
  void HTMLMediaElement::UpdatePlayState(
      std::optional<WebMediaPlayer::PauseReason>
          pause_reason /* = std::nullopt */) {
@@ -3416,7 +2949,7 @@
 +
    DVLOG(3) << "updatePlayState(" << *this
             << ") - shouldBePlaying = " << base::ToString(should_be_playing)
-@@ -4273,7 +5453,7 @@
+@@ -4273,7 +5008,7 @@
        // Set rate, muted before calling play in case they were set before the
        // media engine was setup.  The media engine should just stash the rate
        // and muted values since it isn't already playing.
@@ -3426,20 +2959,21 @@
        web_media_player_->Play();
 -
 +
-@@ -4331,6 +5511,7 @@
+@@ -4331,6 +5066,8 @@
  void HTMLMediaElement::StopPeriodicTimers() {
    progress_event_timer_.Stop();
    playback_progress_timer_.Stop();
-+  parc_check_playback_target_compatibility_timer_.Stop();
++  ParcMediaElementAirPlay::From(*this)
++      .check_playback_target_compatibility_timer_.Stop();
    if (player_lazy_load_intersection_observer_) {
      player_lazy_load_intersection_observer_->disconnect();
      player_lazy_load_intersection_observer_ = nullptr;
-@@ -4355,11 +5536,16 @@
+@@ -4355,11 +5092,16 @@
      media_player_receiver_set_->Value().Clear();
      media_player_observer_remote_set_->Value().Clear();
    }
 +  ParcMediaElement::From(*this).media_source_failed_ = false;
-+  parc_deferred_web_media_source_.reset();
++  ParcMediaElementAirPlay::From(*this).deferred_web_media_source_.reset();
 -
 +
    OnWebMediaPlayerCleared();
@@ -3454,7 +2988,7 @@
 -
 +
    CloseMediaSource();
-@@ -4368,6 +5554,7 @@
+@@ -4368,6 +5110,7 @@
    if (RuntimeEnabledFeatures::LazyLoadVideoAndAudioEnabled()) {
      lazy_media_load_state_ = LazyMediaLoadState::kNone;
      LazyMediaHelper::StopMonitoring(this);
@@ -3463,7 +2997,7 @@
 -
 +
    {
-@@ -4377,6 +5564,20 @@
+@@ -4377,6 +5120,13 @@
 -
 +
    StopPeriodicTimers();
@@ -3473,20 +3007,13 @@
 +  // Parc: WebKit's clearMediaPlayer tells availability listeners the element
 +  // has nothing to play to a target, and it plays to none.
 +  if (PresentsParcSafariIdentity()) {
-+    if (ParcHasPlaybackTargetAvailabilityListeners() &&
-+        !parc_wireless_playback_target_disabled_) {
-+      ParcEnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/false);
-+    }
-+    if (parc_playing_to_wireless_target_) {
-+      ParcUpdatePlayingToWirelessTarget();
-+    }
-+    ParcRemoteAvailabilityChanged();
++    ParcMediaElementAirPlay::From(*this).PlayerCleared();
 +  }
 -
 +
    pending_action_flags_ = 0;
    load_state_ = kWaitingForSource;
-@@ -4387,6 +5588,9 @@
+@@ -4387,6 +5137,9 @@
 -
 +
  void HTMLMediaElement::ContextLifecycleStateChanged(
@@ -3497,7 +3024,7 @@
    if (state == mojom::blink::FrameLifecycleState::kFrozen) {
      if (playing_) {
        PausePlayback(WebMediaPlayer::PauseReason::kFrameFrozen);
-@@ -4409,6 +5613,8 @@
+@@ -4409,6 +5162,8 @@
    ClearMediaPlayer();
    ready_state_ = kHaveNothing;
    ready_state_maximum_ = kHaveNothing;
@@ -3506,7 +3033,7 @@
    SetNetworkState(kNetworkEmpty);
    SetShouldDelayLoadEvent(false);
    current_source_node_ = nullptr;
-@@ -4423,6 +5629,7 @@
+@@ -4423,6 +5178,7 @@
 -
 +
    StopPeriodicTimers();
@@ -3516,7 +3043,7 @@
 +
    UpdateVideoVisibilityTracker();
  }
-@@ -4514,34 +5721,25 @@
+@@ -4514,34 +5270,25 @@
  // static
  void HTMLMediaElement::AssertShadowRootChildren(ShadowRoot& shadow_root) {
  #if DCHECK_IS_ON()
@@ -3571,7 +3098,7 @@
  }
 -
 +
-@@ -4581,6 +5779,11 @@
+@@ -4581,6 +5328,11 @@
 -
 +
    EnsureTextTrackContainer().UpdateDisplay(
@@ -3586,31 +3113,23 @@
 +
 -
 +
-@@ -4806,6 +6009,15 @@
+@@ -4806,6 +5558,15 @@
  void HTMLMediaElement::MediaSourceOpened(
      std::unique_ptr<WebMediaSource> web_media_source) {
    SetShouldDelayLoadEvent(false);
 +  // Parc: Safari for macOS keeps a ManagedMediaSource "closed", without
 +  // sourceopen, until the element can open it (MediaSource::sourceOpen,
 +  // ManagedMediaSourceNeedsAirPlay).
-+  if (media_source_attachment_->ParcManaged() &&
-+      PresentsParcSafariIdentity() &&
-+      !ParcDeferredMediaSourceOpenCanProgress()) {
-+    parc_deferred_web_media_source_ = std::move(web_media_source);
++  ParcMediaElementAirPlay& parc_air_play = ParcMediaElementAirPlay::From(*this);
++  if (media_source_attachment_->ParcManaged() && PresentsParcSafariIdentity() &&
++      !parc_air_play.DeferredMediaSourceOpenCanProgress()) {
++    parc_air_play.deferred_web_media_source_ = std::move(web_media_source);
 +    return;
 +  }
    media_source_attachment_->CompleteAttachingToMediaElement(
        media_source_tracer_, std::move(web_media_source));
  }
-@@ -4843,6 +6055,7 @@
-   visitor->Trace(current_source_node_);
-   visitor->Trace(next_child_node_to_consider_);
-   visitor->Trace(deferred_load_timer_);
-+  visitor->Trace(parc_check_playback_target_compatibility_timer_);
-   visitor->Trace(media_source_tracer_);
-   visitor->Trace(audio_tracks_);
-   visitor->Trace(video_tracks_);
-@@ -4873,7 +6086,8 @@
+@@ -4873,7 +5634,8 @@
  void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
    // Create a placeholder audio track if the player says it has audio but it
    // didn't explicitly announce the tracks.
@@ -3620,7 +3139,7 @@
      AddTrack(media::MediaTrack::CreateAudioTrack(
          "audio", media::MediaTrack::AudioKind::kMain, "Audio Track", "", true));
    }
-@@ -4991,6 +6205,10 @@
+@@ -4991,6 +5753,10 @@
      RejectPlayPromisesInternal(
          DOMExceptionCode::kNotSupportedError,
          "Failed to load because no supported source was found.");
@@ -3632,7 +3151,7 @@
    }
 -
 +
-@@ -5032,6 +6250,7 @@
+@@ -5032,6 +5798,7 @@
            "media-playback-while-not-visible permission policy";
        break;
      case PlayPromiseError::kNotSupported:
@@ -3640,7 +3159,7 @@
        NOTREACHED();
    }
    RejectPlayPromisesInternal(DOMExceptionCode::kAbortError,
-@@ -5056,8 +6275,12 @@
+@@ -5056,8 +5823,12 @@
    DCHECK(code == DOMExceptionCode::kAbortError ||
           code == DOMExceptionCode::kNotSupportedError ||
           code == DOMExceptionCode::kNotAllowedError);
@@ -3655,7 +3174,7 @@
 +
    play_promise_reject_list_.clear();
  }
-@@ -5070,10 +6293,27 @@
+@@ -5070,10 +5841,27 @@
      return;
    }
 -
@@ -3687,7 +3206,7 @@
 -
 +
  void HTMLMediaElement::AudioSourceProviderImpl::Wrap(
-@@ -5212,6 +6452,12 @@
+@@ -5212,6 +6000,12 @@
    }
 -
 +
@@ -3702,7 +3221,7 @@
 -
 +
  void HTMLMediaElement::DidPlayerMediaPositionStateChange(
-@@ -5299,6 +6545,9 @@
+@@ -5299,6 +6093,9 @@
  }
 -
 +
@@ -3713,7 +3232,7 @@
    switch (code) {
      case DOMExceptionCode::kNotAllowedError:
        return autoplay_policy_->GetPlayErrorMessage();
-@@ -5324,6 +6573,17 @@
+@@ -5324,6 +6121,17 @@
    return *media_player_host_remote_->Value().get();
  }
 -
@@ -3732,7 +3251,7 @@
  mojo::PendingAssociatedReceiver<media::mojom::blink::MediaPlayerObserver>
  HTMLMediaElement::AddMediaPlayerObserverAndPassReceiver() {
    mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayerObserver>
-@@ -5360,21 +6620,44 @@
+@@ -5360,21 +6168,44 @@
    PauseInternal(triggered_by_user
                      ? WebMediaPlayer::PauseReason::kPauseRequestedByUser
                      : WebMediaPlayer::PauseReason::kPauseRequestedInternally);
@@ -3781,7 +3300,7 @@
  }
 -
 +
-@@ -5487,7 +6770,7 @@
+@@ -5487,7 +6318,7 @@
  }
 -
 +
@@ -3871,7 +3390,7 @@
 -
 +
    bool IsMediaElement() const override { return true; }
-@@ -252,6 +255,43 @@
+@@ -252,6 +255,13 @@
    // playback state
    double currentTime() const;
    void setCurrentTime(double);
@@ -3882,40 +3401,10 @@
 +  ScriptObject getStartDate(ScriptState* script_state) const;
 +  // Parc: WebKit's fastSeek(), on Safari-identity pages only.
 +  void fastSeek(double time);
-+  // Parc: WebKit's AirPlay members, on Safari-identity pages only.
-+  // SetParcPlaybackTargetEventHook keeps kParcWebKitPlaybackTargetScript's
-+  // completion value, the availability event's hook, for the main world of
-+  // `script_state` (parc_webkit_playback_target.h).
-+  static void SetParcPlaybackTargetEventHook(ScriptState* script_state,
-+                                             v8::Local<v8::Value> hook);
-+  void webkitShowPlaybackTargetPicker();
-+  bool webkitCurrentPlaybackTargetIsWireless() const {
-+    return parc_playing_to_wireless_target_;
-+  }
-+  // Parc: the element's player plays to AirPlay targets (the native HLS
-+  // player), on a Safari-identity page; its Remote Playback is AirPlay.
-+  bool ParcPlaysToPlaybackTargets() const;
-+  // AirPlay devices are nearby and the element doesn't disable AirPlay.
-+  bool ParcPlaybackTargetsAvailable() const {
-+    return !parc_wireless_playback_target_disabled_ &&
-+           parc_has_playback_targets_;
-+  }
-+  // x-webkit-airplay="deny", webkitwirelessvideoplaybackdisabled or
-+  // disableremoteplayback (isWirelessPlaybackTargetDisabled).
-+  bool ParcWirelessPlaybackTargetDisabled() const;
-+  // The target's device name (MediaPlaybackTarget::deviceName).
-+  const String& ParcPlaybackTargetDeviceName() const {
-+    return parc_playback_target_device_name_;
-+  }
-+  // The AirPlay glyph in the window's Space tint, as a CSS image, for the
-+  // connecting and connected button and the placard (dark surfaces), or for
-+  // a light surface (the overflow menu on a light page); null without a
-+  // tint.
-+  String ParcAirPlayTintedGlyph(bool on_light_surface = false) const;
    double duration() const;
    bool paused() const;
    void SetPaused(bool);
-@@ -504,11 +544,21 @@
+@@ -504,6 +514,13 @@
    bool MediaShouldBeOpaque() const;
 -
 +
@@ -3931,17 +3420,7 @@
 -
 +
    // Called after the creation of |web_media_player_|.
-   virtual void OnWebMediaPlayerCreated() {}
-   virtual void OnWebMediaPlayerCleared() {}
-+  // Parc: webkitCurrentPlaybackTargetIsWireless or the target's device name
-+  // changed (PlacardSupport's AirPlay placard).
-+  virtual void ParcPlayingToWirelessTargetChanged() {}
--
-+
-   void UpdateLayoutObject();
--
-+
-@@ -634,6 +684,16 @@
+@@ -634,6 +651,13 @@
    gfx::ColorSpace TargetColorSpace() override;
    bool WasAutoplayInitiated() override;
    bool IsInAutoPIP() const override { return false; }
@@ -3951,14 +3430,11 @@
 +  // (parc_safari_identity.h). A document without a window of its own answers
 +  // for the window that created it.
 +  bool PresentsParcSafariIdentity() const;
-+  // Parc: the player plays to the AirPlay device now, or no longer (WebKit's
-+  // mediaPlayerCurrentPlaybackTargetIsWirelessChanged).
-+  void ParcPlaybackTargetIsWirelessChanged(bool wireless);
 +
    void ResumePlayback() final;
    void PausePlayback(WebMediaPlayer::PauseReason) final;
    void DidPlayerStartPlaying() override;
-@@ -669,6 +729,8 @@
+@@ -669,6 +693,8 @@
    void RequestPause(bool triggered_by_user) override;
    void RequestSeekForward(base::TimeDelta seek_time) override;
    void RequestSeekBackward(base::TimeDelta seek_time) override;
@@ -3967,7 +3443,7 @@
    void RequestSeekTo(base::TimeDelta seek_time) override;
    void RequestEnterPictureInPicture(
        const std::optional<gfx::Size>& min_size) override {}
-@@ -685,6 +747,13 @@
+@@ -685,6 +711,13 @@
        const media::PictureInPictureEventsInfo::AutoPipInfo&
            auto_picture_in_picture_info) override;
    void RequestSaveVideoFrame() override;
@@ -3982,7 +3458,7 @@
 +
    void LoadTimerFired(TimerBase*);
    void ProgressEventTimerFired();
-@@ -701,7 +770,8 @@
+@@ -701,7 +734,8 @@
    void ScheduleNamedEvent(const AtomicString& event_name);
 -
 +
@@ -3993,7 +3469,7 @@
    void InvokeResourceSelectionAlgorithm();
    void LoadInternal();
    void SelectMediaResource();
-@@ -832,6 +902,9 @@
+@@ -832,6 +866,9 @@
    mojo::PendingAssociatedReceiver<media::mojom::blink::MediaPlayerObserver>
    AddMediaPlayerObserverAndPassReceiver();
 -
@@ -4004,70 +3480,13 @@
    // Timers used to schedule one-shot tasks with no delay.
    HeapTaskRunnerTimer<HTMLMediaElement> load_timer_;
    HeapTaskRunnerTimer<HTMLMediaElement> audio_tracks_timer_;
-@@ -968,6 +1041,56 @@
-   bool is_remote_rendering_ = false;
-   // Whether the media content is encrypted.
-   bool is_encrypted_media_ = false;
-+  // Parc: AirPlay (webkitShowPlaybackTargetPicker).
-+  void ParcWirelessPlaybackTargetDisabledChanged();
-+  // enqueuePlaybackTargetAvailabilityChangedEvent; `only_when_changed` skips
-+  // an event that would repeat the last one's availability.
-+  void ParcEnqueuePlaybackTargetAvailabilityEvent(bool only_when_changed);
-+  // The element's AirPlay state, to the browser and the player.
-+  void ParcReportPlaybackTargetState();
-+  void ParcApplyPlaybackTargetToPlayer();
-+  // setIsPlayingToWirelessTarget: in a media element task, then
-+  // webkitcurrentplaybacktargetiswirelesschanged.
-+  void ParcUpdatePlayingToWirelessTarget();
-+  void ParcDidChangePlayingToWirelessTarget();
-+  bool ParcHasPlaybackTargetAvailabilityListeners() const;
-+  // RemotePlayback's AirPlay availability may have changed.
-+  void ParcRemoteAvailabilityChanged();
-+  bool parc_has_playback_targets_ = false;
-+  bool parc_last_availability_event_ = false;
-+  bool parc_playing_to_wireless_target_ = false;
-+  // What the current player last reported (isCurrentPlaybackTargetWireless).
-+  bool parc_player_wireless_ = false;
-+  bool parc_wireless_playback_target_disabled_ = false;
-+  String parc_playback_target_id_;
-+  String parc_playback_target_device_name_;
-+  uint32_t parc_playback_target_tint_ = 0;
-+  uint32_t parc_playback_target_tint_on_light_ = 0;
-+  bool parc_should_play_to_playback_target_ = false;
-+  // checkPlaybackTargetCompatibility, half a second after the element
-+  // starts or stops playing to the target.
-+  void ParcCheckPlaybackTargetCompatibility(TimerBase*);
-+  // m_remotePlaybackConfiguration while the element switches to a <source>
-+  // alternative: its time, applied once that has future data. Rate and
-+  // paused stay with the element.
-+  std::optional<double> parc_remote_playback_time_;
-+  // What the Media Source player was last told (its m_shouldPlayToTarget),
-+  // and that the check turned the target down (m_failedToPlayToWirelessTarget).
-+  bool parc_player_should_play_ = false;
-+  bool parc_failed_to_play_to_wireless_target_ = false;
-+  // hasWirelessPlaybackTargetAlternative.
-+  bool ParcHasWirelessPlaybackTargetAlternative() const;
-+  // The player plays to a target, or the element switches to one that can.
-+  bool ParcSupportsPlaybackTarget() const;
-+  // deferredMediaSourceOpenCanProgress and openIfDeferredOpen: a
-+  // ManagedMediaSource opens once the element disables AirPlay or has an
-+  // AirPlay alternative.
-+  bool ParcDeferredMediaSourceOpenCanProgress() const;
-+  void ParcOpenIfDeferredOpen();
-+  std::unique_ptr<WebMediaSource> parc_deferred_web_media_source_;
-+  // See ParcCheckPlaybackTargetCompatibility().
-+  HeapTaskRunnerTimer<HTMLMediaElement>
-+      parc_check_playback_target_compatibility_timer_;
--
-+
-   // Whether the frame containing the media element is hidden. This is nullopt
-   // if the visibility state of the frame is not yet known - e.g. during frame
-@@ -1079,12 +1202,14 @@
+@@ -1079,12 +1116,15 @@
    Member<Document> opener_document_;
    Member<OpenerContextObserver> opener_context_observer_;
 -
 +
 +  friend class ParcMediaElement;
++  friend class ParcMediaElementAirPlay;
    friend class AutoplayPolicy;
    friend class AutoplayUmaHelperTest;
    friend class Internals;
@@ -4422,15 +3841,6 @@
      [RaisesException] TextTrack addTextTrack(TextTrackKind kind, optional DOMString label = "", optional DOMString language = "");
 -
 +
-@@ -97,4 +103,8 @@
-     // The number of bytes consumed by the media decoder.
-     [MeasureAs=PrefixedAudioDecodedByteCount] readonly attribute unsigned long long webkitAudioDecodedByteCount;
-     [MeasureAs=PrefixedVideoDecodedByteCount] readonly attribute unsigned long long webkitVideoDecodedByteCount;
-+
-+    // Parc: WebKit's AirPlay members, on Safari-identity pages only.
-+    [ContextEnabled=ParcSafariIdentity] undefined webkitShowPlaybackTargetPicker();
-+    [ContextEnabled=ParcSafariIdentity] readonly attribute boolean webkitCurrentPlaybackTargetIsWireless;
- };
 --- a/third_party/blink/renderer/core/context_features/context_feature_settings.h
 +++ b/third_party/blink/renderer/core/context_features/context_feature_settings.h
 @@ -72,6 +72,18 @@
@@ -5347,7 +4757,7 @@
    if (picture_in_picture_service_.is_bound())
 --- a/third_party/blink/renderer/core/html/media/html_video_element.cc
 +++ b/third_party/blink/renderer/core/html/media/html_video_element.cc
-@@ -56,16 +56,20 @@
+@@ -56,16 +56,21 @@
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/local_frame_client.h"
  #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -5359,6 +4769,7 @@
  #include "third_party/blink/renderer/core/html/media/media_remoting_interstitial.h"
  #include "third_party/blink/renderer/core/html/media/media_video_visibility_tracker.h"
 +#include "third_party/blink/renderer/core/html/media/parc_media_element.h"
++#include "third_party/blink/renderer/core/html/media/parc_media_element_air_play.h"
 +#include "third_party/blink/renderer/core/html/media/parc_media_element_names.h"
  #include "third_party/blink/renderer/core/html/media/picture_in_picture_interstitial.h"
  #include "third_party/blink/renderer/core/html/media/video_frame_callback_requester.h"
@@ -5368,7 +4779,7 @@
  #include "third_party/blink/renderer/core/html_names.h"
  #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
-@@ -1056,14 +1060,21 @@
+@@ -1056,14 +1061,21 @@
    is_remote_rendering_ = true;
    remote_device_friendly_name_ = remote_device_friendly_name;
    OnRemotePlaybackMetadataChange();
@@ -5392,7 +4803,7 @@
 -
 +
  void HTMLVideoElement::MediaRemotingStopped(int error_code) {
-@@ -1133,12 +1144,25 @@
+@@ -1133,12 +1145,25 @@
  }
 -
 +
@@ -5421,11 +4832,11 @@
      HTMLMediaElement::AssertShadowRootChildren(shadow_root);
    }
    picture_in_picture_interstitial_->Show();
-@@ -1153,12 +1177,14 @@
+@@ -1153,12 +1178,14 @@
    if (picture_in_picture_interstitial_) {
      picture_in_picture_interstitial_->Hide();
    }
-+  ParcPlayingToWirelessTargetChanged();
++  ParcMediaElementAirPlay::From(*this).PlayingToWirelessTargetChanged();
 -
 +
    PseudoStateChanged(CSSSelector::kPseudoPictureInPicture);
@@ -5439,53 +4850,7 @@
 -
 +
  void HTMLVideoElement::SetIsEffectivelyFullscreen(
-@@ -1280,6 +1306,44 @@
-   UpdateVideoFrameAvailability();
- }
--
-+
-+// PlacardSupport::_updatePlacard: the AirPlay placard while
-+// webkitCurrentPlaybackTargetIsWireless, unless picture in picture's placard
-+// is up. The shadow root holds one interstitial, so the AirPlay placard takes
-+// the place of a hidden picture in picture one and leaves when it ends.
-+void HTMLVideoElement::ParcPlayingToWirelessTargetChanged() {
-+  const bool in_picture_in_picture =
-+      picture_in_picture_interstitial_ &&
-+      picture_in_picture_interstitial_->IsVisible();
-+  if (webkitCurrentPlaybackTargetIsWireless() && !in_picture_in_picture) {
-+    if (picture_in_picture_interstitial_) {
-+      picture_in_picture_interstitial_->remove();
-+    }
-+    EnsureRemotingInterstitial().ParcShowAirPlay(ParcPlaybackTargetDeviceName(),
-+                                                 ParcAirPlayTintedGlyph());
-+  } else if (remoting_interstitial_ &&
-+             remoting_interstitial_->ParcShowsAirPlay()) {
-+    remoting_interstitial_->remove();
-+    remoting_interstitial_->Hide(MediaPlayerClient::kMediaRemotingStopNoText);
-+  }
-+}
-+
-+// MediaElementSession::wirelessVideoPlaybackDisabled on macOS: the
-+// attributes, else whether there is a player (each of Safari's players
-+// allows AirPlay unless told not to).
-+bool HTMLVideoElement::webkitWirelessVideoPlaybackDisabled() const {
-+  return FastHasAttribute(parc_media_element_names::
-+                              WebkitwirelessvideoplaybackdisabledAttr()) ||
-+         FastHasAttribute(html_names::kDisableremoteplaybackAttr) ||
-+         !GetWebMediaPlayer();
-+}
-+
-+// [ReflectSetter].
-+void HTMLVideoElement::setWebkitWirelessVideoPlaybackDisabled(bool disabled) {
-+  SetBooleanAttribute(
-+      parc_media_element_names::WebkitwirelessvideoplaybackdisabledAttr(),
-+      disabled);
-+}
-+
- void HTMLVideoElement::RecordVideoOcclusionState(
-     std::string_view occlusion_state) const {
-   if (auto* wmp = GetWebMediaPlayer()) {
-@@ -1298,6 +1362,14 @@
+@@ -1298,6 +1325,14 @@
    UpdatePictureInPictureAvailability();
 -
 +
@@ -6847,34 +6212,12 @@
    ApplyFontsFromMap(prefs.fixed_font_family_map, SetFixedFontFamilyWrapper,
 --- a/third_party/blink/renderer/core/html/media/html_video_element.h
 +++ b/third_party/blink/renderer/core/html/media/html_video_element.h
-@@ -97,6 +97,10 @@
-   unsigned webkitDecodedFrameCount() const;
-   unsigned webkitDroppedFrameCount() const;
--
-+
-+  // Parc: WebKit's AirPlay attribute, on Safari-identity pages only.
-+  bool webkitWirelessVideoPlaybackDisabled() const;
-+  void setWebkitWirelessVideoPlaybackDisabled(bool disabled);
-+
-   // Used by canvas to gain raw pixel access.
-   void PaintCurrentFrame(cc::PaintCanvas*,
-                          const gfx::Rect&,
-@@ -207,6 +211,7 @@
--
-+
-   void OnWebMediaPlayerCreated() final;
-   void OnWebMediaPlayerCleared() final;
-+  void ParcPlayingToWirelessTargetChanged() final;
--
-+
-   void AttributeChanged(const AttributeModificationParams& params) override;
--
-+
-@@ -216,9 +221,12 @@
+@@ -216,9 +216,13 @@
    friend class HTMLVideoElementPersistentTest;
    friend class VideoFillingViewportTest;
    friend class HTMLVideoElementTest;
 +  friend class ParcMediaElement;
++  friend class ParcMediaElementAirPlay;
 -
 +
    // ExecutionContextLifecycleStateObserver functions.
@@ -7010,17 +6353,6 @@
    // May return null.
    virtual std::unique_ptr<WebServiceWorkerProvider>
    CreateServiceWorkerProvider() {
---- a/third_party/blink/renderer/core/html/media/html_video_element.idl
-+++ b/third_party/blink/renderer/core/html/media/html_video_element.idl
-@@ -45,4 +45,7 @@
-     [MeasureAs=PrefixedVideoDroppedFrameCount] readonly attribute unsigned long webkitDroppedFrameCount;
--
-+
-     [CEReactions, Reflect] attribute boolean playsInline;
-+
-+    // Parc: WebKit's AirPlay attribute, on Safari-identity pages only.
-+    [ContextEnabled=ParcSafariIdentity, CEReactions] attribute boolean webkitWirelessVideoPlaybackDisabled;
- };
 --- a/third_party/blink/renderer/core/html/media/media_remoting_interstitial.cc
 +++ b/third_party/blink/renderer/core/html/media/media_remoting_interstitial.cc
 @@ -70,6 +70,53 @@
@@ -7154,7 +6486,7 @@
  /* generic block-level elements */
 --- a/third_party/blink/renderer/modules/media_controls/elements/media_control_cast_button_element.cc
 +++ b/third_party/blink/renderer/modules/media_controls/elements/media_control_cast_button_element.cc
-@@ -8,8 +8,10 @@
+@@ -8,16 +8,20 @@
  #include "third_party/blink/public/platform/platform.h"
  #include "third_party/blink/public/platform/user_metrics_action.h"
  #include "third_party/blink/public/strings/grit/blink_strings.h"
@@ -7164,8 +6496,10 @@
 +#include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/geometry/dom_rect.h"
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
++#include "third_party/blink/renderer/core/html/media/parc_media_element_air_play.h"
  #include "third_party/blink/renderer/core/input_type_names.h"
-@@ -18,6 +20,7 @@
+ #include "third_party/blink/renderer/modules/media_controls/elements/media_control_elements_helper.h"
+ #include "third_party/blink/renderer/modules/media_controls/media_controls_impl.h"
  #include "third_party/blink/renderer/modules/remoteplayback/remote_playback.h"
  #include "third_party/blink/renderer/modules/remoteplayback/remote_playback_metrics.h"
  #include "third_party/blink/renderer/platform/text/platform_locale.h"
@@ -7174,7 +6508,7 @@
 -
 +
  namespace blink {
-@@ -58,6 +61,48 @@
+@@ -58,6 +62,51 @@
  }
 -
 +
@@ -7189,7 +6523,8 @@
 +    using State = mojom::blink::PresentationConnectionState;
 +    const bool connected = remote.GetState() == State::CONNECTED;
 +    const bool connecting = remote.GetState() == State::CONNECTING;
-+    const String& device = MediaElement().ParcPlaybackTargetDeviceName();
++    const String& device = ParcMediaElementAirPlay::From(MediaElement())
++                               .PlaybackTargetDeviceName();
 +    String label = "AirPlay";
 +    if (connected && !device.empty()) {
 +      label = StrCat({"Playing on ", device});
@@ -7204,9 +6539,11 @@
 +    // The window's Space tint, over mediaControls.css's own accent; in the
 +    // overflow menu, whose background follows the page's colour scheme, the
 +    // tint for each.
-+    String glyph = MediaElement().ParcAirPlayTintedGlyph();
++    const ParcMediaElementAirPlay& air_play =
++        ParcMediaElementAirPlay::From(MediaElement());
++    String glyph = air_play.AirPlayTintedGlyph();
 +    const String on_light =
-+        MediaElement().ParcAirPlayTintedGlyph(/*on_light_surface=*/true);
++        air_play.AirPlayTintedGlyph(/*on_light_surface=*/true);
 +    if (IsOverflowElement() && !glyph.IsNull() && !on_light.IsNull()) {
 +      glyph = StrCat({"light-dark(", on_light, ", ", glyph, ")"});
 +    }
@@ -7224,7 +6561,7 @@
    if (IsPlayingRemotely()) {
      setAttribute(
          html_names::kAriaLabelAttr,
-@@ -112,6 +157,13 @@
+@@ -112,6 +161,13 @@
    return MediaControlElementsHelper::IsUserInteractionEvent(event);
  }
 -
@@ -7279,9 +6616,7 @@
    // should not be a subtitle.
 --- a/third_party/blink/renderer/modules/media_controls/media_controls_impl_test.cc
 +++ b/third_party/blink/renderer/modules/media_controls/media_controls_impl_test.cc
-@@ -6,15 +6,21 @@
--
-+
+@@ -7,14 +7,20 @@
  #include <limits>
  #include <memory>
 -
@@ -7303,15 +6638,16 @@
  #include "third_party/blink/renderer/core/css/css_property_value_set.h"
  #include "third_party/blink/renderer/core/css/document_style_environment_variables.h"
  #include "third_party/blink/renderer/core/css/style_engine.h"
-@@ -31,6 +37,7 @@
+@@ -31,6 +37,8 @@
  #include "third_party/blink/renderer/core/html/html_head_element.h"
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
  #include "third_party/blink/renderer/core/html/media/html_video_element.h"
++#include "third_party/blink/renderer/core/html/media/parc_media_element_air_play.h"
 +#include "third_party/blink/renderer/core/html/media/parc_media_element_names.h"
  #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
  #include "third_party/blink/renderer/core/html/track/text_track.h"
  #include "third_party/blink/renderer/core/html/track/vtt/vtt_cue.h"
-@@ -55,6 +62,7 @@
+@@ -55,6 +63,7 @@
  #include "third_party/blink/renderer/modules/media_controls/elements/media_control_timeline_element.h"
  #include "third_party/blink/renderer/modules/media_controls/elements/media_control_volume_slider_element.h"
  #include "third_party/blink/renderer/modules/remoteplayback/remote_playback.h"
@@ -7319,7 +6655,7 @@
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
  #include "third_party/blink/renderer/platform/heap/thread_state.h"
  #include "third_party/blink/renderer/platform/media/remote_playback_client.h"
-@@ -90,17 +98,30 @@
+@@ -90,14 +99,27 @@
    display::ScreenInfo screen_info_;
  };
 -
@@ -7338,12 +6674,12 @@
 +  bool ParcSupportsPlaybackTarget() const override {
 +    return parc_supports_playback_target_;
 +  }
--
 +  void ParcFastSeek(double seconds, double tolerance_before) override {
 +    Seek(seconds);
 +  }
 +  void ParcEnabledAudioTracksChanged(
 +      const std::vector<TrackId>& enabled_track_ids) override {}
+-
 +
    bool has_audio_ = false;
 +  bool parc_supports_playback_target_ = false;
@@ -7351,10 +6687,7 @@
  };
 -
 +
- class StubLocalFrameClientForImpl : public EmptyLocalFrameClient {
-  public:
-   std::unique_ptr<WebMediaPlayer> CreateWebMediaPlayer(
-@@ -114,6 +135,27 @@
+@@ -114,6 +136,27 @@
        HTMLMediaElement& element) override {
      return &RemotePlayback::From(element);
    }
@@ -7383,7 +6716,7 @@
 -
 +
  Element* GetElementByShadowPseudoId(Node& root_node,
-@@ -213,6 +255,12 @@
+@@ -213,6 +256,12 @@
      test::RunPendingTasks();
    }
 -
@@ -7397,7 +6730,7 @@
    void SimulateHideMediaControlsTimerFired() {
      media_controls_->HideMediaControlsTimerFired(nullptr);
    }
-@@ -327,6 +375,16 @@
+@@ -327,6 +376,16 @@
    void SetReady() {
      MediaControls().MediaElement().SetReadyState(
          HTMLMediaElement::kHaveEnoughData);
@@ -7409,14 +6742,13 @@
 +
 +  // Parc: the player's isCurrentPlaybackTargetWireless.
 +  void SetPlayerWireless(bool wireless) {
-+    MediaControls().MediaElement().ParcPlaybackTargetIsWirelessChanged(
-+        wireless);
++    ParcMediaElementAirPlay::From(MediaControls().MediaElement())
++        .PlaybackTargetIsWirelessChanged(wireless);
    }
 -
 +
    // Set the focus .
-@@ -2031,5 +2089,266 @@
-     EXPECT_EQ(style->UsedUserModify(), EUserModify::kReadOnly) << pseudo_id;
+@@ -2032,4 +2091,265 @@
    }
  }
 -

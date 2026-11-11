@@ -13,7 +13,7 @@ namespace blink {
 class ParcRemotePlaybackExtension {
  public:
   // An element whose player plays to AirPlay targets on a Safari-identity
-  // page (HTMLMediaElement::ParcPlaysToPlaybackTargets()) runs its Remote
+  // page (ParcMediaElementAirPlay::PlaysToPlaybackTargets()) runs its Remote
   // Playback as AirPlay, as WebKit's RemotePlayback does. Whether it can offer
   // AirPlay may have changed: devices nearby
   // (wirelessRoutesAvailableDidChange), disabled, or a new player.
