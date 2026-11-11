@@ -1,8 +1,5 @@
 import Foundation
 
-/// The Easel's explicit address/search input is independent of the browser
-/// command bar. Search produces an ordinary URL; it never serializes a native
-/// autocomplete request, POST body or document token.
 enum EaselWebNavigation {
     enum Mode: Int, CaseIterable { case address, search }
     enum Category: String, CaseIterable {
@@ -45,13 +42,10 @@ enum EaselWebNavigation {
         case .images: values += [URLQueryItem(name: "iax", value: "images"), URLQueryItem(name: "ia", value: "images")]
         case .video: values += [URLQueryItem(name: "iax", value: "videos"), URLQueryItem(name: "ia", value: "videos")]
         case .news: values += [URLQueryItem(name: "iar", value: "news"), URLQueryItem(name: "ia", value: "news")]
-        //
-        // also supplied ia=news; preserve Maps intent without that stale vertical.
         case .maps: values += [URLQueryItem(name: "iaxm", value: "maps")]
         case .shopping: values += [URLQueryItem(name: "iax", value: "shopping"), URLQueryItem(name: "ia", value: "shopping")]
         }
         components.queryItems = values
-        // A literal plus must survive conventional query decoding as a plus.
         components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
         return components.url
     }

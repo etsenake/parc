@@ -1,7 +1,5 @@
 import Foundation
 
-/// Reset All follows the original visible saved hierarchy, not storage order.
-/// Disclosure affects folders; a whole split contributes its original children.
 enum SavedTabResetTargets {
     static func collect(in state: BrowserState, spaceID: UUID) -> [BrowserTab] {
         guard let space = state.spaces.first(where: { $0.id == spaceID }),

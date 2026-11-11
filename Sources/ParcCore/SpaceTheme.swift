@@ -1,8 +1,5 @@
 import Foundation
 
-/// Source-owned color values, independent of AppKit. Catalog colors retain
-/// their color space and component precision; legacy hexadecimal colors are
-/// sRGB. Converting every preset to eight-bit sRGB would discard its gamut.
 struct ThemeColor: Codable, Equatable {
     enum ColorSpace: String, Codable { case sRGB, displayP3, linearSRGB }
     let red: Double
@@ -43,8 +40,6 @@ struct ThemeColor: Codable, Equatable {
         return (hue < 0 ? hue + 1 : hue, saturation, lightness)
     }
 
-    /// The recovered editor uses HSL, not HSV/HSB. Hue wraps at the seam;
-    /// saturation and lightness are bounded by the caller's editor policy.
     static func hsl(hue: Double, saturation: Double, lightness: Double, colorSpace: ColorSpace = .sRGB) -> Self? {
         guard hue.isFinite, saturation.isFinite, lightness.isFinite,
               (0...1).contains(saturation), (0...1).contains(lightness) else { return nil }
@@ -80,13 +75,8 @@ struct ThemeColor: Codable, Equatable {
     }
 }
 
-/// One repeat of a theme texture spans this many points on every surface.
 enum ThemeTexturePitch { static let points: Double = 100 }
 
-/// Persisted theme choices. Drag/undo/preset-page state belongs to the editor,
-/// while all windows and onboarding resolve these same values for rendering.
-///
-/// model. This is Parc's implementation, not recovered original Swift source.
 struct SpaceTheme: Codable, Equatable {
     enum Appearance: String, Codable, CaseIterable { case automatic, light, dark }
     enum Wheel: String, Codable, CaseIterable { case complimentary, analogous }
@@ -109,8 +99,6 @@ struct SpaceTheme: Codable, Equatable {
 
     static func singleColor(_ color: ThemeColor) -> Self { Self(primaryColor: color, colorCount: 1) }
 
-    /// Strength of the texture overlay every themed surface draws: the
-    /// texture's maximum scaled by the grain dial, a quarter while inactive.
     func textureStrength(isActive: Bool) -> Double {
         let maximum: Double
         switch texture { case .grain: maximum = 0.8; case .sand: maximum = 0.15; case .denim: maximum = 0.6; case .tweed: maximum = 0.4 }
@@ -123,9 +111,6 @@ struct SpaceTheme: Codable, Equatable {
             && intensity.isFinite && (0...1).contains(intensity)
     }
 
-    ///
-    /// lightness. Two complementary colors are 180° apart; three use 150°
-    /// and 210°. Analogous companions use +40° and then -40°.
     var colors: [ThemeColor] {
         guard isValid, let primaryColor else { return [] }
         let hsl = primaryColor.hsl
@@ -153,8 +138,6 @@ struct SpaceTheme: Codable, Equatable {
         }
     }
 
-    /// Non-rotating noise input uses the recovered twenty-step quantization.
-    /// The circular gesture itself keeps continuous precision.
     mutating func setNoise(_ value: Double, rotating: Bool = false) {
         guard value.isFinite else { return }
         let bounded = min(1, max(0, value))

@@ -1,32 +1,6 @@
 import Foundation
 
-/// An Add Split or Option-Return result from another Space of the same Profile.
-///
-///
-///
-/// `visibilityBehavior` ensureVisible and, while Add Split's pending content
-/// is the command bar's `targetWindowContent`, the disposition that places the
-///
-///
-///
-///
-///
-///
-/// is a child of the split in the window's Space, so the window stays.
-///
-/// The chosen item therefore joins as a same-Space result does, under the split
-/// membership rules (SplitMembership): a saved (pinned) tab leaves a fresh home
-/// at its original slot in its own Space, a Today tab leaving a split there
-///
-/// anchor, or dissolves in place), and the tab itself becomes an ordinary Today
-/// tab of this Space at the target pane's slot, so the displayed split does not
-/// move. The same membership transaction then admits it.
 enum SplitCrossSpaceAdd {
-    /// Moves `source` from another Space of `profileID` into `spaceID`, ready for
-    /// SplitMembership's join. A pinned source needs `homeID` for its saved
-    /// home. `pane` is the displayed pane the result joins beside. Returns
-    /// `state` unchanged for a source already in `spaceID` or a Favorite, and
-    /// nil when it cannot be moved.
     static func relocated(_ state: BrowserState, source: UUID, into spaceID: UUID, profileID: UUID,
                           pane: UUID?, homeID: UUID?, now: Date) -> BrowserState? {
         guard let tab = state.tabs.first(where: { $0.id == source && $0.archivedAt == nil }),
@@ -46,7 +20,6 @@ enum SplitCrossSpaceAdd {
             let home = SplitMembership.makeHome(of: tab, id: homeID, now: now, activeTabBeforeCreationID: nil)
             if let parent = parents.first, let stored = next.splitLayouts.firstIndex(where: { $0.id == parent.id }),
                let child = parent.tabIDs.firstIndex(of: source) {
-                // A saved child taken from another split leaves its home there.
                 next.splitLayouts[stored].tabIDs[child] = homeID
                 if parent.sidebarAnchorID == source { next.splitLayouts[stored].sidebarAnchorID = homeID }
                 next.tabs.append(home)
@@ -73,14 +46,12 @@ enum SplitCrossSpaceAdd {
             } else { next.splitLayouts.remove(at: stored) }
         }
         next.tabs[index].spaceID = spaceID; next.tabs[index].kind = .today; next.tabs[index].folderID = nil
-        // The origin split keeps its slot, under a new anchor, or dissolves in place.
         SplitMembership.preservingSlots(before: state, after: &next)
         for key in next.selectionBySpace.keys where key != spaceID.uuidString {
             guard let selection = next.selectionBySpace[key], selection.contains(source) else { continue }
             let updated = replacement.map { home in selection.map { $0 == source ? home : $0 } } ?? selection.filter { $0 != source }
             next.selectionBySpace[key] = updated.isEmpty ? nil : updated
         }
-        // The moved tab takes the target pane's Today slot, else Today's top.
         let today = SidebarContainerLocation(spaceID: spaceID, folderID: nil, section: .today)
         var items = SidebarHierarchy.children(in: today, state: next).filter { $0 != .tab(source) }
         let paneRoot: SidebarItemReference? = pane.map { id in

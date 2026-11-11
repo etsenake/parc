@@ -1,12 +1,9 @@
 import Foundation
 
-/// Only durable Parc identities cross a restart. Native source/profile tokens
-/// belong to one discovery session and must be acquired again after launch.
 struct BrowserImportRestartIntent: Codable, Equatable {
     let spaceID: UUID
     let profileID: UUID
     let onboarding: Bool
-    /// Settings → Replay onboarding's own restart: only this reopens a saved replay draft.
     let replay: Bool
     let sourceBundleID: String
     private enum CodingKeys: String, CodingKey {

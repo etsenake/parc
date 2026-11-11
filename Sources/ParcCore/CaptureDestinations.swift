@@ -1,7 +1,5 @@
 import Foundation
 
-/// Capture ranks the original local documents by Sidebar activity, independently
-/// of the document's modification date. Missing activity sorts at distantPast.
 struct CaptureEaselDestination: Equatable {
     let id: UUID
     let title: String
@@ -24,7 +22,6 @@ struct CaptureEaselDestination: Equatable {
     static func ranked(_ destinations: [Self]) -> [Self] {
         destinations.sorted {
             let left = $0.lastActive ?? .distantPast, right = $1.lastActive ?? .distantPast
-            // Local UUID order makes equal/unknown activity deterministic.
             return left == right ? $0.id.uuidString < $1.id.uuidString : left > right
         }
     }
@@ -109,8 +106,6 @@ enum CaptureDestinationMenu {
         if persistentDestinations && easelDestinationsAvailable { actions.append(.newEasel) }
         let easels = persistentDestinations && easelDestinationsAvailable ? CaptureEaselDestination.ranked(destinations).map { CaptureDestinationAction.easel($0.id, $0.title) } : []
         if !query.isEmpty {
-            // Search recurses through the complete expandable section and only
-            // matches the current displayed toggle text, preserving row order.
             let query = query.lowercased()
             return (actions + easels).filter {
                 $0.title(librarySaved: librarySaved, framed: framed).lowercased().contains(query)

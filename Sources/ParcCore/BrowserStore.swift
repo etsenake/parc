@@ -2,15 +2,8 @@ import Foundation
 import Darwin
 import Combine
 
-//
-// distinguish top apps, pinned and unpinned containers, profile-bound Spaces,
-// hierarchical items, saved tab destinations, and split-pane state.
-// This is Parc's source implementation of those concepts, not recovered source.
-
 enum TabKind: String, Codable, CaseIterable { case favorite, pinned, today }
 
-//
-// sessions may also contain 1h/6h/Never; preserve those values on migration.
 enum AutoArchiveInterval: Double, CaseIterable {
     case never = 0, oneHour = 1, sixHours = 6, twelveHours = 12
     case twentyFourHours = 24, sevenDays = 168, thirtyDays = 720
@@ -37,8 +30,6 @@ struct BrowserProfile: Codable, Identifiable, Equatable {
     var autoArchiveHours: Double = AutoArchiveInterval.twelveHours.rawValue
 }
 
-/// Captures the exact Profiles reviewed by the automatic-archive scope sheet.
-/// Newly created, renamed or changed Profiles cannot join a retained callback.
 struct AutoArchiveProfileChange: Equatable {
     let profileID: UUID
     let profiles: [BrowserProfile]
@@ -48,8 +39,6 @@ struct AutoArchiveProfileChange: Equatable {
 
 struct BrowserSpace: Codable, Identifiable, Equatable {
     var id: UUID
-    /// Optional authored title; all existing callers read the positional display
-    /// name through `name`. Setting it remains an explicit rename.
     var title: String?
     private var placeholderName = "Space"
     var name: String {
@@ -99,9 +88,6 @@ struct BrowserSpace: Codable, Identifiable, Equatable {
         try c.encodeIfPresent(customIcon, forKey: .customIcon)
     }
     static func == (lhs: Self, rhs: Self) -> Bool {
-        // Migration/cache bookkeeping is not authored Space state. In
-        // particular a titled Space constructed in memory equals its decoded
-        // form even when their unused positional placeholders differ.
         lhs.id == rhs.id && lhs.title == rhs.title && lhs.name == rhs.name
             && lhs.symbol == rhs.symbol && lhs.customIcon == rhs.customIcon
             && lhs.theme == rhs.theme && lhs.profileID == rhs.profileID
@@ -116,10 +102,6 @@ struct BrowserSpace: Codable, Identifiable, Equatable {
     }
 }
 
-//
-// Nil provenance is intentionally unknown for sessions predating this schema.
-/// Library Put Back follows the initiating window and its selected source filter.
-/// Reopen Closed Tab keeps its separate previous-Space policy.
 enum ArchiveRestoreDestination {
     case putBack(currentSpaceID: UUID, requestedSpaceID: UUID?)
     case previousSpace(fallbackSpaceID: UUID?)
@@ -170,22 +152,16 @@ struct BrowserTab: Codable, Identifiable, Equatable {
     var isMuted: Bool = false
     var isUnread: Bool = false
     var archiveProvenance: ArchiveProvenance? = nil
-    // Original creation identities; never reconstructed from a URL or a later
-    // global selection. Older saved records deliberately decode these as nil.
     var referrerID: UUID? = nil
     var activeTabBeforeCreationID: UUID? = nil
 }
 
-/// Saved-tab presentation equality, not a navigation or security canonicalizer.
-/// Always dispatch the original destination; these comparison-only transforms
-///
 enum SavedTabURLComparison {
     static func isAway(current: URL?, saved: URL?) -> Bool {
         guard let current, let saved, current != saved else { return false }
         return normalized(current) != normalized(saved)
     }
 
-    /// Comparison key for deduplicating saved URL strings.
     static func key(_ string: String) -> String {
         URL(string: string).map { normalized($0).absoluteString } ?? string
     }
@@ -193,7 +169,6 @@ enum SavedTabURLComparison {
     private static func normalized(_ original: URL) -> URL {
         guard var parts = URLComponents(string: original.absoluteString.lowercased()) else { return original }
         let originalPath = parts.path
-        // The original component helper repairs only a missing scheme AND host.
         if parts.scheme == nil, parts.host == nil, let string = parts.string,
            let repaired = URLComponents(string: "https://" + string) { parts = repaired }
         if parts.scheme == nil || parts.scheme == "http" { parts.scheme = "https" }
@@ -208,8 +183,6 @@ enum SavedTabURLComparison {
         }
         if let items = parts.queryItems {
             let kept = items.filter { !($0.value ?? "").isEmpty && !$0.name.hasPrefix("utm_") }
-            // Preserve original encoding/order when there is nothing to remove.
-            // Reassigning even an unchanged array can alter percent escapes.
             if items.isEmpty || kept.count != items.count { parts.queryItems = kept.isEmpty ? nil : kept }
         }
         return parts.url ?? original
@@ -217,8 +190,6 @@ enum SavedTabURLComparison {
 }
 
 extension BrowserTab {
-    // The saved destination belongs to the Sidebar item; navigation changes
-    // its live URL without moving that destination.
     var resetDestination: URL? {
         guard archivedAt == nil, kind != .today,
               !InternalPage.isInternal(url), !InternalPage.isInternal(savedURL),
@@ -247,8 +218,6 @@ extension BrowserTab {
         savedTitle = try values.decode(String.self, forKey: .savedTitle)
         customTitle = try values.decodeIfPresent(String.self, forKey: .customTitle)
         isMuted = try values.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
-        // Earlier Parc opened every new tab as selected, so those existing
-        // tabs were already seen. Preserve explicit unread values if present.
         isUnread = try values.decodeIfPresent(Bool.self, forKey: .isUnread) ?? false
         archiveProvenance = try values.decodeIfPresent(ArchiveProvenance.self, forKey: .archiveProvenance)
         referrerID = try values.decodeIfPresent(UUID.self, forKey: .referrerID)
@@ -266,16 +235,8 @@ struct TabCreationProvenance: Equatable {
             } ? value : nil }
         }
         self.referrerID = original(referrerID)
-        // WindowData+TabCreation 10261e650–680: explicit referrer wins;
-        // otherwise the original window's active item is captured at creation.
         activeTabBeforeCreationID = self.referrerID ?? original(activeTabID)
     }
-    ///
-    ///
-    ///
-    ///
-    /// its active item. Without a same-Profile source the adopting window is
-    /// not the creating window, so its own current item is never substituted.
     init(routedFrom source: UUID?, openedLink: Bool, profileID: UUID, state: BrowserState) {
         self.init(referrerID: openedLink ? nil : source, activeTabID: source, profileID: profileID, state: state)
     }
@@ -284,17 +245,8 @@ struct TabCreationProvenance: Equatable {
     }
 }
 
-///
-///
-///
 enum TodayInsertion: Equatable {
-    /// The nil-strategy default: after the referrer's opened run, else the top.
     case automatic
-    /// `absolute(index: 0)`. Both matched routes supply it: created contents
-    ///
-    ///
-    /// So does an alternate Back/Forward in a new tab, in the current Space's
-    ///
     case top
 }
 
@@ -304,7 +256,6 @@ struct BrowserFolder: Codable, Identifiable, Equatable {
     var name: String
     var parentID: UUID?
     var isExpanded: Bool = true
-    ///
     var customIcon: SidebarGroupIcon? = nil
 }
 
@@ -338,12 +289,6 @@ struct BrowserHistoryEntry: Codable, Identifiable, Equatable {
     var profileID: UUID
 }
 
-/// `history.jsonl`: one compact JSON visit per line, appended as visits are
-/// added or retitled, so a navigation writes one line instead of the whole
-/// history. Removals rewrite the file. A later record for the same visit
-/// replaces the earlier one; the oldest visits beyond capacity are dropped
-/// on load and the file is compacted once it holds `compactionSlack` extra
-/// records.
 enum BrowserHistoryFile {
     static let name = "history.jsonl"
     static let compactionSlack = 5_000
@@ -359,8 +304,6 @@ enum BrowserHistoryFile {
         return data
     }
 
-    /// Visits oldest-first. An unreadable line (an append cut short) is
-    /// skipped; the first write after launch rewrites the file without it.
     static func decode(_ data: Data) -> [BrowserHistoryEntry] {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -376,10 +319,6 @@ enum BrowserHistoryFile {
         return visits
     }
 
-    /// The records to append when `next` only adds visits at the end, retitles
-    /// visits, or drops the oldest for capacity; nil when it needs a rewrite.
-    /// Oldest visits dropped below capacity were deleted, and loading would
-    /// bring them back, so that is a rewrite too.
     static func appended(from previous: [BrowserHistoryEntry],
                          to next: [BrowserHistoryEntry]) -> [BrowserHistoryEntry]? {
         var dropped = 0
@@ -403,10 +342,6 @@ enum BrowserHistoryFile {
     }
 }
 
-/// Visit records in `BrowserState.history` are oldest-first: new visits append
-/// and overflow drops the oldest prefix. Newest-first surfaces reuse that order
-/// when timestamps are strictly increasing, and otherwise use the same
-/// `sorted { $0.visitedAt > $1.visitedAt }` as before (including same-second ties).
 enum BrowserHistoryOrder {
     static let capacity = 20_000
 
@@ -421,18 +356,12 @@ enum BrowserHistoryOrder {
         return true
     }
 
-    /// Identity and order match `history.sorted { $0.visitedAt > $1.visitedAt }`.
     static func newestFirst(_ history: [BrowserHistoryEntry]) -> [BrowserHistoryEntry] {
         if isStrictlyChronological(history) { return Array(history.reversed()) }
         return history.sorted { $0.visitedAt > $1.visitedAt }
     }
 }
 
-/// A deletion from Chromium's history, as `PCNativeHistoryDidDeleteNotification`
-/// reports it: all history, a time range (perhaps for given URLs only), the URLs
-/// removed outright and their hosts. From overlay 320 it also names the profile
-/// and those URLs; an older engine's names neither, so its deletions reach every
-/// profile and, outside a time range, the reported hosts stand in for URLs.
 struct ChromiumHistoryDeletion {
     var profilePath: String?
     var all: Bool
@@ -490,14 +419,12 @@ struct BrowserDownload: Codable, Identifiable, Equatable {
     var requiresReview = false
     var sourceURL: String?
     var startedAt: Date?
-    // Capabilities are live leases, deliberately never restored from disk.
     var canPause = false
     var canResume = false
     var canCancel = false
     var canReview = false
     var canRetry = false
     var nativeIdentity: String?
-    // An original live OTR manager lease; never serialized with session data.
     var privateContextID: String?
     var canOpen = false
     var canReveal = false
@@ -507,7 +434,6 @@ struct BrowserDownload: Codable, Identifiable, Equatable {
     var openWhenComplete = false
     var fileMissing = false
     var statusText = ""
-    // Presentation metadata from this live manager, never restored as progress.
     var sourceDomain: String?
     var mimeType: String?
     var timeRemaining: TimeInterval?
@@ -586,8 +512,6 @@ struct BrowserDownload: Codable, Identifiable, Equatable {
         requiresReview = try values.decodeIfPresent(Bool.self, forKey: .requiresReview) ?? false
         sourceURL = try values.decodeIfPresent(String.self, forKey: .sourceURL)
         startedAt = try values.decodeIfPresent(Date.self, forKey: .startedAt)
-        // Earlier sessions only recorded completion/cancellation. Preserve
-        // those outcomes; byte progress distinguishes active from pending.
         status = try values.decodeIfPresent(BrowserDownloadStatus.self, forKey: .status)
             ?? .inferred(isComplete: values.decodeIfPresent(Bool.self, forKey: .isComplete) ?? false,
                          isCancelled: values.decodeIfPresent(Bool.self, forKey: .isCancelled) ?? false,
@@ -612,25 +536,19 @@ struct BrowserDownload: Codable, Identifiable, Equatable {
         try values.encode(requiresReview, forKey: .requiresReview)
         try values.encodeIfPresent(sourceURL, forKey: .sourceURL)
         try values.encodeIfPresent(startedAt, forKey: .startedAt)
-        // Keep the original fields readable by earlier Parc session readers.
         try values.encode(isComplete, forKey: .isComplete)
         try values.encode(isCancelled, forKey: .isCancelled)
     }
 }
 
 struct BrowserSettings: Codable, Equatable {
-    ///
     var sidebarWidth: Double = 228
-    // Legacy session decoding/model-only fallback. Native address input uses the selected Profile.
     var searchEngine: String = "https://duckduckgo.com/?q="
     var restoreSession: Bool = true
     var onboardingComplete: Bool = false
     var settingsPane: String?
     var settingsProfileID: UUID?
     var defaultProfileID: UUID?
-    // Optional storage keeps older sessions decodable. These names/polarities
-    //
-    //
     var modalEnabled: Bool?
     var disableShiftClickToOpenLinksInModal: Bool?
     var automaticPeekEnabled: Bool {
@@ -641,34 +559,16 @@ struct BrowserSettings: Codable, Equatable {
         get { !(disableShiftClickToOpenLinksInModal ?? false) }
         set { disableShiftClickToOpenLinksInModal = !newValue }
     }
-    ///
-    /// dismissed; the App Tray reads it as hasDismissedEmptyState
-    ///
     var topAppsEmptyStateDismissedForProfiles: [UUID]?
     func favoritesEmptyStateDismissed(for profileID: UUID) -> Bool {
         topAppsEmptyStateDismissedForProfiles?.contains(profileID) == true
     }
-    ///
-    ///
-    ///
-    ///
-    /// reads as that default.
     var showSpaceHeaderOnSingleUnnamedSpaces: Bool?
-    ///
-    ///
-    /// AppReducer registers no default for it, so nil reads false.
     var shouldBypassConfirmInterProfileMoveDialog: Bool?
 }
 
-//
-// each split. Horizontal describes the page arrangement, not the divider.
 enum SplitOrientation: String, Codable, CaseIterable { case horizontal, vertical }
 
-///
-/// 61 cases in this order, a String raw value equal to the case name
-///
-///
-/// icon fonts and assets (see `Resources/CustomInfoPicker/README.md`).
 enum SidebarIconType: String, Codable, CaseIterable {
     case star, bookmark, heart, flag, flash, triangle, medical, notifications, bulb, shapes
     case grid, apps, layers, server, albums, copy, folder, fileTrayFull, calendar, mail
@@ -678,18 +578,12 @@ enum SidebarIconType: String, Codable, CaseIterable {
     case bonfire, pizza, skull, receipt, thumbsUp, train, rss, github, linear, figma
     case search
 
-    ///
-    /// star through train (no rss, github, linear, figma or search).
     static let tabAndSpacePicker = Array(allCases.prefix(56))
-    ///
     static let folderPicker: [SidebarIconType] = [.star, .bookmark, .heart, .flash, .triangle, .medical,
         .notifications, .bulb, .chatBubbleEllipses, .people, .construction, .egg, .ellipse, .moon, .planet,
         .leaf, .cloud, .paw, .restaurant, .airplane, .musicalNote, .video, .code, .skull]
 }
 
-///
-/// Character, one `SidebarIconType`, or an SF Symbol name. Spaces and split
-///
 enum SidebarGroupIcon: Codable, Equatable {
     case emoji(String)
     case icon(SidebarIconType)
@@ -699,20 +593,13 @@ enum SidebarGroupIcon: Codable, Equatable {
         switch self {
         case .emoji(let value): return value.count == 1 && value.unicodeScalars.contains { $0.properties.isEmojiPresentation || $0.value == 0xFE0F || $0.value > 0x1F000 }
         case .icon: return true
-        //
-        // but its picker never produces one. Parc's only symbols are those its
-        // earlier picker stored, so only those names remain valid.
         case .symbol(let value): return Self.storedSymbols.contains(value)
         }
     }
-    /// Symbols written by Parc's pre-catalog picker; kept so stored values
-    /// still decode and render. Nothing new is created with them.
     static let storedSymbols: Set<String> = ["square.grid.2x2", "star", "heart", "bookmark", "briefcase", "house",
         "globe", "book", "music.note", "camera", "gamecontroller", "paintbrush", "leaf", "sun.max", "moon", "bolt",
         "flame", "flag", "gift", "graduationcap", "lightbulb", "paperplane", "puzzlepiece", "sparkles"]
 
-    /// An unknown stored icon (for example a raw value this build does not
-    /// know) decodes as absent instead of failing the whole document.
     static func decodeIfValid<Key: CodingKey>(_ container: KeyedDecodingContainer<Key>, forKey key: Key) -> SidebarGroupIcon? {
         guard let icon = try? container.decodeIfPresent(SidebarGroupIcon.self, forKey: key), icon.isValid else { return nil }
         return icon
@@ -720,10 +607,6 @@ enum SidebarGroupIcon: Codable, Equatable {
 }
 
 struct BrowserSplitLayout: Codable, Equatable, Identifiable {
-    ///
-    /// 1.122's split removal (WindowContentPresentationMutationContext+SplitView
-    ///
-    /// index, else the new last one (SP32).
     static func focusSuccessor(_ remaining: [UUID], removedAt index: Int?) -> UUID? {
         guard !remaining.isEmpty else { return nil }
         return remaining[min(max(index ?? 0, 0), remaining.count - 1)]
@@ -762,7 +645,6 @@ struct BrowserSplitLayout: Codable, Equatable, Identifiable {
     static func normalized(_ factors: [Double], count: Int) -> [Double]? {
         guard (2...4).contains(count), factors.count == count,
               factors.allSatisfy({ $0.isFinite && $0 > 0 }), let largest = factors.max() else { return nil }
-        // Scaling first avoids overflowing the sum for valid, large weights.
         let scaled = factors.map { $0 / largest }
         let sum = scaled.reduce(0, +)
         let result = scaled.map { $0 / sum }
@@ -770,11 +652,6 @@ struct BrowserSplitLayout: Codable, Equatable, Identifiable {
         return result
     }
 
-    ///
-    /// focused content 1 and every other pane 0; the split's effective-factor
-    /// layout gives a zero weight the expanded pane minimum. Saved weights stay
-    /// positive here, so that zero is kept as a weight the same minimum
-    /// redistribution resolves to the minimum at any window size.
     func expandedFactors(focusing id: UUID) -> [Double]? {
         guard tabIDs.contains(id) else { return nil }
         return Self.normalized(tabIDs.map { $0 == id ? 1 : 1e-9 }, count: tabIDs.count)
@@ -800,11 +677,7 @@ struct BrowserState: Codable, Equatable {
     var recentlyClosedIDs: [UUID] = []
     var settings = BrowserSettings()
     var profileRemovals: [ProfileRemovalRecord] = []
-    ///
     var arcImportedSpaces: [String: UUID] = [:]
-    /// The session file's window records (Windows and lifecycle hook). They
-    /// drive no UI, so BrowserStore keeps them off this published state as
-    /// `windowRecords`; in memory this list is always empty.
     var windows: [BrowserWindowRecord] = []
 
     static func initial() -> Self {
@@ -814,11 +687,6 @@ struct BrowserState: Codable, Equatable {
         return Self(profiles: [profile], spaces: [space], activeSpaceID: space.id)
     }
 
-    /// Outline membership, selection, folder expansion, and sidebar chrome
-    /// structure that live metadata does not rebuild (spaces/profiles/settings/
-    /// splits/order). Title/URL/customTitle, unread/mute flags, downloads and
-    /// other non-outline fields may differ so `SidebarView` can patch cells
-    /// instead of reallocating rows.
     func preservesSidebarOutline(relativeTo previous: BrowserState) -> Bool {
         profiles == previous.profiles
             && spaces == previous.spaces
@@ -842,9 +710,6 @@ struct BrowserState: Codable, Equatable {
             }
     }
 
-    /// Title, URL, saved metadata and history may differ. Membership, selection
-    /// and chrome-owning fields must not, so a metadata tick can patch rows
-    /// instead of reconstructing the sidebar and window chrome.
     func preservesChromeLayout(relativeTo previous: BrowserState) -> Bool {
         preservesSidebarOutline(relativeTo: previous)
             && version == previous.version
@@ -901,8 +766,6 @@ extension BrowserState {
         if let saved = try values.decodeIfPresent([BrowserSplitLayout].self, forKey: .splitLayouts) {
             splitLayouts = saved
         } else {
-            // Earlier Parc always rendered side by side; its unused global
-            // splitIsVertical flag never affected the displayed arrangement.
             let legacy = try decoder.container(keyedBy: LegacySplitKeys.self)
             let weights = try legacy.decodeIfPresent([Double].self, forKey: .splitWidthFactors) ?? []
             var selections = selectionBySpace
@@ -928,10 +791,6 @@ extension BrowserState {
     }
 }
 
-///
-/// SharedWindowFeature.CodableWindowData in StorableWindows.windows.
-///
-///
 struct BrowserWindowRecord: Codable, Equatable {
     var sidebarWidth: Double
     var itemLastActiveDates: [UUID: Date]
@@ -941,8 +800,6 @@ struct BrowserWindowRecord: Codable, Equatable {
     var focusedTabID: UUID?
     var sidebarHidden: Bool?
     var stayOnTop: Bool
-    ///
-    /// the items each collapsed folder still shows, in peek order.
     var peekedFolders: [UUID: [SidebarItemReference]]?
     private enum CodingKeys: String, CodingKey {
         case sidebarWidth, itemLastActiveDates, id, focusedSpaceID, selectedTabIDs, focusedTabID, sidebarHidden, stayOnTop, peekedFolders
@@ -971,7 +828,6 @@ struct BrowserWindowRecord: Codable, Equatable {
         if let intervals = try? values.decode([UUID: Double].self, forKey: .itemLastActiveDates) {
             itemLastActiveDates = intervals.mapValues { Date(timeIntervalSinceReferenceDate: $0) }
         } else {
-            // Earlier session records used the store's ISO-8601 date strategy.
             itemLastActiveDates = try values.decodeIfPresent([UUID: Date].self, forKey: .itemLastActiveDates) ?? [:]
         }
     }
@@ -985,33 +841,20 @@ struct BrowserWindowRecord: Codable, Equatable {
         try values.encodeIfPresent(sidebarHidden, forKey: .sidebarHidden)
         try values.encode(stayOnTop, forKey: .stayOnTop)
         try values.encodeIfPresent(peekedFolders, forKey: .peekedFolders)
-        // The store's ISO-8601 strategy drops fractions of a second, which
-        // would change the ranking of rapid selections after a restart.
         try values.encode(itemLastActiveDates.mapValues(\.timeIntervalSinceReferenceDate), forKey: .itemLastActiveDates)
     }
 
-    /// Keep windows the single-window launcher did not reopen. If the original
-    /// owner was reopened, its live record replaces that same saved identity.
     static func preservingUnrestored(live: [Self], unrestored: [Self]) -> [Self] {
         let liveIDs = Set(live.compactMap(\.id))
         return live + unrestored.filter { $0.id.map { !liveIDs.contains($0) } ?? true }
     }
 
-    /// The order the open windows' records are saved in, as indices into the
-    /// windows given: the one holding the shared frame autosave name first,
-    /// then front to back (`frontToBack`, nil for a window not on screen),
-    /// then opening order. A Parc adaptation for the one window it reopens,
-    /// which takes that autosaved frame, so the first record is the same
-    ///
-    /// list carries no window identity a multi-window restorer could match.
     static func sessionOrder(holdsFrameAutosave: [Bool], frontToBack: [Int?]) -> [Int] {
         func rank(_ index: Int) -> Int { holdsFrameAutosave[index] ? -1 : frontToBack[index] ?? .max }
         return holdsFrameAutosave.indices.sorted { (rank($0), $0) < (rank($1), $1) }
     }
 }
 
-/// Typed sidebar identity: split containers move together and retain their
-/// original children. Pasteboard bytes never authorize one of these moves.
 enum SidebarItemReference: Codable, Hashable {
     case tab(UUID), folder(UUID), split(UUID)
 }
@@ -1092,7 +935,6 @@ enum SidebarHierarchy {
                   && ($0.kind == .favorite || $0.spaceID == spaceID) }) else { return nil }
         return tabLocation(of: tab, spaceID: spaceID, profileID: profileID)
     }
-    /// The location of a live tab of the Space's profile, a Favorite or in the Space.
     private static func tabLocation(of tab: BrowserTab, spaceID: UUID, profileID: UUID) -> SidebarContainerLocation? {
         if tab.kind == .favorite {
             guard tab.folderID == nil else { return nil }
@@ -1112,15 +954,11 @@ enum SidebarHierarchy {
                 guard group.sidebarAnchorID == tab.id else { continue }
                 item = .split(group.id)
             } else { item = .tab(tab.id) }
-            // The tab is the item's (or its split's anchor's) own record, so
-            // its location needn't be looked up again among every tab.
             if tabLocation(of: tab, spaceID: location.spaceID, profileID: profileID) == location { legacy.append(item) }
         }
         if location.section == .pinned {
             legacy += state.folders.filter { $0.spaceID == location.spaceID && $0.parentID == location.folderID }.map { .folder($0.id) }
         }
-        // Persist a split at its original anchor. Creating/separating a split
-        // therefore cannot erase that item's established mixed sibling slot.
         let stored = (state.sidebarItemOrder[location.key] ?? []).map { item -> SidebarItemReference in
             if case .tab(let id) = item, let group = groups.first(where: { $0.sidebarAnchorID == id }) { return .split(group.id) }
             return item
@@ -1129,9 +967,6 @@ enum SidebarHierarchy {
         let present = Set(legacy)
         return (stored + legacy).filter { present.contains($0) && seen.insert($0).inserted }
     }
-    /// `children(in:state:)` of every pinned, Today and folder (pinned)
-    /// container of a Space, keyed by location key, from one pass over the
-    /// tabs; a container without children has no entry.
     static func childrenByContainer(spaceID: UUID, state: BrowserState) -> [String: [SidebarItemReference]] {
         guard let profileID = state.spaces.first(where: { $0.id == spaceID })?.profileID else { return [:] }
         let groups = SidebarSplitItems.groups(in: state, spaceID: spaceID)
@@ -1160,17 +995,11 @@ enum SidebarHierarchy {
         }
         return result
     }
-    ///
-    /// tab enters at index 0. Otherwise the scan starts at the referrer's whole
-    /// root item, or the top when the referrer is pinned, a Favorite or outside
-    /// this Today list, and passes that item plus following tabs opened from
-    ///
     static func placingCreatedTab(_ id: UUID, insertion: TodayInsertion, in state: inout BrowserState) {
         guard let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil
                   && $0.kind == .today && $0.folderID == nil }) else { return }
         let location = SidebarContainerLocation(spaceID: tab.spaceID, folderID: nil, section: .today)
         var items = children(in: location, state: state)
-        // A tab created directly into a split keeps that group's anchor slot.
         guard let current = items.firstIndex(of: .tab(id)) else { return }
         items.remove(at: current)
         var index = 0
@@ -1239,10 +1068,6 @@ enum SidebarHierarchy {
                   group.tabIDs == ids, Set(ids).count == ids.count,
                   BrowserSplitLayout.normalized(group.widthFactors, count: ids.count) != nil,
                   ids.allSatisfy({ id in expected.tabs.contains {
-                      // Ordinary split children keep their original kind/folder
-                      // until this explicit whole-group placement assigns all
-                      // of them to the requested destination. Favorites remain
-                      // a separate, uniformly profile-wide collection.
                       $0.id == id && $0.profileID == expected.profileID &&
                           (source.section == .favorite
                               ? $0.kind == .favorite && $0.folderID == nil
@@ -1283,9 +1108,6 @@ enum SidebarHierarchy {
 }
 
 
-/// A typed document reference retains the original profile and document, never
-/// a second document serialized from its URL. The real store supplies the pure
-/// validity check; creating another sidebar alias does not finish an editor draft.
 struct SidebarDocumentReference {
     let page: InternalPage
     let profileID: UUID
@@ -1294,7 +1116,6 @@ struct SidebarDocumentReference {
         self.page = page; self.profileID = profileID; self.validate = validate
     }
     @MainActor func isCurrent() -> Bool { do { try validate(); return true } catch { return false } }
-    /// Archive/Undo consumes existing typed identities, never a document writer.
     @MainActor static func validates(_ originals: [BrowserTab], references: [UUID: Self]) -> Bool {
         guard Set(references.keys).isSubset(of: Set(originals.map(\.id))) else { return false }
         return originals.allSatisfy { original in
@@ -1328,11 +1149,6 @@ struct SidebarCopySources {
     }
 }
 
-/// A folder command binds its original tree and saved items. Live destinations
-/// are resolved by the owning window at invocation, never by a global current tab.
-/// One original ordered collection. The command-bar source already normalizes
-/// ancestor ownership and validates whole splits; context copies additionally
-/// reject Favorites and retain every original saved record for stale refusal.
 struct SidebarDuplicateTarget: Equatable {
     let source: CommandBarFolderMoveSource
     let folderIDs: [UUID]
@@ -1372,8 +1188,6 @@ struct SidebarDuplicateTarget: Equatable {
     }
 }
 
-/// The single-folder public entry is the same collection transaction, not a
-/// separate copy loop with independently visible saves.
 struct FolderDuplicateTarget: Equatable {
     let folderID: UUID
     let collection: SidebarDuplicateTarget
@@ -1391,7 +1205,6 @@ struct FolderDuplicateTarget: Equatable {
         InternalPage(urlString: value) != nil || validDestination(value)
     }
     static func validDestination(_ value: String) -> Bool {
-        // Renderer destinations remain separate from typed document aliases.
         guard !InternalPage.isInternal(value), let url = URL(string: value),
               let scheme = url.scheme, !scheme.isEmpty else { return false }
         return true
@@ -1404,10 +1217,6 @@ struct SidebarDuplicateResult {
     let openTabIDs: [UUID]
 }
 
-/// The originals of an Option-drag copy of whole splits (SP23): ordinary or
-///
-///
-///
 struct SidebarSplitCopy: Equatable {
     let collection: SidebarMoveCollection
     let groups: [BrowserSplitLayout]
@@ -1429,9 +1238,6 @@ struct SidebarSplitCopy: Equatable {
         self.collection = collection; self.groups = groups
     }
 
-    /// The same splits in the same place: group identity and geometry, child
-    /// IDs and each child's Profile, Space, section and folder. Titles, URLs,
-    /// activity and unrelated items may change while a decision is pending.
     func matchesPlacement(of other: SidebarSplitCopy) -> Bool {
         func placement(_ tab: BrowserTab) -> [String] {
             [tab.id.uuidString, tab.profileID.uuidString, tab.spaceID.uuidString, tab.kind.rawValue, tab.folderID?.uuidString ?? ""]
@@ -1445,16 +1251,9 @@ struct SidebarSplitCopy: Equatable {
 struct FolderDuplicateResult {
     let folderID: UUID
     let tabIDs: [UUID]
-    ///
-    /// folder-tab descendants remain saved-only until selected.
     let openTabIDs: [UUID]
 }
 
-/// The Delete command binds the original folder subtree and archives its
-/// sidebar references. Typed Notes/Easels remain in their document stores. It is
-/// separate from Close (unload saved tabs) and from archiving a folder itself.
-/// One captured collection. Selected ancestors own their descendants; split
-/// panes remain a single root. The single-folder entry shares this transaction.
 struct FolderRemovalTarget: Equatable {
     let roots: [SidebarItemReference]
     let name: String
@@ -1506,10 +1305,6 @@ struct FolderRemovalTarget: Equatable {
     }
 }
 
-/// Keyboard Close classifies the selected original sidebar roots, not each
-///
-/// collection when any original item belongs to Today; a saved-only collection
-/// instead deselects/unloads its content and retains the saved references.
 struct SidebarKeyboardCloseTarget: Equatable {
     let items: FolderRemovalTarget
     let archivesItems: Bool
@@ -1523,15 +1318,9 @@ struct SidebarKeyboardCloseTarget: Equatable {
         }
     }
 
-    // Ordinary tab Close has no extra Parc warning. A mixed command containing
-    // an ordinary folder keeps the actual folder-deletion confirmation.
     var requiresConfirmation: Bool { archivesItems && !items.folderIDs.isEmpty }
 }
 
-/// One original-window close group, not a snapshot of the browser store. The
-/// archived afterimages authorize restoration of these exact saved identities.
-///
-/// regroup actions; its separate folder-archive feature is not required.
 struct FolderDeletionUndo {
     let id = UUID()
     let roots: [SidebarItemReference]
@@ -1581,8 +1370,6 @@ struct FolderDeletionUndo {
         focusedTabID = selection?.originalFocus.flatMap { focus in target.tabs.contains { $0.id == focus } ? focus : nil }
     }
 
-    /// Navigation/title changes after Undo are legitimate. Redo still closes
-    /// only the recorded tree and original members, never newly added children.
     func redoTarget(in state: BrowserState) -> FolderRemovalTarget? {
         guard let target = FolderRemovalTarget(items: roots, spaceID: spaceID, profileID: profileID, state: state),
               locations.allSatisfy({ location in
@@ -1601,20 +1388,9 @@ struct FolderDeletionUndo {
     }
 }
 
-///
-///
-/// It holds the pre-close records and archived afterimages, not a store
-///
 struct ClosedTabsUndo {
-    ///
-    ///
-    ///
-    ///
-    ///
     enum Prompt {
         case clear, archive
-        ///
-        ///
         func name(count: Int) -> String {
             switch self {
             case .clear: return count == 1 ? "Clear Tab" : "Clear Tabs"
@@ -1624,28 +1400,14 @@ struct ClosedTabsUndo {
     }
     let prompt: Prompt
     let spaceID: UUID, profileID: UUID
-    /// Pre-close records in model order.
     let tabs: [BrowserTab]
-    /// Their archived afterimages. Empty when the close removed them, as a
-    /// private window's does.
     let archivedTabs: [BrowserTab]
-    /// Every split the close touched, with its pre-close geometry.
     let groups: [BrowserSplitLayout]
-    ///
-    /// into the survivor, or regroupItems when this close dissolved it.
     let memberships: [UUID: ClosedSplitMembership]
-    /// The Space's Today list before the close.
     let order: [SidebarItemReference]
-    /// The window's focused tab, when this close took it. The shared
-    ///
-    /// configuration's focusedTabItemID with the focused item only when it is
-    /// among the closed items, and Undo selects that one step's item
-    ///
     let focusedTabID: UUID?
 
     var actionName: String { prompt.name(count: itemCount(of: Set(tabs.map(\.id)))) }
-    /// Each tab, plus a split this close removes with its children
-    ///
     func itemCount(of ids: Set<UUID>) -> Int {
         let closed = Set(tabs.map(\.id))
         let removed = groups.filter { group in
@@ -1654,8 +1416,6 @@ struct ClosedTabsUndo {
         }
         return ids.count + removed.filter { !Set($0.tabIDs).isDisjoint(with: ids) }.count
     }
-    ///
-    ///
     func reopenedIDs(_ reopened: ClosedItemRecord) -> Set<UUID> {
         Set(reopened.tabs.filter { tab in archivedTabs.contains {
             $0.id == tab.id && $0.archivedAt == tab.archivedAt && $0.archiveProvenance == tab.archiveProvenance
@@ -1664,8 +1424,6 @@ struct ClosedTabsUndo {
     private var removesTabs: Bool { archivedTabs.isEmpty }
     private var location: SidebarContainerLocation { .init(spaceID: spaceID, folderID: nil, section: .today) }
 
-    /// Nil when the close took nothing out of the sidebar: a saved tab's close
-    ///
     init?(prompt: Prompt, ids: Set<UUID>, spaceID: UUID, profileID: UUID, focusedTabID: UUID?,
           before: BrowserState, after: BrowserState) {
         let candidates = before.tabs.filter { ids.contains($0.id) && $0.archivedAt == nil && $0.kind == .today
@@ -1687,10 +1445,6 @@ struct ClosedTabsUndo {
         self.focusedTabID = focusedTabID.flatMap { closed.contains($0) ? $0 : nil }
     }
 
-    ///
-    /// still archived by this close, by the identity an Archive preview checks,
-    /// or one a private window's close removed. A tab reopened, put back,
-    /// deleted or archived again stays as it is.
     func restorableIDs(in state: BrowserState) -> Set<UUID> {
         if removesTabs { return Set(tabs.filter { original in !state.tabs.contains { $0.id == original.id } }.map(\.id)) }
         return Set(archivedTabs.filter { recorded in state.tabs.contains { current in
@@ -1700,7 +1454,6 @@ struct ClosedTabsUndo {
         } }.map(\.id))
     }
 
-    /// Redo closes the recorded tabs that are live Today tabs again.
     func redoIDs(in state: BrowserState) -> Set<UUID> {
         Set(tabs.filter { original in state.tabs.contains {
             $0.id == original.id && $0.archivedAt == nil && $0.kind == .today && $0.folderID == nil
@@ -1708,9 +1461,6 @@ struct ClosedTabsUndo {
         } }.map(\.id))
     }
 
-    /// The restored tabs, regrouped splits and Today positions, with
-    /// unrelated state read from `state`. Selection is untouched. `regroupable`
-    /// admits a surviving pane a restored one may rejoin.
     func restoring(_ state: BrowserState, regroupable: (UUID) -> Bool = { _ in true }) -> BrowserState? {
         let ids = restorableIDs(in: state)
         guard !ids.isEmpty else { return nil }
@@ -1719,16 +1469,12 @@ struct ClosedTabsUndo {
             guard let index = next.tabs.firstIndex(where: { $0.id == original.id }) else {
                 next.tabs.append(original); continue
             }
-            // Only its place and archive state return; a title or address
-            // edited in the Archive since (a Note, say) is kept.
             next.tabs[index].archivedAt = original.archivedAt
             next.tabs[index].archiveProvenance = original.archiveProvenance
             next.tabs[index].kind = original.kind
             next.tabs[index].folderID = original.folderID
         }
         next.recentlyClosedIDs.removeAll { ids.contains($0) }
-        // regroupItems: a split closed whole returns whole when every pane
-        // does and none has joined another split.
         let closed = Set(tabs.map(\.id))
         var regrouped = Set<UUID>()
         for group in groups where group.tabIDs.allSatisfy({ closed.contains($0) && ids.contains($0) })
@@ -1739,8 +1485,6 @@ struct ClosedTabsUndo {
         for original in tabs where ids.contains(original.id) {
             guard let membership = memberships[original.id],
                   var group = membership.restoredLayout(restoring: original.id, in: next, available: regroupable) else { continue }
-            // The pane that took over the split's sidebar slot during the close
-            // hands it back, so Undo leaves the split as it was.
             if let anchor = membership.layout.sidebarAnchorID, group.tabIDs.contains(anchor) { group.sidebarAnchorID = anchor }
             next.splitLayouts.removeAll { $0.id == group.id }
             next.splitLayouts.append(group)
@@ -1750,7 +1494,6 @@ struct ClosedTabsUndo {
         for item in order {
             guard case .split(let id) = item, let group = groups.first(where: { $0.id == id }) else { entries.append(item); continue }
             if regrouped.contains(id) { entries.append(item); continue }
-            // A pane that did not regroup or rejoin returns alone in its split's slot.
             if !group.tabIDs.allSatisfy(closed.contains) { entries.append(item) }
             entries += group.tabIDs.filter { closed.contains($0) && !rejoined.contains($0) }.map { .tab($0) }
         }
@@ -1761,8 +1504,6 @@ struct ClosedTabsUndo {
             case .folder: return false
             }
         }
-        //
-        // returns to its slot even if losing that pane moved it.
         let rejoinedMembers = Set(next.splitLayouts.filter { rejoinedGroups.contains($0.id) }.flatMap(\.tabIDs))
         var siblings = SidebarHierarchy.children(in: location, state: state).filter { item in
             switch item {
@@ -1780,7 +1521,6 @@ struct ClosedTabsUndo {
                 ?? min(position, siblings.count)
             siblings.insert(root, at: insertion)
         }
-        // A survivor that a restored pane regrouped with now stands for the split.
         let shown = SidebarSplitItems.groups(in: next, spaceID: spaceID)
         var seen = Set<SidebarItemReference>()
         let roots = siblings.map { item -> SidebarItemReference in
@@ -1795,9 +1535,6 @@ struct ClosedTabsUndo {
     }
 }
 
-///
-/// nextItemToSelect before close; the saved deletion and this selection publish
-/// together. Referrer/creation-history branches are not inferred from URLs.
 struct FolderRemovalSelection: Equatable {
     let spaceID: UUID, profileID: UUID
     let original: [UUID]
@@ -1830,8 +1567,6 @@ struct FolderRemovalSelection: Equatable {
             previouslySelectedItemID: previouslySelectedItemID, available: available)
     }
 
-    /// Shared original-window close decision. The original IDs remain an
-    /// anchor even after native unload; candidate pages are never recreated.
     static func resolve(removing removed: Set<UUID>, spaceID space: UUID,
                         profileID profile: UUID, state: BrowserState,
                         selected: [UUID], focused: UUID?, referrerPool: Set<UUID> = [],
@@ -1848,9 +1583,6 @@ struct FolderRemovalSelection: Equatable {
                   originalFocus: focused, tabIDs: ids, focusedTabID: focus, removed: removed, referrerPool: referrerPool,
                   previouslySelectedItemID: previouslySelectedItemID, replacementSpaceID: replacementSpaceID)
         }
-        // Closing a background folder never selects a different page. A
-        // surviving original pane retains focus; otherwise the pane that takes
-        // the closed focused pane's place does, else the new last (SP32).
         if !survivors.isEmpty || selected.isEmpty {
             guard survivors.allSatisfy(available) else { return nil }
             return decision(survivors, focus: focused.flatMap { survivors.contains($0) ? $0 : nil }
@@ -1881,17 +1613,12 @@ struct FolderRemovalSelection: Equatable {
                 }
             }
         }
-        // The recovered close traversal descends folder children independently
-        // of disclosure, and does not flatten a split into individual panes.
         collect(nil, section: .pinned); collect(nil, section: .today)
         func eligible(_ item: Item) -> Bool {
             item.ids.allSatisfy { !removed.contains($0) && available($0) }
         }
         let candidates = ordered.filter { eligible($0) || current.map($0.ids.contains) == true }
         if let current, let index = candidates.firstIndex(where: { $0.ids.contains(current) }) {
-            //
-            // genuine tab whose referrer is this closing item, before the
-            // ordinary neighbor fallback. A split remains one item.
             for neighbor in [index - 1, index + 1] where candidates.indices.contains(neighbor) {
                 let item = candidates[neighbor]
                 if item.ids.count == 1, let id = item.ids.first,
@@ -1899,9 +1626,6 @@ struct FolderRemovalSelection: Equatable {
                     return decision(item.ids, focus: id)
                 }
             }
-            // 1025d2a20 walks forward through original items for a sibling
-            // with the same explicit referrer, requiring both IDs in this
-            // physical window's actual referrer pool.
             if referrerPool.contains(current), let referrer = tabs[current]?.referrerID {
                 for item in candidates.dropFirst(index + 1) where item.ids.count == 1 {
                     if let id = item.ids.first, referrerPool.contains(id),
@@ -1911,8 +1635,6 @@ struct FolderRemovalSelection: Equatable {
                 }
             }
         }
-        // 1025d332c: a Favorite is profile-wide; a pinned/Today return
-        // belongs to this Space. Preserve a real split as one item.
         if let current, let previous = state.tabs.first(where: { $0.id == current })?.activeTabBeforeCreationID,
            referrerPool.contains(previous), !removed.contains(previous), available(previous),
            let tab = state.tabs.first(where: { $0.id == previous && $0.archivedAt == nil
@@ -1922,10 +1644,6 @@ struct FolderRemovalSelection: Equatable {
                 return decision(item.ids, focus: previous)
             }
         }
-        //
-        // compares outer itemContainer values, not immediate folder parents:
-        // two Space containers require the same Space; a Favorite container
-        // compares its Profile with the other Favorite or Space's Profile.
         if let current, let previous = previouslySelectedItemID, previous != current,
            let source = state.tabs.first(where: { $0.id == current && $0.archivedAt == nil && $0.profileID == profile }),
            let tab = state.tabs.first(where: { $0.id == previous && $0.archivedAt == nil && $0.profileID == profile }),
@@ -1950,15 +1668,11 @@ struct FolderRemovalSelection: Equatable {
             }
         }
         if let current, let index = candidates.firstIndex(where: { $0.ids.contains(current) }) {
-            //
-            // original closing item stays as the traversal anchor only.
             for neighbor in [index - 1, index + 1] where candidates.indices.contains(neighbor) {
                 let item = candidates[neighbor]
                 if eligible(item) { return decision(item.ids, focus: item.ids.first) }
             }
         }
-        //
-        // dates retain the source-owned mixed sidebar order in Parc.
         let fallback = ordered.enumerated().filter { eligible($0.element) }.sorted {
             if $0.element.accessed != $1.element.accessed { return $0.element.accessed > $1.element.accessed }
             return $0.offset < $1.offset
@@ -1968,17 +1682,12 @@ struct FolderRemovalSelection: Equatable {
 }
 
 
-/// Window-local sidebar selection, distinct from the pages visible in a split.
-/// AppKit's outline proposals are represented explicitly for Parc's existing
-/// view-backed rows. Anchor/focus are original item IDs, never row indices.
 struct SidebarItemSelection: Equatable {
     private(set) var items: [SidebarItemReference] = []
     private(set) var singleItem: SidebarItemReference?
     private(set) var anchor: SidebarItemReference?
     private(set) var focus: SidebarItemReference?
     mutating func clear() { items = []; singleItem = nil; anchor = nil; focus = nil }
-    /// The native outline's Select All proposal is its currently displayed rows;
-    /// hidden descendants are included only by the later item action, not here.
     mutating func selectAll(order: [SidebarItemReference], active: SidebarItemReference?) {
         var seen = Set<SidebarItemReference>()
         let visible = order.filter { seen.insert($0).inserted }
@@ -2015,7 +1724,6 @@ struct SidebarItemSelection: Equatable {
             else { proposed.append(item) }
             anchor = item
         } else { proposed = [item]; anchor = item }
-        //
         if proposed.count > 1, let active, order.contains(active) { proposed.append(active) }
         let selected = Set(proposed)
         items = order.filter { selected.contains($0) }
@@ -2026,8 +1734,6 @@ struct SidebarItemSelection: Equatable {
 }
 
 extension SidebarHierarchy {
-    /// Ancestor selection owns its subtree; preserve visible original order and
-    /// remove duplicate descendants before a bulk mutation.
     static func roots(_ items: [SidebarItemReference], state: BrowserState, spaceID: UUID) -> [SidebarItemReference]? {
         guard !items.isEmpty, Set(items).count == items.count,
               items.allSatisfy({ location(of: $0, state: state, spaceID: spaceID) != nil }) else { return nil }
@@ -2060,8 +1766,6 @@ extension SidebarHierarchy {
     }
 }
 
-/// Public browser addresses. Chromium still owns the actual WebUI origin and
-/// request; this projection never touches an HTTP URL, embedded URL, or query.
 enum BrowserInternalURL {
     static func publicString(_ input: String) -> String {
         guard var value = URLComponents(string: input),
@@ -2094,7 +1798,6 @@ enum InternalPage: Equatable {
     var easelID: UUID? { if case let .easel(id) = self { return id }; return nil }
     var noteID: UUID? { if case let .note(id) = self { return id }; return nil }
     var untitledTitle: String { noteID != nil ? "Untitled Note" : "Untitled Easel" }
-    ///
     var sidebarFallbackSymbol: String {
         switch self {
         case .note: return "note.text"
@@ -2110,29 +1813,18 @@ enum InternalPage: Equatable {
     }
 }
 
-/// The What's New page bundled as `Contents/Resources/WhatsNew.html`. It
-/// loads as an ordinary file page, but its address is a path into the app,
-///
-///
-/// content's `titleText` for Notes and Easels instead of a URL).
 enum WhatsNewPage {
     static let current = Bundle.main.url(forResource: "WhatsNew", withExtension: "html")
     private static let path = Bundle.main.bundleURL
         .appendingPathComponent("Contents/Resources/WhatsNew.html").standardizedFileURL.path
 
-    /// Only the running app's page: another app's `WhatsNew.html` keeps its address.
     static func matches(_ address: String) -> Bool {
         guard let url = URL(string: address), url.isFileURL else { return false }
         return url.standardizedFileURL.path == path
     }
 
-    /// The address Parc shows, copies or shares for a page: none for this one.
     static func presented(_ address: String) -> String { matches(address) ? "" : address }
 
-    /// A restored tab of another Parc install's page, whose bundle still says
-    /// it is Parc, opens this build's copy. Only session load relocates: a
-    /// Back to such an entry must not redirect. This build's address keeps
-    /// Chromium's spelling.
     static func relocated(_ address: String, to page: URL? = current) -> String {
         guard let page, let url = URL(string: address), url.isFileURL else { return address }
         let file = url.standardizedFileURL
@@ -2179,8 +1871,6 @@ enum NavigationInput {
     }
 }
 
-/// A window Undo payload outlives the transient theme editor. Only the captured
-/// Space's theme is replaced; its name, icon, ordering and tabs remain current.
 struct SpaceThemeChange: Equatable {
     let spaceID: UUID
     let profileID: UUID
@@ -2198,20 +1888,10 @@ struct SpaceThemeChange: Equatable {
 
 @MainActor
 final class BrowserStore: ObservableObject {
-    /// Published snapshot. Activity-only `lastAccessed` stamps install through
-    /// `activityOnlyState` so archive/session persistence sees them without a
-    /// `@Published` UI fan-out (sidebar/window sinks, `stateRevision` caches).
-    /// Default satisfies definite initialization; inits overwrite before use.
     @Published private var publishedState: BrowserState = .initial() {
         didSet { stateRevision &+= 1 }
     }
-    /// Overlay installed by `refreshVisibleTabs` when only access dates change.
-    /// Cleared on the next published assign. Reads prefer this over `publishedState`.
     private var activityOnlyState: BrowserState?
-    /// Current model state. Distinct assignments clear any activity overlay and
-    /// publish. Identical assigns are true no-ops: `@Published` would still fan
-    /// out sidebar/window sinks on equal writes (for example `changed()`
-    /// rewriting `selectionBySpace` to the same ids after `updateTab`).
     private(set) var state: BrowserState {
         get { activityOnlyState ?? publishedState }
         set {
@@ -2219,7 +1899,6 @@ final class BrowserStore: ObservableObject {
             guard newValue != current else { return }
             activityOnlyState = nil
             publishedState = newValue
-            // A Space moved off its previewed theme (another editor, removal) ends that preview.
             if !themePreviews.isEmpty {
                 themePreviews = themePreviews.filter { id, entry in
                     newValue.spaces.contains { $0.id == id && $0.theme == entry.preview }
@@ -2227,20 +1906,12 @@ final class BrowserStore: ObservableObject {
             }
         }
     }
-    /// Replay's live Space themes. Windows render them from `state`; every
-    /// session write keeps the saved theme until Finish commits the preview.
     private var themePreviews: [UUID: (saved: SpaceTheme, preview: SpaceTheme)] = [:]
-    /// Former `$state` Combine surface; emits only on published assigns.
     var statePublisher: Published<BrowserState>.Publisher { $publishedState }
-    /// Changes with every state publication; drop proposals cache against it.
     private(set) var stateRevision: UInt64 = 0
-    /// Changes only when visit records change, so History and command-bar
-    /// recents can skip rebuilding against unrelated publications.
     private(set) var historyRevision: UInt64 = 0
     @Published private(set) var persistenceError: String?
     @Published private(set) var autoArchiveEducationPending = false
-    // The shared Library projects these live manager records without placing
-    // them in BrowserState or its durable session file.
     @Published private(set) var transientDownloads: [BrowserDownload] = []
     var downloadItems: [BrowserDownload] {
         let profiles = Set(state.profiles.map(\.id))
@@ -2251,40 +1922,21 @@ final class BrowserStore: ObservableObject {
     }
     lazy var linkRouting = LinkRoutingStore(directory: directory)
     let directory: URL
-    // The directory belongs to the normal application. Ephemeral initialization
-    // never reads or creates it; every model persistence entry is gated below.
     let privateParentProfileID: UUID?
     private let privateEnginePath: String?
     var isEphemeral: Bool { privateEnginePath != nil }
     private let clock: () -> Date
     private var pendingSave: DispatchWorkItem?
-    /// Persisted snapshot last handed to a still-pending debounce. Used so a
-    /// no-op `changed()`/`scheduleSave` does not cancel and reset the timer.
     private var pendingSaveSnapshot: BrowserState?
     private let sessionWriter = SessionFileWriter()
-    /// Never part of `state` or the session file.
     var closedPageHistory = ClosedPageHistory<AnyObject>()
-    /// Windows of this store share one frozen frame per placeholder tab; a private
-    /// window has its own store, so its frames stay with it.
     let placeholderImages = PagePlaceholderImages()
-    /// Live pages' back/forward entries for the next launch; none when private.
     lazy var tabHistory: TabHistoryArchive? = isEphemeral ? nil
         : TabHistoryArchive(directory: directory.appendingPathComponent("Tab History", isDirectory: true))
-    /// The open standard windows' session records, the first the window Parc
-    /// reopens. They stay off the published state: each window's render
-    /// follows `state`, and the records change on every width commit and
-    /// window close. Session writes put them back into the file.
     private(set) var windowRecords: [BrowserWindowRecord] = []
-    // Installed by the native application. The model keeps the saved tab
-    // unchanged until every real page using it has accepted retirement. The
-    // native owner MUST call shouldCommit after all approvals and before any
-    // unload, then report success only after every actual page is destroyed.
     var requestPageRetirement: ((Set<UUID>, @escaping () -> Bool, @escaping (Bool) -> Void) -> Void)?
-    /// Whether another shared sidebar banner (update ready, Update Complete) holds the slot.
     var sidebarBannerOccupied: () -> Bool = { false }
     private var profileWriteReservations: [UUID: UUID] = [:]
-    /// Capture output is an explicit durable write. Reserve its original
-    /// parent before launching the disk actor so removal cannot cross it.
     func reserveProfileWrite(_ profileID: UUID) -> ProfileWriteReservation? {
         guard !isEphemeral, !isProfileRemovalPending(profileID),
               state.profiles.contains(where: { $0.id == profileID }) else { return nil }
@@ -2319,13 +1971,7 @@ final class BrowserStore: ObservableObject {
             if FileManager.default.fileExists(atPath: historyFile.path) {
                 let bytes = try? Data(contentsOf: historyFile)
                 let saved = bytes.map(BrowserHistoryFile.decode) ?? []
-                // An unreadable file, or one with records this build cannot
-                // read, is left untouched for the session instead of being
-                // replaced by the visits that did load.
                 if bytes == nil || (saved.isEmpty && bytes?.isEmpty == false) { sessionWriter.preserveHistoryFile() }
-                // A session written before the split (the file may already
-                // hold those visits) or by an older build since (newer visits)
-                // still carries visits inline; the file's come first.
                 let filed = Set(saved.map(\.id))
                 var merged = saved + decoded.history.filter { !filed.contains($0.id) }
                 if merged.count > BrowserHistoryOrder.capacity {
@@ -2352,7 +1998,6 @@ final class BrowserStore: ObservableObject {
                 state = SplitMembership.resolvingSharedLegacyFavorites(state)
                 reconcileSplitLayouts()
                 migrateLegacySplitContainers()
-                // Persist normalized legacy groups and their newly assigned identities.
                 if needsGroupIdentityMigration || state != decoded { try save() }
             } else {
                 beginFreshSession()
@@ -2420,8 +2065,6 @@ final class BrowserStore: ObservableObject {
             result[tab.id] = ArchiveProvenance(reason: reason, spaceID: tab.spaceID,
                 spaceName: state.spaces.first { $0.id == tab.spaceID }?.name ?? "Space")
         }
-        // Preserve only a complete archived split; a partially closed group
-        // must never restore or steal panes which stayed open in another window.
         for layout in state.splitLayouts where layout.tabIDs.allSatisfy({ ids.contains($0) }) {
             guard layout.tabIDs.allSatisfy({ id in state.tabs.contains { $0.id == id && $0.kind == .today && $0.archivedAt == nil } }),
                   layout.tabIDs.allSatisfy({ result[$0]?.groupID == nil }) else { continue }
@@ -2431,8 +2074,6 @@ final class BrowserStore: ObservableObject {
         return result
     }
 
-    //
-    // its age comparison retains age < threshold and removes age >= threshold.
     static let archiveRetention: TimeInterval = 60 * 24 * 60 * 60
     func cleanExpiredArchive(now: Date? = nil) {
         let cutoff = (now ?? clock()).addingTimeInterval(-Self.archiveRetention)
@@ -2440,8 +2081,6 @@ final class BrowserStore: ObservableObject {
         deleteArchivedTabs(ids)
     }
 
-    /// A preview reserves an exact archived item, including its ordered group.
-    /// Mutable titles and URLs may legitimately change while a Note is edited.
     func acquireArchivePreview(id: UUID, profileID: UUID) -> ArchivePreviewLease? {
         guard !isEphemeral, !isProfileRemovalPending(profileID),
               state.profiles.contains(where: { $0.id == profileID }),
@@ -2471,8 +2110,6 @@ final class BrowserStore: ObservableObject {
         if archivePreviewLeases[lease.token] == lease { archivePreviewLeases.removeValue(forKey: lease.token) }
     }
 
-    /// Native retirement compares this exact set with the original live
-    /// preview owners before unloading and again at its consent gate.
     func archivePreviewLeases(intersecting ids: Set<UUID>) -> [ArchivePreviewLease] {
         archivePreviewLeases.values.filter { !ids.isDisjoint(with: Set($0.tabs.map(\.id))) }
     }
@@ -2486,8 +2123,6 @@ final class BrowserStore: ObservableObject {
             && (profileID == nil || $0.profileID == profileID) }
         guard !originals.isEmpty else { return }
         let removing = Set(originals.map(\.id))
-        // Retire the entire original group even for a partial selection: a
-        // preview may own all its panes under a single archive item.
         let groups = Set(originals.map(\.profileID)).flatMap { archivedItems(profileID: $0) }
             .filter { !removing.isDisjoint(with: Set($0.tabs.map(\.id))) }
         let snapshots = groups.map(\.tabs)
@@ -2526,8 +2161,6 @@ final class BrowserStore: ObservableObject {
 
     func independentEngineProfilePath(for profileID: UUID) -> String {
         if let privateEnginePath { return privateEnginePath }
-        // Current CEF requires an immediate child of root_cache_path. Nested
-        // paths silently become off-the-record contexts, so reject aliases.
         return independentEngineRoot.appendingPathComponent(profileID.uuidString, isDirectory: true).path
     }
 
@@ -2538,9 +2171,6 @@ final class BrowserStore: ObservableObject {
         }?.id
     }
 
-    // Records an already-created engine page. This deliberately does not use
-    // NavigationInput: the page may be a POST popup or an extension document,
-    // and recording its identity must never issue another navigation.
     func adoptNativePage(url: URL?, title: String, profilePath: String,
                          preferredSpaceID: UUID, select: Bool, creation: TabCreationProvenance? = nil,
                          insertion: TodayInsertion = .automatic) -> UUID? {
@@ -2551,8 +2181,6 @@ final class BrowserStore: ObservableObject {
         let id = UUID()
         let destination = BrowserInternalURL.publicString(url?.absoluteString ?? "about:blank")
         let name = title.isEmpty ? (url?.host ?? "New Tab") : title
-        // One published assign: append + place + optional selection must not
-        // multi-fire window/sidebar sinks mid-adoption.
         var next = state
         next.tabs.append(BrowserTab(id: id, spaceID: space.id, profileID: profileID,
                                     url: destination, title: name, kind: .today,
@@ -2574,9 +2202,6 @@ final class BrowserStore: ObservableObject {
         return id
     }
 
-    // A renderer may refuse retirement after an archive/profile/internal-page
-    // model change. Restore only that exact outstanding mutation, never a newer
-    // edit made while the confirmation was open.
     @discardableResult
     func restoreLiveTab(_ original: BrowserTab, replacing expected: BrowserTab?) -> Bool {
         guard state.tabs.first(where: { $0.id == original.id }) == expected,
@@ -2624,7 +2249,6 @@ final class BrowserStore: ObservableObject {
             return id
         }
         let id = UUID()
-        // The new note is the item being added: it joins the split without a copy.
         var next = state
         next.tabs.append(BrowserTab(id: id, spaceID: activeSpaceID, profileID: activeSpace.profileID,
             url: page.urlString, title: name, kind: .today, createdAt: clock(), lastAccessed: clock(),
@@ -2686,9 +2310,6 @@ final class BrowserStore: ObservableObject {
                     if layout.sidebarAnchorID.map({ layout.tabIDs.contains($0) }) != true { layout.sidebarAnchorID = layout.tabIDs.first }
                     return layout
                 }
-                // Persist removal of original tab references first. If this
-                // write fails, the document is untouched. If document deletion
-                // fails afterward, its real Library entry remains retryable.
                 try self.commitProfileSettings(next)
                 try deleteDocument(); completion(nil)
             } catch { completion(error) }
@@ -2710,7 +2331,6 @@ final class BrowserStore: ObservableObject {
             return id
         }
         let id = UUID()
-        // The new Easel is the item being added: it joins the split without a copy.
         var next = state
         next.tabs.append(BrowserTab(id: id, spaceID: activeSpaceID, profileID: activeSpace.profileID,
                                      url: page.urlString, title: title, kind: .today,
@@ -2729,8 +2349,6 @@ final class BrowserStore: ObservableObject {
         return id
     }
 
-    /// Live and archived aliases of one profile-local document share a tab.
-    /// Prefer a live tab so a pinned SP21 home is not ignored for an archived pane.
     private func localDocumentTabIndex(_ page: InternalPage, profileID: UUID) -> Int? {
         let matches = state.tabs.indices.filter { index in
             let tab = state.tabs[index]
@@ -2742,7 +2360,6 @@ final class BrowserStore: ObservableObject {
         return matches.first { state.tabs[$0].archivedAt == nil } ?? matches.first
     }
 
-    /// Library reopen restores a closeable Today tab; a Favorite stays a Favorite.
     private func presentLocalDocument(at index: Int, page: InternalPage, title: String) -> UUID {
         let id = state.tabs[index].id
         state.tabs[index].url = page.urlString
@@ -2789,7 +2406,6 @@ final class BrowserStore: ObservableObject {
         let creation = creation?.validated(profileID: activeSpace.profileID, state: state)
         let resolved = BrowserInternalURL.publicString(url.absoluteString)
         let title = url.host ?? "New Tab"
-        // Append + Today placement + selection publish once (same end state).
         var next = state
         next.tabs.append(BrowserTab(id: id, spaceID: activeSpaceID, profileID: activeSpace.profileID,
                                      url: resolved, title: title, kind: kind, createdAt: clock(), lastAccessed: clock(),
@@ -2804,8 +2420,6 @@ final class BrowserStore: ObservableObject {
         return id
     }
 
-    /// A force-open creates a distinct unread Today tab without presenting it.
-    /// The native request remains with the originating window, not this URL metadata.
     @discardableResult
     func insertCommandBarBackground(tabID: UUID, url: URL, spaceID: UUID,
                                     profileID: UUID, expectedSelection: [UUID], creation: TabCreationProvenance? = nil) -> Bool {
@@ -2826,19 +2440,13 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// Commit a command-bar split in one model publication. The caller retains
-    /// the original classified native request separately; this URL is metadata.
     @discardableResult
-    /// The member a command-bar split result adds, plus the saved homes it
-    /// needs (`savedHomeSources`); a new URL tab is the item being added.
     func commandBarSplitHomes(after focusedID: UUID, expectedSelection: [UUID], tabID: UUID, isNew: Bool) -> [BrowserTab]? {
         guard let index = expectedSelection.firstIndex(of: focusedID), expectedSelection.count < 4,
               !expectedSelection.contains(tabID) else { return nil }
         var ids = expectedSelection
         ids.insert(tabID, at: index + 1)
         let previous = activeSplitLayout.flatMap { $0.tabIDs == expectedSelection ? $0 : nil }
-        // A new URL tab is the item being added; displayed saved panes of a
-        // new split still need their homes.
         return SplitMembership.savedHomeSources(joining: ids, existing: previous, added: isNew ? tabID : nil, state: state)
     }
 
@@ -2855,10 +2463,6 @@ final class BrowserStore: ObservableObject {
         guard expectedSelection.count < 4 else { return false }
         var next = state
         let creation = creation?.validated(profileID: activeSpace.profileID, state: state)
-        // Option-Return on a tab from another Space of the Profile joins as
-        // Add Split's result does (SplitCrossSpaceAdd); a pinned one leaves
-        // its planned saved home in its own Space. Its typed reference was
-        // planned before the move, so validate against those homes.
         var savedHomeIDs = savedHomeIDs, validatedBeforeMove = false
         if newURL == nil, let foreign = state.tabs.first(where: { $0.id == tabID && $0.archivedAt == nil
             && $0.kind != .favorite && $0.profileID == activeSpace.profileID && $0.spaceID != activeSpaceID }) {
@@ -2881,7 +2485,6 @@ final class BrowserStore: ObservableObject {
                 profileID: activeSpace.profileID, url: resolved, title: title, kind: .today,
                 createdAt: clock(), lastAccessed: clock(), savedURL: resolved, savedTitle: title,
                 referrerID: creation?.referrerID, activeTabBeforeCreationID: creation?.activeTabBeforeCreationID))
-            //
             SidebarHierarchy.placingCreatedTab(tabID, insertion: .automatic, in: &next)
         } else {
             guard next.tabs.contains(where: { $0.id == tabID && $0.archivedAt == nil
@@ -2912,14 +2515,12 @@ final class BrowserStore: ObservableObject {
         for i in next.tabs.indices where ids.contains(next.tabs[i].id) {
             next.tabs[i].lastAccessed = clock(); next.tabs[i].isUnread = false
         }
-        // Apply exclusive membership before the one publication.
         next.splitLayouts = Self.reconciledSplitLayouts(in: next, activeSpaceID: activeSpaceID)
         state = next
         changed(selectionAlreadyStamped: true)
         return true
     }
 
-    /// Save before exposing the new split/item to any observing window.
     func commitFavoriteSplit(_ request: FavoriteSplitRequest) throws -> UUID? {
         guard !isEphemeral, let next = request.applying(to: state, retiring: retiringTabIDs, now: clock()) else { return nil }
         try commitProfileSettings(next)
@@ -2956,9 +2557,6 @@ final class BrowserStore: ObservableObject {
            historyTitle == nil, !appendHistory {
             return
         }
-        // A native metadata callback is one model update. Publishing each
-        // field separately queues a full window/sidebar render for every write,
-        // even though the window reads the latest state when the queue runs.
         var next = state
         next.tabs[index].title = nextTitle
         next.tabs[index].url = nextURL
@@ -2979,9 +2577,6 @@ final class BrowserStore: ObservableObject {
         changed()
     }
 
-    ///
-    /// moveFromOriginalLocation false) use the caller's fixed IDs; a caller
-    /// supplying typed-document references has every typed home validated.
     func splitExtensionHomes(_ id: UUID) -> [BrowserTab] {
         guard !state.selectedTabIDs.contains(id), state.selectedTabIDs.count < 4 else { return [] }
         let ids = state.selectedTabIDs + [id]
@@ -2999,9 +2594,6 @@ final class BrowserStore: ObservableObject {
             guard let compatible = state.spaces.first(where: { $0.profileID == tab.profileID }) else { return }
             selectSpace(compatible.id)
         }
-        // Space switches above may already have published; batch the remaining
-        // selection stamp (and any split activation) into one assignment before
-        // the final changed().
         guard let index = state.tabs.firstIndex(where: { $0.id == id && $0.archivedAt == nil }) else { return }
         var next = state
         next.tabs[index].lastAccessed = clock()
@@ -3030,8 +2622,6 @@ final class BrowserStore: ObservableObject {
         changed(selectionAlreadyStamped: true)
     }
 
-    // Select the initiating window's command context without briefly restoring
-    // another window's cached page selection or marking those pages as read.
     @discardableResult
     func setWindowPresentation(spaceID: UUID, selectedTabIDs: [UUID],
                                splitLayout: BrowserSplitLayout? = nil) -> Bool {
@@ -3048,18 +2638,13 @@ final class BrowserStore: ObservableObject {
             guard layout.spaceID == spaceID, layout.tabIDs == selected,
                   let factors = BrowserSplitLayout.normalized(layout.widthFactors, count: selected.count) else { return false }
             layout.widthFactors = factors
-            // Window-local geometry cannot restore an old shared container name.
             if let original = SidebarSplitItems.groups(in: state, spaceID: spaceID).first(where: { $0.id == layout.id && $0.tabIDs == selected }) {
                 layout.customTitle = original.customTitle
                 layout.customIcon = original.customIcon
-                // Window-local projection must not mint another shared Favorite
-                // group when it is selected from a different Space.
                 layout.spaceID = original.spaceID
                 next.splitLayouts.removeAll { $0.id == original.id }
                 next.splitLayouts.append(layout)
             } else {
-                // A window's own split that the shared model no longer holds is
-                // formed again through the membership owner, never mixed.
                 next.splitLayouts.removeAll { $0.spaceID == spaceID && $0.tabIDs == selected }
                 if let admitted = admittingNewSplit(layout, in: next) { next = admitted }
             }
@@ -3082,7 +2667,6 @@ final class BrowserStore: ObservableObject {
         closeTabs(ids, reason: reason, shouldCommit: { true }, completion: completion)
     }
 
-    /// `didCommit` receives the state the close replaced, after it published.
     func closeTabs(_ ids: Set<UUID>, reason: ArchiveReason = .manual,
                    selection: FolderRemovalSelection? = nil,
                    didCommit: ((BrowserState) -> Void)? = nil,
@@ -3110,9 +2694,6 @@ final class BrowserStore: ObservableObject {
     private func finishClosingTabs(_ ids: Set<UUID>, reason: ArchiveReason, selection: FolderRemovalSelection? = nil) {
         let closing = state.tabs.filter { ids.contains($0.id) && $0.archivedAt == nil }.map(\.id)
         guard !closing.isEmpty else { return }
-        // @Published sends for mutations of nested value properties too.
-        // Build the entire close result locally so no subscriber observes a
-        // half-closed group or materializes an intermediate fallback page.
         let provenance = archiveProvenance(for: Set(closing), reason: reason)
         var next = state
         let oldVisible = visibleTabs.map(\.id)
@@ -3122,12 +2703,9 @@ final class BrowserStore: ObservableObject {
                 ids.contains(id) && state.tabs.contains { $0.id == id && $0.kind != .today && $0.archivedAt == nil }
             }
         }.map(\.id))
-        // The displayed split, by identity: a Favorite split is stored under
-        // its home Space but is the same item from every Space of its Profile.
         let displayedGroupID = SidebarSplitItems.groups(in: state, spaceID: activeSpaceID)
             .first { $0.tabIDs == state.selectedTabIDs }?.id
         for id in closing {
-            // A close archives or resets the tab; its next page starts afresh.
             tabHistory?.remove(id)
             guard let index = next.tabs.firstIndex(where: { $0.id == id }) else { continue }
             if let layoutIndex = next.splitLayouts.firstIndex(where: { $0.id == displayedGroupID && $0.tabIDs == next.selectedTabIDs && !retainedSavedGroups.contains($0.id) }),
@@ -3145,15 +2723,11 @@ final class BrowserStore: ObservableObject {
                 next.recentlyClosedIDs.removeAll { $0 == id }
                 next.recentlyClosedIDs.append(id)
             } else {
-                // Closing a saved website unloads its live tab; it does not erase the bookmark.
                 next.tabs[index].url = next.tabs[index].savedURL
                 next.tabs[index].title = next.tabs[index].savedTitle
             }
             next.selectedTabIDs.removeAll { $0 == id }
         }
-        //
-        // shown or not, drops the panes this close took out of the sidebar
-        // before slots are kept, so a remaining pane stands for it in place.
         for index in next.splitLayouts.indices where !retainedSavedGroups.contains(next.splitLayouts[index].id) {
             var layout = next.splitLayouts[index]
             guard state.splitLayouts.contains(where: { $0.id == layout.id && !Set($0.tabIDs).isDisjoint(with: closing) }) else { continue }
@@ -3188,8 +2762,6 @@ final class BrowserStore: ObservableObject {
             for key in Array(next.selectionBySpace.keys) { next.selectionBySpace[key]?.removeAll { ids.contains($0) } }
             next.selectionBySpace[selection.replacementSpaceID.uuidString] = selection.tabIDs
         }
-        // A split losing a pane keeps its slot; a dissolved split leaves its
-        //
         SplitMembership.preservingSlots(before: state, after: &next)
         state = next
         changed(selectionAlreadyStamped: selection != nil)
@@ -3211,10 +2783,6 @@ final class BrowserStore: ObservableObject {
         changed(selectionAlreadyStamped: true)
     }
 
-    // The caller supplies its physical window's exact close capability. Never
-    // search another window's global Archive or resurrect a destroyed page.
-    // `regroupable` admits surviving split panes for that physical window; a
-    // refused pane is never moved and the closed pane returns alone.
     @discardableResult
     func restoreClosedItem(_ record: ClosedItemRecord,
                            regroupable: (UUID) -> Bool = { _ in true }) throws -> Bool {
@@ -3230,7 +2798,6 @@ final class BrowserStore: ObservableObject {
             if record.kind == .archived {
                 next.tabs[index].archivedAt = nil
                 next.tabs[index].archiveProvenance = nil
-                // Original location survives only while its exact parent exists.
                 if let folder = next.tabs[index].folderID,
                    !next.folders.contains(where: { $0.id == folder && $0.spaceID == record.spaceID }) {
                     next.tabs[index].folderID = nil
@@ -3241,11 +2808,8 @@ final class BrowserStore: ObservableObject {
         }
         next.recentlyClosedIDs.removeAll { record.tabIDs.contains($0) }
         if record.kind == .archived, let split = record.split {
-            // Saved groups remain in place; only archived groups are reinserted.
             next.splitLayouts.append(split)
         }
-        // A pane closed out of a larger split rejoins its surviving original
-        // container, or regroups the original one that close dissolved.
         if let membership = record.membership,
            let group = membership.restoredLayout(restoring: record.tabs[0].id, in: next,
                available: { [retiringTabIDs] id in !retiringTabIDs.contains(id) && regroupable(id) }) {
@@ -3280,8 +2844,6 @@ final class BrowserStore: ObservableObject {
         let preferred: UUID?, fallback: UUID?
         switch target {
         case let .putBack(currentSpaceID, requestedSpaceID):
-            //
-            // initiating window's focused Space when absent or no longer valid.
             preferred = requestedSpaceID; fallback = currentSpaceID
         case let .previousSpace(fallbackSpaceID):
             preferred = item.provenance?.spaceID ?? original.spaceID
@@ -3300,11 +2862,6 @@ final class BrowserStore: ObservableObject {
         next.activeSpaceID = destination.id
         next.selectedTabIDs = ids
         next.recentlyClosedIDs.removeAll { ids.contains($0) }
-        //
-        // and Put Back returns it there (`unarchiveAndPutBackItem`,
-        //
-        // folder when it is put back into its own Space and the folder is
-        // still there. A deleted folder is not invented again.
         let folderID = original.kind == .pinned && (item.provenance?.spaceID ?? original.spaceID) == destination.id
             ? original.folderID.flatMap { id in next.folders.contains { $0.id == id && $0.spaceID == destination.id } ? id : nil }
             : nil
@@ -3323,8 +2880,6 @@ final class BrowserStore: ObservableObject {
             next.splitLayouts.append(split)
         }
         if let preview {
-            // Published state invokes observers during willSet. Keep admission
-            // blocked until the new state is visible, even after lease release.
             exclusiveRetirementIDs.formUnion(ids)
             releaseArchivePreview(preview)
         }
@@ -3334,8 +2889,6 @@ final class BrowserStore: ObservableObject {
         return ids
     }
 
-    // Only the shell may use this after confirming that no native page owns
-    // the item. Live reset waits for the original page's committed URL callback.
     func resetDormantSavedTab(_ expected: BrowserTab) {
         guard let index = state.tabs.firstIndex(where: { $0.id == expected.id }),
               state.tabs[index] == expected, expected.resetDestination != nil,
@@ -3346,11 +2899,8 @@ final class BrowserStore: ObservableObject {
         changed()
     }
 
-    ///
-    /// keeps its identity and takes the page it shows as its new home.
     @discardableResult
     func replaceSavedHome(_ expected: BrowserTab, url: String, title: String) -> Bool {
-        //
         let url = BrowserInternalURL.publicString(url)
         guard let index = state.tabs.firstIndex(where: { $0.id == expected.id }),
               state.tabs[index] == expected, expected.resetDestination != nil,
@@ -3362,12 +2912,6 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    ///
-    ///
-    /// page's URL and title enters the top of its Space's Today list
-    ///
-    /// returns to its saved destination. The shell moves the live page to the
-    /// new tab in the same turn; selection is left to it.
     @discardableResult
     func separateFromPinnedTab(_ expected: BrowserTab, todayID: UUID, title: String) -> Bool {
         guard let index = state.tabs.firstIndex(where: { $0.id == expected.id }),
@@ -3390,8 +2934,6 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// A split formed outside the explicit routes (a window's own selection)
-    /// still follows `SplitMembership`: a new Today split with fresh homes.
     private func admittingNewSplit(_ layout: BrowserSplitLayout, in base: BrowserState) -> BrowserState? {
         var homeIDs: [UUID: UUID] = [:]
         for home in SplitMembership.savedHomeSources(joining: layout.tabIDs, existing: nil, added: nil, state: base) {
@@ -3401,11 +2943,6 @@ final class BrowserStore: ObservableObject {
                                          spaceID: base.activeSpaceID, homeIDs: homeIDs, now: clock())
     }
 
-    ///
-    ///
-    ///
-    ///
-    /// pane's Pin/Unpin moves its whole split, every child together.
     func setKind(_ id: UUID, _ kind: TabKind) {
         guard !retiringTabIDs.contains(id), let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }) else { return }
         let group = SidebarSplitItems.groups(in: state, spaceID: tab.kind == .favorite ? activeSpaceID : tab.spaceID)
@@ -3426,8 +2963,6 @@ final class BrowserStore: ObservableObject {
             state.tabs[index].archivedAt = nil
             state.tabs[index].archiveProvenance = nil
             if kind != .pinned { state.tabs[index].folderID = nil }
-            // Reclassifying a saved item does not silently repin a navigated-away
-            // live page. Entering/leaving Today establishes its current destination.
             if previousKind == .today || kind == .today {
                 state.tabs[index].savedURL = state.tabs[index].url
                 state.tabs[index].savedTitle = state.tabs[index].title
@@ -3485,7 +3020,6 @@ final class BrowserStore: ObservableObject {
         var space = BrowserSpace(id: UUID(), name: name,
                                  symbol: "circle.fill", color: color, profileID: activeSpace.profileID)
         space.updateDisplayName(position: state.spaces.count)
-        // Append + Space selection normalize/stamp publish once (same end state).
         var next = state
         next.spaces.append(space)
         next.selectionBySpace[next.activeSpaceID.uuidString] = next.selectedTabIDs
@@ -3506,8 +3040,6 @@ final class BrowserStore: ObservableObject {
         changed()
     }
 
-    /// Original-Space title/icon leases deliberately do not include the theme:
-    /// another editor may change the palette while this native control is open.
     func saveSpaceTitle(_ expected: BrowserSpace, title: String?) throws {
         guard !isEphemeral, !isProfileRemovalPending(expected.profileID),
               let index = state.spaces.firstIndex(where: { $0.id == expected.id && $0.profileID == expected.profileID }),
@@ -3527,8 +3059,6 @@ final class BrowserStore: ObservableObject {
         if next != state { try commitProfileSettings(next) }
     }
 
-    /// Complete original-Space teardown joins the same native consent and
-    /// typed document barriers as ordinary folder deletion before one save.
     func deleteSpace(_ target: SpaceDeletionTarget, documents: [UUID: SidebarDocumentReference],
                      shouldCommit: @escaping () -> Bool,
                      didCommit: @escaping (SpaceDeletionUndo) -> Void,
@@ -3581,20 +3111,14 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// Show `theme` on the Space's windows without saving it. A crash or any
-    /// session write in the meantime keeps the Space's saved theme.
     @discardableResult
     func previewSpaceTheme(_ id: UUID, theme: SpaceTheme) -> Bool {
         guard theme.isValid, let index = state.spaces.firstIndex(where: { $0.id == id }) else { return false }
         themePreviews[id] = (themePreviews[id]?.saved ?? state.spaces[index].theme, theme)
-        // Publish only: a theme moves no split layout or selection, and the
-        // session file never records the preview.
         if state.spaces[index].theme != theme { state.spaces[index].theme = theme }
         return true
     }
 
-    /// Drop a preview, showing the saved theme again unless another editor
-    /// has since replaced the preview.
     func endSpaceThemePreview(_ id: UUID) {
         guard let entry = themePreviews.removeValue(forKey: id),
               let index = state.spaces.firstIndex(where: { $0.id == id }),
@@ -3603,19 +3127,15 @@ final class BrowserStore: ObservableObject {
         changed()
     }
 
-    /// The theme a session write records for the Space, ignoring any preview.
     func savedTheme(of space: BrowserSpace) -> SpaceTheme {
         themePreviews[space.id]?.saved ?? space.theme
     }
 
-    /// A theme commit for a Space under preview replaces the preview.
     private func commitSpaceTheme(_ next: BrowserState, spaceID: UUID) throws {
         let preview = themePreviews.removeValue(forKey: spaceID)
         do { try commitProfileSettings(next) } catch { themePreviews[spaceID] = preview; throw error }
     }
 
-    /// Commit a completed editor gesture only if its original Space/Profile and
-    /// before-image still match. Disk failure never publishes a partial theme.
     @discardableResult
     func saveSpaceTheme(spaceID: UUID, profileID: UUID, previous: SpaceTheme,
                         theme: SpaceTheme) throws -> SpaceThemeChange? {
@@ -3648,8 +3168,6 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// Sidebar names are independent of the original page's title and saved URL.
-    /// Revalidate the original item, but permit live navigation/title updates.
     @discardableResult
     func saveSidebarTitle(_ expected: BrowserTab, title: String) throws -> SidebarTabTitleChange? {
         guard !isProfileRemovalPending(expected.profileID), !retiringTabIDs.contains(expected.id),
@@ -3667,8 +3185,6 @@ final class BrowserStore: ObservableObject {
         return change
     }
 
-    /// Favorite Rename is a dialog with a required, literal title. Its supplied
-    /// text does not use the ordinary inline editor's empty-name reset path.
     @discardableResult
     func saveFavoriteTitle(_ expected: BrowserTab, title: String) throws -> SidebarTabTitleChange? {
         guard !title.isEmpty, !isEphemeral, expected.kind == .favorite,
@@ -3692,8 +3208,6 @@ final class BrowserStore: ObservableObject {
             change.target(in: state, undo: undo) != nil
     }
 
-    /// Resolve the original item, changing only its manual title. Its current
-    /// page, saved destination, membership and selection belong to other owners.
     @discardableResult
     func applyTabTitleChange(_ change: SidebarTabTitleChange, undo: Bool) throws -> Bool {
         guard canApplyTabTitleChange(change, undo: undo),
@@ -3704,7 +3218,6 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// A split name belongs to the original container, never its focused child.
     @discardableResult
     func saveSidebarSplitTitle(_ expected: SidebarSplitTitleEdit, title: String) throws -> SidebarSplitTitleChange? {
         guard expected.matches(state), !isProfileRemovalPending(expected.profileID),
@@ -3761,8 +3274,6 @@ final class BrowserStore: ObservableObject {
         return Set(group.tabIDs).isDisjoint(with: retiringTabIDs)
     }
 
-    /// Re-resolve the original container at commit. Never restore an old layout,
-    /// selection, child title or physical page just to apply a name inverse.
     @discardableResult
     func applySplitTitleChange(_ change: SidebarSplitTitleChange, undo: Bool) throws -> Bool {
         guard canApplySplitTitleChange(change, undo: undo),
@@ -3780,8 +3291,6 @@ final class BrowserStore: ObservableObject {
         changed()
     }
 
-    /// Settings commits before publishing, so a write error keeps the name,
-    /// native profile path, Space assignments and selected profile unchanged.
     func saveProfileName(_ id: UUID, expectedName: String, name: String) throws {
         guard !isProfileRemovalPending(id) else { throw ProfileRemovalError.incompleteOperation }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3809,8 +3318,6 @@ final class BrowserStore: ObservableObject {
         try commitProfileSettings(next)
     }
 
-    /// Settings controls publish only after the session is durably replaced.
-    /// Browser gestures retain their existing debounced updateSettings path.
     func saveRestoreSession(_ enabled: Bool) throws {
         var next = state
         next.settings.restoreSession = enabled
@@ -3826,7 +3333,6 @@ final class BrowserStore: ObservableObject {
         try commitProfileSettings(next)
     }
 
-    /// Resolve the editing selection without reassigning the originating Space.
     func settingsPageSpace(profileID: UUID?, originatingSpaceID: UUID?) -> BrowserSpace? {
         guard let profileID, !isEphemeral, !isProfileRemovalPending(profileID),
               state.profiles.contains(where: { $0.id == profileID }) else { return nil }
@@ -3839,8 +3345,6 @@ final class BrowserStore: ObservableObject {
             || state.tabs.contains { $0.profileID == profileID && retiringTabIDs.contains($0.id) }
     }
 
-    /// Durable authorization/identity is staged before asking the native owner
-    /// to cross its irreversible boundary. The profile remains visible but busy.
     func stageProfileRemoval(_ profileID: UUID, expectedName: String) throws -> ProfileRemovalRecord {
         let summary = try validateProfileRemoval(profileID, expectedName: expectedName)
         guard !hasProfileWrite(profileID), !hasArchiveActivity(profileID) else { throw ProfileRemovalError.activeDocumentWrite }
@@ -3852,9 +3356,6 @@ final class BrowserStore: ObservableObject {
         return record
     }
 
-    /// Authorize exactly the reviewed profiles in one durable write. A later
-    /// native failure is per profile; it cannot imply rollback of another
-    /// profile's completed removal or authorize a newly created profile.
     func stageUnusedProfileRemovals(_ profiles: [BrowserProfile]) throws -> [ProfileRemovalRecord] {
         try validateUnusedProfileRemoval(profiles)
         guard profiles.allSatisfy({ !hasProfileWrite($0.id) && !hasArchiveActivity($0.id) }) else { throw ProfileRemovalError.activeDocumentWrite }
@@ -3873,8 +3374,6 @@ final class BrowserStore: ObservableObject {
         try commitProfileSettings(next)
     }
 
-    /// Called only for a successful, exact native removal receipt. A failed
-    /// metadata write leaves the durable record blocking profile reuse for retry.
     func finishProfileRemoval(_ record: ProfileRemovalRecord) throws {
         guard state.profileRemovals.contains(record),
               state.profiles.contains(where: { $0.id == record.profileID }) else {
@@ -3911,8 +3410,6 @@ final class BrowserStore: ObservableObject {
         if next.settings.settingsProfileID == record.profileID {
             next.settings.settingsProfileID = defaultProfileID
         }
-        // Easels are app-global. Routes retain their destination UUID and the
-        // existing unavailable-destination fallback; neither store is rewritten.
         try commitProfileSettings(next)
         if historyChanged { historyRevision &+= 1 }
     }
@@ -3920,12 +3417,6 @@ final class BrowserStore: ObservableObject {
     private func commitProfileSettings(_ next: BrowserState) throws {
         if isEphemeral { state = next; return }
         do {
-            // Same ISO-8601 / pretty-printed / sorted-keys session bytes as
-            // `save()`. Encode runs off the calling thread; when those bytes
-            // match the last successful write the atomic replace is a true
-            // no-op. Distinct settings revisions still replace in FIFO order.
-            // Cancel the debounce only after the persist succeeds so a failed
-            // settings write cannot drop an already-scheduled session persist.
             try persistSnapshot(persisted(next), wait: true)
             pendingSave?.cancel(); pendingSave = nil
             pendingSaveSnapshot = nil
@@ -3956,9 +3447,6 @@ final class BrowserStore: ObservableObject {
         try commitProfileSettings(next); return profile.id
     }
 
-    /// Profile assignment shares the real inter-Profile retirement/document
-    /// transaction. Never publish new Profile IDs before typed content moves
-    /// and the durable session write succeeds.
     func assignProfile(_ profileID: UUID, toSpace spaceID: UUID,
                        shouldCommit: @escaping () -> Bool = { true },
                        completion: @escaping (Result<Bool, Error>) -> Void = { _ in }) {
@@ -3978,8 +3466,6 @@ final class BrowserStore: ObservableObject {
             }
             next.spaces[index].profileID = profileID
             for i in next.tabs.indices where ids.contains(next.tabs[i].id) { next.tabs[i].profileID = profileID }
-            // A Profile's Favorites may have remained parked after its last
-            // Space was removed. Reattach the original whole groups.
             for i in next.splitLayouts.indices where SidebarSplitItems.isFavorite(next.splitLayouts[i], in: next, profileID: profileID)
                 && !next.spaces.contains(where: { $0.id == next.splitLayouts[i].spaceID && $0.profileID == profileID }) {
                 next.splitLayouts[i].spaceID = spaceID
@@ -4019,8 +3505,6 @@ final class BrowserStore: ObservableObject {
             guard let self, !finished, !approved,
                   ids.allSatisfy({ self.retirementRequests[$0] == token }),
                   shouldCommit() else { return false }
-            // A validator may reenter the model. Do not authorize an older
-            // transaction after it has been replaced by that callback.
             guard ids.allSatisfy({ self.retirementRequests[$0] == token }) else { return false }
             approved = true
             self.committingRetirementIDs.formUnion(ids)
@@ -4032,8 +3516,6 @@ final class BrowserStore: ObservableObject {
             let current = ids.allSatisfy { self.retirementRequests[$0] == token }
             for id in ids where self.retirementRequests[id] == token { self.retirementRequests.removeValue(forKey: id) }
             if !exclusive && approved { self.committingRetirementIDs.subtract(ids) }
-            // Exclusive reservations survive synchronous model publication:
-            // @Published observers can run before the new state is installed.
             if current && approved && allowed { commit() }
             else { onRefusal?() }
             if exclusive {
@@ -4052,7 +3534,6 @@ final class BrowserStore: ObservableObject {
         return id
     }
 
-    /// Management sheets retain their original Space/Profile across focus changes.
     @discardableResult
     func createFolder(name: String, in expected: BrowserSpace, parent: BrowserFolder? = nil) throws -> UUID? {
         guard !isEphemeral, state.spaces.contains(where: { $0.id == expected.id && $0.profileID == expected.profileID }),
@@ -4077,8 +3558,6 @@ final class BrowserStore: ObservableObject {
         try commitProfileSettings(next); return true
     }
 
-    /// A management draft belongs to the original name, placement and Profile.
-    /// Disclosure may change independently while the sheet is open.
     @discardableResult
     func renameFolder(_ expected: BrowserFolder, profileID: UUID, name: String) throws -> Bool {
         guard !isEphemeral, !name.isEmpty, !isProfileRemovalPending(profileID),
@@ -4091,7 +3570,6 @@ final class BrowserStore: ObservableObject {
         try commitProfileSettings(next); return true
     }
 
-    /// Change Icon… keeps the original folder, Space and Profile.
     @discardableResult
     func setFolderIcon(_ icon: SidebarGroupIcon?, expected: BrowserFolder, profileID: UUID) throws -> Bool {
         guard !isEphemeral, icon?.isValid ?? true, !isProfileRemovalPending(profileID),
@@ -4115,9 +3593,6 @@ final class BrowserStore: ObservableObject {
         changed()
     }
 
-    /// Keyboard Return toggles one original folder while the input keeps focus.
-    /// Persist the exact disclosure before notifying any window; do not publish
-    /// a different folder or a temporary mutation when saving fails.
     @discardableResult
     func setFolderExpanded(_ expanded: Bool, expected: BrowserFolder, profileID: UUID) throws -> Bool {
         guard !isEphemeral,
@@ -4133,9 +3608,6 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// Disclosure belongs to the originating Space, not whichever window most
-    /// recently changed the shared store's active selection. Include descendants
-    /// hidden by a collapsed parent and publish the entire change atomically.
     @discardableResult
     func setFoldersExpanded(_ expanded: Bool, in spaceID: UUID, profileID: UUID,
                             expectedFolders: [BrowserFolder]) throws -> Bool {
@@ -4149,8 +3621,6 @@ final class BrowserStore: ObservableObject {
         for index in next.folders.indices where next.folders[index].spaceID == spaceID {
             next.folders[index].isExpanded = expanded
         }
-        // This operation cannot change tab/Space selection, content ownership,
-        // split geometry, saved URLs or the other windows' browsing activity.
         try commitProfileSettings(next)
         return true
     }
@@ -4162,7 +3632,6 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// Persist before publishing. Reordering never closes or reloads a page.
     @discardableResult
     func moveSidebarItem(_ item: SidebarItemReference, to destination: SidebarContainerLocation,
                          before: SidebarItemReference?, expected: SidebarHierarchySnapshot) throws -> Bool {
@@ -4184,9 +3653,6 @@ final class BrowserStore: ObservableObject {
     }
 
 
-    /// The draft is window-owned and never persisted. Publish the new Space and
-    /// all original item placements only after the same atomic session write.
-    /// A failed write leaves the draft's fixed ID available for an explicit retry.
     @discardableResult
     func createSpaceAndMoveSidebarItems(_ draft: SidebarNewSpaceDraft) throws -> UUID? {
         guard !isEphemeral, !draft.tabIDs.contains(where: { retiringTabIDs.contains($0) }),
@@ -4195,9 +3661,6 @@ final class BrowserStore: ObservableObject {
         return draft.spaceID
     }
 
-    ///
-    ///
-    /// order, and the emptied folder goes in the same atomic write.
     @discardableResult
     func turnFolderIntoSpace(_ draft: SidebarNewSpaceDraft, folder expected: BrowserFolder) throws -> UUID? {
         let contents = SidebarContainerLocation(spaceID: expected.spaceID, folderID: expected.id, section: .pinned)
@@ -4208,7 +3671,6 @@ final class BrowserStore: ObservableObject {
               SidebarHierarchy.children(in: contents, state: staged).isEmpty else { return nil }
         var next = staged
         next.folders.removeAll { $0.id == expected.id }
-        // As deleteFolder does: archived records may still name the folder.
         for index in next.tabs.indices where next.tabs[index].folderID == expected.id { next.tabs[index].folderID = nil }
         next.sidebarItemOrder[location.key]?.removeAll { $0 == .folder(expected.id) }
         next.sidebarItemOrder.removeValue(forKey: contents.key)
@@ -4216,8 +3678,6 @@ final class BrowserStore: ObservableObject {
         return draft.spaceID
     }
 
-    /// All affected windows retain their native owners. Commit membership and
-    /// hierarchy together only after the original owner leases were validated.
     @discardableResult
     func moveSidebarItemsAcrossSpaces(_ move: SidebarSpaceMove) throws -> Bool {
         guard !isEphemeral, !move.crossesProfiles, move.tabIDs.allSatisfy({ !retiringTabIDs.contains($0) }),
@@ -4226,8 +3686,6 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// Called only after all original native pages have reached their reserved
-    /// destination containers. A failed save asks that same transfer to roll back.
     @discardableResult
     func commitSidebarWindowMove(_ move: SidebarWindowMove) throws -> Bool {
         guard !isEphemeral, !move.crossesProfiles, move.tabIDs.allSatisfy({ !retiringTabIDs.contains($0) }),
@@ -4236,17 +3694,8 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    ///
-    /// records and deleting/reloading their window contents in the destination
-    /// Profile (`WindowAction.deleteAndReloadWindowContentsFor`, emitted by
-    ///
-    /// moved tabs accepts retirement first, then one durable save publishes
-    /// the moved records. The destination recreates each page from its current
-    /// URL in its new Profile. A refusal or failed save changes no record.
     func moveAcrossProfiles(_ ids: Set<UUID>, proposal: @escaping (BrowserState) -> BrowserState?,
                             completion: @escaping (Result<Bool, Error>) -> Void) {
-        // Each moved tab's Profile before and after, and the local documents
-        // (Notes/Easels) that move into the destination Profile's storage.
         func admitted(_ state: BrowserState) -> (next: BrowserState, from: UUID, to: UUID, documents: [InternalPage])? {
             guard let next = proposal(state),
                   let from = InterProfileMove.sourceProfile(of: Array(ids), in: state),
@@ -4255,8 +3704,6 @@ final class BrowserStore: ObservableObject {
                   documents.isEmpty || relocateLocalDocuments != nil else { return nil }
             return (next, from, to, documents)
         }
-        //
-        // page or document to retire it publishes at once.
         if ids.isEmpty {
             guard !isEphemeral, let next = proposal(state) else { completion(.success(false)); return }
             do { try commitProfileSettings(next); completion(.success(true)) } catch { completion(.failure(error)) }
@@ -4265,9 +3712,6 @@ final class BrowserStore: ObservableObject {
         guard !isEphemeral, ids.isDisjoint(with: retiringTabIDs),
               ids.allSatisfy({ id in state.tabs.first { $0.id == id }.map(InterProfileMove.admits) == true }),
               admitted(state) != nil else { completion(.success(false)); return }
-        // Capture the exact original Easel editors before asynchronous native
-        // consent. Revalidate their draft/composition boundary before unload
-        // and again before relocating; a replacement editor cannot inherit it.
         let validateEditors: () -> Bool
         if let prepare = prepareLocalDocumentRelocation {
             guard let validate = prepare(ids), validate() else { completion(.success(false)); return }
@@ -4292,17 +3736,9 @@ final class BrowserStore: ObservableObject {
         }
     }
 
-    /// Installed by the native application: closes the moved tabs' local
-    /// editors in every window, then moves the exact documents from the source
-    /// Profile's stores into the destination's. Returns the undo of that move,
-    /// used when the durable save fails.
     var relocateLocalDocuments: ((Set<UUID>, [InternalPage], UUID, UUID) throws -> () -> Void)?
-    /// Native editor identity/draft admission for that same Profile transaction.
     var prepareLocalDocumentRelocation: ((Set<UUID>) -> (() -> Bool)?)?
 
-    ///
-    /// page/editor to this window first (SP19's collection owner); this then
-    /// publishes the placement in one durable save. No page reloads.
     @discardableResult
     func commitForeignSplitDrop(_ ids: Set<UUID>, proposal: (BrowserState) -> BrowserState?) throws -> Bool {
         guard !isEphemeral, !ids.isEmpty, ids.isDisjoint(with: retiringTabIDs), let next = proposal(state),
@@ -4313,13 +3749,10 @@ final class BrowserStore: ObservableObject {
 
     var bypassesInterProfileMoveConfirmation: Bool { state.settings.shouldBypassConfirmInterProfileMoveDialog ?? false }
 
-    ///
     func rememberInterProfileMoveChoice() {
         updateSettings { $0.shouldBypassConfirmInterProfileMoveDialog = true }
     }
 
-    /// Folder placement uses one durable commit, including any original same-
-    /// profile Space relocation. No intermediate root move is ever published.
     @discardableResult
     func performCommandBarFolderMove(_ move: CommandBarFolderMove) throws -> Bool {
         guard !isEphemeral, move.tabIDs.allSatisfy({ !retiringTabIDs.contains($0) }),
@@ -4328,7 +3761,6 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// One durable membership transaction; pages and selections retain identity.
     @discardableResult
     func performFavoriteAction(_ action: CommandBarFavoriteAction) throws -> Bool {
         guard !isEphemeral, action.tabIDs.allSatisfy({ !retiringTabIDs.contains($0) }),
@@ -4337,8 +3769,6 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// The command publishes all original-root copies in one durable write.
-    /// Native eager-open requests occur only after these exact IDs exist.
     func copyCommandBarItemsToFolder(_ move: CommandBarFolderMove,
                                      destinations: [UUID: String],
                                      documents: [UUID: SidebarDocumentReference] = [:],
@@ -4351,8 +3781,6 @@ final class BrowserStore: ObservableObject {
         return copy
     }
 
-    /// Publish the complete copied tree only after its durable write succeeds.
-    /// No original page, selection, history or native retirement is mutated.
     func duplicateFolder(_ target: FolderDuplicateTarget,
                          destinations: [UUID: String],
                          documents: [UUID: SidebarDocumentReference] = [:],
@@ -4387,8 +3815,6 @@ final class BrowserStore: ObservableObject {
             guard let id = tabMap[original.id], let url = destinations[original.id] else { return nil }
             var copy = original
             copy.id = id
-            // Original duplicate constructor102568d9c passes nil referrer and
-            // a fresh original-window active item, never the source's chain.
             copy.referrerID = nil; copy.activeTabBeforeCreationID = previous
             if let parent = original.folderID, let folder = folderMap[parent] { copy.folderID = folder }
             copy.url = url; copy.savedURL = url
@@ -4433,8 +3859,6 @@ final class BrowserStore: ObservableObject {
             if case .split(let id) = item, let anchor = next.splitLayouts.first(where: { $0.id == id })?.sidebarAnchorID { return .tab(anchor) }
             return item
         }
-        // Adjacent insertion remains Parc's explicit placement policy. Build
-        // every affected container from its original mixed order, then save once.
         var siblingsByKey: [String: [SidebarItemReference]] = [:]
         var copiedRoots: [SidebarItemReference] = [], eager: [UUID] = []
         func requestOpen(_ item: SidebarItemReference, shouldOpen: Bool) {
@@ -4460,8 +3884,6 @@ final class BrowserStore: ObservableObject {
             guard let position = siblings.firstIndex(of: root) else { return nil }
             siblings.insert(copy, at: position + 1); siblingsByKey[source.key] = siblings
             copiedRoots.append(copy)
-            // Context policy2 is the same original indexed adapter: only the
-            // first five ordinary roots open, with no truncation of saved copies.
             requestOpen(root, shouldOpen: index < 5)
         }
         for (key, siblings) in siblingsByKey { next.sidebarItemOrder[key] = siblings.map(stored) }
@@ -4471,14 +3893,6 @@ final class BrowserStore: ObservableObject {
         return result
     }
 
-    ///
-    ///
-    ///
-    ///
-    /// `0x100`, so every web child opens — and the copy then takes the ordinary
-    ///
-    ///
-    /// durable save publishes the placed copies; originals stay untouched.
     func copySidebarSplits(_ copy: SidebarSplitCopy, to destination: SidebarContainerLocation,
                            before: SidebarItemReference?, destinations: [UUID: String],
                            documents: [UUID: SidebarDocumentReference] = [:],
@@ -4489,13 +3903,6 @@ final class BrowserStore: ObservableObject {
         return placed.result
     }
 
-    ///
-    /// `WindowAction.deleteAndReloadWindowContentsFor` the dragged originals
-    ///
-    /// effect), so the originals' live pages are retired through their real
-    /// leave-page consent first and reload when shown again in their own
-    /// Profile. Only then does one durable save publish the placed copy. A
-    /// refusal or failed save publishes nothing.
     func copySidebarSplitsReloadingOriginals(_ copy: SidebarSplitCopy, to destination: SidebarContainerLocation,
                                              before: SidebarItemReference?, destinations: [UUID: String],
                                              documents: [UUID: SidebarDocumentReference] = [:],
@@ -4515,7 +3922,6 @@ final class BrowserStore: ObservableObject {
         }
     }
 
-    /// The drop proposal: whether this copy would be placed, without saving.
     func canCopySidebarSplits(_ copy: SidebarSplitCopy, to destination: SidebarContainerLocation,
                               before: SidebarItemReference?, destinations: [UUID: String],
                               documents: [UUID: SidebarDocumentReference] = [:]) -> Bool {
@@ -4529,8 +3935,6 @@ final class BrowserStore: ObservableObject {
                                  creation: TabCreationProvenance?,
                                  holdingRetirement: Bool = false) -> (state: BrowserState, result: SidebarDuplicateResult)? {
         let source = original.source
-        // The gesture binds the splits' placement; the copy takes their
-        // current records.
         guard !isEphemeral,
               let copy = SidebarSplitCopy(items: original.roots, spaceID: source.spaceID, profileID: source.profileID, state: state),
               copy.matchesPlacement(of: original),
@@ -4538,8 +3942,6 @@ final class BrowserStore: ObservableObject {
               holdingRetirement || copy.tabs.allSatisfy({ !retiringTabIDs.contains($0.id) }),
               let destinationProfile = state.spaces.first(where: { $0.id == destination.spaceID })?.profileID,
               destination.profileID == nil || destination.profileID == destinationProfile else { return nil }
-        // Parc keeps Notes and Easels per Profile, so a document alias cannot
-        //
         guard destinationProfile == source.profileID
                 || copy.tabs.allSatisfy({ InternalPage(urlString: $0.savedURL) == nil }) else { return nil }
         let previous = creation?.validated(profileID: source.profileID, state: state).activeTabBeforeCreationID
@@ -4553,8 +3955,6 @@ final class BrowserStore: ObservableObject {
             let map = Dictionary(uniqueKeysWithValues: group.tabIDs.map { ($0, UUID()) })
             for id in group.tabIDs {
                 guard let original = copy.tabs.first(where: { $0.id == id }), let url = destinations[id], let newID = map[id] else { return nil }
-                // The duplicate constructor (102568d9c) passes nil referrer and a
-                // fresh active-before item, as the context Duplicate does.
                 var tab = original
                 tab.id = newID; tab.referrerID = nil; tab.activeTabBeforeCreationID = previous
                 tab.url = url; tab.savedURL = url
@@ -4585,9 +3985,6 @@ final class BrowserStore: ObservableObject {
         return (placed, SidebarDuplicateResult(roots: roots, tabIDs: tabIDs, openTabIDs: open))
     }
 
-    /// The shell confirms Delete first. All original pages, including owners in
-    /// other windows and Peek children, then join the existing retirement gate.
-    /// A refusal never publishes partial folder removal or archive records.
     func deleteFolder(_ target: FolderRemovalTarget, selection: FolderRemovalSelection? = nil,
                       documents: [UUID: SidebarDocumentReference] = [:],
                       shouldCommit: @escaping () -> Bool,
@@ -4607,7 +4004,6 @@ final class BrowserStore: ObservableObject {
         guard current(), ids.isDisjoint(with: retiringTabIDs) else { completion(.success(false)); return }
         withRetiredPages(ids, shouldCommit: {
             guard current(), shouldCommit() else { return false }
-            // The originating validator may synchronously mutate the model.
             return current()
         }, onRefusal: { completion(.success(false)) }) { [weak self] in
             guard let self, current() else { completion(.success(false)); return }
@@ -4617,8 +4013,6 @@ final class BrowserStore: ObservableObject {
                 (tab.id, ArchiveProvenance(reason: .manual, spaceID: tab.spaceID,
                     spaceName: next.spaces.first { $0.id == tab.spaceID }?.name ?? "Space"))
             })
-            // Preserve an entire original split as one archive item. No pane
-            // outside this exact subtree is closed or attached to the archive.
             for split in target.groups where split.tabIDs.allSatisfy({ provenance[$0]?.groupID == nil }) {
                 let group = UUID()
                 for id in split.tabIDs { provenance[id]?.groupID = group; provenance[id]?.split = split }
@@ -4628,7 +4022,6 @@ final class BrowserStore: ObservableObject {
                     next.tabs[index].archivedAt = now
                     next.tabs[index].archiveProvenance = provenance[next.tabs[index].id]
                 }
-                // Previously archived records may still name a deleted folder.
                 if next.tabs[index].folderID.map(target.folderIDs.contains) == true { next.tabs[index].folderID = nil }
             }
             next.folders.removeAll { target.folderIDs.contains($0.id) }
@@ -4639,8 +4032,6 @@ final class BrowserStore: ObservableObject {
             for key in Array(next.selectionBySpace.keys) { next.selectionBySpace[key]?.removeAll { ids.contains($0) } }
             if let selection {
                 next.selectionBySpace[selection.replacementSpaceID.uuidString] = selection.tabIDs
-                // Another physical window's last-used shared selection is not
-                // the origin of this command. Do not overwrite it by coincidence.
                 if next.activeSpaceID == expected.spaceID && self.state.selectedTabIDs == selection.original {
                     next.activeSpaceID = selection.replacementSpaceID
                     next.selectedTabIDs = selection.tabIDs
@@ -4660,8 +4051,6 @@ final class BrowserStore: ObservableObject {
                 }
             }
             do {
-                // Existing owners have closed. A save failure keeps the saved
-                // tree intact and reports failure; it must not fake success.
                 let undo = FolderDeletionUndo(target: target, selection: selection, documents: documents, before: self.state, after: next)
                 try self.commitProfileSettings(next)
                 didCommit?(undo)
@@ -4690,8 +4079,6 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// Restores only the recorded original subtree and its exact still-archived
-    /// members. Unrelated state is read from the current store, not rolled back.
     @discardableResult
     func undoFolderDeletion(_ undo: FolderDeletionUndo, shouldCommit: () -> Bool) throws -> Bool {
         let ids = Set(undo.tabs.map(\.id))
@@ -4704,8 +4091,6 @@ final class BrowserStore: ObservableObject {
             guard let index = next.tabs.firstIndex(where: { $0.id == original.id }) else { return false }
             next.tabs[index] = original
         }
-        // Delete had detached preexisting archived records from removed containers.
-        // Restore that reference only if that exact archived record is unchanged.
         for original in undo.detachedArchive {
             var expected = original; expected.folderID = nil
             if let index = next.tabs.firstIndex(where: { $0.id == original.id && $0 == expected }) {
@@ -4717,8 +4102,6 @@ final class BrowserStore: ObservableObject {
         for (key, order) in undo.childOrder { next.sidebarItemOrder[key] = order }
         for location in undo.locations {
             var siblings = SidebarHierarchy.children(in: location.container, state: state)
-            // Restore original roots in their original local order. Existing
-            // survivors anchor each insertion, including roots restored above.
             for root in location.siblings where undo.roots.contains(root) {
                 guard let position = location.siblings.firstIndex(of: root), !siblings.contains(root) else { return false }
                 let following = location.siblings.dropFirst(position + 1).first { siblings.contains($0) }
@@ -4733,7 +4116,6 @@ final class BrowserStore: ObservableObject {
                 return item
             }
         }
-        // Physical-window selection is deliberately completed by its owner.
         try commitProfileSettings(next)
         return true
     }
@@ -4745,8 +4127,6 @@ final class BrowserStore: ObservableObject {
             && !undo.restorableIDs(in: state).isEmpty
     }
 
-    /// Durable before publication: a failed write leaves the tabs archived
-    /// and the Undo retryable. An archived item open in a Library preview waits.
     @discardableResult
     func undoClosedTabs(_ undo: ClosedTabsUndo, regroupable: (UUID) -> Bool = { _ in true },
                         shouldCommit: () -> Bool) throws -> Bool {
@@ -4782,7 +4162,6 @@ final class BrowserStore: ObservableObject {
             if state.splitLayouts[index] == layout { return true }
             state.splitLayouts[index] = layout
         } else {
-            // A selection without its split forms one through the membership owner.
             guard let next = admittingNewSplit(layout, in: state) else { return false }
             state = next
         }
@@ -4790,13 +4169,9 @@ final class BrowserStore: ObservableObject {
         return true
     }
 
-    /// New Folder with *n* Items (SidebarFolderFromItems): the folder and the
-    /// moved items publish together after one durable write.
     @discardableResult
     func createFolder(containing items: [SidebarItemReference], folderID: UUID,
                       expected: SidebarHierarchySnapshot) throws -> SidebarFolderFromItems? {
-        // The snapshot names its Space; another window may have made a
-        // different Space the store's active one since.
         guard !isEphemeral, !isProfileRemovalPending(expected.profileID),
               let (receipt, next) = SidebarFolderFromItems.make(items: items, folderID: folderID, expected: expected, state: state),
               receipt.tabIDs.allSatisfy({ !retiringTabIDs.contains($0) }) else { return nil }
@@ -4804,9 +4179,6 @@ final class BrowserStore: ObservableObject {
         return receipt
     }
 
-    /// Undo (true) or Redo (false) of one New Folder with *n* Items. The
-    /// returned receipt keeps the folder's current name and presentation for
-    /// Redo, including the name entered immediately after creation.
     @discardableResult
     func revertFolderCreation(_ receipt: SidebarFolderFromItems, undo: Bool) throws -> SidebarFolderFromItems? {
         guard !isEphemeral, !isProfileRemovalPending(receipt.profileID),
@@ -4820,11 +4192,6 @@ final class BrowserStore: ObservableObject {
         return updated
     }
 
-    /// Convert to Vertical/Horizontal Split View from the split cell menu
-    ///
-    ///
-    /// proportions, membership and selection stay. A displayed split shows the
-    /// new orientation.
     @discardableResult
     func flipSplitOrientation(expected: BrowserSplitLayout) -> Bool {
         guard !isProfileRemovalPending(activeSpace.profileID),
@@ -4837,14 +4204,6 @@ final class BrowserStore: ObservableObject {
         catch { return false }
     }
 
-    ///
-    ///
-    ///
-    /// keeps its saved placement. A displayed split keeps the focused original
-    /// page displayed alone, because the focused content is among those
-    ///
-    ///
-    /// reloaded.
     @discardableResult
     func separateAllTabsFromSplit(expected: BrowserSplitLayout, focusedID: UUID?) -> Bool {
         guard !isProfileRemovalPending(activeSpace.profileID),
@@ -4853,8 +4212,6 @@ final class BrowserStore: ObservableObject {
               expected.tabIDs.allSatisfy({ !retiringTabIDs.contains($0) }) else { return false }
         var next = state
         next.splitLayouts.remove(at: index)
-        // Replace the split's one stored slot with its children in pane order,
-        // including after a whole-split move stored only its anchor there.
         SplitMembership.preservingSlots(before: state, after: &next)
         if next.selectedTabIDs == expected.tabIDs, let first = expected.tabIDs.first {
             let kept = focusedID.flatMap { expected.tabIDs.contains($0) ? $0 : nil } ?? first
@@ -4868,8 +4225,6 @@ final class BrowserStore: ObservableObject {
         catch { return false }
     }
 
-    /// Commit one admitted original divider operation before publishing the
-    /// new geometry. Selection, membership, placement and live page IDs survive.
     @discardableResult
     func resizeSplit(expected: BrowserSplitLayout, widthFactors: [Double]) -> Bool {
         guard activeSplitLayout == expected, state.selectedTabIDs == expected.tabIDs,
@@ -4884,8 +4239,6 @@ final class BrowserStore: ObservableObject {
         catch { return false }
     }
 
-    /// A pane-menu reorder moves the original ID and its size together. Saved
-    /// parent placement, group identity, focused item and every live owner stay.
     @discardableResult
     func moveSplitPane(_ id: UUID, offset: Int, expected: BrowserSplitLayout) -> Bool {
         guard (offset == -1 || offset == 1), activeSplitLayout == expected,
@@ -4905,24 +4258,18 @@ final class BrowserStore: ObservableObject {
         do { try commitProfileSettings(next); return true } catch { return false }
     }
 
-    /// The URL is metadata from an already classified native navigation. Its
-    /// full request remains retained by the originating window until adoption.
     @discardableResult
     func insertSplitPane(_ request: SplitPaneInsertion, tabID: UUID, navigationURL: URL?,
                          creation: TabCreationProvenance?, savedHomeIDs: [UUID: UUID],
                          documents: [UUID: SidebarDocumentReference],
                          localPage: InternalPage? = nil, localTitle: String? = nil) -> Bool {
         var savedHomeIDs = savedHomeIDs
-        //
-        // (SplitCrossSpaceAdd); its saved home, if any, stays in its Space.
         let foreign = state.tabs.contains { $0.id == tabID && $0.spaceID != request.spaceID && $0.kind != .favorite }
         let foreignHomeID = foreign ? savedHomeIDs.removeValue(forKey: tabID) : nil
         guard (request.selection + [tabID] + Array(savedHomeIDs.values) + [foreignHomeID].compactMap { $0 })
                 .allSatisfy({ !retiringTabIDs.contains($0) }),
               let current = request.preparedState(state, tabID: tabID, navigationURL: navigationURL,
                   localPage: localPage, localTitle: localTitle, now: clock(), creation: creation),
-              // The window planned homes and typed references before the move,
-              // when a pinned source from another Space still needed one.
               let homes = OriginalSplitDrop.savedHomes(source: tabID, state: current,
                   selection: request.selection, layout: request.layout, target: .insert(request.index),
                   orientation: request.orientation, spaceID: request.spaceID),
@@ -4940,7 +4287,6 @@ final class BrowserStore: ObservableObject {
         let originalID = activeSplitLayout?.id, before = state
         var next = state
         next.splitLayouts.removeAll { $0.id == originalID }
-        //
         SplitMembership.preservingSlots(before: before, after: &next)
         next.selectedTabIDs = Array(next.selectedTabIDs.prefix(1))
         stampSelection(in: &next)
@@ -4948,17 +4294,12 @@ final class BrowserStore: ObservableObject {
         state = next
         changed(selectionAlreadyStamped: true)
     }
-    /// The main-menu action separates the original focused page and keeps it
-    /// displayed. It does not close either side of the former split.
     @discardableResult
     func separateSplitPane(_ id: UUID) -> Bool {
         guard let group = activeSplitLayout else { return false }
         return separateTabFromSplit(id, expected: group, focusedID: id)
     }
 
-    /// A background sidebar target changes its saved container only. When the
-    /// target is displayed, the original focus determines which side stays on
-    /// screen; the window owns native focus after the durable publication.
     @discardableResult
     func separateTabFromSplit(_ id: UUID, expected: BrowserSplitLayout, focusedID: UUID? = nil) -> Bool {
         guard !isProfileRemovalPending(activeSpace.profileID),
@@ -4974,8 +4315,6 @@ final class BrowserStore: ObservableObject {
             if remaining.sidebarAnchorID == id { remaining.sidebarAnchorID = remaining.tabIDs.first }
             next.splitLayouts[index] = remaining
         } else { next.splitLayouts.remove(at: index) }
-        // The separated child follows the split in its container; a split left
-        //
         SplitMembership.preservingSlots(before: state, after: &next)
         if next.selectedTabIDs == expected.tabIDs {
             next.selectedTabIDs = focusedID == id ? [id] : remaining.tabIDs
@@ -4990,11 +4329,6 @@ final class BrowserStore: ObservableObject {
         catch { return false }
     }
 
-    ///
-    /// Extending or editing the displayed split keeps that container; other
-    /// sets form a new Today split. Saved members newly joining leave fresh
-    /// homes (`SplitMembership`). A refused change leaves the selection as it was.
-    /// Mutates `next` only so callers can publish once with surrounding work.
     @discardableResult
     private func activateSplit(_ ids: [UUID], savedHomeIDs: [UUID: UUID] = [:], adding added: UUID? = nil,
                                into next: inout BrowserState) -> Bool {
@@ -5011,7 +4345,6 @@ final class BrowserStore: ObservableObject {
         if let previous, ids.contains(where: { previous.tabIDs.contains($0) }) {
             orientation = previous.orientation
             if ids.count == previous.tabIDs.count {
-                // Cycling a tab replaces content in a pane without moving the divider.
                 factors = previous.widthFactors
             } else {
                 factors = ids.map { id in
@@ -5041,12 +4374,9 @@ final class BrowserStore: ObservableObject {
         var layout = state.splitLayouts.remove(at: index)
         layout.tabIDs.remove(at: pane)
         layout.widthFactors.remove(at: pane)
-        // If this becomes an existing group, the visible split's geometry wins.
         state.splitLayouts.append(layout)
     }
 
-    ///
-    /// result is written back with the rest of the restored session.
     private func migrateLegacySplitContainers() {
         var next = SplitMembership.normalizingLegacyContainers(state, now: clock())
         guard next != state else { return }
@@ -5070,9 +4400,6 @@ final class BrowserStore: ObservableObject {
         let visible = SidebarSplitItems.groups(in: next, spaceID: next.activeSpaceID)
         if let first = next.selectedTabIDs.first,
            next.selectedTabIDs.contains(where: { id in visible.contains { $0.tabIDs.contains(id) } }) {
-            // A remembered selection made stale by a split change shows the
-            // split holding its first page; it never forms a new split that
-            // takes members (and saved homes) from existing splits.
             next.selectedTabIDs = visible.first { $0.tabIDs.contains(first) }?.tabIDs ?? [first]
         } else {
             _ = activateSplit(next.selectedTabIDs, into: &next)
@@ -5080,14 +4407,7 @@ final class BrowserStore: ObservableObject {
         }
     }
 
-    /// The exclusive-membership normalization `changed()` applies, as a value
-    /// function so a transaction can publish its already-normalized state once.
     static func reconciledSplitLayouts(in state: BrowserState, activeSpaceID: UUID) -> [BrowserSplitLayout] {
-        // A tab belongs to one typed split: an ordinary tab per Space, and a
-        // Favorite per Profile, since Favorites (topApps) are one profile-wide
-        //
-        //
-        // overlapping layout caches, then the most recently stored one.
         var candidates = state.splitLayouts
         let visible = SidebarSplitItems.groups(in: state, spaceID: activeSpaceID)
         if let active = candidates.lastIndex(where: { group in group.tabIDs == state.selectedTabIDs
@@ -5116,8 +4436,6 @@ final class BrowserStore: ObservableObject {
             if weights.count != layout.widthFactors.count || abs(weights.reduce(0, +) - 1) > 1e-12 {
                 layout.widthFactors = factors
             }
-            // Legacy overlapping entries may carry the same identity after a
-            // pane replacement. Only the winning container retains that ID.
             if layouts.contains(where: { $0.id == layout.id }) { layout.id = UUID() }
             for id in ids {
                 if state.tabs.contains(where: { $0.id == id && $0.kind == .favorite }) {
@@ -5130,8 +4448,6 @@ final class BrowserStore: ObservableObject {
         return layouts
     }
 
-    /// External URL creation and placement publish once, after durable save.
-    /// Replacement leaves the displaced original tab/page and its content intact.
     func dropExternalURLIntoSplit(_ url: URL, tabID: UUID, spaceID: UUID, profileID: UUID,
                                   expectedSelection: [UUID], expectedLayout: BrowserSplitLayout?,
                                   target: SplitDropTarget, orientation: SplitOrientation,
@@ -5178,8 +4494,6 @@ final class BrowserStore: ObservableObject {
         catch { return false }
     }
 
-    ///
-    ///
     @discardableResult
     func changeAutoArchiveInterval(_ interval: AutoArchiveInterval, for profileID: UUID) throws -> AutoArchiveProfileChange? {
         guard !isProfileRemovalPending(profileID),
@@ -5192,7 +4506,6 @@ final class BrowserStore: ObservableObject {
         if Set(next.profiles.map(\.autoArchiveHours)).count == 1 {
             next.autoArchiveDefaultHours = interval.rawValue
         }
-        // The original threshold change also disarms default-interval education.
         next.autoArchiveEducationEligible = false
         try commitProfileSettings(next)
         guard state.profiles.count > 1, Set(state.profiles.map(\.autoArchiveHours)).count > 1,
@@ -5217,9 +4530,6 @@ final class BrowserStore: ObservableObject {
         autoArchiveEducationPending = false
     }
 
-    /// AppKit owns the windows; it replaces their records as a whole, which
-    /// publishes nothing and only schedules the debounced save. Private
-    /// stores never persist, so they keep none.
     func updateWindowRecords(_ records: [BrowserWindowRecord]) {
         guard !isEphemeral, records != windowRecords else { return }
         windowRecords = records
@@ -5235,28 +4545,16 @@ final class BrowserStore: ObservableObject {
         changed()
     }
 
-    /// The Favorites empty state's Dismiss button and Hide item record the
-    ///
-    ///
-    /// profile, and only once, is [I]: the reducer was not traced.
     func dismissFavoritesEmptyState(profileID: UUID) {
         guard state.profiles.contains(where: { $0.id == profileID }),
               !state.settings.favoritesEmptyStateDismissed(for: profileID) else { return }
         updateSettings { $0.topAppsEmptyStateDismissedForProfiles = ($0.topAppsEmptyStateDismissedForProfiles ?? []) + [profileID] }
     }
 
-    ///
-    ///
-    ///
     func toggleSpaceHeaderOnSingleUnnamedSpaces() {
         updateSettings { $0.showSpaceHeaderOnSingleUnnamedSpaces = !($0.showSpaceHeaderOnSingleUnnamedSpaces ?? false) }
     }
 
-    // The native timer stamps current contents only for visible windows.
-    // Callers provide actual visibility; app/key-window focus is not the gate.
-    // Activity-only stamps keep archive/session lastAccessed correct but do not
-    // publish: lastAccessed is outside preservesChromeLayout / sidebar outline,
-    // and RecentTabOrder ignores archive-safety refreshes for already-ranked items.
     func refreshVisibleTabs(_ ids: Set<UUID>) {
         let now = clock()
         var next = state, didChange = false
@@ -5290,8 +4588,6 @@ final class BrowserStore: ObservableObject {
 
     @discardableResult
     func archiveExpiredTabs(protectedTabIDs: Set<UUID> = []) -> [UUID] {
-        // Pure-model callers have no live pages. Native callers use the
-        // completion overload so the result follows real beforeunload consent.
         guard requestPageRetirement == nil else {
             archiveExpiredTabs(protectedTabIDs: protectedTabIDs, completion: { _ in })
             return []
@@ -5307,8 +4603,6 @@ final class BrowserStore: ObservableObject {
         guard !candidates.isEmpty else { completion([]); return }
         withRetiredPages(candidates, shouldCommit: { [weak self] in
             guard let self else { return false }
-            // Revalidate the WHOLE set before native unload. Rechecking only
-            // after destruction could leave a selected page saved but gone.
             let protected = protectedTabIDs.union(currentProtection?() ?? [])
             let current = self.expiredArchiveItems(protectedTabIDs: protected)
             return originalItems.allSatisfy { current.contains($0) }
@@ -5318,9 +4612,6 @@ final class BrowserStore: ObservableObject {
         }
     }
 
-    /// The archive candidate is an original sidebar item, not an independently
-    /// eligible child of a split. Keep the placement/document identity through
-    /// beforeunload without treating an unrelated title/favicon update as a move.
     private struct AutomaticArchiveItem: Equatable {
         struct Member: Equatable {
             let id: UUID, profileID: UUID, spaceID: UUID
@@ -5343,14 +4634,10 @@ final class BrowserStore: ObservableObject {
     private func expiredArchiveItems(protectedTabIDs: Set<UUID>) -> [AutomaticArchiveItem] {
         let now = clock()
         guard let startedAt = state.autoArchiveStartedAt else {
-            //
-            // and preserves it across launch/wake and subsequent sweeps.
             state.autoArchiveStartedAt = now
             changed()
             return []
         }
-        // Current contents are excluded regardless of window occlusion. The
-        // application contributes every physical window's own presentation.
         let excluded = protectedTabIDs.union(state.selectedTabIDs)
         var candidates: [AutomaticArchiveItem] = []
         for space in state.spaces {
@@ -5366,14 +4653,11 @@ final class BrowserStore: ObservableObject {
                         && tab.profileID == space.profileID && tab.spaceID == space.id
                         && !tab.isUnread && !excluded.contains(tab.id)
                         && now.timeIntervalSince(tab.lastAccessed) > threshold
-                        //
-                        // Malformed local-document addresses have no such owner.
                         && (!InternalPage.isInternal(tab.url) || InternalPage(urlString: tab.url) != nil)
                 }) else { continue }
                 let split: BrowserSplitLayout?
                 switch item {
                 case .tab:
-                    // Do not detach a child from an unavailable/mixed group.
                     guard !state.splitLayouts.contains(where: { $0.tabIDs.contains(where: ids.contains) }) else { continue }
                     split = nil
                 case .split(let id):
@@ -5395,10 +4679,6 @@ final class BrowserStore: ObservableObject {
         let archived = state.tabs.filter { candidates.contains($0.id) }.map(\.id)
         let provenance = archiveProvenance(for: candidates, reason: .automatic)
         var next = state
-        // SharedAppFeature's real autoArchiveItems route enqueues one shared
-        // education banner and clears eligibility before presentation, only
-        // while no other banner holds the slot. Private stores never
-        // participate in application education or persistence.
         if !isEphemeral && next.autoArchiveEducationEligible && !sidebarBannerOccupied() {
             next.autoArchiveEducationEligible = false
             autoArchiveEducationPending = true
@@ -5415,8 +4695,6 @@ final class BrowserStore: ObservableObject {
         return archived
     }
 
-    // Called only after the original Profile manager reports real history
-    // readiness. Unknown-profile legacy records are not assigned elsewhere.
     func reconcileDownloads(profileID: UUID, nativeIDs: Set<String>) {
         guard state.profiles.contains(where: { $0.id == profileID }) else { return }
         let retained = state.downloads.filter { item in
@@ -5427,8 +4705,6 @@ final class BrowserStore: ObservableObject {
         state.downloads = retained; changed()
     }
 
-    /// Only the application-owned original context registry calls this path.
-    /// The native context token separates even equal GUIDs across OTR lifetimes.
     func recordTransientDownload(_ values: [String: Any], contextID: String) {
         guard !isEphemeral, !contextID.isEmpty, values["offTheRecord"] as? Bool == true,
               let path = values["profilePath"] as? String,
@@ -5454,8 +4730,6 @@ final class BrowserStore: ObservableObject {
         transientDownloads.removeAll { $0.privateContextID == contextID }
     }
 
-    // Private manager publications can only enter this original window's
-    // memory-only store. They never enter a persisted regular catalog.
     func recordPrivateDownload(_ values: [String: Any]) {
         guard isEphemeral, values["offTheRecord"] as? Bool == true,
               let path = values["profilePath"] as? String,
@@ -5474,7 +4748,7 @@ final class BrowserStore: ObservableObject {
         if let path = values["profilePath"] as? String {
             guard let id = self.profileID(forEnginePath: path) else { return }
             profileID = id
-        } else { profileID = nil } // Preserve legacy records without controls.
+        } else { profileID = nil }
         let id = profileID.map { $0.uuidString + ":" + nativeID } ?? nativeID
         if values["removed"] as? Bool == true {
             state.downloads.removeAll { $0.id == id }; changed(); return
@@ -5485,17 +4759,11 @@ final class BrowserStore: ObservableObject {
         changed()
     }
 
-    /// Commit setup and its completion marker in the same atomic session write.
-    /// No page is created here. Failed persistence restores the original model.
     func completeOnboarding(_ draft: OnboardingDraft) throws {
         guard !state.settings.onboardingComplete else { return }
         try commitOnboardingSetup(draft, replay: false)
     }
 
-    /// Settings → General → Replay onboarding: the same Space name, theme,
-    /// Favorites and bookmark-file writes as first launch, added to the
-    /// existing session. Existing tabs, Spaces and settings stay; the active
-    /// Space, completion marker and first-setup education gate are unchanged.
     func applyOnboardingReplay(_ draft: OnboardingDraft) throws {
         try commitOnboardingSetup(draft, replay: true)
     }
@@ -5513,8 +4781,6 @@ final class BrowserStore: ObservableObject {
         let saved = savedTheme(of: space)
         themePreviews[space.id] = nil
         let name = draft.spaceName.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Replay applies only what it changed from where it started, so edits
-        // made elsewhere meanwhile (and placeholder titles) survive.
         if !name.isEmpty, !replay || name != (draft.replayBaseName ?? space.name) {
             state.spaces[index].title = name; state.spaces[index].updateDisplayName(position: index)
         }
@@ -5541,8 +4807,6 @@ final class BrowserStore: ObservableObject {
         }
         if !replay {
             state.settings.onboardingComplete = true
-            //
-            // genuine first local setup is the equivalent one-time education gate.
             state.autoArchiveEducationEligible = true
         }
         do { try save() }
@@ -5550,15 +4814,11 @@ final class BrowserStore: ObservableObject {
         changed()
     }
 
-    /// Imported native profile data has its own category transactions. This
-    /// writes only selected sidebar bookmarks into the original local target.
     @discardableResult
     func commitImportedBookmarks(_ roots: [BrowserImportBookmark], destination: BrowserImportDestination) throws -> BrowserImportPlacement {
         try commitImportedBookmarks([(roots, destination, BrowserImportPlacement())])[0]
     }
 
-    /// Every page in one write. A page's `placed` is what it added before;
-    /// its new roots replace that (setup's Back to an accepted page).
     func commitImportedBookmarks(_ pages: [(roots: [BrowserImportBookmark], destination: BrowserImportDestination,
                                             placed: BrowserImportPlacement)]) throws -> [BrowserImportPlacement] {
         guard !isEphemeral, pages.allSatisfy({ $0.destination.isCurrent(in: state) }) else { throw CocoaError(.userCancelled) }
@@ -5575,12 +4835,6 @@ final class BrowserStore: ObservableObject {
         return placements
     }
 
-    ///
-    /// standard Profile maps to `standardProfileID`; a custom one to an unused
-    /// live Profile with its name, else a new one. Each Profile in `profiles`
-    /// gets a destination Space for its native data import. The active Space
-    /// does not change. The `primary` Profile goes into `target`, as any
-    /// browser's default profile does. The others map as above.
     func importArcSidebar(_ arc: ArcSidebarImport, profiles: [(key: ArcSidebarImport.ProfileKey, name: String)],
                           standardProfileID: UUID, primary: ArcSidebarImport.ProfileKey? = nil,
                           into target: UUID? = nil) throws
@@ -5597,8 +4851,6 @@ final class BrowserStore: ObservableObject {
         return result.destinations
     }
 
-    /// Create a distinct local destination before the native profile service is
-    /// acquired. Does not change the active Space or any existing page owner.
     func createImportDestination(name: String, basedOn original: BrowserImportDestination) throws -> BrowserImportDestination {
         guard !isEphemeral else { throw CocoaError(.userCancelled) }
         let previous = state
@@ -5617,8 +4869,6 @@ final class BrowserStore: ObservableObject {
         return BrowserImportDestination(spaceID: space.id, profileID: profile.id)
     }
 
-    /// Resolve an existing Profile target. An unused existing Profile gets a
-    /// sidebar Space without replacing its native context or identity.
     func prepareImportDestination(_ target: BrowserImportProfileTarget,
                                   basedOn original: BrowserImportDestination) throws -> BrowserImportDestination {
         guard !isEphemeral, original.isCurrent(in: state), target.isCurrent(in: state) else {
@@ -5667,8 +4917,6 @@ final class BrowserStore: ObservableObject {
         historyRevision &+= 1
         changed()
     }
-    /// Chromium's history is the one history; the visits Parc keeps for the
-    /// command bar's recents and site ranking drop what it deletes.
     func forgetHistory(_ deletion: ChromiumHistoryDeletion) {
         let profileID = deletion.profilePath.flatMap(profileID(forEnginePath:))
         guard deletion.profilePath == nil || profileID != nil else { return }
@@ -5692,7 +4940,6 @@ final class BrowserStore: ObservableObject {
         }
     }
 
-    /// The session file's form of a state: the window records join it.
     private func persisted(_ state: BrowserState) -> BrowserState {
         var saved = state; saved.windows = windowRecords
         for (id, entry) in themePreviews {
@@ -5704,13 +4951,9 @@ final class BrowserStore: ObservableObject {
     }
 
     private func changed(selectionAlreadyStamped: Bool = false) {
-        // Batch reconcile + selection cache into at most one published assign so
-        // callers that already published their mutation do not multi-fire again.
         var next = state
         let selectedBeforeReconcile = next.selectedTabIDs
         reconcileSplitLayouts(into: &next)
-        // Refresh the active-Space selection cache unless the caller already
-        // stamped it and reconcile left selection alone (true no-op).
         if !selectionAlreadyStamped || next.selectedTabIDs != selectedBeforeReconcile {
             let key = next.activeSpaceID.uuidString
             if next.selectionBySpace[key] != next.selectedTabIDs {
@@ -5724,17 +4967,12 @@ final class BrowserStore: ObservableObject {
     private func scheduleSave() {
         guard !isEphemeral else { return }
         let snapshot = persisted(state)
-        // True no-op: a debounce already covers this exact persisted state.
-        // Distinct revisions still cancel/reset the 0.25s timer so the latest
-        // mutation is not dropped.
         if pendingSave != nil, pendingSaveSnapshot == snapshot { return }
         pendingSave?.cancel()
         let task = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.pendingSave = nil
             self.pendingSaveSnapshot = nil
-            // Snapshot on main, then return immediately. Encode/write run on
-            // the session queue; waiting here would hitch input and layout.
             try? self.persistSnapshot(self.persisted(self.state), wait: false)
         }
         pendingSave = task
@@ -5742,13 +4980,6 @@ final class BrowserStore: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: task)
     }
 
-    /// `wait` is for explicit callers (quit, tests, onboarding, settings
-    /// commits) that must observe the file before continuing. The 0.25s
-    /// debounce uses `wait: false` so page-load metadata never encodes on
-    /// the calling thread. JSON schema and `JSONEncoder` formatting are
-    /// unchanged. Identical pretty/sorted bytes skip the atomic replace on
-    /// every path; Equatable snapshot skip is only for the coalesced debounce
-    /// so it can avoid encode entirely when state has not changed.
     private func persistSnapshot(_ snapshot: BrowserState, wait: Bool) throws {
         guard !isEphemeral else { return }
         let url = stateURL
@@ -5783,7 +5014,6 @@ final class BrowserStore: ObservableObject {
                 state.tabs[index].title = state.tabs[index].savedTitle
             }
         }
-        // Saved destinations remain in the sidebar, without loading a web page.
         state.selectedTabIDs = []
         state.selectionBySpace = [:]
         state.splitLayouts = []
@@ -5872,15 +5102,11 @@ enum ProfileSettingsError: LocalizedError {
 }
 
 
-//
-// SplitViewController delegate. This transaction never carries a URL.
 enum SplitDropTarget: Equatable {
     case insert(Int)
     case replace(Int)
 }
 
-/// A public pasteboard URL is a new navigation value, never an original tab ID.
-/// File/internal/custom-scheme activation is intentionally not part of this route.
 enum ExternalSplitDrop {
     static func url(_ string: String) -> URL? {
         guard !string.isEmpty, string == string.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -5891,9 +5117,6 @@ enum ExternalSplitDrop {
         return url
     }
 
-    /// The original saved-item branch replaces the pinned/Favorite parent-list slot
-    /// with a fresh saved-home copy; the original live ID enters the new split.
-    /// Existing group children and single-pane replacement do not take that branch.
     static func savedHomeSource(state: BrowserState, selection: [UUID],
                                 layout: BrowserSplitLayout?, target: SplitDropTarget) -> BrowserTab? {
         guard layout == nil, selection.count == 1, case .insert = target else { return nil }
@@ -5930,8 +5153,6 @@ enum ExternalSplitDrop {
             url: address, title: title, kind: .today, createdAt: now, lastAccessed: now,
             savedURL: address, savedTitle: title, referrerID: receipt?.referrerID,
             activeTabBeforeCreationID: receipt?.activeTabBeforeCreationID))
-        //
-        //
         SidebarHierarchy.placingCreatedTab(tabID, insertion: .automatic, in: &next)
         var homeIDs: [UUID: UUID] = [:]
         if let original = savedHomeSource(state: state, selection: selection, layout: layout, target: target) {
@@ -5959,8 +5180,6 @@ enum SplitDropTransaction {
     static func make(source: UUID, selection: [UUID], layout: BrowserSplitLayout?,
                      target: SplitDropTarget, orientation: SplitOrientation,
                      spaceID: UUID) -> BrowserSplitLayout? {
-        //
-        //
         guard !selection.isEmpty, selection.count <= 4, Set(selection).count == selection.count, !selection.contains(source),
               layout == nil || (layout?.spaceID == spaceID && layout?.tabIDs == selection),
               selection.count == 1 || layout != nil,
@@ -5989,8 +5208,6 @@ enum SplitDropTransaction {
     }
 }
 
-// Typed sidebar projection. The container is positioned at its original
-// anchor; members retain their saved kind/folder for later separation.
 enum SidebarSplitItems {
     static func isFavorite(_ group: BrowserSplitLayout, in state: BrowserState, profileID: UUID) -> Bool {
         group.tabIDs.count > 1 && group.tabIDs.allSatisfy { id in
@@ -6008,8 +5225,6 @@ enum SidebarSplitItems {
     }
 }
 
-// Application commands leave the ephemeral model only through its explicit
-// normal parent. A missing/retiring parent never falls back to another profile.
 extension BrowserStore {
     struct ApplicationContext: Equatable {
         let profileID: UUID
@@ -6029,11 +5244,7 @@ extension BrowserStore {
     }
 }
 
-///
-/// the Sidebar's saved label and explicit user override have their own lifetime.
 enum SidebarTabTitle {
-    /// Global Rename resolves the window's selected sidebar item. A split is
-    /// an original container, not whichever child currently has page focus.
     static func currentRenameTab(state: BrowserState, spaceID: UUID, profileID: UUID,
                                  selectedTabIDs: [UUID]) -> BrowserTab? {
         guard selectedTabIDs.count == 1, let id = selectedTabIDs.first,
@@ -6050,8 +5261,6 @@ enum SidebarTabTitle {
         var errorDescription: String? { "This tab changed while its name was being edited. Please try again." }
     }
 
-    /// A tab the sidebar can rename: not a Favorite (its own rename) and not a
-    /// Parc document page.
     static func isRenameable(_ tab: BrowserTab) -> Bool {
         tab.kind != .favorite && !InternalPage.isInternal(tab.url)
     }
@@ -6064,8 +5273,6 @@ enum SidebarTabTitle {
     static func display(_ tab: BrowserTab) -> String {
         if let custom = tab.customTitle { return custom }
         if let saved = customValue(tab.savedTitle), saved != "about:blank" { return saved }
-        //
-        // shortening rules are separate from the recovered title precedence.
         return tab.savedURL.isEmpty || tab.savedURL == "about:blank" ? "New tab" : tab.savedURL
     }
 
@@ -6078,9 +5285,6 @@ enum SidebarTabTitle {
     }
 }
 
-/// The committed name inverse follows the original tab ID in its profile.
-/// Later same-profile membership changes do not rename the page or replace it.
-/// A different shared name, archived/deleted item or different profile refuses.
 struct SidebarTabTitleChange: Equatable {
     let tabID: UUID
     let profileID: UUID
@@ -6096,8 +5300,6 @@ struct SidebarTabTitleChange: Equatable {
     }
 }
 
-/// Original container + child placements form a short-lived name-edit lease.
-/// Navigation metadata may change; membership, placement and the saved name may not.
 struct SidebarSplitTitleEdit: Equatable {
     let group: BrowserSplitLayout
     let profileID: UUID
@@ -6141,9 +5343,6 @@ struct SidebarSplitTitleEdit: Equatable {
     }
 }
 
-/// A committed container-name change, shared by the originating window's Undo
-/// and Redo. Layout/member changes are not name edits; same-profile moves retain
-/// the original ID. A different shared name or deleted/replaced owner refuses.
 struct SidebarSplitTitleChange: Equatable {
     let containerID: UUID
     let profileID: UUID
@@ -6161,8 +5360,6 @@ struct SidebarSplitTitleChange: Equatable {
     }
 }
 
-/// Only fields owned by this operation participate in its inverse. In particular,
-/// undoing an icon choice does not overwrite a later independent title edit.
 struct SidebarSplitAppearanceChange: Equatable {
     let containerID: UUID
     let profileID: UUID
@@ -6171,8 +5368,6 @@ struct SidebarSplitAppearanceChange: Equatable {
     let previousIcon: SidebarGroupIcon?
     let icon: SidebarGroupIcon?
     let resetsTitle: Bool
-    ///
-    ///
     var actionName: String { resetsTitle ? "Reset Name and Icon" : "Customize Tab" }
     func target(in state: BrowserState, undo: Bool) -> BrowserSplitLayout? {
         guard let group = state.splitLayouts.first(where: { $0.id == containerID }),
@@ -6183,42 +5378,18 @@ struct SidebarSplitAppearanceChange: Equatable {
     }
 }
 
-///
-///
-/// `JSONEncoder.encode`; Parc previously encoded the whole `BrowserState` on
-/// main after every `changed()`. Bytes stay ISO-8601, pretty-printed, sorted
-/// keys; 0o600 and same-directory `rename(2)` remain. Work is FIFO on one
-/// serial queue so a failed later write cannot drop an earlier in-flight
-/// persist. When encoded bytes equal the last successful write, the atomic
-/// replace is skipped (true identical-byte no-op); encode of that identical
-/// snapshot may still run off the caller. `allowSkip` Equatable short-circuit
-/// is only for the coalesced debounce so unchanged title/URL ticks avoid
-/// encode entirely; explicit `save()` / profile-settings commits always encode
-/// and only skip when the pretty/sorted bytes already match disk.
-///
-/// Visits are kept in `BrowserHistoryFile` beside the session and written only
-/// when they change: title, selection and activity writes no longer re-encode
-/// a history that holds up to `BrowserHistoryOrder.capacity` visits.
 private final class SessionFileWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "org.parc.session-save", qos: .utility)
     private var lastWritten: BrowserState?
-    /// Last successfully replaced pretty/sorted payload. Touched only on `queue`.
     private var lastWrittenBytes: Data?
-    /// Visits last written to the history file, and the records it holds.
-    /// Touched only on `queue`.
     private var lastWrittenHistory: [BrowserHistoryEntry]?
     private var historyRecords = 0
     private var historyPreserved = false
 
-    /// Stops this session from writing the history file (see the store's load).
     func preserveHistoryFile() { queue.sync { historyPreserved = true } }
 
     func write(_ snapshot: BrowserState, to url: URL, wait: Bool, allowSkip: Bool,
                completion: @escaping (Error?) -> Void) {
-        // Always `async` onto the save queue. `DispatchQueue.sync` may run the
-        // block inline on the calling/MainActor thread; settings commits and
-        // explicit `save()` need the pretty/sorted encode and atomic replace
-        // off that stack even when the caller must still wait for durability.
         let work = {
             do {
                 try self.encodeAndReplace(snapshot, to: url, allowSkip: allowSkip)
@@ -6250,16 +5421,11 @@ private final class SessionFileWriter: @unchecked Sendable {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(session)
-        // Skip only when the same pretty/sorted bytes are still on disk. A
-        // missing session.json must recreate even if the in-memory payload
-        // matches the last successful replace.
         if lastWrittenBytes == data, FileManager.default.fileExists(atPath: url.path) {
             lastWritten = snapshot
             return
         }
         do { try Self.replaceAtomically(data, at: url) } catch {
-            // The history file may already hold this snapshot's visits; a
-            // rolled-back model must not be skipped as already written.
             lastWritten = nil
             throw error
         }
@@ -6282,8 +5448,6 @@ private final class SessionFileWriter: @unchecked Sendable {
                         try handle.seekToEnd()
                         try handle.write(contentsOf: try BrowserHistoryFile.encode(records))
                     } catch {
-                        // A partial append ends in a torn line; the next write
-                        // replaces the whole file instead of appending after it.
                         lastWrittenHistory = nil
                         throw error
                     }

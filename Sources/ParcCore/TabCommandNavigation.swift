@@ -1,13 +1,6 @@
 import Foundation
 
-/// Positional traversal and selection history are independent of held-key MRU.
-///
 struct TabSelectionHistory {
-    ///
-    ///
-    /// that shipped default: no stack is recorded, the Cycle commands are not
-    /// created or registered, and their chords reach the page. The traversal
-    /// below is retained for the flag's enabled state.
     static let isEnabled = false
 
     private struct Stack {
@@ -42,8 +35,6 @@ struct TabSelectionHistory {
         return nil
     }
 
-    /// Update the cursor before selection callbacks record the same destination.
-    /// The caller restores this value if its real selection is refused.
     mutating func move(in space: UUID, forward: Bool,
                        available: (RecentTabOrder.Item) -> Bool) -> RecentTabOrder.Item? {
         guard var stack = spaces[space] else { return nil }
@@ -62,9 +53,6 @@ struct TabSelectionHistory {
 }
 
 enum PositionalTabNavigation {
-    /// Parc owns separate folder/tab arrays; flatten them in its actual sidebar
-    ///
-    /// treats a split as one item, rather than cycling its individual panes.
     static func items(state: BrowserState, spaceID: UUID, selected: [UUID],
                       focused: UUID?, includeFavorites: Bool = true,
                       available: (UUID) -> Bool) -> [RecentTabOrder.Item] {
@@ -99,7 +87,6 @@ enum PositionalTabNavigation {
             if let group, let saved = groups.first(where: { $0.tabIDs == group }),
                saved.sidebarAnchorID != tab.id { continue }
             let ids = group ?? [tab.id]
-            // Never silently break a split whose other live page is unavailable.
             guard ids.allSatisfy({ usable[$0] != nil && !assigned.contains($0) }) else { continue }
             let orientation = groups.first { $0.tabIDs == ids }?.orientation ?? .horizontal
             result.append(.init(tabIDs: ids, focusedTabID: focused.flatMap { ids.contains($0) ? $0 : nil } ?? ids[0],

@@ -1,7 +1,5 @@
 import Foundation
 
-/// A Type Travel membership action owns the original ordinary items, not their
-/// displayed names or URLs. It never substitutes the current tab at activation.
 struct CommandBarFavoriteAction: Equatable, Identifiable {
     enum Operation: String {
         case favorite, unfavorite
@@ -37,8 +35,6 @@ struct CommandBarFavoriteAction: Equatable, Identifiable {
               !state.profileRemovals.contains(where: { $0.profileID == profileID }) else { return nil }
         var tabs: [BrowserTab] = []
         for item in items {
-            // Favorites currently have ordinary page tiles. A folder or whole
-            // split must not silently flatten into unrelated page commands.
             guard case .tab(let id) = item,
                   let tab = state.tabs.first(where: { $0.id == id && $0.profileID == profileID && $0.archivedAt == nil }),
                   tab.kind == .favorite || tab.spaceID == spaceID,
@@ -70,7 +66,6 @@ struct CommandBarFavoriteAction: Equatable, Identifiable {
         guard isCurrent(in: state) else { return nil }
         let ids = Set(tabIDs)
         var next = state
-        // Normalize each original mixed parent before removing its actual IDs.
         for target in targets where target.kind != .favorite {
             let location = SidebarContainerLocation(spaceID: target.spaceID, folderID: target.folderID, section: target.kind)
             next.sidebarItemOrder[location.key] = SidebarHierarchy.children(in: location, state: state)
@@ -86,8 +81,6 @@ struct CommandBarFavoriteAction: Equatable, Identifiable {
             moved[i].kind = operation == .favorite ? .favorite : .today
             moved[i].folderID = nil
             if operation == .unfavorite { moved[i].spaceID = spaceID }
-            // Preserve the established saved-tab boundary: promoting a Today
-            // snapshots its current document, while an existing pin keeps home.
             if previousKind == .today || operation == .unfavorite {
                 moved[i].savedURL = moved[i].url; moved[i].savedTitle = moved[i].title
             }

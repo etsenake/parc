@@ -1,20 +1,12 @@
 import Foundation
 
-///
-/// welcome reducer supplies the three introduction phases; setup is local.
 struct OnboardingDraft: Codable, Equatable {
     enum Stage: Int, Codable, CaseIterable {
         case introAnimation, sellIntro, sellCompleted, introduction, theme, favorites, bookmarks, ready
-        // Keep every persisted version-one tag stable. The old introduction
-        // card is a migration alias; screen order is not enum declaration order.
         case defaultBrowser
-        // allSteps tag 7. Appended so existing drafts keep their integer tags.
         case adBlockers
         var isWelcome: Bool { rawValue <= Self.sellCompleted.rawValue }
 
-        /// Account-free allSteps without arcMax and without the excluded
-        /// skip-and-auto-select-onboarding-favorites remote flag. Import
-        /// substeps remain nested in `.bookmarks`.
         static var setupOrder: [Self] { setupOrder(includingAdBlockers: false) }
         static func setupOrder(includingAdBlockers: Bool, retaining current: Self? = nil) -> [Self] {
             var order: [Self] = [.bookmarks, .favorites, .theme]
@@ -51,32 +43,18 @@ struct OnboardingDraft: Codable, Equatable {
     var stage: Stage = .introAnimation
     var spaceName: String
     var theme: SpaceTheme
-    // Setup's static initial OrderedSet is [YouTube, Google Calendar].
     var favoriteURLs: Set<String> = ["https://youtube.com", "https://calendar.google.com"]
-    // Setup.State.selectedTopApps is an OrderedSet. Keep the earlier draft's
-    // set readable while recording the user's selection order from now on.
     var favoriteOrder: [String]? = ["https://youtube.com", "https://calendar.google.com"]
     var bookmarks: [Bookmark] = []
     var bookmarkFileName: String?
-    //
-    // this is only a pending choice, never proof of the macOS default handler.
     var defaultBrowserChoice: Bool?
-    // Explicitly accepted on the Safari password-choice step. A pending choice
-    // survives setup resume but never means the extension has been installed.
     var iCloudPasswordsProfileID: UUID?
-    // Known ad-blocker extensions actually submitted with the first-launch
-    // import. Empty means allSteps omits tag 7.
     var importedAdBlockers: [ImportedAdBlocker] = []
-    // Pending AdBlockersSelection. Next accepts it; Skip leaves it unchanged.
     var adBlockerChoice: AdBlockerChoice?
-    // Replay only: the Space name and saved theme it started from, so Finish
-    // applies only what replay changed, and its unsaved light/dark preview.
     var replayBaseName: String?
     var replayBaseTheme: SpaceTheme?
     var replayAppearance: String?
     var wantsDefaultBrowser: Bool { defaultBrowserChoice ?? true }
-    //
-    // {uBlock Origin}, so an empty import shows the YES/NO choice.
     var showsAdBlockers: Bool {
         Set(importedAdBlockers.map(\.identifier)) != [OnboardingAdBlocker.uBlockOrigin] || stage.current == .adBlockers
     }
@@ -85,7 +63,6 @@ struct OnboardingDraft: Codable, Equatable {
     func visibleSetupOrder() -> [Stage] {
         Stage.setupOrder(includingAdBlockers: showsAdBlockers, retaining: stage.current)
     }
-    /// Numbered setup steps exclude Ready, which still displays as "Ready".
     func displayedSetupCount() -> Int {
         visibleSetupOrder().filter { $0 != .ready }.count
     }
@@ -93,20 +70,14 @@ struct OnboardingDraft: Codable, Equatable {
     struct ImportedAdBlocker: Codable, Equatable, Identifiable {
         var identifier: String
         var displayName: String
-        // Destination Profiles it was imported into; nil in older drafts.
         var profileIDs: [UUID]? = nil
         var id: String { identifier }
     }
 
-    /// AdBlockersSelection.Selection without arcNative and keepAll.
     enum AdBlockerChoice: Codable, Equatable {
-        /// noAdBlock: "Don't block ads", or NO when nothing was imported.
         case none
-        /// userSelected: keeps this imported blocker and removes the rest.
         case keep(String)
-        /// uBlock: YES when nothing was imported.
         case uBlock
-        /// keepAll: "Use all imported ad blockers" leaves every one installed.
         case keepAll
         var keptIdentifier: String? {
             if case .keep(let identifier) = self { return identifier }
@@ -116,8 +87,6 @@ struct OnboardingDraft: Codable, Equatable {
             if case .keep(let kept) = self { return kept == identifier }
             return false
         }
-        ///
-        /// current choice still names one of its rows.
         static func settled(_ choice: Self?, for blockers: [ImportedAdBlocker]) -> Self {
             guard let first = blockers.first else { return choice == AdBlockerChoice.none ? .none : .uBlock }
             switch choice {
@@ -126,9 +95,6 @@ struct OnboardingDraft: Codable, Equatable {
             default: return .keep(first.identifier)
             }
         }
-        ///
-        /// blocker the choice doesn't keep is removed; YES installs uBlock in
-        /// the setup Space's Profile.
         func plan(for blockers: [ImportedAdBlocker], setupProfileID: UUID) -> AdBlockerPlan {
             var removals: [UUID: Set<String>] = [:]
             if self != .uBlock && self != .keepAll {
@@ -155,8 +121,6 @@ struct OnboardingDraft: Codable, Equatable {
         var artwork: String { "favorite-" + id }
         var bookmark: Bookmark { .init(title: title, url: url) }
     }
-    // The onboarding grid is a fixed nine-item subset of BaseModels.TopApp,
-    //
     static let favoriteChoices: [FavoriteChoice] = [
         .init(id: "twitter", title: "Twitter", url: "https://twitter.com"),
         .init(id: "gmail", title: "Gmail", url: "https://mail.google.com"),
@@ -173,15 +137,12 @@ struct OnboardingDraft: Codable, Equatable {
         .init(title: "GitHub", url: "https://github.com")
     ]
     static func favoriteKey(_ url: String) -> String {
-        // Migrate only the two aliases present in older Parc setup drafts.
         switch url {
         case "https://www.youtube.com": return "https://youtube.com"
         case "https://www.notion.so": return "https://notion.so"
         default: return url
         }
     }
-    /// The grid choice a saved Favorite URL matches under the saved-tab comparison
-    /// the session commit dedupes with, or its alias-migrated URL.
     static func choiceURL(forSaved url: String) -> String {
         let key = SavedTabURLComparison.key(favoriteKey(url))
         return favoriteChoices.first { SavedTabURLComparison.key($0.url) == key }?.url ?? favoriteKey(url)
@@ -208,7 +169,6 @@ struct OnboardingDraft: Codable, Equatable {
             order.removeAll { $0 == choice.url }
         } else {
             favoriteURLs.insert(choice.url)
-            // Setup.topAppTapped inserts an absent item at index zero.
             order.insert(choice.url, at: 0)
         }
         favoriteOrder = order
@@ -271,7 +231,6 @@ struct OnboardingDraft: Codable, Equatable {
     static let introDuration: TimeInterval = 3.3
     static let sellDuration: TimeInterval = 6.5
 
-    /// A replay's Safari restart saves its draft here so relaunch reopens replay at the import.
     static let replayRestartFileName = "onboarding-replay.json"
 
     static func load(directory: URL, space: BrowserSpace, fileName: String = "onboarding.json") throws -> Self {
@@ -287,8 +246,6 @@ struct OnboardingDraft: Codable, Equatable {
             OnboardingAdBlocker.isKnown($0.identifier) && !$0.identifier.isEmpty && !$0.displayName.isEmpty
         }
         if let choice = draft.adBlockerChoice {
-            // Past the step a made choice stands, as it does without a restart:
-            // a kept blocker that later failed still removes the others.
             let order = Stage.setupOrder(includingAdBlockers: true)
             let passed = (order.firstIndex(of: draft.stage.current) ?? 0) > (order.firstIndex(of: .adBlockers) ?? 0)
             let valid = passed
@@ -310,7 +267,6 @@ struct OnboardingDraft: Codable, Equatable {
         let url = directory.appendingPathComponent(fileName)
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
-    /// Consumes a saved replay draft for its own Space, resuming at the import.
     static func takeReplayRestart(directory: URL, space: BrowserSpace) -> Self? {
         defer { try? remove(directory: directory, fileName: replayRestartFileName) }
         guard FileManager.default.fileExists(atPath: directory.appendingPathComponent(replayRestartFileName).path),
@@ -320,9 +276,6 @@ struct OnboardingDraft: Codable, Equatable {
     }
 }
 
-///
-///
-/// not implement.
 enum OnboardingAdBlocker {
     static let chromeExtensionIDs: Set<String> = [
         "cfhdojbkjhnklbpkdaibdccddilifddb",

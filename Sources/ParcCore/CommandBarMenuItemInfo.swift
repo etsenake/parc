@@ -1,31 +1,16 @@
 import Foundation
 
-///
-///
-/// each MainMenu item as user-defined runtime attributes (`arcTypeTravelTriggers`,
-/// `arcTypeTravelCandidateBump`, `arcTypeTravelTitle`, `arcTypeTravelDisregardCache`,
-///
-/// `Base.lproj/MainMenu.nib`; the 1.122 binary carries only the key names.
-/// No item sets a minimum query length. Items for excluded features (Boosts,
-///
-/// Release Notes opens Parc's own bundled page, so it is kept.
 struct CommandBarMenuItemInfo: Equatable, Sendable {
     let triggers: [String]
     var bump: Double? = nil
 
     static func info(forMenuCommand id: String) -> CommandBarMenuItemInfo? { table[id] }
 
-    ///
     static func candidateBump(forMenuCommand id: String) -> Double? { table[id]?.bump }
 
-    ///
-    /// own `ImportanceConfiguration` weight was not recovered; 0.06 keeps the
-    /// largest bump (Export Notes, 1.5) at most 0.94, below an exact tab
-    /// match's 0.95, while still ordering commands of equal quality.
     static let bumpWeight = 0.06
     static func rankingBump(_ bump: Double?) -> Double { (bump ?? 0) * bumpWeight }
 
-    /// Words a query may match besides the title: the trigger phrases.
     static func searchText(forMenuCommand id: String) -> String {
         table[id]?.triggers.joined(separator: " ") ?? ""
     }

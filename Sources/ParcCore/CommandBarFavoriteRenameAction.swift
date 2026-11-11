@@ -1,7 +1,5 @@
 import Foundation
 
-/// Type Travel Rename owns the current original Favorite, not the keyboard
-/// highlight or a sidebar multi-selection. The global menu has a separate owner.
 struct CommandBarFavoriteRenameAction: Equatable, Identifiable {
     let tab: BrowserTab
     let spaceID: UUID

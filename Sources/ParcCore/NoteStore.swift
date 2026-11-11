@@ -2,8 +2,6 @@ import Foundation
 import Combine
 import Darwin
 
-// Notes is a document, not an Easel object. The linear body uses the shared
-//
 struct NoteBody: Codable, Equatable {
     var id = UUID()
     var text = ""
@@ -33,12 +31,6 @@ enum NoteError: Error, LocalizedError {
 @MainActor
 final class NoteStore {
     static let maximumBytes = 8 * 1024 * 1024
-    ///
-    /// `Publisher.delay(for:tolerance:scheduler:options:)` using
-    /// `DispatchQueue.SchedulerTimeType.Stride.seconds` of the Int 3 stored at
-    ///
-    /// Firebase `DocumentSaveLocation` remains excluded; local disk is the
-    /// recovered save location.
     nonisolated static let recoveredDiskSaveDelay: TimeInterval = 3
     private static var shared: [String: NoteStore] = [:]
     static func sharedStore(directory: URL, diskSaveDelay: TimeInterval = recoveredDiskSaveDelay) throws -> NoteStore {
@@ -56,10 +48,6 @@ final class NoteStore {
     let directory: URL
     let diskSaveDelay: TimeInterval
     let changes = PassthroughSubject<Void, Never>()
-    /// Off-main sorted-keys encode + atomic replace. Publication still validates
-    /// field limits on the caller; encode/write leave the MainActor stack.
-    /// Identical sorted-keys bytes skip the atomic replace; distinct revisions
-    /// still encode and replace in FIFO order.
     private let documentWriter = NoteDocumentWriter()
     private let now: () -> Date
     private final class WeakSession { weak var value: NoteSession?; init(_ value: NoteSession) { self.value = value } }
@@ -121,8 +109,6 @@ final class NoteStore {
         let document = try read(id)
         guard !document.deleted else { throw NoteError.deleted }; return session(document)
     }
-    /// Sidebar aliases share this existing document and any original live draft.
-    /// Validate disk and shared session identity without committing that draft.
     func validateReference(_ id: UUID) throws {
         if let live = sessions[id]?.value {
             guard !live.document.deleted else { throw NoteError.deleted }
@@ -184,11 +170,6 @@ final class NoteStore {
     private func session(_ document: NoteDocument) -> NoteSession {
         let value = NoteSession(store: self, document: document); sessions[document.id] = WeakSession(value); return value
     }
-    ///
-    ///
-    /// Profile's Space. Parc keeps one store per Profile: the exact file moves
-    /// into the destination store. A live session or an existing destination
-    /// file refuses; nothing is copied or rewritten.
     func relocate(_ id: UUID, to destination: NoteStore) throws {
         try flushDelayedDiskSave(id)
         guard destination !== self, sessions[id]?.value == nil, destination.sessions[id]?.value == nil else { throw NoteError.changed }
@@ -204,9 +185,6 @@ final class NoteStore {
         sessions.removeValue(forKey: id); destination.sessions.removeValue(forKey: id)
         changes.send(); destination.changes.send()
     }
-    /// The inter-Profile transaction already flushed and closed every editor.
-    /// Revoke retained callbacks before moving the file; native consent may
-    /// still retain the old editor/session until its completion returns.
     func retireSessionForRelocation(_ id: UUID) throws {
         try flushDelayedDiskSave(id)
         guard let current = sessions[id]?.value else { return }
@@ -265,16 +243,9 @@ final class NoteStore {
               document.modifiedAt.timeIntervalSinceReferenceDate.isFinite else { throw NoteError.invalid }
         try document.body.richText.validate(text: document.body.text)
     }
-    /// In-memory publication validates field limits only. Sorted-keys encode
-    /// and size check run once on the note-save queue at disk persist.
     fileprivate func validateForPublication(_ document: NoteDocument) throws {
         try validate(document)
     }
-    /// Validates on the caller, then encodes sorted-keys JSON once and
-    /// atomically replaces on the note-save queue. Callers that must observe
-    /// the file wait for durability before publishing; encode/write leave the
-    /// MainActor stack. Identical sorted-keys bytes to the last successful
-    /// write for that path skip the atomic replace.
     func persist(_ document: NoteDocument) throws {
         try checkDirectory()
         let destination = path(document.id)
@@ -285,7 +256,6 @@ final class NoteStore {
     }
 }
 
-/// Shared O_EXCL / fsync / rename(2) replace for note JSON documents.
 private enum NoteAtomicFile {
     static func write(_ data: Data, to destination: URL, maximumBytes: Int) throws {
         if FileManager.default.fileExists(atPath: destination.path) {
@@ -320,24 +290,12 @@ private enum NoteAtomicFile {
     }
 }
 
-/// Off-calling-thread note document encode/replace. Bytes stay sorted-keys
-/// JSON with the same `.write-*` / fsync / rename contract readers depend on.
-/// Work is FIFO on one serial queue so a later persist cannot leapfrog or drop
-/// an earlier durable revision. When encoded bytes equal the last successful
-/// write for that path, the atomic replace is skipped (true identical-byte
-/// no-op); encode of that identical document may still run off the caller.
 private final class NoteDocumentWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "org.parc.note-save", qos: .utility)
-    /// Last successfully replaced sorted-keys payload per document path.
-    /// Touched only on `queue`.
     private var lastWrittenBytes: [String: Data] = [:]
 
     func write(_ document: NoteDocument, to url: URL, maximumBytes: Int,
                completion: @escaping (Error?) -> Void) {
-        // Always `async` onto the save queue. `DispatchQueue.sync` may run the
-        // block inline on the calling/MainActor thread; note edits need the
-        // sorted-keys encode and atomic replace off that stack even when the
-        // caller must still wait for durability before publishing.
         let group = DispatchGroup()
         group.enter()
         queue.async {
@@ -352,8 +310,6 @@ private final class NoteDocumentWriter: @unchecked Sendable {
         group.wait()
     }
 
-    /// Drop the remembered payload after the on-disk file is moved so a later
-    /// create/replace at the same path is not treated as identical.
     func forget(_ url: URL) {
         let group = DispatchGroup()
         group.enter()
@@ -371,7 +327,6 @@ private final class NoteDocumentWriter: @unchecked Sendable {
         guard data.count <= maximumBytes else { throw NoteError.invalid }
         let key = url.path
         if lastWrittenBytes[key] == data {
-            // Same sorted-keys JSON already durable; skip fsync/rename.
             return
         }
         try NoteAtomicFile.write(data, to: url, maximumBytes: maximumBytes)
@@ -399,8 +354,6 @@ final class NoteSession {
         guard body != expected else { return }
         try replace { $0.body = body }
     }
-    /// A title/body boundary edit is one durable document publication. The
-    /// native editors still retain their independent field-local Undo managers.
     func updateTitleAndBody(title: String, body: NoteBody, replacingTitle expectedTitle: String, body expectedBody: NoteBody) throws {
         guard document.title == expectedTitle, document.body == expectedBody,
               body.id == expectedBody.id else { throw NoteError.changed }

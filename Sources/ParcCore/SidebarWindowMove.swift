@@ -1,7 +1,5 @@
 import Foundation
 
-/// Immutable original collection, shared by ordinary and app-tray transfers.
-/// This is an admission snapshot of BrowserState, not another item store.
 struct SidebarMoveCollection: Equatable {
     let hierarchy: SidebarHierarchySnapshot
     let roots: [SidebarItemReference]
@@ -22,10 +20,6 @@ struct SidebarMoveCollection: Equatable {
                 return SidebarHierarchy.children(in: .init(spaceID: spaceID, folderID: id, section: .pinned), state: state).allSatisfy(collect)
             case .tab(let id): ids.append(id)
             case .split(let id):
-                // The split is the movable container. Ordinary children retain
-                // their original saved placement until the explicit destination
-                // maps the whole group; every original child still joins this
-                // receipt and the native/editor ownership transaction.
                 guard let group = hierarchy.groups.first(where: { $0.id == id }),
                       let anchor = group.sidebarAnchorID, group.tabIDs.contains(anchor), group.tabIDs.count > 1,
                       Set(group.tabIDs).count == group.tabIDs.count,
@@ -49,8 +43,6 @@ struct SidebarMoveCollection: Equatable {
     }
 }
 
-/// The original collection and both sidebar locations are one drop intent.
-/// Native ownership is committed separately, against this same immutable value.
 struct SidebarWindowMove: Equatable {
     let collection: SidebarMoveCollection
     let destination: SidebarHierarchySnapshot
@@ -61,9 +53,6 @@ struct SidebarWindowMove: Equatable {
     var source: SidebarHierarchySnapshot { collection.hierarchy }
     var crossesProfiles: Bool { source.profileID != destination.profileID }
 
-    ///
-    ///
-    ///
     init?(items: [SidebarItemReference], sourceSpaceID: UUID, profileID: UUID, destinationProfileID: UUID? = nil,
           to location: SidebarContainerLocation, before: SidebarItemReference?, state: BrowserState) {
         guard let collection = SidebarMoveCollection(items: items, spaceID: sourceSpaceID, profileID: profileID, state: state),

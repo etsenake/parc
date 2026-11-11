@@ -1,8 +1,6 @@
 import Foundation
 import Combine
 
-// The matcher describes destinations; it never rewrites a navigation request.
-//
 enum LinkMatchStyle: String, Codable, CaseIterable {
     case matches, contains
 }
@@ -31,10 +29,6 @@ struct LinkRouteCondition: Codable, Equatable, Identifiable {
         }
     }
 
-    //
-    // not the host/path parser used by matches. These are the three web
-    // pattern families from 100785510/100784c2c; non-web families cannot
-    // survive the following normalized-https gate at 101be84b8.
     private static func looseWebURL(_ text: String) -> URL? {
         let prefix = #"^(http(s)?:\/\/)?"#
         let suffix = #"(:[0-9]{1,5})?((\?|\/|#).*)?"#
@@ -59,8 +53,6 @@ struct LinkRouteCondition: Codable, Equatable, Identifiable {
         return parts.url
     }
 
-    //
-    // one www. prefix/trailing slash, ordinary fragments and empty/utm_ queries.
     static func normalized(_ url: URL) -> URL {
         guard var parts = URLComponents(string: url.absoluteString.lowercased()) else { return url }
         if parts.scheme == nil || parts.scheme == "http" { parts.scheme = "https" }
@@ -94,7 +86,6 @@ struct LinkRoute: Codable, Equatable, Identifiable {
 struct LinkRoutingState: Codable, Equatable {
     var version = 1
     var rules: [LinkRoute] = []
-    //
     var defaultDestination = LinkRouteDestination.mostRecent
     var recentSpaceIDs: [UUID] = []
 }
@@ -110,8 +101,6 @@ struct LinkRoutingDecision: Equatable {
     let usedUnavailableDestinationFallback: Bool
 }
 
-// The missing explicit-Space app-open path chooses the first eligible window
-// in system order before falling back to the last focused or first Space.
 enum LinkRoutingUnavailableSpace {
     static func firstEligibleWindow<ID: Hashable>(ordered: [ID], eligible: Set<ID>) -> ID? {
         ordered.first { eligible.contains($0) }
@@ -130,7 +119,6 @@ final class LinkRoutingStore: ObservableObject {
     @Published private(set) var errorMessage: String?
     private let file: URL
     private var unreadableFile = false
-    /// Last pretty/sorted JSON bytes successfully written (or loaded as such).
     private var lastWrittenBytes: Data?
 
     init(directory: URL) {
@@ -144,8 +132,6 @@ final class LinkRoutingStore: ObservableObject {
                 throw CocoaError(.fileReadCorruptFile)
             }
             state = loaded
-            // Seed from the same encoder commit uses so an identical recommit
-            // can skip without rewriting the file.
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             lastWrittenBytes = try? encoder.encode(loaded)
         } catch {
@@ -187,14 +173,9 @@ final class LinkRoutingStore: ObservableObject {
         return commit(next)
     }
 
-    //
-    // empty component. Retain the active session if another sheet changed the
-    // rules, or if the atomic write fails, rather than overwriting either.
     @discardableResult
     func commitEditor(_ rules: [LinkRoute], basedOn original: [LinkRoute]) -> Bool {
         let filtered = rules.filter { !$0.conditions.isEmpty && $0.conditions.allSatisfy { !$0.pattern.isEmpty } }
-        // A blank new row is discarded without a write. In particular, merely
-        // opening a sheet must not trap someone with an unreadable saved file.
         if filtered == original { return true }
         guard state.rules == original else {
             errorMessage = "Routes changed in another window. Reopen Air Traffic Control to review the latest routes."
@@ -221,8 +202,6 @@ final class LinkRoutingStore: ObservableObject {
         var next = state; next.recentSpaceIDs.removeAll { $0 == id }
         next.recentSpaceIDs.insert(id, at: 0)
         next.recentSpaceIDs = Array(next.recentSpaceIDs.prefix(256))
-        // Keep live recency even if the disk is temporarily unavailable. Rule
-        // changes, in contrast, publish only after their atomic save succeeds.
         if !commit(next) { state.recentSpaceIDs = next.recentSpaceIDs }
     }
 

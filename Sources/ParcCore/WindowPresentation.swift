@@ -1,21 +1,13 @@
 import Foundation
 
-// Session metadata is shared. Presentation belongs to one physical NSWindow;
-// a store publication is never an instruction to adopt another window's page.
 struct WindowPresentation {
     private(set) var activeSpaceID: UUID
     private(set) var selectedTabIDs: [UUID]
     private(set) var isReady: Bool
     private var selectionBySpace: [String: [UUID]]
-    //
-    // with the physical window's presentation, never in another window's
-    // published selection or in a delayed renderer-focus callback.
     private var focusedTabBySpace: [UUID: UUID] = [:]
     private var splitLayoutBySpace: [UUID: BrowserSplitLayout] = [:]
 
-    //
-    // records and the currently loaded native pages. It is not restored from
-    // the app's durable selected-tab list.
     private(set) var referrerPool: Set<UUID> = []
     private var poolFocusedID: UUID?
     private(set) var previouslySelectedItemID: UUID?
@@ -29,9 +21,6 @@ struct WindowPresentation {
         }
     }
 
-    // Modal expansion/add-to-split replaces the pool, unlike ordinary creation
-    // with an explicit referrer, which unions its pair into the existing Set.
-    // Call only after the original Peek page has acquired its saved-item owner.
     @discardableResult
     mutating func recordPeekPromotion(_ id: UUID, state: BrowserState) -> Bool {
         guard let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
@@ -49,19 +38,13 @@ struct WindowPresentation {
     }
 
     mutating func recordSelectionForReturn(_ id: UUID?, state: BrowserState) {
-        // Refreshes and renderer focus acknowledgments are not new selections.
         guard id != poolFocusedID else { return }
         if let id, !state.tabs.contains(where: { $0.id == id && $0.archivedAt == nil }) { return }
         let outgoing = poolFocusedID
         poolFocusedID = id
         guard let id else { return }
-        // WindowState.previouslySelectedItem is the outgoing original item,
-        // assigned only when selection actually changes to an existing item.
-        // A missing outgoing selection clears it; refreshes preserve it.
         previouslySelectedItemID = outgoing
         guard referrerPool.contains(id) else { referrerPool.removeAll(); return }
-        // SidebarItemContextType is recursive container context: topApp=0,
-        // pinned=1, unpinned=2, missing=3. Only the first two collapse the Set.
         if let tab = state.tabs.first(where: { $0.id == id && $0.archivedAt == nil }),
            tab.kind != .today { referrerPool = [id] }
     }
@@ -89,8 +72,6 @@ struct WindowPresentation {
         focusedTabBySpace[activeSpaceID] = id
     }
 
-    // If a remembered pane is no longer available to this window, the
-    // surviving panes retain their original orientation and relative sizes.
     var splitLayout: BrowserSplitLayout? {
         guard selectedTabIDs.count > 1, let layout = splitLayoutBySpace[activeSpaceID] else { return nil }
         let positions = layout.tabIDs.indices.filter { selectedTabIDs.contains(layout.tabIDs[$0]) }
@@ -174,17 +155,12 @@ struct WindowPresentation {
             return tab.profileID == space.profileID && (tab.kind == .favorite || tab.spaceID == space.id)
         }.prefix(4))
         selectionBySpace[activeSpaceID.uuidString] = selectedTabIDs
-        // Consume an invalid focus once. If that page later returns from a
-        // different window, it cannot supersede the user's newer selection.
         if let focus = preferredFocusedTabID { focusedTabBySpace[activeSpaceID] = focus }
         else { focusedTabBySpace.removeValue(forKey: activeSpaceID) }
-        // A surviving subset is a projection of the original split. Do not
-        // substitute an unrelated shared layout with the same smaller group.
         if selectedTabIDs == originalSelection { rememberSplitLayout(state) }
         reconcilePlaceholders(state, available: available)
     }
 
-    // Called only for a command originating in this window, not by Combine.
     mutating func captureCommand(_ state: BrowserState, available: (UUID) -> Bool) {
         guard isReady else { return }
         selectionBySpace[activeSpaceID.uuidString] = selectedTabIDs
@@ -202,8 +178,6 @@ struct WindowPresentation {
         reconcile(state, available: available)
     }
 
-    /// Space deletion's inverse restores this window's original selection,
-    /// never a different window's last published selection for the Space.
     mutating func restoreDeletedSpace(_ id: UUID, selection: [UUID], focus: UUID?, state: BrowserState,
                                       available: (UUID) -> Bool) {
         guard isReady, state.spaces.contains(where: { $0.id == id }) else { return }
@@ -213,8 +187,6 @@ struct WindowPresentation {
         reconcile(state, available: available)
     }
 
-    // A ready shell-local page intentionally has no native selection. A web
-    // wrapper that is still creating its page is not that local-page command.
     func isLocalSelection(_ id: UUID?, state: BrowserState, hasNativeWrapper: Bool) -> Bool {
         guard isReady else { return false }
         guard let id else { return selectedTabIDs.isEmpty && !hasNativeWrapper }
@@ -224,8 +196,6 @@ struct WindowPresentation {
             || (!hasNativeWrapper && (tab.url.isEmpty || tab.url == "about:blank"))
     }
 
-    // An engine selection identifies an existing live page. It does not adopt
-    // another window's page or collapse a split that already contains it.
     @discardableResult
     mutating func selectExistingTab(_ id: UUID, state: BrowserState,
                                     available: (UUID) -> Bool) -> Bool {
@@ -253,9 +223,6 @@ struct WindowPresentation {
 
     mutating func adopt(_ id: UUID, state: BrowserState, foreground: Bool) {
         guard let tab = state.tabs.first(where: { $0.id == id }) else { return }
-        // A profile-wide Favorite moved into a ready window joins that window's
-        // current Space of its profile, as an existing-page selection does; its
-        // stored creation Space is not a destination.
         let currentProfile = state.spaces.first { $0.id == activeSpaceID }?.profileID
         let spaceID = isReady && tab.kind == .favorite && currentProfile == tab.profileID ? activeSpaceID : tab.spaceID
         guard state.spaces.contains(where: { $0.id == spaceID && $0.profileID == tab.profileID }) else { return }
@@ -269,8 +236,6 @@ struct WindowPresentation {
         }
     }
 
-    /// Apply only the origin's completed close decision. Other windows merely
-    /// reconcile removed IDs; they never adopt this command's replacement.
     @discardableResult
     mutating func finishFolderRemoval(_ selection: FolderRemovalSelection,
                                       state: BrowserState, available: (UUID) -> Bool) -> Bool {
@@ -297,14 +262,10 @@ struct WindowPresentation {
         selectionBySpace[activeSpaceID.uuidString] = selection.tabIDs
         focusedTabBySpace[activeSpaceID] = selection.focusedTabID
         rememberSplitLayout(state)
-        // Commit the actual selection transition here, including an empty
-        // selection. Intermediate store reconciliation is not a selection.
         recordSelectionForReturn(selection.focusedTabID, state: state)
         return true
     }
 
-    ///
-    /// This runs solely in the originating physical window after durable Undo.
     @discardableResult
     mutating func finishFolderUndo(_ undo: FolderDeletionUndo, state: BrowserState,
                                   available: (UUID) -> Bool) -> Bool {
@@ -340,18 +301,10 @@ struct WindowPresentation {
         for key in Array(selectionBySpace.keys) { selectionBySpace[key]?.removeAll { $0 == id } }
     }
 
-    //
-    //
-    // it leaves keeps that content as a placeholder (Blueprint case 5) with
-    // no sidebar item: its row and address clear, but its pane stays in place,
-    //
     struct PagePlaceholders: Equatable {
-        /// The Space's panes in their original order, placeholders included.
         var tabIDs: [UUID]
         var placeholders: Set<UUID>
         var layout: BrowserSplitLayout?
-        /// The Space's selection is still this slot's live panes, or what
-        /// remains of them; any other selection replaced the placeholders.
         func holds(_ selection: [UUID]) -> Bool {
             var remaining = selection[...]
             for id in tabIDs where !placeholders.contains(id) && remaining.first == id { remaining = remaining.dropFirst() }
@@ -360,8 +313,6 @@ struct WindowPresentation {
     }
     private(set) var placeholdersBySpace: [UUID: PagePlaceholders] = [:]
 
-    /// The page of `id` moved to another window. Every Space selecting it
-    /// keeps its pane as a placeholder; returns whether one was kept.
     @discardableResult
     mutating func leavePlaceholder(_ id: UUID, state: BrowserState) -> Bool {
         var kept = false
@@ -394,23 +345,18 @@ struct WindowPresentation {
     private var currentPlaceholders: PagePlaceholders? {
         placeholdersBySpace[activeSpaceID].flatMap { $0.holds(selectedTabIDs) ? $0 : nil }
     }
-    /// Panes of the current Space: the selection, with any placeholders in
-    /// their original slots.
     var displayedTabIDs: [UUID] {
         guard let slot = currentPlaceholders else { return selectedTabIDs }
         return Array(slot.tabIDs.filter { slot.placeholders.contains($0) || selectedTabIDs.contains($0) }.prefix(4))
     }
     var displayedPlaceholders: Set<UUID> { currentPlaceholders?.placeholders ?? [] }
-    /// Split geometry for `displayedTabIDs`.
     var displayedSplitLayout: BrowserSplitLayout? {
         guard let slot = currentPlaceholders else { return splitLayout }
         guard let layout = slot.layout, layout.tabIDs == displayedTabIDs,
               BrowserSplitLayout.normalized(layout.widthFactors, count: layout.tabIDs.count) != nil else { return nil }
         return layout
     }
-    /// Whether any Space of this window shows `id` as a placeholder.
     func showsPlaceholder(_ id: UUID) -> Bool { placeholdersBySpace.values.contains { $0.placeholders.contains(id) } }
-    /// Every tab any Space of this window shows as a placeholder.
     var allPlaceholders: Set<UUID> { placeholdersBySpace.values.reduce(into: []) { $0.formUnion($1.placeholders) } }
     var hasPlaceholders: Bool { !placeholdersBySpace.isEmpty }
 
@@ -427,8 +373,6 @@ struct WindowPresentation {
                     && ($0.kind == .favorite || $0.spaceID == space.id) }
             }
             var slot = original
-            // A page this window can use again (returned, or released by its
-            // last owner) rejoins the selection in its slot.
             let returning = slot.placeholders.filter { belongs($0) && available($0) }
             slot.placeholders = slot.placeholders.filter { belongs($0) && !returning.contains($0) }
             slot.tabIDs = slot.tabIDs.filter { selection.contains($0) || returning.contains($0) || slot.placeholders.contains($0) }
@@ -452,13 +396,7 @@ struct WindowPresentation {
     }
 }
 
-///
-/// (`WindowsData+ContentReparenting.swift`).
 enum PageReparenting {
-    /// Pages another window holds for a selection of `members`, in pane order,
-    ///
-    ///
-    ///
     static func pagesToMove(_ members: [UUID], usableHere: (UUID) -> Bool, movable: (UUID) -> Bool) -> [UUID]? {
         var pages: [UUID] = []
         for id in members where !usableHere(id) {
@@ -468,14 +406,7 @@ enum PageReparenting {
         return pages
     }
 
-    ///
-    /// so a row works in every window: an action on a tab another window
-    /// holds moves its page here first. Close too moves it, then closes it
-    /// here, so a leave-page prompt and the close's Undo and Reopen belong to
-    /// the window whose row was used.
     enum RowAction: Equatable { case here, moveHere, moveHereThenClose }
-    /// `busy` covers this window's own refusals (a close, move or retirement
-    /// under way), never which window holds the page.
     static func rowAction(closing: Bool, busy: Bool, usableHere: Bool, heldElsewhere: Bool) -> RowAction? {
         guard !busy else { return nil }
         if usableHere { return .here }
@@ -485,51 +416,32 @@ enum PageReparenting {
 
     struct Candidate: Equatable {
         let windowID: UUID
-        /// A placeholder for the page in the window's current Space.
         let displaysPlaceholder: Bool
-        /// A placeholder for the page in any of the window's Spaces.
         let showsPlaceholder: Bool
         let lastActive: Date
-        /// The window could take the page now (not closing, moving or in full screen).
         var canReceive = true
     }
     enum Trigger: Equatable {
-        /// `ReparentingTrigger.untargeted(.itemDeselected)`.
         case deselected
-        ///
         case ownerClosing
     }
-    ///
-    /// holding a placeholder and takes the most recent by date. A deselected
-    /// page returns only to a window showing it now; a closing owner's page
-    /// goes to any window keeping its placeholder rather than closing.
     static func returnDestination(_ candidates: [Candidate], trigger: Trigger) -> UUID? {
         returnDestinations(candidates, trigger: trigger).first
     }
-    /// Every eligible window, most recent first, so a move one of them
-    /// refuses can still go to the next.
     static func returnDestinations(_ candidates: [Candidate], trigger: Trigger) -> [UUID] {
         candidates.filter { $0.canReceive && (trigger == .deselected ? $0.displaysPlaceholder : $0.showsPlaceholder) }
             .sorted { $0.lastActive > $1.lastActive }.map(\.windowID)
     }
     enum ReturnOutcome: Equatable {
         case started
-        /// A window keeps the page's placeholder but can't take it now.
         case blocked
-        /// No window keeps its placeholder.
         case unneeded
     }
-    /// A return that started no move still waits while a window keeps the
-    /// page's placeholder in any Space; it can't take the page now (moving,
-    /// in full screen, closing, or showing another Space).
     static func unstartedReturn(_ candidates: [Candidate]) -> ReturnOutcome {
         candidates.contains(where: \.showsPlaceholder) ? .blocked : .unneeded
     }
 }
 
-// The registry reserves model IDs before native creation and records the exact
-// incoming page identity before adoption. A token preserves both claims while
-// the native engine transfers the same live page between physical windows.
 @MainActor
 final class NativePageOwnership {
     private var tabs: [UUID: UUID] = [:]
@@ -617,7 +529,6 @@ final class NativePageOwnership {
 
     func canUse(_ tab: UUID, owner: UUID) -> Bool { collectionTransfers[tab] == nil && (tabs[tab] == nil || tabs[tab] == owner) }
     func isClaimed(_ tab: UUID) -> Bool { tabs[tab] != nil }
-    /// The window claiming the tab, without collecting its pages as `claimSnapshot` does.
     func owner(of tab: UUID) -> UUID? { tabs[tab] }
     func canAdopt(_ page: String) -> Bool { pages[page] == nil }
 
@@ -634,8 +545,6 @@ final class NativePageOwnership {
     func release(_ tab: UUID, owner: UUID) {
         guard tabs[tab] == owner else { return }
         transfers.removeValue(forKey: tab)
-        // A real page close may arrive during a collection transfer. Keep its
-        // reservation until the transaction explicitly accounts for that close.
         tabs.removeValue(forKey: tab)
         pages = pages.filter { $0.value.owner != owner || $0.value.tab != tab }
     }

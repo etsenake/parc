@@ -1,7 +1,5 @@
 import Foundation
 
-/// Original sidebar identity, saved-parent copies and the displayed group publish
-/// together. Live pages and local documents never pass through a URL replay.
 enum OriginalSplitDrop {
     static func savedHomes(source: UUID, state: BrowserState, selection: [UUID],
                            layout: BrowserSplitLayout?, target: SplitDropTarget,
@@ -11,9 +9,6 @@ enum OriginalSplitDrop {
         return SplitMembership.savedHomeSources(joining: group.tabIDs, existing: layout, added: nil, state: state)
     }
 
-    ///
-    /// isItemBeingAdded and moveFromOriginalLocation false, so every newly
-    /// joining saved member, the dragged item included, leaves a fresh home.
     static func proposal(source: UUID, state: BrowserState, selection: [UUID],
                          layout: BrowserSplitLayout?, target: SplitDropTarget,
                          orientation: SplitOrientation, spaceID: UUID, profileID: UUID,
@@ -44,34 +39,9 @@ enum OriginalSplitDrop {
     }
 }
 
-///
-/// exactly one container: Today, a pinned root or folder, or the profile's
-///
-/// one set of widths and orientation. Parc's flat records store that container
-/// on every child, so every child of a group shares its anchor's placement.
-///
-///
-/// - Members newly joining a split that are saved (topApps or pinned, predicate
-///
-///
-///   the parent list, duplicate with copySavedURL + shouldOpen, options `0x101`,
-///
-///   SelectItemParameters `isItemBeingAdded` (+0x4a) exempts the item a creation
-///   just added; `moveFromOriginalLocation` (+0x4b) would skip every copy, and
-///   no split route in this model sets it.
-/// - Members of an existing split's other containers are excluded before that
-///
-/// - A new split is inserted `relative(after:)` its first ordinary (unsaved)
-///   member in display order, else `absolute(index: 0)` in the current Space's
-///
-/// - Children removed from a split move `relative(after:)` the split; with fewer
-///   than two left, every child moves after it and the split item is deleted
-///
 enum SplitMembership {
     static func isSaved(_ tab: BrowserTab) -> Bool { tab.kind == .pinned || tab.kind == .favorite }
 
-    /// The container holding a group: the profile's Favorites for a Favorite
-    /// anchor, else the anchor's Space, folder and section.
     static func container(of group: BrowserSplitLayout, in state: BrowserState) -> SidebarContainerLocation? {
         guard let anchorID = group.sidebarAnchorID ?? group.tabIDs.first, group.tabIDs.contains(anchorID),
               let anchor = state.tabs.first(where: { $0.id == anchorID && $0.archivedAt == nil }) else { return nil }
@@ -94,8 +64,6 @@ enum SplitMembership {
             && tab.kind == (container.folderID == nil ? container.section : .pinned)
     }
 
-    /// Entering a container is a parent change of the same original record;
-    /// saved/current URLs, titles, history and local document identity stay.
     static func convert(_ tab: inout BrowserTab, to container: SidebarContainerLocation) {
         if container.section == .favorite {
             tab.kind = .favorite; tab.folderID = nil; tab.spaceID = container.spaceID
@@ -105,7 +73,6 @@ enum SplitMembership {
         }
     }
 
-    /// The members that need a fresh saved home when `ids` becomes a split.
     static func savedHomeSources(joining ids: [UUID], existing: BrowserSplitLayout?, added: UUID?,
                                  state: BrowserState) -> [BrowserTab] {
         guard ids.count > 1 else { return [] }
@@ -116,9 +83,6 @@ enum SplitMembership {
         }
     }
 
-    /// Fixed fresh identities for the homes a split change needs, and the
-    /// typed-document references that prove each Note/Easel home aliases a
-    /// live document (`resolve` returns them for the typed homes). Nil refuses.
     @MainActor static func homePlan(_ homes: [BrowserTab],
                                     resolve: ([BrowserTab]) -> [UUID: SidebarDocumentReference]?)
         -> (ids: [UUID: UUID], documents: [UUID: SidebarDocumentReference])? {
@@ -138,9 +102,6 @@ enum SplitMembership {
         return home
     }
 
-    /// One membership transaction: saved homes, departures from other splits,
-    /// container entry, the group record and sidebar slots. Selection is the
-    /// caller's. `existing` is the split being extended or edited (same ID).
     static func admitting(_ group: BrowserSplitLayout, existing: BrowserSplitLayout?, added: UUID?,
                           state: BrowserState, spaceID: UUID, homeIDs: [UUID: UUID], now: Date,
                           activeTabBeforeCreationID: UUID? = nil) -> BrowserState? {
@@ -167,12 +128,10 @@ enum SplitMembership {
         let newIDs = homes.compactMap { homeIDs[$0.id] }
         guard newIDs.count == homes.count, Set(newIDs).count == newIDs.count,
               newIDs.allSatisfy({ id in !ids.contains(id) && !state.tabs.contains { $0.id == id } }) else { return nil }
-        // A joining member leaves at most one other split, visible from here.
         for id in joining {
             let parents = state.splitLayouts.filter { $0.id != existing?.id && $0.tabIDs.contains(id) }
             guard parents.count <= 1, parents.allSatisfy({ visible.contains($0) }) else { return nil }
         }
-        // The new split goes after its first ordinary member, else Today's top.
         let ordinary = existing == nil ? ids.first { id in
             state.tabs.contains { $0.id == id && $0.kind == .today && $0.folderID == nil && $0.spaceID == spaceID }
                 && !state.splitLayouts.contains { $0.tabIDs.contains(id) }
@@ -182,7 +141,6 @@ enum SplitMembership {
             guard FolderDuplicateTarget.validSource(source.savedURL), let homeID = homeIDs[source.id] else { return nil }
             let home = makeHome(of: source, id: homeID, now: now, activeTabBeforeCreationID: activeTabBeforeCreationID)
             if let parent = next.splitLayouts.firstIndex(where: { $0.id != existing?.id && $0.tabIDs.contains(source.id) }) {
-                // A saved child taken from another split leaves its home there.
                 let child = next.splitLayouts[parent].tabIDs.firstIndex(of: source.id)!
                 next.splitLayouts[parent].tabIDs[child] = homeID
                 if next.splitLayouts[parent].sidebarAnchorID == source.id { next.splitLayouts[parent].sidebarAnchorID = homeID }
@@ -197,12 +155,9 @@ enum SplitMembership {
                 items[slot] = .tab(homeID)
                 next.sidebarItemOrder[location.key] = items.map { stored($0, state: next) }
             }
-            // Parent lists may store a split's anchor rather than its group ID.
             for key in Array(next.sidebarItemOrder.keys) {
                 next.sidebarItemOrder[key] = next.sidebarItemOrder[key]?.map { $0 == .tab(source.id) ? .tab(homeID) : $0 }
             }
-            // Other Spaces' persisted return selections follow the saved home;
-            // the window that performs the split keeps the original live ID.
             for key in Array(next.selectionBySpace.keys) where key != spaceID.uuidString {
                 next.selectionBySpace[key] = next.selectionBySpace[key]?.map { $0 == source.id ? homeID : $0 }
             }
@@ -225,7 +180,6 @@ enum SplitMembership {
             }
             var result = group
             if let existing {
-                // The container keeps its slot; only a departed anchor is replaced.
                 result.spaceID = existing.spaceID
                 result.sidebarAnchorID = existing.sidebarAnchorID.flatMap { ids.contains($0) ? $0 : nil }
                     ?? ids.first { existing.tabIDs.contains($0) } ?? ids.first
@@ -249,10 +203,6 @@ enum SplitMembership {
         return next
     }
 
-    ///
-    /// keeps its slot with departing children directly after it; a split left
-    /// with fewer than two children is replaced by all of them in child order.
-    /// Groups moved to another container keep the mover's own placement.
     static func preservingSlots(before: BrowserState, after next: inout BrowserState) {
         for old in before.splitLayouts where old.tabIDs.count > 1 {
             let current = next.splitLayouts.first { $0.id == old.id }
@@ -270,9 +220,6 @@ enum SplitMembership {
         }
     }
 
-    /// Inserts the items that are currently roots of `container` at the slot
-    /// `slot` held in `before` (after its nearest surviving predecessor), or at
-    /// the top when no slot is given.
     static func place(_ items: [SidebarItemReference], atSlotOf slot: SidebarItemReference?,
                       in container: SidebarContainerLocation, before: BrowserState, after next: inout BrowserState) {
         let current = SidebarHierarchy.children(in: container, state: next)
@@ -290,13 +237,6 @@ enum SplitMembership {
         next.sidebarItemOrder[container.key] = result.map { stored($0, state: next) }
     }
 
-    /// Before this owner, Parc grouped children in place: a group could mix a
-    /// Favorite or pinned child with Today children, and the same Favorites
-    ///
-    /// one-container form without dropping a page or saved item: the group
-    /// stays where its anchor shows it; a saved child from another container
-    /// keeps a fresh home in its own slot (the existing-container branch of
-    ///
     static func normalizingLegacyContainers(_ state: BrowserState, now: Date) -> BrowserState {
         var next = state
         for group in state.splitLayouts where group.tabIDs.count > 1 {
@@ -327,12 +267,6 @@ enum SplitMembership {
         return next
     }
 
-    /// Before this owner, the same Favorite could sit in splits of several
-    /// Spaces. A Favorite belongs to one split per Profile; when restoring,
-    /// a split held in the Favorites container keeps it (so no Favorite leaves
-    /// a topApps split and the tray gains no root), then the displayed split,
-    /// then the most recently stored one. Every other split drops just that
-    /// Favorite and keeps its remaining children, its layout and appearance.
     static func resolvingSharedLegacyFavorites(_ state: BrowserState) -> BrowserState {
         var next = state
         let favorites = state.tabs.filter { $0.kind == .favorite && $0.archivedAt == nil }.map(\.id)

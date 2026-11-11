@@ -1,19 +1,9 @@
 import Foundation
 
-///
-///
-/// `SplitViewAction.onDropSidebarItem` and `beginMoveItems(configuration:maybeMoveDecision:)`.
 enum InterProfileMoveDecision: Equatable {
     case abort, proceed, alwaysProceed
 }
 
-/// One move from a single source Profile into a destination Profile.
-///
-///
-/// otherwise the remembered `shouldBypassConfirmInterProfileMoveDialog`
-/// (preference case 0x28, unregistered so false by default) skips the prompt,
-/// a nil decision asks, and Always proceeds after storing that preference.
-/// Items from several source Profiles are refused (`MoveItemsError.multipleSourceProfiles`).
 enum InterProfileMoveGate: Equatable {
     case proceed(remembersChoice: Bool)
     case confirm
@@ -32,17 +22,10 @@ enum InterProfileMoveGate: Equatable {
     }
 }
 
-///
-///
-///
-///
-///
-///
 struct InterProfileMovePrompt: Equatable {
     static let confirmTitle = "Move it"
     static let cancelTitle = "Cancel"
     static let suppressionTitle = "Don’t ask again"
-    ///
     static let dialogWidth: Double = 455
 
     let destinationName: String
@@ -64,8 +47,6 @@ struct InterProfileMovePrompt: Equatable {
             + (tabCount > 1 ? "these tabs" : "this tab") + ".\n\nThis can't be undone!"
     }
 
-    ///
-    ///
     var titleSegments: [(String, Bool)] {
         [("Move \(tabCount > 1 ? "tabs" : "tab") to ", false), (destinationName, true), ("?", false)]
     }
@@ -79,24 +60,14 @@ struct InterProfileMovePrompt: Equatable {
         return String(name.prefix(24)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 
-    ///
-    /// with the checkbox → alwaysProceed, Cancel → abort.
     static func decision(confirmed: Bool, suppressed: Bool) -> InterProfileMoveDecision {
         confirmed ? (suppressed ? .alwaysProceed : .proceed) : .abort
     }
 }
 
-///
-/// window contents in the destination Profile; neither `maybeMove` nor
-///
-/// carry only document IDs, so local documents move with their items.
 enum InterProfileMove {
     static func admits(_ tab: BrowserTab) -> Bool { tab.archivedAt == nil }
 
-    /// Local documents the moved tabs reference. Parc stores them per Profile,
-    /// so each moves into the destination store with its tabs. A document that
-    /// a record left in another Profile still references (a saved home or
-    /// another alias) cannot be in both stores; that move refuses.
     static func documents(moving ids: Set<UUID>, after state: BrowserState) -> [InternalPage]? {
         var pages: [InternalPage] = []
         for id in ids.sorted(by: { $0.uuidString < $1.uuidString }) {
@@ -115,10 +86,6 @@ enum InterProfileMove {
         return pages
     }
 
-    /// Placement and saved metadata bind a gesture; live navigation can still
-    /// change the original's URL/title, which then reloads in the destination.
-    /// A Today tab's saved fields follow its navigation (`updateTab`), so only
-    /// a saved item's saved destination binds.
     static func samePlacement(_ tab: BrowserTab, _ original: BrowserTab) -> Bool {
         guard tab.id == original.id && tab.spaceID == original.spaceID && tab.profileID == original.profileID
             && tab.kind == original.kind && tab.folderID == original.folderID && tab.archivedAt == original.archivedAt
@@ -126,14 +93,12 @@ enum InterProfileMove {
         return tab.kind == .today || (tab.savedURL == original.savedURL && tab.savedTitle == original.savedTitle)
     }
 
-    /// Valid source Profile for every listed original tab, or nil.
     static func sourceProfile(of ids: [UUID], in state: BrowserState) -> UUID? {
         let profiles = Set(ids.compactMap { id in state.tabs.first { $0.id == id }?.profileID })
         guard profiles.count == 1, ids.allSatisfy({ id in state.tabs.contains { $0.id == id } }) else { return nil }
         return profiles.first
     }
 
-    /// Profile eligibility shared by every cross-Profile route.
     static func profilesAvailable(_ source: UUID, _ destination: UUID, in state: BrowserState) -> Bool {
         source != destination
             && state.profiles.contains { $0.id == source } && state.profiles.contains { $0.id == destination }
@@ -141,13 +106,6 @@ enum InterProfileMove {
     }
 }
 
-///
-/// drop target is not Profile- or window-gated; another Profile first passes
-/// the inter-Profile decision. The reducer then runs the same drop
-///
-/// this window's split, and a saved (pinned) original leaves a fresh
-///
-/// This is a pure proposal over the shared state.
 enum ForeignSplitDrop {
     struct Request: Equatable {
         let source: BrowserTab
@@ -172,8 +130,6 @@ enum ForeignSplitDrop {
               state.spaces.contains(where: { $0.id == request.spaceID && $0.profileID == request.profileID }),
               !request.selection.contains(tab.id),
               SidebarHierarchySnapshot(state: state, spaceID: tab.spaceID, profileID: tab.profileID) != nil else { return nil }
-        // Two windows showing the same Space: the ordinary drop owns the
-        // source's saved home in place.
         var homes = request.destinationHomeIDs
         var staged = state
         if tab.spaceID == request.spaceID {
@@ -191,14 +147,11 @@ enum ForeignSplitDrop {
             savedHomeIDs: homes, creation: creation)
     }
 
-    /// Destination members that a new group gives fresh saved homes.
     static func destinationHomes(_ request: Request, state: BrowserState) -> [BrowserTab]? {
         OriginalSplitDrop.savedHomes(source: request.source.id, state: state, selection: request.selection,
             layout: request.layout, target: request.target, orientation: request.orientation, spaceID: request.spaceID)
     }
 
-    /// Source-side half of the move: the original leaves its Space, its split
-    /// and its parent list; a saved original leaves its fresh home in place.
     private static func detach(_ tab: BrowserTab, homeID: UUID, spaceID destination: UUID, profileID: UUID,
                                state: BrowserState, now: Date) -> BrowserState? {
         guard !state.tabs.contains(where: { $0.id == homeID }) else { return nil }
@@ -235,8 +188,6 @@ enum ForeignSplitDrop {
                 var kept = parent
                 kept.tabIDs.remove(at: child); kept.widthFactors.remove(at: child)
                 if kept.tabIDs.count < 2 {
-                    // A dissolved container leaves its survivor at the group's
-                    // original anchor slot rather than an unrelated position.
                     next.splitLayouts.remove(at: index)
                     if parent.sidebarAnchorID == tab.id, let survivor = kept.tabIDs.first {
                         for key in next.sidebarItemOrder.keys where key.hasPrefix(prefix) {
@@ -277,9 +228,6 @@ enum ForeignSplitDrop {
 }
 
 
-/// One inter-Profile collection can contain several documents sharing assets.
-/// Reverse every document first; any failed reversal retains the destination
-/// assets needed by that document. Cleanup is safe only for a complete reversal.
 @MainActor
 final class LocalDocumentRelocationRollback {
     private var reversals: [() -> Bool] = []

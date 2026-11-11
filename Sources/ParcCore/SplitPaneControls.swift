@@ -1,6 +1,5 @@
 import Foundation
 
-/// The original pane menu carries an operation and its original content ID.
 enum SplitPaneOperation: Int, CaseIterable {
     case movePrevious, moveNext, addBefore, addAfter, addAbove, addBelow, separate, copyLink, share, flip
 
@@ -15,9 +14,6 @@ enum SplitPaneOperation: Int, CaseIterable {
     }
 }
 
-/// A blank pane is window presentation, not a durable about:blank tab. This
-/// receipt survives its command bar; only a chosen original item or classified
-/// native navigation can materialize it.
 struct SplitPaneInsertion: Equatable {
     let spaceID: UUID
     let profileID: UUID
@@ -57,10 +53,6 @@ struct SplitPaneInsertion: Equatable {
             } }
     }
 
-    ///
-    /// content added without a factor `1 / contentPanes.count` after insertion
-    ///
-    /// `1 / count` before normalizing yields exactly that share.
     var previewFactors: [Double] {
         var factors = layout?.widthFactors ?? [1]
         factors.insert(1 / Double(selection.count), at: index)
@@ -94,7 +86,6 @@ struct SplitPaneInsertion: Equatable {
             url: address, title: title, kind: .today, createdAt: now, lastAccessed: now,
             savedURL: address, savedTitle: title, referrerID: receipt?.referrerID,
             activeTabBeforeCreationID: receipt?.activeTabBeforeCreationID))
-        //
         SidebarHierarchy.placingCreatedTab(tabID, insertion: .automatic, in: &next)
         return next
     }

@@ -1,22 +1,12 @@
 import Foundation
 
-/// Open-bar result rebuild skip. Everyday refresh/reconcile ticks that leave
-/// the query and result identity unchanged must not rebuild Result rows or call
-/// `reloadData`/`layoutContents`. Membership inputs are fingerprinted cheaply;
-/// closed-bar snapshot gating stays in `CommandBarReconcileInputs`.
 enum CommandBarOpenResultsSkip {
-    /// Distinct presentation while the sidebar-anchored bar is in browse mode.
     static let sidebarBrowsingToken = "sidebar-browsing"
 
-    /// True no-op: identical open-bar presentation fingerprint, including an
-    /// identical empty or sidebar-browsing token. A changed query, selection,
-    /// or tab/history membership bit must not skip.
     static func shouldSkip(previous: String?, next: String) -> Bool {
         previous == next
     }
 
-    /// A tab row also shows its custom title and its Switch to Tab caption,
-    /// which follows the active Space and split membership.
     static func tabToken(id: UUID, title: String, url: String, archived: Bool,
                          customTitle: String? = nil, caption: String = "") -> String {
         [id.uuidString, title, url, archived ? "1" : "0", customTitle ?? "", caption].joined(separator: "\u{1f}")
@@ -38,8 +28,6 @@ enum CommandBarOpenResultsSkip {
         [id, name, detail].joined(separator: "\u{1f}")
     }
 
-    /// Fingerprint of the open-bar query plus every input that feeds result
-    /// identity (tab/history membership, natives, commands, selection, scope).
     static func fingerprint(
         query: String,
         actionsScope: Bool,
@@ -74,9 +62,6 @@ enum CommandBarOpenResultsSkip {
             "scope:\(scopeName)",
             "sel:\(selectionID ?? "-")",
             "err:\(nativeError ?? "-")",
-            // Same-looking publications carry new request/scope/deletion
-            // objects. Rebuild their payloads, then let the row diff retain
-            // unchanged views. Ordinary chrome refreshes keep this revision.
             "publication:\(nativeRevision)",
             "fav:\(favoriteActionID ?? "-")|\(favoriteEligible ? "1" : "0")",
             "ren:\(favoriteRenameID ?? "-")|\(renameEligible ? "1" : "0")",

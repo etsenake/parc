@@ -1,13 +1,9 @@
 import Foundation
 
-/// Sparkle reports byte increments, not a running total. Keep the count and
-/// its presentation together so the label and bar describe the same download.
 struct SoftwareUpdateDownloadProgress {
     struct Display {
         let text: String
         let fraction: Double?
-        /// Reserve the completed count's width, so changing digits grow left
-        /// without moving the decimal point or the "of …" suffix.
         let widthTemplate: String?
     }
 
@@ -15,8 +11,6 @@ struct SoftwareUpdateDownloadProgress {
     private(set) var expectedLength: UInt64 = 0
 
     mutating func expect(_ length: UInt64) {
-        // Sparkle can report the size more than once, including invalid sizes.
-        // An unknown size must not erase one we already know.
         if length > 0 { expectedLength = length }
     }
 
@@ -31,8 +25,6 @@ struct SoftwareUpdateDownloadProgress {
         formatter.countStyle = .file
         formatter.allowsNonnumericFormatting = false
         formatter.zeroPadsFractionDigits = true
-        // Use the total's unit throughout the transfer. Otherwise the count
-        // switches between KB and MB and drops trailing zeroes as it grows.
         switch total {
         case 0..<1_000: formatter.allowedUnits = .useBytes
         case 1_000..<1_000_000: formatter.allowedUnits = .useKB

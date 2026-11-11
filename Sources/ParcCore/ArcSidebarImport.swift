@@ -1,19 +1,11 @@
 import Foundation
 
-///
-/// and Today trees, and each Profile's Favorites (`topApps`). Notes, easels
-/// and links Parc cannot open are left behind. Field names and shapes follow
-///
-/// skipped rather than failing the whole file.
 struct ArcSidebarImport: Equatable {
-    ///
-    /// directory name under "User Data".
     enum ProfileKey: Hashable { case standard; case custom(directory: String) }
 
     struct Tab: Equatable {
         let title: String
         let url: String
-        ///
         var customTitle: String? = nil
         var isMuted = false
     }
@@ -27,22 +19,16 @@ struct ArcSidebarImport: Equatable {
     struct Space: Equatable {
         let title: String?
         let icon: SidebarGroupIcon?
-        ///
         let theme: SpaceTheme?
         let profile: ProfileKey
         let pinned: [Item]
-        ///
         var id: String? = nil
-        ///
         var today: [Item] = []
     }
 
     let spaces: [Space]
     let favorites: [ProfileKey: [Item]]
-    ///
-    ///
     var autoArchiveHours: [ProfileKey: Double] = [:]
-    /// Sidebar entries Parc cannot represent or that were malformed.
     let skippedItemCount: Int
 
     var profiles: [ProfileKey] {
@@ -97,8 +83,6 @@ struct ArcSidebarImport: Equatable {
         skippedItemCount = parser.skipped
     }
 
-    /// The `pinned` or `unpinned` entry of `containerIDs` (label, id pairs in
-    /// either order), else the `{"pinned":{}}` entry of `newContainerIDs`.
     private static func containerID(_ space: [String: Any], _ section: String) -> String? {
         for key in ["containerIDs", "newContainerIDs"] {
             for (label, id) in Parser.pairs(space[key]) {
@@ -109,9 +93,6 @@ struct ArcSidebarImport: Equatable {
         return nil
     }
 
-    ///
-    ///
-    /// A Profile with neither keeps Parc's setting.
     static func autoArchiveHours(preferences: [String: Any], profiles: [ProfileKey]) -> [ProfileKey: Double] {
         func hours(_ value: Any?) -> Double? {
             let name = value as? String ?? (value as? [String: Any]).flatMap { $0.count == 1 ? $0.keys.first : nil }
@@ -144,7 +125,6 @@ struct ArcSidebarImport: Equatable {
     static func profile(_ value: Any?) -> ProfileKey? {
         guard let value = value as? [String: Any] else { return nil }
         if value["default"] != nil { return .standard }
-        // The directory is joined under the source's "User Data" folder.
         guard let id = (value["custom"] as? [String: Any])?["_0"] as? [String: Any],
               let directory = id["directoryBasename"] as? String, !directory.isEmpty, directory.utf8.count <= 255,
               !directory.hasPrefix("."), !directory.contains("/"),
@@ -152,8 +132,6 @@ struct ArcSidebarImport: Equatable {
         return profileKey(directory: directory)
     }
 
-    ///
-    ///
     static func icon(_ value: Any?) -> SidebarGroupIcon? {
         guard let value = value as? [String: Any] else { return nil }
         let icon: SidebarGroupIcon?
@@ -167,13 +145,6 @@ struct ArcSidebarImport: Equatable {
         return icon?.isValid == true ? icon : nil
     }
 
-    ///
-    ///
-    ///
-    /// gradient, and three as a two-color gradient whose overlay is
-    /// `[clear, third]`. Its translucency is always light and the content
-    ///
-    /// automatic appearance computes, so neither is carried over.
     static func theme(_ value: Any) -> SpaceTheme? {
         if value is NSNull { return SpaceTheme() }
         guard let background = value as? [String: Any],
@@ -212,8 +183,6 @@ struct ArcSidebarImport: Equatable {
         return theme.isValid ? theme : nil
     }
 
-    ///
-    /// others are converted exactly to Display P3 and clamped to its gamut.
     static func color(_ value: Any?) -> ThemeColor? {
         guard let value = value as? [String: Any],
               let red = value["red"] as? Double, let green = value["green"] as? Double,
@@ -228,7 +197,6 @@ struct ArcSidebarImport: Equatable {
             return m <= 0.0031308 ? m * 12.92 : 1.055 * pow(m, 1 / 2.4) - 0.055
         }
         let r = linear(red), g = linear(green), b = linear(blue)
-        // Linear sRGB to linear Display P3, both D65.
         return ThemeColor(red: encoded(0.8224619687 * r + 0.1775380313 * g),
                           green: encoded(0.0331941989 * r + 0.9668058011 * g),
                           blue: encoded(0.0170826307 * r + 0.0723974407 * g + 0.9105199286 * b),
@@ -248,13 +216,11 @@ struct ArcSidebarImport: Equatable {
             }
         }
 
-        ///
         static func pairs(_ value: Any?) -> [(Any, Any)] {
             guard let array = value as? [Any] else { return [] }
             return stride(from: 0, to: array.count - 1, by: 2).map { (array[$0], array[$0 + 1]) }
         }
 
-        /// Each item is placed once, so a cycle or shared child cannot repeat.
         private mutating func take(_ id: Any) -> (id: String, item: [String: Any])? {
             guard let id = id as? String, let item = items[id], used.insert(id).inserted else { skipped += 1; return nil }
             return (id, item)
@@ -289,7 +255,6 @@ struct ArcSidebarImport: Equatable {
                     if Self.data(taken.item, "tab") == nil { drop(taken.item, depth: depth + 1) }
                     else if let tab = tab(taken.item) { tabs.append((taken.id, tab)) }
                 }
-                // Parc's splits hold two to four pages; the rest stay as tabs.
                 let members = Array(tabs.prefix(4)), rest = tabs.dropFirst(4).map { Item.tab($0.tab) }
                 guard members.count > 1 else { return members.map { .tab($0.tab) } }
                 var weights: [String: Double] = [:]
@@ -307,7 +272,6 @@ struct ArcSidebarImport: Equatable {
             return []
         }
 
-        /// Counts an item that can't come over together with everything under it.
         private mutating func drop(_ item: [String: Any], depth: Int) {
             skipped += 1
             guard depth < ArcSidebarImport.maximumDepth else { return }
@@ -316,13 +280,10 @@ struct ArcSidebarImport: Equatable {
             }
         }
 
-        /// The same public-URL and scheme rules as a bookmark import.
         private mutating func tab(_ item: [String: Any]) -> Tab? {
             let tab = Self.data(item, "tab") ?? [:]
             let saved = tab["savedURL"] as? String ?? ""
             let value = BrowserInternalURL.publicString(saved)
-            //
-            //
             guard let url = URL(string: value), let scheme = url.scheme?.lowercased(),
                   ["https", "http", "file"].contains(scheme) || (scheme == "parc" && saved.lowercased().hasPrefix("chrome://")),
                   scheme == "file" || url.host?.isEmpty == false else { skipped += 1; return nil }
@@ -340,8 +301,6 @@ extension ArcSidebarImport {
         var destinations: [ProfileKey: BrowserImportDestination]
     }
 
-    /// The pure state transform behind `BrowserStore.importArcSidebar`. A
-    ///
     func inserting(into state: BrowserState, profiles: [(key: ProfileKey, name: String)],
                    standardProfileID: UUID, target: (key: ProfileKey, profileID: UUID)? = nil, at date: Date) throws -> Result {
         func live(_ id: UUID) -> Bool {
@@ -350,7 +309,6 @@ extension ArcSidebarImport {
         guard live(standardProfileID), target.map({ live($0.profileID) }) != false else { throw CocoaError(.userCancelled) }
         var next = state
         var mapped: [ProfileKey: UUID] = [:], names: [ProfileKey: String] = [:]
-        //
         for (key, rawName) in profiles where mapped[key] == nil {
             let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
             names[key] = name.isEmpty ? "Imported Profile" : name
@@ -386,7 +344,6 @@ extension ArcSidebarImport {
                 savedURL: tab.url, savedTitle: tab.title, customTitle: tab.customTitle, isMuted: tab.isMuted))
             return id
         }
-        /// A split is ordered by its first page, as Parc stores split anchors.
         func makeSplit(title: String?, icon: SidebarGroupIcon?, tabs: [Tab], orientation: SplitOrientation,
                        factors: [Double], spaceID: UUID, profileID: UUID, kind: TabKind, folderID: UUID?) -> SidebarItemReference {
             let ids = tabs.map { makeTab($0, spaceID: spaceID, profileID: profileID, kind: kind, folderID: folderID) }
@@ -414,7 +371,6 @@ extension ArcSidebarImport {
             next.sidebarItemOrder[location.key] = order
         }
 
-        /// Today holds no folders in Parc; a folder's pages keep their place.
         func insertToday(_ items: [Item], spaceID: UUID, profileID: UUID) {
             let location = SidebarContainerLocation(spaceID: spaceID, folderID: nil, section: .today)
             var order = next.sidebarItemOrder[location.key] ?? []
@@ -442,8 +398,6 @@ extension ArcSidebarImport {
                 }
             }.sorted()
         }
-        ///
-        /// still exists. Imports that predate the record match by name and pinned pages.
         func alreadyImported(_ space: Space, profileID: UUID) -> BrowserSpace? {
             if let arcID = space.id, let spaceID = state.arcImportedSpaces[arcID] {
                 return state.spaces.first { $0.id == spaceID && $0.profileID == profileID }
@@ -471,8 +425,6 @@ extension ArcSidebarImport {
             insertToday(space.today, spaceID: id, profileID: profileID)
             if let arcID = space.id { next.arcImportedSpaces[arcID] = id }
         }
-        // As a Settings change does: a shared value becomes the default for new
-        // Profiles, and any change disarms default-interval education.
         var archiveChanged = false
         for (key, hours) in autoArchiveHours {
             guard let profileID = mapped[key], let index = next.profiles.firstIndex(where: { $0.id == profileID }),

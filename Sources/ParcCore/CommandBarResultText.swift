@@ -1,14 +1,6 @@
 import Foundation
 
-///
-///
 enum CommandBarResultText {
-    ///
-    /// trailing "?" and then one trailing "/" dropped, then "https://" or else
-    /// "http://", then a leading "www.", and the remainder lowercased. Other
-    /// schemes keep their prefix. Punycode hosts and percent escapes stay as
-    /// written, so Chromium's spoofing protections hold. Parc keeps a file
-    /// path's case and caps a data URL before it is measured.
     static func displayURL(_ url: String) -> String {
         var text = Substring(url.hasPrefix("data:") ? String(url.prefix(dataURLLimit)) : url)
         if text.hasSuffix("?") { text = text.dropLast() }
@@ -22,41 +14,28 @@ enum CommandBarResultText {
         return url.hasPrefix("file:") ? String(text) : text.lowercased()
     }
 
-    /// A data URL is cut to this many characters before any row measures it.
     static let dataURLLimit = 256
 
-    ///
-    ///
-    ///
     static func urlSubtitle(_ url: String) -> String? {
         let display = displayURL(url)
         return display.isEmpty ? nil : "— " + display
     }
 
-    /// The subtitle as VoiceOver reads it: the URL itself, without the dash.
     static func spokenSubtitle(_ subtitle: String?) -> String {
         guard let subtitle else { return "" }
         return subtitle.hasPrefix("— ") ? String(subtitle.dropFirst(2)) : subtitle
     }
 
-    ///
-    /// history or bookmark match's description when it is non-empty and its
-    ///
     static func historyTitle(pageTitle: String, url: String) -> String {
         pageTitle.isEmpty ? displayURL(url) : pageTitle
     }
 
-    /// An open tab's title: its custom title, else its page title, else the
-    ///
     static func tabTitle(customTitle: String?, pageTitle: String, url: String) -> String {
         if let customTitle, !customTitle.isEmpty { return customTitle }
         if !pageTitle.isEmpty { return pageTitle }
         return BrowserState.isBlankPage(url) ? "New Tab" : displayURL(url)
     }
 
-    ///
-    /// Space's name, else Switch to Split View for a split member, else Switch
-    /// to Tab. Favorites belong to no single Space.
     struct TabCaption: Equatable {
         let text: String
         let spoken: String
@@ -70,28 +49,14 @@ enum CommandBarResultText {
         return isInSplit ? TabCaption(text: "Switch to Split View", spoken: "Switch to Split View") : .switchToTab
     }
 
-    ///
-    ///
     enum NativeKind: Equatable {
-        /// Query only, no description (search-what-you-typed, suggestions,
-        /// entity suggestions, search history, other engines).
         case search
-        /// The page title, else contents, then the URL subtitle.
         case history
-        /// Contents, then the URL subtitle.
         case navSuggestion
-        /// Contents and nothing else.
         case typedURL
-        /// The typed input, then "= answer".
         case calculator(answer: String)
     }
 
-    ///
-    ///
-    /// never become candidates. A calculator match survives only when its
-    /// contents read "<input> = <answer>" and the input is not one word without
-    /// a digit. Without a match type, a search keeps its query, a description
-    /// marks a history match and anything else is typed input.
     static func nativeKind(matchType: String?, isSearch: Bool, contents: String, description: String, input: String) -> NativeKind? {
         guard let matchType else {
             return isSearch ? .search : description.isEmpty ? .typedURL : .history
@@ -124,19 +89,9 @@ enum CommandBarResultText {
         let title: String
         let subtitle: String?
         let symbol: String
-        /// Search glyphs stay off the selected row's icon tile.
         let isSearch: Bool
     }
 
-    /// One Chromium match as a row. Only history, bookmark and history-title
-    ///
-    /// mask `0x430`: indices 4, 5 and 10); navigation suggestions keep their
-    /// contents. History and navigation suggestions add the URL subtitle
-    ///
-    ///
-    /// own navigate/search-what-you-typed candidates; Parc retains the native
-    /// request instead, with the same presentation fallback as an older engine.
-    /// Dropping it would silently promote a different destination or search.
     static func nativeRow(matchType: String?, isSearch: Bool, contents: String, description: String,
                           url: String, input: String, preserveDefault: Bool = false) -> NativeRow? {
         let shown = contents.isEmpty ? displayURL(url) : contents
@@ -152,7 +107,6 @@ enum CommandBarResultText {
         case .typedURL:
             return NativeRow(title: shown, subtitle: nil, symbol: "globe", isSearch: false)
         case .calculator(let answer):
-            //
             return NativeRow(title: input, subtitle: "= " + answer, symbol: "plus.forwardslash.minus", isSearch: true)
         case nil:
             return nil

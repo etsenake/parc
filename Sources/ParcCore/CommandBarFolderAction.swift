@@ -1,7 +1,5 @@
 import Foundation
 
-/// The command retains one ordinary folder's original Space/profile and parent
-/// path. A moved/replaced folder cannot retarget a highlighted command.
 struct CommandBarFolderAction: Equatable, Identifiable {
     let folderID: UUID
     let reveal: SidebarItemReveal
@@ -26,8 +24,6 @@ struct CommandBarFolderAction: Equatable, Identifiable {
     }
 
     static func snapshot(state: BrowserState, profileID: UUID) -> [Self] {
-        // Follow actual mixed sidebar order, including descendants of collapsed
-        // folders. Same-profile Spaces are the bounded local ownership scope.
         var result: [Self] = [], seen = Set<UUID>()
         for space in state.spaces where space.profileID == profileID {
             func visit(_ parent: UUID?) {
@@ -42,8 +38,6 @@ struct CommandBarFolderAction: Equatable, Identifiable {
         return result
     }
 
-    /// Word matching/name-prefix ordering are explicit local adaptations. No
-    /// synthetic Type Travel scope or URL navigation is inferred from this row.
     static func matching(_ actions: [Self], query: String) -> [Self] {
         let query = normalized(query).trimmingCharacters(in: .whitespacesAndNewlines)
         let words = query.split(whereSeparator: \.isWhitespace)

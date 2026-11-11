@@ -1,7 +1,6 @@
 import Foundation
 
 enum EaselTextEditing {
-    //
     static let defaultText = "Start typing to enter text"
 
     static func isEmpty(_ item: EaselItem) -> Bool {
@@ -9,8 +8,6 @@ enum EaselTextEditing {
     }
 }
 
-// Transient, window-owned selection and geometry. Durable edits still pass
-// through the original document's shared EaselSession transaction.
 enum EaselCanvasSelection {
     enum Operation { case replace, add, subtract }
 
@@ -33,8 +30,6 @@ enum EaselCanvasSelection {
     }
 }
 
-//
-// Case order matches the recovered locations; Parc's canvas uses a top-left origin.
 enum EaselResizeHandle: Int, CaseIterable {
     case topLeft, topRight, bottomLeft, bottomRight, top, left, bottom, right
 
@@ -61,8 +56,6 @@ enum EaselResizeHandle: Int, CaseIterable {
     }
 }
 
-// Arrow payloads carry two original endpoints. They are not frame corners in
-// Parc's point representation, so native handles target the rendered points.
 enum EaselArrowEndpoint: CaseIterable {
     case start, end
     func index(in item: EaselItem) -> Int { self == .start ? 0 : item.points.count - 1 }
@@ -78,8 +71,6 @@ enum EaselArrowEndpoint: CaseIterable {
     }
 }
 
-// Centering is independently owned on each axis by the original drag session.
-// Live Option adds both axes without discarding the captured guide anchors.
 struct EaselResizeCentering: OptionSet {
     let rawValue: Int
     static let horizontal = Self(rawValue: 1)
@@ -108,8 +99,6 @@ struct EaselGeometryEdit {
     }
 
     func translated(x: Double, y: Double) -> [EaselItem] {
-        // Clamp the group once: independently clamping each object changes the
-        // spacing between original selected objects at the canvas boundary.
         guard x.isFinite, y.isFinite else { return originals }
         let dx = max(-(originals.map { $0.frame.x }.min() ?? 0), x)
         let dy = max(-(originals.map { $0.frame.y }.min() ?? 0), y)
@@ -156,15 +145,11 @@ struct EaselGeometryEdit {
         if handle.movesBottom { bottom += dy; if centering.contains(.vertical) { top -= dy } }
         let target = EaselRect(x: min(left, right), y: min(top, bottom),
                                width: abs(right - left), height: abs(bottom - top))
-        //
-        // option. Do not substitute the sign of the centered output extent.
         let flipX = original.width < (handle.movesLeft ? dx : -dx)
         let flipY = original.height < (handle.movesTop ? dy : -dy)
         return (target, flipX, flipY)
     }
 
-    // AspectRatioControlPoints applies its policy after the ordinary frame
-    // proposal, then maps the originals again without the frame crossing flags.
     func resizedPreservingAspect(using handle: EaselResizeHandle, x: Double, y: Double,
                                   centering: EaselResizeCentering) -> [EaselItem]? {
         guard let plain = resizingFrame(using: handle, x: x, y: y, centering: centering) else { return nil }
@@ -173,8 +158,6 @@ struct EaselGeometryEdit {
         guard ratio.isFinite, ratio > 0 else { return nil }
         let target: EaselRect
         if handle.isCorner && centering.isEmpty {
-            // Orthogonal projection onto the original-ratio diagonal through
-            // the opposite corner, not max-delta or nearest-axis scaling.
             let fixed = EaselPoint(x: handle.movesLeft ? r.x + r.width : r.x,
                                    y: handle.movesTop ? r.y + r.height : r.y)
             let moving = handle.point(in: r)
@@ -184,10 +167,6 @@ struct EaselGeometryEdit {
             target = .init(x: min(fixed.x, end.x), y: min(fixed.y, end.y),
                            width: abs(end.x - fixed.x), height: abs(end.y - fixed.y))
         } else {
-            // Horizontal edges and centered corners derive height from width;
-            // vertical edges derive width from height. Edges keep the proposed
-            // midpoint. A corner with only one centered axis fixes the other
-            // axis's opposite side, as in the original center helper.
             let width = handle == .top || handle == .bottom ? r.height * ratio : r.width
             let height = width / ratio
             var midX = r.x + r.width / 2, midY = r.y + r.height / 2
@@ -205,8 +184,6 @@ struct EaselGeometryEdit {
     }
 
     func preservesAspect(shift: Bool, command: Bool) -> Bool {
-        // Single shapes/text supply their own plain frame controls. The generic
-        // group and image/card owners supply AspectRatioControlPoints.
         let intrinsic = originals.contains { $0.kind == .image || $0.kind == .webCard || $0.kind == .link }
         return !command && (intrinsic || (shift && originals.count > 1))
     }
@@ -218,9 +195,6 @@ struct EaselGeometryEdit {
         absolute[endpoint.index(in: next)] = .init(x: first.x + x, y: first.y + y)
         let minX = absolute.map(\.x).min()!, minY = absolute.map(\.y).min()!
         let maxX = absolute.map(\.x).max()!, maxY = absolute.map(\.y).max()!
-        // The original normalized payload follows crossing through a flipped
-        // frame. Rebase actual points instead: this preserves both endpoint
-        // identities and the stationary endpoint exactly, including flat lines.
         next.frame = .init(x: minX, y: minY, width: max(1, maxX - minX), height: max(1, maxY - minY))
         next.points = absolute.map { .init(x: $0.x - minX, y: $0.y - minY) }
         return Self.validGeometry([next]) ? [next] : nil
@@ -237,19 +211,12 @@ struct EaselGeometryEdit {
             next.frame = EaselRect(x: target.x + (flipX ? target.width - relativeX - width : relativeX),
                                    y: target.y + (flipY ? target.height - relativeY - height : relativeY),
                                    width: width, height: height)
-            //
-            // Parc stores local points, so scale them with the same transform.
-            // Other payloads, including arrow endpoints, are not mirrored by
-            //
             next.points = item.points.map { point in
                 EaselPoint(x: (item.kind == .freehand && flipX ? item.frame.width - point.x : point.x) * scaleX,
                            y: (item.kind == .freehand && flipY ? item.frame.height - point.y : point.y) * scaleY)
             }
             return next
         }
-        // The durable point model requires every dimension >= 1. Refuse the
-        // whole proposal at singular/unsafe geometry rather than distort one
-        // object or publish a partial group; crossing can resume from originals.
         return Self.validGeometry(proposed) ? proposed : nil
     }
     private static func validGeometry(_ proposed: [EaselItem]) -> Bool {
@@ -268,16 +235,12 @@ struct EaselGeometryEdit {
         var next = document
         for index in next.items.indices {
             guard let change = changes[next.items[index].id] else { continue }
-            // Keep current text, styling, assets and z-order, including updates
-            // made in another window while this original geometry was moving.
             next.items[index].frame = change.frame; next.items[index].points = change.points
         }
         return next
     }
 }
 
-// Context commands retain the exact original objects rather than consulting a
-// later selection when native menu tracking returns.
 struct EaselObjectCommand {
     let documentID: UUID
     let originals: [EaselItem]
@@ -302,8 +265,6 @@ struct EaselObjectCommand {
         guard maximum <= Int.max - originals.count else { return nil }
         return originals.enumerated().map { index, item in
             var copy = item; copy.id = UUID()
-            //
-            // own normalized coordinate model. Retain the existing 24pt offset.
             copy.frame.x += 24; copy.frame.y += 24
             copy.zIndex = maximum + index + 1; copy.movedToFrontAt = nil
             return copy
@@ -311,8 +272,6 @@ struct EaselObjectCommand {
     }
 }
 
-//
-// uses the same 30 screen-point minimum target and round stroked-path hit area.
 enum EaselContentHitTest {
     static func contains(_ point: EaselPoint, item: EaselItem, selected: Bool, scale: Double = 1) -> Bool {
         guard scale.isFinite, scale > 0, point.x.isFinite, point.y.isFinite else { return false }
@@ -340,8 +299,6 @@ enum EaselContentHitTest {
         let r = item.frame
         switch item.kind {
         case .freehand:
-            // The original marquee delegate checks stored samples, not the
-            // expanded stroke hit area used by pointer selection.
             return item.points.contains { contains(.init(x: r.x + $0.x, y: r.y + $0.y), rect: rect) }
         case .arrow:
             guard let first = item.points.first, let last = item.points.last else { return false }
@@ -371,7 +328,6 @@ enum EaselContentHitTest {
         guard item.kind == .arrow, item.points.count >= 2, let last = item.points.last else { return [] }
         let previous = item.points[item.points.count - 2], angle = atan2(last.y - previous.y, last.x - previous.x)
         let end = EaselPoint(x: item.frame.x + last.x, y: item.frame.y + last.y)
-        // Matches Parc's existing rendered arrowhead; the payload is untouched.
         return [-0.5, 0.5].map { offset in
             (.init(x: end.x - cos(angle + offset) * 16, y: end.y - sin(angle + offset) * 16), end)
         }
@@ -406,8 +362,6 @@ enum EaselAnchor: Int, CaseIterable {
     }
 }
 
-// One transient solver per original-object gesture. The immutable guide targets
-// are retired if their original geometry changes in the shared document.
 struct EaselAlignmentGuides {
     struct Segment: Equatable {
         let start: EaselPoint
@@ -420,7 +374,7 @@ struct EaselAlignmentGuides {
         let anchorSegments: [Segment]
     }
     private struct Guide {
-        let itemID: UUID? // nil is the original logical canvas, not another object.
+        let itemID: UUID?
         let frame: EaselRect
         let anchor: EaselAnchor
         let spacing: Bool
@@ -431,18 +385,13 @@ struct EaselAlignmentGuides {
     private let margin: Double
     private let canvasWidth: Double
     private let viewport: EaselRect
-    // Recomputed for each original gesture; never saved in the shared document.
     let activeAtDragBegin: Set<EaselAnchor>
     private(set) var lines: [Line] = []
     init(edit: EaselGeometryEdit, items: [EaselItem], viewport: EaselRect, canvasWidth: Double, scale: Double = 1) {
         self.canvasWidth = max(0, canvasWidth.isFinite ? canvasWidth : 0)
         margin = self.canvasWidth * 0.075
         self.viewport = viewport
-        //
-        // within each target the original guide order is preserved.
         let canvas = EaselRect(x: 0, y: 0, width: self.canvasWidth, height: 0)
-        //
-        // in this order. Its normalized margin is exactly 42 / 1000.
         let canvasGuides = self.canvasWidth > 0 ? [
             Guide(itemID: nil, frame: canvas, anchor: .left, spacing: false, offset: self.canvasWidth * 0.042),
             Guide(itemID: nil, frame: canvas, anchor: .centerX, spacing: false),
@@ -455,9 +404,6 @@ struct EaselAlignmentGuides {
                 Guide(itemID: item.id, frame: item.frame, anchor: $0, spacing: true)
             }
         }
-        // Drag begin collects guides that would leave the original union
-        // unchanged (strict 1e-6 normalized tolerance), not merely nearby
-        // targets. Command/disabled-guide suppression is a separate live path.
         let original = edit.bounds
         let proximity = margin, tolerance = self.canvasWidth * 0.000001
         let initialScale = scale.isFinite && scale > 0 ? scale : 1
@@ -505,8 +451,6 @@ struct EaselAlignmentGuides {
             let multiplier = anchor == .centerX ? 2.0 : 1.0
             var threshold = 6 * multiplier
             if let beginning = guide.translationAtSnap {
-                // Original SnapSession increases stickiness with travel on the
-                // perpendicular axis, capped at 3.5 times the admission radius.
                 let crossTravel = anchor.horizontal ? translation.y - beginning.y : translation.x - beginning.x
                 threshold *= 1 + min(abs(crossTravel) * scale / 300, 2.5)
             } else {
@@ -514,16 +458,11 @@ struct EaselAlignmentGuides {
                 if speed >= 125 * multiplier { continue }
             }
             guard abs(difference) * scale < threshold else { guides[index].translationAtSnap = nil; continue }
-            // An already aligned fixed axis still owns its guide, including
-            //
             if abs(difference) < canvasWidth * 0.000001 {
                 accepted.append(index)
                 if guides[index].translationAtSnap == nil { guides[index].translationAtSnap = translation }
                 continue
             }
-            // ArrowControlPoint inherits the false anchor-correction predicate.
-            // It may highlight exact alignment, but must not move either
-            // original endpoint to acquire a nearby guide.
             guard endpoint == nil else { guides[index].translationAtSnap = nil; continue }
             let coefficient = handle.map { Self.coefficient(anchor, handle: $0, centering: centering) } ?? 1
             guard coefficient != 0 else { guides[index].translationAtSnap = nil; continue }
@@ -541,8 +480,6 @@ struct EaselAlignmentGuides {
             x = nextX; y = nextY; result = next; accepted.append(index)
             if guides[index].translationAtSnap == nil { guides[index].translationAtSnap = translation }
         }
-        // Later guides can supersede an earlier alignment. Never display a
-        // claimed alignment that the final accepted group no longer satisfies.
         if let final = EaselGeometryEdit.bounds(of: result) {
             for index in accepted {
                 let guide = guides[index], value = Self.target(guide, scale: scale)
@@ -559,9 +496,6 @@ struct EaselAlignmentGuides {
     }
     private func highlight(anchor: EaselAnchor, coordinate: Double, moving: EaselRect,
                            target: EaselRect, scale: Double) -> Line {
-        //
-        // Its normalized 0.015 extension and 7/1000 * 1.3 center clearance
-        // become points on Parc's canvas; center ticks stay seven screen points.
         let vertical = anchor.horizontal
         let centered = anchor == .centerX || anchor == .centerY
         let clearance = centered ? canvasWidth * 0.0091 : 0
@@ -615,7 +549,6 @@ struct EaselAlignmentGuides {
         case .top: return handle.movesTop ? 1 : 0
         case .bottom: return handle.movesBottom ? 1 : 0
         case .centerX: return !centering.contains(.horizontal) && (handle.movesLeft || handle.movesRight) ? 0.5 : 0
-        //
         case .centerY: return 0
         }
     }

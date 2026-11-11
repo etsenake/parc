@@ -1,7 +1,5 @@
 import Foundation
 
-/// Captured before the command panel takes key focus. A selected collection is
-/// never replaced by whichever tab happens to be active at submission time.
 struct CommandBarFolderMoveSource: Equatable {
     let hierarchy: SidebarHierarchySnapshot
     let roots: [SidebarItemReference]
@@ -14,9 +12,6 @@ struct CommandBarFolderMoveSource: Equatable {
     init?(items: [SidebarItemReference], spaceID: UUID, profileID: UUID, state: BrowserState) {
         guard let hierarchy = SidebarHierarchySnapshot(state: state, spaceID: spaceID, profileID: profileID),
               !items.isEmpty, Set(items).count == items.count else { return nil }
-        // Favorites share their original Profile across Spaces. Project only
-        // their placement for the existing hierarchy transaction, retaining
-        // every original field (including saved home and creation identity).
         guard let projected = Self.projectingFavorites(items, spaceID: spaceID, profileID: profileID, state: state),
               let roots = SidebarHierarchy.roots(items, state: projected, spaceID: spaceID), !roots.isEmpty else { return nil }
         let ids = roots.flatMap { SidebarHierarchy.tabIDs(in: $0, state: projected, spaceID: spaceID) }
@@ -61,8 +56,6 @@ struct CommandBarFolderMoveSource: Equatable {
     }
 }
 
-///
-/// both original trees and never turns its label into a URL or a new page.
 struct CommandBarFolderMove: Equatable, Identifiable {
     let source: CommandBarFolderMoveSource
     let folder: CommandBarFolderAction
@@ -122,9 +115,6 @@ struct CommandBarFolderMove: Equatable, Identifiable {
     }
 }
 
-/// One force-open copy proposal. Fresh IDs are allocated once, while original
-/// records and their native pages remain untouched. Typed document children
-/// create fresh sidebar references to the same validated original document.
 @MainActor
 struct CommandBarFolderCopy {
     let move: CommandBarFolderMove
@@ -174,7 +164,6 @@ struct CommandBarFolderCopy {
                 let destination = SidebarContainerLocation(spaceID: spaceID, folderID: copy.id, section: .pinned)
                 var children: [SidebarItemReference] = []
                 for child in SidebarHierarchy.children(in: old, state: projected) {
-                    // The recovered list recursion supplies shouldOpen false.
                     guard let result = copyItem(child, parent: copy.id, shouldOpen: false) else { return nil }
                     children.append(result)
                 }
@@ -185,8 +174,6 @@ struct CommandBarFolderCopy {
                       let anchor = group.sidebarAnchorID, group.tabIDs.contains(anchor) else { return nil }
                 var map: [UUID: UUID] = [:]
                 for child in group.tabIDs {
-                    // Original split duplication explicitly opens its children,
-                    // including when that split is nested in a saved folder.
                     guard let copied = copyTab(child, parent: parent, shouldOpen: true) else { return nil }
                     map[child] = copied
                 }
@@ -199,8 +186,6 @@ struct CommandBarFolderCopy {
         }
         var roots: [SidebarItemReference] = []
         for (index, original) in move.source.roots.enumerated() {
-            // The real indexed adapter maps policy2 to index < 5. This is not
-            // a cap on saved copies or on the separate split-child policy.
             guard let copy = copyItem(original, parent: move.folder.folderID, shouldOpen: index < 5) else { return nil }
             roots.append(copy)
         }

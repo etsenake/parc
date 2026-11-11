@@ -1,23 +1,16 @@
 import Foundation
 
-///
-///
-/// layout on every event; the owner persists only the end result.
 struct SidebarResizeGesture {
     static let minimumWidth = 164.0
     static let maximumWidth = 500.0
-    /// Half the minimum: a live hidden preview below it, a collapse at or below it on release.
     static let collapseThreshold = 82.0
-    /// Two 8 pt insets, four 47 pt favorites and three 8 pt gaps.
     static let defaultWidth = 228.0
     static let snapBand = 14.0
     static let snapMaximumVelocity = 50.0
     static let releaseFeedbackHold: TimeInterval = 0.5
 
     enum Event: Equatable {
-        /// Pulse the indicator and perform the generic haptic.
         case snapEngaged
-        /// The generic haptic is performed only after a hold longer than 0.5 s.
         case snapReleased(haptic: Bool)
         case previewHiddenChanged(Bool)
         case breakpointChanged(Int)
@@ -34,7 +27,6 @@ struct SidebarResizeGesture {
     }
 
     let widthOnBegin: Double
-    ///
     let locked: Bool
     private let breakpoints: [Double]
     private(set) var canSnap = false
@@ -75,7 +67,6 @@ struct SidebarResizeGesture {
             timeOfSnap = now; proposed = Self.defaultWidth
             events.append(.snapEngaged)
         } else {
-            // The band arms only after the pointer has been outside it once.
             canSnap = canSnap || !near
             if let snapped = timeOfSnap {
                 timeOfSnap = nil
@@ -90,8 +81,6 @@ struct SidebarResizeGesture {
         return Change(width: proposed, widthChanged: changed, events: events)
     }
 
-    /// Cancelled and failed gestures restore the starting width. A locked
-    /// release at or below the threshold keeps that width and collapses.
     func end(_ completion: Completion, translationX: Double) -> Commit {
         switch completion {
         case .ended:
@@ -105,32 +94,15 @@ struct SidebarResizeGesture {
     }
 }
 
-///
-/// PersistedWindowState, CodableWindowData) beside the app-wide
-/// `sidebarViewPreferences` {sidebarMode, sidebarWidth} of WindowsState,
-/// PersistedWindowsState and StorableWindows (Swift field metadata). Parc's
-/// app-wide value is BrowserSettings.sidebarWidth: it seeds each new window,
-/// and a window's completed drag or reset updates that window and the
-/// app-wide value only. A reopened window takes its own saved width instead
-/// (BrowserWindowRecord).
 struct SidebarWindowWidth: Equatable {
-    /// Posted with the store as object after Parc's Settings slider (an
-    ///
-    /// then applies to every open window of that store.
     static let settingDidChange = Notification.Name("ParcSidebarWidthSettingDidChange")
 
     private(set) var width: Double
     init(lastUsed: Double, restored: Double? = nil) { width = SidebarResizeGesture.clamped(restored ?? lastUsed) }
-    /// The end of this window's drag; returns the app-wide last-used width to
-    ///
-    /// sends `sidebarResizeGestureDidComplete` with the start width after a
-    ///
-    /// untraced, so here no width changes and the last-used value stays.
     mutating func end(_ commit: SidebarResizeGesture.Commit, _ completion: SidebarResizeGesture.Completion) -> Double? {
         width = SidebarResizeGesture.clamped(commit.width)
         return completion == .ended && !commit.collapses ? width : nil
     }
-    /// The double-click reset: 228 in this window and as the last-used width.
     mutating func reset() -> Double { width = SidebarResizeGesture.defaultWidth; return width }
     mutating func applySetting(_ value: Double) { width = SidebarResizeGesture.clamped(value) }
 }

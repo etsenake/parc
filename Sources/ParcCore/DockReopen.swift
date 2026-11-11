@@ -1,7 +1,5 @@
 import Foundation
 
-///
-/// current key window. The caller supplies live window ownership and order.
 enum DockReopen {
     struct Window {
         var available: Bool

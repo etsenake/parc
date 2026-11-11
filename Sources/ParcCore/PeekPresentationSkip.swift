@@ -1,17 +1,10 @@
 import Foundation
 
-/// Peek shell presentation skip. Title/URL/loading/capture/crash/favicon ticks
-/// that leave every Peek-visible bit unchanged must not call `refresh` or the
-/// window `onUpdate` bridge. Real presentation flips still publish.
 enum PeekPresentationSkip {
-    /// True no-op: identical Peek presentation fingerprint. Nil previous never
-    /// skips; any title/URL/loading/history/capture/crash/favicon/chrome bit
-    /// change must not skip.
     static func shouldSkip(previous: String?, next: String) -> Bool {
         previous == next
     }
 
-    /// Display title `PeekController.refresh` writes onto the host.
     static func displayTitle(browserTitle: String, urlHost: String?) -> String {
         browserTitle.isEmpty ? (urlHost ?? "Peek") : browserTitle
     }
@@ -48,8 +41,6 @@ enum PeekPresentationSkip {
         return "fav:\(data.count).\(String(hash, radix: 16))"
     }
 
-    /// Fingerprint of every Peek-visible bit `refresh` / the window chrome
-    /// update path consumes for an active Peek.
     static func fingerprint(
         title: String,
         url: String,

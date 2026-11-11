@@ -1,34 +1,10 @@
 import Foundation
 
-///
-///
-///
-///
-///
-///
-///
-/// Parc folder lives in the pinned section, so a Today item's folder is made in
-/// the Space's pinned root. The folder is inserted into that parent
-///
-///
-/// child count plus −1 plus 1, the end; its ancestors are expanded
-///
-///
-///
-///
-/// folder"). It is a reusable owner for any sidebar items; the split cell menu
-/// uses it, and the tab and multi-selection menus may.
 struct SidebarFolderFromItems: Equatable {
-    ///
-    /// untitled sidebar item label).
     static let defaultName = "Untitled"
     static let undoName = "New Folder…"
 
-    /// Where one moved tab lives; titles, URLs and activity are not compared.
     struct Placement: Equatable { let id: UUID, spaceID: UUID, kind: TabKind, folderID: UUID? }
-    /// The records the change touches, compared and restored one by one: the
-    /// moved tabs' placement, the new folder's placement and the order lists
-    /// the change rewrote. Unrelated edits elsewhere keep Undo available.
     struct Parts: Equatable {
         var tabs: [Placement]
         var folder: Placement?
@@ -43,8 +19,6 @@ struct SidebarFolderFromItems: Equatable {
     let before: Parts
     let after: Parts
 
-    /// The folder and the moved items, or nil when the hierarchy changed or the
-    /// items cannot move into a folder.
     static func make(items: [SidebarItemReference], folderID: UUID, name: String = defaultName,
                      expected: SidebarHierarchySnapshot, state: BrowserState) -> (Self, BrowserState)? {
         let spaceID = expected.spaceID, profileID = expected.profileID
@@ -89,8 +63,6 @@ struct SidebarFolderFromItems: Equatable {
         return Parts(tabs: tabs, folder: folder, order: order)
     }
 
-    /// Undo restores `before` while those records still read `after`, and the
-    /// folder holds nothing else; Redo the reverse. Anything else refuses.
     func reverting(_ state: BrowserState, undo: Bool) -> BrowserState? {
         guard parts(of: state) == (undo ? after : before) else { return nil }
         if undo {
@@ -112,10 +84,6 @@ struct SidebarFolderFromItems: Equatable {
     }
 }
 
-/// Archive Other Tabs / Below / Above from a Today row or Today split: the
-/// menu's order is the Today list as the sidebar shows it (roots in order, a
-/// split's children together), and the request stays valid only while that
-/// order, the anchor and the chosen IDs are current.
 enum SidebarTodayArchive {
     static func order(in state: BrowserState, spaceID: UUID) -> [UUID] {
         SidebarHierarchy.children(in: SidebarContainerLocation(spaceID: spaceID, folderID: nil, section: .today), state: state)

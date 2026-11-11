@@ -1,7 +1,5 @@
 import Foundation
 
-/// The sidebar command input traverses original container identities as well as
-/// pages. Positional tab commands intentionally retain their selectable-only list.
 enum SidebarKeyboardNavigation {
     struct Item {
         let reference: SidebarItemReference
@@ -16,7 +14,6 @@ enum SidebarKeyboardNavigation {
         }
     }
 
-    /// `peeks` lists the items each collapsed folder still shows under it.
     static func items(state: BrowserState, spaceID: UUID, selected: [UUID],
                       focused: UUID?, peeks: [UUID: [SidebarItemReference]] = [:], available: (UUID) -> Bool) -> [Item] {
         guard let space = state.spaces.first(where: { $0.id == spaceID }),

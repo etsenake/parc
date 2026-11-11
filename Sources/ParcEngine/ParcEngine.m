@@ -1,4 +1,3 @@
-// Copyright 2026 Parc contributors.
 #import "ParcEngine.h"
 
 #include <sysexits.h>
@@ -55,7 +54,6 @@ static void PCFinishEngineTermination(void* unused) {
 }
 
 @implementation PCBrowserEngine
-// Initialization is one-shot, including a normal early exit.
 + (PCBrowserEngineStartup*)startWithFrameworkPath:(NSString*)frameworkPath
                                         cachePath:(NSString*)cachePath {
   NSCAssert(NSThread.isMainThread,
@@ -76,20 +74,12 @@ static void PCFinishEngineTermination(void* unused) {
   }
   NSMutableArray<NSString*>* arguments =
       [NSProcessInfo.processInfo.arguments mutableCopy];
-  //
-  // itself says so; for the others, ProfileImpl::ShouldRestoreOldSessionCookies
-  // follows Chromium's restore-last-session switch from the first launch.
-  // Every window Parc creates sets should_trigger_session_restore = false, so
-  // Chrome's own SessionRestore leaves Parc's windows alone.
   if (arguments.count &&
       ![PCNativeBrowserApplication
           respondsToSelector:NSSelectorFromString(@"restoresSessionCookies")] &&
       ![arguments containsObject:@"--restore-last-session"]) {
     [arguments insertObject:@"--restore-last-session" atIndex:1];
   }
-  // Chrome's ThreadProfiler samples every process's stacks unconditionally in
-  // builds without Google Chrome branding (thread_profiler_configuration.cc),
-  // and Parc never uploads the profiles. Insert before any "--" separator.
   NSString* noProfiler = @"--disable-stack-profiler";
   if (arguments.count > 0 && ![arguments containsObject:noProfiler]) {
     [arguments insertObject:noProfiler atIndex:1];
@@ -115,7 +105,6 @@ static void PCFinishEngineTermination(void* unused) {
                                     bundlePath.fileSystemRepresentation,
                                     helper.fileSystemRepresentation, &exitCode);
   }
-  // The engine entry copies argv and retains that copy through shutdown.
   for (NSUInteger index = 0; index < arguments.count; ++index) {
     free(argv[index]);
   }
@@ -159,8 +148,6 @@ static void PCFinishEngineTermination(void* unused) {
     return;
   }
   PCTerminating = YES;
-  // Defer out of the native menu/sendEvent stack. Browser unload approval
-  // is followed by genuine Browser and page drain and the engine-loop return.
   dispatch_async(dispatch_get_main_queue(), ^{
     [PCNativeBrowserApplication requestCloseAllWindows:^(BOOL approved) {
       if (!approved) {
@@ -214,8 +201,6 @@ static void PCFinishEngineTermination(void* unused) {
   BOOL _publishedLoading;
   BOOL _publishedBack;
   BOOL _publishedForward;
-  // CaptureState() allocates a fresh snapshot each read; compare published
-  // producer bits, not pointer identity. Crash snapshots are stable pointers.
   BOOL _hasPublishedCapture;
   BOOL _publishedCapturePresent;
   BOOL _publishedCaptureCamera;
@@ -229,7 +214,6 @@ static void PCFinishEngineTermination(void* unused) {
   BOOL _publishedCaptureCanStopSharing;
   BOOL _hasPublishedCrash;
   PCNativeRendererCrash* _publishedCrash;
-  // Each read returns a fresh NSColor; compare with isEqual:.
   BOOL _hasPublishedPageColor;
   NSColor* _publishedTint;
   NSColor* _publishedPageBackground;
@@ -439,8 +423,6 @@ static void PCFinishEngineTermination(void* unused) {
       PCBrowserView* view = weak;
       if (!page && view && !view->_disposed && !view->_pendingClose.count && error.code == 1 &&
           [error.domain isEqualToString:@"org.parc.independent-engine"]) {
-        // A value refused before any page existed (another Profile, a closed
-        // private context) leaves the address to load on its own.
         view->_creating = NO;
         [view ensurePage];
         return;
@@ -475,8 +457,6 @@ static void PCFinishEngineTermination(void* unused) {
       } completion:^(PCNativePage* page, NSError* error) {
         PCBrowserView* view = weak;
         if (!view) {
-          // Native validation retains no abandoned wrapper. This branch is
-          // only possible after a caller releases a successfully committed view.
           if (page) [page requestClose:^(PCNativePageCloseResult result) {}];
           completion(nil, error ?: PCEngineError(@"The embedded page owner closed."));
           return;
@@ -585,8 +565,6 @@ static void PCFinishEngineTermination(void* unused) {
   [_nativePage setZoomLevel:level];
 }
 - (BOOL)zoomPage:(NSInteger)direction {
-  // NO only for an engine without the command; a page not created yet
-  // ignores it.
   if (![PCNativePage instancesRespondToSelector:@selector(zoomPage:)]) return NO;
   if (!_disposed) [_nativePage zoomPage:direction];
   return YES;
@@ -694,7 +672,6 @@ static void PCFinishEngineTermination(void* unused) {
   }
 }
 - (void)nativePage:(PCNativePage*)page didLearnSafariIdentityForSite:(NSString*)site {
-  // Recorded even while closing: the engine already learned the site.
   if (page != _nativePage || page.observer != self || site.length == 0) return;
   id<PCBrowserViewDelegate> target = self.delegate;
   if ([target respondsToSelector:@selector(browserView:didLearnSafariIdentityForSite:profilePath:offTheRecord:)]) {
@@ -723,10 +700,6 @@ static void PCFinishEngineTermination(void* unused) {
     return;
   }
   id<PCBrowserViewDelegate> target = self.delegate;
-  // Skip capture/crash fan-out when the published value is unchanged so idle
-  // shell NotifyNativePageChanged ticks do not force chrome refresh. Real
-  // capture start/stop (producer bit change) and crash appear/clear still
-  // notify. No ParcEngine harness covers this gate.
   PCNativeCaptureState* capture = page.captureState;
   const BOOL capturePresent = capture != nil;
   const BOOL captureChanged =

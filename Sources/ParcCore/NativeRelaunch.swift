@@ -1,14 +1,12 @@
 import Foundation
 
-/// A second-process command is data for the existing shell, not a second set
-/// of engine/profile settings. Only launch destinations cross this boundary.
 struct NativeRelaunchRequest {
     enum Destination: Equatable { case url(URL), input(String) }
     let destinations: [Destination]
 
     init(arguments: [String], currentDirectory: URL) {
         var result: [Destination] = []
-        var index = 1 // argv[0] is the executable, never a document.
+        var index = 1
         var positionalOnly = false
         while index < arguments.count {
             let value = arguments[index]
@@ -31,8 +29,6 @@ struct NativeRelaunchRequest {
                 }
                 if value.hasPrefix("-") { continue }
             }
-            // Positional launch arguments must be explicit URLs or file paths.
-            // Chromium switch operands and ordinary words are not search input.
             if let url = Self.explicitURL(value, currentDirectory: currentDirectory) {
                 result.append(.url(url))
             }
@@ -42,7 +38,7 @@ struct NativeRelaunchRequest {
 
     private static func destination(_ value: String, currentDirectory: URL) -> Destination {
         if let url = explicitURL(value, currentDirectory: currentDirectory) { return .url(url) }
-        return .input(value) // Explicit --parc-open preserves the existing command-bar parser.
+        return .input(value)
     }
 
     private static func explicitURL(_ value: String, currentDirectory: URL) -> URL? {

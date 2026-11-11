@@ -1,13 +1,9 @@
 import Foundation
 
-///
-/// and discrete wheel/click transactions from a pointer gesture.
 enum SpaceThemeNoiseGesture {
     case slider, rotation, dialClick, scrollWheel, drag
 }
 
-/// Transient editor state. Gesture snapshots include the pad's coordinate range,
-/// so undo restores both the saved theme and the way its handles respond.
 final class SpaceThemeEditorState {
     private struct Snapshot: Equatable {
         var theme: SpaceTheme
@@ -68,8 +64,6 @@ final class SpaceThemeEditorState {
         return true
     }
 
-    /// Coordinates are normalized to -1...1 from the pad's center, with y down.
-    /// The recovered constructor uses Display P3 HSL, not the HSB color wheel.
     @discardableResult func moveColor(x: Double, y: Double) -> Bool {
         guard x.isFinite, y.isFinite else { return false }
         return change {

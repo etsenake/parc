@@ -1,8 +1,5 @@
 import Foundation
 
-///
-/// Space, index, items and focus. This snapshot owns the whole Space, while
-/// profile-wide Favorites and documents retain their independent identities.
 struct SpaceDeletionTarget: Equatable {
     let space: BrowserSpace
     let tabs: [BrowserTab]
@@ -32,8 +29,6 @@ struct SpaceDeletionTarget: Equatable {
     }
 }
 
-/// Only the records touched by deletion are retained. Unrelated windows,
-/// Profiles, tabs and subsequent unrelated edits are never rolled back.
 struct SpaceDeletionUndo {
     let target: SpaceDeletionTarget
     let index: Int
@@ -68,7 +63,6 @@ struct SpaceDeletionUndo {
         var moves: [(id: UUID, profile: UUID, before: UUID, after: UUID)] = []
         for i in next.tabs.indices where next.tabs[i].spaceID == target.space.id {
             if next.tabs[i].kind == .favorite {
-                // Favorites belong to a Profile. Space is only a storage anchor.
                 moves.append((next.tabs[i].id, next.tabs[i].profileID, target.space.id, fallback.id))
             } else {
                 if ids.contains(next.tabs[i].id) {
@@ -119,7 +113,6 @@ struct SpaceDeletionUndo {
               favoriteGroups.allSatisfy({ pair in state.splitLayouts.first { $0.id == pair.after.id } == pair.after }),
               target.order.keys.allSatisfy({ state.sidebarItemOrder[$0] == nil }) else { return nil }
         var next = state
-        // Prefer a surviving next sibling, then the clamped original position.
         let following = neighboringSpaces.dropFirst(index + 1).first { id in next.spaces.contains { $0.id == id } }
         let position = following.flatMap { id in next.spaces.firstIndex { $0.id == id } } ?? min(index, next.spaces.count)
         next.spaces.insert(space, at: position)
@@ -128,8 +121,6 @@ struct SpaceDeletionUndo {
             guard let i = next.tabs.firstIndex(where: { $0.id == original.id }) else { return nil }
             next.tabs[i] = original
         }
-        // A Favorite's live navigation/title may change while its Space is gone.
-        // Restore only its unchanged storage placement, never its live contents.
         for move in favoriteMoves {
             if let i = next.tabs.firstIndex(where: { $0.id == move.id && $0.profileID == move.profile && $0.kind == .favorite && $0.spaceID == move.after }) {
                 next.tabs[i].spaceID = move.before
@@ -146,8 +137,6 @@ struct SpaceDeletionUndo {
         return next
     }
 
-    /// New children or changed container structure invalidate Redo. Ordinary
-    /// title/navigation/theme edits of the restored original remain legitimate.
     func redoTarget(in state: BrowserState) -> SpaceDeletionTarget? {
         guard let current = SpaceDeletionTarget(spaceID: target.space.id, state: state),
               current.space.profileID == target.space.profileID,
@@ -162,9 +151,6 @@ private extension Array {
     subscript(safeSpaceIndex index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }
 
-///
-///
-/// Same-Profile conversion preserves every live page/document identity.
 struct SpaceFolderConversion {
     let target: SpaceDeletionTarget
     let destination: SidebarHierarchySnapshot
@@ -225,8 +211,6 @@ struct SpaceFolderConversion {
         if !todayItems.isEmpty {
             next.sidebarItemOrder[SidebarContainerLocation(spaceID: destinationID, folderID: todayFolderID, section: .pinned).key] = todayItems.map(stored)
         }
-        // With the contents already relocated, deletion only removes the Space
-        // shell and reparents dormant archive/Favorite storage anchors.
         guard let shell = SpaceDeletionTarget(spaceID: sourceID, state: next), shell.tabs.isEmpty, shell.folders.isEmpty,
               let (deletion, removed) = SpaceDeletionUndo.make(target: shell, state: next, now: Date(), documents: [:]) else { return nil }
         next = removed

@@ -1,7 +1,5 @@
 import Foundation
 
-/// The recovered export boundary carries a document identity, title, HTML and
-/// modification date. It is independent of an editor's mutable draft/session.
 struct NoteExportDocument: Sendable {
     let id: UUID
     let title: String
@@ -20,8 +18,6 @@ enum NoteExportError: Error, LocalizedError {
     }
 }
 
-/// Owned temporary output, prepared away from the main thread. Publication is a
-/// separate step so a cancelled or retired window cannot write a late result.
 final class NoteExportArchive: @unchecked Sendable {
     let file: URL
     let suggestedName: String
@@ -32,9 +28,6 @@ final class NoteExportArchive: @unchecked Sendable {
     deinit { try? FileManager.default.removeItem(at: directory) }
 
     static func filename(title: String, id: UUID) -> String {
-        // Arc100704e24: split invalid filename characters, discard empty pieces,
-        // join with underscores and trim. Length/hidden-name guards are local
-        // filesystem adaptations; collisions are resolved by original IDs below.
         let invalid = CharacterSet(charactersIn: "\\/:*?\"<>|")
             .union(.newlines).union(.illegalCharacters).union(.controlCharacters)
         var stem = title.components(separatedBy: invalid).filter { !$0.isEmpty }
@@ -64,7 +57,6 @@ final class NoteExportArchive: @unchecked Sendable {
             func key(_ name: String) -> String { name.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX")) }
             if !names.insert(key(name)).inserted {
                 name = document.id.uuidString.lowercased() + ".html"
-                // A user's title may itself be another document UUID.
                 while !names.insert(key(name)).inserted { name = "_" + name }
             }
             let target = contents.appendingPathComponent(name, isDirectory: false)

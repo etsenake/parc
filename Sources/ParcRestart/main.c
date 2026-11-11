@@ -1,6 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Wait for the original application process, then ask Launch Services to reopen
-// its bundle. No Chromium, shell interpolation, Apple Events or polling process.
 #include <sys/event.h>
 #include <sys/time.h>
 #include <errno.h>
@@ -52,7 +49,6 @@ int main(int argc, char **argv) {
     const int count = kevent(queue, NULL, 0, events, 2, &timeout);
     if (count < 0) { if (errno == EINTR) continue; return 71; }
     if (count == 0) return 75;
-    // Consume commands before acting on NOTE_EXIT when both arrive together.
     for (int index = 0; index < count; ++index) {
       if (events[index].flags & EV_ERROR) return 71;
       if (events[index].filter == EVFILT_PROC) exited = true;
@@ -80,7 +76,6 @@ int main(int argc, char **argv) {
       }
     }
     if (exited) {
-      // A parent that vanished before authorizing restart must never relaunch.
       if (!armed) return 0;
       close(queue);
       if (argc == 5)

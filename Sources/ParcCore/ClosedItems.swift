@@ -1,7 +1,5 @@
 import Foundation
 
-/// One physical window owns its cache. Durable Archive is storage, not the
-///
 struct ClosedItemRecord: Equatable {
     enum Kind { case saved, archived }
     let id: UUID
@@ -11,8 +9,6 @@ struct ClosedItemRecord: Equatable {
     let tabs: [BrowserTab]
     let split: BrowserSplitLayout?
     let focusedTabID: UUID
-    /// A single Today pane closed out of a larger split. Restoration is
-    /// best-effort: the pane itself remains this record's capability.
     var membership: ClosedSplitMembership? = nil
     var tabIDs: [UUID] { tabs.map(\.id) }
 
@@ -34,15 +30,12 @@ struct ClosedItemRecord: Equatable {
         if kind == .saved {
             guard tabs.allSatisfy({ $0.kind != .today && $0.archivedAt == nil }) else { return false }
             if let split {
-                // Saved Close retains the original group. Reopen may select it,
-                // but cannot recreate, replace or detach a changed group.
                 return split.spaceID == spaceID && split.tabIDs == tabIDs
                     && BrowserSplitLayout.normalized(split.widthFactors, count: tabs.count) != nil
                     && overlapping == [split]
             }
             return tabs.count == 1 && overlapping.isEmpty
         }
-        // Archived groups must still be absent before their original restoration.
         guard overlapping.isEmpty else { return false }
         guard tabs.allSatisfy({ $0.kind == .today && $0.archivedAt != nil }) else { return false }
         if let split {
@@ -58,23 +51,12 @@ struct ClosedItemRecord: Equatable {
     }
 }
 
-///
-///
-///
-/// the container does it also record regroupItems with the original container
-///
 struct ClosedSplitMembership: Equatable {
-    /// Original container before the close: ID, order, orientation, ratios,
-    /// title/icon and sidebar anchor.
     let layout: BrowserSplitLayout
     let index: Int
-    /// This close dissolved the container (regroupItems was recorded).
     let dissolved: Bool
-    /// Other panes of the container removed by the same close.
     let closedSiblings: Set<UUID>
 
-    /// The group the restored pane rejoins, or nil when it returns alone.
-    /// `available` is the caller's exact page-owner/retirement admission.
     func restoredLayout(restoring id: UUID, in state: BrowserState,
                         available: (UUID) -> Bool) -> BrowserSplitLayout? {
         guard let position = layout.tabIDs.firstIndex(of: id),
@@ -89,24 +71,14 @@ struct ClosedSplitMembership: Equatable {
         guard live(id), !grouped(id) else { return nil }
         let share = layout.widthFactors[position]
         if var current = state.splitLayouts.first(where: { $0.id == layout.id }) {
-            // insertItem into the surviving container at the recorded index,
-            // clamped to its current children. A four-pane split refuses
-            //
             guard current.spaceID == layout.spaceID, current.tabIDs.count < 4,
                   current.tabIDs.allSatisfy(live),
                   let factors = BrowserSplitLayout.normalized(current.widthFactors, count: current.tabIDs.count)
             else { return nil }
-            //
-            // excludes earlier siblings. Parc's per-pane steps follow model
-            // order, so count earlier siblings that have already returned.
             let returned = current.tabIDs.filter { member in
                 closedSiblings.contains(member) && (layout.tabIDs.firstIndex(of: member) ?? position) < position
             }.count
             let at = min(index + returned, current.tabIDs.count)
-            //
-            // The returning pane keeps its original share relative to the
-            // original shares of the current members; their current
-            // proportions are kept, so untouched panes restore exactly.
             let known = current.tabIDs.compactMap { member in
                 layout.tabIDs.firstIndex(of: member).map { layout.widthFactors[$0] }
             }.reduce(0, +)
@@ -118,11 +90,6 @@ struct ClosedSplitMembership: Equatable {
             return current
         }
         guard dissolved else { return nil }
-        // regroupItems keeps original childIDs that currently exist, in
-        // original order, and refuses a split with fewer than two
-        //
-        //
-        //
         let members = layout.tabIDs.filter { $0 == id || live($0) }
         guard !members.contains(where: { $0 != id && grouped($0) }), members.count >= 2,
               let factors = BrowserSplitLayout.normalized(
@@ -157,9 +124,6 @@ struct ClosedItemIntent {
         }
     }
 
-    /// Checked against the committed afterimage: a surviving container keeps
-    /// its ID and the remaining panes in order; otherwise this close removed
-    /// it. Anything else is not this close's result and records no group.
     func membership(of id: UUID, in state: BrowserState) -> ClosedSplitMembership? {
         let closed = Set(tabs.map(\.id))
         guard let layout = partialSplits.first(where: { $0.tabIDs.contains(id) }),
@@ -179,12 +143,6 @@ struct ClosedItemIntent {
     }
 }
 
-///
-/// openPeek(url, parentID) from the modal's current URL and parent item
-///
-///
-///
-///
 struct ClosedPeekRecord: Equatable {
     let id: UUID
     let url: URL
@@ -199,15 +157,9 @@ struct ClosedPeekRecord: Equatable {
     }
 }
 
-///
-///
 enum ClosedItemStep {
     case items(ClosedItemRecord)
     case peek(ClosedPeekRecord)
-    ///
-    /// insertItem plus expandFolder when its window expansion is `.expanded`
-    ///
-    /// through the folder Undo transaction, which keeps each folder's flag.
     case folder(FolderDeletionUndo)
 
     var id: UUID {
@@ -228,9 +180,6 @@ struct WindowClosedItems {
         self.itemLastActiveDates = itemLastActiveDates
     }
 
-    /// Only the original window's real selection/focus owner calls this. Shared
-    /// tab lastAccessed dates (including archive protection or another window)
-    /// are not the saved Reopen ranking source.
     mutating func recordSelection(_ ids: [UUID], focusedTabID: UUID?, state: BrowserState,
                                   at date: Date = Date()) {
         let available = Set(state.tabs.filter { $0.archivedAt == nil }.map(\.id))
@@ -240,8 +189,6 @@ struct WindowClosedItems {
         itemLastActiveDates[focus] = date
     }
 
-    /// Invoked only after the whole original close transaction has committed.
-    /// A refused/partial close never creates a reopen capability.
     mutating func record(_ intent: ClosedItemIntent, in state: BrowserState) {
         var after: [BrowserTab] = []
         for before in intent.tabs {
@@ -254,8 +201,6 @@ struct WindowClosedItems {
             after.append(tab)
         }
         if !after.isEmpty, after.allSatisfy({ $0.kind != .today }) {
-            //
-            // a bulk saved-item stack. Equal/missing dates retain model order.
             let tab = after.enumerated().min { left, right in
                 let l = itemLastActiveDates[left.element.id] ?? .distantPast
                 let r = itemLastActiveDates[right.element.id] ?? .distantPast
@@ -271,7 +216,6 @@ struct WindowClosedItems {
             saved = record
             return
         }
-        // Actual Today archives retain their separate grouped-step ordering.
         let archived = after.filter { $0.archivedAt != nil }
         guard !archived.isEmpty else { return }
         var seen = Set<UUID>(), steps: [ClosedItemRecord] = []
@@ -298,25 +242,16 @@ struct WindowClosedItems {
         groups.append(steps.map(ClosedItemStep.items))
     }
 
-    ///
-    ///
-    /// pending saved Reopen still runs first.
     mutating func recordPeek(_ record: ClosedPeekRecord, in state: BrowserState) {
         guard record.isValid(in: state) else { return }
         groups.append([.peek(record)])
     }
 
-    /// Invoked only after the whole folder Delete committed. Like every
-    ///
     mutating func recordFolderDeletion(_ undo: FolderDeletionUndo) {
         saved = nil
         groups.append([.folder(undo)])
     }
 
-    /// Invalid durable records expire; a temporarily owned/busy valid record
-    /// is kept at the top by the shell rather than silently skipped. The cache
-    ///
-    ///
     mutating func nextStep(in state: BrowserState,
                            restorable: (FolderDeletionUndo) -> Bool) -> ClosedItemStep? {
         if let saved, saved.isValid(in: state) { return .items(saved) }
@@ -332,7 +267,6 @@ struct WindowClosedItems {
         }
         return nil
     }
-    /// The top original-item step, or nil when another kind is on top.
     mutating func next(in state: BrowserState) -> ClosedItemRecord? {
         guard case .items(let record)? = nextStep(in: state, restorable: { _ in true }) else { return nil }
         return record
@@ -350,12 +284,6 @@ struct WindowClosedItems {
     }
 }
 
-/// Back/forward entries of closed pages, captured just before each closed by
-/// whichever window owned it, keyed by tab or closed-Peek record. The store
-/// keeps them in memory only, so a private window's never reach disk, and any
-/// window restoring the tab gets them. A tab gets its entries back only once
-/// Undo or Reopen restores it, and only for the first page created for it
-/// after that; the oldest entries go past `limit`.
 struct ClosedPageHistory<State> {
     let limit: Int
     private var states: [UUID: State] = [:]
@@ -375,9 +303,7 @@ struct ClosedPageHistory<State> {
         for id in ids where states[id] != nil { restored.insert(id) }
     }
     mutating func unrestore(_ ids: some Sequence<UUID>) { restored.subtract(ids) }
-    /// A page created for the tab any other way drops its restore.
     mutating func pageCreated(_ id: UUID) { if restored.remove(id) != nil { _ = take(id) } }
-    /// A restored tab's entries, for its first page.
     mutating func takeRestored(_ id: UUID) -> State? {
         guard restored.remove(id) != nil else { return nil }
         return take(id)

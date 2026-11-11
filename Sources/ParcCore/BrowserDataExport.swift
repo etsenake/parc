@@ -1,7 +1,5 @@
 import Foundation
 
-/// A value snapshot taken before the save sheet opens. Later tab navigation,
-/// reordering or profile deletion cannot change this approved export's input.
 struct BrowserDataExport {
     private let state: BrowserState
 
@@ -16,8 +14,6 @@ struct BrowserDataExport {
             }.compactMap(urlLine)
             if !favorites.isEmpty { lines += ["", "## Favorites"] + favorites }
 
-            //
-            // those through the same persisted order used by its sidebar.
             let items = children(space: space.id, folder: nil, section: .pinned)
                 + children(space: space.id, folder: nil, section: .today)
             var visitedFolders = Set<UUID>()
@@ -40,8 +36,6 @@ struct BrowserDataExport {
     }
 
     private func urlLine(_ tab: BrowserTab) -> String? {
-        // The reference emits SidebarTab.savedURL, without tab/custom titles.
-        // Native Notes/Easels correspond to distinct non-tab payloads there.
         guard !InternalPage.isInternal(tab.savedURL), !WhatsNewPage.matches(tab.savedURL) else { return nil }
         return "- " + (URL(string: tab.savedURL)?.absoluteString ?? "")
     }
@@ -49,8 +43,6 @@ struct BrowserDataExport {
     private func render(_ items: [SidebarItemReference], space: BrowserSpace,
                         depth: Int, visited: inout Set<UUID>) -> [String] {
         var lines: [String] = []
-        // The recovered writer deliberately emits ordinary URLs before folders
-        // at each level, even when the visible sidebar interleaves those items.
         for item in items {
             if case .folder = item { continue }
             for id in SidebarHierarchy.tabIDs(in: item, state: state, spaceID: space.id) {

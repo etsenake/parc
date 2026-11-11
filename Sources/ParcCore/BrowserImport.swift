@@ -1,7 +1,5 @@
 import Foundation
 
-/// Immutable source identities survive selection; duplicate titles and URLs
-/// remain distinct bookmarks. Credentials never enter this application model.
 struct BrowserImportBookmark: Equatable, Identifiable {
     let id: String
     let title: String
@@ -15,8 +13,6 @@ struct BrowserImportSelection {
     private(set) var expanded = Set<String>()
     private let nodes: [String: BrowserImportBookmark]
 
-    /// Every bookmark starts ticked. Setup also opens the top-level folders so
-    /// their pages show.
     init(roots: [BrowserImportBookmark], expandsTopFolders: Bool = false) throws {
         var nodes: [String: BrowserImportBookmark] = [:]
         func visit(_ items: [BrowserImportBookmark], depth: Int) throws {
@@ -51,8 +47,6 @@ struct BrowserImportSelection {
 
     var allSelected: Bool { !nodes.isEmpty && selected.count == nodes.count }
 
-    /// The import picker's Select All row owns this source's entire tree,
-    /// including descendants that are currently collapsed.
     mutating func toggleAll() {
         if allSelected { selected.removeAll() }
         else { selected = Set(nodes.keys) }
@@ -80,17 +74,10 @@ struct BrowserImportDestination: Equatable {
             && !state.profileRemovals.contains { $0.profileID == profileID }
     }
 
-    /// Pure preparation keeps the visible session unchanged until its real
-    /// atomic write succeeds. No existing folder, split or tab is repurposed.
     func inserting(_ roots: [BrowserImportBookmark], into state: BrowserState, at date: Date) throws -> BrowserState {
         try replacing(BrowserImportPlacement(), with: roots, in: state, at: date).state
     }
 
-    /// Changes what one accepted page added to `roots`: newly ticked
-    /// bookmarks are added beside their source siblings, unticked ones leave,
-    /// and the rest stay as they are. Only an item still exactly as the
-    /// import wrote it, unselected and outside any split, is removed; a
-    /// folder also needs to be empty of everything else.
     func replacing(_ placed: BrowserImportPlacement, with roots: [BrowserImportBookmark],
                    in state: BrowserState, at date: Date) throws -> (state: BrowserState, placement: BrowserImportPlacement) {
         guard isCurrent(in: state) else { throw CocoaError(.userCancelled) }
@@ -141,7 +128,6 @@ struct BrowserImportDestination: Equatable {
             let location = SidebarContainerLocation(spaceID: spaceID, folderID: parent, section: .pinned)
             let before = SidebarHierarchy.children(in: location, state: next)
             var order = before
-            // Each source item's sidebar entry when this page already has it here.
             func existing(_ item: BrowserImportBookmark) -> SidebarItemReference? {
                 if item.url != nil {
                     guard let id = placement.tabs[item.id]?.id,
@@ -155,8 +141,6 @@ struct BrowserImportDestination: Equatable {
             }
             var anchor: SidebarItemReference?
             for (position, item) in items.enumerated() {
-                // A folder the user moved to another Space is theirs now; no
-                // empty copy here.
                 if item.url == nil, let id = placement.folders[item.id]?.id,
                    next.folders.contains(where: { $0.id == id && $0.spaceID != spaceID }) { continue }
                 if let kept = existing(item) {
@@ -183,8 +167,6 @@ struct BrowserImportDestination: Equatable {
                     next.folders.append(folder); placement.folders[item.id] = folder
                     reference = .folder(folder.id)
                 }
-                // After the nearest earlier source sibling here, else before
-                // the nearest later one, else at the end.
                 if let anchor, let index = order.firstIndex(of: anchor) {
                     order.insert(reference, at: index + 1)
                 } else if let later = items[(position + 1)...].lazy.compactMap(existing).first(where: { order.contains($0) }),
@@ -201,17 +183,12 @@ struct BrowserImportDestination: Equatable {
     }
 }
 
-/// What one accepted bookmark page wrote, by source identity, exactly as
-/// written, so a later change of that page can tell its own items from the
-/// user's.
 struct BrowserImportPlacement: Equatable {
     fileprivate(set) var tabs: [String: BrowserTab] = [:]
     fileprivate(set) var folders: [String: BrowserFolder] = [:]
     var isEmpty: Bool { tabs.isEmpty && folders.isEmpty }
 }
 
-/// An existing Parc Profile an import can land in. A Space is captured for
-/// sidebar bookmarks; it never follows another window's current selection.
 struct BrowserImportProfileTarget: Equatable {
     let profileID: UUID
     let spaceID: UUID?
@@ -232,8 +209,6 @@ struct BrowserImportProfileTarget: Equatable {
         if let spaceID {
             return state.spaces.contains { $0.id == spaceID && $0.profileID == profileID }
         }
-        // A formerly unused Profile gaining a Space invalidates the issued
-        // target, rather than silently changing its destination.
         return !state.spaces.contains { $0.profileID == profileID }
     }
 }

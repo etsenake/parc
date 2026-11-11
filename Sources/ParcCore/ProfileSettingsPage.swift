@@ -1,8 +1,5 @@
 import Foundation
 
-///
-/// ProfilePreferences.Action and NewManageView retain the Profile in each
-/// command; see docs/settings.md, General and Profiles command inventory.
 enum ProfileSettingsPage: String, CaseIterable {
     case search, privacy, passwords, payments, notifications, clearBrowsingData
 
@@ -28,9 +25,6 @@ enum ProfileSettingsPage: String, CaseIterable {
         }
     }
 
-    /// Keep an already open credential editor and its authentication. Other
-    /// commands reuse only their exact destination, never redirect another
-    /// settings subpage that may contain unfinished edits.
     func canReuse(_ address: String) -> Bool {
         guard let url = URL(string: address), BrowserInternalURL.isWebUI(url),
               let destination = URL(string: self.address), url.host == destination.host,

@@ -1,8 +1,5 @@
 import Foundation
 
-///
-/// of active contents. Crossing either edge clears it; the next arrow enters
-/// from the other edge. Typing does not commit this cursor to browser state.
 struct SidebarKeyboardCursor {
     private(set) var highlightedID: String?
     init(highlightedID: String?) { self.highlightedID = highlightedID }

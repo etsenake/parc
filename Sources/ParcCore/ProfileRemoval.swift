@@ -30,8 +30,6 @@ enum ProfileRemovalError: LocalizedError, Equatable {
 }
 
 extension BrowserStore {
-    /// An unused profile has no assigned Space, even if it retains saved tabs
-    /// or history. Never substitute the currently selected Settings profile.
     var unusedProfilesForRemoval: [BrowserProfile] {
         state.profiles.filter { (try? profileRemovalSummary($0.id)) != nil }
     }
@@ -46,8 +44,6 @@ extension BrowserStore {
         }
     }
 
-    /// Existing sessions preserve the original first profile as Default.
-    /// Display names remain editable and are never used as deletion identity.
     var defaultProfileID: UUID { state.settings.defaultProfileID ?? state.profiles[0].id }
 
     func isProfileRemovalPending(_ profileID: UUID) -> Bool {
@@ -75,8 +71,6 @@ extension BrowserStore {
     }
 }
 
-/// Retains the original store until the asynchronous disk operation finishes.
-/// Ending or replacing the window cannot release this admission early.
 @MainActor final class ProfileWriteReservation {
     private var release: (() -> Void)?
     init(release: @escaping () -> Void) { self.release = release }

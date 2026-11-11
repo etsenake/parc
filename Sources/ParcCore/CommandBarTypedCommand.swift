@@ -1,8 +1,5 @@
 import Foundation
 
-///
-/// document's creation URL, title and the sites whose engagement offers it.
-///
 struct CommandBarWebDocument: Hashable, Sendable {
     let title: String
     let url: String
@@ -22,8 +19,6 @@ struct CommandBarWebDocument: Hashable, Sendable {
         .init(title: "Confluence Page", url: "https://make.page", domains: ["confluence.com"]),
     ]
 
-    ///
-    /// visit to one of them (or a subdomain) in the Profile's own history.
     static func available(visitedHosts: Set<String>) -> [CommandBarWebDocument] {
         catalog.filter { document in
             document.domains.contains { domain in
@@ -33,17 +28,11 @@ struct CommandBarWebDocument: Hashable, Sendable {
     }
 }
 
-///
-///
 struct CommandBarTypedCommand: Hashable, Sendable {
     enum SplitEdge: Hashable, Sendable { case left, right, top, bottom }
-    ///
-    /// lists them: Account, General, Profiles, Shortcuts, Links, App Icon,
-    ///
     enum SettingsPane: CaseIterable, Hashable, Sendable {
         case account, general, profiles, shortcuts, links, appIcon, advanced
 
-        ///
         var title: String {
             switch self {
             case .account: return "Settings"
@@ -56,9 +45,6 @@ struct CommandBarTypedCommand: Hashable, Sendable {
             }
         }
 
-        ///
-        /// "arc card". Links' "mini browser", "little browser" and "little arc"
-        ///
         var triggerPhrases: [String] {
             switch self {
             case .account: return ["membership card", "id card", "arc card", "parc card", "open account preferences"]
@@ -72,11 +58,8 @@ struct CommandBarTypedCommand: Hashable, Sendable {
             }
         }
 
-        ///
         var bump: Double { self == .general ? 0.6 : 0.5 }
     }
-    ///
-    /// triggers in its MainMenu nib (`arcTypeTravelTitle`) but no binding ID.
     enum Appearance: CaseIterable, Hashable, Sendable {
         case light, dark, automatic
 
@@ -94,7 +77,6 @@ struct CommandBarTypedCommand: Hashable, Sendable {
             case .automatic: return ["Switch Automatic Mode", "Automatic Mode"]
             }
         }
-        /// The menu item's selector, whose owner records the Undo step.
         var selectorName: String {
             switch self {
             case .light: return "setLightAppearance:"
@@ -105,31 +87,24 @@ struct CommandBarTypedCommand: Hashable, Sendable {
     }
     enum Kind: Hashable, Sendable {
         case undo(String), redo(String)
-        /// Another Profile's Space carries that Profile's name for its row.
         case pinToSpace(UUID, name: String, profileName: String? = nil)
         case pinToNewFolder
         case replacePinWithCurrentPage
         case duplicateCurrentTab
         case convertSplit(toVertical: Bool)
         case addSplit(SplitEdge)
-        ///
-        ///
         case addVerticalSplit
         case newWebDocument(CommandBarWebDocument)
         case searchSettings
         case airTrafficControl
         case settingsPane(SettingsPane)
         case appearance(Appearance)
-        ///
-        /// File's Capture in Portrait Mode, with their MainMenu nib data.
         case copyAppInfo, revealAppData, capturePortrait
-        /// Help → Troubleshooting → Open Task Manager: Chromium's task manager.
         case openTaskManager
     }
 
     let kind: Kind
 
-    ///
     var candidateBump: Double? {
         switch kind {
         case .settingsPane(let pane): return pane.bump
@@ -187,7 +162,6 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         }
     }
 
-    /// Another Profile's name beside its Space, as Focus on Space shows it.
     var detail: String {
         if case .pinToSpace(_, _, let profile?) = kind { return profile }
         return ""
@@ -218,11 +192,6 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         }
     }
 
-    ///
-    /// action: Pin to [Space] "moves to Pinned", Pin to New Folder "creates a
-    /// new list". Those words also find the command, as Parc's folder moves do.
-    /// Phrases beside the title that find the command; triggers stay whole
-    /// so an exact phrase ranks as an exact match.
     var searchPhrases: [String] {
         switch kind {
         case .pinToSpace(_, _, let profile): return ["move space"] + (profile.map { [$0] } ?? [])
@@ -235,7 +204,6 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         case .airTrafficControl: return ["links routes route"]
         case .settingsPane(let pane): return pane.triggerPhrases
         case .appearance(let appearance): return appearance.triggerPhrases
-        //
         case .copyAppInfo: return ["arc info"]
         case .revealAppData: return ["arc data"]
         case .capturePortrait: return ["Screenshot in Portrait Mode", "Capture Portrait", "Portrait Mode", "Screenshot"]
@@ -252,22 +220,14 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         return !words.isEmpty && words.allSatisfy { text.contains($0) }
     }
 
-    /// Texts ranking matches one by one: the title, each phrase, and the title
-    /// with every phrase for queries that mix their words.
     var rankingTexts: [String] {
         searchPhrases.isEmpty ? [title] : [title] + searchPhrases + [([title] + searchPhrases).joined(separator: " ")]
     }
 
-    /// A menu command's ranking texts beyond its titles: each trigger phrase.
     static func rankingPhrases(forMenuCommand id: String) -> [String] {
         (CommandBarMenuItemInfo.info(forMenuCommand: id)?.triggers ?? []) + (id == "createNote:" ? ["New Arc Note"] : [])
     }
 
-    ///
-    /// existing menu item (cases 17, 20 and 31). The menu bar keeps its own
-    ///
-    /// The menu item's own `arcTypeTravelTitle` (Share URL) comes from
-    /// `CommandBarCommandPresentation`, the one source of those titles.
     static func commandBarTitle(forMenuCommand id: String, menuTitle: String) -> String {
         switch id {
         case "toggleSidebar:": return "Toggle Sidebar"
@@ -277,15 +237,11 @@ struct CommandBarTypedCommand: Hashable, Sendable {
         }
     }
 
-    ///
-    ///
     static func commandBarSearchText(forMenuCommand id: String) -> String {
         let triggers = CommandBarMenuItemInfo.searchText(forMenuCommand: id)
         return id == "createNote:" ? triggers + " new arc note" : triggers
     }
 
-    /// Single-pane Add offers all four edges; a split offers its own axis
-    ///
     static func splitCommands(paneCount: Int, vertical: Bool) -> [CommandBarTypedCommand] {
         guard (1...4).contains(paneCount) else { return [] }
         let edges: [SplitEdge]

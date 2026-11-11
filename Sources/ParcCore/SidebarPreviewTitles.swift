@@ -1,8 +1,5 @@
 import Foundation
 
-///
-///
-///
 struct TidyTitleRule: Equatable {
     enum Match: Equatable {
         case pathEquals(String), pathContainsRegex(String), fragmentEquals(String), fragmentContainsRegex(String)
@@ -24,8 +21,6 @@ struct TidyTitleRule: Equatable {
 }
 
 enum TidyTitles {
-    /// The first matching rule for the host without "www." wins. A blank result
-    ///
     static func title(for url: URL, title: String, rules: [String: [TidyTitleRule]] = parcRules) -> String? {
         guard var host = url.host?.lowercased() else { return nil }
         if host.hasPrefix("www.") { host.removeFirst(4) }
@@ -42,7 +37,6 @@ enum TidyTitles {
         return result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : result
     }
 
-    /// Rule patterns compile once; previews re-title rows on every render.
     private static let expressions = NSCache<NSString, NSRegularExpression>()
     static func expression(_ pattern: String) -> NSRegularExpression? {
         if let cached = expressions.object(forKey: pattern as NSString) { return cached }
@@ -65,7 +59,6 @@ enum TidyTitles {
     ]
 }
 
-///
 enum RecentPageText {
     enum Provider: String { case notion, figma, linear, confluence }
 
@@ -73,7 +66,6 @@ enum RecentPageText {
         switch provider {
         case .notion, .figma: return TidyTitles.title(for: url, title: title) ?? title
         case .linear:
-            //
             let tidy = TidyTitles.title(for: url, title: title) ?? title
             guard let id = linearTicketID(url) else { return tidy }
             return (tidy.hasPrefix(id) ? String(tidy.dropFirst(id.count)) : tidy).trimmingCharacters(in: .whitespaces)
@@ -84,21 +76,12 @@ enum RecentPageText {
         }
     }
 
-    /// A Linear issue page is /<team>/issue/<ID>/<slug>.
     static func linearTicketID(_ url: URL) -> String? {
         guard url.host?.lowercased().hasSuffix("linear.app") == true else { return nil }
         let components = url.pathComponents
         return components.count == 5 && components[2] == "issue" ? components[3] : nil
     }
 
-    ///
-    ///
-    /// which strips a leading "www." from the host and matches it exactly:
-    /// a linear.app ticket gives Copy Issue ID and Copy Issue URL, any other
-    /// recognized page (a notion.so page whose last path component ends in 32
-    /// hex digits) gives no menu, and an unrecognized page gives Copy URL.
-    ///
-    /// Copy URL.
     enum RowMenu: Equatable { case copyURL, linearIssue(id: String), none }
 
     static func rowMenu(_ url: URL) -> RowMenu {
@@ -106,11 +89,9 @@ enum RecentPageText {
         if host.hasPrefix("www.") { host.removeFirst(4) }
         switch host {
         case "linear.app":
-            //
             let components = url.pathComponents
             return components.count == 5 && components[2] == "issue" ? .linearIssue(id: components[3]) : .copyURL
         case "notion.so":
-            //
             return url.lastPathComponent.range(of: "[a-fA-F0-9]{32}$", options: .regularExpression) == nil ? .copyURL : .none
         default:
             return .copyURL
@@ -133,7 +114,6 @@ enum RecentPageText {
         return formatter
     }()
 
-    ///
     static func pageIdentity(_ url: URL) -> String? {
         if let id = linearTicketID(url) { return "linear:" + id }
         guard let host = url.host?.lowercased(), host == "notion.so" || host.hasSuffix(".notion.so") || host.hasSuffix(".notion.site"),
@@ -142,9 +122,6 @@ enum RecentPageText {
         return hex.count == 32 && hex.allSatisfy(\.isHexDigit) ? "notion:" + hex.lowercased() : nil
     }
 
-    /// Keeps the first occurrence in fetch order by tidy title, then by
-    ///
-    /// into one identity; Parc keeps those rows apart.
     static func deduplicated<Row>(_ rows: [Row], title: (Row) -> String, url: (Row) -> URL) -> [Row] {
         var titles = Set<String>(), identities = Set<String>()
         return rows.filter { row in

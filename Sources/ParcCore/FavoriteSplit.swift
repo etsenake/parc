@@ -1,18 +1,9 @@
 import Foundation
 
-///
-/// Favorite is duplicated only while a presentation has fewer than four panes
-///
-/// the focused pane (disposition `0x43`), whose presentation mutation refuses a
-/// fifth pane.
 enum FavoriteOptionRoute: Equatable {
-    /// Insert after the focused pane, focus an existing pane or duplicate the focused Favorite.
     case split
-    /// No current presentation or focused pane: selection presents the Favorite itself.
     case present
-    /// A fifth pane is refused and reported.
     case paneLimit
-    /// The focused Favorite at capacity stays focused; nothing is duplicated.
     case unchanged
 
     init(favoriteID: UUID, selection: [UUID], focusedID: UUID?) {
@@ -25,14 +16,6 @@ enum FavoriteOptionRoute: Equatable {
     }
 }
 
-/// One original App Tray release. Native owners retain live pages separately.
-/// The release enters item selection with disposition `0x43` and selection
-///
-///
-/// saved member, the released Favorite included, into its own slot and moves
-/// the original into the split (`SplitMembership`). A focused Favorite's
-///
-///
 struct FavoriteSplitRequest {
     let favorite: BrowserTab
     let spaceID: UUID
@@ -71,15 +54,12 @@ struct FavoriteSplitRequest {
 
     var targetID: UUID { favorite.id == focusedID ? newID : favorite.id }
 
-    /// The panes after the release: the target follows the focused pane.
     var paneIDs: [UUID] {
         var ids = selection
         if !ids.contains(targetID), let index = ids.firstIndex(of: focusedID) { ids.insert(targetID, at: index + 1) }
         return ids
     }
 
-    /// Saved members that will need a fresh home, for the caller's fixed IDs
-    /// and typed-document validation.
     func savedHomeSources(in state: BrowserState) -> [BrowserTab] {
         guard paneIDs != selection else { return [] }
         return SplitMembership.savedHomeSources(joining: paneIDs, existing: layout,
@@ -107,8 +87,6 @@ struct FavoriteSplitRequest {
         let ids = paneIDs
         guard ids.count <= 4 else { return nil }
         if ids != selection {
-            // Original page identity is unchanged. The displayed split keeps
-            // its container; a new presentation becomes a Today split.
             let weights = ids.map { id in
                 layout.flatMap { group in group.tabIDs.firstIndex(of: id).map { group.widthFactors[$0] } }
                     ?? (1 / Double(selection.count))
@@ -126,7 +104,6 @@ struct FavoriteSplitRequest {
             next = admitted
         }
         next.selectedTabIDs = ids; next.selectionBySpace[spaceID.uuidString] = ids
-        // Only the destination gains focus.
         if let index = next.tabs.firstIndex(where: { $0.id == targetID }) {
             next.tabs[index].lastAccessed = now; next.tabs[index].isUnread = false
         }

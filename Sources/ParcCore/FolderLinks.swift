@@ -1,7 +1,5 @@
 import Foundation
 
-/// A context-menu target belongs to the displayed Space and its profile, rather
-/// than whichever window most recently updated BrowserStore.activeSpaceID.
 struct FolderLinkTarget: Equatable {
     let folderID: UUID
     let spaceID: UUID
@@ -17,9 +15,6 @@ enum FolderLinks {
         let url: String
     }
 
-    /// Include collapsed descendants. Expansion is a presentation choice and
-    /// must not change the meaning of Copy All Links. Preserve sidebar order:
-    /// the typed mixed child order, including each split container’s originals.
     static func links(in state: BrowserState, target: FolderLinkTarget) -> [Link]? {
         guard state.spaces.contains(where: { $0.id == target.spaceID && $0.profileID == target.profileID }),
               state.profiles.contains(where: { $0.id == target.profileID }),
@@ -45,8 +40,6 @@ enum FolderLinks {
         return result
     }
 
-    /// Selected original items share the folder export format. Normalize ancestors
-    /// and deduplicate IDs, while retaining two different tabs with the same URL.
     static func links(in state: BrowserState, items: [SidebarItemReference],
                       spaceID: UUID, profileID: UUID) -> [Link]? {
         guard SidebarHierarchySnapshot(state: state, spaceID: spaceID, profileID: profileID) != nil,
@@ -72,8 +65,6 @@ enum FolderLinks {
                     .replacingOccurrences(of: "]", with: "\\]")
                     .replacingOccurrences(of: "\r", with: " ")
                     .replacingOccurrences(of: "\n", with: " ")
-                // An angle-delimited destination preserves parentheses. Escape
-                // its delimiters so a page title/URL cannot create extra links.
                 let destination = link.url.replacingOccurrences(of: "<", with: "%3C")
                     .replacingOccurrences(of: ">", with: "%3E")
                     .replacingOccurrences(of: "\r", with: "%0D")

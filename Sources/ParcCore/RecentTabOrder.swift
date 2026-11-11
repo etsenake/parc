@@ -1,8 +1,5 @@
 import Foundation
 
-/// Real selections update this window's order. Preview focus never writes it.
-/// Persisted access dates seed a new window; archive safety refreshes cannot
-/// reorder an already visited item during the window's lifetime.
 struct RecentTabOrder {
     struct Item: Identifiable {
         var tabIDs: [UUID]
@@ -41,7 +38,6 @@ struct RecentTabOrder {
                                spaceID: spaceID, profileID: space.profileID, orientation: orientation))
             assigned.formUnion(ids)
         }
-        // A split is one recent item, retaining its actual constituent tab IDs.
         let selectedLayout = SidebarSplitItems.groups(in: state, spaceID: currentSpace).first { $0.tabIDs == selected }
         append(selected, spaceID: currentSpace, orientation: selectedLayout?.orientation ?? .horizontal)
         for layout in state.splitLayouts.reversed() where layout.tabIDs.count > 1 {
@@ -61,8 +57,6 @@ struct RecentTabOrder {
     }
 }
 
-///
-/// one hidden close replacement; preview cycling never selects that reserve.
 struct RecentTabSwitcherSelection {
     static let maximumDisplayedItems = 5
     private(set) var itemIDs: [String]
@@ -84,9 +78,6 @@ struct RecentTabSwitcherSelection {
         focusedIndex = (index % count + count) % count
     }
 
-    /// Called only after the genuine close transaction succeeds. Retain the
-    /// current order, promote its hidden replacement and replenish from actual
-    /// available items. The focused position stays put, or becomes the last.
     mutating func didClose(_ id: String, availableIDs: [String]) {
         let available = Set(availableIDs).subtracting([id])
         var seen = Set<String>()
@@ -97,40 +88,24 @@ struct RecentTabSwitcherSelection {
     }
 }
 
-///
-/// local monitor matches only key-down and flags-changed (mask 0x1400 at
-///
-/// chooses. Raw values are NSEvent modifier flags and virtual key codes.
 struct RecentTabSwitcherInput {
-    ///
-    ///
     static let modifierMask: UInt = 0x1E_0000
     static let control: UInt = 0x4_0000
     enum KeyAction: Equatable { case forward, backward, cancel, close, consume }
-    /// Next, Previous and the Control–physical-backtick alternate
-    ///
     let continuationFlags: [UInt]
 
     init(next: UInt?, previous: UInt?) {
         continuationFlags = [next, previous, Self.control].compactMap { $0.map { $0 & Self.modifierMask } }
     }
 
-    ///
-    /// bindings is down; otherwise the session completes with selection.
     func isHolding(_ flags: UInt) -> Bool {
         flags & continuationFlags.reduce(0, |) != 0
     }
 
-    ///
-    /// exactly one binding's modifiers (so Shift may reverse mid-hold);
-    /// any other change completes with selection.
     func continues(_ flags: UInt) -> Bool {
         continuationFlags.contains(flags & Self.modifierMask)
     }
 
-    ///
-    /// Right (124), Escape (53), W (13). Every other key, and key repeat,
-    /// is consumed without ending the session.
     func keyDown(matchesNext: Bool, matchesPrevious: Bool, keyCode: UInt16, flags: UInt) -> KeyAction {
         if matchesNext { return .forward }
         if matchesPrevious { return .backward }

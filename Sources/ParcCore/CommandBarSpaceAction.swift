@@ -1,7 +1,5 @@
 import Foundation
 
-/// A Type Travel destination is an original Space, not a name lookup or a URL.
-/// The original profile is retained so reassignment cannot retarget an old row.
 struct CommandBarSpaceAction: Equatable, Identifiable {
     let spaceID: UUID
     let profileID: UUID
@@ -29,8 +27,6 @@ struct CommandBarSpaceAction: Equatable, Identifiable {
         }
     }
 
-    ///
-    /// Name-prefix matches lead; otherwise preserve the user's Space order.
     static func matching(_ actions: [Self], query: String) -> [Self] {
         let query = normalized(query).trimmingCharacters(in: .whitespacesAndNewlines)
         let words = query.split(whereSeparator: \.isWhitespace)

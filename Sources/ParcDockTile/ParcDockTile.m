@@ -1,8 +1,5 @@
 #import <AppKit/AppKit.h>
 
-// Loaded by macOS for a retained Dock tile while Parc is not running. This
-// source-owned bundle shares only the icon preference and packaged artwork;
-//
 @interface ParcDockTile : NSObject <NSDockTilePlugIn>
 @property(nonatomic, strong) NSDockTile *tile;
 @property(nonatomic, strong) id observer;
@@ -47,8 +44,6 @@
   if ([selection isKindOfClass:NSDictionary.class] && [selection[@"version"] isKindOfClass:NSNumber.class] &&
       [selection[@"version"] integerValue] == 1 && [selection[@"icon"] isKindOfClass:NSString.class]) {
     NSString *candidate = selection[@"icon"];
-    // Catalog membership and a single filename prevent a preference or a
-    // notification from requesting arbitrary images outside this app bundle.
     if ([variants containsObject:candidate] && [candidate.lastPathComponent isEqual:candidate] &&
         [candidate rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"/\\."]].location == NSNotFound) {
       selected = candidate;

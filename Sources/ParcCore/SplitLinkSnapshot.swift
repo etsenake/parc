@@ -1,7 +1,5 @@
 import Foundation
 
-/// Window-local presentation state captured before an original split request.
-/// Native separately owns the exact source document and BrowserContext lease.
 struct SplitLinkSnapshot: Equatable {
     let spaceID: UUID
     let profileID: UUID

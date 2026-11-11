@@ -1,12 +1,7 @@
 import Foundation
 
-/// UTF-16 ranges mirror NSTextStorage and the recovered RichTextData boundary.
-/// Runs fully cover the string and never split a surrogate pair. The plain text
-/// stays on EaselItem so legacy documents and search retain their existing owner.
 struct EaselRichText: Codable, Equatable {
     struct Image: Codable, Equatable {
-        // Inline bytes stay with the original rich-text range and its atomic
-        // document undo, not an independently editable canvas image object.
         var data: Data
         var fileType: String
         var width: Double
@@ -58,8 +53,6 @@ struct EaselRichText: Codable, Equatable {
         var lists: [List]
         var heading: Int? = nil
     }
-    /// Parc's explicit carrier for a native named color. Fixed authored RGBA
-    /// remains `ink`; this tag never infers intent from a matching hex value.
     enum SemanticInk: String, Codable { case noteBody }
     struct Attributes: Codable, Equatable {
         var font: Font

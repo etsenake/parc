@@ -2,8 +2,6 @@ import Foundation
 import Combine
 import Darwin
 
-// Parc's local implementation of the recovered Easel object/canvas model.
-// The original Firebase provider, presence, and account fields are not used.
 enum EaselItemKind: String, Codable, CaseIterable {
     case text, image, rectangle, circle, arrow, freehand, webCard, browser, link
 }
@@ -20,8 +18,6 @@ struct EaselRect: Codable, Equatable {
     var height: Double
 }
 
-/// Original renderer geometry in CSS pixels. This belongs to the immutable
-/// capture, never to a subsequently navigated live preview.
 struct EaselCaptureLayout: Codable, Equatable {
     var viewport: EaselPoint
     var scroll: EaselPoint
@@ -36,7 +32,6 @@ struct EaselCaptureLayout: Codable, Equatable {
     }
 }
 
-// Recovered EaselText has an object-wide style, separate from RichTextData.
 struct EaselTextStyle: Codable, Equatable {
     enum Family: String, Codable, CaseIterable { case mono, fancy, hip, clean }
     enum Size: String, Codable, CaseIterable {
@@ -45,7 +40,6 @@ struct EaselTextStyle: Codable, Equatable {
         func shifted(by delta: Int) -> Size { Self.allCases[min(4, max(0, index + delta))] }
     }
     enum Fill: String, Codable { case none, contentHugging }
-    // Optional so original documents and private clipboard carriers still decode.
     var fill: Fill?
     var resolvedFill: Fill { fill ?? .none }
     var family: Family = .clean
@@ -72,7 +66,6 @@ struct EaselItem: Codable, Identifiable, Equatable {
     var url: String?
     var assetID: String?
     var color: String = "#252525"
-    // Arrow/freehand points are local to the object's frame.
     var points: [EaselPoint] = []
     var capturedAt: Date?
     var captureLayout: EaselCaptureLayout?
@@ -125,11 +118,6 @@ final class EaselStore {
     private var sessions: [UUID: WeakSession] = [:]
     var documentsDirectory: URL { directory.appendingPathComponent("documents", isDirectory: true) }
     private var assetsDirectory: URL { directory.appendingPathComponent("assets", isDirectory: true) }
-    /// Off-main sorted-keys encode + atomic replace. Canvas/session mutations
-    /// still wait for durability before publishing; encode/write are not on the
-    /// calling/MainActor stack. Explicit `save()` and create use the same path.
-    /// Identical sorted-keys bytes skip the atomic replace; distinct revisions
-    /// still encode and replace in FIFO order.
     private let documentWriter = EaselDocumentWriter()
 
     init(directory: URL, now: @escaping () -> Date = Date.init) throws {
@@ -174,10 +162,8 @@ final class EaselStore {
         return session(try read(id))
     }
 
-    /// The reference owns the same document and assets; a sidebar duplicate
-    /// does not clone embedded pages or finish any window's canvas/text gesture.
     func validateReference(_ id: UUID) throws {
-        let saved = try read(id) // Includes the actual referenced asset checks.
+        let saved = try read(id)
         if let live = sessions[id]?.value, live.document != saved {
             throw EaselStoreError.invalidDocument("the shared document changed outside its session")
         }
@@ -191,20 +177,10 @@ final class EaselStore {
         documentWriter.forget(url)
         syncDirectory(documentsDirectory)
         sessions.removeValue(forKey: id)?.value?.markDeleted()
-        // Assets remain available to undo snapshots and other documents.
-        // Explicit garbage collection requires a separate reachability pass.
     }
 
     fileprivate func timestamp() -> Date { now() }
 
-    /// Validates on the caller, then encodes sorted-keys JSON and atomically
-    /// replaces the document file on the easel-save queue. `wait` is for
-    /// callers that must observe the file and surface I/O errors before
-    /// publishing (create, canvas `perform`/`undo`/`redo`, navigation metadata,
-    /// and explicit `save()`). Timing of encode/write may leave the calling
-    /// thread. Distinct durable revisions are never reordered or dropped; when
-    /// the sorted-keys bytes match the last successful write for that path,
-    /// the atomic replace is a true no-op.
     fileprivate func persist(_ document: EaselDocument, wait: Bool = true) throws {
         try checkDirectories()
         try validate(document)
@@ -221,7 +197,6 @@ final class EaselStore {
 
     fileprivate func importPNG(_ data: Data) throws -> String {
         guard data.count <= Self.maximumAssetBytes else { throw EaselStoreError.tooLarge }
-        // The AppKit importer decodes pixels. This layer only accepts its PNG carrier.
         guard data.count >= 24, data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]),
               Array(data[12..<16]) == Array("IHDR".utf8) else { throw EaselStoreError.invalidImage }
         try checkDirectories()
@@ -240,11 +215,6 @@ final class EaselStore {
         return url
     }
 
-    ///
-    ///
-    /// Space. Parc stores Easels per Profile: referenced assets are copied into
-    /// the destination (source assets stay, as after delete), then the exact
-    /// document file moves. Returns the assets this call copied.
     func relocate(_ id: UUID, to destination: EaselStore) throws -> [String] {
         guard destination !== self, sessions[id]?.value == nil, destination.sessions[id]?.value == nil else {
             throw EaselStoreError.invalidDocument("the document is open")
@@ -280,11 +250,6 @@ final class EaselStore {
         return copied
     }
 
-    /// After every original editor and native child has closed, revoke the old
-    /// session's write capability explicitly. AppKit/async callbacks may still
-    ///
-    /// A failed later relocation can reopen the unchanged source with a fresh
-    /// session, while the retired owner can never recreate its old document.
     func retireSessionForRelocation(_ id: UUID) throws {
         guard let current = sessions[id]?.value else { return }
         try current.validateReplacement(nil)
@@ -295,7 +260,6 @@ final class EaselStore {
         current.markClosed()
     }
 
-    /// Rollback of a relocation's copied assets only.
     func removeAssets(_ ids: [String]) {
         for asset in ids { try? FileManager.default.removeItem(at: assetsDirectory.appendingPathComponent(asset)) }
         if !ids.isEmpty { syncDirectory(assetsDirectory) }
@@ -401,7 +365,6 @@ final class EaselStore {
     }
 }
 
-/// Shared O_EXCL / fsync / rename(2) replace used by document JSON and PNG assets.
 private enum EaselAtomicFile {
     static func write(_ data: Data, to destination: URL) throws {
         if FileManager.default.fileExists(atPath: destination.path) {
@@ -437,26 +400,12 @@ private enum EaselAtomicFile {
     }
 }
 
-/// Off-calling-thread easel document encode/replace. Bytes stay sorted-keys
-/// JSON with the same `.write-*` / fsync / rename contract readers depend on.
-/// Work is FIFO on one serial queue so a later persist cannot leapfrog or drop
-/// an earlier durable revision. When encoded bytes equal the last successful
-/// write for that path, the atomic replace is skipped (true identical-byte
-/// no-op); encode of that identical document may still run off the caller.
-/// `wait` mirrors session save: canvas and explicit callers that must surface
-/// I/O errors block; async is available without skipping distinct revisions.
 private final class EaselDocumentWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "org.parc.easel-save", qos: .utility)
-    /// Last successfully replaced sorted-keys payload per document path.
-    /// Touched only on `queue`.
     private var lastWrittenBytes: [String: Data] = [:]
 
     func write(_ document: EaselDocument, to url: URL, maximumBytes: Int, wait: Bool,
                completion: @escaping (Error?) -> Void) {
-        // Always `async` onto the save queue. `DispatchQueue.sync` may run the
-        // block inline on the calling/MainActor thread; canvas edits need the
-        // sorted-keys encode and atomic replace off that stack even when the
-        // caller must still wait for durability before publishing.
         let work = {
             do {
                 try self.encodeAndReplace(document, to: url, maximumBytes: maximumBytes)
@@ -478,8 +427,6 @@ private final class EaselDocumentWriter: @unchecked Sendable {
         }
     }
 
-    /// Drop the remembered payload after the on-disk file is removed or moved
-    /// so a later create/replace at the same path is not treated as identical.
     func forget(_ url: URL) {
         let group = DispatchGroup()
         group.enter()
@@ -497,7 +444,6 @@ private final class EaselDocumentWriter: @unchecked Sendable {
         guard data.count <= maximumBytes else { throw EaselStoreError.tooLarge }
         let key = url.path
         if lastWrittenBytes[key] == data {
-            // Same sorted-keys JSON already durable; skip fsync/rename.
             return
         }
         try EaselAtomicFile.write(data, to: url)
@@ -520,9 +466,6 @@ final class EaselSession: ObservableObject {
     var isClosed: Bool { closed }
     var isDeleted: Bool { deleted }
     private var lastUndoGroup: UUID?
-    // Application-owned real page lifetimes veto a destructive replacement.
-    // This protects synchronous callers and other editors; approval is obtained
-    // through the actual native close transaction before retrying the mutation.
     private var replacementGuards: [UUID: (EaselDocument?) -> Bool] = [:]
     var undoDestination: EaselDocument? { undoStack.last }
     var redoDestination: EaselDocument? { redoStack.last }
@@ -539,8 +482,6 @@ final class EaselSession: ObservableObject {
         self.document = document
     }
 
-    /// Capture's modal editor uses the same object transactions without creating
-    /// a saved Easel or touching a profile directory. Assets live with this draft.
     init(inMemory document: EaselDocument, assets: [String: Data]) throws {
         store = nil; self.document = document; memoryAssets = assets
         try persist(document)
@@ -582,8 +523,6 @@ final class EaselSession: ObservableObject {
         updateHistoryState()
     }
 
-    // A real page observation updates only this object's URL. It does not
-    // represent a canvas edit or an instruction to navigate other live pages.
     private var recordingBrowserURL: (id: UUID, from: String, to: String)?
     func isRecordingBrowserNavigation(_ id: UUID, from: String, to: String) -> Bool {
         guard let change = recordingBrowserURL else { return false }
@@ -602,8 +541,6 @@ final class EaselSession: ObservableObject {
         defer { recordingBrowserURL = nil }
         try validateReplacement(next)
         try persist(next)
-        // Keep unrelated canvas Undo/Redo from restoring an old browser URL.
-        // These are metadata snapshots, never serialized WebContents/history.
         func refresh(_ snapshot: inout EaselDocument) {
             if let i = snapshot.items.firstIndex(where: { $0.id == itemID && $0.kind == .browser && $0.url == expectedURL }) {
                 snapshot.items[i].url = value
@@ -682,7 +619,6 @@ final class EaselSession: ObservableObject {
     }
 
     private func trimUndo() {
-        // Bound retained snapshots by count and encoded size, excluding assets.
         while undoStack.count > 50 { undoStack.removeFirst() }
         var retainedBytes = 0
         for index in undoStack.indices.reversed() {

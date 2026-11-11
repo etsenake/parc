@@ -1,7 +1,5 @@
 import Foundation
 
-/// A move binds both original hierarchies. Navigation metadata can change while
-/// a menu is open; membership, placement, profile and split identity cannot.
 struct SidebarSpaceMove: Equatable {
     let source: SidebarHierarchySnapshot
     let destination: SidebarHierarchySnapshot
@@ -9,15 +7,10 @@ struct SidebarSpaceMove: Equatable {
     let tabIDs: [UUID]
     let folderIDs: [UUID]
     let groupIDs: [UUID]
-    ///
-    /// roots land in the destination's Pinned section, snapshotting their
-    /// current page as the saved home. Sidebar drags keep their section.
     var pinsToday = false
 
     init?(items: [SidebarItemReference], from source: SidebarHierarchySnapshot,
           to destination: SidebarHierarchySnapshot, state: BrowserState) {
-        //
-        // decision is resolved by the caller before this transaction commits.
         guard source.spaceID != destination.spaceID,
               source.profileID == destination.profileID
                 || InterProfileMove.profilesAvailable(source.profileID, destination.profileID, in: state),
@@ -63,8 +56,6 @@ struct SidebarSpaceMove: Equatable {
 
     var crossesProfiles: Bool { source.profileID != destination.profileID }
 
-    /// The same-window producer cannot relocate a live split through the
-    /// single-page transfer path. Unmaterialized children have no owner yet.
     func permitsSplitOwners(_ owners: [UUID: UUID], in windowID: UUID) -> Bool {
         source.groups.filter { groupIDs.contains($0.id) }.allSatisfy { group in
             group.tabIDs.allSatisfy { owners[$0] == nil || owners[$0] == windowID }
@@ -81,11 +72,6 @@ struct SidebarSpaceMove: Equatable {
             if case .split(let id) = item, let anchor = state.splitLayouts.first(where: { $0.id == id })?.sidebarAnchorID { return .tab(anchor) }
             return item
         }
-        //
-        // it. Parc stores split children as tabs with an anchored projection;
-        // an explicit whole-group move gives every child the group's placement.
-        // Remove dormant child references too, so separating after the move
-        // cannot revive a slot in an unrelated source folder/section.
         let movedGroups = Set(groupIDs)
         for key in next.sidebarItemOrder.keys where key.hasPrefix(source.spaceID.uuidString + ":") {
             next.sidebarItemOrder[key]?.removeAll { item in
@@ -96,9 +82,6 @@ struct SidebarSpaceMove: Equatable {
                 }
             }
         }
-        // Capture normalized mixed order before moving identities. A root goes
-        // to its projected section. Nested folders keep their original parents
-        // and mixed order, including collapsed state.
         var sections: [TabKind: [SidebarItemReference]] = [:]
         for root in roots {
             guard let location = SidebarHierarchy.location(of: root, state: state, spaceID: source.spaceID) else { return nil }
@@ -129,8 +112,6 @@ struct SidebarSpaceMove: Equatable {
             guard let group = source.groups.first(where: { $0.id == groupID }),
                   let location = SidebarHierarchy.location(of: .split(groupID), state: state,
                       spaceID: source.spaceID) else { return nil }
-            // A nested group stays inside its moved folder; a selected group
-            // becomes a root. Never carry a source-only folder into the target.
             let parent = location.folderID.flatMap { movedFolders.contains($0) ? $0 : nil }
             for i in next.tabs.indices where group.tabIDs.contains(next.tabs[i].id) {
                 next.tabs[i].folderID = parent
@@ -154,8 +135,6 @@ struct SidebarSpaceMove: Equatable {
     }
 }
 
-/// Resolves the current original hierarchy for a reveal without selecting or
-/// recreating any tab. A nonempty folder opens; a tab opens its ancestors.
 struct SidebarItemReveal: Equatable {
     let item: SidebarItemReference
     let spaceID: UUID
@@ -192,8 +171,6 @@ struct SidebarItemReveal: Equatable {
 }
 
 
-///
-/// editable title/Profile/style. Resolve an original anchor at commit time.
 enum SidebarSpaceInsertion: Equatable {
     case after(UUID)
     case absolute(Int)
@@ -206,10 +183,6 @@ enum SidebarSpaceInsertion: Equatable {
     }
 }
 
-/// An editing draft has no durable effect. The initiating window owns its
-/// selection/native claims; Core binds the original hierarchy and new identity.
-/// Accepted creation is synchronous and atomic, so there is no later animation
-/// phase in which Cancel could revoke an already committed Space.
 struct SidebarNewSpaceDraft: Equatable {
     let source: SidebarHierarchySnapshot
     let spaceID: UUID
@@ -252,8 +225,6 @@ struct SidebarNewSpaceDraft: Equatable {
         }
     }
 
-    /// Empty creation has no live contents to relocate. A nonempty draft only
-    /// supports the existing same-Profile original-item move mechanism.
     func canUseProfile(_ id: UUID, in state: BrowserState) -> Bool {
         state.profiles.contains { $0.id == id } &&
         !state.profileRemovals.contains { $0.profileID == id } &&
@@ -277,8 +248,6 @@ struct SidebarNewSpaceDraft: Equatable {
         return next
     }
 
-    /// Preview is only for owner validation, not a separately committable empty
-    /// destination. Its destination snapshot exists solely in a local state copy.
     func move(in state: BrowserState) -> SidebarSpaceMove? {
         guard !roots.isEmpty, let next = stagedState(in: state),
               let destination = SidebarHierarchySnapshot(state: next, spaceID: spaceID, profileID: profileID),

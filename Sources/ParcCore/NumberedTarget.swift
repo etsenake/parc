@@ -1,13 +1,5 @@
 import Foundation
 
-///
-/// Sidebar Item (binding IDs `item1`…`item9`, MainMenuAction 2) index the same
-/// sidebar list as Next/Previous Tab: Favorites, then pinned, then Today
-///
-/// left out when `excludeFavoritesInSwitchToNthTab` is set; item 9 is the
-/// last item unless `switchToNinthSidebarItemEnabled` is set. A number past
-/// the end selects nothing. Every Spaces menu entry carries `spaceN`; its
-///
 enum NumberedTarget {
     static let excludeFavoritesKey = "excludeFavoritesInSwitchToNthTab"
     static let ninthItemKey = "switchToNinthSidebarItemEnabled"
@@ -26,8 +18,6 @@ enum NumberedTarget {
         return value
     }
 
-    ///
-    ///
     static func description(for id: String, excludeFavorites: Bool, ninthItemEnabled: Bool) -> String? {
         if let number = itemNumber(id) {
             if number == 9, !ninthItemEnabled { return "Jumps to the last item at the bottom of your Sidebar." }
@@ -43,7 +33,6 @@ enum NumberedTarget {
         return nil
     }
 
-    /// Tag 9 means the last item unless the ninth-item setting is on.
     static func destination<Item>(_ items: [Item], number: Int, ninthItemEnabled: Bool) -> Item? {
         guard numbers.contains(number) else { return nil }
         if number == 9, !ninthItemEnabled { return items.last }

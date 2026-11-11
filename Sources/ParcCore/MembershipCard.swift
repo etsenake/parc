@@ -1,8 +1,6 @@
 import Foundation
 import Combine
 
-/// The decorative card is app-local. Its date is card creation, never an account
-///
 struct MembershipCardState: Codable, Equatable {
     var version = 1
     var name: String
@@ -36,7 +34,6 @@ struct MembershipCardState: Codable, Equatable {
             backgroundBlobInfo.count == 15 && backgroundBlobInfo.allSatisfy { (1...14).contains($0) }
     }
     static func make<R: RandomNumberGenerator>(name: String, date: Date, using random: inout R) -> Self {
-        //
         let shape = shapeForName(name)
         return Self(name: name, createdAt: date, palette: Int.random(in: 1...7, using: &random),
                     shape: shape, title: randomTitle(using: &random),
@@ -49,9 +46,6 @@ struct MembershipCardState: Codable, Equatable {
     }
     func regenerated<R: RandomNumberGenerator>(using random: inout R) -> Self {
         var next = self
-        // A new design changes the mask, palette, title and blob configuration
-        //
-        // genuine local creation date survives regeneration.
         let shapes = (1...4).filter { $0 != shape }
         next.shape = shapes[Int.random(in: shapes.indices, using: &random)]
         let palettes = (1...7).filter { $0 != palette }
@@ -99,8 +93,6 @@ enum MembershipCardFailure: LocalizedError {
     }
 }
 
-/// One live owner for each normal application directory; no per-window copies
-/// can overwrite another window's card. Publish only after atomic file replacement.
 @MainActor
 final class MembershipCardStore: ObservableObject {
     private final class Weak { weak var value: MembershipCardStore?; init(_ value: MembershipCardStore) { self.value = value } }

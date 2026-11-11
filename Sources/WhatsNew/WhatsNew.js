@@ -1,10 +1,6 @@
-// See What's New opens the page at #from=<the version the update replaced>&to=<the one it installed>.
-// A tab restored after a later update keeps the old range, which this page then ignores.
-// scripts/whats_new.py defines `copy` above this, from its COPY.
 const [, from, to] = /^#from=(\d+(?:\.\d+)*)&to=(\d+(?:\.\d+)*)$/.exec(location.hash) ?? [];
 const [current, ...earlier] = document.querySelectorAll(".step");
 if (from && current?.dataset.version === to) {
-  // Numeric collation orders 1.10.0 after 1.9.0, as the app compares versions.
   const newer = (step) => step.dataset.version.localeCompare(from, "en", { numeric: true }) > 0;
   const mark = (step, kind, label) => {
     step.classList.add(kind);

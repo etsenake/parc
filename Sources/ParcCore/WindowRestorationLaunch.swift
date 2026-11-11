@@ -1,7 +1,5 @@
 import Foundation
 
-// Launch and AppKit restoration can finish in either order. Do not present a
-// fallback browser or handle a Dock reopen until both original owners finish.
 struct WindowRestorationLaunch {
     enum Action: Equatable { case newWindow, blankWindow, newNote(spaceID: UUID, profileID: UUID) }
     private(set) var launchReady = false
@@ -42,17 +40,8 @@ struct WindowRestorationLaunch {
     }
 }
 
-///
-/// state at Quit (its defaults domain sets NSQuitAlwaysKeepsWindows) and its
-///
-/// updater relaunched it or after a crash, otherwise as its restore-windows
-/// setting (`arc_quitAlwaysKeepsWindows`, off) says, which leaves one window.
-/// Parc has no updater; a launch of a different build than the last one on
-/// the same data stands in for it. Kept beside the session file.
 struct LaunchContinuity: Codable, Equatable {
-    /// Set for as long as a run is alive; still set at launch means it crashed.
     var running: Bool
-    /// The build that run was.
     var build: String
 
     static func restoresEveryWindow(previous: LaunchContinuity?, build: String) -> Bool {
@@ -60,8 +49,6 @@ struct LaunchContinuity: Codable, Equatable {
         return previous.running || previous.build != build
     }
 
-    /// Whether AppKit may restore a saved window: every one, or only the one
-    /// that was first among the saved records at launch.
     static func accepts(_ recordID: UUID?, launchWindowID: UUID?, everyWindow: Bool) -> Bool {
         everyWindow || (recordID != nil && recordID == launchWindowID)
     }
