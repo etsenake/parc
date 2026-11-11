@@ -29,6 +29,14 @@
 #include "ui/views/widget/widget.h"
 #import "window_security_reservation.h"
 
+namespace parc_hooks {
+void SetClientCertificateSelector(base::OnceClosure (*)(
+    content::WebContents*,
+    net::SSLCertRequestInfo*,
+    net::ClientCertIdentityList,
+    std::unique_ptr<content::ClientCertificateDelegate>));
+}
+
 namespace parc {
 namespace {
 struct Outcome {
@@ -146,6 +154,7 @@ class NativeClientCertificatesTest : public BrowserWithTestWindowTest {
     contents()->UpdateWebContentsVisibility(content::Visibility::VISIBLE);
     web_modal::WebContentsModalDialogManager::CreateForWebContents(contents());
     manager()->SetDelegate(&modal_);
+    parc_hooks::SetClientCertificateSelector(&ShowClientCertificateSelector);
     InstallNativeClientCertificates(*contents());
     SetNativeClientCertificatesAttached(*contents(), true);
     identity_ = net::FakeClientCertIdentity::CreateFromCertAndKeyFiles(
@@ -167,6 +176,7 @@ class NativeClientCertificatesTest : public BrowserWithTestWindowTest {
     browser()->GetTabStripModel()->CloseAllTabs();
     Pump();
     modal_.host.Invalidate();
+    parc_hooks::SetClientCertificateSelector(nullptr);
     BrowserWithTestWindowTest::TearDown();
     [window_ close];
     window_ = nil;

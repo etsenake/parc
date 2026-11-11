@@ -15,7 +15,6 @@
 #include "base/supports_user_data.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ssl/ssl_client_certificate_selector.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/views/ssl_client_certificate_selector.h"
 #include "components/tabs/public/tab_interface.h"
@@ -512,29 +511,34 @@ void InstallNativeClientCertificates(content::WebContents& contents) {
   if (!State(&contents)) {
     contents.SetUserData(kPageState, std::make_unique<PageState>());
   }
-  SetNativeSSLClientCertificateSelectorFactory(
-      contents,
-      base::BindRepeating(
-          [](content::WebContents* contents, net::SSLCertRequestInfo* info,
-             net::ClientCertIdentityList identities,
-             std::unique_ptr<content::ClientCertificateDelegate> delegate) {
-            auto request =
-                std::make_shared<Request>(*contents, std::move(delegate));
-            auto& requests = State(contents)->requests;
-            std::erase_if(requests,
-                          [](const auto& weak) { return weak.expired(); });
-            requests.push_back(request);
-            if (!request->Build(info, std::move(identities))) {
-              request->Abort();
-            }
-            return base::BindOnce(
-                [](std::weak_ptr<Request> weak) {
-                  if (auto request = weak.lock()) {
-                    request->CancelIfHidden();
-                  }
-                },
-                std::weak_ptr<Request>(request));
-          }));
+}
+base::OnceClosure ShowClientCertificateSelector(
+    content::WebContents* contents,
+    net::SSLCertRequestInfo* info,
+    net::ClientCertIdentityList identities,
+    std::unique_ptr<content::ClientCertificateDelegate> delegate) {
+  auto* state = State(contents);
+  if (!state) {
+    auto* selector = new SSLClientCertificateSelector(
+        contents, info, std::move(identities), std::move(delegate));
+    selector->Init();
+    selector->Show();
+    return selector->GetCancellationCallback();
+  }
+  auto request = std::make_shared<Request>(*contents, std::move(delegate));
+  std::erase_if(state->requests,
+                [](const auto& weak) { return weak.expired(); });
+  state->requests.push_back(request);
+  if (!request->Build(info, std::move(identities))) {
+    request->Abort();
+  }
+  return base::BindOnce(
+      [](std::weak_ptr<Request> weak) {
+        if (auto request = weak.lock()) {
+          request->CancelIfHidden();
+        }
+      },
+      std::weak_ptr<Request>(request));
 }
 void SetNativeClientCertificatesAttached(content::WebContents& contents,
                                          bool attached) {

@@ -1,24 +1,3 @@
---- a/chrome/browser/ssl/ssl_client_certificate_selector.h
-+++ b/chrome/browser/ssl/ssl_client_certificate_selector.h
-@@ -34,6 +34,18 @@
-     net::ClientCertIdentityList client_certs,
-     std::unique_ptr<content::ClientCertificateDelegate> delegate);
- 
-+// Per-page native presentation runs only after Chrome certificate policy and
-+// automatic selection. It receives the real filtered identities and delegate.
-+using NativeSSLClientCertificateSelectorFactory =
-+    base::RepeatingCallback<base::OnceClosure(
-+        content::WebContents*,
-+        net::SSLCertRequestInfo*,
-+        net::ClientCertIdentityList,
-+        std::unique_ptr<content::ClientCertificateDelegate>)>;
-+void SetNativeSSLClientCertificateSelectorFactory(
-+    content::WebContents&,
-+    NativeSSLClientCertificateSelectorFactory);
-+
- using ShowSSLClientCertificateSelectorTestingHook =
-     base::RepeatingCallback<base::OnceClosure(
-         content::WebContents* contents,
 --- a/chrome/browser/ui/views/certificate_selector.cc
 +++ b/chrome/browser/ui/views/certificate_selector.cc
 @@ -242,6 +242,13 @@
@@ -66,30 +45,28 @@
    std::u16string GetWindowTitle() const override;
 --- a/chrome/browser/ui/views/ssl_client_certificate_selector.cc
 +++ b/chrome/browser/ui/views/ssl_client_certificate_selector.cc
-@@ -12,6 +12,7 @@
- #include "base/functional/callback_helpers.h"
- #include "base/no_destructor.h"
- #include "base/strings/utf_string_conversions.h"
-+#include "base/supports_user_data.h"
- #include "build/build_config.h"
- #include "chrome/browser/ssl/ssl_client_auth_observer.h"
- #include "chrome/browser/ui/dialogs/browser_dialogs.h"
-@@ -28,6 +29,14 @@
+@@ -27,7 +27,20 @@
+ #include "ui/views/controls/label.h"
  #include "ui/views/widget/widget.h"
  
++namespace parc_hooks {
++using ClientCertificateSelector = base::OnceClosure (*)(
++    content::WebContents* contents,
++    net::SSLCertRequestInfo* cert_request_info,
++    net::ClientCertIdentityList client_certs,
++    std::unique_ptr<content::ClientCertificateDelegate> delegate);
++void SetClientCertificateSelector(ClientCertificateSelector selector);
++}  // namespace parc_hooks
++
  namespace {
-+constexpr char kNativeSelectorFactory[] = "native-ssl-selector-factory";
-+class NativeSelectorFactoryData final : public base::SupportsUserData::Data {
-+ public:
-+  explicit NativeSelectorFactoryData(
-+      NativeSSLClientCertificateSelectorFactory value)
-+      : factory(std::move(value)) {}
-+  NativeSSLClientCertificateSelectorFactory factory;
-+};
++
++// Replaces the Views selector below for every page, after Chrome's checks.
++parc_hooks::ClientCertificateSelector g_parc_client_certificate_selector =
++    nullptr;
  
  // Returns the storage of a test hook for `ShowSSLClientCertificateSelector()`.
  ShowSSLClientCertificateSelectorTestingHook&
-@@ -46,11 +55,13 @@
+@@ -46,11 +59,13 @@
    SSLClientAuthObserverImpl(
        content::WebContents* web_contents,
        const scoped_refptr<net::SSLCertRequestInfo>& cert_request_info,
@@ -105,7 +82,7 @@
  
    void Init(base::OnceClosure close_dialog_callback) {
      close_dialog_callback_ = std::move(close_dialog_callback);
-@@ -72,9 +83,21 @@
+@@ -72,9 +87,21 @@
                         std::move(self), base::Unretained(cert)));
    }
  
@@ -128,7 +105,7 @@
    }
  
    // SSLClientAuthObserver:
-@@ -91,6 +114,7 @@
+@@ -91,6 +118,7 @@
    }
  
   private:
@@ -136,7 +113,7 @@
    base::OnceClosure close_dialog_callback_;
  };
  
-@@ -98,26 +122,30 @@
+@@ -98,26 +126,30 @@
      content::WebContents* web_contents,
      const scoped_refptr<net::SSLCertRequestInfo>& cert_request_info,
      net::ClientCertIdentityList client_certs,
@@ -186,7 +163,7 @@
  }
  
  SSLClientCertificateSelector::~SSLClientCertificateSelector() = default;
-@@ -143,6 +171,10 @@
+@@ -143,6 +175,10 @@
  
  void SSLClientCertificateSelector::AcceptCertificate(
      std::unique_ptr<net::ClientCertIdentity> identity) {
@@ -197,38 +174,29 @@
    // The SSLClientCertificateSelector will be destroyed after this method
    // returns, so the SSLClientAuthObserverImpl manages its own lifetime while
    // acquiring the private key from |identity|.
-@@ -191,6 +223,14 @@
+@@ -191,6 +227,12 @@
      return base::OnceClosure();
    }
  
-+  auto* native = static_cast<NativeSelectorFactoryData*>(
-+      contents->GetUserData(kNativeSelectorFactory));
-+  if (native) {
-+    auto factory = native->factory;
-+    return factory.Run(contents, cert_request_info, std::move(client_certs),
-+                       std::move(delegate));
++  if (g_parc_client_certificate_selector) {
++    return g_parc_client_certificate_selector(
++        contents, cert_request_info, std::move(client_certs),
++        std::move(delegate));
 +  }
 +
    SSLClientCertificateSelector* selector = new SSLClientCertificateSelector(
        contents, cert_request_info, std::move(client_certs),
        std::move(delegate));
-@@ -204,3 +244,16 @@
+@@ -204,3 +246,9 @@
    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
    GetShowSSLClientCertificateSelectorTestingHook() = std::move(hook);
  }
 +
-+void SetNativeSSLClientCertificateSelectorFactory(
-+    content::WebContents& contents,
-+    NativeSSLClientCertificateSelectorFactory factory) {
-+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-+  if (factory) {
-+    contents.SetUserData(
-+        kNativeSelectorFactory,
-+        std::make_unique<NativeSelectorFactoryData>(std::move(factory)));
-+  } else {
-+    contents.RemoveUserData(kNativeSelectorFactory);
-+  }
++namespace parc_hooks {
++void SetClientCertificateSelector(ClientCertificateSelector selector) {
++  g_parc_client_certificate_selector = selector;
 +}
++}  // namespace parc_hooks
 --- a/chrome/browser/ui/views/ssl_client_certificate_selector.h
 +++ b/chrome/browser/ui/views/ssl_client_certificate_selector.h
 @@ -29,7 +29,8 @@

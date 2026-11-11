@@ -9,9 +9,11 @@
 #include <optional>
 #include <string>
 
+#include "base/functional/callback.h"
 #include "chrome/browser/ui/sad_tab_types.h"
 #include "components/permissions/permission_prompt.h"
 #include "content/public/browser/weak_document_ptr.h"
+#include "net/ssl/client_cert_identity.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/native_ui_types.h"
@@ -41,11 +43,13 @@ class GCMClient;
 }
 
 namespace content {
+class ClientCertificateDelegate;
 class RenderFrameHost;
 class WebContents;
 }
 
 namespace net {
+class SSLCertRequestInfo;
 class X509Certificate;
 }
 
@@ -106,6 +110,14 @@ using CertificateViewer = void (*)(content::WebContents* web_contents,
                                    gfx::NativeWindow parent,
                                    net::X509Certificate* cert);
 void SetCertificateViewer(CertificateViewer viewer);
+
+// chrome/browser/ui/views/ssl_client_certificate_selector.cc
+using ClientCertificateSelector = base::OnceClosure (*)(
+    content::WebContents* contents,
+    net::SSLCertRequestInfo* cert_request_info,
+    net::ClientCertIdentityList client_certs,
+    std::unique_ptr<content::ClientCertificateDelegate> delegate);
+void SetClientCertificateSelector(ClientCertificateSelector selector);
 
 // chrome/browser/ui/login/login_handler.cc
 void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));
