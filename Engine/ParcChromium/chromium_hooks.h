@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "chrome/browser/ui/sad_tab_types.h"
 #include "components/permissions/permission_prompt.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -15,6 +16,7 @@ class ChromeBrowserMainParts;
 class LoginHandler;
 class PrefRegistrySimple;
 class PrefService;
+class SadTab;
 class StartupData;
 
 namespace base {
@@ -70,6 +72,11 @@ using FolderUploadConfirmation =
              content::WebContents* web_contents,
              content::RenderFrameHost* frame);
 void SetFolderUploadConfirmation(FolderUploadConfirmation confirmation);
+
+// chrome/browser/ui/sad_tab_controller.cc
+using SadTabFactory = std::unique_ptr<SadTab> (*)(content::WebContents*,
+                                                  SadTabKind);
+void SetSadTabFactory(SadTabFactory factory);
 
 // chrome/browser/ui/login/login_handler.cc
 void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));

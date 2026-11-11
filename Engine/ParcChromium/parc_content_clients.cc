@@ -38,6 +38,7 @@
 #include "parc/native/native_appkit_host.h"
 #include "parc/native/native_internal_urls.h"
 #include "parc/native/native_web_contents_view_delegate.h"
+#include "parc/native/sad_tab.h"
 #include "parc/native/site_permissions.h"
 #include "parc/native/video_overlay_window.h"
 #include "parc/parc_bundle_mac.h"
@@ -83,6 +84,7 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
     parc_hooks::SetLoginHandlerAuthValidator(&ValidateNativeLoginHandlerAuth);
     parc_hooks::SetExtensionUninstallHandler(&BeginExtensionUninstall);
     parc_hooks::SetFolderUploadConfirmation(&ShowFolderUploadConfirmation);
+    parc_hooks::SetSadTabFactory(&CreateSadTab);
     RegisterNativeFileDialogs();
     RegisterLicenseWebUI();
   }

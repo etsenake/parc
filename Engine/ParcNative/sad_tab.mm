@@ -8,11 +8,11 @@
 #include <utility>
 
 #include "base/check.h"
-#include "base/functional/bind.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/sad_tab.h"
+#include "chrome/browser/ui/sad_tab_controller.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "native_appkit_page.h"
@@ -92,7 +92,7 @@ class NativeSadTab final : public SadTab {
     // tab moves read this same snapshot; no view or URL is recreated here.
     NotifyNativePageChanged(contents_.get());
   }
-  void RequestFocus() override {
+  void RequestFocus() {
     State* state = GetState(contents_.get());
     if (state && state->owner.get() == this) {
       RequestNativeRendererCrashFocus(contents_.get(), state->snapshot);
@@ -174,12 +174,13 @@ void InstallNativeSadTab(content::WebContents& contents,
   auto state = std::make_unique<State>();
   state->is_attached = std::move(is_attached);
   contents.SetUserData(&kNativeSadTabStateKey, std::move(state));
-  SadTab::SetNativeFactory(
-      &contents,
-      base::BindRepeating([](content::WebContents* page,
-                             SadTabKind kind) -> std::unique_ptr<SadTab> {
-        return std::make_unique<NativeSadTab>(page, kind);
-      }));
+}
+std::unique_ptr<SadTab> CreateSadTab(content::WebContents* contents,
+                                     SadTabKind kind) {
+  if (GetState(contents)) {
+    return std::make_unique<NativeSadTab>(contents, kind);
+  }
+  return std::make_unique<SadTabController>(contents, kind);
 }
 PCNativeRendererCrash* NativeRendererCrash(content::WebContents* contents) {
   State* state = GetState(contents);
