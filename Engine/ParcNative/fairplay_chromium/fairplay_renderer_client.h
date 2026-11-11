@@ -86,8 +86,9 @@ class FairPlayRendererClient final
   // The GPU process's audio renderers play to the device the pipeline's
   // audio sink names, from Initialize on.
   void ParcOnAudioOutputDeviceChanged() override;
-  // Taking over from Chromium's renderer (Pipeline::ParcHandOffToFairPlay()),
-  // the video hole frame is painted only once shown.
+  // Taking over from Chromium's renderer
+  // (ParcPipelineExtension::ParcHandOffToFairPlay()), the video hole frame is
+  // painted only once shown.
   void ParcSetHidden(bool hidden) override;
   // Through FairPlayRendererExtension.SetPlaybackRateAt; dropped before the
   // GPU process sent the extension (the pipeline then starts it at the swap).

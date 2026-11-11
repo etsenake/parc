@@ -37,9 +37,9 @@ class ParcRendererExtension {
   // (FairPlay, native HLS) move theirs to the device the sink now names.
   virtual void ParcOnAudioOutputDeviceChanged() {}
 
-  // A renderer taking over from another (Pipeline::ParcHandOffToFairPlay())
-  // shows nothing until it does: the FairPlay Renderer paints its video hole
-  // frame only when shown.
+  // A renderer taking over from another
+  // (ParcPipelineExtension::ParcHandOffToFairPlay()) shows nothing until it
+  // does: the FairPlay Renderer paints its video hole frame only when shown.
   virtual void ParcSetHidden(bool hidden) {}
 
   // While hidden, runs at `playback_rate` on the playing renderer's clock,

@@ -10,6 +10,7 @@
 #include "media/base/audio_decoder_config.h"
 #include "media/base/audio_renderer_sink.h"
 #include "media/base/media_resource.h"
+#include "media/base/parc_demuxer_stream_extension.h"
 #include "media/base/video_decoder_config.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_renderer_sink.h"
@@ -74,7 +75,7 @@ void FairPlayRendererClient::Initialize(MediaResource* media_resource,
   std::vector<raw_ptr<DemuxerStream>> streams;
   bool video = false;
   for (DemuxerStream* stream : media_resource->GetAllStreams()) {
-    if (media_resource->ParcMayAddStreams() && stream->ParcIsEnabled() &&
+    if (media_resource->ParcMayAddStreams() && ParcStreamIsEnabled(stream) &&
         (stream->type() == DemuxerStream::AUDIO ||
          (stream->type() == DemuxerStream::VIDEO && !std::exchange(video, true)))) {
       streams.push_back(stream);
@@ -190,10 +191,10 @@ void FairPlayRendererClient::OnTracksChanged(
     return;
   }
   // A renderer that took over from another reads its resource's streams,
-  // not the demuxer's the pipeline names (DemuxerStream::ParcHandOffSource()).
+  // not the demuxer's the pipeline names (ParcStreamHandOffSource()).
   if (stream) {
     for (DemuxerStream* own : media_resource_->GetAllStreams()) {
-      if (own->ParcHandOffSource() == stream->ParcHandOffSource()) {
+      if (ParcStreamHandOffSource(own) == ParcStreamHandOffSource(stream)) {
         stream = own;
         break;
       }
@@ -203,7 +204,7 @@ void FairPlayRendererClient::OnTracksChanged(
   for (auto it = played_.begin(); it != played_.end();) {
     if (track_type == DemuxerStream::AUDIO &&
         it->second.stream->type() == DemuxerStream::AUDIO &&
-        !it->second.stream->ParcIsEnabled()) {
+        !ParcStreamIsEnabled(it->second.stream)) {
       renderer_extension_->RemoveStream(it->first);
       it = played_.erase(it);
     } else {
@@ -221,7 +222,7 @@ void FairPlayRendererClient::OnTracksChanged(
   if (track_type == DemuxerStream::AUDIO) {
     for (DemuxerStream* candidate : media_resource_->GetAllStreams()) {
       if (candidate->type() == DemuxerStream::AUDIO &&
-          candidate->ParcIsEnabled() && !plays(candidate)) {
+          ParcStreamIsEnabled(candidate) && !plays(candidate)) {
         added.push_back(candidate);
       }
     }
