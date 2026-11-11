@@ -265,6 +265,15 @@ an opt-in page context and otherwise run Chromium's own dialog, ambient bubble a
 unchanged. Final-answer hooks would make Parc rebuild those for every other page, and the recovery
 window holds a typed lease object inside Chromium's window class.
 
+The tab-sharing bar, its page-info link and its session profile are hooks, and the unused message
+accessor the patch added is gone. Two capture fixes stay as small patches and are worth sending
+upstream: the share-this-tab picker reports its own destruction and its hiding, which Parc needs to
+keep the window reserved until the dialog is really gone, and the delegated system picker keeps only
+an accepted session. The reader keeps private-window caches private with a plain edit, since this tree
+only builds Parc. The side panel stays: Chromium has no deregistration observer for a pending entry,
+the borrowed extension host has no seam, and the load-time mark is private. So does the
+protocol-handler accessor, which has no public alternative.
+
 ## Browser integration boundaries
 
 Page preference state and frame-focus subscriptions belong to Parc. The top-band
