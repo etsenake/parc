@@ -522,6 +522,7 @@ struct WindowPresentationTests {
         source.reconcile(frozenState, available: usableBySource)
         expect(source.selectedTabIDs.isEmpty && source.displayedTabIDs == [x.id] && source.displayedPlaceholders == [x.id],
                "the row and address clear while the pane stays as a placeholder")
+        expect(source.allPlaceholders == [x.id], "the window lists every tab it shows as a placeholder, in any Space")
         expect(source.sessionSelection.tabIDs.isEmpty && source.preferredFocusedTabID == nil,
                "a placeholder is neither saved nor focused")
         source.selectSpace(otherFrozenSpace.id, state: frozenState, available: usableBySource)

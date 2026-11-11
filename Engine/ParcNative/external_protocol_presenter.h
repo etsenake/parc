@@ -2,11 +2,10 @@
 #pragma once
 #import <AppKit/AppKit.h>
 NS_ASSUME_NONNULL_BEGIN
-//
-//
-// destination application's icon, the title as message text and buttons in
-//
-// (Escape). An empty remember label omits that button.
+// The external-protocol prompt as Parc's dialog sheet (dialog_style.h): the
+// destination application's icon, the title and message, then an unbadged
+// remember button ("Always open"), Cancel (Escape) and accept (default,
+// Return). An empty remember label omits that button.
 @interface PCExternalProtocolPresenter : NSObject
 - (instancetype)initWithPage:(NSView*)page
                       window:(NSWindow*)window

@@ -111,16 +111,16 @@ static void Decisions() {
       Find(r.sheet.contentView, @"http-auth-password"));
   Check([password isKindOfClass:NSSecureTextField.class],
         "secure password control");
-  NSFont* label = [NSFont systemFontOfSize:13];
-  NSFont* weighted = [[NSFontManager.sharedFontManager
-      fontWithFamily:label.familyName
-              traits:0
-              weight:7
-                size:13] fontWithSize:18];
   Check([Label(r.sheet.contentView, @"Sign in to login.example").font
-            isEqual:weighted] &&
-            username.font.pointSize == 13,
-        "the FontSet.label body and its weight-7, 18-point title");
+            isEqual:[NSFont systemFontOfSize:18 weight:NSFontWeightMedium]] &&
+            username.font.pointSize == 14 && password.font.pointSize == 14,
+        "Parc's 18-point medium title and 14-point fields");
+  Check(username.focusRingType == NSFocusRingTypeNone &&
+            password.focusRingType == NSFocusRingTypeNone,
+        "fields draw Parc's edit treatment instead of the focus ring");
+  Check([username.accessibilityLabel isEqual:@"Username"] &&
+            [password.accessibilityLabel isEqual:@"Password"],
+        "fields keep their VoiceOver labels");
   Check(Label(r.sheet.contentView, @"Sign in to login.example") &&
             Label(r.sheet.contentView,
                   @"Your connection to this site is private."),
@@ -131,7 +131,7 @@ static void Decisions() {
         "the field labels and placeholders");
   Check(r.sheet.contentView.frame.size.width >= 400 &&
             (r.sheet.styleMask & NSWindowStyleMaskFullSizeContentView),
-        "the 400-point full-size-content login window");
+        "full-size-content Parc dialog at least 400 points wide");
   [r autofillUsername:@"saved" password:@"original"];
   Check([username.stringValue isEqual:@"saved"] &&
             [password.stringValue isEqual:@"original"],
@@ -180,6 +180,71 @@ static void Decisions() {
   Pump();
   Check(count == 2 && outcome == PCHTTPAuthCancel,
         "Escape means explicit cancellation");
+  // Keyboard routing from any focus, respecting input-method composition.
+  __block int keyed = 0;
+  __block PCHTTPAuthChoice keyedChoice = PCHTTPAuthInterrupted;
+  auto keyResult = ^(PCHTTPAuthChoice c, NSString*, NSString*) {
+    ++keyed;
+    keyedChoice = c;
+  };
+  auto key = ^NSEvent*(NSWindow* sheet, NSString* characters, unsigned short code) {
+    return [NSEvent keyEventWithType:NSEventTypeKeyDown
+                            location:NSZeroPoint
+                       modifierFlags:0
+                           timestamp:NSProcessInfo.processInfo.systemUptime
+                        windowNumber:sheet.windowNumber
+                             context:nil
+                          characters:characters
+         charactersIgnoringModifiers:characters
+                           isARepeat:NO
+                             keyCode:code];
+  };
+  r = Make(p, w, false, ^{ return YES; }, keyResult);
+  [r show];
+  Pump();
+  auto field = static_cast<NSTextField*>(Find(r.sheet.contentView, @"http-auth-username"));
+  auto editor = static_cast<NSTextView*>(field.currentEditor);
+  Check([editor isKindOfClass:NSTextView.class], "username edits when the sheet opens");
+  [editor setMarkedText:@"か" selectedRange:NSMakeRange(1, 0)
+       replacementRange:NSMakeRange(NSNotFound, 0)];
+  Check(![r.sheet performKeyEquivalent:key(r.sheet, @"\r", 36)] &&
+            ![r.sheet performKeyEquivalent:key(r.sheet, @"\033", 53)],
+        "Return and Escape go to the input method while composing");
+  Pump();
+  Check(keyed == 0, "composition never answers the sign-in sheet");
+  [editor unmarkText];
+  auto secretField = static_cast<NSTextField*>(Find(r.sheet.contentView, @"http-auth-password"));
+  [r.sheet makeFirstResponder:secretField];
+  auto secretEditor = static_cast<NSTextView*>(secretField.currentEditor);
+  [secretEditor setMarkedText:@"か" selectedRange:NSMakeRange(1, 0)
+             replacementRange:NSMakeRange(NSNotFound, 0)];
+  if (secretEditor.hasMarkedText) {
+    Check(![r.sheet performKeyEquivalent:key(r.sheet, @"\r", 36)] &&
+              ![r.sheet performKeyEquivalent:key(r.sheet, @"\033", 53)],
+          "composition in the password field keeps Return and Escape");
+    [secretEditor unmarkText];
+  }
+  Pump();
+  Check(keyed == 0, "password-field composition never answers the sheet");
+  [r.sheet makeFirstResponder:Find(r.sheet.contentView, @"http-auth-cancel")];
+  Check([r.sheet performKeyEquivalent:key(r.sheet, @"\r", 36)],
+        "Return signs in with focus on a button");
+  Pump();
+  Check(keyed == 1 && keyedChoice == PCHTTPAuthAccept, "Return from any focus signs in");
+  r = Make(p, w, false, ^{ return YES; }, keyResult);
+  [r show];
+  Pump();
+  Check([r.sheet performKeyEquivalent:key(r.sheet, @"\003", 76)], "keypad Enter is handled");
+  Pump();
+  Check(keyed == 2 && keyedChoice == PCHTTPAuthAccept, "keypad Enter signs in");
+  r = Make(p, w, false, ^{ return YES; }, keyResult);
+  [r show];
+  Pump();
+  [r.sheet makeFirstResponder:nil];
+  Check([r.sheet performKeyEquivalent:key(r.sheet, @"\033", 53)],
+        "Escape is handled without a focused field");
+  Pump();
+  Check(keyed == 3 && keyedChoice == PCHTTPAuthCancel, "Escape from any focus cancels");
   [w close];
 }
 static void Invalidations() {

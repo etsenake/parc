@@ -33,6 +33,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#import "dialog_style.h"
 #include "native_auxiliary_page.h"
 #import "site_permission_presenter.h"
 #include "ui/base/base_window.h"
@@ -180,18 +181,23 @@ NSString* PArcTitle(NSString* site,
 
 //
 //
-// inline Swift string. It opens Parc's own Notifications pane.
+// inline Swift string, drawn as Parc's dialog. It opens Parc's own
+// Notifications pane.
 void ShowSystemNotificationsDeniedSheet(NSWindow* window) {
   if (!window || !window.visible || window.attachedSheet ||
       PCNativeWindowHasSecurityReservation(window)) {
     return;
   }
-  NSAlert* alert = [[NSAlert alloc] init];
-  alert.messageText = @"Parc Needs Notifications Permission";
-  alert.informativeText = @"You need to open System Preferences to give Parc "
-                          @"permission to show you Notifications.";
-  [alert addButtonWithTitle:@"Open System Preferences"];
-  [alert addButtonWithTitle:@"Never Mind"];
+  PCDialogPrompt* alert = [[PCDialogPrompt alloc]
+      initWithTitle:@"Parc Needs Notifications Permission"
+            message:@"You need to open System Preferences to give Parc "
+                    @"permission to show you Notifications."];
+  [alert addButtonWithTitle:@"Open System Preferences"
+                       role:PCDialogPromptPrimary
+                   response:NSAlertFirstButtonReturn];
+  [alert addButtonWithTitle:@"Never Mind"
+                       role:PCDialogPromptCancel
+                   response:NSAlertSecondButtonReturn];
   NSString* bundle = NSBundle.mainBundle.bundleIdentifier ?: @"";
   [alert beginSheetModalForWindow:window
                 completionHandler:^(NSModalResponse response) {

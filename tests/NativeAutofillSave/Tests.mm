@@ -110,7 +110,11 @@ static void TestButtonsAndDeferredCompletion() {
             isEqualToString:@"PCAutofillSaveSheet"],
         "uses custom NSWindow subclass, not NSAlert");
   Check(NSApp.modalWindow == nil, "no application-modal loop");
-  Check(!request.isMouseHovered, "offscreen sheet is not mouse-hovered");
+  // macOS may place the test window on screen, so compare with the pointer.
+  const BOOL pointerOverSheet = NSPointInRect(
+      NSEvent.mouseLocation, [request.sheet contentRectForFrameRect:request.sheet.frame]);
+  Check(request.isMouseHovered == pointerOverSheet,
+        "hover follows the pointer's actual position over the sheet");
   Click(request, @"Save");
   Check(count == 0,
         "button result is deferred after synchronous caller registration");

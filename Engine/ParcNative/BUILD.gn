@@ -88,6 +88,7 @@ source_set("native_components") {
     "autofill_save_presenter.h",
     "browser_window.h",
     "devtools_pane_view.h",
+    "dialog_style.h",
     "extension_install_presenter.h",
     "extension_uninstall_presenter.h",
     "find_bar_view.h",

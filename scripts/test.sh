@@ -15,6 +15,7 @@ core_sources=(
   "$repo_root/Sources/ParcCore/CommandBarFolderMove.swift"
   "$repo_root/Sources/ParcCore/CommandBarFolderAction.swift"
   "$repo_root/Sources/ParcCore/ClosedItems.swift"
+  "$repo_root/Sources/ParcCore/PagePlaceholderImages.swift"
   "$repo_root/Sources/ParcCore/SpaceTheme.swift"
   "$repo_root/Sources/ParcCore/OnboardingDraft.swift"
   "$repo_root/Sources/ParcCore/LinkRouting.swift"
@@ -159,6 +160,8 @@ bash "$repo_root/scripts/test-tab-history.sh"
 bash "$repo_root/scripts/test-handoff-activity.sh"
 # The frozen pane a window keeps when its page moves to another window.
 bash "$repo_root/scripts/test-page-placeholder.sh"
+# Each tab's frozen frame, shared by every window showing its placeholder.
+bash "$repo_root/scripts/test-page-placeholder-images.sh"
 compile_and_run browser-data-export BrowserDataExportTests \
   "$repo_root/Sources/ParcCore/BrowserDataExport.swift"
 # Native site-scope text restoration and button/AX; no actual profile mutation.

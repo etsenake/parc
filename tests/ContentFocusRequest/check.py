@@ -46,7 +46,7 @@ attempt = controller.index("if self.panes[id]?.showsBlank == true { window.makeF
 assert attempt < controller.index("self.focusSelectedLocalContent()\n            return paneHoldsFocus() ? .focused : .waiting"), \
     "a blank tab no longer ends the request before the waiting fallback"
 command = (root / "Sources/ParcApp/CommandBar.swift").read_text()
-assert "mayRestoreOriginal?(view) ?? true,\n               SavedFocus.mayReturn(to: view, in: parent)" in command, "command-bar close order changed"
+assert "mayRestoreOriginal?(view) ?? true,\n              SavedFocus.mayReturn(to: view, in: parent)" in command, "command-bar close order changed"
 peek = (root / "Sources/ParcApp/PeekController.swift").read_text()
 assert "window.selectKeyView(following: entry)" in peek and "window.selectKeyView(preceding: exit)" in peek
 with tempfile.TemporaryDirectory(prefix="parc-content-focus-") as directory:

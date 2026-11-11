@@ -54,6 +54,14 @@ Notes and Easels use their document drawing paths. Image decoding happens off
 the main thread at pane size; explicit user captures have priority over the
 shared capture slot. The placeholder is not a live page or an updating mirror.
 
+The image belongs to the tab, not to a window. Every window showing that tab's
+placeholder, however many, uses the one image and scales it to its own pane. It
+is kept only while some window shows the placeholder, and a private window's
+images never reach a regular window. The engine copies only a window's selected
+page, so the receiving window copies the panes of a moved split one at a time
+and lends the selection to each pane that is not focused for the length of its
+copy; every pane of a moved split gets an image.
+
 Clicking or activating the placeholder through accessibility moves the actual
 content back without reloading it. The last browser window stays open. A
 placeholder does not expose live page commands or pretend its selected row and
@@ -100,7 +108,7 @@ level, so delayed actions cannot affect a different key window.
 Window presentation/session storage, `LaunchContinuity`, the native page
 transfer registry and `BrowserWindowController` own these paths. Focused model
 coverage includes `WindowPresentation`, `ClosedItems`, `CloseUndo`,
-`PagePlaceholder` and session-store tests. Native/compiler checks validate their
+`PagePlaceholder`, `PagePlaceholderImages` and session-store tests. Native/compiler checks validate their
 interfaces when run.
 
 ## Remaining behavior and explicit deferrals

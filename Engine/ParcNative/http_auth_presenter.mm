@@ -1,219 +1,9 @@
 // Copyright 2026 Parc contributors.
 #import "http_auth_presenter.h"
 
-//
-//
-//
-static NSColor* PCAuthColor(NSColor* light, NSColor* dark) {
-  return [NSColor colorWithName:nil
-                dynamicProvider:^NSColor*(NSAppearance* appearance) {
-                  NSAppearanceName match =
-                      [appearance bestMatchFromAppearancesWithNames:@[
-                        NSAppearanceNameAqua, NSAppearanceNameDarkAqua
-                      ]];
-                  return [match isEqualToString:NSAppearanceNameDarkAqua]
-                             ? dark
-                             : light;
-                }];
-}
-static NSColor* PCAuthForegroundPrimary(void) {
-  return PCAuthColor(
-      [NSColor colorWithDisplayP3Red:0.0549 green:0.0588 blue:0.0627 alpha:0.9],
-      [NSColor colorWithSRGBRed:1 green:1 blue:1 alpha:0.8]);
-}
-static NSColor* PCAuthForegroundSecondary(void) {
-  return PCAuthColor([NSColor colorWithSRGBRed:0 green:0 blue:0 alpha:0.5],
-                     [NSColor colorWithSRGBRed:1 green:1 blue:1 alpha:0.5]);
-}
-static NSColor* PCAuthItemBackground(void) {
-  return PCAuthColor(
-      [NSColor colorWithDisplayP3Red:0.055 green:0.059 blue:0.063 alpha:0.05],
-      [NSColor colorWithDisplayP3Red:0.98 green:0.984 blue:1 alpha:0.1]);
-}
-static NSColor* PCAuthVibrantText(void) {
-  return PCAuthColor(
-      [NSColor colorWithSRGBRed:0.047 green:0.314 blue:1 alpha:1],
-      [NSColor colorWithSRGBRed:0.165 green:0.714 blue:0.965 alpha:1]);
-}
-//
-//
-// it the 13-point system font.
-static NSFont* PCAuthBodyFont(void) {
-  return [NSFont systemFontOfSize:13];
-}
-// The title: that label font's family at NSFontManager weight 7, traits 0,
-//
-static NSFont* PCAuthTitleFont(void) {
-  NSFont* label = PCAuthBodyFont();
-  NSFont* weighted = label.familyName
-                         ? [NSFontManager.sharedFontManager
-                               fontWithFamily:label.familyName
-                                       traits:0
-                                       weight:7
-                                         size:label.pointSize]
-                         : nil;
-  return [weighted ?: label fontWithSize:18];
-}
-// The value of kCACornerCurveContinuous, without a QuartzCore link dependency.
-static NSString* const kPCContinuousCorner = @"continuous";
-static void PCAuthPin(NSView* child, NSView* parent, CGFloat inset) {
-  child.translatesAutoresizingMaskIntoConstraints = NO;
-  [parent addSubview:child];
-  [NSLayoutConstraint activateConstraints:@[
-    [child.topAnchor constraintEqualToAnchor:parent.topAnchor constant:inset],
-    [child.leadingAnchor constraintEqualToAnchor:parent.leadingAnchor
-                                        constant:inset],
-    [child.trailingAnchor constraintEqualToAnchor:parent.trailingAnchor
-                                         constant:-inset],
-    [child.bottomAnchor constraintEqualToAnchor:parent.bottomAnchor
-                                       constant:-inset],
-  ]];
-}
-static NSTextField* PCAuthLabel(NSString* text) {
-  NSTextField* label = [NSTextField labelWithString:text];
-  label.font = PCAuthBodyFont();
-  label.textColor = PCAuthForegroundSecondary();
-  label.drawsBackground = NO;
-  label.focusRingType = NSFocusRingTypeNone;
-  label.bezeled = NO;
-  return label;
-}
+#import "dialog_style.h"
 
-// The bordered field container: radius 5, a 2-point VibrantText border while
-// its field edits, the item background.
-@interface PCHTTPAuthFieldBox : NSView
-@property(nonatomic, strong) NSTextField* field;
-@end
-@interface PCHTTPAuthTextField : NSTextField
-@property(nonatomic, weak) PCHTTPAuthFieldBox* box;
-@end
-@interface PCHTTPAuthSecureField : NSSecureTextField
-@property(nonatomic, weak) PCHTTPAuthFieldBox* box;
-@end
-@implementation PCHTTPAuthTextField
-@synthesize box = _box;
-- (BOOL)becomeFirstResponder {
-  BOOL result = [super becomeFirstResponder];
-  self.box.needsDisplay = YES;
-  return result;
-}
-- (void)textDidEndEditing:(NSNotification*)notification {
-  [super textDidEndEditing:notification];
-  self.box.needsDisplay = YES;
-}
-@end
-@implementation PCHTTPAuthSecureField
-@synthesize box = _box;
-- (BOOL)becomeFirstResponder {
-  BOOL result = [super becomeFirstResponder];
-  self.box.needsDisplay = YES;
-  return result;
-}
-- (void)textDidEndEditing:(NSNotification*)notification {
-  [super textDidEndEditing:notification];
-  self.box.needsDisplay = YES;
-}
-@end
-@implementation PCHTTPAuthFieldBox
-@synthesize field = _field;
-- (instancetype)initWithSecure:(BOOL)secure placeholder:(NSString*)placeholder {
-  if ((self = [super initWithFrame:NSZeroRect])) {
-    self.wantsLayer = YES;
-    NSTextField* field;
-    if (secure) {
-      PCHTTPAuthSecureField* secureField = [PCHTTPAuthSecureField new];
-      secureField.box = self;
-      field = secureField;
-    } else {
-      PCHTTPAuthTextField* plain = [PCHTTPAuthTextField new];
-      plain.box = self;
-      field = plain;
-    }
-    _field = field;
-    field.font = PCAuthBodyFont();
-    field.textColor = PCAuthForegroundPrimary();
-    field.drawsBackground = NO;
-    field.usesSingleLineMode = YES;
-    field.cell.wraps = NO;
-    field.cell.scrollable = YES;
-    field.focusRingType = NSFocusRingTypeNone;
-    field.bezeled = NO;
-    field.placeholderString = placeholder;
-    field.accessibilityLabel = placeholder;
-    PCAuthPin(field, self, 7);
-  }
-  return self;
-}
-- (BOOL)wantsUpdateLayer {
-  return YES;
-}
-- (BOOL)pcEditing {
-  NSResponder* responder = self.window.firstResponder;
-  return responder == _field ||
-         ([responder isKindOfClass:NSText.class] &&
-          ((NSText*)responder).delegate == (id)_field);
-}
-- (void)updateLayer {
-  CALayer* layer = self.layer;
-  layer.cornerRadius = 5;
-  layer.cornerCurve = kPCContinuousCorner;
-  layer.borderWidth = 2;
-  const BOOL editing = [self pcEditing];
-  [self.effectiveAppearance performAsCurrentDrawingAppearance:^{
-    layer.borderColor = editing ? PCAuthVibrantText().CGColor
-                                : NSColor.clearColor.CGColor;
-    layer.backgroundColor = PCAuthItemBackground().CGColor;
-  }];
-}
-@end
-
-//
-// radius 5 (continuous) and its own background and title colors.
-@interface PCHTTPAuthButton : NSView
-@property(nonatomic, strong) NSButton* button;
-@property(nonatomic, strong) NSColor* fill;
-@end
-@implementation PCHTTPAuthButton
-@synthesize button = _button;
-@synthesize fill = _fill;
-- (instancetype)initWithTitle:(NSString*)title
-                         fill:(NSColor*)fill
-                         text:(NSColor*)text
-                       target:(id)target
-                       action:(SEL)action {
-  if ((self = [super initWithFrame:NSZeroRect])) {
-    self.wantsLayer = YES;
-    _fill = fill;
-    NSButton* button = [NSButton buttonWithTitle:title
-                                          target:target
-                                          action:action];
-    _button = button;
-    button.bordered = NO;
-    NSMutableParagraphStyle* paragraph = [NSMutableParagraphStyle new];
-    paragraph.alignment = NSTextAlignmentCenter;
-    button.attributedTitle = [[NSAttributedString alloc]
-        initWithString:title
-            attributes:@{
-              NSForegroundColorAttributeName : text,
-              NSFontAttributeName : PCAuthBodyFont(),
-              NSParagraphStyleAttributeName : paragraph,
-            }];
-    PCAuthPin(button, self, 7);
-  }
-  return self;
-}
-- (BOOL)wantsUpdateLayer {
-  return YES;
-}
-- (void)updateLayer {
-  CALayer* layer = self.layer;
-  layer.cornerRadius = 5;
-  layer.cornerCurve = kPCContinuousCorner;
-  [self.effectiveAppearance performAsCurrentDrawingAppearance:^{
-    layer.backgroundColor = self->_fill.CGColor;
-  }];
-}
-@end
+using namespace parc_dialog;
 
 @interface PCHTTPAuthPresenter () <NSTextFieldDelegate> {
   __weak NSView* _page;
@@ -232,6 +22,8 @@ static NSTextField* PCAuthLabel(NSString* text) {
 - (void)accept:(id)sender;
 - (void)cancel:(id)sender;
 - (void)finish:(PCHTTPAuthChoice)choice;
+- (void)acceptFromKeyboard;
+- (BOOL)composing;
 @end
 @interface PCHTTPAuthSheet : NSWindow
 @property(nonatomic, weak) PCHTTPAuthPresenter* request;
@@ -240,6 +32,26 @@ static NSTextField* PCAuthLabel(NSString* text) {
 @synthesize request = _request;
 - (void)cancelOperation:(id)sender {
   [self.request cancel:sender];
+}
+// Return and Escape answer from any focus, except while an input method is
+// composing in a field. Keypad Enter types U+0003, which misses
+// Sign in's Return equivalent.
+- (BOOL)performKeyEquivalent:(NSEvent*)event {
+  if (event.type != NSEventTypeKeyDown) {
+    return [super performKeyEquivalent:event];
+  }
+  if (self.request.composing) {
+    return NO;
+  }
+  const BOOL plain = !(event.modifierFlags &
+                       (NSEventModifierFlagCommand | NSEventModifierFlagControl |
+                        NSEventModifierFlagOption | NSEventModifierFlagShift));
+  if (plain && (event.keyCode == 76 ||
+                [event.charactersIgnoringModifiers isEqualToString:@"\003"])) {
+    [self.request acceptFromKeyboard];
+    return YES;
+  }
+  return [super performKeyEquivalent:event];
 }
 @end
 
@@ -259,124 +71,79 @@ static NSTextField* PCAuthLabel(NSString* text) {
     _window = window;
     _validate = [validate copy];
     _result = [result copy];
-    //
-    // content, transparent title bar, 400 points, then a sheet on the page's
-    //
     PCHTTPAuthSheet* sheet = [[PCHTTPAuthSheet alloc]
-        initWithContentRect:NSMakeRect(0, 0, 400, 400)
-                  styleMask:NSWindowStyleMaskTitled |
-                            NSWindowStyleMaskFullSizeContentView
+        initWithContentRect:NSMakeRect(0, 0, kWidth, 400)
+                  styleMask:NSWindowStyleMaskTitled
                     backing:NSBackingStoreBuffered
                       defer:NO];
     _sheet = sheet;
-    sheet.opaque = NO;
-    sheet.titlebarAppearsTransparent = YES;
+    PrepareSheet(sheet);
     sheet.collectionBehavior = NSWindowCollectionBehaviorFullScreenAuxiliary;
     sheet.releasedWhenClosed = NO;
     sheet.request = self;
-    NSView* view = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 400, 400)];
-    view.wantsLayer = YES;
-    view.layer.cornerRadius = 5;
-    view.layer.cornerCurve = kPCContinuousCorner;
-    sheet.contentView = view;
-    //
-    // subtitle reports Chromium's potentially-trustworthy test, which is
-    // exactly when the engine supplies no explanation.
-    //
-    // origin, or for a proxy the sentence "The proxy <url> requires a username
-    //
-    //
-    // never reads the proxy flag here.
+    // "Sign in to <host>", else the authority itself. The subtitle reports
+    // Chromium's potentially-trustworthy test, which is exactly when the
+    // engine supplies no explanation. For a proxy Chromium's authority is the
+    // sentence "The proxy <url> requires a username and password."; NSURL
+    // finds no host in it, so the title carries the whole sentence.
     (void)proxy;
     NSString* host = [NSURL URLWithString:authority].host;
-    NSTextField* title = PCAuthLabel(
-        [@"Sign in to " stringByAppendingString:host.length ? host
-                                                            : authority]);
-    title.font = PCAuthTitleFont();
-    NSTextField* subtitle =
-        PCAuthLabel(explanation.length
-                        ? @"Your connection to this site is not private."
-                        : @"Your connection to this site is private.");
-    PCHTTPAuthFieldBox* usernameBox =
-        [[PCHTTPAuthFieldBox alloc] initWithSecure:NO placeholder:@"Username"];
-    PCHTTPAuthFieldBox* passwordBox =
-        [[PCHTTPAuthFieldBox alloc] initWithSecure:YES placeholder:@"Password"];
-    _username = usernameBox.field;
+    NSString* titleText =
+        [@"Sign in to " stringByAppendingString:host.length ? host : authority];
+    sheet.title = titleText;
+    sheet.accessibilityLabel = titleText;
+    PCDialogBaseView* root = [[PCDialogBaseView alloc] initWithFrame:NSZeroRect];
+    __block CGFloat y = kInset;
+    NSRect markRect;
+    NSImage* mark = ParcMark(&markRect);
+    PCDialogPictureIcon* art = [[PCDialogPictureIcon alloc] initWithImage:mark
+                                                               imageRect:markRect];
+    [art setAccessibilityElement:NO];
+    art.frameOrigin = NSMakePoint(kInset, y);
+    [root addSubview:art];
+    y = AddHeading(root, titleText,
+                   explanation.length ? @"Your connection to this site is not private."
+                                      : @"Your connection to this site is private.",
+                   y + kArtSize, 200);
+    const CGFloat width = kWidth - 2 * kInset;
+    NSTextField* (^addField)(NSString*, BOOL) = ^NSTextField*(NSString* name, BOOL secure) {
+      NSTextField* label = Label(name, [NSFont systemFontOfSize:13 weight:NSFontWeightMedium],
+                                 PopoverMessage(), 0);
+      [root addSubview:label];
+      y += PlaceLabel(label, kInset, y, width) + 6;
+      PCDialogInputField* input = [[PCDialogInputField alloc] initWithText:@"" secure:secure];
+      input.frame = NSMakeRect(kInset, y, width, 36);
+      input.field.placeholderString = name;
+      input.field.accessibilityLabel = name;
+      [root addSubview:input];
+      y += 36;
+      return input.field;
+    };
+    y += 18;
+    _username = addField(@"Username", NO);
     _username.identifier = @"http-auth-username";
     _username.delegate = self;
-    _password = (NSSecureTextField*)passwordBox.field;
+    y += 14;
+    _password = (NSSecureTextField*)addField(@"Password", YES);
     _password.identifier = @"http-auth-password";
     _password.delegate = self;
-    NSTextField* usernameLabel = PCAuthLabel(@"Username");
-    NSTextField* passwordLabel = PCAuthLabel(@"Password");
-    usernameLabel.alignment = NSTextAlignmentRight;
-    passwordLabel.alignment = NSTextAlignmentRight;
-    NSStackView* usernameStack =
-        [NSStackView stackViewWithViews:@[ usernameLabel, usernameBox ]];
-    NSStackView* passwordStack =
-        [NSStackView stackViewWithViews:@[ passwordLabel, passwordBox ]];
-    PCHTTPAuthButton* cancel =
-        [[PCHTTPAuthButton alloc] initWithTitle:@"Cancel"
-                                           fill:PCAuthItemBackground()
-                                           text:PCAuthForegroundPrimary()
-                                         target:self
-                                         action:@selector(cancel:)];
-    PCHTTPAuthButton* signIn =
-        [[PCHTTPAuthButton alloc] initWithTitle:@"Sign in"
-                                           fill:PCAuthVibrantText()
-                                           text:NSColor.whiteColor
-                                         target:self
-                                         action:@selector(accept:)];
-    cancel.button.identifier = @"http-auth-cancel";
-    signIn.button.identifier = @"http-auth-sign-in";
-    _signIn = signIn.button;
-    NSStackView* buttons = [NSStackView stackViewWithViews:@[ cancel, signIn ]];
-    for (NSView* child in @[
-           title, subtitle, usernameStack, passwordStack, buttons
-         ]) {
-      child.translatesAutoresizingMaskIntoConstraints = NO;
-      [view addSubview:child];
-    }
-    //
-    [NSLayoutConstraint activateConstraints:@[
-      [title.topAnchor constraintEqualToAnchor:view.topAnchor constant:20],
-      [title.leadingAnchor constraintEqualToAnchor:view.leadingAnchor
-                                          constant:20],
-      [title.trailingAnchor constraintLessThanOrEqualToAnchor:view.trailingAnchor
-                                                     constant:-20],
-      [subtitle.topAnchor constraintEqualToAnchor:title.bottomAnchor
-                                         constant:20],
-      [subtitle.leadingAnchor constraintEqualToAnchor:title.leadingAnchor],
-      [subtitle.trailingAnchor
-          constraintLessThanOrEqualToAnchor:title.trailingAnchor],
-      [usernameBox.widthAnchor constraintEqualToConstant:300],
-      [passwordBox.widthAnchor constraintEqualToConstant:300],
-      [usernameLabel.widthAnchor constraintEqualToConstant:65],
-      [passwordLabel.widthAnchor constraintEqualToConstant:65],
-      [usernameStack.topAnchor constraintEqualToAnchor:subtitle.bottomAnchor
-                                              constant:15],
-      [usernameStack.leadingAnchor constraintEqualToAnchor:title.leadingAnchor],
-      [usernameStack.heightAnchor constraintEqualToConstant:40],
-      [usernameStack.trailingAnchor
-          constraintLessThanOrEqualToAnchor:title.trailingAnchor],
-      [passwordStack.topAnchor constraintEqualToAnchor:usernameStack.bottomAnchor
-                                              constant:15],
-      [passwordStack.leadingAnchor constraintEqualToAnchor:title.leadingAnchor],
-      [passwordStack.trailingAnchor
-          constraintLessThanOrEqualToAnchor:title.trailingAnchor],
-      [passwordStack.heightAnchor constraintEqualToConstant:40],
-      [cancel.widthAnchor constraintEqualToConstant:75],
-      [signIn.widthAnchor constraintEqualToConstant:75],
-      [buttons.topAnchor constraintEqualToAnchor:passwordStack.bottomAnchor
-                                        constant:15],
-      [buttons.trailingAnchor constraintEqualToAnchor:title.trailingAnchor],
-      [buttons.heightAnchor constraintEqualToConstant:40],
-      [buttons.bottomAnchor constraintEqualToAnchor:view.bottomAnchor
-                                           constant:-15],
-    ]];
-    [view layoutSubtreeIfNeeded];
-    NSSize fitting = view.fittingSize;
-    [sheet setContentSize:NSMakeSize(MAX(400, fitting.width), fitting.height)];
+    y += 22;
+    PCDialogButton* cancel = [[PCDialogButton alloc] initWithTitle:@"Cancel" primary:NO];
+    cancel.target = self;
+    cancel.action = @selector(cancel:);
+    cancel.keyEquivalent = @"\033";
+    cancel.identifier = @"http-auth-cancel";
+    PCDialogButton* signIn = [[PCDialogButton alloc] initWithTitle:@"Sign in" primary:YES];
+    signIn.target = self;
+    signIn.action = @selector(accept:);
+    signIn.keyEquivalent = @"\r";
+    signIn.identifier = @"http-auth-sign-in";
+    _signIn = signIn;
+    y = PlaceFooter(root, y, nil, @[ signIn, cancel ]);
+    root.frame = NSMakeRect(0, 0, kWidth, y);
+    sheet.contentView = root;
+    [sheet setContentSize:NSMakeSize(kWidth, y)];
+    [sheet setAccessibilityDefaultButton:signIn];
     [sheet center];
     sheet.initialFirstResponder = _username;
     __weak PCHTTPAuthPresenter* weak = self;
@@ -457,10 +224,20 @@ static NSTextField* PCAuthLabel(NSString* text) {
     }
   }
 }
-//
+- (BOOL)composing {
+  NSResponder* responder = _sheet.firstResponder;
+  return [responder isKindOfClass:NSTextView.class] && ((NSTextView*)responder).hasMarkedText;
+}
+- (void)acceptFromKeyboard {
+  [self accept:_signIn];
+}
+// Return signs in and Escape cancels, after any input-method composition.
 - (BOOL)control:(NSControl*)control
                textView:(NSTextView*)textView
     doCommandBySelector:(SEL)selector {
+  if (textView.hasMarkedText) {
+    return NO;
+  }
   if (selector == @selector(insertNewline:)) {
     [self accept:_signIn];
     return YES;

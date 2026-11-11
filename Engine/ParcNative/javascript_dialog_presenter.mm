@@ -257,11 +257,9 @@ static BOOL IsEnter(NSEvent* event) {
   [root addSubview:art];
   y = AddHeading(root, heading, message, y + kArtSize, 240);
   if (kind == PCJavaScriptDialogPrompt) {
-    y += 16;
+    y += message.length ? 16 : 8;
     PCDialogInputField* input = [[PCDialogInputField alloc] initWithText:defaultText];
-    const CGFloat halo = (NSHeight(input.frame) - 36) / 2;
-    input.frame = NSMakeRect(kInset - halo, y - halo, kWidth - 2 * kInset + 2 * halo,
-                             NSHeight(input.frame));
+    input.frame = NSMakeRect(kInset, y, kWidth - 2 * kInset, 36);
     input.field.accessibilityLabel = @"Response";
     input.field.delegate = request;
     request.input = input.field;

@@ -24,6 +24,11 @@ Detach, replacement, navigation and visibility loss interrupt the captured reque
 actual sheet attachment precedes OnBubbleShown. No credential values are sent to
 the Swift shell. Trusted-vault blocking retains Chromium's unlock-before-save path.
 
+Password, address and card prompts share Parc's dialog sheet
+(`dialog_style.mm`): Parc's mark, the title and message, key-badged **No**
+(Escape) and **Save** (Return or keypad Enter), and an unbadged neutral
+**Never on this site** when offered.
+
 Management is reachable through the command bar and Settings. Generation retains
 Chromium's existing Cocoa-container popup route; manager reveal retains the real
 profile store and macOS DeviceAuthenticator. No duplicate generation or reveal

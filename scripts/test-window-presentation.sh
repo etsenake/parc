@@ -34,6 +34,7 @@ inter_profile_source="$(source_path Sources/ParcCore/InterProfileMove.swift)"
 space_move_source="$(source_path Sources/ParcCore/SidebarSpaceMove.swift)"
 window_move_source="$(source_path Sources/ParcCore/SidebarWindowMove.swift)"
 closed_items_source="$(source_path Sources/ParcCore/ClosedItems.swift)"
+placeholder_images_source="$(source_path Sources/ParcCore/PagePlaceholderImages.swift)"
 favorite_action_source="$(source_path Sources/ParcCore/CommandBarFavoriteAction.swift)"
 folder_move_source="$(source_path Sources/ParcCore/CommandBarFolderMove.swift)"
 folder_action_source="$(source_path Sources/ParcCore/CommandBarFolderAction.swift)"
@@ -54,6 +55,6 @@ restoration_launch_source="$(source_path Sources/ParcCore/WindowRestorationLaunc
 test_source="$(source_path tests/WindowPresentationTests.swift)"
 mkdir -p -- "$build_root"
 xcrun swiftc -warnings-as-errors -whole-module-optimization -parse-as-library \
-  "$store_source" "$space_management_source" "$import_source" "$favorite_split_source" "$original_split_source" "$inter_profile_source" "$space_move_source" "$window_move_source" "$closed_items_source" "$favorite_action_source" "$folder_move_source" "$folder_action_source" "$theme_source" "$onboarding_source" "$routing_source" "$pretty_json_source" "$removal_source" "$split_controls_source" "$split_cross_space_source" "$folder_creation_source" "$tab_history_source" "$note_source" "$easel_source" "$easel_text_source" "$presentation_source" "$restoration_launch_source" "$test_source" \
+  "$store_source" "$space_management_source" "$import_source" "$favorite_split_source" "$original_split_source" "$inter_profile_source" "$space_move_source" "$window_move_source" "$closed_items_source" "$placeholder_images_source" "$favorite_action_source" "$folder_move_source" "$folder_action_source" "$theme_source" "$onboarding_source" "$routing_source" "$pretty_json_source" "$removal_source" "$split_controls_source" "$split_cross_space_source" "$folder_creation_source" "$tab_history_source" "$note_source" "$easel_source" "$easel_text_source" "$presentation_source" "$restoration_launch_source" "$test_source" \
   -o "$build_root/window-presentation"
 exec "$build_root/window-presentation"

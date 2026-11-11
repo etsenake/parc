@@ -101,21 +101,39 @@ static void Decisions() {
       Find(r.sheet.contentView, @"external-protocol-cancel"));
   auto* box = static_cast<NSButton*>(
       Find(r.sheet.contentView, @"external-protocol-remember"));
-  Check(r.sheet.defaultButtonCell == open.cell &&
+  Check([open.keyEquivalent isEqual:@"\r"] &&
+            r.sheet.accessibilityDefaultButton == open &&
             [cancel.keyEquivalent isEqual:@"\033"] &&
             !box.keyEquivalent.length,
-        "the Open is the default and Cancel answers Escape");
+        "Open is the default and Cancel answers Escape");
+  const BOOL boxFirst = NSMidY(box.frame) == NSMidY(open.frame)
+                           ? NSMinX(box.frame) < NSMinX(cancel.frame)
+                           : NSMaxY(box.frame) <= NSMinY(open.frame);
   Check(open.superview == box.superview && box.superview == cancel.superview &&
-            [open.superview.subviews indexOfObject:open] <
-                [open.superview.subviews indexOfObject:box] &&
-            [open.superview.subviews indexOfObject:box] <
-                [open.superview.subviews indexOfObject:cancel],
-        "buttons keep the order: Open, Always open, Cancel");
+            NSMidY(cancel.frame) == NSMidY(open.frame) &&
+            NSMinX(cancel.frame) < NSMinX(open.frame) && boxFirst,
+        "Cancel sits left of Open; Always open is left of Cancel or wraps above");
+  Check(NSContainsRect(r.sheet.contentView.bounds, open.frame) &&
+            NSContainsRect(r.sheet.contentView.bounds, cancel.frame) &&
+            NSContainsRect(r.sheet.contentView.bounds, box.frame),
+        "every button stays inside the sheet");
   Check([box.title isEqual:@"Always open “Example”"],
         "remember is the Always open button");
   [box performClick:nil];
   Check(results == 0 && r.sheet.visible,
         "input protection refusal keeps request pending");
+  NSEvent* enter = [NSEvent keyEventWithType:NSEventTypeKeyDown
+                                    location:NSZeroPoint
+                               modifierFlags:0
+                                   timestamp:NSProcessInfo.processInfo.systemUptime
+                                windowNumber:r.sheet.windowNumber
+                                     context:nil
+                                  characters:@"\003"
+                 charactersIgnoringModifiers:@"\003"
+                                   isARepeat:NO
+                                     keyCode:76];
+  Check([r.sheet performKeyEquivalent:enter] && results == 0 && r.sheet.visible,
+        "keypad Enter is held by the same input protection");
   input = YES;
   [open performClick:nil];
   Pump();

@@ -8,6 +8,7 @@ for test_source in Tests presentation_tests; do
     -fobjc-arc -fblocks -Wall -Wextra -Werror \
     -I "$repo_root/Engine/ParcNative" \
     "$repo_root/Engine/ParcNative/autofill_save_presenter.mm" \
+    "$repo_root/Engine/ParcNative/dialog_style.mm" \
     "$repo_root/tests/NativeAutofillSave/$test_source.mm" \
     -framework Cocoa -o "$output_dir/$test_source"
   "$output_dir/$test_source"

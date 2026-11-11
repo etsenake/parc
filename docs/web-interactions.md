@@ -109,8 +109,8 @@ unrelated page or answered after its original owner retires.
 | --- | --- |
 | JavaScript alert/confirm/prompt | Parc dialog sheet with Chromium's origin-aware title, OK/Cancel and a rounded prompt field |
 | Before unload | Original close/reload consent; OK leaves, Cancel stays; no suppression checkbox |
-| HTTP authentication | Page-owned sheet, original authority/trust text, username/password and Cancel/Sign in |
-| External protocol | Origin/application-aware alert with Open, policy-eligible Always open and Cancel |
+| HTTP authentication | Page-owned Parc dialog, original authority/trust text, labelled rounded username/secure password fields and Cancel/Sign in |
+| External protocol | Origin/application-aware Parc dialog with the app's icon, Open, policy-eligible Always open and Cancel |
 | Site permission | Original request popover anchored to that page's controls, with Not Now/Allow |
 | Server certificate | Chromium's certificate viewer sheet for the visible certificate |
 | Client certificate | Genuine Chromium `SSLClientCertificateSelector` |
@@ -118,13 +118,18 @@ unrelated page or answered after its original owner retires.
 
 Page dialogs use the engine's shared Parc dialog (`dialog_style.mm`): Parc's
 mark, the bold title, the page's text (scrolling when very long), key-badged
-**Cancel** (Escape) and **OK** (Return or keypad Enter). A prompt's field sits
-16 points below the text, 36 points tall, and edits without the system focus
-ring: its border and soft halo take Parc's selection blue. OK stays inert for
+**Cancel** (Escape) and **OK** (Return or keypad Enter). A prompt's field is
+the app dialog's tinted rounded card ([dialogs](dialogs.md)): 16 points below
+the text, 36 points tall with 12-point padding and no focus ring. OK stays inert for
 half a second after the sheet appears, and a held Return or one pressed before
 then never accepts, so a page cannot time a dialog under a keystroke. An input
 method composing in the field keeps Return and Escape. A plain alert still has
 only OK and ignores Escape.
+
+The notifications-permission sheet (**Open System Preferences**, or **Never
+Mind** with Escape) uses the same dialog. So do the browser's decision sheets
+for active downloads, caret browsing and private-window data, where the
+Return button carries the primary face.
 
 JavaScript prompts offer **Don't show this again** from the sixth page dialog.
 Suppression returns the native cancellation result; primary-page change resets
@@ -228,8 +233,9 @@ content immediately. The reload link uses native pointer, keyboard and
 accessibility actions; hover changes the cursor. The hung-renderer sheet uses
 Chromium's text and the unresponsive widget's actual renderer process. Wait
 restarts its hang timer; Exit terminates that process. A replacement request or
-page detach invalidates the old decision. The sheet lists titles without
-favicons and retains the application icon. Renderer and ordinary navigation failures
+page detach invalidates the old decision. The sheet is Parc's dialog: it lists
+titles without favicons under Parc's mark, Wait answers Return and Escape, and
+Exit is an unbadged neutral button. Renderer and ordinary navigation failures
 must not be conflated merely because both show an error surface.
 
 ## Webpage actions, keyboard, focus and accessibility — WEB18

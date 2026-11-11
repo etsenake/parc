@@ -11,6 +11,7 @@
 #include "components/javascript_dialogs/app_modal_dialog_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
+#import "dialog_style.h"
 #include "folder_upload.h"
 #include "http_auth.h"
 #include "native_auxiliary_page.h"
@@ -119,53 +120,48 @@ class Dialog final : public javascript_dialogs::AppModalDialogView {
     const bool prompt = model_->javascript_dialog_type() ==
                         content::JAVASCRIPT_DIALOG_TYPE_PROMPT;
     const bool suppress = model_->display_suppress_checkbox();
-    const CGFloat height = 190 + (prompt ? 34 : 0) + (suppress ? 28 : 0);
-    panel_ = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 440, height)
-                                        styleMask:NSWindowStyleMaskTitled
-                                          backing:NSBackingStoreBuffered
-                                            defer:NO];
+    PCDialogPanel* panel = [[PCDialogPanel alloc]
+        initWithContentRect:NSMakeRect(0, 0, parc_dialog::kWidth, 200)
+                  styleMask:NSWindowStyleMaskTitled
+                    backing:NSBackingStoreBuffered
+                      defer:NO];
+    panel_ = panel;
     panel_.releasedWhenClosed = NO;
     panel_.title = base::SysUTF16ToNSString(model_->title());
-    NSView* content = panel_.contentView;
-    NSTextField* title = [NSTextField labelWithString:panel_.title];
-    title.font = [NSFont boldSystemFontOfSize:14];
-    title.frame = NSMakeRect(20, height - 46, 400, 26);
-    [content addSubview:title];
+    panel_.accessibilityLabel = panel_.title;
+    parc_dialog::PrepareSheet(panel_);
+    PCDialogBaseView* root = [[PCDialogBaseView alloc] initWithFrame:NSZeroRect];
+    CGFloat y = parc_dialog::kInset;
+    NSRect markRect;
+    NSImage* mark = parc_dialog::ParcMark(&markRect);
+    PCDialogPictureIcon* art = [[PCDialogPictureIcon alloc] initWithImage:mark
+                                                               imageRect:markRect];
+    [art setAccessibilityElement:NO];
+    art.frameOrigin = NSMakePoint(parc_dialog::kInset, y);
+    [root addSubview:art];
     // Preserve the actual model's complete (upstream-bounded) message. Long
     // prompts remain readable and selectable rather than being clipped.
-    NSScrollView* scroll = [[NSScrollView alloc]
-        initWithFrame:NSMakeRect(20, height - 120, 400, 70)];
-    scroll.hasVerticalScroller = YES;
-    scroll.drawsBackground = NO;
-    NSTextView* message = [[NSTextView alloc] initWithFrame:scroll.bounds];
-    message.editable = NO;
-    message.selectable = YES;
-    message.drawsBackground = NO;
-    message.font = [NSFont systemFontOfSize:13];
-    message.textColor = NSColor.labelColor;
-    message.string = base::SysUTF16ToNSString(model_->message_text());
-    message.autoresizingMask = NSViewWidthSizable;
-    message.textContainer.widthTracksTextView = YES;
-    scroll.documentView = message;
-    [content addSubview:scroll];
-    CGFloat y = height - 154;
+    NSString* message = base::SysUTF16ToNSString(model_->message_text());
+    y = parc_dialog::AddHeading(root, panel_.title, message, y + parc_dialog::kArtSize, 200,
+                                true);
     if (prompt) {
-      input_ = [[NSTextField alloc] initWithFrame:NSMakeRect(20, y, 400, 24)];
-      input_.stringValue =
-          base::SysUTF16ToNSString(model_->default_prompt_text());
+      y += message.length ? 16 : 8;
+      PCDialogInputField* input = [[PCDialogInputField alloc]
+          initWithText:base::SysUTF16ToNSString(model_->default_prompt_text())];
+      input.frame = NSMakeRect(parc_dialog::kInset, y,
+                               parc_dialog::kWidth - 2 * parc_dialog::kInset, 36);
+      input_ = input.field;
       input_.accessibilityLabel = @"Response";
-      [content addSubview:input_];
+      [root addSubview:input];
       panel_.initialFirstResponder = input_;
-      y -= 30;
+      y += 36;
     }
+    y += 22;
     if (suppress) {
-      suppress_ =
-          [NSButton checkboxWithTitle:
-                        @"Prevent this page from creating additional dialogs"
-                               target:nil
-                               action:nil];
-      suppress_.frame = NSMakeRect(20, y, 400, 24);
-      [content addSubview:suppress_];
+      suppress_ = [[PCDialogCheckbox alloc]
+          initWithTitle:@"Prevent this page from creating additional dialogs"
+                 target:nil
+                 action:nil];
     }
     actions_ = [PCAuxiliaryDialogActions new];
     actions_->action = base::BindRepeating(
@@ -178,24 +174,26 @@ class Dialog final : public javascript_dialogs::AppModalDialogView {
     NSString* primary = model_->is_before_unload_dialog()
                             ? (model_->is_reload() ? @"Reload" : @"Leave Page")
                             : @"OK";
-    NSButton* accept = [NSButton buttonWithTitle:primary
-                                          target:actions_
-                                          action:@selector(accept:)];
-    accept.frame = NSMakeRect(318, 18, 102, 30);
+    PCDialogButton* accept = [[PCDialogButton alloc] initWithTitle:primary primary:YES];
+    accept.target = actions_;
+    accept.action = @selector(accept:);
     accept.keyEquivalent = @"\r";
-    [content addSubview:accept];
-    panel_.defaultButtonCell = accept.cell;
-    NSButton* cancel = [NSButton
-        buttonWithTitle:model_->is_before_unload_dialog() ? @"Stay" : @"Cancel"
-                 target:actions_
-                 action:@selector(cancel:)];
-    cancel.frame = NSMakeRect(206, 18, 102, 30);
+    PCDialogButton* cancel = [[PCDialogButton alloc]
+        initWithTitle:model_->javascript_dialog_type() ==
+                              content::JAVASCRIPT_DIALOG_TYPE_ALERT
+                          ? @"Close"
+                          : (model_->is_before_unload_dialog() ? @"Stay" : @"Cancel")
+              primary:NO];
+    cancel.target = actions_;
+    cancel.action = @selector(cancel:);
     cancel.keyEquivalent = @"\033";
-    if (model_->javascript_dialog_type() ==
-        content::JAVASCRIPT_DIALOG_TYPE_ALERT) {
-      cancel.title = @"Close";
-    }
-    [content addSubview:cancel];
+    y = parc_dialog::PlaceFooter(root, y, suppress_, @[ accept, cancel ]);
+    root.frame = NSMakeRect(0, 0, parc_dialog::kWidth, y);
+    panel_.contentView = root;
+    [panel_ setContentSize:NSMakeSize(parc_dialog::kWidth, y)];
+    panel.enterButton = accept;
+    panel.escapeButton = cancel;
+    [panel_ setAccessibilityDefaultButton:accept];
     showing_ = true;
     [parent_ beginSheet:panel_
         completionHandler:^(NSModalResponse) {

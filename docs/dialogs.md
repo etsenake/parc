@@ -2,8 +2,12 @@
 
 Every alert, confirmation and name prompt a person sees in Parc's own windows is
 18-point title, 14-point message, 36-point buttons with Escape and return hints,
-and a red Delete for destructive confirmations. Web page alerts and the extension
-remove sheet are drawn by the engine in the same style. The system alert is not
+and a red Delete for destructive confirmations. The engine draws its own sheets in
+the same style with the same checkbox and field card
+(`Engine/ParcNative/dialog_style.mm`): web page and DevTools-window alerts,
+extension install and remove, password/address/card saving, website sign-in,
+open-in-app, unresponsive pages, the notifications-permission nudge and the
+download, caret-browsing and private-window decisions. The system alert is not
 used for anything Parc owns. The one exception is the "Parc couldn’t start"
 error, which can appear before any Parc window or engine exists.
 

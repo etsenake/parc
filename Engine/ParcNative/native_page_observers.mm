@@ -31,6 +31,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "content/public/common/result_codes.h"
+#import "dialog_style.h"
 #include "native_appkit_page.h"
 #include "native_engine_entry.h"
 #include "native_history_swipe.h"
@@ -156,10 +157,6 @@ class NativeHungRenderer final
     const std::vector<content::WebContents*> hung =
         GetHungWebContentsList(contents, process);
     const int count = static_cast<int>(hung.size());
-    alert_ = [[NSAlert alloc] init];
-    alert_.alertStyle = NSAlertStyleWarning;
-    alert_.messageText = base::SysUTF16ToNSString(l10n_util::GetPluralStringFUTF16(
-        IDS_BROWSER_HANGMONITOR_RENDERER_TITLE, count));
     NSMutableString* info = [base::SysUTF16ToNSString(
         l10n_util::GetPluralStringFUTF16(IDS_BROWSER_HANGMONITOR_RENDERER, count))
         mutableCopy];
@@ -168,12 +165,20 @@ class NativeHungRenderer final
       [info appendFormat:@"\n%@", base::SysUTF16ToNSString(
           GetHungWebContentsTitle(affected, process))];
     }
-    alert_.informativeText = info;
-    [alert_ addButtonWithTitle:base::SysUTF16ToNSString(l10n_util::GetStringUTF16(
-        IDS_BROWSER_HANGMONITOR_RENDERER_WAIT))];
-    [alert_ addButtonWithTitle:base::SysUTF16ToNSString(
-        l10n_util::GetPluralStringFUTF16(IDS_BROWSER_HANGMONITOR_RENDERER_END, count))];
-    alert_.buttons.firstObject.keyEquivalent = @"\r";
+    alert_ = [[PCDialogPrompt alloc]
+        initWithTitle:base::SysUTF16ToNSString(l10n_util::GetPluralStringFUTF16(
+                          IDS_BROWSER_HANGMONITOR_RENDERER_TITLE, count))
+              message:info];
+    // Wait answers Return and Escape; ending the pages is never a key's default.
+    alert_.escapeButton = [alert_
+        addButtonWithTitle:base::SysUTF16ToNSString(l10n_util::GetStringUTF16(
+                               IDS_BROWSER_HANGMONITOR_RENDERER_WAIT))
+                      role:PCDialogPromptPrimary
+                  response:NSAlertFirstButtonReturn];
+    [alert_ addButtonWithTitle:base::SysUTF16ToNSString(l10n_util::GetPluralStringFUTF16(
+                                   IDS_BROWSER_HANGMONITOR_RENDERER_END, count))
+                          role:PCDialogPromptAuxiliary
+                      response:NSAlertSecondButtonReturn];
     const uint64_t generation = generation_;
     [alert_ beginSheetModalForWindow:window completionHandler:^(NSModalResponse response) {
       if (!weak || weak->generation_ != generation) return;
@@ -219,7 +224,7 @@ class NativeHungRenderer final
     auto contents = web_contents() ? web_contents()->GetWeakPtr()
                                   : base::WeakPtr<content::WebContents>();
     NSWindow* __weak window = window_;
-    NSAlert* alert = alert_;
+    PCDialogPrompt* alert = alert_;
     auto reservation = reservation_;
     alert_ = nil;
     reservation_ = nil;
@@ -271,7 +276,7 @@ class NativeHungRenderer final
   base::WeakPtr<BrowserWindowInterface> browser_;
   content::WeakDocumentPtr document_;
   NSWindow* __weak window_ = nil;
-  NSAlert* __strong alert_ = nil;
+  PCDialogPrompt* __strong alert_ = nil;
   PCNativeWindowSecurityReservation* __strong reservation_ = nil;
   NSMutableArray* __strong observations_ = nil;
   base::CallbackListSubscription deactivate_, detach_, discard_;
