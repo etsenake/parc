@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 706,
+  "version": 707,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -2530,6 +2530,26 @@
       "source": "Engine/ParcChromium/tests/cast/gmc/media_notification_service_test.cc",
       "target": "chrome/browser/ui/global_media_controls/parc_tests/media_notification_service_test.cc",
       "sha256": "f1502adcbb1e17b8c1b5b3994af92841edf4ee5d9ee147aeb69438e10ef00086"
+    },
+    {
+      "source": "Engine/ParcChromium/tests/cast/dialog/BUILD.gn",
+      "target": "chrome/browser/ui/views/global_media_controls/parc_tests/BUILD.gn",
+      "sha256": "a3398f48c303d75f6adee19c53a102ed9199caf07e11223554a44e751ff20b85"
+    },
+    {
+      "source": "Engine/ParcChromium/tests/cast/dialog/media_dialog_view_test.cc",
+      "target": "chrome/browser/ui/views/global_media_controls/parc_tests/media_dialog_view_test.cc",
+      "sha256": "976cfef439678fec288adf7efa4e8ce8d37d7884b365965c631fc6689aaa5151"
+    },
+    {
+      "source": "Engine/ParcChromium/tests/cast/router/BUILD.gn",
+      "target": "chrome/browser/ui/media_router/parc_tests/BUILD.gn",
+      "sha256": "eba1a9463da0602fd5e2989369869354aa1bd8ae3d31c0a78cb313d7ee0d9d1d"
+    },
+    {
+      "source": "Engine/ParcChromium/tests/cast/router/media_router_ui_test.cc",
+      "target": "chrome/browser/ui/media_router/parc_tests/media_router_ui_test.cc",
+      "sha256": "4fff23a313eeb3177172c462cdd60fe43acfde16353a22df491fad99d05e86b7"
     }
   ],
   "patches": [
@@ -3264,7 +3284,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-gmc-presentation.patch",
-      "sha256": "28a5889076b6d33b9f370b714f9fe3c89f38506fe6ef236724d8684e721bb344",
+      "sha256": "eb3a97229df817751a46367d1e146034410b15e30995f6d9ee66072dda11ecb8",
       "files": [
         {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host.cc",
@@ -3357,11 +3377,6 @@
           "after_sha256": "56e5484ef36a52229a7d26c0fdd6a9496fb9b6f1dd30600c0122bf16a3da4215"
         },
         {
-          "target": "chrome/browser/ui/views/global_media_controls/media_dialog_view_unittest.cc",
-          "before_sha256": "3718a663f953400872717e0cb65c9e2cd7b2d31585e0422c46126ad0b2af4710",
-          "after_sha256": "8aab1fe30dfe37bf33d9fd700c71ab8cfe5e7c3b9dc2aa7419445f90253e2752"
-        },
-        {
           "target": "chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc",
           "before_sha256": "43c8caf7866bee5b7290b4f88a52a61c58c418d82881cbbc867637eb2850b2ca",
           "after_sha256": "df1924d9c38015bfb483f32d5e92be2014aa095c8079cfb85bdbddc84b75d6ff"
@@ -3380,11 +3395,6 @@
           "target": "chrome/browser/ui/media_router/media_router_ui.cc",
           "before_sha256": "658bed71a7b515cbbd83df31a74fd6207bfeb359f27b1007fbd544485938db2a",
           "after_sha256": "bdd27e187c2fc5275591cb5eb1bf1f65a5cb900a30df48650a01f587ad08e18a"
-        },
-        {
-          "target": "chrome/browser/ui/media_router/media_router_ui_unittest.cc",
-          "before_sha256": "73062095addf85e076bc0b93571eeaa577b009e69107e1ef91038f23f29ab1be",
-          "after_sha256": "f2ccbad85e2a30a518c5e1714c13c800bed0e18e7f1336854772bcc4d239b549"
         },
         {
           "target": "chrome/browser/media/cast_remoting_connector.cc",
@@ -3431,7 +3441,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/parc-owned-tests.patch",
-      "sha256": "3eb623e06828d535427723ff91f7eedcf107392dd72cdb1059053ddc58ad28e0",
+      "sha256": "ee9963094ab433947d3e2560cf618f3d3f0f85e635d71d00595ed081d6556266",
       "files": [
         {
           "target": "third_party/blink/renderer/controller/BUILD.gn",
@@ -3457,6 +3467,16 @@
           "target": "chrome/browser/media/BUILD.gn",
           "before_sha256": "7afb4247e7ee29da50a2b6f086c1e3bd51a56b66e9968403b9215155f88367b0",
           "after_sha256": "e15f63fe02235d05eb579935a77db3f8e328f6fa6ba412609ee5aa83e0a71a7e"
+        },
+        {
+          "target": "chrome/browser/ui/views/global_media_controls/BUILD.gn",
+          "before_sha256": "6f73a9472f615e35cc725e09e0ef60e3cdf6f169a5be8d87a4fbaa1cde3b9cb0",
+          "after_sha256": "bc3513e421cd36cf2d39e32750dd0b48f9bb9a64531ef60137d9ad5e190f5c68"
+        },
+        {
+          "target": "chrome/browser/ui/media_router/BUILD.gn",
+          "before_sha256": "dbf105fc91ae1f8c30e5972d906334265e9f85b53589b237d52ce02c222122d4",
+          "after_sha256": "30f8525f71833cd03b165b69a44006511692b334cdc62a7ff70842d881ee146b"
         }
       ]
     },
