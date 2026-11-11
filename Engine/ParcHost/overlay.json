@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 665,
+  "version": 666,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -2024,7 +2024,7 @@
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "81c1fb089befb81527d447b6fcc39385c77ff7e3f4ad03e0d79011d192ba818c"
+      "sha256": "b4aa528d4f8dbd8d8c1db78154cc772f9b9d89615e3f529a37fbc570f8305b50"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2064,12 +2064,12 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.h",
       "target": "parc/parc_main_delegate.h",
-      "sha256": "0f15c36bf1413681e52b5f363d3caf53729038f028f67800af63de4d1c9e1fd9"
+      "sha256": "1943c9e0314b1475495b18568c6610b318087aa0fde64d5beb9c1ff2e3b1317f"
     },
     {
       "source": "Engine/ParcChromium/parc_main_delegate.cc",
       "target": "parc/parc_main_delegate.cc",
-      "sha256": "b4266a56eda6c2a0aa07262ed16a46c840ab17d6cdf22d549753e41b787cae99"
+      "sha256": "f509f86753184b1a9efcd82ba858997ba68784d1171e7397d0ca825153db8baa"
     }
   ],
   "patches": [
@@ -6212,17 +6212,12 @@
     },
     {
       "source": "Engine/ParcHost/integration/chromium-direct-startup.patch",
-      "sha256": "5d14098f3c6c40f1f8a0fedcf77c5d8e9b37b701fb7470ac6205fc23df3c230d",
+      "sha256": "5dc4b7a794ce600ccdff9e04e5c283c467a5f342b7a17808edb2464216c52143",
       "files": [
         {
           "target": "chrome/app/chrome_main_delegate.cc",
           "before_sha256": "728fe6993ca4c3759b63f383d47a3f21a531b70fea9232932af190714ead184f",
-          "after_sha256": "bbe35b78d1fa24c18af6c8abf514a3f21a8738dc5bedc18f28c705b2eafad18a"
-        },
-        {
-          "target": "chrome/app/chrome_main_delegate.h",
-          "before_sha256": "2649f545b17271b8499e1a56ae533f72df86e6c23ed8e76ef8c4fa16092e877e",
-          "after_sha256": "ab8b8be7539263eb76823f6f4ceeba7c6cad7ee09fba4d6b7738cc705de04f21"
+          "after_sha256": "a7017fc27df47ec44f91e8c17d770d2988d392705a993710f0db04a694f9daaf"
         },
         {
           "target": "chrome/browser/chrome_browser_main.cc",
@@ -6237,12 +6232,7 @@
         {
           "target": "chrome/browser/chrome_resource_bundle_helper.cc",
           "before_sha256": "e902d9b5a8b0826f676993e505febc7e686e1a12ae2ae53fbc10389911d25fed",
-          "after_sha256": "84c37fff770c3b711b1a3a7772427cc27ea4834fa95bfe3da170a95032f8c1e9"
-        },
-        {
-          "target": "chrome/browser/chrome_resource_bundle_helper.h",
-          "before_sha256": "a95ddfc8d76643786a8581a1b26e49ef91e056a9bb552f66ffe9d7e2b1673a23",
-          "after_sha256": "c3b7a5b74c4e2996c54bcce8a2cce937207166b4e8cb55041f55b3508cd45024"
+          "after_sha256": "a4315c392d9357d988a40d956612a3717ea7e761e692214f3c405c8f318b9959"
         },
         {
           "target": "chrome/browser/profiles/pref_service_builder_utils.cc",
