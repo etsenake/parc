@@ -195,8 +195,7 @@ class Request final : public content::WebContentsObserver,
     selector->Init();
     auto* widget = new views::Widget;
     auto params = views::DialogDelegate::GetDialogWidgetInitParams(
-        selector, gfx::NativeWindow(), gfx::NativeView(), gfx::Rect(),
-        gfx::kNullAcceleratedWidget);
+        selector, gfx::NativeWindow(), gfx::NativeView(), gfx::Rect());
     params.native_widget = new CertificateWidget(widget);
     widget->Init(std::move(params));
     widget_ = widget->GetWeakPtr();

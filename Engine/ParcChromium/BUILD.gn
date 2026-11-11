@@ -73,9 +73,13 @@ source_set("page_preferences_tests") {
 
 # Startup, the content clients and the native application, compiled into the
 # framework binary. Chrome's main delegate is compiled here, not in
-# //chrome:chrome_dll, whose ChromeMain Parc doesn't use.
+# //chrome:chrome_dll, whose ChromeMain Parc doesn't use. The crash reporter
+# client comes along because //chrome/app_shim calls it.
 source_set("browser") {
   sources = [
+    "//chrome/app/chrome_crash_reporter_client.cc",
+    "//chrome/app/chrome_crash_reporter_client.h",
+    "//chrome/app/chrome_crash_reporter_client_mac.mm",
     "//chrome/app/chrome_main_delegate.cc",
     "//chrome/app/chrome_main_delegate.h",
     "chromium_hooks.h",
@@ -177,10 +181,10 @@ source_set("browser") {
     "parc_branding.h",
     "parc_bundle_mac.h",
     "parc_bundle_mac.mm",
-    "parc_content_clients.cc",
     "parc_content_clients.h",
-    "parc_main_delegate.cc",
+    "parc_content_clients.mm",
     "parc_main_delegate.h",
+    "parc_main_delegate.mm",
   ]
 
   public_deps = [

@@ -1,5 +1,9 @@
 #import "javascript_dialog_presenter.h"
 
+#import "dialog_style.h"
+
+using namespace parc_dialog;
+
 @class PCJavaScriptDialogRequest;
 
 @interface PCJavaScriptDialogPresenter () {
@@ -16,32 +20,132 @@
 // A request is also the AppKit completion's lifetime anchor. Clearing its
 // completion before endSheet prevents a synchronous AppKit callback from
 // resolving it a second time. It does not retain its presenter or host.
-@interface PCJavaScriptDialogRequest : NSObject
+@interface PCJavaScriptDialogRequest : NSObject <NSTextFieldDelegate>
 @property(nonatomic, weak) PCJavaScriptDialogPresenter* owner;
 @property(nonatomic, weak) NSView* page;
 @property(nonatomic, weak) NSWindow* parent;
-@property(nonatomic, strong) NSAlert* alert;
+@property(nonatomic, strong) NSPanel* sheet;
 @property(nonatomic, strong) NSTextField* input;
 @property(nonatomic, strong) NSButton* suppression;
+@property(nonatomic, strong) NSButton* accept;
+@property(nonatomic, strong) NSButton* cancelButton;
+@property(nonatomic, strong) NSTimer* inputTimer;
+@property(nonatomic) NSTimeInterval allowAfter;
 @property(nonatomic, strong) id closeObserver;
 @property(nonatomic, copy) PCJavaScriptDialogCompletion completion;
-// fromUser is NO for programmatic handling, cancellation and teardown; only a
-//
-//
+// fromUser is NO for programmatic handling, cancellation, teardown and another
+// owner ending the sheet; only a button or key reports the suppression checkbox.
 - (void)finishAccepted:(BOOL)accepted
               override:(NSString*)input
               fromUser:(BOOL)fromUser;
+- (void)acceptFromUser:(NSEvent*)key;
+- (void)cancelFromUser;
+- (BOOL)composing;
+@end
+
+static NSEvent* CurrentKeyEvent(void) {
+  NSEvent* event = NSApp.currentEvent;
+  return event.type == NSEventTypeKeyDown ? event : nil;
+}
+static BOOL IsPlainKey(NSEvent* event) {
+  return !(event.modifierFlags &
+           (NSEventModifierFlagCommand | NSEventModifierFlagControl |
+            NSEventModifierFlagOption | NSEventModifierFlagShift));
+}
+// Return, or keypad Enter (U+0003, which misses the button's Return equivalent).
+static BOOL IsEnter(NSEvent* event) {
+  NSString* characters = event.charactersIgnoringModifiers;
+  return IsPlainKey(event) && (event.keyCode == 76 || [characters isEqualToString:@"\003"]);
+}
+
+@interface PCJavaScriptDialogSheet : NSPanel
+@property(nonatomic, weak) PCJavaScriptDialogRequest* request;
+@end
+@implementation PCJavaScriptDialogSheet
+@synthesize request = _request;
+- (void)cancelOperation:(id)sender {
+  [self.request cancelFromUser];
+}
+- (BOOL)performKeyEquivalent:(NSEvent*)event {
+  // An input method composing in the prompt keeps its Return and Escape.
+  if (event.type == NSEventTypeKeyDown && self.request.composing) {
+    return NO;
+  }
+  if (event.type == NSEventTypeKeyDown && IsEnter(event)) {
+    [self.request acceptFromUser:event];
+    return YES;
+  }
+  return [super performKeyEquivalent:event];
+}
+- (void)keyDown:(NSEvent*)event {
+  if (!self.request.composing &&
+      (IsEnter(event) ||
+       (IsPlainKey(event) && [event.charactersIgnoringModifiers isEqualToString:@"\r"]))) {
+    [self.request acceptFromUser:event];
+    return;
+  }
+  [super keyDown:event];
+}
 @end
 
 @implementation PCJavaScriptDialogRequest
 @synthesize owner = _owner;
 @synthesize page = _page;
 @synthesize parent = _parent;
-@synthesize alert = _alert;
+@synthesize sheet = _sheet;
 @synthesize input = _input;
 @synthesize suppression = _suppression;
+@synthesize accept = _accept;
+@synthesize cancelButton = _cancelButton;
+@synthesize inputTimer = _inputTimer;
+@synthesize allowAfter = _allowAfter;
 @synthesize closeObserver = _closeObserver;
 @synthesize completion = _completion;
+- (BOOL)composing {
+  NSText* editor = self.input.currentEditor;
+  return [editor isKindOfClass:NSTextView.class] && ((NSTextView*)editor).hasMarkedText;
+}
+- (void)acceptClicked:(PCDialogButton*)sender {
+  [self acceptFromUser:sender.keyEvent ?: CurrentKeyEvent()];
+}
+- (void)cancelClicked:(id)sender {
+  [self cancelFromUser];
+}
+// A page can open a dialog at any moment, so OK is inert for half a second
+// after the sheet appears, and a held or earlier Return never accepts it;
+// NSEvent timestamps share systemUptime's clock.
+- (void)acceptFromUser:(NSEvent*)key {
+  if (!self.completion || !self.accept.enabled || self.composing) {
+    return;
+  }
+  if (key && (key.isARepeat || key.timestamp < self.allowAfter)) {
+    return;
+  }
+  [self finishAccepted:YES override:nil fromUser:YES];
+}
+// A plain alert has no Cancel, so Escape leaves it open.
+- (void)cancelFromUser {
+  if (!self.completion || !self.cancelButton) {
+    return;
+  }
+  [self finishAccepted:NO override:nil fromUser:YES];
+}
+- (BOOL)control:(NSControl*)control
+               textView:(NSTextView*)textView
+    doCommandBySelector:(SEL)command {
+  if (control != self.input || textView.hasMarkedText) {
+    return NO;
+  }
+  if (command == @selector(insertNewline:)) {
+    [self acceptFromUser:CurrentKeyEvent()];
+    return YES;
+  }
+  if (command == @selector(cancelOperation:)) {
+    [self cancelFromUser];
+    return YES;
+  }
+  return NO;
+}
 - (void)finishAccepted:(BOOL)accepted
               override:(NSString*)input
               fromUser:(BOOL)fromUser {
@@ -58,11 +162,20 @@
   accepted = accepted && attached;
   NSString* result =
       accepted && self.input ? [input ?: self.input.stringValue copy] : @"";
-  //
+  // The checkbox is reported with either button; a moved page reports none.
   const BOOL suppress = fromUser && attached && self.suppression &&
                         self.suppression.state == NSControlStateValueOn;
-  NSAlert* alert = self.alert;
-  self.alert = nil;
+  NSPanel* sheet = self.sheet;
+  self.sheet = nil;
+  ((PCJavaScriptDialogSheet*)sheet).request = nil;
+  [self.inputTimer invalidate];
+  self.inputTimer = nil;
+  for (NSButton* button in @[ self.accept ?: NSNull.null, self.cancelButton ?: NSNull.null ]) {
+    if ([button isKindOfClass:NSButton.class]) button.target = nil;
+  }
+  self.input.delegate = nil;
+  self.accept = nil;
+  self.cancelButton = nil;
   self.input = nil;
   self.suppression = nil;
   if (self.closeObserver) {
@@ -71,12 +184,11 @@
   }
   [self.owner requestFinished:self];
   self.owner = nil;
-  if (alert.window.sheetParent) {
-    [alert.window.sheetParent endSheet:alert.window
-                            returnCode:accepted ? NSAlertFirstButtonReturn
-                                                : NSAlertSecondButtonReturn];
+  if (sheet.sheetParent) {
+    [sheet.sheetParent endSheet:sheet
+                     returnCode:accepted ? NSModalResponseOK : NSModalResponseCancel];
   }
-  [alert.window orderOut:nil];
+  [sheet orderOut:nil];
   completion(accepted, result, suppress);
 }
 @end
@@ -96,7 +208,7 @@
   return _request != nil;
 }
 - (NSWindow*)presentedSheet {
-  return _request.alert.window;
+  return _request.sheet;
 }
 
 - (void)presentKind:(PCJavaScriptDialogKind)kind
@@ -120,46 +232,71 @@
   request.page = page;
   request.parent = window;
   request.completion = completion;
-  //
-  // engine's ("<origin> says", "Leave site?"); the page text is informative.
-  NSAlert* alert = [NSAlert new];
-  request.alert = alert;
-  alert.messageText = title.length ? title : @"This page says";
-  alert.informativeText = message;
-  [alert addButtonWithTitle:@"OK"];
-  if (kind != PCJavaScriptDialogAlert) {
-    [alert addButtonWithTitle:@"Cancel"];
-    alert.buttons[1].keyEquivalent = @"\033";
-  }
-  NSMutableArray<NSView*>* accessories = [NSMutableArray array];
+  // The title is the engine's ("<origin> says", "Leave site?"); the page text
+  // is the message. Parc's mark stands where NSAlert showed the app icon.
+  NSString* heading = title.length ? title : @"This page says";
+  PCJavaScriptDialogSheet* sheet = [[PCJavaScriptDialogSheet alloc]
+      initWithContentRect:NSMakeRect(0, 0, kWidth, 200)
+                styleMask:NSWindowStyleMaskTitled
+                  backing:NSBackingStoreBuffered
+                    defer:YES];
+  sheet.releasedWhenClosed = NO;
+  sheet.title = heading;
+  sheet.request = request;
+  sheet.becomesKeyOnlyIfNeeded = NO;
+  sheet.accessibilityLabel = heading;
+  PrepareSheet(sheet);
+  request.sheet = sheet;
+  PCDialogBaseView* root = [[PCDialogBaseView alloc] initWithFrame:NSZeroRect];
+  CGFloat y = kInset;
+  NSRect markRect;
+  NSImage* mark = ParcMark(&markRect);
+  PCDialogPictureIcon* art = [[PCDialogPictureIcon alloc] initWithImage:mark imageRect:markRect];
+  [art setAccessibilityElement:NO];
+  art.frameOrigin = NSMakePoint(kInset, y);
+  [root addSubview:art];
+  y = AddHeading(root, heading, message, y + kArtSize, 240);
   if (kind == PCJavaScriptDialogPrompt) {
-    NSTextField* field = [NSTextField new];
-    field.stringValue = defaultText;
-    field.accessibilityLabel = @"Response";
-    request.input = field;
-    [accessories addObject:field];
+    y += 16;
+    PCDialogInputField* input = [[PCDialogInputField alloc] initWithText:defaultText];
+    const CGFloat halo = (NSHeight(input.frame) - 36) / 2;
+    input.frame = NSMakeRect(kInset - halo, y - halo, kWidth - 2 * kInset + 2 * halo,
+                             NSHeight(input.frame));
+    input.field.accessibilityLabel = @"Response";
+    input.field.delegate = request;
+    request.input = input.field;
+    [root addSubview:input];
+    y += 36;
+  }
+  y += 22;
+  PCDialogButton* accept = [[PCDialogButton alloc] initWithTitle:@"OK" primary:YES];
+  accept.target = request;
+  accept.action = @selector(acceptClicked:);
+  accept.keyEquivalent = @"\r";
+  accept.keyEquivalentModifierMask = 0;
+  accept.enabled = NO;
+  request.accept = accept;
+  NSMutableArray<NSButton*>* buttons = [NSMutableArray arrayWithObject:accept];
+  if (kind != PCJavaScriptDialogAlert) {
+    PCDialogButton* cancel = [[PCDialogButton alloc] initWithTitle:@"Cancel" primary:NO];
+    cancel.target = request;
+    cancel.action = @selector(cancelClicked:);
+    cancel.keyEquivalent = @"\033";
+    cancel.keyEquivalentModifierMask = 0;
+    request.cancelButton = cancel;
+    [buttons addObject:cancel];
   }
   if (offersSuppression && kind != PCJavaScriptDialogBeforeUnload) {
-    NSButton* box = [NSButton new];
-    [box setButtonType:NSButtonTypeSwitch];
-    box.title = @"Don't show this again";
-    request.suppression = box;
-    [accessories addObject:box];
+    request.suppression = [[PCDialogCheckbox alloc] initWithTitle:@"Don't show this again"
+                                                           target:nil
+                                                           action:nil];
   }
-  if (accessories.count) {
-    //
-    // view in the top gravity area.
-    NSStackView* stack = [[NSStackView alloc]
-        initWithFrame:NSMakeRect(0, 0, 280, 24.0 * accessories.count)];
-    stack.orientation = NSUserInterfaceLayoutOrientationVertical;
-    for (NSView* view in accessories) {
-      [stack addView:view inGravity:NSStackViewGravityTop];
-    }
-    alert.accessoryView = stack;
-  }
-  if (request.input) {
-    alert.window.initialFirstResponder = request.input;
-  }
+  y = PlaceFooter(root, y, request.suppression, buttons);
+  root.frame = NSMakeRect(0, 0, kWidth, y);
+  sheet.contentView = root;
+  [sheet setContentSize:NSMakeSize(kWidth, y)];
+  [sheet setAccessibilityDefaultButton:accept];
+  sheet.initialFirstResponder = request.input ?: accept;
   _request = request;
   __weak PCJavaScriptDialogRequest* weakRequest = request;
   request.closeObserver = [NSNotificationCenter.defaultCenter
@@ -171,13 +308,29 @@
                 [current.owner parentWindowWillClose:notification.object];
                 [current finishAccepted:NO override:nil fromUser:NO];
               }];
-  // Never nil: this is a page-bound sheet, not NSAlert's app-modal path.
-  [alert beginSheetModalForWindow:window
-                completionHandler:^(NSModalResponse result) {
-                  [request finishAccepted:result == NSAlertFirstButtonReturn
-                                 override:nil
-                                 fromUser:YES];
-                }];
+  // Never app-modal: this is a page-bound sheet. Another owner ending it
+  // answers Cancel without reporting the checkbox.
+  [window beginSheet:sheet
+      completionHandler:^(NSModalResponse) {
+        [request finishAccepted:NO override:nil fromUser:NO];
+      }];
+  if (!request.completion) {
+    return;
+  }
+  if (request.input) {
+    [sheet makeFirstResponder:request.input];
+  }
+  request.allowAfter = NSProcessInfo.processInfo.systemUptime + .5;
+  request.inputTimer = [NSTimer timerWithTimeInterval:.5
+                                              repeats:NO
+                                                block:^(NSTimer*) {
+                                                  PCJavaScriptDialogRequest* current = weakRequest;
+                                                  if (current.completion) {
+                                                    current.accept.enabled = YES;
+                                                  }
+                                                }];
+  [NSRunLoop.mainRunLoop addTimer:request.inputTimer forMode:NSRunLoopCommonModes];
+  [NSRunLoop.mainRunLoop addTimer:request.inputTimer forMode:NSModalPanelRunLoopMode];
 }
 
 - (void)requestFinished:(PCJavaScriptDialogRequest*)request {

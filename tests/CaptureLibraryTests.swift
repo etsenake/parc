@@ -117,7 +117,7 @@ struct CaptureLibraryTests {
         }
         ownerReservation = nil
         while resumeDelete == nil { await Task.yield() }
-        do { _ = try parentStore.stageProfileRemoval(removable, expectedName: "Removal test", confirmation: "Removal test"); fatalError("Removal crossed an in-flight deletion") } catch {}
+        do { _ = try parentStore.stageProfileRemoval(removable, expectedName: "Removal test"); fatalError("Removal crossed an in-flight deletion") } catch {}
         resumeDelete?.resume(); try await deletion.value
         precondition(!owned.contains(candidate))
         precondition(owned.reserveDeletion(owner: parentStore, item: candidate) == nil)
@@ -126,7 +126,7 @@ struct CaptureLibraryTests {
         let replacement = try await owned.save(deletionInput(current.revision))
         do { try await failingReservation.perform { try await owned.delete(current) }; fatalError("Stale delete succeeded") } catch {}
         precondition(owned.contains(replacement))
-        let staged = try parentStore.stageProfileRemoval(removable, expectedName: "Removal test", confirmation: "Removal test")
+        let staged = try parentStore.stageProfileRemoval(removable, expectedName: "Removal test")
         precondition(owned.reserveDeletion(owner: parentStore, item: replacement) == nil)
         try parentStore.cancelProfileRemoval(staged)
         let finalReservation = owned.reserveDeletion(owner: parentStore, item: replacement)!

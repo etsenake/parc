@@ -23,18 +23,16 @@ import Foundation
         let reviewed = store.unusedProfilesForRemoval
         let controller = ProfileRemovalController()
         controller.configure(store: store)
-        try rejects { try controller.removeUnusedProfiles(reviewed, confirmation: " CONFIRM ") }
-        try expect(PCNativeBrowserApplication.preparations.isEmpty, "Wrong confirmation cannot reach native preparation")
         var everyTargetWasStaged = true
         PCNativeBrowserApplication.willPrepare = {
             everyTargetWasStaged = everyTargetWasStaged && [first, second, third].allSatisfy(store.isProfileRemovalPending)
         }
-        try controller.removeUnusedProfiles(reviewed, confirmation: "confirm")
+        try controller.removeUnusedProfiles(reviewed)
         PCNativeBrowserApplication.willPrepare = nil
         try expect(everyTargetWasStaged && PCNativeBrowserApplication.preparations.count == 3,
                    "All authorizations precede the first native preparation")
         let originalRecords = store.state.profileRemovals
-        try rejects { try controller.removeUnusedProfiles(reviewed, confirmation: "CONFIRM") }
+        try rejects { try controller.removeUnusedProfiles(reviewed) }
         try expect(PCNativeBrowserApplication.preparations.count == 3, "Repeated submit cannot duplicate running operations")
         let firstLease = PCNativeBrowserApplication.prepare(0)
         controller.cancel(profileID: first)
@@ -50,7 +48,7 @@ import Foundation
         try expect(!store.state.profiles.contains { $0.id == first } && store.state.profiles.count == 3,
                    "Success removes only the exact completed profile")
         let unreviewed = store.createProfile(name: "New after confirmation")
-        try controller.removeUnusedProfiles(reviewed, confirmation: "CONFIRM")
+        try controller.removeUnusedProfiles(reviewed)
         try expect(PCNativeBrowserApplication.preparations.count == 5 && !store.isProfileRemovalPending(unreviewed),
                    "Retry skips completed targets and cannot expand to newly unused profiles")
         let secondRecord = store.state.profileRemovals.first { $0.profileID == second }!
@@ -63,7 +61,7 @@ import Foundation
         controller.cancel(profileID: second)
         try expect(store.state.profileRemovals == [secondRecord] && !secondLease.cancelled,
                    "Partial completion keeps the exact incomplete journal blocked")
-        try controller.removeUnusedProfiles(reviewed, confirmation: "CONFIRM")
+        try controller.removeUnusedProfiles(reviewed)
         try expect(PCNativeBrowserApplication.preparations.count == 5 && PCNativeBrowserApplication.recoveries.count == 1,
                    "Retry recovers a committed operation instead of preparing a second deletion")
         let recovery = PCNativeBrowserApplication.recoveries[0]
@@ -75,9 +73,27 @@ import Foundation
         let assigned = store.createProfile(name: "Assigned after review")
         let staleReview = store.unusedProfilesForRemoval
         store.assignProfile(assigned, toSpace: store.state.activeSpaceID)
-        try rejects { try controller.removeUnusedProfiles(staleReview, confirmation: "CONFIRM") }
+        try rejects { try controller.removeUnusedProfiles(staleReview) }
         try expect(PCNativeBrowserApplication.preparations.count == 5 && !store.isProfileRemovalPending(unreviewed),
                    "A newly assigned target prevents every new removal before native dispatch")
+        let single = store.createProfile(name: "Single")
+        controller.remove(profileID: single, expectedName: "Single")
+        try expect(PCNativeBrowserApplication.preparations.count == 6 && controller.status(for: single)?.running == true,
+                   "Confirming one profile stages and prepares it without a typed name")
+        PCNativeBrowserApplication.preparations[5].completion(nil, ProfileRemovalError.unavailable)
+        try expect(controller.claimFailure(for: single)?.error != nil && controller.claimFailure(for: single) == nil
+                   && !store.isProfileRemovalPending(single),
+                   "A refused preparation hands its error to one presenter and keeps the profile")
+        controller.remove(profileID: single, expectedName: "Single")
+        PCNativeBrowserApplication.prepare(6).completion?(.pending, ProfileRemovalError.incompleteOperation)
+        try expect(controller.claimFailure(for: single)?.error != nil && store.isProfileRemovalPending(single),
+                   "An incomplete removal stays pending with a reportable error")
+        controller.remove(profileID: single, expectedName: "Single")
+        try expect(PCNativeBrowserApplication.recoveries.count == 2 && PCNativeBrowserApplication.preparations.count == 7,
+                   "Retrying a pending removal recovers its journal without confirming again")
+        PCNativeBrowserApplication.recoveries[1].completion(.removed, nil)
+        try expect(!store.state.profiles.contains { $0.id == single } && controller.status(for: single) == nil,
+                   "Recovered removal finishes silently")
         print("Profile removal controller: \(assertions) assertions passed (isolated native-boundary doubles)")
     }
 }

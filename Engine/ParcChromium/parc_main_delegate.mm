@@ -145,11 +145,6 @@ ParcMainDelegate::~ParcMainDelegate() {
   parc_hooks::SetBrowserResourceBundleFactory(nullptr, nullptr);
 }
 
-ParcContentBrowserClient& ParcMainDelegate::browser_client() {
-  return static_cast<ParcContentBrowserClient&>(
-      *chrome_content_browser_client_);
-}
-
 void ParcMainDelegate::ShutdownBrowser() {
   // Null after an early exit, before browser startup created it.
   if (browser_runner_) {

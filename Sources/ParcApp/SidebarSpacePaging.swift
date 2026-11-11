@@ -242,6 +242,8 @@ enum SidebarSpacePagingPresentationSkip {
     var selectedID: () -> UUID? = { nil }
     var pageWidth: () -> CGFloat = { 0 }
     var canBegin: () -> Bool = { false }
+    /// The owner offers trailing-edge creation when no adjacent page exists.
+    var canTrackSinglePageCreation: () -> Bool = { false }
     var canSelect: (Page) -> Bool = { _ in false }
     var select: (Page) -> Void = { _ in }
     /// Draws the strip at an offset in points (see the type comment).
@@ -338,8 +340,11 @@ enum SidebarSpacePagingPresentationSkip {
             ownsMomentum = false
             //
             // |dx| ≥ |dy| that the owner accepts starts tracking from the
-            // strip's current position.
-            guard abs(dx) >= abs(dy), canBegin(), let index = selectedIndex, pages().count > 1 else { return false }
+            // strip's current position. One page can still track past its
+            // trailing edge for the create-Space gesture; target and settle
+            // keep that page selected because there is no adjacent page.
+            guard abs(dx) >= abs(dy), canBegin(), let index = selectedIndex,
+                  pages().count > 1 || canTrackSinglePageCreation() else { return false }
             let start = CGFloat(index) * pageWidth() - offset
             tracking = Tracking(begin: index, position: start, samples: [(time, start)])
             place(offset)

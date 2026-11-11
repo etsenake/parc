@@ -33,6 +33,9 @@ class ParcContentBrowserClient final : public ChromeContentBrowserClient {
   explicit ParcContentBrowserClient(NativeApplication& application);
   ~ParcContentBrowserClient() override;
 
+  // The browser process's client, which outlives every page and window.
+  static ParcContentBrowserClient& Get();
+
   // The profile Chrome's startup loaded; set once browser startup reaches
   // PostProfileInit.
   Profile* initial_profile() const { return initial_profile_; }

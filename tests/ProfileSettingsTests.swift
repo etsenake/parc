@@ -64,7 +64,7 @@ struct ProfileSettingsTests {
         try expect(store.settingsPageSpace(profileID: UUID(), originatingSpaceID: originalSpace.id) == nil,
                    "Removed and stale profiles refuse page commands")
         let unused = store.createProfile(name: "Removing")
-        _ = try store.stageProfileRemoval(unused, expectedName: "Removing", confirmation: "Removing")
+        _ = try store.stageProfileRemoval(unused, expectedName: "Removing")
         try expect(store.settingsPageSpace(profileID: unused, originatingSpaceID: nil) == nil,
                    "A retiring profile never admits a settings page")
         try expect(ProfileSettingsPage.passwords.canReuse("chrome://password-manager/passwords/credential"),

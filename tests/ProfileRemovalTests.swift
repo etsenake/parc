@@ -40,16 +40,15 @@ struct ProfileRemovalTests {
         let store = try BrowserStore(directory: directory)
         let archivedID = seed.tabs[2].id
         let preview = store.acquireArchivePreview(id: archivedID, profileID: deleting)!
-        try rejects { _ = try store.stageProfileRemoval(deleting, expectedName: "Work", confirmation: "Work") }
-        try rejects { _ = try store.stageUnusedProfileRemovals([seed.profiles[1]], confirmation: "CONFIRM") }
+        try rejects { _ = try store.stageProfileRemoval(deleting, expectedName: "Work") }
+        try rejects { _ = try store.stageUnusedProfileRemovals([seed.profiles[1]]) }
         try expect(store.state.profileRemovals.isEmpty, "Preview lease prevents single and bulk staging")
         store.releaseArchivePreview(preview)
         try expect(store.defaultProfileID == originalProfile, "Legacy default is immutable original identity")
         try store.saveProfileName(originalProfile, expectedName: "Default", name: "Renamed Default")
         try rejects { _ = try store.profileRemovalSummary(originalProfile) }
-        try rejects { _ = try store.validateProfileRemoval(deleting, expectedName: "Other", confirmation: "Other") }
-        try rejects { _ = try store.validateProfileRemoval(deleting, expectedName: "Work", confirmation: " Work ") }
-        let summary = try store.validateProfileRemoval(deleting, expectedName: "Work", confirmation: "wOrK")
+        try rejects { _ = try store.validateProfileRemoval(deleting, expectedName: "Other") }
+        let summary = try store.validateProfileRemoval(deleting, expectedName: "Work")
         try expect(summary.savedTabCount == 2 && summary.historyEntryCount == 1, "Confirmation reports actual source records")
         // Hold the original parent across a delayed Library write. Its owning
         // window is irrelevant; the operation retains the reservation itself.
@@ -61,7 +60,7 @@ struct ProfileRemovalTests {
         } }
         originalOwner = nil
         while pendingWrite == nil { await Task.yield() }
-        try rejects { _ = try store.stageProfileRemoval(deleting, expectedName: "Work", confirmation: "Work") }
+        try rejects { _ = try store.stageProfileRemoval(deleting, expectedName: "Work") }
         pendingWrite?.resume(); let written = await write.value
         try expect(written == 1, "Completed write releases its reservation")
         let failing = store.reserveProfileWrite(deleting)!
@@ -78,14 +77,14 @@ struct ProfileRemovalTests {
         }
         store.assignProfile(deleting, toSpace: spaceID)
         try expect(deferredAssignmentGate != nil, "Assignment waits for native retirement approval")
-        let record = try store.stageProfileRemoval(deleting, expectedName: "Work", confirmation: "WORK")
+        let record = try store.stageProfileRemoval(deleting, expectedName: "Work")
         try expect(store.state.profiles.contains { $0.id == deleting }, "Staging cannot publish deletion")
         try expect(store.isProfileRemovalPending(deleting), "Staging blocks reuse")
         try expect(store.reserveProfileWrite(deleting) == nil, "Staged removal refuses a new Library write")
         try expect(deferredAssignmentGate?() == false, "Pending removal revokes a preexisting reassignment before native close")
         deferredAssignmentCompletion?(false)
         store.requestPageRetirement = nil
-        try rejects { _ = try store.stageProfileRemoval(deleting, expectedName: "Work", confirmation: "Work") }
+        try rejects { _ = try store.stageProfileRemoval(deleting, expectedName: "Work") }
         store.assignProfile(deleting, toSpace: spaceID)
         try expect(store.state.spaces[0].profileID == originalProfile, "Pending profile cannot be reassigned")
         try rejects { try store.saveProfileName(deleting, expectedName: "Work", name: "Other") }
@@ -93,7 +92,7 @@ struct ProfileRemovalTests {
         try expect(restarted.state.profileRemovals == [record] && restarted.isProfileRemovalPending(deleting), "Pending operation survives restart")
         try restarted.cancelProfileRemoval(record)
         try expect(!restarted.isProfileRemovalPending(deleting) && restarted.state.tabs.count == 3, "Cancellation preserves records")
-        let retry = try restarted.stageProfileRemoval(deleting, expectedName: "Work", confirmation: "Work")
+        let retry = try restarted.stageProfileRemoval(deleting, expectedName: "Work")
         try FileManager.default.removeItem(at: file)
         try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
         try rejects { try restarted.finishProfileRemoval(retry) }
@@ -116,16 +115,15 @@ struct ProfileRemovalTests {
         let secondUnused = final.createProfile(name: "Research")
         let reviewed = final.unusedProfilesForRemoval
         try expect(reviewed.map(\.id) == [firstUnused, secondUnused], "Bulk candidates exclude the renamed Default")
-        try rejects { _ = try final.stageUnusedProfileRemovals(reviewed, confirmation: " CONFIRM ") }
-        try rejects { _ = try final.stageUnusedProfileRemovals([], confirmation: "CONFIRM") }
-        try rejects { _ = try final.stageUnusedProfileRemovals([reviewed[0], reviewed[0]], confirmation: "CONFIRM") }
-        try rejects { _ = try final.stageUnusedProfileRemovals([final.state.profiles[0]], confirmation: "CONFIRM") }
+        try rejects { _ = try final.stageUnusedProfileRemovals([]) }
+        try rejects { _ = try final.stageUnusedProfileRemovals([reviewed[0], reviewed[0]]) }
+        try rejects { _ = try final.stageUnusedProfileRemovals([final.state.profiles[0]]) }
         try final.saveProfileName(secondUnused, expectedName: "Research", name: "Reference")
-        try rejects { _ = try final.stageUnusedProfileRemovals(reviewed, confirmation: "CONFIRM") }
+        try rejects { _ = try final.stageUnusedProfileRemovals(reviewed) }
         try expect(final.state.profileRemovals.isEmpty, "One stale name rejects every new target before staging")
         let currentReview = final.unusedProfilesForRemoval
         let bulkWrite = final.reserveProfileWrite(firstUnused)!
-        try rejects { _ = try final.stageUnusedProfileRemovals(currentReview, confirmation: "CONFIRM") }
+        try rejects { _ = try final.stageUnusedProfileRemovals(currentReview) }
         try expect(final.state.profileRemovals.isEmpty, "A reserved write refuses the whole bulk removal")
         bulkWrite.finish(); bulkWrite.finish()
         let newAfterReview = final.createProfile(name: "Created after review")
@@ -134,12 +132,12 @@ struct ProfileRemovalTests {
         let savedBeforeBulk = try Data(contentsOf: file)
         try FileManager.default.removeItem(at: file)
         try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
-        try rejects { _ = try final.stageUnusedProfileRemovals(currentReview, confirmation: "CONFIRM") }
+        try rejects { _ = try final.stageUnusedProfileRemovals(currentReview) }
         try expect(final.state == beforeBulk && final.state.profileRemovals.isEmpty,
                    "Failed bulk staging publishes no partial authorization or removal")
         try FileManager.default.removeItem(at: file)
         try savedBeforeBulk.write(to: file)
-        let bulk = try final.stageUnusedProfileRemovals(currentReview, confirmation: "cOnFiRm")
+        let bulk = try final.stageUnusedProfileRemovals(currentReview)
         try expect(bulk.map(\.profileID) == [firstUnused, secondUnused] && Set(bulk.map(\.id)).count == 2,
                    "Bulk staging binds separate operation UUIDs to the reviewed identities")
         try expect(final.state.profiles.count == 4 && !final.isProfileRemovalPending(newAfterReview),

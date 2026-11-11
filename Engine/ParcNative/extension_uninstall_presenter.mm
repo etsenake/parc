@@ -1,8 +1,11 @@
 #import "extension_uninstall_presenter.h"
 
-//
-// separate Return/Escape methods. This source-owned view follows that boundary;
-// geometry/fonts are provisional until matched visual/motion verification.
+#import "dialog_style.h"
+
+using namespace parc_dialog;
+
+// A custom sheet, supplied-parent beginSheet and separate Return/Escape
+// methods, drawn in Parc's dialog style with the extension's artwork.
 @interface PCNativeUninstallPresenter ()
 - (void)accept:(id)sender;
 - (void)cancel:(id)sender;
@@ -70,7 +73,7 @@
     _changed = [changed copy];
     _result = [result copy];
     _sheet = [[PCNativeUninstallSheet alloc]
-        initWithContentRect:NSMakeRect(0, 0, 440, 230)
+        initWithContentRect:NSMakeRect(0, 0, kWidth, 230)
                   styleMask:NSWindowStyleMaskTitled
                     backing:NSBackingStoreBuffered
                       defer:NO];
@@ -79,87 +82,40 @@
     _sheet.request = self;
     _sheet.becomesKeyOnlyIfNeeded = NO;
     _sheet.accessibilityLabel = title;
-    NSView* content = _sheet.contentView;
-    NSTextField* heading = [NSTextField wrappingLabelWithString:title];
-    heading.font = [NSFont boldSystemFontOfSize:15];
-    heading.preferredMaxLayoutWidth = icon ? 348 : 392;
-    heading.accessibilityRole = NSAccessibilityStaticTextRole;
-    NSMutableArray<NSView*>* headerViews = [NSMutableArray array];
-    if (icon) {
-      NSImageView* iconView = [NSImageView imageViewWithImage:icon];
-      iconView.imageScaling = NSImageScaleProportionallyUpOrDown;
-      iconView.accessibilityElement =
-          NO;  // Adjacent title identifies the extension.
-      [iconView.widthAnchor constraintEqualToConstant:32].active = YES;
-      [iconView.heightAnchor constraintEqualToConstant:32].active = YES;
-      [headerViews addObject:iconView];
-    }
-    [headerViews addObject:heading];
-    NSStackView* header = [NSStackView stackViewWithViews:headerViews];
-    header.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-    header.spacing = 12;
-    header.alignment = NSLayoutAttributeCenterY;
-    _accept = [NSButton buttonWithTitle:acceptLabel
-                                 target:self
-                                 action:@selector(accept:)];
-    _cancel = [NSButton buttonWithTitle:cancelLabel
-                                 target:self
-                                 action:@selector(cancel:)];
+    PrepareSheet(_sheet);
+    PCDialogBaseView* root = [[PCDialogBaseView alloc] initWithFrame:NSZeroRect];
+    CGFloat y = kInset;
+    // The adjacent title identifies the extension, so the art is not an element.
+    NSImageView* art = ExtensionArt(icon);
+    art.frameOrigin = NSMakePoint(kInset, y);
+    [root addSubview:art];
+    y = AddHeading(root, title, message, y + kArtSize, 200) + 22;
+    _accept = [[PCDialogButton alloc] initWithTitle:acceptLabel
+                                            primary:YES
+                                        destructive:YES];
+    _cancel = [[PCDialogButton alloc] initWithTitle:cancelLabel primary:NO];
+    _accept.target = self;
+    _accept.action = @selector(accept:);
+    _cancel.target = self;
+    _cancel.action = @selector(cancel:);
     _accept.keyEquivalent = @"\r";
     _cancel.keyEquivalent = @"\033";
     _accept.keyEquivalentModifierMask = 0;
     _cancel.keyEquivalentModifierMask = 0;
-    _sheet.defaultButtonCell = _accept.cell;
-    NSStackView* actions =
-        [NSStackView stackViewWithViews:@[ _cancel, _accept ]];
-    actions.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-    actions.spacing = 8;
-    NSMutableArray<NSView*>* rows = [NSMutableArray arrayWithObject:header];
-    if (message.length) {
-      NSTextField* detail = [NSTextField wrappingLabelWithString:message];
-      detail.font = [NSFont systemFontOfSize:13];
-      detail.preferredMaxLayoutWidth = 392;
-      [rows addObject:detail];
-    }
     if (checkboxLabel) {
-      _checkbox = [NSButton checkboxWithTitle:checkboxLabel
-                                       target:self
-                                       action:@selector(checkChanged:)];
+      _checkbox = [[PCDialogCheckbox alloc] initWithTitle:checkboxLabel
+                                                   target:self
+                                                   action:@selector(checkChanged:)];
       _checkbox.state =
           checked ? NSControlStateValueOn : NSControlStateValueOff;
-      _checkbox.cell.wraps = YES;
-      [rows addObject:_checkbox];
     }
-    NSStackView* stack = [NSStackView stackViewWithViews:rows];
-    stack.orientation = NSUserInterfaceLayoutOrientationVertical;
-    stack.alignment = NSLayoutAttributeLeading;
-    stack.spacing = 14;
-    for (NSView* row in rows) {
-      [row.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
-    }
-    for (NSView* view in @[ stack, actions ]) {
-      view.translatesAutoresizingMaskIntoConstraints = NO;
-      [content addSubview:view];
-    }
-    [NSLayoutConstraint activateConstraints:@[
-      [stack.leadingAnchor constraintEqualToAnchor:content.leadingAnchor
-                                          constant:24],
-      [stack.trailingAnchor constraintEqualToAnchor:content.trailingAnchor
-                                           constant:-24],
-      [stack.topAnchor constraintEqualToAnchor:content.topAnchor constant:24],
-      [actions.topAnchor constraintEqualToAnchor:stack.bottomAnchor
-                                        constant:20],
-      [actions.trailingAnchor constraintEqualToAnchor:content.trailingAnchor
-                                             constant:-24],
-      [actions.bottomAnchor constraintEqualToAnchor:content.bottomAnchor
-                                           constant:-20],
-      [actions.leadingAnchor
-          constraintGreaterThanOrEqualToAnchor:content.leadingAnchor
-                                      constant:24],
-    ]];
-    [content layoutSubtreeIfNeeded];
-    NSSize fit = content.fittingSize;
-    [_sheet setContentSize:NSMakeSize(440, MAX(180, fit.height))];
+    y = PlaceFooter(root, y, _checkbox, @[ _accept, _cancel ]);
+    root.frame = NSMakeRect(0, 0, kWidth, y);
+    _sheet.contentView = root;
+    [_sheet setContentSize:NSMakeSize(kWidth, y)];
+    // Return is the Remove button's key equivalent; a default button cell
+    // would tint over the drawn face.
+    [_sheet setAccessibilityDefaultButton:_accept];
     _sheet.initialFirstResponder = _checkbox ?: _accept;
     __weak PCNativeUninstallPresenter* weak = self;
     _closeObserver = [NSNotificationCenter.defaultCenter

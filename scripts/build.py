@@ -321,7 +321,7 @@ def check_helper_contract(source: Path) -> None:
     helper = (source / "parc/helper/BUILD.gn").read_text()
     if 'executable("parc_helper")' not in helper or '"//sandbox/mac:seatbelt"' not in helper:
         raise Refusal("Direct engine helper target or Seatbelt dependency is missing")
-    client = (source / "parc/parc_content_clients.cc").read_text()
+    client = (source / "parc/parc_content_clients.mm").read_text()
     bundle = (source / "parc/parc_bundle_mac.mm").read_text()
     constants = (source / "chrome/common/chrome_constants.cc").read_text()
     if (f'kMacHelperSuffixCdm[] = "{CDM_HELPER}";' not in client or
@@ -407,8 +407,8 @@ def verify_workspace(engine: Path, repo: Path) -> tuple[Path, dict]:
     if any(generated_args.get(k, "").strip() != v for k, v in expected_args.items()):
         raise Refusal("Generated engine configuration differs from the reviewed Release ARM64 build")
     proof_names = PROOF_FILES + (
-        "parc/BUILD.gn", "parc/framework.exports", "parc/helper/BUILD.gn", "parc/helper/main.cc",
-        "parc/parc_content_clients.cc", "parc/parc_bundle_mac.mm", "chrome/common/chrome_constants.cc")
+        "parc/BUILD.gn", "parc/helper/BUILD.gn", "parc/helper/main.cc",
+        "parc/parc_content_clients.mm", "parc/parc_bundle_mac.mm", "chrome/common/chrome_constants.cc")
     proof = {name: sha(source / name) for name in proof_names}
     proof["out/" + engine.name + "/args.gn"] = sha(args_path)
     gl_flags = engine / "gen/ui/gl/buildflags.h"

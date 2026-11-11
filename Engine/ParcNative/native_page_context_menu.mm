@@ -9,7 +9,6 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/clipboard_types.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/common/content_client.h"
 #include "ui/base/clipboard/clipboard_format_type.h"
 #include "ui/base/clipboard/clipboard_metadata.h"
 #include "ui/base/data_transfer_policy/data_transfer_endpoint.h"
@@ -35,6 +34,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "native_appkit_page.h"
+#include "parc/parc_content_clients.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/mojom/context_menu/context_menu.mojom.h"
 #include "ui/base/cocoa/menu_utils.h"
@@ -194,7 +194,7 @@ void CheckImagePolicy(PageLease lease, NSURL* source, NSString* title,
       }, lease.document), *frame);
   content::ClipboardPasteData data;
   data.bitmap = bitmap;
-  content::GetContentClient()->browser()->IsClipboardCopyAllowedByPolicy(
+  ParcContentBrowserClient::Get().IsClipboardCopyAllowedByPolicy(
       source_endpoint, {.size = bitmap.computeByteSize(),
                         .format_type = ui::ClipboardFormatType::BitmapType()}, data,
       base::BindOnce([](PageLease lease, NSURL* source, NSString* title,

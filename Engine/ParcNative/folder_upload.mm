@@ -125,8 +125,7 @@ class Request final : public content::WebContentsObserver,
         weak));
     auto* widget = new views::Widget;
     auto params = views::DialogDelegate::GetDialogWidgetInitParams(
-        host.release(), gfx::NativeWindow(), gfx::NativeView(), gfx::Rect(),
-        gfx::kNullAcceleratedWidget);
+        host.release(), gfx::NativeWindow(), gfx::NativeView(), gfx::Rect());
     params.native_widget = new FolderWidget(widget);
     widget->Init(std::move(params));
     widget_ = widget->GetWeakPtr();

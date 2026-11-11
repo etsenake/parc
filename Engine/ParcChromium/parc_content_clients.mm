@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/apple/foundation_util.h"
+#include "base/check.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -21,6 +22,7 @@
 #include "content/public/browser/browser_url_handler.h"
 #include "content/public/browser/overlay_window.h"
 #include "content/public/browser/video_picture_in_picture_window_controller.h"
+#include "content/public/browser/web_contents_view_delegate.h"
 #include "content/public/common/content_switches.h"
 #include "media/base/audio_codecs.h"
 #include "media/base/media_types.h"
@@ -63,6 +65,7 @@ constexpr char kMacHelperSuffixCdm[] = " (CDM)";
 constexpr int kChildProcessHelperCdm =
     std::to_underlying(ChildProcessHostFlags::kChildProcessHelperAlerts) + 1;
 constexpr char kInputDiagnostics[] = "parc-input-diagnostics";
+ParcContentBrowserClient* g_browser_client = nullptr;
 }  // namespace
 
 class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
@@ -143,6 +146,8 @@ ParcContentBrowserClient::ParcContentBrowserClient(
     loader->Add(kInternalExtensionManifest,
                 base::FilePath(FILE_PATH_LITERAL("parc_internal_extension")));
   });
+  CHECK(!g_browser_client);
+  g_browser_client = this;
 }
 
 void ParcContentBrowserClient::OverrideWebPreferences(
@@ -152,7 +157,15 @@ void ParcContentBrowserClient::OverrideWebPreferences(
   ApplyPagePreferences(*contents, *prefs);
 }
 
-ParcContentBrowserClient::~ParcContentBrowserClient() = default;
+ParcContentBrowserClient::~ParcContentBrowserClient() {
+  g_browser_client = nullptr;
+}
+
+// static
+ParcContentBrowserClient& ParcContentBrowserClient::Get() {
+  CHECK(g_browser_client);
+  return *g_browser_client;
+}
 
 std::unique_ptr<content::BrowserMainParts>
 ParcContentBrowserClient::CreateBrowserMainParts(bool is_integration_test) {

@@ -23,11 +23,11 @@ typedef void (^PCJavaScriptDialogCompletion)(BOOL accepted,
 // Completion is called exactly once, after removing the request and its sheet;
 // it may synchronously destroy this presenter or submit a new request.
 //
-//
-// docs/web-interactions.md): the title as message text, the page text as
-// informative text, OK and (except for an alert) Cancel, and a prompt's text
-// field and the optional suppression checkbox in a 280-point vertical stack.
-// Before unload uses the same OK/Cancel sheet.
+// Presentation is Parc's dialog sheet (dialog_style.h, see
+// docs/web-interactions.md): Parc's mark, the title, the page text, a prompt's
+// field, the optional suppression checkbox and OK plus (except for an alert)
+// Cancel. OK is inert for half a second after the sheet appears. Before
+// unload uses the same OK/Cancel sheet.
 @interface PCJavaScriptDialogPresenter : NSObject
 - (instancetype)initWithPageView:(NSView*)pageView NS_DESIGNATED_INITIALIZER;
 - (instancetype)init NS_UNAVAILABLE;

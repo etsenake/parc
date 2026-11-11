@@ -3838,8 +3838,8 @@ final class BrowserStore: ObservableObject {
 
     /// Durable authorization/identity is staged before asking the native owner
     /// to cross its irreversible boundary. The profile remains visible but busy.
-    func stageProfileRemoval(_ profileID: UUID, expectedName: String, confirmation: String) throws -> ProfileRemovalRecord {
-        let summary = try validateProfileRemoval(profileID, expectedName: expectedName, confirmation: confirmation)
+    func stageProfileRemoval(_ profileID: UUID, expectedName: String) throws -> ProfileRemovalRecord {
+        let summary = try validateProfileRemoval(profileID, expectedName: expectedName)
         guard !hasProfileWrite(profileID), !hasArchiveActivity(profileID) else { throw ProfileRemovalError.activeDocumentWrite }
         let record = ProfileRemovalRecord(id: UUID(), profileID: profileID, profileName: summary.profile.name)
         var next = state
@@ -3852,8 +3852,8 @@ final class BrowserStore: ObservableObject {
     /// Authorize exactly the reviewed profiles in one durable write. A later
     /// native failure is per profile; it cannot imply rollback of another
     /// profile's completed removal or authorize a newly created profile.
-    func stageUnusedProfileRemovals(_ profiles: [BrowserProfile], confirmation: String) throws -> [ProfileRemovalRecord] {
-        try validateUnusedProfileRemoval(profiles, confirmation: confirmation)
+    func stageUnusedProfileRemovals(_ profiles: [BrowserProfile]) throws -> [ProfileRemovalRecord] {
+        try validateUnusedProfileRemoval(profiles)
         guard profiles.allSatisfy({ !hasProfileWrite($0.id) && !hasArchiveActivity($0.id) }) else { throw ProfileRemovalError.activeDocumentWrite }
         let records = profiles.map { ProfileRemovalRecord(id: UUID(), profileID: $0.id, profileName: $0.name) }
         var next = state

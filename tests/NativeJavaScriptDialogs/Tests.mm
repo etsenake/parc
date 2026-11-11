@@ -60,11 +60,35 @@ static NSTextField* Input(NSView* view) {
   }
   return nil;
 }
+// OK stays inert for half a second after the sheet appears.
+static void WaitEnabled(NSButton* button) {
+  NSDate* deadline = [NSDate dateWithTimeIntervalSinceNow:2];
+  while (!button.enabled && deadline.timeIntervalSinceNow > 0) {
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
+  }
+}
 static void Click(PCJavaScriptDialogPresenter* presenter, NSString* title) {
   NSButton* button = Button(presenter.presentedSheet.contentView, title);
   Check(button != nil, "actual native sheet contains requested button");
+  WaitEnabled(button);
   [button performClick:nil];
   Drain();
+}
+static NSEvent* Key(NSWindow* window, NSString* characters, unsigned short code,
+                    NSTimeInterval timestamp, BOOL repeat = NO) {
+  return [NSEvent keyEventWithType:NSEventTypeKeyDown
+                          location:NSZeroPoint
+                     modifierFlags:0
+                         timestamp:timestamp
+                      windowNumber:window.windowNumber
+                           context:nil
+                        characters:characters
+       charactersIgnoringModifiers:characters
+                         isARepeat:repeat
+                           keyCode:code];
+}
+static NSTimeInterval Now(void) {
+  return NSProcessInfo.processInfo.systemUptime;
 }
 static void Present(PCJavaScriptDialogPresenter* presenter,
                     PCJavaScriptDialogKind kind,
@@ -417,7 +441,7 @@ static void TestIndependentWindowsAndCallbackRelease(void) {
   [second close];
 }
 
-static void TestArcPresentation(void) {
+static void TestParcPresentation(void) {
   ++groups;
   NSWindow* window = Window();
   NSView* page = Page(window);
@@ -426,52 +450,112 @@ static void TestArcPresentation(void) {
   __block int count = 0;
   __block BOOL result = NO;
   __block BOOL suppressed = NO;
+  __block NSString* text = nil;
   PCJavaScriptDialogCompletion completion =
-      ^(BOOL accepted, NSString*, BOOL suppress) {
+      ^(BOOL accepted, NSString* input, BOOL suppress) {
         ++count;
         result = accepted;
         suppressed = suppress;
+        text = input;
       };
   Present(presenter, PCJavaScriptDialogAlert, completion);
   NSView* content = presenter.presentedSheet.contentView;
   Check(Label(content, @"127.0.0.1:8080 says") &&
             Label(content, @"Fixture dialog"),
-        "title is the message text and page text the informative text");
+        "title and page text are shown");
+  Check([presenter.presentedSheet.accessibilityLabel isEqualToString:@"127.0.0.1:8080 says"],
+        "VoiceOver names the sheet by its title");
   Check(Button(content, @"OK") && !Button(content, @"Cancel"),
         "alert has only OK");
   Check(!Button(content, @"Don't show this again") && !Input(content),
         "plain alert has no accessory");
+  NSWindow* sheet = presenter.presentedSheet;
+  [sheet cancelOperation:nil];
+  Drain();
+  Check(count == 0 && presenter.isPresenting, "Escape does not dismiss an alert");
   Click(presenter, @"OK");
+  Check(count == 1 && result, "alert OK acknowledges");
+
+  Present(presenter, PCJavaScriptDialogConfirm, completion);
+  sheet = presenter.presentedSheet;
+  NSButton* ok = Button(sheet.contentView, @"OK");
+  Check(!ok.enabled, "OK starts inert while the sheet appears");
+  Check(![sheet performKeyEquivalent:Key(sheet, @"\r", 36, Now())] || count == 1,
+        "early Return is consumed without accepting");
+  Check(count == 1 && presenter.isPresenting, "early Return never accepts");
+  WaitEnabled(ok);
+  Check(ok.enabled, "OK becomes active after the delay");
+  [sheet performKeyEquivalent:Key(sheet, @"\r", 36, Now(), YES)];
+  Check(count == 1, "held Return never accepts");
+  [sheet performKeyEquivalent:Key(sheet, @"\r", 36, Now() - 5)];
+  Check(count == 1, "Return pressed before the sheet appeared never accepts");
+  [sheet performKeyEquivalent:Key(sheet, @"\r", 36, Now())];
+  Drain();
+  Check(count == 2 && result, "fresh Return accepts");
+
+  Present(presenter, PCJavaScriptDialogConfirm, completion);
+  sheet = presenter.presentedSheet;
+  WaitEnabled(Button(sheet.contentView, @"OK"));
+  Check([sheet performKeyEquivalent:Key(sheet, @"\003", 76, Now())],
+        "keypad Enter is handled");
+  Drain();
+  Check(count == 3 && result, "keypad Enter accepts");
+
+  Present(presenter, PCJavaScriptDialogConfirm, completion);
+  sheet = presenter.presentedSheet;
+  Check([sheet performKeyEquivalent:Key(sheet, @"\033", 53, Now())], "Escape is handled");
+  Drain();
+  Check(count == 4 && !result, "Escape cancels at once");
+
   Present(presenter, PCJavaScriptDialogPrompt, completion, YES);
-  content = presenter.presentedSheet.contentView;
+  sheet = presenter.presentedSheet;
+  content = sheet.contentView;
   NSTextField* field = Input(content);
   NSButton* box = Button(content, @"Don't show this again");
-  Check(field && box && field.superview == box.superview &&
-            [field.superview isKindOfClass:NSStackView.class],
-        "prompt field and checkbox share the stack");
-  NSStackView* stack = (NSStackView*)field.superview;
-  Check(stack.orientation == NSUserInterfaceLayoutOrientationVertical &&
-            stack.frame.size.width == 280 && stack.frame.size.height == 48,
-        "stack is vertical, 280 wide and 24 points per view");
-  Check(presenter.presentedSheet.initialFirstResponder == field,
-        "prompt field is the initial first responder");
+  Check(field && box, "prompt shows its field and the suppression checkbox");
+  Check([field.accessibilityLabel isEqualToString:@"Response"], "field keeps its VoiceOver label");
+  Check([box.accessibilityRole isEqualToString:NSAccessibilityCheckBoxRole] &&
+            [box.accessibilityValue isEqualToString:@"Not selected"],
+        "checkbox reads as a checkbox that is not selected");
+  Check(field.focusRingType == NSFocusRingTypeNone, "field draws its own focus treatment");
+  Check(sheet.initialFirstResponder == field, "prompt field is the initial first responder");
   Check([Button(content, @"Cancel").keyEquivalent isEqualToString:@"\033"],
         "Cancel answers Escape");
-  box.state = NSControlStateValueOn;
+  NSTextView* editor = (NSTextView*)field.currentEditor;
+  Check([editor isKindOfClass:NSTextView.class], "field is being edited when the sheet opens");
+  WaitEnabled(Button(content, @"OK"));
+  [editor setMarkedText:@"か" selectedRange:NSMakeRange(1, 0)
+       replacementRange:NSMakeRange(NSNotFound, 0)];
+  Check(editor.hasMarkedText, "input method composition is in progress");
+  Check(![sheet performKeyEquivalent:Key(sheet, @"\r", 36, Now())] &&
+            ![sheet performKeyEquivalent:Key(sheet, @"\033", 53, Now())],
+        "Return and Escape go to the input method while composing");
+  Check(count == 4 && presenter.isPresenting, "composition never answers the dialog");
+  [editor unmarkText];
+  [box performClick:nil];
+  Check([box.accessibilityValue isEqualToString:@"Selected"], "checkbox reads as selected");
+  field.stringValue = @"answer";
   Click(presenter, @"Cancel");
-  Check(count == 2 && !result && suppressed,
+  Check(count == 5 && !result && suppressed && text.length == 0,
         "checked suppression is reported with Cancel too");
   Present(presenter, PCJavaScriptDialogConfirm, completion, YES);
   Click(presenter, @"OK");
-  Check(count == 3 && result && !suppressed,
+  Check(count == 6 && result && !suppressed,
         "unchecked suppression is not reported");
   Present(presenter, PCJavaScriptDialogConfirm, completion, YES);
   Button(presenter.presentedSheet.contentView, @"Don't show this again")
       .state = NSControlStateValueOn;
   [presenter handleAccepted:YES promptOverride:nil];
   Drain();
-  Check(count == 4 && result && !suppressed,
+  Check(count == 7 && result && !suppressed,
         "programmatic handling never reports suppression");
+  Present(presenter, PCJavaScriptDialogConfirm, completion, YES);
+  sheet = presenter.presentedSheet;
+  Button(sheet.contentView, @"Don't show this again").state = NSControlStateValueOn;
+  [window endSheet:sheet returnCode:NSModalResponseAbort];
+  Drain();
+  Check(count == 8 && !result && !suppressed,
+        "another owner ending the sheet never reports suppression");
   [presenter invalidate];
   [window close];
 }
@@ -486,7 +570,7 @@ int main(void) {
     TestOwnershipAndReentry();
     TestDetachReentry();
     TestIndependentWindowsAndCallbackRelease();
-    TestArcPresentation();
+    TestParcPresentation();
     printf("NativeJavaScriptDialogs: %d assertions across %d groups passed\n",
            assertions, groups);
   }

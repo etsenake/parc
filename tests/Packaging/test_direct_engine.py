@@ -81,7 +81,7 @@ class DirectEngineTests(unittest.TestCase):
         files = {
             "content/public/app/mac_helpers.gni": 'content_mac_helpers = [\n["default", "", ""], ["renderer", ".renderer", " (Renderer)"], ["gpu", "", " (GPU)"],\n]',
             "parc/helper/BUILD.gn": 'executable("parc_helper") { deps = [ "//sandbox/mac:seatbelt" ] }',
-            "parc/parc_content_clients.cc": 'constexpr char kMacHelperSuffixCdm[] = " (CDM)"; SetCdmServiceChildFlags( HelperExecutablePath(chrome::kMacHelperSuffixAlerts)',
+            "parc/parc_content_clients.mm": 'constexpr char kMacHelperSuffixCdm[] = " (CDM)"; SetCdmServiceChildFlags( HelperExecutablePath(chrome::kMacHelperSuffixAlerts)',
             "parc/parc_bundle_mac.mm": 'name + " Helper"',
             "chrome/common/chrome_constants.cc": 'kMacHelperSuffixAlerts[] = " (Alerts)";',
         }
@@ -90,7 +90,7 @@ class DirectEngineTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
         pkg.check_helper_contract(self.root)
-        for name in ("parc/helper/BUILD.gn", "parc/parc_content_clients.cc", "parc/parc_bundle_mac.mm", "chrome/common/chrome_constants.cc"):
+        for name in ("parc/helper/BUILD.gn", "parc/parc_content_clients.mm", "parc/parc_bundle_mac.mm", "chrome/common/chrome_constants.cc"):
             path = self.root / name
             original = path.read_text()
             path.write_text("")

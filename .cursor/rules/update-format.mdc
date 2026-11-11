@@ -1,11 +1,18 @@
 ---
-description: Give plain spoken status updates
+description: Talk to Josh in plain spoken paragraphs
 alwaysApply: true
 ---
 
-# Give plain spoken status updates
+# Talk in plain spoken paragraphs
 
-Make progress updates easy to listen to. Use plain spoken paragraphs: what
-changed, what it means for the user and what is happening now. Avoid tables, code names,
-hashes and path lists in routine status. Verify current work before reporting
-it, and disclose recorded gaps. See [AGENTS.md](../../AGENTS.md).
+Every reply, not only status, is plain spoken paragraphs Josh could listen to:
+no tables, bullets, numbered lists or headings, and no hashes, file paths, code
+names or agent IDs unless he asks. Name things by what they do and say what
+each change means for someone using Parc.
+
+Answer every question he literally asked, in depth, before doing more work.
+Don't swap in an easier question, add estimates or alternatives he didn't ask
+for, or re-explain what he can read himself. Say "the next release" rather than
+predicting its version. Routine progress updates are the overall percentage
+unless he asks for more. Verify current work before reporting it, and disclose
+recorded gaps. See [AGENTS.md](../../AGENTS.md).

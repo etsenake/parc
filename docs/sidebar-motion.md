@@ -100,6 +100,13 @@ the current canvas. Re-basing the selected Space preserves the strip position
 and therefore the rendered mix, including drags through multiple pages.
 Locked and floating surfaces use the same transition input.
 
+Dragging past the final Space presents the create-Space edge over 15 strip
+points, fills its ring over 22.5 points and creates after the ring stays full
+for more than 0.1 seconds before release. The gesture works when the sidebar
+has one Space as well as when it has several; a release that does not create
+springs the current Space back into place. Private and Space-management
+sidebars do not offer this creation gesture.
+
 For a colored floating Space, the blur follows the window's appearance while
 text follows the Space palette. Where material is the whole background, its
 appearance follows the palette's light/dark side. A saved forced-dark colored
@@ -248,4 +255,5 @@ require the budget to fail.
 | `tests/SidebarWindowButtons/check.py` | Native button layout and pointer-state reconciliation |
 | `tests/SidebarPlusMenu/check.py` | HUD geometry, palette and dismissal behavior |
 | `tests/SidebarPacing/check.py` | Bounded AppKit layout work and continuity |
+| `tests/SidebarSpacePaging/check.py` | Phased, discrete and legacy paging plus the trailing create-Space gesture |
 | `tests/SidebarSpaceSwipe/check.py` | Space-switch lifecycle and frame-budget regressions |
