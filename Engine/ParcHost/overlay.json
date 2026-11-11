@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 669,
+  "version": 670,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -2024,7 +2024,7 @@
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "7e3cc8d92de7b94f56c20de85741f6b6ecacf93295ba084a4227a922f9407991"
+      "sha256": "05985f8f9c53932dd3c379e2e39d3490ca517232c05aaa37267803a022af75fb"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2079,7 +2079,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.cc",
       "target": "parc/parc_main_delegate.cc",
-      "sha256": "3b63ec04023f92378ce1c9f3e3648773e37fc44fe6931155156b31d3a0d41557"
+      "sha256": "f07bc19d696c9dbb15444eacdf35e1860abde8476942ae5302a470ae513ee72a"
     }
   ],
   "patches": [
@@ -6170,7 +6170,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/chromium-direct-startup.patch",
-      "sha256": "97398aca3515bcd8aa06d06b811be6d8a5f5a394e7582ce7a4919358fb030846",
+      "sha256": "4e68cc1703f14ed89c14af2bb931fc24732c56037d80e2b7a9bca01797888ad3",
       "files": [
         {
           "target": "chrome/app/chrome_main_delegate.cc",
@@ -6178,14 +6178,14 @@
           "after_sha256": "15ca572f58d8ac72733cbb7cbde0b546a05033af01769bf1d0e6d9dfd06fc316"
         },
         {
+          "target": "chrome/browser/browser_process_impl.cc",
+          "before_sha256": "122592a2009ac44209f402762327c287d6ec2be39fabe9bc2e7497f023a58c7e",
+          "after_sha256": "a07dc55597c07f744be3b72a29c6a61d6272be6c3789bf03db547f10c42fad51"
+        },
+        {
           "target": "chrome/browser/chrome_browser_main.cc",
           "before_sha256": "6386e69814d99b3ca0f3f5d778635f5225c8a4d0810b892f552170add01f0dc3",
           "after_sha256": "a8cca41a2055db96feb9845ce479ef38d869bdc732cac9b363ff6d9a3bc48b28"
-        },
-        {
-          "target": "chrome/browser/chrome_browser_main_mac.mm",
-          "before_sha256": "d4d7671a8befd46724bf25d861a53acec76e5de280ce9128dcba514cec3e3490",
-          "after_sha256": "fa6aaa228c0e959cd4bebb8976bc407357fbf3e083efa3c80422b8468aa6c725"
         },
         {
           "target": "chrome/browser/chrome_resource_bundle_helper.cc",
