@@ -14,6 +14,55 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/EngineSource -v
 
 The suite uses temporary files and mocked process/host boundaries. It does not run Git, download dependencies, compile Chromium, inspect real Keychain data or launch an application.
 
+## Branch export and equivalence
+
+`scripts/engine-overlay-export.py` reads committed Git objects from an authoring
+branch above the exact Chromium source-lock commit. It first proves that the
+branch matches the current manifest's computed output, then exports its residual
+changes as sorted per-target patches and owned files in a new review directory.
+It validates the candidate with the same `prepare_overlay` implementation and
+compares bytes and modes again. Every branch change and current manifest target
+participates; extra changes, missing files and changed executable bits fail.
+Unchanged files outside that inventory have identical Git objects on both sides.
+The working tree and engine workspace markers are never consulted or changed.
+
+```sh
+python3 scripts/engine-overlay-export.py \
+  --repository /absolute/chromium-authoring/src --branch parc-integration \
+  --manifest "$PWD/Engine/ParcHost/overlay.json" \
+  --output /absolute/review-directory
+```
+
+Dependency contents such as FFmpeg and WebRTC live in separate Git repositories,
+even when Chromium records their commits as gitlinks. Supply
+an explicit committed base and branch for each affected dependency, for example
+`--dependency third_party/ffmpeg=BASE..parc-integration`. The repository lives at
+that prefix beneath `--repository`; its base must be an ancestor of its branch.
+A recorded gitlink must match the dependency base. The current manifest's exact
+before hashes also bind the relevant dependency base
+bytes. This check proves source equivalence, not DEPS synchronization or the
+provenance of unrelated dependency files. Omitting a dependency touched by the manifest refuses the export. Equivalence
+covers only the supplied committed trees: supply every dependency carrying
+authored changes, including changes the current manifest does not mention.
+The tool never reads uncommitted files or guesses dependency revisions.
+
+The output directory must be new and separate from the branch repositories.
+The candidate keeps the manifest ID, version and build targets, uses local
+`source_root: "manifest"` inputs, and contains no timestamps or checkout paths.
+Identical committed inputs produce identical file contents and file modes.
+The manifest integrator reviews and publishes the candidate; exporting does not
+increment the overlay version or edit the canonical manifest. The existing
+release pipeline continues to materialize pinned upstream plus overlay once.
+Never apply branch changes and overlay patches to the same source workspace.
+
+The existing validator remains authoritative: deletions, renames with removed
+sources, mode changes, binary/symlink entries and contextless rewrites cannot be
+represented. They are refused. New owned files have mode 0644; patched files
+preserve their base mode. Missing final newlines are preserved. Empty residuals
+are subject to the validator's existing empty-overlay refusal.
+
+## Engine workspace operations
+
 Read-only preflight and command plan (the parent directory must already exist):
 
 ```sh
