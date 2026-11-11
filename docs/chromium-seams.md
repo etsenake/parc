@@ -364,10 +364,12 @@ They stay in Chromium's file because they read and change the player's
 private state in place, in an order Safari-identity pages depend on.
 
 MediaCapabilities answers Safari-identity documents as WebKit's `decodingInfo`
-does. Its HEVC and Dolby Vision codec-string parsers and the shape of a
-finished result live in a Parc file beside it. The capability computation
-itself stays in Chromium's file for now, because it calls that file's private
-content-type parser and Media Source support check.
+does. Its HEVC and Dolby Vision codec-string parsers, the video rules over
+VideoToolbox's facts and the shape of a finished result live in a Parc file
+beside it. Chromium's file still parses the video's content type and checks
+that the type plays, then hands the parsed codecs to the Parc rules. Those
+two steps stay because they use that file's private content-type parser and
+Media Source support check, and they run in the same order as before.
 
 Safari's Media Source eviction, ManagedMediaSource purge, buffered-interval
 math, gap tolerances and type mapping live in Parc-owned media filter files.

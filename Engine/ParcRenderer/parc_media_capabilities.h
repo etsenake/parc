@@ -3,7 +3,8 @@
 // //third_party/blink/renderer/modules/media_capabilities/parc_media_capabilities.h.
 // The parts of WebKit's decodingInfo that MediaCapabilities applies on
 // Safari-identity documents and that need nothing of its own: the HEVC and
-// Dolby Vision codec-string parsers, and the shape of a finished result.
+// Dolby Vision codec-string parsers, the video rules over VideoToolbox's
+// facts, and the shape of a finished result.
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_MEDIA_CAPABILITIES_PARC_MEDIA_CAPABILITIES_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_MEDIA_CAPABILITIES_PARC_MEDIA_CAPABILITIES_H_
 
@@ -12,12 +13,24 @@
 #include <optional>
 #include <string_view>
 
+namespace media::mojom::blink {
+class ParcVideoToolboxDecodingFacts;
+}  // namespace media::mojom::blink
+
 namespace blink {
 
 class ExecutionContext;
 class MediaCapabilitiesDecodingInfo;
 class MediaDecodingConfiguration;
 class MediaKeySystemAccess;
+class String;
+class VideoConfiguration;
+
+struct ParcDecodingAnswer {
+  bool supported = false;
+  bool smooth = false;
+  bool power_efficient = false;
+};
 
 struct ParcHevcParameters {
   uint8_t profile_space = 0;
@@ -46,6 +59,18 @@ MediaCapabilitiesDecodingInfo* ParcFinishDecodingInfo(
     ExecutionContext* context,
     const MediaDecodingConfiguration* config,
     MediaKeySystemAccess* access);
+
+// computeMediaCapabilitiesInfo's video half (WebKit's
+// PlatformMediaEngineConfigurationFactoryCocoa.cpp) for `config`'s `video`,
+// whose content type MediaCapabilities parsed into `codecs` and found
+// supported. Fills `answer`; false where WebKit answers unsupported. `facts`
+// is null when VideoToolbox's facts couldn't be had.
+bool ParcSafariVideoAnswer(
+    const MediaDecodingConfiguration* config,
+    const VideoConfiguration* video,
+    const String& codecs,
+    const media::mojom::blink::ParcVideoToolboxDecodingFacts* facts,
+    ParcDecodingAnswer& answer);
 
 }  // namespace blink
 

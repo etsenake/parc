@@ -5,10 +5,12 @@
 
 #include <algorithm>
 #include <limits>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include "media/base/video_codec_string_parsers.h"
+#include "media/mojo/mojom/parc_video_toolbox_decoding.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_configuration.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_capabilities_decoding_info.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_decoding_configuration.h"
@@ -16,6 +18,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
 #include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
 
@@ -273,6 +276,98 @@ MediaCapabilitiesDecodingInfo* ParcFinishDecodingInfo(
     info->setKeySystemAccess(access);
   }
   return info;
+}
+
+bool ParcSafariVideoAnswer(
+    const MediaDecodingConfiguration* config,
+    const VideoConfiguration* video,
+    const String& codecs,
+    const media::mojom::blink::ParcVideoToolboxDecodingFacts* facts,
+    ParcDecodingAnswer& answer) {
+  // WebKit wants exactly one codec, counting as ContentType::codecs()
+  // does: the non-empty pieces between commas, each trimmed.
+  String codec;
+  wtf_size_t codec_count = 0;
+  for (const String& piece : codecs.Split(',')) {
+    if (!piece.empty()) {
+      codec = piece.StripWhiteSpace();
+      ++codec_count;
+    }
+  }
+  if (codec_count != 1 || !codec.ContainsOnlyAsciiOrEmpty()) {
+    return false;
+  }
+  answer.supported = true;
+  const bool hdr = video->hasColorGamut() || video->hasHdrMetadataType() ||
+                   video->hasTransferFunction();
+  const bool alpha = video->hasAlphaChannel() && video->alphaChannel();
+  const std::string ascii = codec.Ascii();
+  if (codec.starts_with("hvc1") || codec.starts_with("hev1")) {
+    // validateHEVCParameters (HEVCUtilitiesCocoa.mm).
+    const std::optional<ParcHevcParameters> parameters =
+        ParcParseHevc(ascii);
+    if (!parameters || !facts) {
+      return false;
+    }
+    if (hdr && !(parameters->profile_space == 0 &&
+                 (parameters->profile_idc == 2 ||
+                  parameters->compatibility_flags == 1))) {
+      return false;  // HDR needs HEVC Main10.
+    }
+    if (!(alpha ? facts->hevc_with_alpha_decoder : facts->hevc_decoder) ||
+        !facts->hevc_profiles) {
+      return false;
+    }
+    const media::mojom::blink::ParcHevcProfileSupport* profile = nullptr;
+    for (const auto& entry : *facts->hevc_profiles) {
+      if (entry->profile_idc == parameters->profile_idc) {
+        profile = entry.get();
+        break;
+      }
+    }
+    if (!profile) {
+      return false;
+    }
+    answer.power_efficient = profile->hardware_accelerated;
+    if (profile->has_max_decode_level &&
+        parameters->level_idc > profile->max_decode_level) {
+      return false;
+    }
+    answer.smooth = profile->has_max_playback_level &&
+                    parameters->level_idc <= profile->max_playback_level;
+  } else if (codec.starts_with("dvh1") || codec.starts_with("dvhe") ||
+             codec.starts_with("dav1.10.")) {
+    // validateDoViParameters (HEVCUtilitiesCocoa.mm).
+    const std::optional<ParcDoViParameters> parameters = ParcParseDoVi(ascii);
+    const bool extended_mse =
+        config->type() == V8MediaDecodingType::Enum::kMediaSource &&
+        parameters && (parameters->profile == 10 || parameters->profile == 20);
+    if (!parameters || (parameters->profile != 5 && !extended_mse) ||
+        (hdr && parameters->profile != 5) || alpha) {
+      return false;
+    }
+    const bool vt_supported = facts && facts->hevc_decoder &&
+        facts->dolby_vision_profiles && facts->dolby_vision_levels &&
+        std::ranges::contains(*facts->dolby_vision_profiles, parameters->profile) &&
+        std::ranges::contains(*facts->dolby_vision_levels, parameters->level);
+    if (!extended_mse && !vt_supported) {
+      return false;
+    }
+    // MSE accepts these new types independently of VT's Dolby profile list.
+    // VT still determines smoothness and hardware efficiency.
+    answer.smooth = vt_supported;
+    answer.power_efficient = vt_supported && facts->dolby_vision_hardware;
+  } else {
+    // H.264: no alpha or HDR; VTIsHardwareDecodeSupported.
+    if (alpha || hdr) {
+      return false;
+    }
+    if (facts && facts->hardware_decode_query) {
+      answer.power_efficient = facts->h264_hardware;
+      answer.smooth = true;
+    }
+  }
+  return true;
 }
 
 }  // namespace blink
