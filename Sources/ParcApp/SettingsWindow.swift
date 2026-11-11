@@ -33,7 +33,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private let archive = PointingHandPopUpButton()
     private let archiveInfo = PointingHandButton()
     private var archiveInfoPopover: NSPopover?
-    private var archiveScopeAlert: NSAlert?
+    private var archiveScopeAlert: PArcDialog?
     private var archiveScopeChange: AutoArchiveProfileChange?
     private let restore = PointingHandSwitch()
     private let warnBeforeQuitting = PointingHandSwitch()
@@ -813,7 +813,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             // silently cancel an already approved file write or hide its error.
             Task { @MainActor [self] in
                 do { try await Task.detached(priority: .utility) { try snapshot.write(to: url) }.value }
-                catch { NSApp.presentError(error) }
+                catch { PArcDialog.present(error) }
                 if self.dataExportID == id { self.dataExportID = nil; self.exportData.isEnabled = true }
             }
         }
@@ -854,10 +854,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         guard !isClosing, let window, window.isVisible, window.isKeyWindow, window.attachedSheet == nil else { return }
         for profile in store.state.profiles {
             guard let status = ProfileRemovalController.shared.claimFailure(for: profile.id) else { continue }
-            let alert = NSAlert()
-            alert.messageText = "Parc couldn’t delete “\(profile.name)”."
-            alert.informativeText = status.message
-            alert.beginSheetModal(for: window)
+            PArcDialog.inform(in: window, .init(title: "Parc couldn’t delete “\(profile.name)”.", message: status.message))
             return
         }
     }
@@ -888,9 +885,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
 
     private func reportProfileSettingsError(_ error: Error) {
         guard let window, window.attachedSheet == nil else { return }
-        let alert = NSAlert(error: error)
-        alert.messageText = "Parc couldn’t save these settings."
-        alert.beginSheetModal(for: window)
+        PArcDialog.inform(in: window, .init(error: error, title: "Parc couldn’t save these settings."))
     }
 
     var replaySpaceID: UUID? { settingsContextSpace()?.id }
@@ -912,10 +907,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
 
     private func reportSettingsCommandRefusal(_ title: String) {
         guard let window, window.attachedSheet == nil else { return }
-        let alert = NSAlert()
-        alert.messageText = "Parc couldn’t open " + title.trimmingCharacters(in: CharacterSet(charactersIn: "…")) + "."
-        alert.informativeText = "The original window or profile is unavailable or busy. Finish its current operation and try again."
-        alert.beginSheetModal(for: window)
+        PArcDialog.inform(in: window, .init(title: "Parc couldn’t open " + title.trimmingCharacters(in: CharacterSet(charactersIn: "…")) + ".",
+            message: "The original window or profile is unavailable or busy. Finish its current operation and try again."))
     }
 
     private func settingsContextSpace() -> BrowserSpace? {
@@ -944,10 +937,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
               let onMoreSettings else { return }
         if onMoreSettings(space.id, space.profileID) { _ = attemptClose(); return }
         guard let window else { return }
-        let alert = NSAlert()
-        alert.messageText = "Parc couldn’t open more settings."
-        alert.informativeText = "The original window or profile is busy. Finish its current operation and try again."
-        alert.beginSheetModal(for: window)
+        PArcDialog.inform(in: window, .init(title: "Parc couldn’t open more settings.",
+            message: "The original window or profile is busy. Finish its current operation and try again."), queued: true)
     }
 
     private func cancelDownloadFolderSelection() {
@@ -1078,18 +1069,17 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         let revision = lifecycleRevision
         let spaceID = displayedSpaceID
         let originalSpace = store.state.spaces.first { $0.id == spaceID }
-        let alert = NSAlert(); alert.messageText = "New local profile"
-        alert.informativeText = spaceID == nil
-            ? "A profile keeps its own cookies and website sessions. You can assign it to a regular Space later."
-            : "A profile keeps its own cookies and website sessions. This Space will use the new profile."
-        alert.addButton(withTitle: "Create"); alert.addButton(withTitle: "Cancel")
-        let field = NSTextField(); field.placeholderString = "Profile name"; field.frame = NSRect(x: 0, y: 0, width: 280, height: 26)
+        let dialog = PArcDialog(.init(title: [("New local profile", false)],
+            message: [(spaceID == nil
+                ? "A profile keeps its own cookies and website sessions. You can assign it to a regular Space later."
+                : "A profile keeps its own cookies and website sessions. This Space will use the new profile.", false)],
+            confirm: "Create", cancel: "Cancel", field: .init(value: "", placeholder: "Profile name")))
+        guard let field = dialog.textField else { return }
         field.setAccessibilityLabel("New profile name")
-        alert.accessoryView = field
-        alert.beginSheetModal(for: window) { [weak self, weak window] response in
+        _ = dialog.begin(for: window) { [weak self, weak window] response in
             guard let self, let window, self.window === window, window.isVisible,
                   !self.isClosing, self.lifecycleRevision == revision,
-                  response == .alertFirstButtonReturn else { return }
+                  response == .confirm else { return }
             let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return }
             do {
@@ -1111,7 +1101,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
                 try self.store.saveSettingsSelection(pane: self.selectedPane.rawValue, profileID: id)
             } catch { self.reportProfileSettingsError(error) }
         }
-        alert.window.makeFirstResponder(field)
     }
     @objc private func archiveChanged() {
         guard let window, window.attachedSheet == nil, let profileID = displayedProfileID,
@@ -1121,17 +1110,17 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
               AutoArchiveInterval.settingsChoices.contains(interval) else { refresh(); return }
         do {
             guard let change = try store.changeAutoArchiveInterval(interval, for: profileID) else { return }
-            let alert = NSAlert()
-            alert.messageText = "Parc will now archive your tabs after \(interval.durationTitle)"
-            alert.informativeText = "Would you like to apply this change to all of your Profiles, or only your \(change.profileName) Profile?"
-            alert.addButton(withTitle: "All Profiles")
-            alert.addButton(withTitle: "Only this Profile")
-            archiveScopeChange = change; archiveScopeAlert = alert
-            alert.beginSheetModal(for: window) { [weak self, weak alert, weak window] response in
-                guard let self, let alert, self.archiveScopeAlert === alert,
+            var content = PArcDialog.Content(title: "Parc will now archive your tabs after \(interval.durationTitle)",
+                message: "Would you like to apply this change to all of your Profiles, or only your \(change.profileName) Profile?",
+                confirm: "All Profiles")
+            content.secondary = "Only this Profile"
+            let dialog = PArcDialog(content)
+            archiveScopeChange = change; archiveScopeAlert = dialog
+            _ = dialog.begin(for: window) { [weak self, weak dialog, weak window] response in
+                guard let self, let dialog, self.archiveScopeAlert === dialog,
                       self.window === window else { return }
                 self.archiveScopeAlert = nil; self.archiveScopeChange = nil
-                guard response == .alertFirstButtonReturn,
+                guard response == .confirm,
                       self.displayedProfileID == change.profileID,
                       self.selectedProfileID == change.profileID else { return }
                 do { try self.store.applyAutoArchiveIntervalToAllProfiles(change) }
@@ -1141,10 +1130,10 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 
     private func cancelArchiveScopeSheet() {
-        guard let alert = archiveScopeAlert else { return }
+        guard let dialog = archiveScopeAlert else { return }
         archiveScopeAlert = nil; archiveScopeChange = nil
-        alert.window.sheetParent?.endSheet(alert.window, returnCode: .cancel)
-        alert.window.orderOut(nil)
+        dialog.panel.sheetParent?.endSheet(dialog.panel, returnCode: .cancel)
+        dialog.panel.orderOut(nil)
     }
 
     @objc private func showArchiveInformation() {

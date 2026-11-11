@@ -17,7 +17,7 @@ Progress and recovery live on the Profile list. The row reads "Removing…" whil
 the native job runs and "Retry" when it stopped with the removal still pending.
 The minus button cancels a reversible preparation, is disabled during the
 irreversible commit, and retries a pending removal without asking again. A
-failure is reported once in a standard alert naming the Profile. A failure before
+failure is reported once in a Parc dialog naming the Profile. A failure before
 the irreversible commit leaves the Profile in place for a fresh Delete. Closing
 Settings never cancels a confirmed removal. Retry recovers the original journal
 and never reauthorizes a new target.

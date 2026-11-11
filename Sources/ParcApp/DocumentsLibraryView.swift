@@ -242,11 +242,11 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private func open(_ row: Row) { guard valid else { return }; onOpen?(row.page, row.title) }
     private func rename(_ row: Row) {
         guard valid, let window, window.attachedSheet == nil else { return }
-        let alert = NSAlert(); alert.messageText = row.page.noteID == nil ? "Rename Easel" : "Rename Note"
-        let field = NSTextField(string: row.title); field.frame = NSRect(x: 0, y: 0, width: 280, height: 24); alert.accessoryView = field
-        alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { [weak self] result in
-            guard let self, result == .alertFirstButtonReturn, self.valid else { return }
+        let dialog = PArcDialog(.init(title: [(row.page.noteID == nil ? "Rename Easel" : "Rename Note", false)],
+            confirm: "Rename", cancel: "Cancel", field: .init(value: row.title, placeholder: "", required: false)))
+        guard let field = dialog.textField else { return }
+        _ = dialog.begin(for: window) { [weak self] result in
+            guard let self, result == .confirm, self.valid else { return }
             do {
                 if let id = row.page.noteID {
                     let session = try NoteStore.sharedStore(directory: self.store.notesDirectory(for: self.profileID)).load(id)
