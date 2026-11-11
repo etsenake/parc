@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/html/html_summary_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
+#include "third_party/blink/renderer/core/html/media/parc_picture_in_picture_captions.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/html/track/text_track_container.h"
 #include "third_party/blink/renderer/core/html_names.h"
@@ -25,6 +26,10 @@
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/layout_video.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
+#include "third_party/blink/renderer/platform/heap/disallow_new_wrapper.h"
+#include "third_party/blink/renderer/platform/heap/persistent.h"
+#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "ui/gfx/geometry/size_f.h"
 
@@ -38,6 +43,14 @@ constexpr wtf_size_t kMaxPlaces = 16;
 constexpr unsigned kMaxNodes = 5000;
 // Levels a place's path goes up from its box.
 constexpr unsigned kMaxPathDepth = 32;
+
+// The boxes every ParcPageCaptions shows (ParcPageCaptions::Show()).
+HeapHashSet<WeakMember<Element>>& BoxesShownAsCaptions() {
+  using BoxSetHolder = DisallowNewWrapper<HeapHashSet<WeakMember<Element>>>;
+  DEFINE_STATIC_LOCAL(Persistent<BoxSetHolder>, holder,
+                      (MakeGarbageCollected<BoxSetHolder>()));
+  return holder->Value();
+}
 
 // What players' caption boxes carry in their ids, classes and data
 // attributes: Netflix's player-timedtext, YouTube's captions-text, Disney+'s
@@ -123,7 +136,7 @@ bool IsFocusable(const Element& element) {
 bool IsTransparent(const Element& element) {
   const ComputedStyle* style = element.GetComputedStyle();
   return style && style->Opacity() == 0 &&
-         !element.IsParcPictureInPictureCaptions();
+         !IsParcPictureInPictureCaptions(element);
 }
 
 // The box of text a viewer sees over the video, if any. Visually hidden text
@@ -278,6 +291,11 @@ gfx::RectF CaptionRegion(const gfx::RectF& video) {
 }
 
 }  // namespace
+
+bool IsParcPictureInPictureCaptions(const Element& element) {
+  const HeapHashSet<WeakMember<Element>>& boxes = BoxesShownAsCaptions();
+  return !boxes.empty() && boxes.Contains(const_cast<Element*>(&element));
+}
 
 ParcPageCaptions::ParcPageCaptions(HTMLVideoElement& video) : video_(video) {}
 
@@ -474,10 +492,15 @@ void ParcPageCaptions::Clear() {
 void ParcPageCaptions::Show(const HeapVector<Member<Element>>& boxes) {
   // Style hides a shown box in the tab, and its layer then paints only it.
   auto mark = [](Element& box, bool shown) {
-    if (box.IsParcPictureInPictureCaptions() == shown) {
+    HeapHashSet<WeakMember<Element>>& captions = BoxesShownAsCaptions();
+    if (captions.Contains(&box) == shown) {
       return;
     }
-    box.SetIsParcPictureInPictureCaptions(shown);
+    if (shown) {
+      captions.insert(&box);
+    } else {
+      captions.erase(&box);
+    }
     box.SetNeedsStyleRecalc(kLocalStyleChange,
                             StyleChangeReasonForTracing::Create(
                                 style_change_reason::kPseudoClass));

@@ -602,7 +602,7 @@
  #include "media/mojo/mojom/media_player.mojom-blink.h"
  #include "mojo/public/cpp/bindings/pending_associated_remote.h"
  #include "mojo/public/cpp/bindings/pending_receiver.h"
-@@ -18,12 +20,21 @@
+@@ -18,12 +20,22 @@
  #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
@@ -619,12 +619,13 @@
  #include "third_party/blink/renderer/core/html/media/html_media_test_helper.h"
  #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 +#include "third_party/blink/renderer/core/html/media/parc_page_captions.h"
++#include "third_party/blink/renderer/core/html/media/parc_picture_in_picture_captions.h"
 +#include "third_party/blink/renderer/core/html/track/text_track.h"
 +#include "third_party/blink/renderer/core/html/track/vtt/vtt_cue.h"
  #include "third_party/blink/renderer/core/layout/layout_image.h"
  #include "third_party/blink/renderer/core/loader/empty_clients.h"
  #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
-@@ -140,6 +151,7 @@
+@@ -140,6 +152,7 @@
    MOCK_METHOD(void,
                UpdateMediaPosition,
                (media_session::mojom::blink::MediaPositionPtr));
@@ -633,7 +634,8 @@
 +
   private:
    mojo::Receiver<mojom::blink::PictureInPictureSession> receiver_;
-@@ -373,6 +385,553 @@
+@@ -372,7 +385,554 @@
+   EXPECT_NE(nullptr, PictureInPictureControllerImpl::From(GetDocument())
                           .PictureInPictureElement());
  }
 -
@@ -863,7 +865,7 @@
 +                &Find("clock"),
 +                [&](const Element& shown) { return shown == timed_text; }),
 +            &timed_text);
-+  EXPECT_TRUE(timed_text.IsParcPictureInPictureCaptions());
++  EXPECT_TRUE(IsParcPictureInPictureCaptions(timed_text));
 +  GetDocument().UpdateStyleAndLayoutTree();
 +  EXPECT_EQ(Opacity(timed_text), 0);
 +  ExpectPainted(page);
@@ -871,7 +873,7 @@
 +  Controller().ExitPictureInPicture(Video(), nullptr);
 +  MakeGarbageCollected<WaitForEvent>(Video(),
 +                                     event_type_names::kLeavepictureinpicture);
-+  EXPECT_FALSE(timed_text.IsParcPictureInPictureCaptions());
++  EXPECT_FALSE(IsParcPictureInPictureCaptions(timed_text));
 +  GetDocument().UpdateStyleAndLayoutTree();
 +  EXPECT_EQ(Opacity(timed_text), 1);
 +  // The look stops with picture in picture.
@@ -1142,7 +1144,7 @@
 +  // A box that stops being captions shows in the tab again.
 +  Find("top").SetInnerHTMLWithoutTrustedTypes("<button>Up here!</button>");
 +  EXPECT_TRUE(page.Update());
-+  EXPECT_FALSE(Find("top").IsParcPictureInPictureCaptions());
++  EXPECT_FALSE(IsParcPictureInPictureCaptions(Find("top")));
 +  GetDocument().UpdateStyleAndLayoutTree();
 +  EXPECT_EQ(Opacity(Find("top")), 1);
 +  EXPECT_EQ(Opacity(Find("bottom")), 0);
@@ -1166,7 +1168,7 @@
 +  track->setMode(V8TextTrackMode(V8TextTrackMode::Enum::kShowing));
 +  EXPECT_TRUE(page.Update());
 +  EXPECT_TRUE(page.Shown().empty());
-+  EXPECT_FALSE(Find("lines").IsParcPictureInPictureCaptions());
++  EXPECT_FALSE(IsParcPictureInPictureCaptions(Find("lines")));
 +}
 +
 +// Between lines the look costs nothing: with the document unchanged it runs
@@ -1188,78 +1190,31 @@
  TEST_F(PictureInPictureControllerTestWithWidget,
         FrameThrottlingIsSetProperlyWithoutSetup) {
    // This test assumes that it throttling is allowed by default.
---- a/third_party/blink/renderer/core/dom/element.h
-+++ b/third_party/blink/renderer/core/dom/element.h
-@@ -220,8 +220,9 @@
-   kIsEligibleForElementCapture = 1 << 6,
-   kHasCheckedElementCaptureEligibility = 1 << 7,
-   kIsUnboundedElementActive = 1 << 8,
--
--  kNumberOfElementFlags = 9,  // Size of bitfield used to store the flags.
-+  kIsParcPictureInPictureCaptions = 1 << 9,
-+
-+  kNumberOfElementFlags = 10,  // Size of bitfield used to store the flags.
- };
--
-+
- enum class ShadowRootMode;
-@@ -1169,6 +1170,15 @@
-     SetElementFlag(ElementFlags::kStyleAffectedByEmpty);
-   }
--
-+
-+  // Parc: the page's captions a picture in picture window shows
-+  // (ParcPageCaptions), which style isolates so their layer paints only them.
-+  bool IsParcPictureInPictureCaptions() const {
-+    return HasElementFlag(ElementFlags::kIsParcPictureInPictureCaptions);
-+  }
-+  void SetIsParcPictureInPictureCaptions(bool value) {
-+    SetElementFlag(ElementFlags::kIsParcPictureInPictureCaptions, value);
-+  }
-+
-   // Recursively sets the IsInCanvasSubtree bit for the element and its subtree.
-   void SetIsInCanvasSubtree(bool value);
-   // Is in the flat subtree of a canvas element, but not the canvas element
---- a/third_party/blink/renderer/core/dom/node_rare_data.h
-+++ b/third_party/blink/renderer/core/dom/node_rare_data.h
-@@ -138,7 +138,7 @@
--
-+
-   enum {
-     kConnectedFrameCountBits = 10,  // Must fit Page::maxNumberOfFrames.
--    kNumberOfElementFlags = 9,
-+    kNumberOfElementFlags = 10,
-     kNumberOfDynamicRestyleFlags = 14
-   };
--
-+
-@@ -800,7 +800,7 @@
-     // This is distinct from native passwords (<input type=password>).
-     unsigned has_been_heuristic_custom_password_css_ : 1 = false;
--
-+
--    // 1 free bit in the second word (9 free bits overall).
-+    // 0 free bits in the second word (8 free bits overall).
-   };
-   static_assert(sizeof(Flags) <= 8, "Flags struct should not exceed 64 bits");
--
-+
 --- a/third_party/blink/renderer/core/css/resolver/style_adjuster.cc
 +++ b/third_party/blink/renderer/core/css/resolver/style_adjuster.cc
-@@ -1255,6 +1255,11 @@
+@@ -77,6 +77,7 @@
+ #include "third_party/blink/renderer/core/html/html_wbr_element.h"
+ #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+ #include "third_party/blink/renderer/core/html/media/html_video_element.h"
++#include "third_party/blink/renderer/core/html/media/parc_picture_in_picture_captions.h"
+ #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
+ #include "third_party/blink/renderer/core/html/shadow/shadow_element_utils.h"
+ #include "third_party/blink/renderer/core/html_names.h"
+@@ -1255,7 +1256,12 @@
    if (element && element->CanvasForDrawing()) {
      builder.SetIsolation(EIsolation::kIsolate);
    }
 +  // Parc: a page's captions picture in picture shows are hidden in the tab,
 +  // their layout kept, and their layer paints only them (ParcPageCaptions).
-+  if (element && element->IsParcPictureInPictureCaptions()) {
++  if (element && IsParcPictureInPictureCaptions(*element)) {
 +    builder.SetOpacity(0);
 +  }
 -
 +
    // z-index is only applicable if positioned, or if a flex/grid/etc item.
    if (builder.GetPosition() != EPosition::kStatic ||
-@@ -1562,6 +1567,11 @@
+       LayoutParentStyleForcesZIndexToCreateStackingContext(
+@@ -1562,9 +1568,14 @@
    // Has special handling in a number of places (including depending on
    // parents' IsContentDrawable() status).
    if (element.IsCanvasOrInCanvasSubtree()) {
@@ -1267,14 +1222,28 @@
 +  }
 +
 +  // Parc: isolated only while picture in picture shows it as captions.
-+  if (element.IsParcPictureInPictureCaptions()) {
++  if (IsParcPictureInPictureCaptions(element)) {
      return {ElementType::kIsNotElement};
    }
 -
 +
+   // Some UA shadow elements have special handling of background and
+   // text-overflow, as well as special slider container style.
+   // (It is possible that we could loosen this check a bit.)
 --- a/third_party/blink/renderer/core/paint/paint_layer_painter.cc
 +++ b/third_party/blink/renderer/core/paint/paint_layer_painter.cc
-@@ -421,7 +421,11 @@
+@@ -12,6 +12,7 @@
+ #include "third_party/blink/renderer/core/frame/settings.h"
+ #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
+ #include "third_party/blink/renderer/core/html/html_element.h"
++#include "third_party/blink/renderer/core/html/media/parc_picture_in_picture_captions.h"
+ #include "third_party/blink/renderer/core/html_names.h"
+ #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
+ #include "third_party/blink/renderer/core/layout/fragmentation_utils.h"
+@@ -419,12 +420,16 @@
+-
++
+   PaintTimelineReporter timeline_reporter(paint_layer_, should_paint_content);
    PaintController& controller = context.GetPaintController();
 -
 +
@@ -1284,21 +1253,34 @@
 +  // tab, without their opacity (ParcPageCaptions).
 +  const auto* element = DynamicTo<Element>(object.GetNode());
 +  if (PaintedOutputInvisible(object.StyleRef()) &&
-+      !(element && element->IsParcPictureInPictureCaptions())) {
++      !(element && IsParcPictureInPictureCaptions(*element))) {
      effectively_invisible.emplace(controller);
    }
 -
 +
+   std::optional<ScopedPaintChunkProperties> layer_chunk_properties;
+-
++
+   // The parent effect (before creating layer_chunk_properties for the current
 --- a/third_party/blink/renderer/core/animation/compositor_animations.cc
 +++ b/third_party/blink/renderer/core/animation/compositor_animations.cc
-@@ -597,6 +597,12 @@
+@@ -56,6 +56,7 @@
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/settings.h"
+ #include "third_party/blink/renderer/core/frame/web_feature.h"
++#include "third_party/blink/renderer/core/html/media/parc_picture_in_picture_captions.h"
+ #include "third_party/blink/renderer/core/layout/layout_box.h"
+ #include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
+ #include "third_party/blink/renderer/core/layout/layout_object.h"
+@@ -596,7 +597,13 @@
+   // TODO(crbug.com/1287221): Add a more specific reason.
    if (target_element.GetDocument().ShouldForceReduceMotion())
      state.disposition |= kAcceleratedAnimationsDisabled;
 -
 +
 +  // Parc: a page's captions picture in picture shows stay transparent in the
 +  // tab, which only the main thread's style keeps (ParcPageCaptions).
-+  if (target_element.IsParcPictureInPictureCaptions()) {
++  if (IsParcPictureInPictureCaptions(target_element)) {
 +    state.disposition |= kTargetHasInvalidCompositingState;
 +  }
 +

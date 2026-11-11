@@ -139,7 +139,13 @@ context-menu and file-selector work shares files across areas, so it goes throug
    - 2a: one media accessor per interface across Renderer, Pipeline, the audio and video renderers and
      DemuxerStream;
    - 2b: the Blink public and platform accessors;
-   - 2c: the widely included Blink and base headers listed above.
+   - 2c: the widely included Blink and base headers listed above. The HTML and event names,
+     `execution_context.h`, `memory_pressure_listener.h`, `element.h` and `node_rare_data.h` are back
+     to Chromium's. WebKit's names are Parc statics. The EME bindings test Safari's identity themselves.
+     The ManagedMediaSource listener's tag lies past every suppression mask, so nothing can silence its
+     purge. The picture-in-picture caption boxes sit in a Parc set. The `ParcSafariIdentityEme` runtime
+     feature stays, because Blink's IDL reader requires every `[SecureContext=…]` name to be one.
+     `page.h` leaves with the WebPreferences fields in step 8.
 
    Browser state stays in `Browser` and the restore-state headers until step 4's ownership work lands.
 4. **Move bodies behind hooks.** This is most of the refit win:
