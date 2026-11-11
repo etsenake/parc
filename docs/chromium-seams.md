@@ -293,7 +293,14 @@ policy; modern registration and transport remain upstream.
 ## Decisions
 
 - **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
-- **Autofill capability patch:** whether it's deleted depends on the per-feature audit in step 4.
+- **Autofill capability patch:** decided, it stays. The audit found Parc presents almost every gated
+  offer natively, and each native sheet is built on the presentation results and request state the
+  patch adds. Without them a refused sheet would count as an ignored offer and collect strikes. Only
+  the password sheet's routing moved behind a hook. A later compiled slice can still free
+  `autofill_client.h`, whose only change is one defaulted capability query.
+- **Extension install:** decided, it stays. The research's show-time hooks only see the page once the
+  prompt is ready, but Parc binds consent to the asking page's document and Browser when the prompt is
+  created, and starts watching for navigation and detach before the icon loads.
 - **STAY patches:** a few are better sent upstream to Chromium and WebRTC than carried forever. The
   candidates are the macOS system screen-picker fix, mp2t multi-audio, ipcm/fpcm in MP4, pipelined
   MojoAudioDecoder decodes, the global-media-controls reentrancy fix, and FFmpeg's ADTS parameters.
