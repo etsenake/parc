@@ -574,7 +574,7 @@
  
 --- a/content/renderer/BUILD.gn
 +++ b/content/renderer/BUILD.gn
-@@ -395,6 +395,22 @@
+@@ -395,6 +395,24 @@
      ]
    }
  
@@ -585,6 +585,8 @@
 +      "media/fairplay/fairplay_renderer_client.h",
 +      "media/fairplay/fairplay_renderer_client_factory.cc",
 +      "media/fairplay/fairplay_renderer_client_factory.h",
++      "media/fairplay/fairplay_renderer_factories.cc",
++      "media/fairplay/fairplay_renderer_factories.h",
 +      "media/fairplay/native_hls_demuxer.cc",
 +      "media/fairplay/native_hls_demuxer.h",
 +      "media/fairplay/native_hls_renderer.cc",
@@ -599,19 +601,18 @@
    }
 --- a/content/renderer/media/media_factory.cc
 +++ b/content/renderer/media/media_factory.cc
-@@ -132,6 +132,11 @@
+@@ -132,6 +132,10 @@
  #include "media/mojo/mojom/speech_recognition_service.mojom.h"
  #endif  // BUILDFLAG(IS_WIN)
  
 +#if BUILDFLAG(IS_MAC)
-+#include "content/renderer/media/fairplay/fairplay_renderer_client_factory.h"
-+#include "content/renderer/media/fairplay/native_hls_renderer_factory.h"
++#include "content/renderer/media/fairplay/fairplay_renderer_factories.h"
 +#endif  // BUILDFLAG(IS_MAC)
 +
  namespace {
  
  // This limit is much higher than it needs to be right now, because the logic
-@@ -464,14 +469,7 @@
+@@ -464,14 +468,7 @@
    }
  #endif
  
@@ -627,7 +628,7 @@
        web_frame, client, encrypted_client, delegate,
        std::move(factory_selector), std::move(submitter), std::move(media_log),
        player_id,
-@@ -497,6 +495,98 @@
+@@ -497,6 +494,76 @@
        blink::Platform::Current()->GetBrowserInterfaceBroker());
  }
  
@@ -663,11 +664,8 @@
 +}
 +
 +// CreateRendererFactorySelector() made the factories with the other frame's
-+// decoder, interface and remoter factories, which go with that frame. FairPlay
-+// renderers made here find a CDM another frame of the process made
-+// (MojoCdmServiceContext::GetCdmContextRef) and get this frame's tab mute,
-+// which the one playing follows too (CreateMuteStateHandoff). Remoting goes
-+// through this frame's tab.
++// decoder, interface and remoter factories, which go with that frame.
++// Remoting goes through this frame's tab.
 +void MediaFactory::ParcMoveRendererFactories(
 +    media::RendererFactorySelector& selector) {
 +  if (auto* factory = selector.GetFactory(media::RendererType::kRendererImpl)) {
@@ -675,26 +673,7 @@
 +        decoder_factory_.get());
 +  }
 +#if BUILDFLAG(IS_MAC)
-+  media::mojom::InterfaceFactory* interface_factory =
-+      GetMediaInterfaceFactory();
-+  auto follow_mute_state = [interface_factory](auto* factory) {
-+    if (auto target = factory->ParcMuteStateHandoffTarget()) {
-+      interface_factory->CreateMuteStateHandoff(std::move(target));
-+    }
-+  };
-+  if (auto* factory = selector.GetFactory(media::RendererType::kFairPlay)) {
-+    auto* fairplay_factory =
-+        static_cast<media::FairPlayRendererClientFactory*>(factory);
-+    fairplay_factory->mojo_renderer_factory()->ParcSetInterfaceFactory(
-+        interface_factory);
-+    follow_mute_state(fairplay_factory);
-+  }
-+  if (auto* factory = selector.GetFactory(media::RendererType::kFairPlayHls)) {
-+    auto* native_hls_factory =
-+        static_cast<parc::fairplay::NativeHlsRendererFactory*>(factory);
-+    native_hls_factory->ParcSetInterfaceFactory(interface_factory);
-+    follow_mute_state(native_hls_factory);
-+  }
++  parc::fairplay::MoveRendererFactories(selector, GetMediaInterfaceFactory());
 +#endif  // BUILDFLAG(IS_MAC)
 +#if BUILDFLAG(ENABLE_MEDIA_REMOTING)
 +  if (auto* factory = selector.GetFactory(media::RendererType::kCourier)) {
@@ -726,30 +705,20 @@
  blink::WebEncryptedMediaClient* MediaFactory::EncryptedMediaClient() {
    if (!web_encrypted_media_client_) {
      web_encrypted_media_client_ =
-@@ -658,6 +748,23 @@
+@@ -657,6 +724,13 @@
+     }
    }
  #endif  // BUILDFLAG(IS_WIN)
- 
-+#if BUILDFLAG(IS_MAC)
-+  // Parc: the FairPlay Streaming Renderer runs next to the FairPlay CDM in
-+  // the GPU process. PipelineImpl selects it only when the attached CDM
-+  // RequiresFairPlayRenderer(); it is never the base renderer.
-+  factory_selector->AddFactory(
-+      RendererType::kFairPlay,
-+      std::make_unique<media::FairPlayRendererClientFactory>(
-+          CreateMojoRendererFactory()));
-+  // Parc: Safari's native HLS route. DemuxerManager asks this factory for its
-+  // demuxer (an AVPlayer next to the frame's FairPlay CDMs) on pages
-+  // presenting Safari's identity; PipelineImpl then takes its renderer.
-+  factory_selector->AddFactory(
-+      RendererType::kFairPlayHls,
-+      std::make_unique<parc::fairplay::NativeHlsRendererFactory>(
-+          GetMediaInterfaceFactory()));
-+#endif  // BUILDFLAG(IS_MAC)
 +
++#if BUILDFLAG(IS_MAC)
++  // Parc: FairPlay Streaming and Safari's native HLS route.
++  parc::fairplay::AddRendererFactories(*factory_selector,
++                                       CreateMojoRendererFactory(),
++                                       GetMediaInterfaceFactory());
++#endif  // BUILDFLAG(IS_MAC)
+ 
  #if BUILDFLAG(IS_CASTOS) || BUILDFLAG(IS_CAST_ANDROID)
    if (renderer_media_playback_options.is_remoting_renderer_enabled()) {
- #if BUILDFLAG(ENABLE_CAST_RENDERER)
 --- a/content/renderer/media/media_interface_factory.cc
 +++ b/content/renderer/media/media_interface_factory.cc
 @@ -171,6 +171,58 @@
