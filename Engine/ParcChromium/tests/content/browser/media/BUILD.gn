@@ -1,0 +1,34 @@
+# Installed at //content/browser/media/parc_tests so browser-media regressions
+# stay in content_unittests with content's private test support.
+
+assert(is_mac)
+
+source_set("tests") {
+  visibility = [ "//content/test:*" ]
+  testonly = true
+  if (is_component_build) {
+    check_includes = false
+  }
+  sources = [
+    "media_session_controller_test.cc",
+    "media_session_impl_service_routing_test.cc",
+    "media_web_contents_observer_test.cc",
+  ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//content/browser:for_content_tests",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//media",
+    "//media/mojo/mojom",
+    "//mojo/public/cpp/bindings",
+    "//services/media_session/public/cpp",
+    "//services/media_session/public/cpp/test:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/blink/public/common",
+    "//ui/gfx",
+  ]
+}

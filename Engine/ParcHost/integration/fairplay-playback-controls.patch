@@ -546,26 +546,6 @@
  
    void RequestVisibility(
        RequestVisibilityCallback request_visibility_callback) override {
-@@ -451,6 +467,19 @@
-   controller_.reset();
-   EXPECT_FALSE(media_session()->IsActive());
-   EXPECT_FALSE(media_session()->IsControllable());
-+}
-+
-+TEST_F(MediaSessionControllerTest, PlaybackControlsRetainOriginAndBoundaries) {
-+  using Action = media_session::mojom::PlaybackControlsAction;
-+  for (auto action : {Action::kBeginScrubbing, Action::kSeekTo,
-+                      Action::kEndScrubbing, Action::kPauseForDragging,
-+                      Action::kResumeForDragging}) {
-+    controller_->OnHandlePlaybackControlsAction(
-+        controller_->get_player_id_for_testing(), action, base::Seconds(3));
-+    media_player_->WaitUntilReceivedMessage();
-+    EXPECT_EQ(action, media_player_->received_playback_controls_action_);
-+    EXPECT_TRUE(ReceivedMessageSeekTo(base::Seconds(3)));
-+  }
- }
- 
- TEST_F(MediaSessionControllerTest, VolumeMultiplier) {
 --- a/content/browser/media/media_web_contents_observer_unittest.cc
 +++ b/content/browser/media/media_web_contents_observer_unittest.cc
 @@ -32,6 +32,9 @@
@@ -592,118 +572,6 @@
  
   private:
    mojo::AssociatedReceiver<media::mojom::MediaPlayer> receiver_{this};
-@@ -519,5 +529,111 @@
-   EXPECT_FALSE(AudibilityBypassTracker::ClaimGrant(player_id));
- }
- 
-+// Parc: a Safari-identity page moving an element to another frame registers its
-+// player there under the same id (HTMLMediaElement::ParcMovePlayerToFrame).
-+class MediaWebContentsObserverMovedPlayerTest
-+    : public MediaWebContentsObserverTest {
-+ protected:
-+  void SetUp() override {
-+    MediaWebContentsObserverTest::SetUp();
-+    RenderFrameHost* main_rfh = contents()->GetPrimaryMainFrame();
-+    RenderFrameHostTester::For(main_rfh)->InitializeRenderFrameIfNeeded();
-+    child_rfh_ = RenderFrameHostTester::For(main_rfh)->AppendChild("child");
-+    RenderFrameHostTester::For(child_rfh_)->InitializeRenderFrameIfNeeded();
-+    main_player_host_ = SetupPlayerHost();
-+    media_web_contents_observer().BindMediaPlayerHost(
-+        child_rfh_->GetGlobalId(),
-+        child_player_host_.BindNewEndpointAndPassDedicatedReceiver());
-+  }
-+
-+  void TearDown() override {
-+    main_player_host_.reset();
-+    child_player_host_.reset();
-+    MediaWebContentsObserverTest::TearDown();
-+  }
-+
-+  void BypassAudioService(PlayerSetup& player) {
-+    SetMediaMetadata(player.observer, /*has_audio=*/true, /*has_video=*/false);
-+    SetUseAudioService(player.observer, false);
-+  }
-+
-+  void EndRegistration(PlayerSetup& player) {
-+    player.observer.reset();
-+    player.player.reset();
-+    base::RunLoop().RunUntilIdle();
-+  }
-+
-+  raw_ptr<RenderFrameHost> child_rfh_ = nullptr;
-+  mojo::AssociatedRemote<media::mojom::MediaPlayerHost> main_player_host_;
-+  mojo::AssociatedRemote<media::mojom::MediaPlayerHost> child_player_host_;
-+};
-+
-+// The grant follows the player when its old registration ends first, and its
-+// revocation reaches it in the new frame.
-+TEST_F(MediaWebContentsObserverMovedPlayerTest, GrantFollowsAndIsRevoked) {
-+  auto grant =
-+      AudibilityBypassTracker::AddGrant(contents()->GetPrimaryMainFrame());
-+  auto player = CreateAndAddPlayer(main_player_host_, /*player_id=*/7);
-+  BypassAudioService(player);
-+  PlayMedia(player.observer);
-+  ASSERT_TRUE(IsWebContentsAudible());
-+
-+  EndRegistration(player);
-+  auto moved = CreateAndAddPlayer(child_player_host_, /*player_id=*/7);
-+  BypassAudioService(moved);
-+  PlayMedia(moved.observer);
-+  EXPECT_TRUE(IsWebContentsAudible());
-+
-+  grant.RunAndReset();
-+  base::RunLoop().RunUntilIdle();
-+  EXPECT_FALSE(IsWebContentsAudible());
-+}
-+
-+// A paused player's grant follows it when the new registration plays before
-+// the old one ends, and no other player of the new frame gets it.
-+TEST_F(MediaWebContentsObserverMovedPlayerTest,
-+       PausedPlayersGrantFollowsWhenOldRegistrationEndsLast) {
-+  auto grant =
-+      AudibilityBypassTracker::AddGrant(contents()->GetPrimaryMainFrame());
-+  auto player = CreateAndAddPlayer(main_player_host_, /*player_id=*/7);
-+  BypassAudioService(player);
-+  ASSERT_FALSE(IsWebContentsAudible());
-+
-+  auto moved = CreateAndAddPlayer(child_player_host_, /*player_id=*/7);
-+  BypassAudioService(moved);
-+  PlayMedia(moved.observer);
-+  EXPECT_FALSE(IsWebContentsAudible());
-+  EndRegistration(player);
-+  EXPECT_TRUE(IsWebContentsAudible());
-+
-+  auto other = CreateAndAddPlayer(child_player_host_, /*player_id=*/8);
-+  PauseMedia(moved.observer);
-+  BypassAudioService(other);
-+  PlayMedia(other.observer);
-+  EXPECT_FALSE(IsWebContentsAudible());
-+}
-+
-+// A paused moved player takes its grant when its old registration ends, so
-+// the grant stays its own after the old frame goes.
-+TEST_F(MediaWebContentsObserverMovedPlayerTest,
-+       PausedMovedPlayerKeepsGrantAfterOldFrameGoes) {
-+  auto grant = AudibilityBypassTracker::AddGrant(child_rfh_);
-+  auto player = CreateAndAddPlayer(child_player_host_, /*player_id=*/7);
-+  BypassAudioService(player);
-+
-+  auto moved = CreateAndAddPlayer(main_player_host_, /*player_id=*/7);
-+  BypassAudioService(moved);
-+  EndRegistration(player);
-+  RenderFrameHostTester::For(child_rfh_.ExtractAsDangling())->Detach();
-+  base::RunLoop().RunUntilIdle();
-+
-+  PlayMedia(moved.observer);
-+  EXPECT_TRUE(IsWebContentsAudible());
-+
-+  grant.RunAndReset();
-+  base::RunLoop().RunUntilIdle();
-+  EXPECT_FALSE(IsWebContentsAudible());
-+}
-+
- }  // namespace
- }  // namespace content
 --- a/content/browser/picture_in_picture/picture_in_picture_service_impl_unittest.cc
 +++ b/content/browser/picture_in_picture/picture_in_picture_service_impl_unittest.cc
 @@ -180,6 +180,9 @@
@@ -815,16 +683,7 @@
    MOCK_METHOD(void, EnterPictureInPicture, (), (override));
 --- a/content/browser/media/session/media_session_impl_service_routing_unittest.cc
 +++ b/content/browser/media/session/media_session_impl_service_routing_unittest.cc
-@@ -7,6 +7,8 @@
- #include <string>
- 
- #include "base/memory/raw_ptr.h"
-+#include "base/functional/callback_helpers.h"
-+#include "content/browser/media/parc_fairplay_hooks.h"
- #include "base/run_loop.h"
- #include "base/strings/utf_string_conversions.h"
- #include "base/test/scoped_feature_list.h"
-@@ -70,6 +72,12 @@
+@@ -70,6 +70,12 @@
    MOCK_METHOD2(OnResume, void(int player_id, bool triggered_by_user));
    MOCK_METHOD2(OnSeekForward, void(int player_id, base::TimeDelta seek_time));
    MOCK_METHOD2(OnSeekBackward, void(int player_id, base::TimeDelta seek_time));
@@ -837,7 +696,7 @@
    MOCK_METHOD2(OnSeekTo, void(int player_id, base::TimeDelta seek_time));
    MOCK_METHOD2(OnSetVolumeMultiplier,
                 void(int player_id, double volume_multiplier));
-@@ -146,6 +154,7 @@
+@@ -146,6 +152,7 @@
    media::MediaContentType media_content_type_;
  
    std::optional<media_session::MediaPosition> position_;
@@ -845,38 +704,3 @@
  };
  
  }  // anonymous namespace
-@@ -295,6 +304,34 @@
- 
-   std::set<MediaSessionAction> actions_;
- };
-+
-+TEST_F(MediaSessionImplServiceRoutingTest, SafariScrubKeepsPausedRecipients) {
-+  using Action = media_session::mojom::PlaybackControlsAction;
-+  parc::fairplay::SetSafariIdentityQuery(base::BindRepeating(
-+      [](RenderFrameHost*) { return true; }));
-+  base::ScopedClosureRunner reset(base::BindOnce([] {
-+    parc::fairplay::SetSafariIdentityQuery({});
-+  }));
-+  StartPlayerForFrame(main_frame_);
-+  StartPlayerForFrame(sub_frame_);
-+  auto* session = MediaSessionImpl::Get(contents());
-+  for (auto* frame : {main_frame_.get(), sub_frame_.get()})
-+    EXPECT_CALL(*GetPlayerForFrame(frame),
-+                OnHandlePlaybackControlsAction(kPlayerId, Action::kBeginScrubbing, _));
-+  session->HandlePlaybackControlsAction(Action::kBeginScrubbing, {});
-+  session->OnPlayerPaused(GetPlayerForFrame(main_frame_), kPlayerId);
-+  for (auto* frame : {main_frame_.get(), sub_frame_.get()})
-+    EXPECT_CALL(*GetPlayerForFrame(frame),
-+                OnHandlePlaybackControlsAction(kPlayerId, Action::kEndScrubbing, _));
-+  session->HandlePlaybackControlsAction(Action::kEndScrubbing, {});
-+}
-+
-+TEST_F(MediaSessionImplServiceRoutingTest, ChromePlaybackControlsKeepSeekRouting) {
-+  StartPlayerForFrame(main_frame_);
-+  EXPECT_CALL(*GetPlayerForFrame(main_frame_), OnSeekTo(kPlayerId, base::Seconds(3)));
-+  MediaSessionImpl::Get(contents())->HandlePlaybackControlsAction(
-+      media_session::mojom::PlaybackControlsAction::kSeekTo, base::Seconds(3));
-+}
- 
- TEST_F(MediaSessionImplServiceRoutingTest, NoFrameProducesAudio) {
-   CreateServiceForFrame(main_frame_);

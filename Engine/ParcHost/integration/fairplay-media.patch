@@ -26,6 +26,16 @@
        "memory/swap_metrics_driver_impl_mac.cc",
        "memory/swap_metrics_driver_impl_mac.h",
        "renderer_host/browser_compositor_view_mac.h",
+@@ -3647,8 +3652,9 @@
+ group("for_content_tests") {
+   visibility = [
+     "//content/browser/btm:unit_tests",
+     "//content/browser/indexed_db:idb_factory_mojolpm_fuzzer",
+     "//content/browser/indexed_db:unit_tests",
++    "//content/browser/media/parc_tests:tests",
+     "//content/public/test/android/*",
+     "//content/test/*",
+     "//content/web_test:web_test_browser",
 --- a/content/browser/media/media_interface_proxy.cc
 +++ b/content/browser/media/media_interface_proxy.cc
 @@ -22,6 +22,7 @@
@@ -210,6 +220,14 @@
    if (is_linux || is_chromeos || is_android) {
      deps += [ "//sandbox:sandbox_buildflags" ]
    }
+@@ -434,6 +455,7 @@
+ group("for_content_tests") {
+   visibility = [
+     ":*",
++    "//content/renderer/media/parc_tests:tests",
+     "//content/test/*",
+     "//content/web_test:web_test_renderer_public_deps",
+   ]
 --- a/content/renderer/media/media_factory.cc
 +++ b/content/renderer/media/media_factory.cc
 @@ -62,6 +62,7 @@
@@ -9109,7 +9127,7 @@
    configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 --- a/content/test/BUILD.gn
 +++ b/content/test/BUILD.gn
-@@ -3456,6 +3456,14 @@
+@@ -3456,6 +3456,18 @@
 -
 +
    if (is_mac) {
@@ -9121,7 +9139,11 @@
 +      "../browser/media/parc_audibility_grant_unittest.cc",
 +      "../renderer/media/fairplay/native_hls_unittest.cc",
 +    ]
-+    deps += [ "//third_party/parc_fairplay:unit_tests" ]
++    deps += [
++      "//content/browser/media/parc_tests:tests",
++      "//content/renderer/media/parc_tests:tests",
++      "//third_party/parc_fairplay:unit_tests",
++    ]
    }
 -
 +
@@ -16381,32 +16403,6 @@
    decoder_factory_->CreateVideoDecoders(
        media_task_runner, gpu_factories, media_log_.get(),
        std::move(request_overlay_info_cb), target_color_space, &video_decoders);
---- a/content/renderer/media/inspector_media_event_handler_unittest.cc
-+++ b/content/renderer/media/inspector_media_event_handler_unittest.cc
-@@ -308,4 +308,22 @@
-   handler_->SendQueuedMediaEvents(errors);
- }
--
-+
-+// Parc: a player a Safari-identity element moved to another frame leaves the
-+// old frame's inspector and appears in the new one's, with its element.
-+TEST_F(InspectorMediaEventHandlerTest, ParcMovesToInspectorContext) {
-+  MockMediaInspectorContext new_context;
-+  EXPECT_CALL(*mock_context_, MockDestroyPlayer());
-+  EXPECT_CALL(new_context, MockSetDomNodeIdForPlayer(123));
-+  handler_->ParcMoveToInspectorContext(&new_context);
-+
-+  std::vector<media::MediaLogRecord> events = {
-+      CreateEvent<media::MediaLogEvent::kPlay>()};
-+  EXPECT_CALL(*mock_context_, MockNotifyPlayerEvents(_)).Times(0);
-+  EXPECT_CALL(new_context, MockNotifyPlayerEvents(_));
-+  handler_->SendQueuedMediaEvents(events);
-+
-+  EXPECT_CALL(new_context, MockDestroyPlayer());
-+  handler_->OnWebMediaPlayerDestroyed();
-+}
-+
- }  // namespace content
 --- a/third_party/blink/renderer/modules/presentation/presentation_controller.h
 +++ b/third_party/blink/renderer/modules/presentation/presentation_controller.h
 @@ -68,6 +68,14 @@

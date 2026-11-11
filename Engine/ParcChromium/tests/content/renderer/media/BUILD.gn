@@ -1,0 +1,21 @@
+# Installed at //content/renderer/media/parc_tests so Parc's regression remains
+# in content_unittests without exposing renderer internals across layers.
+
+assert(is_mac)
+
+source_set("tests") {
+  visibility = [ "//content/test:*" ]
+  testonly = true
+  if (is_component_build) {
+    check_includes = false
+  }
+  sources = [ "inspector_media_event_handler_test.cc" ]
+
+  deps = [
+    "//content/renderer:for_content_tests",
+    "//media",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/blink/public:blink",
+  ]
+}
