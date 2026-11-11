@@ -47,6 +47,19 @@ source_set("renderer") {
   ]
 }
 
+action("internal_extension_manifest") {
+  script = "generate_internal_extension.py"
+  sources = [ "internal_extension/manifest.json" ]
+  outputs = [ "$target_gen_dir/internal_extension_manifest.h" ]
+  args = [ rebase_path(sources[0], root_build_dir),
+           rebase_path(outputs[0], root_build_dir) ]
+}
+
+bundle_data("internal_extension_resources") {
+  sources = [ "internal_extension/manifest.json", "internal_extension/background.js" ]
+  outputs = [ "{{bundle_resources_dir}}/parc_internal_extension/{{source_file_part}}" ]
+}
+
 source_set("page_preferences") {
   sources = [ "page_preferences.cc", "page_preferences.h" ]
   deps = [ "//base", "//content/public/browser", "//third_party/blink/public/common" ]
@@ -180,6 +193,8 @@ source_set("browser") {
   ]
 
   deps = [
+    ":internal_extension_manifest",
+    "//chrome/browser/extensions",
     "//components/gcm_driver",
     "//google_apis/gcm",
     ":page_preferences",
@@ -389,6 +404,7 @@ mac_framework_bundle("parc_framework") {
   info_plist_target = ":parc_framework_plist"
 
   deps = [
+    ":internal_extension_resources",
     ":browser",
     ":parc_framework_resources",
     ":parc_framework_swiftshader_binaries",

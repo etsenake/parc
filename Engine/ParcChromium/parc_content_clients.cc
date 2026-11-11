@@ -11,6 +11,7 @@
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "chrome/browser/child_process_host_flags.h"
+#include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/ui/login/http_auth_coordinator.h"
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/common/chrome_constants.h"
@@ -27,6 +28,7 @@
 #include "mojo/public/cpp/bindings/binder_map.h"
 #include "parc/chromium_hooks.h"
 #include "parc/frame_focus.h"
+#include "parc/internal_extension_manifest.h"
 #include "parc/page_preferences.h"
 #include "parc/web_push.h"
 #include "parc/native/file_dialog.h"
@@ -111,6 +113,10 @@ ParcContentBrowserClient::ParcContentBrowserClient(
     : application_(application) {
   parc_hooks::SetFrameFocusNotifier(&NotifyFrameFocus);
   parc_hooks::SetWebPushFactory(&CreateWebPushClient);
+  parc_hooks::SetInternalExtensionInstaller([](extensions::ComponentLoader* loader) {
+    loader->Add(kInternalExtensionManifest,
+                base::FilePath(FILE_PATH_LITERAL("parc_internal_extension")));
+  });
 }
 
 void ParcContentBrowserClient::OverrideWebPreferences(

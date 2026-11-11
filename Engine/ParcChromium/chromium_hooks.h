@@ -21,6 +21,10 @@ class CommandLine;
 class FilePath;
 }
 
+namespace extensions {
+class ComponentLoader;
+}
+
 namespace gcm {
 class GCMClient;
 }
@@ -37,6 +41,9 @@ using PermissionPromptFactory =
         content::WebContents* web_contents,
         permissions::PermissionPrompt::Delegate* delegate);
 void SetPermissionPromptFactory(PermissionPromptFactory factory);
+
+// chrome/browser/extensions/component_loader.cc
+void SetInternalExtensionInstaller(void (*installer)(extensions::ComponentLoader*));
 
 // components/gcm_driver/gcm_client_factory.cc
 void SetWebPushFactory(std::unique_ptr<gcm::GCMClient> (*factory)());

@@ -81,9 +81,13 @@ when none exists or private access is unavailable.
 
 ## Chrome Web Store identity
 
-`Engine/ParcInternalExtension` is a bundled component extension, registered by
-`internal-extension.patch`, that labels the store's install/remove controls for
-Parc and removes Chrome-switch prompts. Its fixed ID is
+`Engine/ParcInternalExtension` is a bundled component extension that labels the
+store's install/remove controls for Parc and removes Chrome-switch prompts.
+Parc installs it at Chromium's existing background-component registration point,
+preserving its profile coverage and test-mode skips. Its manifest
+and worker script ship in the signed framework, and Chromium serves the worker
+through its normal extension file loader. The manifest key and the exact-ID
+allowlist in `internal-extension.patch` preserve its identity. Its fixed ID is
 `nncglbbjcndfbjaofnljgecleghcjohe`. It matches the store host exactly and does
 not change user-agent brands or other sites. Store host permission supplies the
 URL; no `tabs` permission or unrelated Slack/Notion page styling is included.
