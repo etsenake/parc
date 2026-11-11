@@ -12441,7 +12441,20 @@
      RequestRemotePlayStateChangeCB callback_request) {
 --- a/media/filters/BUILD.gn
 +++ b/media/filters/BUILD.gn
-@@ -462,6 +462,10 @@
+@@ -88,6 +88,12 @@
+     "offloading_video_decoder.h",
+     "opus_audio_decoder.cc",
+     "opus_audio_decoder.h",
++    "parc_mse_type_map.cc",
++    "parc_mse_type_map.h",
++    "parc_source_buffer_eviction.cc",
++    "parc_source_buffer_eviction.h",
++    "parc_source_buffer_stream_state.cc",
++    "parc_source_buffer_stream_state.h",
+     "pipeline_controller.cc",
+     "pipeline_controller.h",
+     "source_buffer_parse_warnings.h",
+@@ -462,6 +468,10 @@
        "manifest_demuxer_unittest.cc",
        "stream_parser_factory_unittest.cc",
      ]
@@ -12788,15 +12801,17 @@
  
 --- a/media/filters/source_buffer_stream.h
 +++ b/media/filters/source_buffer_stream.h
-@@ -16,6 +16,7 @@
+@@ -36,6 +36,8 @@
  
- #include <list>
- #include <memory>
-+#include <optional>
- #include <string>
- #include <type_traits>
- #include <utility>
-@@ -96,6 +97,43 @@ class MEDIA_EXPORT SourceBufferStream {
+ namespace media {
+-
++
++class ParcSourceBufferStreamState;
++
+ // Status returned by GetNextBuffer().
+ // kSuccess: Indicates that the next buffer was returned.
+ // kNeedBuffer: Indicates that we need more data before a buffer can be
+@@ -96,6 +98,43 @@
    // |media_time| is current playback position.
    bool GarbageCollectIfNeeded(base::TimeDelta media_time, size_t newDataSize);
  
@@ -12816,7 +12831,7 @@
 +
 +  // Parc: a Safari-identity page's Media Source
 +  // (ChunkDemuxer::ParcSetSafariMediaSource()). GetBufferedTime() reports
-+  // WebKit's buffered ranges (ParcBufferedTime()), and seeks and video reads
++  // WebKit's buffered ranges through the Parc state, and seeks and video reads
 +  // cross the gaps WebKit's playback bridges (Seek(), ParcBridgeGap()).
 +  void ParcSetSafariMediaSource(bool safari);
 +  // Parc: what WebKit's MediaSourcePrivate::gapToleranceAtTime() reads
@@ -12840,45 +12855,35 @@
    // Changes the SourceBufferStream's state so that it will start returning
    // buffers starting from the closest keyframe before |timestamp|.
    void Seek(base::TimeDelta timestamp);
-@@ -191,6 +229,9 @@ class MEDIA_EXPORT SourceBufferStream {
+@@ -181,6 +220,7 @@
+-
++
+  private:
+   friend class SourceBufferStreamTest;
++  friend class ParcSourceBufferStreamState;
+-
++
+   // Attempts to delete approximately |total_bytes_to_free| amount of data
+   // |ranges_|, starting at the front of |ranges_| and moving linearly forward
+@@ -190,6 +230,9 @@
+   size_t FreeBuffers(size_t total_bytes_to_free,
                       base::TimeDelta media_time,
                       bool reverse_direction);
- 
++
 +  // Parc: where Remove(|start|, |end|, |duration|) stops removing.
 +  base::TimeDelta ParcRemoveEnd(base::TimeDelta end, base::TimeDelta duration);
+-
 +
    // Attempts to delete approximately |total_bytes_to_free| amount of data from
    // |ranges_|, starting after the last appended media
-   // (|highest_buffered_end_time_in_append_sequence_|) but before the current
-@@ -422,6 +463,44 @@ class MEDIA_EXPORT SourceBufferStream {
+@@ -422,6 +465,23 @@
    // True if the end of the stream has been signalled.
    bool end_of_stream_ = false;
  
-+  // Parc: ParcRemoveFrom() took data off an ended stream; see there.
-+  bool parc_end_of_stream_suspended_ = false;
++  // Parc: WebKit-compatible append interval, gap and purge state. The policy
++  // lives in a Parc-owned .cc; this class still performs cursor changes.
++  std::unique_ptr<ParcSourceBufferStreamState> parc_state_;
 +
-+  // Parc: see ParcSetSafariMediaSource() and ParcSetMediaSourceBuffered().
-+  bool parc_safari_media_source_ = false;
-+  base::TimeDelta parc_media_source_start_ = kNoTimestamp;
-+  Ranges<base::TimeDelta> parc_audio_buffered_;
-+  // Parc: the latest end of a buffer output since the last seek.
-+  base::TimeDelta parc_highest_output_end_ = kNoTimestamp;
-+  // Parc: sorted, disjoint [start, end) intervals.
-+  using ParcIntervals = std::vector<std::pair<base::TimeDelta, base::TimeDelta>>;
-+  // Parc: gaps WebKit's PlatformTimeRanges::add(EliminateSmallGaps) filled
-+  // as frames were appended (ParcFillSmallGaps()) and no frame has filled
-+  // since; see ParcBufferedTime().
-+  ParcIntervals parc_filled_gaps_;
-+  // Parc: ParcFrames(), until the public methods that change frames reset it.
-+  mutable std::optional<ParcIntervals> parc_frames_;
-+
-+  // Parc: the buffered frames' presentation intervals, holes of up to 1
-+  // microsecond (Chromium's timestamp rounding) closed.
-+  const ParcIntervals& ParcFrames() const;
-+  // Parc: the filled gaps with frames still on both sides.
-+  ParcIntervals ParcKeptFilledGaps() const;
-+  // Parc: WebKit's buffered ranges for this track.
-+  Ranges<base::TimeDelta> ParcBufferedTime() const;
 +  // Parc: adds |buffers| to |buffered|, WebKit's buffered ranges before
 +  // them, as WebKit adds each frame, recording the gaps that fills.
 +  void ParcFillSmallGaps(Ranges<base::TimeDelta>* buffered,
@@ -12905,123 +12910,44 @@
  #include <map>
  #include <memory>
  #include <sstream>
-@@ -66,6 +67,99 @@
- // start time in order to still be considered the start of stream.
- base::TimeDelta kSeekToStartFudgeRoom() {
-   return base::Milliseconds(1000);
-+}
-+
-+// Parc: whether |gap| lies strictly between zero and WebKit's
-+// PlatformTimeRanges::timeFudgeFactor(), 2002/24000 s (MediaTime::isBetween).
-+// Chromium's timestamps are rounded to microseconds, so a gap of exactly
-+// that much (two frames at 23.976 fps) arrives as 83416 to 83418 us; WebKit
-+// leaves it open.
-+bool ParcWithinTimeFudgeFactor(base::TimeDelta gap) {
-+  return gap.is_positive() && gap < base::Microseconds(83416);
-+}
-+
-+using ParcInterval = std::pair<base::TimeDelta, base::TimeDelta>;
-+using ParcIntervals = std::vector<ParcInterval>;
-+
-+// Parc: the first of sorted, disjoint |intervals| that ends after |time|.
-+ParcIntervals::const_iterator ParcFirstEndingAfter(
-+    const ParcIntervals& intervals,
-+    base::TimeDelta time) {
-+  return std::partition_point(
-+      intervals.begin(), intervals.end(),
-+      [time](const ParcInterval& interval) { return interval.second <= time; });
-+}
-+
-+// Parc: whether one of sorted, disjoint |intervals| holds |time|.
-+bool ParcHolds(const ParcIntervals& intervals, base::TimeDelta time) {
-+  const auto it = ParcFirstEndingAfter(intervals, time);
-+  return it != intervals.end() && it->first <= time;
-+}
-+
-+// Parc: adds [start, end), which lies between |intervals|, to them.
-+void ParcInsert(ParcIntervals* intervals,
-+                base::TimeDelta start,
-+                base::TimeDelta end) {
-+  intervals->insert(ParcFirstEndingAfter(*intervals, start), {start, end});
-+}
-+
-+// Parc: removes [start, end) from |intervals|.
-+void ParcCut(ParcIntervals* intervals,
-+             base::TimeDelta start,
-+             base::TimeDelta end) {
-+  const auto first = ParcFirstEndingAfter(*intervals, start);
-+  if (first == intervals->end() || end <= first->first) {
-+    return;
-+  }
-+  ParcIntervals rest;
-+  auto last = first;
-+  for (; last != intervals->end() && last->first < end; ++last) {
-+    if (last->first < start) {
-+      rest.emplace_back(last->first, start);
-+    }
-+    if (end < last->second) {
-+      rest.emplace_back(end, last->second);
-+    }
-+  }
-+  intervals->insert(intervals->erase(first, last), rest.begin(), rest.end());
-+}
-+
-+// Parc: sorted |intervals| joined where one starts no more than |slack|
-+// after the end of those before it.
-+ParcIntervals ParcCoalesce(const ParcIntervals& intervals,
-+                           base::TimeDelta slack) {
-+  ParcIntervals coalesced;
-+  for (const ParcInterval& interval : intervals) {
-+    if (!coalesced.empty() &&
-+        interval.first <= coalesced.back().second + slack) {
-+      coalesced.back().second =
-+          std::max(coalesced.back().second, interval.second);
-+    } else {
-+      coalesced.push_back(interval);
-+    }
-+  }
-+  return coalesced;
-+}
-+
-+// Parc: WebKit's PlatformTimeRanges::nearest(): |time| when a range holds it,
-+// ends included, else the closest range boundary, the first found on a tie;
-+// kNoTimestamp without ranges.
-+base::TimeDelta ParcNearest(const Ranges<base::TimeDelta>& ranges,
-+                            base::TimeDelta time) {
-+  base::TimeDelta nearest = kNoTimestamp;
-+  base::TimeDelta nearest_distance = base::TimeDelta::Max();
-+  for (size_t i = 0; i < ranges.size(); ++i) {
-+    if (time >= ranges.start(i) && time <= ranges.end(i)) {
-+      return time;
-+    }
-+    for (const base::TimeDelta boundary : {ranges.start(i), ranges.end(i)}) {
-+      if ((boundary - time).magnitude() < nearest_distance) {
-+        nearest = boundary;
-+        nearest_distance = (boundary - time).magnitude();
-+      }
-+    }
-+  }
-+  return nearest;
- }
+@@ -17,6 +18,7 @@
+ #include "media/base/media_switches.h"
+ #include "media/base/stream_parser_buffer.h"
+ #include "media/base/timestamp_constants.h"
++#include "media/filters/parc_source_buffer_stream_state.h"
 -
 +
- // Helper method for logging.
-@@ -275,6 +369,14 @@
+ namespace media {
+-
++
+@@ -145,6 +147,7 @@
+ SourceBufferStream::SourceBufferStream(const AudioDecoderConfig& audio_config,
+                                        MediaLog* media_log)
+     : media_log_(MediaLog::CloneSafely(media_log)),
++      parc_state_(std::make_unique<ParcSourceBufferStreamState>()),
+       seek_buffer_timestamp_(kNoTimestamp),
+       coded_frame_group_start_pts_(kNoTimestamp),
+       range_for_next_append_(ranges_.end()),
+@@ -160,6 +163,7 @@
+ SourceBufferStream::SourceBufferStream(const VideoDecoderConfig& video_config,
+                                        MediaLog* media_log)
+     : media_log_(MediaLog::CloneSafely(media_log)),
++      parc_state_(std::make_unique<ParcSourceBufferStreamState>()),
+       seek_buffer_timestamp_(kNoTimestamp),
+       coded_frame_group_start_pts_(kNoTimestamp),
+       range_for_next_append_(ranges_.end()),
+@@ -275,6 +279,10 @@
  
    PrepareRangesForNextAppend(buffers, &deleted_buffers);
  
 +  // Parc: WebKit's buffered ranges before |buffers| (ParcFillSmallGaps()).
 +  Ranges<base::TimeDelta> parc_buffered;
-+  if (parc_safari_media_source_) {
-+    parc_frames_.reset();
-+    parc_filled_gaps_ = ParcKeptFilledGaps();
-+    parc_buffered = ParcBufferedTime();
-+  }
++  parc_state_->PrepareForAppend(*this, &parc_buffered);
 +
    // If there's a range for |buffers|, insert |buffers| accordingly. Otherwise,
    // create a new range with |buffers|.
    if (range_for_next_append_ != ranges_.end()) {
-@@ -291,6 +393,7 @@
+@@ -291,6 +299,7 @@
        // Otherwise, use the first new buffer as proof of adjacency.
        (*range_for_next_append_)->AppendBuffersToEnd(buffers, kNoTimestamp);
      }
@@ -13029,7 +12955,7 @@
  
      last_appended_buffer_timestamp_ = buffers.back()->timestamp();
      last_appended_buffer_duration_ = buffers.back()->duration();
-@@ -353,6 +456,7 @@
+@@ -353,6 +362,7 @@
          new_range_start_time,
          base::BindRepeating(&SourceBufferStream::GetMaxInterbufferDistance,
                              base::Unretained(this))));
@@ -13037,7 +12963,7 @@
  
      last_appended_buffer_timestamp_ =
          buffers_for_new_range->back()->timestamp();
-@@ -418,6 +522,263 @@
+@@ -418,6 +428,152 @@
    DCHECK(OnlySelectedRangeIsSeeked());
  }
  
@@ -13067,14 +12993,7 @@
 +  if (start >= end || start >= remove_end) {
 +    return 0;
 +  }
-+  size_t size = 0;
-+  for (const auto& range : ranges_) {
-+    if (range->GetStartTimestamp() >= remove_end) {
-+      break;
-+    }
-+    size += range->ParcRemovalSize(start, remove_end);
-+  }
-+  return size;
++  return parc_state_->RemovalSize(*this, start, remove_end);
 +}
 +
 +// Parc: WebKit's TrackBuffer sync-sample lookup: the keyframe at or before
@@ -13116,134 +13035,38 @@
 +  // appends again (which reopens the source and unmarks the end of stream).
 +  if (end_of_stream_ && end < buffered_end) {
 +    end_of_stream_ = false;
-+    parc_end_of_stream_suspended_ = true;
++    parc_state_->set_end_of_stream_suspended(true);
 +  }
 +}
 +
 +void SourceBufferStream::ParcSetSafariMediaSource(bool safari) {
-+  parc_safari_media_source_ = safari;
-+  parc_filled_gaps_.clear();
-+  parc_frames_.reset();
++  parc_state_->SetSafariMediaSource(safari);
 +}
 +
 +void SourceBufferStream::ParcSetMediaSourceBuffered(
 +    base::TimeDelta start,
 +    Ranges<base::TimeDelta> audio) {
-+  parc_media_source_start_ = start;
-+  parc_audio_buffered_ = std::move(audio);
++  parc_state_->SetMediaSourceBuffered(start, std::move(audio));
 +  if (seek_pending_) {
 +    Seek(seek_buffer_timestamp_);
 +  }
-+}
-+
-+const ParcIntervals& SourceBufferStream::ParcFrames() const {
-+  if (!parc_frames_) {
-+    ParcIntervals intervals;
-+    for (const auto& range : ranges_) {
-+      range->ParcAppendPresentationIntervals(&intervals);
-+    }
-+    std::sort(intervals.begin(), intervals.end());
-+    parc_frames_ = ParcCoalesce(intervals, base::Microseconds(1));
-+  }
-+  return *parc_frames_;
-+}
-+
-+// Parc: TrackBuffer::removeSamples() erases a filled gap with the frame on
-+// either side of it.
-+ParcIntervals SourceBufferStream::ParcKeptFilledGaps() const {
-+  const ParcIntervals& frames = ParcFrames();
-+  ParcIntervals kept;
-+  for (const ParcInterval& gap : ParcCoalesce(parc_filled_gaps_, {})) {
-+    if (ParcHolds(frames, gap.first - base::Microseconds(1)) &&
-+        ParcHolds(frames, gap.second)) {
-+      kept.push_back(gap);
-+    }
-+  }
-+  return kept;
-+}
-+
-+// Parc: WebKit's TrackBuffer buffered ranges: every frame's presentation
-+// interval and the gaps filled as frames were appended.
-+Ranges<base::TimeDelta> SourceBufferStream::ParcBufferedTime() const {
-+  const ParcIntervals& frames = ParcFrames();
-+  const ParcIntervals kept = ParcKeptFilledGaps();
-+  ParcIntervals intervals;
-+  intervals.reserve(frames.size() + kept.size());
-+  std::merge(frames.begin(), frames.end(), kept.begin(), kept.end(),
-+             std::back_inserter(intervals));
-+  Ranges<base::TimeDelta> buffered;
-+  for (const ParcInterval& interval : ParcCoalesce(intervals, {})) {
-+    buffered.Add(interval.first, interval.second);
-+  }
-+  return buffered;
 +}
 +
 +// Parc: WebKit's TrackBuffer::addSample() adds each frame's presentation
 +// interval with PlatformTimeRanges::add(EliminateSmallGaps), which moves its
 +// start back, and its end forward, to the nearest range boundary that lies
 +// strictly within timeFudgeFactor(). A hole of 1 microsecond is rounding
-+// (ParcFrames()), not a gap to record.
++// (the Parc-owned interval state), not a gap to record.
 +void SourceBufferStream::ParcFillSmallGaps(Ranges<base::TimeDelta>* buffered,
 +                                           const BufferQueue& buffers) {
-+  if (!parc_safari_media_source_) {
-+    return;
-+  }
-+  const base::TimeDelta kRounding = base::Microseconds(1);
-+  // Gaps this append fills, merged in once so that appending into the middle
-+  // of the buffer doesn't shift every recorded gap for each frame.
-+  ParcIntervals added;
-+  for (const auto& buffer : buffers) {
-+    const base::TimeDelta frame_start = buffer->timestamp();
-+    const base::TimeDelta frame_end =
-+        frame_start + std::max(buffer->duration(), kRounding);
-+    base::TimeDelta start = frame_start;
-+    base::TimeDelta end = frame_end;
-+    const base::TimeDelta nearest_start = ParcNearest(*buffered, start);
-+    const base::TimeDelta nearest_end = ParcNearest(*buffered, end);
-+    if (nearest_start != kNoTimestamp &&
-+        ParcWithinTimeFudgeFactor(start - nearest_start)) {
-+      if (start - nearest_start > kRounding) {
-+        ParcInsert(&added, nearest_start, start);
-+      }
-+      start = nearest_start;
-+    }
-+    if (nearest_end != kNoTimestamp &&
-+        ParcWithinTimeFudgeFactor(nearest_end - end)) {
-+      if (nearest_end - end > kRounding) {
-+        ParcInsert(&added, end, nearest_end);
-+      }
-+      end = nearest_end;
-+    }
-+    ParcCut(&parc_filled_gaps_, frame_start, frame_end);
-+    ParcCut(&added, frame_start, frame_end);
-+    buffered->Add(start, end);
-+  }
-+  ParcIntervals gaps;
-+  gaps.reserve(parc_filled_gaps_.size() + added.size());
-+  std::merge(parc_filled_gaps_.begin(), parc_filled_gaps_.end(), added.begin(),
-+             added.end(), std::back_inserter(gaps));
-+  parc_filled_gaps_ = std::move(gaps);
-+  parc_frames_.reset();
++  parc_state_->FillSmallGaps(buffered, buffers);
 +}
 +
 +// Parc: 1 s before the media source's first range when that starts within
 +// the first second, 250 ms where its audio covers |time|, 125 ms otherwise.
 +base::TimeDelta SourceBufferStream::ParcGapToleranceAt(
 +    base::TimeDelta time) const {
-+  const base::TimeDelta kStartGapAllowance = base::Seconds(1);
-+  if (time >= base::TimeDelta() && time < kStartGapAllowance &&
-+      parc_media_source_start_ != kNoTimestamp &&
-+      parc_media_source_start_ <= kStartGapAllowance &&
-+      time < parc_media_source_start_) {
-+    return kStartGapAllowance;
-+  }
-+  for (size_t i = 0; i < parc_audio_buffered_.size(); ++i) {
-+    if (time >= parc_audio_buffered_.start(i) &&
-+        time <= parc_audio_buffered_.end(i)) {
-+      return base::Milliseconds(250);
-+    }
-+  }
-+  return base::Milliseconds(125);
++  return parc_state_->GapToleranceAt(time);
 +}
 +
 +// Parc: WebKit's TrackBuffer::nextSample() enqueues across a gap no wider
@@ -13251,11 +13074,11 @@
 +// plays buffers back to back, so skipping an audio gap would shift audio
 +// against video.
 +void SourceBufferStream::ParcBridgeGap() {
-+  if (!parc_safari_media_source_ ||
++  if (!parc_state_->enabled() ||
 +      GetType() != SourceBufferStreamType::kVideo || !track_buffer_.empty() ||
 +      seek_pending_ ||
 +      (selected_range_ ? selected_range_->HasNextBuffer()
-+                       : parc_highest_output_end_ == kNoTimestamp)) {
++                       : parc_state_->highest_output_end() == kNoTimestamp)) {
 +    return;
 +  }
 +  // From the end of the selected range, or, with none selected (the track
@@ -13264,7 +13087,7 @@
 +  // last sample it enqueued.
 +  const base::TimeDelta gap_start =
 +      selected_range_ ? selected_range_->GetBufferedEndTimestamp()
-+                      : parc_highest_output_end_;
++                      : parc_state_->highest_output_end();
 +  auto next = ranges_.begin();
 +  if (selected_range_) {
 +    while (next != ranges_.end() && next->get() != selected_range_) {
@@ -13287,52 +13110,44 @@
 +}
 +
 +void SourceBufferStream::ParcNoteOutput(const StreamParserBuffer& buffer) {
-+  if (!parc_safari_media_source_) {
-+    return;
-+  }
-+  const base::TimeDelta end =
-+      buffer.timestamp() + std::max(buffer.duration(), base::TimeDelta());
-+  if (parc_highest_output_end_ == kNoTimestamp ||
-+      end > parc_highest_output_end_) {
-+    parc_highest_output_end_ = end;
-+  }
++  parc_state_->NoteOutput(buffer);
 +}
 +
  void SourceBufferStream::Remove(base::TimeDelta start,
                                  base::TimeDelta end,
                                  base::TimeDelta duration) {
-@@ -428,6 +789,7 @@
+@@ -428,6 +584,7 @@
    DCHECK(start < end) << "start " << start.InMicroseconds() << "us, end "
                        << end.InMicroseconds() << "us";
    DCHECK(duration != kNoTimestamp);
-+  parc_frames_.reset();
++  parc_state_->FramesChanged();
  
    base::TimeDelta remove_end_timestamp = duration;
    base::TimeDelta keyframe_timestamp = FindKeyframeAfterTimestamp(end);
-@@ -624,6 +986,7 @@
+@@ -624,6 +781,7 @@
    track_buffer_.clear();
    config_change_pending_ = false;
    highest_output_buffer_timestamp_ = kNoTimestamp;
-+  parc_highest_output_end_ = kNoTimestamp;
++  parc_state_->ResetOutput();
    just_exhausted_track_buffer_ = false;
    pending_buffer_.reset();
    pending_buffers_complete_ = false;
-@@ -742,6 +1105,7 @@
+@@ -742,6 +900,7 @@
                                                  size_t newDataSize) {
    DCHECK(media_time != kNoTimestamp);
    DCHECK(!end_of_stream_);
-+  parc_frames_.reset();
++  parc_state_->FramesChanged();
  
    // Compute size of |ranges_|.
    size_t ranges_size = GetMemoryUsage();
-@@ -1449,6 +1813,24 @@
+@@ -1449,6 +1608,24 @@
        break;
    }
  
 +  // Parc: WebKit's TrackBuffer::reenqueueMediaForTime() starts from the next
 +  // frame when the gap to it is within its enqueue tolerance. The audio
 +  // renderer plays silence up to the first buffer after a seek.
-+  if (itr == ranges_.end() && parc_safari_media_source_) {
++  if (itr == ranges_.end() && parc_state_->enabled()) {
 +    for (const auto& range : ranges_) {
 +      if (range->GetStartTimestamp() <= timestamp) {
 +        continue;
@@ -13350,15 +13165,15 @@
    if (itr == ranges_.end())
      return;
  
-@@ -1484,6 +1866,7 @@
+@@ -1484,6 +1661,7 @@
    DVLOG(1) << __func__ << " " << GetStreamTypeName() << " ("
             << duration.InMicroseconds() << "us)";
    DCHECK(!end_of_stream_);
-+  parc_frames_.reset();
++  parc_state_->FramesChanged();
  
    if (ranges_.empty())
      return;
-@@ -1563,6 +1946,7 @@
+@@ -1563,6 +1741,7 @@
      WarnIfTrackBufferExhaustionSkipsForward(*out_buffer);
      highest_output_buffer_timestamp_ =
          std::max(highest_output_buffer_timestamp_, (*out_buffer)->timestamp());
@@ -13366,7 +13181,7 @@
  
      // If the track buffer becomes empty, then try to set the selected range
      // based on the timestamp of this buffer being returned.
-@@ -1575,6 +1959,7 @@
+@@ -1575,6 +1754,7 @@
    }
  
    DCHECK(track_buffer_.empty());
@@ -13374,7 +13189,7 @@
    if (!selected_range_ || !selected_range_->HasNextBuffer()) {
      if (IsEndOfStreamReached()) {
        return SourceBufferStreamStatus::kEndOfStream;
-@@ -1596,6 +1981,7 @@
+@@ -1596,6 +1776,7 @@
    WarnIfTrackBufferExhaustionSkipsForward(*out_buffer);
    highest_output_buffer_timestamp_ =
        std::max(highest_output_buffer_timestamp_, (*out_buffer)->timestamp());
@@ -13382,7 +13197,7 @@
    return SourceBufferStreamStatus::kSuccess;
  }
  
-@@ -1625,6 +2011,7 @@
+@@ -1625,6 +1806,7 @@
    if (!track_buffer_.empty())
      return track_buffer_.front()->GetConfigId() != current_config_index_;
  
@@ -13390,28 +13205,28 @@
    if (!selected_range_ || !selected_range_->HasNextBuffer())
      return false;
  
-@@ -1681,6 +2068,9 @@
+@@ -1681,6 +1863,9 @@
  }
  
  Ranges<base::TimeDelta> SourceBufferStream::GetBufferedTime() const {
-+  if (parc_safari_media_source_) {
-+    return ParcBufferedTime();
++  if (parc_state_->enabled()) {
++    return parc_state_->BufferedTime(*this);
 +  }
    Ranges<base::TimeDelta> ranges;
    for (auto itr = ranges_.begin(); itr != ranges_.end(); ++itr) {
      ranges.Add((*itr)->GetStartTimestamp(), (*itr)->GetBufferedEndTimestamp());
-@@ -1720,9 +2110,16 @@
+@@ -1720,9 +1905,16 @@
  void SourceBufferStream::MarkEndOfStream() {
    DCHECK(!end_of_stream_);
    end_of_stream_ = true;
-+  parc_end_of_stream_suspended_ = false;
++  parc_state_->set_end_of_stream_suspended(false);
  }
  
  void SourceBufferStream::UnmarkEndOfStream() {
 +  // Parc: a purge already suspended it (ParcRemoveFrom()).
-+  if (parc_end_of_stream_suspended_) {
++  if (parc_state_->end_of_stream_suspended()) {
 +    DCHECK(!end_of_stream_);
-+    parc_end_of_stream_suspended_ = false;
++    parc_state_->set_end_of_stream_suspended(false);
 +    return;
 +  }
    DCHECK(end_of_stream_);
@@ -13419,118 +13234,64 @@
  }
 --- a/media/filters/source_buffer_range.h
 +++ b/media/filters/source_buffer_range.h
-@@ -8,6 +8,8 @@
- #include <stddef.h>
- #include <map>
- #include <memory>
-+#include <utility>
-+#include <vector>
+@@ -16,6 +16,8 @@
+ #include "media/base/stream_parser_buffer.h"
  
- #include "base/functional/callback.h"
- #include "base/memory/scoped_refptr.h"
-@@ -217,6 +219,12 @@
-   // the last GOP in the range is unset.
-   base::TimeDelta GetBufferedEndTimestamp() const;
+ namespace media {
++
++class ParcSourceBufferStreamState;
 -
 +
-+  // Parc: appends the presentation interval of every buffer to |intervals|, a
-+  // zero duration counting as 1 microsecond as in GetBufferedEndTimestamp().
-+  void ParcAppendPresentationIntervals(
-+      std::vector<std::pair<base::TimeDelta, base::TimeDelta>>* intervals)
-+      const;
-+
-   // Returns whether a buffer with a starting timestamp of |timestamp| would
-   // belong in this range. This includes a buffer that would be appended to
-   // the end of the range.
-@@ -252,6 +260,10 @@
--
-+
-   // Returns the memory usage of the buffered data in bytes.
-   size_t GetMemoryUsage() const { return memory_usage_in_bytes_; }
-+
-+  // Parc: the bytes SourceBufferStream::RemoveInternal(|start|, |end|) frees
-+  // from this range: SplitRange(|end|), then TruncateAt(|start|).
-+  size_t ParcRemovalSize(base::TimeDelta start, base::TimeDelta end) const;
--
-+
+ // Base class for representing a continuous range of buffered data in the
+ // presentation timeline. All buffers in a SourceBufferRange are ordered
+@@ -256,6 +258,7 @@
   private:
    // Friend of private is only for IsNextInPresentationSequence testing.
---- a/media/filters/source_buffer_range.cc
-+++ b/media/filters/source_buffer_range.cc
-@@ -560,6 +560,17 @@
-   return GetEndTimestamp() + duration;
- }
+   friend class SourceBufferStreamTest;
++  friend class ParcSourceBufferStreamState;
 -
 +
-+void SourceBufferRange::ParcAppendPresentationIntervals(
-+    std::vector<std::pair<base::TimeDelta, base::TimeDelta>>* intervals)
-+    const {
-+  for (const auto& buffer : buffers_) {
-+    intervals->emplace_back(
-+        buffer->timestamp(),
-+        buffer->timestamp() +
-+            std::max(buffer->duration(), base::Microseconds(1)));
-+  }
-+}
-+
- bool SourceBufferRange::BelongsToRange(base::TimeDelta timestamp) const {
-   DVLOG(1) << __func__;
-   DVLOG(4) << ToStringForDebugging();
-@@ -683,6 +694,20 @@
-     buffers->emplace_back(std::move(buffer));
-   }
-   return previous_size < buffers->size();
-+}
-+
-+size_t SourceBufferRange::ParcRemovalSize(base::TimeDelta start,
-+                                          base::TimeDelta end) const {
-+  const auto split = GetFirstKeyframeAt(end, false);
-+  const size_t end_index = split == keyframe_map_.end()
-+                               ? buffers_.size()
-+                               : static_cast<size_t>(split->second -
-+                                                     keyframe_map_index_base_);
-+  size_t size = 0;
-+  for (size_t i = GetBufferIndexAt(start, false); i < end_index; ++i) {
-+    size += buffers_[i]->GetMemoryUsage();
-+  }
-+  return size;
- }
+   using KeyframeMap = std::map<base::TimeDelta, int>;
 -
 +
- void SourceBufferRange::AdjustEstimatedDurationForNewAppend(
 --- a/media/filters/source_buffer_state.h
 +++ b/media/filters/source_buffer_state.h
-@@ -5,6 +5,8 @@
+@@ -4,6 +4,8 @@
+-
++
  #ifndef MEDIA_FILTERS_SOURCE_BUFFER_STATE_H_
  #define MEDIA_FILTERS_SOURCE_BUFFER_STATE_H_
- 
++
 +#include <stdint.h>
+-
 +
  #include "base/functional/bind.h"
  #include "base/memory/memory_pressure_listener.h"
- #include "base/memory/raw_ptr.h"
-@@ -98,6 +100,69 @@
+@@ -21,9 +23,9 @@
+-
++
+ namespace media {
+-
++
+-
+ class ChunkDemuxerStream;
+ class FrameProcessor;
++class ParcSourceBufferEviction;
+-
++
+ // Contains state belonging to a source id.
+ class MEDIA_EXPORT SourceBufferState {
+@@ -98,6 +100,41 @@
                base::TimeDelta end,
                base::TimeDelta duration);
 -
 +
-+  // Parc: WebKit's SourceBufferPrivate::memoryPressure for this
-+  // ManagedMediaSource SourceBuffer; see the definition. |buffered| is the
-+  // media source's buffered ranges and |audio| the union of the ranges of the
-+  // audio its active SourceBuffers carry, as WebKit's MediaSourcePrivate has
-+  // them.
 +  void ParcPurgeForMemoryPressure(base::TimeDelta media_time,
 +                                  bool active,
 +                                  base::TimeDelta duration,
 +                                  const Ranges<base::TimeDelta>& buffered,
 +                                  const Ranges<base::TimeDelta>& audio,
 +                                  bool safari_eviction);
-+  // Parc: the pieces of WebKit's SourceBufferPrivate::evictCodedFrames that
-+  // ChunkDemuxer::EvictCodedFrames() runs for a Safari-identity SourceBuffer:
-+  // isBufferFullFor, canAppend (from the estimate computeEvictionData keeps)
-+  // and evictFrames, which returns whether it is still full; see the
-+  // definitions. |duration|, |buffered| and |audio| as for
-+  // ParcPurgeForMemoryPressure().
 +  bool ParcIsBufferFullFor(size_t new_data_size) const;
 +  bool ParcCanAppend(size_t new_data_size) const;
 +  bool ParcEvictFrames(base::TimeDelta media_time,
@@ -13539,40 +13300,23 @@
 +                       const Ranges<base::TimeDelta>& buffered,
 +                       const Ranges<base::TimeDelta>& audio,
 +                       bool memory_pressure = false);
-+  // Parc: WebKit's SourceBufferPrivate::computeEvictionData: estimates, at
-+  // |media_time|, what evictFrames could free.
 +  void ParcComputeEvictionData(base::TimeDelta media_time,
 +                               base::TimeDelta duration,
 +                               const Ranges<base::TimeDelta>& buffered,
 +                               const Ranges<base::TimeDelta>& audio);
-+  // Parc: WebKit's SourceBuffer::maximumBufferSize, in bytes.
 +  static size_t ParcMaximumBufferSize(bool has_video);
-+  // Parc: whether any of this object's tracks is enabled, and the union of
-+  // its audio streams' buffered ranges.
 +  bool ParcIsActive() const;
 +  Ranges<base::TimeDelta> ParcAudioBufferedRanges(
 +      base::TimeDelta duration) const;
-+  // Parc: a purge emptied this object while it was inactive and it is still
-+  // inactive and empty. WebKit's media source then leaves it out of its
-+  // buffered ranges and of the data a seek waits for, as it leaves out every
-+  // inactive SourceBuffer; Chromium counts every SourceBuffer, so an emptied
-+  // one would empty the element's buffered ranges and hold seeks forever.
 +  bool ParcLeftOutOfMediaSource() const;
-+  bool ParcPurgedWhileInactive() const { return parc_purged_while_inactive_; }
++  bool ParcPurgedWhileInactive() const;
 +
-+  // Parc: see ChunkDemuxer::ParcSetClearDolbyVisionAllowed().
 +  void ParcSetClearDolbyVisionAllowed(bool allowed) {
 +    parc_clear_dolby_vision_allowed_ = allowed;
 +  }
-+  // Parc: run whenever an init segment's Dolby Vision video passes the check
-+  // above (see ChunkDemuxer::ParcPrefersFairPlayRenderer()).
 +  void ParcSetDolbyVisionCallback(base::RepeatingClosure callback) {
 +    parc_dolby_vision_cb_ = std::move(callback);
 +  }
-+  // Parc: on a document presenting Safari's identity, init segments are
-+  // checked as WebKit's SourceBuffer checks them (see OnNewConfigs()) rather
-+  // than against the codecs addSourceBuffer() or changeType() named. Called
-+  // before Init().
 +  void ParcSetSafariInitSegmentRules(bool safari) {
 +    parc_safari_init_segment_rules_ = safari;
 +  }
@@ -13581,27 +13325,22 @@
    void SetAppendWindow(base::TimeDelta start, base::TimeDelta end);
 -
 +
-@@ -195,6 +260,11 @@ class MEDIA_EXPORT SourceBufferState {
-     PENDING_PARSER_REINIT
-   };
- 
-+  // Parc: this object's audio streams, then its video streams.
-+  std::vector<ChunkDemuxerStream*> ParcStreams() const;
-+  // Parc: the bytes its streams hold.
-+  uint64_t ParcContentSize() const;
+@@ -175,6 +212,8 @@
+   void SetParseWarningCallback(SourceBufferParseWarningCB parse_warning_cb);
+-
 +
-   // Initializes |stream_parser_|. Also, updates |expected_audio_codecs| and
-   // |expected_video_codecs|.
-   void InitializeParser(std::optional<std::string_view> expected_codecs);
-@@ -256,6 +326,20 @@ class MEDIA_EXPORT SourceBufferState {
+  private:
++  friend class ParcSourceBufferEviction;
++
+   // State advances through this list to PARSER_INITIALIZED.
+   // The intent is to ensure at least one config is received prior to parser
+   // calling initialization callback, and that such initialization callback
+@@ -256,6 +295,17 @@
    // Keeps track of whether a media segment is being parsed.
    bool parsing_media_segment_;
  
-+  // Parc: see ParcLeftOutOfMediaSource().
-+  bool parc_purged_while_inactive_ = false;
-+
-+  // Parc: the evictable size ParcComputeEvictionData() last estimated.
-+  uint64_t parc_evictable_size_ = 0;
++  // Parc: Safari eviction and ManagedMediaSource purge policy and state.
++  std::unique_ptr<ParcSourceBufferEviction> parc_eviction_;
 +
 +  // Parc: see ParcSetClearDolbyVisionAllowed() and
 +  // ParcSetDolbyVisionCallback().
@@ -13616,7 +13355,7 @@
    std::map<StreamParser::TrackId, bool> media_segment_has_data_for_track_;
 --- a/media/filters/source_buffer_state.cc
 +++ b/media/filters/source_buffer_state.cc
-@@ -8,10 +8,12 @@
+@@ -8,6 +8,7 @@
  #include <set>
  #include <string_view>
  #include <utility>
@@ -13624,110 +13363,27 @@
  
  #include "base/command_line.h"
  #include "base/feature_list.h"
- #include "base/functional/callback_helpers.h"
-+#include "base/numerics/checked_math.h"
- #include "base/strings/string_number_conversions.h"
- #include "build/build_config.h"
- #include "media/base/media_switches.h"
-@@ -295,6 +297,383 @@
+@@ -22,6 +23,7 @@
+ #include "media/base/video_codec_string_parsers.h"
+ #include "media/filters/chunk_demuxer.h"
+ #include "media/filters/frame_processor.h"
++#include "media/filters/parc_source_buffer_eviction.h"
+ #include "media/filters/source_buffer_stream.h"
+ #include "media/media_buildflags.h"
+-
++
+@@ -129,6 +131,7 @@
+     : timestamp_offset_during_append_(nullptr),
+       timestamp_offset_(base::TimeDelta()),
+       parsing_media_segment_(false),
++      parc_eviction_(std::make_unique<ParcSourceBufferEviction>()),
+       stream_parser_(std::move(stream_parser)),
+       frame_processor_(std::move(frame_processor)),
+       create_demuxer_stream_cb_(std::move(create_demuxer_stream_cb)),
+@@ -295,6 +298,99 @@
    }
  }
  
-+namespace {
-+
-+// Parc: WebKit's SourceBufferPrivate::findPreviousSyncSamplePresentationTime.
-+// WebKit takes the sync sample of whichever track its hash map visits last;
-+// the earliest of them keeps every track's current GOP.
-+base::TimeDelta ParcPreviousSyncTime(
-+    base::TimeDelta media_time,
-+    const std::vector<ChunkDemuxerStream*>& streams) {
-+  base::TimeDelta previous_sync = media_time;
-+  for (ChunkDemuxerStream* stream : streams) {
-+    const base::TimeDelta keyframe = stream->ParcKeyframeAtOrBefore(media_time);
-+    if (keyframe != kNoTimestamp && keyframe < previous_sync) {
-+      previous_sync = keyframe;
-+    }
-+  }
-+  return previous_sync;
-+}
-+
-+// Parc: the intersection of |streams|' buffered ranges.
-+Ranges<base::TimeDelta> ParcOwnRanges(
-+    const std::vector<ChunkDemuxerStream*>& streams,
-+    base::TimeDelta duration) {
-+  SourceBufferState::RangesList track_ranges;
-+  for (ChunkDemuxerStream* stream : streams) {
-+    track_ranges.push_back(stream->GetBufferedRanges(duration));
-+  }
-+  return SourceBufferState::ComputeRangesIntersection(track_ranges,
-+                                                      /*ended=*/false);
-+}
-+
-+// Parc: MediaSourcePrivate::nextStallTime over |own|: where playback from
-+// |media_time| stalls, at the first gap MediaSourcePrivate::gapToleranceAtTime
-+// doesn't bridge or the end of the last range; kNoTimestamp when |own|
-+// doesn't hold |media_time|, as WebKit's [media_time, +inf) intersection
-+// has it (a range ending there doesn't count).
-+base::TimeDelta ParcPlayableEnd(base::TimeDelta media_time,
-+                                const Ranges<base::TimeDelta>& own,
-+                                const Ranges<base::TimeDelta>& buffered,
-+                                const Ranges<base::TimeDelta>& audio) {
-+  // MediaSourcePrivate::gapToleranceAtTime: 1 s before the media source's
-+  // first range when that starts within the first second, 250 ms where audio
-+  // covers the time, 125 ms otherwise.
-+  const auto tolerance = [&](base::TimeDelta time) {
-+    const base::TimeDelta kStartGapAllowance = base::Seconds(1);
-+    if (time >= base::TimeDelta() && time < kStartGapAllowance &&
-+        buffered.size() && buffered.start(0) <= kStartGapAllowance &&
-+        time < buffered.start(0)) {
-+      return kStartGapAllowance;
-+    }
-+    for (size_t i = 0; i < audio.size(); ++i) {
-+      if (time >= audio.start(i) && time <= audio.end(i)) {
-+        return base::Milliseconds(250);
-+      }
-+    }
-+    return base::Milliseconds(125);
-+  };
-+
-+  for (size_t i = 0; i < own.size(); ++i) {
-+    if (media_time < own.start(i) || media_time >= own.end(i)) {
-+      continue;
-+    }
-+    for (size_t j = i; j + 1 < own.size(); ++j) {
-+      if (own.start(j + 1) - own.end(j) > tolerance(own.end(j))) {
-+        return own.end(j);
-+      }
-+    }
-+    return own.end(own.size() - 1);
-+  }
-+  return kNoTimestamp;
-+}
-+
-+}  // namespace
-+
-+std::vector<ChunkDemuxerStream*> SourceBufferState::ParcStreams() const {
-+  std::vector<ChunkDemuxerStream*> streams;
-+  for (const auto& it : audio_streams_) {
-+    streams.push_back(it.second);
-+  }
-+  for (const auto& it : video_streams_) {
-+    streams.push_back(it.second);
-+  }
-+  return streams;
-+}
-+
-+// Parc: WebKit's SourceBufferPrivate::memoryPressure, which a
-+// ManagedMediaSource's SourceBuffers run as memory pressure rises. An
-+// inactive SourceBuffer is emptied. An active one runs evictFrames(
-+// maximumBufferSize, media_time), which removes, across all its tracks,
-+// everything before the earlier of 3.75 s before |media_time| and its
-+// previous sync sample (findPreviousSyncSamplePresentationTime; each track's
-+// removal then runs to its next keyframe, as Remove() does), and everything
-+// after the point where playback from |media_time| would stall
-+// (MediaSourcePrivate::nextStallTime over this SourceBuffer's intersected
-+// track ranges, gaps bridged by MediaSourcePrivate::gapToleranceAtTime), or
-+// after 3.75 s past it when it isn't buffered.
 +void SourceBufferState::ParcPurgeForMemoryPressure(
 +    base::TimeDelta media_time,
 +    bool active,
@@ -13735,121 +13391,23 @@
 +    const Ranges<base::TimeDelta>& buffered,
 +    const Ranges<base::TimeDelta>& audio,
 +    bool safari_eviction) {
-+  const std::vector<ChunkDemuxerStream*> streams = ParcStreams();
-+
-+  if (!active) {
-+    for (ChunkDemuxerStream* stream : streams) {
-+      stream->ParcRemoveFrom(base::TimeDelta(), duration);
-+    }
-+    parc_purged_while_inactive_ = true;
-+    return;
-+  }
-+
-+  if (safari_eviction) {
-+    // SourceBufferPrivate::memoryPressure passes its full maximumBufferSize.
-+    ParcEvictFrames(media_time, ParcMaximumBufferSize(!video_streams_.empty()),
-+                    duration, buffered, audio, true);
-+    return;
-+  }
-+
-+  const base::TimeDelta kTimeChunk = base::Milliseconds(3750);
-+
-+  const base::TimeDelta front_end = std::min(
-+      media_time - kTimeChunk, ParcPreviousSyncTime(media_time, streams));
-+  for (ChunkDemuxerStream* stream : streams) {
-+    stream->ParcRemoveBefore(front_end, duration);
-+  }
-+
-+  const base::TimeDelta playable_end = ParcPlayableEnd(
-+      media_time, ParcOwnRanges(streams, duration), buffered, audio);
-+  const base::TimeDelta back_start =
-+      playable_end != kNoTimestamp ? playable_end : media_time + kTimeChunk;
-+  for (ChunkDemuxerStream* stream : streams) {
-+    stream->ParcRemoveFrom(back_start, duration);
-+  }
++  parc_eviction_->PurgeForMemoryPressure(
++      *this, media_time, active, duration, buffered, audio, safari_eviction);
 +}
 +
 +// static
 +size_t SourceBufferState::ParcMaximumBufferSize(bool has_video) {
-+  // WebKit's SettingsBase::defaultMaximumSourceBufferSize, split in float
-+  // arithmetic as SourceBuffer::maximumBufferSize splits it.
-+  constexpr size_t kMaximumSourceBufferSize = 318767104;
-+  size_t maximum = static_cast<size_t>(kMaximumSourceBufferSize * .05f);
-+  if (has_video) {
-+    maximum += static_cast<size_t>(kMaximumSourceBufferSize * .95f);
-+  }
-+  return maximum;
++  return ParcSourceBufferEviction::MaximumBufferSize(has_video);
 +}
 +
-+namespace {
-+
-+// Parc: SourceBufferPrivate::minimumBufferedTime and maximumBufferedTime over
-+// |streams|; kInfiniteDuration and kNoTimestamp when none holds data.
-+base::TimeDelta ParcMinimumBufferedTime(
-+    const std::vector<ChunkDemuxerStream*>& streams,
-+    base::TimeDelta duration) {
-+  base::TimeDelta minimum = kInfiniteDuration;
-+  for (ChunkDemuxerStream* stream : streams) {
-+    const Ranges<base::TimeDelta> ranges = stream->GetBufferedRanges(duration);
-+    if (ranges.size()) {
-+      minimum = std::min(minimum, ranges.start(0));
-+    }
-+  }
-+  return minimum;
-+}
-+
-+base::TimeDelta ParcMaximumBufferedTime(
-+    const std::vector<ChunkDemuxerStream*>& streams,
-+    base::TimeDelta duration) {
-+  base::TimeDelta maximum = kNoTimestamp;
-+  for (ChunkDemuxerStream* stream : streams) {
-+    const Ranges<base::TimeDelta> ranges = stream->GetBufferedRanges(duration);
-+    if (ranges.size()) {
-+      maximum = std::max(maximum, ranges.end(ranges.size() - 1));
-+    }
-+  }
-+  return maximum;
-+}
-+
-+}  // namespace
-+
-+uint64_t SourceBufferState::ParcContentSize() const {
-+  uint64_t size = 0;
-+  for (ChunkDemuxerStream* stream : ParcStreams()) {
-+    size += stream->GetMemoryUsage();
-+  }
-+  return size;
-+}
-+
-+// Parc: WebKit's SourceBufferPrivate::isBufferFullFor. A SourceBuffer has one
-+// budget for all its tracks, as for audio alone until it has video
-+// (SourceBuffer::maximumBufferSize).
 +bool SourceBufferState::ParcIsBufferFullFor(size_t new_data_size) const {
-+  base::CheckedNumeric<size_t> required = new_data_size;
-+  for (ChunkDemuxerStream* stream : ParcStreams()) {
-+    required += stream->GetMemoryUsage();
-+  }
-+  return !required.IsValid() ||
-+         required.ValueOrDie() >=
-+             ParcMaximumBufferSize(!video_streams_.empty());
++  return parc_eviction_->IsBufferFullFor(*this, new_data_size);
 +}
 +
-+// Parc: WebKit's SourceBufferPrivate::canAppend, in its unsigned arithmetic:
-+// whether evicting what computeEvictionData last estimated would leave room.
 +bool SourceBufferState::ParcCanAppend(size_t new_data_size) const {
-+  return ParcContentSize() - parc_evictable_size_ + new_data_size <=
-+         ParcMaximumBufferSize(!video_streams_.empty());
++  return parc_eviction_->CanAppend(*this, new_data_size);
 +}
 +
-+// Parc: WebKit's SourceBufferPrivate::evictFrames, removing as
-+// removeCodedFramesInternal does (Remove(): frame by frame, with the frames
-+// that depend on them). Until the SourceBuffer isn't full it removes chunks
-+// of 30 s halved while at least 3 s: first from the start of its data up to
-+// the earlier of a chunk before |media_time| and the previous sync sample,
-+// then from the end of what all its tracks hold together (a longer track
-+// keeps its tail) back to where playback from |media_time| stalls
-+// (MediaSourcePrivate::nextStallTime), or to a chunk after |media_time| when
-+// that isn't buffered. Returns whether it is still full.
 +bool SourceBufferState::ParcEvictFrames(
 +    base::TimeDelta media_time,
 +    size_t new_data_size,
@@ -13857,113 +13415,18 @@
 +    const Ranges<base::TimeDelta>& buffered,
 +    const Ranges<base::TimeDelta>& audio,
 +    bool memory_pressure) {
-+  const std::vector<ChunkDemuxerStream*> streams = ParcStreams();
-+  const auto remove = [&](base::TimeDelta start, base::TimeDelta end) {
-+    for (ChunkDemuxerStream* stream : streams) {
-+      if (memory_pressure) {
-+        stream->ParcRemoveFrom(start, duration, end);
-+      } else {
-+        stream->ParcRemove(start, end, duration);
-+      }
-+    }
-+  };
-+  const base::TimeDelta kInitialTimeChunk = base::Seconds(30);
-+  const base::TimeDelta kTimeChunkLowThreshold = base::Seconds(3);
-+
-+  bool full = true;
-+  for (base::TimeDelta chunk = kInitialTimeChunk;
-+       full && chunk >= kTimeChunkLowThreshold; chunk /= 2) {
-+    const base::TimeDelta maximum_end = std::min(
-+        media_time - chunk, ParcPreviousSyncTime(media_time, streams));
-+    do {
-+      const base::TimeDelta start = ParcMinimumBufferedTime(streams, duration);
-+      const base::TimeDelta end = std::min(start + chunk, maximum_end);
-+      if (start >= end) {
-+        break;
-+      }
-+      remove(start, end);
-+      if (ParcMinimumBufferedTime(streams, duration) == start) {
-+        break;
-+      }
-+      full = ParcIsBufferFullFor(new_data_size);
-+    } while (full);
-+  }
-+  if (!full) {
-+    return false;
-+  }
-+
-+  for (base::TimeDelta chunk = kInitialTimeChunk;
-+       full && chunk >= kTimeChunkLowThreshold; chunk /= 2) {
-+    do {
-+      const Ranges<base::TimeDelta> own = ParcOwnRanges(streams, duration);
-+      if (!own.size() || own.end(own.size() - 1) <= media_time) {
-+        break;
-+      }
-+      const base::TimeDelta end = own.end(own.size() - 1);
-+      const base::TimeDelta playable_end =
-+          ParcPlayableEnd(media_time, own, buffered, audio);
-+      const base::TimeDelta start =
-+          std::max(playable_end != kNoTimestamp ? playable_end
-+                                                : media_time + chunk,
-+                   end - chunk);
-+      if (start >= end) {
-+        break;
-+      }
-+      const uint64_t size_before = ParcContentSize();
-+      remove(start, end);
-+      // With a longer track, a removal that frees nothing would repeat.
-+      if (ParcMaximumBufferedTime(streams, duration) == end ||
-+          ParcContentSize() == size_before) {
-+        break;
-+      }
-+      full = ParcIsBufferFullFor(new_data_size);
-+    } while (full);
-+  }
-+  return full;
++  return parc_eviction_->EvictFrames(*this, media_time, new_data_size,
++                                     duration, buffered, audio,
++                                     memory_pressure);
 +}
 +
-+// Parc: WebKit's SourceBufferPrivate::computeEvictionData, the estimate
-+// canAppend reads: what Remove() would free from the start of the data to the
-+// earlier of 3 s before |media_time| and the previous sync sample, and from
-+// where playback from |media_time| stalls (or 3 s after it, when it isn't
-+// buffered) to the end of what all tracks hold together. evictFrames' last
-+// chunk is 3.75 s, so the estimate can count data it doesn't remove.
 +void SourceBufferState::ParcComputeEvictionData(
 +    base::TimeDelta media_time,
 +    base::TimeDelta duration,
 +    const Ranges<base::TimeDelta>& buffered,
 +    const Ranges<base::TimeDelta>& audio) {
-+  const std::vector<ChunkDemuxerStream*> streams = ParcStreams();
-+  const auto removal_size = [&](base::TimeDelta start, base::TimeDelta end) {
-+    uint64_t size = 0;
-+    for (ChunkDemuxerStream* stream : streams) {
-+      size += stream->ParcRemovalSize(start, end, duration);
-+    }
-+    return size;
-+  };
-+  const base::TimeDelta kTimeChunk = base::Seconds(3);
-+
-+  uint64_t evictable = 0;
-+  const base::TimeDelta front_start =
-+      ParcMinimumBufferedTime(streams, duration);
-+  const base::TimeDelta front_end = std::min(
-+      media_time - kTimeChunk, ParcPreviousSyncTime(media_time, streams));
-+  if (front_start < front_end) {
-+    evictable += removal_size(front_start, front_end);
-+  }
-+
-+  const Ranges<base::TimeDelta> own = ParcOwnRanges(streams, duration);
-+  if (own.size() && own.end(own.size() - 1) > media_time) {
-+    const base::TimeDelta playable_end =
-+        ParcPlayableEnd(media_time, own, buffered, audio);
-+    const base::TimeDelta back_start =
-+        playable_end != kNoTimestamp ? playable_end : media_time + kTimeChunk;
-+    const base::TimeDelta back_end = own.end(own.size() - 1);
-+    if (back_start < back_end) {
-+      evictable += removal_size(back_start, back_end);
-+    }
-+  }
-+  parc_evictable_size_ = evictable;
++  parc_eviction_->ComputeEvictionData(*this, media_time, duration, buffered,
++                                      audio);
 +}
 +
 +bool SourceBufferState::ParcIsActive() const {
@@ -13981,7 +13444,7 @@
 +}
 +
 +bool SourceBufferState::ParcLeftOutOfMediaSource() const {
-+  if (!parc_purged_while_inactive_ || ParcIsActive()) {
++  if (!parc_eviction_->purged_while_inactive() || ParcIsActive()) {
 +    return false;
 +  }
 +  for (const auto& it : audio_streams_) {
@@ -13995,6 +13458,10 @@
 +    }
 +  }
 +  return true;
++}
++
++bool SourceBufferState::ParcPurgedWhileInactive() const {
++  return parc_eviction_->purged_while_inactive();
 +}
 +
 +Ranges<base::TimeDelta> SourceBufferState::ParcAudioBufferedRanges(
@@ -14013,7 +13480,7 @@
  bool SourceBufferState::EvictCodedFrames(base::TimeDelta media_time,
                                           size_t newDataSize) {
    size_t total_buffered_size = 0;
-@@ -517,6 +896,11 @@
+@@ -517,6 +613,11 @@
  }
  
  bool SourceBufferState::IsSeekWaitingForData() const {
@@ -14025,7 +13492,7 @@
    for (const auto& it : audio_streams_) {
      if (it.second->IsSeekWaitingForData())
        return true;
-@@ -534,6 +918,14 @@
+@@ -534,6 +635,14 @@
      std::optional<std::string_view> expected_codecs) {
    expected_audio_codecs_.clear();
    expected_video_codecs_.clear();
@@ -14040,7 +13507,7 @@
  
    std::vector<std::string> expected_codecs_parsed;
    if ((strict_codec_expectations_ = expected_codecs.has_value())) {
-@@ -592,6 +984,31 @@
+@@ -592,6 +701,31 @@
    // RunSegmentParserLoop(), but not during Flush or parser reset operations.
    CHECK(new_configs_possible_);
  
@@ -14072,7 +13539,7 @@
    bool success = true;
  
    // TODO(wolenetz): Update codec string strictness, if necessary, once spec
-@@ -602,7 +1019,10 @@
+@@ -602,7 +736,10 @@
    // TODO(wolenetz): Once codec strictness is relaxed, we can change
    // |allow_codec_changes| to always be true. Until then, we only allow codec
    // changes on explicit ChangeType().
@@ -14084,7 +13551,7 @@
  
    FrameProcessor::TrackIdChanges track_id_changes;
    for (const auto& track : tracks->tracks()) {
-@@ -685,15 +1105,32 @@
+@@ -685,15 +822,32 @@
            return false;
          }
 -
@@ -14588,14 +14055,14 @@
    // always treat the source buffer as Dolby Vision, if false and if
 --- a/media/filters/stream_parser_factory.cc
 +++ b/media/filters/stream_parser_factory.cc
-@@ -28,6 +28,7 @@
+@@ -25,6 +25,7 @@
+ #include "media/base/media_util.h"
+ #include "media/base/video_codecs.h"
+ #include "media/base/video_decoder_config.h"
++#include "media/filters/parc_mse_type_map.h"
  #include "media/formats/mp4/mp4_stream_parser.h"
  #include "media/formats/mpeg/adts_stream_parser.h"
  #include "media/formats/mpeg/mpeg1_audio_stream_parser.h"
-+#include "media/formats/ogg/parc_ogg_stream_parser.h"
- #include "media/formats/webcodecs/webcodecs_encoded_chunk_stream_parser.h"
- #include "media/formats/webm/webm_stream_parser.h"
- #include "media/media_buildflags.h"
 @@ -303,6 +304,12 @@
                                                CodecInfo::HISTOGRAM_FLAC};
  static const CodecInfo kMPEG4FLACCodecInfo2 = {
@@ -14676,33 +14143,13 @@
  }
  #if BUILDFLAG(USE_PROPRIETARY_CODECS)
  static const CodecInfo kADTSCodecInfo = {nullptr, CodecInfo::AUDIO, nullptr,
-@@ -782,6 +815,129 @@
+@@ -782,6 +815,62 @@
  }
  
  // static
 +std::unique_ptr<StreamParser> StreamParserFactory::ParcCreateWithoutCodecs(
 +    std::string_view type) {
-+  if (IsTypeSupported(type, {}) != SupportsType::kMaybeSupported) {
-+    return nullptr;
-+  }
-+  if (type == "video/webm" || type == "audio/webm") {
-+    return std::make_unique<WebMStreamParser>();
-+  }
-+  if (type == "video/mp4" || type == "audio/mp4") {
-+    // Dolby Vision as Dolby Vision, as if the codecs named it, rather than as
-+    // its cross-compatible codec: no codec string says to do otherwise.
-+    return std::make_unique<mp4::MP4StreamParser>(
-+        std::nullopt, /*has_sbr=*/false, /*has_flac=*/true,
-+        /*has_iamf=*/false, /*has_dv=*/true);
-+  }
-+#if BUILDFLAG(USE_PROPRIETARY_CODECS) && \
-+    BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
-+  if (type == "video/mp2t") {
-+    return std::make_unique<mp2t::Mp2tStreamParser>(std::nullopt,
-+                                                    /*has_sbr=*/false);
-+  }
-+#endif
-+  return nullptr;
++  return ParcCreateMseParserWithoutCodecs(type);
 +}
 +
 +// static
@@ -14710,96 +14157,49 @@
 +StreamParserFactory::ParcSafariMediaSourceType(
 +    std::string_view type,
 +    base::span<const std::string> codecs) {
-+  static constexpr auto kIsoBmffTypes = std::to_array<std::string_view>(
-+      {"application/mp4", "audio/3gpp", "audio/3gpp2", "audio/mp4",
-+       "audio/x-m4a", "audio/x-m4b", "audio/x-m4p", "audio/x-m4r",
-+       "audio/x-quicktime", "video/3gpp", "video/3gpp2", "video/quicktime",
-+       "video/x-m4v"});
-+  static constexpr auto kMp3Types = std::to_array<std::string_view>(
-+      {"audio/mp3", "audio/mpeg", "audio/mpeg3", "audio/mpg", "audio/x-mp3",
-+       "audio/x-mpeg", "audio/x-mpeg3", "audio/x-mpg"});
-+
-+  for (const auto& codec : codecs) {
-+    if ((codec == "ipcm" || codec.starts_with("ipcm.") ||
-+         codec == "fpcm" || codec.starts_with("fpcm.")) &&
-+        (type == "video/quicktime" || type == "audio/x-quicktime"))
-+      return std::nullopt;
-+  }
-+  ParcSafariType result{std::string(type),
-+                        std::vector<std::string>(codecs.begin(), codecs.end())};
++  ParcMseCodecPredicate is_iamf = nullptr;
 +#if BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)
-+  if (std::ranges::any_of(result.codecs, [](const std::string& codec_id) {
-+        return base::MatchPattern(codec_id, kIAMFCodecInfo1.pattern) ||
-+               base::MatchPattern(codec_id, kIAMFCodecInfo2.pattern);
-+      })) {
-+    return std::nullopt;
-+  }
++  is_iamf = [](std::string_view codec_id) {
++    return base::MatchPattern(codec_id, kIAMFCodecInfo1.pattern) ||
++           base::MatchPattern(codec_id, kIAMFCodecInfo2.pattern);
++  };
 +#endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
-+  if (std::ranges::find(kIsoBmffTypes, type) != kIsoBmffTypes.end()) {
-+    result.type = "video/mp4";
-+    // AVStreamDataParser takes 3GPP's AMR and H.263, though not H.263 in
-+    // QuickTime; MP4StreamParser takes them under Safari's init segment rules,
-+    // whatever the codecs name, so they leave the list.
-+    const auto names = [](const std::string& codec_id, std::string_view name) {
-+      return codec_id == name || (codec_id.starts_with(name) &&
-+                                  codec_id[name.size()] == '.');
-+    };
-+    if (type == "video/quicktime" || type == "audio/x-quicktime") {
-+      for (const std::string& codec_id : result.codecs) {
-+        if (names(codec_id, "s263")) {
-+          return std::nullopt;
-+        }
-+      }
-+    }
-+    std::erase_if(result.codecs, [&names](const std::string& codec_id) {
-+      return names(codec_id, "samr") || names(codec_id, "sawb") ||
-+             names(codec_id, "s263");
-+    });
-+  } else if (std::ranges::find(kMp3Types, type) != kMp3Types.end()) {
-+    result.type = "audio/mpeg";
-+    std::erase(result.codecs, "mp3");
-+  } else if (type == "audio/aacp") {
-+    result.type = "audio/aac";
++
++  ParcMseCodecPredicate is_valid_aac = nullptr;
 +#if BUILDFLAG(USE_PROPRIETARY_CODECS)
-+  } else if (type == "audio/aac") {
++  is_valid_aac = [](std::string_view codec_id) {
 +    NullMediaLog media_log;
-+    std::erase_if(result.codecs, [&media_log](const std::string& codec_id) {
-+      return base::MatchPattern(codec_id, kMPEG2AACLCCodecInfo.pattern) ||
-+             (base::MatchPattern(codec_id, kMPEG4AACCodecInfo.pattern) &&
-+              ValidateMP4ACodecID(codec_id, &media_log));
-+    });
++    return base::MatchPattern(codec_id, kMPEG2AACLCCodecInfo.pattern) ||
++           (base::MatchPattern(codec_id, kMPEG4AACCodecInfo.pattern) &&
++            ValidateMP4ACodecID(codec_id, &media_log));
++  };
 +#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
++
++  ParcSafariType result;
++  if (!ParcMapSafariMseType(type, codecs, is_iamf, is_valid_aac, &result.type,
++                            &result.codecs)) {
++    return std::nullopt;
 +  }
 +  return result;
 +}
 +
 +// static
 +bool StreamParserFactory::ParcIsOggType(std::string_view type) {
-+  return type == "audio/ogg" || type == "application/ogg";
++  return ParcIsSafariOggType(type);
 +}
 +
 +// static
 +bool StreamParserFactory::ParcSafariTakesOgg(
 +    std::string_view type,
 +    base::span<const std::string> codecs) {
-+  if (type == "application/ogg") {
-+    return codecs.empty();
-+  }
-+  return type == "audio/ogg" &&
-+         std::ranges::all_of(codecs, [](const std::string& codec_id) {
-+           return codec_id == "opus" || codec_id == "vorbis" ||
-+                  codec_id == "flac";
-+         });
++  return media::ParcSafariTakesOgg(type, codecs);
 +}
 +
 +// static
 +std::unique_ptr<StreamParser> StreamParserFactory::ParcCreateOggParser(
 +    std::string_view type,
 +    base::span<const std::string> codecs) {
-+  if (!ParcSafariTakesOgg(type, codecs)) {
-+    return nullptr;
-+  }
-+  return std::make_unique<ParcOggStreamParser>();
++  return ParcCreateSafariOggParser(type, codecs);
 +}
 +
 +// static

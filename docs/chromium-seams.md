@@ -368,6 +368,15 @@ finished result live in a Parc file beside it. The capability computation
 itself stays in Chromium's file for now, because it calls that file's private
 content-type parser and Media Source support check.
 
+Safari's Media Source eviction, ManagedMediaSource purge, buffered-interval
+math, gap tolerances and type mapping live in Parc-owned media filter files.
+ChunkDemuxer still calls the policy under its existing lock and keeps every
+stream lookup, range removal and parser construction primitive in place.
+SourceBufferStream still advances its read cursor from `GetNextBuffer`, while a
+private Parc state pointer keeps the interval history out of the Chromium
+headers. Parser codec validation and the ignore-declared-codecs flag remain
+with Chromium's parser factory and parser.
+
 ## Decisions
 
 - **AMR and H.263 files:** decided. They keep playing only on Safari-identity pages, exactly as they do today, so that small patch stays.
