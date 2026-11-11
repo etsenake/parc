@@ -1906,36 +1906,6 @@
  }
 -
 +
---- a/components/global_media_controls/media_item_manager_impl_unittest.cc
-+++ b/components/global_media_controls/media_item_manager_impl_unittest.cc
-@@ -89,6 +89,25 @@
-   ExpectHistogramCountRecorded(3, 1);
--
-+
-   EXPECT_CALL(observer(), OnMediaDialogClosed());
-+  item_manager()->SetDialogDelegate(nullptr);
-+}
-+
-+TEST_F(MediaItemManagerImplTest, ReentrantClosePreservesReplacementSingleItem) {
-+  test::MockMediaItemProducer producer;
-+  item_manager()->AddItemProducer(&producer);
-+  producer.AddItem("foo", true, false, false);
-+  producer.AddItem("bar", true, false, false);
-+  NiceMock<test::MockMediaDialogDelegate> original;
-+  NiceMock<test::MockMediaDialogDelegate> replacement;
-+  item_manager()->SetDialogDelegate(&original);
-+
-+  EXPECT_CALL(replacement, ShowMediaItem("foo", _)).Times(1);
-+  EXPECT_CALL(replacement, ShowMediaItem("bar", _)).Times(0);
-+  EXPECT_CALL(observer(), OnMediaDialogClosed()).WillOnce([&] {
-+    item_manager()->SetDialogDelegateForId(&replacement, "foo");
-+  });
-+  item_manager()->SetDialogDelegate(nullptr);
-+  testing::Mock::VerifyAndClearExpectations(&observer());
-   item_manager()->SetDialogDelegate(nullptr);
- }
--
-+
 --- a/components/global_media_controls/public/supplemental_device_picker_producer.cc
 +++ b/components/global_media_controls/public/supplemental_device_picker_producer.cc
 @@ -56,7 +56,17 @@
