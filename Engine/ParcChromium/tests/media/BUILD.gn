@@ -8,8 +8,13 @@ source_set("media_tests") {
   testonly = true
   sources = [
     "audio_toolbox_amr_test.cc",
+    "box_definitions_test.cc",
     "chunk_demuxer_test.cc",
+    "ffmpeg_demuxer_test.cc",
+    "mp2t_stream_parser_test.cc",
+    "mp4_stream_parser_test.cc",
     "pipeline_impl_test.cc",
+    "stream_parser_factory_test.cc",
     "video_decoder_config_mojom_traits_test.cc",
     "source_buffer_state_test.cc",
     "source_buffer_stream_test.cc",
@@ -23,6 +28,7 @@ source_set("media_tests") {
     "//media",
     "//media:test_support",
     "//media/mojo/mojom",
+    "//ui/gfx",
     "//testing/gmock",
     "//testing/gtest",
   ]
