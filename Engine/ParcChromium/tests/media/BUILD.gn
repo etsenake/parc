@@ -8,6 +8,7 @@ source_set("media_tests") {
   testonly = true
   sources = [
     "audio_toolbox_amr_test.cc",
+    "chunk_demuxer_test.cc",
     "source_buffer_state_test.cc",
     "source_buffer_stream_test.cc",
   ]
