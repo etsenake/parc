@@ -109,7 +109,7 @@ unrelated page or answered after its original owner retires.
 | --- | --- |
 | JavaScript alert/confirm/prompt | Parc dialog sheet with Chromium's origin-aware title, OK/Cancel and a rounded prompt field |
 | Before unload | Original close/reload consent; OK leaves, Cancel stays; no suppression checkbox |
-| HTTP authentication | Page-owned sheet, original authority/trust text, username/password and Cancel/Sign in |
+| HTTP authentication | Page-owned Parc dialog, original authority/trust text, labelled rounded username/secure password fields and Cancel/Sign in |
 | External protocol | Origin/application-aware alert with Open, policy-eligible Always open and Cancel |
 | Site permission | Original request popover anchored to that page's controls, with Not Now/Allow |
 | Server certificate | Chromium's certificate viewer sheet for the visible certificate |

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 669,
+  "version": 670,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -579,7 +579,7 @@
     {
       "source": "Engine/ParcNative/http_auth_presenter.mm",
       "target": "parc/native/http_auth_presenter.mm",
-      "sha256": "d8b396b4845f3e6407a2dbcc231415c27cc2f449fc59f14aa5db8fb8346afe3e"
+      "sha256": "015a5a428e0e434a34748fb930ad9b10496b5b834d88e87255eb17cfff0df31a"
     },
     {
       "source": "tests/NativeHTTPAuth/BUILD.gn",
