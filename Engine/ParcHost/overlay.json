@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 659,
+  "version": 660,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -4562,7 +4562,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-identity-blink-direct.patch",
-      "sha256": "40ca74d2f6afcdf80e8587c0a44520ff54f9583bc11aecf7b074d76380ccaf99",
+      "sha256": "908430eceda32a6cd53311d98d951f899764dc82747694b961696f84801e9ed4",
       "files": [
         {
           "target": "third_party/blink/renderer/core/frame/navigator.cc",
@@ -4717,7 +4717,7 @@
         {
           "target": "third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc",
           "before_sha256": "a96ac2f05d360f0c4125949d36bd0d08652d12c7529f67a12b57aebad316497b",
-          "after_sha256": "1e6a54363efc78b4a8a4e9e3c318956be219c61f4e4062b611fd3c6fb6032607"
+          "after_sha256": "2e69e50b49db717e793cbcb90d91115e8bd67e60ec9536221565476e7a5c77de"
         },
         {
           "target": "third_party/blink/renderer/core/html/media/html_video_element.cc",

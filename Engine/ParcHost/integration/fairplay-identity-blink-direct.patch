@@ -7597,11 +7597,12 @@
  #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture.h"
  #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture_event.h"
  #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_event.h"
-@@ -37,6 +41,9 @@
+@@ -37,6 +41,10 @@
  #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
  #include "third_party/blink/renderer/platform/widget/frame_widget.h"
  #include "third_party/blink/renderer/platform/wtf/functional.h"
 +#include "third_party/skia/include/core/SkBitmap.h"
++#include "ui/display/screen_info.h"
 +#include "ui/gfx/geometry/rect_f.h"
 +#include "ui/gfx/geometry/size_f.h"
 -
@@ -7609,7 +7610,7 @@
  namespace blink {
 -
 +
-@@ -126,7 +133,15 @@
+@@ -126,7 +134,15 @@
    if (!video_element.HasVideo())
      return Status::kVideoTrackNotAvailable;
 -
@@ -7628,7 +7629,7 @@
 -
 +
    if (video_element.IsInAutoPIP())
-@@ -269,6 +284,11 @@
+@@ -269,6 +285,11 @@
 -
 +
    picture_in_picture_element_ = element;
@@ -7642,7 +7643,7 @@
 +
    // Request that viz does not throttle our LayerTree's BeginFrame messages, in
    // case this page generates them as a side-effect of driving picture-in-
-@@ -344,6 +364,11 @@
+@@ -344,6 +365,11 @@
 -
 +
      HTMLVideoElement* element = picture_in_picture_element_;
@@ -7656,7 +7657,7 @@
 +
      element->OnExitedPictureInPicture();
      element->DispatchEvent(*PictureInPictureEvent::Create(
-@@ -592,6 +617,67 @@
+@@ -592,6 +618,67 @@
      const gfx::Size& size) {
    if (picture_in_picture_window_)
      picture_in_picture_window_->OnResize(size);
@@ -7725,7 +7726,7 @@
 -
 +
  void PictureInPictureControllerImpl::OnStopped() {
-@@ -615,6 +701,8 @@
+@@ -615,6 +702,8 @@
    visitor->Trace(document_picture_in_picture_window_);
    visitor->Trace(document_picture_in_picture_owner_);
    visitor->Trace(document_pip_context_observer_);
@@ -7734,7 +7735,7 @@
    visitor->Trace(picture_in_picture_element_);
    visitor->Trace(picture_in_picture_window_);
    visitor->Trace(session_observer_receiver_);
-@@ -630,7 +718,11 @@
+@@ -630,7 +719,11 @@
        ExecutionContextClient(document.GetExecutionContext()),
        session_observer_receiver_(this, document.GetExecutionContext()),
        picture_in_picture_service_(document.GetExecutionContext()),
