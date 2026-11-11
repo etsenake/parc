@@ -2264,6 +2264,9 @@ final class BrowserStore: ObservableObject {
     private let sessionWriter = SessionFileWriter()
     /// Never part of `state` or the session file.
     var closedPageHistory = ClosedPageHistory<AnyObject>()
+    /// Windows of this store share one frozen frame per placeholder tab; a private
+    /// window has its own store, so its frames stay with it.
+    let placeholderImages = PagePlaceholderImages()
     /// Live pages' back/forward entries for the next launch; none when private.
     lazy var tabHistory: TabHistoryArchive? = isEphemeral ? nil
         : TabHistoryArchive(directory: directory.appendingPathComponent("Tab History", isDirectory: true))

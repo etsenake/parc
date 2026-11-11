@@ -410,6 +410,8 @@ struct WindowPresentation {
     }
     /// Whether any Space of this window shows `id` as a placeholder.
     func showsPlaceholder(_ id: UUID) -> Bool { placeholdersBySpace.values.contains { $0.placeholders.contains(id) } }
+    /// Every tab any Space of this window shows as a placeholder.
+    var allPlaceholders: Set<UUID> { placeholdersBySpace.values.reduce(into: []) { $0.formUnion($1.placeholders) } }
     var hasPlaceholders: Bool { !placeholdersBySpace.isEmpty }
 
     private mutating func reconcilePlaceholders(_ state: BrowserState, available: (UUID) -> Bool) {
