@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_associated_receiver.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_associated_remote.h"
+#include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/timer.h"
 
 namespace viz {
@@ -38,8 +39,13 @@ class LocalFrameView;
 // TopBandColorObserver. See Parc docs/top-band-color.md.
 class CORE_EXPORT TopBandColorTracker final
     : public GarbageCollected<TopBandColorTracker>,
+      public Supplement<LocalFrame>,
       public parc::mojom::blink::TopBandColorAgent {
  public:
+  static const char kSupplementName[];
+  static void Install(LocalFrame&);
+  static TopBandColorTracker* From(LocalFrame&);
+
   explicit TopBandColorTracker(LocalFrame&);
 
   // LocalFrameView::RunPostLifecycleSteps (0x46849d0).
@@ -51,7 +57,7 @@ class CORE_EXPORT TopBandColorTracker final
   // DocumentLoader::CommitNavigation (0x1fefbd0).
   void DidCommitNavigation();
 
-  void Trace(Visitor*) const;
+  void Trace(Visitor*) const override;
 
  private:
   //
@@ -84,7 +90,6 @@ class CORE_EXPORT TopBandColorTracker final
   void RememberSampledElement(const Element&);
   void CancelPendingFallback();
 
-  Member<LocalFrame> frame_;
   // The frame's kInternalDefault runner, kept past its detach.
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   HeapTaskRunnerTimer<TopBandColorTracker> timer_;

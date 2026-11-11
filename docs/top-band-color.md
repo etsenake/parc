@@ -19,7 +19,8 @@ raster work, capped at 800 pixels, sampling two rows and five horizontal points.
 A color distance above 0.5 rejects a nonuniform band; otherwise the samples
 produce the candidate average.
 
-Detection runs after lifecycle updates, throttled to 100 ms, and waits for a
+A `LocalFrame` supplement owns the detector. Detection runs after canvas onpaint
+steps, throttled to 100 ms, and waits for a
 clean pre-paint state. Parsing and largest-contentful-paint progress schedule
 new attempts. Only the observed outermost document participates; SVG documents
 are excluded. A commit resets document state so a prior page cannot report

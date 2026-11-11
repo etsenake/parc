@@ -334,9 +334,18 @@ bool TopBandColorTracker::ChosenState::operator==(
          reuse_frame_sample == other.reuse_frame_sample;
 }
 
-// 0x4684838.
+const char TopBandColorTracker::kSupplementName[] = "ParcTopBandColorTracker";
+
+void TopBandColorTracker::Install(LocalFrame& frame) {
+  ProvideTo(frame, MakeGarbageCollected<TopBandColorTracker>(frame));
+}
+
+TopBandColorTracker* TopBandColorTracker::From(LocalFrame& frame) {
+  return Supplement<LocalFrame>::From<TopBandColorTracker>(frame);
+}
+
 TopBandColorTracker::TopBandColorTracker(LocalFrame& frame)
-    : frame_(&frame),
+    : Supplement<LocalFrame>(frame),
       task_runner_(frame.GetTaskRunner(TaskType::kInternalDefault)),
       timer_(task_runner_, this, &TopBandColorTracker::TimerFired) {
   frame.GetInterfaceRegistry()->AddAssociatedInterface(
@@ -344,7 +353,7 @@ TopBandColorTracker::TopBandColorTracker(LocalFrame& frame)
 }
 
 void TopBandColorTracker::Trace(Visitor* visitor) const {
-  visitor->Trace(frame_);
+  Supplement<LocalFrame>::Trace(visitor);
   visitor->Trace(timer_);
   visitor->Trace(agent_);
   visitor->Trace(observer_);
@@ -354,7 +363,7 @@ void TopBandColorTracker::Trace(Visitor* visitor) const {
 void TopBandColorTracker::BindAgent(
     mojo::PendingAssociatedReceiver<parc::mojom::blink::TopBandColorAgent>
         receiver) {
-  if (frame_->IsDetached()) {
+  if (GetSupplementable()->IsDetached()) {
     return;
   }
   agent_.reset();
@@ -364,7 +373,7 @@ void TopBandColorTracker::BindAgent(
 void TopBandColorTracker::SetObserver(
     mojo::PendingAssociatedRemote<parc::mojom::blink::TopBandColorObserver>
         observer) {
-  if (frame_->IsDetached()) {
+  if (GetSupplementable()->IsDetached()) {
     return;
   }
   observer_.reset();
@@ -400,13 +409,13 @@ void TopBandColorTracker::ScheduleDetection() {
   if (!observer_.is_bound()) {
     return;
   }
-  if (LocalFrameView* view = frame_->View()) {
+  if (LocalFrameView* view = GetSupplementable()->View()) {
     view->ScheduleAnimation();
   }
 }
 
 void TopBandColorTracker::FireDetection() {
-  LocalFrameView* view = frame_->View();
+  LocalFrameView* view = GetSupplementable()->View();
   // Nothing listens: no browser page binds this frame.
   if (!view || !observer_.is_bound()) {
     return;
@@ -511,7 +520,7 @@ void TopBandColorTracker::RememberSampledElement(const Element& element) {
 
 // 0x4684c40.
 void TopBandColorTracker::Detect(LocalFrameView& view) {
-  Document* document = frame_->GetDocument();
+  Document* document = GetSupplementable()->GetDocument();
   LayoutView* layout_view = document ? document->GetLayoutView() : nullptr;
   if (!layout_view) {
     if (state_ != State::kUnavailable) {
@@ -700,12 +709,12 @@ void TopBandColorTracker::EmitChosenState(LocalFrameView& view,
   }
   const bool changed = !has_sent_ || !(last_sent_ == state);
   if (changed && (state.sample_frame || state.fallback)) {
-    if (Page* page = frame_->GetPage()) {
+    if (Page* page = GetSupplementable()->GetPage()) {
       pending_ = state;
       awaiting_presentation_ = true;
       ++generation_;
       page->GetChromeClient().NotifyPresentationTime(
-          *frame_, BindOnce(&TopBandColorTracker::DidPresent,
+          *GetSupplementable(), BindOnce(&TopBandColorTracker::DidPresent,
                             WrapWeakPersistent(this), generation_));
       return;
     }
