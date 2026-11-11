@@ -5,7 +5,6 @@
 #include "base/run_loop.h"
 #include "base/test/run_until.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/dialogs/browser_dialogs.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -86,7 +85,7 @@ class NativeFolderUploadTest : public InProcessBrowserTest {
     // This genuine DialogModel drives the production folder adapter. The
     // existing FileSelectHelperTest.ConfirmationDialog separately verifies
     // the actual enumerated-files/title/default/input-protection schema.
-    chrome::ShowFolderUploadConfirmation(
+    ShowFolderUploadConfirmation(
         ui::DialogModel::Builder()
             .SetTitle(u"Upload test folder?")
             .AddParagraph(ui::DialogModelLabel(u"Two files"))

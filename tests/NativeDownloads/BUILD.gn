@@ -34,7 +34,6 @@ source_set("file_dialog_browser_tests") {
     "//parc/native:native_components",
     "//parc/native:native_downloads",
     "//chrome/browser/tab_list",
-    "//chrome/browser/ui/dialogs:browser_dialogs",
     "//components/web_modal",
     "//ui/views",
     "//chrome/browser/ui/browser_window",

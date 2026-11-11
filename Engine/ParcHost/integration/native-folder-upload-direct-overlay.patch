@@ -1,76 +1,3 @@
---- a/chrome/browser/ui/dialogs/browser_dialogs.cc
-+++ b/chrome/browser/ui/dialogs/browser_dialogs.cc
-@@ -6,6 +6,8 @@
--
-+
- #include "base/functional/callback_helpers.h"
- #include "base/notimplemented.h"
-+#include "base/supports_user_data.h"
-+#include "content/public/browser/web_contents.h"
--
-+
- #if defined(TOOLKIT_VIEWS)
- #include "components/constrained_window/constrained_window_views.h"
-@@ -20,6 +22,35 @@
- #endif
--
-+
- namespace chrome {
-+namespace {
-+constexpr char kNativeFolderUpload[] = "native-folder-upload-confirmation";
-+struct FolderUploadHandler final : base::SupportsUserData::Data {
-+  explicit FolderUploadHandler(NativeFolderUploadConfirmation value)
-+      : callback(std::move(value)) {}
-+  NativeFolderUploadConfirmation callback;
-+};
-+}  // namespace
-+void SetNativeFolderUploadConfirmation(
-+    content::WebContents& contents,
-+    NativeFolderUploadConfirmation callback) {
-+  contents.SetUserData(
-+      kNativeFolderUpload,
-+      std::make_unique<FolderUploadHandler>(std::move(callback)));
-+}
-+void ShowFolderUploadConfirmation(std::unique_ptr<ui::DialogModel> model,
-+                                  content::WebContents* contents,
-+                                  content::RenderFrameHost* frame) {
-+  auto* handler = contents ? static_cast<FolderUploadHandler*>(
-+                                 contents->GetUserData(kNativeFolderUpload))
-+                           : nullptr;
-+  if (handler) {
-+    // Copy before the callback can destroy the originating contents/user data.
-+    auto callback = handler->callback;
-+    callback.Run(std::move(model), frame);
-+    return;
-+  }
-+  ShowTabModal(std::move(model), contents);
-+}
--
-+
- #if !defined(TOOLKIT_VIEWS)
- void ShowWindowNamePrompt(BrowserWindowInterface* browser) {
---- a/chrome/browser/ui/dialogs/browser_dialogs.h
-+++ b/chrome/browser/ui/dialogs/browser_dialogs.h
-@@ -110,6 +110,18 @@
- void ShowTabModal(std::unique_ptr<ui::DialogModel> dialog_model,
-                   content::WebContents* web_contents);
--
-+
-+// Specific native presentation override for FileSelectHelper's existing folder
-+// consent model. The contents owns the callback; a detached native route must
-+// consume/cancel the model rather than fall through to another presentation.
-+using NativeFolderUploadConfirmation =
-+    base::RepeatingCallback<void(std::unique_ptr<ui::DialogModel>,
-+                                 content::RenderFrameHost*)>;
-+void SetNativeFolderUploadConfirmation(content::WebContents& contents,
-+                                       NativeFolderUploadConfirmation callback);
-+void ShowFolderUploadConfirmation(std::unique_ptr<ui::DialogModel> model,
-+                                  content::WebContents* contents,
-+                                  content::RenderFrameHost* frame);
-+
- // Creates and shows an HTML dialog with the given delegate and context.
- // The window is automatically destroyed when it is closed.
- // Returns the created window.
 --- a/components/web_modal/web_contents_modal_dialog_manager.cc
 +++ b/components/web_modal/web_contents_modal_dialog_manager.cc
 @@ -48,16 +48,34 @@
@@ -98,8 +25,7 @@
 +    }
    }
    child_dialogs_.emplace_back(dialog, std::move(manager));
--
-+
+ 
    if (child_dialogs_.size() == 1) {
      BlockWebContentsInteraction(true);
 -    if (delegate_ && delegate_->IsWebContentsVisible(web_contents())) {
@@ -127,8 +53,7 @@
 @@ -1312,6 +1311,26 @@
                                  bottom_margin >= 0 ? bottom_margin : 0, 0));
  }
--
-+
+ 
 +void BubbleDialogModelHost::SetNativeAcceptanceValidation(
 +    base::RepeatingCallback<bool()> validation) {
 +  native_acceptance_validation_ = std::move(validation);
@@ -157,8 +82,7 @@
 @@ -120,6 +120,11 @@
        bool autosize = true,
        bool owned_by_widget = true);
--
-+
+ 
 +  // Optional external native-parent guard. A refused acceptance runs the
 +  // original model cancellation, retaining its actual callbacks and controls.
 +  void SetNativeAcceptanceValidation(
@@ -172,15 +96,13 @@
    void Close() override;
    void OnDialogButtonChanged() override;
 -
--
-+
+ 
   private:
    // Observes the ContentsView for theme changes (to update the window icon)
 @@ -176,6 +180,8 @@
    void OnExtraLinkClicked(const ui::Event& event);
    bool IsPossiblyUnintendedInteraction(const ui::Event& event);
--
-+
+ 
 +  bool AcceptModel();
 +  base::RepeatingCallback<bool()> native_acceptance_validation_;
    std::unique_ptr<ui::DialogModel> model_;

@@ -32,7 +32,12 @@ class GCMClient;
 }
 
 namespace content {
+class RenderFrameHost;
 class WebContents;
+}
+
+namespace ui {
+class DialogModel;
 }
 
 namespace parc_hooks {
@@ -58,6 +63,13 @@ using ExtensionUninstallHandler =
     void (*)(BrowserWindowInterface* browser,
              const extensions::Extension* extension);
 void SetExtensionUninstallHandler(ExtensionUninstallHandler handler);
+
+// chrome/browser/file_select_helper.cc
+using FolderUploadConfirmation =
+    void (*)(std::unique_ptr<ui::DialogModel> model,
+             content::WebContents* web_contents,
+             content::RenderFrameHost* frame);
+void SetFolderUploadConfirmation(FolderUploadConfirmation confirmation);
 
 // chrome/browser/ui/login/login_handler.cc
 void SetLoginHandlerAuthValidator(bool (*validator)(LoginHandler*));

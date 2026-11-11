@@ -174,21 +174,55 @@
 +}
 --- a/chrome/browser/file_select_helper.cc
 +++ b/chrome/browser/file_select_helper.cc
-@@ -268,7 +268,8 @@
+@@ -70,7 +70,19 @@
+ 
+ DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kCancelButtonId);
+ 
++namespace parc_hooks {
++using FolderUploadConfirmation =
++    void (*)(std::unique_ptr<ui::DialogModel> model,
++             content::WebContents* web_contents,
++             content::RenderFrameHost* frame);
++void SetFolderUploadConfirmation(FolderUploadConfirmation confirmation);
++}  // namespace parc_hooks
++
+ namespace {
++
++// Replaces the tab-modal folder-upload confirmation below.
++parc_hooks::FolderUploadConfirmation g_parc_folder_upload_confirmation =
++    nullptr;
+ 
+ void DeleteFiles(std::vector<base::FilePath> paths) {
+   for (auto& file_path : paths)
+@@ -99,6 +111,12 @@
+ #endif
+ 
+ }  // namespace
++
++namespace parc_hooks {
++void SetFolderUploadConfirmation(FolderUploadConfirmation confirmation) {
++  g_parc_folder_upload_confirmation = confirmation;
++}
++}  // namespace parc_hooks
+ 
+ struct FileSelectHelper::ActiveDirectoryEnumeration {
+   explicit ActiveDirectoryEnumeration(const std::u16string& display_name)
+@@ -268,6 +286,11 @@
          entry->display_name_, std::move(chooser_files),
          base::BindOnce(&FileSelectHelper::PerformContentAnalysisIfNeeded,
                         this));
--    chrome::ShowTabModal(std::move(model), web_contents_);
-+    chrome::ShowFolderUploadConfirmation(std::move(model), web_contents_,
-+                                         render_frame_host_);
++    if (g_parc_folder_upload_confirmation) {
++      g_parc_folder_upload_confirmation(std::move(model), web_contents_,
++                                        render_frame_host_);
++      return;
++    }
+     chrome::ShowTabModal(std::move(model), web_contents_);
    } else {
      listener_->FileSelected(std::move(chooser_files), base_dir_,
-                             FileChooserParams::Mode::kUploadFolder);
-@@ -526,17 +527,24 @@
+@@ -526,17 +549,24 @@
    std::vector<base::FilePath::StringType>* extensions =
        &file_type->extensions.back();
--
-+
+ 
 +  // Create individual filters for each accept type.
 +  std::vector<std::vector<base::FilePath::StringType>> all_extensions;
 +  std::vector<std::u16string> all_overrides;
@@ -211,7 +245,7 @@
      } else {
        if (!base::IsStringASCII(accept_type))
          continue;
-@@ -547,10 +555,18 @@
+@@ -547,10 +577,18 @@
          description_id = IDS_AUDIO_FILES;
        else if (ascii_type == "video/*")
          description_id = IDS_VIDEO_FILES;
@@ -234,7 +268,7 @@
      if (extensions->size() > old_extension_size)
        valid_type_count++;
    }
-@@ -566,13 +582,23 @@
+@@ -566,13 +604,23 @@
    //    "ehtml,shtml,htm,html" for "text/html". On Windows, the select file
    //    dialog uses the first extension in the list to form the description,
    //    like "EHTML Files". This is not what we want.
@@ -262,8 +296,7 @@
 +        file_type->extension_description_overrides.end(), all_overrides.begin(),
 +        all_overrides.end());
    }
--
-+
+ 
    return file_type;
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn

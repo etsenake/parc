@@ -437,25 +437,24 @@ bool NativeModal::IsActive() const {
   return request_->IsActive();
 }
 }  // namespace
+void ShowFolderUploadConfirmation(std::unique_ptr<ui::DialogModel> model,
+                                  content::WebContents* contents,
+                                  content::RenderFrameHost* frame) {
+  auto* state = State(contents);
+  if (!state) {
+    chrome::ShowTabModal(std::move(model), contents);
+    return;
+  }
+  auto request = std::make_shared<Request>(contents, frame);
+  std::erase_if(state->requests,
+                [](const auto& weak) { return weak.expired(); });
+  state->requests.push_back(request);
+  request->Build(std::move(model));
+}
 void InstallNativeFolderUpload(content::WebContents& contents) {
   if (State(&contents))
     return;
   contents.SetUserData(kState, std::make_unique<PageState>());
-  chrome::SetNativeFolderUploadConfirmation(
-      contents,
-      base::BindRepeating(
-          [](base::WeakPtr<content::WebContents> contents,
-             std::unique_ptr<ui::DialogModel> model,
-             content::RenderFrameHost* frame) {
-            auto request = std::make_shared<Request>(contents.get(), frame);
-            if (auto* state = State(contents.get())) {
-              std::erase_if(state->requests,
-                            [](const auto& weak) { return weak.expired(); });
-              state->requests.push_back(request);
-            }
-            request->Build(std::move(model));
-          },
-          contents.GetWeakPtr()));
 }
 void SetNativeFolderUploadAttached(content::WebContents& contents,
                                    bool attached) {

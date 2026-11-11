@@ -246,6 +246,11 @@ window, before loading starts. The context menu's uninstall command reaches Parc
 Parc subclasses Chromium's uninstall dialog, building the same model as the Views version. The crash
 the research expected in that funnel isn't reachable: nothing in Chromium calls its BrowserView overload.
 
+Folder-upload consent doesn't use `ShowTabModal` either, because Parc cancels it when the asking frame
+navigates or goes away and `ShowTabModal` only receives the page. A hook in FileSelectHelper hands Parc
+the frame too. The consent stays Chromium's Views dialog in Parc's sheet, so its acceptance check stays
+a patch: a dialog model's accept action can only be run by a dialog host.
+
 ## Browser integration boundaries
 
 Page preference state and frame-focus subscriptions belong to Parc. The top-band
