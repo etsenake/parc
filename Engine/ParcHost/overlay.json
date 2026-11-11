@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 712,
+  "version": 713,
   "source_root": "repository",
   "upstream": {
     "chromium": "2ad9b7f5a86846e0b264090723a6a78964bb84c4"
@@ -4105,7 +4105,7 @@
     },
     {
       "source": "Engine/ParcHost/integration/fairplay-media.patch",
-      "sha256": "0f54e1fe8c443ec9ae09f87644ba566500826fb48fd839360acf90147faa5017",
+      "sha256": "3f7194e67b33cfaa2f7480d99b48574a7a4593e0df42b042a476a5bba93ff6f1",
       "files": [
         {
           "target": "components/cdm/renderer/external_clear_key_key_system_info.cc",
@@ -4410,7 +4410,7 @@
         {
           "target": "media/filters/source_buffer_stream.h",
           "before_sha256": "11c5ae59189f59ca51d00f8ec848f8b14f71c449b9a1f35e8085ba1f9cce73a5",
-          "after_sha256": "5c239e6aaa6e9167ace9f7495447d1645a0a75600244466ed2f6432d825e8f0a"
+          "after_sha256": "bdb0bcb036b85cec8626c8ae4ed82f65a9f15478b35ffef5652297443213568a"
         },
         {
           "target": "media/filters/source_buffer_stream.cc",
@@ -4420,7 +4420,7 @@
         {
           "target": "media/filters/source_buffer_range.h",
           "before_sha256": "3b60ca6a77955176b38c1f68573ebdf9123698adac828eb9c4876853b8f7bd06",
-          "after_sha256": "2d4b48982725ad5b5a2dfbaf9872e83ea07f249afa880c10616d2073d77f140e"
+          "after_sha256": "2b9bdc3b1267a1809995cd7320f27e00c8d0aec2950b47336a3412ab573a532b"
         },
         {
           "target": "media/filters/source_buffer_state.h",

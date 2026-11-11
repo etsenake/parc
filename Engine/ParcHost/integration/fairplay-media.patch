@@ -8042,17 +8042,18 @@
    // Changes the SourceBufferStream's state so that it will start returning
    // buffers starting from the closest keyframe before |timestamp|.
    void Seek(base::TimeDelta timestamp);
-@@ -181,6 +220,7 @@
+@@ -181,6 +220,8 @@
 -
 +
   private:
    friend class SourceBufferStreamTest;
++  friend class ParcSourceBufferStreamState;
 +  friend class ParcSourceBufferStreamTest;
 -
 +
    // Attempts to delete approximately |total_bytes_to_free| amount of data
    // |ranges_|, starting at the front of |ranges_| and moving linearly forward
-@@ -190,6 +230,9 @@
+@@ -190,6 +231,9 @@
    size_t FreeBuffers(size_t total_bytes_to_free,
                       base::TimeDelta media_time,
                       bool reverse_direction);
@@ -8063,7 +8064,7 @@
 +
    // Attempts to delete approximately |total_bytes_to_free| amount of data from
    // |ranges_|, starting after the last appended media
-@@ -422,6 +465,23 @@
+@@ -422,6 +466,23 @@
    // True if the end of the stream has been signalled.
    bool end_of_stream_ = false;
 -
@@ -8452,10 +8453,11 @@
 +
  // Base class for representing a continuous range of buffered data in the
  // presentation timeline. All buffers in a SourceBufferRange are ordered
-@@ -256,6 +258,7 @@
+@@ -256,6 +258,8 @@
   private:
    // Friend of private is only for IsNextInPresentationSequence testing.
    friend class SourceBufferStreamTest;
++  friend class ParcSourceBufferStreamState;
 +  friend class ParcSourceBufferStreamTest;
 -
 +
