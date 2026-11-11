@@ -1255,42 +1255,6 @@
 +
    // The MediaSession source ID for the current BrowserContext. This is passed
    // to `provider_` to distinguish `this` from other possible clients.
---- a/chrome/browser/ui/global_media_controls/presentation_request_notification_producer_unittest.cc
-+++ b/chrome/browser/ui/global_media_controls/presentation_request_notification_producer_unittest.cc
-@@ -14,6 +14,7 @@
- #include "chrome/browser/media/router/chrome_media_router_factory.h"
- #include "chrome/browser/media/router/media_router_feature.h"
- #include "chrome/browser/ui/global_media_controls/media_notification_service.h"
-+#include "chrome/browser/ui/global_media_controls/presentation_request_notification_item.h"
- #include "chrome/browser/ui/global_media_controls/test_helper.h"
- #include "chrome/test/base/chrome_render_view_host_test_harness.h"
- #include "chrome/test/base/testing_profile.h"
-@@ -110,6 +111,24 @@
- };
--
-+
- TEST_F(PresentationRequestNotificationProducerTest,
-+       NativeItemRetiresAfterContextMovesToDeviceHost) {
-+  const auto token = base::UnguessableToken::Create();
-+  auto context = std::make_unique<media_router::StartPresentationContext>(
-+      CreatePresentationRequest(), base::DoNothing(), base::DoNothing());
-+  context->SetNativeRequestToken(token);
-+  device_picker_host_->OnStartPresentationContextCreated(std::move(context));
-+  auto item = device_picker_host_->GetNotificationItem();
-+  ASSERT_TRUE(item);
-+  auto moved = item->PassContext();
-+  ASSERT_TRUE(moved);
-+  EXPECT_FALSE(device_picker_host_->TakeNativeContext(
-+      base::UnguessableToken::Create()));
-+  EXPECT_TRUE(device_picker_host_->GetNotificationItem());
-+  EXPECT_FALSE(device_picker_host_->TakeNativeContext(token));
-+  EXPECT_FALSE(device_picker_host_->GetNotificationItem());
-+}
-+
-+TEST_F(PresentationRequestNotificationProducerTest,
-        HideItemOnMediaRoutesChanged) {
-   SimulateStartPresentationContextCreated();
-   SimulatePresentationsChanged(true);
 --- a/chrome/browser/ui/views/global_media_controls/cast_device_selector_view.cc
 +++ b/chrome/browser/ui/views/global_media_controls/cast_device_selector_view.cc
 @@ -338,6 +338,8 @@
@@ -2689,6 +2653,14 @@
      "//chrome/browser/media/router:media_router_feature",
      "//chrome/browser/ui/browser_window",
      "//chrome/browser/ui/tabs:tab_strip",
+@@ -143,3 +144,7 @@
+     "//ui/gfx:test_support",
+   ]
++
++  if (is_mac) {
++    deps += [ "//chrome/browser/ui/global_media_controls/parc_tests:unit_tests" ]
++  }
+ }
 --- a/components/global_media_controls/public/media_session_item_producer.h
 +++ b/components/global_media_controls/public/media_session_item_producer.h
 @@ -59,6 +59,13 @@
