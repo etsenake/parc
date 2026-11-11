@@ -3,6 +3,7 @@
 // compositor surface; 0xa89c328/a889c90 use RecyclableCompositorMac. This is
 // source-owned adaptation to Chromium156, not a binary wrapper.
 #include "video_overlay_window.h"
+#include "video_picture_in_picture_captions.h"
 
 #import <QuartzCore/QuartzCore.h>
 
@@ -27,14 +28,18 @@
 #include "components/tabs/public/tab_interface.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/context_factory.h"
+#include "content/public/browser/document_user_data.h"
 #include "content/public/browser/manifest_icon_downloader.h"
+#include "content/public/browser/media_player_id.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/overlay_window.h"
 #include "content/public/browser/page.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_frame_host_receiver_set.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/video_picture_in_picture_window_controller.h"
+#include "content/public/browser/weak_document_ptr.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "net/base/mime_util.h"
@@ -44,6 +49,7 @@
 #include "third_party/blink/public/common/manifest/manifest_icon_selector.h"
 #include "third_party/blink/public/mojom/favicon/favicon_url.mojom.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom.h"
+#include "third_party/blink/public/mojom/parc/picture_in_picture_captions.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColorType.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
@@ -252,6 +258,67 @@ class PiPInputDiagnostics final : public content::WebContentsObserver,
   base::WeakPtrFactory<PiPInputDiagnostics> weak_factory_{this};
 };
 
+// How many picture-in-picture sessions the browser has started for a
+// document. The renderer counts the same sessions as they are given to it.
+class PictureInPictureSessions final
+    : public content::DocumentUserData<PictureInPictureSessions> {
+ public:
+  uint64_t started = 0;
+
+ private:
+  explicit PictureInPictureSessions(content::RenderFrameHost* frame)
+      : DocumentUserData(frame) {}
+  friend content::DocumentUserData<PictureInPictureSessions>;
+  DOCUMENT_USER_DATA_KEY_DECL();
+};
+DOCUMENT_USER_DATA_KEY_IMPL(PictureInPictureSessions);
+
+class NativeVideoOverlayWindow;
+
+// The captions of a WebContents' native picture-in-picture window. Only those
+// of the session the browser started last reach it.
+const char kPictureInPictureCaptionsKey = 0;
+class PictureInPictureCaptions final
+    : public mojom::PictureInPictureCaptionsHost,
+      public base::SupportsUserData::Data {
+ public:
+  explicit PictureInPictureCaptions(content::WebContents* contents)
+      : receivers_(contents, this) {}
+
+  static PictureInPictureCaptions& For(content::WebContents* contents) {
+    auto* captions = static_cast<PictureInPictureCaptions*>(
+        contents->GetUserData(&kPictureInPictureCaptionsKey));
+    if (!captions) {
+      auto owned = std::make_unique<PictureInPictureCaptions>(contents);
+      captions = owned.get();
+      contents->SetUserData(&kPictureInPictureCaptionsKey, std::move(owned));
+    }
+    return *captions;
+  }
+
+  void Bind(content::RenderFrameHost* frame,
+            mojo::PendingAssociatedReceiver<mojom::PictureInPictureCaptionsHost>
+                receiver) {
+    receivers_.Bind(frame, std::move(receiver));
+  }
+  void SetWindow(base::WeakPtr<NativeVideoOverlayWindow> window) {
+    window_ = std::move(window);
+  }
+  void StartSession(content::RenderFrameHost& frame);
+
+  // mojom::PictureInPictureCaptionsHost:
+  void UpdateCaptions(uint64_t session,
+                      const SkBitmap& captions,
+                      const gfx::RectF& bounds) override;
+
+ private:
+  content::RenderFrameHostReceiverSet<mojom::PictureInPictureCaptionsHost>
+      receivers_;
+  base::WeakPtr<NativeVideoOverlayWindow> window_;
+  content::WeakDocumentPtr document_;
+  uint64_t session_ = 0;
+};
+
 class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
                                        public content::WebContentsObserver,
                                        public ui::AcceleratedWidgetMacNSView {
@@ -312,6 +379,7 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
       native_id_ = tracker_->RegisterNativePictureInPictureWindow(
           gfx::NativeWindow(presenter_.panel));
     }
+    PictureInPictureCaptions::For(web_contents()).SetWindow(weak);
   }
   ~NativeVideoOverlayWindow() override {
     weak_factory_.InvalidateWeakPtrs();
@@ -509,8 +577,7 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
   void SetPlaybackControlsVisibility(bool visible) override {
     [presenter_ setControlsVisible:visible];
   }
-  void SetCaptions(const SkBitmap& captions,
-                   const gfx::RectF& bounds) override {
+  void SetCaptions(const SkBitmap& captions, const gfx::RectF& bounds) {
     // The renderer paints at most 8192 pixels a side for the window.
     const bool shown = !captions.drawsNothing() && captions.width() <= 8192 &&
                        captions.height() <= 8192;
@@ -650,6 +717,26 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
   bool muted_ = false;
   base::WeakPtrFactory<NativeVideoOverlayWindow> weak_factory_{this};
 };
+
+void PictureInPictureCaptions::StartSession(content::RenderFrameHost& frame) {
+  document_ = frame.GetWeakDocumentPtr();
+  session_ = ++PictureInPictureSessions::GetOrCreateForCurrentDocument(&frame)
+                   ->started;
+  // A reused window may still show the previous session's captions.
+  if (window_) {
+    window_->SetCaptions(SkBitmap(), gfx::RectF());
+  }
+}
+
+void PictureInPictureCaptions::UpdateCaptions(uint64_t session,
+                                              const SkBitmap& captions,
+                                              const gfx::RectF& bounds) {
+  if (window_ && session == session_ &&
+      document_.AsRenderFrameHostIfValid() ==
+          &receivers_.CurrentTargetFrame()) {
+    window_->SetCaptions(captions, bounds);
+  }
+}
 }  // namespace
 bool UsesNativeVideoPictureInPicture(content::WebContents* contents) {
   auto* tab =
@@ -660,5 +747,22 @@ std::unique_ptr<content::VideoOverlayWindow> CreateNativeVideoOverlayWindow(
     content::VideoPictureInPictureWindowController* controller) {
   CHECK(controller);
   return std::make_unique<NativeVideoOverlayWindow>(controller);
+}
+void StartPictureInPictureCaptionsSession(
+    const content::MediaPlayerId& player) {
+  content::RenderFrameHost* frame =
+      content::RenderFrameHost::FromID(player.frame_routing_id);
+  CHECK(frame);
+  PictureInPictureCaptions::For(
+      content::WebContents::FromRenderFrameHost(frame))
+      .StartSession(*frame);
+}
+void BindPictureInPictureCaptionsHost(
+    content::RenderFrameHost* frame,
+    mojo::PendingAssociatedReceiver<mojom::PictureInPictureCaptionsHost>
+        receiver) {
+  PictureInPictureCaptions::For(
+      content::WebContents::FromRenderFrameHost(frame))
+      .Bind(frame, std::move(receiver));
 }
 }  // namespace parc

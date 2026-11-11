@@ -4586,7 +4586,15 @@
                                                WrapWeakPersistent(&element),
 --- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
 +++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
-@@ -24,11 +24,16 @@
+@@ -12,6 +12,7 @@
+ #include "media/mojo/mojom/media_player.mojom-blink.h"
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+ #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
++#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+ #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+ #include "third_party/blink/public/platform/web_media_player.h"
+ #include "third_party/blink/public/web/web_picture_in_picture_window_options.h"
+@@ -24,11 +25,16 @@
  #include "third_party/blink/renderer/core/dom/dom_exception.h"
  #include "third_party/blink/renderer/core/dom/events/event.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -4603,7 +4611,7 @@
  #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture.h"
  #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture_event.h"
  #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_event.h"
-@@ -37,6 +42,10 @@
+@@ -37,6 +43,10 @@
  #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
  #include "third_party/blink/renderer/platform/widget/frame_widget.h"
  #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -4616,7 +4624,7 @@
  namespace blink {
 -
 +
-@@ -126,7 +135,15 @@
+@@ -126,7 +136,15 @@
    if (!video_element.HasVideo())
      return Status::kVideoTrackNotAvailable;
 -
@@ -4635,7 +4643,18 @@
 -
 +
    if (video_element.IsInAutoPIP())
-@@ -269,6 +286,11 @@
+@@ -239,6 +257,8 @@
+-
++
+     return;
+   }
++  // Parc: the browser counted this session when it started it.
++  ++captions_session_;
+-
++
+   picture_in_picture_session_.reset();
+   picture_in_picture_session_.Bind(
+@@ -269,6 +289,11 @@
 -
 +
    picture_in_picture_element_ = element;
@@ -4649,7 +4668,7 @@
 +
    // Request that viz does not throttle our LayerTree's BeginFrame messages, in
    // case this page generates them as a side-effect of driving picture-in-
-@@ -344,6 +366,11 @@
+@@ -344,6 +369,11 @@
 -
 +
      HTMLVideoElement* element = picture_in_picture_element_;
@@ -4663,7 +4682,7 @@
 +
      element->OnExitedPictureInPicture();
      element->DispatchEvent(*PictureInPictureEvent::Create(
-@@ -592,6 +619,67 @@
+@@ -592,6 +622,72 @@
      const gfx::Size& size) {
    if (picture_in_picture_window_)
      picture_in_picture_window_->OnResize(size);
@@ -4717,7 +4736,12 @@
 +    return;
 +  }
 +  showing_captions_ = !captions.drawsNothing();
-+  picture_in_picture_session_->UpdateCaptions(captions, bounds);
++  if (!captions_host_.is_bound()) {
++    frame->GetRemoteNavigationAssociatedInterfaces()->GetInterface(
++        captions_host_.BindNewEndpointAndPassReceiver(
++            GetSupplementable()->GetTaskRunner(TaskType::kMediaElementEvent)));
++  }
++  captions_host_->UpdateCaptions(captions_session_, captions, bounds);
 +}
 +
 +void PictureInPictureControllerImpl::PageCaptionsTimerFired(TimerBase*) {
@@ -4732,21 +4756,23 @@
 -
 +
  void PictureInPictureControllerImpl::OnStopped() {
-@@ -615,6 +703,8 @@
+@@ -615,6 +711,9 @@
    visitor->Trace(document_picture_in_picture_window_);
    visitor->Trace(document_picture_in_picture_owner_);
    visitor->Trace(document_pip_context_observer_);
++  visitor->Trace(captions_host_);
 +  visitor->Trace(page_captions_);
 +  visitor->Trace(page_captions_timer_);
    visitor->Trace(picture_in_picture_element_);
    visitor->Trace(picture_in_picture_window_);
    visitor->Trace(session_observer_receiver_);
-@@ -630,7 +720,11 @@
+@@ -630,7 +729,12 @@
        ExecutionContextClient(document.GetExecutionContext()),
        session_observer_receiver_(this, document.GetExecutionContext()),
        picture_in_picture_service_(document.GetExecutionContext()),
 -      picture_in_picture_session_(document.GetExecutionContext()) {}
 +      picture_in_picture_session_(document.GetExecutionContext()),
++      captions_host_(document.GetExecutionContext()),
 +      page_captions_timer_(document.GetTaskRunner(TaskType::kInternalMedia),
 +                           this,
 +                           &PictureInPictureControllerImpl::

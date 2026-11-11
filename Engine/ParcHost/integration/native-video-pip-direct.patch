@@ -160,87 +160,6 @@
    TabModalConfirmDialog::Create(
        std::make_unique<RepostFormWarningController>(source), source);
  }
---- a/content/browser/picture_in_picture/picture_in_picture_session.cc
-+++ b/content/browser/picture_in_picture/picture_in_picture_session.cc
-@@ -59,6 +59,11 @@
- void PictureInPictureSession::UpdateMediaPosition(
-     const media_session::MediaPosition& media_position) {
-   GetController().SetMediaPosition(media_position);
-+}
-+
-+void PictureInPictureSession::UpdateCaptions(const SkBitmap& captions,
-+                                             const gfx::RectF& bounds) {
-+  GetController().SetCaptions(captions, bounds);
- }
--
-+
- void PictureInPictureSession::OnPlayerGone() {
---- a/content/browser/picture_in_picture/picture_in_picture_session.h
-+++ b/content/browser/picture_in_picture/picture_in_picture_session.h
-@@ -52,6 +52,7 @@
-       bool show_play_pause_button) final;
-   void UpdateMediaPosition(
-       const media_session::MediaPosition& media_position) final;
-+  void UpdateCaptions(const SkBitmap& captions, const gfx::RectF& bounds) final;
--
-+
-   void NotifyWindowResized(const gfx::Size& size);
--
-+
---- a/content/public/browser/overlay_window.h
-+++ b/content/public/browser/overlay_window.h
-@@ -14,8 +14,11 @@
- #include "third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom-forward.h"
- #include "ui/gfx/native_ui_types.h"
--
-+
-+class SkBitmap;
-+
- namespace gfx {
- class Rect;
-+class RectF;
- class Size;
- }
--
-+
-@@ -70,6 +73,10 @@
-   virtual void SetSurfaceId(const viz::SurfaceId& surface_id) = 0;
-   virtual void SetPlaybackControlsVisibility(bool is_visible) = 0;
-   virtual void SetImmersiveVideoOptions(const ImmersiveOptions& options) = 0;
-+  // Parc: shows the video's captions over it at `bounds`, a fraction of the
-+  // window; an empty `captions` removes them.
-+  virtual void SetCaptions(const SkBitmap& captions, const gfx::RectF& bounds) {
-+  }
- };
--
-+
- }  // namespace content
---- a/third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom
-+++ b/third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom
-@@ -8,6 +8,7 @@
- import "media/mojo/mojom/media_types.mojom";
- import "services/media_session/public/mojom/media_session.mojom";
- import "services/viz/public/mojom/compositing/surface_id.mojom";
-+import "skia/public/mojom/bitmap.mojom";
- import "ui/gfx/geometry/mojom/geometry.mojom";
--
-+
- // PictureInPictureSessionObserver is associated to a PictureInPictureSession at
-@@ -41,6 +42,13 @@
-   // Notifies the session that the associated player's position has been
-   // updated.
-   UpdateMediaPosition(media_session.mojom.MediaPosition media_position);
-+
-+  // Parc: the video's displayed text track cues, painted for the window, as
-+  // WebKit sends Safari's (VideoPresentationManager::
-+  // updateTextTrackRepresentationForVideoElement). `bounds` places them as a
-+  // fraction of the video frame the window shows; a null `captions` removes
-+  // them.
-+  UpdateCaptions(skia.mojom.BitmapN32? captions, gfx.mojom.RectF bounds);
- };
--
-+
- // PictureInPictureService is a Document-associated interface that lives in
 --- a/third_party/blink/renderer/core/frame/picture_in_picture_controller.h
 +++ b/third_party/blink/renderer/core/frame/picture_in_picture_controller.h
 @@ -105,6 +105,10 @@
@@ -255,17 +174,6 @@
    // Returns element currently in Picture-in-Picture if any. Null otherwise.
    virtual Element* PictureInPictureElement() const = 0;
    virtual Element* PictureInPictureElement(TreeScope&) const = 0;
---- a/third_party/blink/renderer/core/html/media/video_wake_lock_test.cc
-+++ b/third_party/blink/renderer/core/html/media/video_wake_lock_test.cc
-@@ -60,6 +60,7 @@
-               bool show_play_pause_button) override {}
-   void UpdateMediaPosition(
-       media_session::mojom::blink::MediaPositionPtr) override {}
-+  void UpdateCaptions(const SkBitmap&, const gfx::RectF&) override {}
--
-+
-  private:
-   mojo::Receiver<mojom::blink::PictureInPictureSession> receiver_;
 --- a/third_party/blink/renderer/core/html/track/text_track_container.cc
 +++ b/third_party/blink/renderer/core/html/track/text_track_container.cc
 @@ -29,15 +29,30 @@
@@ -521,8 +429,18 @@
 +
 --- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h
 +++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h
-@@ -17,11 +17,13 @@
+@@ -9,19 +9,23 @@
+ #include "build/build_config.h"
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+ #include "third_party/blink/public/common/frame/user_activation_state.h"
++#include "third_party/blink/public/mojom/parc/picture_in_picture_captions.mojom-blink.h"
+ #include "third_party/blink/public/mojom/picture_in_picture/picture_in_picture.mojom-blink.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
+ #include "third_party/blink/renderer/modules/modules_export.h"
  #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_window.h"
++#include "third_party/blink/renderer/platform/mojo/heap_mojo_associated_remote.h"
  #include "third_party/blink/renderer/platform/mojo/heap_mojo_receiver.h"
  #include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
 +#include "third_party/blink/renderer/platform/timer.h"
@@ -537,7 +455,7 @@
  class HTMLVideoElement;
  class PictureInPictureWindow;
  class ScriptState;
-@@ -109,6 +111,7 @@
+@@ -109,6 +113,7 @@
    void OnMediaPositionStateChanged(
        const media_session::mojom::blink::MediaPositionPtr& media_position)
        override;
@@ -545,7 +463,7 @@
    Element* PictureInPictureElement() const override;
    Element* PictureInPictureElement(TreeScope&) const override;
    bool PictureInPictureEnabled() const override;
-@@ -130,6 +133,12 @@
+@@ -130,6 +135,12 @@
 -
 +
    bool IsSessionObserverReceiverBoundForTesting() {
@@ -560,7 +478,7 @@
 -
 +
   private:
-@@ -171,6 +180,14 @@
+@@ -171,6 +182,14 @@
    // https://crbug.com/1232173
    void SetMayThrottleIfUndrawnFrames(bool may_throttle);
 -
@@ -576,7 +494,7 @@
    // Makes sure the `picture_in_picture_service_` is set. Returns whether it was
    // initialized successfully.
    bool EnsureService();
-@@ -241,6 +258,11 @@
+@@ -241,6 +260,16 @@
        picture_in_picture_session_;
 -
 +
@@ -584,6 +502,11 @@
 +
 +  bool captions_update_pending_ = false;
 +  bool showing_captions_ = false;
++  // Parc: how many sessions the browser has started for this document, which
++  // names the bound session's captions.
++  uint64_t captions_session_ = 0;
++  HeapMojoAssociatedRemote<parc::mojom::blink::PictureInPictureCaptionsHost>
++      captions_host_;
 +  Member<ParcPageCaptions> page_captions_;
 +  HeapTaskRunnerTimer<PictureInPictureControllerImpl> page_captions_timer_;
  };
@@ -592,7 +515,7 @@
  }  // namespace blink
 --- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_test.cc
 +++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_test.cc
-@@ -6,6 +6,8 @@
+@@ -6,24 +6,41 @@
  #include <utility>
 -
 +
@@ -600,9 +523,18 @@
 +#include "base/functional/function_ref.h"
 +#include "base/run_loop.h"
  #include "media/mojo/mojom/media_player.mojom-blink.h"
++#include "mojo/public/cpp/bindings/associated_receiver.h"
++#include "mojo/public/cpp/bindings/pending_associated_receiver.h"
  #include "mojo/public/cpp/bindings/pending_associated_remote.h"
  #include "mojo/public/cpp/bindings/pending_receiver.h"
-@@ -18,12 +20,23 @@
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+ #include "mojo/public/cpp/bindings/receiver.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
++#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
++#include "third_party/blink/public/mojom/parc/picture_in_picture_captions.mojom-blink.h"
+ #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
  #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
@@ -626,19 +558,81 @@
  #include "third_party/blink/renderer/core/layout/layout_image.h"
  #include "third_party/blink/renderer/core/loader/empty_clients.h"
  #include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
-@@ -140,6 +153,7 @@
-   MOCK_METHOD(void,
-               UpdateMediaPosition,
-               (media_session::mojom::blink::MediaPositionPtr));
-+  MOCK_METHOD(void, UpdateCaptions, (const SkBitmap&, const gfx::RectF&));
+@@ -145,6 +162,25 @@
+   mojo::Receiver<mojom::blink::PictureInPictureSession> receiver_;
+ };
 -
 +
-  private:
-   mojo::Receiver<mojom::blink::PictureInPictureSession> receiver_;
-@@ -373,6 +387,553 @@
-                          .PictureInPictureElement());
- }
++// Parc: the browser's host for the window's captions.
++class MockPictureInPictureCaptionsHost
++    : public parc::mojom::blink::PictureInPictureCaptionsHost {
++ public:
++  void Bind(mojo::ScopedInterfaceEndpointHandle handle) {
++    receiver_.Bind(mojo::PendingAssociatedReceiver<
++                   parc::mojom::blink::PictureInPictureCaptionsHost>(
++        std::move(handle)));
++  }
++
++  MOCK_METHOD(void,
++              UpdateCaptions,
++              (uint64_t, const SkBitmap&, const gfx::RectF&));
++
++ private:
++  mojo::AssociatedReceiver<parc::mojom::blink::PictureInPictureCaptionsHost>
++      receiver_{this};
++};
++
+ // The MockPictureInPictureService implements the PictureInPicture service in
+ // the same process as the test and guarantees that the callbacks are called in
+ // order for the events to be fired.
+@@ -300,6 +336,12 @@
+         mojom::blink::PictureInPictureService::Name_,
+         BindRepeating(&MockPictureInPictureService::Bind,
+                       Unretained(&mock_service_)));
++    GetFrame()
++        .GetRemoteNavigationAssociatedInterfaces()
++        ->OverrideBinderForTesting(
++            parc::mojom::blink::PictureInPictureCaptionsHost::Name_,
++            BindRepeating(&MockPictureInPictureCaptionsHost::Bind,
++                          Unretained(&captions_host_)));
 -
++
+     video_ = MakeGarbageCollected<HTMLVideoElement>(GetDocument());
+     GetDocument().body()->AppendChild(video_);
+@@ -324,11 +366,16 @@
+   void TearDown() override {
+     GetFrame().GetBrowserInterfaceBroker().SetBinderForTesting(
+         mojom::blink::PictureInPictureService::Name_, {});
++    GetFrame()
++        .GetRemoteNavigationAssociatedInterfaces()
++        ->OverrideBinderForTesting(
++            parc::mojom::blink::PictureInPictureCaptionsHost::Name_, {});
+     RenderingTest::TearDown();
+   }
+-
++
+   HTMLVideoElement* Video() const { return video_.Get(); }
+   MockPictureInPictureService& Service() { return mock_service_; }
++  MockPictureInPictureCaptionsHost& CaptionsHost() { return captions_host_; }
+-
++
+   LocalFrame& GetFrame() const { return *helper_.LocalMainFrame()->GetFrame(); }
+-
++
+@@ -349,6 +396,7 @@
+   Persistent<HTMLVideoElement> video_;
+   std::unique_ptr<frame_test_helpers::TestWebFrameClient> client_;
+   testing::NiceMock<MockPictureInPictureService> mock_service_;
++  testing::NiceMock<MockPictureInPictureCaptionsHost> captions_host_;
+   scoped_refptr<cc::Layer> layer_;
+   frame_test_helpers::WebViewHelper helper_;
+ };
+@@ -371,6 +419,554 @@
+-
++
+   EXPECT_NE(nullptr, PictureInPictureControllerImpl::From(GetDocument())
+                          .PictureInPictureElement());
++}
 +
 +// Parc: the window shows the displayed cues, as Safari's does, and drops them
 +// when the track stops showing.
@@ -655,7 +649,7 @@
 +
 +  // Entry clears whatever the window showed; the mock's window has no size
 +  // yet, so that first update carries no cues.
-+  EXPECT_CALL(Service().Session(), UpdateCaptions(_, _))
++  EXPECT_CALL(CaptionsHost(), UpdateCaptions(_, _, _))
 +      .Times(testing::AnyNumber());
 +  PictureInPictureControllerImpl::From(GetDocument())
 +      .EnterPictureInPicture(Video(), /*promise=*/nullptr);
@@ -663,8 +657,9 @@
 +                                     event_type_names::kEnterpictureinpicture);
 +
 +  base::RunLoop painted;
-+  EXPECT_CALL(Service().Session(),
-+              UpdateCaptions(testing::Truly([](const SkBitmap& captions) {
++  // The browser started this document's first session.
++  EXPECT_CALL(CaptionsHost(),
++              UpdateCaptions(1u, testing::Truly([](const SkBitmap& captions) {
 +                               for (int y = 0; y < captions.height(); ++y) {
 +                                 for (int x = 0; x < captions.width(); ++x) {
 +                                   if (SkColorGetA(captions.getColor(x, y))) {
@@ -691,8 +686,8 @@
 +  painted.Run();
 +
 +  base::RunLoop cleared;
-+  EXPECT_CALL(Service().Session(),
-+              UpdateCaptions(testing::Truly([](const SkBitmap& captions) {
++  EXPECT_CALL(CaptionsHost(),
++              UpdateCaptions(1u, testing::Truly([](const SkBitmap& captions) {
 +                               return captions.drawsNothing();
 +                             }),
 +                             _))
@@ -714,7 +709,7 @@
 +  Video()->Play();
 +  test::RunPendingTasks();
 +
-+  EXPECT_CALL(Service().Session(), UpdateCaptions(_, _))
++  EXPECT_CALL(CaptionsHost(), UpdateCaptions(_, _, _))
 +      .Times(testing::AnyNumber());
 +  PictureInPictureControllerImpl::From(GetDocument())
 +      .EnterPictureInPicture(Video(), /*promise=*/nullptr);
@@ -725,8 +720,8 @@
 +  test::RunPendingTasks();
 +
 +  base::RunLoop repainted;
-+  EXPECT_CALL(Service().Session(),
-+              UpdateCaptions(testing::Truly([](const SkBitmap& captions) {
++  EXPECT_CALL(CaptionsHost(),
++              UpdateCaptions(1u, testing::Truly([](const SkBitmap& captions) {
 +                               return !captions.drawsNothing();
 +                             }),
 +                             _))
@@ -1185,11 +1180,10 @@
 +  ASSERT_TRUE(GetDocument().NeedsLayoutTreeUpdate());
 +  EXPECT_FALSE(page.Update());
 +  EXPECT_TRUE(GetDocument().NeedsLayoutTreeUpdate());
-+}
+ }
+-
 +
  TEST_F(PictureInPictureControllerTestWithWidget,
-        FrameThrottlingIsSetProperlyWithoutSetup) {
-   // This test assumes that it throttling is allowed by default.
 --- a/third_party/blink/renderer/core/css/resolver/style_adjuster.cc
 +++ b/third_party/blink/renderer/core/css/resolver/style_adjuster.cc
 @@ -77,6 +77,7 @@

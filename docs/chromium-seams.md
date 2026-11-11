@@ -475,7 +475,10 @@ check.
 Automatic picture in picture keeps its tab-helper patch: Chromium's occlusion helper exists only behind an
 off flag, merges the shell's and the page's states that Parc keeps apart, and goes quiet while not
 observing, and entry's wait for the renderer's hidden acknowledgement starts and is cancelled at seven
-private points. Only that acknowledgement is a hook.
+private points. Only that acknowledgement is a hook. Captions reach Parc's window over a
+navigation-associated Parc interface, so Chromium's session interface and window class are stock. Each
+names its session by the document's count of started sessions, which both processes keep, so a replaced
+session's captions never show.
 
 ## Decisions
 

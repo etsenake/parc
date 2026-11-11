@@ -79,6 +79,7 @@ namespace content {
 class ClientCertificateDelegate;
 class RenderFrameHost;
 class WebContents;
+struct MediaPlayerId;
 }
 
 namespace net {
@@ -316,6 +317,12 @@ void SetEmptyTabColorProvider(const ui::ColorProvider* (*provider)());
 // unhooked builds enter at once, as Chromium does.
 void SetAutoPictureInPictureVisibilitySync(
     void (*sync)(content::WebContents*, base::OnceCallback<void(bool)>));
+
+// content/browser/picture_in_picture/
+// video_picture_in_picture_window_controller_impl.cc. Runs as each video
+// picture-in-picture session starts, before its window shows.
+void SetVideoPictureInPictureSessionStarted(
+    void (*started)(const content::MediaPlayerId& player));
 
 // chrome/browser/ui/views/frame/browser_window_factory.cc; a null window keeps
 // Chrome's.

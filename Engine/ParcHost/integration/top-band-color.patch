@@ -1,12 +1,14 @@
 --- a/third_party/blink/public/mojom/BUILD.gn
 +++ b/third_party/blink/public/mojom/BUILD.gn
-@@ -1192,6 +1192,8 @@
+@@ -1192,6 +1192,9 @@
      "page/prerender_page_param.mojom",
      "page/widget.mojom",
      "page_state/page_state.mojom",
 +    "parc/page_network_activity.mojom",
++    "parc/picture_in_picture_captions.mojom",
 +    "parc/top_band_color.mojom",
- 
+-
++
      # transferable_message.mojom depends the other messaging/ mojom files here.
      "messaging/cloneable_message.mojom",
 --- a/third_party/blink/renderer/core/frame/build.gni
