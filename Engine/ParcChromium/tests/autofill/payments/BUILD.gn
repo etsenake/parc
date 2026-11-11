@@ -1,0 +1,31 @@
+# Installed at //chrome/browser/ui/autofill/payments/parc_tests so this owned
+# test target stays beside the desktop payments layer it exercises.
+
+assert(is_mac)
+
+source_set("unit_tests") {
+  visibility = [ "//chrome/browser/ui/autofill/payments:*" ]
+  testonly = true
+  sources = [ "wallet_reminder_notice_bubble_controller_test.cc" ]
+
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui:browser_actions",
+    "//chrome/browser/ui/actions:actions_headers",
+    "//chrome/browser/ui/autofill:test_support",
+    "//chrome/browser/ui/autofill/payments",
+    "//chrome/browser/ui/page_action:test_support",
+    "//chrome/browser/ui:test_support",
+    "//chrome/test/base:chrome_render_view_host_test_harness",
+    "//components/tabs:test_support",
+    "//content/public/browser",
+    "//content/test:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//ui/actions",
+    "//ui/base",
+    "//url",
+  ]
+}

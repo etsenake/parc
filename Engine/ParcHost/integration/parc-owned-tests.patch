@@ -11,3 +11,16 @@
    configs += [
      "//third_party/blink/renderer:config",
      "//third_party/blink/renderer:inside_blink",
+--- a/chrome/browser/ui/autofill/payments/BUILD.gn
++++ b/chrome/browser/ui/autofill/payments/BUILD.gn
+@@ -369,6 +369,10 @@
+       "//content/test:test_support",
+       "//ui/gfx",
+       "//ui/gfx:test_support",
+     ]
++
++    if (is_mac) {
++      deps += [ "//chrome/browser/ui/autofill/payments/parc_tests:unit_tests" ]
++    }
+   }
+ }
