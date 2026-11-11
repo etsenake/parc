@@ -67,7 +67,8 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
       application_(application) {
   parc_hooks::SetMacMainLoopEndHandler(nullptr);
   parc_hooks::SetMacMainPartsFactory(&CreateMacMainParts);
-  parc_hooks::SetBrowserAdmission(&PrepareNativeBrowserWindow);
+  parc_hooks::SetBrowserAdmission(&PrepareNativeBrowserWindow,
+                                  &SkipNativeBrowserAdmission);
   parc_hooks::SetBrowserLifetime(&NativeBrowser::OnBrowserCreated,
                                  &NativeBrowser::OnBrowserDestroyed);
   parc_hooks::SetBrowserDelegateChange(&NativeBrowser::SetAsDelegate);

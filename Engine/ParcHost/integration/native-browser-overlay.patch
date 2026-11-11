@@ -1,6 +1,6 @@
 --- a/chrome/browser/ui/browser.cc
 +++ b/chrome/browser/ui/browser.cc
-@@ -210,6 +210,27 @@
+@@ -210,6 +210,30 @@
  using ui::WebDialogDelegate;
  using web_modal::WebContentsModalDialogManager;
 -
@@ -8,12 +8,15 @@
 +namespace parc_hooks {
 +namespace {
 +bool (*browser_admission)(BrowserWindowCreateParams&) = nullptr;
++void (*browser_unadmitted)() = nullptr;
 +void (*browser_created)(Browser&) = nullptr;
 +void (*browser_destroyed)(Browser&) = nullptr;
 +void (*browser_delegate_changed)(Browser&, WebContents&, bool) = nullptr;
 +}  // namespace
-+void SetBrowserAdmission(bool (*admission)(BrowserWindowCreateParams&)) {
++void SetBrowserAdmission(bool (*admission)(BrowserWindowCreateParams&),
++                         void (*unadmitted)()) {
 +  browser_admission = admission;
++  browser_unadmitted = unadmitted;
 +}
 +void SetBrowserLifetime(void (*created)(Browser&),
 +                        void (*destroyed)(Browser&)) {
@@ -30,7 +33,7 @@
  // Browser, CreateParams:
 -
 +
-@@ -236,6 +257,10 @@
+@@ -236,6 +260,10 @@
    // should handle this; see e.g. crbug.com/40154317 and crbug.com/40798999.
    CHECK_EQ(CreationStatus::kOk,
             GetBrowserWindowCreationStatusForProfile(*params.profile));
@@ -42,7 +45,20 @@
 +
    Profile* const profile_ptr = &*params.profile;
    std::unique_ptr<Browser> browser =
-@@ -281,6 +306,11 @@
+@@ -255,6 +283,11 @@
+   // should handle this; see e.g. crbug.com/40154317 and crbug.com/40798999.
+   CHECK_EQ(CreationStatus::kOk,
+            GetBrowserWindowCreationStatusForProfile(*params.profile));
++  // Parc pairs each Browser construction with its admission; this one has
++  // none, and must not take a reservation admitted for another Browser.
++  if (parc_hooks::browser_unadmitted) {
++    parc_hooks::browser_unadmitted();
++  }
+-
++
+   Profile* const profile_ptr = &*params.profile;
+   std::unique_ptr<Browser> browser =
+@@ -281,6 +314,11 @@
        keep_alive_(
            std::make_unique<ScopedKeepAlive>(KeepAliveOrigin::BROWSER,
                                              KeepAliveRestartOption::DISABLED)) {
@@ -54,7 +70,7 @@
    const bool user_gesture = params.from_user_gesture;
    const bool in_tab_dragging = params.in_tab_dragging;
    BrowserWindow* const custom_window = params.window;
-@@ -394,6 +424,10 @@
+@@ -394,6 +432,10 @@
 -
 +
    if (service) {
@@ -67,7 +83,7 @@
  }
 -
 +
-@@ -880,6 +914,10 @@
+@@ -880,6 +922,10 @@
  // Browser, Assorted utility functions (private):
 -
 +

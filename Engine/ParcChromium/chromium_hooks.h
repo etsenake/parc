@@ -213,9 +213,11 @@ void SetSessionRestorePolicy(bool (*policy)());
 void SetGaiaAccountsPolicy(bool (*policy)(PrefService*));
 
 // chrome/browser/ui/browser.cc: Browser::Create before any allocation (false
-// cancels the creation), the start of the constructor and the end of the
-// destructor, and Browser::SetAsDelegate.
-void SetBrowserAdmission(bool (*admission)(BrowserWindowCreateParams&));
+// cancels the creation) and the test-only construction that skips admission,
+// the start of the constructor and the end of the destructor, and
+// Browser::SetAsDelegate.
+void SetBrowserAdmission(bool (*admission)(BrowserWindowCreateParams&),
+                         void (*unadmitted)());
 void SetBrowserLifetime(void (*created)(Browser&),
                         void (*destroyed)(Browser&));
 void SetBrowserDelegateChange(

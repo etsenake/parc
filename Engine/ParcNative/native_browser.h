@@ -147,6 +147,8 @@ void RetryNativeOTRProfileDestruction();
 // Profile's Browser gets a one-use window reservation for its constructor.
 // false is a cancelled native creation, never a Chrome-window fallback.
 bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params);
+// Browser::DeprecatedCreateOwnedForTesting: its Browser takes no reservation.
+void SkipNativeBrowserAdmission();
 
 // DevTools frontend for a native page, before its first navigation.
 void PrepareNativeDevtoolsContents(content::WebContents* inspected,

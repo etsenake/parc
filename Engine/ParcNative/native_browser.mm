@@ -39,9 +39,9 @@ std::vector<std::unique_ptr<NativeBrowser>>& Records() {
   return *value;
 }
 
-// Admission's accepted reservation, null for an ordinary Browser, waiting for
-// that Browser's constructor. Creation nests, so the newest is the Browser now
-// being constructed.
+// One entry per Browser construction, waiting for its constructor: admission's
+// accepted reservation, or null for an ordinary or test-built Browser. Creation
+// nests, so the newest belongs to the Browser now being constructed.
 std::vector<std::unique_ptr<PreparedNativeWindow>>& PendingWindows() {
   static base::NoDestructor<std::vector<std::unique_ptr<PreparedNativeWindow>>>
       value;
@@ -63,10 +63,7 @@ DEFINE_USER_DATA(NativeBrowser);
 // static
 void NativeBrowser::OnBrowserCreated(Browser& browser) {
   auto& pending = PendingWindows();
-  // DeprecatedCreateOwnedForTesting constructs a Browser without admission.
-  if (pending.empty()) {
-    return;
-  }
+  CHECK(!pending.empty());
   std::unique_ptr<PreparedNativeWindow> reservation = std::move(pending.back());
   pending.pop_back();
   if (reservation) {
@@ -364,6 +361,10 @@ bool PrepareNativeBrowserWindow(BrowserWindowCreateParams& params) {
   }
   PendingWindows().push_back(std::move(window));
   return true;
+}
+
+void SkipNativeBrowserAdmission() {
+  PendingWindows().push_back(nullptr);
 }
 
 void PrepareNativeDevtoolsContents(content::WebContents* inspected,
