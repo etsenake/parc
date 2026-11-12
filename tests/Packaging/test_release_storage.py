@@ -55,12 +55,21 @@ class ReleaseStorageTests(unittest.TestCase):
     def test_failed_upload_never_stops_the_release_and_names_the_retry(self):
         self.runner.state['storage_mode'] = 'image'
         with patch.object(release.subprocess, 'Popen', return_value=self.launched({'published': None, 'error': 'NAS offline'})), \
-                patch.object(self.runner, 'command', side_effect=release.Failure('busy')) as command:
+                patch.object(self.runner, 'storage_cleanup', return_value=False) as cleanup:
             self.runner.start_storage_upload()
             self.runner.storage()
         self.assertIn('not updated (NAS offline)', self.runner.state['storage_result'])
         self.assertIn('engine_storage.py publish', self.runner.state['storage_result'])
-        self.assertIn('detach', [str(a) for a in command.call_args.args[0]])
+        cleanup.assert_called_once_with('detach')
+
+    def test_an_eject_that_never_finishes_is_stopped_and_the_release_moves_on(self):
+        child = Mock(pid=4343)
+        child.wait.side_effect = release.subprocess.TimeoutExpired('detach', 1)
+        with patch.object(release.subprocess, 'Popen', return_value=child), \
+                patch.object(release.os, 'killpg') as killpg:
+            self.assertFalse(self.runner.storage_cleanup('detach'))
+        self.assertEqual([call.args for call in killpg.call_args_list],
+                         [(4343, release.signal.SIGTERM), (4343, release.signal.SIGKILL)])
 
     def test_upload_that_dies_without_a_result_is_reported(self):
         with patch.object(release.subprocess, 'Popen', return_value=self.launched(None)):
@@ -99,7 +108,7 @@ class ReleaseStorageTests(unittest.TestCase):
         child.wait.side_effect = release.subprocess.TimeoutExpired('publish', 1)
         self.runner.state['storage_mode'] = 'image'
         with patch.object(release.subprocess, 'Popen', return_value=child), \
-                patch.object(self.runner, 'command', side_effect=AssertionError('ejected')):
+                patch.object(self.runner, 'storage_cleanup', side_effect=AssertionError('ejected')):
             self.runner.start_storage_upload()
             self.runner.storage()
         self.assertIn('still uploading in the background', self.runner.state['storage_result'])

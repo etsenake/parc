@@ -165,6 +165,22 @@ def mount_share(config: dict, timeout: float = 90) -> bool:
     return mounted(config["mount_point"], "nfs")
 
 
+def used_bytes(folder: Path) -> int:
+    total, seen = 0, set()
+    for base, _, names in os.walk(folder):
+        for name in names:
+            try:
+                info = os.lstat(os.path.join(base, name))
+            except OSError:
+                continue
+            if info.st_nlink > 1:
+                if (info.st_dev, info.st_ino) in seen:
+                    continue
+                seen.add((info.st_dev, info.st_ino))
+            total += info.st_blocks * 512
+    return total
+
+
 def developer_dir() -> Path | None:
     try:
         result = run(["/usr/bin/xcode-select", "-p"], 30)
@@ -597,7 +613,17 @@ class Store:
         previous = self.local if self.local != destination and describe(self.local) is not None else None
         if previous is not None and not self.operation_idle(previous):
             previous = None
-        if (existing is not None or previous is not None) and shutil.disk_usage(destination.parent).free < need:
+        free = shutil.disk_usage(destination.parent).free
+        if free < need:
+            device = os.stat(destination.parent).st_dev
+            removable = [path for path in (destination if existing is not None else None, previous)
+                         if path is not None and os.stat(path).st_dev == device]
+            reclaimable = sum(used_bytes(path) for path in removable)
+            if free + reclaimable < need:
+                self.log(f"Not enough free space to unpack the NAS snapshot ({need / (1 << 30):.0f} GB needed, "
+                         f"{free / (1 << 30):.0f} GB free, {reclaimable / (1 << 30):.0f} GB in older engine copies); "
+                         "nothing was removed")
+                return False
             self.verify_snapshot()
         aside = None
         if existing is not None:
@@ -780,23 +806,38 @@ class Store:
             if (marker.get("from_host"), marker.get("created_utc")) != (info.get("from_host"),
                                                                        info.get("snapshot_created_utc")):
                 raise StorageError("the NAS snapshot no longer holds the handed-off build; hand it off again")
-            info.update(taken_by=self.host, taken_utc=now())
+            claim = {"taken_by": self.host, "taken_utc": now()}
+            info.update(claim)
             write_json(info_path, info)
+            write_json(self.current / "metadata.json", {**snapshot, "handoff": {**marker, **claim}})
         finally:
             handle.close()
         try:
             return self.continue_release(info, snapshot)
         except BaseException:
-            handle = self.locked(exclusive=True)
-            try:
-                claimed = read_json(info_path)
-                if claimed and claimed.get("taken_by") == self.host:
-                    claimed.pop("taken_by", None)
-                    claimed.pop("taken_utc", None)
-                    write_json(info_path, claimed)
-            finally:
-                handle.close()
+            self.release_claim(info)
             raise
+
+    def release_claim(self, info: dict) -> None:
+        identity = (info.get("from_host"), info.get("snapshot_created_utc"), self.host)
+        handle = self.locked(exclusive=True)
+        try:
+            path = self.share / "handoff/current/handoff.json"
+            claimed = read_json(path)
+            if claimed and (claimed.get("from_host"), claimed.get("snapshot_created_utc"),
+                            claimed.get("taken_by")) == identity:
+                claimed.pop("taken_by", None)
+                claimed.pop("taken_utc", None)
+                write_json(path, claimed)
+            metadata = read_json(self.current / "metadata.json")
+            marker = (metadata or {}).get("handoff")
+            if isinstance(marker, dict) and (marker.get("from_host"), marker.get("created_utc"),
+                                             marker.get("taken_by")) == identity:
+                marker.pop("taken_by", None)
+                marker.pop("taken_utc", None)
+                write_json(self.current / "metadata.json", metadata)
+        finally:
+            handle.close()
 
     def continue_release(self, info: dict, snapshot: dict) -> dict:
         source_run = self.share / "handoff/current/run"
@@ -812,16 +853,27 @@ class Store:
             raise StorageError("the handed-off build is for a different engine than this checkout")
         if not self.restore(snapshot):
             raise StorageError("the handed-off build could not be unpacked on this Mac")
-        self.mark_handoff_taken()
-        shutil.copytree(source_run, run_dir, symlinks=True)
-        state = relocate(state, [(info["from_root"], str(self.repo)), (info["from_home"], str(Path.home()))])
-        for key in ("pid", "command_pid", "command", "command_started_utc", "interrupted_process_group",
-                    "interrupted_inputs_replaced", "storage_upload", "storage_result", "storage_error", "handed_off_utc"):
-            state.pop(key, None)
-        state.update(run=str(run_dir), workspace=str(self.local), storage_mode="restored", status="stopped",
-                     handed_off_from=info.get("from_host"), updated_utc=now())
-        write_json(run_dir / "state.json", state)
-        write_json(self.repo / "build/releases/current.json", state)
+        staging = run_dir.with_name(".taking-" + run_dir.name)
+        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            shutil.copytree(source_run, staging, symlinks=True)
+            state = relocate(state, [(info["from_root"], str(self.repo)), (info["from_home"], str(Path.home()))])
+            for key in ("pid", "command_pid", "command", "command_started_utc", "interrupted_process_group",
+                        "interrupted_inputs_replaced", "storage_upload", "storage_result", "storage_error",
+                        "handed_off_utc"):
+                state.pop(key, None)
+            state.update(run=str(run_dir), workspace=str(self.local), storage_mode="restored", status="stopped",
+                         handed_off_from=info.get("from_host"), updated_utc=now())
+            write_json(staging / "state.json", state)
+            staging.rename(run_dir)
+        except BaseException:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+        try:
+            write_json(self.repo / "build/releases/current.json", state)
+        except BaseException:
+            shutil.rmtree(run_dir, ignore_errors=True)
+            raise
         return state
 
     def publish(self, workspace: Path, handoff: bool = False) -> dict:

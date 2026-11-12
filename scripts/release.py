@@ -30,6 +30,7 @@ REPOSITORY = "etsenake/parc"
 PUBLIC_REPOSITORY = "etsenake/parc-releases"
 TERMINAL = {"complete", "abandoned", "nothing-to-release", "handed-off"}
 STORAGE_WAIT_SECONDS = 4 * 3600
+STORAGE_CLEANUP_SECONDS = 600
 
 
 class Failure(RuntimeError):
@@ -692,12 +693,34 @@ class Release:
             line = ("not updated (" + str(outcome.get("error")) + "); the release is unaffected. Retry from either Mac "
                     "with: python3 scripts/engine_storage.py publish")
         self.checkpoint(storage_result=line)
-        if self.state.get("storage_mode") == "image":
-            try:
-                self.command([sys.executable, Path(self.state["source"]) / "scripts/engine_storage.py", "detach",
-                              "--repo", self.state["source"]], name="engine-storage-detach")
-            except Failure as error:
-                self.emit("The NAS disk image is still open on this Mac: " + str(error))
+        if self.state.get("storage_mode") == "image" and not self.storage_cleanup("detach"):
+            self.emit("The NAS disk image is still open on this Mac; eject it later with: "
+                      "python3 scripts/engine_storage.py detach")
+
+    def storage_cleanup(self, *args):
+        source = Path(self.state["source"])
+        try:
+            with self.log.open("a") as stream:
+                child = subprocess.Popen([sys.executable, source / "scripts/engine_storage.py", *args, "--repo", source],
+                                         cwd=self.root, env=self.env, stdout=stream, stderr=subprocess.STDOUT,
+                                         start_new_session=True)
+        except OSError as error:
+            self.emit("NAS engine storage cleanup could not start: " + str(error))
+            return False
+        try:
+            return child.wait(timeout=STORAGE_CLEANUP_SECONDS) == 0
+        except subprocess.TimeoutExpired:
+            self.emit("NAS engine storage cleanup did not finish in time; stopping it")
+            for stop in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.killpg(child.pid, stop)
+                    child.wait(timeout=10)
+                    break
+                except ProcessLookupError:
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+            return False
 
     def package(self):
         self.start_storage_upload()

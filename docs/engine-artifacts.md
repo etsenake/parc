@@ -75,9 +75,11 @@ prompt.
    replaced the snapshot after it was chosen. An outdated Parc-owned workspace
    there, or at the previous local path, is moved aside and deleted after a
    successful unpack, or put back if the unpack fails. When space is short it
-   is deleted first, but only after every byte of the snapshot checks out; a
-   connection lost mid-unpack then leaves no engine copy until the next run
-   unpacks again. Folders without a Parc receipt are never touched.
+   is deleted first, but only when deleting the older copies on that disk frees
+   enough room and every byte of the snapshot checks out; otherwise nothing is
+   removed. A connection lost mid-unpack after such a deletion leaves no engine
+   copy until the next run unpacks again. Folders without a Parc receipt are
+   never touched.
 4. The local workspace as it is.
 
 "Ahead" compares copies with the checkout's source lock by overlay version: the
@@ -97,8 +99,10 @@ share, tied to that snapshot's handoff mark, and the first Mac marks it
 `handed-off` so it won't resume there. The next `release.sh` (or `take-handoff`)
 on another Mac without its own unfinished release claims it under the lock, so
 only one Mac can, refuses if the snapshot no longer carries the matching mark,
-unpacks the snapshot, relocates the run's paths to that checkout and home, and
-resumes it under the same release lease. A failed takeover releases the claim. A release past its engine stage must finish where
+unpacks the snapshot, stages a copy of the run with its paths relocated to that
+checkout and home, moves it into place only when complete, and resumes it under
+the same release lease. A failed takeover removes its local copy and releases
+both claims, on the run and on the snapshot, so it can be retried. A release past its engine stage must finish where
 it is. `--from image|snapshot|local` forces a copy; a requested copy that is
 unavailable is an error rather than a silent fallback.
 
@@ -124,9 +128,9 @@ With settings present and `PARC_ENGINE_WORKSPACE` unset, the
 choice when resumed. Once the engine is sealed, the release starts packing it
 into the NAS snapshot in the background, writing to the release log, and
 continues packaging. Its last stage waits up to four hours for that upload,
-ejects an image it opened, and adds the upload's outcome to the release's final
-line; an upload still running then keeps going in the background and is
-reported as such. A resumed release waits only on its own uploader process. A
+ejects an image it opened (stopping an eject that takes over ten minutes), and
+adds the upload's outcome to the release's final line; an upload still running
+then keeps going in the background and is reported as such. A resumed release waits only on its own uploader process. A
 failed or unstartable upload, unreadable settings or a failed NAS engine choice
 is reported (the last falls back to this Mac's workspace) and never stops the
 release.

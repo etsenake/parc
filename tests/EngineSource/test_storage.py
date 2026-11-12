@@ -267,10 +267,72 @@ class StorageTests(unittest.TestCase):
             raise storage.StorageError("part 3 is damaged")
 
         with patch.object(self.store, "engine_tool", side_effect=tool), \
+                patch.object(storage, "used_bytes", return_value=1 << 51), \
                 self.assertRaisesRegex(storage.StorageError, "damaged"):
             self.store.restore(self.store.snapshot())
         self.assertEqual(calls, ["verify"])
         self.assertEqual(storage.describe(self.store.local)["overlay_identity"], "0" * 64)
+
+    def test_too_little_room_even_after_deleting_keeps_the_old_copy(self):
+        self.receipt(self.store.local, overlay="0" * 64)
+        self.snapshot(size=1 << 50)
+        with patch.object(self.store, "engine_tool", side_effect=AssertionError("touched the snapshot")):
+            self.assertFalse(self.store.restore(self.store.snapshot()))
+        self.assertEqual(storage.describe(self.store.local)["overlay_identity"], "0" * 64)
+        self.assertTrue(any("nothing was removed" in line for line in self.logs))
+
+    def test_room_made_by_deleting_the_old_copy_unpacks_after_checking(self):
+        self.receipt(self.store.local, overlay="0" * 64)
+        self.snapshot(size=50 << 30)
+        calls = []
+
+        def tool(*args, **kwargs):
+            calls.append(args[0])
+            return self.restored(*args, **kwargs) if args[0] == "restore" else ""
+
+        def usage(path):
+            room = (10 << 30) if self.store.local.exists() else (200 << 30)
+            return SimpleNamespace(free=room, used=0, total=0)
+
+        with patch.object(self.store, "engine_tool", side_effect=tool), \
+                patch.object(storage, "used_bytes", return_value=100 << 30), \
+                patch.object(storage.shutil, "disk_usage", side_effect=usage):
+            self.assertTrue(self.store.restore(self.store.snapshot()))
+        self.assertEqual(calls, ["verify", "restore"])
+        self.assertEqual(storage.describe(self.store.local)["phase"], "synced")
+
+    def assert_takeover_left_no_trace(self, info):
+        self.assertNotIn("taken_by", json.loads(info.read_text()))
+        self.assertNotIn("taken_by", self.store.snapshot()["handoff"])
+        releases = self.repo / "build/releases"
+        self.assertEqual(sorted(p.name for p in releases.iterdir()) if releases.exists() else [], [])
+
+    def test_takeover_failing_while_copying_the_release_rolls_everything_back(self):
+        info = self.handoff_waiting()
+        self.handed_off_snapshot("T1")
+        with patch.object(storage, "mount_share", return_value=True), patch.object(storage, "run"), \
+                patch.object(self.store, "restore", return_value=True), \
+                patch.object(storage.shutil, "copytree", side_effect=OSError("disk full")), \
+                self.assertRaises(OSError):
+            self.store.take_release()
+        self.assert_takeover_left_no_trace(info)
+
+    def test_takeover_failing_to_record_the_release_rolls_everything_back(self):
+        info = self.handoff_waiting()
+        self.handed_off_snapshot("T1")
+        original = storage.write_json
+
+        def write(path, value):
+            if path.name == "current.json":
+                raise OSError("disk full")
+            original(path, value)
+
+        with patch.object(storage, "mount_share", return_value=True), patch.object(storage, "run"), \
+                patch.object(self.store, "restore", return_value=True), \
+                patch.object(storage, "write_json", side_effect=write), \
+                self.assertRaises(OSError):
+            self.store.take_release()
+        self.assert_takeover_left_no_trace(info)
 
     def test_take_over_clears_another_macs_record_and_checks_the_image(self):
         self.store.bundle.mkdir()
