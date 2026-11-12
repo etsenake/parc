@@ -12,53 +12,66 @@ final class LinksSettingsView: NSView {
 
     init(store: BrowserStore) {
         self.store = store
-        super.init(frame: NSRect(x: 0, y: 0, width: 684, height: 562))
-        let group = SettingsGroupView(frame: NSRect(x: 64, y: 202, width: 556, height: 88))
-        let label = NSTextField(wrappingLabelWithString: "Choose which Space opens your links.")
-        label.font = .systemFont(ofSize: 13)
-        label.frame = NSRect(x: 12, y: 14, width: 340, height: 46)
-        group.addSubview(label)
-        let open = ActionButton("Air Traffic Control…") { [weak self] in _ = self?.showRoutes() }
-        open.focusRingType = .exterior
-        open.isBordered = true; open.bezelStyle = .rounded; open.contentTintColor = .labelColor
-        open.frame = NSRect(x: 360, y: 22, width: 184, height: 30)
-        group.addSubview(open); addSubview(group)
-        let explanation = NSTextField(wrappingLabelWithString: "Peek is a way to preview a link without opening a new tab. It’s perfect for quickly looking at a link from an email, news article, or tweet.")
-        explanation.font = .systemFont(ofSize: 13)
-        explanation.frame = NSRect(x: 74, y: 20, width: 536, height: 38)
-        addSubview(explanation)
-        let peekGroup = SettingsGroupView(frame: NSRect(x: 64, y: 74, width: 556, height: 90))
+        super.init(frame: NSRect(x: 0, y: 0, width: SettingsLayout.contentWidth, height: SettingsLayout.contentHeight))
+        let margin = SettingsLayout.margin, width = SettingsLayout.groupWidth, inset = SettingsLayout.rowInset
+        let rowHeight = SettingsLayout.rowHeight, noteHeight = SettingsLayout.noteRowHeight
+        let peekTop = 20 + SettingsLayout.headingGap + SettingsLayout.headingHeight
+        let peekHeading = SettingsSectionHeading(title: "Peek")
+        peekHeading.frame = NSRect(x: margin + inset, y: 20, width: width - inset * 2, height: SettingsLayout.headingHeight)
+        addSubview(peekHeading)
+        let peekGroup = SettingsGroupView(frame: NSRect(x: margin, y: peekTop, width: width, height: rowHeight + noteHeight))
         let titles = ["Open a Peek window when clicking on links with Shift held",
                       "Open a Peek window when clicking on links to other sites"]
         for (index, toggle) in [shiftPeek, automaticPeek].enumerated() {
+            let top = CGFloat(index) * rowHeight
             let label = NSTextField(labelWithString: titles[index])
             label.font = .systemFont(ofSize: 13)
-            label.frame = NSRect(x: 10, y: 9 + CGFloat(index) * 36, width: 492, height: 20)
+            label.frame = NSRect(x: inset, y: top + (index == 0 ? 12 : 10), width: width - inset * 3 - 38, height: 18)
             peekGroup.addSubview(label)
             toggle.controlSize = .small
-            toggle.frame = NSRect(x: 512, y: 9 + CGFloat(index) * 44, width: 34, height: 22)
+            let height = index == 0 ? rowHeight : noteHeight
+            toggle.frame = NSRect(x: width - inset - 38, y: top + ((height - 22) / 2).rounded(), width: 38, height: 22)
             toggle.target = self
             toggle.action = index == 0 ? #selector(changeShiftPeek(_:)) : #selector(changeAutomaticPeek(_:))
             toggle.setAccessibilityLabel(titles[index])
             peekGroup.addSubview(toggle)
         }
-        let rowDivider = NSBox(frame: NSRect(x: 10, y: 36, width: 536, height: 1))
+        let rowDivider = NSBox(frame: NSRect(x: inset, y: rowHeight, width: width - inset * 2, height: 1))
         rowDivider.boxType = .separator; peekGroup.addSubview(rowDivider)
         let note = NSTextField(labelWithString: "Note: This only affects Favorites and Pinned tabs")
-        note.font = NSFontManager.shared.convert(.systemFont(ofSize: 12), toHaveTrait: .italicFontMask)
+        note.font = .systemFont(ofSize: 11)
         note.textColor = .secondaryLabelColor
-        note.frame = NSRect(x: 10, y: 66, width: 492, height: 18)
+        note.frame = NSRect(x: inset, y: rowHeight + 30, width: width - inset * 3 - 38, height: 16)
         peekGroup.addSubview(note)
         automaticPeek.setAccessibilityHelp(note.stringValue)
         addSubview(peekGroup)
-        let separator = NSBox(frame: NSRect(x: 64, y: 182, width: 556, height: 1))
-        separator.boxType = .separator; addSubview(separator)
+        let explanation = NSTextField(wrappingLabelWithString: "Peek is a way to preview a link without opening a new tab. It’s perfect for quickly looking at a link from an email, news article, or tweet.")
+        explanation.font = .systemFont(ofSize: 11)
+        explanation.textColor = .secondaryLabelColor
+        explanation.frame = NSRect(x: margin + inset, y: peekGroup.frame.maxY + 8, width: width - inset * 2, height: 30)
+        addSubview(explanation)
+        let routesTop = explanation.frame.maxY + SettingsLayout.headingSpacing - 8
+        let routesHeading = SettingsSectionHeading(title: "Air Traffic Control")
+        routesHeading.frame = NSRect(x: margin + inset, y: routesTop - SettingsLayout.headingGap - SettingsLayout.headingHeight,
+                                     width: width - inset * 2, height: SettingsLayout.headingHeight)
+        addSubview(routesHeading)
+        let group = SettingsGroupView(frame: NSRect(x: margin, y: routesTop, width: width, height: rowHeight))
+        let label = NSTextField(wrappingLabelWithString: "Choose which Space opens your links.")
+        label.font = .systemFont(ofSize: 13)
+        label.frame = NSRect(x: inset, y: 12, width: 340, height: 18)
+        group.addSubview(label)
+        let open = SettingsPillButton(title: "Air Traffic Control…")
+        open.target = self; open.action = #selector(openRoutes)
+        open.frame = NSRect(x: width - inset - open.fittingWidth, y: ((rowHeight - SettingsLayout.buttonHeight) / 2).rounded(),
+                            width: open.fittingWidth, height: SettingsLayout.buttonHeight)
+        group.addSubview(open); addSubview(group)
         settingsSubscription = store.statePublisher.map(\.settings).removeDuplicates().receive(on: RunLoop.main).sink { [weak self] settings in
             self?.automaticPeek.state = settings.automaticPeekEnabled ? .on : .off
             self?.shiftPeek.state = settings.shiftPeekEnabled ? .on : .off
         }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    @objc private func openRoutes() { _ = showRoutes() }
     @objc private func changeAutomaticPeek(_ sender: NSSwitch) {
         store.updateSettings { $0.automaticPeekEnabled = sender.state == .on }
     }

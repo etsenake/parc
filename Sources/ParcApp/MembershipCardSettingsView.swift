@@ -22,8 +22,8 @@ final class MembershipCardSettingsView: LayoutView, @preconcurrency NSSharingSer
     var onNameChanged: ((String) -> Void)?
     private(set) var displayName = "Your Card"
 
-    private let nameGroup = SettingsGroupView(frame: NSRect(x: 0, y: 0, width: 340, height: 56))
-    private let detailsGroup = SettingsGroupView(frame: NSRect(x: 0, y: 0, width: 340, height: 112))
+    private let nameGroup = SettingsGroupView(frame: NSRect(x: 0, y: 0, width: 292, height: 56))
+    private let detailsGroup = SettingsGroupView(frame: NSRect(x: 0, y: 0, width: 292, height: 130))
     private let created = NSTextField(labelWithString: "")
     private let explanation = NSTextField(wrappingLabelWithString:
         "Your name and card design are saved on this Mac. Share, download or randomize it below the card.")
@@ -32,7 +32,7 @@ final class MembershipCardSettingsView: LayoutView, @preconcurrency NSSharingSer
 
     init(cards: MembershipCardStore) {
         self.cards = cards
-        super.init(frame: NSRect(x: 0, y: 0, width: 684, height: 562))
+        super.init(frame: NSRect(x: 0, y: 0, width: SettingsLayout.contentWidth, height: SettingsLayout.contentHeight))
         autoresizingMask = [.width]
         addSubview(card)
         addSubview(nameGroup); addSubview(detailsGroup)
@@ -41,19 +41,19 @@ final class MembershipCardSettingsView: LayoutView, @preconcurrency NSSharingSer
         nameGroup.addSubview(nameTitle)
         name.font = .systemFont(ofSize: 13); name.alignment = .right
         name.lineBreakMode = .byTruncatingTail
-        name.frame = NSRect(x: 116, y: 19, width: 152, height: 18); nameGroup.addSubview(name)
         rename.target = self; rename.action = #selector(editName)
-        rename.frame = NSRect(x: 276, y: 16, width: 48, height: 24)
+        rename.frame = NSRect(x: 292 - 12 - rename.fittingWidth, y: 16, width: rename.fittingWidth, height: 24)
+        name.frame = NSRect(x: 112, y: 19, width: rename.frame.minX - 10 - 112, height: 18); nameGroup.addSubview(name)
         rename.setAccessibilityLabel("Edit card display name"); nameGroup.addSubview(rename)
         let createdTitle = NSTextField(labelWithString: "Card created")
         createdTitle.font = .systemFont(ofSize: 13); createdTitle.frame = NSRect(x: 16, y: 19, width: 140, height: 18)
         detailsGroup.addSubview(createdTitle)
         created.font = .systemFont(ofSize: 13); created.alignment = .right
-        created.frame = NSRect(x: 160, y: 19, width: 164, height: 18); detailsGroup.addSubview(created)
-        let rule = NSBox(frame: NSRect(x: 16, y: 56, width: 308, height: 1))
+        created.frame = NSRect(x: 140, y: 19, width: 136, height: 18); detailsGroup.addSubview(created)
+        let rule = NSBox(frame: NSRect(x: 12, y: 56, width: 268, height: 1))
         rule.boxType = .separator; detailsGroup.addSubview(rule)
         explanation.font = .systemFont(ofSize: 13); explanation.textColor = .secondaryLabelColor
-        explanation.frame = NSRect(x: 16, y: 67, width: 308, height: 36); detailsGroup.addSubview(explanation)
+        explanation.frame = NSRect(x: 16, y: 66, width: 260, height: 54); detailsGroup.addSubview(explanation)
         for (button, symbol, label, action) in [
             (share, "square.and.arrow.up", "Share card", #selector(shareCard)),
             (download, "square.and.arrow.down", "Download card", #selector(downloadCard)),
@@ -87,7 +87,7 @@ final class MembershipCardSettingsView: LayoutView, @preconcurrency NSSharingSer
     }
     private func layoutContent() {
         let banner = defaultPrompt.isHidden ? 0 : MembershipDefaultBrowserPrompt.height + 38
-        let cardX = max(16, ((bounds.width - 614) / 2).rounded())
+        let cardX = max(16, ((bounds.width - 556) / 2).rounded())
         var top = max(16, ((bounds.height - 416 - banner) / 2).rounded())
         if !defaultPrompt.isHidden {
             let width = min(defaultPrompt.fittingWidth, bounds.width - 32)
@@ -99,11 +99,11 @@ final class MembershipCardSettingsView: LayoutView, @preconcurrency NSSharingSer
         for (index, button) in [share, download, randomize].enumerated() {
             button.frame = NSRect(x: cardX + 64 + CGFloat(index) * 40, y: top + 384, width: 32, height: 32)
         }
-        let column = cardX + 274
-        nameGroup.frame = NSRect(x: column, y: top, width: 340, height: 56)
-        detailsGroup.frame = NSRect(x: column, y: nameGroup.frame.maxY + 16, width: 340, height: 112)
-        status.frame = NSRect(x: column, y: detailsGroup.frame.maxY + 16, width: 340, height: 44)
-        reload.frame = NSRect(x: column + 340 - 112, y: status.frame.maxY + 4, width: 112, height: 32)
+        let column = cardX + 264
+        nameGroup.frame = NSRect(x: column, y: top, width: 292, height: 56)
+        detailsGroup.frame = NSRect(x: column, y: nameGroup.frame.maxY + 16, width: 292, height: 130)
+        status.frame = NSRect(x: column, y: detailsGroup.frame.maxY + 16, width: 292, height: 44)
+        reload.frame = NSRect(x: column + 292 - 112, y: status.frame.maxY + 4, width: 112, height: 32)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     private func refresh(_ state: MembershipCardState?) {

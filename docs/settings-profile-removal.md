@@ -13,10 +13,12 @@ files and Easels stay on this Mac. Cancel precedes the red Delete button. There 
 no typed confirmation and no completion state: Delete closes the dialog and
 removal proceeds in the background.
 
-Progress and recovery live on the Profile list. The row reads "Removing…" while
-the native job runs and "Retry" when it stopped with the removal still pending.
-The minus button cancels a reversible preparation, is disabled during the
-irreversible commit, and retries a pending removal without asking again. A
+Progress and recovery live on the Profile list and Edit Profile. The list row
+reads "Removing…" while the native job runs and "Retry" when it stopped with the
+removal still pending. Edit Profile's Delete Profile button becomes Cancel
+Removal for a reversible preparation, Removing… and disabled during the
+irreversible commit, and Retry Removal for a pending removal, which retries
+without asking again. A
 failure is reported once in a Parc dialog naming the Profile. A failure before
 the irreversible commit leaves the Profile in place for a fresh Delete. Closing
 Settings never cancels a confirmed removal. Retry recovers the original journal

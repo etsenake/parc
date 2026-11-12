@@ -1,8 +1,9 @@
 # Settings and application preferences
 
-Settings is a native window with a personal-name card pane followed by General,
-Profiles, Links, Shortcuts, Icon and Advanced. Each pane retains its scroll
-position and responder while owned. Ordinary Settings entry preserves the
+Settings is a native window whose sidebar lists your card, then General,
+Profiles, Links, Shortcuts, Icon and Advanced. Back and Forward retrace the pages
+you visited, and Profiles drills into an Edit Profile page. Each pane retains its
+scroll position and responder while owned. Ordinary Settings entry preserves the
 selected pane; explicit commands can select Profiles or a particular shortcut.
 [Presentation](settings-presentation.md), [motion](settings-motion.md) and the
 [local card](settings-membership-card.md) have focused guides.
@@ -12,7 +13,7 @@ selected pane; explicit commands can select Profiles or a particular shortcut.
 | Pane | Current controls |
 |---|---|
 | General | Default browser, Warn before quitting, Previews Settings, Profile Settings, Replay onboarding |
-| Profiles | Create, rename, assign and remove Profiles; search/suggestions; downloads; automatic archive; native data/settings destinations |
+| Profiles | Profile list with Space counts and New Profile; Edit Profile with rename, search/suggestions, automatic archive, downloads, native data/settings destinations, Clear Browsing Data and Delete Profile |
 | Links | Ordered Air Traffic Control rules |
 | Shortcuts | Search, bindings, priority, conflict resolution and Reset All |
 | Icon | Available application icons |
@@ -39,8 +40,10 @@ Space. New Profile follows its create-and-assign flow; app-owned Settings with
 no regular Space can create an unassigned Profile. See
 [Space management](space-management.md#profile-assignment-dependency).
 
-The selected pane and editing Profile are session fields with backward-compatible
-optional decoding. An unavailable saved selection falls back to the originating
+Choosing a Profile in the list saves it as the editing Profile, then opens Edit
+Profile; reopening Settings on Profiles shows the list. Archive education and
+General's Profile Settings open Edit Profile directly. The selected pane and
+editing Profile are session fields with backward-compatible optional decoding. An unavailable saved selection falls back to the originating
 Space's Profile, then the first available Profile. Selection saves atomically
 before adoption; failure leaves the old selection.
 
@@ -343,9 +346,11 @@ approved write survives Settings closure and reports actual errors.
 
 ## Settings responder ownership and interruption — SET26
 
-The native toolbar owns pane navigation and cannot be hidden. Selecting the same
-pane preserves its responder. A sheet disables toolbar actions; refused changes
-leave the old pane intact. Controls follow their visible group order and native
+The sidebar owns pane navigation and cannot be collapsed; the toolbar holds Back,
+Forward and the title and cannot be hidden. Selecting the same pane preserves its
+responder, and choosing a page from the sidebar keeps focus there. A sheet
+disables Back and Forward; refused changes leave the old pane and sidebar
+selection intact. Controls follow their visible group order and native
 keyboard eligibility; labels are not extra key stops.
 
 Each pane remembers a weak original responder; Profiles includes its UUID and

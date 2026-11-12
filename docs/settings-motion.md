@@ -8,8 +8,9 @@ Preference changes do not acquire a generic spring, scale, sound or haptic.
 
 `SettingsHoverButton` owns one tracking area and immediate redraw without
 replacing native button tracking, target/action, keyboard or accessibility.
-Enabled hovered command rows use accent color at 0.15 with 8-point corners.
-Disabled controls use 0.25 opacity and no hover fill. Layout/repaint disable
+Command and profile rows show no hover fill; they keep the pointing hand and
+show a faint label-tinted fill with 8-point corners only while pressed.
+Disabled controls use 0.25 opacity and no press fill. Layout/repaint disable
 implicit layer animation. The real command dispatcher closes Settings only
 after accepting an action; refusal retains its error presentation.
 

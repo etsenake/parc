@@ -6,7 +6,6 @@ import tempfile
 
 root = pathlib.Path(__file__).resolve().parents[2]
 settings = (root / "Sources/ParcApp/SettingsWindow.swift").read_text()
-presentation = (root / "Sources/ParcApp/SettingsPresentation.swift").read_text()
 sidebar = (root / "Sources/ParcApp/SidebarView.swift").read_text()
 
 
@@ -19,7 +18,6 @@ def between(text, start, end):
 helpers = (between(settings, "    @discardableResult\n    private func label(", "    private func place(")
            + between(settings, "    private func place(", "\n    }\n") + "\n    }\n")
 card = between(settings, "        let downloads = group(", "\n\n") + "\n"
-group_view = between(presentation, "final class SettingsGroupView: LayoutView {", "@MainActor\nfinal class SettingsSymbolBadge")
 for use in ("label(\"Download location\", in: downloads,", "place(downloadLocationPicker, in: downloads,",
             "width: DownloadLocationPicker.width", "place(downloadHelp, in: downloads,", "place(downloadRetry, in: downloads,"):
     assert use in card, f"The Downloads card no longer lays out: {use}"
@@ -35,7 +33,7 @@ harness = f"""import AppKit
 {card}        return downloads
     }}
 }}
-{group_view}"""
+"""
 
 for use in (
         "private let downloadLocationPicker = DownloadLocationPicker()",
@@ -77,7 +75,8 @@ with tempfile.TemporaryDirectory(prefix="parc-download-location-") as directory:
     sources = [controls, temporary / "DownloadsCard.swift", root / "Sources/ParcApp/DownloadLocationPicker.swift",
                root / "Sources/ParcApp/MenuItemImage.swift",
                root / "Sources/ParcApp/TranslucentButtonFace.swift", root / "Sources/ParcApp/PointerCover.swift", root / "Sources/ParcApp/ReloadControl.swift",
-               root / "Sources/ParcApp/PointingHand.swift",
+               root / "Sources/ParcApp/PointingHand.swift", root / "Sources/ParcApp/SettingsHoverButton.swift",
+               root / "Sources/ParcApp/SettingsPresentation.swift",
                root / "tests/DownloadLocation/PickerTests.swift"]
     executable = temporary / "download-location-picker"
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-whole-module-optimization", "-parse-as-library",

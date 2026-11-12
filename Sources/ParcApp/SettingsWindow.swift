@@ -3,7 +3,7 @@ import Combine
 import UniformTypeIdentifiers
 
 @MainActor
-final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NSTableViewDataSource, NSTableViewDelegate, NSToolbarItemValidation {
+final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDelegate, NSToolbarItemValidation, NSMenuItemValidation {
     private let focusState = SettingsFocusState()
     private var sheetFocusContext: String?
     private var lifecycleRevision: UInt64 = 0
@@ -50,25 +50,41 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private let toolbarFullURL = PointingHandSwitch()
     enum Pane: String, CaseIterable {
         case membership = "Membership", general = "General", profiles = "Profiles", links = "Links", shortcuts = "Shortcuts", icon = "Icon", advanced = "Advanced"
-        var identifier: NSToolbarItem.Identifier { .init("Parc.Settings." + rawValue) }
         var symbol: String {
             switch self { case .membership: return "person.crop.square.filled.and.at.rectangle"; case .general: return "gearshape"; case .profiles: return "person"; case .shortcuts: return "keyboard"; case .icon: return "app"; case .links: return "macwindow.on.rectangle"; case .advanced: return "slider.horizontal.3" }
         }
     }
+    enum Destination: Equatable {
+        case pane(Pane), profile(UUID)
+        var pane: Pane { if case .pane(let pane) = self { return pane }; return .profiles }
+    }
+    private static let backItem = NSToolbarItem.Identifier("Parc.Settings.Back")
+    private static let forwardItem = NSToolbarItem.Identifier("Parc.Settings.Forward")
+    private static let titleItem = NSToolbarItem.Identifier("Parc.Settings.Title")
+    private let titleLabel = NSTextField(labelWithString: "")
     private let membershipPane: MembershipCardSettingsView
     private let shortcutsPane = ShortcutsSettingsView(shortcuts: .shared)
     private let iconPane = IconSettingsView(icons: .shared)
+    private let sidebar = SettingsSidebarController(panes: Pane.allCases)
     private var selectedPane = Pane.general
-    private let paneHost = SettingsPaneHost(frame: NSRect(x: 0, y: 0, width: 684, height: 562))
+    private var shownDestination: Destination?
+    private var navigation = SettingsNavigation<Destination>()
+    private let paneHost = SettingsPaneHost(frame: NSRect(x: 0, y: 0, width: SettingsLayout.contentWidth, height: SettingsLayout.contentHeight))
     private var panes: [Pane: NSScrollView] = [:]
-    private let profileList = NSTableView()
+    private var profileEditor = NSScrollView()
+    private let profileList = SettingsGroupView(frame: NSRect(x: SettingsLayout.margin, y: 0, width: SettingsLayout.groupWidth, height: SettingsLayout.rowHeight))
+    private var profileRows: [UUID: SettingsProfileButton] = [:]
+    private struct ProfileRowState: Equatable { let id: UUID; let name: String; let detail: String }
+    private var renderedProfileRows: [ProfileRowState] = []
+    private let newProfile = SettingsPillButton(title: "New Profile…")
     private var selectedProfileID: UUID?
-    private var refreshingProfiles = false
-    private let renameProfile = ActionButton("", symbol: "rectangle.and.pencil.and.ellipsis")
+    private let profileNameValue = NSTextField(labelWithString: "")
+    private let renameProfile = SettingsPillButton(title: "Rename…")
     private var profileNameDialog: (dialog: PArcDialog, profileID: UUID)?
     private var previewSettingsSheet: SidebarPreviewSettingsSheet?
-    private let removeProfile = ActionButton("", symbol: "minus")
+    private let removeProfile = SettingsPillButton(title: "Delete Profile…")
     private var removalSubscription: AnyCancellable?
+    private var membershipSubscription: AnyCancellable?
 
     private let downloadLocationPicker = DownloadLocationPicker()
     private let downloadHelp = NSTextField(wrappingLabelWithString: "")
@@ -104,42 +120,68 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             ?? store.state.profiles.first { $0.id == savedProfileID }?.id
             ?? store.state.spaces.first { $0.id == spaceID }?.profileID
             ?? store.state.profiles.first?.id
-        let window = SettingsNativeWindow(contentRect: NSRect(x: 0, y: 0, width: 684, height: 562),
-                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let width = SettingsLayout.sidebarWidth + SettingsLayout.contentWidth
+        let window = SettingsNativeWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: SettingsLayout.contentHeight),
+                              styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
         window.title = Pane.general.rawValue
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
-        window.toolbarStyle = .preference
+        window.toolbarStyle = .unified
+        window.titleVisibility = .hidden
+        window.titlebarSeparatorStyle = .none
         super.init(window: window)
         window.delegate = self
-        window.contentView = paneHost
         configureControls()
-        let membershipScroll = NSScrollView(frame: membershipPane.bounds)
+        let frame = NSRect(x: 0, y: 0, width: SettingsLayout.contentWidth, height: SettingsLayout.contentHeight)
+        let membershipScroll = NSScrollView(frame: frame)
         membershipScroll.drawsBackground = false; membershipScroll.hasVerticalScroller = true
         membershipScroll.autohidesScrollers = true; membershipScroll.documentView = membershipPane
         panes[.membership] = membershipScroll
         membershipPane.onNameChanged = { [weak self] _ in self?.refreshMembershipTitle() }
         membershipPane.onMakeDefault = { [weak self] in self?.makeDefaultBrowser() }
+        membershipSubscription = membershipPane.cards.$state.receive(on: RunLoop.main).sink { [weak self] _ in
+            self?.refreshMembershipTitle()
+        }
         panes[.general] = makeGeneralPane()
         panes[.profiles] = makeProfilesPane()
+        profileEditor = makeProfileEditorPane()
         panes[.advanced] = makeAdvancedPane()
-        let shortcutScroll = NSScrollView(frame: shortcutsPane.bounds)
+        let shortcutScroll = NSScrollView(frame: frame)
         shortcutScroll.drawsBackground = false; shortcutScroll.documentView = shortcutsPane
         panes[.shortcuts] = shortcutScroll
-        let iconScroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 684, height: 562))
+        let iconScroll = NSScrollView(frame: frame)
         iconScroll.drawsBackground = false; iconScroll.hasVerticalScroller = true
         iconScroll.autohidesScrollers = true; iconScroll.documentView = iconPane
         panes[.icon] = iconScroll
-        let linksScroll = NSScrollView(frame: iconScroll.frame)
+        let linksScroll = NSScrollView(frame: frame)
         linksScroll.drawsBackground = false
         linksScroll.documentView = LinksSettingsView(store: store)
         panes[.links] = linksScroll
-        let toolbar = NSToolbar(identifier: "Parc.Settings")
+        let split = SettingsSplitViewController()
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        sidebarItem.canCollapse = false
+        sidebarItem.minimumThickness = SettingsLayout.sidebarWidth
+        sidebarItem.maximumThickness = SettingsLayout.sidebarWidth
+        sidebarItem.titlebarSeparatorStyle = .none
+        let contentController = NSViewController()
+        contentController.view = paneHost
+        let contentItem = NSSplitViewItem(viewController: contentController)
+        contentItem.minimumThickness = SettingsLayout.contentWidth
+        contentItem.titlebarSeparatorStyle = .none
+        split.addSplitViewItem(sidebarItem)
+        split.addSplitViewItem(contentItem)
+        split.view.frame = NSRect(x: 0, y: 0, width: width, height: SettingsLayout.contentHeight)
+        window.contentViewController = split
+        window.initialFirstResponder = sidebar.table
+        sidebar.onSelect = { [weak self] pane in self?.selectFromSidebar(pane) }
+        let toolbar = NSToolbar(identifier: "Parc.Settings.Navigation")
         toolbar.delegate = self
-        toolbar.displayMode = .iconAndLabel
+        toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
-        toolbar.showsBaselineSeparator = true
         window.toolbar = toolbar
+        let chrome = max(0, window.frame.height - window.contentLayoutRect.height)
+        window.setContentSize(NSSize(width: width, height: SettingsLayout.contentHeight + chrome))
+        refreshMembershipTitle()
         showPane(store.state.settings.settingsPane.flatMap(Pane.init(rawValue:)) ?? .membership, persist: false)
         subscription = store.statePublisher.map { state in
             Snapshot(settings: state.settings, profiles: state.profiles, spaces: state.spaces)
@@ -218,22 +260,29 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         replay.target = self; replay.action = #selector(replayWelcome)
         exportData.setAccessibilityHelp("Export your Spaces and saved tab links as Markdown.")
         moreSettings.setAccessibilityHelp(applicationProfileID == nil ? "Open browser settings for this window’s Space and profile." : "Open browser settings for the original regular profile.")
-        removeProfile.contentTintColor = .labelColor
+        removeProfile.destructive = true
         removeProfile.setAccessibilityLabel("Delete profile")
-        removeProfile.actionBlock = { [weak self] in self?.showProfileRemoval() }
-        renameProfile.contentTintColor = .labelColor
+        removeProfile.target = self; removeProfile.action = #selector(deleteSelectedProfile)
         renameProfile.toolTip = "Rename profile"
         renameProfile.setAccessibilityLabel("Rename profile")
-        renameProfile.actionBlock = { [weak self] in self?.showProfileNameEditor() }
+        renameProfile.target = self; renameProfile.action = #selector(renameSelectedProfile)
+        newProfile.target = self; newProfile.action = #selector(addProfile)
+        newProfile.setAccessibilityLabel("New profile")
+        newProfile.toolTip = applicationProfileID == nil ? "Create a profile for this Space" : "Create a regular profile"
+        profileNameValue.font = .systemFont(ofSize: 13); profileNameValue.textColor = .secondaryLabelColor
+        profileNameValue.alignment = .right; profileNameValue.lineBreakMode = .byTruncatingTail
         for field in [downloadHelp] {
             field.font = .systemFont(ofSize: 11); field.textColor = .secondaryLabelColor
         }
     }
+    @objc private func deleteSelectedProfile() { showProfileRemoval() }
+    @objc private func renameSelectedProfile() { showProfileNameEditor() }
+    @objc private func addProfile() { createProfile() }
 
-    private func pane(height: CGFloat = 562) -> (NSScrollView, LayoutView) {
-        let content = LayoutView(frame: NSRect(x: 0, y: 0, width: 684, height: height))
+    private func pane(height: CGFloat = SettingsLayout.contentHeight) -> (NSScrollView, LayoutView) {
+        let content = LayoutView(frame: NSRect(x: 0, y: 0, width: SettingsLayout.contentWidth, height: height))
         content.autoresizingMask = [.width]
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 684, height: 562))
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: SettingsLayout.contentWidth, height: SettingsLayout.contentHeight))
         scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         scroll.drawsBackground = false; scroll.documentView = content
         return (scroll, content)
@@ -248,7 +297,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         return field
     }
 
-    private func group(in parent: NSView, x: CGFloat = 64, y: CGFloat, width: CGFloat = 556, height: CGFloat) -> SettingsGroupView {
+    private func group(in parent: NSView, x: CGFloat = SettingsLayout.margin, y: CGFloat,
+                       width: CGFloat = SettingsLayout.groupWidth, height: CGFloat) -> SettingsGroupView {
         let group = SettingsGroupView(frame: NSRect(x: x, y: y, width: width, height: height))
         parent.addSubview(group); return group
     }
@@ -258,130 +308,234 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         control.frame = frame; parent.addSubview(control)
     }
 
+    @discardableResult
+    private func heading(_ title: String, in parent: NSView, above groupY: CGFloat) -> NSTextField {
+        let field = SettingsSectionHeading(title: title)
+        field.frame = NSRect(x: SettingsLayout.margin + SettingsLayout.rowInset,
+                             y: groupY - SettingsLayout.headingGap - SettingsLayout.headingHeight,
+                             width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 2, height: SettingsLayout.headingHeight)
+        parent.addSubview(field)
+        return field
+    }
+
+    private func rowLabel(_ text: String, in group: NSView, row: Int, width: CGFloat = 360) {
+        label(text, in: group, NSRect(x: SettingsLayout.rowInset, y: CGFloat(row) * SettingsLayout.rowHeight + 12, width: width, height: 18))
+    }
+
+    private func trailing(_ control: NSView, in group: NSView, top: CGFloat, rowHeight: CGFloat = SettingsLayout.rowHeight,
+                          width: CGFloat, height: CGFloat) {
+        place(control, in: group, NSRect(x: group.bounds.width - SettingsLayout.rowInset - width,
+                                         y: top + ((rowHeight - height) / 2).rounded(), width: width, height: height))
+    }
+
+    private func trailingSwitch(_ toggle: NSSwitch, in group: NSView, top: CGFloat, rowHeight: CGFloat = SettingsLayout.rowHeight) {
+        trailing(toggle, in: group, top: top, rowHeight: rowHeight, width: 38, height: 22)
+    }
+
+    private func trailingPill(_ button: SettingsPillButton, in group: NSView, top: CGFloat, rowHeight: CGFloat = SettingsLayout.rowHeight) {
+        trailing(button, in: group, top: top, rowHeight: rowHeight, width: button.fittingWidth, height: SettingsLayout.buttonHeight)
+    }
+
     private func refreshMembershipTitle() {
         if selectedPane == .membership { window?.title = membershipPane.displayName }
-        if let item = window?.toolbar?.items.first(where: { $0.itemIdentifier == Pane.membership.identifier }) {
-            item.label = membershipPane.displayName
-            item.paletteLabel = membershipPane.displayName
-        }
+        let colors = membershipPane.cards.state.map { MembershipCardState.palettes[$0.palette].map(MembershipCardArtwork.color) } ?? []
+        sidebar.updateMembership(name: membershipPane.displayName, colors: colors)
     }
 
     private func makeGeneralPane() -> NSScrollView {
         let (scroll, content) = pane()
-        let quitting = group(in: content, y: 20, height: 37)
-        label("Warn before quitting", in: quitting, NSRect(x: 10, y: 9, width: 480, height: 18))
+        let rowHeight = SettingsLayout.rowHeight, noteHeight = SettingsLayout.noteRowHeight
+        let quitting = group(in: content, y: 20, height: rowHeight)
+        rowLabel("Warn before quitting", in: quitting, row: 0)
         warnBeforeQuitting.setAccessibilityLabel("Warn before quitting")
-        place(warnBeforeQuitting, in: quitting, NSRect(x: 508, y: 7, width: 38, height: 22))
-        let preferences = group(in: content, y: 66, height: 89)
-        label("Previews", in: preferences, NSRect(x: 10, y: 13, width: 300, height: 18))
+        trailingSwitch(warnBeforeQuitting, in: quitting, top: 0)
+        let previewsY = quitting.frame.maxY + SettingsLayout.headingSpacing
+        heading("Previews and Profiles", in: content, above: previewsY)
+        let preferences = group(in: content, y: previewsY, height: rowHeight + noteHeight)
+        rowLabel("Previews", in: preferences, row: 0)
         let previewSettings = SettingsPillButton(title: "Previews Settings…")
         previewSettings.target = self; previewSettings.action = #selector(openPreviewSettings)
-        place(previewSettings, in: preferences, NSRect(x: 546 - previewSettings.fittingWidth, y: 10,
-                                                      width: previewSettings.fittingWidth, height: 24))
-        preferences.separator(at: 44)
-        label("Manage your default search engine, Auto-Archive, and downloads in Profile Settings.",
-              in: preferences, NSRect(x: 10, y: 50, width: 340, height: 34))
+        trailingPill(previewSettings, in: preferences, top: 0)
+        preferences.separator(at: rowHeight)
         let jump = SettingsPillButton(title: "Profile Settings…")
         jump.target = self; jump.action = #selector(openProfilesPane)
-        place(jump, in: preferences, NSRect(x: 546 - jump.fittingWidth, y: 55, width: jump.fittingWidth, height: 24))
-        let onboarding = group(in: content, y: 164, height: 82)
-        label("Onboarding", in: onboarding, NSRect(x: 10, y: 13, width: 300, height: 18))
-        place(replay, in: onboarding, NSRect(x: 546 - replay.fittingWidth, y: 10, width: replay.fittingWidth, height: 24))
+        label("Manage your default search engine, Auto-Archive, and downloads in Profile Settings.",
+              in: preferences, NSRect(x: SettingsLayout.rowInset, y: rowHeight + 10,
+                                      width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 3 - jump.fittingWidth, height: 36))
+        trailingPill(jump, in: preferences, top: rowHeight, rowHeight: noteHeight)
+        let onboardingY = preferences.frame.maxY + SettingsLayout.headingSpacing
+        heading("Onboarding", in: content, above: onboardingY)
+        let onboarding = group(in: content, y: onboardingY, height: noteHeight + 6)
+        label("Replay onboarding", in: onboarding, NSRect(x: SettingsLayout.rowInset, y: 10, width: 300, height: 18))
         label("Replay the full welcome and setup. Finishing applies your choices to this Space; existing tabs stay.",
-              in: onboarding, NSRect(x: 10, y: 44, width: 536, height: 32), help: true)
+              in: onboarding, NSRect(x: SettingsLayout.rowInset, y: 30,
+                                     width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 3 - replay.fittingWidth, height: 28), help: true)
+        trailingPill(replay, in: onboarding, top: 0, rowHeight: noteHeight + 6)
         return scroll
     }
     @objc private func openPreviewSettings() { showPreviewSettings() }
-    @objc private func openProfilesPane() { showPane(.profiles) }
+    @objc private func openProfilesPane() {
+        if let id = selectedProfileID, store.state.profiles.contains(where: { $0.id == id }) { show(.profile(id)) }
+        else { showPane(.profiles) }
+    }
 
     private func makeProfilesPane() -> NSScrollView {
         let (scroll, content) = pane()
         let intro = NSTextField(labelWithAttributedString: profilesIntroduction())
         intro.isSelectable = true; intro.allowsEditingTextAttributes = true
-        intro.maximumNumberOfLines = 2; intro.lineBreakMode = .byWordWrapping
-        place(intro, in: content, NSRect(x: 64, y: 14, width: 556, height: 40))
-        let list = group(in: content, y: 72, width: 206, height: 477)
-        let heading = label("Your Profiles", in: list, NSRect(x: 16, y: 6, width: 174, height: 18))
-        heading.font = .systemFont(ofSize: 13, weight: .semibold); heading.textColor = .secondaryLabelColor
-        for y in [CGFloat(28), 445] {
-            let rule = NSBox(frame: NSRect(x: 0, y: y, width: 206, height: 1)); rule.boxType = .separator; list.addSubview(rule)
-        }
-        let column = NSTableColumn(identifier: .init("profile"))
-        column.width = 190
-        profileList.addTableColumn(column)
-        profileList.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
-        profileList.frame = NSRect(x: 0, y: 0, width: 190, height: 400)
-        profileList.autoresizingMask = [.width]
-        profileList.headerView = nil; profileList.rowHeight = 40
-        profileList.intercellSpacing = .zero; profileList.style = .plain
-        profileList.backgroundColor = .clear
-        profileList.allowsEmptySelection = false
-        profileList.dataSource = self; profileList.delegate = self
+        intro.maximumNumberOfLines = 3; intro.lineBreakMode = .byWordWrapping
+        place(intro, in: content, NSRect(x: SettingsLayout.margin + SettingsLayout.rowInset, y: 18,
+                                         width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 2, height: 46))
+        let listY: CGFloat = 104
+        heading("Your Profiles", in: content, above: listY)
+        profileList.setFrameOrigin(NSPoint(x: SettingsLayout.margin, y: listY))
+        profileList.setAccessibilityElement(true)
+        profileList.setAccessibilityRole(.group)
         profileList.setAccessibilityLabel("Your Profiles")
-        let profileScroll = NSScrollView(frame: NSRect(x: 8, y: 38, width: 190, height: 400))
-        profileScroll.drawsBackground = false
-        profileScroll.hasVerticalScroller = true; profileScroll.autohidesScrollers = true
-        profileScroll.documentView = profileList; list.addSubview(profileScroll)
-        let add = ActionButton("", symbol: "plus") { [weak self] in self?.createProfile() }
-        add.contentTintColor = .labelColor; add.setAccessibilityLabel("New profile")
-        add.toolTip = applicationProfileID == nil ? "Create a profile for this Space" : "Create a regular profile"
-        place(add, in: list, NSRect(x: 2, y: 447, width: 26, height: 26))
-        place(removeProfile, in: list, NSRect(x: 33, y: 447, width: 26, height: 26))
-        place(renameProfile, in: list, NSRect(x: 64, y: 447, width: 30, height: 26))
-        for x in [CGFloat(30), 61] {
-            let rule = NSBox(frame: NSRect(x: x, y: 452, width: 1, height: 19)); rule.boxType = .separator; list.addSubview(rule)
-        }
+        content.addSubview(profileList)
+        content.addSubview(newProfile)
+        layoutProfileList()
+        return scroll
+    }
 
-        let searching = group(in: content, x: 280, y: 72, width: 340, height: 125)
-        label("Search engine", in: searching, NSRect(x: 10, y: 13, width: 138, height: 18))
-        place(engine, in: searching, NSRect(x: 150, y: 10, width: 180, height: 25))
-        searching.separator(at: 44)
-        label("Manage search", in: searching, NSRect(x: 10, y: 58, width: 150, height: 18))
-        place(profilePageButton(.search), in: searching, NSRect(x: 200, y: 55, width: 130, height: 24))
-        searching.separator(at: 89)
-        label("Include search engine suggestions", in: searching, NSRect(x: 10, y: 99, width: 270, height: 18))
+    private func layoutProfileList() {
+        let height = max(SettingsLayout.rowHeight, CGFloat(renderedProfileRows.count) * SettingsLayout.rowHeight)
+        profileList.setFrameSize(NSSize(width: SettingsLayout.groupWidth, height: height))
+        newProfile.frame = NSRect(x: profileList.frame.maxX - newProfile.fittingWidth, y: profileList.frame.maxY + 12,
+                                  width: newProfile.fittingWidth, height: SettingsLayout.buttonHeight)
+        if let content = profileList.superview {
+            content.setFrameSize(NSSize(width: content.frame.width, height: max(SettingsLayout.contentHeight, newProfile.frame.maxY + 20)))
+        }
+    }
+
+    private func renderProfileList() {
+        let rows = store.state.profiles.map { profile -> ProfileRowState in
+            let count = store.state.spaces.filter { $0.profileID == profile.id }.count
+            let detail = store.isProfileRemovalPending(profile.id)
+                ? (ProfileRemovalController.shared.status(for: profile.id)?.running == true ? "Removing…" : "Retry")
+                : "\(count) \(count == 1 ? "Space" : "Spaces")"
+            return ProfileRowState(id: profile.id, name: profile.name, detail: detail)
+        }
+        guard rows != renderedProfileRows else { return }
+        let focused = profileRows.first { window?.firstResponder === $0.value }?.key
+        renderedProfileRows = rows
+        profileList.subviews.forEach { $0.removeFromSuperview() }
+        profileRows.removeAll()
+        for (index, row) in rows.enumerated() {
+            let top = CGFloat(index) * SettingsLayout.rowHeight
+            if index > 0 { profileList.separator(at: top) }
+            let button = SettingsProfileButton { [weak self] in self?.openProfile(row.id) }
+            button.update(name: row.name, detail: row.detail)
+            button.setAccessibilityIdentifier("settings.profile.row." + row.id.uuidString)
+            button.frame = NSRect(x: 0, y: top, width: SettingsLayout.groupWidth, height: SettingsLayout.rowHeight)
+            profileList.addSubview(button)
+            profileRows[row.id] = button
+        }
+        layoutProfileList()
+        if selectedPane == .profiles, shownDestination == .pane(.profiles), let content = panes[.profiles] {
+            connectKeyViews(in: content)
+        }
+        if let focused, let row = profileRows[focused] { window?.makeFirstResponder(row) }
+    }
+
+    private func openProfile(_ id: UUID) {
+        guard store.state.profiles.contains(where: { $0.id == id }) else { return }
+        show(.profile(id))
+    }
+
+    private func makeProfileEditorPane() -> NSScrollView {
+        let (scroll, content) = pane()
+        let rowHeight = SettingsLayout.rowHeight
+        let identity = group(in: content, y: 20, height: rowHeight)
+        rowLabel("Profile Name", in: identity, row: 0, width: 160)
+        trailingPill(renameProfile, in: identity, top: 0)
+        place(profileNameValue, in: identity, NSRect(x: 180, y: 12,
+                                                     width: SettingsLayout.groupWidth - 180 - SettingsLayout.rowInset * 2 - renameProfile.fittingWidth, height: 18))
+
+        let searchTitle = SettingsSectionHeading(title: "Search")
+        content.addSubview(searchTitle)
+        let searching = group(in: content, y: 0, height: rowHeight * 3)
+        rowLabel("Search engine", in: searching, row: 0)
+        trailing(engine, in: searching, top: 0, width: 220, height: 25)
+        searching.separator(at: rowHeight)
+        rowLabel("Manage search", in: searching, row: 1)
+        if let manage = profilePageButton(.search) as? SettingsPillButton { trailingPill(manage, in: searching, top: rowHeight) }
+        searching.separator(at: rowHeight * 2)
+        rowLabel("Include search engine suggestions", in: searching, row: 2)
         searchSuggestions.setAccessibilityLabel("Include search engine suggestions")
-        place(searchSuggestions, in: searching, NSRect(x: 292, y: 97, width: 38, height: 22))
+        trailingSwitch(searchSuggestions, in: searching, top: rowHeight * 2)
 
-        let downloads = group(in: content, x: 280, y: 206, width: 340, height: 129)
-        downloadLocationPicker.rowTitle = label("Download location", in: downloads, NSRect(x: 10, y: 58, width: 132, height: 18))
-        place(downloadLocationPicker, in: downloads, NSRect(x: 150, y: 54, width: DownloadLocationPicker.width, height: 28))
-        place(downloadHelp, in: downloads, NSRect(x: 10, y: 92, width: 240, height: 32))
-        place(downloadRetry, in: downloads, NSRect(x: 260, y: 94, width: 70, height: 28))
+        let browsingTitle = SettingsSectionHeading(title: "Tabs and Downloads")
+        content.addSubview(browsingTitle)
+        let downloads = group(in: content, y: 0, height: SettingsLayout.rowHeight * 2)
+        downloadLocationPicker.rowTitle = label("Download location", in: downloads, NSRect(x: 12, y: 54, width: 160, height: 18))
+        place(downloadLocationPicker, in: downloads, NSRect(x: SettingsLayout.groupWidth - 12 - DownloadLocationPicker.width, y: 49,
+                                                            width: DownloadLocationPicker.width, height: 28))
+        place(downloadHelp, in: downloads, NSRect(x: 12, y: 92, width: SettingsLayout.groupWidth - 120, height: 32))
+        place(downloadRetry, in: downloads, NSRect(x: SettingsLayout.groupWidth - 82, y: 94, width: 70, height: 28))
 
-        label("Archive tabs after", in: downloads, NSRect(x: 10, y: 13, width: 116, height: 18))
-        place(archiveInfo, in: downloads, NSRect(x: 128, y: 14, width: 16, height: 16))
-        place(archive, in: downloads, NSRect(x: 150, y: 10, width: 180, height: 25))
-        downloads.separator(at: 44)
-        profileCards = downloads
+        let archiveTitle = label("Archive tabs after", in: downloads, NSRect(x: 12, y: 12, width: 116, height: 18))
+        archiveTitle.sizeToFit()
+        place(archiveInfo, in: downloads, NSRect(x: archiveTitle.frame.maxX + 4, y: 13, width: 16, height: 16))
+        trailing(archive, in: downloads, top: 0, width: 220, height: 25)
+        downloads.separator(at: rowHeight)
 
-        let dataTitle = label("Your Data and Settings", in: content, NSRect(x: 290, y: 306, width: 320, height: 18))
-        dataTitle.textColor = .secondaryLabelColor
-        let data = group(in: content, x: 280, y: 327, width: 340, height: 178)
-        for (index, page) in [ProfileSettingsPage.privacy, .passwords, .payments, .notifications, .clearBrowsingData].enumerated() {
-            place(profilePageButton(page), in: data, NSRect(x: 10, y: 5 + CGFloat(index) * 34, width: 320, height: 34))
+        let dataTitle = SettingsSectionHeading(title: "Your Data and Settings")
+        content.addSubview(dataTitle)
+        let pages: [ProfileSettingsPage] = [.privacy, .passwords, .payments, .notifications]
+        let data = group(in: content, y: 0, height: rowHeight * CGFloat(pages.count))
+        for (index, page) in pages.enumerated() {
+            if index > 0 { data.separator(at: CGFloat(index) * rowHeight) }
+            place(profilePageButton(page), in: data, NSRect(x: 0, y: CGFloat(index) * rowHeight,
+                                                            width: SettingsLayout.groupWidth, height: rowHeight))
         }
-        profileDataTitle = dataTitle; profileData = data
+        if let clear = profilePageButton(.clearBrowsingData) as? SettingsPillButton { content.addSubview(clear) }
+        content.addSubview(removeProfile)
+        profileEditorLayout = ProfileEditorLayout(identity: identity, sections: [(searchTitle, searching), (browsingTitle, downloads), (dataTitle, data)],
+                                                  downloads: downloads, content: content)
         layoutProfileCards()
         return scroll
     }
 
-    private weak var profileCards: SettingsGroupView?
-    private weak var profileDataTitle: NSTextField?
-    private weak var profileData: SettingsGroupView?
+    private struct ProfileEditorLayout {
+        let identity: SettingsGroupView
+        let sections: [(NSTextField, SettingsGroupView)]
+        let downloads: SettingsGroupView
+        let content: LayoutView
+    }
+    private var profileEditorLayout: ProfileEditorLayout?
 
     private func layoutProfileCards() {
-        guard let cards = profileCards, let title = profileDataTitle, let data = profileData else { return }
+        guard let layout = profileEditorLayout else { return }
         let note = !downloadHelp.isHidden || !downloadRetry.isHidden
-        cards.setFrameSize(NSSize(width: cards.frame.width, height: note ? 129 : 89))
-        title.setFrameOrigin(NSPoint(x: title.frame.minX, y: cards.frame.maxY + 11))
-        data.setFrameOrigin(NSPoint(x: data.frame.minX, y: title.frame.maxY + 3))
+        layout.downloads.setFrameSize(NSSize(width: SettingsLayout.groupWidth,
+                                             height: SettingsLayout.rowHeight * 2 + (note ? 44 : 0)))
+        var bottom = layout.identity.frame.maxY
+        for (title, group) in layout.sections {
+            let top = bottom + SettingsLayout.headingSpacing
+            group.setFrameOrigin(NSPoint(x: SettingsLayout.margin, y: top))
+            title.frame = NSRect(x: SettingsLayout.margin + SettingsLayout.rowInset,
+                                 y: top - SettingsLayout.headingGap - SettingsLayout.headingHeight,
+                                 width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 2, height: SettingsLayout.headingHeight)
+            bottom = group.frame.maxY
+        }
+        let buttonsY = bottom + 20
+        let deleteWidth = max(removeProfile.fittingWidth, 120)
+        removeProfile.frame = NSRect(x: SettingsLayout.margin + SettingsLayout.groupWidth - deleteWidth, y: buttonsY,
+                                     width: deleteWidth, height: SettingsLayout.buttonHeight)
+        if let clear = profilePageButtons[.clearBrowsingData] as? SettingsPillButton {
+            clear.frame = NSRect(x: removeProfile.frame.minX - 12 - clear.fittingWidth, y: buttonsY,
+                                 width: clear.fittingWidth, height: SettingsLayout.buttonHeight)
+        }
+        layout.content.setFrameSize(NSSize(width: layout.content.frame.width,
+                                           height: max(SettingsLayout.contentHeight, buttonsY + SettingsLayout.buttonHeight + 20)))
     }
 
     private func profilesIntroduction() -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: 12)
         let text = NSMutableAttributedString(string: "Profiles help keep your data separate across Spaces — like history, logins, cookies, and extensions. You can use any Profile across one or more Spaces. ",
-            attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.labelColor])
-        text.append(NSAttributedString(string: "Learn more.", attributes: [.font: NSFont.systemFont(ofSize: 13),
+            attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor])
+        text.append(NSAttributedString(string: "Learn more.", attributes: [.font: font,
             .link: URL(string: "https://resources.arc.net/hc/en-us/articles/19227964556183-Profiles-Separate-Work-Personal-Browsing")!]))
         return text
     }
@@ -390,20 +544,24 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         let button: NSButton
         let activate: () -> Void = { [weak self] in self?.openProfileSettingsPage(page) }
         switch page {
-        case .search:
-            let search = ActionButton(page.title, action: activate)
-            search.isBordered = true; search.bezelStyle = .rounded; search.contentTintColor = .labelColor
-            button = search
+        case .search, .clearBrowsingData:
+            let pill = SettingsPillButton(title: page == .search ? page.title : page.title + "…")
+            pill.identifier = NSUserInterfaceItemIdentifier(page.rawValue)
+            pill.target = self; pill.action = #selector(openProfilePageButton(_:))
+            button = pill
         case .privacy: button = SettingsCommandButton(title: page.title, symbol: "lock.fill", color: .systemBlue, action: activate)
         case .passwords: button = SettingsCommandButton(title: page.title, symbol: "key.fill", color: .systemGreen, action: activate)
         case .payments: button = SettingsCommandButton(title: page.title, symbol: "creditcard.and.123", color: .systemYellow, action: activate)
         case .notifications: button = SettingsCommandButton(title: page.title, symbol: "bell.fill", color: .systemOrange, action: activate)
-        case .clearBrowsingData: button = SettingsCommandButton(title: page.title, symbol: "trash.fill", color: .systemRed, action: activate)
         }
         button.setAccessibilityLabel(page.title)
         button.setAccessibilityIdentifier("settings.profile." + page.rawValue)
         profilePageButtons[page] = button
         return button
+    }
+    @objc private func openProfilePageButton(_ sender: NSButton) {
+        guard let page = sender.identifier.flatMap({ ProfileSettingsPage(rawValue: $0.rawValue) }) else { return }
+        openProfileSettingsPage(page)
     }
 
     private struct AdvancedRow {
@@ -414,39 +572,48 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private func makeAdvancedPane() -> NSScrollView {
         let (scroll, content) = pane()
         var y: CGFloat = 20
-        func section(_ rows: [AdvancedRow]) {
-            let heights = rows.map { $0.note == nil ? CGFloat(40) : 50 }
-            let box = group(in: content, y: y, height: heights.reduce(0, +) + CGFloat(rows.count - 1))
-            var top: CGFloat = 0
+        func section(_ title: String, _ rows: [AdvancedRow]) {
+            let heights = rows.map { $0.note == nil ? SettingsLayout.rowHeight : SettingsLayout.noteRowHeight }
+            let top = y + SettingsLayout.headingGap + SettingsLayout.headingHeight
+            heading(title, in: content, above: top)
+            let box = group(in: content, y: top, height: heights.reduce(0, +))
+            var rowTop: CGFloat = 0
+            let inset = SettingsLayout.rowInset
             for (index, row) in rows.enumerated() {
-                if index > 0 { box.separator(at: top); top += 1 }
+                if index > 0 { box.separator(at: rowTop) }
                 let height = heights[index]
                 place(SettingsSymbolBadge(symbol: row.symbol, color: row.color), in: box,
-                      NSRect(x: 10, y: top + (height - 20) / 2, width: 20, height: 20))
+                      NSRect(x: inset, y: rowTop + (height - 20) / 2, width: 20, height: 20))
+                let textWidth = box.bounds.width - inset * 3 - 30 - 38
                 if let note = row.note {
-                    label(row.title, in: box, NSRect(x: 38, y: top + 7, width: 452, height: 18))
-                    label(note, in: box, NSRect(x: 38, y: top + 26, width: 452, height: 16), help: true)
+                    label(row.title, in: box, NSRect(x: inset + 30, y: rowTop + 10, width: textWidth, height: 18))
+                    label(note, in: box, NSRect(x: inset + 30, y: rowTop + 30, width: textWidth, height: 16), help: true)
                 } else {
-                    label(row.title, in: box, NSRect(x: 38, y: top + (height - 18) / 2, width: 452, height: 18))
+                    label(row.title, in: box, NSRect(x: inset + 30, y: rowTop + (height - 18) / 2, width: textWidth, height: 18))
                 }
                 row.control.setAccessibilityLabel(row.title.trimmingCharacters(in: CharacterSet(charactersIn: ".")))
-                place(row.control, in: box, NSRect(x: box.bounds.width - 48, y: top + (height - 22) / 2, width: 38, height: 22))
-                top += height
+                trailingSwitch(row.control, in: box, top: rowTop, rowHeight: height)
+                rowTop += height
             }
-            y = box.frame.maxY + 10
+            y = box.frame.maxY + SettingsLayout.headingSpacing - SettingsLayout.headingGap - SettingsLayout.headingHeight
         }
-        section([AdvancedRow(symbol: "speaker.wave.2.fill", color: .systemBlue, title: "Play Parc sound effects", control: soundEffects),
-                 AdvancedRow(symbol: "hand.tap.fill", color: .systemBlue, title: "Haptic feedback when reordering tabs", control: reorderingHaptics)])
-        section([AdvancedRow(symbol: "macwindow", color: .systemGreen, title: "When opening Parc, restore windows from previous session", control: restore),
-                 AdvancedRow(symbol: "rectangle.topthird.inset.filled", color: .systemGreen, title: "Allow window dragging from the top of webpages", control: windowDragging),
-                 AdvancedRow(symbol: "ellipsis.rectangle", color: .systemRed, title: "Show full URL when Toolbar is enabled", control: toolbarFullURL),
-                 AdvancedRow(symbol: "quote.opening", color: .systemRed, title: "Enable Shared Quotes when highlighting text.", control: sharedQuotes,
-                             note: "If disabled, you can still use Copy URL as Quote from the Edit menu.")])
-        section([AdvancedRow(symbol: "paintpalette.fill", color: .systemPurple, title: "Allow websites to get your theme data", control: websiteTheme)])
+        section("Sound and Feedback", [
+            AdvancedRow(symbol: "speaker.wave.2.fill", color: .systemBlue, title: "Play Parc sound effects", control: soundEffects),
+            AdvancedRow(symbol: "hand.tap.fill", color: .systemBlue, title: "Haptic feedback when reordering tabs", control: reorderingHaptics)])
+        section("Windows and Tabs", [
+            AdvancedRow(symbol: "macwindow", color: .systemGreen, title: "When opening Parc, restore windows from previous session", control: restore),
+            AdvancedRow(symbol: "rectangle.topthird.inset.filled", color: .systemGreen, title: "Allow window dragging from the top of webpages", control: windowDragging),
+            AdvancedRow(symbol: "ellipsis.rectangle", color: .systemRed, title: "Show full URL when Toolbar is enabled", control: toolbarFullURL),
+            AdvancedRow(symbol: "quote.opening", color: .systemRed, title: "Enable Shared Quotes when highlighting text.", control: sharedQuotes,
+                        note: "If disabled, you can still use Copy URL as Quote from the Edit menu.")])
+        section("Websites", [
+            AdvancedRow(symbol: "paintpalette.fill", color: .systemPurple, title: "Allow websites to get your theme data", control: websiteTheme)])
         websiteTheme.setAccessibilityHelp("Allow webpages to match the colors of this window’s Space.")
-        place(moreSettings, in: content, NSRect(x: 64, y: y, width: moreSettings.fittingWidth, height: 24))
-        place(exportData, in: content, NSRect(x: content.bounds.width - 64 - exportData.fittingWidth, y: y,
-                                              width: exportData.fittingWidth, height: 24))
+        let buttonsY = y - SettingsLayout.headingSpacing + SettingsLayout.headingGap + SettingsLayout.headingHeight + 20
+        place(moreSettings, in: content, NSRect(x: SettingsLayout.margin, y: buttonsY, width: moreSettings.fittingWidth, height: SettingsLayout.buttonHeight))
+        place(exportData, in: content, NSRect(x: SettingsLayout.margin + SettingsLayout.groupWidth - exportData.fittingWidth, y: buttonsY,
+                                              width: exportData.fittingWidth, height: SettingsLayout.buttonHeight))
+        content.setFrameSize(NSSize(width: content.frame.width, height: max(SettingsLayout.contentHeight, buttonsY + SettingsLayout.buttonHeight + 20)))
         return scroll
     }
 
@@ -464,7 +631,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         catch { reportProfileSettingsError(error); return false }
         cancelDownloadFolderSelection()
         selectedProfileID = profileID
-        showPane(.profiles, persist: false)
+        show(.profile(profileID), persist: false)
         refresh()
         archive.scrollToVisible(archive.bounds)
         window.makeFirstResponder(archive)
@@ -472,52 +639,133 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 
     func showPane(_ pane: Pane, persist: Bool = true) {
-        guard let content = panes[pane], let window else { return }
-        guard window.attachedSheet == nil else {
-            window.toolbar?.selectedItemIdentifier = selectedPane.identifier
-            return
+        show(.pane(pane), persist: persist)
+    }
+
+    private func content(for destination: Destination) -> NSScrollView? {
+        switch destination {
+        case .pane(let pane): return panes[pane]
+        case .profile(let id): return store.state.profiles.contains(where: { $0.id == id }) ? profileEditor : nil
         }
-        if persist {
+    }
+
+    private func title(for destination: Destination?) -> String {
+        switch destination {
+        case .pane(.membership)?: return membershipPane.displayName
+        case .pane(let pane)?: return pane.rawValue
+        case .profile?: return "Edit Profile"
+        case nil: return Pane.general.rawValue
+        }
+    }
+
+    private func selectFromSidebar(_ pane: Pane) {
+        guard let window else { return }
+        let keepsSidebarFocus = window.firstResponder === sidebar.table
+        if !show(.pane(pane), focusContent: !keepsSidebarFocus) { syncChrome() }
+    }
+
+    @discardableResult
+    private func show(_ destination: Destination, persist: Bool = true, record: Bool = true, focusContent: Bool = true) -> Bool {
+        guard let content = content(for: destination), let window else { syncChrome(); return false }
+        let pane = destination.pane
+        guard window.attachedSheet == nil else { syncChrome(); return false }
+        if case .profile(let id) = destination, id != selectedProfileID {
+            if persist {
+                do { try store.saveSettingsSelection(pane: pane.rawValue, profileID: id) }
+                catch { syncChrome(); reportProfileSettingsError(error); return false }
+            }
+            cancelDownloadFolderSelection()
+            selectedProfileID = id
+            refresh()
+        } else if persist {
             do { try store.saveSettingsSelection(pane: pane.rawValue, profileID: selectedProfileID) }
             catch {
-                window.toolbar?.selectedItemIdentifier = selectedPane.identifier
+                syncChrome()
                 reportProfileSettingsError(error)
-                return
+                return false
             }
         }
         if selectedPane != pane {
             cancelDownloadFolderSelection()
         }
         if pane == .general { DefaultBrowserController.shared.refresh() }
-        if selectedPane == pane, paneHost.pane === content {
-            window.title = pane == .membership ? membershipPane.displayName : pane.rawValue
-            window.toolbar?.selectedItemIdentifier = pane.identifier
-            return
+        if record { navigation.visit(destination) }
+        if shownDestination == destination, paneHost.pane === content {
+            syncChrome()
+            return true
         }
-        if let current = window.contentView { focusState.remember(in: window, root: current, context: focusContext) }
+        if focusContent, let root = window.contentView { focusState.remember(in: window, root: root, context: focusContext) }
         shortcutsPane.endRecording()
         archiveInfoPopover?.close(); archiveInfoPopover = nil
-        window.makeFirstResponder(nil)
+        if focusContent { window.makeFirstResponder(nil) }
         selectedPane = pane
+        shownDestination = destination
         paneHost.show(content, animated: window.isVisible)
-        window.title = pane == .membership ? membershipPane.displayName : pane.rawValue
-        window.toolbar?.selectedItemIdentifier = pane.identifier
-        content.documentView?.setAccessibilityLabel(pane.rawValue + " settings")
+        syncChrome()
+        content.documentView?.setAccessibilityLabel(title(for: destination) + " settings")
         window.autorecalculatesKeyViewLoop = pane == .shortcuts || pane == .icon
         window.recalculateKeyViewLoop()
-        if pane != .shortcuts && pane != .icon { SettingsFocusState.connectKeyViews(in: content) }
-        restorePaneFocus()
+        if pane != .shortcuts && pane != .icon { connectKeyViews(in: content) }
+        if focusContent { restorePaneFocus() }
+        return true
+    }
+
+    private func connectKeyViews(in content: NSView) {
+        SettingsFocusState.connectKeyViews(in: content)
+        let controls = SettingsFocusState.controls(in: content)
+        guard let first = controls.first, let last = controls.last else { sidebar.table.nextKeyView = nil; return }
+        last.nextKeyView = sidebar.table
+        sidebar.table.nextKeyView = first
+    }
+
+    private func syncChrome() {
+        guard let window else { return }
+        window.title = title(for: shownDestination)
+        titleLabel.stringValue = window.title
+        sidebar.select(selectedPane)
+        updateNavigationControls()
+    }
+
+    private func updateNavigationControls() {
+        let available = !isClosing && window?.attachedSheet == nil
+        for item in window?.toolbar?.items ?? [] {
+            if item.itemIdentifier == Self.backItem { item.isEnabled = available && navigation.canGoBack }
+            if item.itemIdentifier == Self.forwardItem { item.isEnabled = available && navigation.canGoForward }
+        }
+    }
+
+    private func moveInHistory(forward: Bool) {
+        guard let target = forward ? navigation.next : navigation.previous else { return }
+        guard show(target, record: false) else { return }
+        if forward { navigation.moveForward() } else { navigation.moveBack() }
+        syncChrome()
+    }
+
+    @objc func goBack(_ sender: Any?) { moveInHistory(forward: false) }
+    @objc func goForward(_ sender: Any?) { moveInHistory(forward: true) }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard !isClosing, window?.attachedSheet == nil else { return false }
+        if item.action == #selector(goBack(_:)) { return navigation.canGoBack }
+        if item.action == #selector(goForward(_:)) { return navigation.canGoForward }
+        return true
     }
 
     private var focusContext: String {
-        selectedPane.rawValue + (selectedPane == .profiles ? ":" + (selectedProfileID?.uuidString ?? "none") : "")
+        selectedPane.rawValue + (shownDestination.flatMap { if case .profile(let id) = $0 { return ":" + id.uuidString }; return nil } ?? "")
+    }
+
+    private var profileFallback: NSView? {
+        guard selectedPane == .profiles else { return nil }
+        if case .profile? = shownDestination { return renameProfile }
+        return store.state.profiles.first(where: { $0.id == selectedProfileID }).flatMap { profileRows[$0.id] }
+            ?? store.state.profiles.first.flatMap { profileRows[$0.id] }
     }
 
     private func restorePaneFocus(context: String? = nil) {
         guard !isClosing, context == nil || context == focusContext,
               let window, let content = window.contentView else { return }
-        focusState.restore(in: window, root: content, context: focusContext,
-                           fallback: selectedPane == .profiles ? profileList : nil)
+        focusState.restore(in: window, root: content, context: focusContext, fallback: sidebar.table)
     }
 
     func windowWillBeginSheet(_ notification: Notification) {
@@ -526,13 +774,13 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         sheetFocusContext = focusContext
         shortcutsPane.endRecording()
         archiveInfoPopover?.close(); archiveInfoPopover = nil
-        window.toolbar?.items.forEach { $0.isEnabled = false }
+        updateNavigationControls()
     }
 
     func windowDidEndSheet(_ notification: Notification) {
         let context = sheetFocusContext
         sheetFocusContext = nil
-        window?.toolbar?.items.forEach { $0.isEnabled = true }
+        updateNavigationControls()
         guard !isClosing else { return }
         let revision = lifecycleRevision
         DispatchQueue.main.async { [weak self] in
@@ -543,65 +791,72 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             if context?.hasPrefix(Pane.profiles.rawValue + ":") == true, self.selectedPane == .profiles,
                context != self.focusContext {
                 if let window = self.window, let content = window.contentView {
-                    self.focusState.restore(in: window, root: content, context: nil, fallback: self.profileList)
+                    self.focusState.restore(in: window, root: content, context: nil, fallback: self.profileFallback)
                 }
             } else { self.restorePaneFocus(context: context) }
         }
     }
 
-    func validateToolbarItem(_ item: NSToolbarItem) -> Bool { !isClosing && window?.attachedSheet == nil }
+    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
+        guard !isClosing, window?.attachedSheet == nil else { return false }
+        if item.itemIdentifier == Self.backItem { return navigation.canGoBack }
+        if item.itemIdentifier == Self.forwardItem { return navigation.canGoForward }
+        return true
+    }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolbarDefaultItemIdentifiers(toolbar)
     }
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace] + Pane.allCases.map(\.identifier) + [.flexibleSpace]
-    }
-    func toolbarSelectableItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        Pane.allCases.map(\.identifier)
+        [.sidebarTrackingSeparator, Self.backItem, Self.forwardItem, .space, Self.titleItem, .flexibleSpace]
     }
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        guard let pane = Pane.allCases.first(where: { $0.identifier == identifier }) else { return nil }
         let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = pane == .membership ? membershipPane.displayName : pane.rawValue
-        item.paletteLabel = item.label
-        item.toolTip = pane == .membership ? "Your local Parc card" : pane.rawValue + " settings"
-        item.image = NSImage(systemSymbolName: pane.symbol, accessibilityDescription: pane.rawValue)
-        item.target = self; item.action = #selector(selectPane(_:))
+        switch identifier {
+        case Self.backItem, Self.forwardItem:
+            let back = identifier == Self.backItem
+            item.label = back ? "Back" : "Forward"
+            item.paletteLabel = item.label
+            item.toolTip = back ? "Show the previous settings page" : "Show the next settings page"
+            item.image = NSImage(systemSymbolName: back ? "chevron.left" : "chevron.right", accessibilityDescription: item.label)
+            item.isNavigational = true
+            item.isBordered = true
+            item.autovalidates = false
+            item.target = self
+            item.action = back ? #selector(goBack(_:)) : #selector(goForward(_:))
+            DispatchQueue.main.async { [weak self] in self?.updateNavigationControls() }
+        case Self.titleItem:
+            titleLabel.font = .systemFont(ofSize: 15, weight: .bold)
+            titleLabel.textColor = .labelColor
+            titleLabel.lineBreakMode = .byTruncatingTail
+            titleLabel.setAccessibilityElement(false)
+            item.view = titleLabel
+            item.isBordered = false
+            item.label = "Title"
+            item.paletteLabel = "Title"
+            item.visibilityPriority = .high
+        default:
+            return nil
+        }
         return item
     }
-    @objc private func selectPane(_ sender: NSToolbarItem) {
-        guard let pane = Pane.allCases.first(where: { $0.identifier == sender.itemIdentifier }) else { return }
-        showPane(pane)
+
+    private func pruneRemovedProfiles() {
+        let ids = Set(store.state.profiles.map(\.id))
+        let removed: (Destination) -> Bool = { if case .profile(let id) = $0 { return !ids.contains(id) }; return false }
+        let currentRemoved = shownDestination.map(removed) ?? false
+        navigation.removeAll(where: removed, replacingCurrentWith: .pane(.profiles))
+        if currentRemoved, !isClosing {
+            if !show(.pane(.profiles), persist: false, record: false) {
+                shownDestination = .pane(.profiles)
+                syncChrome()
+            }
+        } else {
+            updateNavigationControls()
+        }
     }
 
-    func numberOfRows(in tableView: NSTableView) -> Int { store.state.profiles.count }
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard store.state.profiles.indices.contains(row) else { return nil }
-        let profile = store.state.profiles[row]
-        let count = store.state.spaces.filter { $0.profileID == profile.id }.count
-        let cell = SettingsProfileCell()
-        cell.name.stringValue = profile.name
-        cell.count.stringValue = store.isProfileRemovalPending(profile.id) ? (ProfileRemovalController.shared.status(for: profile.id)?.running == true ? "Removing…" : "Retry") : "\(count) \(count == 1 ? "Space" : "Spaces")"
-        cell.setAccessibilityLabel(profile.name + ", " + cell.count.stringValue)
-        return cell
-    }
-    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { SettingsProfileRowView() }
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        guard !refreshingProfiles, store.state.profiles.indices.contains(profileList.selectedRow) else { return }
-        let id = store.state.profiles[profileList.selectedRow].id
-        guard id != selectedProfileID else { return }
-        do { try store.saveSettingsSelection(pane: selectedPane.rawValue, profileID: id) }
-        catch {
-            refresh()
-            reportProfileSettingsError(error)
-            return
-        }
-        cancelDownloadFolderSelection()
-        selectedProfileID = id
-        refresh()
-    }
     private func profilePageSpace() -> BrowserSpace? {
         store.settingsPageSpace(profileID: selectedProfileID, originatingSpaceID: contextSpaceID)
     }
@@ -623,12 +878,15 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             cancelArchiveScopeSheet()
         }
         renameProfile.isEnabled = displayedProfileID != nil && !removing
+        profileNameValue.stringValue = store.state.profiles.first { $0.id == displayedProfileID }?.name ?? ""
         if let id = displayedProfileID {
             if removing {
                 let status = ProfileRemovalController.shared.status(for: id)
                 removeProfile.isEnabled = status?.running != true || status?.canCancel == true
                 removeProfile.toolTip = status?.running == true ? (status?.canCancel == true ? "Cancel this profile’s removal" : "This profile is being removed") : "Retry this profile’s removal"
+                removeProfile.setLabel(status?.running == true ? (status?.canCancel == true ? "Cancel Removal" : "Removing…") : "Retry Removal")
             } else {
+                removeProfile.setLabel("Delete Profile…")
                 do {
                     _ = try store.profileRemovalSummary(id)
                     removeProfile.isEnabled = true
@@ -639,6 +897,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
                 }
             }
         } else {
+            removeProfile.setLabel("Delete Profile…")
             removeProfile.isEnabled = false
             removeProfile.toolTip = "Select an available profile."
         }
@@ -668,12 +927,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         moreSettings.isEnabled = settingsContextSpace() != nil && onMoreSettings != nil
         replay.isEnabled = replaySpaceID != nil && NSApp.delegate?.responds(to: #selector(AppDelegate.replayOnboarding(_:))) == true
         restore.state = store.state.settings.restoreSession ? .on : .off
-        refreshingProfiles = true
-        profileList.reloadData()
-        if let index = store.state.profiles.firstIndex(where: { $0.id == selectedProfileID }) {
-            profileList.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
-        }
-        refreshingProfiles = false
+        renderProfileList()
+        layoutProfileCards()
+        pruneRemovedProfiles()
         refreshDownloadPreferences()
         refreshSearchPreferences()
         reportRemovalFailures()
@@ -854,8 +1110,13 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         NSApp.sendAction(#selector(AppDelegate.replayOnboarding(_:)), to: NSApp.delegate, from: self)
     }
 
+    private var showsProfileEditor: Bool {
+        if case .profile(let id)? = shownDestination { return id == selectedProfileID }
+        return false
+    }
+
     private func openProfileSettingsPage(_ page: ProfileSettingsPage) {
-        guard selectedPane == .profiles, window?.isKeyWindow == true,
+        guard selectedPane == .profiles, showsProfileEditor, window?.isKeyWindow == true,
               window?.attachedSheet == nil else { return }
         guard let space = profilePageSpace(),
               onProfileSettingsPage?(space.id, space.profileID, page) == true else {
@@ -885,7 +1146,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 
     func permitsProfilePage(in ownerStore: BrowserStore, spaceID: UUID, profileID: UUID) -> Bool {
-        selectedPane == .profiles && selectedProfileID == profileID
+        selectedPane == .profiles && showsProfileEditor && selectedProfileID == profileID
             && profilePageSpace()?.id == spaceID
             && permitsPage(in: ownerStore, spaceID: spaceID, profileID: profileID)
     }
@@ -1035,6 +1296,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
                 }
                 self.refresh()
                 try self.store.saveSettingsSelection(pane: self.selectedPane.rawValue, profileID: id)
+                self.show(.profile(id), persist: false)
             } catch { self.reportProfileSettingsError(error) }
         }
     }
@@ -1239,6 +1501,14 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
 }
 
 @MainActor
+final class SettingsSplitViewController: NSSplitViewController {
+    override func toggleSidebar(_ sender: Any?) {}
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        item.action == #selector(toggleSidebar(_:)) ? false : super.validateUserInterfaceItem(item)
+    }
+}
+
+@MainActor
 final class SettingsPaneHost: NSView {
     private(set) var pane: NSView?
     override init(frame: NSRect) {
@@ -1255,7 +1525,17 @@ final class SettingsPaneHost: NSView {
             layer?.add(fade, forKey: "pane")
         }
         pane?.removeFromSuperview()
-        next.frame = bounds; next.autoresizingMask = [.width, .height]
+        if let scroll = next as? NSScrollView {
+            scroll.automaticallyAdjustsContentInsets = false
+            scroll.contentInsets = NSEdgeInsetsZero
+        }
+        next.autoresizingMask = []
         addSubview(next); pane = next
+        layoutPane()
+    }
+    override func layout() { super.layout(); layoutPane() }
+    private func layoutPane() {
+        let top = safeAreaInsets.top
+        pane?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - top))
     }
 }

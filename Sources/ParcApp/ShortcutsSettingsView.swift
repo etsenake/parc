@@ -39,14 +39,14 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
         self.shortcuts = shortcuts
         self.numberedTargetDefaults = numberedTargetDefaults
         self.systemShortcutProvider = systemShortcutProvider
-        super.init(frame: NSRect(x: 0, y: 0, width: 684, height: 562))
+        super.init(frame: NSRect(x: 0, y: 0, width: 596, height: 562))
         let basics = ShortcutBasicsBanner()
-        basics.frame = NSRect(x: 0, y: 18, width: 684, height: 36)
+        basics.frame = NSRect(x: 0, y: 18, width: 596, height: 36)
         basics.onPress = { [weak self] in self?.showEssentials(nil) }
         addSubview(basics)
-        let listBackground = ShortcutListSurface(frame: NSRect(x: 64, y: 84, width: 340, height: 450))
+        let listBackground = ShortcutListSurface(frame: NSRect(x: 20, y: 84, width: 340, height: 450))
         addSubview(listBackground)
-        searchHeader.frame = NSRect(x: 64, y: 84, width: 340, height: 41)
+        searchHeader.frame = NSRect(x: 20, y: 84, width: 340, height: 41)
         search.delegate = self
         searchHeader.onClear = { [weak self] in self?.clearSearch() }
         addSubview(searchHeader)
@@ -60,24 +60,24 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
             guard let self, self.rows.indices.contains(row), case .command(let command) = self.rows[row] else { return nil }
             return self.commandMenu(for: command.id)
         }
-        let scroll = NSScrollView(frame: NSRect(x: 64, y: 125, width: 340, height: 409))
+        let scroll = NSScrollView(frame: NSRect(x: 20, y: 125, width: 340, height: 409))
         scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true
         scroll.drawsBackground = false; scroll.borderType = .noBorder
         table.frame = scroll.bounds; table.autoresizingMask = [.width]
         scroll.documentView = table; addSubview(scroll)
         keycaps.size = .large; keycaps.alignment = .leading
-        keycaps.frame = NSRect(x: 420, y: 84, width: 200, height: 64); addSubview(keycaps)
-        heading.frame = NSRect(x: 420, y: 174, width: 200, height: 22)
+        keycaps.frame = NSRect(x: 376, y: 84, width: 200, height: 64); addSubview(keycaps)
+        heading.frame = NSRect(x: 376, y: 174, width: 200, height: 22)
         heading.font = .systemFont(ofSize: 14, weight: .bold); addSubview(heading)
-        explanation.frame = NSRect(x: 420, y: 203, width: 200, height: 40)
+        explanation.frame = NSRect(x: 376, y: 203, width: 200, height: 40)
         explanation.font = .systemFont(ofSize: 12); explanation.textColor = .secondaryLabelColor; addSubview(explanation)
-        detailDivider.boxType = .separator; detailDivider.frame = NSRect(x: 420, y: 236, width: 200, height: 1)
+        detailDivider.boxType = .separator; detailDivider.frame = NSRect(x: 376, y: 236, width: 200, height: 1)
         addSubview(detailDivider)
         priority.addItems(withTitles: KeyboardShortcuts.Priority.allCases.map(\.title))
-        priority.font = .systemFont(ofSize: 12); priority.frame = NSRect(x: 420, y: 253, width: 148, height: 26)
+        priority.font = .systemFont(ofSize: 12); priority.frame = NSRect(x: 376, y: 253, width: 148, height: 26)
         priority.target = self; priority.action = #selector(priorityChanged)
         priority.setAccessibilityLabel("Shortcut priority"); addSubview(priority)
-        priorityHelp.frame = NSRect(x: 420, y: 285, width: 200, height: 86)
+        priorityHelp.frame = NSRect(x: 376, y: 285, width: 200, height: 86)
         priorityHelp.font = .systemFont(ofSize: 12); priorityHelp.textColor = .secondaryLabelColor; addSubview(priorityHelp)
         for toggle in [includeFavorites, ninthItem, captureGesture] {
             toggle.font = .systemFont(ofSize: 12); toggle.target = self
@@ -86,14 +86,14 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
         }
         captureGesture.cell?.wraps = true
         captureGesture.cell?.lineBreakMode = .byWordWrapping
-        feedback.frame = NSRect(x: 420, y: 402, width: 200, height: 90)
+        feedback.frame = NSRect(x: 376, y: 402, width: 200, height: 90)
         feedback.font = .systemFont(ofSize: 11); feedback.textColor = .secondaryLabelColor
         feedback.setAccessibilityLabel("Shortcut status"); addSubview(feedback)
-        reset.frame = NSRect(x: 420, y: 506, width: 174, height: 28)
+        reset.frame = NSRect(x: 376, y: 506, width: 174, height: 28)
         reset.bezelStyle = .rounded; reset.target = self; reset.action = #selector(resetShortcut); addSubview(reset)
         more.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "More shortcut actions")
         more.bezelStyle = .circular; more.isBordered = true
-        more.frame = NSRect(x: 596, y: 507, width: 26, height: 26)
+        more.frame = NSRect(x: 552, y: 507, width: 26, height: 26)
         more.target = self; more.action = #selector(showMore); addSubview(more)
         subscription = shortcuts.$revision.receive(on: RunLoop.main).sink { [weak self] _ in self?.refresh() }
         systemSubscriptions = [
@@ -317,19 +317,19 @@ final class ShortcutsSettingsView: NSView, NSTableViewDataSource, NSTableViewDel
             field.invalidateIntrinsicContentSize()
             return ceil(field.sizeThatFits(NSSize(width: 200, height: CGFloat.greatestFiniteMagnitude)).height)
         }
-        heading.frame = NSRect(x: 420, y: keycaps.frame.maxY + 24, width: 200, height: fittedHeight(heading))
-        explanation.frame = NSRect(x: 420, y: heading.frame.maxY + 8, width: 200, height: fittedHeight(explanation))
+        heading.frame = NSRect(x: 376, y: keycaps.frame.maxY + 24, width: 200, height: fittedHeight(heading))
+        explanation.frame = NSRect(x: 376, y: heading.frame.maxY + 8, width: 200, height: fittedHeight(explanation))
         detailDivider.frame.origin.y = explanation.frame.maxY + 24
         priority.frame.origin.y = detailDivider.frame.maxY + 16
-        priorityHelp.frame = NSRect(x: 420, y: priority.frame.maxY + 8, width: 200, height: fittedHeight(priorityHelp))
+        priorityHelp.frame = NSRect(x: 376, y: priority.frame.maxY + 8, width: 200, height: fittedHeight(priorityHelp))
         var toggleY = (priority.isHidden ? explanation.frame.maxY : priorityHelp.frame.maxY) + 24
         for toggle in [ninthItem, includeFavorites, captureGesture] where !toggle.isHidden {
             let height = ceil(toggle.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: 200, height: 1000)).height ?? toggle.fittingSize.height)
-            toggle.frame = NSRect(x: 420, y: toggleY, width: 200, height: height)
+            toggle.frame = NSRect(x: 376, y: toggleY, width: 200, height: height)
             toggleY += height + 8
         }
         let feedbackY = max(402, toggleY + 8)
-        feedback.frame = NSRect(x: 420, y: feedbackY, width: 200,
+        feedback.frame = NSRect(x: 376, y: feedbackY, width: 200,
                                 height: max(0, reset.frame.minY - feedbackY - 8))
         feedback.toolTip = feedback.stringValue
         for field in [heading, explanation, priorityHelp] {
@@ -798,8 +798,7 @@ private struct ShortcutClearButton: View {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.cornerRadius = 8; layer?.cornerCurve = .continuous
-        layer?.borderWidth = 1
+        layer?.cornerRadius = 12; layer?.cornerCurve = .continuous
         refreshColors()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -808,7 +807,10 @@ private struct ShortcutClearButton: View {
         super.viewDidChangeEffectiveAppearance(); refreshColors()
     }
     private func refreshColors() {
-        layer?.borderColor = Self.gray(light: 0.858, dark: 0.243, appearance: effectiveAppearance).cgColor
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(dark ? 0.045 : 0.032).cgColor
+        }
     }
     static func gray(light: CGFloat, dark: CGFloat, appearance: NSAppearance) -> NSColor {
         let value = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light

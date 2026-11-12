@@ -16,12 +16,12 @@ final class IconSettingsView: NSView {
 
     init(icons: AppIconController) {
         self.icons = icons
-        super.init(frame: NSRect(x: 0, y: 0, width: 684, height: 562))
+        super.init(frame: NSRect(x: 0, y: 0, width: 596, height: 562))
         autoresizingMask = [.width]
         addSubview(group); addSubview(status); addSubview(retry)
         list.drawsBackground = false; list.hasVerticalScroller = true; list.autohidesScrollers = true
         list.documentView = choices; group.addSubview(list)
-        list.wantsLayer = true; list.layer?.cornerRadius = 7; list.layer?.cornerCurve = .continuous
+        list.wantsLayer = true; list.layer?.cornerRadius = 12; list.layer?.cornerCurve = .continuous
         list.layer?.masksToBounds = true
         status.font = .systemFont(ofSize: 12); status.textColor = .secondaryLabelColor
         retry.bezelStyle = .rounded; retry.target = self; retry.action = #selector(retryApplication)
@@ -68,13 +68,13 @@ final class IconSettingsView: NSView {
     override func layout() {
         super.layout()
         let noticeHeight: CGFloat = status.isHidden ? 0 : (retry.isHidden ? 62 : 92)
-        status.frame = NSRect(x: 64, y: 20, width: max(0, bounds.width - 128), height: 52)
-        retry.frame = NSRect(x: 60, y: 72, width: 105, height: 28)
+        status.frame = NSRect(x: 32, y: 20, width: max(0, bounds.width - 64), height: 52)
+        retry.frame = NSRect(x: 28, y: 72, width: 105, height: 28)
         let rowHeight: CGFloat = 81
         let content = CGFloat(rows.count) * rowHeight + 24
         let height = max(rowHeight + 2, min(515, content + 2, 562 - 40 - noticeHeight))
-        group.frame = NSRect(x: 64, y: 20 + noticeHeight, width: max(0, bounds.width - 128), height: height)
-        list.frame = group.bounds.insetBy(dx: 1, dy: 1)
+        group.frame = NSRect(x: 20, y: 20 + noticeHeight, width: max(0, bounds.width - 40), height: height)
+        list.frame = group.bounds
         choices.frame = NSRect(x: 0, y: 0, width: list.contentSize.width, height: content)
         list.tile()
         choices.frame = NSRect(x: 0, y: 0, width: list.contentSize.width, height: content)
@@ -96,10 +96,6 @@ private final class IconChoiceStack: NSView {
 @MainActor
 private final class IconListGroup: NSView {
     override var isFlipped: Bool { true }
-    override func draw(_ dirtyRect: NSRect) {
-        let shape = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
-        NSColor.separatorColor.setStroke(); shape.stroke()
-    }
 }
 
 @MainActor

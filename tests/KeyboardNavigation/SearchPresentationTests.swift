@@ -32,7 +32,7 @@ import AppKit
         let scroll = view.subviews.compactMap { $0 as? NSScrollView }.first!
         let table = scroll.documentView as! NSTableView
         view.layoutSubtreeIfNeeded()
-        expect(header.frame == NSRect(x: 64, y: 84, width: 340, height: 41), "Original 24-point field plus 8-point padding and 1-point rule")
+        expect(header.frame == NSRect(x: 20, y: 84, width: 340, height: 41), "Original 24-point field plus 8-point padding and 1-point rule")
         expect(field.frame == NSRect(x: 33, y: 8, width: 291, height: 24), "Search image 13 plus 4 gap and 16-point leading/trailing padding")
         expect(scroll.frame.minY == header.frame.maxY && scroll.frame.maxY == 534, "Search header stays outside the full-height list scroller")
         expect(field.cell is NSTextFieldCell && !(field.cell is NSSearchFieldCell), "No stock search-cell magnifier or cancel offsets")
