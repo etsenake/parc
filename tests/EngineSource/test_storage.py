@@ -77,6 +77,49 @@ class StorageTests(unittest.TestCase):
             "overlay_version": version if version is not None else (2 if overlay is None else 1),
             "workspace_bytes": size}))
 
+    def run_setup(self, metal=(True,), mounted=True, local_engine=False):
+        settings = self.root / "settings/engine-storage.json"
+        settings.parent.mkdir()
+        settings.write_text(json.dumps({"schema_version": 1, "share": "nfs://old.local/engine",
+                                        "mount_point": str(self.share), "min_image_mb_per_second": 50}))
+        if local_engine:
+            self.receipt(self.repo / "work/engine")
+        with patch.dict(storage.os.environ, {"PARC_ENGINE_STORAGE": str(settings)}), \
+                patch.object(storage, "metal_toolchain_ready", side_effect=list(metal)), \
+                patch.object(storage.subprocess, "run") as download, \
+                patch.object(storage, "mount_share", return_value=mounted), \
+                patch.object(storage.Store, "make_folder") as make_folder, \
+                patch.object(storage.Store, "align_current") as align:
+            problems = storage.setup("nfs://Tardis.local/volume1/parc-engine-nfs", self.repo, self.logs.append)
+        return problems, json.loads(settings.read_text()), download, make_folder, align
+
+    def test_setup_prepares_a_new_mac_for_the_shared_engine(self):
+        built = self.root / "elsewhere/ParcBuild/engine-cx"
+        self.snapshot()
+        metadata = json.loads((self.store.current / "metadata.json").read_text())
+        (self.store.current / "metadata.json").write_text(json.dumps({**metadata, "workspace": str(built)}))
+        problems, settings, download, make_folder, align = self.run_setup(metal=(False, True))
+        self.assertEqual(problems, [])
+        self.assertEqual(settings["share"], "nfs://Tardis.local/volume1/parc-engine-nfs")
+        self.assertEqual(settings["min_image_mb_per_second"], 50)
+        self.assertEqual(download.call_args.args[0], ["xcodebuild", "-downloadComponent", "MetalToolchain"])
+        make_folder.assert_called_once_with(built.parent)
+        align.assert_called_once()
+
+    def test_setup_leaves_xcode_alone_on_a_mac_with_its_own_engine(self):
+        self.snapshot()
+        problems, _, download, _, align = self.run_setup(local_engine=True)
+        self.assertEqual(problems, [])
+        download.assert_not_called()
+        align.assert_not_called()
+
+    def test_setup_says_what_is_still_needed(self):
+        problems, _, _, make_folder, _ = self.run_setup(metal=(False, False), mounted=False)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("downloadComponent MetalToolchain", problems[0])
+        self.assertIn("Network Volumes", problems[1])
+        make_folder.assert_not_called()
+
     def test_missing_settings_leave_scripts_unchanged(self):
         self.assertIsNone(storage.load_config(self.root / "absent.json"))
 

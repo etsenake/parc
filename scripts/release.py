@@ -37,6 +37,13 @@ class Failure(RuntimeError):
     pass
 
 
+def metal_toolchain_ready(env=None):
+    try:
+        return subprocess.run(["xcrun", "metal", "--version"], env=env, capture_output=True, timeout=120).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -381,6 +388,9 @@ class Release:
         self.command(["xcrun", "--find", "swiftc"], capture=True)
         self.command(["xcrun", "--find", "notarytool"], capture=True)
         self.command(["xcodebuild", "-checkFirstLaunchStatus"], capture=True)
+        if not metal_toolchain_ready(self.env):
+            raise Failure("Apple's Metal toolchain is missing and the engine build needs it; install it once with: "
+                          "xcodebuild -downloadComponent MetalToolchain")
         identity_path = Path.home() / ".config/parc/signing-identity"
         identities = self.command(["security", "find-identity", "-v", "-p", "codesigning"], capture=True)
         missing = (not re.search(r'"Developer ID Application: [^"\n]+ \(' + TEAM + r'\)"', identities)

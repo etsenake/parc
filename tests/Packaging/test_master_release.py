@@ -611,7 +611,8 @@ class Pipeline(Repository):
                     patch.object(release.platform, 'system', return_value='Darwin'), \
                     patch.object(release.platform, 'machine', return_value='arm64'), \
                     patch.object(release.shutil, 'which', side_effect=lambda name: tool if name == 'op' else '/opt/homebrew/bin/brew'), \
-                    patch.object(release.sparkle, 'has_key', side_effect=lambda: keychain['key']):
+                    patch.object(release.sparkle, 'has_key', side_effect=lambda: keychain['key']), \
+                    patch.object(release, 'metal_toolchain_ready', return_value=True):
                 if restored:
                     runner.preflight()
                     self.assertEqual(runner.env['PARC_SIGN_IDENTITY'], identity)
@@ -621,6 +622,23 @@ class Pipeline(Repository):
                 restores = [args for args in commands if args[-1] == 'restore']
                 self.assertEqual(len(restores), 1 if tool else 0)
             for handle in runner.locks: handle.close()
+
+    def test_preflight_stops_before_any_build_without_the_metal_toolchain(self):
+        runner = self.runner(); runner.auth = Mock(); commands = []
+        runner.command = lambda args, **kwargs: commands.append([str(arg) for arg in args]) or ''
+        with patch.object(release.platform, 'system', return_value='Darwin'), \
+                patch.object(release.platform, 'machine', return_value='arm64'), \
+                patch.object(release.shutil, 'which', return_value='/opt/homebrew/bin/brew'), \
+                patch.object(release, 'metal_toolchain_ready', return_value=False), \
+                self.assertRaisesRegex(release.Failure, 'xcodebuild -downloadComponent MetalToolchain'):
+            runner.preflight()
+        self.assertFalse(any('find-identity' in args for args in commands))
+        for handle in runner.locks: handle.close()
+
+    def test_metal_check_runs_the_compiler_not_the_placeholder_xcode_ships(self):
+        with patch.object(release.subprocess, 'run', return_value=Mock(returncode=1)) as run:
+            self.assertFalse(release.metal_toolchain_ready())
+        self.assertEqual(run.call_args.args[0], ['xcrun', 'metal', '--version'])
 
     def test_preflight_restores_a_failing_notary_profile_or_stops(self):
         home = Path(self.tmp.name); (home / '.config/parc').mkdir(parents=True)
@@ -642,7 +660,8 @@ class Pipeline(Repository):
                     patch.object(release.platform, 'system', return_value='Darwin'), \
                     patch.object(release.platform, 'machine', return_value='arm64'), \
                     patch.object(release.shutil, 'which', side_effect=lambda name: tool if name == 'op' else '/opt/homebrew/bin/brew'), \
-                    patch.object(release.sparkle, 'has_key', return_value=True):
+                    patch.object(release.sparkle, 'has_key', return_value=True), \
+                    patch.object(release, 'metal_toolchain_ready', return_value=True):
                 if works or (tool and restored):
                     runner.preflight()
                     self.assertEqual(runner.state['notary_profile'], 'parc-notary')

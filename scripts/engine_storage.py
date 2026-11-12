@@ -1030,11 +1030,54 @@ class Store:
                 "target": target(self.repo)}
 
 
+def metal_toolchain_ready() -> bool:
+    try:
+        return run(["xcrun", "metal", "--version"], 120).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def setup(share: str, repo: Path, log) -> list[str]:
+    path = config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    current = read_json(path) or {}
+    if current.get("share") not in (None, share):
+        log(f"Replacing the NAS address {current['share']} with {share}")
+    write_json(path, {**current, "schema_version": 1, "share": share})
+    log(f"Saved the NAS settings at {path}")
+    store = Store(load_config(path), repo, log=log)
+    problems = []
+    if not metal_toolchain_ready():
+        log("Downloading Apple's Metal toolchain, which the engine build needs")
+        subprocess.run(["xcodebuild", "-downloadComponent", "MetalToolchain"])
+        if not metal_toolchain_ready():
+            problems.append("Apple's Metal toolchain is still missing; run: xcodebuild -downloadComponent MetalToolchain")
+    if not mount_share(store.config):
+        problems.append(f"The NAS at {share} did not mount; join the network it is on and allow this app's "
+                        "Network Volumes prompt, then run setup again")
+        return problems
+    log(f"The NAS is mounted at {store.share}")
+    snapshot = store.snapshot()
+    if snapshot is None:
+        log("The NAS holds no engine snapshot yet; the first release on any Mac will upload one")
+        return problems
+    try:
+        store.make_folder(Path(snapshot.get("workspace") or store.local).parent)
+        if describe(store.local) is None:
+            store.align_current()
+        else:
+            log("This Mac already has an engine workspace, so its Xcode dates were left alone")
+    except StorageError as error:
+        problems.append(str(error))
+    return problems
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("resolve", "workspace", "publish", "take-handoff", "detach", "status",
-                                            "record-xcode", "align-xcode"))
+    parser.add_argument("command", choices=("setup", "resolve", "workspace", "publish", "take-handoff", "detach",
+                                            "status", "record-xcode", "align-xcode"))
     parser.add_argument("--repo", type=Path, default=ROOT)
+    parser.add_argument("--share", help="NAS address for setup, for example nfs://nas.local/volume1/parc-engine-nfs")
     parser.add_argument("--workspace", type=Path)
     parser.add_argument("--result", type=Path)
     parser.add_argument("--from", dest="prefer", choices=("local", "image", "snapshot"),
@@ -1044,6 +1087,15 @@ def main(argv=None) -> int:
     parser.add_argument("--handoff", action="store_true",
                         help="Publish an unfinished build (and its stopped release) for another Mac to continue")
     args = parser.parse_args(argv)
+    if args.command == "setup":
+        if not args.share:
+            parser.error("setup needs --share")
+        problems = setup(args.share, args.repo.resolve(),
+                         lambda message: print(f"[{now()}] engine-storage: {message}", file=sys.stderr, flush=True))
+        for problem in problems:
+            print(f"[{now()}] engine-storage: Still needed: {problem}", file=sys.stderr)
+        print(json.dumps({"ready": not problems, "problems": problems}))
+        return 0 if not problems else 1
     try:
         config = load_config()
         if config is None:

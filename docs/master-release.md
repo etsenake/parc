@@ -53,7 +53,8 @@ published tag still refuses.
 
 ## Pipeline
 
-1. Check GitHub login, Xcode/license, Developer ID Application identity for Team
+1. Check GitHub login, Xcode/license, Apple's Metal toolchain (stopping with its
+   install command when missing), Developer ID Application identity for Team
    `94HKA7L2DR`, Homebrew tooling and the `parc-notary` profile. No ad-hoc fallback.
 2. Fast-forward clean main, commit and immediately push the version, then extract
    verified Git inputs into ignored build storage. This is an immutable input

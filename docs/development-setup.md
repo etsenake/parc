@@ -32,6 +32,10 @@ directory.
   source's `docs/mac_build_instructions.md` and
   `build/config/mac/mac_sdk.gni` describe its SDK policy. The macOS 13 deployment
   target is not a claim that an old Xcode can build the current source.
+- Install Apple's Metal toolchain once with
+  `xcodebuild -downloadComponent MetalToolchain` (about 840 MB). Xcode ships
+  only a placeholder `metal` command; the engine build fails without the real
+  toolchain, and `xcrun metal --version` succeeds once it is installed.
 - Install Python 3.12 or later and ensure `python3` selects it. The engine scripts
   require at least 3.11; archive tooling also uses modern tar extraction
   filters. **Do not use macOS's Python 3.9.6** for

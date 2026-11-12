@@ -15,17 +15,26 @@ checkout paths. Setup does not claim backlog items or authorize a new build.
    for Markdown guides in the pushed tree; changelogs are exempt. See
    [documentation policy](documentation.md).
 
-3. **Verify prerequisites.** Follow the setup guide for full Xcode, the selected
-   developer directory, Swift/SDK, Python 3.12+, Git, GitHub CLI, repository
-   access and disk space. Complete available setup steps while user login or
-   administrator authorization is pending.
+3. **Verify prerequisites.** Follow the setup guide for full Xcode (the same
+   version as the Mac that built the shared engine), the selected developer
+   directory, Swift/SDK, Apple's Metal toolchain, Python 3.12+, Git, GitHub CLI,
+   repository access and disk space. Complete available setup steps while user
+   login or administrator authorization is pending.
 
-4. **Restore the saved engine workspace.** Follow
-   [engine artifacts](engine-artifacts.md). Verify the pinned archives and let
-   the restore tool validate provenance and adopt the new local path. Preserve
-   compiled objects and caches. The completed app-and-engine package is a
-   separate artifact. Do not start a fresh Chromium sync/build or edit receipts
-   to make an incompatible workspace appear valid.
+4. **Connect to the shared engine.** On the home network, run
+   `python3 scripts/engine_storage.py setup --share
+   nfs://Tardis.local/volume1/parc-engine-nfs` from Terminal (or the app that
+   will run releases). It saves the NAS settings, downloads the Metal toolchain
+   if needed, mounts the share (allow the Network Volumes prompt), creates the
+   engine's build folder with an administrator password and matches Xcode's
+   file dates; turn on System Settings > Privacy & Security > App Management
+   for that app first, or setup names it as still needed. It ends by listing
+   anything left. The first release, or `python3 scripts/engine_storage.py
+   workspace`, then unpacks the engine from the NAS and builds only what
+   changed. See [shared engine storage](engine-artifacts.md#shared-engine-storage-on-a-nas).
+   Without a NAS, the [archive restore](engine-artifacts.md) needs a published
+   pin. Do not start a fresh Chromium sync/build or edit receipts to make an
+   incompatible workspace appear valid.
 
 5. **Run applicable inert checks.** Read the check scripts first. Run
    `scripts/check-swift.py` against the checkout's native bridge headers.

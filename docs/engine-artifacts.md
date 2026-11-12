@@ -11,6 +11,13 @@ scratch. It is off unless the Mac has a settings file at
 {"schema_version": 1, "share": "nfs://nas.local/volume1/parc-engine-nfs"}
 ```
 
+`setup --share URL` writes that file (keeping other keys) and prepares a new
+Mac in one run: it downloads Apple's Metal toolchain when `xcrun metal
+--version` fails, mounts the share, creates the current snapshot's build
+folder and, on a Mac without its own engine workspace, matches Xcode's file
+dates. It prints what is still needed, such as a permission, and exits non-zero
+until nothing is.
+
 Optional keys and defaults: `mount_point` (`/Volumes/parc-engine-nfs`),
 `image` (`parc-engine.sparsebundle`), `volume` (`ParcEngine`),
 `image_workspace` (`ParcBuild/engine`), `local_workspace` (whatever the
