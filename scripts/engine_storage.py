@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import fcntl
+import gzip
 import hashlib
 import json
 import os
@@ -13,8 +14,10 @@ import plistlib
 import shlex
 import shutil
 import socket
+import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -24,6 +27,13 @@ SHIPPING = ".parc-shipping-build.json"
 OPERATION_LOCK = ".parc-operation.lock"
 SNAPSHOT_NAME = "engine-workspace"
 TERMINAL = {"complete", "abandoned", "nothing-to-release", "handed-off"}
+XCODE_ROOTS = ("Platforms/MacOSX.platform", "Toolchains/XcodeDefault.xctoolchain", "usr")
+XCODE_RECORD = "xcode-files.json.gz"
+ALIGN_HELPER = """import json, os, sys
+for path, mtime in json.load(open(sys.argv[1])):
+    info = os.stat(path)
+    os.utime(path, ns=(info.st_atime_ns, mtime))
+"""
 DEFAULTS = {
     "mount_point": "/Volumes/parc-engine-nfs",
     "image": "parc-engine.sparsebundle",
@@ -148,6 +158,48 @@ def mount_share(config: dict, timeout: float = 90) -> bool:
     except subprocess.TimeoutExpired:
         return False
     return mounted(config["mount_point"], "nfs")
+
+
+def developer_dir() -> Path | None:
+    try:
+        result = run(["/usr/bin/xcode-select", "-p"], 30)
+    except subprocess.TimeoutExpired:
+        return None
+    path = Path(result.stdout.strip())
+    return path if result.returncode == 0 and path.is_dir() else None
+
+
+def xcode_identity(developer: Path) -> dict:
+    info = plistlib.loads((developer.parent / "version.plist").read_bytes())
+    return {"version": info.get("CFBundleShortVersionString"), "build": info.get("ProductBuildVersion")}
+
+
+def xcode_record(developer: Path) -> dict:
+    files = []
+    for root in XCODE_ROOTS:
+        for base, _, names in os.walk(developer / root):
+            for name in names:
+                path = Path(base) / name
+                info = os.lstat(path)
+                if stat.S_ISREG(info.st_mode):
+                    files.append([str(path.relative_to(developer)), info.st_size, info.st_mtime_ns, sha(path)])
+    return {"schema_version": 1, "xcode": xcode_identity(developer), "files": files}
+
+
+def write_record(path: Path, record: dict) -> None:
+    temporary = path.with_name("." + path.name + ".tmp")
+    with gzip.open(temporary, "wt") as stream:
+        json.dump(record, stream)
+    os.replace(temporary, path)
+
+
+def read_record(path: Path) -> dict | None:
+    try:
+        with gzip.open(path, "rt") as stream:
+            value = json.load(stream)
+    except (OSError, ValueError, EOFError):
+        return None
+    return value if isinstance(value, dict) and value.get("schema_version") == 1 else None
 
 
 def relocate(value, moves: list[tuple[str, str]]):
@@ -406,17 +458,87 @@ class Store:
         script = (f"/bin/mkdir -p {shlex.quote(str(folder))} && /usr/sbin/chown {shlex.quote(user)}:staff "
                   + " ".join(shlex.quote(str(part)) for part in missing))
         self.log(f"Creating {folder} needs administrator rights once on this Mac")
+        if not (self.privileged(script) and folder.is_dir()):
+            raise StorageError(f"could not create {folder}; run once on this Mac: sudo /bin/sh -c '{script}'")
+
+    def privileged(self, script: str) -> bool:
         attempts = [["/usr/bin/sudo", "-n", "/bin/sh", "-c", script]]
         if sys.stdin.isatty():
             attempts.append(["/usr/bin/sudo", "/bin/sh", "-c", script])
         attempts.append(["/usr/bin/osascript", "-e", f'do shell script "{script}" with administrator privileges'])
         for command in attempts:
             try:
-                if run(command, 600).returncode == 0 and folder.is_dir():
-                    return
+                if run(command, 1800).returncode == 0:
+                    return True
             except subprocess.TimeoutExpired:
                 pass
-        raise StorageError(f"could not create {folder}; run once on this Mac: sudo /bin/sh -c '{script}'")
+        return False
+
+    def xcode_plan(self, record: dict) -> tuple[list, dict] | None:
+        developer = developer_dir()
+        if developer is None:
+            self.log("No Xcode is selected on this Mac; Xcode timestamps were not aligned")
+            return None
+        if xcode_identity(developer) != record.get("xcode"):
+            self.log(f"This Mac's Xcode {xcode_identity(developer)} differs from the engine's {record.get('xcode')}; "
+                     "only files with identical contents are aligned and steps that use the rest will rebuild")
+        plan, counts = [], {"aligned": 0, "changed": 0, "missing": 0}
+        for relative, size, mtime, digest in record.get("files", []):
+            path = developer / relative
+            try:
+                info = os.lstat(path)
+            except OSError:
+                counts["missing"] += 1
+                continue
+            if not stat.S_ISREG(info.st_mode) or info.st_size != size:
+                counts["changed"] += 1
+            elif info.st_mtime_ns == mtime:
+                counts["aligned"] += 1
+            elif sha(path) == digest:
+                plan.append([str(path), mtime])
+            else:
+                counts["changed"] += 1
+        return plan, counts
+
+    def align_xcode(self, record: dict | None) -> dict | None:
+        if not record:
+            return None
+        result = self.xcode_plan(record)
+        if result is None:
+            return None
+        plan, counts = result
+        if plan:
+            self.log(f"Matching {len(plan)} Xcode file timestamps to the engine's build Mac; "
+                     "this needs administrator rights")
+            with tempfile.TemporaryDirectory(prefix="parc-xcode-align-") as folder:
+                helper, listing = Path(folder) / "align.py", Path(folder) / "plan.json"
+                helper.write_text(ALIGN_HELPER)
+                listing.write_text(json.dumps(plan))
+                os.chmod(folder, 0o755)
+                if not self.privileged(f"{shlex.quote(sys.executable)} {shlex.quote(str(helper))} "
+                                       f"{shlex.quote(str(listing))}"):
+                    raise StorageError("could not align Xcode file timestamps; administrator rights were not granted")
+            moved = sum(1 for path, mtime in plan if os.lstat(path).st_mtime_ns == mtime)
+            counts["aligned"] += moved
+            counts["unmoved"] = len(plan) - moved
+        self.log(f"Xcode timestamps: {counts['aligned']} match the engine's build Mac, "
+                 f"{counts['changed']} differ in content, {counts['missing']} missing")
+        return counts
+
+    def record_xcode(self, *targets: Path) -> dict | None:
+        developer = developer_dir()
+        if developer is None:
+            self.log("No Xcode is selected on this Mac; Xcode timestamps were not recorded")
+            return None
+        try:
+            record = xcode_record(developer)
+        except (OSError, ValueError) as error:
+            self.log(f"Xcode timestamps were not recorded ({error})")
+            return None
+        for target in targets:
+            write_record(target, record)
+        self.log(f"Recorded {len(record['files'])} Xcode file timestamps for Xcode {record['xcode']}")
+        return record
 
     def link_repo(self, destination: Path) -> None:
         if destination == self.link:
@@ -480,7 +602,17 @@ class Store:
             shutil.rmtree(previous, ignore_errors=True)
         self.link_repo(destination)
         self.local = destination
+        self.align_quietly(read_record(self.current / XCODE_RECORD))
         return True
+
+    def align_quietly(self, record: dict | None) -> None:
+        if record is None:
+            self.log("The NAS copy has no Xcode timestamp record; a build may redo work that depends on Xcode")
+            return
+        try:
+            self.align_xcode(record)
+        except (StorageError, OSError, subprocess.TimeoutExpired) as error:
+            self.log(f"Xcode timestamps were not aligned ({error}); a build may redo work that depends on Xcode")
 
     def pending_handoff(self, snapshot: dict | None) -> dict | None:
         handoff = (snapshot or {}).get("handoff")
@@ -525,8 +657,10 @@ class Store:
                 rate = self.speed()
                 fast = rate is not None and rate >= float(self.config["min_image_mb_per_second"])
                 if prefer == "image" and rank(image, wanted) is not None:
+                    self.align_quietly(read_record(self.share / XCODE_RECORD))
                     return self.choice(self.image_workspace, "image", "requested", attached=True)
                 if fast and newer(image, local, wanted):
+                    self.align_quietly(read_record(self.share / XCODE_RECORD))
                     return self.choice(self.image_workspace, "image",
                                        f"the NAS disk image is ahead of this Mac and the link reads {rate:.0f} MB/s",
                                        attached=True)
@@ -676,6 +810,7 @@ class Store:
                 write_json(staging / "metadata.json", {**found, "workspace": str(workspace), "workspace_bytes": total,
                                                        "host": self.host, "created_utc": now(),
                                                        **({"handoff": marker} if marker else {})})
+                xcode = self.record_xcode(staging / XCODE_RECORD)
             except BaseException:
                 shutil.rmtree(staging, ignore_errors=True)
                 raise
@@ -686,6 +821,8 @@ class Store:
             staging.rename(self.current)
             if retired is not None:
                 shutil.rmtree(retired, ignore_errors=True)
+            if xcode is not None:
+                write_record(self.share / XCODE_RECORD, xcode)
         finally:
             handle.close()
         self.log("The NAS snapshot now holds this engine")
@@ -712,10 +849,31 @@ class Store:
             if opened:
                 self.detach()
 
+    def record_current(self) -> dict | None:
+        if not mount_share(self.config):
+            raise StorageError("the NAS is not reachable")
+        handle = self.locked(exclusive=True)
+        try:
+            targets = [self.share / XCODE_RECORD]
+            if self.snapshot() is not None:
+                targets.append(self.current / XCODE_RECORD)
+            return self.record_xcode(*targets)
+        finally:
+            handle.close()
+
+    def align_current(self) -> dict | None:
+        if not mount_share(self.config):
+            raise StorageError("the NAS is not reachable")
+        record = read_record(self.current / XCODE_RECORD) or read_record(self.share / XCODE_RECORD)
+        if record is None:
+            raise StorageError("the NAS holds no Xcode timestamp record")
+        return self.align_xcode(record)
+
     def status(self) -> dict:
         reachable = mount_share(self.config)
         return {"settings": str(config_path()), "local": describe(self.local), "share_reachable": reachable,
                 "snapshot": self.snapshot() if reachable else None,
+                "xcode_record": reachable and (self.current / XCODE_RECORD).is_file(),
                 "image_attached_here": mounted(str(self.volume)),
                 "image_holder": read_json(self.holder) if reachable else None,
                 "target": target(self.repo)}
@@ -723,7 +881,8 @@ class Store:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("resolve", "workspace", "publish", "take-handoff", "detach", "status"))
+    parser.add_argument("command", choices=("resolve", "workspace", "publish", "take-handoff", "detach", "status",
+                                            "record-xcode", "align-xcode"))
     parser.add_argument("--repo", type=Path, default=ROOT)
     parser.add_argument("--workspace", type=Path)
     parser.add_argument("--result", type=Path)
@@ -760,6 +919,11 @@ def main(argv=None) -> int:
             print(json.dumps(outcome))
         elif args.command == "detach":
             return 0 if store.detach() else 1
+        elif args.command == "record-xcode":
+            record = store.record_current()
+            print(json.dumps({"files": len(record["files"]), "xcode": record["xcode"]} if record else {"files": 0}))
+        elif args.command == "align-xcode":
+            print(json.dumps(store.align_current()))
         else:
             print(json.dumps(store.status(), indent=2))
         return 0

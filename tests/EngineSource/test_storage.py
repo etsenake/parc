@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -35,6 +36,25 @@ class StorageTests(unittest.TestCase):
             patcher = patch.object(storage.time, name)
             patcher.start()
             self.addCleanup(patcher.stop)
+        self.developer = self.root / "Xcode.app/Contents/Developer"
+        headers = self.developer / "Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include"
+        headers.mkdir(parents=True)
+        (self.developer / "usr/bin").mkdir(parents=True)
+        (self.developer.parent / "version.plist").write_bytes(storage.plistlib.dumps(
+            {"CFBundleShortVersionString": "27.2", "ProductBuildVersion": "27B52"}))
+        for path, text in ((headers / "stdio.h", "int printf();"), (headers / "stdlib.h", "void exit(int);"),
+                           (self.developer / "usr/bin/actool", "tool")):
+            path.write_text(text)
+            storage.os.utime(path, ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
+        (headers / "alias.h").symlink_to("stdio.h")
+        patcher = patch.object(storage, "developer_dir", return_value=self.developer)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.privileged = []
+
+    def run_privileged(self, script):
+        self.privileged.append(script)
+        return subprocess.run(script, shell=True).returncode == 0
 
     def receipt(self, workspace, lock=None, overlay=None, phase="built", version=None):
         workspace.mkdir(parents=True, exist_ok=True)
@@ -408,6 +428,76 @@ class StorageTests(unittest.TestCase):
         self.assertEqual((metadata["overlay_identity"], metadata["workspace_bytes"]), (self.wanted["overlay_identity"], 7))
         self.assertEqual(sorted(p.name for p in self.store.snapshots.iterdir() if not p.name.startswith(".lock")),
                          ["current"])
+        for path in (self.store.current / storage.XCODE_RECORD, self.share / storage.XCODE_RECORD):
+            record = storage.read_record(path)
+            self.assertEqual(record["xcode"], {"version": "27.2", "build": "27B52"})
+            self.assertEqual(sorted(entry[0].rsplit("/", 1)[-1] for entry in record["files"]),
+                             ["actool", "stdio.h", "stdlib.h"])
+
+    def test_restore_matches_this_macs_xcode_timestamps_to_the_build_mac(self):
+        record = storage.xcode_record(self.developer)
+        headers = self.developer / "Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include"
+        storage.os.utime(headers / "stdio.h", ns=(1, 1_800_000_000_000_000_000))
+        (headers / "stdlib.h").write_text("void quit(int);")
+        storage.os.utime(headers / "stdlib.h", ns=(1, 1_800_000_000_000_000_000))
+        (self.developer / "usr/bin/actool").unlink()
+        self.receipt(self.store.local, overlay="0" * 64)
+        self.snapshot()
+        storage.write_record(self.store.current / storage.XCODE_RECORD, record)
+        with patch.object(self.store, "engine_tool", side_effect=self.restored), \
+                patch.object(self.store, "privileged", side_effect=self.run_privileged):
+            self.assertTrue(self.store.restore(self.store.snapshot()))
+        self.assertEqual((headers / "stdio.h").stat().st_mtime_ns, 1_700_000_000_000_000_000)
+        self.assertEqual((headers / "stdlib.h").stat().st_mtime_ns, 1_800_000_000_000_000_000)
+        self.assertEqual(len(self.privileged), 1)
+        self.assertIn("Xcode timestamps: 1 match the engine's build Mac, 1 differ in content, 1 missing", self.logs)
+
+    def test_aligned_xcode_needs_no_administrator_rights(self):
+        record = storage.xcode_record(self.developer)
+        with patch.object(self.store, "privileged", side_effect=AssertionError("asked for rights")):
+            counts = self.store.align_xcode(record)
+        self.assertEqual(counts, {"aligned": 3, "changed": 0, "missing": 0})
+
+    def test_other_xcode_build_still_aligns_identical_files(self):
+        record = storage.xcode_record(self.developer)
+        record["xcode"] = {"version": "27.2.1", "build": "27C10"}
+        headers = self.developer / "Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include"
+        storage.os.utime(headers / "stdio.h", ns=(1, 1_800_000_000_000_000_000))
+        with patch.object(self.store, "privileged", side_effect=self.run_privileged):
+            counts = self.store.align_xcode(record)
+        self.assertEqual(counts["aligned"], 3)
+        self.assertEqual((headers / "stdio.h").stat().st_mtime_ns, 1_700_000_000_000_000_000)
+
+    def test_refused_rights_leave_the_restore_in_place_and_say_why(self):
+        record = storage.xcode_record(self.developer)
+        headers = self.developer / "Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include"
+        storage.os.utime(headers / "stdio.h", ns=(1, 1_800_000_000_000_000_000))
+        self.receipt(self.store.local, overlay="0" * 64)
+        self.snapshot()
+        storage.write_record(self.store.current / storage.XCODE_RECORD, record)
+        with patch.object(self.store, "engine_tool", side_effect=self.restored), \
+                patch.object(self.store, "privileged", return_value=False):
+            self.assertTrue(self.store.restore(self.store.snapshot()))
+        self.assertTrue(any("Xcode timestamps were not aligned" in line for line in self.logs))
+
+    def test_building_in_the_image_matches_xcode_to_the_shared_record(self):
+        self.store.bundle.mkdir()
+        self.receipt(self.store.image_workspace, overlay="0" * 64)
+        storage.write_record(self.share / storage.XCODE_RECORD, storage.xcode_record(self.developer))
+        with patch.object(storage, "mount_share", return_value=True), \
+                patch.object(self.store, "attach", return_value=True), \
+                patch.object(self.store, "speed", return_value=250.0), \
+                patch.object(self.store, "align_xcode") as align:
+            self.assertEqual(self.store.resolve()["mode"], "image")
+        self.assertEqual(align.call_args.args[0]["xcode"], {"version": "27.2", "build": "27B52"})
+
+    def test_record_command_writes_the_current_snapshot_and_shared_record(self):
+        self.snapshot()
+        with patch.object(storage, "mount_share", return_value=True):
+            record = self.store.record_current()
+        self.assertEqual(len(record["files"]), 3)
+        self.assertTrue((self.store.current / storage.XCODE_RECORD).is_file())
+        self.assertTrue((self.share / storage.XCODE_RECORD).is_file())
 
 
     def test_manual_publish_defaults_to_the_last_release_workspace(self):

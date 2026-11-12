@@ -29,6 +29,21 @@ a terminal prompt, or a macOS password dialog), and points `work/engine` at it
 so the checkout still shows it. A build there then writes records at that same
 path, which the next snapshot carries.
 
+Siso also records the timestamps of Xcode's files that the build reads, and two
+Macs with the same Xcode release can carry identical files with different
+dates. A changed SDK date makes Siso rebuild the system module cache, and
+every compile that depends on it follows. Publishing therefore records the
+timestamp and content hash of every file in Xcode's macOS platform, default
+toolchain and `usr` folder, in the snapshot and as `xcode-files.json.gz` at the
+share root. After unpacking a snapshot, or before building in the disk image,
+the tool gives each of this Mac's Xcode files whose contents match the record
+its recorded timestamp, asking for administrator rights only when something
+needs changing. Files with different contents keep their dates, so a genuinely
+different Xcode still rebuilds what depends on it. A failed alignment leaves the
+unpacked workspace in place and says the build may redo Xcode-dependent work.
+`record-xcode` writes the record for the snapshot already on the share and
+`align-xcode` reruns the alignment.
+
 The share holds two copies of the engine. `parc-engine.sparsebundle` is an APFS
 disk image holding a live workspace that one Mac at a time opens and builds in.
 `snapshots/current` is a packed snapshot of the latest published workspace,
