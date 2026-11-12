@@ -49,6 +49,7 @@ DEFAULTS = {
     "image_workspace": "ParcBuild/engine",
     "min_image_mb_per_second": 100,
     "attach_attempts": 3,
+    "attach_wait_seconds": 600,
     "holder_stale_hours": 48,
     "lock_wait_seconds": 600,
 }
@@ -300,20 +301,75 @@ class Store:
             return None
         return metadata
 
-    def holder_blocks(self) -> str | None:
+    def holder_record(self) -> tuple[dict | None, float | None]:
         holder = read_json(self.holder)
-        if holder is None or holder.get("host") == self.host:
-            return None
         try:
-            age = time.time() - self.holder.stat().st_mtime
+            age = time.time() - self.holder.stat().st_mtime if holder is not None else None
         except OSError:
+            age = None
+        return holder, age
+
+    def describe_holder(self, holder: dict) -> str:
+        state = "opening it" if holder.get("state") == "opening" else "has it open"
+        return f"{holder.get('host') or 'another Mac'} {state} since {holder.get('since_utc') or holder.get('attached_utc')}"
+
+    def holder_blocks(self) -> str | None:
+        holder, age = self.holder_record()
+        if holder is None or holder.get("host") == self.host or age is None:
             return None
-        if age > self.config["holder_stale_hours"] * 3600:
-            return None
-        return holder.get("host") or "another Mac"
+        limit = (float(self.config["attach_wait_seconds"]) + 300 if holder.get("state") == "opening"
+                 else self.config["holder_stale_hours"] * 3600)
+        return None if age > limit else self.describe_holder(holder)
+
+    def claim(self, state: str) -> None:
+        write_json(self.holder, {"host": self.host, "user": os.environ.get("USER"), "pid": os.getpid(),
+                                 "state": state, "since_utc": now()})
+
+    def drop_claim(self) -> None:
+        holder = read_json(self.holder)
+        if holder is not None and holder.get("host") == self.host:
+            self.holder.unlink(missing_ok=True)
+
+    def attached_here(self) -> bool:
+        try:
+            result = run(["/usr/bin/hdiutil", "info", "-plist"], 30)
+            images = plistlib.loads(result.stdout.encode()).get("images", []) if result.returncode == 0 else []
+        except (subprocess.TimeoutExpired, ValueError):
+            return False
+        return any(image.get("image-path") == str(self.bundle) for image in images)
+
+    def open_image(self) -> str | None:
+        child = subprocess.Popen(["/usr/bin/hdiutil", "attach", "-owners", "off", "-plist", str(self.bundle)],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        wait = float(self.config["attach_wait_seconds"])
+        try:
+            output, errors = child.communicate(timeout=wait)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.communicate()
+            for _ in range(24):
+                if mounted(str(self.volume)):
+                    return None
+                time.sleep(5)
+            if self.attached_here():
+                run(["/usr/bin/hdiutil", "detach", "-force", str(self.bundle)], 120)
+            return f"opening it did not finish within {wait / 60:.0f} minutes"
+        if child.returncode != 0:
+            if mounted(str(self.volume)):
+                return None
+            reason = " ".join(line for line in (errors or output).splitlines() if "WARNING" not in line).strip()
+            return reason or f"hdiutil exited with {child.returncode}"
+        points = [entry["mount-point"] for entry in plistlib.loads(output.encode()).get("system-entities", [])
+                  if "mount-point" in entry]
+        if str(self.volume) not in points:
+            for point in points:
+                run(["/usr/bin/hdiutil", "detach", point], 120)
+            raise StorageError(f"Disk image mounted at {points}, not {self.volume}; detached")
+        return None
 
     def attach(self, take_over: bool = False) -> bool:
         if mounted(str(self.volume)):
+            self.claim("open")
             return True
         if not self.bundle.is_dir():
             return False
@@ -325,26 +381,22 @@ class Store:
         for attempt in range(attempts):
             blocker = self.holder_blocks()
             if blocker is None:
-                try:
-                    result = run(["/usr/bin/hdiutil", "attach", "-owners", "off", "-nobrowse", "-plist", self.bundle], 180)
-                except subprocess.TimeoutExpired:
-                    result = None
-                if result is not None and result.returncode == 0:
-                    points = [entry["mount-point"] for entry in plistlib.loads(result.stdout.encode()).get("system-entities", [])
-                              if "mount-point" in entry]
-                    if str(self.volume) not in points:
-                        for point in points:
-                            run(["/usr/bin/hdiutil", "detach", point], 120)
-                        raise StorageError(f"Disk image mounted at {points}, not {self.volume}; detached")
-                    write_json(self.holder, {"host": self.host, "user": os.environ.get("USER"), "pid": os.getpid(),
-                                             "attached_utc": now()})
+                self.claim("opening")
+                self.log("Opening the NAS disk image")
+                failure = self.open_image()
+                if failure is None:
+                    self.claim("open")
                     if take_over:
                         self.check_volume()
                     return True
-                reason = (result.stderr or result.stdout).strip() if result is not None else "timed out"
-                self.log(f"Disk image refused to open ({reason}); attempt {attempt + 1} of {attempts}")
+                self.drop_claim()
+                holder, _ = self.holder_record()
+                if "temporarily unavailable" in failure:
+                    failure = ("another Mac or an interrupted open holds its lock"
+                               + (f"; the last record says {self.describe_holder(holder)}" if holder else ""))
+                self.log(f"The NAS disk image could not be opened: {failure}; attempt {attempt + 1} of {attempts}")
             else:
-                self.log(f"Disk image is held by {blocker}; attempt {attempt + 1} of {attempts}")
+                self.log(f"The NAS disk image is busy: {blocker}; attempt {attempt + 1} of {attempts}")
             if attempt + 1 < attempts:
                 time.sleep(5 * 2 ** attempt)
         return False
@@ -745,10 +797,13 @@ class Store:
         elif current:
             return self.choice(self.local, "local", "this Mac's workspace already matches the current engine")
         if prefer in (None, "image") and self.bundle.is_dir():
-            if self.attach(take_over):
+            rate = self.speed()
+            fast = rate is not None and rate >= float(self.config["min_image_mb_per_second"])
+            if prefer is None and not fast:
+                self.log(f"Not opening the NAS disk image: the link reads {rate or 0:.0f} MB/s, below "
+                         f"{float(self.config['min_image_mb_per_second']):.0f} MB/s")
+            elif self.attach(take_over):
                 image = describe(self.image_workspace)
-                rate = self.speed()
-                fast = rate is not None and rate >= float(self.config["min_image_mb_per_second"])
                 if prefer == "image" and rank(image, wanted) is not None:
                     self.align_quietly(read_record(self.share / XCODE_RECORD))
                     return self.choice(self.image_workspace, "image", "requested", attached=True)
@@ -766,7 +821,7 @@ class Store:
                     reason = f"the link reads {rate or 0:.0f} MB/s"
                 self.log(f"Not building inside the NAS disk image: {reason}")
             else:
-                self.log("The NAS disk image is in use on another Mac")
+                self.log("Not building inside the NAS disk image: it could not be opened")
         if prefer == "image":
             raise StorageError("the NAS disk image is unavailable or holds a different engine")
         if (prefer == "snapshot" and rank(snapshot, wanted) is not None) or (prefer is None and newer(snapshot, local, wanted)):
@@ -993,7 +1048,7 @@ class Store:
         opened = False
         if self.volume in workspace.parents and not mounted(str(self.volume)):
             if not mount_share(self.config) or not self.attach():
-                raise StorageError("the NAS disk image holding that workspace is unreachable or in use on another Mac")
+                raise StorageError("the NAS disk image holding that workspace is unreachable or could not be opened")
             opened = True
         try:
             return self.publish(workspace, handoff)

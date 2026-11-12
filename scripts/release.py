@@ -590,6 +590,7 @@ class Release:
         source = Path(self.state["source"])
         workspace = Path(os.environ.get("PARC_ENGINE_WORKSPACE", "")) if os.environ.get("PARC_ENGINE_WORKSPACE") else None
         storage = self.storage_tool(source)
+        self.discard_frozen_choice(source)
         if workspace is None and self.state.get("storage_mode"):
             workspace = Path(self.state["workspace"])
             if self.state["storage_mode"] == "image":
@@ -651,6 +652,12 @@ class Release:
             self.command([sys.executable, script, "shipping-build", "--workspace", workspace, "--jobs", jobs], name="engine-build")
             self.command([sys.executable, source / "scripts/build.py", "seal-engine", "--engine-dir", output, "--manifest", manifest, "--purpose", "distribution"], name="engine-seal")
         self.checkpoint(manifest=str(manifest), manifest_sha256=sha(manifest))
+
+    def discard_frozen_choice(self, source):
+        recorded = Path(self.state.get("workspace") or "/")
+        if self.state.get("storage_mode") and (recorded == source or source in recorded.parents):
+            self.emit("Discarding an engine choice inside this release's frozen inputs; choosing again", workspace=str(recorded))
+            self.checkpoint(storage_mode=None, storage_reason=None, workspace=None)
 
     def move_engine_to_lock(self, script, workspace, lock):
         old = json.loads((workspace / ".parc-engine-source.json").read_text())

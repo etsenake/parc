@@ -132,6 +132,20 @@ class ReleaseStorageTests(unittest.TestCase):
         self.assertEqual(args[args.index('--source') + 1], str(self.source))
         self.assertEqual(workspace, Path(choice['workspace']))
 
+    def test_a_resumed_release_drops_an_engine_choice_inside_its_frozen_inputs(self):
+        self.runner.checkpoint = lambda **values: self.runner.state.update(values)
+        self.runner.state.update(storage_mode='local', storage_reason='no newer NAS copy applies',
+                                 workspace=str(self.source / 'work/engine'))
+        self.runner.discard_frozen_choice(self.source)
+        self.assertIsNone(self.runner.state['storage_mode'])
+        self.assertIsNone(self.runner.state['workspace'])
+
+    def test_a_resumed_release_keeps_a_real_engine_choice(self):
+        self.runner.checkpoint = lambda **values: self.runner.state.update(values)
+        self.runner.state.update(storage_mode='restored', workspace='/Users/someone/ParcBuild/engine-cx')
+        self.runner.discard_frozen_choice(self.source)
+        self.assertEqual(self.runner.state['storage_mode'], 'restored')
+
     def test_unreadable_settings_turn_storage_off_instead_of_failing(self):
         self.settings.write_text('{not json')
         self.assertFalse(self.runner.storage_enabled())

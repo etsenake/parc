@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("engine_storage", ROOT / "scripts/engine_storage.py")
@@ -456,14 +456,50 @@ class StorageTests(unittest.TestCase):
     def test_take_over_clears_another_macs_record_and_checks_the_image(self):
         self.store.bundle.mkdir()
         self.store.holder.write_text(json.dumps({"host": "other-mac"}))
-        plist = storage.plistlib.dumps({"system-entities": [{"mount-point": str(self.store.volume)}]}).decode()
-        attached = storage.subprocess.CompletedProcess([], 0, plist, "")
         with patch.object(storage, "mounted", side_effect=lambda path, kind=None: False), \
-                patch.object(storage, "run", return_value=attached), \
+                patch.object(self.store, "open_image", return_value=None), \
                 patch.object(self.store, "check_volume") as check:
             self.assertTrue(self.store.attach(take_over=True))
         check.assert_called_once()
-        self.assertEqual(json.loads(self.store.holder.read_text())["host"], self.store.host)
+        holder = json.loads(self.store.holder.read_text())
+        self.assertEqual((holder["host"], holder["state"]), (self.store.host, "open"))
+
+    def test_an_open_that_outlasts_the_wait_is_used_once_macos_finishes_it(self):
+        self.store.bundle.mkdir()
+        self.config["attach_wait_seconds"] = 1
+        child = Mock(returncode=None)
+        child.communicate.side_effect = [storage.subprocess.TimeoutExpired("hdiutil", 1), ("", "")]
+        answers = iter([False, False, True])
+        with patch.object(storage.subprocess, "Popen", return_value=child) as popen, \
+                patch.object(storage, "mounted", side_effect=lambda path, kind=None: next(answers)):
+            self.assertTrue(self.store.attach())
+        self.assertEqual(json.loads(self.store.holder.read_text())["state"], "open")
+        self.assertNotIn("-nobrowse", popen.call_args.args[0])
+
+    def test_an_open_that_never_finishes_is_cleaned_up_and_reported(self):
+        self.store.bundle.mkdir()
+        self.config["attach_wait_seconds"] = 60
+        self.config["attach_attempts"] = 1
+        child = Mock(returncode=None)
+        child.communicate.side_effect = [storage.subprocess.TimeoutExpired("hdiutil", 1), ("", "")]
+        with patch.object(storage.subprocess, "Popen", return_value=child), \
+                patch.object(storage, "mounted", return_value=False), \
+                patch.object(self.store, "attached_here", return_value=True), \
+                patch.object(storage, "run") as run:
+            self.assertFalse(self.store.attach())
+        self.assertIn("detach", [str(arg) for arg in run.call_args.args[0]])
+        self.assertTrue(any("did not finish within 1 minutes" in line for line in self.logs))
+        self.assertFalse(self.store.holder.exists())
+
+    def test_other_macs_can_see_who_is_opening_the_image_and_a_stale_attempt_expires(self):
+        self.store.bundle.mkdir()
+        self.store.host = "air"
+        self.store.claim("opening")
+        self.store.host = "studio"
+        self.assertIn("air opening it since", self.store.holder_blocks())
+        old = storage.time.time() - self.config["attach_wait_seconds"] - 400
+        storage.os.utime(self.store.holder, (old, old))
+        self.assertIsNone(self.store.holder_blocks())
 
     def test_publish_removes_interrupted_uploads(self):
         self.receipt(self.store.local)
@@ -501,13 +537,12 @@ class StorageTests(unittest.TestCase):
         self.receipt(self.store.image_workspace)
         self.snapshot()
         with patch.object(storage, "mount_share", return_value=True), \
-                patch.object(self.store, "attach", return_value=True), \
+                patch.object(self.store, "attach", side_effect=AssertionError("opened over a slow link")), \
                 patch.object(self.store, "speed", return_value=20.0), \
-                patch.object(self.store, "detach", return_value=True) as detach, \
                 patch.object(self.store, "restore", return_value=True) as restore:
             choice = self.store.resolve()
-        detach.assert_called_once()
         restore.assert_called_once()
+        self.assertTrue(any("link reads 20 MB/s" in line for line in self.logs))
         self.assertEqual(choice["mode"], "restored")
 
     def test_image_behind_this_mac_is_not_used(self):
@@ -551,14 +586,17 @@ class StorageTests(unittest.TestCase):
         with patch.object(storage, "mounted", return_value=False), patch.object(storage, "run") as run:
             self.assertFalse(self.store.attach())
         run.assert_not_called()
-        self.assertEqual(sum("held by other-mac" in line for line in self.logs), self.config["attach_attempts"])
+        self.assertEqual(sum("other-mac has it open" in line for line in self.logs), self.config["attach_attempts"])
 
-    def test_refused_attach_retries_before_giving_up(self):
+    def test_refused_attach_retries_before_giving_up_and_says_why(self):
         self.store.bundle.mkdir()
-        refused = storage.subprocess.CompletedProcess([], 1, "", "Resource temporarily unavailable")
-        with patch.object(storage, "mounted", return_value=False), patch.object(storage, "run", return_value=refused) as run:
+        with patch.object(storage, "mounted", return_value=False), \
+                patch.object(self.store, "open_image", return_value="hdiutil: attach failed - Resource temporarily unavailable") as opened:
             self.assertFalse(self.store.attach())
-        self.assertEqual(run.call_count, self.config["attach_attempts"])
+        self.assertEqual(opened.call_count, self.config["attach_attempts"])
+        self.assertFalse(self.store.holder.exists())
+        self.assertTrue(any("holds its lock" in line for line in self.logs))
+        self.assertFalse(any("another Mac" in line and "in use" in line for line in self.logs))
 
     def test_snapshot_for_other_chromium_is_ignored(self):
         self.receipt(self.store.local, overlay="0" * 64)

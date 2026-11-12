@@ -65,7 +65,9 @@ disk image holding a live workspace that one Mac at a time opens and builds in.
 `snapshots/current` is a packed snapshot of the latest published workspace,
 with `pin.json` and `metadata.json` describing it. The NFS export maps all
 users to the NAS administrator; the image is attached with ownership ignored,
-so its files belong to whoever opens it. The app or terminal that runs builds
+so its files belong to whoever opens it. It mounts visibly as ParcEngine in
+Finder's sidebar; a `.metadata_never_index` file inside the image keeps
+Spotlight from indexing it on every Mac. The app or terminal that runs builds
 needs macOS's Network Volumes permission once; a first access waits on that
 prompt.
 
@@ -73,11 +75,17 @@ prompt.
 
 1. The local workspace, when its source lock and overlay already match the
    checkout. No network is used.
-2. The disk image, when the share is reachable, the image opens, its workspace
-   is ahead of the local copy and an uncached read from the share reaches the
-   speed threshold. A Mac records itself in `parc-engine.sparsebundle.holder.json`
-   while it has the image open; another Mac's recent record, or a refused
-   open, counts as busy after the configured retries.
+2. The disk image, when the share is reachable, an uncached read from the
+   share reaches the speed threshold (measured before opening, so a slow link
+   never tries), the image opens and its workspace is ahead of the local copy.
+   A Mac writes `parc-engine.sparsebundle.holder.json` as "opening" before it
+   tries and "open" once mounted, and removes it when an attempt fails or the
+   image is ejected; `status` shows it, and another Mac reports who holds or is
+   opening the image. An "opening" record older than `attach_wait_seconds`
+   (600) plus five minutes is ignored as an interrupted attempt. An open that
+   outlasts that wait is given two more minutes to finish in the background,
+   then ejected if it half-attached; a refusal reports macOS's reason, such as
+   a lock held by another Mac or an interrupted open.
 3. The NAS snapshot, unpacked with the normal restore tool at its recorded
    build path when it is ahead of the local copy and the disk has room. The
    whole unpack holds the share's snapshot lock and stops if another Mac
