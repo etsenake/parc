@@ -65,7 +65,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private var selectedProfileID: UUID?
     private var refreshingProfiles = false
     private let renameProfile = ActionButton("", symbol: "rectangle.and.pencil.and.ellipsis")
-    private var profileNameSheet: ProfileNameSheet?
+    private var profileNameDialog: (dialog: PArcDialog, profileID: UUID)?
     private var previewSettingsSheet: SidebarPreviewSettingsSheet?
     private let removeProfile = ActionButton("", symbol: "minus")
     private var removalSubscription: AnyCancellable?
@@ -642,8 +642,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             removeProfile.isEnabled = false
             removeProfile.toolTip = "Select an available profile."
         }
-        if let sheet = profileNameSheet,
-           !store.state.profiles.contains(where: { $0.id == sheet.profileID }) {
+        if let editing = profileNameDialog,
+           !store.state.profiles.contains(where: { $0.id == editing.profileID }) {
             cancelProfileNameEditor()
         }
         archive.removeAllItems()
@@ -815,27 +815,32 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 
     private func showProfileNameEditor() {
-        guard let window, window.attachedSheet == nil, profileNameSheet == nil,
+        guard let window, window.attachedSheet == nil, profileNameDialog == nil,
               let profile = store.state.profiles.first(where: { $0.id == displayedProfileID }) else { return }
-        let editor = ProfileNameSheet(profile: profile) { [weak self] name in
-            guard let self else { throw ProfileSettingsError.unavailable }
-            try self.store.saveProfileName(profile.id, expectedName: profile.name, name: name)
+        let dialog = PArcDialog(.init(title: [("Rename your Profile", false)],
+            message: [("This won’t affect the names of any of the Spaces associated with this Profile.", false)],
+            confirm: "Save", cancel: "Cancel", field: .init(value: profile.name, placeholder: "Profile name")))
+        guard let field = dialog.textField else { return }
+        field.setAccessibilityLabel("Profile name")
+        profileNameDialog = (dialog, profile.id)
+        let began = dialog.begin(for: window) { [weak self, weak dialog] response in
+            guard let self else { return }
+            if self.profileNameDialog?.dialog === dialog { self.profileNameDialog = nil }
+            if response == .confirm {
+                do { try self.store.saveProfileName(profile.id, expectedName: profile.name, name: field.stringValue) }
+                catch { self.reportProfileSettingsError(error) }
+            }
+            self.refresh()
         }
-        guard let sheet = editor.window else { return }
-        profileNameSheet = editor
-        window.beginSheet(sheet) { [weak self, weak editor] _ in
-            sheet.orderOut(nil)
-            if self?.profileNameSheet === editor { self?.profileNameSheet = nil }
-            self?.refresh()
-        }
-        editor.focusName()
+        if !began { profileNameDialog = nil }
     }
 
     private func cancelProfileNameEditor() {
-        guard let editor = profileNameSheet, let sheet = editor.window else { return }
-        profileNameSheet = nil
-        sheet.sheetParent?.endSheet(sheet, returnCode: .cancel)
-        sheet.orderOut(nil)
+        guard let editing = profileNameDialog else { return }
+        profileNameDialog = nil
+        let panel = editing.dialog.panel
+        panel.sheetParent?.endSheet(panel, returnCode: .cancel)
+        panel.orderOut(nil)
     }
 
     private func reportProfileSettingsError(_ error: Error) {
@@ -994,10 +999,6 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
                 self.refreshDownloadPreferences()
             } catch { self.reportDownloadPreferenceError(error) }
         }
-    }
-    func beginProfileCreation() {
-        showPane(.profiles)
-        createProfile()
     }
     private func createProfile() {
         guard let window, window.attachedSheet == nil else { return }

@@ -21,8 +21,9 @@ each accepted choice; Remove writes nil and failure preserves the draft.
 
 With multiple Profiles the header shows the actual assignment. Set Profile and
 its accessibility actions share original-target callbacks; retiring Profiles
-cannot be chosen. New Profile opens the real Settings owner for that Space
-without first switching the browser selection.
+cannot be chosen. New Profile asks for the name in a Parc dialog over the
+browser window and assigns the new Profile to that Space, without opening
+Settings or switching the browser selection.
 
 ## Complete manager and original-content transactions
 

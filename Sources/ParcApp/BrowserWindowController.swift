@@ -5958,15 +5958,36 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         renameSpace(activeSpaceID)
     }
     var canCreateProfile: Bool {
-        !isPrivateBrowsing && spaceCommandsAvailable && settings?.window?.attachedSheet == nil
+        !isPrivateBrowsing && spaceCommandsAvailable && window?.attachedSheet == nil
     }
     func newProfile() { newProfile(for: activeSpaceID) }
     private func newProfile(for spaceID: UUID) {
         guard canCreateProfile, let expected = managementSpace(spaceID) else { return }
         commandBar?.dismiss()
-        guard canCreateProfile, managementSpace(spaceID, profileID: expected.profileID) != nil else { return }
-        showSettings(pane: .profiles, contextSpaceID: spaceID)
-        settings?.beginProfileCreation()
+        guard canCreateProfile, managementSpace(spaceID, profileID: expected.profileID) != nil,
+              let window else { return }
+        let dialog = PArcDialog(.init(title: [("New local profile", false)],
+            message: [("A profile keeps its own cookies and website sessions. This Space will use the new profile.", false)],
+            confirm: "Create", cancel: "Cancel", field: .init(value: "", placeholder: "Profile name")))
+        guard let field = dialog.textField else { return }
+        field.setAccessibilityLabel("New profile name")
+        _ = dialog.begin(for: window) { [weak self, weak window] response in
+            guard let self, let window, response == .confirm,
+                  self.managementSpace(spaceID, profileID: expected.profileID) != nil else { return }
+            let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return }
+            do {
+                let id = try self.store.createProfilePersisted(name: name)
+                self.store.assignProfile(id, toSpace: spaceID, shouldCommit: { [weak self] in
+                    self?.managementSpace(spaceID, profileID: expected.profileID) != nil
+                }, completion: { [weak window] result in
+                    guard case .failure(let error) = result, let window else { return }
+                    PArcDialog.inform(in: window, .init(error: error, title: "Parc couldn’t switch this Space to the new profile."))
+                })
+            } catch {
+                PArcDialog.inform(in: window, .init(error: error, title: "Parc couldn’t create this profile."))
+            }
+        }
     }
     var canOpenPageInNewTab: Bool {
         presentation.isReady && !isClosing && !wholeWindowClose && !isPrivateBrowsing && !isPopupWindow
