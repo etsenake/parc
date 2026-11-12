@@ -978,8 +978,6 @@ private final class ThemeMetalRenderer {
         float4 result=themeLayer(v,c);
         return float4(result.rgb*result.a,result.a);
     }
-    // gradientFragment's two-layer case: the straight layer colours mix by
-    // the progress, then premultiply. An absent layer is clear.
     fragment float4 themeTransitionGradientFragment(Vertex v [[stage_in]], constant Config &c [[buffer(0)]],
         constant Config &next [[buffer(1)]], constant float4 &mixing [[buffer(2)]]) {
         float4 from=themeLayer(v,c), to=themeLayer(v,next);
@@ -992,8 +990,6 @@ private final class ThemeMetalRenderer {
     float4 themeOverlay(float2 uv, texture2d<float> texture, constant OutputConfig &config) {
         float4 c=config.parameters;
         if(c.w<0.5f) return float4(0);
-        // Textures are premultiplied at load; multiplying all channels matches
-        // the original unpremultiply → alpha scale → premultiply sequence.
         return texture.sample(themeSampler,fract(uv*c.xy))*c.z;
     }
     float4 themeComposite(float4 background, float4 overlay) {
@@ -1007,8 +1003,6 @@ private final class ThemeMetalRenderer {
         if(config.parameters.w<0.5f) return background;
         return themeComposite(background,themeOverlay(uv,texture,config));
     }
-    // overlayFragment's two textures mix by the progress over the mixed
-    // gradient; renderFragment composites them as for one theme.
     fragment float4 themeTransitionFragment(Vertex v [[stage_in]],
         texture2d<float> gradient [[texture(0)]], texture2d<float> texture [[texture(1)]],
         texture2d<float> nextTexture [[texture(2)]],
