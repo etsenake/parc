@@ -132,7 +132,27 @@ def matches(found: dict | None, wanted: dict, *, overlay: bool = True) -> bool:
     return not overlay or found.get("overlay_identity") == wanted["overlay_identity"]
 
 
+def lock_history(repo: Path, limit: int = 100) -> list[str]:
+    try:
+        log = subprocess.run(["git", "-C", str(repo), "log", f"-{limit}", "--format=%H", "--", "Engine/source-lock.json"],
+                             capture_output=True, text=True, timeout=60)
+        digests = []
+        for revision in log.stdout.split() if log.returncode == 0 else []:
+            shown = subprocess.run(["git", "-C", str(repo), "show", f"{revision}:Engine/source-lock.json"],
+                                   capture_output=True, text=True, timeout=60)
+            if shown.returncode == 0:
+                digest = hashlib.sha256((shown.stdout.strip() + "\n").encode()).hexdigest()
+                if digest not in digests:
+                    digests.append(digest)
+        return digests
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+
 def rank(found: dict | None, wanted: dict) -> int | None:
+    if found and found.get("lock_sha256") != wanted["lock_sha256"]:
+        history = [digest for digest in wanted.get("history", []) if digest != wanted["lock_sha256"]]
+        return -1 - history.index(found["lock_sha256"]) if found.get("lock_sha256") in history else None
     if not matches(found, wanted, overlay=False):
         return None
     if found.get("overlay_identity") == wanted["overlay_identity"]:
@@ -802,6 +822,8 @@ class Store:
                 raise StorageError("the NAS is not reachable")
             return self.choice(self.local, "local", "this Mac's workspace already matches the current engine" if current
                                else "the NAS is not reachable")
+        if not current:
+            wanted["history"] = lock_history(self.repo)
         snapshot = self.snapshot()
         handoff = self.pending_handoff(snapshot)
         if (prefer is None and handoff is not None and rank(snapshot, wanted) is not None

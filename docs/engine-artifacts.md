@@ -107,7 +107,12 @@ prompt.
    never touched.
 4. The local workspace as it is.
 
-"Ahead" compares copies with the checkout's source lock by overlay version: the
+A copy built on an earlier Chromium lock from the checkout's own Git history
+is a usable starting point that the release then upgrades in place; it ranks
+below every copy on the current lock, the most recent earlier lock first, so a
+new Mac starts from an older snapshot instead of downloading Chromium. A copy on
+a lock outside that history is ignored. Among copies on the current lock,
+"ahead" compares by overlay version: the
 checkout's exact overlay ranks highest, a copy with a newer overlay than the
 checkout is unusable, and the local copy wins ties. A Mac whose engine just
 changed therefore compiles locally instead of unpacking an older NAS copy.

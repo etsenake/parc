@@ -616,6 +616,35 @@ class StorageTests(unittest.TestCase):
         self.assertTrue(any("holds its lock" in line for line in self.logs))
         self.assertFalse(any("another Mac" in line and "in use" in line for line in self.logs))
 
+    def test_a_new_mac_starts_from_an_older_chromium_snapshot_instead_of_downloading(self):
+        self.snapshot()
+        metadata = json.loads((self.store.current / "metadata.json").read_text())
+        (self.store.current / "metadata.json").write_text(json.dumps({**metadata, "lock_sha256": "9" * 64}))
+        with patch.object(storage, "mount_share", return_value=True), \
+                patch.object(storage, "lock_history", return_value=[self.wanted["lock_sha256"], "9" * 64]), \
+                patch.object(self.store, "restore", return_value=True) as restore:
+            self.assertEqual(self.store.resolve()["mode"], "restored")
+        restore.assert_called_once()
+
+    def test_a_copy_on_the_right_chromium_beats_one_on_an_older_chromium(self):
+        wanted = {**self.wanted, "history": ["8" * 64, "9" * 64]}
+        right = {"lock_sha256": self.wanted["lock_sha256"], "overlay_identity": "0" * 64, "overlay_version": 1}
+        older, oldest = {"lock_sha256": "8" * 64}, {"lock_sha256": "9" * 64}
+        self.assertTrue(storage.newer(right, older, wanted))
+        self.assertTrue(storage.newer(older, oldest, wanted))
+        self.assertFalse(storage.newer(oldest, older, wanted))
+        self.assertIsNone(storage.rank({"lock_sha256": "7" * 64}, wanted))
+
+    def test_the_lock_history_comes_from_this_checkouts_git_history(self):
+        subprocess.run(["git", "init", "-q"], cwd=self.repo, check=True)
+        lock = self.repo / "Engine/source-lock.json"
+        for version in ("old", "new"):
+            lock.write_text(json.dumps({"chromium": version}) + "\n")
+            subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+            subprocess.run(["git", "-c", "user.email=f@e", "-c", "user.name=F", "commit", "-qm", version], cwd=self.repo, check=True)
+        old = storage.hashlib.sha256((json.dumps({"chromium": "old"}) + "\n").encode()).hexdigest()
+        self.assertEqual(storage.lock_history(self.repo), [storage.sha(lock), old])
+
     def test_snapshot_for_other_chromium_is_ignored(self):
         self.receipt(self.store.local, overlay="0" * 64)
         self.snapshot()
