@@ -13,6 +13,13 @@ For otherwise unassigned work, retain the requested order: Routing, Windows,
 Data, Performance, Folders, Archive, Command bar, Tab switcher, Peek and Onboarding.
 Finish assigned work first; explicit deferrals remain deferred.
 
+## Current handoffs
+
+- **Engine build for Chromium 156.0.8078.103 (overlay 719):** owner Claude on
+  the MacBook Air. Affected: that Mac's canonical checkout and its NAS-restored
+  engine workspace, both frozen until the shipping build finishes. No blocker.
+  Next action: finish the shipping build.
+
 ## Reported behavior
 
 - **What's New address leakage:** native History can record the bundled file URL,
