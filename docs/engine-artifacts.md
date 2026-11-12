@@ -150,7 +150,9 @@ holder record; `status` reports the local, image and snapshot state.
 
 With settings present and `PARC_ENGINE_WORKSPACE` unset, the
 [release](master-release.md) resolves its workspace this way and keeps that
-choice when resumed. It runs `resolve --repo CHECKOUT --source FROZEN`: the
+choice when resumed. It always runs the checkout's own storage script, the same
+version as the release script, even when resuming a release whose frozen
+inputs predate a storage change. It runs `resolve --repo CHECKOUT --source FROZEN`: the
 checkout's `work/engine` link (or `local_workspace`) names this Mac's
 workspace, and the release's frozen inputs supply the engine lock and overlay
 it must match, so a Mac whose engine is current reuses it and an unpack's link

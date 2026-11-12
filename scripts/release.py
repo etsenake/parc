@@ -190,7 +190,7 @@ class Release:
         return self.command(["gh", *args], capture=True, retries=2, name="github")
 
     def take_handoff(self):
-        storage = self.storage_tool(self.root)
+        storage = self.storage_tool()
         if storage is None or storage.load_config() is None:
             return
         try:
@@ -589,7 +589,7 @@ class Release:
     def engine(self):
         source = Path(self.state["source"])
         workspace = Path(os.environ.get("PARC_ENGINE_WORKSPACE", "")) if os.environ.get("PARC_ENGINE_WORKSPACE") else None
-        storage = self.storage_tool(source)
+        storage = self.storage_tool()
         self.discard_frozen_choice(source)
         if workspace is None and self.state.get("storage_mode"):
             workspace = Path(self.state["workspace"])
@@ -597,7 +597,7 @@ class Release:
                 if storage is None or not storage.Store(storage.load_config(), self.root, log=self.emit,
                                                         source=source).attach():
                     raise Failure("The NAS disk image holding this release's engine is unavailable; preserved")
-        elif workspace is None and self.storage_enabled(source):
+        elif workspace is None and self.storage_enabled():
             workspace = self.storage_workspace(source)
         if workspace is None:
             options = [self.root / "work/engine", Path.home() / "ParcBuild/engine"]
@@ -691,7 +691,7 @@ class Release:
 
     def storage_workspace(self, source):
         try:
-            output = self.command([sys.executable, source / "scripts/engine_storage.py", "resolve", "--repo", self.root,
+            output = self.command([sys.executable, self.root / "scripts/engine_storage.py", "resolve", "--repo", self.root,
                                    "--source", source], capture=True, name="engine-storage")
             choice = json.loads(output.splitlines()[-1])
             self.checkpoint(storage_mode=choice["mode"], storage_reason=choice["reason"])
@@ -700,14 +700,14 @@ class Release:
             self.emit("Choosing the engine through the NAS failed; using this Mac's engine workspace: " + str(error))
             return None
 
-    def storage_tool(self, source):
-        if not (Path(source) / "scripts/engine_storage.py").is_file():
+    def storage_tool(self):
+        if not (self.root / "scripts/engine_storage.py").is_file():
             return None
-        return module(source, "engine_storage")
+        return module(self.root, "engine_storage")
 
-    def storage_enabled(self, source=None):
+    def storage_enabled(self):
         try:
-            storage = self.storage_tool(source or self.state["source"])
+            storage = self.storage_tool()
             return storage is not None and storage.load_config() is not None
         except (OSError, ValueError, ImportError, SyntaxError) as error:
             self.emit("The NAS engine storage settings could not be read; continuing without it: " + str(error))
@@ -716,12 +716,11 @@ class Release:
     def start_storage_upload(self):
         if self.state.get("storage_upload") or not self.storage_enabled():
             return
-        source = Path(self.state["source"])
         result = Path(self.state["run"]) / "engine-storage-publish.json"
         try:
             result.unlink(missing_ok=True)
             with self.log.open("a") as stream:
-                child = subprocess.Popen([sys.executable, source / "scripts/engine_storage.py", "publish", "--repo", source,
+                child = subprocess.Popen([sys.executable, self.root / "scripts/engine_storage.py", "publish", "--repo", self.root,
                                           "--workspace", self.state["workspace"], "--result", result],
                                          cwd=self.root, env=self.env, stdout=stream, stderr=subprocess.STDOUT,
                                          start_new_session=True)
@@ -789,10 +788,9 @@ class Release:
                       "python3 scripts/engine_storage.py detach")
 
     def storage_cleanup(self, *args):
-        source = Path(self.state["source"])
         try:
             with self.log.open("a") as stream:
-                child = subprocess.Popen([sys.executable, source / "scripts/engine_storage.py", *args, "--repo", source],
+                child = subprocess.Popen([sys.executable, self.root / "scripts/engine_storage.py", *args, "--repo", self.root],
                                          cwd=self.root, env=self.env, stdout=stream, stderr=subprocess.STDOUT,
                                          start_new_session=True)
         except OSError as error:

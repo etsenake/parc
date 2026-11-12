@@ -19,7 +19,8 @@ class ReleaseStorageTests(unittest.TestCase):
         self.base = Path(temp.name)
         self.source = self.base / 'source'
         (self.source / 'scripts').mkdir(parents=True)
-        shutil.copy(ROOT / 'scripts/engine_storage.py', self.source / 'scripts/engine_storage.py')
+        (self.base / 'repo/scripts').mkdir(parents=True)
+        shutil.copy(ROOT / 'scripts/engine_storage.py', self.base / 'repo/scripts/engine_storage.py')
         self.settings = self.base / 'engine-storage.json'
         self.settings.write_text(json.dumps({'schema_version': 1, 'share': 'nfs://nas.test/engine'}))
         environment = patch.dict(os.environ, {'PARC_ENGINE_STORAGE': str(self.settings)})
@@ -128,6 +129,7 @@ class ReleaseStorageTests(unittest.TestCase):
                 patch.object(self.runner, 'checkpoint'):
             workspace = self.runner.storage_workspace(self.source)
         args = [str(arg) for arg in command.call_args.args[0]]
+        self.assertEqual(args[1], str(self.runner.root / 'scripts/engine_storage.py'))
         self.assertEqual(args[args.index('--repo') + 1], str(self.runner.root))
         self.assertEqual(args[args.index('--source') + 1], str(self.source))
         self.assertEqual(workspace, Path(choice['workspace']))
