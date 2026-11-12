@@ -77,14 +77,17 @@ class StorageTests(unittest.TestCase):
             "overlay_version": version if version is not None else (2 if overlay is None else 1),
             "workspace_bytes": size}))
 
-    def run_setup(self, metal=(True,), mounted=True, local_engine=False):
+    def run_setup(self, metal=(True,), mounted=True, local_engine=False, environment=None):
         settings = self.root / "settings/engine-storage.json"
         settings.parent.mkdir()
         settings.write_text(json.dumps({"schema_version": 1, "share": "nfs://old.local/engine",
                                         "mount_point": str(self.share), "min_image_mb_per_second": 50}))
         if local_engine:
             self.receipt(self.repo / "work/engine")
-        with patch.dict(storage.os.environ, {"PARC_ENGINE_STORAGE": str(settings)}), \
+        home = self.root / "home"
+        home.mkdir(exist_ok=True)
+        with patch.dict(storage.os.environ, {"PARC_ENGINE_STORAGE": str(settings), **(environment or {})}), \
+                patch.object(storage.Path, "home", return_value=home), \
                 patch.object(storage, "metal_toolchain_ready", side_effect=list(metal)), \
                 patch.object(storage.subprocess, "run") as download, \
                 patch.object(storage, "mount_share", return_value=mounted), \
@@ -111,6 +114,18 @@ class StorageTests(unittest.TestCase):
         problems, _, download, _, align = self.run_setup(local_engine=True)
         self.assertEqual(problems, [])
         download.assert_not_called()
+        align.assert_not_called()
+
+    def test_setup_finds_an_engine_anywhere_a_release_would_look(self):
+        self.snapshot()
+        self.receipt(self.root / "home/ParcBuild/engine")
+        _, _, _, _, align = self.run_setup()
+        align.assert_not_called()
+        storage.shutil.rmtree(self.root / "home/ParcBuild")
+        self.receipt(self.root / "chosen/engine")
+        (self.root / "settings/engine-storage.json").unlink()
+        (self.root / "settings").rmdir()
+        _, _, _, _, align = self.run_setup(environment={"PARC_ENGINE_WORKSPACE": str(self.root / "chosen/engine")})
         align.assert_not_called()
 
     def test_setup_says_what_is_still_needed(self):

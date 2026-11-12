@@ -14,7 +14,9 @@ scratch. It is off unless the Mac has a settings file at
 `setup --share URL` writes that file (keeping other keys) and prepares a new
 Mac in one run: it downloads Apple's Metal toolchain when `xcrun metal
 --version` fails, mounts the share, creates the current snapshot's build
-folder and, on a Mac without its own engine workspace, matches Xcode's file
+folder and, on a Mac with no engine workspace anywhere a release looks (the
+local workspace, the checkout's `work/engine`, `~/ParcBuild/engine`,
+`PARC_ENGINE_WORKSPACE` or the snapshot's build path), matches Xcode's file
 dates. It prints what is still needed, such as a permission, and exits non-zero
 until nothing is.
 

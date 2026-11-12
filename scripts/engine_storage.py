@@ -1063,10 +1063,14 @@ def setup(share: str, repo: Path, log) -> list[str]:
         return problems
     try:
         store.make_folder(Path(snapshot.get("workspace") or store.local).parent)
-        if describe(store.local) is None:
-            store.align_current()
+        candidates = [store.local, repo / "work/engine", Path.home() / "ParcBuild/engine"]
+        candidates += [Path(value) for value in (os.environ.get("PARC_ENGINE_WORKSPACE"), snapshot.get("workspace"))
+                       if value]
+        existing = [path for path in candidates if describe(path) is not None]
+        if existing:
+            log(f"This Mac already has an engine workspace at {existing[0]}, so its Xcode dates were left alone")
         else:
-            log("This Mac already has an engine workspace, so its Xcode dates were left alone")
+            store.align_current()
     except StorageError as error:
         problems.append(str(error))
     return problems
