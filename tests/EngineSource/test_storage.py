@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -335,6 +336,35 @@ class StorageTests(unittest.TestCase):
             self.store.make_folder(folder)
         self.assertEqual(run.call_args.args[0][:3], ["/usr/bin/sudo", "-n", "/bin/sh"])
         self.assertIn("chown", run.call_args.args[0][-1])
+
+    def tool(self, body):
+        scripts = self.repo / "scripts"
+        scripts.mkdir(exist_ok=True)
+        (scripts / "engine-artifacts.py").write_text("import sys, time\n" + body)
+        self.store.progress_seconds = 0.05
+
+    def test_engine_tool_reports_progress_and_shows_tool_messages_as_they_happen(self):
+        self.tool("print('working', file=sys.stderr, flush=True)\ntime.sleep(0.4)\nprint('{\"ok\": 1}')\n")
+        ticks = []
+        self.assertEqual(self.store.engine_tool("restore", progress=lambda: ticks.append(1)).strip(), '{"ok": 1}')
+        self.assertGreater(len(ticks), 1)
+        self.assertIn("working", self.logs)
+
+    def test_engine_tool_failure_carries_the_tools_error(self):
+        self.tool("print('bad archive part', file=sys.stderr)\nsys.exit(1)\n")
+        with self.assertRaisesRegex(storage.StorageError, "bad archive part"):
+            self.store.engine_tool("restore")
+
+    def test_unpack_progress_reports_gigabytes_and_then_verification(self):
+        used = iter([0, 30 << 30, 60 << 30, 60 << 30])
+        with patch.object(storage.shutil, "disk_usage", side_effect=lambda path: SimpleNamespace(used=next(used))):
+            report = self.store.unpack_progress(self.root, 60 << 30)
+            report()
+            report()
+            report()
+        self.assertIn("Unpacked 30.0 of 60.0 GB (50%", self.logs[0])
+        self.assertTrue(self.logs[1].startswith("Unpacked; verifying"))
+        self.assertTrue(self.logs[2].startswith("Still verifying"))
 
     def test_failed_restore_puts_the_old_workspace_back(self):
         self.receipt(self.store.local, overlay="0" * 64)

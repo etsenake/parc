@@ -15,6 +15,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -181,6 +182,7 @@ class Store:
         self.current = self.snapshots / "current"
         self.holder = self.share / (config["image"] + ".holder.json")
         self.host = socket.gethostname()
+        self.progress_seconds = 30
 
     def snapshot(self) -> dict | None:
         metadata = read_json(self.current / "metadata.json")
@@ -299,11 +301,85 @@ class Store:
                     raise StorageError("Another Mac is updating the NAS snapshot")
                 time.sleep(10)
 
-    def engine_tool(self, *args: str, timeout: float = 6 * 3600) -> str:
-        result = run([sys.executable, self.repo / "scripts/engine-artifacts.py", *args], timeout, cwd=self.repo)
-        if result.returncode != 0:
-            raise StorageError((result.stderr or result.stdout).strip() or "engine artifact operation failed")
-        return result.stdout
+    def engine_tool(self, *args: str, timeout: float = 6 * 3600, progress=None) -> str:
+        command = [sys.executable, str(self.repo / "scripts/engine-artifacts.py"), *args]
+        child = subprocess.Popen(command, cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        output, errors = [], []
+
+        def pump(stream, sink, echo):
+            for line in stream:
+                sink.append(line)
+                if echo and line.strip():
+                    self.log(line.rstrip())
+
+        pumps = [threading.Thread(target=pump, args=(child.stdout, output, False), daemon=True),
+                 threading.Thread(target=pump, args=(child.stderr, errors, True), daemon=True)]
+        for thread in pumps:
+            thread.start()
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                child.wait(timeout=self.progress_seconds)
+                break
+            except subprocess.TimeoutExpired:
+                if time.monotonic() > deadline:
+                    child.kill()
+                    child.wait()
+                    raise
+                if progress is not None:
+                    progress()
+        for thread in pumps:
+            thread.join()
+        child.stdout.close()
+        child.stderr.close()
+        if child.returncode != 0:
+            raise StorageError(("".join(errors) or "".join(output)).strip()[-2000:] or "engine artifact operation failed")
+        return "".join(output)
+
+    def unpack_progress(self, folder: Path, total: int):
+        start, began, phase = shutil.disk_usage(folder).used, time.monotonic(), {"verifying": False}
+
+        def report():
+            done = max(0, shutil.disk_usage(folder).used - start)
+            minutes = (time.monotonic() - began) / 60
+            if phase["verifying"]:
+                self.log(f"Still verifying the unpacked workspace ({minutes:.0f} min elapsed)")
+            elif total and done >= total * 0.99:
+                phase["verifying"] = True
+                self.log("Unpacked; verifying every file and adopting the workspace at this path")
+            elif total:
+                self.log(f"Unpacked {done / 2**30:.1f} of {total / 2**30:.1f} GB ({done / total:.0%}, {minutes:.0f} min)")
+            else:
+                self.log(f"Unpacked {done / 2**30:.1f} GB ({minutes:.0f} min)")
+
+        return report
+
+    def pack_progress(self, staging: Path, estimate: int):
+        reader = {"path": None, "offset": 0, "bytes": 0, "began": time.monotonic(), "checking": False}
+
+        def report():
+            if reader["path"] is None:
+                found = sorted(staging.glob(f".{SNAPSHOT_NAME}-*/{SNAPSHOT_NAME}.inventory.jsonl"))
+                reader["path"] = found[0] if found else None
+            minutes = (time.monotonic() - reader["began"]) / 60
+            if reader["path"] is None or not reader["path"].exists():
+                if reader["bytes"] and not reader["checking"]:
+                    reader["checking"] = True
+                    self.log("Packed; confirming the workspace did not change while it was read")
+                elif not reader["bytes"]:
+                    self.log(f"Checking the workspace before packing ({minutes:.0f} min)")
+                return
+            with reader["path"].open("rb") as stream:
+                stream.seek(reader["offset"])
+                for line in stream:
+                    if not line.endswith(b"\n"):
+                        break
+                    reader["offset"] += len(line)
+                    reader["bytes"] += json.loads(line).get("size", 0)
+            share = f", about {reader['bytes'] / estimate:.0%}" if estimate else ""
+            self.log(f"Packed {reader['bytes'] / 2**30:.1f} GB of the workspace into the NAS snapshot ({minutes:.0f} min{share})")
+
+        return report
 
     def operation_idle(self, workspace: Path) -> bool:
         lock = workspace / OPERATION_LOCK
@@ -389,7 +465,8 @@ class Store:
         try:
             self.log(f"Unpacking the NAS snapshot into {destination}, where its engine was last built")
             self.engine_tool("restore", "--kind", "workspace", "--lock", str(self.current / "pin.json"),
-                             "--cache", str(self.current), "--destination", str(destination))
+                             "--cache", str(self.current), "--destination", str(destination),
+                             progress=self.unpack_progress(destination.parent, int(metadata.get("workspace_bytes") or 0)))
         except (StorageError, subprocess.TimeoutExpired):
             if aside is not None and not destination.exists():
                 aside.rename(destination)
@@ -582,8 +659,10 @@ class Store:
             staging.mkdir()
             try:
                 self.log(f"Packing {workspace} into the NAS snapshot")
+                estimate = int((current or {}).get("workspace_bytes") or 0)
                 result = json.loads(self.engine_tool("create-workspace", "--workspace", str(workspace),
-                                                     "--output", str(staging), "--name", SNAPSHOT_NAME))
+                                                     "--output", str(staging), "--name", SNAPSHOT_NAME,
+                                                     progress=self.pack_progress(staging, estimate)))
                 manifest = staging / (SNAPSHOT_NAME + ".manifest.json")
                 pin = {"schema_version": 1, "target": "mac-arm64", "repository": "etsenake/parc",
                        "release": "nas-engine-snapshot", "source_revision": "",

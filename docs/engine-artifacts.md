@@ -81,6 +81,9 @@ repairs it when needed. Publishing removes uploads that an earlier interrupted
 publish left on the share.
 
 A restored workspace must regenerate its build plan; compiled objects are kept.
+Unpacking and packing log progress every 30 seconds (gigabytes done, a
+percentage and elapsed minutes, then the verification phase), and messages
+from the restore and pack tools appear as they happen.
 `publish --workspace PATH` packs a workspace into a new snapshot and replaces
 `snapshots/current` under a share-wide lock, skipping an unchanged engine.
 Without `--workspace` it publishes the latest release's workspace, opening and
