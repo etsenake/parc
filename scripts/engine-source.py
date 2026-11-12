@@ -541,10 +541,15 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         for index, command in enumerate(plan["sync"]):
             if index < 4 * len(repository_names(lock)) and index % 4 not in {2, 3}:
                 continue
+            argv = list(command["argv"])
+            if index < 4 * len(repository_names(lock)) and index % 4 == 3:
+                argv.insert(argv.index("checkout") + 1, "--force")
+            if index == 4 * len(repository_names(lock)):
+                argv += ["--reset", "--delete_unversioned_trees"]
             if index >= 4 * len(repository_names(lock)):
                 for name, path in locations(workspace, lock).items():
                     verify_repository(path, lock[name], env, require_clean=name == "depot_tools")
-            run(command["argv"], Path(command["cwd"]), env)
+            run(argv, Path(command["cwd"]), env)
         repositories = synced_repositories(workspace, lock)
         for name, path in locations(workspace, lock).items():
             verify_repository(path, lock[name], env, require_clean=name == "depot_tools")

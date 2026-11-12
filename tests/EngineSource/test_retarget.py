@@ -102,6 +102,16 @@ class RetargetTests(unittest.TestCase):
         self.assertEqual((self.roots['chromium'] / 'source.cc').read_text(), 'upstream\n')
         self.assertEqual(engine.read_marker(self.workspace, self.new_sha)['phase'], 'synced')
 
+    def test_an_upgrade_clears_dropped_dependencies_and_forces_the_new_version(self):
+        self.call()
+        sync = next(argv for argv in self.calls if argv[0].endswith('gclient') and 'sync' in argv)
+        self.assertIn('--reset', sync)
+        self.assertIn('--delete_unversioned_trees', sync)
+        checkouts = [argv for argv in self.calls if 'checkout' in argv and '--detach' in argv]
+        self.assertTrue(checkouts and all('--force' in argv for argv in checkouts))
+        hooks = next(argv for argv in self.calls if argv[0].endswith('gclient') and 'runhooks' in argv)
+        self.assertNotIn('--reset', hooks)
+
     def test_a_clean_engine_is_left_exactly_as_it_is_before_a_build(self):
         source = self.roots['chromium'] / 'source.cc'
         before = source.stat().st_mtime_ns

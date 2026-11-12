@@ -103,8 +103,10 @@ python3 scripts/engine-source.py retarget --workspace /absolute/engine-source \
 Retarget requires an idle owned workspace and its previous lock, overwrites
 any source changes made outside the Parc overlay (logging that it did), and
 refuses only another repository origin, target platform or lock schema. It restores recorded overlay originals, preserves compiled
-objects and unrelated files, checks out the new pins and repeats dependency
-sync and hooks; generation then uses the new lock's build settings. Changed
+objects and unrelated files, force-checks out the new pins and repeats
+dependency sync and hooks, removing dependencies the new version dropped and
+resetting changed ones, which matters most across a milestone; generation
+then uses the new lock's build settings. Changed
 dependency pins use the 80 GB sync reserve; unchanged pins use the 40 GB build
 reserve. Reapply the overlay before generation. `reset-source --workspace`
 does the same cleanup without a version change: when the source fingerprint
