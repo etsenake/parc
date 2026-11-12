@@ -75,9 +75,14 @@ prompt.
 
 1. The local workspace, when its source lock and overlay already match the
    checkout. No network is used.
-2. The disk image, when the share is reachable, an uncached read from the
-   share reaches the speed threshold (measured before opening, so a slow link
-   never tries), the image opens and its workspace is ahead of the local copy.
+2. The disk image, when the share is reachable, a request to the NAS answers
+   within `max_image_round_trip_ms` (3), an uncached read reaches the speed
+   threshold, the image opens and its workspace is ahead of the local copy.
+   Both are measured before opening: opening the image sends the NAS about
+   18,000 requests, 7,600 of them lock round trips that run one after another,
+   so a wired Mac at under 1 ms opens it in about 10 seconds while Wi-Fi at
+   27 ms takes minutes however much bandwidth it has. The round trip is timed
+   with lock requests on a per-Mac probe file at the share root.
    A Mac writes `parc-engine.sparsebundle.holder.json` as "opening" before it
    tries and "open" once mounted, and removes it when an attempt fails or the
    image is ejected; `status` shows it, and another Mac reports who holds or is

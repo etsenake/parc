@@ -32,6 +32,7 @@ SNAPSHOT_NAME = "engine-workspace"
 TERMINAL = {"complete", "abandoned", "nothing-to-release", "handed-off"}
 XCODE_ROOTS = ("Platforms/MacOSX.platform", "Toolchains/XcodeDefault.xctoolchain", "usr")
 XCODE_RECORD = "xcode-files.json.gz"
+IMAGE_OPEN_REQUESTS = 7600
 SNAPSHOT_IDENTITY = ("created_utc", "host", "workspace", "lock_sha256", "overlay_identity")
 ALIGN_HELPER = """import json, os, sys
 for path, mtime in json.load(open(sys.argv[1])):
@@ -50,6 +51,7 @@ DEFAULTS = {
     "min_image_mb_per_second": 100,
     "attach_attempts": 3,
     "attach_wait_seconds": 600,
+    "max_image_round_trip_ms": 3,
     "holder_stale_hours": 48,
     "lock_wait_seconds": 600,
 }
@@ -449,6 +451,18 @@ class Store:
             os.close(descriptor)
         return total / (1 << 20) / elapsed if total and elapsed > 0 else None
 
+    def round_trip_ms(self, samples: int = 20) -> float | None:
+        probe = self.share / f".round-trip-{self.host}"
+        try:
+            with open(probe, "a") as handle:
+                began = time.perf_counter()
+                for _ in range(samples):
+                    fcntl.lockf(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.lockf(handle, fcntl.LOCK_UN)
+                return (time.perf_counter() - began) * 1000 / (2 * samples)
+        except OSError:
+            return None
+
     def locked(self, exclusive: bool):
         self.snapshots.mkdir(parents=True, exist_ok=True)
         handle = (self.snapshots / ".lock").open("a+")
@@ -797,9 +811,16 @@ class Store:
         elif current:
             return self.choice(self.local, "local", "this Mac's workspace already matches the current engine")
         if prefer in (None, "image") and self.bundle.is_dir():
-            rate = self.speed()
+            trip = self.round_trip_ms()
+            limit = float(self.config["max_image_round_trip_ms"])
+            rate = self.speed() if trip is not None and trip <= limit else None
             fast = rate is not None and rate >= float(self.config["min_image_mb_per_second"])
-            if prefer is None and not fast:
+            if prefer is None and (trip is None or trip > limit):
+                self.log("Not opening the NAS disk image: " + (
+                    "the NAS round trip could not be measured" if trip is None else
+                    f"each request to the NAS takes {trip:.1f} ms (over {limit:.0f} ms), so opening it would take "
+                    f"at least {trip * IMAGE_OPEN_REQUESTS / 60000:.1f} minutes"))
+            elif prefer is None and not fast:
                 self.log(f"Not opening the NAS disk image: the link reads {rate or 0:.0f} MB/s, below "
                          f"{float(self.config['min_image_mb_per_second']):.0f} MB/s")
             elif self.attach(take_over):

@@ -545,6 +545,24 @@ class StorageTests(unittest.TestCase):
         self.assertTrue(any("link reads 20 MB/s" in line for line in self.logs))
         self.assertEqual(choice["mode"], "restored")
 
+    def test_a_slow_round_trip_never_opens_the_image_however_fast_the_link(self):
+        self.store.bundle.mkdir()
+        self.receipt(self.store.image_workspace)
+        self.snapshot()
+        with patch.object(storage, "mount_share", return_value=True), \
+                patch.object(self.store, "round_trip_ms", return_value=26.8), \
+                patch.object(self.store, "speed", side_effect=AssertionError("measured throughput")), \
+                patch.object(self.store, "attach", side_effect=AssertionError("opened the image")), \
+                patch.object(self.store, "restore", return_value=True):
+            self.assertEqual(self.store.resolve()["mode"], "restored")
+        self.assertTrue(any("26.8 ms" in line and "3.4 minutes" in line for line in self.logs))
+
+    def test_round_trips_are_timed_with_locks_on_the_share(self):
+        trip = self.store.round_trip_ms(samples=5)
+        self.assertIsNotNone(trip)
+        self.assertLess(trip, 50)
+        self.assertTrue((self.share / f".round-trip-{self.store.host}").is_file())
+
     def test_image_behind_this_mac_is_not_used(self):
         self.store.bundle.mkdir()
         self.receipt(self.store.local, overlay="1" * 64, version=1)
