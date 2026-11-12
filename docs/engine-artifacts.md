@@ -1,5 +1,93 @@
 # Existing engine snapshots
 
+## Shared engine storage on a NAS
+
+`scripts/engine_storage.py` lets several Macs share one engine workspace through
+an NFS share on a NAS, so a Mac other than the last builder doesn't start from
+scratch. It is off unless the Mac has a settings file at
+`~/.config/parc/engine-storage.json` (or the path in `PARC_ENGINE_STORAGE`):
+
+```json
+{"schema_version": 1, "share": "nfs://nas.local/volume1/parc-engine-nfs"}
+```
+
+Optional keys and defaults: `mount_point` (`/Volumes/parc-engine-nfs`),
+`image` (`parc-engine.sparsebundle`), `volume` (`ParcEngine`),
+`image_workspace` (`ParcBuild/engine`), `local_workspace`
+(`~/ParcBuild/engine`), `min_image_mb_per_second` (100), `attach_attempts` (3),
+`holder_stale_hours` (48) and `lock_wait_seconds` (600). Keep local and image
+workspaces at the same path depth so a moved workspace reuses its compiled
+objects.
+
+The share holds two copies of the engine. `parc-engine.sparsebundle` is an APFS
+disk image holding a live workspace that one Mac at a time opens and builds in.
+`snapshots/current` is a packed snapshot of the latest published workspace,
+with `pin.json` and `metadata.json` describing it. The NFS export maps all
+users to the NAS administrator; the image is attached with ownership ignored,
+so its files belong to whoever opens it. The app or terminal that runs builds
+needs macOS's Network Volumes permission once; a first access waits on that
+prompt.
+
+`resolve` (JSON) and `workspace` (path only) pick the workspace in this order:
+
+1. The local workspace, when its source lock and overlay already match the
+   checkout. No network is used.
+2. The disk image, when the share is reachable, the image opens, its workspace
+   is ahead of the local copy and an uncached read from the share reaches the
+   speed threshold. A Mac records itself in `parc-engine.sparsebundle.holder.json`
+   while it has the image open; another Mac's recent record, or a refused
+   open, counts as busy after the configured retries.
+3. The NAS snapshot, unpacked onto this Mac with the normal restore tool, when
+   it is ahead of the local copy and the disk has room. An outdated Parc-owned
+   local workspace is moved aside and deleted after a successful unpack,
+   deleted first when space is short, or put back if the unpack fails. Folders
+   without a Parc receipt are never touched.
+4. The local workspace as it is.
+
+"Ahead" compares copies with the checkout's source lock by overlay version: the
+checkout's exact overlay ranks highest, a copy with a newer overlay than the
+checkout is unusable, and the local copy wins ties. A Mac whose engine just
+changed therefore compiles locally instead of unpacking an older NAS copy.
+Copies at the same version cannot be ordered by build progress. To move an
+unfinished build in the disk image, stop it, run `detach` on the first Mac and
+build on the second. To move an unfinished local build, stop it and run
+`publish --handoff` on the first Mac; an interrupted build stays packable, but
+one still running is refused. The snapshot then carries a handoff mark that the
+next other Mac takes automatically, once, even over its own copy at the same
+version. A stopped release whose engine stage is unfinished moves with it: its
+run folder is copied to `handoff/current` on the share, the first Mac marks it
+`handed-off` so it won't resume there, and the next `release.sh` (or
+`take-handoff`) on another Mac without its own unfinished release unpacks the
+snapshot, relocates the run's paths to that checkout and home, and resumes it
+under the same release lease. A release past its engine stage must finish where
+it is. `--from image|snapshot|local` forces a copy; a requested copy that is
+unavailable is an error rather than a silent fallback.
+
+If the Mac that has the image open loses its connection or cannot eject, pass
+`--take-over` on the other Mac once the first no longer has it open. It clears
+the first Mac's holder record, opens the image, verifies its file system and
+repairs it when needed. Publishing removes uploads that an earlier interrupted
+publish left on the share.
+
+A restored workspace must regenerate its build plan; compiled objects are kept.
+`publish --workspace PATH` packs a workspace into a new snapshot and replaces
+`snapshots/current` under a share-wide lock, skipping an unchanged engine.
+Without `--workspace` it publishes the latest release's workspace, opening and
+ejecting the disk image when that workspace lives there, so a failed upload can
+be retried from either Mac. `detach` ejects the image and clears this Mac's
+holder record; `status` reports the local, image and snapshot state.
+
+With settings present and `PARC_ENGINE_WORKSPACE` unset, the
+[release](master-release.md) resolves its workspace this way and keeps that
+choice when resumed. Once the engine is sealed, the release starts packing it
+into the NAS snapshot in the background, writing to the release log, and
+continues packaging. Its last stage waits for that upload, ejects an image it
+opened, and adds the upload's outcome to the release's final line. A failed
+upload is reported with the retry command and never stops the release.
+For a development engine build, pass
+`--workspace "$(python3 scripts/engine_storage.py workspace)"` to
+`scripts/engine-source.py`.
+
 ## Finish an upload without a chat session
 
 `scripts/publish-engine-snapshot.py --config /absolute/publish-config.json

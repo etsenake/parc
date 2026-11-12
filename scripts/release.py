@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TEAM = "94HKA7L2DR"
 REPOSITORY = "etsenake/parc"
 PUBLIC_REPOSITORY = "etsenake/parc-releases"
-TERMINAL = {"complete", "abandoned", "nothing-to-release"}
+TERMINAL = {"complete", "abandoned", "nothing-to-release", "handed-off"}
 
 
 class Failure(RuntimeError):
@@ -159,8 +159,20 @@ class Release:
     def github(self, *args):
         return self.command(["gh", *args], capture=True, retries=2, name="github")
 
+    def take_handoff(self):
+        storage = self.storage_tool(self.root)
+        if storage is None or storage.load_config() is None:
+            return
+        try:
+            taken = storage.Store(storage.load_config(), self.root, log=self.emit).take_release()
+        except (storage.StorageError, OSError, subprocess.SubprocessError) as error:
+            raise Failure("Could not take over the release handed off from another Mac: " + str(error)) from error
+        if taken:
+            self.emit("Continuing release " + taken["id"] + " handed off from " + str(taken.get("handed_off_from")))
+
     def start(self):
         self.lock()
+        self.take_handoff()
         if self.current.exists():
             prior = json.loads(self.current.read_text())
             if prior.get("status") == "running":
@@ -505,6 +517,18 @@ class Release:
     def engine(self):
         source = Path(self.state["source"])
         workspace = Path(os.environ.get("PARC_ENGINE_WORKSPACE", "")) if os.environ.get("PARC_ENGINE_WORKSPACE") else None
+        storage = self.storage_tool(source)
+        if workspace is None and self.state.get("storage_mode"):
+            workspace = Path(self.state["workspace"])
+            if self.state["storage_mode"] == "image":
+                if storage is None or not storage.Store(storage.load_config(), source, log=self.emit).attach():
+                    raise Failure("The NAS disk image holding this release's engine is unavailable; preserved")
+        elif workspace is None and storage is not None and storage.load_config() is not None:
+            output = self.command([sys.executable, source / "scripts/engine_storage.py", "resolve", "--repo", source],
+                                  capture=True, name="engine-storage")
+            choice = json.loads(output.splitlines()[-1])
+            workspace = Path(choice["workspace"])
+            self.checkpoint(storage_mode=choice["mode"], storage_reason=choice["reason"])
         if workspace is None:
             options = [self.root / "work/engine", Path.home() / "ParcBuild/engine"]
             workspace = next((p for p in options if (p / ".parc-engine-source.json").is_file()), options[0])
@@ -580,7 +604,68 @@ class Release:
             self.command([sys.executable, source / "scripts/build.py", "seal-engine", "--engine-dir", output, "--manifest", manifest, "--purpose", "distribution"], name="engine-seal")
         self.checkpoint(manifest=str(manifest), manifest_sha256=sha(manifest))
 
+    def storage_tool(self, source):
+        if not (Path(source) / "scripts/engine_storage.py").is_file():
+            return None
+        return module(source, "engine_storage")
+
+    def storage_enabled(self):
+        storage = self.storage_tool(self.state["source"])
+        return storage is not None and storage.load_config() is not None
+
+    def start_storage_upload(self):
+        if self.state.get("storage_upload") or not self.storage_enabled():
+            return
+        source = Path(self.state["source"])
+        result = Path(self.state["run"]) / "engine-storage-publish.json"
+        result.unlink(missing_ok=True)
+        with self.log.open("a") as stream:
+            child = subprocess.Popen([sys.executable, source / "scripts/engine_storage.py", "publish", "--repo", source,
+                                      "--workspace", self.state["workspace"], "--result", result],
+                                     cwd=self.root, env=self.env, stdout=stream, stderr=subprocess.STDOUT,
+                                     start_new_session=True)
+        self.storage_child = child
+        self.emit("Packing the release engine into the NAS snapshot in the background", pid=child.pid)
+        self.checkpoint(storage_upload={"pid": child.pid, "result": str(result), "started_utc": now()})
+
+    def storage(self):
+        if not self.storage_enabled():
+            return
+        self.start_storage_upload()
+        upload = self.state["storage_upload"]
+        child = getattr(self, "storage_child", None)
+        if child is not None:
+            child.wait()
+        else:
+            while True:
+                try:
+                    os.kill(upload["pid"], 0)
+                except ProcessLookupError:
+                    break
+                except PermissionError:
+                    pass
+                time.sleep(15)
+        try:
+            outcome = json.loads(Path(upload["result"]).read_text())
+        except (OSError, ValueError):
+            outcome = {"error": "the upload stopped without reporting a result"}
+        if outcome.get("published") is True:
+            line = "updated"
+        elif outcome.get("published") is False:
+            line = "already holds this engine"
+        else:
+            line = ("not updated (" + str(outcome.get("error")) + "); the release is unaffected. Retry from either Mac "
+                    "with: python3 scripts/engine_storage.py publish")
+        self.checkpoint(storage_result=line)
+        if self.state.get("storage_mode") == "image":
+            try:
+                self.command([sys.executable, Path(self.state["source"]) / "scripts/engine_storage.py", "detach",
+                              "--repo", self.state["source"]], name="engine-storage-detach")
+            except Failure as error:
+                self.emit("The NAS disk image is still open on this Mac: " + str(error))
+
     def package(self):
+        self.start_storage_upload()
         source = Path(self.state["source"]); package_run = Path(self.state["run"]) / "package"
         self.env.update(PARC_RELEASE_REPOSITORY=str(self.root), PARC_RELEASE_COMMIT=self.state["commit"],
                         PARC_PACKAGE_RUN=str(package_run), PARC_ENGINE_WORKSPACE=self.state["workspace"])
@@ -687,7 +772,7 @@ class Release:
             if self.refresh_source or self.state.get('refresh_commit'):
                 self.refresh_inputs()
             for name, action in [("source", self.prepare), ("engine", self.engine), ("package", self.package),
-                                 ("appcast", self.appcast), ("homebrew", self.tap)]:
+                                 ("appcast", self.appcast), ("homebrew", self.tap), ("storage", self.storage)]:
                 if name in self.state["completed"]:
                     if name == 'source':
                         release_inputs.verify(self.root, self.state['source'], self.state['commit'])
@@ -702,7 +787,8 @@ class Release:
                 self.state["completed"].append(name)
                 self.checkpoint()
             self.finish()
-            self.emit("Released " + self.state["tag"] + "; notarized assets and published Homebrew cask verified")
+            self.emit("Released " + self.state["tag"] + "; notarized assets and published Homebrew cask verified"
+                      + ("; NAS engine snapshot " + self.state["storage_result"] if self.state.get("storage_result") else ""))
             return 0
         except Exception as error:
             self.emit(str(error) if isinstance(error, (Failure, RuntimeError, OSError, ValueError, subprocess.SubprocessError))
