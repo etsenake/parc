@@ -94,12 +94,13 @@ class RetargetTests(unittest.TestCase):
         self.assertEqual(state['phase'], 'synced')
         engine.verify_workspace(self.workspace, self.new, state, self.env)
 
-    def test_changed_source_refused_before_mutation(self):
+    def test_hand_edits_are_overwritten_and_the_upgrade_carries_on(self):
         (self.roots['chromium'] / 'pinned').write_text('user edit')
-        with self.assertRaises(engine.Refusal):
-            self.call()
-        self.assertFalse(any('restore' in c for c in self.calls))
-        self.assertEqual((self.roots['chromium'] / 'pinned').read_text(), 'user edit')
+        (self.roots['chromium'] / 'source.cc').write_text('stray change\n')
+        self.call()
+        self.assertEqual((self.roots['chromium'] / 'pinned').read_text(), 'new\n')
+        self.assertEqual((self.roots['chromium'] / 'source.cc').read_text(), 'upstream\n')
+        self.assertEqual(engine.read_marker(self.workspace, self.new_sha)['phase'], 'synced')
 
     def test_an_interrupted_upgrade_resumes_to_the_same_version(self):
         output = self.roots['chromium'] / 'out/object.o'

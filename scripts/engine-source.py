@@ -508,7 +508,11 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
             raise Refusal("retarget requires a recorded good source phase")
         env = environment(workspace, previous, state["symbol_level"])
         if not resuming:
-            verify_workspace(workspace, previous, state, env)
+            try:
+                verify_workspace(workspace, previous, state, env)
+            except Refusal as error:
+                print(f"engine-source: overwriting source changes made outside the Parc overlay ({error})",
+                      file=sys.stderr)
         unchanged = all(previous[k] == lock[k] for k in ("chromium", "depot_tools"))
         reserve = "build" if unchanged else "sync"
         report = host_report(workspace, lock, reserve)

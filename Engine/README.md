@@ -100,9 +100,9 @@ python3 scripts/engine-source.py retarget --workspace /absolute/engine-source \
   --previous-lock "$PWD/work/previous-source-lock.json"
 ```
 
-Retarget requires an idle owned workspace, its previous lock and an unchanged
-source fingerprint, and refuses only another repository origin, target platform
-or lock schema. It restores recorded overlay originals, preserves compiled
+Retarget requires an idle owned workspace and its previous lock, overwrites
+any source changes made outside the Parc overlay (logging that it did), and
+refuses only another repository origin, target platform or lock schema. It restores recorded overlay originals, preserves compiled
 objects and unrelated files, checks out the new pins and repeats dependency
 sync and hooks; generation then uses the new lock's build settings. Changed
 dependency pins use the 80 GB sync reserve; unchanged pins use the 40 GB build
