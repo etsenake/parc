@@ -136,6 +136,60 @@ not a measured guarantee that another output fits.
 See [packaging](../tests/Packaging/README.md#standalone-distribution).
 Exact dependency versions live in [the source lock](source-lock.json).
 
+## Upgrading Chromium
+
+An upgrade is one commit that changes [the source lock](source-lock.json) and
+the overlay together: the overlay records the exact Chromium commit it fits, so
+every bump needs a new overlay version even when no patch breaks. Never commit
+the lock alone; the next release would move its engine to the new version and
+then stop at the overlay check. A minor bump (same milestone, new patch number)
+usually breaks a few of the 74 patches and keeps the compiler, so the build is
+incremental. A major bump (new milestone) breaks many patches, adds and drops
+dependencies and usually rolls the compiler, so the next build recompiles
+nearly everything; also check the new version's required macOS SDK in its
+`build/config/mac/mac_sdk.gni` and update Xcode on every release Mac first if
+needed, and recheck what [How Parc changes Chromium](../docs/chromium-seams.md)
+lists for each upgrade. Do the refit in an isolated copy so releases keep using
+the current engine:
+
+1. Choose the new Chrome stable tag and its commit (and a depot_tools commit if
+   the new version needs one). Save the current lock with
+   `git show HEAD:Engine/source-lock.json > "$PWD/work/previous-source-lock.json"`,
+   then write the new pins into your checkout's lock without committing.
+2. Make an APFS copy of an idle engine and adopt it with
+   `--previous-lock "$PWD/work/previous-source-lock.json"` (see the clone
+   commands above).
+3. Record Parc's current changes as commits in the copy. In `chromium/src`,
+   `git switch -c parc-previous`, `git add` exactly the overlay's targets and
+   commit; do the same in `third_party/ffmpeg` and
+   `third_party/devtools-frontend/src` for their targets. Prove the branch equals
+   the overlay with `scripts/engine-overlay-export.py --repository
+   <copy>/chromium/src --branch parc-previous --manifest
+   "$PWD/Engine/ParcHost/overlay.json" --lock "$PWD/work/previous-source-lock.json"
+   --dependency PREFIX=BASE..parc-previous --output /absolute/review`
+   ([details](../tests/EngineSource/README.md#branch-export-and-equivalence)).
+4. Move the copy to the new version in place: `retarget --workspace <copy>
+   --previous-lock "$PWD/work/previous-source-lock.json"`. It downloads only what
+   changed, takes Parc's changes off and keeps the branches.
+5. Replay Parc's changes: in each repository, `git switch -c parc-next` and
+   `git cherry-pick parc-previous`. Git merges every patch three-way against the
+   old Chromium; files that merge cleanly still fit, and the conflicts list every
+   patch that needs refitting. Resolve them, fix Parc-owned files that broke on
+   API changes, and commit. A refit that grows a patch or adds a hook needs the
+   user's approval and a [hooks reference](../docs/chromium-hooks.md) update.
+6. Write the refit back into the overlay inputs by hand (no tool does this yet;
+   see the [backlog](../docs/backlog.md#engine-architecture)): regenerate each
+   patch file as a plain `--- a/`/`+++ b/` unified diff from the new Chromium
+   file to the `parc-next` file, keeping the patch's grouping of targets; copy
+   changed Parc-owned files back to their sources; update every `sha256`,
+   `before_sha256` and `after_sha256`, set `upstream.chromium` to the new commit
+   and `version` to main's current overlay version plus one.
+7. Prove it in the copy: `reset-source`, then `overlay-check` and
+   `overlay-apply` with the new manifest, then `generate` and `shipping-build`.
+8. Fetch main, commit the lock, manifest and changed patch and source files in
+   one commit, and push. The next release on any Mac upgrades its engine in
+   place and builds. Delete the copy afterwards.
+
 ## Required native integration
 
 Keep real Chromium Profile, Browser, TabList and WebContents identities behind
