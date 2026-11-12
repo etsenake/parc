@@ -562,6 +562,43 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
                 "reserve": reserve, "minimum_free_bytes": report.get("minimum_free_bytes")}
 
 
+def reset_source(workspace: Path, lock: dict, lock_sha: str) -> dict:
+    guard_path = internal_path(workspace / ".parc-operation.lock", workspace)
+    with guard_path.open("r") as guard:
+        try:
+            fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise Refusal("Another operation is using this workspace") from error
+        state = settle_dead_operation(workspace, read_marker(workspace, lock_sha))
+        if state.get("phase") not in {"synced", "generation-failed", "generated", "built"}:
+            raise Refusal("Partial operation preserved; only a completed source state can be reset")
+        env = environment(workspace, lock, state["symbol_level"])
+        try:
+            verify_workspace(workspace, lock, state, env)
+            return {"workspace": str(workspace), "reset": False}
+        except Refusal as error:
+            print(f"engine-source: overwriting source changes made outside the Parc overlay ({error})", file=sys.stderr)
+        try:
+            record = recorded_overlay(workspace, state)
+        except Refusal:
+            record = None
+        for target, item in (record or {}).get("targets", {}).items():
+            write_source(target_path(workspace, target, lock),
+                         item["original"].encode() if item["original"] is not None else None, item["mode"])
+        for name, path in locations(workspace, lock).items():
+            run(GIT + ["checkout", "--force", "--detach", lock[name]["commit"]], path, env)
+        for relative in state["repositories"]:
+            run(GIT + ["restore", "--source=HEAD", "--staged", "--worktree", "."],
+                internal_path(workspace / relative, workspace), env)
+        (workspace / "chromium/.gclient").write_text(gclient_text(lock))
+        active = {k: v for k, v in state.items() if k not in {"overlay", "generation_error"}}
+        if active["phase"] in {"generated", "built", "generation-failed"}:
+            active["phase"] = "synced"
+        active["source_fingerprint"] = tree_fingerprint(workspace, env, state["repositories"])
+        write_marker(workspace, active)
+        return {"workspace": str(workspace), "reset": True, "phase": active["phase"]}
+
+
 def verify_repository(path: Path, item: dict, env: dict, require_clean: bool = True) -> None:
     if path.is_symlink() or not (path / ".git").is_dir() or (path / ".git").is_symlink():
         raise Refusal(f"Expected owned ordinary Git checkout: {path}")
@@ -1093,7 +1130,7 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "plan", "sync", "build", "generate", "shipping-plan", "shipping-generate", "shipping-build", "overlay-check", "overlay-apply", "reconfigure", "retarget", "adopt-clone"))
+    parser.add_argument("command", choices=("check", "plan", "sync", "build", "generate", "shipping-plan", "shipping-generate", "shipping-build", "overlay-check", "overlay-apply", "reconfigure", "retarget", "adopt-clone", "reset-source"))
     parser.add_argument("--workspace", required=True,
                         help="Dedicated absolute path under this checkout's ignored work/ "
                              "(preferred) or outside the repo; sync claims a new directory or "
@@ -1122,6 +1159,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.source_workspace is not None:
             raise Refusal("--source-workspace is only accepted by adopt-clone")
+        if args.command == "reset-source":
+            print(json.dumps(reset_source(workspace, lock, sha), indent=2))
+            return 0
         if args.command.startswith("overlay-"):
             if args.manifest is None:
                 raise Refusal("Source overlay requires --manifest")

@@ -106,7 +106,11 @@ refuses only another repository origin, target platform or lock schema. It resto
 objects and unrelated files, checks out the new pins and repeats dependency
 sync and hooks; generation then uses the new lock's build settings. Changed
 dependency pins use the 80 GB sync reserve; unchanged pins use the 40 GB build
-reserve. Reapply the overlay before generation. Running it again after an
+reserve. Reapply the overlay before generation. `reset-source --workspace`
+does the same cleanup without a version change: when the source fingerprint
+no longer matches, it restores the overlay's originals, checks out the pinned
+commits, discards edits to tracked files and records the workspace as synced
+for regeneration; a matching workspace is left untouched. Running retarget again after an
 interruption resumes toward the same lock.
 
 Reconfiguration preserves sources/objects and requires generation before building.

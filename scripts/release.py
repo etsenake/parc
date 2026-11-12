@@ -630,6 +630,8 @@ class Release:
                 save(retired, dict(json.loads(retired.read_text()), cancelled_build_recovered=self.state['id']))
             self.checkpoint(interrupted_process_group=None, interrupted_inputs_replaced=None)
         self.git("fetch", "origin", "main", retries=2)
+        if hasattr(engine_tool, "reset_source"):
+            self.command([sys.executable, script, "reset-source", "--workspace", workspace], name="engine-reset-source")
         self.command([sys.executable, script, "overlay-check", "--workspace", workspace, "--manifest", overlay], name="overlay-check")
         current = json.loads((workspace / ".parc-engine-source.json").read_text())
         if current.get("overlay", {}).get("identity") != sha(overlay):

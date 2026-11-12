@@ -83,7 +83,9 @@ published tag still refuses.
    current reviewed cumulative overlay, not every intermediate overlay. Fetch
    before overlay/build operations. Reuse a compatible sealed official ARM64
    non-component engine. Otherwise generate and compile incrementally, preserving
-   objects/caches. Build-flag lock changes use verified reconfiguration with the
+   objects/caches. Before reapplying the overlay, `reset-source` overwrites any
+   hand edits to Chromium's files (a clean workspace is left untouched, so
+   nothing extra recompiles). Build-flag lock changes use verified reconfiguration with the
    exact prior lock. A Chromium or depot_tools pin change moves the same
    workspace in place with `retarget --previous-lock`, fetching only the new
    revisions and keeping compiled objects at the same path, so Siso rebuilds

@@ -102,6 +102,23 @@ class RetargetTests(unittest.TestCase):
         self.assertEqual((self.roots['chromium'] / 'source.cc').read_text(), 'upstream\n')
         self.assertEqual(engine.read_marker(self.workspace, self.new_sha)['phase'], 'synced')
 
+    def test_a_clean_engine_is_left_exactly_as_it_is_before_a_build(self):
+        source = self.roots['chromium'] / 'source.cc'
+        before = source.stat().st_mtime_ns
+        self.assertFalse(engine.reset_source(self.workspace, self.old, self.old_sha)['reset'])
+        self.assertEqual(source.stat().st_mtime_ns, before)
+        self.assertEqual(engine.read_marker(self.workspace, self.old_sha)['phase'], 'built')
+
+    def test_hand_edits_are_overwritten_before_an_ordinary_build(self):
+        (self.roots['chromium'] / 'source.cc').write_text('hand edit\n')
+        (self.roots['chromium'] / 'pinned').write_text('another hand edit\n')
+        self.assertTrue(engine.reset_source(self.workspace, self.old, self.old_sha)['reset'])
+        self.assertEqual((self.roots['chromium'] / 'source.cc').read_text(), 'upstream\n')
+        self.assertEqual((self.roots['chromium'] / 'pinned').read_text(), 'old\n')
+        state = engine.read_marker(self.workspace, self.old_sha)
+        self.assertEqual(state['phase'], 'synced')
+        engine.verify_workspace(self.workspace, self.old, state, self.env)
+
     def test_an_interrupted_upgrade_resumes_to_the_same_version(self):
         output = self.roots['chromium'] / 'out/object.o'
         output.parent.mkdir(exist_ok=True)

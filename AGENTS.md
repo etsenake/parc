@@ -59,6 +59,12 @@ and kept patch with its reason. The boundary keeps a
 Chromium upgrade to a version bump plus small refits, keeps engine work from
 recompiling large parts of Chromium, and keeps behaviour and speed unchanged.
 
+**Never edit an engine workspace's Chromium files by hand.** Every change to
+them goes through Parc's reviewed source overlay. The engine tools overwrite
+anything else without asking: a release puts back the pinned Chromium source
+and reapplies the overlay before it builds, and a Chromium upgrade replaces
+stray edits with the new version.
+
 Every engine change uses the first of these that fully preserves what users
 see, hear and feel:
 

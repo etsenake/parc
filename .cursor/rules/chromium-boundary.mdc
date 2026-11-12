@@ -5,6 +5,8 @@ alwaysApply: true
 
 # Keep Parc's code out of Chromium
 
+Never edit an engine workspace's Chromium files by hand; changes go through
+Parc's source overlay, and releases and upgrades overwrite anything else.
 Use a Chromium extension point first, then Parc-owned code under `Engine/Parc*`.
 Any new or larger patch, hook, Chromium header edit or Chromium BUILD edit is a
 last resort. Try the alternatives against the real code and write down why
