@@ -101,11 +101,29 @@ class RetargetTests(unittest.TestCase):
         self.assertFalse(any('restore' in c for c in self.calls))
         self.assertEqual((self.roots['chromium'] / 'pinned').read_text(), 'user edit')
 
-    def test_failure_leaves_incomplete_receipt(self):
+    def test_an_interrupted_upgrade_resumes_to_the_same_version(self):
+        output = self.roots['chromium'] / 'out/object.o'
+        output.parent.mkdir(exist_ok=True)
+        output.write_bytes(b'cached')
+        self.state['source_fingerprint'] = engine.tree_fingerprint(self.workspace, self.env, self.repos)
+        engine.write_marker(self.workspace, self.state)
         with self.assertRaises(OSError):
             self.call(True)
         self.assertEqual(engine.read_marker(self.workspace, self.old_sha)['phase'], 'retarget-in-progress')
-        with self.assertRaises(engine.Refusal):
+        self.call()
+        state = engine.read_marker(self.workspace, self.new_sha)
+        self.assertEqual(state['phase'], 'synced')
+        self.assertNotIn('retarget_lock_sha256', state)
+        self.assertEqual(output.read_bytes(), b'cached')
+        for name, root in self.roots.items():
+            self.assertEqual(self.git(root, 'rev-parse', 'HEAD').strip().decode(), self.new[name]['commit'])
+
+    def test_an_interrupted_upgrade_cannot_switch_to_another_version(self):
+        with self.assertRaises(OSError):
+            self.call(True)
+        self.new['chromium']['tag'] = '156.0.8078.999'
+        self.new_sha = engine.digest(json.dumps(self.new).encode())
+        with self.assertRaisesRegex(engine.Refusal, 'good source phase'):
             self.call()
 
     def test_build_change_refused(self):

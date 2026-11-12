@@ -504,10 +504,12 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         except BlockingIOError as error:
             raise Refusal("Another operation is using this workspace") from error
         state = read_marker(workspace, previous_sha)
-        if state.get("phase") not in {"synced", "generated", "built"}:
+        resuming = state.get("phase") == "retarget-in-progress" and state.get("retarget_lock_sha256") == lock_sha
+        if not resuming and state.get("phase") not in {"synced", "generated", "built"}:
             raise Refusal("retarget requires a recorded good source phase")
         env = environment(workspace, previous, state["symbol_level"])
-        verify_workspace(workspace, previous, state, env)
+        if not resuming:
+            verify_workspace(workspace, previous, state, env)
         unchanged = all(previous[k] == lock[k] for k in ("chromium", "depot_tools"))
         reserve = "build" if unchanged else "sync"
         report = host_report(workspace, lock, reserve)
@@ -543,7 +545,8 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         repositories = synced_repositories(workspace, lock)
         for name, path in locations(workspace, lock).items():
             verify_repository(path, lock[name], env, require_clean=name == "depot_tools")
-        active = {k: v for k, v in state.items() if k not in {"overlay", "generation_error", "engine_mode", "args_sha256", "build_targets"}}
+        active = {k: v for k, v in state.items() if k not in {"overlay", "generation_error", "engine_mode", "args_sha256",
+                                                              "build_targets", "retarget_lock_sha256"}}
         active.update(lock_sha256=lock_sha, phase="synced", repositories=repositories,
                       source_fingerprint=tree_fingerprint(workspace, env, repositories))
         active["engine_mode"] = "direct"

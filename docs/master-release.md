@@ -68,7 +68,12 @@ published tag still refuses.
    before overlay/build operations. Reuse a compatible sealed official ARM64
    non-component engine. Otherwise generate and compile incrementally, preserving
    objects/caches. Build-flag lock changes use verified reconfiguration with the
-   exact prior lock; upstream changes get a separate versioned workspace.
+   exact prior lock. A Chromium or depot_tools pin change moves the same
+   workspace in place with `retarget --previous-lock`, fetching only the new
+   revisions and keeping compiled objects at the same path, so Siso rebuilds
+   only what changed; an interrupted move resumes toward the same lock. Only a
+   change `retarget` cannot take (another repository origin or other lock
+   settings) gets a separate versioned workspace and a fresh sync.
 4. Seal, build the optimized app, timestamp-sign app/helpers, notarize/staple the
    app, create/sign/notarize/staple the DMG, and publish ZIP/DMG through
    `package-app.sh`. Verify actual release/tag, pristine signatures, stable Team

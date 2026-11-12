@@ -37,6 +37,12 @@ class Failure(RuntimeError):
     pass
 
 
+def retargetable(before, after):
+    pins = {'chromium', 'depot_tools', 'references'}
+    return ({k: v for k, v in before.items() if k not in pins} == {k: v for k, v in after.items() if k not in pins}
+            and all(before.get(name, {}).get('url') == after.get(name, {}).get('url') for name in ('chromium', 'depot_tools')))
+
+
 def metal_toolchain_ready(env=None):
     try:
         return subprocess.run(["xcrun", "metal", "--version"], env=env, capture_output=True, timeout=120).returncode == 0
@@ -553,28 +559,7 @@ class Release:
             self.command([sys.executable, script, "sync", "--workspace", workspace], name="engine-sync")
         elif not (workspace / ".parc-engine-source.json").is_file():
             raise Failure("Existing workspace is unowned; preserved without adoption or deletion")
-        old = json.loads((workspace / ".parc-engine-source.json").read_text())
-        if old["lock_sha256"] != sha(lock):
-            previous = None
-            for revision in self.git('rev-list', self.state['commit'], '--', 'Engine/source-lock.json').splitlines():
-                data = self.git('show', revision + ':Engine/source-lock.json') + '\n'
-                if hashlib.sha256(data.encode()).hexdigest() == old['lock_sha256']:
-                    previous = Path(self.state['run']) / 'previous-source-lock.json'
-                    previous.write_text(data)
-                    break
-            if previous is None:
-                raise Failure('Previous source lock is absent from Git history; workspace and objects preserved')
-            before = json.loads(previous.read_text()); after = json.loads(lock.read_text())
-            def sources(value):
-                return {**{k:v for k,v in value.items() if k != 'storage'},
-                        'build': {k:v for k,v in value['build'].items() if k != 'gn_defines'}}
-            if sources(before) == sources(after):
-                self.command([sys.executable, script, 'reconfigure', '--workspace', workspace,
-                              '--previous-lock', previous], name='engine-reconfigure')
-            else:
-                workspace = workspace.with_name(workspace.name + '-' + sha(lock)[:12])
-                self.checkpoint(workspace=str(workspace))
-                self.command([sys.executable, script, 'sync', '--workspace', workspace], name='engine-sync')
+        workspace = self.move_engine_to_lock(script, workspace, lock)
         if not self.state.get('interrupted_process_group'):
             superseded = self.superseded_shipping_build()
             if superseded:
@@ -612,6 +597,36 @@ class Release:
             self.command([sys.executable, script, "shipping-build", "--workspace", workspace, "--jobs", jobs], name="engine-build")
             self.command([sys.executable, source / "scripts/build.py", "seal-engine", "--engine-dir", output, "--manifest", manifest, "--purpose", "distribution"], name="engine-seal")
         self.checkpoint(manifest=str(manifest), manifest_sha256=sha(manifest))
+
+    def move_engine_to_lock(self, script, workspace, lock):
+        old = json.loads((workspace / ".parc-engine-source.json").read_text())
+        if old["lock_sha256"] == sha(lock):
+            return workspace
+        previous = None
+        for revision in self.git('rev-list', self.state['commit'], '--', 'Engine/source-lock.json').splitlines():
+            data = self.git('show', revision + ':Engine/source-lock.json') + '\n'
+            if hashlib.sha256(data.encode()).hexdigest() == old['lock_sha256']:
+                previous = Path(self.state['run']) / 'previous-source-lock.json'
+                previous.write_text(data)
+                break
+        if previous is None:
+            raise Failure('Previous source lock is absent from Git history; workspace and objects preserved')
+        before = json.loads(previous.read_text()); after = json.loads(lock.read_text())
+
+        def sources(value):
+            return {**{k: v for k, v in value.items() if k != 'storage'},
+                    'build': {k: v for k, v in value['build'].items() if k != 'gn_defines'}}
+        if sources(before) == sources(after):
+            self.command([sys.executable, script, 'reconfigure', '--workspace', workspace,
+                          '--previous-lock', previous], name='engine-reconfigure')
+        elif retargetable(before, after):
+            self.command([sys.executable, script, 'retarget', '--workspace', workspace,
+                          '--previous-lock', previous], name='engine-retarget')
+        else:
+            workspace = workspace.with_name(workspace.name + '-' + sha(lock)[:12])
+            self.checkpoint(workspace=str(workspace))
+            self.command([sys.executable, script, 'sync', '--workspace', workspace], name='engine-sync')
+        return workspace
 
     def storage_workspace(self, source):
         try:
