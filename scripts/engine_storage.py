@@ -583,6 +583,7 @@ class Store:
                 aside.rename(destination)
             self.log(f"Not enough free space to unpack the NAS snapshot ({need / (1 << 30):.0f} GB needed)")
             return False
+        self.align_quietly(read_record(self.current / XCODE_RECORD))
         handle = self.locked(exclusive=False)
         try:
             self.log(f"Unpacking the NAS snapshot into {destination}, where its engine was last built")
@@ -602,7 +603,6 @@ class Store:
             shutil.rmtree(previous, ignore_errors=True)
         self.link_repo(destination)
         self.local = destination
-        self.align_quietly(read_record(self.current / XCODE_RECORD))
         return True
 
     def align_quietly(self, record: dict | None) -> None:

@@ -35,12 +35,13 @@ dates. A changed SDK date makes Siso rebuild the system module cache, and
 every compile that depends on it follows. Publishing therefore records the
 timestamp and content hash of every file in Xcode's macOS platform, default
 toolchain and `usr` folder, in the snapshot and as `xcode-files.json.gz` at the
-share root. After unpacking a snapshot, or before building in the disk image,
-the tool gives each of this Mac's Xcode files whose contents match the record
-its recorded timestamp, asking for administrator rights only when something
-needs changing. Files with different contents keep their dates, so a genuinely
-different Xcode still rebuilds what depends on it. A failed alignment leaves the
-unpacked workspace in place and says the build may redo Xcode-dependent work.
+share root. Before unpacking a snapshot, right after creating its folder so
+both administrator requests come together, and before building in the disk
+image, the tool gives each of this Mac's Xcode files whose contents match the
+record its recorded timestamp, asking for administrator rights only when
+something needs changing. Files with different contents keep their dates, so a
+genuinely different Xcode still rebuilds what depends on it. A failed alignment
+does not stop the unpack; it says the build may redo Xcode-dependent work.
 `record-xcode` writes the record for the snapshot already on the share and
 `align-xcode` reruns the alignment.
 

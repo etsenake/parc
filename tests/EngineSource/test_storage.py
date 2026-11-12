@@ -452,6 +452,23 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(len(self.privileged), 1)
         self.assertIn("Xcode timestamps: 1 match the engine's build Mac, 1 differ in content, 1 missing", self.logs)
 
+    def test_xcode_is_aligned_before_the_long_unpack_starts(self):
+        record = storage.xcode_record(self.developer)
+        header = self.developer / "Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/stdio.h"
+        storage.os.utime(header, ns=(1, 1_800_000_000_000_000_000))
+        self.snapshot()
+        storage.write_record(self.store.current / storage.XCODE_RECORD, record)
+        seen = []
+
+        def restored(*args, **kwargs):
+            seen.append(header.stat().st_mtime_ns)
+            return self.restored(*args, **kwargs)
+
+        with patch.object(self.store, "engine_tool", side_effect=restored), \
+                patch.object(self.store, "privileged", side_effect=self.run_privileged):
+            self.assertTrue(self.store.restore(self.store.snapshot()))
+        self.assertEqual(seen, [1_700_000_000_000_000_000])
+
     def test_aligned_xcode_needs_no_administrator_rights(self):
         record = storage.xcode_record(self.developer)
         with patch.object(self.store, "privileged", side_effect=AssertionError("asked for rights")):
