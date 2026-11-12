@@ -536,6 +536,7 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         for relative in state["repositories"]:
             path = internal_path(workspace / relative, workspace)
             run(GIT + ["restore", "--source=HEAD", "--staged", "--worktree", "."], path, env)
+            run(GIT + ["clean", "-fd"], path, env)
         plan = command_plan(workspace, lock, 4)
         env = environment(workspace, lock, state["symbol_level"])
         for index, command in enumerate(plan["sync"]):
@@ -593,9 +594,12 @@ def reset_source(workspace: Path, lock: dict, lock_sha: str) -> dict:
         for name, path in locations(workspace, lock).items():
             run(GIT + ["checkout", "--force", "--detach", lock[name]["commit"]], path, env)
         for relative in state["repositories"]:
-            run(GIT + ["restore", "--source=HEAD", "--staged", "--worktree", "."],
-                internal_path(workspace / relative, workspace), env)
+            path = internal_path(workspace / relative, workspace)
+            run(GIT + ["restore", "--source=HEAD", "--staged", "--worktree", "."], path, env)
+            run(GIT + ["clean", "-fd"], path, env)
         (workspace / "chromium/.gclient").write_text(gclient_text(lock))
+        hooks = command_plan(workspace, lock, 4)["sync"][-1]
+        run(hooks["argv"], Path(hooks["cwd"]), env)
         active = {k: v for k, v in state.items() if k not in {"overlay", "generation_error"}}
         if active["phase"] in {"generated", "built", "generation-failed"}:
             active["phase"] = "synced"

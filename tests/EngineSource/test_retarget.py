@@ -89,7 +89,7 @@ class RetargetTests(unittest.TestCase):
         for name, root in self.roots.items():
             self.assertEqual(self.git(root, 'rev-parse', 'HEAD').strip().decode(), self.new[name]['commit'])
         self.assertEqual(output.read_bytes(), b'cached')
-        self.assertEqual(user.read_text(), 'mine')
+        self.assertFalse(user.exists())
         state = engine.read_marker(self.workspace, self.new_sha)
         self.assertEqual(state['phase'], 'synced')
         engine.verify_workspace(self.workspace, self.new, state, self.env)
@@ -112,17 +112,33 @@ class RetargetTests(unittest.TestCase):
         hooks = next(argv for argv in self.calls if argv[0].endswith('gclient') and 'runhooks' in argv)
         self.assertNotIn('--reset', hooks)
 
+    def reset(self):
+        real = engine.run
+        def command(argv, cwd, env, capture=False):
+            self.calls.append(argv)
+            return real(argv, cwd, env, capture) if argv[0] == engine.GIT[0] else b''
+        with patch.object(engine, 'run', side_effect=command):
+            return engine.reset_source(self.workspace, self.old, self.old_sha)
+
     def test_a_clean_engine_is_left_exactly_as_it_is_before_a_build(self):
         source = self.roots['chromium'] / 'source.cc'
         before = source.stat().st_mtime_ns
-        self.assertFalse(engine.reset_source(self.workspace, self.old, self.old_sha)['reset'])
+        self.assertFalse(self.reset()['reset'])
+        self.assertFalse(any('clean' in argv or 'runhooks' in argv for argv in self.calls))
         self.assertEqual(source.stat().st_mtime_ns, before)
         self.assertEqual(engine.read_marker(self.workspace, self.old_sha)['phase'], 'built')
 
     def test_hand_edits_are_overwritten_before_an_ordinary_build(self):
         (self.roots['chromium'] / 'source.cc').write_text('hand edit\n')
         (self.roots['chromium'] / 'pinned').write_text('another hand edit\n')
-        self.assertTrue(engine.reset_source(self.workspace, self.old, self.old_sha)['reset'])
+        (self.roots['chromium'] / 'added_by_hand.cc').write_text('stray\n')
+        objects = self.roots['chromium'] / 'out/object.o'
+        objects.parent.mkdir(exist_ok=True)
+        objects.write_bytes(b'cached')
+        self.assertTrue(self.reset()['reset'])
+        self.assertFalse((self.roots['chromium'] / 'added_by_hand.cc').exists())
+        self.assertEqual(objects.read_bytes(), b'cached')
+        self.assertTrue(any(argv[0].endswith('gclient') and 'runhooks' in argv for argv in self.calls))
         self.assertEqual((self.roots['chromium'] / 'source.cc').read_text(), 'upstream\n')
         self.assertEqual((self.roots['chromium'] / 'pinned').read_text(), 'old\n')
         state = engine.read_marker(self.workspace, self.old_sha)

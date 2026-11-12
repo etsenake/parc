@@ -111,8 +111,11 @@ dependency pins use the 80 GB sync reserve; unchanged pins use the 40 GB build
 reserve. Reapply the overlay before generation. `reset-source --workspace`
 does the same cleanup without a version change: when the source fingerprint
 no longer matches, it restores the overlay's originals, checks out the pinned
-commits, discards edits to tracked files and records the workspace as synced
-for regeneration; a matching workspace is left untouched. Running retarget again after an
+commits, discards edits to tracked files, deletes untracked files Chromium's
+ignore rules don't cover (build outputs, dependency checkouts and toolchains
+are ignored and kept), reruns Chromium's hooks to restore what they generate
+and records the workspace as synced for regeneration; a matching workspace is
+left untouched. Retarget deletes the same untracked files before its sync. Running retarget again after an
 interruption resumes toward the same lock.
 
 Reconfiguration preserves sources/objects and requires generation before building.
