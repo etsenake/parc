@@ -170,12 +170,14 @@ class StorageTests(unittest.TestCase):
                  "completed": ["source"], "command_pid": 999, "storage_upload": {"pid": 5}}
         (run / "state.json").write_text(json.dumps(state))
         (handoff / "handoff.json").write_text(json.dumps({"release_id": state["id"], "from_host": "other-mac",
-                                                          "from_root": other_root, "from_home": other_home}))
-        restored = {"workspace": str(self.store.local), "mode": "restored", "reason": "", "attached": False}
+                                                          "from_root": other_root, "from_home": other_home,
+                                                          "snapshot_created_utc": "T1"}))
+        self.handed_off_snapshot("T1")
         with patch.object(storage, "mount_share", return_value=True), patch.object(storage, "run"), \
-                patch.object(self.store, "resolve", return_value=restored) as resolve:
+                patch.object(self.store, "restore", return_value=True) as restore:
             taken = self.store.take_release()
-        resolve.assert_called_once_with("snapshot")
+        restore.assert_called_once()
+        self.assertEqual(self.store.snapshot()["handoff"]["taken_by"], self.store.host)
         local_run = self.repo / "build/releases" / state["id"]
         self.assertEqual(taken["run"], str(local_run))
         self.assertEqual(taken["source"], str(local_run / "source"))
@@ -187,6 +189,88 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(json.loads((self.repo / "build/releases/current.json").read_text())["id"], state["id"])
         self.assertEqual(json.loads((handoff / "handoff.json").read_text())["taken_by"], self.store.host)
         self.assertIsNone(self.store.take_release())
+
+    def handed_off_snapshot(self, created):
+        self.snapshot()
+        metadata = json.loads((self.store.current / "metadata.json").read_text())
+        (self.store.current / "metadata.json").write_text(json.dumps(
+            {**metadata, "handoff": {"from_host": "other-mac", "created_utc": created}}))
+
+    def handoff_waiting(self, **extra):
+        handoff = self.share / "handoff/current"
+        (handoff / "run").mkdir(parents=True)
+        (handoff / "run/state.json").write_text(json.dumps({"id": "20261112T000000Z-abcd1234", "completed": []}))
+        (handoff / "handoff.json").write_text(json.dumps({"release_id": "20261112T000000Z-abcd1234",
+                                                          "from_host": "other-mac", "from_root": "/a", "from_home": "/b",
+                                                          "snapshot_created_utc": "T1", **extra}))
+        return handoff / "handoff.json"
+
+    def test_a_release_another_mac_already_claimed_is_left_alone(self):
+        self.handoff_waiting(taken_by="third-mac")
+        self.handed_off_snapshot("T1")
+        with patch.object(storage, "mount_share", return_value=True), \
+                patch.object(self.store, "restore", side_effect=AssertionError("restored")):
+            self.assertIsNone(self.store.take_release())
+
+    def test_failed_takeover_gives_the_claim_back(self):
+        info = self.handoff_waiting()
+        self.handed_off_snapshot("T1")
+        with patch.object(storage, "mount_share", return_value=True), patch.object(storage, "run"), \
+                patch.object(self.store, "restore", return_value=False), \
+                self.assertRaises(storage.StorageError):
+            self.store.take_release()
+        self.assertNotIn("taken_by", json.loads(info.read_text()))
+        self.assertFalse((self.repo / "build/releases/20261112T000000Z-abcd1234").exists())
+
+    def test_takeover_refuses_a_snapshot_replaced_since_the_handoff(self):
+        info = self.handoff_waiting()
+        self.handed_off_snapshot("T2")
+        with patch.object(storage, "mount_share", return_value=True), \
+                patch.object(self.store, "restore", side_effect=AssertionError("restored")), \
+                self.assertRaisesRegex(storage.StorageError, "no longer holds"):
+            self.store.take_release()
+        self.assertNotIn("taken_by", json.loads(info.read_text()))
+
+    def test_handoff_packs_even_when_the_snapshot_holds_the_same_engine(self):
+        self.receipt(self.store.local)
+        self.snapshot()
+        (self.store.current / "metadata.json").write_text(json.dumps(storage.describe(self.store.local)))
+
+        def create(*args, **kwargs):
+            output = Path(args[args.index("--output") + 1])
+            (output / "engine-workspace.manifest.json").write_text("{}")
+            (output / "engine-workspace.inventory.jsonl").write_text('{"size": 5}\n')
+            return json.dumps({"metadata_sha256": "a" * 64})
+
+        with patch.object(storage, "mount_share", return_value=True), \
+                patch.object(self.store, "engine_tool", side_effect=create) as tool:
+            self.assertTrue(self.store.publish(self.store.local, handoff=True)["published"])
+        tool.assert_called_once()
+        self.assertEqual(self.store.snapshot()["handoff"]["from_host"], self.store.host)
+
+    def test_restore_refuses_a_snapshot_replaced_after_it_was_chosen(self):
+        self.receipt(self.store.local, overlay="0" * 64)
+        self.snapshot()
+        chosen = {**self.store.snapshot(), "created_utc": "earlier"}
+        with patch.object(self.store, "engine_tool", side_effect=AssertionError("unpacked")), \
+                self.assertRaisesRegex(storage.StorageError, "changed"):
+            self.store.restore(chosen)
+        self.assertEqual(storage.describe(self.store.local)["overlay_identity"], "0" * 64)
+
+    def test_short_space_checks_the_snapshot_before_deleting_the_old_copy(self):
+        self.receipt(self.store.local, overlay="0" * 64)
+        self.snapshot(size=1 << 50)
+        calls = []
+
+        def tool(*args, **kwargs):
+            calls.append(args[0])
+            raise storage.StorageError("part 3 is damaged")
+
+        with patch.object(self.store, "engine_tool", side_effect=tool), \
+                self.assertRaisesRegex(storage.StorageError, "damaged"):
+            self.store.restore(self.store.snapshot())
+        self.assertEqual(calls, ["verify"])
+        self.assertEqual(storage.describe(self.store.local)["overlay_identity"], "0" * 64)
 
     def test_take_over_clears_another_macs_record_and_checks_the_image(self):
         self.store.bundle.mkdir()

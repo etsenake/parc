@@ -29,6 +29,7 @@ SNAPSHOT_NAME = "engine-workspace"
 TERMINAL = {"complete", "abandoned", "nothing-to-release", "handed-off"}
 XCODE_ROOTS = ("Platforms/MacOSX.platform", "Toolchains/XcodeDefault.xctoolchain", "usr")
 XCODE_RECORD = "xcode-files.json.gz"
+SNAPSHOT_IDENTITY = ("created_utc", "host", "workspace", "lock_sha256", "overlay_identity")
 ALIGN_HELPER = """import json, os, sys
 for path, mtime in json.load(open(sys.argv[1])):
     info = os.stat(path)
@@ -565,6 +566,24 @@ class Store:
         self.log(f"{self.link} now points at {destination}")
 
     def restore(self, metadata: dict) -> bool:
+        handle = self.locked(exclusive=False)
+        try:
+            current = self.snapshot()
+            if current is None or any(current.get(key) != metadata.get(key) for key in SNAPSHOT_IDENTITY):
+                raise StorageError("the NAS snapshot changed while this Mac was choosing it; run again")
+            return self.restore_locked(current)
+        finally:
+            handle.close()
+
+    def verify_snapshot(self) -> None:
+        began = time.monotonic()
+        self.log("Checking every byte of the NAS snapshot before removing an engine copy to make room")
+        self.engine_tool("verify", "--kind", "workspace", "--lock", str(self.current / "pin.json"),
+                         "--cache", str(self.current),
+                         progress=lambda: self.log(f"Still checking the NAS snapshot "
+                                                   f"({(time.monotonic() - began) / 60:.0f} min elapsed)"))
+
+    def restore_locked(self, metadata: dict) -> bool:
         destination = Path(metadata.get("workspace") or self.local)
         need = int(metadata.get("workspace_bytes") or 0) * 1.05 + (5 << 30)
         self.make_folder(destination.parent)
@@ -578,6 +597,8 @@ class Store:
         previous = self.local if self.local != destination and describe(self.local) is not None else None
         if previous is not None and not self.operation_idle(previous):
             previous = None
+        if (existing is not None or previous is not None) and shutil.disk_usage(destination.parent).free < need:
+            self.verify_snapshot()
         aside = None
         if existing is not None:
             if shutil.disk_usage(destination.parent).free >= need:
@@ -596,7 +617,6 @@ class Store:
             self.log(f"Not enough free space to unpack the NAS snapshot ({need / (1 << 30):.0f} GB needed)")
             return False
         self.align_quietly(read_record(self.current / XCODE_RECORD))
-        handle = self.locked(exclusive=False)
         try:
             self.log(f"Unpacking the NAS snapshot into {destination}, where its engine was last built")
             self.engine_tool("restore", "--kind", "workspace", "--lock", str(self.current / "pin.json"),
@@ -606,8 +626,6 @@ class Store:
             if aside is not None and not destination.exists():
                 aside.rename(destination)
             raise
-        finally:
-            handle.close()
         if aside is not None:
             shutil.rmtree(aside, ignore_errors=True)
         if previous is not None and previous.exists():
@@ -725,20 +743,24 @@ class Store:
                 pass
         return release
 
-    def hand_off_release(self, release: dict) -> None:
+    def hand_off_release(self, release: dict, marker: dict) -> None:
         run_dir = Path(release["run"])
         root = self.share / "handoff"
-        root.mkdir(exist_ok=True)
-        staging = root / (".new-" + release["id"])
-        shutil.rmtree(staging, ignore_errors=True)
-        shutil.copytree(run_dir, staging / "run", symlinks=True)
-        write_json(staging / "handoff.json", {"release_id": release["id"], "from_host": self.host,
-                                              "from_root": str(self.repo), "from_home": str(Path.home()),
-                                              "created_utc": now()})
-        current = root / "current"
-        if current.exists():
-            shutil.rmtree(current)
-        staging.rename(current)
+        handle = self.locked(exclusive=True)
+        try:
+            root.mkdir(exist_ok=True)
+            staging = root / (".new-" + release["id"])
+            shutil.rmtree(staging, ignore_errors=True)
+            shutil.copytree(run_dir, staging / "run", symlinks=True)
+            write_json(staging / "handoff.json", {"release_id": release["id"], "from_host": self.host,
+                                                  "from_root": str(self.repo), "from_home": str(Path.home()),
+                                                  "snapshot_created_utc": marker["created_utc"], "created_utc": now()})
+            current = root / "current"
+            if current.exists():
+                shutil.rmtree(current)
+            staging.rename(current)
+        finally:
+            handle.close()
         state = dict(release, status="handed-off", handed_off_utc=now(), updated_utc=now())
         write_json(self.repo / "build/releases/current.json", state)
         write_json(run_dir / "state.json", state)
@@ -748,9 +770,35 @@ class Store:
         if self.unfinished_release() is not None or not mount_share(self.config, 15):
             return None
         info_path = self.share / "handoff/current/handoff.json"
-        info = read_json(info_path)
-        if info is None or info.get("from_host") == self.host or info.get("taken_by"):
-            return None
+        handle = self.locked(exclusive=True)
+        try:
+            info = read_json(info_path)
+            if info is None or info.get("from_host") == self.host or info.get("taken_by") not in (None, self.host):
+                return None
+            snapshot = self.snapshot()
+            marker = (snapshot or {}).get("handoff") or {}
+            if (marker.get("from_host"), marker.get("created_utc")) != (info.get("from_host"),
+                                                                       info.get("snapshot_created_utc")):
+                raise StorageError("the NAS snapshot no longer holds the handed-off build; hand it off again")
+            info.update(taken_by=self.host, taken_utc=now())
+            write_json(info_path, info)
+        finally:
+            handle.close()
+        try:
+            return self.continue_release(info, snapshot)
+        except BaseException:
+            handle = self.locked(exclusive=True)
+            try:
+                claimed = read_json(info_path)
+                if claimed and claimed.get("taken_by") == self.host:
+                    claimed.pop("taken_by", None)
+                    claimed.pop("taken_utc", None)
+                    write_json(info_path, claimed)
+            finally:
+                handle.close()
+            raise
+
+    def continue_release(self, info: dict, snapshot: dict) -> dict:
         source_run = self.share / "handoff/current/run"
         state = read_json(source_run / "state.json")
         if state is None or not state.get("id"):
@@ -760,18 +808,20 @@ class Store:
             raise StorageError(f"{run_dir} already exists on this Mac")
         self.log(f"Taking over release {state['id']} handed off from {info.get('from_host')}")
         run(["git", "fetch", "origin", "main"], 300, cwd=self.repo)
-        choice = self.resolve("snapshot")
+        if rank(snapshot, target(self.repo)) is None:
+            raise StorageError("the handed-off build is for a different engine than this checkout")
+        if not self.restore(snapshot):
+            raise StorageError("the handed-off build could not be unpacked on this Mac")
+        self.mark_handoff_taken()
         shutil.copytree(source_run, run_dir, symlinks=True)
         state = relocate(state, [(info["from_root"], str(self.repo)), (info["from_home"], str(Path.home()))])
         for key in ("pid", "command_pid", "command", "command_started_utc", "interrupted_process_group",
                     "interrupted_inputs_replaced", "storage_upload", "storage_result", "storage_error", "handed_off_utc"):
             state.pop(key, None)
-        state.update(run=str(run_dir), workspace=choice["workspace"], storage_mode="restored", status="stopped",
+        state.update(run=str(run_dir), workspace=str(self.local), storage_mode="restored", status="stopped",
                      handed_off_from=info.get("from_host"), updated_utc=now())
         write_json(run_dir / "state.json", state)
         write_json(self.repo / "build/releases/current.json", state)
-        info.update(taken_by=self.host, taken_utc=now())
-        write_json(info_path, info)
         return state
 
     def publish(self, workspace: Path, handoff: bool = False) -> dict:
@@ -784,16 +834,7 @@ class Store:
         current = self.snapshot()
         same = ("lock_sha256", "overlay_identity", "source_fingerprint", "receipt_sha256", "shipping_receipt_sha256")
         marker = {"from_host": self.host, "created_utc": now()} if handoff else None
-        if current is not None and all(current.get(key) == found.get(key) for key in same):
-            if marker is not None:
-                handle = self.locked(exclusive=True)
-                try:
-                    write_json(self.current / "metadata.json", {**current, "handoff": marker})
-                finally:
-                    handle.close()
-                if release is not None:
-                    self.hand_off_release(release)
-                return {"published": False, "reason": "already current", "handoff": True}
+        if marker is None and current is not None and all(current.get(key) == found.get(key) for key in same):
             self.log("The NAS snapshot already holds this engine")
             return {"published": False, "reason": "already current"}
         handle = self.locked(exclusive=True)
@@ -839,7 +880,7 @@ class Store:
             handle.close()
         self.log("The NAS snapshot now holds this engine")
         if release is not None:
-            self.hand_off_release(release)
+            self.hand_off_release(release, marker)
         return {"published": True, **({"handoff": True} if handoff else {})}
 
     def last_release_workspace(self) -> Path:

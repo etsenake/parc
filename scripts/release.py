@@ -29,6 +29,7 @@ TEAM = "94HKA7L2DR"
 REPOSITORY = "etsenake/parc"
 PUBLIC_REPOSITORY = "etsenake/parc-releases"
 TERMINAL = {"complete", "abandoned", "nothing-to-release", "handed-off"}
+STORAGE_WAIT_SECONDS = 4 * 3600
 
 
 class Failure(RuntimeError):
@@ -523,12 +524,15 @@ class Release:
             if self.state["storage_mode"] == "image":
                 if storage is None or not storage.Store(storage.load_config(), source, log=self.emit).attach():
                     raise Failure("The NAS disk image holding this release's engine is unavailable; preserved")
-        elif workspace is None and storage is not None and storage.load_config() is not None:
-            output = self.command([sys.executable, source / "scripts/engine_storage.py", "resolve", "--repo", source],
-                                  capture=True, name="engine-storage")
-            choice = json.loads(output.splitlines()[-1])
-            workspace = Path(choice["workspace"])
-            self.checkpoint(storage_mode=choice["mode"], storage_reason=choice["reason"])
+        elif workspace is None and self.storage_enabled(source):
+            try:
+                output = self.command([sys.executable, source / "scripts/engine_storage.py", "resolve", "--repo", source],
+                                      capture=True, name="engine-storage")
+                choice = json.loads(output.splitlines()[-1])
+                workspace = Path(choice["workspace"])
+                self.checkpoint(storage_mode=choice["mode"], storage_reason=choice["reason"])
+            except (Failure, ValueError, KeyError, IndexError) as error:
+                self.emit("Choosing the engine through the NAS failed; using this Mac's engine workspace: " + str(error))
         if workspace is None:
             options = [self.root / "work/engine", Path.home() / "ParcBuild/engine"]
             workspace = next((p for p in options if (p / ".parc-engine-source.json").is_file()), options[0])
@@ -609,24 +613,43 @@ class Release:
             return None
         return module(source, "engine_storage")
 
-    def storage_enabled(self):
-        storage = self.storage_tool(self.state["source"])
-        return storage is not None and storage.load_config() is not None
+    def storage_enabled(self, source=None):
+        try:
+            storage = self.storage_tool(source or self.state["source"])
+            return storage is not None and storage.load_config() is not None
+        except (OSError, ValueError, ImportError, SyntaxError) as error:
+            self.emit("The NAS engine storage settings could not be read; continuing without it: " + str(error))
+            return False
 
     def start_storage_upload(self):
         if self.state.get("storage_upload") or not self.storage_enabled():
             return
         source = Path(self.state["source"])
         result = Path(self.state["run"]) / "engine-storage-publish.json"
-        result.unlink(missing_ok=True)
-        with self.log.open("a") as stream:
-            child = subprocess.Popen([sys.executable, source / "scripts/engine_storage.py", "publish", "--repo", source,
-                                      "--workspace", self.state["workspace"], "--result", result],
-                                     cwd=self.root, env=self.env, stdout=stream, stderr=subprocess.STDOUT,
-                                     start_new_session=True)
+        try:
+            result.unlink(missing_ok=True)
+            with self.log.open("a") as stream:
+                child = subprocess.Popen([sys.executable, source / "scripts/engine_storage.py", "publish", "--repo", source,
+                                          "--workspace", self.state["workspace"], "--result", result],
+                                         cwd=self.root, env=self.env, stdout=stream, stderr=subprocess.STDOUT,
+                                         start_new_session=True)
+        except OSError as error:
+            self.emit("The NAS engine upload could not start: " + str(error))
+            self.checkpoint(storage_upload={"error": str(error), "result": str(result), "started_utc": now()})
+            return
         self.storage_child = child
         self.emit("Packing the release engine into the NAS snapshot in the background", pid=child.pid)
         self.checkpoint(storage_upload={"pid": child.pid, "result": str(result), "started_utc": now()})
+
+    def uploader_alive(self, upload):
+        if not upload.get("pid"):
+            return False
+        try:
+            command = subprocess.run(["ps", "-ww", "-o", "command=", "-p", str(upload["pid"])], capture_output=True,
+                                     text=True, timeout=30).stdout
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return "engine_storage.py" in command and upload["result"] in command
 
     def storage(self):
         if not self.storage_enabled():
@@ -634,21 +657,33 @@ class Release:
         self.start_storage_upload()
         upload = self.state["storage_upload"]
         child = getattr(self, "storage_child", None)
-        if child is not None:
-            child.wait()
+        deadline = time.monotonic() + STORAGE_WAIT_SECONDS
+        running = False
+        if upload.get("error"):
+            pass
+        elif child is not None:
+            try:
+                child.wait(timeout=STORAGE_WAIT_SECONDS)
+            except subprocess.TimeoutExpired:
+                running = True
         else:
-            while True:
-                try:
-                    os.kill(upload["pid"], 0)
-                except ProcessLookupError:
+            while self.uploader_alive(upload):
+                if time.monotonic() > deadline:
+                    running = True
                     break
-                except PermissionError:
-                    pass
                 time.sleep(15)
         try:
             outcome = json.loads(Path(upload["result"]).read_text())
         except (OSError, ValueError):
-            outcome = {"error": "the upload stopped without reporting a result"}
+            outcome = {"error": upload.get("error") or "the upload stopped without reporting a result"}
+        if running:
+            line = (f"still uploading in the background after {STORAGE_WAIT_SECONDS // 3600} hours; the release is "
+                    "unaffected. Check it later with: python3 scripts/engine_storage.py status")
+            self.checkpoint(storage_result=line)
+            if self.state.get("storage_mode") == "image":
+                self.emit("The NAS disk image stays open on this Mac until the upload finishes; eject it afterwards with: "
+                          "python3 scripts/engine_storage.py detach")
+            return
         if outcome.get("published") is True:
             line = "updated"
         elif outcome.get("published") is False:

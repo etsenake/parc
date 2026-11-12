@@ -34,7 +34,7 @@ class ReleaseStorageTests(unittest.TestCase):
     def launched(self, outcome):
         child = Mock(pid=4242)
 
-        def wait():
+        def wait(timeout=None):
             if outcome is not None:
                 Path(self.runner.state['storage_upload']['result']).write_text(json.dumps(outcome))
             return 0
@@ -72,11 +72,41 @@ class ReleaseStorageTests(unittest.TestCase):
         result = Path(self.runner.state['run']) / 'engine-storage-publish.json'
         result.write_text(json.dumps({'published': False, 'reason': 'already current'}))
         self.runner.state['storage_upload'] = {'pid': 4242, 'result': str(result)}
-        with patch.object(release.os, 'kill', side_effect=[None, ProcessLookupError()]), \
+        uploader = Mock(stdout=f'python3 scripts/engine_storage.py publish --result {result}\n')
+        gone = Mock(stdout='')
+        with patch.object(release.subprocess, 'run', side_effect=[uploader, gone]), \
                 patch.object(release.time, 'sleep') as sleep:
             self.runner.storage()
         sleep.assert_called_once()
         self.assertEqual(self.runner.state['storage_result'], 'already holds this engine')
+
+    def test_resumed_release_ignores_a_reused_process_id(self):
+        result = Path(self.runner.state['run']) / 'engine-storage-publish.json'
+        self.runner.state['storage_upload'] = {'pid': 4242, 'result': str(result)}
+        with patch.object(release.subprocess, 'run', return_value=Mock(stdout='/usr/sbin/someone-else\n')), \
+                patch.object(release.time, 'sleep', side_effect=AssertionError('waited')):
+            self.runner.storage()
+        self.assertIn('stopped without reporting a result', self.runner.state['storage_result'])
+
+    def test_upload_that_cannot_start_is_reported_without_stopping_the_release(self):
+        with patch.object(release.subprocess, 'Popen', side_effect=OSError('no such interpreter')):
+            self.runner.start_storage_upload()
+            self.runner.storage()
+        self.assertIn('not updated (no such interpreter)', self.runner.state['storage_result'])
+
+    def test_upload_past_the_deadline_is_left_running_and_reported(self):
+        child = Mock(pid=4242)
+        child.wait.side_effect = release.subprocess.TimeoutExpired('publish', 1)
+        self.runner.state['storage_mode'] = 'image'
+        with patch.object(release.subprocess, 'Popen', return_value=child), \
+                patch.object(self.runner, 'command', side_effect=AssertionError('ejected')):
+            self.runner.start_storage_upload()
+            self.runner.storage()
+        self.assertIn('still uploading in the background', self.runner.state['storage_result'])
+
+    def test_unreadable_settings_turn_storage_off_instead_of_failing(self):
+        self.settings.write_text('{not json')
+        self.assertFalse(self.runner.storage_enabled())
 
     def test_without_settings_nothing_is_uploaded(self):
         self.settings.unlink()
