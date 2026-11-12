@@ -71,9 +71,10 @@ published tag still refuses.
    exact prior lock. A Chromium or depot_tools pin change moves the same
    workspace in place with `retarget --previous-lock`, fetching only the new
    revisions and keeping compiled objects at the same path, so Siso rebuilds
-   only what changed; an interrupted move resumes toward the same lock. Only a
-   change `retarget` cannot take (another repository origin or other lock
-   settings) gets a separate versioned workspace and a fresh sync.
+   only what changed, including build settings changed in the same lock; an
+   interrupted move resumes toward the same lock. Only another repository
+   origin, target platform or lock schema gets a separate versioned workspace
+   and a fresh sync.
 4. Seal, build the optimized app, timestamp-sign app/helpers, notarize/staple the
    app, create/sign/notarize/staple the DMG, and publish ZIP/DMG through
    `package-app.sh`. Verify actual release/tag, pristine signatures, stable Team

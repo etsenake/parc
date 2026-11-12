@@ -92,7 +92,8 @@ python3 scripts/engine-source.py reconfigure --workspace /absolute/engine-source
   --previous-lock "$PWD/work/previous-source-lock.json"
 ```
 
-For a pinned-source upgrade with unchanged build settings and storage policy:
+For a pinned-source upgrade (the release does this itself whenever the lock's
+pins change), including build-setting or storage changes made in the same lock:
 
 ```sh
 python3 scripts/engine-source.py retarget --workspace /absolute/engine-source \
@@ -100,11 +101,13 @@ python3 scripts/engine-source.py retarget --workspace /absolute/engine-source \
 ```
 
 Retarget requires an idle owned workspace, its previous lock and an unchanged
-source fingerprint. It restores recorded overlay originals, preserves compiled
+source fingerprint, and refuses only another repository origin, target platform
+or lock schema. It restores recorded overlay originals, preserves compiled
 objects and unrelated files, checks out the new pins and repeats dependency
-sync and hooks. Changed dependency pins use the 80 GB sync reserve; unchanged
-pins use the 40 GB build reserve. Reapply the overlay before generation.
-Interrupted operations remain incomplete for inspection.
+sync and hooks; generation then uses the new lock's build settings. Changed
+dependency pins use the 80 GB sync reserve; unchanged pins use the 40 GB build
+reserve. Reapply the overlay before generation. Running it again after an
+interruption resumes toward the same lock.
 
 Reconfiguration preserves sources/objects and requires generation before building.
 Shipping planning, generation and building use one operation lock:

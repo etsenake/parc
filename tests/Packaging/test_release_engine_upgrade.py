@@ -60,6 +60,14 @@ class EngineUpgradeTests(unittest.TestCase):
         workspace, commands = self.upgrade(after)
         self.assertEqual((workspace, commands[0][2]), (self.workspace, 'retarget'))
 
+    def test_a_version_and_build_setting_change_together_still_moves_in_place(self):
+        after = copy.deepcopy(self.before)
+        after['chromium'].update(commit='c' * 40, tag='156.0.8078.103')
+        after['build']['gn_defines'] += ' enable_nacl=false'
+        after['storage']['sync_minimum_free_bytes'] = 90
+        workspace, commands = self.upgrade(after)
+        self.assertEqual((workspace, commands[0][2]), (self.workspace, 'retarget'))
+
     def test_a_build_setting_change_reconfigures_in_place(self):
         after = copy.deepcopy(self.before)
         after['build']['gn_defines'] += ' enable_nacl=false'

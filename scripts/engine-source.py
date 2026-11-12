@@ -487,10 +487,9 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         raise Refusal("Previous source lock must be an absolute non-symlink path")
     previous, previous_sha = load_lock(previous_path)
     def fixed(item):
-        return {k: v for k, v in item.items() if k not in
-                {"chromium", "depot_tools", "references"}}
+        return {k: item.get(k) for k in ("schema_version", "target")}
     if previous_sha == lock_sha or fixed(previous) != fixed(lock):
-        raise Refusal("retarget requires changed pins with unchanged build settings and storage")
+        raise Refusal("retarget requires a changed lock with the same schema and target platform")
     for name in locations(workspace, lock):
         if previous[name]["url"] != lock[name]["url"]:
             raise Refusal("retarget cannot change repository origins")

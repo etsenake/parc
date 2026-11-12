@@ -126,9 +126,19 @@ class RetargetTests(unittest.TestCase):
         with self.assertRaisesRegex(engine.Refusal, 'good source phase'):
             self.call()
 
-    def test_build_change_refused(self):
+    def test_build_settings_changed_with_the_version_ride_along_in_place(self):
         self.new['build']['gn_defines'] += ' changed=true'
-        with self.assertRaisesRegex(engine.Refusal, 'unchanged build'):
+        self.new['storage']['basis'] = 'updated'
+        self.new_sha = engine.digest(json.dumps(self.new).encode())
+        self.call()
+        state = engine.read_marker(self.workspace, self.new_sha)
+        self.assertEqual(state['phase'], 'synced')
+        self.assertNotIn('args_sha256', state)
+
+    def test_another_target_platform_is_refused(self):
+        self.new['target'] = 'mac-x64'
+        self.new_sha = engine.digest(json.dumps(self.new).encode())
+        with self.assertRaisesRegex(engine.Refusal, 'target platform'):
             self.call()
 
     def test_overlay_originals_restored_and_owned_additions_retired(self):

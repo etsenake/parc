@@ -38,8 +38,7 @@ class Failure(RuntimeError):
 
 
 def retargetable(before, after):
-    pins = {'chromium', 'depot_tools', 'references'}
-    return ({k: v for k, v in before.items() if k not in pins} == {k: v for k, v in after.items() if k not in pins}
+    return (all(before.get(key) == after.get(key) for key in ('schema_version', 'target'))
             and all(before.get(name, {}).get('url') == after.get(name, {}).get('url') for name in ('chromium', 'depot_tools')))
 
 
