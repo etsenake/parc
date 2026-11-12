@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.0 (2026-11-12)
+
+### New
+
+- **settings:** Give Settings a glow-up with a sidebar, glass back and forward buttons and a proper Edit Profile page
+
+### Fixed
+
+- **profiles:** Ask for a new profile's name right where you are, and give renaming the proper Parc dialog
+
 ## 2.0.0 (2026-11-11)
 
 ### Heads up

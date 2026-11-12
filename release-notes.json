@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "version": "2.1.0",
+      "build": 32,
+      "date": "2026-11-12",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "profiles",
+          "summary": "Ask for a new profile's name right where you are, and give renaming the proper Parc dialog",
+          "breaking": false
+        },
+        {
+          "type": "feat",
+          "scope": "settings",
+          "summary": "Give Settings a glow-up with a sidebar, glass back and forward buttons and a proper Edit Profile page",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.0.0",
       "build": 31,
       "date": "2026-11-11",
