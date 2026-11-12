@@ -4809,7 +4809,7 @@
  #include "third_party/blink/renderer/core/html_names.h"
  #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
-@@ -1056,14 +1061,21 @@
+@@ -1057,14 +1062,20 @@
    is_remote_rendering_ = true;
    remote_device_friendly_name_ = remote_device_friendly_name;
    OnRemotePlaybackMetadataChange();
@@ -4821,7 +4821,6 @@
      remoting_interstitial_ =
          MakeGarbageCollected<MediaRemotingInterstitial>(*this);
 +  }
-+  // Parc: the AirPlay placard leaves the shadow root when it ends.
 +  if (!remoting_interstitial_->parentNode()) {
      ShadowRoot& shadow_root = EnsureUserAgentShadowRoot();
      shadow_root.InsertBefore(remoting_interstitial_, shadow_root.firstChild());
@@ -4833,13 +4832,11 @@
 -
 +
  void HTMLVideoElement::MediaRemotingStopped(int error_code) {
-@@ -1133,12 +1145,25 @@
+@@ -1134,12 +1145,20 @@
  }
 -
 +
  void HTMLVideoElement::OnEnteredPictureInPicture() {
-+  // Parc: picture in picture's placard takes the AirPlay placard's place
-+  // (PlacardSupport::_updatePlacard).
 +  if (remoting_interstitial_ && remoting_interstitial_->ParcShowsAirPlay()) {
 +    remoting_interstitial_->remove();
 +    remoting_interstitial_->Hide(MediaPlayerClient::kMediaRemotingStopNoText);
@@ -4852,9 +4849,6 @@
      ShadowRoot& shadow_root = EnsureUserAgentShadowRoot();
 -    shadow_root.InsertBefore(picture_in_picture_interstitial_,
 -                             shadow_root.firstChild());
-+    // Parc: WebKit's placard covers the cues, which its media controls place
-+    // before themselves (media-controller.js), so Safari's page shows no cues
-+    // while picture in picture shows them.
 +    Node* before = PresentsParcSafariIdentity()
 +                       ? EnsureTextTrackContainer().nextSibling()
 +                       : shadow_root.firstChild();
@@ -4862,7 +4856,7 @@
      HTMLMediaElement::AssertShadowRootChildren(shadow_root);
    }
    picture_in_picture_interstitial_->Show();
-@@ -1153,12 +1178,14 @@
+@@ -1154,12 +1173,14 @@
    if (picture_in_picture_interstitial_) {
      picture_in_picture_interstitial_->Hide();
    }
@@ -4880,7 +4874,7 @@
 -
 +
  void HTMLVideoElement::SetIsEffectivelyFullscreen(
-@@ -1298,6 +1325,14 @@
+@@ -1300,6 +1321,11 @@
    UpdatePictureInPictureAvailability();
 -
 +
@@ -4888,9 +4882,6 @@
 +    return;
 +  }
 +
-+  // Parc: WebKit never checks disablePictureInPicture, so setting it leaves
-+  // a Safari-identity document's video in picture in picture
-+  // (parc_safari_identity.h).
 +  if (const ExecutionContext* context = GetDocument().GetExecutionContext();
 +      context && IsParcSafariIdentityUserAgent(context->UserAgent())) {
      return;

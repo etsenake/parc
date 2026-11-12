@@ -143,13 +143,12 @@
  #include "content/browser/media/webaudio/audio_context_manager_impl.h"
  #include "content/browser/navigation_or_document_handle.h"
  #include "content/browser/network/cross_origin_embedder_policy_reporter.h"
-@@ -468,6 +474,13 @@
+@@ -468,6 +474,12 @@
 -
 +
  namespace {
 -
 +
-+// Opt-in delivery observations only; never log page content or input values.
 +bool ParcInputDiagnosticsEnabled() {
 +  return base::CommandLine::InitializedForCurrentProcess() &&
 +         base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -159,12 +158,10 @@
  // Maximum amount of time to wait for beforeunload/unload handlers to be
  // processed by the renderer process.
  constexpr base::TimeDelta kUnloadTimeout = base::Milliseconds(500);
-@@ -3220,15 +3233,39 @@
+@@ -3220,15 +3232,33 @@
            LoadedWithCacheControlNoStoreHeader()
                ? BackForwardCacheImpl::kInCCNSContext
                : BackForwardCacheImpl::kNotInCCNSContext);
-+  // Parc: a Safari-identity page stays restorable as long as WebKit keeps
-+  // one (WebBackForwardCacheEntry's expirationDelay, 30 minutes).
 +  if (!LoadedWithCacheControlNoStoreHeader() &&
 +      parc::fairplay::FramePresentsSafariIdentity(this)) {
 +    evict_after = std::max(evict_after, base::Minutes(30));
@@ -186,10 +183,6 @@
 +
 +void RenderFrameHostImpl::OnBackForwardCacheEvictionTimeout(
 +    base::TimeDelta waited) {
-+  // Parc: a video cast from this page, paused there, stays on the receiver as
-+  // long as WebKit keeps an AirPlay route after its video stopped playing
-+  // (WebMediaSessionManager::configureWatchdogTimer, an hour), so the page
-+  // stays restorable as long. The cast ends with the page.
 +  constexpr base::TimeDelta kCastingLifetime = base::Hours(1);
 +  if (waited < kCastingLifetime && !LoadedWithCacheControlNoStoreHeader() &&
 +      MediaWebContentsObserver::IsRemotePlaybackStartedInPage(this)) {
@@ -205,14 +198,13 @@
 -
 +
  void RenderFrameHostImpl::DisableBackForwardCache(
-@@ -4026,10 +4063,29 @@
+@@ -4026,10 +4056,28 @@
 -
 +
  void RenderFrameHostImpl::AccessibilityPerformAction(
      const ui::AXActionData& action_data) {
 +  const bool parc_trace = ParcInputDiagnosticsEnabled() &&
 +                          action_data.action == ax::mojom::Action::kDoDefault;
-+  // Copied identity permits logging after a branch without retaining the frame.
 +  const std::string parc_tree = parc_trace ? GetAXTreeID().ToString() : "";
 +  const auto parc_frame = GetGlobalId();
 +  const int parc_node = action_data.target_node_id;
@@ -237,7 +229,7 @@
    }
 -
 +
-@@ -4043,6 +4099,7 @@
+@@ -4043,6 +4091,7 @@
    // Don't perform the action if the WebContents is set to ignore input events.
    // See WebContents::IgnoreInputEvents for more information.
    if (delegate()->ShouldIgnoreInputEvents()) {
@@ -246,7 +238,7 @@
    }
 -
 +
-@@ -4056,6 +4113,7 @@
+@@ -4056,6 +4105,7 @@
      }
    }
 -
@@ -256,7 +248,7 @@
  }
 -
 +
-@@ -10297,6 +10355,28 @@
+@@ -10297,6 +10347,28 @@
    frame_tree_->controller().UpdateStateForFrame(this, state);
  }
 -
@@ -286,7 +278,7 @@
  void RenderFrameHostImpl::OpenURL(blink::mojom::OpenURLParamsPtr params) {
    // Verify and unpack the Mojo payload.
    GURL validated_url;
-@@ -10447,7 +10527,7 @@
+@@ -10447,7 +10519,7 @@
        params->disposition, params->should_replace_current_entry,
        params->user_gesture, params->triggering_event_info,
        params->href_translate, std::move(blob_url_loader_factory),

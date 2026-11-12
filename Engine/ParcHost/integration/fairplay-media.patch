@@ -8127,20 +8127,19 @@
        seek_buffer_timestamp_(kNoTimestamp),
        coded_frame_group_start_pts_(kNoTimestamp),
        range_for_next_append_(ranges_.end()),
-@@ -275,6 +279,10 @@
+@@ -275,6 +279,9 @@
 -
 +
    PrepareRangesForNextAppend(buffers, &deleted_buffers);
 -
 +
-+  // Parc: WebKit's buffered ranges before |buffers| (ParcFillSmallGaps()).
 +  Ranges<base::TimeDelta> parc_buffered;
 +  parc_state_->PrepareForAppend(*this, &parc_buffered);
 +
    // If there's a range for |buffers|, insert |buffers| accordingly. Otherwise,
    // create a new range with |buffers|.
    if (range_for_next_append_ != ranges_.end()) {
-@@ -291,6 +299,7 @@
+@@ -291,6 +298,7 @@
        // Otherwise, use the first new buffer as proof of adjacency.
        (*range_for_next_append_)->AppendBuffersToEnd(buffers, kNoTimestamp);
      }
@@ -8149,7 +8148,7 @@
 +
      last_appended_buffer_timestamp_ = buffers.back()->timestamp();
      last_appended_buffer_duration_ = buffers.back()->duration();
-@@ -353,6 +362,7 @@
+@@ -353,6 +361,7 @@
          new_range_start_time,
          base::BindRepeating(&SourceBufferStream::GetMaxInterbufferDistance,
                              base::Unretained(this))));
@@ -8158,13 +8157,11 @@
 +
      last_appended_buffer_timestamp_ =
          buffers_for_new_range->back()->timestamp();
-@@ -418,6 +428,152 @@
+@@ -418,6 +427,128 @@
    DCHECK(OnlySelectedRangeIsSeeked());
  }
 -
 +
-+// Parc: Remove() extends |end| to the next keyframe, or stops at |duration|
-+// when none follows.
 +base::TimeDelta SourceBufferStream::ParcRemoveEnd(base::TimeDelta end,
 +                                                  base::TimeDelta duration) {
 +  const base::TimeDelta keyframe = FindKeyframeAfterTimestamp(end);
@@ -8180,7 +8177,6 @@
 +  }
 +}
 +
-+// Parc: what RemoveInternal() frees for Remove(), range by range.
 +size_t SourceBufferStream::ParcRemovalSize(base::TimeDelta start,
 +                                           base::TimeDelta end,
 +                                           base::TimeDelta duration) {
@@ -8192,9 +8188,6 @@
 +  return parc_state_->RemovalSize(*this, start, remove_end);
 +}
 +
-+// Parc: WebKit's TrackBuffer sync-sample lookup: the keyframe at or before
-+// |time| in the range holding it, or the last keyframe of the last range
-+// before it.
 +base::TimeDelta SourceBufferStream::ParcKeyframeAtOrBefore(
 +    base::TimeDelta time) const {
 +  for (auto itr = ranges_.rbegin(); itr != ranges_.rend(); ++itr) {
@@ -8226,9 +8219,6 @@
 +  const base::TimeDelta end = ranges_.empty()
 +                                  ? base::TimeDelta()
 +                                  : ranges_.back()->GetBufferedEndTimestamp();
-+  // An ended stream reports end of stream once playback reaches its last
-+  // range; WebKit's waits for data where the purge stopped, until the page
-+  // appends again (which reopens the source and unmarks the end of stream).
 +  if (end_of_stream_ && end < buffered_end) {
 +    end_of_stream_ = false;
 +    parc_state_->set_end_of_stream_suspended(true);
@@ -8248,27 +8238,16 @@
 +  }
 +}
 +
-+// Parc: WebKit's TrackBuffer::addSample() adds each frame's presentation
-+// interval with PlatformTimeRanges::add(EliminateSmallGaps), which moves its
-+// start back, and its end forward, to the nearest range boundary that lies
-+// strictly within timeFudgeFactor(). A hole of 1 microsecond is rounding
-+// (the Parc-owned interval state), not a gap to record.
 +void SourceBufferStream::ParcFillSmallGaps(Ranges<base::TimeDelta>* buffered,
 +                                           const BufferQueue& buffers) {
 +  parc_state_->FillSmallGaps(buffered, buffers);
 +}
 +
-+// Parc: 1 s before the media source's first range when that starts within
-+// the first second, 250 ms where its audio covers |time|, 125 ms otherwise.
 +base::TimeDelta SourceBufferStream::ParcGapToleranceAt(
 +    base::TimeDelta time) const {
 +  return parc_state_->GapToleranceAt(time);
 +}
 +
-+// Parc: WebKit's TrackBuffer::nextSample() enqueues across a gap no wider
-+// than the tolerance at its start. Video only: Chromium's audio renderer
-+// plays buffers back to back, so skipping an audio gap would shift audio
-+// against video.
 +void SourceBufferStream::ParcBridgeGap() {
 +  if (!parc_state_->enabled() ||
 +      GetType() != SourceBufferStreamType::kVideo || !track_buffer_.empty() ||
@@ -8277,10 +8256,6 @@
 +                       : parc_state_->highest_output_end() == kNoTimestamp)) {
 +    return;
 +  }
-+  // From the end of the selected range, or, with none selected (the track
-+  // buffer ran out where nothing follows within Chromium's fudge room), from
-+  // the end of the last buffer output, as WebKit measures from the end of the
-+  // last sample it enqueued.
 +  const base::TimeDelta gap_start =
 +      selected_range_ ? selected_range_->GetBufferedEndTimestamp()
 +                      : parc_state_->highest_output_end();
@@ -8312,7 +8287,7 @@
  void SourceBufferStream::Remove(base::TimeDelta start,
                                  base::TimeDelta end,
                                  base::TimeDelta duration) {
-@@ -428,6 +584,7 @@
+@@ -428,6 +559,7 @@
    DCHECK(start < end) << "start " << start.InMicroseconds() << "us, end "
                        << end.InMicroseconds() << "us";
    DCHECK(duration != kNoTimestamp);
@@ -8321,7 +8296,7 @@
 +
    base::TimeDelta remove_end_timestamp = duration;
    base::TimeDelta keyframe_timestamp = FindKeyframeAfterTimestamp(end);
-@@ -624,6 +781,7 @@
+@@ -624,6 +756,7 @@
    track_buffer_.clear();
    config_change_pending_ = false;
    highest_output_buffer_timestamp_ = kNoTimestamp;
@@ -8329,7 +8304,7 @@
    just_exhausted_track_buffer_ = false;
    pending_buffer_.reset();
    pending_buffers_complete_ = false;
-@@ -742,6 +900,7 @@
+@@ -742,6 +875,7 @@
                                                  size_t newDataSize) {
    DCHECK(media_time != kNoTimestamp);
    DCHECK(!end_of_stream_);
@@ -8338,14 +8313,11 @@
 +
    // Compute size of |ranges_|.
    size_t ranges_size = GetMemoryUsage();
-@@ -1449,6 +1608,24 @@
+@@ -1455,6 +1589,21 @@
        break;
    }
 -
 +
-+  // Parc: WebKit's TrackBuffer::reenqueueMediaForTime() starts from the next
-+  // frame when the gap to it is within its enqueue tolerance. The audio
-+  // renderer plays silence up to the first buffer after a seek.
 +  if (itr == ranges_.end() && parc_state_->enabled()) {
 +    for (const auto& range : ranges_) {
 +      if (range->GetStartTimestamp() <= timestamp) {
@@ -8365,7 +8337,7 @@
      return;
 -
 +
-@@ -1484,6 +1661,7 @@
+@@ -1490,6 +1639,7 @@
    DVLOG(1) << __func__ << " " << GetStreamTypeName() << " ("
             << duration.InMicroseconds() << "us)";
    DCHECK(!end_of_stream_);
@@ -8374,7 +8346,7 @@
 +
    if (ranges_.empty())
      return;
-@@ -1563,6 +1741,7 @@
+@@ -1569,6 +1719,7 @@
      WarnIfTrackBufferExhaustionSkipsForward(*out_buffer);
      highest_output_buffer_timestamp_ =
          std::max(highest_output_buffer_timestamp_, (*out_buffer)->timestamp());
@@ -8383,7 +8355,7 @@
 +
      // If the track buffer becomes empty, then try to set the selected range
      // based on the timestamp of this buffer being returned.
-@@ -1575,6 +1754,7 @@
+@@ -1581,6 +1732,7 @@
    }
 -
 +
@@ -8392,7 +8364,7 @@
    if (!selected_range_ || !selected_range_->HasNextBuffer()) {
      if (IsEndOfStreamReached()) {
        return SourceBufferStreamStatus::kEndOfStream;
-@@ -1596,6 +1776,7 @@
+@@ -1602,6 +1754,7 @@
    WarnIfTrackBufferExhaustionSkipsForward(*out_buffer);
    highest_output_buffer_timestamp_ =
        std::max(highest_output_buffer_timestamp_, (*out_buffer)->timestamp());
@@ -8401,7 +8373,7 @@
  }
 -
 +
-@@ -1625,6 +1806,7 @@
+@@ -1631,6 +1784,7 @@
    if (!track_buffer_.empty())
      return track_buffer_.front()->GetConfigId() != current_config_index_;
 -
@@ -8411,7 +8383,7 @@
      return false;
 -
 +
-@@ -1681,6 +1863,9 @@
+@@ -1687,6 +1841,9 @@
  }
 -
 +
@@ -8422,7 +8394,7 @@
    Ranges<base::TimeDelta> ranges;
    for (auto itr = ranges_.begin(); itr != ranges_.end(); ++itr) {
      ranges.Add((*itr)->GetStartTimestamp(), (*itr)->GetBufferedEndTimestamp());
-@@ -1720,9 +1905,16 @@
+@@ -1726,9 +1883,15 @@
  void SourceBufferStream::MarkEndOfStream() {
    DCHECK(!end_of_stream_);
    end_of_stream_ = true;
@@ -8431,7 +8403,6 @@
 -
 +
  void SourceBufferStream::UnmarkEndOfStream() {
-+  // Parc: a purge already suspended it (ParcRemoveFrom()).
 +  if (parc_state_->end_of_stream_suspended()) {
 +    DCHECK(!end_of_stream_);
 +    parc_state_->set_end_of_stream_suspended(false);
@@ -15231,8 +15202,9 @@
        volume_(1.0),
        volume_before_muted_(1.0),
        volume_multiplier_(1.0),
-@@ -790,7 +799,8 @@
-       SetNetworkState(WebMediaPlayer::kNetworkStateLoading);
+@@ -820,7 +829,8 @@
+-
++
        audio_renderer_ = renderer_factory_->GetAudioRenderer(
            web_stream_, internal_frame_->web_frame(),
 -          initial_audio_output_device_id_,
@@ -15242,12 +15214,11 @@
                                 weak_factory_.GetWeakPtr()));
 -
 +
-@@ -985,10 +995,103 @@
+@@ -1021,8 +1031,96 @@
    }
 -
 +
    auto sink_id_utf8 = sink_id.Utf8();
-+  // Parc: the device the renderer plays to, as TrackAudioRenderer keeps it.
 +  callback = base::BindOnce(
 +      [](base::WeakPtr<WebMediaPlayerMS> player, WebString sink_id,
 +         media::OutputDeviceStatusCB callback,
@@ -15259,17 +15230,13 @@
 +      },
 +      weak_factory_.GetWeakPtr(), sink_id, std::move(callback));
    audio_renderer_->SwitchOutputDevice(sink_id_utf8, std::move(callback));
-+  return true;
+   return true;
 +}
 +
 +ParcWebMediaPlayerExtension* WebMediaPlayerMS::GetParcExtension() {
 +  return this;
 +}
 +
-+// Parc: as WebKit's MediaPlayerPrivateMediaStreamAVFObjC, which no frame owns,
-+// the stream keeps playing in the frame a Safari-identity page moved its
-+// element to. Its audio renderer is made again for that frame: a frame's audio
-+// streams go with it.
 +bool WebMediaPlayerMS::ParcMoveToFrame(ParcFrameServices services) {
 +  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 +  if (!parc_frame_task_runner_ ||
@@ -15309,7 +15276,7 @@
 +    }
 +  }
 +  std::move(services.move_media_log).Run(*media_log_);
-   return true;
++  return true;
 +}
 +
 +void WebMediaPlayerMS::ParcReportStateToClient() {
@@ -15330,8 +15297,7 @@
 +  client_->DidPlayerMediaPositionStateChange(
 +      /*playback_rate=*/1.0, base::Seconds(Duration()),
 +      base::Seconds(CurrentTime()), /*end_of_media=*/false);
- }
--
++}
 +
 +void WebMediaPlayerMS::ParcFastSeek(double seconds, double tolerance_before) {
 +  Seek(seconds);
@@ -15343,17 +15309,14 @@
 +      enabled_track_ids.empty()
 +          ? std::nullopt
 +          : std::make_optional(enabled_track_ids.front()));
-+}
+ }
+-
 +
  void WebMediaPlayerMS::SetPreload(WebMediaPlayer::Preload preload) {
-   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
- }
-@@ -1285,6 +1388,11 @@
+@@ -1321,6 +1419,9 @@
    bridge_ = std::move(create_bridge_callback_)
                  .Run(this, compositor_->GetUpdateSubmissionStateCallback());
    bridge_->CreateSurfaceLayer();
-+  // Parc: the frame a Safari-identity page moved the element to before the
-+  // first frame, not the one the bridge was made for.
 +  if (parc_parent_frame_sink_id_) {
 +    bridge_->ReparentFrameSinkHierarchy(*parc_parent_frame_sink_id_);
 +  }
@@ -15361,7 +15324,7 @@
 -
 +
    PostCrossThreadTask(
-@@ -1689,6 +1797,8 @@
+@@ -1735,6 +1836,8 @@
      const viz::FrameSinkId& new_parent_frame_sink_id) {
    if (bridge_) {
      bridge_->ReparentFrameSinkHierarchy(new_parent_frame_sink_id);
