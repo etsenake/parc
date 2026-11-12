@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import shlex
 import shutil
 import socket
 import subprocess
@@ -169,7 +170,13 @@ class Store:
         self.bundle = self.share / config["image"]
         self.volume = Path("/Volumes") / config["volume"]
         self.image_workspace = self.volume / config["image_workspace"]
-        self.local = Path(config["local_workspace"]) if config.get("local_workspace") else self.repo / "work/engine"
+        self.link = self.repo / "work/engine"
+        if config.get("local_workspace"):
+            self.local = Path(config["local_workspace"])
+        elif self.link.is_symlink():
+            self.local = (self.link.parent / os.readlink(self.link)).resolve()
+        else:
+            self.local = self.link
         self.snapshots = self.share / "snapshots"
         self.current = self.snapshots / "current"
         self.holder = self.share / (config["image"] + ".holder.json")
@@ -310,42 +317,92 @@ class Store:
             fcntl.flock(handle, fcntl.LOCK_UN)
         return True
 
+    def make_folder(self, folder: Path) -> None:
+        if folder.is_dir():
+            return
+        missing = [part for part in [folder, *folder.parents] if not part.exists()]
+        try:
+            folder.mkdir(parents=True)
+            return
+        except PermissionError:
+            pass
+        user = os.environ.get("USER") or str(os.getuid())
+        script = (f"/bin/mkdir -p {shlex.quote(str(folder))} && /usr/sbin/chown {shlex.quote(user)}:staff "
+                  + " ".join(shlex.quote(str(part)) for part in missing))
+        self.log(f"Creating {folder} needs administrator rights once on this Mac")
+        attempts = [["/usr/bin/sudo", "-n", "/bin/sh", "-c", script]]
+        if sys.stdin.isatty():
+            attempts.append(["/usr/bin/sudo", "/bin/sh", "-c", script])
+        attempts.append(["/usr/bin/osascript", "-e", f'do shell script "{script}" with administrator privileges'])
+        for command in attempts:
+            try:
+                if run(command, 600).returncode == 0 and folder.is_dir():
+                    return
+            except subprocess.TimeoutExpired:
+                pass
+        raise StorageError(f"could not create {folder}; run once on this Mac: sudo /bin/sh -c '{script}'")
+
+    def link_repo(self, destination: Path) -> None:
+        if destination == self.link:
+            return
+        if self.link.exists() and not self.link.is_symlink():
+            self.log(f"{self.link} is a real folder, so it was not replaced with a link to {destination}")
+            return
+        self.link.parent.mkdir(parents=True, exist_ok=True)
+        if self.link.is_symlink():
+            self.link.unlink()
+        self.link.symlink_to(destination)
+        self.log(f"{self.link} now points at {destination}")
+
     def restore(self, metadata: dict) -> bool:
+        destination = Path(metadata.get("workspace") or self.local)
         need = int(metadata.get("workspace_bytes") or 0) * 1.05 + (5 << 30)
-        self.local.parent.mkdir(parents=True, exist_ok=True)
-        existing = describe(self.local)
-        if self.local.exists() and existing is None:
-            self.log(f"{self.local} exists but is not a Parc engine workspace; leaving it untouched")
+        self.make_folder(destination.parent)
+        existing = describe(destination)
+        if destination.exists() and existing is None:
+            self.log(f"{destination} exists but is not a Parc engine workspace; leaving it untouched")
             return False
-        if existing is not None and not self.operation_idle(self.local):
-            self.log(f"{self.local} is in use by another engine operation")
+        if existing is not None and not self.operation_idle(destination):
+            self.log(f"{destination} is in use by another engine operation")
             return False
+        previous = self.local if self.local != destination and describe(self.local) is not None else None
+        if previous is not None and not self.operation_idle(previous):
+            previous = None
         aside = None
         if existing is not None:
-            if shutil.disk_usage(self.local.parent).free >= need:
-                aside = self.local.with_name(self.local.name + ".replaced-" + time.strftime("%Y%m%dT%H%M%S"))
-                self.local.rename(aside)
+            if shutil.disk_usage(destination.parent).free >= need:
+                aside = destination.with_name(destination.name + ".replaced-" + time.strftime("%Y%m%dT%H%M%S"))
+                destination.rename(aside)
             else:
-                self.log(f"Removing the outdated engine workspace at {self.local} to make room")
-                shutil.rmtree(self.local)
-        if shutil.disk_usage(self.local.parent).free < need:
+                self.log(f"Removing the outdated engine workspace at {destination} to make room")
+                shutil.rmtree(destination)
+        if shutil.disk_usage(destination.parent).free < need and previous is not None:
+            self.log(f"Removing the outdated engine workspace at {previous} to make room")
+            shutil.rmtree(previous)
+            previous = None
+        if shutil.disk_usage(destination.parent).free < need:
             if aside is not None:
-                aside.rename(self.local)
+                aside.rename(destination)
             self.log(f"Not enough free space to unpack the NAS snapshot ({need / (1 << 30):.0f} GB needed)")
             return False
         handle = self.locked(exclusive=False)
         try:
-            self.log(f"Unpacking the NAS snapshot into {self.local}")
+            self.log(f"Unpacking the NAS snapshot into {destination}, where its engine was last built")
             self.engine_tool("restore", "--kind", "workspace", "--lock", str(self.current / "pin.json"),
-                             "--cache", str(self.current), "--destination", str(self.local))
+                             "--cache", str(self.current), "--destination", str(destination))
         except (StorageError, subprocess.TimeoutExpired):
-            if aside is not None and not self.local.exists():
-                aside.rename(self.local)
+            if aside is not None and not destination.exists():
+                aside.rename(destination)
             raise
         finally:
             handle.close()
         if aside is not None:
             shutil.rmtree(aside, ignore_errors=True)
+        if previous is not None and previous.exists():
+            self.log(f"Removing the outdated engine workspace at {previous}")
+            shutil.rmtree(previous, ignore_errors=True)
+        self.link_repo(destination)
+        self.local = destination
         return True
 
     def pending_handoff(self, snapshot: dict | None) -> dict | None:

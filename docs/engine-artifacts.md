@@ -13,11 +13,21 @@ scratch. It is off unless the Mac has a settings file at
 
 Optional keys and defaults: `mount_point` (`/Volumes/parc-engine-nfs`),
 `image` (`parc-engine.sparsebundle`), `volume` (`ParcEngine`),
-`image_workspace` (`ParcBuild/engine`), `local_workspace` (the checkout's
-ignored `work/engine`), `min_image_mb_per_second` (100), `attach_attempts` (3),
-`holder_stale_hours` (48) and `lock_wait_seconds` (600). Keep local and image
-workspaces at the same path depth so a moved workspace reuses its compiled
-objects.
+`image_workspace` (`ParcBuild/engine`), `local_workspace` (whatever the
+checkout's ignored `work/engine` links to, or that folder itself),
+`min_image_mb_per_second` (100), `attach_attempts` (3), `holder_stale_hours`
+(48) and `lock_wait_seconds` (600).
+
+Siso keeps its record of finished build steps inside the workspace, keyed by
+each file's absolute, symlink-resolved path. Those records travel inside a
+snapshot, but they only match when the workspace sits at the same absolute
+path where it was last built; anywhere else, nearly every step reruns. A
+snapshot's `metadata.json` records that path as `workspace`, so unpacking puts
+the workspace back there on every Mac, creating the folder with administrator
+rights once when the Mac cannot otherwise write there (non-interactive `sudo`,
+a terminal prompt, or a macOS password dialog), and points `work/engine` at it
+so the checkout still shows it. A build there then writes records at that same
+path, which the next snapshot carries.
 
 The share holds two copies of the engine. `parc-engine.sparsebundle` is an APFS
 disk image holding a live workspace that one Mac at a time opens and builds in.
@@ -37,11 +47,12 @@ prompt.
    speed threshold. A Mac records itself in `parc-engine.sparsebundle.holder.json`
    while it has the image open; another Mac's recent record, or a refused
    open, counts as busy after the configured retries.
-3. The NAS snapshot, unpacked onto this Mac with the normal restore tool, when
-   it is ahead of the local copy and the disk has room. An outdated Parc-owned
-   local workspace is moved aside and deleted after a successful unpack,
-   deleted first when space is short, or put back if the unpack fails. Folders
-   without a Parc receipt are never touched.
+3. The NAS snapshot, unpacked with the normal restore tool at its recorded
+   build path when it is ahead of the local copy and the disk has room. An
+   outdated Parc-owned workspace there, or at the previous local path, is moved
+   aside and deleted after a successful unpack, deleted first when space is
+   short, or put back if the unpack fails. Folders without a Parc receipt are
+   never touched.
 4. The local workspace as it is.
 
 "Ahead" compares copies with the checkout's source lock by overlay version: the

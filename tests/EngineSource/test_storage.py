@@ -295,6 +295,47 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(storage.describe(self.store.local)["phase"], "synced")
         self.assertEqual([p.name for p in self.store.local.parent.iterdir()], ["engine"])
 
+    def test_restore_goes_where_the_engine_was_last_built_and_links_the_repo(self):
+        built = self.root / "elsewhere/ParcBuild/engine-cx"
+        self.receipt(self.store.local, overlay="0" * 64)
+        self.snapshot()
+        metadata = json.loads((self.store.current / "metadata.json").read_text())
+        (self.store.current / "metadata.json").write_text(json.dumps({**metadata, "workspace": str(built)}))
+
+        def restored(*args, **kwargs):
+            destination = Path(args[args.index("--destination") + 1])
+            self.receipt(destination, phase="synced")
+            return ""
+
+        with patch.object(self.store, "engine_tool", side_effect=restored):
+            self.assertTrue(self.store.restore(self.store.snapshot()))
+        self.assertEqual(self.store.local, built)
+        self.assertEqual(storage.describe(built)["phase"], "synced")
+        self.assertFalse(self.config["local_workspace"] and Path(self.config["local_workspace"]).exists())
+        self.assertTrue(self.store.link.is_symlink())
+        self.assertEqual(Path(storage.os.readlink(self.store.link)), built)
+
+    def test_local_workspace_follows_the_repo_link(self):
+        target = self.root / "elsewhere/engine"
+        target.mkdir(parents=True)
+        (self.repo / "work").mkdir()
+        (self.repo / "work/engine").symlink_to(target)
+        config = {key: value for key, value in self.config.items() if key != "local_workspace"}
+        self.assertEqual(storage.Store(config, self.repo).local, target.resolve())
+
+    def test_unwritable_build_path_is_created_with_administrator_rights(self):
+        folder = self.root / "protected/ParcBuild"
+
+        def privileged(command, timeout, cwd=None):
+            storage.os.makedirs(folder)
+            return storage.subprocess.CompletedProcess(command, 0, "", "")
+
+        with patch.object(storage.Path, "mkdir", side_effect=PermissionError("denied")), \
+                patch.object(storage, "run", side_effect=privileged) as run:
+            self.store.make_folder(folder)
+        self.assertEqual(run.call_args.args[0][:3], ["/usr/bin/sudo", "-n", "/bin/sh"])
+        self.assertIn("chown", run.call_args.args[0][-1])
+
     def test_failed_restore_puts_the_old_workspace_back(self):
         self.receipt(self.store.local, overlay="0" * 64)
         self.snapshot()
