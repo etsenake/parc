@@ -272,9 +272,10 @@ def relocate(value, moves: list[tuple[str, str]]):
 
 
 class Store:
-    def __init__(self, config: dict, repo: Path = ROOT, log=None):
+    def __init__(self, config: dict, repo: Path = ROOT, log=None, source: Path | None = None):
         self.config = config
         self.repo = Path(repo)
+        self.source = Path(source) if source else self.repo
         self.log = log or (lambda message: print(f"[{now()}] engine-storage: {message}", file=sys.stderr, flush=True))
         self.share = Path(config["mount_point"])
         self.bundle = self.share / config["image"]
@@ -725,7 +726,7 @@ class Store:
     def resolve(self, prefer: str | None = None, take_over: bool = False) -> dict:
         if take_over:
             prefer = "image"
-        wanted = target(self.repo)
+        wanted = target(self.source)
         local = describe(self.local)
         if prefer == "local":
             return self.choice(self.local, "local", "requested")
@@ -1080,7 +1081,11 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("setup", "resolve", "workspace", "publish", "take-handoff", "detach",
                                             "status", "record-xcode", "align-xcode"))
-    parser.add_argument("--repo", type=Path, default=ROOT)
+    parser.add_argument("--repo", type=Path, default=ROOT,
+                        help="Checkout whose work/engine link names this Mac's engine workspace")
+    parser.add_argument("--source", type=Path,
+                        help="Source whose engine lock and overlay the workspace must match, such as a release's "
+                             "frozen inputs; defaults to --repo")
     parser.add_argument("--share", help="NAS address for setup, for example nfs://nas.local/volume1/parc-engine-nfs")
     parser.add_argument("--workspace", type=Path)
     parser.add_argument("--result", type=Path)
@@ -1104,7 +1109,7 @@ def main(argv=None) -> int:
         config = load_config()
         if config is None:
             raise StorageError(f"No engine storage settings at {config_path()}")
-        store = Store(config, args.repo.resolve())
+        store = Store(config, args.repo.resolve(), source=args.source.resolve() if args.source else None)
         if args.command in ("resolve", "workspace"):
             choice = store.resolve(args.prefer, args.take_over)
             print(json.dumps(choice) if args.command == "resolve" else choice["workspace"])

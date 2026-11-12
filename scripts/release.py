@@ -533,17 +533,11 @@ class Release:
         if workspace is None and self.state.get("storage_mode"):
             workspace = Path(self.state["workspace"])
             if self.state["storage_mode"] == "image":
-                if storage is None or not storage.Store(storage.load_config(), source, log=self.emit).attach():
+                if storage is None or not storage.Store(storage.load_config(), self.root, log=self.emit,
+                                                        source=source).attach():
                     raise Failure("The NAS disk image holding this release's engine is unavailable; preserved")
         elif workspace is None and self.storage_enabled(source):
-            try:
-                output = self.command([sys.executable, source / "scripts/engine_storage.py", "resolve", "--repo", source],
-                                      capture=True, name="engine-storage")
-                choice = json.loads(output.splitlines()[-1])
-                workspace = Path(choice["workspace"])
-                self.checkpoint(storage_mode=choice["mode"], storage_reason=choice["reason"])
-            except (Failure, ValueError, KeyError, IndexError) as error:
-                self.emit("Choosing the engine through the NAS failed; using this Mac's engine workspace: " + str(error))
+            workspace = self.storage_workspace(source)
         if workspace is None:
             options = [self.root / "work/engine", Path.home() / "ParcBuild/engine"]
             workspace = next((p for p in options if (p / ".parc-engine-source.json").is_file()), options[0])
@@ -618,6 +612,17 @@ class Release:
             self.command([sys.executable, script, "shipping-build", "--workspace", workspace, "--jobs", jobs], name="engine-build")
             self.command([sys.executable, source / "scripts/build.py", "seal-engine", "--engine-dir", output, "--manifest", manifest, "--purpose", "distribution"], name="engine-seal")
         self.checkpoint(manifest=str(manifest), manifest_sha256=sha(manifest))
+
+    def storage_workspace(self, source):
+        try:
+            output = self.command([sys.executable, source / "scripts/engine_storage.py", "resolve", "--repo", self.root,
+                                   "--source", source], capture=True, name="engine-storage")
+            choice = json.loads(output.splitlines()[-1])
+            self.checkpoint(storage_mode=choice["mode"], storage_reason=choice["reason"])
+            return Path(choice["workspace"])
+        except (Failure, ValueError, KeyError, IndexError) as error:
+            self.emit("Choosing the engine through the NAS failed; using this Mac's engine workspace: " + str(error))
+            return None
 
     def storage_tool(self, source):
         if not (Path(source) / "scripts/engine_storage.py").is_file():

@@ -122,6 +122,16 @@ class ReleaseStorageTests(unittest.TestCase):
             self.runner.storage()
         self.assertIn('still uploading in the background', self.runner.state['storage_result'])
 
+    def test_release_looks_for_the_engine_through_the_checkout_not_its_frozen_copy(self):
+        choice = {'workspace': '/Users/someone/ParcBuild/engine-cx', 'mode': 'local', 'reason': 'matches'}
+        with patch.object(self.runner, 'command', return_value='progress\n' + json.dumps(choice)) as command, \
+                patch.object(self.runner, 'checkpoint'):
+            workspace = self.runner.storage_workspace(self.source)
+        args = [str(arg) for arg in command.call_args.args[0]]
+        self.assertEqual(args[args.index('--repo') + 1], str(self.runner.root))
+        self.assertEqual(args[args.index('--source') + 1], str(self.source))
+        self.assertEqual(workspace, Path(choice['workspace']))
+
     def test_unreadable_settings_turn_storage_off_instead_of_failing(self):
         self.settings.write_text('{not json')
         self.assertFalse(self.runner.storage_enabled())

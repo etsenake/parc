@@ -137,7 +137,11 @@ holder record; `status` reports the local, image and snapshot state.
 
 With settings present and `PARC_ENGINE_WORKSPACE` unset, the
 [release](master-release.md) resolves its workspace this way and keeps that
-choice when resumed. Once the engine is sealed, the release starts packing it
+choice when resumed. It runs `resolve --repo CHECKOUT --source FROZEN`: the
+checkout's `work/engine` link (or `local_workspace`) names this Mac's
+workspace, and the release's frozen inputs supply the engine lock and overlay
+it must match, so a Mac whose engine is current reuses it and an unpack's link
+lands in the checkout where the next release finds it. Once the engine is sealed, the release starts packing it
 into the NAS snapshot in the background, writing to the release log, and
 continues packaging. Its last stage waits up to four hours for that upload,
 ejects an image it opened (stopping an eject that takes over ten minutes), and

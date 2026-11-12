@@ -135,6 +135,23 @@ class StorageTests(unittest.TestCase):
         self.assertIn("Network Volumes", problems[1])
         make_folder.assert_not_called()
 
+    def test_a_release_finds_the_engine_through_the_checkout_and_matches_its_frozen_source(self):
+        frozen = self.root / "build/releases/run-1/source"
+        (frozen / "Engine/ParcHost").mkdir(parents=True)
+        (frozen / "Engine/source-lock.json").write_text((self.repo / "Engine/source-lock.json").read_text())
+        (frozen / "Engine/ParcHost/overlay.json").write_text((self.repo / "Engine/ParcHost/overlay.json").read_text())
+        workspace = self.root / "elsewhere/ParcBuild/engine-cx"
+        self.receipt(workspace)
+        (self.repo / "work").mkdir()
+        (self.repo / "work/engine").symlink_to(workspace)
+        (self.repo / "Engine/ParcHost/overlay.json").write_text('{"version": 3}\n')
+        config = {key: value for key, value in self.config.items() if key != "local_workspace"}
+        store = storage.Store(config, self.repo, log=self.logs.append, source=frozen)
+        with patch.object(storage, "mount_share", return_value=False), \
+                patch.object(store, "restore", side_effect=AssertionError("unpacked over this Mac's engine")):
+            choice = store.resolve()
+        self.assertEqual((choice["mode"], choice["workspace"]), ("local", str(workspace.resolve())))
+
     def test_missing_settings_leave_scripts_unchanged(self):
         self.assertIsNone(storage.load_config(self.root / "absent.json"))
 
