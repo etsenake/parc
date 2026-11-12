@@ -59,6 +59,12 @@ class StorageTests(unittest.TestCase):
     def test_missing_settings_leave_scripts_unchanged(self):
         self.assertIsNone(storage.load_config(self.root / "absent.json"))
 
+    def test_local_workspace_defaults_to_the_checkouts_ignored_work_folder(self):
+        settings = self.root / "settings.json"
+        settings.write_text(json.dumps({"schema_version": 1, "share": "nfs://nas.test/engine"}))
+        store = storage.Store(storage.load_config(settings), self.repo)
+        self.assertEqual(store.local, self.repo / "work/engine")
+
     def test_matching_local_workspace_works_offline(self):
         self.receipt(self.store.local)
         with patch.object(storage, "mount_share", return_value=False) as mount:

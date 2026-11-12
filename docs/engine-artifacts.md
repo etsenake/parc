@@ -13,8 +13,8 @@ scratch. It is off unless the Mac has a settings file at
 
 Optional keys and defaults: `mount_point` (`/Volumes/parc-engine-nfs`),
 `image` (`parc-engine.sparsebundle`), `volume` (`ParcEngine`),
-`image_workspace` (`ParcBuild/engine`), `local_workspace`
-(`~/ParcBuild/engine`), `min_image_mb_per_second` (100), `attach_attempts` (3),
+`image_workspace` (`ParcBuild/engine`), `local_workspace` (the checkout's
+ignored `work/engine`), `min_image_mb_per_second` (100), `attach_attempts` (3),
 `holder_stale_hours` (48) and `lock_wait_seconds` (600). Keep local and image
 workspaces at the same path depth so a moved workspace reuses its compiled
 objects.

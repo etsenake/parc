@@ -27,7 +27,6 @@ DEFAULTS = {
     "image": "parc-engine.sparsebundle",
     "volume": "ParcEngine",
     "image_workspace": "ParcBuild/engine",
-    "local_workspace": "~/ParcBuild/engine",
     "min_image_mb_per_second": 100,
     "attach_attempts": 3,
     "holder_stale_hours": 48,
@@ -57,7 +56,8 @@ def load_config(path: Path | None = None) -> dict | None:
         raise StorageError(f"Unsupported engine storage settings: {path}")
     config = {**DEFAULTS, **raw}
     for key in ("mount_point", "local_workspace"):
-        config[key] = str(Path(config[key]).expanduser())
+        if config.get(key):
+            config[key] = str(Path(config[key]).expanduser())
     return config
 
 
@@ -169,7 +169,7 @@ class Store:
         self.bundle = self.share / config["image"]
         self.volume = Path("/Volumes") / config["volume"]
         self.image_workspace = self.volume / config["image_workspace"]
-        self.local = Path(config["local_workspace"])
+        self.local = Path(config["local_workspace"]) if config.get("local_workspace") else self.repo / "work/engine"
         self.snapshots = self.share / "snapshots"
         self.current = self.snapshots / "current"
         self.holder = self.share / (config["image"] + ".holder.json")
