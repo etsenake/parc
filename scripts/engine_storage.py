@@ -32,7 +32,11 @@ XCODE_RECORD = "xcode-files.json.gz"
 ALIGN_HELPER = """import json, os, sys
 for path, mtime in json.load(open(sys.argv[1])):
     info = os.stat(path)
-    os.utime(path, ns=(info.st_atime_ns, mtime))
+    try:
+        os.utime(path, ns=(info.st_atime_ns, mtime))
+    except PermissionError as error:
+        open(sys.argv[2], "w").write(str(error))
+        sys.exit(3)
 """
 DEFAULTS = {
     "mount_point": "/Volumes/parc-engine-nfs",
@@ -461,7 +465,7 @@ class Store:
         if not (self.privileged(script) and folder.is_dir()):
             raise StorageError(f"could not create {folder}; run once on this Mac: sudo /bin/sh -c '{script}'")
 
-    def privileged(self, script: str) -> bool:
+    def privileged(self, script: str, ran=lambda: False) -> bool:
         attempts = [["/usr/bin/sudo", "-n", "/bin/sh", "-c", script]]
         if sys.stdin.isatty():
             attempts.append(["/usr/bin/sudo", "/bin/sh", "-c", script])
@@ -472,6 +476,8 @@ class Store:
                     return True
             except subprocess.TimeoutExpired:
                 pass
+            if ran():
+                return False
         return False
 
     def xcode_plan(self, record: dict) -> tuple[list, dict] | None:
@@ -511,12 +517,18 @@ class Store:
             self.log(f"Matching {len(plan)} Xcode file timestamps to the engine's build Mac; "
                      "this needs administrator rights")
             with tempfile.TemporaryDirectory(prefix="parc-xcode-align-") as folder:
-                helper, listing = Path(folder) / "align.py", Path(folder) / "plan.json"
+                helper, listing, refusal = (Path(folder) / name for name in ("align.py", "plan.json", "refusal.txt"))
                 helper.write_text(ALIGN_HELPER)
                 listing.write_text(json.dumps(plan))
                 os.chmod(folder, 0o755)
-                if not self.privileged(f"{shlex.quote(sys.executable)} {shlex.quote(str(helper))} "
-                                       f"{shlex.quote(str(listing))}"):
+                granted = self.privileged(f"{shlex.quote(sys.executable)} {shlex.quote(str(helper))} "
+                                          f"{shlex.quote(str(listing))} {shlex.quote(str(refusal))}",
+                                          ran=refusal.is_file)
+                if refusal.is_file():
+                    raise StorageError(f"macOS refused to change Xcode's files ({refusal.read_text()}); turn on "
+                                       "System Settings > Privacy & Security > App Management for the app running "
+                                       "this script, such as Terminal or T3 Code")
+                if not granted:
                     raise StorageError("could not align Xcode file timestamps; administrator rights were not granted")
             moved = sum(1 for path, mtime in plan if os.lstat(path).st_mtime_ns == mtime)
             counts["aligned"] += moved

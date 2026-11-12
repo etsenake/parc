@@ -52,7 +52,7 @@ class StorageTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.privileged = []
 
-    def run_privileged(self, script):
+    def run_privileged(self, script, ran=None):
         self.privileged.append(script)
         return subprocess.run(script, shell=True).returncode == 0
 
@@ -468,6 +468,21 @@ class StorageTests(unittest.TestCase):
                 patch.object(self.store, "privileged", side_effect=self.run_privileged):
             self.assertTrue(self.store.restore(self.store.snapshot()))
         self.assertEqual(seen, [1_700_000_000_000_000_000])
+
+    def test_macos_refusing_xcode_changes_names_the_missing_permission(self):
+        record = storage.xcode_record(self.developer)
+        header = self.developer / "Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/stdio.h"
+        storage.os.utime(header, ns=(1, 1_800_000_000_000_000_000))
+        subprocess.run(["/usr/bin/chflags", "uchg", str(header)], check=True)
+        self.addCleanup(subprocess.run, ["/usr/bin/chflags", "nouchg", str(header)])
+        with patch.object(self.store, "privileged", side_effect=self.run_privileged), \
+                self.assertRaisesRegex(storage.StorageError, "App Management"):
+            self.store.align_xcode(record)
+
+    def test_a_refusal_does_not_ask_for_the_password_again(self):
+        with patch.object(storage, "run", return_value=SimpleNamespace(returncode=3, stdout="", stderr="")) as run:
+            self.assertFalse(self.store.privileged("true", ran=lambda: True))
+        self.assertEqual(run.call_count, 1)
 
     def test_aligned_xcode_needs_no_administrator_rights(self):
         record = storage.xcode_record(self.developer)

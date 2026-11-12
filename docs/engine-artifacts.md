@@ -40,8 +40,14 @@ both administrator requests come together, and before building in the disk
 image, the tool gives each of this Mac's Xcode files whose contents match the
 record its recorded timestamp, asking for administrator rights only when
 something needs changing. Files with different contents keep their dates, so a
-genuinely different Xcode still rebuilds what depends on it. A failed alignment
-does not stop the unpack; it says the build may redo Xcode-dependent work.
+genuinely different Xcode still rebuilds what depends on it. macOS's App
+Management protection refuses changes inside installed apps even to an
+administrator, so the app that runs the script (Terminal, T3 Code or another)
+needs System Settings > Privacy & Security > App Management turned on once on
+each Mac that unpacks or builds a copy from another Mac; a refusal is reported
+with that instruction and does not ask for the password again. A failed
+alignment does not stop the unpack; it says the build may redo Xcode-dependent
+work.
 `record-xcode` writes the record for the snapshot already on the share and
 `align-xcode` reruns the alignment.
 
