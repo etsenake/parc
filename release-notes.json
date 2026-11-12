@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "2.1.1",
+      "build": 33,
+      "date": "2026-11-12",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "engine",
+          "summary": "Pull in Chromium's latest security fixes so sneaky videos, PDFs and extensions have fewer holes to climb through",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.1.0",
       "build": 32,
       "date": "2026-11-12",

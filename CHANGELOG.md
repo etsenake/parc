@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.1 (2026-11-12)
+
+### Fixed
+
+- **engine:** Pull in Chromium's latest security fixes so sneaky videos, PDFs and extensions have fewer holes to climb through
+
 ## 2.1.0 (2026-11-12)
 
 ### New
