@@ -103,6 +103,15 @@ class ReleaseStorageTests(unittest.TestCase):
             self.runner.storage()
         self.assertIn('not updated (no such interpreter)', self.runner.state['storage_result'])
 
+    def test_a_stuck_eject_helper_is_killed_even_after_its_leader_exits(self):
+        child = Mock(pid=4444)
+        child.wait.side_effect = [release.subprocess.TimeoutExpired('detach', 1), 0, 0]
+        with patch.object(release.subprocess, 'Popen', return_value=child), \
+                patch.object(release.os, 'killpg') as killpg:
+            self.assertFalse(self.runner.storage_cleanup('detach'))
+        self.assertEqual([call.args for call in killpg.call_args_list],
+                         [(4444, release.signal.SIGTERM), (4444, release.signal.SIGKILL)])
+
     def test_upload_past_the_deadline_is_left_running_and_reported(self):
         child = Mock(pid=4242)
         child.wait.side_effect = release.subprocess.TimeoutExpired('publish', 1)

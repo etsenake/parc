@@ -267,7 +267,8 @@ class StorageTests(unittest.TestCase):
             raise storage.StorageError("part 3 is damaged")
 
         with patch.object(self.store, "engine_tool", side_effect=tool), \
-                patch.object(storage, "used_bytes", return_value=1 << 51), \
+                patch.object(storage, "available_bytes", return_value=10 << 30), \
+                patch.object(storage, "reclaimable_bytes", return_value=1 << 51), \
                 self.assertRaisesRegex(storage.StorageError, "damaged"):
             self.store.restore(self.store.snapshot())
         self.assertEqual(calls, ["verify"])
@@ -276,10 +277,28 @@ class StorageTests(unittest.TestCase):
     def test_too_little_room_even_after_deleting_keeps_the_old_copy(self):
         self.receipt(self.store.local, overlay="0" * 64)
         self.snapshot(size=1 << 50)
-        with patch.object(self.store, "engine_tool", side_effect=AssertionError("touched the snapshot")):
+        with patch.object(self.store, "engine_tool", side_effect=AssertionError("touched the snapshot")), \
+                patch.object(storage, "available_bytes", return_value=10 << 30):
             self.assertFalse(self.store.restore(self.store.snapshot()))
         self.assertEqual(storage.describe(self.store.local)["overlay_identity"], "0" * 64)
         self.assertTrue(any("nothing was removed" in line for line in self.logs))
+
+    def test_only_storage_a_file_owns_counts_as_freed(self):
+        folder, outside = self.root / "old-engine", self.root / "elsewhere"
+        folder.mkdir()
+        outside.mkdir()
+        (folder / "own.bin").write_bytes(storage.os.urandom(1 << 20))
+        (outside / "shared.bin").write_bytes(storage.os.urandom(1 << 20))
+        storage.os.link(outside / "shared.bin", folder / "second-name.bin")
+        (outside / "original.bin").write_bytes(storage.os.urandom(1 << 20))
+        subprocess.run(["/bin/cp", "-c", str(outside / "original.bin"), str(folder / "copy.bin")], check=True)
+        (folder / "link").symlink_to(outside / "original.bin")
+        freed = storage.reclaimable_bytes(folder)
+        self.assertGreaterEqual(freed, 1 << 20)
+        self.assertLess(freed, (1 << 20) + (1 << 18))
+
+    def test_free_space_counts_what_macos_reclaims_on_demand(self):
+        self.assertGreaterEqual(storage.available_bytes(self.root), storage.shutil.disk_usage(self.root).free)
 
     def test_room_made_by_deleting_the_old_copy_unpacks_after_checking(self):
         self.receipt(self.store.local, overlay="0" * 64)
@@ -290,13 +309,10 @@ class StorageTests(unittest.TestCase):
             calls.append(args[0])
             return self.restored(*args, **kwargs) if args[0] == "restore" else ""
 
-        def usage(path):
-            room = (10 << 30) if self.store.local.exists() else (200 << 30)
-            return SimpleNamespace(free=room, used=0, total=0)
-
         with patch.object(self.store, "engine_tool", side_effect=tool), \
-                patch.object(storage, "used_bytes", return_value=100 << 30), \
-                patch.object(storage.shutil, "disk_usage", side_effect=usage):
+                patch.object(storage, "reclaimable_bytes", return_value=100 << 30), \
+                patch.object(storage, "available_bytes",
+                             side_effect=lambda path: (10 << 30) if self.store.local.exists() else (200 << 30)):
             self.assertTrue(self.store.restore(self.store.snapshot()))
         self.assertEqual(calls, ["verify", "restore"])
         self.assertEqual(storage.describe(self.store.local)["phase"], "synced")
@@ -316,6 +332,22 @@ class StorageTests(unittest.TestCase):
                 self.assertRaises(OSError):
             self.store.take_release()
         self.assert_takeover_left_no_trace(info)
+
+    def test_claim_failing_halfway_leaves_the_release_free_for_any_mac(self):
+        info = self.handoff_waiting()
+        self.handed_off_snapshot("T1")
+        original = storage.write_json
+
+        def write(path, value):
+            if path.name == "metadata.json":
+                raise OSError("NAS went away")
+            original(path, value)
+
+        with patch.object(storage, "mount_share", return_value=True), \
+                patch.object(storage, "write_json", side_effect=write), \
+                self.assertRaises(OSError):
+            self.store.take_release()
+        self.assertNotIn("taken_by", json.loads(info.read_text()))
 
     def test_takeover_failing_to_record_the_release_rolls_everything_back(self):
         info = self.handoff_waiting()

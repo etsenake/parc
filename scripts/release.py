@@ -714,12 +714,12 @@ class Release:
             for stop in (signal.SIGTERM, signal.SIGKILL):
                 try:
                     os.killpg(child.pid, stop)
-                    child.wait(timeout=10)
-                    break
                 except ProcessLookupError:
                     break
+                try:
+                    child.wait(timeout=10)
                 except subprocess.TimeoutExpired:
-                    continue
+                    pass
             return False
 
     def package(self):

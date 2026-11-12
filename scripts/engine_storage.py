@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import ctypes.util
 import datetime
 import fcntl
 import gzip
@@ -15,6 +17,7 @@ import shlex
 import shutil
 import socket
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -165,20 +168,53 @@ def mount_share(config: dict, timeout: float = 90) -> bool:
     return mounted(config["mount_point"], "nfs")
 
 
-def used_bytes(folder: Path) -> int:
-    total, seen = 0, set()
+class AttributeRequest(ctypes.Structure):
+    _fields_ = [("bitmapcount", ctypes.c_ushort), ("reserved", ctypes.c_uint16), ("commonattr", ctypes.c_uint32),
+                ("volattr", ctypes.c_uint32), ("dirattr", ctypes.c_uint32), ("fileattr", ctypes.c_uint32),
+                ("forkattr", ctypes.c_uint32)]
+
+
+LIBC = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+RETURNED_ATTRIBUTES = 0x80000000
+PRIVATE_SIZE = 0x00000008
+NO_FOLLOW_EXTENDED = 0x00000001 | 0x00000020
+
+
+def private_bytes(path: str, allocated: int) -> int:
+    request = AttributeRequest(5, 0, RETURNED_ATTRIBUTES, 0, 0, 0, PRIVATE_SIZE)
+    answer = ctypes.create_string_buffer(64)
+    if LIBC.getattrlist(os.fsencode(path), ctypes.byref(request), answer, len(answer), NO_FOLLOW_EXTENDED) != 0:
+        return 0
+    if not struct.unpack_from("5I", answer, 4)[4] & PRIVATE_SIZE:
+        return allocated
+    return min(allocated, struct.unpack_from("q", answer, 24)[0])
+
+
+def reclaimable_bytes(folder: Path) -> int:
+    total = 0
     for base, _, names in os.walk(folder):
         for name in names:
+            path = os.path.join(base, name)
             try:
-                info = os.lstat(os.path.join(base, name))
+                info = os.lstat(path)
             except OSError:
                 continue
-            if info.st_nlink > 1:
-                if (info.st_dev, info.st_ino) in seen:
-                    continue
-                seen.add((info.st_dev, info.st_ino))
-            total += info.st_blocks * 512
+            if info.st_nlink == 1 and stat.S_ISREG(info.st_mode):
+                total += private_bytes(path, info.st_blocks * 512)
     return total
+
+
+def available_bytes(folder: Path) -> int:
+    key = "NSURLVolumeAvailableCapacityForImportantUsageKey"
+    script = (f'ObjC.import("Foundation"); const u = $.NSURL.fileURLWithPath({json.dumps(str(folder))}); '
+              f'const v = u.resourceValuesForKeysError($([{json.dumps(key)}]), null); v.objectForKey({json.dumps(key)}).js')
+    try:
+        result = run(["/usr/bin/osascript", "-l", "JavaScript", "-e", script], 30)
+        if result.returncode == 0 and result.stdout.strip().isdigit():
+            return max(int(result.stdout.strip()), shutil.disk_usage(folder).free)
+    except subprocess.TimeoutExpired:
+        pass
+    return shutil.disk_usage(folder).free
 
 
 def developer_dir() -> Path | None:
@@ -613,31 +649,31 @@ class Store:
         previous = self.local if self.local != destination and describe(self.local) is not None else None
         if previous is not None and not self.operation_idle(previous):
             previous = None
-        free = shutil.disk_usage(destination.parent).free
+        free = available_bytes(destination.parent)
         if free < need:
             device = os.stat(destination.parent).st_dev
             removable = [path for path in (destination if existing is not None else None, previous)
                          if path is not None and os.stat(path).st_dev == device]
-            reclaimable = sum(used_bytes(path) for path in removable)
+            reclaimable = sum(reclaimable_bytes(path) for path in removable)
             if free + reclaimable < need:
                 self.log(f"Not enough free space to unpack the NAS snapshot ({need / (1 << 30):.0f} GB needed, "
-                         f"{free / (1 << 30):.0f} GB free, {reclaimable / (1 << 30):.0f} GB in older engine copies); "
-                         "nothing was removed")
+                         f"{free / (1 << 30):.0f} GB available, {reclaimable / (1 << 30):.0f} GB that removing older "
+                         "engine copies would free); nothing was removed")
                 return False
             self.verify_snapshot()
         aside = None
         if existing is not None:
-            if shutil.disk_usage(destination.parent).free >= need:
+            if free >= need:
                 aside = destination.with_name(destination.name + ".replaced-" + time.strftime("%Y%m%dT%H%M%S"))
                 destination.rename(aside)
             else:
                 self.log(f"Removing the outdated engine workspace at {destination} to make room")
                 shutil.rmtree(destination)
-        if shutil.disk_usage(destination.parent).free < need and previous is not None:
+        if previous is not None and available_bytes(destination.parent) < need:
             self.log(f"Removing the outdated engine workspace at {previous} to make room")
             shutil.rmtree(previous)
             previous = None
-        if shutil.disk_usage(destination.parent).free < need:
+        if available_bytes(destination.parent) < need:
             if aside is not None:
                 aside.rename(destination)
             self.log(f"Not enough free space to unpack the NAS snapshot ({need / (1 << 30):.0f} GB needed)")
@@ -808,8 +844,15 @@ class Store:
                 raise StorageError("the NAS snapshot no longer holds the handed-off build; hand it off again")
             claim = {"taken_by": self.host, "taken_utc": now()}
             info.update(claim)
-            write_json(info_path, info)
-            write_json(self.current / "metadata.json", {**snapshot, "handoff": {**marker, **claim}})
+            try:
+                write_json(info_path, info)
+                write_json(self.current / "metadata.json", {**snapshot, "handoff": {**marker, **claim}})
+            except BaseException:
+                try:
+                    self.clear_claim(info)
+                except OSError:
+                    pass
+                raise
         finally:
             handle.close()
         try:
@@ -819,25 +862,28 @@ class Store:
             raise
 
     def release_claim(self, info: dict) -> None:
-        identity = (info.get("from_host"), info.get("snapshot_created_utc"), self.host)
         handle = self.locked(exclusive=True)
         try:
-            path = self.share / "handoff/current/handoff.json"
-            claimed = read_json(path)
-            if claimed and (claimed.get("from_host"), claimed.get("snapshot_created_utc"),
-                            claimed.get("taken_by")) == identity:
-                claimed.pop("taken_by", None)
-                claimed.pop("taken_utc", None)
-                write_json(path, claimed)
-            metadata = read_json(self.current / "metadata.json")
-            marker = (metadata or {}).get("handoff")
-            if isinstance(marker, dict) and (marker.get("from_host"), marker.get("created_utc"),
-                                             marker.get("taken_by")) == identity:
-                marker.pop("taken_by", None)
-                marker.pop("taken_utc", None)
-                write_json(self.current / "metadata.json", metadata)
+            self.clear_claim(info)
         finally:
             handle.close()
+
+    def clear_claim(self, info: dict) -> None:
+        identity = (info.get("from_host"), info.get("snapshot_created_utc"), self.host)
+        path = self.share / "handoff/current/handoff.json"
+        claimed = read_json(path)
+        if claimed and (claimed.get("from_host"), claimed.get("snapshot_created_utc"),
+                        claimed.get("taken_by")) == identity:
+            claimed.pop("taken_by", None)
+            claimed.pop("taken_utc", None)
+            write_json(path, claimed)
+        metadata = read_json(self.current / "metadata.json")
+        marker = (metadata or {}).get("handoff")
+        if isinstance(marker, dict) and (marker.get("from_host"), marker.get("created_utc"),
+                                         marker.get("taken_by")) == identity:
+            marker.pop("taken_by", None)
+            marker.pop("taken_utc", None)
+            write_json(self.current / "metadata.json", metadata)
 
     def continue_release(self, info: dict, snapshot: dict) -> dict:
         source_run = self.share / "handoff/current/run"

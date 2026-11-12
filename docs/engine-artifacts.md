@@ -75,9 +75,12 @@ prompt.
    replaced the snapshot after it was chosen. An outdated Parc-owned workspace
    there, or at the previous local path, is moved aside and deleted after a
    successful unpack, or put back if the unpack fails. When space is short it
-   is deleted first, but only when deleting the older copies on that disk frees
-   enough room and every byte of the snapshot checks out; otherwise nothing is
-   removed. A connection lost mid-unpack after such a deletion leaves no engine
+   is deleted first, but only when every byte of the snapshot checks out and
+   the room is certain: macOS's available space for important use (which
+   includes space it frees on demand, such as Time Machine local snapshots)
+   plus only the storage the older copies on that disk own outright, not
+   blocks shared with APFS clones or files with another hard link. Otherwise
+   nothing is removed. A connection lost mid-unpack after such a deletion leaves no engine
    copy until the next run unpacks again. Folders without a Parc receipt are
    never touched.
 4. The local workspace as it is.
