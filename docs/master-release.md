@@ -5,11 +5,18 @@ bash scripts/release.sh
 # Override the bump only when the commits can't choose it: --type patch, minor or major
 ```
 
-Run from clean main on an Apple Silicon Mac. This command is **release-only**:
-engine/app build, production signing, notarization, GitHub assets and Homebrew
-cask publication. It never installs/replaces/quits/opens Parc, runs startup or
-browser tests, or invokes Homebrew install/upgrade/reinstall. Users run
-`brew upgrade --cask parc` themselves. There is no quiet-window timer.
+Run from main with no uncommitted changes to tracked files on an Apple Silicon
+Mac. This command is **release-only**: engine/app build, production signing,
+notarization, GitHub assets and Homebrew cask publication. It never
+installs/replaces/quits/opens Parc, runs startup or browser tests, or installs,
+upgrades or reinstalls Parc with Homebrew. Users run `brew upgrade --cask parc`
+themselves. There is no quiet-window timer.
+
+`release.sh` starts the release with Python 3.12 or later: `python3` when it is
+new enough, otherwise a Homebrew `python3.x` (macOS's own Python 3.9 is too
+old). Release steps that call `python3`, such as packaging, get that same
+interpreter. With no suitable Python it stops and names
+`brew install python@3.13`.
 
 ## Versions and release notes
 
@@ -53,14 +60,23 @@ published tag still refuses.
 
 ## Pipeline
 
-1. Check GitHub login, Xcode/license, Apple's Metal toolchain (stopping with its
-   install command when missing), Developer ID Application identity for Team
-   `94HKA7L2DR`, Homebrew tooling and the `parc-notary` profile. No ad-hoc fallback.
-2. Fast-forward clean main, commit and immediately push the version, then extract
+1. Check Homebrew, GitHub login, Xcode/license, Apple's Metal toolchain,
+   Developer ID Application identity for Team `94HKA7L2DR`, Sparkle's key and
+   the `parc-notary` profile. No ad-hoc fallback. The preflight provisions what
+   it safely can: it installs a missing GitHub CLI with Homebrew, downloads a
+   missing Metal toolchain, completes the identity's certificate chain and
+   restores missing credentials from 1Password, installing the 1Password CLI
+   first (see [credentials](#credentials-on-another-mac)). It stops and names
+   the next step for what needs a person: installing Homebrew, `gh auth login`,
+   Xcode selection and first-launch setup (both need `sudo`) or unlocking
+   1Password. Keychain approval stays macOS's own prompt.
+2. Fast-forward main, commit and immediately push the version, then extract
    verified Git inputs into ignored build storage. This is an immutable input
    archive, not another Git checkout/worktree. Later commits cannot retarget the
-   engine or package. Local edits cause a clear refusal and are never reset,
-   stashed, cleaned or overwritten.
+   engine or package. Uncommitted changes to tracked files cause a clear refusal
+   and are never reset, stashed, cleaned or overwritten. Untracked files don't
+   block the release and are left where they are, since the inputs come only
+   from Git objects.
 3. Find `PARC_ENGINE_WORKSPACE`, a workspace chosen by
    [shared engine storage](engine-artifacts.md#shared-engine-storage-on-a-nas)
    when this Mac has its settings, `work/engine` or `~/ParcBuild/engine`; use the
@@ -176,8 +192,9 @@ version files that main lacks, as after main is rewritten, stops for
 reconciliation instead of being merged away.
 
 If the release owner died during overlay validation, or during a Git
-command or a preflight step (`gh`, `xcrun`, `xcodebuild`, `security`, or the
-signing-key restore), for example while a source refresh was fetching, source
+command or a preflight step (`gh`, `xcrun`, `xcodebuild`, `security`, a Homebrew
+install of a missing tool, or the signing-key restore), for example while a
+source refresh was fetching, source
 refresh verifies that both the saved command PID and its process group are gone,
 records the interrupted command and reruns from its start. A live PID or group
 still refuses. It does not record a successful exit or clear an interrupted
@@ -209,8 +226,20 @@ Keychain export approval may be required. A successful verified helper result is
 backup; this guide is not a current backup receipt.
 
 On another Mac with that vault available, the release command automatically
-restores a missing identity into the normal login Keychain; explicit recovery is
-`python3 scripts/signing-backup.py restore`. You can also transfer just this
+restores a missing identity into the normal login Keychain, installing the
+1Password CLI (`brew install --cask 1password-cli`) first when `op` is missing;
+explicit recovery is `python3 scripts/signing-backup.py restore`.
+
+An identity is only valid for code signing when the Apple intermediate that
+issued its certificate, "Developer ID Certification Authority" (G2 for current
+certificates), is in a keychain. Without it `security find-identity` lists the
+identity but counts none valid. When a Team identity is present but not valid,
+`restore` and the release preflight read its issuer, download that intermediate
+from Apple's certificate authority page over HTTPS, check with `openssl verify`
+that the Apple Root CA in the system roots issued it, import it into the login
+Keychain and check the identity again. A certificate from any other issuer, or
+one that fails the check, is never imported. An identity that is still invalid
+afterwards, for example because it expired, stops the release. You can also transfer just this
 identity manually using Keychain Access and encrypted PKCS#12. The command selects the sole matching Team Developer ID if
 `~/.config/parc/signing-identity` does not yet exist; multiple identities require
 one-time `scripts/setup-signing.sh` selection. Never commit private keys or
@@ -241,7 +270,8 @@ password with Apple before saving, then checks it again. notarytool only takes
 the password in argv or at its `getpass` prompt, and with no controlling
 terminal that prompt reads standard input, so both commands run in a new session
 and receive the password on stdin. The release preflight runs `restore` when the
-profile fails and `op` is installed, rechecks it, and stops if it still fails.
+profile fails, installing the 1Password CLI first when it is missing, rechecks
+the profile, and stops if it still fails.
 `store-credentials --sync` remains Apple's separate iCloud Keychain route; it
 cannot combine with `--keychain`. The script checks credentials before starting
 compilation. One-time provisioning or a locked Keychain can require the user's
@@ -259,8 +289,8 @@ and the item is verified by a fresh vault read. `restore` imports a missing key
 the same way with `generate_keys -f` and checks the public key afterwards,
 removing an imported key that doesn't match; it leaves a present key and
 identity alone. Two vault items with the same title stop both commands. The release preflight runs `restore`
-when either credential is missing and `op` is installed, and stops if the
-Sparkle key is still missing. As with the identity, confirm the verified backup exists before relying on it. Never run plain `generate_keys
+when either credential is missing, installing the 1Password CLI first when it
+is missing, and stops if the Sparkle key is still missing. As with the identity, confirm the verified backup exists before relying on it. Never run plain `generate_keys
 --account parc` on a Mac without the key: it would create a new key that no
 installed Parc trusts, and the appcast stage refuses to sign with it. The first
 signing asks for Keychain access to `sign_update`; choose Always Allow so later

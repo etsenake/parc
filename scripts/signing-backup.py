@@ -15,7 +15,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import re
 import secrets
 import subprocess
 import sys
@@ -27,9 +26,17 @@ SPARKLE_TITLE = 'Parc Sparkle EdDSA key'
 NOTARY_TITLE = 'Parc notary profile'
 PROFILE = os.environ.get('PARC_NOTARY_PROFILE', 'parc-notary')
 os.environ.setdefault('OP_ACCOUNT', 'my.1password.ca')
-spec = importlib.util.spec_from_file_location('parc_signing_sparkle', Path(__file__).with_name('sparkle.py'))
-sparkle = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(sparkle)
+
+
+def load(name):
+    spec = importlib.util.spec_from_file_location('parc_signing_' + name, Path(__file__).with_name(name + '.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+sparkle = load('sparkle')
+developer_id = load('developer_id')
 
 
 def run(args, *, data=None, umask=-1, start_new_session=False):
@@ -181,9 +188,14 @@ def restore():
 
 def restore_identity():
     identities = run(['security','find-identity','-v','-p','codesigning'])
-    if re.search(r'"Developer ID Application: [^"\n]+ \(94HKA7L2DR\)"', identities):
+    if developer_id.IDENTITY.search(identities):
         print('Production identity already in the normal Keychain')
         return
+    listed = developer_id.names(run(['security','find-identity','-p','codesigning']))
+    if listed and developer_id.install_intermediates(listed):
+        if developer_id.IDENTITY.search(run(['security','find-identity','-v','-p','codesigning'])):
+            print("Production identity validated in the normal Keychain once Apple's intermediate certificate was installed")
+            return
     saved = existing(TITLE)
     if saved is None:
         raise ValueError('1Password has no production identity backup to restore')
@@ -192,8 +204,10 @@ def restore_identity():
         raise ValueError('Vault entry is not the expected production identity')
     run([helper(),'import'],data=json.dumps({'pkcs12':saved['pkcs12'],'password':saved['password']}))
     identities = run(['security','find-identity','-v','-p','codesigning'])
+    if '"' + identity + '"' not in identities and developer_id.install_intermediates([identity]):
+        identities = run(['security','find-identity','-v','-p','codesigning'])
     if '"' + identity + '"' not in identities:
-        raise ValueError('Imported identity does not validate for code signing')
+        raise ValueError('Imported identity does not validate for code signing; its certificate may be expired or revoked')
     config = Path.home() / '.config/parc/signing-identity'; config.parent.mkdir(parents=True,exist_ok=True)
     if config.exists() and config.read_text().strip() != identity:
         raise ValueError('Existing signing configuration differs; preserved')

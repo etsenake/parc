@@ -272,8 +272,9 @@ sync/build. Setup does not authorize compilation or feature development.
 (or `--type major|minor|patch`), build engine/app, Developer ID sign,
 notarize/staple, publish GitHub assets and publish/verify the tap cask. It must
 never wait for main to be quiet, install/replace/quit/open the local app, run
-startup/browser checks, or run Homebrew install/upgrade/reinstall. Users run
-Homebrew upgrades themselves. Signature/hash/source/notarization checks remain
+startup/browser checks, or install, upgrade or reinstall Parc with Homebrew; it
+installs only missing release tools with Homebrew. Users run Homebrew upgrades
+themselves. Signature/hash/source/notarization checks remain
 required. See [release guide](docs/master-release.md).
 
 Publish authorized development app packages with `scripts/package-app.sh` and

@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import shlex
 import signal
 import shutil
 import subprocess
@@ -18,6 +19,7 @@ import time
 import traceback
 import uuid
 
+import developer_id
 import release_inputs
 import release_lease
 import release_notes
@@ -47,6 +49,19 @@ def metal_toolchain_ready(env=None):
         return subprocess.run(["xcrun", "metal", "--version"], env=env, capture_output=True, timeout=120).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
+
+
+def interpreter_path(root, path):
+    folder = Path(root) / "build/release-tools/bin"
+    folder.mkdir(parents=True, exist_ok=True)
+    shim = folder / "python3"
+    text = "#!/bin/sh\nexec " + shlex.quote(sys.executable) + ' "$@"\n'
+    if not shim.is_file() or shim.read_text() != text:
+        temporary = folder / ("python3." + uuid.uuid4().hex[:8])
+        temporary.write_text(text)
+        temporary.chmod(0o755)
+        os.replace(temporary, shim)
+    return str(folder) + os.pathsep + (path or os.defpath)
 
 
 def now():
@@ -93,7 +108,8 @@ class Release:
         self.log.parent.mkdir(parents=True, exist_ok=True)
         self.current = self.base / "current.json"
         self.state = {}
-        self.env = dict(os.environ, HOMEBREW_NO_AUTO_UPDATE="1", HOMEBREW_NO_INSTALL_CLEANUP="1", GIT_TERMINAL_PROMPT="0", PYTHONDONTWRITEBYTECODE="1")
+        self.env = dict(os.environ, HOMEBREW_NO_AUTO_UPDATE="1", HOMEBREW_NO_INSTALL_CLEANUP="1", GIT_TERMINAL_PROMPT="0", PYTHONDONTWRITEBYTECODE="1",
+                        PATH=interpreter_path(self.root, os.environ.get("PATH")))
         self.secrets = []
         self.locks = []
 
@@ -231,7 +247,7 @@ class Release:
         pid = prior.get('command_pid')
         source = prior.get('source')
         overlay_check = bool(source) and command[1:3] == [str(Path(source) / 'scripts/engine-source.py'), 'overlay-check']
-        tool = command[:1] in (['git'], ['gh'], ['xcrun'], ['xcodebuild'], ['security'])
+        tool = command[:1] in (['git'], ['gh'], ['xcrun'], ['xcodebuild'], ['security']) or command[:2] == ['brew', 'install']
         restore = command[1:3] == [str(self.root / 'scripts/signing-backup.py'), 'restore']
         if (prior.get('status') != 'stopped' or prior.get('stage') != 'engine' or not pid
                 or not (overlay_check or tool or restore)):
@@ -294,7 +310,7 @@ class Release:
         return max(found, key=lambda state: state.get('abandoned_utc', '')) if found else None
 
     def refresh_inputs(self):
-        if self.git('status', '--porcelain'):
+        if self.git('status', '--porcelain', '--untracked-files=no'):
             raise Failure('Source refresh requires clean main; local edits were preserved')
         if self.git('branch', '--show-current') != 'main':
             raise Failure('Source refresh requires main')
@@ -384,30 +400,70 @@ class Release:
         self.env.update(GIT_CONFIG_COUNT="2", GIT_CONFIG_KEY_0="credential.helper", GIT_CONFIG_VALUE_0="",
                         GIT_CONFIG_KEY_1="credential.helper", GIT_CONFIG_VALUE_1="!gh auth git-credential")
 
+    def provision(self, tool, *package):
+        if shutil.which(tool):
+            return True
+        self.emit("Installing " + package[-1] + " with Homebrew; the release needs " + tool)
+        try:
+            self.command(["brew", "install", *package], name="install-" + package[-1])
+        except Failure:
+            return False
+        return shutil.which(tool) is not None
+
+    def restore_credentials(self, name):
+        if not self.provision("op", "--cask", "1password-cli"):
+            return False
+        try:
+            self.command([sys.executable, self.root / "scripts/signing-backup.py", "restore"], name=name)
+        except Failure:
+            return False
+        return True
+
+    def identities(self, valid=True):
+        return self.command(["security", "find-identity", *(["-v"] if valid else []), "-p", "codesigning"], capture=True)
+
     def preflight(self):
         if platform.system() != "Darwin" or platform.machine() != "arm64":
             raise Failure("Release builds require an Apple Silicon Mac with full Xcode")
+        if not shutil.which("brew"):
+            raise Failure("Install Homebrew once before running a production release")
+        if not self.provision("gh", "gh"):
+            raise Failure("The GitHub CLI is missing and Homebrew could not install it; see " + str(self.log))
         self.auth()
-        if not shutil.which('brew'):
-            raise Failure('Install Homebrew once before running a production release')
         self.command(["xcrun", "--find", "swiftc"], capture=True)
         self.command(["xcrun", "--find", "notarytool"], capture=True)
-        self.command(["xcodebuild", "-checkFirstLaunchStatus"], capture=True)
+        try:
+            self.command(["xcodebuild", "-checkFirstLaunchStatus"], capture=True)
+        except Failure:
+            raise Failure("Xcode is not ready: select full Xcode with sudo xcode-select -s /Applications/Xcode.app, "
+                          "then run sudo xcodebuild -runFirstLaunch once") from None
         if not metal_toolchain_ready(self.env):
-            raise Failure("Apple's Metal toolchain is missing and the engine build needs it; install it once with: "
-                          "xcodebuild -downloadComponent MetalToolchain")
+            self.emit("Downloading Apple's Metal toolchain, which the engine build needs")
+            try:
+                self.command(["xcodebuild", "-downloadComponent", "MetalToolchain"], name="install-metal-toolchain", retries=1)
+            except Failure:
+                pass
+            if not metal_toolchain_ready(self.env):
+                raise Failure("Apple's Metal toolchain is missing and could not be downloaded; the engine build needs it. "
+                              "Install it with: xcodebuild -downloadComponent MetalToolchain")
         identity_path = Path.home() / ".config/parc/signing-identity"
-        identities = self.command(["security", "find-identity", "-v", "-p", "codesigning"], capture=True)
-        missing = (not re.search(r'"Developer ID Application: [^"\n]+ \(' + TEAM + r'\)"', identities)
-                   or not sparkle.has_key())
-        if missing and shutil.which('op'):
-            self.command([sys.executable, self.root / 'scripts/signing-backup.py', 'restore'], name='restore-signing-keys')
-            identities = self.command(['security','find-identity','-v','-p','codesigning'], capture=True)
+        identities = self.identities()
+        if not developer_id.IDENTITY.search(identities):
+            listed = developer_id.names(self.identities(valid=False))
+            if listed:
+                try:
+                    if developer_id.install_intermediates(listed, log=self.emit):
+                        identities = self.identities()
+                except (ValueError, OSError, subprocess.SubprocessError) as error:
+                    self.emit("Could not install Apple's Developer ID intermediate certificate: " + str(error))
+        missing = not developer_id.IDENTITY.search(identities) or not sparkle.has_key()
+        if missing and self.restore_credentials("restore-signing-keys"):
+            identities = self.identities()
         if not sparkle.has_key():
             raise Failure("Sparkle's update signing key (login Keychain, account parc) is missing and was not restored; "
-                          "unlock 1Password and run python3 scripts/signing-backup.py restore")
+                          "unlock 1Password and rerun the release")
         if not identity_path.is_file():
-            candidates = re.findall(r'"(Developer ID Application: [^"\n]+ \(' + TEAM + r'\))"', identities)
+            candidates = developer_id.IDENTITY.findall(identities)
             if len(candidates) != 1:
                 raise Failure('Import this Team Developer ID certificate AND private key on this Mac, then run scripts/setup-signing.sh; never ad-hoc fallback')
             identity_path.parent.mkdir(parents=True, exist_ok=True)
@@ -421,14 +477,13 @@ class Release:
         profile = self.env["PARC_NOTARY_PROFILE"] = os.environ.get("PARC_NOTARY_PROFILE", "parc-notary")
         history = ["xcrun", "notarytool", "history", "--keychain-profile", profile, "--output-format", "json"]
         unavailable = ("The notarytool profile " + profile + " is missing or failing and was not restored; "
-                       "unlock 1Password and run python3 scripts/signing-backup.py restore")
+                       "unlock 1Password and rerun the release")
         try:
             self.command(history, capture=True, retries=2)
         except Failure:
-            if not shutil.which('op'):
+            if not self.restore_credentials("restore-notary-profile"):
                 raise Failure(unavailable) from None
             try:
-                self.command([sys.executable, self.root / 'scripts/signing-backup.py', 'restore'], name='restore-notary-profile')
                 self.command(history, capture=True)
             except Failure:
                 raise Failure(unavailable) from None
@@ -455,7 +510,7 @@ class Release:
             release_inputs.verify(self.root, self.state["source"], self.state["commit"])
             return
         if not self.state.get("version"):
-            if self.git("status", "--porcelain"):
+            if self.git("status", "--porcelain", "--untracked-files=no"):
                 raise Failure("Start on clean main; never reset/stash/clean local changes")
             self.checkpoint(quiet_seconds=None, quiet_head=None, quiet_since=None)
             self.git("fetch", "origin", "main", retries=2)
@@ -487,7 +542,7 @@ class Release:
                         or any(self.git('show', 'HEAD:' + name) != text.strip() for name, text in files.items())):
                     raise Failure('Source changed during version transaction; preserved for reconciliation')
             else:
-                dirty = {line.split(maxsplit=1)[1] for line in self.git('status', '--porcelain').splitlines()}
+                dirty = {line.split(maxsplit=1)[1] for line in self.git('status', '--porcelain', '--untracked-files=no').splitlines()}
                 if not dirty <= set(files) or any((self.root / name).read_text() != files[name] for name in dirty):
                     raise Failure('Unexpected local edits during version transaction; preserved')
                 for name, text in files.items():
@@ -896,6 +951,8 @@ class Release:
 
 
 def main():
+    if sys.version_info < (3, 12):
+        raise SystemExit("Production releases need Python 3.12 or later; start them with: bash scripts/release.sh")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--type", choices=("major", "minor", "patch"),
                         help="Override the bump Conventional Commits since the last release tag would choose")

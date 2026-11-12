@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ from unittest.mock import patch
 
 spec=importlib.util.spec_from_file_location('parc_signing_backup',Path(__file__).resolve().parents[2]/'scripts/signing-backup.py')
 backup=importlib.util.module_from_spec(spec);spec.loader.exec_module(backup)
+REAL_RUN = subprocess.run
 
 def setUpModule():
     guard = patch.object(backup.subprocess, 'run', side_effect=AssertionError('unfaked credential command'))
@@ -145,6 +147,160 @@ class SparkleKey(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()):
             backup.restore_identity()
         run.assert_called_once_with(['security', 'find-identity', '-v', '-p', 'codesigning'])
+
+
+class Identity(unittest.TestCase):
+    IDENTITY = 'Developer ID Application: Fixture (94HKA7L2DR)'
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name); (self.home / '.config/parc').mkdir(parents=True)
+        (self.home / '.config/parc/signing-identity').write_text(self.IDENTITY + '\n')
+
+    def keychain(self, state):
+        def run(args, *, data=None, umask=-1):
+            self.calls.append(list(args))
+            if args[:2] == ['security', 'find-identity']:
+                if '-v' in args:
+                    return '1) ABC "' + self.IDENTITY + '"' if state['valid'] else '0 valid identities found'
+                return '1) ABC "' + self.IDENTITY + '" (CSSMERR_TP_NOT_TRUSTED)' if state['listed'] else ''
+            if args == ['native-helper', 'import']:
+                state['listed'] = True; return 'Imported selected production identity'
+            raise AssertionError(args)
+        return run
+
+    def chain(self, state, installable):
+        def install(identities):
+            self.installs.append(list(identities))
+            state['valid'] = installable
+            return ['DeveloperIDG2CA.cer'] if installable else []
+        return install
+
+    def test_listed_identity_validates_once_its_intermediate_is_installed_without_the_vault(self):
+        self.calls, self.installs, state = [], [], {'valid': False, 'listed': True}
+        with patch.object(Path, 'home', return_value=self.home), patch.object(backup, 'run', side_effect=self.keychain(state)), \
+                patch.object(backup.developer_id, 'install_intermediates', side_effect=self.chain(state, True)), \
+                patch.object(backup, 'existing', side_effect=AssertionError('vault read')), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            backup.restore_identity()
+        self.assertEqual(self.installs, [[self.IDENTITY]])
+        self.assertIn("intermediate certificate was installed", output.getvalue())
+
+    def test_imported_identity_gets_its_intermediate_or_fails_clearly(self):
+        saved = {'identity': self.IDENTITY, 'pkcs12': 'ZW5jcnlwdGVk', 'password': 'p' * 48}
+        (self.home / '.config/parc/signing-identity').unlink()
+        for installable in (True, False):
+            self.calls, self.installs, state = [], [], {'valid': False, 'listed': False}
+            with self.subTest(installable=installable), patch.object(Path, 'home', return_value=self.home), \
+                    patch.object(backup, 'run', side_effect=self.keychain(state)), \
+                    patch.object(backup, 'helper', return_value='native-helper'), \
+                    patch.object(backup, 'existing', return_value=saved), \
+                    patch.object(backup.developer_id, 'install_intermediates', side_effect=self.chain(state, installable)), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                if installable:
+                    backup.restore_identity()
+                    self.assertEqual((self.home / '.config/parc/signing-identity').read_text(), self.IDENTITY + '\n')
+                else:
+                    with self.assertRaisesRegex(ValueError, 'Imported identity does not validate for code signing'):
+                        backup.restore_identity()
+                self.assertEqual(self.installs, [[self.IDENTITY]])
+                self.assertIn(['native-helper', 'import'], self.calls)
+
+
+class DeveloperIDChain(unittest.TestCase):
+    IDENTITY = 'Developer ID Application: Fixture (94HKA7L2DR)'
+    G2 = '/C=US/O=Apple Inc./OU=G2/CN=Developer ID Certification Authority'
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.folder = Path(self.tmp.name)
+        (self.folder / 'openssl.cnf').write_text(
+            '[req]\ndistinguished_name = dn\n[dn]\n[ca]\nbasicConstraints = critical,CA:TRUE\n'
+            'keyUsage = critical,keyCertSign,cRLSign\n[leaf]\nbasicConstraints = critical,CA:FALSE\n'
+            'keyUsage = critical,digitalSignature\nextendedKeyUsage = codeSigning\n')
+        root = '/CN=Apple Root CA/OU=Apple Certification Authority/O=Apple Inc./C=US'
+        self.authority('root', root); self.authority('impostor', root)
+        self.authority('g2', self.G2, 'root'); self.authority('forged', self.G2, 'impostor')
+        self.authority('leaf', '/CN=' + self.IDENTITY + '/OU=94HKA7L2DR/O=Fixture/C=US', 'g2', 'leaf')
+        self.authority('stranger', '/CN=' + self.IDENTITY + '/OU=94HKA7L2DR/O=Fixture/C=US')
+        self.present, self.served, self.issuer, self.roots = [], 'g2', 'leaf', ['root']
+        self.downloads, self.imports = [], []
+        patcher = patch.object(backup.developer_id.subprocess, 'run', side_effect=self.fake)
+        patcher.start(); self.addCleanup(patcher.stop)
+        patcher = patch.object(Path, 'home', return_value=self.folder)
+        patcher.start(); self.addCleanup(patcher.stop)
+
+    def openssl(self, *args):
+        REAL_RUN(['/usr/bin/openssl', *args], cwd=self.folder, capture_output=True, check=True)
+
+    def authority(self, name, subject, issuer=None, extensions='ca'):
+        common = ['-config', 'openssl.cnf', '-newkey', 'rsa:2048', '-nodes', '-keyout', name + '.key', '-subj', subject]
+        if issuer is None:
+            self.openssl('req', '-x509', *common, '-extensions', extensions, '-days', '30', '-out', name + '.pem')
+        else:
+            self.openssl('req', '-new', *common, '-out', name + '.csr')
+            self.openssl('x509', '-req', '-in', name + '.csr', '-CA', issuer + '.pem', '-CAkey', issuer + '.key',
+                         '-set_serial', '7', '-extfile', 'openssl.cnf', '-extensions', extensions, '-days', '30',
+                         '-out', name + '.pem')
+        self.openssl('x509', '-in', name + '.pem', '-outform', 'DER', '-out', name + '.cer')
+
+    def pem(self, *names):
+        return ''.join((self.folder / (name + '.pem')).read_text() for name in names)
+
+    def fake(self, args, **kwargs):
+        if args[0] == '/usr/bin/openssl':
+            return REAL_RUN(args, **kwargs)
+        if args[:5] == ['security', 'find-certificate', '-a', '-c', backup.developer_id.INTERMEDIATE]:
+            output = self.pem(*self.present)
+        elif args[:5] == ['security', 'find-certificate', '-a', '-c', self.IDENTITY]:
+            output = self.pem(self.issuer)
+        elif args[:5] == ['security', 'find-certificate', '-a', '-c', 'Apple Root CA']:
+            self.assertEqual(args[6:], [backup.developer_id.SYSTEM_ROOTS])
+            output = self.pem(*self.roots)
+        elif args[0] == '/usr/bin/curl':
+            self.assertEqual(args[args.index('--proto') + 1], '=https')
+            self.downloads.append(args[-1])
+            Path(args[args.index('--output') + 1]).write_bytes((self.folder / (self.served + '.cer')).read_bytes())
+            output = ''
+        elif args[:2] == ['security', 'import']:
+            self.assertEqual(args[3:], ['-k', str(self.folder / 'Library/Keychains/login.keychain-db'), '-t', 'cert'])
+            self.imports.append(Path(args[2]).read_bytes()); self.present.append(self.served)
+            output = ''
+        else:
+            raise AssertionError(args)
+        return subprocess.CompletedProcess(args, 0 if output or args[1] != 'find-certificate' else 44, output, '')
+
+    def test_missing_issuer_is_downloaded_checked_against_apple_root_and_imported_once(self):
+        logged = []
+        self.assertEqual(backup.developer_id.install_intermediates([self.IDENTITY], log=logged.append), ['DeveloperIDG2CA.cer'])
+        self.assertEqual(self.downloads, ['https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer'])
+        self.assertEqual(self.imports, [(self.folder / 'g2.cer').read_bytes()])
+        self.assertIn('issued by Apple Root CA', logged[0])
+        self.assertEqual(backup.developer_id.install_intermediates([self.IDENTITY], log=logged.append), [])
+        self.assertEqual((len(self.downloads), len(self.imports)), (1, 1))
+
+    def test_a_certificate_apple_root_did_not_issue_is_never_imported(self):
+        for served, roots, expected in (('forged', ['root'], 'not issued by Apple Root CA'),
+                                        ('root', ['root'], 'different certificate'),
+                                        ('g2', ['impostor'], 'not issued by Apple Root CA'),
+                                        ('g2', [], 'no Apple Root CA')):
+            with self.subTest(served=served, roots=roots):
+                self.served, self.roots = served, roots
+                with self.assertRaisesRegex(ValueError, expected):
+                    backup.developer_id.install_intermediates([self.IDENTITY], log=lambda message: None)
+        self.assertEqual(self.imports, [])
+
+    def test_an_identity_from_another_authority_is_left_alone(self):
+        self.issuer = 'stranger'
+        with self.assertRaisesRegex(ValueError, 'not an Apple Developer ID intermediate'):
+            backup.developer_id.install_intermediates([self.IDENTITY], log=lambda message: None)
+        self.assertEqual((self.downloads, self.imports), ([], []))
+
+    def test_identity_names_come_from_find_identity_output(self):
+        output = ('  1) ABC "Developer ID Application: Fixture (94HKA7L2DR)" (CSSMERR_TP_NOT_TRUSTED)\n'
+                  '  2) DEF "Developer ID Application: Other (0000000000)"\n'
+                  '  3) ABC "Developer ID Application: Fixture (94HKA7L2DR)"\n')
+        self.assertEqual(backup.developer_id.names(output), [self.IDENTITY])
 
 
 class NotaryProfile(unittest.TestCase):

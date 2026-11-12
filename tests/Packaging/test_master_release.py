@@ -1,5 +1,7 @@
+import contextlib
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -118,7 +120,9 @@ class Repository(unittest.TestCase):
     def test_refresh_without_a_pin_publishes_its_notes_as_a_fast_forward(self):
         self.stopped_patch_release()
         self.commit('fix(engine): build with the new SDK'); fixed = self.git('rev-parse', 'HEAD')
+        (self.root / 'stray').write_text('')
         refreshed = self.refresh(); refreshed.refresh_inputs()
+        self.assertTrue((self.root / 'stray').exists())
         self.assertEqual(self.git('rev-parse', 'origin/main'), refreshed.state['commit'])
         self.assertEqual(self.git('log', '-1', '--format=%s %P', 'origin/main'), 'chore(release): 1.0.1 notes ' + fixed)
 
@@ -281,6 +285,25 @@ class Repository(unittest.TestCase):
         with self.assertRaisesRegex(release.Failure, 'clean main'): runner.prepare()
         self.assertEqual(target.read_bytes(), b'other owner')
         self.assertNotIn('version', runner.state)
+
+    def test_untracked_files_never_block_and_stay_untouched(self):
+        stray = self.root / 'stray'; stray.write_bytes(b'')
+        notes = self.root / 'Resources/notes.txt'; notes.write_text('mine')
+        runner = self.runner(); runner.prepare()
+        self.assertEqual(self.git('log', '-1', '--format=%s', 'origin/main'), 'chore(release): 1.1.0')
+        self.assertNotIn('stray', self.git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD').splitlines())
+        self.assertEqual((stray.read_bytes(), notes.read_text()), (b'', 'mine'))
+        self.assertEqual(self.git('status', '--porcelain'), '?? Resources/notes.txt\n?? stray')
+        self.assertFalse((Path(runner.state['source']) / 'stray').exists())
+        self.assertFalse((Path(runner.state['source']) / 'Resources/notes.txt').exists())
+
+    def test_child_commands_run_python3_with_the_release_interpreter(self):
+        shim = self.root / 'build/release-tools/bin/python3'
+        shim.parent.mkdir(parents=True); shim.write_text('#!/bin/sh\nexec /usr/bin/python3 "$@"\n')
+        runner = self.runner()
+        self.assertEqual(runner.env['PATH'].split(os.pathsep)[0], str(runner.root / 'build/release-tools/bin'))
+        found = runner.command(['python3', '-c', 'import sys; print(sys.executable)'], capture=True)
+        self.assertEqual(found, sys.executable)
 
     def test_nonblocking_lock_prevents_overlapping_run(self):
         first = self.runner(); second = release.Release(self.root, 'minor')
@@ -464,7 +487,8 @@ class InterruptedOverlayCheck(unittest.TestCase):
 
     def test_dead_check_or_tool_allows_refresh_without_claiming_success_or_bumping(self):
         restore = [release.sys.executable, str(self.runner.root / 'scripts/signing-backup.py'), 'restore']
-        for command in (self.prior['command'], ['xcrun', 'notarytool', 'history'], restore):
+        for command in (self.prior['command'], ['xcrun', 'notarytool', 'history'], restore,
+                        ['brew', 'install', '--cask', '1password-cli']):
             with self.subTest(command=command):
                 release.save(self.runner.current, dict(self.prior, command=command))
                 with patch.object(release.os, 'kill', side_effect=ProcessLookupError), \
@@ -623,17 +647,62 @@ class Pipeline(Repository):
                 self.assertEqual(len(restores), 1 if tool else 0)
             for handle in runner.locks: handle.close()
 
-    def test_preflight_stops_before_any_build_without_the_metal_toolchain(self):
-        runner = self.runner(); runner.auth = Mock(); commands = []
-        runner.command = lambda args, **kwargs: commands.append([str(arg) for arg in args]) or ''
+    def test_preflight_downloads_a_missing_metal_toolchain_or_stops_before_any_build(self):
+        for downloads in (True, False):
+            runner = self.runner(); runner.auth = Mock(); commands = []; toolchain = {'ready': False}
+            def command(args, **kwargs):
+                commands.append([str(arg) for arg in args])
+                if commands[-1][:2] == ['xcodebuild', '-downloadComponent']:
+                    toolchain['ready'] = downloads
+                if 'find-identity' in commands[-1]:
+                    raise release.Failure('stop after the toolchain check')
+                return ''
+            runner.command = command
+            with self.subTest(downloads=downloads), \
+                    patch.object(release.platform, 'system', return_value='Darwin'), \
+                    patch.object(release.platform, 'machine', return_value='arm64'), \
+                    patch.object(release.shutil, 'which', return_value='/opt/homebrew/bin/brew'), \
+                    patch.object(release, 'metal_toolchain_ready', side_effect=lambda env: toolchain['ready']):
+                expected = 'stop after the toolchain check' if downloads else 'xcodebuild -downloadComponent MetalToolchain'
+                with self.assertRaisesRegex(release.Failure, expected):
+                    runner.preflight()
+                self.assertIn(['xcodebuild', '-downloadComponent', 'MetalToolchain'], commands)
+                self.assertEqual(any('find-identity' in args for args in commands), downloads)
+            for handle in runner.locks: handle.close()
+
+    def test_preflight_names_the_xcode_setup_it_cannot_do_itself(self):
+        runner = self.runner(); runner.auth = Mock()
+        def command(args, **kwargs):
+            if args == ['xcodebuild', '-checkFirstLaunchStatus']:
+                raise release.Failure('Command failed (69)')
+            return ''
+        runner.command = command
         with patch.object(release.platform, 'system', return_value='Darwin'), \
                 patch.object(release.platform, 'machine', return_value='arm64'), \
                 patch.object(release.shutil, 'which', return_value='/opt/homebrew/bin/brew'), \
-                patch.object(release, 'metal_toolchain_ready', return_value=False), \
-                self.assertRaisesRegex(release.Failure, 'xcodebuild -downloadComponent MetalToolchain'):
+                self.assertRaisesRegex(release.Failure, 'sudo xcodebuild -runFirstLaunch'):
             runner.preflight()
-        self.assertFalse(any('find-identity' in args for args in commands))
         for handle in runner.locks: handle.close()
+
+    def test_preflight_installs_a_missing_github_cli_before_logging_in(self):
+        for installs in (True, False):
+            runner = self.runner(); runner.auth = Mock(side_effect=release.Failure('stop after logging in'))
+            tools = {'brew': '/opt/homebrew/bin/brew'}; commands = []
+            def command(args, **kwargs):
+                commands.append([str(arg) for arg in args])
+                if commands[-1] == ['brew', 'install', 'gh'] and installs:
+                    tools['gh'] = '/opt/homebrew/bin/gh'
+                return ''
+            runner.command = command
+            with self.subTest(installs=installs), \
+                    patch.object(release.platform, 'system', return_value='Darwin'), \
+                    patch.object(release.platform, 'machine', return_value='arm64'), \
+                    patch.object(release.shutil, 'which', side_effect=tools.get):
+                with self.assertRaisesRegex(release.Failure, 'stop after logging in' if installs else 'GitHub CLI'):
+                    runner.preflight()
+                self.assertEqual(commands, [['brew', 'install', 'gh']])
+                self.assertEqual(runner.auth.called, installs)
+            for handle in runner.locks: handle.close()
 
     def test_metal_check_runs_the_compiler_not_the_placeholder_xcode_ships(self):
         with patch.object(release.subprocess, 'run', return_value=Mock(returncode=1)) as run:
@@ -672,6 +741,87 @@ class Pipeline(Repository):
                 self.assertEqual(len([args for args in commands if args[-1] == 'restore']), 0 if works or not tool else 1)
                 self.assertEqual(len(histories), 1 if works or not tool else 2)
                 self.assertTrue(all(args[args.index('--keychain-profile') + 1] == 'parc-notary' for args in histories))
+            for handle in runner.locks: handle.close()
+
+    def signing(self, keychain, tools, commands, profile=None):
+        identity = 'Developer ID Application: Fixture (' + release.TEAM + ')'
+        def command(args, **kwargs):
+            commands.append([str(arg) for arg in args])
+            if commands[-1] == ['brew', 'install', '--cask', '1password-cli']:
+                if not keychain.get('installable', True):
+                    raise release.Failure('Command failed (1)')
+                tools['op'] = '/opt/homebrew/bin/op'
+            if commands[-1][-1] == 'restore':
+                keychain.update(identity=True, valid=True, key=True)
+                if profile is not None:
+                    profile['works'] = True
+            if 'history' in commands[-1] and profile is not None and not profile['works']:
+                raise release.Failure('Command failed (69)')
+            if 'find-identity' in commands[-1] and keychain['identity']:
+                if '-v' in commands[-1]:
+                    return '1) ABC "' + identity + '"' if keychain['valid'] else '0 valid identities found'
+                return '1) ABC "' + identity + '"' + ('' if keychain['valid'] else ' (CSSMERR_TP_NOT_TRUSTED)')
+            return ''
+        return identity, command
+
+    def preflight_patches(self, home, keychain, tools):
+        return (patch.object(Path, 'home', return_value=home),
+                patch.object(release.platform, 'system', return_value='Darwin'),
+                patch.object(release.platform, 'machine', return_value='arm64'),
+                patch.object(release.shutil, 'which', side_effect=tools.get),
+                patch.object(release.sparkle, 'has_key', side_effect=lambda: keychain['key']),
+                patch.object(release, 'metal_toolchain_ready', return_value=True))
+
+    def test_preflight_installs_the_1password_cli_before_restoring(self):
+        home = Path(self.tmp.name)
+        for installable, missing in ((True, 'key'), (False, 'key'), (True, 'profile'), (False, 'profile')):
+            keychain = {'identity': True, 'valid': True, 'key': missing != 'key', 'installable': installable}
+            profile = {'works': missing != 'profile'}
+            tools = {'brew': '/opt/homebrew/bin/brew', 'gh': '/opt/homebrew/bin/gh'}; commands = []
+            runner = self.runner(); runner.auth = Mock()
+            identity, runner.command = self.signing(keychain, tools, commands, profile)
+            with self.subTest(installable=installable, missing=missing), contextlib.ExitStack() as stack:
+                for patcher in self.preflight_patches(home, keychain, tools):
+                    stack.enter_context(patcher)
+                if installable:
+                    runner.preflight()
+                    self.assertEqual(runner.env['PARC_SIGN_IDENTITY'], identity)
+                else:
+                    expected = "Sparkle's update signing key" if missing == 'key' else 'notarytool profile parc-notary'
+                    with self.assertRaisesRegex(release.Failure, expected):
+                        runner.preflight()
+                install = commands.index(['brew', 'install', '--cask', '1password-cli'])
+                restores = [index for index, args in enumerate(commands) if args[-1] == 'restore']
+                self.assertEqual(len(restores), 1 if installable else 0)
+                self.assertTrue(all(index > install for index in restores))
+            for handle in runner.locks: handle.close()
+
+    def test_preflight_installs_a_missing_developer_id_intermediate(self):
+        home = Path(self.tmp.name)
+        for completes, op in ((True, None), (False, '/opt/homebrew/bin/op'), (False, None)):
+            keychain = {'identity': True, 'valid': False, 'key': True, 'installable': False}
+            tools = {'brew': '/opt/homebrew/bin/brew', 'gh': '/opt/homebrew/bin/gh', 'op': op}; commands = []
+            runner = self.runner(); runner.auth = Mock()
+            identity, runner.command = self.signing(keychain, tools, commands)
+            installs = []
+            def install(identities, log):
+                installs.append(identities)
+                if not completes:
+                    raise ValueError('Certificate operation failed: curl')
+                keychain['valid'] = True
+                return ['DeveloperIDG2CA.cer']
+            with self.subTest(completes=completes, op=op), contextlib.ExitStack() as stack:
+                for patcher in self.preflight_patches(home, keychain, tools):
+                    stack.enter_context(patcher)
+                stack.enter_context(patch.object(release.developer_id, 'install_intermediates', side_effect=install))
+                if completes or op:
+                    runner.preflight()
+                    self.assertEqual(runner.env['PARC_SIGN_IDENTITY'], identity)
+                else:
+                    with self.assertRaisesRegex(release.Failure, 'unavailable or expired'):
+                        runner.preflight()
+                self.assertEqual(installs, [[identity]])
+                self.assertEqual(len([args for args in commands if args[-1] == 'restore']), 1 if op and not completes else 0)
             for handle in runner.locks: handle.close()
 
     def test_tap_stage_hands_the_appcast_to_the_publisher(self):
@@ -747,6 +897,52 @@ class Install(unittest.TestCase):
             release_install.install(self.package,'v1.1.0','commit',self.receipts,self.app)
         self.assertEqual((self.app / 'code').read_text(),'old')
         self.check.record.assert_not_called()
+
+
+class Launcher(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name); (self.base / 'scripts').mkdir()
+        shutil.copy2(Path(release.__file__).with_name('release.sh'), self.base / 'scripts/release.sh')
+        self.path, self.brew = self.base / 'path', self.base / 'brew'
+        self.python(self.path / 'python3', (3, 9, 6))
+
+    def python(self, path, version):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('#!/bin/sh\nif [ "$1" = -c ]; then exec "' + sys.executable + '" -c '
+                        '"import sys; sys.version_info = ' + repr(version) + '; exec(sys.argv[1])" "$2"; fi\n'
+                        'echo "$0 $*"\n')
+        path.chmod(0o755)
+
+    def launch(self):
+        return subprocess.run(['/bin/bash', str(self.base / 'scripts/release.sh'), '--type', 'patch'],
+                              env={'PATH': str(self.path) + ':/usr/bin:/bin', 'HOMEBREW_PREFIX': str(self.brew)},
+                              capture_output=True, text=True)
+
+    def test_finds_python_3_12_or_later_when_python3_is_older(self):
+        for suitable in (self.brew / 'bin/python3.13', self.brew / 'opt/python@3.13/libexec/bin/python3'):
+            with self.subTest(suitable=suitable):
+                shutil.rmtree(self.brew, ignore_errors=True)
+                self.python(self.brew / 'bin/python3.11', (3, 11, 9)); self.python(suitable, (3, 13, 1))
+                launched = self.launch()
+                self.assertEqual((launched.returncode, launched.stdout.strip()),
+                                 (0, str(suitable) + ' ' + str(self.base / 'scripts/release.py') + ' --type patch'))
+
+    def test_prefers_a_suitable_python3_on_path(self):
+        self.python(self.path / 'python3', (3, 12, 0)); self.python(self.brew / 'bin/python3.13', (3, 13, 1))
+        self.assertEqual(self.launch().stdout.split()[0], str(self.path / 'python3'))
+
+    def test_stops_clearly_without_a_suitable_interpreter(self):
+        self.python(self.brew / 'bin/python3.11', (3, 11, 9))
+        launched = self.launch()
+        self.assertEqual((launched.returncode, launched.stdout), (1, ''))
+        self.assertIn('need Python 3.12 or later', launched.stderr)
+
+    def test_release_py_refuses_an_older_interpreter_before_doing_anything(self):
+        with patch.object(release.sys, 'version_info', (3, 9, 6)), patch.object(release, 'Release') as runner, \
+                self.assertRaisesRegex(SystemExit, 'bash scripts/release.sh'):
+            release.main()
+        runner.assert_not_called()
 
 
 class RemoteTransactions(unittest.TestCase):

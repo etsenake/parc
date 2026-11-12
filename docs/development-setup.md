@@ -35,7 +35,8 @@ directory.
 - Install Apple's Metal toolchain once with
   `xcodebuild -downloadComponent MetalToolchain` (about 840 MB). Xcode ships
   only a placeholder `metal` command; the engine build fails without the real
-  toolchain, and `xcrun metal --version` succeeds once it is installed.
+  toolchain, and `xcrun metal --version` succeeds once it is installed. The
+  production release and NAS setup download it themselves when it is missing.
 - Install Python 3.12 or later and ensure `python3` selects it. The engine scripts
   require at least 3.11; archive tooling also uses modern tar extraction
   filters. **Do not use macOS's Python 3.9.6** for
@@ -43,6 +44,8 @@ directory.
   `PATH`; otherwise replace it with the installed interpreter's absolute path
   (for example `/opt/homebrew/bin/python3.13`). Git must also be available.
   Check `python3 --version` and `git --version` before starting.
+  `scripts/release.sh` finds a Homebrew Python 3.12+ itself when `python3` is
+  older.
   The checked-in orchestration scripts use the Python standard library. Xcode
   supplies the native compilers and packaging/signing tools; the pinned source
   bootstrap fetches its own depot_tools, Chromium dependencies and build tools.
