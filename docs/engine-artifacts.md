@@ -79,8 +79,8 @@ prompt.
    the room is certain: macOS's available space for important use (which
    includes space it frees on demand, such as Time Machine local snapshots)
    plus only the storage the older copies on that disk own outright, not
-   blocks shared with APFS clones or files with another hard link. Otherwise
-   nothing is removed. A connection lost mid-unpack after such a deletion leaves no engine
+   blocks shared with APFS clones or files with another hard link; a disk that
+   can't report that ownership counts nothing. Otherwise nothing is removed. A connection lost mid-unpack after such a deletion leaves no engine
    copy until the next run unpacks again. Folders without a Parc receipt are
    never touched.
 4. The local workspace as it is.

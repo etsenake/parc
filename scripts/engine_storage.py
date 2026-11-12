@@ -186,7 +186,7 @@ def private_bytes(path: str, allocated: int) -> int:
     if LIBC.getattrlist(os.fsencode(path), ctypes.byref(request), answer, len(answer), NO_FOLLOW_EXTENDED) != 0:
         return 0
     if not struct.unpack_from("5I", answer, 4)[4] & PRIVATE_SIZE:
-        return allocated
+        return 0
     return min(allocated, struct.unpack_from("q", answer, 24)[0])
 
 

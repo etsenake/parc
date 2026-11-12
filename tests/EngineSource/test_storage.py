@@ -297,6 +297,18 @@ class StorageTests(unittest.TestCase):
         self.assertGreaterEqual(freed, 1 << 20)
         self.assertLess(freed, (1 << 20) + (1 << 18))
 
+    def test_a_disk_that_cannot_report_ownership_never_authorizes_deleting(self):
+        self.receipt(self.store.local, overlay="0" * 64)
+        (self.store.local / "objects.bin").write_bytes(storage.os.urandom(1 << 20))
+        self.snapshot(size=1 << 30)
+        need = int((1 << 30) * 1.05 + (5 << 30))
+        with patch.object(storage, "LIBC", SimpleNamespace(getattrlist=lambda *args: 0)), \
+                patch.object(storage, "available_bytes", return_value=need - (1 << 19)), \
+                patch.object(self.store, "engine_tool", side_effect=AssertionError("touched the snapshot")):
+            self.assertFalse(self.store.restore(self.store.snapshot()))
+        self.assertTrue((self.store.local / "objects.bin").is_file())
+        self.assertTrue(any("nothing was removed" in line for line in self.logs))
+
     def test_free_space_counts_what_macos_reclaims_on_demand(self):
         self.assertGreaterEqual(storage.available_bytes(self.root), storage.shutil.disk_usage(self.root).free)
 
