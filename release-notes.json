@@ -10,6 +10,18 @@
           "scope": "passwords",
           "summary": "Keep passkey sheets, card-name fixes, extension panels and held tabs behaving on the new Chromium",
           "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "engine",
+          "summary": "Let reconfigure and retarget trust the receipt's fingerprint of the old build settings instead of rewriting them with today's rules",
+          "breaking": false
+        },
+        {
+          "type": "fix",
+          "scope": "engine",
+          "summary": "Bring Chromium 157's security fixes to Parc by fitting Parc's engine code to Chromium's new APIs",
+          "breaking": false
         }
       ]
     },
