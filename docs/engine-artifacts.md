@@ -27,9 +27,9 @@ as a fallback; delete it once the drive works. macOS ignores ownership on the
 drive, so different user names on the Macs don't matter. `status` reports
 whether the linked engine is on an external drive and registered at its path;
 `eject` refuses while an engine operation runs and otherwise ejects the drive.
-The engine compiles against its own SDK copy on the drive (see
-[Engine](../Engine/README.md#build-configuration)), so another Mac needs no Xcode
-date matching to build incrementally.
+The engine builds with its own Xcode folder on the drive (see
+[Engine](../Engine/README.md#build-configuration)), so another Mac builds
+incrementally whatever Xcode it has installed.
 
 ## Restore the saved artifacts
 
@@ -91,7 +91,7 @@ Relocation invalidates the old generated build graph: adoption records `synced`
 and requires normal generation before another build. No source or binary text
 is rewritten, and no build is launched by restore. See
 [engine commands](../Engine/README.md) before making engine changes. A different
-workspace depth or Xcode installation may invalidate generated dependencies;
+workspace depth may invalidate generated dependencies;
 this snapshot preserves reusable output but does not promise a zero-work build.
 
 Fetch resumes `.partial` downloads and reuses verified parts. It refuses to

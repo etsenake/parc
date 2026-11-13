@@ -29,8 +29,10 @@ import tempfile
 REPO = Path(__file__).resolve().parents[1]
 LOCK_FILE = REPO / "Engine/source-lock.json"
 MARKER = ".parc-engine-source.json"
-SDK_COPY = "build/mac_files/parc_sdk/MacOSX.sdk"
-SDK_LINK = "parc_sdk/MacOSX.sdk"
+XCODE_FOLDER = "build/mac_files/xcode_binaries"
+XCODE_DEVELOPER = "Contents/Developer"
+XCODE_TOOLCHAIN = XCODE_DEVELOPER + "/Toolchains/XcodeDefault.xctoolchain/usr/bin"
+XCODE_TOOLS = ("gperf",)
 SHIPPING_MARKER = ".parc-shipping-build.json"
 SHIPPING_CONFIGURATION = "ParcDistribution_GN_arm64"
 OVERLAY_RECORD_LIMIT = 64 * 1024 * 1024
@@ -70,16 +72,16 @@ def gn_arguments(defines: str) -> bytes:
     return ("\n".join(k + "=" + v for k, v in sorted(pairs)) + "\n").encode()
 
 
-def uses_sdk_copy(defines: str) -> bool:
+def engine_sdk_version(defines: str) -> str | None:
     pairs = dict(line.split("=", 1) for line in gn_arguments(defines).decode().splitlines())
-    return pairs.get("mac_sdk_path") == json.dumps("//" + SDK_COPY)
+    if pairs.get("use_system_xcode") != "false":
+        return None
+    if "mac_sdk_official_version" not in pairs:
+        raise Refusal("The engine's own Xcode folder needs mac_sdk_official_version")
+    return json.loads(pairs["mac_sdk_official_version"])
 
 
-def engine_arguments(lock: dict, defines: str, configuration: str | None = None) -> bytes:
-    if uses_sdk_copy(defines):
-        output = configuration or lock["build"]["configuration"]
-        defines = defines.replace("mac_sdk_path=" + json.dumps("//" + SDK_COPY),
-                                  "mac_sdk_path=" + json.dumps("//out/" + output + "/" + SDK_LINK))
+def engine_arguments(lock: dict, defines: str) -> bytes:
     roots = json.dumps(lock["build"]["targets"], separators=(",", ":"))
     return gn_arguments(defines) + ("root_extra_deps=" + roots + "\n").encode()
 
@@ -336,7 +338,7 @@ def shipping_command_plan(workspace: Path, jobs: int, lock: dict | None = None) 
 
 
 def shipping_arguments(workspace: Path, env: dict, lock: dict | None = None) -> bytes:
-    return engine_arguments(lock or load_lock()[0], env["GN_DEFINES"], SHIPPING_CONFIGURATION)
+    return engine_arguments(lock or load_lock()[0], env["GN_DEFINES"])
 
 
 def read_shipping_marker(workspace: Path, lock_sha: str, state: dict) -> dict:
@@ -384,7 +386,7 @@ def shipping_build(workspace: Path, lock: dict, lock_sha: str, symbol_level: int
         applied = recorded_overlay(workspace, state)
         if not applied:
             raise Refusal("Shipping requires the reviewed native source overlay")
-        ensure_sdk(workspace, lock)
+        ensure_xcode(workspace, lock)
         output = internal_path(locations(workspace)["chromium"] / "out" / SHIPPING_CONFIGURATION, workspace)
         receipt_path = internal_path(workspace / SHIPPING_MARKER, workspace)
         arguments = shipping_arguments(workspace, env, lock)
@@ -401,7 +403,6 @@ def shipping_build(workspace: Path, lock: dict, lock_sha: str, symbol_level: int
         else:
             output.mkdir()
             (output / "args.gn").write_bytes(arguments)
-        link_sdk(workspace, lock, output)
         receipt = {"schema_version": 1, "workspace": str(workspace), "lock_sha256": lock_sha,
                    "configuration": SHIPPING_CONFIGURATION, "gn_defines": SHIPPING_DEFINES,
                    "symbol_level": symbol_level, "args_sha256": digest(arguments),
@@ -583,44 +584,48 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
                 "reserve": reserve, "minimum_free_bytes": report.get("minimum_free_bytes")}
 
 
-def ensure_sdk(workspace: Path, lock: dict) -> Path | None:
-    if not uses_sdk_copy(lock["build"]["gn_defines"]):
+def ensure_xcode(workspace: Path, lock: dict) -> Path | None:
+    version = engine_sdk_version(lock["build"]["gn_defines"])
+    if version is None:
         return None
-    target = internal_path(locations(workspace)["chromium"] / SDK_COPY, workspace)
-    if (target / "SDKSettings.json").is_file():
+    target = internal_path(locations(workspace)["chromium"] / XCODE_FOLDER, workspace)
+    sdk = XCODE_DEVELOPER + f"/Platforms/MacOSX.platform/Developer/SDKs/MacOSX{version}.sdk"
+    needed = ["Contents/version.plist", sdk + "/SDKSettings.json", *(XCODE_TOOLCHAIN + "/" + tool for tool in XCODE_TOOLS)]
+    if all((target / item).is_file() for item in needed):
         if os.access(target, os.W_OK):
             subprocess.run(["/bin/chmod", "-R", "a-w", str(target)], check=True)
         return target
+    if target.exists() or target.is_symlink():
+        raise Refusal(f"The engine's Xcode folder is incomplete; remove it so it can be copied again: {target}")
+    selected = subprocess.run(["/usr/bin/xcode-select", "-p"], capture_output=True, text=True, timeout=120)
     shown = subprocess.run(["/usr/bin/xcrun", "--sdk", "macosx", "--show-sdk-path"], capture_output=True, text=True,
                            timeout=120)
+    developer = Path(selected.stdout.strip()) if selected.returncode == 0 else None
     source = Path(shown.stdout.strip()).resolve() if shown.returncode == 0 else None
-    if source is None or not (source / "SDKSettings.json").is_file():
-        raise Refusal("No installed macOS SDK to copy into the engine; install Xcode")
+    if (developer is None or not (developer.parent / "version.plist").is_file()
+            or source is None or not (source / "SDKSettings.json").is_file()):
+        raise Refusal("No installed Xcode to copy into the engine; install Xcode")
+    tools = developer.parent / XCODE_TOOLCHAIN.removeprefix("Contents/")
+    missing = [tool for tool in XCODE_TOOLS if not (tools / tool).is_file()]
+    if missing:
+        raise Refusal(f"The installed Xcode lacks {', '.join(missing)}; install the full Xcode")
+    found = plistlib.loads((source / "System/Library/CoreServices/SystemVersion.plist").read_bytes())["ProductVersion"]
+    if found != version:
+        raise Refusal(f"The engine pins macOS SDK {version} but the installed Xcode has {found}; install Xcode with SDK {version}")
     staging = internal_path(target.with_name(target.name + ".copying"), workspace)
-    shutil.rmtree(staging, ignore_errors=True)
-    staging.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["/usr/bin/ditto", str(source), str(staging)], check=True)
+    if staging.exists():
+        subprocess.run(["/bin/chmod", "-R", "u+w", str(staging)], check=True)
+        shutil.rmtree(staging)
+    (staging / XCODE_TOOLCHAIN).mkdir(parents=True)
+    shutil.copy2(developer.parent / "version.plist", staging / "Contents/version.plist")
+    subprocess.run(["/usr/bin/ditto", str(source), str(staging / sdk)], check=True)
+    for tool in XCODE_TOOLS:
+        shutil.copy2(tools / tool, staging / XCODE_TOOLCHAIN / tool)
     subprocess.run(["/bin/chmod", "-R", "a-w", str(staging)], check=True)
     staging.rename(target)
-    print(f"engine-source: copied the macOS SDK from {source} into the engine", file=sys.stderr)
+    print(f"engine-source: copied Xcode's version, macOS SDK {version} and build tools from {developer} into the engine",
+          file=sys.stderr)
     return target
-
-
-def link_sdk(workspace: Path, lock: dict, output: Path) -> None:
-    if not uses_sdk_copy(lock["build"]["gn_defines"]):
-        return
-    copy = internal_path(locations(workspace)["chromium"] / SDK_COPY, workspace)
-    folder = internal_path(output / Path(SDK_LINK).parent, workspace)
-    link = folder / Path(SDK_LINK).name
-    wanted = os.path.relpath(copy, folder)
-    if link.is_symlink():
-        if os.readlink(link) == wanted:
-            return
-        link.unlink()
-    elif link.exists():
-        raise Refusal(f"Expected the engine SDK link, found something else: {link}")
-    folder.mkdir(parents=True, exist_ok=True)
-    link.symlink_to(wanted)
 
 
 def reset_source(workspace: Path, lock: dict, lock_sha: str) -> dict:
@@ -1160,7 +1165,7 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                 plan["build"][-1]["argv"].extend(t.removeprefix('//') for t in applied["build_targets"])
             if not applied:
                 raise Refusal("Direct generation requires the reviewed Parc overlay")
-            ensure_sdk(workspace, lock)
+            ensure_xcode(workspace, lock)
             if state["phase"] in {"synced", "generation-failed"}:
                 command = plan["build"][0]
                 run(command["argv"], Path(command["cwd"]), env)
@@ -1169,7 +1174,6 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                 command = plan["build"][1]
                 output = internal_path(locations(workspace)["chromium"] / "out" / lock["build"]["configuration"], workspace)
                 output.mkdir(parents=True, exist_ok=True)
-                link_sdk(workspace, lock, output)
                 arguments = engine_arguments(lock, env["GN_DEFINES"])
                 write_source(internal_path(output / "args.gn", workspace), arguments, 0o644)
                 state.update(engine_mode="direct", build_targets=lock["build"]["targets"], args_sha256=digest(arguments))
