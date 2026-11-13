@@ -41,8 +41,8 @@ the pinned Chromium checkout (`--source`, default the shared engine source, or
   - `EXECUTABLE_PATH`, `BUNDLE_PATH`, `BUNDLE_ID`, `BROWSER_PID`,
     `LOG_FILE_PATH`, `OS_VERSION` and `USER_HOMEDIR_AS_LITERAL`;
   - the canonical `DARWIN_USER_DIR`, `_CACHE_DIR` and `_TEMP_DIR`;
-  - `DISABLE_METAL_SHADER_CACHE=FALSE` and `RESTRICT_GPU_DARWIN_USER_DIRS=TRUE`
-    (the feature's default).
+  - `DISABLE_METAL_SHADER_CACHE=FALSE`, `RESTRICT_GPU_DARWIN_USER_DIRS=TRUE` and
+    `WEBNN_COMPILER_PROCESS=TRUE` (the features' Mac defaults).
 
   Logging is on, as with `--enable-sandbox-logging`, so denials reach the log.
   If outbound network still works, the run is a setup failure: the profile

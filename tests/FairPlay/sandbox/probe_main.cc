@@ -368,6 +368,7 @@ std::vector<std::string> GpuSandboxParameters(const std::string& executable, con
       "DARWIN_USER_TEMP_DIR", DarwinDir(_CS_DARWIN_USER_TEMP_DIR),
       "DISABLE_METAL_SHADER_CACHE", "FALSE",
       "RESTRICT_GPU_DARWIN_USER_DIRS", "TRUE",
+      "WEBNN_COMPILER_PROCESS", "TRUE",
   };
 }
 
