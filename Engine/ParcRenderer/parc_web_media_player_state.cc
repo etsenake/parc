@@ -15,6 +15,7 @@
 #include "media/base/parc_pipeline_extension.h"
 #include "media/base/renderer_factory.h"
 #include "media/base/renderer_factory_selector.h"
+#include "media/filters/pipeline_controller.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_audio_source_provider_impl.h"
 #include "third_party/blink/public/platform/web_media_player.h"

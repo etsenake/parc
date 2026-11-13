@@ -23,7 +23,6 @@ class MediaKeys;
 class ScriptState;
 template <typename IDLResolvedType>
 class ScriptPromiseResolver;
-class Visitor;
 struct WebMediaKeySystemConfiguration;
 
 void ParcApplyInitDataTypeRules(const MediaKeySystemConfiguration& config,

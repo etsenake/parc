@@ -343,6 +343,7 @@ class EngineSourceTests(unittest.TestCase):
             report = engine.reconfigure(self.workspace, self.lock, self.sha, previous_path)
         self.assertEqual(verify.call_args.args[1]["build"]["gn_defines"],
                          json.loads(previous_path.read_text())["build"]["gn_defines"])
+        self.assertTrue(verify.call_args.kwargs["previous"])
         self.assertEqual((report["previous_lock_sha256"], report["lock_sha256"], report["phase"]),
                          (previous_sha, self.sha, "synced"))
         self.assertIsNone(report["shipping"])
@@ -363,6 +364,24 @@ class EngineSourceTests(unittest.TestCase):
         self.assertIn("disable_fieldtrial_testing_config=true", calls[1][2]["GN_DEFINES"].split())
         self.assertTrue(calls[2][0][0].endswith("/autoninja"))
         self.assertEqual(engine.read_marker(self.workspace, self.sha)["phase"], "built")
+
+    def test_the_previous_lock_check_trusts_the_receipt_not_todays_argument_rules(self):
+        state = self.owned_with_lock(self.sha, phase="generated")
+        output = self.workspace / "chromium/src/out" / self.lock["build"]["configuration"]
+        output.mkdir(parents=True)
+        written = engine.engine_arguments(self.lock, self.env["GN_DEFINES"]) + b"written_by_an_earlier_tool=true\n"
+        (output / "args.gn").write_bytes(written)
+        (self.workspace / "chromium/.gclient").write_text(engine.gclient_text(self.lock))
+        state.update(engine_mode="direct", build_targets=self.lock["build"]["targets"],
+                     args_sha256=engine.digest(written))
+        with patch.object(engine, "verify_repository"), patch.object(engine, "recorded_overlay"), \
+                patch.object(engine, "tree_fingerprint", return_value="recorded-source"):
+            engine.verify_workspace(self.workspace, self.lock, state, self.env, previous=True)
+            with self.assertRaisesRegex(engine.Refusal, "differ from their receipt"):
+                engine.verify_workspace(self.workspace, self.lock, state, self.env)
+            (output / "args.gn").write_bytes(written + b"edited_after_generation=true\n")
+            with self.assertRaisesRegex(engine.Refusal, "differ from their receipt"):
+                engine.verify_workspace(self.workspace, self.lock, state, self.env, previous=True)
 
     def test_reconfigure_adopts_changed_disk_floors(self):
         previous_path, previous_sha = self.previous_lock()
