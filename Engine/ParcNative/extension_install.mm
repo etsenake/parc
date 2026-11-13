@@ -280,7 +280,7 @@ class NativeExtensionInstallService::Request final
         cancelLabel:base::SysUTF16ToNSString(prompt_->GetAbortButtonLabel())
         checkboxLabel:
             withhold_ ? base::SysUTF16ToNSString(l10n_util::GetStringUTF16(
-                            IDS_EXTENSIONS_CONTEXT_MENU_PAGE_ACCESS_RUN_ON_ALL_SITES_V2))
+                            IDS_EXTENSION_PROMPT_GRANT_PERMISSIONS_CHECKBOX))
                       : nil
         validate:^BOOL {
           auto s = weak.lock();

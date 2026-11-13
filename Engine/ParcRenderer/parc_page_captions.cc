@@ -291,11 +291,6 @@ bool IsParcPictureInPictureCaptions(const Element& element) {
   return !boxes.empty() && boxes.Contains(const_cast<Element*>(&element));
 }
 
-bool IsParcPictureInPictureCaptions(const Node* node) {
-  const auto* element = DynamicTo<Element>(node);
-  return element && IsParcPictureInPictureCaptions(*element);
-}
-
 ParcPageCaptions::ParcPageCaptions(HTMLVideoElement& video) : video_(video) {}
 
 bool ParcPageCaptions::VideoShowsCues() const {

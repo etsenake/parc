@@ -6,7 +6,6 @@
 #include "base/functional/bind.h"
 #include "base/task/sequenced_task_runner.h"
 #include "components/global_media_controls/public/media_session_item_producer.h"
-#include "components/media_router/browser/media_router.h"
 #include "components/media_router/browser/media_router_factory.h"
 #include "components/media_router/browser/presentation/start_presentation_context.h"
 #include "components/sessions/content/session_tab_helper.h"

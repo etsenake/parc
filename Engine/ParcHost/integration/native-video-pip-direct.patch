@@ -266,14 +266,15 @@
  #include "third_party/blink/renderer/core/html_names.h"
  #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
  #include "third_party/blink/renderer/core/layout/fragmentation_utils.h"
-@@ -430,7 +431,8 @@
+@@ -430,7 +431,9 @@
    PaintController& controller = context.GetPaintController();
 -
 +
    std::optional<ScopedEffectivelyInvisible> effectively_invisible;
 -  if (PaintedOutputInvisible(object.Style())) {
++  const auto* element = DynamicTo<Element>(object.GetNode());
 +  if (PaintedOutputInvisible(object.Style()) &&
-+      !IsParcPictureInPictureCaptions(object.GetNode())) {
++      !(element && IsParcPictureInPictureCaptions(*element))) {
      effectively_invisible.emplace(
          controller,
          ScopedEffectivelyInvisible::Visibility::kEffectivelyInvisible);

@@ -20,7 +20,6 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "content/public/browser/page_navigator.h"
-#include "content/public/browser/parc_native_links.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/weak_document_ptr.h"
@@ -702,7 +701,7 @@ class MatchedLinkOperation final : public content::WebContentsObserver,
     page->SetUserData(&kRoutedPageKey, std::make_unique<RoutedPage>(route_, *destination, params_.native_route_background));
     const auto page_lease = page->GetWeakPtr();
     if (source_->source_ && source_->document_.AsRenderFrameHostIfValid())
-      content::NotifyNativeDeferredOpenURL(source_->source_.get(), page, source_->document_, params_);
+      source_->source_->NotifyNativeDeferredOpenURL(page, source_->document_, params_);
 
     if (!page_lease || !destination ||
         destination->GetTabStripModel()->GetIndexOfWebContents(page_lease.get()) == TabStripModel::kNoTab) {

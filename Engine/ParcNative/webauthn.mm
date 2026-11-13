@@ -70,7 +70,6 @@
 #include "ui/views/layout/layout_types.h"
 #include "ui/views/style/typography.h"
 #include "ui/views/style/typography_provider.h"
-#include "ui/views/view.h"
 #import "window_security_reservation.h"
 
 namespace parc {
@@ -732,15 +731,16 @@ class WindowLease final : public NativeAuthenticatorRequestWindow {
   base::WeakPtrFactory<WindowLease> weak_factory_{this};
 };
 
-class NativeAmbientSigninBubble final : public views::BubbleDialogDelegate {
+class NativeAmbientSigninBubble final : public views::BubbleDialogDelegateView {
+  METADATA_HEADER(NativeAmbientSigninBubble, views::BubbleDialogDelegateView)
  public:
   NativeAmbientSigninBubble(
       gfx::NativeView parent, const gfx::Rect& anchor,
       const std::string& relying_party_id,
       base::RepeatingCallback<bool()> validation,
       base::RepeatingCallback<void(size_t)> selected)
-      : BubbleDialogDelegate(views::BubbleAnchor(),
-                             views::BubbleBorder::Arrow::TOP_RIGHT),
+      : BubbleDialogDelegateView(views::BubbleAnchor(),
+                                 views::BubbleBorder::Arrow::TOP_RIGHT),
         validation_(std::move(validation)), selected_(std::move(selected)) {
     set_parent_window(parent);
     SetAnchorRect(anchor);
@@ -764,12 +764,10 @@ class NativeAmbientSigninBubble final : public views::BubbleDialogDelegate {
             views::TypographyProvider::Get().GetFont(
                 views::style::CONTEXT_DIALOG_TITLE,
                 views::style::STYLE_PRIMARY))));
-    auto contents = std::make_unique<views::View>();
     auto layout = std::make_unique<views::BoxLayout>(
         views::BoxLayout::Orientation::kVertical);
     layout->set_cross_axis_alignment(views::LayoutAlignment::kStretch);
-    contents->SetLayoutManager(std::move(layout));
-    contents_ = SetContentsView(std::move(contents));
+    SetLayoutManager(std::move(layout));
   }
   base::WeakPtr<NativeAmbientSigninBubble> GetWeakPtr() {
     return weak_factory_.GetWeakPtr();
@@ -789,7 +787,7 @@ class NativeAmbientSigninBubble final : public views::BubbleDialogDelegate {
                     : vector_icons::kSubmenuArrowChromeRefreshOldIcon,
                 ui::kColorIcon, 20));
       }
-      contents_->AddChildView(std::make_unique<HoverButton>(
+      AddChildView(std::make_unique<HoverButton>(
           base::BindRepeating(
               [](base::WeakPtr<NativeAmbientSigninBubble> self, size_t index,
                  const ui::Event&) {
@@ -815,9 +813,9 @@ class NativeAmbientSigninBubble final : public views::BubbleDialogDelegate {
           weak_factory_.GetWeakPtr(), 0));
     }
     set_fixed_width(320);
-    widget_ = views::BubbleDialogDelegate::CreateBubble(
-        this, base::BindOnce(&NativeAmbientSigninBubble::Closed,
-                             weak_factory_.GetWeakPtr()));
+    widget_ = views::BubbleDialogDelegate::CreateBubbleDeprecated(
+                  this, views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET)
+                  ->GetWeakPtr();
     widget_->Show();
   }
   void Disconnect() {
@@ -826,9 +824,6 @@ class NativeAmbientSigninBubble final : public views::BubbleDialogDelegate {
     if (widget_) widget_->Close();
   }
  private:
-  void Closed(views::Widget::ClosedReason) {
-    base::SingleThreadTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE, this);
-  }
   void SelectCredential(size_t index) {
     const auto validation = validation_;
     if (!validation || !validation.Run()) return;
@@ -838,10 +833,11 @@ class NativeAmbientSigninBubble final : public views::BubbleDialogDelegate {
   }
   base::RepeatingCallback<bool()> validation_;
   base::RepeatingCallback<void(size_t)> selected_;
-  raw_ptr<views::View> contents_ = nullptr;
-  std::unique_ptr<views::Widget> widget_;
+  base::WeakPtr<views::Widget> widget_;
   base::WeakPtrFactory<NativeAmbientSigninBubble> weak_factory_{this};
 };
+BEGIN_METADATA(NativeAmbientSigninBubble)
+END_METADATA
 
 class Ambient final : public content::WebContentsObserver,
                       public AuthenticatorRequestDialogModel::Observer {

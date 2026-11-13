@@ -212,7 +212,7 @@
 +
 --- a/components/webdata/common/web_database.cc
 +++ b/components/webdata/common/web_database.cc
-@@ -111,6 +111,28 @@
+@@ -111,6 +111,30 @@
    }
  }
 -
@@ -221,9 +221,11 @@
 +  if (!db_.is_open())
 +    return false;
 +  if (db_.HasActiveTransactions()) {
-+    if (use_scoped_transaction_)
++    // Never commit or roll back another active scoped caller, or a nested
++    // transaction. The legacy backend owns exactly one outer transaction.
++    if (use_scoped_transaction_ || db_.transaction_nesting() != 1)
 +      return false;
-+    if (!db_.CommitTransactionDeprecated() || db_.HasActiveTransactions()) {
++    if (!db_.CommitTransactionDeprecated()) {
 +      db_.BeginTransactionDeprecated();
 +      return false;
 +    }
