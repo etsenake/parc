@@ -18,6 +18,10 @@ Finish assigned work first; explicit deferrals remain deferred.
 - **What's New address leakage:** native History can record the bundled file URL,
   and Copy URL can expose it while a new typed destination is loading. Add exact
   engine history/copy guards. [Software updates](software-update.md).
+- **Swipe in windows that aren't in focus:** Back/Forward swipes do nothing over
+  a Parc window while another app or Parc window is frontmost, after focus moves
+  navigate the page under the pointer. Drop Parc's own focus requirements.
+  [Swipe navigation](swipe-navigation.md#windows-that-arent-in-focus).
 
 ## Sidebar accessibility and presentation
 
@@ -119,6 +123,22 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 - Download arrival needs a Reduce Motion path. [Downloads](download-library.md).
 - Extension context-menu side-panel toggle is unavailable even though toolbar
   side-panel presentation works. [Extension interaction](extensions-interaction.md).
+
+## Swipe navigation and window frame
+
+Requested by Josh and planned, not started. Visual work in each item follows the
+[interface review](visual-review.md) workflow, renders first.
+
+- Replace Chromium's swipe recognizer and grey edge arrow with a Parc-owned
+  gesture and a Dia-inspired capsule, commit haptic and confirmation wash, then
+  retire the `native-history-swipe-direct` patch. Needs a Dia reference recording.
+  [Swipe navigation](swipe-navigation.md#planned-a-parc-owned-gesture).
+- Swipe and hold opens that direction's history list at the pane edge; vertical
+  finger movement picks an entry and lifting navigates to it, Back and Forward.
+  [Swipe navigation](swipe-navigation.md#planned-swipe-and-hold-for-history).
+- Let people thin the window frame from today's 10 points to a 3-point floor,
+  never invisible, through a playful, direct-manipulation control. A Parc addition.
+  [Window frame](window-frame.md#planned-adjustable-thickness).
 
 ## Peek
 

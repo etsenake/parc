@@ -18,8 +18,9 @@ Git and release notes retain history.
 
 ## Everyday browsing
 
-- [Navigation](navigation.md), [command bar](command-bar.md),
-  [keyboard navigation](keyboard-navigation.md), [tab switcher](tab-switcher.md).
+- [Navigation](navigation.md), [swipe navigation](swipe-navigation.md),
+  [command bar](command-bar.md), [keyboard navigation](keyboard-navigation.md),
+  [tab switcher](tab-switcher.md).
 - [Saved tabs and Favorites](saved-tabs.md), [closed-tab restoration](reopen-closed-tabs.md),
   [folder commands](folder-commands.md), [folder moves](folder-moves.md).
 - [Split groups](split-groups.md), [split navigation](split-navigation.md),
@@ -32,7 +33,8 @@ Git and release notes retain history.
 ## Windows, sidebar and appearance
 
 - [Window lifecycle](windows-lifecycle.md), [activation](window-activation.md),
-  [window appearance](window-appearance.md), [page composition](page-compositing.md).
+  [window appearance](window-appearance.md), [window frame](window-frame.md),
+  [page composition](page-compositing.md).
 - [Sidebar motion](sidebar-motion.md), [resizing](sidebar-resize.md),
   [selection](sidebar-selection.md), [previews](sidebar-previews.md),
   [accessibility](sidebar-accessibility.md).

@@ -115,16 +115,10 @@ rows do not add another loading spinner.
 
 ## History swipe
 
-Page history gestures stay in Chromium's `HistorySwiper`. The renderer receives
-the gesture first; an unconsumed acknowledgement and CSS overscroll policy decide
-whether history navigation can begin. The shell does not add a competing page
-recognizer.
-
-A gesture retains its original page/document/window and selected-pane identity.
-Navigation, transfer, selection, security or window eligibility changes cancel
-it. Delayed Magic Mouse work checks the same generation. The overlay remains
-inside the original renderer's clipped pane, including Split and Peek. Reduce
-Motion keeps static edge feedback; no additional haptic is synthesized.
+Two-finger Back/Forward swipes use Chromium's history swiper behind Parc's
+eligibility check. [Swipe navigation](swipe-navigation.md) owns the current
+behavior, the defect with windows that aren't in focus, and the planned
+Parc-owned gesture, look and swipe-and-hold history list.
 
 ## Focus traversal across page, controls and auxiliary contexts
 
