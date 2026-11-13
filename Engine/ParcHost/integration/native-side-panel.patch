@@ -1,15 +1,16 @@
 --- a/chrome/browser/ui/extensions/extension_side_panel_coordinator.cc
 +++ b/chrome/browser/ui/extensions/extension_side_panel_coordinator.cc
-@@ -3,6 +3,8 @@
- // found in the LICENSE file.
- 
+@@ -4,12 +4,15 @@
+-
++
  #include "chrome/browser/ui/extensions/extension_side_panel_coordinator.h"
+-
 +
 +#include <utility>
- 
++
  #include "base/strings/utf_string_conversions.h"
  #include "chrome/browser/extensions/extension_tab_util.h"
-@@ -10,6 +12,7 @@
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
  #include "chrome/browser/ui/side_panel/side_panel_entry.h"
  #include "chrome/browser/ui/side_panel/side_panel_native_view.h"
  #include "chrome/browser/ui/side_panel/side_panel_registry.h"
@@ -19,19 +20,22 @@
  #include "content/public/browser/browser_context.h"
 @@ -104,6 +107,10 @@
  }
- 
+-
++
  ExtensionSidePanelCoordinator::~ExtensionSidePanelCoordinator() {
 +  weak_factory_.InvalidateWeakPtrs();
 +  scoped_entry_observation_.Reset();
 +  scoped_host_observation_.Reset();
 +  CancelNativePresentation();
+   DeregisterEntry();
+-
++
    // If the panel was active when its coordinator is destroyed (e.g., due to
-   // a tab/window closing), fire the onClosed event.
-   if (is_panel_active_) {
-@@ -112,6 +119,43 @@
+@@ -114,6 +121,43 @@
    }
  }
- 
+-
++
 +void ExtensionSidePanelCoordinator::CancelNativePresentation() {
 +  if (native_request_close_)
 +    std::move(native_request_close_).Run();
@@ -72,9 +76,10 @@
  SidePanelType ExtensionSidePanelCoordinator::GetPanelType() {
    return SidePanelType::kContent;
  }
-@@ -135,6 +179,10 @@
+@@ -137,6 +181,10 @@
  }
- 
+-
++
  void ExtensionSidePanelCoordinator::DeregisterEntry() {
 +  auto weak = weak_factory_.GetWeakPtr();
 +  CancelNativePresentation();
@@ -83,7 +88,7 @@
    scoped_entry_observation_.Reset();
    // Deregister synchronously closes the side panel if this entry is showing.
    // Release the action item reference only when an entry was actually removed.
-@@ -195,13 +243,24 @@
+@@ -197,13 +245,22 @@
      } else {
        // Otherwise, invalidate the cached view and reset the host (since the
        // view will be deleted).
@@ -98,27 +103,29 @@
      }
    }
  }
- 
+-
++
  void ExtensionSidePanelCoordinator::OnSidePanelServiceShutdown() {
    scoped_service_observation_.Reset();
-+  // The keyed service is shutting down; do not dispatch a close event back
-+  // into it when releasing the native host lease.
 +  is_panel_active_ = false;
 +  on_opened_dispatched_ = false;
 +  CancelNativePresentation();
  }
- 
+-
++
  void ExtensionSidePanelCoordinator::OnViewDestroyed() {
-@@ -375,14 +434,18 @@
+@@ -372,14 +429,18 @@
    }
- 
+-
++
    // Dispatch all arguments to reach the router listener.
 +  on_opened_dispatched_ = false;
    service->DispatchOnClosedEvent(extension_id, window_id_.value(), tab_id,
                                   side_panel_url_.path());
 -  on_opened_dispatched_ = false;
  }
- 
+-
++
  void ExtensionSidePanelCoordinator::HandleCloseExtensionSidePanel(
      ExtensionHost* host) {
    DCHECK_EQ(host, host_.get());
@@ -129,26 +136,24 @@
    if (delegate_) {
      delegate_->CloseSidePanel(GetEntry());
    }
-@@ -391,7 +454,9 @@
+@@ -388,7 +449,8 @@
  void ExtensionSidePanelCoordinator::NavigateIfNecessary() {
    // Sanity check that this is called when the view exists for this extension's
    // SidePanelEntry.
 -  DCHECK(host_);
-+  // A background registry can select an entry before it has a view.
 +  if (!host_)
 +    return;
- 
+-
++
    auto* host_contents = host_->host_contents();
    DCHECK(host_contents);
 --- a/chrome/browser/ui/extensions/extension_side_panel_coordinator.h
 +++ b/chrome/browser/ui/extensions/extension_side_panel_coordinator.h
-@@ -101,6 +101,16 @@
+@@ -101,6 +101,13 @@
    // Called when the native view is destroyed.
    void OnViewDestroyed();
- 
-+  // Native presentation borrows the exact existing coordinator's host. The
-+  // shared lease keeps it alive while its own callback stack unwinds. It must
-+  // be released before Browser/Profile teardown. No Views content is created.
+-
++
 +  std::shared_ptr<ExtensionViewHost> AcquireNativeHost(
 +      base::OnceClosure request_close);
 +  void ReleaseNativeHost(ExtensionViewHost* expected);
@@ -159,30 +164,33 @@
    Profile* profile() const { return profile_; }
    BrowserWindowInterface* browser() const { return browser_; }
    tabs::TabInterface* tab_interface() const { return tab_interface_; }
-@@ -113,6 +123,8 @@
+@@ -113,6 +120,8 @@
    BrowserWindowInterface* GetBrowser();
- 
+-
++
   private:
 +  void CancelNativePresentation();
 +
    // SidePanelEntryObserver:
    void OnEntryShown(SidePanelEntry* entry) override;
    void OnEntryWillHide(SidePanelEntry* entry,
-@@ -195,7 +207,8 @@
+@@ -195,7 +204,8 @@
    // extension. This is defined if and only if the aforementioned view exists.
    // Note: the view is destroyed when the side panel is closed or when the
    // SidePanelEntry for this extension is deregistered.
 -  std::unique_ptr<ExtensionViewHost> host_ = nullptr;
 +  std::shared_ptr<ExtensionViewHost> host_;
 +  base::OnceClosure native_request_close_;
- 
+-
++
    // The extension's own icon for its side panel entry.
    std::unique_ptr<IconImage> extension_icon_;
 --- a/chrome/browser/ui/extensions/extension_side_panel_manager.cc
 +++ b/chrome/browser/ui/extensions/extension_side_panel_manager.cc
 @@ -55,7 +55,7 @@
  }
- 
+-
++
  ExtensionSidePanelCoordinator*
 -ExtensionSidePanelManager::GetExtensionCoordinatorForTesting(
 +ExtensionSidePanelManager::GetExtensionCoordinator(
@@ -191,30 +199,28 @@
    return (it == coordinators_.end()) ? nullptr : it->second.get();
 --- a/chrome/browser/ui/extensions/extension_side_panel_manager.h
 +++ b/chrome/browser/ui/extensions/extension_side_panel_manager.h
-@@ -56,8 +56,14 @@
+@@ -56,8 +56,12 @@
    // none. Tab-scoped instances are not registered and are not returned here.
    static ExtensionSidePanelManager* From(BrowserWindowInterface* browser);
- 
-+  // Actual coordinator lookup used by native entry presentation. Caller must
-+  // also match its exact registry entry and Browser/Tab ownership.
+-
++
+-  ExtensionSidePanelCoordinator* GetExtensionCoordinatorForTesting(
 +  ExtensionSidePanelCoordinator* GetExtensionCoordinator(
-+      const ExtensionId& extension_id);
-   ExtensionSidePanelCoordinator* GetExtensionCoordinatorForTesting(
--      const ExtensionId& extension_id);
+       const ExtensionId& extension_id);
++  ExtensionSidePanelCoordinator* GetExtensionCoordinatorForTesting(
 +      const ExtensionId& extension_id) {
 +    return GetExtensionCoordinator(extension_id);
 +  }
- 
+-
++
    // Called when the BrowserView for `browser_` is being created. Creates
    // ExtensionSidePanelCoordinators (which in turn, registers extension
 --- a/chrome/browser/ui/side_panel/side_panel_entry.h
 +++ b/chrome/browser/ui/side_panel/side_panel_entry.h
-@@ -70,6 +70,11 @@
+@@ -70,6 +70,9 @@
    // Creates the content to be shown inside the side panel when this entry is
    // shown.
    SidePanelNativeView GetContent();
-+  // Native presentation starts the same load measurement without asking the
-+  // Views callback to construct a proxy page.
 +  void NativeContentRequested() {
 +    entry_show_triggered_timestamp_ = base::TimeTicks::Now();
 +  }
@@ -223,7 +229,7 @@
    SidePanelNativeView& CachedView() { return content_view_; }
 --- a/chrome/browser/ui/side_panel/side_panel_registry.cc
 +++ b/chrome/browser/ui/side_panel/side_panel_registry.cc
-@@ -129,7 +129,8 @@
+@@ -127,7 +127,8 @@
              SidePanelUI::From(browser_window_interface)) {
        // If the entry with the same key and scope is showing, synchronously
        // close. A tab-scoped entry only shows for the active tab.
@@ -235,16 +241,13 @@
                               /*suppress_animations=*/true);
 --- a/chrome/browser/ui/side_panel/side_panel_ui.h
 +++ b/chrome/browser/ui/side_panel/side_panel_ui.h
-@@ -92,6 +92,17 @@
+@@ -92,6 +92,13 @@
    virtual bool IsSidePanelEntryShowing(const SidePanelEntryKey& entry_key,
                                         bool for_tab) const = 0;
- 
-+  // A native browser uses the existing extension coordinator/host without
-+  // constructing a Views entry view. False for existing Views/WebUI UIs.
+-
++
 +  virtual bool UsesNativeExtensionContent() const { return false; }
 +
-+  // Pending entries are not visible, but deregistration must cancel their
-+  // renderer and native attachment before deleting the entry/coordinator.
 +  virtual bool IsSidePanelEntryPending(const SidePanelEntryKey& key,
 +                                       bool for_tab) const {
 +    return false;

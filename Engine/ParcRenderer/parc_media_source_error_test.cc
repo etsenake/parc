@@ -1,9 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Installed by the reviewed overlay at
-// //third_party/blink/renderer/modules/mediasource/parc_media_source_error_test.cc
-// (blink_unittests). A failed append on a Safari-identity page closes the
-// MediaSource before the page's handlers run, as WebKit's
-// SourceBuffer::appendError and MediaSource::streamEndedWithError do.
 #include <cmath>
 #include <memory>
 #include <utility>
@@ -34,6 +29,7 @@
 #include "third_party/blink/renderer/modules/mediasource/url_media_source.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
+#include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/media/media_player_client.h"
 #include "third_party/blink/renderer/platform/testing/empty_web_media_player.h"
 #include "third_party/blink/renderer/platform/testing/task_environment.h"
@@ -51,7 +47,6 @@ constexpr char kChromeUserAgent[] =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
 
-// Every append fails to parse.
 class FailingWebSourceBuffer final : public WebSourceBuffer {
  public:
   void SetClient(WebSourceBufferClient*) override {}
@@ -109,7 +104,6 @@ class FakeWebMediaSource final : public WebMediaSource {
   void UnmarkEndOfStream() override {}
 };
 
-// Opens the MediaSource and reports states as the pipeline would.
 class MediaSourcePlayer final : public EmptyWebMediaPlayer {
  public:
   explicit MediaSourcePlayer(WebMediaPlayerClient* client)
@@ -131,7 +125,7 @@ class MediaSourcePlayer final : public EmptyWebMediaPlayer {
   ReadyState GetReadyState() const override { return ready_state_; }
 
  private:
-  raw_ptr<MediaPlayerClient> client_;
+  WeakPersistent<MediaPlayerClient> client_;
   NetworkState network_state_ = kNetworkStateLoading;
   ReadyState ready_state_ = kReadyStateHaveNothing;
 };
@@ -167,8 +161,6 @@ class CountingListener final : public NativeEventListener {
   int count_ = 0;
 };
 
-// What the page sees in its first SourceBuffer error handler, which appends
-// again.
 class ErrorHandlerState final : public NativeEventListener {
  public:
   ErrorHandlerState(HTMLMediaElement* media,
@@ -212,8 +204,6 @@ class ErrorHandlerState final : public NativeEventListener {
 
 class ParcMediaSourceErrorTest : public testing::Test {
  protected:
-  // Attaches a MediaSource with one SourceBuffer to a video element that has
-  // its metadata, then appends.
   void AppendFailingSegment(const char* user_agent) {
     frame_client_ = MakeGarbageCollected<MediaSourceFrameClient>(user_agent);
     page_holder_ = std::make_unique<DummyPageHolder>(gfx::Size(), nullptr,
@@ -277,7 +267,6 @@ TEST_F(ParcMediaSourceErrorTest, SafariAppendErrorClosesSourceFirst) {
   EXPECT_TRUE(handler_->append_threw_invalid_state);
   EXPECT_TRUE(std::isnan(source_->duration()));
 
-  // The pipeline's own report of the error comes later and changes nothing.
   frame_client_->player()->ReportDecodeError();
   test::RunPendingTasks();
   EXPECT_EQ(media_errors_->count(), 1);
@@ -290,7 +279,6 @@ TEST_F(ParcMediaSourceErrorTest, ChromeAppendErrorWaitsForPipeline) {
   EXPECT_EQ(handler_->ready_state, "ended");
   EXPECT_EQ(handler_->source_buffers, 1u);
   EXPECT_FALSE(handler_->append_threw_invalid_state);
-  // The handler's append was accepted and failed again.
   EXPECT_EQ(handler_->count, 2);
   EXPECT_EQ(source_->readyState(), "ended");
   EXPECT_EQ(media_errors_->count(), 0);
@@ -303,6 +291,6 @@ TEST_F(ParcMediaSourceErrorTest, ChromeAppendErrorWaitsForPipeline) {
   EXPECT_NE(source_->readyState(), "closed");
 }
 
-}  // namespace
+}
 
-}  // namespace blink
+}

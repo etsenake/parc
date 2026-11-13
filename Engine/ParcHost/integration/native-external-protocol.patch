@@ -1,6 +1,6 @@
 --- a/chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.cc
 +++ b/chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.cc
-@@ -322,6 +322,28 @@
+@@ -367,6 +367,28 @@
        UpdateObserverStateForWidget(weak_widget.get());
      }
    }
@@ -30,7 +30,7 @@
 -
 +
  void PictureInPictureOcclusionTracker::UpdateObserverStateForWidget(
-@@ -356,6 +378,16 @@
+@@ -408,6 +430,16 @@
      }
    }
 -
@@ -48,7 +48,7 @@
    auto iter = observed_widget_data_.find(widget);
    CHECK(iter != observed_widget_data_.end());
    if (!force_update && (occluded == iter->second.occluded)) {
-@@ -376,3 +408,33 @@
+@@ -428,3 +460,33 @@
      }
    }
  }

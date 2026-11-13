@@ -1,6 +1,6 @@
 --- a/chrome/browser/safe_browsing/BUILD.gn
 +++ b/chrome/browser/safe_browsing/BUILD.gn
-@@ -48,6 +48,7 @@ static_library("safe_browsing") {
+@@ -45,6 +45,7 @@
      "//chrome/browser/optimization_guide",
      "//chrome/browser/password_manager",
      "//chrome/browser/password_manager/factories",
@@ -8,7 +8,7 @@
      "//chrome/browser/preloading/prefetch/no_state_prefetch",
      "//chrome/browser/profiles",
      "//chrome/browser/profiles:profile",
-@@ -67,6 +68,7 @@ static_library("safe_browsing") {
+@@ -64,6 +65,7 @@
      "//components/enterprise/buildflags",
      "//components/enterprise/common:strings",
      "//components/enterprise/obfuscation/core:enterprise_obfuscation",

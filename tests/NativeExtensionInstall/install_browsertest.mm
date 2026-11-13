@@ -1,5 +1,3 @@
-// Actual ExtensionInstallPrompt/InstallPromptData above real Browser/Profile.
-// These exercise real consent controllers, not fake installation success.
 #import <AppKit/AppKit.h>
 
 #include "base/run_loop.h"
@@ -85,12 +83,12 @@ class Host final : public NativeExtensionActionHost {
   bool selected = true, security = false;
 };
 
-}  // namespace
+}
 class NativeExtensionInstallTest : public extensions::ExtensionApiTest {
  public:
   NativeExtensionInstallTest() {
     features_.InitAndEnableFeature(
-        extensions_features::kAllowWithholdingExtensionPermissionsOnInstall);
+        extensions_features::kExtensionInstallSiteAccessOptions);
   }
 
  private:
@@ -385,4 +383,4 @@ IN_PROC_BROWSER_TEST_F(NativeExtensionInstallTest,
   EXPECT_EQ(Result::ABORTED, result_);
   EXPECT_FALSE(Showing());
 }
-}  // namespace parc
+}

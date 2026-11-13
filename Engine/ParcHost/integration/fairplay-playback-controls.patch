@@ -8,9 +8,11 @@
 +
    // Requests the media player to start or resume media playback.
    RequestPlay(bool triggered_by_user);
- 
+-
++
 @@ -73,6 +75,25 @@
- 
+-
++
    // Request the media player to save the current video frame.
    RequestSaveVideoFrame();
 +  RequestHandlePlaybackControlsAction(media_session.mojom.PlaybackControlsAction action,
@@ -33,10 +35,12 @@
 +  // (playbackTargetPickerWasDismissed).
 +  ParcPlaybackTargetPickerDismissed();
  };
- 
+-
++
  // Implemented by the MediaWebContentsObserver. The remote lives in the renderer
 @@ -135,6 +156,19 @@
- 
+-
++
    // Notifies the browser process of save video frame's availability.
    OnVideoFrameAvailabilityChanged(bool available);
 +
@@ -53,17 +57,20 @@
 +  // Document::showPlaybackTargetPicker).
 +  OnParcShowPlaybackTargetPicker(gfx.mojom.Point position);
  };
- 
+-
++
  // Implemented by MediaWebContentsObserver::MediaPlayerHostImpl in the browser
 --- a/services/media_session/public/mojom/media_session.mojom
 +++ b/services/media_session/public/mojom/media_session.mojom
 @@ -9,7 +9,7 @@
  import "ui/gfx/geometry/mojom/geometry.mojom";
  import "url/mojom/url.mojom";
- 
+-
++
 -// Next MinVersion: 26
 +// Next MinVersion: 27
- 
+-
++
  [Stable, Extensible]
  enum MediaPlaybackState {
 @@ -248,6 +248,7 @@
@@ -72,10 +79,12 @@
    [MinVersion=24] bool can_enter_browser_initiated_autopip;
 +  [MinVersion=26] bool parc_safari_playback_controls;
  };
- 
+-
++
  // Contains debugging information about a MediaSession. This will be displayed
 @@ -290,7 +291,16 @@
- 
+-
++
  // A MediaSession manages the media session and audio focus for a given
  // WebContents or ARC app.
 -// Next Method ID: 28
@@ -93,7 +102,8 @@
  interface MediaSession {
    [Stable, Extensible]
 @@ -417,4 +427,6 @@
- 
+-
++
    // Save the current video frame.
    [MinVersion=25] SaveVideoFrame@28();
 +  [MinVersion=26] HandlePlaybackControlsAction@29(PlaybackControlsAction action,
@@ -104,10 +114,12 @@
 @@ -8,7 +8,7 @@
  import "mojo/public/mojom/base/unguessable_token.mojom";
  import "services/media_session/public/mojom/media_session.mojom";
- 
+-
++
 -// Next MinVersion: 9
 +// Next MinVersion: 10
- 
+-
++
  // Next Method ID: 3
  [Stable, Uuid="1ed3225e-33c8-487b-b79f-4c3ec13ad623"]
 @@ -33,7 +33,7 @@
@@ -120,20 +132,23 @@
  interface MediaController {
    // Suspend the media session.
 @@ -125,6 +125,8 @@
- 
+-
++
    // Save the current video frame.
    [MinVersion=8] SaveVideoFrame@22();
 +  [MinVersion=9] HandlePlaybackControlsAction@23(PlaybackControlsAction action,
 +      mojo_base.mojom.TimeDelta seek_time);
  };
- 
+-
++
  // The observer for observing media controller events. This is different to a
 --- a/services/media_session/media_controller.cc
 +++ b/services/media_session/media_controller.cc
 @@ -382,6 +382,13 @@
        images));
  }
- 
+-
++
 +void MediaController::HandlePlaybackControlsAction(mojom::PlaybackControlsAction action,
 +                                            base::TimeDelta seek_time) {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -143,7 +158,8 @@
 +
  void MediaController::SeekTo(base::TimeDelta seek_time) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
- 
+-
++
 --- a/services/media_session/media_controller.h
 +++ b/services/media_session/media_controller.h
 @@ -54,6 +54,8 @@
@@ -190,12 +206,14 @@
 @@ -5,10 +5,13 @@
  #ifndef CONTENT_PUBLIC_BROWSER_MEDIA_SESSION_PLAYER_OBSERVER_H_
  #define CONTENT_PUBLIC_BROWSER_MEDIA_SESSION_PLAYER_OBSERVER_H_
- 
+-
++
 +#include "services/media_session/public/mojom/media_session.mojom.h"
 +
  #include <optional>
  #include <string>
- 
+-
++
  #include "base/functional/callback.h"
 +#include "base/memory/weak_ptr.h"
  #include "base/time/time.h"
@@ -203,7 +221,8 @@
  #include "media/base/picture_in_picture_events_info.h"
 @@ -44,6 +47,12 @@
    virtual void OnSeekBackward(int player_id, base::TimeDelta seek_time) {}
- 
+-
++
    // The given |player_id| has been seeked to by the MediaSession.
 +  virtual base::WeakPtr<MediaSessionPlayerObserver> GetPlaybackControlsWeakPtr() {
 +    return {};
@@ -212,14 +231,16 @@
 +      int player_id, media_session::mojom::PlaybackControlsAction action,
 +      base::TimeDelta seek_time) {}
    virtual void OnSeekTo(int player_id, base::TimeDelta seek_time) {}
- 
+-
++
    // The given |player_id| has been set a new volume multiplier by
 --- a/content/browser/media/session/media_session_controller.cc
 +++ b/content/browser/media/session/media_session_controller.cc
 @@ -78,6 +78,15 @@
        ->RequestSeekBackward(seek_time);
  }
- 
+-
++
 +void MediaSessionController::OnHandlePlaybackControlsAction(
 +    int player_id, media_session::mojom::PlaybackControlsAction action,
 +    base::TimeDelta seek_time) {
@@ -249,18 +270,19 @@
    void OnEnterPictureInPicture(
 --- a/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.cc
 +++ b/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.cc
-@@ -3,6 +3,8 @@
- // found in the LICENSE file.
+@@ -4,6 +4,8 @@
 -
 +
  #include "content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h"
+-
 +
 +#include "content/browser/media/parc_fairplay_hooks.h"
--
 +
  #include <set>
  #include <utility>
-@@ -23,7 +25,19 @@
+-
++
+@@ -24,8 +26,20 @@
  #include "content/public/common/content_client.h"
  #include "media/base/media_switches.h"
 -
@@ -274,15 +296,16 @@
 +}  // namespace parc_hooks
 +
  namespace content {
+-
 +
 +namespace {
 +void (*parc_video_pip_session_started)(const MediaPlayerId& player) = nullptr;
 +}  // namespace
--
 +
  // static
  VideoPictureInPictureWindowController*
-@@ -327,6 +341,7 @@
+ PictureInPictureWindowController::GetOrCreateVideoPictureInPictureController(
+@@ -336,6 +350,7 @@
    }
 -
 +
@@ -291,21 +314,21 @@
      active_session_->Disconnect();
      pip_session_media_position_ = std::nullopt;
    }
-@@ -350,6 +365,12 @@
-   // options on the window.
-   if (immersive_options) {
+@@ -361,6 +376,12 @@
      window_->SetImmersiveVideoOptions(immersive_options.value());
-+  }
+   }
+-
 +
 +  // Parc's window drops a reused window's captions and shows only this
 +  // session's from now on.
 +  if (parc_video_pip_session_started) {
 +    parc_video_pip_session_started(player_id);
-   }
--
++  }
 +
    // If the window is closed by the system, then the picture in picture session
-@@ -389,6 +410,7 @@
+   // will end. The renderer must call `StartSession()` again.
+   EmbedSurface(surface_id, natural_size);
+@@ -398,6 +419,7 @@
    if (!active_session_ || active_session_->service() != service)
      return;
 -
@@ -314,7 +337,7 @@
    active_session_->Shutdown();
    active_session_ = nullptr;
    pip_session_media_position_ = std::nullopt;
-@@ -476,14 +498,32 @@
+@@ -494,14 +516,32 @@
    return MediaSessionImpl::Get(web_contents())->GetMuteStatus();
  }
 -
@@ -351,7 +374,7 @@
 -
 +
  void VideoPictureInPictureWindowControllerImpl::MediaSessionInfoChanged(
-@@ -676,6 +716,7 @@
+@@ -694,6 +734,7 @@
          /*triggered_by_user=*/false);
    }
 -
@@ -360,7 +383,7 @@
    active_session_->Shutdown();
    active_session_ = nullptr;
    pip_session_media_position_ = std::nullopt;
-@@ -769,3 +810,17 @@
+@@ -787,3 +828,17 @@
  WEB_CONTENTS_USER_DATA_KEY_IMPL(VideoPictureInPictureWindowControllerImpl);
 -
 +
@@ -396,7 +419,8 @@
 +++ b/components/media_message_center/media_notification_item.h
 @@ -68,6 +68,12 @@
        media_session::mojom::MediaSessionAction action) = 0;
- 
+-
++
    // Called by MediaNotificationView when progress bar is clicked to seek.
 +  virtual void SetPlaybackControlsScrubbing(bool scrubbing) {}
 +  virtual void SetScrubbing(bool scrubbing) {
@@ -405,22 +429,26 @@
 +                  : media_session::mojom::MediaSessionAction::kPlay);
 +  }
    virtual void SeekTo(base::TimeDelta time) = 0;
- 
+-
++
    // Hides the media notification.
 --- a/components/global_media_controls/public/media_session_notification_item.cc
 +++ b/components/global_media_controls/public/media_session_notification_item.cc
 @@ -74,6 +74,7 @@
  }
- 
+-
++
  MediaSessionNotificationItem::~MediaSessionNotificationItem() {
 +  SetPlaybackControlsScrubbing(false);
    delegate_->HideItem(request_id_);
  }
- 
+-
++
 @@ -237,9 +238,32 @@
    media_session::PerformMediaSessionAction(action, media_controller_remote_);
  }
- 
+-
++
 +void MediaSessionNotificationItem::SetPlaybackControlsScrubbing(bool scrubbing) {
 +  if (scrubbing && frozen_)
 +    return;
@@ -449,7 +477,8 @@
 +    media_controller_remote_->HandlePlaybackControlsAction(
 +        media_session::mojom::PlaybackControlsAction::kSeekTo, time);
  }
- 
+-
++
  void MediaSessionNotificationItem::Dismiss() {
 --- a/components/global_media_controls/public/media_session_notification_item.h
 +++ b/components/global_media_controls/public/media_session_notification_item.h
@@ -464,17 +493,20 @@
    // then call |MediaNotificationController::RemoveItem()| to ensure removal.
 @@ -146,6 +148,9 @@
    void Freeze(base::OnceClosure unfrozen_callback);
- 
+-
++
    bool frozen() const { return frozen_; }
 +  // Parc: frozen and waiting for its freeze to time out. An item hidden at
 +  // that timeout keeps frozen() without one.
 +  bool ParcFreezePending() const { return freeze_timer_.IsRunning(); }
- 
+-
++
    std::optional<std::string> device_name() const { return device_name_; }
- 
+-
++
 --- a/components/global_media_controls/public/views/media_item_ui_detailed_view.cc
 +++ b/components/global_media_controls/public/views/media_item_ui_detailed_view.cc
-@@ -293,7 +293,12 @@
+@@ -289,7 +289,12 @@
            theme_.paused_progress_foreground_color_id,
            theme_.paused_progress_background_color_id,
            theme_.focus_ring_color_id,
@@ -488,16 +520,18 @@
            base::BindRepeating(
                &MediaItemUIDetailedView::OnPlaybackStateChangeForProgressDrag,
                base::Unretained(this)),
-@@ -402,6 +407,7 @@
- 
+@@ -398,6 +403,7 @@
+-
++
  MediaItemUIDetailedView::~MediaItemUIDetailedView() {
    if (item_) {
 +    item_->SetPlaybackControlsScrubbing(false);
      item_->SetView(nullptr);
    }
  }
-@@ -411,6 +417,8 @@
- 
+@@ -407,6 +413,8 @@
+-
++
  void MediaItemUIDetailedView::UpdateWithMediaSessionInfo(
      const media_session::mojom::MediaSessionInfoPtr& session_info) {
 +  progress_view_->SetParcSafariPlaybackControls(
@@ -505,7 +539,7 @@
    bool playing =
        session_info && session_info->playback_state ==
                            media_session::mojom::MediaPlaybackState::kPlaying;
-@@ -700,7 +708,7 @@
+@@ -696,7 +704,7 @@
             ? MediaSessionAction::kPause
             : MediaSessionAction::kPlay);
    if (item_) {
@@ -516,10 +550,11 @@
      // the action itself.
 --- a/content/browser/media/session/media_session_controller_unittest.cc
 +++ b/content/browser/media/session/media_session_controller_unittest.cc
-@@ -137,6 +137,15 @@
+@@ -139,6 +139,15 @@
      run_loop_->Quit();
    }
- 
+-
++
 +  void RequestHandlePlaybackControlsAction(
 +      media_session::mojom::PlaybackControlsAction action,
 +      base::TimeDelta seek_time) override {
@@ -532,8 +567,9 @@
    void RequestSeekTo(base::TimeDelta seek_time) override {
      received_seek_to_time_ = seek_time;
      run_loop_->Quit();
-@@ -166,6 +175,13 @@
- 
+@@ -168,6 +177,13 @@
+-
++
    void RequestMediaRemoting() override {}
    void RequestSaveVideoFrame() override {}
 +  void ParcSetPlaybackTargetAvailability(bool available) override {}
@@ -543,7 +579,8 @@
 +                             uint32_t tint_argb,
 +                             uint32_t tint_on_light_argb) override {}
 +  void ParcPlaybackTargetPickerDismissed() override {}
- 
+-
++
    void RequestVisibility(
        RequestVisibilityCallback request_visibility_callback) override {
 --- a/content/browser/media/media_web_contents_observer_unittest.cc
@@ -569,7 +606,8 @@
 +                             uint32_t tint_argb,
 +                             uint32_t tint_on_light_argb) override {}
 +  void ParcPlaybackTargetPickerDismissed() override {}
- 
+-
++
   private:
    mojo::AssociatedReceiver<media::mojom::MediaPlayer> receiver_{this};
 --- a/content/browser/picture_in_picture/picture_in_picture_service_impl_unittest.cc
@@ -621,7 +659,8 @@
 +                             uint32_t tint_argb,
 +                             uint32_t tint_on_light_argb) override {}
 +  void ParcPlaybackTargetPickerDismissed() override {}
- 
+-
++
    // BaseAudioContext override to enable UseCounter.
    // https://webaudio.github.io/web-audio-api/#BaseAudioContext
 --- a/components/global_media_controls/public/views/media_progress_view.cc
@@ -629,7 +668,8 @@
 @@ -365,6 +365,21 @@
    OnProgressDragEnded();
  }
- 
+-
++
 +void MediaProgressView::OnMouseCaptureLost() {
 +  if (!parc_safari_playback_controls_)
 +    return;
@@ -660,10 +700,12 @@
 +  }
    bool OnKeyPressed(const ui::KeyEvent& event) override;
    void OnGestureEvent(ui::GestureEvent* event) override;
- 
+-
++
 @@ -115,6 +119,7 @@
    gfx::SlideAnimation& thickness_animation_for_testing();
- 
+-
++
   private:
 +  bool parc_safari_playback_controls_ = false;
    // Runs the progress update callback and updates the accessible value if the
@@ -698,9 +740,11 @@
                 void(int player_id, double volume_multiplier));
 @@ -146,6 +152,7 @@
    media::MediaContentType media_content_type_;
- 
+-
++
    std::optional<media_session::MediaPosition> position_;
 +  base::WeakPtrFactory<MockMediaSessionPlayerObserver> weak_factory_{this};
  };
- 
+-
++
  }  // anonymous namespace

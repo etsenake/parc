@@ -10,8 +10,8 @@
 +
  if (!is_android) {
    source_set("browser_web_contents_delegate") {
-@@ -14,6 +15,7 @@
-     public_deps = [ "//chrome/browser:browser_public_dependencies" ]
+@@ -13,6 +14,7 @@
+     ]
      deps = [
        "//base",
 +      "//parc:buildflags",
@@ -34,11 +34,11 @@
      }
 --- a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
 +++ b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
-@@ -3,6 +3,14 @@
- // found in the LICENSE file.
+@@ -4,6 +4,14 @@
 -
 +
  #include "chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h"
+-
 +
 +#include "parc/features.h"
 +#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
@@ -47,10 +47,10 @@
 +#include "parc/native/video_overlay_window.h"
 +#include "content/public/browser/video_picture_in_picture_window_controller.h"
 +#endif
--
 +
  #include "base/check_deref.h"
  #include "base/metrics/histogram_macros.h"
+ #include "base/notimplemented.h"
 @@ -300,6 +308,15 @@
  content::PictureInPictureResult
  BrowserWebContentsDelegate::EnterPictureInPicture(
@@ -67,7 +67,7 @@
    return PictureInPictureWindowManager::GetInstance()
        ->EnterVideoPictureInPicture(web_contents);
  }
-@@ -552,7 +569,8 @@
+@@ -546,7 +563,8 @@
    // creating a new tab. Return |source| so that WebContentsImpl::OpenURL()
    // sees new_contents == this and skips the DidOpenRequestedURL notification,
    // which is only meant for newly created WebContents.
@@ -77,7 +77,7 @@
      tabs::TabInterface* const source_tab =
          tabs::TabInterface::MaybeGetFromContents(source);
      if (source_tab && source_tab->IsSplit()) {
-@@ -572,11 +590,15 @@
+@@ -566,11 +584,15 @@
    nav_params.FillNavigateParamsFromOpenURLParams(params);
    nav_params.source_contents = source;
    nav_params.tabstrip_add_types = AddTabTypes::ADD_NONE;
@@ -94,7 +94,7 @@
    auto popup_delegate =
        std::make_unique<ChromePopupNavigationDelegate>(std::move(nav_params));
    if (is_popup) {
-@@ -592,7 +614,26 @@
+@@ -586,7 +608,23 @@
      }
    }
 -
@@ -111,9 +111,6 @@
 +       !parc::HasNativeSplitOwner(*split_browser_weak, *split_source_weak))) return nullptr;
 +#endif
 +
-+  // The original split request has passed popup and tab-group checks. Parc
-+  // owns its multi-pane presentation; create the original page without
-+  // imposing a two-tab split or replacing another native pane.
 +  if (params.native_route_split &&
 +      params.disposition == WindowOpenDisposition::NEW_SPLIT_VIEW) {
 +    popup_delegate->nav_params()->disposition =
@@ -123,15 +120,12 @@
 +
    base::WeakPtr<content::NavigationHandle> navigation_handle =
        Navigate(popup_delegate->nav_params());
-@@ -701,6 +742,21 @@
+@@ -695,6 +733,18 @@
                                                          source, disposition);
    }
 -
 +
 +#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
-+  // Popup tracking above retains the original split disposition and page.
-+  // Parc owns the pane layout; keep this exact created page in the native
-+  // tabstrip without creating a conflicting Chromium split.
 +  if (source && new_contents && disposition == WindowOpenDisposition::NEW_SPLIT_VIEW) {
 +    const auto source_weak = source->GetWeakPtr();
 +    const auto child_weak = new_contents->GetWeakPtr();
@@ -146,13 +140,12 @@
    // Postpone activating popups opened by content-fullscreen tabs. This permits
    // popups on other screens and retains fullscreen focus for exit accelerators.
    // Popups are activated when the opener exits fullscreen, which happens
-@@ -923,6 +979,12 @@
+@@ -915,6 +965,11 @@
 -
 +
  void BrowserWebContentsDelegate::ShowRepostFormWarningDialog(
      content::WebContents* source) {
 +#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
-+  // A Parc page asks on its own alert sheet, not a Views tab-modal dialog.
 +  if (parc::ShowNativeRepostFormWarning(*source)) {
 +    return;
 +  }
@@ -162,13 +155,11 @@
  }
 --- a/third_party/blink/renderer/core/frame/picture_in_picture_controller.h
 +++ b/third_party/blink/renderer/core/frame/picture_in_picture_controller.h
-@@ -105,6 +105,10 @@
+@@ -105,6 +105,8 @@
    virtual void OnMediaPositionStateChanged(
        const media_session::mojom::blink::MediaPositionPtr& media_position) = 0;
 -
 +
-+  // Parc: notifies that the displayed text track cues of the
-+  // Picture-in-Picture video changed.
 +  virtual void OnTextTrackDisplayChanged() {}
 +
    // Returns element currently in Picture-in-Picture if any. Null otherwise.
@@ -211,7 +202,7 @@
  namespace blink {
 -
 +
-@@ -146,6 +161,154 @@
+@@ -146,6 +161,141 @@
                           CSSPrimitiveValue::UnitType::kPixels);
  }
 -
@@ -224,8 +215,6 @@
 +  if (!frame || !frame->View() || !HasChildren() || window_size.IsEmpty()) {
 +    return SkBitmap();
 +  }
-+  // Throttling applies only inside a frame update, so this also brings a
-+  // throttled frame (say a cross-origin player scrolled away) up to date.
 +  if (!frame->View()->UpdateAllLifecyclePhasesExceptPaint(
 +          DocumentUpdateReason::kOverlay) ||
 +      GetDocument().Lifecycle().GetState() !=
@@ -246,8 +235,6 @@
 +    }
 +  }
 +  cues.Intersect(gfx::RectF(container->AbsoluteBoundingBoxRect()));
-+  // contain: paint makes the container a stacking context, so its layer
-+  // paints exactly the cues.
 +  return PaintLayersForPictureInPicture({container}, {cues}, *video,
 +                                        window_size, device_scale_factor,
 +                                        bounds);
@@ -261,14 +248,14 @@
 +  for (const Node& node : NodeTraversal::DescendantsOf(*this)) {
 +    const auto* text = DynamicTo<Text>(node);
 +    const LayoutObject* layout = text ? text->GetLayoutObject() : nullptr;
-+    if (!layout || layout->StyleRef().Visibility() != EVisibility::kVisible ||
++    if (!layout || layout->Style().Visibility() != EVisibility::kVisible ||
 +        text->data().ContainsOnlyWhitespaceOrEmpty()) {
 +      continue;
 +    }
 +    bool transparent = false;
 +    for (const LayoutObject* above = layout->Parent(); above && !transparent;
 +         above = above == container ? nullptr : above->Parent()) {
-+      transparent = above->StyleRef().Opacity() == 0;
++      transparent = above->Style().Opacity() == 0;
 +    }
 +    if (!transparent) {
 +      return true;
@@ -295,9 +282,6 @@
 +    return SkBitmap();
 +  }
 +
-+  // The window shows the video frame, fitted inside it, so cues keep their
-+  // place and size relative to the frame, as WebKit lays them out over the
-+  // window's video layer. Cues in the element's letterbox move onto the frame.
 +  const float scale = std::min(window_size.width() / video_rect.width(),
 +                               window_size.height() / video_rect.height());
 +  const gfx::SizeF picture = gfx::ScaleSize(video_rect.size(), scale);
@@ -324,8 +308,6 @@
 +  bitmap.eraseColor(SK_ColorTRANSPARENT);
 +  cc::SkiaPaintCanvas canvas(bitmap);
 +
-+  // Each layer paints at its own place in the cue area. Painting follows
-+  // DraggedNodeImageBuilder.
 +  DocumentLifecycle& lifecycle = video.GetDocument().Lifecycle();
 +  lifecycle.AdvanceTo(DocumentLifecycle::kInPaint);
 +  for (wtf_size_t i = 0; i < containers.size(); ++i) {
@@ -344,10 +326,6 @@
 +    PaintRecordBuilder builder;
 +    PaintLayerPainter(layer).Paint(builder.Context(),
 +                                   PaintFlag::kOmitCompositingInfo);
-+    // `local` is the area in the layer's space, which a transform on the
-+    // player scales against the absolute `area` the bitmap is sized from.
-+    // Its own effect isn't applied: a page's captions are transparent in the
-+    // tab while the window shows them.
 +    canvas.save();
 +    canvas.translate((area.x() - cues.x()) * pixels,
 +                     (area.y() - cues.y()) * pixels);
@@ -382,7 +360,7 @@
 +namespace gfx {
 +class RectF;
 +class SizeF;
-+}  // namespace gfx
++}
 -
 +
  namespace blink {
@@ -395,26 +373,15 @@
 +
  class TextTrackContainer final : public HTMLDivElement {
   public:
-@@ -56,6 +66,29 @@
-   };
+@@ -57,6 +67,18 @@
    void UpdateDisplay(HTMLMediaElement&, ExposingControls);
    void UpdateDefaultFontSize(LayoutObject*);
+-
 +
-+  // Parc: the displayed cues for a picture-in-picture window of
-+  // `window_size` DIPs, painted as WebKit's
-+  // MediaControlTextTrackContainerElement::createTextTrackRepresentationImage
-+  // paints Safari's. `bounds` receives where they go, as a fraction of the
-+  // video frame the window shows. Empty when no cue shows.
 +  SkBitmap PaintForPictureInPicture(const gfx::SizeF& window_size,
 +                                    float device_scale_factor,
 +                                    gfx::RectF& bounds);
-+  // Parc: whether a viewer sees any of the cues. A page may hide them and
-+  // draw its own: TELUS TV+ hides ::-webkit-media-text-track-container while
-+  // its player shows the track for picture in picture.
 +  bool ShowsCues() const;
-+  // Paints each of `containers`' layers, stacking contexts, over its area
-+  // (absolute) for that window, as PaintForPictureInPicture paints the cue
-+  // container. `bounds` places them all.
 +  static SkBitmap PaintLayersForPictureInPicture(
 +      const HeapVector<Member<const LayoutBoxModelObject>>& containers,
 +      const Vector<gfx::RectF>& areas,
@@ -422,11 +389,11 @@
 +      const gfx::SizeF& window_size,
 +      float device_scale_factor,
 +      gfx::RectF& bounds);
--
 +
    void Trace(Visitor*) const override;
 -
 +
+  private:
 --- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h
 +++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.h
 @@ -9,19 +9,23 @@
@@ -463,30 +430,26 @@
    Element* PictureInPictureElement() const override;
    Element* PictureInPictureElement(TreeScope&) const override;
    bool PictureInPictureEnabled() const override;
-@@ -130,6 +135,12 @@
--
-+
+@@ -131,6 +136,12 @@
    bool IsSessionObserverReceiverBoundForTesting() {
      return session_observer_receiver_.is_bound();
-+  }
+   }
 +  ParcPageCaptions* PageCaptionsForTesting() const {
 +    return page_captions_.Get();
 +  }
 +  bool IsPageCaptionsTimerActiveForTesting() const {
 +    return page_captions_timer_.IsActive();
-   }
++  }
 -
 +
   private:
-@@ -171,6 +182,14 @@
+   Status IsElementAllowedInternal(const HTMLVideoElement&,
+@@ -171,6 +182,11 @@
    // https://crbug.com/1232173
    void SetMayThrottleIfUndrawnFrames(bool may_throttle);
 -
 +
-+  // Parc: sends the displayed cues to the window.
 +  void UpdateCaptions();
-+  // Parc: follows the captions the page draws itself, which nothing
-+  // announces, as often as the cue timeline updates.
 +  void PageCaptionsTimerFired(TimerBase*);
 +  static constexpr base::TimeDelta kPageCaptionsInterval =
 +      base::Milliseconds(250);
@@ -494,7 +457,7 @@
    // Makes sure the `picture_in_picture_service_` is set. Returns whether it was
    // initialized successfully.
    bool EnsureService();
-@@ -241,6 +260,16 @@
+@@ -241,6 +257,14 @@
        picture_in_picture_session_;
 -
 +
@@ -502,8 +465,6 @@
 +
 +  bool captions_update_pending_ = false;
 +  bool showing_captions_ = false;
-+  // Parc: how many sessions the browser has started for this document, which
-+  // names the bound session's captions.
 +  uint64_t captions_session_ = 0;
 +  HeapMojoAssociatedRemote<parc::mojom::blink::PictureInPictureCaptionsHost>
 +      captions_host_;
@@ -515,7 +476,7 @@
  }  // namespace blink
 --- a/third_party/blink/renderer/core/css/resolver/style_adjuster.cc
 +++ b/third_party/blink/renderer/core/css/resolver/style_adjuster.cc
-@@ -77,6 +77,7 @@
+@@ -78,6 +78,7 @@
  #include "third_party/blink/renderer/core/html/html_wbr_element.h"
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
  #include "third_party/blink/renderer/core/html/media/html_video_element.h"
@@ -523,12 +484,10 @@
  #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
  #include "third_party/blink/renderer/core/html/shadow/shadow_element_utils.h"
  #include "third_party/blink/renderer/core/html_names.h"
-@@ -1255,7 +1256,12 @@
+@@ -1264,6 +1265,9 @@
    if (element && element->CanvasForDrawing()) {
      builder.SetIsolation(EIsolation::kIsolate);
    }
-+  // Parc: a page's captions picture in picture shows are hidden in the tab,
-+  // their layout kept, and their layer paints only them (ParcPageCaptions).
 +  if (element && IsParcPictureInPictureCaptions(*element)) {
 +    builder.SetOpacity(0);
 +  }
@@ -536,19 +495,14 @@
 +
    // z-index is only applicable if positioned, or if a flex/grid/etc item.
    if (builder.GetPosition() != EPosition::kStatic ||
-       LayoutParentStyleForcesZIndexToCreateStackingContext(
-@@ -1562,9 +1568,14 @@
-   // Has special handling in a number of places (including depending on
-   // parents' IsContentDrawable() status).
-   if (element.IsCanvasOrInCanvasSubtree()) {
-+    return {ElementType::kIsNotElement};
-+  }
-+
-+  // Parc: isolated only while picture in picture shows it as captions.
-+  if (IsParcPictureInPictureCaptions(element)) {
+@@ -1579,6 +1583,10 @@
      return {ElementType::kIsNotElement};
    }
 -
++
++  if (IsParcPictureInPictureCaptions(element)) {
++    return {ElementType::kIsNotElement};
++  }
 +
    // Some UA shadow elements have special handling of background and
    // text-overflow, as well as special slider container style.
@@ -563,28 +517,18 @@
  #include "third_party/blink/renderer/core/html_names.h"
  #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
  #include "third_party/blink/renderer/core/layout/fragmentation_utils.h"
-@@ -419,12 +420,16 @@
--
-+
-   PaintTimelineReporter timeline_reporter(paint_layer_, should_paint_content);
+@@ -430,7 +431,9 @@
    PaintController& controller = context.GetPaintController();
 -
 +
    std::optional<ScopedEffectivelyInvisible> effectively_invisible;
--  if (PaintedOutputInvisible(object.StyleRef())) {
-+  // Parc: picture in picture paints a page's captions, transparent in the
-+  // tab, without their opacity (ParcPageCaptions).
+-  if (PaintedOutputInvisible(object.Style())) {
 +  const auto* element = DynamicTo<Element>(object.GetNode());
-+  if (PaintedOutputInvisible(object.StyleRef()) &&
++  if (PaintedOutputInvisible(object.Style()) &&
 +      !(element && IsParcPictureInPictureCaptions(*element))) {
-     effectively_invisible.emplace(controller);
-   }
--
-+
-   std::optional<ScopedPaintChunkProperties> layer_chunk_properties;
--
-+
-   // The parent effect (before creating layer_chunk_properties for the current
+     effectively_invisible.emplace(
+         controller,
+         ScopedEffectivelyInvisible::Visibility::kEffectivelyInvisible);
 --- a/third_party/blink/renderer/core/animation/compositor_animations.cc
 +++ b/third_party/blink/renderer/core/animation/compositor_animations.cc
 @@ -56,6 +56,7 @@
@@ -595,14 +539,11 @@
  #include "third_party/blink/renderer/core/layout/layout_box.h"
  #include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
  #include "third_party/blink/renderer/core/layout/layout_object.h"
-@@ -596,7 +597,13 @@
-   // TODO(crbug.com/1287221): Add a more specific reason.
+@@ -617,6 +618,10 @@
    if (target_element.GetDocument().ShouldForceReduceMotion())
      state.disposition |= kAcceleratedAnimationsDisabled;
 -
 +
-+  // Parc: a page's captions picture in picture shows stay transparent in the
-+  // tab, which only the main thread's style keeps (ParcPageCaptions).
 +  if (IsParcPictureInPictureCaptions(target_element)) {
 +    state.disposition |= kTargetHasInvalidCompositingState;
 +  }

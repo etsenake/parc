@@ -1,6 +1,6 @@
 --- a/content/app_shim_remote_cocoa/render_widget_host_view_cocoa.mm
 +++ b/content/app_shim_remote_cocoa/render_widget_host_view_cocoa.mm
-@@ -15,7 +15,9 @@
+@@ -16,7 +16,9 @@
 -
 +
  #import "base/apple/foundation_util.h"
@@ -11,13 +11,12 @@
  #import "base/mac/mac_util.h"
  #include "base/memory/raw_ptr.h"
  #include "base/numerics/safe_conversions.h"
-@@ -76,6 +78,33 @@
+@@ -77,6 +79,32 @@
 -
 +
  namespace {
 -
 +
-+// Opt-in delivery observations only; never log page content or input values.
 +bool ParcInputDiagnosticsEnabled() {
 +  return base::CommandLine::InitializedForCurrentProcess() &&
 +         base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -47,7 +46,7 @@
  constexpr NSString* WebAutomaticQuoteSubstitutionEnabled =
      @"WebAutomaticQuoteSubstitutionEnabled";
  constexpr NSString* const WebAutomaticDashSubstitutionEnabled =
-@@ -1048,6 +1077,8 @@
+@@ -1061,6 +1089,8 @@
        // the window. Cocoa does this for us. We should handle these events and
        // not ignore (since there is no other render view to handle them). Thus
        // the |!hasOpenMouseDown_| check above.
@@ -56,7 +55,7 @@
        return YES;
      }
      view = [view superview];
-@@ -1055,10 +1086,13 @@
+@@ -1068,10 +1098,13 @@
    // Ignore events which don't hit test to this subtree (and hit, for example,
    // an overlapping view instead). As discussed above, the mouse may go outside
    // the bounds of the view and keep sending events during a drag.
@@ -72,7 +71,7 @@
 -
 +
    _textSelectionChangedForContextualMenu = NO;
-@@ -1086,11 +1120,15 @@
+@@ -1110,11 +1143,15 @@
    if (_responderDelegate &&
        [_responderDelegate respondsToSelector:@selector(handleEvent:)]) {
      BOOL handled = [_responderDelegate handleEvent:theEvent];
@@ -80,20 +79,18 @@
 +    if (handled) {
 +      ParcTraceMouse(self, theEvent, "cocoa-responder-handled");
        return;
--  }
--  if (ui::PlatformEventSource::ShouldIgnoreNativePlatformEvents())
--    return;
 +    }
-+  }
+   }
+-  if (ui::PlatformEventSource::ShouldIgnoreNativePlatformEvents())
 +  if (ui::PlatformEventSource::ShouldIgnoreNativePlatformEvents()) {
 +    ParcTraceMouse(self, theEvent, "cocoa-platform-ignore");
-+    return;
+     return;
 +  }
 -
 +
    // Set the pointer type when we are receiving a NSEventTypeMouseEntered event
    // and the following NSEventTypeMouseExited event should have the same pointer
-@@ -1148,6 +1186,7 @@
+@@ -1172,6 +1209,7 @@
    }
 -
 +
@@ -102,7 +99,7 @@
      // If this is the first such event, send a mouse exit to the host view.
      // Mouse exited events are also delivered for hidden views, so that hover
      // state gets cleared when a view under the cursor is hidden (see the
-@@ -1273,6 +1312,7 @@
+@@ -1297,6 +1335,7 @@
    }
 -
 +
@@ -134,16 +131,16 @@
  #include "base/memory/ptr_util.h"
  #include "base/memory/raw_ptr.h"
  #include "base/memory_coordinator/traits.h"
-@@ -116,6 +120,8 @@
- #include "content/browser/media/key_system_support_impl.h"
+@@ -112,6 +116,8 @@
+ #include "content/browser/loader/url_loader_factory_utils.h"
+ #include "content/browser/log_console_message.h"
  #include "content/browser/media/media_devices_util.h"
- #include "content/browser/media/media_interface_proxy.h"
 +#include "content/browser/media/media_web_contents_observer.h"
 +#include "content/browser/media/parc_fairplay_hooks.h"
  #include "content/browser/media/webaudio/audio_context_manager_impl.h"
  #include "content/browser/navigation_or_document_handle.h"
  #include "content/browser/network/cross_origin_embedder_policy_reporter.h"
-@@ -468,6 +474,12 @@
+@@ -465,6 +471,12 @@
 -
 +
  namespace {
@@ -158,7 +155,7 @@
  // Maximum amount of time to wait for beforeunload/unload handlers to be
  // processed by the renderer process.
  constexpr base::TimeDelta kUnloadTimeout = base::Milliseconds(500);
-@@ -3220,15 +3232,33 @@
+@@ -3232,15 +3244,33 @@
            LoadedWithCacheControlNoStoreHeader()
                ? BackForwardCacheImpl::kInCCNSContext
                : BackForwardCacheImpl::kNotInCCNSContext);
@@ -198,7 +195,7 @@
 -
 +
  void RenderFrameHostImpl::DisableBackForwardCache(
-@@ -4026,10 +4056,28 @@
+@@ -4038,10 +4068,28 @@
 -
 +
  void RenderFrameHostImpl::AccessibilityPerformAction(
@@ -229,7 +226,7 @@
    }
 -
 +
-@@ -4043,6 +4091,7 @@
+@@ -4055,6 +4103,7 @@
    // Don't perform the action if the WebContents is set to ignore input events.
    // See WebContents::IgnoreInputEvents for more information.
    if (delegate()->ShouldIgnoreInputEvents()) {
@@ -238,7 +235,7 @@
    }
 -
 +
-@@ -4056,6 +4105,7 @@
+@@ -4068,6 +4117,7 @@
      }
    }
 -
@@ -248,7 +245,7 @@
  }
 -
 +
-@@ -10297,6 +10347,28 @@
+@@ -10319,6 +10369,28 @@
    frame_tree_->controller().UpdateStateForFrame(this, state);
  }
 -
@@ -278,7 +275,7 @@
  void RenderFrameHostImpl::OpenURL(blink::mojom::OpenURLParamsPtr params) {
    // Verify and unpack the Mojo payload.
    GURL validated_url;
-@@ -10447,7 +10519,7 @@
+@@ -10469,7 +10541,7 @@
        params->disposition, params->should_replace_current_entry,
        params->user_gesture, params->triggering_event_info,
        params->href_translate, std::move(blob_url_loader_factory),
@@ -302,13 +299,12 @@
  #include "base/metrics/histogram_macros.h"
  #include "base/task/common/task_annotator.h"
  #include "base/timer/elapsed_timer.h"
-@@ -42,6 +44,13 @@
+@@ -42,6 +44,12 @@
 -
 +
  namespace {
 -
 +
-+// Opt-in delivery observations only; never log page content or input values.
 +bool ParcInputDiagnosticsEnabled() {
 +  return base::CommandLine::InitializedForCurrentProcess() &&
 +         base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -318,7 +314,7 @@
  // The minimum amount of time that should be spent in serializing code in order
  // to report the elapsed time as a URL-keyed metric.
  constexpr base::TimeDelta kMinSerializationTimeToSend = base::Milliseconds(100);
-@@ -321,7 +330,27 @@
+@@ -321,7 +329,26 @@
  }
 -
 +
@@ -331,7 +327,6 @@
 +      parc_web_frame ? parc_web_frame->GetAXTreeID().ToString() : "none";
 +  const int parc_node = data.target_node_id;
 +  const int parc_request = data.request_id;
-+  // PerformAction may destroy this frame. No diagnostic reads it afterward.
 +  const auto parc_log = [parc_trace, parc_tree, parc_node, parc_request](
 +                            const char* phase, int target_type = -1,
 +                            int result = -1) {
@@ -347,7 +342,7 @@
      return;
    }
    // Update layout and AX first before attempting to perform the action.
-@@ -329,6 +358,7 @@
+@@ -329,6 +356,7 @@
 -
 +
    WebDocument document = GetMainDocument();
@@ -357,7 +352,7 @@
    }
 -
 +
-@@ -397,9 +427,13 @@
+@@ -402,9 +430,13 @@
      case ax::mojom::Action::kScrollRight:
      case ax::mojom::Action::kStitchChildTree:
      case ax::mojom::Action::kShowTooltip:
@@ -385,12 +380,11 @@
  #include "base/memory/raw_ptr.h"
  #include "base/metrics/histogram_functions.h"
  #include "base/metrics/histogram_macros.h"
-@@ -83,6 +85,13 @@
+@@ -83,6 +85,12 @@
      "back an AXTextMarker");
 -
 +
  namespace {
-+// Opt-in delivery observations only; never log page content or input values.
 +bool ParcInputDiagnosticsEnabled() {
 +  return base::CommandLine::InitializedForCurrentProcess() &&
 +         base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -400,7 +394,7 @@
  // Test-only attribute name used by accessibility dump tests to read
  // aria-actions custom-action names across the AXUIElementCopyAttributeValue
  // marshaling boundary (NSAccessibilityCustomAction is not marshalable).
-@@ -3362,17 +3371,32 @@
+@@ -3362,17 +3370,32 @@
  }
 -
 +

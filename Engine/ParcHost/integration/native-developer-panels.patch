@@ -1,12 +1,14 @@
 --- a/chrome/browser/devtools/devtools_toggle_action.cc
 +++ b/chrome/browser/devtools/devtools_toggle_action.cc
 @@ -22,10 +22,12 @@
- 
+-
++
  DevToolsToggleAction::DevToolsToggleAction(const DevToolsToggleAction& rhs)
      : type_(rhs.type_),
 +      native_panel_(rhs.native_panel_),
        params_(rhs.params_.get() ? new RevealParams(*rhs.params_) : nullptr) {}
- 
+-
++
  void DevToolsToggleAction::operator=(const DevToolsToggleAction& rhs) {
    type_ = rhs.type_;
 +  native_panel_ = rhs.native_panel_;
@@ -34,7 +36,8 @@
 +    kNoOp,
 +    kShowNativePanel
    };
- 
+-
++
    struct RevealParams {
 @@ -49,6 +50,9 @@
                                       size_t line_number,
@@ -43,15 +46,18 @@
 +  // Source-owned native toolbar; the scheduled action survives frontend load.
 +  static DevToolsToggleAction ShowNativePanel(const std::string& panel);
 +  const std::string& native_panel() const { return native_panel_; }
- 
+-
++
    Type type() const { return type_; }
    const RevealParams* params() const { return params_.get(); }
 @@ -59,6 +63,7 @@
- 
+-
++
    // The type of action.
    Type type_;
 +  std::string native_panel_;
- 
+-
++
    // Additional parameters for the Reveal action; NULL if of any other type.
    std::unique_ptr<RevealParams> params_;
 --- a/third_party/devtools-frontend/src/front_end/core/host/InspectorFrontendHost.ts
@@ -59,7 +65,8 @@
 @@ -22,7 +22,18 @@
    var InspectorFrontendAPI: InspectorFrontendAPIImpl;   // eslint-disable-line @typescript-eslint/naming-convention
  }
- 
+-
++
 +// The native page command queries the exact live InspectorView. This is not a
 +// persisted profile preference or an optimistic record of a prior show command.
 +let currentPanelProvider: (() => string)|undefined;
@@ -79,7 +86,8 @@
 +++ b/third_party/devtools-frontend/src/front_end/ui/legacy/InspectorView.ts
 @@ -233,6 +233,7 @@
          });
- 
+-
++
      this.tabbedPane = this.tabbedLocation.tabbedPane();
 +    Host.InspectorFrontendHost.setCurrentPanelProvider(() => this.tabbedPane.selectedTabId || '');
      this.tabbedPane.setMinimumSize(MIN_MAIN_PANEL_WIDTH, 0);

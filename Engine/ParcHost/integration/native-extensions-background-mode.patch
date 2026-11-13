@@ -8,7 +8,7 @@
  import("//chrome/common/features.gni")
  import("//components/enterprise/buildflags/buildflags.gni")
  import("//components/guest_view/buildflags/buildflags.gni")
-@@ -665,6 +666,9 @@
+@@ -674,6 +675,9 @@
 -
 +
    if (is_mac) {
@@ -19,7 +19,7 @@
    }
    if (enable_spellcheck) {
      deps += [ "//chrome/browser/spellchecker" ]
-@@ -3173,10 +3177,10 @@
+@@ -3229,10 +3233,10 @@
 -
 +
      if (!is_chromeos) {

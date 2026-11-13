@@ -13,12 +13,14 @@
    WebDragSource* __strong _dragSource;
    NSDragOperation _dragOperation;
 +  PCNativeContentDropRouter* __strong _nativeDropRouter;
- 
+-
++
    BOOL _willSetWebContentsOccludedAfterDelay;
  }
 @@ -367,6 +369,10 @@
  // NSDraggingDestination methods
- 
+-
++
  - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
 +  if (!_nativeDropRouter)
 +    _nativeDropRouter = [[PCNativeContentDropRouter alloc] initWithView:self];
@@ -26,10 +28,12 @@
 +    return _nativeDropRouter.operation;
    if (!_host)
      return NSDragOperationNone;
- 
+-
++
 @@ -389,12 +395,18 @@
  }
- 
+-
++
  - (void)draggingExited:(id<NSDraggingInfo>)sender {
 +  if (_nativeDropRouter.claimed) {
 +    [_nativeDropRouter exit:sender];
@@ -39,7 +43,8 @@
      return;
    _host->DraggingExited();
  }
- 
+-
++
  - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
 +  if (_nativeDropRouter.claimed)
 +    return [_nativeDropRouter update:sender];
@@ -49,7 +54,8 @@
 @@ -404,7 +416,13 @@
    return result;
  }
- 
+-
++
 +- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)sender {
 +  return _nativeDropRouter.claimed ? [_nativeDropRouter prepare:sender] : YES;
 +}
@@ -63,7 +69,8 @@
 @@ -414,12 +432,21 @@
    return result;
  }
- 
+-
++
 +- (void)draggingEnded:(id<NSDraggingInfo>)sender {
 +  [_nativeDropRouter end];
 +}
@@ -75,7 +82,8 @@
  - (void)clearViewsHostableView {
    _viewsHostableView = nullptr;
  }
- 
+-
++
  - (void)setHost:(remote_cocoa::mojom::WebContentsNSViewHost*)host {
    if (!host) {
 +    [_nativeDropRouter end];
@@ -84,7 +92,7 @@
    _host = host;
 --- a/ui/base/BUILD.gn
 +++ b/ui/base/BUILD.gn
-@@ -319,6 +319,8 @@
+@@ -320,6 +320,8 @@
        "cocoa/default_command_dispatcher_delegate.mm",
        "cocoa/defaults_utils.h",
        "cocoa/defaults_utils.mm",

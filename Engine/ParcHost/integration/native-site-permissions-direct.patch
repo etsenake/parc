@@ -3,7 +3,8 @@
 @@ -44,6 +44,14 @@
  #include "chrome/browser/web_applications/os_integration/mac/web_app_shortcut_mac.h"
  #endif
- 
+-
++
 +namespace parc_hooks {
 +using PermissionPromptFactory =
 +    std::unique_ptr<permissions::PermissionPrompt> (*)(
@@ -13,17 +14,20 @@
 +}  // namespace parc_hooks
 +
  namespace {
- 
+-
++
  BrowserWindowInterface* GetBrowser(content::WebContents* web_contents) {
 @@ -258,8 +266,17 @@
    }
  }
- 
+-
++
 +// Replaces every Chrome prompt below, including a null "no prompt" result.
 +parc_hooks::PermissionPromptFactory g_parc_permission_prompt_factory = nullptr;
 +
  }  // namespace
- 
+-
++
 +namespace parc_hooks {
 +void SetPermissionPromptFactory(PermissionPromptFactory factory) {
 +  g_parc_permission_prompt_factory = factory;

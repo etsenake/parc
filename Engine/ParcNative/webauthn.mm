@@ -1,9 +1,13 @@
-// Copyright 2026 Parc contributors.
+// Copyright 2024 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 #include "webauthn.h"
 
 #import <AppKit/AppKit.h>
 
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -20,7 +24,6 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/views/extensions/security_dialog_tracker.h"
 #include "chrome/browser/ui/views/webauthn/authenticator_request_dialog_view.h"
-#include "chrome/browser/ui/views/webauthn/ambient/ambient_signin_bubble_view.h"
 #include "chrome/browser/ui/webauthn/ambient/ambient_signin_controller.h"
 #include "chrome/browser/ui/views/webauthn/authenticator_request_sheet_view.h"
 #include "chrome/browser/ui/views/webauthn/sheet_view_factory.h"
@@ -44,6 +47,29 @@
 #include "ui/views/widget/native_widget_mac.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
+#include "base/callback_list.h"
+#include "chrome/browser/ui/passwords/ui_utils.h"
+#include "chrome/browser/ui/views/controls/hover_button.h"
+#include "chrome/browser/ui/webauthn/webauthn_ui_helpers.h"
+#include "chrome/grit/generated_resources.h"
+#include "components/strings/grit/components_strings.h"
+#include "components/vector_icons/vector_icons.h"
+#include "ui/base/l10n/l10n_util.h"
+#include "ui/base/metadata/metadata_header_macros.h"
+#include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/base/models/image_model.h"
+#include "ui/base/mojom/dialog_button.mojom.h"
+#include "ui/base/ui_base_features.h"
+#include "ui/color/color_id.h"
+#include "ui/gfx/font_list.h"
+#include "ui/views/bubble/bubble_border.h"
+#include "ui/views/bubble/bubble_dialog_delegate_view.h"
+#include "ui/views/controls/image_view.h"
+#include "ui/views/layout/box_layout.h"
+#include "ui/views/layout/layout_provider.h"
+#include "ui/views/layout/layout_types.h"
+#include "ui/views/style/typography.h"
+#include "ui/views/style/typography_provider.h"
 #import "window_security_reservation.h"
 
 namespace parc {
@@ -133,8 +159,7 @@ class Guard final : public content::WebContentsObserver,
   };
   void Ready() {
     ready_ = true;
-    // Registration is inside the real delegate call. Do not delete that
-    // delegate from this frame, even if its native page was already detached.
+
     if (!Valid(false)) {
       CancelSoon();
     }
@@ -152,20 +177,17 @@ class Guard final : public content::WebContentsObserver,
     }
     ready_ = false;
     auto request = std::exchange(request_, {});
-    // The genuine cancel callback destroys the actual request and platform
-    // authenticator. Never manufacture a successful assertion or OS consent.
+
     if (request) {
       request->OnCancelRequest();
     } else if (settings_model_) {
-      // Settings is owned by ChangePinControllerImpl, not the WebAuthn
-      // scheduler. Its real cancel event resolves the settings callback false.
+
       scoped_refptr<AuthenticatorRequestDialogModel> model(settings_model_);
       model->CancelAuthenticatorRequest();
     }
   }
   void DidStartNavigation(content::NavigationHandle* nav) override {
-    // A starting navigation has no RenderFrameHost yet (reading it CHECKs);
-    // its frame identifies the requesting document's frame.
+
     auto* frame = document_.AsRenderFrameHostIfValid();
     if (!nav->IsSameDocument() &&
         (nav->IsInPrimaryMainFrame() ||
@@ -185,8 +207,7 @@ class Guard final : public content::WebContentsObserver,
   }
   void MarkOSWindowRequested() { os_window_requested_ = true; }
   void WebContentsDestroyed() override {
-    // //content destroys the real delegate. Avoid calling into a request while
-    // WebContents itself is executing destruction observers.
+
     cancelled_ = true;
     ready_ = false;
     request_.reset();
@@ -221,8 +242,7 @@ class Context final : public NativeAuthenticatorRequestContext {
   void Created(
       content::RenderFrameHost& frame,
       base::WeakPtr<ChromeAuthenticatorRequestDelegate> request) override {
-    // The genuine scheduler prevents overlapping requests. A completed weak
-    // request may leave this inert guard until the next request replaces it.
+
     if (guard_ && guard_->HasModel()) {
       guard_->CancelSoon();
     }
@@ -291,11 +311,6 @@ bool Guard::Valid(bool visible) const {
            contents->GetVisibility() != content::Visibility::HIDDEN));
 }
 
-//
-// reports its real auxiliary NSWindow to the native page delegate. Current Mac
-// kChild initialization assumes a Views browser parent, so only that parenting
-// step is replaced. Real sheet controls, request logic and input protection
-// stay.
 class AuthenticatorWidget final : public views::NativeWidgetMac {
  public:
   explicit AuthenticatorWidget(views::Widget* widget)
@@ -384,7 +399,7 @@ class Dialog final : public views::WidgetObserver,
     Guard::Operation operation(guard_);
     auto keep = shared_from_this();
     if (!ready_) {
-      return;  // No real sheet exists before OnStepTransition.
+      return;
     }
     if (!Valid() || !widget_ || !host_) {
       AbortSoon();
@@ -452,17 +467,14 @@ class Dialog final : public views::WidgetObserver,
     if (finished_ || aborting_) {
       return;
     }
-    // HostChanged runs inside the real manager's child_dialogs_ iteration.
-    // Prevent presentation immediately, but do not erase that list or destroy
-    // the real request until the notification stack has unwound.
+
     aborting_ = true;
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostNonNestableTask(
         FROM_HERE, base::BindOnce(&Dialog::Finish, shared_from_this()));
     guard_->CancelSoon();
   }
   void CloseFromManager() {
-    // Unlike HostChanged, CloseAllDialogs deliberately loops until Close()
-    // removes its current item synchronously.
+
     auto guard = guard_;
     Finish();
     guard->CancelSoon();
@@ -498,7 +510,7 @@ class Dialog final : public views::WidgetObserver,
     AbortSoon();
   }
   void OnWidgetBoundsChanged(views::Widget*, const gfx::Rect&) override {
-    // The native host controls placement; avoid a recursive frame update here.
+
   }
   void OnWidgetClosing(views::Widget*) override { AbortSoon(); }
   void OnWidgetDestroying(views::Widget* widget) override {
@@ -586,7 +598,7 @@ class Controller final : public AuthenticatorRequestDialogViewController,
     view_->SetNativePresentationValidation(base::BindRepeating(
         [](std::weak_ptr<Dialog> weak) {
           auto self = weak.lock();
-          return self && self->MayShow();
+          return self && self->MaySelect();
         },
         weak));
     widget_ = std::make_unique<views::Widget>();
@@ -639,7 +651,7 @@ class Controller final : public AuthenticatorRequestDialogViewController,
   }
 
  private:
-  const raw_ref<AuthenticatorRequestDialogModel> model_;  // Real model owns us.
+  const raw_ref<AuthenticatorRequestDialogModel> model_;
   const std::shared_ptr<Dialog> dialog_;
   std::unique_ptr<views::Widget> widget_;
   raw_ptr<AuthenticatorRequestDialogView> view_ = nullptr;
@@ -648,17 +660,14 @@ class Controller final : public AuthenticatorRequestDialogViewController,
       observation_{this};
   base::WeakPtrFactory<Controller> weak_factory_{this};
 };
-// The original WINDOW controller owns the real native Browser and recovery
-// page. This lease supplies the same exact native ownership used by dialogs.
+
 class WindowLease final : public NativeAuthenticatorRequestWindow {
  public:
   explicit WindowLease(std::shared_ptr<Guard> guard) : guard_(std::move(guard)) {}
   ~WindowLease() override { Release(); }
   base::WeakPtr<WindowLease> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
   bool IsValid() const override {
-    // The genuine recovery observer owns its exact WebContents. Native page
-    // view attachment is asynchronous; do not mistake that attachment interval
-    // for another owner or substitute a focused window.
+
     return !released_ && guard_->Valid(true) && child_ &&
            reservation_.isOnlyReservation;
   }
@@ -707,8 +716,7 @@ class WindowLease final : public NativeAuthenticatorRequestWindow {
       [NSNotificationCenter.defaultCenter removeObserver:security_];
       security_ = nil;
     }
-    // Called before constructing the subsequent PIN dialog: the recovery
-    // window must surrender the security reservation before that dialog asks.
+
     [child_ orderOut:nil];
     [child_.parentWindow removeChildWindow:child_];
     [reservation_ invalidate];
@@ -723,67 +731,210 @@ class WindowLease final : public NativeAuthenticatorRequestWindow {
   base::WeakPtrFactory<WindowLease> weak_factory_{this};
 };
 
-class Ambient final : public AuthenticatorRequestDialogModel::Observer {
+class NativeAmbientSigninBubble final : public views::BubbleDialogDelegateView {
+  METADATA_HEADER(NativeAmbientSigninBubble, views::BubbleDialogDelegateView)
+ public:
+  NativeAmbientSigninBubble(
+      gfx::NativeView parent, const gfx::Rect& anchor,
+      const std::string& relying_party_id,
+      base::RepeatingCallback<bool()> validation,
+      base::RepeatingCallback<void(size_t)> selected)
+      : BubbleDialogDelegateView(views::BubbleAnchor(),
+                                 views::BubbleBorder::Arrow::TOP_RIGHT),
+        validation_(std::move(validation)), selected_(std::move(selected)) {
+    set_parent_window(parent);
+    SetAnchorRect(anchor);
+    SetShowCloseButton(true);
+    UseCompactMargins();
+    set_close_on_deactivate(false);
+    SetShowIcon(true);
+    SetIcon(ui::ImageModel::FromVectorIcon(GooglePasswordManagerVectorIcon()));
+    SetShowTitle(true);
+    auto* layout_provider = views::LayoutProvider::Get();
+    const int title_width = layout_provider->GetDistanceMetric(
+                                views::DISTANCE_BUBBLE_PREFERRED_WIDTH) -
+                            layout_provider->GetInsetsMetric(
+                                views::INSETS_DIALOG).width() -
+                            layout_provider->GetInsetsMetric(
+                                views::INSETS_DIALOG_TITLE).width();
+    SetTitle(l10n_util::GetStringFUTF16(
+        IDS_WEBAUTHN_SIGN_IN_TO_WEBSITE_DIALOG_TITLE,
+        webauthn_ui_helpers::RpIdToElidedHost(
+            relying_party_id, title_width,
+            views::TypographyProvider::Get().GetFont(
+                views::style::CONTEXT_DIALOG_TITLE,
+                views::style::STYLE_PRIMARY))));
+    auto layout = std::make_unique<views::BoxLayout>(
+        views::BoxLayout::Orientation::kVertical);
+    layout->set_cross_axis_alignment(views::LayoutAlignment::kStretch);
+    SetLayoutManager(std::move(layout));
+  }
+  base::WeakPtr<NativeAmbientSigninBubble> GetWeakPtr() {
+    return weak_factory_.GetWeakPtr();
+  }
+  void ShowCredentials(
+      const std::vector<AuthenticatorRequestDialogModel::Mechanism>& mechanisms,
+      const std::vector<size_t>& indices) {
+    const bool single = indices.size() == 1;
+    for (size_t i = 0; i < indices.size(); ++i) {
+      const auto& mechanism = mechanisms.at(indices.at(i));
+      std::unique_ptr<views::ImageView> secondary;
+      if (!single) {
+        secondary = std::make_unique<views::ImageView>(
+            ui::ImageModel::FromVectorIcon(
+                features::IsRoundedIconsEnabled()
+                    ? vector_icons::kKeyboardArrowRightFlippableIcon
+                    : vector_icons::kSubmenuArrowChromeRefreshOldIcon,
+                ui::kColorIcon, 20));
+      }
+      AddChildView(std::make_unique<HoverButton>(
+          base::BindRepeating(
+              [](base::WeakPtr<NativeAmbientSigninBubble> self, size_t index,
+                 const ui::Event&) {
+                if (self) self->SelectCredential(index);
+              }, weak_factory_.GetWeakPtr(), i),
+          std::make_unique<views::ImageView>(ui::ImageModel::FromVectorIcon(
+              *mechanism.icon, ui::kColorIcon, 20)),
+          mechanism.name, mechanism.description, std::move(secondary)));
+    }
+    SetButtons(single ? static_cast<int>(ui::mojom::DialogButton::kCancel) |
+                            static_cast<int>(ui::mojom::DialogButton::kOk)
+                      : static_cast<int>(ui::mojom::DialogButton::kNone));
+    if (single) {
+      SetButtonLabel(ui::mojom::DialogButton::kCancel,
+                     l10n_util::GetStringUTF16(IDS_NOT_NOW));
+      SetCancelCallback(base::BindOnce(&NativeAmbientSigninBubble::Disconnect,
+                                       weak_factory_.GetWeakPtr()));
+      SetButtonLabel(ui::mojom::DialogButton::kOk,
+                     l10n_util::GetStringUTF16(
+                         IDS_PASSWORD_MANAGER_ACCOUNT_CHOOSER_SIGN_IN));
+      SetAcceptCallback(base::BindOnce(
+          &NativeAmbientSigninBubble::SelectCredential,
+          weak_factory_.GetWeakPtr(), 0));
+    }
+    set_fixed_width(320);
+    widget_ = views::BubbleDialogDelegate::CreateBubbleDeprecated(
+                  this, views::Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET)
+                  ->GetWeakPtr();
+    widget_->Show();
+  }
+  void Disconnect() {
+    validation_.Reset();
+    selected_.Reset();
+    if (widget_) widget_->Close();
+  }
+ private:
+  void SelectCredential(size_t index) {
+    const auto validation = validation_;
+    if (!validation || !validation.Run()) return;
+    auto selected = selected_;
+    if (widget_) widget_->Hide();
+    if (selected) selected.Run(index);
+  }
+  base::RepeatingCallback<bool()> validation_;
+  base::RepeatingCallback<void(size_t)> selected_;
+  base::WeakPtr<views::Widget> widget_;
+  base::WeakPtrFactory<NativeAmbientSigninBubble> weak_factory_{this};
+};
+BEGIN_METADATA(NativeAmbientSigninBubble)
+END_METADATA
+
+class Ambient final : public content::WebContentsObserver,
+                      public AuthenticatorRequestDialogModel::Observer {
  public:
   Ambient(AuthenticatorRequestDialogModel& model, std::shared_ptr<Guard> guard,
           base::WeakPtr<ambient_signin::AmbientSigninController> controller)
-      : model_(&model), guard_(std::move(guard)), controller_(controller) {
+      : WebContentsObserver(guard->contents()), model_(&model),
+        guard_(std::move(guard)), controller_(controller) {
     observation_.Observe(&model);
+    if (auto* tab = tabs::TabInterface::MaybeGetFromContents(guard_->contents())) {
+      subscriptions_.push_back(tab->RegisterWillDeactivate(base::BindRepeating(
+          [](base::WeakPtr<Ambient> self, tabs::TabInterface*) {
+            if (self) self->Hide();
+          }, weak_factory_.GetWeakPtr())));
+      subscriptions_.push_back(tab->RegisterDidActivate(base::BindRepeating(
+          [](base::WeakPtr<Ambient> self, tabs::TabInterface*) {
+            if (self) self->Reshow();
+          }, weak_factory_.GetWeakPtr())));
+    }
   }
   ~Ambient() override { Hide(); }
   bool Matches(AuthenticatorRequestDialogModel& model) const { return model_ == &model; }
   bool MayShow() const {
-    return model_ && guard_->Valid(true) && !guard_->window().attachedSheet &&
+    return model_ && controller_ && guard_->Valid(true) && !guard_->window().attachedSheet &&
            !PCNativeWindowHasSecurityReservation(guard_->window());
   }
+  bool MaySelect() const {
+    return !selection_made_ && MayShow() &&
+           model_->step() == AuthenticatorRequestDialogModel::Step::kPasskeyAutofill;
+  }
+  void Reshow() {
+    if (MaySelect()) Show();
+  }
   void Show() {
-    if (!MayShow() || !controller_) return;
-    // A later Show may replace the actual credential list. Never retain a
-    // visible row label whose selection index now names another credential.
+    if (!MayShow()) return;
+    selection_made_ = false;
     Hide();
-    std::vector<size_t> indices;
+    indices_.clear();
     for (size_t i = 0; i < model_->mechanisms.size(); ++i) {
       const auto& type = model_->mechanisms[i].type;
       if (std::holds_alternative<AuthenticatorRequestDialogModel::Mechanism::Credential>(type) ||
           std::holds_alternative<AuthenticatorRequestDialogModel::Mechanism::Password>(type)) {
-        indices.push_back(i);
+        indices_.push_back(i);
       }
     }
-    if (indices.empty()) return;
-    auto* bubble = new ambient_signin::AmbientSigninBubbleView(
-        views::BubbleAnchor(), controller_.get());
-    bubble_ = bubble->GetWeakPtr();
+    if (indices_.empty()) return;
     const auto bounds = guard_->contents()->GetContainerBounds();
-    //
-    // Chromium156 ambient surface, use the actual page's upper trailing edge;
-    // preserve the genuine credential rows, icons, labels and interaction.
-    bubble->SetNativeHost(guard_->contents()->GetNativeView(),
-                         gfx::Rect(bounds.right() - 24, bounds.y() + 8, 1, 1),
-                         base::BindRepeating([](base::WeakPtr<Ambient> self) {
-                           return self && self->MayShow() &&
-                               self->model_->step() == AuthenticatorRequestDialogModel::Step::kPasskeyAutofill;
-                         }, weak_factory_.GetWeakPtr()));
+    auto* bubble = new NativeAmbientSigninBubble(
+        guard_->contents()->GetNativeView(),
+        gfx::Rect(bounds.right() - 24, bounds.y() + 8, 1, 1),
+        model_->relying_party_id,
+        base::BindRepeating([](base::WeakPtr<Ambient> self) {
+          return self && self->MaySelect();
+        }, weak_factory_.GetWeakPtr()),
+        base::BindRepeating(&Ambient::SelectCredential,
+                            weak_factory_.GetWeakPtr(), generation_));
+    bubble_ = bubble->GetWeakPtr();
     auto weak = weak_factory_.GetWeakPtr();
     security_ = [NSNotificationCenter.defaultCenter
         addObserverForName:PCNativeWindowSecurityStateChanged object:guard_->window()
                     queue:nil usingBlock:^(NSNotification*) {
                       if (weak && !weak->MayShow()) weak->Hide();
                     }];
-    bubble->ShowCredentials(model_->mechanisms, indices);
+    bubble->ShowCredentials(model_->mechanisms, indices_);
   }
   void Hide() {
+    ++generation_;
     if (security_) {
       [NSNotificationCenter.defaultCenter removeObserver:security_];
       security_ = nil;
     }
     auto bubble = std::exchange(bubble_, {});
-    if (bubble) bubble->DisconnectController();
+    if (bubble) bubble->Disconnect();
+  }
+  void SelectCredential(uint64_t generation, size_t index) {
+    if (generation != generation_ || !MaySelect() || index >= indices_.size()) return;
+    auto callback = model_->mechanisms.at(indices_.at(index)).callback;
+    selection_made_ = true;
+    Hide();
+    callback.Run();
+  }
+  void OnVisibilityChanged(content::Visibility visibility) override {
+    if (visibility == content::Visibility::HIDDEN) {
+      Hide();
+    } else if (!bubble_) {
+      Reshow();
+    }
   }
   void OnStepTransition() override {
     if (model_ && model_->step() != AuthenticatorRequestDialogModel::Step::kPasskeyAutofill)
       Hide();
   }
-  void OnRequestComplete() override { Hide(); }
+  void OnRequestComplete() override {
+    observation_.Reset();
+    model_ = nullptr;
+    Hide();
+  }
   void OnModelDestroyed(AuthenticatorRequestDialogModel*) override {
     observation_.Reset();
     model_ = nullptr;
@@ -793,7 +944,11 @@ class Ambient final : public AuthenticatorRequestDialogModel::Observer {
   raw_ptr<AuthenticatorRequestDialogModel> model_;
   const std::shared_ptr<Guard> guard_;
   base::WeakPtr<ambient_signin::AmbientSigninController> controller_;
-  base::WeakPtr<ambient_signin::AmbientSigninBubbleView> bubble_;
+  base::WeakPtr<NativeAmbientSigninBubble> bubble_;
+  std::vector<size_t> indices_;
+  uint64_t generation_ = 0;
+  bool selection_made_ = false;
+  std::vector<base::CallbackListSubscription> subscriptions_;
   base::ScopedObservation<AuthenticatorRequestDialogModel,
                           AuthenticatorRequestDialogModel::Observer> observation_{this};
   id security_;
@@ -837,9 +992,7 @@ void CancelModelSoon(AuthenticatorRequestDialogModel& model) {
 }
 bool Context::BeginSettings(content::RenderFrameHost& frame,
                             AuthenticatorRequestDialogModel& model) {
-  // This is called only by the real settings controller at an explicit new
-  // attempt. Reusing its document-owned model may begin a new generation, but
-  // merely reattaching a page or asking for a dialog may never revive one.
+
   if (guard_ && !guard_->Matches(model) && guard_->HasModel() && guard_->Valid(false))
     return false;
   if (!frame.IsActive() ||
@@ -852,7 +1005,7 @@ bool Context::BeginSettings(content::RenderFrameHost& frame,
 std::shared_ptr<Guard> Context::GuardForModel(
     AuthenticatorRequestDialogModel& model) {
   if (guard_ && guard_->Matches(model)) {
-    return guard_;  // Never revive a detached/cancelled instance of this model.
+    return guard_;
   }
   CancelModelSoon(model);
   return {};
@@ -869,7 +1022,7 @@ std::unique_ptr<AuthenticatorRequestDialogViewController> Context::CreateDialog(
   Guard::Operation operation(guard);
   return std::make_unique<Controller>(model, guard);
 }
-}  // namespace
+}
 std::unique_ptr<ChromeAuthenticatorRequestDelegate>
 CreateWebAuthenticationRequestDelegate(
     content::RenderFrameHost* render_frame_host) {
@@ -904,4 +1057,4 @@ void SetNativeWebAuthnAttached(content::WebContents& contents, bool attached) {
     }
   }
 }
-}  // namespace parc
+}

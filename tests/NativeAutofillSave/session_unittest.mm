@@ -1,7 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Link with the real native save session/presenter in Chromium's unit_tests.
-// This test-only non-Views window lets the actual Browser/Tab/controller path
-// run without substituting a fake save bubble or a duplicate state machine.
 #import <AppKit/AppKit.h>
 
 #include <memory>
@@ -20,7 +17,6 @@
 #include "chrome/browser/ui/autofill/save_address_bubble_controller.h"
 #include "chrome/browser/ui/autofill/test/test_autofill_bubble_handler.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "components/autofill/core/browser/data_manager/test_personal_data_manager.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/autofill/core/browser/test_utils/autofill_test_util.h"
@@ -28,6 +24,7 @@
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 #include "ui/base/unowned_user_data/scoped_unowned_user_data.h"
 
 namespace parc {
@@ -59,9 +56,6 @@ NSButton* FindButton(NSView* view, NSString* title) {
   return nil;
 }
 
-// Exercise both Chromium UI tasks and the actual native run-loop delivery used
-// by the presenter. The wall-clock bound fails visibly rather than fabricating
-// a sheet/result when AppKit or an upstream lifecycle prerequisite is missing.
 template <typename Predicate>
 bool PumpUntil(Predicate predicate) {
   const auto deadline = base::TimeTicks::Now() + base::Seconds(5);
@@ -80,7 +74,7 @@ class SessionHandler final : public autofill::TestAutofillBubbleHandler {
   autofill::AutofillBubbleBase* ShowSaveCreditCardBubble(
       content::WebContents* contents,
       autofill::SaveCardBubbleController* controller,
-      bool /*is_user_gesture*/) override {
+      bool ) override {
     auto* actual = CardController::FromWebContents(contents);
     CHECK(actual && controller == actual);
     auto* browser = tabs::TabInterface::GetFromContents(contents)
@@ -95,7 +89,7 @@ class SessionHandler final : public autofill::TestAutofillBubbleHandler {
   autofill::AutofillBubbleBase* ShowSaveAddressProfileBubble(
       content::WebContents* contents,
       std::unique_ptr<autofill::SaveAddressBubbleController> controller,
-      bool /*is_user_gesture*/) override {
+      bool ) override {
     auto* browser = tabs::TabInterface::GetFromContents(contents)
                         ->GetBrowserWindowInterface();
     CHECK(browser);
@@ -155,12 +149,12 @@ class SessionTestWindow final : public TestBrowserWindow {
   __weak NSWindow* native_window_;
   const raw_ref<SessionHandler> handler_;
 };
-}  // namespace
+}
 
-class NativeAutofillSaveSessionTest : public BrowserWithTestWindowTest {
+class NativeAutofillSaveSessionTest : public ParcBrowserWindowTest {
  public:
   void SetUp() override {
-    BrowserWithTestWindowTest::SetUp();
+    ParcBrowserWindowTest::SetUp();
     ASSERT_TRUE(native_window_);
     profile()->GetPrefs()->SetBoolean(prefs::kSigninAllowed, false);
     ASSERT_FALSE(window()->AsBrowserView());
@@ -170,9 +164,6 @@ class NativeAutofillSaveSessionTest : public BrowserWithTestWindowTest {
         ui::ScopedUnownedUserData<autofill::AutofillBubbleHandler>>(
         browser()->GetUnownedUserDataHost(), handler_);
 
-    // AddTab creates real WebContents, TabInterface and Browser ownership.
-    // about:blank and the test personal data manager use no network or
-    // Keychain.
     AddTab(browser(), GURL("about:blank"));
     NSView* native = contents()->GetNativeView().GetNativeNSView();
     ASSERT_TRUE(native);
@@ -191,11 +182,8 @@ class NativeAutofillSaveSessionTest : public BrowserWithTestWindowTest {
     handler_.InterruptAll();
     browser()->GetTabStripModel()->CloseAllTabs();
     EXPECT_TRUE(PumpUntil([this] { return handler_.AllDestroyed(); }));
-    // Scope registration and every borrowed controller are gone before Browser,
-    // Profile and its UnownedUserDataHost. Native window outlives that
-    // teardown.
     registration_.reset();
-    BrowserWithTestWindowTest::TearDown();
+    ParcBrowserWindowTest::TearDown();
     [native_window_ close];
     native_window_ = nil;
   }
@@ -228,8 +216,6 @@ class NativeAutofillSaveSessionTest : public BrowserWithTestWindowTest {
     return autofill::AddressBubblesController::FromWebContents(contents());
   }
   void OfferCard(CardClient::LocalSaveCardPromptCallback callback) {
-    // Only visibility is overridden for the offscreen fixture. Controller,
-    // BubbleManager, callback consumption and view registration remain real.
     auto ignore_activation = CardController::IgnoreWindowActivationForTesting();
     card()->OfferLocalSave(
         autofill::test::GetCreditCard(),
@@ -242,7 +228,7 @@ class NativeAutofillSaveSessionTest : public BrowserWithTestWindowTest {
       autofill::AutofillClient::AddressProfileSavePromptCallback callback) {
     autofill::AddressBubblesController::SetUpAndShowSaveOrUpdateAddressBubble(
         contents(), address_profile_, nullptr, AddressType::kSave,
-        /*user_has_any_profile_saved=*/true, std::move(callback));
+        true, std::move(callback));
   }
   void AwaitSheet() {
     ASSERT_TRUE(
@@ -256,7 +242,6 @@ class NativeAutofillSaveSessionTest : public BrowserWithTestWindowTest {
     ASSERT_TRUE(button.enabled);
     [button performClick:nil];
   }
-  // Fixture-owned results remain alive during failure-path TearDown callbacks.
   int decisions_ = 0;
   int replacement_decisions_ = 0;
   std::vector<AddressDecision> address_decisions_;
@@ -296,13 +281,11 @@ TEST_F(NativeAutofillSaveSessionTest,
     ++decisions_;
     EXPECT_EQ(decision, CardDecision::kAccepted);
     auto accepting = handler_.last;
-    card()->HideBubble(/*initiated_by_bubble_manager=*/false);
-    // Without the accepted-Hide safeguard, the real controller is left in
-    // kLocalSave with an already-consumed save callback.
+    card()->HideBubble(false);
     EXPECT_EQ(card()->GetPaymentsBubbleType(), PaymentState::kManageCards);
     EXPECT_EQ(card()->GetPaymentBubbleView(), nullptr);
     base::RunLoop().RunUntilIdle();
-    EXPECT_TRUE(accepting);  // No self-delete task during the engine callback.
+    EXPECT_TRUE(accepting);
   }));
   auto session = handler_.last;
   AwaitSheet();
@@ -318,7 +301,7 @@ TEST_F(NativeAutofillSaveSessionTest,
   OfferCard(base::BindLambdaForTesting([this](CardDecision decision) {
     ++decisions_;
     EXPECT_EQ(decision, CardDecision::kAccepted);
-    card()->HideBubble(/*initiated_by_bubble_manager=*/false);
+    card()->HideBubble(false);
     EXPECT_EQ(card()->GetPaymentsBubbleType(), PaymentState::kManageCards);
     OfferCard(base::BindLambdaForTesting([this](CardDecision next) {
       ++replacement_decisions_;
@@ -422,4 +405,4 @@ TEST_F(NativeAutofillSaveSessionTest,
               type == AddressType::kSave);
   }
 }
-}  // namespace parc
+}

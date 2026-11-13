@@ -22,7 +22,8 @@
    cast_controller_->AddObserver(this);
 @@ -105,7 +108,7 @@
  }
- 
+-
++
  void CastDeviceListHost::SelectDevice(const std::string& device_id) {
 -  if (!cast_controller_) {
 +  if (!cast_controller_ || (native_guard_ && !native_guard_.Run())) {
@@ -31,23 +32,21 @@
    auto sink_it =
 @@ -171,7 +174,8 @@
  }
- 
+-
++
  void CastDeviceListHost::OnCastingStarted() {
 -  hide_dialog_callback_.Run();
 +  if (!native_guard_ || native_guard_.Run())
 +    hide_dialog_callback_.Run();
  }
- 
+-
++
  void CastDeviceListHost::StartCasting(const media_router::UIMediaSink& sink) {
-@@ -182,9 +186,16 @@
+@@ -182,9 +186,12 @@
      // valid.
      return;
    }
 -  cast_controller_->StartCasting(sink.id, cast_mode.value());
-+  // Parc: requests remoting at the pick, as Chrome does, so the picked player
-+  // casts even from the back/forward cache, and hands the launch's result to
-+  // the request, even if this dialog closed meanwhile: a launch that fails
-+  // takes it back, or a later tab cast would put this video on the receiver.
    if (cast_mode.value() == media_router::MediaCastMode::REMOTE_PLAYBACK) {
 -    media_remoting_callback_.Run();
 +    auto launched = media_remoting_callback_.Run();
@@ -63,7 +62,8 @@
 @@ -5,6 +5,7 @@
  #ifndef CHROME_BROWSER_UI_GLOBAL_MEDIA_CONTROLS_CAST_DEVICE_LIST_HOST_H_
  #define CHROME_BROWSER_UI_GLOBAL_MEDIA_CONTROLS_CAST_DEVICE_LIST_HOST_H_
- 
+-
++
 +#include "base/functional/callback.h"
  #include "chrome/browser/ui/media_router/cast_dialog_controller.h"
  #include "chrome/browser/ui/media_router/ui_media_sink.h"
@@ -80,7 +80,8 @@
 +      base::RepeatingClosure on_sinks_discovered_callback,
 +      base::RepeatingCallback<bool()> native_guard = {});
    ~CastDeviceListHost() override;
- 
+-
++
    // mojom::DeviceListHost:
 @@ -49,11 +52,13 @@
    mojo::Remote<global_media_controls::mojom::DeviceListClient> client_;
@@ -94,17 +95,20 @@
    // Called whenever the sink is discovered.
    base::RepeatingClosure on_sinks_discovered_callback_;
 +  base::RepeatingCallback<bool()> native_guard_;
- 
+-
++
    // Metrics
    base::Time initialization_time_;
 --- a/chrome/browser/ui/global_media_controls/media_notification_service.cc
 +++ b/chrome/browser/ui/global_media_controls/media_notification_service.cc
 @@ -6,10 +6,12 @@
- 
+-
++
  #include <algorithm>
  #include <memory>
 +#include <utility>
- 
+-
++
  #include "base/callback_list.h"
  #include "base/functional/bind.h"
  #include "base/metrics/histogram_functions.h"
@@ -112,7 +116,7 @@
  #include "base/unguessable_token.h"
  #include "chrome/browser/feature_engagement/tracker_factory.h"
  #include "chrome/browser/glic/host/guest_util.h"
-@@ -40,13 +42,19 @@
+@@ -40,7 +42,9 @@
  #include "content/public/browser/media_session.h"
  #include "content/public/browser/media_session_service.h"
  #include "content/public/browser/render_frame_host.h"
@@ -122,18 +126,21 @@
  #include "media/remoting/device_capability_checker.h"
  #include "mojo/public/cpp/bindings/pending_remote.h"
  #include "mojo/public/cpp/bindings/self_owned_receiver.h"
- #include "services/media_session/public/mojom/media_session.mojom.h"
+@@ -48,6 +52,10 @@
  #include "services/metrics/public/cpp/ukm_builders.h"
  #include "services/metrics/public/cpp/ukm_recorder.h"
+-
 +
 +#if BUILDFLAG(ENABLE_MEDIA_REMOTING)
 +#include "chrome/browser/media/cast_remoting_connector.h"
 +#endif
- 
++
  #if BUILDFLAG(IS_CHROMEOS)
  #include "ash/session/session_controller_impl.h"
+ #include "ash/shell.h"
 @@ -280,6 +288,10 @@
- 
+-
++
  void MediaNotificationService::Shutdown() {
    shutdown_has_started_ = true;
 +  auto weak_this = weak_ptr_factory_.GetWeakPtr();
@@ -143,14 +150,11 @@
    // `cast_notification_producer_`,
    // `presentation_request_notification_producer_` and `host_receivers_`
    // depend on MediaRouter, which is another keyed service. So they must be
-@@ -334,7 +346,62 @@
-   if (web_contents && web_contents->GetLastCommittedURL().SchemeIsFile()) {
-     feature_engagement::TrackerFactory::GetForBrowserContext(profile_)
-         ->NotifyEvent("media_route_started_from_gmc");
-+  }
-+}
+@@ -337,6 +349,58 @@
+   }
+ }
+-
 +
-+// static
 +base::OnceCallback<void(bool)>
 +MediaNotificationService::ParcRequestMediaRemoting(const std::string& item_id) {
 +  auto* web_contents =
@@ -158,7 +162,6 @@
 +  if (!web_contents) {
 +    return {};
 +  }
-+  // The session's one player now, which only this page's can be.
 +  content::MediaSession::Get(web_contents)->RequestMediaRemoting();
 +  return base::BindOnce(
 +      &MediaNotificationService::ParcOnMediaRemotingLaunched,
@@ -166,7 +169,6 @@
 +      web_contents->GetPrimaryMainFrame()->GetWeakDocumentPtr());
 +}
 +
-+// static
 +void MediaNotificationService::ParcOnMediaRemotingLaunched(
 +    base::WeakPtr<content::WebContents> web_contents,
 +    content::WeakDocumentPtr document,
@@ -188,7 +190,7 @@
 +                    content::RenderFrameHost::LifecycleState::
 +                        kInBackForwardCache))) {
 +    return;
-   }
++  }
 +  auto* router =
 +      media_router::MediaRouterFactory::GetApiForBrowserContextIfExists(
 +          web_contents->GetBrowserContext());
@@ -203,14 +205,16 @@
 +      router->TerminateRoute(route.media_route_id());
 +    }
 +  }
- }
- 
++}
++
  void MediaNotificationService::OnSinksDiscovered(const std::string& item_id) {
-@@ -518,8 +585,228 @@
+   auto item = media_session_item_producer_->GetMediaItem(item_id);
+   auto* web_contents =
+@@ -518,8 +582,223 @@
               : false;
  }
- 
-+// static
+-
++
 +std::optional<media_router::MediaRoute>
 +MediaNotificationService::ParcCastRouteForWebContents(
 +    content::WebContents* web_contents,
@@ -378,8 +382,6 @@
 +    base::UnguessableToken token) {
 +  if (!native_presentation_ || native_presentation_->token != token)
 +    return;
-+  // Remove ownership before any callback: a new request may reenter while the
-+  // old context or widget is being torn down.
 +  auto old_state = std::move(*native_presentation_);
 +  native_presentation_.reset();
 +  auto weak_this = weak_ptr_factory_.GetWeakPtr();
@@ -409,8 +411,6 @@
 +  }
 +  if (!old_item_id.empty())
 +    media_session_item_producer_->UpdateMediaItemSourceOrigin(old_item_id, std::nullopt);
-+  // A SelectDevice dispatch may have reentered cancellation. Revoke the
-+  // lease now, but destroy its self-owned host only after that stack unwinds.
 +  for (auto& host : hosts) {
 +    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
 +        FROM_HERE, base::BindOnce(
@@ -435,10 +435,11 @@
    auto* web_contents = content::WebContents::FromRenderFrameHost(
        content::RenderFrameHost::FromID(
            context->presentation_request().render_frame_host_id));
-@@ -542,7 +829,24 @@
+@@ -542,7 +821,24 @@
        return;
      }
- 
+-
++
 +    auto weak_this = weak_ptr_factory_.GetWeakPtr();
 +    auto weak_contents = web_contents->GetWeakPtr();
 +    auto* request_host = content::RenderFrameHost::FromID(
@@ -457,10 +458,11 @@
 +      return;
 +    }
 +    web_contents = weak_contents.get();
- 
+-
++
      // If there exists a media session notification associated with
      // |web_contents|, hold onto the context for later use.
-@@ -554,12 +858,11 @@
+@@ -554,12 +850,11 @@
      std::string item_id =
          GetActiveControllableSessionForWebContents(web_contents);
      context_item_id_ = item_id;
@@ -476,7 +478,7 @@
      }
  #endif
    } else if (presentation_request_notification_producer_) {
-@@ -577,6 +880,9 @@
+@@ -577,6 +872,9 @@
      const std::string& session_id,
      mojo::PendingReceiver<mojom::DeviceListHost> host_receiver,
      mojo::PendingRemote<mojom::DeviceListClient> client_remote) {
@@ -486,7 +488,7 @@
    std::optional<std::string> remoting_session_id;
    // `remoting_session_id` is used to construct the MediaRemotingCallback for
    // CastDeviceListHost to request Media Remoting for a MediaSession. This is
-@@ -585,20 +891,54 @@
+@@ -585,20 +883,52 @@
    // presentation context), the Remote Playback API on the blink side handles
    // sending the Media Remoting request and there's no need for requesting Media
    // Remoting from MNS.
@@ -506,8 +508,6 @@
 -  CreateCastDeviceListHost(CreateCastDialogControllerForSession(session_id),
 -                           std::move(host_receiver), std::move(client_remote),
 -                           remoting_session_id);
-+  // A second selector must not substitute a default source after this native
-+  // request has already moved into its original device host.
 +  if (native_presentation_ && !native_token)
 +    return;
 +  auto controller = CreateCastDialogControllerForSession(session_id);
@@ -517,7 +517,8 @@
 +                           std::move(client_remote), remoting_session_id,
 +                           std::move(native_guard), std::move(native_token));
  }
- 
+-
++
  void MediaNotificationService::GetDeviceListHostForPresentation(
      mojo::PendingReceiver<mojom::DeviceListHost> host_receiver,
      mojo::PendingRemote<mojom::DeviceListClient> client_remote) {
@@ -546,9 +547,10 @@
 +                           std::move(client_remote), std::nullopt,
 +                           std::move(native_guard), std::move(native_token));
  }
- 
+-
++
  void MediaNotificationService::SetDevicePickerProvider(
-@@ -661,7 +1001,12 @@
+@@ -661,7 +991,12 @@
      std::unique_ptr<media_router::CastDialogController> dialog_controller,
      mojo::PendingReceiver<mojom::DeviceListHost> host_pending_receiver,
      mojo::PendingRemote<mojom::DeviceListClient> client_remote,
@@ -562,7 +564,7 @@
    if (!dialog_controller) {
      // We discard the PendingReceiver/Remote here, and if they have disconnect
      // handlers set, those get called.
-@@ -670,21 +1015,26 @@
+@@ -670,21 +1005,26 @@
    auto media_remoting_callback_ =
        remoting_session_id.has_value()
            ? base::BindRepeating(
@@ -593,18 +595,20 @@
    int host_id = host->id();
    mojo::SelfOwnedReceiverRef<global_media_controls::mojom::DeviceListHost>
        host_receiver = mojo::MakeSelfOwnedReceiver(
-@@ -693,6 +1043,8 @@
+@@ -693,6 +1033,8 @@
        base::BindOnce(&MediaNotificationService::RemoveDeviceListHost,
                       weak_ptr_factory_.GetWeakPtr(), host_id));
    host_receivers_.emplace(host_id, std::move(host_receiver));
 +  if (native_token)
 +    native_device_hosts_.emplace(host_id, *native_token);
  }
- 
+-
++
  bool MediaNotificationService::HasPresentationContextForSession(
-@@ -713,16 +1065,16 @@
+@@ -713,16 +1055,16 @@
  }
- 
+-
++
  void MediaNotificationService::ResetPresentationContext() {
 -  context_.reset();
 -  if (!context_item_id_.empty()) {
@@ -623,11 +627,13 @@
 -    context_item_id_.clear();
    }
  }
- 
-@@ -773,6 +1125,14 @@
+-
++
+@@ -773,6 +1115,14 @@
    });
  }
- 
+-
++
 +bool MediaNotificationService::ParcHasFrozenSessionForWebContents(
 +    content::WebContents* web_contents) const {
 +  return content::MediaSession::GetIfExists(web_contents) &&
@@ -639,26 +645,29 @@
  std::string
  MediaNotificationService::GetActiveControllableSessionForWebContents(
      content::WebContents* web_contents) const {
-@@ -793,6 +1153,7 @@
+@@ -793,6 +1143,7 @@
    // get destroyed soon anyways.
    if (!shutdown_has_started_) {
      host_receivers_.erase(host_id);
 +    native_device_hosts_.erase(host_id);
    }
  }
- 
+-
++
 --- a/chrome/browser/ui/global_media_controls/media_notification_service.h
 +++ b/chrome/browser/ui/global_media_controls/media_notification_service.h
 @@ -5,12 +5,15 @@
  #ifndef CHROME_BROWSER_UI_GLOBAL_MEDIA_CONTROLS_MEDIA_NOTIFICATION_SERVICE_H_
  #define CHROME_BROWSER_UI_GLOBAL_MEDIA_CONTROLS_MEDIA_NOTIFICATION_SERVICE_H_
- 
+-
++
 +#include <cstdint>
  #include <map>
  #include <optional>
  #include <string>
  #include <vector>
- 
+-
++
 +#include "base/functional/callback.h"
  #include "base/gtest_prod_util.h"
 +#include "base/unguessable_token.h"
@@ -675,30 +684,22 @@
  #include "mojo/public/cpp/bindings/pending_receiver.h"
  #include "mojo/public/cpp/bindings/pending_remote.h"
  #include "mojo/public/cpp/bindings/receiver.h"
-@@ -118,9 +123,38 @@
+@@ -118,9 +123,28 @@
    // True if there are local cast notifications.
    bool HasLocalCastNotifications() const;
- 
-+  // Parc: the route among the router's current `routes` that casts
-+  // `web_contents`, as its dialog shows it (SetDialogDelegateForWebContents()):
-+  // a presentation the page started, its media session's Remote Playback or
-+  // tab mirroring (GetSessionRoute()), or its default presentation's launch
-+  // while it connects, before the page learns of it.
+-
++
 +  static std::optional<media_router::MediaRoute> ParcCastRouteForWebContents(
 +      content::WebContents* web_contents,
 +      const std::vector<media_router::MediaRoute>& routes);
 +
-+  // Parc: whether `web_contents`' media session item is frozen, as on losing
-+  // audio focus: it is listed again when the page regains it, or dropped when
-+  // the freeze times out (MediaSessionNotificationItem::Freeze()).
 +  bool ParcHasFrozenSessionForWebContents(
 +      content::WebContents* web_contents) const;
 +
    void OnStartPresentationContextCreated(
        std::unique_ptr<media_router::StartPresentationContext> context);
- 
-+  // Owns only the exact native request identified by token. Invalidation
-+  // closes its native surface and revokes its device host before callbacks.
+-
++
 +  bool BeginNativePresentation(
 +      base::UnguessableToken token,
 +      std::unique_ptr<media_router::StartPresentationContext> context,
@@ -714,12 +715,13 @@
    // global_media_controls::mojom::DeviceService:
    void GetDeviceListHostForSession(
        const std::string& session_id,
-@@ -163,6 +197,30 @@
+@@ -162,6 +186,25 @@
+   friend class MediaNotificationServiceCastTest;
    friend class MediaToolbarButtonControllerTest;
    friend class ash::GlobalMediaControlsCastStartTest;
 +  friend class ParcMediaNotificationServiceTest;
 +  friend class ParcMediaNotificationServiceCastTest;
- 
++
 +  void StartPresentationContext(
 +      std::unique_ptr<media_router::StartPresentationContext> context,
 +      uint64_t sequence);
@@ -729,23 +731,18 @@
 +      base::UnguessableToken token,
 +      global_media_controls::SupplementalDevicePickerProducer::NativeLifecycleEvent event);
 +
-+  // Parc: a cast was picked for `item_id`'s player. Requests its remoting
-+  // now, and returns what the launch's result does with the request.
 +  static base::OnceCallback<void(bool)> ParcRequestMediaRemoting(
 +      const std::string& item_id);
 +
-+  // Parc: the cast picked for the player of `web_contents`' `document`
-+  // launched, or failed and takes the request back. A launch whose page is
-+  // gone (a cached page casts from the back/forward cache) ends.
 +  static void ParcOnMediaRemotingLaunched(
 +      base::WeakPtr<content::WebContents> web_contents,
 +      content::WeakDocumentPtr document,
 +      bool launched);
+-
 +
    // Instantiates a MediaRouterViewsUI object associated with the Session with
    // the given |session_id|.
-   std::unique_ptr<media_router::CastDialogController>
-@@ -180,7 +238,9 @@
+@@ -180,7 +223,9 @@
            host_receiver,
        mojo::PendingRemote<global_media_controls::mojom::DeviceListClient>
            client_remote,
@@ -753,13 +750,15 @@
 +      std::optional<std::string> remoting_session_id,
 +      base::RepeatingCallback<bool()> native_guard = {},
 +      std::optional<base::UnguessableToken> native_token = std::nullopt);
- 
+-
++
    // True if there is a presentation context for the given session ID.
    bool HasPresentationContextForSession(const std::string& session_id);
-@@ -248,6 +308,15 @@
+@@ -248,6 +293,15 @@
        mojo::SelfOwnedReceiverRef<global_media_controls::mojom::DeviceListHost>>
        host_receivers_;
- 
+-
++
 +  struct NativePresentationState {
 +    base::UnguessableToken token;
 +    base::RepeatingCallback<bool()> guard;
@@ -770,7 +769,8 @@
 +  uint64_t presentation_sequence_ = 0;
 +
    bool shutdown_has_started_ = false;
- 
+-
++
    struct IphState {
 --- a/chrome/browser/ui/global_media_controls/presentation_request_notification_producer.cc
 +++ b/chrome/browser/ui/global_media_controls/presentation_request_notification_producer.cc
@@ -822,11 +822,10 @@
  }
 -
 +
-@@ -104,6 +129,92 @@
- base::WeakPtr<PresentationRequestNotificationItem>
- PresentationRequestNotificationProducer::GetNotificationItem() {
+@@ -106,6 +131,87 @@
    return item_ ? item_->GetWeakPtr() : nullptr;
-+}
+ }
+-
 +
 +std::unique_ptr<media_router::StartPresentationContext>
 +PresentationRequestNotificationProducer::TakeNativeContext(
@@ -849,8 +848,6 @@
 +    global_media_controls::SupplementalDevicePickerProducer* local_provider) {
 +  native_request_token_ = token;
 +  native_disconnect_ = std::move(on_disconnect);
-+  // The previous dialog was closed before arming. Discard any of its queued
-+  // untagged observer messages, and bind a fresh same-process observer now.
 +  observer_receiver_.reset();
 +  local_provider->AddObserver(observer_receiver_.BindNewPipeAndPassRemote());
 +  if (presentation_manager_)
@@ -872,9 +869,6 @@
 +  if (!native_request_token_ || *native_request_token_ != token ||
 +      !provider_.is_bound())
 +    return false;
-+  // This control message is ordered after the item creation/removal messages
-+  // already sent on the same pipe. Avoid showing a new item before an older
-+  // queued DeleteItem has reached the provider.
 +  provider_.QueryVersion(base::BindOnce(
 +      [](base::WeakPtr<PresentationRequestNotificationProducer> self,
 +         base::UnguessableToken token, base::OnceClosure completion, uint32_t) {
@@ -912,11 +906,12 @@
 +    context->InvokeErrorCallback(blink::mojom::PresentationError(
 +        blink::mojom::PresentationErrorType::PRESENTATION_REQUEST_CANCELLED,
 +        "Dialog closed."));
- }
--
++}
 +
  void PresentationRequestNotificationProducer::BindProvider(
-@@ -113,6 +224,11 @@
+     mojo::PendingRemote<global_media_controls::mojom::DevicePickerProvider>
+         pending_provider) {
+@@ -113,6 +219,11 @@
    provider_->AddObserver(observer_receiver_.BindNewPipeAndPassRemote());
    provider_.set_disconnect_handler(base::BindOnce(
        [](PresentationRequestNotificationProducer* self) {
@@ -928,7 +923,7 @@
          self->item_.reset();
        },
        base::Unretained(this)));
-@@ -125,6 +241,8 @@
+@@ -125,6 +236,8 @@
  }
 -
 +
@@ -938,7 +933,7 @@
    is_dialog_open_ = true;
    presentation_manager_ = test_presentation_manager_
                                ? test_presentation_manager_
-@@ -147,6 +265,8 @@
+@@ -147,6 +260,8 @@
  }
 -
 +
@@ -948,7 +943,7 @@
    is_dialog_open_ = false;
    DeleteItemForPresentationRequest("Dialog closed.");
    if (presentation_manager_) {
-@@ -160,6 +280,8 @@
+@@ -160,6 +275,8 @@
  }
 -
 +
@@ -959,7 +954,7 @@
  }
 -
 +
-@@ -177,6 +299,8 @@
+@@ -177,6 +294,8 @@
 -
 +
  void PresentationRequestNotificationProducer::OnDefaultPresentationChanged(
@@ -969,7 +964,7 @@
    // NOTE: We only observe the presentation manager while the media control
    // dialog is open, so this method is only handling the unusual case where
    // the default presentation request is changed while the dialog is open.
-@@ -199,6 +323,9 @@
+@@ -199,6 +318,9 @@
            GetWebContentsFromPresentationRequest(request), this);
    // This may replace an existing item, which is the right thing to do if
    // we've reached this point.
@@ -979,30 +974,29 @@
    item_.emplace(request, std::move(context), provider_);
    if (provider_.is_bound()) {
      provider_->CreateItem(source_id_);
-@@ -211,16 +338,18 @@
+@@ -211,16 +333,18 @@
    if (!item_) {
      return;
    }
 -  if (item_->context()) {
 -    item_->context()->InvokeErrorCallback(blink::mojom::PresentationError(
+-        blink::mojom::PresentationErrorType::PRESENTATION_REQUEST_CANCELLED,
+-        message));
+-  }
 +  ++item_generation_;
 +  auto context = item_->PassContext();
-+  item_.reset();
+   item_.reset();
 +  native_item_token_.reset();
-+  presentation_request_observer_.reset();
+   presentation_request_observer_.reset();
+-  if (provider_.is_bound()) {
 +  should_show_ = false;
 +  if (provider_.is_bound())
-+    provider_->DeleteItem();
+     provider_->DeleteItem();
+-  }
 +  if (context)
 +    context->InvokeErrorCallback(blink::mojom::PresentationError(
-         blink::mojom::PresentationErrorType::PRESENTATION_REQUEST_CANCELLED,
-         message));
--  }
--  item_.reset();
--  presentation_request_observer_.reset();
--  if (provider_.is_bound()) {
--    provider_->DeleteItem();
--  }
++        blink::mojom::PresentationErrorType::PRESENTATION_REQUEST_CANCELLED,
++        message));
  }
 -
 +
@@ -1018,24 +1012,22 @@
  #include <memory>
  #include <optional>
  #include <string>
-@@ -18,6 +19,10 @@
- #include "content/public/browser/presentation_observer.h"
+@@ -19,6 +20,10 @@
  #include "mojo/public/cpp/bindings/pending_remote.h"
  #include "mojo/public/cpp/bindings/remote.h"
+-
 +
 +namespace global_media_controls {
 +class SupplementalDevicePickerProducer;
-+}  // namespace global_media_controls
--
++}
 +
  // An object that creates and manages media notifications related to
  // presentation requests by delegating to the implementer of
-@@ -67,6 +72,21 @@
+ // global_media_controls::mojom::DevicePickerProvider that handles the UI.
+@@ -67,6 +72,19 @@
    // `this` manages.
    content::WebContents* GetWebContents();
    base::WeakPtr<PresentationRequestNotificationItem> GetNotificationItem();
-+  // Extract only the native request identified by token. Removing the item
-+  // precedes any website callback, so a reentrant replacement survives.
 +  std::unique_ptr<media_router::StartPresentationContext>
 +  TakeNativeContext(const base::UnguessableToken& token);
 +
@@ -1053,7 +1045,7 @@
 +
    void BindProvider(
        mojo::PendingRemote<global_media_controls::mojom::DevicePickerProvider>
-@@ -135,6 +155,8 @@
+@@ -135,6 +153,8 @@
 -
 +
    // The notification managed by this producer, if there is one.
@@ -1064,7 +1056,7 @@
 +
    // False if |notification_service_| should hide |item_| because there are
    // active notifications on WebContents managed by this producer.
-@@ -142,6 +164,8 @@
+@@ -142,6 +162,8 @@
 -
 +
    // Whether the media dialog containing the media notifications is open.
@@ -1134,7 +1126,7 @@
 +
 --- a/chrome/browser/ui/views/global_media_controls/media_dialog_view.cc
 +++ b/chrome/browser/ui/views/global_media_controls/media_dialog_view.cc
-@@ -113,7 +113,8 @@
+@@ -230,7 +230,8 @@
    auto* widget =
        ShowDialog(views::BubbleAnchor(), views::BubbleBorder::TOP_CENTER,
                   service, profile, contents, entry_point);
@@ -1143,8 +1135,9 @@
 +    instance_->SetAnchorRect(bounds);
    return widget;
  }
- 
-@@ -129,15 +130,23 @@
+-
++
+@@ -246,15 +247,23 @@
    // Hide the previous instance if it exists, since there can only be one dialog
    // instance at a time.
    HideDialog();
@@ -1159,7 +1152,8 @@
 -    instance_->set_has_parent(false);
 +    dialog->set_has_parent(false);
    }
- 
+-
++
    views::Widget* widget =
 -      views::BubbleDialogDelegateView::CreateBubble(instance_);
 +      views::BubbleDialogDelegateView::CreateBubble(dialog);
@@ -1169,13 +1163,21 @@
    widget->Show();
 +  if (!weak_widget || instance_ != dialog)
 +    return nullptr;
- 
+-
++
    base::UmaHistogramBoolean("Media.GlobalMediaControls.RepeatUsage",
                              has_been_opened_);
-@@ -149,17 +158,76 @@
+@@ -266,17 +275,77 @@
  }
- 
+-
++
  // static
+-void MediaDialogView::HideDialog() {
+-  if (IsShowing()) {
+-    instance_->service_->media_item_manager()->SetDialogDelegate(nullptr);
+-    speech::SodaInstaller::GetInstance()->RemoveObserver(instance_);
+-    instance_->GetWidget()->Close();
+-  }
 +views::Widget* MediaDialogView::CreateDialogForNativePage(
 +    gfx::NativeView parent,
 +    const gfx::Rect& bounds,
@@ -1231,40 +1233,35 @@
 +  speech::SodaInstaller::GetInstance()->RemoveObserver(old);
 +  service->media_item_manager()->SetDialogDelegate(nullptr);
 +}
+-
 +
 +// static
- void MediaDialogView::HideDialog() {
--  if (IsShowing()) {
--    instance_->service_->media_item_manager()->SetDialogDelegate(nullptr);
--    speech::SodaInstaller::GetInstance()->RemoveObserver(instance_);
--    instance_->GetWidget()->Close();
--  }
--
--  // Set |instance_| to nullptr so that |IsShowing()| returns false immediately.
--  // We also set to nullptr in |WindowClosing()| (which happens asynchronously),
--  // since |HideDialog()| is not always called.
++void MediaDialogView::HideDialog() {
 +  auto* old = instance_;
 +  if (!old)
 +    return;
 +  auto widget = old->GetWidget()->GetWeakPtr();
 +  auto* service = old->service_.get();
-+  // Relinquish the singleton before callbacks. A reentrant new dialog must not
-+  // be cleared by cleanup of the previous instance.
+   // Set |instance_| to nullptr so that |IsShowing()| returns false immediately.
+   // We also set to nullptr in |WindowClosing()| (which happens asynchronously),
+   // since |HideDialog()| is not always called.
    instance_ = nullptr;
 +  speech::SodaInstaller::GetInstance()->RemoveObserver(old);
 +  service->media_item_manager()->SetDialogDelegate(nullptr);
 +  if (widget)
 +    widget->Close();
  }
- 
+-
++
  // static
-@@ -170,9 +238,13 @@
+@@ -287,9 +356,13 @@
  global_media_controls::MediaItemUI* MediaDialogView::ShowMediaItem(
      const std::string& id,
      base::WeakPtr<media_message_center::MediaNotificationItem> item) {
 +  auto weak_this = weak_factory_.GetWeakPtr();
    global_media_controls::MediaItemUI* view_ptr;
- 
+-
++
    auto view = BuildMediaItemUIUpdatedView(id, item);
 +  if (!weak_this)
 +    return nullptr;
@@ -1272,13 +1269,14 @@
    view->SetProperty(views::kElementIdentifierKey,
                      kMediaItemUIUpdatedViewElementId);
    if (auto* save_button = view->GetMediaActionButton(
-@@ -183,23 +255,29 @@
+@@ -300,23 +373,29 @@
    view_ptr = view.get();
    items_[id] = view.get();
    active_sessions_view_->ShowUpdatedItem(id, std::move(view));
 +  if (!weak_this || !items_.contains(id) || items_[id] != view_ptr)
 +    return nullptr;
- 
+-
++
    view_ptr->AddObserver(this);
    UpdateBubbleSize();
    observers_.Notify(&MediaDialogViewObserver::OnMediaSessionShown);
@@ -1286,7 +1284,8 @@
 +    return nullptr;
    return view_ptr;
  }
- 
+-
++
  void MediaDialogView::HideMediaItem(const std::string& id) {
 +  auto weak_this = weak_factory_.GetWeakPtr();
    active_sessions_view_->HideUpdatedItem(id);
@@ -1303,38 +1302,40 @@
 +  if (weak_this)
 +    observers_.Notify(&MediaDialogViewObserver::OnMediaSessionHidden);
  }
- 
+-
++
  void MediaDialogView::RefreshMediaItem(
-@@ -212,10 +290,14 @@
+@@ -329,10 +408,11 @@
        entry_point_ == GlobalMediaControlsEntryPoint::kPresentation;
- 
+-
++
    items_[id]->UpdateFooterView(
 -      BuildFooter(id, item, profile_, media_color_theme_));
 -  items_[id]->UpdateDeviceSelectorView(
 -      BuildDeviceSelector(id, item, service_, service_, profile_, entry_point_,
 -                          media_color_theme_, show_devices));
 +      BuildFooter(id, item, profile_, media_color_theme_, native_guard_));
-+  // A native site request's exact context has moved into this selector's
-+  // device host. Rebuilding the selector would drop that request and create
-+  // an unrelated default source on a later Mojo call.
 +  if (!native_guard_)
 +    items_[id]->UpdateDeviceSelectorView(
 +        BuildDeviceSelector(id, item, service_, service_, profile_, entry_point_,
 +                            media_color_theme_, show_devices));
- 
+-
++
    UpdateBubbleSize();
  }
-@@ -225,7 +307,8 @@
+@@ -342,7 +422,8 @@
  }
- 
+-
++
  void MediaDialogView::Focus() {
 -  RequestFocus();
 +  if (MayNativeInteract())
 +    RequestFocus();
  }
- 
+-
++
  void MediaDialogView::AddedToWidget() {
-@@ -235,6 +318,7 @@
+@@ -352,6 +433,7 @@
    if (frame) {
      frame->SetRoundedCorners(gfx::RoundedCornersF(corner_radius));
    }
@@ -1342,25 +1343,28 @@
    if (entry_point_ ==
        global_media_controls::GlobalMediaControlsEntryPoint::kPresentation) {
      service_->SetDialogDelegateForWebContents(
-@@ -242,7 +326,6 @@
+@@ -359,7 +441,6 @@
    } else {
      service_->media_item_manager()->SetDialogDelegate(this);
    }
 -  speech::SodaInstaller::GetInstance()->AddObserver(this);
  }
- 
+-
++
  gfx::Size MediaDialogView::CalculatePreferredSize(
-@@ -348,6 +431,8 @@
+@@ -465,6 +546,8 @@
  }
- 
+-
++
  void MediaDialogView::TargetLanguageChanged() {
 +  if (!MayNativeInteract())
 +    return;
    static_cast<LiveTranslateComboboxModel*>(
        target_language_combobox_->GetModel())
        ->UpdateTargetLanguageIndex(
-@@ -431,13 +516,16 @@
- 
+@@ -552,13 +635,16 @@
+-
++
  void MediaDialogView::WindowClosing() {
    if (instance_ == this) {
 +    auto* service = service_.get();
@@ -1370,32 +1374,35 @@
 +    service->media_item_manager()->SetDialogDelegate(nullptr);
    }
  }
- 
+-
++
  void MediaDialogView::OnLiveCaptionButtonPressed() {
 +  if (!MayNativeInteract())
 +    return;
    bool enabled = !profile_->GetPrefs()->GetBoolean(prefs::kLiveCaptionEnabled);
    profile_->GetPrefs()->SetBoolean(prefs::kLiveCaptionEnabled, enabled);
    base::UmaHistogramBoolean(
-@@ -445,6 +533,8 @@
+@@ -566,6 +652,8 @@
  }
- 
+-
++
  void MediaDialogView::OnLiveTranslateButtonPressed() {
 +  if (!MayNativeInteract())
 +    return;
    bool enabled =
        !profile_->GetPrefs()->GetBoolean(prefs::kLiveTranslateEnabled);
    profile_->GetPrefs()->SetBoolean(prefs::kLiveTranslateEnabled, enabled);
-@@ -453,6 +543,8 @@
+@@ -574,6 +662,8 @@
  }
- 
+-
++
  void MediaDialogView::OnSettingsButtonPressed() {
 +  if (!MayNativeInteract())
 +    return;
    NavigateParams navigate_params(profile_,
                                   GURL(captions::GetCaptionSettingsUrl()),
                                   ui::PAGE_TRANSITION_LINK);
-@@ -691,8 +783,8 @@
+@@ -812,8 +902,8 @@
    return std::make_unique<global_media_controls::MediaItemUIUpdatedView>(
        id, item, media_color_theme_,
        BuildDeviceSelector(id, item, service_, service_, profile_, entry_point_,
@@ -1404,14 +1411,16 @@
 +                          media_color_theme_, show_devices, native_guard_),
 +      BuildFooter(id, item, profile_, media_color_theme_, native_guard_));
  }
- 
+-
++
  BEGIN_METADATA(MediaDialogView)
 --- a/chrome/browser/ui/views/global_media_controls/media_dialog_view.h
 +++ b/chrome/browser/ui/views/global_media_controls/media_dialog_view.h
 @@ -9,8 +9,11 @@
  #include <memory>
  #include <string>
- 
+-
++
 +#include "base/functional/callback.h"
  #include "base/memory/raw_ptr.h"
 +#include "base/memory/weak_ptr.h"
@@ -1427,16 +1436,13 @@
 +#include "ui/gfx/native_ui_types.h"
  #include "ui/views/bubble/bubble_anchor.h"
  #include "ui/views/bubble/bubble_dialog_delegate_view.h"
- 
-@@ -74,6 +78,22 @@
-       Profile* profile,
+-
++
+@@ -75,6 +79,18 @@
        content::WebContents* contents,
        global_media_controls::GlobalMediaControlsEntryPoint entry_point);
+-
 +
-+  // Create, but do not show, a presentation dialog parented to the exact
-+  // native page. The caller observes the returned widget before showing it.
-+  // An empty token shows the page's media session without a presentation
-+  // request; its device list then casts the session (the Mini Player's Cast).
 +  static views::Widget* CreateDialogForNativePage(
 +      gfx::NativeView parent,
 +      const gfx::Rect& bounds,
@@ -1448,28 +1454,35 @@
 +  static bool IsNativeDialogCurrent(views::Widget* widget);
 +  static void CloseNativeDialog(views::Widget* widget);
 +  static void ForgetNativeDialogForDestroying(views::Widget* widget);
- 
++
    static void HideDialog();
    static bool IsShowing();
-@@ -166,6 +186,11 @@
+-
++
+@@ -170,6 +186,11 @@
        const std::string& id,
        base::WeakPtr<media_message_center::MediaNotificationItem> item);
- 
+-
++
 +  bool MayNativeInteract() const {
 +    return !native_guard_ || native_guard_.Run();
 +  }
 +  base::RepeatingCallback<bool()> native_guard_;
 +
    const raw_ptr<MediaNotificationService> service_;
- 
+-
++
    // Always the original (non-OTR) profile; all prefs are read, written and
-@@ -210,6 +235,7 @@
-   const global_media_controls::GlobalMediaControlsEntryPoint entry_point_;
- 
+@@ -216,6 +237,8 @@
    media_message_center::MediaColorTheme media_color_theme_;
+-
++
+   std::unique_ptr<PictureInPictureFocusHandler> pip_focus_handler_;
++
 +  base::WeakPtrFactory<MediaDialogView> weak_factory_{this};
  };
- 
+-
++
  #endif  // CHROME_BROWSER_UI_VIEWS_GLOBAL_MEDIA_CONTROLS_MEDIA_DIALOG_VIEW_H_
 --- a/chrome/browser/ui/views/global_media_controls/media_item_ui_helper.cc
 +++ b/chrome/browser/ui/views/global_media_controls/media_item_ui_helper.cc
@@ -1483,7 +1496,7 @@
  #include "chrome/app/vector_icons/vector_icons.h"
  #include "chrome/browser/media/router/media_router_feature.h"
  #include "chrome/browser/profiles/profile.h"
-@@ -215,13 +216,15 @@
+@@ -214,13 +215,15 @@
      Profile* profile,
      global_media_controls::GlobalMediaControlsEntryPoint entry_point,
      media_message_center::MediaColorTheme media_color_theme,
@@ -1502,7 +1515,7 @@
 +
  #if BUILDFLAG(IS_CHROMEOS)
    const bool is_local_media_session =
-@@ -233,9 +236,11 @@
+@@ -232,9 +235,11 @@
        std::move(device_set.client), /*has_audio_output=*/is_local_media_session,
        entry_point, media_color_theme, show_devices);
  #else
@@ -1516,7 +1529,7 @@
  }
 -
 +
-@@ -243,21 +248,31 @@
+@@ -242,7 +247,17 @@
      const std::string& id,
      base::WeakPtr<media_message_center::MediaNotificationItem> item,
      Profile* profile,
@@ -1532,44 +1545,26 @@
 +            action.Run();
 +        }, native_guard, std::move(action));
 +  };
-   // Show a footer view for a Cast item.
-   if (item->GetSourceType() == media_message_center::SourceType::kCast) {
-     auto media_cast_item =
-         static_cast<CastMediaNotificationItem*>(item.get())->GetWeakPtr();
- #if BUILDFLAG(IS_CHROMEOS)
-     return std::make_unique<MediaItemUICastFooterView>(
--        base::BindRepeating(&CastMediaNotificationItem::StopCasting,
--                            media_cast_item),
-+        guarded(base::BindRepeating(&CastMediaNotificationItem::StopCasting,
-+                            media_cast_item)),
-         media_color_theme);
- #else
-     return std::make_unique<CastDeviceFooterView>(
-         media_cast_item->device_name(),
--        base::BindRepeating(&CastMediaNotificationItem::StopCasting,
--                            media_cast_item),
-+        guarded(base::BindRepeating(&CastMediaNotificationItem::StopCasting,
-+                            media_cast_item)),
-         media_color_theme);
- #endif
+   if (!item) {
+     return nullptr;
    }
-@@ -270,13 +285,13 @@
+@@ -269,11 +284,11 @@
+   }
 -
 +
  #if BUILDFLAG(IS_CHROMEOS)
-   return std::make_unique<MediaItemUILegacyCastFooterView>(
--      std::move(stop_casting_cb));
-+      guarded(std::move(stop_casting_cb)));
+-  return std::make_unique<MediaItemUICastFooterView>(std::move(stop_casting_cb),
+-                                                     media_color_theme);
++  return std::make_unique<MediaItemUICastFooterView>(
++      guarded(std::move(stop_casting_cb)), media_color_theme);
  #else
-   auto* media_session_item =
-       static_cast<global_media_controls::MediaSessionNotificationItem*>(
-           item.get());
    return std::make_unique<CastDeviceFooterView>(
--      media_session_item->device_name(), std::move(stop_casting_cb),
-+      media_session_item->device_name(), guarded(std::move(stop_casting_cb)),
-       media_color_theme);
+-      device_name, std::move(stop_casting_cb), media_color_theme);
++      device_name, guarded(std::move(stop_casting_cb)), media_color_theme);
  #endif
  }
+-
++
 --- a/chrome/browser/ui/views/global_media_controls/media_item_ui_helper.h
 +++ b/chrome/browser/ui/views/global_media_controls/media_item_ui_helper.h
 @@ -9,6 +9,7 @@
@@ -1605,25 +1600,29 @@
  media_message_center::MediaColorTheme GetMediaColorTheme();
 --- a/chrome/browser/ui/views/toolbar/webui_media_toolbar_button.cc
 +++ b/chrome/browser/ui/views/toolbar/webui_media_toolbar_button.cc
-@@ -45,9 +45,11 @@
-   if (MediaDialogView::IsShowing()) {
-     MediaDialogView::HideDialog();
-   } else if (!suppress) {
--    reopen_suppressor_.Observe(MediaDialogView::ShowDialogFromToolbar(
--        GetBubbleAnchor(), service_, delegate_->GetBrowser()->GetProfile()));
--    ClosePromoBubble(/*engaged=*/true);
-+    if (auto* widget = MediaDialogView::ShowDialogFromToolbar(
-+            GetBubbleAnchor(), service_, delegate_->GetBrowser()->GetProfile())) {
-+      reopen_suppressor_.Observe(widget);
-+      ClosePromoBubble(/*engaged=*/true);
-+    }
-   }
- }
+@@ -182,13 +182,15 @@
+   views::Widget* const widget = MediaDialogView::ShowDialogFromToolbar(
+       views::BubbleAnchor(element), service_,
+       delegate_->GetBrowser()->GetProfile());
+-  dialog_widget_observation_.Observe(widget);
++  if (widget)
++    dialog_widget_observation_.Observe(widget);
 -
 +
+   // Note that this is deliberately not done above, when the button is still
+   // hidden: this method is invoked a second time once the button becomes
+   // visible, and notifying that the feature was used twice per click would
+   // double-count it in the feature engagement backend.
+-  ClosePromoBubble(/*engaged=*/true);
++  if (widget)
++    ClosePromoBubble(/*engaged=*/true);
+-
++
+   // Since `dialog_widget_observation_` has changed, need to call UpdateState()
+   // to pass the updated value of `prevent_overflow` to the renderer.
 --- a/components/global_media_controls/media_item_manager_impl.cc
 +++ b/components/global_media_controls/media_item_manager_impl.cc
-@@ -75,30 +75,36 @@
+@@ -75,30 +75,34 @@
  }
 -
 +
@@ -1632,12 +1631,9 @@
    dialog_opened_for_single_item_ = false;
    SetDialogDelegateCommon(delegate);
 -  if (!dialog_delegate_) {
--    return;
--  }
-+  // Observer callbacks may replace the dialog reentrantly. Continue only for
-+  // the exact delegate this invocation installed.
 +  if (!weak_this || !delegate || dialog_delegate_ != delegate)
-+    return;
+     return;
+-  }
    auto item_ids = GetActiveItemIds();
    for (const std::string& id : item_ids) {
      ShowMediaItemUI(id);
@@ -1658,11 +1654,10 @@
 +  auto weak_this = weak_ptr_factory_.GetWeakPtr();
    SetDialogDelegateCommon(delegate);
 -  if (!dialog_delegate_) {
--    return;
++  if (!weak_this || !delegate || dialog_delegate_ != delegate)
+     return;
 -  }
 -  if (ShowMediaItemUI(id)) {
-+  if (!weak_this || !delegate || dialog_delegate_ != delegate)
-+    return;
 +  const bool shown = ShowMediaItemUI(id);
 +  if (weak_this && dialog_delegate_ == delegate && shown)
      dialog_opened_for_single_item_ = true;
@@ -1671,20 +1666,13 @@
 -
 +
  void MediaItemManagerImpl::FocusDialog() {
-@@ -155,15 +161,21 @@
+@@ -155,15 +159,21 @@
  }
 -
 +
  bool MediaItemManagerImpl::ShowMediaItemUI(const std::string& id) {
 -  base::WeakPtr<media_message_center::MediaNotificationItem> item = GetItem(id);
 -  if (!item) {
--    return false;
--  }
--  CHECK(dialog_delegate_);
--  MediaItemUI* item_ui = dialog_delegate_->ShowMediaItem(id, item);
--  MediaItemProducer* producer = GetItemProducer(id);
--  CHECK(producer);
--  producer->OnItemShown(id, item_ui);
 +  const std::string item_id = id;
 +  auto weak_this = weak_ptr_factory_.GetWeakPtr();
 +  base::WeakPtr<media_message_center::MediaNotificationItem> item = GetItem(item_id);
@@ -1699,11 +1687,17 @@
 +    return false;
 +  producer->OnItemShown(item_id, item_ui);
 +  if (!weak_this || dialog_delegate_ != delegate || !item)
-+    return false;
+     return false;
+-  }
+-  CHECK(dialog_delegate_);
+-  MediaItemUI* item_ui = dialog_delegate_->ShowMediaItem(id, item);
+-  MediaItemProducer* producer = GetItemProducer(id);
+-  CHECK(producer);
+-  producer->OnItemShown(id, item_ui);
    base::UmaHistogramEnumeration(
        media_message_center::MediaNotificationItem::kSourceHistogramName,
        item->GetSource());
-@@ -195,15 +207,14 @@
+@@ -195,15 +205,14 @@
      MediaDialogDelegate* delegate) {
    DCHECK(!delegate || !dialog_delegate_);
    dialog_delegate_ = delegate;
@@ -1746,7 +1740,7 @@
      for (auto& observer : observers_) {
        observer->OnPickerDismissed();
      }
-@@ -149,6 +159,38 @@
+@@ -149,6 +159,36 @@
    return pending_remote;
  }
 -
@@ -1774,8 +1768,6 @@
 +  }
 +  if (pending_native_lifecycle_ && pending_native_lifecycle_->token == token)
 +    pending_native_lifecycle_.reset();
-+  // Active ownership is relinquished by OnMediaDialogClosed, after the
-+  // original dialog delegate is detached.
 +}
 +
 +bool SupplementalDevicePickerProducer::HasPendingNativeLifecycle(
@@ -1786,7 +1778,7 @@
  void SupplementalDevicePickerProducer::OnItemListChanged() {
    for (auto& observer : observers_) {
      observer->OnMediaUIUpdated();
-@@ -156,12 +198,33 @@
+@@ -156,12 +196,33 @@
  }
 -
 +
@@ -1873,7 +1865,8 @@
 --- a/components/global_media_controls/public/views/media_item_ui_updated_view.cc
 +++ b/components/global_media_controls/public/views/media_item_ui_updated_view.cc
 @@ -340,6 +340,7 @@
- 
+-
++
  MediaItemUIUpdatedView::~MediaItemUIUpdatedView() {
    if (item_) {
 +    item_->SetPlaybackControlsScrubbing(false);
@@ -1882,7 +1875,8 @@
    for (auto& observer : observers_) {
 @@ -375,12 +376,16 @@
  }
- 
+-
++
  bool MediaItemUIUpdatedView::OnKeyPressed(const ui::KeyEvent& event) {
 +  if (!MayInteract())
 +    return false;
@@ -1890,7 +1884,8 @@
    // events that can change the progress.
    return progress_view_->OnKeyPressed(event);
  }
- 
+-
++
  bool MediaItemUIUpdatedView::OnMousePressed(const ui::MouseEvent& event) {
 +  if (!MayInteract())
 +    return false;
@@ -1898,7 +1893,8 @@
    // background view is pressed.
    for (auto& observer : observers_) {
 @@ -405,6 +410,8 @@
- 
+-
++
  void MediaItemUIUpdatedView::UpdateWithMediaSessionInfo(
      const media_session::mojom::MediaSessionInfoPtr& session_info) {
 +  progress_view_->SetParcSafariPlaybackControls(
@@ -1908,7 +1904,8 @@
                            media_session::mojom::MediaPlaybackState::kPlaying;
 @@ -603,6 +610,8 @@
  }
- 
+-
++
  void MediaItemUIUpdatedView::MediaActionButtonPressed(views::Button* button) {
 +  if (!MayInteract())
 +    return;
@@ -1917,7 +1914,8 @@
      case MediaSessionAction::kPause:
 @@ -705,6 +714,8 @@
  }
- 
+-
++
  void MediaItemUIUpdatedView::OnProgressDragStateChange(DragState drag_state) {
 +  if (item_ && (drag_state == DragState::kDragEnded || MayInteract()))
 +    item_->SetPlaybackControlsScrubbing(drag_state == DragState::kDragStarted);
@@ -1925,7 +1923,8 @@
    UpdateMediaActionButtonsVisibility();
    UpdateTimestampLabelsVisibility();
 @@ -729,14 +740,18 @@
- 
+-
++
  void MediaItemUIUpdatedView::OnPlaybackStateChangeForProgressDrag(
      PlaybackStateChangeForDragging change) {
 +  if (!MayInteract())
@@ -1937,16 +1936,19 @@
 -  item_->OnMediaSessionActionButtonPressed(action);
 +  item_->SetScrubbing(action == MediaSessionAction::kPause);
  }
- 
+-
++
  void MediaItemUIUpdatedView::SeekTo(double seek_progress) {
 +  if (!MayInteract())
 +    return;
    item_->SeekTo(seek_progress * position_.duration());
  }
- 
+-
++
 @@ -746,6 +761,8 @@
  }
- 
+-
++
  void MediaItemUIUpdatedView::StartCastingButtonPressed() {
 +  if (!MayInteract())
 +    return;
@@ -1996,9 +1998,11 @@
 --- a/chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc
 +++ b/chrome/browser/ui/global_media_controls/cast_device_list_host_unittest.cc
 @@ -4,7 +4,10 @@
- 
+-
++
  #include "chrome/browser/ui/global_media_controls/cast_device_list_host.h"
- 
+-
++
 +#include <optional>
 +
  #include "base/memory/raw_ptr.h"
@@ -2029,13 +2033,15 @@
 @@ -80,7 +89,7 @@
      host_ = CreateHost(std::move(dialog_controller), mock_client_.PassRemote());
    }
- 
+-
++
 -  MOCK_METHOD(void, OnMediaRemotingRequested, ());
 +  MOCK_METHOD(base::OnceCallback<void(bool)>, OnMediaRemotingRequested, ());
    MOCK_METHOD(void, HideMediaDialog, ());
    MOCK_METHOD(void, OnSinksDiscoveredCallback, ());
- 
-@@ -147,11 +156,25 @@
+-
++
+@@ -147,11 +156,23 @@
    UIMediaSink sink = CreateMediaSink();
    sink.cast_modes = {media_router::MediaCastMode::REMOTE_PLAYBACK};
    host_->OnModelUpdated({CreateModelWithSinks({sink})});
@@ -2043,8 +2049,6 @@
 -      *dialog_controller_,
 -      StartCasting(sink.id, media_router::MediaCastMode::REMOTE_PLAYBACK));
 -  EXPECT_CALL(*this, OnMediaRemotingRequested());
-+  // Parc: remoting is requested at the pick, as Chrome does, and the request
-+  // learns whether the cast launched.
 +  testing::InSequence sequence;
 +  std::optional<bool> launched;
 +  EXPECT_CALL(*this, OnMediaRemotingRequested())
@@ -2063,32 +2067,29 @@
 +  std::move(on_result).Run(true);
 +  EXPECT_EQ(true, launched);
  }
- 
+-
++
  // TODO(crbug.com/1486680): Enable this on Chrome OS once stopping mirroring
 --- a/chrome/browser/ui/media_router/cast_dialog_controller.h
 +++ b/chrome/browser/ui/media_router/cast_dialog_controller.h
 @@ -5,7 +5,7 @@
  #ifndef CHROME_BROWSER_UI_MEDIA_ROUTER_CAST_DIALOG_CONTROLLER_H_
  #define CHROME_BROWSER_UI_MEDIA_ROUTER_CAST_DIALOG_CONTROLLER_H_
- 
+-
++
 -#include "base/functional/callback_forward.h"
 +#include "base/functional/callback.h"
  #include "chrome/browser/ui/media_router/media_cast_mode.h"
  #include "components/media_router/common/issue.h"
  #include "components/media_router/common/media_route.h"
-@@ -46,6 +46,21 @@
+@@ -46,6 +46,15 @@
    virtual void StartCasting(const MediaSink::Id& sink_id,
                              MediaCastMode cast_mode) = 0;
- 
-+  // Parc: requests remoting of a session's player and returns what to run
-+  // with whether its cast launched.
+-
++
 +  using ParcRemotingRequest =
 +      base::RepeatingCallback<base::OnceCallback<void(bool launched)>()>;
 +
-+  // Parc: StartCasting(), running `on_result` with whether the cast launched
-+  // once it did or failed, even if this controller is gone by then. A
-+  // controller that can't tell drops it, leaving a failed launch's remoting
-+  // request in place, as Chrome does.
 +  virtual void ParcStartCasting(const MediaSink::Id& sink_id,
 +                                MediaCastMode cast_mode,
 +                                base::OnceCallback<void(bool)> on_result) {
@@ -2110,23 +2111,22 @@
    void StopCasting(const std::string& route_id) override;
    void ClearIssue(const Issue::Id& issue_id) override;
    void FreezeRoute(const std::string& route_id) override;
-@@ -113,9 +116,10 @@
-   // |cast_mode|, to the sink given by |sink_id|.
-   // Returns true if a route request is successfully submitted.
+@@ -115,7 +118,8 @@
    // |OnRouteResponseReceived()| will be invoked when the route request
--  // completes.
-+  // completes. Parc: and `on_result`, with whether the route was created.
+   // completes.
    virtual bool CreateRoute(const MediaSink::Id& sink_id,
 -                           MediaCastMode cast_mode);
 +                           MediaCastMode cast_mode,
 +                           base::OnceCallback<void(bool)> on_result);
- 
+-
++
    // Calls MediaRouter to terminate the given route.
    void TerminateRoute(const MediaRoute::Id& route_id);
 --- a/chrome/browser/ui/media_router/media_router_ui.cc
 +++ b/chrome/browser/ui/media_router/media_router_ui.cc
 @@ -178,7 +178,13 @@
- 
+-
++
  void MediaRouterUI::StartCasting(const std::string& sink_id,
                                   MediaCastMode cast_mode) {
 -  CreateRoute(sink_id, cast_mode);
@@ -2138,11 +2138,13 @@
 +                                     base::OnceCallback<void(bool)> on_result) {
 +  CreateRoute(sink_id, cast_mode, std::move(on_result));
  }
- 
+-
++
  void MediaRouterUI::StopCasting(const std::string& route_id) {
 @@ -229,7 +235,8 @@
  }
- 
+-
++
  bool MediaRouterUI::CreateRoute(const MediaSink::Id& sink_id,
 -                                MediaCastMode cast_mode) {
 +                                MediaCastMode cast_mode,
@@ -2163,7 +2165,8 @@
 +        },
 +        std::move(on_result)));
 +  }
- 
+-
++
    params->route_result_callbacks.push_back(base::BindOnce(
        &MediaRouterUI::OnRouteResponseReceived, weak_factory_.GetWeakPtr(),
 --- a/chrome/browser/media/cast_remoting_connector.cc
@@ -2171,7 +2174,8 @@
 @@ -97,6 +97,16 @@
    remoting_allowed_ = GetRemotingAllowedUserPref();
  }
- 
+-
++
 +void CastRemotingConnector::ParcDropRemotingRequests() {
 +  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 +  if (active_bridge_ || HasSinkMetadata()) {
@@ -2187,31 +2191,32 @@
      mojo::PendingReceiver<media::mojom::RemotingSource> receiver) {
 --- a/chrome/browser/media/cast_remoting_connector.h
 +++ b/chrome/browser/media/cast_remoting_connector.h
-@@ -102,6 +102,12 @@
- 
+@@ -103,6 +103,8 @@
    // Called at the start of mirroring to reset the permission.
    void ResetRemotingPermission();
+-
 +
-+  // Parc: a cast picked for one of this tab's players failed to launch. The
-+  // remoting request the pick sent that player must not take the tab's next
-+  // session, so every source drops its request while no session runs. A
-+  // source's RemotingSource reaches it in the back/forward cache too.
 +  void ParcDropRemotingRequests();
- 
++
    // Used by Mirroring Service to connect the media remoter with this source.
    void ConnectWithMediaRemoter(
-@@ -113,4 +119,5 @@
+       mojo::PendingRemote<media::mojom::Remoter> remoter,
+@@ -113,6 +115,7 @@
    // have a complete browser (i.e., with a WebContents and RenderFrameHost) to
    // work with.
    friend class CastRemotingConnectorTest;
 +  friend class ParcCastRemotingConnectorTest;
    friend class RedirectionConnectorTest;
+-
++
+   // Main constructor. |tab_id| refers to any remoted content managed
 --- a/chrome/browser/media/remoting_bridge.cc
 +++ b/chrome/browser/media/remoting_bridge.cc
 @@ -106,6 +106,14 @@
    source_->OnStopped(reason);
  }
- 
+-
++
 +void RemotingBridge::ParcDropRemotingRequest(Client* client) {
 +  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 +  if (active_client_ && client != active_client_) {
@@ -2225,18 +2230,17 @@
    GetEntry(client).Reset();
 --- a/chrome/browser/media/remoting_bridge.h
 +++ b/chrome/browser/media/remoting_bridge.h
-@@ -94,6 +94,11 @@
+@@ -94,6 +94,8 @@
    // Called by the Client when it is being destroyed.
    void OnClientDestroyed(Client* client);
- 
-+  // Parc: the browser took back a remoting request it sent the source's
-+  // player (RendererController::OnStartFailed() drops it), unless another
-+  // Client serves the source.
+-
++
 +  void ParcDropRemotingRequest(Client* client);
 +
    // Called by a Client when its ability to serve this source changes.
    void SetClientAvailable(Client* client, bool available);
- 
+-
++
 --- a/chrome/browser/ui/global_media_controls/BUILD.gn
 +++ b/chrome/browser/ui/global_media_controls/BUILD.gn
 @@ -75,6 +75,7 @@
@@ -2247,7 +2251,8 @@
      "//chrome/browser/media/router:media_router_feature",
      "//chrome/browser/ui/browser_window",
      "//chrome/browser/ui/tabs:tab_strip",
-@@ -143,3 +144,7 @@
+@@ -141,4 +142,8 @@
+     "//skia",
      "//ui/gfx:test_support",
    ]
 +
@@ -2257,12 +2262,10 @@
  }
 --- a/components/global_media_controls/public/media_session_item_producer.h
 +++ b/components/global_media_controls/public/media_session_item_producer.h
-@@ -59,6 +59,13 @@
+@@ -59,6 +59,11 @@
        const std::string& id) override;
    std::set<std::string> GetActiveControllableItemIds() const override;
    bool HasFrozenItems() override;
-+  // Parc: whether `id` is frozen, waiting for its session to regain audio
-+  // focus until its freeze times out.
 +  bool ParcIsItemFrozen(const std::string& id) {
 +    auto it = sessions_.find(id);
 +    return frozen_session_ids_.contains(id) && it != sessions_.end() &&
@@ -2270,4 +2273,5 @@
 +  }
    void OnItemShown(const std::string& id, MediaItemUI* item_ui) override;
    bool IsItemActivelyPlaying(const std::string& id) override;
- 
+-
++

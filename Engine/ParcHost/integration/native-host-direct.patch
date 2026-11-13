@@ -1,11 +1,11 @@
 --- a/chrome/browser/ui/actions/chrome_action_id.h
 +++ b/chrome/browser/ui/actions/chrome_action_id.h
-@@ -519,7 +519,8 @@
+@@ -523,7 +523,8 @@
+   E(kActionSidePanelShowSearchCompanion) \
+   E(kActionSidePanelShowShoppingInsights) \
    E(kActionSidePanelShowSideSearch) \
-   E(kActionSidePanelShowMerchantTrust) \
-   E(kActionSidePanelShowTabsFromOtherDevices, \
--    IDC_SHOW_TABS_FROM_OTHER_DEVICES_SIDE_PANEL)
-+    IDC_SHOW_TABS_FROM_OTHER_DEVICES_SIDE_PANEL) \
+-  E(kActionSidePanelShowMerchantTrust)
++  E(kActionSidePanelShowMerchantTrust) \
 +  E(kActionSidePanelShowParcNativeHost)
 -
 +
@@ -13,8 +13,8 @@
    E(kActionHome, IDC_HOME) \
 --- a/chrome/browser/ui/side_panel/side_panel_entry_id.h
 +++ b/chrome/browser/ui/side_panel/side_panel_entry_id.h
-@@ -45,6 +45,7 @@
-     "TabsFromOtherDevices")                                                   \
+@@ -43,6 +43,7 @@
+   V(kGlic, kActionSidePanelShowGlic, "Glic")                                  \
    V(kSidePanelDev, std::nullopt, "SidePanelDev")                              \
    V(kTestTabScopedEntry, std::nullopt, "TestTabScopedEntry")                  \
 +  V(kParcNativeHost, kActionSidePanelShowParcNativeHost, "ParcNativeHost")    \
@@ -34,17 +34,17 @@
    <variant name="ReadingList" summary="reading list"/>
 --- a/chrome/browser/media/webrtc/desktop_media_picker.cc
 +++ b/chrome/browser/media/webrtc/desktop_media_picker.cc
-@@ -3,6 +3,8 @@
- // found in the LICENSE file.
+@@ -4,6 +4,8 @@
 -
 +
  #include "chrome/browser/media/webrtc/desktop_media_picker.h"
+-
 +
 +#include "base/no_destructor.h"
--
 +
  #if BUILDFLAG(IS_ANDROID)
  // Enabled by Finch depending on form factor.
+ BASE_FEATURE(kAndroidMediaPicker, base::FEATURE_DISABLED_BY_DEFAULT);
 @@ -17,3 +19,22 @@
  DesktopMediaPicker::Params& DesktopMediaPicker::Params::operator=(
      const Params&) = default;
@@ -55,7 +55,7 @@
 +  static base::NoDestructor<DesktopMediaPicker::NativeFactory> factory;
 +  return *factory;
 +}
-+}  // namespace
++}
 +
 +void DesktopMediaPicker::SetNativeFactory(NativeFactory factory) {
 +  NativePickerFactory() = std::move(factory);
@@ -80,13 +80,11 @@
  #include "base/memory/raw_ptr.h"
  #include "base/types/expected.h"
  #include "build/android_buildflags.h"
-@@ -149,6 +149,15 @@
+@@ -149,6 +149,13 @@
    static std::unique_ptr<DesktopMediaPicker> Create(
        const content::MediaStreamRequest* request);
 -
 +
-+  // Native embedders may wrap presentation while retaining the normal picker
-+  // for pages outside their explicit route. No engine dependency from Chrome.
 +  using NativeFactory = base::RepeatingCallback<std::unique_ptr<DesktopMediaPicker>(
 +      std::unique_ptr<DesktopMediaPicker>, const content::MediaStreamRequest*)>;
 +  static void SetNativeFactory(NativeFactory factory);
@@ -110,19 +108,16 @@
    }
 -
 +
-@@ -1528,6 +1529,10 @@
+@@ -1528,6 +1529,7 @@
      }
      dialog_->DetachParent();
      dialog_->GetWidget()->Close();
-+    // A native host can revoke the request before the dialog reports a
-+    // result. DetachParent prevents its close from reporting one, so balance
-+    // the manager notification here. The normal result path clears dialog_.
 +    DesktopMediaPickerManager::Get()->OnHideDialog();
    }
  }
 -
 +
-@@ -1566,11 +1571,17 @@
+@@ -1566,11 +1568,17 @@
  // static
  std::unique_ptr<DesktopMediaPicker> DesktopMediaPicker::Create(
      const content::MediaStreamRequest* request) {
@@ -134,16 +129,14 @@
 +    picker = std::make_unique<ShareThisTabMediaPicker>();
    } else {
 -    return std::make_unique<DesktopMediaPickerImpl>();
--  }
--}
 +    picker = std::make_unique<DesktopMediaPickerImpl>();
-+  }
+   }
 +#if BUILDFLAG(IS_MAC)
 +  return DesktopMediaPicker::MaybeWrapNative(std::move(picker), request);
 +#else
 +  return picker;
 +#endif
-+}
+ }
 --- a/chrome/browser/media/webrtc/media_stream_capture_indicator.cc
 +++ b/chrome/browser/media/webrtc/media_stream_capture_indicator.cc
 @@ -233,6 +233,13 @@
@@ -174,17 +167,16 @@
    }
 -
 +
-@@ -256,6 +266,8 @@
+@@ -256,6 +266,7 @@
    int window_stream_count_ = 0;
    int display_stream_count_ = 0;
 -
 +
-+  // Source identity comes from a real DesktopMediaID, never a selected UI row.
 +  std::map<int, base::WeakPtr<content::WebContents>> captured_sources_;
    std::map<int, base::OnceClosure> display_media_stop_callbacks_;
    std::map<int, base::OnceClosure> user_media_stop_callbacks_;
    base::WeakPtrFactory<WebContentsDeviceUsage> weak_factory_{this};
-@@ -278,6 +290,7 @@
+@@ -278,6 +289,7 @@
               std::optional<content::DesktopMediaID> media_id)
        : device_usage_(device_usage),
          devices_(devices),
@@ -192,7 +184,7 @@
          ui_(std::move(ui)),
  #if !BUILDFLAG(IS_ANDROID)
          focus_delegate_(web_contents),
-@@ -323,6 +336,7 @@
+@@ -324,6 +336,7 @@
      if (device_usage_) {
        // |device_usage_| handles |stop_callback| when |ui_| is unspecified.
        device_usage_->AddDevices(devices_, stop_callback, stop_callback_id_);
@@ -201,7 +193,7 @@
 -
 +
  #if BUILDFLAG(IS_CHROMEOS)
-@@ -352,6 +366,10 @@
+@@ -353,6 +366,10 @@
        const content::DesktopMediaID& old_media_id,
        const content::DesktopMediaID& new_media_id,
        bool captured_surface_control_active) override {
@@ -212,7 +204,7 @@
  #if BUILDFLAG(IS_CHROMEOS)
      policy::DlpContentManager::Get()->OnScreenShareSourceChanging(
          label, old_media_id, new_media_id, captured_surface_control_active);
-@@ -431,6 +449,7 @@
+@@ -432,6 +449,7 @@
 -
 +
    base::WeakPtr<WebContentsDeviceUsage> device_usage_;
@@ -221,7 +213,7 @@
    const std::unique_ptr<::MediaStreamUI> ui_;
  #if !BUILDFLAG(IS_ANDROID)
    MediaStreamFocusDelegate focus_delegate_;
-@@ -512,6 +531,7 @@
+@@ -513,6 +531,7 @@
  void MediaStreamCaptureIndicator::WebContentsDeviceUsage::RemoveDevices(
      const blink::mojom::StreamDevices& devices,
      int stop_callback_id) {
@@ -230,12 +222,10 @@
 -
 +
    if (devices.audio_device.has_value()) {
-@@ -539,6 +559,123 @@
-   }
--
-+
+@@ -542,6 +561,119 @@
    indicator_->UpdateNotificationUserInterface();
-+}
+ }
+-
 +
 +void MediaStreamCaptureIndicator::WebContentsDeviceUsage::SetCapturedSource(
 +    int id, const std::optional<content::DesktopMediaID>& media_id) {
@@ -262,7 +252,6 @@
 +  if (next) {
 +    captured_sources_[id] = next;
 +  }
-+  // Observers defer UI work; the final state also accounts for other sessions.
 +  for (Observer& observer : indicator_->observers_) {
 +    if (old) {
 +      observer.OnIsBeingSharedChanged(old.get(), indicator_->IsBeingShared(old.get()));
@@ -310,7 +299,6 @@
 +  if (!source || it == captured_sources_.end() || it->second.get() != source.get()) {
 +    return;
 +  }
-+  // The same stream may have switched sources while a menu was open.
 +  StopStream(kDisplayMedia, id);
 +}
 +
@@ -345,18 +333,17 @@
 +  if (it == callbacks.end()) {
 +    return;
 +  }
-+  // Remove before callback reentry. The real callback may destroy this usage;
-+  // there is deliberately no access to members after Run().
 +  auto callback = std::move(it->second);
 +  callbacks.erase(it);
 +  if (callback) {
 +    std::move(callback).Run();
 +  }
- }
--
++}
 +
  void MediaStreamCaptureIndicator::WebContentsDeviceUsage::StopMediaCapturing(
-@@ -762,6 +899,92 @@
+     int media_type) {
+   if (media_type & MediaType::kUserMedia) {
+@@ -765,6 +897,90 @@
    return CheckUsage(web_contents, &WebContentsDeviceUsage::IsCapturingDisplay);
  }
 -
@@ -429,8 +416,6 @@
 +          [](base::WeakPtr<content::WebContents> parent,
 +             base::WeakPtr<content::WebContents> child,
 +             base::OnceClosure stop) {
-+            // A menu owned by the old outer page cannot stop an inner page
-+            // after that inner page has moved to another owner.
 +            if (parent && child && child->GetOuterWebContents() == parent.get()) {
 +              std::move(stop).Run();
 +            }
@@ -452,24 +437,21 @@
      int media_type) const {
 --- a/chrome/browser/media/webrtc/media_stream_capture_indicator.h
 +++ b/chrome/browser/media/webrtc/media_stream_capture_indicator.h
-@@ -53,6 +53,9 @@
+@@ -53,6 +53,8 @@
 -
 +
    class Observer : public base::CheckedObserver {
     public:
-+    // The source of an actual started tab capture, resolved from DesktopMediaID.
 +    virtual void OnIsBeingSharedChanged(content::WebContents* web_contents,
 +                                       bool is_being_shared) {}
      virtual void OnIsCapturingVideoChanged(content::WebContents* web_contents,
                                             bool is_capturing_video) {}
      virtual void OnIsCapturingAudioChanged(content::WebContents* web_contents,
-@@ -86,6 +89,12 @@
+@@ -86,6 +88,10 @@
        const std::u16string application_title = std::u16string(),
        std::optional<content::DesktopMediaID> media_id = std::nullopt);
 -
 +
-+  // Actual started display-media sessions using this tab as their source.
-+  // The stop lease remains bound to those sessions and that source identity.
 +  bool IsBeingShared(content::WebContents* source) const;
 +  base::OnceClosure CreateStopCallbackForSharedTab(
 +      content::WebContents* source) const;
@@ -478,22 +460,17 @@
    void ExecuteCommand(int command_id, int event_flags) override;
 -
 +
-@@ -111,6 +120,13 @@
--
-+
+@@ -112,6 +118,9 @@
    // Returns true if |web_contents| is capturing a display.
    bool IsCapturingDisplay(content::WebContents* web_contents) const;
+-
 +
-+  // Returns a once-only stop lease for the currently registered, stoppable
-+  // streams of this type, including inner WebContents. Null means no actual
-+  // stop callback is available. A retained lease never stops replacement
-+  // streams or managed all-screens capture, and does not retain WebContents.
 +  base::OnceClosure CreateStopCallbackForCurrentStreams(
 +      content::WebContents* web_contents, MediaType media_type) const;
--
 +
    // Called to stop media capturing of the |media_type|.
    // |media_type| is underlying_type of MediaType.
+   void StopMediaCapturing(content::WebContents* web_contents,
 --- a/chrome/browser/ui/tabs/BUILD.gn
 +++ b/chrome/browser/ui/tabs/BUILD.gn
 @@ -4,6 +4,7 @@
@@ -504,9 +481,9 @@
 +
 +import("//parc/features.gni")
  import("//chrome/common/features.gni")
- import("//components/signin/features.gni")
- import("//content/public/common/features.gni")
-@@ -531,6 +532,7 @@
+ import("//components/captive_portal/core/features.gni")
+ import("//components/compose/features.gni")
+@@ -533,6 +534,7 @@
      }
 -
 +
@@ -515,7 +492,7 @@
        ":tab_group",
        ":tab_model",
        ":tab_strip",
-@@ -708,6 +710,10 @@
+@@ -770,6 +772,10 @@
        ]
      }
 -
@@ -529,22 +506,22 @@
          "//chrome/browser:font_prewarmer_tab_helper",
 --- a/chrome/browser/ui/tabs/tab_features.cc
 +++ b/chrome/browser/ui/tabs/tab_features.cc
-@@ -3,6 +3,11 @@
- // found in the LICENSE file.
+@@ -4,6 +4,11 @@
 -
 +
  #include "chrome/browser/ui/tabs/public/tab_features.h"
+-
 +
 +#include "parc/features.h"
 +#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
 +#include "parc/native/native_tab_preview.h"
 +#endif
--
 +
  #include <memory>
+ #include <optional>
 -
 +
-@@ -637,7 +642,14 @@
+@@ -841,7 +846,12 @@
    intent_picker_tab_helper_ =
        std::make_unique<IntentPickerTabHelper>(tab, tab.GetContents());
 -
@@ -553,8 +530,6 @@
 +  bool needs_tab_thumbnails =
 +      base::FeatureList::IsEnabled(features::kTabHoverCardImages);
 +#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
-+  // Parc's recent-item switcher consumes the same capture/helper lifecycle.
-+  // The upstream hover-card feature is disabled by default on macOS.
 +  needs_tab_thumbnails |= parc::NeedsNativeTabThumbnails(*profile);
 +#endif
 +  if (needs_tab_thumbnails) {
@@ -575,7 +550,7 @@
 +                              ProfileManager::ProfileLoadedCallback) = nullptr;
 +bool (*profile_deletion_cleanup)(ProfileManager&,
 +                                 const base::FilePath&) = nullptr;
-+}  // namespace
++}
 +void SetNativeProfileDeletion(
 +    void (*load)(ProfileManager&,
 +                 const base::FilePath&,
@@ -584,13 +559,13 @@
 +  profile_deletion_load = load;
 +  profile_deletion_cleanup = cleanup;
 +}
-+}  // namespace parc_hooks
++}
 +
  namespace {
 -
 +
  // Called after a deleted profile was checked and cleaned up.
-@@ -377,11 +395,18 @@
+@@ -377,11 +395,16 @@
 -
 +
    // Attempt to load the profile before deleting it to properly clean up
@@ -603,8 +578,6 @@
 +  auto callback = base::BindOnce(
 +      &DeleteProfileHelper::OnLoadProfileForProfileDeletion,
 +      base::Unretained(this), profile_dir, std::move(keep_alive));
-+  // Only Parc's registered native removal may load a tombstoned Profile for
-+  // its sign-out and extension cleanup; an ordinary open stays refused.
 +  if (parc_hooks::profile_deletion_load) {
 +    parc_hooks::profile_deletion_load(*profile_manager_, profile_dir,
 +                                      std::move(callback));
@@ -615,7 +588,7 @@
    if (!IsProfileDirectoryMarkedForDeletion(profile_dir)) {
      // Prevents CreateProfileAsync from re-creating the profile.
      MarkProfileDirectoryForDeletion(profile_dir);
-@@ -422,9 +447,12 @@
+@@ -422,7 +445,9 @@
 -
 +
      // Clean-up pref data that won't be cleaned up by deleting the profile dir.
@@ -625,15 +598,11 @@
 +             !parc_hooks::profile_deletion_cleanup(*profile_manager_,
 +                                                   profile_dir)) {
      // We failed to load the profile, but it's safe to delete a not yet loaded
--    // Profile from disk.
-+    // Profile from disk. A native removal instead runs its own cleanup once no
-+    // Profile remains alive.
+     // Profile from disk.
      base::ThreadPool::PostTask(
-         FROM_HERE,
-         {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
 --- a/chrome/browser/profiles/profile_manager.cc
 +++ b/chrome/browser/profiles/profile_manager.cc
-@@ -176,6 +176,36 @@
+@@ -175,6 +175,36 @@
 -
 +
  using content::BrowserThread;
@@ -652,7 +621,7 @@
 +                                   const base::FilePath&) = nullptr;
 +bool (*profile_disk_cleanup_run)(ProfileManager&,
 +                                 const base::FilePath&) = nullptr;
-+}  // namespace
++}
 +void SetNativeProfileRemoval(
 +    void (*created)(ProfileManager&,
 +                    base::RepeatingCallback<bool(const base::FilePath&)>,
@@ -667,20 +636,18 @@
 +  profile_disk_cleanup_owned = disk_cleanup_owned;
 +  profile_disk_cleanup_run = disk_cleanup_run;
 +}
-+}  // namespace parc_hooks
++}
 +
  namespace {
 -
 +
  const void* const kProfileDestructionObserverKey =
-@@ -468,6 +498,23 @@
+@@ -467,6 +497,21 @@
 -
 +
    zombie_metrics_timer_.Start(FROM_HERE, base::Minutes(30), this,
                                &ProfileManager::RecordZombieMetrics);
 +
-+  // Parc's native Profile removal reads whether a path still has a Profile
-+  // object, initialized or not, and whether its destruction is pending.
 +  if (parc_hooks::profile_manager_created) {
 +    parc_hooks::profile_manager_created(
 +        *this,
@@ -699,7 +666,7 @@
 -
 +
  ProfileManager::~ProfileManager() {
-@@ -503,6 +550,10 @@
+@@ -502,6 +547,10 @@
    profiles_pending_destruction_.clear();
    profiles_info_.clear();
    ProfileDestroyer::DestroyPendingProfilesForShutdown();
@@ -711,13 +678,11 @@
 -
 +
  #if BUILDFLAG(ENABLE_SESSION_SERVICE)
-@@ -991,6 +1042,12 @@
+@@ -990,6 +1039,10 @@
  }
 -
 +
  bool ProfileManager::CanCreateProfileAtPath(const base::FilePath& path) const {
-+  // A native removal's durable tombstone refuses the path, even after
-+  // Chromium's deleted-profiles preference is cleaned.
 +  if (parc_hooks::profile_creation_refused &&
 +      parc_hooks::profile_creation_refused(*this, path)) {
 +    return false;
@@ -725,11 +690,10 @@
    if (!IsAllowedProfilePath(path)) {
      LOG(ERROR) << "Cannot create profile at path " << path.AsUTF8Unsafe();
      return false;
-@@ -1775,10 +1832,18 @@
+@@ -1771,10 +1824,16 @@
    bool ephemeral =
        IsRegisteredAsEphemeral(&GetProfileAttributesStorage(), profile_dir);
    bool marked_for_deletion = IsProfileDirectoryMarkedForDeletion(profile_dir);
-+  // Read first: the erase below can complete destruction and run the cleanup.
 +  const bool native_cleanup =
 +      parc_hooks::profile_disk_cleanup_owned &&
 +      parc_hooks::profile_disk_cleanup_owned(*this, profile_dir);
@@ -738,7 +702,6 @@
    // Remove from |profiles_info_|, eventually causing the Profile object's
    // destruction.
    profiles_info_.erase(profile_dir);
-+  // OnProfileDestructionComplete posts the native removal's own cleanup.
 +  if (native_cleanup) {
 +    return;
 +  }
@@ -746,7 +709,7 @@
 +
    if (!ephemeral && !marked_for_deletion)
      return;
-@@ -2189,6 +2254,9 @@
+@@ -2185,6 +2244,9 @@
 -
 +
    std::vector<base::OnceClosure> callbacks = std::move(it->second);

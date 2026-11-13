@@ -41,7 +41,7 @@
    }
 --- a/ui/views/bubble/bubble_dialog_model_host.cc
 +++ b/ui/views/bubble/bubble_dialog_model_host.cc
-@@ -902,8 +902,7 @@
+@@ -904,8 +904,7 @@
    // Widget::Close() calls WidgetWillClose() synchronously so there shouldn't
    // be any dangling references after model removal.
    SetAcceptCallbackWithClose(base::BindRepeating(
@@ -51,7 +51,7 @@
    SetCancelCallbackWithClose(base::BindRepeating(
        &ui::DialogModel::OnDialogCancelAction, base::Unretained(model_.get()),
        DialogModelHost::GetPassKey()));
-@@ -1312,6 +1311,26 @@
+@@ -1314,6 +1313,26 @@
                                  bottom_margin >= 0 ? bottom_margin : 0, 0));
  }
 -

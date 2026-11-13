@@ -1,7 +1,4 @@
 // Copyright 2026 Parc contributors.
-// The production transaction operates on actual Browser, TabStripModel,
-// TabInterface, WebContents and UnloadController instances. AppKit presentation
-// is a narrow callback input; no tab model or close state machine is copied.
 #include "tab_transfer.h"
 
 #include <memory>
@@ -13,7 +10,6 @@
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/unload_controller.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/test_browser_window.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/tab_groups/tab_group_color.h"
@@ -22,6 +18,7 @@
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/web_contents_tester.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "unload_transactions.h"
 
@@ -44,11 +41,10 @@ void SetUnloadControllerPageGates(
     std::optional<bool> (*)(const UnloadController&, content::WebContents*),
     bool (*)(content::WebContents*),
     bool (*)(UnloadController&, content::WebContents*, bool));
-}  // namespace parc_hooks
+}
 
 namespace parc {
 namespace {
-// The hooks ParcMainDelegate installs, set before any test Browser exists.
 void InstallUnloadTransactions(bool install) {
   parc_hooks::SetUnloadControllerLifetime(
       install ? &OnUnloadControllerCreated : nullptr,
@@ -69,11 +65,11 @@ void InstallUnloadTransactions(bool install) {
       install ? &ConsumesBeforeUnloadReply : nullptr);
 }
 
-class NativeTabTransferTest : public BrowserWithTestWindowTest {
+class NativeTabTransferTest : public ParcBrowserWindowTest {
  protected:
   void SetUp() override {
     InstallUnloadTransactions(true);
-    BrowserWithTestWindowTest::SetUp();
+    ParcBrowserWindowTest::SetUp();
     destination_ =
         CreateBrowser(profile(), BrowserWindowInterface::TYPE_NORMAL, false);
     page_ = Append(browser());
@@ -85,7 +81,7 @@ class NativeTabTransferTest : public BrowserWithTestWindowTest {
     destination_->GetTabStripModel()->CloseAllTabs();
     destination_.reset();
     base::RunLoop().RunUntilIdle();
-    BrowserWithTestWindowTest::TearDown();
+    ParcBrowserWindowTest::TearDown();
     base::RunLoop().RunUntilIdle();
     InstallUnloadTransactions(false);
   }
@@ -150,16 +146,12 @@ TEST_F(NativeTabTransferTest,
                 &retire_source),
             TabTransferResult::kTransferred);
   ASSERT_TRUE(retire_source);
-  // TestBrowserWindow records Browser's immediate TabStripEmpty notification;
-  // it does not implement native Close's UnloadController refusal. Install the
-  // observer afterward to isolate the transaction's actual deferred close.
   int closes = 0;
   static_cast<TestBrowserWindow*>(browser()->GetWindow())
       ->SetCloseCallback(base::BindLambdaForTesting([&] { ++closes; }));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(closes, 0);
   EXPECT_EQ(tab_->GetBrowserWindowInterface(), destination_.get());
-  // The caller has delivered its result and committed shell ownership here.
   std::move(retire_source).Run();
   EXPECT_EQ(closes, 1);
 }
@@ -290,7 +282,6 @@ TEST_F(NativeTabTransferTest,
   EXPECT_TRUE(destination_->GetTabStripModel()->empty());
   EXPECT_EQ(presented_, std::vector<BrowserWindowInterface*>(
                             {destination_.get(), browser()}));
-  // A premature TabStripEmpty close would leave the real controller past Idle.
   auto token = ReserveTabTransfer(*UnloadController::From(browser()));
   ASSERT_TRUE(token);
   ReleaseTabTransfer(*UnloadController::From(browser()), *token);
@@ -494,7 +485,6 @@ TEST_F(NativeTabTransferTest, CollectionCommitsOnlyAfterAllOriginalPagesAttach) 
   EXPECT_FALSE(HasLiveTabTransfer());
   EXPECT_FALSE(IsLiveTabTransferTarget(second));
   EXPECT_FALSE(static_cast<TestBrowserWindow*>(browser()->GetWindow())->IsClosed());
-  // The physical caller may still own local Notes/Easels; it decides cleanup.
   EXPECT_EQ(cleanup.size(), 1u);
 }
 
@@ -565,5 +555,5 @@ TEST_F(NativeTabTransferTest, CollectionRejectsReentrantSingleTransfer) {
       }), base::BindLambdaForTesting([] { return true; }), &cleanup), TabTransferResult::kTransferred);
 }
 
-}  // namespace
-}  // namespace parc
+}
+}

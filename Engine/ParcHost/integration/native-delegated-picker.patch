@@ -198,7 +198,7 @@
 +
    // If |excluded_window_id| is not kNullId, then that ID will
    // be ignored by `this`.
-@@ -690,6 +691,11 @@
+@@ -693,6 +694,11 @@
    Refresh(/*update_thumbnails=*/false);
  }
 -
@@ -209,13 +209,12 @@
 +}
 +
  void NativeDesktopMediaList::Worker::ClearDelegatedSourceListSelection() {
-   DCHECK(is_source_list_delegated_);
+   CHECK(is_source_list_delegated_, base::NotFatalUntil::M161);
    if (!delegated_source_list_has_selection_)
-@@ -872,6 +878,16 @@
-       FROM_HERE,
-       base::BindOnce(&Worker::Start, base::Unretained(worker_.get())));
+@@ -878,6 +884,16 @@
    is_capturer_started_ = true;
-+}
+ }
+-
 +
 +void NativeDesktopMediaList::AcceptDelegatedSelection(const DesktopMediaID& id) {
 +  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -225,10 +224,11 @@
 +  thread_.task_runner()->PostTask(
 +      FROM_HERE, base::BindOnce(&Worker::AcceptDelegatedSelection,
 +                                base::Unretained(worker_.get()), id.id));
- }
--
++}
 +
  void NativeDesktopMediaList::ClearDelegatedSourceListSelection() {
+   CHECK_CURRENTLY_ON(content::BrowserThread::UI, base::NotFatalUntil::M161);
+   // base::Unretained is safe here because we own the lifetime of both the
 --- a/chrome/browser/media/webrtc/native_desktop_media_list.h
 +++ b/chrome/browser/media/webrtc/native_desktop_media_list.h
 @@ -44,6 +44,7 @@

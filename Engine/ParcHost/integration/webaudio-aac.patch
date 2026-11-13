@@ -3,7 +3,8 @@
 @@ -65,6 +65,29 @@
    int channels() const { return config_->channels(); }
    int sample_rate() const { return config_->samples_per_second(); }
- 
+-
++
 +  // Open() and Read() for a decoder that completes asynchronously, such as a
 +  // MojoAudioDecoder, for codecs this build's FFmpeg demuxes but cannot
 +  // decode. OpenWithoutDecoder() opens the demuxer and `config()`. The caller
@@ -31,7 +32,8 @@
    // known.  Must be called after Open();
    bool HasKnownDuration() const;
 @@ -95,8 +118,11 @@
- 
+-
++
   private:
    bool OpenDemuxer();
 +  bool OpenConfig();
@@ -43,7 +45,8 @@
    void FinalizeDecodedBuffer(scoped_refptr<AudioBuffer> buffer,
                               bool is_final_output);
 @@ -118,6 +144,14 @@
- 
+-
++
    // Set once the decoder is opened.
    std::optional<AudioDecoderConfig> config_;
 +
@@ -54,14 +57,17 @@
 +
 +  // AddDecodedOutput()'s destination.
 +  std::vector<std::unique_ptr<AudioBus>> decoded_output_;
- 
+-
++
    media::NullMediaLog media_log_;
- 
+-
++
 --- a/media/filters/audio_file_reader.cc
 +++ b/media/filters/audio_file_reader.cc
 @@ -53,10 +53,20 @@
  }
- 
+-
++
  bool AudioFileReader::Open() {
 -  return OpenDemuxer() && OpenDecoder();
 -}
@@ -97,13 +103,15 @@
 +  AudioDecoderConfig config = *config_;
 +  output_sample_rate_ = config.samples_per_second();
 +  output_channels_ = config.channels();
- 
+-
++
    // Under a very specific set of circumstances, we can use the
    // SymphoniaAudioDecoder.
 @@ -219,6 +238,29 @@
        [](size_t total, const auto& bus) { return total + bus->frames(); });
  }
- 
+-
++
 +scoped_refptr<DecoderBuffer> AudioFileReader::ReadNextBuffer() {
 +  auto packet = ScopedAVPacket::Allocate();
 +  if (!ReadPacket(packet.get())) {
@@ -136,7 +144,8 @@
      const base::TimeDelta frame_duration =
 -        AudioTimestampHelper::FramesToTime(frames_read, sample_rate());
 +        AudioTimestampHelper::FramesToTime(frames_read, buffer->sample_rate());
- 
+-
++
      if (last_packet_duration_ < frame_duration) {
        const int new_frames_read = base::ClampFloor(
 @@ -307,7 +349,7 @@
@@ -151,7 +160,8 @@
 @@ -323,16 +365,21 @@
      return;
    }
- 
+-
++
 +  if (!output_sample_rate_) {
 +    output_sample_rate_ = buffer->sample_rate();
 +    output_channels_ = buffer->channel_count();
@@ -171,21 +181,25 @@
                  << "), channels=" << buffer->channel_count() << " (expected "
 -                << config_->channels() << "\")";
 +                << *output_channels_ << "\")";
- 
+-
++
      // This is an unrecoverable error, so bail out.  We'll return
      // whatever we've decoded up to this point.
 @@ -425,7 +472,8 @@
    return false;
  }
- 
+-
++
 -bool AudioFileReader::DecodePacket(const ScopedAVPacket& packet) {
 +scoped_refptr<DecoderBuffer> AudioFileReader::CreateDecoderBuffer(
 +    const ScopedAVPacket& packet) {
    auto buffer = DecoderBuffer::CopyFrom(AVPacketData(*packet));
- 
+-
++
    base::TimeDelta stream_timestamp =
 @@ -456,6 +504,11 @@
- 
+-
++
    last_packet_duration_ = buffer->duration();
    last_packet_timestamp_ = buffer->timestamp();
 +  return buffer;
@@ -193,7 +207,8 @@
 +
 +bool AudioFileReader::DecodePacket(const ScopedAVPacket& packet) {
 +  auto buffer = CreateDecoderBuffer(packet);
- 
+-
++
    std::optional<DecoderStatus> decode_status;
    decoder_->Decode(
 --- a/media/mojo/clients/BUILD.gn
@@ -209,9 +224,11 @@
 --- a/media/mojo/clients/mojo_audio_decoder.h
 +++ b/media/mojo/clients/mojo_audio_decoder.h
 @@ -7,6 +7,7 @@
- 
+-
++
  #include <memory>
- 
+-
++
 +#include "base/containers/circular_deque.h"
  #include "base/memory/scoped_refptr.h"
  #include "base/sequence_checker.h"
@@ -219,7 +236,8 @@
 @@ -107,8 +108,11 @@
    OutputCB output_cb_;
    WaitingCB waiting_cb_;
- 
+-
++
 -  // |decode_cb_| and |reset_cb_| are replaced by every by Decode() and Reset().
 -  DecodeCB decode_cb_;
 +  // Callbacks of the Decode() calls awaiting an answer, oldest first. Unlike
@@ -228,23 +246,27 @@
 +  base::circular_deque<DecodeCB> decode_cbs_;
 +  // |reset_cb_| is replaced by every Reset().
    base::OnceClosure reset_cb_;
- 
+-
++
    // Flag telling whether this decoder requires bitstream conversion.
 --- a/media/mojo/clients/mojo_audio_decoder.cc
 +++ b/media/mojo/clients/mojo_audio_decoder.cc
 @@ -121,8 +121,7 @@
      return;
    }
- 
+-
++
 -  DCHECK(!decode_cb_);
 -  decode_cb_ = std::move(decode_cb);
 +  decode_cbs_.push_back(std::move(decode_cb));
- 
+-
++
    remote_decoder_->Decode(std::move(buffer),
                            base::BindOnce(&MojoAudioDecoder::OnDecodeStatus,
 @@ -134,11 +133,12 @@
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
- 
+-
++
    if (!remote_decoder_.is_connected()) {
 -    if (decode_cb_) {
 +    for (DecodeCB& decode_cb : decode_cbs_) {
@@ -254,13 +276,15 @@
                                      DecoderStatus::Codes::kDisconnected));
      }
 +    decode_cbs_.clear();
- 
+-
++
      task_runner_->PostTask(FROM_HERE, std::move(closure));
      return;
 @@ -205,10 +205,14 @@
      return;
    }
- 
+-
++
 -  if (decode_cb_)
 -    std::move(decode_cb_).Run(DecoderStatus::Codes::kDisconnected);
 -  if (reset_cb_)
@@ -274,12 +298,14 @@
 +  if (reset_cb)
 +    std::move(reset_cb).Run();
  }
- 
+-
++
  void MojoAudioDecoder::OnInitialized(const DecoderStatus& status,
 @@ -236,8 +240,10 @@
    DVLOG(1) << __func__ << ": status:" << static_cast<int>(status.code());
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
- 
+-
++
 -  DCHECK(decode_cb_);
 -  std::move(decode_cb_).Run(status);
 +  DCHECK(!decode_cbs_.empty());
@@ -287,62 +313,75 @@
 +  decode_cbs_.pop_front();
 +  std::move(decode_cb).Run(status);
  }
- 
+-
++
  void MojoAudioDecoder::OnResetDone() {
 @@ -245,7 +251,7 @@
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
- 
+-
++
    // For pending decodes OnDecodeStatus() should arrive before OnResetDone().
 -  DCHECK(!decode_cb_);
 +  DCHECK(decode_cbs_.empty());
- 
+-
++
    DCHECK(reset_cb_);
    std::move(reset_cb_).Run();
 --- a/media/mojo/services/mojo_audio_decoder_service.h
 +++ b/media/mojo/services/mojo_audio_decoder_service.h
 @@ -9,7 +9,9 @@
- 
+-
++
  #include <memory>
  #include <optional>
 +#include <utility>
- 
+-
++
 +#include "base/containers/circular_deque.h"
  #include "base/memory/raw_ptr.h"
  #include "base/memory/scoped_refptr.h"
  #include "base/memory/weak_ptr.h"
 @@ -60,6 +62,8 @@
    void Reset(ResetCallback callback) final;
- 
+-
++
   private:
 +  using PendingDecode = std::pair<scoped_refptr<DecoderBuffer>, DecodeCallback>;
 +
    // Called by |decoder_| upon finishing initialization.
    void OnInitialized(InitializeCallback callback, DecoderStatus status);
- 
+-
++
 @@ -68,6 +72,9 @@
                    DecodeCallback callback,
                    scoped_refptr<DecoderBuffer> buffer);
- 
+-
++
 +  // Decodes or answers |pending_decodes_| in order while |decoder_| is idle.
 +  void DecodePending();
 +
    // Called by |mojo_decoder_buffer_reader_| when reset is finished.
    void OnReaderFlushDone(ResetCallback callback);
- 
+-
++
 @@ -75,7 +82,8 @@
    void OnDecodeStatus(DecodeCallback callback, DecoderStatus status);
- 
+-
++
    // Called by |decoder_| when reset sequence is finished.
 -  void OnResetDone(ResetCallback callback);
 +  void OnResetDone(base::circular_deque<PendingDecode> aborted,
 +                   ResetCallback callback);
- 
+-
++
    // Called by |decoder_| for each decoded buffer.
    void OnAudioBufferReady(scoped_refptr<AudioBuffer> audio_buffer);
 @@ -107,6 +115,11 @@
- 
+-
++
    scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
- 
+-
++
 +  // Clients may send several decodes at once, but an AudioDecoder takes one at
 +  // a time, so the rest wait here in order. A null buffer is a failed read.
 +  base::circular_deque<PendingDecode> pending_decodes_;
@@ -350,7 +389,8 @@
 +
    // Last DecodeStatus seen by OnDecodeStatus(). Collected for logging purposes.
    std::optional<DecoderStatus> last_decode_status_;
- 
+-
++
 --- a/media/mojo/services/mojo_audio_decoder_service.cc
 +++ b/media/mojo/services/mojo_audio_decoder_service.cc
 @@ -186,6 +186,7 @@
@@ -360,11 +400,13 @@
 +    DecodePending();
      return;
    }
- 
+-
++
 @@ -204,8 +205,10 @@
      scoped_refptr<DecoderBuffer> buffer) {
    DVLOG(3) << __func__ << " success:" << !!buffer;
- 
+-
++
 +  // A failed read is answered in turn, after the decodes queued before it.
    if (!buffer) {
 -    std::move(callback).Run(DecoderStatus::Codes::kFailedToGetDecoderBuffer);
@@ -372,11 +414,13 @@
 +    DecodePending();
      return;
    }
- 
+-
++
 @@ -223,25 +226,58 @@
      return;
    }
- 
+-
++
 -  decoder_->Decode(std::move(buffer),
 -                   base::BindOnce(&MojoAudioDecoderService::OnDecodeStatus,
 -                                  weak_this_, std::move(callback)));
@@ -403,7 +447,8 @@
 +                                    weak_this_, std::move(callback)));
 +  }
  }
- 
+-
++
  void MojoAudioDecoderService::OnReaderFlushDone(ResetCallback callback) {
 +  if (!decoder_) {
 +    OnResetDone(std::exchange(pending_decodes_, {}), std::move(callback));
@@ -416,7 +461,8 @@
 +                                 weak_this_, std::exchange(pending_decodes_, {}),
 +                                 std::move(callback)));
  }
- 
+-
++
  void MojoAudioDecoderService::OnDecodeStatus(DecodeCallback callback,
                                               const DecoderStatus status) {
    status.DebugLog(3);
@@ -439,7 +485,8 @@
 +  }
    std::move(callback).Run();
  }
- 
+-
++
 --- a/third_party/blink/renderer/modules/webaudio/BUILD.gn
 +++ b/third_party/blink/renderer/modules/webaudio/BUILD.gn
 @@ -152,6 +152,8 @@
@@ -451,7 +498,7 @@
      "realtime_analyser.cc",
      "realtime_analyser.h",
      "realtime_audio_destination_handler.cc",
-@@ -190,6 +192,10 @@
+@@ -192,6 +194,10 @@
      sources += [ "cpu/arm/oscillator_kernel_neon.cc" ]
    }
    deps = [
@@ -472,10 +519,11 @@
  class DelayNode;
  class DynamicsCompressorNode;
  class ExceptionState;
-@@ -412,6 +413,9 @@
+@@ -415,6 +416,9 @@
    // to resolve them.
    HeapHashSet<Member<ScriptPromiseResolverBase>> decode_audio_resolvers_;
- 
+-
++
 +  // Stops decodes running in another process once the document is destroyed.
 +  scoped_refptr<DecodeCancellation> decode_cancellation_;
 +
@@ -485,9 +533,11 @@
 --- a/third_party/blink/renderer/modules/webaudio/base_audio_context.cc
 +++ b/third_party/blink/renderer/modules/webaudio/base_audio_context.cc
 @@ -25,9 +25,13 @@
- 
+-
++
  #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
- 
+-
++
 +#include <atomic>
 +
  #include "base/metrics/histogram_functions.h"
@@ -504,7 +554,8 @@
  #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 +#include "third_party/blink/renderer/platform/wtf/thread_safe_ref_counted.h"
  #include "third_party/blink/renderer/platform/wtf/uuid.h"
- 
+-
++
 +#if BUILDFLAG(ENABLE_FFMPEG) && BUILDFLAG(ENABLE_MOJO_AUDIO_DECODER)
 +#include "base/numerics/safe_conversions.h"
 +#include "base/task/sequenced_task_runner.h"
@@ -535,9 +586,11 @@
 +
 +  std::atomic<bool> cancelled_{false};
 +};
- 
+-
++
  namespace {
- 
+-
++
 @@ -105,6 +139,79 @@
                                     error_callback);
    }
@@ -615,7 +668,8 @@
 +                          MakeUnwrappingCrossThreadHandle(context)));
 +}
 +#endif  // BUILDFLAG(ENABLE_FFMPEG) && BUILDFLAG(ENABLE_MOJO_AUDIO_DECODER)
- 
+-
++
  void DecodeOnBackgroundThread(
      ArrayBufferContents audio_data_contents,
 @@ -113,10 +220,29 @@
@@ -646,7 +700,8 @@
 +    return;
 +  }
 +#endif  // BUILDFLAG(ENABLE_FFMPEG) && BUILDFLAG(ENABLE_MOJO_AUDIO_DECODER)
- 
+-
++
    // A reference to `bus` is retained by base::OnceCallback and will be removed
    // after `NotifyDecodingComplete()` is done.
 @@ -144,6 +270,7 @@
@@ -658,14 +713,16 @@
        periodic_wave_square_(nullptr),
        periodic_wave_sawtooth_(nullptr),
 @@ -194,6 +321,10 @@
- 
+-
++
  void BaseAudioContext::Uninitialize() {
    DCHECK(IsMainThread());
 +
 +  // Only ContextDestroyed() gets here, even for a closed context, and a
 +  // destroyed document runs no decodeAudioData() callbacks.
 +  decode_cancellation_->Cancel();
- 
+-
++
    if (!IsDestinationInitialized()) {
      return;
 @@ -437,7 +568,7 @@
@@ -674,6 +731,7 @@
              MakeCrossThreadHandle(resolver), MakeCrossThreadHandle(this),
 -            std::move(task_runner)));
 +            std::move(task_runner), decode_cancellation_));
- 
+-
++
      return promise;
    }

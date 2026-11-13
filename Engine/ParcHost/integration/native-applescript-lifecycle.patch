@@ -2,7 +2,8 @@
 +++ b/content/browser/renderer_host/page_lifecycle_state_manager.h
 @@ -6,6 +6,7 @@
  #define CONTENT_BROWSER_RENDERER_HOST_PAGE_LIFECYCLE_STATE_MANAGER_H_
- 
+-
++
  #include "base/functional/callback_forward.h"
 +#include "base/functional/callback_helpers.h"
  #include "base/memory/raw_ptr.h"
@@ -10,7 +11,8 @@
  #include "base/time/time.h"
 @@ -41,6 +42,11 @@
    ~PageLifecycleStateManager();
- 
+-
++
    void SetIsFrozen(bool frozen);
 +
 +  // Keeps this original page runnable for an owned native request. Explicit
@@ -21,9 +23,11 @@
        blink::mojom::PageVisibilityState visibility_state);
    void SetIsInBackForwardCache(
 @@ -77,6 +83,10 @@
- 
+-
++
    void SetIsLeavingBackForwardCache(base::OnceClosure done_cb);
- 
+-
++
 +  // Parc: barrier for actions on a different IPC pipe that require the page's
 +  // visibilitychange to have run. The caller must have a live PageBroadcast.
 +  void SynchronizeParcPageLifecycleState(base::OnceClosure done_cb);
@@ -33,7 +37,8 @@
      return back_forward_cache_entered_ == BackForwardCacheEntered::kEntered;
 @@ -90,6 +100,9 @@
    void SetDelegateForTesting(TestDelegate* test_delegate_);
- 
+-
++
   private:
 +  void ReleaseParcUnfreezingLease();
 +  size_t parc_unfreezing_lease_count_ = 0;
@@ -44,7 +49,8 @@
 --- a/content/browser/renderer_host/page_lifecycle_state_manager.cc
 +++ b/content/browser/renderer_host/page_lifecycle_state_manager.cc
 @@ -72,6 +72,20 @@
- 
+-
++
    SendUpdatesToRendererIfNeeded(
        /*page_restore_params=*/nullptr, base::NullCallback());
 +}
@@ -62,12 +68,14 @@
 +  --parc_unfreezing_lease_count_;
 +  SendUpdatesToRendererIfNeeded(nullptr, base::NullCallback());
  }
- 
+-
++
  void PageLifecycleStateManager::SetFrameTreeVisibility(
 @@ -191,6 +205,11 @@
    return !eviction_enabled_ || !last_acknowledged_state_->eviction_enabled;
  }
- 
+-
++
 +void PageLifecycleStateManager::SynchronizeParcPageLifecycleState(
 +    base::OnceClosure done_cb) {
 +  SendUpdatesToRendererIfNeeded(nullptr, std::move(done_cb));

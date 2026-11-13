@@ -64,22 +64,26 @@
 +                                            ImportPagesResult* result,
 +                                            URLRows* imported_urls) {
    TRACE_EVENT0("browser", "HistoryBackend::AddPagesWithDetails");
- 
+-
++
    if (!db_) {
 -    return;
 +    return false;
    }
- 
+-
++
    URLRows changed_urls;
 @@ -1570,6 +1627,8 @@
- 
+-
++
      // As of M37, we no longer maintain an archived database, ignore old visits.
      if (IsExpiredVisitTime(i->last_visit())) {
 +      if (result)
 +        ++result->expired;
        continue;
      }
- 
+-
++
 @@ -1580,7 +1639,7 @@
        url_id = db_->AddURL(*i);
        if (!url_id) {
@@ -87,7 +91,8 @@
 -        return;
 +        return false;
        }
- 
+-
++
        changed_urls.push_back(*i);
 @@ -1600,13 +1659,15 @@
        visit_info.source = visit_source;
@@ -96,7 +101,8 @@
 -        return;
 +        return false;
        }
- 
+-
++
        if (visit_info.visit_time < first_recorded_time_) {
          first_recorded_time_ = visit_info.visit_time;
        }
@@ -104,7 +110,8 @@
 +    if (result)
 +      ++result->imported;
    }
- 
+-
++
    // Broadcast a notification for typed URLs that have been modified. This
 @@ -1614,8 +1675,13 @@
    //
@@ -120,39 +127,45 @@
 +  }
 +  return true;
  }
- 
+-
++
  bool HistoryBackend::IsExpiredVisitTime(const base::Time& time) const {
-@@ -3677,14 +3743,14 @@
+@@ -3684,14 +3750,14 @@
    }
  }
- 
+-
++
 -void HistoryBackend::CommitSingletonTransactionIfItExists() {
 +bool HistoryBackend::CommitSingletonTransactionIfItExists() {
    TRACE_EVENT0("browser",
                 "HistoryBackend::CommitSingletonTransactionIfItExists");
- 
+-
++
    if (!singleton_transaction_) {
      DCHECK(!db_->HasActiveTransactions())
          << "There should not be any transactions other than the singleton one.";
 -    return;
 +    return true;
    }
- 
+-
++
    DCHECK(db_->HasActiveTransactions())
-@@ -3698,6 +3764,7 @@
+@@ -3705,6 +3771,7 @@
    // The crash reports are again predominantly on Windows. More discussion in
    // https://crbug.com/40874369 and https://crbug.com/385734240#comment4.
    singleton_transaction_.reset();
 +  return success;
  }
- 
+-
++
  ////////////////////////////////////////////////////////////////////////////////
 --- a/components/history/core/browser/history_backend.h
 +++ b/components/history/core/browser/history_backend.h
-@@ -856,6 +856,21 @@
+@@ -863,6 +863,21 @@
    // Each visit will have the visit_source type set.
    void AddPagesWithDetails(const URLRows& info, VisitSource visit_source);
- 
+-
++
 +  // Profile-owned import on the history sequence. Retains normal expiration and
 +  // visit-source policy, but publishes a result only after the actual database
 +  // transaction commits. A storage failure or cancellation before commit rolls
@@ -170,35 +183,39 @@
 +
  #if defined(UNIT_TEST)
    HistoryDatabase* db() const { return db_.get(); }
- 
-@@ -881,6 +896,11 @@
-   friend class HistoryBackendTest;
+-
++
+@@ -889,6 +904,11 @@
    friend class HistoryBackendDBBaseTest;
    FRIEND_TEST_ALL_PREFIXES(OrderingHistoryServiceTest, EnsureCorrectOrder);
+-
 +
 +  bool AddPagesWithDetailsImpl(const URLRows& info,
 +                              VisitSource visit_source,
 +                              ImportPagesResult* result,
 +                              URLRows* changed_urls);
- 
++
    // Returns the name of the Favicons database.
    base::FilePath GetFaviconsFileName() const;
-@@ -1014,7 +1034,7 @@
+-
++
+@@ -1021,7 +1041,7 @@
    // If the singleton transaction exists, commits it and checks all invariants.
    // Does nothing if `singleton_transaction_` is nullptr. Caller is responsible
    // for starting a new singleton transaction.
 -  void CommitSingletonTransactionIfItExists();
 +  bool CommitSingletonTransactionIfItExists();
- 
+-
++
    // Segments ------------------------------------------------------------------
- 
+-
++
 --- a/components/webdata/common/web_database.cc
 +++ b/components/webdata/common/web_database.cc
-@@ -110,6 +110,30 @@
-   if (!use_scoped_transaction_) {
-     db_.CommitTransactionDeprecated();
+@@ -111,6 +111,30 @@
    }
-+}
+ }
+-
 +
 +bool WebDatabase::RunAtomicImport(base::OnceCallback<bool()> write) {
 +  if (!db_.is_open())
@@ -222,14 +239,17 @@
 +  if (!use_scoped_transaction_)
 +    db_.BeginTransactionDeprecated();
 +  return committed;
- }
- 
++}
++
  std::unique_ptr<sql::Transaction> WebDatabase::AcquireTransaction() {
+   if (use_scoped_transaction_) {
+     // Only one active transaction at the time is allowed.
 --- a/components/webdata/common/web_database.h
 +++ b/components/webdata/common/web_database.h
 @@ -9,6 +9,7 @@
  #include <string>
- 
+-
++
  #include "base/files/file_path.h"
 +#include "base/functional/callback.h"
  #include "base/memory/raw_ptr.h"
@@ -238,7 +258,8 @@
 @@ -112,6 +113,12 @@
    void BeginTransaction();
    void CommitTransaction();
- 
+-
++
 +  // Runs one synchronous profile import on the existing database sequence.
 +  // Commits earlier legacy transaction work first, then owns the batch's real
 +  // transaction. False means this batch did not commit. Restores the normal

@@ -1,5 +1,3 @@
-// Genuine Chrome scheduler/request/model/Views sheets with a real supplied
-// AppKit window and native modal host. No OS credentials or signatures mocked.
 #import <AppKit/AppKit.h>
 
 #include <memory>
@@ -14,11 +12,11 @@
 #include "chrome/browser/webauthn/authenticator_request_scheduler.h"
 #include "chrome/browser/webauthn/chrome_authenticator_request_delegate.h"
 #include "chrome/browser/webauthn/native_authenticator_request_context.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/navigation_simulator.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 #include "ui/views/widget/widget.h"
 #include "webauthn.h"
 #import "window_security_reservation.h"
@@ -64,11 +62,11 @@ void Pump() {
     CFRunLoopRunInMode(kCFRunLoopDefaultMode, .01, true);
   }
 }
-}  // namespace
-class NativeWebAuthnTest : public BrowserWithTestWindowTest {
+}
+class NativeWebAuthnTest : public ParcBrowserWindowTest {
  public:
   void SetUp() override {
-    BrowserWithTestWindowTest::SetUp();
+    ParcBrowserWindowTest::SetUp();
     AddTab(browser(), GURL("https://webauthn.example/auth"));
     auto* page = contents()->GetNativeView().GetNativeNSView();
     ASSERT_TRUE(page);
@@ -90,7 +88,7 @@ class NativeWebAuthnTest : public BrowserWithTestWindowTest {
     browser()->GetTabStripModel()->CloseAllTabs();
     Pump();
     modal_.host.Invalidate();
-    BrowserWithTestWindowTest::TearDown();
+    ParcBrowserWindowTest::TearDown();
     [window_ close];
     window_ = nil;
   }
@@ -271,7 +269,6 @@ TEST_F(NativeWebAuthnTest, RealModalHostChangeDefersRemovalUntilIterationEnds) {
   Show();
   ASSERT_TRUE(manager()->IsDialogActive());
   manager()->SetDelegate(nullptr);
-  // The actual UpdateDialogHost range iteration must retain its list entry.
   EXPECT_TRUE(manager()->IsDialogActive());
   EXPECT_TRUE(request_);
   manager()->SetDelegate(&modal_);
@@ -285,4 +282,4 @@ TEST_F(NativeWebAuthnTest, RealModalHostChangeDefersRemovalUntilIterationEnds) {
   Pump();
   EXPECT_TRUE(view());
 }
-}  // namespace parc
+}

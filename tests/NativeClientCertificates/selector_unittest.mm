@@ -1,5 +1,3 @@
-// Genuine SSLClientCertificateSelector, identities, SSL auth observer and modal
-// manager. Only certificate/private-key inputs are synthetic test fixtures.
 #import <AppKit/AppKit.h>
 
 #include <memory>
@@ -15,7 +13,6 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/ssl_client_certificate_selector.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "client_certificates.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
@@ -26,6 +23,7 @@
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_private_key.h"
 #include "net/test/test_data_directory.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 #include "ui/views/widget/widget.h"
 #import "window_security_reservation.h"
 
@@ -140,11 +138,11 @@ void Pump() {
     CFRunLoopRunInMode(kCFRunLoopDefaultMode, .01, true);
   }
 }
-}  // namespace
-class NativeClientCertificatesTest : public BrowserWithTestWindowTest {
+}
+class NativeClientCertificatesTest : public ParcBrowserWindowTest {
  public:
   void SetUp() override {
-    BrowserWithTestWindowTest::SetUp();
+    ParcBrowserWindowTest::SetUp();
     AddTab(browser(), GURL("https://certificate.example/request"));
     auto* page = contents()->GetNativeView().GetNativeNSView();
     ASSERT_TRUE(page);
@@ -177,7 +175,7 @@ class NativeClientCertificatesTest : public BrowserWithTestWindowTest {
     Pump();
     modal_.host.Invalidate();
     parc_hooks::SetClientCertificateSelector(nullptr);
-    BrowserWithTestWindowTest::TearDown();
+    ParcBrowserWindowTest::TearDown();
     [window_ close];
     window_ = nil;
   }
@@ -415,4 +413,4 @@ TEST_F(NativeClientCertificatesTest, GenuineDelegateCanDestroyPageOnReply) {
   EXPECT_EQ(result.destroyed, 1);
   EXPECT_EQ(browser()->GetTabStripModel()->count(), 0);
 }
-}  // namespace parc
+}

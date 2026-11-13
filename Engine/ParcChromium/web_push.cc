@@ -13,9 +13,9 @@ namespace parc {
 namespace {
 class WebPushClient final : public gcm::GCMClientImpl {
  public:
-  WebPushClient() : GCMClientImpl(std::make_unique<gcm::GCMInternalsBuilder>()) {}
+  WebPushClient() : GCMClientImpl(std::make_unique<fcm::FcmInternalsBuilder>()) {}
   void Initialize(
-      const ChromeBuildInfo& build_info, const base::FilePath& store_path,
+      const fcm::ChromeBuildInfo& build_info, const base::FilePath& store_path,
       const scoped_refptr<base::SequencedTaskRunner>& blocking_runner,
       scoped_refptr<base::SequencedTaskRunner> io_runner,
       base::RepeatingCallback<void(
@@ -31,7 +31,6 @@ class WebPushClient final : public gcm::GCMClientImpl {
                              std::move(encryptor), delegate);
   }
   void Register(scoped_refptr<gcm::RegistrationInfo> info) override {
-    // The sender-ID endpoint is retired; Instance ID and transport stay upstream.
     if (gcm::GCMRegistrationInfo::FromRegistrationInfo(info.get())) {
       delegate_->OnRegisterFinished(info, std::string(), GCM_DISABLED);
       return;

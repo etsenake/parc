@@ -2,7 +2,8 @@
 +++ b/content/browser/media/service_factory.cc
 @@ -25,6 +25,8 @@
  #include "mojo/public/cpp/bindings/remote_set.h"
- 
+-
++
  #if BUILDFLAG(IS_MAC)
 +#include "content/common/content_export.h"
 +#include "content/public/browser/child_process_host.h"
@@ -12,7 +13,8 @@
 @@ -35,11 +37,21 @@
  #include "media/mojo/mojom/media_foundation_service.mojom.h"
  #endif  // BUILDFLAG(IS_WIN)
- 
+-
++
 +#if BUILDFLAG(IS_MAC)
 +namespace parc_hooks {
 +CONTENT_EXPORT void SetCdmServiceChildFlags(int flags);
@@ -20,9 +22,11 @@
 +#endif  // BUILDFLAG(IS_MAC)
 +
  namespace content {
- 
+-
++
  namespace {
- 
+-
++
  #if BUILDFLAG(IS_MAC)
 +// A value other than CHILD_NORMAL must be resolved by the embedder's
 +// ContentBrowserClient::GetChildProcessPath().
@@ -43,7 +47,8 @@
      }
 @@ -312,3 +327,11 @@
  #endif  // BUILDFLAG(IS_WIN)
- 
+-
++
  }  // namespace content
 +
 +#if BUILDFLAG(IS_MAC)

@@ -1,6 +1,6 @@
 --- a/chrome/browser/dom_distiller/dom_distiller_service_factory.cc
 +++ b/chrome/browser/dom_distiller/dom_distiller_service_factory.cc
-@@ -60,13 +60,12 @@
+@@ -58,13 +58,12 @@
  DomDistillerServiceFactory::DomDistillerServiceFactory()
      : ProfileKeyedServiceFactory(
            "DomDistillerService",
@@ -19,7 +19,7 @@
                // TODO(crbug.com/41488885): Check if this service is needed for
                // Ash Internals.
                .WithAshInternals(ProfileSelection::kRedirectedToOriginal)
-@@ -107,10 +106,13 @@
+@@ -101,10 +100,13 @@
 -
 +
    std::unique_ptr<DistilledPagePrefs> distilled_page_prefs =
@@ -36,7 +36,7 @@
            base::BindRepeating(&DomDistillerServiceFactory::
                                    UpdateDistilledPagePrefsDefaultFontScaling,
                                weak_ptr_factory_.GetWeakPtr(),
-@@ -136,8 +138,11 @@
+@@ -130,8 +132,11 @@
    DistilledPagePrefs* distilled_page_prefs = service->GetDistilledPagePrefs();
 -
 +

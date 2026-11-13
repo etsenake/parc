@@ -11,7 +11,8 @@
 @@ -246,7 +247,28 @@
    return control;
  }
- 
+-
++
 +// Parc: see content/public/browser/parc_worker_identity.h.
 +ParcWorkerIdentityHook g_parc_worker_identity_hook = nullptr;
 +
@@ -34,7 +35,8 @@
 +                                creator_frame, user_agent, metadata);
 +  }
 +}
- 
+-
++
  constexpr base::TimeDelta ServiceWorkerVersion::kTimeoutTimerDelay;
  constexpr base::TimeDelta ServiceWorkerVersion::kStartNewWorkerTimeout;
 @@ -2794,6 +2816,13 @@
@@ -61,10 +63,11 @@
  #include "content/public/browser/permission_controller.h"
  #include "content/public/browser/permission_descriptor_util.h"
  #include "content/public/browser/service_worker_context.h"
-@@ -482,6 +483,16 @@
+@@ -504,6 +505,16 @@
                                     .GetWebExposedIsolationInfo()
                                     .is_isolated();
- 
+-
++
 +  // Parc: the worker presents its site's identity, as its documents do
 +  // (content/public/browser/parc_worker_identity.h).
 +  std::string user_agent = GetContentClient()->browser()->GetUserAgent();
@@ -78,7 +81,7 @@
    // Send the CreateSharedWorker message.
    factory_.Bind(std::move(factory));
    factory_->CreateSharedWorker(
-@@ -489,9 +500,8 @@
+@@ -511,9 +522,8 @@
        instance_.worker_storage_key().origin(),
        creator_policy_container_host_ &&
            creator_policy_container_host_->policies().is_web_secure_context,
@@ -103,7 +106,8 @@
 @@ -301,6 +302,24 @@
        /*should_update_existing_headers=*/false, renderer_preferences,
        /*is_for_worker_script=*/true);
- 
+-
++
 +  // Parc: a Safari site's service worker requests its scripts, imports and
 +  // update checks included, with Safari's user agent, as its own fetches are
 +  // (parc_worker_identity.h). The worker is named by its origin: an import
@@ -127,7 +131,7 @@
    request.headers.SetHeader(net::HttpRequestHeaders::kAccept,
 --- a/content/browser/worker_host/worker_script_fetcher.cc
 +++ b/content/browser/worker_host/worker_script_fetcher.cc
-@@ -35,6 +35,7 @@
+@@ -36,6 +36,7 @@
  #include "content/public/browser/browser_thread.h"
  #include "content/public/browser/child_process_host.h"
  #include "content/public/browser/content_browser_client.h"
@@ -135,7 +139,7 @@
  #include "content/public/browser/global_request_id.h"
  #include "content/public/browser/network_service_instance.h"
  #include "content/public/browser/shared_cors_origin_access_list.h"
-@@ -106,7 +107,9 @@
+@@ -107,7 +108,9 @@
  // TODO(nhiroki): Align this function with AddAdditionalRequestHeaders() in
  // navigation_request.cc, FrameFetchContext, and WorkerFetchContext.
  void AddAdditionalRequestHeaders(network::ResourceRequest* resource_request,
@@ -144,9 +148,10 @@
 +                                 const GURL& top_level_site,
 +                                 RenderFrameHost* creator_frame) {
    CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M160);
- 
+-
++
    // TODO(nhiroki): Return early when the request is neither HTTP nor HTTPS
-@@ -125,6 +128,21 @@
+@@ -126,6 +129,21 @@
        &resource_request->headers, browser_context,
        /*should_update_existing_headers=*/false, renderer_preferences,
        /*is_for_worker_script=*/true);
@@ -166,12 +171,14 @@
 +                                        user_agent);
 +  }
  }
- 
- void DidCreateScriptLoader(
-@@ -389,7 +407,12 @@
+-
++
+ // Build `PolicyContainerPolicies` from the worker script response headers or
+@@ -410,7 +428,12 @@
        outside_fetch_client_settings_object->insecure_requests_policy ==
        blink::mojom::InsecureRequestsPolicy::kUpgrade;
- 
+-
++
 -  AddAdditionalRequestHeaders(resource_request.get(), browser_context);
 +  AddAdditionalRequestHeaders(
 +      resource_request.get(), browser_context,
@@ -179,6 +186,7 @@
 +      request_destination == network::mojom::RequestDestination::kWorker
 +          ? &ancestor_render_frame_host
 +          : nullptr);
- 
+-
++
    // Notify that the request for fetching the main worker script is about to
    // start to DevTools. It fires `Network.onRequestWillBeSent` event. For

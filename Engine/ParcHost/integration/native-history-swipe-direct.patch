@@ -12,7 +12,7 @@
                        isValidItem:(BOOL*)valid;
 --- a/chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.mm
 +++ b/chrome/browser/renderer_host/chrome_render_widget_host_view_mac_delegate.mm
-@@ -73,6 +73,7 @@
+@@ -68,6 +68,7 @@
  }
 -
 +
@@ -22,7 +22,7 @@
  }
 -
 +
-@@ -133,6 +134,10 @@
+@@ -128,6 +129,10 @@
  // Handle an event. All incoming key and mouse events flow through this
  // delegate method if implemented. Return YES if the event is fully handled, or
  // NO if normal processing should take place.

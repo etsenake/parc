@@ -2,32 +2,38 @@
 +++ b/third_party/blink/renderer/core/html/track/text_track.idl
 @@ -26,7 +26,10 @@
  // https://html.spec.whatwg.org/C/#texttrack
- 
+-
++
  enum TextTrackMode { "disabled",  "hidden",  "showing" };
 -enum TextTrackKind { "subtitles",  "captions",  "descriptions",  "chapters",  "metadata" };
 +// Parc: "forced" is WebKit's kind for forced-only subtitles (native HLS
 +// FORCED=YES renditions). Documents without Safari's identity refuse it where
 +// Chromium's enum would (HTMLMediaElement::addTextTrack, HTMLTrackElement).
 +enum TextTrackKind { "subtitles",  "captions",  "descriptions",  "chapters",  "metadata", "forced" };
- 
+-
++
  [Exposed=Window]
  interface TextTrack : EventTarget {
 @@ -35,7 +38,9 @@
      readonly attribute DOMString language;
- 
+-
++
      readonly attribute DOMString id;
 -    // readonly attribute DOMString inBandMetadataTrackDispatchType;
 +    // Parc: WebKit's attribute on Safari-identity documents; the native HLS
 +    // metadata track answers "com.apple.streaming", other tracks "".
 +    [ContextEnabled=ParcSafariIdentity] readonly attribute DOMString inBandMetadataTrackDispatchType;
- 
+-
++
      attribute TextTrackMode mode;
- 
+-
++
 --- a/third_party/blink/renderer/core/html/track/text_track.cc
 +++ b/third_party/blink/renderer/core/html/track/text_track.cc
 @@ -111,8 +111,11 @@
  }
- 
+-
++
  bool TextTrack::IsVisualKind() const {
 +  // Parc: WebKit renders forced subtitles like subtitles
 +  // (TextTrack::isRendered).
@@ -36,12 +42,14 @@
 +         kind() == V8TextTrackKind::Enum::kCaptions ||
 +         kind() == V8TextTrackKind::Enum::kForced;
  }
- 
+-
++
  void TextTrack::setMode(const V8TextTrackMode& mode) {
 --- a/third_party/blink/renderer/core/html/track/automatic_track_selection.cc
 +++ b/third_party/blink/renderer/core/html/track/automatic_track_selection.cc
 @@ -85,6 +85,11 @@
- 
+-
++
      if (text_track->kind() == PreferredTrackKind())
        track_score += 1;
 +    // Parc: Safari's native HLS tracks (M156's only in-band text tracks)
@@ -211,39 +219,47 @@
 --- a/third_party/blink/renderer/core/html/track/text_track_list.h
 +++ b/third_party/blink/renderer/core/html/track/text_track_list.h
 @@ -69,6 +69,11 @@
- 
+-
++
    bool HasShowingTracks();
- 
+-
++
 +  // Parc: the in-band tracks (Safari's native HLS route), in order.
 +  const HeapVector<Member<TextTrack>>& InbandTracks() const {
 +    return inband_tracks_;
 +  }
 +
    void Trace(Visitor*) const override;
- 
+-
++
   private:
 @@ -83,6 +88,7 @@
- 
+-
++
    HeapVector<Member<TextTrack>> add_track_tracks_;
    HeapVector<Member<TextTrack>> element_tracks_;
 +  HeapVector<Member<TextTrack>> inband_tracks_;
  };
- 
+-
++
  }  // namespace blink
 --- a/third_party/blink/renderer/core/html/track/text_track_list.cc
 +++ b/third_party/blink/renderer/core/html/track/text_track_list.cc
 @@ -39,7 +39,8 @@
  TextTrackList::~TextTrackList() = default;
- 
+-
++
  unsigned TextTrackList::length() const {
 -  return add_track_tracks_.size() + element_tracks_.size();
 +  return add_track_tracks_.size() + element_tracks_.size() +
 +         inband_tracks_.size();
  }
- 
+-
++
  int TextTrackList::GetTrackIndex(TextTrack* text_track) {
 @@ -48,6 +49,11 @@
- 
+-
++
    if (text_track->TrackType() == TextTrack::kAddTrack)
      return element_tracks_.size() + add_track_tracks_.Find(text_track);
 +
@@ -251,12 +267,14 @@
 +    return element_tracks_.size() + add_track_tracks_.size() +
 +           inband_tracks_.Find(text_track);
 +  }
- 
+-
++
    NOTREACHED();
  }
 @@ -69,6 +75,15 @@
    }
- 
+-
++
    for (const auto& track : add_track_tracks_) {
 +    if (!track->IsRendered())
 +      continue;
@@ -269,18 +287,21 @@
 +  for (const auto& track : inband_tracks_) {
      if (!track->IsRendered())
        continue;
- 
+-
++
 @@ -98,6 +113,10 @@
    if (index < add_track_tracks_.size())
      return add_track_tracks_[index].Get();
- 
+-
++
 +  index -= add_track_tracks_.size();
 +  if (index < inband_tracks_.size())
 +    return inband_tracks_[index].Get();
 +
    return nullptr;
  }
- 
+-
++
 @@ -123,8 +142,14 @@
      tracks = &element_tracks_;
      for (const auto& add_track : add_track_tracks_)
@@ -331,18 +352,21 @@
 +  visitor->Trace(inband_tracks_);
    EventTarget::Trace(visitor);
  }
- 
+-
++
 --- a/third_party/blink/renderer/core/html/track/vtt/vtt_parser.h
 +++ b/third_party/blink/renderer/core/html/track/vtt/vtt_parser.h
 @@ -113,6 +113,9 @@
    // Transfers ownership of last parsed style sheets to caller.
    void GetNewStyleSheets(HeapVector<Member<CSSStyleSheet>>&);
- 
+-
++
 +  // Parc: the regions parsed so far (a native HLS track's WebVTT header).
 +  const VTTRegionMap& RegionMap() const { return region_map_; }
 +
    void Trace(Visitor*) const;
- 
+-
++
   private:
 --- a/third_party/blink/renderer/core/html/build.gni
 +++ b/third_party/blink/renderer/core/html/build.gni
@@ -397,15 +421,18 @@
 +                    (webkit_kinds && kind == "description")
 +                ? kind
 +                : g_empty_atom) {}
- 
+-
++
  AudioTrack::~AudioTrack() = default;
- 
+-
++
 --- a/third_party/blink/renderer/core/html/track/track_list_base.h
 +++ b/third_party/blink/renderer/core/html/track/track_list_base.h
 @@ -67,6 +67,20 @@
      NOTREACHED();
    }
- 
+-
++
 +  // Parc: removes `track` itself, for lists whose ids can repeat.
 +  void RemoveTrack(T* track) {
 +    for (unsigned i = 0; i < tracks_.size(); ++i) {
@@ -427,7 +454,8 @@
 +++ b/third_party/blink/renderer/core/html/track/audio_track.h
 @@ -16,12 +16,15 @@
    DEFINE_WRAPPERTYPEINFO();
- 
+-
++
   public:
 +  // Parc: `webkit_kinds` also takes WebKit's "description" keyword, for
 +  // Safari's native HLS route's tracks (Safari-identity documents).
@@ -441,24 +469,28 @@
 +             bool webkit_kinds = false);
    ~AudioTrack() override;
    void Trace(Visitor*) const override;
- 
+-
++
 --- a/third_party/blink/renderer/core/html/track/text_track.h
 +++ b/third_party/blink/renderer/core/html/track/text_track.h
 @@ -124,6 +124,11 @@
    void SetHasBeenConfigured(bool flag) { has_been_configured_ = flag; }
- 
+-
++
    virtual bool IsDefault() const { return false; }
 +  // Parc: TextTrack.inBandMetadataTrackDispatchType on Safari-identity
 +  // documents (WebKit's TextTrack); ParcInbandTextTrack overrides it.
 +  virtual String inBandMetadataTrackDispatchType() const {
 +    return g_empty_string;
 +  }
- 
+-
++
    void Reset();
- 
+-
++
 --- a/third_party/blink/renderer/bindings/idl_in_core.gni
 +++ b/third_party/blink/renderer/bindings/idl_in_core.gni
-@@ -515,10 +515,13 @@
+@@ -517,10 +517,13 @@
    "//third_party/blink/renderer/core/html/media/html_media_element.idl",
    "//third_party/blink/renderer/core/html/media/html_video_element.idl",
    "//third_party/blink/renderer/core/html/media/media_error.idl",
@@ -474,7 +506,7 @@
    "//third_party/blink/renderer/core/html/track/text_track_cue.idl",
 --- a/third_party/blink/renderer/bindings/generated_in_core.gni
 +++ b/third_party/blink/renderer/bindings/generated_in_core.gni
-@@ -1004,6 +1004,8 @@
+@@ -1008,6 +1008,8 @@
    "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_custom_state_set.h",
    "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_container_query_list.cc",
    "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_container_query_list.h",
@@ -488,7 +520,8 @@
 @@ -30,6 +30,9 @@
  #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_HTML_TRACK_VTT_VTT_CUE_H_
  #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_TRACK_VTT_VTT_CUE_H_
- 
+-
++
 +#include <cstdint>
 +#include <optional>
 +
@@ -498,7 +531,8 @@
 @@ -156,6 +159,22 @@
    // Applies CSS override style from user settings.
    void ApplyUserOverrideCSSProperties();
- 
+-
++
 +  // Parc: what WebKit draws of a generic cue of Safari's native HLS route
 +  // (TextTrackCueGeneric: CEA-608/708 and other non-WebVTT captions), set by
 +  // ParcInbandTextTrack. Colours are 0xRRGGBBAA. WebKit keeps a generic cue's
@@ -516,12 +550,15 @@
 +  void SetParcGenericStyle(const ParcGenericCueStyle& style);
 +
    DocumentFragment* getCueAsHTML();
- 
- 
+-
++
+-
++
 @@ -230,6 +249,10 @@
    Member<VTTCueBackgroundBox> cue_background_box_;
    Member<VTTCueBox> display_tree_;
- 
+-
++
 +  // Parc: TextTrackCueGenericBoxElement::applyCSSProperties.
 +  void ApplyParcGenericStyle();
 +  std::optional<ParcGenericCueStyle> parc_generic_style_;
@@ -592,7 +629,8 @@
 +    display_tree_->RemoveInlineStyleProperty(CSSPropertyID::kTextWrapMode);
 +  }
  }
- 
+-
++
  void VTTCue::setText(const String& text) {
 @@ -871,6 +927,7 @@
    if (!region()) {

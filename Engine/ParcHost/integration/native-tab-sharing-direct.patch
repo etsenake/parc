@@ -1,6 +1,6 @@
 --- a/chrome/browser/ui/tab_sharing/tab_sharing_infobar_delegate.cc
 +++ b/chrome/browser/ui/tab_sharing/tab_sharing_infobar_delegate.cc
-@@ -38,7 +38,29 @@
+@@ -38,7 +38,27 @@
  #include "ui/base/ui_base_features.h"
  #include "ui/strings/grit/ui_strings.h"
 -
@@ -19,12 +19,10 @@
 +    TabSharingInfoBarDelegate::TabShareType capture_type,
 +    base::WeakPtr<ScreensharingControlsHistogramLogger> uma_logger);
 +void SetTabSharingInfoBarFactory(TabSharingInfoBarFactory factory);
-+}  // namespace parc_hooks
++}
 +
  namespace {
 +
-+// Replace the captured-surface-control page info and the Views infobar below
-+// for every page.
 +parc_hooks::TabSharingPageInfo g_parc_tab_sharing_page_info = nullptr;
 +parc_hooks::TabSharingInfoBarFactory g_parc_tab_sharing_infobar_factory =
 +    nullptr;
@@ -32,19 +30,18 @@
 -
 +
  constexpr int kCapturedSurfaceControlIndicatorButtonIconHeight = 16;
-@@ -147,6 +169,10 @@
--
-+
-   void Click(infobars::InfoBar* infobar) override {
+@@ -149,6 +169,10 @@
      if (!web_contents_) {
-+      return;
-+    }
-+    if (g_parc_tab_sharing_page_info) {
-+      g_parc_tab_sharing_page_info(web_contents_.get());
        return;
      }
++    if (g_parc_tab_sharing_page_info) {
++      g_parc_tab_sharing_page_info(web_contents_.get());
++      return;
++    }
      ShowPageInfoDialog(web_contents_.get(), base::DoNothing(),
-@@ -213,12 +239,19 @@
+                        bubble_anchor_util::Anchor::kLocationBar,
+                        ContentSettingsType::CAPTURED_SURFACE_CONTROL);
+@@ -213,12 +237,19 @@
    CHECK(infobar_manager);
    CHECK(ui);
 -
@@ -72,7 +69,7 @@
 +
    return old_infobar ? infobar_manager->ReplaceInfoBar(old_infobar,
                                                         std::move(new_infobar))
-@@ -345,3 +378,12 @@
+@@ -345,3 +376,12 @@
    return const_cast<TabSharingInfoBarDelegateButton&>(
        const_cast<const TabSharingInfoBarDelegate*>(this)->GetButton(button));
  }
@@ -84,10 +81,10 @@
 +void SetTabSharingInfoBarFactory(TabSharingInfoBarFactory factory) {
 +  g_parc_tab_sharing_infobar_factory = factory;
 +}
-+}  // namespace parc_hooks
++}
 --- a/chrome/browser/ui/views/tab_sharing/tab_sharing_ui_views.cc
 +++ b/chrome/browser/ui/views/tab_sharing/tab_sharing_ui_views.cc
-@@ -69,7 +69,16 @@
+@@ -84,8 +84,16 @@
  #include "ui/views/widget/native_widget_aura.h"
  #endif
 -
@@ -96,17 +93,17 @@
 +using TabSharingProfile =
 +    Profile* (*)(content::GlobalRenderFrameHostId capturer);
 +void SetTabSharingProfile(TabSharingProfile profile);
-+}  // namespace parc_hooks
++}
 +
  namespace {
-+
-+// Replaces the last-used profile below as the capture session's profile.
-+parc_hooks::TabSharingProfile g_parc_tab_sharing_profile = nullptr;
 -
++
++parc_hooks::TabSharingProfile g_parc_tab_sharing_profile = nullptr;
 +
  using TabRole = ::TabSharingInfoBarDelegate::TabRole;
  using content::GlobalRenderFrameHostId;
-@@ -188,7 +197,9 @@
+ using content::RenderFrameHost;
+@@ -203,7 +211,9 @@
      TabSharingInfoBarDelegate::TabShareType capture_type,
      bool captured_surface_control_active)
      : capture_session_id_(next_capture_session_id_++),
@@ -117,7 +114,7 @@
        capturer_(capturer),
        capturer_origin_(GetOriginFromId(capturer)),
        can_focus_capturer_(GetOriginFromId(capturer).scheme() !=
-@@ -771,3 +782,9 @@
+@@ -942,3 +952,9 @@
    }
  }
  #endif
@@ -126,4 +123,4 @@
 +void SetTabSharingProfile(TabSharingProfile profile) {
 +  g_parc_tab_sharing_profile = profile;
 +}
-+}  // namespace parc_hooks
++}

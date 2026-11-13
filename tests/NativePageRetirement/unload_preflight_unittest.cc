@@ -1,8 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Real UnloadController, TabStripModel and WebContents. The controlled custom
-// confirmation is the public TabUnloadHandler input, not a copy of transaction
-// state or a fake unload controller. Renderer/AppKit integration is a separate
-// browser runtime gate.
 #include <map>
 #include <memory>
 #include <set>
@@ -13,10 +9,10 @@
 #include "base/test/bind.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/unload_controller.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/web_contents_tester.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 #include "tab_retirement.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "unload_transactions.h"
@@ -40,11 +36,10 @@ void SetUnloadControllerPageGates(
     std::optional<bool> (*)(const UnloadController&, content::WebContents*),
     bool (*)(content::WebContents*),
     bool (*)(UnloadController&, content::WebContents*, bool));
-}  // namespace parc_hooks
+}
 
 namespace parc {
 namespace {
-// The hooks ParcMainDelegate installs, set before any test Browser exists.
 void InstallUnloadTransactions(bool install) {
   parc_hooks::SetUnloadControllerLifetime(
       install ? &OnUnloadControllerCreated : nullptr,
@@ -96,11 +91,11 @@ class Confirmations final : public UnloadController::TabUnloadHandler {
   bool synchronous_accept = false;
 };
 
-class NativePageRetirementTest : public BrowserWithTestWindowTest {
+class NativePageRetirementTest : public ParcBrowserWindowTest {
  protected:
   void SetUp() override {
     InstallUnloadTransactions(true);
-    BrowserWithTestWindowTest::SetUp();
+    ParcBrowserWindowTest::SetUp();
     a_ = Append();
     b_ = Append();
     untouched_ = Append();
@@ -116,7 +111,7 @@ class NativePageRetirementTest : public BrowserWithTestWindowTest {
     handler_->selected.clear();
     handler_->callbacks.clear();
     base::RunLoop().RunUntilIdle();
-    BrowserWithTestWindowTest::TearDown();
+    ParcBrowserWindowTest::TearDown();
     base::RunLoop().RunUntilIdle();
     InstallUnloadTransactions(false);
   }
@@ -170,10 +165,7 @@ TEST_F(NativePageRetirementTest, EveryApprovalPrecedesPostedActualUnload) {
   EXPECT_EQ(Count(), 3);
   ASSERT_TRUE(IsTabClosePreflightReady(*controller(), *token_));
   ASSERT_TRUE(CommitTabClosePreflight(*controller(), *token_));
-  EXPECT_EQ(Count(), 3);  // Commit must not run a renderer or native callback.
-  // Blank TestWebContents have no renderer/unload handler; actual ClosePage
-  // reaches Browser's genuine CloseContents/TabStripModel removal synchronously
-  // when the posted commit runs.
+  EXPECT_EQ(Count(), 3);
   a_ = nullptr;
   b_ = nullptr;
   base::RunLoop().RunUntilIdle();
@@ -193,7 +185,7 @@ TEST_F(NativePageRetirementTest, LateCustomLeaveAfterCancellationCannotClose) {
   EXPECT_FALSE(ReserveTabClosePreflight(*controller(),
       {a_, b_}, base::BindRepeating([](bool) {})));
   handler_->Reply(a_,
-                  true);  // Old generation is consumed, never ordinary close.
+                  true);
   EXPECT_EQ(Count(), 3);
   EXPECT_EQ(results_.size(), 1u);
   token_ = ReserveTabClosePreflight(*controller(),
@@ -245,7 +237,7 @@ TEST_F(NativePageRetirementTest,
   EXPECT_FALSE(
       UnloadController::From(other.get())->BeforeUnloadFired(identity, true));
   handler_->Reply(identity,
-                  true);  // Stale custom callback cannot consume a new request.
+                  true);
   EXPECT_EQ(other->GetTabStripModel()->count(), 1);
   EXPECT_EQ(other->GetTabStripModel()->GetWebContentsAt(0), identity);
   a_ = nullptr;
@@ -263,7 +255,7 @@ TEST_F(NativePageRetirementTest, NewDocumentRetiresCancelledReplyReservation) {
   auto fresh = ReserveTabClosePreflight(*controller(),
       {a_}, base::BindRepeating([](bool) {}));
   ASSERT_TRUE(fresh);
-  handler_->Reply(a_, true);  // Old custom callback cannot approve fresh token.
+  handler_->Reply(a_, true);
   EXPECT_FALSE(IsTabClosePreflightReady(*controller(), *fresh));
   ReleaseTabClosePreflight(*controller(), *fresh);
 }
@@ -507,5 +499,5 @@ TEST_F(NativePageRetirementTest,
   other.reset();
   base::RunLoop().RunUntilIdle();
 }
-}  // namespace
-}  // namespace parc
+}
+}

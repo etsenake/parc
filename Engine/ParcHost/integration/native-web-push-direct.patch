@@ -1,6 +1,10 @@
 --- a/components/gcm_driver/gcm_client_factory.cc
 +++ b/components/gcm_driver/gcm_client_factory.cc
-@@ -10,3 +10,14 @@
+@@ -7,9 +7,20 @@
+ #include "components/fcm/engine/fcm_internals_builder.h"
+ #include "components/gcm_driver/gcm_client_impl.h"
+-
++
 +namespace parc_hooks {
 +namespace {
 +std::unique_ptr<gcm::GCMClient> (*web_push_factory)() = nullptr;
@@ -8,10 +12,14 @@
 +void SetWebPushFactory(std::unique_ptr<gcm::GCMClient> (*factory)()) {
 +  web_push_factory = factory;
 +}
-+}  // namespace parc_hooks
++}
 +
  namespace gcm {
- 
+-
++
  std::unique_ptr<GCMClient> GCMClientFactory::BuildInstance() {
 +  if (parc_hooks::web_push_factory)
 +    return parc_hooks::web_push_factory();
+   return std::make_unique<GCMClientImpl>(
+       std::make_unique<fcm::FcmInternalsBuilder>());
+ }

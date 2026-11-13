@@ -1,6 +1,6 @@
 --- a/chrome/browser/extensions/extension_context_menu_model.cc
 +++ b/chrome/browser/extensions/extension_context_menu_model.cc
-@@ -91,9 +91,20 @@
+@@ -91,10 +91,21 @@
 -
 +
  static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
@@ -17,15 +17,16 @@
 -
 +
  namespace {
+-
 +
 +// Replaces the confirmation and removal flow below for every Browser.
 +parc_hooks::ExtensionUninstallHandler g_parc_extension_uninstall_handler =
 +    nullptr;
--
 +
  // Returns true if the given |item| is of the given |type|.
  bool MenuItemMatchesAction(const std::optional<ActionInfo::Type> action_type,
-@@ -550,9 +561,12 @@
+                            const MenuItem* item) {
+@@ -561,9 +572,12 @@
                              visible ? ExtensionUsageAction::kPinned
                                      : ExtensionUsageAction::kUnpinned);
  #if !BUILDFLAG(IS_ANDROID)
@@ -41,7 +42,7 @@
          ui::TrackedElement* const browser_element =
              ui::ElementTracker::GetElementTracker()->GetUniqueElement(
                  kBrowserViewElementId, context);
-@@ -565,6 +579,10 @@
+@@ -576,6 +590,10 @@
        break;
      }
      case UNINSTALL: {
@@ -52,7 +53,7 @@
        UninstallDialogHelper::UninstallExtension(
            profile_, browser_->GetWindow()->GetNativeWindow(), extension);
        break;
-@@ -1129,3 +1147,9 @@
+@@ -1169,3 +1187,9 @@
  }
 -
 +

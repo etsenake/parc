@@ -1,43 +1,30 @@
-# Installed by the reviewed overlay at //parc/native.
-# Shared native AppKit components and Chromium-backed native services. Other
-# services and the full window/page adapters compile in //parc:browser.
 import("//components/signin/features.gni")
 import("//printing/buildflags/buildflags.gni")
 
 assert(is_mac)
 
-# Pure component conversion shared by original Chromium navigation and output.
 source_set("native_internal_urls_api") {
   public = [ "native_internal_urls.h" ]
   sources = public
   public_deps = [ "//url" ]
 }
 
-# TabFeatures owns the genuine thumbnail helper for native browser profiles.
-# The predicate implementation stays in //parc:browser; Chrome takes declarations.
 source_set("native_tab_preview_api") {
   public = [ "native_tab_preview.h" ]
   sources = public
 }
 
-# Declaration-only seam for Chrome's first-ordered context-menu observer.
 source_set("native_page_context_menu_api") {
   public = [ "native_page_context_menu.h" ]
   sources = public
 }
 
-# Chrome's windows.update preflight calls the engine without depending on
-# //parc:browser or acquiring a Views window. Implementation stays in the real
-# native_browser_window.mm owner.
 source_set("native_window_state_api") {
   public = [ "native_window_state.h" ]
   sources = public
   public_deps = [ "//ui/base/mojom:ui_base_types" ]
 }
 
-# Chrome's picker can name the native dialog factory without a reverse
-# dependency on //parc:browser or native_downloads. The used implementation
-# stays in native_downloads' existing file_dialog.mm translation unit.
 source_set("native_download_dialog_api") {
   public = [ "download_file_dialog.h" ]
   sources = public
@@ -47,9 +34,6 @@ source_set("native_download_dialog_api") {
   ]
 }
 
-# Chrome callers use these declarations without acquiring //parc:browser (which
-# already depends on Chrome). The implementation stays in the actual engine;
-# the application owns and links its visible PiP presenter separately.
 source_set("native_video_pip_api") {
   public = [
     "native_appkit_bridge.h",
@@ -58,8 +42,6 @@ source_set("native_video_pip_api") {
   sources = public
 }
 
-# Implemented in //parc:browser. Chrome's auto-PiP helper reaches the lifecycle
-# acknowledgement through a hook, so nothing in Chrome depends on this target.
 source_set("native_background_picture_in_picture_api") {
   public = [
     "native_background_picture_in_picture.h",
@@ -69,8 +51,6 @@ source_set("native_background_picture_in_picture_api") {
   public_deps = [ "//base" ]
 }
 
-# Chrome's BrowserWebContentsDelegate asks a Parc page's own alert sheet for
-# the repost warning; native_javascript_dialogs implements it.
 source_set("native_repost_form_warning_api") {
   public = [ "native_repost_form_warning_api.h" ]
   sources = public
@@ -143,9 +123,6 @@ source_set("native_components") {
     "window_security_reservation.mm",
   ]
 
-  #
-  # Keep those configs intact; do not add no_arc or warning suppressions.
-  # QuartzCore: the status pill's own CALayer/CATransaction use.
   frameworks = [
     "AppKit.framework",
     "QuartzCore.framework",
@@ -157,8 +134,6 @@ source_set("native_components") {
     "//ui/display",
   ]
 
-  # browser_window.h exposes these real Chromium interfaces/types, so their
-  # include permissions and component link dependencies must reach consumers.
   public_deps = [
     "//base",
     "//components/web_modal",
@@ -167,9 +142,6 @@ source_set("native_components") {
   ]
 }
 
-# Both the production native bridge and real Chromium controller tests use this
-# implementation. Keep it independent of //parc:browser and startup-private headers
-# so the test binary does not acquire the engine's entire implementation.
 source_set("autofill_save_sessions") {
   public = [
     "autofill_bubble_handler.h",
@@ -250,9 +222,6 @@ source_set("autofill_save_sessions") {
   }
 }
 
-# Actual Chromium action models and supplied ExtensionViewHost sessions, shared
-# by the production engine and genuine-host browser regressions. No dependency
-# on //parc:browser or private startup implementation headers.
 source_set("native_extensions") {
   public = [
     "extension_action_bridge.h",
@@ -339,10 +308,6 @@ source_set("native_extensions") {
   ]
 }
 
-# The production native bridge and genuine-controller unit tests share this exact
-# implementation. It has no //parc:browser dependency or startup-private include.
-# Close and transfer transactions behind UnloadController's hooks, shared by
-# retirement, transfer and their tests.
 source_set("unload_transactions") {
   public = [ "unload_transactions.h" ]
   sources = [
@@ -382,8 +347,6 @@ source_set("tab_retirement") {
   ]
 }
 
-# The engine and genuine PermissionRequestManager tests share the typed native
-# adapter. The manager owns policy, persistence and temporary-grant lifetime.
 source_set("native_permissions") {
   public = [ "site_permissions.h" ]
   sources = [
@@ -414,9 +377,6 @@ source_set("native_permissions") {
   ]
 }
 
-# //parc:browser and the genuine-controller tests consume the same
-# implementation. No application startup dependency is introduced into
-# chrome/test:unit_tests.
 source_set("tab_transfer") {
   public = [ "tab_transfer.h" ]
   sources = [
@@ -436,7 +396,6 @@ source_set("tab_transfer") {
   ]
 }
 
-# Profile-owned download and actual platform file-selection services.
 source_set("native_downloads") {
   public = [
     "downloads.h",
@@ -499,8 +458,6 @@ source_set("native_downloads") {
   }
 }
 
-# Native presentation above the original LoginHandler/HttpAuthCoordinator.
-# No //parc:browser dependency: actual controller tests use the same service.
 source_set("native_http_auth") {
   public = [ "http_auth.h" ]
   sources = [
@@ -526,8 +483,6 @@ source_set("native_http_auth") {
   ]
 }
 
-# Retains Chromium's actual certificate table/observer/private-key path while
-# attaching its auxiliary NSWindow to the supplied native page window.
 source_set("native_client_certificates") {
   public = [ "client_certificates.h" ]
   sources = [
@@ -555,9 +510,6 @@ source_set("native_client_certificates") {
   ]
 }
 
-#
-# window keeps across tab switches (docs/page-compositing.md). The engine host
-# reaches it through native_devtools, which docked tools also use.
 source_set("native_pane_compositor") {
   public = [ "pane_compositor.h" ]
   sources = [
@@ -583,8 +535,6 @@ source_set("native_pane_compositor") {
   ]
 }
 
-# The engine and genuine DevTools tests share actual main/toolbox presentation.
-# DevToolsWindow owns the WebContents; this service only hosts their NSViews.
 source_set("native_devtools") {
   public = [ "devtools_pane.h" ]
   sources = [
@@ -613,7 +563,6 @@ source_set("native_devtools") {
   ]
 }
 
-# The page's content::JavaScriptDialogManager and its repost warning sheet.
 source_set("native_javascript_dialogs") {
   public = [ "javascript_dialog_manager.h" ]
   sources = [
@@ -632,7 +581,6 @@ source_set("native_javascript_dialogs") {
   ]
 }
 
-#
 source_set("native_external_protocol") {
   public = [ "external_protocol.h" ]
   sources = [ "external_protocol.h", "external_protocol.mm" ]
@@ -663,33 +611,36 @@ source_set("native_external_protocol") {
   ]
 }
 
-# Genuine Chromium WebAuthn sheets and Apple authorization anchored to the
-# actual supplied AppKit window. No BrowserView surrogate or credential store.
 source_set("native_webauthn") {
   public = [ "webauthn.h" ]
   sources = [ "webauthn.h", "webauthn.mm" ]
   frameworks = [ "AppKit.framework" ]
   deps = [
-    ":native_components",
     "//base",
+    "//chrome/app:generated_resources",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/passwords",
+    "//chrome/browser/ui/views/controls",
     "//chrome/browser/ui/views/extensions:security_dialog_tracker",
     "//chrome/browser/ui/views/webauthn",
-    "//chrome/browser/ui/views/webauthn/ambient",
     "//chrome/browser/ui/webauthn",
     "//chrome/browser/webauthn",
     "//chrome/browser/webauthn:impl",
+    "//components/strings:components_strings",
     "//components/tabs:public",
+    "//components/vector_icons",
     "//components/web_modal",
     "//content/public/browser",
     "//ui/base",
+    "//ui/base/mojom",
+    "//ui/color",
     "//ui/gfx",
     "//ui/views",
+    ":native_components",
   ]
 }
 
-# Shared exact auxiliary ownership; independent of private CEF runtime.
 source_set("native_auxiliary_page") {
   public = [
     "native_auxiliary_page.h",
@@ -714,7 +665,6 @@ source_set("native_auxiliary_page") {
   ]
 }
 
-# Shared exact auxiliary ownership; independent of private CEF runtime.
 source_set("native_auxiliary_services") {
   public = [
     "native_auxiliary_services.h",
@@ -738,7 +688,6 @@ source_set("native_auxiliary_services") {
   ]
 }
 
-# Exact page-owned OS server-certificate details; SSL decisions stay in Chrome.
 source_set("native_certificate_viewer") {
   public = [
     "certificate_viewer.h",
@@ -770,9 +719,6 @@ source_set("native_certificate_viewer") {
   ]
 }
 
-# Page-owned native translation above Chromium's actual translation model.
-# Chrome retains the originating page through asynchronous intent app/icon
-# lookup. This public header does not depend on its CEF host implementation.
 source_set("native_intent_picker_api") {
   public = [ "native_intent_picker_api.h" ]
   sources = public
@@ -796,7 +742,6 @@ source_set("native_intent_picker") {
   ]
 }
 
-# Native UI over Chromium's actual offered sources and capture policy pipeline.
 source_set("native_capture_picker") {
   public = [ "native_capture_picker.h" ]
   sources = [ "native_capture_picker.h", "native_capture_picker.mm" ]
@@ -819,8 +764,6 @@ source_set("native_capture_picker") {
   ]
 }
 
-# Full-page reading uses Chromium's extractor and protected viewer. Its native
-#
 source_set("native_reader") {
   public = [ "native_reader.h" ]
   sources = [ "native_reader.h", "native_reader.cc" ]

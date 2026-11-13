@@ -13,7 +13,7 @@
      "//third_party/blink/renderer:inside_blink",
 --- a/chrome/browser/ui/autofill/payments/BUILD.gn
 +++ b/chrome/browser/ui/autofill/payments/BUILD.gn
-@@ -351,7 +351,6 @@
+@@ -353,7 +353,6 @@
        "save_card_bubble_controller_impl_unittest.cc",
        "wallet_reminder_notice_bubble_controller_unittest.cc",
        "wallet_reminder_notice_page_action_controller_unittest.cc",
@@ -21,8 +21,7 @@
      ]
      deps += [
        ":payments",
-@@ -369,6 +368,10 @@
-       "//content/test:test_support",
+@@ -372,6 +371,10 @@
        "//ui/gfx",
        "//ui/gfx:test_support",
      ]
@@ -32,9 +31,13 @@
 +    }
    }
  }
+-
++
 --- a/components/global_media_controls/BUILD.gn
 +++ b/components/global_media_controls/BUILD.gn
-@@ -89,4 +89,7 @@
+@@ -87,7 +87,10 @@
+     sources += [ "public/views/chapter_item_view.cc" ]
+   }
 -
 +
 -  friend = [ ":*" ]
@@ -42,10 +45,11 @@
 +    ":*",
 +    "//components/global_media_controls/parc_tests:*",
 +  ]
+   check_includes_strict = CHECK_INCLUDES_STRICT_PUBLIC_INCLUDES_PRIVATE
+ }
 -
 +
-   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
-@@ -137,4 +140,8 @@
+@@ -133,6 +136,10 @@
      "//ui/gfx:test_support",
      "//ui/views:test_support",
    ]
@@ -54,12 +58,20 @@
 +    deps += [ "//components/global_media_controls/parc_tests:unit_tests" ]
 +  }
  }
+-
++
+ static_library("test_support") {
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -4234,2 +4234,3 @@
+@@ -6099,6 +6099,7 @@
+   }
+-
++
    if (is_mac) {
 +    deps += [ "//chrome/browser/parc_tests/file_selector:unit_tests" ]
      sources += [
+       "app_controller_mac_unittest.mm",
+       "chrome_browser_application_mac_unittest.mm",
 --- a/chrome/browser/media/BUILD.gn
 +++ b/chrome/browser/media/BUILD.gn
 @@ -143,4 +143,8 @@
@@ -73,16 +85,20 @@
 +    }
 --- a/chrome/browser/ui/views/global_media_controls/BUILD.gn
 +++ b/chrome/browser/ui/views/global_media_controls/BUILD.gn
-@@ -146,3 +146,9 @@
-       "//components/prefs",
+@@ -148,6 +148,12 @@
      ]
    }
+-
 +
 +  if (is_mac) {
 +    deps += [
 +      "//chrome/browser/ui/views/global_media_controls/parc_tests:unit_tests",
 +    ]
 +  }
++
+   if (use_nss_certs && is_chromeos) {
+     sources += [ "media_item_ui_cast_footer_view_unittest.cc" ]
+     deps += [ "//chromeos/ash/components/kcer" ]
 --- a/chrome/browser/ui/media_router/BUILD.gn
 +++ b/chrome/browser/ui/media_router/BUILD.gn
 @@ -128,5 +128,9 @@
@@ -97,7 +113,7 @@
 +  }
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
-@@ -1648,6 +1648,9 @@
+@@ -1697,6 +1697,9 @@
 -
 +
    if (media_use_ffmpeg) {
@@ -125,17 +141,16 @@
    # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
 --- a/third_party/blink/renderer/platform/BUILD.gn
 +++ b/third_party/blink/renderer/platform/BUILD.gn
-@@ -2545,7 +2545,11 @@
-   deps += [
-     ":bridge_ice_controller_tests",
-     ":rustfft_ffi_unittests",
+@@ -2612,6 +2612,10 @@
+     "//build/rust/crubit",
    ]
+-
 +
 +  if (is_mac) {
 +    deps += [ "//third_party/blink/renderer/platform/parc_tests:unit_tests" ]
 +  }
--
 +
    data_deps = [ ":blink_platform_unittests_data" ]
 -
 +
+   defines = [ "INSIDE_BLINK" ]

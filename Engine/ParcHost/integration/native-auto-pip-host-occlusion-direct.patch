@@ -1,6 +1,6 @@
 --- a/chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc
 +++ b/chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc
-@@ -48,6 +48,18 @@
+@@ -50,6 +50,18 @@
  using OcclusionState =
      AutoPictureInPictureWindowOcclusionHelperBase::OcclusionState;
 -
@@ -10,17 +10,18 @@
 +    void (*)(content::WebContents*, base::OnceCallback<void(bool)>);
 +namespace {
 +AutoPictureInPictureVisibilitySync auto_pip_visibility_sync = nullptr;
-+}  // namespace
++}
 +void SetAutoPictureInPictureVisibilitySync(
 +    AutoPictureInPictureVisibilitySync sync) {
 +  auto_pip_visibility_sync = sync;
 +}
-+}  // namespace parc_hooks
++}
 +
- AutoPictureInPictureTabHelper::AutoPictureInPictureTabHelper(
-     content::WebContents* web_contents)
-     : content::WebContentsObserver(web_contents),
-@@ -134,6 +146,7 @@
+ DEFINE_USER_DATA(AutoPictureInPictureTabHelper);
+-
++
+ // static
+@@ -167,6 +179,7 @@
 -
 +
  void AutoPictureInPictureTabHelper::PrimaryPageChanged(content::Page& page) {
@@ -29,7 +30,7 @@
    // On navigation, forget any 'allow once' state.
  #if !BUILDFLAG(IS_ANDROID)
    auto_pip_setting_helper_.reset();
-@@ -359,6 +372,9 @@
+@@ -392,6 +405,9 @@
      return;
    }
    is_in_picture_in_picture_ = is_in_picture_in_picture;
@@ -40,18 +41,7 @@
 -
 +
    if (!is_in_picture_in_picture_) {
-@@ -403,7 +419,9 @@
-     if (tab_observer_helper_->IsTabActivated() &&
-         (!window_occlusion_helper_ ||
-          window_occlusion_helper_->GetOcclusionState() ==
--             OcclusionState::kVisible)) {
-+             OcclusionState::kVisible) &&
-+        host_occlusion_state_.value_or(OcclusionState::kVisible) ==
-+            OcclusionState::kVisible) {
-       MaybeExitAutoPictureInPicture();
-     } else if (is_playing_) {
-       // Media is playing, start the watch time timer.
-@@ -421,6 +439,9 @@
+@@ -459,6 +475,9 @@
 -
 +
  void AutoPictureInPictureTabHelper::OnTabActivatedChanged(
@@ -62,7 +52,7 @@
    // Don't enter or exit autopip if we're somehow still occluded. Note that this
    // is an unlikely case since tab switching generally occurs on the
    // active/topmost window but could happen if e.g. a script has closed the
-@@ -447,8 +468,7 @@
+@@ -485,8 +504,7 @@
        active_tab_helper->OnTabBecameActive();
      }
 -
@@ -74,7 +64,7 @@
  }
 -
 +
-@@ -463,19 +483,92 @@
+@@ -501,14 +519,18 @@
    switch (occlusion_state) {
      case OcclusionState::kOccluded:
        if (!is_in_picture_in_picture_) {
@@ -84,7 +74,6 @@
        }
        break;
      case OcclusionState::kVisible:
-+      // A WebContents notification can precede the shell's window update.
 +      if (host_occlusion_state_ == OcclusionState::kOccluded) {
 +        break;
 +      }
@@ -92,15 +81,14 @@
        MaybeExitAutoPictureInPicture();
        break;
      case OcclusionState::kHidden:
--      // Don't make any changes for a hidden state. If we're already in autopip
--      // then leave it open, and if we're not already in autopip then leave it
--      // closed.
 +      CancelPendingAutoPictureInPicture();
-+      // Do not change an existing PiP for a hidden state. Leave it open if
-+      // already in autopip; otherwise leave it closed.
-       break;
+       // Don't make any changes for a hidden state. If we're already in autopip
+       // then leave it open, and if we're not already in autopip then leave it
+       // closed.
+@@ -516,6 +538,70 @@
    }
-+}
+ }
+-
 +
 +void AutoPictureInPictureTabHelper::SetHostOcclusionState(
 +    OcclusionState occlusion_state) {
@@ -123,9 +111,6 @@
 +    MaybeScheduleAsyncTasks();
 +    return;
 +  }
-+  // Tab selection precedes the native anti-flash hold's eventual WasHidden.
-+  // Browser visibility alone is insufficient: lifecycle and media-session
-+  // actions use separate Mojo pipes. Wait for the renderer's lifecycle ACK.
 +  enter_when_hidden_ = true;
 +  if (web_contents()->GetVisibility() == content::Visibility::VISIBLE ||
 +      visibility_ack_pending_) {
@@ -162,28 +147,40 @@
 +    return;
 +  }
 +  if (visibility == content::Visibility::VISIBLE) {
-+    // Invalidate an old hide ACK, including hide/show/hide cycles. A still
-+    // pending tab departure may wait again; activation cancels it altogether.
 +    CancelPendingAutoPictureInPicture();
 +    enter_when_hidden_ = true;
 +    return;
 +  }
 +  EnterAutoPictureInPictureOnceHidden();
++}
++
+ #if !BUILDFLAG(IS_ANDROID)
+ void AutoPictureInPictureTabHelper::OnFocusGained(
+     media_session::mojom::AudioFocusRequestStatePtr session) {
+@@ -604,6 +690,9 @@
+       pscs->OnRegisteredForAutoPictureInPictureChanged();
+     }
+   }
++  if (!is_enter_auto_picture_in_picture_available_) {
++    CancelPendingAutoPictureInPicture();
++  }
+   MaybeStartOrStopObservers();
  }
 -
 +
- #if !BUILDFLAG(IS_ANDROID)
-@@ -565,6 +658,9 @@
-     if (pscs) {
-       pscs->OnRegisteredForAutoPictureInPictureChanged();
-     }
-+  }
-+  if (!is_enter_auto_picture_in_picture_available_) {
-+    CancelPendingAutoPictureInPicture();
-   }
-   MaybeStartOrStopObservers();
+@@ -693,7 +782,9 @@
+   return tab_observer_helper_->IsTabActivated() &&
+          (!window_occlusion_helper_ ||
+           window_occlusion_helper_->GetOcclusionState() ==
+-              OcclusionState::kVisible);
++              OcclusionState::kVisible) &&
++         host_occlusion_state_.value_or(OcclusionState::kVisible) ==
++             OcclusionState::kVisible;
  }
-@@ -1064,6 +1160,7 @@
+-
++
+ void AutoPictureInPictureTabHelper::MaybeStartOrStopObservers() {
+@@ -1117,6 +1208,7 @@
  }
 -
 +
@@ -194,7 +191,7 @@
      base::TimeDelta back_to_tab_post_hide_time =
 --- a/chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.h
 +++ b/chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.h
-@@ -77,6 +77,7 @@
+@@ -92,6 +92,7 @@
    void PrimaryPageChanged(content::Page& page) override;
    void MediaPictureInPictureChanged(bool is_in_picture_in_picture) override;
    void MediaSessionCreated(content::MediaSession* media_session) override;
@@ -203,27 +200,24 @@
 +
    // Called by `tab_observer_helper_` when the tab changes between
    // activated and unactivated.
-@@ -85,6 +86,12 @@
-   // Called by `window_occlusion_helper_` when the tab's window changes between
-   // occluded and unoccluded.
-   void OnOcclusionStateChanged(
-+      AutoPictureInPictureWindowOcclusionHelperBase::OcclusionState
-+          occlusion_state);
-+
-+  // Parc: native AppKit shells also report loss of window/app activation.
-+  // The upstream WebContents observer only knows actual page visibility.
-+  void SetHostOcclusionState(
+@@ -103,6 +104,10 @@
        AutoPictureInPictureWindowOcclusionHelperBase::OcclusionState
            occlusion_state);
 -
 +
-@@ -223,6 +230,11 @@
++  void SetHostOcclusionState(
++      AutoPictureInPictureWindowOcclusionHelperBase::OcclusionState
++          occlusion_state);
++
+ #if !BUILDFLAG(IS_ANDROID)
+   // media_session::mojom::AudioFocusObserver:
+   void OnFocusGained(
+@@ -236,6 +241,10 @@
 -
 +
    void MaybeEnterAutoPictureInPicture();
 -
 +
-+  // Parc: dispatch after native visibility and its renderer acknowledgement.
 +  void EnterAutoPictureInPictureOnceHidden();
 +  void OnAutoPictureInPictureVisibilityReady(bool hidden);
 +  void CancelPendingAutoPictureInPicture();
@@ -231,19 +225,14 @@
    // If needed, schedules the asynchronous task to get the URL safety. When
    // async tasks complete there may be a call to
    // `MaybeEnterAutoPictureInPicture`. This method can safely be called multiple
-@@ -433,6 +445,17 @@
+@@ -450,6 +459,12 @@
    // Set to the current time when the media starts playing.
    std::optional<base::TimeTicks> playing_start_time_;
 -
 +
-+  // Parc: the last state passed to `SetHostOcclusionState()`.
 +  std::optional<AutoPictureInPictureWindowOcclusionHelperBase::OcclusionState>
 +      host_occlusion_state_;
 +
-+  // Parc: the tab was deactivated or occluded while its page still showed.
-+  // Native shells hide the page after the tab strip changes, and a page's
-+  // handler (Meet's) opens no window while its document is visible, so entry
-+  // waits until the renderer acknowledges its hidden state.
 +  bool enter_when_hidden_ = false;
 +  bool visibility_ack_pending_ = false;
 +
@@ -251,16 +240,15 @@
    std::optional<base::TimeDelta> current_pip_playback_time_;
 -
 +
-@@ -490,6 +513,10 @@
+@@ -510,6 +525,9 @@
    base::WeakPtrFactory<AutoPictureInPictureTabHelper> async_tasks_weak_factory_{
        this};
 -
 +
-+  // Independent of URL checks, whose scheduling invalidates the factory above.
 +  base::WeakPtrFactory<AutoPictureInPictureTabHelper> visibility_weak_factory_{
 +      this};
 +
-   WEB_CONTENTS_USER_DATA_KEY_DECL();
+   base::WeakPtrFactory<AutoPictureInPictureTabHelper> weak_factory_{this};
  };
 -
 +

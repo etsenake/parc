@@ -1,20 +1,24 @@
 --- a/content/browser/media/session/media_session_impl.cc
 +++ b/content/browser/media/session/media_session_impl.cc
 @@ -4,7 +4,10 @@
- 
+-
++
  #include "content/browser/media/session/media_session_impl.h"
- 
+-
++
 +#include "content/browser/media/parc_fairplay_hooks.h"
 +
  #include <algorithm>
 +#include <cmath>
  #include <memory>
  #include <utility>
- 
-@@ -831,6 +834,14 @@
+-
++
+@@ -837,6 +840,14 @@
    return desired_audio_focus_type_ == AudioFocusType::kGain;
  }
- 
+-
++
 +void MediaSessionImpl::SetUserVolumeMultiplier(double multiplier) {
 +  // Reject NaN as well as infinities before sending a player multiplier.
 +  if (!std::isfinite(multiplier))
@@ -26,31 +30,33 @@
  void MediaSessionImpl::SetDuckingVolumeMultiplier(double multiplier) {
    ducking_volume_multiplier_ = std::clamp(multiplier, 0.0, 1.0);
  }
-@@ -897,7 +908,8 @@
+@@ -903,7 +914,8 @@
  }
- 
+-
++
  double MediaSessionImpl::GetVolumeMultiplier() const {
 -  return is_ducking_ ? ducking_volume_multiplier_ : kUnduckedVolumeMultiplier;
 +  return user_volume_multiplier_ *
 +      (is_ducking_ ? ducking_volume_multiplier_ : kUnduckedVolumeMultiplier);
  }
- 
+-
++
  bool MediaSessionImpl::IsActive() const {
-@@ -1110,6 +1122,9 @@
+@@ -1116,6 +1128,9 @@
  MediaSessionImpl::GetMediaSessionInfoSync() {
    media_session::mojom::MediaSessionInfoPtr info(
        media_session::mojom::MediaSessionInfo::New());
 +  info->parc_safari_playback_controls =
 +      !parc_playback_controls_players_.empty() ||
 +      parc::fairplay::FramePresentsSafariIdentity(GetRoutedFrame());
- 
+-
++
    switch (audio_focus_state_) {
      case State::ACTIVE:
-@@ -1291,6 +1306,46 @@
- 
- void MediaSessionImpl::NextSlide() {
+@@ -1299,6 +1314,46 @@
    DidReceiveAction(media_session::mojom::MediaSessionAction::kNextSlide);
-+}
+ }
+-
 +
 +void MediaSessionImpl::HandlePlaybackControlsAction(
 +    media_session::mojom::PlaybackControlsAction action,
@@ -90,15 +96,18 @@
 +  for (const auto& it : normal_players_)
 +    it.first.observer->OnHandlePlaybackControlsAction(it.first.player_id, action,
 +                                                    seek_time);
- }
- 
++}
++
  void MediaSessionImpl::SeekTo(base::TimeDelta seek_time) {
+   // If the site has registered an action handler for seek to then we
+   // should pass it to the site and let them handle it.
 --- a/content/browser/media/session/media_session_impl.h
 +++ b/content/browser/media/session/media_session_impl.h
 @@ -202,6 +202,12 @@
    void DidReceiveAction(
        media_session::mojom::MediaSessionAction action) override;
- 
+-
++
 +  // Parc's independent per-session UI volume, composed with system ducking.
 +  // The site-owned media volume remains unchanged; new players inherit this.
 +  CONTENT_EXPORT void SetUserVolumeMultiplier(double multiplier);
@@ -107,20 +116,25 @@
 +
    // Set the volume multiplier applied during ducking.
    CONTENT_EXPORT void SetDuckingVolumeMultiplier(double multiplier) override;
- 
+-
++
 @@ -279,6 +285,8 @@
    CONTENT_EXPORT void NextSlide() override;
- 
+-
++
    // Seek the media session to a specific time.
 +  void HandlePlaybackControlsAction(media_session::mojom::PlaybackControlsAction action,
 +      base::TimeDelta seek_time) override;
    void SeekTo(base::TimeDelta seek_time) override;
- 
+-
++
    // Scrub ("fast seek") the media session to a specific time.
 @@ -613,6 +621,11 @@
- 
+-
++
    std::unique_ptr<AudioFocusDelegate> delegate_;
- 
+-
++
 +  // Internal player pauses can remove a player from normal_players_. Keep
 +  // scrubbing addressed to the players that received its beginning.
 +  std::vector<std::pair<base::WeakPtr<MediaSessionPlayerObserver>, int>>
@@ -131,9 +145,11 @@
        normal_players_;
 @@ -660,6 +673,7 @@
    base::UnguessableToken audio_focus_group_id_ = base::UnguessableToken::Null();
- 
+-
++
    double ducking_volume_multiplier_;
 +  double user_volume_multiplier_ = 1.0;
- 
+-
++
    // True if the WebContents associated with this MediaSessionImpl is focused.
    bool focused_ = false;

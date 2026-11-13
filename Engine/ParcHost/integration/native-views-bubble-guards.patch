@@ -1,9 +1,10 @@
 --- a/chrome/browser/ui/toasts/toast_controller.cc
 +++ b/chrome/browser/ui/toasts/toast_controller.cc
-@@ -143,6 +143,15 @@
+@@ -144,6 +144,15 @@
      return false;
    }
- 
+-
++
 +  // Parc: native AppKit browser windows register no Views toast anchor, and
 +  // CreateToast CHECKs without one outside tests.
 +  if (browser_window_interface_ && !webui_browser::IsWebUIBrowserEnabled() &&
@@ -15,7 +16,8 @@
 +
    RecordToastTriggeredToShow(params.toast_id);
    CloseToast(toasts::ToastCloseReason::kPreempted);
- 
+-
++
 --- a/chrome/browser/ui/views/page_info/safety_tip_page_info_bubble_view.cc
 +++ b/chrome/browser/ui/views/page_info/safety_tip_page_info_bubble_view.cc
 @@ -13,6 +13,7 @@
@@ -36,7 +38,8 @@
 +    std::move(close_callback).Run(SafetyTipInteraction::kNotShown);
 +    return;
 +  }
- 
+-
++
    bubble_anchor_util::AnchorConfiguration configuration =
        bubble_anchor_util::GetPageInfoAnchorConfiguration(
 --- a/chrome/browser/ui/views/file_system_access/file_system_access_restore_permission_bubble_view.cc
@@ -60,6 +63,7 @@
 +    std::move(callback).Run(permissions::PermissionAction::DISMISSED);
 +    return nullptr;
 +  }
- 
+-
++
    Profile* profile =
        web_contents

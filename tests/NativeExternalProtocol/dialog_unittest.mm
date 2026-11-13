@@ -1,5 +1,3 @@
-// Real Browser/Profile/Tab, external-protocol continuation, native modal
-// manager and sheet. Only OS launch is intercepted by Chromium's test delegate.
 #import <AppKit/AppKit.h>
 
 #include <memory>
@@ -13,7 +11,6 @@
 #include "chrome/browser/picture_in_picture/picture_in_picture_occlusion_tracker.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
@@ -23,6 +20,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/navigation_simulator.h"
 #include "external_protocol.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 #include "ui/events/event.h"
 #include "ui/views/input_event_activation_protector.h"
 #include "ui/views/test/views_test_base.h"
@@ -126,11 +124,11 @@ NSButton* Find(NSView* root, NSString* id) {
   }
   return nil;
 }
-}  // namespace
-class NativeExternalProtocolTest : public BrowserWithTestWindowTest {
+}
+class NativeExternalProtocolTest : public ParcBrowserWindowTest {
  public:
   void SetUp() override {
-    BrowserWithTestWindowTest::SetUp();
+    ParcBrowserWindowTest::SetUp();
     AddTab(browser(), GURL("https://protocol.example/start"));
     auto* page = contents()->GetNativeView().GetNativeNSView();
     ASSERT_TRUE(page);
@@ -144,8 +142,6 @@ class NativeExternalProtocolTest : public BrowserWithTestWindowTest {
     InstallNativeExternalProtocol(*contents());
     SetNativeExternalProtocolAttached(*contents(), true);
     ExternalProtocolHandler::SetDelegateForTesting(&os_);
-    // Lifetime/decision cases use Chromium's explicit test switch. The real
-    // protector remains exercised separately; production has no such override.
     command_.GetProcessCommandLine()->AppendSwitch(
         views::switches::kDisableInputEventActivationProtectionForTesting);
   }
@@ -161,7 +157,7 @@ class NativeExternalProtocolTest : public BrowserWithTestWindowTest {
     ExternalProtocolHandler::SetDelegateForTesting(nullptr);
     parc_hooks::SetExternalProtocolPrompt(nullptr);
     os_.launched_page = nullptr;
-    BrowserWithTestWindowTest::TearDown();
+    ParcBrowserWindowTest::TearDown();
     [window_ close];
     window_ = nil;
   }
@@ -199,8 +195,6 @@ class NativeExternalProtocolTest : public BrowserWithTestWindowTest {
   NSButton* button(NSString* name) {
     return Find(window_.attachedSheet.contentView, name);
   }
-  //
-  // may not remember, only Open exists.
   void Accept(bool remember = false) {
     NSButton* always = button(@"external-protocol-remember");
     [(remember && always ? always : button(@"external-protocol-open"))
@@ -391,7 +385,7 @@ TEST_F(NativeExternalProtocolTest, ExistingSchemePolicyRemainsAuthoritative) {
             ExternalProtocolHandler::BLOCK);
   EXPECT_EQ(os_.launches, 0);
 }
-}  // namespace parc
+}
 namespace parc {
 class NativeExternalProtocolProtectionTest : public views::ViewsTestBase {};
 TEST_F(NativeExternalProtocolProtectionTest,
@@ -450,4 +444,4 @@ TEST_F(NativeExternalProtocolProtectionTest,
                       base::TimeTicks::Now());
   EXPECT_TRUE(protector.IsPossiblyUnintendedInteraction(reveal, false));
 }
-}  // namespace parc
+}

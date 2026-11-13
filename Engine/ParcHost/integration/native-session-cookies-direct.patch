@@ -1,6 +1,6 @@
 --- a/chrome/browser/profiles/profile_impl.cc
 +++ b/chrome/browser/profiles/profile_impl.cc
-@@ -288,6 +288,15 @@
+@@ -293,6 +293,15 @@
 -
 +
  class ScopedAllowBlockingForProfile : public base::ScopedAllowBlocking {};
@@ -19,7 +19,7 @@
 -
 +
  #if BUILDFLAG(ENABLE_SESSION_SERVICE)
-@@ -1272,6 +1281,9 @@
+@@ -1298,6 +1307,9 @@
  }
 -
 +

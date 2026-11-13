@@ -1,7 +1,4 @@
 // Copyright 2026 Parc contributors.
-// This fixture is derived from Chromium's web_audio_source_provider_impl_test.cc
-// (Chromium Authors; BSD-style license in Chromium's LICENSE) and contains
-// only Parc regressions.
 
 #include "third_party/blink/public/platform/web_audio_source_provider_impl.h"
 
@@ -24,7 +21,7 @@ namespace {
 const float kTestVolume = 0.25;
 const int kTestSampleRate = 48000;
 
-}  // namespace
+}
 
 class ParcWebAudioSourceProviderImplTest : public testing::Test,
                                        public WebAudioSourceProviderClient {
@@ -46,7 +43,6 @@ class ParcWebAudioSourceProviderImplTest : public testing::Test,
       const ParcWebAudioSourceProviderImplTest&) = delete;
   ~ParcWebAudioSourceProviderImplTest() override = default;
 
-  // WebAudioSourceProviderClient implementation.
   MOCK_METHOD2(SetFormat, void(uint32_t numberOfChannels, float sampleRate));
 
  protected:
@@ -59,9 +55,6 @@ class ParcWebAudioSourceProviderImplTest : public testing::Test,
   scoped_refptr<WebAudioSourceProviderImpl> wasp_impl_;
 };
 
-// Parc: a sink swapped in plays, once authorized, in the state the old one
-// was in, with the volume the old one had; an unauthorized one is never used,
-// and a client keeps the audio.
 TEST_F(ParcWebAudioSourceProviderImplTest, ParcSwitchSinkKeepsPlaybackState) {
   wasp_impl_->Initialize(params_, &fake_callback_);
   EXPECT_CALL(*mock_sink_, Start());
@@ -100,8 +93,9 @@ TEST_F(ParcWebAudioSourceProviderImplTest, ParcSwitchSinkKeepsPlaybackState) {
                                bus.get());
   EXPECT_FALSE(bus->AreFramesZero());
 
-  EXPECT_CALL(*new_sink, Pause());
-  wasp_impl_->Pause();
+  EXPECT_CALL(*new_sink,
+              Pause(media::AudioRendererSink::PauseReason::kPlaybackPaused));
+  wasp_impl_->Pause(media::AudioRendererSink::PauseReason::kPlaybackPaused);
   testing::Mock::VerifyAndClear(new_sink.get());
 
   EXPECT_CALL(*new_sink, Stop());
@@ -114,4 +108,4 @@ TEST_F(ParcWebAudioSourceProviderImplTest, ParcSwitchSinkKeepsPlaybackState) {
   EXPECT_FALSE(unused_sink->callback());
 }
 
-}  // namespace blink
+}

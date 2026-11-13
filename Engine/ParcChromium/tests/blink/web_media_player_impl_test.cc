@@ -1,6 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Installed at
-// //third_party/blink/renderer/parc_tests/blink/web_media_player_impl_test.cc.
 // The fixture is derived from Chromium's web_media_player_impl_unittest.cc
 // (Copyright 2016 The Chromium Authors; BSD-style license in Chromium's
 // LICENSE) and contains only Parc's media-player regressions.
@@ -161,10 +159,16 @@ class MockMediaObserver : public media::MediaObserver {
   base::WeakPtrFactory<MediaObserver> weak_ptr_factory_{this};
 };
 
-class MockWebMediaPlayerClient : public MediaPlayerClient,
-                                 public ParcMediaPlayerClient {
+class MockWebMediaPlayerClient
+    : public GarbageCollected<MockWebMediaPlayerClient>,
+      public MediaPlayerClient,
+      public ParcMediaPlayerClient {
  public:
   MockWebMediaPlayerClient() = default;
+
+  void Trace(Visitor* visitor) const override {
+    MediaPlayerClient::Trace(visitor);
+  }
 
   MockWebMediaPlayerClient(const MockWebMediaPlayerClient&) = delete;
   MockWebMediaPlayerClient& operator=(const MockWebMediaPlayerClient&) = delete;
@@ -245,8 +249,6 @@ class MockWebMediaPlayerEncryptedMediaClient
 };
 
 #if BUILDFLAG(IS_MAC)
-// A CDM whose sessions have key requests for `requested_keys` ("skd" init
-// data), answering ParcHasSessionForInitData as the FairPlay CDM does.
 class ParcKeyRequestCdmContext : public media::CdmContext {
  public:
   std::unique_ptr<media::CallbackRegistration> RegisterEventCB(
@@ -274,7 +276,6 @@ class ParcKeyRequestCdmContext : public media::CdmContext {
     std::move(done).Run(has_session);
   }
 
-  // Delivers the deferred answers in order, as MojoCdm does.
   void AnswerDeferred() {
     for (base::OnceClosure& answer : std::exchange(deferred_answers, {})) {
       std::move(answer).Run();
@@ -292,7 +293,6 @@ class ParcKeyRequestCdmContext : public media::CdmContext {
   std::vector<std::vector<uint8_t>> requested_keys;
   std::vector<media::EmeInitDataType> asked_types;
   bool requires_fairplay_renderer = false;
-  // Answers as each was when asked, but later (MojoCdm's round trip).
   bool defer_answers = false;
   std::vector<base::OnceClosure> deferred_answers;
 
@@ -313,11 +313,9 @@ class ParcCdmContextRef : public media::CdmContextRef {
 std::vector<uint8_t> SkdInitData(std::string_view uri) {
   return std::vector<uint8_t>(uri.begin(), uri.end());
 }
-#endif  // BUILDFLAG(IS_MAC)
+#endif
 
 #if BUILDFLAG(IS_MAC)
-// Parc: a FairPlay CDM whose sessions already asked for every key the init
-// data names.
 class ParcFairPlayCdmContext : public media::MockCdmContext {
  public:
   bool RequiresFairPlayRenderer() override { return true; }
@@ -346,14 +344,13 @@ class ParcCdmResult final : public ContentDecryptionModuleResult {
   bool completed = false;
   bool failed = false;
 };
-#endif  // BUILDFLAG(IS_MAC)
+#endif
 
 class MockWebMediaPlayerDelegate : public WebMediaPlayerDelegate {
  public:
   MockWebMediaPlayerDelegate() = default;
   ~MockWebMediaPlayerDelegate() override = default;
 
-  // WebMediaPlayerDelegate implementation.
   int AddObserver(Observer* observer) override {
     DCHECK_EQ(nullptr, observer_);
     observer_ = observer;
@@ -436,7 +433,6 @@ class MockVideoFrameCompositor : public VideoFrameCompositor {
       : VideoFrameCompositor(task_runner, nullptr) {}
   ~MockVideoFrameCompositor() override = default;
 
-  // MOCK_METHOD doesn't like OnceCallback.
   MOCK_METHOD1(SetOnFramePresentedCallback, void(OnNewFramePresentedCB));
   MOCK_METHOD1(SetIsPageVisible, void(bool));
   MOCK_METHOD0(
@@ -449,7 +445,7 @@ class MockVideoFrameCompositor : public VideoFrameCompositor {
                void(const viz::SurfaceId&, media::VideoTransformation, bool));
 };
 
-}  // namespace
+}
 
 class ParcWebMediaPlayerImplTest
     : public testing::Test,
@@ -461,6 +457,7 @@ class ParcWebMediaPlayerImplTest
       : media_thread_("MediaThreadForTest"),
         context_provider_(viz::TestContextProvider::CreateGLES()),
         audio_parameters_(media::TestAudioParameters::Normal()),
+        client_(MakeGarbageCollected<NiceMock<MockWebMediaPlayerClient>>()),
         memory_dump_manager_(
             base::trace_event::MemoryDumpManager::CreateInstanceForTesting()) {
     av1_command_line_.GetProcessCommandLine()->AppendSwitchASCII(
@@ -474,7 +471,7 @@ class ParcWebMediaPlayerImplTest
         std::make_unique<NiceMock<MockSurfaceLayerBridge>>();
     surface_layer_bridge_ptr_ = surface_layer_bridge_.get();
 
-    EXPECT_CALL(client_, SetCcLayer(_)).Times(0);
+    EXPECT_CALL(*client_, SetCcLayer(_)).Times(0);
     ON_CALL(*surface_layer_bridge_ptr_, GetSurfaceId())
         .WillByDefault(ReturnRef(surface_id_));
   }
@@ -485,14 +482,9 @@ class ParcWebMediaPlayerImplTest
   ~ParcWebMediaPlayerImplTest() override {
     if (!wmpi_)
       return;
-    EXPECT_CALL(client_, SetCcLayer(nullptr));
-    EXPECT_CALL(client_, MediaRemotingStopped(_));
+    EXPECT_CALL(*client_, SetCcLayer(nullptr));
+    EXPECT_CALL(*client_, MediaRemotingStopped(_));
 
-    // Destruct WebMediaPlayerImpl and pump the message loop to ensure that
-    // objects passed to the message loop for destruction are released.
-    //
-    // NOTE: This should be done before any other member variables are
-    // destructed since WMPI may reference them during destruction.
     wmpi_->Shutdown();
     wmpi_.reset();
     if (parc_demuxer_) {
@@ -505,7 +497,6 @@ class ParcWebMediaPlayerImplTest
  protected:
   void InitializeWebMediaPlayerImpl(
       std::unique_ptr<media::Demuxer> demuxer_override = nullptr) {
-    // We want to avoid the "Uninteresting mock function call" warning.
     EXPECT_CALL(*this, IsShuttingDown())
         .Times(AnyNumber())
         .WillRepeatedly(Return(false));
@@ -513,9 +504,6 @@ class ParcWebMediaPlayerImplTest
     auto media_log = std::make_unique<NiceMock<media::MockMediaLog>>();
     InitializeSurfaceLayerBridge();
 
-    // Retain a raw pointer to |media_log| for use by tests. Meanwhile, give its
-    // ownership to |wmpi_|. Reject attempts to reinitialize to prevent orphaned
-    // expectations on previous |media_log_|.
     ASSERT_FALSE(media_log_) << "Reinitialization of media_log_ is disallowed";
     media_log_ = media_log.get();
 
@@ -552,9 +540,6 @@ class ParcWebMediaPlayerImplTest
             media::mojom::MediaMetricsProviderInterfaceBase>(
             provider.BindNewPipeAndPassReceiver()));
 
-    // Initialize provider since none of the tests below actually go through the
-    // full loading/pipeline initialize phase. If this ever changes the provider
-    // will start DCHECK failing.
     provider->Initialize(false, media::mojom::MediaURLScheme::kHttp,
                          media::mojom::MediaStreamType::kNone);
 
@@ -569,8 +554,13 @@ class ParcWebMediaPlayerImplTest
     compositor_ = compositor.get();
 
     CHECK(!wmpi_);
+    WebLocalFrame* frame = GetWebLocalFrame();
     wmpi_ = std::make_unique<WebMediaPlayerImpl>(
-        GetWebLocalFrame(), &client_, &encrypted_client_, &delegate_,
+        frame->Scheduler(), frame->GetSecurityOrigin(),
+        frame->GetDocument().Url(), frame->GetDocument().Title(),
+        BindRepeating(&WebLocalFrame::HasTransientUserActivation,
+                      Unretained(frame)),
+        client_.Get(), &encrypted_client_, &delegate_,
         std::move(factory_selector), url_index_.get(), std::move(compositor),
         std::move(media_log), player_id, WebMediaPlayerBuilder::DeferLoadCB(),
         audio_sink_, media_thread_.task_runner(), media_thread_.task_runner(),
@@ -595,12 +585,12 @@ class ParcWebMediaPlayerImplTest
   }
 
   void SetNetworkState(WebMediaPlayer::NetworkState state) {
-    EXPECT_CALL(client_, NetworkStateChanged());
+    EXPECT_CALL(*client_, NetworkStateChanged());
     wmpi_->SetNetworkState(state);
   }
 
   void SetReadyState(WebMediaPlayer::ReadyState state) {
-    EXPECT_CALL(client_, ReadyStateChanged());
+    EXPECT_CALL(*client_, ReadyStateChanged());
     wmpi_->SetReadyState(state);
   }
 
@@ -633,7 +623,7 @@ class ParcWebMediaPlayerImplTest
   void PaintFrame() {
     compositor_->PaintSingleFrame(
         media::VideoFrame::CreateBlackFrame(gfx::Size(16, 16)),
-        /*repaint_duplicate_frame=*/false);
+        false);
   }
   void SetWasSuspendedForFrameClosed(bool is_suspended) {
     wmpi_->was_suspended_for_frame_closed_or_frozen_ = is_suspended;
@@ -642,7 +632,7 @@ class ParcWebMediaPlayerImplTest
   void SetMetadata(bool has_audio, bool has_video) {
     wmpi_->SetNetworkState(WebMediaPlayer::kNetworkStateLoaded);
 
-    EXPECT_CALL(client_, ReadyStateChanged());
+    EXPECT_CALL(*client_, ReadyStateChanged());
     wmpi_->SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
     wmpi_->pipeline_metadata_.has_audio = has_audio;
     wmpi_->pipeline_metadata_.has_video = has_video;
@@ -673,7 +663,6 @@ class ParcWebMediaPlayerImplTest
   void ParcPlayNativeHls() {
     wmpi_->renderer_type_ = media::RendererType::kFairPlayHls;
   }
-  // Parc: a clear file's move between routes (ParcSwitchRoute).
   bool ParcFileOnNativeRoute() const {
     return wmpi_->parc_->file_on_native_route_;
   }
@@ -683,8 +672,6 @@ class ParcWebMediaPlayerImplTest
   bool HasDataSource() const {
     return wmpi_->demuxer_manager_->HasDataSource();
   }
-  // What the restarting pipeline reports, without expecting the element to
-  // hear it.
   void ParcReportReadyState(WebMediaPlayer::ReadyState state) {
     wmpi_->SetReadyState(state);
   }
@@ -692,15 +679,11 @@ class ParcWebMediaPlayerImplTest
   void ParcReportNativeReadyState(media::ParcNativeHlsReadyState state) {
     wmpi_->ParcNativeHlsReadyStateChanged(state);
   }
-  // The fixture serves files from file:// URLs; the native route loads only
-  // HTTP(S).
   void ParcServeOverHttps() {
     wmpi_->demuxer_manager_->SetLoadedUrl(
         GURL("https://example.com/episode.mp3"));
     wmpi_->ParcCheckFileTargetSupport();
   }
-  // A live stream that supports a target, loaded again from `url` by a route
-  // switch.
   void ParcMakeLive(const GURL& url) {
     wmpi_->parc_->file_streaming_ = true;
     wmpi_->demuxer_manager_->SetLoadedUrl(url);
@@ -737,7 +720,6 @@ class ParcWebMediaPlayerImplTest
   }
   void ParcHandOffOrRestart() { wmpi_->ParcHandOffOrRestart(); }
 
-  // Parc: setMediaKeys with `parc_cdm_context_` behind `web_cdm_`.
   void ParcSetKeyRequestCdm() {
     DCHECK(web_cdm_);
     EXPECT_CALL(*mock_cdm_, GetCdmContext())
@@ -746,14 +728,13 @@ class ParcWebMediaPlayerImplTest
     CycleThreads();
   }
 
-  // Attaches `parc_cdm_context_` as a completed SetCdm would.
   void ParcAttachCdm() { ParcAttachCdm(&parc_cdm_context_); }
   void ParcAttachCdm(media::CdmContext* cdm_context) {
     wmpi_->pending_cdm_context_ref_ =
         std::make_unique<ParcCdmContextRef>(cdm_context);
     wmpi_->OnCdmAttached(true);
   }
-#endif  // BUILDFLAG(IS_MAC)
+#endif
 
   void OnVideoNaturalSizeChange(const gfx::Size& size) {
     wmpi_->OnVideoNaturalSizeChange(size);
@@ -764,51 +745,45 @@ class ParcWebMediaPlayerImplTest
   }
 
 #if BUILDFLAG(IS_MAC)
-  // Parc: reports a late SourceBuffer's streams to a paused player at
-  // HAVE_ENOUGH and expects readyState to drop to HAVE_METADATA without the
-  // pipeline restarting (no suspend and resume) to play them.
   void ParcAddStreamsWithoutRestart(
       const media::PipelineMetadata& added,
       const std::vector<media::ChunkDemuxer::ParcAddedTrack>& tracks) {
     ASSERT_EQ(wmpi_->GetReadyState(),
               WebMediaPlayer::kReadyStateHaveEnoughData);
     ASSERT_TRUE(wmpi_->Paused());
-    EXPECT_CALL(client_, ReadyStateChanged());
+    EXPECT_CALL(*client_, ReadyStateChanged());
     wmpi_->ParcOnSourceBufferStreamsAdded(added, tracks);
     EXPECT_EQ(wmpi_->GetReadyState(), WebMediaPlayer::kReadyStateHaveMetadata);
     EXPECT_FALSE(wmpi_->pending_suspend_resume_cycle_);
-    testing::Mock::VerifyAndClearExpectations(&client_);
-    EXPECT_CALL(client_, ReadyStateChanged()).Times(AnyNumber());
+    testing::Mock::VerifyAndClearExpectations(client_.Get());
+    EXPECT_CALL(*client_, ReadyStateChanged()).Times(AnyNumber());
     CycleThreads();
     EXPECT_FALSE(IsSuspended());
     EXPECT_FALSE(wmpi_->pending_suspend_resume_cycle_);
     EXPECT_TRUE(wmpi_->Paused());
   }
 
-  // Parc: as ParcAddStreamsWithoutRestart(), but the pipeline restarts into
-  // a renderer made with every stream, whose buffering raises readyState
-  // again; the player stays paused and isn't suspended.
   void ParcAddStreamsAndWaitForRestart(
       const media::PipelineMetadata& added,
       const std::vector<media::ChunkDemuxer::ParcAddedTrack>& tracks) {
     ASSERT_EQ(wmpi_->GetReadyState(),
               WebMediaPlayer::kReadyStateHaveEnoughData);
     ASSERT_TRUE(wmpi_->Paused());
-    EXPECT_CALL(client_, ReadyStateChanged());
+    EXPECT_CALL(*client_, ReadyStateChanged());
     wmpi_->ParcOnSourceBufferStreamsAdded(added, tracks);
     EXPECT_EQ(wmpi_->GetReadyState(), WebMediaPlayer::kReadyStateHaveMetadata);
     EXPECT_TRUE(wmpi_->pending_suspend_resume_cycle_);
-    testing::Mock::VerifyAndClearExpectations(&client_);
+    testing::Mock::VerifyAndClearExpectations(client_.Get());
 
     while (wmpi_->GetReadyState() <
            WebMediaPlayer::kReadyStateHaveEnoughData) {
       base::RunLoop loop;
-      EXPECT_CALL(client_, ReadyStateChanged())
+      EXPECT_CALL(*client_, ReadyStateChanged())
           .WillRepeatedly(RunClosure(loop.QuitClosure()));
       loop.Run();
-      testing::Mock::VerifyAndClearExpectations(&client_);
+      testing::Mock::VerifyAndClearExpectations(client_.Get());
     }
-    EXPECT_CALL(client_, ReadyStateChanged()).Times(AnyNumber());
+    EXPECT_CALL(*client_, ReadyStateChanged()).Times(AnyNumber());
     CycleThreads();
     EXPECT_FALSE(IsSuspended());
     EXPECT_TRUE(wmpi_->Paused());
@@ -818,7 +793,6 @@ class ParcWebMediaPlayerImplTest
     return wmpi_->parc_->awaits_added_streams_renderer_;
   }
 
-  // Parc: a FairPlay CDM being set, as SetCdmInternal() leaves it.
   void ParcSetPendingFairPlayCdm() {
     wmpi_->pending_cdm_context_ref_ =
         std::make_unique<ParcCdmContextRef>(&parc_fairplay_cdm_context_);
@@ -833,7 +807,7 @@ class ParcWebMediaPlayerImplTest
     return wmpi_->ParcFairPlayPlaysCurrentStreams();
   }
   void ParcClearChunkDemuxer() { wmpi_->parc_->chunk_demuxer_ = nullptr; }
-#endif  // BUILDFLAG(IS_MAC)
+#endif
 
   bool IsSuspended() { return wmpi_->pipeline_controller_->IsSuspended(); }
 
@@ -843,8 +817,6 @@ class ParcWebMediaPlayerImplTest
     return wmpi_->pipeline_controller_->IsPipelineSuspended();
   }
 
-  // Freezes the page's task queues, as the back/forward cache does. Only a
-  // hidden page is frozen.
   void FreezePage(bool frozen) {
     PageScheduler* scheduler = web_view_helper_.GetWebView()->Scheduler();
     if (frozen) {
@@ -858,22 +830,17 @@ class ParcWebMediaPlayerImplTest
 
   bool IsStreaming() const { return wmpi_->IsStreaming(); }
 
-  // As SwitchToRemoteRenderer() leaves the player, without restarting the
-  // test's pipeline.
   void SetRemoteRenderingWithoutRestart() {
     wmpi_->ParcSetRemoteRendering(true);
     wmpi_->disable_pipeline_auto_suspend_ = true;
   }
 
 #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-  // The provider GetHlsDataSourceProvider() makes, used on this thread.
   std::unique_ptr<media::HlsDataSourceProviderImpl> CreateHlsProvider() {
     return std::make_unique<media::HlsDataSourceProviderImpl>(
         wmpi_->CreateHlsDataSourceFactory());
   }
 
-  // Reads https://example.com/segment.ts through `provider`; `client` is its
-  // load's once it starts.
   void ReadHlsSegment(media::HlsDataSourceProvider& provider,
                       WebAssociatedURLLoaderClient*& client,
                       bool& runs_while_frozen,
@@ -944,7 +911,6 @@ class ParcWebMediaPlayerImplTest
 
     loop.Run();
 
-    // Clear the mock so it doesn't have a stale QuitClosure.
     testing::Mock::VerifyAndClearExpectations(compositor_);
   }
 
@@ -960,7 +926,6 @@ class ParcWebMediaPlayerImplTest
 
     loop.Run();
 
-    // Clear the mock so it doesn't have a stale QuitClosure.
     testing::Mock::VerifyAndClearExpectations(compositor_);
   }
 
@@ -1006,12 +971,6 @@ class ParcWebMediaPlayerImplTest
     wmpi_->Pause(pause_reason);
   }
 
-  void ScheduleIdlePauseTimer() { wmpi_->ScheduleIdlePauseTimer(); }
-
-  bool IsIdlePauseTimerRunning() {
-    return wmpi_->background_pause_timer_.IsRunning();
-  }
-
   void SetSuspendState(bool is_suspended) {
     wmpi_->SetSuspendState(is_suspended);
   }
@@ -1025,9 +984,6 @@ class ParcWebMediaPlayerImplTest
   bool ShouldCancelUponDefer() const {
     auto* ds = wmpi_->demuxer_manager_->GetDataSourceForTesting();
     CHECK_NE(ds, nullptr);
-    // TODO(crbug.com/40243452): Can we add |cancel_on_defer_for_testing| to
-    // CrossOriginDataSource? We can't do a |GetAsMultiBufferDataSource| since
-    // MBDS is in blink, and we can't import that into media.
     return static_cast<const MultiBufferDataSource*>(ds)
         ->cancel_on_defer_for_testing();
   }
@@ -1035,7 +991,6 @@ class ParcWebMediaPlayerImplTest
   MultiBufferDataSource* GetMultiBufferDataSource() {
     auto* ds = wmpi_->demuxer_manager_->GetDataSourceForTesting();
     CHECK_NE(ds, nullptr);
-    // See comment in |ShouldCancelUponDefer|.
     return static_cast<MultiBufferDataSource*>(ds);
   }
 
@@ -1063,18 +1018,10 @@ class ParcWebMediaPlayerImplTest
             LoadType load_type = LoadType::kFullyBuffered) {
     const bool is_streaming = load_type == LoadType::kStreaming;
 
-    // The URL is used by MultiBufferDataSource to determine if it should assume
-    // the resource is fully buffered locally. We can use a fake one here since
-    // we're injecting the response artificially. It's value is unknown to the
-    // underlying demuxer.
     const KURL kTestURL(
         String::FromUtf8(std::string(is_streaming ? "http" : "file") +
                          "://example.com/sample.webm"));
 
-    // This block sets up a fetch context which ultimately provides us a pointer
-    // to the WebAssociatedURLLoaderClient handed out by the DataSource after it
-    // requests loading of a resource. We then use that client as if we are the
-    // network stack and "serve" an in memory file to the DataSource.
     const bool should_have_client =
         !wmpi_->demuxer_manager_->HasDemuxerOverride();
     WebAssociatedURLLoaderClient* client = nullptr;
@@ -1093,7 +1040,7 @@ class ParcWebMediaPlayerImplTest
     wmpi_->Load(WebMediaPlayer::kLoadTypeURL,
                 WebMediaPlayerSource(WebURL(kTestURL)),
                 WebMediaPlayer::kCorsModeUnspecified,
-                /*is_cache_disabled=*/false);
+                false);
 
     base::RunLoop().RunUntilIdle();
     if (!should_have_client) {
@@ -1101,13 +1048,9 @@ class ParcWebMediaPlayerImplTest
     }
     EXPECT_TRUE(client);
 
-    // Load a real media file into memory.
     scoped_refptr<media::DecoderBuffer> data =
         media::ReadTestDataFile(data_file);
 
-    // "Serve" the file to the DataSource. Note: We respond with 200 okay, which
-    // will prevent range requests or partial responses from being used. For
-    // streaming responses, we'll pretend we don't know the content length.
     WebURLResponse response(kTestURL);
     response.SetHttpHeaderField(
         WebString("Content-Length"),
@@ -1117,33 +1060,24 @@ class ParcWebMediaPlayerImplTest
     response.SetHttpStatusCode(200);
     client->DidReceiveResponse(response);
 
-    // Copy over the file data.
     client->DidReceiveData(base::as_chars(base::span(*data)));
 
-    // If we're pretending to be a streaming resource, don't complete the load;
-    // otherwise the DataSource will not be marked as streaming.
     if (!is_streaming)
       client->DidFinishLoading();
   }
 
-  // This runs until we reach the |ready_state_|. Attempting to wait for ready
-  // states < kReadyStateHaveCurrentData in non-startup-suspend test cases is
-  // unreliable due to asynchronous execution of tasks on the
-  // base::test:TaskEnvironment.
   void LoadAndWaitForReadyState(std::string data_file,
                                 WebMediaPlayer::ReadyState ready_state) {
     Load(data_file);
     while (wmpi_->GetReadyState() < ready_state) {
       base::RunLoop loop;
-      EXPECT_CALL(client_, ReadyStateChanged())
+      EXPECT_CALL(*client_, ReadyStateChanged())
           .WillRepeatedly(RunClosure(loop.QuitClosure()));
       loop.Run();
 
-      // Clear the mock so it doesn't have a stale QuitClosure.
-      testing::Mock::VerifyAndClearExpectations(&client_);
+      testing::Mock::VerifyAndClearExpectations(client_.Get());
     }
 
-    // Verify we made it through pipeline startup.
     EXPECT_TRUE(HasDataSource());
     EXPECT_TRUE(wmpi_->demuxer_manager_->HasDemuxer());
 
@@ -1157,22 +1091,17 @@ class ParcWebMediaPlayerImplTest
   }
 
   void CycleThreads() {
-    // Ensure any tasks waiting to be posted to the media thread are posted.
     base::RunLoop().RunUntilIdle();
 
-    // Flush all media tasks.
     media_thread_.FlushForTesting();
 
-    // Cycle anything that was posted back from the media thread.
     base::RunLoop().RunUntilIdle();
   }
 
   void OnProgress() { wmpi_->OnProgress(); }
 
-  // Parc: a paused audio Media Source element at HAVE_METADATA over a
-  // ChunkDemuxer the test appends to.
   void StartParcMediaSource(bool safari_identity) {
-    ON_CALL(client_, PresentsParcSafariIdentity())
+    ON_CALL(*client_, PresentsParcSafariIdentity())
         .WillByDefault(Return(safari_identity));
     parc_demuxer_ = std::make_unique<media::ChunkDemuxer>(
         base::DoNothing(), base::DoNothing(), base::DoNothing(),
@@ -1183,12 +1112,10 @@ class ParcWebMediaPlayerImplTest
     parc_demuxer_->SetTracksWatcher("audio", base::DoNothing());
     wmpi_->load_type_ = WebMediaPlayer::kLoadTypeMediaSource;
     wmpi_->parc_->chunk_demuxer_ = parc_demuxer_.get();
-    SetMetadata(/*has_audio=*/true, /*has_video=*/false);
+    SetMetadata(true, false);
     SetPaused(true);
   }
 
-  // Appends the part of a 2.7 s audio file in [start, end) to SourceBuffer
-  // |id|, as an append reports progress.
   void AppendParcMediaSource(base::TimeDelta start,
                              base::TimeDelta end,
                              const std::string& id = "audio") {
@@ -1215,7 +1142,6 @@ class ParcWebMediaPlayerImplTest
   }
 
   void CreateCdm() {
-    // Must use a supported key system on a secure context.
     media::CdmConfig cdm_config = {media::kClearKeyKeySystem, false, false,
                                    false};
     auto test_origin =
@@ -1242,11 +1168,9 @@ class ParcWebMediaPlayerImplTest
   }
 
 #if BUILDFLAG(IS_MAC)
-  // Parc: a Media Source element of a Safari-identity page gets FairPlay
-  // MediaKeys (setMediaKeys).
   void ParcSetFairPlayCdmOnSafariMediaSource() {
     DCHECK(web_cdm_);
-    ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+    ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
     wmpi_->load_type_ = WebMediaPlayer::kLoadTypeMediaSource;
     EXPECT_CALL(*mock_cdm_, GetCdmContext())
         .WillRepeatedly(Return(&parc_fairplay_cdm_context_));
@@ -1254,21 +1178,17 @@ class ParcWebMediaPlayerImplTest
     CycleThreads();
   }
 
-  // Parc: an init segment's FairPlay sinf for a protected track.
   void ParcAppendSinf() {
     wmpi_->OnEncryptedMediaInitData(media::EmeInitDataType::SINF,
                                     std::vector<uint8_t>{1, 2, 3});
     CycleThreads();
   }
-#endif  // BUILDFLAG(IS_MAC)
+#endif
 
   test::TaskEnvironment task_environment_;
 
-  // "Media" thread. This is necessary because WMPI destruction waits on a
-  // WaitableEvent.
   base::Thread media_thread_;
 
-  // Blink state.
   frame_test_helpers::WebViewHelper web_view_helper_;
 
   scoped_refptr<viz::TestContextProvider> context_provider_;
@@ -1280,19 +1200,16 @@ class ParcWebMediaPlayerImplTest
   MockResourceFetchContext mock_resource_fetch_context_;
   std::unique_ptr<UrlIndex> url_index_;
 
-  // Audio hardware configuration.
   media::AudioParameters audio_parameters_;
 
   bool is_background_suspend_enabled_ = false;
   bool is_background_video_playback_enabled_ = true;
 
-  // The client interface used by |wmpi_|.
-  NiceMock<MockWebMediaPlayerClient> client_;
+  Persistent<NiceMock<MockWebMediaPlayerClient>> client_;
   MockWebMediaPlayerEncryptedMediaClient encrypted_client_;
 
   std::unique_ptr<media::KeySystemsImpl> key_systems_;
 
-  // Used to create the media::MockCdm to test encrypted playback.
   scoped_refptr<media::MockCdm> mock_cdm_ =
       base::MakeRefCounted<media::MockCdm>();
   media::MockCdmFactory mock_cdm_factory_{mock_cdm_};
@@ -1301,7 +1218,7 @@ class ParcWebMediaPlayerImplTest
 #if BUILDFLAG(IS_MAC)
   ParcFairPlayCdmContext parc_fairplay_cdm_context_;
   ParcKeyRequestCdmContext parc_cdm_context_;
-#endif  // BUILDFLAG(IS_MAC)
+#endif
 
   viz::FrameSinkId frame_sink_id_ = viz::FrameSinkId(1, 1);
   viz::LocalSurfaceId local_surface_id_ = viz::LocalSurfaceId(
@@ -1311,42 +1228,32 @@ class ParcWebMediaPlayerImplTest
       viz::SurfaceId(frame_sink_id_, local_surface_id_);
 
   NiceMock<MockWebMediaPlayerDelegate> delegate_;
-  // Parc: the delegate and media cache of the frame ParcMoveToFrame() moves
-  // |wmpi_| to.
   NiceMock<MockWebMediaPlayerDelegate> moved_to_delegate_;
   StrictMock<MockResourceFetchContext> moved_to_fetch_context_;
   std::unique_ptr<UrlIndex> moved_to_url_index_;
   frame_test_helpers::WebViewHelper moved_to_view_helper_;
 
-  // Use NiceMock since most tests do not care about this.
   std::unique_ptr<NiceMock<MockSurfaceLayerBridge>> surface_layer_bridge_;
   raw_ptr<NiceMock<MockSurfaceLayerBridge>,
           UnprotectedInRelease | DanglingUntriaged>
       surface_layer_bridge_ptr_ = nullptr;
 
-  // Only valid once set by InitializeWebMediaPlayerImpl(), this is for
-  // verifying a subset of potential media logs.
   raw_ptr<NiceMock<media::MockMediaLog>,
           UnprotectedInRelease | DanglingUntriaged>
       media_log_ = nullptr;
 
-  // Raw pointer of the media::RendererFactorySelector owned by |wmpi_|.
   raw_ptr<media::RendererFactorySelector,
           UnprotectedInRelease | DanglingUntriaged>
       renderer_factory_selector_ = nullptr;
 
-  // default decoder factory for WMPI
   std::unique_ptr<media::DecoderFactory> decoder_factory_;
 
-  // The WebMediaPlayerImpl's media observer.
   NiceMock<MockMediaObserver> mock_observer_;
 
-  // Parc: see StartParcMediaSource(); outlives |wmpi_|, which points at it.
   NiceMock<media::MockMediaLog> parc_media_log_;
   NiceMock<media::MockDemuxerHost> parc_demuxer_host_;
   std::unique_ptr<media::ChunkDemuxer> parc_demuxer_;
 
-  // The WebMediaPlayerImpl instance under test.
   std::unique_ptr<WebMediaPlayerImpl> wmpi_;
 
   std::unique_ptr<base::trace_event::MemoryDumpManager> memory_dump_manager_;
@@ -1356,11 +1263,11 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcSafariRefusesUndeclaredAV1WithoutHardware
   InitializeWebMediaPlayerImpl();
   av1_command_line_.GetProcessCommandLine()->AppendSwitchASCII(
       media::kParcAV1HardwareDecoder, "0");
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   media::PipelineMetadata metadata;
   metadata.has_video = true;
   metadata.video_decoder_config = TestVideoConfig::Normal(media::VideoCodec::kAV1);
-  EXPECT_CALL(client_, NetworkStateChanged());
+  EXPECT_CALL(*client_, NetworkStateChanged());
   OnMetadata(metadata);
   EXPECT_EQ(wmpi_->GetNetworkState(), WebMediaPlayer::kNetworkStateFormatError);
 }
@@ -1369,7 +1276,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcChromeTakesUndeclaredAV1WithoutHardware) 
   InitializeWebMediaPlayerImpl();
   av1_command_line_.GetProcessCommandLine()->AppendSwitchASCII(
       media::kParcAV1HardwareDecoder, "0");
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(false));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(false));
   media::PipelineMetadata metadata;
   metadata.has_video = true;
   metadata.video_decoder_config = TestVideoConfig::Normal(media::VideoCodec::kAV1);
@@ -1377,54 +1284,25 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcChromeTakesUndeclaredAV1WithoutHardware) 
   EXPECT_NE(wmpi_->GetNetworkState(), WebMediaPlayer::kNetworkStateFormatError);
 }
 
-
-// Verify LoadAndWaitForCurrentData() functions without issue.
-
-// Verify LoadAndWaitForCurrentData() functions without issue.
-
-// Verify that preload=metadata suspend works properly.
-
-// Verify that Play() before kReadyStateHaveEnough doesn't increase buffer size.
-
-// Verify that preload=metadata suspend works properly for streaming sources.
-
-// Verify that lazy load for preload=metadata works properly.
-
-// Verify that lazy load is skipped when rVFC has been requested.
-
-// Verify that preload=metadata suspend video w/ poster uses zero video memory.
-
-// Verify that preload=metadata suspend is aborted if we know the element will
-// play as soon as we reach kReadyStateHaveFutureData.
-
-
-// Ensure memory reporting is not running after an error.
-
-
-// Parc: playing backward (only Safari-identity pages do), the player ends at
-// the start, as WebKit's MediaPlayerPrivateAVFoundation::didEnd; the element
-// hears it, and the time stays the player's, not the duration.
 TEST_F(ParcWebMediaPlayerImplTest, ParcBackwardEndKeepsTheTime) {
   InitializeWebMediaPlayerImpl();
   LoadAndWaitForReadyState(kAudioOnlyTestFile,
                            WebMediaPlayer::kReadyStateHaveFutureData);
   wmpi_->SetRate(-1.0);
 
-  EXPECT_CALL(client_, TimeChanged());
+  EXPECT_CALL(*client_, TimeChanged());
   OnEnded();
   EXPECT_FALSE(wmpi_->IsEnded());
   EXPECT_EQ(0, wmpi_->CurrentTime());
 }
 
-// The element reads CurrentTime() for currentTime and timeupdate; Now Playing
-// must use the same renderer clock, including when a receiver cannot reverse.
 class ParcWebMediaPlayerImplReverseRouteTest
     : public ParcWebMediaPlayerImplTest,
       public testing::WithParamInterface<media::RendererType> {};
 
 TEST_P(ParcWebMediaPlayerImplReverseRouteTest, FrozenRouteReportsItsActualRate) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
   auto factory = std::make_unique<media::MockRendererFactory>();
   auto time = std::make_shared<std::atomic<int64_t>>(1000000);
@@ -1452,34 +1330,32 @@ TEST_P(ParcWebMediaPlayerImplReverseRouteTest, FrozenRouteReportsItsActualRate) 
   Play();
   CycleThreads();
 
-  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
+  EXPECT_CALL(*client_, DidPlayerMediaPositionStateChange(
                            0.0, kAudioOnlyTestFileDuration, base::Seconds(1),
-                           /*end_of_media=*/false));
+                           false));
   wmpi_->OnTimeUpdate();
   EXPECT_EQ(1.0, wmpi_->CurrentTime());
-  testing::Mock::VerifyAndClearExpectations(&client_);
-  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(_, _, _, _)).Times(0);
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
+  EXPECT_CALL(*client_, DidPlayerMediaPositionStateChange(_, _, _, _)).Times(0);
   CycleThreads();
   wmpi_->OnTimeUpdate();
   EXPECT_EQ(1.0, wmpi_->CurrentTime());
-  testing::Mock::VerifyAndClearExpectations(&client_);
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
 
-  // A new receiver position (including a backward seek) reaches both clocks.
   time->store(500000);
-  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
+  EXPECT_CALL(*client_, DidPlayerMediaPositionStateChange(
                            0.0, kAudioOnlyTestFileDuration, base::Seconds(0.5),
-                           /*end_of_media=*/false));
+                           false));
   wmpi_->OnTimeUpdate();
   EXPECT_EQ(0.5, wmpi_->CurrentTime());
-  testing::Mock::VerifyAndClearExpectations(&client_);
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
 
-  // Forward playback resumes on the same route.
   EXPECT_CALL(*renderer, SetPlaybackRate(1.0));
   wmpi_->SetRate(1.0);
   CycleThreads();
-  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
+  EXPECT_CALL(*client_, DidPlayerMediaPositionStateChange(
                            1.0, kAudioOnlyTestFileDuration, base::Seconds(0.5),
-                           /*end_of_media=*/false));
+                           false));
   wmpi_->OnTimeUpdate();
 }
 
@@ -1492,38 +1368,34 @@ INSTANTIATE_TEST_SUITE_P(
 #if BUILDFLAG(IS_MAC)
 TEST_F(ParcWebMediaPlayerImplTest, ParcReversingRoutesKeepNegativePositionRate) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   LoadAndWaitForReadyState(kAudioOnlyTestFile,
                            WebMediaPlayer::kReadyStateHaveFutureData);
   wmpi_->SetRate(-1.0);
   Play();
   ParcPlayChromiumRenderer();
-  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
+  EXPECT_CALL(*client_, DidPlayerMediaPositionStateChange(
                            -1.0, kAudioOnlyTestFileDuration, base::TimeDelta(),
-                           /*end_of_media=*/false));
+                           false));
   wmpi_->OnTimeUpdate();
-  testing::Mock::VerifyAndClearExpectations(&client_);
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
   ParcPlayNativeHls();
-  // A rate change must still be reported by native HLS.
   wmpi_->SetRate(-2.0);
-  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
+  EXPECT_CALL(*client_, DidPlayerMediaPositionStateChange(
                            -2.0, kAudioOnlyTestFileDuration, base::TimeDelta(),
-                           /*end_of_media=*/false));
+                           false));
   wmpi_->OnTimeUpdate();
 }
 #endif
 
-
-// On a Safari-identity page the end reaches the element while paused too, as
-// WebKit's player reports it (HTMLMediaElement::handlePlaybackPositionChanged).
 TEST_F(ParcWebMediaPlayerImplTest, SafariIdentity_EndedWhilePausedTellsClient) {
   InitializeWebMediaPlayerImpl();
   LoadAndWaitForReadyState(kAudioOnlyTestFile,
                            WebMediaPlayer::kReadyStateHaveFutureData);
   ASSERT_TRUE(IsPaused());
-  EXPECT_CALL(client_, PresentsParcSafariIdentity())
+  EXPECT_CALL(*client_, PresentsParcSafariIdentity())
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(client_, TimeChanged());
+  EXPECT_CALL(*client_, TimeChanged());
   OnEnded();
   EXPECT_TRUE(wmpi_->IsEnded());
 }
@@ -1533,119 +1405,102 @@ TEST_F(ParcWebMediaPlayerImplTest, EndedWhilePausedDoesNotTellClient) {
   LoadAndWaitForReadyState(kAudioOnlyTestFile,
                            WebMediaPlayer::kReadyStateHaveFutureData);
   ASSERT_TRUE(IsPaused());
-  EXPECT_CALL(client_, PresentsParcSafariIdentity())
+  EXPECT_CALL(*client_, PresentsParcSafariIdentity())
       .WillRepeatedly(Return(false));
-  EXPECT_CALL(client_, TimeChanged()).Times(0);
+  EXPECT_CALL(*client_, TimeChanged()).Times(0);
   OnEnded();
   EXPECT_TRUE(wmpi_->IsEnded());
 }
 
-
-// It's possible for current time to be infinite if the page seeks to
-// |media::kInfiniteDuration| (2**64 - 1) when duration is infinite.
-
-// A src= player whose first 10% (1s) is buffered, at HAVE_ENOUGH_DATA.
 class ParcWebMediaPlayerImplUrlSeekTest : public ParcWebMediaPlayerImplTest {
  protected:
   void SetUpPlayer(bool safari_identity,
                    bool has_video,
                    bool has_first_frame = true) {
     InitializeWebMediaPlayerImpl();
-    ON_CALL(client_, PresentsParcSafariIdentity())
+    ON_CALL(*client_, PresentsParcSafariIdentity())
         .WillByDefault(Return(safari_identity));
-    SetMetadata(/*has_audio=*/true, has_video);
+    SetMetadata(true, has_video);
     SetDuration(base::Seconds(10));
     SetBufferedBytes(100, 1000);
     SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
     if (has_first_frame) {
       SetHasFirstFrame();
     }
-    testing::Mock::VerifyAndClearExpectations(&client_);
+    testing::Mock::VerifyAndClearExpectations(client_.Get());
   }
 };
 
-// Safari keeps readyState through a seek into buffered media and ends it at
-// the target's first frame: no waiting, canplay, playing or canplaythrough.
 TEST_F(ParcWebMediaPlayerImplUrlSeekTest,
        SafariSeekIntoBufferedKeepsReadyState) {
-  SetUpPlayer(/*safari_identity=*/true, /*has_video=*/true);
+  SetUpPlayer(true, true);
 
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
-  EXPECT_CALL(client_, TimeChanged()).Times(0);
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
+  EXPECT_CALL(*client_, TimeChanged()).Times(0);
   wmpi_->Seek(0.5);
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
   EXPECT_TRUE(wmpi_->Seeking());
 
-  // The pipeline's seek alone doesn't end the element's (no TimeChanged()):
-  // the target's frame isn't up.
-  OnPipelineSeeked(/*time_updated=*/true);
+  OnPipelineSeeked(true);
   CycleThreads();
   EXPECT_FALSE(wmpi_->Seeking());
-  testing::Mock::VerifyAndClearExpectations(&client_);
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
 
-  // Its first frame does, before the renderer reports HAVE_ENOUGH.
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
-  EXPECT_CALL(client_, TimeChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
+  EXPECT_CALL(*client_, TimeChanged());
   PaintFrame();
   CycleThreads();
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
-  testing::Mock::VerifyAndClearExpectations(&client_);
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
 
-  // Once.
-  EXPECT_CALL(client_, TimeChanged()).Times(0);
+  EXPECT_CALL(*client_, TimeChanged()).Times(0);
   PaintFrame();
   CycleThreads();
 }
 
 TEST_F(ParcWebMediaPlayerImplUrlSeekTest, SafariAudioSeekEndsWithPipelineSeek) {
-  SetUpPlayer(/*safari_identity=*/true, /*has_video=*/false);
+  SetUpPlayer(true, false);
 
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
-  EXPECT_CALL(client_, TimeChanged()).Times(0);
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
+  EXPECT_CALL(*client_, TimeChanged()).Times(0);
   wmpi_->Seek(0.5);
-  testing::Mock::VerifyAndClearExpectations(&client_);
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
 
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
-  EXPECT_CALL(client_, TimeChanged());
-  OnPipelineSeeked(/*time_updated=*/true);
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
+  EXPECT_CALL(*client_, TimeChanged());
+  OnPipelineSeeked(true);
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
 }
 
-// A frame of an earlier seek doesn't end a later one.
 TEST_F(ParcWebMediaPlayerImplUrlSeekTest, SafariSeekIgnoresEarlierSeeksFrame) {
-  SetUpPlayer(/*safari_identity=*/true, /*has_video=*/true);
+  SetUpPlayer(true, true);
 
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
-  EXPECT_CALL(client_, TimeChanged()).Times(0);
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
+  EXPECT_CALL(*client_, TimeChanged()).Times(0);
   wmpi_->Seek(0.5);
-  OnPipelineSeeked(/*time_updated=*/true);
+  OnPipelineSeeked(true);
   CycleThreads();
   wmpi_->Seek(0.7);
-  // The first seek's frame reaches the main thread only after the second
-  // seek's pipeline part is done.
   PaintFrame();
   media_thread_.FlushForTesting();
-  OnPipelineSeeked(/*time_updated=*/true);
+  OnPipelineSeeked(true);
   CycleThreads();
-  testing::Mock::VerifyAndClearExpectations(&client_);
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
 
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
-  EXPECT_CALL(client_, TimeChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
+  EXPECT_CALL(*client_, TimeChanged());
   PaintFrame();
   CycleThreads();
 }
 
-// Before the first frame the compositor's callback is OnFirstFrame()'s, so a
-// frame doesn't end the seek (the renderer's HAVE_ENOUGH does); readyState is
-// still kept.
 TEST_F(ParcWebMediaPlayerImplUrlSeekTest, SafariSeekBeforeFirstFrameWaits) {
-  SetUpPlayer(/*safari_identity=*/true, /*has_video=*/true,
-              /*has_first_frame=*/false);
+  SetUpPlayer(true, true,
+              false);
 
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
-  EXPECT_CALL(client_, TimeChanged()).Times(0);
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
+  EXPECT_CALL(*client_, TimeChanged()).Times(0);
   wmpi_->Seek(0.5);
-  OnPipelineSeeked(/*time_updated=*/true);
+  OnPipelineSeeked(true);
   CycleThreads();
   PaintFrame();
   CycleThreads();
@@ -1655,68 +1510,62 @@ TEST_F(ParcWebMediaPlayerImplUrlSeekTest, SafariSeekBeforeFirstFrameWaits) {
 
 TEST_F(ParcWebMediaPlayerImplUrlSeekTest,
        SafariSeekOutsideBufferedLowersReadyState) {
-  SetUpPlayer(/*safari_identity=*/true, /*has_video=*/true);
+  SetUpPlayer(true, true);
 
-  EXPECT_CALL(client_, ReadyStateChanged());
-  EXPECT_CALL(client_, TimeChanged()).Times(0);
+  EXPECT_CALL(*client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, TimeChanged()).Times(0);
   wmpi_->Seek(5);
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveMetadata, wmpi_->GetReadyState());
-  OnPipelineSeeked(/*time_updated=*/true);
+  OnPipelineSeeked(true);
   PaintFrame();
   CycleThreads();
 }
 
 TEST_F(ParcWebMediaPlayerImplUrlSeekTest, ChromeSeekLowersReadyState) {
-  SetUpPlayer(/*safari_identity=*/false, /*has_video=*/true);
+  SetUpPlayer(false, true);
 
-  EXPECT_CALL(client_, ReadyStateChanged());
-  EXPECT_CALL(client_, TimeChanged()).Times(0);
+  EXPECT_CALL(*client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, TimeChanged()).Times(0);
   wmpi_->Seek(0.5);
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveMetadata, wmpi_->GetReadyState());
-  OnPipelineSeeked(/*time_updated=*/true);
+  OnPipelineSeeked(true);
   PaintFrame();
   CycleThreads();
 }
 
 #if BUILDFLAG(IS_MAC)
-// Parc: a clear MP3 served over HTTPS, paused at 2s at HAVE_ENOUGH_DATA in
-// Chromium's pipeline (NATIVE_HLS.md, AirPlay).
 class ParcWebMediaPlayerImplFileAirPlayTest : public ParcWebMediaPlayerImplTest {
  protected:
   void LoadFile(bool safari_identity) {
     InitializeWebMediaPlayerImpl();
-    ON_CALL(client_, PresentsParcSafariIdentity())
+    ON_CALL(*client_, PresentsParcSafariIdentity())
         .WillByDefault(Return(safari_identity));
     wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
     LoadAndWaitForReadyState("bear-audio-10s-CBR-has-TOC.mp3",
                              WebMediaPlayer::kReadyStateHaveEnoughData);
     ParcServeOverHttps();
-    EXPECT_CALL(client_, ReadyStateChanged()).Times(AnyNumber());
-    EXPECT_CALL(client_, TimeChanged()).Times(AnyNumber());
+    EXPECT_CALL(*client_, ReadyStateChanged()).Times(AnyNumber());
+    EXPECT_CALL(*client_, TimeChanged()).Times(AnyNumber());
     wmpi_->Seek(2);
     for (int i = 0; i < 100 && wmpi_->Seeking(); ++i) {
       CycleThreads();
     }
     ASSERT_FALSE(wmpi_->Seeking());
-    testing::Mock::VerifyAndClearExpectations(&client_);
+    testing::Mock::VerifyAndClearExpectations(client_.Get());
   }
   void SwitchLiveStream(std::optional<double> seek_during_switch);
 };
 
-// Parc: the file, paused at 2s, as a live stream played to a target; the
-// native route AVFoundation can't open here sends it back to Chromium's
-// pipeline on a new connection.
 void ParcWebMediaPlayerImplFileAirPlayTest::SwitchLiveStream(
     std::optional<double> seek_during_switch) {
-  LoadFile(/*safari_identity=*/true);
+  LoadFile(true);
   const GURL file_url = LoadedUrl();
   ParcServeOverHttps();
   ParcMakeLive(file_url);
-  wmpi_->ParcSetPlaybackTarget("context", /*should_play=*/true);
+  wmpi_->ParcSetPlaybackTarget("context", true);
   ASSERT_TRUE(ParcSwitchingRoute());
   if (seek_during_switch) {
-    // The element's seek completes.
-    EXPECT_CALL(client_, TimeChanged()).Times(testing::AtLeast(1));
+    EXPECT_CALL(*client_, TimeChanged()).Times(testing::AtLeast(1));
     wmpi_->Seek(*seek_during_switch);
   }
   for (int i = 0; i < 200 && ParcSwitchingRoute(); ++i) {
@@ -1726,66 +1575,55 @@ void ParcWebMediaPlayerImplFileAirPlayTest::SwitchLiveStream(
   EXPECT_FALSE(ParcFileOnNativeRoute());
 }
 
-// Safari's AVPlayer plays the file, so it supports a target, as the native
-// HLS player does; the element reports it at HAVE_METADATA.
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, SafariFileSupportsTarget) {
-  LoadFile(/*safari_identity=*/true);
+  LoadFile(true);
   EXPECT_TRUE(wmpi_->ParcSupportsPlaybackTarget());
 }
 
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, ChromeFileKeepsItsPipeline) {
-  LoadFile(/*safari_identity=*/false);
+  LoadFile(false);
   EXPECT_FALSE(wmpi_->ParcSupportsPlaybackTarget());
-  wmpi_->ParcSetPlaybackTarget("context", /*should_play=*/true);
+  wmpi_->ParcSetPlaybackTarget("context", true);
   EXPECT_FALSE(ParcFileOnNativeRoute());
   EXPECT_FALSE(ParcSwitchingRoute());
   EXPECT_TRUE(HasDataSource());
 }
 
-// A target the element doesn't play to, or none, moves nothing.
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, NotPlayingToTargetStays) {
-  LoadFile(/*safari_identity=*/true);
-  wmpi_->ParcSetPlaybackTarget("context", /*should_play=*/false);
-  wmpi_->ParcSetPlaybackTarget("", /*should_play=*/true);
+  LoadFile(true);
+  wmpi_->ParcSetPlaybackTarget("context", false);
+  wmpi_->ParcSetPlaybackTarget("", true);
   EXPECT_FALSE(ParcFileOnNativeRoute());
   EXPECT_FALSE(ParcSwitchingRoute());
   EXPECT_FALSE(wmpi_->Seeking());
   EXPECT_TRUE(HasDataSource());
 }
 
-// A finite stream without byte ranges couldn't resume where the element is.
 TEST_F(ParcWebMediaPlayerImplTest, ParcFiniteStreamDoesNotSupportTarget) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
-  // Over http; larger than the MultiBuffer block size, so the data source
-  // initializes.
   Load("bear_192kHz.wav", LoadType::kStreaming);
   while (wmpi_->GetReadyState() < WebMediaPlayer::kReadyStateHaveMetadata) {
     base::RunLoop loop;
-    EXPECT_CALL(client_, ReadyStateChanged())
+    EXPECT_CALL(*client_, ReadyStateChanged())
         .WillRepeatedly(RunClosure(loop.QuitClosure()));
     loop.Run();
-    testing::Mock::VerifyAndClearExpectations(&client_);
+    testing::Mock::VerifyAndClearExpectations(client_.Get());
   }
   ASSERT_TRUE(IsStreaming());
   EXPECT_FALSE(wmpi_->ParcSupportsPlaybackTarget());
 }
 
-// Played to the target, the file moves to the native route: the element
-// sees the same time, duration and readyState, and nothing the restarting
-// pipeline reports, until the new route has seeked there; Chromium's
-// pipeline, coming back, then reports its own, never lowered to
-// HAVE_METADATA.
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, SwitchHoldsWhatTheElementSees) {
-  LoadFile(/*safari_identity=*/true);
+  LoadFile(true);
   const double duration = wmpi_->Duration();
   const WebMediaPlayer::ReadyState ready_state = wmpi_->GetReadyState();
 
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
-  EXPECT_CALL(client_, DurationChanged()).Times(0);
-  EXPECT_CALL(client_, TimeChanged()).Times(0);
-  wmpi_->ParcSetPlaybackTarget("context", /*should_play=*/true);
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
+  EXPECT_CALL(*client_, DurationChanged()).Times(0);
+  EXPECT_CALL(*client_, TimeChanged()).Times(0);
+  wmpi_->ParcSetPlaybackTarget("context", true);
   EXPECT_TRUE(ParcFileOnNativeRoute());
   ASSERT_TRUE(ParcSwitchingRoute());
   EXPECT_FALSE(HasDataSource());
@@ -1794,60 +1632,50 @@ TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, SwitchHoldsWhatTheElementSees) {
   EXPECT_NEAR(wmpi_->CurrentTime(), 2, 0.05);
   EXPECT_EQ(wmpi_->Duration(), duration);
   EXPECT_EQ(wmpi_->GetReadyState(), ready_state);
-  testing::Mock::VerifyAndClearExpectations(&client_);
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
 
-  // Only a higher readyState than the held one is told at the seek's end.
   ParcReportReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
-  OnPipelineSeeked(/*time_updated=*/false);
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
+  OnPipelineSeeked(false);
   EXPECT_FALSE(ParcSwitchingRoute());
   EXPECT_EQ(wmpi_->GetReadyState(), ready_state);
-  testing::Mock::VerifyAndClearExpectations(&client_);
-  // The switch ends once: later states are the pipeline's own.
-  EXPECT_CALL(client_, ReadyStateChanged());
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
+  EXPECT_CALL(*client_, ReadyStateChanged());
   ParcReportReadyState(WebMediaPlayer::kReadyStateHaveCurrentData);
 }
 
-// A live stream's new connection starts its own timeline at 0; the element's
-// time goes on from where it was, as Safari's single connection's does.
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, LiveStreamKeepsItsTime) {
-  SwitchLiveStream(/*seek_during_switch=*/std::nullopt);
+  SwitchLiveStream(std::nullopt);
   ASSERT_LT(PipelineTime(), base::Seconds(0.5));
   EXPECT_NEAR(wmpi_->CurrentTime(), 2, 0.05);
   ASSERT_FALSE(wmpi_->Buffered().empty());
   EXPECT_NEAR(wmpi_->Buffered()[0].start, 2, 0.05);
 }
 
-// A seek while it reconnects lands where the page asked, the new
-// connection's start taking that time.
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, LiveStreamSeekDuringSwitch) {
-  SwitchLiveStream(/*seek_during_switch=*/5);
+  SwitchLiveStream(5);
   ASSERT_LT(PipelineTime(), base::Seconds(0.5));
   EXPECT_FALSE(wmpi_->Seeking());
   EXPECT_NEAR(wmpi_->CurrentTime(), 5, 0.05);
 }
 
-// The element's audio and video choices go to the native route's player by
-// position among Chromium's audio and video tracks, every enabled audio
-// track (Safari's AVPlayer plays them all) and the selected video track.
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, TrackChoicesByPosition) {
-  LoadFile(/*safari_identity=*/true);
-  // The MP3's own audio track is "1".
+  LoadFile(true);
   media::MediaTracks tracks;
   tracks
-      .AddAudioTrack(TestAudioConfig::Normal(), /*enabled=*/false, 2,
+      .AddAudioTrack(TestAudioConfig::Normal(), false, 2,
                      media::MediaTrack::Kind("main"),
                      media::MediaTrack::Label(""),
                      media::MediaTrack::Language("fr"))
       ->set_id(media::MediaTrack::Id("2"));
   tracks
-      .AddVideoTrack(TestVideoConfig::Normal(), /*enabled=*/true, 3,
+      .AddVideoTrack(TestVideoConfig::Normal(), true, 3,
                      media::MediaTrack::Kind("main"),
                      media::MediaTrack::Label(""),
                      media::MediaTrack::Language(""))
       ->set_id(media::MediaTrack::Id("3"));
   tracks
-      .AddVideoTrack(TestVideoConfig::Normal(), /*enabled=*/false, 4,
+      .AddVideoTrack(TestVideoConfig::Normal(), false, 4,
                      media::MediaTrack::Kind("main"),
                      media::MediaTrack::Label(""),
                      media::MediaTrack::Language(""))
@@ -1876,33 +1704,25 @@ TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, TrackChoicesByPosition) {
   EXPECT_EQ(choices.video, std::nullopt);
 }
 
-// On the native route the element takes AVPlayer's readyState from the
-// seek's end, as for native HLS; its HAVE_METADATA lowers nothing.
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, NativeRouteTakesAVPlayerState) {
-  LoadFile(/*safari_identity=*/true);
-  wmpi_->ParcSetPlaybackTarget("context", /*should_play=*/true);
+  LoadFile(true);
+  wmpi_->ParcSetPlaybackTarget("context", true);
   ASSERT_TRUE(ParcSwitchingRoute());
   ParcPlayNativeHls();
 
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
-  OnPipelineSeeked(/*time_updated=*/false);
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
+  OnPipelineSeeked(false);
   EXPECT_FALSE(ParcSwitchingRoute());
   EXPECT_EQ(wmpi_->GetReadyState(), WebMediaPlayer::kReadyStateHaveEnoughData);
-  testing::Mock::VerifyAndClearExpectations(&client_);
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
 
-  EXPECT_CALL(client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged());
   ParcReportNativeReadyState(media::ParcNativeHlsReadyState::kHaveCurrentData);
   EXPECT_EQ(wmpi_->GetReadyState(), WebMediaPlayer::kReadyStateHaveCurrentData);
 }
-#endif  // BUILDFLAG(IS_MAC)
-
+#endif
 
 #if BUILDFLAG(IS_MAC)
-// Parc: setMediaKeys(null) on a Safari-identity page detaches its FairPlay
-// MediaKeys, as WebKit's HTMLMediaElement::setMediaKeys does
-// (cdmInstanceDetached): a protected track's init data then finds no CDM, so
-// the element hears `encrypted` and waits for a key, as WebKit's renderer
-// without one answers setInitData, until the same MediaKeys come back.
 TEST_F(ParcWebMediaPlayerImplTest, ParcSafariMediaKeysNullDetachesFairPlayCdm) {
   InitializeWebMediaPlayerImpl();
   CreateCdm();
@@ -1931,27 +1751,23 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcSafariMediaKeysNullDetachesFairPlayCdm) {
   ParcAppendSinf();
 }
 
-// Parc: a page without Safari's identity still can't clear its MediaKeys,
-// FairPlay's included, as Chromium refuses.
 TEST_F(ParcWebMediaPlayerImplTest, ParcChromeMediaKeysNullStillRefused) {
   InitializeWebMediaPlayerImpl();
   CreateCdm();
   ParcSetFairPlayCdmOnSafariMediaSource();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(false));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(false));
 
   Persistent<ParcCdmResult> result = MakeGarbageCollected<ParcCdmResult>();
   wmpi_->SetContentDecryptionModule(nullptr, result->Result());
   CycleThreads();
   EXPECT_TRUE(result->failed);
 }
-#endif  // BUILDFLAG(IS_MAC)
+#endif
 
 #if BUILDFLAG(IS_MAC)
-// WebKit's native HLS player stops waiting only once a session has a request
-// for the key it waits on, not for another key becoming usable.
 TEST_F(ParcWebMediaPlayerImplTest, ParcStalledKeyWaitEndsOnlyForThatKey) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcPlayNativeHls();
   const std::vector<uint8_t> key_a = SkdInitData("skd://a");
   const std::vector<uint8_t> key_b = SkdInitData("skd://b");
@@ -1975,15 +1791,9 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcStalledKeyWaitEndsOnlyForThatKey) {
   base::RunLoop().RunUntilIdle();
 }
 
-// The native HLS player stalls only for a request made while it held no CDM,
-// so the element waits even when a CDM attached here since, as WebKit's
-// player sets waiting at the request; a session that already has a request
-// for the key then ends the wait, as WebKit's setMediaKeys does
-// (attemptToResumePlaybackIfNecessary). One for a key no session asked for
-// stays waiting.
 TEST_F(ParcWebMediaPlayerImplTest, ParcStallAfterItsKeyArrivedWaitsThenResumes) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcPlayNativeHls();
   const std::vector<uint8_t> key_a = SkdInitData("skd://a");
   parc_cdm_context_.requested_keys = {key_a};
@@ -2010,11 +1820,9 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcStallAfterItsKeyArrivedWaitsThenResumes) 
   base::RunLoop().RunUntilIdle();
 }
 
-// WebKit's setMediaKeys ends the wait when a session already asked for the
-// key (attemptToResumePlaybackIfNecessary).
 TEST_F(ParcWebMediaPlayerImplTest, ParcStalledKeyWaitEndsOnAttachWithItsKey) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcPlayNativeHls();
   const std::vector<uint8_t> key_a = SkdInitData("skd://a");
 
@@ -2029,11 +1837,9 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcStalledKeyWaitEndsOnAttachWithItsKey) {
   ParcAttachCdm();
 }
 
-// A key event while the stall's own check is on its way asks again, and only
-// that later answer decides.
 TEST_F(ParcWebMediaPlayerImplTest, ParcKeyEventDuringStallCheckDecides) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcPlayNativeHls();
   const std::vector<uint8_t> key_a = SkdInitData("skd://a");
   ParcAttachCdm();
@@ -2053,13 +1859,10 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcKeyEventDuringStallCheckDecides) {
   parc_cdm_context_.AnswerDeferred();
 }
 
-// WebKit's cdmInstanceDetached: a stall whose key check was on its way to
-// MediaKeys the page then clears has no CDM, so it waits, whatever that
-// check answers.
 TEST_F(ParcWebMediaPlayerImplTest, ParcStallCheckingDetachedCdmWaits) {
   InitializeWebMediaPlayerImpl();
   CreateCdm();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcPlayNativeHls();
   const std::vector<uint8_t> key_a = SkdInitData("skd://a");
   parc_cdm_context_.requires_fairplay_renderer = true;
@@ -2083,10 +1886,9 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcStallCheckingDetachedCdmWaits) {
   CycleThreads();
 }
 
-// src= decryptor stalls with an attached CDM are not waiting-for-key.
 TEST_F(ParcWebMediaPlayerImplTest, ParcSrcAttachedCdmDoesNotWait) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcAttachCdm();
   EXPECT_CALL(encrypted_client_, DidBlockPlaybackWaitingForKey()).Times(0);
   EXPECT_CALL(encrypted_client_, DidResumePlaybackBlockedForKey()).Times(0);
@@ -2097,7 +1899,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcSrcAttachedCdmDoesNotWait) {
 
 TEST_F(ParcWebMediaPlayerImplTest, ParcMediaSourceWaitsForEverySourceBuffer) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcMediaSource();
   ParcAttachCdm();
   EXPECT_CALL(encrypted_client_, Encrypted(media::EmeInitDataType::SINF, _))
@@ -2119,13 +1921,9 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcMediaSourceWaitsForEverySourceBuffer) {
   base::RunLoop().RunUntilIdle();
 }
 
-// Parc: Safari's Media Source reports a SAMPLE-AES TS stream's "mpts" init
-// data as it reports sinf (SourceBufferPrivateAVFObjC): `encrypted` with it
-// and a wait until a session has a request for it; a Chrome page's element
-// hears it as before.
 TEST_F(ParcWebMediaPlayerImplTest, ParcMediaSourceReportsMptsInitData) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcMediaSource();
   ParcAttachCdm();
   const std::vector<uint8_t> mpts = {'{', '}'};
@@ -2144,14 +1942,14 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcMediaSourceReportsMptsInitData) {
   EXPECT_THAT(parc_cdm_context_.asked_types,
               testing::Each(media::EmeInitDataType::MPTS));
 
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(false));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(false));
   EXPECT_CALL(encrypted_client_, Encrypted(media::EmeInitDataType::MPTS, _));
   OnEncryptedMediaInitData(media::EmeInitDataType::MPTS, mpts);
 }
 
 TEST_F(ParcWebMediaPlayerImplTest, ParcRemovedSourceDoesNotHoldWaitOrAcceptOldCheck) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcMediaSource();
   ParcAttachCdm();
   EXPECT_CALL(encrypted_client_, Encrypted(media::EmeInitDataType::SINF, _));
@@ -2168,7 +1966,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcRemovedSourceDoesNotHoldWaitOrAcceptOldCh
 TEST_F(ParcWebMediaPlayerImplTest, ParcResolvedSourceDoesNotEmitOldEncryptedEvent) {
   InitializeWebMediaPlayerImpl();
   CreateCdm();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcMediaSource();
   parc_cdm_context_.requires_fairplay_renderer = true;
   parc_cdm_context_.requested_keys = {{1}};
@@ -2187,7 +1985,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcResolvedSourceDoesNotEmitOldEncryptedEven
 
 TEST_F(ParcWebMediaPlayerImplTest, ParcReplacementIgnoresOldSourceCheck) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcMediaSource();
   ParcAttachCdm();
   parc_cdm_context_.defer_answers = true;
@@ -2203,7 +2001,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcReplacementIgnoresOldSourceCheck) {
 
 TEST_F(ParcWebMediaPlayerImplTest, ParcRejectedCdmCannotEndSourceWait) {
   InitializeWebMediaPlayerImpl();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcMediaSource();
   EXPECT_CALL(encrypted_client_, Encrypted(media::EmeInitDataType::SINF, _))
       .Times(2);
@@ -2220,7 +2018,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcRejectedCdmCannotEndSourceWait) {
 TEST_F(ParcWebMediaPlayerImplTest, ParcMediaSourceDetachedCdmIgnoresInFlightSuccess) {
   InitializeWebMediaPlayerImpl();
   CreateCdm();
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcMediaSource();
   parc_cdm_context_.requires_fairplay_renderer = true;
   ParcSetKeyRequestCdm();
@@ -2239,62 +2037,13 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcMediaSourceDetachedCdmIgnoresInFlightSucc
   parc_cdm_context_.AnswerDeferred();
   CycleThreads();
 }
-#endif  // BUILDFLAG(IS_MAC)
+#endif
 
 #if BUILDFLAG(IS_WIN)
 
-// Tests that for encrypted media, when a CDM is attached that requires
-// MediaFoundationRenderer, the pipeline will fallback to create a new Renderer
-// for RendererType::kMediaFoundation.
-
-// Tests that when PIPELINE_ERROR_HARDWARE_CONTEXT_RESET happens, the pipeline
-// will suspend/resume the pipeline, which will create a new Renderer.
-
-// Same as above, but tests that when PIPELINE_ERROR_HARDWARE_CONTEXT_RESET
-// happens twice, the pipeline will suspend/resume the pipeline only for the
-// first one, which will create a new Renderer. For the second one, we will
-// stop and fail with PIPELINE_ERROR_HARDWARE_CONTEXT_RESET error code. See
-// https://crbug.com/40272221 for the context.
-
-
-// Test the case where a hardware context reset happens first, the video is
-// playing, and the video is not recovered by a subsequent error after resuming
-// from the hardware context reset. Steps: a) A hardware context reset happens
-// -> b) Playing video -> c) A pipeline decode error happens -> d) The video is
-// not recovered and terminated.
-
-// Test the case where a hardware context reset happens first, the video is
-// playing, and the video is recovered without any subsequent errors after
-// resuming from the hardware context reset. Steps: a) A hardware context reset
-// happens -> b) Playing video -> c) The video is recovered and terminated.
-
-// Test the case where a hardware context reset happens first, the video is not
-// recovered by a subsequent hardware context reset after resuming from the
-// hardware context reset while the video is paused, and then terminated without
-// any additional error. Steps: a) A hardware context reset happens
-// -> b) Paused video -> c) Another hardware context reset happens (we can't
-// conclude whether it is failed to recover or not since the video is paused) ->
-// d) The video is not recovered but terminated.
-
-// Test the case where a hardware context reset happens first, the video is not
-// recovered by a subsequent hardware context reset after resuming from the
-// hardware context reset while the video is paused, and then the video is
-// playing (only 1 ms advanced) but another hardware context reset happens.
-// Steps: a) A hardware context reset happens -> b) Paused video -> c) Another
-// hardware context reset happens (we can't conclude whether it is failed to
-// recover or not since the video is paused) -> d) The video is playing (only 1
-// ms advanced) -> e) Another hardware context reset happens -> f) The video is
-// not recovered but terminated.
-#endif  // BUILDFLAG(IS_WIN)
-
+#endif
 
 #if BUILDFLAG(IS_MAC)
-// Parc: a SourceBuffer added after the renderer was made enables a stream of a
-// new type (ChunkDemuxer::ParcAllowSourceBuffersAfterInit()). readyState drops
-// to HAVE_METADATA (WebKit's MediaSource::sourceBufferActiveTrackFlagChanged),
-// and the stream joins RendererImpl through the pipeline's track change, as
-// WebKit adds a renderer to its synchronizer, instead of a restart into a new
-// renderer that decodes again from a keyframe.
 TEST_F(ParcWebMediaPlayerImplTest, ParcStreamsAddedJoinRenderer) {
   InitializeWebMediaPlayerImpl();
   LoadAndWaitForReadyState(kVideoOnlyTestFile,
@@ -2312,8 +2061,6 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcStreamsAddedJoinRenderer) {
   EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
 }
 
-// Parc: a second audio track, which WebKit mixes with the first, joins
-// RendererImpl, which mixes it too (RendererImpl::ParcSyncMixedAudio()).
 TEST_F(ParcWebMediaPlayerImplTest, ParcStreamsAddedMixingAudioJoinsRendererImpl) {
   InitializeWebMediaPlayerImpl();
   LoadAndWaitForReadyState(kAudioOnlyTestFile,
@@ -2325,9 +2072,6 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcStreamsAddedMixingAudioJoinsRendererImpl)
   EXPECT_TRUE(ParcAwaitsAddedStreamsRenderer());
 }
 
-// Parc: so does an encrypted stream: RendererImpl's decoders take the CDM
-// when it's set, the clock waiting for it there, as WebKit's renderer waits
-// for samples it can't decrypt yet, instead of a restart (a rebuffer).
 TEST_F(ParcWebMediaPlayerImplTest, ParcStreamsAddedEncryptedJoinsRendererImpl) {
   InitializeWebMediaPlayerImpl();
   LoadAndWaitForReadyState(kVideoOnlyTestFile,
@@ -2344,8 +2088,6 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcStreamsAddedEncryptedJoinsRendererImpl) {
   EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
 }
 
-// Parc: one encrypted for the FairPlay CDM, which only the FairPlay Renderer
-// decrypts, restarts into a renderer made with every stream.
 TEST_F(ParcWebMediaPlayerImplTest, ParcStreamsAddedForFairPlayRestart) {
   InitializeWebMediaPlayerImpl();
   LoadAndWaitForReadyState(kVideoOnlyTestFile,
@@ -2362,15 +2104,9 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcStreamsAddedForFairPlayRestart) {
   EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
 }
 
-// Parc: Safari's renderer plays VP9 (profiles 0 and 2, VideoToolbox's) and
-// Vorbis beside Dolby Vision, so on a Safari-identity Media Source the
-// FairPlay Renderer takes them over from Chromium's renderer instead of
-// failing at a switch into Dolby Vision, and changeType() on its players
-// switches to them, and to AV1. A Chrome-identity page, or a file, still
-// keeps them on Chromium's renderer.
 TEST_F(ParcWebMediaPlayerImplTest, ParcSafariFairPlayPlaysVp9AndVorbis) {
   InitializeWebMediaPlayerImpl();
-  StartParcMediaSource(/*safari_identity=*/true);
+  StartParcMediaSource(true);
   const media::VideoDecoderConfig dolby_vision =
       TestVideoConfig::NormalCodecProfile(media::VideoCodec::kDolbyVision,
                                           media::DOLBYVISION_PROFILE5);
@@ -2400,10 +2136,10 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcSafariFairPlayPlaysVp9AndVorbis) {
   EXPECT_TRUE(
       ParcFairPlayChangeTypeSupported(true, "video/mp4", "av01.0.04M.08"));
 
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(false));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(false));
   EXPECT_FALSE(ParcFairPlayPlays(dolby_vision, vorbis));
   EXPECT_FALSE(ParcFairPlayPlays(vp9_profile2, aac));
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   ParcClearChunkDemuxer();
   EXPECT_FALSE(ParcFairPlayPlays(dolby_vision, vorbis));
   EXPECT_FALSE(
@@ -2414,16 +2150,9 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcSafariFairPlayPlaysVp9AndVorbis) {
   EXPECT_TRUE(
       ParcFairPlayChangeTypeSupported(false, "video/mp4", "avc1.64001f"));
 }
-#endif  // BUILDFLAG(IS_MAC)
+#endif
 
 #if BUILDFLAG(IS_MAC)
-// Parc: a FairPlay Renderer takes FairPlay MediaKeys in place, after playing
-// without any (a clear start, or clear Dolby Vision) and when the page
-// replaces them: new renderers join the key session on the same clock
-// (FairPlayRenderer::SetCdm), as Safari attaches keys to samples at any time,
-// instead of a restart that stops playback for a moment.
-// Parc: a move to the FairPlay Renderer asked for during a seek waits for
-// it, rather than restarting now, which would stop playback a second time.
 TEST_F(ParcWebMediaPlayerImplTest, ParcHandOffWaitsForASeek) {
   InitializeWebMediaPlayerImpl();
   LoadAndWaitForReadyState(kVideoOnlyTestFile,
@@ -2458,8 +2187,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcFairPlayRendererTakesLateKeysInPlace) {
 
   EXPECT_CALL(*surface_layer_bridge_ptr_, ClearObserver());
 }
-#endif  // BUILDFLAG(IS_MAC)
-
+#endif
 
 class ParcWebMediaPlayerImplHiddenVideoTest
     : public ParcWebMediaPlayerImplTest,
@@ -2467,7 +2195,6 @@ class ParcWebMediaPlayerImplHiddenVideoTest
  protected:
   bool PresentsSafariIdentity() const { return GetParam(); }
 
-  // A playing video-only player on a desktop renderer's defaults.
   void PlayVideoOnly() {
     std::unique_ptr<media::MockDemuxer> demuxer =
         std::make_unique<NiceMock<media::MockDemuxer>>();
@@ -2482,7 +2209,7 @@ class ParcWebMediaPlayerImplHiddenVideoTest
     EXPECT_CALL(delegate_, DidMediaMetadataChange(_, false, true, _)).Times(2);
     OnMetadata(metadata);
 
-    ON_CALL(client_, PresentsParcSafariIdentity())
+    ON_CALL(*client_, PresentsParcSafariIdentity())
         .WillByDefault(Return(PresentsSafariIdentity()));
     SetReadyState(WebMediaPlayer::kReadyStateHaveFutureData);
     SetSeeking(false);
@@ -2490,28 +2217,25 @@ class ParcWebMediaPlayerImplHiddenVideoTest
   }
 };
 
-// Safari doesn't pause a video for its page being hidden, so the page sees no
-// `pause` and no auto-resume when shown; Chrome pages still pause and resume.
 TEST_P(ParcWebMediaPlayerImplHiddenVideoTest, PageHidden) {
   PlayVideoOnly();
 
-  EXPECT_CALL(client_, PausePlayback(WebMediaPlayer::PauseReason::kPageHidden))
+  EXPECT_CALL(*client_, PausePlayback(WebMediaPlayer::PauseReason::kPageHidden))
       .Times(PresentsSafariIdentity() ? 0 : 1);
   BackgroundPlayer(BackgroundBehaviorType::Page);
   EXPECT_EQ(!PresentsSafariIdentity(), IsPausedBecausePageHidden());
 
-  EXPECT_CALL(client_, ResumePlayback())
+  EXPECT_CALL(*client_, ResumePlayback())
       .Times(PresentsSafariIdentity() ? 0 : 1);
   ForegroundPlayer(BackgroundBehaviorType::Page);
   EXPECT_FALSE(IsPausedBecausePageHidden());
 }
 
-// The media-playback-while-not-visible policy still pauses a hidden frame.
 TEST_P(ParcWebMediaPlayerImplHiddenVideoTest, FrameHiddenWithPolicy) {
   PlayVideoOnly();
   wmpi_->SetShouldPauseWhenFrameIsHidden(true);
 
-  EXPECT_CALL(client_,
+  EXPECT_CALL(*client_,
               PausePlayback(WebMediaPlayer::PauseReason::kFrameHidden));
   BackgroundPlayer(BackgroundBehaviorType::Frame);
   EXPECT_TRUE(IsPausedBecauseFrameHidden());
@@ -2521,16 +2245,11 @@ INSTANTIATE_TEST_SUITE_P(SafariIdentity,
                          ParcWebMediaPlayerImplHiddenVideoTest,
                          ::testing::Bool());
 
-// When `WebMediaPlayerImpl::should_pause_when_frame_is_hidden` is false, frame
-// visibility changes should not affect the playback state.
-
-
 TEST_F(ParcWebMediaPlayerImplTest, ParcOnFrozenWhileRemotingKeepsPipeline) {
   InitializeWebMediaPlayerImpl();
   wmpi_->SwitchToRemoteRenderer("TV");
   ASSERT_FALSE(IsSuspended());
 
-  // The observer keeps a session casting this element.
   EXPECT_CALL(mock_observer_, OnFrozen());
   wmpi_->OnFrozen();
   EXPECT_FALSE(IsSuspended());
@@ -2539,16 +2258,15 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcOnFrozenWhileRemotingKeepsPipeline) {
 TEST_F(ParcWebMediaPlayerImplTest, ParcOnFrozenWhileRemotingKeepsStreamingReader) {
   InitializeWebMediaPlayerImpl();
   wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
-  // Larger than the MultiBuffer block size, so the data source initializes.
   Load("bear_192kHz.wav", LoadType::kStreaming);
   while (wmpi_->GetReadyState() < WebMediaPlayer::kReadyStateHaveMetadata) {
     base::RunLoop loop;
-    EXPECT_CALL(client_, ReadyStateChanged())
+    EXPECT_CALL(*client_, ReadyStateChanged())
         .WillRepeatedly(RunClosure(loop.QuitClosure()));
     loop.Run();
-    testing::Mock::VerifyAndClearExpectations(&client_);
+    testing::Mock::VerifyAndClearExpectations(client_.Get());
   }
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(AnyNumber());
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(AnyNumber());
   ASSERT_TRUE(IsStreaming());
   ASSERT_FALSE(ShouldCancelUponDefer());
 
@@ -2571,8 +2289,6 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcFrozenInBackForwardCacheKeepsPipeline) {
   EXPECT_TRUE(ShouldCancelUponDefer());
 }
 
-// A cast whose session starts after the page went into the back/forward cache
-// restarts the pipeline on the receiver's renderer, paused.
 TEST_F(ParcWebMediaPlayerImplTest,
        ParcCastStartedInBackForwardCacheReachesReceiver) {
   InitializeWebMediaPlayerImpl();
@@ -2589,7 +2305,6 @@ TEST_F(ParcWebMediaPlayerImplTest,
   FreezePage(false);
 }
 
-// Casting takes a suspend already waiting on the frozen page with it.
 TEST_F(ParcWebMediaPlayerImplTest,
        ParcCastStartedAfterFrozenSuspendReachesReceiver) {
   InitializeWebMediaPlayerImpl();
@@ -2610,7 +2325,6 @@ TEST_F(ParcWebMediaPlayerImplTest,
   FreezePage(false);
 }
 
-// A player that isn't casting stays frozen with its page.
 TEST_F(ParcWebMediaPlayerImplTest, ParcFrozenPlayerNotCastingWaitsForItsPage) {
   InitializeWebMediaPlayerImpl();
   wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
@@ -2628,8 +2342,6 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcFrozenPlayerNotCastingWaitsForItsPage) {
   EXPECT_TRUE(base::test::RunUntil([&] { return IsPipelineSuspended(); }));
 }
 
-// A casting player's source keeps its reader in a frozen frame, and loads on
-// for the receiver.
 TEST_F(ParcWebMediaPlayerImplTest, ParcOnFrozenWhileCastingKeepsReader) {
   InitializeWebMediaPlayerImpl();
   wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
@@ -2653,8 +2365,6 @@ TEST_F(ParcWebMediaPlayerImplTest,
   EXPECT_FALSE(ShouldCancelUponDefer());
 }
 
-// A cast that starts after the page was frozen preloads for the receiver
-// again, and its source reads while the page stays frozen.
 TEST_F(ParcWebMediaPlayerImplTest, ParcCastStartedWhileFrozenReadsOn) {
   InitializeWebMediaPlayerImpl();
   wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
@@ -2669,7 +2379,6 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcCastStartedWhileFrozenReadsOn) {
   EXPECT_TRUE(base::test::RunUntil([&] { return IsPipelineStable(); }));
   EXPECT_FALSE(ShouldCancelUponDefer());
 
-  // Without a reader, the read waits for the source's task.
   MultiBufferDataSource* data_source = GetMultiBufferDataSource();
   data_source->StopPreloading();
   uint8_t byte = 0;
@@ -2681,7 +2390,6 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcCastStartedWhileFrozenReadsOn) {
   FreezePage(false);
 }
 
-// A frozen player that isn't casting reads only once its page runs again.
 TEST_F(ParcWebMediaPlayerImplTest, ParcFrozenSourceNotCastingWaitsForItsPage) {
   InitializeWebMediaPlayerImpl();
   wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
@@ -2706,8 +2414,6 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcFrozenSourceNotCastingWaitsForItsPage) {
   EXPECT_TRUE(base::test::RunUntil([&] { return read; }));
 }
 
-// A cast still connecting keeps its source's reader in the back/forward cache,
-// until its request ends.
 TEST_F(ParcWebMediaPlayerImplTest, ParcConnectingCastKeepsReaderWhileCached) {
   InitializeWebMediaPlayerImpl();
   wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
@@ -2722,15 +2428,12 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcConnectingCastKeepsReaderWhileCached) {
   wmpi_->ParcOnFrozenInBackForwardCache();
   EXPECT_FALSE(ShouldCancelUponDefer());
 
-  // The connection failed.
   wmpi_->ParcCastRequestChanged(false);
   wmpi_->ParcOnFrozenInBackForwardCache();
   EXPECT_TRUE(ShouldCancelUponDefer());
 }
 
 #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-// Parc: Chromium's HLS player reads a segment while casting from a frozen
-// page, and only once the page runs again otherwise.
 TEST_F(ParcWebMediaPlayerImplTest, ParcHlsSegmentReadsWhileCastingFromFrozenPage) {
   InitializeWebMediaPlayerImpl();
   auto provider = CreateHlsProvider();
@@ -2767,32 +2470,8 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcHlsSegmentNotCastingWaitsForFrozenPage) {
   ServeHlsSegment(client);
   EXPECT_TRUE(base::test::RunUntil([&] { return read; }));
 }
-#endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
+#endif
 
-
-TEST_F(ParcWebMediaPlayerImplTest, SafariIdentityHasNoBackgroundIdlePauseTimer) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(media::kPauseBackgroundTimer);
-  InitializeWebMediaPlayerImpl();
-  SetSuspendState(true);
-  SetPaused(false);
-  SetMetadata(true, true);
-  ASSERT_TRUE(IsSuspended());
-
-  EXPECT_CALL(client_, PresentsParcSafariIdentity())
-      .WillRepeatedly(Return(true));
-  ScheduleIdlePauseTimer();
-  EXPECT_FALSE(IsIdlePauseTimerRunning());
-
-  EXPECT_CALL(client_, PresentsParcSafariIdentity())
-      .WillRepeatedly(Return(false));
-  ScheduleIdlePauseTimer();
-  EXPECT_TRUE(IsIdlePauseTimerRunning());
-}
-
-// A player told its element's page visibility follows that page, and its
-// compositor keeps drawing while that page is visible, whatever the page of
-// the frame that made it does; std::nullopt follows that frame's page again.
 TEST_F(ParcWebMediaPlayerImplTest, ParcSetPageHiddenOverridesDelegatePage) {
   InitializeWebMediaPlayerImpl();
   HidePlayerPage();
@@ -2831,27 +2510,20 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcSetPageHiddenOverridesDelegatePage) {
   testing::Mock::VerifyAndClearExpectations(compositor_);
 }
 
-// A Safari-identity element that takes its player to another frame
-// (HTMLMediaElement::ParcMovePlayerToFrame) makes it that frame's, keeping its
-// pipeline: the frame's delegate tracks it, its audio plays out of the sink
-// made for the frame and its factories are handed the frame's; then the player
-// tells its client again what it told it so far.
 TEST_F(ParcWebMediaPlayerImplTest, ParcMoveToFrameMovesPlayerAndReportsState) {
-  ON_CALL(client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
+  ON_CALL(*client_, PresentsParcSafariIdentity()).WillByDefault(Return(true));
   InitializeWebMediaPlayerImpl();
   LoadAndWaitForReadyState(kAudioOnlyTestFile,
                            WebMediaPlayer::kReadyStateHaveFutureData);
   wmpi_->SetRate(1.0);
-  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
+  EXPECT_CALL(*client_, DidPlayerMediaPositionStateChange(
                            0.0, kAudioOnlyTestFileDuration, base::TimeDelta(),
-                           /*end_of_media=*/false));
+                           false));
   wmpi_->OnTimeUpdate();
-  testing::Mock::VerifyAndClearExpectations(&client_);
+  testing::Mock::VerifyAndClearExpectations(client_.Get());
 
   auto new_sink =
       base::MakeRefCounted<NiceMock<media::MockAudioRendererSink>>();
-  // The test file's server has no ranges, so its load stays with the old
-  // index (MultiBufferDataSource::ParcMoveToUrlIndex).
   moved_to_url_index_ = std::make_unique<UrlIndex>(
       &moved_to_fetch_context_, media_thread_.task_runner());
   moved_to_view_helper_.Initialize();
@@ -2874,25 +2546,23 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcMoveToFrameMovesPlayerAndReportsState) {
   EXPECT_TRUE(media_log_moved);
   EXPECT_FALSE(delegate_.has_observer());
   EXPECT_TRUE(moved_to_delegate_.has_observer());
-  // The switch, then the new sink's authorization answer.
   media_thread_.FlushForTesting();
   media_thread_.FlushForTesting();
   testing::Mock::VerifyAndClearExpectations(audio_sink_.get());
   EXPECT_TRUE(new_sink->callback());
   EXPECT_FALSE(IsSuspended());
 
-  EXPECT_CALL(client_,
-              ParcReportMediaMetadata(/*has_audio=*/true, /*has_video=*/false,
+  EXPECT_CALL(*client_,
+              ParcReportMediaMetadata(true, false,
                                       _));
-  EXPECT_CALL(client_, DidPlayerMutedStatusChange(false));
-  EXPECT_CALL(client_, DidPlayerStartPlaying()).Times(0);
-  EXPECT_CALL(client_, DidPlayerMediaPositionStateChange(
+  EXPECT_CALL(*client_, DidPlayerMutedStatusChange(false));
+  EXPECT_CALL(*client_, DidPlayerStartPlaying()).Times(0);
+  EXPECT_CALL(*client_, DidPlayerMediaPositionStateChange(
                            0.0, kAudioOnlyTestFileDuration, base::TimeDelta(),
-                           /*end_of_media=*/false));
+                           false));
   wmpi_->ParcReportStateToClient();
 }
 
-// A player made for a Chrome-identity page stays with its frame.
 TEST_F(ParcWebMediaPlayerImplTest, ParcMoveToFrameKeepsChromeIdentityPlayer) {
   InitializeWebMediaPlayerImpl();
   moved_to_view_helper_.Initialize();
@@ -2905,114 +2575,87 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcMoveToFrameKeepsChromeIdentityPlayer) {
   EXPECT_FALSE(moved_to_delegate_.has_observer());
 }
 
-// Verifies that an infinite duration doesn't muck up GetCurrentTimeInternal.
-
-
-// Tests that updating the surface id calls OnPictureInPictureStateChange.
-
-// Test that OnPictureInPictureStateChange is not called for audio elements.
-// This test explicitly sets display type to picture in picture, for an audio
-// element, for testing purposes only (See crbug.com/40251587 for reference).
-
-
-// Verify that a demuxer override is used when specified.
-// TODO(crbug.com/40131757): This test is flaky.
-
-
-// Parc: Safari's Media Source element takes readyState from the buffered
-// ranges (WebKit's MediaSource::monitorSourceBuffers): canplay before
-// canplaythrough, and a seek into buffered data keeps HAVE_ENOUGH_DATA, so
-// the element fires no waiting, canplay or playing.
 TEST_F(ParcWebMediaPlayerImplTest, ParcSafariMediaSourceBufferedSeek) {
   InitializeWebMediaPlayerImpl();
-  StartParcMediaSource(/*safari_identity=*/true);
+  StartParcMediaSource(true);
 
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(2);
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(2);
   AppendParcMediaSource(base::TimeDelta(), media::kInfiniteDuration);
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveFutureData, wmpi_->GetReadyState());
   parc_demuxer_->MarkEndOfStream(media::PIPELINE_OK);
   OnProgress();
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
 
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
   wmpi_->Seek(1.0);
   EXPECT_TRUE(wmpi_->Seeking());
   OnProgress();
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
 }
 
-// Parc: a seek with no data at its target drops to HAVE_METADATA (waiting)
-// and rises through HAVE_FUTURE_DATA to HAVE_ENOUGH_DATA as data comes.
 TEST_F(ParcWebMediaPlayerImplTest, ParcSafariMediaSourceUnbufferedSeek) {
   InitializeWebMediaPlayerImpl();
-  StartParcMediaSource(/*safari_identity=*/true);
+  StartParcMediaSource(true);
 
-  EXPECT_CALL(client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged());
   AppendParcMediaSource(base::TimeDelta(), base::Seconds(1));
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveFutureData, wmpi_->GetReadyState());
 
-  EXPECT_CALL(client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged());
   wmpi_->Seek(2.0);
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveMetadata, wmpi_->GetReadyState());
 
-  EXPECT_CALL(client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged());
   AppendParcMediaSource(base::Seconds(2), base::Seconds(2.5));
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveFutureData, wmpi_->GetReadyState());
 
-  EXPECT_CALL(client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged());
   AppendParcMediaSource(base::Seconds(2.5), media::kInfiniteDuration);
   parc_demuxer_->MarkEndOfStream(media::PIPELINE_OK);
   OnProgress();
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
 }
 
-// Parc: a SourceBuffer added after the others initialized joins the buffered
-// ranges with its first init segment, so a second audio language drops
-// readyState to HAVE_METADATA and it rises through HAVE_FUTURE_DATA to
-// HAVE_ENOUGH_DATA as that SourceBuffer's data comes.
 TEST_F(ParcWebMediaPlayerImplTest, ParcSafariMediaSourceLateSourceBuffer) {
   InitializeWebMediaPlayerImpl();
-  StartParcMediaSource(/*safari_identity=*/true);
+  StartParcMediaSource(true);
   parc_demuxer_->ParcAllowSourceBuffersAfterInit(base::DoNothing());
 
-  EXPECT_CALL(client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged());
   AppendParcMediaSource(base::TimeDelta(), media::kInfiniteDuration);
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveFutureData, wmpi_->GetReadyState());
 
   ASSERT_EQ(parc_demuxer_->AddId("audio2", "audio/webm", "vorbis"),
             media::ChunkDemuxer::kOk);
   parc_demuxer_->SetTracksWatcher("audio2", base::DoNothing());
-  EXPECT_CALL(client_, ReadyStateChanged()).Times(0);
+  EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
   OnProgress();
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveFutureData, wmpi_->GetReadyState());
 
-  // Its init segment alone: every frame is outside the append window.
-  EXPECT_CALL(client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged());
   AppendParcMediaSource(base::Seconds(10), media::kInfiniteDuration, "audio2");
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveMetadata, wmpi_->GetReadyState());
 
-  EXPECT_CALL(client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged());
   AppendParcMediaSource(base::TimeDelta(), base::Seconds(1), "audio2");
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveFutureData, wmpi_->GetReadyState());
 
-  EXPECT_CALL(client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged());
   AppendParcMediaSource(base::Seconds(1), media::kInfiniteDuration, "audio2");
   parc_demuxer_->MarkEndOfStream(media::PIPELINE_OK);
   OnProgress();
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveEnoughData, wmpi_->GetReadyState());
 }
 
-// Parc: Chrome's identity keeps Chromium's readyState: appends alone don't
-// raise it, and a seek drops it to HAVE_METADATA.
 TEST_F(ParcWebMediaPlayerImplTest, ParcChromeMediaSourceSeekUnchanged) {
   InitializeWebMediaPlayerImpl();
-  StartParcMediaSource(/*safari_identity=*/false);
+  StartParcMediaSource(false);
 
   AppendParcMediaSource(base::TimeDelta(), media::kInfiniteDuration);
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveMetadata, wmpi_->GetReadyState());
   SetReadyState(WebMediaPlayer::kReadyStateHaveEnoughData);
 
-  EXPECT_CALL(client_, ReadyStateChanged());
+  EXPECT_CALL(*client_, ReadyStateChanged());
   wmpi_->Seek(1.0);
   EXPECT_EQ(WebMediaPlayer::kReadyStateHaveMetadata, wmpi_->GetReadyState());
 }
@@ -3023,7 +2666,6 @@ class ParcWebMediaPlayerImplBackgroundBehaviorTest
       public ::testing::WithParamInterface<
           std::tuple<bool, int, int, bool, bool, bool, bool, bool, bool>> {
  public:
-  // Indices of the tuple parameters.
   static const int kIsMediaSuspendEnabled = 0;
   static const int kDurationSec = 1;
   static const int kAverageKeyframeDistanceSec = 2;
@@ -3031,8 +2673,6 @@ class ParcWebMediaPlayerImplBackgroundBehaviorTest
   static const int kIsPictureInPictureEnabled = 4;
   static const int kIsBackgroundVideoPlaybackEnabled = 5;
   static const int kIsVideoBeingCaptured = 6;
-  // If true, the player's page is hidden. Otherwise, the player's frame is
-  // hidden.
   static const int kShouldHidePage = 7;
   static const int kShouldPauseWhenFrameIsHidden = 8;
 
@@ -3064,7 +2704,6 @@ class ParcWebMediaPlayerImplBackgroundBehaviorTest
 
     InitializeWebMediaPlayerImpl();
 
-    // MSE or SRC doesn't matter since we artificially inject pipeline stats.
     SetLoadType(WebMediaPlayer::kLoadTypeURL);
 
     SetVideoKeyframeDistanceAverage(
@@ -3093,7 +2732,7 @@ class ParcWebMediaPlayerImplBackgroundBehaviorTest
   void SetPiPExpectations() {
     if (!IsPictureInPictureOn())
       return;
-    EXPECT_CALL(client_, GetDisplayType())
+    EXPECT_CALL(*client_, GetDisplayType())
         .WillRepeatedly(
             Return(WebMediaPlayer::DisplayType::kVideoPictureInPicture));
   }
@@ -3143,8 +2782,6 @@ class ParcWebMediaPlayerImplBackgroundBehaviorTest
 
   void SetVolume(double volume) { wmpi_->SetVolume(volume); }
 
-  // We should pause media playback if the media-playback-while-not-visible
-  // permission policy is not enabled and the player's frame is hidden.
   bool IsFrameHiddenAndShouldPauseWhenHidden() const {
     return background_type_ == BackgroundBehaviorType::Frame &&
            GetShouldPauseWhenFrameIsHidden();
@@ -3177,11 +2814,9 @@ class ParcWebMediaPlayerImplBackgroundBehaviorTest
   base::test::ScopedFeatureList feature_list_;
 };
 
-
-// Exercise both load types: the optimization runs above renderer selection.
 TEST_P(ParcWebMediaPlayerImplBackgroundBehaviorTest,
        SafariIdentity_KeepsBackgroundVideoTrackSelected) {
-  EXPECT_CALL(client_, PresentsParcSafariIdentity())
+  EXPECT_CALL(*client_, PresentsParcSafariIdentity())
       .WillRepeatedly(Return(true));
   SetMetadata(true, true);
   for (auto load_type : {WebMediaPlayer::kLoadTypeURL,
@@ -3193,7 +2828,7 @@ TEST_P(ParcWebMediaPlayerImplBackgroundBehaviorTest,
 
 TEST_P(ParcWebMediaPlayerImplBackgroundBehaviorTest,
        ChromeIdentity_PreservesBackgroundVideoOptimization) {
-  EXPECT_CALL(client_, PresentsParcSafariIdentity())
+  EXPECT_CALL(*client_, PresentsParcSafariIdentity())
       .WillRepeatedly(Return(false));
   SetMetadata(true, true);
   const bool eligible =
@@ -3207,16 +2842,13 @@ TEST_P(ParcWebMediaPlayerImplBackgroundBehaviorTest,
   }
 }
 
-// On a Safari-identity page a hidden player pauses only for the
-// media-playback-while-not-visible policy or an embedder that disables
-// background video playback, whatever its tracks, volume or suspend flags.
 TEST_P(ParcWebMediaPlayerImplBackgroundBehaviorTest, SafariIdentity_AudioOnly) {
   base::test::ScopedFeatureList scoped_background_audio_flag{
       media::kPauseMutedBackgroundAudio};
   SCOPED_TRACE(testing::Message() << PrintValues());
-  EXPECT_CALL(client_, PresentsParcSafariIdentity())
+  EXPECT_CALL(*client_, PresentsParcSafariIdentity())
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
+  EXPECT_CALL(*client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
   SetMetadata(true, false);
   SetVolume(0.);
   EXPECT_EQ(IsFrameHiddenAndShouldPauseWhenHidden() ||
@@ -3226,9 +2858,9 @@ TEST_P(ParcWebMediaPlayerImplBackgroundBehaviorTest, SafariIdentity_AudioOnly) {
 
 TEST_P(ParcWebMediaPlayerImplBackgroundBehaviorTest, SafariIdentity_VideoOnly) {
   SCOPED_TRACE(testing::Message() << PrintValues());
-  EXPECT_CALL(client_, PresentsParcSafariIdentity())
+  EXPECT_CALL(*client_, PresentsParcSafariIdentity())
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
+  EXPECT_CALL(*client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
   SetMetadata(false, true);
   EXPECT_EQ(
       IsFrameHiddenAndShouldPauseWhenHidden() ||
@@ -3243,15 +2875,15 @@ TEST_P(ParcWebMediaPlayerImplBackgroundBehaviorTest, SafariIdentity_AudioVideo) 
   const bool should_pause =
       IsFrameHiddenAndShouldPauseWhenHidden() ||
       (!IsBackgroundVideoPlaybackEnabled() && !IsPictureInPictureOn());
-  EXPECT_CALL(client_, PresentsParcSafariIdentity())
+  EXPECT_CALL(*client_, PresentsParcSafariIdentity())
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
+  EXPECT_CALL(*client_, WasAlwaysMuted()).WillRepeatedly(Return(true));
   SetMetadata(true, true);
   EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
   SetVolume(0.);
   EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
 
-  EXPECT_CALL(client_, WasAlwaysMuted()).WillRepeatedly(Return(false));
+  EXPECT_CALL(*client_, WasAlwaysMuted()).WillRepeatedly(Return(false));
   SetVolume(1.);
   EXPECT_EQ(should_pause, ShouldPausePlaybackWhenHidden());
 }
@@ -3278,4 +2910,4 @@ INSTANTIATE_TEST_SUITE_P(
         ::testing::Bool(),
         ::testing::Bool()));
 
-}  // namespace blink
+}

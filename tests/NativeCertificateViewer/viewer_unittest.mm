@@ -1,5 +1,3 @@
-// Actual generic viewer dispatch and SSL-error controller with a synthetic
-// certificate. No TLS request, trust change, user identity or Proceed action.
 #import <AppKit/AppKit.h>
 #import <SecurityInterface/SFCertificatePanel.h>
 
@@ -10,7 +8,6 @@
 #include "chrome/browser/ssl/ssl_error_controller_client.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/certificate_viewer/certificate_viewer_webui.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "components/security_interstitials/content/settings_page_helper.h"
 #include "components/security_interstitials/core/metrics_helper.h"
 #include "content/public/browser/navigation_controller.h"
@@ -20,6 +17,7 @@
 #include "content/public/test/navigation_simulator.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/test_data_directory.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 #import "window_security_reservation.h"
 
 namespace parc_hooks {
@@ -48,11 +46,11 @@ void Pump() {
     }
   }
 }
-}  // namespace
-class NativeCertificateViewerTest : public BrowserWithTestWindowTest {
+}
+class NativeCertificateViewerTest : public ParcBrowserWindowTest {
  public:
   void SetUp() override {
-    BrowserWithTestWindowTest::SetUp();
+    ParcBrowserWindowTest::SetUp();
     certificate_ = net::ImportCertFromFile(net::GetTestCertsDirectory(),
                                            "root_ca_cert.pem");
     ASSERT_TRUE(certificate_);
@@ -77,7 +75,7 @@ class NativeCertificateViewerTest : public BrowserWithTestWindowTest {
     browser()->GetTabStripModel()->CloseAllTabs();
     Pump();
     parc_hooks::SetCertificateViewer(nullptr);
-    BrowserWithTestWindowTest::TearDown();
+    ParcBrowserWindowTest::TearDown();
     [window_ close];
     window_ = nil;
   }
@@ -252,7 +250,7 @@ TEST_F(NativeCertificateViewerTest, ParentCloseRetiresReservation) {
   EXPECT_FALSE(window_.attachedSheet);
   EXPECT_FALSE(PCNativeWindowHasSecurityReservation(window_));
 }
-}  // namespace parc
+}
 
 namespace parc {
 TEST_F(NativeCertificateViewerTest, NativeRefusalDoesNotFallBackToStockViewer) {
@@ -269,10 +267,9 @@ TEST_F(NativeCertificateViewerTest, NativeRefusalDoesNotFallBackToStockViewer) {
   Pump();
   EXPECT_EQ(stock_calls, 0);
   EXPECT_FALSE(window_.attachedSheet);
-  // A page without the native route keeps Chromium's viewer.
   AddTab(browser(), GURL("https://other.example/"));
   Show();
   EXPECT_EQ(stock_calls, 1);
   EXPECT_FALSE(window_.attachedSheet);
 }
-}  // namespace parc
+}

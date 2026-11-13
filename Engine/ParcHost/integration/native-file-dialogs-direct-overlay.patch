@@ -9,7 +9,7 @@
 +
  source_set("download") {
    public = [
-@@ -187,6 +188,7 @@
+@@ -184,6 +185,7 @@
 -
 +
    deps = [
@@ -18,7 +18,7 @@
      "//chrome/browser:browser_process",
      "//chrome/browser:primitives",
      "//chrome/browser/actor",
-@@ -353,6 +355,9 @@
+@@ -354,6 +356,9 @@
    }
 -
 +
@@ -42,27 +42,24 @@
  #include "chrome/browser/download/download_prefs.h"
  #include "chrome/browser/platform_util.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
-@@ -42,8 +46,18 @@
-   DCHECK(item);
-   item->AddObserver(this);
-   WebContents* web_contents = content::DownloadItemUtils::GetWebContents(item);
+@@ -54,9 +58,15 @@
+       download_item_
+           ? content::DownloadItemUtils::GetWebContents(download_item_)
+           : nullptr;
 +#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
-+  if (!web_contents) {
-+    // A native background/restored download belongs to its actual Profile,
-+    // even without a page. Keep this picker and every target/security check;
-+    // only supply an explicit, identity-checked native parent.
++  if (download_item_ && !web_contents) {
 +    select_file_dialog_ = parc::CreateNativeDownloadFileDialog(
-+        *item, this, std::make_unique<ChromeSelectFilePolicy>(nullptr));
++        *download_item_, this, std::make_unique<ChromeSelectFilePolicy>(nullptr));
 +  }
 +#endif
    // Extension download may not have associated webcontents.
--  if (item->GetDownloadSource() != download::DownloadSource::EXTENSION_API &&
-+  if (!select_file_dialog_ &&
-+      item->GetDownloadSource() != download::DownloadSource::EXTENSION_API &&
-       (!web_contents || !web_contents->GetNativeView())) {
+   if (!download_item_ || (web_contents && !fullscreen_block_) ||
+-      (download_item_->GetDownloadSource() !=
++      (!select_file_dialog_ && download_item_->GetDownloadSource() !=
+            download::DownloadSource::EXTENSION_API &&
+        (!web_contents || !web_contents->GetNativeView()))) {
      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-         FROM_HERE, base::BindOnce(&DownloadFilePicker::FileSelectionCanceled,
-@@ -51,8 +65,10 @@
+@@ -65,8 +75,10 @@
      return;
    }
 -
@@ -90,15 +87,13 @@
  };
 --- a/chrome/browser/ui/webui/print_preview/pdf_printer_handler.cc
 +++ b/chrome/browser/ui/webui/print_preview/pdf_printer_handler.cc
-@@ -531,8 +531,10 @@
+@@ -531,8 +531,8 @@
    }
  #endif
 -
 +
 -  select_file_dialog_ =
 -      ui::SelectFileDialog::Create(this, nullptr /*policy already checked*/);
-+  // Name the preview as the source so Parc's chooser can bind Save to PDF to
-+  // the preview's own native window and its print initiator.
 +  select_file_dialog_ = ui::SelectFileDialog::Create(
 +      this, std::make_unique<ChromeSelectFilePolicy>(preview_web_contents_));
    select_file_dialog_->SelectFile(

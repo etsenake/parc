@@ -3,7 +3,8 @@
 @@ -7,9 +7,12 @@
  #include <memory>
  #include <utility>
- 
+-
++
 +#include "base/callback_list.h"
  #include "base/functional/bind.h"
  #include "base/notreached.h"
@@ -28,9 +29,11 @@
  #include "ui/base/mojom/dialog_button.mojom.h"
  #include "ui/base/mojom/ui_base_types.mojom-shared.h"
 @@ -35,10 +41,12 @@
- 
+-
++
  namespace {
- 
+-
++
 -class AutofillBubbleUI : public AutofillBubbleBase {
 +class AutofillBubbleUI : public AutofillBubbleBase,
 +                         public content::WebContentsObserver {
@@ -44,7 +47,8 @@
    ~AutofillBubbleUI() override;
 @@ -49,21 +57,44 @@
    bool IsMouseHovered() const override;
- 
+-
++
    void CloseWidget(views::Widget::ClosedReason closed_reason);
 -
 +  void WebContentsDestroyed() override;
@@ -56,7 +60,8 @@
    std::unique_ptr<views::Widget> dialog_;
    raw_ptr<EditAddressProfileView> profile_view_ = nullptr;
  };
- 
+-
++
  AutofillBubbleUI::AutofillBubbleUI(std::unique_ptr<views::Widget> dialog,
 -                                   EditAddressProfileView* profile_view)
 -    : dialog_(std::move(dialog)), profile_view_(profile_view) {
@@ -77,9 +82,11 @@
 +                base::Unretained(this)));
 +  }
  }
- 
+-
++
  AutofillBubbleUI::~AutofillBubbleUI() = default;
- 
+-
++
  void AutofillBubbleUI::Hide() {
 +  if (!dialog_) {
 +    return;
@@ -89,7 +96,8 @@
 +  }
    dialog_->Close();
  }
- 
+-
++
 @@ -77,8 +108,27 @@
    // stack to be cleaned up from the WidgetClosed() call. This keeps potential
    // dangling pointer checks from triggering as the stack unwinds.
@@ -116,7 +124,8 @@
 +    Hide();
 +  }
  }
- 
+-
++
  }  // namespace
 @@ -88,6 +138,43 @@
      EditAddressProfileDialogController* controller) {
@@ -163,9 +172,11 @@
        tabs::TabInterface::GetFromContents(web_contents);
    auto widget =
 @@ -138,6 +225,16 @@
- 
+-
++
  EditAddressProfileView::~EditAddressProfileView() = default;
- 
+-
++
 +void EditAddressProfileView::SetNativeAccountValidator(
 +    base::RepeatingCallback<bool()> validator) {
 +  native_account_validator_ = std::move(validator);
@@ -181,7 +192,8 @@
    DCHECK(web_contents);
 @@ -175,6 +272,9 @@
  }
- 
+-
++
  void EditAddressProfileView::WidgetClosed() {
 +  if (native_account_validator_ && !native_account_validator_.Run()) {
 +    InvalidateNativeOwner();
@@ -190,7 +202,8 @@
      std::exchange(controller_, nullptr)
          ->OnDialogClosed(
 @@ -197,7 +297,9 @@
- 
+-
++
  void EditAddressProfileView::OnUserDecision(
      AutofillClient::AddressPromptUserDecision decision) {
 -  decision_ = decision;
@@ -198,11 +211,13 @@
 +                  ? AutofillClient::AddressPromptUserDecision::kIgnored
 +                  : decision;
  }
- 
+-
++
  void EditAddressProfileView::UpdateActionButtonState(bool is_valid) {
 @@ -205,6 +307,10 @@
  }
- 
+-
++
  bool EditAddressProfileView::OnAcceptButtonClicked() {
 +  if (native_account_validator_ && !native_account_validator_.Run()) {
 +    InvalidateNativeOwner();
@@ -216,7 +231,8 @@
 @@ -5,6 +5,7 @@
  #ifndef CHROME_BROWSER_UI_VIEWS_AUTOFILL_EDIT_ADDRESS_PROFILE_VIEW_H_
  #define CHROME_BROWSER_UI_VIEWS_AUTOFILL_EDIT_ADDRESS_PROFILE_VIEW_H_
- 
+-
++
 +#include "base/functional/callback.h"
  #include "base/memory/raw_ptr.h"
  #include "chrome/browser/ui/autofill/autofill_bubble_base.h"
@@ -224,7 +240,8 @@
 @@ -45,6 +46,14 @@
    // synchronously closed.
    void WidgetClosed();
- 
+-
++
 +  // Native owner loss is an interruption, including an accepted result whose
 +  // close callback has not yet been delivered. It must not persist an edit.
 +  void InvalidateNativeOwner();
@@ -234,12 +251,14 @@
 +  void SetNativeAccountValidator(base::RepeatingCallback<bool()> validator);
 +
    AddressEditorView* GetAddressEditorViewForTesting();
- 
+-
++
   private:
 @@ -52,6 +61,7 @@
    void UpdateActionButtonState(bool is_valid);
    bool OnAcceptButtonClicked();
- 
+-
++
 +  base::RepeatingCallback<bool()> native_account_validator_;
    raw_ptr<EditAddressProfileDialogController> controller_;
    raw_ptr<AddressEditorView> address_editor_view_ = nullptr;

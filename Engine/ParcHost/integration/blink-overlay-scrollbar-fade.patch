@@ -1,8 +1,9 @@
 --- a/third_party/blink/renderer/core/scroll/scrollable_area.cc
 +++ b/third_party/blink/renderer/core/scroll/scrollable_area.cc
-@@ -964,6 +964,17 @@
+@@ -957,6 +957,17 @@
  }
- 
+-
++
  void ScrollableArea::FadeOverlayScrollbarsTimerFired(TimerBase*) {
 +  // The page scrollbar theme can change while the timer is pending, e.g. when
 +  // device emulation is turned off on Mac. Overlay visibility then belongs to

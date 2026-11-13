@@ -22,28 +22,10 @@ class Accelerator;
 namespace parc {
 class NativeExtensionActionHost;
 
-// One shell bridge per real (Browser/window, Profile). The adapter owns this
-// bridge; the bridge never owns the shell NSWindow. Required native services
-// and presentation capabilities are explicit below. Chrome compatibility hooks
-// need not create Chrome UI, but must honor their callers' result/lifetime
-// contracts without fabricating successful presentation or user consent.
-//
-// All methods execute on the AppKit/Chromium UI thread. Native service
-// references stay live until BeginTeardown returns and Chromium's pre-window
-// feature teardown has completed. The adapter supplies real native/profile
-// theme providers directly, using the recovered native key policy.
-// Async callbacks retain their actual request/profile identity. BeginTeardown
-// must resolve outstanding requests with cancellation/interruption, never a
-// fabricated user acceptance or successful presentation.
-// Callbacks may request a new selection or normal asynchronous Browser close;
-// they must not directly destroy Browser/the adapter or spin a nested run loop
-// that runs its deferred deletion before the current delivery returns.
 class NativeBrowserWindowHost {
  public:
   virtual ~NativeBrowserWindowHost() = default;
 
-  // Association, multi-profile shell coordination and native geometry. Native
-  // coordinates are converted here by the shell, not guessed by this adapter.
   virtual void DidAttachWindow(gfx::NativeWindow window) = 0;
   virtual void DidDetachWindow(gfx::NativeWindow window) = 0;
   virtual void DidChangeSelectedBrowser(bool selected) = 0;
@@ -56,23 +38,14 @@ class NativeBrowserWindowHost {
                                const gfx::Rect& bounds) = 0;
   virtual void FlashWindow(gfx::NativeWindow window, bool flash) = 0;
 
-  // Exact Browser-owned action host; same native parent/security source as
-  // menus and popups.
   virtual NativeExtensionActionHost& GetExtensionActionHost() = 0;
 
-  // Required real native services. These are not BrowserView stand-ins.
   virtual autofill::AutofillBubbleHandler& GetAutofillBubbleHandler() = 0;
   virtual ui::AcceleratorProvider& GetAcceleratorProvider() = 0;
   virtual std::unique_ptr<FindBar> CreateFindBar() = 0;
-  // Required real action route, distinct from named commands and native menu
-  // fallback. Match this Browser's actual action accelerator, check its current
-  // eligibility and invoke its real action model/popup path. Returning false
-  // is only an unhandled accelerator, never a stand-in for a missing service.
   virtual bool DispatchExtensionActionAccelerator(
       const ui::Accelerator& accelerator) = 0;
 
-  // Native presentation seams. Chrome's visual toolbar is absent; the shell's
-  // command bar, profile picker and page tools remain actual native controls.
   virtual bool IsToolbarAvailable() const = 0;
   virtual void ShowIntentPicker(
       std::vector<apps::IntentPickerAppInfo> apps,
@@ -97,9 +70,6 @@ class NativeBrowserWindowHost {
   virtual void ShowIncognitoHistoryDisclaimerDialog() = 0;
   virtual void HandleDragEnded() = 0;
 
-  // Keep Chromium's real fullscreen/pointer/keyboard-lock state machines.
-  // Request acceptance is separate from actual NSWindow transition completion.
-  // The adapter feeds native did-enter/did-exit notifications to Chromium.
   enum class FullscreenRequestResult { kAccepted, kRejected };
   virtual void RequestFullscreen(
       bool enter,
@@ -110,15 +80,6 @@ class NativeBrowserWindowHost {
   virtual bool CanUserExitFullscreen() const = 0;
 };
 
-// A real BrowserWindow implementation for a caller-owned AppKit window. It is
-// created detached from a window, after Browser's pre-window feature/model
-// initialization. BrowserManager owns Browser; Browser owns this adapter using
-// BrowserWindowDeleter. Never directly delete Browser or replace NSWindow's
-// contentView. See the external REA Window/modal/exclusive-access contracts.
-//
-// A concrete shell host and factory/feature/platform hooks are required before
-// this can be instantiated in a running independent browser. The declaration
-// is not a claim that those integration gates have been completed.
 class NativeBrowserWindow final : public BrowserWindow,
                                   public ui::ColorProviderSource {
  public:
@@ -130,8 +91,6 @@ class NativeBrowserWindow final : public BrowserWindow,
   friend std::optional<std::string> PrepareNativeWindowStateUpdate(
       BrowserWindowInterface&, ui::mojom::WindowShowState, const gfx::Rect*);
 
-  // Call only after BrowserManager has registered Browser. Selection is an
-  // explicit shell action: creation/popups do not inherit the parent's window.
   bool AttachToNativeWindow(gfx::NativeWindow window);
   void SetSelectedForNativeWindow(bool selected);
   void NotifyActiveHostGeometryChanged();
@@ -237,8 +196,6 @@ class NativeBrowserWindow final : public BrowserWindow,
   web_modal::WebContentsModalDialogHost* GetWebContentsModalDialogHostFor(
       content::WebContents* web_contents) override;
   void ShowAvatarBubbleFromAvatarButton(bool is_source_accelerator) override;
-  void MaybeShowProfileSwitchIPH() override;
-  void MaybeShowSupervisedUserProfileSignInIPH() override;
   void ShowHatsDialog(
       const std::string& site_id,
       const std::optional<std::string>& hats_histogram_name,
@@ -274,5 +231,5 @@ class NativeBrowserWindow final : public BrowserWindow,
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace parc
-#endif  // PARC_NATIVE_NATIVE_BROWSER_WINDOW_H_
+}
+#endif

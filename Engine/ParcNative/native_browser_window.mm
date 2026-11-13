@@ -50,7 +50,7 @@ void RequireUIThread() {
 }
 using NativeEventCallback =
     base::RepeatingCallback<void(PCNativeWindowEvent, gfx::NativeWindow)>;
-}  // namespace
+}
 
 @interface PCBrowserWindowEventSink
     : NSObject <PCNativeWindowAssociationObserver>
@@ -73,7 +73,6 @@ using NativeEventCallback =
 - (void)nativeWindowAssociation:(PCNativeWindowAssociation*)association
                 didReceiveEvent:(PCNativeWindowEvent)event
                          window:(NSWindow*)window {
-  // Retain the callback value through delivery; its weak target may disappear.
   NativeEventCallback callback = _callback;
   if (callback) {
     callback.Run(event, gfx::NativeWindow(window));
@@ -101,9 +100,6 @@ class NativeBrowserWindow::Impl final
     void EnterFullscreen(const url::Origin&,
                          ExclusiveAccessBubbleType,
                          FullscreenTabParams params) override {
-      //
-      // Unlike its bit-only compatibility method, the native presenter here
-      // must actually handle the request and its display.
       fullscreen_ = true;
       impl_.RequestFullscreen(true, params);
     }
@@ -114,9 +110,6 @@ class NativeBrowserWindow::Impl final
     void UpdateExclusiveAccessBubble(
         const ExclusiveAccessBubbleParams&,
         ExclusiveAccessBubbleHideCallback callback) override {
-      //
-      //
-      // pointer relock for a warning nobody saw.
       if (callback) {
         std::move(callback).Run(ExclusiveAccessBubbleHideReason::kNotShown);
       }
@@ -153,12 +146,7 @@ class NativeBrowserWindow::Impl final
         initWithCallback:base::BindRepeating(&Impl::OnNativeEvent,
                                              weak_factory_.GetWeakPtr())];
     association_ = [[PCNativeWindowAssociation alloc] initWithObserver:sink_];
-    // These models are initialized in BrowserWindowFeatures::Init before the
-    // native-window factory. This service owns no visible Chrome omnibox.
     location_bar_ = std::make_unique<NativeLocationBar>(browser);
-    //
-    // also exists before this factory, so use the real shared command/grant
-    // machinery without a Views FocusManager or a second tab identity map.
     extension_registry_ = std::make_unique<NativeExtensionKeybindingRegistry>(
         browser,
         base::BindRepeating(
@@ -198,8 +186,6 @@ class NativeBrowserWindow::Impl final
     RequireUIThread();
     content::WebContents* contents = ActiveContents();
     NSView* page = contents ? contents->GetNativeView().GetNativeNSView() : nil;
-    // Exact recovered modal policy: native content's actual superview. Page
-    // hosting itself is PCNativePageHost, installed by the page adapter.
     return gfx::NativeView(page.superview);
   }
   gfx::Size GetBrowserWindowSize() const override {
@@ -216,9 +202,6 @@ class NativeBrowserWindow::Impl final
       return;
     }
     if (selected) {
-      // Commit all selected flags before delivering any callback. A native
-      // presenter may select another profile reentrantly; the drain below
-      // reconciles that latest selection instead of replaying stale changes.
       for (const auto& peer : Registry()) {
         if (peer && peer.get() != this &&
             peer->association_.window == association_.window) {
@@ -234,10 +217,6 @@ class NativeBrowserWindow::Impl final
 
   static void DrainActivationChanges() {
     RequireUIThread();
-    // Publish all latest selection/key-window assignments BEFORE arbitrary
-    // activation callbacks. Do this even during a reentrant drain: callers
-    // already committed selected_ flags, and must not leave the Profile's
-    // global registry pointing at the old selected Browser until callbacks end.
     const auto activation_peers = Registry();
     for (const auto& peer : activation_peers) {
       if (peer && peer->extension_registry_) {
@@ -254,8 +233,6 @@ class NativeBrowserWindow::Impl final
     bool had_work;
     do {
       had_work = false;
-      // Neither Chromium activation callbacks nor native presenters retain a
-      // peer across delivery. Their reentrant requests are drained next.
       const auto peers = Registry();
       for (const auto& peer : peers) {
         if (!peer || peer->tearing_down_ || !peer->activation_pending_) {
@@ -299,9 +276,6 @@ class NativeBrowserWindow::Impl final
     if (tearing_down_ || !selected_ || !association_.window.isKeyWindow) {
       return false;
     }
-    // This real native service owns action registration and presentation. The
-    // registry handles named commands separately through Chromium's grant path.
-    // Do not touch Impl after delivery; the service can request normal close.
     return host_->DispatchExtensionActionAccelerator(accelerator);
   }
 
@@ -314,8 +288,6 @@ class NativeBrowserWindow::Impl final
     switch (event) {
       case PCNativeWindowEventWillClose:
         ClearPendingWindowState();
-        // Association has detached already. This is NOT beforeunload consent;
-        // the shell close coordinator must obtain all Browser approvals first.
         SetSelected(false);
         if (!self || tearing_down_) {
           return;
@@ -348,8 +320,6 @@ class NativeBrowserWindow::Impl final
         }
         modal_.NotifyPositionRequiresUpdate();
         if (self && !tearing_down_) {
-          // Cocoa is still delivering its transition notification. Apply the
-          // queued operation only after that native stack unwinds.
           base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
               FROM_HERE, base::BindOnce(&Impl::DrainPendingWindowState, self));
         }
@@ -377,8 +347,6 @@ class NativeBrowserWindow::Impl final
       return;
     }
     NSWindow* const window = association_.window;
-    // Another Profile's Browser may target the same physical window. A newer
-    // request supersedes an older deferred request instead of replaying later.
     if (state_window_ != window ||
         state_generation_ != association_.stateRequestGeneration) {
       ClearPendingWindowState();
@@ -408,11 +376,9 @@ class NativeBrowserWindow::Impl final
       return;
     }
     if (owner_.IsFullscreen()) {
-      // Geometry alone changes the future restored placement, not fullscreen
-      // ownership. A real state change exits via the existing controller.
       if (pending_show_state_) {
         ExclusiveAccessManager::From(browser_)->fullscreen_controller()
-            ->ToggleBrowserFullscreenMode(/*user_initiated=*/false);
+            ->ToggleBrowserFullscreenMode(false);
       }
       return;
     }
@@ -441,7 +407,6 @@ class NativeBrowserWindow::Impl final
       }
       const bool maximize = state == ui::mojom::WindowShowState::kMaximized;
       if (window.isZoomed != maximize) {
-        // performZoom preserves AppKit's own standard/user frame pair.
         [window performZoom:nil];
       }
     }
@@ -475,8 +440,6 @@ class NativeBrowserWindow::Impl final
     }
     if (result == NativeBrowserWindowHost::FullscreenRequestResult::kRejected) {
       ClearPendingWindowState();
-      // An explicit presenter rejection rolls back the companion state. Actual
-      // success is reported only by the NSWindow completion notification.
       exclusive_.SetNativeState(owner_.IsFullscreen());
       NotifyFullscreenStateChanged();
     }
@@ -486,8 +449,6 @@ class NativeBrowserWindow::Impl final
     RequireUIThread();
     auto* manager = ExclusiveAccessManager::From(browser_);
     CHECK(manager);
-    // In156 this also updates command-controller and bookmark-controller
-    // state; those were separate calls in the recovered142 Browser method.
     manager->fullscreen_controller()->WindowFullscreenStateChanged();
   }
 
@@ -500,8 +461,6 @@ class NativeBrowserWindow::Impl final
       return;
     }
     host_->BrowserCloseApproved();
-    // UnloadController schedules BrowserManager destruction. This adapter
-    // neither deletes Browser nor closes a shared native window independently.
   }
   void OnBrowserCloseCancelled(BrowserWindowInterface* browser,
                                BrowserWindowInterface::ClosingStatus status) {
@@ -536,9 +495,6 @@ class NativeBrowserWindow::Impl final
     tearing_down_ = true;
     selected_ = false;
     activation_pending_ = false;
-    // Remove command/media observers and active-global ownership before any
-    // native cancellation/activation callback can reenter. Profile, TabList
-    // and the host's action service all still exist at this point.
     extension_registry_->SetShortcutHandlingSuspended(true);
     extension_registry_->OnHostActivationChanged(false);
     extension_registry_.reset();
@@ -551,12 +507,7 @@ class NativeBrowserWindow::Impl final
       notified_selected_ = false;
       host_->DidChangeSelectedBrowser(false);
     }
-    // Cancel pending native requests while their actual Chromium controllers
-    // are still alive. Native service objects remain live until host_.reset().
     host_->BeginTeardown();
-    // Match BrowserWidget's required pre-window teardown while services and
-    // companions are live. This destroys ExclusiveAccessManager/FindBarOwner,
-    // removes page color observers and tears down other window-dependent state.
     browser_->GetFeatures().TearDownPreBrowserWindowDestruction();
     weak_factory_.InvalidateWeakPtrs();
     std::erase_if(Registry(), [](const auto& value) { return !value; });
@@ -606,7 +557,6 @@ std::optional<std::string> PrepareNativeWindowStateUpdate(
     ui::mojom::WindowShowState state,
     const gfx::Rect* bounds) {
   RequireUIThread();
-  // Upstream owns the accepted PiP restrictions and behavior.
   if (browser.GetType() == BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
     return std::nullopt;
   }
@@ -647,9 +597,6 @@ std::optional<std::string> PrepareNativeWindowStateUpdate(
       return "This native browser window cannot leave fullscreen.";
     }
     if (state != ui::mojom::WindowShowState::kDefault || bounds) {
-      // Validation above is complete. An accepted newer extension mutation
-      // supersedes the exact physical window's older deferred operation,
-      // including a new fullscreen request that bypasses Restore/SetBounds.
       entry->ClearPendingWindowState();
       [entry->association_ beginStateRequest];
     }
@@ -671,10 +618,6 @@ bool NativeBrowserWindow::AttachToNativeWindow(gfx::NativeWindow window) {
     return false;
   }
   bool registered = false;
-  // OnBrowserRegistered runs after the profile's BrowserManager takes
-  // ownership and installs subscriptions, before it notifies the global
-  // collection. Check the owning manager through its public collection, not
-  // that later observer cache. Keep exact Browser/profile identity required.
   ProfileBrowserCollection::GetForProfile(impl_->browser_->GetProfile())
       ->ForEach([&](BrowserWindowInterface* b) {
         registered = b == impl_->browser_;
@@ -735,7 +678,6 @@ void NativeBrowserWindow::SetBounds(const gfx::Rect& bounds) {
   if (!impl_->tearing_down_ && impl_->browser_ && !bounds.IsEmpty()) {
     if (impl_->browser_->GetType() ==
         BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
-      // Accepted PiP path is intentionally unchanged.
       if (impl_->association_.window) {
         impl_->host_->SetWindowBounds(GetNativeWindow(), bounds);
       }
@@ -753,9 +695,6 @@ void NativeBrowserWindow::Show() {
   }
   NSWindow* const window = impl->association_.window;
   const bool initial = !std::exchange(impl->has_been_shown_, true);
-  //
-  // independent route consumes the actual creation state once in its shell.
-  // The independent PiP presenter retains its established lifecycle.
   if (initial && impl->browser_->GetType() !=
                      BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
     const auto* state = BrowserInitState::From(impl->browser_);
@@ -802,8 +741,6 @@ bool NativeBrowserWindow::IsVisible() const {
 void NativeBrowserWindow::Close() {
   RequireUIThread();
   if (!impl_->tearing_down_ && !impl_->browser_->IsDeleteScheduled()) {
-    // Runs HandleBeforeClose itself, preserves unload/download cancellation,
-    // closes real TabStripModel tabs and schedules BrowserManager deletion.
     UnloadController::From(impl_->browser_)->OnWindowClosing();
   }
 }
@@ -820,8 +757,6 @@ void NativeBrowserWindow::Activate() {
   if (!current()) {
     return;
   }
-  // Match Chromium's macOS activation order. Each AppKit operation can deliver
-  // native callbacks; a closed, replaced or deselected owner must not continue.
   [NSApp activateIgnoringOtherApps:YES];
   if (!current()) {
     return;
@@ -856,8 +791,6 @@ const ui::ThemeProvider* NativeBrowserWindow::GetThemeProvider() const {
 }
 ui::ColorProviderKey NativeBrowserWindow::GetColorProviderKey() const {
   RequireUIThread();
-  // Recovered0x2ab7f80: native OS key, custom_theme=null, custom frame=true.
-  // Keep Space theming separate; never retain a cached provider across reset.
   return ui::NativeTheme::GetInstanceForNativeUi()->GetColorProviderKey(nullptr,
                                                                         true);
 }
@@ -890,13 +823,10 @@ void NativeBrowserWindow::OnActiveTabChanged(content::WebContents* old_contents,
                                              content::WebContents* new_contents,
                                              int index,
                                              int reason) {
-  // Arc0x68a6bb8 does no layout; page adoption/layout remain the shell's job.
-  // 156 modal observers still need the new active wrapper's geometry.
   NotifyActiveHostGeometryChanged();
 }
 void NativeBrowserWindow::OnTabDetached(content::WebContents* contents,
                                         bool was_active) {
-  // Arc0x68a6c3c is a compatibility no-op, not page ownership transfer.
   NotifyActiveHostGeometryChanged();
 }
 LocationBar* NativeBrowserWindow::GetLocationBar() const {
@@ -912,7 +842,6 @@ NativeBrowserWindow::GetWebContentsModalDialogHost() {
 web_modal::WebContentsModalDialogHost*
 NativeBrowserWindow::GetWebContentsModalDialogHostFor(
     content::WebContents* contents) {
-  // Both recovered getters return the same window-owned active-page host.
   return &impl_->modal_;
 }
 autofill::AutofillBubbleHandler*
@@ -923,24 +852,17 @@ ui::AcceleratorProvider* NativeBrowserWindow::GetAcceleratorProvider() {
   return &impl_->host_->GetAcceleratorProvider();
 }
 std::vector<StatusBubble*> NativeBrowserWindow::GetStatusBubbles() {
-  // BrowserWindow permits an empty list. Chromium156's UpdateTargetURL and
-  // ContentsMouseEvent cast every entry to StatusBubbleViews/ContentsWebView;
-  // an AppKit StatusBubble implementation is not safe through this interface.
-  // Native hovered-link presentation still needs a page-bound shell route.
   return {};
 }
 std::unique_ptr<FindBar> NativeBrowserWindow::CreateFindBar() {
   auto find = impl_->host_->CreateFindBar();
-  CHECK(find);  // 156 FindBarController immediately dereferences this result.
+  CHECK(find);
   return find;
 }
 content::KeyboardEventProcessingResult
 NativeBrowserWindow::PreHandleKeyboardEvent(
     const input::NativeWebKeyboardEvent& event) {
   RequireUIThread();
-  //
-  // shell interception priorities are implemented here in the independent
-  // engine; ordinary menu/DevTools/extension ordering remains post-renderer.
   if (impl_->tearing_down_ || !impl_->browser_ || !IsActive())
     return content::KeyboardEventProcessingResult::NOT_HANDLED;
   return PreHandleNativeShortcut(*impl_->browser_, event);
@@ -948,9 +870,6 @@ NativeBrowserWindow::PreHandleKeyboardEvent(
 bool NativeBrowserWindow::HandleKeyboardEvent(
     const input::NativeWebKeyboardEvent& event) {
   RequireUIThread();
-  // Recovered route: native menu -> original Browser delegate (DevTools first)
-  // -> Window registry. Keep this as the only extension-dispatch call site;
-  // the page/menu bridge must not call the registry independently.
   if (impl_->tearing_down_ || !IsActive() || !impl_->extension_registry_) {
     return false;
   }
@@ -966,8 +885,6 @@ bool NativeBrowserWindow::IsToolbarVisible() const {
   return impl_->host_->IsToolbarAvailable();
 }
 PinnedToolbarActions* NativeBrowserWindow::GetPinnedToolbarActions() {
-  // 156 explicitly permits null for custom-tab-toolbar windows. Extension
-  //  actions use their native presenter; this is not a fake Chrome toolbar.
   return nullptr;
 }
 
@@ -992,15 +909,12 @@ ShowTranslateBubbleResult NativeBrowserWindow::ShowTranslateBubble(
     const std::string&,
     translate::TranslateErrors,
     bool) {
-  // Page translation is excluded: it needs a Google API key Parc never ships.
   return ShowTranslateBubbleResult::kBrowserWindowNotValid;
 }
 void NativeBrowserWindow::ConfirmBrowserCloseWithPendingDownloads(
     int count,
     DownloadCloseType type,
     base::OnceCallback<void(bool)> callback) {
-  //
-  // confirmation belongs to the shell's shared-window close coordinator.
   impl_->host_->ConfirmCloseWithDownloads(count, type, std::move(callback));
 }
 void NativeBrowserWindow::ShowAvatarBubbleFromAvatarButton(bool accelerator) {
@@ -1041,16 +955,11 @@ void NativeBrowserWindow::ShowHatsDialog(
     base::OnceClosure failure,
     const SurveyBitsData& bits,
     const SurveyStringData& strings) {
-  //
-  // interface, report that absence through failure, never a fake shown result.
   if (failure) {
     std::move(failure).Run();
   }
 }
 
-// Arc142's named compatibility overrides below diagnose/return defaults.
-// Included Chromium windows.update and placement callers require actual native
-// operations here; this is an explicit independent-engine adaptation.
 bool NativeBrowserWindow::IsMaximized() const {
   RequireUIThread();
   return impl_->browser_ && impl_->browser_->GetType() !=
@@ -1068,8 +977,6 @@ gfx::Rect NativeBrowserWindow::GetRestoredBounds() const {
              : gfx::Rect();
 }
 ui::mojom::WindowShowState NativeBrowserWindow::GetRestoredState() const {
-  // Return actual native state, including zoom, instead of reporting normal
-  // for a minimized or fullscreen window.
   if (!impl_->browser_ || impl_->browser_->GetType() ==
       BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
     return ui::mojom::WindowShowState::kNormal;
@@ -1086,9 +993,6 @@ void NativeBrowserWindow::Hide() {
 }
 void NativeBrowserWindow::ShowInactive() {
   RequireUIThread();
-  //
-  // caller-supplied shell must implement the navigator's inactive show itself.
-  // Selecting the Browser within its physical window does not activate NSApp.
   if (impl_->browser_->GetType() ==
       BrowserWindowInterface::TYPE_PICTURE_IN_PICTURE) {
     return;
@@ -1138,82 +1042,79 @@ void NativeBrowserWindow::Restore() {
 ui::ZOrderLevel NativeBrowserWindow::GetZOrderLevel() const {
   return ui::ZOrderLevel::kNormal;
 }
-void NativeBrowserWindow::SetZOrderLevel(ui::ZOrderLevel order) {}  // 0x68a9ad4
+void NativeBrowserWindow::SetZOrderLevel(ui::ZOrderLevel order) {}
 bool NativeBrowserWindow::IsOnCurrentWorkspace() const {
   return true;
-}  // 0x68a62f4
+}
 bool NativeBrowserWindow::IsVisibleOnScreen() const {
   return true;
-}  // 0x68a637c
+}
 void NativeBrowserWindow::SetTopControlsShownRatio(
     content::WebContents* contents,
-    float ratio) {}  // 0x68a646c
+    float ratio) {}
 bool NativeBrowserWindow::DoBrowserControlsShrinkRendererSize(
     const content::WebContents* contents) const {
   return false;
-}  // 0x68a64f0
+}
 int NativeBrowserWindow::GetTopControlsHeight() const {
   return 0;
-}  // 0x68a6600
+}
 void NativeBrowserWindow::SetTopControlsGestureScrollInProgress(bool value) {
-}  // 0x68a6688
-void NativeBrowserWindow::UpdateTitleBar() {}                       // 0x68a670c
-void NativeBrowserWindow::UpdateLoadingAnimations(bool visible) {}  // 0x68a69a4
+}
+void NativeBrowserWindow::UpdateTitleBar() {}
+void NativeBrowserWindow::UpdateLoadingAnimations(bool visible) {}
 void NativeBrowserWindow::SetContentsSize(const gfx::Size& size) {
-}  // 0x68a71b8
+}
 void NativeBrowserWindow::SetFocusToLocationBar(bool user_initiated) {
-}  // 0x3a6a9f0
+}
 void NativeBrowserWindow::UpdateReloadStopState(bool loading, bool force) {
-}  // 0x68a7478
+}
 void NativeBrowserWindow::UpdateToolbar(content::WebContents* contents) {
-}  // 0x68a74fc
+}
 bool NativeBrowserWindow::UpdateToolbarSecurityState() {
   return false;
-}  // 0x68a7580
+}
 void NativeBrowserWindow::UpdateCustomTabBarVisibility(bool visible,
                                                        bool animate) {
-}  // 0x68a7608
+}
 void NativeBrowserWindow::ResetToolbarTabState(content::WebContents* contents) {
-}  // 0x68a7710
-void NativeBrowserWindow::FocusToolbar() {}                      // 0x68a7794
-void NativeBrowserWindow::ToolbarSizeChanged(bool animating) {}  // 0x68a7818
+}
+void NativeBrowserWindow::FocusToolbar() {}
+void NativeBrowserWindow::ToolbarSizeChanged(bool animating) {}
 void NativeBrowserWindow::TabDraggingStatusChanged(bool dragging) {
-}  // 0x68a789c
+}
 void NativeBrowserWindow::LinkOpeningFromGesture(
-    WindowOpenDisposition disposition) {}    // 0x68a7920
-void NativeBrowserWindow::FocusAppMenu() {}  // 0x68a79a4
+    WindowOpenDisposition disposition) {}
+void NativeBrowserWindow::FocusAppMenu() {}
 bool NativeBrowserWindow::IsToolbarShowing() const {
   return false;
-}  // 0x68a7dd0
+}
 bool NativeBrowserWindow::IsLocationBarVisible() const {
   return false;
-}  // 0x68a7e58
+}
 void NativeBrowserWindow::ShowUpdateChromeDialog() {
-}  // 0x68a7f74; vendor updater UI excluded
+}
 DownloadBubbleUIController*
 NativeBrowserWindow::GetDownloadBubbleUIController() {
   return nullptr;
-}  // 0x2f05c54; native download UI is separate
-void NativeBrowserWindow::ShowAppMenu() {}  // 0x68a86ac; macOS uses native menu
+}
+void NativeBrowserWindow::ShowAppMenu() {}
 void NativeBrowserWindow::PreHandleDragUpdate(const content::DropData& data,
                                               const gfx::PointF& point) {
-}  // 0x68a9bdc
-void NativeBrowserWindow::PreHandleDragExit() {}          // 0x68a9c60
-void NativeBrowserWindow::MaybeShowProfileSwitchIPH() {}  // 0x68a8a0c
-void NativeBrowserWindow::MaybeShowSupervisedUserProfileSignInIPH() {
-}  // 0x68a8a90
+}
+void NativeBrowserWindow::PreHandleDragExit() {}
 std::string NativeBrowserWindow::GetWorkspace() const {
   return {};
-}  // 0x68a8c94
+}
 bool NativeBrowserWindow::IsVisibleOnAllWorkspaces() const {
   return false;
-}  // 0x68a8d2c
+}
 bool NativeBrowserWindow::IsUnframedModeEnabled() const {
   return false;
-}  // normal native browser, no IWA frame mode
+}
 bool NativeBrowserWindow::GetCanResize() {
   return false;
-}  // 0x3a6ac24; WebAPI frame policy, not shell resize
+}
 ui::mojom::WindowShowState NativeBrowserWindow::GetWindowShowState() const {
   RequireUIThread();
   if (!impl_->browser_ || impl_->browser_->GetType() ==
@@ -1231,10 +1132,10 @@ ui::mojom::WindowShowState NativeBrowserWindow::GetWindowShowState() const {
   }
   return ui::mojom::WindowShowState::kNormal;
 }
-void NativeBrowserWindow::ShowChromeLabs() {}  // 0x68a90e0
+void NativeBrowserWindow::ShowChromeLabs() {}
 BrowserView* NativeBrowserWindow::AsBrowserView() {
   return nullptr;
-}  // 0x68a9274: real native adapter
+}
 
 void NativeBrowserWindow::DeleteBrowserWindow() {
   RequireUIThread();
@@ -1242,10 +1143,8 @@ void NativeBrowserWindow::DeleteBrowserWindow() {
     return;
   }
   impl_->TearDown();
-  // Browser is destroyed by its manager; only this now-detached adapter is
-  // deleted here, after returning to the UI run loop (Arc0x2fb9a08).
   base::SingleThreadTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE,
                                                                 this);
 }
 
-}  // namespace parc
+}

@@ -1,10 +1,3 @@
-// Installed by the reviewed overlay at
-// //content/renderer/media/fairplay/native_hls_unittest.cc (content_unittests,
-// macOS). The render-process state mapping of Safari's native HLS route
-// (NATIVE_HLS.md "Media element state and events"): what the GPU AVPlayer
-// reports through media.mojom.FairPlayHlsPlayerClient becomes the pipeline's
-// metadata, duration, buffered ranges, buffering state, time, ended, waiting
-// and errors, and the pipeline's commands become the player's.
 
 #include <memory>
 #include <optional>
@@ -52,8 +45,6 @@ using ::testing::StrictMock;
 
 constexpr char kPlaylist[] = "https://media.example/master.m3u8";
 
-// The GPU player: records commands and answers Seek when told (the test
-// answers Initialize with OnInitialized on the client pipe).
 class FakePlayer : public media::mojom::FairPlayHlsPlayer {
  public:
   void Initialize(const GURL& url,
@@ -137,10 +128,9 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   SeekCallback seek_cb_;
   std::optional<base::TimeDelta> seek_time_;
   base::TimeDelta seek_tolerance_;
-  std::vector<double> commands_;  // Play(rate) or 0 for Pause().
+  std::vector<double> commands_;
   std::vector<std::optional<base::UnguessableToken>> cdm_ids_;
   bool accepts_cdm_ = true;
-  // SetCdm answers wait in `cdm_answers_` for the test.
   bool holds_cdm_answers_ = false;
   std::vector<SetCdmCallback> cdm_answers_;
   std::vector<std::pair<std::string, std::vector<uint8_t>>> clear_keys_;
@@ -150,15 +140,13 @@ class FakePlayer : public media::mojom::FairPlayHlsPlayer {
   std::vector<std::string> audio_output_devices_;
 };
 
-// The element's audio sink (WebAudioSourceProviderImpl), which only names
-// the output device setSinkId switched it to.
 class FakeAudioSink : public media::AudioRendererSink {
  public:
   void Initialize(const media::AudioParameters& params,
                   RenderCallback* callback) override {}
   void Start() override {}
   void Stop() override {}
-  void Pause() override {}
+  void Pause(PauseReason reason) override {}
   void Play() override {}
   void Flush() override {}
   bool SetVolume(double volume) override { return true; }
@@ -226,7 +214,6 @@ class NativeHlsTest : public testing::Test {
     task_environment_.RunUntilIdle();
   }
 
-  // Initializes the demuxer and answers with `metadata`.
   media::PipelineStatus InitializeWith(
       media::mojom::FairPlayHlsMetadataPtr metadata) {
     std::optional<media::PipelineStatus> status;
@@ -237,8 +224,6 @@ class NativeHlsTest : public testing::Test {
                              &status));
     task_environment_.RunUntilIdle();
     EXPECT_TRUE(player_.initialized_);
-    // The element's size reaches the player with the load (WebKit's initial
-    // video layer size).
     EXPECT_EQ(gfx::SizeF(640, 360), player_.video_layer_size_);
     EXPECT_EQ(2, player_.video_layer_scale_);
     client_->OnInitialized(std::move(metadata));
@@ -267,7 +252,6 @@ class NativeHlsTest : public testing::Test {
   base::MockCallback<NativeHlsDemuxer::StartLoadCallback> start_load_cb_;
   base::MockCallback<base::RepeatingClosure> time_jumped_cb_;
   base::MockCallback<base::RepeatingCallback<void(bool)>> wireless_cb_;
-  // The element's AirPlay state when the demuxer is made.
   std::string initial_target_id_;
   bool initial_should_play_ = false;
   bool initial_wireless_disabled_ = false;
@@ -283,18 +267,15 @@ class NativeHlsTest : public testing::Test {
 TEST(NativeHlsTimeTest, Interpolates) {
   const base::TimeTicks capture = base::TimeTicks() + base::Seconds(100);
   const base::TimeDelta duration = base::Seconds(60);
-  // Paused: the reported time.
   EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(5), 0, capture,
                                      capture + base::Seconds(3), duration),
             base::Seconds(5));
-  // Playing at 1 and at 2.
   EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(5), 1, capture,
                                      capture + base::Seconds(3), duration),
             base::Seconds(8));
   EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(5), 2, capture,
                                      capture + base::Seconds(3), duration),
             base::Seconds(11));
-  // Never past the duration, unless the stream is live.
   EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(59), 1, capture,
                                      capture + base::Seconds(3), duration),
             duration);
@@ -302,7 +283,6 @@ TEST(NativeHlsTimeTest, Interpolates) {
                                      capture + base::Seconds(3),
                                      media::kInfiniteDuration),
             base::Seconds(62));
-  // A clock that hasn't reported yet doesn't advance; nothing goes negative.
   EXPECT_EQ(InterpolateNativeHlsTime(base::Seconds(1), 1, base::TimeTicks(),
                                      capture, duration),
             base::Seconds(1));
@@ -322,7 +302,6 @@ TEST(NativeHlsTimeTest, ReverseClockAndStartBoundary) {
 }
 
 TEST(NativeHlsErrorTest, InitializeFailureStatus) {
-  // The item's own error (Safari's MEDIA_ERR_NETWORK, for example) wins.
   EXPECT_EQ(NativeHlsDemuxer::InitializeFailureStatus(
                 media::PipelineStatus(media::PIPELINE_ERROR_NETWORK))
                 .code(),
@@ -331,11 +310,9 @@ TEST(NativeHlsErrorTest, InitializeFailureStatus) {
             media::DEMUXER_ERROR_COULD_NOT_OPEN);
 }
 
-// Parc: the player follows the tab mute of the frame a Safari-identity page
-// moved its element to, handed off before its pipe is bound as well as after.
 TEST_F(NativeHlsTest, TheMovedElementsTabMuteReachesThePlayer) {
   const base::UnguessableToken before = base::UnguessableToken::Create();
-  demuxer_->FollowMuteStateHandoff(before, /*order=*/1);
+  demuxer_->FollowMuteStateHandoff(before, 1);
   task_environment_.RunUntilIdle();
   EXPECT_TRUE(player_.mute_state_handoffs_.empty());
 
@@ -343,16 +320,13 @@ TEST_F(NativeHlsTest, TheMovedElementsTabMuteReachesThePlayer) {
   EXPECT_EQ(std::vector<base::UnguessableToken>({before}),
             player_.mute_state_handoffs_);
 
-  // Moved twice more: the later frame answered first, so the earlier one's
-  // answer is dropped.
   const base::UnguessableToken later = base::UnguessableToken::Create();
-  demuxer_->FollowMuteStateHandoff(later, /*order=*/3);
+  demuxer_->FollowMuteStateHandoff(later, 3);
   demuxer_->FollowMuteStateHandoff(base::UnguessableToken::Create(),
-                                   /*order=*/2);
-  // A frame without tab mute answers none, which still supersedes.
-  demuxer_->FollowMuteStateHandoff(std::nullopt, /*order=*/5);
+                                   2);
+  demuxer_->FollowMuteStateHandoff(std::nullopt, 5);
   demuxer_->FollowMuteStateHandoff(base::UnguessableToken::Create(),
-                                   /*order=*/4);
+                                   4);
   task_environment_.RunUntilIdle();
   EXPECT_EQ(std::vector<base::UnguessableToken>({before, later}),
             player_.mute_state_handoffs_);
@@ -455,8 +429,6 @@ TEST_F(NativeHlsTest, SkdKeyRequestRaisesEncrypted) {
   task_environment_.RunUntilIdle();
 }
 
-// Key-session creation fails in generateRequest, on the CDM pipe. The
-// native player stays usable and reports encrypted without a MediaError.
 TEST_F(NativeHlsTest, AttachedKeySessionFailureKeepsNativePlayerUsable) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
@@ -506,8 +478,6 @@ TEST_F(NativeHlsTest, ClearKeyReachesThePlayer) {
   EXPECT_EQ(player_.clear_keys_[0].second, key);
 }
 
-// WebKit's mediaEngineUpdated: a new player gets the element's target and
-// disabled flag, before AVFoundation makes its AVPlayer.
 class NativeHlsAirPlayTest : public NativeHlsTest {
  protected:
   void SetUp() override {
@@ -534,7 +504,6 @@ TEST_F(NativeHlsTest, AirPlayTargetChangesReachThePlayer) {
   demuxer_->SetWirelessVideoPlaybackDisabled(true);
   task_environment_.RunUntilIdle();
   ASSERT_EQ(player_.targets_.size(), 2u);
-  // Set before the pipe was bound: sent with the load, before Initialize.
   EXPECT_TRUE(player_.targets_[0].should_play);
   EXPECT_FALSE(player_.targets_[0].after_initialize);
   EXPECT_FALSE(player_.targets_[1].should_play);
@@ -542,8 +511,6 @@ TEST_F(NativeHlsTest, AirPlayTargetChangesReachThePlayer) {
   EXPECT_EQ(player_.wireless_disabled_, std::vector<bool>{true});
 }
 
-// A clear file's track choices (NATIVE_HLS.md, AirPlay): one made before the
-// pipe is bound goes with the load, before Initialize; later ones at once.
 TEST_F(NativeHlsTest, FileTrackChoicesReachThePlayer) {
   demuxer_->SelectFileTracks(
       {.audio_count = 2, .audio = {1}, .video_count = 1, .video = 0});
@@ -599,11 +566,6 @@ TEST_F(NativeHlsTest, WaitingForKeyReachesALaterRenderer) {
   CreateRenderer();
 }
 
-// The GPU player decides at each key request whether it held a CDM, as
-// WebKit's player does (MediaPlayerPrivateAVFoundationObjC::
-// shouldWaitForLoadingOfResource), and reports the wait only without one. A
-// request that came before SetCdm reached it waits even when SetCdm's answer
-// gets here first: the two cross on different pipes.
 TEST_F(NativeHlsTest, WaitsWhenThePlayerSaysSoWithACdmAttached) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
@@ -650,8 +612,6 @@ TEST_F(NativeHlsTest, ARefusedCdmMayBeOfferedAgain) {
   EXPECT_EQ(player_.cdm_ids_.size(), 2u);
 }
 
-// The pipeline hands the demuxer its CDM, then the renderer offers the same
-// one: the offer is answered with the player's own answer to the first.
 TEST_F(NativeHlsTest, ASecondOfferOfAnUnansweredCdmWaitsForThePlayer) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
@@ -675,8 +635,6 @@ TEST_F(NativeHlsTest, ASecondOfferOfAnUnansweredCdmWaitsForThePlayer) {
   }
 }
 
-// A CDM offered again after another one was sent goes to the player again
-// and takes the answer to that SetCdm, not to its first one.
 TEST_F(NativeHlsTest, ACdmOfferedAgainAfterAnotherTakesItsOwnAnswer) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
@@ -708,8 +666,6 @@ TEST_F(NativeHlsTest, ACdmOfferedAgainAfterAnotherTakesItsOwnAnswer) {
   task_environment_.RunUntilIdle();
 }
 
-// A lost GPU player refuses the offers it hadn't answered, as MojoRenderer
-// does.
 TEST_F(NativeHlsTest, ALostPlayerRefusesUnansweredCdmOffers) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
@@ -746,15 +702,12 @@ TEST_F(NativeHlsTest, BufferingStateFollowsPlaybackStart) {
                 OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH,
                                        media::BUFFERING_CHANGE_REASON_UNKNOWN));
   }
-  // playbackLikelyToKeepUp before the pipeline starts: held until then.
   client_->OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH);
   task_environment_.RunUntilIdle();
   renderer_->StartPlayingFrom(base::TimeDelta());
-  // Repeats aren't reported again.
   client_->OnBufferingStateChange(media::BUFFERING_HAVE_ENOUGH);
   client_->OnBufferingStateChange(media::BUFFERING_HAVE_NOTHING);
   task_environment_.RunUntilIdle();
-  // A flush (seek) silences reports until playback starts again.
   base::MockCallback<base::OnceClosure> flush_cb;
   EXPECT_CALL(flush_cb, Run());
   renderer_->Flush(flush_cb.Get());
@@ -764,10 +717,6 @@ TEST_F(NativeHlsTest, BufferingStateFollowsPlaybackStart) {
   task_environment_.RunUntilIdle();
 }
 
-// PipelineImpl posts a seek's completion right after StartPlayingFrom()
-// returns, and WebMediaPlayerImpl drops buffering states that reach it before
-// that completion. The state after every start comes in a later task, as
-// RendererImpl's does, even when the player had enough data all along.
 TEST_F(NativeHlsTest, StateAfterEveryStartComesInALaterTask) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
@@ -784,7 +733,6 @@ TEST_F(NativeHlsTest, StateAfterEveryStartComesInALaterTask) {
   task_environment_.RunUntilIdle();
   testing::Mock::VerifyAndClearExpectations(&renderer_client_);
 
-  // A seek within what AVPlayer holds: no change reaches the facade.
   base::MockCallback<base::OnceClosure> flush_cb;
   EXPECT_CALL(flush_cb, Run());
   renderer_->Flush(flush_cb.Get());
@@ -798,7 +746,6 @@ TEST_F(NativeHlsTest, StateAfterEveryStartComesInALaterTask) {
   task_environment_.RunUntilIdle();
   testing::Mock::VerifyAndClearExpectations(&renderer_client_);
 
-  // A flush before the report: the next start reports, once.
   EXPECT_CALL(flush_cb, Run());
   renderer_->Flush(flush_cb.Get());
   renderer_->StartPlayingFrom(base::Seconds(40));
@@ -830,7 +777,6 @@ TEST_F(NativeHlsTest, RateAndVolumeDriveThePlayer) {
 
 TEST_F(NativeHlsTest, VolumeAndPitchSetBeforeInitializeReachThePlayer) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
-  // PipelineImpl::InitializeRenderer: a muted autoplay video is volume 0.
   renderer_ = std::make_unique<NativeHlsRenderer>(
       task_environment_.GetMainThreadTaskRunner(), &sink_, audio_sink_.get());
   renderer_->SetPreservesPitch(false);
@@ -843,10 +789,6 @@ TEST_F(NativeHlsTest, VolumeAndPitchSetBeforeInitializeReachThePlayer) {
   EXPECT_EQ(player_.preserves_pitch_, false);
 }
 
-// HTMLMediaElement.setSinkId: the player plays to the device the sink names
-// when the facade is made (a sink ID set before playback, or kept across a
-// suspension) and to each one it switches to, as WebKit's
-// MediaPlayerPrivateAVFoundationObjC::audioOutputDeviceChanged.
 TEST_F(NativeHlsTest, AudioOutputFollowsTheSinksDevice) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   audio_sink_->device_id_ = "hashed-headphones";
@@ -855,7 +797,6 @@ TEST_F(NativeHlsTest, AudioOutputFollowsTheSinksDevice) {
   EXPECT_EQ(player_.audio_output_devices_,
             (std::vector<std::string>{"hashed-headphones"}));
 
-  // Only the device of the last switch counts.
   audio_sink_->device_id_ = "hashed-speakers";
   renderer_->ParcOnAudioOutputDeviceChanged();
   audio_sink_->device_id_ = "";
@@ -864,7 +805,6 @@ TEST_F(NativeHlsTest, AudioOutputFollowsTheSinksDevice) {
   EXPECT_EQ(player_.audio_output_devices_,
             (std::vector<std::string>{"hashed-headphones", ""}));
 
-  // A facade made again after a suspension names it again.
   renderer_.reset();
   audio_sink_->device_id_ = "hashed-speakers";
   CreateRenderer();
@@ -879,7 +819,6 @@ TEST_F(NativeHlsTest, TimeComesFromThePlayersClock) {
   task_environment_.RunUntilIdle();
   EXPECT_EQ(renderer_->GetMediaTime(), base::Seconds(7));
 
-  // During a seek the target; after it, the target until the player reports.
   base::MockCallback<media::PipelineStatusCallback> seek_cb;
   EXPECT_CALL(seek_cb, Run(media::HasStatusCode(media::PIPELINE_OK)));
   demuxer_->Seek(base::Seconds(40), seek_cb.Get());
@@ -893,9 +832,6 @@ TEST_F(NativeHlsTest, TimeComesFromThePlayersClock) {
   EXPECT_EQ(demuxer_->ParcTakeFastSeekLanding(), std::nullopt);
 }
 
-// The player's backward jump reaches the element (WebKit's
-// mediaPlayerTimeChanged), unless a seek the player hadn't received answers
-// for the time.
 TEST_F(NativeHlsTest, TimeJumpedBackwardReachesTheElement) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
@@ -921,8 +857,6 @@ TEST_F(NativeHlsTest, TimeJumpedBackwardReachesTheElement) {
   task_environment_.RunUntilIdle();
 }
 
-// A jump after the player finished a seek whose reply is still to come: the
-// seek keeps the time the player jumped to.
 TEST_F(NativeHlsTest, TimeJumpedBackwardAfterSeekKeepsItsTime) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
@@ -940,8 +874,6 @@ TEST_F(NativeHlsTest, TimeJumpedBackwardAfterSeekKeepsItsTime) {
   EXPECT_EQ(renderer_->GetMediaTime(), base::Seconds(12));
 }
 
-// HTMLMediaElement.fastSeek: the tolerance reaches AVPlayer for the seek to
-// its target only, and the clock and the pipeline take where it landed.
 TEST_F(NativeHlsTest, FastSeekLandsWhereThePlayerDid) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
@@ -970,7 +902,6 @@ TEST_F(NativeHlsTest, EndedOncePerRun) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   CreateRenderer();
   EXPECT_CALL(renderer_client_, OnEnded()).Times(1);
-  // Not before playback starts, then once.
   client_->OnEnded();
   task_environment_.RunUntilIdle();
   renderer_->StartPlayingFrom(base::TimeDelta());
@@ -982,7 +913,6 @@ TEST_F(NativeHlsTest, EndedOncePerRun) {
 TEST_F(NativeHlsTest, LayerPaintsAHoleFrame) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   const base::UnguessableToken token = base::UnguessableToken::Create();
-  // Registered before the renderer exists: replayed when it attaches.
   client_->OnLayerRegistered(token, gfx::Size(1920, 1080));
   task_environment_.RunUntilIdle();
   EXPECT_CALL(sink_, PaintSingleFrame(_, true))
@@ -991,7 +921,6 @@ TEST_F(NativeHlsTest, LayerPaintsAHoleFrame) {
         EXPECT_EQ(frame->natural_size(), gfx::Size(1920, 1080));
       });
   CreateRenderer();
-  // A new size repaints after the element hears it.
   {
     InSequence sequence;
     EXPECT_CALL(renderer_client_,
@@ -1017,9 +946,6 @@ TEST_F(NativeHlsTest, CdmReachesThePlayerByIdOnce) {
             (std::vector<std::optional<base::UnguessableToken>>{cdm_id}));
 }
 
-// setMediaKeys(null) on a Safari-identity page (PipelineImpl's
-// SetCdm(nullptr)): the player detaches the CDM, as WebKit's
-// cdmInstanceDetached, and the same MediaKeys set again reach it again.
 TEST_F(NativeHlsTest, NullCdmDetachesAndTheSameCdmReattaches) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   NiceMock<media::MockCdmContext> cdm_context;
@@ -1035,7 +961,6 @@ TEST_F(NativeHlsTest, NullCdmDetachesAndTheSameCdmReattaches) {
   renderer_->SetCdm(nullptr, attached_cb.Get());
   task_environment_.RunUntilIdle();
 
-  // Set again, including before the null's reply, it reaches the player.
   renderer_->SetCdm(&cdm_context, attached_cb.Get());
   task_environment_.RunUntilIdle();
   renderer_->SetCdm(nullptr, attached_cb.Get());
@@ -1050,8 +975,6 @@ TEST_F(NativeHlsTest, NullCdmDetachesAndTheSameCdmReattaches) {
                 std::nullopt, other_cdm_id}));
 }
 
-// A replacement the player refuses leaves it the CDM before, which a null
-// then detaches.
 TEST_F(NativeHlsTest, NullCdmDetachesAfterARefusedReplacement) {
   ASSERT_TRUE(InitializeWith(Metadata(base::Seconds(60))).is_ok());
   NiceMock<media::MockCdmContext> cdm_context;
@@ -1148,7 +1071,6 @@ TEST_F(NativeHlsTest, CdmSetBeforeInitializeReachesThePlayer) {
   NiceMock<media::MockCdmContext> cdm_context;
   const base::UnguessableToken cdm_id = base::UnguessableToken::Create();
   cdm_context.set_cdm_id(cdm_id);
-  // PipelineImpl::InitializeRenderer sets the CDM first.
   renderer_ = std::make_unique<NativeHlsRenderer>(
       task_environment_.GetMainThreadTaskRunner(), &sink_, audio_sink_.get());
   base::MockCallback<NativeHlsSource::CdmAttachedCB> attached_cb;
@@ -1162,5 +1084,5 @@ TEST_F(NativeHlsTest, CdmSetBeforeInitializeReachesThePlayer) {
             (std::vector<std::optional<base::UnguessableToken>>{cdm_id}));
 }
 
-}  // namespace
-}  // namespace parc::fairplay
+}
+}

@@ -13,7 +13,6 @@
 #include "base/strings/string_util.h"
 
 namespace parc {
-// Disabled even when the command line explicitly enables them.
 inline constexpr const char* kExcludedFeatures[] = {
     "HistoryEmbeddings",
     "Glic",
@@ -22,15 +21,11 @@ inline constexpr const char* kExcludedFeatures[] = {
     "LensOverlay",
     "TranslateRankerQuery",
     "TranslateRankerEnforcement",
+    "CentralizedInfoBarFramework",
 };
-// Applied only to features the command line does not already name.
 inline constexpr const char* kArcEnabledFeatures[] = {
     "CertificateTransparencyAskBeforeEnabling",
 };
-// Parc's own defaults, applied the same way. WebContentsDiscard is the
-// in-place discard -[PCNativePage discardIfIdle] uses for long-unused
-// background tabs; it keeps Parc's page and WebContents, where desktop
-// Chrome's discard replaces the WebContents.
 inline constexpr const char* kParcEnabledFeatures[] = {
     "WebContentsDiscard",
 };
@@ -56,21 +51,11 @@ inline void AppendFeature(std::string& list, std::string_view feature) {
   list += feature;
 }
 
-// Browser process only; children inherit the resulting feature state.
 inline void ApplyNativeStartupPolicy(base::CommandLine& command) {
-  // Chromium testing/variations/README.md prescribes this control for
-  // non-developer browsers. Its bundled testing config enables experiments
-  // outside pinned CEF's supported helper cohort. Keep feature defaults;
-  // do not permanently exclude Aperitif. Explicit developer opt-ins retain
-  // upstream precedence; the shipping GN policy must disable this config.
   command.AppendSwitch("disable-field-trial-config");
-  // Page translation is excluded: Chrome's translate service needs a Google
-  // API key, which Parc never ships.
   command.AppendSwitch("disable-translate-trigger");
   std::string enabled = command.GetSwitchValueUTF8(switches::kEnableFeatures);
   std::string disabled = command.GetSwitchValueUTF8(switches::kDisableFeatures);
-  // Chromium applies any disable over an enable of the same feature, so an
-  //
   std::set<std::string, std::less<>> named;
   for (const std::string* list : {&enabled, &disabled}) {
     for (std::string_view entry :
@@ -107,5 +92,5 @@ inline void ApplyNativeStartupPolicy(base::CommandLine& command) {
   }
   command.AppendSwitchUTF8(switches::kDisableFeatures, disabled);
 }
-}  // namespace parc
+}
 #endif  // PARC_NATIVE_STARTUP_POLICY_H_

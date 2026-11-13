@@ -11,7 +11,8 @@
 @@ -43,14 +44,36 @@
  using extensions::PermissionMessages;
  using extensions::PermissionSet;
- 
+-
++
 +namespace {
 +using ExtensionInstallCapture =
 +    std::shared_ptr<extensions::ExtensionInstallNativeBinding> (*)(
@@ -35,7 +36,8 @@
 +}  // namespace parc_hooks
 +
  namespace {
- 
+-
++
  // Returns bitmap for the default icon with size equal to the default icon's
  // pixel size under maximal supported scale factor.
  SkBitmap GetDefaultIconBitmapForMaxScaleFactor(bool is_app) {
@@ -57,7 +59,8 @@
 +  native_ =
 +      extensions::CaptureExtensionInstallNativeBinding(*show_params_);
 +}
- 
+-
++
  ExtensionInstallPrompt::ExtensionInstallPrompt(
      Profile* profile,
 @@ -98,9 +124,25 @@
@@ -86,11 +89,13 @@
 +    native_->Cancel();
 +  }
 +}
- 
+-
++
  void ExtensionInstallPrompt::ShowDialog(
      DoneCallback done_callback,
 @@ -123,8 +165,9 @@
- 
+-
++
    extension_ = extension;
    done_callback_ = std::move(done_callback);
 -  if (icon && !icon->empty())
@@ -99,11 +104,13 @@
 +  }
    custom_permissions_ = std::move(custom_permissions);
    show_dialog_callback_ = show_dialog_callback;
- 
+-
++
 @@ -138,6 +181,13 @@
      return;
    }
- 
+-
++
 +  if (native_) {
 +    auto binding = native_;
 +    auto weak = weak_factory_.GetWeakPtr();
@@ -113,11 +120,13 @@
 +  }
    LoadImageIfNeeded();
  }
- 
+-
++
 @@ -147,19 +197,38 @@
    extension_ = extension;
    SetIcon(icon);
- 
+-
++
 +  if (native_) {
 +    if (!skip_native_post_install_ui_ && !extension->is_theme()) {
 +      native_->InstallationFinished(extension.get(), true, {}, &icon_, native_app_installed_bubble_);
@@ -126,7 +135,8 @@
 +  }
    install_ui_->OnInstallSuccess(extension, &icon_);
  }
- 
+-
++
  void ExtensionInstallPrompt::OnInstallFailure(
      const extensions::CrxInstallError& error) {
 +  if (native_) {
@@ -142,20 +152,24 @@
 +  }
    install_ui_->OnInstallFailure(error);
  }
- 
+-
++
  void ExtensionInstallPrompt::SetUseAppInstalledBubble(bool use_bubble) {
 +  native_app_installed_bubble_ = use_bubble;
    install_ui_->SetUseAppInstalledBubble(use_bubble);
  }
- 
+-
++
  void ExtensionInstallPrompt::SetSkipPostInstallUI(bool skip_ui) {
 +  skip_native_post_install_ui_ = skip_ui;
    install_ui_->SetSkipPostInstallUI(skip_ui);
  }
- 
+-
++
 @@ -216,10 +285,11 @@
  }
- 
+-
++
  void ExtensionInstallPrompt::SetIcon(const SkBitmap* image) {
 -  if (image)
 +  if (image) {
@@ -169,19 +183,23 @@
      // pixel size under maximal supported scale factor. If the bitmap is larger
 @@ -259,6 +329,10 @@
  }
- 
+-
++
  void ExtensionInstallPrompt::ShowConfirmation() {
 +  if (native_ && !native_->CanContinue()) {
 +    native_->Cancel();
 +    return;
 +  }
    std::unique_ptr<const PermissionSet> permissions_to_display;
- 
+-
++
    if (custom_permissions_.get()) {
 @@ -276,6 +350,18 @@
- 
+-
++
    prompt_->set_icon(gfx::Image::CreateFrom1xBitmap(icon_));
- 
+-
++
 +  if (native_) {
 +    auto binding = native_;
 +    auto prompt = std::move(prompt_);
@@ -199,7 +217,8 @@
      return;
 @@ -288,11 +374,13 @@
    prompt_->OnDialogOpened();
- 
+-
++
    // If true, auto confirm is enabled and already handled the result.
 -  if (AutoConfirmPromptIfEnabled())
 -    return;
@@ -229,7 +248,8 @@
  class WebContents;
 -}
 +}  // namespace content
- 
+-
++
  namespace extensions {
  class CrxInstallError;
  class Extension;
@@ -255,7 +275,8 @@
 +std::shared_ptr<ExtensionInstallNativeBinding>
 +CaptureExtensionInstallNativeBinding(ExtensionInstallPromptShowParams&);
  }  // namespace extensions
- 
+-
++
  // Displays all the UI around extension installation.
 @@ -78,6 +101,13 @@
    ExtensionInstallPrompt(Profile* profile,
@@ -268,13 +289,15 @@
 +                         gfx::NativeWindow native_window,
 +                         std::unique_ptr<extensions::InstallPromptData> prompt,
 +                         std::shared_ptr<extensions::ExtensionInstallNativeBinding> native);
- 
+-
++
    ExtensionInstallPrompt(const ExtensionInstallPrompt&) = delete;
    ExtensionInstallPrompt& operator=(const ExtensionInstallPrompt&) = delete;
 @@ -178,6 +208,12 @@
    // Used to show the confirm dialog.
    ShowDialogCallback show_dialog_callback_;
- 
+-
++
 +  // Exact native origin, captured before icon loading. Never resolve a new
 +  // frontmost window at presentation or install completion.
 +  std::shared_ptr<extensions::ExtensionInstallNativeBinding> native_;
@@ -283,11 +306,13 @@
 +
    // Whether or not the `show_dialog_callback_` was called.
    bool did_call_show_dialog_;
- 
+-
++
 --- a/chrome/browser/supervised_user/supervised_user_extensions_delegate_impl.cc
 +++ b/chrome/browser/supervised_user/supervised_user_extensions_delegate_impl.cc
 @@ -8,6 +8,8 @@
- 
+-
++
  #include "base/functional/bind.h"
  #include "base/task/single_thread_task_runner.h"
 +#include "chrome/browser/extensions/extension_install_prompt.h"
@@ -302,10 +327,12 @@
 +#include "extensions/common/extension.h"
  #include "ui/gfx/image/image_skia.h"
  #include "ui/gfx/native_ui_types.h"
- 
+-
++
 @@ -28,6 +31,38 @@
  #endif  // BUILDFLAG(IS_ANDROID)
- 
+-
++
  namespace {
 +
 +// The existing native binding captures the original page/profile before
@@ -339,13 +366,16 @@
 +  gfx::ImageSkia icon_;
 +  DoneCallback done_;
 +};
- 
+-
++
  void OnParentPermissionDialogComplete(
      extensions::SupervisedUserExtensionsDelegate::ExtensionApprovalDoneCallback
 @@ -133,12 +168,31 @@
- 
+-
++
    done_callback_ = std::move(extension_approval_callback);
- 
+-
++
 -  // Fetch icon from local resources and then show enable flow.
 +  // Capture native page/document/profile ownership before icon loading.
 +  std::shared_ptr<ExtensionInstallNativeBinding> native;
@@ -393,6 +423,7 @@
 +      return;
 +    }
 +  }
- 
+-
++
    gfx::NativeWindow parent_window =
        contents ? contents->GetTopLevelNativeWindow() : gfx::NativeWindow();

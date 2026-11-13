@@ -15,6 +15,8 @@
 #include "media/base/media_util.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "third_party/blink/public/platform/web_media_player.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/media/media_player_client.h"
 #include "third_party/blink/renderer/platform/media/parc_media_player_client.h"
 #include "third_party/blink/renderer/platform/testing/task_environment.h"
@@ -97,28 +99,13 @@ class FakeWebMediaPlayerDelegate : public WebMediaPlayerDelegate {
   bool is_idle_ = false;
 };
 
-class ParcWebMediaPlayerMSTest
-    : public testing::TestWithParam<std::tuple<bool, bool>>,
+class TestMediaPlayerClient final
+    : public GarbageCollected<TestMediaPlayerClient>,
       public MediaPlayerClient,
       public ParcMediaPlayerClient {
  public:
-  ~ParcWebMediaPlayerMSTest() override {
-    if (!player_) {
-      return;
-    }
-    player_->Shutdown();
-    player_.reset();
-    base::RunLoop().RunUntilIdle();
-  }
-
- protected:
-  void InitializeWebMediaPlayerMS() {
-    auto task_runner = scheduler::GetSingleThreadTaskRunnerForTesting();
-    player_ = std::make_unique<WebMediaPlayerMS>(
-        nullptr, this, &delegate_, std::make_unique<media::NullMediaLog>(),
-        task_runner, task_runner, task_runner, task_runner, task_runner,
-        /*gpu_factories=*/nullptr, WebString(), CreateSurfaceLayerBridgeCB(),
-        /*submitter=*/nullptr);
+  void Trace(Visitor* visitor) const override {
+    MediaPlayerClient::Trace(visitor);
   }
 
   void NetworkStateChanged() override {}
@@ -174,18 +161,40 @@ class ParcWebMediaPlayerMSTest
   void OnRequestVideoFrameCallback() override {}
   int GetElementId() override { return 0; }
   ParcMediaPlayerClient* ParcClient() override { return this; }
-  bool PresentsParcSafariIdentity() const override {
-    return parc_safari_identity_;
+  bool PresentsParcSafariIdentity() const override { return false; }
+};
+
+class ParcWebMediaPlayerMSTest
+    : public testing::TestWithParam<std::tuple<bool, bool>> {
+ public:
+  ~ParcWebMediaPlayerMSTest() override {
+    if (!player_) {
+      return;
+    }
+    player_->Shutdown();
+    player_.reset();
+    base::RunLoop().RunUntilIdle();
+  }
+
+ protected:
+  void InitializeWebMediaPlayerMS() {
+    auto task_runner = scheduler::GetSingleThreadTaskRunnerForTesting();
+    player_ = std::make_unique<WebMediaPlayerMS>(
+        nullptr, client_.Get(), &delegate_,
+        std::make_unique<media::NullMediaLog>(), task_runner, task_runner,
+        task_runner, task_runner, task_runner,
+        nullptr, WebString(), CreateSurfaceLayerBridgeCB(),
+        nullptr);
   }
 
   base::test::TaskEnvironment task_environment_;
   FakeWebMediaPlayerDelegate delegate_;
-  bool parc_safari_identity_ = false;
+  Persistent<TestMediaPlayerClient> client_ =
+      MakeGarbageCollected<TestMediaPlayerClient>();
   FakeWebMediaPlayerDelegate moved_to_delegate_;
   std::unique_ptr<WebMediaPlayerMS> player_;
 };
 
-// A Chrome-identity page's player stays with the frame that made it.
 TEST_P(ParcWebMediaPlayerMSTest, ParcMoveToFrameKeepsChromeIdentityPlayer) {
   InitializeWebMediaPlayerMS();
   ParcWebMediaPlayerExtension::ParcFrameServices services;
@@ -199,5 +208,5 @@ INSTANTIATE_TEST_SUITE_P(All,
                          ::testing::Combine(::testing::Bool(),
                                             ::testing::Bool()));
 
-}  // namespace
-}  // namespace blink
+}
+}

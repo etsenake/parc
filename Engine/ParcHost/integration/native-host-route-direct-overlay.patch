@@ -1,6 +1,6 @@
 --- a/content/browser/renderer_host/navigator.cc
 +++ b/content/browser/renderer_host/navigator.cc
-@@ -1088,7 +1088,8 @@
+@@ -1085,7 +1085,8 @@
      const std::string& href_translate,
      scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
      bool has_rel_opener,
@@ -34,7 +34,7 @@
    // `blink::RemoteFrame`. If `method` is "POST", then `post_body` needs to
 --- a/content/browser/renderer_host/render_frame_host_impl.h
 +++ b/content/browser/renderer_host/render_frame_host_impl.h
-@@ -1756,6 +1756,10 @@
+@@ -1803,6 +1803,10 @@
    // BackForwardCache after time to live.
    void StartBackForwardCacheEvictionTimer();
 -
@@ -47,7 +47,7 @@
 -
 +
    // Prevents this frame (along with its parents/children) from being added to
-@@ -3525,6 +3529,10 @@
+@@ -3527,6 +3531,10 @@
        blink::mojom::PreferredColorScheme color_scheme) override;
    void UpdateEncoding(const std::string& encoding) override;
    void UpdateState(const blink::PageState& state) override;
@@ -61,7 +61,7 @@
 +
 --- a/content/common/frame.mojom
 +++ b/content/common/frame.mojom
-@@ -822,6 +822,15 @@
+@@ -823,6 +823,15 @@
    // listen to the end of the renderer-initiated navigation cancelation window
    // for this navigation. See comment for NavigationRendererCancellationListener
    // for more details.
@@ -131,7 +131,7 @@
  #include "build/build_config.h"
  #include "content/common/content_export.h"
  #include "content/public/browser/eye_dropper.h"
-@@ -166,6 +167,14 @@
+@@ -167,6 +168,14 @@
    // Returns the WebContents the URL is opened in, or nullptr if the URL wasn't
    // opened immediately. Note that the URL might be opened in another context
    // when a nullptr is returned.
@@ -148,7 +148,7 @@
        const OpenURLParams& params,
 --- a/content/renderer/render_frame_impl.cc
 +++ b/content/renderer/render_frame_impl.cc
-@@ -3620,6 +3620,14 @@
+@@ -3615,6 +3615,14 @@
        std::move(compositor_worker_task_runner));
  }
 -
@@ -164,7 +164,7 @@
  std::unique_ptr<blink::WebContentSettingsClient>
  RenderFrameImpl::CreateWorkerContentSettingsClient() {
    if (!frame_ || !frame_->View()) {
-@@ -4356,6 +4364,7 @@
+@@ -4351,6 +4359,7 @@
          screenshot_destination,
      base::UnguessableToken same_document_metrics_token,
      bool caused_by_ad) {
@@ -172,7 +172,7 @@
    TRACE_EVENT1("navigation,rail",
                 "RenderFrameImpl::didFinishSameDocumentNavigation",
                 "frame_token", frame_token_);
-@@ -4543,6 +4552,7 @@
+@@ -4538,6 +4547,7 @@
 -
 +
  void RenderFrameImpl::AbortClientNavigation(bool for_new_navigation) {
@@ -182,7 +182,7 @@
 +
    // If the navigations are deferred, cancellations should be deferred too.
    client_navigation_throttler_.DispatchOrScheduleNavigation(
-@@ -5038,17 +5048,15 @@
+@@ -5033,17 +5043,15 @@
  }
 -
 +
@@ -210,7 +210,7 @@
    DocumentState* document_state =
        document_loader ? DocumentState::FromDocumentLoader(document_loader)
                        : nullptr;
-@@ -5689,6 +5697,7 @@
+@@ -5673,6 +5681,7 @@
    // JS should be running in |this|, and no other frame should have a reference
    // to |this|.
    CHECK(in_frame_tree_);
@@ -219,11 +219,10 @@
 +
    // This might be the first navigation in this RenderFrame.
    const bool first_navigation_in_render_frame = !had_started_any_navigation_;
-@@ -5739,6 +5748,59 @@
-   if (info->is_unfenced_top_navigation) {
-     OpenURL(std::move(info));
+@@ -5725,6 +5734,59 @@
      return;
-+  }
+   }
+-
 +
 +  // Native link policy runs before a NavigationRequest or renderer
 +  // NavigationClient is created. Never reconstruct a request from its URL.
@@ -276,11 +275,12 @@
 +      OpenURL(std::move(info), token);
 +      return;
 +    }
-   }
--
++  }
 +
    // If the browser is interested, then give it a chance to look at the request.
-@@ -6108,12 +6170,15 @@
+   if (IsTopLevelNavigation(frame_) &&
+       GetWebView()
+@@ -6092,12 +6154,15 @@
    std::move(callback).Run(GetWebFrame()->GetFrameToken().value());
  }
 -
@@ -389,7 +389,7 @@
    // On Linux, uses |gtk-cursor-blink| from GtkSettings.
 --- a/content/browser/web_contents/web_contents_impl.h
 +++ b/content/browser/web_contents/web_contents_impl.h
-@@ -696,6 +696,8 @@
+@@ -697,6 +697,8 @@
    WindowOpenDisposition GetOriginalWindowOpenDisposition() const override;
 -
 +

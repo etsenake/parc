@@ -86,6 +86,10 @@ hand-off readers, renderer transitions and the compositing planner and layer cla
   definitions and the GPU sandbox rule. It spans 154 files across `media/base`, `media/filters`,
   `media/formats`, `media/mojo`, `media/renderers`, content's media code and Blink's platform media
   and loader. Each change sits where Chromium's private player, demuxer and renderer state lives.
+  Since Chromium 157 the player is built without its frame and binds the user-activation check to the
+  creating frame, so the patch drops `const` from `has_transient_user_activation_cb_` in
+  `web_media_player_impl.h`; a Safari-identity player moved to another frame re-binds it there, and
+  nothing else in the player or its builder lets it change frames.
 - **`fairplay-compositing-direct`**: the nested render-pass planner call, the protected-layer claim
   call and the CALayer compositing core, with a per-processor switch for protected layers. Touches 22
   Viz display, frame-sink, CALayer tree, compositor and mojom files; candidate construction, the

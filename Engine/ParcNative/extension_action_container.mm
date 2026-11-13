@@ -58,7 +58,7 @@ class NativeExtensionActionContainer::ActionDelegate final
       owner_->HidePopupFor(model_->GetId());
     }
   }
-  gfx::NativeView GetPopupNativeView() override {
+  gfx::NativeView GetPopupNativeViewForTesting() override {
     return IsShowingPopup() ? owner_->popup_->native_view() : gfx::NativeView();
   }
   void TriggerPopup(std::unique_ptr<extensions::ExtensionViewHost> host,
@@ -79,7 +79,7 @@ class NativeExtensionActionContainer::ActionDelegate final
     }
     const std::string id = model_->GetId();
     auto model =
-        owner->Find(id);  // Hold real model across native menu callbacks.
+        owner->Find(id);
     if (model && !owner->shell_.ShowActionContextMenu(*model, nil) && owner) {
       owner->shell_.ExtensionCapabilityUnavailable(id, "action context menu");
     }
@@ -95,7 +95,7 @@ class NativeExtensionActionContainer::ActionDelegate final
 
  private:
   base::WeakPtr<NativeExtensionActionContainer> owner_;
-  ExtensionActionViewModel* model_ = nullptr;  // Model owns this delegate.
+  ExtensionActionViewModel* model_ = nullptr;
 };
 
 NativeExtensionActionContainer::NativeExtensionActionContainer(
@@ -122,7 +122,6 @@ NativeExtensionActionContainer::NativeExtensionActionContainer(
                   weak->HostStateChanged();
                 }
               }];
-  // No external shell callback from a partially constructed container.
   if (model_->actions_initialized()) {
     for (const auto& id : model_->action_ids()) {
       Add(id);
@@ -161,8 +160,6 @@ struct NativeExtensionActionContainer::ShutdownState
   }
   void Finish() {
     CHECK(pending == 0 && !complete);
-    // Model delegates were invalidated before entering drain. Their genuine
-    // Browser/Profile dependencies still live until the final posted callback.
     actions.clear();
     sessions.clear();
     complete = true;
@@ -184,8 +181,6 @@ struct NativeExtensionActionContainer::ShutdownState
       ScheduleFinish();
       return;
     }
-    // Snapshot protects iteration if a future close implementation changes
-    // delivery; the current Close(completion) always posts its completion.
     auto snapshot = sessions;
     for (auto& session : snapshot) {
       session->Close(
@@ -232,8 +227,6 @@ void NativeExtensionActionContainer::Shutdown(base::OnceClosure completion) {
   state->actions = std::move(actions_);
   popup_id_.clear();
   commands_.clear();
-  // State survives owner destruction/reentry and reports only actual closure.
-  // No container member accesses follow external result delivery in Start().
   state->Start();
 }
 std::shared_ptr<ExtensionActionViewModel> NativeExtensionActionContainer::Find(
@@ -291,7 +284,6 @@ bool NativeExtensionActionContainer::DispatchActionAccelerator(
   if (shutdown_ || !shell_.IsSelectedBrowser() || !GetActiveWebContents()) {
     return false;
   }
-  // Snapshot identities; action execution may synchronously unload/reenter.
   std::vector<std::string> ids;
   for (const auto& [id, key] : commands_) {
     if (key == accelerator) {
@@ -347,8 +339,6 @@ void NativeExtensionActionContainer::TriggerPopup(
     }
     return;
   }
-  // Grants are already handled by real model user/API entrypoints; by_user is
-  // deliberately not converted into another grant or artificial user gesture.
   (void)by_user;
   const uint64_t expected = popup_generation_ + 1;
   HideActivePopup();
@@ -461,8 +451,7 @@ bool NativeExtensionActionContainer::ShowToolbarActionPopupForAPICall(
     return false;
   }
   action->TriggerPopupForAPI(std::move(callback));
-  return true;  // Accepted; the actual show/cancel callback supplies the
-                // result.
+  return true;
 }
 void NativeExtensionActionContainer::CloseExtensionsMenuIfOpen() {
   if (!shutdown_) {
@@ -562,4 +551,4 @@ void NativeExtensionActionContainer::OnTabListDestroyed(TabListInterface&) {
   tabs_ = nullptr;
   Shutdown();
 }
-}  // namespace parc
+}

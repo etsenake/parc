@@ -43,14 +43,11 @@ namespace {
 
 namespace top_band = ::parc::top_band;
 
-// 0x4686a2c's style test: a visible, displayed element with some opacity.
 bool IsShown(const ComputedStyle& style) {
   return style.Visibility() == EVisibility::kVisible &&
          style.Display() != EDisplay::kNone && style.Opacity() > 0;
 }
 
-// The element a hit-test node stands for at a sample point, if it spans the
-// top band (0x4686a2c).
 Element* BandElement(Node* node, int viewport_width) {
   auto* element = DynamicTo<Element>(node);
   if (!element) {
@@ -68,9 +65,6 @@ Element* BandElement(Node* node, int viewport_width) {
              : nullptr;
 }
 
-// Video and canvas pixels change without style changes, so neither is a band
-//
-// sample there (0x46852f8; tags '\n' and 'Y').
 bool IsVideoOrCanvas(const Element& element) {
   return IsA<HTMLVideoElement>(element) || IsA<HTMLCanvasElement>(element);
 }
@@ -98,8 +92,6 @@ bool CoveredByVideoOrCanvas(const HitTestResult::NodeSet& nodes,
   return false;
 }
 
-// YouTube's masthead is skipped on youtube.com, so its page background shows
-// through (0x46867fc).
 bool IsYouTubeMasthead(const Element& element, const Document& document) {
   DEFINE_STATIC_LOCAL(const AtomicString, masthead, ("ytd-masthead"));
   if (!element.HasClass() || !element.ClassNames().Contains(masthead)) {
@@ -109,8 +101,6 @@ bool IsYouTubeMasthead(const Element& element, const Document& document) {
   return host == "youtube.com" || host.ends_with(".youtube.com");
 }
 
-// A layer's image that cannot reach the top band: it does not repeat
-// vertically and is anchored to the bottom edge.
 bool AnchoredToBottom(const FillLayer& layer) {
   if (layer.Repeat().y != EFillRepeat::kNoRepeatFill) {
     return false;
@@ -123,10 +113,6 @@ bool AnchoredToBottom(const FillLayer& layer) {
          position.IsPercent() && position.Percent() == 100;
 }
 
-// Whether the element's own pixels decide its colour (0x4685508): an <img>,
-// opacity below 1, or a background image that can cover the band. A
-// non-repeating bitmap shorter than half the element leaves its background
-// colour in charge.
 bool ColorIsUnknown(const Element& element, const ComputedStyle& style) {
   if (IsA<HTMLImageElement>(element)) {
     return true;
@@ -170,7 +156,6 @@ std::optional<SkColor> SampleBitmap(const SkBitmap& bitmap) {
       bitmap.width(), bitmap.height(), top_band::kBandRows,
       top_band::kRightMargin,
       [&bitmap](int x, int y) { return bitmap.getColor(x, y); });
-  // Only an opaque sample is a colour (0x46862e4).
   if (!sample || SkColorGetA(*sample) != SK_AlphaOPAQUE) {
     return std::nullopt;
   }
@@ -188,17 +173,12 @@ std::optional<SkBitmap> DecodedBitmap(ImageResourceContent* content) {
   return image->AsSkBitmapForCurrentFrame(kRespectImageOrientation);
 }
 
-// The size a generated background is drawn at: the element's, at most
-// 800 px a side (0x46862e8).
 gfx::Size RasterSize(const LayoutObject& layout_object) {
   const gfx::Rect box = layout_object.AbsoluteBoundingBoxRect();
   return gfx::Size(std::min(box.width(), top_band::kMaximumRasterSize),
                    std::min(box.height(), top_band::kMaximumRasterSize));
 }
 
-// SamplePixels' inputs, in its order: an <img>'s image, else each background
-// layer's image and load state, with a generated layer's value, raster size
-// and resolving style.
 top_band::PixelSampleMemory::Key PixelKey(Element& element,
                                           const ComputedStyle& style) {
   top_band::PixelSource source;
@@ -217,7 +197,6 @@ top_band::PixelSampleMemory::Key PixelKey(Element& element,
         continue;
       }
       if (image->IsGeneratedImage()) {
-        // A re-resolved value is a new object with the same text.
         const CSSValue* value = image->CssValue();
         const String text = value ? value->CssText() : String();
         source.AddGenerated(
@@ -233,9 +212,6 @@ top_band::PixelSampleMemory::Key PixelKey(Element& element,
   return {DOMNodeIds::IdForNode(&element), source.value()};
 }
 
-// 0x4685778–0x46862e4: an <img>'s decoded pixels, else the first background
-// layer with an image. A generated one is drawn at RasterSize into a bitmap
-// of only the band rows SampleBand reads.
 std::optional<SkColor> SamplePixels(const Element& element,
                                     const ComputedStyle& style) {
   if (const auto* image_element = DynamicTo<HTMLImageElement>(element)) {
@@ -297,9 +273,6 @@ HitTestResult HitTestBand(LayoutView& layout_view,
   return result;
 }
 
-// While scrolled, the first band element at the viewport's top-left decides
-// whether the band follows the viewport (a fixed or sticky header) or stays
-// at the document's top (0x4685104–0x4685c2c).
 bool HeaderFollowsViewport(LayoutView& layout_view, int viewport_width) {
   const HitTestResult result = HitTestBand(
       layout_view, PhysicalOffset(LayoutUnit(top_band::SampleColumn(
@@ -321,7 +294,7 @@ bool HeaderFollowsViewport(LayoutView& layout_view, int viewport_width) {
   return false;
 }
 
-}  // namespace
+}
 
 bool TopBandColorTracker::ChosenState::operator==(
     const ChosenState& other) const {
@@ -380,9 +353,6 @@ void TopBandColorTracker::SetObserver(
   observer_.Bind(std::move(observer), task_runner_);
   observer_.set_disconnect_handler(BindOnce(
       &TopBandColorTracker::ObserverDisconnected, WrapWeakPersistent(this)));
-  //
-  // new observer gets this document's last report without a crossfade and a
-  // fresh detection.
   if (has_sent_) {
     observer_->DidSampleTopBandColor(
         last_sent_.has_color ? last_sent_.color.Rgb() : 0,
@@ -396,15 +366,12 @@ void TopBandColorTracker::ObserverDisconnected() {
   observer_.reset();
 }
 
-// 0x46847c0: a detection asked for during the throttle runs on the next
-// lifecycle update after it.
 void TopBandColorTracker::TimerFired(TimerBase*) {
   if (detection_pending_) {
     ScheduleDetection();
   }
 }
 
-// Without an observer nothing is requested; SetObserver schedules one.
 void TopBandColorTracker::ScheduleDetection() {
   if (!observer_.is_bound()) {
     return;
@@ -416,7 +383,6 @@ void TopBandColorTracker::ScheduleDetection() {
 
 void TopBandColorTracker::FireDetection() {
   LocalFrameView* view = GetSupplementable()->View();
-  // Nothing listens: no browser page binds this frame.
   if (!view || !observer_.is_bound()) {
     return;
   }
@@ -437,7 +403,6 @@ void TopBandColorTracker::FireDetection() {
   Detect(*view);
 }
 
-// Document::FinishedParsing: the document background may now be reported.
 void TopBandColorTracker::DidFinishParsing() {
   if (finished_parsing_) {
     return;
@@ -475,8 +440,6 @@ void TopBandColorTracker::DidCommitNavigation() {
   frame_sample_id_ = 0;
 }
 
-// A pending document-background report waits for parsing; drop it when the
-// band stops being reportable (0x4684edc, 0x4685164).
 void TopBandColorTracker::CancelPendingFallback() {
   if (awaiting_presentation_ && pending_ && pending_->fallback) {
     awaiting_presentation_ = false;
@@ -485,8 +448,6 @@ void TopBandColorTracker::CancelPendingFallback() {
   }
 }
 
-// 0x4686b58: the same element (by node id) within 1.5 s, with an unchanged
-// background and opacity.
 bool TopBandColorTracker::SameElementAsLastSample(
     const Element& element) const {
   if (sampled_node_ == kInvalidDOMNodeId ||
@@ -518,7 +479,6 @@ void TopBandColorTracker::RememberSampledElement(const Element& element) {
   sampled_at_ = base::TimeTicks::Now();
 }
 
-// 0x4684c40.
 void TopBandColorTracker::Detect(LocalFrameView& view) {
   Document* document = GetSupplementable()->GetDocument();
   LayoutView* layout_view = document ? document->GetLayoutView() : nullptr;
@@ -536,16 +496,12 @@ void TopBandColorTracker::Detect(LocalFrameView& view) {
     CancelPendingFallback();
     return;
   }
-  //
-  // checks rather than updating the lifecycle there. While rendering is
-  // blocked the parsing-finished and LCP hooks schedule the next detection.
   if (document->Lifecycle().GetState() < DocumentLifecycle::kPrePaintClean) {
     return;
   }
 
-  // The canvas background (the propagated root background), when opaque.
   std::optional<Color> canvas;
-  const Color root = layout_view->StyleRef().VisitedDependentColor(
+  const Color root = layout_view->Style().VisitedDependentColor(
       GetCSSPropertyBackgroundColor());
   if (root.Alpha() >= 1) {
     canvas = root;
@@ -597,8 +553,6 @@ void TopBandColorTracker::Detect(LocalFrameView& view) {
         voted = true;
         break;
       }
-      // Before the first contentful paint a translucent or pixel-coloured
-      // band is not reported at all.
       if (!seen_contentful_paint_) {
         CancelPendingFallback();
         return;
@@ -663,7 +617,6 @@ void TopBandColorTracker::Detect(LocalFrameView& view) {
     chosen.has_color = true;
   }
   if (!chosen.has_color && !chosen.sample_frame) {
-    // Nothing voted: the document background, once parsing has finished.
     const Color background = view.DocumentBackgroundColor();
     if (background.Alpha() >= 1) {
       if (awaiting_presentation_) {
@@ -695,8 +648,6 @@ void TopBandColorTracker::Detect(LocalFrameView& view) {
   EmitChosenState(view, chosen);
 }
 
-// 0x4687028: a frame-sample or document-background report waits for the
-// next presented frame, so the browser's copy and the bar change with it.
 void TopBandColorTracker::EmitChosenState(LocalFrameView& view,
                                           const ChosenState& state) {
   if (awaiting_presentation_) {
@@ -722,7 +673,6 @@ void TopBandColorTracker::EmitChosenState(LocalFrameView& view,
   SendState(state);
 }
 
-// 0x468743c.
 void TopBandColorTracker::DidPresent(uint32_t generation,
                                      const viz::FrameTimingDetails&) {
   if (generation != generation_) {
@@ -736,8 +686,6 @@ void TopBandColorTracker::DidPresent(uint32_t generation,
   }
 }
 
-// 0x46874c0. Reports before the document's first LCP update and the first
-// report after it cut; later ones crossfade.
 void TopBandColorTracker::SendState(const ChosenState& state) {
   if (has_sent_ && last_sent_ == state) {
     return;
@@ -758,4 +706,4 @@ void TopBandColorTracker::SendState(const ChosenState& state) {
                                    state.reuse_frame_sample, crossfade);
 }
 
-}  // namespace blink
+}

@@ -2,20 +2,23 @@
 +++ b/chrome/browser/ui/signin/promos/bubble_signin_promo_delegate.h
 @@ -32,6 +32,10 @@
        delete;
- 
+-
++
    virtual ~BubbleSignInPromoDelegate();
 +
 +  // Native presenters can reject a stale page/window before the view closes.
 +  // This predicate must not destroy the view or invoke sign-in itself.
 +  virtual bool CanSignIn() const { return true; }
- 
+-
++
    // Informs the delegate to sign in `account` or to present
    // the browser sign-in page if `account` is empty.
 --- a/chrome/browser/ui/signin/promos/bubble_signin_promo_view.cc
 +++ b/chrome/browser/ui/signin/promos/bubble_signin_promo_view.cc
-@@ -502,6 +502,9 @@
+@@ -469,6 +469,9 @@
  }
- 
+-
++
  void BubbleSignInPromoView::SignIn() {
 +  if (!delegate_ || !delegate_->CanSignIn()) {
 +    return;
@@ -26,7 +29,8 @@
 --- a/chrome/browser/ui/views/autofill/address_sign_in_promo_view.cc
 +++ b/chrome/browser/ui/views/autofill/address_sign_in_promo_view.cc
 @@ -6,6 +6,7 @@
- 
+-
++
  #include "chrome/browser/signin/signin_promo_util.h"
  #include "chrome/browser/ui/autofill/address_bubbles_controller.h"
 +#include "chrome/browser/ui/signin/promos/bubble_signin_promo_delegate.h"
@@ -50,7 +54,8 @@
 @@ -35,10 +43,17 @@
        views::DISTANCE_BUBBLE_PREFERRED_WIDTH));
    set_margins(BubbleSignInPromoView::GetBubbleSigninPromoMargins());
- 
+-
++
 +  if (!sign_in_delegate) {
 +    sign_in_delegate =
 +        std::make_unique<BubbleSignInPromoForSyncableDataTypeDelegate>(
@@ -63,7 +68,8 @@
        web_contents, signin_metrics::AccessPoint::kAddressBubble,
 -      syncer::LocalDataItemModel::DataId(autofill_profile.guid())));
 +      std::move(sign_in_delegate)));
- 
+-
++
    SetInitiallyFocusedView(sign_in_promo->GetSignInButton());
  }
 --- a/chrome/browser/ui/views/autofill/address_sign_in_promo_view.h
@@ -71,15 +77,18 @@
 @@ -5,7 +5,11 @@
  #ifndef CHROME_BROWSER_UI_VIEWS_AUTOFILL_ADDRESS_SIGN_IN_PROMO_VIEW_H_
  #define CHROME_BROWSER_UI_VIEWS_AUTOFILL_ADDRESS_SIGN_IN_PROMO_VIEW_H_
- 
+-
++
 +#include <memory>
 +
  #include "chrome/browser/ui/views/autofill/address_bubble_base_view.h"
 +
 +class BubbleSignInPromoDelegate;
- 
+-
++
  namespace autofill {
- 
+-
++
 @@ -20,6 +24,11 @@
    explicit AddressSignInPromoView(views::BubbleAnchor anchor,
                                    content::WebContents* web_contents,
@@ -89,6 +98,7 @@
 +      content::WebContents* web_contents,
 +      const AutofillProfile& autofill_profile,
 +      std::unique_ptr<BubbleSignInPromoDelegate> sign_in_delegate);
- 
+-
++
    AddressSignInPromoView(const AddressSignInPromoView&) = delete;
    AddressSignInPromoView& operator=(const AddressSignInPromoView&) = delete;

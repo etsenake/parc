@@ -7,7 +7,12 @@
        extension_misc::kContextualTasksExtensionId,
 --- a/chrome/browser/extensions/component_loader.cc
 +++ b/chrome/browser/extensions/component_loader.cc
-@@ -102,1 +102,10 @@
+@@ -99,6 +99,15 @@
+-
++
+ using content::BrowserThread;
+-
++
 +namespace parc_hooks {
 +namespace {
 +void (*internal_extension_installer)(extensions::ComponentLoader*) = nullptr;
@@ -18,7 +23,10 @@
 +}  // namespace parc_hooks
 +
  namespace extensions {
-@@ -790,5 +799,7 @@
+-
++
+ namespace {
+@@ -791,6 +800,8 @@
    AddAimEligibilityExtension();
    AddGlicExtension();
    AddContextualTasksExtension();
@@ -27,3 +35,4 @@
 -
 +
  // http://crbug.com/41070702
+ #if BUILDFLAG(GOOGLE_CHROME_BRANDING) && !BUILDFLAG(IS_CHROMEOS)

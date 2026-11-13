@@ -9,7 +9,7 @@
  import("//base/allocator/allocator.gni")
  import("//build/buildflag_header.gni")
  import("//build/config/buildflags_paint_preview.gni")
-@@ -1517,7 +1518,12 @@
+@@ -1695,7 +1696,12 @@
      }
    }
 -

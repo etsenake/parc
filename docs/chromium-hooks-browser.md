@@ -103,8 +103,10 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
   `chrome/browser/ui/browser_tabstrip.cc` fixes the transition inside `AddTabAt`. Answered by
   `NativeAddTabTransition` in `parc_main_delegate.mm`.
 - **`SetTabUIUpdateGate`**: a page that starts loading before it reaches its tab strip doesn't
-  update loading interface it isn't part of. The gate is synchronous in
-  `chrome/browser/ui/browser_ui_controller/browser_ui_controller.cc`. Answered by
+  update loading or favicon interface it isn't part of. The gate is synchronous in
+  `BrowserUiController::NotifyTabUIChanged`, ahead of both the tab-strip and tab-helper notifications,
+  so 157's immediate favicon update is covered too
+  (`chrome/browser/ui/browser_ui_controller/browser_ui_controller.cc`). Answered by
   `NativeTabUIUpdateAllowed` in `parc_main_delegate.mm`.
 - **`SetEmptyTabColorProvider`**: a window with no tabs still draws in the right colors.
   `GetColorProvider` in `chrome/browser/ui/tabs/tab_strip_api/tab_strip_model_impl/tab_strip_model_adapter_impl.cc`
@@ -120,7 +122,9 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
 - **`SetUnloadControllerLifetime`, `SetUnloadControllerTabEvents`, `SetUnloadControllerCloseGates`,
   `SetUnloadControllerPageGates`**: closing a window or moving tabs runs each page's leave-page check
   once and rolls back cleanly. `chrome/browser/ui/unload_controller.cc` keeps its close state and
-  beforeunload runner private. Answered by `Engine/ParcNative/unload_transactions.cc`.
+  beforeunload runner private. Since Chromium 157 splits closing into `CloseContents()` and a const
+  query, the page gate sits in the query after its state check, never before it, because closing can
+  already have cleared a page's unload state. Answered by `Engine/ParcNative/unload_transactions.cc`.
 - **`SetFrameFocusNotifier`**: keyboard shortcuts follow the frame that has focus.
   `content/browser/web_contents/web_contents_impl.cc` (`CONTENT_EXPORT`) calls it where focus
   changes, so `web_contents_observer.h` gains no method. Installed in the `ParcContentBrowserClient`
@@ -136,8 +140,9 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
   `chrome_paths_mac.mm`, `content/app/content_main.cc` and the `chrome/common` and
   `components/os_crypt/common` build files.
 - **`native-browser-overlay`**: the Browser, manager, window, navigator, tab-strip and DevTools
-  creator hooks, the DevTools page-command body and the tabs API's native window-state check, across
-  11 files in `chrome/browser/ui`, `chrome/browser/devtools` and `chrome/browser/extensions/api/tabs`.
+  creator hooks, the DevTools page-command body and the windows API's native window-state check
+  (`windows_api.cc`, where Chromium 157 moved `windows.update`), across 11 files in
+  `chrome/browser/ui`, `chrome/browser/devtools` and `chrome/browser/extensions/api/tabs`.
   The gates sit at Chromium's private construction, deletion and navigation points.
 - **`native-page-retirement`**: only the unload-controller hooks, in `unload_controller.cc`.
 - **`native-embedded-pages`**: only the three restore-omission hooks, in the three sessions files.

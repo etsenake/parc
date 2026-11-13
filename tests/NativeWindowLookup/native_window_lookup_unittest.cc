@@ -1,7 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Regression for the generic BrowserWindow lookup with an actual tab model
-// and a non-Views BrowserWindow. This test-only fixture is intentional: a
-// BrowserView fixture alone cannot expose the dropped native-window result.
 #include <memory>
 #include <utility>
 
@@ -11,14 +8,14 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/tabs/tab_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/web_contents_tester.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 #include "url/gurl.h"
 
 namespace parc {
 
-class NativeWindowLookupTest : public BrowserWithTestWindowTest {};
+class NativeWindowLookupTest : public ParcBrowserWindowTest {};
 
 TEST_F(NativeWindowLookupTest, ResolvesActiveAndBackgroundTabsWithoutViews) {
   ASSERT_FALSE(window()->AsBrowserView());
@@ -52,9 +49,6 @@ TEST_F(NativeWindowLookupTest, AddressAcceptanceDoesNotRequireChromePromoView) {
   auto* controller =
       autofill::AddressBubblesController::FromWebContents(contents);
   ASSERT_TRUE(controller);
-  // Exercise the real post-acceptance continuation. There is intentionally no
-  // save callback/bubble in this regression: the unrelated iOS-promo lookup
-  // must not dereference a missing BrowserView after a native save completes.
   autofill::AutofillProfile address(autofill::AddressCountryCode("US"));
   autofill::SaveAddressBubbleController save_controller(
       controller->GetWeakPtr(), contents, address,
@@ -83,11 +77,9 @@ TEST_F(NativeWindowLookupTest, DetachedTabResolvesOnlyAfterActualReinsertion) {
   EXPECT_EQ(destination_window,
             BrowserWindow::FindBrowserWindowWithWebContents(contents));
 
-  // This fixture owns test Browsers directly. Follow its real pre-window
-  // feature teardown before releasing a secondary Browser.
   destination->GetTabStripModel()->CloseAllTabs();
   destination->GetFeatures().TearDownPreBrowserWindowDestruction();
   destination.reset();
 }
 
-}  // namespace parc
+}

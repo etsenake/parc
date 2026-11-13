@@ -25,7 +25,8 @@
 @@ -208,11 +212,24 @@
    Invalidate();
  }
- 
+-
++
 +void AppModalDialogController::SetNativeDecisionValidator(
 +    base::RepeatingCallback<bool()> validator) {
 +  CHECK(!view_);
@@ -45,7 +46,8 @@
 +    success = false;
 +    suppress_js_messages = false;
    }
- 
+-
++
    // Mark invalid immediately so that any re-entrant calls (such as OnClose()
 @@ -225,7 +242,8 @@
    // letting the dialog queue delete it. See https://crbug.com/560439699.
@@ -66,10 +68,12 @@
 +  using ViewFactory = base::RepeatingCallback<AppModalDialogView*(
 +      std::unique_ptr<AppModalDialogController>)>;
    using ExtraDataMap = std::map<void*, ChromeJavaScriptDialogExtraData>;
- 
+-
++
    AppModalDialogController(
 @@ -94,6 +96,11 @@
- 
+-
++
    // Accessors.
    std::u16string title() const { return title_; }
 +  // Native ownership can change while CompleteDialog shows the next queued
@@ -82,12 +86,14 @@
      return javascript_dialog_type_;
 @@ -132,6 +139,8 @@
                                  const std::u16string& prompt_text);
- 
+-
++
    // The title of the dialog.
 +  ViewFactory native_view_factory_;
 +  base::RepeatingCallback<bool()> native_decision_validator_;
    const std::u16string title_;
- 
+-
++
    // False if the dialog should no longer be shown, e.g. because the underlying
 --- a/components/javascript_dialogs/app_modal_dialog_manager.cc
 +++ b/components/javascript_dialogs/app_modal_dialog_manager.cc
@@ -129,7 +135,8 @@
 +                        : nullptr;
 +  return data ? data->provider.Run() : AppModalViewFactory();
  }
- 
+-
++
  void AppModalDialogManager::SetNativeDialogFactory(
 --- a/components/javascript_dialogs/app_modal_dialog_manager.h
 +++ b/components/javascript_dialogs/app_modal_dialog_manager.h
@@ -147,6 +154,8 @@
 +                                           NativeViewFactoryProvider provider);
 +  static AppModalViewFactory CaptureNativeViewFactory(
 +      content::WebContents* contents);
- 
+-
++
    AppModalViewFactory* view_factory() { return &view_factory_; }
- 
+-
++

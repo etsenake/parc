@@ -11,12 +11,14 @@
 +  void OnWindowDidFailToEnterFullscreen(bool resume_pending_state = false);
    void OnWindowWillExitFullscreen();
    void OnWindowDidExitFullscreen();
- 
+-
++
 --- a/components/remote_cocoa/app_shim/native_widget_ns_window_fullscreen_controller.mm
 +++ b/components/remote_cocoa/app_shim/native_widget_ns_window_fullscreen_controller.mm
 @@ -206,11 +206,19 @@
  }
- 
+-
++
  void NativeWidgetNSWindowFullscreenController::
 -    OnWindowDidFailToEnterFullscreen() {
 +    OnWindowDidFailToEnterFullscreen(bool resume_pending_state) {
@@ -36,4 +38,5 @@
 +    }
    }
  }
- 
+-
++

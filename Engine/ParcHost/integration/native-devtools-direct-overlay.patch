@@ -80,10 +80,10 @@
          return entry.first->contents_view()->web_contents() == web_contents;
 --- a/chrome/browser/devtools/devtools_window.h
 +++ b/chrome/browser/devtools/devtools_window.h
-@@ -138,6 +138,15 @@
-   static DevToolsWindow* AsDevToolsWindow(content::WebContents* web_contents);
+@@ -147,6 +147,15 @@
    static DevToolsWindow* AsDevToolsWindow(BrowserWindowInterface* browser);
    static DevToolsWindow* FindDevToolsWindow(content::DevToolsAgentHost*);
+-
 +
 +  // Native page command. A repeated generic command closes the actual tools;
 +  // Console/Network close only when the original frontend reports that panel.
@@ -93,11 +93,11 @@
 +      content::WebContents* inspected_web_contents,
 +      const DevToolsToggleAction& action,
 +      base::RepeatingCallback<bool()> is_current);
--
 +
    // Open or reveal DevTools window, and perform the specified action.
    // How to get pointer to the created window see comments for
-@@ -630,6 +639,8 @@
+   // ToggleDevToolsWindow().
+@@ -638,6 +647,8 @@
 -
 +
    friend class DevToolsEventForwarder;

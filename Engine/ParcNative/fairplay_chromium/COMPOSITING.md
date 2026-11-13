@@ -339,10 +339,12 @@ video it can't composite the same way.
   itself; only geometry changes need frames.
 - **Window resize and fullscreen:** a resize is a new frame at a new size.
   The tree matches the same host, and only the transform and rect change.
-  `kCATransactionV2` is off upstream. With it on, a resize makes
-  `CALayerTreeCoordinator` drop its tree and CAContext before the next commit,
-  and the next tree builds a new host, which takes the layer, all inside one
-  CATransaction. Parc's fullscreen keeps the page in its own window and
+  Chromium 157 removed `kCATransactionV2`; its resize branch now sits behind
+  `kCAContextFenceOnResize`, on by default, which only sends a fence port with
+  the frame and keeps the tree and CAContext, so the protected layer keeps
+  matching the same host across a resize. Parc's pane compositors and PiP
+  window hand frames to `DisplayCALayerTree`, which releases the fence at once.
+  Parc's fullscreen keeps the page in its own window and
   compositor, so it is a resize. The video element itself entering fullscreen
   ends its PiP (`HTMLVideoElement::DidEnterFullscreen`, called only when the new
   fullscreen element is the video). A container entering fullscreen, as

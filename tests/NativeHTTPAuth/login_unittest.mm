@@ -1,5 +1,3 @@
-// Real LoginHandler / WebContentsModalDialogManager / Browser / Profile. The
-// fixture supplies only a native test window and a modal visibility delegate.
 #import <AppKit/AppKit.h>
 
 #include <memory>
@@ -13,13 +11,13 @@
 #include "chrome/browser/ui/login/login_handler.h"
 #include "chrome/browser/ui/login/http_auth_coordinator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/navigation_simulator.h"
 #include "http_auth.h"
 #include "net/base/auth.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 #include "url/gurl.h"
 #include "url/scheme_host_port.h"
 #import "window_security_reservation.h"
@@ -90,11 +88,11 @@ struct Outcome {
   int calls = 0;
   std::optional<net::AuthCredentials> credentials;
 };
-}  // namespace
-class NativeHTTPAuthTest : public BrowserWithTestWindowTest {
+}
+class NativeHTTPAuthTest : public ParcBrowserWindowTest {
  public:
   void SetUp() override {
-    BrowserWithTestWindowTest::SetUp();
+    ParcBrowserWindowTest::SetUp();
     AddTab(browser(), GURL("https://auth.example:8443/page"));
     auto* page = contents()->GetNativeView().GetNativeNSView();
     ASSERT_TRUE(page);
@@ -110,7 +108,7 @@ class NativeHTTPAuthTest : public BrowserWithTestWindowTest {
     handlers_.clear();
     base::RunLoop().RunUntilIdle();
     browser()->GetTabStripModel()->CloseAllTabs();
-    BrowserWithTestWindowTest::TearDown();
+    ParcBrowserWindowTest::TearDown();
     [native_window_ close];
     native_window_ = nil;
   }
@@ -287,7 +285,6 @@ TEST_F(NativeHTTPAuthTest, PropagatedCredentialsAlsoRespectDetachedOwner) {
   auto& out = Start();
   ASSERT_TRUE(Pump([&] { return native_window_.attachedSheet != nil; }));
   SetNativeHTTPAuthAttached(*contents(), false);
-  // Same entry the actual LoginHandler uses for another matching challenge.
   handlers_.front()->SetAuth(u"other-handler", u"must-not-apply");
   ASSERT_TRUE(Pump([&] { return out.calls == 1; }));
   EXPECT_FALSE(out.credentials);
@@ -328,8 +325,6 @@ TEST_F(NativeHTTPAuthTest, InvalidHostCannotReviveBeforeDeferredCancellation) {
   NSView* page = contents()->GetNativeView().GetNativeNSView();
   NSView* parent = page.superview;
   [page removeFromSuperview];
-  // The real modal manager sends HostChanged while its collection is active.
-  // No task pump occurs between invalidation and restoring the exact owner.
   manager()->SetDelegate(nullptr);
   [parent addSubview:page];
   manager()->SetDelegate(&modal_);
@@ -340,4 +335,4 @@ TEST_F(NativeHTTPAuthTest, InvalidHostCannotReviveBeforeDeferredCancellation) {
   EXPECT_FALSE(manager()->IsDialogActive());
   EXPECT_FALSE(native_window_.attachedSheet);
 }
-}  // namespace parc
+}

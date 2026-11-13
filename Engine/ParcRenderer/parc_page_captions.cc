@@ -1,5 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Installed at third_party/blink/renderer/core/html/media/parc_page_captions.cc.
 #include "third_party/blink/renderer/core/html/media/parc_page_captions.h"
 
 #include <algorithm>
@@ -37,14 +36,10 @@ namespace blink {
 
 namespace {
 
-// Places followed at once; text that moves around the player makes more.
 constexpr wtf_size_t kMaxPlaces = 16;
-// Nodes looked at in one player, which bounds the work of a look.
 constexpr unsigned kMaxNodes = 5000;
-// Levels a place's path goes up from its box.
 constexpr unsigned kMaxPathDepth = 32;
 
-// The boxes every ParcPageCaptions shows (ParcPageCaptions::Show()).
 HeapHashSet<WeakMember<Element>>& BoxesShownAsCaptions() {
   using BoxSetHolder = DisallowNewWrapper<HeapHashSet<WeakMember<Element>>>;
   DEFINE_STATIC_LOCAL(Persistent<BoxSetHolder>, holder,
@@ -52,11 +47,6 @@ HeapHashSet<WeakMember<Element>>& BoxesShownAsCaptions() {
   return holder->Value();
 }
 
-// What players' caption boxes carry in their ids, classes and data
-// attributes: Netflix's player-timedtext, YouTube's captions-text, Disney+'s
-// timed-text-override-region and hive-subtitle-renderer, TELUS TV+'s
-// data-id="captions" and Video.js's vjs-text-track-display among them. A
-// "subtitle" alone is a page's secondary title, not subtitles.
 bool NamesCaptions(const AtomicString& value) {
   if (value.empty()) {
     return false;
@@ -81,7 +71,6 @@ bool HasCaptionName(const Element& element) {
   return false;
 }
 
-// ARIA's widget roles, and the live regions that count down or scroll.
 bool HasControlRole(const Element& element) {
   static constexpr const char* kRoles[] = {
       "button",   "checkbox", "combobox", "dialog",    "grid",
@@ -105,8 +94,6 @@ bool HasControlRole(const Element& element) {
   return false;
 }
 
-// Something a viewer acts on, whose text is its label, not captions, or a
-// figure's caption, which stays as long as the figure.
 bool IsControl(const Element& element) {
   return element.IsFormControlElement() || element.IsLink() ||
          IsA<HTMLSummaryElement>(element) || IsEditable(element) ||
@@ -114,7 +101,6 @@ bool IsControl(const Element& element) {
          element.HasTagName(html_names::kFigcaptionTag);
 }
 
-// A live region, which players also announce volume and seeking in.
 bool IsLiveRegion(const Element& element) {
   const AtomicString& live =
       element.FastGetAttribute(html_names::kAriaLiveAttr);
@@ -122,8 +108,6 @@ bool IsLiveRegion(const Element& element) {
          EqualIgnoringAsciiCase(live, "assertive");
 }
 
-// Focusable, so no caption box, though it may hold one: YouTube's caption
-// window takes focus so a viewer can move it with the keyboard.
 bool IsFocusable(const Element& element) {
   int tab_index = 0;
   return element.FastHasAttribute(html_names::kTabindexAttr) &&
@@ -132,19 +116,16 @@ bool IsFocusable(const Element& element) {
          tab_index >= 0;
 }
 
-// Fully transparent, unless that is the captions hidden in the tab.
 bool IsTransparent(const Element& element) {
   const ComputedStyle* style = element.GetComputedStyle();
   return style && style->Opacity() == 0 &&
          !IsParcPictureInPictureCaptions(element);
 }
 
-// The box of text a viewer sees over the video, if any. Visually hidden text
-// for screen readers is a pixel or so.
 std::optional<gfx::RectF> VisibleText(const Text& text,
                                       const gfx::RectF& region) {
   const LayoutObject* layout = text.GetLayoutObject();
-  if (!layout || layout->StyleRef().Visibility() != EVisibility::kVisible ||
+  if (!layout || layout->Style().Visibility() != EVisibility::kVisible ||
       text.data().ContainsOnlyWhitespaceOrEmpty()) {
     return std::nullopt;
   }
@@ -156,8 +137,6 @@ std::optional<gfx::RectF> VisibleText(const Text& text,
   return box;
 }
 
-// The video's player: the outermost element around it not much bigger than
-// it. Players lay their captions out in it.
 Element* FindPlayer(const HTMLVideoElement& video) {
   const LayoutObject* layout = video.GetLayoutObject();
   if (!layout) {
@@ -181,8 +160,6 @@ Element* FindPlayer(const HTMLVideoElement& video) {
   return found;
 }
 
-// Finds the boxes that may hold captions: the largest that hold visible text
-// outside controls, and hold no control, focusable element or video.
 class CaptionsFinder {
   STACK_ALLOCATED();
 
@@ -212,7 +189,6 @@ class CaptionsFinder {
                      VisibleText(*text, region_);
       } else if (auto* child_element = DynamicTo<Element>(child)) {
         const Look child_look = Visit(*child_element, hidden, in_control);
-        // Painted on its own, so it needs a box of its own.
         if (!child_look.excluded && child_look.text &&
             IsA<LayoutBoxModelObject>(child_element->GetLayoutObject())) {
           candidates.push_back(child_element);
@@ -235,8 +211,6 @@ class CaptionsFinder {
   unsigned visited_ = 0;
 };
 
-// What a caption box shows: its visible text, the text's boxes, and the area
-// it paints, its boxes' backgrounds and a quarter em around for shadows.
 struct Caption {
   StringBuilder text;
   gfx::RectF text_area;
@@ -269,7 +243,7 @@ void CollectText(const Element& element,
       if (const LayoutObject* parent = layout.Parent()) {
         area.Union(parent->AbsoluteBoundingBoxRectF());
       }
-      area.Outset(layout.StyleRef().ComputedFontSize() / 4);
+      area.Outset(layout.Style().ComputedFontSize() / 4);
       caption.area.Union(area);
     } else if (auto* child_element = DynamicTo<Element>(child)) {
       CollectText(*child_element, region, hidden, caption);
@@ -282,15 +256,13 @@ gfx::RectF VideoBox(const HTMLVideoElement& video) {
   return layout ? layout->AbsoluteBoundingBoxRectF() : gfx::RectF();
 }
 
-// Where captions over the video can sit: on it, or just past its top or
-// bottom where a player letterboxes it.
 gfx::RectF CaptionRegion(const gfx::RectF& video) {
   gfx::RectF region = video;
   region.Outset(gfx::OutsetsF::VH(video.height() / 10, 0));
   return region;
 }
 
-}  // namespace
+}
 
 bool IsParcPictureInPictureCaptions(const Element& element) {
   const HeapHashSet<WeakMember<Element>>& boxes = BoxesShownAsCaptions();
@@ -317,8 +289,6 @@ bool ParcPageCaptions::VideoShowsCues() const {
 
 bool ParcPageCaptions::Update() {
   Document& document = video_->GetDocument();
-  // Captions change the document's nodes or style; between lines there is
-  // nothing to do.
   if (document.DomTreeVersion() == dom_tree_version_ &&
       document.StyleVersion() == style_version_) {
     return false;
@@ -330,7 +300,6 @@ bool ParcPageCaptions::Update() {
     return false;
   }
   dom_tree_version_ = document.DomTreeVersion();
-  // The video's own text tracks are its captions when a viewer sees them.
   if (VideoShowsCues()) {
     const bool shown = !shown_.empty();
     Show(HeapVector<Member<Element>>());
@@ -374,7 +343,6 @@ bool ParcPageCaptions::Update() {
     auto it = std::ranges::find(places_, key, &Place::path);
     if (it == places_.end()) {
       if (places_.size() == kMaxPlaces) {
-        // The place unseen longest goes.
         const wtf_size_t oldest = static_cast<wtf_size_t>(
             std::ranges::min_element(places_, {}, &Place::last_seen) -
             places_.begin());
@@ -388,7 +356,6 @@ bool ParcPageCaptions::Update() {
     Place& place = *it;
     const wtf_size_t index = static_cast<wtf_size_t>(it - places_.begin());
     const String text = caption.text.ToString();
-    // Several boxes at one place, say two speakers' windows, read as one.
     place.text = seen[index] ? place.text + "\n" + text : text;
     seen[index] = true;
     place.last_seen = looks_;
@@ -397,10 +364,6 @@ bool ParcPageCaptions::Update() {
     if (place.lines.size() < 2 && !place.lines.Contains(place.text)) {
       place.lines.push_back(place.text);
     }
-    // Speech changes the lines; a named box shows at once, any other must
-    // have cleared once and sit centred, above or below the middle, as
-    // captions do and a player's titles, timers, badges and bezels don't.
-    // A named box over the video itself shows at once.
     const gfx::PointF centre = caption.text_area.CenterPoint();
     const bool placed =
         std::abs(centre.x() - video.CenterPoint().x()) <= video.width() / 10 &&
@@ -426,7 +389,6 @@ bool ParcPageCaptions::Update() {
   const bool changed = shown != shown_ || text != shown_text_ ||
                        shown_areas != shown_areas_;
   Show(shown);
-  // Showing restyles the boxes, which is no change to look at again.
   style_version_ = document.StyleVersion();
   shown_text_ = text;
   shown_areas_ = std::move(shown_areas);
@@ -470,7 +432,6 @@ SkBitmap ParcPageCaptions::Paint(const gfx::SizeF& window_size,
   }
   SkBitmap bitmap = TextTrackContainer::PaintLayersForPictureInPicture(
       containers, areas, *video, window_size, device_scale_factor, bounds);
-  // What the window can't show stays in the tab.
   if (bitmap.drawsNothing()) {
     painted.clear();
   }
@@ -490,7 +451,6 @@ void ParcPageCaptions::Clear() {
 }
 
 void ParcPageCaptions::Show(const HeapVector<Member<Element>>& boxes) {
-  // Style hides a shown box in the tab, and its layer then paints only it.
   auto mark = [](Element& box, bool shown) {
     HeapHashSet<WeakMember<Element>>& captions = BoxesShownAsCaptions();
     if (captions.Contains(&box) == shown) {
@@ -521,4 +481,4 @@ void ParcPageCaptions::Trace(Visitor* visitor) const {
   visitor->Trace(shown_);
 }
 
-}  // namespace blink
+}

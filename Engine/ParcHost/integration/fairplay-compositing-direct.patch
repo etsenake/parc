@@ -96,7 +96,7 @@
  #include "ui/base/cocoa/animation_utils.h"
  #include "ui/base/ui_base_switches.h"
  #include "ui/gfx/geometry/dip_util.h"
-@@ -462,7 +464,11 @@
+@@ -464,7 +466,11 @@
      CALayerMap& old_ca_layer_map,
      int& layer_order,
      int& last_old_layer_order) {
@@ -110,7 +110,7 @@
 +
    if (!io_surface_ref)
      return;
-@@ -673,7 +679,8 @@
+@@ -675,7 +681,8 @@
            return false;
 -
 +
@@ -121,7 +121,7 @@
            found_video_layer = true;
            if (!transform_layer.transform_.IsPositiveScaleOrTranslation())
              return false;
-@@ -789,7 +796,8 @@
+@@ -791,7 +798,8 @@
      bool nearest_neighbor_filter,
      const gfx::HDRMetadata& hdr_metadata,
      gfx::ProtectedVideoType protected_video_type,
@@ -131,7 +131,7 @@
      : parent_layer_(parent_layer),
        io_surface_(io_surface),
        cv_pixel_buffer_(cv_pixel_buffer),
-@@ -843,9 +851,19 @@
+@@ -845,9 +853,19 @@
    }
 -
 +
@@ -155,7 +155,7 @@
      type_ = CALayerType::kHDRCopier;
    } else if (io_surface) {
      // Only allow YUV frames which fill the layer's contents or protected
-@@ -903,6 +921,12 @@
+@@ -905,6 +923,12 @@
  CARendererLayerTree::ContentLayer::~ContentLayer() {
    [ca_layer_ removeFromSuperlayer];
    [update_indicator_layer_ removeFromSuperlayer];
@@ -169,7 +169,7 @@
 -
 +
  bool CARendererLayerTree::RootLayer::AddContentLayer(
-@@ -968,7 +992,8 @@
+@@ -970,7 +994,8 @@
        params.contents_rect, params.rect, params.background_color,
        params.io_surface_color_space, params.edge_aa_mask, params.opacity,
        params.nearest_neighbor_filter, params.hdr_metadata,
@@ -180,7 +180,7 @@
 -
 +
  void CARendererLayerTree::RootLayer::CommitToCA(CALayer* superlayer,
-@@ -1163,12 +1188,14 @@
+@@ -1165,12 +1190,14 @@
      DCHECK(old_layer_->ca_layer_);
      std::swap(ca_layer_, old_layer_->ca_layer_);
      std::swap(av_layer_, old_layer_->av_layer_);
@@ -196,7 +196,7 @@
      // If the HDR headroom has changed then the HDRCopierLayer's tone mapping
      // may change, so re-draw this layer.
      if (old_layer_->type_ == CALayerType::kHDRCopier &&
-@@ -1209,6 +1236,12 @@
+@@ -1211,6 +1238,12 @@
          break;
        case CALayerType::kDefault:
          ca_layer_ = [[CALayer alloc] init];
@@ -209,7 +209,7 @@
      }
      ca_layer_.anchorPoint = CGPointZero;
    }
-@@ -1265,6 +1298,9 @@
+@@ -1267,6 +1300,9 @@
          // https://crbug.com/702369
        }
        break;
@@ -219,7 +219,7 @@
      case CALayerType::kDefault:
        if (update_contents) {
          if (io_surface_) {
-@@ -1279,7 +1315,8 @@
+@@ -1281,7 +1317,8 @@
        break;
    }
 -
@@ -230,7 +230,7 @@
      if (@available(macOS 26, iOS 26, *)) {
        float max_hdr_headroom = cc::ToneMapUtil::GetMaxHdrHeadroom(
            io_surface_color_space_, hdr_metadata_);
-@@ -1298,7 +1335,7 @@
+@@ -1300,7 +1337,7 @@
    }
 -
 +
@@ -240,20 +240,20 @@
        ca_layer_.contentsRect = contents_rect_.ToCGRect();
    }
    if (update_rect) {
-@@ -1329,6 +1366,11 @@
-   if (update_ca_filter) {
+@@ -1332,6 +1369,11 @@
      ca_layer_.magnificationFilter = ca_filter_;
      ca_layer_.minificationFilter = ca_filter_;
-+  }
+   }
 +  if (type_ == CALayerType::kProtectedLayer) {
 +    ParcUpdateProtectedLayerClaim(
 +        ParcProtectedLayerClaimAction::kCommit, this, &ca_layer_,
 +        &protected_layer_, &hosted_layer_, tree()->scale_factor_);
-   }
++  }
 -
 +
  #if BUILDFLAG(IS_MAC)
-@@ -1360,6 +1402,11 @@
+   static bool show_overlay_borders =
+@@ -1362,6 +1404,11 @@
            green = blue = 1;
          }
          break;
@@ -298,7 +298,7 @@
  #include "build/build_config.h"
  #include "components/viz/common/quads/aggregated_render_pass.h"
  #include "components/viz/common/quads/texture_draw_quad.h"
-@@ -248,6 +249,11 @@
+@@ -253,6 +254,11 @@
 -
 +
    // The edge anti-aliasing mask property for the CALayer.
@@ -469,7 +469,7 @@
  }  // namespace viz
 --- a/components/viz/service/display/skia_renderer.cc
 +++ b/components/viz/service/display/skia_renderer.cc
-@@ -3036,6 +3036,15 @@
+@@ -2992,6 +2992,15 @@
      DCHECK(!overlay.rpdq);
  #endif
 -
@@ -488,7 +488,7 @@
        DCHECK(!overlay.resource_id);
 --- a/components/viz/service/display/software_renderer.cc
 +++ b/components/viz/service/display/software_renderer.cc
-@@ -365,7 +365,12 @@
+@@ -445,7 +445,12 @@
        // Quad and the quad would then reach here unexpectedly. Therefore
        // we should skip NOTREACHED() so an untrusted render is not capable
        // of causing a crash.
@@ -505,7 +505,7 @@
 +
 --- a/components/viz/service/display_embedder/output_presenter_gl.cc
 +++ b/components/viz/service/display_embedder/output_presenter_gl.cc
-@@ -160,22 +160,23 @@
+@@ -161,22 +161,23 @@
      io_surface_color_space = access->representation()->color_space();
      backpressure_fences = access->GetBackpressureFences();
    }
@@ -672,7 +672,7 @@
  }  // namespace viz
 --- a/components/viz/service/display/display.h
 +++ b/components/viz/service/display/display.h
-@@ -147,6 +147,10 @@
+@@ -149,6 +149,10 @@
    void SetDisplayColorSpaces(
        const gfx::DisplayColorSpaces& display_color_spaces);
    void SetOutputIsSecure(bool secure);
@@ -684,9 +684,9 @@
 -
 +
    const SurfaceId& CurrentSurfaceId() const;
-@@ -305,6 +309,7 @@
+@@ -309,6 +313,7 @@
    gfx::DisplayColorSpaces display_color_spaces_;
-   bool visible_ = false;
+   mojom::DisplayVisibility visibility_ = mojom::DisplayVisibility::kInvisible;
    bool output_is_secure_ = false;
 +  bool protected_layers_allowed_ = true;
 -
@@ -695,7 +695,7 @@
    std::unique_ptr<gpu::ScopedAllowScheduleGpuTask>
 --- a/components/viz/service/display/display.cc
 +++ b/components/viz/service/display/display.cc
-@@ -492,6 +492,23 @@
+@@ -512,6 +512,23 @@
      aggregator_->SetDisplayColorSpaces(display_color_spaces_);
  }
 -
@@ -732,35 +732,34 @@
    void ForceImmediateDrawAndSwapIfPossible() override;
 --- a/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
 +++ b/components/viz/service/frame_sinks/root_compositor_frame_sink_impl.cc
-@@ -381,6 +381,10 @@
--
-+
- void RootCompositorFrameSinkImpl::SetOutputIsSecure(bool secure) {
+@@ -384,6 +384,10 @@
    display_->SetOutputIsSecure(secure);
-+}
-+
-+void RootCompositorFrameSinkImpl::SetProtectedLayersAllowed(bool allowed) {
-+  display_->SetProtectedLayersAllowed(allowed);
  }
 -
 +
++void RootCompositorFrameSinkImpl::SetProtectedLayersAllowed(bool allowed) {
++  display_->SetProtectedLayersAllowed(allowed);
++}
++
  void RootCompositorFrameSinkImpl::SetDisplayVSyncParameters(
+     base::TimeTicks timebase,
+     base::TimeDelta interval) {
 --- a/services/viz/privileged/mojom/compositing/display_private.mojom
 +++ b/services/viz/privileged/mojom/compositing/display_private.mojom
-@@ -46,6 +46,12 @@
-   // effect when using GPU compositing.
+@@ -59,6 +59,12 @@
    SetDisplayColorSpaces(gfx.mojom.DisplayColorSpaces display_color_spaces);
    SetOutputIsSecure(bool secure);
+-
 +
 +  // Parc: whether this display may show FairPlay protected layers
 +  // (ui::ProtectedLayerRegistry). A parked pane compositor's display may not,
 +  // so it never takes one from the display that shows the page. Defaults to
 +  // true.
 +  SetProtectedLayersAllowed(bool allowed);
--
 +
    // Sets CGDirectDisplayID for GPU begin frame source.
    [EnableIf=is_mac]
+   SetVSyncDisplayID(int64 display_id);
 --- a/ui/compositor/compositor.h
 +++ b/ui/compositor/compositor.h
 @@ -462,6 +462,10 @@
@@ -788,7 +787,7 @@
    const bool is_pixel_canvas_;
 --- a/ui/compositor/compositor.cc
 +++ b/ui/compositor/compositor.cc
-@@ -372,6 +372,7 @@
+@@ -366,6 +366,7 @@
      display_private_->SetDisplayColorMatrix(
          gfx::SkM44ToTransform(display_color_matrix_));
      display_private_->SetOutputIsSecure(output_is_secure_);
@@ -796,7 +795,7 @@
  #if BUILDFLAG(IS_MAC)
      display_private_->SetVSyncDisplayID(display_id_);
  #endif
-@@ -994,6 +995,16 @@
+@@ -991,6 +992,16 @@
      display_private_->SetOutputIsSecure(output_is_secure);
  }
 -

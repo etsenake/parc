@@ -1,6 +1,6 @@
 --- a/components/viz/service/frame_sinks/video_capture/frame_sink_video_capturer_impl.cc
 +++ b/components/viz/service/frame_sinks/video_capture/frame_sink_video_capturer_impl.cc
-@@ -1534,16 +1534,20 @@ void FrameSinkVideoCapturerImpl::MaybeDeliverFrame(FrameCapture frame_capture) {
+@@ -1533,16 +1533,20 @@
      // frame is desirable.)
      if (frame_capture.frame->metadata().capture_version != capture_version()) {
        frame_capture.CaptureFailed(CaptureResult::kSubCaptureTargetChanged);
@@ -13,7 +13,8 @@
 -      frame_capture.CaptureFailed(CaptureResult::kOracleRejectedFrame);
      }
    }
- 
+-
++
 +  // Complete every recorded capture, including failed copies and frames from
 +  // an obsolete capture target. Otherwise the oracle's pending-frame count
 +  // prevents subsequent refresh requests from capturing a replacement frame.
@@ -28,7 +29,7 @@
    if (!frame_capture.success()) {
      const media::VideoFrameMetadata& metadata = frame_capture.frame_metadata();
      TRACE_EVENT_END("gpu.capture", CaptureTrack(metadata), "result",
-@@ -1654,6 +1658,8 @@ void FrameSinkVideoCapturerImpl::OnLog(const std::string& message) {
+@@ -1653,6 +1657,8 @@
  bool FrameSinkVideoCapturerImpl::ShouldMark(const media::VideoFrame& frame,
                                              int64_t content_version) const {
    return !marked_frame_ || content_version > content_version_in_marked_frame_ ||
@@ -36,8 +37,9 @@
 +             marked_frame_->metadata().capture_version ||
           frame.coded_size() != marked_frame_->coded_size();
  }
- 
-@@ -1667,7 +1673,8 @@ void FrameSinkVideoCapturerImpl::MarkFrame(
+-
++
+@@ -1666,7 +1672,8 @@
  bool FrameSinkVideoCapturerImpl::CanResurrectFrame(
      const gfx::Size& size) const {
    return content_version_ == content_version_in_marked_frame_ &&
@@ -45,14 +47,16 @@
 +         marked_frame_ && marked_frame_->coded_size() == size &&
 +         marked_frame_->metadata().capture_version == capture_version();
  }
- 
+-
++
  void FrameSinkVideoCapturerImpl::NotifyFrameReleased(
 --- a/components/viz/service/frame_sinks/video_capture/frame_sink_video_capturer_impl_unittest.cc
 +++ b/components/viz/service/frame_sinks/video_capture/frame_sink_video_capturer_impl_unittest.cc
 @@ -580,6 +580,12 @@ class FakeCapturableFrameSink : public CapturableFrameSink {
      PropagateMojoTasks(task_runner_);
    }
- 
+-
++
 +  void DropCopyOutputResult(int offset) {
 +    // Destroying the request sends an empty result, just like a failed copy.
 +    results_[offset].Reset();
@@ -65,7 +69,8 @@
 @@ -1570,6 +1576,66 @@ TEST_P(FrameSinkVideoCapturerTest, EventuallySendsARefreshFrame) {
    StopCapture();
  }
- 
+-
++
 +// A failed readback must not leave the oracle waiting for a capture that will
 +// never complete. The retry must work without new damage or a refresh demand.
 +TEST_P(FrameSinkVideoCapturerTest, RefreshRecoversAfterFailedCopy) {

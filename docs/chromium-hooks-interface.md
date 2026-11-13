@@ -106,8 +106,9 @@ which an embedder cannot override without replacing that file.
   ([decisions](chromium-seams.md#decisions)).
 - **`native-webauthn`**: passkey and security-key requests on opted-in pages use Parc's window; other
   pages run Chromium's dialogs unchanged, and the recovery window holds a typed lease. Adds a native
-  host and presentation validation to the ambient sign-in bubble and request dialog, across 11
-  WebAuthn view, controller, model and BUILD files.
+  host and presentation validation to the request dialog across 9 WebAuthn view, controller, model
+  and BUILD files. Chromium 157 deleted the ambient sign-in bubble, so Parc's ambient credential
+  chooser lives in `Engine/ParcNative/webauthn.mm` and uses the controller's public model callbacks.
 - **`native-autofill-capabilities-direct`**, **`native-autofill-controllers-direct`**,
   **`native-address-editor`**, **`native-address-account`**: presentation results and request state
   for native offers, and routes for native owners without a Views widget

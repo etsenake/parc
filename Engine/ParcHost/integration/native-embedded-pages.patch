@@ -36,7 +36,7 @@
 +
 --- a/components/sessions/core/tab_restore_service_helper.cc
 +++ b/components/sessions/core/tab_restore_service_helper.cc
-@@ -47,8 +47,25 @@
+@@ -47,9 +47,26 @@
  #include "ui/base/mojom/window_show_state.mojom.h"
  #include "ui/base/window_open_disposition.h"
 -
@@ -53,6 +53,7 @@
 +
  namespace sessions {
  namespace {
+-
 +
 +// Parc's Easel-owned pages never become restored tabs, including when their
 +// window, group or split closes.
@@ -60,10 +61,10 @@
 +  return parc_hooks::tab_restore_omitted &&
 +         parc_hooks::tab_restore_omitted(live_tab->GetSessionID());
 +}
--
 +
  void MaybeAddSplitToGroup(tab_restore::Group& group,
                            const tab_restore::Tab& tab) {
+   if (tab.split_id.has_value() &&
 @@ -257,7 +274,7 @@
  std::optional<SessionID> TabRestoreServiceHelper::CreateHistoricalTab(
      LiveTab* live_tab,
@@ -74,7 +75,7 @@
    }
 -
 +
-@@ -322,6 +339,12 @@
+@@ -324,6 +341,12 @@
    window->extra_data = context->GetExtraDataForWindow();
 -
 +
@@ -88,7 +89,7 @@
      auto tab = std::make_unique<Tab>();
      PopulateTab(tab.get(), tab_index, context,
                  context->GetLiveTabAt(tab_index));
-@@ -480,6 +503,9 @@
+@@ -491,6 +514,9 @@
    }
 -
 +
@@ -99,7 +100,7 @@
      auto tab = std::make_unique<Tab>();
      PopulateTab(tab.get(), split_tab.first, context, split_tab.second);
      split->tabs.push_back(std::move(tab));
-@@ -1469,6 +1495,9 @@
+@@ -1482,6 +1508,9 @@
                                            LiveTabContext* context,
                                            LiveTab* live_tab) {
    tab->current_navigation_index = 0;
@@ -111,7 +112,7 @@
          live_tab, AddBehavior::kCurrentAndPreceedingEntries, tab->navigations);
 --- a/chrome/browser/sessions/session_service_base.cc
 +++ b/chrome/browser/sessions/session_service_base.cc
-@@ -81,7 +81,23 @@
+@@ -82,7 +82,23 @@
  using sessions::ContentSerializedNavigationBuilder;
  using sessions::SerializedNavigationEntry;
 -
@@ -137,7 +138,7 @@
 +
  // Every kWritesPerReset commands triggers recreating the file.
  const int kWritesPerReset = 250;
-@@ -275,7 +291,8 @@
+@@ -276,7 +292,8 @@
  void SessionServiceBase::TabInserted(WebContents* contents) {
    sessions::SessionTabHelper* session_tab_helper =
        sessions::SessionTabHelper::FromWebContents(contents);
@@ -147,7 +148,7 @@
      return;
    }
    SetTabWindow(session_tab_helper->window_id(),
-@@ -612,6 +629,9 @@
+@@ -615,6 +632,9 @@
 -
 +
    sessions::SessionTabHelper* session_tab_helper =

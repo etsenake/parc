@@ -1,6 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Genuine Browser/TabList/ToolbarActionsModel/ExtensionActionViewModel tests.
-// AppKit shell policy is supplied separately; no fake action/grant/controller.
 #import <AppKit/AppKit.h>
 #include <memory>
 #include "base/functional/bind.h"
@@ -23,7 +21,6 @@
 #include "chrome/browser/ui/extensions/extensions_container.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/toolbar_actions_model.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "content/public/browser/web_contents.h"
@@ -38,6 +35,7 @@
 #include "extensions/browser/permissions/active_tab_permission_granter.h"
 #include "extensions/browser/unloaded_extension_reason.h"
 #include "extensions/common/extension_builder.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 #include "testing/gtest_mac.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/color/color_provider.h"
@@ -80,12 +78,12 @@ class ActionHost final : public NativeExtensionActionHost {
   std::string last_context;
   base::RepeatingClosure on_context;
 };
-}  // namespace
-class NativeExtensionActionsTest : public BrowserWithTestWindowTest,
+}
+class NativeExtensionActionsTest : public ParcBrowserWindowTest,
                                    public ToolbarActionsModel::Observer {
  protected:
   void SetUp() override {
-    BrowserWithTestWindowTest::SetUp();
+    ParcBrowserWindowTest::SetUp();
     auto* system = static_cast<extensions::TestExtensionSystem*>(
         extensions::ExtensionSystem::Get(profile()));
     system->Init();
@@ -93,8 +91,6 @@ class NativeExtensionActionsTest : public BrowserWithTestWindowTest,
         extensions::extension_action_test_util::CreateToolbarModelForProfile(
             profile());
     ASSERT_TRUE(model_);
-    // TestBrowserWindow has no Views ExtensionsContainer. The actual native
-    // container is registered on the genuine Browser's unowned-data host.
     ASSERT_EQ(nullptr, ExtensionsContainer::From(*browser()));
     container_ =
         std::make_unique<NativeExtensionActionContainer>(*browser(), host_);
@@ -124,7 +120,7 @@ class NativeExtensionActionsTest : public BrowserWithTestWindowTest,
       container_.reset();
     }
     base::RunLoop().RunUntilIdle();
-    BrowserWithTestWindowTest::TearDown();
+    ParcBrowserWindowTest::TearDown();
   }
   scoped_refptr<const extensions::Extension> AddExtension(
       const std::string& name) {
@@ -254,7 +250,7 @@ TEST_F(NativeExtensionActionsTest, SelectionAndAttachmentRejectOldSnapshots) {
   PCNativeExtensionAction* current = Value(*extension_);
   ASSERT_TRUE(current);
   attached_ = false;
-  bridge_->Changed();  // The actual host's synchronous WillDetach call.
+  bridge_->Changed();
   attached_ = true;
   EXPECT_FALSE(bridge_->SetPinned(current, *contents_, true));
   EXPECT_TRUE(bridge_->SetPinned(Value(*extension_), *contents_, true));
@@ -410,10 +406,10 @@ TEST_F(NativeExtensionActionsTest, EnabledMetadataDoesNotInventActionsOrIcons) {
   host_.security = false;
   registrar->RemoveExtension(no_action->id(), extensions::UnloadedExtensionReason::DISABLE);
   EXPECT_FALSE(bridge_->ExecuteEnabled(absent_action, *contents_));
-  EXPECT_FALSE(bridge_->ShowEnabledContextMenu(action, *contents_)); // Generation retired.
+  EXPECT_FALSE(bridge_->ShowEnabledContextMenu(action, *contents_));
   base::RunLoop().RunUntilIdle();
   for (PCNativeEnabledExtension* value in bridge_->EnabledSnapshot(*contents_))
-    EXPECT_FALSE(value.icon);  // No manifest icon; no fabricated fallback.
+    EXPECT_FALSE(value.icon);
 }
 TEST_F(NativeExtensionActionsTest, EnabledMetadataLoadsSmallManifestIconAndDispatches) {
   base::ScopedAllowBlockingForTesting allow_blocking;
@@ -431,7 +427,6 @@ TEST_F(NativeExtensionActionsTest, EnabledMetadataLoadsSmallManifestIconAndDispa
                    .SetPath(directory.GetPath())
                    .Build();
   extensions::ExtensionRegistrar::Get(profile())->AddExtension(small);
-  // Start the load, then let its UI-thread completion wake RunUntil.
   bridge_->EnabledSnapshot(*contents_);
   PCNativeEnabledExtension* small_value = nil;
   ASSERT_TRUE(base::test::RunUntil([&] {
@@ -454,4 +449,4 @@ TEST_F(NativeExtensionActionsTest, EnabledMetadataLoadsSmallManifestIconAndDispa
   EXPECT_FALSE(bridge_->ExecuteEnabled(action, *contents_));
   EXPECT_FALSE(bridge_->ShowEnabledContextMenu(small_value, *contents_));
 }
-}  // namespace parc
+}

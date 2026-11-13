@@ -1,6 +1,6 @@
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.h
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.h
-@@ -582,6 +582,9 @@
+@@ -580,6 +580,9 @@
    // Video frame sub-menu handling.
    ui::SimpleMenuModel video_frame_submenu_model_;
 -

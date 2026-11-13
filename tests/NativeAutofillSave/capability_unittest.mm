@@ -1,5 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Actual Browser/Tab/controller and native handler regression tests.
 #import <AppKit/AppKit.h>
 
 #include "base/functional/bind.h"
@@ -13,11 +12,11 @@
 #include "chrome/browser/ui/autofill/payments/save_card_bubble_controller_impl.h"
 #include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "components/autofill/core/browser/data_manager/test_personal_data_manager.h"
 #include "components/autofill/core/browser/test_utils/autofill_test_util.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 
 namespace parc {
 namespace {
@@ -39,8 +38,6 @@ class CapabilityWindow final : public TestBrowserWindow {
  private:
   __weak NSWindow* window_;
 };
-// Boundary stand-in for another currently hovered bubble. It supplies only
-// visibility; all queueing, preemption and card lifecycle logic is production.
 class OccupiedController final : public autofill::BubbleControllerBase {
  public:
   void ShowBubble() override { showing = true; }
@@ -91,13 +88,13 @@ bool Pump(P predicate) {
   } while (base::TimeTicks::Now() < end);
   return predicate();
 }
-}  // namespace
-class NativeAutofillCapabilityTest : public BrowserWithTestWindowTest,
+}
+class NativeAutofillCapabilityTest : public ParcBrowserWindowTest,
                                      public NativeAutofillBubbleHost,
                                      public testing::WithParamInterface<bool> {
  public:
   void SetUp() override {
-    BrowserWithTestWindowTest::SetUp();
+    ParcBrowserWindowTest::SetUp();
     handler_ = std::make_unique<NativeAutofillBubbleHandler>(*browser(), *this);
     static_cast<CapabilityWindow*>(window())->handler = handler_.get();
     AddTab(browser(), GURL("about:blank"));
@@ -117,11 +114,10 @@ class NativeAutofillCapabilityTest : public BrowserWithTestWindowTest,
     }
     browser()->GetTabStripModel()->CloseAllTabs();
     EXPECT_TRUE(Pump([this] { return native_.attachedSheet == nil; }));
-    // Drain deferred session deletion before Browser/Profile borrowed services.
     base::RunLoop().RunUntilIdle();
     static_cast<CapabilityWindow*>(window())->handler = nullptr;
     handler_.reset();
-    BrowserWithTestWindowTest::TearDown();
+    ParcBrowserWindowTest::TearDown();
     [native_ close];
     native_ = nil;
   }
@@ -335,7 +331,7 @@ TEST_P(NativeAutofillCapabilityTest,
   Offer(base::BindLambdaForTesting(
       [this](Decision d) { decisions_.push_back(d); }));
   EXPECT_FALSE(weak);
-  EXPECT_TRUE(decisions_.empty());  // Destruction is not a fabricated decline.
+  EXPECT_TRUE(decisions_.empty());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(native_.attachedSheet, nil);
 }
@@ -373,4 +369,4 @@ TEST_P(NativeAutofillCapabilityTest,
 INSTANTIATE_TEST_SUITE_P(RealManagerModes,
                          NativeAutofillCapabilityTest,
                          testing::Bool());
-}  // namespace parc
+}

@@ -1,5 +1,3 @@
-// Real Browser/Profile/Tab + PermissionRequestManager and native sheet. The
-// request callback observes actual manager decisions; it does not grant them.
 #import <AppKit/AppKit.h>
 
 #include <memory>
@@ -14,7 +12,6 @@
 #include "base/time/time.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/features.h"
 #include "components/permissions/permission_decision.h"
@@ -29,6 +26,7 @@
 #include "content/public/browser/permission_result.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/navigation_simulator.h"
+#include "parc/tests/parc_native_test_support/browser_window_test.h"
 #include "site_permissions.h"
 #import "window_security_reservation.h"
 
@@ -88,15 +86,15 @@ class NativePermissionWindow final : public TestBrowserWindow {
  private:
   NSWindow* __weak window_;
 };
-}  // namespace
-class NativeSitePermissionTest : public BrowserWithTestWindowTest {
+}
+class NativeSitePermissionTest : public ParcBrowserWindowTest {
  public:
   NativeSitePermissionTest() {
     features_.InitAndEnableFeature(
         content_settings::features::kApproximateGeolocationPermission);
   }
   void SetUp() override {
-    BrowserWithTestWindowTest::SetUp();
+    ParcBrowserWindowTest::SetUp();
     ASSERT_FALSE(window()->AsBrowserView());
     AddTab(browser(), GURL("https://permission.example"));
     NSView* view = contents()->GetNativeView().GetNativeNSView();
@@ -120,8 +118,7 @@ class NativeSitePermissionTest : public BrowserWithTestWindowTest {
   void TearDown() override {
     browser()->GetTabStripModel()->CloseAllTabs();
     EXPECT_TRUE(Pump([this] { return !Prompt(); }));
-    // Outcome storage remains alive through real request/controller teardown.
-    BrowserWithTestWindowTest::TearDown();
+    ParcBrowserWindowTest::TearDown();
     [native_window_ close];
     native_window_ = nil;
   }
@@ -171,9 +168,6 @@ class NativeSitePermissionTest : public BrowserWithTestWindowTest {
                           std::move(request));
     return *outcome;
   }
-  //
-  // The newest visible child, so a closing popover is not mistaken for its
-  // replacement.
   NSWindow* Prompt() {
     for (NSWindow* child in native_window_.childWindows.reverseObjectEnumerator) {
       if (child.visible) {
@@ -270,7 +264,6 @@ TEST_F(NativeSitePermissionTest, AllowCarriesEngineAccuracySelection) {
   auto& result = Add(Type::kGeolocation,
                      permissions::GeolocationPromptType::kApproximateOrPrecise);
   ASSERT_TRUE(Sheet());
-  //
   EXPECT_FALSE(Accuracy(Prompt().contentView));
   const bool precise =
       manager()->GetInitialGeolocationAccuracySelection() ==
@@ -338,8 +331,6 @@ TEST_F(NativeSitePermissionTest,
   auto old_detach = detach_;
   ASSERT_TRUE(old_detach);
   old_detach.Run();
-  // The platform calls this before removing the view. Both windows/page remain
-  // visible; no navigation or WebContents visibility signal is required.
   EXPECT_TRUE(Pump([&] { return !Prompt(); }));
   ASSERT_TRUE(Pump([&] { return old.calls > 0; }));
   EXPECT_EQ(Decision::kNone, old.decision);
@@ -414,4 +405,4 @@ TEST_F(NativeSitePermissionTest,
             settings->GetContentSetting(origin, origin,
                                         ContentSettingsType::NOTIFICATIONS));
 }
-}  // namespace parc
+}

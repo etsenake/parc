@@ -1,26 +1,26 @@
 --- a/media/BUILD.gn
 +++ b/media/BUILD.gn
-@@ -88,8 +88,12 @@
- }
- 
+@@ -89,7 +89,8 @@
+-
++
  if (proprietary_codecs && media_use_ffmpeg) {
-+  # macOS can do without FFmpeg's H.264 and AAC decoders: VideoToolbox and
-+  # AudioToolbox decode them. H.264 then has no software decoder, which
-+  # enable_ffmpeg_video_decoders=false must state.
    assert(
 -      ffmpeg_branding != "Chromium",
 +      ffmpeg_branding != "Chromium" ||
 +          (is_mac && !enable_ffmpeg_video_decoders),
        "proprietary codecs and ffmpeg_branding set to Chromium are incompatible")
  }
- 
-@@ -219,5 +223,6 @@
-     "//media/test:pipeline_integration_tests",
+-
++
+@@ -220,6 +221,7 @@
      "//media/test:run_all_unittests",
      "//media/video:unit_tests",
      "//media/webrtc:unit_tests",
 +    "//media/parc_tests:media_tests",
    ]
+-
++
+   data = [
 --- a/media/ffmpeg/ffmpeg_common.cc
 +++ b/media/ffmpeg/ffmpeg_common.cc
 @@ -164,6 +164,10 @@
@@ -43,13 +43,10 @@
      default:
        DVLOG(1) << "Unknown video CodecID: " << codec_id;
    }
-@@ -409,6 +415,17 @@
+@@ -409,6 +415,14 @@
        sample_format = kSampleFormatMpegHAudio;
        break;
  #endif
-+    // FFmpeg built without its AAC, ALAC or AMR decoders can't fill
-+    // |sample_fmt|; the platform decoder (AudioToolbox) decodes to planar
-+    // float.
 +    case AudioCodec::kAAC:
 +    case AudioCodec::kALAC:
 +    case AudioCodec::kAMR_NB:
@@ -58,11 +55,13 @@
 +        sample_format = kSampleFormatPlanarF32;
 +      }
 +      break;
- 
+-
++
      default:
        break;
-@@ -482,8 +499,9 @@
- 
+@@ -482,8 +496,9 @@
+-
++
    // Verify that AudioConfig.bytes_per_channel was calculated correctly for
    // codecs that have |sample_fmt| set by FFmpeg.
 -  DCHECK_EQ(av_get_bytes_per_sample(codec_context->sample_fmt),
@@ -72,15 +71,18 @@
 +             config->bytes_per_channel());
    return true;
  }
- 
+-
++
 --- a/media/filters/mac/audio_toolbox_audio_decoder.h
 +++ b/media/filters/mac/audio_toolbox_audio_decoder.h
 @@ -8,13 +8,17 @@
  #include <AudioToolbox/AudioToolbox.h>
- 
+-
++
  #include <memory>
 +#include <vector>
- 
+-
++
  #include "base/apple/scoped_typeref.h"
  #include "base/memory/free_deleter.h"
 +#include "base/memory/scoped_refptr.h"
@@ -91,76 +93,65 @@
  #include "media/base/audio_discard_helper.h"
 +#include "media/base/channel_layout.h"
  #include "media/base/media_export.h"
- 
+-
++
  namespace media {
-@@ -44,6 +48,10 @@
+@@ -44,6 +48,8 @@
    void Reset(base::OnceClosure reset_cb) override;
    bool NeedsBitstreamConversion() const override;
- 
-+  // Whether end of stream returns the frames AudioToolbox still holds, as for
-+  // AAC-LC and HE-AAC. xHE-AAC and AC-3/E-AC-3 keep upstream's end of stream.
+-
++
 +  static bool DrainsAtEndOfStreamForTesting(const AudioDecoderConfig& config);
 +
   private:
    struct ScopedAudioConverterRefTraits {
      static AudioConverterRef InvalidValue() { return nullptr; }
-@@ -54,13 +62,41 @@
+@@ -54,13 +60,29 @@
        base::apple::ScopedTypeRef<AudioConverterRef,
                                   ScopedAudioConverterRefTraits>;
- 
+-
++
 -  bool CreateDecoder(const AudioDecoderConfig& config);
-+  // Replaces the AAC decoder with one for `audio_specific_config` at
-+  // `sample_rate`, twice the core rate for implicitly signalled SBR. If that
-+  // fails it falls back to the container's rate.
 +  bool ReplaceDecoder(const std::vector<uint8_t>& audio_specific_config,
 +                      int sample_rate);
- 
-+  // `sample_rate` is the rate to decode AAC at: the container's, or twice the
-+  // core rate for implicitly signalled SBR.
++
 +  bool CreateDecoder(const AudioDecoderConfig& config,
 +                     const std::vector<uint8_t>& audio_specific_config,
 +                     int sample_rate);
 +
-+  // Passes on `frames` of `output_bus_` decoded for the input `time_info`
-+  // describes, regrouped for HE-AAC by access unit.
 +  void Deliver(int frames, const AudioDiscardHelper::TimeInfo& time_info);
 +  void DeliverHeldFrames();
 +
-+  // Outputs `frames` of `bus` as one buffer for the input `time_info`
-+  // describes.
 +  void Output(const AudioBus& bus,
 +              int frames,
 +              const AudioDiscardHelper::TimeInfo& time_info);
+-
 +
    void OnOutputReady(AudioDiscardHelper::TimeInfo time_info,
                       scoped_refptr<AudioBuffer> output_buffer);
- 
+-
++
    std::unique_ptr<MediaLog> media_log_;
- 
+-
++
 +  AudioDecoderConfig config_;
 +
-+  // Whether the stream's AAC layer is undecided: no access unit has shown
-+  // whether an AAC-LC config carries implicitly signalled SBR, and nothing has
-+  // been output.
 +  bool check_implicit_sbr_ = false;
 +
    // "Converter" for turning encoded samples into raw audio.
    ScopedAudioConverterRef decoder_;
- 
-@@ -69,8 +105,23 @@
- 
-   std::unique_ptr<AudioDiscardHelper> discard_helper_;
- 
-+  // Null for AAC-LC and HE-AAC, which are output unlimited.
+-
++
+@@ -71,6 +93,17 @@
+-
++
    std::unique_ptr<LimitingAudioQueue> limiter_queue_;
- 
+-
++
 +  ChannelLayout channel_layout_ = CHANNEL_LAYOUT_NONE;
 +  int sample_rate_ = 0;
 +  scoped_refptr<AudioBufferMemoryPool> pool_;
 +
-+  // HE-AAC output regrouped by access unit (see Deliver()). `delay_` is how
-+  // short AudioToolbox's first output was, and `held_` the frames of the
-+  // latest access unit waiting for the rest from the next output.
 +  bool aligns_to_access_units_ = false;
 +  bool awaiting_first_output_ = true;
 +  int delay_ = 0;
@@ -175,12 +166,14 @@
 +++ b/media/filters/mac/audio_toolbox_audio_decoder.cc
 @@ -5,13 +5,18 @@
  #include "media/filters/mac/audio_toolbox_audio_decoder.h"
- 
+-
++
  #include <algorithm>
 +#include <array>
  #include <optional>
 +#include <vector>
- 
+-
++
  #include "base/apple/osstatus_logging.h"
  #include "base/auto_reset.h"
 +#include "base/containers/span.h"
@@ -198,37 +191,28 @@
  #include "media/formats/mp4/es_descriptor.h"
 +#include "media/formats/mpeg/adts_constants.h"
  #include "media/media_buildflags.h"
- 
+-
++
  namespace media {
-@@ -40,14 +46,314 @@
-     return true;
-   }
+@@ -42,12 +48,260 @@
  #endif
--  // We use AudioToolbox for decoding xHE-AAC content and that's available on
--  // macOS 10.15 or higher.
+   // We use AudioToolbox for decoding xHE-AAC content and that's available on
+   // macOS 10.15 or higher.
 -  return config.profile() == AudioCodecProfile::kXHE_AAC;
-+  // FFmpeg is built without its AAC decoder, so AudioToolbox decodes every AAC
-+  // profile, including HE-AAC and xHE-AAC, and Apple Lossless and AMR, which
-+  // FFmpeg doesn't decode here either.
 +  return config.codec() == AudioCodec::kAAC ||
 +         config.codec() == AudioCodec::kALAC ||
 +         config.codec() == AudioCodec::kAMR_NB ||
 +         config.codec() == AudioCodec::kAMR_WB;
- }
- 
++}
++
 +bool IsAmr(const AudioDecoderConfig& config) {
 +  return config.codec() == AudioCodec::kAMR_NB ||
 +         config.codec() == AudioCodec::kAMR_WB;
 +}
 +
-+// The frames of an AMR sample, which AudioToolbox takes one per packet. A
-+// 3GPP sample holds several (TS 26.244, 6.5), each sized by its header's
-+// frame type (RFC 4867, 5.3; FFmpeg's amr.c). A truncated last frame is left
-+// out.
 +std::vector<AudioStreamPacketDescription> AmrPackets(
 +    AudioCodec codec,
 +    base::span<const uint8_t> sample) {
-+  // Header byte included; frame types above 8 (AMR-WB: 9) carry no speech.
 +  static constexpr std::array<uint8_t, 16> kNarrowbandSizes = {
 +      13, 14, 16, 18, 20, 21, 27, 32, 6, 1, 1, 1, 1, 1, 1, 1};
 +  static constexpr std::array<uint8_t, 16> kWidebandSizes = {
@@ -254,16 +238,10 @@
 +         config.profile() != AudioCodecProfile::kXHE_AAC;
 +}
 +
-+// ADTS frames without an AudioSpecificConfig (WebCodecs with no description)
-+// configure the decoder from the first frame's header.
 +bool TakesConfigFromAdts(const AudioDecoderConfig& config) {
 +  return MayArriveAsAdts(config) && config.extra_data().empty();
 +}
 +
-+// The ADTS header size when `data` is exactly one ADTS frame with a payload,
-+// as Chromium's MPEG-2 TS and ADTS stream parsers and WebCodecs chunks without
-+// a description deliver AAC; zero otherwise, as for a raw access unit.
-+// AudioToolbox rejects the header.
 +size_t AdtsHeaderSize(base::span<const uint8_t> data) {
 +  if (data.size() < kADTSHeaderMinSize || data[0] != 0xff ||
 +      (data[1] & 0xf6) != 0xf0) {
@@ -279,8 +257,6 @@
 +  return header_size;
 +}
 +
-+// The AudioSpecificConfig equivalent to an ADTS header (ISO/IEC 13818-7 and
-+// ISO/IEC 14496-3 section 1.6.2.1).
 +std::vector<uint8_t> AdtsAudioSpecificConfig(base::span<const uint8_t> adts) {
 +  const uint8_t object_type = (adts[2] >> 6) + 1;
 +  const uint8_t frequency_index = (adts[2] >> 2) & 0x0f;
@@ -290,11 +266,6 @@
 +                               (channel_config << 3))};
 +}
 +
-+// Rewrites an AAC-LC AudioSpecificConfig to signal SBR, with parametric stereo
-+// for a mono core, when the container plays it at twice the core rate. That is
-+// implicitly signalled HE-AAC (ADTS cannot signal it any other way), which
-+// AudioToolbox would otherwise decode as its half-rate AAC-LC core. Anything
-+// else is returned unchanged.
 +std::vector<uint8_t> SignalImplicitSbr(
 +    const std::vector<uint8_t>& audio_specific_config,
 +    int sample_rate) {
@@ -306,9 +277,6 @@
 +                                   (audio_specific_config[1] >> 7);
 +  const uint32_t channel_config = (audio_specific_config[1] >> 3) & 0x0f;
 +  const uint32_t frame_length_flag = (audio_specific_config[1] >> 2) & 0x01;
-+  // SBR doubles cores from 24 kHz (index 6) down to 8 kHz (index 11); twice
-+  // each rate sits three table entries earlier. dependsOnCoreCoder and
-+  // extensionFlag would add fields this rewrite doesn't carry.
 +  if (object_type != 2 || frequency_index < 6 || frequency_index > 11 ||
 +      channel_config < 1 || channel_config > 7 ||
 +      (audio_specific_config[1] & 0x03) != 0 ||
@@ -323,9 +291,6 @@
 +          static_cast<uint8_t>(bits >> 8), static_cast<uint8_t>(bits)};
 +}
 +
-+// The core rate of a bare two-byte AAC-LC AudioSpecificConfig whose stream may
-+// carry SBR that only the bitstream signals, or 0. SBR doubles cores from
-+// 24 kHz down to 8 kHz. Longer configs signal SBR explicitly or rule it out.
 +int ImplicitSbrCoreRate(const std::vector<uint8_t>& audio_specific_config) {
 +  if (audio_specific_config.size() != 2) {
 +    return 0;
@@ -334,8 +299,6 @@
 +  const uint32_t frequency_index = ((audio_specific_config[0] & 0x07) << 1) |
 +                                   (audio_specific_config[1] >> 7);
 +  const uint32_t channel_config = (audio_specific_config[1] >> 3) & 0x0f;
-+  // frameLengthFlag, dependsOnCoreCoder and extensionFlag must be clear: ADTS,
-+  // which the check below uses, can't carry them.
 +  if (object_type != 2 || frequency_index < 6 || frequency_index > 11 ||
 +      channel_config < 1 || channel_config > 7 ||
 +      (audio_specific_config[1] & 0x07) != 0) {
@@ -344,18 +307,10 @@
 +  return kADTSFrequencyTable[frequency_index];
 +}
 +
-+// Whether `access_unit`, coded as the bare AAC-LC `audio_specific_config`
-+// describes, carries SBR. macOS's ADTS parser reads that from the raw data
-+// block, as FFmpeg's decoder does from a stream's first frame, and then lists
-+// HE-AAC layers. It reports nothing until it has parsed about 128 bytes, so it
-+// gets the access unit repeated as ADTS frames. Nullopt when the parser can't
-+// judge the access unit, as for an empty, truncated or damaged one.
 +std::optional<bool> CarriesSbr(
 +    const std::vector<uint8_t>& audio_specific_config,
 +    base::span<const uint8_t> access_unit) {
-+  // ADTS's 13-bit frame length.
 +  constexpr size_t kMaxAdtsFrameSize = 0x1fff;
-+  // At least two frames and 1 KB, a margin over the parser's 128 bytes.
 +  constexpr size_t kMinParsedBytes = 1024;
 +  const int core_rate = ImplicitSbrCoreRate(audio_specific_config);
 +  if (!core_rate) {
@@ -365,7 +320,6 @@
 +  if (access_unit.empty() || frame_size > kMaxAdtsFrameSize) {
 +    return std::nullopt;
 +  }
-+  // MPEG-4 AAC-LC without CRC, variable bitrate, one raw data block.
 +  const uint8_t frequency_index = ((audio_specific_config[0] & 0x07) << 1) |
 +                                  (audio_specific_config[1] >> 7);
 +  const uint8_t channel_config = (audio_specific_config[1] >> 3) & 0x0f;
@@ -428,13 +382,6 @@
 +      });
 +}
 +
-+// The rate to decode `audio_specific_config` at, given `access_unit`, the
-+// first its stream can be judged by. Like FFmpeg's decoder, this takes SBR
-+// that only that access unit signals (implicitly signalled HE-AAC) and runs at
-+// twice the core rate, with parametric stereo for a mono core. Otherwise it is
-+// `sample_rate`, the container's; SignalImplicitSbr() already handles a
-+// container at twice the core rate. Nullopt when the access unit can't be
-+// judged.
 +std::optional<int> ImplicitSbrRate(
 +    const std::vector<uint8_t>& audio_specific_config,
 +    base::span<const uint8_t> access_unit,
@@ -451,10 +398,6 @@
 +  return *sbr ? 2 * core_rate : sample_rate;
 +}
 +
-+// Fills `format` with the richest layer of the AAC stream in `cookie` that
-+// macOS decodes (HE-AAC v2, HE-AAC, then the AAC-LC core), preferring one at
-+// `sample_rate` so the output keeps the config's rate where the stream allows.
-+// kAudioFormatProperty_FormatInfo alone would describe only the AAC-LC core.
 +bool SelectAacLayer(const std::vector<uint8_t>& cookie,
 +                    int sample_rate,
 +                    AudioStreamBasicDescription& format,
@@ -500,25 +443,22 @@
 +  return true;
 +}
 +
-+// AAC-LC and HE-AAC end of stream returns the frames AudioToolbox still holds.
-+// xHE-AAC and AC-3/E-AC-3 keep upstream's end of stream.
 +bool DrainsAtEndOfStream(const AudioDecoderConfig& config) {
 +  return MayArriveAsAdts(config);
-+}
+ }
+-
 +
  struct InputData {
    raw_ptr<DecoderBuffer> buffer = nullptr;
-+  // Leading bytes of `buffer` that aren't AAC payload: a stripped ADTS header.
 +  size_t header_size = 0;
-+  // See DrainsAtEndOfStream().
 +  bool drains_at_end_of_stream = false;
    AudioStreamPacketDescription packet = {};
-+  // An AMR sample's frames (AmrPackets()), in place of `packet`.
 +  std::vector<AudioStreamPacketDescription> amr_packets;
  };
- 
+-
++
  // Special error code we use to differentiate real errors from end of buffer.
-@@ -60,21 +366,41 @@
+@@ -60,21 +314,38 @@
                                AudioStreamPacketDescription** packets,
                                void* user_data) {
    auto* input_data = reinterpret_cast<InputData*>(user_data);
@@ -528,16 +468,14 @@
      *num_packets = 0;
      return kNoMoreDataError;
    }
-+  // No packets and no error tells AudioToolbox the input has ended, so it
-+  // returns what its decoder still holds (HE-AAC's last 962 frames). An error
-+  // would make it drop them.
 +  if (input_data->buffer->end_of_stream()) {
 +    *num_packets = 0;
 +    buffer_list->mBuffers[0].mDataByteSize = 0;
 +    buffer_list->mBuffers[0].mData = nullptr;
 +    return noErr;
 +  }
- 
+-
++
 +  auto payload =
 +      base::span(*input_data->buffer).subspan(input_data->header_size);
    *num_packets = buffer_list->mNumberBuffers = 1;
@@ -550,12 +488,14 @@
    buffer_list->mBuffers[0].mNumberChannels = 0;
 -  buffer_list->mBuffers[0].mDataByteSize = input_data->buffer->size();
 +  buffer_list->mBuffers[0].mDataByteSize = payload.size();
- 
+-
++
    // No const version of this API unfortunately, so we need const_cast().
 -  buffer_list->mBuffers[0].mData =
 -      const_cast<uint8_t*>(base::span(*input_data->buffer).data());
 +  buffer_list->mBuffers[0].mData = const_cast<uint8_t*>(payload.data());
- 
+-
++
 -  if (packets)
 -    *packets = &input_data->packet;
 +  if (packets) {
@@ -563,10 +503,11 @@
 +                   ? &input_data->packet
 +                   : input_data->amr_packets.data();
 +  }
- 
+-
++
    // This ensures that if this callback is called again, we'll exit via the
    // kNoMoreDataError path above.
-@@ -116,7 +442,7 @@
+@@ -116,7 +387,7 @@
                                            const WaitingCB& waiting_cb) {
    if (!CanUseAudioToolbox(config)) {
      DLOG(WARNING)
@@ -575,9 +516,10 @@
      std::move(init_cb).Run(DecoderStatus::Codes::kUnsupportedCodec);
      return;
    }
-@@ -131,7 +457,15 @@
+@@ -131,7 +402,15 @@
    decoder_.reset();
- 
+-
++
    output_cb_ = output_cb;
 -  const bool success = CreateDecoder(config);
 +  config_ = config;
@@ -592,15 +534,16 @@
    if (!success) {
      decoder_.reset();
    }
-@@ -142,10 +476,15 @@
- 
+@@ -142,10 +421,14 @@
+-
++
  void AudioToolboxAudioDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
                                        DecodeCB decode_cb) {
 -  CHECK(decoder_);
    DecodeCB decode_cb_bound =
        base::BindPostTaskToCurrentDefault(std::move(decode_cb));
- 
-+  // MojoAudioDecoderService forwards Decode() even after Initialize() failed.
+-
++
 +  if (!decoder_ && !TakesConfigFromAdts(config_)) {
 +    std::move(decode_cb_bound).Run(DecoderStatus::Codes::kNotInitialized);
 +    return;
@@ -609,16 +552,15 @@
    // Make sure we are notified if https://crbug.com/49709 returns. Issue also
    // occurs with some damaged files.
    if (!buffer->end_of_stream() && buffer->timestamp() == kNoTimestamp) {
-@@ -163,63 +502,168 @@
- 
+@@ -163,20 +446,96 @@
+-
++
    InputData input_data;
    input_data.buffer = buffer.get();
 +  input_data.drains_at_end_of_stream = DrainsAtEndOfStream(config_);
 +  if (!buffer->end_of_stream() && MayArriveAsAdts(config_)) {
 +    input_data.header_size = AdtsHeaderSize(base::span(*buffer));
 +  }
-+  // AudioToolbox takes one access unit per packet, so a multi-block ADTS frame
-+  // is refused. FFmpeg's decoder would have decoded only its first block.
 +  if (input_data.header_size && (base::span(*buffer)[6] & 0x03) != 0) {
 +    MEDIA_LOG(ERROR, media_log_)
 +        << "ADTS frames with several raw data blocks are unsupported";
@@ -640,15 +582,12 @@
 +          .Run(DecoderStatus::Codes::kPlatformDecodeFailure);
 +      return;
 +    }
-+    // Without a description each ADTS header gives the config.
 +    std::optional<std::vector<uint8_t>> audio_specific_config;
 +    if (!TakesConfigFromAdts(config_)) {
 +      audio_specific_config = config_.extra_data();
 +    } else if (input_data.header_size) {
 +      audio_specific_config = AdtsAudioSpecificConfig(base::span(*buffer));
 +    }
-+    // As in FFmpeg's decoder, the first access unit that can be judged
-+    // decides. One that can't leaves it to the next, unless it produces output.
 +    const std::optional<int> sample_rate =
 +        audio_specific_config
 +            ? ImplicitSbrRate(
@@ -661,7 +600,6 @@
 +    }
 +    if (!decoder_ ||
 +        (sample_rate && *sample_rate != config_.samples_per_second())) {
-+      // Both cases have a config: without a description, an ADTS header.
 +      CHECK(audio_specific_config);
 +      if (!ReplaceDecoder(*audio_specific_config,
 +                          sample_rate.value_or(config_.samples_per_second()))) {
@@ -672,13 +610,13 @@
 +      }
 +    }
 +  }
- 
+-
++
    if (!buffer->end_of_stream()) {
 -    if (buffer->size() == 0) {
 -      OnOutputReady(AudioDiscardHelper::TimeInfo::FromBuffer(*buffer), nullptr);
 +    if (IsAmr(config_)) {
 +      input_data.amr_packets = AmrPackets(config_.codec(), base::span(*buffer));
-+      // The AMRSpecificBox counts a sample's frames in a byte.
 +      if (input_data.amr_packets.size() > 255) {
 +        MEDIA_LOG(ERROR, media_log_) << "AMR sample with too many frames";
 +        std::move(decode_cb_bound)
@@ -688,8 +626,6 @@
 +    }
 +    if (buffer->size() == 0 ||
 +        (IsAmr(config_) && input_data.amr_packets.empty())) {
-+      // Held HE-AAC frames haven't reached the discard helper yet, so an empty
-+      // buffer mustn't set its base timestamp an access unit late.
 +      if (!held_frames_) {
 +        OnOutputReady(AudioDiscardHelper::TimeInfo::FromBuffer(*buffer),
 +                      nullptr);
@@ -700,8 +636,6 @@
      last_input_timestamp_ = buffer->timestamp();
 -    input_data.packet.mDataByteSize = buffer->size();
 +    input_data.packet.mDataByteSize = buffer->size() - input_data.header_size;
-+    // Room for all of an AMR sample's 20 ms frames, so that none waits in
-+    // AudioToolbox for the next sample.
 +    const int amr_frames =
 +        base::checked_cast<int>(input_data.amr_packets.size()) * sample_rate_ /
 +        50;
@@ -709,48 +643,34 @@
 +      output_bus_ = AudioBus::Create(output_bus_->channels(), amr_frames);
 +    }
    }
- 
--  // Must be filled in each time in case AudioConverterFillComplexBuffer()
--  // modified it during a previous call.
+-
++
+   // Must be filled in each time in case AudioConverterFillComplexBuffer()
+   // modified it during a previous call.
 -  output_buffer_list_->mNumberBuffers = output_bus_->channels();
-+  // Decodes up to |num_frames| of encoded data into |output_bus_| by calling
-+  // the ProvideInputCallback to fill an AudioBufferList that points into
 +  // |input_data|. See media::AudioConverter for a similar mechanism.
 +  auto fill_output_bus = [this, &input_data](UInt32* num_frames) {
 +    // Must be filled in each time in case AudioConverterFillComplexBuffer()
 +    // modified it during a previous call.
 +    output_buffer_list_->mNumberBuffers = output_bus_->channels();
- 
--  // SAFETY: In `CreateDecoder` , we allocate memory for `output_buffer_list_`
--  // of `sizeof(AudioBufferList) + output_bus_->channels() *
--  // sizeof(AudioBuffer)`.
--  //
--  // From
--  // https://developer.apple.com/documentation/coreaudiotypes/audiobufferlist we
--  // learn that the structure of `AudioBufferList` is:
--  //
--  // ```
--  // struct AudioBufferList {
--  //   UInt32 mNumberBuffers;
--  //   AudioBuffer mBuffers[1];  // this is a variable length array of
--  //                             // mNumberBuffers elements
--  // };
--  // ```
--  //
--  // So the size of `output_buffer_list_` is sufficient.
+-
++
+   // SAFETY: In `CreateDecoder` , we allocate memory for `output_buffer_list_`
+   // of `sizeof(AudioBufferList) + output_bus_->channels() *
+@@ -195,31 +554,63 @@
+   // ```
+   //
+   // So the size of `output_buffer_list_` is sufficient.
 -  auto buffer_span = UNSAFE_BUFFERS(base::span(
 -      output_buffer_list_->mBuffers, output_buffer_list_->mNumberBuffers));
 -  for (int i = 0; i < output_bus_->channels(); ++i) {
 -    buffer_span[i].mNumberChannels = 1;
 -    buffer_span[i].mDataByteSize = output_bus_->frames() * sizeof(float);
 -    buffer_span[i].mData = output_bus_->channel(i).data();
-+    // SAFETY: In `CreateDecoder` , we allocate memory for
-+    // `output_buffer_list_` of `sizeof(AudioBufferList) +
-+    // output_bus_->channels() * sizeof(AudioBuffer)`.
+-  }
+-
 +    //
 +    // From
-+    // https://developer.apple.com/documentation/coreaudiotypes/audiobufferlist
-+    // we learn that the structure of `AudioBufferList` is:
 +    //
 +    // ```
 +    // struct AudioBufferList {
@@ -779,7 +699,13 @@
 +                                            : last_input_timestamp_,
 +      base::TimeDelta(), std::nullopt};
 +  if (buffer->end_of_stream() && input_data.drains_at_end_of_stream) {
-+    // AudioToolbox holds less than a packet, so this ends after one or two.
+   // Decodes |num_frames| of encoded data into |output_bus_| by calling the
+   // ProvideInputCallback to fill an AudioBufferList that points into
+   // |input_data|. See media::AudioConverter for a similar mechanism.
+-  UInt32 num_frames = output_bus_->frames();
+-  auto result = AudioConverterFillComplexBuffer(
+-      decoder_.get(), ProvideInputCallback, &input_data, &num_frames,
+-      output_buffer_list_.get(), nullptr);
 +    for (int i = 0; i < 8; ++i) {
 +      UInt32 num_frames = 0;
 +      const auto result = fill_output_bus(&num_frames);
@@ -793,16 +719,9 @@
 +    DeliverHeldFrames();
 +    std::move(decode_cb_bound).Run(OkStatus());
 +    return;
-   }
- 
--  // Decodes |num_frames| of encoded data into |output_bus_| by calling the
--  // ProvideInputCallback to fill an AudioBufferList that points into
--  // |input_data|. See media::AudioConverter for a similar mechanism.
--  UInt32 num_frames = output_bus_->frames();
--  auto result = AudioConverterFillComplexBuffer(
--      decoder_.get(), ProvideInputCallback, &input_data, &num_frames,
--      output_buffer_list_.get(), nullptr);
++  }
 -
++
 +  UInt32 num_frames = 0;
 +  const auto result = fill_output_bus(&num_frames);
    if (result == kNoMoreDataError && !num_frames) {
@@ -818,11 +737,18 @@
    if (result != noErr && result != kNoMoreDataError) {
      OSSTATUS_MEDIA_LOG(ERROR, result, media_log_)
          << "AudioConverterFillComplexBuffer() failed";
-@@ -227,35 +671,102 @@
+@@ -227,35 +618,95 @@
          .Run(DecoderStatus::Codes::kPlatformDecodeFailure);
      return;
    }
++  if (num_frames && buffer->end_of_stream()) {
++    Deliver(num_frames, end_of_stream_time_info);
++  } else if (num_frames) {
++    check_implicit_sbr_ = false;
++    Deliver(num_frames, AudioDiscardHelper::TimeInfo::FromBuffer(*buffer));
++  }
 -
++
 -  base::TimeDelta timestamp;
 -  AudioDiscardHelper::TimeInfo time_info;
 -  if (buffer->end_of_stream()) {
@@ -833,19 +759,7 @@
 -  } else {
 -    timestamp = buffer->timestamp();
 -    time_info = AudioDiscardHelper::TimeInfo::FromBuffer(*buffer);
-+  if (num_frames && buffer->end_of_stream()) {
-+    Deliver(num_frames, end_of_stream_time_info);
-+  } else if (num_frames) {
-+    // Once there is output, the stream's AAC layer stays.
-+    check_implicit_sbr_ = false;
-+    Deliver(num_frames, AudioDiscardHelper::TimeInfo::FromBuffer(*buffer));
-   }
- 
--  limiter_queue_->Push(*output_bus_, num_frames, timestamp,
--                       base::BindOnce(&AudioToolboxAudioDecoder::OnOutputReady,
--                                      base::Unretained(this), time_info));
--
-   std::move(decode_cb_bound).Run(OkStatus());
++  std::move(decode_cb_bound).Run(OkStatus());
 +}
 +
 +// static
@@ -860,12 +774,7 @@
 +  if (!aligns_to_access_units_ || (!awaiting_first_output_ && !delay_)) {
 +    Output(*output_bus_, frames, time_info);
 +    return;
-+  }
-+  // AudioToolbox drops HE-AAC's SBR delay from its first output after creation
-+  // or Reset(), so that buffer is short by it. Every later buffer starts that
-+  // many frames before its access unit, whose frames end in the next buffer.
-+  // Holding them back keeps each buffer, and its discard padding, on its own
-+  // access unit, as macOS lines them up.
+   }
 +  if (awaiting_first_output_) {
 +    awaiting_first_output_ = false;
 +    delay_ = std::max(output_bus_->frames() - frames, 0);
@@ -886,15 +795,21 @@
 +  held_frames_ = frames - completing;
 +  output_bus_->CopyPartialFramesTo(completing, held_frames_, 0, held_.get());
 +  held_time_info_ = time_info;
- }
- 
++}
+-
++
+-  limiter_queue_->Push(*output_bus_, num_frames, timestamp,
+-                       base::BindOnce(&AudioToolboxAudioDecoder::OnOutputReady,
+-                                      base::Unretained(this), time_info));
 +void AudioToolboxAudioDecoder::DeliverHeldFrames() {
 +  if (held_frames_) {
 +    Output(*held_, held_frames_, held_time_info_);
 +    held_frames_ = 0;
 +  }
 +}
+-
 +
+-  std::move(decode_cb_bound).Run(OkStatus());
 +void AudioToolboxAudioDecoder::Output(
 +    const AudioBus& bus,
 +    int frames,
@@ -916,20 +831,19 @@
 +                AudioBuffer::CopyFrom(kSampleFormatPlanarF32, channel_layout_,
 +                                      bus.channels(), sample_rate_, frames,
 +                                      channels, time_info.timestamp, pool_));
-+}
+ }
+-
 +
  void AudioToolboxAudioDecoder::Reset(base::OnceClosure reset_cb) {
 -  CHECK(decoder_);
--  // This could fail, but ResetCB has no error reporting mechanism, so just let
--  // a subsequent decode call fail.
++  if (decoder_) {
+   // This could fail, but ResetCB has no error reporting mechanism, so just let
+   // a subsequent decode call fail.
 -  const auto result = AudioConverterReset(decoder_.get());
 -  OSSTATUS_DLOG_IF(WARNING, result != noErr, result)
 -      << "AudioConverterReset() failed";
 -  discard_helper_->Reset(discard_helper_->decoder_delay());
 -  limiter_queue_->Clear();
-+  if (decoder_) {
-+    // This could fail, but ResetCB has no error reporting mechanism, so just
-+    // let a subsequent decode call fail.
 +    const auto result = AudioConverterReset(decoder_.get());
 +    OSSTATUS_DLOG_IF(WARNING, result != noErr, result)
 +        << "AudioConverterReset() failed";
@@ -937,22 +851,21 @@
 +    if (limiter_queue_) {
 +      limiter_queue_->Clear();
 +    }
-+    // AudioToolbox drops HE-AAC's SBR delay again after a reset.
 +    awaiting_first_output_ = true;
 +    held_frames_ = 0;
 +  }
    last_input_timestamp_ = kNoTimestamp;
    base::BindPostTaskToCurrentDefault(std::move(reset_cb)).Run();
  }
-@@ -266,16 +777,47 @@
+@@ -266,16 +717,45 @@
    return false;
  }
- 
+-
++
 -bool AudioToolboxAudioDecoder::CreateDecoder(const AudioDecoderConfig& config) {
 +bool AudioToolboxAudioDecoder::ReplaceDecoder(
 +    const std::vector<uint8_t>& audio_specific_config,
 +    int sample_rate) {
-+  // Nothing has been output yet, so an AAC-LC converter can go.
 +  decoder_.reset();
 +  if (CreateDecoder(config_, audio_specific_config, sample_rate)) {
 +    return true;
@@ -973,11 +886,11 @@
 +    int sample_rate) {
    AudioStreamBasicDescription input_format = {};
    std::vector<uint8_t> magic_cookie;
- 
+-
++
    switch (config.codec()) {
      case AudioCodec::kAAC: {
 +      if (config.profile() != AudioCodecProfile::kXHE_AAC) {
-+        // Input is AAC-LC, HE-AAC or HE-AAC v2.
 +        magic_cookie = mp4::ESDescriptor::CreateEsds(
 +            SignalImplicitSbr(audio_specific_config, sample_rate));
 +        if (!SelectAacLayer(magic_cookie, sample_rate, input_format,
@@ -992,17 +905,15 @@
        input_format.mFormatID = kAudioFormatMPEGD_USAC;
 -      magic_cookie = mp4::ESDescriptor::CreateEsds(config.extra_data());
 +      magic_cookie = mp4::ESDescriptor::CreateEsds(audio_specific_config);
- 
+-
++
        // Have macOS fill in the rest of the input_format for us.
        UInt32 format_size = sizeof(input_format);
-@@ -289,6 +831,34 @@
+@@ -289,6 +769,30 @@
        }
        break;
      }
 +    case AudioCodec::kALAC: {
-+      // Input is Apple Lossless. The extra data is its magic cookie: the
-+      // ALACSpecificConfig from MP4StreamParser, or the 'alac' atom FFmpeg
-+      // keeps; AudioToolbox reads either, and fills in the rest.
 +      input_format.mFormatID = kAudioFormatAppleLossless;
 +      magic_cookie = config.extra_data();
 +      UInt32 format_size = sizeof(input_format);
@@ -1018,7 +929,6 @@
 +    }
 +    case AudioCodec::kAMR_NB:
 +    case AudioCodec::kAMR_WB:
-+      // Input is AMR, mono 20 ms frames without a magic cookie.
 +      input_format.mFormatID = config.codec() == AudioCodec::kAMR_NB
 +                                   ? kAudioFormatAMR
 +                                   : kAudioFormatAMR_WB;
@@ -1030,36 +940,36 @@
  #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
      case AudioCodec::kAC3:
      case AudioCodec::kEAC3:
-@@ -414,7 +984,8 @@
+@@ -414,7 +918,8 @@
      return false;
    }
- 
+-
++
 -  if (config.codec() == AudioCodec::kAAC) {
 +  if (config.codec() == AudioCodec::kAAC ||
 +      config.codec() == AudioCodec::kALAC) {
      // Instill the magic!
      result = AudioConverterSetProperty(
          decoder_.get(), kAudioConverterDecompressionMagicCookie,
-@@ -424,7 +995,9 @@
+@@ -424,7 +929,9 @@
            << "AudioConverterSetProperty() failed";
        return false;
      }
 +  }
- 
+-
++
 +  if (config.profile() == AudioCodecProfile::kXHE_AAC) {
      // macOS doesn't provide a default target loudness. Use the value
      // recommended by Fraunhofer. AC3/E-AC3 doesn't support set this,
      // so limit this to xHE-AAC only.
-@@ -460,10 +1033,35 @@
+@@ -460,9 +967,31 @@
    output_bus_ = AudioBus::Create(input_format.mChannelsPerFrame,
                                   input_format.mFramesPerPacket);
- 
+-
++
 -  limiter_queue_ = std::make_unique<LimitingAudioQueue>(
 -      channel_layout, input_format.mSampleRate, input_format.mChannelsPerFrame,
 -      input_format.mFramesPerPacket);
-+  // AAC-LC, HE-AAC and AMR samples pass through untouched, as FFmpeg's
-+  // decoders leave them (AudioToolbox's AMR output stays within [-1, 1]);
-+  // only the other codecs get the peak limiter.
 +  if ((config.codec() != AudioCodec::kAAC ||
 +       config.profile() == AudioCodecProfile::kXHE_AAC) &&
 +      !IsAmr(config)) {
@@ -1074,7 +984,7 @@
 +  if (!pool_) {
 +    pool_ = base::MakeRefCounted<AudioBufferMemoryPool>();
 +  }
- 
++
 +  aligns_to_access_units_ =
 +      input_format.mFormatID == kAudioFormatMPEG4AAC_HE ||
 +      input_format.mFormatID == kAudioFormatMPEG4AAC_HE_V2;
@@ -1085,21 +995,23 @@
 +              ? AudioBus::Create(input_format.mChannelsPerFrame,
 +                                 input_format.mFramesPerPacket)
 +              : nullptr;
+-
 +
    // AudioBufferList is a strange variable length structure that by default only
    // includes one buffer slot, so we need to construct our own multichannel one.
-   //
 --- a/media/renderers/audio_renderer_impl.cc
 +++ b/media/renderers/audio_renderer_impl.cc
 @@ -8,8 +8,10 @@
  #include <stddef.h>
- 
+-
++
  #include <algorithm>
 +#include <array>
  #include <memory>
  #include <utility>
 +#include <vector>
- 
+-
++
  #include "base/command_line.h"
  #include "base/functional/bind.h"
 @@ -17,6 +19,7 @@
@@ -1118,15 +1030,12 @@
  #include "media/filters/audio_clock.h"
  #include "media/filters/decrypting_demuxer_stream.h"
  #include "third_party/perfetto/include/perfetto/tracing/track.h"
-@@ -209,8 +213,113 @@
+@@ -209,8 +213,101 @@
    return result;
  }
- 
+-
++
 +#if BUILDFLAG(IS_MAC)
-+// Whether AudioToolbox may find implicitly signalled HE-AAC in `config`'s
-+// stream and decode it at twice the config's rate. That takes an AAC-LC core
-+// of 24 kHz or less, given by the first ADTS header when there is no config,
-+// or by a bare two-byte AudioSpecificConfig at the stream's rate.
 +bool MayDoubleAacRate(const AudioDecoderConfig& config) {
 +  if (config.codec() != AudioCodec::kAAC ||
 +      config.profile() == AudioCodecProfile::kXHE_AAC ||
@@ -1140,7 +1049,6 @@
 +  if (audio_specific_config.size() != 2) {
 +    return false;
 +  }
-+  // Sampling frequency indices 6 to 11 (ISO/IEC 14496-3, Table 1.18).
 +  constexpr auto kCoreRates =
 +      std::to_array<int>({24000, 22050, 16000, 12000, 11025, 8000});
 +  const uint32_t object_type = audio_specific_config[0] >> 3;
@@ -1152,24 +1060,19 @@
 +         (audio_specific_config[1] & 0x07) == 0 &&
 +         kCoreRates[frequency_index - 6] == config.samples_per_second();
 +}
-+#endif  // BUILDFLAG(IS_MAC)
++#endif
 +
-+// Parc: how far a mixed renderer may drift from the timeline of the renderer
-+// it's mixed into before it waits or drops audio to meet it again; more than
-+// WSOLA's own drift at rates other than 1.
 +constexpr base::TimeDelta kParcMixedDriftTolerance = base::Milliseconds(30);
 +
  }  // namespace
- 
-+// Parc: pulled from the Render() of the renderer it's mixed into, while the
-+// renderer that has it plays.
+-
++
 +class AudioRendererImpl::ParcMixedSink final : public AudioRendererSink {
 + public:
 +  explicit ParcMixedSink(const AudioParameters& params) : params_(params) {}
 +
 +  const AudioParameters& params() const { return params_; }
 +
-+  // |renderer| stops this sink before it goes.
 +  void SetRenderer(AudioRendererImpl* renderer) {
 +    base::AutoLock auto_lock(lock_);
 +    renderer_ = renderer;
@@ -1187,7 +1090,6 @@
 +                                      audio_bus);
 +  }
 +
-+  // AudioRendererSink implementation.
 +  void Initialize(const AudioParameters& params,
 +                  RenderCallback* callback) override {}
 +  void Start() override {
@@ -1199,7 +1101,7 @@
 +    started_ = false;
 +    playing_ = false;
 +  }
-+  void Pause() override {
++  void Pause(PauseReason reason) override {
 +    base::AutoLock auto_lock(lock_);
 +    playing_ = false;
 +  }
@@ -1232,41 +1134,37 @@
  AudioRendererImpl::AudioRendererImpl(
      const scoped_refptr<base::SequencedTaskRunner>& task_runner,
      scoped_refptr<AudioRendererSink> sink,
-@@ -279,6 +388,9 @@
+@@ -277,6 +374,9 @@
    sink_->Stop();
    if (null_sink_)
      null_sink_->Stop();
 +  if (parc_mixed_sink_) {
 +    parc_mixed_sink_->SetRenderer(nullptr);
 +  }
- 
+-
++
    if (init_cb_)
      FinishInitialization(PIPELINE_ERROR_ABORT);
-@@ -676,6 +788,16 @@
+@@ -682,6 +782,11 @@
      expecting_config_changes_ = true;
    }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO) && BUILDFLAG(IS_WIN)
 +#if BUILDFLAG(IS_MAC)
-+  // AudioToolbox decodes AAC and, like FFmpeg's decoder, finds SBR that only
-+  // the first access unit signals. That HE-AAC comes out at twice the core
-+  // rate, in stereo for a mono core. Without FFmpeg's AAC decoder
-+  // FFmpegDemuxer configures the core, so take the change as Media Source
-+  // playback does.
 +  if (MayDoubleAacRate(current_decoder_config_)) {
 +    expecting_config_changes_ = true;
 +  }
-+#endif  // BUILDFLAG(IS_MAC)
- 
++#endif
+-
++
    bool use_stream_params =
        !expecting_config_changes_ || !hw_params.IsValid() ||
-@@ -702,7 +824,14 @@
+@@ -708,7 +813,12 @@
                 hw_params.IsValid() ? hw_params.frames_per_buffer() : 0);
- 
+-
++
    OutputConfig output_config;
 -  if (is_passthrough_) {
 +  if (parc_mixed_sink_) {
-+    // Parc: in the format of the renderer it's mixed into, the sink's; the
-+    // decoded audio is converted to it.
 +    is_passthrough_ = false;
 +    expecting_config_changes_ = true;
 +    output_config.params = hw_params;
@@ -1275,7 +1173,7 @@
      output_config =
          ComputeBitstreamOutputConfig(stream->audio_decoder_config(), hw_params);
      buffer_converter_.reset();
-@@ -977,6 +1106,138 @@
+@@ -981,6 +1091,130 @@
        was_played_with_user_activation_and_high_media_engagement;
  }
 -
@@ -1299,14 +1197,11 @@
 +  renderer->parc_mixed_sink_ = sink;
 +  sink->SetRenderer(renderer.get());
 +  base::AutoLock auto_lock(lock_);
-+  // Those only this one still holds belong to renderers that are gone.
 +  std::erase_if(parc_mixed_sinks_,
 +                [](const scoped_refptr<ParcMixedSink>& mixed_sink) {
 +                  return mixed_sink->HasOneRef();
 +                });
 +  parc_mixed_sinks_.push_back(std::move(sink));
-+  // Made here rather than on the audio thread; Render() resizes them only if
-+  // the device asks for more.
 +  const int channels = audio_parameters_.channels();
 +  if (!parc_mix_bus_ || parc_mix_bus_->channels() != channels) {
 +    parc_mix_bus_ =
@@ -1363,10 +1258,6 @@
 +  return mixed_frames;
 +}
 +
-+// WebKit's renderers play their samples at their timestamps on one
-+// synchronizer; this one keeps to the timeline of the renderer it's mixed into
-+// by waiting while ahead of it (as after joining) and dropping what that one
-+// already played while behind (after an underflow of this one alone).
 +int AudioRendererImpl::ParcRenderMixed(base::TimeDelta start,
 +                                       base::TimeDelta delay,
 +                                       base::TimeTicks delay_timestamp,
@@ -1387,7 +1278,6 @@
 +                                audio_parameters_.sample_rate() /
 +                                playback_rate_);
 +      };
-+      // Silence before the first sample passes without taking audio.
 +      if (first_packet_timestamp_ != kNoTimestamp &&
 +          first_packet_timestamp_ > back && behind.is_positive()) {
 +        const int silent =
@@ -1415,8 +1305,9 @@
  void AudioRendererImpl::OnSuspend() {
    base::AutoLock auto_lock(lock_);
    is_suspending_ = true;
-@@ -1027,7 +1288,7 @@
- 
+@@ -1031,7 +1265,7 @@
+-
++
    bool allow_config_changes = expecting_config_changes_;
    if (base::FeatureList::IsEnabled(kMatchSourceAudioChannelLayout) &&
 -      !buffer->end_of_stream() &&
@@ -1424,36 +1315,40 @@
        ((audio_parameters_.channels() != buffer->channel_count()) ||
         (audio_parameters_.sample_rate() != buffer->sample_rate()))) {
      // If the incoming buffer's channel count or sample rate has changed,
-@@ -1378,6 +1639,7 @@
+@@ -1383,6 +1617,7 @@
    }
- 
+-
++
    int frames_written = 0;
 +  int parc_mixed_frames = 0;
    {
      base::AutoLock auto_lock(lock_);
      DCHECK_NE(state_, kReinitializingSink);
-@@ -1404,6 +1666,7 @@
+@@ -1409,6 +1644,7 @@
                                 playback_rate_);
        return 0;
      }
 +    const base::TimeDelta parc_mix_start = audio_clock_->back_timestamp();
- 
+-
++
      if (playback_rate_ == 0 || is_suspending_) {
        audio_clock_->WroteAudio(0, frames_requested, frames_delayed,
-@@ -1477,6 +1740,9 @@
+@@ -1482,6 +1718,9 @@
              playback_rate_);
          frames_written += frames_filled;
          effective_playback_rate = algorithm_->effective_playback_rate();
 +        if (parc_own_audio_muted_) {
 +          audio_bus->ZeroFramesPartial(0, frames_written);
 +        }
- 
+-
++
          DVLOG(4) << __func__ << ": frames_filled=" << frames_filled
                   << ", playback_rate_=" << playback_rate_
-@@ -1536,6 +1802,13 @@
+@@ -1541,6 +1780,13 @@
        SetBufferingState_Locked(BUFFERING_HAVE_NOTHING);
      }
- 
+-
++
 +    if (!parc_mixed_sinks_.empty() && !is_passthrough_) {
 +      parc_mixed_frames = ParcMix_Locked(
 +          parc_mix_start, frames_written,
@@ -1464,69 +1359,55 @@
      // Note: effective_playback_rate() is used here because WSOLA is a
      // non-linear operation. E.g., for a `playback_rate_` of 2.0 WSOLA may end
      // up with effective rates between 1 and 3 and a/v sync drift of +/- 20ms.
-@@ -1565,7 +1838,7 @@
+@@ -1570,7 +1816,7 @@
    }
- 
+-
++
    DCHECK_LE(frames_written, frames_requested);
 -  return frames_written;
 +  return std::max(frames_written, parc_mixed_frames);
  }
- 
+-
++
  void AudioRendererImpl::OnRenderError() {
 --- a/third_party/blink/renderer/platform/peerconnection/rtc_video_decoder_adapter.cc
 +++ b/third_party/blink/renderer/platform/peerconnection/rtc_video_decoder_adapter.cc
-@@ -121,8 +121,8 @@
-     return false;
+@@ -122,7 +122,7 @@
    }
  // Software fallback for the H.264 codec is disabled on Android ARM 32‑bit
--// devices for both encoding and decoding.
+ // devices for both encoding and decoding.
 -#if BUILDFLAG(IS_ANDROID)
-+// devices and macOS builds without OpenH264, for both encoding and decoding.
 +#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
    return video_codec != media::VideoCodec::kH264 ||
           ::features::IsOpenH264SoftwareEncoderEnabledForWebRTC();
  #else
 --- a/third_party/blink/renderer/platform/peerconnection/webrtc_util.cc
 +++ b/third_party/blink/renderer/platform/peerconnection/webrtc_util.cc
-@@ -129,20 +129,26 @@
+@@ -129,13 +129,15 @@
  #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
      BUILDFLAG(IS_ANDROID)
    return base::FeatureList::IsEnabled(kPlatformH264CbpEncoding);
 +#elif BUILDFLAG(IS_MAC) && !BUILDFLAG(ENABLE_OPENH264)
-+  // Without OpenH264, VideoToolbox must also encode Constrained Baseline, the
-+  // H264 profile most WebRTC peers negotiate. Its Baseline streams use no
-+  // slice groups or redundant pictures, which Constrained Baseline excludes.
 +  return true;
  #else
    return false;
  #endif
  }
- 
+-
++
  bool PLATFORM_EXPORT UseH264AcceleratedEncoderForWebRTC() {
 -#if !BUILDFLAG(IS_ANDROID)
--  // On non-Android, H264 HW encoder cannot be used unless SW encoder is also
--  // available because of assumptions that SW fallback is always possible. This
--  // check should be removed when SW implementation is always available.
 +#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_MAC)
-+  // On other platforms, H264 HW encoder cannot be used unless SW encoder is
-+  // also available because of assumptions that SW fallback is always possible.
-+  // This check should be removed when SW implementation is always available.
-   return ::features::IsOpenH264SoftwareEncoderEnabledForWebRTC();
- #else
--  // On Android, H264 HW encoder can be used without SW encoder because the SW
--  // fallback logic can be explicitly disabled.
-+  // On Android and macOS, H264 HW encoder can be used without SW encoder
-+  // because the SW fallback logic can be explicitly disabled. VideoToolbox
-+  // provides the H264 encoder on every supported Mac.
-   return true;
- #endif
- }
+   // On non-Android, H264 HW encoder cannot be used unless SW encoder is also
+   // available because of assumptions that SW fallback is always possible. This
+   // check should be removed when SW implementation is always available.
 --- a/third_party/ffmpeg/BUILD.gn
 +++ b/third_party/ffmpeg/BUILD.gn
 @@ -9,6 +9,21 @@
  import("//build/config/compiler/compiler.gni")
  import("//build/config/sanitizers/sanitizers.gni")
- 
+-
++
 +# Parc's Chromium-branded macOS configuration also demuxes raw ADTS AAC (the
 +# "aac" demuxer and parser, enabled in chromium/config/Chromium/mac/arm64). It
 +# still has no AAC decoder; AudioToolbox decodes the stream.
@@ -1547,7 +1428,7 @@
      "chromium/config/$ffmpeg_branding/$os_config/$ffmpeg_arch"
 --- a/third_party/ffmpeg/chromium/config/Chromium/mac/arm64/config.h
 +++ b/third_party/ffmpeg/chromium/config/Chromium/mac/arm64/config.h
-@@ -732,7 +732,7 @@
+@@ -705,7 +705,7 @@
  #define CONFIG_PROTOCOLS 0
  #define CONFIG_AANDCTTABLES 0
  #define CONFIG_AC3DSP 0
@@ -1558,7 +1439,7 @@
  #define CONFIG_AUDIODSP 0
 --- a/third_party/ffmpeg/chromium/config/Chromium/mac/arm64/config_components.h
 +++ b/third_party/ffmpeg/chromium/config/Chromium/mac/arm64/config_components.h
-@@ -1016,7 +1016,7 @@
+@@ -1021,7 +1021,7 @@
  #define CONFIG_WMV3_NVDEC_CUARRAY_HWACCEL 0
  #define CONFIG_WMV3_VAAPI_HWACCEL 0
  #define CONFIG_WMV3_VDPAU_HWACCEL 0
@@ -1567,7 +1448,7 @@
  #define CONFIG_AAC_LATM_PARSER 0
  #define CONFIG_AC3_PARSER 0
  #define CONFIG_ADX_PARSER 0
-@@ -1709,7 +1709,7 @@
+@@ -1716,7 +1716,7 @@
  #define CONFIG_AMOVIE_FILTER 0
  #define CONFIG_MOVIE_FILTER 0
  #define CONFIG_AA_DEMUXER 0
@@ -1596,7 +1477,8 @@
 +++ b/third_party/ffmpeg/libavformat/aacdec.c
 @@ -21,7 +21,10 @@
   */
- 
+-
++
  #include "libavutil/avassert.h"
 +#include "libavutil/channel_layout.h"
  #include "libavutil/intreadwrite.h"
@@ -1608,7 +1490,8 @@
 @@ -104,6 +107,32 @@
      return 0;
  }
- 
+-
++
 +// Without an AAC decoder nothing else reports the stream's rate, channels and
 +// frame size: the AAC parser leaves them to the decoder. libavformat needs the
 +// frame size to give packets durations and timestamps. These are the first
@@ -1641,26 +1524,27 @@
 @@ -129,6 +158,10 @@
      if (ret < 0)
          return ret;
- 
+-
++
 +    ret = adts_aac_read_parameters(s, st);
 +    if (ret < 0)
 +        return ret;
 +
      // LCM of all possible ADTS sample rates
      avpriv_set_pts_info(st, 64, 1, 28224000);
- 
+-
++
 --- a/media/base/mime_util_internal.cc
 +++ b/media/base/mime_util_internal.cc
-@@ -89,6 +89,8 @@
-       {"Opus", MimeUtil::OPUS},
-       {"flac", MimeUtil::FLAC},
-       {"fLaC", MimeUtil::FLAC},
-+      // Parc: Apple Lossless, as Safari names it.
-+      {"alac", MimeUtil::ALAC},
-       {"vp8", MimeUtil::VP8},
-       {"vp8.0", MimeUtil::VP8},
-       {"theora", MimeUtil::THEORA},
-@@ -189,6 +191,8 @@
+@@ -86,6 +86,7 @@
+         {"Opus", MimeUtil::OPUS},
+         {"flac", MimeUtil::FLAC},
+         {"fLaC", MimeUtil::FLAC},
++        {"alac", MimeUtil::ALAC},
+         {"vp8", MimeUtil::VP8},
+         {"vp8.0", MimeUtil::VP8},
+         {"theora", MimeUtil::THEORA},
+@@ -183,6 +184,8 @@
        return AudioCodec::kAC4;
      case MimeUtil::IAMF:
        return AudioCodec::kIAMF;
@@ -1669,23 +1553,24 @@
      default:
        break;
    }
-@@ -381,6 +385,12 @@
+@@ -375,6 +378,10 @@
    mp4_audio_codecs.emplace(IAMF);
  #endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
- 
+-
++
 +#if BUILDFLAG(USE_PROPRIETARY_CODECS) && BUILDFLAG(IS_MAC)
-+  // Parc: Apple Lossless in MP4, decoded by AudioToolbox; Blink answers yes
-+  // only under Safari's identity (parc_safari_identity.h).
 +  mp4_audio_codecs.emplace(ALAC);
 +#endif
 +
    CodecSet mp4_codecs(mp4_audio_codecs);
    mp4_codecs.insert(mp4_video_codecs.begin(), mp4_video_codecs.end());
- 
-@@ -663,6 +673,9 @@
+-
++
+@@ -657,6 +664,9 @@
      case AC4:
        return false;
- 
+-
++
 +    case ALAC:
 +      return false;
 +
@@ -1699,10 +1584,11 @@
      AC4,
      IAMF,
 -    LAST_CODEC = IAMF
-+    ALAC,  // Parc: Apple Lossless (macOS, AudioToolbox).
++    ALAC,
 +    LAST_CODEC = ALAC
    };
- 
+-
++
    // Platform configuration structure.  Controls which codecs are supported at
 --- a/media/base/supported_types.cc
 +++ b/media/base/supported_types.cc
@@ -1714,17 +1600,7 @@
        return true;
      case VideoCodec::kUnknown:
      case VideoCodec::kTheora:
-@@ -465,6 +466,9 @@
-     case VideoCodec::kVC1:
-     case VideoCodec::kMPEG2:
-     case VideoCodec::kMPEG4:
-+    // Parc: only Safari-identity pages play H.263, so FFmpegDemuxer and
-+    // MP4StreamParser take it there themselves.
-+    case VideoCodec::kH263:
-       return false;
-   }
- }
-@@ -548,6 +552,7 @@
+@@ -465,6 +466,7 @@
      case VideoCodec::kVC1:
      case VideoCodec::kMPEG2:
      case VideoCodec::kMPEG4:
@@ -1732,7 +1608,15 @@
        return false;
    }
  }
-@@ -574,6 +579,7 @@
+@@ -548,6 +550,7 @@
+     case VideoCodec::kVC1:
+     case VideoCodec::kMPEG2:
+     case VideoCodec::kMPEG4:
++    case VideoCodec::kH263:
+       return false;
+   }
+ }
+@@ -574,6 +577,7 @@
      case media::VideoCodec::kVC1:
      case media::VideoCodec::kMPEG2:
      case media::VideoCodec::kMPEG4:
@@ -1742,24 +1626,22 @@
  }
 --- a/media/base/mime_util_unittest.cc
 +++ b/media/base/mime_util_unittest.cc
-@@ -542,6 +542,11 @@
- 
+@@ -543,6 +543,10 @@
            case MimeUtil::IAMF:
              EXPECT_EQ(HasIamfSupport(true), result);
-+            break;
+             break;
 +
-+          // Parc: Apple Lossless is macOS-only (AudioToolbox).
 +          case MimeUtil::ALAC:
 +            EXPECT_FALSE(result);
-             break;
++            break;
          }
        });
-@@ -614,6 +619,11 @@
+ }
+@@ -614,6 +618,10 @@
            case MimeUtil::IAMF:
              EXPECT_EQ(HasIamfSupport(false), result);
              break;
 +
-+          // Parc: Apple Lossless is macOS-only (AudioToolbox).
 +          case MimeUtil::ALAC:
 +            EXPECT_FALSE(result);
 +            break;
@@ -1768,23 +1650,23 @@
  }
 --- a/media/base/video_codecs.h
 +++ b/media/base/video_codecs.h
-@@ -32,12 +32,15 @@
+@@ -32,12 +32,13 @@
    kHEVC = 8,
    kDolbyVision = 9,
    kAV1 = 10,
-+  // Parc: H.263 in 3GPP, which Safari plays; VideoToolbox decodes it on
-+  // macOS. It has no VideoCodecProfile.
 +  kH263 = 11,
    // DO NOT ADD RANDOM VIDEO CODECS!
    //
    // The only acceptable time to add a new codec is if there is production code
    // that uses said codec in the same CL.
- 
+-
++
 -  kMaxValue = kAV1,  // Must equal the last "real" codec above.
-+  kMaxValue = kH263,  // Must equal the last "real" codec above.
++  kMaxValue = kH263,
  };
  // LINT.ThenChange(//tools/metrics/histograms/enums.xml:VideoCodec)
- 
+-
++
 --- a/media/base/video_codecs.cc
 +++ b/media/base/video_codecs.cc
 @@ -37,6 +37,8 @@
@@ -1836,14 +1718,12 @@
  #include "media/gpu/mac/video_toolbox_av1_accelerator.h"
  #include "media/gpu/mac/video_toolbox_decompression_metadata.h"
  #include "media/gpu/mac/video_toolbox_h264_accelerator.h"
-@@ -176,7 +178,14 @@
+@@ -176,7 +178,11 @@
    auto accelerator_output_cb = base::BindRepeating(
        &VideoToolboxVideoDecoder::OnAcceleratorOutput, base::Unretained(this));
- 
+-
++
 -  switch (VideoCodecProfileToVideoCodec(config.profile())) {
-+  // Parc: H.263 and MPEG-1/2 video have no VideoCodecProfile, so their
-+  // configs name only the codec. MPEG-1/2 video comes only from a
-+  // Safari-identity page's Media Source (ParcVideoToolboxMpegVideoDecoder).
 +  const VideoCodec codec =
 +      config.codec() == VideoCodec::kH263 || config.codec() == VideoCodec::kMPEG2
 +          ? config.codec()
@@ -1852,10 +1732,11 @@
      case VideoCodec::kH264:
        accelerator_ = std::make_unique<H264Decoder>(
            std::make_unique<VideoToolboxH264Accelerator>(
-@@ -211,6 +220,18 @@
+@@ -211,6 +217,18 @@
        break;
  #endif  // BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
- 
+-
++
 +    case VideoCodec::kH263:
 +      accelerator_ = std::make_unique<ParcVideoToolboxH263Decoder>(
 +          media_log_->Clone(), std::move(accelerator_decode_cb),
@@ -1875,7 +1756,8 @@
 +++ b/media/gpu/mac/BUILD.gn
 @@ -18,6 +18,10 @@
    visibility = [ "//media/gpu" ]
- 
+-
++
    sources = [
 +    "parc_video_toolbox_h263_decoder.cc",
 +    "parc_video_toolbox_h263_decoder.h",
@@ -1886,7 +1768,8 @@
      "video_toolbox_decompression_metadata.cc",
 @@ -95,6 +99,8 @@
    }
- 
+-
++
    sources = [
 +    "parc_video_toolbox_h263_decoder_unittest.cc",
 +    "parc_video_toolbox_mpeg_video_decoder_unittest.cc",
