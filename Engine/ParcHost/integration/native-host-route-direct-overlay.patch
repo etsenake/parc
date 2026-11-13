@@ -395,35 +395,10 @@
 +
    // Implementation of PageNavigator.
 +  void NotifyNativeDeferredOpenURL(WebContents* created,
-+      const WeakDocumentPtr& source_document, const OpenURLParams& params) override;
++      const WeakDocumentPtr& source_document, const OpenURLParams& params);
    WebContents* OpenURL(const OpenURLParams& params,
                         base::OnceCallback<void(content::NavigationHandle&)>
                             navigation_handle_callback) override;
---- a/content/public/browser/web_contents.h
-+++ b/content/public/browser/web_contents.h
-@@ -148,6 +148,7 @@
- struct DropData;
- struct MHTMLGenerationParams;
- class PreloadingAttempt;
-+class WeakDocumentPtr;
- #if BUILDFLAG(IS_ANDROID)
- class SelectionPopupDelegate;
- #endif
-@@ -489,6 +490,12 @@
--
-+
-   // Gets the NavigationController for primary frame tree of this WebContents.
-   // See comments on NavigationController for more details.
-+  // Completes the observer notification for one native-owned asynchronous
-+  // OpenURL delegate continuation. The source document must still be this
-+  // active page. This does not start/retry navigation or invoke its delegate.
-+  virtual void NotifyNativeDeferredOpenURL(WebContents* created,
-+      const WeakDocumentPtr& source_document, const OpenURLParams& params) = 0;
-+
-   virtual NavigationController& GetController() = 0;
-   virtual const NavigationController& GetController() const = 0;
--
-+
 --- a/third_party/blink/public/web/web_navigation_params.h
 +++ b/third_party/blink/public/web/web_navigation_params.h
 @@ -4,6 +4,8 @@

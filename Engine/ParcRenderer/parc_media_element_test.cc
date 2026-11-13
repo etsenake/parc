@@ -1,12 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Installed by the reviewed overlay at
-// //third_party/blink/renderer/core/html/media/parc_media_element_test.cc
-// (blink_unittests). Tests HTMLMediaElement's Parc side
-// (parc_media_element.h): WebKit's media element behaviour on a
-// Safari-identity page (parc_safari_identity.h), and that Chrome's pages keep
-// Chromium's. The fixture is Chromium's html_media_element_test.cc fixture
-// (Copyright 2016 The Chromium Authors; BSD-style license in Chromium's
-// LICENSE) with Parc's helpers.
 
 #include "third_party/blink/renderer/core/html/media/parc_media_element.h"
 
@@ -150,7 +142,6 @@ class StubMediaSourceAttachment : public MediaSourceAttachment {
   void OnElementContextDestroyed() override {}
 };
 
-// A ManagedMediaSource's attachment (MediaSourceAttachment::ParcManaged()).
 class ManagedMediaSourceAttachment final : public StubMediaSourceAttachment {
  public:
   ManagedMediaSourceAttachment() { parc_managed_ = true; }
@@ -270,8 +261,6 @@ class WebMediaStubLocalFrameClient : public EmptyLocalFrameClient {
   String user_agent_;
 };
 
-// Parc: the frame-move hook for these tests' frames. Content's
-// MediaFactory::ParcAdoptMediaPlayer leaves the decision to the player.
 bool MoveStubWebMediaPlayer(HTMLMediaElement& element) {
   ParcWebMediaPlayerExtension* parc =
       element.GetWebMediaPlayer()->GetParcExtension();
@@ -281,21 +270,17 @@ bool MoveStubWebMediaPlayer(HTMLMediaElement& element) {
 
 class FullscreenMockChromeClient : public EmptyChromeClient {
  public:
-  // ChromeClient overrides:
   void EnterFullscreen(LocalFrame& frame,
                        const FullscreenOptions*,
                        FullscreenRequestType) override {
     Fullscreen::DidResolveEnterFullscreenRequest(*frame.GetDocument(),
-                                                 true /* granted */);
+                                                 true);
   }
   void ExitFullscreen(LocalFrame& frame) override {
     Fullscreen::DidExitFullscreen(*frame.GetDocument());
   }
 };
 
-// Helper class that provides an implementation of the MediaPlayerObserver mojo
-// interface to allow checking that messages sent over mojo are received with
-// the right values in the other end.
 class TestMediaPlayerObserver final
     : public media::mojom::blink::MediaPlayerObserver {
  public:
@@ -305,15 +290,12 @@ class TestMediaPlayerObserver final
     media::MediaContentType media_content_type;
   };
 
-  // Needs to be called from tests after invoking a method from the MediaPlayer
-  // mojo interface, so that we have enough time to process the message.
   void WaitUntilReceivedMessage() {
     run_loop_ = std::make_unique<base::RunLoop>();
     run_loop_->Run();
     run_loop_.reset();
   }
 
-  // media::mojom::blink::MediaPlayerObserver implementation.
   void OnMediaPlaying() override {
     received_media_playing_ = true;
     run_loop_->Quit();
@@ -332,8 +314,6 @@ class TestMediaPlayerObserver final
   void OnMediaMetadataChanged(bool has_audio,
                               bool has_video,
                               media::MediaContentType content_type) override {
-    // struct OnMetadataChangedResult result{has_audio, has_video,
-    // content_type};
     received_metadata_changed_result_ =
         OnMetadataChangedResult{has_audio, has_video, content_type};
     run_loop_->Quit();
@@ -425,7 +405,6 @@ class TestMediaPlayerObserver final
     received_video_frame_availability_.reset();
   }
 
-  // Getters used from ParcMediaElementTest.
   bool received_media_playing() const { return received_media_playing_; }
 
   const std::optional<bool>& received_media_paused_stream_ended() const {
@@ -472,13 +451,12 @@ class TestMediaPlayerHost final : public media::mojom::blink::MediaPlayerHost {
  public:
   void WaitForPlayer() { run_loop_.Run(); }
 
-  // media::mojom::MediaPlayerHost
   void OnMediaPlayerAdded(
       mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>
           media_player,
       mojo::PendingAssociatedReceiver<media::mojom::blink::MediaPlayerObserver>
           media_player_observer,
-      int32_t /*player_id*/) override {
+      int32_t) override {
     media_player_.reset();
     media_player_.Bind(std::move(media_player));
     receiver_.reset();
@@ -499,8 +477,6 @@ class TestMediaPlayerHost final : public media::mojom::blink::MediaPlayerHost {
   base::RunLoop run_loop_;
 };
 
-// Listener that counts how many times an event of the given type fires, used
-// by the document-move tests below to assert presence/absence of play/pause.
 class EventCountingListener final : public NativeEventListener {
  public:
   void Invoke(ExecutionContext*, Event*) override { ++count_; }
@@ -512,7 +488,7 @@ class EventCountingListener final : public NativeEventListener {
 
 enum class MediaTestParam { kAudio, kVideo };
 
-}  // namespace
+}
 
 class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
  public:
@@ -525,14 +501,11 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
   void SetUp() override {
     previous_move_web_media_player_ =
         parc_hooks::SetMoveWebMediaPlayer(&MoveStubWebMediaPlayer);
-    // Sniff the media player pointer to facilitate mocking.
     auto mock_media_player =
         std::make_unique<testing::NiceMock<MockWebMediaPlayer>>();
     media_player_weak_ = mock_media_player->AsWeakPtr();
     media_player_ = mock_media_player.get();
 
-    // Most tests do not care about this call, nor its return value. Those that
-    // do will clear this expectation and set custom expectations/returns.
     EXPECT_CALL(*mock_media_player, Seekable())
         .WillRepeatedly(Return(WebTimeRanges()));
     EXPECT_CALL(*mock_media_player, HasAudio()).WillRepeatedly(Return(true));
@@ -596,7 +569,6 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
 
   bool PotentiallyPlaying() { return Media()->PotentiallyPlaying(); }
 
-  // At the end of the media, paused, at rate 0.
   void ParcStopAtEndAtRateZero() {
     WebTimeRanges seekable;
     seekable.Add(0, 1.0);
@@ -666,7 +638,7 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
 
   void SetPageVisibility(mojom::blink::PageVisibilityState visibility) {
     dummy_page_holder_->GetPage().SetVisibilityState(
-        visibility, /*is_initial_state=*/false);
+        visibility, false);
   }
 
   LocalDOMWindow* GetDomWindow() const {
@@ -674,7 +646,7 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
   }
 
   bool HasHiddenAutoplayGrant() const {
-    return Media()->autoplay_policy_->parc_hidden_autoplay_granted_;
+    return ParcMediaElement::From(*Media()).hidden_autoplay_granted_;
   }
 
   void PrepareReplacementPlayer() {
@@ -695,7 +667,6 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
     Media()->AddTrack(media::MediaTrack::CreateAudioTrack(
         "audio", media::MediaTrack::AudioKind::kMain, "audio", "en", true));
   }
-  // Parc: an enabled "audio1" and a disabled "audio2", which it returns.
   AudioTrack* ParcAddTwoAudioTracks() {
     Media()->AddTrack(media::MediaTrack::CreateAudioTrack(
         "audio1", media::MediaTrack::AudioKind::kMain, "audio1", "", true));
@@ -727,7 +698,6 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
     return ParcMediaElement::From(*Media()).ParcPreparesToPlay();
   }
 
-  // Seeks from the system's media controls.
   void PlaybackControls(
       media_session::mojom::blink::PlaybackControlsAction action,
       double time = 0) {
@@ -745,8 +715,7 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
   void RequestSeekBackward(double seconds) {
     Media()->RequestSeekBackward(base::Seconds(seconds));
   }
-  void RequestPause() { Media()->RequestPause(/*triggered_by_user=*/true); }
-  // When the remote scrub ends, if one is running.
+  void RequestPause() { Media()->RequestPause(true); }
   std::optional<base::TimeDelta> ParcRemoteScrubEndsIn() const {
     ParcMediaElement& parc = ParcMediaElement::From(*Media());
     if (!parc.remote_scrub_end_timer_.IsActive()) {
@@ -776,7 +745,6 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
     Media()->AppendChild(source);
   }
 
-  // checkPlaybackTargetCompatibility, run now instead of by its timer.
   void CheckParcPlaybackTargetCompatibility() {
     ParcMediaElementAirPlay& air_play = ParcMediaElementAirPlay::From(*Media());
     air_play.check_playback_target_compatibility_timer_.Stop();
@@ -787,8 +755,6 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
     return Media()->play_promise_resolvers_.size();
   }
 
-  // As AutoplayPolicy::OnIntersectionChangedForAutoplay pauses an invisible
-  // muted autoplay.
   void PauseForInvisibleAutoplay() {
     Media()->PauseInternal(WebMediaPlayer::PauseReason::kAutoplayAutoPause);
     Media()->can_autoplay_ = true;
@@ -807,22 +773,15 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
                                    video_codec, media_content_type,
                                    is_encrypted_media);
     media_player_observer().WaitUntilReceivedMessage();
-    // wait for OnRemotePlaybackMetadataChange() to be called.
     media_player_observer().WaitUntilReceivedMessage();
   }
 
   bool WasPlayerDestroyed() const { return !media_player_weak_; }
 
-  // Create a dummy page holder with the given security origin. If
-  // `with_mock_player` is true, the page is wired up with a fresh
-  // MockWebMediaPlayer so the load algorithm can complete after the element is
-  // moved into this page; otherwise the page has no injected player and any
-  // attempt to create one will DCHECK.
   std::unique_ptr<DummyPageHolder> CreatePageWithSecurityOrigin(
       const char* origin,
       bool is_picture_in_picture,
       bool with_mock_player = false) {
-    // Make another document with the same security origin.
     std::unique_ptr<WebMediaPlayer> player;
     if (with_mock_player) {
       auto mock_player =
@@ -856,8 +815,6 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
     return dummy_page_holder;
   }
 
-  // Gives `document` Safari's user agent, which is Parc's Safari identity
-  // (parc_safari_identity.h).
   static void PresentSafariIdentity(Document& document) {
     static_cast<WebMediaStubLocalFrameClient*>(document.GetFrame()->Client())
         ->set_user_agent(
@@ -866,7 +823,6 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
             "Safari/605.1.15");
   }
 
-  // Set the security origin of our window.
   void SetSecurityOrigin(const char* origin) {
     Media()
         ->GetDocument()
@@ -875,8 +831,6 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
         .SetSecurityOriginForTesting(SecurityOrigin::CreateFromString(origin));
   }
 
-  // Moves a playing Media() from https://a.com to a document in `new_origin`
-  // and expects Chromium's reload in the new document.
   void ExpectDocumentMoveReloads(bool old_safari,
                                  bool new_safari,
                                  const char* new_origin) {
@@ -892,7 +846,7 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
     auto* emptied = MakeGarbageCollected<EventCountingListener>();
     Media()->addEventListener(event_type_names::kEmptied, emptied);
     auto new_page = CreatePageWithSecurityOrigin(
-        new_origin, /*is_picture_in_picture=*/false, /*with_mock_player=*/true);
+        new_origin, false, true);
     if (new_safari) {
       PresentSafariIdentity(new_page->GetDocument());
     }
@@ -914,7 +868,6 @@ class ParcMediaElementTest : public testing::TestWithParam<MediaTestParam> {
   Persistent<HTMLMediaElement> media_;
   Persistent<FullscreenMockChromeClient> chrome_client_;
 
-  // Owned by WebMediaStubLocalFrameClient.
   raw_ptr<MockWebMediaPlayer, UnprotectedInRelease | DanglingUntriaged>
       media_player_;
   base::WeakPtr<WebMediaPlayer> media_player_weak_;
@@ -931,10 +884,6 @@ INSTANTIATE_TEST_SUITE_P(Video,
                          ParcMediaElementTest,
                          testing::Values(MediaTestParam::kVideo));
 
-// As WebKit's didMoveToNewDocument, under Safari's identity a playing element
-// moved between same-origin documents keeps its player, which stays with the
-// frame that created it, through a chain of moves and back again, without
-// reloading.
 TEST_P(ParcMediaElementTest, SafariIdentityDocumentMoveKeepsPlayer) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(false);
   const char* origin = "https://a.com";
@@ -954,7 +903,7 @@ TEST_P(ParcMediaElementTest, SafariIdentityDocumentMoveKeepsPlayer) {
   }
 
   auto second_page =
-      CreatePageWithSecurityOrigin(origin, /*is_picture_in_picture=*/false);
+      CreatePageWithSecurityOrigin(origin, false);
   PresentSafariIdentity(second_page->GetDocument());
   second_page->GetDocument().body()->AppendChild(Media());
   ASSERT_FALSE(WasPlayerDestroyed());
@@ -962,7 +911,7 @@ TEST_P(ParcMediaElementTest, SafariIdentityDocumentMoveKeepsPlayer) {
   EXPECT_EQ(original_document.GetFrame(), Media()->LocalFrameForPlayer());
 
   auto third_page =
-      CreatePageWithSecurityOrigin(origin, /*is_picture_in_picture=*/false);
+      CreatePageWithSecurityOrigin(origin, false);
   PresentSafariIdentity(third_page->GetDocument());
   third_page->GetDocument().body()->AppendChild(Media());
   ASSERT_FALSE(WasPlayerDestroyed());
@@ -977,11 +926,6 @@ TEST_P(ParcMediaElementTest, SafariIdentityDocumentMoveKeepsPlayer) {
   EXPECT_EQ(reload_listener->count(), 0);
 }
 
-// As WebKit's player belongs to its element, which registers with its new
-// document (HTMLMediaElement::didMoveToNewDocument), under Safari's identity a
-// player kept by a move becomes the new frame's: it registers with the new
-// frame's browser side, ends its registration with the old frame, and plays on
-// without reloading when the frame that made it goes.
 TEST_P(ParcMediaElementTest, SafariIdentityMovedPlayerBelongsToNewFrame) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(false);
   const char* origin = "https://a.com";
@@ -993,7 +937,7 @@ TEST_P(ParcMediaElementTest, SafariIdentityMovedPlayerBelongsToNewFrame) {
   ASSERT_TRUE(media_player_host().HasConnectedPlayer());
 
   auto new_page = CreatePageWithSecurityOrigin(
-      origin, /*is_picture_in_picture=*/false, /*with_mock_player=*/true);
+      origin, false, true);
   Document& new_document = new_page->GetDocument();
   PresentSafariIdentity(new_document);
   TestMediaPlayerHost new_host;
@@ -1046,27 +990,21 @@ TEST_P(ParcMediaElementTest, SafariIdentityMovedPlayerBelongsToNewFrame) {
   EXPECT_EQ(reload_listener->count(), 0);
 }
 
-// Chromium's reload stays for Chrome's identity on either document and for
-// moves between origins.
 TEST_P(ParcMediaElementTest, ChromeIdentityDocumentMoveReloads) {
-  ExpectDocumentMoveReloads(/*old_safari=*/false, /*new_safari=*/false,
+  ExpectDocumentMoveReloads(false, false,
                             "https://a.com");
 }
 
 TEST_P(ParcMediaElementTest, SafariToChromeIdentityDocumentMoveReloads) {
-  ExpectDocumentMoveReloads(/*old_safari=*/true, /*new_safari=*/false,
+  ExpectDocumentMoveReloads(true, false,
                             "https://a.com");
 }
 
 TEST_P(ParcMediaElementTest, SafariIdentityCrossOriginDocumentMoveReloads) {
-  ExpectDocumentMoveReloads(/*old_safari=*/true, /*new_safari=*/true,
+  ExpectDocumentMoveReloads(true, true,
                             "https://b.com");
 }
 
-// The one case where Safari's identity still reloads: the frame that made a
-// player that can't move (ParcMoveToFrame() refuses) goes away while the
-// element is elsewhere. The element's events followed it, so the reload is
-// seen in its new document.
 TEST_P(ParcMediaElementTest, SafariIdentityMovedElementReloadsWhenFrameGoes) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(false);
   const char* origin = "https://a.com";
@@ -1077,7 +1015,7 @@ TEST_P(ParcMediaElementTest, SafariIdentityMovedElementReloadsWhenFrameGoes) {
   test::RunPendingTasks();
 
   auto new_page = CreatePageWithSecurityOrigin(
-      origin, /*is_picture_in_picture=*/false, /*with_mock_player=*/true);
+      origin, false, true);
   PresentSafariIdentity(new_page->GetDocument());
   new_page->GetDocument().body()->AppendChild(Media());
   test::RunPendingTasks();
@@ -1092,8 +1030,6 @@ TEST_P(ParcMediaElementTest, SafariIdentityMovedElementReloadsWhenFrameGoes) {
   EXPECT_EQ(emptied_listener->count(), 1);
 }
 
-// Under Safari's identity an element can first leave a picture-in-picture
-// window; its player stays with that window's frame.
 TEST_P(ParcMediaElementTest,
        SafariIdentityMoveOutOfPictureInPictureWindowKeepsPlayer) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(true);
@@ -1106,16 +1042,13 @@ TEST_P(ParcMediaElementTest,
   WaitForPlayer();
 
   auto new_page =
-      CreatePageWithSecurityOrigin(origin, /*is_picture_in_picture=*/false);
+      CreatePageWithSecurityOrigin(origin, false);
   PresentSafariIdentity(new_page->GetDocument());
   new_page->GetDocument().adoptNode(Media(), ASSERT_NO_EXCEPTION);
   EXPECT_FALSE(WasPlayerDestroyed());
   EXPECT_EQ(original_document.GetFrame(), Media()->LocalFrameForPlayer());
 }
 
-// A Safari-identity element whose load is deferred (preload none) has no
-// player yet: the move doesn't restart the load, and its player will be made
-// for the new document.
 TEST_P(ParcMediaElementTest, SafariIdentityDeferredLoadMoveUsesNewFrame) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(false);
   const char* origin = "https://a.com";
@@ -1135,7 +1068,7 @@ TEST_P(ParcMediaElementTest, SafariIdentityDeferredLoadMoveUsesNewFrame) {
     Media()->addEventListener(type, reload_listener);
   }
   auto new_page = CreatePageWithSecurityOrigin(
-      origin, /*is_picture_in_picture=*/false, /*with_mock_player=*/true);
+      origin, false, true);
   PresentSafariIdentity(new_page->GetDocument());
   new_page->GetDocument().body()->AppendChild(Media());
   test::RunPendingTasks();
@@ -1145,11 +1078,6 @@ TEST_P(ParcMediaElementTest, SafariIdentityDeferredLoadMoveUsesNewFrame) {
   EXPECT_EQ(new_page->GetDocument().GetFrame(), Media()->LocalFrameForPlayer());
 }
 
-// As WebKit's ActiveDOMObject::didMoveToNewDocument, which observes the new
-// document's contextDocument: under Safari's identity a playing element moved
-// into a document without a frame keeps its player in the frame of the window
-// that made that document. Connected there, it plays on
-// (HTMLMediaElement::removingSteps), and it comes back without reloading.
 TEST_P(ParcMediaElementTest, SafariIdentityMoveThroughFramelessDocument) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(false);
   SetSecurityOrigin("https://a.com");
@@ -1182,9 +1110,6 @@ TEST_P(ParcMediaElementTest, SafariIdentityMoveThroughFramelessDocument) {
   EXPECT_EQ(reload_listener->count(), 0);
 }
 
-// Disconnected in a template's content, it pauses
-// (HTMLMediaElement::pauseAfterDetachedTask) and keeps its player; moved on
-// to another page, it doesn't reload either.
 TEST_P(ParcMediaElementTest, SafariIdentityMoveThroughTemplateContent) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(false);
   const char* origin = "https://a.com";
@@ -1210,7 +1135,7 @@ TEST_P(ParcMediaElementTest, SafariIdentityMoveThroughTemplateContent) {
   EXPECT_TRUE(Media()->paused());
 
   auto new_page =
-      CreatePageWithSecurityOrigin(origin, /*is_picture_in_picture=*/false);
+      CreatePageWithSecurityOrigin(origin, false);
   PresentSafariIdentity(new_page->GetDocument());
   new_page->GetDocument().body()->AppendChild(Media());
   test::RunPendingTasks();
@@ -1218,8 +1143,6 @@ TEST_P(ParcMediaElementTest, SafariIdentityMoveThroughTemplateContent) {
   EXPECT_EQ(reload_listener->count(), 0);
 }
 
-// A deferred load kept in a document without a frame fails when it starts
-// there, as WebKit's loadResource does without a frame.
 TEST_P(ParcMediaElementTest,
        SafariIdentityDeferredLoadFailsInFramelessDocument) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(false);
@@ -1243,7 +1166,6 @@ TEST_P(ParcMediaElementTest,
   EXPECT_EQ(Media()->error()->code(), MediaError::kMediaErrSrcNotSupported);
 }
 
-// Chrome's identity reloads, and fails without a frame, as before.
 TEST_P(ParcMediaElementTest, ChromeIdentityMoveIntoFramelessDocumentReloads) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(false);
   SetSecurityOrigin("https://a.com");
@@ -1263,8 +1185,6 @@ TEST_P(ParcMediaElementTest, ChromeIdentityMoveIntoFramelessDocumentReloads) {
   EXPECT_EQ(Media()->error()->code(), MediaError::kMediaErrSrcNotSupported);
 }
 
-// A move into Document Picture-in-Picture before the player exists still
-// binds the next player to the opener under Safari's identity.
 TEST_P(ParcMediaElementTest,
        SafariIdentityPictureInPictureMoveBeforeLoadUsesOpenerFrame) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(true);
@@ -1272,7 +1192,7 @@ TEST_P(ParcMediaElementTest,
   SetSecurityOrigin(origin);
   PresentSafariIdentity(Media()->GetDocument());
   auto new_page =
-      CreatePageWithSecurityOrigin(origin, /*is_picture_in_picture=*/true);
+      CreatePageWithSecurityOrigin(origin, true);
   PresentSafariIdentity(new_page->GetDocument());
   LocalFrame* old_frame = Media()->GetDocument().GetFrame();
   new_page->GetDocument().GetFrame()->SetOpener(old_frame);
@@ -1280,31 +1200,27 @@ TEST_P(ParcMediaElementTest,
   EXPECT_EQ(old_frame, Media()->LocalFrameForPlayer());
 }
 
-// A player kept across documents is told its new frame's visibility.
 TEST_P(ParcMediaElementTest, SafariIdentityKeptPlayerLearnsFrameVisibility) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(false);
   const char* origin = "https://a.com";
   SetSecurityOrigin(origin);
   PresentSafariIdentity(Media()->GetDocument());
   dummy_page_holder_->GetFrame().OnFrameVisibilityChangedForMediaPlayback(
-      /*is_hidden=*/false);
+      false);
   Media()->GetDocument().body()->AppendChild(Media());
   WaitForPlayer();
 
   auto new_page =
-      CreatePageWithSecurityOrigin(origin, /*is_picture_in_picture=*/false);
+      CreatePageWithSecurityOrigin(origin, false);
   PresentSafariIdentity(new_page->GetDocument());
   new_page->GetFrame().OnFrameVisibilityChangedForMediaPlayback(
-      /*is_hidden=*/true);
+      true);
   EXPECT_CALL(*MockMediaPlayer(), OnFrameHidden());
   new_page->GetDocument().body()->AppendChild(Media());
   EXPECT_FALSE(WasPlayerDestroyed());
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 }
 
-// As WebKit's player follows its element's document, a player kept for an
-// element moved to another page follows that page's visibility, not the page
-// of the frame that made it, until the element is back on that page.
 TEST_P(ParcMediaElementTest, SafariIdentityKeptPlayerFollowsElementPage) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(false);
   const char* origin = "https://a.com";
@@ -1316,7 +1232,7 @@ TEST_P(ParcMediaElementTest, SafariIdentityKeptPlayerFollowsElementPage) {
   SetPageVisibility(mojom::blink::PageVisibilityState::kHidden);
 
   auto new_page =
-      CreatePageWithSecurityOrigin(origin, /*is_picture_in_picture=*/false);
+      CreatePageWithSecurityOrigin(origin, false);
   PresentSafariIdentity(new_page->GetDocument());
   {
     testing::InSequence sequence;
@@ -1331,21 +1247,18 @@ TEST_P(ParcMediaElementTest, SafariIdentityKeptPlayerFollowsElementPage) {
   ASSERT_FALSE(WasPlayerDestroyed());
   ASSERT_EQ(original_document.GetFrame(), Media()->LocalFrameForPlayer());
 
-  // The page of the frame that made the player isn't the element's.
   SetPageVisibility(mojom::blink::PageVisibilityState::kVisible);
   new_page->GetPage().SetVisibilityState(
       mojom::blink::PageVisibilityState::kHiddenButPainting,
-      /*is_initial_state=*/false);
+      false);
   new_page->GetPage().SetVisibilityState(
-      mojom::blink::PageVisibilityState::kHidden, /*is_initial_state=*/false);
+      mojom::blink::PageVisibilityState::kHidden, false);
 
   original_document.body()->AppendChild(Media());
   ASSERT_FALSE(WasPlayerDestroyed());
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 }
 
-// A player made for an element already moved away from the frame that makes
-// it follows the element's page from the start.
 TEST_P(ParcMediaElementTest,
        SafariIdentityPlayerMadeAfterMoveFollowsElementPage) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(true);
@@ -1354,7 +1267,7 @@ TEST_P(ParcMediaElementTest,
   PresentSafariIdentity(Media()->GetDocument());
   SetPageVisibility(mojom::blink::PageVisibilityState::kHidden);
   auto new_page =
-      CreatePageWithSecurityOrigin(origin, /*is_picture_in_picture=*/true);
+      CreatePageWithSecurityOrigin(origin, true);
   PresentSafariIdentity(new_page->GetDocument());
   LocalFrame* old_frame = Media()->GetDocument().GetFrame();
   new_page->GetDocument().GetFrame()->SetOpener(old_frame);
@@ -1367,8 +1280,6 @@ TEST_P(ParcMediaElementTest,
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 }
 
-// Chrome's player keeps its opener's page when moved into Document
-// Picture-in-Picture.
 TEST_P(ParcMediaElementTest,
        ChromeIdentityPictureInPicturePlayerKeepsOpenerPage) {
   ScopedDocumentPictureInPictureAPIForTest scoped_feature(true);
@@ -1376,7 +1287,7 @@ TEST_P(ParcMediaElementTest,
   SetSecurityOrigin(origin);
   WaitForPlayer();
   auto new_page =
-      CreatePageWithSecurityOrigin(origin, /*is_picture_in_picture=*/true);
+      CreatePageWithSecurityOrigin(origin, true);
   new_page->GetDocument().GetFrame()->SetOpener(
       Media()->GetDocument().GetFrame());
 
@@ -1384,7 +1295,7 @@ TEST_P(ParcMediaElementTest,
   new_page->GetDocument().adoptNode(Media(), ASSERT_NO_EXCEPTION);
   ASSERT_FALSE(WasPlayerDestroyed());
   new_page->GetPage().SetVisibilityState(
-      mojom::blink::PageVisibilityState::kHidden, /*is_initial_state=*/false);
+      mojom::blink::PageVisibilityState::kHidden, false);
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 }
 
@@ -1395,8 +1306,6 @@ constexpr char kParcChromeUserAgent[] =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
 
-// WebKit's currentMediaTime reads the player each time while playing, waiting
-// for data too, and holds the time only while paused.
 TEST_P(ParcMediaElementTest, ParcSafariCurrentTimeFollowsPlayerWhilePlaying) {
   SetUserAgent(kParcSafariUserAgent);
   double now = 0;
@@ -1425,9 +1334,6 @@ TEST_P(ParcMediaElementTest, ParcSafariCurrentTimeFollowsPlayerWhilePlaying) {
   EXPECT_EQ(Media()->currentTime(), 0.5);
 }
 
-// Parc: WebKit's player plays every audio track the element enables, so a
-// Safari-identity element hands the player all of them when the page turns
-// one on beside another.
 TEST_P(ParcMediaElementTest, ParcSafariHandsPlayerEveryEnabledAudioTrack) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
@@ -1443,7 +1349,6 @@ TEST_P(ParcMediaElementTest, ParcSafariHandsPlayerEveryEnabledAudioTrack) {
   test::RunPendingTasks();
 }
 
-// Parc: a Chrome-identity element hands Chromium's player the first.
 TEST_P(ParcMediaElementTest, ParcChromeHandsPlayerOneAudioTrack) {
   SetUserAgent(kParcChromeUserAgent);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
@@ -1457,9 +1362,6 @@ TEST_P(ParcMediaElementTest, ParcChromeHandsPlayerOneAudioTrack) {
   test::RunPendingTasks();
 }
 
-// Enters picture in picture with captions showing and tells whether the
-// picture in picture interstitial follows the cues in the shadow root, which
-// paints it over them.
 bool ParcPictureInPictureCardFollowsCues(HTMLMediaElement& media) {
   media.SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
   test::RunPendingTasks();
@@ -1483,9 +1385,6 @@ bool ParcPictureInPictureCardFollowsCues(HTMLMediaElement& media) {
   return false;
 }
 
-// Parc: WebKit's placard covers Safari's inline cues while picture in picture
-// shows them (media-controller.js puts the cues before the controls, which
-// hold the placard).
 TEST_P(ParcMediaElementTest, ParcSafariPictureInPictureCardCoversCues) {
   if (GetParam() != MediaTestParam::kVideo) {
     return;
@@ -1494,7 +1393,6 @@ TEST_P(ParcMediaElementTest, ParcSafariPictureInPictureCardCoversCues) {
   EXPECT_TRUE(ParcPictureInPictureCardFollowsCues(*Media()));
 }
 
-// Parc: Chrome's cues stay over its interstitial.
 TEST_P(ParcMediaElementTest, ParcChromePictureInPictureCuesOverCard) {
   if (GetParam() != MediaTestParam::kVideo) {
     return;
@@ -1525,8 +1423,6 @@ TEST_P(ParcMediaElementTest, ParcChromeCurrentTimeHeldUntilMicrotask) {
   EXPECT_EQ(Media()->currentTime(), 0.5);
 }
 
-// WebKit's setPlaybackRate and setDefaultPlaybackRate take any rate; the
-// URL player receives the requested rate without range clamping.
 TEST_P(ParcMediaElementTest, ParcSafariAcceptsAnyPlaybackRate) {
   SetUserAgent(kParcSafariUserAgent);
   EXPECT_CALL(*MockMediaPlayer(), CurrentTime()).WillRepeatedly(Return(0.5));
@@ -1582,7 +1478,6 @@ TEST_P(ParcMediaElementTest, ParcChromeRejectsUnsupportedPlaybackRate) {
   EXPECT_EQ(ratechange->count(), 0);
 }
 
-// WebKit's ended requires a rate above 0.
 TEST_P(ParcMediaElementTest, ParcSafariNotEndedAtRateZero) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
@@ -1611,9 +1506,6 @@ TEST_P(ParcMediaElementTest, ParcChromeEndedAtRateZero) {
   EXPECT_TRUE(Media()->ended());
 }
 
-// WebKit's endedPlayback is false at rate 0: play() at the end doesn't seek
-// to the start (playInternal) and the element plays on there
-// (couldPlayIfEnoughData).
 TEST_P(ParcMediaElementTest, ParcSafariPlayAtEndAtRateZeroDoesNotSeek) {
   SetUserAgent(kParcSafariUserAgent);
   ASSERT_NO_FATAL_FAILURE(ParcStopAtEndAtRateZero());
@@ -1637,8 +1529,6 @@ TEST_P(ParcMediaElementTest, ParcChromePlayAtEndAtRateZeroSeeksToStart) {
   EXPECT_TRUE(Media()->seeking());
 }
 
-// WebKit's handlePlaybackPositionChanged ends playback only at a rate above
-// 0 (or below it, at the start).
 TEST_P(ParcMediaElementTest, ParcSafariNoEndedAtEndAtRateZero) {
   SetUserAgent(kParcSafariUserAgent);
   ASSERT_NO_FATAL_FAILURE(ParcStopAtEndAtRateZero());
@@ -1656,8 +1546,6 @@ TEST_P(ParcMediaElementTest, ParcSafariNoEndedAtEndAtRateZero) {
   EXPECT_EQ(pause->count(), 0);
 }
 
-// WebKit's setPlaybackRate gives a player that was potentially playing at
-// rate 0 the new rate, and at the end the player reports the end.
 TEST_P(ParcMediaElementTest, ParcSafariRateAboveZeroAtEndEnds) {
   SetUserAgent(kParcSafariUserAgent);
   ASSERT_NO_FATAL_FAILURE(ParcStopAtEndAtRateZero());
@@ -1713,9 +1601,6 @@ TEST_P(ParcMediaElementTest, ParcChromeEndedAtEndAtRateZero) {
   EXPECT_EQ(ended->count(), 1);
 }
 
-// A default rate only Safari's identity accepts is kept by a load after the
-// document presents Chrome's (a user agent override), and the player is given
-// one it plays.
 TEST_P(ParcMediaElementTest,
        ParcLoadKeepsSafariDefaultRateAfterIdentityChange) {
   SetUserAgent(kParcSafariUserAgent);
@@ -1734,8 +1619,6 @@ TEST_P(ParcMediaElementTest,
   EXPECT_TRUE(PotentiallyPlaying());
 }
 
-// WebKit's handlePlaybackPositionChanged: going backwards, the start ends
-// playback, looping or not, without the ended attribute.
 TEST_P(ParcMediaElementTest, ParcSafariBackwardPlaybackEndsAtStart) {
   SetUserAgent(kParcSafariUserAgent);
   double now = 0.5;
@@ -1887,8 +1770,6 @@ TEST_P(ParcMediaElementTest, ParcSafariScriptMutedBeforeAttributeIsKept) {
   EXPECT_EQ(volumechange->count(), 0);
 }
 
-// WebKit (setMutedInternal) compares with m_muted, which stays false until
-// the attribute is latched.
 TEST_P(ParcMediaElementTest, ParcSafariVolumechangeBeforeMutedIsLatched) {
   ScopedMediaElementMutedDefaultStateForTest scoped_muted_default(false);
   SetUserAgent(kParcSafariUserAgent);
@@ -1937,7 +1818,6 @@ class EventOrderListener final : public NativeEventListener {
   void Invoke(ExecutionContext*, Event* event) override {
     types_.push_back(event->type().Utf8());
   }
-  // The events of `types` the element fired, in order.
   std::vector<std::string> Only(std::initializer_list<std::string> types) {
     std::vector<std::string> result;
     for (const std::string& type : types_) {
@@ -1954,9 +1834,6 @@ class EventOrderListener final : public NativeEventListener {
 
 class ParcMediaElementSeekTest : public ParcMediaElementTest {
  protected:
-  // A loaded, paused player at `ready_state` and the earliest seekable time,
-  // with 10 seconds of media seekable from `start` to `end` (nothing when they
-  // are equal).
   void Prepare(const char* user_agent,
                double start,
                double end,
@@ -1990,7 +1867,6 @@ class ParcMediaElementSeekTest : public ParcMediaElementTest {
     Media()->setCurrentTimeForBindings(time, ASSERT_NO_EXCEPTION);
   }
 
-  // A seek task and the events it queued.
   void RunTasks() { test::RunPendingTasks(); }
 
   std::vector<std::string> Events() {
@@ -2006,9 +1882,6 @@ INSTANTIATE_TEST_SUITE_P(Video,
                          ParcMediaElementSeekTest,
                          testing::Values(MediaTestParam::kVideo));
 
-// WebKit's seekWithTolerance: the target, at most the duration, shows at
-// once; seekTask clamps it, fires `seeking` and seeks the player, once for
-// seeks in one task.
 TEST_P(ParcMediaElementSeekTest, ParcSafariSeekContinuesInTask) {
   Prepare(kParcSafariUserAgent, 2, 8);
   SetCurrentTime(20);
@@ -2025,7 +1898,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariSeekContinuesInTask) {
   EXPECT_THAT(Events(), testing::ElementsAre("seeking"));
 }
 
-// The task compares the last target with where the first seek started.
 TEST_P(ParcMediaElementSeekTest, ParcSafariReplacedSeekKeepsItsStart) {
   Prepare(kParcSafariUserAgent, 0, 10);
   SetCurrentTime(5);
@@ -2037,8 +1909,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariReplacedSeekKeepsItsStart) {
               testing::ElementsAre("seeking", "timeupdate", "seeked"));
 }
 
-// PlatformTimeRanges::nearest: a tie goes to the earliest range, wherever
-// playback is.
 TEST_P(ParcMediaElementSeekTest, ParcSafariNearestTieGoesToEarliest) {
   Prepare(kParcSafariUserAgent, 0, 10);
   WebTimeRanges seekable;
@@ -2055,8 +1925,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariNearestTieGoesToEarliest) {
   EXPECT_THAT(seeks_, testing::ElementsAre(9, 2));
 }
 
-// WebKit: a seek already with the player still finishes while a later one
-// waits for its task.
 TEST_P(ParcMediaElementSeekTest, ParcSafariEarlierSeekFinishesFirst) {
   Prepare(kParcSafariUserAgent, 0, 10);
   SetCurrentTime(3);
@@ -2096,8 +1964,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariFastSeekContinuesInTask) {
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 }
 
-// WebKit's seekTask: a precise seek to the current time fires the events
-// without seeking the player.
 TEST_P(ParcMediaElementSeekTest, ParcSafariSeekToCurrentTimeSkipsPlayer) {
   Prepare(kParcSafariUserAgent, 0, 10);
   SetCurrentTime(0);
@@ -2117,8 +1983,6 @@ TEST_P(ParcMediaElementSeekTest, ParcChromeSeekToCurrentTimeSeeksPlayer) {
   EXPECT_THAT(Events(), testing::ElementsAre("seeking"));
 }
 
-// WebKit seekTask returns before changing m_sentEndEvent on this path.
-// Keep the end screen stable even when rate zero makes ended() false.
 TEST_P(ParcMediaElementSeekTest,
        ParcSafariCurrentTimeSeekAtRateZeroKeepsEndedLatch) {
   Prepare(kParcSafariUserAgent, 0, 10);
@@ -2131,7 +1995,6 @@ TEST_P(ParcMediaElementSeekTest,
   ASSERT_THAT(events_->Only({"ended"}), testing::ElementsAre("ended"));
   const auto initial_seeks = seeks_.size();
 
-  // Both the exact time and a target clamped to it skip the player.
   for (double target : {10.0, 20.0}) {
     Media()->setPlaybackRate(0);
     Media()->Play();
@@ -2182,7 +2045,6 @@ class SeekableMediaSourceAttachment final : public StubMediaSourceAttachment {
   }
 };
 
-// An open Media Source always flushes: the player seeks.
 TEST_P(ParcMediaElementSeekTest,
        ParcSafariSeekToCurrentTimeWithMediaSourceSeeksPlayer) {
   Prepare(kParcSafariUserAgent, 0, 0);
@@ -2194,8 +2056,6 @@ TEST_P(ParcMediaElementSeekTest,
   EXPECT_THAT(Events(), testing::ElementsAre("seeking"));
 }
 
-// WebKit's seekTask with nothing seekable: the events for a seek to the
-// current time, nothing for another.
 TEST_P(ParcMediaElementSeekTest, ParcSafariSeekWithNothingSeekable) {
   Prepare(kParcSafariUserAgent, 0, 0);
   SetCurrentTime(0);
@@ -2219,14 +2079,11 @@ TEST_P(ParcMediaElementSeekTest, ParcChromeSeekWithNothingSeekable) {
   EXPECT_TRUE(seeks_.empty());
 }
 
-// WebKit's m_sentEndEvent: a seek landing on the end of ended playback
-// doesn't fire `ended` again; one leaving the end re-arms it.
 TEST_P(ParcMediaElementSeekTest, ParcSafariEndedOnceUntilPlaybackLeaves) {
   Prepare(kParcSafariUserAgent, 0, 10);
   EXPECT_CALL(*MockMediaPlayer(), IsEnded).WillRepeatedly(Return(true));
   EXPECT_CALL(*MockMediaPlayer(), CurrentTime).WillRepeatedly(Return(10.0));
   TimeChanged();
-  // Paused, the official position is still 0, so this seeks the player.
   ASSERT_EQ(Media()->currentTime(), 0);
   SetCurrentTime(10);
   RunTasks();
@@ -2260,9 +2117,6 @@ TEST_P(ParcMediaElementSeekTest, ParcChromeEndedAfterEachSeekToTheEnd) {
   EXPECT_THAT(events_->Only({"ended"}), testing::ElementsAre("ended", "ended"));
 }
 
-// WebKit's scheduleNotifyAboutPlaying: a `playing` readyState brings while
-// seeking waits for `seeked` (finishSeek, maybeFirePendingPlaying), and only
-// the player's seek finishes the seek.
 TEST_P(ParcMediaElementSeekTest, ParcSafariPlayingWaitsForSeeked) {
   Prepare(kParcSafariUserAgent, 0, 10, HTMLMediaElement::kHaveCurrentData);
   Media()->Play();
@@ -2291,8 +2145,6 @@ TEST_P(ParcMediaElementSeekTest, ParcChromeReadyStateFinishesSeek) {
               testing::ElementsAre("seeking", "seeked", "playing"));
 }
 
-// Once the player has the seek, a readyState change the seek didn't lower
-// doesn't end it; the player's TimeChanged() does.
 TEST_P(ParcMediaElementSeekTest, ParcSafariKeptReadyStateChangeDoesNotEndSeek) {
   Prepare(kParcSafariUserAgent, 0, 10, HTMLMediaElement::kHaveFutureData);
   SetCurrentTime(5);
@@ -2312,7 +2164,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariKeptReadyStateChangeDoesNotEndSeek) {
               testing::ElementsAre("seeking", "seeked"));
 }
 
-// A seek the player lowered readyState for still ends when it rises again.
 TEST_P(ParcMediaElementSeekTest, ParcSafariLoweredReadyStateRiseEndsSeek) {
   Prepare(kParcSafariUserAgent, 0, 10, HTMLMediaElement::kHaveFutureData);
   SetCurrentTime(5);
@@ -2326,8 +2177,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariLoweredReadyStateRiseEndsSeek) {
               testing::ElementsAre("seeking", "seeked"));
 }
 
-// WebKit's seekWithTolerance: below HAVE_FUTURE_DATA a seek prepares to play,
-// preload auto.
 TEST_P(ParcMediaElementSeekTest, ParcSafariSeekPreparesToPlay) {
   Media()->setAttribute(html_names::kPreloadAttr, AtomicString("metadata"));
   Prepare(kParcSafariUserAgent, 0, 10, HTMLMediaElement::kHaveMetadata);
@@ -2338,7 +2187,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariSeekPreparesToPlay) {
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 }
 
-// WebKit's player has future data at preload metadata for a live stream.
 TEST_P(ParcMediaElementSeekTest, ParcSafariSeekWithFutureDataKeepsPreload) {
   Media()->setAttribute(html_names::kPreloadAttr, AtomicString("metadata"));
   Prepare(kParcSafariUserAgent, 0, 10, HTMLMediaElement::kHaveFutureData,
@@ -2352,8 +2200,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariSeekWithFutureDataKeepsPreload) {
   EXPECT_EQ(WebMediaPlayer::kPreloadMetaData, Media()->EffectivePreloadType());
 }
 
-// WebKit's player has no data past metadata at preload metadata, so a seek
-// there prepares even where Chromium's has buffered more.
 TEST_P(ParcMediaElementSeekTest,
        ParcSafariSeekAtPreloadMetadataPreparesWhateverBuffered) {
   Media()->setAttribute(html_names::kPreloadAttr, AtomicString("metadata"));
@@ -2378,10 +2224,6 @@ TEST_P(ParcMediaElementSeekTest, ParcChromeSeekKeepsPreload) {
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
 }
 
-// WebKit's handleSeekToPlaybackPosition on macOS: the first seek of a scrub
-// from the system's media controls pauses playing media, its seeks continue
-// in a task as a page's, and the seek that finishes resumes playback
-// (finishSeek).
 TEST_P(ParcMediaElementSeekTest, ParcSafariPlaybackControlsScrubIsSilent) {
   using Action = media_session::mojom::blink::PlaybackControlsAction;
   Prepare(kParcSafariUserAgent, 0, 10);
@@ -2486,9 +2328,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariRemoteScrubPausesUntilSeeked) {
                                    "seeked", "play", "playing"));
 }
 
-// Blink finishes a seek as the player's ready state climbs back; WebKit's
-// finishSeek runs from the seek's completion, so the climb reports no playing
-// of its own.
 TEST_P(ParcMediaElementSeekTest, ParcSafariRemoteScrubPlayingOnceAfterClimb) {
   Prepare(kParcSafariUserAgent, 0, 10);
   Media()->Play();
@@ -2505,8 +2344,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariRemoteScrubPlayingOnceAfterClimb) {
                                    "seeked", "play", "playing"));
 }
 
-// Each seek of the scrub restarts its 500 ms end and leaves playback alone
-// after the first; a seek once the scrub has ended starts another.
 TEST_P(ParcMediaElementSeekTest, ParcSafariRemoteScrubEndsAfterHalfSecond) {
   static thread_local base::TimeTicks mock_time_ticks;
   mock_time_ticks = base::TimeTicks::Now();
@@ -2533,7 +2370,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariRemoteScrubEndsAfterHalfSecond) {
   EXPECT_TRUE(Media()->paused());
 }
 
-// WebKit's SkipForwardCommand: a remote seek to at most the duration.
 TEST_P(ParcMediaElementSeekTest, ParcSafariRemoteSkipPausesUntilSeeked) {
   Prepare(kParcSafariUserAgent, 0, 10);
   Media()->Play();
@@ -2547,7 +2383,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariRemoteSkipPausesUntilSeeked) {
   EXPECT_FALSE(Media()->paused());
 }
 
-// WebKit's SkipBackwardCommand: a remote seek to no earlier than 0.
 TEST_P(ParcMediaElementSeekTest, ParcSafariRemoteSkipBackPausesUntilSeeked) {
   Prepare(kParcSafariUserAgent, 0, 10);
   EXPECT_CALL(*MockMediaPlayer(), CurrentTime).WillRepeatedly(Return(6.0));
@@ -2567,8 +2402,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariRemoteSkipBackPausesUntilSeeked) {
   EXPECT_FALSE(Media()->paused());
 }
 
-// WebKit's pause() (a remote pause too): playback the scrub paused stays
-// paused after its seek.
 TEST_P(ParcMediaElementSeekTest, ParcSafariPauseDuringRemoteScrubHolds) {
   Prepare(kParcSafariUserAgent, 0, 10);
   Media()->Play();
@@ -2593,7 +2426,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariPauseDuringRemoteScrubHolds) {
   EXPECT_TRUE(Media()->paused());
 }
 
-// WebKit's clearSeeking: a seek that needs no player resumes nothing.
 TEST_P(ParcMediaElementSeekTest, ParcSafariRemoteSeekToCurrentTimeHolds) {
   Prepare(kParcSafariUserAgent, 0, 10);
   Media()->Play();
@@ -2632,9 +2464,6 @@ class ClosingMediaSourceAttachment final : public StubMediaSourceAttachment {
   int closes_ = 0;
 };
 
-// WebKit's mediaSourceWasDetached runs userCancelledLoad: before metadata the
-// element reports MEDIA_ERR_ABORTED, fires abort then emptied, empties and
-// detaches its Media Source.
 TEST_P(ParcMediaElementTest, ParcSafariMediaSourceDetachAbortsLoad) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
@@ -2667,7 +2496,6 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceDetachAbortsLoad) {
               testing::ElementsAre("abort", "emptied"));
 }
 
-// The element's own controls reset without pausing it into a new load.
 TEST_P(ParcMediaElementTest, ParcSafariMediaSourceDetachWithControlsStays) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetScriptEnabled(true);
@@ -2691,7 +2519,6 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceDetachWithControlsStays) {
   test::RunPendingTasks();
   EXPECT_EQ(Media()->getNetworkState(), HTMLMediaElement::kNetworkEmpty);
 
-  // Later resets of the controls leave it too.
   Media()->SetBooleanAttribute(html_names::kControlsAttr, false);
   Media()->SetBooleanAttribute(html_names::kControlsAttr, true);
   test::RunPendingTasks();
@@ -2700,8 +2527,6 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceDetachWithControlsStays) {
               testing::ElementsAre("abort", "emptied"));
 }
 
-// After metadata the element goes idle without emptied, and with the player
-// gone reports HAVE_NOTHING, no duration and time 0.
 TEST_P(ParcMediaElementSeekTest, ParcSafariMediaSourceDetachAfterMetadata) {
   EXPECT_CALL(*MockMediaPlayer(), CurrentTime).WillRepeatedly(Return(2.0));
   Prepare(kParcSafariUserAgent, 2, 8);
@@ -2726,7 +2551,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariMediaSourceDetachAfterMetadata) {
               testing::ElementsAre("abort"));
 }
 
-// WebKit's clearMediaPlayer cancels a queued seek: seeking stays set at 0.
 TEST_P(ParcMediaElementSeekTest, ParcSafariMediaSourceDetachDropsSeek) {
   Prepare(kParcSafariUserAgent, 0, 10);
   SetCurrentTime(5);
@@ -2741,9 +2565,6 @@ TEST_P(ParcMediaElementSeekTest, ParcSafariMediaSourceDetachDropsSeek) {
   EXPECT_THAT(events_->Only({"seeking", "seeked"}), testing::IsEmpty());
 }
 
-// WebKit's m_completelyLoaded: once the Media Source has ended without an
-// error, its going away leaves the load alone, including while the Loaded
-// report is still queued.
 TEST_P(ParcMediaElementTest, ParcSafariMediaSourceDetachAfterEndOfStreamKeeps) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
@@ -2765,7 +2586,6 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceDetachAfterEndOfStreamKeeps) {
   EXPECT_FALSE(Media()->error());
   EXPECT_EQ(Media()->getNetworkState(), HTMLMediaElement::kNetworkIdle);
 
-  // A new load starts incomplete (WebKit's prepareForLoad).
   ASSERT_TRUE(ParcCompletelyLoaded());
   Media()->load();
   EXPECT_FALSE(ParcCompletelyLoaded());
@@ -2786,9 +2606,6 @@ TEST_P(ParcMediaElementTest, ParcChromeMediaSourceDetachKeepsLoad) {
   EXPECT_EQ(Media()->getNetworkState(), network_state);
 }
 
-// An empty src fails in the element, the next load's player fails with a
-// message of its own, and an element in a document without a frame fails
-// without a player.
 TEST_P(ParcMediaElementTest, ParcSafariSrcNotSupportedMessages) {
   SetUserAgent(kParcSafariUserAgent);
   EXPECT_CALL(*MockMediaPlayer(), WouldTaintOrigin())
@@ -2918,9 +2735,6 @@ void ExpectParcPlayRejection(ScriptState* script_state,
   EXPECT_EQ(exception->message(), message);
 }
 
-// play() without the user activation the policy wants, then play() calls
-// that pause(), a new load and that load's failure interrupt, and one made
-// after the failure.
 void ExpectParcPlayRejectionMessages(
     HTMLMediaElement* media,
     ScriptState* script_state,
@@ -2951,11 +2765,10 @@ void ExpectParcPlayRejectionMessages(
                           "NotSupportedError", expected.no_source);
 }
 
-}  // namespace
+}
 
 TEST_P(ParcMediaElementTest, ParcSafariPlayRejectionMessages) {
   SetUserAgent(kParcSafariUserAgent);
-  // Safari refuses a video only once its player reports audio.
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
   test::RunPendingTasks();
   ScriptState* script_state =
@@ -2992,8 +2805,6 @@ TEST_P(ParcMediaElementTest, ParcChromePlayRejectionMessages) {
 
 namespace {
 
-// Chromium's default policy with a user gesture in the frame's past but none
-// being processed now: enough for Chromium, not for Safari.
 void ParcStickyActivationOnly(HTMLMediaElement* media) {
   media->GetDocument().GetSettings()->SetAutoplayPolicy(
       AutoplayPolicy::Type::kDocumentUserActivationRequired);
@@ -3003,10 +2814,8 @@ void ParcStickyActivationOnly(HTMLMediaElement* media) {
   LocalFrame::ConsumeTransientUserActivation(frame);
 }
 
-}  // namespace
+}
 
-// WebKit's RequireUserGestureForAudioRateChange: audible play() needs a
-// gesture now, or one that already reached the element.
 TEST_P(ParcMediaElementTest, ParcSafariAudiblePlayNeedsGestureOnElement) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
@@ -3031,8 +2840,6 @@ TEST_P(ParcMediaElementTest, ParcChromeAudiblePlayAfterAnyGesture) {
   EXPECT_FALSE(Media()->Play().has_value());
 }
 
-// Safari plays muted, silent and audio-less video media without a gesture;
-// an audio element counts as audible whatever its tracks.
 TEST_P(ParcMediaElementTest, ParcSafariSilentPlayNeedsNoGesture) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetAutoplayPolicy(
@@ -3068,8 +2875,6 @@ TEST_P(ParcMediaElementTest, ParcChromeSilentPlay) {
   EXPECT_EQ(Media()->Play(), DOMExceptionCode::kNotAllowedError);
 }
 
-// WebKit's updateShouldPlay and setVolume: media made audible without a
-// gesture is paused, a pending play() aborted.
 TEST_P(ParcMediaElementTest, ParcSafariBecomingAudiblePauses) {
   SetUserAgent(kParcSafariUserAgent);
   ScriptState* script_state =
@@ -3107,8 +2912,6 @@ TEST_P(ParcMediaElementTest, ParcChromeBecomingAudibleAfterAnyGesture) {
   EXPECT_FALSE(Media()->paused());
 }
 
-// WebKit's mediaPlayerCharacteristicChanged: a video found to have audio
-// once its metadata arrives is paused and its play() refused.
 TEST_P(ParcMediaElementTest, ParcSafariAudioFoundAtMetadataRefusesPlay) {
   if (GetParam() == MediaTestParam::kAudio) {
     GTEST_SKIP();
@@ -3134,8 +2937,6 @@ TEST_P(ParcMediaElementTest, ParcSafariAudioFoundAtMetadataRefusesPlay) {
       "current context, possibly because the user denied permission.");
 }
 
-// Safari refuses audible autoplay, starts it when muted without waiting for
-// the element to be visible (macOS has no InvisibleAutoplayNotPermitted).
 TEST_P(ParcMediaElementTest, ParcSafariMutingStartsRefusedAutoplay) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetAutoplayPolicy(
@@ -3162,9 +2963,6 @@ TEST_P(ParcMediaElementTest, ParcChromeMutingLeavesAutoplayAlone) {
   EXPECT_TRUE(Media()->paused());
 }
 
-// WebKit's Document::processingUserGestureForMedia: an element created
-// during a gesture is unlocked, and an unlocked element's ended lends the
-// document's other media a gesture.
 TEST_P(ParcMediaElementTest, ParcSafariGestureReachesOtherMedia) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
@@ -3187,8 +2985,6 @@ TEST_P(ParcMediaElementTest, ParcSafariGestureReachesOtherMedia) {
   EXPECT_TRUE(ParcMediaElement::From(*other).HadMediaUserGesture());
 }
 
-// WebKit's setMutedInternal: the first muted set, even to the value muted
-// already had, unlocks the element under a gesture, so it autoplays later.
 TEST_P(ParcMediaElementTest, ParcSafariFirstMutedSetInGestureUnlocks) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetAutoplayPolicy(
@@ -3207,8 +3003,6 @@ TEST_P(ParcMediaElementTest, ParcSafariFirstMutedSetInGestureUnlocks) {
   EXPECT_FALSE(Media()->paused());
 }
 
-// WebKit's mediaPlayerCharacteristicChanged: audio the player reports after
-// playback began pauses it.
 TEST_P(ParcMediaElementTest, ParcSafariAudioFoundLaterPauses) {
   if (GetParam() == MediaTestParam::kAudio) {
     GTEST_SKIP();
@@ -3317,8 +3111,6 @@ TEST_P(ParcMediaElementTest, ParcChromeBackForwardCacheFreezePauses) {
   EXPECT_EQ(pause->count(), 1);
 }
 
-// As WebKit's resume(), a page restored from the back/forward cache while
-// hidden plays on only once it is shown.
 TEST_P(ParcMediaElementTest, ParcSafariBackForwardCacheRestoreHeldUntilShown) {
   SetUserAgent(kParcSafariUserAgent);
   ON_CALL(*MockMediaPlayer(), Paused()).WillByDefault(Return(true));
@@ -3366,8 +3158,6 @@ TEST_P(ParcMediaElementTest, ParcSafariBackForwardCacheRestoreHeldUntilShown) {
   EXPECT_EQ(pause->count(), 0);
 }
 
-// Chromium unfreezes a restored page before showing it; playback resumes as it
-// is shown, without events.
 TEST_P(ParcMediaElementTest, ParcSafariBackForwardCacheRestoreVisibleResumes) {
   SetUserAgent(kParcSafariUserAgent);
   ON_CALL(*MockMediaPlayer(), Paused()).WillByDefault(Return(true));
@@ -3531,9 +3321,6 @@ TEST_P(ParcMediaElementTest,
   EXPECT_EQ(pause->count(), 0);
 }
 
-// The end of playback pauses on the player's time, as WebKit's
-// mediaPlayerTimeChanged leaves currentMediaTime to read it, even while
-// Chromium holds its official position for want of data.
 TEST_P(ParcMediaElementTest, ParcSafariPausesAtEndOnPlayerTime) {
   SetUserAgent(kParcSafariUserAgent);
   double now = 0.5;
@@ -3632,8 +3419,6 @@ TEST_P(ParcMediaElementTest, ParcSafariPreloadNoneStillDefersLoad) {
   EXPECT_FALSE(ParcPreparesToPlay());
 }
 
-// WebKit: load() prepares to play and autoplay sets the player's preload to
-// auto, whatever the autoplay policy.
 TEST_P(ParcMediaElementTest, ParcSafariEffectivePreloadFollowsWebKit) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetAutoplayPolicy(
@@ -3662,9 +3447,6 @@ TEST_P(ParcMediaElementTest, ParcSafariEffectivePreloadFollowsWebKit) {
   EXPECT_EQ(WebMediaPlayer::kPreloadAuto, other->EffectivePreloadType());
 }
 
-// WebKit's effectivePreloadValue: once an element has prepared to play
-// (m_hasEverPreparedToPlay, never reset), every later load preloads
-// automatically, whatever the preload attribute.
 TEST_P(ParcMediaElementTest, ParcSafariLoadKeepsPreloadAutoForLaterLoads) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->setPreload(AtomicString("none"));
@@ -3682,7 +3464,6 @@ TEST_P(ParcMediaElementTest, ParcSafariLoadKeepsPreloadAutoForLaterLoads) {
   EXPECT_TRUE(ParcPreparesToPlay());
 }
 
-// WebKit's load queues prepareToPlay; a new load cancels it.
 TEST_P(ParcMediaElementTest, ParcSafariNewLoadCancelsLoadPrepareToPlay) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->setPreload(AtomicString("none"));
@@ -3694,8 +3475,6 @@ TEST_P(ParcMediaElementTest, ParcSafariNewLoadCancelsLoadPrepareToPlay) {
   EXPECT_EQ(WebMediaPlayer::kPreloadNone, Media()->EffectivePreloadType());
 }
 
-// WebKit's player has no data past metadata at preload metadata, so playing
-// there prepares to play even where Chromium's has buffered more.
 TEST_P(ParcMediaElementTest, ParcSafariPlayKeepsPreloadAutoForLaterLoads) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetAutoplayPolicy(
@@ -3714,8 +3493,6 @@ TEST_P(ParcMediaElementTest, ParcSafariPlayKeepsPreloadAutoForLaterLoads) {
   test::RunPendingTasks();
 }
 
-// WebKit's updatePlayState prepares only an element that isn't potentially
-// playing: one already playing at preload auto hasn't prepared.
 TEST_P(ParcMediaElementTest, ParcSafariPlayingAtPreloadAutoDoesNotPrepare) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetAutoplayPolicy(
@@ -3734,8 +3511,6 @@ TEST_P(ParcMediaElementTest, ParcSafariPlayingAtPreloadAutoDoesNotPrepare) {
   test::RunPendingTasks();
 }
 
-// WebKit's player keeps the data it has when the preload is lowered, so a
-// stall after that isn't a prepare.
 TEST_P(ParcMediaElementTest, ParcSafariLoweredPreloadKeepsFutureData) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetAutoplayPolicy(
@@ -3754,8 +3529,6 @@ TEST_P(ParcMediaElementTest, ParcSafariLoweredPreloadKeepsFutureData) {
   test::RunPendingTasks();
 }
 
-// Raised to auto, WebKit's player gets the data Chromium's already has, and
-// keeps it when the preload is lowered again.
 TEST_P(ParcMediaElementTest, ParcSafariRaisedPreloadCountsBufferedData) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetAutoplayPolicy(
@@ -3775,8 +3548,6 @@ TEST_P(ParcMediaElementTest, ParcSafariRaisedPreloadCountsBufferedData) {
   test::RunPendingTasks();
 }
 
-// WebKit's load prepares to play after resource selection has made the
-// player at preload none, which suspends first.
 TEST_P(ParcMediaElementTest, ParcSafariLoadSuspendsThenLoadsAtPreloadNone) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->setPreload(AtomicString("none"));
@@ -3829,8 +3600,6 @@ TEST_P(ParcMediaElementTest, ParcSafariSeekKeepsPreloadAutoForLaterLoads) {
   test::RunPendingTasks();
 }
 
-// WebKit's seekWithTolerance tests the preload attribute, not autoplay's
-// effective auto.
 TEST_P(ParcMediaElementTest, ParcSafariSeekWithAutoplayKeepsPreloadAuto) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetAutoplayPolicy(
@@ -3851,7 +3620,6 @@ TEST_P(ParcMediaElementTest, ParcSafariSeekWithAutoplayKeepsPreloadAuto) {
   test::RunPendingTasks();
 }
 
-// WebKit's prepareMediaFragmentURI prepares to play whatever the preload.
 TEST_P(ParcMediaElementTest, ParcSafariFragmentStartKeepsPreloadAuto) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->SetSrc(AtomicString("http://example.com/foo.mp4#t=2"));
@@ -3953,7 +3721,6 @@ TEST_P(ParcMediaElementTest, ParcChromeEffectivePreloadUnchanged) {
 
 class ParcTimeupdateTest : public ParcMediaElementTest {
  protected:
-  // A player at |time| of 10s with seekable [0, 10], playing.
   void StartPlaying(double time) {
     WebTimeRanges seekable;
     seekable.Add(0, 10);
@@ -4024,7 +3791,6 @@ TEST_P(ParcTimeupdateTest, SafariPeriodicThrottledSinceLastTimeupdate) {
   SetUserAgent(kParcSafariUserAgent);
   StartPlaying(0);
 
-  // Waiting for data queues a timeupdate at 1s.
   SetTime(1);
   SetReadyState(HTMLMediaElement::kHaveCurrentData);
   EXPECT_EQ(Timeupdates(), 1);
@@ -4088,15 +3854,12 @@ TEST_P(ParcTimeupdateTest, ChromeSeekKeepsQueuedPeriodicTimeupdate) {
   EXPECT_EQ(Timeupdates(), 1);
 }
 
-// WebKit's finishSeek and prepareForLoad queue their timeupdate directly.
 TEST_P(ParcTimeupdateTest, SafariSeekFinishedTimeupdateIsUnconditional) {
   SetUserAgent(kParcSafariUserAgent);
   StartPlaying(1);
   Media()->pause();
   EXPECT_EQ(Timeupdates(), 0);
 
-  // The player still reports the old time when the seek finishes, so only an
-  // unconditional timeupdate fires.
   Media()->setCurrentTime(2);
   SetReadyState(HTMLMediaElement::kHaveMetadata);
   SetReadyState(HTMLMediaElement::kHaveFutureData);
@@ -4110,7 +3873,6 @@ TEST_P(ParcTimeupdateTest, SafariLoadResetTimeupdateIsUnconditional) {
   Media()->setCurrentTime(1);
   ASSERT_EQ(Media()->currentTime(), 1);
 
-  // No second player: the fixture's frame client makes only one.
   Media()->removeAttribute(html_names::kSrcAttr);
   Media()->load();
   EXPECT_EQ(Timeupdates(), 1);
@@ -4126,7 +3888,7 @@ class SeekableToOneMediaSourceAttachment final
   }
 };
 
-}  // namespace
+}
 
 TEST_P(ParcMediaElementTest, ParcSafariEndedByPositionFiresOnce) {
   SetUserAgent(kParcSafariUserAgent);
@@ -4162,8 +3924,6 @@ TEST_P(ParcMediaElementTest, ParcSafariEndedByPositionFiresOnce) {
   test::RunPendingTasks();
   EXPECT_EQ(ended->count(), 2);
 
-  // A seek that lands on the end doesn't end again; one away from it does,
-  // even before it completes.
   Media()->setCurrentTime(1.0);
   TimeChanged();
   test::RunPendingTasks();
@@ -4176,8 +3936,6 @@ TEST_P(ParcMediaElementTest, ParcSafariEndedByPositionFiresOnce) {
   EXPECT_EQ(ended->count(), 3);
 }
 
-// WebKit's m_sentEndEvent: media that ended, then played at rate 0, pauses
-// at rate 1 without a second ended.
 TEST_P(ParcMediaElementTest, ParcSafariEndedOnceAcrossRateZeroPlay) {
   SetUserAgent(kParcSafariUserAgent);
   double now = 0.5;
@@ -4301,7 +4059,6 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceEndsOnlyOnceEnded) {
   EXPECT_FALSE(Media()->paused());
   EXPECT_EQ(ended->count(), 0);
 
-  // Not paused, so canplay brings playing even at the end.
   auto* playing = MakeGarbageCollected<EventCountingListener>();
   Media()->addEventListener(event_type_names::kPlaying, playing);
   SetReadyState(HTMLMediaElement::kHaveCurrentData);
@@ -4315,7 +4072,6 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceEndsOnlyOnceEnded) {
   EXPECT_TRUE(Media()->paused());
   EXPECT_EQ(ended->count(), 1);
 
-  // Reopened at the end, it can't reach the end, which re-arms ended.
   attachment->ParcSetMediaSourceEnded(false);
   TimeChanged();
   attachment->ParcSetMediaSourceEnded(true);
@@ -4386,7 +4142,6 @@ TEST_P(ParcMediaElementTest, ParcSafariDetachedElementPauses) {
   SetUserAgent(kParcSafariUserAgent);
   NonThrowableExceptionState should_not_throw;
 
-  // While seeking: not paused.
   Media()->GetDocument().body()->AppendChild(Media());
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
   test::RunPendingTasks();
@@ -4401,14 +4156,12 @@ TEST_P(ParcMediaElementTest, ParcSafariDetachedElementPauses) {
   test::RunPendingTasks();
   EXPECT_FALSE(Media()->paused());
 
-  // After the seek: paused.
   TimeChanged();
   Media()->GetDocument().body()->AppendChild(Media());
   Media()->remove(should_not_throw);
   test::RunPendingTasks();
   EXPECT_TRUE(Media()->paused());
 
-  // Paused for invisible autoplay: autoplay is kept.
   Media()->setAttribute(html_names::kAutoplayAttr, g_empty_atom);
   Media()->GetDocument().body()->AppendChild(Media());
   Media()->Play();
@@ -4498,10 +4251,10 @@ void DisallowPlaybackWhileNotVisible(LocalDOMWindow* window) {
   network::ParsedPermissionsPolicy policy;
   policy.emplace_back(
       network::mojom::PermissionsPolicyFeature::kMediaPlaybackWhileNotVisible,
-      /*allowed_origins=*/std::vector<network::OriginWithPossibleWildcards>(),
-      /*self_if_matches=*/std::nullopt,
-      /*matches_all_origins=*/false,
-      /*matches_opaque_src=*/false);
+      std::vector<network::OriginWithPossibleWildcards>(),
+      std::nullopt,
+      false,
+      false);
   window->GetSecurityContext().SetPermissionsPolicy(
       network::PermissionsPolicy::CreateFromParsedPolicy(
           policy, window->GetSecurityOrigin()->ToUrlOrigin()));
@@ -4509,7 +4262,7 @@ void DisallowPlaybackWhileNotVisible(LocalDOMWindow* window) {
       network::mojom::PermissionsPolicyFeature::kMediaPlaybackWhileNotVisible));
 }
 
-}  // namespace
+}
 
 TEST_P(ParcMediaElementTest, ParcSafariPlaysWhileHiddenDespitePolicy) {
   SetUserAgent(kParcSafariUserAgent);
@@ -4529,7 +4282,6 @@ TEST_P(ParcMediaElementTest, ParcChromePausesWhileHiddenUnderPolicy) {
   ASSERT_TRUE(Media()->GetWebMediaPlayer());
 }
 
-// WebKit's Wait for Key (HTMLMediaElement::mediaPlayerWaitingForKeyChanged).
 TEST_P(ParcMediaElementTest, ParcSafariWaitForKeyLowersReadyStateOnce) {
   SetUserAgent(kParcSafariUserAgent);
   WaitForPlayer();
@@ -4544,13 +4296,10 @@ TEST_P(ParcMediaElementTest, ParcSafariWaitForKeyLowersReadyStateOnce) {
   auto* waiting = MakeGarbageCollected<EventCountingListener>();
   Media()->addEventListener(event_type_names::kWaiting, waiting);
 
-  // The current time is buffered: HAVE_CURRENT_DATA, and `waiting`.
   EXPECT_CALL(*MockMediaPlayer(), Buffered())
       .WillRepeatedly(Return(WebTimeRanges(0, 10)));
   EXPECT_TRUE(ParcMediaElement::From(*Media()).WaitForKey());
   EXPECT_EQ(Media()->getReadyState(), HTMLMediaElement::kHaveCurrentData);
-  // The player repeating its readyState doesn't undo it, and one blocked
-  // episode raises one waitingforkey.
   ReadyStateChanged();
   EXPECT_EQ(Media()->getReadyState(), HTMLMediaElement::kHaveCurrentData);
   EXPECT_TRUE(ParcMediaElement::From(*Media()).WaitForKey());
@@ -4558,19 +4307,16 @@ TEST_P(ParcMediaElementTest, ParcSafariWaitForKeyLowersReadyStateOnce) {
   EXPECT_EQ(waitingforkey->count(), 1);
   EXPECT_EQ(waiting->count(), 1);
 
-  // A change of the player's readyState still reaches the element.
   EXPECT_CALL(*MockMediaPlayer(), GetReadyState())
       .WillRepeatedly(Return(WebMediaPlayer::kReadyStateHaveFutureData));
   ReadyStateChanged();
   EXPECT_EQ(Media()->getReadyState(), HTMLMediaElement::kHaveFutureData);
 
-  // When the player stops waiting, its readyState comes back.
   EXPECT_CALL(*MockMediaPlayer(), GetReadyState())
       .WillRepeatedly(Return(WebMediaPlayer::kReadyStateHaveEnoughData));
   EXPECT_TRUE(ParcMediaElement::From(*Media()).StopWaitingForKey());
   EXPECT_EQ(Media()->getReadyState(), HTMLMediaElement::kHaveEnoughData);
 
-  // The next block is a new episode; nothing buffered: HAVE_METADATA.
   EXPECT_CALL(*MockMediaPlayer(), Buffered())
       .WillRepeatedly(Return(WebTimeRanges()));
   EXPECT_TRUE(ParcMediaElement::From(*Media()).WaitForKey());
@@ -4579,8 +4325,6 @@ TEST_P(ParcMediaElementTest, ParcSafariWaitForKeyLowersReadyStateOnce) {
   EXPECT_EQ(waitingforkey->count(), 2);
 }
 
-// Keys don't hold readyState before the block, and the block never raises
-// it.
 TEST_P(ParcMediaElementTest, ParcSafariWaitForKeyOnlyLowersReadyState) {
   SetUserAgent(kParcSafariUserAgent);
   WaitForPlayer();
@@ -4593,7 +4337,6 @@ TEST_P(ParcMediaElementTest, ParcSafariWaitForKeyOnlyLowersReadyState) {
   EXPECT_EQ(Media()->getReadyState(), HTMLMediaElement::kHaveMetadata);
 }
 
-// WebKit's prepareForLoad clears playback blocked waiting for key.
 TEST_P(ParcMediaElementTest, ParcSafariLoadEndsTheWaitForKey) {
   SetUserAgent(kParcSafariUserAgent);
   WaitForPlayer();
@@ -4601,7 +4344,6 @@ TEST_P(ParcMediaElementTest, ParcSafariLoadEndsTheWaitForKey) {
   Media()->addEventListener(event_type_names::kWaitingforkey, waitingforkey);
   EXPECT_TRUE(ParcMediaElement::From(*Media()).WaitForKey());
   test::RunPendingTasks();
-  // Without a source the load makes no second player (the stub has one).
   Media()->removeAttribute(html_names::kSrcAttr);
   Media()->load();
   EXPECT_TRUE(ParcMediaElement::From(*Media()).WaitForKey());
@@ -4626,8 +4368,6 @@ TEST_P(ParcMediaElementTest, ParcChromeWaitForKeyIsBlinks) {
 
 namespace {
 
-// Holds every video in picture in picture and counts the requests to leave.
-// Its picture-in-picture element is the one set, if any.
 class ParcPictureInPictureController final : public PictureInPictureController {
  public:
   explicit ParcPictureInPictureController(Document& document)
@@ -4682,11 +4422,8 @@ class ParcPictureInPictureController final : public PictureInPictureController {
   Member<Element> element_;
 };
 
-}  // namespace
+}
 
-// Parc: a video moved while in picture in picture keeps its player with the
-// frame that made it until it leaves picture in picture; then the player
-// follows the element's frame, as WebKit's does on the move.
 TEST_P(ParcMediaElementTest,
        SafariIdentityPictureInPictureVideoMovesWhenItLeaves) {
   if (!IsA<HTMLVideoElement>(Media())) {
@@ -4706,7 +4443,7 @@ TEST_P(ParcMediaElementTest,
   pip->set_element(Media());
 
   auto new_page = CreatePageWithSecurityOrigin(
-      origin, /*is_picture_in_picture=*/false, /*with_mock_player=*/true);
+      origin, false, true);
   PresentSafariIdentity(new_page->GetDocument());
   EXPECT_CALL(*MockMediaPlayer(), ParcMoveToFrame(_)).Times(0);
   new_page->GetDocument().body()->AppendChild(Media());
@@ -4719,7 +4456,6 @@ TEST_P(ParcMediaElementTest,
   testing::Mock::VerifyAndClearExpectations(MockMediaPlayer());
   EXPECT_FALSE(WasPlayerDestroyed());
 
-  // The old document no longer holds it.
   auto* emptied_listener = MakeGarbageCollected<EventCountingListener>();
   Media()->addEventListener(event_type_names::kEmptied, emptied_listener);
   EXPECT_CALL(*MockMediaPlayer(), ParcMoveToFrame(_)).Times(0);
@@ -4729,7 +4465,6 @@ TEST_P(ParcMediaElementTest,
   EXPECT_EQ(emptied_listener->count(), 0);
 }
 
-// Parc: so does one whose picture in picture ended with the old document.
 TEST_P(ParcMediaElementTest,
        SafariIdentityPictureInPictureVideoMovesWhenItsFrameGoes) {
   if (!IsA<HTMLVideoElement>(Media())) {
@@ -4749,7 +4484,7 @@ TEST_P(ParcMediaElementTest,
   pip->set_element(Media());
 
   auto new_page = CreatePageWithSecurityOrigin(
-      origin, /*is_picture_in_picture=*/false, /*with_mock_player=*/true);
+      origin, false, true);
   PresentSafariIdentity(new_page->GetDocument());
   new_page->GetDocument().body()->AppendChild(Media());
   test::RunPendingTasks();
@@ -4764,8 +4499,6 @@ TEST_P(ParcMediaElementTest,
   EXPECT_EQ(emptied_listener->count(), 0);
 }
 
-// WebKit's load() pauses and rejects play() from NETWORK_EMPTY too
-// (HTMLMediaElement::prepareForLoad).
 TEST_P(ParcMediaElementTest, ParcSafariLoadAfterPlayWithoutSourcePauses) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetScriptEnabled(true);
@@ -4796,9 +4529,6 @@ TEST_P(ParcMediaElementTest, ParcChromeLoadAfterPlayWithoutSourceKeepsPlaying) {
   EXPECT_FALSE(Media()->paused());
 }
 
-// WebKit rejects the play promises on every load, but a load that load()
-// didn't start keeps playing (HTMLMediaElement::prepareForLoad and
-// cancelPendingEventsAndCallbacks).
 TEST_P(ParcMediaElementTest, ParcSafariSrcAfterPlayWithoutSourceRejectsPlay) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->GetDocument().GetSettings()->SetScriptEnabled(true);
@@ -4836,9 +4566,6 @@ TEST_P(ParcMediaElementTest, ParcChromeSrcAfterPlayWithoutSourceKeepsPlay) {
   EXPECT_EQ(PendingPlayPromiseCount(), 1u);
 }
 
-// WebKit defers a lazy load before networkState becomes NETWORK_LOADING, and
-// play resumes it (HTMLMediaElement::deferMediaResourceLoadIfNeeded,
-// playInternal).
 TEST_P(ParcMediaElementTest, ParcSafariLazyLoadWaitsAtNoSource) {
   ScopedLazyLoadVideoAndAudioForTest scoped_feature(true);
   SetUserAgent(kParcSafariUserAgent);
@@ -4901,7 +4628,6 @@ TEST_P(ParcMediaElementTest, ParcSafariLazyLoadIgnoresAddedSource) {
   EXPECT_EQ(Media()->currentSrc(), KURL(SrcSchemeToURL(TestURLScheme::kHttp)));
 }
 
-// Before resource selection has run, play() selects rather than resumes.
 TEST_P(ParcMediaElementTest, ParcSafariPosterDeferredPlaySelects) {
   ScopedLazyLoadVideoAndAudioForTest scoped_feature(true);
   SetUserAgent(kParcSafariUserAgent);
@@ -4936,8 +4662,6 @@ TEST_P(ParcMediaElementTest, ParcSafariPlayWaitsForQueuedSelection) {
   EXPECT_EQ(loadstart->count(), 0);
 }
 
-// A poster can defer an element before resource selection runs; a <source>
-// added then still starts selection.
 TEST_P(ParcMediaElementTest,
        ParcSafariPosterDeferredElementSelectsAddedSource) {
   ScopedLazyLoadVideoAndAudioForTest scoped_feature(true);
@@ -4953,8 +4677,6 @@ TEST_P(ParcMediaElementTest,
   EXPECT_EQ(Media()->getNetworkState(), HTMLMediaElement::kNetworkNoSource);
 }
 
-// WebKit's didMoveToNewDocument leaves a deferred load deferred, observed in
-// the new document.
 TEST_P(ParcMediaElementTest, ParcSafariLazyLoadStaysDeferredOnDocumentMove) {
   ScopedLazyLoadVideoAndAudioForTest scoped_feature(true);
   ScopedDocumentPictureInPictureAPIForTest scoped_pip(false);
@@ -4987,7 +4709,7 @@ TEST_P(ParcMediaElementTest, ParcSafariLazyLoadResumesAfterSameOriginMove) {
   ASSERT_TRUE(Media()->IsLazyLoadDeferred());
 
   auto new_page = CreatePageWithSecurityOrigin(
-      origin, /*is_picture_in_picture=*/false, /*with_mock_player=*/true);
+      origin, false, true);
   PresentSafariIdentity(new_page->GetDocument());
   new_page->GetDocument().body()->AppendChild(Media());
   test::RunPendingTasks();
@@ -5002,8 +4724,6 @@ TEST_P(ParcMediaElementTest, ParcSafariLazyLoadResumesAfterSameOriginMove) {
   EXPECT_NE(Media()->GetWebMediaPlayer(), MockMediaPlayer());
 }
 
-// WebKit empties the network state when nothing is left to load and leaves
-// picture in picture (HTMLMediaElement::selectMediaResource).
 TEST_P(ParcMediaElementTest, ParcSafariNothingToLoadEmptiesNetworkState) {
   SetUserAgent(kParcSafariUserAgent);
   auto* pip = MakeGarbageCollected<ParcPictureInPictureController>(
@@ -5040,8 +4760,6 @@ TEST_P(ParcMediaElementTest, ParcChromeNothingToLoadKeepsNetworkState) {
   EXPECT_EQ(pip->exit_count(), 0);
 }
 
-// WebKit's AVFoundation player waits for play under preload none whatever the
-// URL (MediaPlayerPrivateAVFoundation::load).
 TEST_P(ParcMediaElementTest, ParcSafariPreloadNoneDefersBlob) {
   SetUserAgent(kParcSafariUserAgent);
   SetSecurityOrigin("http://example.com");
@@ -5061,9 +4779,6 @@ TEST_P(ParcMediaElementTest, ParcChromePreloadNoneLoadsBlob) {
   EXPECT_TRUE(Media()->GetWebMediaPlayer());
 }
 
-// WebKit always fires a last progress before suspend, and stops delaying the
-// load event (HTMLMediaElement::setNetworkState,
-// changeNetworkStateFromLoadingToIdle).
 TEST_P(ParcMediaElementTest, ParcSafariIdleFiresProgressAndSuspend) {
   SetUserAgent(kParcSafariUserAgent);
   auto* progress = MakeGarbageCollected<EventCountingListener>();
@@ -5104,8 +4819,6 @@ TEST_P(ParcMediaElementTest, ParcChromeIdleFiresSuspendOnly) {
   EXPECT_TRUE(ShouldDelayLoadEvent());
 }
 
-// Safari's Media Source player monitors no progress and reports Loaded once
-// the stream ends (MediaPlayerPrivateMediaSourceAVFObjC).
 TEST_P(ParcMediaElementTest, ParcSafariMediaSourceProgressOnlyAtEnd) {
   SetUserAgent(kParcSafariUserAgent);
   auto* progress = MakeGarbageCollected<EventCountingListener>();
@@ -5155,7 +4868,6 @@ TEST_P(ParcMediaElementTest, ParcChromeMediaSourceProgressWhileLoading) {
   EXPECT_EQ(suspend->count(), 0);
 }
 
-// WebKit's updateActiveTextTrackCues queues a periodic timeupdate.
 TEST_P(ParcTimeupdateTest, SafariCueUpdateQueuesTimeupdate) {
   SetUserAgent(kParcSafariUserAgent);
   StartPlaying(0);
@@ -5187,8 +4899,6 @@ class EventNameListener final : public NativeEventListener {
   Vector<AtomicString> names_;
 };
 
-// WebKit's finishSeek runs the cue update in a task queued before its
-// timeupdate and seeked, so the update's timeupdate follows them.
 TEST_P(ParcTimeupdateTest, SafariSeekCueTimeupdateFollowsSeeked) {
   static thread_local base::TimeTicks mock_time_ticks;
   mock_time_ticks = base::TimeTicks::Now();
@@ -5218,8 +4928,6 @@ TEST_P(ParcTimeupdateTest, SafariSeekCueTimeupdateFollowsSeeked) {
                                    event_type_names::kTimeupdate));
 }
 
-// WebKit's mediaPlayerTimeChanged queues a timeupdate at the end before it
-// loops.
 TEST_P(ParcTimeupdateTest, SafariLoopAtEndQueuesTimeupdate) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->setAttribute(html_names::kLoopAttr, g_empty_atom);
@@ -5242,8 +4950,6 @@ TEST_P(ParcTimeupdateTest, ChromeLoopAtEndQueuesNone) {
   EXPECT_EQ(Timeupdates(), 0);
 }
 
-// WebKit's mediaPlayerTimeChanged for a time the player reports outside a
-// seek (MediaPlayerPrivateRemote::currentTimeChanged's backward jump).
 TEST_P(ParcTimeupdateTest, SafariPlayerTimeChangeQueuesTimeupdate) {
   SetUserAgent(kParcSafariUserAgent);
   StartPlaying(5);
@@ -5266,9 +4972,6 @@ TEST_P(ParcTimeupdateTest, ChromePlayerTimeChangeQueuesNone) {
   EXPECT_EQ(Timeupdates(), 0);
 }
 
-// Safari's element hears its Media Source player's Loaded report from the GPU
-// process, after endOfStream() has returned, and a new load drops it
-// (HTMLMediaElement::mediaPlayerNetworkStateChanged).
 TEST_P(ParcMediaElementTest, ParcSafariMediaSourceEndedWaitsForTask) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
@@ -5298,8 +5001,6 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceEndedCancelledByLoad) {
   EXPECT_EQ(suspend->count(), 0);
 }
 
-// WebKit resumes a lazy load in a media element task that a new load cancels
-// (HTMLMediaElement::resumeDeferredMediaResourceLoad, prepareForLoad).
 TEST_P(ParcMediaElementTest, ParcSafariLazyResumeWaitsForTask) {
   ScopedLazyLoadVideoAndAudioForTest scoped_feature(true);
   SetUserAgent(kParcSafariUserAgent);
@@ -5360,7 +5061,6 @@ class ParcClosingMediaSourceAttachment final
   int close_count_ = 0;
 };
 
-// WebKit's mediaLoadingFailedFatally detaches the MediaSource.
 TEST_P(ParcMediaElementTest, ParcSafariMediaEngineErrorClosesMediaSource) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
@@ -5392,8 +5092,6 @@ TEST_P(ParcMediaElementTest, ParcChromeMediaEngineErrorKeepsMediaSource) {
   EXPECT_EQ(attachment->close_count(), 0);
 }
 
-// WebKit's MediaSource::streamEndedWithError runs the failure steps at once;
-// the player reports nothing more.
 TEST_P(ParcMediaElementTest, ParcSafariMediaSourceErrorFailsAtOnce) {
   SetUserAgent(kParcSafariUserAgent);
   Media()->SetSrc(SrcSchemeToURL(TestURLScheme::kHttp));
@@ -5405,7 +5103,7 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceErrorFailsAtOnce) {
   Media()->addEventListener(event_type_names::kError, error);
 
   ParcMediaElement::From(*Media()).MediaSourceEndedWithError(
-      /*network_error=*/false);
+      false);
   ASSERT_TRUE(Media()->error());
   EXPECT_EQ(Media()->error()->code(), MediaError::kMediaErrDecode);
   EXPECT_EQ(Media()->getNetworkState(), HTMLMediaElement::kNetworkIdle);
@@ -5429,7 +5127,7 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceErrorBeforeMetadata) {
   Media()->addEventListener(event_type_names::kError, error);
 
   ParcMediaElement::From(*Media()).MediaSourceEndedWithError(
-      /*network_error=*/false);
+      false);
   ASSERT_TRUE(Media()->error());
   EXPECT_EQ(Media()->error()->code(), MediaError::kMediaErrSrcNotSupported);
   EXPECT_EQ(Media()->getNetworkState(), HTMLMediaElement::kNetworkNoSource);
@@ -5447,7 +5145,7 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceNetworkErrorFailsAtOnce) {
   SetMediaSourceAttachment(attachment);
 
   ParcMediaElement::From(*Media()).MediaSourceEndedWithError(
-      /*network_error=*/true);
+      true);
   ASSERT_TRUE(Media()->error());
   EXPECT_EQ(Media()->error()->code(), MediaError::kMediaErrNetwork);
   EXPECT_EQ(Media()->getNetworkState(), HTMLMediaElement::kNetworkIdle);
@@ -5465,7 +5163,7 @@ TEST_P(ParcMediaElementTest, ParcChromeMediaSourceErrorWaitsForPlayer) {
   Media()->addEventListener(event_type_names::kError, error);
 
   ParcMediaElement::From(*Media()).MediaSourceEndedWithError(
-      /*network_error=*/true);
+      true);
   EXPECT_FALSE(Media()->error());
 
   EXPECT_CALL(*MockMediaPlayer(), GetNetworkState())
@@ -5478,7 +5176,7 @@ TEST_P(ParcMediaElementTest, ParcChromeMediaSourceErrorWaitsForPlayer) {
   EXPECT_EQ(attachment->close_count(), 0);
 }
 
-}  // namespace blink
+}
 
 namespace blink {
 class ParcMediaMockTimeTest : public ParcMediaElementTest {
@@ -5656,17 +5354,11 @@ TEST_P(ParcMediaMockTimeTest, HiddenAutoplayLoadGrantIsSingleUse) {
 
 namespace {
 constexpr char kParcAirPlayContextId[] = "6F1B3B57-0D0B-4B4A-9C55-3C3E2E3B1A11";
-}  // namespace
+}
 
-// WebKit's setWirelessPlaybackTarget / setShouldPlayToPlaybackTarget reach the
-// player, and its isCurrentPlaybackTargetWireless becomes
-// webkitCurrentPlaybackTargetIsWireless with
-// webkitcurrentplaybacktargetiswirelesschanged in a media element task
-// (HTMLMediaElement::setIsPlayingToWirelessTarget).
 TEST_P(ParcMediaElementTest, ParcSafariAirPlayTargetAndWirelessEvent) {
   SetUserAgent(kParcSafariUserAgent);
   WaitForPlayer();
-  // The state the new player reported first.
   base::RunLoop().RunUntilIdle();
   auto* listener = MakeGarbageCollected<EventCountingListener>();
   Media()->addEventListener(
@@ -5686,7 +5378,6 @@ TEST_P(ParcMediaElementTest, ParcSafariAirPlayTargetAndWirelessEvent) {
       ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
   EXPECT_EQ(listener->count(), 1);
 
-  // Taken off the target: plays locally again.
   EXPECT_CALL(*MockMediaPlayer(),
               ParcSetPlaybackTarget(std::string_view(), false));
   ParcSetPlaybackTarget(String(), String(), false);
@@ -5696,8 +5387,6 @@ TEST_P(ParcMediaElementTest, ParcSafariAirPlayTargetAndWirelessEvent) {
   EXPECT_EQ(listener->count(), 2);
 }
 
-// A new Space tint for the same target recolours the button and placard
-// without giving the player its target again.
 TEST_P(ParcMediaElementTest, ParcSafariAirPlayTintAloneLeavesThePlayer) {
   SetUserAgent(kParcSafariUserAgent);
   WaitForPlayer();
@@ -5714,11 +5403,9 @@ TEST_P(ParcMediaElementTest, ParcSafariAirPlayTintAloneLeavesThePlayer) {
           "rgba(186,164,224,1)"));
 }
 
-// A wireless report the element didn't ask for (no target) changes nothing.
 TEST_P(ParcMediaElementTest, ParcSafariWirelessNeedsTheTarget) {
   SetUserAgent(kParcSafariUserAgent);
   WaitForPlayer();
-  // The state the new player reported first.
   base::RunLoop().RunUntilIdle();
   ParcPlaybackTargetIsWirelessChanged(true);
   test::RunPendingTasks();
@@ -5736,13 +5423,9 @@ TEST_P(ParcMediaElementTest, ParcChromeIgnoresAirPlayTarget) {
       ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
 }
 
-// isWirelessPlaybackTargetDisabledChanged: x-webkit-airplay="deny" (and
-// disableremoteplayback) disable external playback in the player, and the
-// browser hears the element can't play to a target.
 TEST_P(ParcMediaElementTest, ParcSafariAirPlayDenyDisablesExternalPlayback) {
   SetUserAgent(kParcSafariUserAgent);
   WaitForPlayer();
-  // The state the new player reported first.
   base::RunLoop().RunUntilIdle();
   EXPECT_CALL(*MockMediaPlayer(), ParcSupportsPlaybackTarget())
       .WillRepeatedly(Return(true));
@@ -5770,9 +5453,6 @@ TEST_P(ParcMediaElementTest, ParcSafariAirPlayDenyDisablesExternalPlayback) {
                   ->supports_target);
 }
 
-// WebKit's legacy EME handler attributes are content attributes of HTML
-// elements only under Safari's identity; elsewhere they stay plain
-// attributes, as in Chrome.
 TEST_P(ParcMediaElementTest, ParcLegacyEmeHandlerAttributesNeedSafariIdentity) {
   Media()->GetDocument().GetSettings()->SetScriptEnabled(true);
   const struct {
@@ -5796,10 +5476,6 @@ TEST_P(ParcMediaElementTest, ParcLegacyEmeHandlerAttributesNeedSafariIdentity) {
   }
 }
 
-// MediaSource::sourceOpen with ManagedMediaSourceNeedsAirPlay (on for
-// macOS): a ManagedMediaSource stays closed until its element has a <source>
-// alternative that isn't blob:, opening as one is added
-// (deferredMediaSourceOpenCanProgress, sourceWasAdded's openIfDeferredOpen).
 TEST_P(ParcMediaElementTest, ParcSafariManagedMediaSourceOpensWithAlternative) {
   SetUserAgent(kParcSafariUserAgent);
   AppendSource(SrcSchemeToURL(TestURLScheme::kBlob));
@@ -5814,7 +5490,6 @@ TEST_P(ParcMediaElementTest, ParcSafariManagedMediaSourceOpensWithAlternative) {
   EXPECT_EQ(attachment->opens(), 1);
 }
 
-// Or once the element disables AirPlay (attributeChanged).
 TEST_P(ParcMediaElementTest,
        ParcSafariManagedMediaSourceOpensWithDisableRemotePlayback) {
   SetUserAgent(kParcSafariUserAgent);
@@ -5838,12 +5513,6 @@ TEST_P(ParcMediaElementTest, ParcChromeManagedMediaSourceOpensAtOnce) {
   EXPECT_EQ(attachment->opens(), 1);
 }
 
-// checkPlaybackTargetCompatibility: a Media Source element given the target
-// says it plays there, as WebKit's Media Source player does; half a second
-// later it switches to its next <source>, which gets the target, keeps
-// playing and resumes at the element's time once it has future data. The
-// browser hears the element can play to a target, and not that it does
-// until the alternative's player says so.
 TEST_P(ParcMediaElementTest, ParcSafariMediaSourceSwitchesToAirPlaySource) {
   SetUserAgent(kParcSafariUserAgent);
   double now = 0;
@@ -5907,8 +5576,6 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceSwitchesToAirPlaySource) {
   EXPECT_EQ(listener->count(), 3);
 }
 
-// Without an alternative the check turns the target down: the element plays
-// here and the browser hears it can't play to a target.
 TEST_P(ParcMediaElementTest, ParcSafariMediaSourceWithoutAirPlaySourceStays) {
   SetUserAgent(kParcSafariUserAgent);
   AppendSource(SrcSchemeToURL(TestURLScheme::kBlob));
@@ -5936,19 +5603,15 @@ TEST_P(ParcMediaElementTest, ParcSafariMediaSourceWithoutAirPlaySourceStays) {
       ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
   EXPECT_EQ(Media()->currentSrc(), KURL(SrcSchemeToURL(TestURLScheme::kBlob)));
 
-  // Given the target again, it stays here.
   ParcSetPlaybackTarget(kParcAirPlayContextId, "Living Room", true);
   test::RunPendingTasks();
   EXPECT_FALSE(
       ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(*Media()));
 }
 
-// MediaElementSession::showPlaybackTargetPicker: nothing before
-// HAVE_METADATA on macOS, the browser's route list after.
 TEST_P(ParcMediaElementTest, ParcSafariPlaybackTargetPickerNeedsMetadata) {
   SetUserAgent(kParcSafariUserAgent);
   WaitForPlayer();
-  // The state the new player reported first.
   base::RunLoop().RunUntilIdle();
   ParcMediaElementAirPlay::webkitShowPlaybackTargetPicker(*Media());
   base::RunLoop().RunUntilIdle();
@@ -5959,13 +5622,9 @@ TEST_P(ParcMediaElementTest, ParcSafariPlaybackTargetPickerNeedsMetadata) {
   EXPECT_EQ(media_player_observer().received_playback_target_pickers(), 1);
 }
 
-// The first webkitplaybacktargetavailabilitychanged listener asks the browser
-// to watch for AirPlay devices (MediaElementSession::
-// setHasPlaybackTargetAvailabilityListeners); the last one leaving stops it.
 TEST_P(ParcMediaElementTest, ParcSafariAvailabilityListenersStartMonitoring) {
   SetUserAgent(kParcSafariUserAgent);
   WaitForPlayer();
-  // The state the new player reported first.
   base::RunLoop().RunUntilIdle();
   auto* listener = MakeGarbageCollected<EventCountingListener>();
   Media()->addEventListener(
@@ -5979,16 +5638,13 @@ TEST_P(ParcMediaElementTest, ParcSafariAvailabilityListenersStartMonitoring) {
   Media()->removeEventListener(
       parc_media_element_names::Webkitplaybacktargetavailabilitychanged(),
       listener,
-      /*use_capture=*/false);
+      false);
   media_player_observer().WaitUntilReceivedMessage();
   EXPECT_FALSE(media_player_observer()
                    .received_playback_target_state()
                    ->requires_monitoring);
 }
 
-// MediaElementSession::wirelessVideoPlaybackDisabled on macOS: true without
-// a player or with the attribute (or disableremoteplayback); the setter
-// reflects the attribute ([ReflectSetter]).
 TEST_P(ParcMediaElementTest, ParcSafariWebkitWirelessVideoPlaybackDisabled) {
   auto* video = DynamicTo<HTMLVideoElement>(Media());
   if (!video) {
@@ -6023,4 +5679,4 @@ TEST_P(ParcMediaElementTest, ParcSafariWebkitWirelessVideoPlaybackDisabled) {
       ParcMediaElementAirPlay::webkitWirelessVideoPlaybackDisabled(*video));
 }
 
-}  // namespace blink
+}

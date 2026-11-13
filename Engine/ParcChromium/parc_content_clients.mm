@@ -1,7 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Portions copyright 2020 The Chromium Embedded Framework Authors
-// (cef/libcef/browser/chrome/chrome_content_browser_client_cef.cc,
-// chrome_browser_main_extra_parts_cef.cc).
 #include "parc/parc_content_clients.h"
 
 #include <utility>
@@ -38,6 +34,7 @@
 #include "parc/page_preferences.h"
 #include "parc/web_push.h"
 #include "parc/native/certificate_viewer.h"
+#include "parc/native/native_address_editor.h"
 #include "parc/native/client_certificates.h"
 #include "parc/native/extension_install.h"
 #include "parc/native/extension_uninstall.h"
@@ -68,10 +65,7 @@
 
 namespace parc {
 namespace {
-// Only this helper is signed without library validation, because the
-// component-updated Widevine CDM carries Google's code signature.
 constexpr char kMacHelperSuffixCdm[] = " (CDM)";
-// The flag after Chrome's own helper flags.
 constexpr int kChildProcessHelperCdm =
     std::to_underlying(ChildProcessHostFlags::kChildProcessHelperAlerts) + 1;
 constexpr char kInputDiagnostics[] = "parc-input-diagnostics";
@@ -84,7 +78,7 @@ bool SupportsAutofillUiPresentation(
   return autofill::AutofillBubbleHandler::IsPresentationSupported(
       content_client.web_contents(), presentation);
 }
-}  // namespace
+}
 
 class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
  public:
@@ -97,8 +91,6 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
     }
   }
   void PostBrowserStart() override {
-    // Chrome's own PostBrowserStart, which follows, lets ProcessSingleton
-    // deliver second launches; the native handoff must be in place first.
     parc_hooks::SetAlreadyRunningCommandLineHandler(
         [](const base::CommandLine& command_line, const base::FilePath& cwd,
            void* context) {
@@ -108,9 +100,9 @@ class ParcBrowserMainExtraParts final : public ChromeBrowserMainExtraParts {
         &*client_->application_);
   }
   void PreMainMessageLoopRun() override {
-    // Before any page exists.
     parc_hooks::SetAutofillUiPresentationSupport(
         &SupportsAutofillUiPresentation);
+    parc_hooks::SetEditAddressDialog(&ShowNativeAddressEditor);
     parc_hooks::SetPermissionPromptFactory(&CreateSitePermissionPrompt);
     parc_hooks::SetLoginHandlerAuthValidator(&ValidateNativeLoginHandlerAuth);
     parc_hooks::SetExtensionInstallCapture(
@@ -186,7 +178,6 @@ ParcContentBrowserClient::~ParcContentBrowserClient() {
   g_browser_client = nullptr;
 }
 
-// static
 ParcContentBrowserClient& ParcContentBrowserClient::Get() {
   CHECK(g_browser_client);
   return *g_browser_client;
@@ -194,8 +185,6 @@ ParcContentBrowserClient& ParcContentBrowserClient::Get() {
 
 std::unique_ptr<content::BrowserMainParts>
 ParcContentBrowserClient::CreateBrowserMainParts(bool is_integration_test) {
-  // A bundle without the CDM helper keeps the CDM in the default helper. This
-  // runs before the UI thread disallows blocking work.
   if (base::apple::AmIBundled() &&
       base::PathExists(HelperExecutablePath(kMacHelperSuffixCdm))) {
     parc_hooks::SetCdmServiceChildFlags(kChildProcessHelperCdm);
@@ -217,8 +206,6 @@ base::FilePath ParcContentBrowserClient::GetChildProcessPath(int flags) {
     return base::apple::AmIBundled() ? HelperExecutablePath(kMacHelperSuffixCdm)
                                      : base::FilePath();
   }
-  // Chrome's Alerts helper lives inside its framework; Parc's sits beside the
-  // other helpers.
   if (flags ==
       std::to_underlying(ChildProcessHostFlags::kChildProcessHelperAlerts)) {
     return base::apple::AmIBundled()
@@ -237,12 +224,9 @@ void ParcContentBrowserClient::AppendExtraCommandLineSwitches(
       switches::kRendererProcess) {
     return;
   }
-  // Renderers can't ask VideoToolbox from their sandbox.
   command_line->AppendSwitchASCII(
       media::kParcAV1HardwareDecoder,
       content::ParcAV1HardwareDecoderAvailable() ? "1" : "0");
-  // The input-diagnostics opt-in follows only the renderer receiving the
-  // observed input.
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(kInputDiagnostics)) {
     command_line->AppendSwitch(kInputDiagnostics);
   }
@@ -253,14 +237,12 @@ void ParcContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
     mojo::BinderMapWithContext<content::RenderFrameHost*>* map) {
   ChromeContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
       render_frame_host, map);
-  // VideoToolbox's decoder facts for Safari-identity documents.
   map->Add<media::mojom::ParcVideoToolboxDecoding>(base::BindRepeating(
       [](content::RenderFrameHost*,
          mojo::PendingReceiver<media::mojom::ParcVideoToolboxDecoding>
              receiver) {
         content::BindParcVideoToolboxDecoding(std::move(receiver));
       }));
-  // The document's FairPlay Renderers and native HLS players.
   map->Add<media::mojom::FairPlayMediaHost>(
       base::BindRepeating(&FairPlayDocumentHost::BindMediaHost));
 }
@@ -283,8 +265,6 @@ bool ParcContentBrowserClient::IsHandledURL(const GURL& url) {
 
 void ParcContentBrowserClient::BrowserURLHandlerCreated(
     content::BrowserURLHandler* handler) {
-  // Rewrite parc: to its Chrome page and return false, so the genuine Profile,
-  // about: aliases, policy and WebUI handlers still run.
   handler->AddHandlerPair(
       [](GURL* url, content::BrowserContext*) {
         *url = CanonicalInternalURL(*url);
@@ -323,8 +303,6 @@ void ParcContentGpuClient::ExposeInterfacesToBrowser(
     mojo::BinderMap* binders) {
   ChromeContentGpuClient::ExposeInterfacesToBrowser(
       gpu_service, gpu_preferences, gpu_workarounds, binders);
-  // FairPlay's CDMs, renderers and native HLS players, on the kind of thread
-  // the GPU media service runs on.
   binders->Add<media::mojom::FairPlayMediaService>(
       base::BindRepeating(&media::BindFairPlayMediaService),
       media::CreateFairPlayMediaServiceTaskRunner());
@@ -333,7 +311,6 @@ void ParcContentGpuClient::ExposeInterfacesToBrowser(
 void ParcContentRendererClient::RenderFrameCreated(
     content::RenderFrame* render_frame) {
   ChromeContentRendererClient::RenderFrameCreated(render_frame);
-  // Owned by the frame it observes.
   new WebsiteThemeAgent(render_frame);
 }
 
@@ -341,9 +318,6 @@ std::unique_ptr<media::KeySystemSupportRegistration>
 ParcContentRendererClient::GetSupportedKeySystems(
     content::RenderFrame* render_frame,
     media::GetSupportedKeySystemsCB cb) {
-  // Chrome builds its key systems from the browser's capabilities and skips
-  // FairPlay's, so FairPlay joins each update. Persistence follows Chrome's
-  // rule for its own key systems.
   return ChromeContentRendererClient::GetSupportedKeySystems(
       render_frame,
       base::BindRepeating(
@@ -358,11 +332,9 @@ ParcContentRendererClient::GetSupportedKeySystems(
 
 bool ParcContentRendererClient::IsDecoderSupportedAudioType(
     const media::AudioType& type) {
-  // AudioToolbox decodes Apple Lossless; Chromium's default list has no
-  // decoder for it.
   if (type.codec == media::AudioCodec::kALAC) {
     return !type.spatial_rendering;
   }
   return ChromeContentRendererClient::IsDecoderSupportedAudioType(type);
 }
-}  // namespace parc
+}

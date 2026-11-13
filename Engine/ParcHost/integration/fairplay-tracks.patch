@@ -110,112 +110,6 @@
      auto* track_item = CreateTextTrackListItem(track);
      track_item->setAttribute(html_names::kAriaSetsizeAttr,
                               AtomicString::Number(track_list->length() + 1));
---- a/media/base/media_track.cc
-+++ b/media/base/media_track.cc
-@@ -5,6 +5,7 @@
- #include "media/base/media_track.h"
--
-+
- #include "base/notreached.h"
-+#include "media/base/parc_inband_tracks.h"
--
-+
- namespace media {
--
-+
-@@ -144,4 +145,91 @@
-   update_.Run(track, state);
- }
--
-+
-+ParcInbandTextTrack::ParcInbandTextTrack() = default;
-+ParcInbandTextTrack::ParcInbandTextTrack(const ParcInbandTextTrack&) = default;
-+ParcInbandTextTrack::ParcInbandTextTrack(ParcInbandTextTrack&&) = default;
-+ParcInbandTextTrack& ParcInbandTextTrack::operator=(
-+    const ParcInbandTextTrack&) = default;
-+ParcInbandTextTrack& ParcInbandTextTrack::operator=(ParcInbandTextTrack&&) =
-+    default;
-+ParcInbandTextTrack::~ParcInbandTextTrack() = default;
-+
-+ParcInbandTextCue::ParcInbandTextCue() = default;
-+ParcInbandTextCue::ParcInbandTextCue(const ParcInbandTextCue&) = default;
-+ParcInbandTextCue::ParcInbandTextCue(ParcInbandTextCue&&) = default;
-+ParcInbandTextCue& ParcInbandTextCue::operator=(const ParcInbandTextCue&) =
-+    default;
-+ParcInbandTextCue& ParcInbandTextCue::operator=(ParcInbandTextCue&&) = default;
-+ParcInbandTextCue::~ParcInbandTextCue() = default;
-+
-+ParcDataCueValue::ParcDataCueValue() = default;
-+ParcDataCueValue::ParcDataCueValue(const ParcDataCueValue&) = default;
-+ParcDataCueValue::ParcDataCueValue(ParcDataCueValue&&) = default;
-+ParcDataCueValue& ParcDataCueValue::operator=(const ParcDataCueValue&) =
-+    default;
-+ParcDataCueValue& ParcDataCueValue::operator=(ParcDataCueValue&&) = default;
-+ParcDataCueValue::~ParcDataCueValue() = default;
-+bool ParcDataCueValue::operator==(const ParcDataCueValue&) const = default;
-+
-+ParcInbandDataCue::ParcInbandDataCue() = default;
-+ParcInbandDataCue::ParcInbandDataCue(const ParcInbandDataCue&) = default;
-+ParcInbandDataCue::ParcInbandDataCue(ParcInbandDataCue&&) = default;
-+ParcInbandDataCue& ParcInbandDataCue::operator=(const ParcInbandDataCue&) =
-+    default;
-+ParcInbandDataCue& ParcInbandDataCue::operator=(ParcInbandDataCue&&) = default;
-+ParcInbandDataCue::~ParcInbandDataCue() = default;
-+
-+ParcInbandAudioTrack::ParcInbandAudioTrack() = default;
-+ParcInbandAudioTrack::ParcInbandAudioTrack(const ParcInbandAudioTrack&) =
-+    default;
-+ParcInbandAudioTrack::ParcInbandAudioTrack(ParcInbandAudioTrack&&) = default;
-+ParcInbandAudioTrack& ParcInbandAudioTrack::operator=(
-+    const ParcInbandAudioTrack&) = default;
-+ParcInbandAudioTrack& ParcInbandAudioTrack::operator=(ParcInbandAudioTrack&&) =
-+    default;
-+ParcInbandAudioTrack::~ParcInbandAudioTrack() = default;
-+
-+ParcInbandTrackForwarder::ParcInbandTrackForwarder(
-+    base::RepeatingCallback<void(const std::vector<ParcInbandTextTrack>&,
-+                                 ParcInbandTextTrackModeCB)> set_tracks,
-+    base::RepeatingCallback<void(const std::string&,
-+                                 const std::vector<ParcInbandTextCue>&)>
-+        add_cues,
-+    base::RepeatingCallback<void(const std::string&,
-+                                 const std::vector<ParcInbandDataCue>&)>
-+        add_data_cues,
-+    base::RepeatingCallback<void(const std::vector<ParcInbandAudioTrack>&,
-+                                 ParcInbandAudioTrackEnabledCB)>
-+        set_audio_tracks)
-+    : set_tracks_(std::move(set_tracks)),
-+      add_cues_(std::move(add_cues)),
-+      add_data_cues_(std::move(add_data_cues)),
-+      set_audio_tracks_(std::move(set_audio_tracks)) {}
-+
-+ParcInbandTrackForwarder::~ParcInbandTrackForwarder() = default;
-+
-+void ParcInbandTrackForwarder::ParcSetInbandTextTracks(
-+    const std::vector<ParcInbandTextTrack>& tracks,
-+    ParcInbandTextTrackModeCB set_mode) {
-+  set_tracks_.Run(tracks, std::move(set_mode));
-+}
-+
-+void ParcInbandTrackForwarder::ParcAddInbandTextCues(
-+    const std::string& key,
-+    const std::vector<ParcInbandTextCue>& cues) {
-+  add_cues_.Run(key, cues);
-+}
-+
-+void ParcInbandTrackForwarder::ParcAddInbandDataCues(
-+    const std::string& key,
-+    const std::vector<ParcInbandDataCue>& cues) {
-+  add_data_cues_.Run(key, cues);
-+}
-+
-+void ParcInbandTrackForwarder::ParcSetInbandAudioTracks(
-+    const std::vector<ParcInbandAudioTrack>& tracks,
-+    ParcInbandAudioTrackEnabledCB set_enabled) {
-+  set_audio_tracks_.Run(tracks, std::move(set_enabled));
-+}
-+
- }  // namespace media
 --- a/third_party/blink/renderer/core/html/track/text_track_list.h
 +++ b/third_party/blink/renderer/core/html/track/text_track_list.h
 @@ -69,6 +69,11 @@
@@ -528,15 +422,13 @@
  #include "third_party/blink/renderer/bindings/core/v8/v8_align_setting.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_line_align_setting.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_position_align_setting.h"
-@@ -156,6 +159,22 @@
+@@ -156,6 +159,20 @@
    // Applies CSS override style from user settings.
    void ApplyUserOverrideCSSProperties();
 -
 +
-+  // Parc: what WebKit draws of a generic cue of Safari's native HLS route
-+  // (TextTrackCueGeneric: CEA-608/708 and other non-WebVTT captions), set by
-+  // ParcInbandTextTrack. Colours are 0xRRGGBBAA. WebKit keeps a generic cue's
-+  // font size and font name without drawing them, so they aren't here.
++
++
 +  struct ParcGenericCueStyle {
 +    std::optional<uint32_t> foreground_color;
 +    std::optional<uint32_t> background_color;
@@ -554,13 +446,12 @@
 +
 -
 +
-@@ -230,6 +249,10 @@
+@@ -230,6 +247,9 @@
    Member<VTTCueBackgroundBox> cue_background_box_;
    Member<VTTCueBox> display_tree_;
 -
 +
-+  // Parc: TextTrackCueGenericBoxElement::applyCSSProperties.
-+  void ApplyParcGenericStyle();
++
 +  std::optional<ParcGenericCueStyle> parc_generic_style_;
 +
    bool snap_to_lines_ : 1;
@@ -568,75 +459,24 @@
  };
 --- a/third_party/blink/renderer/core/html/track/vtt/vtt_cue.cc
 +++ b/third_party/blink/renderer/core/html/track/vtt/vtt_cue.cc
-@@ -375,6 +375,62 @@
-   CueWillChange();
-   cue_alignment_ = alignment;
-   CueDidChange();
-+}
-+
-+void VTTCue::SetParcGenericStyle(const ParcGenericCueStyle& style) {
-+  if (parc_generic_style_ == style) {
-+    return;
-+  }
-+  CueWillChange();
-+  parc_generic_style_ = style;
-+  CueDidChange();
-+}
-+
-+namespace {
-+
-+String ParcCssColor(uint32_t rgba) {
-+  StringBuilder builder;
-+  builder.Append("rgba(");
-+  builder.AppendNumber(rgba >> 24);
-+  builder.Append(", ");
-+  builder.AppendNumber((rgba >> 16) & 0xff);
-+  builder.Append(", ");
-+  builder.AppendNumber((rgba >> 8) & 0xff);
-+  builder.Append(", ");
-+  builder.AppendNumber((rgba & 0xff) / 255.0);
-+  builder.Append(")");
-+  return builder.ToString();
-+}
-+
-+}  // namespace
-+
-+void VTTCue::ApplyParcGenericStyle() {
-+  if (!parc_generic_style_) {
-+    return;
-+  }
-+  const ParcGenericCueStyle& style = *parc_generic_style_;
-+  // WebKit colours its cue highlight box, the span around the cue's text
-+  // (Blink's background box here), with the foreground and highlight
-+  // colours, and the cue's box with the background colour.
-+  if (style.foreground_color) {
-+    cue_background_box_->SetInlineStyleProperty(
-+        CSSPropertyID::kColor, ParcCssColor(*style.foreground_color));
-+  }
-+  if (style.highlight_color) {
-+    cue_background_box_->SetInlineStyleProperty(
-+        CSSPropertyID::kBackgroundColor, ParcCssColor(*style.highlight_color));
-+  }
-+  if (style.background_color) {
-+    display_tree_->SetInlineStyleProperty(
-+        CSSPropertyID::kBackgroundColor, ParcCssColor(*style.background_color));
-+  }
-+  // WebKit keeps a generic cue on one line only when it says so
-+  // (VTTCueBox::applyCSSProperties); Blink does it for every cue that doesn't
-+  // snap to lines, which generic cues never do.
-+  if (!style.prevent_line_wrapping) {
-+    display_tree_->RemoveInlineStyleProperty(CSSPropertyID::kWhiteSpaceCollapse);
-+    display_tree_->RemoveInlineStyleProperty(CSSPropertyID::kTextWrapMode);
-+  }
- }
+@@ -29,6 +29,8 @@
 -
 +
- void VTTCue::setText(const String& text) {
-@@ -871,6 +927,7 @@
+ #include "third_party/blink/renderer/core/html/track/vtt/vtt_cue.h"
+-
++
++#include "third_party/blink/renderer/core/html/media/parc_generic_cue_style.h"
++
+ #include <cmath>
+-
++
+ #include "third_party/blink/renderer/bindings/core/v8/v8_direction_setting.h"
+@@ -871,6 +873,8 @@
    if (!region()) {
      VTTDisplayParameters display_parameters = CalculateDisplayParameters();
      display_tree_->ApplyCSSProperties(display_parameters);
-+    ApplyParcGenericStyle();
++    ApplyParcGenericCueStyle(parc_generic_style_,
++                             cue_background_box_.Get(), display_tree_.Get());
    } else {
      display_tree_->SetInlineStyleProperty(CSSPropertyID::kPosition,
                                            CSSValueID::kRelative);

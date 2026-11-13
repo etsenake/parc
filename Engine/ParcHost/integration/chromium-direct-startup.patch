@@ -46,7 +46,7 @@
 +
  #if BUILDFLAG(IS_CHROMEOS)
    ash::BootTimesRecorder::Get()->SaveChromeMainStats();
-@@ -1569,19 +1595,23 @@
+@@ -1569,18 +1595,21 @@
    }
  #endif
 -
@@ -68,19 +68,15 @@
 -
 +
  #if !defined(BUILDING_CHROME_RENDERER)
--  // Initialize the user data dir for any process type that needs it.
+   // Initialize the user data dir for any process type that needs it.
 -  if (chrome::ProcessNeedsProfileDir(process_type)) {
--    InitializeUserDataDir(base::CommandLine::ForCurrentProcess());
-+  if (!parc_hooks::UsesNativeStartup()) {
-+    // Initialize the user data dir for any process type that needs it.
-+    if (chrome::ProcessNeedsProfileDir(process_type)) {
-+      InitializeUserDataDir(base::CommandLine::ForCurrentProcess());
-+    }
++  if (!parc_hooks::UsesNativeStartup() &&
++      chrome::ProcessNeedsProfileDir(process_type)) {
+     InitializeUserDataDir(base::CommandLine::ForCurrentProcess());
    }
 -
 +
-   // Register component_updater PathProvider after DIR_USER_DATA overridden by
-@@ -1688,7 +1718,8 @@
+@@ -1688,7 +1717,8 @@
  #else
      const std::string loaded_locale =
          ui::ResourceBundle::InitSharedInstanceWithLocale(
@@ -91,17 +87,13 @@
 +
      base::FilePath resources_pack_path;
      base::PathService::Get(chrome::FILE_RESOURCES_PACK, &resources_pack_path);
-@@ -1731,9 +1762,11 @@
-                                 : base::android::PROCESS_CHILD);
- #endif  // BUILDFLAG(IS_ANDROID)
+@@ -1733,7 +1763,9 @@
 -
 +
--  // After all the platform Breakpads have been initialized, store the command
--  // line for crash reporting.
+   // After all the platform Breakpads have been initialized, store the command
+   // line for crash reporting.
 -  crash_keys::SetCrashKeysFromCommandLine(command_line);
 +  if (!parc_hooks::UsesNativeStartup()) {
-+    // After all the platform Breakpads have been initialized, store the command
-+    // line for crash reporting.
 +    crash_keys::SetCrashKeysFromCommandLine(command_line);
 +  }
 -
@@ -197,284 +189,59 @@
  #elif BUILDFLAG(IS_CHROMEOS)
    main_parts = std::make_unique<ash::ChromeBrowserMainPartsAsh>(
        is_integration_test, startup_data);
-@@ -1221,41 +1249,43 @@
+@@ -1220,6 +1248,9 @@
+ // Chrome OS has its own out-of-box-experience code.
  #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
    master_prefs_ = std::make_unique<first_run::MasterPrefs>();
--
-+
--  std::unique_ptr<installer::InitialPreferences> installer_initial_prefs =
--      startup_data_->chrome_feature_list_creator()->TakeInitialPrefs();
--  if (!installer_initial_prefs) {
--    return content::RESULT_CODE_NORMAL_EXIT;
--  }
--
--  // On first run, we need to process the predictor preferences before the
--  // browser's profile_manager object is created, but after ResourceBundle
--  // is initialized.
--  first_run::ProcessInitialPreferencesResult pip_result =
--      first_run::ProcessInitialPreferences(user_data_dir_,
--                                           std::move(installer_initial_prefs),
--                                           master_prefs_.get());
--  if (pip_result == first_run::EULA_EXIT_NOW) {
--    return CHROME_RESULT_CODE_EULA_REFUSED;
--  }
-+  if (!parc_hooks::BrowserUsesNativeStartup()) {
-+    std::unique_ptr<installer::InitialPreferences> installer_initial_prefs =
-+        startup_data_->chrome_feature_list_creator()->TakeInitialPrefs();
-+    if (!installer_initial_prefs) {
-+      return content::RESULT_CODE_NORMAL_EXIT;
-+    }
--
-+
--  // TODO(macourteau): refactor preferences that are copied from
--  // master_preferences into local_state, as a "local_state" section in
--  // initial preferences. If possible, a generic solution would be preferred
--  // over a copy one-by-one of specific preferences. Also see related TODO
--  // in first_run.h.
-+    // On first run, we need to process the predictor preferences before the
-+    // browser's profile_manager object is created, but after ResourceBundle
-+    // is initialized.
-+    first_run::ProcessInitialPreferencesResult pip_result =
-+        first_run::ProcessInitialPreferences(user_data_dir_,
-+                                             std::move(installer_initial_prefs),
-+                                             master_prefs_.get());
-+    if (pip_result == first_run::EULA_EXIT_NOW) {
-+      return CHROME_RESULT_CODE_EULA_REFUSED;
-+    }
--
-+
--  PrefService* local_state = g_browser_process->local_state();
--  if (!master_prefs_->suppress_default_browser_prompt_for_version.empty()) {
--    local_state->SetString(
--        prefs::kBrowserSuppressDefaultBrowserPrompt,
--        master_prefs_->suppress_default_browser_prompt_for_version);
--  }
-+    // TODO(macourteau): refactor preferences that are copied from
-+    // master_preferences into local_state, as a "local_state" section in
-+    // initial preferences. If possible, a generic solution would be preferred
-+    // over a copy one-by-one of specific preferences. Also see related TODO
-+    // in first_run.h.
-+
-+    PrefService* local_state = g_browser_process->local_state();
-+    if (!master_prefs_->suppress_default_browser_prompt_for_version.empty()) {
-+      local_state->SetString(
-+          prefs::kBrowserSuppressDefaultBrowserPrompt,
-+          master_prefs_->suppress_default_browser_prompt_for_version);
-+    }
- #if BUILDFLAG(IS_MAC)
--  if (!master_prefs_->confirm_to_quit) {
--    local_state->SetBoolean(prefs::kConfirmToQuitEnabled,
--                            master_prefs_->confirm_to_quit);
--  }
-+    if (!master_prefs_->confirm_to_quit) {
-+      local_state->SetBoolean(prefs::kConfirmToQuitEnabled,
-+                              master_prefs_->confirm_to_quit);
-+    }
- #endif
++  if (parc_hooks::BrowserUsesNativeStartup()) {
++    return content::RESULT_CODE_NORMAL_EXIT;
 +  }
- #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
-   return content::RESULT_CODE_NORMAL_EXIT;
- }
-@@ -1328,10 +1358,12 @@
+-
++
+   std::unique_ptr<installer::InitialPreferences> installer_initial_prefs =
+       startup_data_->chrome_feature_list_creator()->TakeInitialPrefs();
+@@ -1328,7 +1359,8 @@
  // Android does first run in Java instead of native.
  // Chrome OS has its own out-of-box-experience code.
  #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
 -  if (first_run::IsChromeFirstRun()) {
--    if (!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kApp) &&
--        !base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kAppId)) {
--      browser_creator_->AddFirstRunTabs(master_prefs_->new_tabs);
-+  if (!parc_hooks::BrowserUsesNativeStartup()) {
-+    if (first_run::IsChromeFirstRun()) {
-+      if (!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kApp) &&
-+          !base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kAppId)) {
-+        browser_creator_->AddFirstRunTabs(master_prefs_->new_tabs);
-+      }
-     }
-   }
- #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
-@@ -1828,18 +1860,20 @@
++  if (!parc_hooks::BrowserUsesNativeStartup() &&
++      first_run::IsChromeFirstRun()) {
+     if (!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kApp) &&
+         !base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kAppId)) {
+       browser_creator_->AddFirstRunTabs(master_prefs_->new_tabs);
+@@ -1828,7 +1860,8 @@
    }
  #endif
 -
 +
 -  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
--          switches::kMakeDefaultBrowser)) {
--    bool is_managed = g_browser_process->local_state()->IsManagedPreference(
--        prefs::kDefaultBrowserSettingEnabled);
--    if (is_managed && !g_browser_process->local_state()->GetBoolean(
--                          prefs::kDefaultBrowserSettingEnabled)) {
--      return static_cast<int>(CHROME_RESULT_CODE_ACTION_DISALLOWED_BY_POLICY);
--    }
-+  if (!parc_hooks::BrowserUsesNativeStartup()) {
-+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-+            switches::kMakeDefaultBrowser)) {
-+      bool is_managed = g_browser_process->local_state()->IsManagedPreference(
-+          prefs::kDefaultBrowserSettingEnabled);
-+      if (is_managed && !g_browser_process->local_state()->GetBoolean(
-+                            prefs::kDefaultBrowserSettingEnabled)) {
-+        return static_cast<int>(CHROME_RESULT_CODE_ACTION_DISALLOWED_BY_POLICY);
-+      }
--
-+
--    return shell_integration::SetAsDefaultBrowser()
--               ? static_cast<int>(content::RESULT_CODE_NORMAL_EXIT)
--               : static_cast<int>(CHROME_RESULT_CODE_SHELL_INTEGRATION_FAILED);
-+      return shell_integration::SetAsDefaultBrowser()
-+                 ? static_cast<int>(content::RESULT_CODE_NORMAL_EXIT)
-+                 : static_cast<int>(CHROME_RESULT_CODE_SHELL_INTEGRATION_FAILED);
-+    }
-   }
--
-+
- #if defined(USE_AURA)
-@@ -1965,42 +1999,44 @@
-   profile_init_manager_ = std::make_unique<ProfileInitManager>(this, profile);
--
-+
- #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
--  // Execute first run specific code after the PrefService has been initialized
--  // and preferences have been registered since some of the import code depends
--  // on preferences.
++  if (!parc_hooks::BrowserUsesNativeStartup() &&
++      base::CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kMakeDefaultBrowser)) {
+     bool is_managed = g_browser_process->local_state()->IsManagedPreference(
+         prefs::kDefaultBrowserSettingEnabled);
+@@ -1968,7 +2001,8 @@
+   // Execute first run specific code after the PrefService has been initialized
+   // and preferences have been registered since some of the import code depends
+   // on preferences.
 -  if (first_run::IsChromeFirstRun()) {
--    // `profile` may be nullptr even on first run, for example when the
--    // "BrowserSignin" policy is set to "Force". If so, skip the auto import.
--    if (profile) {
--      first_run::AutoImport(profile, master_prefs_->import_bookmarks_path);
--
--      if (base::FeatureList::IsEnabled(features::kBookmarksImportOnFirstRun) &&
--          !master_prefs_->import_bookmarks_dict.empty()) {
--        first_run::StartBookmarkImportFromDict(
--            profile, std::move(master_prefs_->import_bookmarks_dict));
--      }
-+  if (!parc_hooks::BrowserUsesNativeStartup()) {
-+    // Execute first run specific code after the PrefService has been initialized
-+    // and preferences have been registered since some of the import code depends
-+    // on preferences.
-+    if (first_run::IsChromeFirstRun()) {
-+      // `profile` may be nullptr even on first run, for example when the
-+      // "BrowserSignin" policy is set to "Force". If so, skip the auto import.
-+      if (profile) {
-+        first_run::AutoImport(profile, master_prefs_->import_bookmarks_path);
-+
-+        if (base::FeatureList::IsEnabled(features::kBookmarksImportOnFirstRun) &&
-+            !master_prefs_->import_bookmarks_dict.empty()) {
-+          first_run::StartBookmarkImportFromDict(
-+              profile, std::move(master_prefs_->import_bookmarks_dict));
-+        }
--
-+
- #if BUILDFLAG(ENABLE_EXTENSIONS)
--      if (base::FeatureList::IsEnabled(features::kInitialExternalExtensions)) {
--        profile->GetPrefs()->SetString(
--            extensions::pref_names::kInitialInstallProviderName,
--            std::move(master_prefs_->initial_extensions_provider_name));
--        // Store the initial extension IDs into the profile's prefs so that
--        // InitialExternalExtensionLoader can later pick them up.
--        profile->GetPrefs()->SetList(
--            extensions::pref_names::kInitialInstallList,
--            std::move(master_prefs_->initial_extensions));
-+        if (base::FeatureList::IsEnabled(features::kInitialExternalExtensions)) {
-+          profile->GetPrefs()->SetString(
-+              extensions::pref_names::kInitialInstallProviderName,
-+              std::move(master_prefs_->initial_extensions_provider_name));
-+          // Store the initial extension IDs into the profile's prefs so that
-+          // InitialExternalExtensionLoader can later pick them up.
-+          profile->GetPrefs()->SetList(
-+              extensions::pref_names::kInitialInstallList,
-+              std::move(master_prefs_->initial_extensions));
-+        }
-+#endif
-       }
--#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
--    }
--
-+
--    // Note: This can pop-up the first run consent dialog on Linux & Mac.
--    first_run::DoPostImportTasks(master_prefs_->make_chrome_default_for_user);
-+      // Note: This can pop-up the first run consent dialog on Linux & Mac.
-+      first_run::DoPostImportTasks(master_prefs_->make_chrome_default_for_user);
--
-+
--    // The first run dialog is modal, and spins a RunLoop, which could receive
--    // a SIGTERM, and call chrome::AttemptExit(). Exit cleanly in that case.
--    if (browser_shutdown::IsTryingToQuit()) {
--      return content::RESULT_CODE_NORMAL_EXIT;
-+      // The first run dialog is modal, and spins a RunLoop, which could receive
-+      // a SIGTERM, and call chrome::AttemptExit(). Exit cleanly in that case.
-+      if (browser_shutdown::IsTryingToQuit()) {
-+        return content::RESULT_CODE_NORMAL_EXIT;
-+      }
-     }
-   }
- #endif
-@@ -2118,37 +2154,40 @@
-   }
++  if (!parc_hooks::BrowserUsesNativeStartup() &&
++      first_run::IsChromeFirstRun()) {
+     // `profile` may be nullptr even on first run, for example when the
+     // "BrowserSignin" policy is set to "Force". If so, skip the auto import.
+     if (profile) {
+@@ -2119,7 +2153,8 @@
  #endif
 -
 +
-+  if (!parc_hooks::BrowserUsesNativeStartup()) {
    // This step is costly.
 -  if (browser_creator_->Start(*base::CommandLine::ForCurrentProcess(),
--                              base::FilePath(), profile_info,
--                              last_opened_profiles)) {
-+    // This step is costly.
-+    if (browser_creator_->Start(*base::CommandLine::ForCurrentProcess(),
-+                                base::FilePath(), profile_info,
-+                                last_opened_profiles)) {
++  if (!parc_hooks::BrowserUsesNativeStartup() &&
++      browser_creator_->Start(*base::CommandLine::ForCurrentProcess(),
+                               base::FilePath(), profile_info,
+                               last_opened_profiles)) {
  #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
--    // Initialize autoupdate timer. Timer callback costs basically nothing
--    // when browser is not in persistent mode, so it's OK to let it ride on
--    // the main thread. This needs to be done here because we don't want
--    // to start the timer when Chrome is run inside a test harness.
--    browser_process_->StartAutoupdateTimer();
-+      // Initialize autoupdate timer. Timer callback costs basically nothing
-+      // when browser is not in persistent mode, so it's OK to let it ride on
-+      // the main thread. This needs to be done here because we don't want
-+      // to start the timer when Chrome is run inside a test harness.
-+      browser_process_->StartAutoupdateTimer();
- #endif
--
-+
- #if BUILDFLAG(IS_LINUX)
--    // On Linux, the running exe will be updated if an upgrade becomes
--    // available while the browser is running.  We need to save the last
--    // modified time of the exe, so we can compare to determine if there is
--    // an upgrade while the browser is kept alive by a persistent extension.
--    upgrade_util::SaveLastModifiedTimeOfExe();
-+      // On Linux, the running exe will be updated if an upgrade becomes
-+      // available while the browser is running.  We need to save the last
-+      // modified time of the exe, so we can compare to determine if there is
-+      // an upgrade while the browser is kept alive by a persistent extension.
-+      upgrade_util::SaveLastModifiedTimeOfExe();
- #endif
--
-+
--    // Record now as the last successful chrome start.
--    if constexpr (kShouldRecordActiveUse) {
--      GoogleUpdateSettings::SetLastRunTime();
--    }
-+      // Record now as the last successful chrome start.
-+      if constexpr (kShouldRecordActiveUse) {
-+        GoogleUpdateSettings::SetLastRunTime();
-+      }
--
-+
--    // Create the RunLoop for MainMessageLoopRun() to use and transfer
--    // ownership of the browser's lifetime to the BrowserProcess.
--    DCHECK(!GetMainRunLoopInstance());
--    GetMainRunLoopInstance() = std::make_unique<base::RunLoop>();
--    browser_process_->SetQuitClosure(
--        GetMainRunLoopInstance()->QuitWhenIdleClosure());
-+      // Create the RunLoop for MainMessageLoopRun() to use and transfer
-+      // ownership of the browser's lifetime to the BrowserProcess.
-+      DCHECK(!GetMainRunLoopInstance());
-+      GetMainRunLoopInstance() = std::make_unique<base::RunLoop>();
-+      browser_process_->SetQuitClosure(
-+          GetMainRunLoopInstance()->QuitWhenIdleClosure());
-+    }
-   }
-   browser_creator_.reset();
- #endif  // BUILDFLAG(IS_ANDROID)
 --- a/chrome/browser/chrome_resource_bundle_helper.cc
 +++ b/chrome/browser/chrome_resource_bundle_helper.cc
 @@ -34,6 +34,21 @@

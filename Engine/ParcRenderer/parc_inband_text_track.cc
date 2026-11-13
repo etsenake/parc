@@ -24,13 +24,17 @@
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 
+#include "third_party/blink/renderer/core/html/media/parc_generic_cue_style.h"
+#include "third_party/blink/renderer/core/css/css_property_names.h"
+#include "third_party/blink/renderer/core/html/track/vtt/vtt_cue_box.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+
 namespace blink {
 
 namespace {
 
 using Align = media::ParcInbandTextCue::Align;
 
-// InbandTextTrackPrivateAVF::startTimeVariance: a quarter second.
 constexpr double kStartTimeVariance = 0.25;
 
 V8TextTrackKind KindFor(const std::string& kind) {
@@ -51,7 +55,6 @@ media::ParcInbandTextTrackMode ModeFor(V8TextTrackMode::Enum mode) {
   return media::ParcInbandTextTrackMode::kDisabled;
 }
 
-// TextTrackCue::hasEquivalentStartTime.
 bool EquivalentStartTimes(double a, double b) {
   return std::abs(std::abs(a) - std::abs(b)) <= kStartTimeVariance;
 }
@@ -60,7 +63,7 @@ bool IsPercentage(double value) {
   return value >= 0 && value <= 100;
 }
 
-}  // namespace
+}
 
 bool ParcInbandTextTrack::CueContents::Matches(
     const CueContents& other) const {
@@ -73,7 +76,7 @@ bool ParcInbandTextTrack::CueContents::Matches(
   if (!generic) {
     return true;
   }
-  // TextTrackCueGeneric::cueContentsMatch (no highlight colour there).
+
   return base_font_size == other.base_font_size &&
          relative_font_size == other.relative_font_size &&
          font_name == other.font_name &&
@@ -95,7 +98,7 @@ ParcInbandTextTrack::ParcInbandTextTrack(
       info_(info),
       set_mode_(std::move(set_mode)),
       element_(&element) {
-  // In-band data is loaded as it plays; nothing to wait for.
+
   SetReadinessState(kLoaded);
 }
 
@@ -123,7 +126,7 @@ void ParcInbandTextTrack::SetModeCallback(
 }
 
 void ParcInbandTextTrack::setMode(const V8TextTrackMode& mode) {
-  // InbandTextTrack::setMode: the DOM track first, then the player.
+
   const bool changed = this->mode().AsEnum() != mode.AsEnum();
   TextTrack::setMode(mode);
   if (changed && set_mode_) {
@@ -154,7 +157,6 @@ void ParcInbandTextTrack::AddCues(
   }
 }
 
-// InbandGenericTextTrack::parseWebVTTFileHeader: regions and style sheets.
 void ParcInbandTextTrack::ParseWebVttHeader(const std::string& header) {
   auto* parser =
       MakeGarbageCollected<VTTParser>(this, element_->GetDocument());
@@ -162,8 +164,7 @@ void ParcInbandTextTrack::ParseWebVttHeader(const std::string& header) {
   parser->Flush();
   HeapVector<Member<CSSStyleSheet>> style_sheets;
   parser->GetNewStyleSheets(style_sheets);
-  // The player sends a track's header once; a track keeps its first sheets
-  // (TextTrack::SetCSSStyleSheets takes them only once).
+
   if (!style_sheets.empty() && GetCSSStyleSheets().empty()) {
     SetCSSStyleSheets(std::move(style_sheets));
   }
@@ -172,13 +173,11 @@ void ParcInbandTextTrack::ParseWebVttHeader(const std::string& header) {
   }
 }
 
-// WebVTTParser::parseCueData, then InbandGenericTextTrack::newCuesParsed.
 void ParcInbandTextTrack::AddWebVttCue(const media::ParcInbandTextCue& data) {
   if (std::isnan(data.start)) {
     return;
   }
-  // A sample without a duration (never seen from AVFoundation) leaves the
-  // cue open.
+
   const double end = std::isnan(data.end)
                          ? std::numeric_limits<double>::infinity()
                          : data.end;
@@ -206,7 +205,6 @@ void ParcInbandTextTrack::AddWebVttCue(const media::ParcInbandTextCue& data) {
   addCue(cue);
 }
 
-// InbandGenericTextTrack::addGenericCue.
 void ParcInbandTextTrack::AddGenericCue(const media::ParcInbandTextCue& data) {
   if (!data.cue_id || generic_cues_.Contains(data.cue_id) ||
       std::isnan(data.start) || std::isnan(data.end)) {
@@ -227,7 +225,6 @@ void ParcInbandTextTrack::AddGenericCue(const media::ParcInbandTextCue& data) {
   addCue(cue);
 }
 
-// InbandGenericTextTrack::updateGenericCue.
 void ParcInbandTextTrack::UpdateGenericCue(
     const media::ParcInbandTextCue& data) {
   auto it = generic_cues_.find(data.cue_id);
@@ -242,7 +239,6 @@ void ParcInbandTextTrack::UpdateGenericCue(
   }
 }
 
-// InbandGenericTextTrack::removeGenericCue.
 void ParcInbandTextTrack::RemoveGenericCue(
     const media::ParcInbandTextCue& data) {
   auto it = generic_cues_.find(data.cue_id);
@@ -258,8 +254,7 @@ void ParcInbandTextTrack::RemoveGenericCue(
 }
 
 double ParcInbandTextTrack::GenericCueEnd(double end) const {
-  // updateCueFromCueData: +infinity becomes the list's duration when valid
-  // (still +infinity for a live stream).
+
   if (std::isinf(end) && end > 0) {
     const double duration = element_->duration();
     if (!std::isnan(duration)) {
@@ -275,8 +270,7 @@ void ParcInbandTextTrack::UpdateCueFromCueData(
   cue.setStartTime(data.start);
   cue.setEndTime(GenericCueEnd(data.end), IGNORE_EXCEPTION);
   cue.setText(String::FromUtf8(data.text));
-  // TextTrackCueGeneric's colours replace the cue's only when given; WebKit
-  // keeps its font size and font name without drawing them.
+
   VTTCue::ParcGenericCueStyle style =
       cue.ParcGenericStyle().value_or(VTTCue::ParcGenericCueStyle());
   if (data.background_color) {
@@ -368,7 +362,7 @@ TextTrackCue* ParcInbandTextTrack::MatchCue(double start,
   if (!list) {
     return nullptr;
   }
-  // The list is in start time order.
+
   for (wtf_size_t i = 0; i < list->length(); ++i) {
     TextTrackCue* existing = list->AnonymousIndexedGetter(i);
     if (existing->startTime() > start + kStartTimeVariance) {
@@ -456,9 +450,7 @@ void ParcInbandTextTrack::AddDataCue(const media::ParcInbandDataCue& data) {
   String type = data.cue_type ? String::FromUtf8(*data.cue_type) : String();
   DataCue* cue = DataCue::CreateFromPlatformValue(context, data.start,
                                                   data.end, data.value, type);
-  // TextTrack::hasCue(cue, IgnoreDuration): a DataCue at the same start with
-  // the same contents, whatever the track's mode. Cues the page removed are
-  // forgotten.
+
   for (wtf_size_t i = 0; i < data_cues_.size();) {
     DataCue* existing = data_cues_[i];
     if (existing->track() != this) {
@@ -489,7 +481,7 @@ void ParcInbandTextTrack::UpdateDataCue(const media::ParcInbandDataCue& data) {
   }
   double end = data.end;
   if (std::isinf(end) && end > 0) {
-    // Still open: it shows the duration meanwhile, when there is one.
+
     const double duration = element_->duration();
     if (!std::isnan(duration)) {
       end = duration;
@@ -521,4 +513,59 @@ void ParcInbandTextTrack::Trace(Visitor* visitor) const {
   VTTParserClient::Trace(visitor);
 }
 
-}  // namespace blink
+void VTTCue::SetParcGenericStyle(const ParcGenericCueStyle& style) {
+  if (parc_generic_style_ == style) {
+    return;
+  }
+  CueWillChange();
+  parc_generic_style_ = style;
+  CueDidChange();
+}
+
+namespace {
+
+String ParcCssColor(uint32_t rgba) {
+  StringBuilder builder;
+  builder.Append("rgba(");
+  builder.AppendNumber(rgba >> 24);
+  builder.Append(", ");
+  builder.AppendNumber((rgba >> 16) & 0xff);
+  builder.Append(", ");
+  builder.AppendNumber((rgba >> 8) & 0xff);
+  builder.Append(", ");
+  builder.AppendNumber((rgba & 0xff) / 255.0);
+  builder.Append(")");
+  return builder.ToString();
+}
+
+}
+
+void ApplyParcGenericCueStyle(
+    const std::optional<VTTCue::ParcGenericCueStyle>& generic_style,
+    VTTCueBackgroundBox* background_box,
+    VTTCueBox* display_tree) {
+  if (!generic_style) {
+    return;
+  }
+  const VTTCue::ParcGenericCueStyle& style = *generic_style;
+
+  if (style.foreground_color) {
+    background_box->SetInlineStyleProperty(
+        CSSPropertyID::kColor, ParcCssColor(*style.foreground_color));
+  }
+  if (style.highlight_color) {
+    background_box->SetInlineStyleProperty(
+        CSSPropertyID::kBackgroundColor, ParcCssColor(*style.highlight_color));
+  }
+  if (style.background_color) {
+    display_tree->SetInlineStyleProperty(
+        CSSPropertyID::kBackgroundColor, ParcCssColor(*style.background_color));
+  }
+
+  if (!style.prevent_line_wrapping) {
+    display_tree->RemoveInlineStyleProperty(CSSPropertyID::kWhiteSpaceCollapse);
+    display_tree->RemoveInlineStyleProperty(CSSPropertyID::kTextWrapMode);
+  }
+}
+
+}

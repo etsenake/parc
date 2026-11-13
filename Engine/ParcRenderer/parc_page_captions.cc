@@ -1,4 +1,5 @@
 // Copyright 2026 Parc contributors.
+
 #include "third_party/blink/renderer/core/html/media/parc_page_captions.h"
 
 #include <algorithm>
@@ -32,12 +33,25 @@
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "ui/gfx/geometry/size_f.h"
 
+#include "cc/paint/skia_paint_canvas.h"
+#include "third_party/blink/renderer/core/dom/element_traversal.h"
+#include "third_party/blink/renderer/core/html/media/html_media_element.h"
+#include "third_party/blink/renderer/core/paint/cull_rect_updater.h"
+#include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/core/paint/paint_layer_painter.h"
+#include "third_party/blink/renderer/platform/graphics/paint/paint_record_builder.h"
+#include "ui/gfx/geometry/quad_f.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
+
 namespace blink {
 
 namespace {
 
 constexpr wtf_size_t kMaxPlaces = 16;
+
 constexpr unsigned kMaxNodes = 5000;
+
 constexpr unsigned kMaxPathDepth = 32;
 
 HeapHashSet<WeakMember<Element>>& BoxesShownAsCaptions() {
@@ -189,6 +203,7 @@ class CaptionsFinder {
                      VisibleText(*text, region_);
       } else if (auto* child_element = DynamicTo<Element>(child)) {
         const Look child_look = Visit(*child_element, hidden, in_control);
+
         if (!child_look.excluded && child_look.text &&
             IsA<LayoutBoxModelObject>(child_element->GetLayoutObject())) {
           candidates.push_back(child_element);
@@ -281,7 +296,7 @@ bool ParcPageCaptions::VideoShowsCues() const {
   }
   for (Node& child : NodeTraversal::ChildrenOf(*root)) {
     if (const auto* container = DynamicTo<TextTrackContainer>(child)) {
-      return container->ShowsCues();
+      return ParcTextTrackContainerShowsCues(*container);
     }
   }
   return false;
@@ -289,6 +304,7 @@ bool ParcPageCaptions::VideoShowsCues() const {
 
 bool ParcPageCaptions::Update() {
   Document& document = video_->GetDocument();
+
   if (document.DomTreeVersion() == dom_tree_version_ &&
       document.StyleVersion() == style_version_) {
     return false;
@@ -300,6 +316,7 @@ bool ParcPageCaptions::Update() {
     return false;
   }
   dom_tree_version_ = document.DomTreeVersion();
+
   if (VideoShowsCues()) {
     const bool shown = !shown_.empty();
     Show(HeapVector<Member<Element>>());
@@ -343,6 +360,7 @@ bool ParcPageCaptions::Update() {
     auto it = std::ranges::find(places_, key, &Place::path);
     if (it == places_.end()) {
       if (places_.size() == kMaxPlaces) {
+
         const wtf_size_t oldest = static_cast<wtf_size_t>(
             std::ranges::min_element(places_, {}, &Place::last_seen) -
             places_.begin());
@@ -356,6 +374,7 @@ bool ParcPageCaptions::Update() {
     Place& place = *it;
     const wtf_size_t index = static_cast<wtf_size_t>(it - places_.begin());
     const String text = caption.text.ToString();
+
     place.text = seen[index] ? place.text + "\n" + text : text;
     seen[index] = true;
     place.last_seen = looks_;
@@ -364,6 +383,7 @@ bool ParcPageCaptions::Update() {
     if (place.lines.size() < 2 && !place.lines.Contains(place.text)) {
       place.lines.push_back(place.text);
     }
+
     const gfx::PointF centre = caption.text_area.CenterPoint();
     const bool placed =
         std::abs(centre.x() - video.CenterPoint().x()) <= video.width() / 10 &&
@@ -389,6 +409,7 @@ bool ParcPageCaptions::Update() {
   const bool changed = shown != shown_ || text != shown_text_ ||
                        shown_areas != shown_areas_;
   Show(shown);
+
   style_version_ = document.StyleVersion();
   shown_text_ = text;
   shown_areas_ = std::move(shown_areas);
@@ -430,8 +451,9 @@ SkBitmap ParcPageCaptions::Paint(const gfx::SizeF& window_size,
       painted.push_back(box);
     }
   }
-  SkBitmap bitmap = TextTrackContainer::PaintLayersForPictureInPicture(
+  SkBitmap bitmap = PaintParcLayersForPictureInPicture(
       containers, areas, *video, window_size, device_scale_factor, bounds);
+
   if (bitmap.drawsNothing()) {
     painted.clear();
   }
@@ -451,6 +473,7 @@ void ParcPageCaptions::Clear() {
 }
 
 void ParcPageCaptions::Show(const HeapVector<Member<Element>>& boxes) {
+
   auto mark = [](Element& box, bool shown) {
     HeapHashSet<WeakMember<Element>>& captions = BoxesShownAsCaptions();
     if (captions.Contains(&box) == shown) {
@@ -479,6 +502,147 @@ void ParcPageCaptions::Show(const HeapVector<Member<Element>>& boxes) {
 void ParcPageCaptions::Trace(Visitor* visitor) const {
   visitor->Trace(video_);
   visitor->Trace(shown_);
+}
+
+SkBitmap PaintParcTextTracksForPictureInPicture(
+    TextTrackContainer& text_track_container,
+    HTMLMediaElement& media_element,
+    const gfx::SizeF& window_size,
+    float device_scale_factor,
+    gfx::RectF& bounds) {
+  LocalFrame* frame = text_track_container.GetDocument().GetFrame();
+  if (!frame || !frame->View() || !text_track_container.HasChildren() || window_size.IsEmpty()) {
+    return SkBitmap();
+  }
+
+  if (!frame->View()->UpdateAllLifecyclePhasesExceptPaint(
+          DocumentUpdateReason::kOverlay) ||
+      text_track_container.GetDocument().Lifecycle().GetState() !=
+          DocumentLifecycle::kPrePaintClean) {
+    return SkBitmap();
+  }
+  const LayoutBox* container = text_track_container.GetLayoutBox();
+  const auto* video = DynamicTo<LayoutVideo>(media_element.GetLayoutObject());
+  if (!container || !container->HasLayer() || !video || !ParcTextTrackContainerShowsCues(text_track_container)) {
+    return SkBitmap();
+  }
+
+  gfx::RectF cues;
+  for (const Element& child : ElementTraversal::ChildrenOf(text_track_container)) {
+    if (const LayoutObject* object = child.GetLayoutObject()) {
+      cues.Union(
+          gfx::RectF(object->AbsoluteBoundingBoxRectIncludingDescendants()));
+    }
+  }
+  cues.Intersect(gfx::RectF(container->AbsoluteBoundingBoxRect()));
+
+  return PaintParcLayersForPictureInPicture({container}, {cues}, *video,
+                                        window_size, device_scale_factor,
+                                        bounds);
+}
+
+bool ParcTextTrackContainerShowsCues(
+    const TextTrackContainer& text_track_container) {
+  const LayoutObject* container = text_track_container.GetLayoutObject();
+  if (!container) {
+    return false;
+  }
+  for (const Node& node : NodeTraversal::DescendantsOf(text_track_container)) {
+    const auto* text = DynamicTo<Text>(node);
+    const LayoutObject* layout = text ? text->GetLayoutObject() : nullptr;
+    if (!layout || layout->Style().Visibility() != EVisibility::kVisible ||
+        text->data().ContainsOnlyWhitespaceOrEmpty()) {
+      continue;
+    }
+    bool transparent = false;
+    for (const LayoutObject* above = layout->Parent(); above && !transparent;
+         above = above == container ? nullptr : above->Parent()) {
+      transparent = above->Style().Opacity() == 0;
+    }
+    if (!transparent) {
+      return true;
+    }
+  }
+  return false;
+}
+
+SkBitmap PaintParcLayersForPictureInPicture(
+    const HeapVector<Member<const LayoutBoxModelObject>>& containers,
+    const Vector<gfx::RectF>& areas,
+    const LayoutVideo& video,
+    const gfx::SizeF& window_size,
+    float device_scale_factor,
+    gfx::RectF& bounds) {
+  DCHECK_EQ(containers.size(), areas.size());
+  gfx::RectF cues;
+  for (const gfx::RectF& area : areas) {
+    cues.Union(area);
+  }
+  const gfx::RectF video_rect(
+      video.LocalToAbsoluteRect(video.ReplacedContentRect()));
+  if (cues.IsEmpty() || video_rect.IsEmpty()) {
+    return SkBitmap();
+  }
+
+  const float scale = std::min(window_size.width() / video_rect.width(),
+                               window_size.height() / video_rect.height());
+  const gfx::SizeF picture = gfx::ScaleSize(video_rect.size(), scale);
+  gfx::RectF placed((cues.x() - video_rect.x()) * scale,
+                    (cues.y() - video_rect.y()) * scale, cues.width() * scale,
+                    cues.height() * scale);
+  const float fit = std::min({1.f, picture.width() / placed.width(),
+                              picture.height() / placed.height()});
+  placed.ClampToCenteredSize(gfx::ScaleSize(placed.size(), fit));
+  placed.set_origin(gfx::PointF(
+      std::clamp(placed.x(), 0.f,
+                 std::max(0.f, picture.width() - placed.width())),
+      std::clamp(placed.y(), 0.f,
+                 std::max(0.f, picture.height() - placed.height()))));
+  const float pixels = scale * fit * device_scale_factor;
+  const gfx::Size size = gfx::ToCeiledSize(gfx::ScaleSize(cues.size(), pixels));
+  constexpr int kMaxDimension = 8192;
+  SkBitmap bitmap;
+  if (size.IsEmpty() || size.width() > kMaxDimension ||
+      size.height() > kMaxDimension ||
+      !bitmap.tryAllocN32Pixels(size.width(), size.height())) {
+    return SkBitmap();
+  }
+  bitmap.eraseColor(SK_ColorTRANSPARENT);
+  cc::SkiaPaintCanvas canvas(bitmap);
+
+  DocumentLifecycle& lifecycle = video.GetDocument().Lifecycle();
+  lifecycle.AdvanceTo(DocumentLifecycle::kInPaint);
+  for (wtf_size_t i = 0; i < containers.size(); ++i) {
+    const LayoutBoxModelObject& container = *containers[i];
+    const gfx::RectF& area = areas[i];
+    PaintLayer& layer = *container.Layer();
+    gfx::RectF local =
+        container.AbsoluteToLocalQuad(gfx::QuadF(area)).BoundingBox();
+    if (local.IsEmpty()) {
+      continue;
+    }
+    local.Offset(gfx::Vector2dF(container.FirstFragment().PaintOffset()));
+    OverriddenCullRectScope cull_rect_scope(
+        layer, CullRect(gfx::ToEnclosingRect(local)),
+        true);
+    PaintRecordBuilder builder;
+    PaintLayerPainter(layer).Paint(builder.Context(),
+                                   PaintFlag::kOmitCompositingInfo);
+
+    canvas.save();
+    canvas.translate((area.x() - cues.x()) * pixels,
+                     (area.y() - cues.y()) * pixels);
+    canvas.scale(area.width() * pixels / local.width(),
+                 area.height() * pixels / local.height());
+    canvas.translate(-local.x(), -local.y());
+    builder.EndRecording(
+        canvas, container.FirstFragment().LocalBorderBoxProperties().Unalias());
+    canvas.restore();
+  }
+  lifecycle.AdvanceTo(DocumentLifecycle::kPaintClean);
+
+  bounds = gfx::ScaleRect(placed, 1 / picture.width(), 1 / picture.height());
+  return bitmap;
 }
 
 }

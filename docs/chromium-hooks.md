@@ -33,13 +33,14 @@ Each patch entry says what it changes, which files it touches and why it must st
 
 ## Counts
 
-The reference covers 64 hooks and 74 patches:
+The reference covers 66 hooks and 73 patches:
 
-- 59 setters in `parc/chromium_hooks.h`, plus its one call-in, `DestroyUnusedOTRProfile`.
+- 61 setters in `parc/chromium_hooks.h`, plus its one call-in, `DestroyUnusedOTRProfile`.
 - 5 setters in layer headers: the Widevine request observer, the Safari-identity query, worker
   identity, the AirPlay playback-target handler and Blink's player move. Their 5 call-ins are the
-  Safari-identity check, the three AirPlay answers and picture-in-picture scrubbing.
-- 74 patches in [`overlay.json`](../Engine/ParcHost/overlay.json): 73 in
+  Safari-identity check, the three AirPlay answers and picture-in-picture scrubbing. One more
+  call-in, `content::NotifyNativeDeferredOpenURL`, lives in `content/public/browser/parc_native_links.h`.
+- 73 patches in [`overlay.json`](../Engine/ParcHost/overlay.json): 72 in
   `Engine/ParcHost/integration/` and `extension_context_menu_native` in `Engine/ParcNative/`.
 
 To recheck the counts after a change, compare the setters the header declares with the ones the
@@ -93,8 +94,8 @@ Patches by area:
   `native-presentation`, `native-gmc-presentation`, `platform-codecs`, `webaudio-aac`,
   `native-viz-capture-direct`, `native-video-pip-direct`, `native-auto-pip-host-occlusion-direct`,
   `document-pip-minimum-size` and `native-document-pip-content-settings`.
-- Blink and renderer: `fairplay-identity-blink-direct`, `fairplay-tracks`, `fairplay-idl-validation`,
-  `top-band-color` and `blink-overlay-scrollbar-fade`.
+- Blink and renderer: `fairplay-identity-blink-direct`, `fairplay-tracks`, `top-band-color` and
+  `blink-overlay-scrollbar-fade`.
 
 ## Build and test patches
 

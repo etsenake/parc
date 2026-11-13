@@ -189,12 +189,13 @@ player applies to its values are pure functions in `parc_web_media_player_rules`
 FairPlay renderer plays and accepts through `changeType()`, the type AVFoundation is told for AirPlay,
 and the readyState a Safari-identity Media Source's buffered ranges give.
 
-Parc's per-player state lives in `parc_web_media_player_state`, which the player befriends. It holds
-the key tracker for Safari-identity elements that wait for a key, and its callbacks still go through
-the player's weak pointer, so they stop exactly when they did. The player header still declares Parc
-overrides and the orchestration that changes the player's private state in place: the FairPlay
-hand-off and restarts, the AirPlay route switch, document moves, casting while frozen and readyState
-gates. Hidden Safari-identity video keeps its track by the player's own identity check, because a
+Parc's per-player state lives in `parc_web_media_player_state`, which the player befriends and hands
+out as its Parc extension. It holds the key tracker for Safari-identity elements that wait for a key
+and the orchestration that changes the player's private state in place: the FairPlay hand-off and
+restarts, the AirPlay route switch, native HLS readyState, document moves, casting while frozen and
+readyState gates. Chromium's file keeps one call at each original point, in its order, and the
+state's callbacks still go through the player's weak pointer, so they stop exactly when they did.
+Hidden Safari-identity video keeps its track by the player's own identity check, because a
 player copies the frame's background-track option once and keeps it after Parc moves it.
 
 HTMLMediaElement's Parc state and steps live in `parc_media_element`, a supplement the element makes
@@ -214,8 +215,13 @@ place. Safari's script APIs are installed by `parc_safari_scripts` from LocalWin
 context is created or a document takes over its window, and from the worker controller.
 `DidCreateScriptContext` would miss the take-over path and cannot reach Blink's trusted events.
 
-Picture in picture: captions reach Parc's window over a navigation-associated Parc interface, so the
-session interface and window class are stock. Scrubbing keeps Chromium's media-session and controller
+Picture in picture: native admission runs in Parc's existing web-contents delegate override, before
+Chromium enters its window manager. Caption bitmaps are painted by `parc_page_captions.cc` using the
+existing text-track container and public layout and paint APIs. The same lifecycle update, layer
+order and normalized video-relative bounds apply. Caption notifications and painting still run at
+their existing points; the protected video layer keeps its compositor owner and capture protection.
+Captions reach Parc's window over a navigation-associated Parc interface, so the session interface
+and window class are stock. Scrubbing keeps Chromium's media-session and controller
 interfaces, because the controls send it on their play and pause pipe in order. The shell's in-window
 and power values ride in WebPreferences, which reach a renderer in order with its page lifecycle, and
 a page supplement holds them, so `page.h` is stock.
@@ -251,6 +257,11 @@ split later, could pass the playing renderer frames past the split and would add
 The hand-off, fast-seek landing and renderer preference share the one Demuxer accessor, which is all
 `demuxer.h` carries. The hand-off lives only in `ParcStreamHandOff`, `ParcDemuxerHandOff` and the
 pipeline helper; ChunkDemuxer has no hand-off reader of its own.
+
+The native HLS track types compile in owned `media/base/parc_inband_tracks.cc`, within the media
+component that owned their definitions before. Generic cue colours and wrapping live in the owned
+in-band text-track file. VTTCue calls that helper immediately after applying default box CSS, and
+keeps the same cue mutation notifications and style storage.
 
 ## Media Source, formats and compositing
 

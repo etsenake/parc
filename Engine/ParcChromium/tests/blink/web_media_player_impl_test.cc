@@ -1,7 +1,4 @@
 // Copyright 2026 Parc contributors.
-// The fixture is derived from Chromium's web_media_player_impl_unittest.cc
-// (Copyright 2016 The Chromium Authors; BSD-style license in Chromium's
-// LICENSE) and contains only Parc's media-player regressions.
 
 #include "third_party/blink/renderer/platform/media/web_media_player_impl.h"
 
@@ -682,7 +679,7 @@ class ParcWebMediaPlayerImplTest
   void ParcServeOverHttps() {
     wmpi_->demuxer_manager_->SetLoadedUrl(
         GURL("https://example.com/episode.mp3"));
-    wmpi_->ParcCheckFileTargetSupport();
+    wmpi_->parc_->CheckFileTargetSupport();
   }
   void ParcMakeLive(const GURL& url) {
     wmpi_->parc_->file_streaming_ = true;
@@ -694,7 +691,7 @@ class ParcWebMediaPlayerImplTest
   }
   void ParcAddTrack(const media::MediaTrack& track) { wmpi_->AddTrack(track); }
   parc::fairplay::NativeHlsSource::FileTracks ParcFileTrackChoices() const {
-    return wmpi_->ParcFileTrackChoices();
+    return wmpi_->parc_->FileTrackChoices();
   }
   void ParcFailPendingCdmAfterSourceCheck() {
     wmpi_->pending_cdm_context_ref_ =
@@ -718,7 +715,7 @@ class ParcWebMediaPlayerImplTest
   bool ParcRestartPending() const {
     return wmpi_->pending_suspend_resume_cycle_;
   }
-  void ParcHandOffOrRestart() { wmpi_->ParcHandOffOrRestart(); }
+  void ParcHandOffOrRestart() { wmpi_->parc_->HandOffOrRestart(); }
 
   void ParcSetKeyRequestCdm() {
     DCHECK(web_cdm_);
@@ -752,7 +749,7 @@ class ParcWebMediaPlayerImplTest
               WebMediaPlayer::kReadyStateHaveEnoughData);
     ASSERT_TRUE(wmpi_->Paused());
     EXPECT_CALL(*client_, ReadyStateChanged());
-    wmpi_->ParcOnSourceBufferStreamsAdded(added, tracks);
+    wmpi_->parc_->OnSourceBufferStreamsAdded(added, tracks);
     EXPECT_EQ(wmpi_->GetReadyState(), WebMediaPlayer::kReadyStateHaveMetadata);
     EXPECT_FALSE(wmpi_->pending_suspend_resume_cycle_);
     testing::Mock::VerifyAndClearExpectations(client_.Get());
@@ -770,7 +767,7 @@ class ParcWebMediaPlayerImplTest
               WebMediaPlayer::kReadyStateHaveEnoughData);
     ASSERT_TRUE(wmpi_->Paused());
     EXPECT_CALL(*client_, ReadyStateChanged());
-    wmpi_->ParcOnSourceBufferStreamsAdded(added, tracks);
+    wmpi_->parc_->OnSourceBufferStreamsAdded(added, tracks);
     EXPECT_EQ(wmpi_->GetReadyState(), WebMediaPlayer::kReadyStateHaveMetadata);
     EXPECT_TRUE(wmpi_->pending_suspend_resume_cycle_);
     testing::Mock::VerifyAndClearExpectations(client_.Get());
@@ -804,7 +801,7 @@ class ParcWebMediaPlayerImplTest
     wmpi_->pipeline_metadata_.video_decoder_config = video;
     wmpi_->pipeline_metadata_.has_audio = true;
     wmpi_->pipeline_metadata_.audio_decoder_config = audio;
-    return wmpi_->ParcFairPlayPlaysCurrentStreams();
+    return wmpi_->parc_->FairPlayPlaysCurrentStreams();
   }
   void ParcClearChunkDemuxer() { wmpi_->parc_->chunk_demuxer_ = nullptr; }
 #endif
@@ -831,7 +828,7 @@ class ParcWebMediaPlayerImplTest
   bool IsStreaming() const { return wmpi_->IsStreaming(); }
 
   void SetRemoteRenderingWithoutRestart() {
-    wmpi_->ParcSetRemoteRendering(true);
+    wmpi_->parc_->SetRemoteRendering(true);
     wmpi_->disable_pipeline_auto_suspend_ = true;
   }
 
@@ -1562,7 +1559,7 @@ void ParcWebMediaPlayerImplFileAirPlayTest::SwitchLiveStream(
   const GURL file_url = LoadedUrl();
   ParcServeOverHttps();
   ParcMakeLive(file_url);
-  wmpi_->ParcSetPlaybackTarget("context", true);
+  wmpi_->GetParcExtension()->ParcSetPlaybackTarget("context", true);
   ASSERT_TRUE(ParcSwitchingRoute());
   if (seek_during_switch) {
     EXPECT_CALL(*client_, TimeChanged()).Times(testing::AtLeast(1));
@@ -1577,13 +1574,13 @@ void ParcWebMediaPlayerImplFileAirPlayTest::SwitchLiveStream(
 
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, SafariFileSupportsTarget) {
   LoadFile(true);
-  EXPECT_TRUE(wmpi_->ParcSupportsPlaybackTarget());
+  EXPECT_TRUE(wmpi_->GetParcExtension()->ParcSupportsPlaybackTarget());
 }
 
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, ChromeFileKeepsItsPipeline) {
   LoadFile(false);
-  EXPECT_FALSE(wmpi_->ParcSupportsPlaybackTarget());
-  wmpi_->ParcSetPlaybackTarget("context", true);
+  EXPECT_FALSE(wmpi_->GetParcExtension()->ParcSupportsPlaybackTarget());
+  wmpi_->GetParcExtension()->ParcSetPlaybackTarget("context", true);
   EXPECT_FALSE(ParcFileOnNativeRoute());
   EXPECT_FALSE(ParcSwitchingRoute());
   EXPECT_TRUE(HasDataSource());
@@ -1591,8 +1588,8 @@ TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, ChromeFileKeepsItsPipeline) {
 
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, NotPlayingToTargetStays) {
   LoadFile(true);
-  wmpi_->ParcSetPlaybackTarget("context", false);
-  wmpi_->ParcSetPlaybackTarget("", true);
+  wmpi_->GetParcExtension()->ParcSetPlaybackTarget("context", false);
+  wmpi_->GetParcExtension()->ParcSetPlaybackTarget("", true);
   EXPECT_FALSE(ParcFileOnNativeRoute());
   EXPECT_FALSE(ParcSwitchingRoute());
   EXPECT_FALSE(wmpi_->Seeking());
@@ -1612,7 +1609,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcFiniteStreamDoesNotSupportTarget) {
     testing::Mock::VerifyAndClearExpectations(client_.Get());
   }
   ASSERT_TRUE(IsStreaming());
-  EXPECT_FALSE(wmpi_->ParcSupportsPlaybackTarget());
+  EXPECT_FALSE(wmpi_->GetParcExtension()->ParcSupportsPlaybackTarget());
 }
 
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, SwitchHoldsWhatTheElementSees) {
@@ -1623,7 +1620,7 @@ TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, SwitchHoldsWhatTheElementSees) {
   EXPECT_CALL(*client_, ReadyStateChanged()).Times(0);
   EXPECT_CALL(*client_, DurationChanged()).Times(0);
   EXPECT_CALL(*client_, TimeChanged()).Times(0);
-  wmpi_->ParcSetPlaybackTarget("context", true);
+  wmpi_->GetParcExtension()->ParcSetPlaybackTarget("context", true);
   EXPECT_TRUE(ParcFileOnNativeRoute());
   ASSERT_TRUE(ParcSwitchingRoute());
   EXPECT_FALSE(HasDataSource());
@@ -1690,13 +1687,14 @@ TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, TrackChoicesByPosition) {
   EXPECT_EQ(choices.video_count, 2u);
   EXPECT_EQ(choices.video, 0u);
 
-  wmpi_->ParcEnabledAudioTracksChanged({WebString::FromUtf8("2")});
+  wmpi_->GetParcExtension()->ParcEnabledAudioTracksChanged(
+      {WebString::FromUtf8("2")});
   wmpi_->SelectedVideoTrackChanged(WebString::FromUtf8("4"));
   choices = ParcFileTrackChoices();
   EXPECT_EQ(choices.audio, std::vector<uint32_t>{1});
   EXPECT_EQ(choices.video, 1u);
 
-  wmpi_->ParcEnabledAudioTracksChanged(
+  wmpi_->GetParcExtension()->ParcEnabledAudioTracksChanged(
       {WebString::FromUtf8("1"), WebString::FromUtf8("2")});
   wmpi_->SelectedVideoTrackChanged(std::nullopt);
   choices = ParcFileTrackChoices();
@@ -1706,7 +1704,7 @@ TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, TrackChoicesByPosition) {
 
 TEST_F(ParcWebMediaPlayerImplFileAirPlayTest, NativeRouteTakesAVPlayerState) {
   LoadFile(true);
-  wmpi_->ParcSetPlaybackTarget("context", true);
+  wmpi_->GetParcExtension()->ParcSetPlaybackTarget("context", true);
   ASSERT_TRUE(ParcSwitchingRoute());
   ParcPlayNativeHls();
 
@@ -2284,7 +2282,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcFrozenInBackForwardCacheKeepsPipeline) {
   ASSERT_FALSE(ShouldCancelUponDefer());
 
   EXPECT_CALL(mock_observer_, OnFrozen());
-  wmpi_->ParcOnFrozenInBackForwardCache();
+  wmpi_->GetParcExtension()->ParcOnFrozenInBackForwardCache();
   EXPECT_FALSE(IsSuspended());
   EXPECT_TRUE(ShouldCancelUponDefer());
 }
@@ -2298,7 +2296,7 @@ TEST_F(ParcWebMediaPlayerImplTest,
   ASSERT_TRUE(base::test::RunUntil([&] { return IsPipelineStable(); }));
 
   FreezePage(true);
-  wmpi_->ParcOnFrozenInBackForwardCache();
+  wmpi_->GetParcExtension()->ParcOnFrozenInBackForwardCache();
   wmpi_->SwitchToRemoteRenderer("TV");
   EXPECT_TRUE(base::test::RunUntil([&] { return IsPipelineStable(); }));
   EXPECT_FALSE(IsSuspended());
@@ -2361,7 +2359,7 @@ TEST_F(ParcWebMediaPlayerImplTest,
   ASSERT_FALSE(IsStreaming());
 
   SetRemoteRenderingWithoutRestart();
-  wmpi_->ParcOnFrozenInBackForwardCache();
+  wmpi_->GetParcExtension()->ParcOnFrozenInBackForwardCache();
   EXPECT_FALSE(ShouldCancelUponDefer());
 }
 
@@ -2373,7 +2371,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcCastStartedWhileFrozenReadsOn) {
   ASSERT_TRUE(base::test::RunUntil([&] { return IsPipelineStable(); }));
 
   FreezePage(true);
-  wmpi_->ParcOnFrozenInBackForwardCache();
+  wmpi_->GetParcExtension()->ParcOnFrozenInBackForwardCache();
   ASSERT_TRUE(ShouldCancelUponDefer());
   wmpi_->SwitchToRemoteRenderer("TV");
   EXPECT_TRUE(base::test::RunUntil([&] { return IsPipelineStable(); }));
@@ -2398,7 +2396,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcFrozenSourceNotCastingWaitsForItsPage) {
   ASSERT_TRUE(base::test::RunUntil([&] { return IsPipelineStable(); }));
 
   FreezePage(true);
-  wmpi_->ParcOnFrozenInBackForwardCache();
+  wmpi_->GetParcExtension()->ParcOnFrozenInBackForwardCache();
   EXPECT_TRUE(ShouldCancelUponDefer());
   MultiBufferDataSource* data_source = GetMultiBufferDataSource();
   uint8_t byte = 0;
@@ -2419,17 +2417,17 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcConnectingCastKeepsReaderWhileCached) {
   wmpi_->SetPreload(WebMediaPlayer::kPreloadAuto);
   LoadAndWaitForCurrentData(kAudioOnlyTestFile);
 
-  wmpi_->ParcSetCastPrompted(true);
-  wmpi_->ParcOnFrozenInBackForwardCache();
+  wmpi_->GetParcExtension()->ParcSetCastPrompted(true);
+  wmpi_->GetParcExtension()->ParcOnFrozenInBackForwardCache();
   EXPECT_FALSE(ShouldCancelUponDefer());
 
   wmpi_->ParcCastRequestChanged(true);
-  wmpi_->ParcSetCastPrompted(false);
-  wmpi_->ParcOnFrozenInBackForwardCache();
+  wmpi_->GetParcExtension()->ParcSetCastPrompted(false);
+  wmpi_->GetParcExtension()->ParcOnFrozenInBackForwardCache();
   EXPECT_FALSE(ShouldCancelUponDefer());
 
   wmpi_->ParcCastRequestChanged(false);
-  wmpi_->ParcOnFrozenInBackForwardCache();
+  wmpi_->GetParcExtension()->ParcOnFrozenInBackForwardCache();
   EXPECT_TRUE(ShouldCancelUponDefer());
 }
 
@@ -2484,7 +2482,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcSetPageHiddenOverridesDelegatePage) {
     EXPECT_CALL(*compositor_, SetIsPageVisible(false))
         .WillOnce(RunClosure(loop.QuitClosure()));
 
-    wmpi_->ParcSetPageHidden(false);
+    wmpi_->GetParcExtension()->ParcSetPageHidden(false);
     EXPECT_FALSE(IsPageHidden());
 
     delegate_.SetPageHiddenForTesting(false);
@@ -2493,8 +2491,8 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcSetPageHiddenOverridesDelegatePage) {
     wmpi_->OnPageHidden();
     EXPECT_FALSE(IsPageHidden());
 
-    wmpi_->ParcSetPageHidden(false);
-    wmpi_->ParcSetPageHidden(true);
+    wmpi_->GetParcExtension()->ParcSetPageHidden(false);
+    wmpi_->GetParcExtension()->ParcSetPageHidden(true);
     EXPECT_TRUE(IsPageHidden());
     loop.Run();
     testing::Mock::VerifyAndClearExpectations(compositor_);
@@ -2504,7 +2502,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcSetPageHiddenOverridesDelegatePage) {
   EXPECT_CALL(*compositor_, SetIsPageVisible(true))
       .WillOnce(RunClosure(loop.QuitClosure()));
   delegate_.SetPageHiddenForTesting(false);
-  wmpi_->ParcSetPageHidden(std::nullopt);
+  wmpi_->GetParcExtension()->ParcSetPageHidden(std::nullopt);
   EXPECT_FALSE(IsPageHidden());
   loop.Run();
   testing::Mock::VerifyAndClearExpectations(compositor_);
@@ -2541,7 +2539,8 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcMoveToFrameMovesPlayerAndReportsState) {
       [](bool* moved, media::MediaLog&) { *moved = true; },
       Unretained(&media_log_moved));
   EXPECT_CALL(*audio_sink_, Stop());
-  EXPECT_TRUE(wmpi_->ParcMoveToFrame(std::move(services)));
+  EXPECT_TRUE(
+      wmpi_->GetParcExtension()->ParcMoveToFrame(std::move(services)));
   EXPECT_TRUE(factories_moved);
   EXPECT_TRUE(media_log_moved);
   EXPECT_FALSE(delegate_.has_observer());
@@ -2560,7 +2559,7 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcMoveToFrameMovesPlayerAndReportsState) {
   EXPECT_CALL(*client_, DidPlayerMediaPositionStateChange(
                            0.0, kAudioOnlyTestFileDuration, base::TimeDelta(),
                            false));
-  wmpi_->ParcReportStateToClient();
+  wmpi_->GetParcExtension()->ParcReportStateToClient();
 }
 
 TEST_F(ParcWebMediaPlayerImplTest, ParcMoveToFrameKeepsChromeIdentityPlayer) {
@@ -2570,7 +2569,8 @@ TEST_F(ParcWebMediaPlayerImplTest, ParcMoveToFrameKeepsChromeIdentityPlayer) {
   services.frame = moved_to_view_helper_.LocalMainFrame();
   services.delegate = &moved_to_delegate_;
   services.url_index = url_index_.get();
-  EXPECT_FALSE(wmpi_->ParcMoveToFrame(std::move(services)));
+  EXPECT_FALSE(
+      wmpi_->GetParcExtension()->ParcMoveToFrame(std::move(services)));
   EXPECT_TRUE(delegate_.has_observer());
   EXPECT_FALSE(moved_to_delegate_.has_observer());
 }

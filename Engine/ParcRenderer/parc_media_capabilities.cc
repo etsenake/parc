@@ -1,6 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Installed by the reviewed overlay at
-// //third_party/blink/renderer/modules/media_capabilities/parc_media_capabilities.cc.
 #include "third_party/blink/renderer/modules/media_capabilities/parc_media_capabilities.h"
 
 #include <algorithm>
@@ -9,24 +7,36 @@
 #include <string_view>
 #include <vector>
 
+#include "base/containers/span.h"
+#include "media/base/mime_util.h"
 #include "media/base/video_codec_string_parsers.h"
+#include "media/filters/stream_parser_factory.h"
 #include "media/mojo/mojom/parc_video_toolbox_decoding.mojom-blink.h"
+#include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+#include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_configuration.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_capabilities_decoding_info.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_decoding_configuration.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_video_configuration.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/execution_context/navigator_base.h"
 #include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
+#include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.h"
+#include "third_party/blink/renderer/platform/heap/persistent.h"
+#include "third_party/blink/renderer/platform/network/mime/content_type.h"
+#include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
+#include "third_party/blink/renderer/platform/network/parsed_content_type.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_to_number.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
 
 namespace {
 
-// Parc: WebKit's parseInteger (StringToIntegerConversion.h) for unsigned
-// types: ASCII whitespace around, an optional '+', at least one digit of
-// `base`, no overflow, nothing else.
 template <typename T>
 std::optional<T> ParcParseUnsigned(std::string_view text, unsigned base = 10) {
   auto is_space = [](char c) {
@@ -69,7 +79,6 @@ std::optional<T> ParcParseUnsigned(std::string_view text, unsigned base = 10) {
   return static_cast<T>(value);
 }
 
-// WTF's StringView::split('.'): the non-empty pieces.
 std::vector<std::string_view> ParcSplitCodec(std::string_view codec) {
   std::vector<std::string_view> pieces;
   size_t start = 0;
@@ -86,10 +95,6 @@ std::vector<std::string_view> ParcSplitCodec(std::string_view codec) {
   return pieces;
 }
 
-// Parc: WebKit's MediaCapabilitiesDecodingInfo for a document presenting
-// Safari's identity carries the configuration as WebKit read it (its
-// MediaDecodingConfiguration, VideoConfiguration with alphaChannel and
-// AudioConfiguration) and no keySystemAccess.
 MediaDecodingConfiguration* ParcSafariEchoConfiguration(
     const MediaDecodingConfiguration* config) {
   auto* echo = MediaDecodingConfiguration::Create();
@@ -137,7 +142,97 @@ MediaDecodingConfiguration* ParcSafariEchoConfiguration(
   return echo;
 }
 
-}  // namespace
+bool ParcCheckMseSupport(const String& mime_type, const String& codec) {
+  base::span<const std::string> codecs;
+  const std::string codec_ascii = codec.Ascii();
+  if (!codec_ascii.empty()) {
+    codecs = base::span_from_ref(codec_ascii);
+  }
+  return media::StreamParserFactory::IsTypeSupported(mime_type.Ascii(),
+                                                     codecs) ==
+         media::SupportsType::kSupported;
+}
+
+bool ParcParseContentType(const String& content_type,
+                          String* mime_type,
+                          String* codec) {
+  ParsedContentType parsed_content_type(content_type);
+  if (!parsed_content_type.IsValid() ||
+      parsed_content_type.GetParameters().HasDuplicatedNames()) {
+    return false;
+  }
+  *mime_type = parsed_content_type.MimeType().ToAsciiLower();
+  *codec = parsed_content_type.ParameterValueForName("codecs");
+  return true;
+}
+
+bool ParcSafariTypeSupported(const MediaDecodingConfiguration* config,
+                             const String& content_type,
+                             const String& mime_type,
+                             const String& codec) {
+  if (ParcSafariAV1Unavailable(codec)) {
+    return false;
+  }
+  if (mime_type == "video/mp4" &&
+      (codec.starts_with("dvh1.") || codec.starts_with("dvhe.") ||
+       codec.starts_with("dav1.10."))) {
+    const std::optional<ParcDoViParameters> parameters =
+        codec.ContainsOnlyAsciiOrEmpty()
+            ? ParcParseDoVi(codec.Ascii())
+            : std::nullopt;
+    if (parameters &&
+        (parameters->profile == 5 ||
+         (config->type() == V8MediaDecodingType::Enum::kMediaSource &&
+          (parameters->profile == 10 || parameters->profile == 20)))) {
+      return true;
+    }
+  }
+  if (config->type() == V8MediaDecodingType::Enum::kMediaSource) {
+    const std::string mime_ascii = mime_type.Ascii();
+    if (media::StreamParserFactory::ParcIsOggType(mime_ascii)) {
+      const std::string codec_ascii = codec.Ascii();
+      return !codec_ascii.empty() &&
+             media::StreamParserFactory::ParcSafariTakesOgg(
+                 mime_ascii, base::span_from_ref(codec_ascii));
+    }
+    return ParcCheckMseSupport(mime_type, codec);
+  }
+  return HTMLMediaElement::GetSupportsType(ContentType(content_type)) ==
+         MIMETypeRegistry::kSupported;
+}
+
+std::optional<ParcDecodingAnswer> ParcSafariAnswer(
+    const MediaDecodingConfiguration* config,
+    const media::mojom::blink::ParcVideoToolboxDecodingFacts* facts) {
+  ParcDecodingAnswer answer;
+  if (config->hasVideo()) {
+    const VideoConfiguration* video = config->video();
+    String mime_type;
+    String codecs;
+    if (!ParcParseContentType(video->contentType(), &mime_type, &codecs) ||
+        !ParcSafariTypeSupported(config, video->contentType(), mime_type,
+                                 codecs)) {
+      return std::nullopt;
+    }
+    if (!ParcSafariVideoAnswer(config, video, codecs, facts, answer)) {
+      return std::nullopt;
+    }
+  }
+  if (config->hasAudio()) {
+    const AudioConfiguration* audio = config->audio();
+    String mime_type;
+    String codec;
+    if (!ParcParseContentType(audio->contentType(), &mime_type, &codec) ||
+        !ParcSafariTypeSupported(config, audio->contentType(), mime_type,
+                                 codec)) {
+      return std::nullopt;
+    }
+    answer.supported = true;
+  }
+  return answer;
+}
+
+}
 
 std::optional<ParcHevcParameters> ParcParseHevc(std::string_view codec) {
   const std::vector<std::string_view> pieces = ParcSplitCodec(codec);
@@ -263,7 +358,6 @@ std::optional<ParcDoViParameters> ParcParseDoVi(std::string_view codec) {
   return parameters;
 }
 
-
 MediaCapabilitiesDecodingInfo* ParcFinishDecodingInfo(
     MediaCapabilitiesDecodingInfo* info,
     ExecutionContext* context,
@@ -284,8 +378,6 @@ bool ParcSafariVideoAnswer(
     const String& codecs,
     const media::mojom::blink::ParcVideoToolboxDecodingFacts* facts,
     ParcDecodingAnswer& answer) {
-  // WebKit wants exactly one codec, counting as ContentType::codecs()
-  // does: the non-empty pieces between commas, each trimmed.
   String codec;
   wtf_size_t codec_count = 0;
   for (const String& piece : codecs.Split(',')) {
@@ -303,7 +395,6 @@ bool ParcSafariVideoAnswer(
   const bool alpha = video->hasAlphaChannel() && video->alphaChannel();
   const std::string ascii = codec.Ascii();
   if (codec.starts_with("hvc1") || codec.starts_with("hev1")) {
-    // validateHEVCParameters (HEVCUtilitiesCocoa.mm).
     const std::optional<ParcHevcParameters> parameters =
         ParcParseHevc(ascii);
     if (!parameters || !facts) {
@@ -312,7 +403,7 @@ bool ParcSafariVideoAnswer(
     if (hdr && !(parameters->profile_space == 0 &&
                  (parameters->profile_idc == 2 ||
                   parameters->compatibility_flags == 1))) {
-      return false;  // HDR needs HEVC Main10.
+      return false;
     }
     if (!(alpha ? facts->hevc_with_alpha_decoder : facts->hevc_decoder) ||
         !facts->hevc_profiles) {
@@ -337,7 +428,6 @@ bool ParcSafariVideoAnswer(
                     parameters->level_idc <= profile->max_playback_level;
   } else if (codec.starts_with("dvh1") || codec.starts_with("dvhe") ||
              codec.starts_with("dav1.10.")) {
-    // validateDoViParameters (HEVCUtilitiesCocoa.mm).
     const std::optional<ParcDoViParameters> parameters = ParcParseDoVi(ascii);
     const bool extended_mse =
         config->type() == V8MediaDecodingType::Enum::kMediaSource &&
@@ -353,12 +443,9 @@ bool ParcSafariVideoAnswer(
     if (!extended_mse && !vt_supported) {
       return false;
     }
-    // MSE accepts these new types independently of VT's Dolby profile list.
-    // VT still determines smoothness and hardware efficiency.
     answer.smooth = vt_supported;
     answer.power_efficient = vt_supported && facts->dolby_vision_hardware;
   } else {
-    // H.264: no alpha or HDR; VTIsHardwareDecodeSupported.
     if (alpha || hdr) {
       return false;
     }
@@ -370,4 +457,132 @@ bool ParcSafariVideoAnswer(
   return true;
 }
 
-}  // namespace blink
+bool IsParcSafariFairPlayVideoCodec(const String& codec) {
+  return codec.starts_with("avc1") || codec.starts_with("avc3") ||
+         codec.starts_with("hvc1") || codec.starts_with("hev1") ||
+         codec.starts_with("dvh1") || codec.starts_with("dvhe") ||
+         codec.starts_with("dav1.10.");
+}
+
+const char ParcSafariMediaCapabilities::kSupplementName[] =
+    "ParcSafariMediaCapabilities";
+
+ParcSafariMediaCapabilities& ParcSafariMediaCapabilities::From(
+    NavigatorBase& navigator) {
+  ParcSafariMediaCapabilities* capabilities =
+      Supplement<NavigatorBase>::From<ParcSafariMediaCapabilities>(navigator);
+  if (!capabilities) {
+    capabilities =
+        MakeGarbageCollected<ParcSafariMediaCapabilities>(navigator);
+    ProvideTo(navigator, capabilities);
+  }
+  return *capabilities;
+}
+
+ParcSafariMediaCapabilities::ParcSafariMediaCapabilities(
+    NavigatorBase& navigator)
+    : Supplement<NavigatorBase>(navigator),
+      video_toolbox_(navigator.GetExecutionContext()) {}
+
+void ParcSafariMediaCapabilities::Trace(Visitor* visitor) const {
+  visitor->Trace(video_toolbox_);
+  Supplement<NavigatorBase>::Trace(visitor);
+}
+
+ScriptPromise<MediaCapabilitiesDecodingInfo>
+ParcSafariMediaCapabilities::DecodingInfo(
+    ScriptState* script_state,
+    const MediaDecodingConfiguration* config,
+    ExceptionState& exception_state) {
+  auto* resolver = MakeGarbageCollected<
+      ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>>(
+      script_state, exception_state.GetContext());
+  auto promise = resolver->Promise();
+  if (facts_) {
+    OnFacts(resolver, config,
+                            facts_.Clone());
+    return promise;
+  }
+  Bind(ExecutionContext::From(script_state));
+  video_toolbox_->GetFacts(mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+      BindOnce(&ParcSafariMediaCapabilities::OnFacts,
+               WrapPersistent(this), WrapPersistent(resolver),
+               WrapPersistent(config)),
+      media::mojom::blink::ParcVideoToolboxDecodingFactsPtr()));
+  return promise;
+}
+
+void ParcSafariMediaCapabilities::OnFacts(
+    ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>* resolver,
+    const MediaDecodingConfiguration* config,
+    media::mojom::blink::ParcVideoToolboxDecodingFactsPtr facts) {
+  if (facts && !facts_) {
+    facts_ = facts.Clone();
+  }
+  ExecutionContext* execution_context = resolver->GetExecutionContext();
+  if (!execution_context || execution_context->IsContextDestroyed()) {
+    return;
+  }
+  const std::optional<ParcDecodingAnswer> answer =
+      ParcSafariAnswer(config, facts.get());
+  if (answer && config->hasAudio() &&
+      config->audio()->hasSpatialRendering() &&
+      config->audio()->spatialRendering()) {
+    Bind(execution_context);
+    video_toolbox_->GetSpatialAudioSources(
+        config->hasVideo(),
+        mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+            BindOnce(&ParcSafariMediaCapabilities::OnSpatialAudioSources,
+                     WrapPersistent(this), WrapPersistent(resolver),
+                     WrapPersistent(config), answer->smooth,
+                     answer->power_efficient),
+            Vector<uint32_t>()));
+    return;
+  }
+  auto* info = MediaCapabilitiesDecodingInfo::Create();
+  info->setSupported(answer && answer->supported);
+  info->setSmooth(answer && answer->smooth);
+  info->setPowerEfficient(answer && answer->power_efficient);
+  resolver->Resolve(
+      ParcFinishDecodingInfo(info, execution_context, config, nullptr));
+}
+
+void ParcSafariMediaCapabilities::OnSpatialAudioSources(
+    ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>* resolver,
+    const MediaDecodingConfiguration* config,
+    bool smooth,
+    bool power_efficient,
+    const Vector<uint32_t>& sources) {
+  ExecutionContext* execution_context = resolver->GetExecutionContext();
+  if (!execution_context || execution_context->IsContextDestroyed()) {
+    return;
+  }
+  const String channels =
+      config->audio()->hasChannels() ? config->audio()->channels() : String();
+  size_t parsed_length = 0;
+  const double channel_count =
+      channels.empty()
+          ? 0
+          : (channels.Is8Bit()
+                 ? CharactersToDouble(channels.Span8(), parsed_length)
+                 : CharactersToDouble(channels.Span16(), parsed_length));
+  auto* info = MediaCapabilitiesDecodingInfo::Create();
+  info->setSupported(IsParcSafariSpatialAudioSupported(
+      sources, channel_count));
+  info->setSmooth(smooth);
+  info->setPowerEfficient(power_efficient);
+  resolver->Resolve(
+      ParcFinishDecodingInfo(info, execution_context, config, nullptr));
+}
+
+void ParcSafariMediaCapabilities::Bind(
+    ExecutionContext* execution_context) {
+  if (video_toolbox_.is_bound()) {
+    return;
+  }
+  execution_context->GetBrowserInterfaceBroker().GetInterface(
+      video_toolbox_.BindNewPipeAndPassReceiver(
+          execution_context->GetTaskRunner(TaskType::kMediaElementEvent)));
+}
+
+}

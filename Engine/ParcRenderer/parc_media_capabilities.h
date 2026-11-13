@@ -1,10 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Installed by the reviewed overlay at
-// //third_party/blink/renderer/modules/media_capabilities/parc_media_capabilities.h.
-// The parts of WebKit's decodingInfo that MediaCapabilities applies on
-// Safari-identity documents and that need nothing of its own: the HEVC and
-// Dolby Vision codec-string parsers, the video rules over VideoToolbox's
-// facts, and the shape of a finished result.
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_MEDIA_CAPABILITIES_PARC_MEDIA_CAPABILITIES_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_MEDIA_CAPABILITIES_PARC_MEDIA_CAPABILITIES_H_
 
@@ -13,16 +7,24 @@
 #include <optional>
 #include <string_view>
 
-namespace media::mojom::blink {
-class ParcVideoToolboxDecodingFacts;
-}  // namespace media::mojom::blink
+#include "media/mojo/mojom/parc_video_toolbox_decoding.mojom-blink.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
+#include "third_party/blink/renderer/core/execution_context/navigator_base.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
+#include "third_party/blink/renderer/platform/supplementable.h"
+#include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
 
+class ExceptionState;
 class ExecutionContext;
 class MediaCapabilitiesDecodingInfo;
 class MediaDecodingConfiguration;
 class MediaKeySystemAccess;
+class ScriptState;
+template <typename IDLResolvedType>
+class ScriptPromiseResolver;
 class String;
 class VideoConfiguration;
 
@@ -35,11 +37,10 @@ struct ParcDecodingAnswer {
 struct ParcHevcParameters {
   uint8_t profile_space = 0;
   uint8_t profile_idc = 0;
-  uint32_t compatibility_flags = 0;  // Bit-reversed, as WebKit keeps it.
+  uint32_t compatibility_flags = 0;
   uint8_t level_idc = 0;
 };
 
-// WebKit's parseHEVCCodecParameters (HEVCUtilities.cpp).
 std::optional<ParcHevcParameters> ParcParseHevc(std::string_view codec);
 
 struct ParcDoViParameters {
@@ -47,24 +48,14 @@ struct ParcDoViParameters {
   uint8_t level = 0;
 };
 
-// WebKit's parseDoViCodecParameters (HEVCUtilities.cpp), for the HEVC
-// codec types (dvh1, dvhe) Parc dispatches to it.
 std::optional<ParcDoViParameters> ParcParseDoVi(std::string_view codec);
 
-// Finishes a decodingInfo result in the shape of the document asking:
-// WebKit's under Safari's identity, Chromium's (keySystemAccess, null
-// without a key system) elsewhere.
 MediaCapabilitiesDecodingInfo* ParcFinishDecodingInfo(
     MediaCapabilitiesDecodingInfo* info,
     ExecutionContext* context,
     const MediaDecodingConfiguration* config,
     MediaKeySystemAccess* access);
 
-// computeMediaCapabilitiesInfo's video half (WebKit's
-// PlatformMediaEngineConfigurationFactoryCocoa.cpp) for `config`'s `video`,
-// whose content type MediaCapabilities parsed into `codecs` and found
-// supported. Fills `answer`; false where WebKit answers unsupported. `facts`
-// is null when VideoToolbox's facts couldn't be had.
 bool ParcSafariVideoAnswer(
     const MediaDecodingConfiguration* config,
     const VideoConfiguration* video,
@@ -72,6 +63,41 @@ bool ParcSafariVideoAnswer(
     const media::mojom::blink::ParcVideoToolboxDecodingFacts* facts,
     ParcDecodingAnswer& answer);
 
-}  // namespace blink
+bool IsParcSafariFairPlayVideoCodec(const String& codec);
 
-#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_MEDIA_CAPABILITIES_PARC_MEDIA_CAPABILITIES_H_
+class ParcSafariMediaCapabilities final
+    : public GarbageCollected<ParcSafariMediaCapabilities>,
+      public Supplement<NavigatorBase> {
+ public:
+  static const char kSupplementName[];
+
+  static ParcSafariMediaCapabilities& From(NavigatorBase& navigator);
+
+  explicit ParcSafariMediaCapabilities(NavigatorBase& navigator);
+
+  ScriptPromise<MediaCapabilitiesDecodingInfo> DecodingInfo(
+      ScriptState* script_state,
+      const MediaDecodingConfiguration* config,
+      ExceptionState& exception_state);
+
+  void Trace(Visitor* visitor) const override;
+
+ private:
+  void OnFacts(ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>* resolver,
+               const MediaDecodingConfiguration* config,
+               media::mojom::blink::ParcVideoToolboxDecodingFactsPtr facts);
+  void OnSpatialAudioSources(
+      ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>* resolver,
+      const MediaDecodingConfiguration* config,
+      bool smooth,
+      bool power_efficient,
+      const Vector<uint32_t>& sources);
+  void Bind(ExecutionContext* execution_context);
+
+  HeapMojoRemote<media::mojom::blink::ParcVideoToolboxDecoding> video_toolbox_;
+  media::mojom::blink::ParcVideoToolboxDecodingFactsPtr facts_;
+};
+
+}
+
+#endif

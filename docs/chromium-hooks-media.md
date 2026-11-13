@@ -75,7 +75,9 @@ Four of these are declared in `parc/chromium_hooks.h`; the rest in a Parc header
 Other renderer points are direct calls from patched Blink and media files into Parc files installed
 beside them: the top-band tracker and network-activity counter on LocalFrame, the media element and
 AirPlay supplements, MediaCapabilities and EME rules, Safari's scripts, Media Source policy, the
-hand-off readers, renderer transitions and the compositing planner and layer claims.
+hand-off readers, renderer transitions and the compositing planner and layer claims. Generic cue
+colours and wrapping use `ApplyParcGenericCueStyle` in the owned in-band text-track file, called
+immediately after the cue box receives its default CSS; cue mutation notifications remain on VTTCue.
 
 ## Media and FairPlay patches
 
@@ -104,16 +106,18 @@ hand-off readers, renderer transitions and the compositing planner and layer cla
 - **`native-cast`**, **`native-presentation`**, **`native-gmc-presentation`**: the Cast device dialog
   and presentation requests honor native page revocation and Parc's cast flow. The presentation patch
   adds a per-request success validator and token, and the media-controls patch an interaction guard;
-  together 34 Cast dialog, media-router, global-media-controls and remoting files.
+  the cast route each player's notification uses is chosen in Parc's `native_cast_route.cc`.
 - **`platform-codecs`**, **`webaudio-aac`**: format support inside Chromium's parsers and the
   AudioToolbox decoder, and pipelined MojoAudioDecoder decodes for `decodeAudioData`. Parsers are
   never forked, so these stay patches across 33 media, FFmpeg configuration, WebRTC and Web Audio
   files. AMR and H.263 play only on Safari-identity pages ([decisions](chromium-seams.md#decisions)).
 - **`native-viz-capture-direct`**: a capture fix; failed or stale copies complete the capture oracle's
   frame, in `frame_sink_video_capturer_impl.cc` and its test.
-- **`native-video-pip-direct`**: split links, repost warnings and picture-in-picture windows in
-  Chromium's web-contents delegate, and caption compositing in Blink, across nine delegate, Blink
-  track, style, paint and animation files.
+- **`native-video-pip-direct`**: split links and repost warnings in Chromium's web-contents delegate,
+  plus caption notifications, style, paint and animation integration in Blink, across seven files.
+  Native video admission runs in Parc's existing web-contents delegate override before Chromium
+  enters its picture-in-picture manager. Caption bitmap painting lives in `parc_page_captions.cc`
+  and uses the existing container and public layout and paint APIs; TextTrackContainer is stock.
 - **`native-auto-pip-host-occlusion-direct`**: Chromium's occlusion helper is behind an off flag,
   merges shell and page states Parc keeps apart and goes quiet while not observing; entry's wait for
   the renderer's hidden acknowledgement starts and is cancelled at seven private points. Only that
@@ -128,14 +132,16 @@ hand-off readers, renderer transitions and the compositing planner and layer cla
 
 - **`fairplay-identity-blink-direct`**: the media element's Safari-identity gates, EME, Media Source
   and MediaCapabilities gates, Safari's script installation from LocalWindowProxy and the worker
-  controller, the player-move installer and the `ParcSafariIdentityEme` runtime feature Blink's IDL
-  reader requires. It spans 81 Blink core, modules, bindings and IDL files; the element's algorithm
-  and the bindings generator are private to Blink.
-- **`fairplay-tracks`**: Safari's text, audio and video track behaviour in 18 Blink track, cue and
-  binding files.
-- **`fairplay-idl-validation`**: lets Blink's IDL validator accept the `ParcSafariIdentityEme`
-  condition on `SecureContext`, so identity-gated EME bindings keep the secure-context gate. The
-  validator's rules live only in `supported_extended_attributes.py`.
+  controller and the player-move installer. EME bindings appear on Safari-identity pages through the
+  per-context `ContextEnabled=ParcSafariIdentityEme` switch answered by `ContextFeatureSettings`, so
+  Blink's bindings generator, validator and runtime-feature list stay stock. Safari's autoplay rule
+  lives in Parc's media element supplement and its `decodingInfo` answers in a Parc navigator
+  supplement, leaving one gate each in `autoplay_policy.cc` and `media_capabilities.cc`. It spans
+  78 Blink core, modules, bindings and IDL files; the element's algorithm is private to Blink.
+- **`fairplay-tracks`**: Safari's text, audio and video track behaviour in 17 Blink track, cue and
+  binding files. The in-band media types compile in owned `media/base/parc_inband_tracks.cc`, in
+  the same media component. Generic cue styling leaves one direct owned helper call at the cue
+  box's existing CSS application point; its style storage and mutation notifications stay on VTTCue.
 - **`top-band-color`**: the top-band tracker's event hooks at frame install, post-canvas sampling,
   parsing, LCP, new documents and resource loads, with its Blink build registration and Mojo target,
   in seven frame, document, loader and BUILD files. A lifecycle observer runs before canvas onpaint,

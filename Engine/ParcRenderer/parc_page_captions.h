@@ -1,17 +1,5 @@
 // Copyright 2026 Parc contributors.
-// Captions a page draws itself over a video in picture in picture. Netflix,
-// YouTube, Disney+ and TELUS TV+ draw subtitles as page text over the video
-// rather than as text track cues, which Safari's and Chrome's windows never
-// show; Parc's window shows them, and hides them in the tab meanwhile. The
-// captions are boxes of text over the video outside any control (link, form
-// control, editable or widget role), holding no control, focusable element
-// or the video: a box its player names for captions (caption, subtitles,
-// timed text, text track) over the video at once, any other, a live region
-// too, once it has shown two lines with a gap between, centred above or below
-// the middle of the video. Each is painted alone, at its place, as the cue
-// container is (TextTrackContainer::PaintForPictureInPicture). The video's
-// own text tracks take their place when a viewer sees them.
-// Installed at third_party/blink/renderer/core/html/media/parc_page_captions.h.
+
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_HTML_MEDIA_PARC_PAGE_CAPTIONS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_MEDIA_PARC_PAGE_CAPTIONS_H_
 
@@ -28,38 +16,52 @@
 
 namespace gfx {
 class SizeF;
-}  // namespace gfx
+}
 
 namespace blink {
 
 class Element;
+class HTMLMediaElement;
+class LayoutBoxModelObject;
+class LayoutVideo;
+class TextTrackContainer;
 class HTMLVideoElement;
+
+CORE_EXPORT SkBitmap PaintParcTextTracksForPictureInPicture(
+    TextTrackContainer& text_track_container,
+    HTMLMediaElement& media_element,
+    const gfx::SizeF& window_size,
+    float device_scale_factor,
+    gfx::RectF& bounds);
+CORE_EXPORT bool ParcTextTrackContainerShowsCues(
+    const TextTrackContainer& text_track_container);
+CORE_EXPORT SkBitmap PaintParcLayersForPictureInPicture(
+    const HeapVector<Member<const LayoutBoxModelObject>>& containers,
+    const Vector<gfx::RectF>& areas,
+    const LayoutVideo& video,
+    const gfx::SizeF& window_size,
+    float device_scale_factor,
+    gfx::RectF& bounds);
 
 class CORE_EXPORT ParcPageCaptions final
     : public GarbageCollected<ParcPageCaptions> {
  public:
   explicit ParcPageCaptions(HTMLVideoElement& video);
 
-  // Looks at the page's text over the video, if its document changed since
-  // the last look. Returns whether the captions to show changed.
   bool Update();
-  // The shown captions painted for the window, as
-  // TextTrackContainer::PaintForPictureInPicture paints cues. Empty when none
-  // show.
+
   SkBitmap Paint(const gfx::SizeF& window_size,
                  float device_scale_factor,
                  gfx::RectF& bounds);
-  // The boxes shown as captions, hidden in the tab.
+
   const HeapVector<Member<Element>>& Shown() const { return shown_; }
-  // Shows the captions in the tab again and forgets them.
+
   void Clear();
 
   void Trace(Visitor*) const;
 
  private:
-  // Text over the video in one place of the page, followed over time. Players
-  // replace caption boxes, so a place is the path of tag names and first
-  // classes from the player down.
+
   struct Place {
     String path;
     bool named = false;
@@ -67,13 +69,12 @@ class CORE_EXPORT ParcPageCaptions final
     bool seen_empty = false;
     uint64_t last_seen = 0;
     String text;
-    // Up to two different lines seen there.
+
     Vector<String, 2> lines;
   };
 
   void Show(const HeapVector<Member<Element>>&);
-  // Whether the video's own cues show where a viewer sees them; a page that
-  // hides them draws its own.
+
   bool VideoShowsCues() const;
 
   Member<HTMLVideoElement> video_;
@@ -86,6 +87,6 @@ class CORE_EXPORT ParcPageCaptions final
   uint64_t style_version_ = 0;
 };
 
-}  // namespace blink
+}
 
-#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_HTML_MEDIA_PARC_PAGE_CAPTIONS_H_
+#endif

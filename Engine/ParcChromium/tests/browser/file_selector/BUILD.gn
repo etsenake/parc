@@ -1,5 +1,3 @@
-# Installed at //chrome/browser/parc_tests/file_selector so this owned test
-# target stays beside the browser layer it exercises.
 
 assert(is_mac)
 
@@ -9,6 +7,7 @@ source_set("unit_tests") {
   sources = [ "file_select_helper_test.cc" ]
 
   deps = [
+    "//parc/native:native_file_types",
     "//chrome/browser:file_select_helper",
     "//chrome/test/base:testing_profile",
     "//content/test:test_support",

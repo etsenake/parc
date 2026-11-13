@@ -1,7 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Portions copyright 2020 The Chromium Embedded Framework Authors
-// (cef/libcef/common/chrome/chrome_main_delegate_cef.cc,
-// cef/libcef/common/resource_util.cc).
 #include "parc/parc_main_delegate.h"
 
 #include <optional>
@@ -128,7 +125,7 @@ class ParcContentUtilityClient final : public ChromeContentUtilityClient {
     });
   }
 };
-}  // namespace
+}
 
 ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
     : ChromeMainDelegate({.exe_entry_point_ticks = base::TimeTicks::Now()}),
@@ -165,9 +162,7 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
                                         &HandleNativeDevtoolsKey);
   parc_hooks::SetUnloadControllerLifetime(&OnUnloadControllerCreated,
                                           &OnUnloadControllerDestroyed);
-  parc_hooks::SetUnloadControllerTabEvents(
-      &OnUnloadControllerTabAttached, &OnUnloadControllerTabDetached,
-      &OnUnloadControllerRenderProcessGone, &AbsorbsTabStripEmpty);
+  parc_hooks::SetUnloadControllerTabEvents(&AbsorbsTabStripEmpty);
   parc_hooks::SetUnloadControllerCloseGates(
       &BlocksWindowClose, &HoldsClosingStatus, &BlocksShutdownBeforeUnload);
   parc_hooks::SetUnloadControllerPageGates(&HoldsContents, &UnloadEventsResult,
@@ -197,7 +192,6 @@ ParcMainDelegate::~ParcMainDelegate() {
 }
 
 void ParcMainDelegate::ShutdownBrowser() {
-  // Null after an early exit, before browser startup created it.
   if (browser_runner_) {
     browser_runner_->Shutdown();
     browser_runner_.reset();
@@ -206,9 +200,6 @@ void ParcMainDelegate::ShutdownBrowser() {
 
 void ParcMainDelegate::PreSandboxStartup() {
   const auto& command_line = *base::CommandLine::ForCurrentProcess();
-  // The browser starts with its exact root on --user-data-dir and Chrome
-  // copies it to every child. Chrome's own lookup would also honour a
-  // UserDataDir policy and fall back to a fresh default root.
   const base::FilePath root =
       command_line.GetSwitchValuePath(switches::kUserDataDir);
   if (!root.empty()) {
@@ -225,9 +216,6 @@ void ParcMainDelegate::PreSandboxStartup() {
 }
 
 std::optional<int> ParcMainDelegate::PreBrowserMain() {
-  // Chrome's would register its own NSApplication subclass and switch
-  // Chromium's strings to the macOS language. Parc keeps its application and,
-  // as under CEF, Chromium's US English strings.
   return content::ContentMainDelegate::PreBrowserMain();
 }
 
@@ -235,8 +223,6 @@ std::optional<int> ParcMainDelegate::PostEarlyInitialization(
     InvokedIn invoked_in) {
   auto result = ChromeMainDelegate::PostEarlyInitialization(invoked_in);
   if (!result && std::holds_alternative<InvokedInBrowserProcess>(invoked_in)) {
-    // Local State exists but BrowserProcess doesn't own it yet. Parc opens
-    // its own windows, never Chrome's profile picker.
     chrome_content_browser_client_->startup_data()
         ->chrome_feature_list_creator()
         ->local_state()
@@ -253,7 +239,6 @@ std::variant<int, content::MainFunctionParams> ParcMainDelegate::RunProcess(
                                           std::move(main_function_params));
   }
   browser_runner_ = content::BrowserMainRunner::Create();
-  // -1 means initialized: the caller now runs the main loop.
   const int exit_code =
       browser_runner_->Initialize(std::move(main_function_params));
   return exit_code >= 0 ? exit_code : 0;
@@ -265,7 +250,6 @@ content::ContentClient* ParcMainDelegate::CreateContentClient() {
 
 content::ContentBrowserClient* ParcMainDelegate::CreateContentBrowserClient() {
   CHECK(application_);
-  // As ChromeMainDelegate's own, with Parc's client type.
   chrome_content_browser_client_ =
       std::make_unique<ParcContentBrowserClient>(*application_);
   CHECK(sampling_profiler_);
@@ -290,4 +274,4 @@ content::ContentUtilityClient* ParcMainDelegate::CreateContentUtilityClient() {
   return chrome_content_utility_client_.get();
 }
 
-}  // namespace parc
+}

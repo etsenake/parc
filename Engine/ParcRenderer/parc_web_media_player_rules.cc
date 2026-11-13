@@ -1,6 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Installed by the reviewed overlay at
-// //third_party/blink/renderer/platform/media/parc_web_media_player_rules.cc.
 #include "third_party/blink/renderer/platform/media/parc_web_media_player_rules.h"
 
 #include <algorithm>
@@ -20,13 +18,6 @@
 
 namespace blink {
 
-// Parc: whether the FairPlay Renderer plays every codec `codecs` names: the
-// ones FairPlay's CdmInfo lists, Dolby Vision profile 8, and on a
-// Safari-identity page 10, which it plays without offering them, FLAC,
-// Opus and ALAC (clear; FLAC and ALAC also protected), and on a
-// Safari-identity page PCM ('ipcm', 'fpcm'), AV1, VP9 profiles 0 and 2 and
-// Vorbis (clear), as Safari's renderer switches among everything its Media
-// Source plays. An empty list leaves the decision to the demuxer.
 bool ParcFairPlayChangeTypeSupported(
     bool safari,
     const std::string& content_type,
@@ -126,7 +117,6 @@ bool ParcFairPlayPlaysStreams(const media::PipelineMetadata& metadata,
         }
         break;
       case media::AudioCodec::kPCM: {
-        // As the MP4 parser gives 'ipcm' and 'fpcm'.
         const media::SampleFormat format =
             metadata.audio_decoder_config.sample_format();
         if (format != media::kSampleFormatS16 &&
@@ -144,9 +134,6 @@ bool ParcFairPlayPlaysStreams(const media::PipelineMetadata& metadata,
   return true;
 }
 
-// Parc: the type AVFoundation is told for a file of `container`, for the
-// containers Safari's src= engine (AVFoundation's) plays; WebM, Ogg and the
-// rest play in players that can't play to an AirPlay target, if at all.
 std::optional<std::string> ParcNativeFileMimeType(
     std::optional<media::container_names::MediaContainerName> container,
     bool has_video) {
@@ -191,13 +178,10 @@ void ParcAddStreams(const media::PipelineMetadata& added,
   }
 }
 
-// WebKit's MediaSourcePrivate buffered checks, which
-// MediaSource::monitorSourceBuffers runs.
 WebMediaPlayer::ReadyState ParcSourceBufferReadyState(
     const media::ChunkDemuxer::ParcBufferedState& source,
     base::TimeDelta now,
     bool time_progressing) {
-  // MediaSourcePrivate.h; the future data threshold is 1001/24000 s.
   constexpr base::TimeDelta kStartGapAllowance = base::Seconds(1);
   constexpr base::TimeDelta kMidStreamGapTolerance = base::Milliseconds(125);
   constexpr base::TimeDelta kAudioCoveredGapTolerance =
@@ -206,7 +190,6 @@ WebMediaPlayer::ReadyState ParcSourceBufferReadyState(
   constexpr base::TimeDelta kHaveEnoughDataThreshold = base::Seconds(3);
   const media::Ranges<base::TimeDelta>& buffered = source.buffered;
 
-  // PlatformTimeRanges::nearest; |ranges| isn't empty.
   auto nearest = [](const media::Ranges<base::TimeDelta>& ranges,
                     base::TimeDelta time) {
     base::TimeDelta result;
@@ -249,7 +232,6 @@ WebMediaPlayer::ReadyState ParcSourceBufferReadyState(
     return time <= source.duration && !buffered.empty() &&
            (nearest(buffered, time) - time).magnitude() <= tolerance(time);
   };
-  // PlatformTimeRanges::containWithEpsilon over [start, end].
   auto is_buffered = [&](base::TimeDelta start, base::TimeDelta end) {
     if (end <= start) {
       return has_buffered_time(start);
@@ -311,4 +293,26 @@ WebMediaPlayer::ReadyState ParcSourceBufferReadyState(
   return state;
 }
 
-}  // namespace blink
+media::EmeConfig::Rule ParcSafariFairPlaySessionTypeRule(
+    WebEncryptedMediaSessionType session_type,
+    const std::vector<WebEncryptedMediaSessionType>& session_types,
+    WebMediaKeySystemConfiguration::Requirement persistent_state,
+    media::EmeConfig::Rule rule) {
+  if (session_type == WebEncryptedMediaSessionType::kTemporary) {
+    return persistent_state ==
+                   WebMediaKeySystemConfiguration::Requirement::kRequired
+               ? media::EmeConfig::UnsupportedRule()
+               : rule;
+  }
+  if (session_type == WebEncryptedMediaSessionType::kPersistentLicense) {
+    return std::find(session_types.begin(), session_types.end(),
+                     WebEncryptedMediaSessionType::kTemporary) !=
+                   session_types.end()
+               ? media::EmeConfig{.persistence =
+                                      media::EmeConfigRuleState::kRequired}
+               : media::EmeConfig::UnsupportedRule();
+  }
+  return rule;
+}
+
+}

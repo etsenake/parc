@@ -1,7 +1,8 @@
 // Copyright 2026 Parc contributors.
-// Installed by the reviewed overlay at
-// //third_party/blink/renderer/core/html/media/parc_media_element.cc.
+
 #include "third_party/blink/renderer/core/html/media/parc_media_element.h"
+
+#include "third_party/blink/renderer/core/html/media/parc_page_captions.h"
 
 #include <algorithm>
 #include <cmath>
@@ -50,12 +51,14 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
+#include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/media/remote_playback_client.h"
 #include "third_party/blink/renderer/platform/network/mime/content_type.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/display/screen_info.h"
@@ -66,25 +69,40 @@ namespace blink {
 
 namespace {
 
-// WebKit's maxTimeupdateEventFrequency. The element's progress timer repeats
-// at Chromium's, which is also 250ms.
 constexpr base::TimeDelta kWebKitMaxTimeupdateEventFrequency =
     base::Milliseconds(250);
 
-// The Parc operations of `player`, or null without a player or without them.
 ParcWebMediaPlayerExtension* ParcExtension(WebMediaPlayer* player) {
   return player ? player->GetParcExtension() : nullptr;
 }
 
 parc_hooks::MoveWebMediaPlayer g_parc_move_web_media_player = nullptr;
 
-}  // namespace
+constexpr base::TimeDelta kMediaEndedGestureGrace = base::Seconds(1);
+constexpr base::TimeDelta kBackgroundPlaybackGrace = base::Seconds(10);
+
+using MediaEndedTimes =
+    GCedHeapHashMap<WeakMember<const Document>, base::TimeTicks>;
+
+MediaEndedTimes& UserActivatedMediaEndedTimes() {
+  DEFINE_STATIC_LOCAL(Persistent<MediaEndedTimes>, times,
+                      (MakeGarbageCollected<MediaEndedTimes>()));
+  return *times;
+}
+
+MediaEndedTimes& AudiblePlaybackStoppedTimes() {
+  DEFINE_STATIC_LOCAL(Persistent<MediaEndedTimes>, times,
+                      (MakeGarbageCollected<MediaEndedTimes>()));
+  return *times;
+}
+
+}
 
 namespace parc_hooks {
 MoveWebMediaPlayer SetMoveWebMediaPlayer(MoveWebMediaPlayer hook) {
   return std::exchange(g_parc_move_web_media_player, hook);
 }
-}  // namespace parc_hooks
+}
 
 const char ParcMediaElement::kSupplementName[] = "ParcMediaElement";
 
@@ -103,6 +121,90 @@ ParcMediaElement::ParcMediaElement(HTMLMediaElement& element)
           element.GetDocument().GetTaskRunner(TaskType::kInternalMedia),
           this,
           &ParcMediaElement::RemoteScrubEndTimerFired) {}
+
+bool ParcMediaElement::ProcessingUserGestureForMedia(const Document& document) {
+  if (LocalFrame::HasTransientUserActivation(document.GetFrame())) {
+    return true;
+  }
+  const MediaEndedTimes& times = UserActivatedMediaEndedTimes();
+  auto it = times.find(&document);
+  return it != times.end() &&
+         base::TimeTicks::Now() - it->value <= kMediaEndedGestureGrace;
+}
+
+void ParcMediaElement::NoteUserActivatedMediaEnded(const Document& document) {
+  UserActivatedMediaEndedTimes().Set(&document, base::TimeTicks::Now());
+}
+
+bool ParcMediaElement::WithinBackgroundGrace() const {
+  const base::TimeTicks now = base::TimeTicks::Now();
+  if (playback_stopped_ &&
+      now - *playback_stopped_ <= kBackgroundPlaybackGrace) {
+    return true;
+  }
+  const MediaEndedTimes& times = AudiblePlaybackStoppedTimes();
+  auto it = times.find(&Media().GetDocument());
+  return it != times.end() && now - it->value <= kBackgroundPlaybackGrace;
+}
+
+void ParcMediaElement::PlaybackStopped() {
+  playback_stopped_ = base::TimeTicks::Now();
+  if (Media().HasAudio() && Media().EffectiveMediaVolume()) {
+    AudiblePlaybackStoppedTimes().Set(&Media().GetDocument(),
+                                      *playback_stopped_);
+  }
+}
+
+void ParcMediaElement::LoadWillStart() {
+  hidden_autoplay_granted_ = Media().Autoplay() && WithinBackgroundGrace();
+}
+
+bool ParcMediaElement::PlaybackPermitted(bool created_during_media_gesture,
+                                         bool audio_reported,
+                                         bool for_autoplay) const {
+  const HTMLMediaElement& element = Media();
+  const Document& document = element.GetDocument();
+  if (document.IsMediaDocument() && document.IsInMainFrame()) {
+    return true;
+  }
+  const bool gesture = ProcessingUserGestureForMedia(document);
+  const bool has_audio = audio_reported || element.HasAudio();
+  const bool stream =
+      element.GetLoadType() == WebMediaPlayer::kLoadTypeMediaStream;
+  const bool playing_audio = DocumentIsPlayingAudio(document);
+  if (element.paused() && document.hidden() && !gesture && !stream &&
+      element.EffectiveMediaVolume() &&
+      (!IsA<HTMLVideoElement>(element) ||
+       element.getReadyState() < HTMLMediaElement::kHaveMetadata ||
+       has_audio) &&
+      !playing_audio && !WithinBackgroundGrace() &&
+      !(for_autoplay && hidden_autoplay_granted_)) {
+    return false;
+  }
+  if (AutoplayPolicy::GetAutoplayPolicyForDocument(document) ==
+          AutoplayPolicy::Type::kNoUserGestureRequired ||
+      AutoplayPolicy::DocumentHasForceAllowFlag(document) ||
+      AutoplayPolicy::DocumentHasUserExceptionFlag(document)) {
+    return true;
+  }
+  if (created_during_media_gesture || had_media_user_gesture_) {
+    return true;
+  }
+  if (stream && (AutoplayPolicy::DocumentIsCapturingUserMedia(document) ||
+                 playing_audio)) {
+    return true;
+  }
+  if (IsA<HTMLVideoElement>(element) && document.GetPage() &&
+      ParcPageMediaState::From(*document.GetPage()).MediaPowerRestricted() &&
+      !gesture) {
+    return false;
+  }
+  if ((IsA<HTMLVideoElement>(element) && !has_audio) ||
+      !element.EffectiveMediaVolume()) {
+    return true;
+  }
+  return ProcessingUserGestureForMedia(document);
+}
 
 void ParcMediaElement::Trace(Visitor* visitor) const {
   visitor->Trace(periodic_timeupdate_);
@@ -157,7 +259,7 @@ MIMETypeRegistry::SupportsType ParcMediaElement::SupportsType(
       }
       others.Append(id);
     }
-    // A malformed list (an empty entry) answers as before.
+
     if (dolby_vision && !empty_entry) {
       if (!other_count) {
         return MIMETypeRegistry::kSupported;
@@ -171,7 +273,7 @@ MIMETypeRegistry::SupportsType ParcMediaElement::SupportsType(
           ContentType(without_dolby_vision.ToString()));
     }
   }
-#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
+#endif
   return HTMLMediaElement::GetSupportsType(content_type);
 }
 
@@ -191,8 +293,7 @@ String ParcMediaElement::WebKitPlayErrorMessage(DOMExceptionCode code) {
 }
 
 void ParcMediaElement::NoteMediaUserGesture() {
-  if (AutoplayPolicy::ParcProcessingUserGestureForMedia(
-          Media().GetDocument())) {
+  if (ProcessingUserGestureForMedia(Media().GetDocument())) {
     had_media_user_gesture_ = true;
   }
 }
@@ -221,12 +322,6 @@ void ParcMediaElement::BeginAutoplay() {
   element.can_autoplay_ = false;
 }
 
-// WebKit (HTMLMediaElement::postConnectionSteps and loadResource): the first
-// of these sets m_explicitlyMuted and m_muted from the attribute, without a
-// volumechange; from then on the attribute no longer changes muted. Use the
-// current document here, not the creation document: adoption before either
-// boundary must still let a Safari document latch the attribute. Without
-// MediaElementMutedDefaultState, Chrome reads muted_ even before this latch.
 void ParcMediaElement::LatchMutedAttribute() {
   HTMLMediaElement& element = Media();
   if (!element.muted_is_default_) {
@@ -245,8 +340,7 @@ bool ParcMediaElement::PresentsParcSafariIdentity() const {
 }
 
 bool ParcMediaElement::ParcPreparesToPlay() const {
-  // Only the native HLS route asks, under Safari's identity, where the
-  // effective preload follows WebKit's rules.
+
   return Media().EffectivePreloadType() == WebMediaPlayer::kPreloadAuto;
 }
 
@@ -255,14 +349,12 @@ void ParcMediaElement::PrepareToPlay() {
     return;
   }
   has_ever_prepared_to_play_ = true;
-  // WebKit's player->prepareToPlay(): the player's preload becomes auto, and
-  // a load deferred at preload none starts.
+
   Media().SetPlayerPreload();
 }
 
 void ParcMediaElement::PrepareToPlayIfCouldPlay() {
-  // WebKit's potentiallyPlaying holds once readyState has reached
-  // HAVE_FUTURE_DATA on this load, a stall since included.
+
   NoteFutureDataAsWebKit();
   if (Media().CouldPlayIfEnoughData() && !had_future_data_as_webkit_) {
     PrepareToPlay();
@@ -270,8 +362,7 @@ void ParcMediaElement::PrepareToPlayIfCouldPlay() {
 }
 
 void ParcMediaElement::NoteFutureDataAsWebKit() {
-  // Sampled as readyState and the preload change, since WebKit's player
-  // keeps the data it has when its preload is lowered.
+
   if (!had_future_data_as_webkit_ &&
       ready_state_maximum_ >= HTMLMediaElement::kHaveFutureData &&
       PresentsParcSafariIdentity()) {
@@ -281,9 +372,7 @@ void ParcMediaElement::NoteFutureDataAsWebKit() {
 
 bool ParcMediaElement::HasFutureDataAsWebKit(
     HTMLMediaElement::ReadyState state) const {
-  // WebKit's AVFoundation player has data past metadata only once its
-  // preload is auto (it has no item before), or for a Media Source, a media
-  // stream or a live stream; Chromium's may at a lower preload.
+
   if (state < HTMLMediaElement::kHaveFutureData) {
     return false;
   }
@@ -308,10 +397,7 @@ bool ParcMediaElement::PotentiallyPlayingForEvents() const {
   if (!PresentsParcSafariIdentity()) {
     return element.PotentiallyPlaying();
   }
-  // WebKit's potentiallyPlaying, which decides `waiting`: from
-  // HAVE_FUTURE_DATA, or below it once the element has had that much.
-  // PotentiallyPlaying() still starts the player from HAVE_METADATA, which
-  // buffers it there as WebKit's prepareToPlay (updatePlayState) does.
+
   return (element.ready_state_ >= HTMLMediaElement::kHaveFutureData ||
           ready_state_maximum_ >= HTMLMediaElement::kHaveFutureData) &&
          element.CouldPlayIfEnoughData();
@@ -327,9 +413,7 @@ void ParcMediaElement::PrepareForLoad() {
 
 void ParcMediaElement::ParcVideoLayerSize(gfx::SizeF* size,
                                           float* scale) const {
-  // WebKit's initial video layer size is the element's content box
-  // (mediaPlayerContentBoxRect). Layout here is in physical pixels (zoom for
-  // device scale), so the display's scale divides it back to points.
+
   HTMLMediaElement& element = Media();
   if (!element.IsHTMLVideoElement()) {
     return;
@@ -352,12 +436,6 @@ void ParcMediaElement::ParcVideoLayerSize(gfx::SizeF* size,
   *scale = device_scale;
 }
 
-// Under Safari's identity, a MediaSource that ends with an error runs the
-// failure steps in the same task, as WebKit's
-// MediaSource::streamEndedWithError does (mediaLoadingFailed before metadata,
-// mediaLoadingFailedFatally after), so they close it before the page's
-// handlers run. The player's own report of that error is ignored
-// (SetNetworkState()), and one it has already made stands.
 void ParcMediaElement::MediaSourceEndedWithError(bool network_error) {
   HTMLMediaElement& element = Media();
   if (!PresentsParcSafariIdentity() || media_source_failed_ || element.error_ ||
@@ -381,12 +459,7 @@ void ParcMediaElement::MediaSourceEndedWithError(bool network_error) {
 }
 
 void ParcMediaElement::MediaSourceEnded() {
-  // WebKit: Safari's Media Source player reports Loaded, its only network
-  // state but an error, once the stream ends without one
-  // (MediaPlayerPrivateMediaSourceAVFObjC::mediaSourceHasRetrievedAllData).
-  // That report reaches the element later, from the GPU process
-  // (HTMLMediaElement::mediaPlayerNetworkStateChanged), never within
-  // endOfStream().
+
   if (PresentsParcSafariIdentity()) {
     media_source_ended_task_ = PostCancellableTask(
         *Media().GetDocument().GetTaskRunner(TaskType::kMediaElementEvent),
@@ -404,9 +477,6 @@ bool ParcMediaElement::CancelsLoadWhenMediaSourceDetaches() const {
   return PresentsParcSafariIdentity();
 }
 
-// WebKit's mediaSourceWasDetached(), which runs userCancelledLoad(). A
-// pending MediaSourceLoaded() counts as loaded: it arrives on another task
-// queue than this notification.
 void ParcMediaElement::MediaSourceWasDetached() {
   HTMLMediaElement& element = Media();
   if (!PresentsParcSafariIdentity() ||
@@ -415,20 +485,12 @@ void ParcMediaElement::MediaSourceWasDetached() {
     return;
   }
 
-  // 1 - The user agent should cancel the fetching process. WebKit's
-  // clearMediaPlayer() also drops a queued seek (cancelPendingTasks), leaving
-  // seeking set.
   if (element.playing_) {
-    element.autoplay_policy_->ParcPlaybackStopped();
+    PlaybackStopped();
   }
   element.ClearMediaPlayer();
   CancelPendingSeek();
 
-  // WebKit resets readyState without events since the player is gone, and
-  // without a player or MediaSource reports no duration and time 0, seeking
-  // or not (durationMediaTime, currentMediaTime). The controls reset before
-  // the error is set: with an error they pause, which could select a
-  // resource again.
   const bool had_nothing =
       element.ready_state_ == HTMLMediaElement::kHaveNothing;
   element.ready_state_ = HTMLMediaElement::kHaveNothing;
@@ -440,17 +502,11 @@ void ParcMediaElement::MediaSourceWasDetached() {
     element.GetMediaControls()->Reset();
   }
 
-  // 2 - Set the error attribute to a new MediaError object whose code
-  // attribute is set to MEDIA_ERR_ABORTED.
   element.SetError(MakeGarbageCollected<MediaError>(
       MediaError::kMediaErrAborted, "Load was aborted"));
 
-  // 3 - Queue a task to fire a simple event named abort at the media element.
   element.ScheduleNamedEvent(event_type_names::kAbort);
 
-  // 4 - If readyState is HAVE_NOTHING, set networkState to NETWORK_EMPTY, set
-  // the show poster flag to true and fire emptied; otherwise set networkState
-  // to NETWORK_IDLE.
   if (had_nothing) {
     element.SetNetworkState(HTMLMediaElement::kNetworkEmpty);
     element.SetShowPosterFlag(true);
@@ -459,10 +515,8 @@ void ParcMediaElement::MediaSourceWasDetached() {
     element.SetNetworkState(HTMLMediaElement::kNetworkIdle);
   }
 
-  // 5 - Set the element's delaying-the-load-event flag to false.
   element.SetShouldDelayLoadEvent(false);
 
-  // 6 - Abort the overall resource selection algorithm.
   element.current_source_node_ = nullptr;
 
   element.UpdatePlayState();
@@ -509,16 +563,9 @@ bool ParcMediaElement::StopWaitingForKey() {
   return true;
 }
 
-// WebKit's HTMLMediaElement::seekWithTolerance: seeking and the target
-// (clamped to the duration) show at once; a page's seek continues in a queued
-// task, which a further seek before it runs replaces, keeping the position
-// the first started from. Seeks of the element's own run it at once
-// (seekInternal).
 void ParcMediaElement::Seek(double time) {
   HTMLMediaElement& element = Media();
-  // If the player has been told to postpone loading data, let it go ahead:
-  // a seek before there is future data, at a preload attribute below auto,
-  // prepares to play.
+
   if (element.PreloadType() != WebMediaPlayer::kPreloadAuto &&
       !HasFutureDataAsWebKit(element.ready_state_)) {
     PrepareToPlay();
@@ -552,7 +599,6 @@ void ParcMediaElement::PostSeekTask() {
       BindOnce(&ParcMediaElement::SeekTask, WrapWeakPersistent(this)));
 }
 
-// WebKit's HTMLMediaElement::seekTask.
 void ParcMediaElement::SeekTask() {
   HTMLMediaElement& element = Media();
   const PendingSeek seek = *pending_seek_;
@@ -563,12 +609,9 @@ void ParcMediaElement::SeekTask() {
     return;
   }
 
-  // The player's start time is zero in WebKit on macOS.
   double time = std::max(std::min(seek.time, element.duration()), 0.0);
   time = element.web_media_player_->MediaTimeForTimeValue(time);
 
-  // A precise seek to the current position needs no seek of the player,
-  // unless a fast seek is still with it or an open Media Source must flush.
   WebTimeRanges seekable_ranges = element.SeekableInternal();
   const bool precise = !seek.tolerance_before;
   bool no_seek_required =
@@ -579,7 +622,7 @@ void ParcMediaElement::SeekTask() {
     no_seek_required = false;
   }
   if (no_seek_required) {
-    // WebKit returns before touching m_sentEndEvent, even at rate zero.
+
     if (time == seek.now) {
       element.ScheduleNamedEvent(event_type_names::kSeeking);
       element.ScheduleTimeupdateEvent(false);
@@ -588,13 +631,12 @@ void ParcMediaElement::SeekTask() {
     ClearSeeking();
     return;
   }
-  // PlatformTimeRanges::nearest: a tie goes to the earliest range.
+
   time =
       seekable_ranges.Nearest(time, -std::numeric_limits<double>::infinity());
 
   element.last_seek_time_ = time;
-  // A seek landing on the end leaves playback ended (endedPlayback, either
-  // direction), so `ended` doesn't fire again.
+
   const bool lands_ended = element.playbackRate() > 0
                                ? element.duration() > 0 &&
                                      time >= element.duration() &&
@@ -631,8 +673,6 @@ void ParcMediaElement::ResetSeekState() {
   player_finished_seek_ = false;
 }
 
-// Only the player finishes a seek; one still in its task hasn't reached it.
-// An earlier seek with the player still finishes, as WebKit's seek promise.
 bool ParcMediaElement::SeekAwaitsTask() const {
   return seek_task_.IsActive() && !seek_with_player_;
 }
@@ -654,10 +694,7 @@ void ParcMediaElement::SetCurrentTimeForBindings(
     double time,
     ExceptionState& exception_state) {
   if (PresentsParcSafariIdentity()) {
-    // WebKit's setCurrentTimeForBindings clamps to [0, DBL_MAX]: +Infinity
-    // (`currentTime = duration` on a live stream) seeks to the end of the
-    // seekable range, the live edge, and -Infinity to 0. A NaN seek lands
-    // on time 0 in WebKit (its nearest seekable point of an invalid time).
+
     time = std::isnan(time)
                ? 0
                : std::clamp(time, 0.0, std::numeric_limits<double>::max());
@@ -665,19 +702,13 @@ void ParcMediaElement::SetCurrentTimeForBindings(
     Media().setCurrentTime(time);
     return;
   } else if (!std::isfinite(time)) {
-    // What the bindings say for a restricted double.
+
     exception_state.ThrowTypeError("The provided double value is non-finite.");
     return;
   }
   Media().setCurrentTime(time);
 }
 
-// WebKit's HTMLMediaElement::fastSeek: a seek that may land early, at a
-// keyframe the player can start from promptly. Forward it lands no earlier
-// than the current position, backward anywhere before the target, never
-// after the target (seekWithTolerance with a negative threshold of the
-// distance, or infinite going back, and no positive one). Before metadata it
-// does nothing. Non-finite times are taken as currentTime takes them here.
 void ParcMediaElement::FastSeek(double time) {
   time = std::isnan(time)
              ? 0
@@ -691,8 +722,7 @@ void ParcMediaElement::FastSeek(double time) {
 }
 
 ScriptObject ParcMediaElement::GetStartDate(ScriptState* script_state) const {
-  // WebKit: NaN without a player, otherwise the player's start date; a Date
-  // either way (an Invalid Date for NaN).
+
   ParcWebMediaPlayerExtension* parc =
       ParcExtension(Media().web_media_player_.get());
   double date =
@@ -703,9 +733,7 @@ ScriptObject ParcMediaElement::GetStartDate(ScriptState* script_state) const {
 }
 
 double ParcMediaElement::PlayerPlaybackRate() const {
-  // WebKit passes the exact rate to the player (setPlaybackRate). Negative
-  // Media Source rates stop its sample-buffer renderer; URL players decide
-  // whether their backend supports reverse playback.
+
   HTMLMediaElement& element = Media();
   if (PresentsParcSafariIdentity()) {
     return element.GetLoadType() == WebMediaPlayer::kLoadTypeMediaSource
@@ -720,7 +748,7 @@ void ParcMediaElement::ScheduleTimeupdateEvent(bool periodic_event) {
   const base::TimeTicks now = base::TimeTicks::Now();
   const base::TimeDelta since_last = now - last_timeupdate_clock_;
   if (periodic_event && since_last < kWebKitMaxTimeupdateEventFrequency) {
-    // Fire when the interval is up, then repeat from there.
+
     element.playback_progress_timer_.Stop();
     element.playback_progress_timer_.StartOneShot(
         kWebKitMaxTimeupdateEventFrequency - since_last);
@@ -774,8 +802,7 @@ void ParcMediaElement::ScheduleCueTimeupdate() {
   if (!PresentsParcSafariIdentity() || Media().seeking_) {
     return;
   }
-  // WebKit's finishSeek runs the cue update in a task after its timeupdate
-  // and seeked.
+
   if (finishing_seek_) {
     cue_timeupdate_after_seek_ = true;
     return;
@@ -783,8 +810,6 @@ void ParcMediaElement::ScheduleCueTimeupdate() {
   Media().ScheduleTimeupdateEvent(true);
 }
 
-// WebKit's mediaPlayerTimeChanged for a time the player reports outside a
-// seek; the end comes through TimeChanged().
 void ParcMediaElement::ParcPlayerTimeChanged() {
   HTMLMediaElement& element = Media();
   if (!PresentsParcSafariIdentity() || !element.web_media_player_ ||
@@ -824,8 +849,7 @@ void ParcMediaElement::ParcWebKitKeyRequest(std::string_view key_uri) {
 void ParcMediaElement::ParcSetInbandTextTracks(
     const std::vector<media::ParcInbandTextTrack>& tracks,
     media::ParcInbandTextTrackModeCB set_mode) {
-  // Only Safari's native HLS route reports in-band text tracks, and it plays
-  // only under Safari's identity.
+
   if (!PresentsParcSafariIdentity()) {
     return;
   }
@@ -849,8 +873,7 @@ void ParcMediaElement::ParcSetInbandTextTracks(
       existing->SetModeCallback(set_mode);
       continue;
     }
-    // As WebKit's HTMLMediaElement::addTextTrack for an in-band track: listed
-    // disabled, then automatic selection decides its mode.
+
     list->Append(
         MakeGarbageCollected<ParcInbandTextTrack>(info, element, set_mode));
     added = true;
@@ -863,14 +886,14 @@ void ParcMediaElement::ParcSetInbandTextTracks(
 void ParcMediaElement::ParcSetInbandAudioTracks(
     const std::vector<media::ParcInbandAudioTrack>& tracks,
     media::ParcInbandAudioTrackEnabledCB set_enabled) {
-  // Only Safari's native HLS route reports these, under Safari's identity.
+
   if (!PresentsParcSafariIdentity()) {
     return;
   }
   HTMLMediaElement& element = Media();
   set_inband_audio_track_enabled_ = std::move(set_enabled);
   if (!reports_inband_audio_tracks_) {
-    // A placeholder made before the player's first list goes.
+
     reports_inband_audio_tracks_ = true;
     HeapVector<Member<AudioTrack>> others;
     for (unsigned i = 0; i < element.audioTracks().length(); ++i) {
@@ -900,17 +923,16 @@ void ParcMediaElement::ParcSetInbandAudioTracks(
     const String key = String::FromUtf8(info.key);
     auto it = inband_audio_tracks_.find(key);
     if (it != inband_audio_tracks_.end()) {
-      // WebKit's AudioTrack follows its private track's enabled state.
+
       it->value->setEnabled(info.enabled, TrackBase::ChangeSource::kDemuxer);
       continue;
     }
-    // Not exclusive: as in WebKit, enabling one leaves the others enabled
-    // until the player reports its selection.
+
     auto* track = MakeGarbageCollected<AudioTrack>(
         String::FromUtf8(info.id), AtomicString(String::FromUtf8(info.kind)),
         AtomicString(String::FromUtf8(info.label)),
         AtomicString(String::FromUtf8(info.language)), info.enabled,
-        /*exclusive=*/false, /*webkit_kinds=*/true);
+        false, true);
     inband_audio_tracks_.Set(key, track);
     element.audioTracks().Add(track);
   }
@@ -957,7 +979,7 @@ ParcInbandTextTrack* ParcMediaElement::FindInbandTextTrack(
 }
 
 void ParcMediaElement::RemoveInbandTextTrack(ParcInbandTextTrack* track) {
-  // As DidRemoveTrackElement; the track's cues leave the timeline with it.
+
   HTMLMediaElement& element = Media();
   element.GetDocument().GetStyleEngine().RemoveTextTrack(track);
   element.text_tracks_->Remove(track);
@@ -972,8 +994,7 @@ void ParcMediaElement::ForgetResourceSpecificTracks() {
   inband_audio_tracks_.clear();
   set_inband_audio_track_enabled_.Reset();
   reports_inband_audio_tracks_ = false;
-  // And the native HLS route's in-band text tracks, as WebKit's
-  // forgetResourceSpecificTracks.
+
   HTMLMediaElement& element = Media();
   if (element.text_tracks_) {
     HeapVector<Member<TextTrack>> inband(element.text_tracks_->InbandTracks());
@@ -983,9 +1004,6 @@ void ParcMediaElement::ForgetResourceSpecificTracks() {
   }
 }
 
-// WebKit's HTMLMediaElement::handleSeekToPlaybackPosition on macOS: a seek
-// from the system's media controls runs as a page's, and the first of a scrub
-// pauses playing media until a seek finishes (finishSeek).
 void ParcMediaElement::HandleSeekToPlaybackPosition(double position) {
   HTMLMediaElement& element = Media();
   {
@@ -1004,14 +1022,10 @@ void ParcMediaElement::HandleSeekToPlaybackPosition(double position) {
   }
 }
 
-// WebKit's seekToPlaybackPositionEndedTimerFired.
 void ParcMediaElement::RemoteScrubEndTimerFired(TimerBase*) {
   scrubbing_remotely_ = false;
 }
 
-// WebKit PlaybackSessionModelMediaElement forwards playback controls to
-// beginScrubbing/endScrubbing and setCurrentTimeWithTolerance, not remote
-// seeks.
 void ParcMediaElement::HandlePlaybackControlsAction(
     media_session::mojom::blink::PlaybackControlsAction action,
     base::TimeDelta seek_time) {
@@ -1068,10 +1082,6 @@ void ParcMediaElement::StopScrubbing() {
   was_playing_before_seeking_ = false;
 }
 
-// WebKit's suspend() stops playback only for the back/forward cache, without
-// events and keeping its player and position
-// (stopWithoutDestroyingMediaPlayer), and resume() plays on
-// (setPausedInternal(false)); it leaves media alone for other suspensions.
 bool ParcMediaElement::ContextLifecycleStateChanged(
     mojom::blink::FrameLifecycleState state) {
   HTMLMediaElement& element = Media();
@@ -1101,11 +1111,7 @@ bool ParcMediaElement::ContextLifecycleStateChanged(
 }
 
 void ParcMediaElement::ResumeAfterBackForwardCacheIfAllowed() {
-  // WebKit's resume() plays on only once its page can start media
-  // (MediaElementSession::pageAllowsPlaybackAfterResuming), which WebKit
-  // allows while the page's view is in a window (WebPage::updateIsInWindow);
-  // otherwise it waits for that (mediaCanStart). Visibility cannot distinguish
-  // a background tab from a minimised or covered active tab.
+
   HTMLMediaElement& element = Media();
   ExecutionContext* context = element.GetExecutionContext();
   if (!paused_for_back_forward_cache_ || !context ||
@@ -1120,11 +1126,7 @@ void ParcMediaElement::ResumeAfterBackForwardCacheIfAllowed() {
 }
 
 void ParcMediaElement::UpdatePlayerPageVisibility() {
-  // WebKit's element tells its player its own document's visibility
-  // (visibilityStateChanged) wherever it moved. A player kept across documents
-  // (DidMoveToNewDocument) belongs to the frame that made it, whose page can be
-  // another one. Hidden but painting counts as visible, as for that frame's
-  // page (RendererWebMediaPlayerDelegate::IsPageHidden).
+
   HTMLMediaElement& element = Media();
   if (!element.web_media_player_ || !PresentsParcSafariIdentity()) {
     return;
@@ -1178,8 +1180,6 @@ bool ParcMediaElement::IsPictureInPictureElementOf(Document* document) const {
   return controller && controller->PictureInPictureElement() == &Media();
 }
 
-// As WebKit's player, which follows the element on the move: the picture in
-// picture that held this one back is over, or went with the old document.
 void ParcMediaElement::PictureInPictureEnded() {
   if (player_waits_for_picture_in_picture_end_ && Media().web_media_player_) {
     MovePlayerToFrame();
@@ -1188,19 +1188,16 @@ void ParcMediaElement::PictureInPictureEnded() {
 
 void ParcMediaElement::OpenerContextDestroyed() {
   HTMLMediaElement& element = Media();
-  // A notifier that went can't be asked to stop (AttachToNewFrame()).
+
   element.opener_context_observer_ = nullptr;
   if (player_waits_for_picture_in_picture_end_ && element.web_media_player_) {
-    // Picture in picture ended with the document it was entered from, which
-    // can't say so (PictureInPictureControllerImpl's document is gone). A
-    // video also hides the interstitial picture in picture left behind, then
-    // ends it as its own exit does.
+
     if (auto* video = DynamicTo<HTMLVideoElement>(element)) {
       video->OnExitedPictureInPicture();
     } else {
       PictureInPictureEnded();
     }
-    // Moved (MovePlayerToFrame()).
+
     if (!element.opener_document_) {
       return;
     }
@@ -1208,12 +1205,6 @@ void ParcMediaElement::OpenerContextDestroyed() {
   element.AttachToNewFrame();
 }
 
-// As WebKit's player belongs to its element wherever it is, which registers
-// with its new document (HTMLMediaElement::didMoveToNewDocument and
-// registerWithDocument): the player keeps playing when the frame that made it
-// goes, the new frame's browser side shows and mutes its sound in that frame's
-// tab, and Now Playing, the media keys and picture in picture reach it there.
-// Closing the mojo endpoints of the old frame ends the player there.
 bool ParcMediaElement::MovePlayerToFrame() {
   HTMLMediaElement& element = Media();
   player_waits_for_picture_in_picture_end_ = false;
@@ -1227,7 +1218,7 @@ bool ParcMediaElement::MovePlayerToFrame() {
     parc->ParcReportStateToClient();
   }
   element.OnRemotePlaybackMetadataChange();
-  // What the video tells its new frame's browser side itself.
+
   if (auto* video = DynamicTo<HTMLVideoElement>(element)) {
     video->UpdatePictureInPictureAvailability();
     video->last_reported_video_frame_availability_ = false;
@@ -1253,8 +1244,9 @@ SkBitmap ParcMediaElement::PaintTextTracksForPictureInPicture(
   if (!element.IsHTMLVideoElement() || !element.TextTracksVisible()) {
     return SkBitmap();
   }
-  return element.EnsureTextTrackContainer().PaintForPictureInPicture(
-      window_size, device_scale_factor, bounds);
+  return PaintParcTextTracksForPictureInPicture(
+      element.EnsureTextTrackContainer(), element, window_size,
+      device_scale_factor, bounds);
 }
 
 ParcMediaElement::PageObserver::PageObserver(ParcMediaElement* parc)
@@ -1279,8 +1271,7 @@ void ParcMediaElement::PageObserver::Trace(Visitor* visitor) const {
 }
 
 void ParcMediaElement::PageObserver::PageInWindowChanged(Page& page) {
-  // A destroyed page ends observation without leaving `page`'s list; only the
-  // page still observed counts, as with Page's own observer list.
+
   if (GetPage() != &page) {
     return;
   }
@@ -1288,12 +1279,11 @@ void ParcMediaElement::PageObserver::PageInWindowChanged(Page& page) {
 }
 
 void ParcMediaElement::PageObserver::PageVisibilityChanged() {
-  // Page::SetVisibilityState iterates its observers, so this must not change
-  // which page is observed.
+
   if (GetPage() == parc_->Media().GetDocument().GetPage()) {
     parc_->UpdatePlayerPageVisibility();
   }
   parc_->ResumeAfterBackForwardCacheIfAllowed();
 }
 
-}  // namespace blink
+}

@@ -7,8 +7,6 @@
 
 namespace parc {
 
-// Chrome's WebContentsDelegate for a native Browser, with Parc's link, Peek,
-// split, key, hang and dialog routes. Owned by BrowserWindowFeatures.
 class NativeBrowserWebContentsDelegate final
     : public BrowserWebContentsDelegate {
  public:
@@ -27,7 +25,8 @@ class NativeBrowserWebContentsDelegate final
       const NativeBrowserWebContentsDelegate&) = delete;
   ~NativeBrowserWebContentsDelegate() override;
 
-  // content::WebContentsDelegate:
+  content::PictureInPictureResult EnterPictureInPicture(
+      content::WebContents* web_contents) override;
   bool HandleKeyboardEvent(content::WebContents* source,
                            const input::NativeWebKeyboardEvent& event) override;
   content::PreloadingEligibility IsPrerender2Supported(
@@ -72,5 +71,5 @@ class NativeBrowserWebContentsDelegate final
   const raw_ref<BrowserWindowInterface> browser_;
 };
 
-}  // namespace parc
-#endif  // PARC_NATIVE_NATIVE_BROWSER_WEB_CONTENTS_DELEGATE_H_
+}
+#endif

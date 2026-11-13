@@ -1,5 +1,6 @@
 // Copyright 2026 Parc contributors.
 #include "file_dialog.h"
+#include "native_file_types.h"
 #include "download_file_dialog.h"
 
 #import <AppKit/AppKit.h>
@@ -42,9 +43,7 @@ namespace parc {
 namespace {
 NativeDownloadDialogParentCallbacks download_parent_callbacks;
 content::WebContents* PrintInitiator(content::WebContents& preview) {
-  // TOOLS16: Print/Save stay Chromium IDC_PRINT / IDC_SAVE_PAGE. Save-to-PDF is
-  //
-  // "Save as PDF" accessory was recovered.
+
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
   auto* controller = printing::PrintPreviewDialogController::GetInstance();
   return controller ? controller->GetInitiator(&preview) : nullptr;
@@ -68,7 +67,7 @@ class PrintInitiatorObserver final : public content::WebContentsObserver {
  private:
   void Cancel() {
     auto cancel = cancel_;
-    cancel.Run();  // May release this observer. No later member access.
+    cancel.Run();
   }
   base::RepeatingClosure cancel_;
 };
@@ -100,9 +99,7 @@ class NativeFileDialog final : public ui::SelectFileDialog,
     CHECK(NSThread.isMainThread);
     auto* tab = tabs::TabInterface::MaybeGetFromContents(&contents);
     if (!tab) {
-      // Print Preview is an actual constrained WebContents, not a tab. Its
-      // Save to PDF picker belongs to the preview window, while the real
-      // controller and original document supply the authority/lifetime.
+
       if (auto* initiator = PrintInitiator(contents)) {
         preview_initiator_ = initiator->GetWeakPtr();
         preview_identity_ = initiator;
@@ -164,8 +161,7 @@ class NativeFileDialog final : public ui::SelectFileDialog,
         Cancel();
         return;
       }
-      // Preparing a real shell window can reenter native ownership callbacks.
-      // Keep the exact item/profile lease and revalidate after that boundary.
+
       window = download_parent_callbacks.prepare(*profile_);
       if (done_) {
         return;
@@ -185,8 +181,7 @@ class NativeFileDialog final : public ui::SelectFileDialog,
       Cancel();
       return;
     }
-    // Acquisition notifies other native security UI. It may detach the page
-    // or destroy its owner, so no engine/native pointer is assumed afterward.
+
     auto reservation =
         [PCNativeWindowSecurityReservation acquireForWindow:parent_];
     if (done_ || !Valid() || !reservation.isOnlyReservation ||
@@ -215,9 +210,7 @@ class NativeFileDialog final : public ui::SelectFileDialog,
                     weak->Cancel();
                   }
                 }];
-    // Chromium's own Mac dialog, bypassing this file's factory, retains every
-    // type/extension/tag/panel option. The base class already applied the
-    // policy before SelectFileImpl.
+
     inner_ = base::MakeRefCounted<ui::SelectFileDialogImpl>(this, nullptr);
     multiple_types_ = types ? types->extensions.size() > 1 : true;
     auto inner = inner_;
@@ -275,8 +268,7 @@ class NativeFileDialog final : public ui::SelectFileDialog,
   ~NativeFileDialog() override {
     listener_ = nullptr;
     external_listener_ = nullptr;
-    // Owners call ListenerDestroyed before releasing; destructor cannot
-    // construct a new refcount lease or call a dead external listener.
+
     if (inner_) {
       inner_->ListenerDestroyed();
     }
@@ -373,9 +365,7 @@ class NativeFileDialog final : public ui::SelectFileDialog,
            web_contents()->GetNativeView().GetNativeNSView().window == parent_;
   }
   bool CanAcceptSelection() const {
-    // The actual panel may already have detached when its Mojo result arrives.
-    // Lease identity, not parent.attachedSheet (which could now be unrelated),
-    // decides whether this chooser still owns the security interaction.
+
     return Valid() && reservation_.isOnlyReservation;
   }
   void Finish(bool accepted,
@@ -417,16 +407,10 @@ class NativeFileDialog final : public ui::SelectFileDialog,
         listener->FileSelected(files.front(), index);
       }
     }
-    // Release after terminal delivery: observers cannot invalidate a borrowed
-    // listener before we call it. Keep inner locally alive through both
-    // callback boundaries; either may enter a nested run loop. No member access
-    // follows.
+
     [reservation invalidate];
     if (inner) {
-      // Mac FileWasSelected erases its dialog record before listener delivery
-      // and accesses no members after it. Queue retirement only after external
-      // callbacks return, using a nonnestable task to retain the actual runner
-      // until the remaining upstream callback frame has unwound.
+
       base::SingleThreadTaskRunner::GetCurrentDefault()->PostNonNestableTask(
           FROM_HERE, base::BindOnce([](scoped_refptr<ui::SelectFileDialog>) {},
                                     std::move(inner)));
@@ -437,8 +421,7 @@ class NativeFileDialog final : public ui::SelectFileDialog,
   base::WeakPtr<content::WebContents> preview_initiator_;
   content::WeakDocumentPtr preview_document_;
   std::unique_ptr<PrintInitiatorObserver> preview_observer_;
-  // Route even base-class asynchronous policy refusal through Finish, so a
-  // later page detach cannot deliver a second terminal notification.
+
   raw_ptr<ui::SelectFileDialog::Listener> external_listener_;
   std::shared_ptr<NativeAuxiliaryPage> auxiliary_;
   base::CallbackListSubscription auxiliary_cancel_;
@@ -459,7 +442,6 @@ class NativeFileDialog final : public ui::SelectFileDialog,
   base::WeakPtrFactory<NativeFileDialog> weak_factory_{this};
 };
 
-// No asking page means no window can be proven to own the chooser.
 class RefusedFileDialog final : public ui::SelectFileDialog {
  public:
   RefusedFileDialog(Listener* listener,
@@ -494,8 +476,7 @@ class NativeFileDialogFactory final : public ui::SelectFileDialogFactory {
       ui::SelectFileDialog::Listener* listener,
       std::unique_ptr<ui::SelectFilePolicy> policy) override {
     CHECK(NSThread.isMainThread);
-    // ChromeSelectFilePolicy is Chrome's only production policy. A guest or
-    // inner page's chooser belongs to the page that hosts it.
+
     content::WebContents* source =
         policy ? static_cast<ChromeSelectFilePolicy*>(policy.get())
                      ->source_contents()
@@ -507,10 +488,11 @@ class NativeFileDialogFactory final : public ui::SelectFileDialogFactory {
                                 std::move(policy));
   }
 };
-}  // namespace
+}
 
 void RegisterNativeFileDialogs() {
   CHECK(NSThread.isMainThread);
+  parc_hooks::SetFileTypeInfoFactory(&NativeFileTypesFromAcceptType);
   ui::SelectFileDialog::SetFactory(std::make_unique<NativeFileDialogFactory>());
 }
 
@@ -567,4 +549,4 @@ void CancelNativeFileDialogs(content::WebContents& contents) {
     dialog->Cancel();
   }
 }
-}  // namespace parc
+}

@@ -39,6 +39,10 @@ which an embedder cannot override without replacing that file.
   query in `components/autofill/core/browser/foundations/autofill_client.cc` keeps
   `autofill_client.h` and `chrome_autofill_client.h` Chromium's own. Answered by
   `SupportsAutofillUiPresentation` in `parc_content_clients.mm`.
+- **`SetEditAddressDialog`**: editing a saved address from an autofill offer opens Parc's sheet, with
+  its account check, in place of the Views editor. `edit_address_profile_view.cc` creates the dialog
+  from a controller only it can see. Installed in `parc_content_clients.mm`; answered by
+  `ShowNativeAddressEditor` in `native_address_editor.cc`.
 - **`SetExtensionInstallCapture`**: installing an extension asks for consent bound to the asking
   page and window. `chrome/browser/extensions/extension_install_prompt.cc` calls it when the prompt
   is created; show-time hooks see the page only once the prompt is ready
@@ -52,6 +56,10 @@ which an embedder cannot override without replacing that file.
   cancelled if the asking frame navigates or goes away. `chrome/browser/file_select_helper.cc`
   hands over the dialog model and frame. Answered by `ShowFolderUploadConfirmation` in
   `folder_upload.mm`.
+- **`SetFileTypeInfoFactory`**: a page's file chooser offers both the combined and the per-type
+  filters Parc's dialog shows. `chrome/browser/file_select_helper.cc` builds them from the page's
+  accept types before the dialog exists. Installed in `file_dialog.mm`; answered by
+  `NativeFileTypesFromAcceptType` in `native_file_types.cc`.
 - **`SetNativePageContextMenu`**: right-clicking a page shows Parc's menu, cancelled on navigation,
   detach or window invalidation. It runs in `Show` in
   `chrome/browser/ui/cocoa/renderer_context_menu/render_view_context_menu_mac_cocoa.mm`, before the
@@ -77,10 +85,11 @@ which an embedder cannot override without replacing that file.
 - **`native-password-prompt-direct`**: the password hook, plus a presentation-unavailable result in
   `manage_passwords_ui_controller.h`.
 - **`chromium-direct-shared`**: the frame-focus and DevTools key hooks; FileSelectHelper's per-type
-  filters, which Parc's dialog factory can't rebuild from the merged list; and the context-menu
-  observer, which must run first for command dispatch. Touches `web_contents_impl.cc`,
-  `devtools_window_views.cc`, `file_select_helper.{h,cc}` and its test, `render_view_context_menu.cc`
-  and two BUILD files.
+  filters, built by Parc's `native_file_types.cc` through `SetFileTypeInfoFactory` because Parc's
+  dialog factory can't rebuild them from the merged list; and the context-menu observer, which must
+  run first for command dispatch. Touches `web_contents_impl.cc`,
+  `devtools_window_views.cc`, `file_select_helper.cc`, `render_view_context_menu.cc` and two BUILD
+  files.
 - **`native-devtools-auxiliary`**: app-modal JavaScript dialogs for auxiliary pages such as Developer
   Tools capture their factory when queued and validate ownership after the queue advances; the public
   view factory runs only when shown and can't do both. Adds a per-dialog decision validator in
@@ -112,8 +121,10 @@ which an embedder cannot override without replacing that file.
 - **`native-autofill-capabilities-direct`**, **`native-autofill-controllers-direct`**,
   **`native-address-editor`**, **`native-address-account`**: presentation results and request state
   for native offers, and routes for native owners without a Views widget
-  ([decisions](chromium-seams.md#decisions)). The capability patch spans 64 autofill and payments
-  files; the address editor adds an account validator to `edit_address_profile_view`.
+  ([decisions](chromium-seams.md#decisions)). The capability patch spans 63 autofill and payments
+  files. The address editor's native dialog and account validation live in Parc's
+  `native_address_editor.cc`, reached by one `SetEditAddressDialog` call in
+  `edit_address_profile_view.cc`.
 - **`native-protocol-handler-request`**: exposes a "handle this kind of link" request's handler in
   `register_protocol_handler_permission_request.h`; there is no public alternative.
 - **`native-current-tab-picker`**, **`native-delegated-picker`**: the share-this-tab picker reports its

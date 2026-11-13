@@ -1,7 +1,3 @@
-# Copyright 2026 Parc contributors.
-# Parc's engine framework, built directly on Chromium's chrome/ layer. Bundle
-# name, identifier and Versions/A layout are unchanged from the CEF engine:
-# code signing, the Keychain and installed copies depend on them.
 
 import("//build/apple/tweak_info_plist.gni")
 import("//build/buildflag_header.gni")
@@ -115,9 +111,6 @@ source_set("page_preferences_tests") {
   deps = [ ":page_preferences", "//content/public/browser", "//content/public/common", "//content/test:test_support", "//testing/gtest", "//third_party/blink/public/common" ]
 }
 
-# Chrome's Mac test support needs this implementation too. Keep one source
-# owner so test binaries that also link Parc's browser do not get duplicate
-# crash-client symbols.
 source_set("crash_reporter_client") {
   sources = [
     "//chrome/app/chrome_crash_reporter_client.cc",
@@ -134,9 +127,6 @@ source_set("crash_reporter_client") {
   ]
 }
 
-# Startup, the content clients and the native application, compiled into the
-# framework binary. Chrome's main delegate is compiled here, not in
-# //chrome:chrome_dll, whose ChromeMain Parc doesn't use.
 source_set("browser") {
   sources = [
     "//chrome/app/chrome_main_delegate.cc",
@@ -279,7 +269,6 @@ source_set("browser") {
     ":mojom",
     ":renderer",
 
-    # What //chrome:chrome_dll gives chrome_main_delegate.cc.
     "//chrome:dependencies",
     "//chrome:packed_resources",
     "//chrome:resources",
@@ -304,7 +293,6 @@ source_set("browser") {
     "//content/public/app",
     "//third_party/cld_3/src/src:cld_3",
 
-    # Parc's native services.
     "//parc/native:autofill_save_sessions",
     "//parc/native:native_internal_urls_api",
     "//parc/native:native_auxiliary_page",
@@ -315,6 +303,7 @@ source_set("browser") {
     "//parc/native:native_components",
     "//parc/native:native_devtools",
     "//parc/native:native_downloads",
+    "//parc/native:native_cast_route",
     "//parc/native:native_extensions",
     "//parc/native:native_external_protocol",
     "//parc/native:native_http_auth",
@@ -327,18 +316,14 @@ source_set("browser") {
     "//parc/native:tab_transfer",
     "//parc/native:unload_transactions",
 
-    # FairPlay Streaming's CDM and key system registration, and the browser's
-    # end of Parc's FairPlay media service.
     "//crypto",
     "//third_party/parc_fairplay:key_system",
     "//third_party/parc_fairplay:mojom",
     "//third_party/parc_fairplay:registration",
     "//third_party/parc_fairplay:service",
 
-    # Chrome's GPU client, which Parc's extends.
     "//chrome/gpu",
 
-    # Chromium services the native sources use directly.
     "//chrome/browser/autocomplete",
     "//chrome/browser/enterprise",
     "//chrome/browser/extensions/api/omnibox",
@@ -527,7 +512,6 @@ mac_framework_bundle("parc_framework") {
     deps += [ ":parc_framework_angle_binaries" ]
   }
 
-  # The app and helpers load the framework by path; nothing links it.
   ldflags = [
     "-Wl,-install_name,@executable_path/../Frameworks/$output_name.framework/$output_name",
     "-compatibility_version",
@@ -536,8 +520,6 @@ mac_framework_bundle("parc_framework") {
     chrome_dylib_version,
   ]
   if (is_component_build) {
-    # The component libraries sit in the output directory, six levels above
-    # <App>.app/Contents/Frameworks/<Framework>.framework/Versions/A/<binary>.
     ldflags += [
       "-rpath",
       "@loader_path/../../../../../..",

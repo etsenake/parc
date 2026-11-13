@@ -1,6 +1,7 @@
 // Copyright 2026 Parc contributors.
 
 #include "chrome/browser/ui/global_media_controls/media_notification_service.h"
+#include "parc/native/native_cast_route.h"
 
 #include <memory>
 #include <string>
@@ -194,40 +195,36 @@ class ParcMediaNotificationServiceCastTest
   std::unique_ptr<MockWebContentsPresentationManager> presentation_manager_;
 };
 
-// Parc: the Mini Player's Cast follows the route that casts the page: its
-// default presentation's launch while it connects, then the presentation the
-// page started, until the router ends it; else its Remote Playback.
 TEST_F(ParcMediaNotificationServiceCastTest, ParcCastRouteForWebContents) {
   CreateSessionServiceTabHelper(web_contents());
   const GURL url("cast:233637DE");
   MediaRoute launching("launching",
                        media_router::MediaSource::ForPresentationUrl(url),
-                       "sink_id", "description", /*is_local=*/true);
+                       "sink_id", "description", true);
   launching.set_is_connecting(true);
-  EXPECT_FALSE(MediaNotificationService::ParcCastRouteForWebContents(
+  EXPECT_FALSE(parc::CastRouteForWebContents(
       web_contents(), {launching}));
 
   SetDefaultPresentationRequest(content::PresentationRequest(
       main_rfh()->GetGlobalId(), {url},
       url::Origin::Create(GURL("https://example.test"))));
-  auto route = MediaNotificationService::ParcCastRouteForWebContents(
+  auto route = parc::CastRouteForWebContents(
       web_contents(), {launching});
   ASSERT_TRUE(route);
   EXPECT_TRUE(route->is_connecting());
 
-  // Connected, the same app's route is only this page's once it started it.
   MediaRoute connected = launching;
   connected.set_is_connecting(false);
-  EXPECT_FALSE(MediaNotificationService::ParcCastRouteForWebContents(
+  EXPECT_FALSE(parc::CastRouteForWebContents(
       web_contents(), {connected}));
   SetMediaRoutesManagedByPresentationManager({launching});
-  route = MediaNotificationService::ParcCastRouteForWebContents(
+  route = parc::CastRouteForWebContents(
       web_contents(), {connected});
   ASSERT_TRUE(route);
   EXPECT_EQ("launching", route->media_route_id());
   EXPECT_FALSE(route->is_connecting());
   EXPECT_FALSE(
-      MediaNotificationService::ParcCastRouteForWebContents(web_contents(), {}));
+      parc::CastRouteForWebContents(web_contents(), {}));
 
   SetMediaRoutesManagedByPresentationManager({});
   MediaRoute remote(
@@ -235,15 +232,13 @@ TEST_F(ParcMediaNotificationServiceCastTest, ParcCastRouteForWebContents) {
       media_router::MediaSource::ForRemotePlayback(
           sessions::SessionTabHelper::IdForTab(web_contents()).id(),
           media::VideoCodec::kH264, media::AudioCodec::kAAC),
-      "sink_id", "description", /*is_local=*/true);
-  route = MediaNotificationService::ParcCastRouteForWebContents(
+      "sink_id", "description", true);
+  route = parc::CastRouteForWebContents(
       web_contents(), {connected, remote});
   ASSERT_TRUE(route);
   EXPECT_EQ("remote", route->media_route_id());
 }
 
-// Parc: a session item that loses audio focus is frozen, neither listed nor
-// gone, until its freeze times out.
 TEST_F(ParcMediaNotificationServiceCastTest,
        ParcFrozenSessionForWebContents) {
   EXPECT_FALSE(service()->ParcHasFrozenSessionForWebContents(web_contents()));
@@ -261,9 +256,6 @@ TEST_F(ParcMediaNotificationServiceCastTest,
   EXPECT_FALSE(service()->ParcHasFrozenSessionForWebContents(web_contents()));
 }
 
-// Parc: a cast picked for a session's player requests its remoting at the
-// pick. Once launched, it stays while the player's page does; after the page
-// is gone, the launch ends rather than waiting for a player.
 TEST_F(ParcMediaNotificationServiceCastTest,
        ParcRemotingLaunchedAfterNavigation) {
   NavigateAndCommit(GURL("https://example.test/"));
@@ -278,7 +270,7 @@ TEST_F(ParcMediaNotificationServiceCastTest,
       media_router::MediaSource::ForRemotePlayback(
           sessions::SessionTabHelper::IdForTab(web_contents()).id(),
           media::VideoCodec::kH264, media::AudioCodec::kAAC),
-      "sink_id", "description", /*is_local=*/true);
+      "sink_id", "description", true);
   ON_CALL(*router, GetCurrentRoutes())
       .WillByDefault(Return(std::vector<MediaRoute>{remote}));
   EXPECT_CALL(*router, TerminateRoute(_)).Times(0);

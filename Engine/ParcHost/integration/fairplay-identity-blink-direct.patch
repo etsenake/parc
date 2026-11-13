@@ -25,20 +25,17 @@
 -
 +
  namespace blink {
-@@ -299,6 +303,11 @@
+@@ -299,6 +303,8 @@
      SetSecurityToken(origin.get());
    }
 -
 +
-+  if (PresentsParcSafariIdentity(GetFrame()->DomWindow()) ||
-+      RuntimeEnabledFeatures::AudioVideoTracksEnabled()) {
-+    EnableParcSafariBindings(GetFrame()->DomWindow());
-+  }
++  EnableParcSafariBindings(GetFrame()->DomWindow());
 +
    {
      TRACE_EVENT2("v8", "ContextCreatedNotification", "IsMainFrame",
                   GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
-@@ -309,6 +318,12 @@
+@@ -309,6 +315,12 @@
    }
 -
 +
@@ -53,16 +50,12 @@
 +
    if (World().IsMainWorld()) {
      probe::DidCreateMainWorldContext(GetFrame());
-@@ -552,6 +567,22 @@
+@@ -552,6 +564,18 @@
      return;
    }
 -
 +
-+  if (RuntimeEnabledFeatures::AudioVideoTracksEnabled()) {
-+    EnableParcSafariBindings(GetFrame()->DomWindow());
-+  }
 +  if (PresentsParcSafariIdentity(GetFrame()->DomWindow())) {
-+    EnableParcSafariBindings(GetFrame()->DomWindow());
 +    ScriptState::Scope scope(script_state_);
 +    RemoveParcUserAgentData(script_state_);
 +    if (world_->IsMainWorld()) {
@@ -288,32 +281,11 @@
    return promise;
 --- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
 +++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.cc
-@@ -4,6 +4,7 @@
--
-+
- #include "third_party/blink/renderer/modules/media_capabilities/media_capabilities.h"
--
-+
-+#include <algorithm>
- #include <memory>
- #include <optional>
- #include <sstream>
-@@ -25,6 +26,7 @@
- #include "media/mojo/mojom/media_metrics_provider.mojom-blink.h"
- #include "media/mojo/mojom/media_types.mojom-blink.h"
- #include "media/video/gpu_video_accelerator_factories.h"
-+#include "mojo/public/cpp/bindings/callback_helpers.h"
- #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
- #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
- #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
-@@ -50,11 +52,16 @@
+@@ -50,11 +50,13 @@
  #include "third_party/blink/renderer/core/execution_context/navigator_base.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
 +#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
-+#include "third_party/blink/renderer/core/html/media/html_media_element.h"
-+#include "third_party/blink/renderer/platform/network/mime/content_type.h"
-+#include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
  #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
@@ -323,7 +295,7 @@
  #include "third_party/blink/renderer/modules/mediarecorder/media_recorder_handler.h"
  #include "third_party/blink/renderer/platform/bindings/exception_state.h"
  #include "third_party/blink/renderer/platform/bindings/script_state.h"
-@@ -152,7 +159,9 @@
+@@ -152,7 +154,9 @@
      bool value,
      ScriptState* script_state,
      const MediaDecodingConfiguration* config) {
@@ -335,7 +307,7 @@
  }
 -
 +
-@@ -652,7 +661,8 @@
+@@ -652,7 +656,8 @@
                                     /*allow_ambiguous_matches=*/false);
    DCHECK(audio_type);
 -
@@ -347,104 +319,7 @@
 -
 +
    return media::IsDecoderSupportedAudioType(*audio_type);
-@@ -733,6 +743,79 @@
-   return true;
- }
--
-+
-+bool IsParcSafariFairPlayVideoCodec(const String& codec) {
-+  return codec.starts_with("avc1") || codec.starts_with("avc3") ||
-+         codec.starts_with("hvc1") || codec.starts_with("hev1") ||
-+         codec.starts_with("dvh1") || codec.starts_with("dvhe") ||
-+         codec.starts_with("dav1.10.");
-+}
-+
-+bool ParcSafariTypeSupported(const MediaDecodingConfiguration* config,
-+                             const String& content_type,
-+                             const String& mime_type,
-+                             const String& codec) {
-+  if (ParcSafariAV1Unavailable(codec)) {
-+    return false;
-+  }
-+  if (mime_type == "video/mp4" &&
-+      (codec.starts_with("dvh1.") || codec.starts_with("dvhe.") ||
-+       codec.starts_with("dav1.10."))) {
-+    const std::optional<ParcDoViParameters> parameters =
-+        codec.ContainsOnlyAsciiOrEmpty()
-+            ? ParcParseDoVi(codec.Ascii())
-+            : std::nullopt;
-+    if (parameters &&
-+        (parameters->profile == 5 ||
-+         (config->type() == V8MediaDecodingType::Enum::kMediaSource &&
-+          (parameters->profile == 10 || parameters->profile == 20)))) {
-+      return true;
-+    }
-+  }
-+  if (config->type() == V8MediaDecodingType::Enum::kMediaSource) {
-+    const std::string mime_ascii = mime_type.Ascii();
-+    if (media::StreamParserFactory::ParcIsOggType(mime_ascii)) {
-+      const std::string codec_ascii = codec.Ascii();
-+      return !codec_ascii.empty() &&
-+             media::StreamParserFactory::ParcSafariTakesOgg(
-+                 mime_ascii, base::span_from_ref(codec_ascii));
-+    }
-+    return CheckMseSupport(mime_type, codec);
-+  }
-+  return HTMLMediaElement::GetSupportsType(ContentType(content_type)) ==
-+         MIMETypeRegistry::kSupported;
-+}
-+
-+std::optional<ParcDecodingAnswer> ParcSafariAnswer(
-+    const MediaDecodingConfiguration* config,
-+    const media::mojom::blink::ParcVideoToolboxDecodingFacts* facts) {
-+  ParcDecodingAnswer answer;
-+  if (config->hasVideo()) {
-+    const VideoConfiguration* video = config->video();
-+    String mime_type;
-+    String codecs;
-+    if (!ParseContentType(video->contentType(), &mime_type, &codecs) ||
-+        !ParcSafariTypeSupported(config, video->contentType(), mime_type,
-+                                 codecs)) {
-+      return std::nullopt;
-+    }
-+    if (!ParcSafariVideoAnswer(config, video, codecs, facts, answer)) {
-+      return std::nullopt;
-+    }
-+  }
-+  if (config->hasAudio()) {
-+    const AudioConfiguration* audio = config->audio();
-+    String mime_type;
-+    String codec;
-+    if (!ParseContentType(audio->contentType(), &mime_type, &codec) ||
-+        !ParcSafariTypeSupported(config, audio->contentType(), mime_type,
-+                                 codec)) {
-+      return std::nullopt;
-+    }
-+    answer.supported = true;
-+  }
-+  return answer;
-+}
-+
- #if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
- bool IsDolbyVisionVideoCodec(const String& video_codec_str) {
-   return video_codec_str.starts_with("dvh1.") ||
-@@ -782,11 +865,13 @@
- MediaCapabilities::MediaCapabilities(NavigatorBase& navigator)
-     : Supplement<NavigatorBase>(navigator),
-       decode_history_service_(navigator.GetExecutionContext()),
--      webrtc_history_service_(navigator.GetExecutionContext()) {}
-+      webrtc_history_service_(navigator.GetExecutionContext()),
-+      parc_video_toolbox_(navigator.GetExecutionContext()) {}
--
-+
- void MediaCapabilities::Trace(blink::Visitor* visitor) const {
-   visitor->Trace(decode_history_service_);
-   visitor->Trace(webrtc_history_service_);
-+  visitor->Trace(parc_video_toolbox_);
-   visitor->Trace(pending_cb_map_);
-   ScriptWrappable::Trace(visitor);
-   Supplement<NavigatorBase>::Trace(visitor);
-@@ -805,6 +890,7 @@
+@@ -805,6 +810,7 @@
  void MediaCapabilities::PendingCallbackState::Trace(
      blink::Visitor* visitor) const {
    visitor->Trace(key_system_access);
@@ -453,7 +328,7 @@
  }
 -
 +
-@@ -820,6 +906,21 @@
+@@ -820,6 +826,21 @@
          WebFeature::kMediaCapabilitiesDecodingInfoWithKeySystemConfig);
    }
 -
@@ -476,7 +351,7 @@
    const bool is_webrtc = config->type() == V8MediaDecodingType::Enum::kWebrtc;
    String message;
    if (!IsValidMediaDecodingConfiguration(config, is_webrtc, &message)) {
-@@ -847,6 +948,7 @@
+@@ -847,6 +868,7 @@
                              : WebrtcDecodingInfoHandler::Instance()) {
        const int callback_id = InsertCallbackAndScheduleTimeout(
            resolver, nullptr, request_time, QueryType::kWebrtcDecoding);
@@ -485,7 +360,7 @@
 +
        std::optional<webrtc::SdpAudioFormat> sdp_audio_format =
            config->hasAudio()
-@@ -898,11 +1000,24 @@
+@@ -898,11 +920,25 @@
      // happens.
      DCHECK(false);
      DVLOG(2) << __func__ << " Could not get DecodingInfoHandler.";
@@ -506,13 +381,14 @@
 +           ParsedContentType(config->video()->contentType())
 +               .ParameterValueForName(kCodecsMimeTypeParam)
 +               .StripWhiteSpace()))) {
-+    return ParcSafariDecodingInfo(script_state, config, exception_state);
++    return ParcSafariMediaCapabilities::From(*GetSupplementable())
++        .DecodingInfo(script_state, config, exception_state);
 +  }
 +
    String audio_mime_str;
    String audio_codec_str;
    if (config->hasAudio()) {
-@@ -921,6 +1036,19 @@
+@@ -921,6 +957,19 @@
      DCHECK(valid_content_type);
    }
 -
@@ -533,7 +409,7 @@
    // MSE support is cheap to check (regex matching). Do it first. Also, note
    // that MSE support is not implied by EME support, so do it irrespective of
    // whether we have a KeySystem configuration.
-@@ -931,10 +1059,8 @@
+@@ -931,10 +980,8 @@
           !CheckMseSupport(video_mime_str, video_codec_str))) {
        // Unsupported EME queries should resolve with a null
        // MediaKeySystemAccess.
@@ -547,111 +423,7 @@
    }
 -
 +
-@@ -1163,6 +1289,102 @@
-   return promise;
- }
--
-+
-+ScriptPromise<MediaCapabilitiesDecodingInfo>
-+MediaCapabilities::ParcSafariDecodingInfo(
-+    ScriptState* script_state,
-+    const MediaDecodingConfiguration* config,
-+    ExceptionState& exception_state) {
-+  auto* resolver = MakeGarbageCollected<
-+      ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>>(
-+      script_state, exception_state.GetContext());
-+  auto promise = resolver->Promise();
-+  if (parc_video_toolbox_facts_) {
-+    OnParcVideoToolboxFacts(resolver, config,
-+                            parc_video_toolbox_facts_.Clone());
-+    return promise;
-+  }
-+  ParcBindVideoToolbox(ExecutionContext::From(script_state));
-+  parc_video_toolbox_->GetFacts(mojo::WrapCallbackWithDefaultInvokeIfNotRun(
-+      BindOnce(&MediaCapabilities::OnParcVideoToolboxFacts,
-+               WrapPersistent(this), WrapPersistent(resolver),
-+               WrapPersistent(config)),
-+      media::mojom::blink::ParcVideoToolboxDecodingFactsPtr()));
-+  return promise;
-+}
-+
-+void MediaCapabilities::OnParcVideoToolboxFacts(
-+    ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>* resolver,
-+    const MediaDecodingConfiguration* config,
-+    media::mojom::blink::ParcVideoToolboxDecodingFactsPtr facts) {
-+  if (facts && !parc_video_toolbox_facts_) {
-+    parc_video_toolbox_facts_ = facts.Clone();
-+  }
-+  ExecutionContext* execution_context = resolver->GetExecutionContext();
-+  if (!execution_context || execution_context->IsContextDestroyed()) {
-+    return;
-+  }
-+  const std::optional<ParcDecodingAnswer> answer =
-+      ParcSafariAnswer(config, facts.get());
-+  if (answer && config->hasAudio() &&
-+      config->audio()->hasSpatialRendering() &&
-+      config->audio()->spatialRendering()) {
-+    ParcBindVideoToolbox(execution_context);
-+    parc_video_toolbox_->GetSpatialAudioSources(
-+        config->hasVideo(),
-+        mojo::WrapCallbackWithDefaultInvokeIfNotRun(
-+            BindOnce(&MediaCapabilities::OnParcSpatialAudioSources,
-+                     WrapPersistent(this), WrapPersistent(resolver),
-+                     WrapPersistent(config), answer->smooth,
-+                     answer->power_efficient),
-+            Vector<uint32_t>()));
-+    return;
-+  }
-+  auto* info = MediaCapabilitiesDecodingInfo::Create();
-+  info->setSupported(answer && answer->supported);
-+  info->setSmooth(answer && answer->smooth);
-+  info->setPowerEfficient(answer && answer->power_efficient);
-+  resolver->Resolve(
-+      ParcFinishDecodingInfo(info, execution_context, config, nullptr));
-+}
-+
-+void MediaCapabilities::OnParcSpatialAudioSources(
-+    ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>* resolver,
-+    const MediaDecodingConfiguration* config,
-+    bool smooth,
-+    bool power_efficient,
-+    const Vector<uint32_t>& sources) {
-+  ExecutionContext* execution_context = resolver->GetExecutionContext();
-+  if (!execution_context || execution_context->IsContextDestroyed()) {
-+    return;
-+  }
-+  const String channels =
-+      config->audio()->hasChannels() ? config->audio()->channels() : String();
-+  size_t parsed_length = 0;
-+  const double channel_count =
-+      channels.empty()
-+          ? 0
-+          : (channels.Is8Bit()
-+                 ? CharactersToDouble(channels.Span8(), parsed_length)
-+                 : CharactersToDouble(channels.Span16(), parsed_length));
-+  auto* info = MediaCapabilitiesDecodingInfo::Create();
-+  info->setSupported(IsParcSafariSpatialAudioSupported(
-+      sources, channel_count));
-+  info->setSmooth(smooth);
-+  info->setPowerEfficient(power_efficient);
-+  resolver->Resolve(
-+      ParcFinishDecodingInfo(info, execution_context, config, nullptr));
-+}
-+
-+void MediaCapabilities::ParcBindVideoToolbox(
-+    ExecutionContext* execution_context) {
-+  if (parc_video_toolbox_.is_bound()) {
-+    return;
-+  }
-+  execution_context->GetBrowserInterfaceBroker().GetInterface(
-+      parc_video_toolbox_.BindNewPipeAndPassReceiver(
-+          execution_context->GetTaskRunner(TaskType::kMediaElementEvent)));
-+}
-+
- bool MediaCapabilities::EnsurePerfHistoryService(
-     ExecutionContext* execution_context) {
-   if (decode_history_service_.is_bound())
-@@ -1349,6 +1571,13 @@
+@@ -1349,6 +1396,13 @@
    // undefined. See comment above Promise() in script_promise_resolver.h
    auto promise = resolver->Promise();
 -
@@ -666,7 +438,7 @@
    EncryptedMediaUtils::GetEncryptedMediaClientFromLocalDOMWindow(
        To<LocalDOMWindow>(execution_context))
        ->RequestMediaKeySystemAccess(WebEncryptedMediaRequest(initializer));
-@@ -1370,8 +1599,9 @@
+@@ -1370,8 +1424,9 @@
 -
 +
    if (!decoding_config->hasVideo()) {
@@ -679,7 +451,7 @@
      resolver->Resolve(info);
      return;
    }
-@@ -1389,13 +1619,16 @@
+@@ -1389,13 +1444,16 @@
    }
 -
 +
@@ -700,7 +472,7 @@
 +
    media::mojom::blink::PredictionFeaturesPtr features =
        media::mojom::blink::PredictionFeatures::New(
-@@ -1516,7 +1749,8 @@
+@@ -1516,7 +1574,8 @@
 -
 +
    auto* info = MediaCapabilitiesDecodingInfo::Create();
@@ -712,7 +484,7 @@
 +
    if (UseGpuFactoriesForPowerEfficient(execution_context,
                                         pending_cb->key_system_access)) {
-@@ -1671,7 +1905,10 @@
+@@ -1671,7 +1730,10 @@
      pending_cb->resolver->DowncastTo<MediaCapabilitiesInfo>()->Resolve(info);
    } else {
      CHECK_EQ(pending_cb->query_type, QueryType::kWebrtcDecoding);
@@ -724,7 +496,7 @@
      info->setSupported(is_supported);
      info->setPowerEfficient(is_power_efficient);
      info->setSmooth(is_smooth);
-@@ -1712,8 +1949,9 @@
+@@ -1712,8 +1774,9 @@
    }
 -
 +
@@ -1273,7 +1045,7 @@
 +  if (event.type() == event_type_names::kEnded &&
 +      ParcMediaElement::From(*this).HadMediaUserGesture() &&
 +      PresentsParcSafariIdentity()) {
-+    AutoplayPolicy::ParcNoteUserActivatedMediaEnded(GetDocument());
++    ParcMediaElement::NoteUserActivatedMediaEnded(GetDocument());
 +  }
 +  return HTMLElement::DispatchEventInternal(event);
 +}
@@ -1356,7 +1128,7 @@
 -
 +
 +  if (PresentsParcSafariIdentity() && playing_)
-+    autoplay_policy_->ParcPlaybackStopped();
++    ParcMediaElement::From(*this).PlaybackStopped();
    ResetMediaPlayerAndMediaSource();
 -
 +
@@ -1406,7 +1178,7 @@
 -
 +
 +  if (PresentsParcSafariIdentity())
-+    autoplay_policy_->ParcLoadWillStart();
++    ParcMediaElement::From(*this).LoadWillStart();
 +
    // 7 - Set the playbackRate attribute to the value of the defaultPlaybackRate
    // attribute.
@@ -1982,10 +1754,10 @@
      return;
    }
 +  if (paused && playing_ && PresentsParcSafariIdentity())
-+    autoplay_policy_->ParcPlaybackStopped();
++    ParcMediaElement::From(*this).PlaybackStopped();
    paused_ = paused;
 +  if (!paused) {
-+    autoplay_policy_->parc_hidden_autoplay_granted_ = false;
++    ParcMediaElement::From(*this).hidden_autoplay_granted_ = false;
 +    ParcMediaElement::From(*this).paused_for_invisible_autoplay_ = false;
 +  }
    PseudoStateChanged(CSSSelector::kPseudoPaused);
@@ -3475,8 +3247,8 @@
 -
 +
 +  bool isParcSafariIdentityEnabled() const;
-+
 +  bool isParcAudioVideoTracksEnabled() const;
++  bool isParcSafariIdentityEmeEnabled() const;
 +
    void Trace(Visitor*) const override;
 -
@@ -3493,7 +3265,7 @@
  #include "third_party/blink/renderer/platform/runtime_enabled_feature_checks.h"
  #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
  #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
-@@ -77,6 +78,15 @@
+@@ -77,6 +78,20 @@
               : UnboundedElementAuth::kAllowedOpenWeb;
  }
 -
@@ -3504,6 +3276,11 @@
 +
 +bool ContextFeatureSettings::isParcAudioVideoTracksEnabled() const {
 +  return RuntimeEnabledFeatures::AudioVideoTracksEnabled() ||
++         isParcSafariIdentityEnabled();
++}
++
++bool ContextFeatureSettings::isParcSafariIdentityEmeEnabled() const {
++  return GetSupplementable()->IsSecureContext() ||
 +         isParcSafariIdentityEnabled();
 +}
 +
@@ -3992,15 +3769,7 @@
  void SourceBuffer::AppendError(
 --- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
 +++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities.h
-@@ -10,6 +10,7 @@
- #include "base/time/time.h"
- #include "media/base/video_codecs.h"  // for media::VideoCodecProfile
- #include "media/base/video_color_space.h"
-+#include "media/mojo/mojom/parc_video_toolbox_decoding.mojom-blink.h"
- #include "media/mojo/mojom/video_decode_perf_history.mojom-blink.h"
- #include "media/mojo/mojom/webrtc_video_perf.mojom-blink.h"
- #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
-@@ -150,6 +151,7 @@
+@@ -150,6 +150,7 @@
 -
 +
      Member<ScriptPromiseResolverBase> resolver;
@@ -4009,43 +3778,6 @@
      std::optional<bool> is_supported;
      std::optional<bool> is_bad_window_prediction_smooth;
      std::optional<bool> is_nnr_prediction_smooth;
-@@ -183,6 +185,22 @@
-   // successful. Returns true if it was already bound.
-   bool EnsureWebrtcPerfHistoryService(ExecutionContext* execution_context);
--
-+
-+  ScriptPromise<MediaCapabilitiesDecodingInfo> ParcSafariDecodingInfo(
-+      ScriptState*,
-+      const MediaDecodingConfiguration*,
-+      ExceptionState&);
-+  void OnParcVideoToolboxFacts(
-+      ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>*,
-+      const MediaDecodingConfiguration*,
-+      media::mojom::blink::ParcVideoToolboxDecodingFactsPtr);
-+  void OnParcSpatialAudioSources(
-+      ScriptPromiseResolver<MediaCapabilitiesDecodingInfo>*,
-+      const MediaDecodingConfiguration*,
-+      bool smooth,
-+      bool power_efficient,
-+      const Vector<uint32_t>& sources);
-+  void ParcBindVideoToolbox(ExecutionContext*);
-+
-   ScriptPromise<MediaCapabilitiesDecodingInfo> GetEmeSupport(
-       ScriptState*,
-       media::VideoCodec,
-@@ -265,6 +283,11 @@
-   HeapMojoRemote<media::mojom::blink::WebrtcVideoPerfHistory>
-       webrtc_history_service_;
--
-+
-+  HeapMojoRemote<media::mojom::blink::ParcVideoToolboxDecoding>
-+      parc_video_toolbox_;
-+  media::mojom::blink::ParcVideoToolboxDecodingFactsPtr
-+      parc_video_toolbox_facts_;
-+
-   // Holds the last key for callbacks in the map below. Incremented for each
-   // usage.
-   int last_callback_id_ = 0;
 --- a/third_party/blink/renderer/modules/media_capabilities/media_capabilities_decoding_info.idl
 +++ b/third_party/blink/renderer/modules/media_capabilities/media_capabilities_decoding_info.idl
 @@ -5,5 +5,6 @@
@@ -4500,61 +4232,6 @@
 -    [RuntimeEnabled=MediaCapabilitiesSpatialAudio] boolean spatialRendering;
 +    boolean spatialRendering;
  };
---- a/third_party/blink/renderer/platform/runtime_enabled_features.json5
-+++ b/third_party/blink/renderer/platform/runtime_enabled_features.json5
-@@ -4924,6 +4924,15 @@
-       name: "Parakeet",
-       origin_trial_feature_name: "Parakeet",
-     },
-+    {
-+      // Parc: names the Encrypted Media constructs exposed to documents
-+      // presenting Safari's identity even outside a secure context
-+      // ([SecureContext=ParcSafariIdentityEme], bind_gen/codegen_expr.py).
-+      // Its own value is never read.
-+      name: "ParcSafariIdentityEme",
-+      status: "stable",
-+      base_feature: "none",
-+    },
-     {
-       name: "PartitionVisitedLinkDatabaseWithSelfLinks",
-       status: {"iOS": "", "default": "stable"},
---- a/third_party/blink/renderer/bindings/scripts/bind_gen/codegen_expr.py
-+++ b/third_party/blink/renderer/bindings/scripts/bind_gen/codegen_expr.py
-@@ -274,6 +274,12 @@
-         secure_context_term = _Expr("${is_in_secure_context}")
-     elif exposure.only_in_secure_contexts is False:
-         secure_context_term = _Expr(True)
-+    elif "ParcSafariIdentityEme" in exposure.only_in_secure_contexts:
-+        secure_context_term = expr_or([
-+            _Expr("${is_in_secure_context}"),
-+            _Expr("${IsParcSafariIdentityUserAgent}("
-+                  "${execution_context}->UserAgent())")
-+        ])
-     else:
-         terms = list(map(ref_enabled, exposure.only_in_secure_contexts))
-         secure_context_term = expr_or(
---- a/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
-+++ b/third_party/blink/renderer/bindings/scripts/bind_gen/interface.py
-@@ -5433,6 +5433,18 @@
-     )
-     local_vars.append(node)
--
-+
-+    def define_parc_safari_identity(symbol_node):
-+        node = SymbolDefinitionNode(symbol_node)
-+        node.accumulate(
-+            CodeGenAccumulator.require_include_headers([
-+                "third_party/blink/renderer/core/frame/parc_safari_identity.h"
-+            ]))
-+        return node
-+
-+    local_vars.append(
-+        S("IsParcSafariIdentityUserAgent",
-+          definition_constructor=define_parc_safari_identity))
-+
-     # parent_interface_template
-     pattern = (
-         "v8::Local<v8::FunctionTemplate> ${parent_interface_template}{_1};"
 --- a/third_party/blink/renderer/modules/encryptedmedia/media_key_session.idl
 +++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_session.idl
 @@ -36,7 +36,7 @@
@@ -4562,7 +4239,7 @@
      Exposed=Window,
      ActiveScriptWrappable,
 -    SecureContext
-+    SecureContext=ParcSafariIdentityEme
++    ContextEnabled=ParcSafariIdentityEme
  ] interface MediaKeySession : EventTarget {
      // session properties
      readonly attribute DOMString sessionId;
@@ -4574,7 +4251,7 @@
  [
      Exposed=Window,
 -    SecureContext
-+    SecureContext=ParcSafariIdentityEme
++    ContextEnabled=ParcSafariIdentityEme
  ] interface MediaKeyMessageEvent : Event {
      constructor(DOMString type, MediaKeyMessageEventInit eventInitDict);
      readonly attribute MediaKeyMessageType messageType;
@@ -4586,7 +4263,7 @@
  [
      Exposed=Window,
 -    SecureContext
-+    SecureContext=ParcSafariIdentityEme
++    ContextEnabled=ParcSafariIdentityEme
  ] interface MediaKeySystemAccess {
      readonly attribute DOMString keySystem;
      MediaKeySystemConfiguration getConfiguration();
@@ -4598,7 +4275,7 @@
  [
      Exposed=Window,
 -    SecureContext
-+    SecureContext=ParcSafariIdentityEme
++    ContextEnabled=ParcSafariIdentityEme
  ] interface MediaKeyStatusMap {
      iterable <BufferSource, MediaKeyStatus>;
      readonly attribute unsigned long size;
@@ -4609,7 +4286,7 @@
      ImplementedAs=NavigatorRequestMediaKeySystemAccess
  ] partial interface Navigator {
 -    [SecureContext, CallWith=ScriptState, RaisesException] Promise<MediaKeySystemAccess> requestMediaKeySystemAccess(DOMString keySystem, sequence<MediaKeySystemConfiguration> supportedConfigurations);
-+    [SecureContext=ParcSafariIdentityEme, CallWith=ScriptState, RaisesException] Promise<MediaKeySystemAccess> requestMediaKeySystemAccess(DOMString keySystem, sequence<MediaKeySystemConfiguration> supportedConfigurations);
++    [ContextEnabled=ParcSafariIdentityEme, CallWith=ScriptState, RaisesException] Promise<MediaKeySystemAccess> requestMediaKeySystemAccess(DOMString keySystem, sequence<MediaKeySystemConfiguration> supportedConfigurations);
  };
 --- a/third_party/blink/renderer/modules/encryptedmedia/html_media_element_encrypted_media.idl
 +++ b/third_party/blink/renderer/modules/encryptedmedia/html_media_element_encrypted_media.idl
@@ -4619,8 +4296,8 @@
  ] partial interface HTMLMediaElement {
 -    [SecureContext] readonly attribute MediaKeys mediaKeys;
 -    [SecureContext, CallWith=ScriptState, RaisesException] Promise<undefined> setMediaKeys(MediaKeys? mediaKeys);
-+    [SecureContext=ParcSafariIdentityEme] readonly attribute MediaKeys mediaKeys;
-+    [SecureContext=ParcSafariIdentityEme, CallWith=ScriptState, RaisesException] Promise<undefined> setMediaKeys(MediaKeys? mediaKeys);
++    [ContextEnabled=ParcSafariIdentityEme] readonly attribute MediaKeys mediaKeys;
++    [ContextEnabled=ParcSafariIdentityEme, CallWith=ScriptState, RaisesException] Promise<undefined> setMediaKeys(MediaKeys? mediaKeys);
      attribute EventHandler onencrypted;
      attribute EventHandler onwaitingforkey;
  };
@@ -5326,38 +5003,19 @@
  }  // namespace blink
 --- a/third_party/blink/renderer/core/html/media/autoplay_policy.h
 +++ b/third_party/blink/renderer/core/html/media/autoplay_policy.h
-@@ -6,6 +6,7 @@
- #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_MEDIA_AUTOPLAY_POLICY_H_
--
-+
- #include <optional>
-+#include "base/time/time.h"
--
-+
- #include "third_party/blink/renderer/core/core_export.h"
- #include "third_party/blink/renderer/platform/bindings/exception_code.h"
-@@ -115,6 +116,18 @@
+@@ -115,6 +115,9 @@
    // avoid false positives.
    void EnsureAutoplayInitiatedSet();
 -
 +
-+  void ParcPlaybackStopped();
-+  bool ParcWithinBackgroundGrace() const;
-+  void ParcLoadWillStart();
-+  std::optional<base::TimeTicks> parc_playback_stopped_;
-+  bool parc_hidden_autoplay_granted_ = false;
 +  bool ParcPlaybackPermitted(bool audio_reported = false,
 +                             bool for_autoplay = false) const;
-+
-+  static bool ParcProcessingUserGestureForMedia(const Document&);
-+
-+  static void ParcNoteUserActivatedMediaEnded(const Document&);
 +
    void Trace(Visitor*) const;
 -
 +
   private:
-@@ -156,6 +169,8 @@
+@@ -156,6 +159,8 @@
 -
 +
    bool locked_pending_user_gesture_ : 1;
@@ -5371,97 +5029,33 @@
 +
 --- a/third_party/blink/renderer/core/html/media/autoplay_policy.cc
 +++ b/third_party/blink/renderer/core/html/media/autoplay_policy.cc
-@@ -4,6 +4,7 @@
--
-+
- #include "third_party/blink/renderer/core/html/media/autoplay_policy.h"
--
-+
-+#include "base/time/time.h"
- #include "build/build_config.h"
- #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
- #include "third_party/blink/public/mojom/autoplay/autoplay.mojom-blink.h"
-@@ -20,14 +21,19 @@
+@@ -20,6 +20,7 @@
  #include "third_party/blink/renderer/core/html/media/autoplay_uma_helper.h"
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
  #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 +#include "third_party/blink/renderer/core/html/media/parc_media_element.h"
-+#include "third_party/blink/renderer/core/html/media/parc_page_media_state.h"
  #include "third_party/blink/renderer/core/inspector/console_message.h"
  #include "third_party/blink/renderer/core/intersection_observer/intersection_observer.h"
  #include "third_party/blink/renderer/core/intersection_observer/intersection_observer_entry.h"
- #include "third_party/blink/renderer/core/page/page.h"
-+#include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
- #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-+#include "third_party/blink/renderer/platform/heap/persistent.h"
- #include "third_party/blink/renderer/platform/network/network_state_notifier.h"
- #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
- #include "third_party/blink/renderer/platform/wtf/assertions.h"
-+#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
--
-+
- namespace blink {
--
-+
-@@ -60,8 +66,37 @@
-   NOTREACHED();
- }
--
-+
-+constexpr base::TimeDelta kParcMediaEndedGestureGrace = base::Seconds(1);
-+
-+using ParcMediaEndedTimes =
-+    GCedHeapHashMap<WeakMember<const Document>, base::TimeTicks>;
-+
-+ParcMediaEndedTimes& ParcUserActivatedMediaEndedTimes() {
-+  DEFINE_STATIC_LOCAL(Persistent<ParcMediaEndedTimes>, times,
-+                      (MakeGarbageCollected<ParcMediaEndedTimes>()));
-+  return *times;
-+}
-+
-+ParcMediaEndedTimes& ParcAudiblePlaybackStoppedTimes() {
-+  DEFINE_STATIC_LOCAL(Persistent<ParcMediaEndedTimes>, times,
-+                      (MakeGarbageCollected<ParcMediaEndedTimes>()));
-+  return *times;
-+}
-+
- }  // anonymous namespace
--
-+
-+// static
-+bool AutoplayPolicy::ParcProcessingUserGestureForMedia(
-+    const Document& document) {
-+  if (LocalFrame::HasTransientUserActivation(document.GetFrame())) {
-+    return true;
-+  }
-+  const ParcMediaEndedTimes& times = ParcUserActivatedMediaEndedTimes();
-+  auto it = times.find(&document);
-+  return it != times.end() &&
-+         base::TimeTicks::Now() - it->value <= kParcMediaEndedGestureGrace;
-+}
-+
- // static
- AutoplayPolicy::Type AutoplayPolicy::GetAutoplayPolicyForDocument(
-     const Document& document) {
-@@ -158,6 +193,8 @@
+@@ -158,6 +159,9 @@
 -
 +
  AutoplayPolicy::AutoplayPolicy(HTMLMediaElement* element)
      : locked_pending_user_gesture_(false),
 +      parc_created_during_media_gesture_(
-+          ParcProcessingUserGestureForMedia(element->GetDocument())),
++          ParcMediaElement::ProcessingUserGestureForMedia(
++              element->GetDocument())),
        element_(element),
        autoplay_uma_helper_(MakeGarbageCollected<AutoplayUmaHelper>(element)) {
    locked_pending_user_gesture_ =
-@@ -250,6 +287,15 @@
+@@ -250,6 +254,14 @@
 -
 +
    autoplay_uma_helper_->OnAutoplayInitiated(AutoplaySource::kAttribute);
 -
 +
 +  if (element_->PresentsParcSafariIdentity()) {
-+    if (!ParcPlaybackPermitted(/*audio_reported=*/false,
-+                               /*for_autoplay=*/true)) {
++    if (!ParcPlaybackPermitted(false, true)) {
 +      return false;
 +    }
 +    MaybeSetAutoplayInitiated();
@@ -5472,7 +5066,7 @@
      return false;
 -
 +
-@@ -292,6 +338,15 @@
+@@ -292,6 +304,15 @@
      return DOMExceptionCode::kNotAllowedError;
    }
 -
@@ -5489,75 +5083,15 @@
    if (!HasTransientUserActivation()) {
      autoplay_uma_helper_->OnAutoplayInitiated(AutoplaySource::kMethod);
      if (IsGestureNeededForPlayback())
-@@ -449,6 +504,72 @@
+@@ -449,6 +470,12 @@
    return element_->can_autoplay_ && element_->paused_ && element_->Autoplay();
  }
 -
 +
-+bool AutoplayPolicy::ParcWithinBackgroundGrace() const {
-+  auto now = base::TimeTicks::Now();
-+  if (parc_playback_stopped_ && now - *parc_playback_stopped_ <= base::Seconds(10))
-+    return true;
-+  auto& times = ParcAudiblePlaybackStoppedTimes();
-+  auto it = times.find(&element_->GetDocument());
-+  return it != times.end() && now - it->value <= base::Seconds(10);
-+}
-+
-+void AutoplayPolicy::ParcPlaybackStopped() {
-+  parc_playback_stopped_ = base::TimeTicks::Now();
-+  if (element_->HasAudio() && element_->EffectiveMediaVolume())
-+    ParcAudiblePlaybackStoppedTimes().Set(&element_->GetDocument(),
-+                                         *parc_playback_stopped_);
-+}
-+
-+void AutoplayPolicy::ParcLoadWillStart() {
-+  parc_hidden_autoplay_granted_ = element_->Autoplay() && ParcWithinBackgroundGrace();
-+}
-+
 +bool AutoplayPolicy::ParcPlaybackPermitted(bool audio_reported,
-+                                            bool for_autoplay) const {
-+  const Document& document = element_->GetDocument();
-+  if (document.IsMediaDocument() && document.IsInMainFrame())
-+    return true;
-+  const bool gesture = ParcProcessingUserGestureForMedia(document);
-+  const bool has_audio = audio_reported || element_->HasAudio();
-+  const bool stream =
-+      element_->GetLoadType() == WebMediaPlayer::kLoadTypeMediaStream;
-+  const bool playing_audio = ParcMediaElement::DocumentIsPlayingAudio(document);
-+  if (element_->paused() && document.hidden() && !gesture && !stream &&
-+      element_->EffectiveMediaVolume() &&
-+      (!IsA<HTMLVideoElement>(element_.Get()) ||
-+       element_->getReadyState() < HTMLMediaElement::kHaveMetadata ||
-+       has_audio) && !playing_audio && !ParcWithinBackgroundGrace() &&
-+      !(for_autoplay && parc_hidden_autoplay_granted_)) {
-+    return false;
-+  }
-+  if (GetAutoplayPolicyForDocument(document) == Type::kNoUserGestureRequired ||
-+      DocumentHasForceAllowFlag(document) ||
-+      DocumentHasUserExceptionFlag(document)) {
-+    return true;
-+  }
-+  if (parc_created_during_media_gesture_ ||
-+      ParcMediaElement::From(*element_).HadMediaUserGesture()) {
-+    return true;
-+  }
-+  if (stream && (DocumentIsCapturingUserMedia(document) || playing_audio))
-+    return true;
-+  if (IsA<HTMLVideoElement>(element_.Get()) && document.GetPage() &&
-+      ParcPageMediaState::From(*document.GetPage()).MediaPowerRestricted() &&
-+      !gesture) {
-+    return false;
-+  }
-+  if ((IsA<HTMLVideoElement>(element_.Get()) && !has_audio) ||
-+      !element_->EffectiveMediaVolume()) {
-+    return true;
-+  }
-+  return ParcProcessingUserGestureForMedia(document);
-+}
-+
-+// static
-+void AutoplayPolicy::ParcNoteUserActivatedMediaEnded(const Document& document) {
-+  ParcUserActivatedMediaEndedTimes().Set(&document, base::TimeTicks::Now());
++                                           bool for_autoplay) const {
++  return ParcMediaElement::From(*element_).PlaybackPermitted(
++      parc_created_during_media_gesture_, audio_reported, for_autoplay);
 +}
 +
  void AutoplayPolicy::Trace(Visitor* visitor) const {

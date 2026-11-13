@@ -1,6 +1,4 @@
 // Copyright 2026 Parc contributors.
-//
-// original webContent for ModalV2CreationOptions.webContent. No URL replay.
 #include "native_link_routing.h"
 
 #include <memory>
@@ -22,6 +20,7 @@
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/parc_native_links.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "native_appkit_host.h"
 #include "native_appkit_page.h"
@@ -42,8 +41,7 @@ const char kCreatedRouteAttemptKey = 0;
 const char kURLLockKey = 0;
 class CreatedPage;
 CreatedPage* Creation(content::WebContents& contents);
-//
-// Keep the same Foundation path-component and decimal-character semantics.
+
 bool IsMeetingURL(NSURL* url) {
   NSString* host = url.host;
   NSArray<NSString*>* parts = url.pathComponents;
@@ -61,9 +59,7 @@ bool IsMeetingURL(NSURL* url) {
   return [host isEqualToString:@"teams.microsoft.com"] && parts.count >= 4 &&
       [parts[1] isEqualToString:@"l"] && [parts[2] isEqualToString:@"meetup-join"];
 }
-//
-// DomainParser's second output is eTLD+1; Chromium's current PSL (including
-//
+
 std::string RegistrableDomain(NSURL* url) {
   if (!url) return {};
   return net::registry_controlled_domains::GetDomainAndRegistry(
@@ -112,10 +108,6 @@ bool IsAuthenticationContinuation(NSURL* source, NSURL* target) {
       [target.absoluteString hasPrefix:@"https://id.atlassian.com/login"];
 }
 
-//
-// reported URL returns to it or the saved eligible sidebar host. The recovered
-// action is WebContentFrameAction.onUpdateURL, not onDidCommitNavigation.
-// CEF OnAddressChange supplies the exact source-owned URL update.
 class URLLockState final : public base::SupportsUserData::Data,
                            public content::WebContentsObserver {
  public:
@@ -172,8 +164,7 @@ class CreatedPage final : public base::SupportsUserData::Data {
       : source_(source.source_), document_(source.document_),
         browser_(source.browser_), modifiers_(source.modifiers_),
         routed_creation_(true), destination_(destination.GetWeakPtr()) {}
-  // Source identity is independent of Peek admission. A routed ordinary tab
-  // may be adopted by another original window, but never another Profile.
+
   PCNativePage* Source(content::WebContents& created) const {
     if (!source_ || !document_.AsRenderFrameHostIfValid() || !browser_ ||
         browser_->IsDeleteScheduled() ||
@@ -227,7 +218,7 @@ class CreatedPage final : public base::SupportsUserData::Data {
   base::WeakPtr<BrowserWindowInterface> browser_;
   NSEventModifierFlags modifiers_;
   bool peek_ = false;
-  // Created by -openPeekWithURL: or -openPeekWithURL:navigationState:.
+
   bool reopened_ = false;
   bool offered_ = false;
   id __strong split_lease_ = nil;
@@ -236,8 +227,7 @@ class CreatedPage final : public base::SupportsUserData::Data {
   const bool routed_creation_ = false;
   base::WeakPtr<BrowserWindowInterface> destination_;
 };
-// A query can be reentered by an embedder callback. Keep this epoch separate
-// from the single-use admission so an older query cannot replace a newer one.
+
 class CurrentLinkSequence final : public base::SupportsUserData::Data {
  public:
   uint64_t value = 0;
@@ -262,8 +252,7 @@ class PendingCurrentLink final : public base::SupportsUserData::Data {
 CreatedPage* Creation(content::WebContents& contents) {
   return static_cast<CreatedPage*>(contents.GetUserData(&kCreatedPageKey));
 }
-// This query is used before a new page exists. State is privately owned by the
-// synchronous navigation object, so callbacks cannot replace its creation data.
+
 bool CanPresentSource(CreatedPage& state) {
   auto source = state.source_;
   PCNativePage* parent = source ? state.Parent(*source) : nil;
@@ -312,11 +301,7 @@ class RoutedPage final : public base::SupportsUserData::Data {
   base::WeakPtr<BrowserWindowInterface> browser;
   const bool background;
 };
-// An already-created page retains its original Profile, renderer, opener and
-// request. This lease changes only its destination Space at first adoption.
-//
-// in TabCreationOptions.insertionStrategy; Peek returns before that ordinary
-// creation action. No profile switch can be made at this ownership boundary.
+
 class CreatedRoute final : public base::SupportsUserData::Data,
                            public content::WebContentsObserver {
  public:
@@ -361,13 +346,11 @@ class CreatedRouteAttempt final : public base::SupportsUserData::Data {
 void AdmitCreatedRoute(content::WebContents& contents) {
   if (auto* active = static_cast<CreatedRouteAttempt*>(
           contents.GetUserData(&kCreatedRouteAttemptKey))) {
-    // A nested reconciliation must never let this outer decision overwrite
-    // a page that the nested callback already offered for ordinary adoption.
+
     active->interrupted = true;
     return;
   }
-  // Take the exact intent before any shell callback. It is never replayed by a
-  // later reconciliation, and callback reentry cannot destroy our local lease.
+
   auto data = contents.TakeUserData(&kCreatedRouteKey);
   auto* intent = static_cast<CreatedRoute*>(data.get());
   if (!intent) return;
@@ -396,13 +379,11 @@ void AdmitCreatedRoute(content::WebContents& contents) {
   if (child && child->GetUserData(&kCreatedRouteAttemptKey) == attempt)
     child->RemoveUserData(&kCreatedRouteAttemptKey);
   if (!admitted || !child) return;
-  // From here the accepted page follows the destination's ordinary tab lifetime;
-  // source navigation after adoption does not move or close it.
+
   child->SetUserData(&kRoutedPageKey,
       std::make_unique<RoutedPage>(intent->route, *browser, intent->background));
 }
-// Shared admission/revalidation. Every selector below is a pure existing-
-// state query; the renderer may be synchronously waiting for this decision.
+
 bool AllowsCurrentLink(CreatedPage& creation, const GURL& target) {
   if (!CanPresentSource(creation)) return false;
   auto source = creation.source_;
@@ -419,7 +400,7 @@ bool AllowsCurrentLink(CreatedPage& creation, const GURL& target) {
       [binding.client nativeBrowser:binding shouldOpenCurrentLinkInPeekFrom:parent targetURL:url] &&
       CanPresentSource(creation);
 }
-}  // namespace
+}
 void UpdateNativeLinkURL(content::WebContents& contents, const GURL& url) {
   auto* state = static_cast<URLLockState*>(contents.GetUserData(&kURLLockKey));
   if (state) state->UpdateURL(url);
@@ -436,9 +417,7 @@ std::optional<base::UnguessableToken> PrepareNativeCurrentLink(
     std::optional<uint32_t> input_modifiers) {
   const bool modified = disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB ||
       disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB;
-  //
-  //
-  // the exact existing OpenURL branch; never sample current NSEvent flags.
+
   if (disposition != WindowOpenDisposition::CURRENT_TAB && !modified) return std::nullopt;
   if (modified && (!input_modifiers ||
       (*input_modifiers & blink::WebInputEvent::kAltKey))) return std::nullopt;
@@ -447,9 +426,7 @@ std::optional<base::UnguessableToken> PrepareNativeCurrentLink(
       source->GetBrowserContext() != browser.GetProfile() ||
       !target.SchemeIsHTTPOrHTTPS() || !AppKitBrowserAcceptsNewPages(browser))
     return std::nullopt;
-  // This is a synchronous renderer policy query: all called shell selectors
-  // must be pure reads of existing state. No UI, storage, new page/profile,
-  // nested run loop, or callback into a renderer is permitted here.
+
   auto* sequence = static_cast<CurrentLinkSequence*>(
       source->GetUserData(&kCurrentLinkSequenceKey));
   if (!sequence) {
@@ -463,14 +440,13 @@ std::optional<base::UnguessableToken> PrepareNativeCurrentLink(
     return source_lease && source_lease->GetUserData(&kCurrentLinkSequenceKey) == sequence &&
         sequence->value == expected_sequence;
   };
-  // A later query supersedes any unconsumed admission from this document.
+
   source->RemoveUserData(&kPendingCurrentLinkKey);
   auto creation = std::make_unique<CreatedPage>(*source, *frame, browser);
   PCNativeLinkRoute* route = MatchedRoute(*creation, target);
   if ((!route && (modified || !AllowsCurrentLink(*creation, target))) ||
       !is_current()) return std::nullopt;
-  // Keep the admitted original disposition with its source/document token.
-  // Original modifier provenance came from Blink, not current NSEvent state.
+
   auto pending = std::make_unique<PendingCurrentLink>(
       std::move(creation), target, expected_sequence, route, disposition);
   const auto token = pending->token;
@@ -504,8 +480,7 @@ bool NativePeekNavigation::SplitStillValid() const {
 void NativePeekNavigation::DidNavigate(content::WebContents* created) {
   if (!state_->creation || !created || created == state_->creation->source_.get() ||
       Creation(*created) || !state_->creation->Parent(*created)) return;
-  // Base navigation already applied the original request and all security
-  // decisions. The posted reconciliation will consume only this presentation.
+
   state_->creation->peek_ = state_->peek;
   created->SetUserData(&kCreatedPageKey, std::move(state_->creation));
 }
@@ -561,8 +536,7 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
     if (!pending || pending->route ||
         pending->disposition != WindowOpenDisposition::CURRENT_TAB ||
         pending->token != *params.native_route_token) return nullptr;
-    // Consume before any callbacks. This token can never authorize a second
-    // request, and a rejected route cannot become a replacement GET.
+
     auto creation = std::move(pending->creation);
     const GURL target = pending->url;
     const GURL source_url = pending->source_url;
@@ -588,9 +562,7 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
     state->params.native_route_token.reset();
     return std::unique_ptr<NativePeekNavigation>(new NativePeekNavigation(std::move(state)));
   }
-  // Capture the source of an ordinary new-tab request before entering the
-  // upstream navigator. The request and callback remain completely original.
-  // This metadata is not a Peek policy or a navigation/security authorization.
+
   if (source && source->GetBrowserContext() == browser.GetProfile() &&
       AppKitBrowserAcceptsNewPages(browser) &&
       (params.disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB ||
@@ -608,9 +580,7 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
       }
     }
   }
-  //
-  //
-  // Blink represents Shift-click/Shift-Return on an ordinary link as NEW_WINDOW.
+
   if (!source || !params.is_renderer_initiated || !params.user_gesture ||
       params.started_from_context_menu || !params.url.SchemeIsHTTPOrHTTPS() ||
       params.disposition != WindowOpenDisposition::NEW_WINDOW ||
@@ -633,8 +603,7 @@ std::unique_ptr<NativePeekNavigation> PrepareNativePeekNavigation(
       ![binding.client nativeBrowser:binding allowsPeekWithShift:YES] ||
       !CanPresentSource(*creation)) return nullptr;
   auto state = std::make_unique<NativePeekNavigation::State>(std::move(creation), params);
-  // Copy every request field. Changing only the presentation disposition keeps
-  // POST/referrer/initiator/blob/security data in Chromium's existing pipeline.
+
   state->params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
   return std::unique_ptr<NativePeekNavigation>(
       new NativePeekNavigation(std::move(state)));
@@ -666,9 +635,7 @@ class MatchedLinkOperation final : public content::WebContentsObserver,
         !source_->source_) return false;
     auto* sequence = static_cast<CurrentLinkSequence*>(
         source_->source_->GetUserData(&kCurrentLinkSequenceKey));
-    // Multiple consumed background/foreground opens may coexist on this
-    // same document. A later click must not cancel a prior admitted tab open.
-    // Current-tab conversion retains its stricter superseding-query boundary.
+
     return !enforce_sequence_ || (sequence && sequence->value == sequence_);
   }
   void Start() {
@@ -705,14 +672,12 @@ class MatchedLinkOperation final : public content::WebContentsObserver,
     }
     auto* delegate = BrowserWebContentsDelegate::From(destination.get());
     if (!delegate) { Finish(Error(@"The destination Browser is unavailable.")); return; }
-    // This is Chromium's original full-request navigator. It deliberately
-    // strips source/opener/referrer across Profiles; never transplant contents.
+
     auto callback = base::BindOnce(
         [](std::shared_ptr<MatchedLinkOperation> operation,
            base::WeakPtr<BrowserWindowInterface> destination,
            content::NavigationHandle& navigation) {
-          // Establish Space metadata before the caller's original callback can
-          // reenter shell adoption. Forward that callback exactly once.
+
           auto* page = navigation.GetWebContents();
           operation->observed_page_ = page->GetWeakPtr();
           operation->observed_navigation_ = true;
@@ -735,14 +700,14 @@ class MatchedLinkOperation final : public content::WebContentsObserver,
     page->SetUserData(&kRoutedPageKey, std::make_unique<RoutedPage>(route_, *destination, params_.native_route_background));
     const auto page_lease = page->GetWeakPtr();
     if (source_->source_ && source_->document_.AsRenderFrameHostIfValid())
-      source_->source_->NotifyNativeDeferredOpenURL(page, source_->document_, params_);
-    // Source observers may close or transfer the actual child during delivery.
+      content::NotifyNativeDeferredOpenURL(
+          source_->source_.get(), page, source_->document_, params_);
+
     if (!page_lease || !destination ||
         destination->GetTabStripModel()->GetIndexOfWebContents(page_lease.get()) == TabStripModel::kNoTab) {
       Finish(nil); return;
     }
-    // A newly prepared background window may appear behind the source. An
-    // existing destination keeps its selection/visibility. No focus recovery.
+
     if (params_.native_route_background && empty_browser_ && destination)
       destination->GetWindow()->ShowInactive();
     empty_browser_.reset();
@@ -784,7 +749,7 @@ class MatchedLinkOperation final : public content::WebContentsObserver,
   bool invalid_ = false;
   bool finished_ = false;
 };
-}  // namespace
+}
 bool HandleNativeMatchedLink(BrowserWindowInterface& browser, content::WebContents* source,
     const content::OpenURLParams& params,
     base::OnceCallback<void(content::NavigationHandle&)>& callback) {
@@ -824,8 +789,7 @@ void CaptureNativeCreatedPage(content::WebContents* source,
   PCNativePage* page = ExistingNativePage(source);
   PCNativeBrowserWindow* binding = page ?
       [PCNativeBrowserApplication ownerForPage:page] : nil;
-  // FrameCreationInfo is associated with this exact original source. Do not
-  // infer top-level intent from a subframe's popup or an unrelated active page.
+
   if (!binding || !opener || opener != source->GetPrimaryMainFrame() ||
       source->GetBrowserContext() != created->GetBrowserContext()) return;
   auto* browser = GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(source);
@@ -841,9 +805,7 @@ static void PrepareCreatedPeek(BrowserWindowInterface& browser,
   if (!state || state->source_.get() != source ||
       state->browser_.get() != &browser || state->offered_) return;
   state->peek_ = false;
-  // Foreground-only is recovered from the original proposedDisposition
-  //
-  // Chromium's original route, including its opener and popup protections.
+
   if (!user_gesture || disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB ||
       !target.SchemeIsHTTPOrHTTPS()) return;
   PCNativePage* parent = state->Parent(created);
@@ -859,8 +821,7 @@ static void PrepareCreatedPeek(BrowserWindowInterface& browser,
       NSEventModifierFlagControl | NSEventModifierFlagOption)) == NSEventModifierFlagShift;
   if (![binding.client respondsToSelector:@selector(nativeBrowser:allowsPeekWithShift:)] ||
       ![binding.client nativeBrowser:binding allowsPeekWithShift:shift] || !valid()) return;
-  // The native layer owns the document; the shell owns favorite/pinned/Space
-  // classification. Never reconstruct it from Chromium's selected tab index.
+
   if (![binding.client respondsToSelector:@selector(nativeBrowser:shouldOpenNewPageInPeekFrom:targetURL:)] ||
       ![binding.client nativeBrowser:binding shouldOpenNewPageInPeekFrom:parent
                            targetURL:url] || !valid() ||
@@ -871,8 +832,7 @@ void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
     content::WebContents* source, content::WebContents& created,
     const GURL& target, WindowOpenDisposition disposition, bool user_gesture) {
   const auto child = created.GetWeakPtr();
-  // The recovered creation reducer selects Peek before constructing the
-  // ordinary tab action with its matched insertion strategy.
+
   PrepareCreatedPeek(browser, source, created, target, disposition, user_gesture);
   if (!child) return;
   auto* state = Creation(*child);
@@ -884,9 +844,7 @@ void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
     auto origin = CaptureSplitOrigin(browser, source, frame, *child);
     if (!child || Creation(*child) != state || state->offered_ || state->split_lease_ ||
         child->GetUserData(&kCreatedRouteKey) || !origin || !origin->Parent(*child)) return;
-    // The created-page reducer matches independently of its split
-    // presentation. Retain the existing same-Profile route lease if one
-    // exists; absence or a different Profile leaves the original page here.
+
     NSString* space = RoutingSourceSpace(*origin);
     PCNativeLinkRoute* route = space ? MatchedRoute(*origin, target) : nil;
     if (!child || Creation(*child) != state || state->offered_ || state->split_lease_ ||
@@ -916,8 +874,7 @@ void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
        disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB) || !state->Parent(*child)) return;
   auto* frame = state->document_.AsRenderFrameHostIfValid();
   if (!frame) return;
-  // Own the source lease independently of child userdata before callbacks.
-  // Unlike Peek, ATC consumes no late OS modifier state at this boundary.
+
   auto origin = std::make_unique<CreatedPage>(*source, *frame, browser);
   const GURL source_url = source->GetLastCommittedURL();
   NSString* space = RoutingSourceSpace(*origin);
@@ -974,7 +931,7 @@ void AbandonNativeCreatedPagePresentation(content::WebContents& contents) {
     state->split_observer_.reset();
   }
 }
-}  // namespace parc
+}
 @implementation PCNativePage (CreatedPage)
 - (PCNativePage*)creationSourcePage {
   auto* contents = parc::ContentsForNativePage(self);
@@ -1015,18 +972,15 @@ void AbandonNativeCreatedPagePresentation(content::WebContents& contents) {
   auto* frame = source->GetPrimaryMainFrame();
   if (!browser || !frame || source->GetBrowserContext() != browser->GetProfile() ||
       !parc::AppKitBrowserAcceptsNewPages(*browser)) return NO;
-  //
-  // link policies do not apply. The shell's exact Peek admission still does.
+
   parc::CreatedPage admission(*source, *frame, *browser);
   if (!parc::CanPresentSource(admission)) return NO;
   const auto source_lease = source->GetWeakPtr();
   const auto browser_lease = browser->GetWeakPtr();
   content::OpenURLParams params(target, content::Referrer(),
       WindowOpenDisposition::NEW_FOREGROUND_TAB,
-      ui::PAGE_TRANSITION_AUTO_BOOKMARK, /*is_renderer_initiated=*/false);
-  // The browser navigator records this exact parent as the created page's
-  // source (PrepareNativePeekNavigation). Marking only this request for Peek
-  // before the posted reconciliation offers it keeps the ordinary adoption.
+      ui::PAGE_TRANSITION_AUTO_BOOKMARK, false);
+
   content::WebContents* created = source->OpenURL(params, {});
   if (!created) return NO;
   auto* state = parc::Creation(*created);
@@ -1055,16 +1009,15 @@ void AbandonNativeCreatedPagePresentation(content::WebContents& contents) {
   auto admission = std::make_unique<parc::CreatedPage>(*source, *frame, *browser);
   if (!parc::CanPresentSource(*admission)) return NO;
   auto restored = parc::CreateRestoredContents(navigation, *browser->GetProfile(),
-                                               /*initially_hidden=*/true);
+                                               true);
   if (!restored) return [self openPeekWithURL:url];
-  // The restored page carries the same parent provenance a created Peek
-  // gets, so the posted reconciliation offers it as this parent's Peek.
+
   admission->peek_ = true;
   admission->reopened_ = true;
   auto* created = restored.get();
   created->SetUserData(&parc::kCreatedPageKey, std::move(admission));
   auto* tabs = browser->GetTabStripModel();
-  // Loads once its Peek attaches it at its size (AppKitBrowserHost Attach).
+
   tabs->InsertWebContentsAt(tabs->count(), std::move(restored), AddTabTypes::ADD_ACTIVE);
   return YES;
 }

@@ -124,7 +124,10 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
   once and rolls back cleanly. `chrome/browser/ui/unload_controller.cc` keeps its close state and
   beforeunload runner private. Since Chromium 157 splits closing into `CloseContents()` and a const
   query, the page gate sits in the query after its state check, never before it, because closing can
-  already have cleared a page's unload state. Answered by `Engine/ParcNative/unload_transactions.cc`.
+  already have cleared a page's unload state. Tab attach, detach and renderer-crash events reach
+  Parc's transactions through public tab-strip and web-contents observers registered when the
+  controller is created, so the tab-events hook keeps only the empty-strip decision. Answered by
+  `Engine/ParcNative/unload_transactions.cc`.
 - **`SetFrameFocusNotifier`**: keyboard shortcuts follow the frame that has focus.
   `content/browser/web_contents/web_contents_impl.cc` (`CONTENT_EXPORT`) calls it where focus
   changes, so `web_contents_observer.h` gains no method. Installed in the `ParcContentBrowserClient`
@@ -132,7 +135,8 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
 
 ## Browser and startup patches
 
-- **`chromium-direct-startup`**: the startup hooks, plus the Mac framework path honoring the
+- **`chromium-direct-startup`**: the startup hooks, each an early return or an added condition at
+  its original point rather than a wrapped block, plus the Mac framework path honoring the
   installed framework, which PathService can't reach for direct callers, a Keychain definition whose
   namespace is mutable in implementation and callers, and the staged content entry. Touches
   `chrome_main_delegate.cc`, `browser_process_impl.cc`, `chrome_browser_main.cc`,
@@ -147,10 +151,9 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
 - **`native-page-retirement`**: only the unload-controller hooks, in `unload_controller.cc`.
 - **`native-embedded-pages`**: only the three restore-omission hooks, in the three sessions files.
 - **`native-host-direct`**: the profile-removal and deletion hooks, capture-picker revocation and
-  capture-indicator fixes, tab previews, and Parc's action and side-panel IDs with their histogram
-  variant. Touches 12 files, including `profile_manager.cc`, `delete_profile_helper.cc`,
-  `desktop_media_picker.cc`, `media_stream_capture_indicator.cc`, `tab_features.cc`,
-  `chrome_action_id.h` and `side_panel_entry_id.h`. The IDs are entries in Chromium's own lists.
+  capture-indicator fixes and tab previews. Touches 9 files, including `profile_manager.cc`,
+  `delete_profile_helper.cc`, `desktop_media_picker.cc`, `media_stream_capture_indicator.cc` and
+  `tab_features.cc`.
 - **`native-session-cookies-direct`**, **`native-signin-disabled-direct`**,
   **`native-web-push-direct`**: each only its hook, in `profile_impl.cc`,
   `gaia_cookie_manager_service.cc` and `gcm_client_factory.cc`.
@@ -174,8 +177,10 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
 - **`native-host-route-direct-overlay`**: native link transport, because a link's policy query runs
   before Chromium creates its navigation request and no public hook reaches that point; also
   per-local-root renderer identity, player adoption across frames and a longer cache stay for a
-  casting page. Touches 18 files: the content navigator, frame host and renderer frame, the frame
-  and renderer-preference mojoms, the web-contents delegate and Blink's frame client.
+  casting page. Touches 17 files: the content navigator, frame host and renderer frame, the frame
+  and renderer-preference mojoms, the web-contents delegate and Blink's frame client. The deferred
+  open notification is the call-in `content::NotifyNativeDeferredOpenURL` in Parc's
+  `parc_native_links.h`, so `web_contents.h` stays stock.
 - **`native-window-lookup-direct`**, **`native-views-bubble-guards`**: callers that expect a
   BrowserView, toast anchor or Views frame do nothing harmful in a native window. Touches
   `browser_view.cc`, `save_address_bubble_controller.h`, `chrome/test/BUILD.gn` for the owned

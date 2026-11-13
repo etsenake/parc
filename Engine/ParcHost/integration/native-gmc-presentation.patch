@@ -210,55 +210,8 @@
  void MediaNotificationService::OnSinksDiscovered(const std::string& item_id) {
    auto item = media_session_item_producer_->GetMediaItem(item_id);
    auto* web_contents =
-@@ -518,8 +582,223 @@
-              : false;
- }
+@@ -520,6 +584,176 @@
 -
-+
-+std::optional<media_router::MediaRoute>
-+MediaNotificationService::ParcCastRouteForWebContents(
-+    content::WebContents* web_contents,
-+    const std::vector<media_router::MediaRoute>& routes) {
-+  auto presentation_manager =
-+      media_router::WebContentsPresentationManager::Get(web_contents);
-+  if (presentation_manager) {
-+    for (const auto& started : presentation_manager->GetMediaRoutes()) {
-+      auto it = std::ranges::find(routes, started.media_route_id(),
-+                                  &media_router::MediaRoute::media_route_id);
-+      if (it != routes.end()) {
-+        return *it;
-+      }
-+    }
-+  }
-+  const int tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
-+  const bool mirroring = base::FeatureList::IsEnabled(
-+      media_router::kFallbackToAudioTabMirroring);
-+  for (const auto& route : routes) {
-+    const auto& source = route.media_source();
-+    if ((source.IsRemotePlaybackSource() &&
-+         source.TabIdFromRemotePlaybackSource() == tab_id) ||
-+        (mirroring && source.IsTabMirroringSource() &&
-+         source.TabId() == tab_id)) {
-+      return route;
-+    }
-+  }
-+  if (!presentation_manager ||
-+      !presentation_manager->HasDefaultPresentationRequest()) {
-+    return std::nullopt;
-+  }
-+  const auto& urls =
-+      presentation_manager->GetDefaultPresentationRequest().presentation_urls;
-+  for (const auto& route : routes) {
-+    if (route.is_local() && route.is_connecting() &&
-+        std::ranges::any_of(urls, [&route](const GURL& url) {
-+          return route.media_source() ==
-+                 media_router::MediaSource::ForPresentationUrl(url);
-+        })) {
-+      return route;
-+    }
-+  }
-+  return std::nullopt;
-+}
 +
  void MediaNotificationService::OnStartPresentationContextCreated(
      std::unique_ptr<media_router::StartPresentationContext> context) {
@@ -435,7 +388,7 @@
    auto* web_contents = content::WebContents::FromRenderFrameHost(
        content::RenderFrameHost::FromID(
            context->presentation_request().render_frame_host_id));
-@@ -542,7 +821,24 @@
+@@ -542,7 +776,24 @@
        return;
      }
 -
@@ -462,7 +415,7 @@
 +
      // If there exists a media session notification associated with
      // |web_contents|, hold onto the context for later use.
-@@ -554,12 +850,11 @@
+@@ -554,12 +805,11 @@
      std::string item_id =
          GetActiveControllableSessionForWebContents(web_contents);
      context_item_id_ = item_id;
@@ -478,7 +431,7 @@
      }
  #endif
    } else if (presentation_request_notification_producer_) {
-@@ -577,6 +872,9 @@
+@@ -577,6 +827,9 @@
      const std::string& session_id,
      mojo::PendingReceiver<mojom::DeviceListHost> host_receiver,
      mojo::PendingRemote<mojom::DeviceListClient> client_remote) {
@@ -488,7 +441,7 @@
    std::optional<std::string> remoting_session_id;
    // `remoting_session_id` is used to construct the MediaRemotingCallback for
    // CastDeviceListHost to request Media Remoting for a MediaSession. This is
-@@ -585,20 +883,52 @@
+@@ -585,20 +838,52 @@
    // presentation context), the Remote Playback API on the blink side handles
    // sending the Media Remoting request and there's no need for requesting Media
    // Remoting from MNS.
@@ -550,7 +503,7 @@
 -
 +
  void MediaNotificationService::SetDevicePickerProvider(
-@@ -661,7 +991,12 @@
+@@ -661,7 +946,12 @@
      std::unique_ptr<media_router::CastDialogController> dialog_controller,
      mojo::PendingReceiver<mojom::DeviceListHost> host_pending_receiver,
      mojo::PendingRemote<mojom::DeviceListClient> client_remote,
@@ -564,7 +517,7 @@
    if (!dialog_controller) {
      // We discard the PendingReceiver/Remote here, and if they have disconnect
      // handlers set, those get called.
-@@ -670,21 +1005,26 @@
+@@ -670,21 +960,26 @@
    auto media_remoting_callback_ =
        remoting_session_id.has_value()
            ? base::BindRepeating(
@@ -595,7 +548,7 @@
    int host_id = host->id();
    mojo::SelfOwnedReceiverRef<global_media_controls::mojom::DeviceListHost>
        host_receiver = mojo::MakeSelfOwnedReceiver(
-@@ -693,6 +1033,8 @@
+@@ -693,6 +988,8 @@
        base::BindOnce(&MediaNotificationService::RemoveDeviceListHost,
                       weak_ptr_factory_.GetWeakPtr(), host_id));
    host_receivers_.emplace(host_id, std::move(host_receiver));
@@ -605,7 +558,7 @@
 -
 +
  bool MediaNotificationService::HasPresentationContextForSession(
-@@ -713,16 +1055,16 @@
+@@ -713,16 +1010,16 @@
  }
 -
 +
@@ -629,7 +582,7 @@
  }
 -
 +
-@@ -773,6 +1115,14 @@
+@@ -773,6 +1070,14 @@
    });
  }
 -
@@ -645,7 +598,7 @@
  std::string
  MediaNotificationService::GetActiveControllableSessionForWebContents(
      content::WebContents* web_contents) const {
-@@ -793,6 +1143,7 @@
+@@ -793,6 +1098,7 @@
    // get destroyed soon anyways.
    if (!shutdown_has_started_) {
      host_receivers_.erase(host_id);
@@ -674,24 +627,18 @@
  #include "base/memory/raw_ptr.h"
  #include "base/memory/weak_ptr.h"
  #include "base/scoped_observation.h"
-@@ -24,7 +27,9 @@
- #include "components/global_media_controls/public/mojom/device_service.mojom.h"
+@@ -25,6 +28,7 @@
  #include "components/global_media_controls/public/supplemental_device_picker_producer.h"
  #include "components/keyed_service/core/keyed_service.h"
-+#include "components/media_router/common/media_route.h"
  #include "content/public/browser/presentation_observer.h"
 +#include "content/public/browser/weak_document_ptr.h"
  #include "mojo/public/cpp/bindings/pending_receiver.h"
  #include "mojo/public/cpp/bindings/pending_remote.h"
  #include "mojo/public/cpp/bindings/receiver.h"
-@@ -118,9 +123,28 @@
+@@ -118,9 +122,24 @@
    // True if there are local cast notifications.
    bool HasLocalCastNotifications() const;
 -
-+
-+  static std::optional<media_router::MediaRoute> ParcCastRouteForWebContents(
-+      content::WebContents* web_contents,
-+      const std::vector<media_router::MediaRoute>& routes);
 +
 +  bool ParcHasFrozenSessionForWebContents(
 +      content::WebContents* web_contents) const;
@@ -715,7 +662,7 @@
    // global_media_controls::mojom::DeviceService:
    void GetDeviceListHostForSession(
        const std::string& session_id,
-@@ -162,6 +186,25 @@
+@@ -162,6 +181,25 @@
    friend class MediaNotificationServiceCastTest;
    friend class MediaToolbarButtonControllerTest;
    friend class ash::GlobalMediaControlsCastStartTest;
@@ -742,7 +689,7 @@
 +
    // Instantiates a MediaRouterViewsUI object associated with the Session with
    // the given |session_id|.
-@@ -180,7 +223,9 @@
+@@ -180,7 +218,9 @@
            host_receiver,
        mojo::PendingRemote<global_media_controls::mojom::DeviceListClient>
            client_remote,
@@ -754,7 +701,7 @@
 +
    // True if there is a presentation context for the given session ID.
    bool HasPresentationContextForSession(const std::string& session_id);
-@@ -248,6 +293,15 @@
+@@ -248,6 +288,15 @@
        mojo::SelfOwnedReceiverRef<global_media_controls::mojom::DeviceListHost>>
        host_receivers_;
 -

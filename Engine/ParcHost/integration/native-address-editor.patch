@@ -1,89 +1,29 @@
 --- a/chrome/browser/ui/views/autofill/edit_address_profile_view.cc
 +++ b/chrome/browser/ui/views/autofill/edit_address_profile_view.cc
-@@ -7,9 +7,12 @@
- #include <memory>
- #include <utility>
+@@ -31,9 +31,19 @@
+ #include "ui/views/view_class_properties.h"
+ #include "ui/views/widget/widget.h"
 -
 +
-+#include "base/callback_list.h"
- #include "base/functional/bind.h"
- #include "base/notreached.h"
-+#include "build/build_config.h"
- #include "chrome/browser/autofill/personal_data_manager_factory.h"
-+#include "chrome/browser/autofill/ui/ui_util.h"
- #include "chrome/browser/ui/autofill/address_editor_controller.h"
- #include "chrome/browser/ui/autofill/autofill_bubble_base.h"
- #include "chrome/browser/ui/autofill/edit_address_profile_dialog_controller.h"
-@@ -18,10 +21,13 @@
- #include "chrome/browser/ui/tabs/public/tab_features.h"
- #include "chrome/browser/ui/views/autofill/address_editor_view.h"
- #include "chrome/browser/ui/views/chrome_layout_provider.h"
-+#include "components/autofill/core/browser/data_manager/personal_data_manager.h"
- #include "components/constrained_window/constrained_window_views.h"
- #include "components/strings/grit/components_strings.h"
- #include "components/tabs/public/tab_interface.h"
-+#include "content/public/browser/navigation_handle.h"
- #include "content/public/browser/web_contents.h"
-+#include "content/public/browser/web_contents_observer.h"
- #include "ui/base/l10n/l10n_util.h"
- #include "ui/base/mojom/dialog_button.mojom.h"
- #include "ui/base/mojom/ui_base_types.mojom-shared.h"
-@@ -35,10 +41,12 @@
++namespace parc_hooks {
++using EditAddressDialog = std::unique_ptr<autofill::AutofillBubbleBase> (*)(
++    content::WebContents*,
++    autofill::EditAddressProfileDialogController*,
++    autofill::EditAddressProfileView*);
++void SetEditAddressDialog(EditAddressDialog factory);
++}
++
+ namespace autofill {
 -
 +
  namespace {
++parc_hooks::EditAddressDialog g_parc_edit_address_dialog = nullptr;
++
 -
 +
--class AutofillBubbleUI : public AutofillBubbleBase {
-+class AutofillBubbleUI : public AutofillBubbleBase,
-+                         public content::WebContentsObserver {
+ class AutofillBubbleUI : public AutofillBubbleBase {
   public:
-   AutofillBubbleUI(std::unique_ptr<views::Widget> dialog,
--                   EditAddressProfileView* profile_view);
-+                   EditAddressProfileView* profile_view,
-+                   content::WebContents* native_owner = nullptr);
-   AutofillBubbleUI(const AutofillBubbleUI&) = delete;
-   AutofillBubbleUI& operator=(const AutofillBubbleUI&) = delete;
-   ~AutofillBubbleUI() override;
-@@ -49,21 +57,44 @@
-   bool IsMouseHovered() const override;
--
-+
-   void CloseWidget(views::Widget::ClosedReason closed_reason);
--
-+  void WebContentsDestroyed() override;
-+  void DidFinishNavigation(content::NavigationHandle* navigation) override;
-+  void OnVisibilityChanged(content::Visibility visibility) override;
-+
-+  const bool has_native_owner_;
-+  base::CallbackListSubscription native_tab_detach_;
-   std::unique_ptr<views::Widget> dialog_;
-   raw_ptr<EditAddressProfileView> profile_view_ = nullptr;
- };
--
-+
- AutofillBubbleUI::AutofillBubbleUI(std::unique_ptr<views::Widget> dialog,
--                                   EditAddressProfileView* profile_view)
--    : dialog_(std::move(dialog)), profile_view_(profile_view) {
-+                                 EditAddressProfileView* profile_view,
-+                                 content::WebContents* native_owner)
-+    : content::WebContentsObserver(native_owner),
-+      has_native_owner_(native_owner != nullptr),
-+      dialog_(std::move(dialog)),
-+      profile_view_(profile_view) {
-   dialog_->MakeCloseSynchronous(
-       base::BindOnce(&AutofillBubbleUI::CloseWidget, base::Unretained(this)));
-+  if (native_owner) {
-+    native_tab_detach_ =
-+        tabs::TabInterface::GetFromContents(native_owner)->RegisterWillDetach(
-+            base::BindRepeating(
-+                [](AutofillBubbleUI* self, tabs::TabInterface*,
-+                   tabs::TabInterface::DetachReason) { self->Hide(); },
-+                base::Unretained(this)));
-+  }
- }
--
-+
+@@ -64,6 +74,9 @@
  AutofillBubbleUI::~AutofillBubbleUI() = default;
 -
 +
@@ -91,87 +31,24 @@
 +  if (!dialog_) {
 +    return;
 +  }
-+  if (has_native_owner_) {
-+    profile_view_->InvalidateNativeOwner();
-+  }
    dialog_->Close();
  }
 -
 +
-@@ -77,8 +108,27 @@
-   // stack to be cleaned up from the WidgetClosed() call. This keeps potential
-   // dangling pointer checks from triggering as the stack unwinds.
-   auto dialog = std::move(dialog_);
-+  Observe(nullptr);
-+  native_tab_detach_ = {};
-   profile_view_->WidgetClosed();
-   dialog.reset();
-+}
-+
-+void AutofillBubbleUI::WebContentsDestroyed() {
-+  Hide();
-+}
-+
-+void AutofillBubbleUI::DidFinishNavigation(content::NavigationHandle* navigation) {
-+  if (navigation->IsInPrimaryMainFrame() && navigation->HasCommitted() &&
-+      !navigation->IsSameDocument()) {
-+    Hide();
-+  }
-+}
-+
-+void AutofillBubbleUI::OnVisibilityChanged(content::Visibility visibility) {
-+  if (visibility == content::Visibility::HIDDEN) {
-+    Hide();
-+  }
- }
--
-+
- }  // namespace
-@@ -88,6 +138,43 @@
+@@ -88,6 +101,12 @@
      EditAddressProfileDialogController* controller) {
    auto* dialog = new EditAddressProfileView(controller);
    dialog->ShowForWebContents(web_contents);
-+#if BUILDFLAG(IS_MAC)
-+  // A native Cocoa browser supplies the exact WebContents modal owner without
-+  // a Views host Widget. TabDialogManager's creation path requires that Widget;
-+  // use the real constrained dialog route for this existing editor instead.
-+  // The editor, country-dependent fields, validation and result controller are
-+  // shared with the Views browser, including account/migration requirements.
-+  if (web_contents->GetTopLevelNativeWindow() &&
-+      !views::Widget::GetWidgetForNativeWindow(
-+          web_contents->GetTopLevelNativeWindow())) {
-+    if (controller->GetIsValidatable()) {
-+      const auto account = GetPrimaryAccountInfoFromBrowserContext(
-+          web_contents->GetBrowserContext());
-+      dialog->SetNativeAccountValidator(base::BindRepeating(
-+          [](base::WeakPtr<content::WebContents> contents,
-+             CoreAccountId original_account) {
-+            if (!contents || original_account.empty()) {
-+              return false;
-+            }
-+            auto current = GetPrimaryAccountInfoFromBrowserContext(
-+                contents->GetBrowserContext());
-+            auto* pdm = PersonalDataManagerFactory::GetForBrowserContext(
-+                contents->GetBrowserContext());
-+            return current && !current->IsEmpty() &&
-+                   current->GetAccountId() == original_account && pdm &&
-+                   pdm->address_data_manager()
-+                       .IsEligibleForAddressAccountStorage();
-+          },
-+          web_contents->GetWeakPtr(),
-+          account ? account->GetAccountId() : CoreAccountId()));
++  if (g_parc_edit_address_dialog) {
++    auto bubble = g_parc_edit_address_dialog(web_contents, controller, dialog);
++    if (bubble) {
++      return bubble;
 +    }
-+    auto widget = constrained_window::ShowWebModalDialogViewsOwned(
-+        dialog, web_contents, views::Widget::InitParams::CLIENT_OWNS_WIDGET);
-+    dialog->RequestFocus();
-+    return std::make_unique<AutofillBubbleUI>(std::move(widget), dialog,
-+                                            web_contents);
 +  }
-+#endif
    tabs::TabInterface* tab_interface =
        tabs::TabInterface::GetFromContents(web_contents);
    auto widget =
-@@ -138,6 +225,16 @@
+@@ -138,6 +157,16 @@
 -
 +
  EditAddressProfileView::~EditAddressProfileView() = default;
@@ -190,7 +67,7 @@
  void EditAddressProfileView::ShowForWebContents(
      content::WebContents* web_contents) {
    DCHECK(web_contents);
-@@ -175,6 +272,9 @@
+@@ -175,6 +204,9 @@
  }
 -
 +
@@ -201,7 +78,7 @@
    if (controller_) {
      std::exchange(controller_, nullptr)
          ->OnDialogClosed(
-@@ -197,7 +297,9 @@
+@@ -197,7 +229,9 @@
 -
 +
  void EditAddressProfileView::OnUserDecision(
@@ -214,7 +91,7 @@
 -
 +
  void EditAddressProfileView::UpdateActionButtonState(bool is_valid) {
-@@ -205,6 +307,10 @@
+@@ -205,6 +239,10 @@
  }
 -
 +
@@ -226,6 +103,17 @@
    bool is_form_valid = address_editor_view_->ValidateAllFields();
    if (is_form_valid) {
      OnUserDecision(AutofillClient::AddressPromptUserDecision::kEditAccepted);
+@@ -215,3 +253,9 @@
+ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(EditAddressProfileView, kTopViewId);
+-
++
+ }  // namespace autofill
++
++namespace parc_hooks {
++void SetEditAddressDialog(EditAddressDialog factory) {
++  autofill::g_parc_edit_address_dialog = factory;
++}
++}
 --- a/chrome/browser/ui/views/autofill/edit_address_profile_view.h
 +++ b/chrome/browser/ui/views/autofill/edit_address_profile_view.h
 @@ -5,6 +5,7 @@

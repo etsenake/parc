@@ -256,7 +256,7 @@ EME's false, when there are none), other types reject with NotSupported.
 ## Ready state, stalls and keys (what the page sees)
 
 A Safari-identity Media Source element, whichever renderer plays it, takes
-its readyState as WebKit's does (`WebMediaPlayerImpl::ParcMonitorSourceBuffers`
+its readyState as WebKit's does (`ParcWebMediaPlayerState::MonitorSourceBuffers`
 after `MediaSource::monitorSourceBuffers`,
 `MediaPlayerPrivateMediaSourceAVFObjC::updateStateFromReadyState` and
 `seekTask`); the FairPlay Renderer follows WebKit's renderer

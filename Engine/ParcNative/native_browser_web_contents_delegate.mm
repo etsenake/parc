@@ -1,8 +1,6 @@
 // Copyright 2026 Parc contributors.
-// OpenURLFromTab's early returns and the fullscreen-exit resize follow
-// Chromium Embedded Framework's chrome_browser_web_contents_delegate.cc,
+
 // Copyright 2026 The Chromium Embedded Framework Authors. All rights reserved.
-// BSD-style license: see LICENSE.
 #include "native_browser_web_contents_delegate.h"
 
 #include <utility>
@@ -19,6 +17,8 @@
 #include "native_link_routing.h"
 #include "native_page_binding.h"
 #include "native_page_observers.h"
+#include "video_overlay_window.h"
+#include "content/public/browser/video_picture_in_picture_window_controller.h"
 
 namespace parc {
 
@@ -43,6 +43,19 @@ NativeBrowserWebContentsDelegate::NativeBrowserWebContentsDelegate(
 
 NativeBrowserWebContentsDelegate::~NativeBrowserWebContentsDelegate() = default;
 
+content::PictureInPictureResult
+NativeBrowserWebContentsDelegate::EnterPictureInPicture(
+    content::WebContents* web_contents) {
+  if (UsesNativeVideoPictureInPicture(web_contents) &&
+      (!CanCreateNativeVideoPiPWindow() ||
+       content::PictureInPictureWindowController::
+           GetOrCreateVideoPictureInPictureController(web_contents)
+               ->IsImmersive())) {
+    return content::PictureInPictureResult::kNotSupported;
+  }
+  return BrowserWebContentsDelegate::EnterPictureInPicture(web_contents);
+}
+
 bool NativeBrowserWebContentsDelegate::HandleKeyboardEvent(
     content::WebContents* source,
     const input::NativeWebKeyboardEvent& event) {
@@ -60,8 +73,6 @@ content::PreloadingEligibility
 NativeBrowserWebContentsDelegate::IsPrerender2Supported(
     content::WebContents& web_contents,
     content::PreloadingTriggerType trigger_type) {
-  // CEF never allowed prerendering (CEF issue #3664), so Parc pages never
-  // have. Keep it off until it is enabled deliberately.
   return content::PreloadingEligibility::kPreloadingDisabled;
 }
 
@@ -80,7 +91,6 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
     const content::OpenURLParams& params,
     base::OnceCallback<void(content::NavigationHandle&)>
         navigation_handle_callback) {
-  // Chrome itself navigates DevTools frontends.
   if (browser_->GetType() == BrowserWindowInterface::Type::TYPE_DEVTOOLS) {
     return BrowserWebContentsDelegate::OpenURLFromTab(
         source, params, std::move(navigation_handle_callback));
@@ -101,7 +111,6 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
   if (!early_browser_weak || (source && !early_source_weak)) {
     return nullptr;
   }
-  // A source already in a Chromium split opens into it, unless Parc owns it.
   if (!native_split_owner &&
       params.disposition == WindowOpenDisposition::NEW_SPLIT_VIEW && source) {
     tabs::TabInterface* const source_tab =
@@ -143,12 +152,9 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
     return created;
   }
   if (split_decision == NativeSplitDecision::kOrdinary) {
-    // Never turn a stale one-use ATC admission into an unrelated request.
     if (params.native_route_token) {
       return nullptr;
     }
-    // Keep the original disposition through Chromium popup checks, but avoid
-    // its native two-pane path when Parc could not admit this presentation.
     content::OpenURLParams ordinary(params);
     ordinary.native_route_split = true;
     return BrowserWebContentsDelegate::OpenURLFromTab(
@@ -158,7 +164,6 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
   if (!browser_weak || (had_source && !source_weak)) {
     return nullptr;
   }
-  // A stale/consumed admission token cannot become an unrelated new tab.
   if (params.native_route_token && !peek) {
     return nullptr;
   }
@@ -190,7 +195,6 @@ content::WebContents* NativeBrowserWebContentsDelegate::AddNewContents(
     PrepareNativeCreatedPage(browser_.get(), source, *new_contents, target_url,
                              disposition, user_gesture);
     if (!child_weak) {
-      // A nested callback destroyed the exact child; do not delete it twice.
       new_contents.release();
       return nullptr;
     }
@@ -221,11 +225,8 @@ void NativeBrowserWebContentsDelegate::WebContentsCreated(
     const GURL& target_url,
     content::WebContents* new_contents) {
   CaptureNativeCreatedPage(source_contents, opener_id, new_contents);
-  // SessionTabHelper must exist before the popup's native binding.
   BrowserWebContentsDelegate::WebContentsCreated(
       source_contents, opener_id, frame_name, target_url, new_contents);
-  // Bind before the popup's first navigation; its Browser comes later, from
-  // AddNewContents.
   if (source_contents && NativePageBinding::FromWebContents(source_contents)) {
     NativePageBinding::CreateForWebContents(new_contents);
   }
@@ -248,16 +249,12 @@ void NativeBrowserWebContentsDelegate::RendererResponsive(
 content::JavaScriptDialogManager*
 NativeBrowserWebContentsDelegate::GetJavaScriptDialogManager(
     content::WebContents* source) {
-  // Null means not installed, and content then cancels the dialog. Chrome's
-  // tab-modal manager has no native window to present in.
   return NativeJavaScriptDialogManager(*source);
 }
 
 void NativeBrowserWebContentsDelegate::ExitFullscreenModeForTab(
     content::WebContents* web_contents) {
   BrowserWebContentsDelegate::ExitFullscreenModeForTab(web_contents);
-  // Workaround for https://crbug.com/1500371: make the page leave its
-  // fullscreen size with an explicit resize.
   if (auto* view = web_contents->GetRenderWidgetHostView()) {
     if (auto* widget = view->GetRenderWidgetHost()) {
       widget->SynchronizeVisualProperties();
@@ -265,4 +262,4 @@ void NativeBrowserWebContentsDelegate::ExitFullscreenModeForTab(
   }
 }
 
-}  // namespace parc
+}

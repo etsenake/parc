@@ -144,6 +144,7 @@ source_set("native_components") {
 
 source_set("autofill_save_sessions") {
   public = [
+    "native_address_editor.h",
     "autofill_bubble_handler.h",
     "autofill_save_session.h",
     "native_card_save_session.h",
@@ -154,6 +155,8 @@ source_set("autofill_save_sessions") {
     "native_tab_payment_session.h",
   ]
   sources = [
+    "native_address_editor.h",
+    "native_address_editor.cc",
     "autofill_bubble_handler.h",
     "autofill_bubble_handler.mm",
     "autofill_save_session.h",
@@ -191,6 +194,7 @@ source_set("autofill_save_sessions") {
     "//chrome/browser/ui/autofill/payments:impl",
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/views/autofill:save_address_profile_view",
+    "//chrome/browser/ui/views/autofill:edit_address_profile_view",
     "//chrome/browser/ui/views/autofill:update_address_profile_view",
     "//chrome/browser/ui/views/autofill/payments:save_card_manage_cards_bubble_views",
     "//chrome/browser/ui/views/autofill/payments:save_card_offer_bubble_views",
@@ -396,6 +400,21 @@ source_set("tab_transfer") {
   ]
 }
 
+source_set("native_file_types") {
+  public = [ "native_file_types.h" ]
+  sources = [
+    "native_file_types.cc",
+    "native_file_types.h",
+  ]
+  public_deps = [ "//ui/shell_dialogs" ]
+  deps = [
+    "//base",
+    "//chrome/app:generated_resources",
+    "//net",
+    "//ui/base",
+  ]
+}
+
 source_set("native_downloads") {
   public = [
     "downloads.h",
@@ -418,6 +437,7 @@ source_set("native_downloads") {
     "//ui/shell_dialogs",
   ]
   deps = [
+    ":native_file_types",
     ":native_internal_urls_api",
     ":native_download_dialog_api",
     ":native_auxiliary_page",
@@ -779,5 +799,21 @@ source_set("native_reader") {
     "//components/back_forward_cache",
     "//components/dom_distiller/content/browser",
     "//ui/base",
+  ]
+}
+
+source_set("native_cast_route") {
+  sources = [
+    "native_cast_route.cc",
+    "native_cast_route.h",
+  ]
+  public_deps = [ "//components/media_router/common" ]
+  deps = [
+    "//base",
+    "//chrome/browser/media/router:media_router_feature",
+    "//components/media_router/browser",
+    "//components/sessions",
+    "//content/public/browser",
+    "//url",
   ]
 }
