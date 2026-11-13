@@ -44,6 +44,21 @@ class Repository(unittest.TestCase):
         self.addCleanup(lambda: [item.close() for item in runner.locks])
         return runner
 
+    def test_resume_ignores_obsolete_checkpoint_fields(self):
+        runner = self.runner()
+        legacy = {"storage_" + suffix: value for suffix, value in
+                  (("mode", "image"), ("reason", "old choice"),
+                   ("upload", {"pid": 999999, "result": "/missing/result.json"}),
+                   ("result", "old result"))}
+        runner.checkpoint(status="stopped", stage="storage", completed=["source", "storage"], **legacy)
+        for handle in runner.locks:
+            handle.close()
+        resumed = self.runner()
+        self.assertEqual(resumed.state["id"], runner.state["id"])
+        self.assertEqual(resumed.state["completed"], ["source", "storage"])
+        self.assertTrue(set(legacy).isdisjoint(resumed.state))
+        self.assertTrue(set(legacy).isdisjoint(json.loads(resumed.current.read_text())))
+
     def test_semantic_bumps(self):
         for kind, expected in [('major','2.0.0'),('minor','1.1.0'),('patch','1.0.1')]:
             self.assertEqual(release.next_version('1.0.0', kind), expected)
@@ -468,6 +483,64 @@ class Repository(unittest.TestCase):
         self.assertEqual([item['version'] for item in self.notes()], ['1.0.1'])
 
 
+class EngineWorkspaceChoice(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name).resolve()
+        self.runner = release.Release(self.base / "repo")
+        self.source = self.base / "source"
+        overlay = self.source / "Engine/ParcHost/overlay.json"
+        overlay.parent.mkdir(parents=True)
+        overlay.write_text('{"version": 1}')
+        self.run = self.base / "run"
+        self.run.mkdir()
+        self.local = self.runner.root / "work/engine"
+        self.home = self.base / "home"
+        self.fallback = self.home / "ParcBuild/engine"
+
+    def choose(self, registered, override=None, command=None):
+        for workspace in registered:
+            workspace.mkdir(parents=True, exist_ok=True)
+            (workspace / ".parc-engine-source.json").write_text(json.dumps({
+                "overlay": {"identity": release.sha(self.source / "Engine/ParcHost/overlay.json")}}))
+        seal = self.run / "engine-artifacts.json"
+        seal.write_text('{}')
+        self.runner.state = {"run": str(self.run), "source": str(self.source)}
+        self.runner.command = Mock(return_value="", side_effect=command)
+        self.runner.git = Mock(return_value="")
+        tool = Mock(SHIPPING_CONFIGURATION="shipping")
+        tool.load_lock.return_value = ({}, "lock")
+        with patch.dict(release.os.environ, {"PARC_ENGINE_WORKSPACE": str(override) if override else ""}), \
+                patch.object(Path, "home", return_value=self.home), \
+                patch.object(release, "module", return_value=tool), \
+                patch.object(self.runner, "move_engine_to_lock", side_effect=lambda script, workspace, lock: workspace):
+            self.runner.engine()
+        return Path(self.runner.state["workspace"])
+
+    def test_explicit_workspace_wins_over_registered_defaults(self):
+        explicit = self.base / "explicit"
+        self.assertEqual(self.choose([self.local, self.fallback, explicit], explicit), explicit)
+
+    def test_checkout_workspace_wins_over_home_workspace(self):
+        self.assertEqual(self.choose([self.local, self.fallback]), self.local)
+
+    def test_home_workspace_is_used_when_checkout_workspace_is_unregistered(self):
+        self.local.mkdir(parents=True)
+        (self.local / "unowned").write_text("preserve")
+        self.assertEqual(self.choose([self.fallback]), self.fallback)
+        self.assertEqual((self.local / "unowned").read_text(), "preserve")
+
+    def test_empty_defaults_start_at_checkout_workspace(self):
+        def command(args, **kwargs):
+            if "sync" in args:
+                self.local.mkdir(parents=True)
+                (self.local / ".parc-engine-source.json").write_text('{}')
+            return ""
+        self.assertEqual(self.choose([], command=command), self.local)
+        self.assertEqual(self.runner.command.call_args_list[0].kwargs["name"], "engine-sync")
+
+
 class InterruptedOverlayCheck(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -570,6 +643,7 @@ class Pipeline(Repository):
             with patch.object(release_inputs, 'verify'):
                 self.assertEqual(runner.run(), 0)
         runner.install.assert_not_called()
+        self.assertEqual(runner.state['completed'], ['source', 'engine', 'package', 'appcast', 'homebrew'])
         self.assertEqual(calls, ['source','engine','publish','appcast','tap','tap'])
 
     def test_appcast_rerun_signs_with_the_same_date_and_a_changed_feed_is_refused(self):

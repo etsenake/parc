@@ -77,10 +77,10 @@ published tag still refuses.
    and are never reset, stashed, cleaned or overwritten. Untracked files don't
    block the release and are left where they are, since the inputs come only
    from Git objects.
-3. Find `PARC_ENGINE_WORKSPACE`, a workspace chosen by
-   [shared engine storage](engine-artifacts.md#shared-engine-storage-on-a-nas)
-   when this Mac has its settings, `work/engine` or `~/ParcBuild/engine`; use the
-   current reviewed cumulative overlay, not every intermediate overlay. Fetch
+3. Use `PARC_ENGINE_WORKSPACE` when set. Otherwise choose the first registered
+   workspace at `work/engine` or `~/ParcBuild/engine`, falling back to
+   `work/engine` if neither is registered. Use the current reviewed cumulative
+   overlay, not every intermediate overlay. Fetch
    before overlay/build operations. Reuse a compatible sealed official ARM64
    non-component engine. Otherwise generate and compile incrementally, preserving
    objects/caches. Before reapplying the overlay, `reset-source` overwrites any
@@ -112,13 +112,6 @@ published tag still refuses.
    update/push the cask's version, URL and checksum in `~/homebrew-tap`; the cask
    says `auto_updates true`, so `brew upgrade` leaves Sparkle-updated installs
    alone. Refresh the local tap metadata, check Ruby syntax and audit the cask.
-7. With shared engine storage settings, the release engine is packed into the
-   NAS snapshot in the background from the end of the engine stage, while
-   packaging reads the same sealed engine; a build that would change the
-   workspace is refused until packing ends. The release waits for it at the
-   end, ejects a NAS disk image it opened and reports the upload's outcome in
-   its final line. A failed upload names the retry command
-   (`python3 scripts/engine_storage.py publish`) and never stops the release.
 
 On a fresh Mac, restore the [saved engine workspace](engine-artifacts.md)
 first to avoid a full pinned source sync/build. An unowned existing workspace is

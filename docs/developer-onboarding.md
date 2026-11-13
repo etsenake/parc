@@ -21,20 +21,11 @@ checkout paths. Setup does not claim backlog items or authorize a new build.
    repository access and disk space. Complete available setup steps while user
    login or administrator authorization is pending.
 
-4. **Connect to the shared engine.** On the home network, run
-   `python3 scripts/engine_storage.py setup --share
-   nfs://Tardis.local/volume1/parc-engine-nfs` from Terminal (or the app that
-   will run releases). It saves the NAS settings, downloads the Metal toolchain
-   if needed, mounts the share (allow the Network Volumes prompt), creates the
-   engine's build folder with an administrator password and matches Xcode's
-   file dates; turn on System Settings > Privacy & Security > App Management
-   for that app first, or setup names it as still needed. It ends by listing
-   anything left. The first release, or `python3 scripts/engine_storage.py
-   workspace`, then unpacks the engine from the NAS and builds only what
-   changed. See [shared engine storage](engine-artifacts.md#shared-engine-storage-on-a-nas).
-   Without a NAS, the [archive restore](engine-artifacts.md) needs a published
-   pin. Do not start a fresh Chromium sync/build or edit receipts to make an
-   incompatible workspace appear valid.
+4. **Connect the engine workspace.** Use the
+   [external engine drive](engine-artifacts.md#engine-on-an-external-drive) or
+   restore a published [engine archive](engine-artifacts.md#restore-the-saved-artifacts).
+   Archive restoration needs a published pin. Do not start a fresh Chromium
+   sync/build or edit receipts to make an incompatible workspace appear valid.
 
 5. **Run applicable inert checks.** Read the check scripts first. Run
    `scripts/check-swift.py` against the checkout's native bridge headers.
