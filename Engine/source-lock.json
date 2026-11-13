@@ -4,8 +4,8 @@
   "target": "mac-arm64",
   "chromium": {
     "url": "https://chromium.googlesource.com/chromium/src.git",
-    "tag": "156.0.8078.103",
-    "commit": "8e3a49cbde48d607a97ed7ac4b57666d5e04109c"
+    "tag": "157.0.8103.80",
+    "commit": "5cb0fce6746acfc926045c45b23d811d479c49b9"
   },
   "depot_tools": {
     "url": "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
@@ -38,7 +38,7 @@
   },
   "references": {
     "depot_updates": "https://chromium.googlesource.com/chromium/tools/depot_tools/+/132599ebbd8d22d1b1bd5ea703a6d3bc493edd71/README.md",
-    "symbols": "https://chromium.googlesource.com/chromium/src/+/8e3a49cbde48d607a97ed7ac4b57666d5e04109c/build/config/compiler/compiler.gni#154",
-    "dsyms": "https://chromium.googlesource.com/chromium/src/+/8e3a49cbde48d607a97ed7ac4b57666d5e04109c/build/config/apple/symbols.gni"
+    "symbols": "https://chromium.googlesource.com/chromium/src/+/5cb0fce6746acfc926045c45b23d811d479c49b9/build/config/compiler/compiler.gni#154",
+    "dsyms": "https://chromium.googlesource.com/chromium/src/+/5cb0fce6746acfc926045c45b23d811d479c49b9/build/config/apple/symbols.gni"
   }
 }
