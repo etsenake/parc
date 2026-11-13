@@ -136,8 +136,9 @@ workflow, renders first.
 - Swipe and hold opens that direction's history list at the pane edge; vertical
   finger movement picks an entry and lifting navigates to it, Back and Forward.
   [Swipe navigation](swipe-navigation.md#planned-swipe-and-hold-for-history).
-- Let people thin the window frame from today's 10 points to a 3-point floor,
-  never invisible, through a playful, direct-manipulation control. A Parc addition.
+- Let people set the window frame anywhere from 3 to 13 points, never invisible,
+  with today's 10 as the default, through a playful, direct-manipulation control.
+  A Parc addition.
   [Window frame](window-frame.md#planned-adjustable-thickness).
 - A Space with no open tab shows a start page: the Parc mark with an Easter-egg
   animation above a resident command bar, on the Space's untextured theme

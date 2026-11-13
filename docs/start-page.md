@@ -126,7 +126,7 @@ first, and approve the direction before building:
 
 - empty Spaces in single-color, multi-color, light, dark, colorless and private
   themes, at rest, while typing and with results;
-- docked and hidden sidebar, the default frame and the thinnest frame;
+- docked and hidden sidebar, at the default, thinnest and thickest frame;
 - page card against edge to edge, texture on and off, both mark treatments;
 - each Easter egg candidate as an animated mockup, plus its Reduce Motion form.
 
