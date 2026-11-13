@@ -49,6 +49,7 @@ DEFAULTS = {
     "volume": "ParcEngine",
     "image_workspace": "ParcBuild/engine",
     "min_image_mb_per_second": 100,
+    "mode": "shared",
     "attach_attempts": 3,
     "attach_wait_seconds": 600,
     "max_image_round_trip_ms": 3,
@@ -1121,7 +1122,8 @@ class Store:
 
     def status(self) -> dict:
         reachable = mount_share(self.config)
-        return {"settings": str(config_path()), "local": describe(self.local), "share_reachable": reachable,
+        return {"settings": str(config_path()), "mode": self.config["mode"], "local": describe(self.local),
+                "share_reachable": reachable,
                 "snapshot": self.snapshot() if reachable else None,
                 "xcode_record": reachable and (self.current / XCODE_RECORD).is_file(),
                 "image_attached_here": mounted(str(self.volume)),
@@ -1136,13 +1138,13 @@ def metal_toolchain_ready() -> bool:
         return False
 
 
-def setup(share: str, repo: Path, log) -> list[str]:
+def setup(share: str, repo: Path, log, mode: str = "shared") -> list[str]:
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     current = read_json(path) or {}
     if current.get("share") not in (None, share):
         log(f"Replacing the NAS address {current['share']} with {share}")
-    write_json(path, {**current, "schema_version": 1, "share": share})
+    write_json(path, {**current, "schema_version": 1, "share": share, "mode": mode})
     log(f"Saved the NAS settings at {path}")
     store = Store(load_config(path), repo, log=log)
     problems = []
@@ -1185,6 +1187,8 @@ def main(argv=None) -> int:
                         help="Source whose engine lock and overlay the workspace must match, such as a release's "
                              "frozen inputs; defaults to --repo")
     parser.add_argument("--share", help="NAS address for setup, for example nfs://nas.local/volume1/parc-engine-nfs")
+    parser.add_argument("--mode", choices=("shared", "backup"), default="shared",
+                        help="backup: releases only upload to the NAS and never take their engine from it")
     parser.add_argument("--workspace", type=Path)
     parser.add_argument("--result", type=Path)
     parser.add_argument("--from", dest="prefer", choices=("local", "image", "snapshot"),
@@ -1198,7 +1202,8 @@ def main(argv=None) -> int:
         if not args.share:
             parser.error("setup needs --share")
         problems = setup(args.share, args.repo.resolve(),
-                         lambda message: print(f"[{now()}] engine-storage: {message}", file=sys.stderr, flush=True))
+                         lambda message: print(f"[{now()}] engine-storage: {message}", file=sys.stderr, flush=True),
+                         args.mode)
         for problem in problems:
             print(f"[{now()}] engine-storage: Still needed: {problem}", file=sys.stderr)
         print(json.dumps({"ready": not problems, "problems": problems}))

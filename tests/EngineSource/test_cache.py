@@ -15,6 +15,9 @@ spec.loader.exec_module(engine)
 
 class CacheTests(unittest.TestCase):
     def setUp(self):
+        sdk = patch.object(engine, "ensure_sdk", return_value=None)
+        sdk.start()
+        self.addCleanup(sdk.stop)
         self.temp = tempfile.TemporaryDirectory(prefix="parc-cache-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)

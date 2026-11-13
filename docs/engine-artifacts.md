@@ -1,5 +1,39 @@
 # Existing engine snapshots
 
+## Engine on an external drive
+
+The primary way to share one engine between Macs is an external APFS drive
+(a Thunderbolt or USB4 NVMe drive) carried between them. Siso trusts an engine
+only at the absolute path where it was built, so the drive is mounted at the
+engine's existing folder (where the checkout's `work/engine` link points),
+not under `/Volumes`; the same path on every Mac keeps every Siso record valid.
+
+`python3 scripts/engine_drive.py prepare --volume NAME` sets a Mac up with the
+drive plugged in. It refuses a non-APFS or internal disk, a drive holding other
+files, and an engine whose operation lock is held. On the first Mac it copies
+the engine onto the empty drive with `ditto`, keeping every file date; on a
+later Mac it finds the drive's engine and copies nothing. It then moves the
+Mac's own engine folder aside to `<folder>.local-<time>` (delete it once the
+drive works), creates the empty mount folder, adds
+`UUID=<volume> <folder> apfs rw` to `/etc/fstab` with administrator rights once
+so the drive always mounts there, and remounts it there now. It writes
+`.metadata_never_index` so Spotlight leaves the drive alone; macOS ignores
+ownership on it, so different user names on the Macs don't matter. `status`
+reports whether the engine folder is the drive and has its mount setting;
+`eject` refuses while an engine operation runs and otherwise ejects the drive.
+Releases then build on the drive through the engine link as usual. Matching
+Xcode file dates is still needed while the SDK comes from Xcode; the engine's
+own SDK copy (see [Engine](../Engine/README.md#build-configuration)) removes
+that need after its one-time rebuild.
+
+With a drive in use, configure the NAS below with `setup --mode backup`: every
+release still packs its engine into the NAS snapshot in the background, but it
+never takes an engine from the NAS and finishes without waiting for the upload,
+recording "backing up to the NAS in the background" instead; `status` shows the
+snapshot's time afterwards. Restoring that backup (for a replacement drive or a
+Mac without the drive) is a manual `workspace --from snapshot`, which unpacks
+at the engine folder.
+
 ## Shared engine storage on a NAS
 
 `scripts/engine_storage.py` lets several Macs share one engine workspace through

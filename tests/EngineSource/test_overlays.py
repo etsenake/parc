@@ -14,6 +14,9 @@ from test_engine_source import engine
 
 class OverlayTests(unittest.TestCase):
     def setUp(self):
+        sdk = patch.object(engine, "ensure_sdk", return_value=None)
+        sdk.start()
+        self.addCleanup(sdk.stop)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.base = Path(temporary.name).resolve()

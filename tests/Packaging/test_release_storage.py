@@ -169,6 +169,32 @@ class ReleaseStorageTests(unittest.TestCase):
         self.runner.discard_frozen_choice(self.source)
         self.assertEqual(self.runner.state['storage_mode'], 'restored')
 
+    def test_backup_mode_never_waits_for_the_upload(self):
+        self.settings.write_text(json.dumps({'schema_version': 1, 'share': 'nfs://nas.test/engine', 'mode': 'backup'}))
+        child = Mock(pid=4545)
+        child.poll.return_value = None
+        child.wait.side_effect = AssertionError('waited for the backup')
+        with patch.object(release.subprocess, 'Popen', return_value=child):
+            self.runner.start_storage_upload()
+            self.runner.storage()
+        self.assertIn('backing up to the NAS in the background', self.runner.state['storage_result'])
+
+    def test_backup_mode_reports_a_backup_that_already_finished(self):
+        self.settings.write_text(json.dumps({'schema_version': 1, 'share': 'nfs://nas.test/engine', 'mode': 'backup'}))
+        child = self.launched({'published': True})
+        child.poll.return_value = 0
+        with patch.object(release.subprocess, 'Popen', return_value=child):
+            self.runner.start_storage_upload()
+            Path(self.runner.state['storage_upload']['result']).write_text(json.dumps({'published': True}))
+            self.runner.storage()
+        self.assertEqual(self.runner.state['storage_result'], 'updated')
+
+    def test_backup_mode_never_takes_the_engine_from_the_nas(self):
+        self.settings.write_text(json.dumps({'schema_version': 1, 'share': 'nfs://nas.test/engine', 'mode': 'backup'}))
+        self.assertTrue(self.runner.storage_backup_only())
+        self.settings.write_text(json.dumps({'schema_version': 1, 'share': 'nfs://nas.test/engine'}))
+        self.assertFalse(self.runner.storage_backup_only())
+
     def test_unreadable_settings_turn_storage_off_instead_of_failing(self):
         self.settings.write_text('{not json')
         self.assertFalse(self.runner.storage_enabled())

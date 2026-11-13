@@ -179,6 +179,16 @@ what users see or hear today, and each must keep it that way.
   and approval because a regression would show as stalled or mis-composited protected video: the
   wait-for-key latch inside the player, `SetOutputIsSecure` in place of the parked-compositor flag,
   a composite renderer and a separate FairPlay process with `CALayerHost`.
+- Switch the engine to its own macOS SDK copy in the next Chromium milestone upgrade commit: add
+  `mac_sdk_path="//build/mac_files/parc_sdk/MacOSX.sdk"` to the source lock's `gn_defines` (the source
+  tool already creates the copy; see [Engine](../Engine/README.md#build-configuration)). It changes
+  every compile command once, so doing it alone would cost an extra full rebuild; afterwards Xcode
+  updates and moving the engine between Macs no longer need Xcode date matching.
+- Switch the engine to its own macOS SDK copy in the next Chromium milestone upgrade commit: add
+  `mac_sdk_path="//build/mac_files/parc_sdk/MacOSX.sdk"` to the source lock's `gn_defines` (the source
+  tool already creates the copy; see [Engine](../Engine/README.md#build-configuration)). It changes
+  every compile command once, so doing it alone would cost an extra full rebuild; afterwards Xcode
+  updates and moving the engine between Macs no longer need Xcode date matching.
 - Carrying Parc's Chromium changes as a branch moved by three-way merges, and the Chromium 157 (or
   158) upgrade taken through it, are separately authorized work. The upgrade is what brings users
   that release's Chromium security fixes; the [upgrade procedure](../Engine/README.md#upgrading-chromium)
