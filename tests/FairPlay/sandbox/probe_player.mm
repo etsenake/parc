@@ -148,6 +148,7 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
     if (s_.audio.present) ac = AudioConfigFor(s_.audio.info);
     fp::Result r = renderer_.Initialize(vc, ac);
     if (!r.ok()) Fail("renderer Initialize: " + r.message);
+    renderer_.SetMuted(true);
     renderer_.StartPlayingFrom(fp::MediaTime::FromMicroseconds(0));
     renderer_.SetPlaybackRate(1);
     SetStage(s_.protected_media ? "license" : "playback");
