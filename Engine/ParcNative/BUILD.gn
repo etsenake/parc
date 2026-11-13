@@ -642,7 +642,6 @@ source_set("native_webauthn") {
     "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/views/extensions:security_dialog_tracker",
     "//chrome/browser/ui/views/webauthn",
-    "//chrome/browser/ui/views/webauthn/ambient",
     "//chrome/browser/ui/webauthn",
     "//chrome/browser/webauthn",
     "//chrome/browser/webauthn:impl",

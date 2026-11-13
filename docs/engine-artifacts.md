@@ -27,9 +27,9 @@ as a fallback; delete it once the drive works. macOS ignores ownership on the
 drive, so different user names on the Macs don't matter. `status` reports
 whether the linked engine is on an external drive and registered at its path;
 `eject` refuses while an engine operation runs and otherwise ejects the drive.
-Moving the engine to a Mac with a differently installed Xcode still needs its
-Xcode file dates matched until the engine uses its own SDK copy (see
-[Engine](../Engine/README.md#build-configuration)).
+The engine compiles against its own SDK copy on the drive (see
+[Engine](../Engine/README.md#build-configuration)), so another Mac needs no Xcode
+date matching to build incrementally.
 
 ## Restore the saved artifacts
 
