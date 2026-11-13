@@ -158,7 +158,7 @@ up, not even for E-AC-3 or AC-3.
 ### Which rules playback needs
 
 `--ablate` replaces each grant on its own, and `--ablate-groups` each
-commented group (for grants that stand in for each other), with a filter that
+top-level `(allow …)` rule (for grants that stand in for each other), with a filter that
 matches nothing. Scenario `h264`:
 
 | Grant | Without it |

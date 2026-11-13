@@ -247,11 +247,10 @@ def main():
         if args.ablate_groups:
             groups, current = [], None
             for i, l in enumerate(lines):
-                if l.strip().startswith(";"):
-                    if current is None or current:
-                        current = []
-                        groups.append(current)
-                elif i in grants and current is not None:
+                if l.startswith("(allow"):
+                    current = []
+                    groups.append(current)
+                if i in grants and current is not None:
                     current.append(i)
             groups = [g for g in groups if g]
             print(f"ablation of {len(groups)} FairPlay grant groups ({args.ablate_scenario}):")
