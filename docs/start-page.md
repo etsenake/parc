@@ -27,8 +27,6 @@ so Command-S hides the sidebar there like anywhere else. The open item is in the
   sits a little above the window's center.
 - Typing grows the card downward with suggestion rows while its top edge stays put.
 - Sidebar, Back, Forward and Reload buttons sit in the top-left corner.
-- Its AI pieces (Ask anything, chat rows, Add tabs or files, voice input) are
-  outside Parc's scope.
 
 ## When it shows
 
