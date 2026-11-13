@@ -33,9 +33,13 @@ so Command-S hides the sidebar there like anywhere else. The open item is in the
 ## When it shows
 
 The start page shows when an ordinary or private window's current Space has no
-selected tab, Note, Easel or split, including in full screen. Popup windows, an
-open Library and Space creation keep their own content. Add Split's pending pane
-keeps today's placeholder and sidebar hold while a result is being chosen.
+selected tab, Note, Easel or split, including in full screen. Closing the last
+open tab in a Space, by Command-W, its close button or a closing command, opens
+the start page in that window with the command bar focused and ready to type;
+the window stays open. Switching to a Space with no open tab, or creating one,
+lands there too. Popup windows, an open Library and Space creation keep their
+own content. Add Split's pending pane keeps today's placeholder and sidebar hold
+while a result is being chosen.
 
 ## Sidebar
 
@@ -116,8 +120,9 @@ first time and never in the way. Candidates for review:
 
 ## Transitions
 
-Closing the last tab fades the page out and the start page in, within the same
-card. Opening a tab from the bar reverses it. Reduce Motion crossfades.
+Closing the last tab fades its page out and the start page in, within the same
+card, and the command bar takes focus as it arrives. Opening a tab from the bar
+reverses it. Reduce Motion crossfades.
 
 ## Visual review is required
 
@@ -139,8 +144,8 @@ The live look-and-feel pass in Parc follows that guide's runtime boundary.
 2. The mark and its Easter egg.
 
 Checks: model tests for the empty-Space condition and sidebar toggling
-(Command-S hides in an empty Space, closing the last tab keeps the presentation,
-Add Split still holds), resident command bar tests (Escape, Command-T focus,
+(Command-S hides in an empty Space, closing the last tab shows the start page
+with the field focused and keeps the sidebar presentation, Add Split still holds), resident command bar tests (Escape, Command-T focus,
 submission opens a tab in the Space), theme surface tests (texture off, shared
 coordinate space, paging), Swift typecheck and whole-module SIL. No engine
 change is needed. When it ships, update the empty-window sections of
