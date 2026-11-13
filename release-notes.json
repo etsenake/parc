@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "2.1.2",
+      "build": 34,
+      "date": "2026-11-13",
+      "changes": [
+        {
+          "type": "fix",
+          "scope": "passwords",
+          "summary": "Keep passkey sheets, card-name fixes, extension panels and held tabs behaving on the new Chromium",
+          "breaking": false
+        }
+      ]
+    },
+    {
       "version": "2.1.1",
       "build": 33,
       "date": "2026-11-12",

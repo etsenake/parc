@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.2 (2026-11-13)
+
+### Fixed
+
+- **passwords:** Keep passkey sheets, card-name fixes, extension panels and held tabs behaving on the new Chromium
+
 ## 2.1.1 (2026-11-12)
 
 ### Fixed
