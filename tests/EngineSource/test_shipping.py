@@ -15,6 +15,9 @@ spec.loader.exec_module(engine)
 
 class ShippingTests(unittest.TestCase):
     def setUp(self):
+        sdk = patch.object(engine, "ensure_sdk", return_value=None)
+        sdk.start()
+        self.addCleanup(sdk.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.workspace = Path(self.temp.name).resolve()

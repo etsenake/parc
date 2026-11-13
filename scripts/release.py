@@ -597,7 +597,7 @@ class Release:
                 if storage is None or not storage.Store(storage.load_config(), self.root, log=self.emit,
                                                         source=source).attach():
                     raise Failure("The NAS disk image holding this release's engine is unavailable; preserved")
-        elif workspace is None and self.storage_enabled():
+        elif workspace is None and self.storage_enabled() and not self.storage_backup_only():
             workspace = self.storage_workspace(source)
         if workspace is None:
             options = [self.root / "work/engine", Path.home() / "ParcBuild/engine"]
@@ -744,6 +744,13 @@ class Release:
             return False
         return "engine_storage.py" in command and upload["result"] in command
 
+    def storage_backup_only(self):
+        try:
+            config = self.storage_tool().load_config() if self.storage_enabled() else None
+        except (OSError, ValueError, ImportError, SyntaxError):
+            return False
+        return bool(config) and config.get("mode") == "backup"
+
     def storage(self):
         if not self.storage_enabled():
             return
@@ -752,6 +759,11 @@ class Release:
         child = getattr(self, "storage_child", None)
         deadline = time.monotonic() + STORAGE_WAIT_SECONDS
         running = False
+        if self.storage_backup_only() and not upload.get("error"):
+            if (child.poll() is None) if child is not None else self.uploader_alive(upload):
+                self.checkpoint(storage_result="backing up to the NAS in the background; check it later with: "
+                                               "python3 scripts/engine_storage.py status")
+                return
         if upload.get("error"):
             pass
         elif child is not None:

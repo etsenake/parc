@@ -25,6 +25,9 @@ class EngineSourceTests(unittest.TestCase):
         self.lock, self.sha = engine.load_lock()
         self.good_host = {"blockers": [], "free_bytes": 200_000_000_000}
         self.env = engine.environment(self.workspace, self.lock, 0)
+        sdk = patch.object(engine, "ensure_sdk", return_value=None)
+        sdk.start()
+        self.addCleanup(sdk.stop)
 
     def owned(self, phase="synced"):
         overlay = patch.object(engine, "recorded_overlay", return_value={"build_targets": []})

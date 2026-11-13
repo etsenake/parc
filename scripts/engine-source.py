@@ -29,6 +29,7 @@ import tempfile
 REPO = Path(__file__).resolve().parents[1]
 LOCK_FILE = REPO / "Engine/source-lock.json"
 MARKER = ".parc-engine-source.json"
+SDK_COPY = "build/mac_files/parc_sdk/MacOSX.sdk"
 SHIPPING_MARKER = ".parc-shipping-build.json"
 SHIPPING_CONFIGURATION = "ParcDistribution_GN_arm64"
 OVERLAY_RECORD_LIMIT = 64 * 1024 * 1024
@@ -371,6 +372,7 @@ def shipping_build(workspace: Path, lock: dict, lock_sha: str, symbol_level: int
         applied = recorded_overlay(workspace, state)
         if not applied:
             raise Refusal("Shipping requires the reviewed native source overlay")
+        ensure_sdk(workspace, lock)
         output = internal_path(locations(workspace)["chromium"] / "out" / SHIPPING_CONFIGURATION, workspace)
         receipt_path = internal_path(workspace / SHIPPING_MARKER, workspace)
         arguments = shipping_arguments(workspace, env, lock)
@@ -566,6 +568,27 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         write_marker(workspace, active)
         return {"workspace": str(workspace), "phase": "synced", "lock_sha256": lock_sha,
                 "reserve": reserve, "minimum_free_bytes": report.get("minimum_free_bytes")}
+
+
+def ensure_sdk(workspace: Path, lock: dict) -> Path | None:
+    defines = dict(line.split("=", 1) for line in gn_arguments(lock["build"]["gn_defines"]).decode().splitlines())
+    if defines.get("mac_sdk_path") != json.dumps("//" + SDK_COPY):
+        return None
+    target = internal_path(locations(workspace)["chromium"] / SDK_COPY, workspace)
+    if (target / "SDKSettings.json").is_file():
+        return target
+    shown = subprocess.run(["/usr/bin/xcrun", "--sdk", "macosx", "--show-sdk-path"], capture_output=True, text=True,
+                           timeout=120)
+    source = Path(shown.stdout.strip()).resolve() if shown.returncode == 0 else None
+    if source is None or not (source / "SDKSettings.json").is_file():
+        raise Refusal("No installed macOS SDK to copy into the engine; install Xcode")
+    staging = internal_path(target.with_name(target.name + ".copying"), workspace)
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["/usr/bin/ditto", str(source), str(staging)], check=True)
+    staging.rename(target)
+    print(f"engine-source: copied the macOS SDK from {source} into the engine", file=sys.stderr)
+    return target
 
 
 def reset_source(workspace: Path, lock: dict, lock_sha: str) -> dict:
@@ -1105,6 +1128,7 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                 plan["build"][-1]["argv"].extend(t.removeprefix('//') for t in applied["build_targets"])
             if not applied:
                 raise Refusal("Direct generation requires the reviewed Parc overlay")
+            ensure_sdk(workspace, lock)
             if state["phase"] in {"synced", "generation-failed"}:
                 command = plan["build"][0]
                 run(command["argv"], Path(command["cwd"]), env)
