@@ -485,7 +485,7 @@ def reconfigure(workspace: Path, lock: dict, lock_sha: str, previous_path: Path)
         state = settle_dead_operation(workspace, read_marker(workspace, previous_sha))
         if state.get("phase") not in {"synced", "generation-failed", "generated", "built"}:
             raise Refusal("Partial operation preserved; only a completed source state can be reconfigured")
-        verify_workspace(workspace, previous, state, environment(workspace, previous, state["symbol_level"]), previous=True)
+        verify_workspace(workspace, previous, state, environment(workspace, previous, state["symbol_level"]))
         report = {"workspace": str(workspace), "previous_lock_sha256": previous_sha,
                   "lock_sha256": lock_sha, "previous_phase": state["phase"],
                   "gn_defines": lock["build"]["gn_defines"], "shipping": None}
@@ -527,7 +527,7 @@ def retarget(workspace: Path, lock: dict, lock_sha: str, previous_path: Path) ->
         env = environment(workspace, previous, state["symbol_level"])
         if not resuming:
             try:
-                verify_workspace(workspace, previous, state, env, previous=True)
+                verify_workspace(workspace, previous, state, env)
             except Refusal as error:
                 print(f"engine-source: overwriting source changes made outside the Parc overlay ({error})",
                       file=sys.stderr)
@@ -813,7 +813,7 @@ def tree_fingerprint(workspace: Path, env: dict, repositories: list[str]) -> str
     return result.hexdigest()
 
 
-def verify_workspace(workspace: Path, lock: dict, state: dict, env: dict, *, previous: bool = False) -> None:
+def verify_workspace(workspace: Path, lock: dict, state: dict, env: dict) -> None:
     config = internal_path(workspace / "chromium/.gclient", workspace)
     if config.is_symlink() or config.read_text() != gclient_text(lock):
         raise Refusal("gclient configuration changed")
@@ -828,7 +828,7 @@ def verify_workspace(workspace: Path, lock: dict, state: dict, env: dict, *, pre
         args = internal_path(locations(workspace)["chromium"] / "out" / lock["build"]["configuration"] / "args.gn", workspace)
         if (not args.is_file() or state.get("engine_mode") != "direct" or state.get("build_targets") != lock["build"]["targets"]
                 or state.get("args_sha256") != digest(args.read_bytes())
-                or not previous and args.read_bytes() != engine_arguments(lock, environment(workspace, lock, state["symbol_level"])["GN_DEFINES"])):
+                or args.read_bytes() != engine_arguments(lock, environment(workspace, lock, state["symbol_level"])["GN_DEFINES"])):
             raise Refusal("Direct generated arguments differ from their receipt")
     recorded_overlay(workspace, state)
 
