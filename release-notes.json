@@ -14,13 +14,7 @@
         {
           "type": "fix",
           "scope": "engine",
-          "summary": "Let reconfigure and retarget trust the receipt's fingerprint of the old build settings instead of rewriting them with today's rules",
-          "breaking": false
-        },
-        {
-          "type": "fix",
-          "scope": "engine",
-          "summary": "Bring Chromium 157's security fixes to Parc by fitting Parc's engine code to Chromium's new APIs",
+          "summary": "Bring Chromium 157's security fixes to Parc",
           "breaking": false
         }
       ]

@@ -5,8 +5,7 @@
 ### Fixed
 
 - **passwords:** Keep passkey sheets, card-name fixes, extension panels and held tabs behaving on the new Chromium
-- **engine:** Let reconfigure and retarget trust the receipt's fingerprint of the old build settings instead of rewriting them with today's rules
-- **engine:** Bring Chromium 157's security fixes to Parc by fitting Parc's engine code to Chromium's new APIs
+- **engine:** Bring Chromium 157's security fixes to Parc
 
 ## 2.1.1 (2026-11-12)
 
