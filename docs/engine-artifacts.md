@@ -3,36 +3,33 @@
 ## Engine on an external drive
 
 The primary way to share one engine between Macs is an external APFS drive
-(a Thunderbolt or USB4 NVMe drive) carried between them. Siso trusts an engine
-only at the absolute path where it was built, so the drive is mounted at the
-engine's existing folder (where the checkout's `work/engine` link points),
-not under `/Volumes`; the same path on every Mac keeps every Siso record valid.
+(a Thunderbolt or USB4 NVMe drive) carried between them. The engine lives at
+the drive's own folder under `/Volumes`, such as `/Volumes/Parc`, and builds
+there in place. Siso trusts an engine only at the absolute path where it was
+built, so use the same drive name on every Mac; macOS gives the drive that same
+path as long as no other mounted volume shares its name.
 
 `python3 scripts/engine_drive.py prepare --volume NAME` sets a Mac up with the
-drive plugged in. It refuses a non-APFS or internal disk, a drive holding other
-files, and an engine whose operation lock is held. On the first Mac it copies
-the engine onto the empty drive with `ditto`, keeping every file date; on a
-later Mac it finds the drive's engine and copies nothing. It then moves the
-Mac's own engine folder aside to `<folder>.local-<time>` (delete it once the
-drive works), creates the empty mount folder, adds
-`UUID=<volume> <folder> apfs rw` to `/etc/fstab` with administrator rights once
-so the drive always mounts there, and remounts it there now. It writes
-`.metadata_never_index` so Spotlight leaves the drive alone; macOS ignores
-ownership on it, so different user names on the Macs don't matter. `status`
-reports whether the engine folder is the drive and has its mount setting;
-`eject` refuses while an engine operation runs and otherwise ejects the drive.
-Releases then build on the drive through the engine link as usual. Matching
-Xcode file dates is still needed while the SDK comes from Xcode; the engine's
-own SDK copy (see [Engine](../Engine/README.md#build-configuration)) removes
-that need after its one-time rebuild.
+drive plugged in and needs no administrator rights. It refuses a non-APFS or
+internal disk, a drive holding other files and an engine whose operation lock
+is held. On the first Mac it copies the engine the checkout's `work/engine`
+link names onto the empty drive with `ditto`, keeping every file date, then
+registers the copy at the drive's path with the engine tool's move proof (the
+`adopt-clone` checks without its same-volume rule), so the first build there
+regenerates and recompiles. Pass `--lock` with the source lock the engine was
+built with when the checkout's lock has moved on. On a later Mac it finds the
+drive's registered engine and copies nothing.
 
-With a drive in use, configure the NAS below with `setup --mode backup`: every
-release still packs its engine into the NAS snapshot in the background, but it
-never takes an engine from the NAS and finishes without waiting for the upload,
-recording "backing up to the NAS in the background" instead; `status` shows the
-snapshot's time afterwards. Restoring that backup (for a replacement drive or a
-Mac without the drive) is a manual `workspace --from snapshot`, which unpacks
-at the engine folder.
+Either way it points the checkout's `work/engine` link at the drive, where
+releases and the engine tools find it, and writes `.metadata_never_index` so
+Spotlight leaves the drive alone. The Mac's own engine folder stays untouched
+as a fallback; delete it once the drive works. macOS ignores ownership on the
+drive, so different user names on the Macs don't matter. `status` reports
+whether the linked engine is on an external drive and registered at its path;
+`eject` refuses while an engine operation runs and otherwise ejects the drive.
+The engine carries its own macOS SDK copy (see
+[Engine](../Engine/README.md#build-configuration)), so moving it between Macs
+needs no Xcode date matching.
 
 ## Shared engine storage on a NAS
 

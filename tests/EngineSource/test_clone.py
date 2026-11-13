@@ -54,6 +54,15 @@ class CloneTests(unittest.TestCase):
         with self.assertRaisesRegex(ws.Refusal, 'same depth'):
             self.adopt()
 
+    def test_moved_copy_at_another_depth_is_adopted(self):
+        self.clone = self.root / 'nested/moved'
+        self.copy()
+        result = ws.adopt_local_clone(self.source, self.clone, self.repo, moved=True)
+        state, _ = ws._read(self.clone / self.engine.MARKER)
+        self.assertEqual(result['phase'], 'synced')
+        self.assertEqual(state['workspace'], str(self.clone))
+        self.assertEqual(state['relocation']['kind'], 'moved')
+
     def test_busy_source_or_clone_refused(self):
         self.copy()
         for root in [self.source, self.clone]:

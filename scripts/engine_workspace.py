@@ -345,14 +345,14 @@ def _adopt_workspace(extracted_root: Path, metadata: dict, *, expected_metadata_
 
 
 def adopt_local_clone(source: Path, clone: Path, repo: Path = REPO,
-                      previous_lock: Path | None = None) -> dict:
+                      previous_lock: Path | None = None, *, moved: bool = False) -> dict:
     engine = _engine(repo)
     try:
         source = engine.safe_path(str(source), repo)
         clone = engine.safe_path(str(clone), repo)
-        if (source == clone or source in clone.parents or clone in source.parents
-                or len(source.parts) != len(clone.parts)
-                or source.stat().st_dev != clone.stat().st_dev):
+        if source == clone or source in clone.parents or clone in source.parents:
+            raise Refusal("Clone must be a separate path from its source")
+        if not moved and (len(source.parts) != len(clone.parts) or source.stat().st_dev != clone.stat().st_dev):
             raise Refusal("Clone must be a separate path at the same depth on the same volume")
         if previous_lock is not None and (not previous_lock.is_absolute()
                 or ".." in previous_lock.parts
@@ -379,7 +379,8 @@ def adopt_local_clone(source: Path, clone: Path, repo: Path = REPO,
                     raise Refusal("Inherited clone snapshot metadata differs from source")
             return _adopt_workspace(clone, metadata,
                                     expected_metadata_sha256=_sha(canonical_json(metadata)),
-                                    provenance={"kind": "local-clone", "source_receipt_sha256": receipt_sha},
+                                    provenance={"kind": "moved" if moved else "local-clone",
+                                                "source_receipt_sha256": receipt_sha},
                                     source_lock=(lock, lock_sha), already_guarded=True, local_source=source, repo=repo)
     except engine.Refusal as error:
         raise Refusal(str(error)) from error
