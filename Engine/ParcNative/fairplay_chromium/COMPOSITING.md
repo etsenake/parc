@@ -458,8 +458,8 @@ compiler checks and executed test results separately.
 
 Browser/app launch, screenshots and live playback checks require explicit new
 user authorization under [AGENTS.md](../../../AGENTS.md). This document does not
-authorize them. Current source/release status belongs in
-[product status](../../../docs/parity.md).
+authorize them. Release status lives in the
+[release notes](../../../CHANGELOG.md).
 
 ## Verification done without a build
 

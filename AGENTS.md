@@ -141,8 +141,9 @@ exact machine records belong in source manifests, Git and ignored check output.
 Technical details should help a reader act, not serve as proof that an agent worked.
 
 - `README.md`: product overview, install/build entry points and navigation.
-- `docs/parity.md`: compact product capabilities, current source/release status,
-  explicit product scope and links. Keep the compact historical progress
+- `docs/parity.md`: compact product capabilities, explicit product scope and links.
+  It carries no version or release status; `app-version.json`, the changelog and the
+  release notes do, so no regular doc changes when a release ships. Keep the compact historical progress
   comparison, with its meaning and limits; do not rebuild the old requirement
   ledger, completed-row inventory or an invented whole-product percentage.
 - `docs/backlog.md`: concrete unfinished work, explicit deferrals and current
