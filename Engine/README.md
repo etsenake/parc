@@ -63,6 +63,18 @@ Codec flags select macOS decoding/encoding rather than bundled proprietary
 FFmpeg/OpenH264 paths. See [engine policy](../docs/engine-flags.md) and
 [FairPlay integration](ParcNative/fairplay_chromium/README.md).
 
+The engine carries its own macOS SDK: `mac_sdk_path` points both outputs at
+`//build/mac_files/parc_sdk/MacOSX.sdk`, which Chromium's ignore rules cover,
+so source cleanup keeps it. Before generating or building, the source tool
+copies the installed Xcode's SDK there with `ditto` (keeping file dates) if it
+is missing, and never touches an existing copy. Compiles then use a path inside
+the engine, so moving the engine to another Mac needs no Xcode date matching and
+an Xcode update no longer changes any compile command. The installed Xcode still
+supplies its tools, and the Metal compiler still runs as `xcrun metal` and needs
+Apple's Metal toolchain installed. Switching to the copy, or refreshing it by
+deleting it, changes every compile command once, so do it with a Chromium
+milestone upgrade, which recompiles nearly everything anyway.
+
 An engine owner can isolate work with an APFS clone of an idle owned workspace.
 Choose an unused destination on the same volume and at the same path depth:
 
