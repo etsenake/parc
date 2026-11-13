@@ -148,23 +148,17 @@
        const OpenURLParams& params,
 --- a/content/renderer/render_frame_impl.cc
 +++ b/content/renderer/render_frame_impl.cc
-@@ -3615,6 +3615,14 @@
-       std::move(compositor_worker_task_runner));
- }
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
 -
 +
-+bool RenderFrameImpl::ParcAdoptMediaPlayer(
-+    blink::WebMediaPlayer& player,
-+    const blink::WebString& sink_id,
-+    blink::MediaInspectorContext* inspector_context) {
-+  return media_factory_.ParcAdoptMediaPlayer(player, sink_id,
-+                                             inspector_context);
-+}
+ #include "content/renderer/render_frame_impl.h"
++#include "content/renderer/parc_native_link_policy.h"
+-
 +
- std::unique_ptr<blink::WebContentSettingsClient>
- RenderFrameImpl::CreateWorkerContentSettingsClient() {
-   if (!frame_ || !frame_->View()) {
-@@ -4351,6 +4359,7 @@
+ #include <algorithm>
+ #include <memory>
+@@ -4351,6 +4352,7 @@
          screenshot_destination,
      base::UnguessableToken same_document_metrics_token,
      bool caused_by_ad) {
@@ -172,7 +166,7 @@
    TRACE_EVENT1("navigation,rail",
                 "RenderFrameImpl::didFinishSameDocumentNavigation",
                 "frame_token", frame_token_);
-@@ -4538,6 +4547,7 @@
+@@ -4538,6 +4540,7 @@
 -
 +
  void RenderFrameImpl::AbortClientNavigation(bool for_new_navigation) {
@@ -182,7 +176,7 @@
 +
    // If the navigations are deferred, cancellations should be deferred too.
    client_navigation_throttler_.DispatchOrScheduleNavigation(
-@@ -5033,17 +5043,15 @@
+@@ -5033,17 +5036,9 @@
  }
 -
 +
@@ -196,21 +190,15 @@
 -    return false;
 -  }
 -  const WebLocalFrame* main_frame = web_view->MainFrame()->ToWebLocalFrame();
--
--  WebDocumentLoader* document_loader = main_frame->GetDocumentLoader();
-+  // Parc: a frame follows the committed document of its local root: the main
-+  // frame, or the frame at the top of this process's part of the page. So a
-+  // frame in another process than the main document presents the identity
-+  // its own navigation chose, as its headers do (docs/fairplay-identity.md).
-+  // Upstream follows the main frame and never overrides a frame whose main
-+  // frame is in another process (https://crbug.com/426555).
 +  const WebLocalFrame* local_root = frame_->LocalRoot();
+-
 +
+-  WebDocumentLoader* document_loader = main_frame->GetDocumentLoader();
 +  WebDocumentLoader* document_loader = local_root->GetDocumentLoader();
    DocumentState* document_state =
        document_loader ? DocumentState::FromDocumentLoader(document_loader)
                        : nullptr;
-@@ -5673,6 +5681,7 @@
+@@ -5673,6 +5668,7 @@
    // JS should be running in |this|, and no other frame should have a reference
    // to |this|.
    CHECK(in_frame_tree_);
@@ -219,42 +207,13 @@
 +
    // This might be the first navigation in this RenderFrame.
    const bool first_navigation_in_render_frame = !had_started_any_navigation_;
-@@ -5725,6 +5734,59 @@
+@@ -5725,6 +5721,28 @@
      return;
    }
 -
 +
-+  // Native link policy runs before a NavigationRequest or renderer
-+  // NavigationClient is created. Never reconstruct a request from its URL.
-+  // In particular, a no-match result continues the existing branch below.
-+  // Begin-only security/commit metadata has no equivalent in the upstream
-+  // new-tab OpenURL transport: keep those requests on their original branch.
 +  if (GetWebView()->GetRendererPreferences().native_main_frame_link_policy &&
-+      frame_->IsOutermostMainFrame() && !use_archive &&
-+      info->navigation_type == blink::kWebNavigationTypeLinkClicked &&
-+      (info->navigation_policy == blink::kWebNavigationPolicyCurrentTab ||
-+       ((info->navigation_policy == blink::kWebNavigationPolicyNewForegroundTab ||
-+         info->navigation_policy == blink::kWebNavigationPolicyNewBackgroundTab) &&
-+        info->native_link_input_modifiers.has_value() &&
-+        info->triggering_event_info == blink::mojom::TriggeringEventInfo::kFromTrustedEvent)) &&
-+      info->has_transient_user_activation && !info->is_client_redirect &&
-+      !info->is_opener_navigation && info->form.IsNull() &&
-+      info->frame_load_type == WebFrameLoadType::kStandard &&
-+      info->force_history_push == blink::mojom::ForceHistoryPush::kNo &&
-+      !info->is_container_initiated && !info->script_tool_invocation_id &&
-+      info->script_injector_host.IsEmpty() &&
-+      !info->resume_defer_commit_listener.is_valid() &&
-+      info->initiator_origin_trial_features.empty() &&
-+      info->should_check_main_world_content_security_policy ==
-+          network::mojom::CSPDisposition::CHECK &&
-+      !info->initiator_frame_has_download_sandbox_flag &&
-+      frame_->IsAllowedToDownload() && info->url_request.HasUserGesture() &&
-+      !info->initiator_frame_is_ad && !frame_->IsAdFrame() &&
-+      !info->is_ad_script_in_stack &&
-+      !info->is_history_navigation_in_new_child_frame &&
-+      url.SchemeIsHTTPOrHTTPS() &&
-+      info->initiator_frame_token == frame_->GetLocalFrameToken() &&
-+      info->initiator_document_token == frame_->GetDocument().Token()) {
++      parc::MayPrepareNativeMainFrameLink(*frame_, *info, use_archive, url)) {
 +    const auto document = frame_->GetDocument().Token();
 +    const auto self = weak_factory_.GetWeakPtr();
 +    std::optional<base::UnguessableToken> token;
@@ -262,8 +221,6 @@
 +        GetFrameHost()->PrepareNativeMainFrameLink(url, document,
 +            NavigationPolicyToDisposition(info->navigation_policy),
 +            info->native_link_input_modifiers, &token);
-+    // A synchronous reply may process nested associated IPC. Destruction, a
-+    // document replacement or a newer BeginNavigation must not revive input.
 +    if (!self || !in_frame_tree_ ||
 +        native_link_sequence != native_link_navigation_sequence_ ||
 +        document != frame_->GetDocument().Token()) {
@@ -280,7 +237,7 @@
    // If the browser is interested, then give it a chance to look at the request.
    if (IsTopLevelNavigation(frame_) &&
        GetWebView()
-@@ -6092,12 +6154,15 @@
+@@ -6092,12 +6110,15 @@
    std::move(callback).Run(GetWebFrame()->GetFrameToken().value());
  }
 -

@@ -12,6 +12,7 @@ source_set("unit_tests") {
   deps = [
     "//parc/native:native_cast_route",
     "//base",
+    "//parc/native:native_cast_route",
     "//base/test:test_support",
     "//chrome/browser/media/router",
     "//chrome/browser/media/router:media_router_feature",

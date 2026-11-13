@@ -13,7 +13,52 @@
      "//third_party/blink/renderer:inside_blink",
 --- a/chrome/browser/ui/autofill/payments/BUILD.gn
 +++ b/chrome/browser/ui/autofill/payments/BUILD.gn
-@@ -353,7 +353,6 @@
+@@ -102,10 +102,13 @@
+   sources = [
+     "autofill_dialog_models.cc",
+     "chrome_payments_autofill_client.cc",
++    "parc_chrome_payments_autofill_client_presentation.cc",
+     "credit_card_scanner_controller.cc",
+     "credit_card_scanner_view.cc",
+     "mandatory_reauth_bubble_controller_impl.cc",
++    "parc_mandatory_reauth_bubble_controller_impl_presentation.cc",
+     "virtual_card_enroll_bubble_controller_impl.cc",
++    "parc_virtual_card_enroll_bubble_controller_impl_presentation.cc",
+   ]
+-
++
+   public_deps = []
+@@ -160,12 +163,15 @@
+       "desktop_bnpl_ui_delegate.cc",
+       "desktop_payments_window_manager.cc",
+       "omnibox_autofill_bubble_controller.cc",
++    "parc_omnibox_autofill_bubble_controller_presentation.cc",
+       "omnibox_autofill_page_action_controller.cc",
+       "omnibox_gpay_button_page_action_controller.cc",
+       "payments_churned_users_bubble_controller.cc",
++    "parc_payments_churned_users_bubble_controller_presentation.cc",
+       "payments_churned_users_page_action_controller.cc",
+       "payments_churned_users_ui_delegate_desktop.cc",
+       "wallet_reminder_notice_bubble_controller.cc",
++    "parc_wallet_reminder_notice_bubble_controller_presentation.cc",
+       "wallet_reminder_notice_page_action_controller.cc",
+       "wallet_reminder_notice_ui_delegate_desktop.cc",
+       "webauthn_dialog_controller_impl.cc",
+@@ -200,9 +206,13 @@
+   if (toolkit_views) {
+     sources += [
+       "filled_card_information_bubble_controller_impl.cc",
++    "parc_filled_card_information_bubble_controller_impl_presentation.cc",
+       "iban_bubble_controller_impl.cc",
++    "parc_iban_bubble_controller_impl_presentation.cc",
+       "offer_notification_bubble_controller_impl.cc",
++    "parc_offer_notification_bubble_controller_impl_presentation.cc",
+       "save_card_bubble_controller_impl.cc",
++    "parc_save_card_bubble_controller_impl_presentation.cc",
+       "save_payment_icon_controller.cc",
+     ]
+     deps += [
+@@ -353,7 +363,6 @@
        "save_card_bubble_controller_impl_unittest.cc",
        "wallet_reminder_notice_bubble_controller_unittest.cc",
        "wallet_reminder_notice_page_action_controller_unittest.cc",
@@ -21,7 +66,7 @@
      ]
      deps += [
        ":payments",
-@@ -372,6 +371,10 @@
+@@ -372,6 +381,10 @@
        "//ui/gfx",
        "//ui/gfx:test_support",
      ]
@@ -35,7 +80,15 @@
 +
 --- a/components/global_media_controls/BUILD.gn
 +++ b/components/global_media_controls/BUILD.gn
-@@ -87,7 +87,10 @@
+@@ -65,6 +65,7 @@
+     "public/media_session_item_producer.cc",
+     "public/media_session_notification_item.cc",
+     "public/supplemental_device_picker_producer.cc",
++    "public/parc_native_picker_lifecycle.cc",
+     "public/views/media_action_button.cc",
+     "public/views/media_item_ui_detailed_view.cc",
+     "public/views/media_item_ui_device_selector.cc",
+@@ -87,7 +88,10 @@
      sources += [ "public/views/chapter_item_view.cc" ]
    }
 -
@@ -49,7 +102,7 @@
  }
 -
 +
-@@ -133,6 +136,10 @@
+@@ -133,6 +137,10 @@
      "//ui/gfx:test_support",
      "//ui/views:test_support",
    ]
@@ -85,7 +138,15 @@
 +    }
 --- a/chrome/browser/ui/views/global_media_controls/BUILD.gn
 +++ b/chrome/browser/ui/views/global_media_controls/BUILD.gn
-@@ -148,6 +148,12 @@
+@@ -52,6 +52,7 @@
+     "cast_device_footer_view.cc",
+     "cast_device_selector_view.cc",
+     "media_dialog_view.cc",
++    "parc_native_media_dialog.cc",
+     "media_item_ui_cast_footer_view.cc",
+     "media_item_ui_device_selector_view.cc",
+     "media_item_ui_helper.cc",
+@@ -148,6 +149,12 @@
      ]
    }
 -

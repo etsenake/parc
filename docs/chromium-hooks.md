@@ -53,7 +53,7 @@ rg -n 'EXPORT .*Set\w+\(' Engine/ParcHost/integration/*.h Engine/ParcNative/fair
 python3 -c "import json; print(len(json.load(open('Engine/ParcHost/overlay.json'))['patches']))"
 ```
 
-The second command lists the 59 header setters plus the four layer setters and three AirPlay
+The second command lists the 61 header setters plus the four layer setters and three AirPlay
 call-ins the patches define; per-object member setters are indented and left out. Blink's
 player-move setter is defined in Parc's own `parc_media_element.cc`, so only the third finds it.
 
@@ -63,9 +63,9 @@ player-move setter is defined in Parc's own `parc_media_element.cc`, so only the
 |---|---|---|---|
 | Browser and startup | 23 | 14 | [browser, pages and windows](chromium-hooks-browser.md#browser-and-startup-hooks) |
 | Page and window | 17 | 9 | [browser, pages and windows](chromium-hooks-browser.md#page-and-window-hooks) |
-| Interface routing and prompts | 15 | 26 | [interface and prompts](chromium-hooks-interface.md) |
+| Interface routing and prompts | 17 | 26 | [interface and prompts](chromium-hooks-interface.md) |
 | Media and FairPlay | 8 | 16 | [media and Blink](chromium-hooks-media.md#media-and-fairplay-hooks) |
-| Blink and renderer | 1 | 5 | [media and Blink](chromium-hooks-media.md#blink-and-renderer-hooks) |
+| Blink and renderer | 1 | 4 | [media and Blink](chromium-hooks-media.md#blink-and-renderer-hooks) |
 | Build and tests | 0 | 4 | [below](#build-and-test-patches) |
 
 Patches by area:

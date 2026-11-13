@@ -1,6 +1,14 @@
 --- a/chrome/browser/ui/autofill/address_bubbles_controller.cc
 +++ b/chrome/browser/ui/autofill/address_bubbles_controller.cc
-@@ -55,11 +55,15 @@
+@@ -23,6 +23,7 @@
+ #include "chrome/browser/signin/signin_promo_util.h"
+ #include "chrome/browser/ui/actions/chrome_action_id.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
++#include "chrome/browser/ui/autofill/parc_bubble_presentation.h"
+ #include "chrome/browser/ui/autofill/chrome_autofill_client.h"
+ #include "chrome/browser/ui/autofill/edit_address_profile_dialog_controller_impl.h"
+ #include "chrome/browser/ui/autofill/save_address_bubble_controller.h"
+@@ -55,11 +56,15 @@
      content::WebContents* web_contents,
      bool shown_by_user_gesture,
      base::WeakPtr<AddressBubbleControllerDelegate> delegate) {
@@ -19,7 +27,7 @@
        ->ShowSaveAddressProfileBubble(web_contents, std::move(controller),
                                       shown_by_user_gesture);
  }
-@@ -70,10 +74,14 @@
+@@ -70,10 +75,14 @@
      content::WebContents* web_contents,
      bool shown_by_user_gesture,
      base::WeakPtr<AddressBubbleControllerDelegate> delegate) {
@@ -36,7 +44,7 @@
        ->ShowUpdateAddressProfileBubble(
            web_contents, std::move(update_controller), shown_by_user_gesture);
  }
-@@ -81,11 +89,15 @@
+@@ -81,11 +90,15 @@
  #if BUILDFLAG(ENABLE_DICE_SUPPORT)
  AutofillBubbleBase* ShowSignInPromo(content::WebContents* web_contents,
                                      const AutofillProfile& autofill_profile) {
@@ -56,7 +64,7 @@
  #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 -
 +
-@@ -117,6 +129,22 @@
+@@ -117,6 +130,22 @@
      AutofillClient::SaveAddressBubbleType save_address_bubble_type,
      bool user_has_any_profile_saved,
      AutofillClient::AddressProfileSavePromptCallback callback) {
@@ -79,7 +87,7 @@
    AddressBubblesController::CreateForWebContents(web_contents);
    auto* controller = AddressBubblesController::FromWebContents(web_contents);
    bool is_save_bubble = !original_profile;
-@@ -161,6 +189,8 @@
+@@ -161,6 +190,8 @@
  void AddressBubblesController::OnUserDecision(
      AutofillClient::AddressPromptUserDecision decision,
      base::optional_ref<const AutofillProfile> profile) {
@@ -88,7 +96,7 @@
    if (decision == AutofillClient::AddressPromptUserDecision::kEditDeclined) {
      // Reopen this bubble if the user canceled editing.
      shown_by_user_gesture_ = false;
-@@ -169,7 +199,13 @@
+@@ -169,7 +200,13 @@
    }
    if (address_profile_save_prompt_callback_) {
      std::move(address_profile_save_prompt_callback_).Run(decision, profile);
@@ -103,7 +111,7 @@
 -
 +
    if (decision == AutofillClient::AddressPromptUserDecision::kAccepted ||
-@@ -187,7 +223,11 @@
+@@ -187,7 +224,11 @@
  }
 -
 +
@@ -116,7 +124,7 @@
    is_showing_sign_in_promo_ = false;
    UpdatePageActionIcon();
  }
-@@ -242,10 +282,44 @@
+@@ -242,10 +283,29 @@
    CHECK(!bubble_view());
    CHECK(show_bubble_view_callback_);
 -
@@ -131,43 +139,28 @@
 +  if (!weak) {
 +    return;
 +  }
-+  if (!view) {
-+    MarkPresentationUnavailable();
-+    show_bubble_view_callback_.Reset();
-+    is_showing_sign_in_promo_ = false;
-+    auto callback = std::move(address_profile_save_prompt_callback_);
-+    UpdatePageActionIcon();
-+    if (callback) {
-+      std::move(callback).Run(
-+          AutofillClient::AddressPromptUserDecision::kAutoDeclined,
-+          std::nullopt);
-+    }
-+    return;
-+  }
-+  SetBubbleView(*view);
-+  ObservePresentation(
-+      {}, base::BindOnce(
-+              [](base::WeakPtr<AddressBubblesController> weak) {
-+                if (!weak) {
-+                  return;
-+                }
-+                weak->show_bubble_view_callback_.Reset();
-+                weak->is_showing_sign_in_promo_ = false;
-+                auto callback =
-+                    std::move(weak->address_profile_save_prompt_callback_);
-+                weak->UpdatePageActionIcon();
-+                if (callback) {
-+                  std::move(callback).Run(
-+                      AutofillClient::AddressPromptUserDecision::kAutoDeclined,
-+                      std::nullopt);
-+                }
-+              },
-+              weak));
++  ParcBubblePresentation::Adopt(
++      *this, view, weak,
++      [](base::WeakPtr<AddressBubblesController> weak) {
++            if (!weak) {
++              return;
++            }
++            weak->MarkPresentationUnavailable();
++            weak->show_bubble_view_callback_.Reset();
++            weak->is_showing_sign_in_promo_ = false;
++            auto callback = std::move(weak->address_profile_save_prompt_callback_);
++            weak->UpdatePageActionIcon();
++            if (callback) {
++              std::move(callback).Run(
++                  AutofillClient::AddressPromptUserDecision::kAutoDeclined,
++                  std::nullopt);
++            }
++          });
  }
 -
 +
  BubbleType AddressBubblesController::GetBubbleType() const {
-@@ -312,10 +386,14 @@
+@@ -312,10 +372,14 @@
  }
 -
 +
@@ -188,7 +181,7 @@
 +
    // Verify if user is eligible for iOS promo, and attempt showing if they are.
    ios_promos_utils::VerifyIOSPromoEligibility(
-@@ -327,7 +405,9 @@
+@@ -327,7 +391,9 @@
  #if BUILDFLAG(ENABLE_DICE_SUPPORT)
    // Do nothing if there is no autofill profile or the sign in promo should not
    // be shown.
@@ -199,7 +192,7 @@
        !signin::ShouldShowAddressSignInPromo(
            *Profile::FromBrowserContext(web_contents()->GetBrowserContext()),
            autofill_profile.value())) {
-@@ -340,8 +420,12 @@
+@@ -340,8 +406,12 @@
    HideBubble(/*initiated_by_bubble_manager=*/false);
 -
 +
@@ -217,23 +210,20 @@
  #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 --- a/chrome/browser/ui/autofill/payments/save_card_bubble_controller_impl.cc
 +++ b/chrome/browser/ui/autofill/payments/save_card_bubble_controller_impl.cc
-@@ -116,6 +116,25 @@
+@@ -23,6 +23,7 @@
+ #include "chrome/browser/ui/autofill/autofill_bubble_base.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_controller_base.h"
+ #include "chrome/browser/ui/autofill/autofill_bubble_handler.h"
++#include "chrome/browser/ui/autofill/parc_bubble_presentation.h"
+ #include "chrome/browser/ui/autofill/payments/save_card_bubble_controller.h"
+ #include "chrome/browser/ui/autofill/payments/save_card_ui.h"
+ #include "chrome/browser/ui/browser_window.h"
+@@ -116,6 +117,14 @@
      payments::PaymentsAutofillClient::SaveCreditCardOptions options,
      payments::PaymentsAutofillClient::LocalSaveCardPromptCallback
          save_card_prompt_callback) {
-+  const auto kind =
-+      options.card_save_type ==
-+              payments::PaymentsAutofillClient::CardSaveType::kCvcSaveOnly
-+          ? AutofillUiPresentation::kLocalCvcSave
-+          : AutofillUiPresentation::kLocalCardSave;
-+  if (!AutofillBubbleHandler::IsPresentationSupported(web_contents(), kind) ||
-+      (!options.show_prompt &&
-+       !AutofillBubbleHandler::IsPresentationSupported(
-+           web_contents(), AutofillUiPresentation::kCardIcon)) ||
-+      ((options.should_request_name_from_user ||
-+        options.should_request_expiration_date_from_user) &&
-+       !AutofillBubbleHandler::IsPresentationSupported(
-+           web_contents(), AutofillUiPresentation::kCardFixFlow))) {
++  if (!ParcBubblePresentation::SupportsCardOffer(web_contents(), options,
++                                               false)) {
 +    std::move(save_card_prompt_callback)
 +        .Run(payments::PaymentsAutofillClient::SaveCardOfferUserDecision::
 +                 kNotPresented);
@@ -243,7 +233,7 @@
    // If the confirmation view is still showing, close it before showing the new
    // offer.
    if (current_bubble_type_ == PaymentsBubbleType::kUploadComplete) {
-@@ -124,6 +143,11 @@
+@@ -124,6 +133,11 @@
 -
 +
    // Don't show the bubble if it's already visible or cannot be shown.
@@ -257,23 +247,12 @@
    }
 -
 +
-@@ -163,6 +187,26 @@
+@@ -163,6 +177,15 @@
      payments::PaymentsAutofillClient::SaveCreditCardOptions options,
      payments::PaymentsAutofillClient::UploadSaveCardPromptCallback
          save_card_prompt_callback) {
-+  const auto kind =
-+      options.card_save_type ==
-+              payments::PaymentsAutofillClient::CardSaveType::kCvcSaveOnly
-+          ? AutofillUiPresentation::kUploadCvcSave
-+          : AutofillUiPresentation::kUploadCardSave;
-+  if (!AutofillBubbleHandler::IsPresentationSupported(web_contents(), kind) ||
-+      (!options.show_prompt &&
-+       !AutofillBubbleHandler::IsPresentationSupported(
-+           web_contents(), AutofillUiPresentation::kCardIcon)) ||
-+      ((options.should_request_name_from_user ||
-+        options.should_request_expiration_date_from_user) &&
-+       !AutofillBubbleHandler::IsPresentationSupported(
-+           web_contents(), AutofillUiPresentation::kCardFixFlow))) {
++  if (!ParcBubblePresentation::SupportsCardOffer(web_contents(), options,
++                                               true)) {
 +    std::move(save_card_prompt_callback)
 +        .Run(payments::PaymentsAutofillClient::SaveCardOfferUserDecision::
 +                 kNotPresented,
@@ -284,7 +263,7 @@
    // If the confirmation view is still showing, close it before showing the new
    // offer.
    if (current_bubble_type_ == PaymentsBubbleType::kUploadComplete) {
-@@ -171,6 +215,12 @@
+@@ -171,6 +194,12 @@
 -
 +
    // Don't show the bubble if it's already visible or cannot be shown.
@@ -299,7 +278,7 @@
    }
 -
 +
-@@ -237,6 +287,10 @@
+@@ -237,6 +266,10 @@
    if (bubble_view()) {
      return;
    }
@@ -311,7 +290,7 @@
 +
    is_reshow_ = true;
    is_triggered_by_user_gesture_ = is_triggered_by_user_gesture;
-@@ -250,10 +304,23 @@
+@@ -250,10 +283,23 @@
      std::optional<
          payments::PaymentsAutofillClient::OnConfirmationClosedCallback>
          on_confirmation_closed_callback) {
@@ -337,7 +316,7 @@
 +
    is_reshow_ = false;
    is_triggered_by_user_gesture_ = false;
-@@ -268,6 +335,10 @@
+@@ -268,6 +314,10 @@
    // Show upload confirmation bubble.
    CheckPreconditionsBeforeShowing();
    QueueOrShowBubble();
@@ -349,7 +328,7 @@
 +
    // Auto close confirmation bubble when card saved is successful.
    if (card_saved) {
-@@ -656,7 +727,12 @@
+@@ -656,7 +706,12 @@
 -
 +
  void SaveCardBubbleControllerImpl::OnBubbleClosed(
@@ -364,7 +343,7 @@
 +
    // If the dialog should be re-shown, do not change the bubble type or log
    // metrics.
-@@ -679,10 +755,10 @@
+@@ -679,10 +734,10 @@
 -
 +
      UpdatePageActionIcon();
@@ -379,7 +358,7 @@
    }
 -
 +
-@@ -724,21 +800,20 @@
+@@ -724,21 +779,20 @@
    }
 -
 +
@@ -416,7 +395,7 @@
 -
 +
    UpdatePageActionIcon();
-@@ -810,6 +885,11 @@
+@@ -810,6 +864,11 @@
  }
 -
 +
@@ -429,7 +408,7 @@
    if (current_bubble_type_ == PaymentsBubbleType::kInactive) {
      CHECK(!bubble_view());
      // If there is no bubble to show, then there should be no icon.
-@@ -883,26 +963,107 @@
+@@ -883,26 +942,44 @@
      return nullptr;
    }
    BrowserWindowInterface* browser = tab->GetBrowserWindowInterface();
@@ -441,62 +420,6 @@
  }
 -
 +
-+AutofillUiPresentation SaveCardBubbleControllerImpl::CurrentPresentation()
-+    const {
-+  switch (current_bubble_type_) {
-+    case PaymentsBubbleType::kLocalSave:
-+      return AutofillUiPresentation::kLocalCardSave;
-+    case PaymentsBubbleType::kLocalCvcSave:
-+      return AutofillUiPresentation::kLocalCvcSave;
-+    case PaymentsBubbleType::kUploadSave:
-+    case PaymentsBubbleType::kUploadCardholderNameUpdate:
-+      return AutofillUiPresentation::kUploadCardSave;
-+    case PaymentsBubbleType::kUploadCvcSave:
-+      return AutofillUiPresentation::kUploadCvcSave;
-+    case PaymentsBubbleType::kManageCards:
-+      return AutofillUiPresentation::kManageCards;
-+    case PaymentsBubbleType::kUploadComplete:
-+      return AutofillUiPresentation::kCardConfirmation;
-+    case PaymentsBubbleType::kUploadInProgress:
-+      return AutofillUiPresentation::kUploadCardSave;
-+    case PaymentsBubbleType::kInactive:
-+      return AutofillUiPresentation::kCardIcon;
-+  }
-+}
-+
-+bool SaveCardBubbleControllerImpl::SupportsCurrentPresentation() const {
-+  return AutofillBubbleHandler::IsPresentationSupported(
-+             web_contents(), CurrentPresentation()) &&
-+         (!(ShouldRequestNameFromUser() ||
-+            ShouldRequestExpirationDateFromUser()) ||
-+          AutofillBubbleHandler::IsPresentationSupported(
-+              web_contents(), AutofillUiPresentation::kCardFixFlow));
-+}
-+
-+void SaveCardBubbleControllerImpl::RefusePresentation() {
-+  MarkPresentationUnavailable();
-+  const auto previous = current_bubble_type_;
-+  auto local = std::move(local_save_card_prompt_callback_);
-+  auto upload = std::move(upload_save_card_prompt_callback_);
-+  auto confirmation =
-+      std::exchange(on_confirmation_closed_callback_, std::nullopt);
-+  current_bubble_type_ = PaymentsBubbleType::kInactive;
-+  confirmation_ui_params_.reset();
-+  auto_close_confirmation_timer_.Stop();
-+  UpdatePageActionIcon();
-+  using Decision = payments::PaymentsAutofillClient::SaveCardOfferUserDecision;
-+  if (local && (previous == PaymentsBubbleType::kLocalSave ||
-+                previous == PaymentsBubbleType::kLocalCvcSave)) {
-+    std::move(local).Run(Decision::kNotPresented);
-+  } else if (upload && (previous == PaymentsBubbleType::kUploadSave ||
-+                        previous == PaymentsBubbleType::kUploadCvcSave ||
-+                        previous == PaymentsBubbleType::kUploadCardholderNameUpdate)) {
-+    std::move(upload).Run(Decision::kNotPresented, {});
-+  }
-+  if (confirmation) {
-+    std::move(*confirmation).Run();
-+  }
-+}
 +
  void SaveCardBubbleControllerImpl::DoShowBubble() {
 +  if (!SupportsCurrentPresentation()) {
@@ -519,7 +442,8 @@
 -        web_contents(), this, is_triggered_by_user_gesture_));
 +  if (!autofill_bubble_handler) {
 +    return;
-+  }
+   }
+-  CHECK(bubble_view());
 +  auto weak = weak_ptr_factory_.GetWeakPtr();
 +  AutofillBubbleBase* view =
 +      current_bubble_type_ == PaymentsBubbleType::kUploadComplete
@@ -529,19 +453,11 @@
 +                web_contents(), this, is_triggered_by_user_gesture_);
 +  if (!weak) {
 +    return;
-   }
--  CHECK(bubble_view());
-+  if (!view) {
-+    RefusePresentation();
-+    return;
 +  }
-+  SetBubbleView(*view);
-+
-+  ObservePresentation(
-+      base::BindOnce(&SaveCardBubbleControllerImpl::RecordPresentation,
-+                     weak_ptr_factory_.GetWeakPtr()),
-+      base::BindOnce(&SaveCardBubbleControllerImpl::RefusePresentation,
-+                     weak_ptr_factory_.GetWeakPtr()));
++  ParcBubblePresentation::Adopt(
++      *this, view, weak_ptr_factory_.GetWeakPtr(),
++      &SaveCardBubbleControllerImpl::RecordPresentation,
++      &SaveCardBubbleControllerImpl::RefusePresentation);
 +}
 -
 +

@@ -50,6 +50,9 @@ struct BrowserWindowCreateParams;
 struct BrowserWindowDeleter;
 
 namespace autofill {
+class AutofillBubbleBase;
+class EditAddressProfileDialogController;
+class EditAddressProfileView;
 class AutofillClient;
 class AutofillBubbleBase;
 class EditAddressProfileDialogController;
@@ -128,6 +131,11 @@ using AutofillUiPresentationSupport =
     bool (*)(const autofill::AutofillClient&,
              autofill::AutofillUiPresentation);
 void SetAutofillUiPresentationSupport(AutofillUiPresentationSupport support);
+using EditAddressDialog = std::unique_ptr<autofill::AutofillBubbleBase> (*)(
+    content::WebContents*,
+    autofill::EditAddressProfileDialogController*,
+    autofill::EditAddressProfileView*);
+void SetEditAddressDialog(EditAddressDialog factory);
 
 using PermissionPromptFactory =
     std::unique_ptr<permissions::PermissionPrompt> (*)(

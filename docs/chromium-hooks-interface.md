@@ -124,7 +124,11 @@ which an embedder cannot override without replacing that file.
   ([decisions](chromium-seams.md#decisions)). The capability patch spans 63 autofill and payments
   files. The address editor's native dialog and account validation live in Parc's
   `native_address_editor.cc`, reached by one `SetEditAddressDialog` call in
-  `edit_address_profile_view.cc`.
+  `edit_address_profile_view.cc`. `ParcBubblePresentation` gives the controllers one shared call for
+  adopting a possibly missing view and registering its presentation result, through a friend line
+  in the base controller header; Parc's added member definitions compile from Parc-owned files in
+  their original autofill targets, and the generation, close-order and manager safeguards stay at
+  their original points.
 - **`native-protocol-handler-request`**: exposes a "handle this kind of link" request's handler in
   `register_protocol_handler_permission_request.h`; there is no public alternative.
 - **`native-current-tab-picker`**, **`native-delegated-picker`**: the share-this-tab picker reports its

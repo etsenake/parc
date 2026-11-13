@@ -101,7 +101,7 @@
    base::Time initialization_time_;
 --- a/chrome/browser/ui/global_media_controls/media_notification_service.cc
 +++ b/chrome/browser/ui/global_media_controls/media_notification_service.cc
-@@ -6,10 +6,12 @@
+@@ -6,6 +6,7 @@
 -
 +
  #include <algorithm>
@@ -111,34 +111,24 @@
 +
  #include "base/callback_list.h"
  #include "base/functional/bind.h"
- #include "base/metrics/histogram_functions.h"
-+#include "base/task/sequenced_task_runner.h"
- #include "base/unguessable_token.h"
- #include "chrome/browser/feature_engagement/tracker_factory.h"
- #include "chrome/browser/glic/host/guest_util.h"
-@@ -40,7 +42,9 @@
+@@ -40,6 +41,7 @@
  #include "content/public/browser/media_session.h"
  #include "content/public/browser/media_session_service.h"
  #include "content/public/browser/render_frame_host.h"
 +#include "content/public/browser/weak_document_ptr.h"
  #include "media/base/media_switches.h"
-+#include "media/media_buildflags.h"
  #include "media/remoting/device_capability_checker.h"
  #include "mojo/public/cpp/bindings/pending_remote.h"
- #include "mojo/public/cpp/bindings/self_owned_receiver.h"
-@@ -48,6 +52,10 @@
+@@ -48,6 +50,7 @@
  #include "services/metrics/public/cpp/ukm_builders.h"
  #include "services/metrics/public/cpp/ukm_recorder.h"
 -
 +
-+#if BUILDFLAG(ENABLE_MEDIA_REMOTING)
-+#include "chrome/browser/media/cast_remoting_connector.h"
-+#endif
 +
  #if BUILDFLAG(IS_CHROMEOS)
  #include "ash/session/session_controller_impl.h"
  #include "ash/shell.h"
-@@ -280,6 +288,10 @@
+@@ -280,6 +283,10 @@
 -
 +
  void MediaNotificationService::Shutdown() {
@@ -150,67 +140,7 @@
    // `cast_notification_producer_`,
    // `presentation_request_notification_producer_` and `host_receivers_`
    // depend on MediaRouter, which is another keyed service. So they must be
-@@ -337,6 +349,58 @@
-   }
- }
--
-+
-+base::OnceCallback<void(bool)>
-+MediaNotificationService::ParcRequestMediaRemoting(const std::string& item_id) {
-+  auto* web_contents =
-+      content::MediaSession::GetWebContentsFromRequestId(item_id);
-+  if (!web_contents) {
-+    return {};
-+  }
-+  content::MediaSession::Get(web_contents)->RequestMediaRemoting();
-+  return base::BindOnce(
-+      &MediaNotificationService::ParcOnMediaRemotingLaunched,
-+      web_contents->GetWeakPtr(),
-+      web_contents->GetPrimaryMainFrame()->GetWeakDocumentPtr());
-+}
-+
-+void MediaNotificationService::ParcOnMediaRemotingLaunched(
-+    base::WeakPtr<content::WebContents> web_contents,
-+    content::WeakDocumentPtr document,
-+    bool launched) {
-+  if (!web_contents) {
-+    return;
-+  }
-+  if (!launched) {
-+#if BUILDFLAG(ENABLE_MEDIA_REMOTING)
-+    if (auto* connector = CastRemotingConnector::Get(web_contents.get())) {
-+      connector->ParcDropRemotingRequests();
-+    }
-+#endif
-+    return;
-+  }
-+  auto* frame = document.AsRenderFrameHostIfValid();
-+  if (frame && (frame->IsActive() ||
-+                frame->IsInLifecycleState(
-+                    content::RenderFrameHost::LifecycleState::
-+                        kInBackForwardCache))) {
-+    return;
-+  }
-+  auto* router =
-+      media_router::MediaRouterFactory::GetApiForBrowserContextIfExists(
-+          web_contents->GetBrowserContext());
-+  if (!router) {
-+    return;
-+  }
-+  const int tab_id =
-+      sessions::SessionTabHelper::IdForTab(web_contents.get()).id();
-+  for (const auto& route : router->GetCurrentRoutes()) {
-+    if (route.media_source().IsRemotePlaybackSource() &&
-+        route.media_source().TabIdFromRemotePlaybackSource() == tab_id) {
-+      router->TerminateRoute(route.media_route_id());
-+    }
-+  }
-+}
-+
- void MediaNotificationService::OnSinksDiscovered(const std::string& item_id) {
-   auto item = media_session_item_producer_->GetMediaItem(item_id);
-   auto* web_contents =
-@@ -520,6 +584,176 @@
+@@ -520,6 +527,19 @@
 -
 +
  void MediaNotificationService::OnStartPresentationContextCreated(
@@ -225,170 +155,13 @@
 +  StartPresentationContext(std::move(context), sequence);
 +}
 +
-+bool MediaNotificationService::BeginNativePresentation(
-+    base::UnguessableToken token,
-+    std::unique_ptr<media_router::StartPresentationContext> context,
-+    base::RepeatingCallback<bool()> guard,
-+    base::OnceClosure close_surface) {
-+  const uint64_t sequence = ++presentation_sequence_;
-+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
-+  CancelActiveNativePresentation();
-+  if (!weak_this || shutdown_has_started_ || sequence != presentation_sequence_) {
-+    CancelRequest(std::move(context), "The presentation is unavailable.");
-+    return false;
-+  }
-+  if (!presentation_request_notification_producer_ ||
-+      !supplemental_device_picker_producer_) {
-+    CancelRequest(std::move(context), "The presentation is unavailable.");
-+    return false;
-+  }
-+  context->SetNativeRequestToken(token);
-+  native_presentation_.emplace(
-+      NativePresentationState{token, std::move(guard), std::move(close_surface)});
-+  presentation_request_notification_producer_->ArmNativeRequest(
-+      token, base::BindOnce(&MediaNotificationService::CancelNativePresentation,
-+                            weak_ptr_factory_.GetWeakPtr(), token),
-+      supplemental_device_picker_producer_.get());
-+  supplemental_device_picker_producer_->WatchPendingNativeLifecycle(
-+      token, base::BindOnce(&MediaNotificationService::CancelNativePresentation,
-+                            weak_ptr_factory_.GetWeakPtr(), token));
-+  StartPresentationContext(std::move(context), sequence);
-+  if (!weak_this || sequence != presentation_sequence_ || !HasNativePresentation(token))
-+    return false;
-+  if (!NativeContextPending(token)) {
-+    CancelNativePresentation(token);
-+    return false;
-+  }
-+  return true;
-+}
-+
-+bool MediaNotificationService::HasNativePresentation(
-+    const base::UnguessableToken& token) const {
-+  return native_presentation_ && native_presentation_->token == token &&
-+         !shutdown_has_started_;
-+}
-+
-+bool MediaNotificationService::WaitForNativePreparation(
-+    base::UnguessableToken token, base::OnceClosure completion) {
-+  return HasNativePresentation(token) && presentation_request_notification_producer_ &&
-+         presentation_request_notification_producer_->WaitForNativePreparation(
-+             token, std::move(completion));
-+}
-+
-+bool MediaNotificationService::PrepareNativeDialog(base::UnguessableToken token) {
-+  if (!HasNativePresentation(token) || !supplemental_device_picker_producer_ ||
-+      !presentation_request_notification_producer_)
-+    return false;
-+  supplemental_device_picker_producer_->PrepareNativeLifecycle(
-+      token, base::BindRepeating(&MediaNotificationService::OnNativeDialogLifecycle,
-+                                 weak_ptr_factory_.GetWeakPtr(), token));
-+  return true;
-+}
-+
-+void MediaNotificationService::OnNativeDialogLifecycle(
-+    base::UnguessableToken token,
-+    global_media_controls::SupplementalDevicePickerProducer::NativeLifecycleEvent event) {
-+  if (!presentation_request_notification_producer_)
-+    return;
-+  switch (event) {
-+    case global_media_controls::SupplementalDevicePickerProducer::NativeLifecycleEvent::kOpened:
-+      presentation_request_notification_producer_->OnNativeUIOpened(token);
-+      return;
-+    case global_media_controls::SupplementalDevicePickerProducer::NativeLifecycleEvent::kClosed: {
-+      auto weak_this = weak_ptr_factory_.GetWeakPtr();
-+      presentation_request_notification_producer_->OnNativeUIClosed(token);
-+      if (weak_this)
-+        weak_this->CancelNativePresentation(token);
-+      return;
-+    }
-+    case global_media_controls::SupplementalDevicePickerProducer::NativeLifecycleEvent::kDismissed: {
-+      auto weak_this = weak_ptr_factory_.GetWeakPtr();
-+      presentation_request_notification_producer_->OnNativePickerDismissed(token);
-+      if (weak_this)
-+        weak_this->CancelNativePresentation(token);
-+      return;
-+    }
-+  }
-+}
-+
-+bool MediaNotificationService::NativeContextPending(
-+    const base::UnguessableToken& token) const {
-+  if (context_ && context_->native_request_token() == token)
-+    return true;
-+  if (!presentation_request_notification_producer_)
-+    return false;
-+  auto item = presentation_request_notification_producer_->GetNotificationItem();
-+  return item && item->context() && item->context()->native_request_token() == token;
-+}
-+
-+base::WeakPtr<MediaNotificationService>
-+MediaNotificationService::GetWeakPtrForNative() {
-+  return weak_ptr_factory_.GetWeakPtr();
-+}
-+
-+void MediaNotificationService::CancelActiveNativePresentation() {
-+  if (native_presentation_)
-+    CancelNativePresentation(native_presentation_->token);
-+}
-+
-+void MediaNotificationService::CancelNativePresentation(
-+    base::UnguessableToken token) {
-+  if (!native_presentation_ || native_presentation_->token != token)
-+    return;
-+  auto old_state = std::move(*native_presentation_);
-+  native_presentation_.reset();
-+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
-+  if (supplemental_device_picker_producer_)
-+    supplemental_device_picker_producer_->ClearNativeLifecycle(token);
-+  std::unique_ptr<media_router::StartPresentationContext> pending;
-+  std::string old_item_id;
-+  if (context_ && context_->native_request_token() == token) {
-+    pending = std::move(context_);
-+    old_item_id = std::exchange(context_item_id_, {});
-+  }
-+  std::unique_ptr<media_router::StartPresentationContext> supplemental;
-+  if (presentation_request_notification_producer_)
-+    supplemental = presentation_request_notification_producer_->TakeNativeContext(token);
-+  std::vector<mojo::SelfOwnedReceiverRef<mojom::DeviceListHost>> hosts;
-+  for (auto it = native_device_hosts_.begin(); it != native_device_hosts_.end();) {
-+    if (it->second != token) {
-+      ++it;
-+      continue;
-+    }
-+    auto host = host_receivers_.find(it->first);
-+    if (host != host_receivers_.end()) {
-+      hosts.push_back(host->second);
-+      host_receivers_.erase(host);
-+    }
-+    it = native_device_hosts_.erase(it);
-+  }
-+  if (!old_item_id.empty())
-+    media_session_item_producer_->UpdateMediaItemSourceOrigin(old_item_id, std::nullopt);
-+  for (auto& host : hosts) {
-+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-+        FROM_HERE, base::BindOnce(
-+            [](mojo::SelfOwnedReceiverRef<mojom::DeviceListHost> host) {
-+              if (host)
-+                host->Close();
-+            }, host));
-+  }
-+  if (old_state.close_surface)
-+    std::move(old_state.close_surface).Run();
-+  if (weak_this && presentation_request_notification_producer_)
-+    presentation_request_notification_producer_->DisarmNativeRequest(token);
-+  if (pending)
-+    CancelRequest(std::move(pending), "Dialog closed.");
-+  if (supplemental)
-+    CancelRequest(std::move(supplemental), "Dialog closed.");
-+}
-+
 +void MediaNotificationService::StartPresentationContext(
 +    std::unique_ptr<media_router::StartPresentationContext> context,
 +    uint64_t sequence) {
    auto* web_contents = content::WebContents::FromRenderFrameHost(
        content::RenderFrameHost::FromID(
            context->presentation_request().render_frame_host_id));
-@@ -542,7 +776,24 @@
+@@ -542,7 +562,24 @@
        return;
      }
 -
@@ -415,7 +188,7 @@
 +
      // If there exists a media session notification associated with
      // |web_contents|, hold onto the context for later use.
-@@ -554,12 +805,11 @@
+@@ -554,12 +591,11 @@
      std::string item_id =
          GetActiveControllableSessionForWebContents(web_contents);
      context_item_id_ = item_id;
@@ -431,7 +204,7 @@
      }
  #endif
    } else if (presentation_request_notification_producer_) {
-@@ -577,6 +827,9 @@
+@@ -577,6 +613,9 @@
      const std::string& session_id,
      mojo::PendingReceiver<mojom::DeviceListHost> host_receiver,
      mojo::PendingRemote<mojom::DeviceListClient> client_remote) {
@@ -441,7 +214,7 @@
    std::optional<std::string> remoting_session_id;
    // `remoting_session_id` is used to construct the MediaRemotingCallback for
    // CastDeviceListHost to request Media Remoting for a MediaSession. This is
-@@ -585,20 +838,52 @@
+@@ -585,20 +624,52 @@
    // presentation context), the Remote Playback API on the blink side handles
    // sending the Media Remoting request and there's no need for requesting Media
    // Remoting from MNS.
@@ -451,16 +224,17 @@
 +    return;
 +  if (!has_context)
      remoting_session_id = session_id;
+-  }
+-  CreateCastDeviceListHost(CreateCastDialogControllerForSession(session_id),
+-                           std::move(host_receiver), std::move(client_remote),
+-                           remoting_session_id);
 +  base::RepeatingCallback<bool()> native_guard;
 +  std::optional<base::UnguessableToken> native_token;
 +  if (has_context && native_presentation_ && context_ &&
 +      context_->native_request_token() == native_presentation_->token) {
 +    native_guard = native_presentation_->guard;
 +    native_token = native_presentation_->token;
-   }
--  CreateCastDeviceListHost(CreateCastDialogControllerForSession(session_id),
--                           std::move(host_receiver), std::move(client_remote),
--                           remoting_session_id);
++  }
 +  if (native_presentation_ && !native_token)
 +    return;
 +  auto controller = CreateCastDialogControllerForSession(session_id);
@@ -503,7 +277,7 @@
 -
 +
  void MediaNotificationService::SetDevicePickerProvider(
-@@ -661,7 +946,12 @@
+@@ -661,7 +732,12 @@
      std::unique_ptr<media_router::CastDialogController> dialog_controller,
      mojo::PendingReceiver<mojom::DeviceListHost> host_pending_receiver,
      mojo::PendingRemote<mojom::DeviceListClient> client_remote,
@@ -517,7 +291,7 @@
    if (!dialog_controller) {
      // We discard the PendingReceiver/Remote here, and if they have disconnect
      // handlers set, those get called.
-@@ -670,21 +960,26 @@
+@@ -670,21 +746,26 @@
    auto media_remoting_callback_ =
        remoting_session_id.has_value()
            ? base::BindRepeating(
@@ -548,7 +322,7 @@
    int host_id = host->id();
    mojo::SelfOwnedReceiverRef<global_media_controls::mojom::DeviceListHost>
        host_receiver = mojo::MakeSelfOwnedReceiver(
-@@ -693,6 +988,8 @@
+@@ -693,6 +774,8 @@
        base::BindOnce(&MediaNotificationService::RemoveDeviceListHost,
                       weak_ptr_factory_.GetWeakPtr(), host_id));
    host_receivers_.emplace(host_id, std::move(host_receiver));
@@ -558,7 +332,7 @@
 -
 +
  bool MediaNotificationService::HasPresentationContextForSession(
-@@ -713,16 +1010,16 @@
+@@ -713,16 +796,16 @@
  }
 -
 +
@@ -582,23 +356,7 @@
  }
 -
 +
-@@ -773,6 +1070,14 @@
-   });
- }
--
-+
-+bool MediaNotificationService::ParcHasFrozenSessionForWebContents(
-+    content::WebContents* web_contents) const {
-+  return content::MediaSession::GetIfExists(web_contents) &&
-+         media_session_item_producer_->ParcIsItemFrozen(
-+             content::MediaSession::GetRequestIdFromWebContents(web_contents)
-+                 .ToString());
-+}
-+
- std::string
- MediaNotificationService::GetActiveControllableSessionForWebContents(
-     content::WebContents* web_contents) const {
-@@ -793,6 +1098,7 @@
+@@ -793,6 +876,7 @@
    // get destroyed soon anyways.
    if (!shutdown_has_started_) {
      host_receivers_.erase(host_id);
@@ -769,7 +527,7 @@
  }
 -
 +
-@@ -106,6 +131,87 @@
+@@ -106,6 +131,22 @@
    return item_ ? item_->GetWeakPtr() : nullptr;
  }
 -
@@ -790,75 +548,10 @@
 +  return context;
 +}
 +
-+void PresentationRequestNotificationProducer::ArmNativeRequest(
-+    base::UnguessableToken token, base::OnceClosure on_disconnect,
-+    global_media_controls::SupplementalDevicePickerProducer* local_provider) {
-+  native_request_token_ = token;
-+  native_disconnect_ = std::move(on_disconnect);
-+  observer_receiver_.reset();
-+  local_provider->AddObserver(observer_receiver_.BindNewPipeAndPassRemote());
-+  if (presentation_manager_)
-+    presentation_manager_->RemoveObserver(this);
-+  presentation_manager_ = nullptr;
-+  is_dialog_open_ = false;
-+}
-+
-+void PresentationRequestNotificationProducer::DisarmNativeRequest(
-+    base::UnguessableToken token) {
-+  if (native_request_token_ && *native_request_token_ == token) {
-+    native_request_token_.reset();
-+    native_disconnect_.Reset();
-+  }
-+}
-+
-+bool PresentationRequestNotificationProducer::WaitForNativePreparation(
-+    base::UnguessableToken token, base::OnceClosure completion) {
-+  if (!native_request_token_ || *native_request_token_ != token ||
-+      !provider_.is_bound())
-+    return false;
-+  provider_.QueryVersion(base::BindOnce(
-+      [](base::WeakPtr<PresentationRequestNotificationProducer> self,
-+         base::UnguessableToken token, base::OnceClosure completion, uint32_t) {
-+        if (self && self->native_request_token_ &&
-+            *self->native_request_token_ == token)
-+          std::move(completion).Run();
-+      }, weak_factory_.GetWeakPtr(), token, std::move(completion)));
-+  return true;
-+}
-+
-+void PresentationRequestNotificationProducer::OnNativeUIOpened(
-+    base::UnguessableToken token) {
-+  if (native_request_token_ && *native_request_token_ == token)
-+    is_dialog_open_ = true;
-+}
-+
-+void PresentationRequestNotificationProducer::OnNativeUIClosed(
-+    base::UnguessableToken token) {
-+  if (!native_request_token_ || *native_request_token_ != token)
-+    return;
-+  is_dialog_open_ = false;
-+  auto context = TakeNativeContext(token);
-+  if (context)
-+    context->InvokeErrorCallback(blink::mojom::PresentationError(
-+        blink::mojom::PresentationErrorType::PRESENTATION_REQUEST_CANCELLED,
-+        "Dialog closed."));
-+}
-+
-+void PresentationRequestNotificationProducer::OnNativePickerDismissed(
-+    base::UnguessableToken token) {
-+  if (!native_request_token_ || *native_request_token_ != token)
-+    return;
-+  auto context = TakeNativeContext(token);
-+  if (context)
-+    context->InvokeErrorCallback(blink::mojom::PresentationError(
-+        blink::mojom::PresentationErrorType::PRESENTATION_REQUEST_CANCELLED,
-+        "Dialog closed."));
-+}
-+
  void PresentationRequestNotificationProducer::BindProvider(
      mojo::PendingRemote<global_media_controls::mojom::DevicePickerProvider>
          pending_provider) {
-@@ -113,6 +219,11 @@
+@@ -113,6 +154,11 @@
    provider_->AddObserver(observer_receiver_.BindNewPipeAndPassRemote());
    provider_.set_disconnect_handler(base::BindOnce(
        [](PresentationRequestNotificationProducer* self) {
@@ -870,7 +563,7 @@
          self->item_.reset();
        },
        base::Unretained(this)));
-@@ -125,6 +236,8 @@
+@@ -125,6 +171,8 @@
  }
 -
 +
@@ -880,7 +573,7 @@
    is_dialog_open_ = true;
    presentation_manager_ = test_presentation_manager_
                                ? test_presentation_manager_
-@@ -147,6 +260,8 @@
+@@ -147,6 +195,8 @@
  }
 -
 +
@@ -890,7 +583,7 @@
    is_dialog_open_ = false;
    DeleteItemForPresentationRequest("Dialog closed.");
    if (presentation_manager_) {
-@@ -160,6 +275,8 @@
+@@ -160,6 +210,8 @@
  }
 -
 +
@@ -901,7 +594,7 @@
  }
 -
 +
-@@ -177,6 +294,8 @@
+@@ -177,6 +229,8 @@
 -
 +
  void PresentationRequestNotificationProducer::OnDefaultPresentationChanged(
@@ -911,7 +604,7 @@
    // NOTE: We only observe the presentation manager while the media control
    // dialog is open, so this method is only handling the unusual case where
    // the default presentation request is changed while the dialog is open.
-@@ -199,6 +318,9 @@
+@@ -199,6 +253,9 @@
            GetWebContentsFromPresentationRequest(request), this);
    // This may replace an existing item, which is the right thing to do if
    // we've reached this point.
@@ -921,7 +614,7 @@
    item_.emplace(request, std::move(context), provider_);
    if (provider_.is_bound()) {
      provider_->CreateItem(source_id_);
-@@ -211,16 +333,18 @@
+@@ -211,16 +268,18 @@
    if (!item_) {
      return;
    }
@@ -1114,84 +807,25 @@
 +
    base::UmaHistogramBoolean("Media.GlobalMediaControls.RepeatUsage",
                              has_been_opened_);
-@@ -266,17 +275,77 @@
- }
+@@ -267,16 +276,16 @@
 -
 +
  // static
--void MediaDialogView::HideDialog() {
+ void MediaDialogView::HideDialog() {
 -  if (IsShowing()) {
 -    instance_->service_->media_item_manager()->SetDialogDelegate(nullptr);
 -    speech::SodaInstaller::GetInstance()->RemoveObserver(instance_);
 -    instance_->GetWidget()->Close();
 -  }
-+views::Widget* MediaDialogView::CreateDialogForNativePage(
-+    gfx::NativeView parent,
-+    const gfx::Rect& bounds,
-+    MediaNotificationService* service,
-+    Profile* profile,
-+    content::WebContents* contents,
-+    base::UnguessableToken token,
-+    base::RepeatingCallback<bool()> native_guard) {
-+  DCHECK(service);
-+  DCHECK(parent);
-+  DCHECK(contents);
-+  HideDialog();
-+  if (instance_ || !native_guard || !native_guard.Run() ||
-+      (!token.is_empty() && !service->PrepareNativeDialog(token)))
-+    return nullptr;
-+  auto* dialog = new MediaDialogView(
-+      views::BubbleAnchor(), views::BubbleBorder::TOP_CENTER, service, profile,
-+      contents, global_media_controls::GlobalMediaControlsEntryPoint::kPresentation);
-+  instance_ = dialog;
-+  dialog->native_guard_ = std::move(native_guard);
-+  dialog->set_parent_window(parent);
-+  dialog->SetAnchorRect(bounds);
-+  auto* widget = views::BubbleDialogDelegateView::CreateBubble(dialog);
-+  if (instance_ != dialog)
-+    return nullptr;
-+  base::UmaHistogramBoolean("Media.GlobalMediaControls.RepeatUsage",
-+                            has_been_opened_);
-+  base::UmaHistogramEnumeration(
-+      "Media.GlobalMediaControls.EntryPoint",
-+      global_media_controls::GlobalMediaControlsEntryPoint::kPresentation);
-+  has_been_opened_ = true;
-+  return widget;
-+}
-+
-+// static
-+bool MediaDialogView::IsNativeDialogCurrent(views::Widget* widget) {
-+  return widget && instance_ && instance_->GetWidget() == widget;
-+}
-+
-+// static
-+void MediaDialogView::CloseNativeDialog(views::Widget* widget) {
-+  if (IsNativeDialogCurrent(widget))
-+    HideDialog();
-+}
-+
-+// static
-+void MediaDialogView::ForgetNativeDialogForDestroying(views::Widget* widget) {
-+  if (!IsNativeDialogCurrent(widget))
-+    return;
-+  auto* old = instance_;
-+  auto* service = old->service_.get();
-+  instance_ = nullptr;
-+  speech::SodaInstaller::GetInstance()->RemoveObserver(old);
-+  service->media_item_manager()->SetDialogDelegate(nullptr);
-+}
 -
-+
-+// static
-+void MediaDialogView::HideDialog() {
+-  // Set |instance_| to nullptr so that |IsShowing()| returns false immediately.
+-  // We also set to nullptr in |WindowClosing()| (which happens asynchronously),
+-  // since |HideDialog()| is not always called.
 +  auto* old = instance_;
 +  if (!old)
 +    return;
 +  auto widget = old->GetWidget()->GetWeakPtr();
 +  auto* service = old->service_.get();
-   // Set |instance_| to nullptr so that |IsShowing()| returns false immediately.
-   // We also set to nullptr in |WindowClosing()| (which happens asynchronously),
-   // since |HideDialog()| is not always called.
    instance_ = nullptr;
 +  speech::SodaInstaller::GetInstance()->RemoveObserver(old);
 +  service->media_item_manager()->SetDialogDelegate(nullptr);
@@ -1201,7 +835,7 @@
 -
 +
  // static
-@@ -287,9 +356,13 @@
+@@ -287,9 +296,13 @@
  global_media_controls::MediaItemUI* MediaDialogView::ShowMediaItem(
      const std::string& id,
      base::WeakPtr<media_message_center::MediaNotificationItem> item) {
@@ -1216,7 +850,7 @@
    view->SetProperty(views::kElementIdentifierKey,
                      kMediaItemUIUpdatedViewElementId);
    if (auto* save_button = view->GetMediaActionButton(
-@@ -300,23 +373,29 @@
+@@ -300,23 +313,29 @@
    view_ptr = view.get();
    items_[id] = view.get();
    active_sessions_view_->ShowUpdatedItem(id, std::move(view));
@@ -1252,7 +886,7 @@
 -
 +
  void MediaDialogView::RefreshMediaItem(
-@@ -329,10 +408,11 @@
+@@ -329,10 +348,11 @@
        entry_point_ == GlobalMediaControlsEntryPoint::kPresentation;
 -
 +
@@ -1270,7 +904,7 @@
 +
    UpdateBubbleSize();
  }
-@@ -342,7 +422,8 @@
+@@ -342,7 +362,8 @@
  }
 -
 +
@@ -1282,7 +916,7 @@
 -
 +
  void MediaDialogView::AddedToWidget() {
-@@ -352,6 +433,7 @@
+@@ -352,6 +373,7 @@
    if (frame) {
      frame->SetRoundedCorners(gfx::RoundedCornersF(corner_radius));
    }
@@ -1290,7 +924,7 @@
    if (entry_point_ ==
        global_media_controls::GlobalMediaControlsEntryPoint::kPresentation) {
      service_->SetDialogDelegateForWebContents(
-@@ -359,7 +441,6 @@
+@@ -359,7 +381,6 @@
    } else {
      service_->media_item_manager()->SetDialogDelegate(this);
    }
@@ -1299,7 +933,7 @@
 -
 +
  gfx::Size MediaDialogView::CalculatePreferredSize(
-@@ -465,6 +546,8 @@
+@@ -465,6 +486,8 @@
  }
 -
 +
@@ -1309,7 +943,7 @@
    static_cast<LiveTranslateComboboxModel*>(
        target_language_combobox_->GetModel())
        ->UpdateTargetLanguageIndex(
-@@ -552,13 +635,16 @@
+@@ -552,13 +575,16 @@
 -
 +
  void MediaDialogView::WindowClosing() {
@@ -1329,7 +963,7 @@
    bool enabled = !profile_->GetPrefs()->GetBoolean(prefs::kLiveCaptionEnabled);
    profile_->GetPrefs()->SetBoolean(prefs::kLiveCaptionEnabled, enabled);
    base::UmaHistogramBoolean(
-@@ -566,6 +652,8 @@
+@@ -566,6 +592,8 @@
  }
 -
 +
@@ -1339,7 +973,7 @@
    bool enabled =
        !profile_->GetPrefs()->GetBoolean(prefs::kLiveTranslateEnabled);
    profile_->GetPrefs()->SetBoolean(prefs::kLiveTranslateEnabled, enabled);
-@@ -574,6 +662,8 @@
+@@ -574,6 +602,8 @@
  }
 -
 +
@@ -1349,7 +983,7 @@
    NavigateParams navigate_params(profile_,
                                   GURL(captions::GetCaptionSettingsUrl()),
                                   ui::PAGE_TRANSITION_LINK);
-@@ -812,8 +902,8 @@
+@@ -812,8 +842,8 @@
    return std::make_unique<global_media_controls::MediaItemUIUpdatedView>(
        id, item, media_color_theme_,
        BuildDeviceSelector(id, item, service_, service_, profile_, entry_point_,
@@ -1687,45 +1321,7 @@
      for (auto& observer : observers_) {
        observer->OnPickerDismissed();
      }
-@@ -149,6 +159,36 @@
-   return pending_remote;
- }
--
-+
-+void SupplementalDevicePickerProducer::WatchPendingNativeLifecycle(
-+    base::UnguessableToken token, base::OnceClosure on_other_dialog) {
-+  watched_native_token_ = token;
-+  on_other_dialog_ = std::move(on_other_dialog);
-+}
-+
-+void SupplementalDevicePickerProducer::PrepareNativeLifecycle(
-+    base::UnguessableToken token, NativeLifecycleCallback callback) {
-+  if (watched_native_token_ == token) {
-+    watched_native_token_.reset();
-+    on_other_dialog_.Reset();
-+  }
-+  pending_native_lifecycle_.emplace(NativeLifecycle{token, std::move(callback)});
-+}
-+
-+void SupplementalDevicePickerProducer::ClearNativeLifecycle(
-+    base::UnguessableToken token) {
-+  if (watched_native_token_ == token) {
-+    watched_native_token_.reset();
-+    on_other_dialog_.Reset();
-+  }
-+  if (pending_native_lifecycle_ && pending_native_lifecycle_->token == token)
-+    pending_native_lifecycle_.reset();
-+}
-+
-+bool SupplementalDevicePickerProducer::HasPendingNativeLifecycle(
-+    base::UnguessableToken token) const {
-+  return pending_native_lifecycle_ && pending_native_lifecycle_->token == token;
-+}
-+
- void SupplementalDevicePickerProducer::OnItemListChanged() {
-   for (auto& observer : observers_) {
-     observer->OnMediaUIUpdated();
-@@ -156,12 +196,33 @@
+@@ -156,12 +166,33 @@
  }
 -
 +
@@ -2190,7 +1786,16 @@
 +
 --- a/chrome/browser/ui/global_media_controls/BUILD.gn
 +++ b/chrome/browser/ui/global_media_controls/BUILD.gn
-@@ -75,6 +75,7 @@
+@@ -64,6 +64,8 @@
+     "media_notification_device_monitor.cc",
+     "media_notification_device_provider_impl.cc",
+     "media_notification_service.cc",
++    "parc_native_media_notification_service.cc",
++    "parc_native_presentation_request.cc",
+     "media_notification_service_factory.cc",
+     "media_toolbar_button_controller.cc",
+     "media_toolbar_button_controller_delegate.cc",
+@@ -75,6 +77,7 @@
      "//chrome/browser:browser_process",
      "//chrome/browser/feature_engagement",
      "//chrome/browser/glic",
@@ -2198,7 +1803,7 @@
      "//chrome/browser/media/router:media_router_feature",
      "//chrome/browser/ui/browser_window",
      "//chrome/browser/ui/tabs:tab_strip",
-@@ -141,4 +142,8 @@
+@@ -141,4 +144,8 @@
      "//skia",
      "//ui/gfx:test_support",
    ]

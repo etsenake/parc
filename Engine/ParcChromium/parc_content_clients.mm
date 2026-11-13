@@ -1,3 +1,4 @@
+// Copyright 2026 Parc contributors.
 #include "parc/parc_content_clients.h"
 
 #include <utility>

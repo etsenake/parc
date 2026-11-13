@@ -636,28 +636,22 @@ source_set("native_webauthn") {
   sources = [ "webauthn.h", "webauthn.mm" ]
   frameworks = [ "AppKit.framework" ]
   deps = [
+    ":native_components",
     "//base",
-    "//chrome/app:generated_resources",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/ui/browser_window",
-    "//chrome/browser/ui/passwords",
-    "//chrome/browser/ui/views/controls",
     "//chrome/browser/ui/views/extensions:security_dialog_tracker",
     "//chrome/browser/ui/views/webauthn",
+    "//chrome/browser/ui/views/webauthn/ambient",
     "//chrome/browser/ui/webauthn",
     "//chrome/browser/webauthn",
     "//chrome/browser/webauthn:impl",
-    "//components/strings:components_strings",
     "//components/tabs:public",
-    "//components/vector_icons",
     "//components/web_modal",
     "//content/public/browser",
     "//ui/base",
-    "//ui/base/mojom",
-    "//ui/color",
     "//ui/gfx",
     "//ui/views",
-    ":native_components",
   ]
 }
 
@@ -807,11 +801,11 @@ source_set("native_cast_route") {
     "native_cast_route.cc",
     "native_cast_route.h",
   ]
-  public_deps = [ "//components/media_router/common" ]
-  deps = [
+  public_deps = [
     "//base",
     "//chrome/browser/media/router:media_router_feature",
     "//components/media_router/browser",
+    "//components/media_router/common",
     "//components/sessions",
     "//content/public/browser",
     "//url",

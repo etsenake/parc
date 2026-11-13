@@ -1,4 +1,6 @@
 // Copyright 2026 Parc contributors.
+#include "native_cast_route.h"
+
 #include "native_gmc_presentation.h"
 #import <AppKit/AppKit.h>
 #include <algorithm>
@@ -24,7 +26,6 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/global_media_controls/media_notification_service.h"
-#include "parc/native/native_cast_route.h"
 #include "chrome/browser/ui/global_media_controls/media_notification_service_factory.h"
 #include "chrome/browser/ui/media_router/media_router_ui_service.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"

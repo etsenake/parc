@@ -144,7 +144,10 @@ longer include Parc.
 HTTP authentication uses an owned coordinator and tab helper with a source-only validation hook.
 WebAuthn request creation runs in Parc's browser client. The password sheet, tab-sharing bar and its
 page-info link and profile are hooks. The autofill capability query is a free function backed by a
-core-client hook, so `autofill_client.h` and `chrome_autofill_client.h` are Chromium's own. Product
+core-client hook, so `autofill_client.h` and `chrome_autofill_client.h` are Chromium's own. Shared view adoption and card-offer capability checks live in owned
+`parc_bubble_presentation`, using the existing presentation callback and the same controller state.
+The address editor chooses its native modal host through a factory hook after field setup, retaining
+Chromium's editor, acceptance validation and result controller. Product
 names use owned numeric-ID tables in every process. The toolbar and narrow-window drawers share an
 owned dark logo, so they show Parc's logo in dark mode as well as light.
 

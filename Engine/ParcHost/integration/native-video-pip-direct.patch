@@ -101,28 +101,23 @@
 +
    base::WeakPtr<content::NavigationHandle> navigation_handle =
        Navigate(popup_delegate->nav_params());
-@@ -695,6 +722,19 @@
+@@ -695,6 +722,14 @@
                                                          source, disposition);
    }
 -
 +
 +#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_PARC)
 +
-+  if (source && new_contents && disposition == WindowOpenDisposition::NEW_SPLIT_VIEW) {
-+    const auto source_weak = source->GetWeakPtr();
-+    const auto child_weak = new_contents->GetWeakPtr();
-+    const bool native_owner = parc::HasNativeSplitOwner(browser_.get(), *source);
-+    if (!source_weak || !child_weak) return nullptr;
-+    if (parc::ClassifyNativeSplit(native_owner, false) ==
-+        parc::NativeSplitDecision::kOrdinary)
-+      disposition = WindowOpenDisposition::NEW_BACKGROUND_TAB;
++  if (!parc::PrepareNativeCreatedSplit(browser_.get(), source,
++                                       new_contents.get(), disposition)) {
++    return nullptr;
 +  }
 +#endif
 +
    // Postpone activating popups opened by content-fullscreen tabs. This permits
    // popups on other screens and retains fullscreen focus for exit accelerators.
    // Popups are activated when the opener exits fullscreen, which happens
-@@ -915,6 +955,12 @@
+@@ -915,6 +950,12 @@
 -
 +
  void BrowserWebContentsDelegate::ShowRepostFormWarningDialog(

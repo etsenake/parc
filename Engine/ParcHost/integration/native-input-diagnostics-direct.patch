@@ -155,7 +155,7 @@
  // Maximum amount of time to wait for beforeunload/unload handlers to be
  // processed by the renderer process.
  constexpr base::TimeDelta kUnloadTimeout = base::Milliseconds(500);
-@@ -3232,15 +3244,33 @@
+@@ -3232,15 +3244,18 @@
            LoadedWithCacheControlNoStoreHeader()
                ? BackForwardCacheImpl::kInCCNSContext
                : BackForwardCacheImpl::kNotInCCNSContext);
@@ -176,26 +176,11 @@
 -                     BackForwardCacheMetrics::NotRestoredReason::kTimeout));
 +      base::BindOnce(&RenderFrameHostImpl::OnBackForwardCacheEvictionTimeout,
 +                     weak_ptr_factory_.GetWeakPtr(), evict_after));
-+}
-+
-+void RenderFrameHostImpl::OnBackForwardCacheEvictionTimeout(
-+    base::TimeDelta waited) {
-+  constexpr base::TimeDelta kCastingLifetime = base::Hours(1);
-+  if (waited < kCastingLifetime && !LoadedWithCacheControlNoStoreHeader() &&
-+      MediaWebContentsObserver::IsRemotePlaybackStartedInPage(this)) {
-+    back_forward_cache_eviction_timer_.Start(
-+        FROM_HERE, kCastingLifetime - waited,
-+        base::BindOnce(&RenderFrameHostImpl::OnBackForwardCacheEvictionTimeout,
-+                       weak_ptr_factory_.GetWeakPtr(), kCastingLifetime));
-+    return;
-+  }
-+  EvictFromBackForwardCacheWithReason(
-+      BackForwardCacheMetrics::NotRestoredReason::kTimeout);
  }
 -
 +
  void RenderFrameHostImpl::DisableBackForwardCache(
-@@ -4038,10 +4068,28 @@
+@@ -4038,10 +4053,28 @@
 -
 +
  void RenderFrameHostImpl::AccessibilityPerformAction(
@@ -226,7 +211,7 @@
    }
 -
 +
-@@ -4055,6 +4103,7 @@
+@@ -4055,6 +4088,7 @@
    // Don't perform the action if the WebContents is set to ignore input events.
    // See WebContents::IgnoreInputEvents for more information.
    if (delegate()->ShouldIgnoreInputEvents()) {
@@ -235,7 +220,7 @@
    }
 -
 +
-@@ -4068,6 +4117,7 @@
+@@ -4068,6 +4102,7 @@
      }
    }
 -
@@ -245,37 +230,7 @@
  }
 -
 +
-@@ -10319,6 +10369,28 @@
-   frame_tree_->controller().UpdateStateForFrame(this, state);
- }
--
-+
-+void RenderFrameHostImpl::PrepareNativeMainFrameLink(
-+    const GURL& url, const blink::DocumentToken& document,
-+    WindowOpenDisposition disposition, std::optional<uint32_t> input_modifiers,
-+    PrepareNativeMainFrameLinkCallback callback) {
-+  auto* contents = WebContents::FromRenderFrameHost(this);
-+  if ((disposition != WindowOpenDisposition::CURRENT_TAB &&
-+       disposition != WindowOpenDisposition::NEW_FOREGROUND_TAB &&
-+       disposition != WindowOpenDisposition::NEW_BACKGROUND_TAB) ||
-+      !contents || !IsInPrimaryMainFrame() || !IsActive() ||
-+      IsNestedWithinFencedFrame() ||
-+      document != GetDocumentToken() || !url.SchemeIsHTTPOrHTTPS() ||
-+      !contents->GetMutableRendererPrefs()->native_main_frame_link_policy ||
-+      !contents->GetDelegate()) {
-+    std::move(callback).Run(std::nullopt);
-+    return;
-+  }
-+  const auto lease = GetWeakDocumentPtr();
-+  auto token = contents->GetDelegate()->PrepareNativeMainFrameLink(this, url, disposition, input_modifiers);
-+  if (!lease.AsRenderFrameHostIfValid()) token.reset();
-+  std::move(callback).Run(token);
-+}
-+
- void RenderFrameHostImpl::OpenURL(blink::mojom::OpenURLParamsPtr params) {
-   // Verify and unpack the Mojo payload.
-   GURL validated_url;
-@@ -10469,7 +10541,7 @@
+@@ -10469,7 +10504,7 @@
        params->disposition, params->should_replace_current_entry,
        params->user_gesture, params->triggering_event_info,
        params->href_translate, std::move(blob_url_loader_factory),

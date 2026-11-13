@@ -301,6 +301,7 @@ source_set("browser") {
     "//parc/native:native_certificate_viewer",
     "//parc/native:native_client_certificates",
     "//parc/native:native_components",
+    "//parc/native:native_cast_route",
     "//parc/native:native_devtools",
     "//parc/native:native_downloads",
     "//parc/native:native_cast_route",

@@ -293,14 +293,14 @@
 +CONTENT_EXPORT void ScrubVideoPictureInPicture(
 +    content::VideoPictureInPictureWindowController& controller,
 +    bool scrubbing);
-+}  // namespace parc_hooks
++}
 +
  namespace content {
 -
 +
 +namespace {
 +void (*parc_video_pip_session_started)(const MediaPlayerId& player) = nullptr;
-+}  // namespace
++}
 +
  // static
  VideoPictureInPictureWindowController*
@@ -314,13 +314,11 @@
      active_session_->Disconnect();
      pip_session_media_position_ = std::nullopt;
    }
-@@ -361,6 +376,12 @@
+@@ -361,6 +376,10 @@
      window_->SetImmersiveVideoOptions(immersive_options.value());
    }
 -
 +
-+  // Parc's window drops a reused window's captions and shows only this
-+  // session's from now on.
 +  if (parc_video_pip_session_started) {
 +    parc_video_pip_session_started(player_id);
 +  }
@@ -328,7 +326,7 @@
    // If the window is closed by the system, then the picture in picture session
    // will end. The renderer must call `StartSession()` again.
    EmbedSurface(surface_id, natural_size);
-@@ -398,6 +419,7 @@
+@@ -398,6 +417,7 @@
    if (!active_session_ || active_session_->service() != service)
      return;
 -
@@ -337,27 +335,8 @@
    active_session_->Shutdown();
    active_session_ = nullptr;
    pip_session_media_position_ = std::nullopt;
-@@ -494,14 +516,32 @@
-   return MediaSessionImpl::Get(web_contents())->GetMuteStatus();
- }
+@@ -496,12 +516,13 @@
 -
-+
-+bool VideoPictureInPictureWindowControllerImpl::ParcPresentsSafariIdentity() const {
-+  return active_session_ && active_session_->player_id() &&
-+         parc::fairplay::FramePresentsSafariIdentity(RenderFrameHost::FromID(
-+             active_session_->player_id()->frame_routing_id));
-+}
-+
-+void VideoPictureInPictureWindowControllerImpl::SetScrubbing(bool scrubbing) {
-+  if (!active_session_ || scrubbing == parc_scrubbing_ ||
-+      (scrubbing && !ParcPresentsSafariIdentity()))
-+    return;
-+  parc_scrubbing_ = scrubbing;
-+  active_session_->GetMediaPlayerRemote()->RequestHandlePlaybackControlsAction(
-+      scrubbing ? media_session::mojom::PlaybackControlsAction::kBeginScrubbing
-+                : media_session::mojom::PlaybackControlsAction::kEndScrubbing,
-+      base::TimeDelta());
-+}
 +
  void VideoPictureInPictureWindowControllerImpl::SeekTo(base::TimeDelta time) {
    // Default to the Media Session handler if it's available.
@@ -374,7 +353,7 @@
 -
 +
  void VideoPictureInPictureWindowControllerImpl::MediaSessionInfoChanged(
-@@ -694,6 +734,7 @@
+@@ -694,6 +715,7 @@
          /*triggered_by_user=*/false);
    }
 -
@@ -383,7 +362,7 @@
    active_session_->Shutdown();
    active_session_ = nullptr;
    pip_session_media_position_ = std::nullopt;
-@@ -787,3 +828,17 @@
+@@ -787,3 +809,16 @@
  WEB_CONTENTS_USER_DATA_KEY_IMPL(VideoPictureInPictureWindowControllerImpl);
 -
 +
@@ -397,11 +376,10 @@
 +void ScrubVideoPictureInPicture(
 +    content::VideoPictureInPictureWindowController& controller,
 +    bool scrubbing) {
-+  // The implementation is every controller's class; it makes Parc's window.
 +  static_cast<content::VideoPictureInPictureWindowControllerImpl&>(controller)
 +      .SetScrubbing(scrubbing);
 +}
-+}  // namespace parc_hooks
++}
 --- a/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h
 +++ b/content/browser/picture_in_picture/video_picture_in_picture_window_controller_impl.h
 @@ -80,6 +80,10 @@

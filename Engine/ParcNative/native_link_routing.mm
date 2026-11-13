@@ -1,6 +1,8 @@
 // Copyright 2026 Parc contributors.
 #include "native_link_routing.h"
 
+#include "native_link_routing.h"
+
 #include <memory>
 
 #include "base/memory/weak_ptr.h"
@@ -20,7 +22,6 @@
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/parc_native_links.h"
 #include "content/public/browser/weak_document_ptr.h"
 #include "native_appkit_host.h"
 #include "native_appkit_page.h"
@@ -700,8 +701,7 @@ class MatchedLinkOperation final : public content::WebContentsObserver,
     page->SetUserData(&kRoutedPageKey, std::make_unique<RoutedPage>(route_, *destination, params_.native_route_background));
     const auto page_lease = page->GetWeakPtr();
     if (source_->source_ && source_->document_.AsRenderFrameHostIfValid())
-      content::NotifyNativeDeferredOpenURL(
-          source_->source_.get(), page, source_->document_, params_);
+      source_->source_->NotifyNativeDeferredOpenURL(page, source_->document_, params_);
 
     if (!page_lease || !destination ||
         destination->GetTabStripModel()->GetIndexOfWebContents(page_lease.get()) == TabStripModel::kNoTab) {
@@ -887,6 +887,21 @@ void PrepareNativeCreatedPage(BrowserWindowInterface& browser,
       std::move(origin), route, space, target,
       disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB));
 }
+bool PrepareNativeCreatedSplit(BrowserWindowInterface& browser,
+                               content::WebContents* source,
+                               content::WebContents* child,
+                               WindowOpenDisposition& disposition) {
+  if (source && child && disposition == WindowOpenDisposition::NEW_SPLIT_VIEW) {
+    const auto source_weak = source->GetWeakPtr();
+    const auto child_weak = child->GetWeakPtr();
+    const bool native_owner = HasNativeSplitOwner(browser, *source);
+    if (!source_weak || !child_weak) return false;
+    if (ClassifyNativeSplit(native_owner, false) == NativeSplitDecision::kOrdinary)
+      disposition = WindowOpenDisposition::NEW_BACKGROUND_TAB;
+  }
+  return true;
+}
+
 bool HasNativeSplitOwner(BrowserWindowInterface& browser, content::WebContents& source) {
   return GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(&source) == &browser &&
       AppKitBindingForBrowser(&browser) && source.GetBrowserContext() == browser.GetProfile();
