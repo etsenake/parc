@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 722,
+  "version": 723,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -2029,7 +2029,7 @@
     {
       "source": "Engine/ParcChromium/chromium_hooks.h",
       "target": "parc/chromium_hooks.h",
-      "sha256": "c8265c015b18008815a932a3462e343d86d0db04de83ecb1b7a0986528d3ffad"
+      "sha256": "9d6eab05bb1aad4460a3fe51d02c8daf16f1ea1e12bef134307d2f2be96740ac"
     },
     {
       "source": "Engine/ParcChromium/content_main.h",
@@ -2084,7 +2084,7 @@
     {
       "source": "Engine/ParcChromium/parc_main_delegate.mm",
       "target": "parc/parc_main_delegate.mm",
-      "sha256": "d99ee7bb83401c24bb61a1d6368a85b47c9accbdd27d5fb4fbf0063a2ac0ef69"
+      "sha256": "7999579f392fd68836b48ac2f3c579f3bdb0732ba6c72b0f1b823ff032d15734"
     },
     {
       "source": "Engine/ParcNative/native_application.mm",
@@ -2184,12 +2184,12 @@
     {
       "source": "Engine/ParcNative/unload_transactions.h",
       "target": "parc/native/unload_transactions.h",
-      "sha256": "daf6c114ef548065d8dc03b4c05b332bf99b94adb8c6d53b2c4cb4b955fdee89"
+      "sha256": "29ae4e4f9a99a433093b4f11591b42f066c1f2adf9380f2ace4a1175f0fcc4ea"
     },
     {
       "source": "Engine/ParcNative/unload_transactions.cc",
       "target": "parc/native/unload_transactions.cc",
-      "sha256": "eb1f93254c52f7cbca500a6235ea4b810e7816731c6e14f7118decc1554be15f"
+      "sha256": "4d89fb5d79134f375b41c2d23d15ce40fdb5e168e1178df122ca37f8cedbb753"
     },
     {
       "source": "Engine/ParcRenderer/parc_web_media_player_extension.h",
@@ -2973,12 +2973,12 @@
     },
     {
       "source": "Engine/ParcHost/integration/native-page-retirement.patch",
-      "sha256": "9923297ec6ec3d4f264ee9ef9343f41caf4eff3264334896b78fa6a4016d6db2",
+      "sha256": "e70264c16fc53cf87fa4dd7d60306d7d3142ee7c87a70134beb7efec8e42fb32",
       "files": [
         {
           "target": "chrome/browser/ui/unload_controller.cc",
           "before_sha256": "f2910e6cae70fbb670e891c588f29b65ea3bfa7c4ffb3657b266a35e7a152531",
-          "after_sha256": "86b6a1e2bf647ad9678b0a267c9a57d149967263964982d579570425e9b335f0"
+          "after_sha256": "502eba451978d82ce9a1b72cbda3065f1bc279eb486578e1eec0dda8772420d9"
         }
       ]
     },

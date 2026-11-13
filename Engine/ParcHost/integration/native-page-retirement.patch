@@ -13,7 +13,7 @@
  #include "base/location.h"
  #include "base/task/single_thread_task_runner.h"
  #include "chrome/browser/browser_process.h"
-@@ -61,6 +63,62 @@
+@@ -61,6 +63,74 @@
 -
 +
  DEFINE_USER_DATA(UnloadController);
@@ -28,6 +28,12 @@
 +                                  base::RepeatingCallback<bool()>,
 +                                  UnloadEventsRunner) = nullptr;
 +void (*unload_controller_destroyed)(UnloadController&) = nullptr;
++void (*unload_tab_attached)(UnloadController&, content::WebContents*) =
++    nullptr;
++void (*unload_tab_detached)(UnloadController&, content::WebContents*) =
++    nullptr;
++void (*unload_render_process_gone)(UnloadController&, content::WebContents*) =
++    nullptr;
 +bool (*unload_absorbs_tab_strip_empty)(UnloadController&) = nullptr;
 +bool (*unload_blocks_window_close)(const UnloadController&) = nullptr;
 +bool (*unload_holds_closing_status)(const UnloadController&) = nullptr;
@@ -51,7 +57,13 @@
 +  unload_controller_destroyed = destroyed;
 +}
 +void SetUnloadControllerTabEvents(
++    void (*attached)(UnloadController&, content::WebContents*),
++    void (*detached)(UnloadController&, content::WebContents*),
++    void (*render_process_gone)(UnloadController&, content::WebContents*),
 +    bool (*absorbs_tab_strip_empty)(UnloadController&)) {
++  unload_tab_attached = attached;
++  unload_tab_detached = detached;
++  unload_render_process_gone = render_process_gone;
 +  unload_absorbs_tab_strip_empty = absorbs_tab_strip_empty;
 +}
 +void SetUnloadControllerCloseGates(
@@ -79,7 +91,7 @@
 -
 +
  // Returns a pair [last_window, last_window_for_profile] indicating if `browser`
-@@ -90,6 +148,83 @@
+@@ -90,6 +160,83 @@
    return {last_window, last_window_for_profile};
  }
 -
@@ -165,7 +177,7 @@
 -
 +
  ////////////////////////////////////////////////////////////////////////////////
-@@ -107,6 +242,12 @@
+@@ -107,6 +254,12 @@
  }
 -
 +
@@ -179,7 +191,7 @@
    // If `force_skip_warning_user_on_close_` is true, then we should immediately
    // return true.
    if (force_skip_warning_user_on_close()) {
-@@ -223,6 +364,21 @@
+@@ -223,6 +376,21 @@
        scoped_unowned_user_data_(browser->GetUnownedUserDataHost(), *this),
        web_contents_collection_(this) {
    browser_->tab_strip_model()->AddObserver(this);
@@ -202,7 +214,7 @@
 -
 +
  void UnloadController::AddTabUnloadHandler(
-@@ -231,17 +387,28 @@
+@@ -231,17 +399,28 @@
  }
 -
 +
@@ -234,7 +246,7 @@
    return !force_skip_warning_user_on_close_ &&
           RunUnloadEventsHelper(web_contents);
  }
-@@ -249,6 +416,11 @@
+@@ -249,6 +428,11 @@
  void UnloadController::BeforeUnloadFired(content::WebContents* web_contents,
                                           bool proceed,
                                           bool* proceed_to_fire_unload) {
@@ -246,7 +258,7 @@
    if ((browser_->GetType() == BrowserWindowInterface::Type::TYPE_DEVTOOLS) &&
        DevToolsWindow::HandleBeforeUnload(web_contents, proceed,
                                           proceed_to_fire_unload)) {
-@@ -295,6 +467,10 @@
+@@ -295,6 +479,10 @@
        return false;
    }
 -
@@ -258,7 +270,7 @@
    if (!web_app::IsTabClosable(
            browser_->tab_strip_model(),
            browser_->tab_strip_model()->GetIndexOfWebContents(contents))) {
-@@ -333,83 +509,23 @@
+@@ -333,83 +521,23 @@
  }
 -
 +
@@ -358,7 +370,7 @@
      DevToolsWindow::OnPageCloseCanceled(contents);
 -
 +
-@@ -462,6 +578,10 @@
+@@ -462,6 +590,10 @@
 -
 +
  BrowserWindowInterface::ClosingStatus
@@ -370,7 +382,7 @@
    if (IsUnclosableApp()) {
      return BrowserWindowInterface::ClosingStatus::kDeniedByPolicy;
    }
-@@ -506,6 +626,12 @@
+@@ -506,6 +638,12 @@
  bool UnloadController::RunBeforeUnloadForShutdown(
      bool skip_beforeunload,
      const base::RepeatingCallback<void(bool)>& on_close_confirmed) {
@@ -383,7 +395,18 @@
    cancel_download_confirmation_state_ =
        CancelDownloadConfirmationState::kResponseReceived;
    // The devtools browser gets its beforeunload events as the results of
-@@ -635,6 +761,10 @@
+@@ -596,6 +734,9 @@
+-
++
+ void UnloadController::RenderProcessGone(content::WebContents* web_contents,
+                                          base::TerminationStatus status) {
++  if (parc_hooks::unload_render_process_gone) {
++    parc_hooks::unload_render_process_gone(*this, web_contents);
++  }
+   if (is_attempting_to_close_browser()) {
+     ClearUnloadState(web_contents,
+                      false);  // See comment for ClearUnloadState().
+@@ -635,6 +776,10 @@
  }
 -
 +
@@ -395,3 +418,20 @@
    // Set state_ here, so that extensions, etc, do not attempt to add tabs to the
    // browser before it closes.
    if (state_ == State::kIdle) {
+@@ -734,9 +879,15 @@
+   // If the tab crashes in the beforeunload or unload handler, it won't be
+   // able to ack. But we know we can close it.
+   web_contents_collection_.StartObserving(contents);
++  if (parc_hooks::unload_tab_attached) {
++    parc_hooks::unload_tab_attached(*this, contents);
++  }
+ }
+-
++
+ void UnloadController::TabDetachedImpl(content::WebContents* contents) {
++  if (parc_hooks::unload_tab_detached) {
++    parc_hooks::unload_tab_detached(*this, contents);
++  }
+   if (is_attempting_to_close_browser()) {
+     ClearUnloadState(contents, false);
+   }

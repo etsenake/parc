@@ -18,7 +18,6 @@
 #include "chrome/browser/tab_contents/web_contents_collection.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/unload_controller.h"
 #include "chrome/browser/ui/web_applications/web_app_tabbed_utils.h"
 #include "components/performance_manager/public/execution_context_priority/execution_context_priority.h"
@@ -34,6 +33,9 @@
 namespace parc {
 namespace {
 
+// The reply follows the actual page through TabStripModel moves. Storing this
+// only on the old Browser would let a late Leave fall through the new Browser's
+// ordinary close path after a cancelled transaction.
 class TabClosePendingReply final
     : public content::WebContentsUserData<TabClosePendingReply>,
       public content::WebContentsObserver {
@@ -107,8 +109,10 @@ struct TabCloseRequest {
   bool awaiting = false;
 };
 
-class UnloadTransactions final : public WebContentsCollection::Observer,
-                                 public TabStripModelObserver {
+// The close and transfer transactions of one UnloadController. Its
+// WebContentsCollection starts and stops exactly where the controller's does,
+// so it sees the same navigations and destructions.
+class UnloadTransactions final : public WebContentsCollection::Observer {
  public:
   UnloadTransactions(UnloadController& controller,
                      BrowserWindowInterface& browser,
@@ -117,9 +121,7 @@ class UnloadTransactions final : public WebContentsCollection::Observer,
       : controller_(controller),
         browser_(browser),
         unclosable_app_(std::move(unclosable_app)),
-        run_unload_events_(std::move(run_unload_events)) {
-    browser_->GetTabStripModel()->AddObserver(this);
-  }
+        run_unload_events_(std::move(run_unload_events)) {}
   UnloadTransactions(const UnloadTransactions&) = delete;
   UnloadTransactions& operator=(const UnloadTransactions&) = delete;
   ~UnloadTransactions() override = default;
@@ -136,6 +138,9 @@ class UnloadTransactions final : public WebContentsCollection::Observer,
   bool HasTabClosePreflight() const;
   void CancelTabClosePreflight();
 
+  void TabAttached(content::WebContents* contents);
+  void TabDetached(content::WebContents* contents);
+  void ProcessGone(content::WebContents* contents);
   bool AbsorbsTabStripEmpty();
   bool BlocksWindowClose() const;
   bool HoldsClosingStatus() const;
@@ -145,17 +150,10 @@ class UnloadTransactions final : public WebContentsCollection::Observer,
   bool ConsumesBeforeUnloadReply(content::WebContents* contents, bool proceed);
 
  private:
+  // WebContentsCollection::Observer:
   void WebContentsDestroyed(content::WebContents* contents) override;
-  void RenderProcessGone(content::WebContents* contents,
-                         base::TerminationStatus status) override;
   void DidFinishNavigation(content::WebContents* contents,
                            content::NavigationHandle* navigation) override;
-  void OnTabStripModelChanged(TabStripModel* tab_strip_model,
-                              const TabStripModelChange& change,
-                              const TabStripSelectionChange& selection) override;
-
-  void TabAttached(content::WebContents* contents);
-  void TabDetached(content::WebContents* contents);
 
   bool ValidateTabCloseRequest() const;
   bool HasPendingTabCloseReply() const;
@@ -175,6 +173,8 @@ class UnloadTransactions final : public WebContentsCollection::Observer,
   std::unique_ptr<TabCloseRequest> tab_close_request_;
   std::optional<TabCloseToken> tab_transfer_token_;
   bool tab_transfer_saw_empty_ = false;
+  // Retain cancelled outstanding reply identities until the real reply arrives.
+  // A late Leave must never fall through to ordinary destructive tab closure.
   std::map<raw_ptr<content::WebContents>, TabCloseToken> tab_close_pending_;
   base::WeakPtrFactory<UnloadTransactions> weak_factory_{this};
 };
@@ -367,6 +367,8 @@ void UnloadTransactions::AdvanceTabClosePreflight(TabCloseToken token) {
     if (!weak || !tab_close_request_ || tab_close_request_->token != token) {
       return;
     }
+    // A custom confirmation can synchronously settle the request. Do not send
+    // a second decision or access the old target reference after its callback.
     if (!pending && contents && tab_close_pending_.contains(contents.get())) {
       TabClosePendingReply::Complete(contents, token, true);
     }
@@ -445,6 +447,9 @@ void UnloadTransactions::ClosePreparedTabs(TabCloseToken token) {
   if (!CheckCommittedTabClose(token)) {
     return;
   }
+  // Snapshot weak identities: ClosePage can synchronously destroy this Browser
+  // or run shell callbacks. A target moved elsewhere must never be closed in
+  // its new owner by this old transaction.
   auto targets = tab_close_request_->targets;
   auto weak = weak_factory_.GetWeakPtr();
   for (const auto& target : targets) {
@@ -481,6 +486,9 @@ void UnloadTransactions::CancelTabClosePreflight() {
     return;
   }
   auto callback = std::move(request->callback);
+  // All controller state is retired before touching actual dialog managers.
+  // Outstanding renderer replies remain in tab_close_pending_ and are consumed
+  // without allowing unload even if cancellation delivery is asynchronous.
   for (const auto& target : request->targets) {
     if (!target.contents || target.contents->IsBeingDestroyed()) {
       continue;
@@ -510,6 +518,8 @@ void UnloadTransactions::TabDetached(content::WebContents* contents) {
     if (!tab_close_request_->committed) {
       CancelTabClosePreflight();
     } else {
+      // Normal ClosePage detachment destroys the page in this stack. An
+      // independent live transfer instead invalidates the approved owner.
       base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE,
           base::BindOnce(
@@ -524,26 +534,7 @@ void UnloadTransactions::TabDetached(content::WebContents* contents) {
   web_contents_collection_.StopObserving(contents);
 }
 
-void UnloadTransactions::OnTabStripModelChanged(
-    TabStripModel* tab_strip_model,
-    const TabStripModelChange& change,
-    const TabStripSelectionChange& selection) {
-  if (change.type() == TabStripModelChange::kInserted) {
-    for (const auto& contents : change.GetInsert()->contents) {
-      TabAttached(contents.contents);
-    }
-  } else if (change.type() == TabStripModelChange::kReplaced) {
-    TabDetached(change.GetReplace()->old_contents);
-    TabAttached(change.GetReplace()->new_contents);
-  } else if (change.type() == TabStripModelChange::kRemoved) {
-    for (const auto& contents : change.GetRemove()->contents) {
-      TabDetached(contents.contents);
-    }
-  }
-}
-
-void UnloadTransactions::RenderProcessGone(content::WebContents* contents,
-                                           base::TerminationStatus status) {
+void UnloadTransactions::ProcessGone(content::WebContents* contents) {
   tab_close_pending_.erase(contents);
   if (IsTabCloseTarget(contents) && !tab_close_request_->committed) {
     CancelTabClosePreflight();
@@ -621,7 +612,7 @@ void UnloadTransactions::WebContentsDestroyed(content::WebContents* contents) {
     CancelTabClosePreflight();
   }
 }
-}
+}  // namespace
 
 std::optional<TabCloseToken> ReserveTabTransfer(UnloadController& controller) {
   return TransactionsOf(controller).ReserveTabTransfer();
@@ -680,8 +671,30 @@ void OnUnloadControllerDestroyed(UnloadController& controller) {
     return;
   }
   found->second->CancelTabClosePreflight();
+  // Out of the registry before destruction, which posts nothing.
   std::unique_ptr<UnloadTransactions> state = std::move(found->second);
   Registry().erase(found);
+}
+
+void OnUnloadControllerTabAttached(UnloadController& controller,
+                                   content::WebContents* contents) {
+  if (auto* state = StateOf(controller)) {
+    state->TabAttached(contents);
+  }
+}
+
+void OnUnloadControllerTabDetached(UnloadController& controller,
+                                   content::WebContents* contents) {
+  if (auto* state = StateOf(controller)) {
+    state->TabDetached(contents);
+  }
+}
+
+void OnUnloadControllerRenderProcessGone(UnloadController& controller,
+                                         content::WebContents* contents) {
+  if (auto* state = StateOf(controller)) {
+    state->ProcessGone(contents);
+  }
 }
 
 bool AbsorbsTabStripEmpty(UnloadController& controller) {
@@ -726,4 +739,4 @@ bool ConsumesBeforeUnloadReply(UnloadController& controller,
   auto* state = StateOf(controller);
   return state && state->ConsumesBeforeUnloadReply(contents, proceed);
 }
-}
+}  // namespace parc

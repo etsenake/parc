@@ -361,6 +361,9 @@ void SetUnloadControllerLifetime(
                     UnloadEventsRunner),
     void (*destroyed)(UnloadController&));
 void SetUnloadControllerTabEvents(
+    void (*attached)(UnloadController&, content::WebContents*),
+    void (*detached)(UnloadController&, content::WebContents*),
+    void (*render_process_gone)(UnloadController&, content::WebContents*),
     bool (*absorbs_tab_strip_empty)(UnloadController&));
 void SetUnloadControllerCloseGates(
     bool (*blocks_window_close)(const UnloadController&),

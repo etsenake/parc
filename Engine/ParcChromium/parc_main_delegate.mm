@@ -162,7 +162,9 @@ ParcMainDelegate::ParcMainDelegate(NativeApplication* application)
                                         &HandleNativeDevtoolsKey);
   parc_hooks::SetUnloadControllerLifetime(&OnUnloadControllerCreated,
                                           &OnUnloadControllerDestroyed);
-  parc_hooks::SetUnloadControllerTabEvents(&AbsorbsTabStripEmpty);
+  parc_hooks::SetUnloadControllerTabEvents(
+      &OnUnloadControllerTabAttached, &OnUnloadControllerTabDetached,
+      &OnUnloadControllerRenderProcessGone, &AbsorbsTabStripEmpty);
   parc_hooks::SetUnloadControllerCloseGates(
       &BlocksWindowClose, &HoldsClosingStatus, &BlocksShutdownBeforeUnload);
   parc_hooks::SetUnloadControllerPageGates(&HoldsContents, &UnloadEventsResult,
