@@ -127,4 +127,7 @@ smallest include that preserves its behaviour.
 Every change that adds, changes, moves or removes a hook or a patch updates this reference in the
 same change: the entry, its area's count and the totals above. Reviewers treat a missing update as a
 blocking finding ([Chromium boundary](../AGENTS.md#chromium-boundary)). A new hook or patch still
-needs the user's approval first, with the alternatives tried and why each fails.
+needs the user's approval first, with the alternatives tried and why each fails, unless the hook
+converts an existing patch in the established patterns. Every
+[Chromium upgrade](../Engine/README.md#upgrading-chromium) audits every patch here for conversion
+and records the outcome and reason in its entry.

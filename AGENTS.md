@@ -104,9 +104,14 @@ Before any Chromium change:
 None of these excuse skipping that: the change is one line or small, faster to
 write, temporary or test-only; the file is already patched; a release or
 deadline is waiting; or an earlier change did the same. Removing or shrinking a
-Chromium change while preserving behaviour needs no approval. Reviewers treat
-an unapproved diff to `Engine/ParcHost/integration/`, a new hook or a Chromium
-header or BUILD edit as a blocking finding.
+Chromium change while preserving behaviour needs no approval. That includes
+converting a patch into a one-call hook, call-in or extension-point call in the
+established patterns, and moving Parc lines to where Chromium moved the code;
+every Chromium upgrade audits every patch for these
+([procedure](Engine/README.md#upgrading-chromium)). A new pattern needs the
+user's agreement first. Reviewers treat an unapproved diff to
+`Engine/ParcHost/integration/`, a new hook other than such a conversion or a
+Chromium header or BUILD edit as a blocking finding.
 
 ## No code comments
 

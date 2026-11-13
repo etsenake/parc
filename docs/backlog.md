@@ -218,7 +218,7 @@ what users see or hear today, and each must keep it that way.
   158) upgrade taken through it, are separately authorized work. The upgrade is what brings users
   that release's Chromium security fixes; the [upgrade procedure](../Engine/README.md#upgrading-chromium)
   describes it. No tool yet writes a refitted branch on a newer Chromium back into the overlay: the
-  export tool only proves equivalence at the current version, so step 6 regenerates patch files and
+  export tool only proves equivalence at the current version, so step 7 regenerates patch files and
   their hashes by hand, which is slow and error-prone across a milestone where most of the 74 patched
   files change.
 

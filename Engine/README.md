@@ -176,8 +176,9 @@ dependencies and usually rolls the compiler, so the next build recompiles
 nearly everything; also check the new version's required macOS SDK in its
 `build/config/mac/mac_sdk.gni` and, if it needs a newer one, install that Xcode
 and refresh the engine's Xcode folder, and recheck what [How Parc changes Chromium](../docs/chromium-seams.md)
-lists for each upgrade. Do the refit in an isolated copy so releases keep using
-the current engine:
+lists for each upgrade. Every upgrade, minor or major, also audits every patch
+for conversion into hooks and call-ins (step 6). Do the refit in an isolated copy
+so releases keep using the current engine:
 
 1. Choose the new Chrome stable tag and its commit (and a depot_tools commit if
    the new version needs one). Save the current lock with
@@ -202,18 +203,34 @@ the current engine:
    `git cherry-pick parc-previous`. Git merges every patch three-way against the
    old Chromium; files that merge cleanly still fit, and the conflicts list every
    patch that needs refitting. Resolve them, fix Parc-owned files that broke on
-   API changes, and commit. A refit that grows a patch or adds a hook needs the
-   user's approval and a [hooks reference](../docs/chromium-hooks.md) update.
-6. Write the refit back into the overlay inputs by hand (no tool does this yet;
+   API changes, and commit. A refit that grows a patch, or adds a hook other than
+   a step 6 conversion, needs the user's approval; every refit updates the
+   [hooks reference](../docs/chromium-hooks.md).
+6. Audit every patch for conversion, whether the upgrade is minor or major. New
+   Chromium versions add observers, delegates and overrides, so a patch that had
+   to stay last time may not now. For each patch, check against the new Chromium
+   whether it can become a one-call hook, a call-in or an extension-point call in
+   the patterns [How Parc changes Chromium](../docs/chromium-seams.md) defines,
+   or at least shrink. Exhaust the existing hooks and extension points first, and
+   land a conversion only when it is lossless: the same moment and context, the
+   unhooked path unchanged, and no timer, extra IPC hop, copy or hot-path work.
+   Check each conversion, and each patch judged to stay, with a second review
+   that reads the code rather than the first review's conclusion. Conversions
+   into these patterns, and moving Parc lines to where Chromium moved the code,
+   need no separate approval. A new pattern needs the user's agreement first and
+   is only worth raising when it serves the same goal as the existing ones:
+   fewer and smaller changes in Chromium's own files. Record each patch's outcome
+   and reason in the hooks reference.
+7. Write the refit back into the overlay inputs by hand (no tool does this yet;
    see the [backlog](../docs/backlog.md#engine-architecture)): regenerate each
    patch file as a plain `--- a/`/`+++ b/` unified diff from the new Chromium
    file to the `parc-next` file, keeping the patch's grouping of targets; copy
    changed Parc-owned files back to their sources; update every `sha256`,
    `before_sha256` and `after_sha256`, set `upstream.chromium` to the new commit
    and `version` to main's current overlay version plus one.
-7. Prove it in the copy: `reset-source`, then `overlay-check` and
+8. Prove it in the copy: `reset-source`, then `overlay-check` and
    `overlay-apply` with the new manifest, then `generate` and `shipping-build`.
-8. Fetch main, commit the lock, manifest and changed patch and source files in
+9. Fetch main, commit the lock, manifest and changed patch and source files in
    one commit, and push. The next release on any Mac upgrades its engine in
    place and builds. Delete the copy afterwards.
 

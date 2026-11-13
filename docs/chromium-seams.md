@@ -360,7 +360,10 @@ complete exactly once.
    [hooks and patches reference](chromium-hooks.md); reviewers treat a missing update as blocking.
 
 A new hook or any other Chromium change first needs the user's approval, with the alternatives tried and
-why each fails ([Chromium boundary](../AGENTS.md#chromium-boundary)).
+why each fails ([Chromium boundary](../AGENTS.md#chromium-boundary)). Converting an existing patch into a
+hook, call-in or extension-point call in these patterns shrinks Parc's changes and needs no approval;
+every [Chromium upgrade](../Engine/README.md#upgrading-chromium) audits every patch for it. A new pattern
+needs the user's agreement and must serve the same goal: fewer and smaller changes in Chromium's files.
 
 ## Builds and upgrades
 
