@@ -42,6 +42,8 @@ SHIPPING_DEFINES = ('is_component_build=false is_official_build=true chrome_pgo_
                     'enable_platform_ac3_eac3_audio=true '
                     'target_cpu="arm64" enable_dsyms=false use_remoteexec=false')
 GIT = ["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-c", "init.templateDir="]
+READ_ONLY_GIT = {"GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_COUNT": "1",
+                 "GIT_CONFIG_KEY_0": "diff.autoRefreshIndex", "GIT_CONFIG_VALUE_0": "false"}
 ORIGINS = {
     "chromium": "https://chromium.googlesource.com/chromium/src.git",
     "depot_tools": "https://chromium.googlesource.com/chromium/tools/depot_tools.git",

@@ -197,9 +197,11 @@ workspace, and the release's frozen inputs supply the engine lock and overlay
 it must match, so a Mac whose engine is current reuses it and an unpack's link
 lands in the checkout where the next release finds it. Once the engine is sealed, the release starts packing it
 into the NAS snapshot in the background, writing to the release log, and
-continues packaging. Its last stage waits up to four hours for that upload,
-ejects an image it opened (stopping an eject that takes over ten minutes), and
-adds the upload's outcome to the release's final line; an upload still running
+continues packaging alongside it: both only read the sealed engine, so they
+share the workspace (see [capture](#capture-and-publish)). Its last stage
+waits up to four hours for that upload, ejects an image it opened (stopping
+an eject that takes over ten minutes), and adds the upload's outcome to the
+release's final line; an upload still running
 then keeps going in the background and is reported as such. A resumed release waits only on its own uploader process. A
 failed or unstartable upload, unreadable settings or a failed NAS engine choice
 is reported (the last falls back to this Mac's workspace) and never stops the
@@ -311,7 +313,12 @@ parts plus uncompressed files. No automatic cleanup is performed.
 
 The owner of the active engine work freezes the existing workspace and waits
 for its build process to exit before capture. These commands do not build an
-engine or change the source receipt:
+engine or change the source receipt. Workspace capture holds the workspace's
+operation lock shared, as packaging does: sealing and packaging can read the
+engine during a capture, while a build, overlay change or anything else that
+needs the workspace to itself is refused until it ends, and packaging still
+refuses a running build. The Git checks of both run with Git's optional index
+refresh off, so neither rewrites a file the other is reading:
 
 ```sh
 mkdir -p /absolute/new-assets

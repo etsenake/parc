@@ -13,6 +13,12 @@ REPO = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("engine_workspace", REPO / "scripts/engine_workspace.py")
 ws = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ws)
+spec = importlib.util.spec_from_file_location("parc_packager", REPO / "scripts/build.py")
+pkg = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(pkg)
+spec = importlib.util.spec_from_file_location("engine_artifacts", REPO / "scripts/engine-artifacts.py")
+artifacts = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(artifacts)
 
 
 class WorkspaceTests(unittest.TestCase):
@@ -262,7 +268,47 @@ class WorkspaceTests(unittest.TestCase):
         with self.assertRaisesRegex(ws.Refusal, "External Git configuration"):
             self.adopt(restored, metadata)
 
+    def test_packing_a_snapshot_lets_packaging_read_the_engine_but_still_stops_builds(self):
+        loader, during = artifacts.module, []
 
+        def module(name):
+            loaded = loader(name)
+            if name == "artifact_archive":
+                archive = loaded.create_archive
+
+                def packing(*args, **kwargs):
+                    try:
+                        with pkg.engine_lock(self.output):
+                            during.append("packaged")
+                    except pkg.Refusal as error:
+                        during.append(str(error))
+                    try:
+                        self.engine.overlay(self.source, self.lock, self.state["lock_sha256"], self.manifest, True)
+                    except self.engine.Refusal as error:
+                        during.append(str(error))
+                    return archive(*args, **kwargs)
+                loaded.create_archive = packing
+            return loaded
+
+        output = self.root / "snapshot"
+        with patch.object(artifacts, "module", side_effect=module), patch.object(artifacts, "ROOT", self.repo), \
+                patch("builtins.print"):
+            code = artifacts.main(["create-workspace", "--workspace", str(self.source), "--output", str(output),
+                                   "--name", "engine-workspace"])
+        self.assertEqual(during, ["packaged", "Another operation is using this workspace"])
+        self.assertEqual(code, 0)
+        self.assertTrue((output / "engine-workspace.manifest.json").is_file())
+
+    def test_packaging_checks_never_rewrite_the_git_index_a_packer_is_reading(self):
+        readme = self.source / "chromium/src/README"
+        stale = readme.stat().st_mtime_ns - 100_000_000_000
+        os.utime(readme, ns=(stale, stale))
+        index = self.source / "chromium/src/.git/index"
+        before = index.stat()
+        pkg.verify_source_baseline(REPO, self.source, self.lock, self.state)
+        after = index.stat()
+        self.assertEqual((after.st_ino, after.st_mtime_ns, after.st_size),
+                         (before.st_ino, before.st_mtime_ns, before.st_size))
 
 
 if __name__ == "__main__":

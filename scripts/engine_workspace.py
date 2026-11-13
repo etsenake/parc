@@ -72,12 +72,12 @@ def _relative(value: str) -> Path:
 
 
 @contextmanager
-def workspace_guard(workspace: Path):
+def workspace_guard(workspace: Path, shared: bool = False):
     engine = _engine(REPO)
     path = engine.internal_path(Path(workspace) / ".parc-operation.lock", Path(workspace))
     with path.open("rb") as guard:
         try:
-            fcntl.flock(guard, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(guard, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise Refusal("Another operation is using this workspace") from error
         yield
@@ -102,7 +102,7 @@ def _receipt(engine, workspace: Path, lock: dict, lock_sha: str) -> tuple[dict, 
 
 def _validate_baseline(engine, workspace: Path, repo: Path, lock: dict, state: dict, *, verify_overlay_inputs: bool = True) -> None:
     env = engine.environment(workspace, lock, state["symbol_level"])
-    env["GIT_OPTIONAL_LOCKS"] = "0"
+    env.update(engine.READ_ONLY_GIT)
     for relative in ["depot_tools", *state["repositories"]]:
         git = engine.internal_path(workspace / relative / ".git", workspace)
         if not git.is_dir():

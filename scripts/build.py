@@ -323,7 +323,7 @@ def verify_source_baseline(repo: Path, workspace: Path, lock: dict, state: dict)
     module = source_verifier(repo)
     try:
         module.verify_workspace(workspace, lock, state,
-                                module.environment(workspace, lock, state["symbol_level"]))
+                                module.environment(workspace, lock, state["symbol_level"]) | module.READ_ONLY_GIT)
     except module.Refusal as error:
         raise Refusal(str(error)) from error
 
