@@ -134,6 +134,27 @@ class ReleaseStorageTests(unittest.TestCase):
         self.assertEqual(args[args.index('--source') + 1], str(self.source))
         self.assertEqual(workspace, Path(choice['workspace']))
 
+    def test_a_release_frozen_before_a_newer_storage_option_still_chooses_its_engine(self):
+        (self.source / 'scripts/engine_storage.py').write_text(
+            'import argparse, json\n'
+            'parser = argparse.ArgumentParser()\n'
+            'parser.add_argument("command")\n'
+            'parser.add_argument("--repo")\n'
+            'parser.parse_args()\n'
+            'print(json.dumps({"workspace": "/frozen/engine", "mode": "local", "reason": "frozen"}))\n')
+        (self.runner.root / 'scripts/engine_storage.py').write_text(
+            'import json, sys\n'
+            'source = sys.argv[sys.argv.index("--source") + 1]\n'
+            'print("Engine workspace chosen")\n'
+            'print(json.dumps({"workspace": "/Users/someone/ParcBuild/engine-cx", "mode": "restored",\n'
+            '                  "reason": "unpacked for " + source}))\n')
+        workspace = self.runner.storage_workspace(self.source)
+        messages = [call.args[0] for call in self.runner.emit.call_args_list]
+        self.assertEqual([m for m in messages if 'failed' in m], [])
+        self.assertEqual(workspace, Path('/Users/someone/ParcBuild/engine-cx'))
+        self.assertEqual((self.runner.state['storage_mode'], self.runner.state['storage_reason']),
+                         ('restored', 'unpacked for ' + str(self.source)))
+
     def test_a_resumed_release_drops_an_engine_choice_inside_its_frozen_inputs(self):
         self.runner.checkpoint = lambda **values: self.runner.state.update(values)
         self.runner.state.update(storage_mode='local', storage_reason='no newer NAS copy applies',
