@@ -598,7 +598,7 @@ class Controller final : public AuthenticatorRequestDialogViewController,
     view_->SetNativePresentationValidation(base::BindRepeating(
         [](std::weak_ptr<Dialog> weak) {
           auto self = weak.lock();
-          return self && self->MaySelect();
+          return self && self->MayShow();
         },
         weak));
     widget_ = std::make_unique<views::Widget>();

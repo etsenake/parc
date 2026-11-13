@@ -124,7 +124,8 @@ code that answers lives in `Engine/ParcNative/` unless a path says otherwise.
   once and rolls back cleanly. `chrome/browser/ui/unload_controller.cc` keeps its close state and
   beforeunload runner private. Since Chromium 157 splits closing into `CloseContents()` and a const
   query, the page gate sits in the query after its state check, never before it, because closing can
-  already have cleared a page's unload state. Tab attach, detach and renderer-crash events reach
+  already have cleared a page's unload state; Parc's own web-contents delegate overrides
+  `CloseContents()` to hold a page before Chromium's mutating close runs. Tab attach, detach and renderer-crash events reach
   Parc's transactions through public tab-strip and web-contents observers registered when the
   controller is created, so the tab-events hook keeps only the empty-strip decision. Answered by
   `Engine/ParcNative/unload_transactions.cc`.

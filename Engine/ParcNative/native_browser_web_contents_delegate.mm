@@ -7,6 +7,7 @@
 
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/unload_controller.h"
 #include "components/input/native_web_keyboard_event.h"
 #include "components/tabs/public/split_tab_data.h"
 #include "components/tabs/public/tab_interface.h"
@@ -19,6 +20,7 @@
 #include "native_page_observers.h"
 #include "video_overlay_window.h"
 #include "content/public/browser/video_picture_in_picture_window_controller.h"
+#include "unload_transactions.h"
 
 namespace parc {
 
@@ -73,6 +75,7 @@ content::PreloadingEligibility
 NativeBrowserWebContentsDelegate::IsPrerender2Supported(
     content::WebContents& web_contents,
     content::PreloadingTriggerType trigger_type) {
+
   return content::PreloadingEligibility::kPreloadingDisabled;
 }
 
@@ -91,6 +94,7 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
     const content::OpenURLParams& params,
     base::OnceCallback<void(content::NavigationHandle&)>
         navigation_handle_callback) {
+
   if (browser_->GetType() == BrowserWindowInterface::Type::TYPE_DEVTOOLS) {
     return BrowserWebContentsDelegate::OpenURLFromTab(
         source, params, std::move(navigation_handle_callback));
@@ -111,6 +115,7 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
   if (!early_browser_weak || (source && !early_source_weak)) {
     return nullptr;
   }
+
   if (!native_split_owner &&
       params.disposition == WindowOpenDisposition::NEW_SPLIT_VIEW && source) {
     tabs::TabInterface* const source_tab =
@@ -152,9 +157,11 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
     return created;
   }
   if (split_decision == NativeSplitDecision::kOrdinary) {
+
     if (params.native_route_token) {
       return nullptr;
     }
+
     content::OpenURLParams ordinary(params);
     ordinary.native_route_split = true;
     return BrowserWebContentsDelegate::OpenURLFromTab(
@@ -164,6 +171,7 @@ content::WebContents* NativeBrowserWebContentsDelegate::OpenURLFromTab(
   if (!browser_weak || (had_source && !source_weak)) {
     return nullptr;
   }
+
   if (params.native_route_token && !peek) {
     return nullptr;
   }
@@ -195,6 +203,7 @@ content::WebContents* NativeBrowserWebContentsDelegate::AddNewContents(
     PrepareNativeCreatedPage(browser_.get(), source, *new_contents, target_url,
                              disposition, user_gesture);
     if (!child_weak) {
+
       new_contents.release();
       return nullptr;
     }
@@ -207,6 +216,15 @@ content::WebContents* NativeBrowserWebContentsDelegate::AddNewContents(
   return BrowserWebContentsDelegate::AddNewContents(
       source, std::move(new_contents), target_url, disposition,
       window_features, user_gesture, was_blocked);
+}
+
+void NativeBrowserWebContentsDelegate::CloseContents(
+    content::WebContents* source) {
+  auto* controller = UnloadController::From(&browser_.get());
+  if (controller && parc::HoldsContents(*controller, source)) {
+    return;
+  }
+  BrowserWebContentsDelegate::CloseContents(source);
 }
 
 void NativeBrowserWebContentsDelegate::UpdateTargetURL(
@@ -225,8 +243,10 @@ void NativeBrowserWebContentsDelegate::WebContentsCreated(
     const GURL& target_url,
     content::WebContents* new_contents) {
   CaptureNativeCreatedPage(source_contents, opener_id, new_contents);
+
   BrowserWebContentsDelegate::WebContentsCreated(
       source_contents, opener_id, frame_name, target_url, new_contents);
+
   if (source_contents && NativePageBinding::FromWebContents(source_contents)) {
     NativePageBinding::CreateForWebContents(new_contents);
   }
@@ -249,12 +269,14 @@ void NativeBrowserWebContentsDelegate::RendererResponsive(
 content::JavaScriptDialogManager*
 NativeBrowserWebContentsDelegate::GetJavaScriptDialogManager(
     content::WebContents* source) {
+
   return NativeJavaScriptDialogManager(*source);
 }
 
 void NativeBrowserWebContentsDelegate::ExitFullscreenModeForTab(
     content::WebContents* web_contents) {
   BrowserWebContentsDelegate::ExitFullscreenModeForTab(web_contents);
+
   if (auto* view = web_contents->GetRenderWidgetHostView()) {
     if (auto* widget = view->GetRenderWidgetHost()) {
       widget->SynchronizeVisualProperties();

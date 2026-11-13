@@ -44,7 +44,7 @@
     _changed();
 }
 - (void)pageHostDidAttemptDeferredFocus:(PCNativePageHost*)page {
-  // The focus attempt is not a successful presentation acknowledgement.
+
 }
 @end
 
@@ -73,7 +73,7 @@ class NativeExtensionSidePanel::State final
     CHECK(tabs);
     tabs_.Observe(tabs);
     profile_.Observe(browser_->GetProfile());
-    // BrowserView creates this only in its own branch. No duplicate manager.
+
     CHECK(!Manager::From(browser_));
     manager_ =
         std::make_unique<Manager>(browser_, SidePanelRegistry::From(browser_));
@@ -118,7 +118,7 @@ class NativeExtensionSidePanel::State final
     TabChanged();
   }
   void OnTabListDestroyed(TabListInterface&) override {
-    // The owner must drain before starting Browser/TabList destruction.
+
     CHECK(shutdown_);
     CHECK_EQ(retiring_, 0u);
     tabs_.Reset();
@@ -268,8 +268,7 @@ class NativeExtensionSidePanel::State::Session final
     auto owner = owner_.lock();
     if (!owner || !owner->ContextValid())
       return false;
-    // Hidden attachment makes the real native parent available to WebModal
-    // setup before renderer startup, without acknowledging a shown panel.
+
     NSView* container = owner->host_->SidePanelContainer();
     page_.frame = container.bounds;
     page_.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -291,8 +290,7 @@ class NativeExtensionSidePanel::State::Session final
       OnLoaded();
     return !closed_;
   }
-  // Detachment and state change happen synchronously. Actual host destruction
-  // is deferred out of ExtensionHost/entry/NSView observer callback stacks.
+
   void Suspend(SidePanelEntryHideReason reason, bool terminal = false) {
     if (suspending_ || (closed_ && !terminal))
       return;
@@ -371,8 +369,7 @@ class NativeExtensionSidePanel::State::Session final
   }
   void DestroyHost() {
     CHECK(closed_);
-    // ExtensionViewHost may use view() during destruction; this Session and
-    // page wrapper remain alive until after the final host reference goes.
+
     host_.reset();
     [page_ invalidate];
     page_ = nil;
@@ -383,16 +380,14 @@ class NativeExtensionSidePanel::State::Session final
   }
   void ResizeDueToAutoResize(content::WebContents* source,
                              const gfx::Size&) override {
-    // Side panels have app-owned bounded geometry, not popup auto-resize.
-    // Refresh exact container geometry instead of trusting extension sizes.
+
     if (!closed_ && host_ && source == host_->host_contents()) {
       if (auto owner = owner_.lock())
         owner->Changed();
     }
   }
   void RenderFrameCreated(content::RenderFrameHost*) override {
-    // Unlike a popup, no renderer auto-resize is enabled. PCNativePageHost's
-    // real NSView hierarchy supplies the app-owned bounds to the renderer.
+
   }
   bool HandleKeyboardEvent(
       content::WebContents* source,
@@ -406,15 +401,14 @@ class NativeExtensionSidePanel::State::Session final
     if (event.GetType() == blink::WebInputEvent::Type::kRawKeyDown &&
         NativeExtensionSidePanelDismissesForKey(event.os_event.Get(),
                                                page_.window)) {
-      // Upstream Escape-close applies only to popup hosts. A native panel has
-      // its own exact-window, unhandled-key dismissal boundary.
+
       owner->Close(SidePanelEntryHideReason::kSidePanelClosed);
       return true;
     }
     return owner->host_->HandleSidePanelKey(source, event);
   }
   void OnLoaded() override {
-    // ExtensionHost accesses itself after this callback returns.
+
     std::weak_ptr<Session> weak = shared_from_this();
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(
@@ -529,7 +523,7 @@ void NativeExtensionSidePanel::State::Show(
   auto weak_coordinator = coordinator->GetWeakPtr();
   const uint64_t before = generation_;
   Close(SidePanelEntryHideReason::kReplaced, false);
-  // A close/entry/native callback may have installed a newer request.
+
   if (shutdown_ || generation_ != before + 1 || current_ || !weak_entry ||
       !weak_coordinator || !ContextValid())
     return;
@@ -556,8 +550,7 @@ void NativeExtensionSidePanel::State::Show(
 void NativeExtensionSidePanel::State::Ready(
     const std::shared_ptr<Session>& session) {
   auto alive = shared_from_this();
-  // A contextual page can finish loading while cached in a background tab.
-  // That is not a stale owner: retain its real host for the next selection.
+
   if (current_ != session || session->closed_)
     return;
   if (session->shown_ || !SessionValid(*session, false) ||
@@ -582,11 +575,13 @@ void NativeExtensionSidePanel::State::Ready(
     Cancel(session);
     return;
   }
-  // Registry and coordinator receive shown only after real native visibility.
+
   session->entry_->OnEntryShown();
   if (!SessionValid(*session, true))
     return;
-  // The real coordinator focuses its actual host on OnEntryShown.
+  session->host_->host_contents()->Focus();
+  if (!SessionValid(*session, true))
+    return;
   shown_callbacks_.Notify();
 }
 void NativeExtensionSidePanel::State::Cancel(
@@ -612,8 +607,7 @@ void NativeExtensionSidePanel::State::Close(SidePanelEntryHideReason reason,
     return;
   in_close_ = true;
   auto session = std::move(current_);
-  // Count before callbacks: reentrant Shutdown must not report drained while
-  // this old host still lives in the outer Detach frame.
+
   const bool cache = session && !reset_active && !shutdown_ &&
                      session->entry_ && session->coordinator_;
   if (session) {
@@ -666,7 +660,7 @@ void NativeExtensionSidePanel::State::Changed() {
   if (!session)
     return;
   Session::CallScope call(*session);
-  // During initial addSubview the exact identity is already installed.
+
   if (!SessionValid(*session, false)) {
     Cancel(session);
     return;
@@ -684,8 +678,7 @@ void NativeExtensionSidePanel::State::TabChanged() {
     return;
   auto* contextual = Contextual();
   std::optional<SidePanelEntryKey> next;
-  // Current156 precedence: new active contextual entry, current key's global
-  // fallback, global active entry, none. Resolve contextual overrides in Show.
+
   if (contextual && contextual->GetActiveEntry())
     next = (*contextual->GetActiveEntry())->key();
   auto* global = SidePanelRegistry::From(browser_);
@@ -753,10 +746,9 @@ void NativeExtensionSidePanel::State::Shutdown(base::OnceClosure completion) {
     Close(SidePanelEntryHideReason::kSidePanelClosed);
     tabs_.Reset();
     profile_.Reset();
-    // Native lease cancellation preceded manager/coordinator destruction.
+
     ClearUnusedCaches(true);
-    // Manager can currently be dispatching unload/options into this close.
-    // Release it only from the posted drain task after those frames unwind.
+
     Owners().erase(browser_);
     registration_.reset();
     host_ = nullptr;
@@ -770,8 +762,7 @@ void NativeExtensionSidePanel::State::FinishShutdown() {
       drained_.empty())
     return;
   drain_queued_ = true;
-  // Never release the caller's Browser/Profile inside its own native callback,
-  // including the zero-host case. All completion delivery is asynchronous.
+
   base::SequencedTaskRunner::GetCurrentDefault()->PostNonNestableTask(
       FROM_HERE,
       base::BindOnce(
@@ -815,8 +806,7 @@ void NativeExtensionSidePanel::Show(SidePanelEntryKey key,
   state_->Show(key, trigger);
 }
 void NativeExtensionSidePanel::ShowFrom(SidePanelEntryKey key, gfx::Rect) {
-  //
-  // layout is still real; presentation follows the same loaded/visible gate.
+
   state_->Show(key, std::nullopt);
 }
 void NativeExtensionSidePanel::Close(SidePanelEntryHideReason reason, bool) {
@@ -879,10 +869,9 @@ content::WebContents* NativeExtensionSidePanel::GetWebContentsForTest(
              : nullptr;
 }
 void NativeExtensionSidePanel::DisableAnimationsForTesting() {
-  // Native presentation currently has no animation; no state is fabricated.
+
 }
 void NativeExtensionSidePanel::SetNoDelaysForTesting(bool) {
-  // Native presentation always waits for actual host load; test mode must not
-  // bypass the real visible gate or manufacture loaded state.
+
 }
-}  // namespace parc
+}

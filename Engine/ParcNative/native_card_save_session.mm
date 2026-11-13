@@ -35,7 +35,7 @@ using Confirmation =
     autofill::SavePaymentMethodAndVirtualCardEnrollConfirmationUiParams;
 
 struct NativeCardSaveSession::Impl {
-  BrowserWindowInterface* browser_identity = nullptr;  // Compare only.
+  BrowserWindowInterface* browser_identity = nullptr;
   __weak NSView* host;
   __weak NSWindow* window;
   raw_ptr<autofill::SaveCardBubbleControllerImpl> actual = nullptr;
@@ -52,13 +52,10 @@ struct NativeCardSaveSession::Impl {
   std::optional<PaymentsUiClosedReason> accepted_close;
   std::unique_ptr<Controller> controller;
   raw_ptr<autofill::AutofillLocationBarBubble> view = nullptr;
-  // Destroy the view before its controller adapter.
+
   std::unique_ptr<views::Widget> widget;
 };
 
-// The view never borrows the WebContents-owned controller directly. Immutable
-// presentation data remain valid during close; every action revalidates the
-// exact request and the actual controller lifetime before forwarding.
 class NativeCardSaveSession::Controller final
     : public autofill::SaveCardBubbleController {
  public:
@@ -114,9 +111,12 @@ class NativeCardSaveSession::Controller final
     return transport_;
   }
   PaymentsBubbleType GetPaymentsBubbleType() const override {
-    return session_ && session_->CanAct()
-               ? session_->impl_->actual->GetPaymentsBubbleType()
-               : type_;
+    const auto type = session_ && session_->CanAct()
+                          ? session_->impl_->actual->GetPaymentsBubbleType()
+                          : type_;
+    return type == PaymentsBubbleType::kUploadCardholderNameUpdate
+               ? PaymentsBubbleType::kUploadSave
+               : type;
   }
   base::OnceCallback<void(PaymentsUiClosedReason)>
   GetOnBubbleClosedCallback() override {
@@ -132,15 +132,15 @@ class NativeCardSaveSession::Controller final
     if (!session || !session->CanAct() || session->impl_->accepted_close) {
       return;
     }
-    // The upload offer remains visible in its genuine loading state; its
-    // eventual result supplies the confirmation. Other accepted offers close.
+
     const auto type = session->impl_->actual->GetPaymentsBubbleType();
     if (type == PaymentsBubbleType::kUploadInProgress ||
         type == PaymentsBubbleType::kUploadComplete ||
         type == PaymentsBubbleType::kInactive) {
       return;
     }
-    if (type != PaymentsBubbleType::kUploadSave) {
+    if (type != PaymentsBubbleType::kUploadSave &&
+        type != PaymentsBubbleType::kUploadCardholderNameUpdate) {
       session->impl_->accepted_close = PaymentsUiClosedReason::kAccepted;
       session->impl_->widget->GetContentsView()->SetEnabled(false);
     }
@@ -192,12 +192,13 @@ bool NativeCardSaveSession::Supports(
   const bool name = controller.ShouldRequestNameFromUser();
   const bool expiration = controller.ShouldRequestExpirationDateFromUser();
   const auto type = controller.GetPaymentsBubbleType();
-  // The real offer view supports either name or expiration collection, and
-  // the real controller consumes those details only for upload-card consent.
-  // Do not display editable data that the backend would silently discard.
+
   if ((name && expiration) ||
+      (expiration &&
+       type == PaymentsBubbleType::kUploadCardholderNameUpdate) ||
       ((name || expiration) &&
        (type != PaymentsBubbleType::kUploadSave &&
+        type != PaymentsBubbleType::kUploadCardholderNameUpdate &&
         type != PaymentsBubbleType::kUploadInProgress &&
         type != PaymentsBubbleType::kUploadComplete)) ||
       (!controller.IsUploadSave() &&
@@ -208,6 +209,7 @@ bool NativeCardSaveSession::Supports(
     case PaymentsBubbleType::kLocalSave:
     case PaymentsBubbleType::kLocalCvcSave:
     case PaymentsBubbleType::kUploadSave:
+    case PaymentsBubbleType::kUploadCardholderNameUpdate:
     case PaymentsBubbleType::kUploadCvcSave:
     case PaymentsBubbleType::kUploadInProgress:
     case PaymentsBubbleType::kManageCards:
@@ -316,9 +318,7 @@ void NativeCardSaveSession::Start() {
   view->SetArrow(views::BubbleBorder::NONE);
   view->set_close_on_deactivate(false);
   view->set_parent_window(gfx::NativeView(impl_->host));
-  // Use the genuine bubble factory so each concrete view's Init() builds its
-  // fields, legal links, footnote and loading state before native attachment.
-  // The existing native modal bridge then uses this exact page's Cocoa owner.
+
   impl_->widget = views::BubbleDialogDelegate::CreateBubble(view);
   impl_->widget->AddObserver(this);
   impl_->observing_widget = true;
@@ -346,8 +346,7 @@ void NativeCardSaveSession::Finish(PaymentsUiClosedReason reason) {
       view->Hide();
     }
   }
-  // The real controller may already have installed a replacement, especially
-  // upload confirmation. Never send an old close into that new bubble slot.
+
   auto closed = std::move(impl_->closed);
   if (IsCurrent() && closed) {
     std::move(closed).Run(impl_->accepted_close.value_or(reason));
@@ -431,4 +430,4 @@ void NativeCardSaveSession::OnWidgetDestroying(views::Widget* widget) {
 base::WeakPtr<NativeCardSaveSession> NativeCardSaveSession::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
-}  // namespace parc
+}

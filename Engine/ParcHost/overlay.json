@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 721,
+  "version": 722,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -319,7 +319,7 @@
     {
       "source": "Engine/ParcNative/extension_side_panel.mm",
       "target": "parc/native/extension_side_panel.mm",
-      "sha256": "6ec3e7b6ccdac46c7f2c86b0d61477ba5be44f42e2426d7476a462e4aaa7bbba"
+      "sha256": "e38aad135bb92e2b4b966c7815301eb4aa18c916f7699810026c8b965b7748ec"
     },
     {
       "source": "tests/NativeExtensionSidePanel/BUILD.gn",
@@ -374,7 +374,7 @@
     {
       "source": "Engine/ParcNative/native_startup_policy.h",
       "target": "parc/native/native_startup_policy.h",
-      "sha256": "f85b48826a47211158516911e3f16c681cad85f102b3ec97fb1d2c55a4b74f66"
+      "sha256": "6046e394d13d74b49c40235e128ce2399f451d8dc039c295e3f59de7fe5f737f"
     },
     {
       "source": "Engine/ParcNative/native_engine_entry.mm",
@@ -689,7 +689,7 @@
     {
       "source": "Engine/ParcNative/webauthn.mm",
       "target": "parc/native/webauthn.mm",
-      "sha256": "0acb0af0d0066584af43a11782f98b3155bfd1edf62af9e60511ad697086f9ec"
+      "sha256": "3a5269017e58fed94623a579be9e5eb576423a099d897d40691b62c03c623245"
     },
     {
       "source": "Engine/ParcNative/native_authenticator_request_context.h",
@@ -879,7 +879,7 @@
     {
       "source": "Engine/ParcNative/native_card_save_session.mm",
       "target": "parc/native/native_card_save_session.mm",
-      "sha256": "174ad304e79c702cd98c05e775b1744b3b71a28f3157e7d9809905369a25c2bb"
+      "sha256": "b58ea2de0940953109887b670accb74f82ab48d1826df2cf4845bc2edc15871f"
     },
     {
       "source": "Engine/ParcNative/extension_parent_approval.h",
@@ -1989,12 +1989,12 @@
     {
       "source": "Engine/ParcNative/native_browser_web_contents_delegate.h",
       "target": "parc/native/native_browser_web_contents_delegate.h",
-      "sha256": "eca3688985bb4f9f3911fd64fae75204bd85e4f7bbcdfe1c81502d6f1c17c958"
+      "sha256": "ab575580e06f2ca4850e4e54bef4e6c8a9cbe1c0c6a7d79286a8c4f04393f020"
     },
     {
       "source": "Engine/ParcNative/native_browser_web_contents_delegate.mm",
       "target": "parc/native/native_browser_web_contents_delegate.mm",
-      "sha256": "9b89b5a9d035edeab576f044475d6e671075633738c970e69070577de9ae9544"
+      "sha256": "8262ad040ddb0e358880b7013398b4b6e7f288b6f5d6e3393ae3e7647e0a602f"
     },
     {
       "source": "Engine/ParcNative/native_web_contents_view_delegate.h",

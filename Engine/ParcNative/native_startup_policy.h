@@ -93,4 +93,4 @@ inline void ApplyNativeStartupPolicy(base::CommandLine& command) {
   command.AppendSwitchUTF8(switches::kDisableFeatures, disabled);
 }
 }
-#endif  // PARC_NATIVE_STARTUP_POLICY_H_
+#endif
