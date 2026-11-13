@@ -252,7 +252,7 @@ Chromium's renderer to the FairPlay renderer at a future video keyframe. The han
 reverse turn live in `parc_renderer_transitions`, owned by PipelineImpl's renderer wrapper, which keeps
 one call where each step ran. Renderer choice stays upstream's pattern in `CreateRendererInternal`, and
 `pipeline.h` carries only the pipeline accessor. `pipeline_impl.h` declares the extension it
-implements, a backward flag on its end notification and a native-HLS flag.
+implements and a backward flag on its end notification.
 
 The split readers live in `parc_chunk_demuxer_hand_off`: a hand-off object each stream owns, the
 decorator stream the incoming renderer reads, and the demuxer's split negotiation. The split is placed
@@ -261,7 +261,9 @@ readers' seeks, aborts, disabling and shutdown in that locked step. A decorator 
 split later, could pass the playing renderer frames past the split and would add work to every read.
 The hand-off, fast-seek landing and renderer preference share the one Demuxer accessor, which is all
 `demuxer.h` carries. The hand-off lives only in `ParcStreamHandOff`, `ParcDemuxerHandOff` and the
-pipeline helper; ChunkDemuxer has no hand-off reader of its own.
+pipeline helper; ChunkDemuxer has no hand-off reader of its own. Parc's other per-demuxer state and
+logic live in an owned `ParcChunkDemuxer`, a friend of ChunkDemuxer that runs under the same lock on
+the same thread at each original call point.
 
 The native HLS track types compile in owned `media/base/parc_inband_tracks.cc`, within the media
 component that owned their definitions before. Generic cue colours and wrapping live in the owned
@@ -275,7 +277,8 @@ live in owned `media/filters` files. ChunkDemuxer calls them under its existing 
 stream lookup, range removal and parser construction primitive. Formats Chromium lacks get owned
 elementary-stream parsers, an Ogg parser and VideoToolbox decoders; the format rules inside
 Chromium's own parsers and the AudioToolbox decoder stay patched, because those parsers are never
-forked.
+forked; Parc's added helpers for those parsers, the decoder and the renderers compile from owned files
+in the same media targets, inline where they sit on a per-sample or per-buffer path.
 
 The nested protected-video render-pass planner and the CALayer claim and hand-on policy live in owned
 Viz and accelerated-widget files. Chromium keeps one planner call and one claim hook; candidate

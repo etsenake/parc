@@ -1,6 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Installed at //media/base/parc_renderer_transitions.cc.
-
 #include "media/base/parc_renderer_transitions.h"
 
 #include <algorithm>
@@ -9,11 +6,15 @@
 
 #include "base/check.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/task/bind_post_task.h"
+#include "build/build_config.h"
 #include "media/base/audio_decoder_config.h"
+#include "media/base/cdm_context.h"
 #include "media/base/demuxer.h"
 #include "media/base/parc_demuxer_extension.h"
+#include "media/base/parc_native_hls_source.h"
 #include "media/base/parc_renderer_extensions.h"
 #include "media/base/renderer.h"
 #include "media/base/renderer_client.h"
@@ -23,10 +24,6 @@
 #include "ui/gfx/geometry/size.h"
 
 namespace media {
-
-// The incoming renderer's client during a hand-off. It keeps what the
-// pipeline must hear once that renderer takes over, and passes everything on
-// from then.
 class ParcRendererTransitions::IncomingClient final : public RendererClient {
  public:
   explicit IncomingClient(ParcRendererTransitions* transitions)
@@ -56,7 +53,6 @@ class ParcRendererTransitions::IncomingClient final : public RendererClient {
     if (fps_) {
       client->OnVideoFrameRateChange(*fps_);
     }
-    // Always: the pipeline's last state is the other renderer's.
     client->OnBufferingStateChange(
         have_enough_ ? BUFFERING_HAVE_ENOUGH : BUFFERING_HAVE_NOTHING,
         BUFFERING_CHANGE_REASON_UNKNOWN);
@@ -73,8 +69,6 @@ class ParcRendererTransitions::IncomingClient final : public RendererClient {
       transitions_->client_->OnError(std::move(status));
       return;
     }
-    // Kept, should it take over before the hand-off ends; not ended from
-    // inside the renderer's own call, which ending destroys it.
     error_ = std::move(status);
     transitions_->media_task_runner_->PostTask(
         FROM_HERE,
@@ -92,7 +86,7 @@ class ParcRendererTransitions::IncomingClient final : public RendererClient {
       transitions_->client_->OnEnded();
       return;
     }
-    ended_ = true;  // A split at the end of the stream.
+    ended_ = true;
   }
   void OnStatisticsUpdate(const PipelineStatistics& stats) final {
     if (taken_over_) {
@@ -228,7 +222,6 @@ void ParcRendererTransitions::OnIncomingInitialized(PipelineStatus status) {
     Abort(/*restart=*/true);
     return;
   }
-  // Enough ahead for the incoming renderer to have its first frame there.
   constexpr base::TimeDelta kLead = base::Milliseconds(500);
   ParcSplitDemuxerForHandOff(
       host_->ParcDemuxer(),
@@ -246,8 +239,6 @@ void ParcRendererTransitions::OnSplit(base::TimeDelta time) {
   incoming_->StartPlayingFrom(time);
 }
 
-// At the split the playing renderer's last frame and sound end where the
-// incoming renderer's begin, as Safari's one renderer plays straight on.
 void ParcRendererTransitions::FollowPlayingClock() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!split_ || !incoming_client_->have_enough()) {
@@ -280,15 +271,11 @@ void ParcRendererTransitions::Swap() {
   handoff_weak_factory_.InvalidateWeakPtrs();
   split_ = false;
   handed_off_ = true;
-  // First, so its video renderer stops driving the video sink both share,
-  // which the hole frame then takes.
   playing.reset();
   Renderer* renderer = host_->ParcRenderer();
   if (auto* parc = renderer->GetParcExtension()) {
     parc->ParcSetHidden(false);
   }
-  // Before what the new renderer reports, which the caller then takes as
-  // that renderer's.
   std::move(handoff_done_).Run(true);
   incoming_client_->TakeOver();
   if (host_->ParcIsPlaying()) {
@@ -356,7 +343,6 @@ void ParcRendererTransitions::TurnIfNeeded() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   Renderer* renderer = host_->ParcRenderer();
   const double playback_rate = host_->ParcPlaybackRate();
-  // A pause while playing backward stays backward.
   const bool backward =
       renderer && renderer->GetRendererType() == RendererType::kRendererImpl &&
       (playback_rate < 0 || (playback_rate == 0 && backward_));
@@ -365,7 +351,6 @@ void ParcRendererTransitions::TurnIfNeeded() {
     return;
   }
 
-  // RendererRate() stopped time where the other direction starts.
   Demuxer* demuxer = host_->ParcDemuxer();
   const base::TimeDelta time =
       std::max(renderer->GetMediaTime(), demuxer->GetStartTime());
@@ -416,7 +401,6 @@ void ParcRendererTransitions::CompleteTurn(base::TimeDelta time,
 void ParcRendererTransitions::SeekDemuxer(base::TimeDelta time,
                                           base::OnceClosure done) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // A seek, turn or suspend flushes the renderer before it needs the demuxer.
   if (!host_->ParcIsPlaying() || turn_ || !backward_) {
     return;
   }
@@ -502,7 +486,6 @@ void ParcRendererTransitions::OnSeeking() {
 
 void ParcRendererTransitions::OnSuspending() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // The next Demuxer::Seek() is Resume()'s.
   if (demuxer_seek_pending_) {
     host_->ParcDemuxer()->AbortPendingReads();
   }
@@ -535,4 +518,133 @@ void ParcRendererTransitions::Stop() {
   weak_factory_.InvalidateWeakPtrs();
 }
 
-}  // namespace media
+void ParcRendererTransitions::OnStart() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+#if BUILDFLAG(IS_MAC)
+  CdmContext* cdm_context = host_->ParcCdmContext();
+  Demuxer* demuxer = host_->ParcDemuxer();
+  if (cdm_context && !cdm_detached_ && demuxer->GetParcNativeHlsSource()) {
+    demuxer->GetParcNativeHlsSource()->SetCdm(cdm_context, base::DoNothing());
+  }
+#endif
+}
+
+bool ParcRendererTransitions::SetCdm(
+    CdmContext* cdm_context,
+    base::OnceCallback<void(bool)>& cdm_attached_cb) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  Abort(/*restart=*/true);
+#if BUILDFLAG(IS_MAC)
+  Renderer* renderer = host_->ParcRenderer();
+  Demuxer* demuxer = host_->ParcDemuxer();
+  parc::fairplay::NativeHlsSource* native =
+      demuxer ? demuxer->GetParcNativeHlsSource() : nullptr;
+  if (!cdm_context) {
+    cdm_detached_ = true;
+    if (renderer &&
+        (renderer->GetRendererType() == RendererType::kFairPlay ||
+         renderer->GetRendererType() == RendererType::kFairPlayHls)) {
+      renderer->SetCdm(nullptr, std::move(cdm_attached_cb));
+      return true;
+    }
+    if (!renderer && native) {
+      native->SetCdm(nullptr, std::move(cdm_attached_cb));
+      return true;
+    }
+    std::move(cdm_attached_cb).Run(true);
+    return true;
+  }
+  CdmContext* current = host_->ParcCdmContext();
+  if (renderer && renderer->GetRendererType() != RendererType::kFairPlay &&
+      current && current != cdm_context &&
+      current->RequiresFairPlayRenderer() &&
+      cdm_context->RequiresFairPlayRenderer() && !native) {
+    host_->ParcSetCdmContext(cdm_context);
+    cdm_detached_ = false;
+    std::move(cdm_attached_cb).Run(true);
+    return true;
+  }
+  if (!renderer && native) {
+    native->SetCdm(
+        cdm_context,
+        base::BindOnce(
+            [](base::WeakPtr<ParcRendererTransitions> transitions,
+               base::OnceCallback<void(bool)> callback, CdmContext* context,
+               bool success) {
+              if (transitions) {
+                transitions->host_->ParcOnCdmAttached(std::move(callback),
+                                                      context, success);
+              } else {
+                std::move(callback).Run(success);
+              }
+            },
+            cdm_weak_factory_.GetWeakPtr(), std::move(cdm_attached_cb),
+            cdm_context));
+    return true;
+  }
+#endif
+  return false;
+}
+
+void ParcRendererTransitions::SetVolume(float volume) {
+  if (incoming_) {
+    incoming_->SetVolume(volume);
+  }
+}
+
+void ParcRendererTransitions::SetLatencyHint(
+    std::optional<base::TimeDelta> latency_hint) {
+  if (incoming_) {
+    incoming_->SetLatencyHint(latency_hint);
+  }
+}
+
+void ParcRendererTransitions::SetPreservesPitch(bool preserves_pitch) {
+  if (incoming_) {
+    incoming_->SetPreservesPitch(preserves_pitch);
+  }
+}
+
+void ParcRendererTransitions::SetRenderMutedAudio(bool render_muted_audio) {
+  if (incoming_) {
+    incoming_->SetRenderMutedAudio(render_muted_audio);
+  }
+}
+
+void ParcRendererTransitions::OnAudioOutputDeviceChanged() {
+  if (Renderer* renderer = host_->ParcRenderer()) {
+    if (ParcRendererExtension* parc = renderer->GetParcExtension()) {
+      parc->ParcOnAudioOutputDeviceChanged();
+    }
+  }
+  if (incoming_) {
+    if (ParcRendererExtension* parc = incoming_->GetParcExtension()) {
+      parc->ParcOnAudioOutputDeviceChanged();
+    }
+  }
+}
+
+base::TimeDelta ParcRendererTransitions::FastSeekLanding(
+    base::TimeDelta seek_time) {
+  return ParcTakeDemuxerFastSeekLanding(host_->ParcDemuxer())
+      .value_or(seek_time);
+}
+
+std::optional<RendererType> ParcRendererTypeFor(CdmContext* cdm_context,
+                                                Demuxer* demuxer) {
+  std::optional<RendererType> renderer_type;
+#if BUILDFLAG(IS_MAC)
+  if (cdm_context && cdm_context->RequiresFairPlayRenderer()) {
+    renderer_type = RendererType::kFairPlay;
+  }
+  if (ParcDemuxerPrefersFairPlayRenderer(demuxer)) {
+    renderer_type = RendererType::kFairPlay;
+  }
+  if (demuxer->GetParcNativeHlsSource()) {
+    renderer_type = RendererType::kFairPlayHls;
+  }
+#endif
+  return renderer_type;
+}
+
+}

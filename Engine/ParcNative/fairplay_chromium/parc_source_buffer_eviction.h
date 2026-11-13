@@ -1,31 +1,45 @@
-// Copyright 2026 Parc contributors.
-// Installed at //media/filters/parc_source_buffer_eviction.h.
-
 #ifndef MEDIA_FILTERS_PARC_SOURCE_BUFFER_EVICTION_H_
 #define MEDIA_FILTERS_PARC_SOURCE_BUFFER_EVICTION_H_
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include <optional>
+#include <string_view>
 #include <vector>
 
+#include "base/functional/callback.h"
 #include "base/time/time.h"
+#include "media/base/media_export.h"
 #include "media/base/ranges.h"
 
 namespace media {
 
 class ChunkDemuxerStream;
+class MediaTracks;
+class StreamParser;
 class SourceBufferState;
+class VideoDecoderConfig;
 
-// Safari's SourceBuffer eviction and ManagedMediaSource purge policy. The
-// ChunkDemuxer and SourceBufferState hooks invoke it under the same lock as
-// before; stream lookups and removals remain on their existing primitives.
-class ParcSourceBufferEviction {
+class MEDIA_EXPORT ParcSourceBufferEviction {
  public:
   ParcSourceBufferEviction();
   ParcSourceBufferEviction(const ParcSourceBufferEviction&) = delete;
   ParcSourceBufferEviction& operator=(const ParcSourceBufferEviction&) = delete;
   ~ParcSourceBufferEviction();
+
+  static ParcSourceBufferEviction& Of(SourceBufferState& state);
+  static bool IsActive(const SourceBufferState& state);
+  static Ranges<base::TimeDelta> AudioBufferedRanges(
+      const SourceBufferState& state,
+      base::TimeDelta duration);
+  static bool LeftOutOfMediaSource(const SourceBufferState& state);
+  static bool PurgedWhileInactive(const SourceBufferState& state);
+  static void SetClearDolbyVisionAllowed(SourceBufferState& state,
+                                         bool allowed);
+  static void SetDolbyVisionCallback(SourceBufferState& state,
+                                     base::RepeatingClosure callback);
+  static void SetSafariInitSegmentRules(SourceBufferState& state, bool safari);
 
   void PurgeForMemoryPressure(
       SourceBufferState& state,
@@ -52,6 +66,14 @@ class ParcSourceBufferEviction {
                            const Ranges<base::TimeDelta>& buffered,
                            const Ranges<base::TimeDelta>& audio);
 
+  bool safari_init_segment_rules() const { return safari_init_segment_rules_; }
+  void ApplyInitSegmentRules(std::optional<std::string_view>& expected_codecs,
+                             StreamParser& stream_parser) const;
+  bool AcceptsInitSegment(const SourceBufferState& state,
+                          const MediaTracks& tracks) const;
+  bool PlaysClearDolbyVision(const VideoDecoderConfig& video_config) const;
+  void OnDolbyVisionAppended();
+
   bool purged_while_inactive() const { return purged_while_inactive_; }
   static size_t MaximumBufferSize(bool has_video);
 
@@ -62,8 +84,11 @@ class ParcSourceBufferEviction {
 
   bool purged_while_inactive_ = false;
   uint64_t evictable_size_ = 0;
+  bool clear_dolby_vision_allowed_ = false;
+  base::RepeatingClosure dolby_vision_cb_;
+  bool safari_init_segment_rules_ = false;
 };
 
-}  // namespace media
+}
 
-#endif  // MEDIA_FILTERS_PARC_SOURCE_BUFFER_EVICTION_H_
+#endif

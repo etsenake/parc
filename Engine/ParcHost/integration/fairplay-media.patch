@@ -463,18 +463,15 @@
               base::FEATURE_DISABLED_BY_DEFAULT
 --- a/media/base/pipeline_impl.cc
 +++ b/media/base/pipeline_impl.cc
-@@ -31,6 +31,10 @@
+@@ -31,6 +31,7 @@
  #include "media/base/demuxer.h"
  #include "media/base/media_log.h"
  #include "media/base/media_switches.h"
-+#include "media/base/parc_demuxer_extension.h"
-+#include "media/base/parc_native_hls_source.h"
-+#include "media/base/parc_renderer_extensions.h"
 +#include "media/base/parc_renderer_transitions.h"
  #include "media/base/renderer.h"
  #include "media/base/renderer_client.h"
  #include "media/base/serial_runner.h"
-@@ -72,8 +76,10 @@
+@@ -72,8 +73,10 @@
  // |default_renderer| in Start() and Resume() helps avoid a round trip to the
  // render main task runner for Renderer creation in most cases which could add
  // latency to start-to-play time.
@@ -487,7 +484,7 @@
   public:
    RendererWrapper(scoped_refptr<base::SequencedTaskRunner> media_task_runner,
                    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-@@ -96,6 +102,7 @@
+@@ -96,6 +99,7 @@
    void SetVolume(float volume);
    void SetLatencyHint(std::optional<base::TimeDelta> latency_hint);
    void SetPreservesPitch(bool preserves_pitch);
@@ -495,7 +492,7 @@
    void SetRenderMutedAudio(bool render_muted_audio);
    void SetWasPlayedWithUserActivationAndHighMediaEngagement(
        bool was_played_with_user_activation_and_high_media_engagement);
-@@ -112,6 +119,8 @@
+@@ -112,6 +116,8 @@
 -
 +
    void OnExternalVideoFrameRequest();
@@ -506,7 +503,7 @@
   private:
    enum class State {
      kCreated,
-@@ -278,6 +287,17 @@
+@@ -278,6 +284,26 @@
    // one by calling back to PipelineImpl. Fires |done_cb| with the result.
    void CreateRendererInternal(PipelineStatusCallback done_cb);
 -
@@ -521,27 +518,26 @@
 +  std::unique_ptr<Renderer> ParcReplaceRenderer(
 +      std::unique_ptr<Renderer> renderer) final;
 +  void ParcOnPipelineError(PipelineStatus status) final;
++  CdmContext* ParcCdmContext() final { return cdm_context_; }
++  void ParcSetCdmContext(CdmContext* cdm_context) final {
++    cdm_context_ = cdm_context;
++  }
++  void ParcOnCdmAttached(CdmAttachedCB cdm_attached_cb,
++                         CdmContext* cdm_context,
++                         bool success) final {
++    OnCdmAttached(std::move(cdm_attached_cb), cdm_context, success);
++  }
 +
    const scoped_refptr<base::SequencedTaskRunner> media_task_runner_;
    const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
    const std::unique_ptr<MediaLog> media_log_;
-@@ -297,6 +317,7 @@
-   std::optional<base::TimeDelta> latency_hint_;
-   bool render_muted_audio_ = false;
-   raw_ptr<CdmContext, DanglingUntriaged> cdm_context_ = nullptr;
-+  bool parc_cdm_detached_ = false;
--
-+
-   // By default, apply pitch adjustments.
-   bool preserves_pitch_ = true;
-@@ -328,9 +349,85 @@
+@@ -328,9 +354,84 @@
    // Called from non-media threads when an error occurs.
    RepeatingPipelineStatusCallback error_cb_;
 -
 +
 +  ParcRendererTransitions parc_transitions_{this, this, media_task_runner_};
 +
-+  base::WeakPtrFactory<RendererWrapper> cdm_weak_factory_{this};
    base::WeakPtrFactory<RendererWrapper> weak_factory_{this};
  };
 -
@@ -587,7 +583,7 @@
 +
 +void PipelineImpl::RendererWrapper::ParcConfigureRenderer(Renderer& renderer) {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
-+  if (cdm_context_ && !parc_cdm_detached_) {
++  if (cdm_context_ && !parc_transitions_.cdm_detached()) {
 +    renderer.SetCdm(cdm_context_, base::DoNothing());
 +  }
 +  if (latency_hint_) {
@@ -622,20 +618,17 @@
  PipelineImpl::RendererWrapper::RendererWrapper(
      scoped_refptr<base::SequencedTaskRunner> media_task_runner,
      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
-@@ -380,6 +477,11 @@
+@@ -380,6 +481,8 @@
    default_renderer_ = std::move(default_renderer);
    weak_pipeline_ = weak_pipeline;
 -
 +
-+  if (cdm_context_ && !parc_cdm_detached_ &&
-+      demuxer_->GetParcNativeHlsSource()) {
-+    demuxer_->GetParcNativeHlsSource()->SetCdm(cdm_context_, base::DoNothing());
-+  }
++  parc_transitions_.OnStart();
 +
    // Setup |error_cb_| on the media thread.
    error_cb_ = base::BindRepeating(&RendererWrapper::OnPipelineError,
                                    weak_factory_.GetWeakPtr());
-@@ -430,6 +532,7 @@
+@@ -430,6 +533,7 @@
    // the pipeline is stopped before it had a chance to complete outstanding
    // tasks.
    pending_callbacks_.reset();
@@ -644,7 +637,7 @@
 -
 +
    DestroyRenderer();
-@@ -449,6 +552,14 @@
+@@ -449,6 +553,14 @@
  void PipelineImpl::RendererWrapper::Seek(base::TimeDelta time) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
 -
@@ -660,7 +653,7 @@
    // Suppress seeking if we're not fully started.
    if (state_ != State::kPlaying) {
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
-@@ -461,6 +572,7 @@
+@@ -461,6 +573,7 @@
 -
 +
    SetState(State::kSeeking);
@@ -670,7 +663,7 @@
 +
    // Queue asynchronous actions required to start.
    DCHECK(!pending_callbacks_);
-@@ -490,6 +602,14 @@
+@@ -490,6 +603,14 @@
  void PipelineImpl::RendererWrapper::Suspend() {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
 -
@@ -686,7 +679,7 @@
    // Suppress suspending if we're not playing.
    if (state_ != State::kPlaying) {
      DCHECK(state_ == State::kStopping || state_ == State::kStopped)
-@@ -500,6 +620,7 @@
+@@ -500,6 +621,7 @@
    DCHECK(!pending_callbacks_.get());
 -
 +
@@ -696,7 +689,7 @@
 +
    // Freeze playback and record the media time before destroying the renderer.
    shared_state_.media().renderer->SetPlaybackRate(0.0);
-@@ -546,6 +667,7 @@
+@@ -546,6 +668,7 @@
 -
 +
    default_renderer_ = std::move(default_renderer);
@@ -706,7 +699,7 @@
        std::max(timestamp, demuxer_->GetStartTime());
 -
 +
-@@ -576,9 +698,16 @@
+@@ -576,9 +699,16 @@
  void PipelineImpl::RendererWrapper::SetPlaybackRate(double playback_rate) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
 -
@@ -727,160 +720,81 @@
 -
 +
    if (state_ != State::kCreated && state_ != State::kStopping &&
-@@ -595,6 +724,9 @@
+@@ -595,6 +725,7 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetVolume(volume_);
    }
-+  if (Renderer* incoming = parc_transitions_.incoming()) {
-+    incoming->SetVolume(volume_);
-+  }
++  parc_transitions_.SetVolume(volume_);
  }
 -
 +
  void PipelineImpl::RendererWrapper::SetLatencyHint(
-@@ -608,6 +740,9 @@
+@@ -608,6 +739,7 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetLatencyHint(latency_hint_);
    }
-+  if (Renderer* incoming = parc_transitions_.incoming()) {
-+    incoming->SetLatencyHint(latency_hint_);
-+  }
++  parc_transitions_.SetLatencyHint(latency_hint_);
  }
 -
 +
  void PipelineImpl::RendererWrapper::SetPreservesPitch(bool preserves_pitch) {
-@@ -620,6 +755,23 @@
+@@ -620,6 +752,12 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetPreservesPitch(preserves_pitch_);
    }
-+  if (Renderer* incoming = parc_transitions_.incoming()) {
-+    incoming->SetPreservesPitch(preserves_pitch_);
-+  }
++  parc_transitions_.SetPreservesPitch(preserves_pitch_);
 +}
 +
 +void PipelineImpl::RendererWrapper::ParcOnAudioOutputDeviceChanged() {
 +  DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
-+  if (shared_state_.media().renderer) {
-+    if (auto* parc = shared_state_.media().renderer->GetParcExtension()) {
-+      parc->ParcOnAudioOutputDeviceChanged();
-+    }
-+  }
-+  if (Renderer* incoming = parc_transitions_.incoming()) {
-+    if (auto* parc = incoming->GetParcExtension()) {
-+      parc->ParcOnAudioOutputDeviceChanged();
-+    }
-+  }
++  parc_transitions_.OnAudioOutputDeviceChanged();
  }
 -
 +
  void PipelineImpl::RendererWrapper::SetRenderMutedAudio(
-@@ -634,6 +786,9 @@
+@@ -634,6 +772,7 @@
    if (shared_state_.media().renderer) {
      shared_state_.media().renderer->SetRenderMutedAudio(render_muted_audio_);
    }
-+  if (Renderer* incoming = parc_transitions_.incoming()) {
-+    incoming->SetRenderMutedAudio(render_muted_audio_);
-+  }
++  parc_transitions_.SetRenderMutedAudio(render_muted_audio_);
  }
 -
 +
  void PipelineImpl::RendererWrapper::
-@@ -689,8 +844,41 @@
+@@ -689,6 +828,9 @@
  void PipelineImpl::RendererWrapper::SetCdm(CdmContext* cdm_context,
                                             CdmAttachedCB cdm_attached_cb) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
-+  parc_transitions_.Abort(/*restart=*/true);
-+
-+#if BUILDFLAG(IS_MAC)
-+  if (!cdm_context) {
-+    parc_cdm_detached_ = true;
-+    Renderer* renderer = shared_state_.media().renderer.get();
-+    if (renderer && (renderer->GetRendererType() == RendererType::kFairPlay ||
-+                     renderer->GetRendererType() == RendererType::kFairPlayHls)) {
-+      renderer->SetCdm(nullptr, std::move(cdm_attached_cb));
-+      return;
-+    }
-+    if (!renderer && demuxer_ && demuxer_->GetParcNativeHlsSource()) {
-+      demuxer_->GetParcNativeHlsSource()->SetCdm(nullptr,
-+                                                 std::move(cdm_attached_cb));
-+      return;
-+    }
-+    std::move(cdm_attached_cb).Run(true);
++  if (parc_transitions_.SetCdm(cdm_context, cdm_attached_cb)) {
 +    return;
 +  }
-+#endif
    DCHECK(cdm_context);
 -
 +
-+  Renderer* parc_renderer = shared_state_.media().renderer.get();
-+  if (parc_renderer &&
-+      parc_renderer->GetRendererType() != RendererType::kFairPlay &&
-+      cdm_context_ && cdm_context_ != cdm_context &&
-+      cdm_context_->RequiresFairPlayRenderer() &&
-+      cdm_context->RequiresFairPlayRenderer() &&
-+      !(demuxer_ && demuxer_->GetParcNativeHlsSource())) {
-+    cdm_context_ = cdm_context;
-+    parc_cdm_detached_ = false;
-+    std::move(cdm_attached_cb).Run(true);
-+    return;
-+  }
-+
    // If there's already a renderer, set the CDM on the renderer directly.
-   if (shared_state_.media().renderer) {
-     shared_state_.media().renderer->SetCdm(
-@@ -700,9 +888,27 @@
-     return;
-   }
--
-+
-+  if (demuxer_ && demuxer_->GetParcNativeHlsSource()) {
-+    demuxer_->GetParcNativeHlsSource()->SetCdm(
-+        cdm_context,
-+        base::BindOnce(
-+            [](base::WeakPtr<RendererWrapper> wrapper, CdmAttachedCB callback,
-+               CdmContext* context, bool success) {
-+              if (wrapper) {
-+                wrapper->OnCdmAttached(std::move(callback), context, success);
-+              } else {
-+                std::move(callback).Run(success);
-+              }
-+            },
-+            cdm_weak_factory_.GetWeakPtr(), std::move(cdm_attached_cb),
-+            cdm_context));
-+    return;
-+  }
-+
+@@ -703,6 +845,7 @@
    // Otherwise, wait for the Renderer to be created and the CDM will be set
    // in InitializeRenderer().
    cdm_context_ = cdm_context;
-+  parc_cdm_detached_ = false;
++  parc_transitions_.set_cdm_detached(false);
    std::move(cdm_attached_cb).Run(true);
 -
 +
    // Continue Renderer creation if it's waiting for the CDM to be set.
-@@ -734,6 +940,20 @@
+@@ -734,6 +877,11 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
 -
 +
-+#if BUILDFLAG(IS_MAC)
-+  if (cdm_context_ && cdm_context_->RequiresFairPlayRenderer()) {
-+    renderer_type = RendererType::kFairPlay;
++  if (std::optional<RendererType> parc_type =
++          ParcRendererTypeFor(cdm_context_, demuxer_.get())) {
++    renderer_type = parc_type;
 +  }
-+
-+  if (ParcDemuxerPrefersFairPlayRenderer(demuxer_.get())) {
-+    renderer_type = RendererType::kFairPlay;
-+  }
-+
-+  if (demuxer_->GetParcNativeHlsSource()) {
-+    renderer_type = RendererType::kFairPlayHls;
-+  }
-+#endif
 +
    // During Resume(), the |default_renderer_| might already match the
    // |renderer_type|, in which case we shouldn't need to create a new one.
    if (!default_renderer_ ||
-@@ -828,6 +1048,9 @@
+@@ -828,6 +976,9 @@
    if (state_ != State::kPlaying) {
      return;
    }
@@ -891,7 +805,7 @@
 +
    DCHECK(!renderer_ended_);
    renderer_ended_ = true;
-@@ -896,6 +1119,16 @@
+@@ -896,6 +1047,16 @@
      return;
    }
 -
@@ -909,7 +823,7 @@
    demuxer_->OnTracksChanged(
        track_type, std::move(enabled_track_id), GetCurrentTimestamp(),
        base::BindOnce(&RendererWrapper::OnDemuxerCompletedTrackChange,
-@@ -1008,6 +1241,10 @@
+@@ -1008,6 +1169,10 @@
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
    DVLOG(2) << __func__ << "(" << state << ", " << reason << ") ";
 -
@@ -921,7 +835,7 @@
    main_task_runner_->PostTask(
        FROM_HERE, base::BindOnce(&PipelineImpl::OnBufferingStateChange,
                                  weak_pipeline_, state, reason));
-@@ -1099,8 +1336,13 @@
+@@ -1099,8 +1264,13 @@
                                                    bool success) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(shared_state_.media_sequence_checker);
 -
@@ -929,7 +843,7 @@
 -  if (success)
 +  if (success) {
      cdm_context_ = cdm_context;
-+    parc_cdm_detached_ = false;
++    parc_transitions_.set_cdm_detached(false);
 +    if (create_renderer_done_cb_ &&
 +        (state_ == State::kStarting || state_ == State::kResuming))
 +      CreateRendererInternal(std::move(create_renderer_done_cb_));
@@ -938,7 +852,7 @@
  }
 -
 +
-@@ -1116,7 +1358,8 @@
+@@ -1116,7 +1286,8 @@
      return;
 -
 +
@@ -950,19 +864,16 @@
 -
 +
  void PipelineImpl::RendererWrapper::SetState(State next_state) {
-@@ -1146,6 +1389,10 @@
+@@ -1146,6 +1317,7 @@
      return;
    }
 -
 +
-+  if (std::optional<base::TimeDelta> landing =
-+          ParcTakeDemuxerFastSeekLanding(demuxer_.get())) {
-+    seek_time = *landing;
-+  }
++  seek_time = parc_transitions_.FastSeekLanding(seek_time);
    shared_state_.media().renderer->StartPlayingFrom(
        std::max(seek_time, demuxer_->GetStartTime()));
    {
-@@ -1153,12 +1400,15 @@
+@@ -1153,12 +1325,15 @@
      shared_state_.mutable_media().suspend_timestamp = kNoTimestamp;
    }
 -
@@ -982,18 +893,18 @@
 -
 +
  void PipelineImpl::RendererWrapper::CompleteSuspend(PipelineStatus status) {
-@@ -1244,7 +1494,7 @@
+@@ -1244,7 +1419,7 @@
      return;
    }
 -
 +
 -  if (cdm_context_)
-+  if (cdm_context_ && !parc_cdm_detached_)
++  if (cdm_context_ && !parc_transitions_.cdm_detached())
      shared_state_.media().renderer->SetCdm(cdm_context_, base::DoNothing());
 -
 +
    if (latency_hint_)
-@@ -1286,6 +1536,7 @@
+@@ -1286,6 +1461,7 @@
      base::AutoLock auto_lock(shared_state_.lock());
      renderer.swap(shared_state_.mutable_media().renderer);
    }
@@ -1002,15 +913,7 @@
 -
 +
  void PipelineImpl::RendererWrapper::ReportMetadata(StartType start_type) {
-@@ -1398,6 +1649,7 @@
-   DCHECK(!client_);
-   DCHECK(!seek_cb_);
-   client_ = client;
-+  parc_native_hls_ = demuxer->GetParcNativeHlsSource() != nullptr;
-   seek_cb_ = std::move(seek_cb);
-   last_media_time_ = base::TimeDelta();
-   seek_time_ = kNoTimestamp;
-@@ -1529,10 +1781,6 @@
+@@ -1529,10 +1705,6 @@
 -
 +
    // Not checking IsRunning() so we can set the playback rate before Start().
@@ -1024,7 +927,7 @@
 +
    playback_rate_ = playback_rate;
    media_task_runner_->PostTask(
-@@ -1589,6 +1837,14 @@
+@@ -1589,6 +1761,14 @@
                                  preserves_pitch));
  }
 -
@@ -1041,7 +944,7 @@
    DCHECK(thread_checker_.CalledOnValidThread());
 -
 +
-@@ -1630,7 +1886,7 @@
+@@ -1630,7 +1810,7 @@
    //
    // It is expected that such events are transient and will be recovered as
    // rendering continues over time.
@@ -1050,7 +953,7 @@
      DVLOG(2) << __func__ << ": actual=" << media_time
               << " clamped=" << last_media_time_;
      return last_media_time_;
-@@ -1641,6 +1897,24 @@
+@@ -1641,6 +1821,24 @@
    return last_media_time_;
  }
 -
@@ -1076,7 +979,7 @@
  Ranges<base::TimeDelta> PipelineImpl::GetBufferedTimeRanges() const {
    DCHECK(thread_checker_.CalledOnValidThread());
    return renderer_wrapper_->GetBufferedTimeRanges();
-@@ -1665,7 +1939,7 @@
+@@ -1665,7 +1863,7 @@
                            CdmAttachedCB cdm_attached_cb) {
    DVLOG(2) << __func__;
    DCHECK(thread_checker_.CalledOnValidThread());
@@ -1086,7 +989,7 @@
 -
 +
    // Not checking IsRunning() so we can set the CDM before Start().
-@@ -1714,11 +1988,15 @@
+@@ -1714,11 +1912,15 @@
    client_->OnFallback(std::move(status).AddHere());
  }
 -
@@ -1187,34 +1090,16 @@
    }
 --- a/media/filters/chunk_demuxer.cc
 +++ b/media/filters/chunk_demuxer.cc
-@@ -7,13 +7,17 @@
- #include <algorithm>
- #include <limits>
- #include <memory>
-+#include <optional>
-+#include <string>
- #include <utility>
-+#include <vector>
--
-+
- #include "base/functional/bind.h"
- #include "base/functional/callback_helpers.h"
- #include "base/memory/raw_ptr.h"
- #include "base/not_fatal_until.h"
- #include "base/strings/string_number_conversions.h"
-+#include "base/strings/string_util.h"
- #include "base/task/bind_post_task.h"
- #include "base/trace_event/trace_event.h"
- #include "media/base/audio_decoder_config.h"
-@@ -26,6 +30,7 @@
+@@ -26,6 +26,8 @@
  #include "media/base/video_codecs.h"
  #include "media/base/video_decoder_config.h"
  #include "media/filters/frame_processor.h"
 +#include "media/filters/parc_chunk_demuxer_hand_off.h"
++#include "media/filters/parc_source_buffer_stream_state.h"
  #include "media/filters/source_buffer_stream.h"
  #include "media/filters/stream_parser_factory.h"
  #include "third_party/perfetto/include/perfetto/tracing/track.h"
-@@ -47,6 +52,11 @@
+@@ -47,6 +49,11 @@
      media::MediaLog* media_log) {
    std::vector<std::string> parsed_codec_ids;
    media::SplitCodecs(codecs, &parsed_codec_ids);
@@ -1226,7 +1111,7 @@
    return media::StreamParserFactory::Create(content_type, parsed_codec_ids,
                                              media_log);
  }
-@@ -87,10 +97,16 @@
+@@ -87,10 +94,16 @@
    ChangeState_Locked(RETURNING_ABORT_FOR_READS);
    if (read_cb_)
      std::move(read_cb_).Run(kAborted, {});
@@ -1245,7 +1130,7 @@
      return;
 -
 +
-@@ -108,6 +124,9 @@
+@@ -108,6 +121,9 @@
      std::move(read_cb_).Run(DemuxerStream::kOk,
                              {StreamParserBuffer::CreateEOSBuffer()});
    }
@@ -1256,24 +1141,17 @@
 -
 +
  bool ChunkDemuxerStream::IsSeekWaitingForData() const {
-@@ -123,6 +142,14 @@
+@@ -123,6 +139,7 @@
        << state_;
 -
 +
    stream_->Seek(time);
-+  ParcRestartHandOffAfterSeek_Locked();
-+}
-+
-+void ChunkDemuxerStream::ParcRestartHandOffAfterSeek_Locked() {
-+  parc_returned_.clear();
-+  if (parc_stream_hand_off_) {
-+    parc_stream_hand_off_->RestartAfterSeek();
-+  }
++  ParcStreamHandOff::RestartStreamAfterSeek(*this);
  }
 -
 +
  bool ChunkDemuxerStream::Append(const StreamParser::BufferQueue& buffers) {
-@@ -138,10 +165,67 @@
+@@ -138,6 +155,9 @@
 -
 +
    if (read_cb_)
@@ -1285,168 +1163,43 @@
 +
    return true;
  }
--
-+
-+base::TimeDelta ChunkDemuxerStream::ParcKeyframeAtOrBefore(
-+    base::TimeDelta time) const {
-+  base::AutoLock auto_lock(lock_);
-+  return stream_->ParcKeyframeAtOrBefore(time);
-+}
-+
-+void ChunkDemuxerStream::ParcRemoveBefore(base::TimeDelta end,
-+                                          base::TimeDelta duration) {
-+  base::AutoLock auto_lock(lock_);
-+  stream_->ParcRemoveBefore(end, duration);
-+}
-+
-+void ChunkDemuxerStream::ParcRemoveFrom(base::TimeDelta start,
-+                                        base::TimeDelta duration,
-+                                        base::TimeDelta removal_end) {
-+  base::AutoLock auto_lock(lock_);
-+  stream_->ParcRemoveFrom(start, duration, removal_end);
-+}
-+
-+void ChunkDemuxerStream::ParcSetSafariMediaSource(bool safari) {
-+  base::AutoLock auto_lock(lock_);
-+  parc_safari_media_source_ = safari;
-+  if (stream_) {
-+    stream_->ParcSetSafariMediaSource(safari);
-+  }
-+}
-+
-+void ChunkDemuxerStream::ParcSetMediaSourceBuffered(
-+    base::TimeDelta start,
-+    Ranges<base::TimeDelta> audio) {
-+  base::AutoLock auto_lock(lock_);
-+  if (!stream_) {
-+    return;
-+  }
-+  stream_->ParcSetMediaSourceBuffered(start, std::move(audio));
-+  if (read_cb_) {
-+    CompletePendingReadIfPossible_Locked();
-+  }
-+}
-+
-+void ChunkDemuxerStream::ParcRemove(base::TimeDelta start,
-+                                    base::TimeDelta end,
-+                                    base::TimeDelta duration) {
-+  base::AutoLock auto_lock(lock_);
-+  stream_->ParcRemove(start, end, duration);
-+}
-+
-+size_t ChunkDemuxerStream::ParcRemovalSize(base::TimeDelta start,
-+                                           base::TimeDelta end,
-+                                           base::TimeDelta duration) {
-+  base::AutoLock auto_lock(lock_);
-+  return stream_->ParcRemovalSize(start, end, duration);
-+}
-+
- void ChunkDemuxerStream::Remove(base::TimeDelta start,
-                                 base::TimeDelta end,
-                                 base::TimeDelta duration) {
-@@ -231,6 +315,7 @@
+@@ -231,6 +251,8 @@
    if (!stream_) {
      DCHECK_EQ(state_, UNINITIALIZED);
      stream_ = std::make_unique<SourceBufferStream>(config, media_log);
-+    stream_->ParcSetSafariMediaSource(parc_safari_media_source_);
++    ParcSourceBufferStreamState::UseSafariMediaSource(
++        *stream_, parc_safari_media_source_);
      return true;
    }
 -
 +
-@@ -247,6 +332,7 @@
+@@ -247,6 +269,8 @@
    if (!stream_) {
      DCHECK_EQ(state_, UNINITIALIZED);
      stream_ = std::make_unique<SourceBufferStream>(config, media_log);
-+    stream_->ParcSetSafariMediaSource(parc_safari_media_source_);
++    ParcSourceBufferStreamState::UseSafariMediaSource(
++        *stream_, parc_safari_media_source_);
      return true;
    }
 -
 +
-@@ -312,6 +398,25 @@
-   return is_enabled_;
- }
--
-+
-+ParcDemuxerStreamExtension* ChunkDemuxerStream::GetParcExtension() {
-+  return this;
-+}
-+
-+bool ChunkDemuxerStream::ParcIsEnabled() const {
-+  return IsEnabled();
-+}
-+
-+DemuxerStream* ChunkDemuxerStream::ParcHandOffSource() {
-+  return this;
-+}
-+
-+void ChunkDemuxerStream::ParcStartAt(base::TimeDelta time) {
-+  base::AutoLock auto_lock(lock_);
-+  if (is_enabled_ && !read_cb_) {
-+    stream_->Seek(time);
-+  }
-+}
-+
- void ChunkDemuxerStream::SetEnabled(bool enabled, base::TimeDelta timestamp) {
-   base::AutoLock auto_lock(lock_);
--
-+
-@@ -322,9 +427,15 @@
+@@ -322,10 +346,14 @@
    if (enabled) {
      DCHECK(stream_);
      stream_->Seek(timestamp);
--  } else if (read_cb_) {
--    DVLOG(1) << "Read from disabled stream, returning EOS";
--    std::move(read_cb_).Run(kOk, {StreamParserBuffer::CreateEOSBuffer()});
-+    ParcRestartHandOffAfterSeek_Locked();
-+  } else {
-+    if (read_cb_) {
-+      DVLOG(1) << "Read from disabled stream, returning EOS";
-+      std::move(read_cb_).Run(kOk, {StreamParserBuffer::CreateEOSBuffer()});
-+    }
-+    if (parc_stream_hand_off_) {
-+      parc_stream_hand_off_->EndRead();
-+    }
++    ParcStreamHandOff::RestartStreamAfterSeek(*this);
+   } else if (read_cb_) {
+     DVLOG(1) << "Read from disabled stream, returning EOS";
+     std::move(read_cb_).Run(kOk, {StreamParserBuffer::CreateEOSBuffer()});
    }
++  if (!enabled && parc_stream_hand_off_) {
++    parc_stream_hand_off_->EndRead();
++  }
  }
 -
 +
-@@ -346,6 +457,33 @@
-   state_ = state;
- }
--
-+
-+DemuxerStream* ChunkDemuxerStream::ParcHandOffReader() {
-+  base::AutoLock auto_lock(lock_);
-+  if (!parc_stream_hand_off_) {
-+    parc_stream_hand_off_ = std::make_unique<ParcStreamHandOff>(this);
-+  }
-+  return parc_stream_hand_off_->reader();
-+}
-+
-+std::optional<base::TimeDelta> ChunkDemuxerStream::ParcSplitAt(
-+    base::TimeDelta time,
-+    bool unread,
-+    bool* reader_there) {
-+  base::AutoLock auto_lock(lock_);
-+  if (!parc_stream_hand_off_) {
-+    parc_stream_hand_off_ = std::make_unique<ParcStreamHandOff>(this);
-+  }
-+  return parc_stream_hand_off_->SplitAt(time, unread, reader_there);
-+}
-+
-+void ChunkDemuxerStream::ParcEndHandOff() {
-+  base::AutoLock auto_lock(lock_);
-+  if (parc_stream_hand_off_) {
-+    parc_stream_hand_off_->End();
-+  }
-+  parc_stream_hand_off_.reset();
-+}
-+
- ChunkDemuxerStream::~ChunkDemuxerStream() = default;
--
-+
- void ChunkDemuxerStream::CompletePendingReadIfPossible_Locked() {
-@@ -373,7 +511,22 @@
+ void ChunkDemuxerStream::SetStreamMemoryLimit(size_t memory_limit) {
+@@ -373,7 +401,16 @@
    }
    DCHECK(state_ == RETURNING_DATA_FOR_READS);
 -
@@ -1457,13 +1210,7 @@
 +    return;
 +  }
 +  if (!parc_returned_.empty()) {
-+    DecoderBufferVector out;
-+    while (!parc_returned_.empty() && out.size() < requested_buffer_count_) {
-+      out.emplace_back(std::move(parc_returned_.front()));
-+      parc_returned_.pop_front();
-+    }
-+    requested_buffer_count_ = 0;
-+    std::move(read_cb_).Run(kOk, std::move(out));
++    ParcStreamHandOff::ReadReturned(*this);
 +    return;
 +  }
 +
@@ -1472,7 +1219,7 @@
 +
    // If the status from |stream_| is kNeedBuffer and there's no buffers,
    // then after ChunkDemuxerStream::Append, try to read data again,
-@@ -396,16 +549,16 @@
+@@ -396,16 +433,16 @@
  }
 -
 +
@@ -1493,7 +1240,7 @@
                 << ", out_size=" << output_buffers.size();
        return {SourceBufferStreamStatus::kSuccess, std::move(output_buffers)};
      }
-@@ -420,13 +573,13 @@
+@@ -420,13 +457,13 @@
          // Return early with calling |read_cb_| if output_buffers has buffers
          // since there is no more readable data.
          DVLOG(3) << __func__ << " status=" << (int)status << ", type=" << type_
@@ -1509,7 +1256,7 @@
                   << ", out_size=" << output_buffers.size();
          return {status, std::move(output_buffers)};
        case SourceBufferStreamStatus::kConfigChange:
-@@ -436,16 +589,16 @@
+@@ -436,16 +473,16 @@
          // loop|, i.e. output_buffers should be empty.
          DCHECK(output_buffers.empty());
          DVLOG(3) << __func__ << " status=" << (int)status << ", type=" << type_
@@ -1530,95 +1277,50 @@
             << ", out_size=" << output_buffers.size();
    return {SourceBufferStreamStatus::kSuccess, std::move(output_buffers)};
  }
-@@ -529,9 +682,23 @@
+@@ -458,7 +495,8 @@
+     : open_cb_(std::move(open_cb)),
+       progress_cb_(std::move(progress_cb)),
+       encrypted_media_init_data_cb_(std::move(encrypted_media_init_data_cb)),
+-      media_log_(MediaLog::CloneSafely(media_log)) {
++      media_log_(MediaLog::CloneSafely(media_log)),
++      parc_(std::make_unique<ParcChunkDemuxer>(this)) {
+   DCHECK(open_cb_);
+   DCHECK(encrypted_media_init_data_cb_);
+   MEDIA_LOG(INFO, media_log_) << GetDisplayName();
+@@ -529,9 +567,13 @@
      return;
    }
 -
 +
-+  parc_fast_seek_.reset();
-+  parc_fast_seek_landing_.reset();
-+  if (parc_requested_fast_seek_ && parc_requested_fast_seek_->target == time) {
-+    parc_fast_seek_ = std::exchange(parc_requested_fast_seek_, std::nullopt);
-+  }
++  parc_->TakeFastSeek(time);
 +
    SeekAllSources(time);
    StartReturningData();
 -
 +
-+  if (parc_safari_eviction_) {
-+    for (const auto& entry : source_state_map_) {
-+      if (entry.second->ParcIsActive()) {
-+        ParcComputeEvictionData_Locked(entry.second.get(), time);
-+      }
-+    }
-+  }
++  parc_->OnSeek(time);
 +
    if (IsSeekWaitingForData_Locked()) {
      DVLOG(1) << "Seek() : waiting for more data to arrive.";
      return;
-@@ -634,6 +801,7 @@
+@@ -634,6 +676,7 @@
 -
 +
    AbortPendingReads_Locked();
    SeekAllSources(seek_time);
-+  parc_fast_seek_.reset();
++  parc_->CancelFastSeek();
 -
 +
    if (!seek_cb_) {
      cancel_next_seek_ = true;
-@@ -643,6 +811,43 @@
-   RunSeekCB_Locked(PIPELINE_OK);
- }
--
-+
-+void ChunkDemuxer::ParcSetFastSeek(base::TimeDelta target,
-+                                   base::TimeDelta tolerance_before) {
-+  base::AutoLock auto_lock(lock_);
-+  if (tolerance_before.is_positive()) {
-+    parc_requested_fast_seek_ = ParcFastSeek{target, tolerance_before};
-+  } else {
-+    parc_requested_fast_seek_.reset();
-+  }
-+}
-+
-+std::optional<base::TimeDelta> ChunkDemuxer::ParcTakeFastSeekLanding() {
-+  base::AutoLock auto_lock(lock_);
-+  return std::exchange(parc_fast_seek_landing_, std::nullopt);
-+}
-+
-+base::TimeDelta ChunkDemuxer::ParcFastSeekLanding_Locked(
-+    base::TimeDelta target,
-+    base::TimeDelta tolerance_before) const {
-+  lock_.AssertAcquired();
-+  const base::TimeDelta earliest = target - tolerance_before;
-+  base::TimeDelta landing = target;
-+  for (const OwnedChunkDemuxerStreamVector* streams :
-+       {&audio_streams_, &video_streams_}) {
-+    for (const auto& stream : *streams) {
-+      if (!stream->IsEnabled()) {
-+        continue;
-+      }
-+      const base::TimeDelta keyframe = stream->ParcKeyframeAtOrBefore(target);
-+      if (keyframe != kNoTimestamp && keyframe >= earliest &&
-+          keyframe < landing) {
-+        landing = keyframe;
-+      }
-+    }
-+  }
-+  return landing;
-+}
-+
- ChunkDemuxer::Status ChunkDemuxer::AddId(
-     const std::string& id,
-     std::unique_ptr<AudioDecoderConfig> audio_config) {
-@@ -656,12 +861,13 @@
+@@ -656,12 +699,13 @@
    if (!audio_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
 -
 +
 -  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING) ||
 +  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING &&
-+       !ParcCanAddIdAfterInit_Locked()) ||
++       !parc_->CanAddIdAfterInit()) ||
        IsValidId_Locked(id)) {
      return kReachedIdLimit;
    }
@@ -1629,14 +1331,14 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(audio_config)),
                         std::nullopt);
  }
-@@ -679,12 +885,13 @@
+@@ -679,12 +723,13 @@
    if (!video_config->IsValidConfig())
      return ChunkDemuxer::kNotSupported;
 -
 +
 -  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING) ||
 +  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING &&
-+       !ParcCanAddIdAfterInit_Locked()) ||
++       !parc_->CanAddIdAfterInit()) ||
        IsValidId_Locked(id)) {
      return kReachedIdLimit;
    }
@@ -1647,14 +1349,14 @@
    return AddIdInternal(id, StreamParserFactory::Create(std::move(video_config)),
                         std::nullopt);
  }
-@@ -696,17 +903,18 @@
+@@ -696,17 +741,18 @@
             << " codecs=" << codecs;
    base::AutoLock auto_lock(lock_);
 -
 +
 -  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING) ||
 +  if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING &&
-+       !ParcCanAddIdAfterInit_Locked()) ||
++       !parc_->CanAddIdAfterInit()) ||
        IsValidId_Locked(id)) {
      return kReachedIdLimit;
    }
@@ -1672,520 +1374,147 @@
    if (!stream_parser) {
      DVLOG(1) << __func__ << " failed: unsupported content_type=" << content_type
               << " codecs=" << codecs;
-@@ -762,6 +970,11 @@
+@@ -762,6 +808,7 @@
            base::BindRepeating(&ChunkDemuxer::CreateDemuxerStream,
                                base::Unretained(this), id),
            media_log_.get());
-+  source_state->ParcSetClearDolbyVisionAllowed(
-+      parc_clear_dolby_vision_allowed_);
-+  source_state->ParcSetDolbyVisionCallback(base::BindRepeating(
-+      &ChunkDemuxer::ParcOnDolbyVisionAppended, base::Unretained(this)));
-+  source_state->ParcSetSafariInitSegmentRules(parc_safari_init_segment_rules_);
++  parc_->ConfigureSourceState(*source_state);
 -
 +
    // TODO(wolenetz): Change these to DCHECKs or switch to returning
    // kReachedIdLimit once less verification in release build is needed. See
-@@ -774,7 +987,18 @@
+@@ -774,7 +821,7 @@
 -
 +
    source_state->Init(base::BindOnce(&ChunkDemuxer::OnSourceInitDone,
                                      base::Unretained(this), id),
 -                     expected_codecs, encrypted_media_init_data_cb_);
-+                     expected_codecs, base::BindRepeating(
-+                         [](ChunkDemuxer* demuxer, const std::string& id,
-+                            EmeInitDataType type,
-+                            const std::vector<uint8_t>& data) {
-+                           if (demuxer->parc_source_key_cb_ &&
-+                               (type == EmeInitDataType::SINF ||
-+                                type == EmeInitDataType::MPTS)) {
-+                             demuxer->parc_source_key_cb_.Run(id, type, data);
-+                             return;
-+                           }
-+                           demuxer->encrypted_media_init_data_cb_.Run(type, data);
-+                         }, base::Unretained(this), id));
++                     expected_codecs, parc_->InitDataCB(id));
 -
 +
    // TODO(wolenetz): Change to DCHECKs once less verification in release build
    // is needed. See https://crbug.com/786975.
-@@ -802,7 +1026,10 @@
+@@ -802,7 +849,9 @@
  void ChunkDemuxer::RemoveId(const std::string& id) {
    DVLOG(1) << __func__ << " id=" << id;
    base::AutoLock auto_lock(lock_);
-+  if (parc_source_key_cb_)
-+    parc_source_key_cb_.Run(id, EmeInitDataType::UNKNOWN, {});
++  parc_->OnRemoveId(id);
    CHECK(IsValidId_Locked(id));
 +  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
 -
 +
    source_state_map_.erase(id);
    pending_source_init_ids_.erase(id);
-@@ -830,6 +1057,7 @@
+@@ -830,6 +879,7 @@
      CHECK(stream_found);
    }
    id_to_streams_map_.erase(id);
-+  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
++  parc_->ShareMediaSourceBuffered(seek_was_waiting);
  }
 -
 +
  Ranges<base::TimeDelta> ChunkDemuxer::GetBufferedRanges(
-@@ -870,35 +1098,251 @@
+@@ -870,8 +920,13 @@
                                     base::TimeDelta curr_time,
                                     TrackChangeCB change_completed_cb) {
    base::AutoLock auto_lock(lock_);
 +  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
 -
 +
-+  const bool is_audio = track_type == DemuxerStream::AUDIO;
-+  const OwnedChunkDemuxerStreamVector& streams =
-+      is_audio ? audio_streams_ : video_streams_;
    ChunkDemuxerStream* enabled_stream = nullptr;
--  if (track_id.has_value()) {
--    auto it = track_id_to_demux_stream_map_.find(*track_id);
--    if (it != track_id_to_demux_stream_map_.end()) {
--      DCHECK(it->second);
--      DCHECK_EQ(track_type, it->second->type());
--      it->second->SetEnabled(true, curr_time);
--      enabled_stream = it->second;
--    } else {
--      DVLOG(1) << __func__
--               << ": Failed to find track with track_id: " << track_id.value();
-+  if (is_audio && parc_safari_media_source_) {
-+    for (const auto& stream : streams) {
-+      if (parc_audio_tracks_to_enable_) {
-+        stream->SetEnabled(
-+            parc_audio_tracks_to_enable_->contains(stream->media_track_id()),
-+            curr_time);
-+      }
-+      if (!enabled_stream && stream->IsEnabled()) {
-+        enabled_stream = stream.get();
-+      }
-+    }
-+    parc_audio_tracks_to_enable_.reset();
-+  } else {
-+    if (track_id.has_value()) {
-+      auto it = track_id_to_demux_stream_map_.find(*track_id);
-+      if (it != track_id_to_demux_stream_map_.end()) {
-+        DCHECK(it->second);
-+        DCHECK_EQ(track_type, it->second->type());
-+        it->second->SetEnabled(true, curr_time);
-+        enabled_stream = it->second;
-+      } else {
-+        DVLOG(1) << __func__ << ": Failed to find track with track_id: "
-+                 << track_id.value();
-+      }
-+    }
-+
-+    for (const auto& stream : streams) {
-+      if (stream && stream.get() != enabled_stream) {
-+        stream->SetEnabled(false, curr_time);
-+      }
-     }
-   }
-+  for (const auto& stream : streams) {
-+    if (stream->IsEnabled() &&
-+        parc_unstarted_tracks_.erase(stream->media_track_id())) {
-+      stream->ParcStartAt(curr_time);
-+    }
++  if (parc_->ChangeAllAudioTracks(track_type, curr_time, seek_was_waiting,
++                                  change_completed_cb)) {
++    return;
 +  }
-+  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
--
-+
--  bool is_audio = track_type == DemuxerStream::AUDIO;
--  for (const auto& stream : is_audio ? audio_streams_ : video_streams_) {
--    if (stream && stream.get() != enabled_stream) {
--      stream->SetEnabled(false, curr_time);
-+  for (const auto& entry : source_state_map_) {
-+    if (entry.second->ParcPurgedWhileInactive()) {
-+      host_->OnBufferedTimeRangesChanged(GetBufferedRanges_Locked());
-+      break;
+   if (track_id.has_value()) {
+     auto it = track_id_to_demux_stream_map_.find(*track_id);
+     if (it != track_id_to_demux_stream_map_.end()) {
+@@ -892,6 +947,7 @@
      }
    }
 -
 +
++  parc_->AfterTracksChanged(track_type, curr_time, seek_was_waiting);
    std::move(change_completed_cb).Run(enabled_stream);
  }
 -
 +
-+void ChunkDemuxer::ParcSetSourceKeyCallback(ParcSourceKeyCB callback) {
-+  base::AutoLock auto_lock(lock_);
-+  parc_source_key_cb_ = std::move(callback);
-+}
-+
- void ChunkDemuxer::DisableCanChangeType() {
+@@ -899,6 +955,16 @@
    supports_change_type_ = false;
  }
 -
-+
-+void ChunkDemuxer::RestrictCanChangeType(ChangeTypeFilter filter) {
-+  base::AutoLock auto_lock(lock_);
-+  change_type_filter_ = std::move(filter);
-+}
-+
-+void ChunkDemuxer::ParcSetSafariEviction(bool enabled) {
-+  base::AutoLock auto_lock(lock_);
-+  parc_safari_eviction_ = enabled;
-+}
-+
-+void ChunkDemuxer::ParcSetClearDolbyVisionAllowed(bool allowed) {
-+  base::AutoLock auto_lock(lock_);
-+  parc_clear_dolby_vision_allowed_ = allowed;
-+  for (auto& entry : source_state_map_) {
-+    entry.second->ParcSetClearDolbyVisionAllowed(allowed);
-+  }
-+}
-+
-+MediaResource* ChunkDemuxer::ParcBeginHandOff() {
-+  base::AutoLock auto_lock(lock_);
-+  if (!parc_demuxer_hand_off_ && parc_safari_media_source_ &&
-+      (state_ == INITIALIZED || state_ == ENDED)) {
-+    parc_demuxer_hand_off_ = std::make_unique<ParcDemuxerHandOff>(this);
-+  }
-+  return parc_demuxer_hand_off_.get();
-+}
-+
-+void ChunkDemuxer::ParcSplitForHandOff(
-+    base::TimeDelta not_before,
-+    base::OnceCallback<void(base::TimeDelta)> split_cb) {
-+  base::AutoLock auto_lock(lock_);
-+  DCHECK(parc_demuxer_hand_off_);
-+  parc_demuxer_hand_off_->AskSplit(
-+      not_before, base::BindPostTaskToCurrentDefault(std::move(split_cb)));
-+  ParcContinueSplit_Locked();
-+}
-+
-+void ChunkDemuxer::ParcContinueSplit_Locked() {
-+  lock_.AssertAcquired();
-+  if (parc_demuxer_hand_off_) {
-+    parc_demuxer_hand_off_->ContinueSplit(parc_returning_data_, video_streams_,
-+                                          audio_streams_,
-+                                          parc_unstarted_tracks_);
-+  }
-+}
-+
-+void ChunkDemuxer::ParcEndHandOff() {
-+  base::AutoLock auto_lock(lock_);
-+  for (const auto* streams : {&audio_streams_, &video_streams_}) {
-+    for (const auto& stream : *streams) {
-+      stream->ParcEndHandOff();
-+    }
-+  }
-+  parc_demuxer_hand_off_.reset();
-+}
-+
-+bool ChunkDemuxer::ParcPrefersFairPlayRenderer() {
-+  base::AutoLock auto_lock(lock_);
-+  return parc_clear_dolby_vision_allowed_ && parc_dolby_vision_appended_;
-+}
-+
-+void ChunkDemuxer::ParcSetSafariInitSegmentRules(bool safari) {
-+  base::AutoLock auto_lock(lock_);
-+  parc_safari_init_segment_rules_ = safari;
-+}
 +
 +std::unique_ptr<StreamParser> ChunkDemuxer::ParcCreateParser_Locked(
 +    const std::string& content_type,
 +    const std::string& codecs) {
 +  lock_.AssertAcquired();
-+  if (!parc_safari_init_segment_rules_) {
++  if (!parc_->safari_init_segment_rules()) {
 +    return CreateParserForTypeAndCodecs(content_type, codecs, media_log_.get());
 +  }
-+  std::optional<StreamParserFactory::ParcSafariType> safari_type =
-+      ParcSafariMediaSourceType(content_type, codecs);
-+  if (!safari_type) {
-+    return nullptr;
-+  }
-+  if (StreamParserFactory::ParcIsOggType(safari_type->type)) {
-+    return StreamParserFactory::ParcCreateOggParser(safari_type->type,
-+                                                    safari_type->codecs);
-+  }
-+  std::unique_ptr<StreamParser> stream_parser = StreamParserFactory::Create(
-+      safari_type->type, safari_type->codecs, media_log_.get());
-+  if (!stream_parser && safari_type->codecs.empty()) {
-+    stream_parser =
-+        StreamParserFactory::ParcCreateWithoutCodecs(safari_type->type);
-+  }
-+  return stream_parser;
-+}
-+
-+// static
-+std::optional<StreamParserFactory::ParcSafariType>
-+ChunkDemuxer::ParcSafariMediaSourceType(const std::string& content_type,
-+                                        const std::string& codecs) {
-+  std::vector<std::string> parsed_codec_ids;
-+  SplitCodecs(codecs, &parsed_codec_ids);
-+  return StreamParserFactory::ParcSafariMediaSourceType(
-+      base::ToLowerASCII(content_type), parsed_codec_ids);
-+}
-+
-+void ChunkDemuxer::ParcSetDolbyVisionAppendedCallback(
-+    base::RepeatingClosure callback) {
-+  base::AutoLock auto_lock(lock_);
-+  parc_dolby_vision_appended_cb_ = std::move(callback);
-+}
-+
-+void ChunkDemuxer::ParcAllowSourceBuffersAfterInit(
-+    ParcStreamsAddedCB streams_added_cb) {
-+  base::AutoLock auto_lock(lock_);
-+  parc_streams_added_cb_ = std::move(streams_added_cb);
-+}
-+
-+void ChunkDemuxer::ParcSetEnabledAudioTracks(
-+    const std::vector<MediaTrack::Id>& tracks) {
-+  base::AutoLock auto_lock(lock_);
-+  parc_audio_tracks_to_enable_.emplace(tracks.begin(), tracks.end());
-+}
-+
-+bool ChunkDemuxer::ParcMayAddStreams() {
-+  base::AutoLock auto_lock(lock_);
-+  return !parc_streams_added_cb_.is_null();
-+}
-+
-+bool ChunkDemuxer::ParcCanAddIdAfterInit_Locked() const {
-+  lock_.AssertAcquired();
-+  return state_ == INITIALIZED && parc_streams_added_cb_;
-+}
-+
-+bool ChunkDemuxer::ParcAwaitsLateInit_Locked(const std::string& id) const {
-+  lock_.AssertAcquired();
-+  return parc_streams_added_cb_ && (state_ == INITIALIZED || state_ == ENDED) &&
-+         pending_source_init_ids_.contains(id);
-+}
-+
-+void ChunkDemuxer::ParcOnDolbyVisionAppended() {
-+  lock_.AssertAcquired();
-+  if (std::exchange(parc_dolby_vision_appended_, true) ||
-+      !parc_clear_dolby_vision_allowed_) {
-+    return;
-+  }
-+  if (parc_dolby_vision_appended_cb_) {
-+    parc_dolby_vision_appended_cb_.Run();
-+  }
-+}
-+
-+void ChunkDemuxer::ParcSetSafariMediaSource(bool safari) {
-+  base::AutoLock auto_lock(lock_);
-+  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
-+  parc_safari_media_source_ = safari;
-+  for (const OwnedChunkDemuxerStreamVector* streams :
-+       {&audio_streams_, &video_streams_}) {
-+    for (const auto& stream : *streams) {
-+      stream->ParcSetSafariMediaSource(safari);
-+    }
-+  }
-+  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
-+}
-+
-+void ChunkDemuxer::ParcShareMediaSourceBuffered_Locked(bool seek_was_waiting) {
-+  lock_.AssertAcquired();
-+  if (!parc_safari_media_source_ || duration_ == kNoTimestamp) {
-+    return;
-+  }
-+  Ranges<base::TimeDelta> buffered;
-+  Ranges<base::TimeDelta> audio;
-+  ParcMediaSourceRanges_Locked(&buffered, &audio);
-+  const base::TimeDelta start =
-+      buffered.empty() ? kNoTimestamp : buffered.start(0);
-+  for (const auto& stream : audio_streams_) {
-+    stream->ParcSetMediaSourceBuffered(start, Ranges<base::TimeDelta>());
-+  }
-+  for (const auto& stream : video_streams_) {
-+    stream->ParcSetMediaSourceBuffered(start, audio);
-+  }
-+  if (seek_was_waiting && !IsSeekWaitingForData_Locked() && seek_cb_) {
-+    RunSeekCB_Locked(PIPELINE_OK);
-+  }
++  return parc_->CreateSafariParser(content_type, codecs);
 +}
 +
  bool ChunkDemuxer::EvictCodedFrames(const std::string& id,
                                      base::TimeDelta currentMediaTime,
                                      size_t newDataSize) {
-@@ -913,7 +1357,28 @@
+@@ -913,7 +979,8 @@
      LOG(WARNING) << __func__ << " stream " << id << " not found";
      return false;
    }
 -  return itr->second->EvictCodedFrames(currentMediaTime, newDataSize);
-+  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
-+  bool evicted;
-+  if (parc_safari_eviction_) {
-+    SourceBufferState* state = itr->second.get();
-+    evicted = true;
-+    if (state->ParcIsBufferFullFor(newDataSize)) {
-+      const bool can_append = state->ParcCanAppend(newDataSize);
-+      Ranges<base::TimeDelta> buffered;
-+      Ranges<base::TimeDelta> audio;
-+      ParcMediaSourceRanges_Locked(&buffered, &audio);
-+      const bool still_full = state->ParcEvictFrames(
-+          currentMediaTime, newDataSize,
-+          duration_ == kNoTimestamp ? kInfiniteDuration : duration_, buffered,
-+          audio);
-+      ParcComputeEvictionData_Locked(state, currentMediaTime);
-+      evicted = can_append || !still_full;
-+    }
-+  } else {
-+    evicted = itr->second->EvictCodedFrames(currentMediaTime, newDataSize);
-+  }
-+  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
-+  return evicted;
++  return parc_->EvictCodedFrames(itr->second.get(), currentMediaTime,
++                                 newDataSize);
  }
 -
 +
  bool ChunkDemuxer::AppendToParseBuffer(const std::string& id,
-@@ -1013,6 +1478,7 @@
+@@ -1013,6 +1080,7 @@
                   << state_;
          return StreamParser::ParseStatus::kFailed;
      }
-+    ParcShareMediaSourceBuffered_Locked(old_waiting_for_data);
++    parc_->ShareMediaSourceBuffered(old_waiting_for_data);
 -
 +
      // Check to see if newly parsed data was at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1075,6 +1541,8 @@
+@@ -1075,6 +1143,8 @@
          DVLOG(1) << "AppendChunks(): called in unexpected state " << state_;
          return false;
      }
-+    ParcShareMediaSourceBuffered_Locked(old_waiting_for_data);
-+    ParcContinueSplit_Locked();
++    parc_->ShareMediaSourceBuffered(old_waiting_for_data);
++    parc_->ContinueSplit();
 -
 +
      // Check to see if data was appended at the pending seek point. This
      // indicates we have parsed enough data to complete the seek. Work is still
-@@ -1102,6 +1570,7 @@
+@@ -1102,6 +1172,7 @@
    source_state_map_[id]->ResetParserState(append_window_start,
                                            append_window_end,
                                            timestamp_offset);
-+  ParcShareMediaSourceBuffered_Locked(old_waiting_for_data);
++  parc_->ShareMediaSourceBuffered(old_waiting_for_data);
    // ResetParserState can possibly emit some buffers.
    // Need to check whether seeking can be completed.
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
-@@ -1136,10 +1605,107 @@
+@@ -1136,8 +1207,11 @@
    if (start == duration_)
      return;
 -
 +
 +  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
    source_state_map_[id]->Remove(start, end, duration_);
-+  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
-+  host_->OnBufferedTimeRangesChanged(GetBufferedRanges_Locked());
-+  if (parc_safari_init_segment_rules_) {
-+    progress_cb_.Run();
-+  }
-+}
-+
-+std::optional<ChunkDemuxer::ParcBufferedState>
-+ChunkDemuxer::ParcGetBufferedState() const {
-+  base::AutoLock auto_lock(lock_);
-+  if (state_ == WAITING_FOR_INIT || state_ == PARSE_ERROR ||
-+      state_ == SHUTDOWN || duration_ == kNoTimestamp) {
-+    return std::nullopt;
-+  }
-+  ParcBufferedState result;
-+  result.buffered = GetBufferedRanges_Locked();
-+  for (const auto& entry : source_state_map_) {
-+    if (!entry.second->ParcIsActive()) {
-+      continue;
-+    }
-+    const Ranges<base::TimeDelta> audio =
-+        entry.second->ParcAudioBufferedRanges(duration_);
-+    for (size_t i = 0; i < audio.size(); ++i) {
-+      result.audio.Add(audio.start(i), audio.end(i));
-+    }
-+  }
-+  result.duration = duration_;
-+  result.ended = state_ == ENDED;
-+  return result;
-+}
-+
-+void ChunkDemuxer::ParcPurgeForMemoryPressure(const std::string& id,
-+                                              base::TimeDelta media_time,
-+                                              bool active) {
-+  DVLOG(1) << __func__ << "(" << id << ", " << media_time.InSecondsF() << ", "
-+           << active << ")";
-+  base::AutoLock auto_lock(lock_);
-+
-+  auto itr = source_state_map_.find(id);
-+  if (itr == source_state_map_.end() || state_ == SHUTDOWN ||
-+      duration_ == kNoTimestamp) {
-+    return;
-+  }
-+  Ranges<base::TimeDelta> buffered;
-+  Ranges<base::TimeDelta> audio;
-+  ParcMediaSourceRanges_Locked(&buffered, &audio);
-+  const bool seek_was_waiting = IsSeekWaitingForData_Locked();
-+  itr->second->ParcPurgeForMemoryPressure(media_time, active, duration_,
-+                                          buffered, audio, parc_safari_eviction_);
-+  ParcComputeEvictionData_Locked(itr->second.get(), media_time);
-+  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
++  parc_->ShareMediaSourceBuffered(seek_was_waiting);
    host_->OnBufferedTimeRangesChanged(GetBufferedRanges_Locked());
++  parc_->ReportProgress();
  }
 -
 +
-+void ChunkDemuxer::ParcUpdateEvictionData(const std::string& id,
-+                                          base::TimeDelta media_time) {
-+  base::AutoLock auto_lock(lock_);
-+  auto itr = source_state_map_.find(id);
-+  if (itr != source_state_map_.end() && state_ != SHUTDOWN) {
-+    ParcComputeEvictionData_Locked(itr->second.get(), media_time);
-+  }
-+}
-+
-+void ChunkDemuxer::ParcComputeEvictionData_Locked(SourceBufferState* state,
-+                                                  base::TimeDelta media_time) {
-+  lock_.AssertAcquired();
-+  if (!parc_safari_eviction_) {
-+    return;
-+  }
-+  Ranges<base::TimeDelta> buffered;
-+  Ranges<base::TimeDelta> audio;
-+  ParcMediaSourceRanges_Locked(&buffered, &audio);
-+  state->ParcComputeEvictionData(
-+      media_time, duration_ == kNoTimestamp ? kInfiniteDuration : duration_,
-+      buffered, audio);
-+}
-+
-+void ChunkDemuxer::ParcMediaSourceRanges_Locked(
-+    Ranges<base::TimeDelta>* buffered,
-+    Ranges<base::TimeDelta>* audio) const {
-+  lock_.AssertAcquired();
-+  const bool ended = state_ == ENDED;
-+  SourceBufferState::RangesList active_ranges;
-+  for (const auto& entry : source_state_map_) {
-+    const SourceBufferState* state = entry.second.get();
-+    if (!state->ParcIsActive()) {
-+      continue;
-+    }
-+    active_ranges.push_back(state->GetBufferedRanges(duration_, ended));
-+    const Ranges<base::TimeDelta> state_audio =
-+        state->ParcAudioBufferedRanges(duration_);
-+    for (size_t i = 0; i < state_audio.size(); ++i) {
-+      audio->Add(state_audio.start(i), state_audio.end(i));
-+    }
-+  }
-+  *buffered =
-+      SourceBufferState::ComputeRangesIntersection(active_ranges, ended);
-+}
-+
  bool ChunkDemuxer::CanChangeType(const std::string& id,
-                                  const std::string& content_type,
-                                  const std::string& codecs) {
-@@ -1162,11 +1728,28 @@
+@@ -1162,11 +1236,15 @@
      return false;
    }
 -
 +
-+  std::string filter_type = content_type;
-+  std::string filter_codecs = codecs;
-+  if (parc_safari_init_segment_rules_) {
-+    std::optional<StreamParserFactory::ParcSafariType> safari_type =
-+        ParcSafariMediaSourceType(content_type, codecs);
-+    if (!safari_type) {
-+      return false;
-+    }
-+    filter_type = safari_type->type;
-+    filter_codecs = base::JoinString(safari_type->codecs, ",");
-+  }
-+
-+  if (change_type_filter_ &&
-+      !change_type_filter_.Run(filter_type, filter_codecs)) {
++  if (!parc_->ChangeTypeAllowed(content_type, codecs)) {
 +    return false;
 +  }
 +
@@ -2200,7 +1529,7 @@
  }
 -
 +
-@@ -1182,7 +1765,7 @@
+@@ -1182,7 +1260,7 @@
    DCHECK(IsValidId_Locked(id));
 -
 +
@@ -2210,7 +1539,7 @@
    // Caller should query CanChangeType() first to protect from failing this.
    DCHECK(stream_parser);
    source_state_map_[id]->ChangeType(std::move(stream_parser),
-@@ -1244,6 +1827,7 @@
+@@ -1244,6 +1322,7 @@
    DCHECK(duration_td.is_positive());
 -
 +
@@ -2220,185 +1549,103 @@
    host_->SetDuration(duration_);
 -
 +
-@@ -1251,6 +1835,7 @@
+@@ -1251,6 +1330,7 @@
         ++itr) {
      itr->second->OnSetDuration(duration_);
    }
-+  ParcShareMediaSourceBuffered_Locked(seek_was_waiting);
++  parc_->ShareMediaSourceBuffered(seek_was_waiting);
  }
 -
 +
  bool ChunkDemuxer::IsParsingMediaSegment(const std::string& id) {
-@@ -1316,6 +1901,7 @@
+@@ -1316,6 +1396,7 @@
         ++itr) {
      itr->second->MarkEndOfStream();
    }
-+  ParcContinueSplit_Locked();
++  parc_->ContinueSplit();
 -
 +
    CompletePendingReadsIfPossible();
 -
 +
-@@ -1332,6 +1918,9 @@
+@@ -1332,6 +1413,7 @@
 -
 +
    if (old_waiting_for_data && !IsSeekWaitingForData_Locked() && seek_cb_)
      RunSeekCB_Locked(PIPELINE_OK);
-+  if (parc_safari_init_segment_rules_) {
-+    progress_cb_.Run();
-+  }
++  parc_->ReportProgress();
  }
 -
 +
  void ChunkDemuxer::UnmarkEndOfStream() {
-@@ -1440,6 +2029,10 @@
+@@ -1440,6 +1522,10 @@
    CHECK(IsValidId_Locked(source_id));
    CHECK(pending_source_init_ids_.find(source_id) !=
          pending_source_init_ids_.end());
 +  if (state_ == INITIALIZED) {
-+    ParcOnLateSourceInitDone_Locked(source_id, params);
++    parc_->OnLateSourceInitDone(source_id, params);
 +    return;
 +  }
    CHECK(init_cb_);
    CHECK_EQ(state_, INITIALIZING);
    if (audio_streams_.empty() && video_streams_.empty()) {
-@@ -1488,6 +2081,52 @@
-   RunInitCB_Locked(PIPELINE_OK);
- }
--
-+
-+void ChunkDemuxer::ParcOnLateSourceInitDone_Locked(
-+    const std::string& source_id,
-+    const StreamParser::InitParameters& params) {
-+  lock_.AssertAcquired();
-+  pending_source_init_ids_.erase(source_id);
-+  SourceBufferState* source_state = source_state_map_[source_id].get();
-+  if (parc_returning_data_) {
-+    source_state->Seek(parc_seek_time_);
-+    source_state->StartReturningData();
-+  } else {
-+    source_state->AbortReads();
-+  }
-+
-+  const std::vector<raw_ptr<ChunkDemuxerStream>>& streams =
-+      id_to_streams_map_[source_id];
-+  const bool other_audio = std::ranges::any_of(
-+      audio_streams_, [&](const std::unique_ptr<ChunkDemuxerStream>& stream) {
-+        return stream->IsEnabled() &&
-+               std::ranges::find(streams, stream.get()) == streams.end();
-+      });
-+  PipelineMetadata added;
-+  std::vector<ParcAddedTrack> tracks;
-+  for (ChunkDemuxerStream* stream : streams) {
-+    if (params.liveness != StreamLiveness::kUnknown) {
-+      stream->SetLiveness(params.liveness);
-+    }
-+    if (!stream->IsEnabled()) {
-+      continue;
-+    }
-+    tracks.push_back({stream->type(), stream->media_track_id()});
-+    parc_unstarted_tracks_.insert(stream->media_track_id());
-+    if (stream->type() == DemuxerStream::AUDIO) {
-+      if (!other_audio) {
-+        added.has_audio = true;
-+        added.audio_decoder_config = stream->audio_decoder_config();
-+      }
-+    } else if (stream->type() == DemuxerStream::VIDEO) {
-+      added.has_video = true;
-+      added.video_decoder_config = stream->video_decoder_config();
-+    }
-+  }
-+  if (!tracks.empty()) {
-+    parc_streams_added_cb_.Run(added, tracks);
-+  }
-+}
-+
- // static
- MediaTrack::Id ChunkDemuxer::GenerateMediaTrackId() {
-   static unsigned g_track_count = 0;
-@@ -1523,8 +2162,19 @@
+@@ -1523,8 +1609,11 @@
    DCHECK(track_id_to_demux_stream_map_.find(media_track_id) ==
           track_id_to_demux_stream_map_.end());
    track_id_to_demux_stream_map_[media_track_id] = stream.get();
-+  bool enabled = owning_vector->empty();
-+  if (parc_safari_media_source_ && type == DemuxerStream::AUDIO) {
-+    enabled = std::ranges::none_of(
-+        id_to_streams_map_[source_id], [](ChunkDemuxerStream* other) {
-+          return other->type() == DemuxerStream::AUDIO;
-+        });
-+  }
-+  if (enabled && type == DemuxerStream::AUDIO && parc_audio_tracks_to_enable_) {
-+    parc_audio_tracks_to_enable_->insert(media_track_id);
-+  }
++  const bool enabled = parc_->InitiallyEnabled(source_id, type, media_track_id,
++                                               owning_vector->empty());
    id_to_streams_map_[source_id].push_back(stream.get());
 -  stream->SetEnabled(owning_vector->empty(), base::TimeDelta());
 +  stream->SetEnabled(enabled, base::TimeDelta());
-+  stream->ParcSetSafariMediaSource(parc_safari_media_source_);
++  parc_->ConfigureStream(*stream);
    owning_vector->push_back(std::move(stream));
    return owning_vector->back().get();
  }
-@@ -1598,6 +2248,10 @@
+@@ -1598,6 +1687,9 @@
    SourceBufferState::RangesList ranges_list;
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
-+    if (itr->second->ParcLeftOutOfMediaSource() ||
-+        ParcAwaitsLateInit_Locked(itr->first)) {
++    if (parc_->LeftOutOfBufferedRanges(itr->first, *itr->second)) {
 +      continue;
 +    }
      ranges_list.push_back(itr->second->GetBufferedRanges(duration_, ended));
    }
 -
 +
-@@ -1605,13 +2259,16 @@
+@@ -1605,13 +1697,16 @@
  }
 -
 +
  void ChunkDemuxer::StartReturningData() {
-+  parc_returning_data_ = true;
++  parc_->set_returning_data(true);
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->StartReturningData();
    }
-+  ParcContinueSplit_Locked();
++  parc_->ContinueSplit();
  }
 -
 +
  void ChunkDemuxer::AbortPendingReads_Locked() {
-+  parc_returning_data_ = false;
++  parc_->set_returning_data(false);
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->AbortReads();
-@@ -1619,6 +2276,8 @@
+@@ -1619,6 +1714,7 @@
  }
 -
 +
  void ChunkDemuxer::SeekAllSources(base::TimeDelta seek_time) {
-+  parc_seek_time_ = seek_time;
-+  parc_unstarted_tracks_.clear();
++  parc_->OnSeekAllSources(seek_time);
    for (auto itr = source_state_map_.begin(); itr != source_state_map_.end();
         ++itr) {
      itr->second->Seek(seek_time);
-@@ -1650,6 +2309,23 @@
+@@ -1650,6 +1746,7 @@
  void ChunkDemuxer::RunSeekCB_Locked(PipelineStatus status) {
    lock_.AssertAcquired();
    DCHECK(seek_cb_);
-+  if (std::optional<ParcFastSeek> fast_seek =
-+          std::exchange(parc_fast_seek_, std::nullopt);
-+      fast_seek && status == PIPELINE_OK) {
-+    base::TimeDelta landing =
-+        ParcFastSeekLanding_Locked(fast_seek->target, fast_seek->tolerance_before);
-+    if (landing != fast_seek->target) {
-+      AbortPendingReads_Locked();
-+      SeekAllSources(landing);
-+      if (IsSeekWaitingForData_Locked()) {
-+        AbortPendingReads_Locked();
-+        SeekAllSources(fast_seek->target);
-+        landing = fast_seek->target;
-+      }
-+      StartReturningData();
-+    }
-+    parc_fast_seek_landing_ = landing;
-+  }
++  parc_->LandFastSeek(status);
    TRACE_EVENT_END("media", GetTracingTrack(this), "status",
                    PipelineStatusToString(status));
    std::move(seek_cb_).Run(status);
@@ -2413,23 +1660,22 @@
  #include <set>
  #include <string>
  #include <vector>
-@@ -22,6 +23,9 @@
+@@ -22,6 +23,8 @@
  #include "media/base/demuxer.h"
  #include "media/base/demuxer_stream.h"
  #include "media/base/media_tracks.h"
-+#include "media/base/parc_demuxer_extension.h"
 +#include "media/base/parc_demuxer_stream_extension.h"
 +#include "media/base/pipeline_metadata.h"
  #include "media/base/ranges.h"
  #include "media/base/stream_parser.h"
  #include "media/filters/source_buffer_parse_warnings.h"
-@@ -31,12 +35,15 @@
+@@ -31,12 +34,15 @@
 -
 +
  namespace media {
 -
 +
-+class ParcDemuxerHandOff;
++class ParcChunkDemuxer;
 +class ParcStreamHandOff;
  class SourceBufferStream;
 -
@@ -2445,31 +1691,7 @@
    using BufferQueue = base::circular_deque<scoped_refptr<StreamParserBuffer>>;
 -
 +
-@@ -74,6 +81,22 @@
-   void Remove(base::TimeDelta start, base::TimeDelta end,
-               base::TimeDelta duration);
--
-+
-+  base::TimeDelta ParcKeyframeAtOrBefore(base::TimeDelta time) const;
-+  void ParcRemoveBefore(base::TimeDelta end, base::TimeDelta duration);
-+  void ParcRemoveFrom(base::TimeDelta start,
-+                      base::TimeDelta duration,
-+                      base::TimeDelta end = kInfiniteDuration);
-+  void ParcRemove(base::TimeDelta start,
-+                  base::TimeDelta end,
-+                  base::TimeDelta duration);
-+  size_t ParcRemovalSize(base::TimeDelta start,
-+                         base::TimeDelta end,
-+                         base::TimeDelta duration);
-+
-+  void ParcSetSafariMediaSource(bool safari);
-+  void ParcSetMediaSourceBuffered(base::TimeDelta start,
-+                                  Ranges<base::TimeDelta> audio);
-+
-   // If the buffer is full, attempts to try to free up space, as specified in
-   // the "Coded Frame Eviction Algorithm" in the Media Source Extensions Spec.
-   // Returns false iff buffer is still full after running eviction.
-@@ -135,8 +158,20 @@
+@@ -135,8 +141,12 @@
    AudioDecoderConfig audio_decoder_config() override;
    VideoDecoderConfig video_decoder_config() override;
    bool SupportsConfigChanges() override;
@@ -2480,19 +1702,11 @@
 +
 +  bool ParcIsEnabled() const override;
 +  DemuxerStream* ParcHandOffSource() override;
-+
-+  void ParcStartAt(base::TimeDelta time);
-+
-+  DemuxerStream* ParcHandOffReader();
-+  std::optional<base::TimeDelta> ParcSplitAt(base::TimeDelta time,
-+                                             bool unread,
-+                                             bool* reader_there = nullptr);
-+  void ParcEndHandOff();
    void SetEnabled(bool enabled, base::TimeDelta timestamp);
 -
 +
    // Sets the memory limit, in bytes, on the SourceBufferStream.
-@@ -174,7 +209,10 @@
+@@ -174,7 +184,10 @@
    void CompletePendingReadIfPossible_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 -
 +
@@ -2500,13 +1714,13 @@
 -  GetPendingBuffers_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 +  GetPendingBuffers_Locked(uint32_t count) EXCLUSIVE_LOCKS_REQUIRED(lock_);
 +
++  friend class ParcChunkDemuxer;
 +  friend class ParcStreamHandOff;
-+  void ParcRestartHandOffAfterSeek_Locked() EXCLUSIVE_LOCKS_REQUIRED(lock_);
 -
 +
    // Specifies the type of the stream.
    const Type type_;
-@@ -198,11 +236,15 @@
+@@ -198,6 +211,9 @@
    State state_ GUARDED_BY(lock_);
    ReadCB read_cb_ GUARDED_BY(lock_);
    bool is_enabled_ GUARDED_BY(lock_);
@@ -2517,38 +1731,27 @@
 -
 +
  // Demuxer implementation that allows chunks of media data to be passed
- // from JavaScript to the media stack.
--class MEDIA_EXPORT ChunkDemuxer : public Demuxer {
-+class MEDIA_EXPORT ChunkDemuxer : public Demuxer,
-+                                  public ParcDemuxerExtension {
-  public:
-   enum Status {
-     kOk,              // ID added w/o error.
-@@ -248,6 +290,10 @@
+@@ -248,6 +264,7 @@
    // associated JS method calls.
    void StartWaitingForSeek(base::TimeDelta seek_time) override;
    void CancelPendingSeek(base::TimeDelta seek_time) override;
-+  ParcDemuxerExtension* GetParcExtension() override { return this; }
-+  void ParcSetFastSeek(base::TimeDelta target,
-+                       base::TimeDelta tolerance_before) override;
-+  std::optional<base::TimeDelta> ParcTakeFastSeekLanding() override;
++  ParcDemuxerExtension* GetParcExtension() override;
 -
 +
    // Registers a new `id` to use for AppendToParseBuffer(),
    // RunSegmentParserLoop(), AppendChunks(), etc calls. `content_type` indicates
-@@ -293,6 +339,10 @@
+@@ -293,6 +310,9 @@
    // Removed an ID & associated resources that were previously added with
    // AddId().
    void RemoveId(const std::string& id);
 +  using ParcSourceKeyCB = base::RepeatingCallback<void(
 +      const std::string&, EmeInitDataType, const std::vector<uint8_t>&)>;
 +  void ParcSetSourceKeyCallback(ParcSourceKeyCB callback);
-+
 -
 +
    // Gets the currently buffered ranges for the specified ID.
    Ranges<base::TimeDelta> GetBufferedRanges(const std::string& id) const;
-@@ -313,6 +363,31 @@
+@@ -313,6 +333,25 @@
    void SetPlaybackRate(double rate) override {}
 -
 +
@@ -2558,12 +1761,6 @@
 +                                   const std::string& codecs)>;
 +  void RestrictCanChangeType(ChangeTypeFilter filter);
 +  void ParcSetClearDolbyVisionAllowed(bool allowed);
-+  bool ParcPrefersFairPlayRenderer() override;
-+  MediaResource* ParcBeginHandOff() override;
-+  void ParcSplitForHandOff(
-+      base::TimeDelta not_before,
-+      base::OnceCallback<void(base::TimeDelta)> split_cb) override;
-+  void ParcEndHandOff() override;
 +  bool ParcMayAddStreams() override;
 +  void ParcSetDolbyVisionAppendedCallback(base::RepeatingClosure callback);
 +  void ParcSetSafariMediaSource(bool safari);
@@ -2582,7 +1779,7 @@
 +
    // Appends media data to the source buffer's stream parser associated with
    // `id`. No parsing is done, just buffering the media data for future parsing
-@@ -379,6 +454,21 @@
+@@ -379,6 +418,19 @@
    void Remove(const std::string& id, base::TimeDelta start,
                base::TimeDelta end);
 -
@@ -2590,10 +1787,8 @@
 +  void ParcPurgeForMemoryPressure(const std::string& id,
 +                                  base::TimeDelta media_time,
 +                                  bool active);
-+
 +  void ParcUpdateEvictionData(const std::string& id,
 +                              base::TimeDelta media_time);
-+
 +  struct ParcBufferedState {
 +    Ranges<base::TimeDelta> buffered;
 +    Ranges<base::TimeDelta> audio;
@@ -2605,85 +1800,29 @@
    // Returns whether or not the source buffer associated with |id| can change
    // its parser type to one which parses |content_type| and |codecs|.
    // |content_type| indicates the ContentType of the MIME type for the data that
-@@ -491,6 +581,11 @@
-   // SourceBufferState callbacks.
-   void OnSourceInitDone(const std::string& source_id,
-                         const StreamParser::InitParameters& params);
-+  void ParcOnLateSourceInitDone_Locked(
-+      const std::string& source_id,
-+      const StreamParser::InitParameters& params);
-+  bool ParcCanAddIdAfterInit_Locked() const;
-+  bool ParcAwaitsLateInit_Locked(const std::string& id) const;
--
-+
-   // Creates a DemuxerStream of the specified |type| for the SourceBufferState
-   // with the given |source_id|.
-@@ -550,6 +645,7 @@
-   raw_ptr<DemuxerHost, DanglingUntriaged> host_ = nullptr;
-   base::OnceClosure open_cb_;
-   const base::RepeatingClosure progress_cb_;
-+  ParcSourceKeyCB parc_source_key_cb_;
-   EncryptedMediaInitDataCB encrypted_media_init_data_cb_;
--
-+
-   // MediaLog for reporting messages and properties to debug content and engine.
-@@ -597,6 +693,44 @@
+@@ -597,6 +649,11 @@
        track_id_to_demux_stream_map_;
 -
 +
    bool supports_change_type_ = true;
-+  ChangeTypeFilter change_type_filter_;
-+  bool parc_clear_dolby_vision_allowed_ = false;
-+  bool parc_dolby_vision_appended_ = false;
-+  base::RepeatingClosure parc_dolby_vision_appended_cb_;
-+  bool parc_safari_init_segment_rules_ = false;
++  friend class ParcChunkDemuxer;
 +  std::unique_ptr<StreamParser> ParcCreateParser_Locked(
 +      const std::string& content_type,
 +      const std::string& codecs);
-+  static std::optional<StreamParserFactory::ParcSafariType>
-+  ParcSafariMediaSourceType(const std::string& content_type,
-+                            const std::string& codecs);
-+  void ParcOnDolbyVisionAppended();
-+  bool parc_safari_eviction_ = false;
-+  void ParcMediaSourceRanges_Locked(Ranges<base::TimeDelta>* buffered,
-+                                    Ranges<base::TimeDelta>* audio) const;
-+  void ParcComputeEvictionData_Locked(SourceBufferState* state,
-+                                      base::TimeDelta media_time);
-+  ParcStreamsAddedCB parc_streams_added_cb_;
-+  bool parc_returning_data_ = false;
-+  base::TimeDelta parc_seek_time_;
-+  std::set<MediaTrack::Id> parc_unstarted_tracks_;
-+  std::optional<std::set<MediaTrack::Id>> parc_audio_tracks_to_enable_;
-+
-+  bool parc_safari_media_source_ = false;
-+  std::unique_ptr<ParcDemuxerHandOff> parc_demuxer_hand_off_;
-+  void ParcContinueSplit_Locked();
-+  void ParcShareMediaSourceBuffered_Locked(bool seek_was_waiting);
-+
-+  base::TimeDelta ParcFastSeekLanding_Locked(
-+      base::TimeDelta target,
-+      base::TimeDelta tolerance_before) const;
-+  struct ParcFastSeek {
-+    base::TimeDelta target;
-+    base::TimeDelta tolerance_before;
-+  };
-+  std::optional<ParcFastSeek> parc_requested_fast_seek_;
-+  std::optional<ParcFastSeek> parc_fast_seek_;
-+  std::optional<base::TimeDelta> parc_fast_seek_landing_;
++  std::unique_ptr<ParcChunkDemuxer> parc_;
  };
 -
 +
  }  // namespace media
 --- a/media/filters/demuxer_manager.cc
 +++ b/media/filters/demuxer_manager.cc
-@@ -16,10 +16,13 @@
+@@ -16,10 +16,12 @@
  #include "media/base/cross_origin_data_source.h"
  #include "media/base/data_source.h"
  #include "media/base/media_switches.h"
-+#include "media/base/parc_demuxer_extension.h"
++#include "media/base/parc_native_hls_source.h"
  #include "media/filters/chunk_demuxer.h"
  #include "media/filters/ffmpeg_demuxer.h"
-+#include "net/base/data_url.h"
  #include "net/storage_access_api/status.h"
  #include "url/gurl.h"
 +#include "url/url_constants.h"
@@ -2691,35 +1830,7 @@
 +
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
  #include "base/time/time.h"
-@@ -232,6 +235,26 @@
-   demuxer_->DisableCanChangeType();
- }
--
-+
-+void DemuxerManager::RestrictDemuxerCanChangeType(
-+    ChunkDemuxer::ChangeTypeFilter filter) {
-+  if (demuxer_->GetDemuxerType() == DemuxerType::kChunkDemuxer) {
-+    static_cast<ChunkDemuxer*>(demuxer_.get())
-+        ->RestrictCanChangeType(std::move(filter));
-+  }
-+}
-+
-+void DemuxerManager::ParcSetDemuxerClearDolbyVisionAllowed(bool allowed) {
-+  if (demuxer_ && demuxer_->GetDemuxerType() == DemuxerType::kChunkDemuxer) {
-+    static_cast<ChunkDemuxer*>(demuxer_.get())
-+        ->ParcSetClearDolbyVisionAllowed(allowed);
-+  }
-+}
-+
-+bool DemuxerManager::ParcDemuxerPrefersFairPlayRenderer() {
-+  return demuxer_ &&
-+         media::ParcDemuxerPrefersFairPlayRenderer(demuxer_.get());
-+}
-+
- PipelineStatus DemuxerManager::CreateDemuxer(
-     bool load_media_source,
-     DataSource::Preload preload,
-@@ -241,6 +264,9 @@
+@@ -241,6 +243,9 @@
    if (!client_) {
      return DEMUXER_ERROR_COULD_NOT_OPEN;
    }
@@ -2730,7 +1841,7 @@
 +
    // We can only do a universal suspend for posters, unless the flag is enabled.
    auto suspended_mode = Pipeline::StartType::kSuspendAfterMetadataForAudioOnly;
-@@ -249,12 +275,41 @@
+@@ -249,12 +254,41 @@
    }
 -
 +
@@ -2776,7 +1887,7 @@
               /*is_static=*/false);
    }
  #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
-@@ -315,6 +370,12 @@
+@@ -315,6 +349,12 @@
    if (data_source_) {
      data_source_->SetPreload(preload);
    }
@@ -2790,95 +1901,17 @@
 -
 +
  void DemuxerManager::StopAndResetClient() {
-@@ -384,6 +445,113 @@
+@@ -384,6 +424,35 @@
    return false;
  }
 -
 +
-+std::optional<parc::fairplay::NativeHlsSource::Timeline>
-+DemuxerManager::GetParcNativeTimeline() const {
 +#if BUILDFLAG(IS_MAC)
-+  if (demuxer_ && demuxer_->GetParcNativeHlsSource()) {
-+    return demuxer_->GetParcNativeHlsSource()->GetTimeline();
-+  }
-+#endif
-+  return std::nullopt;
-+}
-+
-+void DemuxerManager::ParcSetFastSeek(base::TimeDelta target,
-+                                     base::TimeDelta tolerance_before) {
-+  if (demuxer_) {
-+    ParcSetDemuxerFastSeek(demuxer_.get(), target, tolerance_before);
-+  }
-+}
-+
-+#if BUILDFLAG(IS_MAC)
-+void DemuxerManager::ParcProvideClearKey(std::string key_id,
-+                                         std::vector<uint8_t> key) {
-+  if (!demuxer_ || !demuxer_->GetParcNativeHlsSource()) {
-+    return;
-+  }
-+  media_task_runner_->PostTask(
-+      FROM_HERE,
-+      base::BindOnce(&parc::fairplay::NativeHlsSource::ProvideClearKey,
-+                     base::Unretained(demuxer_->GetParcNativeHlsSource()),
-+                     std::move(key_id), std::move(key)));
-+}
-+
-+void DemuxerManager::ParcSetPlaybackTarget(std::string output_context_id,
-+                                           bool should_play) {
-+  if (!demuxer_ || !demuxer_->GetParcNativeHlsSource()) {
-+    return;
-+  }
-+  media_task_runner_->PostTask(
-+      FROM_HERE,
-+      base::BindOnce(&parc::fairplay::NativeHlsSource::SetPlaybackTarget,
-+                     base::Unretained(demuxer_->GetParcNativeHlsSource()),
-+                     std::move(output_context_id), should_play));
-+}
-+
-+void DemuxerManager::ParcSetWirelessVideoPlaybackDisabled(bool disabled) {
-+  if (!demuxer_ || !demuxer_->GetParcNativeHlsSource()) {
-+    return;
-+  }
-+  media_task_runner_->PostTask(
-+      FROM_HERE,
-+      base::BindOnce(
-+          &parc::fairplay::NativeHlsSource::SetWirelessVideoPlaybackDisabled,
-+          base::Unretained(demuxer_->GetParcNativeHlsSource()), disabled));
-+}
-+
-+void DemuxerManager::ParcSelectFileTracks(
-+    parc::fairplay::NativeHlsSource::FileTracks tracks) {
-+  if (!demuxer_ || !demuxer_->GetParcNativeHlsSource()) {
-+    return;
-+  }
-+  media_task_runner_->PostTask(
-+      FROM_HERE,
-+      base::BindOnce(&parc::fairplay::NativeHlsSource::SelectFileTracks,
-+                     base::Unretained(demuxer_->GetParcNativeHlsSource()),
-+                     std::move(tracks)));
-+}
-+
 +std::string DemuxerManager::ParcNativeHlsDataUrlMimeType() const {
 +#if BUILDFLAG(ENABLE_HLS_DEMUXER)
-+  std::string mime_type;
-+  std::string charset;
-+  if (!loaded_url_.SchemeIs(url::kDataScheme) || !client_ ||
-+      !client_->PresentsParcSafariIdentity() ||
-+      !net::DataURL::Parse(loaded_url_, &mime_type, &charset,
-+                           /*data=*/nullptr)) {
-+    return std::string();
-+  }
-+  std::string_view type = base::TrimWhitespaceASCII(
-+      std::string_view(mime_type).substr(0, mime_type.find(';')),
-+      base::TRIM_ALL);
-+  for (std::string_view hls :
-+       {"application/vnd.apple.mpegurl", "application/x-mpegurl",
-+        "audio/mpegurl", "audio/x-mpegurl"}) {
-+    if (type == hls) {
-+      return std::string(type);
-+    }
++  if (loaded_url_.SchemeIs(url::kDataScheme) && client_ &&
++      client_->PresentsParcSafariIdentity()) {
++    return ParcHlsDataUrlMimeType(loaded_url_);
 +  }
 +#endif
 +  return std::string();
@@ -2905,7 +1938,7 @@
  bool DemuxerManager::IsManifestDemuxerURL() const {
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    return loaded_url_.path().ends_with(".m3u8");
-@@ -408,7 +576,7 @@
+@@ -408,7 +477,7 @@
 -
 +
  std::unique_ptr<Demuxer> DemuxerManager::CreateFFmpegDemuxer() {
@@ -2915,7 +1948,7 @@
        media_task_runner_, data_source_.get(),
        base::BindPostTaskToCurrentDefault(
            base::BindRepeating(&DemuxerManager::OnEncryptedMediaInitData,
-@@ -417,6 +585,8 @@
+@@ -417,6 +486,8 @@
            base::BindRepeating(&DemuxerManager::OnFFmpegMediaTracksUpdated,
                                weak_factory_.GetWeakPtr())),
        media_log_.get(), IsLocalFile(loaded_url_));
@@ -2925,12 +1958,25 @@
 -
 +
  void DemuxerManager::OnFFmpegMediaTracksUpdated(
-@@ -474,6 +644,111 @@
+@@ -474,6 +545,57 @@
            std::move(engine), media_log_.get()));
  }
 -
 +
 +#if BUILDFLAG(IS_MAC)
++template <typename C, typename... Args>
++base::RepeatingCallback<void(Args...)> DemuxerManager::ParcBindToClient(
++    void (C::*method)(Args...)) {
++  return base::BindPostTaskToCurrentDefault(base::BindRepeating(
++      [](base::WeakPtr<DemuxerManager> manager, void (C::*method)(Args...),
++         Args... args) {
++        if (manager && manager->client_) {
++          (manager->client_.get()->*method)(std::forward<Args>(args)...);
++        }
++      },
++      weak_factory_.GetWeakPtr(), method));
++}
++
 +std::unique_ptr<Demuxer> DemuxerManager::MaybeCreateParcNativeHlsDemuxer() {
 +  if (!client_->PresentsParcSafariIdentity()) {
 +    return nullptr;
@@ -2951,88 +1997,21 @@
 +          &DemuxerManager::OnEncryptedMediaInitData,
 +          weak_factory_.GetWeakPtr()));
 +  params.inband_tracks = std::make_unique<ParcInbandTrackForwarder>(
-+      BindPostTaskToCurrentDefault(
-+          base::BindRepeating(&DemuxerManager::ParcSetInbandTextTracks,
-+                              weak_factory_.GetWeakPtr())),
-+      BindPostTaskToCurrentDefault(base::BindRepeating(
-+          &DemuxerManager::ParcAddInbandTextCues, weak_factory_.GetWeakPtr())),
-+      BindPostTaskToCurrentDefault(base::BindRepeating(
-+          &DemuxerManager::ParcAddInbandDataCues, weak_factory_.GetWeakPtr())),
-+      BindPostTaskToCurrentDefault(
-+          base::BindRepeating(&DemuxerManager::ParcSetInbandAudioTracks,
-+                              weak_factory_.GetWeakPtr())));
-+  params.key_request_cb = base::BindPostTaskToCurrentDefault(
-+      base::BindRepeating(&DemuxerManager::OnParcWebKitKeyRequest,
-+                          weak_factory_.GetWeakPtr()));
-+  params.ready_state_cb = base::BindPostTaskToCurrentDefault(
-+      base::BindRepeating(&DemuxerManager::OnParcNativeHlsReadyState,
-+                          weak_factory_.GetWeakPtr()));
-+  params.media_types_cb = base::BindPostTaskToCurrentDefault(
-+      base::BindRepeating(&DemuxerManager::OnParcNativeHlsMediaTypes,
-+                          weak_factory_.GetWeakPtr()));
-+  params.time_jumped_cb = base::BindPostTaskToCurrentDefault(
-+      base::BindRepeating(&DemuxerManager::OnParcNativeHlsTimeJumped,
-+                          weak_factory_.GetWeakPtr()));
-+  params.wireless_cb = base::BindPostTaskToCurrentDefault(
-+      base::BindRepeating(&DemuxerManager::OnParcNativeHlsWireless,
-+                          weak_factory_.GetWeakPtr()));
++      ParcBindToClient(&ParcInbandTrackSink::ParcSetInbandTextTracks),
++      ParcBindToClient(&ParcInbandTrackSink::ParcAddInbandTextCues),
++      ParcBindToClient(&ParcInbandTrackSink::ParcAddInbandDataCues),
++      ParcBindToClient(&ParcInbandTrackSink::ParcSetInbandAudioTracks));
++  params.key_request_cb = ParcBindToClient(&Client::ParcWebKitKeyRequest);
++  params.ready_state_cb =
++      ParcBindToClient(&Client::ParcNativeHlsReadyStateChanged);
++  params.media_types_cb =
++      ParcBindToClient(&Client::ParcNativeHlsMediaTypesChanged);
++  params.time_jumped_cb = ParcBindToClient(&Client::ParcNativeHlsTimeJumped);
++  params.wireless_cb =
++      ParcBindToClient(&Client::ParcNativeHlsPlaybackTargetIsWirelessChanged);
 +  return client_->CreateParcNativeHlsDemuxer(std::move(params));
 +}
 +
-+void DemuxerManager::OnParcWebKitKeyRequest(const std::string& key_uri) {
-+  if (client_) {
-+    client_->ParcWebKitKeyRequest(key_uri);
-+  }
-+}
-+
-+void DemuxerManager::OnParcNativeHlsReadyState(ParcNativeHlsReadyState state) {
-+  if (client_) {
-+    client_->ParcNativeHlsReadyStateChanged(state);
-+  }
-+}
-+
-+void DemuxerManager::OnParcNativeHlsMediaTypes(bool has_audio,
-+                                               bool has_video) {
-+  if (client_) {
-+    client_->ParcNativeHlsMediaTypesChanged(has_audio, has_video);
-+  }
-+}
-+
-+void DemuxerManager::OnParcNativeHlsTimeJumped() {
-+  if (client_) {
-+    client_->ParcNativeHlsTimeJumped();
-+  }
-+}
-+
-+void DemuxerManager::OnParcNativeHlsWireless(bool wireless) {
-+  if (client_) {
-+    client_->ParcNativeHlsPlaybackTargetIsWirelessChanged(wireless);
-+  }
-+}
-+
-+void DemuxerManager::ParcSetInbandTextTracks(
-+    const std::vector<ParcInbandTextTrack>& tracks,
-+    ParcInbandTextTrackModeCB set_mode) {
-+  client_->ParcSetInbandTextTracks(tracks, std::move(set_mode));
-+}
-+
-+void DemuxerManager::ParcAddInbandTextCues(
-+    const std::string& key,
-+    const std::vector<ParcInbandTextCue>& cues) {
-+  client_->ParcAddInbandTextCues(key, cues);
-+}
-+
-+void DemuxerManager::ParcAddInbandDataCues(
-+    const std::string& key,
-+    const std::vector<ParcInbandDataCue>& cues) {
-+  client_->ParcAddInbandDataCues(key, cues);
-+}
-+
-+void DemuxerManager::ParcSetInbandAudioTracks(
-+    const std::vector<ParcInbandAudioTrack>& tracks,
-+    ParcInbandAudioTrackEnabledCB set_enabled) {
-+  client_->ParcSetInbandAudioTracks(tracks, std::move(set_enabled));
-+}
 +#endif
 +
  void DemuxerManager::AddTrack(const MediaTrack& track) {
@@ -3040,17 +2019,16 @@
  }
 --- a/media/filters/demuxer_manager.h
 +++ b/media/filters/demuxer_manager.h
-@@ -17,6 +17,9 @@
+@@ -17,6 +17,8 @@
  #include "media/base/eme_constants.h"
  #include "media/base/media_export.h"
  #include "media/base/media_log.h"
 +#include "media/base/parc_inband_tracks.h"
 +#include "media/base/parc_native_hls_demuxer_params.h"
-+#include "media/base/parc_native_hls_source.h"
  #include "media/base/pipeline.h"
  #include "media/base/pipeline_status.h"
  #include "media/filters/chunk_demuxer.h"
-@@ -42,7 +45,7 @@
+@@ -42,7 +44,7 @@
  // to managing playback state.
  class MEDIA_EXPORT DemuxerManager {
   public:
@@ -3059,7 +2037,7 @@
     public:
      virtual void OnEncryptedMediaInitData(
          EmeInitDataType init_data_type,
-@@ -81,6 +84,22 @@
+@@ -81,6 +83,22 @@
 -
 +
      // Allows a seek triggered by a demuxer (mainly used for live content)
@@ -3084,13 +2062,11 @@
 -
 +
    // Demuxer, StartType, IsStreaming, IsStatic
-@@ -111,6 +130,12 @@
+@@ -111,6 +129,10 @@
    std::optional<container_names::MediaContainerName> GetContainerForMetrics();
    void RespondToDemuxerMemoryUsageReport(base::OnceCallback<void(int64_t)> cb);
    void DisableDemuxerCanChangeType();
-+  void RestrictDemuxerCanChangeType(ChunkDemuxer::ChangeTypeFilter filter);
-+  void ParcSetDemuxerClearDolbyVisionAllowed(bool allowed);
-+  bool ParcDemuxerPrefersFairPlayRenderer();
++  Demuxer* ParcDemuxer() const { return demuxer_.get(); }
 +#if BUILDFLAG(IS_MAC)
 +  bool HasParcNativeHlsDemuxer() const { return parc_native_hls_demuxer_; }
 +#endif
@@ -3098,18 +2074,11 @@
 +
    // Returns a forwarded error/success from |on_demuxer_created|, or an error
    // if a demuxer couldn't be created.
-@@ -140,6 +165,18 @@
+@@ -140,6 +162,11 @@
    bool DataSourceFullyBuffered() const;
    bool IsStreaming() const;
    bool IsLiveContent() const;
-+  std::optional<parc::fairplay::NativeHlsSource::Timeline>
-+  GetParcNativeTimeline() const;
-+  void ParcSetFastSeek(base::TimeDelta target, base::TimeDelta tolerance_before);
 +#if BUILDFLAG(IS_MAC)
-+  void ParcProvideClearKey(std::string key_id, std::vector<uint8_t> key);
-+  void ParcSetPlaybackTarget(std::string output_context_id, bool should_play);
-+  void ParcSetWirelessVideoPlaybackDisabled(bool disabled);
-+  void ParcSelectFileTracks(parc::fairplay::NativeHlsSource::FileTracks tracks);
 +  std::string ParcNativeHlsDataUrlMimeType() const;
 +  void ParcSetNativeRoute(std::optional<std::string> mime_type,
 +                          base::OnceClosure done);
@@ -3118,31 +2087,21 @@
 -
 +
   private:
-@@ -154,6 +191,22 @@
+@@ -154,6 +181,12 @@
  #if BUILDFLAG(ENABLE_HLS_DEMUXER)
    std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
    CreateHlsDemuxer();
 +#if BUILDFLAG(IS_MAC)
 +  std::unique_ptr<Demuxer> MaybeCreateParcNativeHlsDemuxer();
-+  void OnParcWebKitKeyRequest(const std::string& key_uri);
-+  void OnParcNativeHlsReadyState(ParcNativeHlsReadyState state);
-+  void OnParcNativeHlsMediaTypes(bool has_audio, bool has_video);
-+  void OnParcNativeHlsTimeJumped();
-+  void OnParcNativeHlsWireless(bool wireless);
-+  void ParcSetInbandTextTracks(const std::vector<ParcInbandTextTrack>& tracks,
-+                               ParcInbandTextTrackModeCB set_mode);
-+  void ParcAddInbandTextCues(const std::string& key,
-+                             const std::vector<ParcInbandTextCue>& cues);
-+  void ParcAddInbandDataCues(const std::string& key,
-+                             const std::vector<ParcInbandDataCue>& cues);
-+  void ParcSetInbandAudioTracks(const std::vector<ParcInbandAudioTrack>& tracks,
-+                                ParcInbandAudioTrackEnabledCB set_enabled);
++  template <typename C, typename... Args>
++  base::RepeatingCallback<void(Args...)> ParcBindToClient(
++      void (C::*method)(Args...));
 +#endif
 -
 +
    void AddTrack(const MediaTrack&);
    void RemoveTrack(const MediaTrack&);
-@@ -207,6 +260,11 @@
+@@ -207,6 +240,11 @@
    // which becomes the default demuxer to use.
    std::unique_ptr<Demuxer> demuxer_override_;
 -
@@ -3157,7 +2116,15 @@
  #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
 --- a/media/formats/mp4/box_definitions.cc
 +++ b/media/formats/mp4/box_definitions.cc
-@@ -85,6 +85,10 @@
+@@ -26,6 +26,7 @@
+ #include "media/formats/common/opus_constants.h"
+ #include "media/formats/mp4/box_constants.h"
+ #include "media/formats/mp4/es_descriptor.h"
++#include "media/formats/mp4/parc_box_definitions.h"
+ #include "media/formats/mp4/rcheck.h"
+ #include "media/media_buildflags.h"
+ #include "ui/gfx/hdr_metadata.h"
+@@ -85,6 +86,10 @@
                                       dovi_config->dv_level};
    DolbyVisionInfo dv_info;
    dv_info.codec_info = dv_codec_info;
@@ -3169,7 +2136,7 @@
        dovi_config->codec_profile, dovi_config->dv_bl_signal_compatibility_id);
 -
 +
-@@ -459,6 +463,9 @@
+@@ -459,6 +464,9 @@
  FourCC ProtectionSchemeInfo::BoxType() const { return FOURCC_SINF; }
 -
 +
@@ -3180,25 +2147,22 @@
    RCHECK(reader->ScanChildren() &&
           reader->ReadChild(&format) &&
           reader->ReadChild(&type));
-@@ -1410,6 +1417,17 @@
+@@ -1410,6 +1418,14 @@
        break;
      }
  #endif  // BUILDFLAG(ENABLE_AV1_DECODER)
 +#if BUILDFLAG(USE_PROPRIETARY_CODECS)
 +    case FOURCC_S263: {
-+      H263SpecificBox d263;
-+      RCHECK_MEDIA_LOGGED(reader->ReadChild(&d263), reader->media_log(),
-+                          "Failure parsing H263SpecificBox (d263)");
-+      video_info.codec = VideoCodec::kH263;
-+      video_info.level = d263.level;
-+      frame_bitstream_converter = nullptr;
++      if (!ParcReadH263SampleEntry(reader, this)) {
++        return false;
++      }
 +      break;
 +    }
 +#endif
      default:
        // Unknown/unsupported format
        MEDIA_LOG(ERROR, reader->media_log())
-@@ -1458,7 +1476,8 @@
+@@ -1458,7 +1474,8 @@
      video_spatial_format.projection_type = sv3d.projection.type;
    }
 -
@@ -3209,32 +2173,13 @@
      MEDIA_LOG(ERROR, reader->media_log()) << "Unrecognized video codec profile";
      return false;
    }
-@@ -1927,6 +1946,29 @@
+@@ -1927,6 +1944,10 @@
      }
    }
 -
 +
-+  const FourCC original_format =
-+      format == FOURCC_ENCA ? sinf.format.format : format;
-+  if (original_format == FOURCC_IPCM || original_format == FOURCC_FPCM) {
-+    RCHECK(channelcount > 0);
-+    RCHECK(reader->ReadChild(&pcm));
-+    RCHECK(original_format == FOURCC_IPCM
-+               ? (pcm.sample_size == 16 || pcm.sample_size == 24 ||
-+                  pcm.sample_size == 32)
-+               : (pcm.sample_size == 32 || pcm.sample_size == 64));
-+  }
-+
-+  if (original_format == FOURCC_SAMR || original_format == FOURCC_SAWB) {
-+    AMRSpecificBox damr;
-+    RCHECK_MEDIA_LOGGED(reader->ReadChild(&damr), reader->media_log(),
-+                        "Failure parsing AMRSpecificBox (damr)");
-+  }
-+
-+  if (format == FOURCC_ALAC ||
-+      (format == FOURCC_ENCA && sinf.format.format == FOURCC_ALAC)) {
-+    RCHECK_MEDIA_LOGGED(reader->ReadChild(&alac), reader->media_log(),
-+                        "Failure parsing ALACSpecificBox (alac)");
++  if (!ParcReadAudioSampleEntryBoxes(reader, this)) {
++    return false;
 +  }
 +
    if (format == FOURCC_OPUS ||
@@ -3261,7 +2206,7 @@
 -
 +
  struct MEDIA_EXPORT Stereoscopic3DVideo : Box {
-@@ -439,6 +442,31 @@
+@@ -439,6 +442,21 @@
    uint8_t bits_per_sample;
  };
 -
@@ -3281,20 +2226,10 @@
 +  uint32_t sample_rate = 0;
 +};
 +
-+struct MEDIA_EXPORT AMRSpecificBox : Box {
-+  DECLARE_BOX_METHODS(AMRSpecificBox);
-+};
-+
-+struct MEDIA_EXPORT H263SpecificBox : Box {
-+  DECLARE_BOX_METHODS(H263SpecificBox);
-+
-+  uint8_t level = 0;
-+};
-+
  struct MEDIA_EXPORT OpusSpecificBox : Box {
    DECLARE_BOX_METHODS(OpusSpecificBox);
    std::vector<uint8_t> extradata;
-@@ -509,6 +537,8 @@
+@@ -509,6 +527,8 @@
    ElementaryStreamDescriptor esds;
    FlacSpecificBox dfla;
    OpusSpecificBox dops;
@@ -3305,47 +2240,16 @@
    DtsUhdSpecificBox udts;
 --- a/media/formats/mp4/mp4_stream_parser.cc
 +++ b/media/formats/mp4/mp4_stream_parser.cc
-@@ -12,6 +12,7 @@
- #include <utility>
- #include <vector>
--
-+
-+#include "base/base64.h"
- #include "base/containers/to_vector.h"
- #include "base/functional/callback_helpers.h"
- #include "base/logging.h"
-@@ -41,6 +42,10 @@
+@@ -38,6 +38,7 @@
+ #include "media/formats/mp4/box_reader.h"
+ #include "media/formats/mp4/es_descriptor.h"
+ #include "media/formats/mp4/rcheck.h"
++#include "media/formats/mp4/parc_mp4_stream_parser.h"
  #include "media/formats/mp4/stream_parser_metadata_track.h"
  #include "media/formats/mpeg/adts_constants.h"
 -
 +
-+#if BUILDFLAG(USE_PROPRIETARY_CODECS)
-+#include "media/formats/mp4/dolby_vision.h"
-+#endif
-+
- namespace media::mp4 {
--
-+
- namespace {
-@@ -52,6 +57,16 @@
--
-+
- // Caller should be prepared to handle return of EncryptionScheme::kUnencrypted
- // in case of unsupported scheme.
-+void AddSinfInitData(const ProtectionSchemeInfo& sinf,
-+                     std::vector<std::vector<uint8_t>>* init_data) {
-+  if (sinf.raw_payload.empty()) {
-+    return;
-+  }
-+  const std::string json =
-+      "{\"sinf\":[\"" + base::Base64Encode(sinf.raw_payload) + "\"]}";
-+  init_data->emplace_back(json.begin(), json.end());
-+}
-+
- EncryptionScheme GetEncryptionScheme(const ProtectionSchemeInfo& sinf) {
-   if (!sinf.HasSupportedScheme())
-     return EncryptionScheme::kUnencrypted;
-@@ -173,6 +188,10 @@
+@@ -173,6 +174,10 @@
 -
 +
  MP4StreamParser::~MP4StreamParser() = default;
@@ -3358,7 +2262,7 @@
  void MP4StreamParser::Init(
      InitCB init_cb,
      NewConfigCB config_cb,
-@@ -455,6 +474,7 @@
+@@ -455,6 +460,7 @@
    int detected_audio_track_count = 0;
    int detected_video_track_count = 0;
    int detected_metadata_track_count = 0;
@@ -3367,7 +2271,7 @@
 +
    for (std::vector<Track>::const_iterator track = moov_->tracks.begin();
         track != moov_->tracks.end(); ++track) {
-@@ -497,8 +517,23 @@
+@@ -497,8 +503,23 @@
        FourCC audio_format = (entry.format == FOURCC_ENCA)
                                  ? entry.sinf.format.format
                                  : entry.format;
@@ -3378,7 +2282,7 @@
 +      }
 +#endif
 +      if (entry.format == FOURCC_ENCA) {
-+        AddSinfInitData(entry.sinf, &sinf_init_data);
++        parc_mp4::AddSinfInitData(entry.sinf, &sinf_init_data);
 +      }
 -
 +
@@ -3393,7 +2297,7 @@
  #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
            audio_format != FOURCC_AC3 && audio_format != FOURCC_EAC3 &&
  #endif
-@@ -545,7 +580,7 @@
+@@ -545,7 +566,7 @@
        } else if (audio_format == FOURCC_FLAC) {
          // FLAC-in-ISOBMFF does not use object type indication. |audio_format|
          // is sufficient for identifying FLAC codec.
@@ -3402,36 +2306,18 @@
            MEDIA_LOG(ERROR, media_log_) << "FLAC audio stream detected in MP4, "
                                            "mismatching what is specified in "
                                            "the mimetype.";
-@@ -556,11 +591,37 @@
+@@ -556,11 +577,19 @@
          channel_layout_config = ChannelLayoutConfig::Guess(entry.channelcount);
          sample_per_second = entry.samplerate;
          extra_data = entry.dfla.stream_info;
-+      } else if (audio_format == FOURCC_IPCM || audio_format == FOURCC_FPCM) {
-+        if (!parc_ignore_declared_codecs_)
-+          return false;
-+        if (entry.format == FOURCC_ENCA &&
-+            (!(entry.pcm.format_flags & 1) || entry.pcm.sample_size == 64))
-+          return false;
-+        codec = AudioCodec::kPCM;
-+        channel_layout_config = ChannelLayoutConfig::Guess(entry.channelcount);
-+        sample_per_second = entry.samplerate;
-+      } else if (parc_amr) {
-+        codec = audio_format == FOURCC_SAMR ? AudioCodec::kAMR_NB
-+                                            : AudioCodec::kAMR_WB;
-+        channel_layout_config = ChannelLayoutConfig::Mono();
-+        sample_per_second = audio_format == FOURCC_SAMR ? 8000 : 16000;
-+      } else if (audio_format == FOURCC_ALAC) {
-+        if (!parc_has_alac_ && !parc_ignore_declared_codecs_) {
-+          MEDIA_LOG(ERROR, media_log_) << "ALAC audio stream detected in MP4, "
-+                                          "mismatching what is specified in "
-+                                          "the mimetype.";
++      } else if (audio_format == FOURCC_IPCM || audio_format == FOURCC_FPCM ||
++                 parc_amr || audio_format == FOURCC_ALAC) {
++        if (!parc_mp4::AudioEntryConfig(
++                audio_format, entry, parc_amr, parc_ignore_declared_codecs_,
++                parc_has_alac_, media_log_.get(), &codec,
++                &channel_layout_config, &sample_per_second, &extra_data)) {
 +          return false;
 +        }
-+        codec = AudioCodec::kALAC;
-+        channel_layout_config =
-+            ChannelLayoutConfig::Guess(entry.alac.channel_count);
-+        sample_per_second = entry.alac.sample_rate;
-+        extra_data = entry.alac.config;
  #if BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)
        } else if (audio_format == FOURCC_IAMF) {
          // ISOBMFF IAMF streams do not use object type indication.
@@ -3441,7 +2327,7 @@
            MEDIA_LOG(ERROR, media_log_) << "IAMF audio stream detected in MP4, "
                                            "mismatching what is specified in "
                                            "the mimetype.";
-@@ -618,7 +679,8 @@
+@@ -618,7 +647,8 @@
          }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO)
          DVLOG(1) << "audio_type 0x" << std::hex << static_cast<int>(audio_type);
@@ -3451,29 +2337,20 @@
            if (!strict_audio_object_types_->contains(audio_type)) {
              MEDIA_LOG(ERROR, media_log_)
                  << "audio object type 0x" << std::hex
-@@ -703,7 +765,19 @@
+@@ -703,7 +733,10 @@
        }
 -
 +
        SampleFormat sample_format;
 -      if (entry.samplesize == 8) {
-+      if (audio_format == FOURCC_FPCM) {
-+        sample_format = kSampleFormatF32;
-+      } else if (audio_format == FOURCC_IPCM) {
-+        sample_format = entry.pcm.sample_size == 16 ? kSampleFormatS16
-+                        : entry.pcm.sample_size == 24 ? kSampleFormatS24
-+                                                     : kSampleFormatS32;
-+      } else if (parc_amr) {
-+        sample_format = kSampleFormatS16;
-+      } else if (codec == AudioCodec::kALAC) {
-+        sample_format = entry.alac.bit_depth == 16   ? kSampleFormatS16
-+                        : entry.alac.bit_depth == 32 ? kSampleFormatS32
-+                                                     : kSampleFormatS24;
++      if (auto parc_format = parc_mp4::AudioSampleFormat(audio_format, codec,
++                                                         parc_amr, entry)) {
++        sample_format = *parc_format;
 +      } else if (entry.samplesize == 8) {
          sample_format = kSampleFormatU8;
        } else if (entry.samplesize == 16) {
          sample_format = kSampleFormatS16;
-@@ -768,12 +842,17 @@
+@@ -768,12 +801,17 @@
          desc_idx = 0;
        const VideoSampleEntry& entry = samp_descr.video_entries[desc_idx];
 -
@@ -3488,32 +2365,20 @@
          return false;
        }
 +      if (entry.format == FOURCC_ENCV) {
-+        AddSinfInitData(entry.sinf, &sinf_init_data);
++        parc_mp4::AddSinfInitData(entry.sinf, &sinf_init_data);
 +      }
 -
 +
        // TODO(strobe): Recover correct crop box
        gfx::Size coded_size(entry.width, entry.height);
-@@ -803,9 +882,28 @@
+@@ -803,9 +841,16 @@
        VideoCodec video_codec = entry.video_info.codec;
        VideoCodecProfile video_codec_profile = entry.video_info.profile;
        VideoCodecLevel video_codec_level = entry.video_info.level;
 -      if (entry.dv_info.has_value()) {
-+      bool parc_base_layer = false;
-+      bool parc_dolby_vision = false;
-+      if (entry.dv_info.has_value() && parc_ignore_declared_codecs_) {
-+        const VideoCodecProfile profile = entry.dv_info->codec_info.profile;
-+        const FourCC video_format =
-+            entry.format == FOURCC_ENCV ? entry.sinf.format.format
-+                                        : entry.format;
-+        const bool decodes_as_dolby_vision =
-+            profile == DOLBYVISION_PROFILE5 ||
-+            profile == DOLBYVISION_PROFILE8 ||
-+            (profile == DOLBYVISION_PROFILE10 && video_format != FOURCC_AV01);
-+        parc_base_layer = entry.dv_info->parc_base_codec_info.has_value() &&
-+                          !decodes_as_dolby_vision;
-+        parc_dolby_vision = decodes_as_dolby_vision;
-+      }
++      const auto [parc_base_layer, parc_dolby_vision] =
++          parc_ignore_declared_codecs_ ? parc_mp4::DolbyVisionLayers(entry)
++                                       : std::pair(false, false);
 +      if (parc_base_layer) {
 +        video_codec = entry.dv_info->parc_base_codec_info->codec;
 +        video_codec_profile = entry.dv_info->parc_base_codec_info->profile;
@@ -3525,16 +2390,13 @@
            video_codec = entry.dv_info->codec_info.codec;
            video_codec_profile = entry.dv_info->codec_info.profile;
            video_codec_level = entry.dv_info->codec_info.level;
-@@ -831,13 +929,28 @@
+@@ -831,13 +876,19 @@
 -
 +
        video_config.set_aspect_ratio(aspect_ratio);
        video_config.set_level(video_codec_level);
 +      video_config.set_parc_dolby_vision_sdr(
-+          parc_dolby_vision && entry.dv_info &&
-+          (entry.dv_info->codec_info.profile == DOLBYVISION_PROFILE8 ||
-+           entry.dv_info->codec_info.profile == DOLBYVISION_PROFILE10) &&
-+          entry.dv_info->parc_compatibility_id == 2);
++          parc_mp4::IsDolbyVisionSdr(entry, parc_dolby_vision));
 -
 +
        if (entry.video_color_space.IsSpecified())
@@ -3546,14 +2408,8 @@
 -        video_config.set_color_space_info(entry.dv_info->color_space);
 +      if (entry.dv_info.has_value() && (has_dv_ || parc_dolby_vision) &&
 +          !parc_base_layer) {
-+        VideoColorSpace dv_color_space = entry.dv_info->color_space;
-+#if BUILDFLAG(USE_PROPRIETARY_CODECS)
-+        if (parc_dolby_vision &&
-+            entry.dv_info->codec_info.profile == DOLBYVISION_PROFILE10) {
-+          dv_color_space = ParseDolbyVisionColorSpace(
-+              DOLBYVISION_PROFILE8, entry.dv_info->parc_compatibility_id);
-+        }
-+#endif
++        const VideoColorSpace dv_color_space =
++            parc_mp4::DolbyVisionColorSpace(*entry.dv_info, parc_dolby_vision);
 +        if (dv_color_space.IsSpecified()) {
 +          video_config.set_color_space_info(dv_color_space);
 +        }
@@ -3561,7 +2417,7 @@
 -
 +
        video_config.set_hdr_metadata(entry.hdr_metadata);
-@@ -886,6 +999,9 @@
+@@ -886,6 +937,9 @@
 -
 +
    if (!moov_->pssh.empty())
@@ -3574,39 +2430,15 @@
    RCHECK(config_cb_.Run(std::move(media_tracks)));
 -
 +
-@@ -1094,6 +1210,36 @@
+@@ -1094,6 +1148,12 @@
    // being put in a StreamParserBuffer. Prefer `heap_frame_buf` where possible.
    std::vector<uint8_t> frame_buf;
    base::HeapArray<uint8_t> heap_frame_buf;
-+  if (buffer_type == DemuxerStream::AUDIO && parc_ignore_declared_codecs_) {
-+    const auto& entry = runs_->audio_description();
-+    const FourCC format = entry.format == FOURCC_ENCA
-+                              ? entry.sinf.format.format : entry.format;
-+    if (format == FOURCC_IPCM || format == FOURCC_FPCM) {
-+      const size_t width = entry.pcm.sample_size / 8;
-+      if (!width || !entry.channelcount ||
-+          sample_size % (width * entry.channelcount) != 0)
-+        return ParseResult::kError;
-+      if (runs_->is_encrypted() &&
-+          (!(entry.pcm.format_flags & 1) || width == 8))
-+        return ParseResult::kError;
-+      if (!runs_->is_encrypted()) {
-+        frame_buf = base::ToVector(buf.first(sample_size));
-+        if (!(entry.pcm.format_flags & 1)) {
-+          for (size_t i = 0; i < frame_buf.size(); i += width)
-+            std::reverse(frame_buf.begin() + i, frame_buf.begin() + i + width);
-+        }
-+        if (format == FOURCC_FPCM && width == 8) {
-+          for (size_t i = 0; i < frame_buf.size() / 8; ++i) {
-+            double value;
-+            memcpy(&value, frame_buf.data() + i * 8, 8);
-+            const float converted = static_cast<float>(value);
-+            memcpy(frame_buf.data() + i * 4, &converted, 4);
-+          }
-+          frame_buf.resize(frame_buf.size() / 2);
-+        }
-+      }
-+    }
++  if (buffer_type == DemuxerStream::AUDIO && parc_ignore_declared_codecs_ &&
++      !parc_mp4::PreparePcmSample(runs_->audio_description(),
++                                  runs_->is_encrypted(), buf, sample_size,
++                                  frame_buf)) {
++    return ParseResult::kError;
 +  }
    if (buffer_type == DemuxerStream::VIDEO) {
      if (runs_->video_description().video_info.codec == VideoCodec::kH264 ||
@@ -4174,7 +3006,7 @@
  void WebMediaPlayerImpl::Seek(double seconds) {
    DVLOG(1) << __func__ << "(" << seconds << "s)";
    DCHECK(main_task_runner_->BelongsToCurrentThread());
-+  demuxer_manager_->ParcSetFastSeek(
++  parc_->SetDemuxerFastSeek(
 +      parc_->PipelineSeekTime(base::Seconds(seconds)),
 +      std::exchange(parc_->fast_seek_tolerance_, base::TimeDelta()));
    DoSeek(base::Seconds(seconds), true);
@@ -4281,7 +3113,7 @@
 +    track.on = track.id == media_track_id;
 +  }
 +  if (parc_->file_on_native_route_) {
-+    demuxer_manager_->ParcSelectFileTracks(parc_->FileTrackChoices());
++    parc_->SendFileTrackChoices();
 +  }
 +#endif
    pipeline_controller_->OnSelectedVideoTrackChanged(media_track_id);
@@ -4334,7 +3166,7 @@
 -
 +
 +  if (std::optional<parc::fairplay::NativeHlsSource::Timeline> timeline =
-+          demuxer_manager_->GetParcNativeTimeline()) {
++          media::ParcNativeHlsTimeline(demuxer_manager_->ParcDemuxer())) {
 +    WebTimeRanges ranges;
 +    for (size_t i = 0; i < timeline->seekable.size(); ++i) {
 +      const base::TimeDelta end = timeline->seekable.end(i);
@@ -4581,7 +3413,7 @@
    // after the pipeline is done with the `cdm_context`.
    pending_cdm_context_ref_ = std::move(cdm_context_ref);
 +#if BUILDFLAG(IS_MAC)
-+  demuxer_manager_->ParcSetDemuxerClearDolbyVisionAllowed(
++  parc_->SetDemuxerClearDolbyVisionAllowed(
 +      parc_->ClearDolbyVisionAllowed());
 +#endif
    pipeline_controller_->SetCdm(
@@ -5104,7 +3936,7 @@
    }
 +#if BUILDFLAG(IS_MAC)
 +  if (renderer_type_ == media::RendererType::kFairPlay) {
-+    demuxer_manager_->RestrictDemuxerCanChangeType(
++    parc_->RestrictDemuxerCanChangeType(
 +        blink::BindRepeating(&ParcFairPlayChangeTypeSupported,
 +                             PresentsParcSafariIdentity()));
 +  }
@@ -5150,7 +3982,7 @@
 +    pipeline_controller_->Seek(seek_time_, /*time_updated=*/false);
 +  }
 +  if (parc_->file_on_native_route_) {
-+    demuxer_manager_->ParcSelectFileTracks(parc_->FileTrackChoices());
++    parc_->SendFileTrackChoices();
 +  }
 +#endif
    return media::OkStatus();
@@ -5692,7 +4524,24 @@
      "pipeline_controller.cc",
      "pipeline_controller.h",
      "source_buffer_parse_warnings.h",
-@@ -366,6 +374,7 @@
+@@ -156,6 +164,7 @@
+     sources += [
+       "audio_file_reader.cc",
+       "audio_file_reader.h",
++      "parc_audio_file_reader.cc",
+       "audio_video_metadata_extractor.cc",
+       "audio_video_metadata_extractor.h",
+       "blocking_url_protocol.cc",
+@@ -260,6 +269,8 @@
+     sources += [
+       "mac/audio_toolbox_audio_decoder.cc",
+       "mac/audio_toolbox_audio_decoder.h",
++      "mac/parc_audio_toolbox_aac.cc",
++      "mac/parc_audio_toolbox_aac.h",
+       "mac/audio_toolbox_audio_encoder.cc",
+       "mac/audio_toolbox_audio_encoder.h",
+     ]
+@@ -366,6 +377,7 @@
      "frame_processor_unittest.cc",
      "memory_data_source_unittest.cc",
      "offloading_video_decoder_unittest.cc",
@@ -5700,7 +4549,7 @@
      "pipeline_controller_unittest.cc",
      "source_buffer_state_unittest.cc",
      "source_buffer_stream_unittest.cc",
-@@ -468,6 +477,9 @@
+@@ -468,6 +480,9 @@
        "manifest_demuxer_unittest.cc",
        "stream_parser_factory_unittest.cc",
      ]
@@ -6023,32 +4872,7 @@
  // Status returned by GetNextBuffer().
  // kSuccess: Indicates that the next buffer was returned.
  // kNeedBuffer: Indicates that we need more data before a buffer can be
-@@ -96,6 +98,23 @@
-   // |media_time| is current playback position.
-   bool GarbageCollectIfNeeded(base::TimeDelta media_time, size_t newDataSize);
--
-+
-+  base::TimeDelta ParcKeyframeAtOrBefore(base::TimeDelta time) const;
-+  void ParcRemoveBefore(base::TimeDelta end, base::TimeDelta duration);
-+  void ParcRemoveFrom(base::TimeDelta start,
-+                      base::TimeDelta duration,
-+                      base::TimeDelta end = kInfiniteDuration);
-+
-+  void ParcSetSafariMediaSource(bool safari);
-+  void ParcSetMediaSourceBuffered(base::TimeDelta start,
-+                                  Ranges<base::TimeDelta> audio);
-+
-+  void ParcRemove(base::TimeDelta start,
-+                  base::TimeDelta end,
-+                  base::TimeDelta duration);
-+  size_t ParcRemovalSize(base::TimeDelta start,
-+                         base::TimeDelta end,
-+                         base::TimeDelta duration);
-+
-   // Changes the SourceBufferStream's state so that it will start returning
-   // buffers starting from the closest keyframe before |timestamp|.
-   void Seek(base::TimeDelta timestamp);
-@@ -181,6 +200,8 @@
+@@ -181,6 +183,8 @@
 -
 +
   private:
@@ -6059,28 +4883,12 @@
 +
    // Attempts to delete approximately |total_bytes_to_free| amount of data
    // |ranges_|, starting at the front of |ranges_| and moving linearly forward
-@@ -191,6 +212,8 @@
-                      base::TimeDelta media_time,
-                      bool reverse_direction);
--
-+
-+  base::TimeDelta ParcRemoveEnd(base::TimeDelta end, base::TimeDelta duration);
-+
-   // Attempts to delete approximately |total_bytes_to_free| amount of data from
-   // |ranges_|, starting after the last appended media
-   // (|highest_buffered_end_time_in_append_sequence_|) but before the current
-@@ -422,6 +445,14 @@
+@@ -422,6 +426,8 @@
    // True if the end of the stream has been signalled.
    bool end_of_stream_ = false;
 -
 +
 +  std::unique_ptr<ParcSourceBufferStreamState> parc_state_;
-+
-+  void ParcFillSmallGaps(Ranges<base::TimeDelta>* buffered,
-+                         const BufferQueue& buffers);
-+  base::TimeDelta ParcGapToleranceAt(base::TimeDelta time) const;
-+  void ParcBridgeGap();
-+  void ParcNoteOutput(const StreamParserBuffer& buffer);
 +
    // Timestamp of the last request to Seek().
    base::TimeDelta seek_buffer_timestamp_;
@@ -6088,16 +4896,7 @@
 +
 --- a/media/filters/source_buffer_stream.cc
 +++ b/media/filters/source_buffer_stream.cc
-@@ -5,6 +5,7 @@
- #include "media/filters/source_buffer_stream.h"
--
-+
- #include <algorithm>
-+#include <iterator>
- #include <map>
- #include <memory>
- #include <sstream>
-@@ -17,6 +18,7 @@
+@@ -17,6 +17,7 @@
  #include "media/base/media_switches.h"
  #include "media/base/stream_parser_buffer.h"
  #include "media/base/timestamp_constants.h"
@@ -6107,7 +4906,7 @@
  namespace media {
 -
 +
-@@ -145,6 +147,7 @@
+@@ -145,6 +146,7 @@
  SourceBufferStream::SourceBufferStream(const AudioDecoderConfig& audio_config,
                                         MediaLog* media_log)
      : media_log_(MediaLog::CloneSafely(media_log)),
@@ -6115,7 +4914,7 @@
        seek_buffer_timestamp_(kNoTimestamp),
        coded_frame_group_start_pts_(kNoTimestamp),
        range_for_next_append_(ranges_.end()),
-@@ -160,6 +163,7 @@
+@@ -160,6 +162,7 @@
  SourceBufferStream::SourceBufferStream(const VideoDecoderConfig& video_config,
                                         MediaLog* media_log)
      : media_log_(MediaLog::CloneSafely(media_log)),
@@ -6123,7 +4922,7 @@
        seek_buffer_timestamp_(kNoTimestamp),
        coded_frame_group_start_pts_(kNoTimestamp),
        range_for_next_append_(ranges_.end()),
-@@ -275,6 +279,9 @@
+@@ -275,6 +278,9 @@
 -
 +
    PrepareRangesForNextAppend(buffers, &deleted_buffers);
@@ -6135,155 +4934,25 @@
    // If there's a range for |buffers|, insert |buffers| accordingly. Otherwise,
    // create a new range with |buffers|.
    if (range_for_next_append_ != ranges_.end()) {
-@@ -291,6 +298,7 @@
+@@ -291,6 +297,7 @@
        // Otherwise, use the first new buffer as proof of adjacency.
        (*range_for_next_append_)->AppendBuffersToEnd(buffers, kNoTimestamp);
      }
-+    ParcFillSmallGaps(&parc_buffered, buffers);
++    parc_state_->FillSmallGaps(&parc_buffered, buffers);
 -
 +
      last_appended_buffer_timestamp_ = buffers.back()->timestamp();
      last_appended_buffer_duration_ = buffers.back()->duration();
-@@ -353,6 +361,7 @@
+@@ -353,6 +360,7 @@
          new_range_start_time,
          base::BindRepeating(&SourceBufferStream::GetMaxInterbufferDistance,
                              base::Unretained(this))));
-+    ParcFillSmallGaps(&parc_buffered, *buffers_for_new_range);
++    parc_state_->FillSmallGaps(&parc_buffered, *buffers_for_new_range);
 -
 +
      last_appended_buffer_timestamp_ =
          buffers_for_new_range->back()->timestamp();
-@@ -418,6 +427,128 @@
-   DCHECK(OnlySelectedRangeIsSeeked());
- }
--
-+
-+base::TimeDelta SourceBufferStream::ParcRemoveEnd(base::TimeDelta end,
-+                                                  base::TimeDelta duration) {
-+  const base::TimeDelta keyframe = FindKeyframeAfterTimestamp(end);
-+  return keyframe != kNoTimestamp ? keyframe : std::min(end, duration);
-+}
-+
-+void SourceBufferStream::ParcRemove(base::TimeDelta start,
-+                                    base::TimeDelta end,
-+                                    base::TimeDelta duration) {
-+  start = std::max(start, base::TimeDelta());
-+  if (start < end && start < ParcRemoveEnd(end, duration)) {
-+    Remove(start, end, duration);
-+  }
-+}
-+
-+size_t SourceBufferStream::ParcRemovalSize(base::TimeDelta start,
-+                                           base::TimeDelta end,
-+                                           base::TimeDelta duration) {
-+  start = std::max(start, base::TimeDelta());
-+  const base::TimeDelta remove_end = ParcRemoveEnd(end, duration);
-+  if (start >= end || start >= remove_end) {
-+    return 0;
-+  }
-+  return parc_state_->RemovalSize(*this, start, remove_end);
-+}
-+
-+base::TimeDelta SourceBufferStream::ParcKeyframeAtOrBefore(
-+    base::TimeDelta time) const {
-+  for (auto itr = ranges_.rbegin(); itr != ranges_.rend(); ++itr) {
-+    const SourceBufferRange* range = itr->get();
-+    if (range->GetStartTimestamp() > time) {
-+      continue;
-+    }
-+    return range->KeyframeBeforeTimestamp(
-+        std::min(time, range->GetEndTimestamp()));
-+  }
-+  return kNoTimestamp;
-+}
-+
-+void SourceBufferStream::ParcRemoveBefore(base::TimeDelta end,
-+                                          base::TimeDelta duration) {
-+  if (!ranges_.empty()) {
-+    ParcRemove(ranges_.front()->GetStartTimestamp(), end, duration);
-+  }
-+}
-+
-+void SourceBufferStream::ParcRemoveFrom(base::TimeDelta start,
-+                                        base::TimeDelta duration,
-+                                        base::TimeDelta removal_end) {
-+  if (ranges_.empty()) {
-+    return;
-+  }
-+  const base::TimeDelta buffered_end = ranges_.back()->GetBufferedEndTimestamp();
-+  ParcRemove(start, removal_end, duration);
-+  const base::TimeDelta end = ranges_.empty()
-+                                  ? base::TimeDelta()
-+                                  : ranges_.back()->GetBufferedEndTimestamp();
-+  if (end_of_stream_ && end < buffered_end) {
-+    end_of_stream_ = false;
-+    parc_state_->set_end_of_stream_suspended(true);
-+  }
-+}
-+
-+void SourceBufferStream::ParcSetSafariMediaSource(bool safari) {
-+  parc_state_->SetSafariMediaSource(safari);
-+}
-+
-+void SourceBufferStream::ParcSetMediaSourceBuffered(
-+    base::TimeDelta start,
-+    Ranges<base::TimeDelta> audio) {
-+  parc_state_->SetMediaSourceBuffered(start, std::move(audio));
-+  if (seek_pending_) {
-+    Seek(seek_buffer_timestamp_);
-+  }
-+}
-+
-+void SourceBufferStream::ParcFillSmallGaps(Ranges<base::TimeDelta>* buffered,
-+                                           const BufferQueue& buffers) {
-+  parc_state_->FillSmallGaps(buffered, buffers);
-+}
-+
-+base::TimeDelta SourceBufferStream::ParcGapToleranceAt(
-+    base::TimeDelta time) const {
-+  return parc_state_->GapToleranceAt(time);
-+}
-+
-+void SourceBufferStream::ParcBridgeGap() {
-+  if (!parc_state_->enabled() ||
-+      GetType() != SourceBufferStreamType::kVideo || !track_buffer_.empty() ||
-+      seek_pending_ ||
-+      (selected_range_ ? selected_range_->HasNextBuffer()
-+                       : parc_state_->highest_output_end() == kNoTimestamp)) {
-+    return;
-+  }
-+  const base::TimeDelta gap_start =
-+      selected_range_ ? selected_range_->GetBufferedEndTimestamp()
-+                      : parc_state_->highest_output_end();
-+  auto next = ranges_.begin();
-+  if (selected_range_) {
-+    while (next != ranges_.end() && next->get() != selected_range_) {
-+      ++next;
-+    }
-+    CHECK(next != ranges_.end());
-+    ++next;
-+  } else {
-+    while (next != ranges_.end() &&
-+           (*next)->GetStartTimestamp() <= gap_start) {
-+      ++next;
-+    }
-+  }
-+  if (next == ranges_.end() || (*next)->GetStartTimestamp() - gap_start >
-+                                   ParcGapToleranceAt(gap_start)) {
-+    return;
-+  }
-+  (*next)->SeekToStart();
-+  SetSelectedRange(next->get());
-+}
-+
-+void SourceBufferStream::ParcNoteOutput(const StreamParserBuffer& buffer) {
-+  parc_state_->NoteOutput(buffer);
-+}
-+
- void SourceBufferStream::Remove(base::TimeDelta start,
-                                 base::TimeDelta end,
-                                 base::TimeDelta duration) {
-@@ -428,6 +559,7 @@
+@@ -428,6 +436,7 @@
    DCHECK(start < end) << "start " << start.InMicroseconds() << "us, end "
                        << end.InMicroseconds() << "us";
    DCHECK(duration != kNoTimestamp);
@@ -6292,7 +4961,7 @@
 +
    base::TimeDelta remove_end_timestamp = duration;
    base::TimeDelta keyframe_timestamp = FindKeyframeAfterTimestamp(end);
-@@ -624,6 +756,7 @@
+@@ -624,6 +633,7 @@
    track_buffer_.clear();
    config_change_pending_ = false;
    highest_output_buffer_timestamp_ = kNoTimestamp;
@@ -6300,7 +4969,7 @@
    just_exhausted_track_buffer_ = false;
    pending_buffer_.reset();
    pending_buffers_complete_ = false;
-@@ -742,6 +875,7 @@
+@@ -742,6 +752,7 @@
                                                  size_t newDataSize) {
    DCHECK(media_time != kNoTimestamp);
    DCHECK(!end_of_stream_);
@@ -6309,31 +4978,20 @@
 +
    // Compute size of |ranges_|.
    size_t ranges_size = GetMemoryUsage();
-@@ -1455,6 +1589,21 @@
+@@ -1455,6 +1466,10 @@
        break;
    }
 -
 +
 +  if (itr == ranges_.end() && parc_state_->enabled()) {
-+    for (const auto& range : ranges_) {
-+      if (range->GetStartTimestamp() <= timestamp) {
-+        continue;
-+      }
-+      if (range->GetStartTimestamp() - timestamp <=
-+          ParcGapToleranceAt(timestamp)) {
-+        range->SeekToStart();
-+        SetSelectedRange(range.get());
-+        seek_pending_ = false;
-+      }
-+      break;
-+    }
++    parc_state_->SeekAcrossGap(*this, timestamp);
 +  }
 +
    if (itr == ranges_.end())
      return;
 -
 +
-@@ -1490,6 +1639,7 @@
+@@ -1490,6 +1505,7 @@
    DVLOG(1) << __func__ << " " << GetStreamTypeName() << " ("
             << duration.InMicroseconds() << "us)";
    DCHECK(!end_of_stream_);
@@ -6342,44 +5000,48 @@
 +
    if (ranges_.empty())
      return;
-@@ -1569,6 +1719,7 @@
+@@ -1569,6 +1585,7 @@
      WarnIfTrackBufferExhaustionSkipsForward(*out_buffer);
      highest_output_buffer_timestamp_ =
          std::max(highest_output_buffer_timestamp_, (*out_buffer)->timestamp());
-+    ParcNoteOutput(**out_buffer);
++    parc_state_->NoteOutput(**out_buffer);
 -
 +
      // If the track buffer becomes empty, then try to set the selected range
      // based on the timestamp of this buffer being returned.
-@@ -1581,6 +1732,7 @@
+@@ -1581,6 +1598,9 @@
    }
 -
 +
    DCHECK(track_buffer_.empty());
-+  ParcBridgeGap();
++  if (parc_state_->enabled()) {
++    parc_state_->BridgeGap(*this);
++  }
    if (!selected_range_ || !selected_range_->HasNextBuffer()) {
      if (IsEndOfStreamReached()) {
        return SourceBufferStreamStatus::kEndOfStream;
-@@ -1602,6 +1754,7 @@
+@@ -1602,6 +1622,7 @@
    WarnIfTrackBufferExhaustionSkipsForward(*out_buffer);
    highest_output_buffer_timestamp_ =
        std::max(highest_output_buffer_timestamp_, (*out_buffer)->timestamp());
-+  ParcNoteOutput(**out_buffer);
++  parc_state_->NoteOutput(**out_buffer);
    return SourceBufferStreamStatus::kSuccess;
  }
 -
 +
-@@ -1631,6 +1784,7 @@
+@@ -1631,6 +1652,9 @@
    if (!track_buffer_.empty())
      return track_buffer_.front()->GetConfigId() != current_config_index_;
 -
 +
-+  ParcBridgeGap();
++  if (parc_state_->enabled()) {
++    parc_state_->BridgeGap(*this);
++  }
    if (!selected_range_ || !selected_range_->HasNextBuffer())
      return false;
 -
 +
-@@ -1687,6 +1841,9 @@
+@@ -1687,6 +1711,9 @@
  }
 -
 +
@@ -6390,7 +5052,7 @@
    Ranges<base::TimeDelta> ranges;
    for (auto itr = ranges_.begin(); itr != ranges_.end(); ++itr) {
      ranges.Add((*itr)->GetStartTimestamp(), (*itr)->GetBufferedEndTimestamp());
-@@ -1726,9 +1883,15 @@
+@@ -1726,9 +1753,15 @@
  void SourceBufferStream::MarkEndOfStream() {
    DCHECK(!end_of_stream_);
    end_of_stream_ = true;
@@ -6433,23 +5095,9 @@
 +
 --- a/media/filters/source_buffer_state.h
 +++ b/media/filters/source_buffer_state.h
-@@ -5,6 +5,8 @@
- #ifndef MEDIA_FILTERS_SOURCE_BUFFER_STATE_H_
- #define MEDIA_FILTERS_SOURCE_BUFFER_STATE_H_
+@@ -24,6 +24,7 @@
 -
 +
-+#include <stdint.h>
-+
- #include "base/functional/bind.h"
- #include "base/memory/memory_pressure_listener.h"
- #include "base/memory/raw_ptr.h"
-@@ -21,9 +23,9 @@
--
-+
- namespace media {
--
-+
--
  class ChunkDemuxerStream;
  class FrameProcessor;
 +class ParcSourceBufferEviction;
@@ -6457,51 +5105,7 @@
 +
  // Contains state belonging to a source id.
  class MEDIA_EXPORT SourceBufferState {
-@@ -98,6 +100,41 @@
-               base::TimeDelta end,
-               base::TimeDelta duration);
--
-+
-+  void ParcPurgeForMemoryPressure(base::TimeDelta media_time,
-+                                  bool active,
-+                                  base::TimeDelta duration,
-+                                  const Ranges<base::TimeDelta>& buffered,
-+                                  const Ranges<base::TimeDelta>& audio,
-+                                  bool safari_eviction);
-+  bool ParcIsBufferFullFor(size_t new_data_size) const;
-+  bool ParcCanAppend(size_t new_data_size) const;
-+  bool ParcEvictFrames(base::TimeDelta media_time,
-+                       size_t new_data_size,
-+                       base::TimeDelta duration,
-+                       const Ranges<base::TimeDelta>& buffered,
-+                       const Ranges<base::TimeDelta>& audio,
-+                       bool memory_pressure = false);
-+  void ParcComputeEvictionData(base::TimeDelta media_time,
-+                               base::TimeDelta duration,
-+                               const Ranges<base::TimeDelta>& buffered,
-+                               const Ranges<base::TimeDelta>& audio);
-+  static size_t ParcMaximumBufferSize(bool has_video);
-+  bool ParcIsActive() const;
-+  Ranges<base::TimeDelta> ParcAudioBufferedRanges(
-+      base::TimeDelta duration) const;
-+  bool ParcLeftOutOfMediaSource() const;
-+  bool ParcPurgedWhileInactive() const;
-+
-+  void ParcSetClearDolbyVisionAllowed(bool allowed) {
-+    parc_clear_dolby_vision_allowed_ = allowed;
-+  }
-+  void ParcSetDolbyVisionCallback(base::RepeatingClosure callback) {
-+    parc_dolby_vision_cb_ = std::move(callback);
-+  }
-+  void ParcSetSafariInitSegmentRules(bool safari) {
-+    parc_safari_init_segment_rules_ = safari;
-+  }
-+
-   // Set the append window boundaries.
-   void SetAppendWindow(base::TimeDelta start, base::TimeDelta end);
--
-+
-@@ -175,6 +212,8 @@
+@@ -175,6 +176,8 @@
    void SetParseWarningCallback(SourceBufferParseWarningCB parse_warning_cb);
 -
 +
@@ -6511,33 +5115,19 @@
    // State advances through this list to PARSER_INITIALIZED.
    // The intent is to ensure at least one config is received prior to parser
    // calling initialization callback, and that such initialization callback
-@@ -256,6 +295,13 @@
+@@ -256,6 +259,8 @@
    // Keeps track of whether a media segment is being parsed.
    bool parsing_media_segment_;
 -
 +
 +  std::unique_ptr<ParcSourceBufferEviction> parc_eviction_;
 +
-+  bool parc_clear_dolby_vision_allowed_ = false;
-+  base::RepeatingClosure parc_dolby_vision_cb_;
-+
-+  bool parc_safari_init_segment_rules_ = false;
-+
    // Valid only while |parsing_media_segment_| is true. These flags enable
    // warning when the parsed media segment doesn't have frames for some track.
    std::map<StreamParser::TrackId, bool> media_segment_has_data_for_track_;
 --- a/media/filters/source_buffer_state.cc
 +++ b/media/filters/source_buffer_state.cc
-@@ -8,6 +8,7 @@
- #include <set>
- #include <string_view>
- #include <utility>
-+#include <vector>
--
-+
- #include "base/command_line.h"
- #include "base/feature_list.h"
-@@ -22,6 +23,7 @@
+@@ -22,6 +22,7 @@
  #include "media/base/video_codec_string_parsers.h"
  #include "media/filters/chunk_demuxer.h"
  #include "media/filters/frame_processor.h"
@@ -6546,7 +5136,7 @@
  #include "media/media_buildflags.h"
 -
 +
-@@ -129,6 +131,7 @@
+@@ -129,6 +130,7 @@
      : timestamp_offset_during_append_(nullptr),
        timestamp_offset_(base::TimeDelta()),
        parsing_media_segment_(false),
@@ -6554,199 +5144,67 @@
        stream_parser_(std::move(stream_parser)),
        frame_processor_(std::move(frame_processor)),
        create_demuxer_stream_cb_(std::move(create_demuxer_stream_cb)),
-@@ -295,6 +298,99 @@
-   }
- }
--
-+
-+void SourceBufferState::ParcPurgeForMemoryPressure(
-+    base::TimeDelta media_time,
-+    bool active,
-+    base::TimeDelta duration,
-+    const Ranges<base::TimeDelta>& buffered,
-+    const Ranges<base::TimeDelta>& audio,
-+    bool safari_eviction) {
-+  parc_eviction_->PurgeForMemoryPressure(
-+      *this, media_time, active, duration, buffered, audio, safari_eviction);
-+}
-+
-+// static
-+size_t SourceBufferState::ParcMaximumBufferSize(bool has_video) {
-+  return ParcSourceBufferEviction::MaximumBufferSize(has_video);
-+}
-+
-+bool SourceBufferState::ParcIsBufferFullFor(size_t new_data_size) const {
-+  return parc_eviction_->IsBufferFullFor(*this, new_data_size);
-+}
-+
-+bool SourceBufferState::ParcCanAppend(size_t new_data_size) const {
-+  return parc_eviction_->CanAppend(*this, new_data_size);
-+}
-+
-+bool SourceBufferState::ParcEvictFrames(
-+    base::TimeDelta media_time,
-+    size_t new_data_size,
-+    base::TimeDelta duration,
-+    const Ranges<base::TimeDelta>& buffered,
-+    const Ranges<base::TimeDelta>& audio,
-+    bool memory_pressure) {
-+  return parc_eviction_->EvictFrames(*this, media_time, new_data_size,
-+                                     duration, buffered, audio,
-+                                     memory_pressure);
-+}
-+
-+void SourceBufferState::ParcComputeEvictionData(
-+    base::TimeDelta media_time,
-+    base::TimeDelta duration,
-+    const Ranges<base::TimeDelta>& buffered,
-+    const Ranges<base::TimeDelta>& audio) {
-+  parc_eviction_->ComputeEvictionData(*this, media_time, duration, buffered,
-+                                      audio);
-+}
-+
-+bool SourceBufferState::ParcIsActive() const {
-+  for (const auto& it : audio_streams_) {
-+    if (it.second->IsEnabled()) {
-+      return true;
-+    }
-+  }
-+  for (const auto& it : video_streams_) {
-+    if (it.second->IsEnabled()) {
-+      return true;
-+    }
-+  }
-+  return false;
-+}
-+
-+bool SourceBufferState::ParcLeftOutOfMediaSource() const {
-+  if (!parc_eviction_->purged_while_inactive() || ParcIsActive()) {
-+    return false;
-+  }
-+  for (const auto& it : audio_streams_) {
-+    if (it.second->GetMemoryUsage()) {
-+      return false;
-+    }
-+  }
-+  for (const auto& it : video_streams_) {
-+    if (it.second->GetMemoryUsage()) {
-+      return false;
-+    }
-+  }
-+  return true;
-+}
-+
-+bool SourceBufferState::ParcPurgedWhileInactive() const {
-+  return parc_eviction_->purged_while_inactive();
-+}
-+
-+Ranges<base::TimeDelta> SourceBufferState::ParcAudioBufferedRanges(
-+    base::TimeDelta duration) const {
-+  Ranges<base::TimeDelta> ranges;
-+  for (const auto& it : audio_streams_) {
-+    const Ranges<base::TimeDelta> stream_ranges =
-+        it.second->GetBufferedRanges(duration);
-+    for (size_t i = 0; i < stream_ranges.size(); ++i) {
-+      ranges.Add(stream_ranges.start(i), stream_ranges.end(i));
-+    }
-+  }
-+  return ranges;
-+}
-+
- bool SourceBufferState::EvictCodedFrames(base::TimeDelta media_time,
-                                          size_t newDataSize) {
-   size_t total_buffered_size = 0;
-@@ -517,6 +613,10 @@
+@@ -517,6 +519,10 @@
  }
 -
 +
  bool SourceBufferState::IsSeekWaitingForData() const {
-+  if (ParcLeftOutOfMediaSource()) {
++  if (ParcSourceBufferEviction::LeftOutOfMediaSource(*this)) {
 +    return false;
 +  }
 +
    for (const auto& it : audio_streams_) {
      if (it.second->IsSeekWaitingForData())
        return true;
-@@ -535,6 +635,11 @@
+@@ -535,6 +541,8 @@
    expected_audio_codecs_.clear();
    expected_video_codecs_.clear();
 -
 +
-+  if (parc_safari_init_segment_rules_) {
-+    expected_codecs.reset();
-+    stream_parser_->ParcIgnoreDeclaredCodecs();
-+  }
++  parc_eviction_->ApplyInitSegmentRules(expected_codecs, *stream_parser_);
 +
    std::vector<std::string> expected_codecs_parsed;
    if ((strict_codec_expectations_ = expected_codecs.has_value())) {
      DVLOG(1) << __func__ << " expected_codecs=" << expected_codecs.value();
-@@ -592,6 +697,26 @@
+@@ -592,6 +600,10 @@
    // RunSegmentParserLoop(), but not during Flush or parser reset operations.
    CHECK(new_configs_possible_);
 -
 +
-+  if (parc_safari_init_segment_rules_ && first_init_segment_received_) {
-+    size_t audio_tracks = 0;
-+    size_t video_tracks = 0;
-+    for (const auto& track : tracks->tracks()) {
-+      if (track->type() == MediaTrack::Type::kAudio) {
-+        ++audio_tracks;
-+      } else if (track->type() == MediaTrack::Type::kVideo) {
-+        ++video_tracks;
-+      }
-+    }
-+    if (audio_tracks != audio_streams_.size() ||
-+        video_tracks != video_streams_.size()) {
-+      MEDIA_LOG(ERROR, media_log_)
-+          << "Initialization segment has " << audio_tracks << " audio and "
-+          << video_tracks << " video tracks; the first had "
-+          << audio_streams_.size() << " and " << video_streams_.size() << ".";
-+      return false;
-+    }
++  if (!parc_eviction_->AcceptsInitSegment(*this, *tracks)) {
++    return false;
 +  }
 +
    bool success = true;
 -
 +
    // TODO(wolenetz): Update codec string strictness, if necessary, once spec
-@@ -602,7 +727,8 @@
+@@ -602,7 +614,9 @@
    // TODO(wolenetz): Once codec strictness is relaxed, we can change
    // |allow_codec_changes| to always be true. Until then, we only allow codec
    // changes on explicit ChangeType().
 -  const bool allow_codec_changes = state_ == PENDING_PARSER_RECONFIG;
 +  const bool allow_codec_changes =
-+      state_ == PENDING_PARSER_RECONFIG || parc_safari_init_segment_rules_;
++      state_ == PENDING_PARSER_RECONFIG ||
++      parc_eviction_->safari_init_segment_rules();
 -
 +
    FrameProcessor::TrackIdChanges track_id_changes;
    for (const auto& track : tracks->tracks()) {
-@@ -685,16 +811,27 @@
-           return false;
-         }
--
-+
-+        const bool parc_fairplay_plays_clear =
-+            parc_clear_dolby_vision_allowed_ &&
-+            (video_config.profile() == DOLBYVISION_PROFILE5 ||
-+             video_config.profile() == DOLBYVISION_PROFILE8 ||
-+             (parc_safari_init_segment_rules_ &&
-+              video_config.profile() == DOLBYVISION_PROFILE10));
-+
-         // If `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` is
+@@ -689,12 +703,15 @@
          // specified which force allow Dolby Vision in Media Source.
          if (!base::FeatureList::IsEnabled(
                  kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled) &&
 -            !video_config.is_encrypted()) {
-+            !video_config.is_encrypted() && !parc_fairplay_plays_clear) {
++            !video_config.is_encrypted() &&
++            !parc_eviction_->PlaysClearDolbyVision(video_config)) {
            MEDIA_LOG(ERROR, media_log_)
                << "MSE playback of DolbyVision is only supported via platform "
                   "decryptor, but the provided DV track is not encrypted.";
            return false;
          }
 +
-+        if (parc_dolby_vision_cb_) {
-+          parc_dolby_vision_cb_.Run();
-+        }
++        parc_eviction_->OnDolbyVisionAppended();
        }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
 -
@@ -7050,16 +5508,10 @@
  }
  #if BUILDFLAG(USE_PROPRIETARY_CODECS)
  static const CodecInfo kADTSCodecInfo = {nullptr, CodecInfo::AUDIO, nullptr,
-@@ -781,6 +811,62 @@
+@@ -781,6 +811,49 @@
    return stream_parser;
  }
 -
-+
-+// static
-+std::unique_ptr<StreamParser> StreamParserFactory::ParcCreateWithoutCodecs(
-+    std::string_view type) {
-+  return ParcCreateMseParserWithoutCodecs(type);
-+}
 +
 +// static
 +std::optional<StreamParserFactory::ParcSafariType>
@@ -7104,13 +5556,6 @@
 +  return media::ParcSafariTakesOgg(type, codecs);
 +}
 +
-+// static
-+std::unique_ptr<StreamParser> StreamParserFactory::ParcCreateOggParser(
-+    std::string_view type,
-+    base::span<const std::string> codecs) {
-+  return ParcCreateSafariOggParser(type, codecs);
-+}
-+
  // static
  std::unique_ptr<StreamParser> StreamParserFactory::Create(
      std::unique_ptr<AudioDecoderConfig> audio_config) {
@@ -7137,13 +5582,10 @@
  #include <string>
  #include <string_view>
  #include <vector>
-@@ -74,6 +75,24 @@
+@@ -74,6 +75,18 @@
    static std::unique_ptr<StreamParser> Create(
        std::unique_ptr<VideoDecoderConfig> video_config);
 -
-+
-+  static std::unique_ptr<StreamParser> ParcCreateWithoutCodecs(
-+      std::string_view type);
 +
 +  struct ParcSafariType {
 +    std::string type;
@@ -7156,9 +5598,6 @@
 +  static bool ParcIsOggType(std::string_view type);
 +  static bool ParcSafariTakesOgg(std::string_view type,
 +                                 base::span<const std::string> codecs);
-+  static std::unique_ptr<StreamParser> ParcCreateOggParser(
-+      std::string_view type,
-+      base::span<const std::string> codecs);
 +
    // Creates a parser used for determining which codecs are present in a media
    // file. This parser won't log to media log because failure to parse is not
@@ -7214,116 +5653,6 @@
    std::optional<base::UnguessableToken> cdm_id = cdm_context->GetCdmId();
    if (!cdm_id) {
      DVLOG(2) << "MojoRenderer only works with remote CDMs but the CDM ID "
---- a/media/mojo/services/mojo_renderer_service.cc
-+++ b/media/mojo/services/mojo_renderer_service.cc
-@@ -11,6 +11,7 @@
- #include "base/functional/bind.h"
- #include "base/memory/ptr_util.h"
- #include "base/time/time.h"
-+#include "build/build_config.h"
- #include "media/base/cdm_context.h"
- #include "media/base/renderer.h"
- #include "media/mojo/common/media_type_converters.h"
-@@ -110,6 +111,34 @@
- void MojoRendererService::SetCdm(
-     const std::optional<base::UnguessableToken>& cdm_id,
-     SetCdmCallback callback) {
-+#if BUILDFLAG(IS_MAC)
-+  if (cdm_context_ref_ &&
-+      renderer_->GetRendererType() == RendererType::kFairPlay) {
-+    if (!cdm_id) {
-+      renderer_->SetCdm(nullptr, std::move(callback));
-+      return;
-+    }
-+    std::unique_ptr<CdmContextRef> cdm_context_ref =
-+        mojo_cdm_service_context_
-+            ? mojo_cdm_service_context_->GetCdmContextRef(cdm_id.value())
-+            : nullptr;
-+    if (cdm_context_ref && cdm_context_ref->GetCdmContext() ==
-+                               cdm_context_ref_->GetCdmContext()) {
-+      renderer_->SetCdm(cdm_context_ref_->GetCdmContext(), std::move(callback));
-+      return;
-+    }
-+    if (cdm_context_ref) {
-+      parc_replaced_cdm_context_refs_.push_back(std::move(cdm_context_ref_));
-+      cdm_context_ref_ = std::move(cdm_context_ref);
-+      renderer_->SetCdm(
-+          cdm_context_ref_->GetCdmContext(),
-+          base::BindOnce(&MojoRendererService::ParcOnReplacementCdmAttached,
-+                         weak_this_, std::move(callback)));
-+      return;
-+    }
-+  }
-+#endif
-+
-   if (cdm_context_ref_) {
-     DVLOG(1) << "Switching CDM not supported";
-     std::move(callback).Run(false);
-@@ -285,6 +314,18 @@
-   std::move(callback).Run();
- }
--
-+
-+#if BUILDFLAG(IS_MAC)
-+void MojoRendererService::ParcOnReplacementCdmAttached(
-+    base::OnceCallback<void(bool)> callback,
-+    bool success) {
-+  if (!success) {
-+    cdm_context_ref_ = std::move(parc_replaced_cdm_context_refs_.back());
-+    parc_replaced_cdm_context_refs_.pop_back();
-+  }
-+  std::move(callback).Run(success);
-+}
-+#endif
-+
- void MojoRendererService::OnCdmAttached(base::OnceCallback<void(bool)> callback,
-                                         bool success) {
-   DVLOG(1) << __func__ << "(" << success << ")";
---- a/media/mojo/services/mojo_renderer_service.h
-+++ b/media/mojo/services/mojo_renderer_service.h
-@@ -9,6 +9,7 @@
--
-+
- #include <memory>
- #include <optional>
-+#include <vector>
--
-+
- #include "base/compiler_specific.h"
- #include "base/functional/callback.h"
-@@ -17,6 +18,7 @@
- #include "base/time/time.h"
- #include "base/timer/timer.h"
- #include "base/unguessable_token.h"
-+#include "build/build_config.h"
- #include "media/base/buffering_state.h"
- #include "media/base/media_resource.h"
- #include "media/base/pipeline_status.h"
-@@ -116,6 +118,10 @@
--
-+
-   // Callback executed once SetCdm() completes.
-   void OnCdmAttached(base::OnceCallback<void(bool)> callback, bool success);
-+#if BUILDFLAG(IS_MAC)
-+  void ParcOnReplacementCdmAttached(base::OnceCallback<void(bool)> callback,
-+                                    bool success);
-+#endif
--
-+
-   const raw_ptr<MojoCdmServiceContext> mojo_cdm_service_context_ = nullptr;
--
-+
-@@ -132,6 +138,9 @@
-   // Holds the CdmContextRef to keep the CdmContext alive for the lifetime of
-   // the |renderer_|.
-   std::unique_ptr<CdmContextRef> cdm_context_ref_;
-+#if BUILDFLAG(IS_MAC)
-+  std::vector<std::unique_ptr<CdmContextRef>> parc_replaced_cdm_context_refs_;
-+#endif
--
-+
-   // Note: Destroy |renderer_| first to avoid access violation into other
-   // members, e.g. |media_resource_| and |cdm_|.
 --- a/media/base/pipeline.h
 +++ b/media/base/pipeline.h
 @@ -26,6 +26,7 @@
@@ -7397,15 +5726,6 @@
    void OnMetadata(const PipelineMetadata& metadata);
    void OnBufferingStateChange(BufferingState state,
                                BufferingStateChangeReason reason);
-@@ -188,6 +195,7 @@
-   // SetPlaybackRate() and a task is dispatched on the task runner to notify
-   // the filters.
-   double playback_rate_;
-+  bool parc_native_hls_ = false;
--
-+
-   // Current volume level (from 0.0f to 1.0f). This value is set immediately
-   // via SetVolume() and a task is dispatched on the task runner to notify the
 --- a/media/filters/pipeline_controller.h
 +++ b/media/filters/pipeline_controller.h
 @@ -142,6 +142,9 @@
@@ -7420,15 +5740,18 @@
    bool DidLoadingProgress();
 --- a/media/formats/BUILD.gn
 +++ b/media/formats/BUILD.gn
-@@ -64,6 +64,7 @@
+@@ -64,6 +64,10 @@
      "mp4/fourccs.h",
      "mp4/mp4_stream_parser.cc",
      "mp4/mp4_stream_parser.h",
 +    "mp4/parc_box_definitions.cc",
++    "mp4/parc_box_definitions.h",
++    "mp4/parc_mp4_stream_parser.cc",
++    "mp4/parc_mp4_stream_parser.h",
      "mp4/parse_result.h",
      "mp4/rcheck.h",
      "mp4/sample_to_group_iterator.cc",
-@@ -78,6 +79,8 @@
+@@ -78,6 +82,8 @@
      "mpeg/mpeg1_audio_stream_parser.h",
      "mpeg/mpeg_audio_stream_parser_base.cc",
      "mpeg/mpeg_audio_stream_parser_base.h",
@@ -7437,7 +5760,7 @@
      "webcodecs/webcodecs_encoded_chunk_stream_parser.cc",
      "webcodecs/webcodecs_encoded_chunk_stream_parser.h",
      "webm/webm_audio_client.cc",
-@@ -227,6 +230,17 @@
+@@ -227,6 +233,19 @@
        "mp2t/ts_section_psi.cc",
        "mp2t/ts_section_psi.h",
      ]
@@ -7445,6 +5768,8 @@
 +    sources += [
 +      "mp2t/parc_es_parser_mpeg_video.cc",
 +      "mp2t/parc_es_parser_mpeg_video.h",
++      "mp2t/parc_mp2t_stream_parser.cc",
++      "mp2t/parc_mp2t_stream_parser.h",
 +    ]
 +    if (enable_platform_ac3_eac3_audio) {
 +      sources += [
@@ -7456,7 +5781,7 @@
 -
 +
    # TODO(crbug.com/40057824): These should be gated behind `enable_hls_demuxer`,
-@@ -325,6 +339,7 @@
+@@ -325,6 +344,7 @@
      "ac3/ac3_util_unittest.cc",
      "common/offset_byte_queue_unittest.cc",
      "mpeg/mpeg1_audio_stream_parser_unittest.cc",
@@ -7464,7 +5789,7 @@
      "webm/webm_cluster_parser_unittest.cc",
      "webm/webm_content_encodings_client_unittest.cc",
      "webm/webm_crypto_helpers_unittest.cc",
-@@ -388,8 +403,12 @@
+@@ -388,8 +408,12 @@
          "mp2t/es_parser_h264_unittest.cc",
          "mp2t/es_parser_mpeg1audio_unittest.cc",
          "mp2t/mp2t_stream_parser_unittest.cc",
@@ -7536,87 +5861,15 @@
    // attempted to be parsed from `ts_byte_queue_` between calls to Parse().
 --- a/media/formats/mp2t/mp2t_stream_parser.cc
 +++ b/media/formats/mp2t/mp2t_stream_parser.cc
-@@ -11,7 +11,9 @@
- #include "base/containers/span_reader.h"
- #include "base/functional/bind.h"
- #include "base/functional/callback_helpers.h"
-+#include "base/numerics/byte_conversions.h"
- #include "base/numerics/checked_math.h"
-+#include "base/strings/stringprintf.h"
- #include "media/base/byte_queue.h"
- #include "media/base/media_tracks.h"
- #include "media/base/stream_parser.h"
-@@ -24,6 +26,7 @@
+@@ -24,6 +24,7 @@
  #include "media/formats/mp2t/es_parser_h264.h"
  #include "media/formats/mp2t/es_parser_mpeg1audio.h"
  #include "media/formats/mp2t/mp2t_common.h"
-+#include "media/formats/mp2t/parc_es_parser_mpeg_video.h"
++#include "media/formats/mp2t/parc_mp2t_stream_parser.h"
  #include "media/formats/mp2t/ts_packet.h"
  #include "media/formats/mp2t/ts_section.h"
  #include "media/formats/mp2t/ts_section_cat.h"
-@@ -33,6 +36,10 @@
- #include "media/formats/mp2t/ts_section_pes.h"
- #include "media/formats/mp2t/ts_section_pmt.h"
--
-+
-+#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
-+#include "media/formats/mp2t/parc_es_parser_ac3.h"
-+#endif
-+
- namespace media {
- namespace mp2t {
--
-+
-@@ -40,23 +47,42 @@
--
-+
- enum StreamType {
-   // ISO-13818.1 / ITU H.222 Table 2.34 "Stream type assignments"
-+  kStreamTypeParcMpeg1Video = 0x1,
-+  kStreamTypeParcMpeg2Video = 0x2,
-   kStreamTypeMpeg1Audio = 0x3,
-   // ISO/IEC 13818-3 Audio (MPEG-2)
-   kStreamTypeMpeg2Audio = 0x4,
-   kStreamTypeAAC = 0xf,
-   kStreamTypeAVC = 0x1b,
-+  kStreamTypeParcAC3 = 0x81,
-+  kStreamTypeParcEAC3 = 0x87,
-+  kStreamTypeParcAC3WithSampleAES = 0xc1,
-+  kStreamTypeParcEAC3WithSampleAES = 0xc2,
-   kStreamTypeAACWithSampleAES = 0xcf,
-   kStreamTypeAVCWithSampleAES = 0xdb,
--  // TODO(dougsteed). Consider adding support for the following:
--  //  kStreamTypeAC3WithSampleAES = 0xc1,
--  //  kStreamTypeEAC3WithSampleAES = 0xc2,
- };
--
-+
- constexpr uint32_t kSampleAESPrivateDataIndicatorAVC = 0x7a617663;
- constexpr uint32_t kSampleAESPrivateDataIndicatorAAC = 0x61616364;
-+constexpr uint32_t kParcSampleAESPrivateDataIndicatorAC3 = 0x61633364;
-+constexpr uint32_t kParcSampleAESPrivateDataIndicatorEAC3 = 0x65633364;
-+
- // TODO(dougsteed). Consider adding support for the following:
- // const int64_t kSampleAESPrivateDataIndicatorAC3 = 0x61633364;
- // const int64_t kSampleAESPrivateDataIndicatorEAC3 = 0x65633364;
-+constexpr uint32_t kParcAudioSetupInformation = 0x61706164;
-+constexpr uint32_t kParcFormatTypeZavc = 0x7a617663;
-+constexpr uint32_t kParcMediaTypeVideo = 0x76696465;
-+constexpr uint32_t kParcMediaTypeAudio = 0x736f756e;
-+
-+constexpr char kParcTransportStreamKeyId[] = "TransportStreamIdentifier";
-+
-+void ParcMarkSampleAes(StreamParserBuffer& buffer) {
-+  buffer.set_decrypt_config(DecryptConfig::CreateCbcsConfig(
-+      kParcTransportStreamKeyId,
-+      std::string(DecryptConfig::kDecryptionKeySize, '\0'), {},
-+      std::nullopt));
-+}
--
-+
- std::optional<base::flat_set<int>> MapAllowedStreamTypes(
-     std::optional<base::span<const std::string>> allowed_codecs) {
-@@ -214,10 +240,10 @@
+@@ -214,10 +215,10 @@
 -
 +
  Mp2tStreamParser::BufferQueueWithConfig::BufferQueueWithConfig(
@@ -7631,7 +5884,7 @@
  }
 -
 +
-@@ -274,6 +300,8 @@
+@@ -274,6 +275,8 @@
      pid_pair.second->Flush();
    }
    pids_.clear();
@@ -7641,20 +5894,7 @@
 +
    // Flush is invoked from SourceBuffer.abort/SourceState::ResetParserState, and
    // MSE spec prohibits emitting new configs in ResetParserState algorithm (see
-@@ -327,6 +355,11 @@
-   EmitRemainingBuffers();
- }
--
-+
-+void Mp2tStreamParser::ParcIgnoreDeclaredCodecs() {
-+  allowed_stream_types_.reset();
-+  parc_safari_streams_ = true;
-+}
-+
- bool Mp2tStreamParser::GetGenerateTimestampsFlag() const {
-   return false;
- }
-@@ -414,7 +447,8 @@
+@@ -414,7 +417,8 @@
                 .insert(
                     std::make_pair(ts_packet->pid(), std::move(pat_pid_state)))
                 .first;
@@ -7664,116 +5904,13 @@
        // We allow a CAT to appear as the first packet in the TS. This allows us
        // to specify encryption metadata for HLS by injecting it as an extra TS
        // packet at the front of the stream.
-@@ -519,6 +553,101 @@
-                                               media_log_.get());
- }
--
-+
-+std::unique_ptr<EsParser> Mp2tStreamParser::CreateParcMpegVideoParser(
-+    int pes_pid) {
-+  auto on_video_config_changed = base::BindRepeating(
-+      &Mp2tStreamParser::OnVideoConfigChanged, base::Unretained(this), pes_pid);
-+  auto on_emit_video_buffer = base::BindRepeating(
-+      &Mp2tStreamParser::OnEmitVideoBuffer, base::Unretained(this), pes_pid);
-+  return std::make_unique<ParcEsParserMpegVideo>(
-+      std::move(on_video_config_changed), std::move(on_emit_video_buffer));
-+}
-+
-+#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
-+std::unique_ptr<EsParser> Mp2tStreamParser::CreateParcAc3Parser(int pes_pid,
-+                                                                bool eac3) {
-+  auto on_audio_config_changed = base::BindRepeating(
-+      &Mp2tStreamParser::OnAudioConfigChanged, base::Unretained(this), pes_pid);
-+  auto on_emit_audio_buffer = base::BindRepeating(
-+      &Mp2tStreamParser::OnEmitAudioBuffer, base::Unretained(this), pes_pid);
-+  return std::make_unique<ParcEsParserAc3>(eac3, on_audio_config_changed,
-+                                           std::move(on_emit_audio_buffer),
-+                                           media_log_.get());
-+}
-+#endif
-+
-+std::unique_ptr<EsParser> Mp2tStreamParser::ParcCreateSampleAesParser(
-+    int pes_pid,
-+    int stream_type,
-+    const Descriptors& descriptors) {
-+  const bool video = stream_type == kStreamTypeAVCWithSampleAES;
-+  uint32_t indicator = kSampleAESPrivateDataIndicatorAVC;
-+  if (stream_type == kStreamTypeAACWithSampleAES) {
-+    indicator = kSampleAESPrivateDataIndicatorAAC;
-+  } else if (stream_type == kStreamTypeParcAC3WithSampleAES) {
-+    indicator = kParcSampleAESPrivateDataIndicatorAC3;
-+  } else if (stream_type == kStreamTypeParcEAC3WithSampleAES) {
-+    indicator = kParcSampleAESPrivateDataIndicatorEAC3;
-+  }
-+  if (!descriptors.HasPrivateDataIndicator(indicator)) {
-+    return nullptr;
-+  }
-+  uint32_t format_type = kParcFormatTypeZavc;
-+  std::vector<uint8_t> setup_data;
-+  if (!video) {
-+    uint32_t format_identifier = 0;
-+    std::vector<uint8_t> info;
-+    if (!descriptors.HasRegistrationDescriptor(&format_identifier, &info) ||
-+        format_identifier != kParcAudioSetupInformation || info.size() < 8 ||
-+        info.size() < 8u + info[7]) {
-+      return nullptr;
-+    }
-+    format_type = base::U32FromBigEndian(base::span(info).first<4u>());
-+    setup_data.assign(info.begin() + 8, info.begin() + 8 + info[7]);
-+  }
-+
-+  std::unique_ptr<EsParser> es_parser;
-+  switch (stream_type) {
-+    case kStreamTypeAVCWithSampleAES:
-+      es_parser = std::make_unique<EsParserH264>(
-+          base::BindRepeating(&Mp2tStreamParser::OnVideoConfigChanged,
-+                              base::Unretained(this), pes_pid),
-+          base::BindRepeating(&Mp2tStreamParser::OnEmitVideoBuffer,
-+                              base::Unretained(this), pes_pid),
-+          EncryptionScheme::kCbcs, EsParserH264::GetDecryptConfigCB());
-+      break;
-+    case kStreamTypeAACWithSampleAES:
-+      es_parser = CreateAacParser(pes_pid);
-+      break;
-+#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
-+    case kStreamTypeParcAC3WithSampleAES:
-+    case kStreamTypeParcEAC3WithSampleAES:
-+      es_parser = CreateParcAc3Parser(
-+          pes_pid, stream_type == kStreamTypeParcEAC3WithSampleAES);
-+      break;
-+#endif
-+  }
-+  if (!es_parser) {
-+    return nullptr;
-+  }
-+  parc_sample_aes_pids_[pes_pid] =
-+      stream_type == kStreamTypeAACWithSampleAES ||
-+              stream_type == kStreamTypeParcEAC3WithSampleAES
-+          ? setup_data
-+          : std::vector<uint8_t>();
-+  if (!video)
-+    parc_sample_aes_audio_types_[pes_pid] = format_type;
-+  if (parc_mpts_reported_pids_.insert(pes_pid).second) {
-+    const std::string init_data = base::StringPrintf(
-+        "{\n  \"cont\" : \"mpts\",\n  \"codc\" : %u,\n  \"mtyp\" : %u\n}",
-+        format_type, video ? kParcMediaTypeVideo : kParcMediaTypeAudio);
-+    encrypted_media_init_data_cb_.Run(
-+        EmeInitDataType::MPTS,
-+        std::vector<uint8_t>(init_data.begin(), init_data.end()));
-+  }
-+  return es_parser;
-+}
-+
- bool Mp2tStreamParser::ShouldForceEncryptedParser() {
-   // If we expect to handle encrypted data later in the stream, then force the
-   // use of the encrypted parser variant so that the initial configuration
-@@ -612,7 +741,39 @@
+@@ -612,7 +616,39 @@
        es_parser = CreateMpeg1AudioParser(pes_pid);
        break;
 -
 +
-+    case kStreamTypeParcMpeg1Video:
-+    case kStreamTypeParcMpeg2Video:
++    case parc_mp2t::kStreamTypeMpeg1Video:
++    case parc_mp2t::kStreamTypeMpeg2Video:
 +      if (parc_safari_streams_) {
 +        is_audio = false;
 +        es_parser = CreateParcMpegVideoParser(pes_pid);
@@ -7781,16 +5918,16 @@
 +      break;
 +
 +#if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
-+    case kStreamTypeParcAC3:
-+    case kStreamTypeParcEAC3:
++    case parc_mp2t::kStreamTypeAC3:
++    case parc_mp2t::kStreamTypeEAC3:
 +      if (parc_safari_streams_) {
 +        es_parser = CreateParcAc3Parser(
-+            pes_pid, stream_type == kStreamTypeParcEAC3);
++            pes_pid, stream_type == parc_mp2t::kStreamTypeEAC3);
 +      }
 +      break;
 +
-+    case kStreamTypeParcAC3WithSampleAES:
-+    case kStreamTypeParcEAC3WithSampleAES:
++    case parc_mp2t::kStreamTypeAC3WithSampleAES:
++    case parc_mp2t::kStreamTypeEAC3WithSampleAES:
 +      if (parc_safari_streams_) {
 +        es_parser =
 +            ParcCreateSampleAesParser(pes_pid, stream_type, descriptors);
@@ -7808,7 +5945,7 @@
        if (descriptors.HasPrivateDataIndicator(
                kSampleAESPrivateDataIndicatorAVC)) {
          is_audio = false;
-@@ -625,6 +786,11 @@
+@@ -625,6 +661,11 @@
        break;
 -
 +
@@ -7821,7 +5958,7 @@
        if (descriptors.HasPrivateDataIndicator(
                kSampleAESPrivateDataIndicatorAAC)) {
          es_parser =
-@@ -692,6 +858,11 @@
+@@ -692,6 +733,11 @@
    // Disable all the other audio and video PIDs.
    for (auto it = pids_.begin(); it != pids_.end(); ++it) {
      PidState* pid_state = it->second.get();
@@ -7833,7 +5970,7 @@
      if (it != lowest_audio_pid && it != lowest_video_pid &&
          (pid_state->pid_type() == PidState::kPidAudioPes ||
           pid_state->pid_type() == PidState::kPidVideoPes))
-@@ -716,7 +887,8 @@
+@@ -716,7 +762,8 @@
      BufferQueueWithConfig buffer_queue_with_config(
          false,
          buffer_queue_chain_.empty()
@@ -7843,7 +5980,7 @@
          video_decoder_config);
      buffer_queue_chain_.push_back(buffer_queue_with_config);
    }
-@@ -733,44 +905,56 @@
+@@ -733,44 +780,49 @@
 -
 +
  void Mp2tStreamParser::OnAudioConfigChanged(
@@ -7855,15 +5992,8 @@
 +  AudioDecoderConfig audio_decoder_config = es_audio_decoder_config;
 +  if (auto it = parc_sample_aes_pids_.find(pes_pid);
 +      it != parc_sample_aes_pids_.end()) {
-+    audio_decoder_config.Initialize(
-+        es_audio_decoder_config.codec(),
-+        es_audio_decoder_config.sample_format(),
-+        es_audio_decoder_config.channel_layout_config(),
-+        es_audio_decoder_config.samples_per_second(),
-+        it->second.empty() ? es_audio_decoder_config.extra_data() : it->second,
-+        EncryptionScheme::kCbcs, es_audio_decoder_config.seek_preroll(),
-+        es_audio_decoder_config.codec_delay());
-+    audio_decoder_config.set_parc_ts_audio_type(
++    audio_decoder_config = parc_mp2t::SampleAesAudioConfig(
++        es_audio_decoder_config, it->second,
 +        parc_sample_aes_audio_types_.at(pes_pid));
 +  }
 +  DCHECK(parc_safari_streams_ || pes_pid == selected_audio_pid_);
@@ -7925,7 +6055,7 @@
                                  MediaTrack::Kind("main"), MediaTrack::Label(""),
                                  MediaTrack::Language(""));
    }
-@@ -794,15 +978,24 @@
+@@ -794,15 +846,24 @@
    // Wait for more data to come if one of the config is not available.
    BufferQueueWithConfig& queue_with_config = buffer_queue_chain_.front();
    if (selected_audio_pid_ > 0 &&
@@ -7954,7 +6084,7 @@
    queue_with_config.is_config_sent = true;
 -
 +
-@@ -813,7 +1006,7 @@
+@@ -813,7 +874,7 @@
    // accurately here. Currently, capped at max 1 each for audio and video.
    InitParameters params(kInfiniteDuration);
    params.detected_audio_track_count =
@@ -7963,7 +6093,7 @@
    params.detected_video_track_count =
        queue_with_config.video_config.IsValidConfig() ? 1 : 0;
    std::move(init_cb_).Run(params);
-@@ -825,7 +1018,7 @@
+@@ -825,7 +886,7 @@
  void Mp2tStreamParser::OnEmitAudioBuffer(
      int pes_pid,
      scoped_refptr<StreamParserBuffer> stream_parser_buffer) {
@@ -7973,7 +6103,7 @@
 +
    DVLOG(LOG_LEVEL_ES)
        << "OnEmitAudioBuffer: " << " size=" << stream_parser_buffer->size()
-@@ -839,7 +1032,12 @@
+@@ -839,7 +900,12 @@
      return;
    }
 -
@@ -7982,26 +6112,26 @@
 +  const int track_id = parc_safari_streams_ ? pes_pid + 2 : kMp2tAudioTrackId;
 +  stream_parser_buffer->set_track_id(track_id);
 +  if (parc_sample_aes_pids_.contains(pes_pid)) {
-+    ParcMarkSampleAes(*stream_parser_buffer);
++    parc_mp2t::MarkSampleAes(*stream_parser_buffer);
 +  }
 +  buffer_queue_chain_.back().audio_queues[track_id].push_back(stream_parser_buffer);
  }
 -
 +
  void Mp2tStreamParser::OnEmitVideoBuffer(
-@@ -859,6 +1057,9 @@
+@@ -859,6 +925,9 @@
      NOTREACHED() << "Cannot provide buffers before configs";
    }
 -
 +
 +  if (parc_sample_aes_pids_.contains(pes_pid)) {
-+    ParcMarkSampleAes(*stream_parser_buffer);
++    parc_mp2t::MarkSampleAes(*stream_parser_buffer);
 +  }
    buffer_queue_chain_.back().video_queue.push_back(stream_parser_buffer);
  }
 -
 +
-@@ -873,17 +1074,25 @@
+@@ -873,17 +942,25 @@
      return true;
 -
 +
@@ -8033,7 +6163,7 @@
    // Buffer emission.
    while (!buffer_queue_chain_.empty()) {
      // Start a segment if needed.
-@@ -897,7 +1106,7 @@
+@@ -897,7 +974,7 @@
      BufferQueueWithConfig& queue_with_config = buffer_queue_chain_.front();
      if (!queue_with_config.is_config_sent) {
        std::unique_ptr<MediaTracks> media_tracks = GenerateMediaTrackInfo(
@@ -8042,7 +6172,7 @@
        if (!config_cb_.Run(std::move(media_tracks))) {
          return false;
        }
-@@ -905,10 +1114,7 @@
+@@ -905,10 +982,7 @@
      }
 -
 +
@@ -8055,7 +6185,7 @@
      if (!queue_with_config.video_queue.empty())
        buffer_queue_map.insert(
            std::make_pair(kMp2tVideoTrackId, queue_with_config.video_queue));
-@@ -922,7 +1128,7 @@
+@@ -922,7 +996,7 @@
    // Push an empty queue with the last audio/video config
    // so that buffers with the same config can be added later on.
    BufferQueueWithConfig queue_with_config(
@@ -8838,7 +6968,7 @@
  };
 --- a/media/renderers/renderer_impl.cc
 +++ b/media/renderers/renderer_impl.cc
-@@ -4,9 +4,12 @@
+@@ -4,6 +4,7 @@
 -
 +
  #include "media/renderers/renderer_impl.h"
@@ -8847,19 +6977,9 @@
 +#include <algorithm>
  #include <memory>
  #include <utility>
-+#include <vector>
 -
 +
-+#include "base/barrier_closure.h"
- #include "base/command_line.h"
- #include "base/compiler_specific.h"
- #include "base/functional/bind.h"
-@@ -21,10 +24,12 @@
- #include "base/trace_event/trace_event.h"
- #include "media/base/audio_decoder_config.h"
- #include "media/base/audio_renderer.h"
-+#include "media/base/cdm_context.h"
- #include "media/base/media_client.h"
+@@ -25,11 +26,13 @@
  #include "media/base/media_log.h"
  #include "media/base/media_resource.h"
  #include "media/base/media_switches.h"
@@ -8867,70 +6987,14 @@
  #include "media/base/renderer_client.h"
  #include "media/base/time_source.h"
  #include "media/base/video_decoder_config.h"
-@@ -38,8 +43,61 @@
- perfetto::NamedTrack GetTracingTrack(const RendererImpl* renderer) {
-   return perfetto::NamedTrack::FromPointer("media::RendererImpl", renderer);
- }
-+
-+bool ParcIsEncrypted(DemuxerStream* stream) {
-+  return stream->type() == DemuxerStream::AUDIO
-+             ? stream->audio_decoder_config().is_encrypted()
-+             : stream->video_decoder_config().is_encrypted();
-+}
- }  // namespace
+ #include "media/base/video_renderer.h"
+ #include "media/base/wall_clock_time_source.h"
++#include "media/renderers/parc_renderer_impl_mixed_audio.h"
+ #include "third_party/perfetto/include/perfetto/tracing/track.h"
 -
 +
-+struct RendererImpl::ParcMixedAudio {
-+  int id = 0;
-+  raw_ptr<DemuxerStream> stream;
-+  std::unique_ptr<ParcMixedAudioClient> client;
-+  std::unique_ptr<AudioRenderer> renderer;
-+  bool initialized = false;
-+  bool playing = false;
-+  bool ticking = false;
-+  bool ended = false;
-+  BufferingState buffering_state = BUFFERING_HAVE_NOTHING;
-+  base::OnceClosure flush_done_cb;
-+};
-+
-+class RendererImpl::ParcMixedAudioClient final : public RendererClient {
-+ public:
-+  ParcMixedAudioClient(RendererImpl* renderer, int id)
-+      : renderer_(renderer), id_(id) {}
-+
-+  void OnError(PipelineStatus error) override { renderer_->OnError(error); }
-+  void OnFallback(PipelineStatus error) override {
-+    renderer_->OnFallback(std::move(error).AddHere());
-+  }
-+  void OnEnded() override { renderer_->OnParcMixedAudioEnded(id_); }
-+  void OnStatisticsUpdate(const PipelineStatistics& stats) override {
-+    renderer_->OnStatisticsUpdate(stats);
-+  }
-+  void OnBufferingStateChange(BufferingState state,
-+                              BufferingStateChangeReason reason) override {
-+    renderer_->OnParcMixedAudioBufferingStateChange(id_, state, reason);
-+  }
-+  void OnWaiting(WaitingReason reason) override {
-+    renderer_->OnWaiting(reason);
-+  }
-+  void OnAudioConfigChange(const AudioDecoderConfig& config) override {}
-+  void OnVideoConfigChange(const VideoDecoderConfig& config) override {}
-+  void OnVideoNaturalSizeChange(const gfx::Size& size) override {}
-+  void OnVideoOpacityChange(bool opaque) override {}
-+  void OnVideoFrameRateChange(std::optional<int> fps) override {}
-+  bool IsVideoStreamAvailable() override {
-+    return renderer_->media_resource_->GetFirstStream(DemuxerStream::VIDEO);
-+  }
-+
-+ private:
-+  raw_ptr<RendererImpl> renderer_;
-+  const int id_;
-+};
-+
- class RendererImpl::RendererClientInternal final : public RendererClient {
-  public:
-   RendererClientInternal(DemuxerStream::Type type,
-@@ -132,7 +190,10 @@
+ namespace media {
+@@ -132,7 +135,10 @@
 -
 +
    // Tear down in opposite order of construction as |video_renderer_| can still
@@ -8943,7 +7007,7 @@
 -
 +
    if (init_cb_)
-@@ -182,6 +243,17 @@
+@@ -182,6 +188,17 @@
    cdm_context_ = cdm_context;
    std::move(cdm_attached_cb).Run(true);
 -
@@ -8963,7 +7027,7 @@
      return;
 -
 +
-@@ -200,6 +272,19 @@
+@@ -200,6 +217,19 @@
 -
 +
    if (audio_renderer_)
@@ -8985,7 +7049,7 @@
 -
 +
  void RendererImpl::SetPreservesPitch(bool preserves_pitch) {
-@@ -208,6 +293,15 @@
+@@ -208,6 +238,15 @@
 -
 +
    if (audio_renderer_)
@@ -9003,7 +7067,7 @@
 -
 +
  void RendererImpl::SetRenderMutedAudio(bool render_muted_audio) {
-@@ -217,6 +311,9 @@
+@@ -217,6 +256,9 @@
    if (audio_renderer_) {
      audio_renderer_->SetRenderMutedAudio(render_muted_audio);
    }
@@ -9014,7 +7078,7 @@
 -
 +
  void RendererImpl::SetWasPlayedWithUserActivationAndHighMediaEngagement(
-@@ -227,6 +324,10 @@
+@@ -227,6 +269,10 @@
    if (audio_renderer_)
      audio_renderer_->SetWasPlayedWithUserActivationAndHighMediaEngagement(
          was_played_with_user_activation_and_high_media_engagement);
@@ -9026,7 +7090,7 @@
 -
 +
  void RendererImpl::Flush(base::OnceClosure flush_cb) {
-@@ -250,6 +351,10 @@
+@@ -250,6 +296,10 @@
    flush_cb_ = std::move(flush_cb);
    state_ = STATE_FLUSHING;
 -
@@ -9038,7 +7102,7 @@
    // If a stream restart is pending, this Flush() will complete it. Upon flush
    // completion any pending actions will be executed as well.
    FlushInternal();
-@@ -273,6 +378,11 @@
+@@ -273,6 +323,11 @@
      audio_playing_ = true;
      audio_renderer_->StartPlaying();
    }
@@ -9050,7 +7114,7 @@
    if (video_renderer_) {
      video_playing_ = true;
      video_renderer_->StartPlayingFrom(time);
-@@ -288,7 +398,26 @@
+@@ -288,7 +343,26 @@
    if (state_ != STATE_PLAYING && state_ != STATE_FLUSHED)
      return;
 -
@@ -9079,7 +7143,7 @@
 +
    const double old_rate = playback_rate_;
    playback_rate_ = playback_rate;
-@@ -307,20 +436,29 @@
+@@ -307,20 +381,29 @@
 -
 +
    if (audio_renderer_)
@@ -9114,7 +7178,7 @@
 -
 +
  void RendererImpl::DisableUnderflowForTesting() {
-@@ -362,7 +500,16 @@
+@@ -362,7 +445,16 @@
      return true;
    }
 -
@@ -9134,7 +7198,7 @@
 -
 +
  bool RendererImpl::HasEncryptedStream() {
-@@ -408,6 +555,9 @@
+@@ -408,6 +500,9 @@
    MediaClient* media_client = GetMediaClient();
    if (!audio_stream ||
        (media_client && media_client->ShouldSuppressAudioTracks())) {
@@ -9144,7 +7208,7 @@
      audio_renderer_.reset();
      task_runner_->PostTask(
          FROM_HERE, base::BindOnce(&RendererImpl::OnAudioRendererInitializeDone,
-@@ -459,6 +609,9 @@
+@@ -459,6 +554,9 @@
        media_resource_->GetFirstStream(DemuxerStream::VIDEO);
 -
 +
@@ -9156,7 +7220,7 @@
 -
 +
      // Something has disabled all audio and video streams, so fail
-@@ -512,6 +665,14 @@
+@@ -512,6 +610,14 @@
      time_source_ = wall_clock_time_source_.get();
    }
 -
@@ -9172,7 +7236,7 @@
    state_ = STATE_FLUSHED;
    DCHECK(time_source_);
    DCHECK(audio_renderer_ || video_renderer_);
-@@ -538,11 +699,16 @@
+@@ -538,11 +644,16 @@
    DCHECK_EQ(state_, STATE_FLUSHING);
    DCHECK(flush_cb_);
 -
@@ -9194,7 +7258,7 @@
  }
 -
 +
-@@ -690,6 +856,11 @@
+@@ -690,6 +801,11 @@
      audio_playing_ = true;
      pending_audio_track_change_ = false;
    }
@@ -9206,7 +7270,7 @@
    audio_renderer_->StartPlaying();
    std::move(restart_completed_cb).Run();
  }
-@@ -740,6 +911,25 @@
+@@ -740,6 +856,25 @@
                 type_string, "state",
                 BufferingStateToString(new_buffering_state, reason));
 -
@@ -9234,7 +7298,7 @@
 -
 +
    if (new_buffering_state == BUFFERING_HAVE_NOTHING) {
-@@ -824,7 +1014,12 @@
+@@ -824,7 +959,12 @@
      return true;
    if (video_renderer_ && video_buffering_state_ != BUFFERING_HAVE_ENOUGH)
      return true;
@@ -9249,7 +7313,7 @@
 -
 +
  void RendererImpl::PausePlayback() {
-@@ -858,6 +1053,12 @@
+@@ -858,6 +998,12 @@
    if (time_ticking_) {
      time_ticking_ = false;
      time_source_->StopTicking();
@@ -9263,7 +7327,7 @@
 -
 +
    if (playback_rate_ > 0 && video_renderer_)
-@@ -875,6 +1076,12 @@
+@@ -875,6 +1021,12 @@
      time_ticking_ = true;
      audio_playing_ = true;
      time_source_->StartTicking();
@@ -9276,7 +7340,7 @@
    }
    if (playback_rate_ > 0 && video_renderer_) {
      video_playing_ = true;
-@@ -914,7 +1121,9 @@
+@@ -914,7 +1066,9 @@
    if (video_renderer_ && !video_ended_)
      return false;
 -
@@ -9289,7 +7353,7 @@
 -
 +
  void RendererImpl::RunEndedCallbackIfNeeded() {
-@@ -947,6 +1156,9 @@
+@@ -947,6 +1101,9 @@
 -
 +
    const State old_state = state_;
@@ -9301,7 +7365,7 @@
 +
    if (init_cb_) {
      DCHECK(old_state == STATE_INITIALIZING ||
-@@ -1009,6 +1221,44 @@
+@@ -1009,6 +1166,44 @@
    DCHECK(task_runner_->RunsTasksInCurrentSequence());
    TRACE_EVENT1("media", "RendererImpl::OnTracksChanged", "track_type",
                 track_type);
@@ -9346,7 +7410,7 @@
    // 'fixing' the stream -> restarting if its the same stream,
    //                        reinitializing if it is different.
    base::OnceClosure fix_stream_cb;
-@@ -1084,8 +1334,443 @@
+@@ -1084,6 +1279,47 @@
    }
  }
 -
@@ -9392,406 +7456,9 @@
 +  }
 +}
 +
-+void RendererImpl::OnParcJoinInitialized(DemuxerStream* stream,
-+                                         base::OnceClosure join_completed_cb,
-+                                         PipelineStatus status) {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  const bool was_waiting = WaitingForEnoughData();
-+  const bool audio = stream->type() == DemuxerStream::AUDIO;
-+  (audio ? parc_audio_join_awaiting_cdm_ : parc_video_join_awaiting_cdm_) =
-+      nullptr;
-+  (audio ? parc_audio_joining_ : parc_video_joining_) = false;
-+  if (status != PIPELINE_OK) {
-+    std::move(join_completed_cb).Run();
-+    OnError(status);
-+    return;
-+  }
-+  if (state_ != STATE_PLAYING && state_ != STATE_FLUSHED &&
-+      state_ != STATE_FLUSHING) {
-+    std::move(join_completed_cb).Run();
-+    return;
-+  }
-+  const bool ended = state_ == STATE_PLAYING && PlaybackHasEnded();
-+  const base::TimeDelta now = GetMediaTime();
-+  if (audio) {
-+    audio_renderer_ = std::move(parc_audio_renderer_);
-+    current_audio_stream_ = stream;
-+    audio_ended_ = ended;
-+  } else {
-+    video_renderer_ = std::move(parc_video_renderer_);
-+    current_video_stream_ = stream;
-+    video_ended_ = ended;
-+  }
-+  if (time_ticking_) {
-+    PausePlayback();
-+  }
-+  if (audio) {
-+    {
-+      base::AutoLock lock(restarting_audio_lock_);
-+      time_source_ = audio_renderer_->GetTimeSource();
-+    }
-+    time_source_->SetMediaTime(now);
-+    time_source_->SetPlaybackRate(playback_rate_);
-+  }
-+  if (state_ == STATE_PLAYING) {
-+    if (audio) {
-+      audio_playing_ = true;
-+      audio_renderer_->StartPlaying();
-+    } else {
-+      video_playing_ = true;
-+      video_renderer_->StartPlayingFrom(now);
-+    }
-+    if (!was_waiting) {
-+      client_->OnBufferingStateChange(BUFFERING_HAVE_NOTHING,
-+                                      BUFFERING_CHANGE_REASON_UNKNOWN);
-+    }
-+  }
-+  if (audio && media_resource_->ParcMayAddStreams()) {
-+    parc_own_audio_muted_ = !ParcStreamIsEnabled(stream);
-+    if (auto* parc = audio_renderer_->GetParcExtension()) {
-+      parc->ParcSetOwnAudioMuted(parc_own_audio_muted_);
-+    }
-+    ParcSyncMixedAudio();
-+  }
-+  std::move(join_completed_cb).Run();
-+}
-+
-+bool RendererImpl::ParcAwaitsCdm(DemuxerStream* stream) {
-+  return !cdm_context_ && ParcIsEncrypted(stream);
-+}
-+
-+bool RendererImpl::ParcCannotDecrypt(DemuxerStream* stream) {
-+  return cdm_context_ && cdm_context_->RequiresFairPlayRenderer() &&
-+         ParcIsEncrypted(stream);
-+}
-+
-+void RendererImpl::ParcSyncMixedAudio() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  if (!audio_renderer_ || !media_resource_->ParcMayAddStreams() ||
-+      (state_ != STATE_INITIALIZING && state_ != STATE_FLUSHED &&
-+       state_ != STATE_FLUSHING && state_ != STATE_PLAYING)) {
-+    return;
-+  }
-+  std::vector<DemuxerStream*> enabled;
-+  for (DemuxerStream* stream : media_resource_->GetAllStreams()) {
-+    if (stream->type() == DemuxerStream::AUDIO &&
-+        stream != current_audio_stream_ && ParcStreamIsEnabled(stream) &&
-+        !ParcCannotDecrypt(stream)) {
-+      enabled.push_back(stream);
-+    }
-+  }
-+  const bool was_waiting = WaitingForEnoughData();
-+  const bool ended = state_ == STATE_PLAYING && PlaybackHasEnded();
-+  std::vector<base::OnceClosure> flush_done_cbs;
-+  std::erase_if(parc_mixed_audio_, [&](const std::unique_ptr<ParcMixedAudio>&
-+                                           mixed) {
-+    if (std::ranges::contains(enabled, mixed->stream.get())) {
-+      return false;
-+    }
-+    if (mixed->flush_done_cb) {
-+      flush_done_cbs.push_back(std::move(mixed->flush_done_cb));
-+    }
-+    return true;
-+  });
-+  std::vector<ParcMixedAudio*> initializing;
-+  for (DemuxerStream* stream : enabled) {
-+    auto it = std::ranges::find(parc_mixed_audio_, stream,
-+                                [](const std::unique_ptr<ParcMixedAudio>& m) {
-+                                  return m->stream.get();
-+                                });
-+    if (it != parc_mixed_audio_.end() &&
-+        ((*it)->renderer || ParcAwaitsCdm(stream))) {
-+      continue;
-+    }
-+    std::unique_ptr<AudioRenderer> renderer;
-+    if (ParcAwaitsCdm(stream)) {
-+      OnWaiting(WaitingReason::kNoCdm);
-+    } else {
-+      if (auto* parc = audio_renderer_->GetParcExtension()) {
-+        renderer = parc->ParcCreateMixedRenderer();
-+      }
-+      if (!renderer) {
-+        if (it != parc_mixed_audio_.end()) {
-+          parc_mixed_audio_.erase(it);
-+        }
-+        continue;
-+      }
-+    }
-+    ParcMixedAudio* mixed = it != parc_mixed_audio_.end() ? it->get() : nullptr;
-+    if (!mixed) {
-+      mixed = parc_mixed_audio_.emplace_back(std::make_unique<ParcMixedAudio>())
-+                  .get();
-+      mixed->id = ++parc_last_mixed_audio_id_;
-+      mixed->stream = stream;
-+      mixed->client = std::make_unique<ParcMixedAudioClient>(this, mixed->id);
-+      mixed->ended = ended;
-+    }
-+    if (renderer) {
-+      mixed->renderer = std::move(renderer);
-+      initializing.push_back(mixed);
-+    }
-+  }
-+  for (ParcMixedAudio* mixed : initializing) {
-+    mixed->renderer->SetLatencyHint(parc_latency_hint_);
-+    mixed->renderer->SetPreservesPitch(parc_preserves_pitch_);
-+    mixed->renderer->Initialize(
-+        mixed->stream, cdm_context_, mixed->client.get(),
-+        base::BindOnce(&RendererImpl::OnParcMixedAudioInitialized, weak_this_,
-+                       mixed->id));
-+  }
-+  ParcUpdateWaiting(was_waiting, BUFFERING_CHANGE_REASON_UNKNOWN);
-+  if (!ended && state_ == STATE_PLAYING && PlaybackHasEnded()) {
-+    RunEndedCallbackIfNeeded();
-+  }
-+  for (base::OnceClosure& flush_done_cb : flush_done_cbs) {
-+    std::move(flush_done_cb).Run();
-+  }
-+}
-+
-+RendererImpl::ParcMixedAudio* RendererImpl::ParcFindMixedAudio(int id) {
-+  auto it = std::ranges::find(parc_mixed_audio_, id,
-+                              [](const std::unique_ptr<ParcMixedAudio>& m) {
-+                                return m->id;
-+                              });
-+  return it != parc_mixed_audio_.end() ? it->get() : nullptr;
-+}
-+
-+void RendererImpl::OnParcMixedAudioInitialized(int id, PipelineStatus status) {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  ParcMixedAudio* mixed = ParcFindMixedAudio(id);
-+  if (!mixed || state_ == STATE_ERROR) {
-+    return;
-+  }
-+  if (status != PIPELINE_OK) {
-+    OnError(status);
-+    return;
-+  }
-+  mixed->initialized = true;
-+  if (state_ == STATE_INITIALIZING) {
-+    if (std::ranges::all_of(parc_mixed_audio_, [](const auto& other) {
-+          return !other->renderer || other->initialized;
-+        })) {
-+      state_ = STATE_FLUSHED;
-+      FinishInitialization(PIPELINE_OK);
-+    }
-+    return;
-+  }
-+  if (state_ == STATE_PLAYING && !parc_backward_) {
-+    if (time_ticking_) {
-+      PausePlayback();
-+    }
-+    ParcStartMixedAudio(*mixed, GetMediaTime());
-+  }
-+}
-+
-+void RendererImpl::ParcStartMixedAudio(ParcMixedAudio& mixed,
-+                                       base::TimeDelta time) {
-+  DCHECK(mixed.initialized);
-+  TimeSource* time_source = mixed.renderer->GetTimeSource();
-+  time_source->SetMediaTime(time);
-+  time_source->SetPlaybackRate(std::max(playback_rate_, 0.0));
-+  mixed.playing = true;
-+  mixed.buffering_state = BUFFERING_HAVE_NOTHING;
-+  mixed.renderer->StartPlaying();
-+}
-+
-+void RendererImpl::ParcFlushMixedAudio(base::OnceClosure flush_done_cb) {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  std::vector<ParcMixedAudio*> playing;
-+  for (const auto& mixed : parc_mixed_audio_) {
-+    if (mixed->playing) {
-+      playing.push_back(mixed.get());
-+    }
-+  }
-+  base::RepeatingClosure done =
-+      base::BarrierClosure(playing.size(), std::move(flush_done_cb));
-+  for (ParcMixedAudio* mixed : playing) {
-+    mixed->flush_done_cb = done;
-+    mixed->renderer->Flush(base::BindOnce(
-+        &RendererImpl::OnParcMixedAudioFlushed, weak_this_, mixed->id));
-+  }
-+}
-+
-+void RendererImpl::OnParcMixedAudioFlushed(int id) {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  ParcMixedAudio* mixed = ParcFindMixedAudio(id);
-+  if (!mixed) {
-+    return;
-+  }
-+  mixed->playing = false;
-+  mixed->ended = false;
-+  mixed->buffering_state = BUFFERING_HAVE_NOTHING;
-+  if (mixed->flush_done_cb) {
-+    std::move(mixed->flush_done_cb).Run();
-+  }
-+}
-+
-+void RendererImpl::OnParcMixedAudioBufferingStateChange(
-+    int id,
-+    BufferingState state,
-+    BufferingStateChangeReason reason) {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  ParcMixedAudio* mixed = ParcFindMixedAudio(id);
-+  if (!mixed || !mixed->playing) {
-+    return;
-+  }
-+  const bool was_waiting = WaitingForEnoughData();
-+  mixed->buffering_state = state;
-+  ParcUpdateWaiting(was_waiting, reason);
-+}
-+
-+void RendererImpl::OnParcMixedAudioEnded(int id) {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  ParcMixedAudio* mixed = ParcFindMixedAudio(id);
-+  if (!mixed || !mixed->playing || state_ != STATE_PLAYING ||
-+      PlaybackHasEnded()) {
-+    return;
-+  }
-+  mixed->ended = true;
-+  RunEndedCallbackIfNeeded();
-+}
-+
-+void RendererImpl::ParcUpdateWaiting(bool was_waiting,
-+                                     BufferingStateChangeReason reason) {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  if (state_ != STATE_PLAYING || parc_backward_) {
-+    return;
-+  }
-+  const bool waiting = WaitingForEnoughData();
-+  if (!was_waiting && waiting) {
-+    PausePlayback();
-+    client_->OnBufferingStateChange(BUFFERING_HAVE_NOTHING, reason);
-+  } else if (was_waiting && !waiting && !pending_audio_track_change_ &&
-+             !pending_video_track_change_) {
-+    StartPlayback();
-+    client_->OnBufferingStateChange(BUFFERING_HAVE_ENOUGH, reason);
-+  }
-+}
-+
  RendererType RendererImpl::GetRendererType() {
    return RendererType::kRendererImpl;
  }
--
-+
-+ParcRendererExtension* RendererImpl::GetParcExtension() {
-+  return this;
-+}
-+
-+void RendererImpl::ParcStartPlayingBackwardFrom(
-+    base::TimeDelta time,
-+    double playback_rate,
-+    ParcSeekDemuxerCB seek_demuxer_cb) {
-+  DVLOG(1) << __func__ << "(" << time.InMicroseconds() << ", "
-+           << playback_rate << ")";
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  DCHECK_LE(playback_rate, 0);
-+
-+  if (state_ != STATE_FLUSHED) {
-+    DCHECK_EQ(state_, STATE_ERROR);
-+    return;
-+  }
-+
-+  state_ = STATE_PLAYING;
-+  parc_backward_ = true;
-+  parc_backward_reported_ = false;
-+  parc_backward_ended_ = false;
-+  playback_rate_ = playback_rate;
-+  parc_backward_clock_.SetMediaTime(time);
-+  parc_backward_clock_.SetPlaybackRate(playback_rate);
-+  {
-+    base::AutoLock lock(restarting_audio_lock_);
-+    parc_backward_clock_used_ = true;
-+  }
-+
-+  if (video_renderer_) {
-+    video_playing_ = true;
-+    if (auto* parc = video_renderer_->GetParcExtension()) {
-+      parc->ParcStartPlayingBackwardFrom(time, std::move(seek_demuxer_cb));
-+    }
-+    return;
-+  }
-+
-+  parc_backward_reported_ = true;
-+  if (playback_rate < 0) {
-+    ParcStartBackwardClock();
-+  }
-+  task_runner_->PostTask(
-+      FROM_HERE, base::BindOnce(
-+                     [](base::WeakPtr<RendererImpl> renderer) {
-+                       if (renderer && renderer->parc_backward_ &&
-+                           renderer->state_ == STATE_PLAYING) {
-+                         renderer->client_->OnBufferingStateChange(
-+                             BUFFERING_HAVE_ENOUGH,
-+                             BUFFERING_CHANGE_REASON_UNKNOWN);
-+                       }
-+                     },
-+                     weak_this_));
-+}
-+
-+void RendererImpl::ParcStartBackwardClock() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  DCHECK(parc_backward_);
-+  if (parc_backward_ticking_ || parc_backward_ended_) {
-+    return;
-+  }
-+  parc_backward_ticking_ = true;
-+  parc_backward_clock_.StartTicking();
-+  if (video_renderer_) {
-+    video_renderer_->OnTimeProgressing();
-+  }
-+  ParcScheduleReachStart();
-+}
-+
-+void RendererImpl::ParcStopBackwardClock() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  parc_reach_start_cb_.Cancel();
-+  if (!parc_backward_ticking_) {
-+    return;
-+  }
-+  parc_backward_ticking_ = false;
-+  parc_backward_clock_.StopTicking();
-+  if (video_renderer_) {
-+    video_renderer_->OnTimeStopped();
-+  }
-+}
-+
-+void RendererImpl::ParcScheduleReachStart() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  parc_reach_start_cb_.Cancel();
-+  if (!parc_backward_ticking_ || playback_rate_ >= 0) {
-+    return;
-+  }
-+  const base::TimeDelta left = parc_backward_clock_.CurrentMediaTime();
-+  parc_reach_start_cb_.Reset(
-+      base::BindOnce(&RendererImpl::ParcReachStart, weak_this_));
-+  task_runner_->PostDelayedTask(
-+      FROM_HERE, parc_reach_start_cb_.callback(),
-+      std::max(base::TimeDelta(), left / -playback_rate_));
-+}
-+
-+void RendererImpl::ParcReachStart() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  if (parc_backward_clock_.CurrentMediaTime().is_positive()) {
-+    ParcScheduleReachStart();
-+    return;
-+  }
-+  ParcStopBackwardClock();
-+  parc_backward_clock_.SetMediaTime(base::TimeDelta());
-+  parc_backward_ended_ = true;
-+  client_->OnEnded();
-+}
-+
-+void RendererImpl::ParcEndBackward() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  ParcStopBackwardClock();
-+  parc_backward_ = false;
-+  time_source_->SetMediaTime(std::max(
-+      base::TimeDelta(), parc_backward_clock_.CurrentMediaTime()));
-+  base::AutoLock lock(restarting_audio_lock_);
-+  parc_backward_clock_used_ = false;
-+}
-+
- }  // namespace media
 --- a/media/base/video_renderer.h
 +++ b/media/base/video_renderer.h
 @@ -16,6 +16,7 @@
@@ -10005,33 +7672,7 @@
 +
 --- a/media/renderers/video_renderer_impl.cc
 +++ b/media/renderers/video_renderer_impl.cc
-@@ -5,6 +5,7 @@
- #include "media/renderers/video_renderer_impl.h"
--
-+
- #include <algorithm>
-+#include <cmath>
- #include <memory>
- #include <utility>
--
-+
-@@ -47,6 +48,13 @@
- // SetLatencyHint(), so we needed to peg this with a constant.
- constexpr int kAbsoluteMaxFrames = 24;
--
-+
-+constexpr size_t kParcMaxWindowFrames = 64;
-+constexpr size_t kParcMaxWindowBytes = 192 * 1024 * 1024;
-+constexpr double kParcDecodeMargin = 1.25;
-+constexpr int kParcSpeedSamples = 8;
-+constexpr base::TimeDelta kParcMaxWindowSpan = base::Seconds(30);
-+constexpr base::TimeDelta kParcMaxStartWait = base::Seconds(2);
-+
- }  // namespace
--
-+
- VideoRendererImpl::VideoRendererImpl(
-@@ -119,6 +127,19 @@
+@@ -119,6 +119,19 @@
    }
    received_end_of_stream_ = false;
    rendered_end_of_stream_ = false;
@@ -10052,7 +7693,7 @@
 +
    // Reset |video_decoder_stream_| and drop any pending read callbacks from it.
    pending_read_ = false;
-@@ -127,9 +148,11 @@
+@@ -127,9 +140,11 @@
    }
    cancel_on_flush_weak_factory_.InvalidateWeakPtrs();
    paint_first_frame_cb_.Cancel();
@@ -10068,36 +7709,7 @@
 +
    // To avoid unnecessary work by VDAs, only delete queued frames after
    // resetting |video_decoder_stream_|. If this is done in the opposite order
-@@ -162,6 +185,27 @@
-   AttemptRead_Locked();
- }
--
-+
-+ParcVideoRendererExtension* VideoRendererImpl::GetParcExtension() {
-+  return this;
-+}
-+
-+void VideoRendererImpl::ParcStartPlayingBackwardFrom(
-+    base::TimeDelta timestamp,
-+    ParcSeekDemuxerCB seek_demuxer_cb) {
-+  DVLOG(1) << __func__ << "(" << timestamp.InMicroseconds() << ")";
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  base::AutoLock auto_lock(lock_);
-+  DCHECK_EQ(state_, kFlushed);
-+  DCHECK(!pending_read_);
-+  DCHECK_EQ(buffering_state_, BUFFERING_HAVE_NOTHING);
-+
-+  state_ = kPlaying;
-+  parc_backward_ = true;
-+  parc_seek_demuxer_cb_ = std::move(seek_demuxer_cb);
-+  last_render_time_ = last_frame_ready_time_ = base::TimeTicks();
-+  ParcDecodeWindowEndingAt_Locked(timestamp, /*starting=*/true);
-+}
-+
- void VideoRendererImpl::Initialize(
-     DemuxerStream* stream,
-     CdmContext* cdm_context,
-@@ -249,6 +293,21 @@
+@@ -249,6 +264,21 @@
 -
 +
    last_render_time_ = tick_clock_->NowTicks();
@@ -10121,7 +7733,7 @@
    size_t frames_dropped = 0;
    scoped_refptr<VideoFrame> result =
        algorithm_->Render(deadline_min, deadline_max, &frames_dropped);
-@@ -297,6 +356,9 @@
+@@ -297,6 +327,9 @@
 -
 +
  void VideoRendererImpl::OnFrameDropped() {
@@ -10133,7 +7745,7 @@
  }
 -
 +
-@@ -360,6 +422,10 @@
+@@ -360,6 +393,10 @@
 -
 +
  void VideoRendererImpl::OnStatisticsUpdate(const PipelineStatistics& stats) {
@@ -10146,7 +7758,7 @@
  }
 -
 +
-@@ -431,6 +497,13 @@
+@@ -431,6 +468,13 @@
    if (rendered_end_of_stream_)
      return;
 -
@@ -10161,7 +7773,7 @@
    // If we have no frames queued, there is a pending buffering state change in
    // flight and we should ignore the start attempt.
    if (!algorithm_->frames_queued()) {
-@@ -454,6 +527,10 @@
+@@ -454,6 +498,10 @@
 -
 +
    StopSink();
@@ -10174,7 +7786,7 @@
    // Make sure we expire everything we can if we can't read any more currently,
    // otherwise playback may hang indefinitely.  Note: There are no effective
    // frames queued at this point, otherwise FrameReady() would have canceled
-@@ -633,6 +710,11 @@
+@@ -633,6 +681,11 @@
    last_frame_ready_time_ = tick_clock_->NowTicks();
    last_decoder_stream_avg_duration_ = video_decoder_stream_->AverageDuration();
 -
@@ -10187,7 +7799,7 @@
    const bool is_eos = frame->metadata().end_of_stream;
    const bool is_before_start_time = !is_eos && IsBeforeStartTime(*frame);
    const bool cant_read = !video_decoder_stream_->CanReadWithoutStalling();
-@@ -820,6 +902,11 @@
+@@ -820,6 +873,11 @@
    if (pending_read_ || received_end_of_stream_)
      return;
 -
@@ -10201,7 +7813,7 @@
      return;
 -
 +
-@@ -910,7 +997,7 @@
+@@ -910,7 +968,7 @@
 -
 +
  void VideoRendererImpl::StartSink() {
@@ -10211,312 +7823,10 @@
    sink_started_ = true;
    was_background_rendering_ = false;
    sink_->Start(this);
-@@ -1121,4 +1208,362 @@
+@@ -1121,4 +1179,39 @@
    paint_first_frame_cb_.Cancel();
  }
 -
-+
-+void VideoRendererImpl::ParcDecodeWindowEndingAt_Locked(base::TimeDelta end,
-+                                                        bool starting) {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  lock_.AssertAcquired();
-+  DCHECK(parc_backward_);
-+  DCHECK(!parc_decoding_);
-+
-+  parc_decoded_.clear();
-+  parc_decoded_bytes_ = 0;
-+  parc_window_passed_ = false;
-+  parc_window_awaited_ = false;
-+  parc_requested_end_ = end;
-+  base::TimeDelta cost;
-+  const base::TimeDelta span = ParcPlanWindow_Locked(&cost);
-+  if (parc_decode_speed_ && !parc_shown_.empty() && !end.is_negative()) {
-+    base::TimeDelta now = parc_shown_.back()->timestamp();
-+    const double rate = ParcClock_Locked(&now);
-+    const base::TimeDelta reached = now - cost * (rate * kParcDecodeMargin);
-+    if (starting && cost <= kParcMaxStartWait &&
-+        (reached < end || (parc_keyframe_distance_.is_zero() &&
-+                           parc_shown_.front()->timestamp() ==
-+                               parc_first_timestamp_))) {
-+      parc_window_awaited_ = true;
-+    } else if (reached < end) {
-+      end = std::max(reached, base::TimeDelta());
-+    }
-+  }
-+  parc_window_end_ = end;
-+  if (end.is_negative()) {
-+    parc_at_start_ = true;
-+    return;
-+  }
-+
-+  parc_seek_time_ = std::max(end - span, base::TimeDelta());
-+  parc_window_start_ = tick_clock_->NowTicks();
-+  parc_first_timestamp_ = parc_last_timestamp_ = kNoTimestamp;
-+  parc_window_frames_ = 0;
-+  parc_decoding_ = true;
-+  parc_seeking_ = true;
-+  pending_read_ = false;
-+  if (mappable_shared_image_pool_) {
-+    mappable_shared_image_pool_->Abort();
-+  }
-+  cancel_on_flush_weak_factory_.InvalidateWeakPtrs();
-+  base::OnceClosure seeked =
-+      base::BindOnce(&VideoRendererImpl::ParcOnDemuxerSeeked,
-+                     cancel_on_flush_weak_factory_.GetWeakPtr());
-+  task_runner_->PostTask(
-+      FROM_HERE,
-+      base::BindOnce(parc_seek_demuxer_cb_, parc_seek_time_, std::move(seeked)));
-+}
-+
-+base::TimeDelta VideoRendererImpl::ParcPlanWindow_Locked(
-+    base::TimeDelta* cost) {
-+  lock_.AssertAcquired();
-+  parc_stride_ = base::TimeDelta();
-+  parc_scan_ = false;
-+  if (cost) {
-+    *cost = base::TimeDelta();
-+  }
-+  if (!parc_decode_speed_ || !parc_frame_duration_.is_positive()) {
-+    return base::TimeDelta();
-+  }
-+
-+  const double rate = ParcClock_Locked(nullptr);
-+  const double needed = rate * kParcDecodeMargin;
-+  const base::TimeDelta preroll =
-+      std::max(parc_preroll_, parc_keyframe_distance_);
-+  if (parc_decode_speed_ > needed) {
-+    const base::TimeDelta span =
-+        (parc_seek_cost_ * parc_decode_speed_ + preroll) *
-+        (needed / (parc_decode_speed_ - needed));
-+    const size_t budget = std::clamp<size_t>(
-+        kParcMaxWindowBytes / std::max<size_t>(parc_frame_bytes_, 1), 1,
-+        kParcMaxWindowFrames);
-+    const double frames = std::max(
-+        {1.0, std::floor(parc_render_interval_ * rate / parc_frame_duration_),
-+         std::ceil(span / (parc_frame_duration_ * budget))});
-+    if (span <= kParcMaxWindowSpan &&
-+        (frames == 1 || parc_frame_duration_ * frames * 2 <=
-+                            std::max(preroll, parc_seek_cost_ * needed))) {
-+      if (frames > 1) {
-+        parc_stride_ = parc_frame_duration_ * frames;
-+      }
-+      if (cost) {
-+        *cost = parc_seek_cost_ + (span + preroll) / parc_decode_speed_;
-+      }
-+      return span;
-+    }
-+  }
-+
-+  parc_scan_ = true;
-+  if (cost) {
-+    *cost = parc_seek_cost_ + parc_frame_duration_ / parc_decode_speed_;
-+  }
-+  return base::TimeDelta();
-+}
-+
-+double VideoRendererImpl::ParcClock_Locked(base::TimeDelta* now) {
-+  lock_.AssertAcquired();
-+  std::vector<base::TimeTicks> wall_clock_times;
-+  const bool moving = wall_clock_time_cb_.Run(
-+      {base::TimeDelta(), base::Seconds(1)}, &wall_clock_times);
-+  const base::TimeDelta second = wall_clock_times[0] - wall_clock_times[1];
-+  if (!second.is_positive()) {
-+    return 1;
-+  }
-+  const double rate = base::Seconds(1) / second;
-+  if (now && moving) {
-+    *now = (wall_clock_times[0] - tick_clock_->NowTicks()) * rate;
-+  }
-+  return rate;
-+}
-+
-+void VideoRendererImpl::ParcOnDemuxerSeeked() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  base::AutoLock auto_lock(lock_);
-+  DCHECK(parc_decoding_);
-+  DCHECK(!parc_resetting_);
-+  parc_seeking_ = false;
-+  parc_resetting_ = true;
-+  video_decoder_stream_->Reset(
-+      base::BindOnce(&VideoRendererImpl::ParcOnDecoderStreamReset,
-+                     weak_factory_.GetWeakPtr()));
-+}
-+
-+void VideoRendererImpl::ParcOnDecoderStreamReset() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  {
-+    base::AutoLock auto_lock(lock_);
-+    parc_resetting_ = false;
-+    if (state_ != kFlushing) {
-+      AttemptRead_Locked();
-+      return;
-+    }
-+  }
-+  OnVideoDecoderStreamResetDone();
-+}
-+
-+void VideoRendererImpl::ParcFrameReady_Locked(scoped_refptr<VideoFrame> frame) {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  lock_.AssertAcquired();
-+
-+  if (!frame->metadata().end_of_stream) {
-+    ++stats_.video_frames_decoded;
-+    if (frame->metadata().power_efficient) {
-+      ++stats_.video_frames_decoded_power_efficient;
-+    }
-+  }
-+
-+  if (frame->metadata().end_of_stream ||
-+      frame->timestamp() > parc_window_end_) {
-+    if (!frame->metadata().end_of_stream && parc_decoded_.empty() &&
-+        frame->timestamp() <= parc_requested_end_) {
-+      parc_decoded_bytes_ =
-+          VideoFrame::AllocationSize(frame->format(), frame->coded_size());
-+      parc_decoded_.push_back(std::move(frame));
-+    } else if (!frame->metadata().end_of_stream) {
-+      ++stats_.video_frames_dropped;
-+      if (parc_scan_ && parc_decoded_.size() == 1 &&
-+          frame->timestamp() > parc_last_timestamp_) {
-+        parc_last_timestamp_ = frame->timestamp();
-+        parc_last_frame_ticks_ = tick_clock_->NowTicks();
-+      }
-+    }
-+    UpdateStats_Locked();
-+    ParcFinishWindow_Locked();
-+    return;
-+  }
-+
-+  const base::TimeDelta timestamp = frame->timestamp();
-+  const base::TimeTicks now = tick_clock_->NowTicks();
-+  const size_t bytes =
-+      VideoFrame::AllocationSize(frame->format(), frame->coded_size());
-+  parc_frame_bytes_ = bytes;
-+  if (parc_first_timestamp_ == kNoTimestamp) {
-+    parc_first_timestamp_ = parc_last_timestamp_ = timestamp;
-+    parc_first_frame_ticks_ = parc_last_frame_ticks_ = now;
-+    const base::TimeDelta seek_cost = now - parc_window_start_;
-+    parc_seek_cost_ = parc_seek_cost_.is_zero()
-+                          ? seek_cost
-+                          : (parc_seek_cost_ + seek_cost) / 2;
-+    parc_preroll_ = std::max(parc_preroll_, parc_seek_time_ - timestamp);
-+
-+    if (parc_decode_speed_ && !parc_scan_ && !parc_shown_.empty()) {
-+      if (parc_window_awaited_ &&
-+          (parc_window_end_ - timestamp) / parc_decode_speed_ >
-+              kParcMaxStartWait) {
-+        parc_window_awaited_ = false;
-+        if (buffering_state_ == BUFFERING_HAVE_NOTHING) {
-+          TransitionToHaveEnough_Locked();
-+        }
-+      }
-+      if (!parc_window_awaited_) {
-+        base::TimeDelta current = parc_shown_.back()->timestamp();
-+        const double needed = ParcClock_Locked(&current) * kParcDecodeMargin;
-+        const base::TimeDelta end =
-+            timestamp + (current - timestamp) *
-+                            (parc_decode_speed_ / (parc_decode_speed_ + needed));
-+        parc_window_end_ = std::max(timestamp, std::min(parc_window_end_, end));
-+      }
-+    }
-+  } else if (timestamp > parc_last_timestamp_) {
-+    const base::TimeDelta duration = timestamp - parc_last_timestamp_;
-+    parc_frame_duration_ = parc_frame_duration_.is_zero()
-+                               ? duration
-+                               : (parc_frame_duration_ * 3 + duration) / 4;
-+    parc_last_timestamp_ = timestamp;
-+    parc_last_frame_ticks_ = now;
-+  }
-+  if (!parc_decode_speed_ && ++parc_window_frames_ == kParcSpeedSamples &&
-+      now > parc_first_frame_ticks_) {
-+    parc_decode_speed_ = (parc_last_timestamp_ - parc_first_timestamp_) /
-+                         (now - parc_first_frame_ticks_);
-+    ParcPlanWindow_Locked(nullptr);
-+    parc_scan_ = false;
-+  }
-+
-+  if (parc_scan_ && !parc_decoded_.empty()) {
-+    ++stats_.video_frames_dropped;
-+    UpdateStats_Locked();
-+    ParcFinishWindow_Locked();
-+    return;
-+  }
-+
-+  if (parc_stride_.is_positive() && !parc_decoded_.empty() &&
-+      timestamp > parc_decoded_.back()->timestamp() &&
-+      timestamp - parc_decoded_.back()->timestamp() <
-+          parc_stride_ - parc_frame_duration_ / 2) {
-+    ++stats_.video_frames_dropped;
-+    UpdateStats_Locked();
-+    AttemptRead_Locked();
-+    return;
-+  }
-+
-+  auto it = std::upper_bound(
-+      parc_decoded_.begin(), parc_decoded_.end(), timestamp,
-+      [](base::TimeDelta timestamp, const scoped_refptr<VideoFrame>& other) {
-+        return timestamp < other->timestamp();
-+      });
-+  parc_decoded_bytes_ += bytes;
-+  parc_decoded_.insert(it, std::move(frame));
-+  while (parc_decoded_.size() > kParcMaxWindowFrames ||
-+         (parc_decoded_.size() > 1 &&
-+          parc_decoded_bytes_ > kParcMaxWindowBytes)) {
-+    const VideoFrame& first = *parc_decoded_.front();
-+    parc_decoded_bytes_ -=
-+        VideoFrame::AllocationSize(first.format(), first.coded_size());
-+    parc_decoded_.erase(parc_decoded_.begin());
-+    ++stats_.video_frames_dropped;
-+  }
-+
-+  UpdateStats_Locked();
-+  AttemptRead_Locked();
-+}
-+
-+void VideoRendererImpl::ParcFinishWindow_Locked() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  lock_.AssertAcquired();
-+
-+  parc_decoding_ = false;
-+  if (parc_last_timestamp_ != kNoTimestamp &&
-+      parc_last_timestamp_ > parc_first_timestamp_) {
-+    const base::TimeDelta decoding =
-+        parc_last_frame_ticks_ - parc_first_frame_ticks_;
-+    if (decoding.is_positive()) {
-+      const double speed =
-+          (parc_last_timestamp_ - parc_first_timestamp_) / decoding;
-+      parc_decode_speed_ =
-+          parc_decode_speed_
-+              ? (parc_decode_speed_ + std::min(speed, parc_decode_speed_ * 2)) /
-+                    2
-+              : speed;
-+    }
-+  }
-+  if (parc_decoded_.empty()) {
-+    parc_at_start_ = true;
-+  }
-+  ParcShowNextWindow_Locked();
-+}
-+
-+void VideoRendererImpl::ParcShowNextWindow_Locked() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  lock_.AssertAcquired();
-+  DCHECK(!parc_decoding_);
-+
-+  if ((parc_shown_.empty() || parc_shown_passed_) && !parc_decoded_.empty()) {
-+    const bool starting = parc_shown_.empty();
-+    parc_shown_ = std::move(parc_decoded_);
-+    parc_decoded_.clear();
-+    parc_decoded_bytes_ = 0;
-+    parc_shown_passed_ = false;
-+    ParcDecodeWindowEndingAt_Locked(
-+        parc_shown_.front()->timestamp() - base::Microseconds(1), starting);
-+  }
-+
-+  if (buffering_state_ == BUFFERING_HAVE_NOTHING &&
-+      !(parc_decoding_ && parc_window_awaited_)) {
-+    TransitionToHaveEnough_Locked();
-+  }
-+}
 +
 +scoped_refptr<VideoFrame> VideoRendererImpl::ParcRender_Locked(
 +    base::TimeTicks deadline_min) {
@@ -10551,27 +7861,6 @@
 +
 +  parc_shown_.resize(current);
 +  return parc_shown_.back();
-+}
-+
-+void VideoRendererImpl::ParcStall() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  base::AutoLock auto_lock(lock_);
-+  if (!parc_backward_ || !parc_shown_passed_ || parc_at_start_) {
-+    return;
-+  }
-+
-+  if (!parc_decoding_) {
-+    ParcShowNextWindow_Locked();
-+    return;
-+  }
-+
-+  if (parc_window_passed_ && buffering_state_ == BUFFERING_HAVE_ENOUGH) {
-+    buffering_state_ = BUFFERING_HAVE_NOTHING;
-+    task_runner_->PostTask(
-+        FROM_HERE,
-+        base::BindOnce(&VideoRendererImpl::OnBufferingStateChange,
-+                       weak_factory_.GetWeakPtr(), buffering_state_));
-+  }
 +}
 +
  }  // namespace media
@@ -12552,3 +9841,15 @@
      "remote_playback.cc",
      "remote_playback.h",
      "remote_playback_metrics.cc",
+--- a/media/renderers/BUILD.gn
++++ b/media/renderers/BUILD.gn
+@@ -17,6 +17,9 @@
+     "decrypting_renderer.h",
+     "default_decoder_factory.cc",
+     "default_decoder_factory.h",
++    "parc_audio_renderer_impl.cc",
++    "parc_renderer_impl.cc",
++    "parc_video_renderer_impl.cc",
+     "remote_playback_client_wrapper.h",
+     "renderer_impl.cc",
+     "renderer_impl.h",

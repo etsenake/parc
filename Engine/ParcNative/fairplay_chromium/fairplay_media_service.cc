@@ -13,28 +13,22 @@
 #include "media/audio/audio_device_description.h"
 #include "media/base/media_switches.h"
 #include "media/mojo/services/mojo_demuxer_stream_adapter.h"
-#include "media/mojo/services/mojo_renderer_service.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "third_party/parc_fairplay/chromium/fairplay_hls_player_service.h"
 #include "third_party/parc_fairplay/chromium/fairplay_renderer_adapter.h"
+#include "third_party/parc_fairplay/chromium/fairplay_renderer_service.h"
 
 namespace media {
 
 namespace {
 
-// Each process's FairPlayProcessMedia, on the service's thread.
 std::map<int, raw_ptr<FairPlayProcessMedia>>& Processes() {
   static base::NoDestructor<std::map<int, raw_ptr<FairPlayProcessMedia>>>
       processes;
   return *processes;
 }
 
-// HTMLMediaElement.setSinkId for a player whose audio bypasses the audio
-// service. Runs |set_unique_id| with the Core Audio device each sink ID names
-// (empty for the system default), as the browser resolves the page's hashed
-// ID; an answer a later ID overtook is dropped, and a device the browser
-// doesn't find leaves the output as it is.
 base::RepeatingCallback<void(const std::string&)>
 FairPlayAudioOutputDeviceSetter(
     mojom::FairPlayFrameHost* frame_host,
@@ -65,8 +59,6 @@ FairPlayAudioOutputDeviceSetter(
       base::MakeRefCounted<Requests>(0));
 }
 
-// Streams the render process adds to a playing FairPlay Renderer reach it
-// once their config arrived. Owned by the renderer, with the streams.
 class FairPlayRendererStreams final : public mojom::FairPlayRendererExtension {
  public:
   FairPlayRendererStreams(
@@ -89,8 +81,6 @@ class FairPlayRendererStreams final : public mojom::FairPlayRendererExtension {
       std::move(callback).Run();
       return;
     }
-    // Answered even if the stream is dropped before it is ready: the render
-    // process's track change waits for it.
     streams_[id] = std::make_unique<MojoDemuxerStreamAdapter>(
         std::move(stream),
         base::BindOnce(&FairPlayRendererStreams::OnStreamReady,
@@ -100,7 +90,6 @@ class FairPlayRendererStreams final : public mojom::FairPlayRendererExtension {
   }
 
   void RemoveStream(uint32_t id) final {
-    // A stream the renderer keeps (video) stays alive with it.
     if (renderer_->RemoveStream(id)) {
       streams_.erase(id);
     }
@@ -141,9 +130,8 @@ class FairPlayRendererStreams final : public mojom::FairPlayRendererExtension {
   base::WeakPtrFactory<FairPlayRendererStreams> weak_factory_{this};
 };
 
-}  // namespace
+}
 
-// static
 scoped_refptr<FairPlayProcessMedia> FairPlayProcessMedia::Get(
     int render_process_id) {
   auto found = Processes().find(render_process_id);
@@ -190,8 +178,6 @@ FairPlayFrameMedia::FairPlayFrameMedia(
       frame_host_(std::move(frame_host)),
       cdm_factory_(frame_host_.get()) {
   process_->AddFrame(this);
-  // Unretained: the receivers belong to |this|, so their disconnect handlers
-  // never run once it is gone.
   auto disconnect_cb = base::BindRepeating(
       &FairPlayFrameMedia::OnReceiverDisconnect, base::Unretained(this));
   renderer_receivers_.set_disconnect_handler(disconnect_cb);
@@ -247,8 +233,6 @@ void FairPlayFrameMedia::CreateRenderer(
     mojo::PendingRemote<mojom::FairPlayRendererClientExtension>
         client_extension) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // The adapter keeps the client extension's pipe open for its lifetime: the
-  // browser ties the document's audibility bypass to it.
   auto client =
       std::make_unique<mojo::Remote<mojom::FairPlayRendererClientExtension>>(
           std::move(client_extension));
@@ -270,20 +254,14 @@ void FairPlayFrameMedia::CreateRenderer(
                           process_),
       frame_host_.get()));
   (*client_remote)->OnRendererExtension(std::move(extension));
-  // The document's tab mute, the way MediaFoundationRendererWrapper gets it:
-  // the browser answers with the current state at once. The observer closes
-  // with the renderer.
   mojo::PendingRemote<mojom::FairPlayMuteStateObserver> observer;
   renderer->SetMuteStateObserverCloser(BindFairPlayMuteStateObserver(
       observer.InitWithNewPipeAndPassReceiver(),
       renderer->GetMuteStateCallback()));
   frame_host_->RegisterMuteStateObserver(std::move(observer));
-  // Served with the process's CDM context, so the Renderer's SetCdm() finds a
-  // FairPlay CDM of this document or, for an element a Safari-identity page
-  // moved here, of another document of its render process.
   renderer_receivers_.Add(
-      std::make_unique<MojoRendererService>(&process_->cdm_service_context(),
-                                            std::move(renderer)),
+      std::make_unique<FairPlayRendererService>(
+          &process_->cdm_service_context(), std::move(renderer)),
       std::move(receiver));
 }
 
@@ -292,8 +270,6 @@ void FairPlayFrameMedia::CreateHlsPlayer(
     mojo::PendingRemote<mojom::FairPlayHlsPlayerClient> client,
     mojo::PendingRemote<mojom::FairPlayHlsPlayerLifetime> lifetime) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // Resolves SetCdm()'s ID as the FairPlay Renderer's does. Unretained: the
-  // player belongs to |hls_player_receivers_|, which goes before |process_|.
   auto service = std::make_unique<FairPlayHlsPlayerService>(
       base::SequencedTaskRunner::GetCurrentDefault(),
       base::BindRepeating(
@@ -304,15 +280,11 @@ void FairPlayFrameMedia::CreateHlsPlayer(
       &FairPlayProcessMedia::TakeMuteStateHandoff, process_));
   service->SetAudioOutputDeviceSetter(FairPlayAudioOutputDeviceSetter(
       frame_host_.get(), service->GetAudioOutputDeviceCallback()));
-  // Its audio bypasses the audio service too, so it gets the tab's mute the
-  // same way; the observer closes with the player.
   mojo::PendingRemote<mojom::FairPlayMuteStateObserver> observer;
   service->SetMuteStateObserverCloser(BindFairPlayMuteStateObserver(
       observer.InitWithNewPipeAndPassReceiver(),
       service->GetMuteStateCallback()));
   frame_host_->RegisterMuteStateObserver(std::move(observer));
-  // WebKit's ephemeral session sets the asset's cache and URL logging;
-  // Initialize waits for the answer (none is a persistent session).
   frame_host_->IsEphemeralSession(mojo::WrapCallbackWithDefaultInvokeIfNotRun(
       service->GetEphemeralSessionCallback(), false));
   hls_player_receivers_.Add(std::move(service), std::move(player));
@@ -325,14 +297,10 @@ void FairPlayFrameMedia::CreateMuteStateHandoff(
     std::move(callback).Run(std::nullopt);
     return;
   }
-  // Few players move into one document at once; this bounds what a render
-  // process can leave unfollowed.
   constexpr size_t kMaxMuteStateHandoffs = 8;
   if (mute_state_handoffs_.size() == kMaxMuteStateHandoffs) {
     mute_state_handoffs_.erase(mute_state_handoffs_.begin());
   }
-  // The browser answers the observer with the tab's mute at once and on every
-  // change; it queues until a player follows the handoff.
   mojo::PendingRemote<mojom::FairPlayMuteStateObserver> observer;
   const base::UnguessableToken handoff = base::UnguessableToken::Create();
   mute_state_handoffs_.emplace_back(handoff,
@@ -397,10 +365,6 @@ void FairPlayMediaService::CreateFrameMedia(
 
 scoped_refptr<base::SequencedTaskRunner>
 CreateFairPlayMediaServiceTaskRunner() {
-  // Match IsDedicatedMediaServiceThreadEnabled()'s task-runner policy on
-  // macOS. The single-thread runner keeps one sequence but may share its
-  // worker thread. Decoding and key work must not wait behind lower-priority
-  // tasks, hence user blocking.
   if (!base::FeatureList::IsEnabled(kDedicatedMediaServiceThread)) {
     return base::SingleThreadTaskRunner::GetCurrentDefault();
   }
@@ -418,4 +382,4 @@ void BindFairPlayMediaService(
   service->Bind(std::move(receiver));
 }
 
-}  // namespace media
+}

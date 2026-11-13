@@ -1,7 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Installed at //media/parc_tests/source_buffer_state_test.cc. The fixture is derived from
-// Chromium's source_buffer_state_unittest.cc (Chromium Authors; BSD-style license in
-// Chromium's LICENSE) and contains only Parc regressions.
 
 #include "media/filters/source_buffer_state.h"
 
@@ -24,6 +21,7 @@
 #include "media/base/test_helpers.h"
 #include "media/filters/chunk_demuxer.h"
 #include "media/filters/frame_processor.h"
+#include "media/filters/parc_source_buffer_eviction.h"
 #include "media/media_buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -66,7 +64,7 @@ void AddVideoTrack(std::unique_ptr<MediaTracks>& t, VideoCodec codec, int id) {
                    MediaTrack::Language());
 }
 
-}  // namespace
+}
 
 class ParcSourceBufferStateTest : public ::testing::Test {
  public:
@@ -90,10 +88,7 @@ class ParcSourceBufferStateTest : public ::testing::Test {
       std::optional<std::string_view> expected_codecs,
       bool parc_safari = false) {
     std::unique_ptr<SourceBufferState> sbs = CreateSourceBufferState();
-    sbs->ParcSetSafariInitSegmentRules(parc_safari);
-    // Instead of using SaveArg<> to update |new_config_cb_| when mocked Init is
-    // called, we use a lambda because SaveArg<> doesn't work if any of the
-    // mocked method's arguments are move-only type.
+    ParcSourceBufferEviction::SetSafariInitSegmentRules(*sbs, parc_safari);
     EXPECT_CALL(*mock_stream_parser_, Init(_, _, _, _, _, _, _))
         .WillOnce([&](auto init_cb, auto config_cb, auto new_buffers_cb,
                       auto encrypted_media_init_data_cb, auto new_segment_cb,
@@ -109,7 +104,6 @@ class ParcSourceBufferStateTest : public ::testing::Test {
     sbs->SetTracksWatcher(base::BindRepeating(
         &ParcSourceBufferStateTest::OnMediaTracksUpdated, base::Unretained(this)));
 
-    // These tests are not expected to issue any parse warnings.
     EXPECT_CALL(*this, OnParseWarningMock(_)).Times(0);
 
     sbs->SetParseWarningCallback(base::BindRepeating(
@@ -118,15 +112,12 @@ class ParcSourceBufferStateTest : public ::testing::Test {
     return sbs;
   }
 
-  // Emulates appending and parsing some data to the SourceBufferState, since
-  // OnNewConfigs can only be invoked when parse is in progress.
   bool AppendDataAndReportTracks(const std::unique_ptr<SourceBufferState>& sbs,
                                  std::unique_ptr<MediaTracks> tracks) {
     const uint8_t kStreamData[] = "stream_data";
     base::span<const uint8_t> stream_data = base::span(kStreamData);
     base::TimeDelta t;
 
-    // Ensure `stream_data` fits within one StreamParser::Parse() call.
     CHECK_GT(StreamParser::kMaxPendingBytesPerParse,
              static_cast<int>(stream_data.size_bytes()));
 
@@ -140,7 +131,6 @@ class ParcSourceBufferStateTest : public ::testing::Test {
             DoAll(InvokeWithoutArgs([&] {
                     new_configs_result = new_config_cb_.Run(std::move(tracks));
                   }),
-                  /* Indicate successful parse with no uninspected data. */
                   Return(StreamParser::ParseStatus::kSuccess)));
 
     EXPECT_TRUE(sbs->AppendToParseBuffer(stream_data));
@@ -176,10 +166,6 @@ class ParcSourceBufferStateTest : public ::testing::Test {
 };
 
 #if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
-// Parc: clear Dolby Vision passes the init segment check only where the
-// demuxer allows it (a Safari-identity document or a FairPlay CDM, see
-// ChunkDemuxer::ParcSetClearDolbyVisionAllowed()), and only in the profiles
-// the FairPlay Renderer plays, 5 and 8.
 class ParcSourceBufferStateClearDolbyVisionTest : public ParcSourceBufferStateTest {
  public:
   ParcSourceBufferStateClearDolbyVisionTest() {
@@ -188,8 +174,6 @@ class ParcSourceBufferStateClearDolbyVisionTest : public ParcSourceBufferStateTe
         {kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled});
   }
 
-  // Appends an init segment with one clear Dolby Vision track of |profile|
-  // to a SourceBuffer that names no codecs.
   bool AppendClearDolbyVision(bool allowed, VideoCodecProfile profile) {
     std::unique_ptr<SourceBufferState> sbs = CreateSourceBufferState();
     EXPECT_CALL(*mock_stream_parser_, Init(_, _, _, _, _, _, _))
@@ -208,8 +192,8 @@ class ParcSourceBufferStateClearDolbyVisionTest : public ParcSourceBufferStateTe
     EXPECT_CALL(*this, OnParseWarningMock(_)).Times(0);
     sbs->SetParseWarningCallback(base::BindRepeating(
         &ParcSourceBufferStateTest::OnParseWarningMock, base::Unretained(this)));
-    sbs->ParcSetClearDolbyVisionAllowed(allowed);
-    sbs->ParcSetDolbyVisionCallback(base::BindRepeating(
+    ParcSourceBufferEviction::SetClearDolbyVisionAllowed(*sbs, allowed);
+    ParcSourceBufferEviction::SetDolbyVisionCallback(*sbs, base::BindRepeating(
         [](int* count) { ++*count; }, &dolby_vision_taken_));
 
     const gfx::Size size(16, 16);
@@ -225,8 +209,6 @@ class ParcSourceBufferStateClearDolbyVisionTest : public ParcSourceBufferStateTe
     return AppendDataAndReportTracks(sbs, std::move(tracks));
   }
 
-  // How often ParcSetDolbyVisionCallback()'s callback ran (Dolby Vision
-  // taken, which routes the player to the FairPlay Renderer).
   int dolby_vision_taken_ = 0;
 
  private:
@@ -260,12 +242,9 @@ TEST_F(ParcSourceBufferStateClearDolbyVisionTest, OtherProfilesStayRejected) {
   EXPECT_FALSE(AppendClearDolbyVision(true, DOLBYVISION_PROFILE9));
   EXPECT_EQ(dolby_vision_taken_, 0);
 }
-#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
+#endif
 
 
-// Parc: with SourceBufferState::ParcSetSafariInitSegmentRules(), init
-// segments are checked as WebKit's SourceBuffer checks them, not against the
-// codecs the type named.
 TEST_F(ParcSourceBufferStateTest, ParcSafariTakesCodecTheTypeDidNotName) {
   {
     std::unique_ptr<SourceBufferState> sbs =
@@ -410,4 +389,4 @@ TEST_F(ParcSourceBufferStateTest, ParcSafariTakesCodecChangeInLaterSegment) {
 }
 
 
-}  // namespace media
+}

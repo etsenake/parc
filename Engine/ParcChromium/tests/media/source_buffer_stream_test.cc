@@ -26,6 +26,7 @@
 #include "media/base/mock_media_log.h"
 #include "media/base/test_helpers.h"
 #include "media/base/timestamp_constants.h"
+#include "media/filters/parc_source_buffer_stream_state.h"
 #include "media/filters/source_buffer_range.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -611,9 +612,9 @@ TEST_F(ParcSourceBufferStreamTest, ParcRemovalSize_IsWhatParcRemoveFrees) {
     const base::TimeDelta start = base::Milliseconds(start_ms);
     const base::TimeDelta end = base::Milliseconds(end_ms);
     const base::TimeDelta duration = base::Milliseconds(1000);
-    const size_t expected = stream_->ParcRemovalSize(start, end, duration);
+    const size_t expected = ParcSourceBufferStreamState::RemovalSize(*stream_, start, end, duration);
     const size_t before = stream_->GetMemoryUsage();
-    stream_->ParcRemove(start, end, duration);
+    ParcSourceBufferStreamState::Remove(*stream_, start, end, duration);
     EXPECT_EQ(expected, before - stream_->GetMemoryUsage());
     EXPECT_GT(expected, 0u);
   };
@@ -635,7 +636,7 @@ TEST_F(ParcSourceBufferStreamTest, Parc_ChromeKeepsSmallGaps) {
 }
 
 TEST_F(ParcSourceBufferStreamTest, Parc_SafariFillsGapsUnderTimeFudgeFactor) {
-  stream_->ParcSetSafariMediaSource(true);
+  ParcSourceBufferStreamState::UseSafariMediaSource(*stream_, true);
   NewCodedFrameGroupAppend("0K 33 66 99");
   NewCodedFrameGroupAppend("202K 235 268 301");
   CheckExpectedRangesByTimestamp("{ [0,334) }");
@@ -645,7 +646,7 @@ TEST_F(ParcSourceBufferStreamTest, Parc_SafariFillsGapsUnderTimeFudgeFactor) {
 }
 
 TEST_F(ParcSourceBufferStreamTest, Parc_SafariFilledGapLeavesWithTheFramesBesideIt) {
-  stream_->ParcSetSafariMediaSource(true);
+  ParcSourceBufferStreamState::UseSafariMediaSource(*stream_, true);
   NewCodedFrameGroupAppend("0K 33 66 99");
   NewCodedFrameGroupAppend("202K 235 268 301");
   CheckExpectedRangesByTimestamp("{ [0,334) }");
@@ -670,7 +671,7 @@ TEST_F(ParcSourceBufferStreamTest, Parc_ChromeVideoStopsAtGaps) {
 }
 
 TEST_F(ParcSourceBufferStreamTest, Parc_SafariVideoPlaysAcrossGapsWithinTolerance) {
-  stream_->ParcSetSafariMediaSource(true);
+  ParcSourceBufferStreamState::UseSafariMediaSource(*stream_, true);
   NewCodedFrameGroupAppend("0K 33 66 99");
   NewCodedFrameGroupAppend("232K 265");
   NewCodedFrameGroupAppend("432K 465");
@@ -681,12 +682,12 @@ TEST_F(ParcSourceBufferStreamTest, Parc_SafariVideoPlaysAcrossGapsWithinToleranc
 
   Ranges<base::TimeDelta> audio;
   audio.Add(base::TimeDelta(), base::Seconds(1));
-  stream_->ParcSetMediaSourceBuffered(base::TimeDelta(), audio);
+  ParcSourceBufferStreamState::ShareMediaSourceBuffered(*stream_, base::TimeDelta(), audio);
   CheckExpectedBuffers("432K 465");
 }
 
 TEST_F(ParcSourceBufferStreamTest, Parc_SafariVideoBridgesAfterTrackBuffer) {
-  stream_->ParcSetSafariMediaSource(true);
+  ParcSourceBufferStreamState::UseSafariMediaSource(*stream_, true);
   NewCodedFrameGroupAppend("100K 133 166 199");
   NewCodedFrameGroupAppend("342K 375");
   SeekToTimestampMs(100);
@@ -699,7 +700,7 @@ TEST_F(ParcSourceBufferStreamTest, Parc_SafariVideoBridgesAfterTrackBuffer) {
 
 TEST_F(ParcSourceBufferStreamTest, Parc_SafariAudioStopsAtGaps) {
   SetAudioStream();
-  stream_->ParcSetSafariMediaSource(true);
+  ParcSourceBufferStreamState::UseSafariMediaSource(*stream_, true);
   NewCodedFrameGroupAppend("0K 2K 4K 6K");
   NewCodedFrameGroupAppend("60K 62K");
   SeekToTimestampMs(0);
@@ -716,7 +717,7 @@ TEST_F(ParcSourceBufferStreamTest, Parc_ChromeSeekIntoGapWaits) {
 }
 
 TEST_F(ParcSourceBufferStreamTest, Parc_SafariSeekIntoGapStartsAtNextRange) {
-  stream_->ParcSetSafariMediaSource(true);
+  ParcSourceBufferStreamState::UseSafariMediaSource(*stream_, true);
   NewCodedFrameGroupAppend("0K 33 66 99");
   NewCodedFrameGroupAppend("300K 333");
 
@@ -730,7 +731,7 @@ TEST_F(ParcSourceBufferStreamTest, Parc_SafariSeekIntoGapStartsAtNextRange) {
   EXPECT_TRUE(stream_->IsSeekPending());
   Ranges<base::TimeDelta> audio;
   audio.Add(base::TimeDelta(), base::Seconds(1));
-  stream_->ParcSetMediaSourceBuffered(base::TimeDelta(), audio);
+  ParcSourceBufferStreamState::ShareMediaSourceBuffered(*stream_, base::TimeDelta(), audio);
   EXPECT_FALSE(stream_->IsSeekPending());
   CheckExpectedBuffers("300K 333");
 }

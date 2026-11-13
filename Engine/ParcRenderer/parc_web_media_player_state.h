@@ -99,6 +99,12 @@ class PLATFORM_EXPORT ParcWebMediaPlayerState
   void DidFinishSeek();
   void SetRemoteRendering(bool remote_rendering);
   void UpdateLoadsForCast();
+  void RestrictDemuxerCanChangeType(
+      media::ChunkDemuxer::ChangeTypeFilter filter);
+  void SetDemuxerClearDolbyVisionAllowed(bool allowed);
+  bool DemuxerPrefersFairPlayRenderer();
+  void SetDemuxerFastSeek(base::TimeDelta target,
+                          base::TimeDelta tolerance_before);
 #if BUILDFLAG(IS_MAC)
   struct RouteSwitch {
     double duration;
@@ -119,6 +125,7 @@ class PLATFORM_EXPORT ParcWebMediaPlayerState
   void CheckFileTargetSupport();
   void EndRouteSwitchForError();
   parc::fairplay::NativeHlsSource::FileTracks FileTrackChoices() const;
+  void SendFileTrackChoices();
   std::optional<RouteSwitch> TakeSeekedRouteSwitch();
   void FinishSeekedRouteSwitch(const std::optional<RouteSwitch>& route_switch);
   bool DetachFairPlayCdm(WebContentDecryptionModuleResult& result);

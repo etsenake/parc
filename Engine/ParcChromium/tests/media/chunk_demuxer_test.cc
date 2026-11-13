@@ -1,7 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Installed at //media/parc_tests/chunk_demuxer_test.cc. The fixture is
-// derived from Chromium's chunk_demuxer_unittest.cc (Chromium Authors;
-// BSD-style license in Chromium's LICENSE) and contains only Parc regressions.
 
 #include "media/filters/chunk_demuxer.h"
 
@@ -42,9 +39,11 @@
 #include "media/base/media_tracks.h"
 #include "media/base/mock_demuxer_host.h"
 #include "media/base/mock_media_log.h"
+#include "media/base/parc_demuxer_extension.h"
 #include "media/base/test_data_util.h"
 #include "media/base/test_helpers.h"
 #include "media/base/timestamp_constants.h"
+#include "media/filters/parc_source_buffer_eviction.h"
 #include "media/formats/webm/cluster_builder.h"
 #include "media/formats/webm/webm_cluster_parser.h"
 #include "media/formats/webm/webm_constants.h"
@@ -61,8 +60,8 @@ using ::testing::_;
 namespace media {
 
 const uint8_t kTracksHeader[] = {
-    0x16, 0x54, 0xAE, 0x6B,                          // Tracks ID
-    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // tracks(size = 0)
+    0x16, 0x54, 0xAE, 0x6B,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
 const auto kEncryptedMediaInitData = std::to_array<uint8_t>({
@@ -87,15 +86,11 @@ const auto kEncryptedMediaInitData = std::to_array<uint8_t>({
 const int kTracksHeaderSize = sizeof(kTracksHeader);
 const int kTracksSizeOffset = 4;
 
-// The size of TrackEntry element in test file "webm_vorbis_track_entry" starts
-// at index 1 and spans 8 bytes.
 const int kAudioTrackSizeOffset = 1;
 const int kAudioTrackSizeWidth = 8;
 const int kAudioTrackEntryHeaderSize =
     kAudioTrackSizeOffset + kAudioTrackSizeWidth;
 
-// The size of TrackEntry element in test file "webm_vp8_track_entry" starts at
-// index 1 and spans 8 bytes.
 const int kVideoTrackSizeOffset = 1;
 const int kVideoTrackSizeWidth = 8;
 const int kVideoTrackEntryHeaderSize =
@@ -118,9 +113,6 @@ static base::TimeDelta kDefaultDuration() {
   return base::Milliseconds(201224);
 }
 
-// Write an integer into buffer in the form of vint that spans 8 bytes.
-// The data pointed by |buffer| should be at least 8 bytes long.
-// |number| should be in the range 0 <= number < 0x00FFFFFFFFFFFFFF.
 static void WriteInt64(base::span<uint8_t> buffer, int64_t number) {
   DCHECK(number >= 0 && number < 0x00FFFFFFFFFFFFFFLL);
   buffer[0] = 0x01;
@@ -165,7 +157,6 @@ static void StoreStatusAndBuffers(
 
 class ParcChunkDemuxerTest : public ::testing::Test {
  public:
-  // Public method because test cases use it directly.
   MOCK_METHOD1(DemuxerInitialized, void(PipelineStatus));
 
  protected:
@@ -175,16 +166,10 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     MAX_CODECS_INDEX
   };
 
-  // Default cluster to append first for simple tests.
   std::unique_ptr<Cluster> kDefaultFirstCluster() {
     return GenerateCluster(0, 4);
   }
 
-  // Default cluster to append after kDefaultFirstCluster()
-  // has been appended. This cluster starts with blocks that
-  // have timestamps consistent with the end times of the blocks
-  // in kDefaultFirstCluster() so that these two clusters represent
-  // a continuous region.
   std::unique_ptr<Cluster> kDefaultSecondCluster() {
     return GenerateCluster(46, 66, 5);
   }
@@ -240,12 +225,8 @@ class ParcChunkDemuxerTest : public ::testing::Test {
       audio_track_entry = ReadTestDataFile("webm_vorbis_track_entry");
       auto audio_track_entry_span = base::span(*audio_track_entry);
       tracks_element_size += audio_track_entry_span.size();
-      // Verify that we have TrackNum (0xD7) EBML element at expected offset.
       DCHECK_EQ(audio_track_entry_span[9], kWebMIdTrackNumber);
-      // Verify that the size of TrackNum element is 1. The actual value is 0x81
-      // due to how element sizes are encoded in EBML.
       DCHECK_EQ(audio_track_entry_span[10], 0x81);
-      // Ensure the track id in TrackNum EBML element matches kAudioTrackNum.
       DCHECK_EQ(audio_track_entry_span[11], kAudioTrackNum);
       if (stream_flags & USE_ALTERNATE_AUDIO_TRACK_ID)
         UNSAFE_TODO(audio_track_entry->writable_data()[11]) =
@@ -260,12 +241,8 @@ class ParcChunkDemuxerTest : public ::testing::Test {
       video_track_entry = ReadTestDataFile("webm_vp8_track_entry");
       auto video_track_entry_span = base::span(*video_track_entry);
       tracks_element_size += video_track_entry_span.size();
-      // Verify that we have TrackNum (0xD7) EBML element at expected offset.
       DCHECK_EQ(video_track_entry_span[9], kWebMIdTrackNumber);
-      // Verify that the size of TrackNum element is 1. The actual value is 0x81
-      // due to how element sizes are encoded in EBML.
       DCHECK_EQ(video_track_entry_span[10], 0x81);
-      // Ensure the track id in TrackNum EBML element matches kVideoTrackNum.
       DCHECK_EQ(video_track_entry_span[11], kVideoTrackNum);
       if (stream_flags & USE_ALTERNATE_VIDEO_TRACK_ID)
         UNSAFE_TODO(video_track_entry->writable_data()[11]) =
@@ -295,8 +272,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
                tracks_element_size);
     buf = buf.subspan(base::checked_cast<size_t>(kTracksHeaderSize));
 
-    // TODO(xhwang): Simplify this! Probably have test data files that contain
-    // ContentEncodings directly instead of trying to create one at run-time.
     if (has_video) {
       auto video_track_entry_span = base::span(*video_track_entry);
       buf.copy_prefix_from(video_track_entry_span);
@@ -454,18 +429,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     }
   };
 
-  // |track_number| - The track number to place in
-  // |block_descriptions| - A space delimited string of block info that
-  //  is used to populate |blocks|. Each block info has a timestamp in
-  //  milliseconds and optionally followed by a 'K' to indicate that a block
-  //  should be marked as a key frame. For example "0K 30 60" should populate
-  //  |blocks| with 3 BlockInfo objects: a key frame with timestamp 0 and 2
-  //  non-key-frames at 30ms and 60ms.
-  //  Every block will be a SimpleBlock, with the exception that the last block
-  //  may have an optional duration delimited with a 'D' and appended to the
-  //  block info timestamp, prior to the optional keyframe 'K'. For example "0K
-  //  30 60D10K" indicates that the last block will be a keyframe BlockGroup
-  //  with duration 10ms.
   void ParseBlockDescriptions(int track_number,
                               const std::string block_descriptions,
                               std::vector<BlockInfo>* blocks) {
@@ -481,7 +444,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
 
       if (timestamp_str.ends_with("K")) {
         block_info.flags = kWebMFlagKeyframe;
-        // Remove the "K" off of the token.
         timestamp_str = timestamp_str.substr(0, timestamps[i].length() - 1);
       }
 
@@ -549,9 +511,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     return GenerateCluster(blocks, unknown_size);
   }
 
-  // |block_descriptions| - The block descriptions used to construct the
-  // cluster. See the documentation for ParseBlockDescriptions() for details on
-  // the string format.
   void AppendSingleStreamCluster(const std::string& source_id, int track_number,
                                  const std::string& block_descriptions) {
     std::vector<BlockInfo> blocks;
@@ -559,8 +518,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     ASSERT_TRUE(AppendCluster(source_id, GenerateCluster(blocks, false)));
   }
 
-  // Parc: appends |count| 5 s audio keyframes from |first_second| on, seven to
-  // a cluster to keep WebM's 16-bit block timecodes in range.
   void ParcAppendFiveSecondAudioFrames(int first_second, int count) {
     for (int i = 0; i < count; i += 7) {
       const int end = std::min(i + 7, count);
@@ -598,13 +555,8 @@ class ParcChunkDemuxerTest : public ::testing::Test {
           last_blocks_estimated_duration(last_block_duration_estimate) {}
 
     int track_number;
-    // The block description passed to ParseBlockDescriptions().
-    // See the documentation for that method for details on the string format.
     const char* block_descriptions;
 
-    // If -1, no WebMSimpleBlockDurationEstimated MediaLog expectation is added
-    // when appending the resulting cluster. Otherwise, an expectation (in ms)
-    // is added.
     int last_blocks_estimated_duration;
   };
 
@@ -658,7 +610,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
       return false;
     }
 
-    // Now parse it.
     StreamParser::ParseStatus result =
         StreamParser::ParseStatus::kSuccessHasMoreData;
     while (result == StreamParser::ParseStatus::kSuccessHasMoreData) {
@@ -708,7 +659,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
   }
 
   void AppendGarbage() {
-    // Fill up an array with gibberish.
     int garbage_cluster_size = 10;
     auto garbage_cluster =
         base::HeapArray<uint8_t>::Uninit(garbage_cluster_size);
@@ -780,15 +730,10 @@ class ParcChunkDemuxerTest : public ::testing::Test {
           .Times(Exactly(need_key_count));
     }
 
-    // Adding expectations prior to CreateInitDoneCallback() here because
-    // InSequence tests require init segment received before duration set. Also,
-    // only expect an init segment received callback if there is actually a
-    // track in it.
     if (stream_flags != 0) {
       ExpectInitMediaLogs(stream_flags);
       EXPECT_CALL(*this, InitSegmentReceivedMock(_));
     } else {
-      // OnNewConfigs() requires at least one audio, video, or text track.
       EXPECT_MEDIA_LOG(InitSegmentMissesExpectedTrack("vorbis"));
       EXPECT_MEDIA_LOG(InitSegmentMissesExpectedTrack("vp8"));
       EXPECT_MEDIA_LOG(StreamParsingFailed());
@@ -818,10 +763,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     int audio_flags = HAS_AUDIO;
     int video_flags = HAS_VIDEO;
 
-    // Note: Unlike InitDemuxerWithEncryptionInfo, this method is currently
-    // incompatible with InSequence tests. Refactoring of the duration
-    // set expectation to not be added during CreateInitDoneCallback() could fix
-    // this.
     ExpectInitMediaLogs(audio_flags);
     EXPECT_CALL(*this, InitSegmentReceivedMock(_));
     EXPECT_TRUE(AppendInitSegmentWithSourceId(audio_id, audio_flags));
@@ -837,23 +778,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     return InitDemuxerAudioAndVideoSourcesText(audio_id, video_id);
   }
 
-  // Initializes the demuxer with data from 2 files with different
-  // decoder configurations. This is used to test the decoder config change
-  // logic.
-  //
-  // bear-320x240.webm VideoDecoderConfig returns 320x240 for its natural_size()
-  // bear-640x360.webm VideoDecoderConfig returns 640x360 for its natural_size()
-  // The resulting video stream returns data from each file for the following
-  // time ranges.
-  // bear-320x240.webm : [0-501)       [801-2736)
-  // bear-640x360.webm :       [527-760)
-  //
-  // bear-320x240.webm AudioDecoderConfig returns 3863 for its extra_data size.
-  // bear-640x360.webm AudioDecoderConfig returns 3935 for its extra_data size.
-  // The resulting audio stream returns data from each file for the following
-  // time ranges.
-  // bear-320x240.webm : [0-524)       [779-2736)
-  // bear-640x360.webm :       [527-759)
   bool InitDemuxerWithConfigChangeData() {
     scoped_refptr<DecoderBuffer> bear1 = ReadTestDataFile("bear-320x240.webm");
     scoped_refptr<DecoderBuffer> bear2 = ReadTestDataFile("bear-640x360.webm");
@@ -863,8 +787,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
 
     EXPECT_CALL(*this, DemuxerOpened());
 
-    // Adding expectation prior to CreateInitDoneCallback() here because
-    // InSequence tests require init segment received before duration set.
     ExpectInitMediaLogs(HAS_AUDIO | HAS_VIDEO);
     EXPECT_CALL(*this, InitSegmentReceivedMock(_));
     demuxer_->Initialize(
@@ -873,43 +795,21 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     if (AddId(kSourceId, HAS_AUDIO | HAS_VIDEO) != ChunkDemuxer::kOk)
       return false;
 
-    // Append the whole bear1 file.
     EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimated(24)).Times(3);
-    // While appended all at once, it is parsed in smaller pieces. This part of
-    // this test helper will need to be tuned if that piece size is changed,
-    // because we have estimated duration media log entries that get emitted
-    // between the buffered time ranges changing notifications, and the latter
-    // are emitted when even partial media segments get processed. It is
-    // currently tuned to 128KiB in each incremental parse.
     EXPECT_CALL(host_, OnBufferedTimeRangesChanged(_));
     EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimated(24)).Times(4);
-    // Expect duration adjustment since actual duration differs slightly from
-    // duration in the init segment
     EXPECT_CALL(host_, SetDuration(base::Milliseconds(2768)));
     EXPECT_TRUE(AppendData(bear_span1));
-    // Last audio frame has timestamp 2721 and duration 24 (estimated from max
-    // seen so far for audio track).
-    // Last video frame has timestamp 2703 and duration 33 (from TrackEntry
-    // DefaultDuration for video track).
     CheckExpectedRanges("{ [0,2736) }");
 
-    // Append initialization segment for bear2.
-    // Note: Offsets here and below are derived from
-    // media/test/data/bear-640x360-manifest.js and
-    // media/test/data/bear-320x240-manifest.js which were
-    // generated from media/test/data/bear-640x360.webm and
-    // media/test/data/bear-320x240.webm respectively.
     EXPECT_CALL(*this, InitSegmentReceivedMock(_));
     EXPECT_TRUE(AppendData(bear_span2.first(4340u)));
 
-    // Append a media segment that goes from [0.527000, 1.014000).
     EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimated(24));
     EXPECT_MEDIA_LOG(TrimmedSpliceOverlap(527000, 524000, 20000));
     EXPECT_TRUE(AppendData(bear_span2.subspan(55290u, 18785u)));
     CheckExpectedRanges("{ [0,2736) }");
 
-    // Append initialization segment for bear1 and buffer [779-1197)
-    // segment.
     EXPECT_CALL(*this, InitSegmentReceivedMock(_));
     EXPECT_TRUE(AppendData(bear_span1.first(4370u)));
     EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimated(24));
@@ -962,8 +862,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     int audio_timecode = first_audio_timecode;
     int video_timecode = first_video_timecode;
 
-    // Create simple blocks for everything except the last 2 blocks.
-    // The first video frame must be a key frame.
     uint8_t video_flag = kWebMFlagKeyframe;
     for (int i = 0; i < block_count - 2; i++) {
       if (audio_timecode <= video_timecode) {
@@ -983,8 +881,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
       video_flag = 0;
     }
 
-    // Make the last 2 blocks BlockGroups so that they don't get delayed by the
-    // block duration calculation logic.
     block_queue.push(BlockInfo(kAudioTrackNum,
                                audio_timecode,
                                kWebMFlagKeyframe,
@@ -1008,7 +904,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     ClusterBuilder cb;
     cb.SetClusterTimecode(timecode);
 
-    // Create simple blocks for everything except the last block.
     while (timecode < (end_timecode - block_duration)) {
       cb.AddSimpleBlock(track_number, timecode, kWebMFlagKeyframe, data);
       timecode += block_duration;
@@ -1170,7 +1065,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  // Parc: a read of |type| answered into ReadDone() whenever it completes.
   void ParcStartRead(DemuxerStream::Type type) {
     GetStream(type)->Read(
         1, base::BindOnce(&ParcChunkDemuxerTest::ReadDone, base::Unretained(this)));
@@ -1189,9 +1083,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
         expected, " ", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
     std::stringstream ss;
     for (size_t i = 0; i < timestamps.size(); ++i) {
-      // Initialize status to kAborted since it's possible for Read() to return
-      // without calling StoreStatusAndBuffers() if it doesn't have any buffers
-      // left to return.
       DemuxerStream::Status status = DemuxerStream::kAborted;
       DemuxerStream::DecoderBufferVector buffers;
       stream->Read(1, base::BindOnce(StoreStatusAndBuffers, &status, &buffers));
@@ -1207,7 +1098,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
       if (buffers[0]->is_key_frame())
         ss << "K";
 
-      // Handle preroll buffers.
       if (timestamps[i].ends_with("P")) {
         auto discard_padding = buffers[0]->discard_padding();
         ASSERT_TRUE(discard_padding.has_value());
@@ -1227,12 +1117,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
   };
   static const int kSkip = -1;
 
-  // Test parsing a WebM file.
-  // |filename| - The name of the file in media/test/data to parse.
-  // |timestamps| - The expected timestamps on the parsed buffers.
-  //    a timestamp of kSkip indicates that a Read() call for that stream
-  //    shouldn't be made on that iteration of the loop. If both streams have
-  //    a kSkip then the loop will terminate.
   bool ParseWebMFile(const std::string& filename,
                      base::span<const BufferTimestamps> timestamps,
                      const base::TimeDelta& duration) {
@@ -1249,14 +1133,11 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     if (AddId(kSourceId, stream_flags) != ChunkDemuxer::kOk)
       return false;
 
-    // Read a WebM file into memory and send the data to the demuxer.
     scoped_refptr<DecoderBuffer> buffer = ReadTestDataFile(filename);
     EXPECT_CALL(*this, InitSegmentReceivedMock(_));
 
     EXPECT_TRUE(AppendDataInPieces(base::span(*buffer), 512));
 
-    // Verify that the timestamps on the first few packets match what we
-    // expect.
     for (size_t i = 0;
          (timestamps[i].audio_time_ms != kSkip ||
           timestamps[i].video_time_ms != kSkip);
@@ -1334,13 +1215,8 @@ class ParcChunkDemuxerTest : public ::testing::Test {
   base::TimeDelta append_window_start_for_next_append_;
   base::TimeDelta append_window_end_for_next_append_;
 
-  // The size of coded frame data for a WebM SimpleBlock or BlockGroup muxed
-  // into a test cluster. This defaults to |kBlockSize|, but can be changed to
-  // test behavior.
   size_t block_size_ = kBlockSize;
 
-  // Map of source id to timestamp offset to use for the next AppendData()
-  // operation for that source id.
   std::map<std::string, base::TimeDelta> timestamp_offset_map_;
 
  public:
@@ -1348,7 +1224,6 @@ class ParcChunkDemuxerTest : public ::testing::Test {
     DCHECK(tracks.get());
     DCHECK_GT(tracks->tracks().size(), 0u);
 
-    // Verify that track ids are unique.
     std::set<MediaTrack::Id> track_ids;
     for (const auto& track : tracks->tracks()) {
       EXPECT_EQ(track_ids.end(), track_ids.find(track->track_id()));
@@ -1360,52 +1235,26 @@ class ParcChunkDemuxerTest : public ::testing::Test {
 };
 
 
-// Verifies that all streams waiting for data receive an end of stream
-// buffer when Shutdown() is called.
-
-// Test that Seek() completes successfully when the first cluster
-// arrives.
-
-// Test that parsing errors are handled for clusters appended after init.
-
-// Test the case where a Seek() is requested while the parser
-// is in the middle of cluster. This is to verify that the parser
-// does not reset itself on a seek.
-
-// Test the case where AppendToParseBuffer() and RunSegmentParserLoop() are
-// called before ChunkDemuxer::Initialize().
-
-// Testing for batch read.
 
 
-// Make sure Read() callbacks are dispatched with the proper data.
 
 
-// Test the case where a cluster is passed to AppendCluster() before
-// INFO & TRACKS data.
-
-// Test cases where we get an MarkEndOfStream() call during initialization.
 
 
-// Make sure that all pending reads that we don't have media data for get an
-// "end of stream" buffer when MarkEndOfStream() is called.
-
-// Make sure that all Read() calls after we get an MarkEndOfStream()
-// call return an "end of stream" buffer.
 
 
-// Verify buffered range change behavior for audio/video/text tracks.
-
-// Make sure AppendData() will accept elements that span multiple calls.
 
 
-// Verify that we output buffers before the entire cluster has been parsed.
 
 
-// Parc: on Safari's identity a SourceBuffer can be added after the first ones
-// initialized the demuxer, as WebKit's MediaSource adds one whenever it is
-// open. Its first init segment adds an enabled stream, reported for the
-// pipeline's renderer, and from then it counts toward the buffered ranges.
+
+
+
+
+
+
+
+
 TEST_F(ParcChunkDemuxerTest, ParcAddIdAfterInitialization) {
   std::vector<PipelineMetadata> added;
   demuxer_->ParcAllowSourceBuffersAfterInit(base::BindRepeating(
@@ -1439,13 +1288,9 @@ TEST_F(ParcChunkDemuxerTest, ParcAddIdAfterInitialization) {
   AppendSingleStreamCluster("audio", kAudioTrackNum, 0, 4);
   CheckExpectedRangesForMediaSource("{ [0,92) }");
 
-  // A renderer made now reads it from the last seek, the start.
   CheckExpectedBuffers(audio_stream, "0K 23K 46K 69K");
 }
 
-// Parc: a SourceBuffer added after the one of its type was removed enables
-// and reports its stream; the player restarts for any reported stream, as no
-// renderer made before has it.
 TEST_F(ParcChunkDemuxerTest, ParcAddIdReplacingRemovedSourceBuffer) {
   std::vector<PipelineMetadata> added;
   demuxer_->ParcAllowSourceBuffersAfterInit(base::BindRepeating(
@@ -1466,8 +1311,6 @@ TEST_F(ParcChunkDemuxerTest, ParcAddIdReplacingRemovedSourceBuffer) {
   EXPECT_FALSE(added[0].has_video);
 }
 
-// Parc: a late SourceBuffer of a type that already plays (a second audio
-// language) adds a disabled stream the page can switch to; nothing restarts.
 TEST_F(ParcChunkDemuxerTest, ParcAddIdAfterInitializationSecondAudio) {
   std::vector<PipelineMetadata> added;
   demuxer_->ParcAllowSourceBuffersAfterInit(base::BindRepeating(
@@ -1503,10 +1346,6 @@ TEST_F(ParcChunkDemuxerTest, ParcAddIdAfterInitializationSecondAudio) {
   CheckExpectedBuffers(second, "0K 23K");
 }
 
-// Parc: the pipeline's track change for a late SourceBuffer's stream starts
-// it at the change's time, where playback is, not at the last seek (the
-// start), as WebKit's player enqueues a track added during playback from the
-// current time.
 TEST_F(ParcChunkDemuxerTest, ParcLateStreamStartsAtItsTrackChange) {
   std::vector<std::vector<ChunkDemuxer::ParcAddedTrack>> reported;
   demuxer_->ParcAllowSourceBuffersAfterInit(base::BindRepeating(
@@ -1538,10 +1377,6 @@ TEST_F(ParcChunkDemuxerTest, ParcLateStreamStartsAtItsTrackChange) {
   CheckExpectedBuffers(enabled, "46K 69K");
 }
 
-// Parc: a hand-off (ParcDemuxerExtension::ParcSplitForHandOff()) splits every stream at
-// one video keyframe at or after the time asked: the playing renderer's reads
-// get what comes before it, then end of stream, and the hand-off readers what
-// follows, so the incoming renderer starts where the other ends.
 TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitsAtAVideoKeyframe) {
   ShutdownDemuxer();
   CreateNewDemuxer();
@@ -1555,7 +1390,7 @@ TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitsAtAVideoKeyframe) {
   CheckExpectedBuffers(audio, "0K");
   CheckExpectedBuffers(video, "0K");
 
-  MediaResource* handoff = demuxer_->ParcBeginHandOff();
+  MediaResource* handoff = demuxer_->GetParcExtension()->ParcBeginHandOff();
   ASSERT_TRUE(handoff);
   DemuxerStream* incoming_audio = nullptr;
   DemuxerStream* incoming_video = nullptr;
@@ -1568,7 +1403,7 @@ TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitsAtAVideoKeyframe) {
   EXPECT_EQ(ParcStreamHandOffSource(incoming_video), video);
 
   base::TimeDelta split = kNoTimestamp;
-  demuxer_->ParcSplitForHandOff(
+  demuxer_->GetParcExtension()->ParcSplitForHandOff(
       base::Milliseconds(40),
       base::BindOnce([](base::TimeDelta* out, base::TimeDelta time) { *out = time; },
                      &split));
@@ -1581,11 +1416,9 @@ TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitsAtAVideoKeyframe) {
   CheckExpectedBuffers(incoming_audio, "69K 92K 115K");
   CheckExpectedBuffers(incoming_video, "60K 90 120K");
 
-  demuxer_->ParcEndHandOff();
+  demuxer_->GetParcExtension()->ParcEndHandOff();
 }
 
-// Parc: the split waits for the keyframe that places it to be appended; the
-// playing renderer reads on meanwhile.
 TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitWaitsForItsKeyframe) {
   ShutdownDemuxer();
   CreateNewDemuxer();
@@ -1594,9 +1427,9 @@ TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitWaitsForItsKeyframe) {
   DemuxerStream* video = GetStream(DemuxerStream::VIDEO);
   EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimated(30)).Times(2);
   AppendSingleStreamCluster(kSourceId, kVideoTrackNum, "0K 30");
-  ASSERT_TRUE(demuxer_->ParcBeginHandOff());
+  ASSERT_TRUE(demuxer_->GetParcExtension()->ParcBeginHandOff());
   base::TimeDelta split = kNoTimestamp;
-  demuxer_->ParcSplitForHandOff(
+  demuxer_->GetParcExtension()->ParcSplitForHandOff(
       base::Milliseconds(40),
       base::BindOnce([](base::TimeDelta* out, base::TimeDelta time) { *out = time; },
                      &split));
@@ -1610,11 +1443,9 @@ TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitWaitsForItsKeyframe) {
   CheckExpectedBuffers(video, "60");
   ExpectEndOfStream(DemuxerStream::VIDEO);
 
-  demuxer_->ParcEndHandOff();
+  demuxer_->GetParcExtension()->ParcEndHandOff();
 }
 
-// Parc: a hand-off that ends before its split gives back what it took for
-// the split: the playing renderer reads on without a gap.
 TEST_F(ParcChunkDemuxerTest, ParcHandOffEndedBeforeItsSplitGivesBuffersBack) {
   ShutdownDemuxer();
   CreateNewDemuxer();
@@ -1624,17 +1455,15 @@ TEST_F(ParcChunkDemuxerTest, ParcHandOffEndedBeforeItsSplitGivesBuffersBack) {
   EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimated(30)).Times(2);
   AppendSingleStreamCluster(kSourceId, kVideoTrackNum, "0K 30 60");
   CheckExpectedBuffers(video, "0K");
-  ASSERT_TRUE(demuxer_->ParcBeginHandOff());
-  demuxer_->ParcSplitForHandOff(base::Milliseconds(40), base::DoNothing());
+  ASSERT_TRUE(demuxer_->GetParcExtension()->ParcBeginHandOff());
+  demuxer_->GetParcExtension()->ParcSplitForHandOff(base::Milliseconds(40), base::DoNothing());
   base::RunLoop().RunUntilIdle();
 
-  demuxer_->ParcEndHandOff();
+  demuxer_->GetParcExtension()->ParcEndHandOff();
   AppendSingleStreamCluster(kSourceId, kVideoTrackNum, "90 120K");
   CheckExpectedBuffers(video, "30 60 90 120K");
 }
 
-// Parc: the end of stream places a split still waiting for its keyframe at
-// the end of what was appended.
 TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitAtTheEndOfStream) {
   ShutdownDemuxer();
   CreateNewDemuxer();
@@ -1643,9 +1472,9 @@ TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitAtTheEndOfStream) {
   DemuxerStream* video = GetStream(DemuxerStream::VIDEO);
   EXPECT_MEDIA_LOG(WebMSimpleBlockDurationEstimated(30));
   AppendSingleStreamCluster(kSourceId, kVideoTrackNum, "0K 30");
-  ASSERT_TRUE(demuxer_->ParcBeginHandOff());
+  ASSERT_TRUE(demuxer_->GetParcExtension()->ParcBeginHandOff());
   base::TimeDelta split = kNoTimestamp;
-  demuxer_->ParcSplitForHandOff(
+  demuxer_->GetParcExtension()->ParcSplitForHandOff(
       base::Milliseconds(40),
       base::BindOnce([](base::TimeDelta* out, base::TimeDelta time) { *out = time; },
                      &split));
@@ -1657,11 +1486,9 @@ TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitAtTheEndOfStream) {
   CheckExpectedBuffers(video, "0K 30");
   ExpectEndOfStream(DemuxerStream::VIDEO);
 
-  demuxer_->ParcEndHandOff();
+  demuxer_->GetParcExtension()->ParcEndHandOff();
 }
 
-// Parc: a split asked for while a seek is on its way is placed from the
-// seek's time once the seek returns data.
 TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitWaitsForASeek) {
   ShutdownDemuxer();
   CreateNewDemuxer();
@@ -1670,7 +1497,7 @@ TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitWaitsForASeek) {
   AppendMuxedCluster(
       MuxedStreamInfo(kAudioTrackNum, "0K 23K 46K 69K 92K 115K 138K", 23),
       MuxedStreamInfo(kVideoTrackNum, "0K 30 60K 90 120K 150", 30));
-  MediaResource* handoff = demuxer_->ParcBeginHandOff();
+  MediaResource* handoff = demuxer_->GetParcExtension()->ParcBeginHandOff();
   ASSERT_TRUE(handoff);
   DemuxerStream* incoming_audio = nullptr;
   DemuxerStream* incoming_video = nullptr;
@@ -1682,7 +1509,7 @@ TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitWaitsForASeek) {
 
   demuxer_->StartWaitingForSeek(base::Milliseconds(60));
   base::TimeDelta split = kNoTimestamp;
-  demuxer_->ParcSplitForHandOff(
+  demuxer_->GetParcExtension()->ParcSplitForHandOff(
       base::TimeDelta(),
       base::BindOnce([](base::TimeDelta* out, base::TimeDelta time) { *out = time; },
                      &split));
@@ -1698,11 +1525,9 @@ TEST_F(ParcChunkDemuxerTest, ParcHandOffSplitWaitsForASeek) {
   CheckExpectedBuffers(incoming_audio, "69K 92K 115K 138K");
   CheckExpectedBuffers(incoming_video, "60K 90 120K 150");
 
-  demuxer_->ParcEndHandOff();
+  demuxer_->GetParcExtension()->ParcEndHandOff();
 }
 
-// Parc: on Safari's identity each SourceBuffer's first audio track is
-// enabled, as WebKit's SourceBuffer enables it, and its player mixes them.
 TEST_F(ParcChunkDemuxerTest, ParcSafariEachSourceBufferEnablesItsAudio) {
   for (bool safari : {false, true}) {
     SCOPED_TRACE(safari ? "Safari's identity" : "Chrome's");
@@ -1730,9 +1555,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEachSourceBufferEnablesItsAudio) {
   }
 }
 
-// Parc: so is a late SourceBuffer's, beside the audio that plays; its
-// metadata isn't reported again, as audio already plays. The join's track
-// change keeps both enabled and starts the new one where playback is.
 TEST_F(ParcChunkDemuxerTest, ParcSafariLateSecondAudioMixes) {
   std::vector<PipelineMetadata> added;
   std::vector<ChunkDemuxer::ParcAddedTrack> tracks;
@@ -1777,10 +1599,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariLateSecondAudioMixes) {
   CheckExpectedBuffers(second, "23K 46K 69K");
 }
 
-// Parc: the pipeline keeps one pending change per type, so two late
-// SourceBuffers' joins become one change; it starts both. A later change the
-// page makes enables what the element enabled, nothing left of the joins
-// (WebKit's audioTrackDidChangeEnabled for each track).
 TEST_F(ParcChunkDemuxerTest, ParcCoalescedJoinsStartEveryTrack) {
   std::vector<MediaTrack::Id> ids;
   demuxer_->ParcSetSafariMediaSource(true);
@@ -1825,11 +1643,6 @@ TEST_F(ParcChunkDemuxerTest, ParcCoalescedJoinsStartEveryTrack) {
   }
 }
 
-// Parc: WebKit's player plays every audio track the element enables, so a
-// Safari-identity page's change enables exactly those, the latest the
-// element gave before the pipeline's change, which named one of them; a
-// change it didn't give any for keeps them. A Chrome-identity page's change
-// enables the one it names.
 TEST_F(ParcChunkDemuxerTest, ParcSafariEnablesTheElementsAudioTracks) {
   for (bool safari : {false, true}) {
     SCOPED_TRACE(safari ? "Safari's identity" : "Chrome's");
@@ -1884,7 +1697,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEnablesTheElementsAudioTracks) {
     EXPECT_EQ(second->IsEnabled(), safari);
 
     if (safari) {
-      // A track enabled again starts where playback is.
       demuxer_->ParcSetEnabledAudioTracks({first_id, second_id});
       change(second_id, base::Milliseconds(69));
       EXPECT_EQ(enabled, first);
@@ -1900,7 +1712,7 @@ TEST_F(ParcChunkDemuxerTest, ParcSourceKeyRemovalRetainsBufferIdentity) {
   std::vector<std::string> removed;
   demuxer_->ParcSetSourceKeyCallback(base::BindRepeating(
       [](std::vector<std::string>* removed, const std::string& id,
-         const std::vector<uint8_t>& data) {
+         EmeInitDataType, const std::vector<uint8_t>& data) {
         EXPECT_TRUE(data.empty());
         removed->push_back(id);
       }, &removed));
@@ -1910,37 +1722,18 @@ TEST_F(ParcChunkDemuxerTest, ParcSourceKeyRemovalRetainsBufferIdentity) {
   EXPECT_EQ((std::vector<std::string>{"audio", "video"}), removed);
 }
 
-// Test that Read() calls after a RemoveId() return "end of stream" buffers.
-
-// Test that removing an ID immediately after adding it does not interfere with
-// quota for new IDs in the future.
 
 
-// Test that Seek() successfully seeks to all source IDs.
-
-// Test that Seek() completes successfully when EndOfStream
-// is called before data is available for that seek point.
-// This scenario might be useful if seeking past the end of stream
-// of either audio or video (or both).
-
-// Test that EndOfStream is ignored if coming during a pending seek
-// whose seek time is before some existing ranges.
-
-// Test ranges in an audio-only stream.
-
-// Test ranges in a video-only stream.
 
 
-// Once MarkEndOfStream() is called, GetBufferedRanges should not cut off any
-// over-hanging tails at the end of the ranges as this is likely due to block
-// duration differences.
 
 
-// Test codec ID's that are not compliant with RFC6381, but have been
-// seen in the wild.
 
-// Parc: types named without codecs, which ChunkDemuxer takes only under
-// Safari's init segment rules (ParcSetSafariInitSegmentRules()).
+
+
+
+
+
 TEST_F(ParcChunkDemuxerTest, ParcTypesWithoutCodecsNeedSafariIdentity) {
   EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
   demuxer_->Initialize(&host_,
@@ -2006,12 +1799,9 @@ TEST_F(ParcChunkDemuxerTest, ParcTypeWithoutCodecsTakesTheStreamsCodecs) {
       ReadTestDataFile("bear-640x360-av_frag.mp4");
   EXPECT_CALL(*this, InitSegmentReceivedMock(_));
   EXPECT_TRUE(AppendData(kSourceId, base::span(*mp4)));
-#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
+#endif
 }
 
-// Parc: Safari's other Media Source types (AVStreamDataParser's
-// audiovisualMIMETypes) and their codecs, which ChunkDemuxer takes only under
-// Safari's init segment rules (StreamParserFactory::ParcSafariMediaSourceType).
 TEST_F(ParcChunkDemuxerTest, ParcPCMNeedsSafariRules) {
   EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
   demuxer_->Initialize(&host_,
@@ -2093,14 +1883,14 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariRulesTakeSafariContainerTypes) {
       {"audio/aacp", "", ChunkDemuxer::kOk},
       {"audio/aac", "mp4a.40.2", ChunkDemuxer::kOk},
       {"audio/aacp", "mp4a.40.2", ChunkDemuxer::kNotSupported},
-#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
+#endif
 #if BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)
       {"audio/mp4", "iamf.001.001.Opus", ChunkDemuxer::kNotSupported},
       {"video/mp4", "avc1.640028,iamf", ChunkDemuxer::kNotSupported},
-#endif  // BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
+#endif
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
       {"video/mp4", "s263.1,mp4a.40.2", ChunkDemuxer::kOk},
-#endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
+#endif
   };
   for (const auto& test_case : kCases) {
     ChunkDemuxer::Status result =
@@ -2128,9 +1918,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariAudioContainerTypeTakesMp4Video) {
   EXPECT_TRUE(GetStream(DemuxerStream::VIDEO));
 }
 
-// Parc: Ogg audio, which Safari's Media Source parses with AVStreamDataParser
-// (ParcOggStreamParser): its samples buffer from 0, and changeType() reaches
-// it as addSourceBuffer() does.
 TEST_F(ParcChunkDemuxerTest, ParcSafariOggBuffers) {
   EXPECT_CALL(media_log_, DoAddLogRecordLogString(_)).Times(AnyNumber());
   EXPECT_CALL(host_, SetDuration(_)).Times(AnyNumber());
@@ -2152,8 +1939,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariOggBuffers) {
                              append_window_end_for_next_append_,
                              &timestamp_offset_map_[kSourceId]);
   demuxer_->ChangeType(kSourceId, "audio/ogg", "vorbis");
-  // The new parser's samples start at 0 again, as WebKit's new
-  // SourceBufferParser's do.
   scoped_refptr<DecoderBuffer> vorbis = ReadTestDataFile("sfx.ogg");
   EXPECT_CALL(*this, InitSegmentReceivedMock(_));
   EXPECT_TRUE(AppendData(kSourceId, base::span(*vorbis)));
@@ -2183,8 +1968,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariChangeTypeFilterSeesTheParserType) {
 
 #if (BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || BUILDFLAG(ENABLE_IAMF_TOOLS)) && \
     BUILDFLAG(USE_PROPRIETARY_CODECS)
-// Parc: Safari's SourceBuffer gets an IAMF and H.264 stream without its IAMF
-// track, and plays the video. (Safari refuses an "iamf" codecs string.)
 class ParcChunkDemuxerIamfTest : public ParcChunkDemuxerTest {
  protected:
   void AppendIamfAndH264(bool safari, const std::string& codecs) {
@@ -2213,11 +1996,9 @@ TEST_F(ParcChunkDemuxerIamfTest, SafariRulesLeaveOutIamfTrack) {
   ASSERT_NO_FATAL_FAILURE(AppendIamfAndH264(/*safari=*/true, ""));
   EXPECT_FALSE(GetStream(DemuxerStream::AUDIO));
 }
-#endif  // (BUILDFLAG(ENABLE_PLATFORM_IAMF_AUDIO) || ...
+#endif
 
 
-// Test that Seek() completes successfully when the first cluster
-// arrives.
 
 
 #if BUILDFLAG(USE_PROPRIETARY_CODECS)
@@ -2263,27 +2044,17 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariTsAudioTrackSwitchAndDisable) {
 #endif
 
 
-// Test receiving a Shutdown() call before we get an Initialize()
-// call. This can happen if video element gets destroyed before
-// the pipeline has a chance to initialize the demuxer.
 
-// Verifies that signaling end of stream while stalled at a gap
-// boundary does not trigger end of stream buffers to be returned.
 
 
 namespace {
 
-// Parc: Chromium's audio stream limit on macOS, 12 MiB.
 constexpr size_t kParcChromiumAudioLimit = 12 * 1024 * 1024;
 
-// Parc: the size of an append that a Safari-identity SourceBuffer, with or
-// without video, is full for once it holds |bytes|.
 size_t ParcAppendFullAt(size_t bytes, bool video) {
-  return SourceBufferState::ParcMaximumBufferSize(video) - bytes;
+  return ParcSourceBufferEviction::MaximumBufferSize(video) - bytes;
 }
 
-// Parc: one-second frames from |first_second| to |last_second|, a keyframe
-// every |keyframe_seconds|.
 std::string ParcOneSecondFrames(int first_second,
                                 int last_second,
                                 int keyframe_seconds) {
@@ -2303,26 +2074,22 @@ std::string ParcOneSecondFrames(int first_second,
   return frames;
 }
 
-}  // namespace
+}
 
 TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_WebKitBudget) {
-  // SourceBuffer::maximumBufferSize: 5% of 304 MiB, plus 95% with video.
-  EXPECT_EQ(15938355u, SourceBufferState::ParcMaximumBufferSize(false));
-  EXPECT_EQ(318767091u, SourceBufferState::ParcMaximumBufferSize(true));
+  EXPECT_EQ(15938355u, ParcSourceBufferEviction::MaximumBufferSize(false));
+  EXPECT_EQ(318767091u, ParcSourceBufferEviction::MaximumBufferSize(true));
 }
 
 TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_HoldsUpToTheBudget) {
   ASSERT_TRUE(InitDemuxer(HAS_AUDIO));
   demuxer_->ParcSetSafariEviction(true);
   block_size_ = 1000000;
-  // 15 MB of audio: over Chromium's audio limit, under WebKit's budget.
   ParcAppendFiveSecondAudioFrames(0, 15);
   EXPECT_TRUE(
       demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(), 900000));
   CheckExpectedRanges("{ [0,75000) }");
 
-  // Reaching it at currentTime 0 leaves nothing before currentTime or after
-  // the playable segment to evict: QuotaExceededError.
   EXPECT_FALSE(
       demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(), 1000000));
   CheckExpectedRanges("{ [0,75000) }");
@@ -2342,7 +2109,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_OneBudgetAcrossTracks) {
   ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
   demuxer_->ParcSetSafariEviction(true);
   block_size_ = 1000000;
-  // With video the budget is 304 MiB for all the tracks, audio included.
   EXPECT_MEDIA_LOG(SegmentMissingFrames("1")).Times(3);
   ParcAppendFiveSecondAudioFrames(0, 16);
   EXPECT_TRUE(
@@ -2356,13 +2122,9 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_BudgetBeforeInitSegment) {
                        base::BindOnce(&ParcChunkDemuxerTest::DemuxerInitialized,
                                       base::Unretained(this)));
   ASSERT_EQ(AddId(kSourceId, HAS_AUDIO | HAS_VIDEO), ChunkDemuxer::kOk);
-  // Chromium's limits have no streams to apply to yet.
   EXPECT_TRUE(
       demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(), 20000000));
 
-  // WebKit's is an audio-only SourceBuffer's until an init segment brings
-  // video. An append that reaches it is full (isBufferFullFor) but fits
-  // (canAppend); one past it throws QuotaExceededError.
   demuxer_->ParcSetSafariEviction(true);
   EXPECT_TRUE(
       demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(), 15938355));
@@ -2380,8 +2142,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_EarliestChunkBeforeCurrentTime) 
   const base::TimeDelta current_time = base::Seconds(60);
   Seek(current_time);
 
-  // 17 MB is over the budget. WebKit removes the first 30 s chunk before
-  // currentTime, [0,30), whole, though less would have done.
   EXPECT_TRUE(demuxer_->EvictCodedFrames(kSourceId, current_time, 2000000));
   CheckExpectedRanges("{ [30000,75000) }");
 }
@@ -2408,9 +2168,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_DataAfterThePlayableSegment) {
   CheckExpectedRanges("{ [0,40000) [50000,75000) }");
   Seek(base::TimeDelta());
 
-  // Nothing precedes currentTime; playback from it stalls at the 10 s gap,
-  // so WebKit removes the last 30 s chunk of what follows, [45,75): all of
-  // the second range.
   EXPECT_TRUE(
       demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(), 3000000));
   CheckExpectedRanges("{ [0,40000) }");
@@ -2439,13 +2196,10 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_PastTheLastAppendedGOP) {
   CheckExpectedRanges("{ [0,20000) [50000,120000) }");
   Seek(base::TimeDelta());
 
-  // Playback stalls at 20 s. 22 MB takes two 30 s chunks from the end of what
-  // follows, [90,120) and then [60,90), the last appended frame with them.
   EXPECT_TRUE(
       demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(), 4000000));
   CheckExpectedRanges("{ [0,20000) [50000,60000) }");
 
-  // The next append starts a range of its own.
   ParcAppendFiveSecondAudioFrames(120, 1);
   CheckExpectedRanges("{ [0,20000) [50000,60000) [120000,125000) }");
 }
@@ -2465,8 +2219,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_LongerTrackKeepsItsTail) {
   CheckExpectedRanges(DemuxerStream::VIDEO, "{ [0,10000) [20000,40000) }");
   Seek(base::TimeDelta());
 
-  // Playback stalls at 10 s. WebKit removes the last 30 s chunk of what both
-  // tracks hold, [10,40); the audio after it stays.
   EXPECT_TRUE(demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(),
                                          ParcAppendFullAt(7000000, true)));
   CheckExpectedRanges(DemuxerStream::AUDIO, "{ [0,10000) [40000,50000) }");
@@ -2526,8 +2278,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_RemovesFramesNotWholeGOPs) {
   CheckExpectedRanges("{ [0,10000) [20000,65000) }");
   Seek(base::TimeDelta());
 
-  // Playback stalls at 10 s. The last 30 s chunk, [35,65), starts inside the
-  // GOP at 30 s, whose frames before 35 s stay.
   EXPECT_TRUE(demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(),
                                          ParcAppendFullAt(30000000, true)));
   CheckExpectedRanges("{ [0,10000) [20000,35000) }");
@@ -2542,13 +2292,9 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_EstimateLetsTheRetryAppend) {
   const base::TimeDelta current_time = base::Milliseconds(14500);
   const size_t append = ParcAppendFullAt(3500000, false);
 
-  // Without an estimate, evictFrames frees up to 3.75 s before currentTime,
-  // to the frame at 11 s, which isn't enough: QuotaExceededError.
   EXPECT_FALSE(demuxer_->EvictCodedFrames(kSourceId, current_time, append));
   CheckExpectedRanges("{ [11000,15000) }");
 
-  // The estimate made then reaches 3 s before currentTime, so it counts the
-  // frame at 11 s: the retry appends, though evictFrames frees nothing more.
   EXPECT_TRUE(demuxer_->EvictCodedFrames(kSourceId, current_time, append));
   CheckExpectedRanges("{ [11000,15000) }");
 }
@@ -2589,8 +2335,6 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_KeepsThePlayableSegment) {
   ParcAppendFiveSecondAudioFrames(0, 2);
   Seek(base::TimeDelta());
 
-  // Everything after currentTime plays on without a stall, so WebKit evicts
-  // nothing and throws QuotaExceededError.
   EXPECT_FALSE(
       demuxer_->EvictCodedFrames(kSourceId, base::TimeDelta(), 1000000));
   CheckExpectedRanges("{ [0,75000) }");
@@ -2611,20 +2355,9 @@ TEST_F(ParcChunkDemuxerTest, ParcSafariEviction_Off_EvictsFromThePlayableSegment
 }
 
 
-// Verifies that a Seek() will complete without text cues for
-// the seek point and will return cues after the seek position
-// when they are eventually appended.
 
 
-// TODO(servolk): Add a unit test with multiple audio/video tracks using the
-// same codec type in a single SourceBufferState, when WebM parser supports
-// multiple tracks. crbug.com/646900
 
-// Parc: a Safari-identity page's Media Source
-// (ChunkDemuxer::ParcSetSafariMediaSource()) fills a gap under
-// 2002/24000 s in buffered, as WebKit's TrackBuffer does, and plays video
-// across a gap of up to 250 ms where another SourceBuffer's audio covers it
-// (MediaSourcePrivate::gapToleranceAtTime()).
 TEST_F(ParcChunkDemuxerTest, Parc_ChromeMediaSourceKeepsSmallGaps) {
   std::string audio_id = "audio1";
   std::string video_id = "video1";
@@ -2648,11 +2381,9 @@ TEST_F(ParcChunkDemuxerTest, Parc_SafariMediaSourceGaps) {
   CheckExpectedRanges(video_id, "{ [0,268) [468,534) }");
 
   CheckExpectedBuffers(video_stream, "0K 33 66 99");
-  // A read left waiting shuts down into ReadDone, not into stack variables.
   ExpectRead(DemuxerStream::VIDEO, 202);
   ExpectRead(DemuxerStream::VIDEO, 235);
 
-  // The read waits at the 200 ms gap until audio covers it.
   {
     InSequence s;
     EXPECT_CALL(*this, Checkpoint(1));
@@ -2668,4 +2399,4 @@ TEST_F(ParcChunkDemuxerTest, Parc_SafariMediaSourceGaps) {
   ExpectRead(DemuxerStream::VIDEO, 501);
 }
 
-}  // namespace media
+}

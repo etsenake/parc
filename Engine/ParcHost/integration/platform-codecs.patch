@@ -75,11 +75,12 @@
 +
 --- a/media/filters/mac/audio_toolbox_audio_decoder.h
 +++ b/media/filters/mac/audio_toolbox_audio_decoder.h
-@@ -8,13 +8,17 @@
+@@ -8,13 +8,18 @@
  #include <AudioToolbox/AudioToolbox.h>
 -
 +
  #include <memory>
++#include <optional>
 +#include <vector>
 -
 +
@@ -96,7 +97,7 @@
 -
 +
  namespace media {
-@@ -44,6 +48,8 @@
+@@ -44,6 +49,8 @@
    void Reset(base::OnceClosure reset_cb) override;
    bool NeedsBitstreamConversion() const override;
 -
@@ -106,7 +107,7 @@
   private:
    struct ScopedAudioConverterRefTraits {
      static AudioConverterRef InvalidValue() { return nullptr; }
-@@ -54,13 +60,29 @@
+@@ -54,13 +61,35 @@
        base::apple::ScopedTypeRef<AudioConverterRef,
                                   ScopedAudioConverterRefTraits>;
 -
@@ -125,6 +126,12 @@
 +  void Output(const AudioBus& bus,
 +              int frames,
 +              const AudioDiscardHelper::TimeInfo& time_info);
++
++  std::optional<DecoderStatus> PrepareAacInput(const DecoderBuffer& buffer,
++                                               size_t header_size);
++  void ConfigureOutput(const AudioDecoderConfig& config,
++                       const AudioStreamBasicDescription& input_format,
++                       ChannelLayout channel_layout);
 -
 +
    void OnOutputReady(AudioDiscardHelper::TimeInfo time_info,
@@ -142,7 +149,7 @@
    ScopedAudioConverterRef decoder_;
 -
 +
-@@ -71,6 +93,17 @@
+@@ -71,6 +100,17 @@
 -
 +
    std::unique_ptr<LimitingAudioQueue> limiter_queue_;
@@ -164,12 +171,10 @@
    std::unique_ptr<AudioBufferList, base::FreeDeleter> output_buffer_list_;
 --- a/media/filters/mac/audio_toolbox_audio_decoder.cc
 +++ b/media/filters/mac/audio_toolbox_audio_decoder.cc
-@@ -5,13 +5,18 @@
- #include "media/filters/mac/audio_toolbox_audio_decoder.h"
+@@ -6,12 +6,15 @@
 -
 +
  #include <algorithm>
-+#include <array>
  #include <optional>
 +#include <vector>
 -
@@ -178,275 +183,37 @@
  #include "base/auto_reset.h"
 +#include "base/containers/span.h"
  #include "base/functional/bind.h"
-+#include "base/functional/callback_helpers.h"
  #include "base/logging.h"
  #include "base/memory/raw_ptr.h"
 +#include "base/numerics/safe_conversions.h"
  #include "base/task/bind_post_task.h"
  #include "media/base/audio_buffer.h"
  #include "media/base/audio_bus.h"
-@@ -25,6 +30,7 @@
+@@ -24,6 +27,7 @@
+ #include "media/base/media_log.h"
  #include "media/base/status.h"
  #include "media/base/timestamp_constants.h"
++#include "media/filters/mac/parc_audio_toolbox_aac.h"
  #include "media/formats/mp4/es_descriptor.h"
-+#include "media/formats/mpeg/adts_constants.h"
  #include "media/media_buildflags.h"
 -
 +
- namespace media {
-@@ -42,12 +48,260 @@
+@@ -42,12 +46,23 @@
  #endif
    // We use AudioToolbox for decoding xHE-AAC content and that's available on
    // macOS 10.15 or higher.
 -  return config.profile() == AudioCodecProfile::kXHE_AAC;
-+  return config.codec() == AudioCodec::kAAC ||
-+         config.codec() == AudioCodec::kALAC ||
-+         config.codec() == AudioCodec::kAMR_NB ||
-+         config.codec() == AudioCodec::kAMR_WB;
-+}
-+
-+bool IsAmr(const AudioDecoderConfig& config) {
-+  return config.codec() == AudioCodec::kAMR_NB ||
-+         config.codec() == AudioCodec::kAMR_WB;
-+}
-+
-+std::vector<AudioStreamPacketDescription> AmrPackets(
-+    AudioCodec codec,
-+    base::span<const uint8_t> sample) {
-+  static constexpr std::array<uint8_t, 16> kNarrowbandSizes = {
-+      13, 14, 16, 18, 20, 21, 27, 32, 6, 1, 1, 1, 1, 1, 1, 1};
-+  static constexpr std::array<uint8_t, 16> kWidebandSizes = {
-+      18, 24, 33, 37, 41, 47, 51, 59, 61, 6, 1, 1, 1, 1, 1, 1};
-+  const auto& sizes =
-+      codec == AudioCodec::kAMR_NB ? kNarrowbandSizes : kWidebandSizes;
-+  std::vector<AudioStreamPacketDescription> packets;
-+  size_t offset = 0;
-+  while (offset < sample.size()) {
-+    const size_t size = sizes[(sample[offset] >> 3) & 0x0f];
-+    if (size > sample.size() - offset) {
-+      break;
-+    }
-+    packets.push_back({static_cast<SInt64>(offset), 0,
-+                       static_cast<UInt32>(size)});
-+    offset += size;
-+  }
-+  return packets;
-+}
-+
-+bool MayArriveAsAdts(const AudioDecoderConfig& config) {
-+  return config.codec() == AudioCodec::kAAC &&
-+         config.profile() != AudioCodecProfile::kXHE_AAC;
-+}
-+
-+bool TakesConfigFromAdts(const AudioDecoderConfig& config) {
-+  return MayArriveAsAdts(config) && config.extra_data().empty();
-+}
-+
-+size_t AdtsHeaderSize(base::span<const uint8_t> data) {
-+  if (data.size() < kADTSHeaderMinSize || data[0] != 0xff ||
-+      (data[1] & 0xf6) != 0xf0) {
-+    return 0;
-+  }
-+  const size_t frame_size =
-+      ((data[3] & 0x03) << 11) | (data[4] << 3) | (data[5] >> 5);
-+  const size_t header_size =
-+      (data[1] & 0x01) ? kADTSHeaderSizeNoCrc : kADTSHeaderSizeWithCrc;
-+  if (frame_size != data.size() || frame_size <= header_size) {
-+    return 0;
-+  }
-+  return header_size;
-+}
-+
-+std::vector<uint8_t> AdtsAudioSpecificConfig(base::span<const uint8_t> adts) {
-+  const uint8_t object_type = (adts[2] >> 6) + 1;
-+  const uint8_t frequency_index = (adts[2] >> 2) & 0x0f;
-+  const uint8_t channel_config = ((adts[2] & 0x01) << 2) | (adts[3] >> 6);
-+  return {static_cast<uint8_t>((object_type << 3) | (frequency_index >> 1)),
-+          static_cast<uint8_t>(((frequency_index & 0x01) << 7) |
-+                               (channel_config << 3))};
-+}
-+
-+std::vector<uint8_t> SignalImplicitSbr(
-+    const std::vector<uint8_t>& audio_specific_config,
-+    int sample_rate) {
-+  if (audio_specific_config.size() < 2) {
-+    return audio_specific_config;
-+  }
-+  const uint32_t object_type = audio_specific_config[0] >> 3;
-+  const uint32_t frequency_index = ((audio_specific_config[0] & 0x07) << 1) |
-+                                   (audio_specific_config[1] >> 7);
-+  const uint32_t channel_config = (audio_specific_config[1] >> 3) & 0x0f;
-+  const uint32_t frame_length_flag = (audio_specific_config[1] >> 2) & 0x01;
-+  if (object_type != 2 || frequency_index < 6 || frequency_index > 11 ||
-+      channel_config < 1 || channel_config > 7 ||
-+      (audio_specific_config[1] & 0x03) != 0 ||
-+      2 * kADTSFrequencyTable[frequency_index] != sample_rate) {
-+    return audio_specific_config;
-+  }
-+  const uint32_t extension_type = channel_config == 1 ? 29 : 5;
-+  const uint32_t bits = (extension_type << 27) | (frequency_index << 23) |
-+                        (channel_config << 19) | ((frequency_index - 3) << 15) |
-+                        (object_type << 10) | (frame_length_flag << 9);
-+  return {static_cast<uint8_t>(bits >> 24), static_cast<uint8_t>(bits >> 16),
-+          static_cast<uint8_t>(bits >> 8), static_cast<uint8_t>(bits)};
-+}
-+
-+int ImplicitSbrCoreRate(const std::vector<uint8_t>& audio_specific_config) {
-+  if (audio_specific_config.size() != 2) {
-+    return 0;
-+  }
-+  const uint32_t object_type = audio_specific_config[0] >> 3;
-+  const uint32_t frequency_index = ((audio_specific_config[0] & 0x07) << 1) |
-+                                   (audio_specific_config[1] >> 7);
-+  const uint32_t channel_config = (audio_specific_config[1] >> 3) & 0x0f;
-+  if (object_type != 2 || frequency_index < 6 || frequency_index > 11 ||
-+      channel_config < 1 || channel_config > 7 ||
-+      (audio_specific_config[1] & 0x07) != 0) {
-+    return 0;
-+  }
-+  return kADTSFrequencyTable[frequency_index];
-+}
-+
-+std::optional<bool> CarriesSbr(
-+    const std::vector<uint8_t>& audio_specific_config,
-+    base::span<const uint8_t> access_unit) {
-+  constexpr size_t kMaxAdtsFrameSize = 0x1fff;
-+  constexpr size_t kMinParsedBytes = 1024;
-+  const int core_rate = ImplicitSbrCoreRate(audio_specific_config);
-+  if (!core_rate) {
-+    return false;
-+  }
-+  const size_t frame_size = kADTSHeaderSizeNoCrc + access_unit.size();
-+  if (access_unit.empty() || frame_size > kMaxAdtsFrameSize) {
-+    return std::nullopt;
-+  }
-+  const uint8_t frequency_index = ((audio_specific_config[0] & 0x07) << 1) |
-+                                  (audio_specific_config[1] >> 7);
-+  const uint8_t channel_config = (audio_specific_config[1] >> 3) & 0x0f;
-+  const std::array<uint8_t, kADTSHeaderSizeNoCrc> header = {
-+      0xff,
-+      0xf1,
-+      static_cast<uint8_t>(0x40 | (frequency_index << 2) |
-+                           (channel_config >> 2)),
-+      static_cast<uint8_t>(((channel_config & 0x03) << 6) | (frame_size >> 11)),
-+      static_cast<uint8_t>(frame_size >> 3),
-+      static_cast<uint8_t>(((frame_size & 0x07) << 5) | 0x1f),
-+      0xfc};
-+  const size_t copies =
-+      std::max<size_t>(2, (kMinParsedBytes + frame_size - 1) / frame_size);
-+  std::vector<uint8_t> frames;
-+  frames.reserve(copies * frame_size);
-+  for (size_t i = 0; i < copies; ++i) {
-+    frames.insert(frames.end(), header.begin(), header.end());
-+    frames.insert(frames.end(), access_unit.begin(), access_unit.end());
-+  }
-+
-+  AudioFileStreamID stream = nullptr;
-+  if (AudioFileStreamOpen(
-+          nullptr,
-+          [](void*, AudioFileStreamID, AudioFileStreamPropertyID,
-+             AudioFileStreamPropertyFlags*) {},
-+          [](void*, UInt32, UInt32, const void*,
-+             AudioStreamPacketDescription*) {},
-+          kAudioFileAAC_ADTSType, &stream) != noErr) {
-+    return std::nullopt;
-+  }
-+  base::ScopedClosureRunner close_stream(
-+      base::BindOnce(base::IgnoreResult(&AudioFileStreamClose), stream));
-+  UInt32 size = 0;
-+  if (AudioFileStreamParseBytes(stream,
-+                                base::checked_cast<UInt32>(frames.size()),
-+                                frames.data(), 0) != noErr ||
-+      AudioFileStreamGetPropertyInfo(stream,
-+                                     kAudioFileStreamProperty_FormatList, &size,
-+                                     nullptr) != noErr ||
-+      size < sizeof(AudioFormatListItem)) {
-+    return std::nullopt;
-+  }
-+  std::vector<AudioFormatListItem> layers(size / sizeof(AudioFormatListItem));
-+  size =
-+      base::checked_cast<UInt32>(layers.size() * sizeof(AudioFormatListItem));
-+  if (AudioFileStreamGetProperty(stream, kAudioFileStreamProperty_FormatList,
-+                                 &size, layers.data()) != noErr) {
-+    return std::nullopt;
-+  }
-+  layers.resize(std::min(layers.size(), size / sizeof(AudioFormatListItem)));
-+  if (layers.empty()) {
-+    return std::nullopt;
-+  }
-+  return std::ranges::any_of(
-+      layers, [core_rate](const AudioFormatListItem& layer) {
-+        return (layer.mASBD.mFormatID == kAudioFormatMPEG4AAC_HE ||
-+                layer.mASBD.mFormatID == kAudioFormatMPEG4AAC_HE_V2) &&
-+               layer.mASBD.mSampleRate == 2 * core_rate;
-+      });
-+}
-+
-+std::optional<int> ImplicitSbrRate(
-+    const std::vector<uint8_t>& audio_specific_config,
-+    base::span<const uint8_t> access_unit,
-+    int sample_rate) {
-+  const int core_rate = ImplicitSbrCoreRate(audio_specific_config);
-+  if (!core_rate || sample_rate == 2 * core_rate) {
-+    return sample_rate;
-+  }
-+  const std::optional<bool> sbr =
-+      CarriesSbr(audio_specific_config, access_unit);
-+  if (!sbr) {
-+    return std::nullopt;
-+  }
-+  return *sbr ? 2 * core_rate : sample_rate;
-+}
-+
-+bool SelectAacLayer(const std::vector<uint8_t>& cookie,
-+                    int sample_rate,
-+                    AudioStreamBasicDescription& format,
-+                    MediaLog* media_log) {
-+  AudioFormatInfo info = {};
-+  info.mASBD.mFormatID = kAudioFormatMPEG4AAC;
-+  info.mMagicCookie = cookie.data();
-+  info.mMagicCookieSize = cookie.size();
-+  UInt32 size = 0;
-+  auto status = AudioFormatGetPropertyInfo(kAudioFormatProperty_FormatList,
-+                                           sizeof(info), &info, &size);
-+  if (status != noErr || size < sizeof(AudioFormatListItem)) {
-+    OSSTATUS_MEDIA_LOG(ERROR, status, media_log)
-+        << "AudioFormatGetPropertyInfo() failed";
-+    return false;
-+  }
-+  std::vector<AudioFormatListItem> layers(size / sizeof(AudioFormatListItem));
-+  status = AudioFormatGetProperty(kAudioFormatProperty_FormatList, sizeof(info),
-+                                  &info, &size, layers.data());
-+  layers.resize(size / sizeof(AudioFormatListItem));
-+  if (status != noErr || layers.empty()) {
-+    OSSTATUS_MEDIA_LOG(ERROR, status, media_log)
-+        << "AudioFormatGetProperty() failed";
-+    return false;
-+  }
-+  UInt32 playable = 0;
-+  size = sizeof(playable);
-+  status =
-+      AudioFormatGetProperty(kAudioFormatProperty_FirstPlayableFormatFromList,
-+                             layers.size() * sizeof(AudioFormatListItem),
-+                             layers.data(), &size, &playable);
-+  if (status != noErr || playable >= layers.size()) {
-+    OSSTATUS_MEDIA_LOG(ERROR, status, media_log)
-+        << "AudioFormatGetProperty() found no playable AAC layer";
-+    return false;
-+  }
-+  auto candidates = base::span(layers).subspan(playable);
-+  auto match = std::ranges::find_if(
-+      candidates, [sample_rate](const AudioFormatListItem& layer) {
-+        return layer.mASBD.mSampleRate == sample_rate;
-+      });
-+  format = (match != candidates.end() ? *match : candidates.front()).mASBD;
-+  return true;
-+}
-+
-+bool DrainsAtEndOfStream(const AudioDecoderConfig& config) {
-+  return MayArriveAsAdts(config);
++  return config.profile() == AudioCodecProfile::kXHE_AAC ||
++         parc_audio_toolbox::DecodesWithAudioToolbox(config);
  }
 -
++
++using parc_audio_toolbox::AdtsHeaderSize;
++using parc_audio_toolbox::AmrPackets;
++using parc_audio_toolbox::DrainsAtEndOfStream;
++using parc_audio_toolbox::IsAmr;
++using parc_audio_toolbox::MayArriveAsAdts;
++using parc_audio_toolbox::TakesConfigFromAdts;
 +
  struct InputData {
    raw_ptr<DecoderBuffer> buffer = nullptr;
@@ -458,7 +225,7 @@
 -
 +
  // Special error code we use to differentiate real errors from end of buffer.
-@@ -60,21 +314,38 @@
+@@ -60,21 +75,38 @@
                                AudioStreamPacketDescription** packets,
                                void* user_data) {
    auto* input_data = reinterpret_cast<InputData*>(user_data);
@@ -507,7 +274,7 @@
 +
    // This ensures that if this callback is called again, we'll exit via the
    // kNoMoreDataError path above.
-@@ -116,7 +387,7 @@
+@@ -116,7 +148,7 @@
                                            const WaitingCB& waiting_cb) {
    if (!CanUseAudioToolbox(config)) {
      DLOG(WARNING)
@@ -516,7 +283,7 @@
      std::move(init_cb).Run(DecoderStatus::Codes::kUnsupportedCodec);
      return;
    }
-@@ -131,7 +402,15 @@
+@@ -131,7 +163,15 @@
    decoder_.reset();
 -
 +
@@ -534,7 +301,7 @@
    if (!success) {
      decoder_.reset();
    }
-@@ -142,10 +421,14 @@
+@@ -142,10 +182,14 @@
 -
 +
  void AudioToolboxAudioDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
@@ -552,7 +319,7 @@
    // Make sure we are notified if https://crbug.com/49709 returns. Issue also
    // occurs with some damaged files.
    if (!buffer->end_of_stream() && buffer->timestamp() == kNoTimestamp) {
-@@ -163,20 +446,96 @@
+@@ -163,20 +207,48 @@
 -
 +
    InputData input_data;
@@ -561,54 +328,9 @@
 +  if (!buffer->end_of_stream() && MayArriveAsAdts(config_)) {
 +    input_data.header_size = AdtsHeaderSize(base::span(*buffer));
 +  }
-+  if (input_data.header_size && (base::span(*buffer)[6] & 0x03) != 0) {
-+    MEDIA_LOG(ERROR, media_log_)
-+        << "ADTS frames with several raw data blocks are unsupported";
-+    std::move(decode_cb_bound)
-+        .Run(DecoderStatus::Codes::kPlatformDecodeFailure);
++  if (auto status = PrepareAacInput(*buffer, input_data.header_size)) {
++    std::move(decode_cb_bound).Run(*status);
 +    return;
-+  }
-+
-+  if (!decoder_ ||
-+      (check_implicit_sbr_ && !buffer->end_of_stream() && buffer->size() > 0)) {
-+    if (!decoder_ && (buffer->end_of_stream() || buffer->size() == 0)) {
-+      std::move(decode_cb_bound).Run(OkStatus());
-+      return;
-+    }
-+    if (!decoder_ && !input_data.header_size) {
-+      MEDIA_LOG(ERROR, media_log_)
-+          << "AAC without an AudioSpecificConfig must arrive as ADTS frames";
-+      std::move(decode_cb_bound)
-+          .Run(DecoderStatus::Codes::kPlatformDecodeFailure);
-+      return;
-+    }
-+    std::optional<std::vector<uint8_t>> audio_specific_config;
-+    if (!TakesConfigFromAdts(config_)) {
-+      audio_specific_config = config_.extra_data();
-+    } else if (input_data.header_size) {
-+      audio_specific_config = AdtsAudioSpecificConfig(base::span(*buffer));
-+    }
-+    const std::optional<int> sample_rate =
-+        audio_specific_config
-+            ? ImplicitSbrRate(
-+                  *audio_specific_config,
-+                  base::span(*buffer).subspan(input_data.header_size),
-+                  config_.samples_per_second())
-+            : std::nullopt;
-+    if (sample_rate) {
-+      check_implicit_sbr_ = false;
-+    }
-+    if (!decoder_ ||
-+        (sample_rate && *sample_rate != config_.samples_per_second())) {
-+      CHECK(audio_specific_config);
-+      if (!ReplaceDecoder(*audio_specific_config,
-+                          sample_rate.value_or(config_.samples_per_second()))) {
-+        decoder_.reset();
-+        std::move(decode_cb_bound)
-+            .Run(DecoderStatus::Codes::kFailedToCreateDecoder);
-+        return;
-+      }
-+    }
 +  }
 -
 +
@@ -648,16 +370,13 @@
    // Must be filled in each time in case AudioConverterFillComplexBuffer()
    // modified it during a previous call.
 -  output_buffer_list_->mNumberBuffers = output_bus_->channels();
-+  // |input_data|. See media::AudioConverter for a similar mechanism.
 +  auto fill_output_bus = [this, &input_data](UInt32* num_frames) {
-+    // Must be filled in each time in case AudioConverterFillComplexBuffer()
-+    // modified it during a previous call.
 +    output_buffer_list_->mNumberBuffers = output_bus_->channels();
 -
 +
    // SAFETY: In `CreateDecoder` , we allocate memory for `output_buffer_list_`
    // of `sizeof(AudioBufferList) + output_bus_->channels() *
-@@ -195,31 +554,63 @@
+@@ -195,31 +267,51 @@
    // ```
    //
    // So the size of `output_buffer_list_` is sufficient.
@@ -669,18 +388,6 @@
 -    buffer_span[i].mData = output_bus_->channel(i).data();
 -  }
 -
-+    //
-+    // From
-+    //
-+    // ```
-+    // struct AudioBufferList {
-+    //   UInt32 mNumberBuffers;
-+    //   AudioBuffer mBuffers[1];  // this is a variable length array of
-+    //                             // mNumberBuffers elements
-+    // };
-+    // ```
-+    //
-+    // So the size of `output_buffer_list_` is sufficient.
 +    auto buffer_span = UNSAFE_BUFFERS(base::span(
 +        output_buffer_list_->mBuffers, output_buffer_list_->mNumberBuffers));
 +    for (int i = 0; i < output_bus_->channels(); ++i) {
@@ -737,18 +444,11 @@
    if (result != noErr && result != kNoMoreDataError) {
      OSSTATUS_MEDIA_LOG(ERROR, result, media_log_)
          << "AudioConverterFillComplexBuffer() failed";
-@@ -227,35 +618,95 @@
+@@ -227,35 +319,30 @@
          .Run(DecoderStatus::Codes::kPlatformDecodeFailure);
      return;
    }
-+  if (num_frames && buffer->end_of_stream()) {
-+    Deliver(num_frames, end_of_stream_time_info);
-+  } else if (num_frames) {
-+    check_implicit_sbr_ = false;
-+    Deliver(num_frames, AudioDiscardHelper::TimeInfo::FromBuffer(*buffer));
-+  }
 -
-+
 -  base::TimeDelta timestamp;
 -  AudioDiscardHelper::TimeInfo time_info;
 -  if (buffer->end_of_stream()) {
@@ -759,78 +459,19 @@
 -  } else {
 -    timestamp = buffer->timestamp();
 -    time_info = AudioDiscardHelper::TimeInfo::FromBuffer(*buffer);
-+  std::move(decode_cb_bound).Run(OkStatus());
-+}
-+
-+// static
-+bool AudioToolboxAudioDecoder::DrainsAtEndOfStreamForTesting(
-+    const AudioDecoderConfig& config) {
-+  return DrainsAtEndOfStream(config);
-+}
-+
-+void AudioToolboxAudioDecoder::Deliver(
-+    int frames,
-+    const AudioDiscardHelper::TimeInfo& time_info) {
-+  if (!aligns_to_access_units_ || (!awaiting_first_output_ && !delay_)) {
-+    Output(*output_bus_, frames, time_info);
-+    return;
++  if (num_frames && buffer->end_of_stream()) {
++    Deliver(num_frames, end_of_stream_time_info);
++  } else if (num_frames) {
++    check_implicit_sbr_ = false;
++    Deliver(num_frames, AudioDiscardHelper::TimeInfo::FromBuffer(*buffer));
    }
-+  if (awaiting_first_output_) {
-+    awaiting_first_output_ = false;
-+    delay_ = std::max(output_bus_->frames() - frames, 0);
-+    if (!delay_) {
-+      Output(*output_bus_, frames, time_info);
-+      return;
-+    }
-+    output_bus_->CopyPartialFramesTo(0, frames, 0, held_.get());
-+    held_frames_ = frames;
-+    held_time_info_ = time_info;
-+    return;
-+  }
-+  const int completing =
-+      std::min({delay_, frames, held_->frames() - held_frames_});
-+  output_bus_->CopyPartialFramesTo(0, completing, held_frames_, held_.get());
-+  held_frames_ += completing;
-+  DeliverHeldFrames();
-+  held_frames_ = frames - completing;
-+  output_bus_->CopyPartialFramesTo(completing, held_frames_, 0, held_.get());
-+  held_time_info_ = time_info;
-+}
 -
 +
 -  limiter_queue_->Push(*output_bus_, num_frames, timestamp,
 -                       base::BindOnce(&AudioToolboxAudioDecoder::OnOutputReady,
 -                                      base::Unretained(this), time_info));
-+void AudioToolboxAudioDecoder::DeliverHeldFrames() {
-+  if (held_frames_) {
-+    Output(*held_, held_frames_, held_time_info_);
-+    held_frames_ = 0;
-+  }
-+}
 -
-+
--  std::move(decode_cb_bound).Run(OkStatus());
-+void AudioToolboxAudioDecoder::Output(
-+    const AudioBus& bus,
-+    int frames,
-+    const AudioDiscardHelper::TimeInfo& time_info) {
-+  if (limiter_queue_) {
-+    limiter_queue_->Push(
-+        bus, frames, time_info.timestamp,
-+        base::BindOnce(&AudioToolboxAudioDecoder::OnOutputReady,
-+                       base::Unretained(this), time_info));
-+    return;
-+  }
-+  std::vector<base::span<const uint8_t>> channels;
-+  for (int i = 0; i < bus.channels(); ++i) {
-+    channels.push_back(base::as_bytes(
-+        base::allow_nonunique_obj,
-+        bus.channel(i).first(base::checked_cast<size_t>(frames))));
-+  }
-+  OnOutputReady(time_info,
-+                AudioBuffer::CopyFrom(kSampleFormatPlanarF32, channel_layout_,
-+                                      bus.channels(), sample_rate_, frames,
-+                                      channels, time_info.timestamp, pool_));
+   std::move(decode_cb_bound).Run(OkStatus());
  }
 -
 +
@@ -857,29 +498,12 @@
    last_input_timestamp_ = kNoTimestamp;
    base::BindPostTaskToCurrentDefault(std::move(reset_cb)).Run();
  }
-@@ -266,16 +717,45 @@
+@@ -266,16 +353,27 @@
    return false;
  }
 -
 +
 -bool AudioToolboxAudioDecoder::CreateDecoder(const AudioDecoderConfig& config) {
-+bool AudioToolboxAudioDecoder::ReplaceDecoder(
-+    const std::vector<uint8_t>& audio_specific_config,
-+    int sample_rate) {
-+  decoder_.reset();
-+  if (CreateDecoder(config_, audio_specific_config, sample_rate)) {
-+    return true;
-+  }
-+  if (sample_rate == config_.samples_per_second()) {
-+    return false;
-+  }
-+  MEDIA_LOG(WARNING, media_log_)
-+      << "Decoding implicitly signalled HE-AAC as its AAC-LC core";
-+  decoder_.reset();
-+  return CreateDecoder(config_, audio_specific_config,
-+                       config_.samples_per_second());
-+}
-+
 +bool AudioToolboxAudioDecoder::CreateDecoder(
 +    const AudioDecoderConfig& config,
 +    const std::vector<uint8_t>& audio_specific_config,
@@ -891,10 +515,9 @@
    switch (config.codec()) {
      case AudioCodec::kAAC: {
 +      if (config.profile() != AudioCodecProfile::kXHE_AAC) {
-+        magic_cookie = mp4::ESDescriptor::CreateEsds(
-+            SignalImplicitSbr(audio_specific_config, sample_rate));
-+        if (!SelectAacLayer(magic_cookie, sample_rate, input_format,
-+                            media_log_.get())) {
++        if (!parc_audio_toolbox::AacInputFormat(
++                audio_specific_config, sample_rate, magic_cookie, input_format,
++                media_log_.get())) {
 +          return false;
 +        }
 +        break;
@@ -909,38 +532,23 @@
 +
        // Have macOS fill in the rest of the input_format for us.
        UInt32 format_size = sizeof(input_format);
-@@ -289,6 +769,30 @@
+@@ -289,6 +387,15 @@
        }
        break;
      }
-+    case AudioCodec::kALAC: {
-+      input_format.mFormatID = kAudioFormatAppleLossless;
-+      magic_cookie = config.extra_data();
-+      UInt32 format_size = sizeof(input_format);
-+      auto status = AudioFormatGetProperty(
-+          kAudioFormatProperty_FormatInfo, magic_cookie.size(),
-+          magic_cookie.data(), &format_size, &input_format);
-+      if (status != noErr) {
-+        OSSTATUS_MEDIA_LOG(ERROR, status, media_log_)
-+            << "AudioFormatGetProperty() failed for ALAC";
-+        return false;
-+      }
-+      break;
-+    }
++    case AudioCodec::kALAC:
 +    case AudioCodec::kAMR_NB:
 +    case AudioCodec::kAMR_WB:
-+      input_format.mFormatID = config.codec() == AudioCodec::kAMR_NB
-+                                   ? kAudioFormatAMR
-+                                   : kAudioFormatAMR_WB;
-+      input_format.mSampleRate =
-+          config.codec() == AudioCodec::kAMR_NB ? 8000 : 16000;
-+      input_format.mChannelsPerFrame = 1;
-+      input_format.mFramesPerPacket = input_format.mSampleRate / 50;
++      if (!parc_audio_toolbox::AlacOrAmrInputFormat(config, magic_cookie,
++                                                    input_format,
++                                                    media_log_.get())) {
++        return false;
++      }
 +      break;
  #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
      case AudioCodec::kAC3:
      case AudioCodec::kEAC3:
-@@ -414,7 +918,8 @@
+@@ -414,7 +521,8 @@
      return false;
    }
 -
@@ -951,7 +559,7 @@
      // Instill the magic!
      result = AudioConverterSetProperty(
          decoder_.get(), kAudioConverterDecompressionMagicCookie,
-@@ -424,7 +929,9 @@
+@@ -424,7 +532,9 @@
            << "AudioConverterSetProperty() failed";
        return false;
      }
@@ -962,7 +570,7 @@
      // macOS doesn't provide a default target loudness. Use the value
      // recommended by Fraunhofer. AC3/E-AC3 doesn't support set this,
      // so limit this to xHE-AAC only.
-@@ -460,9 +967,31 @@
+@@ -460,9 +570,7 @@
    output_bus_ = AudioBus::Create(input_format.mChannelsPerFrame,
                                   input_format.mFramesPerPacket);
 -
@@ -970,31 +578,7 @@
 -  limiter_queue_ = std::make_unique<LimitingAudioQueue>(
 -      channel_layout, input_format.mSampleRate, input_format.mChannelsPerFrame,
 -      input_format.mFramesPerPacket);
-+  if ((config.codec() != AudioCodec::kAAC ||
-+       config.profile() == AudioCodecProfile::kXHE_AAC) &&
-+      !IsAmr(config)) {
-+    limiter_queue_ = std::make_unique<LimitingAudioQueue>(
-+        channel_layout, input_format.mSampleRate,
-+        input_format.mChannelsPerFrame, input_format.mFramesPerPacket);
-+  } else {
-+    limiter_queue_.reset();
-+  }
-+  channel_layout_ = channel_layout;
-+  sample_rate_ = input_format.mSampleRate;
-+  if (!pool_) {
-+    pool_ = base::MakeRefCounted<AudioBufferMemoryPool>();
-+  }
-+
-+  aligns_to_access_units_ =
-+      input_format.mFormatID == kAudioFormatMPEG4AAC_HE ||
-+      input_format.mFormatID == kAudioFormatMPEG4AAC_HE_V2;
-+  awaiting_first_output_ = true;
-+  delay_ = 0;
-+  held_frames_ = 0;
-+  held_ = aligns_to_access_units_
-+              ? AudioBus::Create(input_format.mChannelsPerFrame,
-+                                 input_format.mFramesPerPacket)
-+              : nullptr;
++  ConfigureOutput(config, input_format, channel_layout);
 -
 +
    // AudioBufferList is a strange variable length structure that by default only
@@ -1022,15 +606,20 @@
  #include "base/power_monitor/power_monitor.h"
  #include "base/task/bind_post_task.h"
  #include "base/task/sequenced_task_runner.h"
-@@ -38,6 +41,7 @@
+@@ -38,8 +41,11 @@
  #include "media/base/media_util.h"
  #include "media/base/renderer_client.h"
  #include "media/base/timestamp_constants.h"
 +#include "media/base/vector_math.h"
  #include "media/filters/audio_clock.h"
  #include "media/filters/decrypting_demuxer_stream.h"
++#include "media/renderers/parc_audio_renderer_aac.h"
++#include "media/renderers/parc_audio_renderer_mixed_sink.h"
  #include "third_party/perfetto/include/perfetto/tracing/track.h"
-@@ -209,8 +213,101 @@
+-
++
+ namespace media {
+@@ -209,6 +215,35 @@
    return result;
  }
 -
@@ -1067,74 +656,8 @@
  }  // namespace
 -
 +
-+class AudioRendererImpl::ParcMixedSink final : public AudioRendererSink {
-+ public:
-+  explicit ParcMixedSink(const AudioParameters& params) : params_(params) {}
-+
-+  const AudioParameters& params() const { return params_; }
-+
-+  void SetRenderer(AudioRendererImpl* renderer) {
-+    base::AutoLock auto_lock(lock_);
-+    renderer_ = renderer;
-+  }
-+
-+  int Render(base::TimeDelta start,
-+             base::TimeDelta delay,
-+             base::TimeTicks delay_timestamp,
-+             AudioBus* audio_bus) {
-+    base::AutoLock auto_lock(lock_);
-+    if (!renderer_ || !started_ || !playing_) {
-+      return 0;
-+    }
-+    return renderer_->ParcRenderMixed(start, delay, delay_timestamp,
-+                                      audio_bus);
-+  }
-+
-+  void Initialize(const AudioParameters& params,
-+                  RenderCallback* callback) override {}
-+  void Start() override {
-+    base::AutoLock auto_lock(lock_);
-+    started_ = true;
-+  }
-+  void Stop() override {
-+    base::AutoLock auto_lock(lock_);
-+    started_ = false;
-+    playing_ = false;
-+  }
-+  void Pause(PauseReason reason) override {
-+    base::AutoLock auto_lock(lock_);
-+    playing_ = false;
-+  }
-+  void Play() override {
-+    base::AutoLock auto_lock(lock_);
-+    playing_ = true;
-+  }
-+  void Flush() override {}
-+  bool SetVolume(double volume) override { return true; }
-+  OutputDeviceInfo GetOutputDeviceInfo() override {
-+    return OutputDeviceInfo(std::string(), OUTPUT_DEVICE_STATUS_OK, params_);
-+  }
-+  void GetOutputDeviceInfoAsync(OutputDeviceInfoCB info_cb) override {
-+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-+        FROM_HERE, base::BindOnce(std::move(info_cb), GetOutputDeviceInfo()));
-+  }
-+  bool IsOptimizedForHardwareParameters() override { return true; }
-+  bool CurrentThreadIsRenderingThread() override { return false; }
-+
-+ private:
-+  ~ParcMixedSink() override = default;
-+
-+  const AudioParameters params_;
-+  base::Lock lock_;
-+  raw_ptr<AudioRendererImpl> renderer_ = nullptr;
-+  bool started_ = false;
-+  bool playing_ = false;
-+};
-+
  AudioRendererImpl::AudioRendererImpl(
-     const scoped_refptr<base::SequencedTaskRunner>& task_runner,
-     scoped_refptr<AudioRendererSink> sink,
-@@ -277,6 +374,9 @@
+@@ -277,6 +312,9 @@
    sink_->Stop();
    if (null_sink_)
      null_sink_->Stop();
@@ -1145,7 +668,7 @@
 +
    if (init_cb_)
      FinishInitialization(PIPELINE_ERROR_ABORT);
-@@ -682,6 +782,11 @@
+@@ -682,6 +720,11 @@
      expecting_config_changes_ = true;
    }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO) && BUILDFLAG(IS_WIN)
@@ -1158,7 +681,7 @@
 +
    bool use_stream_params =
        !expecting_config_changes_ || !hw_params.IsValid() ||
-@@ -708,7 +813,12 @@
+@@ -708,7 +751,12 @@
                 hw_params.IsValid() ? hw_params.frames_per_buffer() : 0);
 -
 +
@@ -1173,48 +696,10 @@
      output_config =
          ComputeBitstreamOutputConfig(stream->audio_decoder_config(), hw_params);
      buffer_converter_.reset();
-@@ -981,6 +1091,130 @@
+@@ -981,6 +1029,92 @@
        was_played_with_user_activation_and_high_media_engagement;
  }
 -
-+
-+ParcAudioRendererExtension* AudioRendererImpl::GetParcExtension() {
-+  return this;
-+}
-+
-+std::unique_ptr<AudioRenderer> AudioRendererImpl::ParcCreateMixedRenderer() {
-+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
-+  {
-+    base::AutoLock auto_lock(lock_);
-+    if (state_ == kUninitialized || state_ == kInitializing ||
-+        audio_parameters_.IsBitstreamFormat()) {
-+      return nullptr;
-+    }
-+  }
-+  auto sink = base::MakeRefCounted<ParcMixedSink>(audio_parameters_);
-+  auto renderer = std::make_unique<AudioRendererImpl>(
-+      task_runner_, sink, create_audio_decoders_cb_, media_log_, player_id_);
-+  renderer->parc_mixed_sink_ = sink;
-+  sink->SetRenderer(renderer.get());
-+  base::AutoLock auto_lock(lock_);
-+  std::erase_if(parc_mixed_sinks_,
-+                [](const scoped_refptr<ParcMixedSink>& mixed_sink) {
-+                  return mixed_sink->HasOneRef();
-+                });
-+  parc_mixed_sinks_.push_back(std::move(sink));
-+  const int channels = audio_parameters_.channels();
-+  if (!parc_mix_bus_ || parc_mix_bus_->channels() != channels) {
-+    parc_mix_bus_ =
-+        AudioBus::Create(channels, audio_parameters_.frames_per_buffer());
-+    parc_mix_wrapper_ = AudioBus::CreateWrapper(channels);
-+  }
-+  return renderer;
-+}
-+
-+void AudioRendererImpl::ParcSetOwnAudioMuted(bool muted) {
-+  base::AutoLock auto_lock(lock_);
-+  parc_own_audio_muted_ = muted;
-+}
 +
 +int AudioRendererImpl::ParcMix_Locked(base::TimeDelta start,
 +                                      int own_frames,
@@ -1305,7 +790,7 @@
  void AudioRendererImpl::OnSuspend() {
    base::AutoLock auto_lock(lock_);
    is_suspending_ = true;
-@@ -1031,7 +1265,7 @@
+@@ -1031,7 +1165,7 @@
 -
 +
    bool allow_config_changes = expecting_config_changes_;
@@ -1315,7 +800,7 @@
        ((audio_parameters_.channels() != buffer->channel_count()) ||
         (audio_parameters_.sample_rate() != buffer->sample_rate()))) {
      // If the incoming buffer's channel count or sample rate has changed,
-@@ -1383,6 +1617,7 @@
+@@ -1383,6 +1517,7 @@
    }
 -
 +
@@ -1324,7 +809,7 @@
    {
      base::AutoLock auto_lock(lock_);
      DCHECK_NE(state_, kReinitializingSink);
-@@ -1409,6 +1644,7 @@
+@@ -1409,6 +1544,7 @@
                                 playback_rate_);
        return 0;
      }
@@ -1333,7 +818,7 @@
 +
      if (playback_rate_ == 0 || is_suspending_) {
        audio_clock_->WroteAudio(0, frames_requested, frames_delayed,
-@@ -1482,6 +1718,9 @@
+@@ -1482,6 +1618,9 @@
              playback_rate_);
          frames_written += frames_filled;
          effective_playback_rate = algorithm_->effective_playback_rate();
@@ -1344,7 +829,7 @@
 +
          DVLOG(4) << __func__ << ": frames_filled=" << frames_filled
                   << ", playback_rate_=" << playback_rate_
-@@ -1541,6 +1780,13 @@
+@@ -1541,6 +1680,13 @@
        SetBufferingState_Locked(BUFFERING_HAVE_NOTHING);
      }
 -
@@ -1359,7 +844,7 @@
      // Note: effective_playback_rate() is used here because WSOLA is a
      // non-linear operation. E.g., for a `playback_rate_` of 2.0 WSOLA may end
      // up with effective rates between 1 and 3 and a/v sync drift of +/- 20ms.
-@@ -1570,7 +1816,7 @@
+@@ -1570,7 +1716,7 @@
    }
 -
 +

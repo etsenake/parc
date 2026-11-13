@@ -1,5 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Installed at //media/filters/parc_source_buffer_stream_state.h.
 
 #ifndef MEDIA_FILTERS_PARC_SOURCE_BUFFER_STREAM_STATE_H_
 #define MEDIA_FILTERS_PARC_SOURCE_BUFFER_STREAM_STATE_H_
@@ -11,6 +9,7 @@
 #include <vector>
 
 #include "base/time/time.h"
+#include "media/base/media_export.h"
 #include "media/base/ranges.h"
 #include "media/base/stream_parser.h"
 #include "media/base/timestamp_constants.h"
@@ -20,11 +19,7 @@ namespace media {
 class SourceBufferStream;
 class StreamParserBuffer;
 
-// WebKit-compatible interval and gap policy kept out of Chromium's
-// SourceBufferStream and SourceBufferRange headers. The stream still owns every
-// cursor change and calls this object at the same append, seek, remove, and
-// read points.
-class ParcSourceBufferStreamState {
+class MEDIA_EXPORT ParcSourceBufferStreamState {
  public:
   using BufferQueue = StreamParser::BufferQueue;
 
@@ -34,11 +29,30 @@ class ParcSourceBufferStreamState {
       const ParcSourceBufferStreamState&) = delete;
   ~ParcSourceBufferStreamState();
 
-  void SetSafariMediaSource(bool safari);
+  static base::TimeDelta KeyframeAtOrBefore(const SourceBufferStream& stream,
+                                            base::TimeDelta time);
+  static void RemoveBefore(SourceBufferStream& stream,
+                           base::TimeDelta end,
+                           base::TimeDelta duration);
+  static void RemoveFrom(SourceBufferStream& stream,
+                         base::TimeDelta start,
+                         base::TimeDelta duration,
+                         base::TimeDelta end = kInfiniteDuration);
+  static void Remove(SourceBufferStream& stream,
+                     base::TimeDelta start,
+                     base::TimeDelta end,
+                     base::TimeDelta duration);
+  static size_t RemovalSize(SourceBufferStream& stream,
+                            base::TimeDelta start,
+                            base::TimeDelta end,
+                            base::TimeDelta duration);
+  static void UseSafariMediaSource(SourceBufferStream& stream, bool safari);
+  static void ShareMediaSourceBuffered(SourceBufferStream& stream,
+                                       base::TimeDelta start,
+                                       Ranges<base::TimeDelta> audio);
+
   bool enabled() const { return enabled_; }
 
-  void SetMediaSourceBuffered(base::TimeDelta start,
-                              Ranges<base::TimeDelta> audio);
   void PrepareForAppend(const SourceBufferStream& stream,
                         Ranges<base::TimeDelta>* buffered);
   void FillSmallGaps(Ranges<base::TimeDelta>* buffered,
@@ -53,6 +67,8 @@ class ParcSourceBufferStreamState {
   }
   void NoteOutput(const StreamParserBuffer& buffer);
   void ResetOutput();
+  void BridgeGap(SourceBufferStream& stream);
+  void SeekAcrossGap(SourceBufferStream& stream, base::TimeDelta timestamp);
 
   bool end_of_stream_suspended() const {
     return end_of_stream_suspended_;
@@ -61,14 +77,20 @@ class ParcSourceBufferStreamState {
     end_of_stream_suspended_ = suspended;
   }
 
-  size_t RemovalSize(const SourceBufferStream& stream,
-                     base::TimeDelta start,
-                     base::TimeDelta remove_end) const;
-
  private:
   using Interval = std::pair<base::TimeDelta, base::TimeDelta>;
   using Intervals = std::vector<Interval>;
 
+  static base::TimeDelta RemoveEnd(SourceBufferStream& stream,
+                                   base::TimeDelta end,
+                                   base::TimeDelta duration);
+
+  void SetSafariMediaSource(bool safari);
+  void SetMediaSourceBuffered(base::TimeDelta start,
+                              Ranges<base::TimeDelta> audio);
+  size_t RemovalSizeTo(const SourceBufferStream& stream,
+                       base::TimeDelta start,
+                       base::TimeDelta remove_end) const;
   const Intervals& Frames(const SourceBufferStream& stream) const;
   Intervals KeptFilledGaps(const SourceBufferStream& stream) const;
 
@@ -81,6 +103,6 @@ class ParcSourceBufferStreamState {
   mutable std::optional<Intervals> frames_;
 };
 
-}  // namespace media
+}
 
-#endif  // MEDIA_FILTERS_PARC_SOURCE_BUFFER_STREAM_STATE_H_
+#endif

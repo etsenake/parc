@@ -11,6 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/task/bind_post_task.h"
+#include "media/base/parc_demuxer_extension.h"
 #include "media/base/parc_pipeline_extension.h"
 #include "media/base/renderer_factory.h"
 #include "media/base/renderer_factory_selector.h"
@@ -137,7 +138,7 @@ double ParcWebMediaPlayerState::ParcStartDate() const {
     return 0;
   }
   std::optional<parc::fairplay::NativeHlsSource::Timeline> timeline =
-      player_->demuxer_manager_->GetParcNativeTimeline();
+      media::ParcNativeHlsTimeline(player_->demuxer_manager_->ParcDemuxer());
   if (!timeline || !timeline->start_date) {
     return std::numeric_limits<double>::quiet_NaN();
   }
@@ -169,7 +170,7 @@ void ParcWebMediaPlayerState::ParcEnabledAudioTracksChanged(
         });
   }
   if (file_on_native_route_) {
-    player_->demuxer_manager_->ParcSelectFileTracks(FileTrackChoices());
+    SendFileTrackChoices();
   }
 #endif
   player_->EnabledAudioTracksChanged(
@@ -381,7 +382,8 @@ void ParcWebMediaPlayerState::ParcProvideClearKey(
     std::string_view key_id,
     base::span<const uint8_t> key) {
   DCHECK(player_->main_task_runner_->BelongsToCurrentThread());
-  player_->demuxer_manager_->ParcProvideClearKey(
+  media::ParcPostNativeHlsClearKey(
+      player_->demuxer_manager_->ParcDemuxer(), *player_->media_task_runner_,
       std::string(key_id), std::vector<uint8_t>(key.begin(), key.end()));
 }
 
@@ -391,8 +393,9 @@ void ParcWebMediaPlayerState::ParcSetPlaybackTarget(
   DCHECK(player_->main_task_runner_->BelongsToCurrentThread());
   playback_target_id_ = std::string(output_context_id);
   should_play_to_playback_target_ = should_play;
-  player_->demuxer_manager_->ParcSetPlaybackTarget(playback_target_id_,
-                                                   should_play);
+  media::ParcPostNativeHlsPlaybackTarget(
+      player_->demuxer_manager_->ParcDemuxer(), *player_->media_task_runner_,
+      playback_target_id_, should_play);
   UpdateRouteForPlaybackTarget();
 }
 
@@ -400,7 +403,9 @@ void ParcWebMediaPlayerState::ParcSetWirelessVideoPlaybackDisabled(
     bool disabled) {
   DCHECK(player_->main_task_runner_->BelongsToCurrentThread());
   wireless_video_playback_disabled_ = disabled;
-  player_->demuxer_manager_->ParcSetWirelessVideoPlaybackDisabled(disabled);
+  media::ParcPostNativeHlsWirelessVideoPlaybackDisabled(
+      player_->demuxer_manager_->ParcDemuxer(), *player_->media_task_runner_,
+      disabled);
 }
 
 bool ParcWebMediaPlayerState::ParcSupportsPlaybackTarget() const {
@@ -739,8 +744,7 @@ void ParcWebMediaPlayerState::DidFailToAttachCdm() {
       ref && ref->GetCdmContext()->RequiresFairPlayRenderer()
           ? ref->GetCdmContext()
           : nullptr;
-  player_->demuxer_manager_->ParcSetDemuxerClearDolbyVisionAllowed(
-      ClearDolbyVisionAllowed());
+  SetDemuxerClearDolbyVisionAllowed(ClearDolbyVisionAllowed());
 }
 
 bool ParcWebMediaPlayerState::ClearDolbyVisionAllowed() {
@@ -769,7 +773,7 @@ void ParcWebMediaPlayerState::SwitchToFairPlayIfNeeded() {
     return;
   }
   if ((!fairplay_cdm &&
-       !player_->demuxer_manager_->ParcDemuxerPrefersFairPlayRenderer()) ||
+       !DemuxerPrefersFairPlayRenderer()) ||
       !FairPlayPlaysCurrentStreams()) {
     return;
   }
@@ -1031,6 +1035,45 @@ void ParcWebMediaPlayerState::CheckWaitedKey() {
             player->parc_->SetWaitingForKey(!has_session);
           },
           player_->weak_this_, check, waited_key_));
+}
+#endif
+
+void ParcWebMediaPlayerState::RestrictDemuxerCanChangeType(
+    media::ChunkDemuxer::ChangeTypeFilter filter) {
+  media::Demuxer* demuxer = player_->demuxer_manager_->ParcDemuxer();
+  if (demuxer->GetDemuxerType() == media::DemuxerType::kChunkDemuxer) {
+    static_cast<media::ChunkDemuxer*>(demuxer)->RestrictCanChangeType(
+        std::move(filter));
+  }
+}
+
+void ParcWebMediaPlayerState::SetDemuxerClearDolbyVisionAllowed(bool allowed) {
+  media::Demuxer* demuxer = player_->demuxer_manager_->ParcDemuxer();
+  if (demuxer &&
+      demuxer->GetDemuxerType() == media::DemuxerType::kChunkDemuxer) {
+    static_cast<media::ChunkDemuxer*>(demuxer)->ParcSetClearDolbyVisionAllowed(
+        allowed);
+  }
+}
+
+bool ParcWebMediaPlayerState::DemuxerPrefersFairPlayRenderer() {
+  media::Demuxer* demuxer = player_->demuxer_manager_->ParcDemuxer();
+  return demuxer && media::ParcDemuxerPrefersFairPlayRenderer(demuxer);
+}
+
+void ParcWebMediaPlayerState::SetDemuxerFastSeek(
+    base::TimeDelta target,
+    base::TimeDelta tolerance_before) {
+  if (media::Demuxer* demuxer = player_->demuxer_manager_->ParcDemuxer()) {
+    media::ParcSetDemuxerFastSeek(demuxer, target, tolerance_before);
+  }
+}
+
+#if BUILDFLAG(IS_MAC)
+void ParcWebMediaPlayerState::SendFileTrackChoices() {
+  media::ParcPostNativeHlsFileTracks(player_->demuxer_manager_->ParcDemuxer(),
+                                     *player_->media_task_runner_,
+                                     FileTrackChoices());
 }
 #endif
 

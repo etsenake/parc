@@ -1,18 +1,7 @@
-# Installed by the reviewed overlay at //third_party/parc_fairplay.
-# Parc's FairPlay Streaming playback for Chromium on macOS. core/ is the
-# engine-independent playback core (Engine/ParcNative/fairplay in the Parc
-# repository); chromium/ adapts it to Chromium's media interfaces in Parc's
-# FairPlay media service. See Engine/ParcNative/fairplay_chromium/README.md.
-#
-# It lives under third_party so Chromium's clang style plugin and
-# unsafe-buffers checks, which the core predates, don't apply to it.
-
 import("//mojo/public/tools/bindings/mojom.gni")
 
 assert(is_mac)
 
-# Parc's FairPlay media service, its browser host and their render-process
-# end.
 mojom("mojom") {
   sources = [ "chromium/fairplay_media.mojom" ]
   public_deps = [
@@ -24,13 +13,11 @@ mojom("mojom") {
   ]
 }
 
-# Key system names only, for the browser and the renderer.
 source_set("key_system") {
   public = [ "chromium/fairplay_key_system.h" ]
   sources = public
 }
 
-# FairPlay's CdmInfo and KeySystemInfo, registered by Parc's content clients.
 source_set("registration") {
   visibility = [ "//parc:*" ]
   sources = [
@@ -95,9 +82,6 @@ source_set("core") {
   ]
 }
 
-# The GPU process's FairPlay CDM, Renderer and native HLS player, hosted by
-# Parc's FairPlay media service (:service). The render process's client is
-# compiled into //content/renderer (content/renderer/media/fairplay).
 source_set("gpu") {
   visibility = [ ":*" ]
   sources = [
@@ -135,8 +119,6 @@ source_set("gpu") {
   ]
 }
 
-# Parc's FairPlay media service, which Parc's GPU client exposes to the
-# browser (fairplay_media_service.h).
 source_set("service") {
   visibility = [
     ":*",
@@ -145,6 +127,8 @@ source_set("service") {
   sources = [
     "chromium/fairplay_media_service.cc",
     "chromium/fairplay_media_service.h",
+    "chromium/fairplay_renderer_service.cc",
+    "chromium/fairplay_renderer_service.h",
   ]
   public_deps = [
     ":gpu",
@@ -158,7 +142,6 @@ source_set("service") {
   ]
 }
 
-# Linked into content_unittests (content/test/BUILD.gn).
 source_set("unit_tests") {
   testonly = true
   visibility = [ "//content/test:*" ]

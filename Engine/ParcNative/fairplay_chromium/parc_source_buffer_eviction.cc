@@ -1,25 +1,29 @@
-// Copyright 2026 Parc contributors.
-// Installed at //media/filters/parc_source_buffer_eviction.cc.
-
 #include "media/filters/parc_source_buffer_eviction.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "base/numerics/checked_math.h"
+#include "media/base/media_log.h"
+#include "media/base/media_track.h"
+#include "media/base/media_tracks.h"
+#include "media/base/stream_parser.h"
 #include "media/base/timestamp_constants.h"
+#include "media/base/video_codecs.h"
+#include "media/base/video_decoder_config.h"
 #include "media/filters/chunk_demuxer.h"
+#include "media/filters/parc_chunk_demuxer_hand_off.h"
 #include "media/filters/source_buffer_state.h"
 
 namespace media {
 namespace {
-
-// WebKit keeps the earliest current GOP when its tracks disagree.
 base::TimeDelta PreviousSyncTime(
     base::TimeDelta media_time,
     const std::vector<ChunkDemuxerStream*>& streams) {
   base::TimeDelta previous_sync = media_time;
   for (ChunkDemuxerStream* stream : streams) {
-    const base::TimeDelta keyframe = stream->ParcKeyframeAtOrBefore(media_time);
+    const base::TimeDelta keyframe =
+        ParcChunkDemuxer::KeyframeAtOrBefore(*stream, media_time);
     if (keyframe != kNoTimestamp && keyframe < previous_sync) {
       previous_sync = keyframe;
     }
@@ -42,7 +46,6 @@ base::TimeDelta PlayableEnd(base::TimeDelta media_time,
                             const Ranges<base::TimeDelta>& own,
                             const Ranges<base::TimeDelta>& buffered,
                             const Ranges<base::TimeDelta>& audio) {
-  // Match MediaSourcePrivate::gapToleranceAtTime.
   const auto tolerance = [&](base::TimeDelta time) {
     const base::TimeDelta kStartGapAllowance = base::Seconds(1);
     if (time >= base::TimeDelta() && time < kStartGapAllowance &&
@@ -98,10 +101,135 @@ base::TimeDelta MaximumBufferedTime(
   return maximum;
 }
 
-}  // namespace
+}
 
 ParcSourceBufferEviction::ParcSourceBufferEviction() = default;
 ParcSourceBufferEviction::~ParcSourceBufferEviction() = default;
+
+ParcSourceBufferEviction& ParcSourceBufferEviction::Of(
+    SourceBufferState& state) {
+  return *state.parc_eviction_;
+}
+
+bool ParcSourceBufferEviction::IsActive(const SourceBufferState& state) {
+  for (const auto& it : state.audio_streams_) {
+    if (it.second->IsEnabled()) {
+      return true;
+    }
+  }
+  for (const auto& it : state.video_streams_) {
+    if (it.second->IsEnabled()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ParcSourceBufferEviction::LeftOutOfMediaSource(
+    const SourceBufferState& state) {
+  if (!state.parc_eviction_->purged_while_inactive() || IsActive(state)) {
+    return false;
+  }
+  for (const auto& it : state.audio_streams_) {
+    if (it.second->GetMemoryUsage()) {
+      return false;
+    }
+  }
+  for (const auto& it : state.video_streams_) {
+    if (it.second->GetMemoryUsage()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool ParcSourceBufferEviction::PurgedWhileInactive(
+    const SourceBufferState& state) {
+  return state.parc_eviction_->purged_while_inactive();
+}
+
+Ranges<base::TimeDelta> ParcSourceBufferEviction::AudioBufferedRanges(
+    const SourceBufferState& state,
+    base::TimeDelta duration) {
+  Ranges<base::TimeDelta> ranges;
+  for (const auto& it : state.audio_streams_) {
+    const Ranges<base::TimeDelta> stream_ranges =
+        it.second->GetBufferedRanges(duration);
+    for (size_t i = 0; i < stream_ranges.size(); ++i) {
+      ranges.Add(stream_ranges.start(i), stream_ranges.end(i));
+    }
+  }
+  return ranges;
+}
+
+void ParcSourceBufferEviction::SetClearDolbyVisionAllowed(
+    SourceBufferState& state,
+    bool allowed) {
+  state.parc_eviction_->clear_dolby_vision_allowed_ = allowed;
+}
+
+void ParcSourceBufferEviction::SetDolbyVisionCallback(
+    SourceBufferState& state,
+    base::RepeatingClosure callback) {
+  state.parc_eviction_->dolby_vision_cb_ = std::move(callback);
+}
+
+void ParcSourceBufferEviction::SetSafariInitSegmentRules(
+    SourceBufferState& state,
+    bool safari) {
+  state.parc_eviction_->safari_init_segment_rules_ = safari;
+}
+
+void ParcSourceBufferEviction::ApplyInitSegmentRules(
+    std::optional<std::string_view>& expected_codecs,
+    StreamParser& stream_parser) const {
+  if (safari_init_segment_rules_) {
+    expected_codecs.reset();
+    stream_parser.ParcIgnoreDeclaredCodecs();
+  }
+}
+
+bool ParcSourceBufferEviction::AcceptsInitSegment(
+    const SourceBufferState& state,
+    const MediaTracks& tracks) const {
+  if (!safari_init_segment_rules_ || !state.first_init_segment_received_) {
+    return true;
+  }
+  size_t audio_tracks = 0;
+  size_t video_tracks = 0;
+  for (const auto& track : tracks.tracks()) {
+    if (track->type() == MediaTrack::Type::kAudio) {
+      ++audio_tracks;
+    } else if (track->type() == MediaTrack::Type::kVideo) {
+      ++video_tracks;
+    }
+  }
+  if (audio_tracks != state.audio_streams_.size() ||
+      video_tracks != state.video_streams_.size()) {
+    MEDIA_LOG(ERROR, state.media_log_)
+        << "Initialization segment has " << audio_tracks << " audio and "
+        << video_tracks << " video tracks; the first had "
+        << state.audio_streams_.size() << " and "
+        << state.video_streams_.size() << ".";
+    return false;
+  }
+  return true;
+}
+
+bool ParcSourceBufferEviction::PlaysClearDolbyVision(
+    const VideoDecoderConfig& video_config) const {
+  return clear_dolby_vision_allowed_ &&
+         (video_config.profile() == DOLBYVISION_PROFILE5 ||
+          video_config.profile() == DOLBYVISION_PROFILE8 ||
+          (safari_init_segment_rules_ &&
+           video_config.profile() == DOLBYVISION_PROFILE10));
+}
+
+void ParcSourceBufferEviction::OnDolbyVisionAppended() {
+  if (dolby_vision_cb_) {
+    dolby_vision_cb_.Run();
+  }
+}
 
 std::vector<ChunkDemuxerStream*> ParcSourceBufferEviction::Streams(
     const SourceBufferState& state) const {
@@ -136,7 +264,7 @@ void ParcSourceBufferEviction::PurgeForMemoryPressure(
 
   if (!active) {
     for (ChunkDemuxerStream* stream : streams) {
-      stream->ParcRemoveFrom(base::TimeDelta(), duration);
+      ParcChunkDemuxer::RemoveFrom(*stream, base::TimeDelta(), duration);
     }
     purged_while_inactive_ = true;
     return;
@@ -154,7 +282,7 @@ void ParcSourceBufferEviction::PurgeForMemoryPressure(
       std::min(media_time - kTimeChunk,
                PreviousSyncTime(media_time, streams));
   for (ChunkDemuxerStream* stream : streams) {
-    stream->ParcRemoveBefore(front_end, duration);
+    ParcChunkDemuxer::RemoveBefore(*stream, front_end, duration);
   }
 
   const base::TimeDelta playable_end =
@@ -162,12 +290,11 @@ void ParcSourceBufferEviction::PurgeForMemoryPressure(
   const base::TimeDelta back_start =
       playable_end != kNoTimestamp ? playable_end : media_time + kTimeChunk;
   for (ChunkDemuxerStream* stream : streams) {
-    stream->ParcRemoveFrom(back_start, duration);
+    ParcChunkDemuxer::RemoveFrom(*stream, back_start, duration);
   }
 }
 
 size_t ParcSourceBufferEviction::MaximumBufferSize(bool has_video) {
-  // Keep WebKit's float split of its default maximum SourceBuffer size.
   constexpr size_t kMaximumSourceBufferSize = 318767104;
   size_t maximum = static_cast<size_t>(kMaximumSourceBufferSize * .05f);
   if (has_video) {
@@ -190,7 +317,6 @@ bool ParcSourceBufferEviction::IsBufferFullFor(
 
 bool ParcSourceBufferEviction::CanAppend(const SourceBufferState& state,
                                          size_t new_data_size) const {
-  // Keep WebKit's unsigned arithmetic over the last eviction estimate.
   return ContentSize(state) - evictable_size_ + new_data_size <=
          MaximumBufferSize(!state.video_streams_.empty());
 }
@@ -207,9 +333,9 @@ bool ParcSourceBufferEviction::EvictFrames(
   const auto remove = [&](base::TimeDelta start, base::TimeDelta end) {
     for (ChunkDemuxerStream* stream : streams) {
       if (memory_pressure) {
-        stream->ParcRemoveFrom(start, duration, end);
+        ParcChunkDemuxer::RemoveFrom(*stream, start, duration, end);
       } else {
-        stream->ParcRemove(start, end, duration);
+        ParcChunkDemuxer::Remove(*stream, start, end, duration);
       }
     }
   };
@@ -257,7 +383,6 @@ bool ParcSourceBufferEviction::EvictFrames(
       }
       const uint64_t size_before = ContentSize(state);
       remove(start, end);
-      // A longer track can leave the end unchanged while freeing nothing.
       if (MaximumBufferedTime(streams, duration) == end ||
           ContentSize(state) == size_before) {
         break;
@@ -274,13 +399,11 @@ void ParcSourceBufferEviction::ComputeEvictionData(
     base::TimeDelta duration,
     const Ranges<base::TimeDelta>& buffered,
     const Ranges<base::TimeDelta>& audio) {
-  // WebKit estimates with 3 seconds even though eviction's last halved chunk
-  // is 3.75 seconds.
   const std::vector<ChunkDemuxerStream*> streams = Streams(state);
   const auto removal_size = [&](base::TimeDelta start, base::TimeDelta end) {
     uint64_t size = 0;
     for (ChunkDemuxerStream* stream : streams) {
-      size += stream->ParcRemovalSize(start, end, duration);
+      size += ParcChunkDemuxer::RemovalSize(*stream, start, end, duration);
     }
     return size;
   };
@@ -309,4 +432,4 @@ void ParcSourceBufferEviction::ComputeEvictionData(
   evictable_size_ = evictable;
 }
 
-}  // namespace media
+}

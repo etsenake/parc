@@ -1,11 +1,10 @@
-// Copyright 2026 Parc contributors.
-// Installed at //media/filters/parc_source_buffer_stream_state.cc.
 
 #include "media/filters/parc_source_buffer_stream_state.h"
 
 #include <algorithm>
 #include <iterator>
 
+#include "base/check.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/base/timestamp_constants.h"
 #include "media/filters/source_buffer_range.h"
@@ -17,8 +16,6 @@ namespace {
 using Interval = std::pair<base::TimeDelta, base::TimeDelta>;
 using Intervals = std::vector<Interval>;
 
-// WebKit's PlatformTimeRanges::timeFudgeFactor is 2002/24000 seconds.
-// Chromium rounds that strictly-open boundary to 83416 microseconds.
 bool WithinTimeFudgeFactor(base::TimeDelta gap) {
   return gap.is_positive() && gap < base::Microseconds(83416);
 }
@@ -93,10 +90,147 @@ base::TimeDelta Nearest(const Ranges<base::TimeDelta>& ranges,
   return nearest;
 }
 
-}  // namespace
+}
 
 ParcSourceBufferStreamState::ParcSourceBufferStreamState() = default;
 ParcSourceBufferStreamState::~ParcSourceBufferStreamState() = default;
+
+base::TimeDelta ParcSourceBufferStreamState::RemoveEnd(
+    SourceBufferStream& stream,
+    base::TimeDelta end,
+    base::TimeDelta duration) {
+  const base::TimeDelta keyframe = stream.FindKeyframeAfterTimestamp(end);
+  return keyframe != kNoTimestamp ? keyframe : std::min(end, duration);
+}
+
+void ParcSourceBufferStreamState::Remove(SourceBufferStream& stream,
+                                         base::TimeDelta start,
+                                         base::TimeDelta end,
+                                         base::TimeDelta duration) {
+  start = std::max(start, base::TimeDelta());
+  if (start < end && start < RemoveEnd(stream, end, duration)) {
+    stream.Remove(start, end, duration);
+  }
+}
+
+size_t ParcSourceBufferStreamState::RemovalSize(SourceBufferStream& stream,
+                                                base::TimeDelta start,
+                                                base::TimeDelta end,
+                                                base::TimeDelta duration) {
+  start = std::max(start, base::TimeDelta());
+  const base::TimeDelta remove_end = RemoveEnd(stream, end, duration);
+  if (start >= end || start >= remove_end) {
+    return 0;
+  }
+  return stream.parc_state_->RemovalSizeTo(stream, start, remove_end);
+}
+
+base::TimeDelta ParcSourceBufferStreamState::KeyframeAtOrBefore(
+    const SourceBufferStream& stream,
+    base::TimeDelta time) {
+  for (auto itr = stream.ranges_.rbegin(); itr != stream.ranges_.rend();
+       ++itr) {
+    const SourceBufferRange* range = itr->get();
+    if (range->GetStartTimestamp() > time) {
+      continue;
+    }
+    return range->KeyframeBeforeTimestamp(
+        std::min(time, range->GetEndTimestamp()));
+  }
+  return kNoTimestamp;
+}
+
+void ParcSourceBufferStreamState::RemoveBefore(SourceBufferStream& stream,
+                                               base::TimeDelta end,
+                                               base::TimeDelta duration) {
+  if (!stream.ranges_.empty()) {
+    Remove(stream, stream.ranges_.front()->GetStartTimestamp(), end,
+           duration);
+  }
+}
+
+void ParcSourceBufferStreamState::RemoveFrom(SourceBufferStream& stream,
+                                             base::TimeDelta start,
+                                             base::TimeDelta duration,
+                                             base::TimeDelta removal_end) {
+  if (stream.ranges_.empty()) {
+    return;
+  }
+  const base::TimeDelta buffered_end =
+      stream.ranges_.back()->GetBufferedEndTimestamp();
+  Remove(stream, start, removal_end, duration);
+  const base::TimeDelta end =
+      stream.ranges_.empty()
+          ? base::TimeDelta()
+          : stream.ranges_.back()->GetBufferedEndTimestamp();
+  if (stream.end_of_stream_ && end < buffered_end) {
+    stream.end_of_stream_ = false;
+    stream.parc_state_->set_end_of_stream_suspended(true);
+  }
+}
+
+void ParcSourceBufferStreamState::UseSafariMediaSource(
+    SourceBufferStream& stream,
+    bool safari) {
+  stream.parc_state_->SetSafariMediaSource(safari);
+}
+
+void ParcSourceBufferStreamState::ShareMediaSourceBuffered(
+    SourceBufferStream& stream,
+    base::TimeDelta start,
+    Ranges<base::TimeDelta> audio) {
+  stream.parc_state_->SetMediaSourceBuffered(start, std::move(audio));
+  if (stream.seek_pending_) {
+    stream.Seek(stream.seek_buffer_timestamp_);
+  }
+}
+
+void ParcSourceBufferStreamState::BridgeGap(SourceBufferStream& stream) {
+  if (!enabled_ || stream.GetType() != SourceBufferStreamType::kVideo ||
+      !stream.track_buffer_.empty() || stream.seek_pending_ ||
+      (stream.selected_range_ ? stream.selected_range_->HasNextBuffer()
+                              : highest_output_end_ == kNoTimestamp)) {
+    return;
+  }
+  const base::TimeDelta gap_start =
+      stream.selected_range_ ? stream.selected_range_->GetBufferedEndTimestamp()
+                             : highest_output_end_;
+  auto next = stream.ranges_.begin();
+  if (stream.selected_range_) {
+    while (next != stream.ranges_.end() &&
+           next->get() != stream.selected_range_) {
+      ++next;
+    }
+    CHECK(next != stream.ranges_.end());
+    ++next;
+  } else {
+    while (next != stream.ranges_.end() &&
+           (*next)->GetStartTimestamp() <= gap_start) {
+      ++next;
+    }
+  }
+  if (next == stream.ranges_.end() ||
+      (*next)->GetStartTimestamp() - gap_start > GapToleranceAt(gap_start)) {
+    return;
+  }
+  (*next)->SeekToStart();
+  stream.SetSelectedRange(next->get());
+}
+
+void ParcSourceBufferStreamState::SeekAcrossGap(SourceBufferStream& stream,
+                                                base::TimeDelta timestamp) {
+  for (const auto& range : stream.ranges_) {
+    if (range->GetStartTimestamp() <= timestamp) {
+      continue;
+    }
+    if (range->GetStartTimestamp() - timestamp <= GapToleranceAt(timestamp)) {
+      range->SeekToStart();
+      stream.SetSelectedRange(range.get());
+      stream.seek_pending_ = false;
+    }
+    break;
+  }
+}
 
 void ParcSourceBufferStreamState::SetSafariMediaSource(bool safari) {
   enabled_ = safari;
@@ -249,7 +383,7 @@ void ParcSourceBufferStreamState::ResetOutput() {
   highest_output_end_ = kNoTimestamp;
 }
 
-size_t ParcSourceBufferStreamState::RemovalSize(
+size_t ParcSourceBufferStreamState::RemovalSizeTo(
     const SourceBufferStream& stream,
     base::TimeDelta start,
     base::TimeDelta remove_end) const {
@@ -271,4 +405,4 @@ size_t ParcSourceBufferStreamState::RemovalSize(
   return size;
 }
 
-}  // namespace media
+}

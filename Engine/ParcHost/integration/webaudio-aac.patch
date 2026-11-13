@@ -64,36 +64,25 @@
 +
 --- a/media/filters/audio_file_reader.cc
 +++ b/media/filters/audio_file_reader.cc
-@@ -53,10 +53,20 @@
+@@ -53,10 +53,10 @@
  }
 -
 +
  bool AudioFileReader::Open() {
 -  return OpenDemuxer() && OpenDecoder();
--}
--
--bool AudioFileReader::OpenDecoder() {
 +  return OpenDemuxer() && OpenConfig() && OpenDecoder();
-+}
+ }
+-
 +
-+bool AudioFileReader::OpenWithoutDecoder() {
-+  if (!OpenDemuxer() || !OpenConfig()) {
-+    return false;
-+  }
-+  output_sample_rate_.reset();
-+  output_channels_.reset();
-+  decoded_audio_packets_ = &decoded_output_;
-+  return true;
-+}
-+
+-bool AudioFileReader::OpenDecoder() {
 +bool AudioFileReader::OpenConfig() {
    AudioDecoderConfig config;
    if (!AVCodecContextToAudioDecoderConfig(
            codec_context_.get(), EncryptionScheme::kUnencrypted, &config)) {
-@@ -73,6 +83,15 @@
-       CHANNEL_LAYOUT_UNSUPPORTED) {
+@@ -74,6 +74,15 @@
      return false;
    }
+-
 +
 +  config_ = std::move(config);
 +  return true;
@@ -103,42 +92,11 @@
 +  AudioDecoderConfig config = *config_;
 +  output_sample_rate_ = config.samples_per_second();
 +  output_channels_ = config.channels();
--
 +
    // Under a very specific set of circumstances, we can use the
    // SymphoniaAudioDecoder.
-@@ -219,6 +238,29 @@
-       [](size_t total, const auto& bus) { return total + bus->frames(); });
- }
--
-+
-+scoped_refptr<DecoderBuffer> AudioFileReader::ReadNextBuffer() {
-+  auto packet = ScopedAVPacket::Allocate();
-+  if (!ReadPacket(packet.get())) {
-+    return nullptr;
-+  }
-+  return CreateDecoderBuffer(packet);
-+}
-+
-+void AudioFileReader::AddDecodedOutput(scoped_refptr<AudioBuffer> buffer) {
-+  OnOutput(std::move(buffer));
-+}
-+
-+std::vector<std::unique_ptr<AudioBus>> AudioFileReader::TakeDecodedOutput(
-+    bool all_packets_decoded) {
-+  if (pending_output_buffer_) {
-+    FinalizeDecodedBuffer(std::move(pending_output_buffer_),
-+                          /*is_final_output=*/all_packets_decoded &&
-+                              !on_output_error_);
-+  }
-+  decoded_audio_packets_ = nullptr;
-+  return std::move(decoded_output_);
-+}
-+
- void AudioFileReader::FinalizeDecodedBuffer(scoped_refptr<AudioBuffer> buffer,
-                                             bool is_final_output) {
-   // Drop buffers that are entirely before the zero start time.
-@@ -275,7 +317,7 @@
+ #if BUILDFLAG(ENABLE_SYMPHONIA)
+@@ -275,7 +284,7 @@
    if (last_packet_duration_ > base::TimeDelta()) {
      int frames_read = buffer->frame_count();
      const base::TimeDelta frame_duration =
@@ -148,7 +106,7 @@
 +
      if (last_packet_duration_ < frame_duration) {
        const int new_frames_read = base::ClampFloor(
-@@ -307,7 +349,7 @@
+@@ -307,7 +316,7 @@
      const base::TimeDelta raw_duration = ConvertFromTimeBase(
          {1, AV_TIME_BASE}, glue_->format_context()->duration);
      const int expected_total_frames =
@@ -157,7 +115,7 @@
      const int max_remaining_frames =
          std::max(0, expected_total_frames - num_frames_emitted_);
      if (buffer->frame_count() > max_remaining_frames) {
-@@ -323,16 +365,21 @@
+@@ -323,16 +332,21 @@
      return;
    }
 -
@@ -185,7 +143,7 @@
 +
      // This is an unrecoverable error, so bail out.  We'll return
      // whatever we've decoded up to this point.
-@@ -425,7 +472,8 @@
+@@ -425,7 +439,8 @@
    return false;
  }
 -
@@ -197,7 +155,7 @@
 -
 +
    base::TimeDelta stream_timestamp =
-@@ -456,6 +504,11 @@
+@@ -456,6 +471,11 @@
 -
 +
    last_packet_duration_ = buffer->duration();

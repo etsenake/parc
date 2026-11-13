@@ -380,8 +380,9 @@ At most 16 requests are held per document; later ones fail with
 the document while it runs, `CreateCdm` notices through a weak pointer and
 returns. Parc's CDM creator runs next. The held callbacks stay in the proxy,
 not in Parc's host, because their place before `receivers_` closes the pipes
-first. MojoRendererService and MojoRenderer keep the FairPlay CDM swap: CDM
-attach on another pipe would lose its order with the Renderer's calls.
+first. Parc's FairPlay renderer service wraps MojoRendererService and MojoRenderer keeps the FairPlay
+CDM swap, so `mojo_renderer_service.cc` is stock: CDM attach on another pipe would lose its order with
+the Renderer's calls.
 
 ## Codec build flags
 

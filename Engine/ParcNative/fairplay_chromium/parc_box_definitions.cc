@@ -1,8 +1,21 @@
-#include "media/formats/mp4/box_definitions.h"
+#include "media/formats/mp4/parc_box_definitions.h"
 
+#include "media/base/video_codecs.h"
+#include "media/formats/mp4/box_definitions.h"
+#include "media/formats/mp4/box_reader.h"
 #include "media/formats/mp4/rcheck.h"
 
 namespace media::mp4 {
+
+struct AMRSpecificBox : Box {
+  DECLARE_BOX_METHODS(AMRSpecificBox);
+};
+
+struct H263SpecificBox : Box {
+  DECLARE_BOX_METHODS(H263SpecificBox);
+
+  uint8_t level = 0;
+};
 
 PCMConfiguration::PCMConfiguration() = default;
 PCMConfiguration::PCMConfiguration(const PCMConfiguration& other) = default;
@@ -68,6 +81,45 @@ FourCC H263SpecificBox::BoxType() const {
 bool H263SpecificBox::Parse(BoxReader* reader) {
   return reader->SkipBytes(5) && reader->Read1(&level) &&
          reader->SkipBytes(1);
+}
+
+bool ParcReadAudioSampleEntryBoxes(BoxReader* reader, AudioSampleEntry* entry) {
+  const FourCC format = entry->format;
+  const ProtectionSchemeInfo& sinf = entry->sinf;
+  const FourCC original_format =
+      format == FOURCC_ENCA ? sinf.format.format : format;
+  if (original_format == FOURCC_IPCM || original_format == FOURCC_FPCM) {
+    RCHECK(entry->channelcount > 0);
+    RCHECK(reader->ReadChild(&entry->pcm));
+    RCHECK(original_format == FOURCC_IPCM
+               ? (entry->pcm.sample_size == 16 ||
+                  entry->pcm.sample_size == 24 || entry->pcm.sample_size == 32)
+               : (entry->pcm.sample_size == 32 ||
+                  entry->pcm.sample_size == 64));
+  }
+
+  if (original_format == FOURCC_SAMR || original_format == FOURCC_SAWB) {
+    AMRSpecificBox damr;
+    RCHECK_MEDIA_LOGGED(reader->ReadChild(&damr), reader->media_log(),
+                        "Failure parsing AMRSpecificBox (damr)");
+  }
+
+  if (format == FOURCC_ALAC ||
+      (format == FOURCC_ENCA && sinf.format.format == FOURCC_ALAC)) {
+    RCHECK_MEDIA_LOGGED(reader->ReadChild(&entry->alac), reader->media_log(),
+                        "Failure parsing ALACSpecificBox (alac)");
+  }
+  return true;
+}
+
+bool ParcReadH263SampleEntry(BoxReader* reader, VideoSampleEntry* entry) {
+  H263SpecificBox d263;
+  RCHECK_MEDIA_LOGGED(reader->ReadChild(&d263), reader->media_log(),
+                      "Failure parsing H263SpecificBox (d263)");
+  entry->video_info.codec = VideoCodec::kH263;
+  entry->video_info.level = d263.level;
+  entry->frame_bitstream_converter = nullptr;
+  return true;
 }
 
 }
