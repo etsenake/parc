@@ -31,8 +31,8 @@ LOCK_FILE = REPO / "Engine/source-lock.json"
 MARKER = ".parc-engine-source.json"
 XCODE_FOLDER = "build/mac_files/xcode_binaries"
 XCODE_DEVELOPER = "Contents/Developer"
-XCODE_TOOLCHAIN = XCODE_DEVELOPER + "/Toolchains/XcodeDefault.xctoolchain/usr/bin"
-XCODE_TOOLS = ("gperf",)
+XCODE_TOOLCHAINS = XCODE_DEVELOPER + "/Toolchains"
+XCODE_DOWNLOADS = {"MetalToolchain": re.compile(r"metal|metallib|metal-[\w.+-]+|air-[\w.+-]+")}
 SHIPPING_MARKER = ".parc-shipping-build.json"
 SHIPPING_CONFIGURATION = "ParcDistribution_GN_arm64"
 OVERLAY_RECORD_LIMIT = 64 * 1024 * 1024
@@ -422,6 +422,8 @@ def shipping_build(workspace: Path, lock: dict, lock_sha: str, symbol_level: int
                 raise
             receipt["phase"] = "generated" if phase == "generation" else "built"
             write_marker(workspace, receipt, SHIPPING_MARKER)
+            if phase == "generation":
+                complete_xcode(workspace, lock, output)
 
 
 def reconfigure_shipping(workspace: Path, lock: dict, previous_sha: str, lock_sha: str,
@@ -590,7 +592,7 @@ def ensure_xcode(workspace: Path, lock: dict) -> Path | None:
         return None
     target = internal_path(locations(workspace)["chromium"] / XCODE_FOLDER, workspace)
     sdk = XCODE_DEVELOPER + f"/Platforms/MacOSX.platform/Developer/SDKs/MacOSX{version}.sdk"
-    needed = ["Contents/version.plist", sdk + "/SDKSettings.json", *(XCODE_TOOLCHAIN + "/" + tool for tool in XCODE_TOOLS)]
+    needed = ["Contents/version.plist", sdk + "/SDKSettings.json"]
     if all((target / item).is_file() for item in needed):
         if os.access(target, os.W_OK):
             subprocess.run(["/bin/chmod", "-R", "a-w", str(target)], check=True)
@@ -605,10 +607,6 @@ def ensure_xcode(workspace: Path, lock: dict) -> Path | None:
     if (developer is None or not (developer.parent / "version.plist").is_file()
             or source is None or not (source / "SDKSettings.json").is_file()):
         raise Refusal("No installed Xcode to copy into the engine; install Xcode")
-    tools = developer.parent / XCODE_TOOLCHAIN.removeprefix("Contents/")
-    missing = [tool for tool in XCODE_TOOLS if not (tools / tool).is_file()]
-    if missing:
-        raise Refusal(f"The installed Xcode lacks {', '.join(missing)}; install the full Xcode")
     found = plistlib.loads((source / "System/Library/CoreServices/SystemVersion.plist").read_bytes())["ProductVersion"]
     if found != version:
         raise Refusal(f"The engine pins macOS SDK {version} but the installed Xcode has {found}; install Xcode with SDK {version}")
@@ -616,16 +614,93 @@ def ensure_xcode(workspace: Path, lock: dict) -> Path | None:
     if staging.exists():
         subprocess.run(["/bin/chmod", "-R", "u+w", str(staging)], check=True)
         shutil.rmtree(staging)
-    (staging / XCODE_TOOLCHAIN).mkdir(parents=True)
+    (staging / "Contents").mkdir(parents=True)
     shutil.copy2(developer.parent / "version.plist", staging / "Contents/version.plist")
     subprocess.run(["/usr/bin/ditto", str(source), str(staging / sdk)], check=True)
-    for tool in XCODE_TOOLS:
-        shutil.copy2(tools / tool, staging / XCODE_TOOLCHAIN / tool)
     subprocess.run(["/bin/chmod", "-R", "a-w", str(staging)], check=True)
     staging.rename(target)
-    print(f"engine-source: copied Xcode's version, macOS SDK {version} and build tools from {developer} into the engine",
+    print(f"engine-source: copied Xcode's version and macOS SDK {version} from {developer} into the engine",
           file=sys.stderr)
     return target
+
+
+def xcode_references(output: Path) -> set[str]:
+    if not output.is_dir():
+        return set()
+    folders =[output, *(child for child in output.iterdir() if child.is_dir() and not child.is_symlink())]
+    files = {output / "build.ninja"}
+    for toolchain in (folder / "toolchain.ninja" for folder in folders):
+        if toolchain.is_file():
+            files.add(toolchain)
+            files.update(output / name.decode() for name in re.findall(rb"^subninja (\S+)$", toolchain.read_bytes(), re.M))
+    marker = (XCODE_FOLDER + "/" + XCODE_TOOLCHAINS + "/").encode()
+    pattern = re.compile(re.escape(marker) + rb"[^\s\"';,)$]+")
+    references = set()
+    for path in files:
+        data = path.read_bytes() if path.is_file() else b""
+        if marker in data:
+            references.update(os.path.normpath(match.group().decode().removeprefix(XCODE_FOLDER + "/"))
+                              for match in pattern.finditer(data))
+    return references
+
+
+def find_xcode_tool(name: str) -> Path | None:
+    found = subprocess.run(["/usr/bin/xcrun", "--find", name], capture_output=True, text=True, timeout=120)
+    path = Path(found.stdout.strip()) if found.returncode == 0 and found.stdout.strip() else None
+    return path if path is not None and path.is_file() else None
+
+
+def copy_xcode_tool(target: Path, developer: Path, relative: str) -> None:
+    destination = target / relative
+    name = destination.name
+    local = developer.parent / relative.removeprefix("Contents/")
+    if local.is_file():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(local, destination)
+        linked = subprocess.run(["/usr/bin/otool", "-L", str(destination)], capture_output=True, text=True, timeout=120)
+        if linked.returncode == 0 and any(line.strip().startswith("@") for line in linked.stdout.splitlines()[1:]):
+            destination.unlink()
+            raise Refusal(f"Xcode's {name} loads libraries next to it; the engine cannot copy it alone yet")
+        return
+    found = find_xcode_tool(name)
+    for component, tools in XCODE_DOWNLOADS.items():
+        if found is None and tools.fullmatch(name):
+            subprocess.run(["/usr/bin/xcodebuild", "-downloadComponent", component], check=True)
+            found = find_xcode_tool(name)
+    toolchain = next((parent for parent in found.parents if parent.suffix == ".xctoolchain"), None) if found else None
+    if toolchain is None:
+        raise Refusal(f"The build needs Xcode's {name}, which this Mac's Xcode lacks; install the Xcode component that provides it")
+    copied = target / XCODE_TOOLCHAINS / toolchain.name
+    if not copied.exists():
+        subprocess.run(["/usr/bin/ditto", str(toolchain), str(copied)], check=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if not destination.is_symlink():
+        destination.symlink_to(os.path.relpath(copied / found.relative_to(toolchain), destination.parent))
+
+
+def complete_xcode(workspace: Path, lock: dict, output: Path) -> list[str]:
+    if engine_sdk_version(lock["build"]["gn_defines"]) is None:
+        return []
+    target = internal_path(locations(workspace)["chromium"] / XCODE_FOLDER, workspace)
+    missing = sorted(relative for relative in xcode_references(output) if not (target / relative).exists())
+    if not missing:
+        return []
+    selected = subprocess.run(["/usr/bin/xcode-select", "-p"], capture_output=True, text=True, timeout=120)
+    if selected.returncode != 0:
+        raise Refusal("No installed Xcode to copy the build's Xcode tools from; install Xcode")
+    developer = Path(selected.stdout.strip())
+    subprocess.run(["/bin/chmod", "-R", "u+w", str(target)], check=True)
+    try:
+        for relative in missing:
+            copy_xcode_tool(target, developer, relative)
+    finally:
+        subprocess.run(["/bin/chmod", "-R", "a-w", str(target)], check=True)
+    absent = [relative for relative in missing if not (target / relative).exists()]
+    if absent:
+        raise Refusal("Xcode tools still missing from the engine: " + ", ".join(absent))
+    print("engine-source: copied the build's Xcode tools into the engine: "
+          + ", ".join(Path(relative).name for relative in missing), file=sys.stderr)
+    return missing
 
 
 def reset_source(workspace: Path, lock: dict, lock_sha: str) -> dict:
@@ -1190,6 +1265,8 @@ def execute(workspace: Path, lock: dict, lock_sha: str, operation: str, symbol_l
                 state.pop("generation_error", None)
                 state.update(phase="generated", source_fingerprint=tree_fingerprint(workspace, env, state["repositories"]))
                 write_marker(workspace, state)
+            complete_xcode(workspace, lock, internal_path(
+                locations(workspace)["chromium"] / "out" / lock["build"]["configuration"], workspace))
             if operation == "generate":
                 return
             command = plan["build"][-1]
