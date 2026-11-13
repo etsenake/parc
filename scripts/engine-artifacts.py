@@ -158,7 +158,7 @@ def main(argv=None):
         elif args.command == "create-workspace":
             workspace_module = module("engine_workspace")
             workspace = pkg.explicit_path(args.workspace)
-            with workspace_module.workspace_guard(workspace):
+            with workspace_module.workspace_guard(workspace, shared=True):
                 metadata = workspace_module.snapshot_metadata(workspace, ROOT)
                 result = archive.create_archive(workspace, args.output, args.name,
                     extra_files={".parc-workspace-snapshot.json": workspace_module.canonical_json(metadata)},

@@ -113,9 +113,11 @@ published tag still refuses.
    says `auto_updates true`, so `brew upgrade` leaves Sparkle-updated installs
    alone. Refresh the local tap metadata, check Ruby syntax and audit the cask.
 7. With shared engine storage settings, the release engine is packed into the
-   NAS snapshot in the background from the end of the engine stage. The release
-   waits for it at the end, ejects a NAS disk image it opened and reports the
-   upload's outcome in its final line. A failed upload names the retry command
+   NAS snapshot in the background from the end of the engine stage, while
+   packaging reads the same sealed engine; a build that would change the
+   workspace is refused until packing ends. The release waits for it at the
+   end, ejects a NAS disk image it opened and reports the upload's outcome in
+   its final line. A failed upload names the retry command
    (`python3 scripts/engine_storage.py publish`) and never stops the release.
 
 On a fresh Mac, restore the [saved engine workspace](engine-artifacts.md)
