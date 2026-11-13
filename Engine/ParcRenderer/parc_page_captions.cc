@@ -5,7 +5,10 @@
 #include <algorithm>
 #include <cmath>
 
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
@@ -18,6 +21,7 @@
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/html/html_summary_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
+#include "third_party/blink/renderer/core/html/media/parc_media_element.h"
 #include "third_party/blink/renderer/core/html/media/parc_picture_in_picture_captions.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/html/track/text_track_container.h"
@@ -25,12 +29,15 @@
 #include "third_party/blink/renderer/core/layout/layout_box_model_object.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/layout_video.h"
+#include "third_party/blink/renderer/core/page/chrome_client.h"
+#include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/disallow_new_wrapper.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
+#include "ui/display/screen_info.h"
 #include "ui/gfx/geometry/size_f.h"
 
 #include "cc/paint/skia_paint_canvas.h"
@@ -643,6 +650,45 @@ SkBitmap PaintParcLayersForPictureInPicture(
 
   bounds = gfx::ScaleRect(placed, 1 / picture.width(), 1 / picture.height());
   return bitmap;
+}
+
+void SendParcPictureInPictureCaptions(
+    Document& document,
+    HTMLVideoElement& element,
+    const gfx::SizeF& window_size,
+    ParcPageCaptions* page_captions,
+    bool& showing_captions,
+    HeapMojoAssociatedRemote<parc::mojom::blink::PictureInPictureCaptionsHost>&
+        captions_host,
+    uint64_t captions_session) {
+  LocalFrame* frame = document.GetFrame();
+  if (!frame || !frame->GetPage()) {
+    return;
+  }
+  gfx::RectF bounds;
+  SkBitmap captions =
+      ParcMediaElement::From(element).PaintTextTracksForPictureInPicture(
+          window_size,
+          frame->GetPage()->GetChromeClient().GetScreenInfo(*frame)
+              .device_scale_factor,
+          bounds);
+  if (captions.drawsNothing() && page_captions) {
+    captions = page_captions->Paint(
+        window_size,
+        frame->GetPage()->GetChromeClient().GetScreenInfo(*frame)
+            .device_scale_factor,
+        bounds);
+  }
+  if (captions.drawsNothing() && !showing_captions) {
+    return;
+  }
+  showing_captions = !captions.drawsNothing();
+  if (!captions_host.is_bound()) {
+    frame->GetRemoteNavigationAssociatedInterfaces()->GetInterface(
+        captions_host.BindNewEndpointAndPassReceiver(
+            document.GetTaskRunner(TaskType::kMediaElementEvent)));
+  }
+  captions_host->UpdateCaptions(captions_session, captions, bounds);
 }
 
 }

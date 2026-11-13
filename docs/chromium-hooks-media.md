@@ -17,14 +17,15 @@ Four of these are declared in `parc/chromium_hooks.h`; the rest in a Parc header
   in `parc_content_clients.mm`, only when the bundle has the helper and before the interface thread
   forbids blocking; `GetChildProcessPath` there resolves the flag.
 - **`SetFairPlayCdmCreator`**: FairPlay key requests go to Parc's FairPlay media service.
-  `MediaInterfaceProxy::CreateCdm` in `content/browser/media/media_interface_proxy.cc` calls it
-  after the Widevine request observer; false leaves the request to Chromium. Installed in
+  `MediaInterfaceProxy::CreateCdm` in `content/browser/media/media_interface_proxy.cc` makes one
+  call into Parc's `parc_media_routing.cc` in the same layer, which runs the Widevine request
+  observer and then this creator; false leaves the request to Chromium. Installed in
   `PreMainMessageLoopRun`; answered by `FairPlayDocumentHost::CreateCdm` in `fairplay_media_host.cc`.
   The [FairPlay guide](../Engine/ParcNative/fairplay_chromium/README.md#widevine-request-hook)
   explains why the order needs a hook.
 - **`SetWidevineCdmRequestObserver`**: a site that belongs on FairPlay never starts Widevine; its
   Widevine request is held and dropped with the document. Declared in
-  `content/browser/media/parc_fairplay_hooks.h` and defined in `media_interface_proxy.cc`. Installed
+  `content/browser/media/parc_fairplay_hooks.h` and defined in Parc's `parc_media_routing.cc`. Installed
   by `InstallFairPlayIdentity` in `fairplay_identity.mm`, which `native_engine_entry.mm` runs before
   Chromium's command line exists and before any page or worker; answered by `OnWidevineCdmRequest`
   there.
@@ -43,9 +44,9 @@ Four of these are declared in `parc/chromium_hooks.h`; the rest in a Parc header
 - **`SetParcPlaybackTargetHandler`** and its call-ins **`SetParcPlaybackTargetAvailability`**,
   **`SetParcPlaybackTarget`** and **`SetParcPlaybackTargetPickerDismissed`**: AirPlay works for video
   on Safari-identity pages, with the device list, route and dismissal reaching each player. Declared
-  in `content/public/browser/parc_playback_target.h` and defined in
+  in `content/public/browser/parc_playback_target.h`; the handler setter is defined in
   `content/browser/media/media_web_contents_observer.cc`, which already routes each player's
-  observer messages. Installed by `InstallNativeAirPlay` from `native_engine_entry.mm`; answered by
+  observer messages, and the three call-ins in Parc's `parc_media_routing.cc`. Installed by `InstallNativeAirPlay` from `native_engine_entry.mm`; answered by
   `NativeAirPlay` in `native_airplay.mm`.
 - **`SetAutoPictureInPictureVisibilitySync`**: automatic picture in picture on a tab switch waits
   until the page's renderer confirms it is hidden, so the video never flashes. The wait starts and is

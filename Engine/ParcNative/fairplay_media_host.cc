@@ -16,6 +16,7 @@
 #include "content/browser/media/media_devices_util.h"
 #include "content/browser/media/media_web_contents_observer.h"
 #include "content/browser/media/parc_fairplay_hooks.h"
+#include "content/browser/media/parc_media_routing.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/gpu_service_registry.h"
 #include "content/public/browser/render_frame_host.h"
@@ -34,9 +35,6 @@
 namespace parc {
 namespace {
 
-// The GPU process's FairPlay media service, reconnected after it restarts.
-// Sequence-local on the UI thread, as content::GetMediaService() keeps its
-// own.
 media::mojom::FairPlayMediaService& FairPlayMediaService() {
   static base::SequenceLocalStorageSlot<
       mojo::Remote<media::mojom::FairPlayMediaService>>
@@ -53,10 +51,6 @@ media::mojom::FairPlayMediaService& FairPlayMediaService() {
   return *remote.get();
 }
 
-// Forwards the FairPlay Renderer's client extension from the GPU process to
-// the render process, and holds its player's audibility-bypass grant while
-// that Renderer lives. Its audio plays through AVSampleBufferAudioRenderer, not
-// the audio service, so this is how AudioStreamMonitor may count it audible.
 class RendererClientExtensionProxy final
     : public media::mojom::FairPlayRendererClientExtension {
  public:
@@ -81,10 +75,6 @@ class RendererClientExtensionProxy final
   content::AudibilityBypassTracker::ScopedGrant grant_;
 };
 
-// The browser's end of a native HLS player's lifetime handle. It holds its
-// player's audibility-bypass grant until the GPU player closes the pipe:
-// AVPlayer's audio goes straight to CoreAudio, not through the audio service,
-// so this is how AudioStreamMonitor may count the player audible.
 class HlsPlayerLifetime final
     : public media::mojom::FairPlayHlsPlayerLifetime {
  public:
@@ -96,7 +86,7 @@ class HlsPlayerLifetime final
   content::AudibilityBypassTracker::ScopedGrant grant_;
 };
 
-}  // namespace
+}
 
 FairPlayDocumentHost::FairPlayDocumentHost(content::RenderFrameHost* frame)
     : DocumentUserData(frame),
@@ -104,7 +94,6 @@ FairPlayDocumentHost::FairPlayDocumentHost(content::RenderFrameHost* frame)
 
 FairPlayDocumentHost::~FairPlayDocumentHost() = default;
 
-// static
 void FairPlayDocumentHost::BindMediaHost(
     content::RenderFrameHost* frame,
     mojo::PendingReceiver<media::mojom::FairPlayMediaHost> receiver) {
@@ -112,21 +101,15 @@ void FairPlayDocumentHost::BindMediaHost(
   host->media_host_receivers_.Add(host, std::move(receiver));
 }
 
-// static
 bool FairPlayDocumentHost::CreateCdm(
     content::RenderFrameHost& frame,
     const media::CdmConfig& cdm_config,
     media::mojom::FairPlayFrameMedia::CreateCdmCallback& callback) {
-  // Everything the FairPlay CdmInfo matches (CdmRegistryImpl::MatchKeySystem
-  // takes any sub key system) stays here: Chromium's library CDM path would
-  // hit its empty-CDM-path NOTREACHED for a name like "com.apple.fps.".
   if (cdm_config.key_system != fairplay::kFairPlayKeySystem &&
       !media::IsSubKeySystemOf(cdm_config.key_system,
                                fairplay::kFairPlayKeySystem)) {
     return false;
   }
-  // Like every other CDM, only once registered (CdmRegistryImpl::Init), so a
-  // renderer can't create one that Blink never offered.
   if (!fairplay::IsFairPlayKeySystem(cdm_config.key_system) ||
       !content::CdmRegistryImpl::GetInstance()->GetCdmInfo(
           cdm_config.key_system,
@@ -137,8 +120,6 @@ bool FairPlayDocumentHost::CreateCdm(
   }
   FairPlayDocumentHost* host = GetOrCreateForCurrentDocument(&frame);
   host->fairplay_playback_context_ = true;
-  // The GPU process may drop the callback, when it crashes for one; the
-  // trusted browser answers then, as MediaInterfaceProxy does.
   host->FrameMedia().CreateCdm(
       cdm_config, mojo::WrapCallbackWithDefaultInvokeIfNotRun(
                       std::move(callback), mojo::NullRemote(), nullptr,
@@ -151,10 +132,6 @@ void FairPlayDocumentHost::CreateRenderer(
     mojo::PendingReceiver<media::mojom::Renderer> receiver,
     mojo::PendingRemote<media::mojom::FairPlayRendererClientExtension>
         client_extension) {
-  // Only for documents that created a FairPlay CDM, the only CDM it plays
-  // with, or that present Safari's identity, where Dolby Vision plays through
-  // it with or without keys (as Safari plays it); so a renderer can't reach
-  // its parsers or claim audibility otherwise.
   if (!fairplay_playback_context_ &&
       !fairplay::FramePresentsSafariIdentity(&render_frame_host())) {
     return;
@@ -164,8 +141,7 @@ void FairPlayDocumentHost::CreateRenderer(
   mojo::MakeSelfOwnedReceiver(
       std::make_unique<RendererClientExtensionProxy>(
           std::move(client_extension),
-          content::AudibilityBypassTracker::AddPlayerGrant(
-              &render_frame_host(), player_id)),
+          content::ParcAddPlayerGrant(&render_frame_host(), player_id)),
       gpu_client_extension.InitWithNewPipeAndPassReceiver());
   FrameMedia().CreateRenderer(std::move(receiver),
                               std::move(gpu_client_extension));
@@ -178,8 +154,7 @@ void FairPlayDocumentHost::CreateHlsPlayer(
   mojo::PendingRemote<media::mojom::FairPlayHlsPlayerLifetime> lifetime;
   mojo::MakeSelfOwnedReceiver(
       std::make_unique<HlsPlayerLifetime>(
-          content::AudibilityBypassTracker::AddPlayerGrant(
-              &render_frame_host(), player_id)),
+          content::ParcAddPlayerGrant(&render_frame_host(), player_id)),
       lifetime.InitWithNewPipeAndPassReceiver());
   FrameMedia().CreateHlsPlayer(std::move(player), std::move(client),
                                std::move(lifetime));
@@ -192,13 +167,6 @@ void FairPlayDocumentHost::CreateMuteStateHandoff(
                                                   std::nullopt));
 }
 
-// WebKit's per-origin MediaKeys directory (Document::mediaKeysStorageDirectory:
-// the website data store's directory for the top origin and the document's
-// origin), where AVFoundation keeps expired-session reports. It is inside the
-// Profile's engine folder, so it goes with the Profile: "Parc
-// FairPlay/MediaKeys/" then the SHA-256 of the top-level origin and of the
-// frame's origin. None off the record or for an opaque origin, as Safari keeps
-// none for an ephemeral session or a document without storage access.
 void FairPlayDocumentHost::GetStorageDirectory(
     GetStorageDirectoryCallback callback) {
   content::BrowserContext* browser_context =
@@ -219,8 +187,6 @@ void FairPlayDocumentHost::GetStorageDirectory(
               base::HexEncode(crypto::hash::Sha256(top_origin.Serialize())))
           .AppendASCII(
               base::HexEncode(crypto::hash::Sha256(origin.Serialize())));
-  // Created here, where the GPU process's sandbox needn't allow creating the
-  // folders above it.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_BLOCKING},
       base::BindOnce(
@@ -232,12 +198,6 @@ void FairPlayDocumentHost::GetStorageDirectory(
       std::move(callback));
 }
 
-// WebKit's MediaKeys hash salt, DeviceIdHashSaltStorage's salt for the
-// document origin and top-level origin, which seeds the randomized device
-// identifier in the FairPlay CDM's SPCs. Chromium's media device ID salt is
-// the same kind: per storage key (top-level site and origin), replaced when
-// the user clears site data, in memory off the record. None while
-// prerendering, when no CDM is made.
 void FairPlayDocumentHost::GetDeviceIdSalt(GetDeviceIdSaltCallback callback) {
   if (render_frame_host().IsInLifecycleState(
           content::RenderFrameHost::LifecycleState::kPrerendering)) {
@@ -254,14 +214,12 @@ void FairPlayDocumentHost::GetDeviceIdSalt(GetDeviceIdSaltCallback callback) {
           std::move(callback)));
 }
 
-// WebKit's ephemeral session for the native HLS player's asset.
 void FairPlayDocumentHost::IsEphemeralSession(
     IsEphemeralSessionCallback callback) {
   std::move(callback).Run(
       render_frame_host().GetBrowserContext()->IsOffTheRecord());
 }
 
-// As MediaWebContentsObserver translates a player's audio output sink.
 void FairPlayDocumentHost::GetAudioOutputDeviceUid(
     const std::string& hashed_device_id,
     GetAudioOutputDeviceUidCallback callback) {
@@ -270,9 +228,6 @@ void FairPlayDocumentHost::GetAudioOutputDeviceUid(
       blink::mojom::MediaDeviceType::kMediaAudioOutput, std::move(callback));
 }
 
-// The FairPlay Renderer's and native HLS player's audio bypasses the audio
-// service, so they take the tab's mute from here, as MediaFoundation's
-// renderer does on Windows: the current state at once, then every change.
 void FairPlayDocumentHost::RegisterMuteStateObserver(
     mojo::PendingRemote<media::mojom::FairPlayMuteStateObserver> observer) {
   auto id = mute_state_observers_.Add(std::move(observer));
@@ -301,4 +256,4 @@ media::mojom::FairPlayFrameMedia& FairPlayDocumentHost::FrameMedia() {
 
 DOCUMENT_USER_DATA_KEY_IMPL(FairPlayDocumentHost);
 
-}  // namespace parc
+}

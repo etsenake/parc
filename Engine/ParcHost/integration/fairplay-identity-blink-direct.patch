@@ -8,24 +8,7 @@
  #include "third_party/blink/renderer/bindings/core/v8/script_state_impl.h"
  #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
-@@ -72,12 +73,15 @@
- #include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
- #include "third_party/blink/renderer/platform/bindings/v8_set_return_value.h"
- #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-+#include "third_party/blink/renderer/platform/heap/persistent.h"
- #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
- #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
- #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
- #include "third_party/blink/renderer/platform/runtime_feature_state/runtime_feature_state_override_context.h"
-+#include "third_party/blink/renderer/platform/scheduler/public/event_loop.h"
- #include "third_party/blink/renderer/platform/weborigin/reporting_disposition.h"
- #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
-+#include "third_party/blink/renderer/platform/wtf/functional.h"
- #include "v8/include/v8.h"
--
-+
- namespace blink {
-@@ -299,6 +303,8 @@
+@@ -299,6 +300,8 @@
      SetSecurityToken(origin.get());
    }
 -
@@ -35,37 +18,24 @@
    {
      TRACE_EVENT2("v8", "ContextCreatedNotification", "IsMainFrame",
                   GetFrame()->IsMainFrame(), "IsOutermostMainFrame",
-@@ -309,6 +315,12 @@
+@@ -309,6 +312,8 @@
    }
 -
 +
    InstallConditionalFeatures();
-+  if (PresentsParcSafariIdentity(GetFrame()->DomWindow())) {
-+    RemoveParcUserAgentData(script_state_);
-+    if (World().IsMainWorld()) {
-+      InstallParcSafariScripts(script_state_, GetFrame()->DomWindow());
-+    }
-+  }
++  ParcSafariWindowContextCreated(script_state_, GetFrame()->DomWindow(),
++                                 World().IsMainWorld());
 -
 +
    if (World().IsMainWorld()) {
      probe::DidCreateMainWorldContext(GetFrame());
-@@ -552,6 +564,18 @@
+@@ -552,6 +557,9 @@
      return;
    }
 -
 +
-+  if (PresentsParcSafariIdentity(GetFrame()->DomWindow())) {
-+    ScriptState::Scope scope(script_state_);
-+    RemoveParcUserAgentData(script_state_);
-+    if (world_->IsMainWorld()) {
-+      LocalDOMWindow* window = GetFrame()->DomWindow();
-+      window->GetAgent()->event_loop()->EnqueueMicrotask(
-+          BindOnce(&InstallParcSafariScriptsAfterCommit,
-+                   WrapWeakPersistent(script_state_.Get()),
-+                   WrapWeakPersistent(window)));
-+    }
-+  }
++  ParcSafariDocumentTookOverWindow(script_state_, GetFrame()->DomWindow(),
++                                   world_->IsMainWorld());
 +
    if (!world_->IsMainWorld())
      return;
@@ -94,19 +64,7 @@
  void WorkerOrWorkletScriptController::DisableEvalInternal(
 --- a/third_party/blink/renderer/modules/encryptedmedia/navigator_request_media_key_system_access.cc
 +++ b/third_party/blink/renderer/modules/encryptedmedia/navigator_request_media_key_system_access.cc
-@@ -8,7 +8,10 @@
- #include <vector>
--
-+
- #include "base/memory/ptr_util.h"
-+#include "media/mojo/mojom/parc_video_toolbox_decoding.mojom-blink.h"
- #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
-+#include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
-+#include "third_party/blink/public/platform/task_type.h"
- #include "third_party/blink/public/platform/web_encrypted_media_client.h"
- #include "third_party/blink/public/platform/web_encrypted_media_request.h"
- #include "third_party/blink/public/platform/web_media_key_system_configuration.h"
-@@ -19,18 +22,23 @@
+@@ -19,11 +19,13 @@
  #include "third_party/blink/renderer/core/execution_context/execution_context.h"
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -120,18 +78,16 @@
  #include "third_party/blink/renderer/platform/bindings/exception_state.h"
  #include "third_party/blink/renderer/platform/bindings/script_state.h"
  #include "third_party/blink/renderer/platform/bindings/v8_throw_exception.h"
- #include "third_party/blink/renderer/platform/encrypted_media_request.h"
+@@ -31,6 +33,7 @@
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-+#include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
  #include "third_party/blink/renderer/platform/network/mime/content_type.h"
  #include "third_party/blink/renderer/platform/network/parsed_content_type.h"
 +#include "third_party/blink/renderer/platform/wtf/functional.h"
-+#include "third_party/blink/renderer/platform/wtf/hash_map.h"
  #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
  #include "third_party/blink/renderer/platform/wtf/vector.h"
 -
 +
-@@ -65,8 +73,21 @@
+@@ -65,8 +68,15 @@
    void StartRequestAsync();
 -
 +
@@ -141,93 +97,53 @@
    }
 +
 + private:
-+  void ParcAskAVFoundation();
-+  void ParcOnAnswer(const String& content_type, bool playable);
-+  void ParcApplyAnswers();
++  void ParcApplyAnswers(const Vector<ParcAVFoundationCheck>& checks,
++                        const HashMap<String, bool>& answers);
 +
-+  Vector<ParcAVFoundationCheck> parc_checks_;
-+  HashMap<String, bool> parc_answers_;
-+  wtf_size_t parc_pending_ = 0;
-+  bool parc_asked_ = false;
-+  HeapMojoRemote<media::mojom::blink::ParcVideoToolboxDecoding>
-+      parc_avfoundation_;
++  Member<ParcAVFoundationQuery> parc_avfoundation_;
  };
 -
 +
  MediaKeySystemAccessInitializer::MediaKeySystemAccessInitializer(
-@@ -80,7 +101,14 @@
+@@ -80,7 +90,11 @@
            resolver,
            key_system,
            supported_configurations,
 -          /*is_from_media_capabilities=*/false) {}
 +          /*is_from_media_capabilities=*/false),
-+      parc_avfoundation_(context) {
-+  if (!context || !IsParcSafariIdentityUserAgent(context->UserAgent()) ||
-+      !IsParcFairPlayKeySystem(key_system)) {
-+    return;
-+  }
-+  parc_checks_ = ParcAVFoundationChecks(supported_configurations);
-+}
++      parc_avfoundation_(ParcAVFoundationQuery::CreateIfNeeded(
++          context,
++          key_system,
++          supported_configurations)) {}
 -
 +
  void MediaKeySystemAccessInitializer::RequestSucceeded(
      std::unique_ptr<WebContentDecryptionModuleAccess> access) {
-@@ -110,6 +138,11 @@
+@@ -110,6 +124,14 @@
    if (!IsExecutionContextValid() || !DomWindow())
      return;
 -
 +
-+  if (!parc_checks_.empty() && !parc_asked_) {
-+    ParcAskAVFoundation();
++  if (parc_avfoundation_ &&
++      parc_avfoundation_->Ask(
++          *GetExecutionContext(),
++          BindOnce(&MediaKeySystemAccessInitializer::ParcApplyAnswers,
++                   WrapWeakPersistent(this)))) {
 +    return;
 +  }
 +
    // 6. Asynchronously determine support, and if allowed, create and
    //    initialize the MediaKeySystemAccess object.
    DCHECK(!DomWindow()->document()->IsPrerendering());
-@@ -120,6 +153,47 @@
+@@ -120,6 +142,13 @@
    media_client->RequestMediaKeySystemAccess(WebEncryptedMediaRequest(this));
  }
 -
 +
-+void MediaKeySystemAccessInitializer::ParcAskAVFoundation() {
-+  parc_asked_ = true;
-+  ExecutionContext* context = GetExecutionContext();
-+  context->GetBrowserInterfaceBroker().GetInterface(
-+      parc_avfoundation_.BindNewPipeAndPassReceiver(
-+          context->GetTaskRunner(TaskType::kMediaElementEvent)));
-+  parc_avfoundation_.set_disconnect_handler(
-+      BindOnce(&MediaKeySystemAccessInitializer::ParcApplyAnswers,
-+               WrapWeakPersistent(this)));
-+  for (const ParcAVFoundationCheck& check : parc_checks_) {
-+    if (parc_answers_.Contains(check.content_type)) {
-+      continue;
-+    }
-+    parc_answers_.Set(check.content_type, false);
-+    ++parc_pending_;
-+    parc_avfoundation_->IsPlayableExtendedMIMEType(
-+        check.content_type,
-+        BindOnce(&MediaKeySystemAccessInitializer::ParcOnAnswer,
-+                 WrapWeakPersistent(this), check.content_type));
-+  }
-+}
-+
-+void MediaKeySystemAccessInitializer::ParcOnAnswer(const String& content_type,
-+                                                   bool playable) {
-+  parc_answers_.Set(content_type, playable);
-+  if (parc_pending_ && --parc_pending_ == 0) {
-+    ParcApplyAnswers();
-+  }
-+}
-+
-+void MediaKeySystemAccessInitializer::ParcApplyAnswers() {
-+  if (parc_checks_.empty()) {
-+    return;
-+  }
-+  ParcApplyAVFoundationAnswers(parc_checks_, parc_answers_,
-+                               supported_configurations_);
-+  parc_checks_.clear();
-+  parc_avfoundation_.reset();
++void MediaKeySystemAccessInitializer::ParcApplyAnswers(
++    const Vector<ParcAVFoundationCheck>& checks,
++    const HashMap<String, bool>& answers) {
++  ParcApplyAVFoundationAnswers(checks, answers, supported_configurations_);
 +  StartRequestAsync();
 +}
 +
@@ -235,7 +151,7 @@
 -
 +
  ScriptPromise<MediaKeySystemAccess>
-@@ -133,7 +207,12 @@
+@@ -133,7 +162,12 @@
    DVLOG(3) << __func__;
 -
 +
@@ -250,7 +166,7 @@
            network::mojom::PermissionsPolicyFeature::kEncryptedMedia,
            ReportOptions::kReportOnFailure)) {
      UseCounter::Count(window,
-@@ -189,6 +268,13 @@
+@@ -189,6 +223,13 @@
            window, resolver, key_system, supported_configurations);
    auto promise = resolver->Promise();
 -
@@ -265,7 +181,7 @@
    // Defer to determine support until the prerendering page is activated.
    if (window->document()->IsPrerendering()) {
      window->document()->AddPostPrerenderingActivationStep(
-@@ -199,10 +285,7 @@
+@@ -199,10 +240,7 @@
 -
 +
    // 6. Asynchronously determine support, and if allowed, create and
@@ -512,28 +428,17 @@
    // whether the codec is builtin or if we already received a DB response.
 --- a/third_party/blink/renderer/modules/mediasource/media_source.cc
 +++ b/third_party/blink/renderer/modules/mediasource/media_source.cc
-@@ -5,7 +5,10 @@
+@@ -5,6 +5,7 @@
  #include "third_party/blink/renderer/modules/mediasource/media_source.h"
 -
 +
  #include <memory>
 +#include <optional>
-+#include <string>
  #include <tuple>
-+#include <vector>
 -
 +
  #include "base/feature_list.h"
- #include "base/memory/ptr_util.h"
-@@ -19,6 +22,7 @@
- #include "media/base/mime_util.h"
- #include "media/base/supported_types.h"
- #include "media/base/video_decoder_config.h"
-+#include "media/filters/stream_parser_factory.h"
- #include "media/media_buildflags.h"
- #include "third_party/blink/public/platform/web_media_source.h"
- #include "third_party/blink/public/platform/web_source_buffer.h"
-@@ -29,6 +33,7 @@
+@@ -29,6 +30,7 @@
  #include "third_party/blink/renderer/core/dom/events/event.h"
  #include "third_party/blink/renderer/core/dom/events/event_queue.h"
  #include "third_party/blink/renderer/core/frame/deprecation/deprecation.h"
@@ -541,7 +446,15 @@
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
  #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
  #include "third_party/blink/renderer/core/html/track/video_track_list.h"
-@@ -380,10 +385,14 @@
+@@ -37,6 +39,7 @@
+ #include "third_party/blink/renderer/modules/mediasource/cross_thread_media_source_attachment.h"
+ #include "third_party/blink/renderer/modules/mediasource/handle_attachment_provider.h"
+ #include "third_party/blink/renderer/modules/mediasource/media_source_handle_impl.h"
++#include "third_party/blink/renderer/modules/mediasource/parc_media_source_types.h"
+ #include "third_party/blink/renderer/modules/mediasource/same_thread_media_source_attachment.h"
+ #include "third_party/blink/renderer/modules/mediasource/same_thread_media_source_tracer.h"
+ #include "third_party/blink/renderer/modules/mediasource/source_buffer_track_base_supplement.h"
+@@ -380,10 +383,14 @@
    // can be buffered, with appropriate invocations of the
    // InitializationSegmentReceived and AppendError methods.
    ContentType content_type(type);
@@ -559,68 +472,20 @@
 +
    if (!web_source_buffer) {
      // 2. If type contains a MIME type that is not supported ..., then throw a
-@@ -562,9 +571,58 @@
+@@ -562,6 +569,10 @@
    }
 -
 +
    String codecs = content_type.Parameter("codecs");
-+
-+  if (IsParcSafariIdentityUserAgent(context->UserAgent()) &&
-+      ParcSafariAV1Unavailable(codecs)) {
-+    return false;
-+  }
-+
-+  if (IsParcSafariIdentityUserAgent(context->UserAgent())) {
-+    const std::string lower_mime_type = mime_type.ToAsciiLower().Ascii();
-+    std::vector<std::string> parsed_codec_ids;
-+    media::SplitCodecs(codecs.Ascii(), &parsed_codec_ids);
-+    if (media::StreamParserFactory::ParcIsOggType(lower_mime_type)) {
-+      return media::StreamParserFactory::ParcSafariTakesOgg(lower_mime_type,
-+                                                            parsed_codec_ids);
-+    }
-+    std::optional<media::StreamParserFactory::ParcSafariType> safari_type =
-+        media::StreamParserFactory::ParcSafariMediaSourceType(lower_mime_type,
-+                                                              parsed_codec_ids);
-+    if (!safari_type) {
-+      DVLOG(1) << __func__ << "(" << type << ", "
-+               << base::ToString(enforce_codec_specificity)
-+               << ") -> false (refused by Safari's Media Source)";
-+      return false;
-+    }
-+    if (safari_type->type != lower_mime_type ||
-+        safari_type->codecs != parsed_codec_ids) {
-+      std::string safari_codecs;
-+      for (const std::string& codec_id : safari_type->codecs) {
-+        safari_codecs += (safari_codecs.empty() ? "" : ",") + codec_id;
-+      }
-+      mime_type = String::FromUtf8(safari_type->type);
-+      codecs = String::FromUtf8(safari_codecs);
-+      content_type = ContentType(
-+          codecs.empty() ? mime_type
-+                         : StrCat({mime_type, "; codecs=\"", codecs, "\""}));
-+    }
++  if (std::optional<bool> parc_answer = ParcSafariMediaSourceTypeAnswer(
++          context->UserAgent(), mime_type, codecs, content_type)) {
++    return *parc_answer;
 +  }
    ContentType filtered_content_type = content_type;
 -
 +
-+  if (IsParcSafariOnlyAudioCodecs(codecs) &&
-+      !IsParcSafariIdentityUserAgent(context->UserAgent())) {
-+    DVLOG(1) << __func__ << "(" << type << ", "
-+             << base::ToString(enforce_codec_specificity)
-+             << ") -> false (Dolby audio outside Safari's identity)";
-+    return false;
-+  }
-+
  #if BUILDFLAG(ENABLE_MSE_MPEG2TS_STREAM_PARSER)
-+  if (IsParcSafariMediaSourceMp2tType(mime_type) &&
-+      IsParcSafariIdentityUserAgent(context->UserAgent())) {
-+    return ParcSafariMp2tParserCodecs(codecs).has_value();
-+  }
-+
-   // Mime util doesn't include the mp2t container in order to prevent codec
-   // support leaking into HtmlMediaElement.canPlayType. If the stream parser
-   // is enabled, we should check that the codecs are valid using the mp4
-@@ -595,10 +653,16 @@
+@@ -595,10 +606,16 @@
    // from the codecs in the `filtered_content_type`.
    // - When `kAllowClearDolbyVisionInMseWhenPlatformEncryptedDvEnabled` is
    // specified, allow DV regardless of `enforce_codec_specificity`.
@@ -638,7 +503,7 @@
      // Remove any detected DolbyVision codec from the query to GetSupportsType.
      std::string filtered_codecs;
      std::vector<std::string> parsed_codec_ids;
-@@ -608,7 +672,13 @@
+@@ -608,7 +625,13 @@
        if (auto result =
                media::ParseVideoCodecString(mime_type.Ascii(), codec_id,
                                             /*allow_ambiguous_matches=*/false)) {
@@ -653,38 +518,18 @@
            continue;
          }
        }
-@@ -626,6 +696,29 @@
+@@ -626,6 +649,9 @@
    }
  #endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
 -
 +
-+  if (IsParcSafariIdentityUserAgent(context->UserAgent()) &&
-+      (EqualIgnoringAsciiCase(mime_type, "video/mp4") ||
-+       EqualIgnoringAsciiCase(mime_type, "audio/mp4"))) {
-+    auto without_pcm = [](const String& value) {
-+      String result;
-+      for (const String& codec : value.Split(',')) {
-+        const String id = codec.StripWhiteSpace();
-+        if (id == "ipcm" || id.starts_with("ipcm.") ||
-+            id == "fpcm" || id.starts_with("fpcm."))
-+          continue;
-+        if (!result.empty())
-+          result = StrCat({result, ","});
-+        result = StrCat({result, id});
-+      }
-+      return result;
-+    };
-+    codecs = without_pcm(codecs);
-+    const String filtered = without_pcm(filtered_content_type.Parameter("codecs"));
-+    filtered_content_type = ContentType(
-+        filtered.empty() ? mime_type
-+                         : StrCat({mime_type, "; codecs=\"", filtered, "\""}));
-+  }
++  ParcSafariDropPcmCodecs(context->UserAgent(), mime_type, codecs,
++                          filtered_content_type);
 +
    // Note: MediaSource.isTypeSupported() returning true implies that
    // HTMLMediaElement.canPlayType() will return "maybe" or "probably" since it
    // does not make sense for a MediaSource to support a type the
-@@ -660,6 +753,11 @@
+@@ -660,6 +686,11 @@
 -
 +
    bool result = supported == MIMETypeRegistry::kSupported;
@@ -698,29 +543,20 @@
    DVLOG(2) << __func__ << "(" << type << ", "
             << base::ToString(enforce_codec_specificity) << ") -> "
             << base::ToString(result);
-@@ -1015,6 +1113,20 @@
+@@ -1015,6 +1046,11 @@
    DCHECK_LE(highest_buffered_presentation_timestamp,
              std::isnan(old_duration) ? 0 : old_duration);
 -
 +
-+  ExecutionContext* context = GetExecutionContext();
-+  if (context && IsParcSafariIdentityUserAgent(context->UserAgent())) {
-+    for (unsigned i = 0; i < source_buffers_->length(); ++i) {
-+      WebTimeRanges ranges;
-+      source_buffers_->item(i)->GetBuffered_Locked(&ranges, pass_key);
-+      if (!ranges.empty()) {
-+        new_duration = std::max(new_duration, ranges.back().end);
-+      }
-+    }
-+    if (new_duration == old_duration) {
-+      return;
-+    }
++  if (ParcSafariKeepsDuration(GetExecutionContext(), *source_buffers_,
++                              pass_key, new_duration, old_duration)) {
++    return;
 +  }
 +
    // 3. Set old duration to the current value of duration.
    // Done for step 1 above, already.
    // 4. Update duration to new duration.
-@@ -1051,6 +1163,12 @@
+@@ -1051,6 +1087,12 @@
 -
 +
    ready_state_ = state;
@@ -736,7 +572,7 @@
  }
 -
 +
-@@ -1330,11 +1448,16 @@
+@@ -1330,11 +1372,16 @@
      double new_duration = GetDuration_Locked(pass_key);
      auto [attachment, tracer] = AttachmentAndTracer();
      attachment->NotifyDurationChanged(tracer, new_duration);
@@ -756,30 +592,15 @@
 +
 --- a/third_party/blink/renderer/core/html/media/html_media_element.cc
 +++ b/third_party/blink/renderer/core/html/media/html_media_element.cc
-@@ -27,6 +27,7 @@
- #include "third_party/blink/renderer/core/html/media/html_media_element.h"
--
-+
- #include <algorithm>
-+#include <cmath>
- #include <limits>
- #include <utility>
- #include <variant>
-@@ -50,10 +51,13 @@
- #include "third_party/blink/public/common/features.h"
- #include "third_party/blink/public/mojom/frame/user_activation_notification_type.mojom-shared.h"
- #include "third_party/blink/public/platform/modules/mediastream/web_media_stream.h"
-+#include "third_party/blink/public/platform/parc_web_media_player_extension.h"
- #include "third_party/blink/public/platform/task_type.h"
+@@ -54,6 +54,7 @@
  #include "third_party/blink/public/platform/web_media_player.h"
  #include "third_party/blink/public/platform/web_media_player_source.h"
  #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
-+#include "third_party/blink/renderer/bindings/core/v8/parc_webkit_need_key.h"
 +#include "third_party/blink/renderer/bindings/core/v8/script_value.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_can_play_type_result.h"
  #include "third_party/blink/renderer/core/core_initializer.h"
  #include "third_party/blink/renderer/core/core_probes_inl.h"
-@@ -71,6 +75,7 @@
+@@ -71,6 +72,7 @@
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/local_frame_client.h"
@@ -787,7 +608,7 @@
  #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
  #include "third_party/blink/renderer/core/frame/settings.h"
  #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
-@@ -86,6 +91,9 @@
+@@ -86,6 +88,9 @@
  #include "third_party/blink/renderer/core/html/media/media_source_attachment.h"
  #include "third_party/blink/renderer/core/html/media/media_source_handle.h"
  #include "third_party/blink/renderer/core/html/media/media_source_tracer.h"
@@ -797,7 +618,7 @@
  #include "third_party/blink/renderer/core/html/time_ranges.h"
  #include "third_party/blink/renderer/core/html/track/audio_track.h"
  #include "third_party/blink/renderer/core/html/track/audio_track_list.h"
-@@ -464,6 +472,8 @@
+@@ -464,6 +469,8 @@
        controls_list_(MakeGarbageCollected<HTMLMediaElementControlsList>(this)) {
    DVLOG(1) << "HTMLMediaElement(" << *this << ")";
 -
@@ -808,7 +629,7 @@
 -
 +
    LocalFrame* frame = document.GetFrame();
-@@ -524,6 +534,9 @@
+@@ -524,6 +531,9 @@
        GetDocument().GetTaskRunner(TaskType::kInternalMedia));
    removed_from_document_timer_.MoveToNewTaskRunner(
        GetDocument().GetTaskRunner(TaskType::kInternalMedia));
@@ -820,130 +641,81 @@
    autoplay_policy_->DidMoveToNewDocument(old_document);
 -
 +
-@@ -554,7 +567,31 @@
+@@ -554,7 +564,8 @@
    // changes so that playback can be resumed properly.
    // TODO(liberato): Consider checking that the new document's opener is the old
    // document: GetDocument().GetFrame()->Opener() == old_document.GetFrame().
 -  ignore_preload_none_ = false;
-+  const bool parc_keeps_player =
-+      ParcMediaElement::KeepsPlayerAcrossDocuments(old_document, GetDocument());
-+  Document* old_context = parc_keeps_player
-+                              ? ParcMediaElement::ContextDocument(old_document)
-+                              : &old_document;
-+  Document* new_context = parc_keeps_player
-+                              ? ParcMediaElement::ContextDocument(GetDocument())
-+                              : &GetDocument();
-+  const bool parc_moves_player_to_frame =
-+      parc_keeps_player && GetDocument().GetFrame() &&
-+      (opener_document_ ? opener_document_.Get() : old_context) !=
-+          new_context &&
-+      !ShouldReusePlayer(old_document, GetDocument()) &&
-+      !parc_media.IsPictureInPictureElementOf(old_context) &&
-+      !parc_media.IsPictureInPictureElementOf(new_context) &&
-+      !parc_media.IsPictureInPictureElementOf(opener_document_);
-+  if (parc_keeps_player) {
-+    async_event_queue_->MoveToExecutionContext(GetExecutionContext());
-+  } else {
-+    ignore_preload_none_ = false;
-+  }
-+  if (parc_media.seek_task_.IsActive()) {
-+    parc_media.seek_task_.Cancel();
-+    parc_media.PostSeekTask();
-+  }
++  const ParcMediaElement::DocumentMove parc_move =
++      parc_media.BeginDocumentMove(old_document);
 -
 +
    // Experimental: Try to avoid destroying the media player when transferring a
    // media element to a new document. This is a work in progress, and may cause
-@@ -567,19 +604,27 @@
+@@ -567,19 +578,22 @@
    // guaranteed not to outlive its opener document because
    // DocumentPictureInPictureController watches the destruction and navigation
    // of the opener's WebContents.
 -  if (!ShouldReusePlayer(old_document, GetDocument())) {
-+  if (!parc_keeps_player && !ShouldReusePlayer(old_document, GetDocument())) {
++  if (!parc_move.keeps_player &&
++      !ShouldReusePlayer(old_document, GetDocument())) {
      // Don't worry about notifications from any previous document if we're not
      // re-using the player.
      if (opener_context_observer_)
        opener_context_observer_->SetContextLifecycleNotifier(nullptr);
      AttachToNewFrame();
 -  } else if (opener_document_ == GetDocument()) {
-+  } else if (opener_document_ == new_context) {
++  } else if (opener_document_ == parc_move.new_context) {
      // The element is moving back to the player's opener, so stop worrying.
      DCHECK(opener_context_observer_);
      opener_context_observer_->SetContextLifecycleNotifier(
 -        opener_document_->GetExecutionContext());
-+        parc_keeps_player ? nullptr : opener_document_->GetExecutionContext());
++        parc_move.keeps_player ? nullptr
++                               : opener_document_->GetExecutionContext());
      opener_context_observer_ = nullptr;
      opener_document_ = nullptr;
-+  } else if (parc_keeps_player && !opener_document_ &&
-+             old_context == new_context) {
-+  } else if (parc_keeps_player && !opener_document_ && !web_media_player_ &&
-+             !ShouldReusePlayer(old_document, GetDocument())) {
-+    ResetMojoState();
-+    if (remote_playback_client_) {
-+      remote_playback_client_->ParcDidMoveToDocument();
-+    }
++  } else if (parc_media.FinishesMoveWithoutOpener(parc_move, old_document)) {
    } else {
      // Moving to a new document, so make sure that the player's opener is not
      // closed while we're still using it.
-@@ -593,8 +638,9 @@
+@@ -593,8 +607,9 @@
        // then we'll get this wrong.  Somebody would have to set
        // `opener_document_` correctly before we get here, so we'd end up in the
        // case above, instead.  They'd also have to create the context observer.
 -      opener_document_ = old_document;
 -      CHECK(!opener_document_->domWindow()->IsPictureInPictureWindow());
-+      opener_document_ = old_context;
-+      CHECK(parc_keeps_player ||
++      opener_document_ = parc_move.old_context;
++      CHECK(parc_move.keeps_player ||
 +            !opener_document_->domWindow()->IsPictureInPictureWindow());
        opener_context_observer_ =
            MakeGarbageCollected<OpenerContextObserver>(this);
      }
-@@ -616,30 +662,39 @@
-   // player at this point. We generally destroy the player when moving the
+@@ -617,7 +632,8 @@
    // element between frames (see the `ShouldReusePlayer()` check above).
    // Therefore, `GetWebMediaPlayer()` will be null here and reparenting will be
--  // skipped.
+   // skipped.
 -  if (base::FeatureList::IsEnabled(
--          media::kDocumentPictureInPictureReparenting)) {
-+  if (parc_keeps_player || base::FeatureList::IsEnabled(
-+                               media::kDocumentPictureInPictureReparenting)) {
++  if (parc_move.keeps_player ||
++      base::FeatureList::IsEnabled(
+           media::kDocumentPictureInPictureReparenting)) {
      if (IsHTMLVideoElement() && GetWebMediaPlayer() &&
          GetDocument().GetFrame()) {
-       // A Document will always have a non-null FrameWidget when it has a
-       // LocalFrame, except in specialized cases like DevTools or internal
-       // popups. Because ShouldReusePlayer() restricts player reuse strictly to
-       // valid Document PiP transitions, those specialized frameless cases are
--      // already filtered out.
-       // However, Blink unit tests sometimes use DummyPageHolder, which
-       // intentionally mocks a LocalFrame without creating a FrameWidget.
-       if (auto* frame_widget =
+@@ -632,11 +648,12 @@
                GetDocument().GetFrame()->GetWidgetForLocalRoot()) {
          GetWebMediaPlayer()->ReparentFrameSinkHierarchy(
              frame_widget->GetFrameSinkId());
 -      } else {
-+      } else if (!parc_keeps_player) {
++      } else if (!parc_move.keeps_player) {
          CHECK_IS_TEST();
        }
      }
    }
-+  parc_media.player_waits_for_picture_in_picture_end_ =
-+      parc_keeps_player && GetDocument().GetFrame() &&
-+      !parc_moves_player_to_frame &&
-+      !ShouldReusePlayer(old_document, GetDocument()) && opener_document_;
-+  if (parc_moves_player_to_frame && web_media_player_) {
-+    parc_media.MovePlayerToFrame();
-+  }
-+  if (parc_keeps_player) {
-+    parc_media.UpdatePlayerPageVisibility();
-+  }
++  parc_media.FinishDocumentMove(parc_move, old_document);
 -
 +
    HTMLElement::DidMoveToNewDocument(old_document);
  }
-+
- bool HTMLMediaElement::ShouldReusePlayer(Document& old_document,
-                                          Document& new_document) const {
-   // A NULL frame implies a NULL domWindow, so just check one of them
-@@ -700,6 +755,9 @@
+@@ -700,6 +717,9 @@
  }
 -
 +
@@ -954,20 +726,17 @@
    ExecutionContext* context = GetDocument().GetExecutionContext();
    return !context ||
           context->IsFeatureEnabled(network::mojom::PermissionsPolicyFeature::
-@@ -803,6 +861,12 @@
+@@ -803,6 +823,9 @@
  void HTMLMediaElement::ParseAttribute(
      const AttributeModificationParams& params) {
    const QualifiedName& name = params.name;
 +  if (name == html_names::kAutoplayAttr) {
-+    ParcMediaElement::From(*this).NoteMediaUserGesture();
-+    if (PresentsParcSafariIdentity()) {
-+      SetPlayerPreload();
-+    }
++    ParcMediaElement::From(*this).AutoplayAttributeChanged();
 +  }
    if (name == html_names::kSrcAttr) {
      DVLOG(2) << "parseAttribute(" << *this
               << ", kSrcAttr, old=" << params.old_value
-@@ -845,6 +909,13 @@
+@@ -845,6 +868,13 @@
              !params.new_value.IsNull());
        }
      }
@@ -981,26 +750,17 @@
    } else if (name == html_names::kLatencyhintAttr &&
               RuntimeEnabledFeatures::MediaLatencyHintEnabled()) {
      if (web_media_player_)
-@@ -916,7 +987,17 @@
+@@ -916,7 +946,8 @@
    if (insertion_point.isConnected()) {
      if (auto* frame = insertion_point.GetDocument().GetFrame()) {
        frame->AddVisibilityObserver(this);
 -      is_frame_hidden_ = frame->IsHiddenForMediaPlayback();
-+      const std::optional<bool> is_hidden = frame->IsHiddenForMediaPlayback();
-+      if (web_media_player_ && is_hidden.has_value() &&
-+          is_frame_hidden_.has_value() && *is_hidden != *is_frame_hidden_ &&
-+          PresentsParcSafariIdentity()) {
-+        if (*is_hidden) {
-+          OnFrameHidden();
-+        } else {
-+          OnFrameShown();
-+        }
-+      }
-+      is_frame_hidden_ = is_hidden;
++      is_frame_hidden_ = ParcMediaElement::From(*this).FrameHiddenOnInsertion(
++          frame->IsHiddenForMediaPlayback());
      }
      // Cancel any pending removed-from-document timer: the element has been
      // (re-)inserted into a document, so it should not be paused by that timer.
-@@ -932,6 +1013,7 @@
+@@ -932,6 +963,7 @@
        ignore_preload_none_ = false;
        InvokeLoadAlgorithm();
      }
@@ -1009,22 +769,17 @@
 -
 +
    return kInsertionShouldCallDidNotifySubtreeInsertions;
-@@ -1018,6 +1100,12 @@
+@@ -1018,6 +1050,7 @@
    }
 -
 +
    pending_action_flags_ = 0;
-+
-+  ParcMediaElement& parc_media = ParcMediaElement::From(*this);
-+  if (parc_media.prepare_to_play_after_selection_) {
-+    parc_media.prepare_to_play_after_selection_ = false;
-+    parc_media.PrepareToPlay();
-+  }
++  ParcMediaElement::From(*this).PrepareToPlayAfterSelectionIfNeeded();
  }
 -
 +
  MediaError* HTMLMediaElement::error() const {
-@@ -1069,10 +1157,41 @@
+@@ -1069,10 +1102,40 @@
    return network_state_;
  }
 -
@@ -1063,27 +818,24 @@
      const String& mime_type) const {
    MIMETypeRegistry::SupportsType support =
 -      GetSupportsType(ContentType(mime_type));
-+      ParcMediaElement::SupportsType(GetDocument(), mime_type,
-+                                     /*fairplay_dolby_vision=*/true);
++      ParcMediaElement::SupportsType(GetDocument(), mime_type, true);
 -
 +
    V8CanPlayTypeResult can_play =
        V8CanPlayTypeResult(V8CanPlayTypeResult::Enum::k);
-@@ -1101,7 +1220,10 @@
+@@ -1101,7 +1164,8 @@
    autoplay_policy_->TryUnlockingUserGesture();
 -
 +
    ignore_preload_none_ = true;
 -  InvokeLoadAlgorithm();
-+  InvokeLoadAlgorithm(/*parc_explicit_load=*/true);
-+  if (PresentsParcSafariIdentity()) {
-+    ParcMediaElement::From(*this).prepare_to_play_after_selection_ = true;
-+  }
++  InvokeLoadAlgorithm(true);
++  ParcMediaElement::From(*this).ExplicitLoadInvoked();
  }
 -
 +
  // Implements the "media element load algorithm" as defined by
-@@ -1110,8 +1232,12 @@
+@@ -1110,8 +1174,10 @@
  // invokeLoadAlgorithm() in all places except load(). Move it inside here
  // once microtask is implemented for "Await a stable state" step
  // in resource selection algorithm.
@@ -1091,14 +843,12 @@
 +void HTMLMediaElement::InvokeLoadAlgorithm(bool parc_explicit_load) {
    DVLOG(3) << "invokeLoadAlgorithm(" << *this << ")";
 +  ParcMediaElement& parc_media = ParcMediaElement::From(*this);
-+  parc_media.NoteMediaUserGesture();
-+  parc_media.PrepareForLoad();
-+  ParcMediaElementAirPlay::From(*this).remote_playback_time_.reset();
++  parc_media.LoadAlgorithmStarted();
 -
 +
    // Capture the user-visible playback position now, before the player is torn
    // down. ResetMediaPlayerAndMediaSource() nulls web_media_player_, after which
-@@ -1123,10 +1249,12 @@
+@@ -1123,10 +1189,12 @@
    // Perform the cleanup required for the resource load algorithm to run.
    StopPeriodicTimers();
    load_timer_.Stop();
@@ -1111,7 +861,7 @@
    }
    pending_action_flags_ &= ~kLoadMediaResource;
    if (sent_stalled_event_) {
-@@ -1134,6 +1262,8 @@
+@@ -1134,6 +1202,8 @@
      PseudoStateChanged(CSSSelector::kPseudoStalled);
    }
    have_fired_loaded_data_ = false;
@@ -1122,7 +872,7 @@
    autoplay_policy_->StopAutoplayMutedWhenVisible();
 -
 +
-@@ -1176,6 +1306,8 @@
+@@ -1176,6 +1246,8 @@
    if (network_state_ == kNetworkLoading || network_state_ == kNetworkIdle)
      ScheduleNamedEvent(event_type_names::kAbort);
 -
@@ -1133,7 +883,7 @@
 -
 +
    // 6 - If the media element's networkState is not set to NETWORK_EMPTY, then
-@@ -1196,6 +1328,7 @@
+@@ -1196,6 +1268,7 @@
      // state.
      ready_state_ = kHaveNothing;
      ready_state_maximum_ = kHaveNothing;
@@ -1142,7 +892,7 @@
 -
 +
      DCHECK(!paused_ || play_promise_resolvers_.empty());
-@@ -1214,6 +1347,7 @@
+@@ -1214,6 +1287,7 @@
 -
 +
      // 4.7 - If seeking is true, set it to false.
@@ -1152,7 +902,7 @@
 +
      // 4.8 - Set the current playback position to 0.
      //       Set the official playback position to 0.
-@@ -1222,7 +1356,7 @@
+@@ -1222,7 +1296,7 @@
      // 4.9 - Set the initial playback position to 0.
      SetOfficialPlaybackPosition(0);
      if (old_playback_position != 0) {
@@ -1162,18 +912,11 @@
      GetCueTimeline().OnReadyStateReset();
 -
 +
-@@ -1236,11 +1370,30 @@
+@@ -1236,11 +1310,16 @@
      // verify the assumption that it's a very rare situation.
      UseCounter::Count(GetDocument(),
                        WebFeature::kHTMLMediaElementLoadNetworkEmptyNotPaused);
-+    if (PresentsParcSafariIdentity()) {
-+      if (parc_explicit_load) {
-+        SetPaused(true);
-+      }
-+      RejectPlayPromises(DOMExceptionCode::kAbortError,
-+                         "The play() request was interrupted by a new load "
-+                         "request. https://goo.gl/LdLk22");
-+    }
++    parc_media.LoadInterruptedPlayback(parc_explicit_load);
    }
 -
 +
@@ -1183,27 +926,19 @@
    // 7 - Set the playbackRate attribute to the value of the defaultPlaybackRate
    // attribute.
 -  setPlaybackRate(defaultPlaybackRate());
-+  if (!IsValidPlaybackRate(defaultPlaybackRate()) &&
-+      !PresentsParcSafariIdentity()) {
-+    if (playback_rate_ != default_playback_rate_) {
-+      playback_rate_ = default_playback_rate_;
-+      ScheduleNamedEvent(event_type_names::kRatechange);
-+    }
-+  } else {
-+    setPlaybackRate(defaultPlaybackRate());
-+  }
++  parc_media.ResetPlaybackRateForLoad(
++      IsValidPlaybackRate(defaultPlaybackRate()));
 -
 +
    // 8 - Set the error attribute to null and the can autoplay flag to true.
    SetError(nullptr);
-@@ -1352,13 +1505,21 @@
+@@ -1352,13 +1431,15 @@
      // to deal with this properly. https://crbug.com/789737
      load_state_ = kWaitingForSource;
      SetShouldDelayLoadEvent(false);
 -    if (!web_media_player_ || (ready_state_ < kHaveFutureData &&
 -                               ready_state_maximum_ < kHaveFutureData)) {
-+    const bool parc_safari = PresentsParcSafariIdentity();
-+    if (parc_safari || !web_media_player_ ||
++    if (PresentsParcSafariIdentity() || !web_media_player_ ||
 +        (ready_state_ < kHaveFutureData &&
 +         ready_state_maximum_ < kHaveFutureData)) {
        SetNetworkState(kNetworkEmpty);
@@ -1211,17 +946,12 @@
        UseCounter::Count(GetDocument(),
                          WebFeature::kHTMLMediaElementEmptyLoadWithFutureData);
      }
-+    auto* video = DynamicTo<HTMLVideoElement>(this);
-+    if (parc_safari && video &&
-+        PictureInPictureController::IsElementInPictureInPicture(video)) {
-+      PictureInPictureController::From(GetDocument())
-+          .ExitPictureInPicture(video, nullptr);
-+    }
++    ParcMediaElement::From(*this).ExitPictureInPictureWithoutSource();
      UpdateLayoutObject();
 -
 +
      DVLOG(3) << "selectMediaResource(" << *this << "), nothing to load";
-@@ -1383,7 +1544,9 @@
+@@ -1383,7 +1464,9 @@
      }
      // Note: Autoplay is handled by existing AutoplayPolicy which already
      // uses IntersectionObserver to defer muted autoplay until visible.
@@ -1232,7 +962,7 @@
      SetShouldDelayLoadEvent(false);
      return;
    }
-@@ -1513,6 +1676,8 @@
+@@ -1513,6 +1596,8 @@
      return;
    }
 -
@@ -1243,7 +973,7 @@
    SetNetworkState(kNetworkLoading);
 -
 +
-@@ -1568,7 +1733,7 @@
+@@ -1568,7 +1653,7 @@
      if (!media_source_attachment_) {
        attempt_load = false;
      }
@@ -1252,29 +982,23 @@
      media_source_attachment_ =
          MediaSourceAttachment::LookupMediaSource(url.GetString());
    }
-@@ -1605,10 +1770,19 @@
+@@ -1605,10 +1690,13 @@
    if (attempt_load && can_load_resource) {
      DCHECK(!web_media_player_);
 -
 +
 +    ParcMediaElement& parc_media = ParcMediaElement::From(*this);
-+    if (!parc_media.has_ever_prepared_to_play_ &&
-+        PresentsParcSafariIdentity()) {
-+      parc_media.PrepareToPlayIfCouldPlay();
-+    }
++    parc_media.PrepareToPlayBeforeLoad();
 +
      // Conditionally defer the load if effective preload is 'none'.
      // Skip this optional deferral for MediaStream sources or any blob URL,
      // including MediaSource blob URLs.
 -    if (!source.IsMediaStream() && !url.ProtocolIs("blob") &&
-+    const bool parc_may_defer = PresentsParcSafariIdentity()
-+                                    ? !media_source_attachment_
-+                                    : !url.ProtocolIs("blob");
-+    if (!source.IsMediaStream() && parc_may_defer &&
++    if (!source.IsMediaStream() && parc_media.MayDeferLoad(url) &&
          EffectivePreloadType() == WebMediaPlayer::kPreloadNone) {
        DVLOG(3) << "loadResource(" << *this
                 << ") : Delaying load because preload == 'none'";
-@@ -1707,7 +1881,7 @@
+@@ -1707,7 +1795,7 @@
    // the page to operate without JavaScript. The media element is too
    // complicated to continue running in this state, so fail.
    // See https://crbug.com/1345473 for more information.
@@ -1283,37 +1007,19 @@
        GetDocument().domWindow()->IsContextDestroyed()) {
      MediaLoadingFailed(
          WebMediaPlayer::kNetworkStateFormatError,
-@@ -1760,6 +1934,10 @@
+@@ -1760,6 +1848,9 @@
      source = WebMediaPlayerSource(WebURL(kurl));
    }
 -
 +
-+  ParcWebKitMediaKeysNewLoad(*this);
 +  ParcMediaElement& parc_media = ParcMediaElement::From(*this);
-+  parc_media.player_ready_state_ = kHaveNothing;
++  parc_media.PlayerWillLoad();
 +
    web_media_player_ =
        frame->Client()->CreateWebMediaPlayer(*this, source, this);
 -
 +
-@@ -1775,14 +1953,7 @@
-   // Setup the communication channels between the renderer and browser processes
-   // via the MediaPlayer and MediaPlayerObserver mojo interfaces.
-   DCHECK(media_player_receiver_set_->Value().empty());
--  mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>
--      media_player_remote;
--  BindMediaPlayerReceiver(
--      media_player_remote.InitWithNewEndpointAndPassReceiver());
--
--  GetMediaPlayerHostRemote().OnMediaPlayerAdded(
--      std::move(media_player_remote), AddMediaPlayerObserverAndPassReceiver(),
--      web_media_player_->GetPlayerId());
-+  RegisterWithMediaPlayerHost();
--
-+
-   if (GetLayoutObject())
-     GetLayoutObject()->SetShouldDoFullPaintInvalidation();
-@@ -1798,8 +1969,12 @@
+@@ -1798,8 +1889,12 @@
 -
 +
    web_media_player_->RequestRemotePlaybackDisabled(
@@ -1329,7 +1035,7 @@
 +
    bool is_cache_disabled = false;
    probe::IsCacheDisabled(GetDocument().GetExecutionContext(),
-@@ -1824,6 +1999,7 @@
+@@ -1824,6 +1919,7 @@
  }
 -
 +
@@ -1339,7 +1045,7 @@
      web_media_player_->SetPreload(EffectivePreloadType());
 -
 +
-@@ -2125,6 +2301,10 @@
+@@ -2125,6 +2221,10 @@
    // is set to MEDIA_ERR_NETWORK/MEDIA_ERR_DECODE.
    SetError(err);
 -
@@ -1352,7 +1058,7 @@
    ScheduleNamedEvent(event_type_names::kError);
 -
 +
-@@ -2142,6 +2322,7 @@
+@@ -2142,6 +2242,7 @@
  void HTMLMediaElement::CancelPendingEventsAndCallbacks() {
    DVLOG(3) << "cancelPendingEventsAndCallbacks(" << *this << ")";
    async_event_queue_->CancelAllEvents();
@@ -1361,7 +1067,7 @@
 +
    for (HTMLSourceElement* source =
             Traversal<HTMLSourceElement>::FirstChild(*this);
-@@ -2202,19 +2383,26 @@
+@@ -2202,19 +2303,26 @@
      return;
    }
 -
@@ -1393,7 +1099,7 @@
        // Generate a more meaningful error message to differentiate the two types
        // of MEDIA_SRC_ERR_NOT_SUPPORTED.
        NoneSupported(BuildElementErrorMessage(
-@@ -2241,6 +2429,9 @@
+@@ -2241,6 +2349,9 @@
    if (state == WebMediaPlayer::kNetworkStateFormatError ||
        state == WebMediaPlayer::kNetworkStateNetworkError ||
        state == WebMediaPlayer::kNetworkStateDecodeError) {
@@ -1403,7 +1109,7 @@
      MediaLoadingFailed(state, web_media_player_->GetErrorMessage());
      return;
    }
-@@ -2248,6 +2439,9 @@
+@@ -2248,6 +2359,9 @@
    if (state == WebMediaPlayer::kNetworkStateIdle) {
      if (network_state_ > kNetworkIdle) {
        ChangeNetworkStateFromLoadingToIdle();
@@ -1413,7 +1119,7 @@
      } else {
        SetNetworkState(kNetworkIdle);
      }
-@@ -2262,6 +2456,9 @@
+@@ -2262,6 +2376,9 @@
    if (state == WebMediaPlayer::kNetworkStateLoaded) {
      if (network_state_ != kNetworkIdle)
        ChangeNetworkStateFromLoadingToIdle();
@@ -1424,7 +1130,7 @@
  }
 -
 +
-@@ -2271,7 +2468,8 @@
+@@ -2271,7 +2388,8 @@
    if (!MediaShouldBeOpaque()) {
      // Schedule one last progress event so we guarantee that at least one is
      // fired for files that load very quickly.
@@ -1434,26 +1140,19 @@
        ScheduleNamedEvent(event_type_names::kProgress);
      ScheduleNamedEvent(event_type_names::kSuspend);
      SetNetworkState(kNetworkIdle);
-@@ -2283,16 +2481,27 @@
+@@ -2283,6 +2401,9 @@
  }
 -
 +
  void HTMLMediaElement::ReadyStateChanged() {
--  SetReadyState(static_cast<ReadyState>(web_media_player_->GetReadyState()));
-+  const ReadyState state =
-+      static_cast<ReadyState>(web_media_player_->GetReadyState());
-+  ParcMediaElement& parc_media = ParcMediaElement::From(*this);
-+  if (parc_media.playback_blocked_waiting_for_key_) {
-+    if (state == parc_media.player_ready_state_) {
-+      return;
-+    }
-+    parc_media.player_ready_state_ = state;
++  if (ParcMediaElement::From(*this).IgnoresPlayerReadyState()) {
++    return;
 +  }
-+  SetReadyState(state);
+   SetReadyState(static_cast<ReadyState>(web_media_player_->GetReadyState()));
  }
 -
 +
- void HTMLMediaElement::SetReadyState(ReadyState state) {
+@@ -2290,9 +2411,11 @@
    DVLOG(3) << "setReadyState(" << *this << ", " << int{state}
             << ") - current state is " << int{ready_state_};
 -
@@ -1468,7 +1167,7 @@
 +
    ReadyState old_state = ready_state_;
    ReadyState new_state = state;
-@@ -2363,10 +2572,12 @@
+@@ -2363,10 +2486,12 @@
 -
 +
    if (new_state > ready_state_maximum_)
@@ -1484,17 +1183,14 @@
    if (seeking_) {
      // 4.8.12.9, step 9 note: If the media element was potentially playing
      // immediately before it started seeking, but seeking caused its readyState
-@@ -2376,8 +2587,15 @@
+@@ -2376,8 +2501,12 @@
        ScheduleNamedEvent(event_type_names::kWaiting);
 -
 +
      // 4.8.12.9 steps 12-14
 -    if (ready_state_ >= kHaveCurrentData)
-+    if (ready_state_ >= kHaveCurrentData && !parc_media.SeekAwaitsTask() &&
-+        !(old_state >= kHaveCurrentData && PresentsParcSafariIdentity()) &&
-+        (!(GetLoadType() == WebMediaPlayer::kLoadTypeMediaSource &&
-+           PresentsParcSafariIdentity()) ||
-+         parc_media.player_finished_seek_)) {
++    if (ready_state_ >= kHaveCurrentData &&
++        parc_media.SeekMayFinishOnReadyState(old_state)) {
 +      parc_resume_after_seek =
 +          std::exchange(parc_media.was_playing_before_seeking_, false);
        FinishSeek();
@@ -1502,25 +1198,21 @@
    } else {
      if (was_potentially_playing && ready_state_ < kHaveFutureData) {
        // Force an update to official playback position. Automatic updates from
-@@ -2396,6 +2614,7 @@
+@@ -2396,6 +2525,7 @@
    // Once enough of the media data has been fetched to determine the duration of
    // the media resource, its dimensions, and other metadata...
    if (ready_state_ >= kHaveMetadata && old_state < kHaveMetadata) {
-+    parc_media.PauseIfPlaybackNotPermitted(/*reject_as_not_allowed=*/true);
++    parc_media.PauseIfPlaybackNotPermitted(true);
      CreatePlaceholderTracksIfNecessary();
 -
 +
      MediaFragmentURIParser fragment_parser(current_src_.GetSource());
-@@ -2408,10 +2627,20 @@
+@@ -2408,10 +2538,16 @@
      duration_ = web_media_player_->Duration();
      ScheduleNamedEvent(event_type_names::kDurationchange);
 -
 +
-+    if (!parc_media.has_ever_prepared_to_play_ &&
-+        fragment_parser.StartTime() > 0 && PresentsParcSafariIdentity() &&
-+        !parc_media.HasFutureDataAsWebKit(ready_state_)) {
-+      parc_media.PrepareToPlay();
-+    }
++    parc_media.PrepareToPlayForFragment(fragment_parser.StartTime());
 +
      if (IsHTMLVideoElement())
        ScheduleNamedEvent(event_type_names::kResize);
@@ -1534,7 +1226,7 @@
      if (RuntimeEnabledFeatures::AudioVideoTracksEnabled()) {
        Vector<String> default_tracks = fragment_parser.DefaultTracks();
        if (!default_tracks.empty()) {
-@@ -2466,7 +2695,8 @@
+@@ -2466,7 +2602,8 @@
      UpdateLayoutObject();
    }
 -
@@ -1545,20 +1237,13 @@
    if (ready_state_ >= kHaveCurrentData && old_state < kHaveCurrentData &&
        !have_fired_loaded_data_) {
      // Force an update to official playback position to catch non-zero start
-@@ -2481,11 +2711,21 @@
+@@ -2481,11 +2618,14 @@
      OnLoadFinished();
    }
 -
 +
-+  std::optional<double>& parc_remote_playback_time =
-+      ParcMediaElementAirPlay::From(*this).remote_playback_time_;
-+  if (parc_remote_playback_time && tracks_are_ready &&
-+      ready_state_ >= kHaveFutureData && old_state < kHaveFutureData) {
-+    if (const double time =
-+            *std::exchange(parc_remote_playback_time, std::nullopt)) {
-+      setCurrentTime(time);
-+    }
-+  }
++  ParcMediaElementAirPlay::From(*this).RestoreRemotePlaybackTime(
++      tracks_are_ready, old_state);
 +
    if (ready_state_ == kHaveFutureData && old_state <= kHaveCurrentData &&
        tracks_are_ready) {
@@ -1570,7 +1255,7 @@
 -
 +
    if (ready_state_ == kHaveEnoughData && old_state < kHaveEnoughData &&
-@@ -2493,21 +2733,25 @@
+@@ -2493,7 +2633,7 @@
      if (old_state <= kHaveCurrentData) {
        ScheduleNamedEvent(event_type_names::kCanplay);
        if (is_potentially_playing)
@@ -1580,13 +1265,13 @@
 -
 +
      if (autoplay_policy_->RequestAutoplayByAttribute()) {
--      SetPaused(false);
--      SetShowPosterFlag(false);
--      GetCueTimeline().InvokeTimeMarchesOn();
--      ScheduleNamedEvent(event_type_names::kPlay);
+@@ -2501,13 +2641,19 @@
+       SetShowPosterFlag(false);
+       GetCueTimeline().InvokeTimeMarchesOn();
+       ScheduleNamedEvent(event_type_names::kPlay);
 -      ScheduleNotifyPlaying();
--      can_autoplay_ = false;
-+      parc_media.BeginAutoplay();
++      parc_media.ScheduleNotifyPlayingAfterSeek();
+       can_autoplay_ = false;
      }
 -
 +
@@ -1594,10 +1279,7 @@
    }
 -
 +
-+  if (ready_state_ == kHaveFutureData && old_state < kHaveFutureData &&
-+      PotentiallyPlaying()) {
-+    parc_media.PauseIfPlaybackNotPermitted(/*reject_as_not_allowed=*/false);
-+  }
++  parc_media.PauseIfNotPermittedAtFutureData(old_state);
 +
 +  if (parc_resume_after_seek && PresentsParcSafariIdentity()) {
 +    PlayInternal();
@@ -1607,20 +1289,19 @@
  }
 -
 +
-@@ -2549,6 +2793,11 @@
+@@ -2549,6 +2695,10 @@
      return;
    }
 -
 +
-+  if (media_source_attachment_ && PresentsParcSafariIdentity()) {
-+    progress_event_timer_.Stop();
++  if (ParcMediaElement::From(*this).StopsProgressEvents()) {
 +    return;
 +  }
 +
    // If this is an cross-origin request, and we haven't discovered whether
    // the media is actually playable yet, don't fire any progress events as
    // those may let the page know information about the resource that it's
-@@ -2666,6 +2915,11 @@
+@@ -2666,6 +2816,11 @@
    if (!web_media_player_ || ready_state_ == kHaveNothing)
      return;
 -
@@ -1634,25 +1315,18 @@
    SetIgnorePreloadNone();
 -
 +
-@@ -2727,7 +2981,14 @@
+@@ -2727,7 +2882,7 @@
    ScheduleNamedEvent(event_type_names::kSeeking);
 -
 +
    // 11 - Set the current playback position to the given new playback position.
 -  web_media_player_->Seek(time);
-+  ParcWebMediaPlayerExtension* parc = web_media_player_->GetParcExtension();
-+  const std::optional<double>& parc_fast_seek_tolerance =
-+      ParcMediaElement::From(*this).fast_seek_tolerance_;
-+  if (parc_fast_seek_tolerance && parc) {
-+    parc->ParcFastSeek(time, *parc_fast_seek_tolerance);
-+  } else {
-+    web_media_player_->Seek(time);
-+  }
++  ParcMediaElement::From(*this).SeekPlayer(time);
    web_media_player_->OnTimeUpdate();
 -
 +
    // 14-17 are handled, if necessary, when the engine signals a readystate
-@@ -2737,22 +2998,41 @@
+@@ -2737,22 +2892,28 @@
  void HTMLMediaElement::FinishSeek() {
    DVLOG(3) << "finishSeek(" << *this << ")";
    DCHECK(seeking_);
@@ -1683,25 +1357,12 @@
 +
    // 17 - Queue a task to fire a simple event named seeked at the element.
    ScheduleNamedEvent(event_type_names::kSeeked);
-+
-+  if (parc_media.pending_notify_playing_) {
-+    parc_media.pending_notify_playing_ = false;
-+    ScheduleNotifyPlaying();
-+  }
-+
-+  if (parc_was_playing_before_seeking && PresentsParcSafariIdentity()) {
-+    PlayInternal();
-+  }
-+
-+  if (std::exchange(parc_media.cue_timeupdate_after_seek_, false) &&
-+      !seeking_) {
-+    ScheduleTimeupdateEvent(true);
-+  }
++  parc_media.SeekFinished(parc_was_playing_before_seeking);
  }
 -
 +
  HTMLMediaElement::ReadyState HTMLMediaElement::getReadyState() const {
-@@ -2781,6 +3061,9 @@
+@@ -2781,6 +2942,9 @@
    }
    seeking_ = seeking;
    PseudoStateChanged(CSSSelector::kPseudoSeeking);
@@ -1712,21 +1373,20 @@
 -
 +
  // https://www.w3.org/TR/html51/semantics-embedded-content.html#earliest-possible-position
-@@ -2883,6 +3166,11 @@
+@@ -2883,6 +3047,10 @@
      return last_seek_time_;
    }
 -
 +
 +  if (!paused_ && PresentsParcSafariIdentity()) {
-+    const double position = CurrentPlaybackPosition();
-+    return std::isnan(duration()) ? position : std::min(duration(), position);
++    return ParcMediaElement::From(*this).PlayingCurrentTime();
 +  }
 +
    return OfficialPlaybackPosition();
  }
 -
 +
-@@ -2898,6 +3186,21 @@
+@@ -2898,6 +3066,21 @@
    ReportCurrentTimeToMediaSource();
  }
 -
@@ -1749,21 +1409,15 @@
  double HTMLMediaElement::duration() const {
    return duration_;
  }
-@@ -2910,7 +3213,13 @@
+@@ -2910,6 +3093,7 @@
    if (paused_ == paused) {
      return;
    }
-+  if (paused && playing_ && PresentsParcSafariIdentity())
-+    ParcMediaElement::From(*this).PlaybackStopped();
++  ParcMediaElement::From(*this).WillSetPaused(paused);
    paused_ = paused;
-+  if (!paused) {
-+    ParcMediaElement::From(*this).hidden_autoplay_granted_ = false;
-+    ParcMediaElement::From(*this).paused_for_invisible_autoplay_ = false;
-+  }
    PseudoStateChanged(CSSSelector::kPseudoPaused);
    PseudoStateChanged(CSSSelector::kPseudoPlaying);
-   PseudoStateChanged(CSSSelector::kPseudoBuffering);
-@@ -2927,8 +3236,10 @@
+@@ -2927,8 +3111,10 @@
    if (GetLoadType() == WebMediaPlayer::kLoadTypeMediaStream)
      return;
 -
@@ -1777,7 +1431,7 @@
 +
    default_playback_rate_ = rate;
    ScheduleNamedEvent(event_type_names::kRatechange);
-@@ -2946,7 +3257,7 @@
+@@ -2946,7 +3132,7 @@
    if (GetLoadType() == WebMediaPlayer::kLoadTypeMediaStream)
      return;
 -
@@ -1788,19 +1442,18 @@
                        WebFeature::kHTMLMediaElementMediaPlaybackRateOutOfRange);
 -
 +
-@@ -2961,6 +3272,10 @@
+@@ -2961,6 +3147,9 @@
      return;
    }
 -
 +
-+  const bool parc_reports_end = rate > 0 && playback_rate_ == 0 &&
-+                                PresentsParcSafariIdentity() &&
-+                                PotentiallyPlaying();
++  const bool parc_reports_end =
++      ParcMediaElement::From(*this).ReportsEndOnRateChange(rate);
 +
    if (playback_rate_ != rate) {
      playback_rate_ = rate;
      ScheduleNamedEvent(event_type_names::kRatechange);
-@@ -2971,13 +3286,29 @@
+@@ -2971,13 +3160,18 @@
    // web_media_player_ is cleared but readystate is not set to kHaveNothing.
    if (web_media_player_) {
      if (PotentiallyPlaying())
@@ -1816,25 +1469,14 @@
    if (cue_timeline_ && PotentiallyPlaying())
      cue_timeline_->OnPlaybackRateUpdated();
 +
-+  if (parc_reports_end && EndedPlayback(LoopCondition::kIgnored)) {
-+    GetDocument()
-+        .GetTaskRunner(TaskType::kMediaElementEvent)
-+        ->PostTask(FROM_HERE,
-+                   BindOnce(
-+                       [](HTMLMediaElement* element) {
-+                         if (element && element->web_media_player_ &&
-+                             !element->paused_ && !element->seeking_ &&
-+                             element->EndedPlayback(LoopCondition::kIgnored)) {
-+                           element->TimeChanged();
-+                         }
-+                       },
-+                       WrapWeakPersistent(this)));
++  if (parc_reports_end) {
++    ParcMediaElement::From(*this).PostEndCheckAfterRateChange();
 +  }
  }
 -
 +
  HTMLMediaElement::DirectionOfPlayback HTMLMediaElement::GetDirectionOfPlayback()
-@@ -2989,6 +3320,9 @@
+@@ -2989,6 +3183,9 @@
    // 4.8.12.8 Playing the media resource
    // The ended attribute must return true if the media element has ended
    // playback and the direction of playback is forwards, and false otherwise.
@@ -1845,23 +1487,19 @@
  }
 -
 +
-@@ -3025,6 +3359,14 @@
+@@ -3025,6 +3222,10 @@
    lazy_media_load_state_ = LazyMediaLoadState::kFullMedia;
    LazyMediaHelper::StopMonitoring(this);
 -
 +
-+  if (PresentsParcSafariIdentity()) {
-+    ParcMediaElement::From(*this).lazy_load_resume_task_ = PostCancellableTask(
-+        *GetDocument().GetTaskRunner(TaskType::kMediaElementEvent), FROM_HERE,
-+        BindOnce(&HTMLMediaElement::LoadDeferredMediaIfNeededInternal,
-+                 WrapWeakPersistent(this)));
++  if (ParcMediaElement::From(*this).PostsDeferredMediaLoad()) {
 +    return;
 +  }
 +
    // Post the resource selection to a microtask to avoid re-entrancy issues
    // when the IntersectionObserver callback fires during SelectMediaResource.
    GetDocument().GetAgent().event_loop()->EnqueueMicrotask(
-@@ -3085,6 +3427,10 @@
+@@ -3085,6 +3286,10 @@
      return WebMediaPlayer::kPreloadMetaData;
    }
 -
@@ -1873,14 +1511,12 @@
    // Force preload to 'metadata' on cellular connections.
    if (GetNetworkStateNotifier().IsCellularConnectionType()) {
      UseCounter::Count(GetDocument(),
-@@ -3115,12 +3461,20 @@
+@@ -3115,12 +3320,18 @@
  }
 -
 +
  WebMediaPlayer::Preload HTMLMediaElement::EffectivePreloadType() const {
-+  if ((Autoplay() ||
-+       ParcMediaElement::From(*this).has_ever_prepared_to_play_) &&
-+      PresentsParcSafariIdentity()) {
++  if (ParcMediaElement::From(*this).PreloadsAuto()) {
 +    return WebMediaPlayer::kPreloadAuto;
 +  }
 +
@@ -1898,7 +1534,7 @@
 +
    return preload;
  }
-@@ -3160,6 +3514,7 @@
+@@ -3160,6 +3371,7 @@
 -
 +
  std::optional<DOMExceptionCode> HTMLMediaElement::Play() {
@@ -1908,21 +1544,17 @@
 +
    std::optional<DOMExceptionCode> exception_code =
        autoplay_policy_->RequestPlay();
-@@ -3210,6 +3565,12 @@
+@@ -3210,6 +3422,8 @@
      player_lazy_load_intersection_observer_ = nullptr;
    }
 -
 +
-+  if (IsLazyLoadDeferred() && network_state_ == kNetworkNoSource &&
-+      !(pending_action_flags_ & kLoadMediaResource) &&
-+      PresentsParcSafariIdentity()) {
-+    LoadDeferredMediaIfNeeded();
-+  }
++  ParcMediaElement::From(*this).LoadDeferredMediaBeforePlay();
 +
    // 4.8.12.8. Playing the media resource
    if (network_state_ == kNetworkEmpty)
      InvokeResourceSelectionAlgorithm();
-@@ -3223,6 +3584,9 @@
+@@ -3223,6 +3437,9 @@
    if (paused_) {
      SetPaused(false);
      SetShowPosterFlag(false);
@@ -1933,7 +1565,7 @@
      ScheduleNamedEvent(event_type_names::kPlay);
 -
 +
-@@ -3247,15 +3611,23 @@
+@@ -3247,15 +3464,23 @@
 -
 +
    autoplay_policy_->StopAutoplayMutedWhenVisible();
@@ -1963,7 +1595,7 @@
 +
    if (!paused_) {
      SetPaused(true);
-@@ -3313,6 +3685,7 @@
+@@ -3313,6 +3538,7 @@
  }
 -
 +
@@ -1973,7 +1605,7 @@
      return;
 -
 +
-@@ -3400,14 +3773,24 @@
+@@ -3400,13 +3626,17 @@
      return;
    }
 -
@@ -1990,20 +1622,13 @@
    // If it setting volume to audible and AutoplayPolicy doesn't want the
    // playback to continue, pause the playback.
 -  if (EffectiveMediaVolume() && !autoplay_policy_->RequestAutoplayUnmute())
-+  if (PresentsParcSafariIdentity()) {
-+    if (playing_) {
-+      ParcMediaElement::From(*this).PauseIfPlaybackNotPermitted(
-+          /*reject_as_not_allowed=*/true);
-+    }
-+  } else if (EffectiveMediaVolume() &&
-+             !autoplay_policy_->RequestAutoplayUnmute()) {
++  if (!ParcMediaElement::From(*this).VolumeChangeHandledAsWebKit() &&
++      EffectiveMediaVolume() && !autoplay_policy_->RequestAutoplayUnmute())
      pause();
-+  }
 -
 +
    // If playback was not paused by the autoplay policy and got audible, the
-   // element is marked as being allowed to play unmuted.
-@@ -3428,8 +3811,9 @@
+@@ -3428,8 +3658,9 @@
    // ever do support it.
    static_assert(kMinPlaybackRate >= 0);
 -
@@ -2017,7 +1642,7 @@
    }
 -
 +
-@@ -3438,26 +3822,39 @@
+@@ -3438,25 +3669,34 @@
 -
 +
  void HTMLMediaElement::setMuted(bool muted) {
@@ -2061,33 +1686,23 @@
    // If it is unmute and AutoplayPolicy doesn't want the playback to continue,
    // pause the playback.
 -  if (EffectiveMediaVolume() && !autoplay_policy_->RequestAutoplayUnmute())
-+  if (PresentsParcSafariIdentity()) {
-+    ParcMediaElement::From(*this).PauseIfPlaybackNotPermitted(
-+        /*reject_as_not_allowed=*/false);
-+  } else if (EffectiveMediaVolume() &&
-+             !autoplay_policy_->RequestAutoplayUnmute()) {
++  if (!ParcMediaElement::From(*this).MuteChangeHandledAsWebKit() &&
++      EffectiveMediaVolume() && !autoplay_policy_->RequestAutoplayUnmute())
      pause();
-+  }
 -
 +
    // If playback was not paused by the autoplay policy and got unmuted, the
-   // element is marked as being allowed to play unmuted.
-@@ -3470,6 +3867,12 @@
+@@ -3470,6 +3710,7 @@
      web_media_player_->SetVolume(EffectiveMediaVolume());
 -
 +
    autoplay_policy_->StopAutoplayMutedWhenVisible();
-+
-+  if (PresentsParcSafariIdentity() && ready_state_ == kHaveEnoughData &&
-+      autoplay_policy_->RequestAutoplayByAttribute()) {
-+    ParcMediaElement::From(*this).BeginAutoplay();
-+    UpdatePlayState();
-+  }
++  ParcMediaElement::From(*this).AutoplayAfterMuteChange();
  }
 -
 +
  void HTMLMediaElement::SetUserWantsControlsVisible(bool visible) {
-@@ -3499,10 +3902,13 @@
+@@ -3499,10 +3740,13 @@
      return;
 -
 +
@@ -2103,7 +1718,7 @@
    if (!std::isnan(fragment_end_time_) && currentTime() >= fragment_end_time_ &&
        GetDirectionOfPlayback() == kForward) {
      fragment_end_time_ = std::numeric_limits<double>::quiet_NaN();
-@@ -3528,6 +3934,11 @@
+@@ -3528,6 +3772,11 @@
    if (web_media_player_)
      web_media_player_->OnTimeUpdate();
 -
@@ -2116,7 +1731,7 @@
    // Per spec, consult current playback position to check for changing time.
    double media_time = CurrentPlaybackPosition();
    bool media_time_has_progressed =
-@@ -3549,6 +3960,38 @@
+@@ -3549,6 +3798,38 @@
    }
  }
 -
@@ -2156,19 +1771,13 @@
  void HTMLMediaElement::TogglePlayState() {
    if (paused())
      Play();
-@@ -3562,10 +4005,22 @@
+@@ -3562,10 +3843,16 @@
 -
 +
  void HTMLMediaElement::AudioTrackChanged(AudioTrack* track,
                                           TrackBase::ChangeSource source) {
 +  ParcMediaElement& parc_media = ParcMediaElement::From(*this);
-+  if (const String* key = parc_media.InbandAudioTrackKey(track)) {
-+    audioTracks().ScheduleChangeEvent();
-+    if (source != TrackBase::ChangeSource::kDemuxer &&
-+        parc_media.set_inband_audio_track_enabled_) {
-+      parc_media.set_inband_audio_track_enabled_.Run(key->Utf8(),
-+                                                     track->enabled());
-+    }
++  if (parc_media.InbandAudioTrackChanged(track, source)) {
 +    return;
 +  }
 +
@@ -2181,42 +1790,28 @@
 +
    if (track->enabled()) {
      audioTracks().TrackEnabled(track->id(), track->IsExclusive());
-@@ -3583,6 +4038,22 @@
+@@ -3583,6 +3870,9 @@
  }
 -
 +
  void HTMLMediaElement::AudioTracksTimerFired(TimerBase*) {
-+  if (PresentsParcSafariIdentity()) {
-+    std::vector<WebMediaPlayer::TrackId> enabled;
-+    for (unsigned i = 0; i < audioTracks().length(); ++i) {
-+      AudioTrack* track = audioTracks().AnonymousIndexedGetter(i);
-+      if (track->enabled()) {
-+        enabled.push_back(track->id());
-+      }
-+    }
-+    if (auto* parc = web_media_player_->GetParcExtension()) {
-+      parc->ParcEnabledAudioTracksChanged(enabled);
-+    } else {
-+      web_media_player_->EnabledAudioTracksChanged(
-+          enabled.empty() ? std::nullopt : std::make_optional(enabled.front()));
-+    }
++  if (ParcMediaElement::From(*this).SendEnabledAudioTracks()) {
 +    return;
 +  }
    for (unsigned i = 0; i < audioTracks().length(); ++i) {
      AudioTrack* track = audioTracks().AnonymousIndexedGetter(i);
      if (track->enabled()) {
-@@ -3622,6 +4093,9 @@
+@@ -3622,6 +3912,8 @@
  }
 -
 +
  void HTMLMediaElement::AddTrack(const media::MediaTrack& track) {
 +  if (track.type() == media::MediaTrack::Type::kAudio)
-+    ParcMediaElement::From(*this).PauseIfPlaybackNotPermitted(
-+        /*reject_as_not_allowed=*/true, /*audio_reported=*/true);
++    ParcMediaElement::From(*this).PauseIfPlaybackNotPermitted(true, true);
    // `track.label()` and `track.language()` may contains invalid UTF-8
    // sequences, and AtomicString::FromUtf8() doesn't accept invalid sequences.
    switch (track.type()) {
-@@ -3682,6 +4156,7 @@
+@@ -3682,6 +3974,7 @@
  void HTMLMediaElement::ForgetResourceSpecificTracks() {
    audio_tracks_->RemoveAll();
    video_tracks_->RemoveAll();
@@ -2225,15 +1820,12 @@
 +
    audio_tracks_timer_.Stop();
  }
-@@ -3690,6 +4165,14 @@
+@@ -3690,6 +3983,11 @@
                                            const AtomicString& label,
                                            const AtomicString& language,
                                            ExceptionState& exception_state) {
-+  if (kind == V8TextTrackKind::Enum::kForced &&
-+      !PresentsParcSafariIdentity()) {
-+    exception_state.ThrowTypeError(
-+        "The provided value 'forced' is not a valid enum value of type "
-+        "TextTrackKind.");
++  if (!ParcMediaElement::From(*this).AllowsTextTrackKind(kind,
++                                                         exception_state)) {
 +    return nullptr;
 +  }
 +
@@ -2241,18 +1833,17 @@
 -
 +
    // The addTextTrack(kind, label, language) method of media elements, when
-@@ -3898,7 +4381,8 @@
+@@ -3898,7 +4196,7 @@
          DVLOG(3) << "selectNextSourceChild(" << *this << ") - 'type' is '"
                   << type << "'";
        }
 -      if (!GetSupportsType(ContentType(type)))
-+      if (!ParcMediaElement::SupportsType(GetDocument(), type,
-+                                          /*fairplay_dolby_vision=*/false))
++      if (!ParcMediaElement::SupportsType(GetDocument(), type, false))
          goto checkAgain;
      }
 -
 +
-@@ -3936,12 +4420,21 @@
+@@ -3936,12 +4234,21 @@
    DVLOG(3) << "sourceWasAdded(" << *this << ") - 'src' is "
             << UrlForLoggingMedia(url);
 -
@@ -2276,7 +1867,7 @@
    // 4.8.8 - If a source element is inserted as a child of a media element that
    // has no src attribute and whose networkState has the value NETWORK_EMPTY,
    // the user agent must invoke the media element's resource selection
-@@ -4011,6 +4504,10 @@
+@@ -4011,6 +4318,10 @@
    DVLOG(3) << "sourceWasRemoved(" << *this << ") - 'src' is "
             << UrlForLoggingMedia(url);
 -
@@ -2288,7 +1879,7 @@
    // We should only consider a <source> element when there is neither a
    // srcObject nor a src attribute at all.
    if (FastHasAttribute(html_names::kSrcAttr) || HasSrcObject()) {
-@@ -4043,20 +4540,41 @@
+@@ -4043,18 +4354,25 @@
 -
 +
    // 4.8.12.9 steps 12-14. Needed if no ReadyState change is associated with the
@@ -2299,43 +1890,27 @@
 +      !web_media_player_->Seeking() && !parc_media.SeekAwaitsTask()) {
      FinishSeek();
    }
-+  parc_media.player_finished_seek_ =
-+      seeking_ && !web_media_player_->Seeking() && !parc_media.SeekAwaitsTask();
++  parc_media.NotePlayerFinishedSeek();
 -
 +
    std::optional<WebMediaPlayer::PauseReason> pause_reason;
-+  const bool safari = PresentsParcSafariIdentity();
-+  if (safari && seeking_) {
++  if (seeking_ && PresentsParcSafariIdentity()) {
 +    UpdatePlayState();
 +    return;
-+  }
-+  bool at_end = EndedPlayback(LoopCondition::kIgnored);
-+  if (safari && GetDirectionOfPlayback() == kForward && !Loop()) {
-+    at_end = at_end || (playbackRate() > 0 && duration() == 0 &&
-+                        currentTime() == 0);
-+    if (media_source_attachment_ &&
-+        !media_source_attachment_->ParcMediaSourceEnded()) {
-+      at_end = false;
-+    }
 +  }
    // When the current playback position reaches the end of the media resource
    // when the direction of playback is forwards, then the user agent must follow
    // these steps:
 -  if (EndedPlayback(LoopCondition::kIgnored)) {
-+  if (at_end) {
++  if (parc_media.EndedForTimeChanged()) {
      // If the media element has a loop attribute specified
 -    if (Loop()) {
 +    if (Loop() && GetDirectionOfPlayback() == kForward) {
-+      if (safari) {
-+        ScheduleTimeupdateEvent(false);
-+      }
++      parc_media.WillLoop();
        //  then seek to the earliest possible position of the media resource and
        //  abort these steps.
-+      parc_media.sent_end_event_ = false;
        Seek(EarliestPossiblePosition());
-     } else {
-       // Queue a task to fire a simple event named timeupdate at the media
-@@ -4069,7 +4587,11 @@
+@@ -4069,7 +4387,11 @@
          // Trigger an update to `official_playback_position_` (if necessary)
          // BEFORE calling `SetPaused(true)`, to ensure a final sync with
          // `WebMediaPlayer()->CurrentPlaybackPosition()`.
@@ -2349,24 +1924,21 @@
 +
          // changes paused to true and fires a simple event named pause at the
          // media element.
-@@ -4080,8 +4602,15 @@
+@@ -4080,8 +4402,12 @@
              PauseReasonToPlayPromiseError(pause_reason.value()));
        }
        // Queue a task to fire a simple event named ended at the media element.
 -      ScheduleNamedEvent(event_type_names::kEnded);
-+      if (!safari) {
-+        ScheduleNamedEvent(event_type_names::kEnded);
-+      } else if (!parc_media.sent_end_event_) {
-+        parc_media.sent_end_event_ = true;
++      if (parc_media.FiresEndedEvent()) {
 +        ScheduleNamedEvent(event_type_names::kEnded);
 +      }
      }
-+  } else if (safari) {
-+    parc_media.sent_end_event_ = false;
++  } else {
++    parc_media.NotAtEnd();
    }
    UpdatePlayState(pause_reason);
  }
-@@ -4234,6 +4763,10 @@
+@@ -4234,6 +4560,10 @@
  }
 -
 +
@@ -2378,7 +1950,7 @@
    // If we have infinite duration, we'll never have played for long enough to
    // have ended playback.
    const double dur = duration();
-@@ -4247,7 +4780,15 @@
+@@ -4247,7 +4577,15 @@
    if (ready_state_ < kHaveMetadata)
      return false;
 -
@@ -2395,29 +1967,21 @@
    if (web_media_player_) {
      return web_media_player_->IsEnded() &&
             (loop_condition == LoopCondition::kIgnored || !Loop() ||
-@@ -4270,8 +4811,19 @@
+@@ -4270,8 +4608,11 @@
  void HTMLMediaElement::UpdatePlayState(
      std::optional<WebMediaPlayer::PauseReason>
          pause_reason /* = std::nullopt */) {
 +  ParcMediaElement& parc_media = ParcMediaElement::From(*this);
-+  if (!parc_media.has_ever_prepared_to_play_ &&
-+      (web_media_player_ || LoadIsDeferred()) &&
-+      !parc_media.paused_for_back_forward_cache_ &&
-+      !parc_media.scrubbing_playback_controls_ &&
-+      PresentsParcSafariIdentity()) {
-+    parc_media.PrepareToPlayIfCouldPlay();
-+  }
++  parc_media.PrepareToPlayBeforePlayStateUpdate();
 +
    bool is_playing = web_media_player_ && !web_media_player_->Paused();
 -  bool should_be_playing = PotentiallyPlaying();
-+  bool should_be_playing = PotentiallyPlaying() &&
-+                           !parc_media.paused_for_back_forward_cache_ &&
-+                           !parc_media.scrubbing_playback_controls_;
++  bool should_be_playing = PotentiallyPlaying() && !parc_media.HoldsPlayback();
 -
 +
    DVLOG(3) << "updatePlayState(" << *this
             << ") - shouldBePlaying = " << base::ToString(should_be_playing)
-@@ -4286,7 +4838,7 @@
+@@ -4286,7 +4627,7 @@
        // Set rate, muted before calling play in case they were set before the
        // media engine was setup.  The media engine should just stash the rate
        // and muted values since it isn't already playing.
@@ -2427,7 +1991,7 @@
        web_media_player_->Play();
 -
 +
-@@ -4344,6 +4896,8 @@
+@@ -4344,6 +4685,8 @@
  void HTMLMediaElement::StopPeriodicTimers() {
    progress_event_timer_.Stop();
    playback_progress_timer_.Stop();
@@ -2436,7 +2000,7 @@
    if (player_lazy_load_intersection_observer_) {
      player_lazy_load_intersection_observer_->disconnect();
      player_lazy_load_intersection_observer_ = nullptr;
-@@ -4368,11 +4922,15 @@
+@@ -4368,11 +4711,15 @@
      media_player_receiver_set_->Value().Clear();
      media_player_observer_remote_set_->Value().Clear();
    }
@@ -2455,7 +2019,7 @@
 -
 +
    CloseMediaSource();
-@@ -4381,6 +4939,7 @@
+@@ -4381,6 +4728,7 @@
    if (RuntimeEnabledFeatures::LazyLoadVideoAndAudioEnabled()) {
      lazy_media_load_state_ = LazyMediaLoadState::kNone;
      LazyMediaHelper::StopMonitoring(this);
@@ -2464,21 +2028,17 @@
 -
 +
    {
-@@ -4390,6 +4949,11 @@
+@@ -4390,6 +4738,7 @@
 -
 +
    StopPeriodicTimers();
    load_timer_.Stop();
-+  parc_media.prepare_to_play_after_selection_ = false;
-+
-+  if (PresentsParcSafariIdentity()) {
-+    ParcMediaElementAirPlay::From(*this).PlayerCleared();
-+  }
++  parc_media.PlayerCleared();
 -
 +
    pending_action_flags_ = 0;
    load_state_ = kWaitingForSource;
-@@ -4400,6 +4964,9 @@
+@@ -4400,6 +4749,9 @@
 -
 +
  void HTMLMediaElement::ContextLifecycleStateChanged(
@@ -2489,7 +2049,7 @@
    if (state == mojom::blink::FrameLifecycleState::kFrozen) {
      if (playing_) {
        PausePlayback(WebMediaPlayer::PauseReason::kFrameFrozen);
-@@ -4422,6 +4989,8 @@
+@@ -4422,6 +4774,8 @@
    ClearMediaPlayer();
    ready_state_ = kHaveNothing;
    ready_state_maximum_ = kHaveNothing;
@@ -2498,7 +2058,7 @@
    SetNetworkState(kNetworkEmpty);
    SetShouldDelayLoadEvent(false);
    current_source_node_ = nullptr;
-@@ -4436,6 +5005,7 @@
+@@ -4436,6 +4790,7 @@
 -
 +
    StopPeriodicTimers();
@@ -2508,15 +2068,10 @@
 +
    UpdateVideoVisibilityTracker();
  }
-@@ -4527,34 +5097,21 @@
- // static
- void HTMLMediaElement::AssertShadowRootChildren(ShadowRoot& shadow_root) {
- #if DCHECK_IS_ON()
--  // There can be up to three children: an interstitial (media remoting or
--  // picture in picture), text track container, and media controls. The media
--  // controls has to be the last child if present, and has to be the next
--  // sibling of the text track container if both present. When present, media
--  // remoting interstitial has to be the first child.
+@@ -4532,29 +4887,21 @@
+   // controls has to be the last child if present, and has to be the next
+   // sibling of the text track container if both present. When present, media
+   // remoting interstitial has to be the first child.
 -  unsigned number_of_children = shadow_root.CountChildren();
 -  DCHECK_LE(number_of_children, 3u);
 -  Node* first_child = shadow_root.firstChild();
@@ -2549,16 +2104,16 @@
 +    if (child && child->IsPictureInPictureInterstitial()) {
 +      child = child->nextSibling();
 +    }
-+  }
+   }
 +  if (child && child->IsMediaControls()) {
 +    child = child->nextSibling();
-   }
++  }
 +  DCHECK(!child);
  #endif
  }
 -
 +
-@@ -4594,6 +5151,9 @@
+@@ -4594,6 +4941,9 @@
 -
 +
    EnsureTextTrackContainer().UpdateDisplay(
@@ -2571,20 +2126,18 @@
 +
 -
 +
-@@ -4819,6 +5379,12 @@
+@@ -4819,6 +5169,10 @@
  void HTMLMediaElement::MediaSourceOpened(
      std::unique_ptr<WebMediaSource> web_media_source) {
    SetShouldDelayLoadEvent(false);
-+  ParcMediaElementAirPlay& parc_air_play = ParcMediaElementAirPlay::From(*this);
-+  if (media_source_attachment_->ParcManaged() && PresentsParcSafariIdentity() &&
-+      !parc_air_play.DeferredMediaSourceOpenCanProgress()) {
-+    parc_air_play.deferred_web_media_source_ = std::move(web_media_source);
++  if (ParcMediaElementAirPlay::From(*this).DefersMediaSourceOpen(
++          web_media_source)) {
 +    return;
 +  }
    media_source_attachment_->CompleteAttachingToMediaElement(
        media_source_tracer_, std::move(web_media_source));
  }
-@@ -4888,7 +5454,8 @@
+@@ -4888,7 +5242,8 @@
  void HTMLMediaElement::CreatePlaceholderTracksIfNecessary() {
    // Create a placeholder audio track if the player says it has audio but it
    // didn't explicitly announce the tracks.
@@ -2594,7 +2147,7 @@
      AddTrack(media::MediaTrack::CreateAudioTrack(
          "audio", media::MediaTrack::AudioKind::kMain, "Audio Track", "", true));
    }
-@@ -5008,6 +5575,10 @@
+@@ -5008,6 +5363,10 @@
          "Failed to load because no supported source was found.");
      return;
    }
@@ -2606,7 +2159,7 @@
 +
    const char* reason = "";
    switch (play_promise_error_code_) {
-@@ -5047,6 +5618,7 @@
+@@ -5047,6 +5406,7 @@
            "media-playback-while-not-visible permission policy";
        break;
      case PlayPromiseError::kNotSupported:
@@ -2614,7 +2167,7 @@
        NOTREACHED();
    }
    RejectPlayPromisesInternal(DOMExceptionCode::kAbortError,
-@@ -5071,8 +5643,12 @@
+@@ -5071,8 +5431,12 @@
    DCHECK(code == DOMExceptionCode::kAbortError ||
           code == DOMExceptionCode::kNotSupportedError ||
           code == DOMExceptionCode::kNotAllowedError);
@@ -2629,25 +2182,20 @@
 +
    play_promise_reject_list_.clear();
  }
-@@ -5085,10 +5661,21 @@
+@@ -5085,10 +5449,17 @@
      return;
    }
 -
 +
-+  if (PresentsParcSafariIdentity() &&
-+      (network_state_ == kNetworkEmpty ||
-+       ParcMediaElement::From(*this).paused_for_invisible_autoplay_ ||
-+       seeking_)) {
++  if (ParcMediaElement::From(*this).KeepsPlayingAfterRemoval()) {
 +    return;
 +  }
 +
    // Video should not pause when playing in Picture-in-Picture and subsequently
--  // removed from the Document.
+   // removed from the Document.
 -  if (!PictureInPictureController::IsElementInPictureInPicture(this))
 +  if (!PictureInPictureController::IsElementInPictureInPicture(this) &&
-+      !(PresentsParcSafariIdentity() &&
-+        ParcMediaElement::From(*this).IsPictureInPictureElementOf(
-+            ParcMediaElement::ContextDocument(GetDocument())))) {
++      !ParcMediaElement::From(*this).InContextPictureInPicture()) {
      PauseInternal(WebMediaPlayer::PauseReason::kRemovedFromDocument);
 +    ParcMediaElement::From(*this).was_playing_before_seeking_ = false;
 +  }
@@ -2655,21 +2203,20 @@
 -
 +
  void HTMLMediaElement::AudioSourceProviderImpl::Wrap(
-@@ -5227,6 +5814,11 @@
+@@ -5227,6 +5598,10 @@
    }
 -
 +
    OnRemotePlaybackMetadataChange();
 +
 +  if (has_audio) {
-+    ParcMediaElement::From(*this).PauseIfPlaybackNotPermitted(
-+        /*reject_as_not_allowed=*/true, /*audio_reported=*/true);
++    ParcMediaElement::From(*this).PauseIfPlaybackNotPermitted(true, true);
 +  }
  }
 -
 +
  void HTMLMediaElement::DidPlayerMediaPositionStateChange(
-@@ -5314,6 +5906,9 @@
+@@ -5314,6 +5689,9 @@
  }
 -
 +
@@ -2680,26 +2227,7 @@
    switch (code) {
      case DOMExceptionCode::kNotAllowedError:
        return autoplay_policy_->GetPlayErrorMessage();
-@@ -5339,6 +5934,17 @@
-   return *media_player_host_remote_->Value().get();
- }
--
-+
-+void HTMLMediaElement::RegisterWithMediaPlayerHost() {
-+  mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>
-+      media_player_remote;
-+  BindMediaPlayerReceiver(
-+      media_player_remote.InitWithNewEndpointAndPassReceiver());
-+
-+  GetMediaPlayerHostRemote().OnMediaPlayerAdded(
-+      std::move(media_player_remote), AddMediaPlayerObserverAndPassReceiver(),
-+      web_media_player_->GetPlayerId());
-+}
-+
- mojo::PendingAssociatedReceiver<media::mojom::blink::MediaPlayerObserver>
- HTMLMediaElement::AddMediaPlayerObserverAndPassReceiver() {
-   mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayerObserver>
-@@ -5375,12 +5981,17 @@
+@@ -5375,12 +5753,17 @@
    PauseInternal(triggered_by_user
                      ? WebMediaPlayer::PauseReason::kPauseRequestedByUser
                      : WebMediaPlayer::PauseReason::kPauseRequestedInternally);
@@ -2718,7 +2246,7 @@
    if (CanSeekTo(time)) {
      setCurrentTime(time);
    }
-@@ -5389,13 +6000,29 @@
+@@ -5389,13 +5772,29 @@
  void HTMLMediaElement::RequestSeekBackward(base::TimeDelta seek_time) {
    double seconds = seek_time.InSecondsF();
    DCHECK_GE(seconds, 0) << "Attempted to seek by a negative number of seconds";
@@ -2749,7 +2277,7 @@
    double time = std::min(seek_time.InSecondsF(), duration());
    if (CanSeekTo(time)) {
      setCurrentTime(time);
-@@ -5511,7 +6138,7 @@
+@@ -5511,7 +5910,7 @@
  }
 -
 +
@@ -2904,17 +2432,7 @@
    void InvokeResourceSelectionAlgorithm();
    void LoadInternal();
    void SelectMediaResource();
-@@ -833,6 +857,8 @@
-   mojo::PendingAssociatedReceiver<media::mojom::blink::MediaPlayerObserver>
-   AddMediaPlayerObserverAndPassReceiver();
--
-+
-+  void RegisterWithMediaPlayerHost();
-+
-   // Timers used to schedule one-shot tasks with no delay.
-   HeapTaskRunnerTimer<HTMLMediaElement> load_timer_;
-   HeapTaskRunnerTimer<HTMLMediaElement> audio_tracks_timer_;
-@@ -1080,12 +1106,16 @@
+@@ -1080,12 +1104,16 @@
    Member<Document> opener_document_;
    Member<OpenerContextObserver> opener_context_observer_;
 -
@@ -3351,49 +2869,15 @@
    // that a later waitingForKey() call can generate the event.
 --- a/third_party/blink/renderer/core/html/html_element.cc
 +++ b/third_party/blink/renderer/core/html/html_element.cc
-@@ -97,6 +97,7 @@
- #include "third_party/blink/renderer/core/frame/local_dom_window.h"
- #include "third_party/blink/renderer/core/frame/local_frame.h"
- #include "third_party/blink/renderer/core/frame/local_frame_view.h"
-+#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
- #include "third_party/blink/renderer/core/frame/settings.h"
- #include "third_party/blink/renderer/core/frame/web_frame_widget_impl.h"
- #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
-@@ -470,6 +471,32 @@
-   }
- }
--
-+
-+namespace {
-+
-+const AtomicString& ParcLegacyEmeEventName(const QualifiedName& attr_name) {
-+  struct Handler {
-+    QualifiedName attribute;
-+    AtomicString event;
-+  };
-+  DEFINE_STATIC_LOCAL(const Vector<Handler>, handlers,
-+                      ({{QualifiedName(AtomicString("onwebkitkeyadded")),
-+                         AtomicString("webkitkeyadded")},
-+                        {QualifiedName(AtomicString("onwebkitkeyerror")),
-+                         AtomicString("webkitkeyerror")},
-+                        {QualifiedName(AtomicString("onwebkitkeymessage")),
-+                         AtomicString("webkitkeymessage")},
-+                        {QualifiedName(AtomicString("onwebkitneedkey")),
-+                         AtomicString("webkitneedkey")}}));
-+  for (const Handler& handler : handlers) {
-+    if (attr_name == handler.attribute) {
-+      return handler.event;
-+    }
-+  }
-+  return g_null_atom;
-+}
-+
-+}
-+
- // static
- const AttributeTriggers* HTMLElement::TriggersForAttributeName(
-     const QualifiedName& attr_name) {
-@@ -864,7 +891,7 @@
+@@ -39,6 +39,7 @@
+ #include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
+ #include "third_party/blink/public/mojom/unbounded_element/unbounded_element.mojom-blink.h"
+ #include "third_party/blink/renderer/bindings/core/v8/js_event_handler_for_content_attribute.h"
++#include "third_party/blink/renderer/bindings/core/v8/parc_safari_scripts.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_attach_internals_options.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
+@@ -864,7 +865,7 @@
    const AttributeTriggers* triggers = TriggersForAttributeName(attr_name);
    if (triggers)
      return triggers->event;
@@ -3403,15 +2887,13 @@
 -
 +
  void HTMLElement::AttributeChanged(const AttributeModificationParams& params) {
-@@ -952,6 +979,16 @@
+@@ -952,6 +953,14 @@
  void HTMLElement::ParseAttribute(const AttributeModificationParams& params) {
    const AttributeTriggers* triggers = TriggersForAttributeName(params.name);
    if (!triggers) {
 +    const AtomicString& parc_event = ParcLegacyEmeEventName(params.name);
 +    if (!parc_event.IsNull()) {
-+      auto* window =
-+          DynamicTo<LocalDOMWindow>(GetDocument().GetExecutionContext());
-+      if (window && IsParcSafariIdentityUserAgent(window->UserAgent())) {
++      if (ParcLegacyEmeHandlersEnabled(GetDocument())) {
 +        SetElementAttributeEventListenerFromScriptBody(
 +            parc_event, params.name, params.new_value, params.reason);
 +      }
@@ -3801,64 +3283,19 @@
      TransferFunction transferFunction;
 --- a/third_party/blink/renderer/core/fullscreen/fullscreen.cc
 +++ b/third_party/blink/renderer/core/fullscreen/fullscreen.cc
-@@ -48,6 +48,7 @@
- #include "third_party/blink/renderer/core/frame/local_dom_window.h"
- #include "third_party/blink/renderer/core/frame/local_frame.h"
- #include "third_party/blink/renderer/core/frame/local_frame_view.h"
-+#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
- #include "third_party/blink/renderer/core/frame/settings.h"
- #include "third_party/blink/renderer/core/frame/visual_viewport.h"
- #include "third_party/blink/renderer/core/fullscreen/fullscreen_request_type.h"
-@@ -554,10 +555,53 @@
-              : event_type_names::kWebkitfullscreenerror;
- }
--
-+
-+void FireParcSafariEvents(const AtomicString& type,
-+                          Element* element,
-+                          Document* document) {
-+  if (!document || !element) {
-+    return;
-+  }
-+  EventTarget* target =
-+      element->isConnected() && &element->GetDocument() == document
-+          ? static_cast<EventTarget*>(element)
-+          : static_cast<EventTarget*>(document);
-+  const auto fire = [target](const AtomicString& event_type) {
-+    Event* event = Event::CreateBubble(event_type);
-+    event->SetComposed(true);
-+    target->DispatchEvent(*event);
-+  };
-+  fire(type);
-+  if (type == event_type_names::kFullscreenerror) {
-+    fire(event_type_names::kWebkitfullscreenerror);
-+    return;
-+  }
-+  const auto handles_both = [](const EventTarget& listening) {
-+    return listening.HasJSBasedEventListeners(
-+               event_type_names::kWebkitfullscreenchange) &&
-+           listening.HasJSBasedEventListeners(
-+               event_type_names::kFullscreenchange);
-+  };
-+  if (handles_both(*target) || handles_both(target->ToNode()->GetDocument())) {
-+    return;
-+  }
-+  fire(event_type_names::kWebkitfullscreenchange);
-+}
-+
-+bool PresentsParcSafariIdentity(const Document& document) {
-+  const ExecutionContext* context = document.GetExecutionContext();
-+  return context && IsParcSafariIdentityUserAgent(context->UserAgent());
-+}
-+
- void EnqueueEvent(const AtomicString& type,
+@@ -36,6 +36,7 @@
+ #include "third_party/blink/public/mojom/permissions/permission.mojom-blink.h"
+ #include "third_party/blink/public/mojom/permissions/permission_status.mojom-blink.h"
+ #include "third_party/blink/public/platform/task_type.h"
++#include "third_party/blink/renderer/bindings/core/v8/parc_safari_scripts.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_fullscreen_options.h"
+ #include "third_party/blink/renderer/core/css/style_change_reason.h"
+@@ -558,6 +559,9 @@
                    Element& element,
                    Document& document,
                    FullscreenRequestType request_type) {
-+  if (PresentsParcSafariIdentity(document)) {
-+    document.EnqueueAnimationFrameTask(
-+        BindOnce(FireParcSafariEvents, type, WrapWeakPersistent(&element),
-+                 WrapWeakPersistent(&document)));
++  if (EnqueueParcSafariFullscreenEvent(type, element, document)) {
 +    return;
 +  }
    const AtomicString& adjusted_type = AdjustEventType(type, request_type);
@@ -3866,15 +3303,7 @@
                                                WrapWeakPersistent(&element),
 --- a/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
 +++ b/third_party/blink/renderer/modules/document_picture_in_picture/picture_in_picture_controller_impl.cc
-@@ -12,6 +12,7 @@
- #include "media/mojo/mojom/media_player.mojom-blink.h"
- #include "mojo/public/cpp/bindings/pending_remote.h"
- #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
-+#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
- #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
- #include "third_party/blink/public/platform/web_media_player.h"
- #include "third_party/blink/public/web/web_picture_in_picture_window_options.h"
-@@ -24,11 +25,16 @@
+@@ -24,10 +24,12 @@
  #include "third_party/blink/renderer/core/dom/dom_exception.h"
  #include "third_party/blink/renderer/core/dom/events/event.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -3883,28 +3312,21 @@
  #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
  #include "third_party/blink/renderer/core/html/media/html_media_element.h"
  #include "third_party/blink/renderer/core/html/media/html_video_element.h"
-+#include "third_party/blink/renderer/core/html/media/parc_media_element.h"
 +#include "third_party/blink/renderer/core/html/media/parc_page_captions.h"
  #include "third_party/blink/renderer/core/layout/layout_video.h"
-+#include "third_party/blink/renderer/core/page/chrome_client.h"
-+#include "third_party/blink/renderer/core/page/page.h"
  #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture.h"
  #include "third_party/blink/renderer/modules/document_picture_in_picture/document_picture_in_picture_event.h"
- #include "third_party/blink/renderer/modules/picture_in_picture/picture_in_picture_event.h"
-@@ -37,6 +43,10 @@
+@@ -37,6 +39,7 @@
  #include "third_party/blink/renderer/platform/weborigin/scheme_registry.h"
  #include "third_party/blink/renderer/platform/widget/frame_widget.h"
  #include "third_party/blink/renderer/platform/wtf/functional.h"
-+#include "third_party/skia/include/core/SkBitmap.h"
-+#include "ui/display/screen_info.h"
-+#include "ui/gfx/geometry/rect_f.h"
 +#include "ui/gfx/geometry/size_f.h"
 -
 +
  namespace blink {
 -
 +
-@@ -126,7 +136,12 @@
+@@ -126,7 +129,12 @@
    if (!video_element.HasVideo())
      return Status::kVideoTrackNotAvailable;
 -
@@ -3920,7 +3342,7 @@
 -
 +
    if (video_element.IsInAutoPIP())
-@@ -239,6 +254,7 @@
+@@ -239,6 +247,7 @@
 -
 +
      return;
@@ -3930,7 +3352,7 @@
 +
    picture_in_picture_session_.reset();
    picture_in_picture_session_.Bind(
-@@ -269,6 +285,10 @@
+@@ -269,6 +278,10 @@
 -
 +
    picture_in_picture_element_ = element;
@@ -3943,7 +3365,7 @@
 +
    // Request that viz does not throttle our LayerTree's BeginFrame messages, in
    // case this page generates them as a side-effect of driving picture-in-
-@@ -344,6 +364,11 @@
+@@ -344,6 +357,11 @@
 -
 +
      HTMLVideoElement* element = picture_in_picture_element_;
@@ -3957,7 +3379,7 @@
 +
      element->OnExitedPictureInPicture();
      element->DispatchEvent(*PictureInPictureEvent::Create(
-@@ -592,6 +617,68 @@
+@@ -592,6 +610,42 @@
      const gfx::Size& size) {
    if (picture_in_picture_window_)
      picture_in_picture_window_->OnResize(size);
@@ -3978,41 +3400,15 @@
 +
 +void PictureInPictureControllerImpl::UpdateCaptions() {
 +  captions_update_pending_ = false;
-+  LocalFrame* frame = GetSupplementable()->GetFrame();
-+  if (!frame || !frame->GetPage() || !picture_in_picture_element_ || !picture_in_picture_window_ ||
-+      !picture_in_picture_session_.is_bound()) {
-+    return;
-+  }
-+  gfx::RectF bounds;
-+  SkBitmap captions = ParcMediaElement::From(*picture_in_picture_element_)
-+                          .PaintTextTracksForPictureInPicture(
-+                              gfx::SizeF(picture_in_picture_window_->width(),
-+                                         picture_in_picture_window_->height()),
-+                              frame->GetPage()
-+                                  ->GetChromeClient()
-+                                  .GetScreenInfo(*frame)
-+                                  .device_scale_factor,
-+                              bounds);
-+  if (captions.drawsNothing() && page_captions_) {
-+    captions = page_captions_->Paint(
++  if (picture_in_picture_element_ && picture_in_picture_window_ &&
++      picture_in_picture_session_.is_bound()) {
++    SendParcPictureInPictureCaptions(
++        *GetSupplementable(), *picture_in_picture_element_,
 +        gfx::SizeF(picture_in_picture_window_->width(),
 +                   picture_in_picture_window_->height()),
-+        frame->GetPage()
-+            ->GetChromeClient()
-+            .GetScreenInfo(*frame)
-+            .device_scale_factor,
-+        bounds);
++        page_captions_.Get(), showing_captions_, captions_host_,
++        captions_session_);
 +  }
-+  if (captions.drawsNothing() && !showing_captions_) {
-+    return;
-+  }
-+  showing_captions_ = !captions.drawsNothing();
-+  if (!captions_host_.is_bound()) {
-+    frame->GetRemoteNavigationAssociatedInterfaces()->GetInterface(
-+        captions_host_.BindNewEndpointAndPassReceiver(
-+            GetSupplementable()->GetTaskRunner(TaskType::kMediaElementEvent)));
-+  }
-+  captions_host_->UpdateCaptions(captions_session_, captions, bounds);
 +}
 +
 +void PictureInPictureControllerImpl::PageCaptionsTimerFired(TimerBase*) {
@@ -4027,7 +3423,7 @@
 -
 +
  void PictureInPictureControllerImpl::OnStopped() {
-@@ -615,6 +702,9 @@
+@@ -615,6 +669,9 @@
    visitor->Trace(document_picture_in_picture_window_);
    visitor->Trace(document_picture_in_picture_owner_);
    visitor->Trace(document_pip_context_observer_);
@@ -4037,7 +3433,7 @@
    visitor->Trace(picture_in_picture_element_);
    visitor->Trace(picture_in_picture_window_);
    visitor->Trace(session_observer_receiver_);
-@@ -630,7 +720,12 @@
+@@ -630,7 +687,12 @@
        ExecutionContextClient(document.GetExecutionContext()),
        session_observer_receiver_(this, document.GetExecutionContext()),
        picture_in_picture_service_(document.GetExecutionContext()),
@@ -4156,67 +3552,21 @@
    if (controller.PictureInPictureElement(GetTreeScope()) == *this) {
 --- a/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.cc
 +++ b/third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.cc
-@@ -4,14 +4,17 @@
--
-+
- #include "third_party/blink/renderer/modules/encryptedmedia/media_key_system_access.h"
--
-+
-+#include <algorithm>
- #include <memory>
- #include <utility>
--
-+
-+#include "base/location.h"
- #include "base/memory/ptr_util.h"
- #include "base/numerics/safe_conversions.h"
- #include "media/base/eme_constants.h"
- #include "services/metrics/public/cpp/ukm_builders.h"
- #include "services/metrics/public/cpp/ukm_recorder.h"
-+#include "third_party/blink/public/platform/task_type.h"
- #include "third_party/blink/public/platform/web_content_decryption_module.h"
- #include "third_party/blink/public/platform/web_encrypted_media_types.h"
- #include "third_party/blink/public/platform/web_media_key_system_configuration.h"
-@@ -21,13 +24,16 @@
- #include "third_party/blink/renderer/core/dom/dom_exception.h"
- #include "third_party/blink/renderer/core/frame/local_dom_window.h"
- #include "third_party/blink/renderer/core/frame/local_frame.h"
-+#include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
- #include "third_party/blink/renderer/modules/encryptedmedia/content_decryption_module_result_promise.h"
+@@ -25,6 +25,7 @@
  #include "third_party/blink/renderer/modules/encryptedmedia/encrypted_media_utils.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/media_key_session.h"
  #include "third_party/blink/renderer/modules/encryptedmedia/media_keys.h"
++#include "third_party/blink/renderer/modules/encryptedmedia/parc_encrypted_media.h"
  #include "third_party/blink/renderer/platform/allow_discouraged_type.h"
  #include "third_party/blink/renderer/platform/bindings/script_state.h"
-+#include "third_party/blink/renderer/platform/heap/persistent.h"
  #include "third_party/blink/renderer/platform/timer.h"
-+#include "third_party/blink/renderer/platform/wtf/functional.h"
--
-+
- namespace blink {
--
-+
-@@ -222,6 +228,25 @@
+@@ -222,6 +223,11 @@
        resolver, config, configuration.session_types);
    auto promise = resolver->Promise();
 -
 +
-+  ExecutionContext* parc_context = ExecutionContext::From(script_state);
-+  if (parc_context &&
-+      IsParcSafariIdentityUserAgent(parc_context->UserAgent()) &&
-+      IsParcFairPlayKeySystem(keySystem()) &&
-+      std::find(configuration.session_types.begin(),
-+                configuration.session_types.end(),
-+                WebEncryptedMediaSessionType::kPersistentLicense) !=
-+          configuration.session_types.end()) {
-+    parc_context->GetTaskRunner(TaskType::kMediaElementEvent)
-+        ->PostTask(FROM_HERE,
-+                   BindOnce(
-+                       [](ScriptPromiseResolver<MediaKeys>* resolver) {
-+                         resolver->Reject(MakeGarbageCollected<DOMException>(
-+                             DOMExceptionCode::kNotAllowedError));
-+                       },
-+                       WrapPersistent(resolver)));
++  if (ParcRejectFairPlayPersistentLicense(script_state, keySystem(),
++                                          configuration, resolver)) {
 +    return promise;
 +  }
 +

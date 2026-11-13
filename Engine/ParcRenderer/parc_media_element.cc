@@ -22,6 +22,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/parc_webkit_need_key.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_text_track_kind.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
@@ -55,6 +56,7 @@
 #include "third_party/blink/renderer/platform/media/remote_playback_client.h"
 #include "third_party/blink/renderer/platform/network/mime/content_type.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -1213,7 +1215,14 @@ bool ParcMediaElement::MovePlayerToFrame() {
     return false;
   }
   element.ResetMojoState();
-  element.RegisterWithMediaPlayerHost();
+  mojo::PendingAssociatedRemote<media::mojom::blink::MediaPlayer>
+      media_player_remote;
+  element.BindMediaPlayerReceiver(
+      media_player_remote.InitWithNewEndpointAndPassReceiver());
+  element.GetMediaPlayerHostRemote().OnMediaPlayerAdded(
+      std::move(media_player_remote),
+      element.AddMediaPlayerObserverAndPassReceiver(),
+      element.web_media_player_->GetPlayerId());
   if (auto* parc = element.web_media_player_->GetParcExtension()) {
     parc->ParcReportStateToClient();
   }
@@ -1247,6 +1256,466 @@ SkBitmap ParcMediaElement::PaintTextTracksForPictureInPicture(
   return PaintParcTextTracksForPictureInPicture(
       element.EnsureTextTrackContainer(), element, window_size,
       device_scale_factor, bounds);
+}
+
+ParcMediaElement::DocumentMove ParcMediaElement::BeginDocumentMove(
+    Document& old_document) {
+  HTMLMediaElement& element = Media();
+  Document& new_document = element.GetDocument();
+  DocumentMove move;
+  move.keeps_player = KeepsPlayerAcrossDocuments(old_document, new_document);
+  move.old_context =
+      move.keeps_player ? ContextDocument(old_document) : &old_document;
+  move.new_context =
+      move.keeps_player ? ContextDocument(new_document) : &new_document;
+  move.moves_player_to_frame =
+      move.keeps_player && new_document.GetFrame() &&
+      (element.opener_document_ ? element.opener_document_.Get()
+                                : move.old_context) != move.new_context &&
+      !element.ShouldReusePlayer(old_document, new_document) &&
+      !IsPictureInPictureElementOf(move.old_context) &&
+      !IsPictureInPictureElementOf(move.new_context) &&
+      !IsPictureInPictureElementOf(element.opener_document_);
+  if (move.keeps_player) {
+    element.async_event_queue_->MoveToExecutionContext(
+        element.GetExecutionContext());
+  } else {
+    element.ignore_preload_none_ = false;
+  }
+  if (seek_task_.IsActive()) {
+    seek_task_.Cancel();
+    PostSeekTask();
+  }
+  return move;
+}
+
+bool ParcMediaElement::FinishesMoveWithoutOpener(const DocumentMove& move,
+                                                 Document& old_document) {
+  HTMLMediaElement& element = Media();
+  if (!move.keeps_player || element.opener_document_) {
+    return false;
+  }
+  if (move.old_context == move.new_context) {
+    return true;
+  }
+  if (element.web_media_player_ ||
+      element.ShouldReusePlayer(old_document, element.GetDocument())) {
+    return false;
+  }
+  element.ResetMojoState();
+  if (element.remote_playback_client_) {
+    element.remote_playback_client_->ParcDidMoveToDocument();
+  }
+  return true;
+}
+
+void ParcMediaElement::FinishDocumentMove(const DocumentMove& move,
+                                          Document& old_document) {
+  HTMLMediaElement& element = Media();
+  player_waits_for_picture_in_picture_end_ =
+      move.keeps_player && element.GetDocument().GetFrame() &&
+      !move.moves_player_to_frame &&
+      !element.ShouldReusePlayer(old_document, element.GetDocument()) &&
+      element.opener_document_;
+  if (move.moves_player_to_frame && element.web_media_player_) {
+    MovePlayerToFrame();
+  }
+  if (move.keeps_player) {
+    UpdatePlayerPageVisibility();
+  }
+}
+
+void ParcMediaElement::AutoplayAttributeChanged() {
+  NoteMediaUserGesture();
+  if (PresentsParcSafariIdentity()) {
+    Media().SetPlayerPreload();
+  }
+}
+
+std::optional<bool> ParcMediaElement::FrameHiddenOnInsertion(
+    std::optional<bool> is_hidden) {
+  HTMLMediaElement& element = Media();
+  if (element.web_media_player_ && is_hidden.has_value() &&
+      element.is_frame_hidden_.has_value() &&
+      *is_hidden != *element.is_frame_hidden_ && PresentsParcSafariIdentity()) {
+    if (*is_hidden) {
+      element.OnFrameHidden();
+    } else {
+      element.OnFrameShown();
+    }
+  }
+  return is_hidden;
+}
+
+void ParcMediaElement::PrepareToPlayAfterSelectionIfNeeded() {
+  if (prepare_to_play_after_selection_) {
+    prepare_to_play_after_selection_ = false;
+    PrepareToPlay();
+  }
+}
+
+void ParcMediaElement::ExplicitLoadInvoked() {
+  if (PresentsParcSafariIdentity()) {
+    prepare_to_play_after_selection_ = true;
+  }
+}
+
+void ParcMediaElement::LoadAlgorithmStarted() {
+  NoteMediaUserGesture();
+  PrepareForLoad();
+  ParcMediaElementAirPlay::From(Media()).remote_playback_time_.reset();
+}
+
+void ParcMediaElement::LoadInterruptedPlayback(bool explicit_load) {
+  if (!PresentsParcSafariIdentity()) {
+    return;
+  }
+  HTMLMediaElement& element = Media();
+  if (explicit_load) {
+    element.SetPaused(true);
+  }
+  element.RejectPlayPromises(DOMExceptionCode::kAbortError,
+                             "The play() request was interrupted by a new load "
+                             "request. https://goo.gl/LdLk22");
+}
+
+void ParcMediaElement::ResetPlaybackRateForLoad(bool default_rate_valid) {
+  HTMLMediaElement& element = Media();
+  if (!default_rate_valid && !PresentsParcSafariIdentity()) {
+    if (element.playback_rate_ != element.default_playback_rate_) {
+      element.playback_rate_ = element.default_playback_rate_;
+      element.ScheduleNamedEvent(event_type_names::kRatechange);
+    }
+  } else {
+    element.setPlaybackRate(element.defaultPlaybackRate());
+  }
+}
+
+void ParcMediaElement::ExitPictureInPictureWithoutSource() {
+  auto* video = DynamicTo<HTMLVideoElement>(Media());
+  if (PresentsParcSafariIdentity() && video &&
+      PictureInPictureController::IsElementInPictureInPicture(video)) {
+    PictureInPictureController::From(Media().GetDocument())
+        .ExitPictureInPicture(video, nullptr);
+  }
+}
+
+void ParcMediaElement::PrepareToPlayBeforeLoad() {
+  if (!has_ever_prepared_to_play_ && PresentsParcSafariIdentity()) {
+    PrepareToPlayIfCouldPlay();
+  }
+}
+
+bool ParcMediaElement::MayDeferLoad(const KURL& url) const {
+  return PresentsParcSafariIdentity() ? !Media().media_source_attachment_
+                                      : !url.ProtocolIs("blob");
+}
+
+void ParcMediaElement::PlayerWillLoad() {
+  ParcWebKitMediaKeysNewLoad(Media());
+  player_ready_state_ = HTMLMediaElement::kHaveNothing;
+}
+
+bool ParcMediaElement::IgnoresPlayerReadyState() {
+  if (!playback_blocked_waiting_for_key_) {
+    return false;
+  }
+  const HTMLMediaElement::ReadyState state =
+      static_cast<HTMLMediaElement::ReadyState>(
+          Media().web_media_player_->GetReadyState());
+  if (state == player_ready_state_) {
+    return true;
+  }
+  player_ready_state_ = state;
+  return false;
+}
+
+bool ParcMediaElement::SeekMayFinishOnReadyState(
+    HTMLMediaElement::ReadyState old_state) const {
+  return !SeekAwaitsTask() &&
+         !(old_state >= HTMLMediaElement::kHaveCurrentData &&
+           PresentsParcSafariIdentity()) &&
+         (!(Media().GetLoadType() == WebMediaPlayer::kLoadTypeMediaSource &&
+            PresentsParcSafariIdentity()) ||
+          player_finished_seek_);
+}
+
+void ParcMediaElement::PrepareToPlayForFragment(double start_time) {
+  if (!has_ever_prepared_to_play_ && start_time > 0 &&
+      PresentsParcSafariIdentity() &&
+      !HasFutureDataAsWebKit(Media().ready_state_)) {
+    PrepareToPlay();
+  }
+}
+
+void ParcMediaElement::PauseIfNotPermittedAtFutureData(
+    HTMLMediaElement::ReadyState old_state) {
+  HTMLMediaElement& element = Media();
+  if (element.ready_state_ == HTMLMediaElement::kHaveFutureData &&
+      old_state < HTMLMediaElement::kHaveFutureData &&
+      element.PotentiallyPlaying()) {
+    PauseIfPlaybackNotPermitted(false);
+  }
+}
+
+bool ParcMediaElement::StopsProgressEvents() {
+  HTMLMediaElement& element = Media();
+  if (!element.media_source_attachment_ || !PresentsParcSafariIdentity()) {
+    return false;
+  }
+  element.progress_event_timer_.Stop();
+  return true;
+}
+
+void ParcMediaElement::SeekPlayer(double time) {
+  HTMLMediaElement& element = Media();
+  ParcWebMediaPlayerExtension* parc =
+      element.web_media_player_->GetParcExtension();
+  if (fast_seek_tolerance_ && parc) {
+    parc->ParcFastSeek(time, *fast_seek_tolerance_);
+  } else {
+    element.web_media_player_->Seek(time);
+  }
+}
+
+void ParcMediaElement::SeekFinished(bool was_playing_before_seeking) {
+  HTMLMediaElement& element = Media();
+  if (pending_notify_playing_) {
+    pending_notify_playing_ = false;
+    element.ScheduleNotifyPlaying();
+  }
+  if (was_playing_before_seeking && PresentsParcSafariIdentity()) {
+    element.PlayInternal();
+  }
+  if (std::exchange(cue_timeupdate_after_seek_, false) && !element.seeking_) {
+    element.ScheduleTimeupdateEvent(true);
+  }
+}
+
+double ParcMediaElement::PlayingCurrentTime() const {
+  const HTMLMediaElement& element = Media();
+  const double position = element.CurrentPlaybackPosition();
+  return std::isnan(element.duration())
+             ? position
+             : std::min(element.duration(), position);
+}
+
+void ParcMediaElement::WillSetPaused(bool paused) {
+  if (paused && Media().playing_ && PresentsParcSafariIdentity()) {
+    PlaybackStopped();
+  }
+  if (!paused) {
+    hidden_autoplay_granted_ = false;
+    paused_for_invisible_autoplay_ = false;
+  }
+}
+
+bool ParcMediaElement::ReportsEndOnRateChange(double rate) const {
+  return rate > 0 && Media().playback_rate_ == 0 &&
+         PresentsParcSafariIdentity() && Media().PotentiallyPlaying();
+}
+
+void ParcMediaElement::PostEndCheckAfterRateChange() {
+  HTMLMediaElement& element = Media();
+  if (!element.EndedPlayback(HTMLMediaElement::LoopCondition::kIgnored)) {
+    return;
+  }
+  element.GetDocument()
+      .GetTaskRunner(TaskType::kMediaElementEvent)
+      ->PostTask(FROM_HERE,
+                 BindOnce(&ParcMediaElement::CheckEndAfterRateChange,
+                          WrapWeakPersistent(&element)));
+}
+
+void ParcMediaElement::CheckEndAfterRateChange(HTMLMediaElement* element) {
+  if (element && element->web_media_player_ && !element->paused_ &&
+      !element->seeking_ &&
+      element->EndedPlayback(HTMLMediaElement::LoopCondition::kIgnored)) {
+    element->TimeChanged();
+  }
+}
+
+bool ParcMediaElement::PostsDeferredMediaLoad() {
+  if (!PresentsParcSafariIdentity()) {
+    return false;
+  }
+  HTMLMediaElement& element = Media();
+  lazy_load_resume_task_ = PostCancellableTask(
+      *element.GetDocument().GetTaskRunner(TaskType::kMediaElementEvent),
+      FROM_HERE,
+      BindOnce(&HTMLMediaElement::LoadDeferredMediaIfNeededInternal,
+               WrapWeakPersistent(&element)));
+  return true;
+}
+
+bool ParcMediaElement::PreloadsAuto() const {
+  return (Media().Autoplay() || has_ever_prepared_to_play_) &&
+         PresentsParcSafariIdentity();
+}
+
+void ParcMediaElement::LoadDeferredMediaBeforePlay() {
+  HTMLMediaElement& element = Media();
+  if (element.IsLazyLoadDeferred() &&
+      element.network_state_ == HTMLMediaElement::kNetworkNoSource &&
+      !(element.pending_action_flags_ & HTMLMediaElement::kLoadMediaResource) &&
+      PresentsParcSafariIdentity()) {
+    element.LoadDeferredMediaIfNeeded();
+  }
+}
+
+bool ParcMediaElement::VolumeChangeHandledAsWebKit() {
+  if (!PresentsParcSafariIdentity()) {
+    return false;
+  }
+  if (Media().playing_) {
+    PauseIfPlaybackNotPermitted(true);
+  }
+  return true;
+}
+
+bool ParcMediaElement::MuteChangeHandledAsWebKit() {
+  if (!PresentsParcSafariIdentity()) {
+    return false;
+  }
+  PauseIfPlaybackNotPermitted(false);
+  return true;
+}
+
+void ParcMediaElement::AutoplayAfterMuteChange() {
+  HTMLMediaElement& element = Media();
+  if (PresentsParcSafariIdentity() &&
+      element.ready_state_ == HTMLMediaElement::kHaveEnoughData &&
+      element.autoplay_policy_->RequestAutoplayByAttribute()) {
+    BeginAutoplay();
+    element.UpdatePlayState();
+  }
+}
+
+bool ParcMediaElement::InbandAudioTrackChanged(AudioTrack* track,
+                                               TrackBase::ChangeSource source) {
+  const String* key = InbandAudioTrackKey(track);
+  if (!key) {
+    return false;
+  }
+  Media().audioTracks().ScheduleChangeEvent();
+  if (source != TrackBase::ChangeSource::kDemuxer &&
+      set_inband_audio_track_enabled_) {
+    set_inband_audio_track_enabled_.Run(key->Utf8(), track->enabled());
+  }
+  return true;
+}
+
+bool ParcMediaElement::SendEnabledAudioTracks() {
+  if (!PresentsParcSafariIdentity()) {
+    return false;
+  }
+  HTMLMediaElement& element = Media();
+  std::vector<WebMediaPlayer::TrackId> enabled;
+  for (unsigned i = 0; i < element.audioTracks().length(); ++i) {
+    AudioTrack* track = element.audioTracks().AnonymousIndexedGetter(i);
+    if (track->enabled()) {
+      enabled.push_back(track->id());
+    }
+  }
+  if (auto* parc = element.web_media_player_->GetParcExtension()) {
+    parc->ParcEnabledAudioTracksChanged(enabled);
+  } else {
+    element.web_media_player_->EnabledAudioTracksChanged(
+        enabled.empty() ? std::nullopt : std::make_optional(enabled.front()));
+  }
+  return true;
+}
+
+bool ParcMediaElement::AllowsTextTrackKind(
+    const V8TextTrackKind& kind,
+    ExceptionState& exception_state) const {
+  if (kind == V8TextTrackKind::Enum::kForced && !PresentsParcSafariIdentity()) {
+    exception_state.ThrowTypeError(
+        "The provided value 'forced' is not a valid enum value of type "
+        "TextTrackKind.");
+    return false;
+  }
+  return true;
+}
+
+void ParcMediaElement::NotePlayerFinishedSeek() {
+  HTMLMediaElement& element = Media();
+  player_finished_seek_ = element.seeking_ &&
+                          !element.web_media_player_->Seeking() &&
+                          !SeekAwaitsTask();
+}
+
+bool ParcMediaElement::EndedForTimeChanged() const {
+  HTMLMediaElement& element = Media();
+  bool at_end = element.EndedPlayback(HTMLMediaElement::LoopCondition::kIgnored);
+  if (PresentsParcSafariIdentity() &&
+      element.GetDirectionOfPlayback() == HTMLMediaElement::kForward &&
+      !element.Loop()) {
+    at_end = at_end || (element.playbackRate() > 0 &&
+                        element.duration() == 0 && element.currentTime() == 0);
+    if (element.media_source_attachment_ &&
+        !element.media_source_attachment_->ParcMediaSourceEnded()) {
+      at_end = false;
+    }
+  }
+  return at_end;
+}
+
+void ParcMediaElement::WillLoop() {
+  if (PresentsParcSafariIdentity()) {
+    Media().ScheduleTimeupdateEvent(false);
+  }
+  sent_end_event_ = false;
+}
+
+bool ParcMediaElement::FiresEndedEvent() {
+  if (!PresentsParcSafariIdentity()) {
+    return true;
+  }
+  if (sent_end_event_) {
+    return false;
+  }
+  sent_end_event_ = true;
+  return true;
+}
+
+void ParcMediaElement::NotAtEnd() {
+  if (PresentsParcSafariIdentity()) {
+    sent_end_event_ = false;
+  }
+}
+
+void ParcMediaElement::PrepareToPlayBeforePlayStateUpdate() {
+  HTMLMediaElement& element = Media();
+  if (!has_ever_prepared_to_play_ &&
+      (element.web_media_player_ || element.LoadIsDeferred()) &&
+      !paused_for_back_forward_cache_ && !scrubbing_playback_controls_ &&
+      PresentsParcSafariIdentity()) {
+    PrepareToPlayIfCouldPlay();
+  }
+}
+
+bool ParcMediaElement::HoldsPlayback() const {
+  return paused_for_back_forward_cache_ || scrubbing_playback_controls_;
+}
+
+void ParcMediaElement::PlayerCleared() {
+  prepare_to_play_after_selection_ = false;
+  if (PresentsParcSafariIdentity()) {
+    ParcMediaElementAirPlay::From(Media()).PlayerCleared();
+  }
+}
+
+bool ParcMediaElement::KeepsPlayingAfterRemoval() const {
+  const HTMLMediaElement& element = Media();
+  return PresentsParcSafariIdentity() &&
+         (element.network_state_ == HTMLMediaElement::kNetworkEmpty ||
+          paused_for_invisible_autoplay_ || element.seeking_);
+}
+
+bool ParcMediaElement::InContextPictureInPicture() const {
+  return PresentsParcSafariIdentity() &&
+         IsPictureInPictureElementOf(ContextDocument(Media().GetDocument()));
 }
 
 ParcMediaElement::PageObserver::PageObserver(ParcMediaElement* parc)

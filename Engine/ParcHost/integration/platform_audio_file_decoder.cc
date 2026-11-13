@@ -22,28 +22,33 @@
 #include "media/base/media_util.h"
 #include "media/filters/audio_file_reader.h"
 #include "media/filters/in_memory_url_protocol.h"
+#include "media/media_buildflags.h"
+#include "media/mojo/buildflags.h"
+#include "third_party/blink/renderer/platform/audio/audio_bus.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+
+#if BUILDFLAG(ENABLE_FFMPEG) && BUILDFLAG(ENABLE_MOJO_AUDIO_DECODER)
+#include "base/numerics/safe_conversions.h"
+#include "media/mojo/clients/mojo_audio_decoder.h"
+#include "media/mojo/mojom/interface_factory.mojom.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/remote.h"
+#include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
+#include "third_party/blink/public/platform/platform.h"
+#endif
 
 namespace blink {
 
 namespace {
 
-// How often a decode checks for cancellation and a stalled decoder.
 constexpr base::TimeDelta kWatchdogPeriod = base::Seconds(1);
 
-// Errors in the stream itself. Decoding stops and keeps the audio so far, as
-// AudioFileReader::Read() does. Any other error, such as a lost connection,
-// fails the decode.
 bool IsStreamError(const media::DecoderStatus& status) {
   return status.code() == media::DecoderStatus::Codes::kPlatformDecodeFailure ||
          status.code() == media::DecoderStatus::Codes::kMalformedBitstream;
 }
 
-// Lives on its task runner and deletes itself in Finish(). Decoder outputs and
-// answers are posted back to the task runner in the order they arrive, so
-// Finish() never destroys the decoder from inside one of its own calls, and
-// output after a failed decode is never added.
 class DecodeJob {
  public:
   DecodeJob(base::span<const uint8_t> data,
@@ -54,7 +59,7 @@ class DecodeJob {
             base::TimeDelta timeout,
             PlatformAudioFileDecoder::DoneCB done)
       : task_runner_(std::move(task_runner)),
-        protocol_(data, /*streaming=*/false),
+        protocol_(data, false),
         create_decoder_(std::move(create_decoder)),
         is_cancelled_(std::move(is_cancelled)),
         max_decodes_(std::max(decodes_in_flight, 1)),
@@ -87,7 +92,7 @@ class DecodeJob {
                     &DecodeJob::CheckProgress);
     waiting_since_ = base::TimeTicks::Now();
     decoder_->Initialize(
-        reader_->config(), /*cdm_context=*/nullptr,
+        reader_->config(), nullptr,
         base::BindPostTask(task_runner_,
                            blink::BindOnce(&DecodeJob::OnInitialized,
                                            weak_factory_.GetWeakPtr())),
@@ -108,8 +113,6 @@ class DecodeJob {
     DecodeMore();
   }
 
-  // Sends packets until `max_decodes_` are outstanding or the end of stream
-  // has been sent.
   void DecodeMore() {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     while (!end_of_stream_sent_ && decodes_ < max_decodes_) {
@@ -118,7 +121,7 @@ class DecodeJob {
         return;
       }
       if (reader_->has_output_error()) {
-        Complete(/*all_packets_decoded=*/false);
+        Complete(false);
         return;
       }
       scoped_refptr<media::DecoderBuffer> buffer = reader_->ReadNextBuffer();
@@ -138,21 +141,19 @@ class DecodeJob {
     }
   }
 
-  // Answers arrive in the order their decodes were sent.
   void OnDecoded(bool end_of_stream, media::DecoderStatus status) {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     waiting_since_ = --decodes_ ? base::TimeTicks::Now() : base::TimeTicks();
     if (!status.is_ok()) {
       if (IsStreamError(status)) {
-        // Every packet decoded when only the end of stream failed.
-        Complete(/*all_packets_decoded=*/end_of_stream);
+        Complete(end_of_stream);
       } else {
         Finish(std::nullopt);
       }
       return;
     }
     if (end_of_stream) {
-      Complete(/*all_packets_decoded=*/true);
+      Complete(true);
       return;
     }
     DecodeMore();
@@ -193,8 +194,6 @@ class DecodeJob {
     Finish(std::move(output));
   }
 
-  // Deletes `this`, releasing the decoder and demuxer before `done_` runs, so
-  // that `done_` may free the input.
   void Finish(std::optional<PlatformAudioFileDecoder::Output> output) {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     watchdog_.Stop();
@@ -218,8 +217,6 @@ class DecodeJob {
   std::unique_ptr<media::AudioDecoder> decoder_;
   int decodes_ = 0;
   bool end_of_stream_sent_ = false;
-  // When the decoder last answered while calls were outstanding, or when the
-  // first of them was sent; null when none is outstanding.
   base::TimeTicks waiting_since_;
   base::RepeatingTimer watchdog_;
 
@@ -240,7 +237,7 @@ void StartDecodeJob(base::span<const uint8_t> data,
       ->Start();
 }
 
-}  // namespace
+}
 
 PlatformAudioFileDecoder::Output::Output() = default;
 PlatformAudioFileDecoder::Output::Output(Output&&) = default;
@@ -248,7 +245,6 @@ PlatformAudioFileDecoder::Output& PlatformAudioFileDecoder::Output::operator=(
     Output&&) = default;
 PlatformAudioFileDecoder::Output::~Output() = default;
 
-// static
 void PlatformAudioFileDecoder::Decode(
     base::span<const uint8_t> data,
     scoped_refptr<base::SequencedTaskRunner> task_runner,
@@ -268,4 +264,48 @@ void PlatformAudioFileDecoder::Decode(
   }
 }
 
-}  // namespace blink
+#if BUILDFLAG(ENABLE_FFMPEG) && BUILDFLAG(ENABLE_MOJO_AUDIO_DECODER)
+std::unique_ptr<media::AudioDecoder> PlatformAudioFileDecoder::CreateGpuDecoder(
+    scoped_refptr<base::SequencedTaskRunner> task_runner,
+    media::MediaLog* media_log) {
+  mojo::Remote<media::mojom::InterfaceFactory> interface_factory;
+  Platform::Current()->GetBrowserInterfaceBroker()->GetInterface(
+      interface_factory.BindNewPipeAndPassReceiver());
+  mojo::PendingRemote<media::mojom::AudioDecoder> audio_decoder;
+  interface_factory->CreateAudioDecoder(
+      audio_decoder.InitWithNewPipeAndPassReceiver());
+  return std::make_unique<media::MojoAudioDecoder>(
+      std::move(task_runner), media_log, std::move(audio_decoder));
+}
+
+scoped_refptr<AudioBus> PlatformAudioFileDecoder::ToAudioBus(
+    std::optional<Output> output,
+    float sample_rate) {
+  scoped_refptr<AudioBus> bus;
+  if (output && base::IsValueInRangeForNumericType<uint32_t>(output->frames)) {
+    bus = AudioBus::TryCreate(output->channels,
+                              static_cast<uint32_t>(output->frames));
+  }
+  if (bus) {
+    size_t offset = 0;
+    for (const auto& packet : output->packets) {
+      for (int channel = 0; channel < output->channels; ++channel) {
+        bus->Channel(channel)
+            ->MutableSpan()
+            .subspan(offset, static_cast<size_t>(packet->frames()))
+            .copy_from(packet->channel(channel));
+      }
+      offset += packet->frames();
+    }
+    bus->SetSampleRate(output->sample_rate);
+    output.reset();
+    if (bus->SampleRate() != sample_rate) {
+      bus = AudioBus::TryCreateBySampleRateConverting(bus.get(), false,
+                                                      sample_rate);
+    }
+  }
+  return bus;
+}
+#endif
+
+}

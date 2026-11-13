@@ -5,10 +5,12 @@
 
 #include <stdint.h>
 
+#include "third_party/blink/public/mojom/parc/picture_in_picture_captions.mojom-blink.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
+#include "third_party/blink/renderer/platform/mojo/heap_mojo_associated_remote.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -20,13 +22,24 @@ class SizeF;
 
 namespace blink {
 
+class Document;
 class Element;
 class HTMLMediaElement;
+class ParcPageCaptions;
 class LayoutBoxModelObject;
 class LayoutVideo;
 class TextTrackContainer;
 class HTMLVideoElement;
 
+CORE_EXPORT void SendParcPictureInPictureCaptions(
+    Document& document,
+    HTMLVideoElement& element,
+    const gfx::SizeF& window_size,
+    ParcPageCaptions* page_captions,
+    bool& showing_captions,
+    HeapMojoAssociatedRemote<parc::mojom::blink::PictureInPictureCaptionsHost>&
+        captions_host,
+    uint64_t captions_session);
 CORE_EXPORT SkBitmap PaintParcTextTracksForPictureInPicture(
     TextTrackContainer& text_track_container,
     HTMLMediaElement& media_element,

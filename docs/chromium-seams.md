@@ -238,8 +238,10 @@ renderer-extension and media-service mojoms are pristine; `media_factory.cc` kee
 that add and move Parc's renderer factories. Each document's CDMs, FairPlay renderers and native HLS
 players live together in that service, and a render process's documents share one CDM service
 context, so CDM IDs resolve only inside that process. Each audio grant belongs to its own player, so
-closing one player can't take another's speaker indicator. `MediaInterfaceProxy::CreateCdm` keeps the
-Widevine hold and one CDM-creator hook, and MojoRenderer keeps its CDM swap; the
+closing one player can't take another's speaker indicator; those grants live in Parc's
+`content/browser/media/parc_media_routing.cc`. `MediaInterfaceProxy::CreateCdm` keeps one call into
+that file, which runs the Widevine hold and then the CDM-creator hook, and MojoRenderer keeps its CDM
+swap; the
 [FairPlay guide](../Engine/ParcNative/fairplay_chromium/README.md#widevine-request-hook) explains why
 their order requires that.
 

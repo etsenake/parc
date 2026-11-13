@@ -1,6 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Installed by the reviewed overlay at
-// //third_party/blink/renderer/core/html/media/parc_media_element_air_play.cc.
 #include "third_party/blink/renderer/core/html/media/parc_media_element_air_play.h"
 
 #include <iterator>
@@ -45,7 +43,6 @@ namespace blink {
 
 namespace {
 
-// The Parc operations of `player`, or null without a player or without them.
 ParcWebMediaPlayerExtension* ParcExtension(WebMediaPlayer* player) {
   return player ? player->GetParcExtension() : nullptr;
 }
@@ -55,16 +52,11 @@ bool ParcPlayerSupportsPlaybackTarget(WebMediaPlayer* player) {
   return parc && parc->ParcSupportsPlaybackTarget();
 }
 
-// A V8 private symbol, kept on the context's own global object, so a
-// navigation's new context starts without the previous document's hook.
 v8::Local<v8::Private> ParcPlaybackTargetEventHookKey(v8::Isolate* isolate) {
   return v8::Private::ForApi(
       isolate, V8AtomicString(isolate, "Parc::WebKitPlaybackTargetEvent"));
 }
 
-// The event WebKit's enqueuePlaybackTargetAvailabilityChangedEvent queues, or
-// null when the window has no hook (its scripts can't run, so no page script
-// listens either).
 Event* CreateParcPlaybackTargetAvailabilityEvent(LocalDOMWindow& window,
                                                  bool available) {
   if (window.IsContextDestroyed() || !window.GetFrame()) {
@@ -101,7 +93,7 @@ Event* CreateParcPlaybackTargetAvailabilityEvent(LocalDOMWindow& window,
              : nullptr;
 }
 
-}  // namespace
+}
 
 const char ParcMediaElementAirPlay::kSupplementName[] =
     "ParcMediaElementAirPlay";
@@ -147,8 +139,6 @@ bool ParcMediaElementAirPlay::WirelessPlaybackTargetDisabled() const {
          element.FastHasAttribute(html_names::kDisableremoteplaybackAttr);
 }
 
-// The script returns nothing when the context already has the interface (a
-// document taking over its window's context keeps the first hook).
 void ParcMediaElementAirPlay::SetPlaybackTargetEventHook(
     ScriptState* script_state,
     v8::Local<v8::Value> hook) {
@@ -166,8 +156,6 @@ bool ParcMediaElementAirPlay::HasPlaybackTargetAvailabilityListeners() const {
       parc_media_element_names::Webkitplaybacktargetavailabilitychanged());
 }
 
-// isWirelessPlaybackTargetDisabledChanged: listeners hear the change, the
-// last "available" taken back with one "not-available".
 void ParcMediaElementAirPlay::WirelessPlaybackTargetDisabledChanged() {
   HTMLMediaElement& element = Media();
   if (!element.PresentsParcSafariIdentity()) {
@@ -181,7 +169,7 @@ void ParcMediaElementAirPlay::WirelessPlaybackTargetDisabledChanged() {
   wireless_playback_target_disabled_ = disabled;
   if (HasPlaybackTargetAvailabilityListeners() &&
       (!disabled || last_availability_event_)) {
-    EnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/false);
+    EnqueuePlaybackTargetAvailabilityEvent(false);
   }
   if (auto* parc = ParcExtension(element.web_media_player_.get())) {
     parc->ParcSetWirelessVideoPlaybackDisabled(disabled);
@@ -217,8 +205,7 @@ void ParcMediaElementAirPlay::EventListenerAdded(
     return;
   }
   ReportPlaybackTargetState();
-  // "Ensure the event listener gets at least one event."
-  EnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/false);
+  EnqueuePlaybackTargetAvailabilityEvent(false);
 }
 
 void ParcMediaElementAirPlay::EventListenerRemoved(
@@ -231,11 +218,6 @@ void ParcMediaElementAirPlay::EventListenerRemoved(
   }
 }
 
-// MediaElementSession::showPlaybackTargetPicker: nothing before
-// HAVE_METADATA. Safari on macOS needs no gesture for it (its gesture rule
-// applies only where playback needs one); the browser shows the list only for
-// the selected page of the key window. It opens at the last mouse position,
-// as Document::showPlaybackTargetPicker places it.
 void ParcMediaElementAirPlay::webkitShowPlaybackTargetPicker(
     HTMLMediaElement& element) {
   LocalFrame* frame = element.GetDocument().GetFrame();
@@ -263,9 +245,6 @@ bool ParcMediaElementAirPlay::webkitCurrentPlaybackTargetIsWireless(
   return From(element).playing_to_wireless_target_;
 }
 
-// MediaElementSession::wirelessVideoPlaybackDisabled on macOS: the
-// attributes, else whether there is a player (each of Safari's players
-// allows AirPlay unless told not to).
 bool ParcMediaElementAirPlay::webkitWirelessVideoPlaybackDisabled(
     HTMLVideoElement& video) {
   return video.FastHasAttribute(
@@ -283,8 +262,6 @@ void ParcMediaElementAirPlay::setWebkitWirelessVideoPlaybackDisabled(
       disabled);
 }
 
-// WebKit's mediaEngineUpdated gives a new player the element's AirPlay
-// target; createMediaPlayer queues an availability event for its listeners.
 void ParcMediaElementAirPlay::PlayerCreated() {
   player_wireless_ = false;
   player_should_play_ = false;
@@ -296,27 +273,23 @@ void ParcMediaElementAirPlay::PlayerCreated() {
   ReportPlaybackTargetState();
   if (HasPlaybackTargetAvailabilityListeners() &&
       !wireless_playback_target_disabled_) {
-    EnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/false);
+    EnqueuePlaybackTargetAvailabilityEvent(false);
   }
   RemoteAvailabilityChanged();
 }
 
-// WebKit's HAVE_METADATA availability event; the player now knows whether it
-// can play to an AirPlay device.
 void ParcMediaElementAirPlay::MetadataLoaded() {
   if (HasPlaybackTargetAvailabilityListeners() &&
       !wireless_playback_target_disabled_) {
-    EnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/true);
+    EnqueuePlaybackTargetAvailabilityEvent(true);
   }
   ReportPlaybackTargetState();
 }
 
-// WebKit's clearMediaPlayer tells availability listeners the element has
-// nothing to play to a target, and it plays to none.
 void ParcMediaElementAirPlay::PlayerCleared() {
   if (HasPlaybackTargetAvailabilityListeners() &&
       !wireless_playback_target_disabled_) {
-    EnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/false);
+    EnqueuePlaybackTargetAvailabilityEvent(false);
   }
   if (playing_to_wireless_target_) {
     UpdatePlayingToWirelessTarget();
@@ -324,8 +297,32 @@ void ParcMediaElementAirPlay::PlayerCleared() {
   RemoteAvailabilityChanged();
 }
 
-// An AirPlay alternative opens a deferred ManagedMediaSource and lets a Media
-// Source element play to a target.
+void ParcMediaElementAirPlay::RestoreRemotePlaybackTime(
+    bool tracks_are_ready,
+    HTMLMediaElement::ReadyState old_state) {
+  HTMLMediaElement& element = Media();
+  if (remote_playback_time_ && tracks_are_ready &&
+      element.ready_state_ >= HTMLMediaElement::kHaveFutureData &&
+      old_state < HTMLMediaElement::kHaveFutureData) {
+    if (const double time =
+            *std::exchange(remote_playback_time_, std::nullopt)) {
+      element.setCurrentTime(time);
+    }
+  }
+}
+
+bool ParcMediaElementAirPlay::DefersMediaSourceOpen(
+    std::unique_ptr<WebMediaSource>& web_media_source) {
+  HTMLMediaElement& element = Media();
+  if (!element.media_source_attachment_->ParcManaged() ||
+      !element.PresentsParcSafariIdentity() ||
+      DeferredMediaSourceOpenCanProgress()) {
+    return false;
+  }
+  deferred_web_media_source_ = std::move(web_media_source);
+  return true;
+}
+
 void ParcMediaElementAirPlay::SourceWasAdded() {
   OpenIfDeferredOpen();
   ReportPlaybackTargetState();
@@ -335,8 +332,6 @@ void ParcMediaElementAirPlay::SourceWasRemoved() {
   ReportPlaybackTargetState();
 }
 
-// MediaElementSession::externalOutputDeviceAvailableDidChange, then
-// wirelessRoutesAvailableDidChange.
 void ParcMediaElementAirPlay::SetPlaybackTargetAvailability(bool available) {
   if (!Media().PresentsParcSafariIdentity() ||
       available == has_playback_targets_) {
@@ -344,12 +339,11 @@ void ParcMediaElementAirPlay::SetPlaybackTargetAvailability(bool available) {
   }
   has_playback_targets_ = available;
   if (!wireless_playback_target_disabled_) {
-    EnqueuePlaybackTargetAvailabilityEvent(/*only_when_changed=*/true);
+    EnqueuePlaybackTargetAvailabilityEvent(true);
   }
   RemoteAvailabilityChanged();
 }
 
-// setWirelessPlaybackTarget and setShouldPlayToPlaybackTarget.
 void ParcMediaElementAirPlay::SetPlaybackTarget(const String& output_context_id,
                                                 const String& device_name,
                                                 bool should_play,
@@ -359,7 +353,6 @@ void ParcMediaElementAirPlay::SetPlaybackTarget(const String& output_context_id,
   if (!element.PresentsParcSafariIdentity()) {
     return;
   }
-  // The placard shows the device's name in the tint; the button the tint.
   const bool tint_changed =
       tint_argb != playback_target_tint_ ||
       tint_on_light_argb != playback_target_tint_on_light_;
@@ -373,7 +366,6 @@ void ParcMediaElementAirPlay::SetPlaybackTarget(const String& output_context_id,
   playback_target_tint_ = tint_argb;
   playback_target_tint_on_light_ = tint_on_light_argb;
   should_play_to_playback_target_ = should_play && !output_context_id.empty();
-  // A new tint alone (the Space changed) leaves the player as it plays.
   if (target_changed || !tint_changed) {
     ApplyPlaybackTargetToPlayer();
   }
@@ -394,7 +386,6 @@ void ParcMediaElementAirPlay::SetPlaybackTarget(const String& output_context_id,
   }
 }
 
-// playbackTargetPickerWasDismissed.
 void ParcMediaElementAirPlay::PlaybackTargetPickerDismissed() {
   HTMLMediaElement& element = Media();
   if (!element.PresentsParcSafariIdentity()) {
@@ -405,8 +396,6 @@ void ParcMediaElementAirPlay::PlaybackTargetPickerDismissed() {
   }
 }
 
-// WebKit's Airplay.svg (modern-media-controls/images/macOS), the glyph
-// mediaControls.css and mediaInterstitials.css draw, filled with the tint.
 String ParcMediaElementAirPlay::AirPlayTintedGlyph(
     bool on_light_surface) const {
   static constexpr char kGlyphPath[] =
@@ -448,9 +437,6 @@ bool ParcMediaElementAirPlay::PlaysToPlaybackTargets() const {
   return Media().PresentsParcSafariIdentity() && SupportsPlaybackTarget();
 }
 
-// Only the native HLS player and a clear file's native route play to a
-// target. A Media Source element can't, but checkPlaybackTargetCompatibility
-// switches it to its <source> alternative.
 bool ParcMediaElementAirPlay::SupportsPlaybackTarget() const {
   HTMLMediaElement& element = Media();
   return element.web_media_player_ &&
@@ -460,9 +446,6 @@ bool ParcMediaElementAirPlay::SupportsPlaybackTarget() const {
            HasWirelessPlaybackTargetAlternative()));
 }
 
-// A <source> child with a URL that isn't blob:, while the element loads from
-// its <source> children. WebKit also asks isSafeToLoadURL, whose Content
-// Security Policy check would report here each time this is asked.
 bool ParcMediaElementAirPlay::HasWirelessPlaybackTargetAlternative() const {
   HTMLMediaElement& element = Media();
   if (element.load_state_ != HTMLMediaElement::kLoadingFromSourceElement) {
@@ -492,8 +475,6 @@ void ParcMediaElementAirPlay::OpenIfDeferredOpen() {
   }
 }
 
-// checkPlaybackTargetCompatibility: an element playing to the target whose
-// player can't goes on to its next <source>, else stops playing to it.
 void ParcMediaElementAirPlay::CheckPlaybackTargetCompatibility(TimerBase*) {
   HTMLMediaElement& element = Media();
   if (!playing_to_wireless_target_ || !element.web_media_player_ ||
@@ -529,9 +510,6 @@ void ParcMediaElementAirPlay::ApplyPlaybackTargetToPlayer() {
     parc->ParcSetPlaybackTarget(playback_target_id_.Utf8(),
                                 should_play_to_playback_target_);
   }
-  // WebKit's Media Source player reports it plays to the target once told
-  // to, though it can't (MediaPlayerPrivateMediaSourceAVFObjC::
-  // setShouldPlayToPlaybackTarget), until the compatibility check.
   if (element.GetLoadType() == WebMediaPlayer::kLoadTypeMediaSource &&
       should_play_to_playback_target_ != player_should_play_) {
     player_should_play_ = should_play_to_playback_target_;
@@ -544,16 +522,12 @@ void ParcMediaElementAirPlay::ReportPlaybackTargetState() {
   if (!element.media_player_observer_remote_set_) {
     return;
   }
-  // MediaElementSession's RequiresPlaybackTargetMonitoring, and the native
-  // HLS player too, so the browser's own controls can offer AirPlay.
   const bool supports_target =
       !wireless_playback_target_disabled_ && SupportsPlaybackTarget();
   const bool requires_monitoring =
       !wireless_playback_target_disabled_ &&
       (HasPlaybackTargetAvailabilityListeners() || supports_target);
   for (auto& observer : element.media_player_observer_remote_set_->Value()) {
-    // The Mini Player shows a Media Source element connecting, not
-    // connected, until its alternative plays on the device.
     observer->OnParcPlaybackTargetStateChanged(
         requires_monitoring, supports_target, should_play_to_playback_target_,
         playing_to_wireless_target_ &&
@@ -563,7 +537,6 @@ void ParcMediaElementAirPlay::ReportPlaybackTargetState() {
 
 void ParcMediaElementAirPlay::PlaybackTargetIsWirelessChanged(bool wireless) {
   player_wireless_ = wireless;
-  // A file the native route couldn't open no longer supports a target.
   if (!wireless) {
     ReportPlaybackTargetState();
     RemoteAvailabilityChanged();
@@ -581,9 +554,6 @@ void ParcMediaElementAirPlay::UpdatePlayingToWirelessTarget() {
                    WrapWeakPersistent(this)));
 }
 
-// The value as it stands when the task runs, as setIsPlayingToWirelessTarget
-// takes it: the current player's own report, while the element plays to the
-// target.
 void ParcMediaElementAirPlay::DidChangePlayingToWirelessTarget() {
   HTMLMediaElement& element = Media();
   const bool wireless = player_wireless_ && should_play_to_playback_target_ &&
@@ -606,10 +576,6 @@ void ParcMediaElementAirPlay::DidChangePlayingToWirelessTarget() {
           Webkitcurrentplaybacktargetiswirelesschanged()));
 }
 
-// PlacardSupport::_updatePlacard: the AirPlay placard while
-// webkitCurrentPlaybackTargetIsWireless, unless picture in picture's placard
-// is up. The shadow root holds one interstitial, so the AirPlay placard takes
-// the place of a hidden picture in picture one and leaves when it ends.
 void ParcMediaElementAirPlay::PlayingToWirelessTargetChanged() {
   auto* video = DynamicTo<HTMLVideoElement>(Media());
   if (!video) {
@@ -632,4 +598,4 @@ void ParcMediaElementAirPlay::PlayingToWirelessTargetChanged() {
   }
 }
 
-}  // namespace blink
+}

@@ -1,6 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Installed by the reviewed overlay at
-// //third_party/blink/renderer/bindings/core/v8/parc_safari_scripts.cc.
 #include "third_party/blink/renderer/bindings/core/v8/parc_safari_scripts.h"
 
 #include <iterator>
@@ -21,7 +19,11 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_script_runner.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_worker_navigator.h"
 #include "third_party/blink/renderer/core/context_features/context_feature_settings.h"
+#include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
+#include "third_party/blink/renderer/core/dom/qualified_name.h"
+#include "third_party/blink/renderer/core/event_type_names.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/parc_safari_identity.h"
@@ -34,6 +36,11 @@
 #include "third_party/blink/renderer/core/workers/worker_or_worklet_global_scope.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_context_data.h"
+#include "third_party/blink/renderer/platform/heap/persistent.h"
+#include "third_party/blink/renderer/platform/scheduler/public/event_loop.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+#include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "v8/include/v8.h"
 
@@ -41,10 +48,6 @@ namespace blink {
 
 namespace {
 
-// Parc: what Safari's presentation script (parc_webkit_presentation.h)
-// receives as its argument and the page never sees. fire(target, type)
-// dispatches a trusted, cancelable, non-bubbling event, as WebKit's
-// HTMLMediaElement::scheduleEvent does.
 void ParcPresentationFire(const v8::FunctionCallbackInfo<v8::Value>& info) {
   v8::Isolate* isolate = info.GetIsolate();
   if (info.Length() < 2 || !info[1]->IsString()) {
@@ -58,9 +61,6 @@ void ParcPresentationFire(const v8::FunctionCallbackInfo<v8::Value>& info) {
       AtomicString(ToCoreString(isolate, info[1].As<v8::String>()))));
 }
 
-// mediaGesture(element): whether WebKit has lifted the element's fullscreen
-// and picture-in-picture gesture rule (HTMLMediaElement::
-// ParcHadMediaUserGesture).
 void ParcPresentationMediaGesture(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   HTMLMediaElement* element =
@@ -70,11 +70,6 @@ void ParcPresentationMediaGesture(
       element && ParcMediaElement::From(*element).HadMediaUserGesture());
 }
 
-// allowPictureInPicture(video): lets the next picture-in-picture request go
-// without transient activation once WebKit's rule is lifted for the video,
-// through Chromium's picture-in-picture request token. Only for a video
-// Chromium would let in, so the request that follows at once spends the
-// token and none is left for the page.
 void ParcPresentationAllowPictureInPicture(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   HTMLVideoElement* video =
@@ -86,14 +81,12 @@ void ParcPresentationAllowPictureInPicture(
   PictureInPictureController& controller =
       PictureInPictureController::From(video->GetDocument());
   if (!controller.PictureInPictureElement() &&
-      controller.IsElementAllowed(*video, /*report_failure=*/false) ==
+      controller.IsElementAllowed(*video, false) ==
           PictureInPictureController::Status::kEnabled) {
     controller.ActivatePictureInPictureRequestToken();
   }
 }
 
-// The presentation script evaluates to a function; it is called with an
-// object holding the helpers above. Errors are reported like the page's.
 void CallParcPresentationScript(ScriptState* script_state,
                                 v8::Local<v8::Function> install) {
   v8::Isolate* isolate = script_state->GetIsolate();
@@ -127,27 +120,17 @@ void CallParcPresentationScript(ScriptState* script_state,
       std::size(argv), argv, isolate);
 }
 
-}  // namespace
+}
 
 bool PresentsParcSafariIdentity(LocalDOMWindow* window) {
   return IsParcSafariIdentityUserAgent(window->UserAgent());
 }
 
-// Parc: Safari's members of Blink interfaces
-// ([ContextEnabled=ParcSafariIdentity], such as HTMLMediaElement's
-// getStartDate) are installed with each interface object made after the
-// window has these settings; they check the document's user agent then.
-// ContextEnabled=ParcAudioVideoTracks needs them with Chromium's
-// AudioVideoTracks flag too, which [RuntimeEnabled] alone gave.
 void EnableParcSafariBindings(LocalDOMWindow* window) {
   ContextFeatureSettings::From(
       window, ContextFeatureSettings::CreationMode::kCreateIfNotExists);
 }
 
-// Parc: Safari has no navigator.userAgentData, so a document presenting
-// Safari's identity has none either, in every world. The [SecureContext]
-// attribute is installed when the prototype is created, which
-// PrototypeForType does, so it is removed after that. Runs no script.
 void RemoveParcUserAgentData(ScriptState* script_state) {
   v8::Local<v8::Object> prototype =
       script_state->PerContextData()->PrototypeForType(
@@ -159,15 +142,6 @@ void RemoveParcUserAgentData(ScriptState* script_state) {
   }
 }
 
-// Parc: the main world of a new context also gets Safari's
-// ManagedMediaSource, which Chromium lacks (parc_managed_media_source.h),
-// its legacy prefixed EME (parc_webkit_media_keys.h), its MediaKeys
-// without getStatusForPolicy (parc_safari_media_keys.h) and its video
-// presentation API (parc_webkit_presentation.h) and its AirPlay availability
-// event (parc_webkit_playback_target.h), before any script of the
-// page runs, unless the document can't run scripts. Errors from them are
-// reported unmuted, like the page's. The legacy EME script's value is its
-// webkitneedkey hook, which only Blink reaches (parc_webkit_need_key.h).
 void InstallParcSafariScripts(ScriptState* script_state,
                               LocalDOMWindow* window) {
   if (window->CanExecuteScripts(kNotAboutToExecuteScript)) {
@@ -200,9 +174,6 @@ void InstallParcSafariScripts(ScriptState* script_state,
   }
 }
 
-// A document that took over its window's context gets them in a microtask:
-// after the commit that installed it has finished, and before any of its own
-// scripts run.
 void InstallParcSafariScriptsAfterCommit(ScriptState* script_state,
                                          LocalDOMWindow* window) {
   if (!script_state || !window || !script_state->ContextIsValid() ||
@@ -213,15 +184,113 @@ void InstallParcSafariScriptsAfterCommit(ScriptState* script_state,
   InstallParcSafariScripts(script_state, window);
 }
 
+void ParcSafariWindowContextCreated(ScriptState* script_state,
+                                    LocalDOMWindow* window,
+                                    bool main_world) {
+  if (!PresentsParcSafariIdentity(window)) {
+    return;
+  }
+  RemoveParcUserAgentData(script_state);
+  if (main_world) {
+    InstallParcSafariScripts(script_state, window);
+  }
+}
+
+void ParcSafariDocumentTookOverWindow(ScriptState* script_state,
+                                      LocalDOMWindow* window,
+                                      bool main_world) {
+  if (!PresentsParcSafariIdentity(window)) {
+    return;
+  }
+  ScriptState::Scope scope(script_state);
+  RemoveParcUserAgentData(script_state);
+  if (main_world) {
+    window->GetAgent()->event_loop()->EnqueueMicrotask(
+        BindOnce(&InstallParcSafariScriptsAfterCommit,
+                 WrapWeakPersistent(script_state), WrapWeakPersistent(window)));
+  }
+}
+
+namespace {
+
+void FireParcSafariFullscreenEvents(const AtomicString& type,
+                                    Element* element,
+                                    Document* document) {
+  if (!document || !element) {
+    return;
+  }
+  EventTarget* target =
+      element->isConnected() && &element->GetDocument() == document
+          ? static_cast<EventTarget*>(element)
+          : static_cast<EventTarget*>(document);
+  const auto fire = [target](const AtomicString& event_type) {
+    Event* event = Event::CreateBubble(event_type);
+    event->SetComposed(true);
+    target->DispatchEvent(*event);
+  };
+  fire(type);
+  if (type == event_type_names::kFullscreenerror) {
+    fire(event_type_names::kWebkitfullscreenerror);
+    return;
+  }
+  const auto handles_both = [](const EventTarget& listening) {
+    return listening.HasJSBasedEventListeners(
+               event_type_names::kWebkitfullscreenchange) &&
+           listening.HasJSBasedEventListeners(
+               event_type_names::kFullscreenchange);
+  };
+  if (handles_both(*target) || handles_both(target->ToNode()->GetDocument())) {
+    return;
+  }
+  fire(event_type_names::kWebkitfullscreenchange);
+}
+
+}
+
+bool EnqueueParcSafariFullscreenEvent(const AtomicString& type,
+                                      Element& element,
+                                      Document& document) {
+  const ExecutionContext* context = document.GetExecutionContext();
+  if (!context || !IsParcSafariIdentityUserAgent(context->UserAgent())) {
+    return false;
+  }
+  document.EnqueueAnimationFrameTask(
+      BindOnce(FireParcSafariFullscreenEvents, type,
+               WrapWeakPersistent(&element), WrapWeakPersistent(&document)));
+  return true;
+}
+
+const AtomicString& ParcLegacyEmeEventName(const QualifiedName& attr_name) {
+  struct Handler {
+    QualifiedName attribute;
+    AtomicString event;
+  };
+  DEFINE_STATIC_LOCAL(const Vector<Handler>, handlers,
+                      ({{QualifiedName(AtomicString("onwebkitkeyadded")),
+                         AtomicString("webkitkeyadded")},
+                        {QualifiedName(AtomicString("onwebkitkeyerror")),
+                         AtomicString("webkitkeyerror")},
+                        {QualifiedName(AtomicString("onwebkitkeymessage")),
+                         AtomicString("webkitkeymessage")},
+                        {QualifiedName(AtomicString("onwebkitneedkey")),
+                         AtomicString("webkitneedkey")}}));
+  for (const Handler& handler : handlers) {
+    if (attr_name == handler.attribute) {
+      return handler.event;
+    }
+  }
+  return g_null_atom;
+}
+
+bool ParcLegacyEmeHandlersEnabled(const Document& document) {
+  auto* window = DynamicTo<LocalDOMWindow>(document.GetExecutionContext());
+  return window && IsParcSafariIdentityUserAgent(window->UserAgent());
+}
+
 void InstallParcSafariWorkerScripts(WorkerOrWorkletGlobalScope& global_scope,
                                     ScriptState* script_state,
                                     V8PerContextData* per_context_data,
                                     v8::Isolate* isolate) {
-  // Parc: a worker of a document presenting Safari's identity carries
-  // Safari's user agent and, like Safari, has no navigator.userAgentData
-  // (third_party/blink/renderer/core/frame/parc_safari_identity.h). Removed
-  // before the worker's script is evaluated. A dedicated worker also gets
-  // Safari's ManagedMediaSource (parc_managed_media_source.h).
   if (global_scope.IsWorkerGlobalScope() &&
       IsParcSafariIdentityUserAgent(global_scope.UserAgent())) {
     ScriptState::Scope scope(script_state);
@@ -242,4 +311,4 @@ void InstallParcSafariWorkerScripts(WorkerOrWorkletGlobalScope& global_scope,
   }
 }
 
-}  // namespace blink
+}

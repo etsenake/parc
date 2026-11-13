@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/html/media/parc_page_media_state.h"
+#include "third_party/blink/renderer/core/html/track/track_base.h"
 #include "third_party/blink/renderer/core/page/page_visibility_observer.h"
 #include "third_party/blink/renderer/platform/bindings/exception_code.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
@@ -40,9 +41,11 @@ class AudioTrack;
 class Document;
 class Event;
 class ExceptionState;
+class KURL;
 class ParcInbandTextTrack;
 class ScriptObject;
 class ScriptState;
+class V8TextTrackKind;
 
 class CORE_EXPORT ParcMediaElement final
     : public GarbageCollected<ParcMediaElement>,
@@ -141,7 +144,63 @@ class CORE_EXPORT ParcMediaElement final
     Member<ParcMediaElement> parc_;
   };
 
+  struct DocumentMove {
+    bool keeps_player;
+    Document* old_context;
+    Document* new_context;
+    bool moves_player_to_frame;
+  };
+
   HTMLMediaElement& Media() const { return *GetSupplementable(); }
+
+  DocumentMove BeginDocumentMove(Document& old_document);
+  bool FinishesMoveWithoutOpener(const DocumentMove& move,
+                                 Document& old_document);
+  void FinishDocumentMove(const DocumentMove& move, Document& old_document);
+  void AutoplayAttributeChanged();
+  std::optional<bool> FrameHiddenOnInsertion(std::optional<bool> is_hidden);
+  void PrepareToPlayAfterSelectionIfNeeded();
+  void ExplicitLoadInvoked();
+  void LoadAlgorithmStarted();
+  void LoadInterruptedPlayback(bool explicit_load);
+  void ResetPlaybackRateForLoad(bool default_rate_valid);
+  void ExitPictureInPictureWithoutSource();
+  void PrepareToPlayBeforeLoad();
+  bool MayDeferLoad(const KURL& url) const;
+  void PlayerWillLoad();
+  bool IgnoresPlayerReadyState();
+  bool SeekMayFinishOnReadyState(HTMLMediaElement::ReadyState old_state) const;
+  void PrepareToPlayForFragment(double start_time);
+  void PauseIfNotPermittedAtFutureData(HTMLMediaElement::ReadyState old_state);
+  bool StopsProgressEvents();
+  void SeekPlayer(double time);
+  void SeekFinished(bool was_playing_before_seeking);
+  double PlayingCurrentTime() const;
+  void WillSetPaused(bool paused);
+  bool ReportsEndOnRateChange(double rate) const;
+  void PostEndCheckAfterRateChange();
+  static void CheckEndAfterRateChange(HTMLMediaElement* element);
+  bool PostsDeferredMediaLoad();
+  bool PreloadsAuto() const;
+  void LoadDeferredMediaBeforePlay();
+  bool VolumeChangeHandledAsWebKit();
+  bool MuteChangeHandledAsWebKit();
+  void AutoplayAfterMuteChange();
+  bool InbandAudioTrackChanged(AudioTrack* track,
+                               TrackBase::ChangeSource source);
+  bool SendEnabledAudioTracks();
+  bool AllowsTextTrackKind(const V8TextTrackKind& kind,
+                           ExceptionState& exception_state) const;
+  void NotePlayerFinishedSeek();
+  bool EndedForTimeChanged() const;
+  void WillLoop();
+  bool FiresEndedEvent();
+  void NotAtEnd();
+  void PrepareToPlayBeforePlayStateUpdate();
+  bool HoldsPlayback() const;
+  void PlayerCleared();
+  bool KeepsPlayingAfterRemoval() const;
+  bool InContextPictureInPicture() const;
 
   bool WithinBackgroundGrace() const;
 

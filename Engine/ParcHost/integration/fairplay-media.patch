@@ -13,7 +13,16 @@
    }
 --- a/content/browser/BUILD.gn
 +++ b/content/browser/BUILD.gn
-@@ -1426,6 +1426,7 @@
+@@ -1282,6 +1282,8 @@
+     "media/media_web_contents_observer.h",
+     "media/midi_host.cc",
+     "media/midi_host.h",
++    "media/parc_media_routing.cc",
++    "media/parc_media_routing.h",
+     "media/session/audio_focus_delegate.h",
+     "media/session/media_metadata_sanitizer.cc",
+     "media/session/media_metadata_sanitizer.h",
+@@ -1426,6 +1428,7 @@
      "picture_in_picture/picture_in_picture_session.cc",
      "picture_in_picture/picture_in_picture_session.h",
      "picture_in_picture/video_picture_in_picture_window_controller_impl.cc",
@@ -21,7 +30,7 @@
      "picture_in_picture/video_picture_in_picture_window_controller_impl.h",
      "preloading/anchor_element_interaction_host_impl.cc",
      "preloading/anchor_element_interaction_host_impl.h",
-@@ -1844,6 +1845,7 @@
+@@ -1844,6 +1847,7 @@
      "renderer_host/render_frame_host_factory.cc",
      "renderer_host/render_frame_host_factory.h",
      "renderer_host/render_frame_host_impl.cc",
@@ -29,7 +38,7 @@
      "renderer_host/render_frame_host_impl.h",
      "renderer_host/render_frame_host_impl_interface_binders.cc",
      "renderer_host/render_frame_host_lifecycle_state_impl.cc",
-@@ -2736,6 +2738,9 @@
+@@ -2736,6 +2740,9 @@
        "gpu/ca_transaction_gpu_coordinator.cc",
        "gpu/ca_transaction_gpu_coordinator.h",
        "media/desktop_media_window_registry_mac.mm",
@@ -39,7 +48,7 @@
        "memory/swap_metrics_driver_impl_mac.cc",
        "memory/swap_metrics_driver_impl_mac.h",
        "renderer_host/browser_compositor_view_mac.h",
-@@ -3670,6 +3675,7 @@
+@@ -3670,6 +3677,7 @@
      "//content/browser/btm:unit_tests",
      "//content/browser/indexed_db:idb_factory_mojolpm_fuzzer",
      "//content/browser/indexed_db:unit_tests",
@@ -53,117 +62,18 @@
  #include "build/build_config.h"
  #include "content/browser/media/cdm_storage_common.h"
  #include "content/browser/media/media_web_contents_observer.h"
-+#include "content/browser/media/parc_fairplay_hooks.h"
++#include "content/browser/media/parc_media_routing.h"
  #include "content/browser/renderer_host/render_frame_host_delegate.h"
  #include "content/browser/renderer_host/render_frame_host_impl.h"
  #include "content/public/browser/browser_context.h"
-@@ -34,6 +35,7 @@
- #include "content/public/common/cdm_info.h"
- #include "content/public/common/content_client.h"
- #include "media/base/cdm_context.h"
-+#include "media/base/key_system_names.h"
- #include "media/cdm/cdm_type.h"
- #include "media/media_buildflags.h"
- #include "media/mojo/buildflags.h"
-@@ -86,6 +88,66 @@
- #include "mojo/public/cpp/bindings/message.h"
- #endif  // BUILDFLAG(ENABLE_OOP_VIDEO_DECODER)
--
-+
-+namespace {
-+
-+parc::fairplay::WidevineCdmRequestObserver& WidevineCdmRequestObserverSlot() {
-+  static base::NoDestructor<parc::fairplay::WidevineCdmRequestObserver>
-+      observer;
-+  return *observer;
-+}
-+
-+constexpr size_t kMaxHeldWidevineCdmRequests = 16;
-+
-+bool IsWidevineKeySystemName(const std::string& key_system) {
-+  static constexpr char kWidevineKeySystemName[] = "com.widevine.alpha";
-+  return key_system == kWidevineKeySystemName ||
-+         media::IsSubKeySystemOf(key_system, kWidevineKeySystemName);
-+}
-+
-+parc::fairplay::SafariIdentityQuery& SafariIdentityQuerySlot() {
-+  static base::NoDestructor<parc::fairplay::SafariIdentityQuery> query;
-+  return *query;
-+}
-+
-+bool FramePresentsSafariIdentity(content::RenderFrameHost* frame) {
-+  const parc::fairplay::SafariIdentityQuery& query = SafariIdentityQuerySlot();
-+  return query && query.Run(frame);
-+}
-+
-+}
-+
-+namespace parc::fairplay {
-+
-+void SetWidevineCdmRequestObserver(WidevineCdmRequestObserver observer) {
-+  WidevineCdmRequestObserverSlot() = std::move(observer);
-+}
-+
-+void SetSafariIdentityQuery(SafariIdentityQuery query) {
-+  SafariIdentityQuerySlot() = std::move(query);
-+}
-+
-+bool FramePresentsSafariIdentity(content::RenderFrameHost* frame) {
-+  return frame && ::FramePresentsSafariIdentity(frame);
-+}
-+
-+}
-+
-+namespace parc_hooks {
-+using FairPlayCdmCreator =
-+    bool (*)(content::RenderFrameHost&,
-+             const media::CdmConfig&,
-+             media::mojom::InterfaceFactory::CreateCdmCallback&);
-+CONTENT_EXPORT void SetFairPlayCdmCreator(FairPlayCdmCreator creator);
-+}
-+
-+namespace {
-+parc_hooks::FairPlayCdmCreator g_parc_fairplay_cdm_creator = nullptr;
-+}
-+
-+void parc_hooks::SetFairPlayCdmCreator(FairPlayCdmCreator creator) {
-+  g_parc_fairplay_cdm_creator = creator;
-+}
-+
- namespace content {
--
-+
- namespace {
-@@ -546,6 +608,34 @@
+@@ -546,6 +547,12 @@
    CHECK(thread_checker_.CalledOnValidThread(), base::NotFatalUntil::M160);
    DVLOG(1) << __func__ << ": cdm_config=" << cdm_config;
 -
 +
-+  parc::fairplay::WidevineCdmRequestObserver widevine_observer =
-+      WidevineCdmRequestObserverSlot();
-+  if (widevine_observer && IsWidevineKeySystemName(cdm_config.key_system)) {
-+    base::WeakPtr<MediaInterfaceProxy> weak_this = weak_factory_.GetWeakPtr();
-+    const bool hold =
-+        widevine_observer.Run(&render_frame_host(), cdm_config.key_system);
-+    if (!weak_this) {
-+      return;
-+    }
-+    if (hold) {
-+      if (held_widevine_cdm_callbacks_.size() >= kMaxHeldWidevineCdmRequests) {
-+        std::move(create_cdm_cb)
-+            .Run(mojo::NullRemote(), nullptr,
-+                 media::CreateCdmStatus::kCdmCreationAborted);
-+        return;
-+      }
-+      DVLOG(1) << __func__ << ": Widevine CDM request held";
-+      held_widevine_cdm_callbacks_.push_back(std::move(create_cdm_cb));
-+      return;
-+    }
-+  }
-+
-+  if (g_parc_fairplay_cdm_creator &&
-+      g_parc_fairplay_cdm_creator(render_frame_host(), cdm_config,
-+                                  create_cdm_cb)) {
++  if (ParcHandleCdmRequest(render_frame_host(), cdm_config, create_cdm_cb,
++                           held_widevine_cdm_callbacks_,
++                           weak_factory_.GetWeakPtr())) {
 +    return;
 +  }
 +
@@ -8467,39 +8377,7 @@
 -
 +
  // Used to authorize a frame to bypass the browser's audio service for
-@@ -76,6 +77,7 @@
-   using ScopedGrant = base::ScopedClosureRunner;
--
-+
-   static ScopedGrant AddGrant(RenderFrameHost* rfh);
-+  static ScopedGrant AddPlayerGrant(RenderFrameHost* rfh, int player_id);
-   static bool ClaimGrant(const MediaPlayerId& id);
-   static void ReleaseGrant(const MediaPlayerId& id);
--
-+
-@@ -84,11 +86,16 @@
-   explicit AudibilityBypassTracker(RenderFrameHost* rfh);
-   DOCUMENT_USER_DATA_KEY_DECL();
--
-+
--  static void RevokeGrant(GlobalRenderFrameHostId rfh_id, int grant_id);
-+  static void RevokeGrant(int grant_id);
-+
-+  static base::flat_map<int, GlobalRenderFrameHostId>& GrantHolders();
-+
-+  std::optional<int> TakePlayerGrant(int player_id);
--
-+
--  int next_grant_id_ = 0;
-   base::flat_set<int> pending_grants_;
-+  base::flat_map<int, int> pending_player_grants_;
-   base::flat_map<MediaPlayerId, int> active_grants_;
-+  base::flat_map<int, int> released_grants_;
- };
--
-+
- // This class manages all RenderFrame based media related managers at the
-@@ -158,6 +165,9 @@
+@@ -158,6 +159,9 @@
    // Returns whether or not the given player id is active.
    bool IsPlayerActive(const MediaPlayerId& player_id) const;
 -
@@ -8510,7 +8388,7 @@
    bool has_audio_wake_lock_for_testing() const {
      return has_audio_wake_lock_for_testing_;
    }
-@@ -263,6 +273,13 @@
+@@ -263,6 +267,13 @@
      void OnVideoVisibilityChanged(bool meets_visibility_threshold) override;
      void NotifyAudioStreamMonitorIfNeeded();
      void OnVideoFrameAvailabilityChanged(bool available) override;
@@ -8525,7 +8403,7 @@
 +
     private:
      PlayerInfo* GetPlayerInfo();
-@@ -281,6 +298,7 @@
+@@ -281,6 +292,7 @@
 -
 +
      // Helps monitor audio stream when not using AudioService.
@@ -8537,26 +8415,22 @@
 +
 --- a/content/browser/media/media_web_contents_observer.cc
 +++ b/content/browser/media/media_web_contents_observer.cc
-@@ -12,6 +12,7 @@
- #include "base/debug/dump_without_crashing.h"
- #include "base/functional/bind.h"
- #include "base/memory/raw_ptr.h"
-+#include "base/no_destructor.h"
- #include "base/task/sequenced_task_runner.h"
- #include "build/build_config.h"
- #include "content/browser/browser_main_loop.h"
-@@ -22,7 +23,10 @@
+@@ -18,11 +18,14 @@
+ #include "content/browser/media/audible_metrics.h"
+ #include "content/browser/media/media_devices_util.h"
+ #include "content/browser/media/media_web_contents_observer.h"
++#include "content/browser/media/parc_media_routing.h"
+ #include "content/browser/renderer_host/media/media_stream_manager.h"
  #include "content/browser/renderer_host/media/preferred_audio_output_device_manager.h"
  #include "content/browser/renderer_host/render_frame_host_impl.h"
  #include "content/browser/web_contents/web_contents_impl.h"
 +#include "content/public/browser/parc_playback_target.h"
  #include "content/public/browser/render_frame_host.h"
 +#include "content/public/browser/render_widget_host_view.h"
-+#include "content/public/browser/render_process_host.h"
  #include "content/public/browser/web_contents.h"
  #include "mojo/public/cpp/bindings/message.h"
  #include "mojo/public/cpp/bindings/pending_receiver.h"
-@@ -239,6 +243,7 @@
+@@ -239,6 +242,7 @@
      // HasActiveEffectivelyFullscreenVideo() should return false if `player_id`
      // was the only fullscreen media.
      web_contents_impl()->MediaDestroyed(player_id);
@@ -8565,12 +8439,11 @@
 -
 +
    session_controllers_manager_->RenderFrameDeleted(render_frame_host);
-@@ -380,6 +385,24 @@
+@@ -380,6 +384,23 @@
    return false;
  }
 -
 +
-+// static
 +bool MediaWebContentsObserver::IsRemotePlaybackStartedInPage(
 +    RenderFrameHostImpl* main_frame) {
 +  auto* web_contents = WebContentsImpl::FromRenderFrameHostImpl(main_frame);
@@ -8592,7 +8465,7 @@
 -
 +
  MediaWebContentsObserver::MediaPlayerHostImpl::MediaPlayerHostImpl(
-@@ -524,6 +547,7 @@
+@@ -524,6 +545,7 @@
      OnRemotePlaybackMetadataChange(
          media_session::mojom::RemotePlaybackMetadataPtr
              remote_playback_metadata) {
@@ -8600,7 +8473,7 @@
    media_web_contents_observer_->OnRemotePlaybackMetadataChange(
        media_player_id_, std::move(remote_playback_metadata));
  }
-@@ -571,9 +595,9 @@
+@@ -571,9 +593,9 @@
    // Register as an audible client if the player is audible and bypasses the
    // standard audio service (currently only for `MediaFoundationRenderer`).
    // This requires explicit browser-side authorization to prevent spoofing.
@@ -8614,7 +8487,7 @@
 +
    auto* audio_stream_monitor =
        media_web_contents_observer_->web_contents_impl()->audio_stream_monitor();
-@@ -689,6 +713,99 @@
+@@ -689,6 +711,57 @@
        ->OnVideoFrameAvailabilityChanged(media_player_id_, available);
  }
 -
@@ -8625,48 +8498,6 @@
 +
 +void SetParcPlaybackTargetHandler(ParcPlaybackTargetHandler* handler) {
 +  g_parc_playback_target_handler = handler;
-+}
-+
-+void SetParcPlaybackTargetAvailability(WebContents* web_contents,
-+                                       const MediaPlayerId& player,
-+                                       bool available) {
-+  MediaWebContentsObserver* observer =
-+      web_contents ? static_cast<WebContentsImpl*>(web_contents)
-+                         ->media_web_contents_observer()
-+                   : nullptr;
-+  if (observer && observer->IsMediaPlayerRemoteAvailable(player)) {
-+    observer->GetMediaPlayerRemote(player)->ParcSetPlaybackTargetAvailability(
-+        available);
-+  }
-+}
-+
-+void SetParcPlaybackTarget(WebContents* web_contents,
-+                           const MediaPlayerId& player,
-+                           const std::string& output_context_id,
-+                           const std::string& device_name,
-+                           bool should_play,
-+                           uint32_t tint_argb,
-+                           uint32_t tint_on_light_argb) {
-+  MediaWebContentsObserver* observer =
-+      web_contents ? static_cast<WebContentsImpl*>(web_contents)
-+                         ->media_web_contents_observer()
-+                   : nullptr;
-+  if (observer && observer->IsMediaPlayerRemoteAvailable(player)) {
-+    observer->GetMediaPlayerRemote(player)->ParcSetPlaybackTarget(
-+        output_context_id, device_name, should_play, tint_argb,
-+        tint_on_light_argb);
-+  }
-+}
-+
-+void SetParcPlaybackTargetPickerDismissed(WebContents* web_contents,
-+                                          const MediaPlayerId& player) {
-+  MediaWebContentsObserver* observer =
-+      web_contents ? static_cast<WebContentsImpl*>(web_contents)
-+                         ->media_web_contents_observer()
-+                   : nullptr;
-+  if (observer && observer->IsMediaPlayerRemoteAvailable(player)) {
-+    observer->GetMediaPlayerRemote(player)->ParcPlaybackTargetPickerDismissed();
-+  }
 +}
 +
 +void MediaWebContentsObserver::ParcPlaybackTargetPlayerGone(
@@ -8715,7 +8546,7 @@
  bool MediaWebContentsObserver::IsMediaPlayerRemoteAvailable(
      const MediaPlayerId& player_id) {
    return media_player_remotes_.contains(player_id);
-@@ -794,6 +911,7 @@
+@@ -794,6 +867,7 @@
            observer->fullscreen_player_.reset();
          }
          observer->web_contents_impl()->MediaDestroyed(player_id);
@@ -8724,165 +8555,25 @@
        base::Unretained(this), player_id));
 -
 +
-@@ -835,19 +953,59 @@
--
-+
- AudibilityBypassTracker::~AudibilityBypassTracker() = default;
--
-+
-+namespace {
-+
-+int NextGrantId() {
-+  static int next_grant_id = 0;
-+  return ++next_grant_id;
-+}
-+
-+}
-+
- // static
- AudibilityBypassTracker::ScopedGrant AudibilityBypassTracker::AddGrant(
-     RenderFrameHost* rfh) {
-   if (rfh) {
-     auto* tracker = GetOrCreateForCurrentDocument(rfh);
--    int grant_id = ++tracker->next_grant_id_;
-+    int grant_id = NextGrantId();
-     tracker->pending_grants_.insert(grant_id);
--    return ScopedGrant(base::BindOnce(&AudibilityBypassTracker::RevokeGrant,
--                                      rfh->GetGlobalId(), grant_id));
-+    GrantHolders()[grant_id] = rfh->GetGlobalId();
-+    return ScopedGrant(
-+        base::BindOnce(&AudibilityBypassTracker::RevokeGrant, grant_id));
-   }
-   return ScopedGrant();
- }
--
-+
-+// static
-+AudibilityBypassTracker::ScopedGrant AudibilityBypassTracker::AddPlayerGrant(
-+    RenderFrameHost* rfh,
-+    int player_id) {
-+  int grant_id = NextGrantId();
-+  GetOrCreateForCurrentDocument(rfh)->pending_player_grants_[grant_id] =
-+      player_id;
-+  GrantHolders()[grant_id] = rfh->GetGlobalId();
-+  return ScopedGrant(
-+      base::BindOnce(&AudibilityBypassTracker::RevokeGrant, grant_id));
-+}
-+
-+std::optional<int> AudibilityBypassTracker::TakePlayerGrant(int player_id) {
-+  std::optional<int> grant_id;
-+  if (auto released = released_grants_.find(player_id);
-+      released != released_grants_.end()) {
-+    grant_id = released->second;
-+    released_grants_.erase(released);
-+  } else if (auto pending = std::ranges::find_if(
-+                 pending_player_grants_,
-+                 [player_id](const auto& entry) {
-+                   return entry.second == player_id;
-+                 });
-+             pending != pending_player_grants_.end()) {
-+    grant_id = pending->first;
-+    pending_player_grants_.erase(pending);
-+  }
-+  return grant_id;
-+}
-+
- // static
- bool AudibilityBypassTracker::ClaimGrant(const MediaPlayerId& id) {
-   auto* rfh = RenderFrameHost::FromID(id.frame_routing_id);
-@@ -858,6 +1016,18 @@
+@@ -858,6 +932,9 @@
    if (tracker && tracker->active_grants_.contains(id)) {
      return true;
    }
-+  std::optional<int> player_grant_id;
-+  rfh->GetProcess()->ForEachRenderFrameHost([&](RenderFrameHost* other) {
-+    auto* other_tracker = GetForCurrentDocument(other);
-+    if (!player_grant_id && other_tracker) {
-+      player_grant_id = other_tracker->TakePlayerGrant(id.player_id);
-+    }
-+  });
-+  if (player_grant_id) {
-+    GetOrCreateForCurrentDocument(rfh)->active_grants_[id] = *player_grant_id;
-+    GrantHolders()[*player_grant_id] = id.frame_routing_id;
++  if (ParcClaimPlayerGrant(id)) {
 +    return true;
 +  }
    if (tracker && !tracker->pending_grants_.empty()) {
      int grant_id = *tracker->pending_grants_.begin();
      tracker->pending_grants_.erase(tracker->pending_grants_.begin());
-@@ -874,15 +1044,34 @@
-     return;
+@@ -877,6 +954,7 @@
+   if (tracker) {
+     tracker->active_grants_.erase(id);
    }
-   auto* tracker = GetForCurrentDocument(rfh);
--  if (tracker) {
--    tracker->active_grants_.erase(id);
-+  if (!tracker) {
-+    return;
-+  }
-+  auto active = tracker->active_grants_.find(id);
-+  if (active == tracker->active_grants_.end()) {
-+    return;
-   }
-+  tracker->released_grants_[id.player_id] = active->second;
-+  tracker->active_grants_.erase(active);
-+  rfh->GetProcess()->ForEachRenderFrameHost([&](RenderFrameHost* other) {
-+    auto* web_contents =
-+        static_cast<WebContentsImpl*>(WebContents::FromRenderFrameHost(other));
-+    if (other != rfh && web_contents &&
-+        web_contents->media_web_contents_observer()) {
-+      web_contents->media_web_contents_observer()->OnAudibilityBypassRevoked(
-+          MediaPlayerId(other->GetGlobalId(), id.player_id));
-+    }
-+  });
++  ParcReleasePlayerGrant(id);
  }
 -
 +
  // static
--void AudibilityBypassTracker::RevokeGrant(GlobalRenderFrameHostId rfh_id,
--                                          int grant_id) {
--  auto* rfh = RenderFrameHost::FromID(rfh_id);
-+void AudibilityBypassTracker::RevokeGrant(int grant_id) {
-+  auto holder = GrantHolders().find(grant_id);
-+  if (holder == GrantHolders().end()) {
-+    return;
-+  }
-+  auto* rfh = RenderFrameHost::FromID(holder->second);
-+  GrantHolders().erase(holder);
-   if (!rfh) {
-     return;
-   }
-@@ -890,7 +1079,8 @@
-   if (!tracker) {
-     return;
-   }
--  if (tracker->pending_grants_.erase(grant_id)) {
-+  if (tracker->pending_grants_.erase(grant_id) ||
-+      tracker->pending_player_grants_.erase(grant_id)) {
-     return;
-   }
-   for (auto it = tracker->active_grants_.begin();
-@@ -904,9 +1094,20 @@
-         web_contents->media_web_contents_observer()->OnAudibilityBypassRevoked(
-             id);
-       }
--      break;
-+      return;
-     }
-   }
-+  base::EraseIf(tracker->released_grants_, [grant_id](const auto& entry) {
-+    return entry.second == grant_id;
-+  });
-+}
-+
-+// static
-+base::flat_map<int, GlobalRenderFrameHostId>&
-+AudibilityBypassTracker::GrantHolders() {
-+  static base::NoDestructor<base::flat_map<int, GlobalRenderFrameHostId>>
-+      holders;
-+  return *holders;
- }
--
-+
- DOCUMENT_USER_DATA_KEY_IMPL(AudibilityBypassTracker);
 --- a/third_party/blink/public/platform/web_audio_source_provider_impl.h
 +++ b/third_party/blink/public/platform/web_audio_source_provider_impl.h
 @@ -8,6 +8,7 @@
@@ -11546,26 +11237,16 @@
    for (const auto& connection : connections_) {
 --- a/third_party/blink/renderer/modules/remoteplayback/remote_playback.h
 +++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback.h
-@@ -13,6 +13,7 @@
- #include "third_party/blink/renderer/core/dom/events/event_target.h"
- #include "third_party/blink/renderer/core/execution_context/execution_context.h"
- #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
-+#include "third_party/blink/renderer/core/html/media/parc_remote_playback_extension.h"
- #include "third_party/blink/renderer/core/html/media/remote_playback_controller.h"
- #include "third_party/blink/renderer/modules/modules_export.h"
- #include "third_party/blink/renderer/modules/presentation/presentation_availability_observer.h"
-@@ -53,7 +54,8 @@
-       public RemotePlaybackClient,
-       public PresentationAvailabilityObserver,
-       public mojom::blink::PresentationConnection,
--      public RemotePlaybackController {
-+      public RemotePlaybackController,
-+      public ParcRemotePlaybackExtension {
-   DEFINE_WRAPPERTYPEINFO();
+@@ -37,6 +37,7 @@
 -
 +
-  public:
-@@ -110,6 +112,7 @@
+ class AvailabilityCallbackWrapper;
+ class HTMLMediaElement;
++class ParcRemotePlaybackAirPlay;
+ class ScriptState;
+ class V8RemotePlaybackAvailabilityCallback;
+ class V8RemotePlaybackState;
+@@ -110,6 +111,7 @@
    bool CancelWatchAvailabilityInternal(int id);
 -
 +
@@ -11575,7 +11256,7 @@
 +
    // PresentationAvailabilityObserver implementation.
    void AvailabilityChanged(mojom::blink::ScreenAvailability) override;
-@@ -130,6 +133,7 @@
+@@ -130,6 +132,7 @@
    bool RemotePlaybackAvailable() const override;
    void SourceChanged(const KURL&, bool is_source_supported) override;
    String GetPresentationId() override;
@@ -11583,16 +11264,11 @@
    void MediaMetadataChanged(
        std::optional<media::VideoCodec> video_codec,
        std::optional<media::AudioCodec> audio_codec) override;
-@@ -139,12 +143,18 @@
+@@ -139,12 +142,13 @@
    void RemoveObserver(RemotePlaybackObserver*) override;
    void AvailabilityChangedForTesting(bool screen_is_available) override;
    void StateChangedForTesting(bool is_connected) override;
 +  ParcRemotePlaybackExtension& GetParcExtension() override;
-+
-+  void ParcAirPlayAvailabilityChanged() override;
-+  void ParcShouldPlayToRemoteTargetChanged(bool should_play) override;
-+  void ParcPlayingToRemoteTargetChanged(bool playing) override;
-+  void ParcPlaybackTargetPickerDismissed() override;
 -
 +
    // ScriptWrappable implementation.
@@ -11606,45 +11282,17 @@
 +
    // Adjusts the internal state of |this| after a playback state change.
    void StateChanged(mojom::blink::PresentationConnectionState);
-@@ -158,6 +168,7 @@
+@@ -158,6 +162,8 @@
   private:
    friend class V8RemotePlayback;
    friend class RemotePlaybackTest;
++  friend class ParcRemotePlaybackAirPlay;
 +  friend class ParcRemotePlaybackTest;
    friend class MediaControlsImplTest;
 -
 +
    void PromptCancelled();
-@@ -180,6 +191,14 @@
-   // Clears bindings after remote playback stops.
-   void CleanupConnections();
--
-+
-+  void ParcMaybeMoveToElementContext();
-+  void ParcMoveToElementContext();
-+  void ParcEndSessionOfGoneFrame();
-+  bool ParcRemotePlaybackDisabled() const;
-+  void ParcPromptAirPlay(ExceptionState&);
-+  void ParcSettlePrompts(bool resolve);
-+  void ParcSetAirPlayState(mojom::blink::PresentationConnectionState);
-+
-   mojom::blink::PresentationConnectionState state_;
-   mojom::blink::ScreenAvailability availability_;
-   HeapHashMap<int, Member<AvailabilityCallbackWrapper>> availability_callbacks_;
-@@ -187,6 +206,11 @@
-   Member<ScriptPromiseResolver<IDLUndefined>> prompt_promise_resolver_;
-   Vector<KURL> availability_urls_;
-   bool is_listening_;
-+  bool remoting_requested_while_frozen_ = false;
-+  bool parc_follows_element_ = false;
-+  bool parc_reported_availability_ = false;
-+  bool parc_airplay_connection_ = false;
-+  HeapVector<Member<ScriptPromiseResolver<IDLUndefined>>> parc_prompt_resolvers_;
-   bool is_background_availability_monitoring_disabled_for_testing_ = false;
--
-+
-   String presentation_id_;
-@@ -196,9 +220,12 @@
+@@ -196,12 +202,16 @@
    std::optional<media::VideoCodec> video_codec_ = std::nullopt;
    std::optional<media::AudioCodec> audio_codec_ = std::nullopt;
 -
@@ -11661,31 +11309,39 @@
 -
 +
    HeapHashSet<Member<RemotePlaybackObserver>> observers_;
++  Member<ParcRemotePlaybackAirPlay> parc_air_play_;
+ };
+-
++
+ }  // namespace blink
 --- a/third_party/blink/renderer/modules/remoteplayback/remote_playback.cc
 +++ b/third_party/blink/renderer/modules/remoteplayback/remote_playback.cc
-@@ -11,6 +11,7 @@
- #include "base/strings/strcat.h"
- #include "media/base/remoting_constants.h"
- #include "third_party/blink/public/platform/modules/remoteplayback/remote_playback_source.h"
-+#include "third_party/blink/public/platform/parc_web_media_player_extension.h"
- #include "third_party/blink/public/platform/task_type.h"
- #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
- #include "third_party/blink/renderer/bindings/core/v8/v8_throw_dom_exception.h"
-@@ -22,6 +23,7 @@
- #include "third_party/blink/renderer/core/frame/local_dom_window.h"
- #include "third_party/blink/renderer/core/html/media/html_media_element.h"
- #include "third_party/blink/renderer/core/html/media/html_video_element.h"
-+#include "third_party/blink/renderer/core/html/media/parc_media_element_air_play.h"
- #include "third_party/blink/renderer/core/html/media/remote_playback_observer.h"
- #include "third_party/blink/renderer/core/html_names.h"
- #include "third_party/blink/renderer/core/probe/async_task_context.h"
+@@ -30,6 +30,7 @@
+ #include "third_party/blink/renderer/modules/presentation/presentation_availability_state.h"
+ #include "third_party/blink/renderer/modules/presentation/presentation_controller.h"
+ #include "third_party/blink/renderer/modules/remoteplayback/availability_callback_wrapper.h"
++#include "third_party/blink/renderer/modules/remoteplayback/parc_remote_playback_air_play.h"
+ #include "third_party/blink/renderer/modules/remoteplayback/remote_playback_metrics.h"
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+ #include "third_party/blink/renderer/platform/instrumentation/memory_pressure_listener.h"
+@@ -129,7 +130,8 @@
+       media_element_(&element),
+       is_listening_(false),
+       presentation_connection_receiver_(this, element.GetExecutionContext()),
+-      target_presentation_connection_(element.GetExecutionContext()) {}
++      target_presentation_connection_(element.GetExecutionContext()),
++      parc_air_play_(MakeGarbageCollected<ParcRemotePlaybackAirPlay>(*this)) {}
+-
++
+ const AtomicString& RemotePlayback::InterfaceName() const {
+   return event_target_names::kRemotePlayback;
 @@ -143,8 +145,7 @@
      ScriptState* script_state,
      V8RemotePlaybackAvailabilityCallback* callback,
      ExceptionState& exception_state) {
 -  if (media_element_->FastHasAttribute(
 -          html_names::kDisableremoteplaybackAttr)) {
-+  if (ParcRemotePlaybackDisabled()) {
++  if (parc_air_play_->RemotePlaybackDisabled()) {
      exception_state.ThrowDOMException(
          DOMExceptionCode::kInvalidStateError,
          "disableRemotePlayback attribute is present.");
@@ -11695,7 +11351,7 @@
      ExceptionState& exception_state) {
 -  if (media_element_->FastHasAttribute(
 -          html_names::kDisableremoteplaybackAttr)) {
-+  if (ParcRemotePlaybackDisabled()) {
++  if (parc_air_play_->RemotePlaybackDisabled()) {
      exception_state.ThrowDOMException(
          DOMExceptionCode::kInvalidStateError,
          "disableRemotePlayback attribute is present.");
@@ -11705,36 +11361,28 @@
      ExceptionState& exception_state) {
 -  if (media_element_->FastHasAttribute(
 -          html_names::kDisableremoteplaybackAttr)) {
-+  if (ParcRemotePlaybackDisabled()) {
++  if (parc_air_play_->RemotePlaybackDisabled()) {
      exception_state.ThrowDOMException(
          DOMExceptionCode::kInvalidStateError,
          "disableRemotePlayback attribute is present.");
-@@ -214,6 +213,18 @@
+@@ -214,6 +213,10 @@
  ScriptPromise<IDLUndefined> RemotePlayback::prompt(
      ScriptState* script_state,
      ExceptionState& exception_state) {
-+  if (ParcUsesAirPlay()) {
-+    ParcPromptAirPlay(exception_state);
-+    if (exception_state.HadException()) {
-+      return EmptyPromise();
-+    }
-+    auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(
-+        script_state, exception_state.GetContext());
-+    parc_prompt_resolvers_.push_back(resolver);
-+    ParcMediaElementAirPlay::webkitShowPlaybackTargetPicker(*media_element_);
-+    return resolver->Promise();
++  if (parc_air_play_->UsesAirPlay()) {
++    return parc_air_play_->Prompt(script_state, exception_state);
 +  }
 +
    if (media_element_->FastHasAttribute(
            html_names::kDisableremoteplaybackAttr)) {
      exception_state.ThrowDOMException(
-@@ -280,20 +291,33 @@
+@@ -280,20 +283,26 @@
 -
 +
  bool RemotePlayback::HasPendingActivity() const {
    return HasEventListeners() || !availability_callbacks_.empty() ||
 -         prompt_promise_resolver_;
-+         prompt_promise_resolver_ || !parc_prompt_resolvers_.empty();
++         prompt_promise_resolver_ || parc_air_play_->HasPendingActivity();
  }
 -
 +
@@ -11743,8 +11391,7 @@
      return;
 -
 +
-+  if (ParcUsesAirPlay()) {
-+    ParcMediaElementAirPlay::webkitShowPlaybackTargetPicker(*media_element_);
++  if (parc_air_play_->ShowsPickerForPrompt()) {
 +    return;
 +  }
 +
@@ -11755,13 +11402,7 @@
 -        availability_urls_,
 -        BindOnce(&RemotePlayback::HandlePresentationResponse,
 -                 WrapPersistent(this)));
-+#if !BUILDFLAG(IS_ANDROID)
-+    if (WebMediaPlayer* player = media_element_->GetWebMediaPlayer()) {
-+      if (auto* parc = player->GetParcExtension()) {
-+        parc->ParcSetCastPrompted(true);
-+      }
-+    }
-+#endif
++    parc_air_play_->CastPromptStarted();
 +    controller->ParcGetPresentationServiceRunningWhileFrozen()
 +        ->StartPresentation(
 +            availability_urls_,
@@ -11770,170 +11411,107 @@
    } else {
      // TODO(yuryu): Wrapping PromptCancelled with base::OnceClosure as
      // InspectorInstrumentation requires a globally unique pointer to track
-@@ -396,8 +420,10 @@
+@@ -396,8 +405,10 @@
    }
    prompt_promise_resolver_ = nullptr;
 -
 +
 -  if (state_ == state)
 +  if (state_ == state) {
-+    ParcMaybeMoveToElementContext();
++    parc_air_play_->MaybeMoveToElementContext();
      return;
 +  }
 -
 +
    state_ = state;
    if (state_ == mojom::blink::PresentationConnectionState::CONNECTING) {
-@@ -421,6 +447,7 @@
+@@ -421,6 +432,7 @@
 -
 +
    for (auto observer : observers_)
      observer->OnRemotePlaybackStateChanged(state_);
-+  ParcMaybeMoveToElementContext();
++  parc_air_play_->MaybeMoveToElementContext();
  }
 -
 +
  void RemotePlayback::PromptCancelled() {
-@@ -439,6 +466,7 @@
+@@ -439,6 +451,7 @@
        prompt_promise_resolver_->GetScriptState()->GetIsolate(),
        DOMExceptionCode::kNotAllowedError, "The prompt was dismissed."));
    prompt_promise_resolver_ = nullptr;
-+  ParcMaybeMoveToElementContext();
++  parc_air_play_->MaybeMoveToElementContext();
  }
 -
 +
  void RemotePlayback::SourceChanged(const KURL& source,
-@@ -530,6 +558,11 @@
+@@ -530,6 +543,10 @@
  }
 -
 +
  bool RemotePlayback::RemotePlaybackAvailable() const {
-+  if (ParcUsesAirPlay()) {
-+    return ParcMediaElementAirPlay::From(*media_element_)
-+        .PlaybackTargetsAvailable();
++  if (parc_air_play_->UsesAirPlay()) {
++    return parc_air_play_->TargetsAvailable();
 +  }
 +
    if (IsBackgroundAvailabilityMonitoringDisabled() &&
        RuntimeEnabledFeatures::RemotePlaybackBackendEnabled() &&
        !media_element_->currentSrc().IsEmpty()) {
-@@ -552,7 +585,8 @@
+@@ -552,7 +569,8 @@
    StopListeningForAvailability();
 -
 +
    if (state_ == mojom::blink::PresentationConnectionState::CLOSED ||
 -      state_ == mojom::blink::PresentationConnectionState::TERMINATED) {
 +      state_ == mojom::blink::PresentationConnectionState::TERMINATED ||
-+      parc_airplay_connection_) {
++      parc_air_play_->KeepsConnection()) {
      return;
    }
 -
 +
-@@ -568,6 +602,58 @@
+@@ -568,6 +586,15 @@
    presentation_connection_receiver_.reset();
  }
 -
 +
 +void RemotePlayback::ContextDestroyed() {
 +  CleanupConnections();
-+  ExecutionContext* element_context = media_element_->GetExecutionContext();
-+  if (!parc_follows_element_ || !element_context ||
-+      element_context == GetExecutionContext() ||
-+      element_context->IsContextDestroyed()) {
-+    return;
-+  }
-+  element_context->GetTaskRunner(TaskType::kMediaElementEvent)
-+      ->PostTask(FROM_HERE,
-+                 BindOnce(&RemotePlayback::ParcEndSessionOfGoneFrame,
-+                          WrapWeakPersistent(this)));
++  parc_air_play_->ContextDestroyed();
 +}
 +
 +void RemotePlayback::ParcDidMoveToDocument() {
-+  parc_follows_element_ = true;
-+  ParcMaybeMoveToElementContext();
-+}
-+
-+void RemotePlayback::ParcMaybeMoveToElementContext() {
-+  if (prompt_promise_resolver_ ||
-+      state_ == mojom::blink::PresentationConnectionState::CONNECTING ||
-+      state_ == mojom::blink::PresentationConnectionState::CONNECTED) {
-+    return;
-+  }
-+  ParcMoveToElementContext();
-+}
-+
-+void RemotePlayback::ParcMoveToElementContext() {
-+  ExecutionContext* context = media_element_->GetExecutionContext();
-+  if (!parc_follows_element_ || !context || context->IsContextDestroyed() ||
-+      context == GetExecutionContext()) {
-+    return;
-+  }
-+  if (GetExecutionContext() && GetExecutionContext()->IsContextDestroyed()) {
-+    return;
-+  }
-+  StopListeningForAvailability();
-+  is_listening_ = false;
-+  availability_ = mojom::ScreenAvailability::UNKNOWN;
-+  SetExecutionContext(context);
-+  MaybeStartListeningForAvailability();
-+}
-+
-+void RemotePlayback::ParcEndSessionOfGoneFrame() {
-+  ParcMoveToElementContext();
-+  if (parc_airplay_connection_) {
-+    return;
-+  }
-+  StateChanged(mojom::blink::PresentationConnectionState::CLOSED);
++  parc_air_play_->DidMoveToDocument();
 +}
 +
  void RemotePlayback::AvailabilityChanged(
      mojom::blink::ScreenAvailability availability) {
    DCHECK(is_listening_ ||
-@@ -583,6 +669,7 @@
+@@ -583,6 +610,7 @@
    bool new_availability = RemotePlaybackAvailable();
    if (new_availability == old_availability)
      return;
-+  parc_reported_availability_ = new_availability;
++  parc_air_play_->AvailabilityReported(new_availability);
 -
 +
    // Copy the callbacks to a temporary vector to prevent iterator invalidations,
    // in case the JS callbacks invoke watchAvailability().
-@@ -613,7 +700,11 @@
+@@ -613,7 +641,9 @@
 -
 +
  #if !BUILDFLAG(IS_ANDROID)
    media_element_->Play();
 -  media_element_->GetWebMediaPlayer()->RequestMediaRemoting();
-+  if (remoting_requested_while_frozen_) {
-+    remoting_requested_while_frozen_ = false;
-+  } else {
++  if (!parc_air_play_->TakeRemotingRequestedWhileFrozen()) {
 +    media_element_->GetWebMediaPlayer()->RequestMediaRemoting();
 +  }
  #endif
 -
 +
    // Note: Messages on |connection_receiver| are ignored.
-@@ -651,11 +742,38 @@
+@@ -651,11 +681,15 @@
  void RemotePlayback::HandlePresentationResponse(
      mojom::blink::PresentationConnectionResultPtr result,
      mojom::blink::PresentationErrorPtr error) {
-+  ExecutionContext* context = GetExecutionContext();
-+  if (context && context->IsContextFrozenOrPaused()) {
-+#if !BUILDFLAG(IS_ANDROID)
-+    if (WebMediaPlayer* player = media_element_->GetWebMediaPlayer()) {
-+      if (result) {
-+        player->RequestMediaRemoting();
-+        remoting_requested_while_frozen_ = true;
-+      }
-+      if (auto* parc = player->GetParcExtension()) {
-+        parc->ParcSetCastPrompted(false);
-+      }
-+    }
-+#endif
-+    context->GetTaskRunner(TaskType::kPresentation)
-+        ->PostTask(FROM_HERE,
-+                   BindOnce(&RemotePlayback::HandlePresentationResponse,
-+                            WrapPersistent(this), std::move(result),
-+                            std::move(error)));
++  if (parc_air_play_->DefersPresentationResponse(result, error)) {
 +    return;
 +  }
    if (result) {
@@ -11941,158 +11519,28 @@
    } else {
      OnConnectionError(*error);
    }
-+#if !BUILDFLAG(IS_ANDROID)
-+  if (WebMediaPlayer* player = media_element_->GetWebMediaPlayer()) {
-+    if (auto* parc = player->GetParcExtension()) {
-+      parc->ParcSetCastPrompted(false);
-+    }
-+  }
-+#endif
++  parc_air_play_->CastPromptEnded();
  }
 -
 +
  void RemotePlayback::OnMessage(
-@@ -708,9 +826,142 @@
+@@ -708,9 +742,18 @@
    is_listening_ = true;
  }
 -
 +
 +bool RemotePlayback::ParcUsesAirPlay() const {
-+  return media_element_ && ParcMediaElementAirPlay::From(*media_element_)
-+                               .PlaysToPlaybackTargets();
-+}
-+
-+bool RemotePlayback::ParcRemotePlaybackDisabled() const {
-+  return media_element_->FastHasAttribute(
-+             html_names::kDisableremoteplaybackAttr) ||
-+         (ParcUsesAirPlay() && ParcMediaElementAirPlay::From(*media_element_)
-+                                   .WirelessPlaybackTargetDisabled());
-+}
-+
-+void RemotePlayback::ParcPromptAirPlay(ExceptionState& exception_state) {
-+  if (ParcRemotePlaybackDisabled()) {
-+    exception_state.ThrowDOMException(
-+        DOMExceptionCode::kInvalidStateError,
-+        "disableRemotePlayback attribute is present.");
-+    return;
-+  }
-+  LocalDOMWindow* window = media_element_->DomWindow();
-+  if (!window) {
-+    exception_state.ThrowDOMException(
-+        DOMExceptionCode::kInvalidAccessError,
-+        "RemotePlayback::prompt() does not work in a detached window.");
-+    return;
-+  }
-+  if (media_element_->getReadyState() < HTMLMediaElement::kHaveMetadata) {
-+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
-+                                      "The media element has no metadata.");
-+    return;
-+  }
-+  if (!LocalFrame::HasTransientUserActivation(window->GetFrame())) {
-+    exception_state.ThrowDOMException(
-+        DOMExceptionCode::kInvalidAccessError,
-+        "RemotePlayback::prompt() requires user gesture.");
-+    return;
-+  }
-+  if (state_ == mojom::blink::PresentationConnectionState::CLOSED &&
-+      !RemotePlaybackAvailable()) {
-+    exception_state.ThrowDOMException(DOMExceptionCode::kNotSupportedError,
-+                                      "No remote playback devices found.");
-+  }
-+}
-+
-+void RemotePlayback::ParcSettlePrompts(bool resolve) {
-+  HeapVector<Member<ScriptPromiseResolver<IDLUndefined>>> resolvers;
-+  resolvers.swap(parc_prompt_resolvers_);
-+  for (auto& resolver : resolvers) {
-+    if (!IsInParallelAlgorithmRunnable(resolver->GetExecutionContext(),
-+                                       resolver->GetScriptState())) {
-+      continue;
-+    }
-+    ScriptState::Scope script_state_scope(resolver->GetScriptState());
-+    if (resolve) {
-+      resolver->Resolve();
-+    } else {
-+      resolver->Reject(V8ThrowDOMException::CreateOrDie(
-+          resolver->GetScriptState()->GetIsolate(),
-+          DOMExceptionCode::kNotAllowedError, "The prompt was dismissed."));
-+    }
-+  }
-+}
-+
-+void RemotePlayback::ParcSetAirPlayState(
-+    mojom::blink::PresentationConnectionState state) {
-+  if (state_ == state) {
-+    return;
-+  }
-+  state_ = state;
-+  parc_airplay_connection_ =
-+      state != mojom::blink::PresentationConnectionState::CLOSED;
-+  const AtomicString& type =
-+      state == mojom::blink::PresentationConnectionState::CONNECTING
-+          ? event_type_names::kConnecting
-+      : state == mojom::blink::PresentationConnectionState::CONNECTED
-+          ? event_type_names::kConnect
-+          : event_type_names::kDisconnect;
-+  EnqueueEvent(*Event::Create(type), TaskType::kMediaElementEvent);
-+  for (auto observer : observers_) {
-+    observer->OnRemotePlaybackStateChanged(state_);
-+  }
-+  ParcMaybeMoveToElementContext();
++  return parc_air_play_->UsesAirPlay();
 +}
 +
 +ParcRemotePlaybackExtension& RemotePlayback::GetParcExtension() {
-+  return *this;
-+}
-+
-+void RemotePlayback::ParcAirPlayAvailabilityChanged() {
-+  if (!ParcUsesAirPlay()) {
-+    ParcSettlePrompts(/*resolve=*/false);
-+  }
-+  const bool available = RemotePlaybackAvailable();
-+  if (available == parc_reported_availability_) {
-+    return;
-+  }
-+  parc_reported_availability_ = available;
-+  HeapVector<Member<AvailabilityCallbackWrapper>> callbacks(
-+      availability_callbacks_.Values());
-+  for (auto& callback : callbacks) {
-+    callback->Run(this, available);
-+  }
-+}
-+
-+void RemotePlayback::ParcShouldPlayToRemoteTargetChanged(bool should_play) {
-+  if (!ParcUsesAirPlay() && !parc_airplay_connection_) {
-+    return;
-+  }
-+  ParcSettlePrompts(/*resolve=*/true);
-+  if (should_play) {
-+    if (state_ == mojom::blink::PresentationConnectionState::CLOSED) {
-+      ParcSetAirPlayState(
-+          mojom::blink::PresentationConnectionState::CONNECTING);
-+    }
-+  } else if (parc_airplay_connection_) {
-+    ParcSetAirPlayState(mojom::blink::PresentationConnectionState::CLOSED);
-+  }
-+}
-+
-+void RemotePlayback::ParcPlayingToRemoteTargetChanged(bool playing) {
-+  if (!ParcUsesAirPlay() && !parc_airplay_connection_) {
-+    return;
-+  }
-+  ParcSetAirPlayState(
-+      playing ? mojom::blink::PresentationConnectionState::CONNECTED
-+              : mojom::blink::PresentationConnectionState::CLOSED);
-+}
-+
-+void RemotePlayback::ParcPlaybackTargetPickerDismissed() {
-+  ParcSettlePrompts(/*resolve=*/false);
++  return *parc_air_play_;
 +}
 +
  void RemotePlayback::Trace(Visitor* visitor) const {
    visitor->Trace(availability_callbacks_);
    visitor->Trace(prompt_promise_resolver_);
-+  visitor->Trace(parc_prompt_resolvers_);
++  visitor->Trace(parc_air_play_);
    visitor->Trace(media_element_);
    visitor->Trace(presentation_connection_receiver_);
    visitor->Trace(target_presentation_connection_);
@@ -13093,3 +12541,14 @@
    friend class VideoRendererImplTest;
 +  friend class ParcVideoRendererImplTest;
    friend class WallClockTimeSourceTest;
+--- a/third_party/blink/renderer/modules/remoteplayback/BUILD.gn
++++ b/third_party/blink/renderer/modules/remoteplayback/BUILD.gn
+@@ -10,6 +10,8 @@
+     "availability_callback_wrapper.h",
+     "html_media_element_remote_playback.cc",
+     "html_media_element_remote_playback.h",
++    "parc_remote_playback_air_play.cc",
++    "parc_remote_playback_air_play.h",
+     "remote_playback.cc",
+     "remote_playback.h",
+     "remote_playback_metrics.cc",

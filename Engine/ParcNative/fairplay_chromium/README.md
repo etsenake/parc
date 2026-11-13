@@ -39,7 +39,7 @@ this guide covers demuxed samples and the Chromium/CDM boundary.
 | Display handoff | layer token over `mojom::FairPlayRendererClientExtension.OnLayerRegistered`; `ui::ProtectedLayerRegistry` and the compositor side in [COMPOSITING.md](COMPOSITING.md) (fairplay-compositing) |
 | Native HLS (Safari's AVPlayer route) | [NATIVE_HLS.md](NATIVE_HLS.md): `mojom::FairPlayHlsPlayer` over `FairPlayMediaHost.CreateHlsPlayer`; GPU `fairplay_hls_player_service.{h,mm}` (`FairPlayFrameMedia::CreateHlsPlayer`); render-process loads `fairplay_hls_loader.{h,cc}` → `//third_party/blink/renderer/platform/media` |
 | Key system registration | `fairplay_cdm_info.{h,cc}` and `fairplay_key_system_info.{h,cc}` (`:registration`), from one capability: `ParcContentClient::AddContentDecryptionModules` lists the `CdmInfo` after Chrome's CDMs (browser), and `ParcContentRendererClient::GetSupportedKeySystems` adds the `KeySystemInfo` to each of Chrome's key system updates (renderer) |
-| Widevine request hook | `parc::fairplay::SetWidevineCdmRequestObserver` (`parc_fairplay_hooks.h`, defined in `media_interface_proxy.cc`), for fairplay-identity |
+| Widevine request hook | `parc::fairplay::SetWidevineCdmRequestObserver` (`parc_fairplay_hooks.h`, defined in `parc_media_routing.cc`), for fairplay-identity |
 | VideoToolbox decoder facts | `parc_video_toolbox_decoding.{h,mm}` → `//content/browser/media`, with its own `parc_video_toolbox_decoding.mojom` in `//media/mojo/mojom`: the browser reads what WebKit's MediaCapabilities asks VideoToolbox (H.264 hardware, HEVC per-profile hardware and levels, Dolby Vision profiles and levels) once and serves `media.mojom.ParcVideoToolboxDecoding` to frames (`ParcContentBrowserClient::RegisterBrowserInterfaceBindersForFrame`) and dedicated workers (`browser_interface_binders.cc`), for Safari-identity `decodingInfo`. `ParcContentBrowserClient::AppendExtraCommandLineSwitches` gives each renderer the AV1 hardware-decoder answer |
 | Renderer hand-off and reverse turn | `parc_renderer_transitions.{h,cc}` → `//media/base`, owned by PipelineImpl's renderer wrapper; the split readers in `parc_chunk_demuxer_hand_off.{h,cc}` → `//media/filters`, owned by each ChunkDemuxerStream and the ChunkDemuxer ([why](../../../docs/chromium-seams.md#media-player-boundaries)) |
 | GPU sandbox | `sandbox/policy/mac/gpu.sb`, rules listed below |
@@ -229,7 +229,7 @@ EME's false, when there are none), other types reject with NotSupported.
     `AudibilityBypassTracker` grant in the proxy it puts between the GPU
     adapter and the render-process client, so the grant ends with the GPU
     renderer. The grant is the player's own
-    (`AudibilityBypassTracker::AddPlayerGrant`, keyed by the ID `MediaFactory`
+    (`content::ParcAddPlayerGrant`, keyed by the ID `MediaFactory`
     gives the factories once the player exists), so players never take each
     other's, and an unclaimed grant follows its player to another frame of the
     process. The player reports that it doesn't use the audio service, so
