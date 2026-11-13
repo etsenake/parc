@@ -12,6 +12,7 @@
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/time/time.h"
+#include "media/base/audio_decoder.h"
 #include "third_party/blink/renderer/platform/allow_discouraged_type.h"
 #include "third_party/blink/renderer/platform/wtf/thread_safe_ref_counted.h"
 
@@ -21,7 +22,6 @@ class SequencedTaskRunner;
 
 namespace media {
 class AudioBus;
-class AudioDecoder;
 class MediaLog;
 }
 

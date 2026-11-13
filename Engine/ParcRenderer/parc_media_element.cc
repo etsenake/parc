@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/html/media/media_controls.h"
 #include "third_party/blink/renderer/core/html/media/media_error.h"
+#include "third_party/blink/renderer/core/html/media/media_source_attachment.h"
 #include "third_party/blink/renderer/core/html/media/parc_media_element_air_play.h"
 #include "third_party/blink/renderer/core/html/media/parc_inband_text_track.h"
 #include "third_party/blink/renderer/core/html/media/parc_media_player_move.h"
