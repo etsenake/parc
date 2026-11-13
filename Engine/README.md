@@ -63,17 +63,17 @@ Codec flags select macOS decoding/encoding rather than bundled proprietary
 FFmpeg/OpenH264 paths. See [engine policy](../docs/engine-flags.md) and
 [FairPlay integration](ParcNative/fairplay_chromium/README.md).
 
-The engine carries its own macOS SDK: the source lock's `gn_defines` set
-`mac_sdk_path="//build/mac_files/parc_sdk/MacOSX.sdk"`, so both outputs use that
-copy, which Chromium's ignore rules cover, so source cleanup keeps it. Before generating or building, the source tool
-copies the installed Xcode's SDK there with `ditto` (keeping file dates) if it
-is missing, and never touches an existing copy. Compiles then use a path inside
-the engine, so moving the engine to another Mac needs no Xcode date matching and
-an Xcode update no longer changes any compile command. The installed Xcode still
-supplies its tools, and the Metal compiler still runs as `xcrun metal` and needs
-Apple's Metal toolchain installed. Switching to the copy, or refreshing it by
-deleting it, changes every compile command once, so do it with a Chromium
-milestone upgrade, which recompiles nearly everything anyway.
+The engine still compiles against the installed Xcode's SDK. Generation links
+it into each output folder (`sdk/xcode_links`), and every compile command names
+that link, never Xcode's own path, so only the SDK files' dates differ between
+Macs; that is why a moved engine still needs Xcode date matching. Setting
+`mac_sdk_path` in the lock does not work: Chromium's `//build/config/mac:sdk_inputs`
+action lists SDK files as outputs, and GN refuses outputs outside the build
+folder. The source tool can already place a date-preserving copy at
+`chromium/src/build/mac_files/parc_sdk/MacOSX.sdk` (it does so when the lock
+names that path). Pointing the per-output link at that copy instead keeps every
+compile command identical, so adopting it costs no rebuild; see the
+[backlog](../docs/backlog.md#engine-architecture).
 
 An engine owner can isolate work with an APFS clone of an idle owned workspace.
 Choose an unused destination on the same volume and at the same path depth:
