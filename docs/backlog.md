@@ -124,10 +124,10 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
 - Extension context-menu side-panel toggle is unavailable even though toolbar
   side-panel presentation works. [Extension interaction](extensions-interaction.md).
 
-## Swipe navigation and window frame
+## Planned interface work
 
-Requested by Josh and planned, not started. Visual work in each item follows the
-[interface review](visual-review.md) workflow, renders first.
+Visual work in each item follows the [interface review](visual-review.md)
+workflow, renders first.
 
 - Replace Chromium's swipe recognizer and grey edge arrow with a Parc-owned
   gesture and a Dia-inspired capsule, commit haptic and confirmation wash, then
@@ -139,6 +139,10 @@ Requested by Josh and planned, not started. Visual work in each item follows the
 - Let people thin the window frame from today's 10 points to a 3-point floor,
   never invisible, through a playful, direct-manipulation control. A Parc addition.
   [Window frame](window-frame.md#planned-adjustable-thickness).
+- A Space with no open tab shows a start page: the Parc mark with an Easter-egg
+  animation above a resident command bar, on the Space's untextured theme
+  gradient. It replaces the "No tab open" placeholder and retires the rule that
+  keeps the sidebar out, so Command-S hides it there too. [Start page](start-page.md).
 
 ## Peek
 

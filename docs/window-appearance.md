@@ -62,6 +62,7 @@ Add Split. It accepts no input and exposes “No tab open” to accessibility. I
 six-point rounded translucent card follows the window appearance: white at
 0.666 in light appearance and 0.1 in dark appearance, over the window backdrop.
 A blank tab is a real white page and follows its own content-focus request.
+The planned [start page](start-page.md) replaces this placeholder in an empty Space.
 
 ## Page card shadow
 

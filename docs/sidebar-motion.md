@@ -152,6 +152,7 @@ navigation. A request to hide its sidebar yields floating presentation instead.
 Closing its last tab can float a hidden sidebar, independently of hover.
 Creating a Space, Library and popup windows are excluded from this rule.
 When an active item returns, a floating sidebar goes back to the hover rule.
+The planned [start page](start-page.md#sidebar) retires the no-tab half of it.
 
 ### Add Split's pending pane
 

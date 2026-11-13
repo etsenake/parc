@@ -3,7 +3,7 @@
 The window frame is the band of Space color between a browser window's edge and
 its page card. This guide records its current geometry and the planned setting
 that lets people make it thinner. The open item is indexed in the
-[backlog](backlog.md#swipe-navigation-and-window-frame); it is not started.
+[backlog](backlog.md#planned-interface-work).
 
 ## Geometry today
 
@@ -26,7 +26,6 @@ that lets people make it thinner. The open item is indexed in the
 - Popup windows use an 8-point left and chrome inset. Full screen has no frame.
 - The toolbar, when shown, sits inside the page card and is unaffected.
 
-screenshot.
 
 ## Planned: adjustable thickness
 
@@ -100,16 +99,15 @@ review likes it.
 Design and build this through the [interface review](visual-review.md)
 workflow, renders first:
 
-1. Gather references: Josh's Dia screenshot and the current Parc frame.
+1. Gather references: Dia's thin frame and the current Parc frame.
 2. Render or animate each direction before building it, at the default, about
    5 points and the floor, with the sidebar docked, floating and hidden, a
    divided split, the side panel open, light, dark and private themes, and
    Reduce Motion. Mockups need no app launch.
-3. Show Josh one render at a time. His pick sets the direction; when he's away,
-   the coordinator judges by the interface review standard and records each
-   decision.
-4. Build the chosen direction. The live look-and-feel pass in Parc needs Josh's
-   explicit authorization at that time.
+3. Review one render at a time and choose the direction from them, judged by
+   the interface review standard.
+4. Build the chosen direction. The live look-and-feel pass in Parc follows that
+   guide's runtime boundary.
 5. After visual approval, write tests and docs, then hand it to a fresh reviewer.
 
 ## Checks

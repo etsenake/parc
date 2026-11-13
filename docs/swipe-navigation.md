@@ -4,7 +4,7 @@ A two-finger horizontal swipe on a trackpad, or a one-finger swipe on a Magic
 Mouse, moves a page Back or Forward. This guide covers how that works today,
 the defect with windows that aren't in focus, and the planned Parc-owned gesture
 with a new look and a swipe-and-hold history list. The open items are indexed
-in the [backlog](backlog.md#swipe-navigation-and-window-frame); none is started.
+in the [backlog](backlog.md#planned-interface-work).
 
 ## How it works today
 
@@ -37,8 +37,8 @@ Swiping over a page does nothing when:
   instead of the page;
 - in a split, the pointer is over a pane other than the selected one.
 
-bringing the window forward; Josh's screenshots show Dia's swipe history list
-in a background window while another app is frontmost. macOS delivers scroll
+bringing the window forward; Dia even shows its swipe history list in a
+background window while another app is frontmost. macOS delivers scroll
 gestures to the window under the pointer whatever has focus, and Chromium's
 recognizer never asks about focus. The restriction is Parc's own, in three places:
 
@@ -71,8 +71,7 @@ can ship before the new look. The engine half needs an authorized engine build.
 
 ## How Dia does it
 
-Read from Dia's installed app without running it. Dia replaced Chromium's
-arrow with its own gesture module:
+Dia replaced Chromium's arrow with its own gesture module:
 
 - A Swift port of Chromium's recognizer, fed by the web view's touch, scroll and
   renderer-acknowledgement callbacks, with the same Magic Mouse fallback and no
@@ -83,14 +82,14 @@ arrow with its own gesture module:
 - A capsule view that rides the gesture, an animated Gaussian blur, and a
   confirmation wash at commit: white at 40% in light appearance, none in dark.
 - A destination list of favicon-and-title rows shown when you swipe and hold.
-  The screenshots show it at the left edge for Back, the current page at the
-  bottom and older pages above, with a rounded highlight on the chosen row.
+  For Back it sits at the left edge, the current page at the bottom and older
+  pages above, with a rounded highlight on the chosen row.
 - An event interceptor view that takes over the gesture once it belongs to
   navigation, so the page stops scrolling underneath.
 
 Dia's binary is stripped, so its timings, distances, springs, blur radius and
-hold delay need either a targeted decompile of that module or a short screen
-recording from Josh. Running Dia ourselves needs Josh's explicit authorization.
+hold delay come from a targeted decompile of that module or a reference screen
+recording of Dia's swipe.
 
 ## Planned: a Parc-owned gesture
 
@@ -126,8 +125,7 @@ a patch while preserving behavior needs no approval.
 
 ## Planned: the new look
 
-Josh prefers Dia's animation to the current arrow. Use Dia's motion as the
-starting reference and make it Parc's own:
+Dia's motion is the starting reference, made Parc's own:
 
 - A capsule grows out of the pane's edge on the swipe side and follows the
   fingers with rubber-band resistance. It carries the direction arrow and can
@@ -171,10 +169,10 @@ left edge, Forward at the right.
 3. Swipe and hold.
 
 Steps 2 and 3 follow the [interface review](visual-review.md) workflow. Start
-from a Dia reference recording; show Josh renders or animated mockups of
+from a Dia reference recording, and approve renders or animated mockups of
 tracking, armed, commit, cancel and hold, in light, dark and private themes and
 under Reduce Motion, before tests or review. A live look-and-feel pass in Parc
-needs Josh's explicit authorization at that time.
+follows that guide's runtime boundary.
 
 Checks: recognizer model tests over recorded event sequences (trackpad, Magic
 Mouse, page-consumed scroll, `overscroll-behavior: none`, vertical cancel,
