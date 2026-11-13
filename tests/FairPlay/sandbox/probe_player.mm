@@ -214,7 +214,7 @@ class Player : public fp::FairPlayCdmClient, public fp::FairPlayRendererClient {
 
   void OnSessionClosed(const std::string&) override {}
 
-  void OnNeedData(fp::StreamType stream) override { Feed(stream); }
+  void OnNeedData(fp::StreamId stream) override { Feed(stream.type); }
   void OnWaitingForKey() override { Log("waiting for key"); }
   void OnEnded() override { ended_ = true; }
   void OnError(fp::RendererError, const std::string& description) override {
