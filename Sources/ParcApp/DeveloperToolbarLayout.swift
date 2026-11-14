@@ -123,6 +123,17 @@ enum DeveloperChromeGeometry {
                                       height: bounds.height - headerHeight)
     }
 
+    static let peekCardInset: CGFloat = 12
+    static let peekControlGap: CGFloat = 13
+    static let peekControlSize: CGFloat = 32
+
+    static func peekCard(in bounds: NSRect) -> NSRect {
+        let reserved = 2 * (peekControlGap + peekControlSize + 8)
+        let width = max(0, min(bounds.width * 0.8, bounds.width - reserved)).rounded(.down)
+        return NSRect(x: ((bounds.width - width) / 2).rounded(.down), y: peekCardInset,
+                      width: width, height: max(0, bounds.height - 2 * peekCardInset))
+    }
+
     static func peekIsCurrent(
         bounds: NSRect,
         developerHeight: CGFloat,
@@ -131,16 +142,11 @@ enum DeveloperChromeGeometry {
         browserFrame: NSRect,
         contentFrame: NSRect
     ) -> Bool {
-        let width = min(max(0, bounds.width - 80), bounds.width * 0.8)
-        let card = NSRect(x: (bounds.width - width) / 2, y: 12, width: width,
-                          height: max(0, bounds.height - 24))
+        let card = peekCard(in: bounds)
         let stripHeight = max(developerHeight, browserHeight)
-        return developerFrame == NSRect(x: card.minX, y: card.minY + 30, width: width,
-                                        height: developerHeight)
-            && browserFrame == NSRect(x: card.minX, y: card.minY + 30, width: width,
-                                      height: browserHeight)
-            && contentFrame == NSRect(x: card.minX, y: card.minY + 30 + stripHeight,
-                                      width: width,
-                                      height: max(0, card.height - 30 - stripHeight))
+        return developerFrame == NSRect(x: 0, y: 0, width: card.width, height: developerHeight)
+            && browserFrame == NSRect(x: 0, y: 0, width: card.width, height: browserHeight)
+            && contentFrame == NSRect(x: 0, y: stripHeight, width: card.width,
+                                      height: max(0, card.height - stripHeight))
     }
 }

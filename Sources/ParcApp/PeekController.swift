@@ -358,39 +358,37 @@ final class PeekHostView: NSView {
     let developerToolbar = DeveloperToolbarView()
     let browserToolbar = BrowserToolbarView()
     let loadingIndicator = PageLoadingIndicator()
-    private let chrome = NSVisualEffectView()
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let controls = NSStackView()
-    private let closeButton = ActionButton("", symbol: "xmark")
-    private let expandButton = ActionButton("", symbol: "arrow.up.left.and.arrow.down.right")
-    private var closeWidth: NSLayoutConstraint?
+    private let backdrop = ThemeRendererView()
+    private let cardEdge = LayoutView()
+    private let edgeLayer = CALayer()
+    private let card = LayoutView()
+    private let controls = LayoutView()
+    private let closeButton = PeekControlButton(symbol: "xmark")
+    private let expandButton = PeekControlButton(symbol: "arrow.up.left.and.arrow.down.right")
+    private let splitButton = PeekControlButton(symbol: "square.split.2x1")
+    private var controlColors = PeekControlColors(fill: .controlBackgroundColor, accent: .labelColor)
+    private var backdropOrigin: NSPoint?
+    private static let cornerRadius: CGFloat = 8
+    private static let controlSpacing: CGFloat = 9
+    private static let controlTopInset: CGFloat = 7
+    var palette = ThemeChromePalette(theme: SpaceTheme(), isDark: false) {
+        didSet { if palette != oldValue { applyPalette() } }
+    }
     var confirmationTitle: String? {
         didSet {
-            let previous = closeButton.layer?.presentation()?.bounds ?? closeButton.layer?.bounds
-            closeButton.title = confirmationTitle ?? ""
-            closeButton.imagePosition = confirmationTitle == nil ? .imageOnly : .imageLeading
-            closeButton.image = NSImage(systemSymbolName: confirmationTitle == "Hang up" ? "phone.down.fill" : "xmark", accessibilityDescription: nil)
+            guard oldValue != confirmationTitle else { return }
+            refreshCloseButton()
             closeButton.setAccessibilityLabel(confirmationTitle ?? "Close Peek")
             needsLayout = true
-            layoutSubtreeIfNeeded(); controls.layoutSubtreeIfNeeded()
-            guard oldValue != confirmationTitle, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-                  let previous, let layer = closeButton.layer else { return }
-            let animation = CASpringAnimation(keyPath: "bounds")
-            let frequency = 2 * Double.pi / 0.25
-            animation.mass = 1; animation.stiffness = frequency * frequency
-            animation.damping = 2 * 0.8 * frequency
-            animation.fromValue = NSValue(rect: previous); animation.toValue = NSValue(rect: layer.bounds)
-            animation.duration = animation.settlingDuration
-            layer.add(animation, forKey: "parc.peek.confirmation")
+            layoutSubtreeIfNeeded()
         }
     }
-    private let splitButton = ActionButton("", symbol: "rectangle.split.2x1")
     var onClose: (() -> Void)?
     var onExpand: (() -> Void)?
     var onSplit: (() -> Void)?
     var onBackground: (() -> Void)?
     var onLayout: (() -> Void)?
-    var title = "Peek" { didSet { titleLabel.stringValue = title; setAccessibilityLabel("Peek: " + title) } }
+    var title = "Peek" { didSet { setAccessibilityLabel("Peek: " + title) } }
     var isBusy = false { didSet { closeButton.isEnabled = !isBusy; expandButton.isEnabled = canExpand && !isBusy } }
     var canExpand = false { didSet { expandButton.isEnabled = canExpand && !isBusy } }
     var canSplit = false { didSet { splitButton.isEnabled = canSplit } }
@@ -400,61 +398,112 @@ final class PeekHostView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.16).cgColor
-        content.wantsLayer = true
-        content.layer?.cornerRadius = 12; content.layer?.masksToBounds = true
-        content.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        chrome.material = .popover; chrome.blendingMode = .withinWindow; chrome.state = .active
-        chrome.wantsLayer = true; chrome.layer?.cornerRadius = 12
-        chrome.shadow = NSShadow(); chrome.shadow?.shadowBlurRadius = 18
-        chrome.shadow?.shadowColor = NSColor.black.withAlphaComponent(0.22)
-        titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        titleLabel.textColor = .secondaryLabelColor; titleLabel.lineBreakMode = .byTruncatingTail
-        controls.orientation = .vertical; controls.spacing = 7; controls.alignment = .leading
+        backdrop.alphaValue = PeekCardAppearance.backdropOpacity
+        cardEdge.wantsLayer = true
+        cardEdge.layer?.addSublayer(edgeLayer)
+        card.wantsLayer = true
+        card.layer?.cornerRadius = Self.cornerRadius; card.layer?.masksToBounds = true
         for (button, name, id) in [(closeButton, "Close Peek", "closeTab:"), (expandButton, "Open Peek as Tab", "openInCurrentSpace:"),
-                                   (splitButton, "Add Peek to Split View", nil)] as [(NSButton, String, String?)] {
-            LiveShortcutToolTip.set(button, name, commandID: id); button.setAccessibilityLabel(name)
-            button.focusRingType = .default
-            button.contentTintColor = .labelColor; button.wantsLayer = true
-            button.layer?.cornerRadius = 16; button.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.9).cgColor
-            controls.addArrangedSubview(button)
-            let width = button.widthAnchor.constraint(equalToConstant: 32); width.isActive = true
-            if button === closeButton { closeWidth = width }
-            button.heightAnchor.constraint(equalToConstant: 32).isActive = true
+                                   (splitButton, "Add Peek to Split View", nil)] as [(PeekControlButton, String, String?)] {
+            LiveShortcutToolTip.set(button, name, commandID: id, anchor: .trailing)
+            button.setAccessibilityLabel(name)
+            controls.addSubview(button)
         }
         closeButton.actionBlock = { [weak self] in self?.onClose?() }
         expandButton.actionBlock = { [weak self] in self?.onExpand?() }
         splitButton.actionBlock = { [weak self] in self?.onSplit?() }
-        addSubview(chrome); addSubview(content); addSubview(controls); addSubview(titleLabel); addSubview(loadingIndicator)
-        developerToolbar.isHidden = true; addSubview(developerToolbar)
-        browserToolbar.isHidden = true; addSubview(browserToolbar)
+        addSubview(backdrop); addSubview(cardEdge); addSubview(card); addSubview(controls); addSubview(loadingIndicator)
+        card.addSubview(content)
+        developerToolbar.isHidden = true; card.addSubview(developerToolbar)
+        browserToolbar.isHidden = true; card.addSubview(browserToolbar)
         setAccessibilityRole(.group); setAccessibilityLabel("Peek")
+        applyPalette()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    func adoptWindowTheme(_ source: ThemeRendererView) {
+        if backdrop.coordinateSpace !== source { backdrop.coordinateSpace = source }
+        backdrop.incognito = source.incognito
+        backdrop.theme = source.theme
+        palette = source.palette
+    }
+
+    private func applyPalette() {
+        loadingIndicator.appearance = palette.contentAppearance
+        let appearance = palette.contentAppearance ?? effectiveAppearance
+        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        card.layer?.backgroundColor = PeekCardAppearance.cardFill(dark: dark).cgColor
+        controlColors = PeekControlColors(palette: palette)
+        expandButton.setContent(symbol: "arrow.up.left.and.arrow.down.right", text: nil, colors: controlColors)
+        splitButton.setContent(symbol: "square.split.2x1", text: nil, colors: controlColors)
+        refreshCloseButton()
+    }
+
+    private func refreshCloseButton() {
+        closeButton.setContent(symbol: confirmationTitle == "Hang up" ? "phone.down.fill" : "xmark", text: confirmationTitle,
+                               colors: confirmationTitle == nil ? controlColors : .confirmation)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        return hit === cardEdge || hit === backdrop || hit.isDescendant(of: backdrop) ? self : hit
+    }
+
     override func layout() {
         super.layout()
-        let width = min(max(0, bounds.width - 80), bounds.width * 0.8)
-        let card = NSRect(x: (bounds.width - width) / 2, y: 12, width: width, height: max(0, bounds.height - 24))
-        chrome.frame = card
-        let loaderWidth = min(PageLoadingIndicator.size.width, width), loaderHeight = PageLoadingIndicator.size.height
-        loadingIndicator.frame = backingAlignedRect(NSRect(x: card.midX - loaderWidth / 2, y: (card.minY - loaderHeight) / 2,
+        backdrop.frame = bounds
+        let origin = convert(bounds.origin, to: nil)
+        if backdropOrigin != origin { backdropOrigin = origin; backdrop.invalidateCoordinates() }
+        let frame = DeveloperChromeGeometry.peekCard(in: bounds)
+        card.frame = frame
+        cardEdge.frame = frame.insetBy(dx: -0.5, dy: -0.5)
+        layoutCardEdge()
+        let loaderWidth = min(PageLoadingIndicator.size.width, frame.width), loaderHeight = PageLoadingIndicator.size.height
+        loadingIndicator.frame = backingAlignedRect(NSRect(x: frame.midX - loaderWidth / 2, y: (frame.minY - loaderHeight) / 2,
                                                            width: loaderWidth, height: loaderHeight), options: .alignAllEdgesNearest)
-        toastContentRect = NSRect(x: card.minX, y: card.minY + 30, width: width, height: max(0, card.height - 30))
-        titleLabel.frame = NSRect(x: card.minX + 12, y: card.minY + 6, width: max(0, width - 24), height: 18)
+        toastContentRect = frame
         let developerHeight: CGFloat = developerToolbar.isHidden ? 0 : DeveloperToolbarLayout.height
-        developerToolbar.frame = NSRect(x: card.minX, y: card.minY + 30, width: width, height: developerHeight)
+        developerToolbar.frame = NSRect(x: 0, y: 0, width: frame.width, height: developerHeight)
         let toolbarHeight: CGFloat = browserToolbar.isHidden ? 0 : BrowserToolbarView.height
-        browserToolbar.frame = NSRect(x: card.minX, y: card.minY + 30, width: width, height: toolbarHeight)
+        browserToolbar.frame = NSRect(x: 0, y: 0, width: frame.width, height: toolbarHeight)
         let stripHeight = max(developerHeight, toolbarHeight)
-        content.frame = NSRect(x: card.minX, y: card.minY + 30 + stripHeight, width: width, height: max(0, card.height - 30 - stripHeight))
-        let controlsWidth: CGFloat = confirmationTitle == nil ? 32 : min(110, max(32, card.minX - 10))
-        closeWidth?.constant = controlsWidth
-        controls.frame = NSRect(x: max(2, card.minX - controlsWidth - 8), y: card.minY + 6, width: controlsWidth, height: 110)
+        content.frame = NSRect(x: 0, y: stripHeight, width: frame.width, height: max(0, frame.height - stripHeight))
+        layoutControls(beside: frame)
         onLayout?()
     }
+
+    private func layoutCardEdge() {
+        let radius = Self.cornerRadius
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        edgeLayer.frame = cardEdge.bounds
+        edgeLayer.cornerRadius = radius
+        edgeLayer.backgroundColor = NSColor.white.cgColor
+        edgeLayer.borderWidth = PeekCardAppearance.borderWidth
+        edgeLayer.borderColor = PeekCardAppearance.borderColor.cgColor
+        edgeLayer.shadowColor = NSColor.black.cgColor
+        edgeLayer.shadowOpacity = PeekCardAppearance.shadowOpacity
+        edgeLayer.shadowRadius = PeekCardAppearance.shadowRadius
+        edgeLayer.shadowOffset = CGSize(width: 0, height: edgeLayer.contentsAreFlipped() ? 1 : -1)
+        edgeLayer.shadowPath = CGPath(roundedRect: edgeLayer.bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        CATransaction.commit()
+    }
+
+    private func layoutControls(beside card: NSRect) {
+        let size = PeekControlButton.diameter
+        let x = card.maxX + DeveloperChromeGeometry.peekControlGap
+        let closeWidth = min(closeButton.preferredWidth, max(size, bounds.width - x - 4))
+        let buttons = [closeButton, expandButton, splitButton]
+        controls.frame = NSRect(x: x, y: card.minY + Self.controlTopInset, width: max(size, closeWidth),
+                                height: CGFloat(buttons.count) * size + CGFloat(buttons.count - 1) * Self.controlSpacing)
+        for (index, button) in buttons.enumerated() {
+            button.frame = NSRect(x: 0, y: CGFloat(index) * (size + Self.controlSpacing),
+                                  width: button === closeButton ? closeWidth : size, height: size)
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if !chrome.frame.contains(point) && !controls.frame.contains(point) { onBackground?() }
+        if !card.frame.contains(point) && !controls.frame.contains(point) { onBackground?() }
     }
     func animatePresentation() {
         settleMotion()
@@ -466,7 +515,7 @@ final class PeekHostView: NSView {
     }
     func settleMotion() {
         layer?.removeAnimation(forKey: "parc.peek.opacity")
-        closeButton.layer?.removeAnimation(forKey: "parc.peek.confirmation")
+        [closeButton, expandButton, splitButton].forEach { $0.settleMotion() }
     }
 }
 

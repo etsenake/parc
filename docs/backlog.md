@@ -166,6 +166,9 @@ workflow, renders first.
   haptics are absent; dismissal currently handles completed right swipes.
 - Nested Peek needs parent-chain ownership. Existing parent transfer, orphan
   promotion, Tab/Shift-Tab and live Expand are implemented.
+  9 points per side as it fades. Parc's Peek sits inside the page card's clip, so
+  its card is measured from the page card and the parent only fades. Matching
+  needs a Peek host above the page card that keeps window dragging in the margins.
 - **PEEK15:** keep the enabled automatic/Shift-click defaults until the product
   decision changes. [Peek](peek.md).
 

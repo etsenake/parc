@@ -114,12 +114,18 @@ fresh original-owner checks. Native traversal remains intact.
 
 ## Presentation and remaining scope
 
-The card uses an 80% content-width target, 12-point vertical inset and corner
-radius, with a separate title band and tiny-window clamp. Controls use a 0.25/0.8
-spring; entry fades over 0.3 seconds. Reduce Motion settles owned animation.
-Tab and Shift-Tab follow the window key-view loop through Peek controls and its
-renderer, excluding the dimmed parent. Controls have accessible names and the
-close-confirmation state announces its instruction.
+or near-black card fill, a hairline edge and a soft 4-point shadow. The page fills
+the card; there is no title band. A copy of the window's theme background covers
+and dark themes alike.
+
+Round Close, Expand and Split controls sit 13 points right of the card, filled
+with the Space theme's background-extra colour and drawn in its primary ink (kept
+dark enough on light themes). They lift on hover, shrink when pressed and show
+tooltips to their right. Close confirmation widens Close into a red Close or Hang
+up pill on a 0.25/0.8 spring; entry fades over 0.3 seconds. Reduce Motion settles
+owned animation. Tab and Shift-Tab follow the window key-view loop through the
+Peek's renderer and controls, excluding the dimmed parent. Controls have
+accessible names and the close-confirmation state announces its instruction.
 
 Dismissal handles a completed right swipe. Continuous drag progress, velocity,
 reversal and cancellation are absent. Teardown removes the view immediately;

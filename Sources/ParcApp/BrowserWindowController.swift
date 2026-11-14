@@ -704,7 +704,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             self?.sidebarResizeRegion.color = palette.foregroundPrimary
             self?.loadingIndicator.appearance = palette.contentAppearance
             if let self {
-                for peek in self.peeks.values { peek.view.loadingIndicator.appearance = palette.contentAppearance }
+                for peek in self.peeks.values { peek.view.adoptWindowTheme(self.rootView) }
                 self.shortcutHint?.update(theme: self.rootView.theme, basicBackground: self.windowBasicBackground)
                 self.toasts.update(theme: self.rootView.theme)
                 self.commandBar?.theme = self.rootView.paletteTheme
@@ -7502,7 +7502,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func wirePeek(_ peek: PeekController, binding: PCNativeBrowserWindow) {
         let page = peek.page, id = peek.parentTabID
-        peek.view.loadingIndicator.appearance = rootView.palette.contentAppearance
+        peek.view.adoptWindowTheme(rootView)
         peek.canInteract = { [weak self, weak peek] in
             guard let self, let peek else { return false }
             return self.peeks[page.identifier] === peek && self.activePeek === peek

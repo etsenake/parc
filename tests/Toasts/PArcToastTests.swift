@@ -98,7 +98,7 @@ import AppKit
         root.addSubview(peekHost)
         let peekContent = parent.convertToScreen(peekHost.convert(peekHost.toastContentRect, to: nil))
         check(PArcToastPresentation.frame(in: parent, over: peekHost) == PArcToastPlacement.contentFrame(for: peekContent),
-              "an anchor with a content region frames that region, below a Peek's title band")
+              "an anchor with a content region frames that region, inside a Peek's card")
         peekHost.removeFromSuperview()
         pane.isHidden = false
 
