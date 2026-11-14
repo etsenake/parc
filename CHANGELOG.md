@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.3.0 (2026-11-14)
+
+### New
+
+- **settings:** Pick your search engine and download folder once in General and every Space follows along
+- **spaces:** Give every Profile its own Space, let Spaces share data or keep separate, and let each Space pick its own Auto-Archive timer
+- **profiles:** Let the Default Profile retire like any other, handing the crown to a Profile that still has a Space
+- **spaces:** Make New Space ask who to share data with, work from any window and keep Profiles out of sight
+- **start-page:** Lay the start page on solid paper tinted from your Space, with each theme colour glowing from its corner, the multi-colour logo, and light or dark that follows View → Appearance
+- **window-frame:** Hand every window a little crank so you can wind the frame from a hairline to a gallery, with clicks that climb as it opens
+
+### Fixed
+
+- **sidebar:** Give the Done button room for its whole name and let a double-click on the Space name start renaming
+- **settings:** Let a search engine picked inside a Space become everyone's pick, and stop stale or failed writes from sneaking past it
+- **spaces:** Retire the little profile badge from Space headers and the profile pill from Space dock tooltips
+- **command-bar:** Say Space Preferences, drop New Profile, and tell same-named Spaces apart by position
+- **menus:** Drop New Profile and Change Profile from the app menus
+- **links:** List Spaces by name when picking where a link opens
+- **tabs:** Warn that a Space uses different data instead of a different profile
+- **downloads:** Stop naming profiles on download rows and loading messages
+- **spaces:** Say Space instead of profile in capture, notes, easel, import and scripting text
+- **downloads:** Retire the profile filter since profiles are going invisible
+- **links:** Tell same-named Spaces apart in the link destination list
+- **spaces:** Keep leftover link rules converting until they land on a Space and hand the Default crown only to data that still has a Space
+- **spaces:** Keep same-named Spaces apart in the share picker, give it room to breathe, and send New Space to the form you already have open instead of a minimized window
+- **spaces:** Make New Space ask your Peek to hang up first when the camera or mic is live, then carry on into the new Space form
+- **spaces:** Keep a second New Space press from hanging up your Peek call, and run just one wait at a time
+- **spaces:** Show each Space's icon in the New Space sharing picker on macOS 27
+- **command-bar:** Give Adjust Window Frame its window icon in the command bar
+
 ## 2.2.0 (2026-11-14)
 
 ### New
