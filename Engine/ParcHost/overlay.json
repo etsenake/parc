@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "parc-chromium-direct",
-  "version": 730,
+  "version": 731,
   "source_root": "repository",
   "upstream": {
     "chromium": "5cb0fce6746acfc926045c45b23d811d479c49b9"
@@ -2019,7 +2019,7 @@
     {
       "source": "Engine/ParcChromium/BUILD.gn",
       "target": "parc/BUILD.gn",
-      "sha256": "2fe5186a6d80cb2b1124645bed9e0a42663bada76b6939a8ac71f9ffd8f0401d"
+      "sha256": "248d9c46c355abf3e1d0c0b64acbea7762022c78044005a2a46297bdef9db9d0"
     },
     {
       "source": "Engine/ParcChromium/generate_product_name_strings.py",

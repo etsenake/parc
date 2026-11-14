@@ -1,6 +1,7 @@
 
 import("//build/apple/tweak_info_plist.gni")
 import("//build/buildflag_header.gni")
+import("//build/util/branding.gni")
 import("//build/config/locales.gni")
 import("//build/config/mac/rules.gni")
 import("//chrome/version.gni")
@@ -532,5 +533,7 @@ mac_framework_bundle("parc_framework") {
       "-rpath",
       "@loader_path/../../../../../..",
     ]
+  } else {
+    ldflags += [ "-Wcrl,installnametool,-change,@executable_path/../Frameworks/$chrome_product_full_name Framework.framework/Versions/$chrome_version_full/Libraries/libaperitif.dylib,@loader_path/Libraries/libaperitif.dylib" ]
   }
 }
