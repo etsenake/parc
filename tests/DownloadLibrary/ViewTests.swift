@@ -1336,14 +1336,16 @@ import UniformTypeIdentifiers
   func labelBands(_ tile:NSView)->Int {
    guard let rep=tile.bitmapImageRepForCachingDisplay(in:tile.bounds) else { return -1 }
    tile.cacheDisplay(in:tile.bounds,to:rep)
-   let x=Int(tile.bounds.midX)
-   var bands=0, gap=10
-   for y in 47..<74 {
+   let scale=CGFloat(rep.pixelsWide)/tile.bounds.width
+   let x=Int(tile.bounds.midX*scale)
+   let minimumGap=Int(4*scale)
+   var bands=0, gap=minimumGap*3
+   for y in Int(47*scale)..<Int(74*scale) {
     var ink=false
     if let color=rep.colorAt(x:x,y:y)?.usingColorSpace(.sRGB) {
      ink=color.alphaComponent>0.2 && color.redComponent<0.5 && color.greenComponent<0.5 && color.blueComponent<0.5
     }
-    if ink { if gap>=4 { bands += 1 }; gap=0 } else { gap += 1 }
+    if ink { if gap>=minimumGap { bands += 1 }; gap=0 } else { gap += 1 }
    }
    return bands
   }
