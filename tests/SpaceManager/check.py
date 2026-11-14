@@ -51,6 +51,7 @@ InterfaceFeedback.swift
 KeyboardShortcuts.swift
 LibraryArtwork.swift
 LibraryFlyout.swift
+MenuItemImage.swift
 MiniPlayerMotion.swift
 MiniPlayerView.swift
 NavigationControlPress.swift
