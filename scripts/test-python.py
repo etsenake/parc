@@ -2,6 +2,7 @@
 """Run Python unittest folders in parallel: one job per test, or per class when the class has class fixtures."""
 import argparse
 import concurrent.futures
+import contextlib
 import io
 import multiprocessing
 import os
@@ -60,23 +61,38 @@ def run(name):
             "seconds": time.monotonic() - began, "problems": problems}
 
 
-def run_folder(folder, jobs):
+def interleave(queues):
+    queues = [list(queue) for queue in queues]
+    while any(queues):
+        for queue in queues:
+            if queue:
+                yield queue.pop(0)
+
+
+def run_folders(folders, jobs):
     context = multiprocessing.get_context("spawn")
-    with concurrent.futures.ProcessPoolExecutor(jobs, mp_context=context, initializer=prepare,
-                                                initargs=(folder,)) as pool:
-        units = pool.submit(discover, folder).result()
-        futures = [pool.submit(run, name) for name in units]
-        results = []
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                outcome = future.result()
-            except Exception:
-                outcome = {"name": units[futures.index(future)], "run": 0, "skipped": 0, "seconds": 0.0,
-                           "problems": [("ERROR", units[futures.index(future)], traceback.format_exc())]}
-            mark = "F" if outcome["problems"] else ("s" if outcome["skipped"] == outcome["run"] else ".")
-            print(mark, end="", flush=True)
-            results.append(outcome)
-    return results
+    with contextlib.ExitStack() as stack:
+        pools = [stack.enter_context(concurrent.futures.ProcessPoolExecutor(
+            jobs, mp_context=context, initializer=prepare, initargs=(folder,))) for folder in folders]
+        found = [pool.submit(discover, folder) for pool, folder in zip(pools, folders)]
+        pending = interleave([(pool, name) for name in discovery.result()] for pool, discovery in zip(pools, found))
+        running, results = {}, []
+        while True:
+            while len(running) < jobs and (item := next(pending, None)):
+                running[item[0].submit(run, item[1])] = item[1]
+            if not running:
+                return results
+            done, _ = concurrent.futures.wait(running, return_when=concurrent.futures.FIRST_COMPLETED)
+            for future in done:
+                name = running.pop(future)
+                try:
+                    outcome = future.result()
+                except Exception:
+                    outcome = {"name": name, "run": 0, "skipped": 0, "seconds": 0.0,
+                               "problems": [("ERROR", name, traceback.format_exc())]}
+                mark = "F" if outcome["problems"] else ("s" if outcome["skipped"] == outcome["run"] else ".")
+                print(mark, end="", flush=True)
+                results.append(outcome)
 
 
 def main(argv=None):
@@ -86,11 +102,10 @@ def main(argv=None):
     parser.add_argument("--durations", type=int, default=0, metavar="N", help="List the N slowest jobs")
     args = parser.parse_args(argv)
     began = time.monotonic()
-    results = []
     for folder in args.folders:
         if not folder.is_dir():
             parser.error(f"{folder} is not a folder")
-        results += run_folder(str(folder.resolve()), max(1, args.jobs))
+    results = run_folders([str(folder.resolve()) for folder in dict.fromkeys(args.folders)], max(1, args.jobs))
     print()
     problems = [problem for outcome in results for problem in outcome["problems"]]
     for kind, test, text in problems:
