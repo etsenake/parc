@@ -4,7 +4,7 @@ repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 mkdir -p "$repo_root/build/tests"
 jobs_limit="${PARC_TEST_JOBS:-$(sysctl -n hw.ncpu)}"
 steps_dir="$(mktemp -d "${TMPDIR:-/tmp}/parc-test-steps.XXXXXX")"
-trap 'kill $(jobs -pr) 2>/dev/null; rm -rf "$steps_dir"' EXIT
+trap 'kill $(jobs -pr) 2>/dev/null || true; rm -rf "$steps_dir"' EXIT
 began=$SECONDS
 step_count=0
 step() {
