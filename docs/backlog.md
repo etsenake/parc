@@ -22,6 +22,15 @@ Finish assigned work first; explicit deferrals remain deferred.
   a Parc window while another app or Parc window is frontmost, after focus moves
   navigate the page under the pointer. Drop Parc's own focus requirements.
   [Swipe navigation](swipe-navigation.md#windows-that-arent-in-focus).
+- **Folder prompts at first launch:** every new browser window reads and watches
+  Documents and Desktop for the Library button's recent-files list, so a fresh
+  install greets people with two macOS folder-access dialogs the moment
+  onboarding ends. Move that first read, its permission prompts and the folder
+  watcher to the first time someone hovers over the Library button. Once those
+  prompts have been answered, start watching at launch again. Reword the Desktop
+  and Documents prompts too: they talk about the Media Library, which isn't what
+  the person is looking at when the Library button asks.
+  [Library entry](download-library.md#original-library-entry).
 
 ## Sidebar accessibility and presentation
 
