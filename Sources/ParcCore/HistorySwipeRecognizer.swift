@@ -9,11 +9,13 @@ struct HistorySwipeParameters: Equatable {
     var verticalDominance = 2.0
     var verticalExcess = 1.3
     var trackedArmAmount = 0.3
-    var rubberBand = 0.0
-    var holdDelay: TimeInterval = 0.5
-    var rowStep = 0.05
+    var rubberBand = 0.15
+    var holdDelay: TimeInterval = 0.3
+    var rowStep = 0.08
+    var edgeZone = 0.15
+    var edgeStepInterval: TimeInterval = 0.1
 
-    static let chromium = HistorySwipeParameters()
+    static let dia = HistorySwipeParameters()
 }
 
 struct HistorySwipeRecognizer {
@@ -48,6 +50,8 @@ struct HistorySwipeRecognizer {
     private var armedY = 0.0
     private var armedTotalY = 0.0
     private var rowAnchor = 0.0
+    private var edgeDeadline: TimeInterval?
+    private var edgeBlocked = 0
     private var firstScrollUnconsumed = false
     private var overscrollPropagatesX = false
     private var awaitingFirstScroll = false
@@ -57,7 +61,7 @@ struct HistorySwipeRecognizer {
     private var liveTracking: Int?
     private var lastProgress: HistorySwipeProgress?
 
-    init(parameters: HistorySwipeParameters = .chromium) {
+    init(parameters: HistorySwipeParameters = .dia) {
         self.parameters = parameters
     }
 
@@ -90,10 +94,11 @@ struct HistorySwipeRecognizer {
             tracked(update, &step)
         case let .clock(time):
             holdIfDue(time, &step)
+            edgeStepIfDue(time, &step)
         case .cancel:
             cancel(&step)
         }
-        step.clockDeadline = holdDeadline
+        step.clockDeadline = holdDeadline ?? edgeDeadline
         return step
     }
 
@@ -137,6 +142,7 @@ struct HistorySwipeRecognizer {
             }
             emitProgress(touchProgress, &step)
             stepRows(&step)
+            followEdge(time: time, &step)
             return true
         }
         if driftsVertically {
@@ -189,30 +195,75 @@ struct HistorySwipeRecognizer {
         holdDeadline = nil
         selection = 1
         rowAnchor = current.y
+        edgeBlocked = edge
+        edgeDeadline = nil
         step.outputs += [.hold, .selection(1)]
     }
 
+    private var rowSign: Double { direction == .forward ? -1 : 1 }
+
+    private var edge: Int {
+        guard parameters.edgeZone > 0 else { return 0 }
+        let top = current.y >= 1 - parameters.edgeZone, bottom = current.y <= parameters.edgeZone
+        guard top != bottom else { return 0 }
+        return (top ? 1 : -1) * (direction == .forward ? -1 : 1)
+    }
+
+    private func canStep(_ way: Int) -> Bool {
+        guard let selection else { return false }
+        return way > 0 ? selection < entries : selection > 0
+    }
+
+    private mutating func moveRow(_ way: Int, _ step: inout HistorySwipeStep) -> Bool {
+        guard canStep(way), let row = selection else { return false }
+        selection = row + way
+        step.outputs += [.selection(row + way), .detent]
+        return true
+    }
+
     private mutating func stepRows(_ step: inout HistorySwipeStep) {
-        guard var row = selection, parameters.rowStep > 0 else { return }
-        while current.y - rowAnchor >= parameters.rowStep {
-            guard row < entries else {
+        guard selection != nil, parameters.rowStep > 0 else { return }
+        let sign = rowSign
+        while (current.y - rowAnchor) * sign >= parameters.rowStep {
+            guard moveRow(1, &step) else {
                 rowAnchor = current.y
                 break
             }
-            row += 1
-            rowAnchor += parameters.rowStep
-            step.outputs += [.selection(row), .detent]
+            rowAnchor += parameters.rowStep * sign
         }
-        while rowAnchor - current.y >= parameters.rowStep {
-            guard row > 0 else {
+        while (rowAnchor - current.y) * sign >= parameters.rowStep {
+            guard moveRow(-1, &step) else {
                 rowAnchor = current.y
                 break
             }
-            row -= 1
-            rowAnchor -= parameters.rowStep
-            step.outputs += [.selection(row), .detent]
+            rowAnchor -= parameters.rowStep * sign
         }
-        selection = row
+    }
+
+    private mutating func followEdge(time: TimeInterval, _ step: inout HistorySwipeStep) {
+        let way = edge
+        if way != edgeBlocked { edgeBlocked = 0 }
+        guard way != 0, way != edgeBlocked, parameters.edgeStepInterval > 0, canStep(way) else {
+            edgeDeadline = nil
+            return
+        }
+        guard edgeDeadline != nil else {
+            edgeDeadline = time + parameters.edgeStepInterval
+            return
+        }
+        edgeStepIfDue(time, &step)
+    }
+
+    private mutating func edgeStepIfDue(_ time: TimeInterval, _ step: inout HistorySwipeStep) {
+        guard state == .holding, receivingTouches, let deadline = edgeDeadline, time >= deadline else { return }
+        let way = edge
+        guard way != 0, way != edgeBlocked, moveRow(way, &step) else {
+            edgeDeadline = nil
+            return
+        }
+        rowAnchor = current.y
+        let next = deadline + parameters.edgeStepInterval
+        edgeDeadline = canStep(way) ? (next > time ? next : time + parameters.edgeStepInterval) : nil
     }
 
     private mutating func finish(_ step: inout HistorySwipeStep) {
@@ -231,6 +282,7 @@ struct HistorySwipeRecognizer {
         }
         state = .completed
         holdDeadline = nil
+        edgeDeadline = nil
         selection = nil
     }
 
@@ -274,6 +326,7 @@ struct HistorySwipeRecognizer {
         source = nil
         selection = nil
         holdDeadline = nil
+        edgeDeadline = nil
         entries = 0
         announced = false
         lastProgress = nil
@@ -350,8 +403,8 @@ struct HistorySwipeRecognizer {
     private func stretch(_ progress: Double) -> Double {
         guard progress > 0 else { return 0 }
         guard progress > 1, parameters.rubberBand > 0 else { return min(progress, 1) }
-        let excess = progress - 1
-        return 1 + parameters.rubberBand * excess / (excess + parameters.rubberBand)
+        let resisted = (progress - 1) * parameters.rubberBand
+        return 1 + resisted / (resisted + 1)
     }
 
     private mutating func cancel(_ step: inout HistorySwipeStep) {
@@ -359,6 +412,7 @@ struct HistorySwipeRecognizer {
         if announced && isLive { step.outputs.append(.cancel) }
         state = .cancelled
         holdDeadline = nil
+        edgeDeadline = nil
         selection = nil
         liveTracking = nil
     }

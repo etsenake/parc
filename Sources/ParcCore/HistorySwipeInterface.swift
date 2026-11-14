@@ -106,7 +106,7 @@ final class HistorySwipeController {
     private(set) var recognizer: HistorySwipeRecognizer
     private weak var shell: (any HistorySwipeShell)?
 
-    init(shell: any HistorySwipeShell, parameters: HistorySwipeParameters = .chromium) {
+    init(shell: any HistorySwipeShell, parameters: HistorySwipeParameters = .dia) {
         recognizer = HistorySwipeRecognizer(parameters: parameters)
         self.shell = shell
     }
