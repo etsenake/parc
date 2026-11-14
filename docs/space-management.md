@@ -59,6 +59,12 @@ Space/folders and archives original tab/document references with provenance.
 Refusal or failed persistence publishes no partial model. Deleting a Space never
 deletes the underlying Note/Easel document.
 
+`unusedProfile(ifDeletingSpace:)` tells beforehand whether the Space is the last
+one on its Profile; after a successful deletion `unusedProfile(_:)` and
+`stageRemoval(of:)` stage that Profile's removal. Deleting a Space that shares
+data is unchanged and keeps its Undo; Undo of a last-Space deletion is refused
+once its Profile's removal is pending.
+
 Profile-wide Favorites survive even when that Profile loses its last Space.
 Their storage anchor moves without changing Profile, navigation or split geometry;
 later Profile assignment reattaches complete groups. Fallback uses a surviving
@@ -96,6 +102,43 @@ its original assignment context and saves the Profile atomically.
 Moving tabs to a Space that shares the same data never warns and keeps the live
 pages. Moving to a Space with different data asks first: "<Space> uses different
 data, so you might get logged out or lose your progress in these tabs."
+
+## Sharing data between Spaces
+
+Every Space points at exactly one underlying Profile. Spaces on the same Profile
+**share data**: logins, saved passwords, history, extensions and Favorites. The
+model offers only two choices, "Share data with <Space>" (`SpaceDataSharing.share`)
+and "Keep separate" (`.separate`); Profiles are an implementation detail.
+
+**Upgrade.** The first load of an older session file gives every Profile that has
+no Space and no pending removal a new Space named after it, with the active
+Space's theme and the `circle.fill` symbol. Spaces that already share keep sharing
+and nothing is deleted. Saved Links routes that point at a Profile become the
+first Space in sidebar order on that Profile, or the most recent Space if none.
+`BrowserState.spaceSharingVersion` records the upgrade, so it runs and saves once.
+After it, a Profile without a Space exists only while its removal is pending; new
+code never leaves one behind.
+
+**Auto-Archive per Space.** `BrowserSpace.autoArchiveHours` is optional (older
+files decode it as nil) and the upgrade seeds it from the Profile. The archive
+sweep uses the Space's interval, falling back to the Profile's. New Spaces take
+the creating Space's interval. Changing a Profile's interval in Settings sets every
+Space on that Profile; `setAutoArchiveInterval(_:forSpace:)` changes one Space.
+
+**Create.** `createSpace(name:sharing:)` and the sidebar's `SidebarNewSpaceDraft`
+(`shareData(withSpace:in:)` / `keepSeparate()`) add the Space and, for Keep
+separate, its new Profile named after the Space in one save. Nothing exists before
+commit, so cancelling the form leaves no Profile behind. When the draft moves
+items onto another Profile, `createSpace(_:completion:)` runs the ordinary
+inter-Profile move: page retirement and Note/Easel relocation.
+
+**Change sharing** moves a Space, never merges Profiles. `changeSharing(ofSpace:to:)`
+reuses the [assignment](#profile-assignment-dependency) transaction; Keep separate
+creates the new Profile in the same save and does nothing for a Space that already
+keeps separate. The result names the previous Profile when no Space uses it any
+more. `unusedProfile(ifSpace:joins:)` answers that before acting, so the interface
+can warn that its logins, saved passwords and history will be deleted and then
+stage removal with `stageRemoval(of:)`.
 
 ## Library Spaces page presentation
 
@@ -140,6 +183,8 @@ at completion, and closed windows reject stale completions.
 
 ## Checks
 
+`scripts/test-space-sharing.sh` covers the upgrade, Links conversion, per-Space
+Auto-Archive, atomic creation, change sharing and unused-Profile reporting.
 Space-management/store/inter-Profile components cover title migration, exact
 leases, failed saves, deletion/Undo, document relocation and owner preservation.
 `tests/SpaceManager/check.py` exercises real inert cards/sidebar controls and

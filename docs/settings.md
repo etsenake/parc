@@ -54,8 +54,12 @@ window closure or Profile loss cancels. Failed writes preserve the draft.
 
 ### Profile removal
 
-Only nondefault Profiles with no assigned Spaces can be deleted. The default
-Profile is identified by immutable UUID, not its editable name. The confirmation
+Any Profile with no assigned Spaces can be deleted, including the Default one.
+Default is a UUID setting, not the editable name, and nothing protects it. Staging
+picks a surviving Profile that still has a Space (Default first, then the active
+Space's Profile), records it on the removal record and, in the same save, moves
+Default and the Settings selection to it when they pointed at the removed
+Profile. Records saved before survivors were recorded use Default. The confirmation
 shows the original Profile's saved-tab/history counts and explains permanent
 browser-data removal in a standard Delete/Cancel dialog; no name is typed.
 Downloaded files and app-global Easel documents remain.
@@ -65,7 +69,9 @@ its confirmation. Before native preparation, the store atomically records operat
 Profile UUIDs. Pending Profiles cannot be renamed or assigned, and their native
 preference controls stop requesting the retiring context.
 
-The native lease binds exact storage/default paths and operation identity. Its
+The native lease binds the removed and the recorded survivor's storage paths
+and the operation identity; preparation and restart recovery pass the same
+survivor path, because the native journal stores it. Its
 last revalidation checks the current Profile/name and absence of assigned Spaces.
 Only a native `removed` receipt permits metadata deletion. `failed` releases an
 operation only before irreversible cleanup; `pending` retains it for retry.
@@ -73,13 +79,13 @@ Committed cleanup and restart recovery outlive the sheet. A failed final metadat
 write preserves the operation so retry can consume the same native receipt.
 
 Completion removes the selected Profile's tabs, local history, download records
-and related selection/split references, then selects Default. It preserves other
+and related selection/split references, then selects the survivor. It preserves other
 Profiles, downloaded files, routing destination UUIDs and app-global Easels.
 See [removal presentation and recovery](settings-profile-removal.md).
 
 ### Unused-profile cleanup
 
-Bulk cleanup fixes a UUID/name set of eligible nondefault, unassigned Profiles.
+Bulk cleanup fixes a UUID/name set of eligible unassigned Profiles, sharing one survivor.
 Later-created Profiles are not added, and a changed name, assignment or failed
 durable save rejects new authorization. Settings has no bulk entry point yet.
 
@@ -115,8 +121,10 @@ disable the picker. Callbacks validate window and preference identity, and
 leaving General or closing Settings cancels an open folder panel.
 See [downloads](download-library.md).
 
-Automatic archive retains its per-Profile policy, application-to-all-Profile
-scope and new-Profile default. Education is consumed by actual automatic archival;
+Automatic archive keeps its per-Profile control, application-to-all-Profile
+scope and new-Profile default; each Space now has its own interval, and changing
+a Profile's interval sets every Space on it (see
+[Space management](space-management.md#sharing-data-between-spaces)). Education is consumed by actual automatic archival;
 its Settings link selects the original Profile. See [archive](archive.md).
 
 | Profile action | Native destination | Reuse policy |

@@ -1,6 +1,8 @@
 # Profile removal presentation
 
-the same one Space deletion uses. The exact selected UUID and name remain
+the same one Space deletion uses. Any unused Profile can be deleted, the Default
+one included; Default moves to the surviving Profile recorded when removal is
+staged (see [Settings](settings.md#profile-removal)). The exact selected UUID and name remain
 authoritative through preparation, commit and recovery. The dialog does not own
 the native deletion job.
 
@@ -33,6 +35,6 @@ Profile list. Settings closure invalidates pending focus restoration.
 
 ## Checks
 
-Isolated model/native-boundary doubles cover atomic admission, protected Profiles,
+Isolated model/native-boundary doubles cover atomic admission, Default handoff to the recorded survivor,
 preparation cancellation, journal recovery, refused and incomplete removals, and
 partial completion without deleting real profile storage.
