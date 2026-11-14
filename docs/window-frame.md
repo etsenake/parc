@@ -67,6 +67,10 @@ The control is a car window crank that sits on the window itself.
   a floating sidebar slides away while the crank is out. The whole swing and the
   lights stay inside the window, including a window that fills the screen. The
   hidden-sidebar reveal zones are off while the crank is out.
+- **Coming and going.** The crank slides in from the corner with a small spring
+  and stays until you click anywhere else or press Return or Escape, then slides
+  back out. There is no timeout. Escape restores the thickness you had when the
+  crank appeared; every other way out keeps the new value.
 - **Turning.** A two-finger scroll over it or a drag on the knob turns it, a
   third of a turn per point. It follows your hand 1:1, eases through a soft notch
   at each point, and at 3 and 13 gives slightly past the end with a faint tremble,
@@ -106,11 +110,8 @@ What follows the value:
   the side panel's right edge.
 - Split gutters: `splitMarginFrame` in `BrowserWindowController` and
   `dividerThickness` in `ParcSplitView`, both hard-coded to 10 today.
-- The floating sidebar's 5-to-15-point inset and hide offsets (the review
-  decides whether they scale or stay fixed).
-- The page and pane corner radius. Six points was chosen for a 10-point frame,
-  so the review decides whether the corner scales to stay concentric with the
-  window's rounded corner.
+- The page and pane corner radius scales with the thickness so it stays
+  concentric with the window's rounded corner; six points at 10.
 - `LayoutChromeGeometryFingerprint` must include the thickness, or open windows
   skip the relayout. Leave it out of the sidebar motion key, which settles running
   sidebar animations whenever it changes.
@@ -120,8 +121,9 @@ What follows the value:
 These keep today's sizes, so no thickness makes anything harder to hit:
 
 - the hidden-sidebar reveal zones, which get their own constant;
-- split divider drag targets and the split grip's hover band. Below some
-  thickness the grip overlaps the page edge or hides, as the review decides;
+- the floating sidebar's 5-to-15-point inset and hide offsets;
+- split divider drag targets and the split grip's hover band. The grip hides
+  when the frame is thinner than about 6 points;
 - window resize edges, which belong to macOS.
 
 The page shadow stays; check how it looks at both ends of the range in review.
