@@ -255,8 +255,12 @@ Keep the passphrase in the Keychain as above, or type it with `read -rs PARC_WID
 ## Verification
 
 ```sh
-python3 -m unittest discover -s tests/Packaging -v
+python3 scripts/test-python.py tests/Packaging
 ```
+
+The runner discovers the folder like `unittest discover -s` and spreads tests
+across every core; a class with `setUpClass` stays in one job. `--jobs N` limits
+the workers and `--durations N` lists the slowest jobs.
 
 
 Run the real layout/loading tests, including the compact sectionless fixture, with the actual pinned Chromium toolchain:
