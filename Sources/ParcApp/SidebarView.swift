@@ -1818,13 +1818,6 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
     private var clearButton: ActionButton? { shownPage.clearButton }
     private var todayHasTabs: Bool { shownPage.todayHasTabs }
     private var sectionLine: SidebarHairline? { shownPage.sectionLine }
-    private var privateUnpinnedHeader: SidebarSpaceHeaderView? { shownPage.privateUnpinnedHeader }
-    var showsPrivateProfileIndicator = false {
-        didSet {
-            guard showsPrivateProfileIndicator != oldValue else { return }
-            privateUnpinnedHeader?.updateIncognitoIndicator(shown: showsPrivateProfileIndicator)
-        }
-    }
     var palette: ThemeChromePalette? { didSet { applyPalette() } }
     override var isFlipped: Bool { true }
 
@@ -3058,7 +3051,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
             heading.update(.init(isShown: true, title: "Incognito Tabs", placeholder: nil, toggleTitle: nil),
                            symbol: nil, emoji: nil)
             heading.applyStyle(dark: pagePalette?.isDark ?? true, tint: nil)
-            heading.updateIncognitoIndicator(shown: showsPrivateProfileIndicator)
+            heading.updateIncognitoIndicator(shown: true)
             page.privateUnpinnedHeader = heading
             return heading
         }
@@ -3384,7 +3377,7 @@ final class SidebarView: SidebarSpaceMenuSurface, NSMenuItemValidation, Offscree
                        keyDraggedSplitID.flatMap { split in splits.contains { $0.id == split } ? split : nil }]
         return SidebarSpacePageKey(state: state, spaceID: id, focused: focused, placeholder: placeholder, peeks: folderPeeks,
             speakers: speakers, presented: presented, splitCaptures: splitCaptures, keyDragged: dragged,
-            flags: [isPrivateBrowsing, isSpaceManagement, showsPrivateProfileIndicator,
+            flags: [isPrivateBrowsing, isSpaceManagement,
                     SidebarPreviewPreference.recentPages.isEnabled, SidebarPreviewPreference.folders.isEnabled,
                     canSelectItems != nil, prepareSidebarDuplicate != nil, prepareSidebarClose != nil,
                     prepareSidebarDeletion != nil, prepareFolderDeletion != nil])

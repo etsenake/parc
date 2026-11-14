@@ -8,10 +8,10 @@ Private Today content uses “Incognito Tabs” in a 36-point heading, with inse
 8 top, 14 leading, 2 bottom and 8 trailing. The leading inset shifts by 3.5 when
 the sidebar indicator is present.
 
-When the normal store contains multiple Profiles, a passive Incognito capsule
-identifies the private context. It uses the eye-slash symbol, an 11-point medium
+Every private window shows a passive Incognito capsule that identifies the
+private context. It uses the eye-slash symbol, an 11-point medium
 label, a 20-point icon slot and a two-point gap. The capsule has no action and
-must not become a Profile-switch control.
+must not become a control.
 
 ## Private window theme
 

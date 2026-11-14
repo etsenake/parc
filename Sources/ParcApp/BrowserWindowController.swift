@@ -14436,22 +14436,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         }
     }
 
-    var downloadCatalog: BrowserStore? {
-        didSet {
-            privateProfileIndicatorSubscription = nil
-            guard isPrivateBrowsing, let catalog = downloadCatalog else {
-                sidebar.showsPrivateProfileIndicator = false
-                return
-            }
-            sidebar.showsPrivateProfileIndicator = catalog.state.profiles.count > 1
-            privateProfileIndicatorSubscription = catalog.statePublisher.map { $0.profiles.count > 1 }
-                .removeDuplicates().receive(on: RunLoop.main).sink { [weak self, weak catalog] shown in
-                    guard let self, let catalog, self.downloadCatalog === catalog else { return }
-                    self.sidebar.showsPrivateProfileIndicator = shown
-                }
-        }
-    }
-    private var privateProfileIndicatorSubscription: AnyCancellable?
+    var downloadCatalog: BrowserStore?
     private var downloadStore: BrowserStore { downloadCatalog ?? store }
     var onOpenDownloadSource: ((BrowserDownload, URL) -> Bool)?
     private var loadingPrivateDownloadContexts = Set<String>()
