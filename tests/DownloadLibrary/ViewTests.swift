@@ -859,17 +859,17 @@ import UniformTypeIdentifiers
    filterStore.recordDownload(["id":id,"profilePath":path,"name":id,"status":"completed","available":true,"itemIdentity":id+"1","canOpen":true,"startedAt":1000])
   }
   filterPublish("z-original",filterPath);filterPublish("a-later",filterPath);filterPublish("other",secondPath)
-  var filterOwner=true, filterLoads=0, filterClosed=0
-  let filterView=DownloadLibraryView(store:filterStore,ownerValid:{filterOwner})
+  var filterClosed=0
+  let filterView=DownloadLibraryView(store:filterStore,ownerValid:{true})
   filterView.frame=NSRect(x:0,y:0,width:304,height:600)
   let filterWindow=DownloadHoverWindow(contentRect:filterView.frame,styleMask:[.titled],backing:.buffered,defer:false)
   filterWindow.isReleasedWhenClosed=false;filterWindow.contentView=filterView
-  filterView.onLoad={filterLoads += 1};filterView.onClose={filterClosed += 1}
+  filterView.onClose={filterClosed += 1}
   filterView.layoutSubtreeIfNeeded()
   let filterSearch=all(filterView).compactMap{$0 as? NSTextField}.first{$0.accessibilityLabel()=="Search Downloads"}!
   let filterTable=all(filterView).compactMap{$0 as? DownloadLibraryTable}.first!
-  func filterButton(_ title:String)->NSButton {all(filterView).compactMap{$0 as? NSButton}.first{$0.title==title && !($0.accessibilityLabel()?.hasPrefix("Remove ") ?? false)}!}
-  let filterToggle=filterButton("Filter")
+  expect(!all(filterView).compactMap{$0 as? NSButton}.contains{$0.title=="Filter" || $0.title=="Done"},"Downloads has no Filter control now that profiles are invisible")
+  expect(!all(filterView).compactMap{$0 as? NSTextField}.contains{$0.stringValue=="Profiles"},"Downloads shows no Profiles heading")
   let searchBackground=filterView.subviews.first!
   expect(abs(filterSearch.frame.midY-searchBackground.bounds.midY)<=0.5 && filterSearch.frame.height==filterSearch.cell!.cellSize.height,"Plain native editor line stays centered in the original header surface")
   expect(searchBackground.frame.height==36 && searchBackground.bounds.contains(filterSearch.frame) && !searchBackground.isAccessibilityElement() && !searchBackground.isAccessibilityHidden(),"Search padding keeps the full header hit area without introducing a second accessibility control")
@@ -877,8 +877,8 @@ import UniformTypeIdentifiers
   expect(filterSearch is DownloadSearchField && !(filterSearch.cell is NSSearchFieldCell),"Actual query uses a plain native field without duplicate search/clear accessories")
   expect(filterSearch.textColor == .labelColor && filterSearch.placeholderAttributedString?.attribute(.foregroundColor,at:0,effectiveRange:nil) as? NSColor == .placeholderTextColor,
          "Typed query is primary while the placeholder keeps the system placeholder grey")
-  expect(searchBackground.frame.minX==8 && searchBackground.frame.minY==10 && filterToggle.frame.minX-searchBackground.frame.maxX==3 && filterToggle.frame.maxX==filterView.bounds.width-8 && filterToggle.frame.height==36,
-         "Parc header: measured 8pt page inset, recovered 3pt field-filter gap and 36pt controls")
+  expect(searchBackground.frame.minX==8 && searchBackground.frame.minY==10 && searchBackground.frame.maxX==filterView.bounds.width-8 && searchBackground.frame.height==36,
+         "Parc header: measured 8pt page inset and a full-width 36pt search field")
   expect(filterSearch.font?.pointSize==14 && !filterSearch.isBezeled && !filterSearch.drawsBackground && filterSearch.focusRingType == .none,"Native editor has original typography without system bezel/focus shadow")
   let optical=searchGlyph.image!.alignmentRect
   expect(optical.size==NSSize(width:15,height:15) && searchGlyph.frame.size==searchGlyph.image!.size && optical.minX>=1 && optical.minY>=1
@@ -889,36 +889,12 @@ import UniformTypeIdentifiers
   expect(!all(searchBackground).contains{$0 is NSButton},"Typed query has no invented clear or search-history action")
   let headerPoint=NSPoint(x:searchBackground.frame.minX+searchGlyph.frame.midX,y:searchBackground.frame.minY+searchGlyph.frame.midY)
   expect(searchBackground.hitTest(headerPoint) === searchBackground,"Passive magnifier forwards pointer focus to the original search surface")
-
-
-  func press(_ b:NSButton) { _=NSApp.sendAction(b.action!,to:b.target,from:b);filterView.layoutSubtreeIfNeeded() }
   func visibleNames()->[String] {(0..<filterTable.numberOfRows).compactMap{row in
    guard let cell=filterView.tableView(filterTable,viewFor:filterTable.tableColumns[0],row:row) as? NSTableCellView else{return nil}
    return all(cell).compactMap{$0 as? NSTextField}.first?.stringValue
   }}
   expect(visibleNames()==filterStore.downloadItems.map(\.name),"Equal original dates retain source order rather than lexical record IDs")
-  filterTable.selectRowIndexes(IndexSet(integer:1),byExtendingSelection:false)
-  let selectedOriginal=filterTable.selectedRowIndexes
-  filterSearch.stringValue="original";filterView.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification))
-  press(filterToggle)
-  expect(filterSearch.isHidden && !filterSearch.isEnabled && filterSearch.stringValue=="original","Filter replaces Search without erasing the actual query")
-  expect(filterToggle.title=="Done" && filterToggle.accessibilityLabel()=="Done","Header changes its real native action and accessibility label")
-  let downloadsDoneText=ceil(("Done" as NSString).size(withAttributes:[.font:filterToggle.font!]).width)
-  expect(filterToggle.fittingSize.width==12+downloadsDoneText+12 && filterToggle.frame.width==filterToggle.fittingSize.width
-         && filterToggle.frame.maxX==filterView.bounds.width-LibraryPageHeader.inset,"Downloads Done shares PageFilterView's 12-point padding")
-  expect(all(filterView).compactMap{$0 as? NSTextField}.contains{$0.stringValue=="Filter Downloads…" && !$0.isHidden},"Expanded header displays recovered filter title")
-  expect(!all(filterView).compactMap{$0 as? NSButton}.contains{$0.title=="All Profiles"},"Nil Profile is all; no invented All Profiles row")
-  expect(filterTable.selectedRowIndexes==selectedOriginal,"Header-only presentation retains selected original row")
-  let oldSpace=filterStore.state.activeSpaceID
-  press(filterButton("Second Profile"))
-  expect(filterTable.numberOfRows==0 && filterLoads==1,"Exact Profile chip combines with the retained query")
-  expect(filterStore.state.activeSpaceID==oldSpace,"Filtering never switches browser Space")
-  expect(filterButton("Second Profile").state == .on,"Original Profile chip exposes selected state")
-  press(filterButton("Second Profile"))
-  expect(visibleNames()==["z-original"] && filterLoads==2,"Clicking selected original Profile toggles back to all")
-  press(filterButton("Second Profile"));press(filterToggle)
-  expect(!filterSearch.isHidden && filterSearch.placeholderString=="Search…","Done restores Search and the selected-filter placeholder")
-  expect(!searchBackground.isHidden && searchBackground.alphaValue==1 && searchBackground.layer?.opacity==1,"Done restores the visible search surface together with its native editor")
+  expect(visibleNames().count==3,"Downloads from every profile appear in one list")
   searchBackground.appearance=NSAppearance(named:.aqua);searchBackground.updateLayer()
   let lightSurface=NSColor(cgColor:searchBackground.layer!.backgroundColor!)!.usingColorSpace(.deviceRGB)!
   expect(lightSurface.redComponent<0.1 && abs(lightSurface.alphaComponent-0.05)<0.001,"Semantic search surface resolves in its actual light view appearance")
@@ -945,113 +921,24 @@ import UniformTypeIdentifiers
   filterWindow.key=true;filterWindow.pointer=NSPoint(x:1000,y:1000)
   searchBackground.mouseMoved(with:hoverEvent);searchBackground.updateLayer()
   expect(abs(NSColor(cgColor:searchBackground.layer!.backgroundColor!)!.alphaComponent-0.05)<0.001,"Current outside hit restores original idle opacity without a delayed effect")
-
-  let removeChip=all(filterView).compactMap{$0 as? NSButton}.first{$0.accessibilityLabel()=="Remove Second Profile Filter"}!
-  expect(!removeChip.isHidden && removeChip.frame.height==32,"Collapsed Profile appears as a removable native chip")
-  press(removeChip)
-  expect(removeChip.isHidden && filterSearch.placeholderString=="Search Downloads…" && visibleNames()==["z-original"],"Removing chip clears only original Profile, not query")
+  filterSearch.stringValue="original"
   filterWindow.makeFirstResponder(filterSearch)
   let filterEditor=filterSearch.currentEditor() as! NSTextView
   filterEditor.setSelectedRange(NSRange(location:2,length:3))
   let surfaceClick=NSEvent.mouseEvent(with:.leftMouseDown,location:.zero,modifierFlags:[],timestamp:0,windowNumber:filterWindow.windowNumber,context:nil,eventNumber:0,clickCount:1,pressure:1)!
   searchBackground.mouseDown(with:surfaceClick)
   expect(filterSearch.currentEditor() === filterEditor && filterEditor.selectedRange()==NSRange(location:2,length:3),"Original background focus preserves the already editing query range")
-
-  press(filterToggle)
-  expect(filterWindow.firstResponder === filterToggle,"Opening from query moves only owned editor focus to visible Done")
-  press(filterToggle)
-  expect(filterSearch.currentEditor()?.selectedRange==NSRange(location:2,length:3),"Done restores original query selection without selecting all")
-  (filterSearch.currentEditor() as! NSTextView).setSelectedRange(NSRange(location:filterSearch.stringValue.utf16.count,length:0))
-  press(filterToggle);press(filterToggle)
-  expect(filterSearch.currentEditor()?.selectedRange==NSRange(location:filterSearch.stringValue.utf16.count,length:0),"Downloads Done preserves the end-of-query caret")
-  press(filterToggle);filterWindow.makeFirstResponder(filterTable);press(filterToggle)
-  expect(filterWindow.firstResponder === filterTable,"User intervening table focus is not replaced by old query restoration")
-  press(filterToggle);filterWindow.makeFirstResponder(filterButton("Second Profile"));filterView.cancelOperation(nil)
-  expect(filterWindow.firstResponder === filterToggle,"Escape from a Profile chip returns to visible Filter, never hidden content")
   filterWindow.makeFirstResponder(filterSearch)
   let composingFilter=filterSearch.currentEditor() as! NSTextView
   composingFilter.setMarkedText("input",selectedRange:NSRange(location:5,length:0),replacementRange:NSRange(location:NSNotFound,length:0))
   searchBackground.mouseDown(with:surfaceClick)
   expect(composingFilter.hasMarkedText(),"Search surface pointer focus never commits or replaces original IME composition")
-
-  press(filterToggle)
-  expect(filterToggle.title=="Filter" && composingFilter.hasMarkedText(),"Filter admission preserves active original field composition")
   composingFilter.unmarkText();filterSearch.stringValue="original"
   filterWindow.makeFirstResponder(filterTable)
-  press(filterToggle);filterView.cancelOperation(nil);filterView.layoutSubtreeIfNeeded()
-  expect(filterToggle.title=="Filter" && filterSearch.stringValue=="original" && filterClosed==0,"Escape exits filter before touching query or Library")
   filterView.cancelOperation(nil)
-  expect(filterSearch.stringValue.isEmpty && filterClosed==0,"Next Escape clears only search")
+  expect(filterSearch.stringValue.isEmpty && filterClosed==0,"Escape clears only search")
   filterView.cancelOperation(nil);expect(filterClosed==1,"Only subsequent empty-state Escape exits Library")
-  let beforeInvalid=filterLoads;filterOwner=false;press(filterToggle)
-  expect(filterToggle.title=="Filter" && filterLoads==beforeInvalid,"Retired original owner refuses filter actions")
-  filterOwner=true;filterWindow.contentView=nil;press(filterToggle)
-  expect(filterToggle.title=="Filter","Detached Library cannot revive a filter session")
   filterWindow.close()
-  SystemOverrides.reduceMotion=false
-  let motionView=DownloadLibraryView(store:filterStore,ownerValid:{true})
-  motionView.frame=NSRect(x:0,y:0,width:304,height:600)
-  let motionWindow=NSWindow(contentRect:motionView.frame,styleMask:.titled,backing:.buffered,defer:false)
-  motionWindow.isReleasedWhenClosed=false;motionWindow.contentView=motionView;motionView.layoutSubtreeIfNeeded()
-  let motionToggle=all(motionView).compactMap{$0 as? NSButton}.first{$0.title=="Filter"}!
-  _=NSApp.sendAction(motionToggle.action!,to:motionToggle.target,from:motionToggle)
-  expect(motionToggle.title=="Done","Actual opening transaction publishes expanded state immediately")
-  _=NSApp.sendAction(motionToggle.action!,to:motionToggle.target,from:motionToggle)
-  motionView.frame.size.width=280;motionView.layoutSubtreeIfNeeded()
-  let motionSearch=all(motionView).compactMap{$0 as? NSTextField}.first{$0.accessibilityLabel()=="Search Downloads"}!
-  expect(!motionSearch.isHidden && motionSearch.alphaValue==1,"Reversal plus resize settles at authoritative collapsed header")
-  motionWindow.contentView=nil
-  RunLoop.main.run(until:Date().addingTimeInterval(0.35))
-  expect(motionSearch.layer?.animationKeys()?.isEmpty != false,"Retired animation completion cannot restore stale header/layers")
-  motionWindow.close()
-  SystemOverrides.reduceMotion=nil
-  final class FilterFlushCountingRoot: NSView {
-    var layouts = 0
-    override func layoutSubtreeIfNeeded() {
-      layouts += 1
-      super.layoutSubtreeIfNeeded()
-    }
-  }
-  let flushWindow=NSWindow(contentRect:NSRect(x:-10000,y:-10000,width:400,height:300),
-                           styleMask:[.borderless],backing:.buffered,defer:false)
-  flushWindow.isReleasedWhenClosed=false
-  let flushRoot=FilterFlushCountingRoot(frame:NSRect(x:0,y:0,width:400,height:300))
-  flushRoot.wantsLayer=true
-  let flushChild=NSView(frame:NSRect(x:0,y:0,width:200,height:300))
-  flushChild.wantsLayer=true
-  flushRoot.addSubview(flushChild)
-  flushWindow.contentView=flushRoot
-  flushWindow.orderFront(nil)
-  flushRoot.layoutSubtreeIfNeeded();flushRoot.displayIfNeeded();CATransaction.flush()
-  flushRoot.layouts=0
-  expect(!DownloadLibraryView.shouldPrepareFilterLayoutFlush(of:flushRoot),
-         "clean laid-out filter root does not need the expand/collapse flush")
-  expect(!DownloadLibraryView.prepareFilterLayoutFlushIfNeeded(for:flushRoot) && flushRoot.layouts==0,
-         "clean filter prep skips layout and flush")
-  flushRoot.needsLayout=true
-  expect(DownloadLibraryView.shouldPrepareFilterLayoutFlush(of:flushRoot),
-         "dirty layout root still requires the expand/collapse flush")
-  expect(DownloadLibraryView.prepareFilterLayoutFlushIfNeeded(for:flushRoot) && flushRoot.layouts==1,
-         "dirty filter prep still runs layout before flush")
-  flushRoot.layouts=0
-  expect(!DownloadLibraryView.shouldPrepareFilterLayoutFlush(of:flushRoot),
-         "layout clears the filter flush requirement")
-  flushChild.layer?.removeAllAnimations()
-  CATransaction.flush()
-  let oldPresentation=flushChild.layer!.presentation()!.position
-  flushChild.frame.origin.x += 40
-  expect(!flushRoot.needsLayout && !flushChild.needsLayout,
-         "origin-only frame move does not dirty AppKit layout")
-  expect(flushChild.layer!.position != oldPresentation
-         && flushChild.layer!.presentation()!.position == oldPresentation,
-         "origin-only prep leaves presentation behind the model")
-  expect(DownloadLibraryView.shouldPrepareFilterLayoutFlush(of:flushRoot),
-         "uncommitted geometry still requires the expand/collapse flush")
-  expect(DownloadLibraryView.prepareFilterLayoutFlushIfNeeded(for:flushRoot) && flushRoot.layouts==0,
-         "uncommitted geometry flushes without a redundant layout pass")
-  expect(!DownloadLibraryView.shouldPrepareFilterLayoutFlush(of:flushRoot),
-         "flushing uncommitted geometry clears the filter requirement")
-  flushWindow.orderOut(nil);flushWindow.close()
   var subtitleItem=BrowserDownload(id:"subtitle",name:"photo.png",path:"",receivedBytes:1000000,totalBytes:2000000,status:.completed)
   subtitleItem.sourceURL="https://files.example.co.uk/photo.png";subtitleItem.sourceDomain="example.co.uk"
   expect(DownloadRowSubtitle.text(for:subtitleItem)=="Image from example.co.uk","Completed image names its type and source domain")
@@ -1195,7 +1082,7 @@ import UniformTypeIdentifiers
   }
   expect(statusLine()==nil && idleListHeight==layoutView.bounds.height-layoutScroll.frame.minY,"Idle Downloads list reaches the bottom with no status line")
   layoutView.setLoading(count:1,message:nil);layoutView.layoutSubtreeIfNeeded()
-  expect(statusLine()?.stringValue=="Loading 1 profile…" && layoutScroll.frame.height==idleListHeight-36,
+  expect(statusLine()?.stringValue=="Loading downloads…" && layoutScroll.frame.height==idleListHeight-36,
          "Loading shows the bottom status line and shortens the list")
   layoutView.setLoading(count:0,message:"Profile unavailable");layoutView.layoutSubtreeIfNeeded()
   expect(statusLine()?.stringValue=="Profile unavailable" && layoutScroll.frame.height==idleListHeight-36,
@@ -2409,7 +2296,7 @@ import UniformTypeIdentifiers
    let sampleRoot=LayoutView(frame:NSRect(x:0,y:0,width:640,height:590))
    let sampleWindow=NSWindow(contentRect:sampleRoot.frame,styleMask:[.titled,.closable],backing:.buffered,defer:false)
    sampleWindow.isReleasedWhenClosed=false;sampleWindow.contentView=sampleRoot
-   sampleWindow.title="Downloads Filter Component — synthetic records"
+   sampleWindow.title="Downloads Component — synthetic records"
    sampleWindow.appearance=NSAppearance(named:.aqua);sampleRoot.appearance=NSAppearance(named:.aqua)
    SystemOverrides.reduceMotion=true
    for index in 0..<2 {
@@ -2417,12 +2304,6 @@ import UniformTypeIdentifiers
     sample.frame=NSRect(x:CGFloat(index)*320,y:0,width:304,height:590)
     sample.appearance=NSAppearance(named:.aqua);sample.palette=ThemeChromePalette(theme:SpaceTheme(),isDark:false)
     sampleRoot.addSubview(sample);sample.layoutSubtreeIfNeeded()
-    let buttons=all(sample).compactMap{$0 as? NSButton}
-    let toggle=buttons.first{$0.title=="Filter"}!
-    _=NSApp.sendAction(toggle.action!,to:toggle.target,from:toggle)
-    let profileButton=all(sample).compactMap{$0 as? NSButton}.first{$0.title=="Second Profile"}!
-    _=NSApp.sendAction(profileButton.action!,to:profileButton.target,from:profileButton)
-    if index==1 { _=NSApp.sendAction(toggle.action!,to:toggle.target,from:toggle) }
     sample.layoutSubtreeIfNeeded()
 
    }

@@ -141,10 +141,9 @@ with tempfile.TemporaryDirectory(prefix="parc-download-library-view-") as direct
         "Flyout drags are copy only"
     assert "onShowKind?(kind)" in (root / "Sources/ParcApp/LibraryView.swift").read_text(), "The Library no longer reports its page"
     download_library = (root / "Sources/ParcApp/DownloadLibraryView.swift").read_text()
-    assert "Self.prepareFilterLayoutFlushIfNeeded(for: self)" in download_library, \
-        "Filter expand/collapse no longer gates layout+flush on a true no-op skip"
-    assert "layoutSubtreeIfNeeded()\n        CATransaction.flush()" not in download_library, \
-        "Filter expand/collapse still unconditionally layouts then flushes"
+    assert "filterScroll" not in download_library and "selectProfile" not in download_library \
+        and 'NSTextField(labelWithString: "Profiles")' not in download_library, \
+        "Downloads regained a profile filter"
     assert "if !force && shouldSkipCatalogReload() { return }" in download_library, \
         "DownloadLibraryView no longer skips identical catalog fingerprints"
     capture_library = (root / "Sources/ParcApp/CaptureLibraryView.swift").read_text()

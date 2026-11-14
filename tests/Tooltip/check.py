@@ -62,7 +62,7 @@ assert "NSPanel" not in entry and ".toolTipsFont" not in entry and "TooltipConfi
 assert "parcTooltip = showsLabel ? nil : TooltipConfiguration(title)" in source("LibraryRailTile.swift"), \
     "a compact rail tile no longer carries its title"
 assert 'LiveShortcutToolTip.set(back, "Exit Library")' in source("LibraryView.swift")
-assert 'behavior: .onMouseIdle(delay: 0.6)' in source("DownloadLibraryView.swift"), "Remove Filter waits 0.6 s"
+assert "Remove" not in source("DownloadLibraryView.swift") or "Filter" not in source("DownloadLibraryView.swift"), "Downloads regained a Remove Filter chip"
 assert 'anchor: .bottom' in source("PopupChromeView.swift"), "Little Arc's tooltips sit below their buttons"
 
 sources = {name: (app / name).read_text() for name in ("Tooltip.swift", "TooltipView.swift", "TooltipController.swift")}

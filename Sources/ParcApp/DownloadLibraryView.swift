@@ -24,15 +24,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     var palette: ThemeChromePalette? { didSet { applyPalette() } }
     private let searchBackdrop = DownloadSearchBackdrop()
     private let search = DownloadSearchField(frame: .zero)
-    private let filter = DownloadFilterButton("Filter", symbol: "line.3.horizontal.decrease.circle", style: .header)
-    private let filterTitle = NSTextField(labelWithString: "Filter Downloads…")
-    private let selectedFilter = DownloadFilterButton("")
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-    private var filterAnimationGeneration: UInt64 = 0
-    private var animatingFilterLayout = false
-    private var savedSearchSelection: NSRange?
-    private let filterContent = LayoutView()
-    private let filterScroll = NSScrollView()
     private let scroll = NSScrollView()
     private let table = DownloadLibraryTable()
     private let emptyContent: DownloadEmptyContentView
@@ -43,10 +34,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     private var rows: [Row] = []
     private var displayed: [BrowserDownload] = []
     private var restoringSelection = false
-    private var selectedProfile: UUID?
-    private var filtersExpanded = false
-    private var filterSignature: [String] = []
-    private var filterControls: [NSView] = []
     private var subscription: AnyCancellable?
     private var transientSubscription: AnyCancellable?
     private var observedDownloads: [BrowserDownload] = []
@@ -63,32 +50,21 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         emptyContent = DownloadEmptyContentView(ownerValid: ownerValid)
         super.init(frame: .zero)
         setAccessibilityRole(.group); setAccessibilityLabel("Downloads")
-        for view in [searchBackdrop, filterTitle, filter, selectedFilter, filterScroll, scroll, emptyContent, footer, retryLoad] {
+        for view in [searchBackdrop, scroll, emptyContent, footer, retryLoad] {
             view.wantsLayer = true; addSubview(view)
         }
-        filterTitle.font = .systemFont(ofSize: 15, weight: .bold)
-        filterTitle.lineBreakMode = .byTruncatingTail
-        filterTitle.isHidden = true; selectedFilter.isHidden = true
-        selectedFilter.symbol = "xmark.circle.fill"
-        selectedFilter.actionBlock = { [weak self] in self?.selectProfile(nil) }
         retryLoad.actionBlock = { [weak self] in self?.onLoad?() }; retryLoad.isHidden = true
         searchBackdrop.addSubview(search)
         search.wantsLayer = true
         search.placeholderString = "Search Downloads…"; search.setAccessibilityLabel("Search Downloads")
         search.delegate = self
         searchBackdrop.onFocus = { [weak self] in
-            guard let self, self.ownerValid(), !self.filtersExpanded,
+            guard let self, self.ownerValid(),
                   !self.searchBackdrop.isHiddenOrHasHiddenAncestor,
                   let window = self.window, window.attachedSheet == nil else { return }
             if self.search.currentEditor() !== window.firstResponder { window.makeFirstResponder(self.search) }
         }
         searchBackdrop.setAccessibilityElement(false)
-        filter.actionBlock = { [weak self] in
-            guard let self else { return }
-            self.setFiltersExpanded(!self.filtersExpanded)
-        }
-        filterScroll.documentView = filterContent; filterScroll.drawsBackground = false
-        filterScroll.hasVerticalScroller = true; filterScroll.autohidesScrollers = true
         let column = NSTableColumn(identifier: .init("download")); column.resizingMask = .autoresizingMask
         table.addTableColumn(column); table.headerView = nil; table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         table.style = .plain; table.backgroundColor = .clear; table.intercellSpacing = .zero
@@ -120,14 +96,13 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         footer.isHidden = true
         subscription = store.statePublisher.receive(on: RunLoop.main).sink { [weak self] _ in self?.reload() }
         transientSubscription = store.$transientDownloads.receive(on: RunLoop.main).sink { [weak self] _ in self?.reload() }
-        reload(force: true); rebuildFilters(); applyPalette()
+        reload(force: true); applyPalette()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    func invalidate(settlePresentation: Bool = true) {
+    func invalidate() {
         contextGeneration &+= 1
         activationGeneration &+= 1; table.retireOriginalClick()
         emptyContent.settle()
-        if settlePresentation { settleFilterAnimation() } else { filterAnimationGeneration &+= 1 }
         retireFileDrags()
         closePreview()
         thumbnails.invalidate()
@@ -188,17 +163,12 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     func setLoading(count: Int, message: String?) {
         loadingCount = count; loadMessage = message; reload(force: true)
     }
-    override func setFrameSize(_ newSize: NSSize) {
-        if newSize != frame.size { settleFilterAnimation() }
-        super.setFrameSize(newSize)
-    }
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil { invalidate() }
         super.viewWillMove(toWindow: newWindow)
     }
     func focusSearch() {
         guard ownerValid(), window?.attachedSheet == nil else { return }
-        setFiltersExpanded(false, animated: false)
         window?.makeFirstResponder(search); search.selectText(nil)
     }
     override func cancelOperation(_ sender: Any?) { escape() }
@@ -214,7 +184,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     }
     private func escape() {
         if preview?.window?.isVisible == true { closePreview(restoringFocus: true); window?.makeFirstResponder(table) }
-        else if filtersExpanded { setFiltersExpanded(false) }
         else if !search.stringValue.isEmpty { invalidate(); search.stringValue = ""; reload(force: true) }
         else { onClose?() }
     }
@@ -226,21 +195,16 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     private func reload(force: Bool = false) {
         if !force && shouldSkipCatalogReload() { return }
         rememberAppliedCatalog()
-        if let selectedProfile, !store.state.profiles.contains(where: { $0.id == selectedProfile }) {
-            invalidate(); self.selectedProfile = nil
-        }
         let liveIdentities = Set(store.downloadItems.map(DownloadLibraryIdentity.init))
         operations = operations.filter { liveIdentities.contains($0.key) }
         if let item = previewItem, !ownerValid() || resolve([item]) == nil || fileURL?(item) != previewURL { closePreview() }
         let query = search.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let next = store.downloadItems.filter { item in
-            (selectedProfile == nil || item.profileID == selectedProfile) &&
             (query.isEmpty || item.name.localizedCaseInsensitiveContains(query) ||
              (item.sourceURL?.localizedCaseInsensitiveContains(query) ?? false))
         }.sorted {
             ($0.startedAt ?? .distantPast) > ($1.startedAt ?? .distantPast)
         }
-        rebuildFilters()
         guard force || next != displayed else { return }
         let originals = selectedItems, origin = scroll.contentView.bounds.origin
         let previousRows = rows
@@ -268,7 +232,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
             if preview?.window?.isVisible == true { updatePreview() }
         } else { reloadRows(selecting: DownloadLibrarySelection.retainedRows(originals, in: rowItems)) }
         scroll.contentView.scroll(to: origin); scroll.reflectScrolledClipView(scroll.contentView)
-        let isUnfilteredEmpty = query.isEmpty && selectedProfile == nil
+        let isUnfilteredEmpty = query.isEmpty
         let message = loadingCount > 0 && next.isEmpty ? "Loading downloads…" : loadMessage != nil && next.isEmpty ? loadMessage! : isUnfilteredEmpty ? "Nothing here yet!\nCome back after you’ve found some cool stuff to save." : "No downloads match this search."
         let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center; paragraph.paragraphSpacing = 6
         let attributed = NSMutableAttributedString(string: message, attributes: [.font: NSFont.systemFont(ofSize: 13), .paragraphStyle: paragraph,
@@ -299,148 +263,6 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         observedProfiles = store.state.profiles
     }
 
-    private func selectProfile(_ id: UUID?) {
-        guard ownerValid(), let window, window.attachedSheet == nil,
-              id == nil || store.state.profiles.contains(where: { $0.id == id }) else { return }
-        invalidate()
-        selectedProfile = selectedProfile == id ? nil : id
-        reload(force: true)
-        onLoad?()
-    }
-    private func setFiltersExpanded(_ expanded: Bool, animated: Bool = true) {
-        guard ownerValid(), let window, window.attachedSheet == nil, expanded != filtersExpanded else { return }
-        if expanded, let editor = search.currentEditor() as? NSTextView,
-           window.firstResponder === editor {
-            guard !editor.hasMarkedText() else { return }
-            savedSearchSelection = editor.selectedRange()
-            guard window.makeFirstResponder(filter) else { savedSearchSelection = nil; return }
-        }
-        let focusWasInFilters = (window.firstResponder as? NSView)?.isDescendant(of: filterContent) == true
-        let restoreSearch = !expanded && savedSearchSelection != nil &&
-            (window.firstResponder === filter || focusWasInFilters)
-        Self.prepareFilterLayoutFlushIfNeeded(for: self)
-        invalidate(settlePresentation: false)
-        filtersExpanded = expanded
-        reload(force: true)
-        let token = filterAnimationGeneration
-        let duration = animated && !reduceMotion ? 0.3 : 0
-        searchBackdrop.isHidden = false; search.isHidden = false; filterTitle.isHidden = false
-        filterScroll.isHidden = false; selectedFilter.isHidden = selectedProfile == nil
-        search.isEnabled = !expanded
-        search.setAccessibilityHidden(expanded); filterTitle.setAccessibilityHidden(!expanded)
-        filterScroll.setAccessibilityHidden(!expanded); selectedFilter.setAccessibilityHidden(expanded || selectedProfile == nil)
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1)
-            context.allowsImplicitAnimation = duration > 0
-            animatingFilterLayout = duration > 0
-            searchBackdrop.animator().alphaValue = expanded ? 0 : 1
-            filterTitle.animator().alphaValue = expanded ? 1 : 0
-            filterScroll.animator().alphaValue = expanded ? 1 : 0
-            selectedFilter.animator().alphaValue = expanded ? 0 : 1
-            needsLayout = true; layoutSubtreeIfNeeded()
-            animatingFilterLayout = false
-        } completionHandler: { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, self.filterAnimationGeneration == token else { return }
-                self.settleFilterAnimation()
-            }
-        }
-        if duration == 0 { settleFilterAnimation() }
-        if restoreSearch, let range = savedSearchSelection {
-            window.makeFirstResponder(search)
-            let length = search.stringValue.utf16.count
-            let location = min(range.location, length)
-            (search.currentEditor() as? NSTextView)?.setSelectedRange(NSRange(location: location, length: min(range.length, length - location)))
-        }
-        if !expanded {
-            if !restoreSearch && focusWasInFilters { window.makeFirstResponder(filter) }
-            savedSearchSelection = nil
-        }
-    }
-
-    static func shouldPrepareFilterLayoutFlush(of root: NSView) -> Bool {
-        subtreeNeedsLayout(root) || subtreeHasUncommittedGeometry(root)
-    }
-
-    @discardableResult
-    static func prepareFilterLayoutFlushIfNeeded(for root: NSView) -> Bool {
-        guard shouldPrepareFilterLayoutFlush(of: root) else { return false }
-        if subtreeNeedsLayout(root) {
-            root.layoutSubtreeIfNeeded()
-        }
-        CATransaction.flush()
-        return true
-    }
-
-    private static func subtreeNeedsLayout(_ root: NSView) -> Bool {
-        if root.needsLayout || root.needsUpdateConstraints { return true }
-        for child in root.subviews where subtreeNeedsLayout(child) { return true }
-        return false
-    }
-
-    private static func subtreeHasUncommittedGeometry(_ root: NSView) -> Bool {
-        if let layer = root.layer, let presentation = layer.presentation(),
-           presentation.position != layer.position
-            || presentation.bounds != layer.bounds
-            || presentation.cornerRadius != layer.cornerRadius {
-            return true
-        }
-        for child in root.subviews where subtreeHasUncommittedGeometry(child) { return true }
-        return false
-    }
-
-    private func settleFilterAnimation() {
-        filterAnimationGeneration &+= 1
-        for view in [searchBackdrop, search, filterTitle, filterScroll, selectedFilter, scroll, emptyContent] {
-            for key in ["position", "bounds", "opacity"] { view.layer?.removeAnimation(forKey: key) }
-        }
-        searchBackdrop.alphaValue = filtersExpanded ? 0 : 1; searchBackdrop.isHidden = filtersExpanded
-        search.alphaValue = 1; search.isHidden = filtersExpanded
-        filterTitle.alphaValue = filtersExpanded ? 1 : 0; filterTitle.isHidden = !filtersExpanded
-        filterScroll.alphaValue = filtersExpanded ? 1 : 0; filterScroll.isHidden = !filtersExpanded
-        selectedFilter.alphaValue = filtersExpanded ? 0 : 1
-        selectedFilter.isHidden = filtersExpanded || selectedProfile == nil
-        search.isEnabled = !filtersExpanded
-        search.setAccessibilityHidden(filtersExpanded); filterTitle.setAccessibilityHidden(!filtersExpanded)
-        filterScroll.setAccessibilityHidden(!filtersExpanded); selectedFilter.setAccessibilityHidden(selectedFilter.isHidden)
-    }
-    private func rebuildFilters(force: Bool = false) {
-        let signature = [selectedProfile?.uuidString ?? "all", String(filtersExpanded)] + store.state.profiles.map { $0.id.uuidString + $0.name }
-        guard force || signature != filterSignature else { return }
-        filterSignature = signature
-        let oldFocusedProfile = (window?.firstResponder as? DownloadFilterButton)?.profileID
-        for view in filterControls { view.removeFromSuperview() }; filterControls = []
-        filter.title = filtersExpanded ? "Done" : "Filter"
-        filter.setAccessibilityLabel(filter.title)
-        filter.symbol = filtersExpanded ? nil : "line.3.horizontal.decrease.circle"
-        let name = selectedProfile.flatMap { id in store.state.profiles.first { $0.id == id }?.name }
-        selectedFilter.title = name ?? ""
-        selectedFilter.setAccessibilityLabel("Remove \(name ?? "Profile") Filter")
-        LiveShortcutToolTip.set(selectedFilter, "Remove \(name ?? "Profile") Filter", behavior: .onMouseIdle(delay: 0.6))
-        search.placeholderString = selectedProfile == nil ? "Search Downloads…" : "Search…"
-        let label = NSTextField(labelWithString: "Profiles"); label.font = .systemFont(ofSize: 12, weight: .semibold)
-        label.textColor = palette?.foregroundSecondary ?? .secondaryLabelColor
-        filterControls.append(label)
-        for profile in store.state.profiles {
-            let id = profile.id
-            let button = DownloadFilterButton(profile.name) { [weak self] in self?.selectProfile(id) }
-            button.profileID = id; button.isChosen = selectedProfile == id
-            button.ink = palette?.foregroundPrimary ?? .labelColor
-            button.state = button.isChosen ? .on : .off
-            button.setAccessibilityValue(NSNumber(value: button.isChosen))
-            filterControls.append(button)
-        }
-        for view in filterControls { filterContent.addSubview(view) }
-        if let oldFocusedProfile, let button = filterControls.compactMap({ $0 as? DownloadFilterButton }).first(where: { $0.profileID == oldFocusedProfile }) {
-            window?.makeFirstResponder(button)
-        }
-        if !animatingFilterLayout {
-            selectedFilter.isHidden = filtersExpanded || selectedProfile == nil
-            filterScroll.isHidden = !filtersExpanded
-        }
-        needsLayout = true
-    }
     private var rowItems: [BrowserDownload?] {
         rows.map { if case let .item(item) = $0 { return item }; return nil }
     }
@@ -726,43 +548,23 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
         empty.textColor = palette?.foregroundSecondary ?? .secondaryLabelColor
         footer.textColor = palette?.foregroundSecondary ?? .secondaryLabelColor
         emptyIcon.contentTintColor = palette?.foregroundSecondary ?? .secondaryLabelColor
-        selectedFilter.ink = palette?.foregroundPrimary ?? .labelColor
-        filterTitle.textColor = palette?.foregroundSecondary ?? .secondaryLabelColor
         searchBackdrop.ink = .labelColor
         retryLoad.contentTintColor = palette?.foregroundPrimary ?? .labelColor
         let selected = table.selectedRowIndexes
         reloadRows(selecting: selected)
-        rebuildFilters(force: true)
     }
     override func layout() {
         super.layout()
-        func place(_ view: NSView, _ frame: NSRect) {
-            if animatingFilterLayout { view.animator().frame = frame } else { view.frame = frame }
-        }
         let inset = LibraryPageHeader.inset, headerTop = LibraryPageHeader.top, headerHeight = LibraryPageHeader.height
-        let width = max(0, bounds.width - 2 * inset), actionWidth = min(filter.fittingSize.width, width)
-        searchBackdrop.frame = NSRect(x: inset, y: headerTop, width: max(0, width - actionWidth - LibraryPageHeader.spacing), height: headerHeight)
-        filterTitle.frame = NSRect(x: inset + 4, y: 20, width: max(0, width - actionWidth - 8), height: 22)
-        filter.frame = NSRect(x: max(inset, bounds.width - inset - actionWidth), y: headerTop, width: actionWidth, height: headerHeight)
-        var x: CGFloat = 0, y: CGFloat = 0
-        for view in filterControls {
-            if view is NSTextField { view.frame = NSRect(x: 4, y: 0, width: max(0, width - 4), height: 18); y = 22; continue }
-            let w = min(width, max(40, view.fittingSize.width))
-            if x > 0 && x + w > width { x = 0; y += 38 }
-            view.frame = NSRect(x: x, y: y, width: w, height: 32); x += w + 6
-        }
-        let filterHeight = min(y + 38, 180)
-        filterContent.frame = NSRect(x: 0, y: 0, width: width, height: y + 38)
-        place(filterScroll, NSRect(x: inset, y: 60, width: width, height: filtersExpanded ? filterHeight : 0))
-        let contentTop = LibraryPageHeader.contentTop
-        selectedFilter.frame = NSRect(x: inset, y: contentTop, width: min(width, selectedFilter.fittingSize.width), height: 32)
-        let top: CGFloat = filtersExpanded ? 60 + filterHeight + 8 : selectedProfile == nil ? contentTop : contentTop + 40
+        let width = max(0, bounds.width - 2 * inset)
+        searchBackdrop.frame = NSRect(x: inset, y: headerTop, width: width, height: headerHeight)
+        let top = LibraryPageHeader.contentTop
         let statusHeight: CGFloat = footer.isHidden ? 0 : 36
-        place(scroll, NSRect(x: 0, y: top, width: bounds.width, height: max(0, bounds.height - top - statusHeight)))
+        scroll.frame = NSRect(x: 0, y: top, width: bounds.width, height: max(0, bounds.height - top - statusHeight))
         footer.frame = NSRect(x: 12, y: bounds.height - 27, width: max(0, width - (retryLoad.isHidden ? 0 : 62)), height: 18)
         retryLoad.frame = NSRect(x: bounds.width - 68, y: bounds.height - 31, width: 58, height: 25)
         let emptyTop = max(top + 30, top + (bounds.height - top - statusHeight) * 0.5 - 65)
-        place(emptyContent, NSRect(x: 0, y: emptyTop, width: bounds.width, height: 148))
+        emptyContent.frame = NSRect(x: 0, y: emptyTop, width: bounds.width, height: 148)
         emptyIcon.frame = NSRect(x: bounds.midX - 24, y: 0, width: 48, height: 48)
         empty.frame = NSRect(x: 24, y: 63, width: max(0, bounds.width - 48), height: 85)
     }
@@ -1043,7 +845,6 @@ enum LibraryPageHeader {
 
 @MainActor final class DownloadFilterButton: PointingHandButton {
     var actionBlock: (() -> Void)?
-    var profileID: UUID?
     var isChosen = false { didSet { state = isChosen ? .on : .off; needsDisplay = true } }
     var ink: NSColor = .secondaryLabelColor { didSet { needsDisplay = true } }
     var symbol: String? { didSet { needsDisplay = true } }
