@@ -38,27 +38,36 @@ harness = f"""import AppKit
 for use in (
         "private let downloadLocationPicker = DownloadLocationPicker()",
         "downloadLocationPicker.onChoose = { [weak self] choice in self?.downloadLocationChosen(choice) }",
-        "for field in [downloadHelp, searchHelp] {",
+        "for field in [downloadHelp, sharedNote] {",
         "downloadRetry.bezelStyle = .rounded; downloadRetry.isHidden = true",
         "enabled: current.map { !$0.directoryManaged && !$0.promptManaged } ?? false,",
         "panelOpen: downloadFolderPanel != nil)",
         "guard let current = currentDownloadPreferences(), !current.directoryManaged, !current.promptManaged else {\n            refreshDownloadPreferences(); return",
         "if choice == .other { chooseDownloadDirectory(); return }",
-        "try AppWidePreferenceController.shared.update { $0.promptForDownload = choice == .prompt }",
-        "let profileID = generalProfileID else { downloadLocationPicker.revert(); return }",
+        "_ = try PCNativeBrowserApplication.setPromptForDownload(choice == .prompt, for: current)",
+        "let profileID = editedProfileID else { downloadLocationPicker.revert(); return }",
         "panel.prompt = \"Select\"",
         "panel.canChooseFiles = false; panel.canChooseDirectories = true",
         "panel.canCreateDirectories = true; panel.allowsMultipleSelection = false",
         "panel.directoryURL = downloadLocationPicker.value?.directory ?? current.directoryURL",
         "downloadFolderPanel = panel\n        renderDownloadLocation()\n        panel.beginSheetModal(for: window)",
         "let url = panel.url else { self.refreshDownloadPreferences(); return }",
-        "try AppWidePreferenceController.shared.update { $0.downloadDirectory = url.path; $0.promptForDownload = false }\n"
+        "let chosen = try PCNativeBrowserApplication.setDownloadDirectory(url, for: current)\n"
+        "                _ = try PCNativeBrowserApplication.setPromptForDownload(false, for: chosen)\n"
         "                self.refreshDownloadPreferences()\n"
         "            } catch { self.reportDownloadPreferenceError(error) }",
         "panel?.cancel(nil)\n        if panel != nil { renderDownloadLocation() }",
         "if selectedPane != pane {\n            cancelDownloadFolderSelection()",
         "guard let self, self.downloadPreferencesGeneration == generation,"):
     assert use in settings, f"SettingsWindow no longer wires the picker as checked: {use}"
+general = between(settings, "    private func makeGeneralPane()", "    @objc private func openPreviewSettings()")
+for absent in ("Download location", "Search engine", "downloadLocationPicker", "AppWide"):
+    assert absent not in general, f"General still carries a per-Space row: {absent}"
+editor = between(settings, "    private func makeSpaceEditorPane()", "    private struct SpaceEditorLayout")
+for present in ("rowLabel(\"Search engine\"", "rowLabel(\"Manage search\"", "Include search engine suggestions", "label(\"Download location\""):
+    assert present in editor, f"Edit Space lost a row: {present}"
+assert "\"Also applies to \"" in settings, "Edit Space no longer names the Spaces sharing its data"
+assert "AppWide" not in settings, "SettingsWindow still references the app-wide mechanism"
 for gone in ("downloadPrompt", "downloadChoose", "Ask where to save each file", "Change download folder",
              "downloadLocation.stringValue"):
     assert gone not in settings, f"SettingsWindow still carries the former checkbox/button: {gone}"

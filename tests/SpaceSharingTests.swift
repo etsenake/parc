@@ -14,6 +14,7 @@ import Foundation
         try draftCreation()
         try changeSharing()
         try warnings()
+        try legacyAppWideKey()
         try deletion()
         try legacyRemovalFallback()
         print("SpaceSharingTests: \(count) assertions passed")
@@ -307,5 +308,16 @@ import Foundation
         try check(store.sharingWarning(forSpace: c.id, to: .separate) == nil, "keeping an already separate Space asks nothing")
         try check(SpaceSharingWarning.deletionNote == "This also deletes its logins, saved passwords and history. This can’t be undone.",
                   "the deletion note names what is lost")
+    }
+
+    static func legacyAppWideKey() throws {
+        let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
+        var object = try JSONSerialization.jsonObject(with: encoder.encode(BrowserState.initial())) as! [String: Any]
+        var settings = object["settings"] as? [String: Any] ?? [:]
+        settings["appWidePreferences"] = ["searchKeyword": "g", "promptForDownload": true, "version": 1]
+        object["settings"] = settings
+        let data = try JSONSerialization.data(withJSONObject: object)
+        try check((try? decoder.decode(BrowserState.self, from: data)) != nil, "an old settings file with the retired app-wide key still loads")
     }
 }

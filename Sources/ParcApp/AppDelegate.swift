@@ -293,7 +293,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
                 FairPlayIdentityController.shared.start(profilePaths: store.state.profiles.map {
                     store.independentEngineProfilePath(for: $0.id)
                 })
-                AppWidePreferenceController.shared.start(store: store)
                 SoftwareUpdateBanner.shared.launch(in: root, existingData: previousRunRecorded)
                 LaunchContinuity(running: true, build: Self.buildIdentity).write(in: root)
                 resumePendingAppKitRestorations()

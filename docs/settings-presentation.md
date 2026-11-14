@@ -44,12 +44,13 @@ Delete Space uses red text.
 
 Spaces lists every Space with its icon, name and a chevron, then New Space and,
 while old data is being removed, a Removing old data row with Retry. Choosing a
-Space opens Edit Space: the name with Rename, Share data with, Tabs, Your Data and
+Space opens Edit Space: the name with Rename, Share data with, Search, Downloads
+(with an "Also applies to" note when other Spaces share the data), Tabs, Your Data and
 Settings, and Clear Browsing Data and Delete Space at the bottom right. Rename
 keeps Parc's rename dialog.
 
-General groups Warn before quitting, Previews, Search, Downloads and Replay
-onboarding, which must stay available. Advanced groups Sound and Feedback,
+General groups Warn before quitting, Previews and Replay onboarding, which must
+stay available. Advanced groups Sound and Feedback,
 Windows and Tabs, and Websites, followed by More Settings and Export Data.
 Links groups the two Peek switches with their note, then Air Traffic Control.
 The icon list sits on the page with row separators and no box. Shortcuts keeps

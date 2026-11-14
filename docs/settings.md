@@ -13,8 +13,8 @@ A pane name saved as Profiles by an earlier version opens Spaces.
 
 | Pane | Current controls |
 |---|---|
-| General | Default browser, Warn before quitting, Window frame (Adjust), Previews Settings, Search (engine, Manage search, suggestions), Download location, Replay onboarding |
-| Spaces | Space list (icon and name) and New Space; a Removing old data row while a background removal runs; Edit Space with rename, Share data with, Archive tabs after, native data/settings destinations, Clear Browsing Data and Delete Space |
+| General | Default browser, Warn before quitting, Window frame (Adjust), Previews Settings, Replay onboarding |
+| Spaces | Space list (icon and name) and New Space; a Removing old data row while a background removal runs; Edit Space with rename, Share data with, search engine, suggestions and Manage search, download location, Archive tabs after, native data/settings destinations, Clear Browsing Data and Delete Space |
 | Links | Ordered Air Traffic Control rules |
 | Shortcuts | Search, bindings, priority, conflict resolution and Reset All |
 | Icon | Available application icons |
@@ -55,6 +55,9 @@ Edit Space holds:
   already has does nothing. Anything else asks the same confirmation as the Space
   menu and moves the Space; see
   [Space management](space-management.md#sharing-data-between-spaces).
+- **Search engine**, **Manage search** and **Include search engine suggestions**, and
+  **Download location** with Ask every time and Other…, for this Space's data. A note
+  under them names the other Spaces they also apply to.
 - **Archive tabs after** for this Space alone, with no all-Spaces question.
 - Privacy and Security, Passwords, Credit Cards and Notifications, which open the
   edited Space's browser settings, and **Clear Browsing Data…**.
@@ -97,29 +100,21 @@ front; later-created ones are not added. Settings has no bulk entry point.
 ## Search and downloads
 
 The search engine, search suggestions and download location (including Ask every
-time) are app-wide settings in General, applied to every Space. Parc keeps them
-in its own settings and writes them to each Chromium Profile: when a Profile
-first becomes available in a session, and immediately to every Profile already
-loaded when General changes a value. Unloaded Profiles receive the value when
-they load; none is forced to load for this. On first launch after the change,
-the first Space's Profile supplies the values. Changing the default engine or
-suggestions on a Space's own search page also becomes the app-wide choice once
-that Space has received the app-wide values; changes still arriving while a
-Space loads or is being written are ignored.
+time) belong to a Space's data, not to the app. They live in Edit Space under
+**Search** and **Downloads** and read and write that Space's own engine settings
+directly, so another Space on separate data keeps its own. When other Spaces share
+the data, one small note under the rows reads "Also applies to <Space names>." The
+rows load when Edit Space opens and reload when its Space changes, when a Space's
+search preferences change and when the window becomes key. An old settings file that
+still carries the retired app-wide key loads normally and ignores it.
 
-Search engines match across Profiles by keyword, never by sync GUID, because
-built-in engines carry different GUIDs per Profile. A Profile that lacks the
-engine keeps its own default. Values an organization or extension controls are
-never overwritten or recorded, and General notes when any loaded Space has such
-a lock. General reads the engine list from the Space of the window Settings
-opened from and refreshes on every Profile's search-preference change.
-
-Manage search opens the search shortcuts page for that Space; custom shortcuts
-remain Profile data. The location picker offers its folder, Other… and Ask every
-time. Choosing Other… sets the folder, then turns prompting off. Managed values
-disable the picker. Callbacks validate window and preference identity, and
-leaving General or closing Settings cancels an open folder panel.
-See [downloads](download-library.md).
+Values an organization or extension controls cannot be changed and say so in the
+control's tooltip or the Downloads note. **Manage search** opens the search
+shortcuts page for the edited Space; custom shortcuts remain that Space's data. The
+location picker offers its folder, Other… and Ask every time. Choosing Other… sets
+the folder, then turns prompting off. Managed values disable the picker. Callbacks
+validate window and preference identity, and leaving Spaces or closing Settings
+cancels an open folder panel. See [downloads](download-library.md).
 
 Automatic archive is a per-Space interval saved when chosen. Education is consumed
 by actual automatic archival; its Settings link opens Edit Space for the original
@@ -127,14 +122,14 @@ Space. See [archive](archive.md).
 
 | Space action | Native destination | Reuse policy |
 |---|---|---|
+| Manage search | `parc://settings/searchEngines` | Exact subpage |
 | Privacy and Security | `parc://settings/privacy` | Exact subpage |
 | Passwords | `parc://password-manager/passwords` | Keep existing credential detail/authentication |
 | Credit Cards | `parc://settings/payments` | Exact subpage |
 | Notifications | `parc://settings/content/notifications` | Exact subpage |
 | Clear Browsing Data | `parc://settings/clearBrowserData` | Exact dialog; opening erases nothing |
 
-Each Edit Space action acts on the edited Space; Manage search uses the originating
-Space. Missing or retiring Spaces refuse. The original
+Each Edit Space action acts on the edited Space. Missing or retiring Spaces refuse. The original
 Settings/browser owner remains the destination when another window becomes
 frontmost. Normal security, close/transfer and sheet gates still apply. Success
 closes Settings; refusal leaves it open with feedback.

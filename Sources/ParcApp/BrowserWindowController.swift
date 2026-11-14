@@ -3114,7 +3114,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     pane.layoutSubtreeIfNeeded()
                     let enginePath = store.independentEngineProfilePath(for: tab.profileID)
                     let browser = PCBrowserView(frame: pane.contentBounds, profilePath: enginePath)
-                    AppWidePreferenceController.shared.profileAvailable(path: enginePath)
                     browser.delegate = self
                     browsers[tab.id] = browser
                     browserProfiles[tab.id] = tab.profileID
