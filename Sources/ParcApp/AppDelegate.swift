@@ -1901,12 +1901,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         if item.action == #selector(viewLibrary) { return libraryCommandWindow.map { $0.canShowLibrary || $0.isPrivateBrowsing && $0.canShowDownloads } ?? false }
         if item.action == #selector(duplicateCurrentItem) { return browserInputCommandWindow?.canDuplicateCurrentItem ?? false }
         if item.action == #selector(revealCurrentTabInSidebar) { return front?.canRevealCurrentTabInSidebar ?? false }
-        if item.action == #selector(changeSpaceProfile) {
-            guard let target = item.representedObject as? SpaceMenuSelection else { return false }
-            return target.owner?.canChangeSpaceProfile(target.spaceID, profileID: target.profileID) == true
-        }
         if item.action == #selector(renameFocusedSpace) { return spaceCommandWindow?.canRenameActiveSpace ?? false }
-        if item.action == #selector(newProfile) { return spaceCommandWindow?.canCreateProfile ?? false }
         if item.action == #selector(manageExtensions) || item.action == #selector(addExtension)
             || item.action == #selector(history) {
             return browserInputCommandWindow?.canOpenPageInNewTab ?? false
@@ -2426,12 +2421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     @objc private func revealCurrentTabInSidebar(_ sender: Any?) { front?.revealCurrentTabInSidebar() }
     @objc private func openSpaceManager(_ sender: Any?) { performLibraryMenuCommand { $0.showLibrary(.spaces) } }
     @objc private func viewLibrary(_ sender: Any?) { performLibraryMenuCommand { $0.showLibraryFromEntry(nil) } }
-    @objc private func changeSpaceProfile(_ sender: NSMenuItem) {
-        guard let target = sender.representedObject as? SpaceMenuSelection else { return }
-        target.owner?.showChangeProfileMenu(target.spaceID, profileID: target.profileID)
-    }
     @objc private func renameFocusedSpace(_ sender: Any?) { spaceCommandWindow?.renameActiveSpace() }
-    @objc private func newProfile(_ sender: Any?) { spaceCommandWindow?.newProfile() }
     @objc private func manageExtensions(_ sender: Any?) { browserInputCommandWindow?.openExtensionsPage(addExtension: false) }
     @objc private func addExtension(_ sender: Any?) { browserInputCommandWindow?.openExtensionsPage(addExtension: true) }
     @objc private func createEasel(_ sender: Any?) {
@@ -2620,12 +2610,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             KeyboardShortcuts.shared.register(entry, group: "Spaces")
         }
         menu.addItem(.separator())
-        let changeProfile = NSMenuItem(title: "Change Profile", action: #selector(changeSpaceProfile), keyEquivalent: "")
-        changeProfile.target = self
-        if let space = spaces.first(where: { $0.id == owner?.activeSpaceID }) {
-            changeProfile.representedObject = SpaceMenuSelection(owner: owner, space: space)
-        }
-        menu.insertItem(changeProfile, at: 3)
         var numberedIDs = Set<String>()
         for (offset, space) in spaces.enumerated() {
             let entry = NSMenuItem(title: space.name, action: #selector(selectSpace), keyEquivalent: "")
@@ -2703,7 +2687,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         item("New Incognito Window", #selector(newIncognitoWindow), "n", in: file, modifiers: [.command, .shift])
         item("Blank Window", #selector(newBlankWindow), "n", in: file, modifiers: [.command, .control])
         item("New Space…", #selector(createSpace), in: file)
-        item("New Profile", #selector(newProfile), in: file)
         item("New Note", #selector(createNote), in: file)
         item("New Note in Split View", #selector(createNoteInSplit), in: file)
         hideKeepingShortcut(file)
