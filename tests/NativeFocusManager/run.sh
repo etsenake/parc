@@ -10,5 +10,5 @@ xcrun clang++ -arch arm64 -std=c++20 -mmacosx-version-min=13.0 \
   "$repo_root/Engine/ParcNative/page_host.mm" \
   "$repo_root/Engine/ParcNative/pane_compositor_view.mm" \
   "$repo_root/tests/NativeFocusManager/Tests.mm" \
-  -framework Cocoa -o "$output_dir/NativeFocusManagerTests"
+  -framework Cocoa -framework QuartzCore -o "$output_dir/NativeFocusManagerTests"
 "$output_dir/NativeFocusManagerTests"

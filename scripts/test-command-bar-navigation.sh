@@ -10,7 +10,7 @@ repo, output = map(Path, sys.argv[1:])
 source = (repo / "Sources/ParcApp/CommandBar.swift").read_text()
 markers = [
     ("    private struct Result {", "    var onNavigate:"),
-    ("    private func tabResult(", "    /// Every source ranked"),
+    ("    private func tabResult(", "    private func rankedResults("),
     ("    private func rankedResults(", "    func updateTopDomains("),
     ("    private func nativeResultRows(", "    private func nativeRow("),
     ("    private func nativeRow(", "    private func caption("),
@@ -66,6 +66,7 @@ xcrun swiftc -warnings-as-errors -whole-module-optimization -parse-as-library \
   "$repo_root/Sources/ParcApp/CommandBarNativeHold.swift" \
   "$repo_root/Sources/ParcApp/CommandBarEditState.swift" \
   "$repo_root/Sources/ParcApp/CommandBarSubmission.swift" \
+  "$repo_root/Sources/ParcApp/CommandBarResidentLifetime.swift" \
   "$repo_root/Sources/ParcApp/CommandBarSiteColor.swift" \
   "$repo_root/tests/CommandBar/NavigationPipelineTests.swift" \
   "$output/Pipeline.swift" "$output/TabCandidates.swift" -o "$output/check"

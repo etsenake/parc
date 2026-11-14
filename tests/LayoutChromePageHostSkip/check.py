@@ -6,7 +6,7 @@ root = Path(__file__).resolve().parents[2]
 controller = (root / "Sources/ParcApp/BrowserWindowController.swift").read_text()
 
 layout = re.search(
-    r"private func layoutChrome\(\) \{(?P<body>.*?)\n    \}\n\n    /// Cheap chrome-geometry \+ full-pass eligibility inputs",
+    r"private func layoutChrome\(\) \{(?P<body>.*?)\n    \}\n\n    private func chromeGeometryFingerprint\(\)",
     controller, re.S)
 assert layout, "layoutChrome not found"
 body = layout.group("body")

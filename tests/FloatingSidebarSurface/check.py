@@ -42,17 +42,17 @@ refresh = refresh[:refresh.index("\n    }\n")]
 assert "applyPagePalette(page, paletteForPage(spaceID))" in refresh, "a page shown beside the strip no longer takes its Space's palette"
 assert ("        sidebar.onPagingTheme = { [weak self] transition in\n"
         "            self?.rootView.pagingTransition = transition; self?.sidebarContainer.pagingTransition = transition\n"
-        "            self?.startPage.pagingTransition = transition\n"
+        "            self?.loadedStartPage?.pagingTransition = transition\n"
         "        }\n") in controller, "the controller no longer gives the swipe to the window's background and the sidebar surface"
 assert "isOnFloatingSurface" not in controller, "the swipe's colour no longer depends on the presentation"
 assert 'shutil.copytree(repo / "Resources", resources, symlinks=True)' in (root / "scripts/build.py").read_text(), \
     "scripts/build.py no longer packages the whole Resources directory"
 artwork = root / "Resources/FloatingSidebar"
 readme = (artwork / "README.md").read_text()
-for name in ("CellDropShadow.png", "CellDropShadow@2x.png"):
-    digest = hashlib.sha256((artwork / name).read_bytes()).hexdigest()
-    assert re.search(rf"\| `{re.escape(name)}` \| `{digest}` \|", readme), f"README provenance hash for {name}"
-assert "30a0e03a290800bc07b3ed475f2d75548cf8890f60371d3e36aaec785cad7595" in readme, "README names the source catalog"
+for name, recorded in (("CellDropShadow.png", "b6f8273641f1a68ab12dca9e2c86919aa1e585628f2bd4111c488f79778f9a06"),
+                       ("CellDropShadow@2x.png", "8acfb6bbb6930fa38c54e0cfddf49a4fe590b720fbc6b4e91562b2dc4213b16c")):
+    assert hashlib.sha256((artwork / name).read_bytes()).hexdigest() == recorded, f"{name} no longer matches the copied artwork"
+assert "Parc 1.170.0 (89123)" in readme and "`Contents/Resources/Assets.car`" in readme, "README names the source catalog"
 assert sorted(path.name for path in artwork.iterdir() if not path.name.startswith(".")) == ["CellDropShadow.png", "CellDropShadow@2x.png", "README.md"], \
     "Resources/FloatingSidebar holds only the copied artwork and its README"
 with tempfile.TemporaryDirectory(prefix="parc-floating-sidebar-surface-") as directory:

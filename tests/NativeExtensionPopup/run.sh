@@ -10,5 +10,5 @@ xcrun clang++ -arch arm64 -std=c++20 -mmacosx-version-min=13.0 \
   "$repo_root/Engine/ParcNative/pane_compositor_view.mm" \
   "$repo_root/Engine/ParcNative/extension_popup_presenter.mm" \
   "$repo_root/tests/NativeExtensionPopup/Tests.mm" \
-  -framework Cocoa -o "$output_dir/NativeExtensionPopupTests"
+  -framework Cocoa -framework QuartzCore -o "$output_dir/NativeExtensionPopupTests"
 "$output_dir/NativeExtensionPopupTests"

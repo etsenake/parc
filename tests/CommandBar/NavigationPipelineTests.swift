@@ -103,6 +103,13 @@ struct TabCandidatesFixture {
     static func site(of scope: PCNativeOmniboxScope) -> Site? { Site(host: scope.searchHost) }
     func caption(for tab: BrowserTab) -> CommandBarResultText.TabCaption { .switchToTab }
     func dismiss(restoreFocus: Bool) { dismissed = true }
+    func respond(to event: CommandBarLifetime.Event) {
+        switch CommandBarLifetime.response(to: event, resident: false) {
+        case .dismiss: dismiss(restoreFocus: false)
+        case .dismissRestoringFocus: dismiss(restoreFocus: true)
+        default: break
+        }
+    }
     func submitResult(_ result: Result, disposition: CommandBarSubmission, retainsSelection: Bool) {
         submitted = (result, disposition)
     }

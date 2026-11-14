@@ -41,6 +41,7 @@ auto BindOnce(F fn, Args&&... args) {
 }
 namespace gfx {
 struct CALayerParams {
+  CALayerParams CloneWithoutFence() const { return {picture}; }
   CALayer* __strong picture;
 };
 }
