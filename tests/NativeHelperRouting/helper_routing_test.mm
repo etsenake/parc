@@ -54,10 +54,10 @@ void CheckStartupPolicy() {
          "the translate switch Chromium 157 removed is no longer passed");
   Expect(actual.GetSwitchValueASCII("disable-features") ==
              std::string("UserDisabledFeature,") + kPolicyDisabled,
-         "explicit disable-features precede product and Parc disables");
+         "explicit disable-features precede product and default disables");
   Expect(actual.GetSwitchValueASCII("enable-features") ==
              std::string("UserEnabledFeature,") + kPolicyEnabled,
-         "explicit feature opt-in is kept ahead of the enabled default");
+         "explicit feature opt-in is kept ahead of the enabled defaults");
   Expect(actual.GetSwitchValueASCII("lang") == "fr-CA" &&
              actual.GetArgs() ==
                  base::CommandLine::StringVector{"https://example.test/kept"},
@@ -83,9 +83,9 @@ void CheckStartupPolicy() {
          "explicit developer test opt-ins retain upstream precedence");
   Expect(
       explicit_test.GetSwitchValueASCII("disable-features") == kPolicyDisabled,
-      "empty disable list receives exactly the product and Parc disables");
+      "empty disable list receives exactly the product and default disables");
   Expect(explicit_test.GetSwitchValueASCII("enable-features") == kPolicyEnabled,
-         "empty enable list receives exactly the and Parc's enabled defaults");
+         "empty enable list receives exactly the enabled defaults");
 
   base::CommandLine opt_in(base::FilePath("/fixture/Parc"));
   opt_in.AppendSwitchASCII(
@@ -97,7 +97,7 @@ void CheckStartupPolicy() {
   Expect(opt_in.GetSwitchValueASCII("enable-features") ==
              "FedCm,*LiveCaption,MerchantTrust<Study.Group:p/v,"
              "HistoryEmbeddings,WebContentsDiscard",
-         "explicit enables are kept; an explicitly disabled Parc enable is not "
+         "explicit enables are kept; an explicitly disabled default enable is not "
          "re-added");
   Expect(opt_in.GetSwitchValueASCII("disable-features") ==
              "CertificateTransparencyAskBeforeEnabling,HistoryEmbeddings,"
@@ -108,7 +108,7 @@ void CheckStartupPolicy() {
              "BrowsingTopics,NetworkTimeServiceQuerying,"
              "PageInfoAboutThisSite,PageInfoAboutThisSiteMoreLangs,"
              "TailoredSecurityIntegration",
-         "named features skip Parc disables; product exclusions remain");
+         "named features skip default disables; product exclusions remain");
 
   base::CommandLine spaced(base::FilePath("/fixture/Parc"));
   spaced.AppendSwitchASCII("enable-features", "FedCm :p/v");
@@ -126,7 +126,7 @@ void CheckStartupPolicy() {
       precedence.GetSwitchValueASCII("disable-features"));
   Expect(features.IsFeatureOverriddenFromCommandLine(
              "FedCm", base::FeatureList::OVERRIDE_ENABLE_FEATURE),
-         "Chromium keeps an explicit enable of an Parc-disabled feature");
+         "Chromium keeps an explicit enable of a default-disabled feature");
   Expect(features.IsFeatureOverriddenFromCommandLine(
              "HistoryEmbeddings", base::FeatureList::OVERRIDE_DISABLE_FEATURE),
          "Chromium applies a product exclusion over an explicit enable");
@@ -136,7 +136,7 @@ void CheckStartupPolicy() {
              features.IsFeatureOverriddenFromCommandLine(
                  "MacAppCodeSignClone",
                  base::FeatureList::OVERRIDE_DISABLE_FEATURE),
-         "Chromium applies Parc defaults to unnamed features");
+         "Chromium applies the startup defaults to unnamed features");
 }
 void CheckApplication(const std::string& name) {
   const base::FilePath executable = base::CommandLine::ForCurrentProcess()->GetProgram();

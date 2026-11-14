@@ -39,25 +39,25 @@ import AppKit
         }
         check(ShortcutPriorityHintView.frame(for: NSRect(x: 100, y: 200, width: 1000, height: 800)) ==
             NSRect(x: 500, y: 400, width: 600, height: 600), "original parent screen frame, not page bounds")
-        let black = PArcToastPalette(colors: [.black])
-        let white = PArcToastPalette(colors: [.white])
+        let black = ParcToastPalette(colors: [.black])
+        let white = ParcToastPalette(colors: [.white])
         check(abs(black.background.redComponent - 0.3) < 0.0001 && black.isDark && black.foreground == .white,
               "neutral dark HSL adjustment and original threshold")
         check(abs(white.background.redComponent - 0.95) < 0.0001 && !white.isDark && white.foreground == .black,
               "neutral light HSL adjustment and original threshold")
-        let red = PArcToastPalette(colors: [NSColor(displayP3Red: 1, green: 0, blue: 0, alpha: 1)])
+        let red = ParcToastPalette(colors: [NSColor(displayP3Red: 1, green: 0, blue: 0, alpha: 1)])
         check(abs(red.background.greenComponent - 0.2) < 0.0001 && abs(red.background.blueComponent - 0.2) < 0.0001,
               "saturated middle-lightness adjustment retains hue")
-        let averaged = PArcToastPalette(colors: [.black, .white])
+        let averaged = ParcToastPalette(colors: [.black, .white])
         check(abs(averaged.background.redComponent - 0.625) < 0.0001, "gradient averages adjusted original colors")
-        let pale = PArcToastPalette(colors: [NSColor(displayP3Red: 0.85, green: 0.85, blue: 0.85, alpha: 1)])
+        let pale = ParcToastPalette(colors: [NSColor(displayP3Red: 0.85, green: 0.85, blue: 0.85, alpha: 1)])
         check(abs(pale.background.redComponent - 0.6) < 0.0001, "lightness 0.8–0.95 steps down 0.25")
         let basic = NSColor(displayP3Red: 0.054, green: 0.06, blue: 0.075, alpha: 1)
-        let incognito = PArcToastPalette(theme: .singleColor(ThemeColor(hex: "202020")!), isDark: true, basicBackground: basic)
+        let incognito = ParcToastPalette(theme: .singleColor(ThemeColor(hex: "202020")!), isDark: true, basicBackground: basic)
         check(abs(incognito.background.redComponent - 0.1594) < 0.001 && abs(incognito.background.greenComponent - 0.2766) < 0.001
               && abs(incognito.background.blueComponent - 0.5696) < 0.001 && incognito.isDark && incognito.foreground == .white,
               "the incognito basic colour replaces the Space's colours")
-        let grey = PArcToastPalette(theme: .singleColor(ThemeColor(hex: "202020")!), isDark: true)
+        let grey = ParcToastPalette(theme: .singleColor(ThemeColor(hex: "202020")!), isDark: true)
         check(abs(grey.background.redComponent - grey.background.blueComponent) < 0.0001, "without it the private Space's grey is used")
         let privateCue = ShortcutPriorityHintView(title: "New Tab", shortcut: "⌘T", canEdit: true,
                                                   theme: .singleColor(ThemeColor(hex: "202020")!), basicBackground: basic)
@@ -90,7 +90,7 @@ import AppKit
         check(panel.frame == ShortcutPriorityHintView.frame(for: moved), "the child moves with its original parent")
         let placed = panel.frame
         window.setFrame(NSRect(origin: moved.origin, size: NSSize(width: moved.width + 100, height: moved.height + 50)), display: false)
-        check(panel.frame == placed, "Parc frames the cue once; resizing the parent does not re-place it")
+        check(panel.frame == placed, "the cue is framed once; resizing the parent does not re-place it")
         cue.dismiss(animated: true)
         check(cue.isRetiring && panel.ignoresMouseEvents, "retirement revokes input before animation")
         check(cue.hitTest(NSPoint(x: cue.bodyRect.midX, y: cue.bodyRect.midY)) == nil, "retiring child refuses input")

@@ -1,5 +1,7 @@
 # Toasts
 
+`Sources/ParcApp/ParcToast.swift` provides one shared transient card through
+`ParcToastPresenter`, `ParcToastPresentation` and `ParcToastCard`. Its passive child
 window never becomes a second browser owner. The Press Again shortcut cue retains
 native-router lifetime while drawing the same card.
 

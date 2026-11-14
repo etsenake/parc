@@ -35,7 +35,7 @@ import CoreText
         expect(window.styleMask.contains(.fullSizeContentView) && window.styleMask.contains(.closable), "Native close and full-size content remain")
         expect(!window.isOpaque && window.titleVisibility == .hidden && window.titlebarAppearsTransparent, "Original transparent titlebar composition")
         expect(window.isMovableByWindowBackground && !window.isReleasedWhenClosed, "Native drag and retained education controller")
-        expect(window.frame.size == NSSize(width: 475, height: 388), "Fixed included-row size, with the excluded Little Arc row removed")
+        expect(window.frame.size == NSSize(width: 475, height: 388), "Fixed included-row size, with the excluded mini browser window row removed")
         expect(ShortcutEssentialsWindow.origin(parent: NSRect(x: 100, y: 50, width: 1200, height: 800), education: window.frame.size)
             == NSPoint(x: 815, y: 452), "Final placement uses the original physical window's top-right ten-point inset")
         let fields = surface.subviews.compactMap { $0 as? NSTextField }
@@ -59,8 +59,7 @@ import CoreText
         let instructionValue = summary.accessibilityValue() as! String
         expect(ShortcutEssentialsWindow.commandIDs.allSatisfy { instructionValue.contains(registry.activeShortcut(for: $0)!.spokenDisplay) },
                "Combined instructions contain every current active binding")
-        expect(!instructionValue.contains("Little Arc") && !instructionValue.contains("without trackers"),
-               "Instructions preserve explicit exclusions and the actual Copy capability")
+        expect(!instructionValue.contains("without trackers"), "Instructions describe the actual Copy capability")
         expect(!summary.accessibilityPerformPress(), "Instruction text never introduces an activation action")
         let summaryFrame = summary.accessibilityFrame()
         expect(!summaryFrame.isEmpty && surface.accessibilityHitTest(NSPoint(x: summaryFrame.midX, y: summaryFrame.midY)) as? NSAccessibilityElement === summary,

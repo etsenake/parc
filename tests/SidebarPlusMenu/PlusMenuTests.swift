@@ -158,13 +158,13 @@ extension NSWindow {
             id == "newTab:" ? "⌘T" : id == "createEasel:" ? "⌃⇧E" : id == "createNote:" ? "⌃⇧N" : id == "split:" ? "⌃⇧=" : ""
         }
         check(titles.map(\.title) == ["New Space", "New Folder", "New Easel", "New Note", "New Split", "New Tab"],
-              "plus menu order matches Parc 1.170, with New Note in the Boost row")
+              "plus menu order, with New Note in the Boost row")
         check(titles.map(\.action) == [.space, .folder, .easel, .note, .split, .tab], "plus menu actions")
         check(titles.allSatisfy(\.enabled), "creation rows are enabled")
         check(!titles.contains { $0.title.contains("Boost") }, "Boost is excluded")
         check(titles.first { $0.action == .note }?.symbol == "doc.text", "New Note uses the doc.text image")
         check(titles.map(\.symbol) == ["add-space", "folder", "scribble", "doc.text", "split-add-right", "add-tab"],
-              "plus menu images are Parc's")
+              "plus menu images are the bundled ones")
         check(SidebarPlusMenuArtwork.directory == Bundle.main.resourceURL?.appendingPathComponent("SidebarPlusMenu", isDirectory: true)
               && SidebarPlusMenuArtwork.image("add-space") != nil, "the artwork loads from the bundle's SidebarPlusMenu resources")
         for name in ["add-space", "split-add-right", "add-tab"] {
@@ -194,9 +194,9 @@ extension NSWindow {
               "private windows disable Space, Folder, Easel, Note and Split")
 
         var chosen: SidebarPlusAction?
-        let neutral = PArcMenuColors(theme: SpaceTheme())
+        let neutral = ParcMenuColors(theme: SpaceTheme())
         let view = SidebarPlusMenuView(rows: titles, colors: neutral) { chosen = $0 }
-        check(view.menuSize.width == 210 && view.menuSize.height == 290, "Parc HUD size 210 × 290")
+        check(view.menuSize.width == 210 && view.menuSize.height == 290, "HUD size 210 × 290")
         check(view.appearance == nil, "the HUD takes the app appearance, not a forced dark one")
         check(view.accessibilityRole() == .menu, "HUD is a menu")
         check(view.accessibilityLabel() == "New Tab, Folder, or Space", "HUD keeps the plus button name")
@@ -209,7 +209,7 @@ extension NSWindow {
             NSRect(x: 8, y: 145, width: 194, height: 40),
             NSRect(x: 8, y: 202, width: 194, height: 40),
             NSRect(x: 8, y: 242, width: 194, height: 40)
-        ], "Parc HUD rows keep balanced 8-point insets and PArcMenu's 8 + 1 + 8 separator bands")
+        ], "HUD rows keep balanced 8-point insets and 8 + 1 + 8 separator bands")
         check(buttons.last?.emphasized == true && buttons.last?.row.action == .tab, "New Tab starts highlighted")
         check(buttons.filter(\.emphasized).count == 1, "only one highlighted row")
 
@@ -217,7 +217,7 @@ extension NSWindow {
         let blue = SpaceTheme(primaryColor: ThemeColor(hex: "3F9BD6"), colorCount: 2, noise: 0.3)
         let srgb = { (r: CGFloat, g: CGFloat, b: CGFloat) in NSColor(srgbRed: r, green: g, blue: b, alpha: 1) }
         for theme in [purple, blue, SpaceTheme()] {
-            let colors = PArcMenuColors(theme: theme)
+            let colors = ParcMenuColors(theme: theme)
             for dark in [false, true] {
                 let palette = ThemeChromePalette(theme: theme, isDark: dark)
                 let name = "\(theme.primaryColor?.hex ?? "colourless") \(dark ? "dark" : "light")"
@@ -231,11 +231,11 @@ extension NSWindow {
                 check(same(colors.disabledSubtitle, disabled, dark: dark), "\(name): disabled shortcuts are MenuSubtitle, the same grey")
             }
         }
-        check(!same(PArcMenuColors(theme: purple).background, ThemeChromePalette(theme: purple, isDark: true).backgroundExtra, dark: false),
+        check(!same(ParcMenuColors(theme: purple).background, ThemeChromePalette(theme: purple, isDark: true).backgroundExtra, dark: false),
               "a forced-dark theme still shows its light half in a light app")
 
         for dark in [false, true] {
-            let colors = PArcMenuColors(theme: purple)
+            let colors = ParcMenuColors(theme: purple)
             let card = SidebarPlusMenuView(rows: titles, colors: colors) { _ in }
             let rep = render(card, dark: dark)
             let background = over(colors.background, resolved(colors.base, dark: dark).map { $0 }, dark: dark)
@@ -357,7 +357,7 @@ extension NSWindow {
             check(chrome.card.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua,
                   "a dark private window's HUD is light in a light app")
             let rep = capture(chrome.card)
-            let colors = PArcMenuColors(theme: purple)
+            let colors = ParcMenuColors(theme: purple)
             check(near(pixel(rep, 100, 4), over(colors.background, resolved(colors.base, dark: false), dark: false)),
                   "a dark private window's HUD draws the theme's light half in a light app")
             controller.dismiss()

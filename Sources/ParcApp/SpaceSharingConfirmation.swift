@@ -21,7 +21,7 @@ import AppKit
         guard window.attachedSheet == nil, valid() else { completion(.success(false)); return }
         guard let warning = store.sharingWarning(forSpace: spaceID, to: sharing) else { completion(.success(false)); return }
         let stillWarned: () -> Bool = { valid() && store.sharingWarning(forSpace: spaceID, to: sharing) == warning }
-        let dialog = PArcDialog(.init(
+        let dialog = ParcDialog(.init(
             title: [(warning.title, false)], message: [(warning.message, false)],
             confirm: warning.confirm, cancel: "Cancel", width: CGFloat(InterProfileMovePrompt.dialogWidth),
             destructive: warning.destructive))

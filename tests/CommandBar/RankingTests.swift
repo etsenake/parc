@@ -75,7 +75,7 @@ import Foundation
         expect(capped.count == 13, "five actions and eight Chromium rows")
         expect(capped.filter { many[$0].archetype == .typeTravel }.count == 5, "Type Travel is capped at five")
         let wide = many + (0..<12).map { tab("New tab \($0)", "https://example\($0).com") }
-        expect(CommandBarRanking.rank(wide, query: "new").count == 15, "the result stops at the 15")
+        expect(CommandBarRanking.rank(wide, query: "new").count == 15, "the result stops at 15")
 
         let note = C(archetype: .document, key: "document:1", texts: ["Trip plans"])
         expect(order([search("trip", 0), note], "trip").contains("document:1"), "a Note without a tab is a result")
@@ -99,7 +99,7 @@ import Foundation
         let bumped = order([search("tab", 0), command("Pin Tab"), C(archetype: .typeTravel, key: "typeTravel:Duplicate Tab", texts: ["Duplicate Tab"], bump: 0.1),
                             C(archetype: .typeTravel, key: "typeTravel:Archive", texts: ["Archive"], bump: 1)], "tab")
         expect(bumped.firstIndex(of: "typeTravel:Duplicate Tab")! < bumped.firstIndex(of: "typeTravel:Pin Tab")!,
-               "the candidate bump lifts an equally matched action")
+               "a candidate bump lifts an equally matched action")
         expect(!bumped.contains("typeTravel:Archive"), "a bump never makes an unmatched action a result")
         print("RankingTests: \(count) assertions passed")
     }

@@ -25,7 +25,7 @@ unconditionally dereferenced `AsBrowserView` before checking eligibility. The
 patch checks for the real Views presentation capability before starting that
 optional promotion. Its eligibility callback ultimately creates a Views bubble
 anchored to Chrome's toolbar. The native save result remains intact; this is a
-promotion. Other promotion entrypoints are outside this focused change.
+Chromium 156 presentation adaptation. Other promotion entrypoints are outside this focused change.
 
 Generation must leave the reviewed overlay output unchanged.
 

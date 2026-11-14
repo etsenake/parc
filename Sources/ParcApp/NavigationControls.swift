@@ -304,7 +304,7 @@ private final class NavigationHistoryCardView: NSView {
     let clip = NSView()
     private let base: NavigationHistoryFill
     private let tint: NavigationHistoryFill
-    init(frame: NSRect, colors: PArcMenuColors) {
+    init(frame: NSRect, colors: ParcMenuColors) {
         base = NavigationHistoryFill(color: colors.base)
         tint = NavigationHistoryFill(color: colors.background)
         super.init(frame: frame)
@@ -334,7 +334,7 @@ private final class NavigationHistoryCardView: NSView {
 final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     let page: PCNativePage
     private let snapshot: PCNativeNavigationHistory
-    private let colors: PArcMenuColors
+    private let colors: ParcMenuColors
     private weak var parent: NSWindow?
     private weak var oldResponder: NSResponder?
     private weak var anchor: NavigationControlButton?
@@ -351,7 +351,7 @@ final class NavigationHistoryController: NSObject, NSTableViewDataSource, NSTabl
     var address: (URL) -> String? = { $0.absoluteString }
 
     init(page: PCNativePage, snapshot: PCNativeNavigationHistory, window: NSWindow, theme: SpaceTheme) {
-        self.page = page; self.snapshot = snapshot; colors = PArcMenuColors(theme: theme)
+        self.page = page; self.snapshot = snapshot; colors = ParcMenuColors(theme: theme)
         parent = window; oldResponder = window.firstResponder
         let m = NavigationHistoryMenuMetrics.self
         let size = NSSize(width: m.width + 2 * m.shadowMargin,

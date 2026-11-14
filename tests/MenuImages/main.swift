@@ -11,7 +11,7 @@ import AppKit
         _ = NSApplication.shared
         let image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: nil)!
         let plain = MenuAction.item("Copy URL") {}
-        check(plain.image == nil, "A MenuAction item has no image context menu items")
+        check(plain.image == nil, "A MenuAction item has no image, like the other context menu items")
 
         let shown = NSMenuItem(title: "Copy URL", action: nil, keyEquivalent: "")
         shown.showImage(image)

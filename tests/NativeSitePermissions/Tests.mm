@@ -113,7 +113,7 @@ static void Decisions() {
               Button(r.sheet.contentView, @"Allow") &&
               !Button(r.sheet.contentView, @"Block") &&
               !Button(r.sheet.contentView, @"Allow This Time"),
-          "the two actions only");
+          "two actions only");
     Check(Button(r.sheet.contentView, @"Allow").keyEquivalent.length == 0,
           "Return does not silently grant");
     Click(r, title);

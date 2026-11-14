@@ -154,7 +154,7 @@ import AppKit
         check(reset.lease(.command)?() == true && separations == 1 && dispatches == resets, "Command click separates")
         check(reset.lease([.command, .shift])?() == true && separations == 2, "Command with Shift still separates")
         check(reset.lease([])?() == true && dispatches == resets + 1 && separations == 2, "A plain click resets")
-        check(reset.lease(.shift)?() == true && dispatches == resets + 2, "Shift alone resets reads only Command")
+        check(reset.lease(.shift)?() == true && dispatches == resets + 2, "Shift alone resets; only Command is read")
         let separate = reset.lease(.command)!
         check(separate() && !separate() && separations == 3, "A separation command is one-use")
         available = false

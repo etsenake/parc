@@ -56,7 +56,7 @@ struct BrowserStoreTests {
         try expect(NavigationInput.resolve(source)?.absoluteString == visible, "Legacy Chromium input receives public metadata")
         try expect(NavigationInput.resolve(visible)?.absoluteString == visible, "Typed Parc WebUI routes to the native engine")
         try expect(!InternalPage.isInternal(visible), "Browser WebUI is not an Easel document")
-        try expect(NavigationInput.resolve("arc://settings/") == nil, "Arc is not an accepted scheme alias")
+        try expect(NavigationInput.resolve("arc://settings/") == nil, "arc:// is not an accepted scheme alias")
         try expect(NavigationInput.resolve("parc:") == nil, "A hostless public address does not become a search")
         try expect(NavigationInput.resolve("parc://unknown-controller/path")?.host == "unknown-controller", "Actual Chromium controller lookup decides unavailable hosts")
         try expect(BrowserInternalURL.publicString("chrome://easel/not-a-uuid") == "chrome://easel/not-a-uuid", "An unsupported Chromium host cannot acquire an app document identity")
@@ -2158,7 +2158,7 @@ struct BrowserStoreTests {
             store.closeTab(tabID)
             try expect(try tab(tabID, in: store).archivedAt == nil && tab(tabID, in: store).kind == .pinned
                        && tab(tabID, in: store).url == created.savedURL,
-                       "Closing a pinned Easel that is showing the document unloads it in place deselect")
+                       "Closing a pinned Easel that is showing the document unloads it in place, like a deselect")
             try expect(store.openEasel(id: documentID, title: "Latest board name") == tabID && (try tab(tabID, in: store)).kind == .pinned,
                        "Opening it again selects the same pinned tab")
             let folder = store.createFolder(name: "Boards")
@@ -2223,7 +2223,7 @@ struct BrowserStoreTests {
             let store = try BrowserStore(directory: directory)
             let firstProfile = store.activeSpace.profileID
             let firstSpace = store.activeSpaceID
-            try expect(store.autoArchiveInterval(for: firstProfile) == .twelveHours, "New profiles must use the verified 12-hour Today default")
+            try expect(store.autoArchiveInterval(for: firstProfile) == .twelveHours, "New profiles must use the 12-hour Today default")
             store.setAutoArchiveInterval(.twentyFourHours, for: firstProfile)
             let secondProfile = store.createProfile(name: "Second")
             store.assignProfile(secondProfile, toSpace: firstSpace)
@@ -2280,7 +2280,7 @@ struct BrowserStoreTests {
                            "Older supported Parc values must round-trip without silently changing user preference")
             }
             try expect(AutoArchiveInterval.settingsChoices == [.twelveHours, .twentyFourHours, .sevenDays, .thirtyDays],
-                       "Normal Settings choices must match the observed Parc menu, excluding hidden and debug cases")
+                       "Normal Settings choices must match the archive menu, excluding hidden and debug cases")
             try expect(AutoArchiveInterval.never.seconds == nil && AutoArchiveInterval.twentyFourHours.seconds == 86400,
                        "Never must be no threshold, and a day must be exactly 86400 seconds")
         }

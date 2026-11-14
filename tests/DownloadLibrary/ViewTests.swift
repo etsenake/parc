@@ -885,7 +885,7 @@ import UniformTypeIdentifiers
   expect(filterSearch.textColor == .labelColor && filterSearch.placeholderAttributedString?.attribute(.foregroundColor,at:0,effectiveRange:nil) as? NSColor == .placeholderTextColor,
          "Typed query is primary while the placeholder keeps the system placeholder grey")
   expect(searchBackground.frame.minX==8 && searchBackground.frame.minY==10 && searchBackground.frame.maxX==filterView.bounds.width-8 && searchBackground.frame.height==36,
-         "Parc header: measured 8pt page inset and a full-width 36pt search field")
+         "Header: 8pt page inset and a full-width 36pt search field")
   expect(filterSearch.font?.pointSize==14 && !filterSearch.isBezeled && !filterSearch.drawsBackground && filterSearch.focusRingType == .none,"Native editor has original typography without system bezel/focus shadow")
   let optical=searchGlyph.image!.alignmentRect
   expect(optical.size==NSSize(width:15,height:15) && searchGlyph.frame.size==searchGlyph.image!.size && optical.minX>=1 && optical.minY>=1
@@ -1001,7 +1001,7 @@ import UniformTypeIdentifiers
   let headingYesterday=headingCalendar.date(byAdding:.day,value:-1,to:headingNow)!
   let headingOlder=headingNow.addingTimeInterval(-3*86400)
   expect(heading(headingNow)=="Today" && heading(headingYesterday)=="Yesterday",
-         "Today and Yesterday follow the calendar checks on the item's own date")
+         "Today and Yesterday follow calendar checks on the item's own date")
   expect(heading(headingOlder)==headingFormatter.localizedString(for:headingOlder,relativeTo:headingNow)
          && heading(headingOlder) != "Today" && heading(headingOlder) != "Yesterday",
          "Older downloads use the relative formatter on the item's own timestamp")
@@ -1016,7 +1016,7 @@ import UniformTypeIdentifiers
    }
    if splitPair != nil { break }
   }
-  expect(splitPair != nil,"the per-timestamp titles can split one calendar day")
+  expect(splitPair != nil,"Per-timestamp titles can split one calendar day")
   let sectionStore=try BrowserStore(directory:directory.appendingPathComponent("sections",isDirectory:true))
   let sectionPath=sectionStore.independentEngineProfilePath(for:sectionStore.state.profiles[0].id)
   let sectionNow=Date()
@@ -1051,7 +1051,7 @@ import UniformTypeIdentifiers
   expect(sectionHeadings==expectedHeadings && expectedHeadings.last==DownloadSectionHeading.undatedTitle
          && expectedHeadings.first=="Today" && expectedHeadings.contains("Yesterday")
          && expectedHeadings.contains{$0 != "Today" && $0 != "Yesterday" && $0 != DownloadSectionHeading.undatedTitle},
-         "Sections follow each item's Parc title, and an undated download is Earlier at the bottom; got \(sectionHeadings), expected \(expectedHeadings)")
+         "Sections follow each item's own section title, and an undated download is Earlier at the bottom; got \(sectionHeadings), expected \(expectedHeadings)")
   expect(sectionHeadings.filter{$0=="Today"}.count==1,"Items that share a title share one section")
   let layoutStore=try BrowserStore(directory:directory.appendingPathComponent("layout",isDirectory:true))
   let layoutProfile=layoutStore.state.profiles[0].id, layoutPath=layoutStore.independentEngineProfilePath(for:layoutProfile)
@@ -1181,8 +1181,8 @@ import UniformTypeIdentifiers
      let placeholder=image.layer!.sublayers!.first!
      expect(placeholder.frame==NSRect(x:9,y:9,width:14,height:14) && !placeholder.isHidden,"Failed row centers original14-point EmptyFavicon inside its32-point slot")
      let favicon=LibraryArtwork.emptyFavicon!
-     expect(favicon.isTemplate && favicon.size==NSSize(width:14,height:14) && placeholder.mask?.frame==placeholder.bounds,"EmptyFavicon is the own 14-point template asset, masking the placeholder")
-     expect(favicon.representations.compactMap{$0 as? NSBitmapImageRep}.map(\.pixelsWide).sorted()==[14,28],"the compiled 1× and 2× EmptyFavicon renditions are used unchanged")
+     expect(favicon.isTemplate && favicon.size==NSSize(width:14,height:14) && placeholder.mask?.frame==placeholder.bounds,"EmptyFavicon is a 14-point template asset, masking the placeholder")
+     expect(favicon.representations.compactMap{$0 as? NSBitmapImageRep}.map(\.pixelsWide).sorted()==[14,28],"The bundled 1× and 2× EmptyFavicon renditions are used unchanged")
      image.effectiveAppearance.performAsCurrentDrawingAppearance {
       let primary=NSColor.labelColor.alphaComponent
       expect(abs((placeholder.backgroundColor?.alpha ?? 0)-primary)<0.001,"EmptyFavicon tints its template with semantic primary")
@@ -1192,7 +1192,7 @@ import UniformTypeIdentifiers
       let pixels=context.data!.bindMemory(to:UInt8.self,capacity:side*side*4)
       func alpha(_ x:Int,_ y:Int)->Double { Double(pixels[(y*side+x)*4+3])/255 }
       expect(abs(alpha(14,14)-primary*72/255)<2.0/255,"EmptyFavicon reproduces original 72/255 template opacity through semantic primary")
-      expect(alpha(0,0)<0.05 && alpha(27,27)<0.05,"EmptyFavicon keeps the rounded silhouette: its corners stay clear")
+      expect(alpha(0,0)<0.05 && alpha(27,27)<0.05,"EmptyFavicon keeps its rounded silhouette: its corners stay clear")
       expect(labels[0].textColor == NSColor.secondaryLabelColor,"Failed original title uses secondary semantic color")
      }
     }
@@ -1323,8 +1323,8 @@ import UniformTypeIdentifiers
   let regularButtons=all(regularRail).compactMap{$0 as? NSButton}
   let categoryNames=["Media","Downloads","Easels & Notes","Spaces","Archived Tabs"]
   let categories=all(regularRail).compactMap{$0 as? LibraryRailTile}
-  expect(categories.map(\.title)==categoryNames,"Regular rail lists the pages without Boosts or History")
-  expect(categories.allSatisfy{$0.frame.size==NSSize(width:97,height:80) && $0.frame.minX==8 && $0.showsLabel},"Tall rail uses the 97 × 80 tiles")
+  expect(categories.map(\.title)==categoryNames,"Regular rail lists the Library pages without Boosts or History")
+  expect(categories.allSatisfy{$0.frame.size==NSSize(width:97,height:80) && $0.frame.minX==8 && $0.showsLabel},"Tall rail uses 97 × 80 tiles")
   expect(zip(categories,categories.dropFirst()).allSatisfy{$1.frame.minY-$0.frame.minY==100},"Tiles sit in 100-point slots")
   expect(abs(categories[0].frame.minY+categories[4].frame.maxY-(48+832-56))<0.01,"Tiles are centred between the rail padding and Back")
   expect(categories.first{$0.title=="Downloads"}!.state == .on,"The shown page's tile is selected")
@@ -1455,7 +1455,7 @@ import UniformTypeIdentifiers
          LibraryView.subtitle(urls:["parc://note/A"],spaceName:nil)=="parc://note/A" &&
          LibraryView.subtitle(urls:["https://user:secret@www.example.com/path"],spaceName:nil)=="example.com/path" &&
          LibraryView.subtitle(urls:["ftp://user@files.example.com/a"],spaceName:nil)=="ftp://files.example.com/a" &&
-         LibraryView.subtitle(urls:["https://a.example","https://b.example"],spaceName:"Work")=="2 tabs · Work","Archive subtitles read")
+         LibraryView.subtitle(urls:["https://a.example","https://b.example"],spaceName:"Work")=="2 tabs · Work","Archive subtitles read as tab count · Space")
   let archiveHeadingNow=Date(timeIntervalSince1970:1_900_000_000)
   expect(LibraryView.heading(for:archiveHeadingNow,relativeTo:archiveHeadingNow)=="Today" &&
          LibraryView.heading(for:archiveHeadingNow.addingTimeInterval(-86_400),relativeTo:archiveHeadingNow)=="Yesterday" &&
@@ -1870,7 +1870,7 @@ import UniformTypeIdentifiers
    expect(parts(0).plate.animationKeys()==nil && parts(0).paper.animationKeys()==nil && parts(0).artwork.animationKeys()==nil,"Reduce Motion snaps the pop without animation")
   } else {
    expect(plateSpring != nil && plateSpring!.mass==1 && abs(plateSpring!.stiffness-pow(2 * .pi/0.18,2))<0.001 && abs(plateSpring!.damping-4 * .pi*0.8/0.18)<0.001 &&
-          plateSpring!.duration==plateSpring!.settlingDuration,"Hover uses the spring(response 0.18, damping 0.8)")
+          plateSpring!.duration==plateSpring!.settlingDuration,"Hover uses spring(response 0.18, damping 0.8)")
    expect((plateSpring!.fromValue as? NSValue)?.rectValue.size==tileBounds.insetBy(dx:4,dy:4).size && (plateSpring!.toValue as? NSValue)?.rectValue.size==tileBounds.size,
           "The plate spring grows from the resting inset to the cell edge")
    let springKeys=Set((parts(0).paper.animationKeys() ?? [])+(parts(0).artwork.animationKeys() ?? []))
@@ -1913,7 +1913,7 @@ import UniformTypeIdentifiers
   NotificationCenter.default.post(name:NSScrollView.willStartLiveScrollNotification,object:tileScroll)
   expectTile(2,aspect:0.5,lit:true,"Scroll start keeps a current hover")
   hoverOut(2)
-  expectTile(2,aspect:0.5,lit:false,"Leaving during a live scroll clears the hover hover bridge does")
+  expectTile(2,aspect:0.5,lit:false,"Leaving during a live scroll clears the hover")
   hoverIn(0)
   expectTile(0,aspect:2,lit:false,"A pointer crossing during a live scroll")
   let pooledTiles=Set(tileGrid.subviews.map(ObjectIdentifier.init))

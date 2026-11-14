@@ -5,7 +5,8 @@ The runtime procedures below are retained for a future explicitly authorized
 run. Source/model checks do not grant that authorization.
 
 `cookie_fixture.py` is a backend-independent loopback fixture for a persistent
-interposer and its synthetic provider/client tests.
+HttpOnly cookie. It remains useful after removal of the old namespace interposer
+and its synthetic provider/client tests.
 
 ## Product namespace and existing encrypted data
 

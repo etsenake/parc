@@ -38,8 +38,8 @@ struct TypedCommandTests {
         check(Command.commandBarTitle(forMenuCommand: "resetTab:", menuTitle: "Reset Tab to Original URL") == "Reset Tab", "Reset Tab")
         check(Command.commandBarTitle(forMenuCommand: "split:", menuTitle: "Add Split View") == "Add Split View", "Add Split View keeps its menu title (side by side)")
         check(Command(kind: .addVerticalSplit).title == "Add Vertical Split View", "the stacked add")
-        check(Command.commandBarTitle(forMenuCommand: "createNote:", menuTitle: "New Note") == "New Parc Note", "Arc Note takes Parc's name")
-        check(Command.commandBarSearchText(forMenuCommand: "createNote:").contains("arc note"), "the words still find it")
+        check(Command.commandBarTitle(forMenuCommand: "createNote:", menuTitle: "New Note") == "New Parc Note", "New Note takes Parc's name")
+        check(Command.commandBarSearchText(forMenuCommand: "createNote:").contains("arc note"), "\"arc note\" still finds it")
         check(Command.commandBarTitle(forMenuCommand: "newTab:", menuTitle: "New Tab") == "New Tab", "Other menu titles are unchanged")
 
         check(CommandBarWebDocument.catalog.count == 11, "Eleven recovered document types")
@@ -65,11 +65,11 @@ struct TypedCommandTests {
         let panes = Command.SettingsPane.allCases
         check(panes.map(\.title) == ["Settings", "Open General Preferences", "Open Space Preferences",
             "Edit Keyboard Shortcuts", "Open Link Preferences", "Open App Icon", "Open Advanced Preferences"],
-              "Recovered pane titles in the order")
+              "Settings pane titles in order")
         check(Command(kind: .settingsPane(.shortcuts)).matches(query: "hotkeys"), "Pane trigger phrase matches")
         check(Command(kind: .settingsPane(.general)).matches(query: "autofill"), "General finds autofill")
         check(Command(kind: .settingsPane(.account)).matches(query: "membership"), "Account finds its card")
-        check(!Command(kind: .settingsPane(.links)).matches(query: "little arc"), "Excluded Little Arc words are not offered")
+        check(!Command(kind: .settingsPane(.links)).matches(query: "little arc"), "Words for the excluded mini browser window are not offered")
         check(Command(kind: .settingsPane(.general)).candidateBump == 0.6 && Command(kind: .settingsPane(.links)).candidateBump == 0.5,
               "Recovered pane bumps")
         check(Command(kind: .searchSettings).candidateBump == nil, "No invented bump")
@@ -83,7 +83,7 @@ struct TypedCommandTests {
               "Copy Parc Info title and icon")
         check(Command(kind: .revealAppData).title == "Reveal Parc Data" && Command(kind: .revealAppData).candidateBump == 0.1,
               "Reveal Parc Data title and bump")
-        check(Command(kind: .copyAppInfo).matches(query: "copy arc info"), "the words find Copy Parc Info")
+        check(Command(kind: .copyAppInfo).matches(query: "copy arc info"), "\"copy arc info\" finds Copy Parc Info")
         check(Command(kind: .capturePortrait).title == "Capture in Portrait Mode" && Command(kind: .capturePortrait).symbol == "camera.macro",
               "Portrait title and icon")
         check(Command(kind: .capturePortrait).matches(query: "screenshot") && Command(kind: .capturePortrait).candidateBump == nil,

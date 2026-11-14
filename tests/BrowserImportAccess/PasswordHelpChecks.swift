@@ -43,6 +43,6 @@ func passwordHelpChecks() throws -> Int {
            && help.contains("ViewThatFits(in: .vertical) {\n                    page(inset: inset, width: width)\n                    ScrollView { page(inset: inset, width: width) }"),
            "A smaller window narrows the card at setup's text size, scrolling only if it must")
     expect(!help.contains("Passkeys") && !help.contains("readable passwords"),
-           "As the SafariKeychainModal (a title and the export steps), the help has no footnote")
+           "The help has a title and the export steps, and no footnote")
     return checks
 }

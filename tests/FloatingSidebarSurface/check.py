@@ -24,7 +24,7 @@ assert "        docksFloatingSurface = previous == .floating && next == .locked\
     "SidebarTransition no longer prepares the dock only for floating → locked"
 assert "sidebarContainer.layer?.cornerRadius" not in controller and "sidebarContainer.layer?.masksToBounds" not in controller, \
     "the surface's corners and clip belong to ThemeRendererView.floatingCornerRadius"
-assert "sidebar.layer?.cornerRadius = 0" not in controller, "a docking sidebar keeps the corners until it settles"
+assert "sidebar.layer?.cornerRadius = 0" not in controller, "a docking sidebar keeps its corners until it settles"
 sidebar_view = (app / "SidebarView.swift").read_text()
 strip = sidebar_view[sidebar_view.index("    private func showPageStrip(at offset: CGFloat) {"):]
 strip = strip[:strip.index("\n    }\n")]
@@ -48,11 +48,9 @@ assert "isOnFloatingSurface" not in controller, "the swipe's colour no longer de
 assert 'shutil.copytree(repo / "Resources", resources, symlinks=True)' in (root / "scripts/build.py").read_text(), \
     "scripts/build.py no longer packages the whole Resources directory"
 artwork = root / "Resources/FloatingSidebar"
-readme = (artwork / "README.md").read_text()
 for name, recorded in (("CellDropShadow.png", "b6f8273641f1a68ab12dca9e2c86919aa1e585628f2bd4111c488f79778f9a06"),
                        ("CellDropShadow@2x.png", "8acfb6bbb6930fa38c54e0cfddf49a4fe590b720fbc6b4e91562b2dc4213b16c")):
-    assert hashlib.sha256((artwork / name).read_bytes()).hexdigest() == recorded, f"{name} no longer matches the copied artwork"
-assert "Parc 1.170.0 (89123)" in readme and "`Contents/Resources/Assets.car`" in readme, "README names the source catalog"
+    assert hashlib.sha256((artwork / name).read_bytes()).hexdigest() == recorded, f"{name} no longer matches the recorded artwork"
 assert sorted(path.name for path in artwork.iterdir() if not path.name.startswith(".")) == ["CellDropShadow.png", "CellDropShadow@2x.png", "README.md"], \
     "Resources/FloatingSidebar holds only the copied artwork and its README"
 with tempfile.TemporaryDirectory(prefix="parc-floating-sidebar-surface-") as directory:

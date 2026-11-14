@@ -16,7 +16,7 @@ import AppKit
             ("\u{5}", "⌃?⃝"), ("+", "⌃+"), ("/", "⌃/"), ("=", "⌃="), ("-", "⌃-"), (".", "⌃."), ("7", "⌃7"),
             ("k", "⌃K"), ("[", "⌃[")]
         for (key, expected) in text {
-            expect(chord(key).display == expected, "\(key.debugDescription) reads \(expected) in PArcMenu text, not \(chord(key).display)")
+            expect(chord(key).display == expected, "\(key.debugDescription) reads \(expected) in menu text, not \(chord(key).display)")
         }
         expect(chord(" ", [.control, .option, .shift, .command]).display == "⌃⌥⇧⌘⎵", "Modifiers keep modifierDisplayInfo's ⌃ ⌥ ⇧ ⌘ order")
         expect(!chord(" ").display.contains("Space"), "Space is never written as a word")

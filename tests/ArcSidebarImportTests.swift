@@ -58,7 +58,7 @@ import Foundation
         let single = require(work.theme, "Single-color theme parses")
         expect(single.colorCount == 1 && single.wheel == .complimentary && single.texture == .grain, "Single color keeps its texture")
         expect(close(single.noise, 0.8) && close(single.intensity, 1), "Noise and intensity come from Arc's modifiers")
-        expect(single.appearance == .automatic, "Content appearance stays contrast-chosen editor derives it")
+        expect(single.appearance == .automatic, "Content appearance stays contrast-chosen")
         let primary = require(single.primaryColor, "Primary color exists")
         expect(primary.colorSpace == .displayP3, "An out-of-sRGB color is carried in Display P3")
         let source = CGColor(colorSpace: CGColorSpace(name: CGColorSpace.extendedSRGB)!, components: [1.0699, -0.143, 0.2, 1])!

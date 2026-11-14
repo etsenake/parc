@@ -81,13 +81,13 @@ enum SidebarPlusMenuPlacement {
 }
 
 @MainActor
-class PArcMenuChrome: NSView {
+class ParcMenuChrome: NSView {
     let content: NSView
     let tailX: CGFloat
     let tailOnTop: Bool
-    var colors: PArcMenuColors { didSet { needsDisplay = true } }
+    var colors: ParcMenuColors { didSet { needsDisplay = true } }
 
-    init(content: NSView, size: NSSize, colors: PArcMenuColors, tailX: CGFloat, tailOnTop: Bool = false) {
+    init(content: NSView, size: NSSize, colors: ParcMenuColors, tailX: CGFloat, tailOnTop: Bool = false) {
         self.content = content
         self.tailX = tailX
         self.tailOnTop = tailOnTop
@@ -117,9 +117,9 @@ class PArcMenuChrome: NSView {
 }
 
 @MainActor
-final class SidebarPlusMenuChrome: PArcMenuChrome {
+final class SidebarPlusMenuChrome: ParcMenuChrome {
     let card: SidebarPlusMenuView
-    override var colors: PArcMenuColors { didSet { card.colors = colors } }
+    override var colors: ParcMenuColors { didSet { card.colors = colors } }
 
     init(card: SidebarPlusMenuView, tailX: CGFloat) {
         self.card = card
@@ -204,7 +204,7 @@ final class SidebarPlusMenuController: NSObject {
 
     var onVisibilityChange: ((Bool) -> Void)?
     var theme = SpaceTheme() {
-        didSet { if theme != oldValue { chrome?.colors = PArcMenuColors(theme: theme) } }
+        didSet { if theme != oldValue { chrome?.colors = ParcMenuColors(theme: theme) } }
     }
     private var panel: SidebarPlusMenuWindow?
     private var chrome: SidebarPlusMenuChrome?
@@ -224,7 +224,7 @@ final class SidebarPlusMenuController: NSObject {
             return
         }
         guard let parent = button.window else { return }
-        let menu = SidebarPlusMenuView(rows: rows, colors: PArcMenuColors(theme: theme), dismiss: { [weak self] in
+        let menu = SidebarPlusMenuView(rows: rows, colors: ParcMenuColors(theme: theme), dismiss: { [weak self] in
             self?.dismiss()
         }) { [weak self] action in
             self?.dismiss()
@@ -337,7 +337,7 @@ final class SidebarPlusMenuView: NSView {
     private var separators: [NSRect] = []
     private var highlighted = 0
     var acceptsActions = true
-    var colors: PArcMenuColors {
+    var colors: ParcMenuColors {
         didSet {
             needsDisplay = true
             for button in buttons { button.colors = colors }
@@ -356,7 +356,7 @@ final class SidebarPlusMenuView: NSView {
         view.layer?.masksToBounds = true
     }
 
-    init(rows: [SidebarPlusRow], colors: PArcMenuColors, dismiss: @escaping () -> Void = {},
+    init(rows: [SidebarPlusRow], colors: ParcMenuColors, dismiss: @escaping () -> Void = {},
          perform: @escaping (SidebarPlusAction) -> Void) {
         self.rows = rows
         self.colors = colors
@@ -454,7 +454,7 @@ final class SidebarPlusMenuView: NSView {
 final class SidebarPlusRowButton: NSButton {
     let row: SidebarPlusRow
     var emphasized = false { didSet { if emphasized != oldValue { needsDisplay = true } } }
-    var colors: PArcMenuColors { didSet { needsDisplay = true } }
+    var colors: ParcMenuColors { didSet { needsDisplay = true } }
     private let icon: NSImage?
     private let iconIsArtwork: Bool
     static let titleFont = NSFont.systemFont(ofSize: 13, weight: .medium)
@@ -467,7 +467,7 @@ final class SidebarPlusRowButton: NSButton {
     static let plateRadius: CGFloat = 8
     private static let shortcutRightInset: CGFloat = 10
 
-    init(row: SidebarPlusRow, colors: PArcMenuColors) {
+    init(row: SidebarPlusRow, colors: ParcMenuColors) {
         self.row = row
         self.colors = colors
         let artwork = SidebarPlusMenuArtwork.image(row.symbol)

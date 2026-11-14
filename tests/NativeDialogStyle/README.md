@@ -4,6 +4,7 @@
 dialog look: the extension install and remove sheets, page and auxiliary-page
 JavaScript dialogs, password/address/card save prompts, website sign-in,
 open-in-app, the unresponsive-page and notifications-permission sheets and the
+browser decision sheets. The app's `ParcDialog.swift` draws the same dialog;
 keep their metrics together.
 
 The module supplies the background, Parc's mark, title and message layout,

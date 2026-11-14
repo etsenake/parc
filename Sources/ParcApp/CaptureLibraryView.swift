@@ -10,7 +10,7 @@ final class CaptureLibraryView: NSView, NSCollectionViewDataSource, NSSearchFiel
     private let media: ExternalMediaLibrary
     var onClose: (() -> Void)?
     var onOpenSource: ((String) -> Void)?
-    var onToast: ((PArcToastContent) -> Void)?
+    var onToast: ((ParcToastContent) -> Void)?
     var palette: ThemeChromePalette? { didSet { collection.backgroundColors = [.clear] } }
     private let search: NSTextField
     private let searchBackdrop: DownloadSearchBackdrop?
@@ -918,7 +918,7 @@ private final class CaptureLibraryPreview: NSObject {
     let store: CaptureLibraryStore
     private let profileOwner: BrowserStore
     var onOpenSource: ((String) -> Void)?
-    var onToast: ((PArcToastContent) -> Void)?
+    var onToast: ((ParcToastContent) -> Void)?
     var onClose: (() -> Void)?
     var onMove: ((Int) -> Void)?
     var sourceRect: (() -> NSRect?)?
@@ -1177,11 +1177,11 @@ private final class CaptureLibraryPreview: NSObject {
         guard !finished, !closing, valid(), store.contains(selected), outputSheet == nil,
               panel.attachedSheet == nil else { return }
         let item = selected
-        var content = PArcDialog.Content(title: [("Delete this capture?", false)],
+        var content = ParcDialog.Content(title: [("Delete this capture?", false)],
             message: [("The saved image will be permanently removed from your Library. Exported files and copies in Easels are kept.", false)],
             confirm: "Delete", cancel: "Cancel")
         content.destructive = true
-        let dialog = PArcDialog(content)
+        let dialog = ParcDialog(content)
         let alertWindow: NSWindow = dialog.panel
         outputSheet = alertWindow
         _ = dialog.begin(for: panel) { [weak self, weak alertWindow] response in

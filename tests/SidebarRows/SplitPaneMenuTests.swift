@@ -67,16 +67,16 @@ import AppKit
         }
         check(shows(menu, ["icon-split-move-left", "icon-split-move-right", nil, "icon-split-add-right", "icon-split-add-left", nil,
                            "icon-separate-from-split", "icon-split-vertical", nil, "icon-split-share-horizontal"]),
-              "A horizontal split's items show the artwork, light or dark by appearance")
+              "A horizontal split's items show their artwork, light or dark by appearance")
         check(shows(full, ["icon-split-move-top", "icon-split-move-bottom", nil, "icon-split-add-top", "icon-split-add-bottom", nil,
                            "icon-separate-from-split-menu-bottom", "icon-split-horizontal", nil, "icon-split-share-vertical"]),
               "A vertical split takes the vertical Separate, Convert and Share artwork")
         check(shows(single, ["icon-split-add-left", "icon-split-add-right", nil, "icon-split-add-top", "icon-split-add-bottom"]),
-              "A sole pane's Add rows show the artwork")
+              "A sole pane's Add rows show their artwork")
         check(menu.items.compactMap(\.image).map(\.size) == [NSSize(width: 18, height: 18), NSSize(width: 18, height: 18),
               NSSize(width: 18, height: 18), NSSize(width: 18, height: 18), NSSize(width: 18, height: 18),
               NSSize(width: 22, height: 22), NSSize(width: 18, height: 18)],
-              "Parc draws its catalog sizes: 18 points, 22 for Convert")
+              "Artwork draws at its catalog sizes: 18 points, 22 for Convert")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("parc-pane-menu-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try BrowserStore(directory: root)

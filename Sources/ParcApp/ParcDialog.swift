@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class PArcDialog: NSObject, NSTextFieldDelegate {
+final class ParcDialog: NSObject, NSTextFieldDelegate {
     enum Response: Equatable { case confirm, alwaysConfirm, secondary, auxiliary, cancel }
 
     struct Field {
@@ -27,10 +27,10 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
     }
 
     let panel: NSPanel
-    let confirmButton: PArcDialogButton
-    let cancelButton: PArcDialogButton?
-    let auxiliaryButton: PArcDialogButton?
-    let secondaryButton: PArcDialogButton?
+    let confirmButton: ParcDialogButton
+    let cancelButton: ParcDialogButton?
+    let auxiliaryButton: ParcDialogButton?
+    let secondaryButton: ParcDialogButton?
     let suppression: ParcSelectionCheckbox?
     let textField: NSTextField?
     private let requiresText: Bool
@@ -39,23 +39,23 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
     private var response = Response.cancel
 
     init(_ content: Content) {
-        panel = PArcDialogPanel(contentRect: NSRect(x: 0, y: 0, width: content.width, height: 160),
+        panel = ParcDialogPanel(contentRect: NSRect(x: 0, y: 0, width: content.width, height: 160),
                                styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: true)
         panel.titlebarAppearsTransparent = true; panel.titleVisibility = .hidden
-        panel.isOpaque = false; panel.backgroundColor = PArcDialogStyle.popoverBackground
+        panel.isOpaque = false; panel.backgroundColor = ParcDialogStyle.popoverBackground
         panel.isReleasedWhenClosed = false
-        confirmButton = PArcDialogButton(title: content.confirm, primary: true, destructive: content.destructive)
-        cancelButton = content.cancel.map { PArcDialogButton(title: $0, primary: false) }
-        auxiliaryButton = content.auxiliary.map { PArcDialogButton(title: $0, primary: false, hint: false) }
-        secondaryButton = content.secondary.map { PArcDialogButton(title: $0, primary: false, hint: false) }
+        confirmButton = ParcDialogButton(title: content.confirm, primary: true, destructive: content.destructive)
+        cancelButton = content.cancel.map { ParcDialogButton(title: $0, primary: false) }
+        auxiliaryButton = content.auxiliary.map { ParcDialogButton(title: $0, primary: false, hint: false) }
+        secondaryButton = content.secondary.map { ParcDialogButton(title: $0, primary: false, hint: false) }
         suppression = content.suppression.map { ParcSelectionCheckbox(title: $0, labelAttributes: [
-            .font: NSFont.systemFont(ofSize: 14), .foregroundColor: PArcDialogStyle.popoverMessage]) }
+            .font: NSFont.systemFont(ofSize: 14), .foregroundColor: ParcDialogStyle.popoverMessage]) }
         textField = content.field.map { field in
             let text = NSTextField(string: field.value)
             text.placeholderString = field.placeholder
             text.isBordered = false; text.isBezeled = false; text.drawsBackground = false
             text.focusRingType = .none; text.font = .systemFont(ofSize: 14)
-            text.textColor = PArcDialogStyle.popoverTitle
+            text.textColor = ParcDialogStyle.popoverTitle
             text.usesSingleLineMode = true; text.lineBreakMode = .byTruncatingTail
             text.cell?.isScrollable = true; text.isEditable = true; text.isSelectable = true
             return text
@@ -63,44 +63,44 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
         requiresText = content.field?.required ?? false
         super.init()
         textField?.delegate = self
-        (panel as? PArcDialogPanel)?.onCancel = { [weak self] in self?.escape() }
-        (panel as? PArcDialogPanel)?.onConfirm = { [weak self] in self?.confirmButton.performClick(nil) }
+        (panel as? ParcDialogPanel)?.onCancel = { [weak self] in self?.escape() }
+        (panel as? ParcDialogPanel)?.onConfirm = { [weak self] in self?.confirmButton.performClick(nil) }
         confirmButton.target = self; confirmButton.action = #selector(confirm(_:)); confirmButton.keyEquivalent = "\r"
         cancelButton?.target = self; cancelButton?.action = #selector(cancel(_:)); cancelButton?.keyEquivalent = "\u{1b}"
         auxiliaryButton?.target = self; auxiliaryButton?.action = #selector(auxiliary(_:))
         secondaryButton?.target = self; secondaryButton?.action = #selector(secondary(_:))
 
         let inset: CGFloat = 38, width = content.width - 2 * inset
-        let root = PArcDialogBaseView(frame: .zero)
+        let root = ParcDialogBaseView(frame: .zero)
         var y = inset
         if let icon = content.icon {
-            let picture = PArcDialogPictureIcon(image: icon)
+            let picture = ParcDialogPictureIcon(image: icon)
             picture.setFrameOrigin(NSPoint(x: inset, y: y)); root.addSubview(picture)
             y += 62
         }
-        let title = PArcDialogStyle.label(content.title, size: 18, weight: .medium, color: PArcDialogStyle.popoverTitle, lineSpacing: 4)
+        let title = ParcDialogStyle.label(content.title, size: 18, weight: .medium, color: ParcDialogStyle.popoverTitle, lineSpacing: 4)
         root.addSubview(title)
-        y += 17 + PArcDialogStyle.place(title, x: inset, y: y + 17, width: width) + 8
+        y += 17 + ParcDialogStyle.place(title, x: inset, y: y + 17, width: width) + 8
         if let message = content.message {
-            let label = PArcDialogStyle.label(message, size: 14, weight: .regular, color: PArcDialogStyle.popoverMessage, lineSpacing: 1)
+            let label = ParcDialogStyle.label(message, size: 14, weight: .regular, color: ParcDialogStyle.popoverMessage, lineSpacing: 1)
             root.addSubview(label)
-            y += PArcDialogStyle.place(label, x: inset, y: y, width: width)
+            y += ParcDialogStyle.place(label, x: inset, y: y, width: width)
         }
         let accessoryGap: CGFloat = content.message != nil ? 16 : 8
         if let details = content.details {
             y += accessoryGap
-            let card = PArcDialogFieldCard(frame: NSRect(x: inset, y: y, width: width, height: PArcDialogStyle.detailsHeight))
-            let scroll = PArcDialogStyle.detailsView(details, size: card.bounds.insetBy(dx: 4, dy: 4).size)
+            let card = ParcDialogFieldCard(frame: NSRect(x: inset, y: y, width: width, height: ParcDialogStyle.detailsHeight))
+            let scroll = ParcDialogStyle.detailsView(details, size: card.bounds.insetBy(dx: 4, dy: 4).size)
             scroll.frame = card.bounds.insetBy(dx: 4, dy: 4); card.addSubview(scroll)
             root.addSubview(card)
             y += card.frame.height
         }
         if let textField {
             y += accessoryGap
-            let card = PArcDialogFieldCard(frame: NSRect(x: inset, y: y, width: width, height: PArcDialogStyle.fieldHeight))
+            let card = ParcDialogFieldCard(frame: NSRect(x: inset, y: y, width: width, height: ParcDialogStyle.fieldHeight))
             let height = ceil(textField.intrinsicContentSize.height)
-            textField.frame = NSRect(x: PArcDialogStyle.fieldPadding - 2, y: (card.frame.height - height) / 2,
-                                     width: width - 2 * PArcDialogStyle.fieldPadding + 4, height: height)
+            textField.frame = NSRect(x: ParcDialogStyle.fieldPadding - 2, y: (card.frame.height - height) / 2,
+                                     width: width - 2 * ParcDialogStyle.fieldPadding + 4, height: height)
             card.addSubview(textField); card.field = textField
             root.addSubview(card)
             y += card.frame.height
@@ -174,10 +174,10 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
 
     @discardableResult
     static func inform(in window: NSWindow, _ content: Content, queued: Bool = false) -> Bool {
-        PArcDialog(content).begin(for: window, queued: queued) { _ in }
+        ParcDialog(content).begin(for: window, queued: queued) { _ in }
     }
 
-    static func present(_ error: Error) { _ = PArcDialog(.init(error: error)).runModal() }
+    static func present(_ error: Error) { _ = ParcDialog(.init(error: error)).runModal() }
 
     @discardableResult
     static func confirm(in window: NSWindow, title: String, message: String?, confirm: String,
@@ -186,7 +186,7 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
         var content = Content(title: [(title, false)], message: message.map { [($0, false)] }, icon: nil,
                               confirm: confirm, cancel: cancel)
         content.destructive = destructive
-        let dialog = PArcDialog(content)
+        let dialog = ParcDialog(content)
         guard dialog.begin(for: window, completion: { decided($0 == .confirm) }) else { decided(false); return false }
         return true
     }
@@ -210,7 +210,7 @@ final class PArcDialog: NSObject, NSTextFieldDelegate {
     }
 }
 
-extension PArcDialog.Content {
+extension ParcDialog.Content {
     init(title: String, message: String? = nil, confirm: String = "OK", cancel: String? = nil) {
         self.init(title: [(title, false)], message: message.map { [($0, false)] }, confirm: confirm, cancel: cancel)
     }
@@ -221,7 +221,7 @@ extension PArcDialog.Content {
 }
 
 @MainActor
-private final class PArcDialogPanel: NSPanel {
+private final class ParcDialogPanel: NSPanel {
     var onCancel: (() -> Void)?
     var onConfirm: (() -> Void)?
     override func cancelOperation(_ sender: Any?) { onCancel?() }
@@ -237,7 +237,7 @@ private final class PArcDialogPanel: NSPanel {
 }
 
 @MainActor
-enum PArcDialogStyle {
+enum ParcDialogStyle {
     static func color(_ light: UInt32, _ lightAlpha: CGFloat, _ dark: UInt32, _ darkAlpha: CGFloat) -> NSColor {
         NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
@@ -407,12 +407,12 @@ final class ParcSelectionCheckbox: PointingHandButton {
 }
 
 @MainActor
-private final class PArcDialogFieldCard: NSView {
+private final class ParcDialogFieldCard: NSView {
     weak var field: NSTextField?
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
-        PArcDialogStyle.fieldFill.setFill()
-        PArcDialogStyle.continuousRect(bounds, radius: 8).fill()
+        ParcDialogStyle.fieldFill.setFill()
+        ParcDialogStyle.continuousRect(bounds, radius: 8).fill()
     }
     override func mouseDown(with event: NSEvent) {
         if let field { window?.makeFirstResponder(field) } else { super.mouseDown(with: event) }
@@ -421,14 +421,14 @@ private final class PArcDialogFieldCard: NSView {
 }
 
 @MainActor
-private final class PArcDialogBaseView: NSView {
+private final class ParcDialogBaseView: NSView {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { true }
-    override func draw(_ dirtyRect: NSRect) { PArcDialogStyle.popoverBackground.setFill(); dirtyRect.fill() }
+    override func draw(_ dirtyRect: NSRect) { ParcDialogStyle.popoverBackground.setFill(); dirtyRect.fill() }
 }
 
 @MainActor
-private final class PArcDialogPictureIcon: NSView {
+private final class ParcDialogPictureIcon: NSView {
     private let image: NSImage
     init(image: NSImage) {
         self.image = image
@@ -444,7 +444,7 @@ private final class PArcDialogPictureIcon: NSView {
         NSGraphicsContext.current?.imageInterpolation = .high
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
-        shadow.shadowColor = PArcDialogStyle.popoverLogoShadow; shadow.shadowBlurRadius = 3; shadow.shadowOffset = NSSize(width: 0, height: -1)
+        shadow.shadowColor = ParcDialogStyle.popoverLogoShadow; shadow.shadowBlurRadius = 3; shadow.shadowOffset = NSSize(width: 0, height: -1)
         shadow.set()
         image.draw(in: NSRect(x: 31.5 - size.width / 2, y: 31.5 - size.height / 2, width: size.width, height: size.height),
                    from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
@@ -454,7 +454,7 @@ private final class PArcDialogPictureIcon: NSView {
 }
 
 @MainActor
-final class PArcDialogButton: PointingHandButton {
+final class ParcDialogButton: PointingHandButton {
     let primary: Bool
     let destructive: Bool
     let hint: Bool
@@ -462,7 +462,7 @@ final class PArcDialogButton: PointingHandButton {
         didSet {
             guard isLoading != oldValue else { return }
             if isLoading, spinner == nil {
-                let host = NSHostingView(rootView: PArcButtonSpinner()); host.setAccessibilityElement(false)
+                let host = NSHostingView(rootView: ParcButtonSpinner()); host.setAccessibilityElement(false)
                 if primary { host.appearance = NSAppearance(named: .darkAqua) }
                 host.frame = body; host.autoresizingMask = [.width, .height]
                 addSubview(host); spinner = host
@@ -472,14 +472,14 @@ final class PArcDialogButton: PointingHandButton {
             needsLayout = true; needsDisplay = true
         }
     }
-    private var spinner: NSHostingView<PArcButtonSpinner>?
+    private var spinner: NSHostingView<ParcButtonSpinner>?
     private var hovered = false
     private var tracking: NSTrackingArea?
 
     init(title: String, primary: Bool, destructive: Bool = false, hint: Bool = true) {
         self.primary = primary; self.destructive = primary && destructive; self.hint = hint
         super.init(frame: .zero)
-        self.title = title; isBordered = false; setButtonType(.momentaryPushIn); font = PArcDialogStyle.buttonFont
+        self.title = title; isBordered = false; setButtonType(.momentaryPushIn); font = ParcDialogStyle.buttonFont
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     override var isFlipped: Bool { true }
@@ -491,11 +491,11 @@ final class PArcDialogButton: PointingHandButton {
         return hintSymbol?.withSymbolConfiguration(configuration)
     }
     private var hintContentSize: NSSize {
-        hintImage(nil)?.size ?? ("ESC" as NSString).size(withAttributes: [.font: PArcDialogStyle.hintFont])
+        hintImage(nil)?.size ?? ("ESC" as NSString).size(withAttributes: [.font: ParcDialogStyle.hintFont])
     }
     private var hintSize: NSSize { NSSize(width: hintContentSize.width + 12, height: hintContentSize.height + 6) }
     var bodyWidth: CGFloat {
-        12 + (title as NSString).size(withAttributes: [.font: PArcDialogStyle.buttonFont]).width + (hint ? 8 + hintSize.width : 0) + 12
+        12 + (title as NSString).size(withAttributes: [.font: ParcDialogStyle.buttonFont]).width + (hint ? 8 + hintSize.width : 0) + 12
     }
     private var body: NSRect { NSRect(x: 0.5, y: 0.5, width: bounds.width - 1, height: 36) }
 
@@ -510,7 +510,7 @@ final class PArcDialogButton: PointingHandButton {
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); hovered = false }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
     override var focusRingMaskBounds: NSRect { body }
-    override func drawFocusRingMask() { PArcDialogStyle.continuousRect(body, radius: 6).fill() }
+    override func drawFocusRingMask() { ParcDialogStyle.continuousRect(body, radius: 6).fill() }
     override func layout() {
         super.layout()
         spinner?.frame = body
@@ -526,36 +526,36 @@ final class PArcDialogButton: PointingHandButton {
         let face: NSColor, foreground: NSColor, border: NSColor?, lip: NSColor
         let hintForeground: NSColor, hintBackground: NSColor, hintBorder: NSColor?
         if !primary {
-            face = pressed ? PArcDialogStyle.neutralPressed : hovered ? PArcDialogStyle.neutralHovered : PArcDialogStyle.neutralFace
-            foreground = isEnabled ? PArcDialogStyle.neutralForeground : PArcDialogStyle.popoverArrowIcon
-            border = PArcDialogStyle.neutralBorder; lip = PArcDialogStyle.neutralShadow
-            hintForeground = PArcDialogStyle.neutralIconForeground; hintBackground = PArcDialogStyle.neutralIconBackground; hintBorder = nil
+            face = pressed ? ParcDialogStyle.neutralPressed : hovered ? ParcDialogStyle.neutralHovered : ParcDialogStyle.neutralFace
+            foreground = isEnabled ? ParcDialogStyle.neutralForeground : ParcDialogStyle.popoverArrowIcon
+            border = ParcDialogStyle.neutralBorder; lip = ParcDialogStyle.neutralShadow
+            hintForeground = ParcDialogStyle.neutralIconForeground; hintBackground = ParcDialogStyle.neutralIconBackground; hintBorder = nil
         } else if isEnabled && destructive {
-            face = pressed ? PArcDialogStyle.destructivePressed : hovered ? PArcDialogStyle.destructiveHovered : PArcDialogStyle.destructiveFace
-            foreground = PArcDialogStyle.primaryForeground; border = nil; lip = PArcDialogStyle.destructiveShadow
-            hintForeground = PArcDialogStyle.primaryIconForeground; hintBackground = PArcDialogStyle.primaryIconBackground
-            hintBorder = PArcDialogStyle.primaryIconBorder
+            face = pressed ? ParcDialogStyle.destructivePressed : hovered ? ParcDialogStyle.destructiveHovered : ParcDialogStyle.destructiveFace
+            foreground = ParcDialogStyle.primaryForeground; border = nil; lip = ParcDialogStyle.destructiveShadow
+            hintForeground = ParcDialogStyle.primaryIconForeground; hintBackground = ParcDialogStyle.primaryIconBackground
+            hintBorder = ParcDialogStyle.primaryIconBorder
         } else if isEnabled {
-            face = pressed ? PArcDialogStyle.primaryPressed : hovered ? PArcDialogStyle.primaryHovered : PArcDialogStyle.primaryFace
-            foreground = PArcDialogStyle.primaryForeground; border = PArcDialogStyle.primaryBorder; lip = PArcDialogStyle.primaryShadow
-            hintForeground = PArcDialogStyle.primaryIconForeground; hintBackground = PArcDialogStyle.primaryIconBackground
-            hintBorder = PArcDialogStyle.primaryIconBorder
+            face = pressed ? ParcDialogStyle.primaryPressed : hovered ? ParcDialogStyle.primaryHovered : ParcDialogStyle.primaryFace
+            foreground = ParcDialogStyle.primaryForeground; border = ParcDialogStyle.primaryBorder; lip = ParcDialogStyle.primaryShadow
+            hintForeground = ParcDialogStyle.primaryIconForeground; hintBackground = ParcDialogStyle.primaryIconBackground
+            hintBorder = ParcDialogStyle.primaryIconBorder
         } else {
-            face = PArcDialogStyle.indigo4; foreground = PArcDialogStyle.popoverArrowIcon; border = nil; lip = PArcDialogStyle.indigo6
-            hintForeground = PArcDialogStyle.popoverArrowIcon; hintBackground = PArcDialogStyle.indigo6; hintBorder = nil
+            face = ParcDialogStyle.indigo4; foreground = ParcDialogStyle.popoverArrowIcon; border = nil; lip = ParcDialogStyle.indigo6
+            hintForeground = ParcDialogStyle.popoverArrowIcon; hintBackground = ParcDialogStyle.indigo6; hintBorder = nil
         }
-        lip.setFill(); PArcDialogStyle.continuousRect(body.offsetBy(dx: 0, dy: 2), radius: 6).fill()
-        let shape = PArcDialogStyle.continuousRect(body, radius: 6)
+        lip.setFill(); ParcDialogStyle.continuousRect(body.offsetBy(dx: 0, dy: 2), radius: 6).fill()
+        let shape = ParcDialogStyle.continuousRect(body, radius: 6)
         face.setFill(); shape.fill()
         if let border { border.setStroke(); shape.lineWidth = 1; shape.stroke() }
         guard !isLoading else { return }
-        let attributes: [NSAttributedString.Key: Any] = [.font: PArcDialogStyle.buttonFont, .foregroundColor: foreground]
+        let attributes: [NSAttributedString.Key: Any] = [.font: ParcDialogStyle.buttonFont, .foregroundColor: foreground]
         let label = (title as NSString).size(withAttributes: attributes)
         (title as NSString).draw(at: NSPoint(x: body.minX + 12, y: body.midY - label.height / 2), withAttributes: attributes)
         guard self.hint else { return }
         let hint = hintSize
         let badge = NSRect(x: body.maxX - 12 - hint.width, y: body.midY - hint.height / 2, width: hint.width, height: hint.height)
-        let badgeShape = PArcDialogStyle.continuousRect(badge, radius: 4)
+        let badgeShape = ParcDialogStyle.continuousRect(badge, radius: 4)
         hintBackground.setFill(); badgeShape.fill()
         if let hintBorder { hintBorder.setStroke(); badgeShape.lineWidth = 2; badgeShape.stroke() }
         let content = hintContentSize
@@ -563,7 +563,7 @@ final class PArcDialogButton: PointingHandButton {
         if let symbol = hintImage(hintForeground) {
             symbol.draw(in: contentRect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         } else {
-            ("ESC" as NSString).draw(at: contentRect.origin, withAttributes: [.font: PArcDialogStyle.hintFont, .foregroundColor: hintForeground])
+            ("ESC" as NSString).draw(at: contentRect.origin, withAttributes: [.font: ParcDialogStyle.hintFont, .foregroundColor: hintForeground])
         }
     }
 }

@@ -185,10 +185,10 @@ import AppKit
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
         let anchor = NSView(frame: root.bounds)
         root.addSubview(anchor); window.contentView = root
-        let toasts = PArcToastPresenter()
-        let upsellToast = PArcToastContent.superCopyUpsell(shortcut: chord.display, message: "Copy links faster by pressing ⇧⌘C")
+        let toasts = ParcToastPresenter()
+        let upsellToast = ParcToastContent.superCopyUpsell(shortcut: chord.display, message: "Copy links faster by pressing ⇧⌘C")
         expect(upsellToast.body == .shortcut(leading: SuperCopyUpsell.prefix, shortcut: "⇧⌘C", trailing: nil)
-               && upsellToast.showsShortcut, "The upsell toast is the shortcut content with the upsell's own text")
+               && upsellToast.showsShortcut, "The upsell toast is shortcut content with the upsell's own text")
         expect(toasts.show(upsellToast, in: window, over: anchor, theme: SpaceTheme()) == nil,
                "A hidden window cannot record a shown upsell")
         window.orderBack(nil)

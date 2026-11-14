@@ -30,7 +30,7 @@ import Foundation
         check(relaunched.state.settings.showSpaceHeaderOnSingleUnnamedSpaces == true, "the setting survives a relaunch")
         var json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
         var settings = json["settings"] as! [String: Any]
-        check(settings["showSpaceHeaderOnSingleUnnamedSpaces"] as? Bool == true, "the session stores the key")
+        check(settings["showSpaceHeaderOnSingleUnnamedSpaces"] as? Bool == true, "the session stores the showSpaceHeaderOnSingleUnnamedSpaces key")
         settings.removeValue(forKey: "showSpaceHeaderOnSingleUnnamedSpaces")
         json["settings"] = settings
         try JSONSerialization.data(withJSONObject: json).write(to: file)

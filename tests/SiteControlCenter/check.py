@@ -26,7 +26,7 @@ for use in ('sidebar.onPageMenu = { [weak self] in self?.showSiteControlCenter()
 assert controller.count(".developerModeHost") == 1, \
     "only the permission rows' web-host gate reads developerModeHost; Developer Mode reads share developerModeSiteHost"
 assert "return developerModeExtensionHost?.lowercased()" in controller, \
-    "Parc keys Developer Mode by the committed page's host, an extension page's ID included"
+    "Developer Mode is keyed by the committed page's host, an extension page's ID included"
 def body(start):
     text = controller[controller.index(start):]
     return text[:text.index("\n    }\n")]
@@ -52,7 +52,7 @@ assert "icon: $0.pinnedArtwork?.image ?? $0.image," in controller \
     and "badge: $0.pinnedArtwork?.badge, badgeText: $0.badgeText)" in controller, \
     "the tiles show the unbadged canvas with the strips' badge, or the baked canvas on older engines"
 assert ".accessibilityValue(item.badgeText)" in center, "VoiceOver reads an extension tile's badge, as the strips do"
-assert "static let button = CGSize(width: 48, height: 32)" in center, "SCC extension tiles must stay the 48×32"
+assert "static let button = CGSize(width: 48, height: 32)" in center, "SCC extension tiles must stay 48×32"
 assert center.count(".fixedSize()") >= 4, "SCC extension tiles must not compress below 48×32"
 downloads = (root / "Engine/ParcNative/downloads.cc").read_text()
 assert "IsExtensionInstallTransfer" in downloads and "application/x-chrome-extension" in downloads, \
@@ -64,10 +64,10 @@ with tempfile.TemporaryDirectory(prefix="parc-site-control-center-") as director
     scratch = Path(directory)
     executable = scratch / "checks"
     compiled = [*sorted((root / "Sources/ParcCore").glob("*.swift")),
-                *[app / name for name in ("ThemeRenderer.swift", "PArcMenuColors.swift", "SidebarPlusMenu.swift",
+                *[app / name for name in ("ThemeRenderer.swift", "ParcMenuColors.swift", "SidebarPlusMenu.swift",
                                           "LibraryRailTile.swift", "LibraryRailIcon.swift", "DownloadActivityBadge.swift",
                                           "DownloadLibrarySelection.swift", "WindowStandardButtons.swift",
-                                          "ExtensionControls.swift", "SiteControlCenter.swift", "PArcContextMenu.swift")]]
+                                          "ExtensionControls.swift", "SiteControlCenter.swift", "ParcContextMenu.swift")]]
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
         "-import-objc-header", str(root / "Engine/ParcNative/native_appkit_bridge.h"),
         *map(str, compiled), *map(str, tooltip_sources(root, scratch, compiled)),

@@ -37,7 +37,7 @@ private struct OnboardingSetupProgressionButton: View {
         Button { state.action?() } label: {
             ZStack {
                 Text(state.title).opacity(state.loading ? 0 : 1)
-                if state.loading { PArcButtonSpinner() }
+                if state.loading { ParcButtonSpinner() }
             }
                 .foregroundColor(Color(nsColor: state.foreground))
                 .padding(.horizontal, 24)
@@ -58,7 +58,7 @@ private struct OnboardingSetupProgressionButton: View {
     }
 }
 
-struct PArcButtonSpinner: View {
+struct ParcButtonSpinner: View {
     var body: some View {
         ProgressView().progressViewStyle(.circular).scaleEffect(0.5).frame(width: 10, height: 10)
             .accessibilityHidden(true)

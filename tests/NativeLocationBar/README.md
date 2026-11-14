@@ -2,7 +2,7 @@
 
 `Engine/ParcNative/location_bar.{h,cc}` implements the non-rendering service
 owned by the native BrowserWindow. It is not the visible Parc command
-loaded by this component.
+bar, a Chrome toolbar, or a browser-window adapter.
 
 ## Current interface
 

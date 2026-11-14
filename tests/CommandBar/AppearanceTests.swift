@@ -121,7 +121,7 @@ import AppKit
         let stiffness = pow(2 * CGFloat.pi / 0.7, 2), damping = 4 * CGFloat.pi * 0.9 / 0.7
         expect(bounce.keyPath == "transform" && bounce.mass == 1 && abs(bounce.stiffness - stiffness) < 0.001
                && abs(bounce.damping - damping) < 0.001 && bounce.duration == bounce.settlingDuration,
-               "the bounce is the 0.9 / 0.7 s spring for its settling time")
+               "the bounce is a 0.9 / 0.7 s spring for its settling time")
         let from = (bounce.fromValue as? NSValue)?.caTransform3DValue ?? CATransform3DIdentity
         let centre = CGPoint(x: 350, y: 32).applying(CATransform3DGetAffineTransform(from))
         expect(abs(from.m11 - 0.95) < 0.0001 && abs(from.m22 - 0.95) < 0.0001
@@ -206,7 +206,7 @@ import AppKit
             }
         }
         let keycap = labels(command).first { $0.stringValue == "⌃⇧E" }
-        expect(keycap.map { $0.alignmentRect(forFrame: $0.frame).minX } == 4, "the keycap's text starts 4 points in pins it")
+        expect(keycap.map { $0.alignmentRect(forFrame: $0.frame).minX } == 4, "the keycap's text starts 4 points in")
 
         command.setSelected(false)
         window.appearance = light; command.layoutSubtreeIfNeeded()

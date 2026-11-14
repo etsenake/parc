@@ -29,7 +29,7 @@ func run() {
         tile.iconColors = (primary, secondary)
         tile.frame = NSRect(x: 0, y: 0, width: LibraryRailLayout.width - 15, height: LibraryRailLayout.tileHeight)
         tile.layoutSubtreeIfNeeded()
-        expect(tile.progress!.frame.size == NSSize(width: 28, height: 28), "The idle badge holds the 28-point icon slot")
+        expect(tile.progress!.frame.size == NSSize(width: 28, height: 28), "The idle badge holds a 28-point icon slot")
         return tile
     }
     func bitmap(_ size: NSSize) -> NSBitmapImageRep {
@@ -237,7 +237,7 @@ func run() {
     let compact = makeTile("Archived Tabs", .archive)
     expect(compact.parcTooltip == nil && compact.toolTip == nil, "A labelled tile has no tooltip")
     compact.showsLabel = false
-    expect(compact.parcTooltip == TooltipConfiguration("Archived Tabs"), "A tile too short for its label shows its title tooltip")
+    expect(compact.parcTooltip == TooltipConfiguration("Archived Tabs"), "A tile too short for its label shows its title as a tooltip")
     compact.showsLabel = true
     expect(compact.parcTooltip == nil, "The label's return removes it")
 

@@ -129,7 +129,7 @@ final class PointerWindow: NSWindow {
         let open = ink(button)
         check(open.width == 20 && open.height == 20, "the open × settles at π/4, 12/√2 + 2 ≈ 10.5 points (\(open.width)×\(open.height) px)")
         let openEdge = ink(button, threshold: 0.05)
-        check(openEdge.width == 22 && openEdge.height == 22, "the open ×'s visible edge spans the 22 × 22 pixels (\(openEdge.width)×\(openEdge.height) px)")
+        check(openEdge.width == 22 && openEdge.height == 22, "the open ×'s visible edge spans 22 × 22 pixels (\(openEdge.width)×\(openEdge.height) px)")
         check(near(open.maxAlpha, 0.565, 0.02) && open.plate == 0, "the open × stays GrayA11 on a clear plate (\(open.maxAlpha), \(open.plate))")
         state.open = false
         let closed = ink(button)

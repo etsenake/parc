@@ -33,7 +33,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     private var privateMediaSubscription: AnyCancellable?
     var onClose: (() -> Void)?
     var onOpenURLs: (([String]) -> Void)?
-    var onToast: ((PArcToastContent) -> Void)?
+    var onToast: ((ParcToastContent) -> Void)?
     var onRestore: (([UUID], UUID?) -> Void)?
     var onPreview: ((UUID) -> Bool)?
     private var clickStartedPreview = false
@@ -670,7 +670,7 @@ final class LibraryView: NSView, NSTableViewDataSource, NSTableViewDelegate, NST
     }
     private func confirm(message: String, detail: String, button: String, action: @escaping () -> Void) {
         guard let window, window.attachedSheet == nil else { return }
-        PArcDialog.confirm(in: window, title: message, message: detail, confirm: button, destructive: true) { [weak self] approved in
+        ParcDialog.confirm(in: window, title: message, message: detail, confirm: button, destructive: true) { [weak self] approved in
             guard approved, let self, self.window === window,
                   self.store.state.profiles.contains(where: { $0.id == self.profileID }) else { return }
             action()

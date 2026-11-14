@@ -1,5 +1,6 @@
 # Native external-protocol confirmation
 
+This component presents the original, policy-checked Chromium external-protocol request in a page-owned Parc dialog sheet with its text, the application's icon and key-badged Open (Return), Cancel (Escape) and an unbadged Always open (WEB15, [web-interactions.md](../../docs/web-interactions.md#dialogs-authentication-certificates-and-permissions--web15)). It retains page-bound ownership and distinct Open, Always open and Cancel decisions. It does not create another navigation, synthesize an installer/OS result, or render a hidden browser window.
 
 A one-call hook in Chromium's platform dialog function hands every request to Parc, which presents installed pages natively and gives any other page Chromium's Views dialog. The request preserves the checked URL, default application name and initiating origin/document. Chrome still performs scheme/enterprise/gesture/default-application policy and actual platform launch. Remembering uses the real origin/scheme preference and its managed checkbox policy. Acceptance revalidates exact page, document, Browser, Profile, native window and sole security lease before and after release; preference observers are followed by another validation before OS launch. Navigation, detach, replacement and destruction cancel the original request.
 
@@ -7,6 +8,7 @@ Current Chromium adaptations use the real `InputEventActivationProtector` utilit
 
 ## Verification
 
+`bash tests/NativeExternalProtocol/run.sh` executes 38 AppKit assertions using actual offscreen NSWindows, sheets, controls and the run loop. It covers deferred visible attachment, the default Open, keypad Enter under input protection and button order, the Always open choice and its availability, input refusal, once-only decisions, hidden/detached ownership, invalidation and callback replacement. It does not launch external applications or touch a browser profile.
 
 `dialog_unittest.mm` contains 17 Chromium-connected cases: 14 use real Browser/Profile/Tab/WebContents, modal manager, preferences and the upstream launch test delegate; three cover the genuine floating-widget occlusion tracker and activation protector. They cover cancellation, remembered policy, stale documents, navigation/detach and queued acceptance across reattachment, replacement, competing release-time reservations, preference-observer navigation and callback-driven page destruction. Only the OS effect is intercepted in controller tests. The tests begin at the checked platform-dialog boundary; they do not establish the earlier default-application lookup/network path. The protection utility cases run without the test bypass; lifecycle tests use Chromium's explicit testing switch.
 

@@ -21,7 +21,8 @@ engine builds, packaging or installations.
 
 ## Safety and product boundaries
 
-  other app, and never screenshot apps.** Use code inspection, compiler checks,
+- **Never launch, open or drive Parc, Chrome (including headless), another
+  browser or any other app, and never screenshot apps.** Use code inspection, compiler checks,
   codesign checks and model/unit tests. Old test instructions are not permission
   to run an app. Browser/runtime testing requires explicit authorization for
   the current task. For an instrumented reproduction, follow
@@ -43,7 +44,8 @@ engine builds, packaging or installations.
   Do not reopen accepted AI cleanup or picture-in-picture work without a new
   defect or user request. Generic Chromium/Google networking is outside the
   service-removal scope.
-  code. Keep Chromium security maintenance on deliberate pinned upgrades.
+- Build and runtime must not require another browser installed or copy/load
+  its executable code. Keep Chromium security maintenance on deliberate pinned upgrades.
   Architecture decisions follow Parc's actual source, requirements and tests.
 - Preserve profiles, release tags/assets, signed artifacts, engine objects and
   compiler caches. Do not infer that a process or workspace is unused from an
@@ -248,7 +250,8 @@ change, and keep the outcome clear; a vague punchline is not a description. Fun
 and descriptive still means one line, never a body or an explanatory second line.
 
 `feat`, `fix` and `perf` subjects become release notes. Write them for Parc users,
-internal names, file paths or measurement archaeology. Examples:
+start the summary with a capital and say what changed for them; no comparisons
+with other browsers, internal names, file paths or measurement archaeology. Examples:
 
 - `fix(tabs): Stop pinned tabs from ghosting you after a restart`
 - `fix(updates): Keep the download counter from doing parkour`

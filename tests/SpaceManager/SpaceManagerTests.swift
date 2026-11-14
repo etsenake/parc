@@ -209,7 +209,7 @@ final class AreaEvent: NSEvent {
         check(!descendants(sidebar).contains { $0 is SidebarNewTabRow }, "a card has no New Tab row")
         let clear = buttons.first { $0.identifier?.rawValue == "sidebarClear" }!
         check(clear.title == "Clear" && clear.isEnabled && clear.font == NSFont.systemFont(ofSize: 10, weight: .semibold) && clear.image != nil,
-              "the card's Clear is the arrow-and-label button")
+              "the card's Clear is an arrow-and-label button")
         check(!clear.isHidden && clear.alphaValue == 1, "a card shows Clear without the pointer over it")
         let section = clear.superview!
         let line = section.subviews.compactMap { $0 as? SidebarHairline }.first!
@@ -442,7 +442,7 @@ final class AreaEvent: NSEvent {
         check(exposed(), "a revealed Clear is an accessibility child")
         check(clear.refusesFirstResponder && !clear.acceptsFirstResponder && !clear.canBecomeKeyView
               && !SidebarAccessibility.keyViews(in: [section], space: sidebar).contains { $0 === clear },
-              "even revealed, Clear is no key view HoverableView is not")
+              "even revealed, Clear is no key view")
         let width = ceil(clear.intrinsicContentSize.width)
         let pad = clear.cell!.imageRect(forBounds: NSRect(x: 0, y: 0, width: width, height: 20)).minX
         check(pad > 0 && clear.frame.width == width - pad && clear.frame.height == 20 && clear.frame.maxX == section.bounds.width - inset
@@ -454,7 +454,7 @@ final class AreaEvent: NSEvent {
               "only a revealed Clear's own width takes its clicks")
         check(clear.parcTooltip == TooltipConfiguration("Clear Today tabs", shortcut: .command("clearToday:")) && clear.toolTip == nil
               && clear.accessibilityLabel() == "Clear" && clear.focusRingType == .none,
-              "Clear keeps its Parc tooltip and accessible name and draws no keyboard ring")
+              "Clear keeps its tooltip and accessible name and draws no keyboard ring")
         check(clear.font == NSFont.systemFont(ofSize: 10, weight: .semibold) && resting(clear.contentTintColor),
               "a revealed Clear the pointer is not on is ForegroundTertiary")
         clear.mouseEntered(with: AreaEvent())
@@ -596,7 +596,7 @@ final class AreaEvent: NSEvent {
         let child = SidebarTabRow(tab: today, selected: false, speaker: nil, close: { nil }, reset: { nil }, separate: { nil })
         child.beginRename = { true }
         child.compactSplitChild = true
-        check(child.parcTooltip == nil, "a split child ChildItemState, has no row tooltip")
+        check(child.parcTooltip == nil, "a split child has no row tooltip")
         check(closeButton(row(pinned)).parcTooltip?.label == "Close and Keep Pinned"
               && closeButton(row(today)).parcTooltip?.label == "Archive this tab",
               "a pinned row's close deselects and a Today row's archives, each with Close Tab's binding")

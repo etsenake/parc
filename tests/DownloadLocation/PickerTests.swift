@@ -35,16 +35,16 @@ struct DownloadLocationPickerTests {
                    "Without a snapshot the picker shows no guessed folder and cannot act")
 
         picker.update(.init(directory: downloads, prompt: false), enabled: true)
-        try expect(picker.itemTitles == ["Downloads", "Other…", "", "Ask every time"], "the rows in the order")
-        try expect(picker.item(at: 2)?.isSeparatorItem == true, "the Divider sits between Other… and Ask every time")
-        try expect(picker.itemArray.filter { !$0.isSeparatorItem }.map(\.tag) == [0, 1, 2], "Rows carry the Tag cases")
+        try expect(picker.itemTitles == ["Downloads", "Other…", "", "Ask every time"], "Downloads, Other…, a divider, then Ask every time")
+        try expect(picker.item(at: 2)?.isSeparatorItem == true, "a divider sits between Other… and Ask every time")
+        try expect(picker.itemArray.filter { !$0.isSeparatorItem }.map(\.tag) == [0, 1, 2], "rows carry tags 0, 1 and 2")
         try expect(picker.selectedTag() == 0 && picker.titleOfSelectedItem == "Downloads", "No prompt selects the folder row")
         try expect(picker.selectedItem?.state == .on, "The shown row carries the menu checkmark")
-        try expect(picker.item(at: 0)?.image?.size == NSSize(width: 16, height: 16), "Parc draws the folder icon at 16×16")
+        try expect(picker.item(at: 0)?.image?.size == NSSize(width: 16, height: 16), "the folder icon is drawn at 16×16")
         try expect(picker.item(at: 1)?.image == nil && picker.item(at: 3)?.image == nil, "Only the folder row has an icon")
         if #available(macOS 27, *) {
             try expect(picker.item(at: 0)?.preferredImageVisibility == .visible,
-                       "The folder row asks to show its icon .titleAndIcon label does")
+                       "The folder row asks to show its title and icon")
         }
         try expect(picker.item(at: 0)?.toolTip == downloads.path && picker.toolTip == downloads.path,
                    "The full effective path stays reachable on hover")
@@ -98,7 +98,7 @@ struct DownloadLocationPickerTests {
         titled.update(.init(directory: downloads, prompt: false), enabled: true)
         try expect(title?.alphaValue == 1, "An enabled row shows its title at full opacity")
         titled.update(.init(directory: downloads, prompt: false), enabled: false)
-        try expect(title?.alphaValue == 0.25, "A managed row dims its title to the 25%")
+        try expect(title?.alphaValue == 0.25, "A managed row dims its title to 25%")
 
         if let output = CommandLine.arguments.dropFirst().first {
             try render(to: URL(fileURLWithPath: output, isDirectory: true), downloads: downloads, custom: custom)

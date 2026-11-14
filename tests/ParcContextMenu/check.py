@@ -8,14 +8,14 @@ root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(root / "tests/Tooltip"))
 from support import tooltip_sources
 app = root / "Sources/ParcApp"
-with tempfile.TemporaryDirectory(prefix="parc-arc-context-menu-") as directory:
+with tempfile.TemporaryDirectory(prefix="parc-context-menu-") as directory:
     scratch = Path(directory)
     executable = scratch / "checks"
     compiled = [*sorted((root / "Sources/ParcCore").glob("*.swift")),
-                *[app / name for name in ("ThemeRenderer.swift", "PArcMenuColors.swift", "SidebarPlusMenu.swift",
+                *[app / name for name in ("ThemeRenderer.swift", "ParcMenuColors.swift", "SidebarPlusMenu.swift",
                                           "LibraryRailTile.swift", "LibraryRailIcon.swift", "DownloadActivityBadge.swift",
                                           "DownloadLibrarySelection.swift", "WindowStandardButtons.swift",
-                                          "ExtensionControls.swift", "SiteControlCenter.swift", "PArcContextMenu.swift")]]
+                                          "ExtensionControls.swift", "SiteControlCenter.swift", "ParcContextMenu.swift")]]
     subprocess.run(["xcrun", "swiftc", "-warnings-as-errors", "-parse-as-library", "-target", "arm64-apple-macos13.0",
         "-import-objc-header", str(root / "Engine/ParcNative/native_appkit_bridge.h"),
         *map(str, compiled), *map(str, tooltip_sources(root, scratch, compiled)),

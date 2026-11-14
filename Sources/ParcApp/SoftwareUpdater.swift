@@ -169,9 +169,9 @@ import Sparkle
     }
 
     private func showError(_ error: Error) {
-        var content = PArcDialog.Content(title: "Update error!", message: error.localizedDescription)
+        var content = ParcDialog.Content(title: "Update error!", message: error.localizedDescription)
         content.secondary = "Download manually"
-        if PArcDialog(content).runModal() == .secondary,
+        if ParcDialog(content).runModal() == .secondary,
            let url = URL(string: "https://github.com/etsenake/parc-releases/releases/latest") {
             NSWorkspace.shared.open(url)
         }

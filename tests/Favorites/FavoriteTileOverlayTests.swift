@@ -46,7 +46,7 @@ private final class ActivityWindow: NSWindow {
         check(!Rules.showsMusic(singlePage: true, status: .active, savedURL: "https://example.test"), "Saved host off the list")
         check(FavoriteMediaSessionStatus(rawStatus: 0) == .active && FavoriteMediaSessionStatus(rawStatus: 1) == .ducking
               && FavoriteMediaSessionStatus(rawStatus: 2) == .suspended && FavoriteMediaSessionStatus(rawStatus: 3) == .inactive,
-              "the MediaSessionStatus order")
+              "the media session status order")
         check(FavoriteMediaSessionStatus(rawStatus: 7) == .inactive && FavoriteMediaSessionStatus(rawStatus: -1) == .inactive,
               "Out-of-range status is inactive")
 
@@ -200,7 +200,7 @@ private final class ActivityWindow: NSWindow {
         tile.isHidden = true
         tile.isHidden = false
         check(overlays.particlesView === darkParticles && darkParticles?.superview === tile,
-              "Like the sink, occlusion and hiding leave the emitter")
+              "occlusion and hiding leave the emitter")
         tile.viewDidChangeEffectiveAppearance()
         check(overlays.particlesView !== darkParticles && darkParticles?.superview == nil
               && overlays.particlesView?.superview === tile && overlays.particlesView?.isDark == true,
@@ -229,7 +229,7 @@ private final class ActivityWindow: NSWindow {
         tile.setOverlays(.none)
         check(overlays.badgeView == nil && badge?.superview == nil, "Without a window the badge is removed at once")
         tile.setOverlays(FavoriteTileOverlayState(music: true))
-        check(overlays.particlesView?.superview === tile, "Like Parc, eligibility alone creates the emitter")
+        check(overlays.particlesView?.superview === tile, "eligibility alone creates the emitter")
         tile.setOverlays(.none)
         window.close()
 

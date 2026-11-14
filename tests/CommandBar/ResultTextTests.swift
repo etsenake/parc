@@ -58,7 +58,7 @@ import Foundation
         expect(row("bookmark-title", description: "A") == nil, "bookmark titles never become rows")
         for type in ["history-body", "history-keyword", "search-suggest-personalized", "search-suggest-infinite",
                      "navsuggest-personalized", "open-tab", "pedal", "url-from-clipboard"] {
-            expect(row(type) == nil, "\(type) is outside the type table")
+            expect(row(type) == nil, "\(type) is outside the result type table")
         }
         expect(row(nil, description: "A Site") == row("history-url", description: "A Site"),
                "without a match type a described match reads like history")

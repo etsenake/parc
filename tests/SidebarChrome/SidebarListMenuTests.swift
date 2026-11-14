@@ -92,7 +92,7 @@ import AppKit
         sidebar.layoutSubtreeIfNeeded(); list.layoutSubtreeIfNeeded()
         clear.frame = NSRect(x: divider.bounds.maxX - 60, y: 2, width: 60, height: 20)
         let lastRow = list.rows.last!
-        check(list.rows.count == 7 && lastRow.cell.content === today[1], "the list has the seven rows, the last a Today item")
+        check(list.rows.count == 7 && lastRow.cell.content === today[1], "the list has seven rows, the last a Today item")
         check(abs(list.frame.height - (lastRow.frame.maxY + SidebarChromeLayout.tablistBottomInset)) < 0.5
               && list.frame.height < scroll.contentSize.height, "the outline ends with the bottom inset, shorter than its scroll view")
 
@@ -158,7 +158,7 @@ import AppKit
               "a new session has one untitled Space and the setting off")
         var menu = sidebar.menu(for: event(.rightMouseDown, inset))
         check(menu?.items.map(\.title) == base + ["Show Space Header"] && menu?.items.allSatisfy(\.isEnabled) == true,
-              "one untitled Space without an icon: the items, then Show Space Header, all enabled")
+              "one untitled Space without an icon: the Space items, then Show Space Header, all enabled")
         menu?.performActionForItem(at: 3)
         check(store.state.settings.showSpaceHeaderOnSingleUnnamedSpaces == true, "Show Space Header turns the setting on")
         menu = sidebar.menu(for: event(.rightMouseDown, inset))
@@ -173,7 +173,7 @@ import AppKit
         let secondID = store.createSpace(name: "Work")
         check(store.state.activeSpaceID == secondID && menuTitles() == base
               && sidebar.menu(for: event(.rightMouseDown, inset))?.items.allSatisfy(\.isEnabled) == true,
-              "two Spaces: the items for the active Space, all enabled, no toggle")
+              "two Spaces: the Space items for the active Space, all enabled, no toggle")
         sidebar.menu(for: event(.rightMouseDown, inset))?.performActionForItem(at: 0)
         store.selectSpace(first.id)
         sidebar.menu(for: event(.rightMouseDown, inset))?.performActionForItem(at: 0)

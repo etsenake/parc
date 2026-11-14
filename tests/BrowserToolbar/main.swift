@@ -32,7 +32,7 @@ try MainActor.assumeIsolated {
     }
     let plus = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)!.withSymbolConfiguration(.init(pointSize: 16, weight: .medium))!
     check(SidebarNewTabAppearance.title == "New Tab" && SidebarNewTabAppearance.plus?.size == plus.size,
-          "New Tab's plus is the 16-point medium plus")
+          "New Tab's plus is a 16-point medium plus")
     let clear = ActionButton(SidebarClearAppearance.title)
     for dark in [false, true] {
         SidebarClearAppearance.apply(to: clear, dark: dark)
@@ -44,7 +44,7 @@ try MainActor.assumeIsolated {
         check(clear.font == NSFont.systemFont(ofSize: 10, weight: .semibold), "Clear's label is 10-point semibold")
         let arrow = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: nil)!.withSymbolConfiguration(.init(pointSize: 10, weight: .bold))!
         check(clear.image?.size == arrow.size && clear.imagePosition == .imageLeading && clear.imageHugsTitle,
-              "Clear leads with the bold 10-point arrow.down")
+              "Clear leads with a bold 10-point arrow.down")
         SidebarClearAppearance.apply(to: clear, dark: dark, hovered: true)
         let hovered = (clear.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as! NSColor).usingColorSpace(.sRGB)!
         let hoveredTint = clear.contentTintColor!.usingColorSpace(.sRGB)!
@@ -88,7 +88,7 @@ try MainActor.assumeIsolated {
     check(!PaneTopBarAdmission.peekDisplayed(toolbarVisible: true, isActivePeek: true, developerToolbarHidden: false),
           "Developer Mode Peek has no ordinary bar")
     check(PaneTopBarAdmission.sidebarAddressBarShown(focusedHasTopBar: true, toolbarVisible: false),
-          "a split pane's top bar keeps the sidebar URL bar (installed Parc, November 1 reference)")
+          "a split pane's top bar keeps the sidebar URL bar")
     check(!PaneTopBarAdmission.sidebarAddressBarShown(focusedHasTopBar: true, toolbarVisible: true),
           "the Toolbar replaces the sidebar URL bar")
     check(PaneTopBarAdmission.sidebarAddressBarShown(focusedHasTopBar: false, toolbarVisible: true),
@@ -241,7 +241,7 @@ try MainActor.assumeIsolated {
                                    alternateImage: nil) { performed += 1 }
     let shareItem = PaneShareMenu.item(for: shared) { sharedRequests.append(contentsOf: $0); return [service] }
     check(sharedRequests == [shared] && shareItem.title == "Share" && shareItem.image == nil,
-          "Share asks for services for the original URL only and keeps the plain title")
+          "Share asks for services for the original URL only and keeps a plain title")
     let serviceEntry = shareItem.submenu?.items.first
     check(shareItem.submenu?.items.count == 1 && serviceEntry?.title == "Test Service" && serviceEntry?.image != nil,
           "each service appears with its menu title and image")
@@ -249,7 +249,7 @@ try MainActor.assumeIsolated {
         let hidden = NSMenu(); hidden.addItem(withTitle: serviceEntry.title, action: nil, keyEquivalent: "")
         hidden.items[0].image = serviceEntry.image
         check(serviceEntry.preferredImageVisibility == .visible && submenu.size.width > hidden.size.width,
-              "macOS 27 shows each service's image ShareMenu does")
+              "macOS 27 shows each service's image")
     }
     if let serviceEntry, let target = serviceEntry.target, let action = serviceEntry.action {
         _ = (target as AnyObject).perform(action)
@@ -405,7 +405,7 @@ try MainActor.assumeIsolated {
     check(lockActions.count == 1, "the lock dispatches didClickSiteInsecureButton to its owner once")
     if case .siteInsecure = lockActions[0] { checks += 1 } else { preconditionFailure("lock sends the insecure action") }
     check(lockAnchors.first === named("Site Control Center"),
-          "the lock's Site Control Center is anchored at the Site Control Center button popover is")
+          "the lock's Site Control Center is anchored at the Site Control Center button")
     toolbar.removeFromSuperview(); toolbarWindow.close(); toolbar.onAction = nil
     update(insecure: false)
     check(lock.isHidden && copyControl.frame.maxX == toolbarTitle.frame.minX, "a secure page drops the lock and its slug")

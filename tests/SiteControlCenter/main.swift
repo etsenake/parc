@@ -15,16 +15,16 @@ struct SiteControlCenterChecks {
                && SiteControlCenterArtwork.controlCenter != nil, "the artwork loads from the bundle's SiteControlCenter resources")
 
         expect(SiteControlCenterMetrics.padding == SidebarPlusMenuView.inset && SiteControlCenterMetrics.width == 232,
-               "the card keeps the tiles and spacing inside the plus HUD's edge inset")
+               "the card keeps its tiles and spacing inside the plus HUD's edge inset")
         expect(SiteControlCenterMetrics.button == CGSize(width: 48, height: 32) &&
                SiteControlCenterMetrics.extensionIcon == 16 && SiteControlCenterMetrics.pin == 14,
-               "extension tiles stay the 48×32 with a 16-point icon and 14-point pin")
+               "extension tiles stay 48×32 with a 16-point icon and 14-point pin")
 
         for (name, size) in [("icon-control-center", NSSize(width: 18, height: 18)),
                              ("copy-url", NSSize(width: 19, height: 19)),
                              ("capture-full-page", NSSize(width: 19, height: 19))] {
             let image = SiteControlCenterArtwork.image(name)
-            expect(image?.size == size && image?.isTemplate == true, "\(name) loads \(size) template")
+            expect(image?.size == size && image?.isTemplate == true, "\(name) loads as a \(size) template")
             expect(image?.representations.contains { $0.pixelsWide == Int(size.width) * 2 } == true,
                    "\(name) keeps its 2× rendition")
             expect(image?.representations.contains { $0 is NSPDFImageRep } == true, "\(name) keeps its vector rendition")
@@ -193,7 +193,7 @@ struct SiteControlCenterChecks {
 
         let content = NSView(frame: .zero)
         let colors = SiteControlCenterColors(theme: SpaceTheme()).menu
-        let top = PArcMenuChrome(content: content, size: NSSize(width: 232, height: 100), colors: colors, tailX: 116, tailOnTop: true)
+        let top = ParcMenuChrome(content: content, size: NSSize(width: 232, height: 100), colors: colors, tailX: 116, tailOnTop: true)
         expect(content.frame == NSRect(x: 0, y: 0, width: 232, height: 100) && top.tailTip == NSPoint(x: 116, y: 106),
                "a hanging card's tail tip is above it")
         let menu = SidebarPlusMenuView(rows: SidebarPlusMenuModel.rows(privateBrowsing: false, canCreateEasel: true,
@@ -453,12 +453,12 @@ struct SiteControlCenterChecks {
             let controller = SiteControlCenterController(model: grown)
             controller.show(relativeTo: button.bounds, of: button, preferredEdge: .minY, expectedWindow: parent, when: { true })
             guard let panel = parent.childWindows?.first as? SiteControlCenterWindow,
-                  let before = panel.contentView as? PArcMenuChrome else { fatalError("SiteControlCenter: the re-hang card opens") }
+                  let before = panel.contentView as? ParcMenuChrome else { fatalError("SiteControlCenter: the re-hang card opens") }
             button.frame.origin.x = 560
             grown.settings = [.init(id: "developerMode", symbol: "hammer.fill", symbolSize: 13, symbolWeight: .medium,
                                     title: "Developer Mode", subtitle: "Off", isOn: false, isEnabled: true)]
-            waitUntil { (panel.contentView as? PArcMenuChrome).map { $0 !== before } ?? false }
-            let after = panel.contentView as? PArcMenuChrome
+            waitUntil { (panel.contentView as? ParcMenuChrome).map { $0 !== before } ?? false }
+            let after = panel.contentView as? ParcMenuChrome
             expect(before.tailX == 168 && after?.tailX == 208 && after?.tailOnTop == true,
                    "a taller card follows its moved button, its tail re-hung on the button")
             expect(panel.firstResponder is NSHostingView<SiteControlCenterView>, "re-hanging keeps the hosted buttons' keyboard focus")

@@ -15,11 +15,11 @@ final class BrowserImportAccessView: LayoutView {
     private let cardTitle = NSTextField(labelWithString: "Full Disk Access")
     private let instructions = NSTextField(wrappingLabelWithString:
         "1. Open System Settings → Privacy & Security → Full Disk Access.\n\n2. Click + and add this copy of Parc.\n\n3. Turn on access for Parc, then return here.")
-    private let openSettings = PArcDialogButton(title: "Open System Settings…", primary: false, hint: false)
-    private let revealApplication = PArcDialogButton(title: "Show Parc in Finder", primary: false, hint: false)
+    private let openSettings = ParcDialogButton(title: "Open System Settings…", primary: false, hint: false)
+    private let revealApplication = ParcDialogButton(title: "Show Parc in Finder", primary: false, hint: false)
     private let status = NSTextField(wrappingLabelWithString: "")
-    private let continueButton = PArcDialogButton(title: "Continue without restarting", primary: false, hint: false)
-    private let restartButton = PArcDialogButton(title: "Restart Parc", primary: true, hint: false)
+    private let continueButton = ParcDialogButton(title: "Continue without restarting", primary: false, hint: false)
+    private let restartButton = ParcDialogButton(title: "Restart Parc", primary: true, hint: false)
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -31,12 +31,12 @@ final class BrowserImportAccessView: LayoutView {
             settingsIcon.image = NSWorkspace.shared.icon(forFile: settings.path)
         } else { settingsIcon.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil) }
         settingsIcon.imageScaling = .scaleProportionallyUpOrDown; settingsIcon.setAccessibilityElement(false)
-        heading.font = .systemFont(ofSize: 18, weight: .bold); heading.textColor = PArcDialogStyle.popoverTitle
-        explanation.font = .systemFont(ofSize: 16); explanation.textColor = PArcDialogStyle.popoverTitle
+        heading.font = .systemFont(ofSize: 18, weight: .bold); heading.textColor = ParcDialogStyle.popoverTitle
+        explanation.font = .systemFont(ofSize: 16); explanation.textColor = ParcDialogStyle.popoverTitle
         card.wantsLayer = true; card.layer?.cornerRadius = 16
-        cardTitle.font = .systemFont(ofSize: 19, weight: .semibold); cardTitle.textColor = PArcDialogStyle.popoverTitle
-        instructions.font = .systemFont(ofSize: 14); instructions.textColor = PArcDialogStyle.popoverTitle
-        status.font = .systemFont(ofSize: 12); status.textColor = PArcDialogStyle.popoverTitle
+        cardTitle.font = .systemFont(ofSize: 19, weight: .semibold); cardTitle.textColor = ParcDialogStyle.popoverTitle
+        instructions.font = .systemFont(ofSize: 14); instructions.textColor = ParcDialogStyle.popoverTitle
+        status.font = .systemFont(ofSize: 12); status.textColor = ParcDialogStyle.popoverTitle
         [logo, heading, explanation, card, status, continueButton, restartButton].forEach(addSubview)
         [settingsIcon, cardTitle, instructions, openSettings, revealApplication].forEach(card.addSubview)
         for (button, action) in [(openSettings, #selector(openSettingsPressed)), (revealApplication, #selector(revealPressed)),
@@ -59,7 +59,7 @@ final class BrowserImportAccessView: LayoutView {
     }
     private func updateCardColor() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            card.layer?.backgroundColor = PArcDialogStyle.color(0x000000, 0.04, 0xFFFFFF, 0.07).cgColor
+            card.layer?.backgroundColor = ParcDialogStyle.color(0x000000, 0.04, 0xFFFFFF, 0.07).cgColor
         }
     }
 

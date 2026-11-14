@@ -19,43 +19,43 @@ assert "if isSuppressed { return false }" in source("TooltipController.swift") \
     and "TooltipController.controller(for: window).isSuppressed = card != nil" in source("SidebarPreviewController.swift"), \
     "a shown sidebar preview card no longer holds back tooltips"
 assert 'LiveShortcutToolTip.set(toggle, label, commandID: "toggleSidebar:")' in sidebar, \
-    "the sidebar toggle no longer shows its Parc tooltip with the live binding and help"
+    "the sidebar toggle no longer shows its tooltip with the live binding and help"
 assert 'LiveShortcutToolTip.set(closeButton, tooltip, commandID: "closeTab:")' in sidebar \
     and sidebar.count("bindCloseButton(tooltip: Self.closeTooltip(tab)") == 2 \
-    and '"Archive this tab" : "Close and Keep Pinned"' in sidebar, "the row Close lost the TabCellStrings tooltips"
+    and '"Archive this tab" : "Close and Keep Pinned"' in sidebar, "the row Close lost its Archive / Close and Keep Pinned tooltips"
 assert "parcTooltip = compactSplitChild ? nil : Self.rowTooltip(tooltipTab, renameable: beginRename != nil)" in sidebar \
     and "style: .label(subtitle: hint), anchor: .cursor" in sidebar \
     and "behavior: .onMouseIdle(delay: 1.5)" in sidebar and 'static let renameHint = "Double-click to rename"' in sidebar \
     and "renameable && tab.customTitle == nil" in sidebar, \
-    "the tab row lost the title / rename-hint tooltip at the pointer, or a split child (ChildItemState) gained one"
+    "the tab row lost its title / rename-hint tooltip at the pointer, or a split child gained one"
 assert "if Self.isRenameClick(originalEvent), beginRename?() == true { return }" in sidebar \
     and "row.beginRename = inGroup || isSpaceManagement || !SidebarTabTitle.isRenameable(tab) ? nil" in sidebar, \
     "the rename hint no longer matches the row's double-click rename"
 assert 'LiveShortcutToolTip.set(parts.region, "Reset Tab", commandID: "resetTab:", requiresBinding: true)' in sidebar
 assert "footerMore.toolTip" not in sidebar and "LiveShortcutToolTip.set(footerMore" not in sidebar \
-    and "footerMore.parcTooltip" not in sidebar, "the dock + has no tooltip in Parc"
+    and "footerMore.parcTooltip" not in sidebar, "the dock + has no tooltip"
 assert 'LiveShortcutToolTip.help(row.button, "New tab", commandID: "newTab:")' in sidebar \
     and "LiveShortcutToolTip.set(row.button" not in sidebar and "newTabRow.button.parcTooltip" not in sidebar, \
-    "the New Tab row has no tooltip in Parc; its help keeps the binding"
+    "the New Tab row has no tooltip; its help keeps the binding"
 assert 'LiveShortcutToolTip.help(addressButton, "Search or enter a URL", commandID: "focusAddress:")' in sidebar \
-    and "LiveShortcutToolTip.set(addressButton" not in sidebar, "the URL pill has no tooltip in Parc"
+    and "LiveShortcutToolTip.set(addressButton" not in sidebar, "the URL pill has no tooltip"
 assert 'button.parcTooltip = TooltipConfiguration(space.name.isEmpty ? "Untitled Space" : space.name,' in sidebar \
     and "style: .dockItem" not in sidebar \
     and "shortcut: .command(NumberedTarget.spaceBindingID(offset + 1)), anchor: .top)" in sidebar \
     and "let profileName = state.profiles.count > 1 ? state.profiles.first(where: { $0.id == space.profileID })?.name : nil" not in sidebar, \
     "a dock Space item's tooltip sits above it with the Space's numbered binding and no profile name"
 assert sidebar.count('"Copy Quote as URL", commandID: "copyCurrentURLAsQuote:")') == 2 \
-    and "Copy a link to the selected text" not in sidebar, "quote mode's buttons show the CopyQuoteTooltip label"
+    and "Copy a link to the selected text" not in sidebar, "quote mode's buttons show the Copy Quote as URL label"
 center = source("SiteControlCenter.swift")
 assert not re.search(r"^\s*\.help\(", center, re.M) and center.count(".parcTooltip(TooltipConfiguration(") == 8 \
     and ".parcTooltip(TooltipConfiguration(button.title, shortcut: button.commandID.map { .command($0) }))" in center, \
-    "Site Control Center's SwiftUI controls (the four, plus the restyle's headers, rows and footer) show the tooltip through the bridge"
+    "Site Control Center's SwiftUI controls (the four buttons, plus the headers, rows and footer) show the Parc tooltip through the bridge"
 for name in ("SidebarView.swift", "SidebarRowActionButton.swift", "SplitPaneControl.swift", "SplitDragView.swift",
              "SidebarSplitTitleView.swift", "SidebarSpaceHeader.swift", "SidebarMoveAttentionView.swift", "SpaceManagerView.swift",
              "SpaceCreationView.swift", "SpaceThemeEditorView.swift", "MiniPlayerView.swift", "PageFindView.swift",
              "PortraitCapture.swift", "ExtensionControls.swift", "ExtensionSidePanelView.swift", "DocumentsLibraryView.swift",
              "SidebarLibraryEntry.swift", "LibraryRailTile.swift"):
-    assert not re.search(r"\btoolTip\s*=", source(name)), f"{name} sets an AppKit help tag beside the tooltip"
+    assert not re.search(r"\btoolTip\s*=", source(name)), f"{name} sets an AppKit help tag beside the Parc tooltip"
 entry = source("SidebarLibraryEntry.swift")
 assert "NSPanel" not in entry and ".toolTipsFont" not in entry and "TooltipConfiguration(text, shortcut: shortcut, anchorRect: rect)" in entry, \
     "the Library entry draws its own tooltip panel again"
@@ -63,7 +63,7 @@ assert "parcTooltip = showsLabel ? nil : TooltipConfiguration(title)" in source(
     "a compact rail tile no longer carries its title"
 assert 'LiveShortcutToolTip.set(back, "Exit Library")' in source("LibraryView.swift")
 assert "Remove" not in source("DownloadLibraryView.swift") or "Filter" not in source("DownloadLibraryView.swift"), "Downloads regained a Remove Filter chip"
-assert 'anchor: .bottom' in source("PopupChromeView.swift"), "Little Arc's tooltips sit below their buttons"
+assert 'anchor: .bottom' in source("PopupChromeView.swift"), "popup window tooltips sit below their buttons"
 
 sources = {name: (app / name).read_text() for name in ("Tooltip.swift", "TooltipView.swift", "TooltipController.swift")}
 for use in ("override var canBecomeKey: Bool { false }", "override var canBecomeMain: Bool { false }",

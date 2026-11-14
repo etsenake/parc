@@ -12,7 +12,7 @@ final class BrowserImportPasswordsView: NSView {
     private let detail = NSTextField(wrappingLabelWithString: "To manually import passwords from Safari, you’ll have to export them.")
     private let help = ActionButton("How do I find this?")
     private let status = NSTextField(wrappingLabelWithString: "")
-    private let continueButton = PArcDialogButton(title: "Skip Passwords", primary: true, hint: false)
+    private let continueButton = ParcDialogButton(title: "Skip Passwords", primary: true, hint: false)
     private let stop = ActionButton("Stop Import")
     private let remove = ActionButton("Move exported file to Trash…")
     private let dropTarget = OnboardingPasswordDropTarget(frame: .zero)
@@ -53,7 +53,7 @@ final class BrowserImportPasswordsView: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
     @objc private func continueClicked() { onContinue?() }
-    private var ink: NSColor { usesSetupCard ? OnboardingSetupPalette.title : PArcDialogStyle.popoverTitle }
+    private var ink: NSColor { usesSetupCard ? OnboardingSetupPalette.title : ParcDialogStyle.popoverTitle }
     private func configurePresentation() {
         title.isHidden = usesSetupCard; detail.isHidden = usesSetupCard; continueButton.isHidden = usesSetupCard
         continueButton.keyEquivalent = usesSetupCard ? "" : "\r"

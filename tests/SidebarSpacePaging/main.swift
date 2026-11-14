@@ -254,7 +254,7 @@ func run() {
     expect(!spring.isSettled(at: 0.2) && spring.isSettled(at: 2) && abs(spring.value(at: 2) - 0.2) < 0.001, "and settles there")
     let omega = 2 * CGFloat.pi / 0.4
     expect(abs(M.springValue(from: 1, velocity: 0, time: 0.3) - (1 + omega * 0.3) * exp(-omega * 0.3)) < 1e-12,
-           "the paging spring stays the critically damped one")
+           "the paging spring stays critically damped")
 
     var ends: [UUID?] = []
     pager.trackingEnded = { ends.append(selected) }

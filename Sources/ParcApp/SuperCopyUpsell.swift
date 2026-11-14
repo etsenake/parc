@@ -16,9 +16,9 @@ struct SuperCopyUpsell {
     func recordShown(now: Date = Date()) { defaults.set(now, forKey: Self.lastSeenKey) }
 }
 
-extension PArcToastContent {
-    static func superCopyUpsell(shortcut: String, message: String) -> PArcToastContent {
-        PArcToastContent(body: .shortcut(leading: SuperCopyUpsell.prefix, shortcut: shortcut, trailing: nil),
+extension ParcToastContent {
+    static func superCopyUpsell(shortcut: String, message: String) -> ParcToastContent {
+        ParcToastContent(body: .shortcut(leading: SuperCopyUpsell.prefix, shortcut: shortcut, trailing: nil),
                         accessibilityText: message)
     }
 }

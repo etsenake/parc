@@ -2,7 +2,7 @@ import AppKit
 
 @MainActor
 final class FavoriteRenameDialog: NSObject, NSTextFieldDelegate {
-    let dialog: PArcDialog
+    let dialog: ParcDialog
     let field: NSTextField
     var isCurrent: () -> Bool = { false }
     var onCommit: ((String) throws -> Void)?
@@ -13,7 +13,7 @@ final class FavoriteRenameDialog: NSObject, NSTextFieldDelegate {
     var sheetWindow: NSWindow { dialog.panel }
 
     init(title: String) {
-        dialog = PArcDialog(.init(title: [("Rename Tab…", false)], confirm: "Rename", cancel: "Cancel",
+        dialog = ParcDialog(.init(title: [("Rename Tab…", false)], confirm: "Rename", cancel: "Cancel",
                                  field: .init(value: title, placeholder: "Keep it short and sweet!", required: false)))
         field = dialog.textField!
         super.init()
@@ -64,7 +64,7 @@ final class FavoriteRenameDialog: NSObject, NSTextFieldDelegate {
             committing = false
             updateValidity()
             if sheetWindow.isVisible, sheetWindow.attachedSheet == nil {
-                PArcDialog.inform(in: sheetWindow, .init(error: error))
+                ParcDialog.inform(in: sheetWindow, .init(error: error))
             }
         }
     }

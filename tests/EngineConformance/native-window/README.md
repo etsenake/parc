@@ -23,6 +23,7 @@ From the repository root:
 bash tests/EngineConformance/native-window/run.sh
 ```
 
+This compiles the actual Objective-C portion of `browser_window.mm` as Objective-C using Apple clang, ARC and warnings as errors. It creates ordinary, unshown test windows and tests native close delivery, attachment identity, weak observer/window ownership, notification filtering, idempotent and terminal teardown, reentrant reassociation/invalidation, independent associations on one window and rejection of off-main-thread calls. It does not launch Parc or another browser, load a profile, show a fullscreen window or synthesize keyboard focus. Key/fullscreen notification routing is tested by posting named notifications.
 
 The AppKit suite covers 60 assertions across five groups. The modal companion removes each observer before its terminal callback, preserving active outer iterators and allowing a callback to release its observer.
 

@@ -182,7 +182,7 @@ extension ReservedPane: SplitLayoutFollowing {
         check((boundsMotion?.toValue as? NSValue)?.rectValue == firstPane.layer?.bounds,
               "animation targets already-authoritative geometry, not a deferred frame write")
         check(lease.isCurrent && !split.isAccessibilityElement() && (split.accessibilitySplitters() ?? []).isEmpty,
-              "controlled geometry stays admitted; the plain container exposes no divider not")
+              "controlled geometry stays admitted; the plain container exposes no divider")
         let held = lease.proposal(at: NSPoint(x: insert.2.midX, y: insert.2.midY), canPropose: { _, _ in true })!
         check(held.0 == insert.0 && held.2 == insert.2 && lease.reusedRegion, "pointer in its own reserved region keeps the original proposal and region")
         let moved = lease.proposal(at: NSPoint(x: secondPane.frame.maxX - 1, y: 200), canPropose: { _, _ in true })!
@@ -241,7 +241,7 @@ extension ReservedPane: SplitLayoutFollowing {
         let headerLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
         let header = headerLease.proposal(at: NSPoint(x: 1, y: 20), canPropose: { _, _ in true })
         check(header?.0 == .insert(0) && header?.2.minY == 0 && header?.2.height == 700,
-              "a pointer over a pane's header targets that pane's edge top bar is inside its pane")
+              "a pointer over a pane's header targets that pane's edge, since the top bar is inside its pane")
         headerLease.end()
         check(split.arrangedSubviews.map(\.frame) == originalFrames, "header proposal lease restores the original frames")
         let staleLease = split.prepareDropReservation(in: reserveHost, contents: [firstPane.body, secondPane.body])!
@@ -457,13 +457,13 @@ extension ReservedPane: SplitLayoutFollowing {
         let cardSize = SplitDropPlaceholderCard.size(forIncomingPane: NSSize(width: headSplit.bounds.width / 2, height: headSplit.bounds.height))!
         let cardImage = linkDragItem.imageComponentsProvider?().first?.contents as? NSImage
         check(cardImage !== linkImage && cardImage?.size == cardSize && linkDragItem.draggingFrame == NSRect(origin: NSPoint(x: 40, y: 50), size: cardSize),
-              "the admitted link becomes the placeholder card at its own bottom-left")
+              "the admitted link becomes a placeholder card at its own bottom-left")
         let headerPoint = NSPoint(x: headA.frame.midX, y: 20)
         headDrag.draggingLocation = headHost.convert(headerPoint, to: nil)
         headRouter.exit(headDrag)
         check(headHost.draggingEntered(headDrag) == .copy, "over a pane header the host continues the link drag")
         check(headHost.performDragOperation(headDrag) && headTargets.count == 1 && headTargets[0].0 == .insert(0) && headTargets[0].1 == .vertical,
-              "a single pane's header is in its 50-point top zone, as over the full-height pane")
+              "a single pane's header is in its 50-point top zone, as over a full-height pane")
         check(linkDragItem.draggingFrame.size == cardSize, "a performed drop keeps the card")
         headRouter.end()
         linkDragItem.setDraggingFrame(NSRect(x: 40, y: 50, width: 120, height: 20), contents: linkImage)

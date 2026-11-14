@@ -31,6 +31,7 @@ per-page and per-window contention, actual window close, page movement and
 detachment, balanced reattachment, cancellation reentry, terminal invalidation,
 reentrant replacement, destruction during
 completion, independent windows, external sheet abort and retained callback
+release. It does not launch Parc or Chromium, access profiles or use fake
 AppKit or Chromium headers. Output goes under ignored `build/tests/`.
 
 All APIs require the main thread. A presenter holds one request, not its page or

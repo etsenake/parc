@@ -580,14 +580,13 @@ struct Result {
 
 let snapTolerance: CGFloat = 20
 
-let arcGroup = "Parc [D]: sidebar frame (origin), contents constraint, contents frame, one layoutSubtreeIfNeeded"
-    + " (floating → locked also fades the floating background's alpha); Parc's budget: no per-frame main-thread work in its views"
+let budget = "Parc's budget: no per-frame main-thread work in its views"
 
 @MainActor func run() -> Int32 {
     _ = NSApplication.shared
     instrument()
     let harness = Harness(), c = harness.checks
-    print("SidebarPacing: display \(Int(harness.refresh)) Hz; \(arcGroup)")
+    print("SidebarPacing: display \(Int(harness.refresh)) Hz; \(budget)")
     c.expect(FloatingSidebarSurface.shadowImage != nil, "the floating shadow measures with its real artwork (check.py copies it)")
     let empty = Window(), page = Window(showsPage: true)
     let idle = (0..<3).map { _ in harness.baseline() }.max() ?? 0
@@ -615,7 +614,7 @@ let arcGroup = "Parc [D]: sidebar frame (origin), contents constraint, contents 
               + String(format: " · view work %.3f ms/frame; run loop busy %.3f ms/frame (idle %.3f)",
                        result.perFrame(result.flight.viewSeconds) * 1000, result.perFrame(result.flight.seconds) * 1000, idle * 1000))
         if result.flight.exempt.total > 0 {
-            print("  outside budget: the floating materials, resized \(result.flight.exempt.byLabel) on frames AppKit drove; [I] the floating background is too")
+            print("  outside budget: the floating materials, resized \(result.flight.exempt.byLabel) on frames AppKit drove")
         }
         print("  completion:  \(result.completion)")
         c.expect(result.flight.isIdle, "\(name): per-frame layout, frame, layer, text, draw or redraw-request work in flight: \(result.flight)")

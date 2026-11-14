@@ -9,7 +9,7 @@ final class Recorder: NSObject, NSMenuDelegate {
 }
 
 @main
-struct PArcContextMenuChecks {
+struct ParcContextMenuChecks {
     @MainActor static func main() {
         _ = NSApplication.shared
         NSApplication.shared.setActivationPolicy(.prohibited)
@@ -46,7 +46,7 @@ struct PArcContextMenuChecks {
             return menu
         }
 
-        let m = PArcContextMenuMetrics.self
+        let m = ParcContextMenuMetrics.self
         let tile = NSRect(x: 100, y: 500, width: 48, height: 32)
         let size = NSSize(width: 200, height: 300)
         let right = m.frame(card: size, reach: size.width, beside: tile, right: true, regions: [NSRect(x: 0, y: 0, width: 1000, height: 800)])
@@ -76,9 +76,9 @@ struct PArcContextMenuChecks {
         deep.addItem(item("A Rather Long Third-Level Choice"))
         let toDeep = NSMenuItem(title: "Deeper", action: nil, keyEquivalent: ""); toDeep.submenu = deep; middle.addItem(toDeep)
         let toMiddle = NSMenuItem(title: "More", action: nil, keyEquivalent: ""); toMiddle.submenu = middle; top.addItem(toMiddle)
-        let deepView = PArcContextMenuView(menu: top, colors: PArcMenuColors(theme: SpaceTheme()))
-        expect(deepView.reach == deepView.card.width + 2 * m.gap + PArcContextMenuView.cardWidth([toDeep])
-               + PArcContextMenuView.cardWidth(deep.items), "the reach counts every level of submenus")
+        let deepView = ParcContextMenuView(menu: top, colors: ParcMenuColors(theme: SpaceTheme()))
+        expect(deepView.reach == deepView.card.width + 2 * m.gap + ParcContextMenuView.cardWidth([toDeep])
+               + ParcContextMenuView.cardWidth(deep.items), "the reach counts every level of submenus")
 
         let menu = extensionMenu()
         menu.items[0].isHidden = true
@@ -86,7 +86,7 @@ struct PArcContextMenuChecks {
         expect(shown.first?.title == "This Can Read and Change Site Data" && !shown.contains { $0.isHidden },
                "a hidden first item takes its separator with it")
         menu.items[0].isHidden = false
-        let view = PArcContextMenuView(menu: menu, colors: PArcMenuColors(theme: SpaceTheme()))
+        let view = ParcContextMenuView(menu: menu, colors: ParcMenuColors(theme: SpaceTheme()))
         let rows = view.items.indices.filter { !view.items[$0].isSeparatorItem }
         expect(rows.allSatisfy { view.rows[$0].height == m.rowHeight } &&
                view.items.indices.filter { view.items[$0].isSeparatorItem }.allSatisfy { view.rows[$0].height == SidebarPlusMenuView.divider },
@@ -102,7 +102,7 @@ struct PArcContextMenuChecks {
         parent.isReleasedWhenClosed = false
         parent.orderFront(nil)
         let anchor = parent.convertToScreen(NSRect(x: 40, y: 600, width: 48, height: 32))
-        let colors = PArcMenuColors(theme: SpaceTheme())
+        let colors = ParcMenuColors(theme: SpaceTheme())
         func key(_ code: UInt16) -> NSEvent {
             NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: parent.windowNumber,
                              context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)!
@@ -112,9 +112,9 @@ struct PArcContextMenuChecks {
                                windowNumber: parent.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 0)!
         }
         func settle() { RunLoop.current.run(until: Date().addingTimeInterval(0.3)) }
-        func run(_ menu: NSMenu, _ events: [NSEvent], during: ((PArcContextMenu) -> Void)? = nil) -> [String] {
+        func run(_ menu: NSMenu, _ events: [NSEvent], during: ((ParcContextMenu) -> Void)? = nil) -> [String] {
             recorder.log.removeAll()
-            let presenter = PArcContextMenu(anchor: anchor, regions: [], parent: parent, colors: colors)
+            let presenter = ParcContextMenu(anchor: anchor, regions: [], parent: parent, colors: colors)
             events.forEach { NSApp.postEvent($0, atStart: false) }
             during?(presenter)
             expect(presenter.present(menu), "the menu shows")
@@ -124,7 +124,7 @@ struct PArcContextMenuChecks {
                    "no tooltip outlives the menu")
             return recorder.log
         }
-        func screenRow(_ view: PArcContextMenuView, _ row: Int, beside: NSRect) -> NSPoint {
+        func screenRow(_ view: ParcContextMenuView, _ row: Int, beside: NSRect) -> NSPoint {
             let frame = m.frame(card: view.card.size, reach: view.reach, beside: beside, right: true, regions: []).frame
             return NSPoint(x: frame.minX - m.shadowMargin + view.rows[row].midX, y: frame.minY - m.shadowMargin + view.rows[row].midY)
         }
@@ -145,7 +145,7 @@ struct PArcContextMenuChecks {
         }) == ["open root", "close root"], "the engine's cancel ends the menu from between events")
 
         keyed = extensionMenu()
-        let sample = PArcContextMenuView(menu: keyed, colors: colors)
+        let sample = ParcContextMenuView(menu: keyed, colors: colors)
         let options = screenRow(sample, 4, beside: anchor)
         expect(run(keyed, [mouse(.mouseMoved, options), mouse(.leftMouseUp, options)]) == ["open root", "close root", "perform Options"],
                "releasing over a row chooses it")
@@ -155,7 +155,7 @@ struct PArcContextMenuChecks {
         let siteRow = screenRow(sample, 2, beside: anchor)
         let rootFrame = m.frame(card: sample.card.size, reach: sample.reach, beside: anchor, right: true, regions: []).frame
         let siteRect = sample.submenuAnchor(2).offsetBy(dx: rootFrame.minX - m.shadowMargin, dy: rootFrame.minY - m.shadowMargin)
-        let access = PArcContextMenuView(menu: keyed.items[2].submenu!, colors: colors)
+        let access = ParcContextMenuView(menu: keyed.items[2].submenu!, colors: colors)
         let allSites = screenRow(access, 2, beside: siteRect)
         expect(run(extensionMenu(), [mouse(.rightMouseDragged, siteRow), mouse(.rightMouseDragged, allSites),
                                       mouse(.rightMouseUp, allSites)]) == ["open root", "close root", "perform Always on All Sites"],
@@ -192,7 +192,7 @@ struct PArcContextMenuChecks {
         expect(run(extensionMenu(), [], during: { _ in
             let timer = Timer(timeInterval: 0.05, repeats: false) { _ in
                 MainActor.assumeIsolated {
-                    let card = parent.childWindows?.first?.contentView as? PArcContextMenuView
+                    let card = parent.childWindows?.first?.contentView as? ParcContextMenuView
                     let element = card?.accessibilityChildren()?.lazy.compactMap { $0 as? NSAccessibilityElement }
                         .first { $0.accessibilityLabel() == "Options" }
                     _ = element?.accessibilityPerformPress()
@@ -202,7 +202,7 @@ struct PArcContextMenuChecks {
         }) == ["open root", "close root", "perform Options"], "a VoiceOver press on a row chooses it at once")
 
         parent.orderOut(nil)
-        expect(!PArcContextMenu(anchor: anchor, regions: [], parent: parent, colors: colors).present(extensionMenu()),
+        expect(!ParcContextMenu(anchor: anchor, regions: [], parent: parent, colors: colors).present(extensionMenu()),
                "a hidden parent shows nothing")
 
         if CommandLine.arguments.count > 1 {
@@ -278,7 +278,7 @@ struct PArcContextMenuChecks {
         let card = SiteControlCenterCard(content: host, colors: colors.menu)
         let placed = SiteControlCenterPlacement.windowFrame(anchor: scene.button, card: size, below: true,
                                                            parent: scene.window, screen: scene.screen)
-        let chrome = PArcMenuChrome(content: card, size: size, colors: colors.menu, tailX: placed.tailX, tailOnTop: placed.below)
+        let chrome = ParcMenuChrome(content: card, size: size, colors: colors.menu, tailX: placed.tailX, tailOnTop: placed.below)
         let window = NSWindow(contentRect: NSRect(x: -12_000, y: -12_000, width: chrome.frame.width, height: chrome.frame.height),
                               styleMask: .borderless, backing: .buffered, defer: false)
         window.appearance = appearance
@@ -291,14 +291,14 @@ struct PArcContextMenuChecks {
         let cardRect = card.convert(card.bounds, to: chrome).offsetBy(dx: origin.x, dy: origin.y)
         let regions = SiteControlCenterPlacement.regions(window: scene.window, screen: scene.screen)
         let anchorRow = NSRect(x: cardRect.minX, y: tileRect.minY, width: cardRect.width, height: tileRect.height)
-        let margin = PArcContextMenuMetrics.shadowMargin
-        let root = PArcContextMenuView(menu: menu(), colors: colors.menu)
-        let rootPlaced = PArcContextMenuMetrics.frame(card: root.card.size, reach: root.reach, beside: anchorRow, right: true, regions: regions)
+        let margin = ParcContextMenuMetrics.shadowMargin
+        let root = ParcContextMenuView(menu: menu(), colors: colors.menu)
+        let rootPlaced = ParcContextMenuMetrics.frame(card: root.card.size, reach: root.reach, beside: anchorRow, right: true, regions: regions)
         root.frame.origin = NSPoint(x: rootPlaced.frame.minX - margin, y: rootPlaced.frame.minY - margin)
         root.highlighted = reasonTip ? nil : 2
         let siteRow = root.submenuAnchor(2).offsetBy(dx: root.frame.minX, dy: root.frame.minY)
-        let sub = PArcContextMenuView(menu: root.items[2].submenu!, colors: colors.menu)
-        let subPlaced = PArcContextMenuMetrics.frame(card: sub.card.size, reach: sub.reach, beside: siteRow, right: rootPlaced.right, regions: regions)
+        let sub = ParcContextMenuView(menu: root.items[2].submenu!, colors: colors.menu)
+        let subPlaced = ParcContextMenuMetrics.frame(card: sub.card.size, reach: sub.reach, beside: siteRow, right: rootPlaced.right, regions: regions)
         sub.frame.origin = NSPoint(x: subPlaced.frame.minX - margin, y: subPlaced.frame.minY - margin)
         sub.highlighted = 2
 

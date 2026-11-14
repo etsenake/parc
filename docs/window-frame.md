@@ -2,6 +2,7 @@
 
 The window frame is the band of Space color between a browser window's edge and
 its page card. People set its thickness from 3 to 13 points by turning a window
+crank on the window itself.
 
 ## Geometry
 
@@ -31,7 +32,6 @@ its page card. People set its thickness from 3 to 13 points by turning a window
 - Popup windows keep their 8-point left and 10-point chrome inset, six-point
   corner and matching shadow at every thickness. Full screen has no frame.
 - The toolbar, when shown, sits inside the page card and is unaffected.
-
 
 ## The setting
 

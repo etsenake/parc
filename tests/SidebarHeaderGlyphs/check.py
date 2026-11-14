@@ -61,11 +61,11 @@ assert "PaneTopBarAdmission.sidebarAddressBarShown(focusedHasTopBar: selectedBro
     in controller, "the URL bar's visibility no longer follows the Toolbar preference"
 assert sidebar.count("Self.address(of: state.tabs.first { $0.id == (focusedTabID ?? state.selectedTabIDs.first) })") == 2 \
     and "SidebarAddressSearchIcon.host(of: url) ?? SidebarAddressSearchIcon.placeholder" in sidebar, \
-    "both address paths no longer show the www-less host or its empty URL bar text"
+    "both address paths no longer show the www-less host or the empty URL bar text"
 pill = (app / "SidebarAddressPill.swift").read_text()
 assert 'static let placeholder = "Search or Enter URL…"' in pill and '"magnifyingglass"' in pill \
     and "override func hitTest(_ point: NSPoint) -> NSView? { nil }" in pill[pill.index("class SidebarAddressSearchIcon"):], \
-    "the empty URL bar's glyph no longer matches the or lets clicks through to the URL bar"
+    "the empty URL bar's glyph no longer matches or lets clicks through to the URL bar"
 assert "if sidebar.isPresented && sidebarShowsAddressBar {\n            return .sidebar(" in controller, \
     "extension popups no longer anchor at the visible sidebar URL bar"
 assert controller.count("if anchor === sidebar.pageControlsAnchor { sidebar.setAddressPopover(controller, open: true) }") == 1, \
@@ -112,7 +112,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-header-glyphs-") as direct
                     str(app / "ExtensionControls.swift"), str(scratch / "SiteControlCenterArtwork.swift"),
                     str(app / "NavigationControlPress.swift"), str(app / "ReloadControl.swift"),
                     str(app / "TranslucentButtonFace.swift"), str(app / "SidebarAddressPill.swift"),
-                    str(app / "SidebarChromeLayout.swift"), str(app / "PArcMenuColors.swift"),
+                    str(app / "SidebarChromeLayout.swift"), str(app / "ParcMenuColors.swift"),
                     *map(str, tooltip_sources(root, scratch, ["SpaceTheme.swift", "ThemeRenderer.swift", "ReloadControl.swift"])),
                     str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)
     subprocess.run([str(executable)], check=True, timeout=120)

@@ -51,6 +51,7 @@ way and nothing covers it. macOS delivers scroll gestures to the window under
 the pointer whatever has focus, and Parc's recognizer never asks about focus.
 Swiping works while another app is frontmost, over a Parc window behind another
 one, with keyboard focus in the address field, the sidebar or another control,
+and over any visible split pane.
 
 - `nativeBrowser(_:allowsHistorySwipeFor:)` in
   [BrowserWindowController.swift](../Sources/ParcApp/BrowserWindowController.swift)

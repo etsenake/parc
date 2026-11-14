@@ -166,7 +166,7 @@ struct EaselImageExportTests {
         }
         let png = try encoded("Export board.png"), jpeg = try encoded("Export board.jpg"), bare = try encoded("Export board"), upper = try encoded("BOARD.PNG")
         expect(png.prefix == [0x89, 0x50, 0x4E, 0x47] && upper.prefix == [0x89, 0x50, 0x4E, 0x47], "A .png name receives PNG bytes")
-        expect(jpeg.prefix.starts(with: [0xFF, 0xD8, 0xFF]) && bare.prefix.starts(with: [0xFF, 0xD8, 0xFF]), "Other names receive the JPEG")
+        expect(jpeg.prefix.starts(with: [0xFF, 0xD8, 0xFF]) && bare.prefix.starts(with: [0xFF, 0xD8, 0xFF]), "Other names receive a JPEG")
         expect(png.width == light.width && jpeg.width == light.width, "Encoding keeps every rendered pixel")
         expect(png.dpi == 144 && jpeg.dpi == 144, "A 2x export records its point size")
         let replaced = try encoded("Export board.png", dark, scale: 1)
@@ -174,13 +174,13 @@ struct EaselImageExportTests {
         let rep = NSBitmapImageRep(cgImage: light)
         rep.size = NSSize(width: width, height: width + 60)
         _ = try encoded("a.jpg")
-        let arcJPEG = try Data(contentsOf: directory.appendingPathComponent("a.jpg")), names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-        expect(arcJPEG == rep.representation(using: .jpeg, properties: [:]), "JPEG bytes equal the NSBitmapImageRep default encoding")
+        let defaultJPEG = try Data(contentsOf: directory.appendingPathComponent("a.jpg")), names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        expect(defaultJPEG == rep.representation(using: .jpeg, properties: [:]), "JPEG bytes equal NSBitmapImageRep's default encoding")
         expect(names.allSatisfy { !$0.hasPrefix("(A Document Being Saved") }, "No staging directory is left beside the export")
 
-        let arcImage = NSImage(size: NSSize(width: 100, height: 50), flipped: false) { _ in true }
-        expect(EaselImageExport.pixelDensity() == CGFloat(arcImage.cgImage(forProposedRect: nil, context: nil, hints: nil)!.width) / 100,
-               "Export density is the one AppKit gives the no-context conversion")
+        let plainImage = NSImage(size: NSSize(width: 100, height: 50), flipped: false) { _ in true }
+        expect(EaselImageExport.pixelDensity() == CGFloat(plainImage.cgImage(forProposedRect: nil, context: nil, hints: nil)!.width) / 100,
+               "Export density is the one AppKit gives a no-context conversion")
 
         let failure = EaselImageExport.failureDialog()
         let texts = failure.panel.contentView!.subviews.compactMap { ($0 as? NSTextField)?.stringValue }

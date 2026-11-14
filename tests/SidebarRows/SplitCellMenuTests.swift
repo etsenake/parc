@@ -51,12 +51,12 @@ import AppKit
                                    "—", "Reset Name and Icon", "Change Icon…", "Rename…",
                                    "—", "Duplicate", "Move to", "New Folder with 1 Items",
                                    "—", "Archive Item", "Archive Other Tabs", "Archive Tabs Below", "Archive Tabs Above", "Close"],
-                  "The split menu follows the append order")
+                  "The split menu follows its append order")
         try check(menu.item(withTitle: "Tab Options")?.isEnabled == false && menu.item(withTitle: "First")?.submenu === child,
                   "Tab Options is a header over one submenu per child")
-        try check(!menu.items.contains { $0.title.hasPrefix("Share") }, "Share Split View… (the sharing service) is absent")
+        try check(!menu.items.contains { $0.title.hasPrefix("Share") }, "Share Split View… is absent")
         try check((menu.items + child.items).allSatisfy { $0.image == nil },
-                  "Like the split cell menu (every PArcContextMenuItem icon nil), no item has an image")
+                  "No split cell menu item has an image")
         for item in menu.items where item.action != nil && item.isEnabled && item.submenu == nil {
             _ = (item.target as? NSObject)?.perform(item.action, with: item)
         }
@@ -99,7 +99,7 @@ import AppKit
         let grip = handle.layer?.sublayers?.first { $0.name == "Split margin grip" }
         try check(grip?.frame == NSRect(x: 4, y: 128, width: 2, height: 24) && grip?.isHidden == false,
                   "The two-by-24 grip is centred on the handle")
-        try check(handle.hitTest(NSPoint(x: 395, y: 150)) == nil, "The handle takes no mouse events (the pan and double click do nothing here)")
+        try check(handle.hitTest(NSPoint(x: 395, y: 150)) == nil, "The handle takes no mouse events (pan and double click do nothing here)")
         try check(handle.trackingAreas.count == 1 && handle.trackingAreas[0].rect == handle.region
                   && handle.trackingAreas[0].options == [.mouseEnteredAndExited, .activeInKeyWindow, .enabledDuringMouseDrag],
                   "Hover tracks the band with the handle's 0x421 options")

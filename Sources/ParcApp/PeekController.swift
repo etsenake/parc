@@ -519,4 +519,4 @@ final class PeekHostView: NSView {
     }
 }
 
-extension PeekHostView: PArcToastAnchoring {}
+extension PeekHostView: ParcToastAnchoring {}

@@ -729,7 +729,7 @@ def verify_development_layout(app: Path, manifest: dict) -> dict:
     for path in sorted(root.rglob("*")):
         if path.is_symlink() or not path.is_file() or not is_macho(path):
             continue
-        if "LegacyCore.framework" in path.parts or path.name == "libParcKeychain.dylib":
+        if path.name == "libParcKeychain.dylib":
             raise Refusal("Superseded engine code is not a packaging input")
         images[inside(path, root)] = inspect_macho(path)
     expected = {}

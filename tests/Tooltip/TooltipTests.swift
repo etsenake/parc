@@ -391,7 +391,7 @@ import SwiftUI
         check(row.hide(.init(duration: 0.3), now: t0) == .init(duration: 0.3) && row.isShowing && row.schedulesWhenPointerStops,
               "the pill fades and the pointer's next stop may schedule again")
         check(row.schedule("row", anchor: .cursor, behavior: .onMouseIdle(delay: 1.5), now: t0.addingTimeInterval(0.1)) == nil,
-              "during the fade the row is declined schedule declines it")
+              "during the fade the row is declined")
         check(row.fadeDidFinish(), "the fade closes the pill's window")
         check(row.schedule("row", anchor: .cursor, behavior: .onMouseIdle(delay: 1.5), now: t0.addingTimeInterval(0.35)) == .presentAfter(0.01)
               && row.target == "row", "after it, the next stop schedules the row with the cursor warm delay")
@@ -684,7 +684,7 @@ import SwiftUI
         button.toolTip = "Go back ⌘["
         LiveShortcutToolTip.set(button, "Go back", commandID: "goBack:")
         check(button.parcTooltip == TooltipConfiguration("Go back", shortcut: .command("goBack:")) && button.toolTip == nil,
-              "a control gets the pill with its command's live keycaps, and no help tag")
+              "a control gets the tooltip pill with its command's live keycaps, and no help tag")
         check(button.accessibilityHelp() == "Go back" && button.cell?.accessibilityHelp() == "Go back",
               "without the app's binder the help is the title, on the button and the cell AppKit exposes")
         LiveShortcutToolTip.set(button, "Remove Personal Filter", anchor: .top, behavior: .onMouseIdle(delay: 0.6))
@@ -703,7 +703,7 @@ import SwiftUI
         let pill = NSButton(title: "", target: nil, action: nil)
         LiveShortcutToolTip.help(pill, "New tab", commandID: "newTab:")
         check(pill.parcTooltip == nil && pill.toolTip == nil && bound.last! == ("New tab", "newTab:", false),
-              "help alone, for a control Parc shows no tooltip on")
+              "help alone, for a control without a tooltip")
         LiveShortcutToolTip.binder = nil
     }
 }

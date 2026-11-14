@@ -1,5 +1,6 @@
 # Native responder coordination
 
+Run `tests/NativeFocusManager/run.sh` on macOS with Xcode command-line tools. It compiles the Parc-owned focus manager and page host against AppKit, then runs isolated assertions with warnings treated as errors. The tests create real, hidden NSWindows; they do not launch a browser or Chromium, show windows, read profiles, or use another browser's binary.
 
 The component is a per-window responder registry, not a pane-cycle implementation. The shell supplies stable keys, retains each registration token, and provides any eligible pane ordering separately. `focusedKey` reflects the exact registered normalized actual responder: a page-host ancestor can preserve renderer focus without falsely reporting that the host itself received focus. Native text-field editors normalize to their containing NSTextField, preserving the selection during repeated requests.
 

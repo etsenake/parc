@@ -7,8 +7,8 @@ final class ShortcutPriorityHintView: NSView {
     var onDismiss: (() -> Void)?
     private(set) weak var originalWindow: NSWindow?
     private weak var toastWindow: ShortcutHintWindow?
-    let state: PArcToastState
-    private var host: NSHostingView<PArcToastCard>!
+    let state: ParcToastState
+    private var host: NSHostingView<ParcToastCard>!
     private var observers: [NSObjectProtocol] = []
     private var workspaceObserver: NSObjectProtocol?
     private var scrollMonitor: Any?
@@ -35,12 +35,12 @@ final class ShortcutPriorityHintView: NSView {
     }
 
     init(title: String, shortcut: String, canEdit: Bool, theme: SpaceTheme, basicBackground: NSColor?) {
-        state = PArcToastState(content: .pressAgain(shortcut: shortcut, title: title),
-            accessory: canEdit ? PArcToastAccessory(text: "Edit the shortcut", image: "arrow.up.right",
+        state = ParcToastState(content: .pressAgain(shortcut: shortcut, title: title),
+            accessory: canEdit ? ParcToastAccessory(text: "Edit the shortcut", image: "arrow.up.right",
                                                    accessibilityLabel: "Edit the shortcut for " + title) : nil,
             theme: theme, basicBackground: basicBackground)
-        super.init(frame: NSRect(x: 0, y: 0, width: PArcToastPlacement.windowSide, height: PArcToastPlacement.windowSide))
-        host = NSHostingView(rootView: PArcToastCard(state: state, actions: PArcToastActions(
+        super.init(frame: NSRect(x: 0, y: 0, width: ParcToastPlacement.windowSide, height: ParcToastPlacement.windowSide))
+        host = NSHostingView(rootView: ParcToastCard(state: state, actions: ParcToastActions(
             tap: nil, accessory: { [weak self] in self?.edit() },
             dismiss: { [weak self] in self?.requestDismissal() },
             share: { _ in },
@@ -59,7 +59,7 @@ final class ShortcutPriorityHintView: NSView {
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
     }
 
-    static func frame(for parent: NSRect) -> NSRect { PArcToastPlacement.windowFrame(for: parent) }
+    static func frame(for parent: NSRect) -> NSRect { ParcToastPlacement.windowFrame(for: parent) }
     @discardableResult
     func present(in parent: NSWindow) -> Bool {
         guard !isRetiring, originalWindow == nil, parent.isKeyWindow, parent.isVisible,
@@ -87,7 +87,7 @@ final class ShortcutPriorityHintView: NSView {
             self.state.showAccessory = true
         }
         revealWork = reveal
-        DispatchQueue.main.asyncAfter(deadline: .now() + PArcToastTiming.accessoryDelay, execute: reveal)
+        DispatchQueue.main.asyncAfter(deadline: .now() + ParcToastTiming.accessoryDelay, execute: reveal)
         return true
     }
 
@@ -137,7 +137,7 @@ final class ShortcutPriorityHintView: NSView {
             self.closePresentation()
         }
         closeWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + PArcToastTiming.retirement, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + ParcToastTiming.retirement, execute: work)
     }
     private func closePresentation() {
         generation = UUID(); isRetiring = true
@@ -175,7 +175,7 @@ final class ShortcutPriorityHintView: NSView {
             }
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self, weak parent] event in
             MainActor.assumeIsolated {
-                guard let self, PArcToastScroll.dismisses(window: event.window, deltaX: event.scrollingDeltaX,
+                guard let self, ParcToastScroll.dismisses(window: event.window, deltaX: event.scrollingDeltaX,
                     deltaY: event.scrollingDeltaY, owners: [parent, self.toastWindow]) else { return }
                 self.requestDismissal()
             }

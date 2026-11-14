@@ -25,7 +25,7 @@ struct PagePlaceholderCheck {
         expect(PagePlaceholderView.downsampled(small, toFill: CGSize(width: 1200, height: 800)) === small,
                "a snapshot smaller than its pane is never enlarged")
         checkDecode(expect)
-        expect(view.acceptsFirstResponder, "the frozen pane takes first responder overlay does")
+        expect(view.acceptsFirstResponder, "the frozen pane takes first responder")
         var clicked = false
         view.onClick = { clicked = true }
         expect(view.accessibilityPerformPress() && clicked, "pressing it brings the page back")
@@ -41,11 +41,11 @@ struct PagePlaceholderCheck {
             PagePlaceholderDim.apply(true, to: moving, animated: true)
             let spring = moving.animation(forKey: "placeholderDim") as? CASpringAnimation
             expect(spring.map { abs($0.stiffness - pow(2 * .pi / 0.225, 2)) < 0.001
-                && abs($0.damping - 4 * .pi * 0.895 / 0.225) < 0.001 } == true, "dimming uses the 0.225 s / 0.895 spring")
+                && abs($0.damping - 4 * .pi * 0.895 / 0.225) < 0.001 } == true, "dimming uses a 0.225 s / 0.895 spring")
             PagePlaceholderDim.apply(false, to: moving, animated: true)
             let back = moving.animation(forKey: "placeholderDim") as? CASpringAnimation
             expect(back.map { abs($0.stiffness - pow(2 * .pi / 0.245, 2)) < 0.001
-                && abs($0.damping - 4 * .pi * 0.865 / 0.245) < 0.001 } == true, "undimming uses the 0.245 s / 0.865 spring")
+                && abs($0.damping - 4 * .pi * 0.865 / 0.245) < 0.001 } == true, "undimming uses a 0.245 s / 0.865 spring")
         }
 
         let arguments = CommandLine.arguments
@@ -67,9 +67,9 @@ struct PagePlaceholderCheck {
             fitted[channel] = a
             theme[channel] = (my - a * mx) / (1 - a)
         }
-        print(String(format: "Parc frozen pane fit: opacity %.3f %.3f %.3f over theme (%.0f, %.0f, %.0f)",
+        print(String(format: "Reference frozen pane fit: opacity %.3f %.3f %.3f over theme (%.0f, %.0f, %.0f)",
                      fitted[0], fitted[1], fitted[2], theme[0], theme[1], theme[2]))
-        expect(fitted.allSatisfy { abs($0 - Double(PagePlaceholderDim.opacity)) < 0.05 }, "the frozen pane is drawn near 0.6 opacity")
+        expect(fitted.allSatisfy { abs($0 - Double(PagePlaceholderDim.opacity)) < 0.05 }, "the reference frozen pane is drawn near 0.6 opacity")
 
         let frame = CGRect(origin: .zero, size: paneSize)
         let surface = CALayer(); surface.frame = frame
@@ -86,13 +86,13 @@ struct PagePlaceholderCheck {
             error += abs(rendered.value(x, y, channel) - frozen.value(x, y, channel)); samples += 1
         } } }
         let meanError = error / samples
-        print(String(format: "Parc frozen pane against Parc's: mean absolute error %.2f of 255", meanError))
+        print(String(format: "Parc frozen pane against the reference: mean absolute error %.2f of 255", meanError))
         if arguments.count > 2 {
             let side = sideBySide([frozen.image, rendered.image], size: paneSize)
             let data = NSBitmapImageRep(cgImage: side).representation(using: .png, properties: [:])!
             try data.write(to: URL(fileURLWithPath: arguments[2]))
         }
-        expect(meanError < 8, "Parc's frozen pane matches the within JPEG noise")
+        expect(meanError < 8, "Parc's frozen pane matches the reference within JPEG noise")
         print("PagePlaceholderCheck: \(count) assertions passed")
     }
 

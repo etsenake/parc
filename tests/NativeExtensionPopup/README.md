@@ -1,5 +1,6 @@
 # Native extension actions and popup lifecycle
 
+The production extension route uses source-owned Chromium integration. It contains a real per-Browser action container, upstream action models and native delegates, a supplied `ExtensionViewHost` session with a genuine `extensions::ExtensionView`, and an AppKit child-window presenter. It does not load another browser's binaries, recreate popups by URL, or create a hidden BrowserView.
 
 ## Presentation and lifecycle
 
@@ -36,6 +37,7 @@ The `NativeExtensionActionHost` interface is a mandatory connection to real nati
 
 ## Checks
 
+Run the AppKit suite (no installed browser or Chromium required):
 
 ```sh
 bash tests/NativeExtensionPopup/run.sh

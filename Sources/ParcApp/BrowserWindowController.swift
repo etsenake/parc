@@ -121,7 +121,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             view = SpaceCreationView(spaceID: draft.source.spaceID, spaces: owner.creationSharingSpaces)
         }
     }
-    private weak var sidebarMoveToast: PArcToastPresentation?
+    private weak var sidebarMoveToast: ParcToastPresentation?
     private var sidebarPreviews: SidebarPreviewController?
     private var contentFocusRequest: ContentFocusRequest?
     private let pageHost = ExternalSplitDropHost()
@@ -452,7 +452,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private var shortcutHint: ShortcutPriorityHintView?
     private var shortcutHintCommand: PCNativeShortcutCommand?
     private weak var shortcutHintPage: PCNativePage?
-    private let toasts = PArcToastPresenter(share: { PaneShareMenu.popUp(for: $0) })
+    private let toasts = ParcToastPresenter(share: { PaneShareMenu.popUp(for: $0) })
     private var copyLinkOperation = UUID()
     private lazy var sharedQuotes: SharedQuoteController = SharedQuoteController(isCurrent: { [weak self] page in
         guard let self else { return false }
@@ -1031,7 +1031,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func showSearchError(_ message: String) {
         guard let window, window.attachedSheet == nil else { return }
-        PArcDialog.inform(in: window, .init(title: "Couldn’t open search", message: message))
+        ParcDialog.inform(in: window, .init(title: "Couldn’t open search", message: message))
     }
 
     private func creationProvenance(activeTabID: UUID?) -> TabCreationProvenance {
@@ -1473,7 +1473,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     do { try await reservation.perform { try await library.delete(capture) } }
                     catch {
                         guard let self, let parent, self.window === parent, parent.attachedSheet == nil else { return }
-                        PArcDialog.inform(in: parent, .init(error: error))
+                        ParcDialog.inform(in: parent, .init(error: error))
                     }
                 }
             }
@@ -2017,7 +2017,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     func showTabTransferFailure(_ detail: String) {
-        if let window { PArcDialog.inform(in: window, .init(title: "This tab couldn’t move", message: detail)) }
+        if let window { ParcDialog.inform(in: window, .init(title: "This tab couldn’t move", message: detail)) }
     }
 
     @discardableResult
@@ -2229,7 +2229,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                                          pages: [PCNativePage], retry: @escaping () -> Void) {
         transferRecoveries[id] = retry
         destination.transferRecoveries[id] = retry
-        var content = PArcDialog.Content(title: "The page move needs attention",
+        var content = ParcDialog.Content(title: "The page move needs attention",
             message: "The live page is retained, but its current owner or attachment couldn’t be confirmed. Retry to reconnect it, or close the actual page with its normal leave-page confirmation.",
             confirm: "Retry")
         content.secondary = "Close Page"; content.auxiliary = "Keep Open"
@@ -2239,7 +2239,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             page.requestClose { _ in MainActor.assumeIsolated { close(remaining.dropFirst()) } }
         }
         if let window = destination.window {
-            _ = PArcDialog(content).begin(for: window) { response in
+            _ = ParcDialog(content).begin(for: window) { response in
                 if response == .confirm { retry() }
                 else if response == .secondary { close(pages[...]) }
             }
@@ -2545,11 +2545,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         return accepted
     }
     private func showError(_ error: Error) {
-        if window != nil { PArcDialog.present(error) }
+        if window != nil { ParcDialog.present(error) }
     }
     private func showNoteError(_ error: Error) {
         guard let window, window.attachedSheet == nil else { return }
-        PArcDialog.inform(in: window, .init(error: error), queued: true)
+        ParcDialog.inform(in: window, .init(error: error), queued: true)
     }
     private func showNote(_ tab: BrowserTab, id: UUID, in pane: BrowserPane) {
         guard !isPrivateBrowsing, !store.isProfileRemovalPending(tab.profileID) else { pane.showError("Notes are unavailable in this Space."); return }
@@ -2591,7 +2591,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func showEaselError(_ error: Error) {
         guard let window, window.attachedSheet == nil else { return }
-        PArcDialog.inform(in: window, .init(title: "Couldn’t open Easels", message: error.localizedDescription), queued: true)
+        ParcDialog.inform(in: window, .init(title: "Couldn’t open Easels", message: error.localizedDescription), queued: true)
     }
     func createEaselFromPlusMenu() {
         guard canCreateNote else { return }
@@ -2734,7 +2734,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     _ = prepareSidebarDuplicate([.tab(id)])?()
                 case .reveal:
                     if revealPreviewTab(id) { render(store.state) }
-                case .excludedLittleArc, .navigateSource, .openNewTab: break
+                case .excludedMiniWindow, .navigateSource, .openNewTab: break
                 }
             case .split: selectTab(id, extendingSplit: true)
             case .archive:
@@ -2788,7 +2788,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             requestedURLs.removeValue(forKey: sourceTab.id)
             performWindowCommand(selectNativePage: false) { store.updateTab(sourceTab.id, url: url.absoluteString) }
             selectTab(sourceTab.id)
-        case .selectOriginal, .duplicate, .reveal, .excludedLittleArc: break
+        case .selectOriginal, .duplicate, .reveal, .excludedMiniWindow: break
         }
     }
 
@@ -5656,7 +5656,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                       self.inputRevisions[peek.identity] == revision, peek.browser.url == originalURL else { return }
                 self.inputRevisions.removeValue(forKey: peek.identity)
                 if let navigation { peek.browser.loadSearchNavigation(navigation) }
-                else if let error, let window = self.window { PArcDialog.inform(in: window, .init(error: error)) }
+                else if let error, let window = self.window { ParcDialog.inform(in: window, .init(error: error)) }
             }
         }
     }
@@ -7108,7 +7108,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     private func archiveTabs(_ ids: Set<UUID>, reason: ArchiveReason, in space: BrowserSpace? = nil) {
         guard !isClosing, !wholeWindowClose, !ids.isEmpty else { return }
         if let message = retirementUnavailableReason?(ids) {
-            if let window { PArcDialog.inform(in: window, .init(title: "These tabs can’t be closed together yet", message: message)) }
+            if let window { ParcDialog.inform(in: window, .init(title: "These tabs can’t be closed together yet", message: message)) }
             return
         }
         let originSpace = activeSpaceID, originProfile = activeProfileID
@@ -7711,7 +7711,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     func nativeBrowser(_ browser: PCNativeBrowserWindow, didFailLinkRoute error: Error) {
         guard browser === nativeBinding, !isClosing, let window, window.attachedSheet == nil else { return }
-        PArcDialog.inform(in: window, .init(title: "Couldn’t open link in its Space", message: error.localizedDescription), queued: true)
+        ParcDialog.inform(in: window, .init(title: "Couldn’t open link in its Space", message: error.localizedDescription), queued: true)
     }
 
     func canAcceptNativeLinkRoute(profileID: UUID) -> Bool {
@@ -8633,7 +8633,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     func nativeBrowser(_ browser: PCNativeBrowserWindow, capabilityUnavailable capability: String) {
         guard browser === nativeBinding else { return }
         NSLog("Parc capability unavailable: %@", capability)
-        if let window { PArcDialog.inform(in: window, .init(title: "This feature isn’t available yet", message: capability)) }
+        if let window { ParcDialog.inform(in: window, .init(title: "This feature isn’t available yet", message: capability)) }
     }
     func closeCurrentTab() {
         if let peek = activePeek { peek.requestDismiss(.closeShortcut); return }
@@ -9232,7 +9232,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         var committed = false
         var resolving = false
         var recoveryInFlight = false
-        var recoveryDialog: PArcDialog?
+        var recoveryDialog: ParcDialog?
         var failure: String?
         var ids: Set<UUID> { Set(plan.tabIDs) }
 
@@ -9481,11 +9481,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
         func presentRecovery() {
             guard recoveryDialog == nil, destinationWindow.attachedSheet == nil else { return }
-            var content = PArcDialog.Content(title: "Some tabs couldn’t be moved",
+            var content = ParcDialog.Content(title: "Some tabs couldn’t be moved",
                 message: "Retry to reconnect the affected tabs, or close them with their normal leave-page confirmation.",
                 confirm: "Retry")
             content.secondary = "Close Affected Tabs"; content.auxiliary = "Keep Open"
-            let dialog = PArcDialog(content)
+            let dialog = ParcDialog(content)
             recoveryDialog = dialog
             _ = dialog.begin(for: destinationWindow) { [self] response in
                 self.recoveryDialog = nil
@@ -9889,7 +9889,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             }
             if requiresConfirmation {
                 let singleFolder = target.roots.count == 1 && !target.folderIDs.isEmpty
-                PArcDialog.confirm(in: window,
+                ParcDialog.confirm(in: window,
                     title: singleFolder ? "Delete your “\(target.name)” folder?"
                         : target.folderIDs.isEmpty ? "Archive the selected tabs?" : "Delete the selected items?",
                     message: singleFolder ? "Deleting this folder will archive the tabs inside it."
@@ -11446,7 +11446,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         performWindowCommand(selectNativePage: false) {
             do { restored = try store.restoreClosedItem(record, regroupable: { self.canUseOrMoveHere($0) }) }
             catch {
-                if let window { PArcDialog.inform(in: window, .init(title: "This tab couldn’t be reopened", message: error.localizedDescription)) }
+                if let window { ParcDialog.inform(in: window, .init(title: "This tab couldn’t be reopened", message: error.localizedDescription)) }
             }
         }
         guard restored else { store.closedPageHistory.unrestore(record.tabIDs); return }
@@ -11602,8 +11602,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
     }
 
     @discardableResult
-    private func showToast(_ content: PArcToastContent, at location: ToastLocation = .content(nil),
-                           onTap: (() -> Void)? = nil, onRetire: (() -> Void)? = nil) -> PArcToastPresentation? {
+    private func showToast(_ content: ParcToastContent, at location: ToastLocation = .content(nil),
+                           onTap: (() -> Void)? = nil, onRetire: (() -> Void)? = nil) -> ParcToastPresentation? {
         guard let window, !isClosing, !wholeWindowClose else { return nil }
         let anchor: NSView?
         switch location {
@@ -13062,12 +13062,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             _ = binding.showExtensionActionContextMenu(action, for: page)
             return
         }
-        let show = { (menu: PArcContextMenu) in _ = binding.showExtensionActionContextMenu(action, for: page, presenter: menu) }
+        let show = { (menu: ParcContextMenu) in _ = binding.showExtensionActionContextMenu(action, for: page, presenter: menu) }
         if siteControlCenter?.presentExtensionMenu(beside: control, for: action.identifier, show) == true { return }
         let rect = window.convertToScreen(control.convert(control.bounds, to: nil))
         let screen = SiteControlCenterPlacement.screen(at: CGPoint(x: rect.midX, y: rect.midY)) ?? window.screen?.visibleFrame
-        let menu = PArcContextMenu(anchor: rect, regions: SiteControlCenterPlacement.regions(window: window.frame, screen: screen),
-                                  parent: window, colors: PArcMenuColors(theme: rootView.theme))
+        let menu = ParcContextMenu(anchor: rect, regions: SiteControlCenterPlacement.regions(window: window.frame, screen: screen),
+                                  parent: window, colors: ParcMenuColors(theme: rootView.theme))
         let inSidebar = control.isDescendant(of: sidebar)
         if inSidebar { sidebar.setAddressPopover(menu, open: true) }
         if let center = siteControlCenter { center.keepingOpen { show(menu) } } else { show(menu) }
@@ -13990,7 +13990,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                 _ = try owner.store.setFoldersExpanded(expanded, in: spaceID,
                     profileID: profileID, expectedFolders: folders)
             } catch {
-                PArcDialog.inform(in: window, .init(title: "Parc couldn’t save the folder layout", message: error.localizedDescription), queued: true)
+                ParcDialog.inform(in: window, .init(title: "Parc couldn’t save the folder layout", message: error.localizedDescription), queued: true)
             }
         }
     }
@@ -14199,7 +14199,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         let message = "This will archive all the tabs and folders inside it."
             + (unused == nil ? "" : " " + SpaceSharingWarning.deletionNote)
         let dialogWindow = sheetWindow ?? window
-        return PArcDialog.confirm(in: dialogWindow, title: "Delete your “\(target.space.name)” Space?", message: message,
+        return ParcDialog.confirm(in: dialogWindow, title: "Delete your “\(target.space.name)” Space?", message: message,
                                  confirm: "Delete", destructive: true) { [weak self, weak window] approved in
             DispatchQueue.main.async {
                 guard approved, let self, let window, self.window === window else { return }
@@ -14354,7 +14354,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
         guard spaceCommandsAvailable else { return }
         let managerSidebar = libraryView?.kind == .spaces ? libraryView?.spaceManager.sidebar(for: id) : nil
         if id != activeSpaceID && managerSidebar == nil {
-            let dialog = PArcDialog(.init(title: [("Rename Space", false)], confirm: "Save", cancel: "Cancel",
+            let dialog = ParcDialog(.init(title: [("Rename Space", false)], confirm: "Save", cancel: "Cancel",
                 field: .init(value: expected.title ?? "", placeholder: expected.name, required: false)))
             guard let field = dialog.textField else { return }
             _ = dialog.begin(for: window, queued: true) { [weak self, weak window] response in
@@ -14416,7 +14416,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
 
     private func prompt(_ title: String, detail: String, value: String, placeholder: String, accept: @escaping (String) -> Void) {
         guard let window else { return }
-        let dialog = PArcDialog(.init(title: [(title, false)], message: [(detail, false)], confirm: "Save", cancel: "Cancel",
+        let dialog = ParcDialog(.init(title: [(title, false)], message: [(detail, false)], confirm: "Save", cancel: "Cancel",
                                      field: .init(value: value, placeholder: placeholder)))
         guard let field = dialog.textField else { return }
         _ = dialog.begin(for: window, queued: true) { response in
@@ -14687,7 +14687,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     if succeeded {
                         _ = self.performNativeDownloadAction(.remove, item: item)
                     } else if let owner = self.window, !self.isClosing, owner.attachedSheet == nil {
-                        PArcDialog.inform(in: owner, .init(title: "Couldn’t move the download to Trash",
+                        ParcDialog.inform(in: owner, .init(title: "Couldn’t move the download to Trash",
                             message: message ?? "The file was not moved. Its download record has been kept."))
                     }
                 }
@@ -14750,7 +14750,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
             easelImageDestination = controller
             controller.present(on: window)
         } catch {
-            PArcDialog.inform(in: window, .init(error: error), queued: true)
+            ParcDialog.inform(in: window, .init(error: error), queued: true)
         }
     }
 

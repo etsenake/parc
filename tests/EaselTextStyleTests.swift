@@ -156,7 +156,7 @@ struct EaselTextStyleTests {
         }
         let fill = pixels(pill).colorAt(x: 240, y: 22)!.usingColorSpace(.sRGB)!
         expect(fill.redComponent < 0.15 && fill.greenComponent < 0.18 && fill.blueComponent < 0.22 && fill.alphaComponent > 0.9,
-               "Easel tool pill is the dark HUD")
+               "Easel tool pill is a dark HUD")
         let selected = pixels(selectedTool).colorAt(x: 16, y: 16)!.usingColorSpace(.sRGB)!
         expect(selected.blueComponent > selected.redComponent && selected.greenComponent > 0.3 && selected.blueComponent > 0.4,
                "The selected tool cell fills steel blue")

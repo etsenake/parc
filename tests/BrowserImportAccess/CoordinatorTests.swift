@@ -230,7 +230,7 @@ import AppKit
         direct.continueSafariWithoutRestarting()
         PCNativeBrowserApplication.profiles.removeFirst().complete(restricted)
         expect(PCNativeBrowserApplication.imports == beforeDirect + 1 && PCNativeBrowserApplication.browserRequests.last?.profile === partial,
-               "As Arc's, Next on Safari access imports what is readable without a second Next on the cards")
+               "Next on Safari access imports what is readable without a second Next on the cards")
         direct.cancel()
         inline.selectSourceInline(impostor)
         let abandoned = PCNativeBrowserApplication.profiles.removeFirst()

@@ -22,7 +22,7 @@ struct UpdateReadyCardTests {
                 card.setAutomaticUpdates(automatic)
                 let heights = [CGFloat(148), 212, 484].map { card.preferredHeight(for: $0) }
                 try expect(heights.allSatisfy { $0 == heights[0] } && (20...32).contains(heights[0]),
-                           "It starts collapsed title at every sidebar width: \(heights)")
+                           "It starts as a collapsed title at every sidebar width: \(heights)")
             }
         }
         try expect(actions == 0, "Laying out never reaches the original owner")

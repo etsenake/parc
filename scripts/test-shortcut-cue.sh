@@ -13,7 +13,7 @@ xcrun swiftc -whole-module-optimization -parse-as-library -warnings-as-errors -t
   "$repo_root/Sources/ParcApp/ShortcutSmileyView.swift" \
   "$repo_root/Sources/ParcCore/SpaceTheme.swift" \
   "$repo_root/Sources/ParcCore/NumberedTarget.swift" \
-  "$repo_root/Sources/ParcApp/PArcToast.swift" \
+  "$repo_root/Sources/ParcApp/ParcToast.swift" \
   "$repo_root/Sources/ParcApp/ShortcutPriorityHintView.swift" \
   "$repo_root/tests/KeyboardNavigation/NativeShortcutStub.swift" \
   "$repo_root/tests/KeyboardNavigation/ShortcutCueTests.swift" \

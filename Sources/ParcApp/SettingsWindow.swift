@@ -80,7 +80,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private var selectedSpaceID: UUID?
     private let spaceNameValue = NSTextField(labelWithString: "")
     private let renameSpace = SettingsPillButton(title: "Rename…")
-    private var spaceNameDialog: (dialog: PArcDialog, spaceID: UUID)?
+    private var spaceNameDialog: (dialog: ParcDialog, spaceID: UUID)?
     private var previewSettingsSheet: SidebarPreviewSettingsSheet?
     private let deleteSpace = SettingsPillButton(title: "Delete Space…")
     private let shareData = PointingHandPopUpButton(frame: .zero, pullsDown: true)
@@ -1097,7 +1097,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             }
             Task { @MainActor [self] in
                 do { try await Task.detached(priority: .utility) { try snapshot.write(to: url) }.value }
-                catch { PArcDialog.present(error) }
+                catch { ParcDialog.present(error) }
                 if self.dataExportID == id { self.dataExportID = nil; self.exportData.isEnabled = true }
             }
         }
@@ -1112,7 +1112,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private func showSpaceDeletion() {
         guard let window, window.attachedSheet == nil, let space = editedSpace, let onDeleteSpace else { return }
         guard onDeleteSpace(space.id) else {
-            PArcDialog.inform(in: window, .init(title: "Parc couldn’t delete this Space.",
+            ParcDialog.inform(in: window, .init(title: "Parc couldn’t delete this Space.",
                 message: "Its window is unavailable or busy. Finish its current operation and try again."))
             return
         }
@@ -1122,7 +1122,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         guard !isClosing, let window, window.isVisible, window.isKeyWindow, window.attachedSheet == nil else { return }
         for profile in store.state.profiles {
             guard let status = ProfileRemovalController.shared.claimFailure(for: profile.id) else { continue }
-            PArcDialog.inform(in: window, .init(title: "Parc couldn’t finish removing old data.", message: status.message))
+            ParcDialog.inform(in: window, .init(title: "Parc couldn’t finish removing old data.", message: status.message))
             return
         }
     }
@@ -1174,7 +1174,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private func showSpaceNameEditor() {
         guard let window, window.attachedSheet == nil, spaceNameDialog == nil, let space = editedSpace,
               !store.isProfileRemovalPending(space.profileID) else { return }
-        let dialog = PArcDialog(.init(title: [("Rename Space", false)], confirm: "Save", cancel: "Cancel",
+        let dialog = ParcDialog(.init(title: [("Rename Space", false)], confirm: "Save", cancel: "Cancel",
             field: .init(value: space.title ?? "", placeholder: space.name, required: false)))
         guard let field = dialog.textField else { return }
         field.setAccessibilityLabel("Space name")
@@ -1201,7 +1201,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
 
     private func reportProfileSettingsError(_ error: Error) {
         guard let window, window.attachedSheet == nil else { return }
-        PArcDialog.inform(in: window, .init(error: error, title: "Parc couldn’t save these settings."))
+        ParcDialog.inform(in: window, .init(error: error, title: "Parc couldn’t save these settings."))
     }
 
     var replaySpaceID: UUID? { settingsContextSpace()?.id }
@@ -1240,7 +1240,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
 
     private func reportSettingsCommandRefusal(_ title: String) {
         guard let window, window.attachedSheet == nil else { return }
-        PArcDialog.inform(in: window, .init(title: "Parc couldn’t open " + title.trimmingCharacters(in: CharacterSet(charactersIn: "…")) + ".",
+        ParcDialog.inform(in: window, .init(title: "Parc couldn’t open " + title.trimmingCharacters(in: CharacterSet(charactersIn: "…")) + ".",
             message: "The original window is unavailable or busy. Finish its current operation and try again."))
     }
 
@@ -1267,7 +1267,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
               let onMoreSettings else { return }
         if onMoreSettings(space.id, space.profileID) { _ = attemptClose(); return }
         guard let window else { return }
-        PArcDialog.inform(in: window, .init(title: "Parc couldn’t open more settings.",
+        ParcDialog.inform(in: window, .init(title: "Parc couldn’t open more settings.",
             message: "The original window is busy. Finish its current operation and try again."), queued: true)
     }
 

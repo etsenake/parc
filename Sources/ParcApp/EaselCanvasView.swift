@@ -127,7 +127,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
     private let textStyleBar = EaselTextStyleBar(frame: .zero)
     private var textPaletteSelection: Set<UUID> = []
     private let liveCaptureButton = PointingHandButton(title: "Make Live", target: nil, action: nil)
-    private var liveCaptureEducation: PArcDialog?
+    private var liveCaptureEducation: ParcDialog?
     private static let liveCaptureEducationKey = "easel.liveCaptureEducationSeen"
     private var editingID: UUID?
     private var editingTextSnapshot: (text: String, rich: EaselRichText?)?
@@ -1571,7 +1571,7 @@ final class EaselCanvasView: LocalContentDropView, NSTextViewDelegate, NSMenuIte
         if enabled && !UserDefaults.standard.bool(forKey: Self.liveCaptureEducationKey) {
             guard liveCaptureEducation == nil, let owner = window, owner.isKeyWindow, owner.attachedSheet == nil else { return }
             let original = session.document, originalSelection = selection
-            let alert = PArcDialog(.init(title: "Make it Live",
+            let alert = ParcDialog(.init(title: "Make it Live",
                 message: "See an up-to-date, interactive view of the region you captured. This does not work on all sites. You can always return to the original screenshot with Snapshot.",
                 confirm: "Make it Live", cancel: "Cancel"))
             liveCaptureEducation = alert

@@ -63,8 +63,8 @@ final class BrowserImportViewController: NSViewController {
     private let root = LayoutView()
     private let heading = NSTextField(wrappingLabelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
-    private let next = PArcDialogButton(title: "Next", primary: true, hint: false)
-    private let cancelButton = PArcDialogButton(title: "Maybe Later", primary: false, hint: false)
+    private let next = ParcDialogButton(title: "Next", primary: true, hint: false)
+    private let cancelButton = ParcDialogButton(title: "Maybe Later", primary: false, hint: false)
     private let windowBackdrop = BrowserImportBackdrop()
     private let closeControl = ActionButton("", symbol: "xmark")
     private let logo = NSImageView()
@@ -119,11 +119,11 @@ final class BrowserImportViewController: NSViewController {
             object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshSafariAccessIfVisible() }
         }
-        heading.font = .systemFont(ofSize: 26, weight: .bold); heading.textColor = PArcDialogStyle.popoverTitle
-        detail.font = .systemFont(ofSize: 13); detail.textColor = PArcDialogStyle.popoverTitle
+        heading.font = .systemFont(ofSize: 26, weight: .bold); heading.textColor = ParcDialogStyle.popoverTitle
+        detail.font = .systemFont(ofSize: 13); detail.textColor = ParcDialogStyle.popoverTitle
         logo.image = ParcBrandMark.image(.borderless) ?? NSApp.applicationIconImage
         logo.imageScaling = .scaleProportionallyUpOrDown; logo.setAccessibilityElement(false)
-        closeControl.contentTintColor = PArcDialogStyle.popoverTitle
+        closeControl.contentTintColor = ParcDialogStyle.popoverTitle
         closeControl.setAccessibilityLabel("Close Import")
         closeControl.actionBlock = { [weak self] in self?.requestClose() }
         if !onboarding { root.addSubview(windowBackdrop) }
@@ -290,7 +290,7 @@ final class BrowserImportViewController: NSViewController {
             sourcePicker?.frame = NSRect(x: 314, y: 100, width: width - 336, height: height - 180)
             bookmarksPicker?.frame = NSRect(x: 34, y: 104, width: width - 68, height: height - 184)
         }
-        func place(_ button: PArcDialogButton, right: CGFloat) -> CGFloat {
+        func place(_ button: ParcDialogButton, right: CGFloat) -> CGFloat {
             button.frame = NSRect(x: right - button.bodyWidth - 0.5, y: height - 64.5, width: button.bodyWidth + 1, height: 38.5)
             return button.isHidden ? right : right - button.bodyWidth - 8
         }
@@ -504,7 +504,7 @@ final class BrowserImportViewController: NSViewController {
         guard !closed, coordinator.canRemovePasswordFile, let window,
               window.attachedSheet == nil else { return }
         let token = coordinator.passwordRequestID
-        PArcDialog.confirm(in: window, title: "Want us to delete \(coordinator.passwordFileName ?? "Passwords.csv")?",
+        ParcDialog.confirm(in: window, title: "Want us to delete \(coordinator.passwordFileName ?? "Passwords.csv")?",
                           message: "For your security, it’s best to remove this file. Now that you’re done importing, you won’t need it again.",
                           confirm: "Yes, delete", cancel: "I'll do this later") { [weak self] approved in
             guard let self, !self.closed, self.coordinator.passwordRequestID == token,
@@ -523,7 +523,7 @@ final class BrowserImportViewController: NSViewController {
     private func updateBackdrop() {
         guard !embedded else { return }
         let value = backdrop
-        windowBackdrop.setPage(fill: PArcDialogStyle.popoverBackground, ink: PArcDialogStyle.popoverTitle,
+        windowBackdrop.setPage(fill: ParcDialogStyle.popoverBackground, ink: ParcDialogStyle.popoverTitle,
                                text: showsSourceCards || coordinator.stage == .loading ? 28 / 580...318 / 580 : 0...1)
         windowBackdrop.show(value.pages, selected: value.selected)
     }

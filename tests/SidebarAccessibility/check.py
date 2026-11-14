@@ -73,7 +73,7 @@ with tempfile.TemporaryDirectory(prefix="parc-sidebar-ax-") as directory:
                 root / "Sources/ParcApp/NavigationControlPress.swift",
                 root / "Sources/ParcCore/SpaceTheme.swift",
                 root / "Sources/ParcApp/ThemeRenderer.swift",
-                root / "Sources/ParcApp/PArcMenuColors.swift",
+                root / "Sources/ParcApp/ParcMenuColors.swift",
                 root / "Sources/ParcApp/ReloadControl.swift",
                 root / "Sources/ParcApp/TranslucentButtonFace.swift"]
     sys.path.insert(0, str(root / "tests/Tooltip"))

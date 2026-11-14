@@ -502,7 +502,7 @@ import AppKit
         try check(commands.activeSplitLayout!.tabIDs == commandIDs && commands.state.selectedTabIDs == commandIDs,
                   "Expand keeps every original pane displayed and in order")
         try check(try BrowserStore(directory: commandRoot).activeSplitLayout == commands.activeSplitLayout,
-                  "Expanded weights persist slot 9 reports them as a resize end")
+                  "Expanded weights persist, reported as a resize end")
         try check(commands.activeSplitLayout!.expandedFactors(focusing: commandIDs[1]) == commands.activeSplitLayout!.widthFactors,
                   "Expanding the already expanded pane computes identical weights, which the command skips")
         commanded.configure(orientation: .horizontal, factors: commands.activeSplitLayout!.widthFactors)
@@ -510,7 +510,7 @@ import AppKit
                   "Expand gives the focused pane the rest and others the expanded minimum, immediately")
         commanded.setFrameSize(NSSize(width: 1610, height: 800))
         try check(commandPanes.map { $0.frame.width } == [220, 1150, 220],
-                  "the zero weight stays at the expanded minimum at any window width")
+                  "A zero weight stays at the expanded minimum at any window width")
         commanded.configure(orientation: .vertical, factors: commands.activeSplitLayout!.widthFactors)
         try check(commandPanes.map { $0.frame.height } == [220, 340, 220] && !commandMotion(),
                   "Converting orientation lays out immediately with the same weights")

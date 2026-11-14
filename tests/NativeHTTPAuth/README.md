@@ -1,5 +1,6 @@
 # Native HTTP and proxy authentication
 
+Parc supplies a native LoginHandler view for its exact registered WebContents. Parc subclasses Chromium's coordinator and tab helper; extension interception, enterprise proxy decisions, credential matching, HttpAuthManager and actual network continuation remain in use. This is source-owned AppKit presentation.
 
 The handler binds the original document, Browser, Profile, native page and NSWindow. Native detach closes the attachment gate before cancellation. Credentials are revalidated after modal dismissal and security-reservation release, then passed to the real LoginHandler on a non-nestable task. The credential-validation hook in Chromium’s handler also covers matching-credential propagation from another handler. The genuine WebContentsModalDialogManager owns native-modal bookkeeping and renderer blocking. Its adapter closes synchronously when the manager requests closure; host-change notifications defer list mutation.
 

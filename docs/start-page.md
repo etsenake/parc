@@ -111,6 +111,7 @@ one recognizer (`StartPageMarkGesture`):
   the page with 90 pieces of theme-colored confetti; released earlier it just
   springs back. A wobble up to eight points is fine; more cancels the charge
   quietly, and that press does nothing else.
+- **Swoop:** three quick clicks, each within the system double-click
   interval and eight points of the first. The mark flies an arc across the
   page with a full turn, trailing a striped ribbon in the Space's colors, and
   lands with a squash and a wobble.
@@ -126,6 +127,7 @@ Rules they share:
 - Ribbon and confetti are fixed sets of layers in a pass-through effects view
   covering the page; the ribbon is cut where it passes under the mark so it
   trails from behind.
+- Reduce Motion keeps the mark still: Taffy and Swoop play a short shimmer
   through the theme's colors; Charge-up keeps its glow while held, since it is
   light rather than motion, and shimmers on a charged release.
 - A haptic tick marks Taffy's release, each landing and the Reduce Motion

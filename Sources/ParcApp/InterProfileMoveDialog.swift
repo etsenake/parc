@@ -2,10 +2,10 @@ import AppKit
 
 @MainActor
 final class InterProfileMoveDialog: NSObject {
-    let dialog: PArcDialog
+    let dialog: ParcDialog
 
     init(prompt: InterProfileMovePrompt) {
-        dialog = PArcDialog(.init(title: prompt.titleSegments, message: prompt.messageSegments,
+        dialog = ParcDialog(.init(title: prompt.titleSegments, message: prompt.messageSegments,
                                  confirm: InterProfileMovePrompt.confirmTitle, cancel: InterProfileMovePrompt.cancelTitle,
                                  suppression: InterProfileMovePrompt.suppressionTitle,
                                  width: CGFloat(InterProfileMovePrompt.dialogWidth)))

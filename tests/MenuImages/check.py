@@ -22,7 +22,7 @@ for source, use in (("PaneTitleControl.swift", "entry.showImage(service.image)")
                     ("DownloadLocationPicker.swift", "folder.showImage(NSImage(size: size, flipped: false)"),
                     ("SplitPaneMenu.swift", "item.showImage(SplitPaneMenuArtwork.image(artwork))"),
                     ("EaselImageExport.swift", "item.showImage(SidebarIconCatalog.featherImage(0xE9CA, size: 14))")):
-    expect(use in (app / source).read_text(), f"{source} no longer shows the menu image: {use}")
+    expect(use in (app / source).read_text(), f"{source} no longer shows its menu image: {use}")
 
 declarations = (
     re.compile(r"\b(?:let|var)\s+(\w+)\s*(?::\s*NSMenuItem\s*)?=\s*(?:NSMenuItem\(|MenuAction\.item)"),

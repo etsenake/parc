@@ -23,7 +23,7 @@ enum SidebarPreviewActivation: Equatable {
     case selectOriginal(split: Bool)
     case duplicate
     case reveal
-    case excludedLittleArc
+    case excludedMiniWindow
 
     static func recentPage(_ modifiers: SidebarPreviewModifiers) -> Self {
         let split = modifiers.contains(.option)
@@ -32,7 +32,7 @@ enum SidebarPreviewActivation: Equatable {
 
     static func folderItem(_ modifiers: SidebarPreviewModifiers) -> Self {
         let flags = modifiers.normalized
-        if flags == [.option, .command] { return .excludedLittleArc }
+        if flags == [.option, .command] { return .excludedMiniWindow }
         if flags == [.command, .shift] { return .duplicate }
         if flags.contains(.command) { return .reveal }
         return .selectOriginal(split: flags == .option)
@@ -41,7 +41,7 @@ enum SidebarPreviewActivation: Equatable {
     var dismissesPreview: Bool {
         switch self {
         case .navigateSource, .openNewTab, .selectOriginal: return true
-        case .duplicate, .reveal, .excludedLittleArc: return false
+        case .duplicate, .reveal, .excludedMiniWindow: return false
         }
     }
 }

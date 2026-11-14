@@ -20,7 +20,7 @@ for use in ("sidebarContainer.isHidden = !sidebarAvailable\n",
             "let transition = SidebarTransition(from: previous, to: presentation)",
             "sidebarRevealsAnchored = transition.revealsAnchored",
             "if self.sidebarPresentation != .hidden { self.sidebar.retestPointer() }"):
-    assert use in controller, f"BrowserWindowController no longer presents the hidden sidebar: {use}"
+    assert use in controller, f"BrowserWindowController no longer presents the hidden sidebar as expected: {use}"
 presented = "let presented = sidebarAvailable && sidebarPresentation.presents(inMotion: sidebarMotionVisible)"
 assert controller.index("sidebar.frame = sidebarContainer.bounds") < controller.index(presented) \
     < controller.index("sidebar.isPresented = presented\n"), \
@@ -61,8 +61,8 @@ for use in ("guard libraryContentWidth != width else { return }",
             "guard let self, !self.isClosing, self.libraryView != nil else { return }",
             "self.pageHost.needsLayout = true\n            self.extensionSidePanel.needsLayout = true\n            self.layoutChrome()",
             "sidebarChromePass = .full\n"):
-    assert use in setter, f"setLibraryContentWidth no longer follows the setHomeWidth: {use}"
-assert "accessibilityDisplayShouldReduceMotion" not in setter, "the home-width group reads no Reduce Motion"
+    assert use in setter, f"setLibraryContentWidth no longer follows the expected width animation: {use}"
+assert "accessibilityDisplayShouldReduceMotion" not in setter, "the Library width group reads no Reduce Motion"
 shutdown = controller[controller.index("    func shutdownBrowsers() {"):controller.index("    func windowWillClose(")]
 assert "        settleSidebarMotion()\n        libraryMotion.cancel()\n" in shutdown, \
     "window disposal settles the Library width group with the sidebar's"
@@ -73,7 +73,7 @@ assert ("        pageHost.frame = frames.pageHost\n"
     "the geometry pass moves the extension side panel with the page"
 assert "pageHost.layer?.cornerRadius = PageCard.cornerRadius\n        pageHost.layer?.cornerCurve = .continuous" in controller \
     and "nonisolated(unsafe) private(set) static var cornerRadius: CGFloat = 6" in (root / "Sources/ParcApp/PageCardShadow.swift").read_text(), \
-    "the page host starts at the 6-point continuous corner and follows the window frame thickness"
+    "the page host starts at a 6-point continuous corner and follows the window frame thickness"
 assert "let sidebarless = isPopupWindow && nativeFullscreenTabID == nil" in controller, \
     "Library is not sidebarless; only a popup is"
 assert "libraryView?.showsWindowButtons = showsOwn && !sidebarless" in controller, \

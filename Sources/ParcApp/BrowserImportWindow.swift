@@ -20,7 +20,7 @@ final class BrowserImportWindow: NSWindowController, NSWindowDelegate {
         window.title = "Import from Another Browser"; window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true; window.isReleasedWhenClosed = false
         window.isMovableByWindowBackground = true; window.tabbingMode = .disallowed
-        window.backgroundColor = PArcDialogStyle.popoverBackground
+        window.backgroundColor = ParcDialogStyle.popoverBackground
         for kind: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
             window.standardWindowButton(kind)?.isHidden = true
         }

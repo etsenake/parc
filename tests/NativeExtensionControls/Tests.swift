@@ -32,7 +32,7 @@ struct ExtensionControlsTests {
         window.contentView?.addSubview(button)
         button.frame = NSRect(x: 0, y: 0, width: 28, height: 28)
         expect(button.isEnabled, "Action controls preserve the engine's disabled-action fallback")
-        expect(button.parcTooltip?.label == "Title a" && button.toolTip == nil, "Actual tooltip reaches native control tooltip")
+        expect(button.parcTooltip?.label == "Title a" && button.toolTip == nil, "Actual tooltip reaches native control as a Parc tooltip")
         expect(button.accessibilityLabel() == "Accessible a", "Native accessibility uses actual action label")
         button.performClick(nil)
         expect(dispatches == 1, "Native activation dispatches once")

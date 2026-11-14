@@ -128,7 +128,7 @@ final class CommandBarPrivacyButton: PointingHandButton {
         self.title = title
         isBordered = false
         setButtonType(.momentaryPushIn)
-        font = PArcDialogStyle.buttonFont
+        font = ParcDialogStyle.buttonFont
         refusesFirstResponder = true
         setAccessibilityLabel(title)
     }
@@ -136,7 +136,7 @@ final class CommandBarPrivacyButton: PointingHandButton {
     override var isFlipped: Bool { true }
     private var body: NSRect { NSRect(x: 0.5, y: 0.5, width: bounds.width - 1, height: Self.bodyHeight) }
     override var intrinsicContentSize: NSSize {
-        let text = (title as NSString).size(withAttributes: [.font: PArcDialogStyle.buttonFont])
+        let text = (title as NSString).size(withAttributes: [.font: ParcDialogStyle.buttonFont])
         return NSSize(width: ceil(text.width) + 24 + 1, height: Self.bodyHeight + 3)
     }
     override func updateTrackingAreas() {
@@ -153,16 +153,16 @@ final class CommandBarPrivacyButton: PointingHandButton {
     }
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); needsDisplay = true }
     override var focusRingMaskBounds: NSRect { body }
-    override func drawFocusRingMask() { PArcDialogStyle.continuousRect(body, radius: 6).fill() }
+    override func drawFocusRingMask() { ParcDialogStyle.continuousRect(body, radius: 6).fill() }
     override func draw(_ dirtyRect: NSRect) {
         let pressed = cell?.isHighlighted == true
-        PArcDialogStyle.neutralShadow.setFill()
-        PArcDialogStyle.continuousRect(body.offsetBy(dx: 0, dy: 2), radius: 6).fill()
-        let shape = PArcDialogStyle.continuousRect(body, radius: 6)
-        (pressed ? PArcDialogStyle.neutralPressed : hovered ? PArcDialogStyle.neutralHovered : PArcDialogStyle.neutralFace).setFill()
+        ParcDialogStyle.neutralShadow.setFill()
+        ParcDialogStyle.continuousRect(body.offsetBy(dx: 0, dy: 2), radius: 6).fill()
+        let shape = ParcDialogStyle.continuousRect(body, radius: 6)
+        (pressed ? ParcDialogStyle.neutralPressed : hovered ? ParcDialogStyle.neutralHovered : ParcDialogStyle.neutralFace).setFill()
         shape.fill()
-        PArcDialogStyle.neutralBorder.setStroke(); shape.lineWidth = 1; shape.stroke()
-        let attributes: [NSAttributedString.Key: Any] = [.font: PArcDialogStyle.buttonFont, .foregroundColor: PArcDialogStyle.neutralForeground]
+        ParcDialogStyle.neutralBorder.setStroke(); shape.lineWidth = 1; shape.stroke()
+        let attributes: [NSAttributedString.Key: Any] = [.font: ParcDialogStyle.buttonFont, .foregroundColor: ParcDialogStyle.neutralForeground]
         let label = (title as NSString).size(withAttributes: attributes)
         (title as NSString).draw(at: NSPoint(x: body.minX + 12, y: body.midY - label.height / 2), withAttributes: attributes)
     }

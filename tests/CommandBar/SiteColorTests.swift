@@ -32,7 +32,7 @@ import AppKit
                                                searchHost: "www.google.com", prepopulated: true) == nil,
               "prepopulated Google falls through to its favicon")
         check(CommandBarSiteColor.bundledColor(template: "", searchHost: "", prepopulated: false) == nil, "no host, no colour")
-        check(CommandBarSiteColor.bundled.count == 19, "Parc bundles nineteen engines")
+        check(CommandBarSiteColor.bundled.count == 19, "nineteen engines are bundled")
         check(CommandBarSiteColor.color(hex: "75A99") == nil && CommandBarSiteColor.color(hex: "GGGGGG") == nil, "malformed hex")
 
         check(CommandBarSiteColor.host("www.youtube.com", matches: "www.youtube.com"), "equal hosts match")

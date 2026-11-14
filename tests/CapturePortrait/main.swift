@@ -187,7 +187,7 @@ struct PortraitChecks {
         let view = PortraitCaptureView(source: source, pageColor: .green, composition: style, defaults: defaults)
         view.layoutSubtreeIfNeeded()
         precondition(view.bounds.size == NSSize(width: PortraitCaptureLayout.width, height: PortraitCaptureLayout.height),
-                     "the WindowScreenshotPopoverContent padding and 140×96 preview")
+                     "the popover's padding and 140×96 preview")
         precondition(view.captureButton.frame.size == NSSize(width: PortraitCaptureLayout.contentWidth, height: PortraitCaptureLayout.captureHeight),
                      "SkeuPrimaryButtonStyle capture control is 32 points tall")
         let previewImage = view.subviews.compactMap { $0 as? NSImageView }.first!

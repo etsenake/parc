@@ -24,7 +24,7 @@ struct QuitWarningTests {
         let root = look.window.contentView!
         check(look.window.frame.width == 450 && look.window.accessibilityLabel() == "Quit Parc?"
               && root.subviews.compactMap { ($0 as? NSTextField)?.stringValue } == ["Quit Parc?"],
-              "the 450-point dialog titled Quit Parc? with no message")
+              "a 450-point dialog titled Quit Parc? with no message")
         check(look.quit.primary && look.quit.hint && look.quit.keyEquivalent == "\r"
               && !look.cancelButton.primary && look.cancelButton.hint && look.cancelButton.keyEquivalent == "\u{1b}"
               && !look.suppress.primary && !look.suppress.hint && look.suppress.keyEquivalent.isEmpty,

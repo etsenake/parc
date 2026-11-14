@@ -31,11 +31,11 @@ with tempfile.TemporaryDirectory(prefix="parc-library-width-") as directory:
            "DownloadLibraryPreview", "DownloadActivityBadge", "DownloadThumbnailProvider", "DownloadFileDrag", "ThemeRenderer", "LibraryArtwork",
            "ExternalMediaLibrary", "CaptureLibrarySharing", "MediaLibraryContext", "SpaceManagerView", "SidebarIconCatalog", "SidebarRowAppearance",
            "CaptureMotion", "DownloadArrivalMotion", "LibraryRailTile", "LibraryRailIcon", "WindowStandardButtons", "TranslucentButtonFace", "ReloadControl",
-           "SidebarMotionController", "PArcToast", "TopBarColorClient", "PArcDialog"]
+           "SidebarMotionController", "ParcToast", "TopBarColorClient", "ParcDialog"]
     sources = sorted((root / "Sources/ParcCore").glob("*.swift"))
     sources += [root / "Sources/ParcApp" / f"{name}.swift" for name in app]
-    spinner = temporary / "PArcButtonSpinner.swift"
-    subprocess.run([sys.executable, "-B", str(root / "tests/Support/declarations.py"), str(spinner), "PArcButtonSpinner"],
+    spinner = temporary / "ParcButtonSpinner.swift"
+    subprocess.run([sys.executable, "-B", str(root / "tests/Support/declarations.py"), str(spinner), "ParcButtonSpinner"],
                    check=True, stdout=subprocess.DEVNULL)
     sources += [controls, store_owner, sidebar_stub, spinner, pathlib.Path(__file__).with_name("LibraryWidthTests.swift")]
     sources += tooltip_sources(root, temporary, sources)

@@ -3,6 +3,7 @@
 Parc is an independent native macOS browser with Spaces, pinned tabs, automatic
 archiving, split views, extensions, local Easels and Notes, capture tools and
 customizable themes. Its Swift/AppKit application uses a source-owned Chromium
+integration and does not depend on any other installed browser.
 
 ## Install
 

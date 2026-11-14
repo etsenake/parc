@@ -339,7 +339,7 @@ private func onboardingImportOrderChecks(store: BrowserStore, destination: Brows
     expect(skipping.stage == .bookmarks && skipping.bookmarkPages[0].committed, "Back shows the bookmarks already added")
     let accepted = skipping.bookmarkPages[0], keptTab = tabs(selected)[0]
     expect(skipping.canChooseBookmarks(accepted) && accepted.selection.selected == [selected.identifier, omitted.identifier],
-           "As in Parc, the page already added keeps its ticks and stays editable")
+           "The page already added keeps its ticks and stays editable")
     skipping.toggleBookmark(pageID: accepted.id, id: omitted.identifier)
     expect(store.state.tabs == tabsAfterAdd, "Changing a tick adds or removes nothing before Next")
     skipping.commitBookmarks()

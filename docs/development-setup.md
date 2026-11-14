@@ -9,7 +9,8 @@ repository's private release assets using the [engine artifact guide](engine-art
 The completed app-and-engine package is available separately. The larger
 workspace snapshot retains Chromium source, build tools and compiled work for
 incremental development.
-directory.
+The application build does not need another browser installed or a previous
+Codex scratch directory.
 
 ## Host and tools
 

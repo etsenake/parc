@@ -1,5 +1,6 @@
 # Independent engine packaging
 
+`scripts/build.py` compiles the existing Swift/AppKit application and independent native facade, and packages a **completed Parc Chromium build**. It does not install or launch the app, run GN/Ninja, download a browser, or include a Keychain interposer. The old `scripts/build-engine.sh` is superseded; its independent facade compilation is now part of this tool. Component engines remain ineligible for distribution, even with a signing certificate or release Swift optimization. The separately built non-component engine supports the standalone path below.
 
 For complete production releases use [the master release command](../../docs/master-release.md):
 `bash scripts/release.sh`, which chooses the version from Conventional Commits
@@ -171,6 +172,7 @@ Moving from Apple Development to Developer ID changes the designated requirement
 
 The main bundle declares `http` and `https`, web Handoff, HTML/XHTML Viewer document types and the Productivity category. These declarations make it available to macOS as a browser and in Open With. They do not change the user's chosen default browser. Extra iOS default-browser entitlements or App Store metadata are not required for this Mac distribution.
 
+It refuses uncommitted or untracked files under `Sources`, `Resources`, `Engine` or `scripts`, ignored files under `Resources` (which packaging copies wholesale; Finder's `.DS_Store` files are deleted first), and a checkout that moves while packaging, so the release matches its commit. It packages into a fresh `build/local-<stamp>` (`package.log`, with compiler output in `package-output.log`), zips the whole `development` directory with `ditto`, and uploads it as a private pre-release tagged `app-<stamp>-<first 8 characters of the commit>`, titled with the engine overlay. It then keeps only the three newest of those releases; a failed cleanup only warns, since the new release is already live. Other releases, such as the engine snapshot, never match its tag pattern. Report the published tag and any material limitations.
 
 Publication ends after package verification and reporting the tag. Do not
 install, replace, quit or open the local app, run browser checks, or run
@@ -238,6 +240,7 @@ The eight helper identities and entitlements remain unchanged.
 
 ## Sparkle
 
+Software updates use the official Sparkle release pinned in `scripts/sparkle.py` (version and SHA-256). `build.py` and `check-swift.py` download it on first use, verify the digest and extract `Sparkle.framework` and `bin/` into the ignored `build/sparkle/`; there is no manual step. The app links it with the existing `@executable_path/../Frameworks` RPATH. Packaging embeds it without headers, module map or the XPC services, which [Sparkle documents](https://sparkle-project.org/documentation/sandboxing/#removing-xpc-services) as unused by apps that aren't sandboxed, thins its code to ARM64 and signs it in Sparkle's documented order (Autoupdate, Updater.app, then the framework) with the app's identity, hardened runtime and timestamp. A distribution package's Info.plist carries `SUFeedURL`, `SUPublicEDKey` and automatic check/install settings; development and local test builds have no feed, so they never replace themselves. The report records the embedded Sparkle version and digest. The EdDSA private key is in the release Mac's login Keychain (Sparkle's service, account `parc`); only the public key is committed. Updater behavior is in [software updates](../../docs/software-update.md).
 
 ## Widevine host signatures
 

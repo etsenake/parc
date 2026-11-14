@@ -86,8 +86,8 @@ enum EaselImageExport {
         else { try files.moveItem(at: encoded, to: url) }
     }
 
-    static func failureDialog() -> PArcDialog {
-        PArcDialog(.init(title: [("Exporting Easel", false)],
+    static func failureDialog() -> ParcDialog {
+        ParcDialog(.init(title: [("Exporting Easel", false)],
                         message: [("Encountered problem exporting easel. Please try again later.", false)],
                         icon: ParcBrandMark.image(.borderless), confirm: "OK"))
     }

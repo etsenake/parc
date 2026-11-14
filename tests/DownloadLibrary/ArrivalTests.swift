@@ -207,7 +207,7 @@ import AppKit
                "Rotation spring −35° → 5° (SwiftUI clockwise), response 1.2")
         expect(alpha?.beginTime == position?.beginTime && rotation?.beginTime == position?.beginTime, "On-appear springs start with the keyframes")
         expect(position != nil && alpha != nil && rotation != nil,
-               "No Reduce Motion gate: Parc reads none, so the flight animates whatever the setting (now \(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion))")
+               "No Reduce Motion gate: the flight animates whatever the setting (now \(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion))")
         expect(first.view.icon.bounds.size == CGSize(width: 30, height: 30) && first.view.icon.shadowRadius == 8
                && first.view.icon.shadowOffset == CGSize(width: 0, height: -4), "30-point icon with the recovered shadow")
         expect(glyphInk(DownloadArrivalPathView.glyph(color: .black, scale: 4)).map { $0.minX <= 4 && $0.maxX >= 115 && $0.minY <= 4 && $0.maxY >= 115 } == true,

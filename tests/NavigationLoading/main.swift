@@ -54,7 +54,7 @@ private final class VisibleWindow: NSWindow {
         check(abs(ReloadGlyph.spring(ReloadGlyph.settlingTime) - 1) < 0.001, "settled within the envelope")
         check(ReloadGlyph.settlingTime > 0.3 && ReloadGlyph.settlingTime < 0.5, "settles in under half a second")
         check((1...40).map { ReloadGlyph.spring(Double($0) / 200) }.max()! > 1.05, "underdamped overshoot")
-        check(ReloadGlyph.delay(enteringLoading: true) == 0.2 && ReloadGlyph.delay(enteringLoading: false) == 0.1, "the delays")
+        check(ReloadGlyph.delay(enteringLoading: true) == 0.2 && ReloadGlyph.delay(enteringLoading: false) == 0.1, "0.2 s entering and 0.1 s leaving delays")
         let view = NSView()
         let glyph = ReloadGlyph(view: view, pointSize: SidebarChromeLayout.navigationGlyphPointSize, rasterized: true)
         func driving(_ sources: [FrameSource]) -> Bool { sources.contains(where: \.isLive) }
@@ -66,16 +66,16 @@ private final class VisibleWindow: NSWindow {
         check(NavigationControlArtwork.directory == Bundle.main.resourceURL?.appendingPathComponent("NavigationControls", isDirectory: true)
               && force?.size == NSSize(width: 22, height: 15) && force?.isTemplate == true
               && force?.representations.contains { $0.pixelsWide == 44 } == true,
-              "the force-reload artwork loads from the bundle's NavigationControls resources with its 2x rendition")
+              "The force-reload artwork loads from the bundle's NavigationControls resources with its 2x rendition")
         check(glyph.idleImage === force, "the force default draws the force-reload artwork")
-        check(SidebarChromeLayout.navigationGlyphPointSize == 16 && glyph.pointSize == 16, "PArcButtonStyle _32 16-point medium glyphs")
+        check(SidebarChromeLayout.navigationGlyphPointSize == 16 && glyph.pointSize == 16, "16-point medium glyphs")
         let arrow = NavigationControlArtwork.symbol("arrow.clockwise", pointSize: 16)
         check(arrow?.isTemplate == true && arrow?.representations.count == 2
               && NavigationControlArtwork.symbol("xmark", pointSize: 16) != nil, "1x and 2x template arrow and stop")
         check(arrow.map { $0.size.width == $0.size.width.rounded() && $0.size.height == $0.size.height.rounded() } == true,
               "whole-point glyph frame")
         check(NavigationControlArtwork.symbol("arrow.clockwise", pointSize: 16) === arrow, "rendered once per symbol and size")
-        check(ReloadGlyph.clipCornerRadius == 6, "PArcButtonStyle's 6-point frame clip")
+        check(ReloadGlyph.clipCornerRadius == 6, "the 6-point frame clip")
         check(ReloadGlyph.actionRotation == 2 * .pi && ReloadGlyph.actionResponse == 0.4 && ReloadGlyph.actionDamping == 0.6,
               "after-action 2π spring")
         check(ReloadGlyph.actionSettlingTime > ReloadGlyph.settlingTime, "click spin lasts longer than the Stop crossfade")
@@ -176,7 +176,7 @@ private final class VisibleWindow: NSWindow {
             return (from.rectValue.width, to.rectValue.width, spring)
         }
         func barTarget() -> Float? { ((bar.animation(forKey: "opacity") as? CASpringAnimation)?.toValue as? NSNumber)?.floatValue }
-        func isArcSpring(_ spring: CASpringAnimation) -> Bool {
+        func isSweepSpring(_ spring: CASpringAnimation) -> Bool {
             let response = 2 * Double.pi / (spring.stiffness / spring.mass).squareRoot()
             let fraction = spring.damping / (2 * (spring.stiffness * spring.mass).squareRoot())
             return abs(response - 0.8) < 0.0001 && abs(fraction - 0.92) < 0.0001 && spring.duration == spring.settlingDuration
@@ -189,11 +189,11 @@ private final class VisibleWindow: NSWindow {
         let sweepAfter = waitForSweep()
         check(bar.opacity == PageLoadingIndicator.sweepBarOpacity && sweepAfter > PageLoadingIndicator.sweepDelay
               && sweepAfter < PageLoadingIndicator.sweepDelay + 0.5,
-              "the pill sweeps at the pulse trough after the 3.2 s")
+              "the pill sweeps at the pulse trough after 3.2 s")
         let widen = boundsSpring()
         check(track.bounds.size == PageLoadingIndicator.trackSize(sweeping: true) && widen.map { near($0.from, 48) && $0.to == 128 } == true
-              && widen.map { isArcSpring($0.spring) } == true && barTarget() == PageLoadingIndicator.sweepBarOpacity,
-              "the sweep springs the track from 48 to 128 points and the bar to 0.92 on the spring")
+              && widen.map { isSweepSpring($0.spring) } == true && barTarget() == PageLoadingIndicator.sweepBarOpacity,
+              "the sweep springs the track from 48 to 128 points and the bar to 0.92 on the sweep spring")
         var skipped = 0
         let settleDeadline = Date(timeIntervalSinceNow: 8)
         while skipped < 2, Date() < settleDeadline {
@@ -209,7 +209,7 @@ private final class VisibleWindow: NSWindow {
         driven.setLoading(false)
         let shrink = boundsSpring()
         check(track.bounds.size == PageLoadingIndicator.trackSize(sweeping: false) && bar.opacity == 0
-              && shrink.map { abs($0.from - 128) < 0.5 && $0.to == 48 && isArcSpring($0.spring) } == true
+              && shrink.map { abs($0.from - 128) < 0.5 && $0.to == 48 && isSweepSpring($0.spring) } == true
               && barTarget() == 0 && driving(pill),
               "ending a load mid-sweep springs the track from 128 to 48 points and the bar to 0")
         driven.reset()
@@ -234,7 +234,7 @@ private final class VisibleWindow: NSWindow {
 
         var chosen: [ReloadOptionsMenu.Choice] = []
         let menu = ReloadOptionsMenu.make(state: .forceReload, canReload: true, canForceReload: true, canClearCookies: false) { chosen.append($0) }
-        check(menu.items.map(\.title) == ["Reload", "Refresh (Ignore Cache)", "", "Clear Cookies and Refresh"], "the items")
+        check(menu.items.map(\.title) == ["Reload", "Refresh (Ignore Cache)", "", "Clear Cookies and Refresh"], "the reload menu items")
         check(menu.items[2].isSeparatorItem, "separator before Clear Cookies")
         check(menu.items[0].state == .off && menu.items[1].state == .on, "checkmark on the stored default")
         check(menu.items[3].isEnabled == false && menu.items[0].isEnabled, "availability")
@@ -245,7 +245,7 @@ private final class VisibleWindow: NSWindow {
         SystemOverrides.standardDefaults = defaults
         check(DeveloperReloadPreference.state == .reload, "the default is Reload")
         DeveloperReloadPreference.state = .forceReload
-        check(defaults.string(forKey: DeveloperReloadPreference.key) == "forceReload", "the raw value stored")
+        check(defaults.string(forKey: DeveloperReloadPreference.key) == "forceReload", "the forceReload raw value is stored")
         check(DeveloperReloadPreference.state == .forceReload, "the stored default reads back")
         SystemOverrides.standardDefaults = nil
         defaults.removePersistentDomain(forName: "parc.navigation-loading-checks")

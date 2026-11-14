@@ -118,7 +118,7 @@ struct OnboardingTests {
         blocked.importedAdBlockers = [ublock]
         precondition(blocked.nextStage() == .defaultBrowser && !blocked.visibleSetupOrder().contains(.adBlockers)
             && blocked.displayedSetupCount() == 5,
-                     "uBlock Origin alone is already the choice, so the step is omitted; Ready is not in the total")
+                     "uBlock Origin alone is already the default choice, so the step is omitted; Ready is not in the total")
         blocked.importedAdBlockers = [ublock, adGuard]
         blocked.adBlockerChoice = .keep(ublock.identifier)
         precondition(blocked.nextStage() == .adBlockers && blocked.visibleSetupOrder().contains(.adBlockers),

@@ -31,8 +31,8 @@ for use in ("commandBarCreatesNewTab = newTab; commandBarShowsNewTabPlaceholder 
     assert use in controller, f"the New Tab placeholder wiring changed: {use}"
 assert controller.count("commandBarShowsNewTabPlaceholder = ") == 4, "an unexpected New Tab placeholder write"
 assert controller.count("newTabPlaceholderActive") == 2, "only the window's own sidebar takes the New Tab placeholder"
-names = """PArcDialog.swift
-PArcMenuColors.swift
+names = """ParcDialog.swift
+ParcMenuColors.swift
 SidebarBannerHost.swift
 AutoArchiveEducationView.swift
 BoxOfThingsIcon.swift
@@ -114,7 +114,7 @@ with tempfile.TemporaryDirectory(prefix="parc-space-manager-") as directory:
         ("NavigationControls.swift", None, "enum NavigationHistoryMenuMetrics", ""),
         ("SiteControlCenter.swift", None, "enum SiteControlCenterMetrics", ""),
         ("DownloadLibraryView.swift", "@MainActor enum DownloadRowSubtitle", "@MainActor enum DownloadRowArtwork {", "import AppKit\nimport UniformTypeIdentifiers\n"),
-        ("OnboardingProgressionButton.swift", "struct PArcButtonSpinner", "extension NSColor", "import SwiftUI\n"),
+        ("OnboardingProgressionButton.swift", "struct ParcButtonSpinner", "extension NSColor", "import SwiftUI\n"),
     ]
     extracted = []
     for name, start, end, prefix in excerpts:

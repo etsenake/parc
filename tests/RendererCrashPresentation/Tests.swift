@@ -68,7 +68,7 @@ struct RendererCrashPresentationTests {
                "the artwork loads from the bundle's SadTab resources")
         expect(art != nil && art!.isTemplate && art!.size == NSSize(width: 96, height: 103) &&
                art!.representations.compactMap { $0 as? NSBitmapImageRep }.map(\.pixelsWide).sorted() == [96, 192],
-               "the copied SadTab template loads with its 1x and 2x bitmaps")
+               "the bundled SadTab template loads with its 1x and 2x bitmaps")
 
         let window = TestWindow(contentRect: NSRect(x: 80, y: 80, width: 640, height: 420),
                                 styleMask: [.titled], backing: .buffered, defer: false)
@@ -136,7 +136,7 @@ struct RendererCrashPresentationTests {
                failure.corner.hitTest(NSPoint(x: code.midX, y: code.midY)) == nil, "plain text passes the pointer on")
         expect(link.accessibilityRole() == .link && link.accessibilityLabel() == SadTabContent.plainMessage &&
                failure.corner.accessibilityRole() == .staticText, "AX exposes the link and the static error code")
-        expect(!link.canBecomeKeyView, "the link stays out of the key-view loop text")
+        expect(!link.canBecomeKeyView, "the link stays out of the key-view loop, like the text")
         let narrow = link.fittingSize(width: 120)
         expect(narrow.width <= 120 && narrow.height > 16, "a narrow pane wraps the HStack's texts")
 
@@ -164,7 +164,7 @@ struct RendererCrashPresentationTests {
         click(NSPoint(x: linkRect.midX, y: linkRect.midY))
         expect(retried == [first], "a click on the visible painted link carries exact snapshot")
         expect(!link.acceptsFirstResponder && window.firstResponder !== link,
-               "a click does not move keyboard focus to the link tap does not")
+               "a click does not move keyboard focus to the link")
         expect(failure.presentation == .renderer(first) && page.isHidden,
                "Retry never predicts recovery or replaces the page")
         expect(navigationRetries == 0, "renderer action does not invoke generic navigation Retry")

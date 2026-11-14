@@ -47,7 +47,7 @@ import AppKit
         host.addSubview(strip)
         strip.dark = false
         let light = NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.5)
-        check(strip.contentInsets.left == 2 && strip.contentInsets.right == 2 && strip.contentInsets.top == 0, "the 0/2/0/2 insets")
+        check(strip.contentInsets.left == 2 && strip.contentInsets.right == 2 && strip.contentInsets.top == 0, "0/2/0/2 insets")
         check(strip.horizontalScrollElasticity == .none && strip.verticalScrollElasticity == .none && !strip.drawsBackground, "no elasticity or background")
 
         let three = buttons(3)

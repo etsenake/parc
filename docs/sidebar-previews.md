@@ -117,6 +117,7 @@ Command-click may have toggled. Return carries modifiers the same way.
 | --- | --- | --- | --- |
 | Recent page or plus button | Command (Option adds split) | New tab, referrer = previewed tab; split after the focused pane with Option | Dismissed first |
 | Recent page or plus button | Otherwise (Option adds split) | The previewed tab's own navigation: in place, then that tab is selected; a policy-created tab uses the split with Option | Dismissed first |
+| Folder tab | Exactly Option-Command | Mini browser window, excluded: consumed, nothing happens | Kept |
 | Folder tab | Exactly Option | Reveal ancestors, then the original joins a split after the focused pane | Dismissed |
 | Folder tab | Exactly Command-Shift | Duplicate beside the original with a fresh ID, opened in the background; nothing selected or revealed | Kept |
 | Folder tab | Any other with Command | Reveal ancestors; nothing selected | Kept |

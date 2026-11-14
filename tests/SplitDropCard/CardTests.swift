@@ -83,7 +83,7 @@ import AppKit
         check(landscape.width == 250 && abs(landscape.height - 250 * 412 / 808) < 1e-9,
               "a wide incoming pane gives a 250-point-wide card at its aspect ratio")
         check(SplitDropPlaceholderCard.size(forIncomingPane: NSSize(width: 300, height: 300)) == NSSize(width: 250, height: 250),
-              "a square pane takes the height branch comparison does")
+              "a square pane takes the height branch")
         check([NSSize(width: 0, height: 808), NSSize(width: 412, height: 0), NSSize(width: -4, height: 10),
                NSSize(width: CGFloat.infinity, height: 10)].allSatisfy { SplitDropPlaceholderCard.size(forIncomingPane: $0) == nil },
               "an empty or unbounded pane makes no card")
@@ -95,7 +95,7 @@ import AppKit
                   let rep = image.representations.first as? NSBitmapImageRep else { check(false, "card image renders"); continue }
             check(image.size == portrait, "card image is the computed card size")
             check(rep.pixelsWide == Int(portrait.width.rounded(.up)) && rep.pixelsHigh == 250,
-                  "the windowless card caches at 1x for a view with no window")
+                  "the windowless card caches at 1x, as for a view with no window")
             let fill = pixel(rep, 6, rep.pixelsHigh / 2)
             check(dark ? fill.r < 8 && fill.g < 8 && fill.b < 8 && fill.a > 247 : fill.r > 247 && fill.g > 247 && fill.b > 247 && fill.a > 247,
                   "the card is FullOpacityBackgroundPrimary in the application's \(dark ? "dark" : "light") appearance")

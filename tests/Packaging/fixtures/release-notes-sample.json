@@ -7,7 +7,7 @@
       "changes": [
         {"type": "feat", "scope": "updates", "summary": "Parc now updates itself, so brew upgrade no longer needs to replace it", "breaking": true},
         {"type": "feat", "scope": "sidebar", "summary": "Show Update Complete in the sidebar after Parc updates", "breaking": false},
-        {"type": "feat", "scope": "updates", "summary": "Check for updates from the Parc menu, with the update window", "breaking": false},
+        {"type": "feat", "scope": "updates", "summary": "Check for updates from the Parc menu, in its own update window", "breaking": false},
         {"type": "feat", "scope": "command-bar", "summary": "Open Edit Theme… straight from the command bar", "breaking": false},
         {"type": "fix", "scope": "pip", "summary": "Keep a Meet call in picture in picture when you switch Spaces", "breaking": false},
         {"type": "fix", "scope": "sidebar", "summary": "Stop pinned tabs from jumping when a folder is dragged above them", "breaking": false},

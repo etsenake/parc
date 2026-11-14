@@ -3,6 +3,7 @@
 `Engine/ParcNative/native_browser_window.h/.mm` implements Chromium's actual
 `BrowserWindow` interface for a caller-owned AppKit window. Browser owns the
 adapter; the shell owns NSWindow. `AsBrowserView()` returns null. This source
+does not allocate a hidden Chrome window.
 
 The adapter connects real Browser activation/close subscriptions, native window
 association, active page geometry, modal hosting, location services and native
@@ -67,6 +68,7 @@ no host service requirement. Chromium156's `UpdateTargetURL` and
 and its anchor to `ContentsWebView`; a custom AppKit implementation would be
 unsafe through those consumers. The separate native hovered-link/status route
 is tied to the originating WebContents; this empty compatibility result does not
+implement that presentation.
 
 ## Verification
 

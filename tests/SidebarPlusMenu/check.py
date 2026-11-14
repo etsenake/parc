@@ -41,21 +41,21 @@ for use in (
     "NSAttributedString(string: row.shortcut, attributes: [\n            .font: Self.shortcutFont, .kern: Self.shortcutKern,",
     ".font: Self.titleFont, .foregroundColor: titleColor",
 ):
-    assert use in plus, f"the plus HUD rows no longer use PArcMenu's fonts: {use}"
+    assert use in plus, f"the plus HUD rows no longer use the menu fonts: {use}"
 assert "NSAppearance(named:" not in plus and ".appearance = " not in plus, "the HUD forces no appearance of its own"
-assert "appearanceSource" not in plus, "like the PArcMenu, the HUD keeps AppKit's default appearance source, the app"
+assert "appearanceSource" not in plus, "the HUD keeps AppKit's default appearance source, the app"
 navigation = (root / "Sources/ParcApp/NavigationControls.swift").read_text()
 history = navigation[navigation.index("private final class NavigationHistoryFill"):]
 for use in (
     "init(page: PCNativePage, snapshot: PCNativeNavigationHistory, window: NSWindow, theme: SpaceTheme) {",
-    "colors = PArcMenuColors(theme: theme)",
+    "colors = ParcMenuColors(theme: theme)",
     "base = NavigationHistoryFill(color: colors.base)",
     "tint = NavigationHistoryFill(color: colors.background)",
     "override func updateLayer() { layer?.backgroundColor = color.cgColor }",
     "view.hoverColor = colors.hover",
     "let primary = colors.title",
 ):
-    assert use in history, f"the history chooser no longer resolves PArcMenu colours like the plus HUD: {use}"
+    assert use in history, f"the history chooser no longer resolves ParcMenuColors like the plus HUD: {use}"
 for gone in ("palette.isDark", ".appearance = ", "NSAppearance(named:", "appearanceSource", "ThemeChromePalette"):
     assert gone not in history, f"the history chooser still picks its own light/dark half: {gone}"
 assert ("NavigationHistoryController(page: page, snapshot: snapshot, window: window,\n"
@@ -67,7 +67,7 @@ assert "sidebar.plusMenuTheme = rootView.paletteTheme" in controller.split("priv
 assert "var paletteTheme: SpaceTheme { incognito ? IncognitoWindowTheme.paletteTheme : theme }" in (root / "Sources/ParcApp/ThemeRenderer.swift").read_text(), \
     "the surface's palette theme is the incognito theme only for a private window"
 assert "set { plusMenu.theme = newValue }" in sidebar, "the sidebar forwards the window theme to the plus HUD"
-assert "SidebarPlusMenuView(rows: rows, colors: PArcMenuColors(theme: theme)" in plus, "the HUD opens in the window theme"
+assert "SidebarPlusMenuView(rows: rows, colors: ParcMenuColors(theme: theme)" in plus, "the HUD opens in the window theme"
 assert "Boost" not in plus.split("enum SidebarPlusAction", 1)[1], "Boost is excluded from the plus menu"
 for use in (
     "private let plusButton = SidebarPlusButtonState()",
@@ -100,7 +100,7 @@ for use in (
     ".animation(.spring(response: 0.3, dampingFraction: 0.6, blendDuration: 0), value: state.pressed)",
     ".animation(.easeIn(duration: 0.1), value: state.hovered)",
 ):
-    assert use in face, f"the + face no longer matches the PlusMenuIcon / PArcButtonStyle: {use}"
+    assert use in face, f"the + face no longer matches its expected styling: {use}"
 with tempfile.TemporaryDirectory(prefix="parc-plus-menu-") as directory:
     executable = Path(directory) / "checks"
     subprocess.run(
@@ -113,7 +113,7 @@ with tempfile.TemporaryDirectory(prefix="parc-plus-menu-") as directory:
             "arm64-apple-macos13.0",
             *map(str, sorted((root / "Sources/ParcCore").glob("*.swift"))),
             str(root / "Sources/ParcApp/ThemeRenderer.swift"),
-            str(root / "Sources/ParcApp/PArcMenuColors.swift"),
+            str(root / "Sources/ParcApp/ParcMenuColors.swift"),
             str(root / "Sources/ParcApp/SidebarPlusMenu.swift"),
             str(Path(__file__).with_name("PlusMenuTests.swift")),
             "-o",

@@ -114,9 +114,12 @@ fresh original-owner checks. Native traversal remains intact.
 
 ## Presentation and remaining scope
 
+The card takes 80% of the page width (narrow pages keep room for the
+controls), with 12-point top and bottom insets, 8-point corners, a near-white
 or near-black card fill, a hairline edge and a soft 4-point shadow. The page fills
 the card; there is no title band. A copy of the window's theme background covers
-and dark themes alike.
+the parent at 70%, so the parent shows through at 30%, in light and dark
+themes alike.
 
 Round Close, Expand and Split controls sit 13 points right of the card, filled
 with the Space theme's background-extra colour and drawn in its primary ink (kept

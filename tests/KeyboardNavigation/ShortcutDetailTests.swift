@@ -96,7 +96,7 @@ import Carbon.HIToolbox
         expect(keycaps.symbols == wide.symbols && keycaps.accessibilityValue() as? String == wide.spokenDisplay, "Five-key custom binding updates existing detail owner")
         try registry.set(KeyboardShortcut(key: " ", flags: .control), for: "closeTab:"); view.selectCommand("closeTab:")
         expect(keycaps.symbols == ["⌃", "⎵"] && keycaps.accessibilityValue() as? String == "⌃Space",
-               "Detail keycaps show Space ⎵ and speak it as Space")
+               "Detail keycaps show Space as ⎵ and speak it as Space")
         try registry.set(KeyboardShortcut(key: "\t", flags: .control), for: "closeTab:"); view.selectCommand("closeTab:")
         expect(keycaps.symbols == ["⌃", "⇥"], "Detail keycaps keep ⇥ for Tab; Essentials and tooltip keycaps spell it out")
         try registry.set(nil, for: "closeTab:"); view.selectCommand("closeTab:")
@@ -105,7 +105,7 @@ import Carbon.HIToolbox
         expect(keycaps.presentation == .binding && !picker.isHidden, "Reset restores the actual binding and its priority")
         expect(view.selectCommand("nextSplitPane:")
                && explanation.stringValue == "Jumps to the next Split View page in your current window.",
-               "Split commands carry the shortcut description")
+               "Split commands carry their shortcut description")
         let numberedToggles = view.subviews.compactMap { $0 as? NSButton }
         let favorites = numberedToggles.first { $0.title == "Include Favorites in ordering." }!
         let ninth = numberedToggles.first { $0.title == "Switch to ninth tab." }!
@@ -316,7 +316,7 @@ import Carbon.HIToolbox
         let spaceWarning = cell("captureFullPage:").subviews.compactMap { $0 as? NSButton }.first!
         expect(spaceWarning.toolTip?.hasPrefix("⌃⎵ is already in use by “") == true
                && spaceWarning.accessibilityLabel()?.hasPrefix("⌃Space is already in use by “") == true,
-               "Conflict help shows the ⎵ but its accessibility label says Space")
+               "Conflict help shows ⎵ but its accessibility label says Space")
         try registry.resetAll()
         warningsWindow.contentView = nil
         view.selectCommand("closeTab:")

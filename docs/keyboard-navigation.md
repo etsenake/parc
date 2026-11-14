@@ -263,7 +263,8 @@ add contextual operations without inventing menu command identities.
 
 ### Excluded by the ledger
 
-account/support services remain excluded. Parc's Check for Updates, Release
+A separate mini browser window, Boosts, AI commands, dedicated live integrations
+and vendor account/support services remain excluded. Parc's Check for Updates, Release
 Notes, Copy Parc Info and Reveal Parc Data are local product features and remain
 included. Getting Started is not a second onboarding replay entry point.
 

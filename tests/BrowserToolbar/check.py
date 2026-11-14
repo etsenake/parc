@@ -65,7 +65,7 @@ final class PCNativePage: NSObject {
         str(root / "Sources/ParcApp/SidebarMotionController.swift"),
         str(root / "Sources/ParcApp/SidebarChromeLayout.swift"),
         str(root / "Sources/ParcApp/WindowStandardButtons.swift"),
-        str(root / "Sources/ParcApp/PArcMenuColors.swift"),
+        str(root / "Sources/ParcApp/ParcMenuColors.swift"),
         str(root / "tests/Support/AppKitObservation.swift"),
         *map(str, tooltip_sources(root, scratch, ["SpaceTheme.swift", "ThemeRenderer.swift", "ReloadControl.swift"])),
         str(Path(__file__).with_name("main.swift")), "-o", str(executable)], check=True)

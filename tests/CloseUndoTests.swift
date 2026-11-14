@@ -98,7 +98,7 @@ struct CloseUndoTests {
                                  before: lone, after: loneCleared)?.actionName == "Clear Tab",
                   "One tab names Clear Tab")
 
-        let content = PArcToastContent.clearedTabs
+        let content = ParcToastContent.clearedTabs
         try check(content.body == .shortcut(leading: "Cleared Tabs! Use", shortcut: "⌘Z", trailing: "to undo.")
                   && content.accessibilityText == "Cleared Tabs! Use ⌘Z to undo." && content.showsShortcut,
                   "Toast reads Cleared Tabs! Use ⌘Z to undo.")
@@ -389,7 +389,7 @@ struct CloseUndoTests {
                   "With the other panes busy elsewhere, the pane comes back alone beside the split")
         refused = [c.id]
         let lastPair = clearSide([b.id])!
-        try check(lastPair.actionName == "Clear Tabs", "A pane that dissolves its split names the split too counts")
+        try check(lastPair.actionName == "Clear Tabs", "A pane that dissolves its split names the split too")
         let lastPairWindow = FolderUndoManager()
         try check(register(lastPair, in: lastPairWindow, on: sideStore), "Registers")
         lastPairWindow.undo()
@@ -469,7 +469,7 @@ struct CloseUndoTests {
                   && unfocused.selectedTabIDs == [t1.id], "Its Undo selects nothing")
 
         try check(close([keep.id], focused: keep.id) == nil && arch.state.tabs.contains { $0.id == keep.id && $0.archivedAt == nil },
-                  "Closing a pinned tab only unloads it, so it registers no Undo deselect")
+                  "Closing a pinned tab only unloads it, so it registers no Undo, like a deselect")
 
         let paneClose = close([s1.id], focused: nil)!
         try check(paneClose.actionName == "Archive Tabs" && !arch.state.splitLayouts.contains { $0.id == duo.id }

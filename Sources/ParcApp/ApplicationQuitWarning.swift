@@ -2,11 +2,11 @@ import AppKit
 
 @MainActor
 final class ApplicationQuitWarning: NSObject {
-    let dialog: PArcDialog
+    let dialog: ParcDialog
     var window: NSWindow { dialog.panel }
-    let quit: PArcDialogButton
-    let suppress: PArcDialogButton
-    let cancelButton: PArcDialogButton
+    let quit: ParcDialogButton
+    let suppress: ParcDialogButton
+    let cancelButton: ParcDialogButton
     private let preferences: QuitWarningPreferences
     private weak var parent: NSWindow?
     private var closeObserver: NSObjectProtocol?
@@ -17,10 +17,10 @@ final class ApplicationQuitWarning: NSObject {
 
     init(preferences: QuitWarningPreferences) {
         self.preferences = preferences
-        var content = PArcDialog.Content(title: [("Quit Parc?", false)], icon: NSApp.applicationIconImage,
+        var content = ParcDialog.Content(title: [("Quit Parc?", false)], icon: NSApp.applicationIconImage,
                                         confirm: "Quit", cancel: "Cancel")
         content.auxiliary = "Quit, and don’t ask again"
-        dialog = PArcDialog(content)
+        dialog = ParcDialog(content)
         quit = dialog.confirmButton; cancelButton = dialog.cancelButton!; suppress = dialog.auxiliaryButton!
         super.init()
         quit.target = self; quit.action = #selector(approve(_:))
@@ -73,7 +73,7 @@ final class ApplicationQuitWarning: NSObject {
         do {
             if disableWarning { try preferences.setEnabled(false) }
             finish(approved: true)
-        } catch { PArcDialog.inform(in: window, .init(error: error), queued: true) }
+        } catch { ParcDialog.inform(in: window, .init(error: error), queued: true) }
     }
     @objc private func cancelAction(_ sender: Any?) { cancel() }
     func cancel() { finish(approved: false) }

@@ -262,7 +262,7 @@ struct SpaceThemeRenderingTests {
         check(!previous.isEnabled && next.isEnabled, "the first preset page disables only <")
         let dimming = peakAlpha(previous) / peakAlpha(next)
         check(dimming > 0.3 && dimming < 0.37, "disabled < draws the enabled chevron at 0.33 opacity")
-        check(previous.frame.size == NSSize(width: 32, height: 32), "the chevron keeps the 32-point label frame")
+        check(previous.frame.size == NSSize(width: 32, height: 32), "the chevron keeps a 32-point label frame")
         func ink(_ view: NSView, _ appearance: NSAppearance) -> NSColor {
             let image = snapshot(view, appearance)
             var best = NSColor.clear

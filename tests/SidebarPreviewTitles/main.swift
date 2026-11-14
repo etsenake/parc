@@ -93,7 +93,7 @@ check(folder([]) == .selectOriginal(split: false) && folder(.shift) == .selectOr
       && folder(.control) == .selectOriginal(split: false), "other modifiers select the original")
 check(folder(.option) == .selectOriginal(split: true) && folder([.option, .capsLock, .function]) == .selectOriginal(split: true), "exact Option splits")
 check(folder([.option, .shift]) == .selectOriginal(split: false) && folder([.option, .control]) == .selectOriginal(split: false), "inexact Option does not split")
-check(folder([.option, .command]) == .excludedLittleArc && folder([.option, .command, .numericPad]) == .excludedLittleArc, "Option-Command is excluded Little Arc")
+check(folder([.option, .command]) == .excludedMiniWindow && folder([.option, .command, .numericPad]) == .excludedMiniWindow, "Option-Command is the excluded mini browser window")
 check(folder([.command, .shift]) == .duplicate && folder([.command, .shift, .capsLock]) == .duplicate, "exact Command-Shift duplicates")
 check(folder(.command) == .reveal && folder([.command, .control]) == .reveal && folder([.command, .option, .shift]) == .reveal,
       "other Command combinations reveal")

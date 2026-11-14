@@ -1,6 +1,6 @@
 import AppKit
 
-struct PArcMenuColors {
+struct ParcMenuColors {
     let base: NSColor
     let background: NSColor
     let hover: NSColor

@@ -1,7 +1,4 @@
 // Copyright 2026 Parc contributors.
-// Exercises the production observer/service against genuine DownloadItemImpl
-// state transitions. Only the manager lookup/ownership boundary is a test
-// double.
 #include "parc/native/downloads.h"
 
 #include "base/functional/bind.h"
@@ -38,8 +35,6 @@ class ResumeDelegate final : public download::DownloadItemImplDelegate {
   }
   int resumptions = 0;
 };
-// Registered after the service to exercise a later observer entering a nested
-// run loop while the genuine item's UpdateObservers frame is still active.
 class CallbackObserver final : public download::DownloadItem::Observer {
  public:
   CallbackObserver(download::DownloadItem& item, base::RepeatingClosure updated)
@@ -90,8 +85,6 @@ class NativeDownloadsTest : public testing::Test {
               ++arrivals;
             }));
   }
-  // A genuine DownloadItemImpl with no DownloadItemUtils data, as restored
-  // history and imported in-progress items have (AttachInfo(nullptr)).
   std::unique_ptr<download::DownloadItemImpl> MakeItem(
       download::DownloadItem::DownloadState state,
       download::DownloadDangerType danger =
@@ -126,7 +119,6 @@ class NativeDownloadsTest : public testing::Test {
       EXPECT_TRUE(service);
       EXPECT_TRUE(item);
     }));
-    // Enter an actual outer loop first; the observer's loop must be nested.
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindLambdaForTesting([&] {
           item->UpdateObservers();
@@ -139,7 +131,6 @@ class NativeDownloadsTest : public testing::Test {
     ASSERT_EQ(updates.size(), 1u);
     EXPECT_EQ(updates.back().available, !manager_shutdown);
     EXPECT_FALSE(service);
-    // Real DownloadItemImpl destruction CHECKs that UpdateObservers unwound.
     EXPECT_FALSE(item);
   }
   void TearDown() override {
@@ -213,8 +204,6 @@ TEST_F(NativeDownloadsTest, InitialHistoryIsCopiedAndNeverClaimsCompletion) {
   EXPECT_EQ(value.can_resume, item->CanResume());
 }
 
-//
-// enumeration or an item without an initiating document.
 TEST_F(NativeDownloadsTest, ManagerInitEnumeratesHistoryConstructorMissed) {
   ON_CALL(manager, GetAllDownloads).WillByDefault([](auto* items) {});
   service = std::make_unique<NativeDownloads>(
@@ -264,8 +253,6 @@ TEST_F(NativeDownloadsTest, ArrivalAdmissionIsTheLiveIncarnationOnly) {
   EXPECT_TRUE(service->CanPresentArrival(value.guid, value.item_identity));
   EXPECT_FALSE(service->CanPresentArrival(value.guid, "another-incarnation"));
   EXPECT_FALSE(service->CanPresentArrival("missing", value.item_identity));
-  //
-  // an existing owner, never the pending hover query).
   EXPECT_TRUE(service->Perform(item->GetGuid(), NativeDownloadAction::kCancel));
   EXPECT_TRUE(service->CanPresentArrival(value.guid, value.item_identity));
   service->Shutdown();
@@ -338,10 +325,10 @@ TEST_F(NativeDownloadsTest,
   destroy_on_update = true;
   item->UpdateObservers();
   ASSERT_TRUE(
-      service);  // No shell callback ran inside DownloadItem notification.
+      service);
   tasks.RunUntilIdle();
   EXPECT_FALSE(service);
-  item->UpdateObservers();  // Observer was genuinely removed.
+  item->UpdateObservers();
 }
 
 TEST_F(NativeDownloadsTest, LaterObserverNestedLoopCannotDeliverItemUpdate) {
@@ -439,8 +426,6 @@ TEST_F(NativeDownloadPreferencesTest, ManagedDirectoryRefusesBothChanges) {
 }
 TEST_F(NativeDownloadPreferencesTest,
        ManagedDirectoryAloneRefusesPromptChange) {
-  // The normal mandatory directory policy also manages the prompt to false.
-  // Preserve refusal during a partially delivered policy update as well.
   ASSERT_TRUE(SetNativeDownloadPrompt(profile, false));
   profile.GetTestingPrefService()->SetManagedPref(
       prefs::kDownloadDefaultDirectory,

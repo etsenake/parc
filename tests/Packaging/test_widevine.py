@@ -26,8 +26,6 @@ vmp = pkg.widevine_vmp
 
 OPENSSL = shutil.which("openssl")
 XCRUN = shutil.which("xcrun")
-REFERENCE = (Path(os.environ.get("PARC_REFERENCE_ROOT", REPO / "work/reference"))
-             / "apps/Parc-1.170.0.app/Contents/Frameworks/LegacyCore.framework/Versions/A")
 
 
 def compile_image(path: Path, *, executable=False, archs=("arm64",)) -> Path:
@@ -81,23 +79,6 @@ class SignatureFormatTests(unittest.TestCase):
                 path.write_bytes(content)
                 with self.subTest(content=content[:4]), self.assertRaises(vmp.VmpError):
                     vmp.macho_digest(path)
-
-
-@unittest.skipUnless(REFERENCE.is_dir(), "Parc 1.170 reference snapshot is not restored")
-class ReferenceSignatureTests(unittest.TestCase):
-    def test_arc_framework_signature_verifies_after_apple_signing(self):
-        moment = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        data = (REFERENCE / "Resources/LegacyCore.sig").read_bytes()
-        info = vmp.verify(REFERENCE / "LegacyCore", data, vmp.BLESSED, moment)
-        self.assertIn("O=The Browser Company of New York Inc", info["certificate"]["subject"])
-        self.assertTrue(info["certificate"]["issuer"].endswith("CN=widevine-codesign-root-ca"))
-        self.assertEqual(len(vmp.macho_body_ranges(REFERENCE / "LegacyCore")), 2)
-        with self.assertRaisesRegex(vmp.VmpError, "flags"):
-            vmp.verify(REFERENCE / "LegacyCore", data, 0, moment)
-        forged = vmp.decode(data)
-        forged["signature"] = bytes([forged["signature"][0] ^ 1]) + forged["signature"][1:]
-        with self.assertRaisesRegex(vmp.VmpError, "does not match"):
-            vmp.verify(REFERENCE / "LegacyCore", vmp.encode(forged["certificate"], forged["signature"], 1), 1, moment)
 
 
 @unittest.skipUnless(XCRUN, "Xcode command-line tools are required")

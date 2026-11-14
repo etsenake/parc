@@ -128,7 +128,7 @@ enum Control: Hashable { case header, divider, heading, newTab }
         outline.reload(entries()); layout()
 
         check(outline.isAccessibilityElement() && outline.accessibilityRole() == .outline, "the list is an AXOutline")
-        check(outline.accessibilityIdentifier() == "sidebarAllTabList", "the outline's AXIdentifier is the sidebarAllTabList")
+        check(outline.accessibilityIdentifier() == "sidebarAllTabList", "the outline's AXIdentifier is sidebarAllTabList")
         check(outline.accessibilityLabel() == nil && outline.accessibilityTitle() == nil, "the outline has no AXDescription or AXTitle")
         let rows = outline.rows
         check(rows.count == 9, "one row per entry, the empty pinned header included (\(rows.count))")
@@ -173,7 +173,7 @@ enum Control: Hashable { case header, divider, heading, newTab }
               "a control's row cell holds the control's exposed cell")
         check(cellChildren(Control.header).isEmpty, "the pinned header's row is an empty row")
         let dividerChildren = cellChildren(Control.divider)
-        check(dividerChildren.count == 1 && same(dividerChildren.first, clear.cell), "Clear sits in the divider's row divider cell")
+        check(dividerChildren.count == 1 && same(dividerChildren.first, clear.cell), "Clear sits in the divider's row")
 
         let workRow = byKey[workKey]!, archiveRow = byKey[archiveKey]!, childRow = byKey[childID]!, dividerRow = byKey[Control.divider]!
         let pinnedRow = byKey[pinnedID]!, splitRow = byKey[splitID]!, todayRow = byKey[todayID]!, newTabRow = byKey[Control.newTab]!
@@ -183,7 +183,7 @@ enum Control: Hashable { case header, divider, heading, newTab }
         check(close(inRow(child, childRow), NSRect(x: 16, y: 2, width: rowWidth - 16, height: 36)), "a folder child is indented 16 points")
         check(close(inRow(subfolder, archiveRow), NSRect(x: 16, y: 2, width: rowWidth - 16, height: 36)), "a subfolder is indented 16 points")
         check(close(inRow(newTab, newTabRow), NSRect(x: 0, y: 2, width: rowWidth, height: 36)),
-              "New Tab takes an item's whole visible row cell does")
+              "New Tab takes an item's whole visible row")
         check(close(inRow(dividerCell, dividerRow), NSRect(x: 0, y: 0, width: rowWidth, height: 24)), "the divider fills its 24-point cell")
         check(rows.map { $0.frame.height } == [3, 41, 41, 41, 41, 41, 25, 41, 41], "each row is its cell and the 1-point gap below it")
         check(zip(rows, rows.dropFirst()).allSatisfy { $0.frame.maxY == $1.frame.minY } && rows.first?.frame.minY == 0

@@ -325,7 +325,8 @@ Settings destinations cover Membership, General, Spaces (Open Space Preferences;
 Profile stays a hidden keyword), Shortcuts, Links,
 Icon and Advanced. Appearance switches reuse window Undo. Getting Started is
 intentionally absent: Replay onboarding belongs only in Settings → General.
-excluded; local diagnostics and Parc updates do not inherit those exclusions.
+AI, a separate mini browser window, vendor account support/services and live
+integrations remain excluded; local diagnostics and Parc updates do not inherit those exclusions.
 
 ## Search-suggestion privacy banner
 

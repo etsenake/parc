@@ -113,7 +113,7 @@ private final class ComponentWindow: NSWindow {
         let prior = events.count
         tile.mouseDown(with: event(.leftMouseDown, [.option, .command]))
         tile.mouseUp(with: event(.leftMouseUp, [.option, .command]))
-        check(events.count == prior, "Excluded Little Arc route never substitutes activation")
+        check(events.count == prior, "The excluded mini browser window route never substitutes activation")
         tile.mouseDown(with: event(.leftMouseDown, .option))
         tile.mouseUp(with: event(.leftMouseUp))
         check(events.count == prior, "Removing Option before release does not replay down selection")

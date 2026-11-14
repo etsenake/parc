@@ -1,6 +1,7 @@
 # Dialogs
 
 Every alert, confirmation and name prompt a person sees in Parc's own windows is
+a `ParcDialog` (`Sources/ParcApp/ParcDialog.swift`): the popover background, an
 18-point title, 14-point message, 36-point buttons with Escape and return hints,
 and a red Delete for destructive confirmations. The engine draws its own sheets in
 the same style with the same checkbox and field card
@@ -16,6 +17,8 @@ error, which can appear before any Parc window or engine exists.
 A dialog is a sheet on a window (`begin(for:)`) or, where it never had a window
 to hang from, app-modal (`runModal()`). A window that already shows a sheet
 refuses an unqueued dialog; a caller that always showed its alert passes
+`queued`. `ParcDialog.inform` shows a title and message with OK, `Content(error:)`
+builds what `NSAlert(error:)` showed, and `ParcDialog.present` is the app-modal
 error alert that replaces `presentError`.
 
 The response says which button ended it: confirm, the checkbox-ticked confirm,
@@ -43,4 +46,4 @@ keyboard focus; Space toggles it and every other key passes on.
 
 Return confirms and Escape cancels wherever focus is, including the field and the
 checkbox, and keypad Enter confirms. An input method that is composing keeps its
-own Return and Escape. `scripts/test-arc-dialog.sh` covers these cases.
+own Return and Escape. `scripts/test-parc-dialog.sh` covers these cases.

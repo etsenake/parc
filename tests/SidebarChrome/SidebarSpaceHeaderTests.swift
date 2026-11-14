@@ -177,7 +177,7 @@ struct SidebarSpaceHeaderTests {
         header.update(titled("Space 2"), symbol: nil, emoji: nil)
         header.layoutSubtreeIfNeeded()
         check(symbolView.isHidden && emoji.isHidden && field.frame == H.frames(width: 228, icon: false, titleHeight: titleHeight).title
-              && field.frame.minX == 14 && field.frame.maxX == 210, "without a custom icon Parc hides the icon and the name leads")
+              && field.frame.minX == 14 && field.frame.maxX == 210, "without a custom icon the icon hides and the name leads")
         header.update(titled(String(repeating: "Long Space Name ", count: 6)), symbol: nil, emoji: nil)
         header.layoutSubtreeIfNeeded()
         check(field.frame.maxX == 210 && field.frame.height == titleHeight, "a long name stays one truncated line inside the slot")
@@ -200,7 +200,7 @@ struct SidebarSpaceHeaderTests {
         field.isMaskingEnabled = false
         check(field.layer?.mask == nil, "disabling masking removes the mask")
         field.isMaskingEnabled = true
-        check(field.layer?.mask == nil, "enabling it again waits for the next text change setter does")
+        check(field.layer?.mask == nil, "enabling it again waits for the next text change")
         field.updateMask(true)
         check(field.layer?.mask === mask, "the mask follows the next evaluation")
         field.textDidEndEditing(Notification(name: NSText.didEndEditingNotification, object: editor))
@@ -274,7 +274,7 @@ struct SidebarSpaceHeaderTests {
         var menu = click.flatMap { header.menu(for: $0) }
         check(menu?.items.map(\.title) == base && menu?.items.allSatisfy(\.isEnabled) == true
               && (field.cell?.accessibilityCustomActions() ?? []).map(\.name) == base,
-              "a titled Space's right-click menu has the titles and no header toggle")
+              "a titled Space's right-click menu has the Space titles and no header toggle")
         header.update(content([first], first, setting: true), symbol: nil, emoji: nil)
         menu = click.flatMap { header.menu(for: $0) }
         check(menu?.items.map(\.title) == base + ["Hide Space Header"] && menu?.items.allSatisfy(\.isEnabled) == true,
@@ -322,7 +322,7 @@ struct SidebarSpaceHeaderTests {
                 return point
             }
         }
-        func isArcFade(_ fade: CABasicAnimation?) -> Bool {
+        func isEditFade(_ fade: CABasicAnimation?) -> Bool {
             fade?.duration == 0.1 && controlPoints(fade?.timingFunction) == controlPoints(CAMediaTimingFunction(name: .easeOut))
         }
         let restFrames = H.frames(width: 228, icon: false, titleHeight: titleHeight)
@@ -376,7 +376,7 @@ struct SidebarSpaceHeaderTests {
         var after: (width: CGFloat, alpha: CGFloat, fade: CABasicAnimation?) = (-1, -1, nil)
         DispatchQueue.main.async { after = (button.frame.width, button.alphaValue, opacityFade()) }
         settle(0.05)
-        check(after.width == 0 && after.alpha == 0 && isArcFade(after.fade) && !button.isHidden && field.frame.maxX == 210,
+        check(after.width == 0 && after.alpha == 0 && isEditFade(after.fade) && !button.isHidden && field.frame.maxX == 210,
               "then, without a custom icon, the width snaps to 0 and the alpha fades out in the 0.1 s ease-out group")
         header.mouseEntered(with: crossing(.mouseEntered))
         header.mouseExited(with: crossing(.mouseExited))
@@ -399,7 +399,7 @@ struct SidebarSpaceHeaderTests {
 
         func fill() -> [CGFloat]? { button.display(); return components(button.layer?.backgroundColor) }
         check(fill() == [0, 0, 0, 0] && button.layer?.cornerRadius == 6 && button.layer?.cornerCurve == .continuous
-              && button.layer?.borderWidth == 0, "unhovered: clear, with the radius 6 continuous corners")
+              && button.layer?.borderWidth == 0, "unhovered: clear, with radius 6 continuous corners")
         button.mouseEntered(with: crossing(.mouseEntered))
         check(button.isHovered && header.isHovered && fill() == [0, 0, 0, 0.071], "hovered: GrayA4 on the button itself (light)")
         check(components(button.contentTintColor) == [0, 0, 0, 0.565], "the tint stays GrayA11 while hovered")
@@ -422,7 +422,7 @@ struct SidebarSpaceHeaderTests {
         check(button.frame == editingFrames.editButton && button.frame.maxX == 214 && button.frame.width >= ceil(doneTitleWidth) + 4
               && field.frame == editingFrames.title && field.frame.maxX == button.frame.minX - 4,
               "editing: Done ends at 214 with room for its whole title and the name ends 4 points before it, without hover")
-        check(button.alphaValue == 1 && isArcFade(opacityFade()), "the editing change fades in, in the group")
+        check(button.alphaValue == 1 && isEditFade(opacityFade()), "the editing change fades in, in the same group")
         check(button.image?.tiffRepresentation != ellipsis?.tiffRepresentation && (button.image?.size.width ?? 0) <= 1
               && button.title == "Done" && editElement?.accessibilityLabel() == "Done", "\"Done\" replaces the ellipsis")
         button.mouseEntered(with: crossing(.mouseEntered))

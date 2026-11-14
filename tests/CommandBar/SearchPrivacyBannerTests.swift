@@ -15,7 +15,7 @@ import AppKit
         check(!policy.hasBeenExplicitlyDismissed, "a fresh profile has not dismissed the banner")
         policy.dismiss()
         check(CommandBarSearchPrivacyPolicy(defaults: defaults).hasBeenExplicitlyDismissed, "Dismiss persists across bar sessions")
-        check(defaults.bool(forKey: "commandBarSearchSuggestionsPrivacyHasBeenExplicitlyDismissed"), "the key name is used")
+        check(defaults.bool(forKey: "commandBarSearchSuggestionsPrivacyHasBeenExplicitlyDismissed"), "the dismissal key name is used")
         defaults.removePersistentDomain(forName: suite)
 
         func info(dismissed: Bool = false, visible: Bool = false, scoped: Bool = false, offer: Bool = false,
@@ -33,7 +33,7 @@ import AppKit
 
         let infoButton = CommandBarPrivacyInfoButton(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
         check(infoButton.image != nil && infoButton.imagePosition == .imageOnly, "the accessory is the info symbol alone")
-        check(infoButton.shadow?.shadowBlurRadius == 8, "the 8-point accessory shadow")
+        check(infoButton.shadow?.shadowBlurRadius == 8, "an 8-point accessory shadow")
         check(infoButton.accessibilityLabel() == "Search suggestions privacy", "the accessory is labelled for VoiceOver")
         check(infoButton.refusesFirstResponder, "clicking the accessory leaves the command field focused")
 
@@ -43,7 +43,7 @@ import AppKit
         window.appearance = NSAppearance(named: .darkAqua)
         window.contentView = banner
         banner.layoutSubtreeIfNeeded()
-        check(banner.title.stringValue == "We talk to your search engine to help us suggest results.", "the title")
+        check(banner.title.stringValue == "We talk to your search engine to help us suggest results.", "the banner title")
         check(banner.title.font == NSFont.boldSystemFont(ofSize: 13), "the title is bold body text")
         check(banner.settingsButton.title == "Search Settings…" && banner.dismissButton.title == "Dismiss", "the button titles")
         check(banner.icon.image != nil, "the info.circle symbol resolves")
@@ -97,7 +97,7 @@ import AppKit
 
         check(SidebarTablistBackground.press(clickCount: 1, modifiers: []) == .dragWindow, "a first press drags the window")
         check(SidebarTablistBackground.press(clickCount: 1, modifiers: [.command, .option, .shift]) == .dragWindow,
-              "other modifiers still drag checks only Control")
+              "other modifiers still drag; only Control is checked")
         check(SidebarTablistBackground.press(clickCount: 2, modifiers: []) == .waitForRelease,
               "the second press of a double-click doesn't drag; its release opens the bar")
         check(SidebarTablistBackground.press(clickCount: 3, modifiers: []) == .waitForRelease, "later presses don't drag")
@@ -106,7 +106,7 @@ import AppKit
         check(SidebarTablistBackground.opensCommandBar(clickCount: 2, modifiers: [], y: 400, lastRowMaxY: 320),
               "a double-click under the last row opens the bar")
         check(SidebarTablistBackground.opensCommandBar(clickCount: 2, modifiers: [], y: 320, lastRowMaxY: 320),
-              "the last row's bottom edge counts as empty space compares")
+              "the last row's bottom edge counts as empty space")
         check(!SidebarTablistBackground.opensCommandBar(clickCount: 2, modifiers: [], y: 200, lastRowMaxY: 320),
               "a gap among rows does not open it")
         check(!SidebarTablistBackground.opensCommandBar(clickCount: 1, modifiers: [], y: 400, lastRowMaxY: 320),

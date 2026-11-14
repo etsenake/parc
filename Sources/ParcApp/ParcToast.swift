@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-struct PArcToastContent: Equatable {
+struct ParcToastContent: Equatable {
     enum Button: Equatable { case share([URL]) }
     enum Body: Equatable {
         case standard(icon: String?, label: String, subLabel: String?, buttons: [Button])
@@ -11,66 +11,66 @@ struct PArcToastContent: Equatable {
     var accessibilityText: String
 
     static func standard(_ label: String, icon: String? = nil, subLabel: String? = nil,
-                         buttons: [Button] = []) -> PArcToastContent {
-        PArcToastContent(body: .standard(icon: icon, label: label, subLabel: subLabel, buttons: buttons),
+                         buttons: [Button] = []) -> ParcToastContent {
+        ParcToastContent(body: .standard(icon: icon, label: label, subLabel: subLabel, buttons: buttons),
                         accessibilityText: [label, subLabel].compactMap { $0 }.joined(separator: ", "))
     }
     private static func share(_ urls: [URL]) -> [Button] { urls.isEmpty ? [] : [.share(urls)] }
-    static func copiedCurrentURL(_ url: URL?) -> PArcToastContent {
+    static func copiedCurrentURL(_ url: URL?) -> ParcToastContent {
         standard("Copied Current URL", buttons: share(url.map { [$0] } ?? []))
     }
-    static func copiedItemLinks(_ urls: [URL]) -> PArcToastContent {
+    static func copiedItemLinks(_ urls: [URL]) -> ParcToastContent {
         standard("Copied item links", buttons: share(urls))
     }
-    static func copiedQuoteLink(_ url: URL?) -> PArcToastContent {
+    static func copiedQuoteLink(_ url: URL?) -> ParcToastContent {
         standard("Copied Link", icon: "quote.bubble.fill", subLabel: "With Quote", buttons: share(url.map { [$0] } ?? []))
     }
-    static func copiedLink(_ url: URL) -> PArcToastContent { standard("Copied Link", buttons: share([url])) }
+    static func copiedLink(_ url: URL) -> ParcToastContent { standard("Copied Link", buttons: share([url])) }
     static let copiedBuildInfo = standard("Copied Build Info")
     static let cannotAddNewPane = standard("Cannot Add New Pane")
     static let copiedImage = standard("Copied Image")
-    static func copiedFile(_ urls: [URL]) -> PArcToastContent { standard("Copied File", buttons: share(urls)) }
-    static func zoom(percent: Int) -> PArcToastContent { standard("\(percent)%") }
-    static func fullScreenExit(shortcut: String) -> PArcToastContent {
+    static func copiedFile(_ urls: [URL]) -> ParcToastContent { standard("Copied File", buttons: share(urls)) }
+    static func zoom(percent: Int) -> ParcToastContent { standard("\(percent)%") }
+    static func fullScreenExit(shortcut: String) -> ParcToastContent {
         standard("To exit full screen, press " + shortcut + ".")
     }
     static let archiveCleared = standard("Archive Cleared")
-    static func extensionsNotAdded(_ names: [String]) -> PArcToastContent {
+    static func extensionsNotAdded(_ names: [String]) -> ParcToastContent {
         standard(names.count == 1 ? "Couldn’t add " + names[0] : "Couldn’t add \(names.count) extensions")
     }
     static let importPartial = standard("Only some of your data imported. Please try again!")
     static let importFailed = standard("We weren’t able to import… please try again!")
-    static func tabRestored(to location: String, selected: Bool) -> PArcToastContent {
+    static func tabRestored(to location: String, selected: Bool) -> ParcToastContent {
         standard("Tab restored to " + location + (selected ? "" : ". Click to view."))
     }
-    static func pinnedToFolder(_ name: String) -> PArcToastContent { standard("Pinned to “" + name + "”") }
-    static func backgroundTabCreated(inSpace space: String?, document: Bool) -> PArcToastContent {
+    static func pinnedToFolder(_ name: String) -> ParcToastContent { standard("Pinned to “" + name + "”") }
+    static func backgroundTabCreated(inSpace space: String?, document: Bool) -> ParcToastContent {
         if document { return standard("New Document Created") }
         return standard(space.map { "New Tab Created in " + $0 } ?? "New Tab Created")
     }
     var showsShortcut: Bool { if case .shortcut = body { return true } else { return false } }
-    static func pressAgain(shortcut: String, title: String) -> PArcToastContent {
-        PArcToastContent(body: .shortcut(leading: nil, shortcut: shortcut, trailing: "again to " + title),
+    static func pressAgain(shortcut: String, title: String) -> ParcToastContent {
+        ParcToastContent(body: .shortcut(leading: nil, shortcut: shortcut, trailing: "again to " + title),
                         accessibilityText: "Press " + shortcut + " again to " + title)
     }
-    static func undoable(_ text: String) -> PArcToastContent {
-        PArcToastContent(body: .shortcut(leading: text + "! Use", shortcut: "⌘Z", trailing: "to undo."),
+    static func undoable(_ text: String) -> ParcToastContent {
+        ParcToastContent(body: .shortcut(leading: text + "! Use", shortcut: "⌘Z", trailing: "to undo."),
                         accessibilityText: text + "! Use ⌘Z to undo.")
     }
     static let clearedTabs = undoable("Cleared Tabs")
 }
 
-struct PArcToastAccessory: Equatable {
+struct ParcToastAccessory: Equatable {
     let text: String
     let image: String?
     let accessibilityLabel: String
 }
 
-@MainActor protocol PArcToastAnchoring: NSView {
+@MainActor protocol ParcToastAnchoring: NSView {
     var toastContentRect: NSRect { get }
 }
 
-enum PArcToastPlacement {
+enum ParcToastPlacement {
     static let windowSide: CGFloat = 600
     static func windowFrame(for parent: NSRect) -> NSRect {
         NSRect(x: parent.maxX - windowSide, y: parent.maxY - windowSide, width: windowSide, height: windowSide)
@@ -80,20 +80,20 @@ enum PArcToastPlacement {
     }
 }
 
-enum PArcToastTiming {
+enum ParcToastTiming {
     static let duration: TimeInterval = 5
     static let retirement: TimeInterval = 1
     static let accessoryDelay: TimeInterval = 0.5
 }
 
-enum PArcToastScroll {
+enum ParcToastScroll {
     static func dismisses(window: NSWindow?, deltaX: CGFloat, deltaY: CGFloat, owners: [NSWindow?]) -> Bool {
         guard deltaX != 0 || deltaY != 0, let window else { return false }
         return owners.contains { $0 === window }
     }
 }
 
-struct PArcToastPalette {
+struct ParcToastPalette {
     let background: NSColor
     let foreground: NSColor
     let isDark: Bool
@@ -154,16 +154,16 @@ struct PArcToastPalette {
 }
 
 @MainActor
-final class PArcToastState: ObservableObject {
-    let content: PArcToastContent
-    let accessory: PArcToastAccessory?
+final class ParcToastState: ObservableObject {
+    let content: ParcToastContent
+    let accessory: ParcToastAccessory?
     @Published var theme: SpaceTheme
     @Published var basicBackground: NSColor?
     @Published var showing = false
     @Published var showAccessory = false
     @Published var reduceMotion = false
-    @Published var maxWidth: CGFloat = PArcToastPlacement.windowSide
-    init(content: PArcToastContent, accessory: PArcToastAccessory? = nil, theme: SpaceTheme, basicBackground: NSColor? = nil) {
+    @Published var maxWidth: CGFloat = ParcToastPlacement.windowSide
+    init(content: ParcToastContent, accessory: ParcToastAccessory? = nil, theme: SpaceTheme, basicBackground: NSColor? = nil) {
         self.content = content; self.accessory = accessory; self.theme = theme; self.basicBackground = basicBackground
     }
     func show() {
@@ -175,34 +175,34 @@ final class PArcToastState: ObservableObject {
     private static let spring = Animation.spring(response: 0.4, dampingFraction: 0.7, blendDuration: 0.1)
 }
 
-struct PArcToastFrames: Equatable {
+struct ParcToastFrames: Equatable {
     var body = CGRect.zero
     var accessory = CGRect.zero
 }
-private struct PArcToastFrameKey: PreferenceKey {
-    static let defaultValue = PArcToastFrames()
-    static func reduce(value: inout PArcToastFrames, nextValue: () -> PArcToastFrames) {
+private struct ParcToastFrameKey: PreferenceKey {
+    static let defaultValue = ParcToastFrames()
+    static func reduce(value: inout ParcToastFrames, nextValue: () -> ParcToastFrames) {
         let next = nextValue()
         if !next.body.isEmpty { value.body = next.body }
         if !next.accessory.isEmpty { value.accessory = next.accessory }
     }
 }
 
-struct PArcToastActions {
+struct ParcToastActions {
     var tap: (() -> Void)?
     var accessory: (() -> Void)?
     var dismiss: () -> Void
     var share: @MainActor ([URL]) -> Void
-    var frames: (PArcToastFrames) -> Void
+    var frames: (ParcToastFrames) -> Void
 }
 
-struct PArcToastCard: View {
-    @ObservedObject var state: PArcToastState
-    let actions: PArcToastActions
+struct ParcToastCard: View {
+    @ObservedObject var state: ParcToastState
+    let actions: ParcToastActions
     @Environment(\.colorScheme) private var colorScheme
     @State private var accessoryHovered = false
-    private var palette: PArcToastPalette {
-        PArcToastPalette(theme: state.theme, isDark: colorScheme == .dark, basicBackground: state.basicBackground)
+    private var palette: ParcToastPalette {
+        ParcToastPalette(theme: state.theme, isDark: colorScheme == .dark, basicBackground: state.basicBackground)
     }
     private var ink: Color { Color(nsColor: palette.foreground) }
     static let iconFont: Font = {
@@ -221,7 +221,7 @@ struct PArcToastCard: View {
                 if abs(value.translation.height) >= 10 { actions.dismiss() }
             })
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .coordinateSpace(name: "toast").onPreferenceChange(PArcToastFrameKey.self, perform: actions.frames)
+            .coordinateSpace(name: "toast").onPreferenceChange(ParcToastFrameKey.self, perform: actions.frames)
     }
 
     private var card: some View {
@@ -230,8 +230,8 @@ struct PArcToastCard: View {
             .background(backdrop(accessory: false))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .background(GeometryReader { proxy in
-                Color.clear.preference(key: PArcToastFrameKey.self,
-                    value: PArcToastFrames(body: proxy.frame(in: .named("toast"))))
+                Color.clear.preference(key: ParcToastFrameKey.self,
+                    value: ParcToastFrames(body: proxy.frame(in: .named("toast"))))
             })
             .modifier(TapModifier(tap: actions.tap))
             .modifier(AccessibilityModifier(content: state.content, tap: actions.tap))
@@ -273,7 +273,7 @@ struct PArcToastCard: View {
                         SwiftUI.Button { actions.share(urls) } label: {
                             Image(systemName: "square.and.arrow.up").offset(x: 0, y: -1)
                         }
-                        .buttonStyle(PArcToastButtonStyle(ink: ink, isDark: palette.isDark))
+                        .buttonStyle(ParcToastButtonStyle(ink: ink, isDark: palette.isDark))
                         .accessibilityLabel("Share")
                     }
                 }
@@ -293,7 +293,7 @@ struct PArcToastCard: View {
         }
     }
 
-    private func accessoryView(_ accessory: PArcToastAccessory) -> some View {
+    private func accessoryView(_ accessory: ParcToastAccessory) -> some View {
         SwiftUI.Button(action: { actions.accessory?() }) {
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(accessory.text)
@@ -308,8 +308,8 @@ struct PArcToastCard: View {
         .buttonStyle(.plain).accessibilityLabel(accessory.accessibilityLabel)
         .opacity(accessoryHovered ? 0.6 : 1).onHover { accessoryHovered = $0 }
         .background(GeometryReader { proxy in
-            Color.clear.preference(key: PArcToastFrameKey.self,
-                value: PArcToastFrames(accessory: proxy.frame(in: .named("toast"))))
+            Color.clear.preference(key: ParcToastFrameKey.self,
+                value: ParcToastFrames(accessory: proxy.frame(in: .named("toast"))))
         })
         .padding(.trailing, 13)
         .transition(.move(edge: .top).combined(with: .opacity))
@@ -318,7 +318,7 @@ struct PArcToastCard: View {
 
     @ViewBuilder private func backdrop(accessory: Bool) -> some View {
         ZStack {
-            PArcToastMaterial()
+            ParcToastMaterial()
             Color(nsColor: palette.background).opacity(0.8)
             if !accessory {
                 LinearGradient(colors: palette.isDark ? [.black.opacity(0.2), .black.opacity(0.4)] :
@@ -336,7 +336,7 @@ struct PArcToastCard: View {
         }
     }
     private struct AccessibilityModifier: ViewModifier {
-        let content: PArcToastContent
+        let content: ParcToastContent
         let tap: (() -> Void)?
         @ViewBuilder func body(content view: Content) -> some View {
             if let tap {
@@ -351,7 +351,7 @@ struct PArcToastCard: View {
     }
 }
 
-struct PArcToastButtonStyle: ButtonStyle {
+struct ParcToastButtonStyle: ButtonStyle {
     let ink: Color
     let isDark: Bool
     func makeBody(configuration: Configuration) -> some View {
@@ -384,7 +384,7 @@ struct PArcToastButtonStyle: ButtonStyle {
     }
 }
 
-private struct PArcToastMaterial: NSViewRepresentable {
+private struct ParcToastMaterial: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = NSVisualEffectView.Material(rawValue: 1) ?? .popover
@@ -395,37 +395,37 @@ private struct PArcToastMaterial: NSViewRepresentable {
 }
 
 @MainActor
-private final class PArcToastWindow: NSWindow {
+private final class ParcToastWindow: NSWindow {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
 
 @MainActor
-final class PArcToastPresentation: NSView {
-    let state: PArcToastState
+final class ParcToastPresentation: NSView {
+    let state: ParcToastState
     private let duration: TimeInterval
     private var onTap: (() -> Void)?
     var onRetire: (() -> Void)?
     var pointerLocation: () -> NSPoint = { NSEvent.mouseLocation }
     private weak var originalWindow: NSWindow?
-    private weak var panel: PArcToastWindow?
-    private var host: NSHostingView<PArcToastCard>!
+    private weak var panel: ParcToastWindow?
+    private var host: NSHostingView<ParcToastCard>!
     private var timer: Timer?
     private var closeWork: DispatchWorkItem?
     private var observers: [NSObjectProtocol] = []
     private var workspaceObserver: NSObjectProtocol?
     private var scrollMonitor: Any?
     private(set) var isRetiring = false
-    private(set) var frames = PArcToastFrames()
+    private(set) var frames = ParcToastFrames()
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { false }
 
-    init(content: PArcToastContent, theme: SpaceTheme, basicBackground: NSColor? = nil, duration: TimeInterval = PArcToastTiming.duration,
+    init(content: ParcToastContent, theme: SpaceTheme, basicBackground: NSColor? = nil, duration: TimeInterval = ParcToastTiming.duration,
          onTap: (() -> Void)? = nil, share: @escaping @MainActor ([URL]) -> Void = { _ in }) {
-        state = PArcToastState(content: content, theme: theme, basicBackground: basicBackground)
+        state = ParcToastState(content: content, theme: theme, basicBackground: basicBackground)
         self.duration = duration; self.onTap = onTap
-        super.init(frame: NSRect(x: 0, y: 0, width: PArcToastPlacement.windowSide, height: PArcToastPlacement.windowSide))
-        host = NSHostingView(rootView: PArcToastCard(state: state, actions: PArcToastActions(
+        super.init(frame: NSRect(x: 0, y: 0, width: ParcToastPlacement.windowSide, height: ParcToastPlacement.windowSide))
+        host = NSHostingView(rootView: ParcToastCard(state: state, actions: ParcToastActions(
             tap: onTap == nil ? nil : { [weak self] in self?.performTap() },
             accessory: nil,
             dismiss: { [weak self] in self?.dismiss(animated: true) },
@@ -447,12 +447,12 @@ final class PArcToastPresentation: NSView {
 
     static func frame(in parent: NSWindow, over anchor: NSView?) -> NSRect {
         if let anchor, anchor.window === parent, !anchor.isHiddenOrHasHiddenAncestor {
-            let content = (anchor as? PArcToastAnchoring)?.toastContentRect ?? anchor.bounds
+            let content = (anchor as? ParcToastAnchoring)?.toastContentRect ?? anchor.bounds
             if content.width > 0, content.height > 0 {
-                return PArcToastPlacement.contentFrame(for: parent.convertToScreen(anchor.convert(content, to: nil)))
+                return ParcToastPlacement.contentFrame(for: parent.convertToScreen(anchor.convert(content, to: nil)))
             }
         }
-        return PArcToastPlacement.windowFrame(for: parent.frame)
+        return ParcToastPlacement.windowFrame(for: parent.frame)
     }
 
     @discardableResult
@@ -460,7 +460,7 @@ final class PArcToastPresentation: NSView {
         guard !isRetiring, originalWindow == nil, parent.isVisible, !parent.isMiniaturized,
               parent.attachedSheet == nil else { return false }
         let frame = Self.frame(in: parent, over: anchor)
-        let panel = PArcToastWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        let panel = ParcToastWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false; panel.isOpaque = false
         panel.backgroundColor = .clear; panel.hasShadow = false
         panel.contentView = self; panel.acceptsMouseMovedEvents = true
@@ -526,7 +526,7 @@ final class PArcToastPresentation: NSView {
         guard shouldAnimate else { closePresentation(); return }
         let work = DispatchWorkItem { [weak self] in self?.closePresentation() }
         closeWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + PArcToastTiming.retirement, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + ParcToastTiming.retirement, execute: work)
     }
 
     private func closePresentation() {
@@ -568,24 +568,24 @@ final class PArcToastPresentation: NSView {
         }
     }
     func scrolled(in window: NSWindow?, deltaX: CGFloat, deltaY: CGFloat) {
-        guard !isRetiring, PArcToastScroll.dismisses(window: window, deltaX: deltaX, deltaY: deltaY,
+        guard !isRetiring, ParcToastScroll.dismisses(window: window, deltaX: deltaX, deltaY: deltaY,
                                                      owners: [originalWindow, panel]) else { return }
         dismiss(animated: true)
     }
 }
 
 @MainActor
-final class PArcToastPresenter {
-    private(set) var current: PArcToastPresentation?
+final class ParcToastPresenter {
+    private(set) var current: ParcToastPresentation?
     private let share: @MainActor ([URL]) -> Void
     var basicBackground: NSColor?
     init(share: @escaping @MainActor ([URL]) -> Void = { _ in }) { self.share = share }
 
     @discardableResult
-    func show(_ content: PArcToastContent, in parent: NSWindow, over anchor: NSView?, theme: SpaceTheme,
-              duration: TimeInterval = PArcToastTiming.duration, onTap: (() -> Void)? = nil,
-              onRetire: (() -> Void)? = nil) -> PArcToastPresentation? {
-        let next = PArcToastPresentation(content: content, theme: theme, basicBackground: basicBackground,
+    func show(_ content: ParcToastContent, in parent: NSWindow, over anchor: NSView?, theme: SpaceTheme,
+              duration: TimeInterval = ParcToastTiming.duration, onTap: (() -> Void)? = nil,
+              onRetire: (() -> Void)? = nil) -> ParcToastPresentation? {
+        let next = ParcToastPresentation(content: content, theme: theme, basicBackground: basicBackground,
                                         duration: duration, onTap: onTap, share: share)
         guard next.present(in: parent, over: anchor) else { return nil }
         let previous = current

@@ -165,11 +165,11 @@ step compile_and_run command-bar-scope-menu CommandBar/ScopeMenuTests \
   "$repo_root/Sources/ParcApp/CommandBarScopeEditing.swift" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
-spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/command-bar-privacy-spinner.swift" PArcButtonSpinner)
+spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$repo_root/build/tests/command-bar-privacy-spinner.swift" ParcButtonSpinner)
 step compile_and_run command-bar-privacy CommandBar/SearchPrivacyBannerTests \
   "$repo_root/Sources/ParcApp/CommandBarSearchPrivacyBanner.swift" \
   "$repo_root/Sources/ParcApp/SidebarTablistBackground.swift" \
-  "$repo_root/Sources/ParcApp/PArcDialog.swift" "$spinner" \
+  "$repo_root/Sources/ParcApp/ParcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/CommandBarAppearance.swift" "${tooltip_sources[@]}"
 
 step compile_and_run command-bar-background CommandBar/BackgroundOpenTests \
@@ -329,7 +329,7 @@ step python3 "$repo_root/tests/DownloadLibrary/check-view.py"
 step python3 "$repo_root/tests/LibraryRail/check.py"
 step python3 "$repo_root/tests/DownloadLocation/check-picker.py"
 step python3 "$repo_root/tests/MenuImages/check.py"
-step bash "$repo_root/scripts/test-arc-dialog.sh"
+step bash "$repo_root/scripts/test-parc-dialog.sh"
 
 step compile_and_run sidebar-window-move SidebarWindowMoveTests \
   "$repo_root/Sources/ParcCore/WindowPresentation.swift" \

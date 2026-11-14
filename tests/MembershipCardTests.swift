@@ -128,12 +128,12 @@ struct MembershipCardTests {
         let art = try require(surface.sublayers?.first { abs($0.frame.width - 208) < 0.5 && abs($0.frame.height - 192) < 0.5 })
         precondition(art.isHidden == false, "stopMotion keeps the live artwork layer visible")
         let rotors = art.sublayers?.filter { $0.bounds == .zero } ?? []
-        precondition(rotors.count == 15, "the CardBackgroundView draws fifteen blobs")
+        precondition(rotors.count == 15, "the card background draws fifteen blobs")
         let current = try require(a.state)
         let field = MembershipCardBlobField(current)
         for (rotor, blob) in zip(rotors, field.rest) {
             precondition((0.2...0.35).contains(blob.scale) && (0...300).contains(blob.offset.x) && (0...300).contains(blob.offset.y)
-                         && abs(blob.rotation) <= 2 * .pi, "blob attributes stay in the ranges")
+                         && abs(blob.rotation) <= 2 * .pi, "blob attributes stay in range")
             precondition(sameAngle(rotor, blob.rotation), "each blob rests at its rotation about the artwork centre")
             precondition(rotor.sublayers?.first?.position == blob.offset)
         }

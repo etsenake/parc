@@ -15,6 +15,7 @@ itself. [Sharing data](space-management.md#sharing-data-between-spaces) asks "Sh
 saved passwords and history will be deleted. [Delete Space](space-management.md#delete-space)
 adds "This also deletes its logins, saved passwords and history. This can’t be
 undone." to its usual confirmation when it is the last Space using that data, and
+registers no Undo. Both use Parc's standard destructive dialog (`ParcDialog`). Saved
 captures, downloaded files and Easels stay on this Mac. Nothing is typed and there is
 no completion state: the dialog closes and `ProfileRemovalController` removes the data
 in the background.

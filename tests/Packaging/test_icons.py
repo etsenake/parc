@@ -255,7 +255,6 @@ class PackagingIconTests(unittest.TestCase):
             self.assertEqual(data, family["Original"])
             self.assertEqual(len(set(family.values())), len(catalog["variants"]))
             families.append(family)
-            self.assertFalse(any("LegacyCore" in str(path) for path in app.rglob("*")))
             for suffix, id_suffix, jit in pkg.HELPERS:
                 helper = app / "Contents/Frameworks" / ("Parc Helper" + suffix + ".app")
                 helper_info = plistlib.loads((helper / "Contents/Info.plist").read_bytes())

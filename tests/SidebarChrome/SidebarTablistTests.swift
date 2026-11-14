@@ -151,7 +151,7 @@ private final class Source: NSObject, NSOutlineViewDataSource, NSOutlineViewDele
               "overlay scrollers keep the list's width")
         let (legacy, legacyList) = scrolled(style: .legacy, clip: 400)
         check(legacy.verticalScroller?.isHidden == false && legacy.verticalScroller?.frame.width == 8, "the 8-point legacy scroller")
-        check(legacy.contentSize.width == width - 8 && legacyList.frame.width == width - 8, "legacy scrollers take the 8 points")
+        check(legacy.contentSize.width == width - 8 && legacyList.frame.width == width - 8, "legacy scrollers take 8 points")
         let (fits, fitsList) = scrolled(style: .legacy, clip: 440)
         check(fits.verticalScroller?.isHidden == true && fitsList.frame.width == width, "a list that fits with its inset keeps its width")
 

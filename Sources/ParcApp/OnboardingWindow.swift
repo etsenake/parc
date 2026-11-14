@@ -768,7 +768,7 @@ final class OnboardingWindow: NSWindowController, NSWindowDelegate, NSTextFieldD
             back.isEnabled = !setupCommitted
             if setupCommitted { next.title = "Open Parc" }
             if let window {
-                PArcDialog.inform(in: window, .init(error: error, title: setupCommitted ? "Parc couldn’t open the browser." : "Parc couldn’t finish setup."),
+                ParcDialog.inform(in: window, .init(error: error, title: setupCommitted ? "Parc couldn’t open the browser." : "Parc couldn’t finish setup."),
                                  queued: true)
             }
         }

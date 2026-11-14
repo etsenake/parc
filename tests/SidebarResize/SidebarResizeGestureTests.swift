@@ -72,7 +72,7 @@ import Foundation
         var dive = G(width: 300, locked: true)
         _ = dive.change(translationX: -30, velocityX: 0, now: 0); _ = dive.change(translationX: -66, velocityX: 0, now: 0)
         let dived = dive.change(translationX: -280, velocityX: -900, now: 1)
-        check(dived.events == [.snapReleased(haptic: true), .previewHiddenChanged(true)] && dived.width == 0, "events keep the order")
+        check(dived.events == [.snapReleased(haptic: true), .previewHiddenChanged(true)] && dived.width == 0, "events keep their order")
 
         check(G.breakpointIndex(for: 99, in: [100, 200]) == 0 && G.breakpointIndex(for: 100, in: [100, 200]) == 1, "breakpoint boundaries")
         check(G.breakpointIndex(for: 300, in: [100, 200]) == 2 && G.breakpointIndex(for: 50, in: []) == 0, "past the last breakpoint")

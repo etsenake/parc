@@ -88,6 +88,7 @@ reset. The model saves before creating only the new copy.
 With no presentation/focused pane, Option selects normally. A fifth pane shows
 **Cannot Add New Pane**; a focused Favorite at capacity stays unchanged. Other
 Option combinations select normally except exact Option–Command, which remains
+consumed because the separate mini browser window is excluded. Release classification ignores flags
 outside the four primary modifiers. Stale window/selection/layout/URL leases
 cannot commit a delayed split.
 

@@ -98,7 +98,7 @@ import AppKit
               "the cell still offers Show Menu and the omitted Space is not in the VoiceOver order")
         var menu = dock.opened(first.id)
         check(menu?.items.map(\.title) == base + ["Show Space Header"] && menu?.items.allSatisfy(\.isEnabled) == true,
-              "one untitled Space without an icon: the items, then Show Space Header, all enabled")
+              "one untitled Space without an icon: the Space items, then Show Space Header, all enabled")
         menu?.performActionForItem(at: 3)
         check(store.state.settings.showSpaceHeaderOnSingleUnnamedSpaces == true, "Show Space Header turns the setting on")
         menu = dock.opened(first.id)
@@ -119,9 +119,9 @@ import AppKit
         check(other !== current && dock.buttons[first.id]?.menu === other && dock.buttons[second.id]?.menu === current,
               "each item keeps its own menu")
         check(other?.items.map(\.title) == base && other?.items.map(\.isEnabled) == [true, false, false],
-              "another Space's item: the items, rename enabled, theme and folder disabled")
+              "another Space's item: the Space items, rename enabled, theme and folder disabled")
         check(current?.items.map(\.title) == base && current?.items.allSatisfy(\.isEnabled) == true,
-              "the active Space's item: the items, all enabled, no toggle with two Spaces")
+              "the active Space's item: the Space items, all enabled, no toggle with two Spaces")
         for index in 0..<3 { other?.performActionForItem(at: index) }
         check(dock.calls == ["rename Space 1"], "another Space's item renames that Space and runs nothing else")
         dock.calls.removeAll()

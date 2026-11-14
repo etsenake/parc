@@ -784,10 +784,10 @@ extension LibraryFlyoutSharing {
 enum LibraryFlyoutCaptureDeletion {
     static let title = "Are you sure you want to delete this capture?"
     static let message = "Doing so will delete this capture permanently."
-    @MainActor static func dialog() -> PArcDialog {
-        var content = PArcDialog.Content(title: [(title, false)], message: [(message, false)], confirm: "Delete", cancel: "Cancel")
+    @MainActor static func dialog() -> ParcDialog {
+        var content = ParcDialog.Content(title: [(title, false)], message: [(message, false)], confirm: "Delete", cancel: "Cancel")
         content.destructive = true
-        return PArcDialog(content)
+        return ParcDialog(content)
     }
     @MainActor static func confirm(in window: NSWindow, decided: @escaping (Bool) -> Void) -> Bool {
         dialog().begin(for: window) { decided($0 == .confirm) }

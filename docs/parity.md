@@ -64,6 +64,7 @@ is resolved.
 
 | Area | Current capability | Details |
 |---|---|---|
+| Independent browser engine | Native pages, real Chromium profiles, renderer recovery, permissions, authentication and native input; no dependency on another installed browser. Most of Parc's engine logic sits in its own files behind extension points and hooks. | [Engine](../Engine/README.md), [Chromium changes](chromium-seams.md), [web interactions](web-interactions.md) |
 | Spaces and profiles | Local profiles, named Spaces, profile assignment, per-window selection, theme editing and persistence. | [Space management](space-management.md), [themes](space-theme-editor.md) |
 | Sidebar and tabs | Today, pinned tabs, Favorites, unread/mute state, resizing, hide/reveal, multi-selection, closed-item recovery and tab picture previews. | [Saved tabs](saved-tabs.md), [sidebar previews](sidebar-previews.md), [sidebar motion](sidebar-motion.md) |
 | Folders | Nested folders, original-item moves, duplication and bulk archive/delete with existing Undo and close consent. Some collection and drag cases remain open. | [Folder moves](folder-moves.md), [folder commands](folder-commands.md) |
@@ -141,7 +142,9 @@ changes belong in the owning guide and release notes, not an ever-growing log he
 
 ## Scope boundaries
 
-and their vendor update checks; Sentry, Datadog, analytics and telemetry; Little
+Excluded: AI features/preferences; vendor accounts/cloud/services and their
+vendor update checks; Sentry, Datadog, analytics and telemetry; a separate mini
+browser window; Boosts; dedicated live service integrations; and page translation (excluded
 because the current service requires Google API keys). Parc's own update system
 is included. Parc must not require Google API keys or paid Google services.
 

@@ -1,5 +1,6 @@
 # Local scripting
 
+Parc bundles its own `Parc.sdef` and enables the Cocoa scripting interface through `NSAppleScriptEnabled` and `OSAScriptingDefinition`. The dictionary describes only the handlers implemented by this interface. This local interface does not use an online account or remote service.
 
 ## Objects and commands
 

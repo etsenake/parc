@@ -222,7 +222,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private func open(_ row: Row) { guard valid else { return }; onOpen?(row.page, row.title) }
     private func rename(_ row: Row) {
         guard valid, let window, window.attachedSheet == nil else { return }
-        let dialog = PArcDialog(.init(title: [(row.page.noteID == nil ? "Rename Easel" : "Rename Note", false)],
+        let dialog = ParcDialog(.init(title: [(row.page.noteID == nil ? "Rename Easel" : "Rename Note", false)],
             confirm: "Rename", cancel: "Cancel", field: .init(value: row.title, placeholder: "", required: false)))
         guard let field = dialog.textField else { return }
         _ = dialog.begin(for: window) { [weak self] result in
@@ -244,7 +244,7 @@ final class DocumentsLibraryView: NSView, NSTextFieldDelegate, NSTableViewDataSo
     private func delete(_ row: Row) {
         guard valid, let window, window.attachedSheet == nil else { return }
         let note = row.page.noteID != nil
-        PArcDialog.confirm(in: window, title: note ? "Are you sure you want to delete this note?" : "Are you sure you want to delete this Easel?",
+        ParcDialog.confirm(in: window, title: note ? "Are you sure you want to delete this note?" : "Are you sure you want to delete this Easel?",
                           message: note ? "Doing so will delete the note permanently." : "Doing so will delete the Easel permanently.",
                           confirm: "Delete", destructive: true) { [weak self] approved in
             guard let self, approved, self.valid else { return }

@@ -36,7 +36,7 @@ import AppKit
         let untitled = ActionButton("", symbol: "house")
         SidebarAccessibility.configureSpace(untitled, name: "")
         check(untitled.accessibilityTitle() == "Untitled Space"
-              && untitled.accessibilityIdentifier() == "SidebarDockItem-Untitled Space", "empty name takes the nil fallback (Parc adaptation)")
+              && untitled.accessibilityIdentifier() == "SidebarDockItem-Untitled Space", "empty name falls back to Untitled Space")
 
         let window = NSWindow(contentRect: NSRect(x: -10_000, y: -10_000, width: 240, height: 400),
                               styleMask: [.titled], backing: .buffered, defer: true)

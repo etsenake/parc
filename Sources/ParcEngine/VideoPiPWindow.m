@@ -5,10 +5,6 @@
 #include <dlfcn.h>
 #include <math.h>
 
-//
-//
-// 1024×563 @2x). Chromium places bottom-right with a 2% buffer. Corner radius
-//
 @interface PCVideoPiPSlider : NSSlider
 @property(nonatomic, copy) void (^scrubbingChanged)(BOOL);
 @end
@@ -78,9 +74,6 @@ static NSRect PCVideoPiPFrameForNaturalSize(NSSize natural) {
                     size.width, size.height);
 }
 
-// A later natural size keeps the width and pins the corner nearest the
-// screen's, as Chromium's VideoOverlayWindowViews::
-// CalculateAndUpdateWindowBounds does by window quadrant.
 static NSRect PCVideoPiPFrameRefitted(NSRect frame, NSSize natural,
                                       NSRect work) {
   const NSSize size = PCVideoPiPSizeForAspect(
@@ -94,9 +87,6 @@ static NSRect PCVideoPiPFrameRefitted(NSRect frame, NSSize natural,
   return NSMakeRect(x, y, size.width, size.height);
 }
 
-// The video surface stretches to fill its view, so the view keeps the
-// video's aspect inside the window, filling it when they differ by under a
-// point (Chromium's UpdateLayerBoundsWithLetterboxing).
 static NSRect PCVideoPiPVideoRect(NSRect bounds, NSSize natural) {
   if (!PCVideoPiPValidSize(natural) || NSIsEmptyRect(bounds)) {
     return bounds;
@@ -115,12 +105,6 @@ static NSRect PCVideoPiPVideoRect(NSRect bounds, NSSize natural) {
                     round(NSMidY(bounds) - height / 2), width, height);
 }
 
-// The window server ignores a background app's cursor unless its connection
-// "SetsCursorInBackground", and a PiP floats over another app most of the
-// time. That is switched on only while the pointer is on a control, so Parc's
-// other windows behind the frontmost app keep leaving the cursor alone. The
-// arrow goes back before it is switched off: AppKit skips setting the cursor
-// it believes is current, even if the window server ignored it.
 typedef int PCCGSConnection;
 static void PCSetsCursorInBackground(BOOL on) {
   static PCCGSConnection (*connection)(void);
@@ -137,8 +121,6 @@ static void PCSetsCursorInBackground(BOOL on) {
         on ? kCFBooleanTrue : kCFBooleanFalse);
   }
 }
-// Counted: the video window and the Meet bar can each have a control under
-// the pointer while one's exit and the other's entry cross.
 void PCPictureInPicturePointAtControl(BOOL control) {
   static NSInteger pointing;
   if (control) {
@@ -168,16 +150,10 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 @end
 @implementation PCVideoPiPPanel
 - (BOOL)canBecomeKeyWindow {
-  // Arc142 MovableWindow → PIPWindowContent canBecomeKey witness returns false.
   return NO;
 }
 @end
 
-//
-// chip is an NSGlassEffectView disc with a borderless symbol button inside.
-// Under the pointer a chip grows to 110% and its symbol goes from 92.5% to
-//
-//
 @interface PCVideoPiPChromeButton : NSButton
 @property(nonatomic, readonly) NSView* hostView;
 @property(nonatomic) BOOL hovered;
@@ -197,12 +173,8 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   self.imagePosition = NSImageOnly;
   self.contentTintColor = NSColor.whiteColor;
   if (@available(macOS 26.0, *)) {
-    // WWDC25: custom floating chrome uses NSGlassEffectView (not
-    // NSBezelStyleGlass — that bezel is a standard push shape). Circular
-    // chips = glass.cornerRadius == half the side. Interactive on 27+.
     NSGlassEffectView* glass = [[NSGlassEffectView alloc] initWithFrame:frame];
     glass.translatesAutoresizingMaskIntoConstraints = NO;
-    //
     glass.style = NSGlassEffectViewStyleClear;
     if (@available(macOS 27.0, *)) {
       glass.effectIsInteractive = YES;
@@ -219,8 +191,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   }
   return self;
 }
-// The glass lays its content out by alignment rect, which follows the
-// symbol's shape: a minus made a shorter button and a squarer disc.
 - (NSEdgeInsets)alignmentRectInsets {
   return NSEdgeInsetsZero;
 }
@@ -240,8 +210,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   [self addCursorRect:self.bounds cursor:NSCursor.pointingHandCursor];
 }
 - (void)mouseDown:(NSEvent*)event {
-  // The button tracks the press inside super until the mouse goes up; its
-  // action can release the presenter that owns it.
   __attribute__((objc_precise_lifetime)) PCVideoPiPChromeButton* keep = self;
   keep.alphaValue = 0.7;
   [super mouseDown:event];
@@ -257,7 +225,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   if (!layer) {
     return;
   }
-  // AppKit anchors a view's layer at its origin; scale about the centre.
   const CGFloat scale = hovered ? 1.1 : 1;
   const CGFloat dx = NSWidth(_hostView.bounds) * (0.5 - layer.anchorPoint.x);
   const CGFloat dy = NSHeight(_hostView.bounds) * (0.5 - layer.anchorPoint.y);
@@ -278,8 +245,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 }
 @end
 
-// Cues sit between the video and the chrome and never take the pointer, so
-// clicks still drag the window.
 @interface PCVideoPiPCaptions : NSView
 @property(nonatomic) NSImage* image;
 @end
@@ -333,8 +298,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 }
 - (void)mouseExited:(NSEvent*)event {
   (void)event;
-  // Chrome sits above this view. Leaving the video layer for a control must
-  // not clear hover — the presenter's screen hit-test owns leave-panel.
   NSWindow* window = self.window;
   if (window && window.visible &&
       NSPointInRect(NSEvent.mouseLocation, window.frame)) {
@@ -353,7 +316,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   }
 }
 - (void)mouseDown:(NSEvent*)event {
-  // Buttons handle their own mouseDown; video clicks climb here for drag.
   [self.window performWindowDragWithEvent:event];
 }
 - (void)setFrameSize:(NSSize)size {
@@ -415,7 +377,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   [host.heightAnchor constraintEqualToConstant:size].active = YES;
   if (@available(macOS 26.0, *)) {
     if ([host isKindOfClass:NSGlassEffectView.class]) {
-      //
       ((NSGlassEffectView*)host).cornerRadius = size * 0.5;
     }
   }
@@ -539,9 +500,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
                                    action:PCVideoPiPMute
                                     label:@"Mute"
                                      size:kPCVideoPiPChromeButton];
-  //
-  // Engine extras (skip/track/camera/…) stay out of the view — unconstrained
-  // hidden ellipsis buttons were still landing at the bottom-left origin.
 
   NSView* backHost = ((PCVideoPiPChromeButton*)_backButton).hostView;
   NSView* minimizeHost = ((PCVideoPiPChromeButton*)_minimizeButton).hostView;
@@ -630,7 +588,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
                                               [weakSelf refreshHoverFromMouse];
                                               return event;
                                             }];
-  // Nonactivating PiP must track hover while another app is frontmost.
   _globalMonitor = [NSEvent
       addGlobalMonitorForEventsMatchingMask:NSEventMaskMouseMoved |
                                             NSEventMaskLeftMouseDragged
@@ -656,8 +613,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
     [self setHovering:NO];
     return;
   }
-  // Tracking-area enter/exit owns hover while the panel is not on-screen
-  // (tests and pre-show). Screen hit-testing only after orderFront.
   if (!_panel.isVisible) {
     return;
   }
@@ -667,11 +622,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   [self refreshPointer];
 }
 
-// The panel never becomes key, and macOS applies a window's cursor rects
-// only in the key window, so the button under the pointer is found on every
-// mouse event the monitors see, the global one while another app is
-// frontmost, and the cursor set here: a hand over a button, the arrow again
-// on leaving one. Chrome shown under a still pointer counts at once.
 - (void)refreshPointer {
   PCVideoPiPChromeButton* button = nil;
   if (!_invalidated && _panel.visible && !_chrome.hidden) {
@@ -696,7 +646,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 - (void)pointAt:(PCVideoPiPChromeButton*)button {
   PCVideoPiPChromeButton* previous = _pointed;
   if (button) {
-    // Every move: the glass or a cursor rect may have changed it meanwhile.
     if (previous) {
       [NSCursor.pointingHandCursor set];
     } else {
@@ -741,14 +690,11 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 }
 - (void)applyChromeVisibility {
   const BOOL show = _controlsEnabled && _hovering && !_invalidated;
-  // Drop in-flight fade completions — a stale hide completion was re-hiding
-  // chrome right after hover showed it (flash once, then gone).
   [_chrome.layer removeAllAnimations];
   if (show) {
     _chrome.hidden = NO;
     _chrome.alphaValue = 1.0;
   } else {
-    // Disable hits immediately; do not wait for a fade to finish.
     _chrome.hidden = YES;
     _chrome.alphaValue = 0;
   }
@@ -787,8 +733,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   [self refreshSliderVisibility];
 }
 - (void)syncProgressTimer {
-  // The panel outlives a PiP session hidden; refreshing its slider 30 times a
-  // second while it is ordered out cost the main thread for the whole video.
   const BOOL need = !_invalidated && _playbackRate != 0 && _mediaDuration > 0 &&
                     _shown;
   if (need) {
@@ -878,10 +822,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   if (_invalidated || !PCVideoPiPValidSize(size)) {
     return;
   }
-  // A playing video's size changes (a page switching renditions as the
-  // window grows) wait while the user resizes: a refit there fought the
-  //
-  //
   if (_panel.inLiveResize) {
     _pendingNaturalSize = size;
     return;
@@ -896,13 +836,10 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   const BOOL first = !PCVideoPiPValidSize(_naturalSize);
   _naturalSize = size;
   _panel.contentAspectRatio = size;
-  // Every change refits the window, as Chromium's UpdateNaturalSize does: a
-  // reused window or a new rendition can bring another aspect.
   const NSRect frame =
       first ? PCVideoPiPFrameForNaturalSize(size)
             : PCVideoPiPFrameRefitted(_panel.frame, size,
                                       PCVideoPiPWorkArea(_panel.screen));
-  // A resize lays out and notifies; observers can then release the owner.
   __attribute__((objc_precise_lifetime)) PCVideoPiPPresenter* keep = self;
   NSPanel* panel = _panel;
   if (!NSEqualRects(frame, panel.frame)) {
@@ -920,7 +857,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
     return NO;
   }
   _videoView.frame = frame;
-  // Rounded only where its corners are the window's; bars keep it square.
   _videoView.layer.cornerRadius =
       NSEqualRects(frame, _panel.contentView.bounds) ? kPCVideoPiPCornerRadius
                                                      : 0;
@@ -929,7 +865,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
 - (void)setAction:(PCVideoPiPAction)action visible:(BOOL)visible {
   NSButton* button = _buttons[@(action)];
   if (!button) {
-    // Unknown / unsupported chrome actions are intentionally absent.
     return;
   }
   if (!visible && (action == PCVideoPiPMute || action == PCVideoPiPPlayPause ||
@@ -982,7 +917,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   _favicon.image = image;
 }
 - (void)setCaptions:(NSImage*)image bounds:(NSRect)bounds {
-  // The page supplies the bounds, so they stay within the video picture.
   const BOOL finite = isfinite(NSMinX(bounds)) && isfinite(NSMinY(bounds)) &&
                       isfinite(NSWidth(bounds)) && isfinite(NSHeight(bounds));
   _captionBounds =
@@ -996,7 +930,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
   if (_captions.hidden) {
     return;
   }
-  // Bounds come from the page relative to the video, origin at the top left.
   const NSRect content = _panel.contentView.bounds;
   const NSRect video = _videoView.frame;
   NSRect frame = NSMakeRect(
@@ -1004,7 +937,6 @@ static NSImage* PCVideoPiPSymbol(NSString* name, CGFloat pointSize) {
       NSMinY(video) + NSHeight(video) * (1 - NSMaxY(_captionBounds)),
       NSWidth(video) * NSWidth(_captionBounds),
       NSHeight(video) * NSHeight(_captionBounds));
-  // A shown scrubber would cover bottom cues; they rise above it meanwhile.
   if (!_position.hiddenOrHasHiddenAncestor) {
     [_chrome layoutSubtreeIfNeeded];
     const CGFloat floor = NSMaxY(_position.frame) + 6;

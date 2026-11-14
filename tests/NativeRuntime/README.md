@@ -101,7 +101,7 @@ by the launcher. A timeout needs its stage diagnostics to distinguish document
 readiness, a missing engine AX root and native-child traversal.
 
 The role/manual/enhanced request policy uses basic mode 3, separate from the
-`ARC_UI_TESTS` full-mode startup path. Real system VoiceOver
+full-mode startup path. Real system VoiceOver
 uses Chromium156's complete/screen-reader scope and releases that scope when
 VoiceOver stops. No renderer AX mode is enabled merely by application readiness.
 The local `fixtures/accessibility.html` provides a real button, checkbox and text
@@ -163,6 +163,7 @@ and the component-build framework compiles it from there. It uses production
 controller targets and the direct engine startup; no alternate engine lock or
 helper recipe is supported.
 
+The app itself is compiled by `package.py` against the actual public headers, using the existing production `scripts/build.py` sealing, Chromium development-layout copying, sandbox/helper contract and signing implementation. It dynamically loads the actual framework and uses the canonical `Sources/ParcHelper/main.cc`; neither main nor helper directly links the engine before the required lifecycle entry. The two marked `nogncheck` imports in main are declarations for this dynamic public ABI, not a bypass for engine implementation dependencies. Package inputs must include the promoted independent production packager/helper, not the old engine build script.
 
 After the reviewed cohort is applied and the normal engine build completes:
 

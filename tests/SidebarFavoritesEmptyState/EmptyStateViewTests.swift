@@ -49,7 +49,7 @@ struct EmptyStateViewTests {
         let title = labels.first { $0.stringValue == FavoritesEmptyStateView.title }
         let subtitle = labels.first { $0.stringValue == FavoritesEmptyStateView.subtitle }
         check(FavoritesEmptyStateView.title == "Drag to add Favorites"
-              && FavoritesEmptyStateView.subtitle == "Favorites keep your most used sites and apps close", "the strings")
+              && FavoritesEmptyStateView.subtitle == "Favorites keep your most used sites and apps close", "the empty state strings")
         guard let title, let subtitle, let button = view.subviews.compactMap({ $0 as? NSButton }).first,
               let icon = view.subviews.compactMap({ $0 as? NSImageView }).first else {
             check(false, "the view holds the icon, both labels and the Dismiss button"); exit(1)

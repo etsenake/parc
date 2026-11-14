@@ -3,7 +3,7 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 check_root=$(mktemp -d "${TMPDIR:-/tmp}/parc-capture-edit.XXXXXX")
 trap 'rm -rf "$check_root"' EXIT
-spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$check_root/PArcButtonSpinner.swift" PArcButtonSpinner)
+spinner=$(python3 -B "$repo_root/tests/Support/declarations.py" "$check_root/ParcButtonSpinner.swift" ParcButtonSpinner)
 xcrun swiftc -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcCore/EaselStore.swift" \
   "$repo_root/Sources/ParcCore/EaselRichText.swift" \
@@ -18,7 +18,7 @@ xcrun swiftc -warnings-as-errors -parse-as-library \
   "$repo_root/Sources/ParcApp/EaselMarkdownEditing.swift" \
   "$repo_root/Sources/ParcApp/WebpageEditCommands.swift" \
   "$repo_root/Sources/ParcApp/EaselCanvasView.swift" \
-  "$repo_root/Sources/ParcApp/PArcDialog.swift" "$spinner" \
+  "$repo_root/Sources/ParcApp/ParcDialog.swift" "$spinner" \
   "$repo_root/Sources/ParcApp/EaselMotion.swift" \
   "$repo_root/Sources/ParcApp/CaptureLibrarySharing.swift" \
   "$repo_root/tests/CaptureEditingTests.swift" -o "$check_root/capture-editing"

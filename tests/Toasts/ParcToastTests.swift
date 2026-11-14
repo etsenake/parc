@@ -1,6 +1,6 @@
 import AppKit
 
-@MainActor private final class BandedAnchor: NSView, PArcToastAnchoring {
+@MainActor private final class BandedAnchor: NSView, ParcToastAnchoring {
     override var isFlipped: Bool { true }
     var toastContentRect: NSRect { NSRect(x: 80, y: 42, width: bounds.width - 160, height: bounds.height - 54) }
 }
@@ -9,7 +9,7 @@ import AppKit
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 }
 
-@main struct PArcToastTests {
+@main struct ParcToastTests {
     @MainActor static func main() {
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
@@ -28,37 +28,37 @@ import AppKit
         }
         func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.75 }
 
-        check(PArcToastPlacement.windowFrame(for: NSRect(x: 100, y: 200, width: 1000, height: 800))
+        check(ParcToastPlacement.windowFrame(for: NSRect(x: 100, y: 200, width: 1000, height: 800))
               == NSRect(x: 500, y: 400, width: 600, height: 600), "600-point child at the window's top right")
-        check(PArcToastPlacement.contentFrame(for: NSRect(x: 300, y: 100, width: 600, height: 700))
+        check(ParcToastPlacement.contentFrame(for: NSRect(x: 300, y: 100, width: 600, height: 700))
               == NSRect(x: 300, y: 450, width: 600, height: 350), "content toast uses the upper half of its pane")
-        check(PArcToastTiming.duration == 5 && PArcToastTiming.retirement == 1, "five-second toast, one-second retirement")
+        check(ParcToastTiming.duration == 5 && ParcToastTiming.retirement == 1, "five-second toast, one-second retirement")
 
         let url = URL(string: "https://chatgpt.com/")!
-        check(PArcToastContent.copiedCurrentURL(url).body
+        check(ParcToastContent.copiedCurrentURL(url).body
               == .standard(icon: nil, label: "Copied Current URL", subLabel: nil, buttons: [.share([url])]),
               "copyTabURL: label and share button for the copied URL")
-        check(PArcToastContent.copiedCurrentURL(nil).body
+        check(ParcToastContent.copiedCurrentURL(nil).body
               == .standard(icon: nil, label: "Copied Current URL", subLabel: nil, buttons: []),
               "no URL, no share button")
-        check(PArcToastContent.copiedItemLinks([url, url]).body
+        check(ParcToastContent.copiedItemLinks([url, url]).body
               == .standard(icon: nil, label: "Copied item links", subLabel: nil, buttons: [.share([url, url])]),
               "copyItemURLs shares every copied URL")
-        check(PArcToastContent.copiedQuoteLink(url).body
+        check(ParcToastContent.copiedQuoteLink(url).body
               == .standard(icon: "quote.bubble.fill", label: "Copied Link", subLabel: "With Quote", buttons: [.share([url])]),
               "copyTabURLQuote: quote icon, sublabel and share button")
-        check(PArcToastContent.cannotAddNewPane.body
+        check(ParcToastContent.cannotAddNewPane.body
               == .standard(icon: nil, label: "Cannot Add New Pane", subLabel: nil, buttons: []), "maxNumberPanes")
-        check(PArcToastContent.pressAgain(shortcut: "⌘T", title: "New Tab").accessibilityText == "Press ⌘T again to New Tab",
+        check(ParcToastContent.pressAgain(shortcut: "⌘T", title: "New Tab").accessibilityText == "Press ⌘T again to New Tab",
               "Press Again keeps its spoken text")
-        check(PArcToastContent.copiedQuoteLink(url).accessibilityText == "Copied Link, With Quote", "label and sublabel are announced")
-        check(PArcToastContent.pressAgain(shortcut: "⌘T", title: "New Tab").showsShortcut
-              && !PArcToastContent.copiedCurrentURL(url).showsShortcut, "only shortcut content shows a shortcut")
-        func label(_ content: PArcToastContent) -> String? {
+        check(ParcToastContent.copiedQuoteLink(url).accessibilityText == "Copied Link, With Quote", "label and sublabel are announced")
+        check(ParcToastContent.pressAgain(shortcut: "⌘T", title: "New Tab").showsShortcut
+              && !ParcToastContent.copiedCurrentURL(url).showsShortcut, "only shortcut content shows a shortcut")
+        func label(_ content: ParcToastContent) -> String? {
             if case .standard(_, let label, _, _) = content.body { return label } else { return nil }
         }
         check(label(.copiedImage) == "Copied Image", "captureCopied")
-        check(PArcToastContent.copiedFile([url]).body
+        check(ParcToastContent.copiedFile([url]).body
               == .standard(icon: nil, label: "Copied File", subLabel: nil, buttons: [.share([url])]), "copyFile shares the file")
         check(label(.zoom(percent: 110)) == "110%", "zoomChanged is the percentage")
         check(label(.fullScreenExit(shortcut: "⎋")) == "To exit full screen, press ⎋.", "didEnterFullScreen names the exit binding")
@@ -82,22 +82,22 @@ import AppKit
         let pane = NSView(frame: NSRect(x: 520, y: 10, width: 470, height: 660))
         root.addSubview(pane); parent.contentView = root
         var shared: [[URL]] = []
-        let toasts = PArcToastPresenter(share: { shared.append($0) })
+        let toasts = ParcToastPresenter(share: { shared.append($0) })
         check(toasts.show(.copiedCurrentURL(url), in: parent, over: pane, theme: SpaceTheme()) == nil,
               "a hidden parent presents nothing")
         parent.orderBack(nil)
         let paneScreen = parent.convertToScreen(pane.convert(pane.bounds, to: nil))
-        check(PArcToastPresentation.frame(in: parent, over: pane) == PArcToastPlacement.contentFrame(for: paneScreen),
+        check(ParcToastPresentation.frame(in: parent, over: pane) == ParcToastPlacement.contentFrame(for: paneScreen),
               "a pane anchor uses that pane, not the window")
-        check(PArcToastPresentation.frame(in: parent, over: nil) == PArcToastPlacement.windowFrame(for: parent.frame),
+        check(ParcToastPresentation.frame(in: parent, over: nil) == ParcToastPlacement.windowFrame(for: parent.frame),
               "window location uses the window's top right")
         pane.isHidden = true
-        check(PArcToastPresentation.frame(in: parent, over: pane) == PArcToastPlacement.windowFrame(for: parent.frame),
+        check(ParcToastPresentation.frame(in: parent, over: pane) == ParcToastPlacement.windowFrame(for: parent.frame),
               "a hidden pane falls back to the window, as the delegate's nil frame does")
         let peekHost = BandedAnchor(frame: NSRect(x: 160, y: 10, width: 820, height: 660))
         root.addSubview(peekHost)
         let peekContent = parent.convertToScreen(peekHost.convert(peekHost.toastContentRect, to: nil))
-        check(PArcToastPresentation.frame(in: parent, over: peekHost) == PArcToastPlacement.contentFrame(for: peekContent),
+        check(ParcToastPresentation.frame(in: parent, over: peekHost) == ParcToastPlacement.contentFrame(for: peekContent),
               "an anchor with a content region frames that region, inside a Peek's card")
         peekHost.removeFromSuperview()
         pane.isHidden = false
@@ -107,7 +107,7 @@ import AppKit
                                       onRetire: { retired += 1 }),
               let panel = parent.childWindows?.first else { preconditionFailure("missing toast child") }
         check(toasts.current === first && panel.parent === parent && panel.contentView === first, "exact child ownership")
-        check(panel.frame == PArcToastPlacement.contentFrame(for: paneScreen), "the child covers the pane's upper half")
+        check(panel.frame == ParcToastPlacement.contentFrame(for: paneScreen), "the child covers the pane's upper half")
         check(!panel.canBecomeKey && !panel.canBecomeMain && !first.acceptsFirstResponder, "no keyboard owner")
         await drain(0.6)
         let body = first.frames.body
@@ -123,7 +123,7 @@ import AppKit
         }
         check(first.isRetiring && toasts.current === second && retired == 1, "a new toast replaces the visible one")
         check(first.hitTest(inParent(NSPoint(x: body.midX, y: body.midY))) == nil, "a retiring toast refuses input at once")
-        check(second.window?.frame == PArcToastPlacement.windowFrame(for: parent.frame), "window toast at the window's top right")
+        check(second.window?.frame == ParcToastPlacement.windowFrame(for: parent.frame), "window toast at the window's top right")
         await drain(1.1)
         check(panel.parent == nil && !panel.isVisible, "the replaced child closes after its retirement")
         check(second.window?.parent === parent, "an old completion cannot retire the replacement")
@@ -145,13 +145,13 @@ import AppKit
         check(privateToast.state.basicBackground == nil, "an ordinary window's refresh carries none")
         privateToast.dismiss(animated: false)
 
-        let timed = PArcToastPresentation(content: .standard("Timed"), theme: SpaceTheme(), duration: 0.3)
+        let timed = ParcToastPresentation(content: .standard("Timed"), theme: SpaceTheme(), duration: 0.3)
         check(timed.present(in: parent, over: pane), "short-lived toast admitted")
         await drain(0.5)
         check(timed.isRetiring, "an unhovered timer tick dismisses")
         timed.dismiss(animated: false)
 
-        let held = PArcToastPresentation(content: .standard("Held"), theme: SpaceTheme(), duration: 1)
+        let held = ParcToastPresentation(content: .standard("Held"), theme: SpaceTheme(), duration: 1)
         check(held.present(in: parent, over: pane), "hover owner admitted")
         await drain(0.7)
         if let heldPanel = held.window {
@@ -171,10 +171,10 @@ import AppKit
         } else { preconditionFailure("missing hover child") }
         held.dismiss(animated: false)
 
-        check(!PArcToastScroll.dismisses(window: parent, deltaX: 0, deltaY: 0, owners: [parent]), "zero distance keeps")
-        check(PArcToastScroll.dismisses(window: parent, deltaX: 0, deltaY: -2, owners: [parent]), "scrolling the parent dismisses")
-        check(!PArcToastScroll.dismisses(window: nil, deltaX: 3, deltaY: 0, owners: [parent]), "a scroll elsewhere keeps")
-        let scrolled = PArcToastPresentation(content: .standard("Scroll"), theme: SpaceTheme())
+        check(!ParcToastScroll.dismisses(window: parent, deltaX: 0, deltaY: 0, owners: [parent]), "zero distance keeps")
+        check(ParcToastScroll.dismisses(window: parent, deltaX: 0, deltaY: -2, owners: [parent]), "scrolling the parent dismisses")
+        check(!ParcToastScroll.dismisses(window: nil, deltaX: 3, deltaY: 0, owners: [parent]), "a scroll elsewhere keeps")
+        let scrolled = ParcToastPresentation(content: .standard("Scroll"), theme: SpaceTheme())
         check(scrolled.present(in: parent, over: pane), "scroll owner admitted")
         scrolled.scrolled(in: parent, deltaX: 0, deltaY: 0)
         check(!scrolled.isRetiring, "resting fingers keep the toast")
@@ -183,8 +183,8 @@ import AppKit
         scrolled.dismiss(animated: false)
 
         var retiringWhenTapped: Bool?
-        var tapped: PArcToastPresentation?
-        tapped = PArcToastPresentation(content: .standard("Tab moved! Click to go there."), theme: SpaceTheme(),
+        var tapped: ParcToastPresentation?
+        tapped = ParcToastPresentation(content: .standard("Tab moved! Click to go there."), theme: SpaceTheme(),
                                       onTap: { retiringWhenTapped = tapped?.isRetiring })
         check(tapped?.present(in: parent, over: nil) == true, "tap owner admitted")
         tapped?.performTap()
@@ -205,7 +205,7 @@ import AppKit
         check(cue.isRetiring && toasts.current == nil, "a shortcut toast retires on a binding change")
         check(shared.isEmpty, "presenting never shares")
 
-        let framed = PArcToastPresentation(content: .standard("Framed"), theme: SpaceTheme())
+        let framed = ParcToastPresentation(content: .standard("Framed"), theme: SpaceTheme())
         check(framed.present(in: parent, over: pane), "framing owner admitted")
         let framedRect = framed.window?.frame
         parent.setFrame(NSRect(origin: parent.frame.origin, size: NSSize(width: 1100, height: 760)), display: false)
@@ -214,7 +214,7 @@ import AppKit
 
         for name in [NSWindow.willMiniaturizeNotification, NSWindow.willBeginSheetNotification,
                      NSWindow.willEnterFullScreenNotification, NSWindow.willExitFullScreenNotification] {
-            let toast = PArcToastPresentation(content: .standard("Closes"), theme: SpaceTheme())
+            let toast = ParcToastPresentation(content: .standard("Closes"), theme: SpaceTheme())
             check(toast.present(in: parent, over: pane), "\(name.rawValue) owner admitted")
             NotificationCenter.default.post(name: name, object: parent)
             check(toast.isRetiring && toast.window == nil, "\(name.rawValue) closes the toast")
@@ -227,7 +227,7 @@ import AppKit
         }
         for (appearance, hex) in [(NSAppearance.Name.darkAqua, "E4E2F7"), (.aqua, "1F1D33")] {
             parent.appearance = NSAppearance(named: appearance)
-            let quote = PArcToastPresentation(content: .copiedQuoteLink(url), theme: .singleColor(ThemeColor(hex: hex)!))
+            let quote = ParcToastPresentation(content: .copiedQuoteLink(url), theme: .singleColor(ThemeColor(hex: hex)!))
             check(quote.present(in: parent, over: pane), "quote toast admitted")
             await drain(0.6)
             guard let rep = quote.bitmapImageRepForCachingDisplay(in: quote.bounds) else { preconditionFailure("no bitmap") }
@@ -255,7 +255,7 @@ import AppKit
         }
         parent.appearance = nil
 
-        let closing = PArcToastPresentation(content: .standard("Close"), theme: SpaceTheme())
+        let closing = ParcToastPresentation(content: .standard("Close"), theme: SpaceTheme())
         check(closing.present(in: parent, over: pane), "close owner admitted")
         parent.close()
         check(closing.isRetiring && closing.window == nil, "closing the parent retires the toast")

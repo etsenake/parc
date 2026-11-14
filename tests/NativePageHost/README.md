@@ -14,6 +14,7 @@ bash tests/NativePageHost/run.sh
 
 The script compiles the production component and tests with ARC and warnings
 treated as errors, then executes the standalone test binary. It links AppKit
+and QuartzCore, requires no installed browser or Chromium SDK, and writes its executable to
 ignored `build/tests/native-page-host/`. Test NSWindows stay offscreen; the suite
 uses their real view hierarchies, Auto Layout, first-responder mechanism and a
 running main queue.

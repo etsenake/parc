@@ -47,7 +47,7 @@ import Foundation
                && NumberedTarget.destination(ordered, number: 10, ninthItemEnabled: false) == nil, "Only tags 1…9")
         expect(NumberedTarget.itemNumber("item9") == 9 && NumberedTarget.itemNumber("item10") == nil
                && NumberedTarget.itemNumber("item01") == nil && NumberedTarget.spaceNumber("space3") == 3
-               && NumberedTarget.spaceNumber("space10") == 10 && NumberedTarget.spaceNumber("space0") == nil, "Parc binding IDs")
+               && NumberedTarget.spaceNumber("space10") == 10 && NumberedTarget.spaceNumber("space0") == nil, "Space binding IDs")
         expect(NumberedTarget.description(for: "item2", excludeFavorites: false, ninthItemEnabled: false)
                == "Jumps to the second item in your Sidebar, starting with your Favorites at the top.", "Including description")
         expect(NumberedTarget.description(for: "item9", excludeFavorites: true, ninthItemEnabled: false)

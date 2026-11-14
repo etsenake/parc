@@ -41,7 +41,7 @@ import Foundation
 
         var json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
         var settings = json["settings"] as! [String: Any]
-        check(settings["topAppsEmptyStateDismissedForProfiles"] as? [String] == [first.uuidString], "the session stores the key")
+        check(settings["topAppsEmptyStateDismissedForProfiles"] as? [String] == [first.uuidString], "the session stores the topAppsEmptyStateDismissedForProfiles key")
         settings.removeValue(forKey: "topAppsEmptyStateDismissedForProfiles")
         json["settings"] = settings
         try JSONSerialization.data(withJSONObject: json).write(to: file)

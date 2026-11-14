@@ -108,6 +108,10 @@ benchmark is not a defect. [Current implementation](performance-navigation.md).
   address selected so submitting navigates that pane. The compact editor belongs
   to the sidebar's address field only; popup windows keep it because they can be
   narrower than the full bar. [Entry points](command-bar.md#entry-points-and-source-owners).
+- The sidebar's compact editor feels cramped. At 350 points wide, titles
+  truncate early, and its address row's icon and text sit left of the result
+  rows' icon and title columns. Widen it to about 450 points and line the address
+  row up with the result columns.
   [Appearance](command-bar.md#appearance-and-theme).
 
 ## Other input and surface limits
@@ -144,9 +148,11 @@ workflow, renders first.
   haptics are absent; dismissal currently handles completed right swipes.
 - Nested Peek needs parent-chain ownership. Existing parent transfer, orphan
   promotion, Tab/Shift-Tab and live Expand are implemented.
-  9 points per side as it fades. Parc's Peek sits inside the page card's clip, so
-  its card is measured from the page card and the parent only fades. Matching
-  needs a Peek host above the page card that keeps window dragging in the margins.
+- The Peek card should be measured from the window edge, with the parent page
+  shrinking by 9 points per side as it fades. Parc's Peek sits inside the page
+  card's clip, so its card is measured from the page card and the parent only
+  fades. This needs a Peek host above the page card that keeps window dragging in
+  the margins.
 - **PEEK15:** keep the enabled automatic/Shift-click defaults until the product
   decision changes. [Peek](peek.md).
 

@@ -9,7 +9,7 @@ final class DownloadLibraryView: NSView, NSTableViewDataSource, NSTableViewDeleg
     private let store: BrowserStore
     private let ownerValid: () -> Bool
     var onClose: (() -> Void)?
-    var onToast: ((PArcToastContent) -> Void)?
+    var onToast: ((ParcToastContent) -> Void)?
     var onAction: ((BrowserDownload, DownloadLibraryAction) -> Bool)?
     var fileURL: ((BrowserDownload) -> URL?)?
     var onLoad: (() -> Void)?

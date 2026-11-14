@@ -86,7 +86,7 @@ import AppKit
         expect(registry.nativeCommand(for: event(53, "\u{1b}"), editable: false) == nil, "Escape owner unchanged")
         let editableBack = registry.nativeCommand(for: event(123, "\u{f702}", .command), editable: true)
         expect(editableBack?.item === items["goBack_Alternate"] && editableBack?.priority == .preferWebsites,
-               "Parc applies the same website-first priority in editable page content; the page still gets the arrow first")
+               "the same website-first priority applies in editable page content; the page still gets the arrow first")
         expect(registry.nativeCommand(for: event(123, "a", .command), editable: false) == nil,
                "A chord typing reserved characters stays with the page even when its physical key is registered")
         let back = registry.nativeCommand(for: event(123, "\u{f702}", .command), editable: false)!

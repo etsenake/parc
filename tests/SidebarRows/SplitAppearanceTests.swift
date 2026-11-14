@@ -167,9 +167,9 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         try check(SidebarIconType.allCases.count == 61 && SidebarIconType.allCases.first == .star && SidebarIconType.allCases.last == .search, "All 61 SidebarIconType cases in order")
         try check(SidebarIconType.tabAndSpacePicker.count == 56 && SidebarIconType.tabAndSpacePicker.last == .train, "Tab/Space catalog stops at train")
         try check(SidebarIconType.folderPicker.count == 24 && SidebarIconType.folderPicker[8] == .chatBubbleEllipses && SidebarIconType.folderPicker.last == .skull, "Folder catalog order")
-        try check(SidebarIconType(rawValue: "colorPallete") == .colorPallete && SidebarIconType.fileTrayFull.rawValue == "fileTrayFull", "Raw values are the case names")
+        try check(SidebarIconType(rawValue: "colorPallete") == .colorPallete && SidebarIconType.fileTrayFull.rawValue == "fileTrayFull", "Raw values are the imported sidebar icon names")
         let ionicons = SidebarIconCatalog.font(.ionicons, size: 14)
-        try check(ionicons.fontName == "ionicons" && SidebarIconCatalog.font(.icomoon, size: 14).fontName == "icomoon", "Copied Parc icon fonts load")
+        try check(ionicons.fontName == "ionicons" && SidebarIconCatalog.font(.icomoon, size: 14).fontName == "icomoon", "Bundled icon fonts load")
         let fontURL = CTFontCopyAttribute(ionicons as CTFont, kCTFontURLAttribute) as? URL
         try check(fontURL?.standardizedFileURL == SidebarIconCatalog.resourceDirectory?.appendingPathComponent("ionicons.ttf").standardizedFileURL, "Icon font comes from the bundled file, not a name lookup")
         for type in SidebarIconType.allCases {
@@ -185,7 +185,7 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
         let encodedIcon = try JSONEncoder().encode(SidebarGroupIcon.icon(.chatBubbleEllipses))
         try check(try JSONDecoder().decode(SidebarGroupIcon.self, from: encodedIcon) == .icon(.chatBubbleEllipses), "Catalog icons round-trip")
         var unknown = try JSONSerialization.jsonObject(with: JSONEncoder().encode(target().group)) as! [String: Any]
-        unknown["customIcon"] = ["icon": ["_0": "notAnArcIcon"]]
+        unknown["customIcon"] = ["icon": ["_0": "notAKnownIcon"]]
         let tolerant = try JSONDecoder().decode(BrowserSplitLayout.self, from: JSONSerialization.data(withJSONObject: unknown))
         try check(tolerant.customIcon == nil && tolerant.id == target().group.id, "An unknown stored icon decodes as absent")
         try check(SidebarIconPickerMetrics.size(.folderPicker) == NSSize(width: 272, height: 144), "Folder picker host is 272 × 144")
@@ -277,7 +277,7 @@ extension NSColor { static var parcInk: NSColor { .labelColor } }
                   && unnamed.accessibilityLabel() == "Split View, 3 tabs" && unnamed.toolTip == nil && unnamed.parcTooltip == nil,
                   "Icon-only split shows the default title; AX names the split; no tooltip")
         try check(row.parcTooltip == TooltipConfiguration("Original", behavior: .onMouseIdle(delay: 0.01)) && row.toolTip == nil,
-                  "A named split's title is its Parc tooltip, after 0.01 s")
+                  "A named split's title is its tooltip, after 0.01 s")
         row.setIcon(.icon(.star)); row.layoutSubtreeIfNeeded()
         try check(pixels(shownImage()) == pixels(SidebarGroupIcon.icon(.star).image(size: 16)) && shownCount() == nil
                   && shownImage()?.isTemplate == true && shownImage()?.size == NSSize(width: 16, height: 16), "Catalog icon is a 16-point template glyph")

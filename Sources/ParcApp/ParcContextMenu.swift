@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-enum PArcContextMenuMetrics {
+enum ParcContextMenuMetrics {
     static let rowHeight: CGFloat = 32
     static let inset = SidebarPlusMenuView.inset
     static let minimumWidth: CGFloat = 180
@@ -53,19 +53,19 @@ enum PArcContextMenuMetrics {
 }
 
 @MainActor
-final class PArcContextMenuView: NSView {
+final class ParcContextMenuView: NSView {
     let source: NSMenu
     let items: [NSMenuItem]
     private(set) var rows: [NSRect] = []
     var highlighted: Int? { didSet { if highlighted != oldValue { needsDisplay = true } } }
-    var colors: PArcMenuColors { didSet { needsDisplay = true } }
+    var colors: ParcMenuColors { didSet { needsDisplay = true } }
     var onPress: ((Int) -> Void)?
     private let showsState: Bool
     private static let checkConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
     private static let chevronConfiguration = NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
 
-    init(menu: NSMenu, colors: PArcMenuColors) {
-        let m = PArcContextMenuMetrics.self
+    init(menu: NSMenu, colors: ParcMenuColors) {
+        let m = ParcContextMenuMetrics.self
         source = menu
         self.colors = colors
         items = m.shownItems(menu)
@@ -102,19 +102,19 @@ final class PArcContextMenuView: NSView {
     var reach: CGFloat { Self.reach(items) }
 
     static func reach(_ items: [NSMenuItem]) -> CGFloat {
-        let chains = items.compactMap(\.submenu).map { PArcContextMenuMetrics.gap + reach(PArcContextMenuMetrics.shownItems($0)) }
+        let chains = items.compactMap(\.submenu).map { ParcContextMenuMetrics.gap + reach(ParcContextMenuMetrics.shownItems($0)) }
         return cardWidth(items) + (chains.max() ?? 0)
     }
 
     static func cardWidth(_ items: [NSMenuItem]) -> CGFloat {
-        let m = PArcContextMenuMetrics.self
+        let m = ParcContextMenuMetrics.self
         let titleWidth = items.map { title($0, color: .black).size().width }.max() ?? 0
         let leading = items.contains { $0.state != .off || $0.image != nil } ? m.stateTitleInset : m.titleInset
         let trailing = m.titleInset + (items.contains { $0.hasSubmenu } ? m.chevronWidth : 0)
         return min(m.maximumWidth, max(m.minimumWidth, ceil(2 * m.inset + leading + titleWidth + trailing)))
     }
 
-    var card: NSRect { bounds.insetBy(dx: PArcContextMenuMetrics.shadowMargin, dy: PArcContextMenuMetrics.shadowMargin) }
+    var card: NSRect { bounds.insetBy(dx: ParcContextMenuMetrics.shadowMargin, dy: ParcContextMenuMetrics.shadowMargin) }
 
     func submenuAnchor(_ row: Int) -> NSRect {
         NSRect(x: card.minX, y: rows[row].minY, width: card.width, height: rows[row].height)
@@ -145,7 +145,7 @@ final class PArcContextMenuView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let m = PArcContextMenuMetrics.self
+        let m = ParcContextMenuMetrics.self
         let path = NSBezierPath(roundedRect: card, xRadius: SidebarPlusMenuPlacement.cornerRadius,
                                 yRadius: SidebarPlusMenuPlacement.cornerRadius)
         NSGraphicsContext.saveGraphicsState()
@@ -201,8 +201,8 @@ final class PArcContextMenuView: NSView {
 
     private final class Element: NSAccessibilityElement {
         let index: Int
-        weak var view: PArcContextMenuView?
-        init(index: Int, view: PArcContextMenuView) {
+        weak var view: ParcContextMenuView?
+        init(index: Int, view: ParcContextMenuView) {
             self.index = index
             self.view = view
             super.init()
@@ -218,12 +218,12 @@ final class PArcContextMenuView: NSView {
 }
 
 @MainActor
-final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
+final class ParcContextMenu: NSObject, PCNativeMenuPresenter {
     private let anchor: NSRect
     private let regions: [NSRect]
     private weak var parent: NSWindow?
-    private let colors: PArcMenuColors
-    private var levels: [(view: PArcContextMenuView, window: NSWindow, right: Bool)] = []
+    private let colors: ParcMenuColors
+    private var levels: [(view: ParcContextMenuView, window: NSWindow, right: Bool)] = []
     private var running = false
     private var done = false
     private var chosen: NSMenuItem?
@@ -232,7 +232,7 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
     private var tip: (level: Int, row: Int, timer: Timer?, delay: TimeInterval)?
     private var tipPresenter: (presenter: TooltipPresenter, level: Int)?
 
-    init(anchor: NSRect, regions: [NSRect], parent: NSWindow, colors: PArcMenuColors) {
+    init(anchor: NSRect, regions: [NSRect], parent: NSWindow, colors: ParcMenuColors) {
         self.anchor = anchor
         self.regions = regions
         self.parent = parent
@@ -326,7 +326,7 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         let item = levels[level].view.items[row]
         let opened = level + 1 < levels.count && levels[level + 1].view.source === item.submenu
         if !opened, level + 1 < levels.count, let previous, heading(from: previous, to: point, into: level + 1) {
-            let timer = Timer(timeInterval: PArcContextMenuMetrics.submenuAimDelay, repeats: false) { [weak self] _ in
+            let timer = Timer(timeInterval: ParcContextMenuMetrics.submenuAimDelay, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated { self?.highlight(row, in: level) }
             }
             RunLoop.main.add(timer, forMode: .common)
@@ -479,9 +479,9 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         guard let owner = levels.last?.window ?? parent else { return }
         menu.update()
         menu.delegate?.menuWillOpen?(menu)
-        let view = PArcContextMenuView(menu: menu, colors: colors)
-        let margin = PArcContextMenuMetrics.shadowMargin
-        let placed = PArcContextMenuMetrics.frame(card: view.card.size, reach: view.reach, beside: row, right: right,
+        let view = ParcContextMenuView(menu: menu, colors: colors)
+        let margin = ParcContextMenuMetrics.shadowMargin
+        let placed = ParcContextMenuMetrics.frame(card: view.card.size, reach: view.reach, beside: row, right: right,
                                                  regions: regions)
         let window = NSWindow(contentRect: placed.frame.insetBy(dx: -margin, dy: -margin), styleMask: .borderless,
                               backing: .buffered, defer: false)
@@ -502,7 +502,7 @@ final class PArcContextMenu: NSObject, PCNativeMenuPresenter {
         SidebarPlusMenuMotion.animateOpen(view, about: Self.pivot(view, right: placed.right))
     }
 
-    private static func pivot(_ view: PArcContextMenuView, right: Bool) -> NSPoint {
+    private static func pivot(_ view: ParcContextMenuView, right: Bool) -> NSPoint {
         NSPoint(x: right ? view.card.minX : view.card.maxX, y: view.card.maxY)
     }
 

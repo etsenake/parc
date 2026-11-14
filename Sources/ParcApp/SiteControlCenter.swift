@@ -46,14 +46,14 @@ enum SiteControlCenterMetrics {
 }
 
 struct SiteControlCenterColors {
-    let menu: PArcMenuColors
+    let menu: ParcMenuColors
     let restingFill = Self.libraryFill(LibraryRailTile.fillOpacity(selected: false, hovered: true))
     let selectedFill = Self.libraryFill(LibraryRailTile.fillOpacity(selected: true, hovered: true))
     let onPlate: NSColor
     var offPlate: NSColor { selectedFill }
 
     init(theme: SpaceTheme) {
-        menu = PArcMenuColors(theme: theme)
+        menu = ParcMenuColors(theme: theme)
         let light = ThemeChromePalette(theme: theme, isDark: false), dark = ThemeChromePalette(theme: theme, isDark: true)
         func either(_ light: NSColor, _ dark: NSColor) -> NSColor {
             NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light }
@@ -290,7 +290,7 @@ struct SiteControlCenterTileFace<Label: View>: View {
 }
 
 struct SiteControlCenterSeparator: View {
-    let colors: PArcMenuColors
+    let colors: ParcMenuColors
 
     var body: some View {
         RoundedRectangle(cornerRadius: 0.5)
@@ -339,7 +339,7 @@ struct SiteControlCenterSectionView<Content: View>: View {
     let title: String
     let hoverAccessoryText: String
     let tooltip: String
-    let colors: PArcMenuColors
+    let colors: ParcMenuColors
     let onHeaderClick: () -> Void
     @ViewBuilder let content: () -> Content
     @State private var isHovered = false
@@ -768,10 +768,10 @@ final class SiteControlCenterWindow: SidebarPlusMenuWindow {
 
 @MainActor
 final class SiteControlCenterCard: NSView {
-    var colors: PArcMenuColors { didSet { needsDisplay = true } }
+    var colors: ParcMenuColors { didSet { needsDisplay = true } }
     var onEscape: (() -> Void)?
 
-    init(content: NSView, colors: PArcMenuColors) {
+    init(content: NSView, colors: ParcMenuColors) {
         self.colors = colors
         super.init(frame: content.frame)
         SidebarPlusMenuView.shapeCard(self)
@@ -800,7 +800,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     private let host: NSHostingController<SiteControlCenterView>
     private let card: SiteControlCenterCard
     private var panel: SiteControlCenterWindow?
-    private var chrome: PArcMenuChrome?
+    private var chrome: ParcMenuChrome?
     private var placement: (rect: CGRect, opened: CGRect, below: Bool)?
     private(set) var isDetached = false
     nonisolated(unsafe) private var transientObservers: [NSObjectProtocol] = []
@@ -815,7 +815,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
     nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
     private var modelChange: AnyCancellable?
     private var sizeCheck: Timer?
-    private weak var extensionMenu: PArcContextMenu?
+    private weak var extensionMenu: ParcContextMenu?
     private var keptOpen = 0
     private var pendingShow: UUID?
     var onClose: (() -> Void)?
@@ -874,7 +874,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
 
     func tile(for id: String) -> NSView? { Self.view(SiteControlCenterAlternateClick.identifier(id), in: host.view) }
 
-    func presentExtensionMenu(beside tile: NSView, for id: String, _ show: (PArcContextMenu) -> Void) -> Bool {
+    func presentExtensionMenu(beside tile: NSView, for id: String, _ show: (ParcContextMenu) -> Void) -> Bool {
         guard let panel, !closing, tile.window === panel else { return false }
         let row = panel.convertToScreen(tile.convert(tile.bounds, to: nil))
         let edges = panel.convertToScreen(card.convert(card.bounds, to: nil))
@@ -883,7 +883,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         if let window = anchorWindow, !isDetached {
             regions = SiteControlCenterPlacement.regions(window: window.frame, screen: screen)
         }
-        let menu = PArcContextMenu(anchor: NSRect(x: edges.minX, y: row.minY, width: edges.width, height: row.height),
+        let menu = ParcContextMenu(anchor: NSRect(x: edges.minX, y: row.minY, width: edges.width, height: row.height),
                                   regions: regions, parent: panel, colors: model.colors.menu)
         extensionMenu = menu
         model.menuExtension = id
@@ -953,7 +953,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
         let placed = SiteControlCenterPlacement.windowFrame(anchor: button, card: size, below: below, parent: parent.frame,
             screen: SiteControlCenterPlacement.screen(at: CGPoint(x: button.midX, y: button.midY)) ?? parent.screen?.visibleFrame)
         card.frame.size = size
-        let chrome = PArcMenuChrome(content: card, size: size, colors: model.colors.menu, tailX: placed.tailX,
+        let chrome = ParcMenuChrome(content: card, size: size, colors: model.colors.menu, tailX: placed.tailX,
                                    tailOnTop: placed.below)
         let panel = SiteControlCenterWindow(contentRect: placed.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
@@ -1008,7 +1008,7 @@ final class SiteControlCenterController: NSObject, SiteControlCenterPresentation
             parent: parent.frame,
             screen: SiteControlCenterPlacement.screen(at: CGPoint(x: button.midX, y: button.midY)) ?? parent.screen?.visibleFrame)
         if placed.below != chrome.tailOnTop || placed.tailX != chrome.tailX {
-            let next = PArcMenuChrome(content: card, size: size, colors: model.colors.menu, tailX: placed.tailX, tailOnTop: placed.below)
+            let next = ParcMenuChrome(content: card, size: size, colors: model.colors.menu, tailX: placed.tailX, tailOnTop: placed.below)
             panel.contentView = next
             self.chrome = next
             self.placement = (placement.rect, placement.opened, placed.below)

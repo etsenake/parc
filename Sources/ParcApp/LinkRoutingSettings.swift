@@ -539,7 +539,7 @@ final class LinkRoutingWindow: NSWindowController, NSWindowDelegate, NSTextField
     }
     private func confirmReset() {
         guard let window else { return }
-        let dialog = PArcDialog(.init(title: "Reset all routes?",
+        let dialog = ParcDialog(.init(title: "Reset all routes?",
             message: "Your Air Traffic Control routes will be removed. Your tabs and Spaces stay unchanged.",
             confirm: "Reset Routes", cancel: "Cancel"))
         _ = dialog.begin(for: window, queued: true) { [weak self, weak window] response in

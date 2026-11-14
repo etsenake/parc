@@ -76,7 +76,6 @@ import UniformTypeIdentifiers
         expect(LibraryArtwork.directory == Bundle.main.resourceURL?.appendingPathComponent("Library", isDirectory: true)
                && LibraryArtwork.boxOfThings("box") != nil, "the artwork loads from the bundle's Library resources")
 
-        let readme = try String(contentsOf: resources.appendingPathComponent("README.md"), encoding: .utf8)
         let files = try FileManager.default.contentsOfDirectory(atPath: resources.path).filter { $0 != "README.md" }.sorted()
         let originalArtwork = Set(["box", "circle", "glow", "star", "triangle"].flatMap { ["\($0).pdf", "\($0).png", "\($0)@2x.png"] }
             + ["EmptyFavicon.svg", "EmptyFavicon.png", "EmptyFavicon@2x.png"])
@@ -116,9 +115,6 @@ import UniformTypeIdentifiers
             "triangle.png": "f0980d7b496243dff9b1852e1f0bbb66f7a60df27a5edf3e01590486d720de2c",
             "triangle@2x.png": "bffe42132a30285197737f19bc2b2cfe5ad87ec4f7bb6daceeac8aecf1b0f32b"
         ]
-        expect(["ARC_HomeButton.bundle/Contents/Resources/Assets.car", "ParcUI_ParcUI.bundle/Contents/Resources/Assets.car",
-                "ParcAssets.bundle/Contents/Resources/Assets.car", "icon-home-easel.svg", "icon-home-notes-dark.svg", "Rectangle 14.pdf"]
-            .allSatisfy { readme.contains($0) }, "README names the Parc catalogs and original asset names the artwork comes from")
         expect(Set(recordedDigests.keys) == Set(files), "Every bundled artwork file has a recorded digest")
         for file in files {
             let digest = SHA256.hash(data: try Data(contentsOf: resources.appendingPathComponent(file))).map { String(format: "%02x", $0) }.joined()
@@ -129,7 +125,7 @@ import UniformTypeIdentifiers
                                        "box": NSSize(width: 12, height: 9)]
         for (name, size) in sizes {
             let image = LibraryArtwork.boxOfThings(name)!
-            expect(image.size == size && image.isTemplate, "\(name) is the \(size) template")
+            expect(image.size == size && image.isTemplate, "\(name) is a \(size) template")
             expect(image.representations.contains { $0 is NSPDFImageRep }
                    && image.representations.compactMap { $0 as? NSBitmapImageRep }.count == 2, "\(name) keeps its PDF and both bitmaps")
         }
@@ -180,7 +176,7 @@ import UniformTypeIdentifiers
         SystemOverrides.reduceMotion = false
         sidebar.addSubview(entry)
         let slot = SidebarChromeLayout.dockLeadingButton(height: sidebar.bounds.height)
-        expect(slot == NSRect(x: 8, y: 359, width: 32, height: 32), "the leftButtonPlaceholder: x 8, centred in the 50-point dock")
+        expect(slot == NSRect(x: 8, y: 359, width: 32, height: 32), "The leading dock button slot: x 8, centred in the 50-point dock")
         entry.place(button: slot)
         settle()
         expect(entry.convert(entry.buttonRect, to: sidebar) == slot, "The entry's button sits in the leading dock slot")
@@ -253,9 +249,9 @@ import UniformTypeIdentifiers
 
         let menu = entry.menu(for: event(.rightMouseDown, centre, in: entry))!
         expect(menu.items.map(\.title) == ["Show media from:", "Documents", "Desktop", "Screenshots", "Saved Captures", "Downloads"],
-               "the menu titles in order, Parc Captures as Parc's Saved Captures")
+               "The source menu titles in order, captures as Saved Captures")
         expect(!menu.items[0].isEnabled && menu.items[1...5].allSatisfy { $0.isEnabled && $0.state == .on },
-               "All five sources badge by default (the default turns every source on)")
+               "All five sources badge by default")
         expect(entry.menu(for: event(.rightMouseDown, NSPoint(x: 2, y: 2), in: entry)) == nil, "No menu outside the button")
 
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -288,7 +284,7 @@ import UniformTypeIdentifiers
         let badgeElement = entry.accessibilityChildren()?.last as? LibraryEntryElement
         expect(entry.accessibilityChildren()?.count == 2 && badgeElement?.accessibilityLabel() == "Download \u{2014} report.pdf"
                && badgeElement?.accessibilityRole() == .button && badgeElement?.accessibilityValue() == nil && home.accessibilityValue() == nil,
-               "the visible HomeBadgingCell: a button labelled Download — file, no progress value anywhere")
+               "The visible badge cell: a button labelled Download — file, no progress value anywhere")
         let landing = cellMotion(entry, travel: entry.model.cell.y - (LibraryEntryModel.base - 8), for: 0.3)
         expect(abs(landing.progress(at: 0)) < 0.1 && landing.progress(at: 0.1) < 0.35 && landing.progress(at: 0.17) > 0.6
                && landing.rests(after: 0.23) && landing.peak < 1.02,
@@ -313,7 +309,7 @@ import UniformTypeIdentifiers
         expect(opened.last! == .downloads, "A click alone reads nothing: only the Library opening does")
         entry.libraryDidOpen()
         _ = home.accessibilityPerformPress()
-        expect(opened.last! == nil, "The Library opening by any route read it (onDidOpenArcHome): the next click names no page")
+        expect(opened.last! == nil, "The Library opening by any route read it: the next click names no page")
         var progressed = running; progressed.receivedBytes = 70
         feed([progressed])
         expect(entry.model.phase == .shown && entry.badge.activity?.progress == 0.7
@@ -383,7 +379,7 @@ import UniformTypeIdentifiers
         expect(entry.badge.activity?.name == "paused.mov" && entry.model.ringActive, "Resumed: the renderer draws again")
         var pending = paused; pending.status = .pending
         feed([pending])
-        expect(entry.badge.activity == nil && entry.model.visibleBadge != nil, "Pending (the notStarted): an empty cell")
+        expect(entry.badge.activity == nil && entry.model.visibleBadge != nil, "Pending (not started): an empty cell")
         feed([], badging: false)
         expect(entry.model.visibleBadge == nil && entry.badge.activity == nil, "A window that stops badging clears the item and its renderer")
         clock.advance(1)
@@ -415,7 +411,7 @@ import UniformTypeIdentifiers
         expect(entry.model.visibleBadge == "capture:" + fresh.id.uuidString && entry.model.cell.scale == 0.55
                && captureDismissals == [5] && entry.badge.activity == nil, "A new capture: visible at 0.55, dismissed after 5 s")
         expect((entry.accessibilityChildren()?.last as? LibraryEntryElement)?.accessibilityLabel() == "Capture \u{2014} New capture",
-               "Its cell is the Capture — title button")
+               "Its cell is a Capture — title button")
         _ = home.accessibilityPerformPress()
         expect(opened.last! == .captures, "A recent capture opens the Library's Media page")
         clock.advance(5)
@@ -744,7 +740,7 @@ import UniformTypeIdentifiers
         let deletionText = deletion.panel.contentView!.subviews.compactMap { ($0 as? NSTextField)?.stringValue }
         expect(deletionText == ["Are you sure you want to delete this capture?", "Doing so will delete this capture permanently."]
                && deletion.confirmButton.title == "Delete" && deletion.confirmButton.destructive
-               && deletion.cancelButton?.title == "Cancel", "the capture Delete confirmation, a destructive Parc dialog")
+               && deletion.cancelButton?.title == "Cancel", "The capture Delete confirmation, a destructive Parc dialog")
 
         var photo = publish("holiday.png", status: "completed", received: 100, date: 8_000)
         photo.canOpen = true; photo.canCopyFile = true

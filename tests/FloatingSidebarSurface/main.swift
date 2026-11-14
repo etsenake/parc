@@ -284,7 +284,7 @@ import MetalKit
         check(largest(over(before, opacity: 1, backdrop), over(after, opacity: 1, backdrop)) <= 1 && largest(stackedBefore, stackedAfter) > 8,
               "control: a second translucent canvas stacked over the first jumps \(largest(stackedBefore, stackedAfter)) levels at the commit")
         print("FloatingSidebarSurface \(surfaceName) swipe commit at p = \(p): \(largest(before, after)) levels across it,"
-              + " \(largest(mixed, expected)) from the mix, \(largest(mixed, crossfade)) from a crossfade;"
+              + " \(largest(mixed, expected)) from the expected mix, \(largest(mixed, crossfade)) from a crossfade;"
               + " the stacked canvas jumped \(largest(stackedBefore, stackedAfter))")
     }
 

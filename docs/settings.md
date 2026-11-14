@@ -159,7 +159,8 @@ The ordered routing editor and native request routes are documented in
 [routing interaction](routing-interaction.md) and [private routing](private-route-lifecycle.md).
 The first matching rule wins; all its conditions must match. Destinations are a
 Space or the most recent Space overall; the menu lists Spaces by name. A rule stored
-with a Profile destination shows as the first Space that uses it. Little
+with a Profile destination shows as the first Space that uses it. A separate
+mini browser window is not a destination; the default is Most Recent Space.
 
 `LinkRoutingStore` atomically stores `link-routing.json`. The editor owns a draft,
 saves on close, omits incomplete conditions and does not write unchanged sessions.

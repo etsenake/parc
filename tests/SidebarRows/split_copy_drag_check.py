@@ -73,7 +73,7 @@ drag_tile = body(tile, "override func mouseDragged(with event: NSEvent)")
 expect("!event.modifierFlags.contains(.option) || session.allowsCopy" in drag_tile, "only a whole Favorite split tile starts an Option drag")
 tile_mask = body(tile, "func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext)")
 expect("sidebarDrag?.allowsCopy == true ? [.move, .copy] : .move" in tile_mask and "return []" in tile_mask,
-       "a split tile offers copy and move inside Parc (the tray mask 17), nothing outside")
+       "a split tile offers copy and move inside Parc, nothing outside")
 
 hd = body(sidebar, "private func headerOrDockDrop(")
 header = hd[:hd.index("guard !spacesHost.isHiddenOrHasHiddenAncestor")]
@@ -103,7 +103,7 @@ cross = dockc[dockc.index("if source !== self {"):dockc.index("guard sidebarWind
 expect(cross.index("self.selectSpaceFromUser(location.spaceID") < cross.index("self.prepareSidebarWindowDrop(session, to: location, before: top)"),
        "another window's items: this window shows the dock's Space, then receives them by window transfer")
 expect("self.confirmInterProfileMove(" in dockc and "self.store.moveAcrossProfiles(moved, proposal: { current($0)?.applying(to: $0) })" in dockc,
-       "a same-window dock move into another Profile passes the decision")
+       "a same-window dock move into another Profile passes the inter-Profile decision")
 expect("_ = self.selectSpaceFromUser(location.spaceID, profileID: space.profileID)" in dockc,
        "the window then focuses the dock's Space")
 expect("sidebar.prepareDockDrop = { [weak self] session, items, location, before in" in controller, "the window wires its dock drop")
