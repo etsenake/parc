@@ -16,7 +16,7 @@ For a custom anchor, assign `view.parcTooltip` a `TooltipConfiguration`; SwiftUI
 uses `.parcTooltip`. Configuration defaults to bottom-trailing placement,
 0.45-second idle delay, maximum width 296 and no allowed modifiers. Optional
 fields select an anchor rectangle, palette, shortcut requirement and style:
-standard, label/subtitle or dock item with Profile name.
+standard or label/subtitle.
 
 A live binding is reread when the tooltip appears. A shortcut-only configuration
 shows nothing when the command is unbound. Assignment clears the system tooltip
@@ -42,11 +42,9 @@ three-point cursor-facing/diagonal corner. A dark pill has a one-point white
 Title and subtitle use 15- and 14-point text, subtitle opacity 0.66 and up to
 four lines. A label taller than 28 points has seven points of anchor overhang.
 
-### The dock item style
+### The dock item tooltip
 
-The Profile capsule is 22 points high with 5/6 horizontal and four-point vertical
-insets, a 20-point icon, two-point gap and 11-point name. It uses at most half
-the row. Profile names appear when multiple Profiles exist. Numbered shortcuts
+A dock Space item uses the standard pill with the Space name. Numbered shortcuts
 resolve from their live binding instead of a copied key string.
 
 ### Copy Quote as URL

@@ -289,7 +289,7 @@ autocomplete; exiting starts a fresh ordinary request in the same valid session.
 
 | Command | Existing action owner |
 | --- | --- |
-| Focus on Space | Original Space/Profile selection |
+| Focus on Space | Original Space/Profile selection; same-named Spaces show their position |
 | Open Folder | Expand ancestors, reveal sidebar row and attention highlight; no page selection |
 | Favorite / Unfavorite | Atomic original-item membership transaction |
 | Pin to Folder / Space | Original sidebar collection move, retaining pages and saved homes |
@@ -302,8 +302,8 @@ autocomplete; exiting starts a fresh ordinary request in the same valid session.
 | Search Settings / Air Traffic Control | Native search settings / local Links editor |
 | Settings panes / Appearance | Existing Settings and appearance actions |
 
-Pin to Space includes other Profiles and uses their existing confirmation/move
-transaction. Folder moves stay within the original Profile. Favorite/Unfavorite
+Pin to Space includes Spaces with different data and uses their existing
+confirmation/move transaction; same-named Spaces show their position. Folder moves stay within the original Profile. Favorite/Unfavorite
 requires uniform membership and preserves current page owners. Unsupported
 collections do not fall back silently to the current tab.
 
@@ -321,7 +321,8 @@ Task Manager, Check for Updates and the bundled What's New page. Page tools
 validate against the real key window, including after dismissal. Task Manager
 can open for a crashed page because it does not require a live renderer.
 
-Settings destinations cover Membership, General, Profiles, Shortcuts, Links,
+Settings destinations cover Membership, General, Spaces (Open Space Preferences;
+Profile stays a hidden keyword), Shortcuts, Links,
 Icon and Advanced. Appearance switches reuse window Undo. Getting Started is
 intentionally absent: Replay onboarding belongs only in Settings → General.
 excluded; local diagnostics and Parc updates do not inherit those exclusions.

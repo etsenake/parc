@@ -257,7 +257,7 @@ at F20.
 The menu registry includes Blank/New/Private windows, local profiles, Duplicate,
 Reveal Tab, Library/Downloads/Media/Documents, Spaces, Extensions, native Window
 Zoom/Bring All to Front, Stay On Top, page tools, app updates and local What's
-New. Manage Spaces and Change Profile are implemented. Notes and Easels keep
+New. Manage Spaces is implemented. Notes and Easels keep
 existing formatting controls. [Typed commands](command-bar.md#typed-type-travel-commands)
 add contextual operations without inventing menu command identities.
 

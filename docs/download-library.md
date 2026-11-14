@@ -30,7 +30,7 @@ Opening Downloads initializes owned regular profiles through the engine registry
 without creating a page. Stale persisted records are removed only after that
 exact manager reports history ready and its authoritative GUID set. Loading,
 failure and Retry are visible; profile retirement is not reported as empty
-history. Filtering never changes the browser's Space or retargets a command.
+history. Searching never changes the browser's Space or retargets a command.
 
 Unchanged profile/record inputs skip catalog filter and sort work. Metadata
 updates reload changed rows; a new Library context renews callbacks even when
@@ -60,23 +60,23 @@ own window-kind filter; it is not the merged Downloads page.
 <a id="original-library-search-composition"></a>
 ## Search, filter and layout
 
-Search matches names and source URLs. Profile chips select one original Profile;
-selecting it again clears the filter. Search selection, marked text and caret
-belong to the native field. Closing Filter retires a hidden chip's focus without
-rewriting the query. Date ordering is newest first, stable for equal dates.
+Search matches names and source URLs across every Space's downloads; there is no
+Filter control and no Profile chips. Search selection, marked text and caret
+belong to the native field. Date ordering is newest first, stable for equal dates.
 Records with no start date appear last under **Earlier**.
 
 The shared shell has a 112-point category rail and a page card. Downloads uses
 the standard 417-point page width, with containment supplied by the shell;
 [Spaces](space-management.md#library-width-on-the-spaces-page) has its own width.
 Search uses the shared 36-point rounded header control and 14-point native
-editor. Filter/Done uses its fitting width. There is no item-count footer.
+editor and spans the full header. There is no item-count footer.
 
 Rows are 56 points high with 12-point outer insets, a 24-point file image,
 8-point horizontal spacing and 2 points between the 14-point title and 12-point
 subtitle. Progress and missing-file artwork use a separate 32-point accessory
-slot. Names truncate without covering controls. Full name, status and original
-Profile/source remain available through accessibility and tooltips.
+slot. Names truncate without covering controls. Full name, status and source
+remain available through accessibility and tooltips; rows never name a Profile.
+Loading shows "Loading downloads…" and a failed load names the Space it belongs to.
 
 ## Keyboard selection and original-item commands
 

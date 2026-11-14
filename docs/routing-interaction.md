@@ -18,7 +18,7 @@ explained link feedback belongs to [hovered-link status](web-interactions.md).
 
 ## Link destinations
 
-External links use the first matching rule. A missing explicit Space falls back
+The rule editor offers Most Recent Space and each Space by name, never Profile names. External links use the first matching rule. A missing explicit Space falls back
 to the frontmost eligible window and its active Space; without one, Parc creates
 a window using the most recent surviving Space. Other unavailable destinations
 fall back through the rule store's recent-Space policy.

@@ -19,11 +19,13 @@ not invalidate naming. Failed writes and competing renames preserve authoritativ
 state. Icon changes use the original Space/Profile/icon lease, renewing it after
 each accepted choice; Remove writes nil and failure preserves the draft.
 
-With multiple Profiles the header shows the actual assignment. Set Profile and
-its accessibility actions share original-target callbacks; retiring Profiles
-cannot be chosen. New Profile asks for the name in a Parc dialog over the
-browser window and assigns the new Profile to that Space, without opening
-Settings or switching the browser selection.
+The header shows only the Space's icon, name and the ellipsis or Done button,
+plus the Incognito indicator in a private window. It never names a Profile, and
+the Spaces menu and File menu have no Change Profile or New Profile items. The
+Space menu's Set Profile submenu and its accessibility actions share
+original-target callbacks; retiring Profiles cannot be chosen. New Profile there
+asks for the name in a Parc dialog over the browser window and assigns it to
+that Space, without opening Settings or switching the browser selection.
 
 ## Complete manager and original-content transactions
 
@@ -88,6 +90,12 @@ relocates exact Note/Easel storage and rolls it back if persistence fails; it
 never just changes their Profile IDs after closing pages. Original membership
 and ownership remain valid through retirement. New Profile creation authorizes
 its original assignment context and saves the Profile atomically.
+
+### Moving tabs between Spaces
+
+Moving tabs to a Space that shares the same data never warns and keeps the live
+pages. Moving to a Space with different data asks first: "<Space> uses different
+data, so you might get logged out or lose your progress in these tabs."
 
 ## Library Spaces page presentation
 

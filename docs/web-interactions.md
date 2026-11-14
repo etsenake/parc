@@ -266,7 +266,7 @@ take focus away from the native content.
 
 ### Contracts for other families
 
-Window Zoom/Bring All to Front, Manage Spaces, Change Profile, Stay On Top,
+Window Zoom/Bring All to Front, Manage Spaces, Stay On Top,
 Extensions menus and typed Appearance commands are connected. Edit → Format → Font menu
 integration is absent. Its implementation must use the working Note/Easel
 formatting owners without preempting their native editing behavior.
