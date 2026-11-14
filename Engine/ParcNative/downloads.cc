@@ -357,11 +357,6 @@ void NativeDownloads::ObserveCreated(download::DownloadItem* item,
   auto snapshot = Snapshot(*item);
   Publish(snapshot);
   if (!inserted || !genuine_creation || !created_) return;
-  //
-  // onDownloadsInitialized replay. This carrier belongs to the initiating
-  // document: restored/imported history attaches no WebContents
-  // (download_manager_impl.cc AttachInfo(nullptr)), and a tab that has
-  // navigated since starting the download cannot supply it.
   auto* contents = content::DownloadItemUtils::GetWebContents(item);
   auto* frame = contents ? contents->GetPrimaryMainFrame() : nullptr;
   if (!frame || !frame->IsRenderFrameLive()) return;
@@ -379,8 +374,6 @@ void NativeDownloads::ObserveCreated(download::DownloadItem* item,
 
 bool NativeDownloads::CanPresentArrival(const std::string& guid,
                                          const std::string& identity) const {
-  //
-  // 3/4) leave a pending hover query in place, so state is not consulted.
   auto found = item_identities_.find(guid);
   return manager_ && Find(guid) && found != item_identities_.end() &&
       found->second.ToString() == identity;

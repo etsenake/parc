@@ -1,5 +1,3 @@
-// Copyright 2026 Parc contributors.
-//
 #ifndef PARC_NATIVE_PASSWORD_PROMPT_H_
 #define PARC_NATIVE_PASSWORD_PROMPT_H_
 

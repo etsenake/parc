@@ -4879,7 +4879,7 @@
    virtual String GetOverflowMenuSubtitleString() const;
 --- a/third_party/blink/renderer/modules/media_controls/resources/mediaControls.css
 +++ b/third_party/blink/renderer/modules/media_controls/resources/mediaControls.css
-@@ -424,6 +424,82 @@
+@@ -424,6 +424,80 @@
  audio::-internal-media-controls-cast-button.on,
  video::-internal-media-controls-cast-button.on {
    background-image: light-dark(url(ic_cast_on.svg), url(ic_cast_on_white.svg));
@@ -4917,8 +4917,6 @@
 +
 +audio::-internal-media-controls-cast-button.parc-airplay.parc-connecting,
 +video::-internal-media-controls-cast-button.parc-airplay.parc-connecting {
-+  /*
-+   * (MiniPlayerMotion.connectingOpacity). */
 +  animation: -ua-parc-airplay-connecting 0.75s ease-in-out infinite alternate;
 +}
 +

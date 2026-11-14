@@ -70,9 +70,6 @@ bool NativeExtensionKeybindingRegistry::DispatchKeyboardEvent(
   if (event.skip_if_unhandled) {
     return false;
   }
-  //
-  // windows_key_code, translated modifier flags, KeyUp -> RELEASED, timestamp.
-  // It preserves repeat metadata without making repeat a different shortcut.
   return DispatchAccelerator(
       ui::GetAcceleratorFromNativeWebKeyboardEvent(event));
 }
@@ -110,9 +107,6 @@ void NativeExtensionKeybindingRegistry::OnHostActivationChanged(bool active) {
   if (!global) {
     return;
   }
-  //
-  // conditional activation rule. A deactivation cannot erase another registry's
-  // selection.
   if (active) {
     global->set_registry_for_active_window(this);
   } else if (global->registry_for_active_window() == this) {

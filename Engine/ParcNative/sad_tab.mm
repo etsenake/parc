@@ -1,7 +1,3 @@
-// Copyright 2026 Parc contributors.
-//
-// restores the same native page. Chromium156's SadTabHelper owns our matching
-//
 #include "sad_tab.h"
 
 #include <memory>

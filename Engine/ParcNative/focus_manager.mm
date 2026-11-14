@@ -2,18 +2,6 @@
 
 #include <cmath>
 
-//
-// 4e452201e483b5480c0403a9ef8566e10515cdcb78828622ff9032b202e29547: 101e55770:
-// weak per-window manager, firstResponder KVO, 2-second PendingValue.
-// 101e51e5c: chain/descendant/text-field guards, pending state before native
-// send. 1009e8fac: nextResponder chain; 1009e8e90: nearest NSTextField
-// ancestor. 101e508c8: actual changes clear matching pending, old resign then
-// new become; nil actual focus falls back to selected windowContent only
-// without a pending request. No pane-cycle ordering is recovered or encoded
-// here. Generation-safe removal, cycle protection, explicit invalidation,
-// reentrant callback checks and detached-pending cleanup below are Parc
-// lifetime guards.
-
 static void* const PCFocusObservationContext =
     (void*)&PCFocusObservationContext;
 static const NSTimeInterval PCFocusPendingInterval = 2.0;

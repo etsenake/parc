@@ -13,16 +13,6 @@
 #include "native_appkit_page.h"
 #import "window_security_reservation.h"
 
-//
-//
-// witness +0x220/+0x228) to ADKClient.WebContentFrame, whose delegate protocol
-//
-// never called. The genuine ContentInfoBarManager therefore keeps every
-// delegate and its own expiry, unanswered, exactly as there. Tab sharing has no
-// in-page bar either: its only control is the sidebar row's "Share this tab
-//
-//
-//
 namespace parc {
 namespace {
 using InfoBar = infobars::InfoBar;

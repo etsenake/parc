@@ -1,7 +1,3 @@
-// Copyright 2026 Parc contributors.
-//
-// while Core retains DevToolsWindow/contents (0x683eedc). Current156's real
-//
 #include "devtools_pane.h"
 
 #include <dispatch/dispatch.h>

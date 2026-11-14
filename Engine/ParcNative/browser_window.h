@@ -83,16 +83,6 @@ class NativeModalDialogHostDelegate {
   virtual gfx::Size GetContentsSize() const = 0;
 };
 
-//
-// primary positioning method centers using separately truncated half-sizes;
-// GetHostView resolves the active page wrapper on every call. No cached active
-// tab, duplicated NSWindow ownership, or invented per-pane policy is introduced.
-//
-// Chromium 156 additionally requires position/destruction observer delivery.
-//
-// list. Call NotifyPositionRequiresUpdate after active-host or geometry changes.
-// Invalidate is reentrant and may run during a position callback; destruction
-//
 class NativeModalDialogHost final
     : public web_modal::WebContentsModalDialogHost {
  public:

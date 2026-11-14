@@ -207,13 +207,7 @@ void CheckImagePolicy(PageLease lease, NSURL* source, NSString* title,
         }
       }, lease, source, title));
 }
-//
-// never adds, for the same Chromium 156: its own split item replaces 50111,
-// the Open Link as/in Profile block and the QR items are gone (QR is also
-// disabled at 0x4266488), and so are Glic, Lens/region search, reading mode,
-// partial translate and video-frame search. Removal keeps every other item,
-// title and command of the genuine model.
-constexpr int kArcOmittedCommands[] = {
+constexpr int kOmittedContextCommands[] = {
     IDC_CONTENT_CONTEXT_OPENLINKSPLITVIEW, IDC_CONTENT_CONTEXT_OPENLINKINPROFILE,
     IDC_CONTENT_CONTEXT_GENERATE_QR_CODE, IDC_CONTENT_CONTEXT_OPEN_IN_READING_MODE,
     IDC_CONTENT_CONTEXT_LISTEN_TO_THIS_PAGE, IDC_CONTENT_CONTEXT_LENS_REGION_SEARCH,
@@ -238,15 +232,11 @@ void NormalizeSeparators(ui::SimpleMenuModel& model) {
 class ContextObserver final : public RenderViewContextMenuObserver {
  public:
   explicit ContextObserver(RenderViewContextMenu* menu) : menu_(menu), lease_(Lease(*menu)) {}
-  // The real menu calls this last in InitMenu, before the Mac toolkit adds
-  //
   void InitMenu(const content::ContextMenuParams& params) override {
     auto& model = const_cast<ui::SimpleMenuModel&>(menu_->menu_model());
-    for (int command : kArcOmittedCommands) RemoveCommand(model, command);
+    for (int command : kOmittedContextCommands) RemoveCommand(model, command);
     for (int command = IDC_OPEN_LINK_IN_PROFILE_FIRST; command < IDC_OPEN_LINK_IN_PROFILE_FIRST + kProfileLinkCommands; ++command)
       RemoveCommand(model, command);
-    //
-    // translation: Chrome's translate service needs a Google API key.
     RemoveCommand(model, IDC_CONTENT_CONTEXT_TRANSLATE);
     // Image search is always the plain "Search ‹engine› for Image" item
     // (IDC 50124, IDS_CONTENT_CONTEXT_SEARCHWEBFORIMAGE), never Lens, no icon.
@@ -263,8 +253,6 @@ class ContextObserver final : public RenderViewContextMenuObserver {
       }
       break;
     }
-    //
-    // a link in a normal browser window, plain title, no icon or separator.
     PCNativePage* page = ExistingNativePage(lease_.contents.get());
     auto* browser = GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(lease_.contents.get());
     auto anchor = model.GetIndexOfCommandId(IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW);
@@ -276,8 +264,6 @@ class ContextObserver final : public RenderViewContextMenuObserver {
       split_ = true;
       model.InsertItemAt(*anchor + 1, kOpenLinkInSplitView, u"Open Link in Split View");
     }
-    //
-    // selection search at the top when the selection is not inside a link.
     if (!params.link_url.is_valid()) {
       if (auto index = model.GetIndexOfCommandId(IDC_CONTENT_CONTEXT_SEARCHWEBFOR); index && *index) {
         const std::u16string label = model.GetLabelAt(*index);
@@ -285,7 +271,6 @@ class ContextObserver final : public RenderViewContextMenuObserver {
         model.InsertItemAt(0, IDC_CONTENT_CONTEXT_SEARCHWEBFOR, label);
       }
     }
-    //
     if (!lease_.contents->GetBrowserContext()->IsOffTheRecord() &&
         params.media_type == blink::mojom::ContextMenuDataMediaType::kImage && params.has_image_contents) {
       image_ = true;
@@ -302,8 +287,6 @@ class ContextObserver final : public RenderViewContextMenuObserver {
   }
   bool IsCommandIdEnabled(int command) override {
     if (command == kOpenLinkInSplitView) {
-      //
-      // loads only HTTP(S) and asks the shell whether it can place a pane.
       const GURL& link = menu_->params().link_url;
       PCNativePage* page = ExistingNativePage(lease_.contents.get());
       id<PCNativePageObserver> observer = page.observer;

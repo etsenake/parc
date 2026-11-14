@@ -41,10 +41,6 @@
 
 namespace parc {
 namespace {
-// AppModalDialogQueue and the real controller still own ordering, suppression,
-//
-// supplied-view attachment justify a page-bound sheet; exact visual parity is
-// deliberately not inferred from that evidence.
 class Dialog final : public javascript_dialogs::AppModalDialogView {
  public:
   explicit Dialog(

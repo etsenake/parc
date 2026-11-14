@@ -31,9 +31,6 @@ typedef NS_ENUM(NSInteger, PCNativeFindAction) {
 @property(nonatomic, readonly) BOOL hasFindFocus;
 @property(nonatomic, readonly) BOOL hasMarkedText;
 
-//
-// priority250, height32. topInset is10 plus any real upper page panel height.
-// Returning NO leaves no stale presentation on the previous page.
 - (BOOL)attachToContainer:(nullable NSView *)container
                 topInset:(CGFloat)topInset
             focusManager:(nullable PCNativeFocusManager *)manager

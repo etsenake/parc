@@ -263,7 +263,6 @@ class NativeExtensionContextMenu::Session final
             state->PrepareItem(item, item_model, index);
           }
         };
-    //
     controller_ = [[MenuControllerCocoa alloc] initWithModel:model
                                                isContextMenu:YES
                                                     delegate:builder_];
@@ -304,10 +303,6 @@ class NativeExtensionContextMenu::Session final
     if (app_presenter_) {
       opened = [app_presenter_ presentMenu:controller_.menu];
     } else {
-      //
-      // Use AppKit's actual screen->window->view conversion for both flipped
-      // and unflipped roots; original unflipped fallback appears to mix
-      // coordinates.
       NSView* root = window_.contentView;
       NSPoint point = [root
           convertPoint:[window_ convertPointFromScreen:NSEvent.mouseLocation]

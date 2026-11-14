@@ -223,8 +223,6 @@ class Session final : public ProfileObserver,
     lifetime_ = shared_from_this();
     return true;
   }
-  //
-  // that started it closes; only Cancel or the Profile going away stop it.
   void Start() {
     if (finished_ || cancelled_)
       return;

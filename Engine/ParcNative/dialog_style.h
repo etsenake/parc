@@ -1,6 +1,3 @@
-// Parc's native dialog look, shared by the engine's own sheets: the extension
-// install and remove sheets and the page's JavaScript dialogs. The app's
-//
 #pragma once
 #import <AppKit/AppKit.h>
 NS_ASSUME_NONNULL_BEGIN
@@ -8,7 +5,6 @@ namespace parc_dialog {
 inline constexpr CGFloat kWidth = 450;
 inline constexpr CGFloat kInset = 38;
 inline constexpr CGFloat kArtSize = 62;
-//
 NSColor* PopoverBackground();
 NSColor* PopoverTitle();
 NSColor* PopoverMessage();
@@ -30,9 +26,6 @@ NSImageView* ExtensionArt(NSImage* _Nullable icon);
 // returns the y below them. A selectable message can be copied.
 CGFloat AddHeading(NSView* root, NSString* title, NSString* _Nullable message,
                    CGFloat y, CGFloat maxMessageHeight, bool selectableMessage = false);
-//
-// the sides and bottom. Buttons that do not fit wrap onto rows above, and a
-// checkbox without room beside them takes its own row. Returns the height.
 CGFloat PlaceFooter(NSView* root, CGFloat y, NSButton* _Nullable checkbox,
                     NSArray<NSButton*>* buttons);
 }  // namespace parc_dialog
@@ -43,7 +36,6 @@ CGFloat PlaceFooter(NSView* root, CGFloat y, NSButton* _Nullable checkbox,
 // system sheet material over the window background color.
 @interface PCDialogBaseView : PCDialogFlippedView
 @end
-//
 @interface PCDialogPictureIcon : NSView
 - (instancetype)initWithImage:(NSImage*)image imageRect:(NSRect)imageRect;
 @end
@@ -68,8 +60,6 @@ CGFloat PlaceFooter(NSView* root, CGFloat y, NSButton* _Nullable checkbox,
 - (instancetype)initWithTitle:(NSString*)title target:(nullable id)target action:(nullable SEL)action;
 - (NSSize)sizeForWidth:(CGFloat)width;
 @end
-//
-// padding focuses `field`.
 @interface PCDialogCard : PCDialogFlippedView
 @property(nonatomic, weak, nullable) NSView* field;
 @end

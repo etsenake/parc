@@ -8,19 +8,12 @@
 
 namespace parc {
 
-// Shell attachment / focus for auto-PiP policy. Independent of Chromium paint
-// visibility: a still-shown page stays WasShown so resign-active does not blank
-//
-// shell occlusion, not WebContents paint freeze.
 enum class BackgroundPipVisibility {
   kVisible,
   kHidden,
   kOccluded,
 };
 
-//
-// MediaControlsDataStore.PIPSessionState cases we actually need; not a claim
-//
 enum class BackgroundPipSessionState {
   kIdle,
   kPendingActive,  // EnterPictureInPicture issued; awaiting session

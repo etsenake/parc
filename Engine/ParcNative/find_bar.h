@@ -27,9 +27,6 @@ class NativeFindBarHost {
   virtual void CloseFindOverlappingBubbles() = 0;
 };
 
-// Owned by FindBarController; host must outlive it. No Browser/Profile/renderer
-// replacement. Source evidence and deliberate156 adaptations are in the test
-//
 class NativeFindBar final : public FindBar, public FindBarTesting {
  public:
   explicit NativeFindBar(NativeFindBarHost& host);

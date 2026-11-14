@@ -2,10 +2,6 @@
 #ifndef THIRD_PARTY_BLINK_PUBLIC_COMMON_PARC_TOP_BAND_COLOR_SAMPLING_H_
 #define THIRD_PARTY_BLINK_PUBLIC_COMMON_PARC_TOP_BAND_COLOR_SAMPLING_H_
 
-//
-// the renderer's TopBandColorTracker and the browser's frame sampler.
-//
-
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -98,11 +94,6 @@ std::optional<uint32_t> SampleBand(int width,
   return average;
 }
 
-// 0x4686a2c's geometry: an element counts for a sample point when it is at
-// least kMinimumBandHeight tall, at least a third of the viewport wide, and
-//
-// feature (off by default) also accepts one covering all three inner sample
-// columns; Parc keeps the default.
 inline bool SpansBand(int x, int width, int height, int viewport_width) {
   if (height < kMinimumBandHeight || width < viewport_width / 3) {
     return false;
@@ -155,11 +146,6 @@ class PixelSource {
   uint64_t value_ = 0x9e3779b97f4a7c15ull;
 };
 
-// Parc: elements whose pixels were read in this detection, and elements whose
-// pixels recently gave no colour, so a failing image or gradient is not
-//
-// re-reads them each time. A key is an element's node id and its
-// PixelSource value; a failure is remembered for kSameElementWindowUs.
 class PixelSampleMemory {
  public:
   struct Key {
@@ -229,9 +215,6 @@ class PixelSampleMemory {
   std::array<Failure, kRememberedFailures> failures_{};
 };
 
-//
-// Entry>), keyed by element. Parc keeps insertion order, so ties go to the
-//
 template <typename Key, typename Color>
 class BandVotes {
  public:
@@ -322,10 +305,6 @@ BandChoice<Color> ChooseBand(const BandVotes<Key, Color>& votes,
   return choice;
 }
 
-// Parc: the host the browser reports with a colour, under which the shell
-// caches it. Only a website (http or https) has one; Reader, extension and
-//
-// under its URL's host.
 inline std::string_view CacheHost(std::string_view scheme,
                                   std::string_view host) {
   return scheme == "http" || scheme == "https" ? host : std::string_view();

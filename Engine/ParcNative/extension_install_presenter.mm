@@ -153,7 +153,6 @@ using namespace parc_dialog;
   return self;
 }
 - (CGFloat)layOutForWidth:(CGFloat)width {
-  //
   const CGFloat rowSpacing = 8.66, textX = 3 + _bulletWidth + 3 + 8;
   CGFloat y = 1 + PlaceLabel(_heading, 0, 1, width);
   for (NSUInteger i = 0; i < _messages.count; ++i) {
@@ -322,7 +321,6 @@ using namespace parc_dialog;
   }
   return unobstructed && NSProcessInfo.processInfo.systemUptime >= _allowAfter;
 }
-//
 - (void)layOutPromptInSheet:(NSWindow*)sheet {
   PrepareSheet(sheet);
   const CGFloat dialogWidth = kWidth, inset = kInset, width = dialogWidth - 2 * inset;
@@ -657,8 +655,6 @@ using namespace parc_dialog;
   if (sender != _accept || sender.window != _sheet || ![self acceptAllowed]) {
     return;
   }
-  //
-  // the input delay ended; NSEvent timestamps share systemUptime's clock.
   NSEvent* key = [sender isKindOfClass:PCDialogButton.class]
                      ? ((PCDialogButton*)sender).keyEvent
                      : nil;

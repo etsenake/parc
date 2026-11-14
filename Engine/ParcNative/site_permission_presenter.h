@@ -25,11 +25,6 @@ typedef NS_ENUM(NSInteger, PCSiteLocationMode) {
 @protocol PCSitePermissionAnchorProviding <NSObject>
 - (nullable NSDictionary*)parcSitePermissionAnchorForPage:(NSView*)page;
 @end
-//
-// shown from the address bar's site controls; docs/web-interactions.md): a
-//
-// buttons, Not Now (dismiss) and Allow. Location accuracy follows the engine's
-//
 @interface PCSitePermissionPresenter : NSObject
 - (instancetype)initWithPage:(NSView*)page
                       window:(NSWindow*)window
@@ -40,7 +35,6 @@ typedef NS_ENUM(NSInteger, PCSiteLocationMode) {
                    presented:(void (^)(void))presented
                       result:(void (^)(PCSitePermissionChoice,
                                        BOOL precise))result;
-//
 - (void)configureSymbol:(NSString*)name
               pointSize:(CGFloat)pointSize
                    bold:(BOOL)bold

@@ -29,9 +29,6 @@
 @end
 
 namespace {
-// Arc1.122 keeps one hovered-information subscription per WindowViewController:
-//
-// releases the previous one, cancelling an earlier unresolved query.
 NSMapTable<PCNativeBrowserWindow*, PCNativeDownloadArrival*>* PendingArrivals() {
   static NSMapTable<PCNativeBrowserWindow*, PCNativeDownloadArrival*>* value =
       [NSMapTable weakToWeakObjectsMapTable];
@@ -76,13 +73,6 @@ NSMapTable<PCNativeBrowserWindow*, PCNativeDownloadArrival*>* PendingArrivals() 
     _downloadIdentifier = [base::SysUTF8ToNSString(snapshot.guid) copy];
     _itemIdentity = [base::SysUTF8ToNSString(snapshot.item_identity) copy];
     _privateContextIdentifier = [context copy];
-    //
-    //
-    //
-    //
-    // resolve to the wrong page. The security reservation refusal is a Parc
-    // adaptation: arrival pixels swallow clicks and must never cover a
-    // reserved security surface. The same rule applies at resolution.
     id<PCNativeBrowserWindowClient> client = binding.client;
     if (!self.valid || !window.keyWindow || window.miniaturized ||
         PCNativeWindowHasSecurityReservation(window) ||
@@ -122,10 +112,6 @@ NSMapTable<PCNativeBrowserWindow*, PCNativeDownloadArrival*>* PendingArrivals() 
   if (PCNativeDownloadArrival* previous = [pending objectForKey:binding])
     previous->_resolved = true;
   [pending setObject:self forKey:binding];
-  //
-  //
-  // Parc returns that rectangle's centre plus the visual viewport so the
-  // resolver can apply pinch/page zoom (see -resolved:). Isolated read only.
   _document.AsRenderFrameHostIfValid()->ExecuteJavaScriptInIsolatedWorld(
       u"(() => { const a=document.querySelector('a:hover'); if(!a)return null;"
        "const r=a.getBoundingClientRect(),v=window.visualViewport;"
@@ -139,8 +125,6 @@ NSMapTable<PCNativeBrowserWindow*, PCNativeDownloadArrival*>* PendingArrivals() 
       }, self), ISOLATED_WORLD_ID_CHROME_INTERNAL);
 }
 
-//
-//
 - (void)resolved:(base::Value)value {
   if (_resolved) return;
   _resolved = true;
@@ -152,8 +136,6 @@ NSMapTable<PCNativeBrowserWindow*, PCNativeDownloadArrival*>* PendingArrivals() 
   auto* contents = content::WebContents::FromRenderFrameHost(_document.AsRenderFrameHostIfValid());
   auto* view = contents->GetRenderWidgetHostView();
   NSView* renderer = view ? view->GetNativeView().GetNativeNSView() : nil;
-  //
-  //
   NSPoint source = NSEvent.mouseLocation;
   const auto* result = value.GetIfDict();
   auto x = result ? result->FindDouble("x") : std::nullopt;
@@ -165,11 +147,6 @@ NSMapTable<PCNativeBrowserWindow*, PCNativeDownloadArrival*>* PendingArrivals() 
   if (renderer.window == window && x && y && ox && oy && scale && std::isfinite(*x) &&
       std::isfinite(*y) && std::isfinite(*ox) && std::isfinite(*oy) &&
       std::isfinite(*scale) && *scale > 0 && std::isfinite(zoom) && zoom > 0) {
-    //
-    //
-    //
-    //
-    // misplaces the start under pinch or page zoom; at 100% they are equal.
     NSPoint point = NSMakePoint((*x - *ox) * *scale * zoom, (*y - *oy) * *scale * zoom);
     if (!renderer.flipped) point.y = renderer.bounds.size.height - point.y;
     NSPoint screen = [window convertPointToScreen:[renderer convertPoint:point toView:nil]];

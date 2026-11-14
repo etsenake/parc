@@ -80,14 +80,6 @@ inline bool ShellNotifyPayloadChanged(
          last.top_band_host != current.top_band_host;
 }
 
-//
-// URL/title events on the frame, separate from other frame activity. CEF
-// OnAddressChange is already main-frame only, including same-document URL
-// changes. Primary cross-document navigations always notify. Subframe/iframe
-// and primary same-document skip only a proven no-op of the current
-// payload-free Notify contract (identical URL, title, loading, back/forward,
-// with favicon observation already current). Iframe history can still change
-// CanGoBack/CanGoForward, so those must still notify.
 inline bool ShouldNotifyFinishedNavigation(
     bool primary_main_frame,
     bool same_document,
@@ -119,13 +111,6 @@ inline bool ShouldNotifyShellPayloadChange(
   return ShellNotifyPayloadChanged(last, current);
 }
 
-//
-// end of loading), the shell keeps showing it loading while the page fills
-// itself in: until the main document has had no request in flight (fetch/XHR
-// included; the renderer's PageNetworkActivity count) for Blink's
-// network-quiet window and the page has had its first contentful paint,
-// never longer than Chromium waits for new content to render. Same-document
-// navigations are never held.
 class LoadingHold {
  public:
   static constexpr int64_t kQuietMs = 500;   // Blink NetworkQuietTimeout.

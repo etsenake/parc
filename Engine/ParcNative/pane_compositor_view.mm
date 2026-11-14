@@ -1,8 +1,3 @@
-// Copyright 2026 Parc contributors.
-//
-// initWithFrame:] 0x4737074 installs PaneHostCompositorOverlayView, its
-// viewDidMoveToWindow 0x4737c38 observes the window's screen changes, and its
-// viewDidHide/viewDidUnhide 0x4737e14/0x4737e64 resynchronize the hosted page.
 #import "pane_compositor_view.h"
 
 #import <QuartzCore/QuartzCore.h>

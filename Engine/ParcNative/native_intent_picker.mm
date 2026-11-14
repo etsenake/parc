@@ -97,9 +97,6 @@ void Deliver(IntentPickerResponse callback, std::string name,
           }, std::move(callback), std::move(name), type, reason, persist,
           std::move(lease)));
 }
-// Arc142 0x68a7ff8 is a callback-consuming compatibility method, not a recovered
-// picker UI. This native page-owned prompt is the explicit Chromium156
-//
 class IntentSession final : public content::WebContentsObserver,
                             public content::WebContentsUserData<IntentSession> {
  public:

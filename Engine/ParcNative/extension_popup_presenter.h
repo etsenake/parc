@@ -1,5 +1,3 @@
-// Copyright 2026 Parc contributors.
-//
 #pragma once
 #import <AppKit/AppKit.h>
 @class PCNativePageHost;
@@ -11,9 +9,6 @@ NS_ASSUME_NONNULL_BEGIN
 + (instancetype)focusedViewAnchor:(NSView*)view;
 @end
 
-// Main thread only. Owns presentation, never an ExtensionViewHost/WebContents.
-//
-// controller and keep its page alive until engine modal-handler teardown.
 @interface PCExtensionPopupPresenter : NSObject
 - (instancetype)initWithParentWindow:(NSWindow*)parent
                             pageHost:(PCNativePageHost*)page

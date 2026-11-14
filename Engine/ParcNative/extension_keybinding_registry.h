@@ -16,15 +16,6 @@ struct NativeWebKeyboardEvent;
 
 namespace parc {
 
-// The native BrowserWindow owns this service and destroys it before its
-// Browser, Profile and TabListInterface. All calls are on Chromium's UI thread.
-// This is the native registration/dispatch boundary, not an extension
-// action/popup presenter.
-//
-//
-// without FocusManager, tries action controllers first, then calls Chromium's
-// shared named-command dispatcher. Keep that dispatcher responsible for real
-// activeTab grants, tab serialization, user gestures and profile isolation.
 class NativeExtensionKeybindingRegistry final
     : public extensions::ExtensionKeybindingRegistry {
  public:

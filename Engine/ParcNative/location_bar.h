@@ -10,15 +10,6 @@
 
 namespace parc {
 
-// BrowserWindow-owned compatibility service, not Parc's visible command bar.
-// Construct on the UI thread after BrowserCommandController and
-// LocationBarModel registration. Destroy before those services, the Browser, or
-// its Profile. Startup must disable HistoryEmbeddings before construction; the
-// feature policy is checked first.
-//
-//
-// OmniboxView, and the real client/controller/edit/autocomplete chain. See
-// tests/NativeLocationBar/README.md for the recovered/current-version boundary.
 class NativeLocationBar final : public LocationBar, public LocationBarTesting {
  public:
   explicit NativeLocationBar(BrowserWindowInterface& browser);

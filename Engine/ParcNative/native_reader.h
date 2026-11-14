@@ -15,10 +15,6 @@
 
 namespace parc {
 
-// The native page owns this controller. Extraction and the protected viewer are
-//
-// is title plus html pages; no desktop ReaderView type exists. This viewer is
-//
 class NativeReader final : public content::WebContentsObserver,
                            public dom_distiller::ViewRequestDelegate {
  public:

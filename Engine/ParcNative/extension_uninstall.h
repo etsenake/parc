@@ -1,5 +1,3 @@
-//
-// Current-engine adaptation: actual DialogModel, strict instance/owner binding.
 #ifndef PARC_NATIVE_EXTENSION_UNINSTALL_H_
 #define PARC_NATIVE_EXTENSION_UNINSTALL_H_
 #include <memory>

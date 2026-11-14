@@ -1,7 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Arc142 0x68a30a4 owns the real VideoOverlayWindow controller and supplied
-// compositor surface; 0xa89c328/a889c90 use RecyclableCompositorMac. This is
-// source-owned adaptation to Chromium156, not a binary wrapper.
 #include "video_overlay_window.h"
 #include "video_picture_in_picture_captions.h"
 
@@ -341,10 +337,6 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
     CHECK(web_contents());
     CHECK(!controller_->IsImmersive());
     NSView* video = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 320, 180)];
-    // DisplayCALayerTree adds an initially zero-sized autoresizing child.
-    // Install it before AppKit sizes the explicit hosting layer to the view;
-    // adding it to an already sized backing layer leaves its width at zero.
-    // This is the Arc142 PiPNSView and current Chromium macOS host ordering.
     CALayer* background = [CALayer layer];
     background.backgroundColor = NSColor.blackColor.CGColor;
     tree_ = std::make_unique<ui::DisplayCALayerTree>(background);
@@ -395,9 +387,6 @@ class NativeVideoOverlayWindow final : public content::VideoOverlayWindow,
     weak_factory_.InvalidateWeakPtrs();
     controller_ = nullptr;
     Observe(nullptr);
-    //
-    // invalidate native view, then release compositor. Notifications can
-    // reenter.
     compositor_->Suspend();
     compositor_->widget()->ResetNSView();
     if (surface_id_.is_valid()) {

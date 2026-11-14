@@ -3,13 +3,6 @@
 
 #import <QuartzCore/QuartzCore.h>
 
-//
-//
-// 0.5/1.5 seconds are stream delays, not animation durations.
-//
-//
-//
-// (explained). See docs/web-interactions.md (WEB16) for every constant.
 @class PCStatusOverlay;
 @interface PCNativeStatusTextController ()
 - (void)layoutOverlay;
@@ -29,7 +22,6 @@
 @end
 
 namespace {
-//
 NSColor* NamedColor(NSString* name, CGFloat light, CGFloat light_alpha,
                     CGFloat dark, CGFloat dark_alpha) {
   return [NSColor colorWithName:name dynamicProvider:^NSColor*(NSAppearance* appearance) {
@@ -476,9 +468,6 @@ NSString* OutcomeFormat(PCNativeStatusLinkOutcome outcome) {
   if (_invalidated || _layingOut) { return; }
   _layingOut = YES;
   NSRect bounds = _overlay.bounds;
-  // StatusTextView: 9 pt side padding, the icon and a 6 pt gap, the text
-  //
-  // at most 400 pt while compact; the page's 10 pt insets always win.
   const NSSize text = [_label.cell cellSizeForBounds:NSMakeRect(0, 0, CGFLOAT_MAX, kHeight)];
   const NSSize icon = _icon.hidden ? NSZeroSize : _icon.intrinsicContentSize;
   const CGFloat leading = kHorizontalPadding + (_icon.hidden ? 0 : icon.width + kIconSpacing);

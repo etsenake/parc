@@ -24,13 +24,13 @@ inline constexpr const char* kExcludedFeatures[] = {
     "CentralizedInfoBarFramework",
     "TranslateTrigger",
 };
-inline constexpr const char* kArcEnabledFeatures[] = {
+inline constexpr const char* kBaselineEnabledFeatures[] = {
     "CertificateTransparencyAskBeforeEnabling",
 };
 inline constexpr const char* kParcEnabledFeatures[] = {
     "WebContentsDiscard",
 };
-inline constexpr const char* kArcDisabledFeatures[] = {
+inline constexpr const char* kBaselineDisabledFeatures[] = {
     "MacAppCodeSignClone",
     "MacAppCodeSignCloneRenameAsBundle",
     "FedCm",
@@ -72,12 +72,12 @@ inline void ApplyNativeStartupPolicy(base::CommandLine& command) {
   for (const char* feature : kExcludedFeatures) {
     AppendFeature(disabled, feature);
   }
-  for (const char* feature : kArcDisabledFeatures) {
+  for (const char* feature : kBaselineDisabledFeatures) {
     if (!named.contains(feature)) {
       AppendFeature(disabled, feature);
     }
   }
-  for (const char* feature : kArcEnabledFeatures) {
+  for (const char* feature : kBaselineEnabledFeatures) {
     if (!named.contains(feature)) {
       AppendFeature(enabled, feature);
     }

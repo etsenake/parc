@@ -10,9 +10,6 @@
 // stay recovered in tests/PageToolAppearance; SettingsWindow is out of
 // TOOLS16 scope and ordinary clear-data stays Chromium WebUI.
 
-//
-// desktop ReaderView type exists; Chromium's DOM-distiller viewer is the
-// explicit current-engine viewing chrome.
 static const char kPCPageToolReaderScheme[] = "chrome-distiller";
 
 // Private-profile copy uses the shared 430×180 AppKit decision sheet.

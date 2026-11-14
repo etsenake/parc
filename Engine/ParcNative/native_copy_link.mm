@@ -1,7 +1,3 @@
-// Copyright 2026 Parc contributors.
-//
-//
-// page. This implementation uses Chromium's original frame and real generator.
 #import "native_appkit_page.h"
 #import "window_security_reservation.h"
 #include "native_page_retirement.h"
@@ -163,7 +159,6 @@ class CopyLink final : public content::WebContentsObserver,
     selection_ = frame->GetView()->GetSelectedText();
     frame->GetRemoteInterfaces()->GetInterface(remote_.BindNewPipeAndPassReceiver());
     remote_.set_disconnect_handler(base::BindOnce(&CopyLink::Finish, weak, PCNativeLinkCopyResultUnavailable));
-    //
     timeout_.Start(FROM_HERE, base::Seconds(10),
         base::BindOnce(&CopyLink::Finish, weak, PCNativeLinkCopyResultUnavailable));
     remote_->RequestSelectorForSelection(base::BindOnce(&CopyLink::Generated, weak));

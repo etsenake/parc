@@ -162,7 +162,6 @@ NSImage* ParcMark(NSRect* imageRect) {
   NSImage* mark = markURL ? [[NSImage alloc] initWithContentsOfURL:markURL] : nil;
   *imageRect = NSMakeRect(0, 0, kArtSize, kArtSize);
   if (mark.isValid && mark.size.width > 0 && mark.size.height > 0) {
-    //
     const CGFloat scale = std::min(52.5 / mark.size.width, 45.5 / mark.size.height);
     const NSSize fitted = NSMakeSize(mark.size.width * scale, mark.size.height * scale);
     *imageRect = NSMakeRect(31.5 - fitted.width / 2, 31.5 - fitted.height / 2,
@@ -538,8 +537,6 @@ using namespace parc_dialog;
 }
 @end
 
-//
-// are the selection marks, so AppKit lays it out and draws keyboard focus.
 @implementation PCDialogCheckbox
 - (instancetype)initWithTitle:(NSString*)title target:(id)target action:(SEL)action {
   if ((self = [super initWithFrame:NSZeroRect])) {
@@ -617,8 +614,6 @@ using namespace parc_dialog;
 }
 @end
 
-//
-// card without a focus ring, and a press on the card's padding focuses it.
 @implementation PCDialogInputField {
   NSTextField* _field;
 }

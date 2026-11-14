@@ -1,10 +1,6 @@
 // Copyright 2026 Parc contributors.
 module parc.mojom;
 
-//
-//
-// renderer's agent on the original frame's associated channel and passes its
-// observer; nothing here runs script or reaches a website-origin endpoint.
 interface TopBandColorObserver {
   // `has_color` false: the renderer found no colour. `sample_frame`: the
   // colour comes from the composited frame's top band under

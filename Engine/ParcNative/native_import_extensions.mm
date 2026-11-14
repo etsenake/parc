@@ -81,8 +81,6 @@ std::vector<std::weak_ptr<Batch>>& LiveBatches() {
   static base::NoDestructor<std::vector<std::weak_ptr<Batch>>> batches;
   return *batches;
 }
-//
-// metadata, policy, blocklist and CRX checks still run.
 class Installer final : public extensions::WebstoreInstallWithPrompt {
  public:
   Installer(std::weak_ptr<Batch> batch,
@@ -455,8 +453,6 @@ class Batch final : public ProfileObserver,
     if (!pending_)
       Finish();
   }
-  // The import's results never wait on downloads; Chromium finishes those in
-  //
   void Report() {
     reported_ = true;
     ticker_.Stop();
@@ -631,12 +627,9 @@ bool ImportMayInstall(NSString* path, const std::string& id) {
 
 namespace parc::setup_extension {
 namespace {
-//
-// unattended-extension API and cannot accept an ID from page content.
 constexpr char kICloudPasswordsID[] = "pejdijmoenmkgeppbflobdenhhabjlaj";
 constexpr char kUBlockOriginID[] = "cjpalhdlnbpafiamejdnhcphjbkeiagm";
 constexpr char kUBlockOriginLiteID[] = "ddkjiahejlhfcafbddmgiahcphecmpfh";
-//
 constexpr const char* kAdBlockerIDs[] = {
     "cfhdojbkjhnklbpkdaibdccddilifddb", "aemffjkmgcepimloclpkecifcnipnodh",
     "mlomiejdfkolichcflejclcbmpeaniij", "pkehgijcmpdhfbdbbnkijodmdjhbjlgp",
@@ -793,9 +786,6 @@ void StartSession(NSString* path, std::vector<std::string> candidates,
       base::BindOnce(&Session::Start, std::move(session)));
 }
 
-// Uninstalls known ad blockers now, and any an import is still installing
-//
-// doesn't keep.
 class Removal final : public extensions::ExtensionRegistryObserver,
                       public ProfileObserver,
                       public std::enable_shared_from_this<Removal> {

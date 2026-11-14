@@ -30,13 +30,6 @@ class Element;
 class LocalFrame;
 class LocalFrameView;
 
-//
-// arc/blink/core/top_band_color_tracker.cc), owned by an ordinary page's
-// outermost main LocalFrame. While the browser observes it, after each
-// lifecycle update it hit-tests four points along the viewport's top edge,
-// votes for the element each one lands on and reports that element's colour
-// (or asks the browser to sample the composited frame) to the browser's
-// TopBandColorObserver. See Parc docs/top-band-color.md.
 class CORE_EXPORT TopBandColorTracker final
     : public GarbageCollected<TopBandColorTracker>,
       public Supplement<LocalFrame>,
@@ -60,7 +53,6 @@ class CORE_EXPORT TopBandColorTracker final
   void Trace(Visitor*) const override;
 
  private:
-  //
   struct ChosenState {
     Color color;
     bool has_color = false;

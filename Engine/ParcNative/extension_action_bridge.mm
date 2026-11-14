@@ -578,8 +578,6 @@ NSArray<PCNativeExtensionAction*>* NativeExtensionActionBridge::Snapshot(
     value.accessibilityLabel =
         base::SysUTF16ToNSString(model->GetAccessibleName(&contents));
     value.enabled = model->IsEnabled(&contents);
-    //
-    // the 16-point icon in that canvas; the shell shows it at its own size.
     const auto image = model->GetIcon(&contents, gfx::Size(32, 32));
     if (image.IsImage()) {
       // Eager native bitmap representations outlive the ImageSkia source's
@@ -645,8 +643,6 @@ bool NativeExtensionActionBridge::Execute(PCNativeExtensionAction* value,
   auto model = Validate(value, contents);
   if (!model)
     return false;
-  // Disabled is presentation state, not a refusal. The upstream model invokes
-  //
   model->ExecuteUserAction(
       menu_entry ? ToolbarActionViewModel::InvocationSource::kMenuEntry
                  : ToolbarActionViewModel::InvocationSource::kToolbarButton);

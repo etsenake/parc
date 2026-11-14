@@ -32,9 +32,6 @@ content::WebContents* Contents(content::GlobalRenderFrameHostId id) {
   return frame ? content::WebContents::FromRenderFrameHost(frame) : nullptr;
 }
 
-// The genuine TabSharingInfoBarDelegate stays owned by its page's real
-//
-// Tab Instead (WEB16, docs/web-interactions.md), so that is the one action.
 class NativeSharingBar final : public infobars::InfoBar {
  public:
   NativeSharingBar(std::unique_ptr<Delegate> delegate,

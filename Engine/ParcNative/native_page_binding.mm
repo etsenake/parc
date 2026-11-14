@@ -95,8 +95,6 @@ NativePageBinding::NativePageBinding(content::WebContents* contents)
   impl_->observer->window_changed =
       base::BindRepeating(&NativePageBinding::NativeWindowChanged,
                           weak_factory_.GetWeakPtr());
-  //
-  // Retain that view and its renderer hierarchy, never reload into another tab.
   impl_->page = [PCNativePageHost hostWithContentView:native_view
                                              observer:impl_->observer];
   auxiliary_subscription_ = ObserveNativeAuxiliaryPage(

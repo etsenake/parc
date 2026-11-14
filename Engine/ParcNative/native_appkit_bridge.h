@@ -1,6 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Public Objective-C boundary shared by the built engine and the existing
-//
 #pragma once
 #import <AppKit/AppKit.h>
 NS_ASSUME_NONNULL_BEGIN
@@ -337,10 +334,6 @@ __attribute__((visibility("default")))
 + (instancetype)new NS_UNAVAILABLE;
 @end
 
-//
-//
-// theme's SemanticColorPalette.background). The appearance keeps the pill's
-// named colors in that palette's light/dark variant. Read on presentation.
 NS_SWIFT_UI_ACTOR
 @protocol PCNativeStatusTextThemeSource <NSObject>
 - (nullable NSColor*)statusTextThemeBackgroundColor;
@@ -371,10 +364,6 @@ NS_SWIFT_UI_ACTOR
 // Image-only update; never republishes a URL/title as a history event.
 - (void)nativePageFaviconDidChange:(PCNativePage*)page;
 - (void)nativePage:(PCNativePage*)page addContextImageToEasel:(PCNativeContextImage*)image;
-//
-// 0x4266d7c): the chosen link of this exact visible page, revalidated for the
-// same document/window when chosen. The shell places it as a split pane after
-// that page or refuses; the engine opens nothing itself.
 - (void)nativePage:(PCNativePage*)page openLinkInSplitView:(NSURL*)url;
 // Whether the shell could place a split pane after this page now (menu
 // validation; a pure state read). The pane-limit refusal is still an action.
@@ -446,8 +435,6 @@ typedef NS_ENUM(NSInteger, PCNativePageTool) {
   PCNativePageToolJavaScriptConsole,
   PCNativePageToolNetworkInspector,
   PCNativePageToolCast,
-  //
-  // MainMenu record 382); enabled by CanOpenTaskManager().
   PCNativePageToolTaskManager,
   // Keep this case last: the command bar's pre-open snapshot asks the engine
   // for every value from Print through PCNativePageToolTaskManager.
@@ -645,10 +632,6 @@ NS_SWIFT_UI_ACTOR
 // Cross-Profile, new-window URL-only and expired document/owner carriers are
 // nil. Use only during original page adoption, never to infer an opener grant.
 @property(nonatomic, readonly, nullable) PCNativePage* creationSourcePage NS_SWIFT_NAME(creationSourcePage);
-// YES when that source was carried by a matched current-link route into its
-//
-//
-// source only as the creating window's active item. Absent in older engines.
 @property(nonatomic, readonly) BOOL routedLinkCreation;
 // A browser-owned, one-use presentation lease for this exact original split
 // request. It does not grant navigation, opener or Profile permissions.
@@ -658,20 +641,7 @@ NS_SWIFT_UI_ACTOR
 
 NS_SWIFT_UI_ACTOR
 @interface PCNativePage (NavigationState)
-// This page's committed back/forward entries and current index, captured
-// before a close destroys it so Undo or Reopen of that close can bring them
-//
-// the item's session). The value lives in this process only, so a private
-// window's history stays in memory, and it restores only into the Profile it
-// came from. Nil for a closed, embedded or uncommitted page. Opaque, so the
-// app needs no class from older engines.
 - (nullable NSObject*)captureNavigationState NS_SWIFT_NAME(captureNavigationState());
-// This page's back/forward entries as bytes for the app's Tab History file,
-// so a relaunch or crash brings the tab back with them and with each entry's
-//
-// entry and up to sessions::gMaxPersistNavigationCount on each side, each
-// pickled the way Chromium's SessionService writes it. Nil for a private,
-// closed, embedded or uncommitted page.
 - (nullable NSData*)archivedNavigationState NS_SWIFT_NAME(archivedNavigationState());
 // A value -[PCNativeBrowserWindow openNavigationState:...] accepts only for
 // the persistent Profile at `profilePath` (error code 1 elsewhere). Nil for
@@ -683,25 +653,11 @@ NS_SWIFT_UI_ACTOR
 
 NS_SWIFT_UI_ACTOR
 @interface PCNativePage (Discard)
-// Frees a hidden page's renderer in place (Chromium's WebContents::Discard):
-// the page keeps its identity, WebContents and back/forward entries, and
-//
-// discarded web content does. NO leaves the page alive: it is shown, loading,
-// not archive-eligible (typed text, audio, capture or sharing, PiP, an active
-// media session), holds a device or file handle, has beforeunload or unload
-// handlers, is being debugged, is not an HTTP(S) page, or is already discarded.
 - (BOOL)discardIfIdle NS_SWIFT_NAME(discardIfIdle());
 @end
 
 NS_SWIFT_UI_ACTOR
 @interface PCNativePage (ReopenedPeek)
-//
-// Opens an HTTP(S) URL as a new Peek child of this exact parent page, in its
-// Profile and physical window, through the ordinary created-page Peek offer
-// (containerForPage: with the Peek disposition). NO creates nothing: the shell
-// refused canPresentPeekFrom: for this page, or the URL is not HTTP(S). YES
-// means the page exists; a source change during creation or a later shell
-// refusal follows the existing created-page adoption contract.
 - (BOOL)openPeekWithURL:(NSURL*)url NS_SWIFT_NAME(openPeek(url:));
 // The same offer, with the Peek's page restored from a captureNavigationState
 // value of the closed Peek instead of a fresh load of `url`. A nil state, or
@@ -766,10 +722,6 @@ typedef NS_ENUM(NSInteger, PCNativeExtensionPopupAnchorKind) {
   PCNativeExtensionPopupAnchorFocusedView,
 };
 
-//
-// Queries must return an actual view of this exact physical window, or a finite
-// sidebar width. The engine rejects a detached/foreign view and falls back to
-// the owning window rather than borrowing another window's geometry.
 NS_SWIFT_UI_ACTOR
 __attribute__((visibility("default")))
 @interface PCNativeExtensionPopupAnchor : NSObject
@@ -804,13 +756,6 @@ NS_SWIFT_UI_ACTOR
 @property(nonatomic, readonly) BOOL authenticationFlowUnlocked;
 @end
 
-// A transient creation receipt for one genuine original download in one
-//
-// Contains no file bytes or persistent metadata. Admission (key window, page
-// visible in it) ran once at creation; `valid` is then identity only: the same
-// live document, page, Profile, physical window and item incarnation. It makes
-// no client callback. Dismissal of a delivered arrival belongs to the window
-// owner, not to this receipt.
 NS_SWIFT_UI_ACTOR
 __attribute__((visibility("default")))
 @interface PCNativeDownloadArrival : NSObject
@@ -819,8 +764,6 @@ __attribute__((visibility("default")))
 @property(nonatomic, readonly, copy) NSString* downloadIdentifier;
 @property(nonatomic, readonly, copy) NSString* itemIdentity;
 @property(nonatomic, readonly, nullable, copy) NSString* privateContextIdentifier;
-// Global screen point, bottom-left origin: the hovered anchor's centre, or the
-//
 @property(nonatomic, readonly) NSPoint sourceScreenPoint;
 @property(nonatomic, readonly, getter=isValid) BOOL valid;
 - (instancetype)init NS_UNAVAILABLE;
@@ -921,8 +864,6 @@ NS_SWIFT_UI_ACTOR
      didFailWithError:(NSError*)error;
 // Existing shell actions, not replacement engine UI.
 - (void)nativeBrowserFocusAddress:(PCNativeBrowserWindow*)browser;
-// Uses the shell's actual key-view traversal, never the declaration order of
-//
 - (BOOL)nativeBrowser:(PCNativeBrowserWindow*)browser
     rotateFocusForward:(BOOL)forward;
 // Native tab fullscreen changes only the supplied page layout/chrome. Engine
@@ -1422,10 +1363,6 @@ __attribute__((visibility("default")))
 @end
 NS_SWIFT_UI_ACTOR
 @interface PCNativeBrowserApplication (CookieStore)
-// YES when every persistent Profile brings back its session cookies after a
-//
-// relaunches), without Chrome's "Continue where you left off" preference.
-// Older engines need the app to pass Chromium's restore-last-session switch.
 @property(class, nonatomic, readonly) BOOL restoresSessionCookies;
 // Commits every persistent Profile's pending cookie changes now. Chromium's
 // cookie store otherwise commits every 30 seconds (or on a clean quit), so a
@@ -1455,9 +1392,6 @@ NS_SWIFT_UI_ACTOR
 @end
 NS_SWIFT_UI_ACTOR
 @interface PCNativePage (TabSharing)
-//
-//
-// tab-sharing delegate offers that button enabled. Changes notify the observer.
 @property(nonatomic, readonly) BOOL canShareThisTabInstead;
 - (BOOL)shareThisTabInstead;
 @end
@@ -1732,13 +1666,6 @@ NS_SWIFT_UI_ACTOR
     NS_SWIFT_NAME(observePreview(in:handler:));
 @end
 
-//
-//
-// holds web content size during a sidebar-width drag until it reports the size
-// last applied. Parc's choice, not recovered: the viewport, in points, of the
-// latest frame the browser activated for this page's primary main-frame
-// widget, cc::RenderFrameMetadata viewport_size_in_pixels /
-// device_scale_factor. NSZeroSize before the first frame or for a closed page.
 NS_SWIFT_UI_ACTOR
 __attribute__((visibility("default")))
 @interface PCNativeRenderFrameObservation : NSObject
@@ -1760,13 +1687,6 @@ NS_SWIFT_UI_ACTOR
     (void (^)(NSSize size))handler NS_SWIFT_NAME(observeRenderFrameViewportSize(_:));
 @end
 
-//
-//
-//
-// NONE -> none, SECURE -> secure, every other level (WARNING, DANGEROUS) ->
-//
-// visible security state; DidChangeVisibleSecurityState already notifies the
-// page observer. None for a closed or retiring page. Absent in older engines.
 typedef NS_ENUM(NSInteger, PCNativeSecureContextState) {
   PCNativeSecureContextStateNone,
   PCNativeSecureContextStateInsecure,
@@ -1789,17 +1709,6 @@ NS_SWIFT_UI_ACTOR
 @property(nonatomic, readonly, nullable) NSColor* pageBackgroundColor;
 @end
 
-//
-// renderer chose for the main frame's top band, or the browser's sample of
-// the composited frame there, delivered only when it changes.
-// `topBandColor` is nil before the first delivery for the current document
-// and when a delivery has no colour, which the top bar ignores.
-// `topBandColorHost` is the host of the committed http or https document that
-// produced it, never the visible or Reader display URL's; nil for Reader,
-// extension, internal and hostless pages, whose colours are not cached.
-// `topBandColorCrossfades` is false for reports before the document's first
-// largest-contentful-paint update and for the first report after it. Observer
-// notifies carry deliveries that change the colour. Absent before overlay 294.
 NS_SWIFT_UI_ACTOR
 @interface PCNativePage (TopBandColor)
 @property(nonatomic, readonly) BOOL hasTopBandColorSample;
@@ -1930,9 +1839,6 @@ __attribute__((visibility("default")))
 - (void)invalidate;
 - (instancetype)init NS_UNAVAILABLE;
 @end
-//
-//
-// eligibility and dismissal.
 typedef NS_ENUM(NSInteger, PCNativeMediaSessionStatus) {
   PCNativeMediaSessionStatusActive, PCNativeMediaSessionStatusDucking,
   PCNativeMediaSessionStatusSuspended, PCNativeMediaSessionStatusInactive
@@ -2169,8 +2075,6 @@ __attribute__((visibility("default")))
 @property(nonatomic, readonly, copy) NSString* identifier;
 @property(nonatomic, readonly) PCNativeImportSource* source;
 @property(nonatomic, readonly, copy) NSString* displayName;
-//
-// sidebar names a Space's profile by it.
 @property(nonatomic, readonly, copy) NSString* directoryName;
 @property(nonatomic, readonly) PCNativeImportCategories supportedCategories;
 @property(nonatomic, readonly, copy) NSArray<PCNativeImportExtension*>* extensions;
@@ -2294,13 +2198,6 @@ __attribute__((visibility("default")))
 @end
 NS_SWIFT_UI_ACTOR
 @interface PCNativeBrowserApplication (ImportedExtensions)
-// Every request's extensions are read back from its source and installed from
-//
-// the choice. One failure never stops the others. A nil return is immediate
-// rejection and calls nothing. Otherwise completion runs once on main as soon
-// as no Web Store lookup is pending; cancelling the lease after that leaves
-// running downloads alone. backgroundFailures then runs once, after the last
-// of those downloads, only if any of them failed.
 + (nullable PCNativeImportSession*)installImportedExtensions:
     (NSArray<PCNativeImportExtensionRequest*>*)requests
     completion:(void (^)(PCNativeImportExtensionResult*))completion

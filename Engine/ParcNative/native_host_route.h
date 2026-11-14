@@ -1,6 +1,3 @@
-// Copyright 2026 Parc contributors.
-//
-// caller-supplied NSWindow and actual TabStripModel/WebContents ownership.
 #ifndef PARC_NATIVE_NATIVE_HOST_ROUTE_H_
 #define PARC_NATIVE_NATIVE_HOST_ROUTE_H_
 

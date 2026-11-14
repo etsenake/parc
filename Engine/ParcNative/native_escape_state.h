@@ -8,9 +8,6 @@
 #include <vector>
 
 namespace parc {
-//
-// independent engine supplies a real acknowledged key, editable state and
-// NSEvent.keyRepeatDelay; this class neither reads input nor dismisses a page.
 class NativeEscapeState {
  public:
   enum class Status { kUnconsumed, kPossiblyConsumed, kConsuming };

@@ -12,8 +12,6 @@ typedef NS_ENUM(NSInteger, PCJavaScriptDialogKind) {
   PCJavaScriptDialogBeforeUnload,
 };
 
-//
-// checkbox and it was checked; the caller then blocks that page's dialogs.
 typedef void (^PCJavaScriptDialogCompletion)(BOOL accepted,
                                              NSString* input,
                                              BOOL suppress);

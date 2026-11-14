@@ -14,8 +14,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)applyInspectedRect:(NSRect)inspected
                  toolsRect:(NSRect)tools
              hideInspected:(BOOL)hidden;
-//
-// tools view. First-docked tools have no CEF SetFocus, so the pane asks here.
 - (BOOL)focusTools;
 - (void)setToolsBlocked:(BOOL)blocked;
 - (void)invalidate;

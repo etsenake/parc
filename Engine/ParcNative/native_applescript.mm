@@ -165,8 +165,6 @@ class Execution final : public content::WebContentsObserver, public ProfileObser
   }
   void Completed(base::Value value) {
     if (!Valid()) { Cancel(); return; }
-    //
-    // The retained callback uses options 0 and a maximum depth of 200.
     auto json = base::WriteJson(value, 200);
     if (!json) { Finish(Failure(@"The JavaScript result could not be represented as JSON text.")); return; }
     Finish([[PCNativeAppleScriptResult alloc] initWithJSON:base::SysUTF8ToNSString(*json) error:nil number:0]);
@@ -236,9 +234,6 @@ class Execution final : public content::WebContentsObserver, public ProfileObser
   auto* browser = parc::Owner(self);
   if (!browser || !parc::CanToggle(self)) return NO;
   const bool previous = parc::Enabled(browser->GetProfile());
-  //
-  // NSEvent's CGEvent sender PID is zero/self and source state is HID system.
-  // No AppleScript command, URL or synthetic AppKit action can grant permission.
   chrome::ToggleJavaScriptFromAppleEventsAllowed(browser);
   return parc::Enabled(browser->GetProfile()) != previous;
 }

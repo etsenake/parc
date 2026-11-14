@@ -35,12 +35,10 @@
  #include "third_party/blink/renderer/core/frame/pausable_script_executor.h"
  #include "third_party/blink/renderer/core/frame/performance_monitor.h"
  #include "third_party/blink/renderer/core/frame/picture_in_picture_controller.h"
-@@ -2123,6 +2125,12 @@
+@@ -2123,6 +2125,10 @@
    if (IsOutermostMainFrame()) {
      intersection_state_.occlusion_state =
          mojom::blink::FrameOcclusionState::kGuaranteedNotOccluded;
-+    //
-+    // ordinary page has a top bar (not an SVG image's page).
 +    if (page.IsOrdinary()) {
 +      TopBandColorTracker::Install(*this);
 +      PageNetworkActivity::Install(*this);
@@ -59,13 +57,12 @@
  #include "third_party/blink/renderer/core/frame/remote_frame.h"
  #include "third_party/blink/renderer/core/frame/remote_frame_view.h"
  #include "third_party/blink/renderer/core/frame/root_frame_viewport.h"
-@@ -1117,6 +1118,11 @@
+@@ -1117,6 +1118,10 @@
    }
 -
 +
    RunCanvasOnpaintSteps();
 +
-+  //
 +  if (TopBandColorTracker* tracker = TopBandColorTracker::From(*frame_)) {
 +    tracker->FireDetection();
 +  }

@@ -124,12 +124,6 @@ bool SetNativeDownloadPrompt(Profile& profile, bool prompt);
 
 enum class NativeDownloadAction { kPause, kResume, kCancel, kRetry, kOpen, kReveal, kRemove, kToggleOpen };
 
-//
-// Core SHA97df7620..., IMPs3dd4cc0,68c743c..68c764c,68d0e20/68d0f88/68d0e78.
-// Current-engine adaptation: the real Chromium manager owns items and history;
-// callbacks publish copied values through nonnestable tasks so shell reentry
-// cannot delete DownloadItem while it is delivering observer notifications,
-// including when a different observer runs a nested loop.
 class NativeDownloads final : public base::SupportsUserData::Data,
                               public content::DownloadManager::Observer,
                               public download::DownloadItem::Observer {

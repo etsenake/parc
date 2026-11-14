@@ -2,17 +2,6 @@
 
 #import "pane_compositor_view.h"
 
-//
-// 0xa88cb4c: exact-class host reuse, same native view, four edge constraints.
-// 0xa88adfc/0xa88adb0: managed content's first child / acceptsFirstResponder.
-// 0xa88ac10/0xa88ac64: deferred focus, live same-window check, attempt callback.
-// 0xa88af38: actual window attachment callback; fullscreen policy is not copied.
-// 0xa88b91c: replace existing managed content and re-establish its four edges.
-// Explicit invalidation/constraint cleanup below are source-owned lifetime
-// safeguards; they are not claims of recovered original destructor behavior.
-
-//
-// and returns nil from hitTest:, so the overlay never takes page input.
 @interface PCNativeHistoryOverlayContainerView : NSView
 @end
 
@@ -271,10 +260,6 @@
 }
 
 - (NSView *)rendererResponder {
-  //
-  // is outside this boundary; arbitrary added subviews are not focus targets.
-  //
-  // it, above the renderer, and is never the renderer.
   for (NSView *child in _contentView.subviews) {
     if (![child isKindOfClass:PCNativePaneCompositorView.class]) {
       return child;

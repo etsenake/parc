@@ -1,8 +1,5 @@
 #import "site_permission_presenter.h"
 
-//
-//
-// the recovered opacities, chosen by the view's appearance.
 static BOOL PCPromptDark(NSView* view) {
   NSAppearanceName match = [view.effectiveAppearance
       bestMatchFromAppearancesWithNames:@[
@@ -132,10 +129,6 @@ static NSColor* PCPromptIconForeground(BOOL dark) {
 - (void)drawRect:(NSRect)dirty {
   const BOOL dark = PCPromptDark(self);
   const NSRect bounds = self.bounds;
-  //
-  // with no hover state or animation modifier; the style's feedback is the
-  // whole button at 75% while pressed (measured on macOS 27 SwiftUI; any
-  // framework fade was unobservable, so it is treated as instant). WEB19.
   CGContextRef context = NSGraphicsContext.currentContext.CGContext;
   const BOOL pressed = self.isHighlighted;
   if (pressed) {
@@ -260,7 +253,6 @@ static void Later(void (^block)(void)) {
     _symbol = @"gearshape.fill";
     _symbolPointSize = 14;
     _locationMode = locationMode;
-    //
     _precise = locationMode == PCSiteLocationUpgradeToPrecise ||
                (locationMode == PCSiteLocationApproximateOrPrecise &&
                 initialPrecise);
@@ -348,8 +340,6 @@ static void Later(void (^block)(void)) {
   title.translatesAutoresizingMaskIntoConstraints = NO;
   [card addSubview:icon];
   [card addSubview:title];
-  //
-  // taller than the icon aligns the icon to its top, otherwise centers it.
   const BOOL tall = title.fittingSize.height > 32;
   NSMutableArray<NSLayoutConstraint*>* constraints = [NSMutableArray arrayWithArray:@[
     [card.widthAnchor constraintEqualToConstant:236],
@@ -372,8 +362,6 @@ static void Later(void (^block)(void)) {
     ]];
   }
   NSView* above = tall ? (NSView*)title : (NSView*)icon;
-  // A permission-element stage awaiting macOS shows its progress and status
-  //
   if ([_followUpChoices containsObject:@(PCSitePermissionRequestSystem)]) {
     _systemProgress = [[NSProgressIndicator alloc] initWithFrame:NSZeroRect];
     _systemProgress.style = NSProgressIndicatorStyleSpinning;
@@ -403,9 +391,6 @@ static void Later(void (^block)(void)) {
     ]];
     above = _systemStatus;
   }
-  //
-  // the width. A Chromium stage's labels keep their order, the last primary;
-  // more than two stack vertically at full width.
   NSArray<NSString*>* labels = _followUpLabels ?: @[ @"Not Now", @"Allow" ];
   NSArray<NSNumber*>* choices =
       _followUpChoices ?: @[ @(PCSitePermissionDismiss), @(PCSitePermissionAllow) ];
@@ -449,9 +434,6 @@ static void Later(void (^block)(void)) {
   [NSLayoutConstraint activateConstraints:constraints];
   return card;
 }
-//
-// window's controller names that anchor. Otherwise the requesting page's top
-// leading corner, as other page controls do while the sidebar is away.
 - (BOOL)showPopover:(NSPopover*)popover {
   NSView* page = _page;
   NSWindow* window = _window;
@@ -504,8 +486,6 @@ static void Later(void (^block)(void)) {
     self->_card = card;
     NSViewController* content = [NSViewController new];
     content.view = card;
-    //
-    // that hands off to macOS stays up while another app is in front.
     NSPopover* popover = [NSPopover new];
     const BOOL system =
         [self->_followUpChoices containsObject:@(PCSitePermissionRequestSystem)] ||
@@ -561,8 +541,6 @@ static void Later(void (^block)(void)) {
   }
   [self finish:choice];
 }
-//
-//
 - (void)popoverDidClose:(NSNotification*)notification {
   if (notification.object == _popover) {
     [self finish:PCSitePermissionDismiss];

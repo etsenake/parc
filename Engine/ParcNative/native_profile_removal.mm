@@ -1,8 +1,3 @@
-// Copyright 2026 Parc contributors.
-//
-// publishes model removal only after the native operation succeeds. Current
-// Chromium adaptation: real DeleteProfileHelper, profile retirement, and an
-// operation-bound durable receipt; no live-directory deletion or URL replay.
 #import "native_profile_removal.h"
 
 #include "native_profile_policy.h"

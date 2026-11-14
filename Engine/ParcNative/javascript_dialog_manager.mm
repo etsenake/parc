@@ -81,20 +81,13 @@ class NativeJavaScriptDialogs final
         std::move(callback).Run(false, std::u16string());
         return;
     }
-    //
-    //
-    // confirm and prompt count before presentation; a set block suppresses
-    // them, which content answers as Cancel.
     if (blocking_) {
       *did_suppress_message = true;
       return;
     }
-    //
     const bool offer_suppression = ++displayed_ > 5;
     PCJavaScriptDialogCallback* completion = [PCJavaScriptDialogCallback new];
     completion->callback = std::move(callback);
-    // Chromium's title ("<origin> says", the embedded-page and nonstandard
-    //
     content::RenderFrameHost* main = contents->GetPrimaryMainFrame();
     NSString* title = base::SysUTF16ToNSString(
         javascript_dialogs::AppModalDialogManager::GetSiteFrameTitle(
@@ -108,7 +101,6 @@ class NativeJavaScriptDialogs final
                 defaultText:base::SysUTF16ToNSString(default_prompt_text)
           offersSuppression:offer_suppression
                  completion:^(BOOL accepted, NSString* input, BOOL suppress) {
-                   //
                    if (suppress && weak) {
                      weak->blocking_ = true;
                    }
@@ -127,8 +119,6 @@ class NativeJavaScriptDialogs final
     }
     PCJavaScriptDialogCallback* completion = [PCJavaScriptDialogCallback new];
     completion->callback = std::move(callback);
-    //
-    //
     PCJavaScriptDialogPresenter* presenter = presenter_;
     [presenter presentKind:PCJavaScriptDialogBeforeUnload
                       title:base::SysUTF16ToNSString(l10n_util::GetStringUTF16(
@@ -191,8 +181,6 @@ class NativeJavaScriptDialogs final
            content::WebContents::FromRenderFrameHost(frame) == contents;
   }
 
-  //
-  // which content does not always pair with a reset_state cancellation.
   void PrimaryPageChanged(content::Page&) override {
     displayed_ = 0;
     blocking_ = false;
@@ -234,13 +222,6 @@ content::JavaScriptDialogManager* NativeJavaScriptDialogManager(
 }
 
 namespace {
-// Chrome's repost warning (RepostFormWarningController) on the page's own
-//
-//
-//
-// continues the pending reload; Cancel, Escape, a refused sheet, a new load or
-// the page leaving its window cancel it, as the controller's Cancel/Close do.
-// A second warning while the sheet is open lets that sheet answer.
 class RepostFormWarningSheet final
     : public content::WebContentsObserver,
       public content::WebContentsUserData<RepostFormWarningSheet> {

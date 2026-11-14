@@ -1,9 +1,6 @@
 #import "find_bar_view.h"
 #import <QuartzCore/QuartzCore.h>
 
-//
-//
-// tokens remain unverified; this component does not invent animation parity.
 namespace {
 void MainThread() { NSCAssert(NSThread.isMainThread, @"Find UI is main-thread-only"); }
 BOOL ResponderBelongsToField(NSResponder *responder, NSTextField *field) {

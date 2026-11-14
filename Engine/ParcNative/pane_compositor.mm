@@ -1,15 +1,3 @@
-// Copyright 2026 Parc contributors.
-//
-// compositor that outlives tab switches. -[WebContentsPaneHostView
-// initWithFrame:] 0x4737074 installs PaneHostCompositorOverlayView and takes
-// Chromium's ImageTransportFactory; attachWebContentsHostView: 0x4737eb4
-// detaches the previous page (0x4738ad4: visibility through ViewsHostable at
-// 0x473d534, then 0x473d128 into BrowserCompositorMac::SetParentUiLayer
-// 0x24983a0; that index's caller attribution is approximate) before attaching
-// the next; syncHostedWebContentsState 0x4738bb0 feeds the window, hidden
-// state, bounds, screen, scale, display and refresh rate. Parc's shell keeps a
-// view per tab rather than per pane, so the window's pool hands the compositor
-// of a page leaving the screen to the page that replaces it.
 #include "pane_compositor.h"
 
 #import <QuartzCore/QuartzCore.h>
@@ -799,8 +787,6 @@ PaneCompositorShow NativePaneCompositorPool::Show(
   auto weak_target = target->GetWeakPtr();
   target->set_reserved(true);
   if (target->attached()) {
-    //
-    // attachWebContentsHostView: detaches the previous page.
     target->Detach(/*restore_view=*/true);
   }
   if (!weak_target) {

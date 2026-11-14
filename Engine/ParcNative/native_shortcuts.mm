@@ -47,8 +47,6 @@ NSString* const kBindingsChanged = @"ParcNativeShortcutBindingsChanged";
 namespace parc {
 namespace {
 using Result = content::KeyboardEventProcessingResult;
-//
-// Its repeating timer dismisses on the first tick that is not hovered.
 constexpr base::TimeDelta kRepeatCueLifetime = base::Seconds(5);
 // Escape is a page-owned input outcome, not a configurable menu shortcut.
 // Native macOS cancel/Exit is a separate responder-chain route in PeekHostView.
@@ -245,9 +243,6 @@ class EscapeRouter final : public content::WebContentsObserver,
       Invalidate();
       return;
     }
-    //
-    // pinned Chromium. Complete once at the genuine matching renderer Raw ACK.
-    // Never synthesize an ACK from an AppKit event or from a timeout.
     const auto sequence = events_.Acknowledge(
         timestamp, key,
         result == blink::mojom::InputEventResultState::kConsumed,
@@ -450,10 +445,6 @@ class ShortcutRouter final : public content::WebContentsObserver,
                            ? (NSView*)window.firstResponder : nil;
     if ([responder respondsToSelector:@selector(hasMarkedText)] &&
         [(id<NSTextInputClient>)responder hasMarkedText]) return false;
-    //
-    // Do not reject an otherwise eligible shortcut merely because another key
-    // is locked. Chromium's per-key skip_if_unhandled bypass and Escape-only
-    // exclusive-access pre-handler remain authoritative before this hook.
     return contents && !contents->IsBeingDestroyed() && page && !page.closed &&
         frame && frame->IsActive() && !browser.IsDeleteScheduled() &&
         GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(contents) == &browser &&

@@ -563,12 +563,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         window_.attachedSheet || PCNativeWindowHasSecurityReservation(window_)) {
       return nullptr;
     }
-    //
-    // calls showSamplerWithSelectionHandler:. Chromium's macOS factory uses
-    // that same system magnifier and selection/Escape interaction, without a
-    // BrowserView. The requesting document owns the returned EyeDropper;
-    // its listener receives the real color or cancellation. Keep Chromium's
-    // weak callback and delayed sampler release on macOS Tahoe intact.
     return ::ShowEyeDropper(frame, listener);
   }
   void ShowCaretBrowsingDialog() override {
@@ -1060,10 +1054,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         }
       }
     }
-    //
-    // This current-engine selection observation is delivered only after the
-    // TabStrip mutation unwinds, including nested native event loops. Layout
-    // must not turn the shell's previously selected page into a new command.
     auto selected_contents = selected_page_pending_;
     if (selected_contents && selected() && Owns(*selected_contents) &&
         browser_.GetTabStripModel()->GetActiveWebContents() ==
@@ -1235,16 +1225,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         }
       }
       ScopedShowDeadline show_deadline(arriving ? contents.get() : nullptr);
-      // Keep Chromium paint visibility tied to shell attachment only. Mapping
-      // resign-active to WasOccluded blanked the live page while the window
-      // stayed on screen, so only a page Chromium's auto-PiP needs hidden is
-      // (PageOccluded). Parc's own auto-PiP treats resign-active as occluded
-      // via the shell visibility passed below, without freezing the page.
-      // A page joins one of the window's persistent compositors before it
-      // appears, so it replaces the previous page's last frame instead of a
-      //
-      // A restored page not yet loaded is sized before the unhide below:
-      // Chromium starts its load on the first VISIBLE report.
       if (shown && HasRestoredLoadPending(*contents)) {
         SizeRestoredPage(*pane, page_host);
         if (!attached_here()) {
@@ -1447,12 +1427,6 @@ class AppKitBrowserHost final : public NativeBrowserWindowHost,
         browser_.GetTabStripModel()->GetActiveWebContents());
   }
   void PageWillDetach(content::WebContents& contents) { Detach(contents); }
-  // The shell took the page's pane out of view but keeps it in this window.
-  // Its prompts, dialogs and bubbles end as a detach ends them; its views,
-  //
-  // stay in their pane host's window. False when the page is no longer
-  // attached here afterwards: a callback detached it, or it could not be
-  // attached again and has been detached.
   bool ParkPage(content::WebContents& contents) {
     auto found = pages_.find(&contents);
     if (tearing_down_ || draining_ || found == pages_.end()) {

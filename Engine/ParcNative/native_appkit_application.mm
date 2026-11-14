@@ -151,10 +151,6 @@ NSMapTable<NSWindow*, PCNativeBrowserWindow*>* Windows() {
   return value;
 }
 __weak id<PCNativeBrowserApplicationClient> application_client;
-// Retained Arc142 BrowserApp role/manual/enhanced hooks request basic mode3;
-// full15 is a distinct scoped capability, not an unconditional startup policy.
-// Current Chromium registers real NSWorkspace VoiceOver KVO on NSApp. Keep its
-// complete/screen-reader mode separate from ordinary native AX inspection.
 struct NativeAccessibility {
   bool initialized = false;
   bool stopped = false;
@@ -539,19 +535,6 @@ void InstallPrivateDownloads(Profile& profile) {
       }, profile.GetWeakPtr()));
 }
 
-//
-// download.prompt_for_download with false (core 0x2dfd310-0x2dfd334), and the
-// main binary writes it only from Settings' Download Location "Ask every time"
-//
-// from ad4055a until this change stored true as a user value in every
-// persistent Profile that had none. That value cannot be told apart from a
-// choice, so each Profile directory gets exactly one pass that clears a stored
-// true back to Chromium's default. A stored false is kept, and later choices
-// stay authoritative because the pass never repeats. Only the user layer is
-// cleared: a managed value stays in force, and a seeded true cannot resurface
-// when a policy is lifted. The pass is recorded only once the cleared value is
-// on disk, since Chromium batches pref writes and a crash before that write
-// must not strand the seeded true behind a completed marker.
 NSString* const kSeededPromptCleared = @"parc.downloads.seededPromptCleared.v1";
 void ClearSeededDownloadPrompt(Profile& profile) {
   NSString* directory = base::SysUTF8ToNSString(profile.GetPath().value());
@@ -579,8 +562,6 @@ void InitializeNativeProfile(Profile& profile) {
   if (!GetNativeRoute(profile)) {
     RegisterNativeRoute(profile);
   }
-  // Keep Chromium's complete target determination/security/filename policy
-  //
   ClearSeededDownloadPrompt(profile);
   NativeDownloads::Install(
       profile, base::BindRepeating([](NativeDownloadSnapshot snapshot) {
@@ -598,10 +579,6 @@ void InitializeNativeProfile(Profile& profile) {
                                            std::move(document), nil);
           }, profile.GetWeakPtr()));
 }
-//
-// white on dark ones, both served by the browser's chrome://theme. Parc's
-// toolbar and narrow-window drawer use the same Parc mark in both themes.
-// Only the browser process publishes this, once its context exists.
 struct ProductBranding {
   int light_logo = -1;
 };
@@ -617,8 +594,6 @@ void PrepareProductBranding() {
   branding->light_logo = webui::CurrentChannelLogoResourceId();
   product_branding.store(branding, std::memory_order_release);
 }
-// The mark's alpha in grey |white|, centred and 20 of 24 pixels tall like
-//
 std::string MarkPNG(CGImageRef mark, CGFloat white, size_t side) {
   base::apple::ScopedCFTypeRef<CGColorSpaceRef> space(
       CGColorSpaceCreateWithName(kCGColorSpaceSRGB));
@@ -1496,8 +1471,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
     return fail(@"The original profile is not available for private browsing.");
   if (IncognitoModePrefs::GetAvailability(parent) == policy::IncognitoModeAvailability::kDisabled)
     return fail(@"Private browsing is disabled for this profile.");
-  //
-  // shared per-parent OTR identity and its last-Browser destruction semantics.
   const bool created_profile = !parent->HasPrimaryOTRProfile();
   Profile* profile = parent->GetPrimaryOTRProfile(/*create_if_needed=*/true);
   base::ScopedClosureRunner abandon_new_context(base::BindOnce(
@@ -1870,8 +1843,6 @@ void AppKitBrowserCloseResult(PCNativeBrowserWindow* binding,
           abandon(parc::Error(@"The page's history belongs to another Profile."));
           return;
         }
-        //
-        // and the restored current entry loads once attached at its size.
         auto weak_browser = browser->GetWeakPtr();
         auto* contents = restored.get();
         auto* tabs = browser->GetTabStripModel();
@@ -2786,8 +2757,6 @@ PCNativeDownloadPreferences* DownloadPreferencesSnapshot(Profile& profile) {
   if (([attribute isEqualToString:@"AXManualAccessibility"] ||
        [attribute isEqualToString:@"AXEnhancedUserInterface"]) &&
       [value isKindOfClass:NSNumber.class] && [value boolValue]) {
-    //
-    // accessibility. They do not claim that a screen reader is running.
     [self accessibilityRoleRequested];
   }
 }

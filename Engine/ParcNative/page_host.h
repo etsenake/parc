@@ -1,5 +1,3 @@
-//
-//
 #pragma once
 
 #import <AppKit/AppKit.h>
@@ -58,11 +56,6 @@ __attribute__((visibility("default")))
 // managed content or renderer focus target; invalidation removes both.
 - (void)setInfobarView:(nullable NSView *)view preferredHeight:(CGFloat)height;
 
-//
-// historyOverlayContainer]): a clipping, click-through view over the whole host,
-// above the pane compositor's display view inside the content. Chromium's
-// history swipe overlay is placed here so the page's frames don't cover it.
-// Created on first request and kept topmost; nil once invalidated.
 - (nullable NSView *)historyOverlayContainer;
 
 // Terminal teardown, called before the engine destroys the native page or its

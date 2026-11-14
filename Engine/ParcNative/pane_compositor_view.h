@@ -1,7 +1,3 @@
-// Copyright 2026 Parc contributors.
-//
-//
-// compositor and its layer tree belong to pane_compositor.mm.
 #ifndef CEF_LIBCEF_BROWSER_PARC_NATIVE_PANE_COMPOSITOR_VIEW_H_
 #define CEF_LIBCEF_BROWSER_PARC_NATIVE_PANE_COMPOSITOR_VIEW_H_
 

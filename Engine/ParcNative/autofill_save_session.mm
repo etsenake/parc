@@ -567,8 +567,6 @@ void NativeAutofillSaveSession::Start() {
     return;
   }
 #endif
-  // Current156 local-save can include CVC. Preserve its actual disclosure;
-  //
   NSString* message =
       card ? base::SysUTF16ToNSString(impl_->card->GetExplanatoryMessage())
            : @"Saved addresses will appear in auto-fill next time you order "
@@ -693,9 +691,6 @@ void NativeAutofillSaveSession::PresentAddressView(
     autofill::AddressBubbleBaseView* view) {
   auto weak = GetWeakPtr();
   impl_->address_view = view;
-  //
-  // ownership boundary: the exact page's Cocoa child modal, not a toolbar
-  //
   view->SetModalType(ui::mojom::ModalType::kChild);
   view->SetArrow(views::BubbleBorder::NONE);
   view->set_close_on_deactivate(false);

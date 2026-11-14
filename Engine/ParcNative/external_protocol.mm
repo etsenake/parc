@@ -245,16 +245,10 @@ class Request final : public content::WebContentsObserver,
     if (!Valid()) {
       return false;
     }
-    //
-    // title quotes the requesting site and the destination application, the
-    // informative text is empty and the buttons name the application. Without
-    // an initiating origin or application name Chromium's own text remains.
     NSString* title = base::SysUTF16ToNSString(decision_->Title());
     NSString* message = base::SysUTF16ToNSString(decision_->Message());
     NSString* accept = base::SysUTF16ToNSString(decision_->AcceptLabel());
     NSString* program = base::SysUTF16ToNSString(decision_->program_name);
-    //
-    // offered only where Chromium may remember this origin's decision.
     NSString* always =
         !decision_->MayRemember() ? @""
         : program.length ? [NSString stringWithFormat:@"Always open “%@”", program]
@@ -270,7 +264,6 @@ class Request final : public content::WebContentsObserver,
       message = @"";
       accept = [NSString stringWithFormat:@"Open “%@”", program];
     }
-    //
     NSImage* icon = nil;
     if (NSURL* target = [NSURL
             URLWithString:base::SysUTF8ToNSString(decision_->url.spec())]) {
@@ -608,8 +601,6 @@ void RunExternalProtocolPrompt(
       std::move(initiator_document));
   auto weak_contents = contents->GetWeakPtr();
   const auto generation = ++state->generation;
-  //
-  // Move the old list first: release notifications may reenter here.
   auto previous = std::move(state->requests);
   for (auto& weak : previous) {
     if (auto old = weak.lock()) {

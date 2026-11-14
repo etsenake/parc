@@ -1,4 +1,3 @@
-//
 #pragma once
 #import <AppKit/AppKit.h>
 
@@ -30,8 +29,6 @@ typedef NS_ENUM(NSInteger, PCAutofillSaveOutcome) {
 // Called only after the exact sheet is attached to the supplied page window.
 // Cleared before delivery; callback may synchronously invalidate this request.
 @property(nonatomic, copy, nullable) void (^onPresented)(void);
-//
-// nil omits the action (including password updates). Escape remains decline.
 @property(nonatomic, copy, nullable) NSString* neverLabel;
 - (void)start;
 // Terminal. Call BEFORE page detach, navigation replacement or host teardown.

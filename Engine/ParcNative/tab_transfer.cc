@@ -168,9 +168,6 @@ static TabTransferResult TransferOne(
         !Owns(source_weak.get(), contents_weak.get(), tab_weak.get())) {
       return false;
     }
-    // Detaching a group's final member destroys that group. Restore the same
-    // source grouping only on rollback; successful moves deliberately carry
-    //
     if (group && !existing_group) {
       model->AddToGroupForRestore({model->GetIndexOfTab(tab_weak.get())},
                                   *group);
@@ -198,8 +195,6 @@ static TabTransferResult TransferOne(
     }
     return true;
   };
-  //
-  // is not a destination user activation.
   if (source_model->active_index() == TabStripModel::kNoTab) {
     source_model->ActivateTabAt(source_index);
   }

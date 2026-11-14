@@ -52,8 +52,6 @@ bool IsSiteConsentStage(Delegate& delegate) {
          flow->prompt_variant() ==
              permissions::EmbeddedPermissionPromptFlowModel::Variant::kAsk;
 }
-//
-// siteTitle, with "this website" as its fallback).
 NSString* SiteLabel(const GURL& origin) {
   NSString* site = base::SysUTF16ToNSString(
       url_formatter::FormatOriginForSecurityDisplay(
@@ -62,18 +60,14 @@ NSString* SiteLabel(const GURL& origin) {
   return site.length ? site : @"this website";
 }
 
-//
-//
-//
-// display name and gear symbol.
-struct PArcPermissionType {
+struct PermissionPresentation {
   NSString* name;
   NSString* symbol;
   CGFloat size;
   bool bold;
   CGFloat offset;
 };
-PArcPermissionType PArcType(permissions::RequestType type) {
+PermissionPresentation PresentationFor(permissions::RequestType type) {
   using T = permissions::RequestType;
   switch (type) {
     case T::kArSession:
@@ -132,18 +126,13 @@ PArcPermissionType PArcType(permissions::RequestType type) {
   }
 }
 
-//
-//
-// camera with microphone reads "camera, microphone"; any other group is
-//
-// (WebContentPermissionProtocolHandlerType); only mailto has its own title.
-NSString* PArcTitle(NSString* site,
+NSString* PermissionTitle(NSString* site,
                    const std::vector<permissions::RequestType>& types,
                    bool mailto,
-                   PArcPermissionType* icon) {
+                   PermissionPresentation* icon) {
   using T = permissions::RequestType;
   if (types.size() == 1) {
-    *
+    *icon = PresentationFor(types[0]);
     if (types[0] == T::kRegisterProtocolHandler && mailto) {
       return [NSString stringWithFormat:@"Make %@ your default mail app?", site];
     }
@@ -171,18 +160,14 @@ NSString* PArcTitle(NSString* site,
       types.size() == 2 &&
       std::find(types.begin(), types.end(), T::kCameraStream) != types.end() &&
       std::find(types.begin(), types.end(), T::kMicStream) != types.end();
-  *
-                         : PArcPermissionType{@"unknown", @"gearshape.fill", 14,
+  *icon = camera_and_mic ? PresentationFor(T::kCameraStream)
+                         : PermissionPresentation{@"unknown", @"gearshape.fill", 14,
                                              false, 0};
   return [NSString stringWithFormat:@"Allow %@ to access your %@?", site,
                                     camera_and_mic ? @"camera, microphone"
                                                    : @"unknown"];
 }
 
-//
-//
-// inline Swift string, drawn as Parc's dialog. It opens Parc's own
-// Notifications pane.
 void ShowSystemNotificationsDeniedSheet(NSWindow* window) {
   if (!window || !window.visible || window.attachedSheet ||
       PCNativeWindowHasSecurityReservation(window)) {
@@ -209,9 +194,6 @@ void ShowSystemNotificationsDeniedSheet(NSWindow* window) {
                 }];
 }
 
-//
-// sure macOS lets Parc show notifications at all. Chromium checks this only
-// for installed web apps, so a denied browser drops every banner silently.
 void EnsureSystemNotificationsAllowed(NSWindow* window) {
   // Genuine-controller tests share this adapter; only a real app bundle has a
   // notification center.
@@ -325,8 +307,6 @@ class Request final : public content::WebContentsObserver,
     document_ = contents->GetPrimaryMainFrame()->GetWeakDocumentPtr();
     std::vector<permissions::RequestType> types;
     bool mailto = false;
-    //
-    // ordinary prompt always reads Allow.
     NSString* allow = @"Allow";
     std::u16string permission_name;
     offers_one_time_ = true;
@@ -450,8 +430,8 @@ class Request final : public content::WebContentsObserver,
       Cancel();
       return;
     }
-    PArcPermissionType icon;
-    NSString* title = PArcTitle(SiteLabel(origin_), types, mailto, &icon);
+    PermissionPresentation icon;
+    NSString* title = PermissionTitle(SiteLabel(origin_), types, mailto, &icon);
     presenter_ = [[PCSitePermissionPresenter alloc] initWithPage:page_
         window:window_
         title:title

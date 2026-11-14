@@ -1,6 +1,3 @@
-// Copyright 2026 Parc contributors.
-//
-// this site (Never omitted for updates); no editable credential fields.
 #include "password_prompt.h"
 
 #include <map>

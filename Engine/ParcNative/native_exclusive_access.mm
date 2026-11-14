@@ -252,12 +252,6 @@ PCNativeHostDecision* ShowNativePrivateProfileDecision(
   base::WeakPtr<BrowserWindowInterface> owner = browser.GetWeakPtr();
   base::WeakPtr<Profile> profile = current->GetWeakPtr();
   __weak NSWindow* parent = window;
-  // The retained Arc142 compatibility slots 0x68a8f50/0x68a8fd4 are inert.
-  // Current Chromium consumes these internal navigations before calling us;
-  // this explicit native adaptation preserves its actual private-profile
-  // policy and localized information instead of silently swallowing the URL.
-  // TOOLS16: the sheet is the shared Parc decision dialog; ordinary profile
-  // Clear Browsing Data remains Chromium WebUI.
   return [PCNativeHostDecision
       showForWindow:window title:string(title) message:string(message)
       accept:string(close) dismiss:string(dismiss)

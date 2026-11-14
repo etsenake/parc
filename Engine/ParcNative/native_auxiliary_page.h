@@ -15,10 +15,6 @@ namespace tabs {
 class TabInterface;
 }
 namespace parc {
-//
-// 0x683eedc wraps the actual main tools via 0x685424c without inserting a tab.
-// Current156 adaptation: bind that exact main frontend to the inspected tab's
-// actual Browser and supplied native pane. Toolbox is deliberately excluded.
 class NativeAuxiliaryPage final
     : public content::WebContentsObserver,
       public std::enable_shared_from_this<NativeAuxiliaryPage> {

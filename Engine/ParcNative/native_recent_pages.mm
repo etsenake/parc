@@ -90,7 +90,6 @@ class RecentPagesQuery final : public ProfileObserver {
   ~RecentPagesQuery() override { Cancel(); }
 
   void Start(NSString* path) {
-    //
     deadline_.Start(FROM_HERE, base::Milliseconds(500),
                     base::BindOnce(&RecentPagesQuery::FinishEmpty,
                                    weak_factory_.GetWeakPtr()));

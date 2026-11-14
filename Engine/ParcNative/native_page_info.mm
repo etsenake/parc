@@ -96,10 +96,6 @@ bool HasPageInfo(content::WebContents* contents) {
   return true;
 }
 
-//
-//
-// native controls here consume genuine PageInfo data; their layout is a
-// current-engine adaptation, not a recovered SiteControlCenter layout.
 class SiteInfo final : public content::WebContentsObserver,
                        public content::WebContentsUserData<SiteInfo>,
                        public PageInfoUI {
@@ -456,15 +452,6 @@ class SiteInfo final : public content::WebContentsObserver,
 };
 WEB_CONTENTS_USER_DATA_KEY_IMPL(SiteInfo);
 
-//
-//
-// and toggles one through `didChangeSiteSetting`. Parc keeps the genuine
-// PageInfo presenter as their source and owner: rows are its published
-// permissions, a toggle is its allow/block change and closing is its
-//
-// Automatic Picture-in-Picture (type 0x1d) on a secure page; PageInfo lists it
-// only once registered or changed, so its row is built from the profile's
-// genuine content setting until then (index -2) and changed through PageInfo.
 using SiteControlsHandler = void (^)(NSArray<NSDictionary<NSString*, id>*>* _Nullable);
 class SiteControls final : public content::WebContentsObserver,
                            public content::WebContentsUserData<SiteControls>,
@@ -485,9 +472,6 @@ class SiteControls final : public content::WebContentsObserver,
     document_ = contents->GetPrimaryMainFrame()->GetWeakDocumentPtr();
     handler_ = [handler copy];
     active_ = true;
-    //
-    //
-    // the page; it lists no rows.
     if (!HasPageInfo(contents)) return true;
     model_ = std::make_shared<PageInfo>(std::make_unique<ChromePageInfoDelegate>(contents), contents, url);
     ui_delegate_ = std::make_unique<ChromePageInfoUiDelegate>(contents, url);

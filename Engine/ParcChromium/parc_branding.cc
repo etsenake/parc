@@ -15,7 +15,7 @@
 
 namespace parc {
 namespace {
-constexpr char kLicenseHTML[] = R"PARC(<html><head><meta charset="utf-8"><title>Parc licences</title></head><body><h1>Parc</h1><p>Copyright 2026 Parc contributors.</p><p>Chromium and third-party notices: <a href="chrome://credits/">credits</a>.</p><h2>Retained Chromium Embedded Framework code</h2><pre>// Copyright (c) 2008-2020 Marshall A. Greenblatt. Portions Copyright (c)
+constexpr char kLicenseHTML[] = R"PARC(<html><head><meta charset="utf-8"><title>Parc licences</title></head><body><h1>Parc</h1><p>Copyright 2026 Josh Etsenake and Parc contributors.</p><p>Parc is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. Parc is distributed WITHOUT ANY WARRANTY; see <a href="https://www.gnu.org/licenses/agpl-3.0.html">the GNU Affero General Public License</a> for details. Source code: <a href="https://github.com/etsenake/parc">github.com/etsenake/parc</a>.</p><p>Chromium and third-party notices: <a href="chrome://credits/">credits</a>.</p><h2>Retained Chromium Embedded Framework code</h2><pre>// Copyright (c) 2008-2020 Marshall A. Greenblatt. Portions Copyright (c)
 // 2006-2009 Google Inc. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without

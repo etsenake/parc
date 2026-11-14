@@ -25,7 +25,6 @@ bool SourceReady(const ProfileData& profile, std::string& error) {
   NSBundle* bundle = [NSBundle
       bundleWithPath:base::SysUTF8ToNSString(source.app_path.value())];
   struct stat directory{};
-  //
   const bool bundled = source.app_path.MatchesExtension(".app");
   if ((bundled && ![bundle.bundleIdentifier
                        isEqualToString:base::SysUTF8ToNSString(source.bundle_id)]) ||
@@ -41,8 +40,6 @@ bool SourceReady(const ProfileData& profile, std::string& error) {
 namespace {
 constexpr char kArcBundleID[] = "company.thebrowser.Browser";
 constexpr char kArcData[] = "Library/Application Support/Arc";
-//
-// A path macOS refuses to stat still exists; reading it asks for access later.
 bool ArcDataExists(const base::FilePath& home) {
   struct stat info{};
   const auto sidebar =
@@ -206,7 +203,6 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
     };
     if (blocked(root) || blocked(root.AppendASCII("Local State")))
       result.restricted = true;
-    //
     if (source->bundle_id == kArcBundleID &&
         blocked(root.DirName().AppendASCII("StorableSidebar.json")))
       result.restricted = true;
@@ -266,10 +262,6 @@ ProfilesResult Load(std::shared_ptr<const Installation> source,
         "a profile and that macOS permits access.");
   return result;
 }
-//
-// (availableImportSourceProfiles:), a browser is offered only with a profile
-// to import, or one macOS withholds until Full Disk Access. Safari's store is
-// always behind that permission, so its own step decides.
 std::vector<Installation> Importable(std::vector<Installation> installed,
                                      base::FilePath home) {
   std::vector<Installation> importable;

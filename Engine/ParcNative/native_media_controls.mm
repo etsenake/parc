@@ -207,8 +207,6 @@ class MediaState final : public content::WebContentsObserver,
     if (!session || !Owner(contents, false)) return PCNativeMediaSessionStatusInactive;
     const auto info = session->GetMediaSessionInfoSync();
     if (!info) return PCNativeMediaSessionStatusInactive;
-    // GetMediaSessionInfoSync already reports ducking ahead of the focus state.
-    //
     switch (info->state) {
       case Info::SessionState::kActive: return PCNativeMediaSessionStatusActive;
       case Info::SessionState::kDucking: return PCNativeMediaSessionStatusDucking;

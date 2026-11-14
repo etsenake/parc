@@ -33,9 +33,6 @@ namespace parc {
 NSNotificationName const kNativeFullscreenSettledNotification =
     @"PCNativeFullscreenSettledNotification";
 
-//
-// ownership model. This current-engine adapter supplies the Cocoa controller's
-// Client directly; it creates no Views window, bridge process or second window.
 class NativeFullscreenWindow final
     : public remote_cocoa::NativeWidgetNSWindowFullscreenController::Client,
       public std::enable_shared_from_this<NativeFullscreenWindow> {

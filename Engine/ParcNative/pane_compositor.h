@@ -1,8 +1,3 @@
-// Copyright 2026 Parc contributors.
-// Pages draw through compositors their window keeps across tab switches, as
-//
-// compositor and a re-shown page shows the pane's white backing until a new
-// compositor's first frame. See docs/page-compositing.md.
 #ifndef CEF_LIBCEF_BROWSER_PARC_NATIVE_PANE_COMPOSITOR_H_
 #define CEF_LIBCEF_BROWSER_PARC_NATIVE_PANE_COMPOSITOR_H_
 

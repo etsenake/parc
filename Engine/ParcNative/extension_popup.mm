@@ -375,7 +375,6 @@ bool NativeExtensionPopup::MayDismissForParentKey() {
   if (closing_) {
     return false;
   }
-  //
   return !javascript_dialogs::AppModalDialogQueue::GetInstance()
               ->HasActiveDialog() &&
          !web_modal::WebContentsHasActiveWebModal(host_->host_contents()) &&

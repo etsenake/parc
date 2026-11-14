@@ -81,9 +81,6 @@ NSError* SearchError(NSString* message) {
                              code:1
                          userInfo:@{NSLocalizedDescriptionKey : message}];
 }
-//
-//
-// Stable IDs and the preserve-once policy below are Parc adaptations.
 constexpr char kSiteCatalogPreference[] = "parc.search.site_catalog";
 struct SiteSearchDefinition {
   const char* guid;
@@ -113,9 +110,6 @@ constexpr SiteSearchDefinition kSiteSearchCatalog[] = {
     {"8f9395dc-e84c-56b6-ada1-af1554285442", "Apple Music", "music.apple.com", "https://music.apple.com/us/search?term={searchTerms}", "https://music.apple.com/favicon.ico"},
     {"8bb123a5-6ed4-5338-bfed-568edce910a4", "Spotify", "spotify.com", "https://open.spotify.com/search/{searchTerms}", "https://www.scdn.co/i/_global/favicon.ico"},
 };
-//
-// own deletable flag. Do not expose removal merely because a duplicate is
-// deletable, or infer a history operation from the displayed destination URL.
 bool SupportsSuggestionDeletion(const AutocompleteMatch& match) {
   if (!match.deletable || !match.provider)
     return false;
@@ -436,9 +430,6 @@ void InitializeNativeSearch(Profile& profile) {
     _editText = [base::SysUTF16ToNSString(match.fill_into_edit) copy];
     _matchType = [base::SysUTF8ToNSString(omnibox::AutocompleteMatchTypeToString(match.type)) copy];
     _relevance = match.relevance;
-    //
-    // search-suggestion and calculator archetypes. These are the corresponding
-    // genuine current-engine result classes, not every IsSearchType match.
     switch (match.type) {
       case omnibox::AutocompleteMatchType::kSearchWhatYouTyped:
       case omnibox::AutocompleteMatchType::kSearchSuggest:
@@ -1535,9 +1526,6 @@ class OmniboxSession final : public AutocompleteController::Observer,
     return value && value->type() != TemplateURL::OMNIBOX_API_EXTENSION &&
         value->sync_guid() == token->_engineGUID ? value : nullptr;
   }
-  // Every active website engine, so a highlighted page can offer whichever
-  //
-  // Rebuilt only when engines or search preferences change.
   NSArray<PCNativeOmniboxScope*>* SiteScopes(uint64_t publication) {
     if (active_ || !controller_ || !service_ || !service_->loaded())
       return @[];

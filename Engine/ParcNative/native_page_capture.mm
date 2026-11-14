@@ -118,10 +118,6 @@ void PostTarget(TargetCompletion completion, PCNativePageCaptureTarget* target) 
       }, [completion copy], target));
 }
 
-//
-// recovered sort callback returns undefined, so it does not rank by score.
-// This fixed isolated-world script reads geometry only; pixels always come
-// from the original renderer compositor, never a DOM reconstruction.
 std::u16string ElementQuery(NSPoint point, double zoom) {
   std::string script = "(() => { const px = " + base::NumberToString(point.x / zoom) +
       ", py = " + base::NumberToString(point.y / zoom) + R"JS(;
@@ -501,8 +497,6 @@ class PageCapture final : public content::WebContentsObserver,
     const uint64_t query = ++target_query_;
     NSPoint point = target_point_;
     target_inflight_ = true;
-    // This bounds a stalled renderer; it is a Parc latency adaptation, not a
-    //
     target_timer_.Start(FROM_HERE, base::Seconds(2), base::BindOnce(
         &PageCapture::TargetResult, weak_factory_.GetWeakPtr(), query, generation,
         point, zoom, base::Value()));
@@ -541,7 +535,6 @@ class PageCapture final : public content::WebContentsObserver,
           std::isfinite(*x) && std::isfinite(*y) && std::isfinite(*w) &&
           std::isfinite(*h) && std::isfinite(*ox) && std::isfinite(*oy) &&
           std::isfinite(*scale) && *w > 0 && *h > 0 && *scale > 0) {
-        //
         const double factor = *scale * zoom;
         NSRect rect = NSMakeRect((*x - *ox) * factor, (*y - *oy) * factor,
                                  *w * factor, *h * factor);
@@ -574,9 +567,6 @@ class PageCapture final : public content::WebContentsObserver,
       PostFailure(completion, @"The element moved. Select it again before capturing.");
       return;
     }
-    //
-    //
-    // Keep the resulting 2-DIP margin inside the original compositor viewport.
     NSRect area = NSIntersectionRect(NSInsetRect(current.viewportRect, -2, -2),
         NSMakeRect(0, 0, viewport_.width(), viewport_.height()));
     Capture(area, false, completion);
@@ -635,8 +625,6 @@ class PageCapture final : public content::WebContentsObserver,
     original_hide_scrollbars_ = prefs.hide_scrollbars;
     original_record_document_ = prefs.record_whole_document;
     protocol_inflight_ = true;
-    //
-    // script, URL reload, alternate WebContents or reduced thumbnail is used.
     constexpr std::string_view command =
         R"({"id":1,"method":"Page.captureScreenshot","params":{"format":"png","fromSurface":true,"captureBeyondViewport":true}})";
     agent_->DispatchProtocolMessage(this, base::as_byte_span(command));
@@ -878,10 +866,6 @@ class PageCapture final : public content::WebContentsObserver,
 @end
 
 namespace parc {
-//
-// auxiliary web content, captured viewport/region and scroll, with at most
-// twenty positioning attempts. The original screenshot and source page are
-// never changed by this operation.
 class LiveCapturePosition final : public std::enable_shared_from_this<LiveCapturePosition> {
  public:
   LiveCapturePosition(PCNativePage* page, NSRect region, NSPoint scroll,
@@ -995,11 +979,6 @@ class LiveCapturePosition final : public std::enable_shared_from_this<LiveCaptur
 @end
 
 namespace parc {
-//
-// live web content included. This copies one embedded page's compositor frame
-// for that artwork. Like Chromium's background tab thumbnails, the capturer
-// count keeps the page hidden to itself and holds no wake lock, but makes its
-// renderer draw frames until the copy finishes.
 class EmbeddedPageSnapshot final : public std::enable_shared_from_this<EmbeddedPageSnapshot> {
  public:
   EmbeddedPageSnapshot(PCNativePage* page, content::WebContents& contents,

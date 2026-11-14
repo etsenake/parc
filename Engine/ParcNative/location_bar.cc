@@ -22,15 +22,10 @@ namespace {
 
 CommandUpdater* RequireCommandUpdater(BrowserWindowInterface& browser) {
   auto* commands = chrome::BrowserCommandController::From(&browser);
-  //
-  // Bind the real owning Browser's updater rather than preserve that hazard.
   CHECK(commands);
   return commands;
 }
 
-//
-// OmniboxView's inherited SetUserText/RevertAll/TextChanged implementations:
-// these mutate the genuine edit model even though there is no text widget.
 class NativeOmniboxView final : public OmniboxView {
  public:
   explicit NativeOmniboxView(OmniboxController* controller)
@@ -95,9 +90,6 @@ NativeLocationBar::NativeLocationBar(BrowserWindowInterface& browser)
             .has_value());
   CHECK(!base::FeatureList::IsEnabled(history_embeddings::kHistoryEmbeddings))
       << "Parc startup must disable HistoryEmbeddings";
-  //
-  // Upstream156 moved controller ownership out of OmniboxView; retain the same
-  // model chain with current typed APIs, not the old binary layout.
   controller_ = std::make_unique<OmniboxController>(
       std::make_unique<ChromeOmniboxClient>(this, &browser, GetProfile()),
       base::Milliseconds(1500));
@@ -108,7 +100,6 @@ NativeLocationBar::~NativeLocationBar() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 }
 
-//
 void NativeLocationBar::FocusLocation(bool, bool) {}
 void NativeLocationBar::FocusSearch() {}
 void NativeLocationBar::UpdateContentSettingsIcons() {}
@@ -124,8 +115,6 @@ OmniboxController* NativeLocationBar::GetOmniboxController() {
   return controller_.get();
 }
 content::WebContents* NativeLocationBar::GetWebContents() {
-  //
-  // frontmost-window lookup can substitute for this profile-bound identity.
   return browser_->GetTabStripModel()->GetActiveWebContents();
 }
 LocationBarModel* NativeLocationBar::GetLocationBarModel() {
