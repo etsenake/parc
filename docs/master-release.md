@@ -112,7 +112,8 @@ published tag still refuses.
    `releases/latest/download/appcast.xml` offers it. Promote stable/latest and
    update/push the cask's version, URL and checksum in `~/homebrew-tap`; the cask
    says `auto_updates true`, so `brew upgrade` leaves Sparkle-updated installs
-   alone. Refresh the local tap metadata, check Ruby syntax and audit the cask.
+   alone. Refresh the local tap metadata, trust the tap (Homebrew 7 loads no
+   untrusted tap's casks), check Ruby syntax and audit the cask.
 
 On a fresh Mac, restore the [saved engine workspace](engine-artifacts.md)
 first to avoid a full pinned source sync/build. An unowned existing workspace is

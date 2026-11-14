@@ -710,6 +710,7 @@ class Release:
             if self.git('ls-remote', 'origin', 'refs/heads/main', cwd=tap).split()[0] != head:
                 raise Failure('Tap commit publication was not verified')
         self.command(["brew", "tap", "etsenake/tap"], name="tap-register")
+        self.command(["brew", "trust", "--tap", "etsenake/tap"], name="tap-trust")
         installed_tap = Path(self.command(["brew", "--repo", "etsenake/tap"], capture=True))
         if self.git("status", "--porcelain", "--untracked-files=no", cwd=installed_tap):
             raise Failure("Installed Homebrew tap has local edits; preserved without overwriting")
