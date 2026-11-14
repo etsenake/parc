@@ -52,6 +52,16 @@ extension AppWidePreferences {
             promptForDownload: state.promptEditable ? state.promptForDownload : nil)
     }
 
+    func adoptingSearch(from state: AppWideProfileState) -> AppWidePreferences {
+        var next = self
+        if state.defaultEditable, let keyword = state.defaultKeyword, !keyword.isEmpty,
+           Self.normalizedKeyword(keyword) != Self.normalizedKeyword(searchKeyword ?? "") {
+            next.searchKeyword = keyword
+        }
+        if state.suggestionsEditable { next.searchSuggestions = state.suggestionsEnabled }
+        return next
+    }
+
     func changes(for state: AppWideProfileState) -> AppWideChanges {
         var changes = AppWideChanges()
         if let keyword = searchKeyword, state.defaultEditable,

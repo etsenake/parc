@@ -943,7 +943,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         for (page, button) in profilePageButtons {
             let available = (page == .search ? settingsContextSpace() : profilePageSpace()) != nil
             button.isEnabled = available && onProfileSettingsPage != nil
-            button.toolTip = button.isEnabled ? nil : "Use this profile for a Space to manage its browser settings."
+            button.toolTip = button.isEnabled ? nil : page == .search
+                ? "Open Settings from a browser window to manage search."
+                : "Use this profile for a Space to manage its browser settings."
         }
         moreSettings.isEnabled = settingsContextSpace() != nil && onMoreSettings != nil
         replay.isEnabled = replaySpaceID != nil && NSApp.delegate?.responds(to: #selector(AppDelegate.replayOnboarding(_:))) == true
@@ -1199,7 +1201,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         let generation = downloadPreferencesGeneration
         downloadRetry.isHidden = true
         guard let profileID = generalProfileID else {
-            downloadPreferences = nil; renderDownloadPreferences(message: "Select an available profile.")
+            downloadPreferences = nil; renderDownloadPreferences(message: "Download settings are unavailable.")
             return
         }
         let path = store.independentEngineProfilePath(for: profileID)
@@ -1384,7 +1386,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         searchMessage = message; renderSearchNote()
         guard let profileID = generalProfileID else {
             engine.removeAllItems(); engine.addItem(withTitle: "Unavailable")
-            searchMessage = "Select an available profile."; renderSearchNote()
+            generalLocks = AppWidePreferenceController.Locks()
+            searchMessage = "Search settings are unavailable."; renderSearchNote()
             return
         }
         let path = store.independentEngineProfilePath(for: profileID)
@@ -1395,6 +1398,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
                 self.engine.removeAllItems()
                 guard let preferences, preferences.profilePath == path else {
                     self.engine.addItem(withTitle: "Unavailable")
+                    self.generalLocks = AppWidePreferenceController.Locks()
                     self.searchMessage = error?.localizedDescription ?? "Search settings are unavailable."; self.renderSearchNote()
                     return
                 }

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 @MainActor
 final class AppWidePreferenceController {
@@ -33,12 +34,31 @@ final class AppWidePreferenceController {
     private weak var store: BrowserStore?
     private var seenPaths: Set<String> = []
     private var waitingPaths: Set<String> = []
+    private var appliedPaths: Set<String> = []
+    private var applyingCounts: [String: Int] = [:]
     private var upgradeStarted = false
+    private var searchSubscription: AnyCancellable?
 
     func start(store: BrowserStore) {
         guard self.store == nil, !store.isEphemeral else { return }
         self.store = store
+        searchSubscription = NotificationCenter.default.publisher(for: Notification.Name("PCNativeSearchPreferencesDidChange"))
+            .compactMap { $0.object as? String }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] path in MainActor.assumeIsolated { self?.searchPreferencesChanged(path: path) } }
         upgradeIfNeeded()
+    }
+
+    private func searchPreferencesChanged(path: String) {
+        guard appliedPaths.contains(path), applyingCounts[path] == nil,
+              store?.state.settings.appWidePreferences != nil else { return }
+        read(path: path) { [weak self] snapshot in
+            guard let self, let snapshot, self.appliedPaths.contains(path), self.applyingCounts[path] == nil,
+                  let current = self.store?.state.settings.appWidePreferences else { return }
+            let adopted = current.adoptingSearch(from: snapshot.state)
+            guard adopted != current else { return }
+            try? self.update { $0 = adopted }
+        }
     }
 
     func profileAvailable(path: String) {
@@ -112,11 +132,20 @@ final class AppWidePreferenceController {
     }
 
     private func apply(toPath path: String, completion: ((Error?) -> Void)? = nil) {
-        guard let wanted = store?.state.settings.appWidePreferences else { completion?(nil); return }
-        read(path: path) { snapshot in
-            guard let snapshot else { completion?(nil); return }
+        guard store?.state.settings.appWidePreferences != nil else { completion?(nil); return }
+        applyingCounts[path, default: 0] += 1
+        let finish: (Error?) -> Void = { [weak self] error in
+            guard let self else { completion?(error); return }
+            let remaining = (self.applyingCounts[path] ?? 1) - 1
+            self.applyingCounts[path] = remaining > 0 ? remaining : nil
+            if error == nil { self.appliedPaths.insert(path) } else { self.seenPaths.remove(path) }
+            completion?(error)
+        }
+        read(path: path) { [weak self] snapshot in
+            guard let self, let snapshot, self.profilePaths().contains(path),
+                  let wanted = self.store?.state.settings.appWidePreferences else { finish(nil); return }
             let changes = wanted.changes(for: snapshot.state)
-            guard !changes.isEmpty else { completion?(nil); return }
+            guard !changes.isEmpty else { finish(nil); return }
             do {
                 var search = snapshot.search
                 var download = snapshot.download
@@ -133,8 +162,8 @@ final class AppWidePreferenceController {
                 if let prompt = changes.promptForDownload {
                     _ = try PCNativeBrowserApplication.setPromptForDownload(prompt, for: download)
                 }
-                completion?(nil)
-            } catch { completion?(error) }
+                finish(nil)
+            } catch { finish(error) }
         }
     }
 

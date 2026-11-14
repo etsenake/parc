@@ -96,7 +96,10 @@ in its own settings and writes them to each Chromium Profile: when a Profile
 first becomes available in a session, and immediately to every Profile already
 loaded when General changes a value. Unloaded Profiles receive the value when
 they load; none is forced to load for this. On first launch after the change,
-the first Space's Profile supplies the values.
+the first Space's Profile supplies the values. Changing the default engine or
+suggestions on a Space's own search page also becomes the app-wide choice once
+that Space has received the app-wide values; changes still arriving while a
+Space loads or is being written are ignored.
 
 Search engines match across Profiles by keyword, never by sync GUID, because
 built-in engines carry different GUIDs per Profile. A Profile that lacks the
@@ -108,7 +111,8 @@ opened from and refreshes on every Profile's search-preference change.
 Manage search opens the search shortcuts page for that Space; custom shortcuts
 remain Profile data. The location picker offers its folder, Other… and Ask every
 time. Choosing Other… sets the folder, then turns prompting off. Managed values
-disable the picker. Callbacks validate window and preference identity.
+disable the picker. Callbacks validate window and preference identity, and
+leaving General or closing Settings cancels an open folder panel.
 See [downloads](download-library.md).
 
 Automatic archive retains its per-Profile policy, application-to-all-Profile

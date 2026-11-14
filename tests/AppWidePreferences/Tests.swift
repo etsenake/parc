@@ -77,6 +77,16 @@ struct AppWidePreferencesTests {
         try expect(wanted.changes(for: missing).engineIdentifier == nil, "A profile without the engine keeps its own")
         try expect(AppWidePreferences().changes(for: profile(guidSuffix: "q")).isEmpty, "Unset values change nothing")
 
+        let chosen = AppWidePreferences(searchKeyword: "google.com", searchSuggestions: true,
+                                        downloadDirectory: "/Users/test/Downloads", promptForDownload: false)
+        let pickedInSpace = chosen.adoptingSearch(from: profile(guidSuffix: "s", default: "DuckDuckGo.com ", suggestions: false))
+        try expect(pickedInSpace == AppWidePreferences(searchKeyword: "DuckDuckGo.com ", searchSuggestions: false,
+                                                       downloadDirectory: "/Users/test/Downloads", promptForDownload: false),
+                   "A default engine or suggestions picked on a Space's own search page becomes the app-wide choice; downloads stay")
+        try expect(chosen.adoptingSearch(from: profile(guidSuffix: "s", default: " GOOGLE.com")) == chosen,
+                   "The same engine under different spacing or case is not a change")
+        try expect(chosen.adoptingSearch(from: locked) == chosen, "A managed or extension-controlled default is never adopted")
+
         print("App-wide preferences: \(assertions) assertions passed")
     }
 }
