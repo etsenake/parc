@@ -41,14 +41,26 @@ that lets people make it thinner or thicker. The open item is indexed in the
 - It is not per Space. A frame that changed as you swiped between Spaces would
   move every page under you.
 
-People reach it in three places:
+People reach it in four places:
 
-- **Onboarding**, as the step after Theme, where most people set it once.
-- **Settings → General.** Choosing it puts the Settings window away and brings
-  the crank onto the front browser window, so the real frame changes in front of
-  you; Settings returns when you finish.
-- **Right-click** on the frame or the empty part of the sidebar: Adjust Frame….
-  It stays out of the Space menu, which would suggest a per-Space value.
+- **Onboarding**, as the step after Theme, where most people set it once. Setup
+  runs before any browser window exists, so the step shows a true-size copy of a
+  window instead: the Space colors and light or dark chosen on the Theme step, a
+  hidden sidebar and a plain page card, with the crank, lights and readout in
+  their real place and size. The frame is drawn at one pixel per point so 3 and 13
+  look honest. The left column carries the heading **Find your frame**, one line
+  of copy, and Next and Skip; Skip keeps 10. No panel, card or number field sits
+  around the window copy. Replay onboarding shows the same step with the current
+  value.
+- **Settings → General**, as a Window frame row showing the value and its name,
+  for example 10 · Classic, with an **Adjust** button. Adjust fades the Settings
+  window out, brings the front browser window forward (opening one if none is
+  open) and slides the crank in. When the crank leaves, Settings fades back with
+  the row updated.
+- **Right-click** on the frame or the empty part of the sidebar: Adjust Window
+  Frame…. It stays out of the Space menu, which would suggest a per-Space value.
+- **The command bar**, as an Adjust Window Frame action that brings the crank onto
+  the current window.
 
 ## The crank
 
