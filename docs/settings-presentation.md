@@ -43,12 +43,11 @@ arrow because they open a page in the browser. Pill buttons use a quiet fill;
 Delete Profile uses red text.
 
 Profiles lists every profile with its Space count and a chevron, then New
-Profile. Choosing one opens Edit Profile: the name with Rename, Search, Tabs and
-Downloads, Your Data and Settings, and Clear Browsing Data and Delete Profile at
-the bottom right. Rename keeps Parc's rename dialog. General's Profile Settings
-opens the selected profile's Edit Profile page.
+Profile. Choosing one opens Edit Profile: the name with Rename, Tabs, Your Data and
+Settings, and Clear Browsing Data and Delete Profile at the bottom right. Rename
+keeps Parc's rename dialog.
 
-General groups Warn before quitting, Previews and Profile Settings, and Replay
+General groups Warn before quitting, Previews, Search, Downloads and Replay
 onboarding, which must stay available. Advanced groups Sound and Feedback,
 Windows and Tabs, and Websites, followed by More Settings and Export Data.
 Links groups the two Peek switches with their note, then Air Traffic Control.

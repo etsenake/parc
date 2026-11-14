@@ -38,28 +38,25 @@ harness = f"""import AppKit
 for use in (
         "private let downloadLocationPicker = DownloadLocationPicker()",
         "downloadLocationPicker.onChoose = { [weak self] choice in self?.downloadLocationChosen(choice) }",
-        "for field in [downloadHelp] {",
+        "for field in [downloadHelp, searchHelp] {",
         "downloadRetry.bezelStyle = .rounded; downloadRetry.isHidden = true",
         "enabled: current.map { !$0.directoryManaged && !$0.promptManaged } ?? false,",
         "panelOpen: downloadFolderPanel != nil)",
         "guard let current = currentDownloadPreferences(), !current.directoryManaged, !current.promptManaged else {\n            refreshDownloadPreferences(); return",
         "if choice == .other { chooseDownloadDirectory(); return }",
-        "_ = try PCNativeBrowserApplication.setPromptForDownload(choice == .prompt, for: current)",
-        "let profileID = displayedProfileID else { downloadLocationPicker.revert(); return }",
+        "try AppWidePreferenceController.shared.update { $0.promptForDownload = choice == .prompt }",
+        "let profileID = generalProfileID else { downloadLocationPicker.revert(); return }",
         "panel.prompt = \"Select\"",
         "panel.canChooseFiles = false; panel.canChooseDirectories = true",
         "panel.canCreateDirectories = true; panel.allowsMultipleSelection = false",
-        "panel.directoryURL = current.directoryURL",
+        "panel.directoryURL = downloadLocationPicker.value?.directory ?? current.directoryURL",
         "downloadFolderPanel = panel\n        renderDownloadLocation()\n        panel.beginSheetModal(for: window)",
         "let url = panel.url else { self.refreshDownloadPreferences(); return }",
-        "let chosen = try PCNativeBrowserApplication.setDownloadDirectory(url, for: current)\n"
-        "                _ = try PCNativeBrowserApplication.setPromptForDownload(false, for: chosen)\n"
+        "try AppWidePreferenceController.shared.update { $0.downloadDirectory = url.path; $0.promptForDownload = false }\n"
         "                self.refreshDownloadPreferences()\n"
         "            } catch { self.reportDownloadPreferenceError(error) }",
         "panel?.cancel(nil)\n        if panel != nil { renderDownloadLocation() }",
         "if selectedPane != pane {\n            cancelDownloadFolderSelection()",
-        "if displayedProfileID != selectedProfileID { cancelDownloadFolderSelection() }",
-        "if removing { cancelDownloadFolderSelection() }",
         "guard let self, self.downloadPreferencesGeneration == generation,"):
     assert use in settings, f"SettingsWindow no longer wires the picker as checked: {use}"
 for gone in ("downloadPrompt", "downloadChoose", "Ask where to save each file", "Change download folder",

@@ -565,6 +565,7 @@ struct BrowserSettings: Codable, Equatable {
     }
     var showSpaceHeaderOnSingleUnnamedSpaces: Bool?
     var shouldBypassConfirmInterProfileMoveDialog: Bool?
+    var appWidePreferences: AppWidePreferences?
 }
 
 enum SplitOrientation: String, Codable, CaseIterable { case horizontal, vertical }
@@ -3323,6 +3324,18 @@ final class BrowserStore: ObservableObject {
         next.settings.restoreSession = enabled
         guard next != state else { return }
         try commitProfileSettings(next)
+    }
+
+    func saveAppWidePreferences(_ preferences: AppWidePreferences) throws {
+        var next = state
+        next.settings.appWidePreferences = preferences
+        guard next != state else { return }
+        try commitProfileSettings(next)
+    }
+
+    func recordAppWidePreferencesIfMissing(_ preferences: AppWidePreferences) throws {
+        guard state.settings.appWidePreferences == nil else { return }
+        try saveAppWidePreferences(preferences)
     }
 
     func saveSidebarWidth(_ width: Double) throws {

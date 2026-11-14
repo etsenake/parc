@@ -12,8 +12,8 @@ selected pane; explicit commands can select Profiles or a particular shortcut.
 
 | Pane | Current controls |
 |---|---|
-| General | Default browser, Warn before quitting, Previews Settings, Profile Settings, Replay onboarding |
-| Profiles | Profile list with Space counts and New Profile; Edit Profile with rename, search/suggestions, automatic archive, downloads, native data/settings destinations, Clear Browsing Data and Delete Profile |
+| General | Default browser, Warn before quitting, Previews Settings, Search (engine, Manage search, suggestions), Download location, Replay onboarding |
+| Profiles | Profile list with Space counts and New Profile; Edit Profile with rename, automatic archive, native data/settings destinations, Clear Browsing Data and Delete Profile |
 | Links | Ordered Air Traffic Control rules |
 | Shortcuts | Search, bindings, priority, conflict resolution and Reset All |
 | Icon | Available application icons |
@@ -41,8 +41,8 @@ no regular Space can create an unassigned Profile. See
 [Space management](space-management.md#profile-assignment-dependency).
 
 Choosing a Profile in the list saves it as the editing Profile, then opens Edit
-Profile; reopening Settings on Profiles shows the list. Archive education and
-General's Profile Settings open Edit Profile directly. The selected pane and
+Profile; reopening Settings on Profiles shows the list. Archive education opens Edit
+Profile directly. The selected pane and
 editing Profile are session fields with backward-compatible optional decoding. An unavailable saved selection falls back to the originating
 Space's Profile, then the first available Profile. Selection saves atomically
 before adoption; failure leaves the old selection.
@@ -88,18 +88,27 @@ native removal/recovery transaction. Results stay per Profile: one failure does
 not hide or undo another success. Retry reuses operation IDs and skips completed
 members.
 
-## Profile search and navigation
+## Search and downloads
 
-Profiles reads the native search engine list/default and suggestions preference.
-Snapshots bind the weak Profile, revision, real search GUIDs and managed/extension
-control state. Mutations revalidate, save through the native preference owner,
-and refresh from its observer. No parallel Profile manager is created.
+The search engine, search suggestions and download location (including Ask every
+time) are app-wide settings in General, applied to every Space. Parc keeps them
+in its own settings and writes them to each Chromium Profile: when a Profile
+first becomes available in a session, and immediately to every Profile already
+loaded when General changes a value. Unloaded Profiles receive the value when
+they load; none is forced to load for this. On first launch after the change,
+the first Space's Profile supplies the values.
 
-Downloads uses the selected Profile's real native preferences. The location
-picker offers its folder, Other… and Ask every time. Choosing Other… sets the
-folder, then turns prompting off. Managed values disable the picker. Changing
-selection/removing a Profile cancels the original folder panel; callbacks validate
-window, Profile and preference identity. Unavailable contexts show an explanation.
+Search engines match across Profiles by keyword, never by sync GUID, because
+built-in engines carry different GUIDs per Profile. A Profile that lacks the
+engine keeps its own default. Values an organization or extension controls are
+never overwritten or recorded, and General notes when any loaded Space has such
+a lock. General reads the engine list from the Space of the window Settings
+opened from and refreshes on every Profile's search-preference change.
+
+Manage search opens the search shortcuts page for that Space; custom shortcuts
+remain Profile data. The location picker offers its folder, Other… and Ask every
+time. Choosing Other… sets the folder, then turns prompting off. Managed values
+disable the picker. Callbacks validate window and preference identity.
 See [downloads](download-library.md).
 
 Automatic archive retains its per-Profile policy, application-to-all-Profile
@@ -114,8 +123,8 @@ its Settings link selects the original Profile. See [archive](archive.md).
 | Notifications | `parc://settings/content/notifications` | Exact subpage |
 | Clear Browsing Data | `parc://settings/clearBrowserData` | Exact dialog; opening erases nothing |
 
-Each action resolves an existing Space in the selected Profile, preferring the
-originating Space. Missing, retiring or unassigned Profiles refuse. The original
+Each Edit Profile action resolves an existing Space in the selected Profile, preferring the
+originating Space; Manage search uses the originating Space. Missing, retiring or unassigned Profiles refuse. The original
 Settings/browser owner remains the destination when another window becomes
 frontmost. Normal security, close/transfer and sheet gates still apply. Success
 closes Settings; refusal leaves it open with feedback.

@@ -3097,7 +3097,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate, NSMen
                     guard !applyingNativeSelection, !store.retiringTabIDs.contains(tab.id) else { continue }
                     restoredHistory = store.closedPageHistory.takeRestored(tab.id) as? NSObject ?? launchHistory(for: tab)
                     pane.layoutSubtreeIfNeeded()
-                    let browser = PCBrowserView(frame: pane.contentBounds, profilePath: store.independentEngineProfilePath(for: tab.profileID))
+                    let enginePath = store.independentEngineProfilePath(for: tab.profileID)
+                    let browser = PCBrowserView(frame: pane.contentBounds, profilePath: enginePath)
+                    AppWidePreferenceController.shared.profileAvailable(path: enginePath)
                     browser.delegate = self
                     browsers[tab.id] = browser
                     browserProfiles[tab.id] = tab.profileID

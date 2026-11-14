@@ -14,8 +14,16 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private let applicationProfileID: UUID?
     private let engine = PointingHandPopUpButton()
     private let searchSuggestions = PointingHandSwitch()
+    private let searchHelp = NSTextField(wrappingLabelWithString: "")
+    private var searchMessage: String?
+    private var generalLocks = AppWidePreferenceController.Locks()
     private var searchNote = "" {
-        didSet { engine.toolTip = searchNote.isEmpty ? nil : searchNote; engine.setAccessibilityHelp(engine.toolTip) }
+        didSet {
+            engine.toolTip = searchNote.isEmpty ? nil : searchNote; engine.setAccessibilityHelp(engine.toolTip)
+            searchHelp.stringValue = searchNote; searchHelp.toolTip = searchNote
+            searchHelp.isHidden = searchNote.isEmpty
+            layoutGeneralPane()
+        }
     }
     private var searchPreferences: PCNativeSearchPreferences?
     private var searchGeneration: UInt64 = 0
@@ -23,9 +31,10 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     @MainActor
     private final class SearchChoice: NSObject {
         let identifier: String
+        let keyword: String
         let preferences: PCNativeSearchPreferences
         init(_ engine: PCNativeSearchEngine, _ preferences: PCNativeSearchPreferences) {
-            identifier = engine.identifier; self.preferences = preferences
+            identifier = engine.identifier; keyword = engine.keyword; self.preferences = preferences
         }
     }
     private let archive = PointingHandPopUpButton()
@@ -187,17 +196,10 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
             Snapshot(settings: state.settings, profiles: state.profiles, spaces: state.spaces)
         }.removeDuplicates().receive(on: RunLoop.main).sink { [weak self] snapshot in
             guard let self else { return }
-            if let id = self.displayedProfileID, !snapshot.profiles.contains(where: { $0.id == id }) {
-                self.cancelDownloadFolderSelection()
-            }
             self.refresh()
         }
         searchSubscription = NotificationCenter.default.publisher(for: Notification.Name("PCNativeSearchPreferencesDidChange"))
-            .receive(on: RunLoop.main).sink { [weak self] notification in
-                guard let self, let id = self.displayedProfileID,
-                      notification.object as? String == self.store.independentEngineProfilePath(for: id) else { return }
-                self.refreshSearchPreferences()
-            }
+            .receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshSearchPreferences() }
         removalSubscription = ProfileRemovalController.shared.$revision.receive(on: RunLoop.main).sink { [weak self] _ in
             self?.refresh()
         }
@@ -222,7 +224,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
         engine.target = self; engine.action = #selector(searchEngineChanged)
         engine.menu?.autoenablesItems = false
-        engine.setAccessibilityLabel("Default search engine for this profile")
+        engine.setAccessibilityLabel("Default search engine")
         searchSuggestions.target = self; searchSuggestions.action = #selector(searchSuggestionsChanged)
         archive.target = self; archive.action = #selector(archiveChanged)
         archive.menu?.autoenablesItems = false
@@ -255,6 +257,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         downloadLocationPicker.onChoose = { [weak self] choice in self?.downloadLocationChosen(choice) }
         downloadRetry.target = self; downloadRetry.action = #selector(retryDownloadPreferences)
         downloadRetry.bezelStyle = .rounded; downloadRetry.isHidden = true
+        searchHelp.isHidden = true
         moreSettings.target = self; moreSettings.action = #selector(openMoreSettings)
         exportData.target = self; exportData.action = #selector(exportBrowserData)
         replay.target = self; replay.action = #selector(replayWelcome)
@@ -271,7 +274,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         newProfile.toolTip = applicationProfileID == nil ? "Create a profile for this Space" : "Create a regular profile"
         profileNameValue.font = .systemFont(ofSize: 13); profileNameValue.textColor = .secondaryLabelColor
         profileNameValue.alignment = .right; profileNameValue.lineBreakMode = .byTruncatingTail
-        for field in [downloadHelp] {
+        for field in [downloadHelp, searchHelp] {
             field.font = .systemFont(ofSize: 11); field.textColor = .secondaryLabelColor
         }
     }
@@ -349,35 +352,78 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         rowLabel("Warn before quitting", in: quitting, row: 0)
         warnBeforeQuitting.setAccessibilityLabel("Warn before quitting")
         trailingSwitch(warnBeforeQuitting, in: quitting, top: 0)
-        let previewsY = quitting.frame.maxY + SettingsLayout.headingSpacing
-        heading("Previews and Profiles", in: content, above: previewsY)
-        let preferences = group(in: content, y: previewsY, height: rowHeight + noteHeight)
+        let previewsTitle = SettingsSectionHeading(title: "Previews")
+        content.addSubview(previewsTitle)
+        let preferences = group(in: content, y: 0, height: rowHeight)
         rowLabel("Previews", in: preferences, row: 0)
         let previewSettings = SettingsPillButton(title: "Previews Settings…")
         previewSettings.target = self; previewSettings.action = #selector(openPreviewSettings)
         trailingPill(previewSettings, in: preferences, top: 0)
-        preferences.separator(at: rowHeight)
-        let jump = SettingsPillButton(title: "Profile Settings…")
-        jump.target = self; jump.action = #selector(openProfilesPane)
-        label("Manage your default search engine, Auto-Archive, and downloads in Profile Settings.",
-              in: preferences, NSRect(x: SettingsLayout.rowInset, y: rowHeight + 10,
-                                      width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 3 - jump.fittingWidth, height: 36))
-        trailingPill(jump, in: preferences, top: rowHeight, rowHeight: noteHeight)
-        let onboardingY = preferences.frame.maxY + SettingsLayout.headingSpacing
-        heading("Onboarding", in: content, above: onboardingY)
-        let onboarding = group(in: content, y: onboardingY, height: noteHeight + 6)
+        let searchTitle = SettingsSectionHeading(title: "Search")
+        content.addSubview(searchTitle)
+        let searching = group(in: content, y: 0, height: rowHeight * 3)
+        rowLabel("Search engine", in: searching, row: 0)
+        trailing(engine, in: searching, top: 0, width: 220, height: 25)
+        searching.separator(at: rowHeight)
+        rowLabel("Manage search", in: searching, row: 1)
+        if let manage = profilePageButton(.search) as? SettingsPillButton { trailingPill(manage, in: searching, top: rowHeight) }
+        searching.separator(at: rowHeight * 2)
+        rowLabel("Include search engine suggestions", in: searching, row: 2)
+        searchSuggestions.setAccessibilityLabel("Include search engine suggestions")
+        trailingSwitch(searchSuggestions, in: searching, top: rowHeight * 2)
+        place(searchHelp, in: searching, NSRect(x: 12, y: rowHeight * 3 + 6, width: SettingsLayout.groupWidth - 24, height: 32))
+        let downloadsTitle = SettingsSectionHeading(title: "Downloads")
+        content.addSubview(downloadsTitle)
+        let downloads = group(in: content, y: 0, height: SettingsLayout.rowHeight)
+        downloadLocationPicker.rowTitle = label("Download location", in: downloads, NSRect(x: 12, y: 12, width: 160, height: 18))
+        place(downloadLocationPicker, in: downloads, NSRect(x: SettingsLayout.groupWidth - 12 - DownloadLocationPicker.width, y: 7,
+                                                            width: DownloadLocationPicker.width, height: 28))
+        place(downloadHelp, in: downloads, NSRect(x: 12, y: 50, width: SettingsLayout.groupWidth - 120, height: 32))
+        place(downloadRetry, in: downloads, NSRect(x: SettingsLayout.groupWidth - 82, y: 52, width: 70, height: 28))
+
+        let onboardingTitle = SettingsSectionHeading(title: "Onboarding")
+        content.addSubview(onboardingTitle)
+        let onboarding = group(in: content, y: 0, height: noteHeight + 6)
         label("Replay onboarding", in: onboarding, NSRect(x: SettingsLayout.rowInset, y: 10, width: 300, height: 18))
         label("Replay the full welcome and setup. Finishing applies your choices to this Space; existing tabs stay.",
               in: onboarding, NSRect(x: SettingsLayout.rowInset, y: 30,
                                      width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 3 - replay.fittingWidth, height: 28), help: true)
         trailingPill(replay, in: onboarding, top: 0, rowHeight: noteHeight + 6)
+        generalLayout = GeneralLayout(quitting: quitting,
+                                      sections: [(previewsTitle, preferences), (searchTitle, searching),
+                                                 (downloadsTitle, downloads), (onboardingTitle, onboarding)],
+                                      search: searching, downloads: downloads, content: content)
+        layoutGeneralPane()
         return scroll
     }
-    @objc private func openPreviewSettings() { showPreviewSettings() }
-    @objc private func openProfilesPane() {
-        if let id = selectedProfileID, store.state.profiles.contains(where: { $0.id == id }) { show(.profile(id)) }
-        else { showPane(.profiles) }
+
+    private struct GeneralLayout {
+        let quitting: SettingsGroupView
+        let sections: [(NSTextField, SettingsGroupView)]
+        let search: SettingsGroupView
+        let downloads: SettingsGroupView
+        let content: LayoutView
     }
+    private var generalLayout: GeneralLayout?
+
+    private func layoutGeneralPane() {
+        guard let layout = generalLayout else { return }
+        let rowHeight = SettingsLayout.rowHeight
+        layout.search.setFrameSize(NSSize(width: SettingsLayout.groupWidth, height: rowHeight * 3 + (searchHelp.isHidden ? 0 : 44)))
+        let note = !downloadHelp.isHidden || !downloadRetry.isHidden
+        layout.downloads.setFrameSize(NSSize(width: SettingsLayout.groupWidth, height: rowHeight + (note ? 44 : 0)))
+        var bottom = layout.quitting.frame.maxY
+        for (title, group) in layout.sections {
+            let top = bottom + SettingsLayout.headingSpacing
+            group.setFrameOrigin(NSPoint(x: SettingsLayout.margin, y: top))
+            title.frame = NSRect(x: SettingsLayout.margin + SettingsLayout.rowInset,
+                                 y: top - SettingsLayout.headingGap - SettingsLayout.headingHeight,
+                                 width: SettingsLayout.groupWidth - SettingsLayout.rowInset * 2, height: SettingsLayout.headingHeight)
+            bottom = group.frame.maxY
+        }
+        layout.content.setFrameSize(NSSize(width: layout.content.frame.width, height: max(SettingsLayout.contentHeight, bottom + 20)))
+    }
+    @objc private func openPreviewSettings() { showPreviewSettings() }
 
     private func makeProfilesPane() -> NSScrollView {
         let (scroll, content) = pane()
@@ -452,33 +498,13 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         place(profileNameValue, in: identity, NSRect(x: 180, y: 12,
                                                      width: SettingsLayout.groupWidth - 180 - SettingsLayout.rowInset * 2 - renameProfile.fittingWidth, height: 18))
 
-        let searchTitle = SettingsSectionHeading(title: "Search")
-        content.addSubview(searchTitle)
-        let searching = group(in: content, y: 0, height: rowHeight * 3)
-        rowLabel("Search engine", in: searching, row: 0)
-        trailing(engine, in: searching, top: 0, width: 220, height: 25)
-        searching.separator(at: rowHeight)
-        rowLabel("Manage search", in: searching, row: 1)
-        if let manage = profilePageButton(.search) as? SettingsPillButton { trailingPill(manage, in: searching, top: rowHeight) }
-        searching.separator(at: rowHeight * 2)
-        rowLabel("Include search engine suggestions", in: searching, row: 2)
-        searchSuggestions.setAccessibilityLabel("Include search engine suggestions")
-        trailingSwitch(searchSuggestions, in: searching, top: rowHeight * 2)
-
-        let browsingTitle = SettingsSectionHeading(title: "Tabs and Downloads")
+        let browsingTitle = SettingsSectionHeading(title: "Tabs")
         content.addSubview(browsingTitle)
-        let downloads = group(in: content, y: 0, height: SettingsLayout.rowHeight * 2)
-        downloadLocationPicker.rowTitle = label("Download location", in: downloads, NSRect(x: 12, y: 54, width: 160, height: 18))
-        place(downloadLocationPicker, in: downloads, NSRect(x: SettingsLayout.groupWidth - 12 - DownloadLocationPicker.width, y: 49,
-                                                            width: DownloadLocationPicker.width, height: 28))
-        place(downloadHelp, in: downloads, NSRect(x: 12, y: 92, width: SettingsLayout.groupWidth - 120, height: 32))
-        place(downloadRetry, in: downloads, NSRect(x: SettingsLayout.groupWidth - 82, y: 94, width: 70, height: 28))
-
-        let archiveTitle = label("Archive tabs after", in: downloads, NSRect(x: 12, y: 12, width: 116, height: 18))
+        let tabs = group(in: content, y: 0, height: SettingsLayout.rowHeight)
+        let archiveTitle = label("Archive tabs after", in: tabs, NSRect(x: 12, y: 12, width: 116, height: 18))
         archiveTitle.sizeToFit()
-        place(archiveInfo, in: downloads, NSRect(x: archiveTitle.frame.maxX + 4, y: 13, width: 16, height: 16))
-        trailing(archive, in: downloads, top: 0, width: 220, height: 25)
-        downloads.separator(at: rowHeight)
+        place(archiveInfo, in: tabs, NSRect(x: archiveTitle.frame.maxX + 4, y: 13, width: 16, height: 16))
+        trailing(archive, in: tabs, top: 0, width: 220, height: 25)
 
         let dataTitle = SettingsSectionHeading(title: "Your Data and Settings")
         content.addSubview(dataTitle)
@@ -491,8 +517,8 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
         if let clear = profilePageButton(.clearBrowsingData) as? SettingsPillButton { content.addSubview(clear) }
         content.addSubview(removeProfile)
-        profileEditorLayout = ProfileEditorLayout(identity: identity, sections: [(searchTitle, searching), (browsingTitle, downloads), (dataTitle, data)],
-                                                  downloads: downloads, content: content)
+        profileEditorLayout = ProfileEditorLayout(identity: identity, sections: [(browsingTitle, tabs), (dataTitle, data)],
+                                                  content: content)
         layoutProfileCards()
         return scroll
     }
@@ -500,16 +526,12 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     private struct ProfileEditorLayout {
         let identity: SettingsGroupView
         let sections: [(NSTextField, SettingsGroupView)]
-        let downloads: SettingsGroupView
         let content: LayoutView
     }
     private var profileEditorLayout: ProfileEditorLayout?
 
     private func layoutProfileCards() {
         guard let layout = profileEditorLayout else { return }
-        let note = !downloadHelp.isHidden || !downloadRetry.isHidden
-        layout.downloads.setFrameSize(NSSize(width: SettingsLayout.groupWidth,
-                                             height: SettingsLayout.rowHeight * 2 + (note ? 44 : 0)))
         var bottom = layout.identity.frame.maxY
         for (title, group) in layout.sections {
             let top = bottom + SettingsLayout.headingSpacing
@@ -866,11 +888,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         if !store.state.profiles.contains(where: { $0.id == selectedProfileID }) {
             selectedProfileID = space?.profileID ?? store.state.profiles.first?.id
         }
-        if displayedProfileID != selectedProfileID { cancelDownloadFolderSelection() }
         displayedSpaceID = space?.id
         displayedProfileID = selectedProfileID
         let removing = displayedProfileID.map(store.isProfileRemovalPending) ?? false
-        if removing { cancelDownloadFolderSelection() }
         archive.isEnabled = displayedProfileID != nil && !removing
         archiveInfo.isEnabled = archive.isEnabled
         if let change = archiveScopeChange,
@@ -920,8 +940,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
         let profileName = store.state.profiles.first { $0.id == displayedProfileID }?.name ?? "Default"
         archive.setAccessibilityHelp("Applies to all Spaces using the \(profileName) Profile.")
-        for button in profilePageButtons.values {
-            button.isEnabled = profilePageSpace() != nil && onProfileSettingsPage != nil
+        for (page, button) in profilePageButtons {
+            let available = (page == .search ? settingsContextSpace() : profilePageSpace()) != nil
+            button.isEnabled = available && onProfileSettingsPage != nil
             button.toolTip = button.isEnabled ? nil : "Use this profile for a Space to manage its browser settings."
         }
         moreSettings.isEnabled = settingsContextSpace() != nil && onMoreSettings != nil
@@ -1116,9 +1137,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 
     private func openProfileSettingsPage(_ page: ProfileSettingsPage) {
-        guard selectedPane == .profiles, showsProfileEditor, window?.isKeyWindow == true,
-              window?.attachedSheet == nil else { return }
-        guard let space = profilePageSpace(),
+        guard page == .search ? selectedPane == .general : (selectedPane == .profiles && showsProfileEditor),
+              window?.isKeyWindow == true, window?.attachedSheet == nil else { return }
+        guard let space = page == .search ? settingsContextSpace() : profilePageSpace(),
               onProfileSettingsPage?(space.id, space.profileID, page) == true else {
             reportSettingsCommandRefusal(page.title)
             return
@@ -1146,8 +1167,9 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
 
     func permitsProfilePage(in ownerStore: BrowserStore, spaceID: UUID, profileID: UUID) -> Bool {
-        selectedPane == .profiles && showsProfileEditor && selectedProfileID == profileID
-            && profilePageSpace()?.id == spaceID
+        (selectedPane == .general
+            ? settingsContextSpace()?.id == spaceID
+            : selectedPane == .profiles && showsProfileEditor && selectedProfileID == profileID && profilePageSpace()?.id == spaceID)
             && permitsPage(in: ownerStore, spaceID: spaceID, profileID: profileID)
     }
 
@@ -1167,14 +1189,16 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         if panel != nil { renderDownloadLocation() }
     }
 
+    private var generalProfileID: UUID? {
+        let id = settingsContextSpace()?.profileID ?? store.state.spaces.first?.profileID ?? store.state.profiles.first?.id
+        return id.flatMap { id in store.state.profiles.contains { $0.id == id } && !store.isProfileRemovalPending(id) ? id : nil }
+    }
     @objc private func retryDownloadPreferences() { refreshDownloadPreferences() }
     private func refreshDownloadPreferences(message: String? = nil) {
         downloadPreferencesGeneration &+= 1
         let generation = downloadPreferencesGeneration
         downloadRetry.isHidden = true
-        guard let profileID = displayedProfileID,
-              store.state.profiles.contains(where: { $0.id == profileID }),
-              !store.isProfileRemovalPending(profileID) else {
+        guard let profileID = generalProfileID else {
             downloadPreferences = nil; renderDownloadPreferences(message: "Select an available profile.")
             return
         }
@@ -1186,9 +1210,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         PCNativeBrowserApplication.downloadPreferences(profilePath: path) { [weak self] preferences, error in
             MainActor.assumeIsolated {
                 guard let self, self.downloadPreferencesGeneration == generation,
-                      self.displayedProfileID == profileID,
-                      self.store.state.profiles.contains(where: { $0.id == profileID }),
-                      !self.store.isProfileRemovalPending(profileID) else { return }
+                      self.generalProfileID == profileID else { return }
                 self.downloadPreferences = preferences?.profilePath == path ? preferences : nil
                 self.downloadRetry.isHidden = self.downloadPreferences != nil
                 self.renderDownloadPreferences(message: error?.localizedDescription ??
@@ -1198,31 +1220,32 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
     }
     private func renderDownloadLocation() {
         let current = downloadPreferences
-        downloadLocationPicker.update(current.map { .init(directory: $0.directoryURL, prompt: $0.promptForDownload) },
+        let stored = store.state.settings.appWidePreferences
+        downloadLocationPicker.update(current.map { current in
+            let directory = current.directoryManaged ? current.directoryURL
+                : stored?.downloadDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? current.directoryURL
+            let prompt = current.promptManaged ? current.promptForDownload : stored?.promptForDownload ?? current.promptForDownload
+            return .init(directory: directory, prompt: prompt)
+        },
                                       enabled: current.map { !$0.directoryManaged && !$0.promptManaged } ?? false,
                                       panelOpen: downloadFolderPanel != nil)
     }
     private func renderDownloadPreferences(message: String? = nil) {
-        let current = downloadPreferences
         renderDownloadLocation()
-        let name = store.state.profiles.first { $0.id == displayedProfileID }?.name ?? "Default"
         downloadHelp.maximumNumberOfLines = 2
         downloadHelp.lineBreakMode = .byWordWrapping
         downloadHelp.cell?.truncatesLastVisibleLine = true
-        downloadHelp.stringValue = message ?? (current?.directoryManaged == true || current?.promptManaged == true
-            ? "Some download settings for “\(name)” are managed by your organization."
-            : "Applies to all Spaces using the “\(name)” profile.")
+        let locked = generalLocks.downloads
+        downloadHelp.stringValue = message ?? (locked ? "Your organization manages download settings in at least one Space. Other Spaces follow this choice." : "")
         downloadHelp.toolTip = downloadHelp.stringValue
-        let managed = current?.directoryManaged == true || current?.promptManaged == true
-        downloadHelp.isHidden = !(managed || !downloadRetry.isHidden || (message != nil && current != nil))
-        layoutProfileCards()
+        downloadHelp.isHidden = downloadHelp.stringValue.isEmpty
+        layoutGeneralPane()
     }
     private func reportDownloadPreferenceError(_ error: Error) {
         refreshDownloadPreferences(message: error.localizedDescription)
     }
     private func currentDownloadPreferences() -> PCNativeDownloadPreferences? {
-        guard let profileID = displayedProfileID,
-              store.state.profiles.contains(where: { $0.id == profileID }), let current = downloadPreferences,
+        guard let profileID = generalProfileID, let current = downloadPreferences,
               current.profilePath == store.independentEngineProfilePath(for: profileID) else { return nil }
         return current
     }
@@ -1232,31 +1255,29 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         }
         if choice == .other { chooseDownloadDirectory(); return }
         do {
-            _ = try PCNativeBrowserApplication.setPromptForDownload(choice == .prompt, for: current)
+            try AppWidePreferenceController.shared.update { $0.promptForDownload = choice == .prompt }
             refreshDownloadPreferences()
         } catch { reportDownloadPreferenceError(error) }
     }
     private func chooseDownloadDirectory() {
         guard let window, window.attachedSheet == nil, downloadFolderPanel == nil,
               let current = currentDownloadPreferences(), !current.directoryManaged, !current.promptManaged,
-              let profileID = displayedProfileID else { downloadLocationPicker.revert(); return }
+              let profileID = generalProfileID else { downloadLocationPicker.revert(); return }
         let panel = NSOpenPanel()
         panel.prompt = "Select"
         panel.canChooseFiles = false; panel.canChooseDirectories = true
         panel.canCreateDirectories = true; panel.allowsMultipleSelection = false
-        panel.directoryURL = current.directoryURL
+        panel.directoryURL = downloadLocationPicker.value?.directory ?? current.directoryURL
         downloadFolderPanel = panel
         renderDownloadLocation()
         panel.beginSheetModal(for: window) { [weak self, weak panel, weak window] response in
             guard let self, let panel, self.downloadFolderPanel === panel else { return }
             self.downloadFolderPanel = nil
             guard response == .OK, let window, self.window === window, window.isVisible,
-                  self.displayedProfileID == profileID,
-                  self.store.state.profiles.contains(where: { $0.id == profileID }),
+                  self.generalProfileID == profileID,
                   let url = panel.url else { self.refreshDownloadPreferences(); return }
             do {
-                let chosen = try PCNativeBrowserApplication.setDownloadDirectory(url, for: current)
-                _ = try PCNativeBrowserApplication.setPromptForDownload(false, for: chosen)
+                try AppWidePreferenceController.shared.update { $0.downloadDirectory = url.path; $0.promptForDownload = false }
                 self.refreshDownloadPreferences()
             } catch { self.reportDownloadPreferenceError(error) }
         }
@@ -1348,77 +1369,82 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate, NSToolbarDeleg
         archiveInfoPopover = popover
         popover.show(relativeTo: archiveInfo.bounds, of: archiveInfo, preferredEdge: .maxY)
     }
+    private func renderSearchNote() {
+        if let searchMessage { searchNote = searchMessage; return }
+        var lines: [String] = []
+        if generalLocks.search { lines.append("Your organization or an extension controls the default search engine in at least one Space.") }
+        if generalLocks.suggestions { lines.append("Your organization manages search suggestions in at least one Space.") }
+        searchNote = lines.joined(separator: " ")
+    }
     private func refreshSearchPreferences(message: String? = nil) {
         searchGeneration &+= 1
         let generation = searchGeneration
         searchPreferences = nil; engine.isEnabled = false; searchSuggestions.isEnabled = false
         engine.removeAllItems(); engine.addItem(withTitle: "Loading…")
-        searchNote = message ?? "Loading this profile’s search settings…"
-        guard let profileID = displayedProfileID, store.state.profiles.contains(where: { $0.id == profileID }),
-              !store.isProfileRemovalPending(profileID) else {
+        searchMessage = message; renderSearchNote()
+        guard let profileID = generalProfileID else {
             engine.removeAllItems(); engine.addItem(withTitle: "Unavailable")
-            searchNote = displayedProfileID.map(store.isProfileRemovalPending) == true
-                ? "Profile removal must finish before these settings can be used." : "Select an available profile."
+            searchMessage = "Select an available profile."; renderSearchNote()
             return
         }
         let path = store.independentEngineProfilePath(for: profileID)
         PCNativeBrowserApplication.searchPreferences(profilePath: path) { [weak self] preferences, error in
             MainActor.assumeIsolated {
-                guard let self, self.searchGeneration == generation, self.displayedProfileID == profileID,
-                      self.store.state.profiles.contains(where: { $0.id == profileID }) else { return }
+                guard let self, self.searchGeneration == generation, self.generalProfileID == profileID else { return }
                 self.searchPreferences = preferences
                 self.engine.removeAllItems()
                 guard let preferences, preferences.profilePath == path else {
                     self.engine.addItem(withTitle: "Unavailable")
-                    self.searchNote = error?.localizedDescription ?? "Search settings are unavailable."
+                    self.searchMessage = error?.localizedDescription ?? "Search settings are unavailable."; self.renderSearchNote()
                     return
                 }
+                let wanted = self.store.state.settings.appWidePreferences?.searchKeyword.map(AppWidePreferences.normalizedKeyword)
+                let wantedIdentifier = preferences.defaultEditable
+                    ? wanted.flatMap { keyword in preferences.engines.first { $0.canMakeDefault && AppWidePreferences.normalizedKeyword($0.keyword) == keyword }?.identifier }
+                    : nil
+                let selected = wantedIdentifier ?? preferences.defaultIdentifier
                 for choice in preferences.engines {
                     self.engine.addItem(withTitle: choice.name)
                     self.engine.lastItem?.representedObject = SearchChoice(choice, preferences)
-                    self.engine.lastItem?.isEnabled = choice.canMakeDefault || choice.identifier == preferences.defaultIdentifier
-                    if choice.identifier == preferences.defaultIdentifier { self.engine.select(self.engine.lastItem) }
+                    self.engine.lastItem?.isEnabled = choice.canMakeDefault || choice.identifier == selected
+                    if choice.identifier == selected { self.engine.select(self.engine.lastItem) }
                 }
-                if preferences.defaultIdentifier == nil {
+                if selected == nil {
                     self.engine.insertItem(withTitle: "No default search engine", at: 0); self.engine.selectItem(at: 0)
                     self.engine.item(at: 0)?.isEnabled = false
                 }
                 self.engine.isEnabled = preferences.defaultEditable && !preferences.engines.isEmpty
-                self.searchSuggestions.state = preferences.suggestionsEnabled ? .on : .off
+                let suggestions = preferences.suggestionsEditable
+                    ? self.store.state.settings.appWidePreferences?.searchSuggestions ?? preferences.suggestionsEnabled
+                    : preferences.suggestionsEnabled
+                self.searchSuggestions.state = suggestions ? .on : .off
                 self.searchSuggestions.isEnabled = preferences.suggestionsEditable
-                if let message { self.searchNote = message }
-                else if preferences.defaultManaged || preferences.suggestionsManaged {
-                    self.searchNote = "Some search settings are managed by your organization."
-                } else if preferences.defaultExtensionControlled {
-                    self.searchNote = "An extension controls this profile’s default search engine."
-                } else {
-                    self.searchNote = ""
-                }
+                self.searchMessage = message; self.renderSearchNote()
                 self.refreshDownloadPreferences()
+                AppWidePreferenceController.shared.locks { [weak self] locks in
+                    guard let self, self.searchGeneration == generation else { return }
+                    self.generalLocks = locks
+                    self.renderSearchNote()
+                    self.renderDownloadPreferences()
+                }
             }
         }
     }
     @objc private func searchEngineChanged() {
         guard let choice = engine.selectedItem?.representedObject as? SearchChoice,
-              let profileID = displayedProfileID,
-              store.state.profiles.contains(where: { $0.id == profileID }),
+              let profileID = generalProfileID,
               choice.preferences.profilePath == store.independentEngineProfilePath(for: profileID) else {
             refreshSearchPreferences(); return
         }
-        if choice.identifier == choice.preferences.defaultIdentifier { return }
         do {
-            _ = try PCNativeBrowserApplication.setDefaultSearchEngine(choice.identifier, for: choice.preferences)
+            try AppWidePreferenceController.shared.update { $0.searchKeyword = choice.keyword }
             refreshSearchPreferences()
         } catch { refreshSearchPreferences(message: error.localizedDescription) }
     }
     @objc private func searchSuggestionsChanged() {
-        guard let current = searchPreferences, let profileID = displayedProfileID,
-              store.state.profiles.contains(where: { $0.id == profileID }),
-              current.profilePath == store.independentEngineProfilePath(for: profileID) else {
-            refreshSearchPreferences(); return
-        }
+        let enabled = searchSuggestions.state == .on
         do {
-            _ = try PCNativeBrowserApplication.setSearchSuggestionsEnabled(searchSuggestions.state == .on, for: current)
+            try AppWidePreferenceController.shared.update { $0.searchSuggestions = enabled }
             refreshSearchPreferences()
         } catch { refreshSearchPreferences(message: error.localizedDescription) }
     }
